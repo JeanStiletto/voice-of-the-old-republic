@@ -1,0 +1,43 @@
+# Build artifacts and run logs
+/build/
+/logs/
+
+# .NET build output (kdev, dbgcapture)
+**/bin/
+**/obj/
+
+# Visual Studio / Rider local files
+.vs/
+.idea/
+*.user
+*.suo
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*~
+*.swp
+
+# Claude Code local-only config (per-user permissions/hooks)
+.claude/settings.local.json
+
+# Internal dev tooling — kdev (build/install/launch CLI), dbgcapture
+# (OutputDebugString sink), ghidra-scripts. Excluded from the public repo
+# for now; may be released separately later.
+/tools/
+
+# Decompiled / reverse-engineered game artifacts: Lane Dibello's Ghidra
+# database (gzf/xml/sarif/h) and architecture PDF. Not redistributable —
+# mirror locally from his Google Drive (links: https://deadlystream.com/topic/11948-kotor-1-gog-reverse-engineering/).
+/docs/llm-docs/
+
+# Upstream third-party clones — recreatable from public repos:
+#   Kotor-Patch-Manager: https://github.com/LaneDibello/Kotor-Patch-Manager
+#   KotorMessageInjector: https://github.com/LaneDibello/KotorMessageInjector
+#   KotOR_IO: https://github.com/LaneDibello/KotOR_IO
+#   DLZ-Tool: https://github.com/Lane-Dibello/DLZ-Tool
+# Tolk (third_party/tolk/) is kept — LGPL distribution requirement.
+/third_party/Kotor-Patch-Manager/
+/third_party/KotorMessageInjector/
+/third_party/KotOR_IO/
+/third_party/DLZ-Tool/

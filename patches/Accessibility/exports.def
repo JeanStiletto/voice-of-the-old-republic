@@ -1,0 +1,6 @@
+LIBRARY Accessibility
+EXPORTS
+    OnRulesInit
+    OnHandleFocusChange
+    OnHandleInputEvent
+    OnSetActiveControl

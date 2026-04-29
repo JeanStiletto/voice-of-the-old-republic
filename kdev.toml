@@ -1,0 +1,35 @@
+# kdev project configuration
+#
+# All paths may be absolute or relative to this file's directory.
+# kdev walks upward from the cwd to find this file.
+
+[game]
+# KOTOR 1 install root. The 'swkotor.exe' inside this directory is the build target.
+install = 'C:\Program Files (x86)\Steam\steamapps\common\swkotor'
+
+[patch_manager]
+# Extracted release of LaneDibello/Kotor-Patch-Manager.
+# kdev loads KPatchCore.dll from <release>/bin/ at runtime.
+release = 'C:\Tools\KotorPatchManager-v0.4.2'
+
+[upstream]
+# Source clone of the patch manager. Used by 'kdev build' to set up the layout
+# create-patch.bat expects (Patches/Common/ and lib/ siblings).
+clone = 'third_party/Kotor-Patch-Manager'
+
+[accessibility]
+# Our patch source directory.
+source = 'patches/Accessibility'
+# Where built .kpatch artifacts land.
+build_output = 'build'
+# The patch's id, must match manifest.toml's [patch].id field.
+patch_id = 'accessibility'
+# Additional patch IDs to install alongside ours on every 'kdev apply'. These
+# must already exist as .kpatch files inside <patch_manager.release>/patches/.
+# - 'widescreen' — Lane's Widescreen patch; fixes the tiny 640x480 windowed-mode default.
+#
+# '4gb-patch' is intentionally not listed: its manifest declares a different
+# Steam SHA than ours (34E6D971... vs. its hardcoded other-Steam hash) and the
+# applicator rejects it. We don't need it for now (no large mod loadout); fork
+# the manifest later if/when we do.
+additional_patches = ['widescreen']

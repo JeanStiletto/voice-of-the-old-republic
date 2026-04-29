@@ -1,0 +1,141 @@
+# Minimal infrastructure-test detour: CSWRules::CSWRules constructor.
+# Address and original-bytes signature borrowed from upstream LevelUpLimit,
+# which declares kotor1_steam_103 in its supported_versions — so this address
+# has been validated against the Steam binary.
+#
+# We don't modify rules behavior. skip_original_bytes = false so the
+# wrapper executes the original 10-byte init sequence after our handler
+# returns, leaving game logic untouched.
+[[hooks]]
+address = 0x00552c9a
+type = "detour"
+function = "OnRulesInit"
+
+# 8d 7e 38              LEA EDI, [ESI+0x38]
+# b9 15 00 00 00        MOV ECX, 0x15
+# f3 ab                 REP STOSD
+original_bytes = [0x8d, 0x7e, 0x38, 0xb9, 0x15, 0x00, 0x00, 0x00, 0xf3, 0xab]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+# CSWRules* this — passed for completeness; handler ignores it for now.
+[[hooks.parameters]]
+source = "esi"
+type = "pointer"
+
+# CSWGuiControl::HandleFocusChange — hooked mid-function at 0x41896b, after
+# the engine has loaded param_1 into EAX and 'this' into EDI. We deliberately
+# skip the function-entry hook to avoid the framework's stack-param feature,
+# which has a known LEA-vs-MOV bug (gives addresses instead of values; see
+# ../../docs/llm-docs/re/ + memory).
+#
+# This hook lands AFTER the entry-time `JZ +0x31` that handles the
+# "param_1 == 0" branch, so we only see "focus gained" / non-zero param_1
+# events. Sufficient for first-fire validation.
+#
+# Bytes from Lane's Ghidra database via tools/ghidra-scripts/DumpBytes.java.
+# Cut at 5 bytes: MOV ECX, [EDI+0x34] (3) + TEST ECX, ECX (2). Both register/
+# memory-relative — safe to relocate. GoG bytes match Steam at this address.
+#
+# Signature per Ghidra: void __thiscall HandleFocusChange(int param_1).
+[[hooks]]
+address = 0x0041896b
+type = "detour"
+function = "OnHandleFocusChange"
+
+# 8b 4f 34              MOV  ECX, [EDI+0x34]   ; reads via 'this' (EDI)
+# 85 c9                 TEST ECX, ECX
+original_bytes = [0x8b, 0x4f, 0x34, 0x85, 0xc9]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "edi"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "eax"
+type = "int"
+
+# CSWGuiPanel::SetActiveControl — hooked mid-function at 0x0040a638. This is
+# THE panel-level entry point for focus change: called once per actual change
+# (arrow-key navigation, mouse click, programmatic SetActiveControl). Unlike
+# CSWGuiControl::HandleFocusChange (which fires twice per navigation — loses
+# and gains — and is bypassed by the title screen entirely), SetActiveControl
+# is the single canonical signal we want for screen-reader announcements.
+#
+# Function entry (0x0040a630) per Lane's SARIF:
+#   void __thiscall CSWGuiPanel::SetActiveControl(CSWGuiControl* param_1)
+#
+# Bytes from 0x0040a630 (DumpBytes.java):
+#   56              push  esi
+#   8b 74 24 08     mov   esi, [esp+8]    ; param_1 → esi
+#   57              push  edi
+#   8b f9           mov   edi, ecx        ; this    → edi
+#   8b 4f 1c        mov   ecx, [edi+0x1c] ; ← hook here, both args populated
+#   3b ce           cmp   ecx, esi
+#
+# Cut at 5 bytes: MOV (3) + CMP (2). Both register/memory-relative — safe to
+# relocate. EDI/ESI are callee-saved so they survive the handler call; the
+# flags set by the relocated CMP feed the JZ at 0x0040a63d on the way back.
+#
+# Note: param_1 may be NULL (panel deactivating its current selection); we
+# handle that in the handler and just skip speaking.
+[[hooks]]
+address = 0x0040a638
+type = "detour"
+function = "OnSetActiveControl"
+
+original_bytes = [0x8b, 0x4f, 0x1c, 0x3b, 0xce]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "edi"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esi"
+type = "pointer"
+
+# CSWGuiMainMenu::HandleInputEvent — hooked mid-function at 0x67b395, after
+# the engine has loaded param_1 into EBX, param_2 into EDI, and 'this' into
+# ESI. Same rationale as HandleFocusChange: skip the entry-point hook so
+# we don't depend on the framework's broken stack-param path.
+#
+# Lands AFTER the entry-time `JZ +0x91` that handles the "param_2 == 0"
+# branch, so we see all key-press events but not key-release events. Fine
+# for "which key was pressed" identification.
+#
+# Cut at 5 bytes: MOV EAX, EBX (2) + SUB EAX, 0x28 (3). Both register-only,
+# safe to relocate.
+#
+# Signature per Ghidra: void __thiscall HandleInputEvent(int param_1, int param_2).
+# param_1 is an InputIndices enum value (key/button code, see Accessibility.cpp);
+# param_2 is the press/state value (0 == released, non-zero == active).
+[[hooks]]
+address = 0x0067b395
+type = "detour"
+function = "OnHandleInputEvent"
+
+# 8b c3                 MOV  EAX, EBX          ; engine copies param_1
+# 83 e8 28              SUB  EAX, 0x28         ; checks for KEYBOARD_F2 (0x28=40)
+original_bytes = [0x8b, 0xc3, 0x83, 0xe8, 0x28]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "esi"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "ebx"
+type = "int"
+
+[[hooks.parameters]]
+source = "edi"
+type = "int"

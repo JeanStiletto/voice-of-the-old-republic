@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <meta name="author" content="Davy Kager" />
+  <title>Tolk</title>
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    span.underline{text-decoration: underline;}
+    div.column{display: inline-block; vertical-align: top; width: 50%;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    ul.task-list{list-style: none;}
+  </style>
+  <!--[if lt IE 9]>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv-printshiv.min.js"></script>
+  <![endif]-->
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Tolk</h1>
+<p class="author">Davy Kager</p>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#tolk-screen-reader-abstraction-library">Tolk: Screen Reader Abstraction Library</a>
+<ul>
+<li><a href="#introduction">Introduction</a></li>
+<li><a href="#license">License</a></li>
+<li><a href="#design">Design</a></li>
+<li><a href="#usage">Usage</a>
+<ul>
+<li><a href="#required-files">Required files</a></li>
+<li><a href="#loading">Loading</a></li>
+<li><a href="#outputting-text">Outputting text</a></li>
+<li><a href="#querying-status">Querying status</a></li>
+<li><a href="#using-sapi">Using SAPI</a></li>
+<li><a href="#wrappers">Wrappers</a></li>
+</ul></li>
+<li><a href="#examples">Examples</a></li>
+<li><a href="#supported-screen-readers">Supported screen readers</a>
+<ul>
+<li><a href="#notes">Notes</a></li>
+</ul></li>
+<li><a href="#compiling">Compiling</a></li>
+<li><a href="#contributors">Contributors</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="tolk-screen-reader-abstraction-library">Tolk: Screen Reader Abstraction Library</h1>
+<ul>
+<li><a href="https://github.com/ndarilek/tolk/releases/download/refs%2Fheads%2Fmaster/tolk.zip">Latest build</a></li>
+<li><a href="https://davykager.com/projects/tolk/">Project page</a></li>
+</ul>
+<h2 id="introduction">Introduction</h2>
+<p>Tolk is an application extension (DLL) that allows Windows applications to output text through screen reader software (assistive technology for the blind and visually impaired). It is an abstraction layer on top of the vendor-specific APIs that auto-detects the active screen reader, allowing for clean and simple client code. Speech and braille output are supported in 32-bit and 64-bit environments. See <code>Supported screen readers</code> for more details. In addition to screen readers, Microsoft Speech API (SAPI) is also supported. The name Tolk is a Dutch word meaning interpreter.</p>
+<p>There are APIs for the following languages:</p>
+<ul>
+<li>C/C++</li>
+<li>Java</li>
+<li>Microsoft .NET (C# and VB)</li>
+<li>Python</li>
+<li>AutoIt</li>
+<li>PureBasic</li>
+</ul>
+<h2 id="license">License</h2>
+<p>Tolk is distributed under the GNU Lesser General Public License version 3 (LGPLv3). Client libraries and headers are distributed under their own license.</p>
+<h2 id="design">Design</h2>
+<p>The key components of Tolk are the screen reader drivers. They wrap a specific screen reader API into an abstract interface which is then used by Tolk’s auto-detection mechanism. SAPI, albeit not a screen reader, also has its own driver. To keep things simple and secure, these screen reader drivers are not exposed to client code.</p>
+<p>Functions that output text or that silence speech are asynchronous. That is, they return immediately once the appropriate commands have been queued for processing by the active screen reader. All other functions are synchronous. that is, they return only when their work is done.</p>
+<p>Finally, a few words on multi-threaded applications. Tolk is not thread-safe. Also, some of the screen reader drivers use COM. You have two options for initializing COM:</p>
+<ol type="1">
+<li>Call <code>Tolk_Load</code> on every thread that uses Tolk. Match every call by a call to <code>Tolk_Unload</code>. Tolk will initialize COM if required.</li>
+<li>Initialize and uninitialize COM yourself and call <code>Tolk_Load</code> only once in your application. You still need a matching call to <code>Tolk_Unload</code>. This is also what you should do in languages that automatically deal with COM, e.g. .NET.</li>
+</ol>
+<h2 id="usage">Usage</h2>
+<p>Tolk has functions for (un)initialization, querying and using the active screen reader, and for working with Microsoft SAPI. To use Tolk, import the appropriate version of <code>Tolk.dll</code> into your application. In C/C++ this is usually done by including <code>Tolk.h</code> and linking with the appropriate import library <code>Tolk.lib</code>. You could also use the Windows API functions <code>LoadLibrary</code> and <code>FreeLibrary</code>. Other languages are also supported, see <code>Wrappers</code>. If you’re working in an unsupported language, use its specific facilities to call into the DLL.</p>
+<h3 id="required-files">Required files</h3>
+<p>The <code>lib</code> directory contains the required screen reader API DLLs. Tolk expects these DLLs to be found either in the current working directory or somewhere in the <code>PATH</code>. If a DLL for a screen reader is not found, that screen reader will be unavailable. Note that some screen readers use COM and therefore don’t need API DLLs.</p>
+<h3 id="loading">Loading</h3>
+<p>Before using Tolk you need to initialize it with <code>Tolk_Load</code>, and uninitialize it with <code>Tolk_Unload</code> when you are done. You can then use all the other functions.</p>
+<h3 id="outputting-text">Outputting text</h3>
+<p>The most important way to send text to the active screen reader is using <code>Tolk_Output</code>. The first parameter to this function is the Unicode string of text, the second parameter indicates whether or not previously queued speech should be interrupted (or canceled, flushed, etc). In languages that support this feature, the second parameter is optional and defaults to <code>false</code>. The advantage of using <code>Tolk_Output</code> is that it tries both speech and braille. If you need something more specialized, use <code>Tolk_Speak</code> for speech, <code>Tolk_Braille</code> for braille and <code>Tolk_Silence</code> to interrupt previously queued speech. All these functions return <code>true</code> on success and <code>false</code> otherwise, but because of the auto-detection mechanism it is recommended (and safe) to discard this return value and simply insert the required calls wherever you need screen reader output. This keeps your code clean and straight-forward.</p>
+<h3 id="querying-status">Querying status</h3>
+<p>There are functions to find out more about the active screen reader driver. You can get the name of the currently active screen reader through <code>Tolk_DetectScreenReader</code>. This returns the name as Unicode string or <code>NULL</code> if none of the supported screen readers is active. As the name implies, this function tries auto-detection if required. Internally, Tolk’s other functions use this, so it is not necessary to call this yourself unless you actually need the common name. If a screen reader is active, you can use <code>Tolk_HasSpeech</code> and <code>Tolk_HasBraille</code> to find out whether the driver supports speech or braille, respectively. For synchronization, <code>Tolk_IsSpeaking</code> returns whether or not the active screen reader is speaking text at the time of the call, assuming the driver supports this query. Note that not many drivers implement this functionality because of limitations in screen reader APIs. See the <code>Status</code> column of the <code>Supported screen readers</code> table for details. There is no such function for braille, since braille is instantaneous.</p>
+<h3 id="using-sapi">Using SAPI</h3>
+<p>Tolk can output text through Microsoft SAPI. This is mostly meant as a fallback mechanism. To do this, Tolk has a screen reader driver that uses SAPI 5.3. Therefore, the functionality is limited to what screen reader drivers provide. Applications that need more control should use SAPI directly. Another consequence is that there is no way to explicitly tell Tolk to use SAPI, the driver is part of the auto-detection chain.</p>
+<p>By default, support for SAPI is disabled. To change this, use <code>Tolk_TrySAPI</code>, passing <code>true</code> to enable SAPI or <code>false</code> to disable it. The required driver will automatically be (un)loaded. SAPI is initially put at the end of the auto-detection chain. This is good for using it as a fallback option when none of the supported screen readers is running. It is also possible to have Tolk prefer SAPI over the other screen reader drivers. This is good for basic SAPI output where screen readers are only tried if SAPI fails or if SAPI 5.3 or later is unavailable. To change the preference for SAPI, use <code>Tolk_PreferSAPI</code>. This also takes a boolean parameter, <code>true</code> to prefer SAPI or <code>false</code> to prefer the traditional screen readers. The most efficient way of enabling SAPI support is to set it up before calling <code>Tolk_Load</code>. However, you can also call these functions after Tolk has already been loaded. This will trigger the screen reader detection process and is therefore slightly less efficient.</p>
+<h3 id="wrappers">Wrappers</h3>
+<p>Wrappers around <code>Tolk.dll</code> have been added for some languages to make things easier:</p>
+<ul>
+<li><code>Tolk.jar</code> for Java</li>
+<li><code>TolkDotNet.dll</code> for C#/VB.NET</li>
+<li><code>Tolk.pyo</code> for Python</li>
+<li><code>Tolk.au3</code> for AutoIt</li>
+<li><code>Tolk.pb</code> for PureBasic</li>
+</ul>
+<p>The wrappers cover all functions and use the language’s native types where possible. The function names have also been adapted to meet the specific conventions for these languages.</p>
+<h2 id="examples">Examples</h2>
+<p>Take a look at the <code>examples</code> directory to get started. This directory contains console applications in the supported languages that demonstrate the basic usage. Note that Microsoft SAPI will stop speaking when your application closes, which means that it will not work with these console applications because they return immediately after queueing text. Add a short delay (sleep) to work around this if you want to try SAPI.</p>
+<h2 id="supported-screen-readers">Supported screen readers</h2>
+<p>The following table lists the supported screen readers in the order in which they are auto-detected.</p>
+<pre><code>Screen Reader   Speech   Braille   Status   x86   x64
+JAWS            Yes      Yes       No       Yes   Yes
+Window-Eyes     Yes      Yes       No       Yes   Yes
+NVDA            Yes      Yes       No       Yes   Yes
+SuperNova       Yes      No        No       Yes   No
+System Access   Yes      Yes       No       Yes   Yes
+ZoomText        Yes      No        Yes      Yes   Yes
+SAPI            Yes      No        Yes      Yes   Yes</code></pre>
+<h3 id="notes">Notes</h3>
+<ul>
+<li>SuperNova is the only screen reader that does not have a 64-bit compatible API.</li>
+<li>SuperNova has support for braille, but the API does not let you use it.</li>
+<li>SuperNova can speak even if the user turned the voice off, but in that state interrupts will not work.</li>
+<li>Some screen readers (notably Window-Eyes and ZoomText) support many more functions, but there are no plans to implement any of them.</li>
+<li>The driver for Microsoft SAPI explicitly disables XML handling because there is no way to be sure SAPI is being used and other drivers don’t support this.</li>
+</ul>
+<h2 id="compiling">Compiling</h2>
+<p>If you want to compile Tolk yourself, here’s what you need to build the whole thing:</p>
+<ul>
+<li>Microsoft Visual C++</li>
+<li>Windows Software Development Kit (SDK)</li>
+<li>Java Development Kit (JDK)</li>
+<li>Microsoft .NET Framework</li>
+<li>Python</li>
+<li>Pandoc</li>
+</ul>
+<p>The root directory and <code>examples</code> directories contain various batch files as a starting point. They assume the required tools are in your <code>PATH</code> and that the JDK include directory is in <code>INCLUDE</code>. For the examples you will also need to copy over any dependency files.</p>
+<h2 id="contributors">Contributors</h2>
+<ul>
+<li>Davy Kager</li>
+<li>Leonard de Ruijter</li>
+<li>Axel Vugts</li>
+<li>QuentinC, who has developed <a href="https://github.com/QuentinC-Github/UniversalSpeech">Universal Speech</a>, another great screen reader library</li>
+</ul>
+</body>
+</html>
