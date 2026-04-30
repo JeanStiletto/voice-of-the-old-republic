@@ -101,35 +101,54 @@ type = "pointer"
 source = "esi"
 type = "pointer"
 
-# CSWGuiMainMenu::HandleInputEvent — hooked mid-function at 0x67b395, after
-# the engine has loaded param_1 into EBX, param_2 into EDI, and 'this' into
-# ESI. Same rationale as HandleFocusChange: skip the entry-point hook so
-# we don't depend on the framework's broken stack-param path.
+# CSWGuiManager::HandleInputEvent — hooked mid-function at 0x0040c907.
+# This is the GUI manager's central input dispatcher: every keyboard / mouse
+# event the engine routes to any GUI surface passes through this function
+# before being virtual-dispatched to the active panel's per-class override.
+# By hooking here we capture input on EVERY screen with one hook (title menu,
+# Options, chargen, in-game menus, dialog, save/load, etc.) — the previous
+# CSWGuiMainMenu::HandleInputEvent hook only saw title-screen events.
 #
-# Lands AFTER the entry-time `JZ +0x91` that handles the "param_2 == 0"
-# branch, so we see all key-press events but not key-release events. Fine
-# for "which key was pressed" identification.
+# We hook BEFORE the entry-time `JZ +0xdf` that handles `param_2 == 0`, so we
+# see both press AND release edges. param_2 is logged as `val=` so press vs
+# release is obvious in the log.
 #
-# Cut at 5 bytes: MOV EAX, EBX (2) + SUB EAX, 0x28 (3). Both register-only,
-# safe to relocate.
+# Function entry (0x0040c8e0) per Lane's SARIF:
+#   void __thiscall HandleInputEvent(int param_1, int param_2)
 #
-# Signature per Ghidra: void __thiscall HandleInputEvent(int param_1, int param_2).
-# param_1 is an InputIndices enum value (key/button code, see Accessibility.cpp);
-# param_2 is the press/state value (0 == released, non-zero == active).
+# Bytes from 0x0040c8e0 (DumpBytes.java):
+#   6a ff 64 a1 00 00 00 00 68 58 48 71 00     ; SEH frame setup
+#   50                                          ; PUSH EAX (saves frame ptr)
+#   8b 44 24 14                                 ; MOV EAX, [ESP+0x14]   param_2
+#   64 89 25 00 00 00 00                        ; install SEH handler
+#   83 ec 14                                    ; SUB ESP, 0x14
+#   53                                          ; PUSH EBX
+#   8b 5c 24 28                                 ; MOV EBX, [ESP+0x28]   param_1
+#   55 56 33 ed 3b c5                           ; PUSH EBP, PUSH ESI, XOR EBP,EBP, CMP EAX,EBP
+#   8b f1 57 89 5e 68                           ← hook here, 6 bytes
+#   0f 84 df 00 00 00                           ; JZ +0xdf (param_2 == 0)
+#
+# At hook entry:
+#   ECX = this  (pre-MOV-ESI-ECX, still in ECX)
+#   EBX = param_1  (loaded at 0x0040c8fd)
+#   EAX = param_2  (loaded at 0x0040c8ee, untouched since CMP EAX,EBP)
+#
+# Cut covers MOV ESI,ECX (2) + PUSH EDI (1) + MOV [ESI+0x68],EBX (3) = 6 bytes.
+# All three instructions are register/memory-relative — safe to relocate. The
+# wrapper saves callee-clobbered registers around our handler call, then runs
+# the cut bytes, then resumes at 0x0040c90d for the JZ.
 [[hooks]]
-address = 0x0067b395
+address = 0x0040c907
 type = "detour"
 function = "OnHandleInputEvent"
 
-# 8b c3                 MOV  EAX, EBX          ; engine copies param_1
-# 83 e8 28              SUB  EAX, 0x28         ; checks for KEYBOARD_F2 (0x28=40)
-original_bytes = [0x8b, 0xc3, 0x83, 0xe8, 0x28]
+original_bytes = [0x8b, 0xf1, 0x57, 0x89, 0x5e, 0x68]
 
 skip_original_bytes = false
 exclude_from_restore = []
 
 [[hooks.parameters]]
-source = "esi"
+source = "ecx"
 type = "pointer"
 
 [[hooks.parameters]]
@@ -137,7 +156,7 @@ source = "ebx"
 type = "int"
 
 [[hooks.parameters]]
-source = "edi"
+source = "eax"
 type = "int"
 
 # CSWGuiListBox::SetActiveControl — hooked mid-function at 0x0041c16b. Listbox

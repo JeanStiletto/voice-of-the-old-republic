@@ -102,6 +102,36 @@ const char* InputIndexName(int code) {
     return "?";
 }
 
+// CSWGuiManager::HandleInputEvent receives KOTOR-internal "logical action"
+// codes for navigation / system keys and translates them to InputIndices
+// values via two inline switch statements before dispatching to the active
+// panel's per-class override. Mapping recovered by decompiling the function
+// at 0x0040c8e0:
+//
+//   0xb4 (180), 0xdf (223)   → 0x28 = KEYBOARD_F2  (cancel / back)
+//   0xb5 (181), 0xbb (187)   → 0x27 = KEYBOARD_F1  (confirm / activate)
+//   0xb6 (182)               → 0x3d
+//   0xb7 (183)               → 0x3e
+//   0xb8 (184)               → 0x3f
+//   0xb9 (185)               → 0x40
+//
+// Codes outside this set pass through unchanged. Naming the four
+// 0x3d-0x40 outputs is impossible without knowing the user's `[Keymapping]`
+// — they're the InputIndices values the user has bound to nav-up/nav-down/
+// next/prev (default keys vary by user). Just print "→ KEYBOARD_X(N)" and
+// let the caller correlate against the user's keybindings.
+int ManagerTranslateCode(int code) {
+    switch (code) {
+    case 0xb4: case 0xdf: return 0x28;
+    case 0xb5: case 0xbb: return 0x27;
+    case 0xb6:            return 0x3d;
+    case 0xb7:            return 0x3e;
+    case 0xb8:            return 0x3f;
+    case 0xb9:            return 0x40;
+    default:              return code;
+    }
+}
+
 }  // namespace
 
 extern "C" void __cdecl OnRulesInit(void* /*rulesThis*/) {
@@ -339,6 +369,74 @@ static void DumpControlVtable(void* control, char* out, size_t outSize) {
              vtable, vtable[0], vtable[4], vtable[20], vtable[22]);
 }
 
+// Container offsets verified against Lane's SARIF (DATATYPE entries for
+// CSWGuiPanel and CSWGuiListBox). CExoArrayList layout:
+//   +0x00  T**      data         (heap array of element pointers)
+//   +0x04  int      size
+//   +0x08  int      capacity
+//
+// CSWGuiPanel.controls is at +0x20 — list of every direct child control.
+// CSWGuiListBox.controls is at +0x29c — list of row controls. Listbox cursor
+// state is in three shorts immediately after the controls array:
+//   +0x2c4  short    items_per_page
+//   +0x2c6  short    selection_index   ← which row is "current"
+//   +0x2c8  short    top_visible_index ← scroll offset
+constexpr size_t kPanelControlsOffset           = 0x20;
+constexpr size_t kListBoxControlsOffset         = 0x29c;
+constexpr size_t kListBoxItemsPerPageOffset     = 0x2c4;
+constexpr size_t kListBoxSelectionIndexOffset   = 0x2c6;
+constexpr size_t kListBoxTopVisibleIndexOffset  = 0x2c8;
+
+struct CExoArrayList {
+    void** data;
+    int    size;
+    int    capacity;
+};
+
+// Walk a CExoArrayList<CSWGuiControl*> embedded at parent+offset and log every
+// child. Used as a diagnostic when the focused panel/listbox changes — gives us
+// the full set of widgets on the screen, not just whatever arrow keys reach.
+//
+// `label` is a short tag that prefixes every line (e.g. "Panel", "ListBox").
+// Iteration is capped at 256 entries to limit damage from a corrupt size field
+// (defensive: the SARIF datatypes are authoritative but a struct-layout
+// regression on a future engine version would otherwise spin forever).
+static void WalkChildren(const char* label, void* parent, size_t offset) {
+    if (!parent) return;
+    auto* list = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(parent) + offset);
+    if (!list->data || list->size <= 0) {
+        acclog::Write("%s walk parent=%p children=0", label, parent);
+        return;
+    }
+    int count = list->size;
+    if (count > 256) {
+        acclog::Write("%s walk parent=%p size_oob=%d (capped)", label, parent, count);
+        count = 256;
+    }
+    acclog::Write("%s walk parent=%p children=%d", label, parent, list->size);
+    for (int i = 0; i < count; ++i) {
+        void* child = list->data[i];
+        if (!child) {
+            acclog::Write("%s   [%d]=NULL", label, i);
+            continue;
+        }
+        int id = *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(child) + 0x50);
+        char text[256];
+        const char* source = ExtractAnnounceableText(child, text, sizeof(text));
+        if (source) {
+            acclog::Write("%s   [%d] %p id=%d src=%s text=\"%s\"",
+                          label, i, child, id, source, text);
+        } else {
+            char vtbl[160];
+            DumpControlVtable(child, vtbl, sizeof(vtbl));
+            acclog::Write("%s   [%d] %p id=%d src=none %s",
+                          label, i, child, id, vtbl);
+        }
+    }
+}
+
 // CSWGuiPanel::SetActiveControl — hooked mid-function at 0x0040a638.
 // At hook entry: EDI = this (the panel), ESI = param_1 (the new active
 // control, possibly null when the panel is deactivating selection).
@@ -361,10 +459,17 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
     static int n = 0;
     ++n;
 
+    // First focus event into a previously-unseen panel: dump every child
+    // control on it. Lets us see widgets the user can't reach with arrow
+    // keys (mouse-only labels, hidden tabs, off-cursor inputs, etc.).
+    static void* s_lastPanel = nullptr;
+    if (panel && panel != s_lastPanel) {
+        s_lastPanel = panel;
+        WalkChildren("Panel", panel, kPanelControlsOffset);
+    }
+
     if (!newControl) {
-        if (n <= 100 || n % 50 == 0) {
-            acclog::Write("SetActiveControl #%d panel=%p newControl=NULL", n, panel);
-        }
+        acclog::Write("SetActiveControl #%d panel=%p newControl=NULL", n, panel);
         return;
     }
 
@@ -374,10 +479,8 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
     const char* source = ExtractAnnounceableText(newControl, text, sizeof(text));
 
     if (source) {
-        if (n <= 100 || n % 50 == 0) {
-            acclog::Write("SetActiveControl #%d panel=%p new=%p id=%d src=%s text=\"%s\"",
-                          n, panel, newControl, id, source, text);
-        }
+        acclog::Write("SetActiveControl #%d panel=%p new=%p id=%d src=%s text=\"%s\"",
+                      n, panel, newControl, id, source, text);
         SpeakIfChanged(/*channel=*/0, text);
     } else {
         // Always log unknowns — these are the events we need to debug.
@@ -422,11 +525,34 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
     static int n = 0;
     ++n;
 
+    // First event for a previously-unseen listbox: dump every row control.
+    // Tells us whether the listbox holds N separate child widgets (one per
+    // visible line) or aggregates everything into a single multi-line label
+    // — the central question for the Options Gameplay panel.
+    static void* s_lastListBox = nullptr;
+    if (listBox && listBox != s_lastListBox) {
+        s_lastListBox = listBox;
+        WalkChildren("ListBox", listBox, kListBoxControlsOffset);
+    }
+
+    // Always log the listbox's internal cursor state. If arrow keys move the
+    // cursor without firing a row-focus event, this is the only signal that
+    // anything happened — the row pointer alone isn't enough.
+    if (listBox) {
+        auto* base = reinterpret_cast<unsigned char*>(listBox);
+        short itemsPerPage = *reinterpret_cast<short*>(
+            base + kListBoxItemsPerPageOffset);
+        short selIdx       = *reinterpret_cast<short*>(
+            base + kListBoxSelectionIndexOffset);
+        short topVisible   = *reinterpret_cast<short*>(
+            base + kListBoxTopVisibleIndexOffset);
+        acclog::Write("ListBox::cursor list=%p sel=%d top=%d perPage=%d",
+                      listBox, selIdx, topVisible, itemsPerPage);
+    }
+
     if (!newRow) {
-        if (n <= 100 || n % 50 == 0) {
-            acclog::Write("ListBox::SetActiveControl #%d list=%p newRow=NULL p2=%d",
-                          n, listBox, param2);
-        }
+        acclog::Write("ListBox::SetActiveControl #%d list=%p newRow=NULL p2=%d",
+                      n, listBox, param2);
         return;
     }
 
@@ -436,11 +562,9 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
     const char* source = ExtractAnnounceableText(newRow, text, sizeof(text));
 
     if (source) {
-        if (n <= 100 || n % 50 == 0) {
-            acclog::Write("ListBox::SetActiveControl #%d list=%p row=%p id=%d "
-                          "p2=%d src=%s text=\"%s\"",
-                          n, listBox, newRow, id, param2, source, text);
-        }
+        acclog::Write("ListBox::SetActiveControl #%d list=%p row=%p id=%d "
+                      "p2=%d src=%s text=\"%s\"",
+                      n, listBox, newRow, id, param2, source, text);
         SpeakIfChanged(/*channel=*/1, text);
     } else {
         char vtbl[160];
@@ -463,24 +587,35 @@ extern "C" void __cdecl OnHandleFocusChange(void* thisPtr, int param_1) {
     EnsureTolkInitialized();
     static int n = 0;
     ++n;
-    if (n <= 50 || n % 100 == 0) {
-        const char* tip; uint32_t tipLen; int id;
-        ReadControlNameFields(thisPtr, tip, tipLen, id);
-        acclog::Write("HandleFocusChange #%d this=%p p1=%d id=%d tip[%u]=\"%s\"",
-                      n, thisPtr, param_1, id, tipLen,
-                      (tip && tipLen > 0) ? tip : "");
-    }
+    const char* tip; uint32_t tipLen; int id;
+    ReadControlNameFields(thisPtr, tip, tipLen, id);
+    acclog::Write("HandleFocusChange #%d this=%p p1=%d id=%d tip[%u]=\"%s\"",
+                  n, thisPtr, param_1, id, tipLen,
+                  (tip && tipLen > 0) ? tip : "");
 }
 
-// CSWGuiMainMenu::HandleInputEvent — hooked mid-function at 0x67b395.
-// At hook entry: ESI = this, EBX = param_1 (InputIndices key/button code),
-// EDI = param_2 (state, always non-zero here — we land after the
-// "param_2 == 0" early-out).
+// CSWGuiManager::HandleInputEvent — hooked mid-function at 0x0040c907.
+// This is the GUI manager's central input dispatcher: every key / mouse event
+// the engine routes to any GUI surface passes through here before being
+// virtual-dispatched to the active panel's per-class override. One hook
+// covers every screen (title, Options, chargen, in-game menus, dialog,
+// save/load) — replaces the old CSWGuiMainMenu-only hook at 0x67b395.
+//
+// We hook BEFORE the param_2 == 0 early-out, so we see press AND release
+// edges. param_2 is logged as `val=` (0 = release, non-zero = press).
+//
+// At hook entry: ECX = this, EBX = param_1 (InputIndices key/button code),
+// EAX = param_2 (state).
 extern "C" void __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_2) {
     EnsureTolkInitialized();
     static int n = 0;
     ++n;
-    if (n <= 1000 || n % 100 == 0) {
+    int translated = ManagerTranslateCode(param_1);
+    if (translated != param_1) {
+        acclog::Write("HandleInputEvent #%d this=%p key=logical(%d) -> %s(%d) val=%d",
+                      n, thisPtr, param_1,
+                      InputIndexName(translated), translated, param_2);
+    } else {
         acclog::Write("HandleInputEvent #%d this=%p key=%s(%d) val=%d",
                       n, thisPtr, InputIndexName(param_1), param_1, param_2);
     }
