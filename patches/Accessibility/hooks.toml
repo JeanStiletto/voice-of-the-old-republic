@@ -139,3 +139,47 @@ type = "int"
 [[hooks.parameters]]
 source = "edi"
 type = "int"
+
+# CSWGuiListBox::SetActiveControl — hooked mid-function at 0x0041c16b. Listbox
+# row navigation (race/class/portrait pickers in chargen, save-game list, etc.)
+# does NOT bubble up to CSWGuiPanel::SetActiveControl; the listbox calls its
+# own SetActiveControl on internal child controls. Without this hook those
+# row-focus events are silent.
+#
+# Function entry (0x0041c160) per Lane's SARIF:
+#   void __thiscall CSWGuiListBox::SetActiveControl(CSWGuiControl* param_1, int param_2)
+#
+# Bytes from 0x0041c160 (DumpBytes.java):
+#   8b 44 24 08      mov   eax, [esp+8]      ; param_2 (int) before push
+#   56               push  esi
+#   8b f1            mov   esi, ecx          ; this    → esi
+#   8b 4c 24 08      mov   ecx, [esp+8]      ; param_1 (post-push)
+#   50 51 8d 8e 9c 02 00 00   ← hook here, all three args in registers
+#   50               push  eax               ; param_2
+#   51               push  ecx               ; param_1
+#   8d 8e 9c 02 00 00 lea  ecx, [esi+0x29c]  ; embedded sub-object
+#   e8 c8 68 2a 00   call  ...
+#
+# Cut covers PUSH EAX (1) + PUSH ECX (1) + complete LEA (6) = 8 bytes. All
+# three instructions are position-independent — safe to relocate.
+[[hooks]]
+address = 0x0041c16b
+type = "detour"
+function = "OnListBoxSetActiveControl"
+
+original_bytes = [0x50, 0x51, 0x8d, 0x8e, 0x9c, 0x02, 0x00, 0x00]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "esi"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "eax"
+type = "int"

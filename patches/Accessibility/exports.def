@@ -4,3 +4,4 @@ EXPORTS
     OnHandleFocusChange
     OnHandleInputEvent
     OnSetActiveControl
+    OnListBoxSetActiveControl

@@ -18,8 +18,9 @@ Thumbs.db
 *~
 *.swp
 
-# Claude Code local-only config (per-user permissions/hooks)
+# Claude Code local-only config (per-user permissions/hooks + runtime state)
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # Internal dev tooling — kdev (build/install/launch CLI), dbgcapture
 # (OutputDebugString sink), ghidra-scripts. Excluded from the public repo
