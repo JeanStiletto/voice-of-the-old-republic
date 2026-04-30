@@ -233,28 +233,46 @@ typedef CExoString* (__thiscall* PFN_GetSimpleString)(void* this_,
 constexpr uintptr_t kAddrGetSimpleString = 0x0041e8f0;
 constexpr uintptr_t kAddrTlkTablePtr     = 0x007a3a08;
 
-// Resolve a strref via the engine's TLK lookup. Currently DISABLED — the
-// previous test session showed that after entering Options the patch went
-// silent (no further hook log entries), and TLK lookup is the most likely
-// culprit. Reverting to a safe baseline that just records the strref so we
-// can verify the field is populated, then we'll re-enable the engine call
-// once we understand the failure mode (likely needs a try/except guard or
-// strref bounds-check).
+// Resolve a strref via the engine's TLK lookup, with SEH guard.
 //
-// When re-enabling, the working pattern is:
-//   void* tlk = *reinterpret_cast<void**>(kAddrTlkTablePtr);   // *0x007a3a08
-//   CExoString tmp = {nullptr, 0};
-//   auto fn = reinterpret_cast<PFN_GetSimpleString>(kAddrGetSimpleString);
-//   fn(tlk, &tmp, strref);  // engine fills tmp.c_string + tmp.length
-// The c_string allocation is engine-CRT — leak it (focus events are
-// low-frequency; bounded growth across a session).
-static bool g_logStrRef = true;  // diagnostic: log strref values when set
-static bool LookupTlk(uint32_t strref, char* /*outBuf*/, size_t /*bufSize*/) {
+// The engine's GetSimpleString has its own SEH frame (it can raise on
+// out-of-range / corrupt indices). A previous attempt to call it from inside
+// a hook handler caused our patch to go silent partway through Options —
+// presumably the engine's exception unwound through our trampoline and the
+// framework disabled the hook on subsequent fires. We now wrap the call in
+// __try/__except so any raised exception is contained.
+//
+// Out-arg: the engine copy-constructs `out` from a stack-local CExoString,
+// allocating a fresh c_string via its own CRT. We copy the string into our
+// caller's buffer, then deliberately leak `tmp.c_string` — calling the
+// engine's CExoString destructor from our DLL would risk heap mismatch, and
+// focus events are low-frequency enough that the leak is negligible across
+// a session.
+//
+// Sanity bounds: we reject strref values that look invalid (-1, >0x100000)
+// before invoking the engine, to reduce the rate of expected exceptions.
+static bool LookupTlk(uint32_t strref, char* outBuf, size_t bufSize) {
     if (strref == 0 || strref == 0xFFFFFFFF) return false;
-    if (g_logStrRef) {
-        acclog::Write("strref candidate: %u (TLK lookup disabled)", strref);
+    if (strref > 0x100000) return false;  // KOTOR's TLK is well below this
+
+    void* tlk = *reinterpret_cast<void**>(kAddrTlkTablePtr);
+    if (!tlk) return false;
+
+    auto fn = reinterpret_cast<PFN_GetSimpleString>(kAddrGetSimpleString);
+    CExoString tmp = {nullptr, 0};
+    bool ok = false;
+    __try {
+        fn(tlk, &tmp, strref);
+        if (tmp.c_string && tmp.length > 0 && tmp.length < bufSize) {
+            memcpy(outBuf, tmp.c_string, tmp.length);
+            outBuf[tmp.length] = '\0';
+            ok = true;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("TLK lookup raised SEH exception for strref=%u", strref);
+        ok = false;
     }
-    return false;
+    return ok;
 }
 
 // Read a uint32 at base+offset.
