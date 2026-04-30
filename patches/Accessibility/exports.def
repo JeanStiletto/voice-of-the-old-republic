@@ -5,3 +5,4 @@ EXPORTS
     OnHandleInputEvent
     OnSetActiveControl
     OnListBoxSetActiveControl
+    OnUpdate

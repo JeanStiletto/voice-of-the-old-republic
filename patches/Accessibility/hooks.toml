@@ -137,6 +137,14 @@ type = "pointer"
 # All three instructions are register/memory-relative — safe to relocate. The
 # wrapper saves callee-clobbered registers around our handler call, then runs
 # the cut bytes, then resumes at 0x0040c90d for the JZ.
+# Selective consumption: when OnHandleInputEvent returns non-zero (arrow key
+# we've handled), the wrapper jumps to the function epilogue at 0x0040cbcb
+# instead of continuing into the engine's translation + dispatch path. This
+# stops the engine from firing its broken `.gui` focus cycle for arrow keys
+# while leaving every other key (Tab, Enter, mouse, etc.) untouched.
+# `eax` excluded from POPAD so the handler's return value reaches the wrapper's
+# TEST EAX, EAX. Stack state at the consumed-exit target matches stack state
+# at the natural fall-through (cut bytes are register-only — no net delta).
 [[hooks]]
 address = 0x0040c907
 type = "detour"
@@ -145,7 +153,8 @@ function = "OnHandleInputEvent"
 original_bytes = [0x8b, 0xf1, 0x57, 0x89, 0x5e, 0x68]
 
 skip_original_bytes = false
-exclude_from_restore = []
+exclude_from_restore = ["eax"]
+consumed_exit_address = 0x0040cbcb
 
 [[hooks.parameters]]
 source = "ecx"
@@ -158,6 +167,41 @@ type = "int"
 [[hooks.parameters]]
 source = "eax"
 type = "int"
+
+# CSWGuiManager::Update — hooked mid-function at 0x0040ce76. Per-frame tick
+# from CClientExoAppInternal::MainLoop @ 0x602eb0 (one call per frame, after
+# input dispatch). Used as a deferred-call site for chain-navigation cursor
+# moves: calling MoveMouseToPosition from inside OnHandleInputEvent would
+# re-enter the manager's input plumbing while it's mid-dispatch. Update runs
+# AFTER dispatch every frame, so its body iterates panels safely while we
+# trigger HitCheckMouse / UpdateMouseOverControl from our handler.
+#
+# Function entry (0x0040ce70) per Lane's SARIF disassembly:
+#   0x40ce70: 51                     push ecx           ; local var slot
+#   0x40ce71: 53                     push ebx
+#   0x40ce72: 55                     push ebp
+#   0x40ce73: 56                     push esi
+#   0x40ce74: 8b e9                  mov  ebp, ecx      ; this → ebp
+#   0x40ce76: 8b 85 8c 00 00 00      mov  eax, [ebp+0x8c]   ← hook here, 6 bytes
+#   0x40ce7c: 57                     push edi
+#
+# Cut at 6 bytes covers a single memory-relative MOV that loads a panel-list
+# field. The instruction is position-independent → safe to relocate. EBP
+# holds the manager pointer at hook entry (loaded two instructions earlier
+# by `mov ebp, ecx`, callee-saved across our handler call).
+[[hooks]]
+address = 0x0040ce76
+type = "detour"
+function = "OnUpdate"
+
+original_bytes = [0x8b, 0x85, 0x8c, 0x00, 0x00, 0x00]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ebp"
+type = "pointer"
 
 # CSWGuiListBox::SetActiveControl — hooked mid-function at 0x0041c16b. Listbox
 # row navigation (race/class/portrait pickers in chargen, save-game list, etc.)

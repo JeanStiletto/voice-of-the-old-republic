@@ -1,503 +1,377 @@
 # Menu Navigation — Unified Cursor Design
 
-Handoff document. Captures architectural decisions, findings, and open
-investigations from session 4 (2026-04-30) so a fresh session can pick up
-implementation without re-deriving the design.
-
-## TL;DR
-
-KOTOR's menu focus-cycle is data-driven via per-button event handlers baked
-into `.gui` data files. On most screens those handlers reach only a subset of
-the panel's controls — the user can keyboard-navigate to 2 of 5 Options tabs,
-3 of 14 inner-settings buttons, etc. There are no hidden hotkeys, no community
-mods, and no native flag to flip. We have to build the navigation layer
-ourselves.
-
-We chose a **unified arrow-keys-drive-cursor** model: the user's arrow keys
-move a synthesized cursor; in menus the cursor *snaps* between consecutive
-`panel.controls` entries (no spatial scanning); on 3D-world / spatial widgets
-the cursor moves smoothly (Lane's `KeyMouseAccessibilityTest` model). One
-mental model, one input pipeline, one announcement source. Engine-driven
-focus events become informational (logged but not spoken during a synth
-window) so the user always hears our deterministic chain.
-
-Phase 1 (next session's first deliverable) is **speak-only** chain navigation
-through `panel.controls` — no cursor movement, no click synthesis, no
-`SetActiveControl` calls. The minimum that proves the idea: arrow keys
-deterministically walk the panel's children with stable order, panel-open
-triggers an enumeration via Tolk, engine's parallel announcements get
-suppressed during a brief window. Once that's stable, layer on cursor
-movement (Phase 2), focus alignment (Phase 3), click activation (Phase 4),
-and spatial mode (Phase 5).
-
-## Findings (from session 4 in-game testing + decompile)
-
-### Settings menu architecture
-
-- **Outer Options panel `07526E88`** has 9 children: 5 tab buttons (Gameplay,
-  Auto-Pause, Grafik, Sound, Feedback), one "Optionen" header label, one
-  "Schliess." close button, plus a multi-line-blob listbox. Engine's tab cycle
-  visits only Gameplay + Feedback — Auto-Pause / Grafik / Sound are unreachable
-  by keyboard, mouse-only by data-file design.
-- **Inner settings panel `0752B1C0`** is the *real* per-setting interaction
-  surface, opened by pressing Enter on a tab. 14 children (refilled to 17 in
-  some sub-tab states). Cycle reaches ~3 of them. The two `vtable=0073E658`
-  unreachable buttons in the 14-child view are the +/- adjustment icons (no
-  text, no `str_ref` — TLK lookup can't help).
-- **Multi-line listbox** (`controls.size = 1`, child = `CSWGuiLabel` with
-  newline-separated setting names) is purely visual. `HitCheckMouseLocal`
-  returns row 0 regardless of which visual line was clicked, so coord-based
-  click synthesis can't disambiguate among the visual lines. Real per-setting
-  buttons live on the inner panel `0752B1C0`, not inside the listbox.
-
-See `memory/project_listbox_keyboard_model.md`,
-`memory/project_listbox_click_flow.md`,
-`memory/project_kotor_gui_struct_offsets.md`.
-
-### How input reaches a control
-
-Decompile of `CSWGuiManager::HandleInputEvent` (0x0040c8e0):
-
-1. Receives `(this, param_1, param_2)` where `param_1` is a raw scancode-ish
-   action ID and `param_2` is press(`128`)/release(`0`) state.
-2. Two inline switches translate KOTOR-internal "logical action" codes into
-   `InputIndices` values:
-   - `0xb4` / `0xdf` → `0x28` (KEYBOARD_F2, cancel/back)
-   - `0xb5` / `0xbb` → `0x27` (KEYBOARD_F1, confirm/activate/Enter)
-   - `0xb6` → `0x3d` (logical "up"/prev)
-   - `0xb7` → `0x3e` (logical "down"/next)
-   - `0xb8` → `0x3f`, `0xb9` → `0x40` (left/right; assignment unconfirmed)
-3. Dispatches translated key to active panel's `HandleInputEvent`. Panel
-   delegates to `active_control->HandleInputEvent`. The control looks up
-   `event_list` for an entry matching the key code and calls the registered
-   handler — that's where the per-button "next focus" cycle lives.
-
-Our existing hook is at `0x0040c907` (mid-function, **before** the translation
-switches), so we see raw codes (`0xb4-0xb9`, `0xdf`, etc.). `ManagerTranslateCode`
-in `Accessibility.cpp` mirrors the engine's mapping for log readability.
-
-### Click flow
-
-Decompile of `HandleLMouseDown / HandleLMouseUp / HitCheckMouseLocal`:
-
-- `HitCheckMouseLocal` reads global mouse coords via
-  `CSWGuiPanel::GetLocalMouseCoords(parent, &x, &y)`, subtracts viewport_x/y,
-  iterates `controls` and calls each child's `vtable->HitCheckMouse(localX,
-  localY)`. Returns first hit + row index via out-param.
-- `HandleLMouseDown` calls `SetSelectedControl(this, rowIdx, 1)` if needed,
-  then fires `HandleInputEvent(this, 0x1f8, 1)` ("click begin").
-- `HandleLMouseUp` re-hit-tests; if same row as down, fires
-  `HandleInputEvent(this, 0x27, 1)` — `0x27` = `KEYBOARD_F1` = engine's
-  "activate / confirm" code.
-
-So a click is `SetSelectedControl + HandleInputEvent(0x27)`. The second call
-is identical to what the engine fires on Enter for the focused control —
-which means **if engine focus = our cursor target, Enter and click both
-activate the same thing**. This is the lever Phase 3+4 use.
-
-### Hook framework constraint
-
-**Entry-point hooks on `CSWGuiListBox` are toxic** even when the hook never
-fires. Discovered empirically (session 4): installing `HandleLMouseDown @
-0x0041c4a0` with a clean 5-byte register-source cut caused title-screen arrow
-nav to oscillate (focus moves to next button, engine reverts, user hears
-double announcement). The pre-existing `SetActiveControl @ 0x0041c16b`
-mid-function hook does NOT cause this. Either Lane's framework wrapper has a
-latent bug for entry-point hooks on certain class layouts, or some indirect
-call path scans bytes near these entry points. Workaround: hook mid-function
-only; never at function entry on CSWGuiListBox.
-
-See `memory/feedback_hook_design_register_sources.md`.
-
-### What works now (committed at HEAD)
-
-- Manager-level input hook at `0x0040c907` — captures every key on every screen
-  with both press and release edges. `ManagerTranslateCode` produces readable
-  log output.
-- Panel-children walk on first focus into a previously-unseen panel — logs
-  every direct child with id, vtable, extracted text or `src=none` diagnostic.
-- Listbox-children walk + cursor read (`selection_index`, `top_visible_index`,
-  `items_per_page`, `bit_flags`, `controls.size`) on every listbox event.
-- Multi-line listbox blob enumeration via `SpeakBlobIfChanged` — newline-
-  separated row text is queued as numbered Tolk utterances.
-- TLK lookup re-enabled with SEH guard — many previously-unresolved
-  `src=none` Buttons/Labels now resolve to localized strings (e.g.
-  "Abbrechen", "Difficulty", "Wähle deine Klasse.").
-- All log rate limits removed (full fidelity per
-  `memory/feedback_log_no_rate_limits.md`).
-
-### What does NOT work and why
-
-- 3 of 5 Options tabs unreachable, 11 of 14 inner-settings buttons
-  unreachable — broken `.gui` focus-cycle data, no hotkey workaround.
-- +/- adjustment buttons are icon-only (no text, no `str_ref`) — TLK lookup
-  can't resolve them; they read as `src=none control N`.
-- Engine's focus cycle on the title screen works fine (3 cycles cleanly), but
-  most other panels are partially or wholly broken.
-
-## Decisions
-
-### 1. Unified arrow-keys-drive-cursor (over hybrid mode)
-
-User-facing model: **one set of keys does one thing in all contexts**. Arrow
-keys move a synthesized pointer; Enter clicks. No mode toggles, no special
-keys. In menus the cursor "teleports" between consecutive `panel.controls`
-entries (snap-to-element); in 3D world space it moves smoothly. Same code
-path, same announcement pipeline, same activation pipeline.
-
-Rejected: hybrid mode (focus jumps in menus, smooth cursor in world). Real
-costs (mode detection, two announcement paths, two activation paths) outweigh
-its theoretical efficiency benefit, especially after snap-to-element makes
-unified menu nav teleport-fast.
-
-Rejected: numpad-only "extra" nav. User explicitly chose arrow-keys-overwrite
-because two-mode systems impose cognitive load and the main-menu's working
-arrow-cycle (which our overwrite would replace) is "one menu lost in exchange
-for all menus working" — acceptable.
-
-### 2. Stable chain = `panel.controls` iteration order
-
-Down on element `i` → element `i+1`. Up → `i-1`. Clamp at `[0, size-1]`. No
-wrapping (user wants borders, not wrap-around). Same chain every session for
-the same panel — `panel.controls` order is set once when the engine builds
-the panel from its `.gui` and doesn't change at runtime.
-
-### 3. Don't filter "suspicious" elements
-
-Multi-line-blob listboxes, `src=none` icon buttons, NULL slots, vtables we
-haven't classified — keep them all in the chain for now. Hearing
-`"control 11"` or `vtable=0073E658` placeholders gives more diagnostic info
-than silently skipping. We'll filter from real evidence later, not from
-guesses now.
-
-### 4. Panel-open enumeration via Tolk (no separate "list elements" key)
-
-When `OnSetActiveControl` sees a *new* panel pointer, queue Tolk speech for
-every `panel.controls` entry in order. No discoverability hotkey needed —
-the user hears the inventory automatically on entering a screen.
-Implementation: existing panel walk (currently log-only) gets a sibling Tolk
-queue per child. Re-entering the same panel does nothing extra (dedup
-against last-announced panel pointer).
-
-### 5. Engine-event suppression window
-
-Engine's broken cycle still fires `SetActiveControl` events on its own when
-its data is partially complete. To prevent doubled announcements, set
-`g_lastChainAnnounce` timestamp on every chain-driven speak; in
-`OnSetActiveControl`, if `(now - g_lastChainAnnounce) < 100ms`, skip the
-Tolk speech path (still log). Our chain becomes the single source of truth
-for what the user hears. Engine focus state can drift; user experience
-stays anchored to our chain.
-
-### 6. Phased implementation, speak-only first
-
-Phase 1 = chain announcement only (no cursor movement, no
-`SetActiveControl` calls). Lowest risk, validates the chain UX before
-introducing the harder pieces. Phases 2-5 layer on cursor sync, focus
-alignment, click activation, spatial mode.
-
-### 7. Main-menu working cycle is acceptable collateral
-
-Title screen's K/L cycle works fine today. Once we install our chain
-override, that cycle is gone (replaced by our identical-or-better chain).
-User explicitly accepts: "one menu lost in exchange for all menus working."
-
-## Open investigations (do these before / during Phase 2-3)
-
-These are not blockers for Phase 1 (speak-only) but become required as we
-layer cursor movement and click activation on top.
-
-### I-1. Engine's "what's under cursor" hit-test entry point
-
-For Phase 3 (cursor sync for hover side effects), we'll move the system
-cursor to a target element and want to verify the engine sees the same
-element under it. SARIF query for top-level hit-test on `CSWGuiManager`,
-likely something like `HandleMouseInput` or `ProcessMouseMovement`.
-
-```bash
-SARIF="docs/llm-docs/re/k1_win_gog_swkotor.exe.sarif"
-jq -r '.runs[0].results[]
-  | select(.ruleId == "FUNCTIONS")
-  | select(.properties.additionalProperties.namespace == "CSWGuiManager")
-  | .properties.additionalProperties
-  | "\(.location)  \(.name)\t\(.value)"' "$SARIF"
-```
-
-Done when: we have an address + signature for a function that takes screen
-coords and returns the topmost hovered control (or NULL).
-
-### I-2. CSWGuiExtent struct layout
-
-For Phase 2 (cursor snap to element center), we need each control's screen
-rectangle (left, top, width, height). `CSWGuiControl` likely has an
-`extent: CSWGuiExtent` member; SARIF DATATYPE entry will give offsets.
-
-```bash
-jq -r '.runs[0].results[]
-  | select(.ruleId == "DATATYPE")
-  | select(.properties.additionalProperties.name == "CSWGuiExtent")
-  | .properties.additionalProperties.fields // {}
-  | to_entries[]
-  | "\(.value.offset)\t\(.key)\t\(.value.type.name // .value.type.kind)"' "$SARIF" | sort -n -k1
-```
-
-Also need the offset of `extent` within `CSWGuiControl`. Cross-reference
-with `memory/project_kotor_gui_struct_offsets.md` (already has Button text
-+0x16c, Label text +0xe8 — extent should be near the start of the control).
-
-Done when: we can read `(left, top, width, height)` for any
-`CSWGuiControl*`.
-
-### I-3. CSWGuiManager global pointer
-
-To find the currently active panel from anywhere (not just from our hook
-event params), we need the `CSWGuiManager` global pointer. The
-`HandleLMouseDown` decompile uses `GuiManager->field2_0x8` as the active
-panel — that's the field, but where does `GuiManager` live?
-
-```bash
-jq -r '.runs[0].results[]
-  | select(.ruleId == "SYMBOLS")
-  | select(.properties.additionalProperties.name == "GuiManager")
-  | .properties.additionalProperties' "$SARIF"
-```
-
-Workaround if not found: track the most recent panel from
-`OnSetActiveControl` events into a static `g_currentPanel`. Phase 1 can
-use that exclusively.
-
-### I-4. Cursor coords vs. screen coords vs. windowed/fullscreen
-
-Lane's prototype uses Win32 `SetCursorPos(int x, int y)` — desktop pixel
-coords. The engine reads cursor via `GetCursorPos` (presumably). For
-fullscreen-exclusive, both should agree. For windowed, `SetCursorPos` is
-desktop-relative; engine probably uses client-area coords; we'd need a
-`ScreenToClient` translation. Test in-game which mode the user runs.
-
-Done when: we know the conversion (or know there isn't one needed) between
-the screen-rect coords stored in `CSWGuiExtent` and the coords we feed to
-`SetCursorPos`.
-
-### I-5. Are numpad keys free in default `[Keymapping]`?
-
-Was a fallback option for "extra navigation key" before we settled on
-arrow-keys-overwrite. Probably not needed, but if Phase 5 (spatial mode)
-ever needs a side channel for cursor speed / mode toggle, knowing what's
-free helps.
-
-```bash
-grep -i "numpad\|NUMPAD" "/c/Program Files (x86)/Steam/steamapps/common/swkotor/swkotor.ini"
-```
-
-Done when: documented which numpad scancodes (DIK_NUMPAD0 through 9) appear
-in `[Keymapping]` in default config.
-
-### I-6. CSWGuiControl `IsNavigable` / focus-skip flag
-
-Some controls in `panel.controls` are decorative-only (header labels,
-background images) and probably shouldn't be in our chain even though
-they're in the iteration. Engine likely has a flag distinguishing these
-(per `CSWGuiControl::GetIsSelectable` from listbox decompile, vtable index
-unknown). Find it; we may eventually want to skip non-selectable controls
-from the chain.
-
-Decision per user: don't filter yet. Investigate but use only if real
-evidence shows the chain has problems.
-
-```bash
-jq -r '.runs[0].results[]
-  | select(.ruleId == "FUNCTIONS")
-  | select(.properties.additionalProperties.name | test("IsSelectable|IsNavigable"))
-  | .properties.additionalProperties
-  | "\(.namespace)::\(.name)  @\(.location)  \(.value)"' "$SARIF"
-```
-
-## Implementation roadmap
-
-Each phase has a definite "done" condition and is testable in isolation.
-Build → apply → launch → log-check loop is well-validated.
-
-### Phase 1 — Speak-only chain navigation (NEXT SESSION FIRST)
-
-**State:**
+Handoff doc. Captures the current design and the data needed to implement it.
+
+## Model
+
+**Arrow keys move a synthesized cursor; Enter clicks.** Same model in menus
+and in the 3D world. In menus the cursor snaps to consecutive
+`panel.controls` entries; in the world it moves smoothly. One input pipeline,
+one announcement source, one activation pipeline.
+
+The whole design hinges on a single engine call, `CSWGuiManager::MoveMouseToPosition`,
+which the SARIF investigation in session 5 surfaced. It does cursor update +
+hit-test + active-control update in one shot, so the menu-nav layer is mostly
+"compute target coords, queue a deferred call to that function."
+
+## Key engine surfaces (from SARIF)
+
+### Globals
+
+- `*(CSWGuiManager**)0x7A39F4` — singleton GuiManager pointer.
+- Adjacent: `0x7A39E4 = CExoInput*`, `0x7A39E8 = CExoResMan*`, `0x7A39FC = CAppManager*`.
+
+### CSWGuiManager methods
+
+- `MoveMouseToPosition(int x, int y)` `@ 0x40c790` — internally calls
+  `CExoInput::SetMousePos` then `HandleMouseMove`, which calls `HitCheckMouse`
+  and `UpdateMouseOverControl`. Single primitive for cursor + hover refresh.
+- `HandleInputEvent(int code, int state)` `@ 0x40c8e0` — already hooked at
+  `0x40c907` mid-function.
+- `HitCheckMouse(x, y, **outPanel, **outCtrl, _)` `@ 0x40abe0` — direct hit-test
+  if needed; usually we let `MoveMouseToPosition` do it.
+- `Update(float dt)` `@ 0x40ce70` — per-frame tick. Single caller is
+  `CClientExoAppInternal::MainLoop @ 0x602eb0` (one call per frame, after
+  input dispatch). Used as the deferred-call site (see "Reentrancy" below).
+  Hook cut detailed in "Update hook" section.
+- `HandleMouseMove(x, y)` `@ 0x40c1e0` — what `MoveMouseToPosition` ultimately drives.
+
+### Struct offsets
+
+`CSWGuiControl`:
+- `+0x0`  vtable
+- `+0x4`  extent (inline `CSWGuiExtent`, 16 bytes)
+- `+0x14` parent_control
+- `+0x18` child_controls (`CExoArrayList`)
+- (memory) `+0xe8` label text, `+0x16c` button text — see
+  `project_kotor_gui_struct_offsets.md`
+
+`CSWGuiExtent` (at `ctrl + 0x4`):
+- `+0x0`  left   `int`
+- `+0x4`  top    `int`
+- `+0x8`  width  `int`
+- `+0xC`  height `int`
+
+Center of any control:
 ```cpp
-static void* g_currentPanel = nullptr;       // tracked from OnSetActiveControl
-static void* g_chainPanel   = nullptr;       // panel our chain is bound to
-static int   g_chainIndex   = 0;             // current position in panel.controls
-static int   g_chainSize    = 0;             // cached panel.controls.size
-static uint64_t g_lastChainAnnounce = 0;     // for engine-suppression window
+int cx = ctrl->extent.left + ctrl->extent.width / 2;
+int cy = ctrl->extent.top  + ctrl->extent.height / 2;
 ```
 
-**`OnHandleInputEvent` additions:**
-- Detect `param_1 == 0xb6` (up) or `0xb7` (down). Skip if `param_2 == 0`
-  (release).
-- If `g_currentPanel != g_chainPanel`: rebind chain (`g_chainPanel = g_currentPanel;
-  g_chainIndex = 0; g_chainSize = panel.controls.size`).
-- Compute new index: clamp `g_chainIndex ± 1` to `[0, g_chainSize - 1]`. If
-  unchanged (at edge), still announce current element so user gets edge feedback.
-- Read target = `panel.controls.data[g_chainIndex]`.
-- `ExtractAnnounceableText(target, buf)` → `tolk::Speak(buf, false)`.
-- `g_lastChainAnnounce = GetTickCount64()`.
+### Other useful methods (for filtering, deferred work)
 
-**`OnSetActiveControl` additions:**
+- `CSWGuiControl::GetIsSelectable` `@ 0x4189d0` — returns `bool`. Overridden on
+  `CSWGuiEditbox`, `CSWGuiListBox`, `CSWGuiPazaakCard`. Available if we ever
+  decide to skip non-selectable controls. Per Decision 3 we don't filter yet.
+
+## Reentrancy: why we use a deferred Update hook
+
+Calling `MoveMouseToPosition` directly from inside our `HandleInputEvent` hook
+is reentrant — the engine is mid-dispatch, and `MoveMouseToPosition` mutates
+input-system + GUI state via `HandleMouseMove` → `UpdateMouseOverControl`.
+Same class of problem as the listbox-entry-hook toxicity from session 4.
+
+Solution: defer to the next `CSWGuiManager::Update` tick.
+
+```cpp
+static bool g_pendingCursorMove = false;
+static int  g_pendingX, g_pendingY;
+
+// in OnHandleInputEvent (input dispatch — cheap work only):
+g_pendingX = cx; g_pendingY = cy;
+g_pendingCursorMove = true;
+
+// in OnUpdate (per-frame tick, post-dispatch):
+if (g_pendingCursorMove) {
+    g_pendingCursorMove = false;
+    auto* gm = *(CSWGuiManager**)0x7A39F4;
+    gm->MoveMouseToPosition(g_pendingX, g_pendingY);
+}
+```
+
+One-frame lag (~16ms at 60fps), inaudible. Tolk speech still fires synchronously
+from the input hook, so the audible response feels instantaneous.
+
+### Update hook (verified)
+
+SARIF + DumpBytes confirmed the cut. Disassembly of the prologue:
+
+```
+0x40ce70: 51                     push ecx           ; local var slot
+0x40ce71: 53                     push ebx
+0x40ce72: 55                     push ebp
+0x40ce73: 56                     push esi
+0x40ce74: 8b e9                  mov  ebp, ecx      ; this → EBP
+0x40ce76: 8b 85 8c 00 00 00      mov  eax, [ebp+0x8c]   ← hook cut (6 bytes)
+0x40ce7c: 57                     push edi
+... loop iterating panels[0x88], calling each panel's vtable[0x38]
+```
+
+- **Cut:** `0x40ce76`, 6 bytes `[0x8b, 0x85, 0x8c, 0x00, 0x00, 0x00]`, single
+  memory-relative MOV — safe to relocate. Resume at `0x40ce7c`.
+- **Source:** `ebp` → pointer (`this`). EBP holds the manager after the engine's
+  `mov ebp, ecx` at `0x40ce74`. Callee-saved across our handler call.
+- **No inbound jumps** land in `0x40ce76`–`0x40ce7b` — all internal jumps in
+  Update target later addresses.
+- **Reentrancy verified safe:** `MoveMouseToPosition` mutates hover/tooltip
+  state via `HandleMouseMove`; Update's panel-iteration loop reads neither.
+  Cursor moves on frame N+1 take effect for that frame's panel updates —
+  correct ordering.
+
+`hooks.toml` entry:
+
+```toml
+[[hooks]]
+address = 0x0040ce76
+type = "detour"
+function = "OnUpdate"
+original_bytes = [0x8b, 0x85, 0x8c, 0x00, 0x00, 0x00]
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ebp"
+type = "pointer"
+```
+
+### Calling MoveMouseToPosition from C++
+
+First time we'll call into the engine from our DLL (existing hooks only react).
+Standard MSVC `__thiscall` function pointer:
+
+```cpp
+typedef void (__thiscall *MoveMouseToPositionFn)(void* gm, int x, int y);
+constexpr MoveMouseToPositionFn MoveMouseToPosition =
+    reinterpret_cast<MoveMouseToPositionFn>(0x0040c790);
+
+auto* gm = *reinterpret_cast<void**>(0x7A39F4);
+MoveMouseToPosition(gm, cx, cy);
+```
+
+If the framework wants a different declaration shape, we'll find out at link time.
+
+## Engine-event consumption
+
+The current framework wrapper (`wrapper_x86_win32.cpp`) has no conditional flow
+control — after the handler returns, it unconditionally executes original
+bytes + JMPs to `hookAddress + originalBytes.size()`. We need a one-feature
+extension: a `consumed_exit_address` field that, when set and the handler
+returns non-zero, makes the wrapper JMP to that address instead.
+
+### Function epilogue (consumed exit target)
+
+`CSWGuiManager::HandleInputEvent` ends with:
+
+```
+0x40cbcb: 8b 4c 24 24             mov  ecx, [esp+0x24]   ; saved old SEH ptr
+0x40cbcf: 5f 5e 5d 5b              pop  edi, esi, ebp, ebx
+0x40cbd3: 64 89 0d 00 00 00 00    mov  fs:[0], ecx       ; restore SEH chain
+0x40cbda: 83 c4 20                 add  esp, 0x20
+0x40cbdd: c2 08 00                 ret  8
+```
+
+Stack state at `0x40cbcb` matches stack state right after our cut bytes run
+(EDI/ESI/EBP/EBX saved, locals + SEH frame intact, `[ESP+0x24]` = saved SEH
+ptr). JMPing here from the wrapper after the cut is a clean exit.
+
+### Framework change required
+
+Eight files, ~50 lines, fully additive (default behavior unchanged for every
+existing hook). Tracked in `docs/upstream-prs.md`. Wrapper tail layout, with
+cut bytes emitted *before* the conditional jump so both paths leave the stack
+in the post-cut state expected at the consumed-exit target:
+
+```asm
+; (register restore complete; eax excluded from POPAD if consuming)
+<cut bytes>                            ; original instructions, e.g. PUSH EDI
+TEST EAX, EAX                          ; 85 c0
+JZ +5                                  ; 74 05  (skip the consumed JMP)
+JMP rel32 to consumed_exit_address     ; e9 ?? ?? ?? ??  (consumed)
+JMP rel32 to hookAddress + cut.size()  ; fall-through (non-consumed)
+```
+
+If the cut bytes ran *after* the conditional jump, the consumed path would
+JMP without the cut's stack mutations applied and the target's POP/ADD ESP
+would corrupt — the design's `0x40cbcb` target assumes EDI/ESI/EBP/EBX are
+on the stack from the cut's `PUSH EDI`. Emitting the cut first keeps both
+paths' stack state identical.
+
+### Hook config after the change
+
+```toml
+[[hooks]]
+address = 0x0040c907
+type = "detour"
+function = "OnHandleInputEvent"
+original_bytes = [0x8b, 0xf1, 0x57, 0x89, 0x5e, 0x68]
+skip_original_bytes = false
+exclude_from_restore = ["eax"]
+consumed_exit_address = 0x0040cbcb
+
+# parameters unchanged
+```
+
+```cpp
+extern "C" __declspec(dllexport)
+int __cdecl OnHandleInputEvent(void* gm, int code, int state) {
+    LogInputEvent(code, state);
+    if (state != 0 && IsArrowKey(code)) {
+        DoChainNavigation(gm, code);
+        return 1;     // CONSUMED — engine skips translation + dispatch
+    }
+    return 0;         // PASS-THROUGH — engine handles normally
+}
+```
+
+Sequence: ship the framework change first, validate existing hooks unchanged,
+then enable consumption on our input hook, then build Phase 1+2 on top.
+
+## Decisions (carried forward from session 4)
+
+1. **Unified cursor model** — same keys do the same thing everywhere. No mode toggles.
+2. **Stable chain = `panel.controls` iteration order.** Down → +1, Up → −1, clamp at ends, no wrap.
+3. **Don't filter "suspicious" elements yet.** Multi-line listboxes, icon-only
+   buttons, NULL slots, unknown vtables — all stay in the chain. Filter from
+   evidence, not guesses. (`GetIsSelectable` is available when we're ready.)
+4. **Panel-open enumeration via Tolk.** First focus into a new panel queues
+   speech for every child in order. Re-entering the same panel does nothing.
+5. **Consume arrow keys at the input hook; don't let the engine see them.**
+   Handler returns non-zero for arrow keys → wrapper jumps directly to the
+   function epilogue at `0x40cbcb`, skipping translation + dispatch. Engine
+   never runs the broken `.gui` cycle, never fires `SetActiveControl(Y)`,
+   nothing to suppress. Other keys (Tab, Enter, mouse) pass through normally.
+   Requires a one-feature framework extension (see "Engine-event consumption"
+   below + `docs/upstream-prs.md`). Also keep a tiny self-dedup flag so our
+   own `MoveMouseToPosition` triggering `SetActiveControl(X)` next frame
+   doesn't double-announce — different problem from engine suppression.
+6. **Phased speak-only first.** Cursor sync added once chain announcement is
+   stable. Activation comes free from the engine.
+7. **Main-menu working K/L cycle is acceptable collateral.** "One menu lost in
+   exchange for all menus working."
+
+## Roadmap
+
+### Phase 1+2 — Speak + cursor sync (NEXT)
+
+State:
+```cpp
+static void* g_currentPanel = nullptr;
+static void* g_chainPanel   = nullptr;
+static int   g_chainIndex   = 0;
+static int   g_chainSize    = 0;
+
+static bool g_pendingCursorMove = false;
+static int  g_pendingX, g_pendingY;
+static void* g_pendingTarget = nullptr;   // for self-dedup
+```
+
+`OnHandleInputEvent` (returns int — 1 = consumed, 0 = pass-through):
+- On `0xb6` (up) / `0xb7` (down) with `state != 0`:
+  - If `g_currentPanel != g_chainPanel`: rebind chain.
+  - Compute `g_chainIndex ± 1`, clamp `[0, g_chainSize-1]`.
+  - `target = panel.controls.data[g_chainIndex]`.
+  - Announce target via Tolk.
+  - Compute target center → write `g_pendingX/Y/Target`, set `g_pendingCursorMove`.
+  - **Return 1** (consumed). Wrapper JMPs to function epilogue; engine never
+    translates or dispatches the arrow key.
+- For all other keys: return 0 (pass-through).
+
+`OnSetActiveControl` additions:
 - `g_currentPanel = panel`.
-- If `panel != g_lastEnumeratedPanel`: walk `panel.controls`, queue Tolk speech
-  for every child's text (existing log-only walk → also speak). Set
-  `g_lastEnumeratedPanel = panel`. Possibly prefix with `"Panel:"` or panel
-  identifier (panel ID? title from a known child? TBD).
-- If `(GetTickCount64() - g_lastChainAnnounce) < 100`: skip Tolk speak path
-  (still log normally). Engine-suppression window.
+- If `panel != g_lastEnumeratedPanel`: walk + speak every child; set `g_lastEnumeratedPanel`.
+- If `param == g_pendingTarget`: skip Tolk path (we caused this; already spoke).
+  Clear `g_pendingTarget`. (Self-dedup, not engine suppression.)
 
-**Done when:** in-game, on Options screen, pressing arrow keys announces
-elements in stable `panel.controls` order. Pressing Down on the last element
-re-announces the same element (edge clamp). Re-entering the panel doesn't
-re-enumerate (dedup).
+`OnUpdate` (new hook on `CSWGuiManager::Update @ 0x40ce70`):
+- If `g_pendingCursorMove`: clear flag, call `MoveMouseToPosition(g_pendingX, g_pendingY)`.
 
-**Risk:** low. No new hooks; no `SetActiveControl` calls; no system cursor
-manipulation. Pure additive announcements. Engine still does whatever it
-does in parallel (we just suppress its announcements during our window).
+**Done when:** arrow keys announce + visibly move the cursor through
+`panel.controls`; Enter activates the chain target via the engine's normal
+click pipeline; re-entering a panel doesn't re-enumerate.
 
-### Phase 2 — Cursor synchronization
+**Risk:** low. Update hook cut is verified. Consumed-exit address `0x0040cbcb`
+is verified by stack-offset arithmetic. Only unknowns: (a) `__thiscall` to
+`MoveMouseToPosition` works first try from the framework's wrapper context;
+(b) the framework extension lands cleanly. Both empirical, cheap to discover.
 
-Make the system cursor follow the chain so engine hover side effects fire
-naturally on the current chain element.
+### Phase 3 — Spatial mode (3D world / non-panel screens)
 
-**Prereqs:** I-2 (CSWGuiExtent layout), I-4 (cursor coord conventions).
+When `g_currentPanel == nullptr`, switch to Lane's smooth-cursor model:
+- Arrow press/release sets/clears direction-flag bits (`dirBitFlags`).
+- `OnUpdate` adds `(speed × xDir, speed × yDir)` to last cursor coords each
+  tick and calls `MoveMouseToPosition`. Engine's hover refresh tells us what's
+  under the cursor (`*outCtrl` from `HitCheckMouse` if we want it explicitly,
+  or just observe `OnSetActiveControl` events).
+- Announce changes in the focused control via Tolk.
 
-**Changes:**
-- After the chain announcement in `OnHandleInputEvent`: read `target.extent`,
-  compute center `(left + width/2, top + height/2)`, call
-  `SetCursorPos(centerX, centerY)`.
-- Verify in-game that hover state updates visibly (sighted observer or via
-  log output of any new engine-side hover events).
-
-**Done when:** moving the chain cursor visibly highlights elements (sighted
-verification) and any hover-only labels become readable.
-
-**Risk:** medium. Cursor coord math could be wrong (windowed vs fullscreen);
-engine might not refresh hover state without a cursor-move event we don't
-synthesize.
-
-### Phase 3 — Engine focus alignment
-
-Ensure engine's `active_control` matches our chain target so Enter activates
-the correct thing.
-
-**Prereqs:** Phase 1 stable.
-
-**Approach:** call `panel->vtable->SetActiveControl(panel, target)` directly
-from our `OnHandleInputEvent` after computing the chain target. This fires
-our existing `OnSetActiveControl` hook recursively — guard with
-`g_inProgrammaticFocus` flag so we don't re-announce or re-enter.
-
-**Risk:** medium. Our forced `SetActiveControl` aligns engine, but engine's
-*own* per-button event handler might still run after our manager hook returns
-and re-move focus. Mitigation: detect this in `OnSetActiveControl` and revert
-once. Test for oscillation.
-
-### Phase 4 — Click activation via Enter
-
-Let user press Enter to activate the chain target.
-
-**Prereqs:** Phase 3 (engine focus aligned with chain).
-
-**Approach 1 (preferred):** do nothing. Engine's existing Enter handling
-dispatches to `active_control` which is now our chain target (Phase 3). Free
-activation.
-
-**Approach 2 (fallback):** intercept Enter (0xb5) in our hook, synthesize a
-`mouse_event(LEFTDOWN/UP)` at cursor position. Engine's click pipeline
-focuses + activates the cursor's hit target. Independent of focus state.
-
-**Done when:** user can press Enter on a chain element and the engine
-performs the corresponding action (button click, +/- adjust, etc.).
-
-### Phase 5 — Spatial mode (3D world / non-panel screens)
-
-When `g_currentPanel == nullptr` (no panel active), switch to Lane's
-smooth-cursor model:
-- Arrow press → set/clear direction-flag bit (Lane's `dirBitFlags`).
-- Background tick (timer or main-loop hook) every ~16ms calls
-  `SetCursorPos(curX + speed × xDir, curY + speed × yDir)`.
-- After move: hit-test (I-1 prereq), `ExtractAnnounceableText`, announce if
-  changed.
-
-**Prereqs:** I-1, plus all of Phase 1-4.
-
-**Done when:** cursor moves smoothly in 3D world, hover announces
-interactables, click activates them.
+Same primitive (`MoveMouseToPosition`), different driver. No new engine
+surfaces required.
 
 ## Open issues (carry forward)
 
-- `+/-` icon buttons (vtable=0073E658, no text, no `str_ref`) — TLK lookup
-  doesn't help. They'd read as `"control N"` placeholder. Acceptable for now;
-  user can position chain on them and press Enter to test +/-. Long-term: a
-  per-vtable name table ("control with vtable 0073E658 = +/- button").
-- TLK `c_string` leak — engine-CRT allocations we don't free. Bounded across
-  a session but unbounded across many sessions. Future cleanup: find
-  `CExoString::~CExoString` and call it.
-- Multi-line listbox in chain — currently entries blob-announce on focus.
-  In Phase 1 the chain might land *on* the listbox and the user hears the
-  whole "List, N items, 1. ..." enumeration. Acceptable. Later: skip listbox
-  blobs from chain (filter-from-evidence).
+- `+/-` icon buttons (vtable `0x73E658`, no text, no `str_ref`) — read as
+  `"control N"`. Acceptable; long-term: per-vtable name table.
+- TLK `c_string` leak — bounded per session, unbounded across many. Future:
+  call `CExoString::~CExoString` after use.
+- Multi-line listbox in chain — entries blob-announce on focus; chain may
+  land *on* the listbox and read the whole list. Acceptable; later, filter
+  blob listboxes from chain.
 
-## Reference logs
+## What's at HEAD (Phase 0)
 
-- **Last working baseline (Phase 0):** `<install>/logs/patch-20260430-110057.log`
-  (972 lines, 0 SEH, all current features active).
-- **Listbox entry-hook regression:** `patch-20260430-073819.log` (55 lines,
-  one HandleInputEvent fired, focus oscillation symptom).
-- **Manager hook + decompile session:** `patch-20260430-070010.log` (332
-  lines, panel walks visible, multi-line blob first observed).
+- Manager-level input hook at `0x40c907` — every key, both edges, readable log via `ManagerTranslateCode`.
+- Panel-children walk on first focus into a new panel.
+- Listbox-children walk + cursor read on every listbox event.
+- Multi-line listbox blob enumeration via `SpeakBlobIfChanged`.
+- TLK lookup with SEH guard.
+- All log rate-limits removed.
+- Last working baseline: `<install>/logs/patch-20260430-110057.log`.
 
-## Memory references (.claude/projects/.../memory/)
+## Constraints
 
-Project-state:
-- `project_listbox_keyboard_model.md` — selection_index = -1 semantics,
-  scroll-mode vs selection-mode
-- `project_listbox_click_flow.md` — HitCheckMouseLocal + LMouseDown/Up +
-  SetSelectedControl + activation via 0x27
-- `project_kotor_gui_struct_offsets.md` — Button text +0x16c, Label text
-  +0xe8, vtable indices for downcasts
-- `project_main_menu_input_path.md` — historical, superseded by manager-level
-  hook
-- `project_kpatchmanager_lea_bug.md` — framework wrapper bug, PR opportunity
+- **No entry-point hooks on `CSWGuiListBox`** — toxic even when never fired
+  (session 4 finding). Mid-function only on that class. Other classes
+  (`CSWGuiManager`, `CSWGuiPanel`) are fine entry-point or mid-function;
+  we still prefer mid-function with register sources per
+  `feedback_hook_design_register_sources.md`.
+- **GoG-derived bytes from Lane's gzf match Steam** — paste into `hooks.toml`
+  unchanged.
+- **No log rate-limits** — full fidelity per `feedback_log_no_rate_limits.md`.
+- **Fallback announcements never silently drop** — per
+  `feedback_never_silence_fallback_announcement.md`.
 
-Behavior rules:
-- `feedback_hook_design_register_sources.md` — mid-function + register
-  sources only; NO entry-point hooks on CSWGuiListBox
-- `feedback_log_no_rate_limits.md` — never throttle diagnostic logs
-- `feedback_never_silence_fallback_announcement.md` — fallback placeholders
-  must speak, dedup is for resolved text only
-- `feedback_explain_decisions_step_by_step.md` — walk through decisions
-  individually; bulk lists fail
-- `feedback_discovery_doc_format.md` — known/suspected/open structure for
-  research docs
+## Build / run
 
-## Build / run quick reference
-
-From project root (`C:\Users\fabia\Dev\kotor`):
+From `C:\Users\fabia\Dev\kotor`:
 
 ```bash
-# Build
 tools/kdev/bin/Debug/net10.0/win-x64/kdev.exe build
-
-# Apply
 tools/kdev/bin/Debug/net10.0/win-x64/kdev.exe apply
-
-# Launch
 tools/kdev/bin/Debug/net10.0/win-x64/kdev.exe launch --monitor
-
-# Logs
 ls -1t "/c/Program Files (x86)/Steam/steamapps/common/swkotor/logs/" | head -3
 ```
 
-Bash/Git Bash on Windows; absolute paths; no `cd /d`.
+## Memory references
 
-## Re-entry checklist for next session
+Project state:
+- `project_listbox_keyboard_model.md` — selection_index semantics
+- `project_listbox_click_flow.md` — click → activation chain
+- `project_kotor_gui_struct_offsets.md` — Button/Label text offsets, vtable indices
+- `project_kpatchmanager_lea_bug.md` — framework wrapper bug, PR opportunity
 
-1. Read this file end-to-end.
-2. `git log --oneline -5` to see what's already on `main`.
-3. Run investigations I-1, I-2, I-3 (~15 min total via SARIF queries).
-4. Implement Phase 1 (speak-only chain). One commit. Test in-game; adjust.
-5. Iterate Phases 2-5 once Phase 1 is stable in user's hands.
+Behavior:
+- `feedback_hook_design_register_sources.md` — mid-function + register sources
+- `feedback_log_no_rate_limits.md` — never throttle diagnostic logs
+- `feedback_never_silence_fallback_announcement.md` — placeholders speak, dedup is for resolved text only
+- `feedback_explain_decisions_step_by_step.md` — walk through decisions individually
+
+## Re-entry checklist
+
+1. Read this file + `docs/upstream-prs.md`.
+2. `git log --oneline -5` for what's at HEAD.
+3. Implement the framework `consumed_exit_address` extension (8 files, ~50 lines).
+   Verify existing hooks still build and run unchanged.
+4. Enable consumption on `OnHandleInputEvent` via `consumed_exit_address = 0x0040cbcb`.
+   Verify engine no longer fires `SetActiveControl(Y)` on arrow keys.
+5. Implement Phase 1+2 (chain + cursor sync) on the clean foundation. One commit.
+6. Phase 3 once Phase 1+2 is stable.

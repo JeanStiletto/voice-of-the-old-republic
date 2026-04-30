@@ -437,12 +437,15 @@ static void DumpControlVtable(void* control, char* out, size_t outSize) {
 //   +0x04  int      size
 //   +0x08  int      capacity
 //
+// CSWGuiPanel.activeControl is at +0x1c — current focused child (read by
+// our SetActiveControl mid-function hook before the SET).
 // CSWGuiPanel.controls is at +0x20 — list of every direct child control.
 // CSWGuiListBox.controls is at +0x29c — list of row controls. Listbox cursor
 // state is in three shorts immediately after the controls array:
 //   +0x2c4  short    items_per_page
 //   +0x2c6  short    selection_index   ← which row is "current"
 //   +0x2c8  short    top_visible_index ← scroll offset
+constexpr size_t kPanelActiveControlOffset      = 0x1c;
 constexpr size_t kPanelControlsOffset           = 0x20;
 constexpr size_t kListBoxControlsOffset         = 0x29c;
 constexpr size_t kListBoxBitFlagsOffset         = 0x2bc;
@@ -450,11 +453,223 @@ constexpr size_t kListBoxItemsPerPageOffset     = 0x2c4;
 constexpr size_t kListBoxSelectionIndexOffset   = 0x2c6;
 constexpr size_t kListBoxTopVisibleIndexOffset  = 0x2c8;
 
+// CSWGuiControl.extent is an inline CSWGuiExtent (16 bytes) at +0x4:
+//   +0x0  left    int
+//   +0x4  top     int
+//   +0x8  width   int
+//   +0xC  height  int
+constexpr size_t kControlExtentOffset = 0x4;
+
 struct CExoArrayList {
     void** data;
     int    size;
     int    capacity;
 };
+
+// ============================================================================
+// Unified-cursor menu navigation (Phase 1+2 — see docs/menu-nav-design.md).
+// ============================================================================
+
+// CSWGuiManager surfaces verified via Lane's SARIF database.
+// `*kAddrGuiManagerPtr` holds the live GuiManager singleton; `MoveMouseToPosition`
+// is the single primitive that does cursor + hover refresh in one call.
+constexpr uintptr_t kAddrGuiManagerPtr        = 0x007A39F4;
+constexpr uintptr_t kAddrMoveMouseToPosition  = 0x0040c790;
+typedef void (__thiscall* PFN_MoveMouseToPosition)(void* gm, int x, int y);
+
+// CSWGuiPanel::SetActiveControl @ 0x40a630 — committing selection to a panel.
+// MoveMouseToPosition only updates hover state; panel.activeControl lags
+// behind the cursor unless we explicitly set it. Enter / F1 activates
+// panel.activeControl, so without this call the engine activates the
+// previously-clicked button instead of the cursor target.
+constexpr uintptr_t kAddrPanelSetActiveControl = 0x0040a630;
+typedef void (__thiscall* PFN_PanelSetActiveControl)(void* panel, void* control);
+
+// Logical input codes received pre-translation by CSWGuiManager::HandleInputEvent.
+// 0xb6 / 0xb7 are the engine's "nav-prev / nav-next" actions, emitted on arrow
+// presses inside menus. Consuming them prevents the engine's broken `.gui`
+// focus-cycle from running. Other key codes (Tab, Enter, mouse, F-keys) pass
+// through normally and reach the engine's existing handlers.
+constexpr int kInputNavUp   = 0xb6;
+constexpr int kInputNavDown = 0xb7;
+
+// 0xb5 / 0xbb both translate to KEYBOARD_F1 (the engine's "confirm/activate"
+// virtual code). We don't consume Enter — the engine's normal activation
+// pipeline runs the button's onClick — but we force panel.activeControl to
+// match the chain target on press so the right button gets activated.
+// MoveMouseToPosition's hover→active path is unreliable (no event in popups,
+// snaps back to default tab in the Options panel), so a one-shot commit on
+// Enter press is the cleanest way to close that gap without the per-frame
+// oscillation an explicit setActive in OnUpdate caused.
+constexpr int kInputEnter1 = 0xb5;
+constexpr int kInputEnter2 = 0xbb;
+
+// Chain state. g_currentPanel is updated in OnSetActiveControl. g_chainPanel
+// is rebound lazily per arrow press if the focused panel has changed since the
+// last navigation. A null current panel disables chain nav (fall through to
+// the engine for unsupported screens — e.g. the title-screen K/L cycle still
+// works, per Decision 7).
+static void* g_currentPanel = nullptr;
+static void* g_chainPanel   = nullptr;
+static int   g_chainIndex   = 0;
+static int   g_chainSize    = 0;
+
+// Deferred MoveMouseToPosition. Called from OnHandleInputEvent would recurse
+// through HandleMouseMove → UpdateMouseOverControl mid-input-dispatch — same
+// class of toxicity as the listbox-entry hooks from session 4. Defer to the
+// next CSWGuiManager::Update tick (~16ms at 60fps; inaudible). Tolk speech
+// still fires synchronously from the input hook so the audible response feels
+// instantaneous.
+static bool  g_pendingCursorMove = false;
+static int   g_pendingX = 0;
+static int   g_pendingY = 0;
+static void* g_pendingTarget = nullptr;   // for self-dedup in OnSetActiveControl
+
+// Tracks the last panel for which we ran the panel-open enumeration (Decision
+// 4). Re-entering the same panel pointer must not re-announce the layout. A
+// distinct static from the existing s_lastPanel inside OnSetActiveControl —
+// that one drives diagnostic WalkChildren logging.
+static void* g_lastEnumeratedPanel = nullptr;
+
+// Read panel.activeControl @ +0x1c. Used to anchor the chain index when we
+// rebind to a panel — start at the engine's current selection so the first
+// arrow press doesn't snap the cursor away from where the user was looking.
+static void* ReadPanelActiveControl(void* panel) {
+    if (!panel) return nullptr;
+    return *reinterpret_cast<void**>(
+        reinterpret_cast<unsigned char*>(panel) + kPanelActiveControlOffset);
+}
+
+// Center pixel of a control's hit area. Returns false on null control or
+// degenerate extent (zero/negative width/height — sometimes seen on hidden
+// panels and templated control prototypes).
+static bool GetControlCenter(void* control, int& outCx, int& outCy) {
+    if (!control) return false;
+    auto* ext = reinterpret_cast<int*>(
+        reinterpret_cast<unsigned char*>(control) + kControlExtentOffset);
+    int width  = ext[2];
+    int height = ext[3];
+    if (width <= 0 || height <= 0) return false;
+    outCx = ext[0] + width  / 2;
+    outCy = ext[1] + height / 2;
+    return true;
+}
+
+// Linear scan a panel's controls list for `needle`. Returns the index, or
+// -1 if not found / list empty / corrupt.
+static int FindControlIndex(void* panel, void* needle) {
+    if (!panel || !needle) return -1;
+    auto* list = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+    if (!list->data || list->size <= 0) return -1;
+    int n = list->size > 256 ? 256 : list->size;
+    for (int i = 0; i < n; ++i) {
+        if (list->data[i] == needle) return i;
+    }
+    return -1;
+}
+
+// True if the control is button-like (CSWGuiButton or its subclasses
+// CharButton / ActivatedButton / ButtonToggle). MoveMouseToPosition's
+// hover→active promotion path is safe for buttons but crashes when the
+// active control is a label (verified: navigating onto the main-menu
+// "Neue Inhalte verfügbar…" label froze the game). Used to filter chain
+// navigation to selectable controls only — Decision 3's "filter from
+// evidence" trigger met by that crash.
+//
+// Long-term: replace with a proper CSWGuiControl::GetIsSelectable call
+// (vtable lookup at 0x4189d0) to also include editbox / listbox / etc.
+// The button-only filter is a conservative starting point that handles
+// menus correctly.
+static bool IsChainNavigable(void* control) {
+    if (!control) return false;
+    if (CallDowncast(control, kVtableAsButton)        != nullptr) return true;
+    if (CallDowncast(control, kVtableAsButtonToggle)  != nullptr) return true;
+    return false;
+}
+
+// Step the chain index forward (or backward) by stride, skipping NULL slots
+// and non-navigable controls. Clamps at the ends of panel.controls. Returns
+// the new index. The stride lets the caller walk through panels with mixed
+// content without forcing the user to stride-press through labels.
+static int AdvanceChainIndex(void* panel, int from, int delta) {
+    auto* list = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+    if (!list || !list->data || list->size <= 0) return from;
+    int max = (list->size > 256 ? 256 : list->size) - 1;
+
+    int candidate = from + delta;
+    while (candidate >= 0 && candidate <= max) {
+        void* c = list->data[candidate];
+        if (IsChainNavigable(c)) return candidate;
+        candidate += delta;
+    }
+    // No navigable control in the requested direction — clamp to last
+    // navigable seen, or stay put if there isn't one.
+    int probe = from;
+    while (probe >= 0 && probe <= max) {
+        if (IsChainNavigable(list->data[probe])) return probe;
+        probe += (delta > 0) ? -1 : +1;
+    }
+    return from;
+}
+
+// Pull the announceable text of a control (tooltip → button → label → ...);
+// fall back to "control N" using the control's id field. Never silently
+// drops — per feedback_never_silence_fallback_announcement.md.
+static void AnnounceControl(void* control) {
+    if (!control) return;
+    char text[256];
+    const char* source = ExtractAnnounceableText(control, text, sizeof(text));
+    if (source) {
+        tolk::Speak(text, /*interrupt=*/false);
+        return;
+    }
+    int id = *reinterpret_cast<int*>(
+        reinterpret_cast<unsigned char*>(control) + 0x50);
+    char placeholder[64];
+    snprintf(placeholder, sizeof(placeholder), "control %d", id);
+    tolk::Speak(placeholder, /*interrupt=*/false);
+}
+
+// First focus into a panel queues speech for every child in panel.controls
+// order — Decision 4. The user hears the full layout once on entry, then per-
+// control announcements for subsequent navigation. The OnSetActiveControl
+// announcement that follows enumerate will repeat the focused control, which
+// is the desired confirmation ("layout: A, B, C, D. Currently on C.").
+static void EnumerateAndSpeakPanel(void* panel) {
+    if (!panel) return;
+    auto* list = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+    if (!list->data || list->size <= 0) return;
+    int n = list->size > 256 ? 256 : list->size;
+    acclog::Write("Panel enumerate parent=%p children=%d", panel, n);
+    for (int i = 0; i < n; ++i) {
+        void* child = list->data[i];
+        if (!child) continue;
+        AnnounceControl(child);
+    }
+}
+
+// (Re)bind the chain to the currently focused panel. Anchors g_chainIndex on
+// the engine's current activeControl when present, so the first arrow press
+// moves one step from where the user was, not from index 0.
+static void RebindChain(void* panel) {
+    g_chainPanel = panel;
+    g_chainIndex = 0;
+    g_chainSize  = 0;
+    if (!panel) return;
+    auto* list = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+    if (!list->data || list->size <= 0) return;
+    g_chainSize = list->size > 256 ? 256 : list->size;
+
+    void* active = ReadPanelActiveControl(panel);
+    int idx = FindControlIndex(panel, active);
+    g_chainIndex = (idx >= 0) ? idx : 0;
+    acclog::Write("Chain rebind panel=%p size=%d index=%d active=%p",
+                  panel, g_chainSize, g_chainIndex, active);
+}
 
 // Walk a CExoArrayList<CSWGuiControl*> embedded at parent+offset and log every
 // child. Used as a diagnostic when the focused panel/listbox changes — gives us
@@ -522,6 +737,11 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
     static int n = 0;
     ++n;
 
+    // Track the currently-focused panel for the chain-navigation handler.
+    // Even NULL newControl events update this — what matters is which panel
+    // the manager is dispatching focus on.
+    g_currentPanel = panel;
+
     // First focus event into a previously-unseen panel: dump every child
     // control on it. Lets us see widgets the user can't reach with arrow
     // keys (mouse-only labels, hidden tabs, off-cursor inputs, etc.).
@@ -531,8 +751,30 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
         WalkChildren("Panel", panel, kPanelControlsOffset);
     }
 
+    // Decision 4: first focus into a new panel queues full-layout enumeration.
+    // Distinct static from s_lastPanel above so reordering the diagnostic walk
+    // doesn't break enumeration semantics.
+    if (panel && panel != g_lastEnumeratedPanel) {
+        g_lastEnumeratedPanel = panel;
+        EnumerateAndSpeakPanel(panel);
+    }
+
     if (!newControl) {
         acclog::Write("SetActiveControl #%d panel=%p newControl=NULL", n, panel);
+        return;
+    }
+
+    // Self-dedup: if this SetActiveControl was caused by our deferred
+    // MoveMouseToPosition, we already announced the target from the input
+    // hook. Skip the Tolk path here and clear the pending marker. This is
+    // self-suppression, not engine suppression — the engine wouldn't fire
+    // SetActiveControl on consumed arrow keys at all (the wrapper JMPs past
+    // dispatch). It only fires here when our own move triggered the engine
+    // to reselect.
+    if (newControl == g_pendingTarget) {
+        acclog::Write("SetActiveControl #%d panel=%p new=%p (self-dedup; cursor sync)",
+                      n, panel, newControl);
+        g_pendingTarget = nullptr;
         return;
     }
 
@@ -682,19 +924,142 @@ extern "C" void __cdecl OnHandleFocusChange(void* thisPtr, int param_1) {
 //
 // At hook entry: ECX = this, EBX = param_1 (InputIndices key/button code),
 // EAX = param_2 (state).
-extern "C" void __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_2) {
+extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_2) {
     EnsureTolkInitialized();
     static int n = 0;
     ++n;
-    int translated = ManagerTranslateCode(param_1);
-    if (translated != param_1) {
-        acclog::Write("HandleInputEvent #%d this=%p key=logical(%d) -> %s(%d) val=%d",
-                      n, thisPtr, param_1,
-                      InputIndexName(translated), translated, param_2);
-    } else {
-        acclog::Write("HandleInputEvent #%d this=%p key=%s(%d) val=%d",
-                      n, thisPtr, InputIndexName(param_1), param_1, param_2);
+
+    // Chain navigation: consume nav-up / nav-down on key-down. We only handle
+    // press edges (param_2 != 0) so key-up events still pass through cleanly.
+    // Other keys (Tab, Enter, mouse, F-keys) always pass through; activation
+    // comes free from the engine via the normal click pipeline once the
+    // cursor is over the chain target.
+    // Enter-press commit: force panel.activeControl to match the chain
+    // target so the engine's normal activation pipeline fires onClick on
+    // the right button. Single-shot (only on press, not release) and only
+    // when chain state is current — avoids the focus oscillation that
+    // crashed when an explicit setActive ran on every arrow press.
+    if (param_2 != 0 &&
+        (param_1 == kInputEnter1 || param_1 == kInputEnter2) &&
+        g_currentPanel != nullptr &&
+        g_chainPanel == g_currentPanel &&
+        g_chainSize > 0)
+    {
+        auto* list = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(g_chainPanel) + kPanelControlsOffset);
+        void* target = (list && list->data && g_chainIndex < list->size)
+                       ? list->data[g_chainIndex] : nullptr;
+        if (target && IsChainNavigable(target)) {
+            void* current = ReadPanelActiveControl(g_currentPanel);
+            if (current != target) {
+                acclog::Write("Enter commit: panel=%p target=%p (was %p)",
+                              g_currentPanel, target, current);
+                auto setActive = reinterpret_cast<PFN_PanelSetActiveControl>(
+                    kAddrPanelSetActiveControl);
+                setActive(g_currentPanel, target);
+            }
+        }
     }
+
+    bool consumed = false;
+    if (param_2 != 0 &&
+        (param_1 == kInputNavUp || param_1 == kInputNavDown) &&
+        g_currentPanel != nullptr)
+    {
+        if (g_currentPanel != g_chainPanel) {
+            RebindChain(g_currentPanel);
+        }
+        if (g_chainSize > 0) {
+            int delta = (param_1 == kInputNavDown) ? +1 : -1;
+            int newIndex = AdvanceChainIndex(g_chainPanel, g_chainIndex, delta);
+            g_chainIndex = newIndex;
+
+            auto* list = reinterpret_cast<CExoArrayList*>(
+                reinterpret_cast<unsigned char*>(g_chainPanel) + kPanelControlsOffset);
+            void* target = (list && list->data) ? list->data[g_chainIndex] : nullptr;
+
+            if (target) {
+                AnnounceControl(target);
+                int cx, cy;
+                if (GetControlCenter(target, cx, cy)) {
+                    g_pendingX = cx;
+                    g_pendingY = cy;
+                    g_pendingTarget = target;
+                    g_pendingCursorMove = true;
+                    acclog::Write("Chain step panel=%p index=%d target=%p center=(%d,%d) %s",
+                                  g_chainPanel, g_chainIndex, target, cx, cy,
+                                  param_1 == kInputNavDown ? "DOWN" : "UP");
+                } else {
+                    acclog::Write("Chain step panel=%p index=%d target=%p extent=degenerate",
+                                  g_chainPanel, g_chainIndex, target);
+                }
+            } else {
+                acclog::Write("Chain step panel=%p index=%d target=NULL %s",
+                              g_chainPanel, g_chainIndex,
+                              param_1 == kInputNavDown ? "DOWN" : "UP");
+            }
+            // Always consume nav-up/nav-down on a panel with a non-empty chain.
+            // AdvanceChainIndex skips NULL slots and non-navigable controls,
+            // but if the panel has zero navigables we still consume rather
+            // than letting the key fall through to the engine's broken cycle.
+            consumed = true;
+        }
+    }
+
+    int translated = ManagerTranslateCode(param_1);
+    const char* tag = consumed ? " CONSUMED" : "";
+    if (translated != param_1) {
+        acclog::Write("HandleInputEvent #%d this=%p key=logical(%d) -> %s(%d) val=%d%s",
+                      n, thisPtr, param_1,
+                      InputIndexName(translated), translated, param_2, tag);
+    } else {
+        acclog::Write("HandleInputEvent #%d this=%p key=%s(%d) val=%d%s",
+                      n, thisPtr, InputIndexName(param_1), param_1, param_2, tag);
+    }
+    return consumed ? 1 : 0;
+}
+
+// CSWGuiManager::Update — hooked mid-function at 0x40ce76. Per-frame tick run
+// once after input dispatch by CClientExoAppInternal::MainLoop. Used as a safe
+// callback site for the deferred MoveMouseToPosition triggered by chain
+// navigation: the engine's input pipeline is NOT mid-flight here, so cursor
+// updates can recurse through HandleMouseMove without re-entrancy.
+//
+// The cut byte is `mov eax, [ebp+0x8c]` (a panel-list field load); EBP is the
+// manager pointer (the engine's `mov ebp, ecx` at 0x40ce74 happens before our
+// hook). We pass EBP as the parameter for clarity even though we also have
+// the global at 0x7A39F4 — both resolve to the same singleton.
+extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
+    if (!g_pendingCursorMove) return;
+    g_pendingCursorMove = false;
+
+    void* gm = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!gm) {
+        acclog::Write("Update: pending move but GuiManager singleton is NULL");
+        g_pendingTarget = nullptr;
+        return;
+    }
+
+    // Move the cursor. The engine's MoveMouseToPosition internally drives
+    // HitCheckMouse → UpdateMouseOverControl → CSWGuiPanel::SetActiveControl,
+    // so the cursor move alone updates panel.activeControl to whatever the
+    // hit-test resolves at the new coords. Verified by Phase-2 testing:
+    // pressing Enter after a chain step activated the focused control
+    // (e.g. Options button → Options menu) without any explicit setActive
+    // call. An earlier prototype that *also* called SetActiveControl(target)
+    // here caused crashes on panels where multiple controls share hit-test
+    // space (Options menu tabs at overlapping screen positions): the engine
+    // would activate the hit-test winner, our explicit setActive would
+    // override it back to the chain target, the listbox would refresh
+    // twice, and rapid state oscillation destabilized the engine.
+    auto move = reinterpret_cast<PFN_MoveMouseToPosition>(kAddrMoveMouseToPosition);
+    move(gm, g_pendingX, g_pendingY);
+
+    acclog::Write("Update: MoveMouseToPosition(%d, %d) target=%p",
+                  g_pendingX, g_pendingY, g_pendingTarget);
+    // g_pendingTarget cleared by OnSetActiveControl's self-dedup path when
+    // the engine's hover→active flow lands on the same control we asked
+    // for; otherwise it stays set and the next chain step overwrites it.
 }
 
 // Read a snapshot of the listbox's cursor / flags / size into a string. Shared
