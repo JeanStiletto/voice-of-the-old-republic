@@ -335,6 +335,50 @@ static const char* ExtractAnnounceableText(void* control,
     return nullptr;
 }
 
+// Multi-line "blob" listbox readout. The Options-Gameplay settings list is
+// the canonical case: CSWGuiListBox.controls.size == 1, the single child is a
+// CSWGuiLabel whose CExoString contains all visible setting names joined by
+// '\n'. There is no engine-side per-line cursor (selection_index stays at -1),
+// and click-to-line wouldn't work either — HitCheckMouseLocal returns row 0
+// regardless of which visual line was clicked (see
+// memory/project_listbox_click_flow.md). The accessible compromise: speak the
+// blob as separate utterances — "List, N items" then "1. <line>", "2. ..." —
+// so the screen reader enunciates each setting cleanly with brief pauses
+// between them.
+//
+// Dedup is local-static: we only re-speak the blob when its content changes,
+// otherwise navigating around the panel (which re-fires
+// OnListBoxSetActiveControl repeatedly with the same row) would queue a
+// fresh enumeration on every event.
+static void SpeakBlobIfChanged(const char* text) {
+    static char s_last[2048] = {0};
+    if (strncmp(s_last, text, sizeof(s_last)) == 0) return;
+    strncpy_s(s_last, text, _TRUNCATE);
+
+    int lineCount = 1;
+    for (const char* p = text; *p; ++p) {
+        if (*p == '\n') ++lineCount;
+    }
+
+    char intro[64];
+    snprintf(intro, sizeof(intro), "List, %d items", lineCount);
+    tolk::Speak(intro, /*interrupt=*/false);
+
+    int idx = 1;
+    const char* lineStart = text;
+    for (const char* p = text;; ++p) {
+        if (*p == '\n' || *p == '\0') {
+            int n = (int)(p - lineStart);
+            char line[300];
+            snprintf(line, sizeof(line), "%d. %.*s", idx, n, lineStart);
+            tolk::Speak(line, /*interrupt=*/false);
+            if (*p == '\0') break;
+            ++idx;
+            lineStart = p + 1;
+        }
+    }
+}
+
 // Speak `text` only if it differs from what we last spoke on this channel.
 // Dedup is the only filter: in the first session we used interrupt=true and
 // NVDA went fully silent in chargen (every utterance got cut off mid-word
@@ -383,6 +427,7 @@ static void DumpControlVtable(void* control, char* out, size_t outSize) {
 //   +0x2c8  short    top_visible_index ← scroll offset
 constexpr size_t kPanelControlsOffset           = 0x20;
 constexpr size_t kListBoxControlsOffset         = 0x29c;
+constexpr size_t kListBoxBitFlagsOffset         = 0x2bc;
 constexpr size_t kListBoxItemsPerPageOffset     = 0x2c4;
 constexpr size_t kListBoxSelectionIndexOffset   = 0x2c6;
 constexpr size_t kListBoxTopVisibleIndexOffset  = 0x2c8;
@@ -535,9 +580,11 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
         WalkChildren("ListBox", listBox, kListBoxControlsOffset);
     }
 
-    // Always log the listbox's internal cursor state. If arrow keys move the
-    // cursor without firing a row-focus event, this is the only signal that
-    // anything happened — the row pointer alone isn't enough.
+    // Always log the listbox's internal cursor + flags state. selection_index
+    // distinguishes scroll-mode (-1, set when bit_flags & 0x200) from
+    // selection-mode (>=0). controls_size tells us how many real rows exist:
+    // for the multi-line-blob settings listbox this is 1 even though the
+    // user sees 8 visual lines.
     if (listBox) {
         auto* base = reinterpret_cast<unsigned char*>(listBox);
         short itemsPerPage = *reinterpret_cast<short*>(
@@ -546,8 +593,15 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
             base + kListBoxSelectionIndexOffset);
         short topVisible   = *reinterpret_cast<short*>(
             base + kListBoxTopVisibleIndexOffset);
-        acclog::Write("ListBox::cursor list=%p sel=%d top=%d perPage=%d",
-                      listBox, selIdx, topVisible, itemsPerPage);
+        uint32_t bitFlags  = *reinterpret_cast<uint32_t*>(
+            base + kListBoxBitFlagsOffset);
+        auto* ctrls = reinterpret_cast<CExoArrayList*>(
+            base + kListBoxControlsOffset);
+        int ctrlsSize = ctrls ? ctrls->size : -1;
+        acclog::Write("ListBox::cursor list=%p sel=%d top=%d perPage=%d "
+                      "size=%d flags=0x%x",
+                      listBox, selIdx, topVisible, itemsPerPage,
+                      ctrlsSize, bitFlags);
     }
 
     if (!newRow) {
@@ -565,7 +619,11 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
         acclog::Write("ListBox::SetActiveControl #%d list=%p row=%p id=%d "
                       "p2=%d src=%s text=\"%s\"",
                       n, listBox, newRow, id, param2, source, text);
-        SpeakIfChanged(/*channel=*/1, text);
+        if (strchr(text, '\n')) {
+            SpeakBlobIfChanged(text);
+        } else {
+            SpeakIfChanged(/*channel=*/1, text);
+        }
     } else {
         char vtbl[160];
         DumpControlVtable(newRow, vtbl, sizeof(vtbl));
@@ -619,6 +677,76 @@ extern "C" void __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param
         acclog::Write("HandleInputEvent #%d this=%p key=%s(%d) val=%d",
                       n, thisPtr, InputIndexName(param_1), param_1, param_2);
     }
+}
+
+// Read a snapshot of the listbox's cursor / flags / size into a string. Shared
+// between the click and key handlers so all listbox events log the same fields.
+static void DumpListBoxState(void* listBox, char* out, size_t outSize) {
+    if (!listBox) {
+        snprintf(out, outSize, "list=NULL");
+        return;
+    }
+    auto* base = reinterpret_cast<unsigned char*>(listBox);
+    short selIdx       = *reinterpret_cast<short*>(base + kListBoxSelectionIndexOffset);
+    short topVisible   = *reinterpret_cast<short*>(base + kListBoxTopVisibleIndexOffset);
+    short itemsPerPage = *reinterpret_cast<short*>(base + kListBoxItemsPerPageOffset);
+    uint32_t bitFlags  = *reinterpret_cast<uint32_t*>(base + kListBoxBitFlagsOffset);
+    auto* ctrls        = reinterpret_cast<CExoArrayList*>(base + kListBoxControlsOffset);
+    int ctrlsSize      = ctrls ? ctrls->size : -1;
+    snprintf(out, outSize,
+             "list=%p sel=%d top=%d perPage=%d size=%d flags=0x%x",
+             listBox, selIdx, topVisible, itemsPerPage, ctrlsSize, bitFlags);
+}
+
+// CSWGuiListBox::HandleLMouseDown — entry hook @0x0041c4a0. Click press.
+extern "C" void __cdecl OnListBoxLMouseDown(void* listBox) {
+    EnsureTolkInitialized();
+    static int n = 0;
+    ++n;
+    char state[160];
+    DumpListBoxState(listBox, state, sizeof(state));
+    acclog::Write("ListBox::LMouseDown #%d %s", n, state);
+}
+
+// CSWGuiListBox::HandleLMouseUp — entry hook @0x0041a700. Click release; this
+// is where the click action commits and the row's callback fires. Pair with
+// the next OnListBoxSetSelectedControl / OnListBoxSetActiveControl events to
+// see the full chain.
+extern "C" void __cdecl OnListBoxLMouseUp(void* listBox) {
+    EnsureTolkInitialized();
+    static int n = 0;
+    ++n;
+    char state[160];
+    DumpListBoxState(listBox, state, sizeof(state));
+    acclog::Write("ListBox::LMouseUp #%d %s", n, state);
+}
+
+// CSWGuiListBox::HandleInputEvent — entry hook @0x0041ce20. Per-listbox key
+// dispatch. Fires only when the listbox is the focused control AND the
+// engine routes the key down to it. We don't extract param_1/param_2 here
+// (would need stack-source path which is broken upstream) — correlate by
+// timestamp with the manager-level HandleInputEvent log line that fired
+// just before.
+extern "C" void __cdecl OnListBoxHandleInput(void* listBox) {
+    EnsureTolkInitialized();
+    static int n = 0;
+    ++n;
+    char state[160];
+    DumpListBoxState(listBox, state, sizeof(state));
+    acclog::Write("ListBox::HandleInputEvent #%d %s", n, state);
+}
+
+// CSWGuiListBox::SetSelectedControl — entry hook @0x0041c040. Fires whenever
+// the listbox's selection index changes, regardless of source (keyboard, mouse,
+// programmatic). Reads the OLD selection_index pre-update; the next
+// OnListBoxSetActiveControl event will reveal the new value.
+extern "C" void __cdecl OnListBoxSetSelectedControl(void* listBox) {
+    EnsureTolkInitialized();
+    static int n = 0;
+    ++n;
+    char state[160];
+    DumpListBoxState(listBox, state, sizeof(state));
+    acclog::Write("ListBox::SetSelectedControl #%d %s (pre-update)", n, state);
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD reason, LPVOID) {
