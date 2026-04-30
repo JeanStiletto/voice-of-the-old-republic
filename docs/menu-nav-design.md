@@ -316,6 +316,19 @@ surfaces required.
 - Multi-line listbox in chain — entries blob-announce on focus; chain may
   land *on* the listbox and read the whole list. Acceptable; later, filter
   blob listboxes from chain.
+- **Listbox auto-readout on tab focus = audio stutter source.** In the Options
+  panel, every tab nav (Gameplay → Auto-Pause → Grafik → ...) re-fires
+  `ListBox::SetActiveControl` because each tab swaps the listbox content. We
+  then dispatch `SpeakBlobIfChanged`, which emits N+1 `Tolk_Output` IPC calls
+  (intro + per line) into NVDA from the game thread. Bursts of 7-9 IPC calls
+  back-to-back briefly stall audio (reproduced: open Options → arrow down →
+  arrow up; second blob trips dedup the first time). Do *not* fix by collapsing
+  the burst into one call — that bakes flexibility loss into the workaround
+  site (see `memory/feedback_no_workaround_at_workaround_site.md`). Real fix:
+  proper tab-then-listbox navigation, where listbox content is only read out
+  when the user explicitly enters the listbox (not as a side-effect of tab
+  hover). Belongs in the next nav phase. Until then the stutter is a
+  known accepted cost on Options-panel tab nav.
 
 ## What's at HEAD (Phase 0)
 

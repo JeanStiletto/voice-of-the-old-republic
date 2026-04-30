@@ -8,9 +8,11 @@ namespace acclog {
 
 namespace {
 
-char g_logDir[MAX_PATH]   = "logs";
-char g_logPath[MAX_PATH]  = "logs\\patch.log";
-char g_patchDir[MAX_PATH] = "";
+char  g_logDir[MAX_PATH]   = "logs";
+char  g_logPath[MAX_PATH]  = "logs\\patch.log";
+char  g_patchDir[MAX_PATH] = "";
+FILE* g_logFile            = nullptr;
+bool  g_logOpenAttempted   = false;
 
 }  // namespace
 
@@ -65,14 +67,26 @@ void Write(const char* fmt, ...) {
 
     OutputDebugStringA(line);
 
-    CreateDirectoryA(g_logDir, nullptr);
-    FILE* f = nullptr;
-    if (fopen_s(&f, g_logPath, "ab") != 0 || !f) {
-        OutputDebugStringA("[accessibility] WARNING: log file open failed\n");
-        return;
+    // Lazy-open the log file on first write and keep the handle for the rest
+    // of the session. The previous fopen+fputs+fclose-per-event pattern caused
+    // observable stutter (alt-tab burst of focus events generated dozens of
+    // CreateFile/CloseHandle syscalls in tight succession). One persistent
+    // handle drops the per-event cost to a single fputs+fflush. fflush is
+    // retained so a game crash still leaves the log readable up to the last
+    // event — the design constraint behind the original open/close pattern.
+    if (!g_logOpenAttempted) {
+        g_logOpenAttempted = true;
+        CreateDirectoryA(g_logDir, nullptr);
+        if (fopen_s(&g_logFile, g_logPath, "ab") != 0 || !g_logFile) {
+            g_logFile = nullptr;
+            OutputDebugStringA("[accessibility] WARNING: log file open failed\n");
+        }
     }
-    fputs(line, f);
-    fclose(f);
+
+    if (g_logFile) {
+        fputs(line, g_logFile);
+        fflush(g_logFile);
+    }
 }
 
 const char* PatchDir() {

@@ -99,6 +99,11 @@ const char* InputIndexName(int code) {
     if (code >= 0 && code < (int)(sizeof(k_names) / sizeof(k_names[0]))) {
         return k_names[code];
     }
+    // Engine logical-action codes that don't translate to an InputIndices
+    // value (i.e. ManagerTranslateCode passes them through unchanged) and
+    // are therefore neither in the InputIndices array nor in our translator.
+    // Naming them inline keeps the input log readable instead of "?(206)".
+    if (code == 0xCE) return "LOGICAL_TAB";
     return "?";
 }
 
@@ -531,6 +536,48 @@ static void* g_pendingTarget = nullptr;   // for self-dedup in OnSetActiveContro
 // that one drives diagnostic WalkChildren logging.
 static void* g_lastEnumeratedPanel = nullptr;
 
+// Tabbed-panel navigation state (Options-menu style: a CSWGuiListBox at
+// controls[0] holds the current tab's content, button cluster after [0] = tabs).
+//
+// Tab key cycles g_currentTabIdx through the contiguous button cluster and
+// warps the cursor to that tab — the engine's hover→active path then activates
+// the new tab and refreshes the listbox. The blob announcement is suppressed
+// because the user navigates the listbox content with arrow keys instead, via
+// virtual line indices we parse out of the listbox row's multi-line label.
+//
+// Detection deliberately keys off "controls[0] is a non-empty CSWGuiListBox"
+// rather than "panel has buttons" — the main menu also has buttons but no
+// active listbox, and arrow-keys must continue to drive chain navigation
+// there. kVtableListBox is the observed Steam-1.0.3 vtable for CSWGuiListBox;
+// future builds will need updating if Lane's SARIF reports a different value.
+//
+// Tab arrives as logical code 0xCE (206), confirmed via patch-20260430-202843
+// log: HandleInputEvent fired with raw param_1 = 206 on every Tab press, never
+// translated to an InputIndices value (the engine's translator passes 0xCE
+// through unchanged). The value sits outside the InputIndices enum range so
+// it logs as `key=?(206)` until we add a name-table entry for it.
+//
+// Shift+Tab not yet investigated — if it arrives with the same code or as
+// some 0xCF/0xD0-range neighbour, we'd add reverse cycling here.
+constexpr int       kInputTab       = 0xCE;
+constexpr uintptr_t kVtableListBox  = 0x0073E840;
+
+static void* g_tabbedPanel       = nullptr;  // panel currently in tabbed mode
+static int   g_tabsStart         = -1;       // first tab-button index in panel.controls
+static int   g_tabsCount         = 0;        // number of contiguous tab buttons
+static int   g_currentTabIdx     = -1;       // 0..g_tabsCount-1
+
+// Virtual-line cursor over the listbox's multi-line blob. The Options listbox
+// has controls.size == 1 with all settings concatenated by '\n' into a single
+// CSWGuiLabel row. We can't activate individual lines (engine has no per-line
+// click target — see project_listbox_click_flow.md) but we can present them as
+// readable navigable items.
+constexpr int kMaxVirtualLines  = 32;
+constexpr int kMaxVirtualLineLen = 256;
+static char g_virtualLines[kMaxVirtualLines][kMaxVirtualLineLen];
+static int  g_virtualLineCount = 0;
+static int  g_virtualLineIdx   = -1;  // -1 = not yet entered (cursor at tab level)
+
 // Read panel.activeControl @ +0x1c. Used to anchor the chain index when we
 // rebind to a panel — start at the engine's current selection so the first
 // arrow press doesn't snap the cursor away from where the user was looking.
@@ -651,6 +698,81 @@ static void EnumerateAndSpeakPanel(void* panel) {
     }
 }
 
+// Detect whether `panel` is laid out as Options-style: a CSWGuiListBox at
+// controls[0] (currently displayed tab content) followed by a contiguous
+// cluster of buttons (the tab strip). Returns true and fills outStart/outCount
+// with the cluster's first index and length on success.
+//
+// Refusing the detection when the listbox is empty keeps main-menu-style
+// panels (which also have a CSWGuiListBox at [0], for the news scroller, but
+// no tab content) on the existing chain-navigation path.
+static bool DetectTabsCluster(void* panel, int& outStart, int& outCount) {
+    outStart = -1;
+    outCount = 0;
+    if (!panel) return false;
+
+    auto* panelList = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+    if (!panelList->data || panelList->size < 2) return false;
+
+    void* lb = panelList->data[0];
+    if (!lb) return false;
+    void** vt = *reinterpret_cast<void***>(lb);
+    if (reinterpret_cast<uintptr_t>(vt) != kVtableListBox) return false;
+
+    auto* lbList = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
+    if (!lbList->data || lbList->size <= 0) return false;
+
+    int n = panelList->size > 256 ? 256 : panelList->size;
+    int start = -1, end = -1;
+    for (int i = 1; i < n; ++i) {
+        void* c = panelList->data[i];
+        if (c && IsChainNavigable(c)) {
+            if (start < 0) start = i;
+            end = i;
+        } else if (start >= 0) {
+            break;  // first non-navigable after the cluster ends it
+        }
+    }
+    if (start < 0 || (end - start + 1) < 2) return false;
+    outStart = start;
+    outCount = end - start + 1;
+    return true;
+}
+
+// Reset all tabbed-mode state. Called when the focused panel changes to a
+// different one — the new panel may or may not be tabbed; OnListBoxSetActive-
+// Control re-runs detection lazily on its first listbox event.
+static void ResetTabbedState() {
+    g_tabbedPanel      = nullptr;
+    g_tabsStart        = -1;
+    g_tabsCount        = 0;
+    g_currentTabIdx    = -1;
+    g_virtualLineCount = 0;
+    g_virtualLineIdx   = -1;
+}
+
+// Split `text` on '\n' into g_virtualLines[]. Truncates oversize lines to fit;
+// caps total line count at kMaxVirtualLines (Options Gameplay tab has 8, no
+// observed listbox blob > 16 in any KOTOR menu — 32 is comfortable headroom).
+static void ParseVirtualLines(const char* text) {
+    g_virtualLineCount = 0;
+    g_virtualLineIdx   = -1;
+    if (!text) return;
+    const char* p = text;
+    while (*p && g_virtualLineCount < kMaxVirtualLines) {
+        const char* end = strchr(p, '\n');
+        size_t len = end ? (size_t)(end - p) : strlen(p);
+        if (len >= kMaxVirtualLineLen) len = kMaxVirtualLineLen - 1;
+        memcpy(g_virtualLines[g_virtualLineCount], p, len);
+        g_virtualLines[g_virtualLineCount][len] = '\0';
+        ++g_virtualLineCount;
+        if (!end) break;
+        p = end + 1;
+    }
+}
+
 // (Re)bind the chain to the currently focused panel. Anchors g_chainIndex on
 // the engine's current activeControl when present, so the first arrow press
 // moves one step from where the user was, not from index 0.
@@ -740,7 +862,15 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
     // Track the currently-focused panel for the chain-navigation handler.
     // Even NULL newControl events update this — what matters is which panel
     // the manager is dispatching focus on.
+    void* prevPanel = g_currentPanel;
     g_currentPanel = panel;
+
+    // Tabbed-mode state is per-panel. When the focused panel changes, drop any
+    // tabbed state from the previous panel; OnListBoxSetActiveControl re-detects
+    // on its next firing (which is what populates tabbed mode in the first place).
+    if (panel != prevPanel && panel != g_tabbedPanel) {
+        ResetTabbedState();
+    }
 
     // First focus event into a previously-unseen panel: dump every child
     // control on it. Lets us see widgets the user can't reach with arrow
@@ -879,8 +1009,38 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
         acclog::Write("ListBox::SetActiveControl #%d list=%p row=%p id=%d "
                       "p2=%d src=%s text=\"%s\"",
                       n, listBox, newRow, id, param2, source, text);
+
+        // Lazy tabbed-mode detection: first listbox event after a panel
+        // change probes whether the focused panel has the Options-style
+        // listbox-at-[0] + button-cluster layout. If so we arm the tab/
+        // virtual-line nav path and silence blob speech (the user navigates
+        // lines explicitly with arrow keys instead).
+        if (g_currentPanel && g_tabbedPanel != g_currentPanel) {
+            int tabsStart = -1, tabsCount = 0;
+            if (DetectTabsCluster(g_currentPanel, tabsStart, tabsCount)) {
+                g_tabbedPanel    = g_currentPanel;
+                g_tabsStart      = tabsStart;
+                g_tabsCount      = tabsCount;
+                void* active = ReadPanelActiveControl(g_currentPanel);
+                int idx = FindControlIndex(g_currentPanel, active);
+                g_currentTabIdx  = (idx >= tabsStart &&
+                                    idx <  tabsStart + tabsCount)
+                                   ? (idx - tabsStart) : 0;
+                acclog::Write("Tab mode armed: panel=%p tabsStart=%d tabsCount=%d "
+                              "currentTab=%d",
+                              g_currentPanel, tabsStart, tabsCount,
+                              g_currentTabIdx);
+            }
+        }
+
         if (strchr(text, '\n')) {
-            SpeakBlobIfChanged(text);
+            if (g_tabbedPanel == g_currentPanel) {
+                ParseVirtualLines(text);
+                acclog::Write("ListBox blob silenced (tabbed mode); %d virtual lines parsed",
+                              g_virtualLineCount);
+            } else {
+                SpeakBlobIfChanged(text);
+            }
         } else {
             SpeakIfChanged(/*channel=*/1, text);
         }
@@ -962,7 +1122,68 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     }
 
     bool consumed = false;
-    if (param_2 != 0 &&
+
+    // Tab key in a tabbed panel: cycle to next tab button. We warp the cursor
+    // to the new tab via the same deferred MoveMouseToPosition path the chain
+    // uses; the engine's hover→active flow then activates the new tab and
+    // refreshes the listbox content. Listbox blob speech is silenced in
+    // tabbed mode (handled in OnListBoxSetActiveControl), so the user just
+    // hears the tab name.
+    if (param_2 != 0 && param_1 == kInputTab &&
+        g_tabbedPanel != nullptr && g_tabbedPanel == g_currentPanel &&
+        g_tabsCount > 0)
+    {
+        g_currentTabIdx = (g_currentTabIdx + 1) % g_tabsCount;
+        int panelIdx = g_tabsStart + g_currentTabIdx;
+        auto* list = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(g_tabbedPanel) + kPanelControlsOffset);
+        void* tabBtn = (list && list->data && panelIdx < list->size)
+                       ? list->data[panelIdx] : nullptr;
+        if (tabBtn) {
+            AnnounceControl(tabBtn);
+            int cx, cy;
+            if (GetControlCenter(tabBtn, cx, cy)) {
+                g_pendingX = cx;
+                g_pendingY = cy;
+                g_pendingTarget = tabBtn;
+                g_pendingCursorMove = true;
+                acclog::Write("Tab cycle: panel=%p tab=%d/%d target=%p center=(%d,%d)",
+                              g_tabbedPanel, g_currentTabIdx, g_tabsCount,
+                              tabBtn, cx, cy);
+            } else {
+                acclog::Write("Tab cycle: panel=%p tab=%d/%d target=%p extent=degenerate",
+                              g_tabbedPanel, g_currentTabIdx, g_tabsCount, tabBtn);
+            }
+        }
+        consumed = true;
+    }
+    // Arrow keys in a tabbed panel: walk the parsed virtual lines. No engine
+    // activation — the multi-line listbox blob has no per-line click target
+    // (controls.size == 1), so this is a read-only enumeration for now.
+    // Future: synthesize per-line activation when we figure out the engine
+    // surface for clicking individual settings.
+    else if (param_2 != 0 &&
+             (param_1 == kInputNavUp || param_1 == kInputNavDown) &&
+             g_tabbedPanel != nullptr && g_tabbedPanel == g_currentPanel &&
+             g_virtualLineCount > 0)
+    {
+        int delta = (param_1 == kInputNavDown) ? +1 : -1;
+        if (g_virtualLineIdx < 0) {
+            g_virtualLineIdx = (delta > 0) ? 0 : g_virtualLineCount - 1;
+        } else {
+            g_virtualLineIdx += delta;
+            if (g_virtualLineIdx < 0) g_virtualLineIdx = 0;
+            if (g_virtualLineIdx >= g_virtualLineCount) g_virtualLineIdx = g_virtualLineCount - 1;
+        }
+        const char* line = g_virtualLines[g_virtualLineIdx];
+        tolk::Speak(line, /*interrupt=*/false);
+        acclog::Write("VLine: panel=%p line=%d/%d %s text=\"%s\"",
+                      g_currentPanel, g_virtualLineIdx, g_virtualLineCount,
+                      param_1 == kInputNavDown ? "DOWN" : "UP", line);
+        consumed = true;
+    }
+    // Arrow keys in a non-tabbed panel: existing chain navigation.
+    else if (param_2 != 0 &&
         (param_1 == kInputNavUp || param_1 == kInputNavDown) &&
         g_currentPanel != nullptr)
     {
