@@ -1,0 +1,18 @@
+[patch]
+id = "enable-script-aurpoststring"
+name = "AurPostString Enabled"
+version = "1.3.1"
+author = "KotOR Patch Manager"
+description = "Re-enables the debug AurPostString script function that displays on-screen debug text. This function is called throughout the game scripts but was disabled for release."
+
+# No dependencies for this patch
+requires = []
+
+# No known conflicts
+conflicts = []
+
+# Supported game versions
+# SHA256 hash of the GOG KOTOR 1 v1.03 executable (swkotor.exe)
+[patch.supported_versions]
+kotor1_gog_103 = "9C10E0450A6EECA417E036E3CDE7474FED1F0A92AAB018446D156944DEA91435"
+kotor1_cdcrack_103 = "761F9466F456A83909036BAEBB5C43167D722387BE66E54617BA20A8C49E9886"

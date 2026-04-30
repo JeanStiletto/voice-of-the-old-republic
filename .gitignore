@@ -33,12 +33,14 @@ Thumbs.db
 /docs/llm-docs/
 
 # Upstream third-party clones — recreatable from public repos:
-#   Kotor-Patch-Manager: https://github.com/LaneDibello/Kotor-Patch-Manager
 #   KotorMessageInjector: https://github.com/LaneDibello/KotorMessageInjector
 #   KotOR_IO: https://github.com/LaneDibello/KotOR_IO
 #   DLZ-Tool: https://github.com/Lane-Dibello/DLZ-Tool
 # Tolk (third_party/tolk/) is kept — LGPL distribution requirement.
-/third_party/Kotor-Patch-Manager/
+#
+# Kotor-Patch-Manager is intentionally NOT ignored: we vendor it so our
+# framework modifications travel with normal commits. The upstream commit
+# we forked from is recorded in docs/framework-changes-backup.patch.
 /third_party/KotorMessageInjector/
 /third_party/KotOR_IO/
 /third_party/DLZ-Tool/

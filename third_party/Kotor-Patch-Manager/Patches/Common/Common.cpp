@@ -1,0 +1,3 @@
+#include "Common.h"
+
+DWORD OBJECT_DEFAULT = (DWORD)0x7f000000;

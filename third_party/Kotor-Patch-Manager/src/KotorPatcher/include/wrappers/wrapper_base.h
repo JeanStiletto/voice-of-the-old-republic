@@ -1,0 +1,92 @@
+#pragma once
+#include <windows.h>
+#include <vector>
+#include <string>
+#include "wrapper_context.h"
+
+// Abstract interface for platform-specific wrapper generators
+// Allows supporting multiple platforms/architectures
+
+namespace KotorPatcher {
+    // Forward declare ParameterInfo to avoid circular dependency
+    struct ParameterInfo;
+
+    namespace Wrappers {
+
+        struct WrapperConfig {
+
+            void* patchFunction;
+            DWORD hookAddress;
+
+            // Original bytes that were overwritten by the hook (for DETOUR type)
+            // These will be executed in the wrapper before returning to original code
+            // Must be >= 5 bytes and align with instruction boundaries
+            std::vector<BYTE> originalBytes;
+
+            // Hook type determines wrapper behavior
+            enum class HookType {
+                DETOUR      // Save state, call patch, restore state, execute stolen bytes, continue original
+            };
+            HookType type = HookType::DETOUR;
+
+            // State preservation options
+            bool preserveRegisters = true;
+            bool preserveFlags = true;
+
+            // Registers to exclude from restoration
+            // Allows patch to modify specific registers
+            std::vector<std::string> excludeFromRestore;
+
+            // Parameters to extract and pass to hook function (for DETOUR hooks)
+            std::vector<ParameterInfo> parameters;
+
+            // Skip executing original bytes after patch function returns
+            // Set to true when you want to fully replace the original behavior
+            // instead of augmenting it
+            bool skipOriginalBytes = false;
+
+            // When non-zero, the wrapper emits a conditional jump after the
+            // register-restore epilogue: if the handler returned non-zero in
+            // EAX, control transfers to this address; otherwise the wrapper
+            // falls through to the existing original-bytes / skipOriginalBytes
+            // path. Caller must add "eax" to excludeFromRestore so the
+            // handler's return value reaches the test. Default 0 = disabled.
+            DWORD consumedExitAddress = 0;
+
+            // Original function pointer (future use)
+            void* originalFunction = nullptr;
+
+            // Helper: Check if a register should be restored
+            bool ShouldRestoreRegister(const std::string& regName) const {
+                if (!preserveRegisters) return false;
+
+                for (const auto& excluded : excludeFromRestore) {
+                    if (_stricmp(excluded.c_str(), regName.c_str()) == 0) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+        };
+
+        // Abstract base class for wrapper generators
+        class WrapperGeneratorBase {
+        public:
+            virtual ~WrapperGeneratorBase() = default;
+
+            // Generate a wrapper stub and return its address
+            // Returns nullptr on failure
+            virtual void* GenerateWrapper(const WrapperConfig& config) = 0;
+
+            // Free all allocated wrappers
+            virtual void FreeAllWrappers() = 0;
+
+            // Get platform name for debugging
+            virtual const char* GetPlatformName() const = 0;
+        };
+
+        // Factory function to get the appropriate wrapper generator for current platform
+        WrapperGeneratorBase* GetWrapperGenerator();
+
+    } // namespace Wrappers
+} // namespace KotorPatcher
