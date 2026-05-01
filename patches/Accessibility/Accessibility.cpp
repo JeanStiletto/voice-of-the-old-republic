@@ -1123,36 +1123,60 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
 
     bool consumed = false;
 
-    // Tab key in a tabbed panel: cycle to next tab button. We warp the cursor
-    // to the new tab via the same deferred MoveMouseToPosition path the chain
-    // uses; the engine's hover→active flow then activates the new tab and
-    // refreshes the listbox content. Listbox blob speech is silenced in
-    // tabbed mode (handled in OnListBoxSetActiveControl), so the user just
-    // hears the tab name.
-    if (param_2 != 0 && param_1 == kInputTab &&
+    // Tab key in a tabbed panel.
+    //
+    // What we DON'T do: explicitly call CSWGuiPanel::SetActiveControl on the
+    // chosen tab. We tried that twice (deferred to OnUpdate, with and without
+    // a current-vs-target guard) — both crashed. The engine's options panel
+    // separates two pieces of state: (a) panel.activeControl, the focused
+    // button highlight, and (b) the listbox content shown on screen. They
+    // are not coupled here: on Tab press, the engine refreshes the listbox
+    // to the next tab's items but leaves panel.activeControl on the original
+    // tab (verified via patch-20260501-152013 log: line 102 SetActiveControl
+    // self-dedup confirms engine *called* the function with our target, but
+    // the read at line 111 still showed the old activeControl). Calling
+    // SetActiveControl from our hook fights this two-axis design and
+    // consistently bounces focus into Feedback (the last tab) before
+    // crashing on the next cursor move.
+    //
+    // What we DO:
+    //   1. Announce the chosen tab name via Tolk (immediate audible feedback).
+    //   2. Warp the cursor to the tab via the deferred MoveMouseToPosition
+    //      (cosmetic — keeps the visible cursor in sync for mouse users; on
+    //      this panel the cursor lands inside the overlapping listbox so the
+    //      engine's hit-test doesn't itself activate the tab, but that's OK
+    //      because the engine's own Tab handler already did the listbox
+    //      refresh by the time we get here).
+    //   3. Consume Tab on BOTH press and release. The engine's release-edge
+    //      handler reverts the listbox back to the original tab — without
+    //      consuming release, the listbox snaps back to Gameplay before the
+    //      user can arrow through the tab they actually selected.
+    if (param_1 == kInputTab &&
         g_tabbedPanel != nullptr && g_tabbedPanel == g_currentPanel &&
         g_tabsCount > 0)
     {
-        g_currentTabIdx = (g_currentTabIdx + 1) % g_tabsCount;
-        int panelIdx = g_tabsStart + g_currentTabIdx;
-        auto* list = reinterpret_cast<CExoArrayList*>(
-            reinterpret_cast<unsigned char*>(g_tabbedPanel) + kPanelControlsOffset);
-        void* tabBtn = (list && list->data && panelIdx < list->size)
-                       ? list->data[panelIdx] : nullptr;
-        if (tabBtn) {
-            AnnounceControl(tabBtn);
-            int cx, cy;
-            if (GetControlCenter(tabBtn, cx, cy)) {
-                g_pendingX = cx;
-                g_pendingY = cy;
-                g_pendingTarget = tabBtn;
-                g_pendingCursorMove = true;
-                acclog::Write("Tab cycle: panel=%p tab=%d/%d target=%p center=(%d,%d)",
-                              g_tabbedPanel, g_currentTabIdx, g_tabsCount,
-                              tabBtn, cx, cy);
-            } else {
-                acclog::Write("Tab cycle: panel=%p tab=%d/%d target=%p extent=degenerate",
-                              g_tabbedPanel, g_currentTabIdx, g_tabsCount, tabBtn);
+        if (param_2 != 0) {
+            g_currentTabIdx = (g_currentTabIdx + 1) % g_tabsCount;
+            int panelIdx = g_tabsStart + g_currentTabIdx;
+            auto* list = reinterpret_cast<CExoArrayList*>(
+                reinterpret_cast<unsigned char*>(g_tabbedPanel) + kPanelControlsOffset);
+            void* tabBtn = (list && list->data && panelIdx < list->size)
+                           ? list->data[panelIdx] : nullptr;
+            if (tabBtn) {
+                AnnounceControl(tabBtn);
+                int cx, cy;
+                if (GetControlCenter(tabBtn, cx, cy)) {
+                    g_pendingX = cx;
+                    g_pendingY = cy;
+                    g_pendingTarget = tabBtn;
+                    g_pendingCursorMove = true;
+                    acclog::Write("Tab cycle: panel=%p tab=%d/%d target=%p center=(%d,%d)",
+                                  g_tabbedPanel, g_currentTabIdx, g_tabsCount,
+                                  tabBtn, cx, cy);
+                } else {
+                    acclog::Write("Tab cycle: panel=%p tab=%d/%d target=%p extent=degenerate",
+                                  g_tabbedPanel, g_currentTabIdx, g_tabsCount, tabBtn);
+                }
             }
         }
         consumed = true;
