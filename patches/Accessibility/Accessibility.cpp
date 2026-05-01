@@ -14,6 +14,11 @@
 #include <cstdio>
 #include <cstring>
 
+// GetAsyncKeyState lives in user32.lib, which the upstream create-patch.bat
+// doesn't link by default (it links kernel32 + sqlite3 only). Pragma the
+// dependency in here rather than touching the vendored build script.
+#pragma comment(lib, "user32.lib")
+
 #include "log.h"
 #include "tolk.h"
 
@@ -361,47 +366,6 @@ static const char* ExtractAnnounceableText(void* control,
 // Multi-line "blob" listbox readout. The Options-Gameplay settings list is
 // the canonical case: CSWGuiListBox.controls.size == 1, the single child is a
 // CSWGuiLabel whose CExoString contains all visible setting names joined by
-// '\n'. There is no engine-side per-line cursor (selection_index stays at -1),
-// and click-to-line wouldn't work either — HitCheckMouseLocal returns row 0
-// regardless of which visual line was clicked (see
-// memory/project_listbox_click_flow.md). The accessible compromise: speak the
-// blob as separate utterances — "List, N items" then "1. <line>", "2. ..." —
-// so the screen reader enunciates each setting cleanly with brief pauses
-// between them.
-//
-// Dedup is local-static: we only re-speak the blob when its content changes,
-// otherwise navigating around the panel (which re-fires
-// OnListBoxSetActiveControl repeatedly with the same row) would queue a
-// fresh enumeration on every event.
-static void SpeakBlobIfChanged(const char* text) {
-    static char s_last[2048] = {0};
-    if (strncmp(s_last, text, sizeof(s_last)) == 0) return;
-    strncpy_s(s_last, text, _TRUNCATE);
-
-    int lineCount = 1;
-    for (const char* p = text; *p; ++p) {
-        if (*p == '\n') ++lineCount;
-    }
-
-    char intro[64];
-    snprintf(intro, sizeof(intro), "List, %d items", lineCount);
-    tolk::Speak(intro, /*interrupt=*/false);
-
-    int idx = 1;
-    const char* lineStart = text;
-    for (const char* p = text;; ++p) {
-        if (*p == '\n' || *p == '\0') {
-            int n = (int)(p - lineStart);
-            char line[300];
-            snprintf(line, sizeof(line), "%d. %.*s", idx, n, lineStart);
-            tolk::Speak(line, /*interrupt=*/false);
-            if (*p == '\0') break;
-            ++idx;
-            lineStart = p + 1;
-        }
-    }
-}
-
 // Speak `text` only if it differs from what we last spoke on this channel.
 // Dedup is the only filter: in the first session we used interrupt=true and
 // NVDA went fully silent in chargen (every utterance got cut off mid-word
@@ -530,20 +494,35 @@ static int   g_pendingX = 0;
 static int   g_pendingY = 0;
 static void* g_pendingTarget = nullptr;   // for self-dedup in OnSetActiveControl
 
-// Tracks the last panel for which we ran the panel-open enumeration (Decision
-// 4). Re-entering the same panel pointer must not re-announce the layout. A
-// distinct static from the existing s_lastPanel inside OnSetActiveControl —
-// that one drives diagnostic WalkChildren logging.
-static void* g_lastEnumeratedPanel = nullptr;
+// Tracks the last panel for which we spoke the title (AnnouncePanelTitle).
+// Re-entering the same panel pointer must not re-announce. A distinct static
+// from the s_lastPanel inside OnSetActiveControl — that one drives the
+// diagnostic WalkChildren logging.
+static void* g_lastTitledPanel = nullptr;
 
 // Tabbed-panel navigation state (Options-menu style: a CSWGuiListBox at
 // controls[0] holds the current tab's content, button cluster after [0] = tabs).
 //
-// Tab key cycles g_currentTabIdx through the contiguous button cluster and
-// warps the cursor to that tab — the engine's hover→active path then activates
-// the new tab and refreshes the listbox. The blob announcement is suppressed
-// because the user navigates the listbox content with arrow keys instead, via
-// virtual line indices we parse out of the listbox row's multi-line label.
+// The two orders that matter for tabs:
+//   1. panel.controls index order — how the engine STORES the buttons
+//      (tabsStart..tabsStart+tabsCount-1).
+//   2. Visual screen order — top-to-bottom by y-center.
+// In the Options panel these orders DIFFER (Feedback is panel.controls[5] but
+// visually sits between Gameplay and Auto-Pause). The engine's tab-cycling
+// behavior is driven by visual order, so we sort by y at arming time and
+// drive the cursor warp from g_visualTabs[].
+//
+// Empirical engine behavior, derived from patch-20260501-152849 log:
+// when we MoveMouseToPosition to visual tab P's center, the engine activates
+// visual tab P-1 (the tab visually above P). No wrap at 0 — warping to the
+// topmost tab (visual 0) yields no activation. Consequence: to activate
+// visual idx N, warp the cursor to visual idx N+1 mod count.
+//
+// Known limitation: the bottom tab (visual idx count-1) is unreachable
+// because warping past it lands on visual 0, which doesn't activate anything.
+// In the Options panel that means Sound stays unreachable via Tab. Reaching
+// it needs a different mechanism (number-key shortcut, or a safe direct
+// activation path) — separate task.
 //
 // Detection deliberately keys off "controls[0] is a non-empty CSWGuiListBox"
 // rather than "panel has buttons" — the main menu also has buttons but no
@@ -554,18 +533,22 @@ static void* g_lastEnumeratedPanel = nullptr;
 // Tab arrives as logical code 0xCE (206), confirmed via patch-20260430-202843
 // log: HandleInputEvent fired with raw param_1 = 206 on every Tab press, never
 // translated to an InputIndices value (the engine's translator passes 0xCE
-// through unchanged). The value sits outside the InputIndices enum range so
-// it logs as `key=?(206)` until we add a name-table entry for it.
-//
-// Shift+Tab not yet investigated — if it arrives with the same code or as
-// some 0xCF/0xD0-range neighbour, we'd add reverse cycling here.
+// through unchanged).
 constexpr int       kInputTab       = 0xCE;
 constexpr uintptr_t kVtableListBox  = 0x0073E840;
 
-static void* g_tabbedPanel       = nullptr;  // panel currently in tabbed mode
-static int   g_tabsStart         = -1;       // first tab-button index in panel.controls
-static int   g_tabsCount         = 0;        // number of contiguous tab buttons
-static int   g_currentTabIdx     = -1;       // 0..g_tabsCount-1
+constexpr int kMaxVisualTabs = 16;
+struct VisualTab {
+    void* control;
+    int   yCenter;
+};
+
+static void*      g_tabbedPanel       = nullptr;  // panel currently in tabbed mode
+static int        g_tabsStart         = -1;       // first tab-button index in panel.controls
+static int        g_tabsCount         = 0;        // number of contiguous tab buttons
+static int        g_currentTabIdx     = -1;       // 0..g_tabsCount-1 (panel.controls order)
+static VisualTab  g_visualTabs[kMaxVisualTabs];   // sorted by yCenter
+static int        g_visualTabCount    = 0;
 
 // Virtual-line cursor over the listbox's multi-line blob. The Options listbox
 // has controls.size == 1 with all settings concatenated by '\n' into a single
@@ -679,22 +662,36 @@ static void AnnounceControl(void* control) {
     tolk::Speak(placeholder, /*interrupt=*/false);
 }
 
-// First focus into a panel queues speech for every child in panel.controls
-// order — Decision 4. The user hears the full layout once on entry, then per-
-// control announcements for subsequent navigation. The OnSetActiveControl
-// announcement that follows enumerate will repeat the focused control, which
-// is the desired confirmation ("layout: A, B, C, D. Currently on C.").
-static void EnumerateAndSpeakPanel(void* panel) {
+// First focus into a panel speaks the panel's "title" — the first label-like
+// child we can find — so the user knows which menu they're in. Subsequent
+// per-control announcements still fire from OnSetActiveControl as the user
+// navigates, so this is just the entry banner, not a layout dump.
+//
+// Heuristic: walk panel.controls in order, return the text of the first
+// CSWGuiLabel / CSWGuiLabelHilight child with announceable text. Buttons and
+// other interactive controls are skipped — they get announced through the
+// regular focus path. If no label exists we stay silent and rely on the
+// SetActiveControl announcement of the focused child to orient the user.
+static void AnnouncePanelTitle(void* panel) {
     if (!panel) return;
     auto* list = reinterpret_cast<CExoArrayList*>(
         reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
     if (!list->data || list->size <= 0) return;
     int n = list->size > 256 ? 256 : list->size;
-    acclog::Write("Panel enumerate parent=%p children=%d", panel, n);
     for (int i = 0; i < n; ++i) {
         void* child = list->data[i];
         if (!child) continue;
-        AnnounceControl(child);
+        if (CallDowncast(child, kVtableAsLabel) == nullptr &&
+            CallDowncast(child, kVtableAsLabelHilight) == nullptr) {
+            continue;
+        }
+        char text[256];
+        if (ExtractAnnounceableText(child, text, sizeof(text))) {
+            acclog::Write("Panel title parent=%p label=%p text=\"%s\"",
+                          panel, child, text);
+            tolk::Speak(text, /*interrupt=*/false);
+            return;
+        }
     }
 }
 
@@ -741,6 +738,46 @@ static bool DetectTabsCluster(void* panel, int& outStart, int& outCount) {
     return true;
 }
 
+// Build g_visualTabs[] sorted top-to-bottom by y-center. Called once at
+// arming time. Buttons with degenerate extents (no center) are skipped.
+static void BuildVisualTabOrder(void* panel, int tabsStart, int tabsCount) {
+    g_visualTabCount = 0;
+    auto* list = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+    if (!list->data || list->size <= 0) return;
+    int end = tabsStart + tabsCount;
+    int cap = list->size > 256 ? 256 : list->size;
+    if (end > cap) end = cap;
+    for (int i = tabsStart; i < end && g_visualTabCount < kMaxVisualTabs; ++i) {
+        void* btn = list->data[i];
+        if (!btn) continue;
+        int cx, cy;
+        if (!GetControlCenter(btn, cx, cy)) continue;
+        g_visualTabs[g_visualTabCount].control = btn;
+        g_visualTabs[g_visualTabCount].yCenter = cy;
+        ++g_visualTabCount;
+    }
+    // Insertion sort by yCenter (small N, simple is fine).
+    for (int i = 1; i < g_visualTabCount; ++i) {
+        VisualTab v = g_visualTabs[i];
+        int j = i;
+        while (j > 0 && g_visualTabs[j - 1].yCenter > v.yCenter) {
+            g_visualTabs[j] = g_visualTabs[j - 1];
+            --j;
+        }
+        g_visualTabs[j] = v;
+    }
+}
+
+// Linear search visual order for `control`. Returns -1 if not a tab.
+static int FindVisualTabIdx(void* control) {
+    if (!control) return -1;
+    for (int i = 0; i < g_visualTabCount; ++i) {
+        if (g_visualTabs[i].control == control) return i;
+    }
+    return -1;
+}
+
 // Reset all tabbed-mode state. Called when the focused panel changes to a
 // different one — the new panel may or may not be tabbed; OnListBoxSetActive-
 // Control re-runs detection lazily on its first listbox event.
@@ -749,6 +786,7 @@ static void ResetTabbedState() {
     g_tabsStart        = -1;
     g_tabsCount        = 0;
     g_currentTabIdx    = -1;
+    g_visualTabCount   = 0;
     g_virtualLineCount = 0;
     g_virtualLineIdx   = -1;
 }
@@ -881,12 +919,12 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
         WalkChildren("Panel", panel, kPanelControlsOffset);
     }
 
-    // Decision 4: first focus into a new panel queues full-layout enumeration.
-    // Distinct static from s_lastPanel above so reordering the diagnostic walk
-    // doesn't break enumeration semantics.
-    if (panel && panel != g_lastEnumeratedPanel) {
-        g_lastEnumeratedPanel = panel;
-        EnumerateAndSpeakPanel(panel);
+    // First focus into a new panel: speak its title (label child) once.
+    // The focused control's announcement below still fires, so the user
+    // hears "<panel title>, <focused control>" on entry.
+    if (panel && panel != g_lastTitledPanel) {
+        g_lastTitledPanel = panel;
+        AnnouncePanelTitle(panel);
     }
 
     if (!newControl) {
@@ -1018,28 +1056,47 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
         if (g_currentPanel && g_tabbedPanel != g_currentPanel) {
             int tabsStart = -1, tabsCount = 0;
             if (DetectTabsCluster(g_currentPanel, tabsStart, tabsCount)) {
-                g_tabbedPanel    = g_currentPanel;
-                g_tabsStart      = tabsStart;
-                g_tabsCount      = tabsCount;
+                g_tabbedPanel = g_currentPanel;
+                g_tabsStart   = tabsStart;
+                g_tabsCount   = tabsCount;
                 void* active = ReadPanelActiveControl(g_currentPanel);
                 int idx = FindControlIndex(g_currentPanel, active);
-                g_currentTabIdx  = (idx >= tabsStart &&
-                                    idx <  tabsStart + tabsCount)
-                                   ? (idx - tabsStart) : 0;
+                g_currentTabIdx = (idx >= tabsStart &&
+                                   idx <  tabsStart + tabsCount)
+                                  ? (idx - tabsStart) : 0;
+                BuildVisualTabOrder(g_currentPanel, tabsStart, tabsCount);
                 acclog::Write("Tab mode armed: panel=%p tabsStart=%d tabsCount=%d "
-                              "currentTab=%d",
+                              "currentTab=%d visualTabs=%d",
                               g_currentPanel, tabsStart, tabsCount,
-                              g_currentTabIdx);
+                              g_currentTabIdx, g_visualTabCount);
+                for (int i = 0; i < g_visualTabCount; ++i) {
+                    char text[128];
+                    const char* src = ExtractAnnounceableText(
+                        g_visualTabs[i].control, text, sizeof(text));
+                    acclog::Write("  visual[%d] %p y=%d text=\"%s\"",
+                                  i, g_visualTabs[i].control,
+                                  g_visualTabs[i].yCenter,
+                                  src ? text : "(none)");
+                }
             }
         }
 
         if (strchr(text, '\n')) {
+            // Multi-line listbox blob (Options-style: all settings concatenated
+            // by '\n' into a single CSWGuiLabel row). In tabbed mode we parse
+            // the lines into a virtual cursor and speak them one-at-a-time on
+            // arrow keys. In non-tabbed mode we silence them too — bulk
+            // enumeration is too noisy. If a non-tabbed multi-line listbox
+            // ever needs per-line nav, that's a future feature.
             if (g_tabbedPanel == g_currentPanel) {
                 ParseVirtualLines(text);
                 acclog::Write("ListBox blob silenced (tabbed mode); %d virtual lines parsed",
                               g_virtualLineCount);
             } else {
-                SpeakBlobIfChanged(text);
+                int lines = 1;
+                for (const char* p = text; *p; ++p) if (*p == '\n') ++lines;
+                acclog::Write("ListBox blob silenced (non-tabbed); lines=%d",
+                              lines);
             }
         } else {
             SpeakIfChanged(/*channel=*/1, text);
@@ -1125,57 +1182,86 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
 
     // Tab key in a tabbed panel.
     //
-    // What we DON'T do: explicitly call CSWGuiPanel::SetActiveControl on the
-    // chosen tab. We tried that twice (deferred to OnUpdate, with and without
-    // a current-vs-target guard) — both crashed. The engine's options panel
-    // separates two pieces of state: (a) panel.activeControl, the focused
-    // button highlight, and (b) the listbox content shown on screen. They
-    // are not coupled here: on Tab press, the engine refreshes the listbox
-    // to the next tab's items but leaves panel.activeControl on the original
-    // tab (verified via patch-20260501-152013 log: line 102 SetActiveControl
-    // self-dedup confirms engine *called* the function with our target, but
-    // the read at line 111 still showed the old activeControl). Calling
-    // SetActiveControl from our hook fights this two-axis design and
-    // consistently bounces focus into Feedback (the last tab) before
-    // crashing on the next cursor move.
+    // Three pieces fit together:
     //
-    // What we DO:
-    //   1. Announce the chosen tab name via Tolk (immediate audible feedback).
-    //   2. Warp the cursor to the tab via the deferred MoveMouseToPosition
-    //      (cosmetic — keeps the visible cursor in sync for mouse users; on
-    //      this panel the cursor lands inside the overlapping listbox so the
-    //      engine's hit-test doesn't itself activate the tab, but that's OK
-    //      because the engine's own Tab handler already did the listbox
-    //      refresh by the time we get here).
-    //   3. Consume Tab on BOTH press and release. The engine's release-edge
-    //      handler reverts the listbox back to the original tab — without
-    //      consuming release, the listbox snaps back to Gameplay before the
-    //      user can arrow through the tab they actually selected.
+    //   1. Cycle direction. We track g_currentTabIdx in panel.controls
+    //      index order (same as V1). Forward Tab increments, Shift+Tab
+    //      decrements. Modifier state comes from GetAsyncKeyState because
+    //      KOTOR's manager-level HandleInputEvent doesn't pass it with
+    //      the key code.
+    //
+    //   2. Off-by-one fix. The engine activates the tab visually ABOVE the
+    //      cursor (verified via patch-20260501-152849). V1 warped to the
+    //      announced tab itself, so the engine landed one tab too high in
+    //      visual order. We instead warp to visual_next(tabBtn) — the tab
+    //      visually below the announced one — so the engine's
+    //      "activate visually-prev" lands on the announced tab.
+    //
+    //   3. Revert avoidance. Comparing V1 (no revert on Tab release) vs.
+    //      the broken intermediate version (revert): the engine's
+    //      release-edge revert fires precisely when our OnSetActiveControl
+    //      hook self-dedups (i.e. when newControl == g_pendingTarget). V1
+    //      never self-deduped because g_pendingTarget = tabBtn but the
+    //      engine activated visual_prev(tabBtn) — a mismatch. To preserve
+    //      that mismatch property even with the off-by-one fix, we set
+    //      g_pendingTarget = warpControl (= visual_next of tabBtn). The
+    //      engine activates tabBtn, which is NOT g_pendingTarget, so the
+    //      hook runs the full body and the engine doesn't revert. The
+    //      hook's SpeakIfChanged then announces tabBtn — the engine's
+    //      actual choice — which by construction matches the listbox.
+    //
+    // Sound (the bottom-most visual tab) stays unreachable because
+    // warping past it wraps to visual 0 (Gameplay), and "engine activates
+    // visual_prev(visual 0)" is a no-change. Same limitation as V1; needs a
+    // different mechanism (number-key shortcut) to reach.
     if (param_1 == kInputTab &&
         g_tabbedPanel != nullptr && g_tabbedPanel == g_currentPanel &&
         g_tabsCount > 0)
     {
         if (param_2 != 0) {
-            g_currentTabIdx = (g_currentTabIdx + 1) % g_tabsCount;
+            bool isShift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+            if (isShift) {
+                g_currentTabIdx = (g_currentTabIdx + g_tabsCount - 1) % g_tabsCount;
+            } else {
+                g_currentTabIdx = (g_currentTabIdx + 1) % g_tabsCount;
+            }
             int panelIdx = g_tabsStart + g_currentTabIdx;
             auto* list = reinterpret_cast<CExoArrayList*>(
                 reinterpret_cast<unsigned char*>(g_tabbedPanel) + kPanelControlsOffset);
             void* tabBtn = (list && list->data && panelIdx < list->size)
                            ? list->data[panelIdx] : nullptr;
             if (tabBtn) {
-                AnnounceControl(tabBtn);
+                int targetVisual = FindVisualTabIdx(tabBtn);
+                void* warpControl = nullptr;
+                if (targetVisual >= 0 && g_visualTabCount > 0) {
+                    int warpVisual = (targetVisual + 1) % g_visualTabCount;
+                    warpControl = g_visualTabs[warpVisual].control;
+                } else {
+                    // No visual mapping (tabBtn outside our cluster) — fall
+                    // back to warping to tabBtn itself. The user gets V1's
+                    // off-by-one behavior here, but at least Tab still moves.
+                    warpControl = tabBtn;
+                }
                 int cx, cy;
-                if (GetControlCenter(tabBtn, cx, cy)) {
+                if (warpControl && GetControlCenter(warpControl, cx, cy)) {
                     g_pendingX = cx;
                     g_pendingY = cy;
-                    g_pendingTarget = tabBtn;
+                    // g_pendingTarget = warpControl (NOT tabBtn). Keeps
+                    // newControl != g_pendingTarget when the engine fires
+                    // SetActiveControl on tabBtn, which prevents the
+                    // engine's release-edge revert (see commentary above).
+                    g_pendingTarget = warpControl;
                     g_pendingCursorMove = true;
-                    acclog::Write("Tab cycle: panel=%p tab=%d/%d target=%p center=(%d,%d)",
-                                  g_tabbedPanel, g_currentTabIdx, g_tabsCount,
-                                  tabBtn, cx, cy);
+                    acclog::Write("Tab cycle %s: panelIdx=%d/%d target=%p "
+                                  "warp=%p (%d,%d)",
+                                  isShift ? "BACK" : "FWD",
+                                  g_currentTabIdx, g_tabsCount,
+                                  tabBtn, warpControl, cx, cy);
                 } else {
-                    acclog::Write("Tab cycle: panel=%p tab=%d/%d target=%p extent=degenerate",
-                                  g_tabbedPanel, g_currentTabIdx, g_tabsCount, tabBtn);
+                    acclog::Write("Tab cycle %s: panelIdx=%d/%d target=%p "
+                                  "warp extent=degenerate",
+                                  isShift ? "BACK" : "FWD",
+                                  g_currentTabIdx, g_tabsCount, tabBtn);
                 }
             }
         }
