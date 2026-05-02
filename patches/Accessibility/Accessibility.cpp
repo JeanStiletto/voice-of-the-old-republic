@@ -14,11 +14,6 @@
 #include <cstdio>
 #include <cstring>
 
-// GetAsyncKeyState lives in user32.lib, which the upstream create-patch.bat
-// doesn't link by default (it links kernel32 + sqlite3 only). Pragma the
-// dependency in here rather than touching the vendored build script.
-#pragma comment(lib, "user32.lib")
-
 #include "log.h"
 #include "tolk.h"
 
@@ -500,68 +495,24 @@ static void* g_pendingTarget = nullptr;   // for self-dedup in OnSetActiveContro
 // diagnostic WalkChildren logging.
 static void* g_lastTitledPanel = nullptr;
 
-// Tabbed-panel navigation state (Options-menu style: a CSWGuiListBox at
+// Tabbed-panel detection state (Options-menu style: a CSWGuiListBox at
 // controls[0] holds the current tab's content, button cluster after [0] = tabs).
-//
-// The two orders that matter for tabs:
-//   1. panel.controls index order — how the engine STORES the buttons
-//      (tabsStart..tabsStart+tabsCount-1).
-//   2. Visual screen order — top-to-bottom by y-center.
-// In the Options panel these orders DIFFER (Feedback is panel.controls[5] but
-// visually sits between Gameplay and Auto-Pause). The engine's tab-cycling
-// behavior is driven by visual order, so we sort by y at arming time and
-// drive the cursor warp from g_visualTabs[].
-//
-// Empirical engine behavior, derived from patch-20260501-152849 log:
-// when we MoveMouseToPosition to visual tab P's center, the engine activates
-// visual tab P-1 (the tab visually above P). No wrap at 0 — warping to the
-// topmost tab (visual 0) yields no activation. Consequence: to activate
-// visual idx N, warp the cursor to visual idx N+1 mod count.
-//
-// Known limitation: the bottom tab (visual idx count-1) is unreachable
-// because warping past it lands on visual 0, which doesn't activate anything.
-// In the Options panel that means Sound stays unreachable via Tab. Reaching
-// it needs a different mechanism (number-key shortcut, or a safe direct
-// activation path) — separate task.
+// Detection runs in OnListBoxSetActiveControl and identifies the layout so the
+// per-line virtual-cursor mode can engage on arrow keys. Tab cycling itself is
+// no longer an explicit handler — the click-sim primitive (Phase 3) replaces
+// the SetActiveControl-based path that crashed at mgr+5 (see
+// docs/tab-crash-investigation.md).
 //
 // Detection deliberately keys off "controls[0] is a non-empty CSWGuiListBox"
 // rather than "panel has buttons" — the main menu also has buttons but no
 // active listbox, and arrow-keys must continue to drive chain navigation
 // there. kVtableListBox is the observed Steam-1.0.3 vtable for CSWGuiListBox;
 // future builds will need updating if Lane's SARIF reports a different value.
-//
-// Tab arrives as logical code 0xCE (206), confirmed via patch-20260430-202843
-// log: HandleInputEvent fired with raw param_1 = 206 on every Tab press, never
-// translated to an InputIndices value (the engine's translator passes 0xCE
-// through unchanged).
-constexpr int       kInputTab       = 0xCE;
 constexpr uintptr_t kVtableListBox  = 0x0073E840;
-
-constexpr int kMaxVisualTabs = 16;
-struct VisualTab {
-    void* control;
-    int   xCenter;
-    int   yCenter;
-};
 
 static void*      g_tabbedPanel       = nullptr;  // panel currently in tabbed mode
 static int        g_tabsStart         = -1;       // first tab-button index in panel.controls
 static int        g_tabsCount         = 0;        // number of contiguous tab buttons
-static VisualTab  g_visualTabs[kMaxVisualTabs];   // sorted by yCenter (top→bottom)
-static int        g_visualTabCount    = 0;
-// GuiManager pointer captured when Tab mode was armed. Used to guard the
-// Tab branch in OnHandleInputEvent against events arriving on a different
-// `thisPtr` than the one driving real user input.
-static void*      g_armedManager      = nullptr;
-
-// Pending Tab activation. Set by the Tab branch in OnHandleInputEvent;
-// applied by OnUpdate on the next per-frame tick. Same defer pattern arrow
-// keys use for their cursor moves: the input dispatcher is still on the
-// stack when our handler runs, so synchronous engine calls recurse through
-// hooks at fragile times. OnUpdate runs in a clean per-frame context after
-// dispatch — the engine can do its post-activation cascade undisturbed.
-static void*      g_pendingTabPanel   = nullptr;
-static void*      g_pendingTabTarget  = nullptr;
 
 // Virtual-line cursor over the listbox's multi-line blob. The Options listbox
 // has controls.size == 1 with all settings concatenated by '\n' into a single
@@ -751,48 +702,6 @@ static bool DetectTabsCluster(void* panel, int& outStart, int& outCount) {
     return true;
 }
 
-// Build g_visualTabs[] sorted top-to-bottom by y-center. Called once at
-// arming time. Buttons with degenerate extents (no center) are skipped.
-static void BuildVisualTabOrder(void* panel, int tabsStart, int tabsCount) {
-    g_visualTabCount = 0;
-    auto* list = reinterpret_cast<CExoArrayList*>(
-        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
-    if (!list->data || list->size <= 0) return;
-    int end = tabsStart + tabsCount;
-    int cap = list->size > 256 ? 256 : list->size;
-    if (end > cap) end = cap;
-    for (int i = tabsStart; i < end && g_visualTabCount < kMaxVisualTabs; ++i) {
-        void* btn = list->data[i];
-        if (!btn) continue;
-        int cx, cy;
-        if (!GetControlCenter(btn, cx, cy)) continue;
-        g_visualTabs[g_visualTabCount].control = btn;
-        g_visualTabs[g_visualTabCount].xCenter = cx;
-        g_visualTabs[g_visualTabCount].yCenter = cy;
-        ++g_visualTabCount;
-    }
-    // Insertion sort by yCenter (small N, simple is fine).
-    for (int i = 1; i < g_visualTabCount; ++i) {
-        VisualTab v = g_visualTabs[i];
-        int j = i;
-        while (j > 0 && g_visualTabs[j - 1].yCenter > v.yCenter) {
-            g_visualTabs[j] = g_visualTabs[j - 1];
-            --j;
-        }
-        g_visualTabs[j] = v;
-    }
-}
-
-// Linear search visual order for `control`. Returns -1 if not a tab.
-static int FindVisualTabIdx(void* control) {
-    if (!control) return -1;
-    for (int i = 0; i < g_visualTabCount; ++i) {
-        if (g_visualTabs[i].control == control) return i;
-    }
-    return -1;
-}
-
-
 // Reset all tabbed-mode state. Called when the focused panel changes to a
 // different one — the new panel may or may not be tabbed; OnListBoxSetActive-
 // Control re-runs detection lazily on its first listbox event.
@@ -800,12 +709,8 @@ static void ResetTabbedState() {
     g_tabbedPanel      = nullptr;
     g_tabsStart        = -1;
     g_tabsCount        = 0;
-    g_visualTabCount   = 0;
     g_virtualLineCount = 0;
     g_virtualLineIdx   = -1;
-    g_armedManager     = nullptr;
-    g_pendingTabPanel  = nullptr;
-    g_pendingTabTarget = nullptr;
 }
 
 // Split `text` on '\n' into g_virtualLines[]. Truncates oversize lines to fit;
@@ -1073,24 +978,11 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
         if (g_currentPanel && g_tabbedPanel != g_currentPanel) {
             int tabsStart = -1, tabsCount = 0;
             if (DetectTabsCluster(g_currentPanel, tabsStart, tabsCount)) {
-                g_tabbedPanel  = g_currentPanel;
-                g_tabsStart    = tabsStart;
-                g_tabsCount    = tabsCount;
-                g_armedManager = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-                BuildVisualTabOrder(g_currentPanel, tabsStart, tabsCount);
-                acclog::Write("Tab mode armed: panel=%p mgr=%p tabsStart=%d tabsCount=%d "
-                              "visualTabs=%d",
-                              g_currentPanel, g_armedManager, tabsStart, tabsCount,
-                              g_visualTabCount);
-                for (int i = 0; i < g_visualTabCount; ++i) {
-                    char btext[128];
-                    const char* src = ExtractAnnounceableText(
-                        g_visualTabs[i].control, btext, sizeof(btext));
-                    acclog::Write("  visual[%d] %p y=%d text=\"%s\"",
-                                  i, g_visualTabs[i].control,
-                                  g_visualTabs[i].yCenter,
-                                  src ? btext : "(none)");
-                }
+                g_tabbedPanel = g_currentPanel;
+                g_tabsStart   = tabsStart;
+                g_tabsCount   = tabsCount;
+                acclog::Write("Tabbed panel detected: panel=%p tabsStart=%d tabsCount=%d",
+                              g_currentPanel, tabsStart, tabsCount);
             }
         }
 
@@ -1193,101 +1085,14 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
 
     bool consumed = false;
 
-    // Tab key in a tabbed panel.
-    //
-    // Plan M: explicitly commit the tab change via CSWGuiPanel::
-    // SetActiveControl, the same pattern Enter uses for chain nav.
-    // No cursor warp — that approach kept getting reverted by the
-    // engine's release-edge handler (which apparently treats hover-
-    // induced focus changes as transient and undoes them on key up).
-    //
-    // We cycle in VISUAL order, top-to-bottom on screen. Each press
-    // moves Δ=1 in visual idx. Read panel.activeControl each press to
-    // anchor the cycle in reality so we don't drift if the engine
-    // does anything unexpected.
-    //
-    // Sound (the bottom-most visual tab) becomes reachable because we
-    // call SetActiveControl directly with the tab pointer — there's no
-    // cursor-position hit-test to defeat us.
-    //
-    // Shift+Tab is detected via GetAsyncKeyState(VK_SHIFT) — KOTOR's
-    // manager-level HandleInputEvent doesn't pass modifier state with
-    // the key code.
-    //
-    // Defer setActive to OnUpdate (next per-frame tick) — same pattern
-    // arrows use for cursor moves. Record target here, return consumed.
-    // The engine's post-activation cascade then runs in a clean context
-    // (not on the input-dispatcher's stack), avoiding whatever fragile
-    // interaction caused crashes when we called setActive synchronously
-    // from inside this handler.
-    //
-    // Announcement: OnSetActiveControl fires when OnUpdate's setActive
-    // commits the change, and SpeakIfChanged speaks the result. By
-    // construction that text matches the new listbox content.
-    //
-    // Manager-pointer guard (`thisPtr == g_armedManager`): defensive,
-    // skips events on a `this` pointer that wasn't the one driving real
-    // user input when Tab mode was armed.
-    if (param_1 == kInputTab &&
-        g_tabbedPanel != nullptr && g_tabbedPanel == g_currentPanel &&
-        g_visualTabCount > 0 &&
-        thisPtr == g_armedManager)
-    {
-        if (param_2 == 128 && g_pendingTabTarget == nullptr) {
-            bool isShift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
-            int n = g_visualTabCount;
-
-            void* active = ReadPanelActiveControl(g_currentPanel);
-            int currentVisual = FindVisualTabIdx(active);
-            if (currentVisual < 0) currentVisual = 0;
-
-            int targetVisual = isShift
-                ? (currentVisual + n - 1) % n
-                : (currentVisual + 1) % n;
-
-            void* targetCtl = g_visualTabs[targetVisual].control;
-            if (targetCtl && targetCtl != active) {
-                acclog::Write("Tab cycle %s queued: current=%d target=%d "
-                              "ctl=%p (was %p) warp=(%d,%d)",
-                              isShift ? "BACK" : "FWD",
-                              currentVisual, targetVisual, targetCtl, active,
-                              g_visualTabs[targetVisual].xCenter,
-                              g_visualTabs[targetVisual].yCenter);
-                g_pendingTabPanel  = g_currentPanel;
-                g_pendingTabTarget = targetCtl;
-                // Also queue a cursor warp to the new tab's center. The
-                // engine's per-frame mouseover reconciles activeControl
-                // against cursor position; without the warp it finds them
-                // inconsistent and crashes after the cascade. The warp
-                // lands on the listbox (visually overlaps tabs) which may
-                // briefly fire SetActiveControl(listbox) inside Move-
-                // MouseToPosition's hit-test — OnUpdate runs the cursor
-                // warp BEFORE the deferred setActive so the latter wins
-                // and activeControl ends as the tab.
-                //
-                // g_pendingTarget left null on purpose: we WANT the
-                // tab announcement from OnSetActiveControl, no self-dedup.
-                g_pendingX          = g_visualTabs[targetVisual].xCenter;
-                g_pendingY          = g_visualTabs[targetVisual].yCenter;
-                g_pendingCursorMove = true;
-            } else {
-                acclog::Write("Tab cycle %s: current=%d target=%d ctl=%p "
-                              "(no change — already active)",
-                              isShift ? "BACK" : "FWD",
-                              currentVisual, targetVisual, targetCtl);
-            }
-        }
-        consumed = true;
-    }
     // Arrow keys in a tabbed panel: walk the parsed virtual lines. No engine
-    // activation — the multi-line listbox blob has no per-line click target
-    // (controls.size == 1), so this is a read-only enumeration for now.
-    // Future: synthesize per-line activation when we figure out the engine
-    // surface for clicking individual settings.
-    else if (param_2 != 0 &&
-             (param_1 == kInputNavUp || param_1 == kInputNavDown) &&
-             g_tabbedPanel != nullptr && g_tabbedPanel == g_currentPanel &&
-             g_virtualLineCount > 0)
+    // activation yet — the multi-line listbox blob has no per-line click
+    // target via SetActiveControl (controls.size == 1). Per-line activation
+    // is Phase 3 (click-sim primitive — see docs/menu-nav-design.md).
+    if (param_2 != 0 &&
+        (param_1 == kInputNavUp || param_1 == kInputNavDown) &&
+        g_tabbedPanel != nullptr && g_tabbedPanel == g_currentPanel &&
+        g_virtualLineCount > 0)
     {
         int delta = (param_1 == kInputNavDown) ? +1 : -1;
         if (g_virtualLineIdx < 0) {
@@ -1373,16 +1178,6 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
 // hook). We pass EBP as the parameter for clarity even though we also have
 // the global at 0x7A39F4 — both resolve to the same singleton.
 extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
-    // Order matters when BOTH a pending cursor warp and a pending tab
-    // activation are queued (Tab key path queues both): cursor warp
-    // FIRST, then setActive. The warp's internal hit-test may set
-    // activeControl as a side effect (lands on the listbox, which
-    // overlaps the tabs visually); the deferred setActive then
-    // overrides to our intended tab. End state: cursor near the new
-    // tab + activeControl = the new tab, consistent for the engine's
-    // next-frame mouseover reconciliation.
-    bool tabPending = (g_pendingTabTarget != nullptr && g_pendingTabPanel != nullptr);
-
     if (g_pendingCursorMove) {
         g_pendingCursorMove = false;
         void* gm = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
@@ -1396,26 +1191,6 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
                           g_pendingX, g_pendingY, g_pendingTarget);
         }
     }
-
-    if (tabPending) {
-        void* panel  = g_pendingTabPanel;
-        void* target = g_pendingTabTarget;
-        g_pendingTabPanel  = nullptr;
-        g_pendingTabTarget = nullptr;
-        auto setActive = reinterpret_cast<PFN_PanelSetActiveControl>(
-            kAddrPanelSetActiveControl);
-        acclog::Write("Update: deferred setActive panel=%p target=%p",
-                      panel, target);
-        setActive(panel, target);
-    }
-    // NOTE: the arrow-keys path's prior implementation also tried "cursor
-    // warp + explicit setActive in OnUpdate" and reportedly crashed via
-    // state oscillation when targets shared hit-test space. The Tab path
-    // here is doing the same combination intentionally — the bet is that
-    // the per-frame mouseover crash we hit without the warp was caused
-    // by cursor/activeControl mismatch, and the warp closes that gap. If
-    // this re-introduces oscillation instead, we'll see SetActiveControl
-    // events bouncing between tab and listbox in the log.
 }
 
 // Read a snapshot of the listbox's cursor / flags / size into a string. Shared
@@ -1486,19 +1261,6 @@ extern "C" void __cdecl OnListBoxSetSelectedControl(void* listBox) {
     char state[160];
     DumpListBoxState(listBox, state, sizeof(state));
     acclog::Write("ListBox::SetSelectedControl #%d %s (pre-update)", n, state);
-}
-
-// CSWGuiManager::PlayGuiSound — diagnostic only. Logs every call so we can
-// spot a tight loop / per-frame oscillation that hammers PlayGuiSound (the
-// only CALL inside CSWGuiPanel::SetActiveControl). The user observed audio
-// stutter ~0.5s before the post-Tab crash; a burst of calls here would
-// confirm the engine is in a stuck state we don't see at our SetActiveControl
-// hook (e.g., direct activeControl mutation that bypasses our hook).
-extern "C" void __cdecl OnPlayGuiSound(void* thisPtr) {
-    EnsureTolkInitialized();
-    static int n = 0;
-    ++n;
-    acclog::Write("PlayGuiSound #%d this=%p", n, thisPtr);
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD reason, LPVOID) {

@@ -6,4 +6,3 @@ EXPORTS
     OnSetActiveControl
     OnListBoxSetActiveControl
     OnUpdate
-    OnPlayGuiSound
