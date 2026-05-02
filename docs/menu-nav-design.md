@@ -14,6 +14,19 @@ which the SARIF investigation in session 5 surfaced. It does cursor update +
 hit-test + active-control update in one shot, so the menu-nav layer is mostly
 "compute target coords, queue a deferred call to that function."
 
+**Caveat on tabbed panels:** `MoveMouseToPosition`'s internal hit-test resolves
+to the button at `cursor.y - tabSpacing` on Options-style panels — a consistent
+45-px shift on Steam 1.0.3, exactly matching the tab pitch. Cause unverified
+(best guess: cursor hotspot coord-system mismatch — programmatic moves don't
+get the OS-cursor-hotspot translation that real WM_MOUSEMOVE events get). Real
+mouse usage is unaffected. We compensate by adding `g_tabClickOffsetY` (computed
+per-panel from chain tab spacing) to y when warping to a tab button, both for
+arrow nav and Enter. Without the offset every nav step + click lands one tab
+above the intended target. See `memory/project_movemouse_hittest_shift.md` and
+`patch-20260502-122734.log` line 91 for the disambiguating diagnostic
+(`before=NULL after=Gameplay` proves the shift is in MoveMouseToPosition's
+hit-test, not stale state).
+
 ## Key engine surfaces (from SARIF)
 
 ### Globals
@@ -251,109 +264,109 @@ then enable consumption on our input hook, then build Phase 1+2 on top.
 
 ## Roadmap
 
-### Phase 1+2 — Speak + cursor sync (NEXT)
+### Phase 1+2 — Speak + cursor sync (DONE)
 
-State:
+Shipped. Chain navigation walks `panel.controls` (recursing one level into
+listboxes with `controls.size > 1`), sorted by `extent.top` so arrow-down is
+visually top-to-bottom. State:
+
 ```cpp
+struct ChainEntry { void* control; int cx; int cy; };
+static ChainEntry g_chain[64];
 static void* g_currentPanel = nullptr;
 static void* g_chainPanel   = nullptr;
 static int   g_chainIndex   = 0;
-static int   g_chainSize    = 0;
+static int   g_chainCount   = 0;
+static int   g_tabClickOffsetY = 0;   // hit-test shift compensation (see Phase 3)
 
 static bool g_pendingCursorMove = false;
 static int  g_pendingX, g_pendingY;
-static void* g_pendingTarget = nullptr;   // for self-dedup
+static void* g_pendingTarget = nullptr;
 ```
 
 `OnHandleInputEvent` (returns int — 1 = consumed, 0 = pass-through):
 - On `0xb6` (up) / `0xb7` (down) with `state != 0`:
-  - If `g_currentPanel != g_chainPanel`: rebind chain.
-  - Compute `g_chainIndex ± 1`, clamp `[0, g_chainSize-1]`.
-  - `target = panel.controls.data[g_chainIndex]`.
-  - Announce target via Tolk.
-  - Compute target center → write `g_pendingX/Y/Target`, set `g_pendingCursorMove`.
-  - **Return 1** (consumed). Wrapper JMPs to function epilogue; engine never
-    translates or dispatches the arrow key.
+  - If `g_currentPanel != g_chainPanel`: `RebindChain(g_currentPanel)`.
+  - Compute `g_chainIndex ± 1`, clamp `[0, g_chainCount-1]`.
+  - `e = g_chain[g_chainIndex]`.
+  - `AnnounceControl(e.control)` via Tolk.
+  - Compute `cursorY = e.cy + (IsTabButton(e.control) ? g_tabClickOffsetY : 0)`.
+  - Write `g_pendingX = e.cx`, `g_pendingY = cursorY`, `g_pendingTarget = e.control`,
+    set `g_pendingCursorMove`.
+  - Return 1 (consumed).
+- On Enter (`0xb5`/`0xbb`) with `state != 0` on a chain target:
+  - If target is a tab button: queue deferred click-sim (cursor warp + manager
+    HandleLMouseDown/Up) with the same `+g_tabClickOffsetY` adjustment.
+  - Else: queue deferred direct activate via `vtable[15].HandleInputEvent(0x27, 1)`.
+  - Return 1.
+- On Esc (`0xb4`/`0xdf`) inside a tabbed parent's sub-dialog: queue deferred
+  FireActivate on the sub-dialog's Schliess button. Return 1.
 - For all other keys: return 0 (pass-through).
 
 `OnSetActiveControl` additions:
 - `g_currentPanel = panel`.
-- If `panel != g_lastEnumeratedPanel`: walk + speak every child; set `g_lastEnumeratedPanel`.
-- If `param == g_pendingTarget`: skip Tolk path (we caused this; already spoke).
-  Clear `g_pendingTarget`. (Self-dedup, not engine suppression.)
+- First focus into a panel: `WalkChildren` log dump; `AnnouncePanelTitle` once.
+- If `param == g_pendingTarget`: skip Tolk announcement (self-dedup, we already
+  spoke from the input hook). Clear `g_pendingTarget`.
 
-`OnUpdate` (new hook on `CSWGuiManager::Update @ 0x40ce70`):
-- If `g_pendingCursorMove`: clear flag, call `MoveMouseToPosition(g_pendingX, g_pendingY)`.
+`OnUpdate` (mid-`CSWGuiManager::Update` @ `0x40ce76`):
+- If `g_pendingCursorMove`: clear, call `MoveMouseToPosition(g_pendingX, g_pendingY)`.
+  Log `mouseOver before/after` for diagnostic.
+- If `g_pendingClick`: clear, call manager `HandleLMouseDown(1)` then `HandleLMouseUp()`.
+  (See Phase 3 below for the path.)
+- If `g_pendingActivate`: clear, call `FireActivate(target)` via vtable[15].
 
-**Done when:** arrow keys announce + visibly move the cursor through
-`panel.controls`; Enter activates the chain target via the engine's normal
-click pipeline; re-entering a panel doesn't re-enumerate.
-
-**Risk:** low. Update hook cut is verified. Consumed-exit address `0x0040cbcb`
-is verified by stack-offset arithmetic. Only unknowns: (a) `__thiscall` to
-`MoveMouseToPosition` works first try from the framework's wrapper context;
-(b) the framework extension lands cleanly. Both empirical, cheap to discover.
+**Done.** Verified end-to-end on main menu, chargen, save/load, Options panel
++ all sub-dialogs (Spieleinstellungen, Feedback-Optionen, Auto-Pause-Optionen,
+Grafikeinstellungen, Soundeinstellungen), quit-confirmation popup.
 
 ### Phase 3 — Activation primitive (synthesized mouse click)
 
-The motivating goal is the Options panel: Tab between tabs, arrow through
-settings within a tab, and *change* settings (toggles, sliders). Phase 1+2
-gives navigation via cursor warp + the engine's natural mouseover-then-active
-cascade. That's enough for plain buttons, but it does not support:
+**Tab activation: DONE.** Per-setting activation inside the Options listbox:
+not yet started.
 
-- Tab cluster activation. `MoveMouseToPosition` alone crashes the engine on
-  Options-panel tabs (see `docs/tab-crash-investigation.md`). The
-  `CSWGuiPanel::SetActiveControl` shortcut crashes too. Both skip pre/post-
-  click invariants the engine maintains.
-- Per-setting interaction inside the Options listbox. The listbox has
+**What works for tabs:** Enter on a tab queues a deferred click-sim on
+`OnUpdate`: cursor warp via `MoveMouseToPosition` to the tab's `(cx, cy + g_tabClickOffsetY)`,
+then manager `HandleLMouseDown(1)` followed by `HandleLMouseUp()`. The engine
+runs its full natural click pipeline against `mouseOverControl` (which the
+warp's hit-test populates correctly because we compensated for the tab-pitch
+shift). Verified opening Spieleinstellungen, Feedback-Optionen,
+Auto-Pause-Optionen, Grafikeinstellungen, Soundeinstellungen.
+
+**Two activation paths**, picked at Enter time:
+
+1. **Tab buttons** (in the tabbed parent panel) → click-sim. Required because
+   each tab's onClick handler (`CSWGuiInGameOptions::OnGraphics`, etc.) gates
+   on `param_1->is_active != 0`, a flag set by `HandleLMouseDown` but not by
+   direct vtable[15] dispatch. So `FireActivate` silently no-ops on a tab.
+2. **Everything else** (sub-dialog Schliess/OK/Cancel, settings buttons in
+   sub-dialog listboxes, main menu) → direct `vtable[15].HandleInputEvent(0x27, 1)`
+   "FireActivate". Bypasses hit-test, so buttons covered by overlapping listbox
+   extents (chain-navigated settings, Schliess inside an Options sub-dialog)
+   still fire correctly.
+
+**Direct vtable[6]/[7] dispatch on the chain target was tried as a workaround
+for the hit-test shift and CRASHES** on the second tab+ click. The button's
+`HandleLMouseDown`/`HandleLMouseUp` depend on manager-side state (probably the
++0x1c mouse_held bit and other setup) that the manager's wrapper performs.
+Skipping the wrapper leaves the button in an inconsistent state.
+
+**The +g_tabClickOffsetY fix** (added 2026-05-02) supersedes the prior plan to
+RE the crash and replicate hidden state. The shift was the actual root cause
+of activation landing on the wrong tab; once compensated, the engine's normal
+click pipeline works as advertised. See top of file for the shift mechanism
+and `memory/project_movemouse_hittest_shift.md`.
+
+**Still open in Phase 3:**
+
+- Per-setting activation inside the Options listbox. The listbox has
   `controls.size == 1` (one multi-line label blob); individual settings are
-  not `CSWGuiControl*`s. Nothing for `SetActiveControl` to target. The engine
-  reaches them only via mouse clicks resolved by y-coordinate.
-
-**Primitive:** synthesize a real click sequence at a coordinate by calling
-`CSWGuiButton::HandleLMouseDown` + `HandleLMouseUp` directly (and analogous
-listbox-side handlers for clicks landing inside a listbox), deferred to
-`OnUpdate` for the same reentrancy reasons as the cursor warp.
-
-This single primitive serves:
-
-- Tab cycling. Click-sim at the next tab's center; engine runs its full
-  click pipeline; whatever invariant `SetActiveControl` was skipping is
-  now satisfied because we're on the engine's expected path.
-- Per-setting activation (toggles). Click-sim at the setting's y-coordinate
-  inside the listbox.
-- Slider drag (later). Click-sim sequence: down at handle → cursor moves
-  via `MoveMouseToPosition` → up at target.
-
-**Prerequisite:** the crash-dump analysis pass described in
-`docs/tab-crash-investigation.md` "Next session" step 1. Output of that pass
-is the engine function doing the indirect call at `mgr+5`, which tells us
-*which* pre/post-click invariant `SetActiveControl` skipped — i.e., which
-state the synthesized click must guarantee. Without that, the click-sim
-primitive risks reproducing the same crash from a different angle.
-
-**Deliverables:**
-
-- New mid-function hooks on `CSWGuiButton::HandleLMouseDown` /
-  `HandleLMouseUp` (addresses TBD via DumpBytes against Lane's gzf;
-  GoG-derived bytes match Steam) — first to verify arg shape, then
-  the functions are called directly via `__thiscall` function pointers
-  (same pattern as `MoveMouseToPosition` and `CSWGuiPanel::SetActiveControl`
-  in current code).
-- Coordinate-based click into a listbox at `(x, y)` — exact engine entry
-  point TBD; candidates: `CSWGuiListBox::HandleLMouseDown` /
-  `HandleLMouseUp` (entry-point hooks on listbox are toxic per session
-  4 finding, so mid-function only) or whatever the parent `CSWGuiPanel`
-  click dispatch resolves to.
-- A small `SimulateClickAt(int x, int y)` helper called from `OnUpdate`
-  alongside (or replacing) the cursor-warp queue.
-- Strip the `SetActiveControl`-based Tab handler (now obsolete) — see
-  `docs/tab-crash-investigation.md` "Next session" step 2.
-
-**Done when:** Tab cycles tabs cleanly without crashing; arrow keys walking
-panel.controls reach tabs without crashing; clicking on a setting via
-synthesized click toggles its value (Easy → Normal → Hard, etc.). Sliders
-deferred to a follow-up.
+  not `CSWGuiControl*`s. The engine reaches them only via mouse clicks
+  resolved by y-coordinate inside the listbox. Need a coordinate-based click
+  primitive that lands inside the listbox at the right line — exact engine
+  entry point TBD.
+- Slider drag. Click-sim sequence: down at handle → cursor moves via
+  `MoveMouseToPosition` → up at target.
 
 ### Phase 4 — Spatial mode (3D world / non-panel screens)
 
@@ -377,31 +390,48 @@ surfaces required.
 - Multi-line listbox in chain — entries blob-announce on focus; chain may
   land *on* the listbox and read the whole list. Acceptable; later, filter
   blob listboxes from chain.
-- **Listbox auto-readout on tab focus = audio stutter source.** In the Options
-  panel, every tab nav (Gameplay → Auto-Pause → Grafik → ...) re-fires
-  `ListBox::SetActiveControl` because each tab swaps the listbox content. We
-  then dispatch `SpeakBlobIfChanged`, which emits N+1 `Tolk_Output` IPC calls
-  (intro + per line) into NVDA from the game thread. Bursts of 7-9 IPC calls
-  back-to-back briefly stall audio (reproduced: open Options → arrow down →
-  arrow up; second blob trips dedup the first time). Do *not* fix by collapsing
-  the burst into one call — that bakes flexibility loss into the workaround
-  site (see `memory/feedback_no_workaround_at_workaround_site.md`). Real fix
-  lives in **Phase 3**: once arrow nav walks `panel.controls` (tabs included)
-  and the click-sim primitive activates a tab cleanly, the per-setting line
-  walk inside the listbox becomes a sub-mode entered explicitly — listbox
-  content is read line-by-line on demand, not as a side-effect of tab hover.
-  Until Phase 3 lands the stutter is a known accepted cost on Options-panel
-  tab nav.
+- **Listbox auto-readout on tab focus** is now silenced via tabbed-mode
+  detection: when `panel.controls[0]` is a `CSWGuiListBox` with a tab cluster
+  detected by `DetectTabsCluster`, the per-tab listbox blob is parsed into
+  virtual lines and `SpeakBlobIfChanged` is suppressed. Logged as `ListBox
+  blob silenced (tabbed mode); N virtual lines parsed`. Per-line readout will
+  be a sub-mode the user enters explicitly — not yet implemented; tracked
+  under Phase 3 "per-setting interaction" in the roadmap.
+- **Engine lagged `SetActiveControl` re-promotion to Gameplay** after each
+  chain step in tabbed panels. The panel's tab-switch logic resets
+  `active_control` to its default (first tab = Gameplay) after the engine's
+  hover-to-active fires for the chain target. Currently dedup hides it from
+  audio but it's noisy in the log. Optional cleanup item; see Re-entry
+  checklist.
 
-## What's at HEAD (Phase 0)
+## What's at HEAD (Phase 1+2 + Phase 3 tabs)
 
-- Manager-level input hook at `0x40c907` — every key, both edges, readable log via `ManagerTranslateCode`.
+- Manager-level input hook at `0x40c907` — every key, both edges, readable log
+  via `ManagerTranslateCode`.
 - Panel-children walk on first focus into a new panel.
 - Listbox-children walk + cursor read on every listbox event.
 - Multi-line listbox blob enumeration via `SpeakBlobIfChanged`.
 - TLK lookup with SEH guard.
+- Flat chain navigation (`g_chain[]`) over `panel.controls` + one-level listbox
+  recursion, sorted by `extent.top`. Anchored on `panel.activeControl` at
+  rebind time.
+- Arrow keys consume + announce + warp cursor. Tab buttons get the
+  `+g_tabClickOffsetY` cursor-y compensation (computed from chain spacing in
+  `RebindChain`).
+- Enter on tabs: deferred click-sim (cursor warp + manager
+  HandleLMouseDown/Up) with the same offset compensation.
+- Enter on non-tabs (sub-dialog Schliess/OK, settings buttons covered by
+  listbox extents, main menu): deferred direct activate via
+  `vtable[15].HandleInputEvent(0x27, 1)`.
+- Esc inside a tabbed parent's sub-dialog: FireActivate the sub-dialog's
+  Schliess button.
+- Tabbed-panel detection (`DetectTabsCluster`) arms `g_tabbedPanel`/`Start`/`Count`
+  for the listbox virtual-line cursor and the tab-button gating in
+  `IsTabButton`.
 - All log rate-limits removed.
-- Last working baseline: `<install>/logs/patch-20260430-110057.log`.
+- Last verified working: `<install>/logs/patch-20260502-123837.log` (every Enter
+  on a tab opens the matching sub-panel; chain step `mouseOver after=` matches
+  the chain target).
 
 ## Constraints
 
@@ -445,17 +475,27 @@ Behavior:
 
 1. Read this file + `docs/tab-crash-investigation.md` + `docs/upstream-prs.md`.
 2. `git log --oneline -5` for what's at HEAD.
-3. ✅ Strip the obsolete `SetActiveControl`-based Tab handler — done in `e638aab`.
-4. ✅ Build `kdev analyze-dump` — done. Findings recorded in
-   `docs/tab-crash-investigation.md` "Findings from kdev analyze-dump"
-   and `memory/project_tab_crash_dump_findings.md`. Key result:
-   **EBP gets corrupted to the manager pointer at fault time**;
-   ESP scan surfaces `MainLoop+0xdf0` as the parent return address;
-   event code 514 is sitting as the top-of-stack arg mid-dispatch.
-5. Validate Phase 1+2 (chain + cursor sync) is intact post-strip. Panels
-   where every chain target is a plain button (title screen, chargen,
-   save/load) should still announce + warp the cursor. Options tabs
-   remain expected to fail (Phase 3 will fix).
-6. Implement Phase 3 (click-sim primitive). Validate on Options tabs
-   first; then per-setting toggles inside the listbox.
-7. Phase 4 (spatial mode) once panels are stable.
+3. ✅ Phase 1+2 chain navigation + cursor sync — done.
+4. ✅ Phase 3 tab activation via click-sim with hit-test-shift compensation —
+   done. Verified in `patch-20260502-123837.log`.
+5. **Next:** Phase 3 per-setting interaction inside the Options listbox.
+   Listbox has `controls.size == 1` so `SetActiveControl` can't target
+   individual lines; need a coordinate-based click that lands inside the
+   listbox at a specific y. Investigate `CSWGuiListBox::HandleLMouseDown` /
+   `HandleLMouseUp` (mid-function only — entry-point hooks on listbox are toxic
+   per session 4).
+6. **Then:** sliders. Click-sim sequence: down at handle → cursor moves →
+   up at target.
+7. **Then:** Phase 4 (spatial mode) once panels are fully done.
+
+**Optional cleanup** (won't move the goalpost but improves polish):
+- Suppress the engine's lagged `SetActiveControl` re-promotion to Gameplay
+  (the panel default) after each chain step — currently dedup hides it from
+  audio but it shows up as noise in the log. Filter in `OnSetActiveControl`
+  on "this control is in chain but isn't `g_chain[g_chainIndex]` and we're
+  in chain-active mode."
+- Add panel-extent offset for popup buttons (popup chain entries are in
+  panel-local coords; today MoveMouseToPosition gets `(145, 85)` instead of
+  `(400, 333)`). The popup currently relies on `FireActivate` (no hit-test)
+  so this is cosmetic — the announced control opens correctly even though
+  the cursor visually misses.

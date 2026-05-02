@@ -570,12 +570,21 @@ static int   g_pendingX = 0;
 static int   g_pendingY = 0;
 static void* g_pendingTarget = nullptr;   // for self-dedup in OnSetActiveControl
 
-// Deferred click-sim (Phase 3). When set, OnUpdate runs Manager::HandleLMouseDown
-// and HandleLMouseUp after the cursor warp has settled — the engine then runs
-// its full natural click pipeline against whatever the warp's hit-test resolved
-// to as mouseOverControl. Always paired with g_pendingCursorMove so the cursor
-// is at the click point before Down dispatches.
-static bool g_pendingClick = false;
+// Deferred click-sim. When set, OnUpdate dispatches click directly to
+// g_pendingClickTarget via its vtable[6] (HandleLMouseDown) and vtable[7]
+// (HandleLMouseUp). We bypass the manager's HandleLMouseDown wrapper because
+// its UpdateMouseOverControl misidentifies the cursor's hit target on tabbed
+// panels (consistent 45-px shift in Options panel — see chat investigation
+// in patch-20260502-114830.log). The button's own HandleLMouseDown still
+// runs CaptureMouse + state setup, and HandleLMouseUp fires the actual
+// onClick — that's what the manager's wrapper would have called once it
+// resolved the right button. We just provide the target ourselves.
+//
+// Distinct from g_pendingActivate (vtable[15] FireActivate path): tabs gate
+// on `is_active` which only HandleLMouseDown sets, so direct activate no-ops
+// for tabs (see comment block below).
+static bool  g_pendingClick       = false;
+static void* g_pendingClickTarget = nullptr;
 
 // Deferred direct-activate via vtable[15].HandleInputEvent(0x27, 1). Used for
 // targets whose click hit-area is covered by an overlapping CSWGuiListBox
@@ -609,6 +618,20 @@ constexpr uintptr_t kVtableListBox  = 0x0073E840;
 static void*      g_tabbedPanel       = nullptr;  // panel currently in tabbed mode
 static int        g_tabsStart         = -1;       // first tab-button index in panel.controls
 static int        g_tabsCount         = 0;        // number of contiguous tab buttons
+
+// Cursor-y offset to compensate for the engine's hit-test shift in tab-cluster
+// panels. MoveMouseToPosition(x, y) on the Options panel hit-tests at the
+// button whose center is at (y - tabSpacing) — consistently 45 px on Steam
+// 1.0.3 (matches the tab pitch). Cause is unverified (best guess: cursor
+// hotspot coord-system mismatch — see chat investigation in
+// patch-20260502-122734.log line 91 where before=NULL after=Gameplay confirms
+// MoveMouseToPosition itself produces the shifted hit-test result, not stale
+// engine state). Real mouse usage is unaffected, so the engine ships fine for
+// sighted players. We compensate by adding this offset to y when warping the
+// cursor to a tab button. Computed in RebindChain from the chain's tab-cluster
+// spacing; 0 for non-tabbed panels (main menu, popups, sub-dialogs) — those
+// panels' MoveMouseToPosition already hits where it should.
+static int        g_tabClickOffsetY   = 0;
 
 // Virtual-line cursor over the listbox's multi-line blob. The Options listbox
 // has controls.size == 1 with all settings concatenated by '\n' into a single
@@ -829,6 +852,22 @@ static void* FindCloseButton(void* panel) {
     return nullptr;
 }
 
+// True if `control` is one of the current panel's tab-cluster buttons.
+// Used to gate the cursor-y offset (g_tabClickOffsetY) — only tab buttons
+// suffer the engine's hit-test shift; close/standard buttons in the same
+// panel are in a different x column or row layout and don't need the offset.
+static bool IsTabButton(void* control) {
+    if (!control || !g_tabbedPanel || g_tabsCount < 2) return false;
+    auto* tlist = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(g_tabbedPanel) + kPanelControlsOffset);
+    if (!tlist || !tlist->data) return false;
+    for (int i = g_tabsStart;
+         i < g_tabsStart + g_tabsCount && i < tlist->size; ++i) {
+        if (tlist->data[i] == control) return true;
+    }
+    return false;
+}
+
 // Append a navigable control to the chain (skipping null/degenerate-extent).
 // Internal helper for RebindChain.
 static void AppendChainEntry(void* control) {
@@ -899,6 +938,26 @@ static void RebindChain(void* panel) {
         }
     }
 
+    // Compute g_tabClickOffsetY from adjacent tab entries' visual spacing.
+    // The chain is now sorted top-to-bottom, so the first two consecutive
+    // tab-cluster entries give us the pitch directly. Non-tabbed panels (no
+    // g_tabbedPanel set, or only one tab) keep offset=0 — their hit-test
+    // works without compensation.
+    g_tabClickOffsetY = 0;
+    if (g_tabbedPanel == panel && g_tabsCount >= 2) {
+        int firstTabIdx = -1;
+        for (int i = 0; i < g_chainCount; ++i) {
+            if (!IsTabButton(g_chain[i].control)) continue;
+            if (firstTabIdx < 0) {
+                firstTabIdx = i;
+            } else {
+                int spacing = g_chain[i].cy - g_chain[firstTabIdx].cy;
+                if (spacing > 0) g_tabClickOffsetY = spacing;
+                break;
+            }
+        }
+    }
+
     // Anchor at active. ReadPanelActiveControl reads panel.activeControl
     // (only direct panel children); listbox-internal selection isn't
     // exposed there, so when the user enters a sub-dialog with focus on
@@ -907,8 +966,8 @@ static void RebindChain(void* panel) {
     int   idx    = FindChainEntry(active);
     g_chainIndex = (idx >= 0) ? idx : 0;
 
-    acclog::Write("Chain rebind panel=%p count=%d index=%d active=%p",
-                  panel, g_chainCount, g_chainIndex, active);
+    acclog::Write("Chain rebind panel=%p count=%d index=%d active=%p tabOffsetY=%d",
+                  panel, g_chainCount, g_chainIndex, active, g_tabClickOffsetY);
     for (int i = 0; i < g_chainCount; ++i) {
         char text[256];
         const char* src = ExtractAnnounceableText(g_chain[i].control,
@@ -1281,13 +1340,16 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             acclog::Write("Enter: op already pending; ignoring (target=%p)", e.control);
             consumed = true;
         } else if (isTabButton) {
-            g_pendingX          = e.cx;
-            g_pendingY          = e.cy;
-            g_pendingTarget     = e.control;
-            g_pendingCursorMove = true;
-            g_pendingClick      = true;
-            acclog::Write("Enter click-sim panel=%p index=%d target=%p (tab)",
-                          g_currentPanel, g_chainIndex, e.control);
+            int cursorY = e.cy;
+            if (g_tabClickOffsetY > 0) cursorY += g_tabClickOffsetY;
+            g_pendingX           = e.cx;
+            g_pendingY           = cursorY;
+            g_pendingTarget      = e.control;
+            g_pendingClickTarget = e.control;
+            g_pendingCursorMove  = true;
+            g_pendingClick       = true;
+            acclog::Write("Enter click-sim panel=%p index=%d target=%p cursorY=%d (tab)",
+                          g_currentPanel, g_chainIndex, e.control, cursorY);
             consumed = true;
         } else {
             g_pendingActivate       = true;
@@ -1332,13 +1394,17 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
 
             ChainEntry& e = g_chain[g_chainIndex];
             AnnounceControl(e.control);
+            int cursorY = e.cy;
+            if (IsTabButton(e.control) && g_tabClickOffsetY > 0) {
+                cursorY += g_tabClickOffsetY;
+            }
             g_pendingX          = e.cx;
-            g_pendingY          = e.cy;
+            g_pendingY          = cursorY;
             g_pendingTarget     = e.control;
             g_pendingCursorMove = true;
-            acclog::Write("Chain step panel=%p index=%d/%d target=%p center=(%d,%d) %s",
+            acclog::Write("Chain step panel=%p index=%d/%d target=%p center=(%d,%d) cursorY=%d %s",
                           g_chainPanel, g_chainIndex, g_chainCount,
-                          e.control, e.cx, e.cy,
+                          e.control, e.cx, e.cy, cursorY,
                           param_1 == kInputNavDown ? "DOWN" : "UP");
             // Always consume nav-up/nav-down on a panel with a non-empty chain.
             consumed = true;
@@ -1433,19 +1499,32 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     if (g_pendingCursorMove) {
         g_pendingCursorMove = false;
         auto move = reinterpret_cast<PFN_MoveMouseToPosition>(kAddrMoveMouseToPosition);
+        // Capture mouseOver BEFORE the move. Disambiguates whether
+        // MoveMouseToPosition itself produces the 45-px-shifted hit-test
+        // result (before==something-else, after==shifted-button) vs. the
+        // engine pre-setting mouseOver during panel init (before==after,
+        // never refreshed by our move at all). See chat.
+        void* moBefore = getMouseOver();
         move(gm, g_pendingX, g_pendingY);
-        acclog::Write("Update: MoveMouseToPosition(%d, %d) target=%p mouseOver=%p",
-                      g_pendingX, g_pendingY, g_pendingTarget, getMouseOver());
+        acclog::Write("Update: MoveMouseToPosition(%d, %d) target=%p mouseOver before=%p after=%p",
+                      g_pendingX, g_pendingY, g_pendingTarget,
+                      moBefore, getMouseOver());
     }
 
-    // Click-sim. Runs in the same frame as the cursor warp: the warp's
-    // hit-test has already populated mouseOverControl, so HandleLMouseDown's
-    // dispatch lands on the intended target. HandleLMouseUp follows
-    // immediately — same-frame is empirically OK for buttons (the engine's
-    // state machine carries no animation that requires a frame gap), and
-    // matches the model in docs/menu-nav-design.md Phase 3.
+    // Click-sim via manager's HandleLMouseDown/Up. Dispatches against
+    // mouseOverControl, which on Options-style tabbed panels resolves to
+    // the button one step above the chain target (consistent 45-px hit-test
+    // shift — see chat investigation). That activates the wrong tab.
+    //
+    // Direct vtable[6]/[7] on the chain target was tried as a workaround
+    // (commit reverted) — it crashes the game on the second tab+ click.
+    // The button's own HandleLMouseDown/Up depend on manager-side state
+    // (probably the +0x1c mouse_held bit and/or other setup we'd skip).
+    // Need a different approach for the off-by-1; for now keep the original
+    // pipeline so behavior is at least stable.
     if (g_pendingClick) {
         g_pendingClick = false;
+        g_pendingClickTarget = nullptr;
         auto down = reinterpret_cast<PFN_ManagerLMouseDown>(kAddrManagerLMouseDown);
         auto up   = reinterpret_cast<PFN_ManagerLMouseUp>(kAddrManagerLMouseUp);
         void* moBefore = getMouseOver();
