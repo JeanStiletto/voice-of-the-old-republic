@@ -681,6 +681,19 @@ static void* g_pendingClickTarget = nullptr;
 static bool  g_pendingActivate       = false;
 static void* g_pendingActivateTarget = nullptr;
 
+// Deferred slider value adjustment. Slider's HandleInputEvent at 0x0041adf0
+// recognises logical codes 500 (increment) and 501 (decrement) — both run
+// the full pipeline: SetCurValue + bounds clamp + the slider's gui_object
+// callback (which is what actually changes the audio system's volume for
+// Music/Voice/SFX/Movie sliders) + PlayGuiSound feedback. We dispatch via
+// vtable[15] from OnUpdate rather than synchronously from OnHandleInputEvent
+// to stay clear of mid-input-dispatch re-entrancy (same reason
+// MoveMouseToPosition is deferred). Per-frame focus monitor catches the
+// resulting cur_value change on the next tick and re-announces.
+static bool  g_pendingSliderInput       = false;
+static void* g_pendingSliderTarget      = nullptr;
+static int   g_pendingSliderCode        = 0;
+
 // Tracks the last panel for which we spoke the title (AnnouncePanelTitle).
 // Re-entering the same panel pointer must not re-announce. A distinct static
 // from the s_lastPanel inside OnSetActiveControl — that one drives the
@@ -1094,6 +1107,45 @@ static void RebindChain(void* panel) {
         }
     }
 
+    // Squash cycle-arrow flankers from the chain. An empty-text navigable
+    // entry that shares a y-row with a text-bearing entry is a cycle arrow
+    // (left/right of a value-display button: `[◀] Normal [▶]`). The user
+    // reaches them via Left/Right cycle dispatch on the value-display
+    // entry — having them in the chain just produces "control N"
+    // placeholders Up/Down would land on. Lone empty-text entries are
+    // kept (we can't say what they are, but the user might want to reach
+    // them for Enter activation). Same-row threshold matches
+    // FindAdjacentArrow's tolerance.
+    {
+        int writeIdx = 0;
+        for (int i = 0; i < g_chainCount; ++i) {
+            char tmp[64];
+            bool hasText = ExtractAnnounceableText(g_chain[i].control,
+                                                   tmp, sizeof(tmp)) != nullptr;
+            if (hasText) {
+                g_chain[writeIdx++] = g_chain[i];
+                continue;
+            }
+            bool sameRowWithText = false;
+            for (int j = 0; j < g_chainCount; ++j) {
+                if (j == i) continue;
+                int dy = g_chain[j].cy - g_chain[i].cy;
+                if (dy < 0) dy = -dy;
+                if (dy > 5) continue;
+                char tmp2[64];
+                if (ExtractAnnounceableText(g_chain[j].control,
+                                            tmp2, sizeof(tmp2)) != nullptr) {
+                    sameRowWithText = true;
+                    break;
+                }
+            }
+            if (!sameRowWithText) {
+                g_chain[writeIdx++] = g_chain[i];
+            }
+        }
+        g_chainCount = writeIdx;
+    }
+
     // Compute g_tabClickOffsetY from adjacent tab entries' visual spacing.
     // The chain is now sorted top-to-bottom, so the first two consecutive
     // tab-cluster entries give us the pitch directly. Non-tabbed panels (no
@@ -1401,10 +1453,23 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
         acclog::Write("ListBox::SetActiveControl #%d list=%p row=%p id=%d "
                       "p2=%d src=none %s",
                       n, listBox, newRow, id, param2, vtbl);
-        // Same rule as the panel path: never silence a fallback announcement.
-        char placeholder[64];
-        snprintf(placeholder, sizeof(placeholder), "row %d", id);
-        tolk::Speak(placeholder, /*interrupt=*/false);
+        // Suppress placeholder for single-row listboxes (description blobs
+        // adjacent to a chain panel — the engine fires SetActiveControl on
+        // them as the user navigates the chain, alternating between
+        // src=label with text and src=none when the description is
+        // momentarily empty). The user isn't navigating these listboxes;
+        // "row 0" repeated 5+ times per chain step is just noise.
+        //
+        // Real multi-row listboxes (save-game list, chargen pickers) keep
+        // the fallback so an extraction failure on one row still announces.
+        auto* ctrls = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(listBox) + kListBoxControlsOffset);
+        int ctrlsSize = ctrls ? ctrls->size : 0;
+        if (ctrlsSize > 1) {
+            char placeholder[64];
+            snprintf(placeholder, sizeof(placeholder), "row %d", id);
+            tolk::Speak(placeholder, /*interrupt=*/false);
+        }
     }
 }
 
@@ -1567,23 +1632,27 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         }
     }
 
-    // Left/Right cycle dispatch. Find an empty-text navigable neighbour at the
-    // same y-row in panel.controls and fire-activate it. Engine cycles the
-    // value-display button's CExoString in place; the per-frame focus monitor
-    // (in OnUpdate) catches the text change and re-announces.
+    // Left/Right dispatch. Two cases:
     //
-    // Sliders are exempt: their HandleInputEvent at 0x0041adf0 expects the
-    // post-translation horizontal codes (0x3f / 0x40 = ManagerTranslateCode of
-    // 0xb8 / 0xb9) and adjusts cur_value natively when the manager dispatches.
-    // Letting Left/Right pass through means the engine handles slider
-    // adjustment for us; the per-frame monitor re-reads cur_value at +0x74 and
-    // announces the new value.
+    //   1. Focused control is a slider — queue a slider HandleInputEvent
+    //      with logical inc/dec code (500 / 501). Engine's slider runs the
+    //      full pipeline: SetCurValue + bounds clamp + gui_object callback
+    //      (audio volume change for Music/Voice/SFX/Movie) + PlayGuiSound.
+    //      Letting the keypress pass through to the engine doesn't work
+    //      because panel.activeControl isn't set to the slider (chain
+    //      navigation only updates mouseOverControl); the engine's natural
+    //      dispatch would route Left/Right to whichever previous control was
+    //      activeControl, not the slider the user navigated to.
     //
-    // Non-slider non-cycle widgets (plain toggles, action buttons): we still
-    // consume Left/Right with no action. Falling through would let the engine
-    // dispatch Left/Right to the focused control's HandleInputEvent, and we'd
-    // rather not surface unspecified native behaviour from a key that has no
-    // user-meaningful effect on these widgets.
+    //   2. Focused control is anything else — find an empty-text navigable
+    //      neighbour at the same y-row in panel.controls and fire-activate
+    //      it (cycle-arrow flanker). Engine rewrites the value-display
+    //      button's CExoString in place. Per-frame monitor catches both
+    //      cases on the next tick and re-announces.
+    //
+    // Both cases consume the keypress so we don't surface unspecified
+    // native behaviour from Left/Right on widgets where it has no
+    // user-meaningful effect.
     if (param_2 != 0 &&
         (param_1 == kInputNavLeft || param_1 == kInputNavRight) &&
         g_currentPanel != nullptr &&
@@ -1593,13 +1662,22 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         g_chainIndex < g_chainCount)
     {
         void* focused = g_chain[g_chainIndex].control;
+        bool toRight = (param_1 == kInputNavRight);
+
         if (IsSlider(focused)) {
-            // Pass through to engine; per-frame monitor handles re-announce.
-            acclog::Write("Cycle %s: focus=%p is slider; passing through",
-                          param_1 == kInputNavRight ? "right" : "left",
-                          focused);
+            if (g_pendingClick || g_pendingActivate || g_pendingCursorMove ||
+                g_pendingSliderInput) {
+                acclog::Write("Slider %s: op already pending; ignoring",
+                              toRight ? "right" : "left");
+            } else {
+                g_pendingSliderInput  = true;
+                g_pendingSliderTarget = focused;
+                g_pendingSliderCode   = toRight ? 500 : 501;
+                acclog::Write("Slider %s panel=%p focus=%p code=%d",
+                              toRight ? "right" : "left",
+                              g_currentPanel, focused, g_pendingSliderCode);
+            }
         } else {
-            bool toRight = (param_1 == kInputNavRight);
             void* neighbor = FindAdjacentArrow(g_currentPanel, focused, toRight);
             if (neighbor) {
                 if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
@@ -1616,8 +1694,8 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                 acclog::Write("Cycle %s: no adjacent arrow for focus=%p",
                               toRight ? "right" : "left", focused);
             }
-            consumed = true;
         }
+        consumed = true;
     }
 
     // Esc / Backspace (when bound to "back/cancel" via the in-game Key Mapping
@@ -1735,16 +1813,19 @@ static void MonitorFocusedControl() {
 // the global at 0x7A39F4 — both resolve to the same singleton.
 extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     MonitorFocusedControl();
-    if (!g_pendingCursorMove && !g_pendingClick && !g_pendingActivate) return;
+    if (!g_pendingCursorMove && !g_pendingClick && !g_pendingActivate &&
+        !g_pendingSliderInput) return;
 
     void* gm = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
     if (!gm) {
-        acclog::Write("Update: pending move/click/activate but GuiManager singleton is NULL");
+        acclog::Write("Update: pending op but GuiManager singleton is NULL");
         g_pendingCursorMove     = false;
         g_pendingClick          = false;
         g_pendingActivate       = false;
+        g_pendingSliderInput    = false;
         g_pendingTarget         = nullptr;
         g_pendingActivateTarget = nullptr;
+        g_pendingSliderTarget   = nullptr;
         return;
     }
 
@@ -1816,6 +1897,31 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
         g_pendingActivateTarget = nullptr;
         acclog::Write("Update: FireActivate target=%p", tgt);
         FireActivate(tgt);
+    }
+
+    // Slider value adjustment via vtable[15].HandleInputEvent(500/501, 1).
+    // The slider's HandleInputEvent runs SetCurValue (clamped to
+    // [0, max_value]) and the gui_object callback that propagates to the
+    // audio system, then plays the click feedback sound. Per-frame focus
+    // monitor catches the cur_value change at +0x74 on the next tick.
+    if (g_pendingSliderInput) {
+        g_pendingSliderInput = false;
+        void* tgt  = g_pendingSliderTarget;
+        int   code = g_pendingSliderCode;
+        g_pendingSliderTarget = nullptr;
+        g_pendingSliderCode   = 0;
+        if (tgt) {
+            void** vtable = *reinterpret_cast<void***>(tgt);
+            if (vtable) {
+                auto fn = reinterpret_cast<PFN_ControlHandleInputEvent>(
+                    vtable[kVtableHandleInputEvent]);
+                if (fn) {
+                    acclog::Write("Update: slider HandleInputEvent target=%p code=%d",
+                                  tgt, code);
+                    fn(tgt, code, 1);
+                }
+            }
+        }
     }
 
 }
