@@ -531,6 +531,10 @@ static const char* FindSiblingLabel(void* panel, void* control,
                                     char* outBuf, size_t bufSize);
 static const char* LookupCycleCategory(void* control);
 static bool IsChainNavigable(void* control);
+// Forward decl helper to keep ExtractAnnounceableText (defined here) decoupled
+// from the PanelKind enum's full definition (defined later in the file). The
+// per-kind hardcoded-name fallback for InGameMenu uses this wrapper.
+static bool IsPanelKindInGameMenu(void* panel);
 
 static const char* ExtractAnnounceableText(void* control,
                                            char* outBuf, size_t bufSize) {
@@ -823,6 +827,99 @@ static const char* ExtractAnnounceableText(void* control,
                 // that reads aren't faulting silently.
                 acclog::Write("Speculative read miss: vtable=0x%x control=%p "
                               "tag=%s", (unsigned)vta, control, ov.tag);
+            }
+        }
+    }
+
+    // 9a. Per-kind hardcoded label fallback. Some panels have widgets whose
+    //     text isn't extractable through any of the engine paths we know
+    //     (inline CExoString, strref, text_object, gui_string, tooltip all
+    //     verified empty for CSWGuiInGameMenu's icons in
+    //     patch-20260502-192712.log — 8 labels + 8 buttons all empty).
+    //     The text must be set via script-side or .gui-resource paths we
+    //     haven't traced yet. For known panel structures with fixed layout
+    //     (CSWGuiInGameMenu's struct definition pins the icon order), we
+    //     can hardcode the names by index until the engine-side path is
+    //     identified.
+    //
+    //     CSWGuiInGameMenu layout (per swkotor.exe.h:10145):
+    //       controls[0..7]  = 8 CSWGuiLabelHilight (vtable=0x0073E8E8)
+    //                          equipment, inventory, character, map,
+    //                          abilities, journal, options, messages
+    //       controls[8..15] = 8 CSWGuiButton       (vtable=0x0073E658)
+    //                          same names, same order
+    //
+    //     The user-visible captions in German are different from the
+    //     internal field names; the strings below are the rendered
+    //     in-game captions for the German build (matches "M" / "I" / "C"
+    //     hotkey conventions per the controls-and-input doc).
+    if (!source && g_currentPanel && IsPanelKindInGameMenu(g_currentPanel)) {
+        // Localized names sourced from dialog.tlk strrefs where they exist;
+        // literal fallback for the one strref we couldn't find. Strref values
+        // verified by parsing the user's actual dialog.tlk (German build,
+        // LangID=2 — `tlk_lookup.ps1` results pasted into git history). The
+        // strrefs are stable across localizations: the engine looks up the
+        // SAME entry index from the locale-specific TLK, so a French or
+        // English install gets correctly translated names without any per-
+        // language switch. Equipment has no standalone strref in any
+        // observed TLK — the engine never asks for that text via TLK — so
+        // we fall back to a literal that matches the German build.
+        struct InGameMenuName {
+            uint32_t    strref;   // 0xFFFFFFFF = no strref, use literal
+            const char* literal;  // fallback if LookupTlk fails
+        };
+        static const InGameMenuName k_inGameMenuNames[8] = {
+            { 0xFFFFFFFFu, "Ausr\xfcstung" },     // equipment
+            { 48220u,      "Inventar"     },      // inventory
+            { 48225u,      "Charakterblatt" },    // character_sheet
+            { 48221u,      "Karte"        },      // map
+            { 48224u,      "F\xe4higkeiten" },    // abilities
+            { 48218u,      "Auftr\xe4ge" },       // journal (= "quests/orders")
+            { 48222u,      "Optionen"     },      // options
+            { 48223u,      "Nachrichten"  },      // messages
+        };
+
+        // Find the index of `control` within g_currentPanel's controls[].
+        auto* list = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(g_currentPanel) + kPanelControlsOffset);
+        if (list && list->data && list->size > 0) {
+            int n = list->size > 32 ? 32 : list->size;
+            int idx = -1;
+            for (int i = 0; i < n; ++i) {
+                if (list->data[i] == control) { idx = i; break; }
+            }
+            // Labels are at panel.controls[0..7]; buttons at [8..15].
+            // Same name table, shifted index for buttons.
+            int nameIdx = -1;
+            if (idx >= 0 && idx <= 7)       nameIdx = idx;
+            else if (idx >= 8 && idx <= 15) nameIdx = idx - 8;
+            if (nameIdx >= 0) {
+                const auto& spec = k_inGameMenuNames[nameIdx];
+                bool gotTlk = false;
+                if (spec.strref != 0xFFFFFFFFu) {
+                    char tlkText[256];
+                    if (LookupTlk(spec.strref, tlkText, sizeof(tlkText))) {
+                        size_t tlen = strnlen(tlkText, sizeof(tlkText));
+                        if (tlen > 0 && tlen + 1 <= bufSize) {
+                            memcpy(outBuf, tlkText, tlen + 1);
+                            source = "perkind-tlk";
+                            gotTlk = true;
+                            acclog::Write("Per-kind InGameMenu TLK: control=%p "
+                                          "panelIdx=%d strref=%u -> \"%s\"",
+                                          control, idx, spec.strref, outBuf);
+                        }
+                    }
+                }
+                if (!gotTlk) {
+                    size_t nlen = strlen(spec.literal);
+                    if (nlen + 1 <= bufSize) {
+                        memcpy(outBuf, spec.literal, nlen + 1);
+                        source = "perkind-literal";
+                        acclog::Write("Per-kind InGameMenu literal: control=%p "
+                                      "panelIdx=%d strref=%u -> \"%s\"",
+                                      control, idx, spec.strref, outBuf);
+                    }
+                }
             }
         }
     }
@@ -1139,6 +1236,13 @@ static PanelKind IdentifyPanel(void* panel) {
         return k;
     }
     return PanelKind::Unknown;
+}
+
+// Wrapper used by ExtractAnnounceableText (which is defined earlier in the
+// file before the PanelKind enum is in scope). Forward-declared near the
+// top of the file.
+static bool IsPanelKindInGameMenu(void* panel) {
+    return IdentifyPanel(panel) == PanelKind::InGameMenu;
 }
 
 // ============================================================================
@@ -3035,25 +3139,50 @@ static void* FindListBoxChild(void* panel) {
 static void MonitorDialogReplies() {
     void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
     if (!mgr) return;
-    void* fg = GetForegroundPanel(mgr);
-    if (!fg) {
-        if (g_dialogReplyState.listBox) {
-            g_dialogReplyState.listBox = nullptr;
-            g_dialogReplyState.lastSelection = -1;
+
+    // Scan ALL panels in the manager's panels[] for a dialog-kind panel.
+    // Was previously gating on fg, which fails because during arrow-key
+    // navigation in a dialog the foreground panel switches to a separate
+    // auxiliary panel (Unknown kind) — the actual dialog-cinematic panel
+    // stays in panels[] but isn't fg, so the old fg-only check rejected
+    // the dialog and reset the monitor state on every keystroke. Verified
+    // in patch-20260502-192712.log: the same listbox 0FE2D434 stayed
+    // allocated through all 8 reply turns; selection_index successfully
+    // changed (initialSel went from -1 → 1 → 0 across turns) but every
+    // change was missed because the monitor reset between them.
+    auto* base = reinterpret_cast<unsigned char*>(mgr);
+    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+
+    void* dialogPanel = nullptr;
+    PanelKind dialogKind = PanelKind::Unknown;
+    if (panelData && panelCount > 0) {
+        int n = panelCount > 16 ? 16 : panelCount;
+        for (int i = 0; i < n; ++i) {
+            void* p = panelData[i];
+            if (!p) continue;
+            PanelKind pk = IdentifyPanel(p);
+            if (IsDialogPanelKind(pk)) {
+                dialogPanel = p;
+                dialogKind  = pk;
+                break;
+            }
         }
-        return;
     }
-    PanelKind k = IdentifyPanel(fg);
-    if (!IsDialogPanelKind(k)) {
+
+    if (!dialogPanel) {
         if (g_dialogReplyState.listBox) {
+            acclog::Write("Dialog reply monitor disarmed: no dialog panel in stack");
             g_dialogReplyState.listBox = nullptr;
             g_dialogReplyState.lastSelection = -1;
         }
         return;
     }
 
-    void* lb = FindListBoxChild(fg);
+    void* lb = FindListBoxChild(dialogPanel);
     if (!lb) return;
+    PanelKind k = dialogKind;
+    void* fg = dialogPanel;  // for log-line compatibility below
 
     short selIdx = *reinterpret_cast<short*>(
         reinterpret_cast<unsigned char*>(lb) + kListBoxSelectionIndexOffset);
