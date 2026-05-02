@@ -215,6 +215,28 @@ constexpr size_t kButtonStrRefOffset  = 0x174;
 constexpr size_t kLabelTextOffset     = 0xe8;
 constexpr size_t kLabelStrRefOffset   = 0xf0;
 
+// Element-state field offsets (verified via Ghidra decomp of Draw/SetSelected/
+// HandleInputEvent for each class):
+//
+//   CSWGuiButtonToggle.field2_0x1c8 — uint32; bit 0 = on/off. HandleInputEvent
+//                                     XOR's bit 0 with 1 on activate; SetSelected
+//                                     masks to bit 0; Draw branches on (& 1) to
+//                                     pick the rendered border.
+//   CSWGuiSlider.max_value (Lane-named) at +0x70 — uint32, slider max.
+//   CSWGuiSlider.cur_value (Lane-named) at +0x74 — uint32, current slider value.
+//                                                  HandleInputEvent calls
+//                                                  SetCurValue on inc/dec keys.
+constexpr size_t kButtonToggleStateOffset = 0x1c8;
+constexpr size_t kSliderMaxValueOffset    = 0x70;
+constexpr size_t kSliderCurValueOffset    = 0x74;
+
+// Slider class identity by vtable address. Resolved via SARIF xrefs:
+// 0x0073E9D0 is referenced by CSWGuiSlider's constructor (0x41bb0d) and
+// destructor (0x41bb9d) — i.e. it's the slider's vftable. Sliders have no
+// AsSlider downcast accessor in GuiControlMethods, so vtable equality is
+// the only safe identity check.
+constexpr uintptr_t kVtableSlider = 0x0073E9D0;
+
 // CTlkTable::GetSimpleString — resolves a TLK str_ref to a localized string.
 // Many KOTOR UI controls (e.g. Options screen "Annehmen"/"Abbrechen", certain
 // chargen labels) leave their CExoString empty and store only a str_ref; the
@@ -296,9 +318,32 @@ static bool ExtractTextOrStrRef(void* control,
     return LookupTlk(strref, outBuf, bufSize);
 }
 
+// Element-class identity helpers. Used by ExtractAnnounceableText to decide
+// which subclass-specific field reads to perform, and by IsChainNavigable to
+// decide which controls keyboard chain-navigation can land on.
+static bool IsToggle(void* control) {
+    return CallDowncast(control, kVtableAsButtonToggle) != nullptr;
+}
+
+static bool IsSlider(void* control) {
+    if (!control) return false;
+    void** vt = *reinterpret_cast<void***>(control);
+    return reinterpret_cast<uintptr_t>(vt) == kVtableSlider;
+}
+
+// Read CSWGuiButtonToggle.field2_0x1c8's bit 0. Decompiled HandleInputEvent
+// XOR's this bit on every activate, and SetSelected masks param to bit 0;
+// Draw branches on (field2 & 1) to pick which border to render. So the
+// rendered "checked" state is exactly bit 0 of this field.
+static bool ReadToggleState(void* toggle) {
+    return (ReadU32(toggle, kButtonToggleStateOffset) & 1u) != 0;
+}
+
 static const char* ExtractAnnounceableText(void* control,
                                            char* outBuf, size_t bufSize) {
     if (!control || bufSize < 2) return nullptr;
+
+    const char* source = nullptr;
 
     // 1. Tooltip on the base class — works for any control that has one.
     const char* tip;
@@ -308,54 +353,87 @@ static const char* ExtractAnnounceableText(void* control,
         tipLen > 0 && tipLen < bufSize) {
         memcpy(outBuf, tip, tipLen);
         outBuf[tipLen] = '\0';
-        return "tooltip";
+        source = "tooltip";
     }
 
     // 2. CSWGuiButton (most common — also covers CharButton, ActivatedButton,
     //    ButtonToggle since those embed Button at offset 0 AND the engine's
     //    AsButton override returns `this` for them). Try the literal
     //    CExoString first, then the TLK str_ref fallback.
-    if (void* btn = CallDowncast(control, kVtableAsButton)) {
-        if (ExtractTextOrStrRef(btn, kButtonTextOffset, kButtonStrRefOffset,
-                                outBuf, bufSize)) {
-            return "button";
+    if (!source) {
+        if (void* btn = CallDowncast(control, kVtableAsButton)) {
+            if (ExtractTextOrStrRef(btn, kButtonTextOffset, kButtonStrRefOffset,
+                                    outBuf, bufSize)) {
+                source = "button";
+            }
         }
     }
 
     // 3. CSWGuiButtonToggle — defensive fallback if AsButton misses it.
     //    Same offsets because ButtonToggle.button is at offset 0.
-    if (void* tgl = CallDowncast(control, kVtableAsButtonToggle)) {
-        if (ExtractTextOrStrRef(tgl, kButtonTextOffset, kButtonStrRefOffset,
-                                outBuf, bufSize)) {
-            return "buttontoggle";
+    if (!source) {
+        if (void* tgl = CallDowncast(control, kVtableAsButtonToggle)) {
+            if (ExtractTextOrStrRef(tgl, kButtonTextOffset, kButtonStrRefOffset,
+                                    outBuf, bufSize)) {
+                source = "buttontoggle";
+            }
         }
     }
 
     // 4. CSWGuiLabel.
-    if (void* lbl = CallDowncast(control, kVtableAsLabel)) {
-        if (ExtractTextOrStrRef(lbl, kLabelTextOffset, kLabelStrRefOffset,
-                                outBuf, bufSize)) {
-            return "label";
+    if (!source) {
+        if (void* lbl = CallDowncast(control, kVtableAsLabel)) {
+            if (ExtractTextOrStrRef(lbl, kLabelTextOffset, kLabelStrRefOffset,
+                                    outBuf, bufSize)) {
+                source = "label";
+            }
         }
     }
 
     // 5. CSWGuiLabelHilight — same offsets (Label embedded at 0).
-    if (void* hil = CallDowncast(control, kVtableAsLabelHilight)) {
-        if (ExtractTextOrStrRef(hil, kLabelTextOffset, kLabelStrRefOffset,
-                                outBuf, bufSize)) {
-            return "labelhilight";
+    if (!source) {
+        if (void* hil = CallDowncast(control, kVtableAsLabelHilight)) {
+            if (ExtractTextOrStrRef(hil, kLabelTextOffset, kLabelStrRefOffset,
+                                    outBuf, bufSize)) {
+                source = "labelhilight";
+            }
         }
     }
 
-    // CSWGuiEditbox / CSWGuiSlider / CSWGuiListBox — the engine doesn't
-    // expose AsX accessors for these in GuiControlMethods, so we have no
-    // safe way to detect them by downcast. Reading at speculative offsets
-    // would risk AVs on smaller controls. Instead, OnSetActiveControl logs
-    // the vtable pointer for any control we can't extract — we'll
-    // accumulate vtable addresses across sessions, map them to classes via
-    // SARIF, and add per-class extraction as a separate step.
+    // 6. CSWGuiSlider — no AsSlider downcast accessor exists; detect by vtable
+    //    identity. cur_value / max_value are Lane-named uint32 fields.
+    //    We don't have a label associated with the slider here (KOTOR sliders
+    //    are paired with sibling label controls visually but those aren't
+    //    reachable via downcast from the slider itself); the chain
+    //    announcement before navigating to the slider tells the user which
+    //    one. This readout is just the numeric position.
+    if (!source && IsSlider(control)) {
+        uint32_t cur = ReadU32(control, kSliderCurValueOffset);
+        uint32_t max = ReadU32(control, kSliderMaxValueOffset);
+        snprintf(outBuf, bufSize, "%u von %u", cur, max);
+        source = "slider";
+    }
 
-    return nullptr;
+    // CSWGuiEditbox / CSWGuiListBox — the engine doesn't expose AsX
+    // accessors for these in GuiControlMethods, and we don't yet know
+    // their struct layouts well enough to read fields by speculative
+    // offsets. OnSetActiveControl logs the vtable pointer for any control
+    // we can't extract; map via SARIF + add per-class extraction here.
+
+    // Append element-state suffix for toggles. Detected via the same downcast
+    // we'd use for text extraction, so works regardless of which path
+    // returned the label (most toggles are caught by AsButton at step 2).
+    if (source && IsToggle(control)) {
+        bool on = ReadToggleState(control);
+        size_t len = strnlen(outBuf, bufSize);
+        const char* suffix = on ? ", ein" : ", aus";
+        size_t suffixLen = strlen(suffix);
+        if (len + suffixLen + 1 <= bufSize) {
+            memcpy(outBuf + len, suffix, suffixLen + 1);
+        }
+    }
+
+    return source;
 }
 
 // Multi-line "blob" listbox readout. The Options-Gameplay settings list is
@@ -504,12 +582,21 @@ static void FireActivate(void* control) {
 }
 
 // Logical input codes received pre-translation by CSWGuiManager::HandleInputEvent.
-// 0xb6 / 0xb7 are the engine's "nav-prev / nav-next" actions, emitted on arrow
-// presses inside menus. Consuming them prevents the engine's broken `.gui`
-// focus-cycle from running. Other key codes (Tab, Enter, mouse, F-keys) pass
-// through normally and reach the engine's existing handlers.
-constexpr int kInputNavUp   = 0xb6;
-constexpr int kInputNavDown = 0xb7;
+// 0xb6 / 0xb7 are the engine's "nav-prev / nav-next" actions (Up/Down in
+// menus); 0xb8 / 0xb9 are the horizontal-axis equivalents (Left/Right). All
+// four are contiguous in ManagerTranslateCode's switch statement and translate
+// to 0x3d-0x40 (KEYBOARD_K through KEYBOARD_N — the four post-translation
+// codes the engine uses internally for slider / cycle adjustment).
+//
+// Consuming Up/Down prevents the engine's broken `.gui` focus-cycle from
+// running. Left/Right are consumed selectively: on a focused slider we let
+// them pass through (engine's slider HandleInputEvent at 0x0041adf0 expects
+// the post-translation codes and adjusts cur_value natively), elsewhere we
+// consume and dispatch to a same-row empty-text neighbour (cycle arrows).
+constexpr int kInputNavUp    = 0xb6;
+constexpr int kInputNavDown  = 0xb7;
+constexpr int kInputNavLeft  = 0xb8;
+constexpr int kInputNavRight = 0xb9;
 
 // 0xb5 / 0xbb both translate to KEYBOARD_F1 (the engine's "confirm/activate"
 // virtual code). We don't consume Enter — the engine's normal activation
@@ -600,6 +687,18 @@ static void* g_pendingActivateTarget = nullptr;
 // diagnostic WalkChildren logging.
 static void* g_lastTitledPanel = nullptr;
 
+// Per-frame focus state monitor. Snapshots the announceable text of the
+// focused chain entry on each focus change; on every OnUpdate tick re-extracts
+// and re-announces if the text has changed since the snapshot. This is the
+// generic mechanism that catches every state mutation visible through
+// ExtractAnnounceableText: toggle on/off flips, cycle-button value changes
+// (engine rewrites the value-display button's CExoString in place when the
+// user activates a flanking arrow), slider cur_value adjustments, etc. New
+// widget types get the behaviour for free as soon as their text/state
+// extraction lands in ExtractAnnounceableText.
+static void* g_focusMonitorControl = nullptr;
+static char  g_focusMonitorText[256] = {0};
+
 // Tabbed-panel detection state (Options-menu style: a CSWGuiListBox at
 // controls[0] holds the current tab's content, button cluster after [0] = tabs).
 // Detection runs in OnListBoxSetActiveControl and identifies the layout so the
@@ -669,21 +768,21 @@ static bool GetControlCenter(void* control, int& outCx, int& outCy) {
 }
 
 // True if the control is button-like (CSWGuiButton or its subclasses
-// CharButton / ActivatedButton / ButtonToggle). MoveMouseToPosition's
-// hover→active promotion path is safe for buttons but crashes when the
-// active control is a label (verified: navigating onto the main-menu
-// "Neue Inhalte verfügbar…" label froze the game). Used to filter chain
-// navigation to selectable controls only — Decision 3's "filter from
-// evidence" trigger met by that crash.
+// CharButton / ActivatedButton / ButtonToggle) OR a CSWGuiSlider.
+// MoveMouseToPosition's hover→active promotion path is safe for buttons but
+// crashes when the active control is a label (verified: navigating onto the
+// main-menu "Neue Inhalte verfügbar…" label froze the game). Sliders are
+// included because Sound's Music/Voice/SFX/Movie controls are real sliders
+// and we want chain navigation to land on them so we can announce their
+// numeric value.
 //
 // Long-term: replace with a proper CSWGuiControl::GetIsSelectable call
 // (vtable lookup at 0x4189d0) to also include editbox / listbox / etc.
-// The button-only filter is a conservative starting point that handles
-// menus correctly.
 static bool IsChainNavigable(void* control) {
     if (!control) return false;
     if (CallDowncast(control, kVtableAsButton)        != nullptr) return true;
     if (CallDowncast(control, kVtableAsButtonToggle)  != nullptr) return true;
+    if (IsSlider(control))                                        return true;
     return false;
 }
 
@@ -850,6 +949,63 @@ static void* FindCloseButton(void* panel) {
         }
     }
     return nullptr;
+}
+
+// Find the closest navigable empty-text neighbour of `focused` in
+// `panel.controls`, on the visual left or right at the same y-row. Used to
+// dispatch Left/Right arrow presses to cycle-button flanker arrows: the
+// Difficulty cycle (and similar) renders as `[◀] Normal [▶]` — three plain
+// CSWGuiButtons, where the middle one carries the value text and the flanks
+// carry an image overlay only. We want Left/Right on the value-display button
+// to fire the corresponding flanker so the engine cycles the value.
+//
+// Heuristic:
+//   - Same-row: |cy_neighbour - cy_focused| <= 5 px (allows for off-by-one
+//     baseline alignment; KOTOR cycle layouts visually match much tighter).
+//   - Empty-text: ExtractAnnounceableText returns nullptr. Real labels and
+//     toggles are excluded so the "neighbour" is unambiguously a flanker.
+//   - Closest by signed dx: smaller |dx| wins among candidates strictly to
+//     the right (toRight=true) or left (toRight=false) of the focused control.
+//
+// Returns nullptr if no flanker found — caller falls back to "consume the
+// keypress with no action" so we don't trigger surprising native behaviour.
+static void* FindAdjacentArrow(void* panel, void* focused, bool toRight) {
+    if (!panel || !focused) return nullptr;
+
+    auto* list = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+    if (!list->data || list->size <= 0) return nullptr;
+
+    int focusCx, focusCy;
+    if (!GetControlCenter(focused, focusCx, focusCy)) return nullptr;
+
+    void* best = nullptr;
+    int bestDx = 0x7fffffff;
+
+    int n = list->size > 256 ? 256 : list->size;
+    for (int i = 0; i < n; ++i) {
+        void* c = list->data[i];
+        if (!c || c == focused) continue;
+        if (!IsChainNavigable(c)) continue;
+
+        int cx, cy;
+        if (!GetControlCenter(c, cx, cy)) continue;
+        if (cy - focusCy > 5 || focusCy - cy > 5) continue;
+
+        int dx = toRight ? (cx - focusCx) : (focusCx - cx);
+        if (dx <= 0) continue;
+
+        // Only consider empty-text neighbours — real labels / toggles are not
+        // cycle flankers.
+        char tmp[64];
+        if (ExtractAnnounceableText(c, tmp, sizeof(tmp))) continue;
+
+        if (dx < bestDx) {
+            bestDx = dx;
+            best   = c;
+        }
+    }
+    return best;
 }
 
 // True if `control` is one of the current panel's tab-cluster buttons.
@@ -1411,6 +1567,59 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         }
     }
 
+    // Left/Right cycle dispatch. Find an empty-text navigable neighbour at the
+    // same y-row in panel.controls and fire-activate it. Engine cycles the
+    // value-display button's CExoString in place; the per-frame focus monitor
+    // (in OnUpdate) catches the text change and re-announces.
+    //
+    // Sliders are exempt: their HandleInputEvent at 0x0041adf0 expects the
+    // post-translation horizontal codes (0x3f / 0x40 = ManagerTranslateCode of
+    // 0xb8 / 0xb9) and adjusts cur_value natively when the manager dispatches.
+    // Letting Left/Right pass through means the engine handles slider
+    // adjustment for us; the per-frame monitor re-reads cur_value at +0x74 and
+    // announces the new value.
+    //
+    // Non-slider non-cycle widgets (plain toggles, action buttons): we still
+    // consume Left/Right with no action. Falling through would let the engine
+    // dispatch Left/Right to the focused control's HandleInputEvent, and we'd
+    // rather not surface unspecified native behaviour from a key that has no
+    // user-meaningful effect on these widgets.
+    if (param_2 != 0 &&
+        (param_1 == kInputNavLeft || param_1 == kInputNavRight) &&
+        g_currentPanel != nullptr &&
+        g_chainPanel == g_currentPanel &&
+        g_chainCount > 0 &&
+        g_chainIndex >= 0 &&
+        g_chainIndex < g_chainCount)
+    {
+        void* focused = g_chain[g_chainIndex].control;
+        if (IsSlider(focused)) {
+            // Pass through to engine; per-frame monitor handles re-announce.
+            acclog::Write("Cycle %s: focus=%p is slider; passing through",
+                          param_1 == kInputNavRight ? "right" : "left",
+                          focused);
+        } else {
+            bool toRight = (param_1 == kInputNavRight);
+            void* neighbor = FindAdjacentArrow(g_currentPanel, focused, toRight);
+            if (neighbor) {
+                if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
+                    acclog::Write("Cycle %s: op already pending; ignoring",
+                                  toRight ? "right" : "left");
+                } else {
+                    g_pendingActivate       = true;
+                    g_pendingActivateTarget = neighbor;
+                    acclog::Write("Cycle %s panel=%p focus=%p neighbor=%p",
+                                  toRight ? "right" : "left",
+                                  g_currentPanel, focused, neighbor);
+                }
+            } else {
+                acclog::Write("Cycle %s: no adjacent arrow for focus=%p",
+                              toRight ? "right" : "left", focused);
+            }
+            consumed = true;
+        }
+    }
+
     // Esc / Backspace (when bound to "back/cancel" via the in-game Key Mapping
     // screen): close the current sub-dialog by FireActivate-ing its Schliess
     // button. The engine's natural Esc → CSWGuiOptionsXxx::HandleInputEvent(0x28)
@@ -1462,6 +1671,58 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     return consumed ? 1 : 0;
 }
 
+// Per-frame focus state monitor. Re-extracts the focused chain entry's
+// announceable text and re-announces if it has changed since the last
+// snapshot. Generic mechanism for state-change announcements — toggle
+// on/off, cycle button value, slider position, and any future widget whose
+// state shows up through ExtractAnnounceableText all flow through here, no
+// per-widget code needed.
+//
+// On focus moving to a different control we only update the snapshot. The
+// initial announcement is handled by the chain step path (OnHandleInputEvent)
+// or OnSetActiveControl; this monitor's job is strictly "same control, text
+// changed since last tick". That's precisely the "state mutated under our
+// focus" case — Enter on a toggle flips +0x1c8 bit 0 synchronously inside
+// FireActivate, the engine's slider HandleInputEvent rewrites cur_value
+// synchronously when Left/Right reach the slider, and a cycle activation
+// rewrites the value-display button's CExoString in place. All three
+// produce a different ExtractAnnounceableText output on the very next tick.
+//
+// Empty-text controls (cycle arrows, controls we don't yet know how to
+// extract) bypass the snapshot entirely so we don't accidentally announce
+// transient placeholders. The chain step path already announced "control N"
+// for them when focus arrived.
+static void MonitorFocusedControl() {
+    if (g_chainCount <= 0 ||
+        g_chainIndex < 0 ||
+        g_chainIndex >= g_chainCount) {
+        return;
+    }
+    if (g_chainPanel != g_currentPanel) {
+        // Chain stale (panel transition mid-flight); skip until rebind.
+        return;
+    }
+    void* focused = g_chain[g_chainIndex].control;
+    if (!focused) return;
+
+    char text[256];
+    const char* source = ExtractAnnounceableText(focused, text, sizeof(text));
+    if (!source) return;
+
+    if (focused == g_focusMonitorControl) {
+        if (strncmp(g_focusMonitorText, text,
+                    sizeof(g_focusMonitorText)) != 0) {
+            tolk::Speak(text, /*interrupt=*/false);
+            strncpy_s(g_focusMonitorText, text, _TRUNCATE);
+            acclog::Write("Monitor: focused=%p text changed -> \"%s\"",
+                          focused, text);
+        }
+    } else {
+        g_focusMonitorControl = focused;
+        strncpy_s(g_focusMonitorText, text, _TRUNCATE);
+    }
+}
+
 // CSWGuiManager::Update — hooked mid-function at 0x40ce76. Per-frame tick run
 // once after input dispatch by CClientExoAppInternal::MainLoop. Used as a safe
 // callback site for the deferred MoveMouseToPosition triggered by chain
@@ -1473,6 +1734,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
 // hook). We pass EBP as the parameter for clarity even though we also have
 // the global at 0x7A39F4 — both resolve to the same singleton.
 extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
+    MonitorFocusedControl();
     if (!g_pendingCursorMove && !g_pendingClick && !g_pendingActivate) return;
 
     void* gm = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
@@ -1541,6 +1803,13 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     // Direct activate via vtable[15].HandleInputEvent(0x27, 1). Bypasses
     // hit-test, so a button covered by a listbox extent (e.g. Schliess.
     // in an Options sub-dialog) still fires its onClick when we target it.
+    //
+    // Post-activation re-announce is handled generically by
+    // MonitorFocusedControl on the next tick: toggles flip +0x1c8 bit 0
+    // synchronously inside FireActivate, cycles rewrite the value-display
+    // button's CExoString in place, sliders mutate cur_value at +0x74. All
+    // three produce a different ExtractAnnounceableText on next entry, and
+    // the monitor speaks the diff.
     if (g_pendingActivate) {
         g_pendingActivate = false;
         void* tgt = g_pendingActivateTarget;
