@@ -14,6 +14,11 @@
 #include <cstdio>
 #include <cstring>
 
+// GetAsyncKeyState lives in user32.lib, which the upstream create-patch.bat
+// doesn't link by default (kernel32 + sqlite3 only). Pragma the dependency
+// in here rather than touching the vendored build script.
+#pragma comment(lib, "user32.lib")
+
 #include "log.h"
 #include "tolk.h"
 
@@ -449,6 +454,36 @@ typedef void (__thiscall* PFN_MoveMouseToPosition)(void* gm, int x, int y);
 constexpr uintptr_t kAddrPanelSetActiveControl = 0x0040a630;
 typedef void (__thiscall* PFN_PanelSetActiveControl)(void* panel, void* control);
 
+// CSWGuiManager click-sim primitives (Phase 3 — see docs/menu-nav-design.md).
+//
+// Decompilation summary (from Lane's gzf):
+//
+//   HandleLMouseDown(this, int press) @ 0x40c570
+//     - XORs `press & 1` into bit 0 of state field at +0x1c.
+//     - If no control is currently held: broadcasts event 0x1f9 to panels
+//       (input class 3 only), runs UpdateMouseOverControl + tooltip-disable,
+//       then dispatches via the engine's mouseOverControl (manager+0x8) ->
+//       vtable[6] = control's HandleLMouseDown. Button-class HandleLMouseDown
+//       calls CaptureMouse, setting mouseHeldControl (manager+0x10).
+//     - Returns 1 if dispatched, 0 if a click is already in progress.
+//
+//   HandleLMouseUp(this) @ 0x40a170
+//     - If a control is held (manager+0x10 non-null AND manager.mouse_held==1):
+//       dispatches mouseHeldControl -> vtable[7] = control's HandleLMouseUp.
+//       That's the function that fires the actual activate event.
+//     - Clears bit 0 of manager+0x1c. Returns 1 if dispatched, 0 otherwise.
+//
+// Calling them in sequence after MoveMouseToPosition has settled the cursor
+// runs the engine's natural click pipeline end-to-end. This is the
+// replacement for the SetActiveControl-based path that crashed at mgr+5
+// (see docs/tab-crash-investigation.md): we no longer skip the prelude
+// HandleLMouseDown writes, so whatever invariant the engine maintains
+// across press+release stays intact.
+constexpr uintptr_t kAddrManagerLMouseDown = 0x0040c570;
+constexpr uintptr_t kAddrManagerLMouseUp   = 0x0040a170;
+typedef int (__thiscall* PFN_ManagerLMouseDown)(void* gm, int press);
+typedef int (__thiscall* PFN_ManagerLMouseUp)(void* gm);
+
 // Logical input codes received pre-translation by CSWGuiManager::HandleInputEvent.
 // 0xb6 / 0xb7 are the engine's "nav-prev / nav-next" actions, emitted on arrow
 // presses inside menus. Consuming them prevents the engine's broken `.gui`
@@ -467,6 +502,14 @@ constexpr int kInputNavDown = 0xb7;
 // oscillation an explicit setActive in OnUpdate caused.
 constexpr int kInputEnter1 = 0xb5;
 constexpr int kInputEnter2 = 0xbb;
+
+// LOGICAL_TAB — the engine's high-level "advance focus" code. Arrives at
+// the manager-level HandleInputEvent untranslated (ManagerTranslateCode
+// passes 0xCE through unchanged). Confirmed via patch-20260430-202843
+// log when the user pressed Tab in the Options panel. Modifier state
+// (Shift) is not encoded in the code itself; we read it via
+// GetAsyncKeyState(VK_SHIFT) at handle time.
+constexpr int kInputTab = 0xCE;
 
 // Chain state. g_currentPanel is updated in OnSetActiveControl. g_chainPanel
 // is rebound lazily per arrow press if the focused panel has changed since the
@@ -488,6 +531,13 @@ static bool  g_pendingCursorMove = false;
 static int   g_pendingX = 0;
 static int   g_pendingY = 0;
 static void* g_pendingTarget = nullptr;   // for self-dedup in OnSetActiveControl
+
+// Deferred click-sim (Phase 3). When set, OnUpdate runs Manager::HandleLMouseDown
+// and HandleLMouseUp after the cursor warp has settled — the engine then runs
+// its full natural click pipeline against whatever the warp's hit-test resolved
+// to as mouseOverControl. Always paired with g_pendingCursorMove so the cursor
+// is at the click point before Down dispatches.
+static bool g_pendingClick = false;
 
 // Tracks the last panel for which we spoke the title (AnnouncePanelTitle).
 // Re-entering the same panel pointer must not re-announce. A distinct static
@@ -1085,6 +1135,128 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
 
     bool consumed = false;
 
+    // Tab cycling in tabbed panels — cursor warp only (no click). The KOTOR
+    // Options panel's "tab" buttons aren't real tabs: hovering one previews
+    // its settings inline (engine's mouseover→active path swaps listbox
+    // content); *clicking* one opens a separate sub-dialog. We want the
+    // preview, not the sub-dialog, so we don't synthesize a click here.
+    //
+    // Two engine quirks shape the design (verified in patch-20260502-065848.log):
+    //
+    //   1. panel.controls order ≠ visual order. The Options strip is
+    //      panel.controls[1..5] = Gameplay, Auto-Pause, Grafik, Sound,
+    //      Feedback, but visually top-to-bottom is Gameplay, Feedback,
+    //      Auto-Pause, Grafik, Sound. Cycling by panel-controls index makes
+    //      Shift+Tab from Gameplay wrap to Feedback (panel idx 5) — which
+    //      the engine refuses to switch to because it's the visually-prev
+    //      of the already-active tab. So we sort by extent.top ascending
+    //      and cycle in visual order.
+    //
+    //   2. The engine's hover→active rule is "activate the tab whose
+    //      center.y is the largest value strictly less than cursor.y"
+    //      (i.e. the bottom-most tab visually above the cursor). Warping
+    //      to target.center activates the tab visually-prev to target, not
+    //      target itself; for the top tab there's nothing to activate at
+    //      all. Solution: warp to (target.cx, target.bottom - 1). At that
+    //      y-coord, target.center.y < cursor.y < next-tab.center.y, so
+    //      target is the bottom-most tab visually above and gets activated.
+    //      Reaches every tab including Sound (bottommost) and Gameplay
+    //      (topmost) — Sound was unreachable in b4a60db.
+    //
+    // Announcement deferred to OnSetActiveControl so the user hears whatever
+    // tab the engine actually activates after the warp.
+    if (param_2 != 0 &&
+        param_1 == kInputTab &&
+        g_tabbedPanel != nullptr && g_tabbedPanel == g_currentPanel &&
+        g_tabsCount >= 2)
+    {
+        bool isShift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+        int delta = isShift ? -1 : +1;
+
+        auto* list = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(g_tabbedPanel) + kPanelControlsOffset);
+        int firstIdx = g_tabsStart;
+        int lastIdx  = g_tabsStart + g_tabsCount - 1;
+
+        // Build visual order: panel-index sorted by extent.top ascending.
+        // Cap at 16 — Options has 5 tabs; chargen-class panels (largest tab
+        // strip in the game) have at most a handful. Anything above 16
+        // would be a misdetection upstream, not a real layout.
+        struct TabEntry { int panelIdx; int top; };
+        TabEntry order[16];
+        int numTabs = 0;
+        if (list && list->data) {
+            for (int i = firstIdx; i <= lastIdx && numTabs < 16; ++i) {
+                void* c = list->data[i];
+                if (!c) continue;
+                int* ext = reinterpret_cast<int*>(
+                    reinterpret_cast<unsigned char*>(c) + kControlExtentOffset);
+                int width = ext[2], height = ext[3];
+                if (width <= 0 || height <= 0) continue;
+                order[numTabs].panelIdx = i;
+                order[numTabs].top      = ext[1];
+                ++numTabs;
+            }
+            // Insertion sort by top ascending — stable, n^2 is fine for n<=16.
+            for (int i = 1; i < numTabs; ++i) {
+                for (int j = i; j > 0 && order[j].top < order[j-1].top; --j) {
+                    TabEntry tmp = order[j];
+                    order[j] = order[j-1];
+                    order[j-1] = tmp;
+                }
+            }
+        }
+
+        if (numTabs < 2) {
+            acclog::Write("Tab cycle: visual ordering yielded %d tabs (need >=2); "
+                          "passing Tab through", numTabs);
+        } else {
+            // Locate current tab in visual order by panel.activeControl.
+            // If activeControl isn't in the cluster (e.g. focus on listbox
+            // or Schliess), seed at the first/last tab in the chosen direction.
+            void* active = ReadPanelActiveControl(g_tabbedPanel);
+            int curVis = -1;
+            for (int i = 0; i < numTabs; ++i) {
+                if (list->data[order[i].panelIdx] == active) { curVis = i; break; }
+            }
+
+            int nextVis;
+            if (curVis < 0) {
+                nextVis = (delta > 0) ? 0 : numTabs - 1;
+            } else {
+                nextVis = curVis + delta;
+                if (nextVis < 0)        nextVis = numTabs - 1;
+                if (nextVis >= numTabs) nextVis = 0;
+            }
+
+            int targetPanelIdx = order[nextVis].panelIdx;
+            void* target = list->data[targetPanelIdx];
+            int* ext = reinterpret_cast<int*>(
+                reinterpret_cast<unsigned char*>(target) + kControlExtentOffset);
+            int cx    = ext[0] + ext[2] / 2;
+            int warpY = ext[1] + ext[3] - 1;   // bottom edge minus 1
+
+            g_pendingX          = cx;
+            g_pendingY          = warpY;
+            g_pendingTarget     = target;
+            g_pendingCursorMove = true;
+            // g_pendingClick stays false — preview only, no click.
+
+            // New tab → fresh listbox content. Drop the parsed virtual lines
+            // so the next listbox blob event re-parses them; reset cursor so
+            // the user starts from the top of the new tab's settings.
+            g_virtualLineCount = 0;
+            g_virtualLineIdx   = -1;
+
+            acclog::Write("Tab cycle panel=%p %s curVis=%d nextVis=%d "
+                          "target=%p panelIdx=%d warpTo=(%d,%d) extent=(top=%d h=%d)",
+                          g_tabbedPanel, isShift ? "SHIFT" : "FWD",
+                          curVis, nextVis, target, targetPanelIdx,
+                          cx, warpY, ext[1], ext[3]);
+            consumed = true;
+        }
+    }
+
     // Arrow keys in a tabbed panel: walk the parsed virtual lines. No engine
     // activation yet — the multi-line listbox blob has no per-line click
     // target via SetActiveControl (controls.size == 1). Per-line activation
@@ -1178,18 +1350,39 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
 // hook). We pass EBP as the parameter for clarity even though we also have
 // the global at 0x7A39F4 — both resolve to the same singleton.
 extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
+    if (!g_pendingCursorMove && !g_pendingClick) return;
+
+    void* gm = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!gm) {
+        acclog::Write("Update: pending move/click but GuiManager singleton is NULL");
+        g_pendingCursorMove = false;
+        g_pendingClick      = false;
+        g_pendingTarget     = nullptr;
+        return;
+    }
+
     if (g_pendingCursorMove) {
         g_pendingCursorMove = false;
-        void* gm = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-        if (!gm) {
-            acclog::Write("Update: pending move but GuiManager singleton is NULL");
-            g_pendingTarget = nullptr;
-        } else {
-            auto move = reinterpret_cast<PFN_MoveMouseToPosition>(kAddrMoveMouseToPosition);
-            move(gm, g_pendingX, g_pendingY);
-            acclog::Write("Update: MoveMouseToPosition(%d, %d) target=%p",
-                          g_pendingX, g_pendingY, g_pendingTarget);
-        }
+        auto move = reinterpret_cast<PFN_MoveMouseToPosition>(kAddrMoveMouseToPosition);
+        move(gm, g_pendingX, g_pendingY);
+        acclog::Write("Update: MoveMouseToPosition(%d, %d) target=%p",
+                      g_pendingX, g_pendingY, g_pendingTarget);
+    }
+
+    // Click-sim. Runs in the same frame as the cursor warp: the warp's
+    // hit-test has already populated mouseOverControl, so HandleLMouseDown's
+    // dispatch lands on the intended target. HandleLMouseUp follows
+    // immediately — same-frame is empirically OK for buttons (the engine's
+    // state machine carries no animation that requires a frame gap), and
+    // matches the model in docs/menu-nav-design.md Phase 3.
+    if (g_pendingClick) {
+        g_pendingClick = false;
+        auto down = reinterpret_cast<PFN_ManagerLMouseDown>(kAddrManagerLMouseDown);
+        auto up   = reinterpret_cast<PFN_ManagerLMouseUp>(kAddrManagerLMouseUp);
+        int dResult = down(gm, /*press=*/1);
+        int uResult = up(gm);
+        acclog::Write("Update: click-sim Down=%d Up=%d at (%d,%d) target=%p",
+                      dResult, uResult, g_pendingX, g_pendingY, g_pendingTarget);
     }
 }
 
