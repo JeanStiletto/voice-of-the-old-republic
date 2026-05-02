@@ -484,6 +484,30 @@ constexpr uintptr_t kAddrManagerLMouseUp   = 0x0040a170;
 typedef int (__thiscall* PFN_ManagerLMouseDown)(void* gm, int press);
 typedef int (__thiscall* PFN_ManagerLMouseUp)(void* gm);
 
+// CSWGuiControl::HandleInputEvent — vtable slot 15 (offset 0x3C) per the
+// GuiControlMethods struct in docs/llm-docs/re/swkotor.exe.h. Direct fire of
+// event 0x27 (KEYBOARD_F1 / "activate") on a control invokes its onClick
+// pipeline without going through the click-sim path. Needed when the button
+// we want to activate is rendered behind/under a CSWGuiListBox whose extent
+// covers the button's hit area: the engine's hit-test resolves the cursor
+// to the listbox instead of the button, and click-sim ends up clicking the
+// wrong control. By firing 0x27 directly on the button we bypass hit-test
+// entirely. Confirmed safe for non-tab buttons (Schliess, OK, Standard,
+// chain targets in sub-dialogs).
+constexpr int kVtableHandleInputEvent = 15;
+typedef void (__thiscall* PFN_ControlHandleInputEvent)(void* this_, int code, int state);
+constexpr int kInputActivate = 0x27;   // KEYBOARD_F1, the engine's activate code
+
+static void FireActivate(void* control) {
+    if (!control) return;
+    void** vtable = *reinterpret_cast<void***>(control);
+    if (!vtable) return;
+    auto fn = reinterpret_cast<PFN_ControlHandleInputEvent>(
+        vtable[kVtableHandleInputEvent]);
+    if (!fn) return;
+    fn(control, kInputActivate, 1);
+}
+
 // Logical input codes received pre-translation by CSWGuiManager::HandleInputEvent.
 // 0xb6 / 0xb7 are the engine's "nav-prev / nav-next" actions, emitted on arrow
 // presses inside menus. Consuming them prevents the engine's broken `.gui`
@@ -555,6 +579,26 @@ static void* g_pendingTarget = nullptr;   // for self-dedup in OnSetActiveContro
 // to as mouseOverControl. Always paired with g_pendingCursorMove so the cursor
 // is at the click point before Down dispatches.
 static bool g_pendingClick = false;
+
+// Deferred direct-activate via vtable[15].HandleInputEvent(0x27, 1). Used for
+// targets whose click hit-area is covered by an overlapping CSWGuiListBox
+// (Schliess. and Standard inside Options sub-dialogs, chain-navigated
+// settings buttons, etc.) — click-sim would land on the listbox instead of
+// the button. Direct activate bypasses hit-test entirely.
+static bool  g_pendingActivate       = false;
+static void* g_pendingActivateTarget = nullptr;
+
+// Two-step sequence for "switch tabs while inside a sub-dialog". The
+// sub-dialog covers the parent's tab strip area, so clicking a tab coord
+// hits the sub-dialog's controls rather than the tab. The fix is to fire
+// activate on Schliess. first (closes sub-dialog → parent becomes active
+// again), THEN on the next frame click the new tab. g_followup* holds
+// the second click; after the primary activate runs, OnUpdate promotes
+// it to g_pending* for the next frame's run.
+static bool  g_followupPending = false;
+static int   g_followupX = 0;
+static int   g_followupY = 0;
+static void* g_followupTarget = nullptr;
 
 // Tracks the last panel for which we spoke the title (AnnouncePanelTitle).
 // Re-entering the same panel pointer must not re-announce. A distinct static
@@ -771,6 +815,37 @@ static void ParseVirtualLines(const char* text) {
     }
 }
 
+// Find the "close" button on a sub-dialog panel — the one we'd click to
+// dismiss the dialog and return to its parent. Used by the Tab handler when
+// the user is inside a sub-dialog of a tabbed panel: we need to close the
+// sub-dialog before we can click another tab on the parent (sub-dialogs
+// cover the tab strip area, so clicks land on the sub-dialog's controls).
+//
+// Match heuristic: scan panel.controls for a button whose text starts with
+// "Schliess" (German "Schließen"), "Close" (English), or "OK" (universal
+// "accept and dismiss" in confirmation dialogs). KOTOR ships with German
+// + English localizations; both texts present here cover the cases we
+// care about. Returns the control pointer or nullptr if none found.
+static void* FindCloseButton(void* panel) {
+    if (!panel) return nullptr;
+    auto* list = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+    if (!list->data || list->size <= 0) return nullptr;
+    int n = list->size > 256 ? 256 : list->size;
+    for (int i = 0; i < n; ++i) {
+        void* c = list->data[i];
+        if (!IsChainNavigable(c)) continue;
+        char text[256];
+        if (!ExtractAnnounceableText(c, text, sizeof(text))) continue;
+        if (strncmp(text, "Schliess", 8) == 0 ||
+            strncmp(text, "Close",    5) == 0 ||
+            strncmp(text, "OK",       2) == 0) {
+            return c;
+        }
+    }
+    return nullptr;
+}
+
 // Append a navigable control to the chain (skipping null/degenerate-extent).
 // Internal helper for RebindChain.
 static void AppendChainEntry(void* control) {
@@ -933,11 +1008,19 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
     void* prevPanel = g_currentPanel;
     g_currentPanel = panel;
 
-    // Tabbed-mode state is per-panel. When the focused panel changes, drop any
-    // tabbed state from the previous panel; OnListBoxSetActiveControl re-detects
-    // on its next firing (which is what populates tabbed mode in the first place).
-    if (panel != prevPanel && panel != g_tabbedPanel) {
-        ResetTabbedState();
+    // Tabbed-mode state survives transitions into sub-dialogs of the tabbed
+    // panel. The tab strip lives on the PARENT panel (e.g. Options) and is
+    // still the right thing for Tab/Shift+Tab to operate on while the user
+    // is inside one of its sub-dialogs (Spieleinstellungen, Feedback-Optionen,
+    // etc.); clicking a different tab from inside a sub-dialog is the
+    // engine's normal "switch tabs" gesture for mouse users. So we only
+    // clear the per-event virtual-line cursor on panel change; g_tabbedPanel/
+    // g_tabsStart/g_tabsCount persist until DetectTabsCluster overwrites
+    // them on a different tabbed panel, or a long-running session re-arms
+    // them naturally.
+    if (panel != prevPanel) {
+        g_virtualLineCount = 0;
+        g_virtualLineIdx   = -1;
     }
 
     // First focus event into a previously-unseen panel: dump every child
@@ -1166,15 +1249,15 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     // cursor is over the chain target.
     bool consumed = false;
 
-    // Enter-press activation. Click-sim against the chain target — works
-    // uniformly for direct panel buttons (main menu, sub-dialog OK/Cancel)
-    // and for listbox-child buttons (sub-dialog settings inside a listbox).
-    // The latter aren't reachable via panel.SetActiveControl + engine F1
-    // dispatch because they're not in panel.controls; click-sim routes
-    // through the engine's natural click pipeline regardless of where the
-    // target sits. Consume Enter so the engine doesn't ALSO activate
-    // panel.activeControl (which would double-fire or hit the wrong target
-    // when the engine has reverted active to its default).
+    // Enter-press activation. Direct activate via vtable[15] on the chain
+    // target — works for direct panel buttons (main menu, sub-dialog
+    // OK/Cancel) AND for listbox-child buttons (sub-dialog settings inside
+    // a listbox), without depending on hit-test resolution. Click-sim
+    // doesn't work here because many buttons in sub-dialogs are covered
+    // by listbox extents; the click resolves to the listbox, not the
+    // button (Up=0 with no dispatch). Direct activate skips hit-test.
+    // Consume Enter so the engine doesn't ALSO fire F1 against
+    // panel.activeControl (which can be stale or wrong).
     if (param_2 != 0 &&
         (param_1 == kInputEnter1 || param_1 == kInputEnter2) &&
         g_currentPanel != nullptr &&
@@ -1183,13 +1266,10 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         g_chainIndex < g_chainCount)
     {
         ChainEntry& e = g_chain[g_chainIndex];
-        g_pendingX          = e.cx;
-        g_pendingY          = e.cy;
-        g_pendingTarget     = e.control;
-        g_pendingCursorMove = true;
-        g_pendingClick      = true;
-        acclog::Write("Enter click-sim panel=%p index=%d target=%p (%d,%d)",
-                      g_currentPanel, g_chainIndex, e.control, e.cx, e.cy);
+        g_pendingActivate       = true;
+        g_pendingActivateTarget = e.control;
+        acclog::Write("Enter activate panel=%p index=%d target=%p",
+                      g_currentPanel, g_chainIndex, e.control);
         consumed = true;
     }
 
@@ -1209,9 +1289,17 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     // 16 — Options has 5; chargen has at most a handful. Wraps at the ends.
     // Bottom tab: no visually-next exists, so warp slightly below it; the
     // engine still finds it as the bottommost tab strictly above cursor.
+    //
+    // Fires regardless of g_currentPanel — the tab strip lives on the
+    // tabbed PARENT, and clicking a different tab from inside a sub-dialog
+    // is the engine's normal "switch tabs" gesture (the engine should
+    // close the current sub-dialog and open the new one, matching mouse
+    // behavior). If that turns out not to work because the sub-dialog
+    // is modal-blocking, we'll need a two-step "Schliess-then-click"
+    // sequence — but try the simple path first.
     if (param_2 != 0 &&
         param_1 == kInputTab &&
-        g_tabbedPanel != nullptr && g_tabbedPanel == g_currentPanel &&
+        g_tabbedPanel != nullptr &&
         g_tabsCount >= 2)
     {
         bool isShift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
@@ -1295,11 +1383,40 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                 warpY = tExt[1] + tExt[3] + 5;     // 5px past target bottom
             }
 
-            g_pendingX          = cx;
-            g_pendingY          = warpY;
-            g_pendingTarget     = target;
-            g_pendingCursorMove = true;
-            g_pendingClick      = true;
+            // If the current panel is a sub-dialog of the tabbed parent
+            // (g_currentPanel != g_tabbedPanel), we have to close that
+            // sub-dialog FIRST: it covers the tab strip area, so clicking a
+            // tab coord directly hits the sub-dialog's controls (verified in
+            // patch-20260502-075651.log mouseOver=sub-dialog-listbox after
+            // warping to a tab coord). Two-step sequence: primary click =
+            // Schliess. on the sub-dialog, follow-up click on next frame =
+            // the new tab on the parent.
+            void* closeBtn = (g_currentPanel != g_tabbedPanel)
+                             ? FindCloseButton(g_currentPanel)
+                             : nullptr;
+            if (closeBtn) {
+                // Sub-dialog Schliess. is covered by a CSWGuiListBox extent
+                // — click-sim hits the listbox, not Schliess (verified in
+                // patch-20260502-080220.log: Up=0 returns, no dispatch).
+                // Direct activate via vtable[15] bypasses hit-test.
+                g_pendingActivate       = true;
+                g_pendingActivateTarget = closeBtn;
+
+                g_followupX        = cx;
+                g_followupY        = warpY;
+                g_followupTarget   = target;
+                g_followupPending  = true;
+
+                acclog::Write("Tab cycle two-step: activate Schliess=%p on %p, "
+                              "then click tab %p at (%d,%d)",
+                              closeBtn, g_currentPanel, target, cx, warpY);
+            } else {
+                g_pendingX          = cx;
+                g_pendingY          = warpY;
+                g_pendingTarget     = target;
+                g_pendingCursorMove = true;
+                g_pendingClick      = true;
+            }
 
             // New tab → sub-dialog opens. The current tabbed-panel state is
             // about to become irrelevant; reset virtual-line cursor so the
@@ -1398,14 +1515,16 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
 // hook). We pass EBP as the parameter for clarity even though we also have
 // the global at 0x7A39F4 — both resolve to the same singleton.
 extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
-    if (!g_pendingCursorMove && !g_pendingClick) return;
+    if (!g_pendingCursorMove && !g_pendingClick && !g_pendingActivate) return;
 
     void* gm = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
     if (!gm) {
-        acclog::Write("Update: pending move/click but GuiManager singleton is NULL");
-        g_pendingCursorMove = false;
-        g_pendingClick      = false;
-        g_pendingTarget     = nullptr;
+        acclog::Write("Update: pending move/click/activate but GuiManager singleton is NULL");
+        g_pendingCursorMove     = false;
+        g_pendingClick          = false;
+        g_pendingActivate       = false;
+        g_pendingTarget         = nullptr;
+        g_pendingActivateTarget = nullptr;
         return;
     }
 
@@ -1446,6 +1565,35 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
                       "mouseOver before=%p afterDown=%p afterUp=%p",
                       dResult, uResult, g_pendingX, g_pendingY, g_pendingTarget,
                       moBefore, moAfterDown, moAfterUp);
+    }
+
+    // Direct activate via vtable[15].HandleInputEvent(0x27, 1). Bypasses
+    // hit-test, so a button covered by a listbox extent (e.g. Schliess.
+    // in an Options sub-dialog) still fires its onClick when we target it.
+    if (g_pendingActivate) {
+        g_pendingActivate = false;
+        void* tgt = g_pendingActivateTarget;
+        g_pendingActivateTarget = nullptr;
+        acclog::Write("Update: FireActivate target=%p", tgt);
+        FireActivate(tgt);
+    }
+
+    // Two-step sequence: promote the follow-up click to next frame's
+    // pending. The Schliess.-first path queues this when the user
+    // presses Tab while inside a sub-dialog of the tabbed parent. The
+    // next OnUpdate (one frame later) runs the follow-up against the
+    // parent's tab strip — by then the engine has finished closing
+    // the sub-dialog and re-rendering the parent.
+    if (g_followupPending) {
+        g_followupPending   = false;
+        g_pendingX          = g_followupX;
+        g_pendingY          = g_followupY;
+        g_pendingTarget     = g_followupTarget;
+        g_pendingCursorMove = true;
+        g_pendingClick      = true;
+        g_followupTarget    = nullptr;
+        acclog::Write("Update: promoting follow-up click to next frame at (%d,%d) target=%p",
+                      g_pendingX, g_pendingY, g_pendingTarget);
     }
 }
 
