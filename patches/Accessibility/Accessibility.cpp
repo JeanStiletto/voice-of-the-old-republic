@@ -551,8 +551,19 @@ static bool IsChainNavigable(void* control);
 // per-kind hardcoded-name fallback for InGameMenu uses this wrapper.
 static bool IsPanelKindInGameMenu(void* panel);
 
+// Forward decl: find the panel in the manager's panels[] that owns `control`
+// (i.e. has it in its controls[]). Used as a fallback when callers of
+// ExtractAnnounceableText don't pass an explicit owner — needed because
+// g_currentPanel only updates on SetActiveControl, so transient flows like
+// fg-flipping-back-after-modal-close leave it pointing at the wrong panel
+// while the chain rebinds against a different one (logged in
+// patch-20260502-214100.log: chain dump for InGameMenu printed text="" / src=?
+// because g_currentPanel was still TutorialBox).
+static void* FindOwningPanel(void* control);
+
 static const char* ExtractAnnounceableText(void* control,
-                                           char* outBuf, size_t bufSize) {
+                                           char* outBuf, size_t bufSize,
+                                           void* ownerPanel = nullptr) {
     if (!control || bufSize < 2) return nullptr;
 
     const char* source = nullptr;
@@ -877,7 +888,16 @@ static const char* ExtractAnnounceableText(void* control,
     //     internal field names; the strings below are the rendered
     //     in-game captions for the German build (matches "M" / "I" / "C"
     //     hotkey conventions per the controls-and-input doc).
-    if (!source && g_currentPanel && IsPanelKindInGameMenu(g_currentPanel)) {
+    // Resolve the owning panel for the perkind fallback. Caller-passed owner
+    // wins (RebindChain, WalkChildren, BuildContentFingerprint, SetActiveControl
+    // all know the panel). Otherwise scan panels[] — covers callers that don't
+    // know the panel (AnnounceControl from chain-step, listbox-row helpers,
+    // FindCloseButton from the input hook). g_currentPanel is the last-resort
+    // fallback for early-attach windows where the manager isn't resolvable yet.
+    void* ownerForPerkind = ownerPanel;
+    if (!ownerForPerkind) ownerForPerkind = FindOwningPanel(control);
+    if (!ownerForPerkind) ownerForPerkind = g_currentPanel;
+    if (!source && ownerForPerkind && IsPanelKindInGameMenu(ownerForPerkind)) {
         // Localized names sourced from dialog.tlk strrefs where they exist;
         // literal fallback for the one strref we couldn't find. Strref values
         // verified by parsing the user's actual dialog.tlk (German build,
@@ -903,9 +923,9 @@ static const char* ExtractAnnounceableText(void* control,
             { 48223u,      "Nachrichten"  },      // messages
         };
 
-        // Find the index of `control` within g_currentPanel's controls[].
+        // Find the index of `control` within the owning panel's controls[].
         auto* list = reinterpret_cast<CExoArrayList*>(
-            reinterpret_cast<unsigned char*>(g_currentPanel) + kPanelControlsOffset);
+            reinterpret_cast<unsigned char*>(ownerForPerkind) + kPanelControlsOffset);
         if (list && list->data && list->size > 0) {
             int n = list->size > 32 ? 32 : list->size;
             int idx = -1;
@@ -1358,6 +1378,39 @@ constexpr size_t kMgrPanelsSizeOffset      = 0x8c;
 constexpr size_t kMgrModalStackDataOffset  = 0x94;
 constexpr size_t kMgrModalStackSizeOffset  = 0x98;
 
+// Find which panel in the manager's panels[] currently owns `control` —
+// i.e. which one has it in its controls[]. Used by ExtractAnnounceableText
+// when the caller didn't pass an explicit owner: g_currentPanel only updates
+// on SetActiveControl, so chain rebinds and other indirect paths can land
+// here while it still points at a previous focus owner. Returns nullptr if
+// the manager isn't resolvable yet (early DLL_PROCESS_ATTACH) or the control
+// isn't in any current panel.
+//
+// Cheap by design: ≤16 panels × ≤32 children, only fires from the perkind
+// fallback path which itself is gated on every prior extraction step missing.
+static void* FindOwningPanel(void* control) {
+    if (!control) return nullptr;
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!mgr) return nullptr;
+    auto* base = reinterpret_cast<unsigned char*>(mgr);
+    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+    if (!panelData || panelCount <= 0) return nullptr;
+    if (panelCount > 16) panelCount = 16;
+    for (int i = 0; i < panelCount; ++i) {
+        void* p = panelData[i];
+        if (!p) continue;
+        auto* list = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(p) + kPanelControlsOffset);
+        if (!list->data || list->size <= 0) continue;
+        int n = list->size > 32 ? 32 : list->size;
+        for (int j = 0; j < n; ++j) {
+            if (list->data[j] == control) return p;
+        }
+    }
+    return nullptr;
+}
+
 // Resolve the topmost (foreground) panel currently owned by the manager.
 // Order:
 //   1. If modal_stack is non-empty, return its top entry — this is the
@@ -1491,6 +1544,39 @@ void* g_currentPanel = nullptr;
 static void* g_chainPanel   = nullptr;
 static int   g_chainIndex   = 0;
 static int   g_chainCount   = 0;
+
+// Sub-screen drill state. The InGameMenu icon strip is kept in foreground by
+// the engine: each icon's onClick (OnInvButtonPressed @0x624d10 etc.) jumps
+// into CGuiInGame::SwitchToSWInGameGui @0x62cf10, which calls AddPanel for the
+// new sub-screen and then SendPanelToBack on it — the strip stays on top
+// (verified via SARIF xref trace). Without intervention our chain therefore
+// keeps targeting the strip's 8 icons and the user can never reach the
+// sub-screen's content (item rows, quest rows, settings buttons).
+//
+// Drill model: Enter on a strip icon arms this flag. The chain-target router
+// in OnHandleInputEvent then prefers FindActiveSubScreenPanel() over the
+// engine's foreground when fg is the strip — so arrows step through the
+// sub-screen instead. Esc clears the flag (returns to strip nav). The flag
+// also self-clears when the sub-screen leaves panels[].
+//
+// Override is gated on fg-is-the-strip: while a tutorial modal or an
+// Options sub-tab is on top, fg is something else and we route to that
+// directly (no double-override). Once the modal/sub-tab closes and fg
+// returns to the strip, the override re-engages.
+static bool g_drilledIntoSubScreen = false;
+
+// Forward decl: find an InGame{X} sub-screen panel currently in panels[].
+// Defined near the sub-screen spec table to share the kind set with
+// AnnounceNewSubScreens. Returns the lowest-index match, or nullptr if no
+// sub-screen is currently pushed.
+static void* FindActiveSubScreenPanel();
+
+// Forward decl matching the InGameSubScreenSpec table defined alongside the
+// content-monitor whitelist. Used by the Esc-drill handler to test
+// "is this panel one of the in-game sub-screens we drill into?" without
+// depending on the spec struct's definition order.
+struct InGameSubScreenSpec;
+static const InGameSubScreenSpec* FindInGameSubScreenSpec(PanelKind k);
 
 // Deferred MoveMouseToPosition. Called from OnHandleInputEvent would recurse
 // through HandleMouseMove → UpdateMouseOverControl mid-input-dispatch — same
@@ -1725,7 +1811,7 @@ static void AnnouncePanelTitle(void* panel) {
             continue;
         }
         char text[256];
-        if (ExtractAnnounceableText(child, text, sizeof(text))) {
+        if (ExtractAnnounceableText(child, text, sizeof(text), panel)) {
             acclog::Write("Panel title parent=%p label=%p text=\"%s\"",
                           panel, child, text);
             tolk::Speak(text, /*interrupt=*/false);
@@ -1827,7 +1913,7 @@ static void* FindCloseButton(void* panel) {
         void* c = list->data[i];
         if (!IsChainNavigable(c)) continue;
         char text[256];
-        if (!ExtractAnnounceableText(c, text, sizeof(text))) continue;
+        if (!ExtractAnnounceableText(c, text, sizeof(text), panel)) continue;
         if (strncmp(text, "Schliess", 8) == 0 ||
             strncmp(text, "Close",    5) == 0 ||
             strncmp(text, "OK",       2) == 0) {
@@ -1884,7 +1970,7 @@ static void* FindAdjacentArrow(void* panel, void* focused, bool toRight) {
         // Only consider empty-text neighbours — real labels / toggles are not
         // cycle flankers.
         char tmp[64];
-        if (ExtractAnnounceableText(c, tmp, sizeof(tmp))) continue;
+        if (ExtractAnnounceableText(c, tmp, sizeof(tmp), panel)) continue;
 
         if (dx < bestDx) {
             bestDx = dx;
@@ -2092,7 +2178,8 @@ static void RebindChain(void* panel) {
         for (int i = 0; i < g_chainCount; ++i) {
             char tmp[64];
             bool hasText = ExtractAnnounceableText(g_chain[i].control,
-                                                   tmp, sizeof(tmp)) != nullptr;
+                                                   tmp, sizeof(tmp),
+                                                   panel) != nullptr;
             if (hasText) {
                 g_chain[writeIdx++] = g_chain[i];
                 continue;
@@ -2105,7 +2192,8 @@ static void RebindChain(void* panel) {
                 if (dy > 5) continue;
                 char tmp2[64];
                 if (ExtractAnnounceableText(g_chain[j].control,
-                                            tmp2, sizeof(tmp2)) != nullptr) {
+                                            tmp2, sizeof(tmp2),
+                                            panel) != nullptr) {
                     sameRowWithText = true;
                     break;
                 }
@@ -2158,7 +2246,8 @@ static void RebindChain(void* panel) {
     for (int i = 0; i < g_chainCount; ++i) {
         char text[256];
         const char* src = ExtractAnnounceableText(g_chain[i].control,
-                                                  text, sizeof(text));
+                                                  text, sizeof(text),
+                                                  panel);
         // Read CSWGuiControl.is_active (+0x4c) and bit_flags (+0x44) per
         // SARIF struct layout. Hypothesis for chargen wizard buttons that
         // silently no-op on Enter (Talente/Name/Spielen): step-gated, with
@@ -2210,7 +2299,12 @@ static void WalkChildren(const char* label, void* parent, size_t offset) {
         int id = *reinterpret_cast<int*>(
             reinterpret_cast<unsigned char*>(child) + 0x50);
         char text[256];
-        const char* source = ExtractAnnounceableText(child, text, sizeof(text));
+        // Pass `parent` so the perkind fallback resolves correctly when
+        // walking InGameMenu's children — the icon labels/buttons have empty
+        // CExoString/strref/text_object/gui_string and only resolve via the
+        // panel-keyed perkind table.
+        const char* source = ExtractAnnounceableText(child, text, sizeof(text),
+                                                     parent);
         if (source) {
             acclog::Write("%s   [%d] %p id=%d src=%s text=\"%s\"",
                           label, i, child, id, source, text);
@@ -2365,7 +2459,8 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
     int id = *reinterpret_cast<int*>(reinterpret_cast<unsigned char*>(newControl) + 0x50);
 
     char text[256];
-    const char* source = ExtractAnnounceableText(newControl, text, sizeof(text));
+    const char* source = ExtractAnnounceableText(newControl, text, sizeof(text),
+                                                 panel);
 
     if (source) {
         acclog::Write("SetActiveControl #%d panel=%p new=%p id=%d src=%s text=\"%s\"",
@@ -2591,6 +2686,24 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                 s_lastCp = g_currentPanel;
             }
         }
+
+        // Drill override: when the user has Entered into a sub-screen, retarget
+        // the chain from the strip (kept in fg by SendPanelToBack) to the
+        // sub-screen panel. Only fires when fg actually IS the strip — leaves
+        // tutorial modals and Options sub-tabs (which become fg in their own
+        // right) routing through fg directly.
+        if (g_drilledIntoSubScreen) {
+            if (IdentifyPanel(activePanel) == PanelKind::InGameMenu) {
+                void* sub = FindActiveSubScreenPanel();
+                if (sub) {
+                    activePanel = sub;
+                } else {
+                    g_drilledIntoSubScreen = false;
+                    acclog::Write("Drill: sub-screen gone from panels[]; "
+                                  "returning to strip");
+                }
+            }
+        }
     }
 
     // Chain navigation: consume nav-up / nav-down on key-down. We only handle
@@ -2663,6 +2776,21 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         } else {
             g_pendingActivate       = true;
             g_pendingActivateTarget = e.control;
+
+            // Arm the drill flag when Enter activates an icon on the InGameMenu
+            // strip. The engine's activation path (FireActivate → button
+            // onClick → SwitchToSWInGameGui) pushes the sub-screen to back; on
+            // the next arrow press, the drill router will retarget the chain
+            // to it. Set EAGERLY: if the engine no-ops the activation (e.g.
+            // re-press of the same icon, GUI_id unchanged), the override
+            // self-clears via FindActiveSubScreenPanel-returns-null on the
+            // next route.
+            if (IdentifyPanel(g_chainPanel) == PanelKind::InGameMenu) {
+                g_drilledIntoSubScreen = true;
+                acclog::Write("Drill: armed (Enter on InGameMenu icon target=%p)",
+                              e.control);
+            }
+
             acclog::Write("Enter activate panel=%p index=%d target=%p",
                           activePanel, g_chainIndex, e.control);
             consumed = true;
@@ -2819,6 +2947,45 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         consumed = true;
     }
 
+    // Esc in drill mode: return chain to the strip without closing the
+    // sub-screen. User flow:
+    //   1. On strip, Enter on Inventory → engine pushes InGameInventory,
+    //      strip stays fg, drill arms, chain retargets to inventory listbox.
+    //   2. User navigates inventory items.
+    //   3. Esc → drill clears, next arrow press rebinds chain to strip.
+    //   4. From strip, Right-arrow + Enter to switch to a different sub-screen.
+    //
+    // We deliberately don't fire the sub-screen's exit_button here — leaving
+    // the sub-screen alive in panels[] means re-pressing Enter on the same
+    // icon is a cheap re-drill (no tutorial replay, no engine-side teardown).
+    // Closing the screen is what the sub-screen's own exit_button is for; the
+    // user can navigate to it explicitly while drilled.
+    //
+    // Routes BEFORE the tabbed-panel Esc handler below: drilled mode is the
+    // outer state, sub-tab close is the inner. If both could match (drilled
+    // into Options with a sub-tab open), close the sub-tab first via the
+    // existing handler — drill stays armed because activePanel is still
+    // a sub-tab modal at that point, not the strip.
+    if (param_2 != 0 &&
+        (param_1 == kInputEsc1 || param_1 == kInputEsc2) &&
+        g_drilledIntoSubScreen &&
+        activePanel != nullptr &&
+        IdentifyPanel(activePanel) != PanelKind::InGameMenu)
+    {
+        // Only fire when activePanel is the sub-screen itself, not a sub-tab
+        // or modal sitting on top of it. Tabbed-Esc handler below will close
+        // sub-tabs first; once activePanel resolves back to the sub-screen,
+        // the next Esc lands here and clears the drill.
+        PanelKind apk = IdentifyPanel(activePanel);
+        if (FindInGameSubScreenSpec(apk)) {
+            g_drilledIntoSubScreen = false;
+            acclog::Write("Drill: Esc -> back to strip (sub-screen panel=%p "
+                          "kind=%s left in panels[])",
+                          activePanel, PanelKindName(apk));
+            consumed = true;
+        }
+    }
+
     // Esc / Backspace (when bound to "back/cancel" via the in-game Key Mapping
     // screen): close the current sub-dialog by FireActivate-ing its Schliess
     // button. The engine's natural Esc → CSWGuiOptionsXxx::HandleInputEvent(0x28)
@@ -2915,7 +3082,8 @@ static void MonitorFocusedControl() {
     if (!focused) return;
 
     char text[256];
-    const char* source = ExtractAnnounceableText(focused, text, sizeof(text));
+    const char* source = ExtractAnnounceableText(focused, text, sizeof(text),
+                                                 g_chainPanel);
     if (!source) return;
 
     if (focused == g_focusMonitorControl) {
@@ -2986,10 +3154,130 @@ static bool IsContentMonitored(PanelKind k) {
     case PanelKind::BarkBubble:
     case PanelKind::MessageBox:
     case PanelKind::AreaTransition:
+    // In-game sub-screens reached via the icon strip. The icon strip
+    // (CSWGuiInGameMenu) stays foreground after activation, so the sub-screen
+    // never becomes the chain target — without content monitoring the user
+    // hears the strip but nothing about what's INSIDE the screen they just
+    // opened. Buttons are filtered by BuildContentFingerprint so the strip's
+    // own buttons don't pollute the fingerprint.
+    case PanelKind::InGameInventory:
+    case PanelKind::InGameMap:
+    case PanelKind::InGameJournal:
+    case PanelKind::InGameCharacter:
+    case PanelKind::InGameAbilities:
+    case PanelKind::InGameMessages:
+    case PanelKind::InGameEquip:
         return true;
     default:
         return false;
     }
+}
+
+// Localized name of an in-game sub-screen, indexed by PanelKind. Reuses
+// the same dialog.tlk strrefs as the perkind icon-label table in
+// ExtractAnnounceableText (verified by parsing the user's dialog.tlk —
+// memory/reference_dialog_tlk_menu_strrefs.md). Returns spec on hit, nullptr
+// if the kind isn't a tracked sub-screen.
+struct InGameSubScreenSpec {
+    PanelKind   kind;
+    uint32_t    strref;     // 0xFFFFFFFF = no strref, use literal
+    const char* literal;
+};
+static const InGameSubScreenSpec k_inGameSubScreens[] = {
+    { PanelKind::InGameEquip,     0xFFFFFFFFu, "Ausr\xfcstung" },
+    { PanelKind::InGameInventory, 48220u,      "Inventar" },
+    { PanelKind::InGameCharacter, 48225u,      "Charakterblatt" },
+    { PanelKind::InGameMap,       48221u,      "Karte" },
+    { PanelKind::InGameAbilities, 48224u,      "F\xe4higkeiten" },
+    { PanelKind::InGameJournal,   48218u,      "Auftr\xe4ge" },
+    { PanelKind::InGameOptions,   48222u,      "Optionen" },
+    { PanelKind::InGameMessages,  48223u,      "Nachrichten" },
+};
+static const InGameSubScreenSpec* FindInGameSubScreenSpec(PanelKind k) {
+    for (const auto& s : k_inGameSubScreens) {
+        if (s.kind == k) return &s;
+    }
+    return nullptr;
+}
+
+// Walk the manager's panels[] for any in-game sub-screen panel
+// (CSWGuiInGameInventory / Map / Journal / …). Used by the drill router to
+// retarget the chain when g_drilledIntoSubScreen is set and the strip is fg.
+//
+// Returns the lowest-index match. CSWGuiManager::SendPanelToBack inserts at
+// front of panels[], so the most recently opened sub-screen typically lives
+// at index 0 — which is also what the user expects to navigate. Multiple
+// sub-screens shouldn't normally coexist (SwitchToSWInGameGui pops the
+// previous one before adding the new one), but if it ever happens we pick
+// the first match deterministically.
+static void* FindActiveSubScreenPanel() {
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!mgr) return nullptr;
+    auto* base = reinterpret_cast<unsigned char*>(mgr);
+    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+    if (!panelData || panelCount <= 0) return nullptr;
+    if (panelCount > 16) panelCount = 16;
+    for (int i = 0; i < panelCount; ++i) {
+        void* p = panelData[i];
+        if (!p) continue;
+        PanelKind k = IdentifyPanel(p);
+        if (FindInGameSubScreenSpec(k)) return p;
+    }
+    return nullptr;
+}
+
+// Tracks which sub-screen panel pointers are currently in the manager's
+// panels[]. Panels added since last tick → speak the screen's localized
+// name once. Removed → drop from the tracked set so a re-open re-announces.
+// Panels[] is small (≤16 in our cap) and turnover is human-paced, so a flat
+// array is fine.
+static void* g_visibleSubScreens[16];
+static int   g_visibleSubScreenCount = 0;
+
+static bool IsSubScreenTracked(void* p) {
+    for (int i = 0; i < g_visibleSubScreenCount; ++i) {
+        if (g_visibleSubScreens[i] == p) return true;
+    }
+    return false;
+}
+
+// Walk current panels[], speak on additions of any tracked sub-screen kind,
+// drop removals from the tracked set. Called from MonitorPanelContents per
+// tick, before the per-panel content fingerprint pass — the kind name lands
+// first, then the fingerprint diff fills in the actual labels/items.
+static void AnnounceNewSubScreens(void** panels, int count) {
+    void* nowVisible[16];
+    int   nowCount = 0;
+    for (int i = 0; i < count && nowCount < 16; ++i) {
+        void* p = panels[i];
+        if (!p) continue;
+        PanelKind k = IdentifyPanel(p);
+        const InGameSubScreenSpec* spec = FindInGameSubScreenSpec(k);
+        if (!spec) continue;
+        nowVisible[nowCount++] = p;
+        if (IsSubScreenTracked(p)) continue;
+        // First sight in panels[] for this address+kind — speak the screen's
+        // localized name. The user already heard the icon's name on focus
+        // before activating; this is the "you are now in this screen"
+        // confirmation.
+        char text[128];
+        bool spoke = false;
+        if (spec->strref != 0xFFFFFFFFu &&
+            LookupTlk(spec->strref, text, sizeof(text))) {
+            acclog::Write("SubScreen open: panel=%p kind=%s strref=%u text=\"%s\"",
+                          p, PanelKindName(k), spec->strref, text);
+            tolk::Speak(text, /*interrupt=*/false);
+            spoke = true;
+        }
+        if (!spoke) {
+            acclog::Write("SubScreen open: panel=%p kind=%s text=\"%s\" (literal)",
+                          p, PanelKindName(k), spec->literal);
+            tolk::Speak(spec->literal, /*interrupt=*/false);
+        }
+    }
+    memcpy(g_visibleSubScreens, nowVisible, sizeof(nowVisible));
+    g_visibleSubScreenCount = nowCount;
 }
 
 // Build a fingerprint of the panel's label/listbox content. Buttons are
@@ -3016,7 +3304,7 @@ static void BuildContentFingerprint(void* panel, char* out, size_t outSize) {
         if (CallDowncast(c, kVtableAsButtonToggle) != nullptr) continue;
 
         char text[256];
-        const char* src = ExtractAnnounceableText(c, text, sizeof(text));
+        const char* src = ExtractAnnounceableText(c, text, sizeof(text), panel);
         if (!src) continue;
         size_t tlen = strnlen(text, sizeof(text));
         if (tlen == 0) continue;
@@ -3075,6 +3363,11 @@ static void MonitorPanelContents() {
     void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
     if (!panelData || panelCount <= 0) return;
     if (panelCount > 16) panelCount = 16;
+
+    // Speak on first sight of an in-game sub-screen (Inventory, Map, …).
+    // Runs before the content-fingerprint loop so the kind name lands
+    // before the per-panel label dump for the same panel.
+    AnnounceNewSubScreens(panelData, panelCount);
 
     for (int i = 0; i < panelCount; ++i) {
         void* p = panelData[i];

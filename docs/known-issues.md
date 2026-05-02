@@ -11,6 +11,7 @@ When an entry is closed, move it out of this file (the corresponding fix or comm
 ## Bugs
 
 - **Tab content echoing.** When the tab content list is too long, the announcement starts echoing — the same line is spoken multiple times instead of just once.
+- **Unlabeled entries in the Options menu (in-game).** While drilled into `CSWGuiInGameOptions`, some chain entries fall through to the "control N" placeholder. The strip-and-Options drill path otherwise works (arrows navigate, Enter activates). Likely cause: a subset of buttons / labels on the in-game Options panel route their text through a path our extractor doesn't yet follow (probably a `text_object` indirection variant or a sibling-label layout we haven't matched). Next step on the next session log: identify which chain entries print `src=none` / fall through to the placeholder, dump their vtables, and decide between adding a vtable-specific extractor or extending the perkind table for this panel.
 
 ## Planned
 

@@ -368,6 +368,44 @@ and `memory/project_movemouse_hittest_shift.md`.
 - Slider drag. Click-sim sequence: down at handle → cursor moves via
   `MoveMouseToPosition` → up at target.
 
+### Phase 3.5 — In-game sub-screen drill (LANDED, partially validated)
+
+The in-game menu (Esc) presents an 8-icon strip — Equipment / Inventory / Character / Map / Abilities / Journal / Options / Messages — sitting on top of whatever sub-screen is currently active. Each icon's onClick dispatches through:
+
+```
+CSWGuiInGameMenu::OnInvButtonPressed @0x624d10  (and 7 sibling stubs)
+  → CClientExoApp::GetInGameGui      @0x5ed690
+  → CGuiInGame::SwitchToSWInGameGui  @0x62cf10
+        ↓ removes previously-active sub-screen
+        ↓ lazily creates the new sub-screen via UpdateCreatedInGameGUI
+        ↓ CSWGuiManager::AddPanel         (push)
+        ↓ CSWGuiManager::SendPanelToBack  ← strip stays foreground
+        ↓ CSWGuiInGameMenu::SetActiveControlID (highlight matching icon)
+        ↓ CExoString + CVirtualMachine::RunScript (spawns the per-screen
+                                                   tutorial popup)
+```
+
+**Architectural consequence.** Because `SendPanelToBack` is called on every push, the `CSWGuiInGameMenu` strip is the foreground panel for the entire time any in-game sub-screen is open. Without intervention our chain therefore keeps targeting the strip's 8 icons and the user never reaches the sub-screen's content. This was visible in `patch-20260502-214100.log` — opening Inventory / Map / Character all produced identical chain dumps targeting the strip.
+
+**Drill model:**
+
+- **Mode A (strip):** chain on `CSWGuiInGameMenu`, arrows step through icons, Enter activates an icon. This is the entry state when Esc is pressed in-game.
+- **Mode B (drilled):** after Enter on an icon, `g_drilledIntoSubScreen` is set. The chain-target router in `OnHandleInputEvent` then prefers `FindActiveSubScreenPanel()` (lowest-index InGame{X} panel in `panels[]`) over the engine's foreground when fg is the strip — so arrows step through the sub-screen instead.
+- **Esc in Mode B:** clears `g_drilledIntoSubScreen` (does NOT close the sub-screen — it stays in `panels[]`). User goes back to Mode A; from there Right-arrow + Enter switches to a different sub-screen and the engine reuses the existing sub-screen object.
+
+**Override is gated on fg-is-the-strip.** While a tutorial modal or an Options sub-tab sits on top of the strip, fg is something else and we route through fg directly (no double-override). Once that closes and fg returns to the strip, the override re-engages.
+
+**Sub-screen layouts (from SARIF DATATYPE):**
+
+- `CSWGuiInGameInventory` — `item_listbox @0x564` is the main nav target. Buttons: exit, useitem, questitems, change_1, change_2, switch_left, switch_right.
+- `CSWGuiInGameJournal` — `items_listbox @0x5C4` is the quest list. Buttons: quest_items, swap_text, sort, exit.
+- `CSWGuiInGameMap` — buttons-only (return / partyselect / exit / up / down). The actual map is a `CSWGuiImage` at `0x1080`; markers are positioned on the texture, not in a list. Live map-note announcement requires hooking `SetMapNote @0x6929b0`.
+- `CSWGuiInGameMenu` — `controls[0..7]` are 8 `CSWGuiLabelHilight` (icon labels), `controls[8..15]` are 8 `CSWGuiButton` (icon buttons), in declaration order Equipment / Inventory / Character_Sheet / Map / Abilities / Journal / Options / Messages. The perkind table in `ExtractAnnounceableText` indexes off this layout.
+
+**Sticky flag is set EAGERLY** in `OnHandleInputEvent`'s Enter activate path when `IdentifyPanel(g_chainPanel) == InGameMenu`. If the engine no-ops the activation (e.g. Enter on the same icon a second time, GUI_id unchanged), the override self-clears via `FindActiveSubScreenPanel`-returns-null on the next route.
+
+**ExtractAnnounceableText decoupling from `g_currentPanel`.** The perkind icon-name fallback originally read `g_currentPanel`, which only updates on `SetActiveControl`. After a TutorialBox modal closes, fg flips back to the strip without firing `SetActiveControl` — leaving `g_currentPanel` pointing at the (now dead) TutorialBox. Chain dumps would then print `text=""` / `src=?` for icon strip entries even though navigation was working. Fix: `ExtractAnnounceableText` now takes an optional `ownerPanel` parameter; callers that know the panel (RebindChain, WalkChildren, BuildContentFingerprint, OnSetActiveControl, …) pass it explicitly. When unset, `FindOwningPanel` scans `panels[]` to locate it.
+
 ### Phase 4 — Spatial mode (3D world / non-panel screens)
 
 When `g_currentPanel == nullptr`, switch to Lane's smooth-cursor model:
