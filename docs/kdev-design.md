@@ -115,6 +115,8 @@ Each is a verb: short, descriptive, predictable.
 
 - **`kdev logs [--follow]`** — tails the most recent log under `logs/`. With `--follow` keeps streaming.
 
+- **`kdev analyze-dump [path] [--list] [--depth N] [--stack-bytes N]`** — opens a Windows minidump (default: newest in `%LOCALAPPDATA%\CrashDumps`) and prints exception, registers, EBP-chain stack walk, ESP-region scan, and a stack hex dump — every code address resolved against Lane's Ghidra XML at `docs/llm-docs/re/k1_win_gog_swkotor.exe.xml`. Reads the saved CONTEXT from the minidump's exception stream rather than the live post-unwind context, so ESP/EBP point to the fault-time stack (not ntdll's exception dispatcher). Built for the Tab-crash investigation; reusable for any future crash. `--list` skips analysis and lists available dumps newest-first.
+
 ## Error handling and exit codes
 
 All KPatchCore calls return `{Success: bool, Error: string?, Messages: List<string>}`. Convention:
@@ -190,5 +192,6 @@ For when v1 hits real friction:
 7. ✅ `kdev launch` — `GameLauncher.LaunchGame` (auto-detects vanilla vs injected based on `patch_config.toml`); `--monitor` blocks until exit.
 8. ✅ `kdev dev` — chains steps 4 → 5 → 6 → 7-with-monitor; fail-fast with the failing step's exit code. End-to-end orchestration verified up to expected build failure.
 9. ✅ `kdev logs` — tails most recent log under `logs/`; `--follow` polls for new lines until Ctrl+C.
+10. ✅ `kdev analyze-dump` — minidump exception + register + stack analysis, resolved against Lane's Ghidra XML. Adds `Microsoft.Diagnostics.Runtime` (ClrMD) for memory + thread access; parses minidump exception stream directly to recover the saved fault-time CONTEXT (live thread context is post-unwind). New `Models/FunctionTable.cs` stream-parses the 31MB Ghidra XML (24K functions, ~0.3s) into a sorted in-memory array.
 
-All eight commands compile cleanly under `dotnet build` (0 warnings, 0 errors in our code; 3 warnings in upstream `KPatchCore` are tolerated). Full happy path through `kdev dev` requires writing actual patch source in `patches/Accessibility/` and having Visual Studio 2022 with C++ tools installed — out of scope for the scaffold phase.
+All commands compile cleanly under `dotnet build` (0 warnings, 0 errors in our code; 3 warnings in upstream `KPatchCore` are tolerated). Full happy path through `kdev dev` requires writing actual patch source in `patches/Accessibility/` and having Visual Studio 2022 with C++ tools installed — out of scope for the scaffold phase.

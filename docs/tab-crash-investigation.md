@@ -111,15 +111,45 @@ These remain useful: any future activation primitive must avoid re-introducing t
 - Per-frame oscillation through `CSWGuiPanel::SetActiveControl` — `PlayGuiSound` (the only `CALL` inside) fires only 6 times per session, not in a loop near the crash.
 - Any flavor of deferred-vs-synchronous `SetActiveControl` (sync, deferred-via-OnUpdate, deferred + manager guard, deferred + cursor warp + manager guard) — all crash identically. The defer pattern is fine; the primitive is wrong.
 
+## Findings from `kdev analyze-dump` (2026-05-02)
+
+Built `kdev analyze-dump` against `Microsoft.Diagnostics.Runtime` and ran it
+on the captured Tab-crash dumps in `%LOCALAPPDATA%\CrashDumps`. Two of the
+ten dumps are clean Tab-path crashes (`24928.dmp`, `27200.dmp`); they show
+identical signatures:
+
+- **Exception:** `0xC0000005` ACCESS_VIOLATION write to `0x00000000`.
+- **EIP at fault:** `mgr+5` (heap; manager pointer changes per-run, but the
+  +5 offset is stable).
+- **EBP at fault = manager pointer.** The bad indirect call corrupts EBP to
+  the manager pointer alongside EIP. That's why the EBP chain dies one frame
+  in. New constraint for the click-sim primitive.
+- **ESP=0x001afd14** (consistent across runs).
+- **ESP scan resolves identical return addresses across both dumps:**
+  `MainLoop+0xdf0`, `FrameHandler_007273a8` (a VC++ SEH entry table), and
+  CRT cleanup unwinders `inline_unlock_8+0x7` / `unlock_8+0x5`.
+- **Top-of-stack hex starts `02 02 00 00`** — the engine-internal event
+  code 514 sitting as a function arg at fault time. Same value the manager
+  logs as `param_2` on press edges (per `project_engine_event_value_layers.md`,
+  NOT `WM_LBUTTONUP` — engine-internal, not a Win32 message). Confirms the
+  engine was mid-event-dispatch when the indirect call landed on mgr+0.
+
+Implication for Phase 3: the engine maintains a state through the natural
+`HandleLMouseDown → HandleLMouseUp → activate → cleanup` flow. `SetActive-
+Control` skips the prelude that writes the eventually-called pointer; that
+pointer ends up zero or stale, gets called, lands on the manager struct
+(data, not code), simultaneously corrupting EBP. Click-sim must enter the
+flow at `HandleLMouseDown` so the prelude runs.
+
 ## What this means for the next session
 
 The Tab handler in `Accessibility.cpp` and the visual-tab-order / manager-guard / pending-tab-target machinery should come out. The `OnPlayGuiSound` diagnostic hook in `hooks.toml` should also come out. The replacement is the click-simulation primitive described in `docs/menu-nav-design.md` Phase 3.
 
-Implementation order for next session:
+Implementation order:
 
-1. **Crash-dump analysis subcommand (`kdev analyze-dump`).** ~2-3h of dotnet work using `Microsoft.Diagnostics.Runtime` against the `.dmp` files Windows captures in `%LOCALAPPDATA%\CrashDumps\`. Output: the call stack at the crash, resolved against Lane's Ghidra database. **Purpose has shifted:** this is no longer "the answer that lets us ship Tab" — it tells us *which engine function does the bad indirect call*, which tells us *which pre/post-click invariant `SetActiveControl` was skipping*, which tells us *what state the synthesized click must touch* to be safe. One-time investment, informs the click-sim design.
+1. ✅ **Crash-dump analysis subcommand (`kdev analyze-dump`).** Built; findings above. Reusable for any future crash.
 
-2. **Strip the SetActiveControl-based Tab path.** Remove the Tab branch and its state in `Accessibility.cpp` (`g_visualTabs`, `g_armedManager`, `g_pendingTabPanel`, `g_pendingTabTarget`, `BuildVisualTabOrder`, `FindVisualTabIdx`, `DetectTabsCluster` may stay — still useful for tab-cluster detection in the new path). Remove `OnPlayGuiSound` diagnostic from `hooks.toml`.
+2. ✅ **Strip the SetActiveControl-based Tab path.** Done in `e638aab`. Tab branch + visual-tab state + manager-guard + pending-tab-target + `OnPlayGuiSound` diagnostic all gone. `DetectTabsCluster` + `g_tabbedPanel`/`Start`/`Count` retained — they arm the listbox virtual-line cursor today and will feed the click-sim primitive in Phase 3.
 
 3. **Build the click-simulation primitive.** Mid-function hooks on `CSWGuiButton::HandleLMouseDown` / `HandleLMouseUp` to verify offsets and arg shapes, then call them directly via `__thiscall` function pointers (same pattern as `MoveMouseToPosition`). Deferred via `OnUpdate` — same reentrancy reasoning as cursor warps. See `docs/menu-nav-design.md` Phase 3 for the full plan.
 

@@ -445,19 +445,17 @@ Behavior:
 
 1. Read this file + `docs/tab-crash-investigation.md` + `docs/upstream-prs.md`.
 2. `git log --oneline -5` for what's at HEAD.
-3. Strip the obsolete `SetActiveControl`-based Tab handler from
-   `Accessibility.cpp` (Tab branch, `g_visualTabs`, `g_armedManager`,
-   `g_pendingTabPanel`, `g_pendingTabTarget`) and the `OnPlayGuiSound`
-   diagnostic from `hooks.toml`. See `docs/tab-crash-investigation.md`
-   "Next session" step 2 for the rationale.
-4. Build the `kdev analyze-dump` subcommand against
-   `Microsoft.Diagnostics.Runtime`. Resolve a captured `.dmp` against
-   Lane's Ghidra DB to identify the engine function doing the bad
-   indirect call. This informs Phase 3's click-sim design.
-5. Implement Phase 1+2 (chain + cursor sync). One commit. Validate on
-   panels where every chain target is a plain button (title screen,
-   chargen, save/load) — Options panel tabs are still expected to fail
-   pending Phase 3.
+3. ✅ Strip the obsolete `SetActiveControl`-based Tab handler — done in `e638aab`.
+4. ✅ Build `kdev analyze-dump` — done. Findings recorded in
+   `docs/tab-crash-investigation.md` "Findings from kdev analyze-dump"
+   and `memory/project_tab_crash_dump_findings.md`. Key result:
+   **EBP gets corrupted to the manager pointer at fault time**;
+   ESP scan surfaces `MainLoop+0xdf0` as the parent return address;
+   event code 514 is sitting as the top-of-stack arg mid-dispatch.
+5. Validate Phase 1+2 (chain + cursor sync) is intact post-strip. Panels
+   where every chain target is a plain button (title screen, chargen,
+   save/load) should still announce + warp the cursor. Options tabs
+   remain expected to fail (Phase 3 will fix).
 6. Implement Phase 3 (click-sim primitive). Validate on Options tabs
    first; then per-setting toggles inside the listbox.
 7. Phase 4 (spatial mode) once panels are stable.
