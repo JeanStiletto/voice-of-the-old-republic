@@ -339,6 +339,16 @@ static bool ReadToggleState(void* toggle) {
     return (ReadU32(toggle, kButtonToggleStateOffset) & 1u) != 0;
 }
 
+// Forward declarations: ExtractAnnounceableText decorates its output via
+// FindSiblingLabel (slider category prefix) and LookupCycleCategory (cycle
+// value-display prefix); both are defined later in the file alongside the
+// chain machinery. g_currentPanel is the focused panel pointer maintained
+// by OnSetActiveControl.
+extern void* g_currentPanel;
+static const char* FindSiblingLabel(void* panel, void* control,
+                                    char* outBuf, size_t bufSize);
+static const char* LookupCycleCategory(void* control);
+
 static const char* ExtractAnnounceableText(void* control,
                                            char* outBuf, size_t bufSize) {
     if (!control || bufSize < 2) return nullptr;
@@ -400,17 +410,22 @@ static const char* ExtractAnnounceableText(void* control,
         }
     }
 
-    // 6. CSWGuiSlider — no AsSlider downcast accessor exists; detect by vtable
-    //    identity. cur_value / max_value are Lane-named uint32 fields.
-    //    We don't have a label associated with the slider here (KOTOR sliders
-    //    are paired with sibling label controls visually but those aren't
-    //    reachable via downcast from the slider itself); the chain
-    //    announcement before navigating to the slider tells the user which
-    //    one. This readout is just the numeric position.
+    // 6. CSWGuiSlider — no AsSlider downcast accessor exists; detect by
+    //    vtable identity. cur_value / max_value are Lane-named uint32 fields.
+    //    The slider widget itself has no inline category text (its CExoString
+    //    is the rendered "X von Y"); the category name lives on a sibling
+    //    CSWGuiLabel rendered to the left of the slider. Look it up via
+    //    FindSiblingLabel and prepend.
     if (!source && IsSlider(control)) {
         uint32_t cur = ReadU32(control, kSliderCurValueOffset);
         uint32_t max = ReadU32(control, kSliderMaxValueOffset);
-        snprintf(outBuf, bufSize, "%u von %u", cur, max);
+        char label[128];
+        if (g_currentPanel &&
+            FindSiblingLabel(g_currentPanel, control, label, sizeof(label))) {
+            snprintf(outBuf, bufSize, "%s %u von %u", label, cur, max);
+        } else {
+            snprintf(outBuf, bufSize, "%u von %u", cur, max);
+        }
         source = "slider";
     }
 
@@ -419,6 +434,27 @@ static const char* ExtractAnnounceableText(void* control,
     // their struct layouts well enough to read fields by speculative
     // offsets. OnSetActiveControl logs the vtable pointer for any control
     // we can't extract; map via SARIF + add per-class extraction here.
+
+    // Cycle value-display prefix. Cycle widgets render as `[◀] value [▶]`
+    // and the engine rewrites the middle button's CExoString to the new
+    // value on each activate, losing the category name. We capture the
+    // category at panel-walk time (in OnSetActiveControl, before any
+    // activation has run); here we just look it up. Skipped for toggles
+    // (whose own text already reads as "{label}, {state}") and for
+    // non-cycle buttons (LookupCycleCategory returns null when control
+    // isn't in the cycle map). Redundancy guard: if the captured
+    // "category" is byte-identical to the current rendered value we
+    // suppress the prefix — that's the failure mode where capture caught
+    // the value rather than the category (timing-dependent; see
+    // OnSetActiveControl), and "Normal, Normal" is worse than just "Normal".
+    if (source && !IsToggle(control)) {
+        const char* category = LookupCycleCategory(control);
+        if (category && strcmp(category, outBuf) != 0) {
+            char value[256];
+            strncpy_s(value, outBuf, _TRUNCATE);
+            snprintf(outBuf, bufSize, "%s, %s", category, value);
+        }
+    }
 
     // Append element-state suffix for toggles. Detected via the same downcast
     // we'd use for text extraction, so works regardless of which path
@@ -641,7 +677,10 @@ struct ChainEntry {
 };
 constexpr int kMaxChainEntries = 64;
 static ChainEntry g_chain[kMaxChainEntries];
-static void* g_currentPanel = nullptr;
+// Default-linkage so ExtractAnnounceableText can forward-declare it via
+// extern (function is defined earlier in the file but needs the panel
+// pointer for slider sibling-label / cycle-category lookups).
+void* g_currentPanel = nullptr;
 static void* g_chainPanel   = nullptr;
 static int   g_chainIndex   = 0;
 static int   g_chainCount   = 0;
@@ -711,6 +750,32 @@ static void* g_lastTitledPanel = nullptr;
 // extraction lands in ExtractAnnounceableText.
 static void* g_focusMonitorControl = nullptr;
 static char  g_focusMonitorText[256] = {0};
+
+// Cycle-button category cache. KOTOR cycle widgets (Difficulty etc.) are a
+// CSWGuiButton flanked by two empty-text arrow buttons. The middle button's
+// CExoString starts as the localized category name (e.g. "Schwierigkeitsgrad"
+// in German) on first panel render — but the engine REPLACES it with the
+// current value text ("Normal", "Leicht") the moment any cycle activation
+// runs, including ours via FireActivate(arrow). To preserve the category for
+// subsequent value-change announcements we capture it during chain rebind,
+// before any activation has rewritten the field. Map is invalidated on
+// every RebindChain.
+struct CycleCategoryEntry {
+    void* control;
+    char  category[128];
+};
+constexpr int kMaxCycleCategoryEntries = 16;
+static CycleCategoryEntry g_cycleCategories[kMaxCycleCategoryEntries];
+static int g_cycleCategoryCount = 0;
+
+static const char* LookupCycleCategory(void* control) {
+    for (int i = 0; i < g_cycleCategoryCount; ++i) {
+        if (g_cycleCategories[i].control == control) {
+            return g_cycleCategories[i].category;
+        }
+    }
+    return nullptr;
+}
 
 // Tabbed-panel detection state (Options-menu style: a CSWGuiListBox at
 // controls[0] holds the current tab's content, button cluster after [0] = tabs).
@@ -1021,6 +1086,91 @@ static void* FindAdjacentArrow(void* panel, void* focused, bool toRight) {
     return best;
 }
 
+// Find the closest label-like sibling of `control` on the panel. Two
+// candidate positions:
+//
+//   1. Same y-row, to the visual LEFT (horizontal layouts, e.g. labelled
+//      buttons on a config row — `[Schliess]   Standard`).
+//   2. Directly ABOVE the control (vertical layouts, e.g. KOTOR's Sound
+//      panel where each slider has a label rendered on the line above it
+//      rather than to its left).
+//
+// Picks the candidate with the smallest scoring distance: Manhattan
+// distance for "above" candidates so a label slightly off-axis but close
+// in y wins over a same-row label that's far to the left. Strict
+// thresholds keep us from matching the panel title (which is far above
+// any individual widget) or unrelated controls in adjacent rows.
+//
+// Returns the source tag ("siblinglabel") and writes the label's text
+// into outBuf, or nullptr if no suitable label was found. Pure read;
+// doesn't recurse through ExtractAnnounceableText so it's safe to call
+// from inside extraction code.
+static const char* FindSiblingLabel(void* panel, void* control,
+                                    char* outBuf, size_t bufSize) {
+    if (!panel || !control || bufSize < 2) return nullptr;
+
+    auto* list = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+    if (!list->data || list->size <= 0) return nullptr;
+
+    int targetCx, targetCy;
+    if (!GetControlCenter(control, targetCx, targetCy)) return nullptr;
+
+    void* best = nullptr;
+    int bestScore = 0x7fffffff;
+
+    // Tolerances. Same-row dy<=5; above dy<=50 (typical KOTOR row height
+    // is ~30-55 px) with dx tolerance 80 px (label can be slightly offset
+    // from the widget center, e.g. left-aligned label vs centered slider).
+    constexpr int kSameRowDyTol  = 5;
+    constexpr int kAboveDyMax    = 50;
+    constexpr int kAboveDxMax    = 80;
+
+    int n = list->size > 256 ? 256 : list->size;
+    for (int i = 0; i < n; ++i) {
+        void* c = list->data[i];
+        if (!c || c == control) continue;
+
+        if (CallDowncast(c, kVtableAsLabel) == nullptr &&
+            CallDowncast(c, kVtableAsLabelHilight) == nullptr) {
+            continue;
+        }
+
+        int cx, cy;
+        if (!GetControlCenter(c, cx, cy)) continue;
+
+        int dy   = cy - targetCy;       // negative = label is above
+        int adx  = cx - targetCx;
+        int absDx = adx < 0 ? -adx : adx;
+        int absDy = dy  < 0 ? -dy  : dy;
+
+        int score = 0x7fffffff;
+        // Same row, left of target
+        if (absDy <= kSameRowDyTol && cx < targetCx) {
+            score = absDx;
+        }
+        // Above target, similar x
+        else if (dy < 0 && absDy <= kAboveDyMax && absDx <= kAboveDxMax) {
+            score = absDx + absDy;  // Manhattan
+        }
+        else {
+            continue;
+        }
+
+        if (score < bestScore) {
+            bestScore = score;
+            best      = c;
+        }
+    }
+
+    if (!best) return nullptr;
+    if (ExtractTextOrStrRef(best, kLabelTextOffset, kLabelStrRefOffset,
+                            outBuf, bufSize)) {
+        return "siblinglabel";
+    }
+    return nullptr;
+}
+
 // True if `control` is one of the current panel's tab-cluster buttons.
 // Used to gate the cursor-y offset (g_tabClickOffsetY) — only tab buttons
 // suffer the engine's hit-test shift; close/standard buttons in the same
@@ -1145,6 +1295,14 @@ static void RebindChain(void* panel) {
         }
         g_chainCount = writeIdx;
     }
+
+    // Cycle category capture lives in OnSetActiveControl's panel-walk path,
+    // not here — RebindChain runs only on the first arrow press in a panel
+    // (typically several seconds after panel open), and by then the engine
+    // has already replaced cycle buttons' .gui-default category text with
+    // the persisted value (e.g. "Difficulty" -> "Normal"). Capture has to
+    // happen at panel-walk time to catch the .gui state before the
+    // .ini-driven update.
 
     // Compute g_tabClickOffsetY from adjacent tab entries' visual spacing.
     // The chain is now sorted top-to-bottom, so the first two consecutive
@@ -1276,10 +1434,55 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
     // First focus event into a previously-unseen panel: dump every child
     // control on it. Lets us see widgets the user can't reach with arrow
     // keys (mouse-only labels, hidden tabs, off-cursor inputs, etc.).
+    //
+    // Also captures cycle-button category text. Cycle widgets (Difficulty
+    // etc.) carry their localized category in their CExoString at panel
+    // construction time (e.g. "Schwierigkeitsgrad" / "Difficulty"); the
+    // engine replaces it with the persisted value (e.g. "Normal") shortly
+    // after, and our FireActivate calls overwrite it again on each cycle.
+    // SetActiveControl's first fire on a new panel happens before any of
+    // those updates, so this is the earliest reachable capture point.
     static void* s_lastPanel = nullptr;
     if (panel && panel != s_lastPanel) {
         s_lastPanel = panel;
         WalkChildren("Panel", panel, kPanelControlsOffset);
+
+        g_cycleCategoryCount = 0;
+        auto* plist = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+        if (plist && plist->data && plist->size > 0) {
+            int pn = plist->size > 256 ? 256 : plist->size;
+            for (int i = 0;
+                 i < pn && g_cycleCategoryCount < kMaxCycleCategoryEntries;
+                 ++i) {
+                void* c = plist->data[i];
+                if (!c) continue;
+                if (CallDowncast(c, kVtableAsButton) == nullptr) continue;
+                if (IsToggle(c)) continue;
+
+                void* leftN  = FindAdjacentArrow(panel, c, /*toRight=*/false);
+                void* rightN = FindAdjacentArrow(panel, c, /*toRight=*/true);
+                if (!leftN && !rightN) continue;
+
+                char text[128];
+                bool gotText = false;
+                uint32_t strref = ReadU32(c, kButtonStrRefOffset);
+                if (LookupTlk(strref, text, sizeof(text))) {
+                    gotText = true;
+                } else if (ReadCExoString(c, kButtonTextOffset,
+                                          text, sizeof(text))) {
+                    gotText = true;
+                }
+                if (gotText) {
+                    g_cycleCategories[g_cycleCategoryCount].control = c;
+                    strncpy_s(g_cycleCategories[g_cycleCategoryCount].category,
+                              text, _TRUNCATE);
+                    ++g_cycleCategoryCount;
+                    acclog::Write("Cycle category captured: control=%p text=\"%s\" strref=%u",
+                                  c, text, strref);
+                }
+            }
+        }
     }
 
     // First focus into a new panel: speak its title (label child) once.
