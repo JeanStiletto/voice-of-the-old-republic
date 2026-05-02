@@ -230,7 +230,8 @@ constexpr size_t kButtonToggleStateOffset = 0x1c8;
 constexpr size_t kSliderMaxValueOffset    = 0x70;
 constexpr size_t kSliderCurValueOffset    = 0x74;
 
-// CSWGuiText layout (from swkotor.exe.h struct definitions):
+// CSWGuiText layout (from swkotor.exe.h + decompiled CSWGuiText::Initialize
+// at 0x00417310 confirmed via headless Ghidra against Lane's gzf):
 //   +0x00  vtable
 //   +0x04  extent (16 bytes)
 //   +0x14  CAurGUIStringInternal* gui_string
@@ -240,26 +241,35 @@ constexpr size_t kSliderCurValueOffset    = 0x74;
 //             ...
 //             +0x50 (=0x68 in text)  CSWGuiText* text_object
 //
-// For CSWGuiLabel: control(0x5C)+border(0x74)+text@(0xD0). So text_params @0xD0+0x18=0xE8.
-//   text_params.text   @ 0xE8 (c_string at 0xE8, length at 0xEC, but the
-//                       CExoString struct is treated as { ptr; uint32 } so
-//                       reading 8 bytes from 0xE8 gives both fields)
+// For CSWGuiLabel: control(0x5C)+border(0x74)+text@(0xD0).
+//   gui_string ptr     @ 0xD0 + 0x14 = 0xE4
+//   text_params.text   @ 0xE8 (c_string + length)
 //   text_params.str_ref @ 0xF0
 //   text_params.text_object @ 0xE8 + 0x50 = 0x138
 //
 // For CSWGuiButton: navigable(0x6C)+border(0x74)+border(0x74)+text@(0x154).
+//   gui_string ptr     @ 0x154 + 0x14 = 0x168
 //   text_params.text   @ 0x154 + 0x18 = 0x16C
 //   text_params.str_ref @ 0x174
 //   text_params.text_object @ 0x16C + 0x50 = 0x1BC
 //
-// `text_object` is followed by classes whose CExoString/strref are empty —
-// the engine renders via this indirected CSWGuiText pointer instead. The
-// indirected CSWGuiText itself has text_params at its own +0x18, with
-// c_string and strref at the same relative offsets.
-constexpr size_t kLabelTextObjectOffset  = 0x138;
-constexpr size_t kButtonTextObjectOffset = 0x1BC;
-constexpr size_t kTextObjectTextOffset   = 0x18;   // CSWGuiText.text_params.text
-constexpr size_t kTextObjectStrRefOffset = 0x20;   // CSWGuiText.text_params.str_ref
+// **gui_string is the ground-truth source.** CSWGuiText::Initialize calls
+// NewCAurGUIString(text_params.text.c_string, ...) which constructs a
+// CAurGUIStringInternal whose constructor copies the c_string into a
+// heap-allocated buffer at offset +0x14 within CAurGUIStringInternal
+// (Ghidra-named field5_0x14). CSWGuiText::Draw reads ONLY from gui_string
+// (it ignores text_params at draw time). For overridden subclasses where
+// the inline text_params CExoString and strref are empty (CSWGuiInGameMenu's
+// 8 icon labels at vtable=0x0073E8E8 are the canonical case — verified via
+// 584 speculative-read miss events in patch-20260502-190936.log on the
+// previous build), gui_string still holds the rendered c_string.
+constexpr size_t kLabelGuiStringPtrOffset  = 0xE4;
+constexpr size_t kLabelTextObjectOffset    = 0x138;
+constexpr size_t kButtonGuiStringPtrOffset = 0x168;
+constexpr size_t kButtonTextObjectOffset   = 0x1BC;
+constexpr size_t kTextObjectTextOffset     = 0x18;   // CSWGuiText.text_params.text
+constexpr size_t kTextObjectStrRefOffset   = 0x20;   // CSWGuiText.text_params.str_ref
+constexpr size_t kAurGuiStringCStrOffset   = 0x14;   // CAurGUIStringInternal.field5
 
 // Slider class identity by vtable address. Resolved via SARIF xrefs:
 // 0x0073E9D0 is referenced by CSWGuiSlider's constructor (0x41bb0d) and
@@ -394,20 +404,75 @@ static bool ExtractTextOrStrRef(void* control,
     return LookupTlk(strref, outBuf, bufSize);
 }
 
-// Resolve text including text_object indirection. CSWGuiText's text_params
-// has a `CSWGuiText* text_object` field (offset 0x50 within text_params)
-// that the engine routes through for some classes — the inline CExoString
-// stays empty and the rendered text actually lives on the indirected
-// CSWGuiText. CSWGuiInGameMenu's icon labels are observed using this path
-// (verified empty CExoString + empty strref but visible text in-game).
+// Read a null-terminated c_string from CAurGUIStringInternal. Bypasses all
+// the CExoString / strref / text_object indirection — goes straight to the
+// engine's actually-rendered string.
 //
-// Tries: inline CExoString → strref → text_object.text_params.{text,strref}.
-// SEH-guarded around the indirected read because text_object can be null
-// or point at unmapped memory in transient states.
+// Confirmed by decompiling CSWGuiText::Initialize (0x00417310) and
+// CAurGUIStringInternal::CAurGUIStringInternal (0x0045B990): the constructor
+// allocates a heap buffer and copies the c_string into it at offset +0x14
+// of CAurGUIStringInternal (Ghidra-named field5_0x14). CSWGuiText::Draw at
+// 0x00416240 reads ONLY through gui_string — text_params is unused at draw
+// time. So gui_string is the ground-truth source whenever a control has
+// rendered visible text.
+//
+// `guiStringPtrOffset` is the offset within `control` to the
+// `CAurGUIStringInternal*` field (i.e. CSWGuiText.gui_string). For
+// CSWGuiLabel that's 0xE4; for CSWGuiButton that's 0x168.
+//
+// SEH-guarded because the gui_string pointer can be null in transient
+// init states and the indirected c_string pointer can theoretically point
+// at freed memory across module transitions.
+static bool ReadGuiString(void* control, size_t guiStringPtrOffset,
+                          char* outBuf, size_t bufSize) {
+    if (!control || bufSize < 2) return false;
+    bool got = false;
+    __try {
+        void* guiString = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(control) + guiStringPtrOffset);
+        if (!guiString) return false;
+        char* str = *reinterpret_cast<char**>(
+            reinterpret_cast<unsigned char*>(guiString) + kAurGuiStringCStrOffset);
+        if (!str) return false;
+        size_t len = 0;
+        while (len < bufSize - 1 && str[len] != '\0') ++len;
+        if (len == 0) return false;
+        memcpy(outBuf, str, len);
+        outBuf[len] = '\0';
+        got = true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("ReadGuiString SEH for control=%p offset=0x%x",
+                      control, (unsigned)guiStringPtrOffset);
+        got = false;
+    }
+    return got;
+}
+
+// Resolve text trying every known path:
+//   1. CAurGUIStringInternal at gui_string (the engine's actual render
+//      source — works for any control with visible rendered text)
+//   2. inline CExoString (text_params.text)
+//   3. strref → TLK lookup
+//   4. text_object indirection (rarely used, kept as defensive fallback)
+//
+// gui_string is tried first because it reflects the rendered state — the
+// other paths can be empty for overridden subclasses (CSWGuiInGameMenu icon
+// labels are the canonical case) but gui_string is always populated when
+// the control has visible text.
+//
+// SEH-guarded reads across the indirection paths.
 static bool ExtractTextOrStrRefIndirect(void* control,
                                         size_t cexoOffset, size_t strRefOffset,
                                         size_t textObjectOffset,
                                         char* outBuf, size_t bufSize) {
+    // gui_string offset for label and button differ by inline CSWGuiText
+    // start offset; derive from cexoOffset to avoid threading another
+    // parameter through every call site (gui_string ptr is at
+    // text.+0x14 = (cexo - 0x18) + 0x14 = cexo - 4).
+    size_t guiStringPtrOffset = cexoOffset - 4;
+    if (ReadGuiString(control, guiStringPtrOffset, outBuf, bufSize)) {
+        return true;
+    }
     if (ExtractTextOrStrRef(control, cexoOffset, strRefOffset, outBuf, bufSize)) {
         return true;
     }
