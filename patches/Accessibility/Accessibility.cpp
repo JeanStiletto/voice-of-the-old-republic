@@ -1420,9 +1420,23 @@ static void RebindChain(void* panel) {
         char text[256];
         const char* src = ExtractAnnounceableText(g_chain[i].control,
                                                   text, sizeof(text));
-        acclog::Write("Chain   [%d] %p (%d,%d) %s text=\"%s\"",
+        // Read CSWGuiControl.is_active (+0x4c) and bit_flags (+0x44) per
+        // SARIF struct layout. Hypothesis for chargen wizard buttons that
+        // silently no-op on Enter (Talente/Name/Spielen): step-gated, with
+        // is_active==0 until prereqs met. We already know `is_active` is
+        // what blocks vtable[15] FireActivate on tabs (set only by
+        // HandleLMouseDown's CaptureMouse path) — same flag, different
+        // gate. If Name shows is_active=0 alongside Fähigkeiten=1, we
+        // have our answer.
+        unsigned int isActive =
+            *reinterpret_cast<unsigned int*>(
+                reinterpret_cast<unsigned char*>(g_chain[i].control) + 0x4c);
+        unsigned int bitFlags =
+            *reinterpret_cast<unsigned int*>(
+                reinterpret_cast<unsigned char*>(g_chain[i].control) + 0x44);
+        acclog::Write("Chain   [%d] %p (%d,%d) %s text=\"%s\" is_active=%u bit_flags=0x%x",
                       i, g_chain[i].control, g_chain[i].cx, g_chain[i].cy,
-                      src ? src : "?", src ? text : "");
+                      src ? src : "?", src ? text : "", isActive, bitFlags);
     }
 }
 
