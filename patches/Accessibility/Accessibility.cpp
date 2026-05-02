@@ -549,12 +549,6 @@ static int        g_tabsStart         = -1;       // first tab-button index in p
 static int        g_tabsCount         = 0;        // number of contiguous tab buttons
 static VisualTab  g_visualTabs[kMaxVisualTabs];   // sorted by yCenter (top→bottom)
 static int        g_visualTabCount    = 0;
-// Set true if the listbox at panel.controls[0] visually overlaps the tab
-// buttons (Options-style panel). When true, we warp the cursor to a position
-// that makes the engine's "tab visually above cursor" hover heuristic
-// resolve to the target. When false, we warp directly to the target's
-// center (the engine's hit-test lands on the tab button itself).
-static bool       g_tabsListboxOverlap = false;
 
 // Virtual-line cursor over the listbox's multi-line blob. The Options listbox
 // has controls.size == 1 with all settings concatenated by '\n' into a single
@@ -785,49 +779,17 @@ static int FindVisualTabIdx(void* control) {
     return -1;
 }
 
-// Determine whether the listbox at `listBox` visually covers any tab button
-// in g_visualTabs[]. Used to pick the correct cursor-warp strategy:
-//   true  → listbox covers the tabs (Options-style). Hit-test at a tab's
-//            center resolves to the listbox; engine falls back to "tab
-//            visually above cursor". Caller compensates by warping one
-//            visual position past the target.
-//   false → listbox doesn't cover the tabs. Warp directly to target;
-//            engine's hit-test lands on the tab button and activates it.
-//
-// CSWGuiControl extent is at +0x4 (kControlExtentOffset): 4× int { left,
-// top, width, height }. Skip if the listbox extent is degenerate.
-static bool DetectListboxOverlap(void* listBox) {
-    if (!listBox || g_visualTabCount <= 0) return false;
-    auto* ext = reinterpret_cast<int*>(
-        reinterpret_cast<unsigned char*>(listBox) + kControlExtentOffset);
-    int left   = ext[0];
-    int top    = ext[1];
-    int width  = ext[2];
-    int height = ext[3];
-    if (width <= 0 || height <= 0) return false;
-    int right  = left + width;
-    int bottom = top + height;
-    for (int i = 0; i < g_visualTabCount; ++i) {
-        int cx = g_visualTabs[i].xCenter;
-        int cy = g_visualTabs[i].yCenter;
-        if (cx >= left && cx < right && cy >= top && cy < bottom) {
-            return true;
-        }
-    }
-    return false;
-}
 
 // Reset all tabbed-mode state. Called when the focused panel changes to a
 // different one — the new panel may or may not be tabbed; OnListBoxSetActive-
 // Control re-runs detection lazily on its first listbox event.
 static void ResetTabbedState() {
-    g_tabbedPanel        = nullptr;
-    g_tabsStart          = -1;
-    g_tabsCount          = 0;
-    g_visualTabCount     = 0;
-    g_tabsListboxOverlap = false;
-    g_virtualLineCount   = 0;
-    g_virtualLineIdx     = -1;
+    g_tabbedPanel      = nullptr;
+    g_tabsStart        = -1;
+    g_tabsCount        = 0;
+    g_visualTabCount   = 0;
+    g_virtualLineCount = 0;
+    g_virtualLineIdx   = -1;
 }
 
 // Split `text` on '\n' into g_virtualLines[]. Truncates oversize lines to fit;
@@ -1099,14 +1061,10 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
                 g_tabsStart   = tabsStart;
                 g_tabsCount   = tabsCount;
                 BuildVisualTabOrder(g_currentPanel, tabsStart, tabsCount);
-                // Detect whether this panel's listbox covers the tab
-                // buttons. Picks the warp strategy for Tab cycling.
-                g_tabsListboxOverlap = DetectListboxOverlap(listBox);
                 acclog::Write("Tab mode armed: panel=%p tabsStart=%d tabsCount=%d "
-                              "visualTabs=%d listboxOverlap=%s",
+                              "visualTabs=%d",
                               g_currentPanel, tabsStart, tabsCount,
-                              g_visualTabCount,
-                              g_tabsListboxOverlap ? "yes" : "no");
+                              g_visualTabCount);
                 for (int i = 0; i < g_visualTabCount; ++i) {
                     char btext[128];
                     const char* src = ExtractAnnounceableText(
@@ -1220,48 +1178,59 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
 
     // Tab key in a tabbed panel.
     //
-    // We cycle in VISUAL order — top-to-bottom on screen — regardless of
-    // panel.controls storage order. Each press moves Δ=1 in visual idx,
-    // which matches both the user's mental model ("next tab down") and
-    // the engine's hover-based activation (which keys off cursor Y).
-    // Δ=1 also avoids the engine's release-edge revert that fires on
-    // larger visual jumps.
+    // Plan M: explicitly commit the tab change via CSWGuiPanel::
+    // SetActiveControl, the same pattern Enter uses for chain nav.
+    // No cursor warp — that approach kept getting reverted by the
+    // engine's release-edge handler (which apparently treats hover-
+    // induced focus changes as transient and undoes them on key up).
     //
-    // The cursor warp coordinate depends on whether the panel's listbox
-    // covers the tab buttons (g_tabsListboxOverlap, set at arming):
+    // We cycle in VISUAL order, top-to-bottom on screen. Each press
+    // moves Δ=1 in visual idx. Read panel.activeControl each press to
+    // anchor the cycle in reality so we don't drift if the engine
+    // does anything unexpected.
     //
-    //   * Overlap panel (Options-style): hit-test at any tab's center
-    //     resolves to the listbox, so the engine falls back to "tab
-    //     visually above cursor". We compensate by warping one visual
-    //     position past the target — engine's fallback then lands on
-    //     the target. For target = bottom tab (visual count-1), wrapping
-    //     past it would yield "no tab above cursor" = no-change, so we
-    //     instead warp into the dead space below the bottom tab; the
-    //     engine still resolves "tab visually above cursor" to it.
-    //
-    //   * Clean panel (no overlap): hit-test at the target's center
-    //     lands on the tab button itself; engine activates it directly.
-    //     Warp straight to target's center.
+    // Sound (the bottom-most visual tab) becomes reachable because we
+    // call SetActiveControl directly with the tab pointer — there's no
+    // cursor-position hit-test to defeat us.
     //
     // Shift+Tab is detected via GetAsyncKeyState(VK_SHIFT) — KOTOR's
     // manager-level HandleInputEvent doesn't pass modifier state with
     // the key code.
     //
-    // We don't announce here. The engine fires SetActiveControl on the
-    // tab it activated, which OnSetActiveControl speaks via SpeakIfChanged.
-    // The announcement therefore matches the listbox content for free.
+    // We don't announce in the handler. The setActive call fires our
+    // OnSetActiveControl hook synchronously, which speaks the engine's
+    // resulting activation via SpeakIfChanged. By construction that
+    // text matches the new listbox content.
+    //
+    // current != target guard: avoids calling setActive on an already-
+    // active control. Earlier deferred-setActive attempts crashed when
+    // doing that no-op call; symptom was a focus cascade ending in
+    // Feedback being activated, then a crash on the next mouse move.
+    // Synchronous setActive from the input hook (this code path) is
+    // the same pattern Enter commit uses safely.
     if (param_1 == kInputTab &&
         g_tabbedPanel != nullptr && g_tabbedPanel == g_currentPanel &&
         g_visualTabCount > 0)
     {
-        if (param_2 != 0) {
+        // Only cycle on val=128, the standard "press edge" value. Other
+        // vals are either val=0 (release) or synthetic events injected by
+        // the engine after our setActive call (verified via
+        // patch-20260502-022154 log line 92: val=514 fired after setActive
+        // returned, immediately before a crash from cascading re-entry).
+        // Both kinds get consumed to prevent the engine's default Tab
+        // handling, but we only do the cycle work on a real press.
+        //
+        // Re-entry guard is also kept because the synthetic event can fire
+        // BEFORE setActive returns (i.e., while our handler is still on
+        // the stack via the engine's onClick → input dispatch chain).
+        // Either filter alone isn't sufficient.
+        static bool s_inTabHandler = false;
+        if (param_2 == 128 && !s_inTabHandler) {
+            s_inTabHandler = true;
+
             bool isShift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
             int n = g_visualTabCount;
 
-            // Read the engine's current active control so our cycle stays
-            // in sync with reality even if a previous Tab failed to change
-            // focus. If active isn't a tab (-1), treat it as visual 0 so
-            // the first Tab steps to the second tab.
             void* active = ReadPanelActiveControl(g_currentPanel);
             int currentVisual = FindVisualTabIdx(active);
             if (currentVisual < 0) currentVisual = 0;
@@ -1270,48 +1239,27 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                 ? (currentVisual + n - 1) % n
                 : (currentVisual + 1) % n;
 
-            int warpX = 0, warpY = 0;
-            const char* warpKind = nullptr;
-            if (g_tabsListboxOverlap) {
-                if (targetVisual == n - 1) {
-                    // Bottom tab: warp into the dead space below it. The
-                    // engine's "tab visually above cursor" then resolves
-                    // to the bottom tab.
-                    int spacing = (n > 1)
-                        ? (g_visualTabs[n - 1].yCenter -
-                           g_visualTabs[n - 2].yCenter)
-                        : 30;
-                    if (spacing < 10) spacing = 30;
-                    warpX    = g_visualTabs[n - 1].xCenter;
-                    warpY    = g_visualTabs[n - 1].yCenter + spacing / 2;
-                    warpKind = "below-bottom";
-                } else {
-                    // Warp to the tab visually below the target. Engine's
-                    // listbox-fallback resolves to target.
-                    int adj = targetVisual + 1;  // safe: targetVisual < n-1
-                    warpX    = g_visualTabs[adj].xCenter;
-                    warpY    = g_visualTabs[adj].yCenter;
-                    warpKind = "visual-next";
-                }
+            void* targetCtl = g_visualTabs[targetVisual].control;
+            if (targetCtl && targetCtl != active) {
+                auto setActive = reinterpret_cast<PFN_PanelSetActiveControl>(
+                    kAddrPanelSetActiveControl);
+                acclog::Write("Tab cycle %s: current=%d target=%d ctl=%p "
+                              "(was %p)",
+                              isShift ? "BACK" : "FWD",
+                              currentVisual, targetVisual, targetCtl, active);
+                setActive(g_currentPanel, targetCtl);
             } else {
-                // Clean panel: warp directly to target's center. Engine's
-                // hit-test lands on the tab and activates it.
-                warpX    = g_visualTabs[targetVisual].xCenter;
-                warpY    = g_visualTabs[targetVisual].yCenter;
-                warpKind = "target-direct";
+                acclog::Write("Tab cycle %s: current=%d target=%d ctl=%p "
+                              "(no change — already active)",
+                              isShift ? "BACK" : "FWD",
+                              currentVisual, targetVisual, targetCtl);
             }
 
-            g_pendingX = warpX;
-            g_pendingY = warpY;
-            // No specific control to dedup against. Letting OnSetActiveControl
-            // run its full body (including SpeakIfChanged) is fine since the
-            // engine's choice is the target tab in either warp strategy.
-            g_pendingTarget = nullptr;
-            g_pendingCursorMove = true;
-            acclog::Write("Tab cycle %s: current=%d target=%d warp=%s (%d,%d)",
-                          isShift ? "BACK" : "FWD",
-                          currentVisual, targetVisual, warpKind,
-                          warpX, warpY);
+            s_inTabHandler = false;
+        } else if (param_2 != 0 && param_2 != 128) {
+            acclog::Write("Tab synthetic event suppressed: val=%d "
+                          "(in_handler=%d)",
+                          param_2, s_inTabHandler ? 1 : 0);
         }
         consumed = true;
     }
