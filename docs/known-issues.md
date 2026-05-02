@@ -14,6 +14,23 @@ When an entry is closed, move it out of this file (the corresponding fix or comm
 
 ## Planned
 
+### In-game architecture refit (in flight, untested)
+
+Six new layers landed in the patch DLL but have not yet been validated against a live in-game session. Iterate on the next gameplay run:
+
+- **Layer 1 — Panel identity registry.** `IdentifyPanel(void*) → PanelKind` resolves CGuiInGame via `*(0x7A39FC) → CAppManager.client(+0x4) → CClientExoApp.internal(+0x4) → CClientExoAppInternal.gui_in_game(+0x40)` and matches the panel pointer against named slots (`tutorial_box`, `main_interface`, `dialog_cinematic`, `bark_bubble`, `in_game_pause`, `message_box`, etc.). Every first-sight `(panel, kind)` pair is logged as `PanelKind: panel=X identified as Y`. Verify against gameplay log: `12B04010` should resolve as `TutorialBox`, `12CD23D8` as `MainInterface`, `07434E40` as `MessageBox`, etc. If `Unknown` everywhere, the indirection chain is wrong.
+- **Layer 2 — Listbox content extraction in `ExtractAnnounceableText`.** When a control with `vtable=0x0073E840` is encountered (most commonly as a panel child), walks `controls[0..7]` and concatenates row texts. Resolves the recurring `src=none vtable=0073E840` lines for modals like the recurring `07434E40`. Verify: those lines should now show `src=listbox text="..."`.
+- **Layer 3 — Per-panel content monitor.** `MonitorPanelContents` runs every `OnUpdate`, walks `panels[]`, and for kinds in `IsContentMonitored` (TutorialBox, MessageBox, BarkBubble, DialogCinematic/Computer/ComputerCamera/CinematicCopy, AreaTransition) computes a fingerprint of label+listbox content, announces diffs. Designed to catch the late-bound tutorial label (panel constructed with `text=" "`, hint string written seconds later). Logs every fingerprint change as `ContentChange: panel=X kind=Y` with prev/curr.
+- **Layer 4 — `g_currentPanel` staleness fix.** Esc handler now uses `activePanel` (resolved from manager's modal_stack each call) instead of `g_currentPanel` (set on focus, never cleared). Should stop the 14×-Esc-spam pattern observed after a modal closes.
+- **Layer 5 — Empty-chain logging.** When `RebindChain` lands on a panel with zero navigable controls, log `Chain empty: panel=X kind=Y has no navigable controls`. No fallback wired yet — first see in the log which kinds tend to be empty (suspect: routing-only overlays like `074FE618`) before deciding policy.
+- **Per-kind handlers (Layer 6).** Not yet implemented as kind-specific extractors. The content monitor (Layer 3) is the generic substrate; kind-specific extraction (e.g. read `CSWGuiBarkBubble.barktext_label` directly at known offset, walk `CSWGuiDialog.replies_listbox` as a chain target) is the natural next step once the generic layer surfaces what's missing.
+
+Known unknowns to watch for in the next log:
+- Whether Layer 1's indirection chain resolves `CGuiInGame` early enough — title-screen sessions never enter gameplay, so identification will return `Unknown` for everything before the first module load. Expected, but worth confirming.
+- Whether Layer 3 spam-announces persistent panels whose content varies harmlessly (e.g. a clock label, an FPS counter) — would manifest as repeated `ContentChange` lines for the same panel. If so, narrow the kind whitelist.
+- Whether the listbox extraction (Layer 2) returns the expected text or something garbled (string-encoding mismatch on the row label). The `prev`/`curr` lines in `ContentChange` make this directly visible.
+- Whether `IdentifyPanel`'s indirect reads occasionally fault (CGuiInGame transient null during loads). The function null-checks at every step but reading `*0x7A39FC` itself would page-fault if the address ever became invalid; not expected on Steam 1.0.3 but a debug log would catch it.
+
 ### Character creation screen
 
 End-to-end navigation through the character creation flow works (foreground-panel routing via `CSWGuiManager.modal_stack` lands chain rebind on the active modal/wizard correctly). Outstanding items:

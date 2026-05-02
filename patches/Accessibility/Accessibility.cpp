@@ -237,6 +237,51 @@ constexpr size_t kSliderCurValueOffset    = 0x74;
 // the only safe identity check.
 constexpr uintptr_t kVtableSlider = 0x0073E9D0;
 
+// CSWGuiListBox vtable. Same identity-by-vtable pattern as the slider:
+// no AsListBox accessor exists in GuiControlMethods, so we identify by
+// vtable equality. Used by chain navigation (RebindChain recurses one
+// level into multi-row listboxes), the tabbed-panel detector, and the
+// listbox-content extraction path in ExtractAnnounceableText (which walks
+// a listbox's rows when the panel walk encounters one as a child — the
+// recurring `vtable=0073E840 src=none` cases in our log are listbox
+// containers wrapping the actual message text).
+constexpr uintptr_t kVtableListBox = 0x0073E840;
+
+// Container offsets verified against Lane's SARIF (DATATYPE entries for
+// CSWGuiPanel and CSWGuiListBox). CExoArrayList layout:
+//   +0x00  T**      data         (heap array of element pointers)
+//   +0x04  int      size
+//   +0x08  int      capacity
+//
+// CSWGuiPanel.activeControl is at +0x1c — current focused child (read by
+// our SetActiveControl mid-function hook before the SET).
+// CSWGuiPanel.controls is at +0x20 — list of every direct child control.
+// CSWGuiListBox.controls is at +0x29c — list of row controls. Listbox cursor
+// state is in three shorts immediately after the controls array:
+//   +0x2c4  short    items_per_page
+//   +0x2c6  short    selection_index   ← which row is "current"
+//   +0x2c8  short    top_visible_index ← scroll offset
+constexpr size_t kPanelActiveControlOffset      = 0x1c;
+constexpr size_t kPanelControlsOffset           = 0x20;
+constexpr size_t kListBoxControlsOffset         = 0x29c;
+constexpr size_t kListBoxBitFlagsOffset         = 0x2bc;
+constexpr size_t kListBoxItemsPerPageOffset     = 0x2c4;
+constexpr size_t kListBoxSelectionIndexOffset   = 0x2c6;
+constexpr size_t kListBoxTopVisibleIndexOffset  = 0x2c8;
+
+// CSWGuiControl.extent is an inline CSWGuiExtent (16 bytes) at +0x4:
+//   +0x0  left    int
+//   +0x4  top     int
+//   +0x8  width   int
+//   +0xC  height  int
+constexpr size_t kControlExtentOffset = 0x4;
+
+struct CExoArrayList {
+    void** data;
+    int    size;
+    int    capacity;
+};
+
 // CTlkTable::GetSimpleString — resolves a TLK str_ref to a localized string.
 // Many KOTOR UI controls (e.g. Options screen "Annehmen"/"Abbrechen", certain
 // chargen labels) leave their CExoString empty and store only a str_ref; the
@@ -329,6 +374,12 @@ static bool IsSlider(void* control) {
     if (!control) return false;
     void** vt = *reinterpret_cast<void***>(control);
     return reinterpret_cast<uintptr_t>(vt) == kVtableSlider;
+}
+
+static bool IsListBox(void* control) {
+    if (!control) return false;
+    void** vt = *reinterpret_cast<void***>(control);
+    return reinterpret_cast<uintptr_t>(vt) == kVtableListBox;
 }
 
 // Read CSWGuiButtonToggle.field2_0x1c8's bit 0. Decompiled HandleInputEvent
@@ -429,11 +480,73 @@ static const char* ExtractAnnounceableText(void* control,
         source = "slider";
     }
 
-    // CSWGuiEditbox / CSWGuiListBox — the engine doesn't expose AsX
-    // accessors for these in GuiControlMethods, and we don't yet know
-    // their struct layouts well enough to read fields by speculative
-    // offsets. OnSetActiveControl logs the vtable pointer for any control
-    // we can't extract; map via SARIF + add per-class extraction here.
+    // 7. CSWGuiListBox content. The listbox is a container; its "text" is
+    //    the concatenation of its row controls' texts. Many in-game modals
+    //    (CSWGuiMessageBox-style — including the recurring 07434E40 OK/Cancel
+    //    in our log, and the quit-confirmation "Möchtest du wirklich
+    //    aufhören?") put their message text in a single listbox row rather
+    //    than directly in a panel label, so without this path the modal
+    //    appears as src=none. Recursion is bounded to one level — listbox
+    //    rows are not themselves listboxes in observed layouts, so we only
+    //    try button/label extraction per row, never re-enter the listbox
+    //    branch.
+    //
+    //    Capped at 8 rows to keep the announcement digestible (long save-
+    //    game lists aren't candidates for this code path; they have rows
+    //    that already announce individually via OnListBoxSetActiveControl).
+    if (!source && IsListBox(control)) {
+        auto* lb = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(control) + kListBoxControlsOffset);
+        if (lb && lb->data && lb->size > 0) {
+            int n = lb->size > 8 ? 8 : lb->size;
+            outBuf[0] = '\0';
+            size_t off = 0;
+            for (int i = 0; i < n; ++i) {
+                void* row = lb->data[i];
+                if (!row) continue;
+                char rowText[256];
+                bool got = false;
+                if (void* btn = CallDowncast(row, kVtableAsButton)) {
+                    got = ExtractTextOrStrRef(btn, kButtonTextOffset,
+                                              kButtonStrRefOffset,
+                                              rowText, sizeof(rowText));
+                }
+                if (!got) {
+                    if (void* lbl = CallDowncast(row, kVtableAsLabel)) {
+                        got = ExtractTextOrStrRef(lbl, kLabelTextOffset,
+                                                  kLabelStrRefOffset,
+                                                  rowText, sizeof(rowText));
+                    }
+                }
+                if (!got) {
+                    if (void* hil = CallDowncast(row, kVtableAsLabelHilight)) {
+                        got = ExtractTextOrStrRef(hil, kLabelTextOffset,
+                                                  kLabelStrRefOffset,
+                                                  rowText, sizeof(rowText));
+                    }
+                }
+                if (!got) continue;
+                size_t rowLen = strnlen(rowText, sizeof(rowText));
+                if (rowLen == 0) continue;
+                size_t needed = (off > 0 ? 2 : 0) + rowLen + 1;
+                if (off + needed >= bufSize) break;
+                if (off > 0) {
+                    outBuf[off++] = ' ';
+                    outBuf[off++] = ' ';
+                }
+                memcpy(outBuf + off, rowText, rowLen);
+                off += rowLen;
+                outBuf[off] = '\0';
+            }
+            if (off > 0) source = "listbox";
+        }
+    }
+
+    // CSWGuiEditbox — the engine doesn't expose an AsEditbox accessor in
+    // GuiControlMethods, and we don't yet know its struct layout well
+    // enough to read fields by speculative offsets. OnSetActiveControl
+    // logs the vtable pointer for any control we can't extract; map via
+    // SARIF + add per-class extraction here.
 
     // Cycle value-display prefix. Cycle widgets render as `[◀] value [▶]`
     // and the engine rewrites the middle button's CExoString to the new
@@ -509,40 +622,199 @@ static void DumpControlVtable(void* control, char* out, size_t outSize) {
              vtable, vtable[0], vtable[4], vtable[20], vtable[22]);
 }
 
-// Container offsets verified against Lane's SARIF (DATATYPE entries for
-// CSWGuiPanel and CSWGuiListBox). CExoArrayList layout:
-//   +0x00  T**      data         (heap array of element pointers)
-//   +0x04  int      size
-//   +0x08  int      capacity
+// ============================================================================
+// In-game panel identity registry.
 //
-// CSWGuiPanel.activeControl is at +0x1c — current focused child (read by
-// our SetActiveControl mid-function hook before the SET).
-// CSWGuiPanel.controls is at +0x20 — list of every direct child control.
-// CSWGuiListBox.controls is at +0x29c — list of row controls. Listbox cursor
-// state is in three shorts immediately after the controls array:
-//   +0x2c4  short    items_per_page
-//   +0x2c6  short    selection_index   ← which row is "current"
-//   +0x2c8  short    top_visible_index ← scroll offset
-constexpr size_t kPanelActiveControlOffset      = 0x1c;
-constexpr size_t kPanelControlsOffset           = 0x20;
-constexpr size_t kListBoxControlsOffset         = 0x29c;
-constexpr size_t kListBoxBitFlagsOffset         = 0x2bc;
-constexpr size_t kListBoxItemsPerPageOffset     = 0x2c4;
-constexpr size_t kListBoxSelectionIndexOffset   = 0x2c6;
-constexpr size_t kListBoxTopVisibleIndexOffset  = 0x2c8;
+// CGuiInGame at offset +0x40 of CClientExoAppInternal holds named pointers to
+// every persistent in-game GUI panel: tutorial_box, main_interface (HUD),
+// dialog_cinematic, bark_bubble, in_game_pause, message_box, etc. By matching
+// any panel pointer against these named slots we can classify it semantically
+// (e.g. panel 12B04010 → TutorialBox) instead of guessing from layout.
+//
+// Resolution chain (per docs/llm-docs/re/swkotor.exe.h):
+//   *(CAppManager**)0x7A39FC                    → CAppManager*
+//   CAppManager.client            (+0x04)       → CClientExoApp*
+//   CClientExoApp.internal        (+0x04)       → CClientExoAppInternal*
+//   CClientExoAppInternal.gui_in_game (+0x40)   → CGuiInGame*
+//
+// Each step is a single indirect read; we re-resolve on every call so a
+// module transition that destroys/recreates the in-game GUI doesn't leave
+// us holding a stale pointer. Total cost is ~4 memory loads — cheap enough
+// to call from any focus event or per-frame tick.
+//
+// The CGuiInGame field offsets below are derived directly from the struct
+// definition in swkotor.exe.h:10219. If the engine struct layout ever
+// changes (different patch level, different distribution), these offsets
+// need to be re-derived. The PanelKind table is also the single point
+// where we'd add a new in-game panel kind to be recognised — name +
+// offset, and IdentifyPanel picks it up.
+// ============================================================================
 
-// CSWGuiControl.extent is an inline CSWGuiExtent (16 bytes) at +0x4:
-//   +0x0  left    int
-//   +0x4  top     int
-//   +0x8  width   int
-//   +0xC  height  int
-constexpr size_t kControlExtentOffset = 0x4;
+constexpr uintptr_t kAddrAppManagerPtr             = 0x007A39FC;
+constexpr size_t    kAppManagerClientOff           = 0x04;
+constexpr size_t    kClientExoAppInternalOff       = 0x04;
+constexpr size_t    kClientExoAppGuiInGameOff      = 0x40;
 
-struct CExoArrayList {
-    void** data;
-    int    size;
-    int    capacity;
+enum class PanelKind {
+    Unknown = 0,
+    // Persistent always-on UI
+    MainInterface,
+    InGameMenu,
+    // Modal screens accessible from the HUD
+    InGameEquip,
+    InGameInventory,
+    InGameCharacter,
+    InGameAbilities,
+    InGameMessages,
+    InGameJournal,
+    InGameMap,
+    InGameOptions,
+    InGamePause,
+    InGameGalaxyMap,
+    // Dialogue surfaces
+    DialogCinematic,
+    DialogCinematicCopy,
+    DialogComputer,
+    DialogComputerCamera,
+    DialogLetterbox1,
+    DialogLetterbox2,
+    DialogLetterbox3,
+    BarkBubble,
+    // Popups / overlays
+    TutorialBox,
+    MessageBox,
+    SkillInfoBox,
+    ControllerLossBox,
+    StatusSummary,
+    Examine,
+    Container,
+    CreateItemMenu,
+    CreateItemSubMenu,
+    Fade,
+    LoadModuleDebugMenu,
+    PowersFeatsSkillsDebugMenu,
+    PartySelection,
+    Store,
+    SoloModeQuery,
+    AreaTransition,
 };
+
+struct PanelKindOffset {
+    size_t      offset;
+    PanelKind   kind;
+    const char* name;
+};
+
+static const PanelKindOffset kPanelKindOffsets[] = {
+    { 0x08, PanelKind::InGameMenu,                 "InGameMenu" },
+    { 0x0c, PanelKind::InGameEquip,                "InGameEquip" },
+    { 0x10, PanelKind::InGameInventory,            "InGameInventory" },
+    { 0x14, PanelKind::InGameCharacter,            "InGameCharacter" },
+    { 0x18, PanelKind::InGameAbilities,            "InGameAbilities" },
+    { 0x1c, PanelKind::InGameMessages,             "InGameMessages" },
+    { 0x20, PanelKind::InGameJournal,              "InGameJournal" },
+    { 0x24, PanelKind::InGameMap,                  "InGameMap" },
+    { 0x28, PanelKind::InGameOptions,              "InGameOptions" },
+    { 0x3c, PanelKind::DialogCinematicCopy,        "DialogCinematicCopy" },
+    { 0x40, PanelKind::DialogCinematic,            "DialogCinematic" },
+    { 0x44, PanelKind::DialogComputer,             "DialogComputer" },
+    { 0x48, PanelKind::DialogComputerCamera,       "DialogComputerCamera" },
+    { 0x4c, PanelKind::BarkBubble,                 "BarkBubble" },
+    { 0x50, PanelKind::Examine,                    "Examine" },
+    { 0x54, PanelKind::Container,                  "Container" },
+    { 0x58, PanelKind::CreateItemMenu,             "CreateItemMenu" },
+    { 0x5c, PanelKind::CreateItemSubMenu,          "CreateItemSubMenu" },
+    { 0x60, PanelKind::DialogLetterbox1,           "DialogLetterbox1" },
+    { 0x64, PanelKind::DialogLetterbox2,           "DialogLetterbox2" },
+    { 0x68, PanelKind::DialogLetterbox3,           "DialogLetterbox3" },
+    { 0x6c, PanelKind::Fade,                       "Fade" },
+    { 0x70, PanelKind::LoadModuleDebugMenu,        "LoadModuleDebugMenu" },
+    { 0x74, PanelKind::PowersFeatsSkillsDebugMenu, "PowersFeatsSkillsDebugMenu" },
+    { 0x78, PanelKind::PartySelection,             "PartySelection" },
+    { 0x7c, PanelKind::InGamePause,                "InGamePause" },
+    { 0x80, PanelKind::InGameGalaxyMap,            "InGameGalaxyMap" },
+    { 0x84, PanelKind::Store,                      "Store" },
+    { 0x8c, PanelKind::SoloModeQuery,              "SoloModeQuery" },
+    { 0x90, PanelKind::MainInterface,              "MainInterface" },
+    { 0x94, PanelKind::AreaTransition,             "AreaTransition" },
+    { 0x98, PanelKind::MessageBox,                 "MessageBox" },
+    { 0x9c, PanelKind::SkillInfoBox,               "SkillInfoBox" },
+    { 0xa0, PanelKind::TutorialBox,                "TutorialBox" },
+    { 0xa4, PanelKind::ControllerLossBox,          "ControllerLossBox" },
+    { 0xa8, PanelKind::StatusSummary,              "StatusSummary" },
+};
+constexpr int kPanelKindOffsetCount =
+    sizeof(kPanelKindOffsets) / sizeof(kPanelKindOffsets[0]);
+
+static const char* PanelKindName(PanelKind k) {
+    if (k == PanelKind::Unknown) return "Unknown";
+    for (int i = 0; i < kPanelKindOffsetCount; ++i) {
+        if (kPanelKindOffsets[i].kind == k) return kPanelKindOffsets[i].name;
+    }
+    return "?";
+}
+
+// Resolve CGuiInGame singleton via the CAppManager → CClientExoApp →
+// CClientExoAppInternal indirection chain. Returns nullptr at any step's
+// null — caller must handle (DLL_PROCESS_ATTACH timing, between modules,
+// title screen with no game loaded, etc.).
+static void* ResolveGuiInGame() {
+    void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
+    if (!appMgr) return nullptr;
+    void* exoApp = *reinterpret_cast<void**>(
+        reinterpret_cast<unsigned char*>(appMgr) + kAppManagerClientOff);
+    if (!exoApp) return nullptr;
+    void* internal = *reinterpret_cast<void**>(
+        reinterpret_cast<unsigned char*>(exoApp) + kClientExoAppInternalOff);
+    if (!internal) return nullptr;
+    return *reinterpret_cast<void**>(
+        reinterpret_cast<unsigned char*>(internal) + kClientExoAppGuiInGameOff);
+}
+
+// Cache of (panel, kind) pairs we've already logged. Keeps the log tidy
+// when persistent panels (HUD) get re-checked on every input event.
+struct PanelKindCacheEntry {
+    void*     panel;
+    PanelKind kind;
+};
+constexpr int kPanelKindCacheSize = 32;
+static PanelKindCacheEntry g_panelKindCache[kPanelKindCacheSize];
+static int g_panelKindCacheCount = 0;
+
+// Compare panel against every named slot in CGuiInGame. Returns kind on
+// match, PanelKind::Unknown if no match (or if CGuiInGame isn't resolvable
+// yet). Logs each distinct (panel, kind) pair on first sight.
+static PanelKind IdentifyPanel(void* panel) {
+    if (!panel) return PanelKind::Unknown;
+    void* gui = ResolveGuiInGame();
+    if (!gui) return PanelKind::Unknown;
+
+    auto* base = reinterpret_cast<unsigned char*>(gui);
+    for (int i = 0; i < kPanelKindOffsetCount; ++i) {
+        void* slot = *reinterpret_cast<void**>(base + kPanelKindOffsets[i].offset);
+        if (slot != panel) continue;
+
+        PanelKind k = kPanelKindOffsets[i].kind;
+        // First-sight log per (panel, kind) pair.
+        for (int j = 0; j < g_panelKindCacheCount; ++j) {
+            if (g_panelKindCache[j].panel == panel &&
+                g_panelKindCache[j].kind  == k) {
+                return k;  // already logged
+            }
+        }
+        if (g_panelKindCacheCount >= kPanelKindCacheSize) {
+            // FIFO evict oldest entry.
+            memmove(g_panelKindCache, g_panelKindCache + 1,
+                    sizeof(g_panelKindCache[0]) * (kPanelKindCacheSize - 1));
+            g_panelKindCacheCount = kPanelKindCacheSize - 1;
+        }
+        g_panelKindCache[g_panelKindCacheCount++] = { panel, k };
+        acclog::Write("PanelKind: panel=%p identified as %s",
+                      panel, kPanelKindOffsets[i].name);
+        return k;
+    }
+    return PanelKind::Unknown;
+}
 
 // ============================================================================
 // Unified-cursor menu navigation (Phase 1+2 — see docs/menu-nav-design.md).
@@ -870,9 +1142,10 @@ static const char* LookupCycleCategory(void* control) {
 // Detection deliberately keys off "controls[0] is a non-empty CSWGuiListBox"
 // rather than "panel has buttons" — the main menu also has buttons but no
 // active listbox, and arrow-keys must continue to drive chain navigation
-// there. kVtableListBox is the observed Steam-1.0.3 vtable for CSWGuiListBox;
-// future builds will need updating if Lane's SARIF reports a different value.
-constexpr uintptr_t kVtableListBox  = 0x0073E840;
+// there. kVtableListBox itself is declared earlier alongside kVtableSlider
+// because the listbox-content extraction step in ExtractAnnounceableText
+// needs it; future builds will need updating if Lane's SARIF reports a
+// different value.
 
 static void*      g_tabbedPanel       = nullptr;  // panel currently in tabbed mode
 static int        g_tabsStart         = -1;       // first tab-button index in panel.controls
@@ -1549,6 +1822,13 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
         // where multiple panels are walked in the same frame).
         LogManagerStack(*reinterpret_cast<void**>(kAddrGuiManagerPtr),
                         "panel-walk");
+        // Identify the panel via the in-game registry. First-sight log
+        // happens inside IdentifyPanel. The kind here is purely diagnostic
+        // — actual per-kind handling lives in MonitorPanelContents on each
+        // OnUpdate tick.
+        PanelKind kind = IdentifyPanel(panel);
+        acclog::Write("Panel walk panel=%p kind=%s",
+                      panel, PanelKindName(kind));
         WalkChildren("Panel", panel, kPanelControlsOffset);
 
         g_cycleCategoryCount = 0;
@@ -1948,6 +2228,18 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         if (activePanel != g_chainPanel) {
             RebindChain(activePanel);
         }
+        if (g_chainCount == 0) {
+            // Foreground panel has no navigable controls. Log so we can see
+            // which panels are routing-only (e.g. the recurring 074FE618
+            // overlay observed in the in-game session) and decide whether
+            // to add a fallback strategy (walk down the modal stack to the
+            // next chain-eligible panel, or surface the panel's content
+            // via the title/listbox path). For now: log only, leave the
+            // input unconsumed so the engine sees it.
+            acclog::Write("Chain empty: panel=%p kind=%s has no navigable "
+                          "controls; input not consumed",
+                          activePanel, PanelKindName(IdentifyPanel(activePanel)));
+        }
         if (g_chainCount > 0) {
             int delta = (param_1 == kInputNavDown) ? +1 : -1;
             int newIndex = g_chainIndex + delta;
@@ -2050,30 +2342,40 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     // Schliess and presses Enter, so routing Esc through it gives deterministic
     // close behavior.
     //
-    // Gated on g_currentPanel != g_tabbedPanel: only fires inside a sub-dialog
+    // Gated on activePanel != g_tabbedPanel: only fires inside a sub-dialog
     // of a tabbed parent. On the parent Options panel itself, Esc passes
     // through to the engine (which opens the "Möchtest du wirklich aufhören?"
     // quit confirmation — desired existing behavior).
+    //
+    // We use activePanel (resolved from the manager's modal_stack/panels[]
+    // at the top of this function) rather than g_currentPanel. The latter is
+    // set by SetActiveControl and never cleared on panel pop, so once a
+    // sub-dialog closes, g_currentPanel keeps pointing at the dead panel
+    // until a new one takes focus — and Esc would keep firing FireActivate
+    // against the popped panel. activePanel always reflects the current
+    // foreground per the manager.
     if (param_2 != 0 &&
         (param_1 == kInputEsc1 || param_1 == kInputEsc2) &&
-        g_currentPanel != nullptr &&
+        activePanel != nullptr &&
         g_tabbedPanel != nullptr &&
-        g_currentPanel != g_tabbedPanel)
+        activePanel != g_tabbedPanel)
     {
         if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
             acclog::Write("Esc: op already pending; ignoring");
             consumed = true;
         } else {
-            void* closeBtn = FindCloseButton(g_currentPanel);
+            void* closeBtn = FindCloseButton(activePanel);
             if (closeBtn) {
                 g_pendingActivate       = true;
                 g_pendingActivateTarget = closeBtn;
-                acclog::Write("Esc close panel=%p Schliess=%p",
-                              g_currentPanel, closeBtn);
+                acclog::Write("Esc close panel=%p kind=%s Schliess=%p",
+                              activePanel, PanelKindName(IdentifyPanel(activePanel)),
+                              closeBtn);
                 consumed = true;
             } else {
-                acclog::Write("Esc on sub-dialog panel=%p but no close button found; "
-                              "passing through", g_currentPanel);
+                acclog::Write("Esc on sub-dialog panel=%p kind=%s but no "
+                              "close button found; passing through",
+                              activePanel, PanelKindName(IdentifyPanel(activePanel)));
             }
         }
     }
@@ -2143,6 +2445,179 @@ static void MonitorFocusedControl() {
     }
 }
 
+// =============================================================================
+// Per-panel content-change monitor.
+//
+// MonitorFocusedControl above watches the focused chain entry's text for
+// state-mutation announcements (toggle flip, cycle value, slider position).
+// That's the right thing for INTERACTIVE focus targets, but blind to two
+// classes of events:
+//
+//   1. Panels that have no focused control (newControl=NULL throughout).
+//      The tutorial popup is the canonical case — panel 12B04010 has a
+//      label child carrying the hint text but no focusable child; the
+//      engine never fires SetActiveControl with a non-null target. The
+//      label text is also late-bound: the panel appears with " " in the
+//      label, then the engine writes the actual hint string seconds later.
+//      Our pointer-keyed gates in OnSetActiveControl (s_lastPanel,
+//      g_lastTitledPanel) only fire once per panel address, so we miss
+//      the late text binding entirely.
+//
+//   2. Always-on panels at the bottom of panels[] (the HUD, persistent
+//      overlays). These never receive SetActiveControl, so they're never
+//      walked, never titled, never monitored.
+//
+// MonitorPanelContents fills both gaps generically: every OnUpdate tick,
+// walk the manager's panels[], identify each by IdentifyPanel, and for
+// the ones flagged as content-monitored compute a fingerprint of their
+// label-bearing children (concatenation of every label and listbox text).
+// Diff against last snapshot, announce changes.
+//
+// Per-kind whitelist (IsContentMonitored) keeps the cost down — we don't
+// fingerprint every panel every frame, only the ones whose content actually
+// changes meaningfully (tutorials, dialogue text, transition text, modal
+// messages). MainInterface (HUD vitals, queue, combat-mode) deserves a
+// dedicated polling layer with named-offset reads instead of full-panel
+// fingerprinting; deferred to a follow-up.
+// =============================================================================
+
+struct ContentSnapshot {
+    void* panel;
+    char  text[512];
+};
+constexpr int kMaxContentSnapshots = 8;
+static ContentSnapshot g_contentSnapshots[kMaxContentSnapshots];
+static int g_contentSnapshotCount = 0;
+
+static bool IsContentMonitored(PanelKind k) {
+    switch (k) {
+    case PanelKind::TutorialBox:
+    case PanelKind::DialogCinematic:
+    case PanelKind::DialogCinematicCopy:
+    case PanelKind::DialogComputer:
+    case PanelKind::DialogComputerCamera:
+    case PanelKind::BarkBubble:
+    case PanelKind::MessageBox:
+    case PanelKind::AreaTransition:
+        return true;
+    default:
+        return false;
+    }
+}
+
+// Build a fingerprint of the panel's label/listbox content. Buttons are
+// skipped because their text mutates on hover (rendered border changes
+// would create false-positive content changes). Whitespace-only fields
+// are skipped (engine uses " " as a "not-yet-bound" placeholder).
+//
+// Output is the concatenation of contents separated by ' | ', truncated
+// at outSize.
+static void BuildContentFingerprint(void* panel, char* out, size_t outSize) {
+    if (outSize == 0) return;
+    out[0] = '\0';
+    if (!panel) return;
+    auto* list = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+    if (!list->data || list->size <= 0) return;
+    int n = list->size > 32 ? 32 : list->size;
+    size_t off = 0;
+    for (int i = 0; i < n; ++i) {
+        void* c = list->data[i];
+        if (!c) continue;
+        // Skip buttons — hover state mutates their border-rendered text.
+        if (CallDowncast(c, kVtableAsButton) != nullptr) continue;
+        if (CallDowncast(c, kVtableAsButtonToggle) != nullptr) continue;
+
+        char text[256];
+        const char* src = ExtractAnnounceableText(c, text, sizeof(text));
+        if (!src) continue;
+        size_t tlen = strnlen(text, sizeof(text));
+        if (tlen == 0) continue;
+
+        // Skip whitespace-only.
+        bool allWs = true;
+        for (size_t k = 0; k < tlen; ++k) {
+            char ch = text[k];
+            if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r') {
+                allWs = false; break;
+            }
+        }
+        if (allWs) continue;
+
+        size_t needed = (off > 0 ? 3 : 0) + tlen;
+        if (off + needed + 1 >= outSize) break;
+        if (off > 0) {
+            out[off++] = ' ';
+            out[off++] = '|';
+            out[off++] = ' ';
+        }
+        memcpy(out + off, text, tlen);
+        off += tlen;
+        out[off] = '\0';
+    }
+}
+
+// Get-or-create the snapshot slot for a panel. FIFO-evicts when full.
+static char* GetContentSnapshot(void* panel) {
+    for (int i = 0; i < g_contentSnapshotCount; ++i) {
+        if (g_contentSnapshots[i].panel == panel) {
+            return g_contentSnapshots[i].text;
+        }
+    }
+    if (g_contentSnapshotCount >= kMaxContentSnapshots) {
+        memmove(g_contentSnapshots, g_contentSnapshots + 1,
+                sizeof(g_contentSnapshots[0]) * (kMaxContentSnapshots - 1));
+        g_contentSnapshotCount = kMaxContentSnapshots - 1;
+    }
+    int idx = g_contentSnapshotCount++;
+    g_contentSnapshots[idx].panel = panel;
+    g_contentSnapshots[idx].text[0] = '\0';
+    return g_contentSnapshots[idx].text;
+}
+
+// Per-tick content scan. Walks the manager's panels[] (top to bottom),
+// finds any panel of an interesting kind, snapshots its content
+// fingerprint, announces diffs. Persistent panels with stable content
+// (dialog-letterbox borders, etc.) settle to a fingerprint that matches
+// the snapshot and stay quiet; only changes speak.
+static void MonitorPanelContents() {
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!mgr) return;
+    auto* base = reinterpret_cast<unsigned char*>(mgr);
+    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+    if (!panelData || panelCount <= 0) return;
+    if (panelCount > 16) panelCount = 16;
+
+    for (int i = 0; i < panelCount; ++i) {
+        void* p = panelData[i];
+        if (!p) continue;
+        PanelKind k = IdentifyPanel(p);
+        if (!IsContentMonitored(k)) continue;
+
+        char fingerprint[512];
+        BuildContentFingerprint(p, fingerprint, sizeof(fingerprint));
+
+        char* last = GetContentSnapshot(p);
+        if (strncmp(last, fingerprint, sizeof(g_contentSnapshots[0].text)) == 0) {
+            continue;  // unchanged
+        }
+
+        if (fingerprint[0] != '\0') {
+            acclog::Write("ContentChange: panel=%p kind=%s",
+                          p, PanelKindName(k));
+            acclog::Write("ContentChange:   prev=\"%.300s\"", last);
+            acclog::Write("ContentChange:   curr=\"%.300s\"", fingerprint);
+            tolk::Speak(fingerprint, /*interrupt=*/false);
+        } else {
+            acclog::Write("ContentChange: panel=%p kind=%s fingerprint cleared "
+                          "(prev=\"%.100s\")", p, PanelKindName(k), last);
+        }
+        strncpy_s(last, sizeof(g_contentSnapshots[0].text),
+                  fingerprint, _TRUNCATE);
+    }
+}
+
 // CSWGuiManager::Update — hooked mid-function at 0x40ce76. Per-frame tick run
 // once after input dispatch by CClientExoAppInternal::MainLoop. Used as a safe
 // callback site for the deferred MoveMouseToPosition triggered by chain
@@ -2155,6 +2630,7 @@ static void MonitorFocusedControl() {
 // the global at 0x7A39F4 — both resolve to the same singleton.
 extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     MonitorFocusedControl();
+    MonitorPanelContents();
     if (!g_pendingCursorMove && !g_pendingClick && !g_pendingActivate &&
         !g_pendingSliderInput) return;
 
