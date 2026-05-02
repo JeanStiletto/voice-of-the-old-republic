@@ -1248,11 +1248,28 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             void* targetCtl = g_visualTabs[targetVisual].control;
             if (targetCtl && targetCtl != active) {
                 acclog::Write("Tab cycle %s queued: current=%d target=%d "
-                              "ctl=%p (was %p)",
+                              "ctl=%p (was %p) warp=(%d,%d)",
                               isShift ? "BACK" : "FWD",
-                              currentVisual, targetVisual, targetCtl, active);
+                              currentVisual, targetVisual, targetCtl, active,
+                              g_visualTabs[targetVisual].xCenter,
+                              g_visualTabs[targetVisual].yCenter);
                 g_pendingTabPanel  = g_currentPanel;
                 g_pendingTabTarget = targetCtl;
+                // Also queue a cursor warp to the new tab's center. The
+                // engine's per-frame mouseover reconciles activeControl
+                // against cursor position; without the warp it finds them
+                // inconsistent and crashes after the cascade. The warp
+                // lands on the listbox (visually overlaps tabs) which may
+                // briefly fire SetActiveControl(listbox) inside Move-
+                // MouseToPosition's hit-test — OnUpdate runs the cursor
+                // warp BEFORE the deferred setActive so the latter wins
+                // and activeControl ends as the tab.
+                //
+                // g_pendingTarget left null on purpose: we WANT the
+                // tab announcement from OnSetActiveControl, no self-dedup.
+                g_pendingX          = g_visualTabs[targetVisual].xCenter;
+                g_pendingY          = g_visualTabs[targetVisual].yCenter;
+                g_pendingCursorMove = true;
             } else {
                 acclog::Write("Tab cycle %s: current=%d target=%d ctl=%p "
                               "(no change — already active)",
@@ -1356,11 +1373,31 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
 // hook). We pass EBP as the parameter for clarity even though we also have
 // the global at 0x7A39F4 — both resolve to the same singleton.
 extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
-    // Pending Tab activation: deferred from OnHandleInputEvent so the engine's
-    // post-activation cascade runs in a clean per-frame context, not on the
-    // input dispatcher's stack. Clear pending state BEFORE the call so any
-    // re-entry through this hook on the same tick doesn't re-fire setActive.
-    if (g_pendingTabTarget != nullptr && g_pendingTabPanel != nullptr) {
+    // Order matters when BOTH a pending cursor warp and a pending tab
+    // activation are queued (Tab key path queues both): cursor warp
+    // FIRST, then setActive. The warp's internal hit-test may set
+    // activeControl as a side effect (lands on the listbox, which
+    // overlaps the tabs visually); the deferred setActive then
+    // overrides to our intended tab. End state: cursor near the new
+    // tab + activeControl = the new tab, consistent for the engine's
+    // next-frame mouseover reconciliation.
+    bool tabPending = (g_pendingTabTarget != nullptr && g_pendingTabPanel != nullptr);
+
+    if (g_pendingCursorMove) {
+        g_pendingCursorMove = false;
+        void* gm = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+        if (!gm) {
+            acclog::Write("Update: pending move but GuiManager singleton is NULL");
+            g_pendingTarget = nullptr;
+        } else {
+            auto move = reinterpret_cast<PFN_MoveMouseToPosition>(kAddrMoveMouseToPosition);
+            move(gm, g_pendingX, g_pendingY);
+            acclog::Write("Update: MoveMouseToPosition(%d, %d) target=%p",
+                          g_pendingX, g_pendingY, g_pendingTarget);
+        }
+    }
+
+    if (tabPending) {
         void* panel  = g_pendingTabPanel;
         void* target = g_pendingTabTarget;
         g_pendingTabPanel  = nullptr;
@@ -1371,37 +1408,14 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
                       panel, target);
         setActive(panel, target);
     }
-
-    if (!g_pendingCursorMove) return;
-    g_pendingCursorMove = false;
-
-    void* gm = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!gm) {
-        acclog::Write("Update: pending move but GuiManager singleton is NULL");
-        g_pendingTarget = nullptr;
-        return;
-    }
-
-    // Move the cursor. The engine's MoveMouseToPosition internally drives
-    // HitCheckMouse → UpdateMouseOverControl → CSWGuiPanel::SetActiveControl,
-    // so the cursor move alone updates panel.activeControl to whatever the
-    // hit-test resolves at the new coords. Verified by Phase-2 testing:
-    // pressing Enter after a chain step activated the focused control
-    // (e.g. Options button → Options menu) without any explicit setActive
-    // call. An earlier prototype that *also* called SetActiveControl(target)
-    // here caused crashes on panels where multiple controls share hit-test
-    // space (Options menu tabs at overlapping screen positions): the engine
-    // would activate the hit-test winner, our explicit setActive would
-    // override it back to the chain target, the listbox would refresh
-    // twice, and rapid state oscillation destabilized the engine.
-    auto move = reinterpret_cast<PFN_MoveMouseToPosition>(kAddrMoveMouseToPosition);
-    move(gm, g_pendingX, g_pendingY);
-
-    acclog::Write("Update: MoveMouseToPosition(%d, %d) target=%p",
-                  g_pendingX, g_pendingY, g_pendingTarget);
-    // g_pendingTarget cleared by OnSetActiveControl's self-dedup path when
-    // the engine's hover→active flow lands on the same control we asked
-    // for; otherwise it stays set and the next chain step overwrites it.
+    // NOTE: the arrow-keys path's prior implementation also tried "cursor
+    // warp + explicit setActive in OnUpdate" and reportedly crashed via
+    // state oscillation when targets shared hit-test space. The Tab path
+    // here is doing the same combination intentionally — the bet is that
+    // the per-frame mouseover crash we hit without the warp was caused
+    // by cursor/activeControl mismatch, and the warp closes that gap. If
+    // this re-introduces oscillation instead, we'll see SetActiveControl
+    // events bouncing between tab and listbox in the log.
 }
 
 // Read a snapshot of the listbox's cursor / flags / size into a string. Shared
