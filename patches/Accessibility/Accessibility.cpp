@@ -549,6 +549,14 @@ static int        g_tabsStart         = -1;       // first tab-button index in p
 static int        g_tabsCount         = 0;        // number of contiguous tab buttons
 static VisualTab  g_visualTabs[kMaxVisualTabs];   // sorted by yCenter (top→bottom)
 static int        g_visualTabCount    = 0;
+// GuiManager pointer captured when Tab mode was armed. The engine swaps
+// App→gui_manager between manager-shaped objects across state transitions
+// (verified: after our setActive on a tab, an internal event fires through
+// HandleInputEvent with a different `this` pointer than the one driving
+// real user input). When OnHandleInputEvent sees a Tab event whose `thisPtr`
+// doesn't match this captured value, the event is part of the engine's
+// post-activation cascade — not a user press — and we must NOT re-handle it.
+static void*      g_armedManager      = nullptr;
 
 // Virtual-line cursor over the listbox's multi-line blob. The Options listbox
 // has controls.size == 1 with all settings concatenated by '\n' into a single
@@ -790,6 +798,7 @@ static void ResetTabbedState() {
     g_visualTabCount   = 0;
     g_virtualLineCount = 0;
     g_virtualLineIdx   = -1;
+    g_armedManager     = nullptr;
 }
 
 // Split `text` on '\n' into g_virtualLines[]. Truncates oversize lines to fit;
@@ -1057,13 +1066,14 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
         if (g_currentPanel && g_tabbedPanel != g_currentPanel) {
             int tabsStart = -1, tabsCount = 0;
             if (DetectTabsCluster(g_currentPanel, tabsStart, tabsCount)) {
-                g_tabbedPanel = g_currentPanel;
-                g_tabsStart   = tabsStart;
-                g_tabsCount   = tabsCount;
+                g_tabbedPanel  = g_currentPanel;
+                g_tabsStart    = tabsStart;
+                g_tabsCount    = tabsCount;
+                g_armedManager = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
                 BuildVisualTabOrder(g_currentPanel, tabsStart, tabsCount);
-                acclog::Write("Tab mode armed: panel=%p tabsStart=%d tabsCount=%d "
+                acclog::Write("Tab mode armed: panel=%p mgr=%p tabsStart=%d tabsCount=%d "
                               "visualTabs=%d",
-                              g_currentPanel, tabsStart, tabsCount,
+                              g_currentPanel, g_armedManager, tabsStart, tabsCount,
                               g_visualTabCount);
                 for (int i = 0; i < g_visualTabCount; ++i) {
                     char btext[128];
@@ -1202,28 +1212,26 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     // resulting activation via SpeakIfChanged. By construction that
     // text matches the new listbox content.
     //
-    // current != target guard: avoids calling setActive on an already-
-    // active control. Earlier deferred-setActive attempts crashed when
-    // doing that no-op call; symptom was a focus cascade ending in
-    // Feedback being activated, then a crash on the next mouse move.
-    // Synchronous setActive from the input hook (this code path) is
-    // the same pattern Enter commit uses safely.
+    // Manager-pointer guard (`thisPtr == g_armedManager`): the engine
+    // swaps App→gui_manager between manager-shaped objects across state
+    // transitions. After our setActive on a tab, the engine fires a
+    // post-activation cascade event back through HandleInputEvent with a
+    // DIFFERENT `thisPtr` (e.g. armed mgr 06CEEF00 vs cascade mgr
+    // 06B93F48 — see patch-20260502-035745 log lines 26 vs 92, plus
+    // CExoInputInternal::BufferEvent diagnosis confirming this event is
+    // not a real Win32 message). That cascade is the engine's normal
+    // post-activation work; if we re-enter our Tab logic on it (or even
+    // just consume it), we corrupt the cascade and crash. Letting it
+    // pass through unchanged is the right behavior.
     if (param_1 == kInputTab &&
         g_tabbedPanel != nullptr && g_tabbedPanel == g_currentPanel &&
-        g_visualTabCount > 0)
+        g_visualTabCount > 0 &&
+        thisPtr == g_armedManager)
     {
-        // Only cycle on val=128, the standard "press edge" value. Other
-        // vals are either val=0 (release) or synthetic events injected by
-        // the engine after our setActive call (verified via
-        // patch-20260502-022154 log line 92: val=514 fired after setActive
-        // returned, immediately before a crash from cascading re-entry).
-        // Both kinds get consumed to prevent the engine's default Tab
-        // handling, but we only do the cycle work on a real press.
-        //
-        // Re-entry guard is also kept because the synthetic event can fire
-        // BEFORE setActive returns (i.e., while our handler is still on
-        // the stack via the engine's onClick → input dispatch chain).
-        // Either filter alone isn't sufficient.
+        // Only cycle on val=128 (standard press edge). Releases (val=0)
+        // are consumed without action. Re-entry guard kept as cheap
+        // insurance against any reentry path the manager-pointer guard
+        // doesn't catch.
         static bool s_inTabHandler = false;
         if (param_2 == 128 && !s_inTabHandler) {
             s_inTabHandler = true;
@@ -1256,10 +1264,6 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             }
 
             s_inTabHandler = false;
-        } else if (param_2 != 0 && param_2 != 128) {
-            acclog::Write("Tab synthetic event suppressed: val=%d "
-                          "(in_handler=%d)",
-                          param_2, s_inTabHandler ? 1 : 0);
         }
         consumed = true;
     }
