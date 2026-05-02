@@ -1488,6 +1488,19 @@ extern "C" void __cdecl OnListBoxSetSelectedControl(void* listBox) {
     acclog::Write("ListBox::SetSelectedControl #%d %s (pre-update)", n, state);
 }
 
+// CSWGuiManager::PlayGuiSound — diagnostic only. Logs every call so we can
+// spot a tight loop / per-frame oscillation that hammers PlayGuiSound (the
+// only CALL inside CSWGuiPanel::SetActiveControl). The user observed audio
+// stutter ~0.5s before the post-Tab crash; a burst of calls here would
+// confirm the engine is in a stuck state we don't see at our SetActiveControl
+// hook (e.g., direct activeControl mutation that bypasses our hook).
+extern "C" void __cdecl OnPlayGuiSound(void* thisPtr) {
+    EnsureTolkInitialized();
+    static int n = 0;
+    ++n;
+    acclog::Write("PlayGuiSound #%d this=%p", n, thisPtr);
+}
+
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         acclog::Init(hinstDLL);

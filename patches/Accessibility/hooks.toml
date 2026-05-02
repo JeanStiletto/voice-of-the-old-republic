@@ -247,6 +247,37 @@ type = "pointer"
 source = "eax"
 type = "int"
 
+# CSWGuiManager::PlayGuiSound — diagnostic hook at function entry (0x0040a140).
+# Counts every call. PlayGuiSound is the only CALL inside CSWGuiPanel::Set-
+# ActiveControl, so a tight loop in the engine's per-frame state would show
+# up here as a burst of calls. Used to investigate whether the post-Tab
+# crash is preceded by per-frame oscillation that doesn't reach our
+# OnSetActiveControl hook (the user observes a ~0.5s music stutter before
+# the crash, consistent with audio being hammered).
+#
+# Function entry (0x40a140):
+#   8a 54 24 04           mov  DL, [ESP+0x4]    ; gui_sound_id
+#   80 fa ff              cmp  DL, 0xff
+#   74 23                 je   +0x23             ; ← outside cut
+#   ...
+#
+# Cut at 7 bytes covers MOV DL (4) + CMP DL,0xff (3). Both are register/
+# memory-relative — safe to relocate. The JE that follows is OUTSIDE the
+# cut and reads the flags set by the relocated CMP as expected.
+[[hooks]]
+address = 0x0040a140
+type = "detour"
+function = "OnPlayGuiSound"
+
+original_bytes = [0x8a, 0x54, 0x24, 0x04, 0x80, 0xfa, 0xff]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
 # CSWGuiListBox::HandleLMouseDown @0x0041c4a0 — DISABLED. Even when this hook
 # never fires (no mouse click occurred), its mere installation causes the
 # title-screen panel to oscillate focus on every arrow press: arrow press
