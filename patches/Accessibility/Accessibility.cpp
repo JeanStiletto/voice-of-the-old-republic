@@ -542,6 +542,88 @@ static const char* ExtractAnnounceableText(void* control,
         }
     }
 
+    // 8. Speculative text read for known label/button vtable overrides.
+    //    Some classes override AsLabel/AsButton in their vtable so that
+    //    CallDowncast returns null even though the class IS label-like or
+    //    button-like at the field-offset level. The InGameMenu icons are
+    //    the canonical case: 8 sibling labels at vtable=0x0073E8E8 and
+    //    8 image-only buttons at vtable=0x0073E658, and our standard
+    //    extraction returns nullptr for all of them (panel-walk shows
+    //    src=none).
+    //
+    //    For each entry in kKnownVtableOverrides we try a direct read at
+    //    the standard label/button text offsets, guarded by SEH so that
+    //    reading at an offset that's NOT a CExoString doesn't crash the
+    //    game. If the structure is different, we'll get a SEH exception
+    //    and silently fall through to the placeholder path.
+    //
+    //    Allowlist gating keeps speculative reads off random unknown
+    //    vtables — we only fire on classes we've observed needing this.
+    if (!source) {
+        struct VtableOverrideInfo {
+            uintptr_t vtable;
+            bool      tryLabel;
+            bool      tryButton;
+            const char* tag;
+        };
+        static const VtableOverrideInfo k_knownOverrides[] = {
+            // Sibling labels of in-game-menu icons (Equipment, Inventory,
+            // Character, ...) — observed children [0..7] of CSWGuiInGameMenu.
+            // Also chargen wizard step-number decorations.
+            { 0x0073E8E8, true,  false, "label-spec" },
+            // Image-only buttons (in-game-menu icons children [8..15],
+            // chargen class icons, portrait-picker arrows).
+            { 0x0073E658, false, true,  "button-spec" },
+        };
+        void** vt = *reinterpret_cast<void***>(control);
+        uintptr_t vta = reinterpret_cast<uintptr_t>(vt);
+        for (const auto& ov : k_knownOverrides) {
+            if (ov.vtable != vta) continue;
+            char text[256];
+            bool got = false;
+            if (ov.tryLabel) {
+                __try {
+                    if (ReadCExoString(control, kLabelTextOffset,
+                                       text, sizeof(text))) {
+                        got = true;
+                    } else {
+                        uint32_t strref = ReadU32(control, kLabelStrRefOffset);
+                        got = LookupTlk(strref, text, sizeof(text));
+                    }
+                } __except (EXCEPTION_EXECUTE_HANDLER) {
+                    acclog::Write("Speculative label read SEH for vtable=0x%x "
+                                  "control=%p", (unsigned)vta, control);
+                    got = false;
+                }
+            }
+            if (!got && ov.tryButton) {
+                __try {
+                    if (ReadCExoString(control, kButtonTextOffset,
+                                       text, sizeof(text))) {
+                        got = true;
+                    } else {
+                        uint32_t strref = ReadU32(control, kButtonStrRefOffset);
+                        got = LookupTlk(strref, text, sizeof(text));
+                    }
+                } __except (EXCEPTION_EXECUTE_HANDLER) {
+                    acclog::Write("Speculative button read SEH for vtable=0x%x "
+                                  "control=%p", (unsigned)vta, control);
+                    got = false;
+                }
+            }
+            if (got) {
+                size_t tlen = strnlen(text, sizeof(text));
+                if (tlen > 0 && tlen + 1 <= bufSize) {
+                    memcpy(outBuf, text, tlen + 1);
+                    source = ov.tag;
+                    acclog::Write("Speculative read hit: vtable=0x%x control=%p "
+                                  "text=\"%s\"", (unsigned)vta, control, outBuf);
+                    break;
+                }
+            }
+        }
+    }
+
     // CSWGuiEditbox — the engine doesn't expose an AsEditbox accessor in
     // GuiControlMethods, and we don't yet know its struct layout well
     // enough to read fields by speculative offsets. OnSetActiveControl
@@ -697,6 +779,11 @@ enum class PanelKind {
     Store,
     SoloModeQuery,
     AreaTransition,
+    // Dialogue auxiliary panels (the panels that route input during a
+    // CSWGuiDialogCinematic conversation — separate from the rendering
+    // panel that holds the message text).
+    DialogMessagesAux,   // 0xf8: void* messages?
+    DialogMessages,      // 0xfc: CGuiInGameDialogMessage*
 };
 
 struct PanelKindOffset {
@@ -742,6 +829,15 @@ static const PanelKindOffset kPanelKindOffsets[] = {
     { 0xa0, PanelKind::TutorialBox,                "TutorialBox" },
     { 0xa4, PanelKind::ControllerLossBox,          "ControllerLossBox" },
     { 0xa8, PanelKind::StatusSummary,              "StatusSummary" },
+    // Dialogue input-routing surfaces (per CGuiInGame layout in
+    // swkotor.exe.h:10282). The in-game session log shows that during
+    // a CSWGuiDialogCinematic conversation, arrow-key input routes to
+    // a separate foreground panel (0FDEE418 in patch-20260502-182804.log)
+    // distinct from the rendering panel (DialogCinematicCopy at +0x3c).
+    // Hypothesis: that routing target is one of these two — registering
+    // both so the next log identifies which.
+    { 0xf8, PanelKind::DialogMessagesAux,          "DialogMessagesAux" },
+    { 0xfc, PanelKind::DialogMessages,             "DialogMessages" },
 };
 constexpr int kPanelKindOffsetCount =
     sizeof(kPanelKindOffsets) / sizeof(kPanelKindOffsets[0]);
@@ -2231,14 +2327,35 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         if (g_chainCount == 0) {
             // Foreground panel has no navigable controls. Log so we can see
             // which panels are routing-only (e.g. the recurring 074FE618
-            // overlay observed in the in-game session) and decide whether
-            // to add a fallback strategy (walk down the modal stack to the
-            // next chain-eligible panel, or surface the panel's content
-            // via the title/listbox path). For now: log only, leave the
-            // input unconsumed so the engine sees it.
+            // overlay and the dialog routing target 0FDEE418 observed in
+            // the in-game session) and decide whether to add a fallback
+            // strategy (walk down the modal stack to the next chain-eligible
+            // panel, or surface the panel's content via the title/listbox
+            // path). For now: log only, leave the input unconsumed so the
+            // engine sees it.
+            PanelKind emptyKind = IdentifyPanel(activePanel);
             acclog::Write("Chain empty: panel=%p kind=%s has no navigable "
                           "controls; input not consumed",
-                          activePanel, PanelKindName(IdentifyPanel(activePanel)));
+                          activePanel, PanelKindName(emptyKind));
+
+            // Walk the panel ONCE so we can see what's actually in it.
+            // OnSetActiveControl's panel-walk gate (s_lastPanel) doesn't
+            // fire on these panels because the engine never sets focus on
+            // them. Without a walk we never learn their structure — log-only
+            // diagnostics give us nothing actionable.
+            static void* s_walkedEmptyPanels[16];
+            static int   s_walkedEmptyCount = 0;
+            bool walked = false;
+            for (int i = 0; i < s_walkedEmptyCount; ++i) {
+                if (s_walkedEmptyPanels[i] == activePanel) { walked = true; break; }
+            }
+            if (!walked && s_walkedEmptyCount < 16) {
+                s_walkedEmptyPanels[s_walkedEmptyCount++] = activePanel;
+                acclog::Write("EmptyChainPanel walk panel=%p kind=%s",
+                              activePanel, PanelKindName(emptyKind));
+                WalkChildren("EmptyChainPanel", activePanel,
+                             kPanelControlsOffset);
+            }
         }
         if (g_chainCount > 0) {
             int delta = (param_1 == kInputNavDown) ? +1 : -1;
