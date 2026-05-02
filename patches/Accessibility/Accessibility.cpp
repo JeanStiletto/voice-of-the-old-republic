@@ -522,6 +522,16 @@ constexpr int kInputNavDown = 0xb7;
 constexpr int kInputEnter1 = 0xb5;
 constexpr int kInputEnter2 = 0xbb;
 
+// LOGICAL_ESC / "back/cancel" — both translate to 0x28 (KEYBOARD_F2) via
+// ManagerTranslateCode @0x0040c8e0. The engine's natural Esc handling for
+// Options sub-dialogs (CSWGuiOptionsXxx::HandleInputEvent → PopModalPanel)
+// is silently failing for reasons we couldn't pin down — Esc reaches our
+// hook as logical(223), translates to 0x28, but no panel close fires. We
+// route it explicitly via FireActivate(Schliess) instead. See Esc handler
+// in OnHandleInputEvent for trigger conditions.
+constexpr int kInputEsc1 = 0xb4;
+constexpr int kInputEsc2 = 0xdf;
+
 // Chain state. g_currentPanel is updated in OnSetActiveControl. g_chainPanel
 // is rebound lazily per arrow press if the focused panel has changed since the
 // last navigation. A null current panel disables chain nav (fall through to
@@ -788,6 +798,35 @@ static void ParseVirtualLines(const char* text) {
         if (!end) break;
         p = end + 1;
     }
+}
+
+// Find the "close" button on a panel — the back/Schliess button we'd click
+// to dismiss the panel. Used by the Esc handler to route Esc to the same
+// FireActivate primitive the user triggers manually by Enter-ing Schliess.
+//
+// Match heuristic: scan panel.controls for a navigable button whose text
+// starts with "Schliess" (German "Schließen"), "Close" (English), or "OK"
+// (universal "accept and dismiss" in confirmation dialogs). KOTOR ships
+// German + English localizations; both texts present here cover the cases
+// we care about. Returns the control pointer or nullptr if none found.
+static void* FindCloseButton(void* panel) {
+    if (!panel) return nullptr;
+    auto* list = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+    if (!list->data || list->size <= 0) return nullptr;
+    int n = list->size > 256 ? 256 : list->size;
+    for (int i = 0; i < n; ++i) {
+        void* c = list->data[i];
+        if (!IsChainNavigable(c)) continue;
+        char text[256];
+        if (!ExtractAnnounceableText(c, text, sizeof(text))) continue;
+        if (strncmp(text, "Schliess", 8) == 0 ||
+            strncmp(text, "Close",    5) == 0 ||
+            strncmp(text, "OK",       2) == 0) {
+            return c;
+        }
+    }
+    return nullptr;
 }
 
 // Append a navigable control to the chain (skipping null/degenerate-extent).
@@ -1268,9 +1307,9 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     //
     // Replacement UX: arrow keys walk tab buttons via the chain (they're
     // already in panel.controls of the tabbed parent), Enter opens a tab via
-    // click-sim (above), Esc closes a sub-dialog via the engine's natural
-    // CSWGuiOptionsXxx::HandleInputEvent(0x28) path — keeping every action
-    // user-paced and never collapsing close+open into the same frame.
+    // click-sim (above), Esc closes a sub-dialog via FireActivate(Schliess)
+    // (handler below) — keeping every action user-paced and never collapsing
+    // close+open into the same frame.
 
     // Arrow keys: flat chain navigation. Chain is built from panel.controls
     // + listbox children (one level) sorted by extent.top, so arrow-down
@@ -1303,6 +1342,44 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                           param_1 == kInputNavDown ? "DOWN" : "UP");
             // Always consume nav-up/nav-down on a panel with a non-empty chain.
             consumed = true;
+        }
+    }
+
+    // Esc / Backspace (when bound to "back/cancel" via the in-game Key Mapping
+    // screen): close the current sub-dialog by FireActivate-ing its Schliess
+    // button. The engine's natural Esc → CSWGuiOptionsXxx::HandleInputEvent(0x28)
+    // → PopModalPanel path is silently failing in our environment (Esc reaches
+    // the manager and translates correctly, but no close fires — verified in
+    // patch-20260502-102803.log lines 311-312). FireActivate(Schliess) is the
+    // same primitive that already works when the user manually navigates to
+    // Schliess and presses Enter, so routing Esc through it gives deterministic
+    // close behavior.
+    //
+    // Gated on g_currentPanel != g_tabbedPanel: only fires inside a sub-dialog
+    // of a tabbed parent. On the parent Options panel itself, Esc passes
+    // through to the engine (which opens the "Möchtest du wirklich aufhören?"
+    // quit confirmation — desired existing behavior).
+    if (param_2 != 0 &&
+        (param_1 == kInputEsc1 || param_1 == kInputEsc2) &&
+        g_currentPanel != nullptr &&
+        g_tabbedPanel != nullptr &&
+        g_currentPanel != g_tabbedPanel)
+    {
+        if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
+            acclog::Write("Esc: op already pending; ignoring");
+            consumed = true;
+        } else {
+            void* closeBtn = FindCloseButton(g_currentPanel);
+            if (closeBtn) {
+                g_pendingActivate       = true;
+                g_pendingActivateTarget = closeBtn;
+                acclog::Write("Esc close panel=%p Schliess=%p",
+                              g_currentPanel, closeBtn);
+                consumed = true;
+            } else {
+                acclog::Write("Esc on sub-dialog panel=%p but no close button found; "
+                              "passing through", g_currentPanel);
+            }
         }
     }
 
