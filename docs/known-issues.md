@@ -14,6 +14,18 @@ When an entry is closed, move it out of this file (the corresponding fix or comm
 
 ## Planned
 
+### In-game architecture refit (live, partially validated)
+
+**Verified working** (in `patch-20260502-184232.log`):
+- Panel identity registry — every observed panel resolves: `MessageBox`, `TutorialBox`, `MainInterface`, `Fade`, `DialogCinematicCopy`, `DialogLetterbox{1,2,3}`, `StatusSummary`, `InGameMenu`, `InGameOptions`, `InGameEquip`, `InGameAbilities`, `InGameCharacter`, `InGamePause`.
+- Listbox content extraction — modal messages and dialog reply lists both extract correctly (`src=listbox text="..."`).
+- Content-change monitor — caught every dialogue line transition for the Trask conversation; tutorial popup now reads when its label late-binds.
+- Esc-handler stale-pointer fix — single-fire close instead of 14× spam.
+- Empty-chain walk — surfaced the dialog auxiliary-panel structure (single message-label child, no listbox) and the routing pattern.
+
+**Open from session 2** (`patch-20260502-184232.log`):
+- Vtables `0x0073E8E8` and `0x0073E658` identified as CSWGuiLabelHilight and image-only CSWGuiButton subclasses respectively (function `0x00641DB0` is the identity downcast). Their visible text routes through `CSWGuiText.text_params.text_object` (offset 0x50 within text_params; absolute 0x138 from CSWGuiLabel base, 0x1BC from CSWGuiButton base) rather than the inline CExoString. **Iteration 3 lands** the `text_object` indirection in `ExtractTextOrStrRefIndirect`, plus generalized `FindSiblingLabel` (now searches above AND below) and a sibling-label fallback in `ExtractAnnounceableText` for chain-navigable buttons with empty text. Plus a dialog-reply selection monitor in `OnUpdate` that polls `listbox.selection_index` and announces the current row when it changes (engine doesn't fire SetActiveControl on per-row arrow nav).
+
 ### In-game architecture refit (in flight, untested)
 
 Six new layers landed in the patch DLL but have not yet been validated against a live in-game session. Iterate on the next gameplay run:

@@ -230,6 +230,37 @@ constexpr size_t kButtonToggleStateOffset = 0x1c8;
 constexpr size_t kSliderMaxValueOffset    = 0x70;
 constexpr size_t kSliderCurValueOffset    = 0x74;
 
+// CSWGuiText layout (from swkotor.exe.h struct definitions):
+//   +0x00  vtable
+//   +0x04  extent (16 bytes)
+//   +0x14  CAurGUIStringInternal* gui_string
+//   +0x18  text_params (CSWGuiTextParams):
+//             +0x00 (=0x18 in text)  CExoString text  (c_string + length)
+//             +0x08 (=0x20 in text)  int str_ref
+//             ...
+//             +0x50 (=0x68 in text)  CSWGuiText* text_object
+//
+// For CSWGuiLabel: control(0x5C)+border(0x74)+text@(0xD0). So text_params @0xD0+0x18=0xE8.
+//   text_params.text   @ 0xE8 (c_string at 0xE8, length at 0xEC, but the
+//                       CExoString struct is treated as { ptr; uint32 } so
+//                       reading 8 bytes from 0xE8 gives both fields)
+//   text_params.str_ref @ 0xF0
+//   text_params.text_object @ 0xE8 + 0x50 = 0x138
+//
+// For CSWGuiButton: navigable(0x6C)+border(0x74)+border(0x74)+text@(0x154).
+//   text_params.text   @ 0x154 + 0x18 = 0x16C
+//   text_params.str_ref @ 0x174
+//   text_params.text_object @ 0x16C + 0x50 = 0x1BC
+//
+// `text_object` is followed by classes whose CExoString/strref are empty —
+// the engine renders via this indirected CSWGuiText pointer instead. The
+// indirected CSWGuiText itself has text_params at its own +0x18, with
+// c_string and strref at the same relative offsets.
+constexpr size_t kLabelTextObjectOffset  = 0x138;
+constexpr size_t kButtonTextObjectOffset = 0x1BC;
+constexpr size_t kTextObjectTextOffset   = 0x18;   // CSWGuiText.text_params.text
+constexpr size_t kTextObjectStrRefOffset = 0x20;   // CSWGuiText.text_params.str_ref
+
 // Slider class identity by vtable address. Resolved via SARIF xrefs:
 // 0x0073E9D0 is referenced by CSWGuiSlider's constructor (0x41bb0d) and
 // destructor (0x41bb9d) — i.e. it's the slider's vftable. Sliders have no
@@ -363,6 +394,41 @@ static bool ExtractTextOrStrRef(void* control,
     return LookupTlk(strref, outBuf, bufSize);
 }
 
+// Resolve text including text_object indirection. CSWGuiText's text_params
+// has a `CSWGuiText* text_object` field (offset 0x50 within text_params)
+// that the engine routes through for some classes — the inline CExoString
+// stays empty and the rendered text actually lives on the indirected
+// CSWGuiText. CSWGuiInGameMenu's icon labels are observed using this path
+// (verified empty CExoString + empty strref but visible text in-game).
+//
+// Tries: inline CExoString → strref → text_object.text_params.{text,strref}.
+// SEH-guarded around the indirected read because text_object can be null
+// or point at unmapped memory in transient states.
+static bool ExtractTextOrStrRefIndirect(void* control,
+                                        size_t cexoOffset, size_t strRefOffset,
+                                        size_t textObjectOffset,
+                                        char* outBuf, size_t bufSize) {
+    if (ExtractTextOrStrRef(control, cexoOffset, strRefOffset, outBuf, bufSize)) {
+        return true;
+    }
+    bool got = false;
+    __try {
+        void* textObj = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(control) + textObjectOffset);
+        if (textObj) {
+            got = ExtractTextOrStrRef(textObj,
+                                      kTextObjectTextOffset,
+                                      kTextObjectStrRefOffset,
+                                      outBuf, bufSize);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("text_object indirection SEH for control=%p "
+                      "(textObjectOffset=0x%x)", control, (unsigned)textObjectOffset);
+        got = false;
+    }
+    return got;
+}
+
 // Element-class identity helpers. Used by ExtractAnnounceableText to decide
 // which subclass-specific field reads to perform, and by IsChainNavigable to
 // decide which controls keyboard chain-navigation can land on.
@@ -399,6 +465,7 @@ extern void* g_currentPanel;
 static const char* FindSiblingLabel(void* panel, void* control,
                                     char* outBuf, size_t bufSize);
 static const char* LookupCycleCategory(void* control);
+static bool IsChainNavigable(void* control);
 
 static const char* ExtractAnnounceableText(void* control,
                                            char* outBuf, size_t bufSize) {
@@ -419,12 +486,17 @@ static const char* ExtractAnnounceableText(void* control,
 
     // 2. CSWGuiButton (most common — also covers CharButton, ActivatedButton,
     //    ButtonToggle since those embed Button at offset 0 AND the engine's
-    //    AsButton override returns `this` for them). Try the literal
-    //    CExoString first, then the TLK str_ref fallback.
+    //    AsButton override returns `this` for them). Tries inline CExoString,
+    //    then TLK str_ref, then text_object indirection — the last covers
+    //    classes whose text routes through CSWGuiText.text_params.text_object
+    //    rather than the inline CExoString.
     if (!source) {
         if (void* btn = CallDowncast(control, kVtableAsButton)) {
-            if (ExtractTextOrStrRef(btn, kButtonTextOffset, kButtonStrRefOffset,
-                                    outBuf, bufSize)) {
+            if (ExtractTextOrStrRefIndirect(btn,
+                                            kButtonTextOffset,
+                                            kButtonStrRefOffset,
+                                            kButtonTextObjectOffset,
+                                            outBuf, bufSize)) {
                 source = "button";
             }
         }
@@ -434,8 +506,11 @@ static const char* ExtractAnnounceableText(void* control,
     //    Same offsets because ButtonToggle.button is at offset 0.
     if (!source) {
         if (void* tgl = CallDowncast(control, kVtableAsButtonToggle)) {
-            if (ExtractTextOrStrRef(tgl, kButtonTextOffset, kButtonStrRefOffset,
-                                    outBuf, bufSize)) {
+            if (ExtractTextOrStrRefIndirect(tgl,
+                                            kButtonTextOffset,
+                                            kButtonStrRefOffset,
+                                            kButtonTextObjectOffset,
+                                            outBuf, bufSize)) {
                 source = "buttontoggle";
             }
         }
@@ -444,8 +519,11 @@ static const char* ExtractAnnounceableText(void* control,
     // 4. CSWGuiLabel.
     if (!source) {
         if (void* lbl = CallDowncast(control, kVtableAsLabel)) {
-            if (ExtractTextOrStrRef(lbl, kLabelTextOffset, kLabelStrRefOffset,
-                                    outBuf, bufSize)) {
+            if (ExtractTextOrStrRefIndirect(lbl,
+                                            kLabelTextOffset,
+                                            kLabelStrRefOffset,
+                                            kLabelTextObjectOffset,
+                                            outBuf, bufSize)) {
                 source = "label";
             }
         }
@@ -454,8 +532,11 @@ static const char* ExtractAnnounceableText(void* control,
     // 5. CSWGuiLabelHilight — same offsets (Label embedded at 0).
     if (!source) {
         if (void* hil = CallDowncast(control, kVtableAsLabelHilight)) {
-            if (ExtractTextOrStrRef(hil, kLabelTextOffset, kLabelStrRefOffset,
-                                    outBuf, bufSize)) {
+            if (ExtractTextOrStrRefIndirect(hil,
+                                            kLabelTextOffset,
+                                            kLabelStrRefOffset,
+                                            kLabelTextObjectOffset,
+                                            outBuf, bufSize)) {
                 source = "labelhilight";
             }
         }
@@ -583,12 +664,36 @@ static const char* ExtractAnnounceableText(void* control,
             bool got = false;
             if (ov.tryLabel) {
                 __try {
+                    // Path A: inline CExoString at standard label offset.
                     if (ReadCExoString(control, kLabelTextOffset,
                                        text, sizeof(text))) {
                         got = true;
-                    } else {
+                    }
+                    // Path B: strref at standard label offset → TLK.
+                    if (!got) {
                         uint32_t strref = ReadU32(control, kLabelStrRefOffset);
                         got = LookupTlk(strref, text, sizeof(text));
+                    }
+                    // Path C: text_object indirection. CSWGuiLabel.text.
+                    // text_params.text_object is a CSWGuiText* at +0x138; if
+                    // non-null, read its text_params.text (CExoString @+0x18)
+                    // or text_params.str_ref (@+0x20). Many labelhilights
+                    // route their rendered text through this pointer rather
+                    // than the inline CExoString.
+                    if (!got) {
+                        void* textObj = *reinterpret_cast<void**>(
+                            reinterpret_cast<unsigned char*>(control)
+                            + kLabelTextObjectOffset);
+                        if (textObj) {
+                            if (ReadCExoString(textObj, kTextObjectTextOffset,
+                                               text, sizeof(text))) {
+                                got = true;
+                            } else {
+                                uint32_t strref = ReadU32(textObj,
+                                                          kTextObjectStrRefOffset);
+                                got = LookupTlk(strref, text, sizeof(text));
+                            }
+                        }
                     }
                 } __except (EXCEPTION_EXECUTE_HANDLER) {
                     acclog::Write("Speculative label read SEH for vtable=0x%x "
@@ -598,12 +703,31 @@ static const char* ExtractAnnounceableText(void* control,
             }
             if (!got && ov.tryButton) {
                 __try {
+                    // Path A: inline CExoString at standard button offset.
                     if (ReadCExoString(control, kButtonTextOffset,
                                        text, sizeof(text))) {
                         got = true;
-                    } else {
+                    }
+                    // Path B: strref at standard button offset → TLK.
+                    if (!got) {
                         uint32_t strref = ReadU32(control, kButtonStrRefOffset);
                         got = LookupTlk(strref, text, sizeof(text));
+                    }
+                    // Path C: text_object indirection at +0x1BC (button-side).
+                    if (!got) {
+                        void* textObj = *reinterpret_cast<void**>(
+                            reinterpret_cast<unsigned char*>(control)
+                            + kButtonTextObjectOffset);
+                        if (textObj) {
+                            if (ReadCExoString(textObj, kTextObjectTextOffset,
+                                               text, sizeof(text))) {
+                                got = true;
+                            } else {
+                                uint32_t strref = ReadU32(textObj,
+                                                          kTextObjectStrRefOffset);
+                                got = LookupTlk(strref, text, sizeof(text));
+                            }
+                        }
                     }
                 } __except (EXCEPTION_EXECUTE_HANDLER) {
                     acclog::Write("Speculative button read SEH for vtable=0x%x "
@@ -620,6 +744,46 @@ static const char* ExtractAnnounceableText(void* control,
                                   "text=\"%s\"", (unsigned)vta, control, outBuf);
                     break;
                 }
+                // got=true but text is empty/whitespace — log so we can see
+                // the read path is wired but the field is genuinely empty.
+                acclog::Write("Speculative read empty: vtable=0x%x control=%p "
+                              "(read returned but text was empty)",
+                              (unsigned)vta, control);
+            } else {
+                // Distinct from SEH: read paths returned cleanly, text just
+                // wasn't there. Could mean the offset is wrong for this
+                // class, the CExoString is genuinely empty, or the strref is
+                // 0/0xFFFFFFFF (LookupTlk silently returns false). Logging
+                // every miss helps confirm the speculative path runs and
+                // that reads aren't faulting silently.
+                acclog::Write("Speculative read miss: vtable=0x%x control=%p "
+                              "tag=%s", (unsigned)vta, control, ov.tag);
+            }
+        }
+    }
+
+    // 9. Sibling-label fallback for chain-navigable controls with no text.
+    //    Image-only icon buttons (vtable=0x0073E658 in CSWGuiInGameMenu —
+    //    Equipment / Inventory / Character / Map / Abilities / Journal /
+    //    Options / Messages icons) genuinely have no inline text. Their
+    //    visible name lives on a separately-allocated CSWGuiLabelHilight
+    //    sibling at the same x-coord. FindSiblingLabel locates that sibling
+    //    spatially; we then announce its text as if it were our own. Same
+    //    pattern the slider extraction (step 6) uses for category labels.
+    //
+    //    Gated on IsChainNavigable(control) so we only fire for buttons
+    //    the user can actually focus — a label on its own (already
+    //    extractable elsewhere) wouldn't hit this path.
+    if (!source && g_currentPanel && IsChainNavigable(control)) {
+        char label[256];
+        if (FindSiblingLabel(g_currentPanel, control,
+                             label, sizeof(label))) {
+            size_t llen = strnlen(label, sizeof(label));
+            if (llen > 0 && llen + 1 <= bufSize) {
+                memcpy(outBuf, label, llen + 1);
+                source = "siblinglabel-fallback";
+                acclog::Write("Sibling-label fallback hit: control=%p label=\"%s\"",
+                              control, outBuf);
             }
         }
     }
@@ -1570,12 +1734,15 @@ static const char* FindSiblingLabel(void* panel, void* control,
     void* best = nullptr;
     int bestScore = 0x7fffffff;
 
-    // Tolerances. Same-row dy<=5; above dy<=50 (typical KOTOR row height
-    // is ~30-55 px) with dx tolerance 80 px (label can be slightly offset
-    // from the widget center, e.g. left-aligned label vs centered slider).
+    // Tolerances. Same-row dy<=5; vertical offset (above OR below) up to
+    // 50 px (typical KOTOR row height is ~30-55 px) with dx tolerance 80
+    // px (label can be slightly offset from the widget center, e.g.
+    // left-aligned label vs centered slider). Search expanded vs the
+    // original same-row-left + above-only set so InGameMenu-style
+    // captioned icons (label below the button) also match.
     constexpr int kSameRowDyTol  = 5;
-    constexpr int kAboveDyMax    = 50;
-    constexpr int kAboveDxMax    = 80;
+    constexpr int kVertDyMax     = 50;
+    constexpr int kVertDxMax     = 80;
 
     int n = list->size > 256 ? 256 : list->size;
     for (int i = 0; i < n; ++i) {
@@ -1590,19 +1757,26 @@ static const char* FindSiblingLabel(void* panel, void* control,
         int cx, cy;
         if (!GetControlCenter(c, cx, cy)) continue;
 
-        int dy   = cy - targetCy;       // negative = label is above
-        int adx  = cx - targetCx;
+        int dy    = cy - targetCy;          // negative = label is above
+        int adx   = cx - targetCx;          // negative = label is to the left
         int absDx = adx < 0 ? -adx : adx;
         int absDy = dy  < 0 ? -dy  : dy;
 
         int score = 0x7fffffff;
-        // Same row, left of target
-        if (absDy <= kSameRowDyTol && cx < targetCx) {
-            score = absDx;
+        // Same row — favour LEFT siblings (existing behaviour for slider
+        // labels) but also accept right-of-target as a fallback so we
+        // don't reject all icon-with-trailing-caption layouts.
+        if (absDy <= kSameRowDyTol) {
+            // Left has score = absDx (lower is better);
+            // right gets a small penalty so left wins on ties.
+            score = (cx < targetCx) ? absDx : (absDx + 8);
         }
-        // Above target, similar x
-        else if (dy < 0 && absDy <= kAboveDyMax && absDx <= kAboveDxMax) {
-            score = absDx + absDy;  // Manhattan
+        // Vertically displaced (above OR below) with similar x. Below-target
+        // captioned-icon layouts (label below the icon button) need the
+        // dy>0 case too. Manhattan distance scoring keeps the closest
+        // candidate winning when multiple labels could pair.
+        else if (absDy <= kVertDyMax && absDx <= kVertDxMax) {
+            score = absDx + absDy;
         }
         else {
             continue;
@@ -1615,8 +1789,11 @@ static const char* FindSiblingLabel(void* panel, void* control,
     }
 
     if (!best) return nullptr;
-    if (ExtractTextOrStrRef(best, kLabelTextOffset, kLabelStrRefOffset,
-                            outBuf, bufSize)) {
+    if (ExtractTextOrStrRefIndirect(best,
+                                    kLabelTextOffset,
+                                    kLabelStrRefOffset,
+                                    kLabelTextObjectOffset,
+                                    outBuf, bufSize)) {
         return "siblinglabel";
     }
     return nullptr;
@@ -2735,6 +2912,135 @@ static void MonitorPanelContents() {
     }
 }
 
+// =============================================================================
+// Dialog-reply selection monitor.
+//
+// During an in-game conversation, the foreground panel is a CSWGuiDialog
+// subclass (CSWGuiDialogCinematic, DialogComputer, etc.) whose child[1] is
+// a CSWGuiListBox holding the player's reply choices. The engine's per-row
+// arrow-key navigation mutates listbox.selection_index in place WITHOUT
+// firing either CSWGuiPanel::SetActiveControl or CSWGuiListBox::
+// SetActiveControl — so without a poll we never hear which reply is
+// currently highlighted. The user sees the visual highlight move but we
+// stay silent.
+//
+// MonitorDialogReplies snapshots selection_index per-listbox, announces
+// the row's extracted text on change. State resets when we leave a dialog
+// (so re-entering a new one announces from the new initial state). The
+// content monitor (Layer 3) still handles the one-shot announcement of the
+// full reply list when it first appears; this monitor is purely for
+// per-row navigation announcements.
+// =============================================================================
+
+struct DialogReplyState {
+    void* listBox;
+    short lastSelection;
+};
+static DialogReplyState g_dialogReplyState = { nullptr, -1 };
+
+static bool IsDialogPanelKind(PanelKind k) {
+    switch (k) {
+    case PanelKind::DialogCinematic:
+    case PanelKind::DialogCinematicCopy:
+    case PanelKind::DialogComputer:
+    case PanelKind::DialogComputerCamera:
+        return true;
+    default:
+        return false;
+    }
+}
+
+// Find the first CSWGuiListBox child in a panel's controls. Returns
+// nullptr if none. CSWGuiDialog::replies_listbox is at child[1] in
+// observed panels (preceded by the message_label at child[0]); first-
+// match on IsListBox is robust enough for the dialog case.
+static void* FindListBoxChild(void* panel) {
+    if (!panel) return nullptr;
+    auto* list = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+    if (!list->data || list->size <= 0) return nullptr;
+    int n = list->size > 32 ? 32 : list->size;
+    for (int i = 0; i < n; ++i) {
+        void* c = list->data[i];
+        if (c && IsListBox(c)) return c;
+    }
+    return nullptr;
+}
+
+static void MonitorDialogReplies() {
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!mgr) return;
+    void* fg = GetForegroundPanel(mgr);
+    if (!fg) {
+        if (g_dialogReplyState.listBox) {
+            g_dialogReplyState.listBox = nullptr;
+            g_dialogReplyState.lastSelection = -1;
+        }
+        return;
+    }
+    PanelKind k = IdentifyPanel(fg);
+    if (!IsDialogPanelKind(k)) {
+        if (g_dialogReplyState.listBox) {
+            g_dialogReplyState.listBox = nullptr;
+            g_dialogReplyState.lastSelection = -1;
+        }
+        return;
+    }
+
+    void* lb = FindListBoxChild(fg);
+    if (!lb) return;
+
+    short selIdx = *reinterpret_cast<short*>(
+        reinterpret_cast<unsigned char*>(lb) + kListBoxSelectionIndexOffset);
+
+    // First sight of this listbox: snapshot only (don't announce — the
+    // content monitor already spoke the full reply list when the dialog
+    // entered the reply state).
+    if (g_dialogReplyState.listBox != lb) {
+        g_dialogReplyState.listBox = lb;
+        g_dialogReplyState.lastSelection = selIdx;
+        acclog::Write("Dialog reply monitor armed: panel=%p kind=%s listbox=%p "
+                      "initialSel=%d", fg, PanelKindName(k), lb, selIdx);
+        return;
+    }
+
+    if (selIdx == g_dialogReplyState.lastSelection) return;
+    short prev = g_dialogReplyState.lastSelection;
+    g_dialogReplyState.lastSelection = selIdx;
+
+    if (selIdx < 0) {
+        acclog::Write("Dialog reply selection cleared: listbox=%p prev=%d",
+                      lb, prev);
+        return;
+    }
+
+    auto* lbList = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
+    if (!lbList || !lbList->data || selIdx >= lbList->size) {
+        acclog::Write("Dialog reply selection out of range: listbox=%p sel=%d "
+                      "size=%d", lb, selIdx,
+                      (lbList ? lbList->size : -1));
+        return;
+    }
+
+    void* row = lbList->data[selIdx];
+    if (!row) return;
+
+    char text[256];
+    const char* src = ExtractAnnounceableText(row, text, sizeof(text));
+    if (src) {
+        acclog::Write("Dialog reply selected: panel=%p kind=%s listbox=%p "
+                      "sel=%d (was %d) src=%s text=\"%s\"",
+                      fg, PanelKindName(k), lb, selIdx, prev, src, text);
+        tolk::Speak(text, /*interrupt=*/false);
+    } else {
+        char vtbl[160];
+        DumpControlVtable(row, vtbl, sizeof(vtbl));
+        acclog::Write("Dialog reply selected (src=none): panel=%p listbox=%p "
+                      "sel=%d row=%p %s", fg, lb, selIdx, row, vtbl);
+    }
+}
+
 // CSWGuiManager::Update — hooked mid-function at 0x40ce76. Per-frame tick run
 // once after input dispatch by CClientExoAppInternal::MainLoop. Used as a safe
 // callback site for the deferred MoveMouseToPosition triggered by chain
@@ -2748,6 +3054,7 @@ static void MonitorPanelContents() {
 extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     MonitorFocusedControl();
     MonitorPanelContents();
+    MonitorDialogReplies();
     if (!g_pendingCursorMove && !g_pendingClick && !g_pendingActivate &&
         !g_pendingSliderInput) return;
 
