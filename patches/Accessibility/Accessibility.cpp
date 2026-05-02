@@ -607,6 +607,88 @@ constexpr int kVtableHandleInputEvent = 15;
 typedef void (__thiscall* PFN_ControlHandleInputEvent)(void* this_, int code, int state);
 constexpr int kInputActivate = 0x27;   // KEYBOARD_F1, the engine's activate code
 
+// CSWGuiManager panel layout — used to resolve the *foreground* panel when
+// multiple panels are walked simultaneously (e.g. character creation pre-
+// instantiates the Default-vs-Custom modal AND both wizard panels in one
+// frame; our chain rebind has been latching onto the LAST walked panel,
+// which is not necessarily the one the user can see/interact with).
+//
+// Verified via Lane's SARIF (docs/llm-docs/re/k1_win_gog_swkotor.exe.sarif,
+// CSWGuiManager DT.Struct entry):
+//   CSWGuiManager.panels      @ 0x88 — CExoArrayList<CSWGuiPanel*> (12 bytes)
+//                                       data ptr (0x88), size (0x8c), cap (0x90)
+//   CSWGuiManager.modal_stack @ 0x94 — GuiManagerModalStack (12 bytes)
+//                                       unnamed (0x94..0x97), size (0x98), cap (0x9c)
+//
+// The first 4 bytes of GuiManagerModalStack are unnamed in the Ghidra DB
+// but the structure is the same shape as CExoArrayList; PushModalPanel
+// (0x0040bd90) and PopModalPanel (0x0040be00) are both RE'd, and
+// GetPosInModalStack (0x0040ab70) implies the engine itself does index
+// lookups against this stack — so it has to be a CSWGuiPanel** array.
+// We treat the unnamed bytes as the data pointer here and emit a
+// diagnostic log so the assumption can be validated against live state
+// before we gate any behavior on it.
+constexpr size_t kMgrPanelsDataOffset      = 0x88;
+constexpr size_t kMgrPanelsSizeOffset      = 0x8c;
+constexpr size_t kMgrModalStackDataOffset  = 0x94;
+constexpr size_t kMgrModalStackSizeOffset  = 0x98;
+
+// Resolve the topmost (foreground) panel currently owned by the manager.
+// Order:
+//   1. If modal_stack is non-empty, return its top entry — this is the
+//      modal currently capturing input.
+//   2. Otherwise return the last entry in panels[] — last-pushed panel
+//      is drawn on top in the engine's iteration order.
+//   3. Returns nullptr if both are empty.
+static void* GetForegroundPanel(void* mgr) {
+    if (!mgr) return nullptr;
+    auto* base = reinterpret_cast<unsigned char*>(mgr);
+    int   modalSize = *reinterpret_cast<int*>(base + kMgrModalStackSizeOffset);
+    void** modalData = *reinterpret_cast<void***>(base + kMgrModalStackDataOffset);
+    if (modalSize > 0 && modalData) {
+        void* top = modalData[modalSize - 1];
+        if (top) return top;
+    }
+    int   panelSize = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+    if (panelSize > 0 && panelData) {
+        return panelData[panelSize - 1];
+    }
+    return nullptr;
+}
+
+// Diagnostic: dump every panel currently on the manager's panels array and
+// modal_stack. Called at panel-walk time so the log captures the engine's
+// view of "which panels exist right now" alongside our own per-panel walks.
+// Also doubles as live verification that kMgrModalStackDataOffset truly
+// points at a CSWGuiPanel** (the SARIF-derived layout assumption).
+static void LogManagerStack(void* mgr, const char* tag) {
+    if (!mgr) {
+        acclog::Write("ManagerStack(%s): mgr=NULL", tag ? tag : "?");
+        return;
+    }
+    auto* base = reinterpret_cast<unsigned char*>(mgr);
+    int   panelSize  = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+    int   modalSize  = *reinterpret_cast<int*>(base + kMgrModalStackSizeOffset);
+    void** modalData = *reinterpret_cast<void***>(base + kMgrModalStackDataOffset);
+    void* fg = GetForegroundPanel(mgr);
+    acclog::Write("ManagerStack(%s) mgr=%p panels.size=%d modal.size=%d fg=%p",
+                  tag ? tag : "?", mgr, panelSize, modalSize, fg);
+    int pn = panelSize;
+    if (pn < 0 || pn > 32) pn = (pn < 0) ? 0 : 32;
+    for (int i = 0; i < pn && panelData; ++i) {
+        acclog::Write("ManagerStack(%s)   panels[%d]=%p", tag ? tag : "?",
+                      i, panelData[i]);
+    }
+    int mn = modalSize;
+    if (mn < 0 || mn > 32) mn = (mn < 0) ? 0 : 32;
+    for (int i = 0; i < mn && modalData; ++i) {
+        acclog::Write("ManagerStack(%s)   modal[%d]=%p", tag ? tag : "?",
+                      i, modalData[i]);
+    }
+}
+
 static void FireActivate(void* control) {
     if (!control) return;
     void** vtable = *reinterpret_cast<void***>(control);
@@ -1445,6 +1527,14 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
     static void* s_lastPanel = nullptr;
     if (panel && panel != s_lastPanel) {
         s_lastPanel = panel;
+        // Dump manager-level panels + modal_stack alongside the per-panel
+        // walk. Lets us correlate "the engine just walked panel X" with
+        // "panels[] and modal_stack[] currently look like this", which is
+        // what we need to validate GetForegroundPanel against the actual
+        // visible foreground (especially in flows like character creation
+        // where multiple panels are walked in the same frame).
+        LogManagerStack(*reinterpret_cast<void**>(kAddrGuiManagerPtr),
+                        "panel-walk");
         WalkChildren("Panel", panel, kPanelControlsOffset);
 
         g_cycleCategoryCount = 0;
@@ -1708,6 +1798,41 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     static int n = 0;
     ++n;
 
+    // Resolve the foreground panel via the manager's modal_stack / panels[].
+    // g_currentPanel tracks "last panel that received SetActiveControl" — fine
+    // for per-instance state (sibling-label lookup, cycle-category capture)
+    // but UNRELIABLE for routing, because flows that pre-instantiate multiple
+    // panels in one frame (character creation: modal + 2 wizards) leave
+    // g_currentPanel pointing at the last-walked panel, which is NOT the
+    // visible foreground. Verified from patch-20260502-164320.log: in that
+    // flow modal_stack.size goes 0→4 with the user-visible Standardcharakter
+    // modal correctly at modal[top], while g_currentPanel had latched onto
+    // a backgrounded wizard. See ManagerStack diagnostic and report.
+    //
+    // Fallback to g_currentPanel only when the manager pointer or the
+    // foreground resolves to null (early-init frames before any panel
+    // exists, or screens we don't yet understand).
+    void* activePanel = nullptr;
+    {
+        void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+        void* fg = GetForegroundPanel(mgr);
+        activePanel = fg ? fg : g_currentPanel;
+        // First-fire-per-pair divergence log: when fg != g_currentPanel we
+        // want to see it in the log, but only once per (fg, g_currentPanel)
+        // tuple to avoid spamming during steady-state (every keypress in a
+        // multi-panel flow would otherwise emit a line).
+        if (fg && fg != g_currentPanel) {
+            static void* s_lastFg = nullptr;
+            static void* s_lastCp = nullptr;
+            if (fg != s_lastFg || g_currentPanel != s_lastCp) {
+                acclog::Write("Routing: fg=%p current=%p (using fg)",
+                              fg, g_currentPanel);
+                s_lastFg = fg;
+                s_lastCp = g_currentPanel;
+            }
+        }
+    }
+
     // Chain navigation: consume nav-up / nav-down on key-down. We only handle
     // press edges (param_2 != 0) so key-up events still pass through cleanly.
     // Other keys (Tab, Enter, mouse, F-keys) always pass through; activation
@@ -1741,8 +1866,8 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     // panel.activeControl (which can be stale or wrong).
     if (param_2 != 0 &&
         (param_1 == kInputEnter1 || param_1 == kInputEnter2) &&
-        g_currentPanel != nullptr &&
-        g_chainPanel == g_currentPanel &&
+        activePanel != nullptr &&
+        g_chainPanel == activePanel &&
         g_chainCount > 0 &&
         g_chainIndex < g_chainCount)
     {
@@ -1773,13 +1898,13 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             g_pendingCursorMove  = true;
             g_pendingClick       = true;
             acclog::Write("Enter click-sim panel=%p index=%d target=%p cursorY=%d (tab)",
-                          g_currentPanel, g_chainIndex, e.control, cursorY);
+                          activePanel, g_chainIndex, e.control, cursorY);
             consumed = true;
         } else {
             g_pendingActivate       = true;
             g_pendingActivateTarget = e.control;
             acclog::Write("Enter activate panel=%p index=%d target=%p",
-                          g_currentPanel, g_chainIndex, e.control);
+                          activePanel, g_chainIndex, e.control);
             consumed = true;
         }
     }
@@ -1804,10 +1929,10 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     // button children of a CSWGuiListBox in sub-dialogs.
     if (param_2 != 0 &&
         (param_1 == kInputNavUp || param_1 == kInputNavDown) &&
-        g_currentPanel != nullptr)
+        activePanel != nullptr)
     {
-        if (g_currentPanel != g_chainPanel) {
-            RebindChain(g_currentPanel);
+        if (activePanel != g_chainPanel) {
+            RebindChain(activePanel);
         }
         if (g_chainCount > 0) {
             int delta = (param_1 == kInputNavDown) ? +1 : -1;
@@ -1858,8 +1983,8 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     // user-meaningful effect.
     if (param_2 != 0 &&
         (param_1 == kInputNavLeft || param_1 == kInputNavRight) &&
-        g_currentPanel != nullptr &&
-        g_chainPanel == g_currentPanel &&
+        activePanel != nullptr &&
+        g_chainPanel == activePanel &&
         g_chainCount > 0 &&
         g_chainIndex >= 0 &&
         g_chainIndex < g_chainCount)
@@ -1878,10 +2003,10 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                 g_pendingSliderCode   = toRight ? 500 : 501;
                 acclog::Write("Slider %s panel=%p focus=%p code=%d",
                               toRight ? "right" : "left",
-                              g_currentPanel, focused, g_pendingSliderCode);
+                              activePanel, focused, g_pendingSliderCode);
             }
         } else {
-            void* neighbor = FindAdjacentArrow(g_currentPanel, focused, toRight);
+            void* neighbor = FindAdjacentArrow(activePanel, focused, toRight);
             if (neighbor) {
                 if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
                     acclog::Write("Cycle %s: op already pending; ignoring",
@@ -1891,7 +2016,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                     g_pendingActivateTarget = neighbor;
                     acclog::Write("Cycle %s panel=%p focus=%p neighbor=%p",
                                   toRight ? "right" : "left",
-                                  g_currentPanel, focused, neighbor);
+                                  activePanel, focused, neighbor);
                 }
             } else {
                 acclog::Write("Cycle %s: no adjacent arrow for focus=%p",
