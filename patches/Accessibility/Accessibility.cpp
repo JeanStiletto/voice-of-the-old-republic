@@ -516,10 +516,27 @@ constexpr int kInputTab = 0xCE;
 // last navigation. A null current panel disables chain nav (fall through to
 // the engine for unsupported screens — e.g. the title-screen K/L cycle still
 // works, per Decision 7).
+//
+// The chain is FLAT: each entry is one navigable button, even if that button
+// lives inside a CSWGuiListBox (Options-style sub-dialogs put their settings
+// as button children of a listbox at panel.controls[N]). Building the chain
+// recurses one level into listboxes when their controls.size > 1 and their
+// children are buttons — sub-dialogs in KOTOR don't nest deeper than that.
+// Entries are sorted by extent.top ascending so arrow-down walks visually
+// top-to-bottom (panel.controls order doesn't always match visual order:
+// in Feedback-Optionen, Schliess+Standard come before the settings listbox
+// in panel.controls but render below it).
+struct ChainEntry {
+    void* control;
+    int   cx;
+    int   cy;
+};
+constexpr int kMaxChainEntries = 64;
+static ChainEntry g_chain[kMaxChainEntries];
 static void* g_currentPanel = nullptr;
 static void* g_chainPanel   = nullptr;
 static int   g_chainIndex   = 0;
-static int   g_chainSize    = 0;
+static int   g_chainCount   = 0;
 
 // Deferred MoveMouseToPosition. Called from OnHandleInputEvent would recurse
 // through HandleMouseMove → UpdateMouseOverControl mid-input-dispatch — same
@@ -599,20 +616,6 @@ static bool GetControlCenter(void* control, int& outCx, int& outCy) {
     return true;
 }
 
-// Linear scan a panel's controls list for `needle`. Returns the index, or
-// -1 if not found / list empty / corrupt.
-static int FindControlIndex(void* panel, void* needle) {
-    if (!panel || !needle) return -1;
-    auto* list = reinterpret_cast<CExoArrayList*>(
-        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
-    if (!list->data || list->size <= 0) return -1;
-    int n = list->size > 256 ? 256 : list->size;
-    for (int i = 0; i < n; ++i) {
-        if (list->data[i] == needle) return i;
-    }
-    return -1;
-}
-
 // True if the control is button-like (CSWGuiButton or its subclasses
 // CharButton / ActivatedButton / ButtonToggle). MoveMouseToPosition's
 // hover→active promotion path is safe for buttons but crashes when the
@@ -632,30 +635,15 @@ static bool IsChainNavigable(void* control) {
     return false;
 }
 
-// Step the chain index forward (or backward) by stride, skipping NULL slots
-// and non-navigable controls. Clamps at the ends of panel.controls. Returns
-// the new index. The stride lets the caller walk through panels with mixed
-// content without forcing the user to stride-press through labels.
-static int AdvanceChainIndex(void* panel, int from, int delta) {
-    auto* list = reinterpret_cast<CExoArrayList*>(
-        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
-    if (!list || !list->data || list->size <= 0) return from;
-    int max = (list->size > 256 ? 256 : list->size) - 1;
-
-    int candidate = from + delta;
-    while (candidate >= 0 && candidate <= max) {
-        void* c = list->data[candidate];
-        if (IsChainNavigable(c)) return candidate;
-        candidate += delta;
+// Linear scan g_chain for `control`. Returns the chain index or -1.
+// Used to anchor the chain at the engine's currently active control on
+// rebind so the first arrow press doesn't snap the cursor to chain[0].
+static int FindChainEntry(void* control) {
+    if (!control) return -1;
+    for (int i = 0; i < g_chainCount; ++i) {
+        if (g_chain[i].control == control) return i;
     }
-    // No navigable control in the requested direction — clamp to last
-    // navigable seen, or stay put if there isn't one.
-    int probe = from;
-    while (probe >= 0 && probe <= max) {
-        if (IsChainNavigable(list->data[probe])) return probe;
-        probe += (delta > 0) ? -1 : +1;
-    }
-    return from;
+    return -1;
 }
 
 // Pull the announceable text of a control (tooltip → button → label → ...);
@@ -783,24 +771,94 @@ static void ParseVirtualLines(const char* text) {
     }
 }
 
-// (Re)bind the chain to the currently focused panel. Anchors g_chainIndex on
-// the engine's current activeControl when present, so the first arrow press
-// moves one step from where the user was, not from index 0.
+// Append a navigable control to the chain (skipping null/degenerate-extent).
+// Internal helper for RebindChain.
+static void AppendChainEntry(void* control) {
+    if (g_chainCount >= kMaxChainEntries) return;
+    if (!IsChainNavigable(control))       return;
+    int cx, cy;
+    if (!GetControlCenter(control, cx, cy)) return;
+    g_chain[g_chainCount++] = { control, cx, cy };
+}
+
+// (Re)bind the chain to the currently focused panel.
+//
+// Walks panel.controls; for each entry:
+//   - direct navigable button → append.
+//   - CSWGuiListBox with controls.size > 1 → recurse one level into its
+//     children, appending any navigable buttons found there.
+// Then sorts entries by extent.top ascending (visual top-to-bottom order)
+// because panel.controls order doesn't match visual order in sub-dialogs.
+//
+// Finally anchors g_chainIndex on the engine's current activeControl when
+// present, so the first arrow press moves one step from where the user
+// was, not from chain[0].
 static void RebindChain(void* panel) {
-    g_chainPanel = panel;
-    g_chainIndex = 0;
-    g_chainSize  = 0;
+    g_chainPanel  = panel;
+    g_chainIndex  = 0;
+    g_chainCount  = 0;
     if (!panel) return;
+
     auto* list = reinterpret_cast<CExoArrayList*>(
         reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
     if (!list->data || list->size <= 0) return;
-    g_chainSize = list->size > 256 ? 256 : list->size;
+    int n = list->size > 256 ? 256 : list->size;
 
+    for (int i = 0; i < n; ++i) {
+        void* c = list->data[i];
+        if (!c) continue;
+
+        // Direct navigable button — typical case (tabs, OK/Cancel, menu items).
+        if (IsChainNavigable(c)) {
+            AppendChainEntry(c);
+            continue;
+        }
+
+        // Listbox with size > 1 — sub-dialogs put their settings here as
+        // button children. Recurse one level. Listboxes with size == 1
+        // are descriptive multi-line label blobs (the inline tab preview
+        // or the per-setting hint pane); their single child is a label,
+        // not a button, so AppendChainEntry would skip it anyway.
+        void** vt = *reinterpret_cast<void***>(c);
+        if (reinterpret_cast<uintptr_t>(vt) == kVtableListBox) {
+            auto* lbList = reinterpret_cast<CExoArrayList*>(
+                reinterpret_cast<unsigned char*>(c) + kListBoxControlsOffset);
+            if (lbList && lbList->data && lbList->size > 1) {
+                int lbN = lbList->size > 256 ? 256 : lbList->size;
+                for (int j = 0; j < lbN; ++j) {
+                    AppendChainEntry(lbList->data[j]);
+                }
+            }
+        }
+    }
+
+    // Insertion sort by cy ascending. Stable; n^2 is fine for n<=64.
+    for (int i = 1; i < g_chainCount; ++i) {
+        for (int j = i; j > 0 && g_chain[j].cy < g_chain[j-1].cy; --j) {
+            ChainEntry tmp = g_chain[j];
+            g_chain[j]   = g_chain[j-1];
+            g_chain[j-1] = tmp;
+        }
+    }
+
+    // Anchor at active. ReadPanelActiveControl reads panel.activeControl
+    // (only direct panel children); listbox-internal selection isn't
+    // exposed there, so when the user enters a sub-dialog with focus on
+    // a listbox child the anchor falls through to chain[0].
     void* active = ReadPanelActiveControl(panel);
-    int idx = FindControlIndex(panel, active);
+    int   idx    = FindChainEntry(active);
     g_chainIndex = (idx >= 0) ? idx : 0;
-    acclog::Write("Chain rebind panel=%p size=%d index=%d active=%p",
-                  panel, g_chainSize, g_chainIndex, active);
+
+    acclog::Write("Chain rebind panel=%p count=%d index=%d active=%p",
+                  panel, g_chainCount, g_chainIndex, active);
+    for (int i = 0; i < g_chainCount; ++i) {
+        char text[256];
+        const char* src = ExtractAnnounceableText(g_chain[i].control,
+                                                  text, sizeof(text));
+        acclog::Write("Chain   [%d] %p (%d,%d) %s text=\"%s\"",
+                      i, g_chain[i].control, g_chain[i].cx, g_chain[i].cy,
+                      src ? src : "?", src ? text : "");
+    }
 }
 
 // Walk a CExoArrayList<CSWGuiControl*> embedded at parent+offset and log every
@@ -1106,65 +1164,51 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     // Other keys (Tab, Enter, mouse, F-keys) always pass through; activation
     // comes free from the engine via the normal click pipeline once the
     // cursor is over the chain target.
-    // Enter-press commit: force panel.activeControl to match the chain
-    // target so the engine's normal activation pipeline fires onClick on
-    // the right button. Single-shot (only on press, not release) and only
-    // when chain state is current — avoids the focus oscillation that
-    // crashed when an explicit setActive ran on every arrow press.
+    bool consumed = false;
+
+    // Enter-press activation. Click-sim against the chain target — works
+    // uniformly for direct panel buttons (main menu, sub-dialog OK/Cancel)
+    // and for listbox-child buttons (sub-dialog settings inside a listbox).
+    // The latter aren't reachable via panel.SetActiveControl + engine F1
+    // dispatch because they're not in panel.controls; click-sim routes
+    // through the engine's natural click pipeline regardless of where the
+    // target sits. Consume Enter so the engine doesn't ALSO activate
+    // panel.activeControl (which would double-fire or hit the wrong target
+    // when the engine has reverted active to its default).
     if (param_2 != 0 &&
         (param_1 == kInputEnter1 || param_1 == kInputEnter2) &&
         g_currentPanel != nullptr &&
         g_chainPanel == g_currentPanel &&
-        g_chainSize > 0)
+        g_chainCount > 0 &&
+        g_chainIndex < g_chainCount)
     {
-        auto* list = reinterpret_cast<CExoArrayList*>(
-            reinterpret_cast<unsigned char*>(g_chainPanel) + kPanelControlsOffset);
-        void* target = (list && list->data && g_chainIndex < list->size)
-                       ? list->data[g_chainIndex] : nullptr;
-        if (target && IsChainNavigable(target)) {
-            void* current = ReadPanelActiveControl(g_currentPanel);
-            if (current != target) {
-                acclog::Write("Enter commit: panel=%p target=%p (was %p)",
-                              g_currentPanel, target, current);
-                auto setActive = reinterpret_cast<PFN_PanelSetActiveControl>(
-                    kAddrPanelSetActiveControl);
-                setActive(g_currentPanel, target);
-            }
-        }
+        ChainEntry& e = g_chain[g_chainIndex];
+        g_pendingX          = e.cx;
+        g_pendingY          = e.cy;
+        g_pendingTarget     = e.control;
+        g_pendingCursorMove = true;
+        g_pendingClick      = true;
+        acclog::Write("Enter click-sim panel=%p index=%d target=%p (%d,%d)",
+                      g_currentPanel, g_chainIndex, e.control, e.cx, e.cy);
+        consumed = true;
     }
 
-    bool consumed = false;
-
-    // Tab cycling in tabbed panels — cursor warp only (no click). The KOTOR
-    // Options panel's "tab" buttons aren't real tabs: hovering one previews
-    // its settings inline (engine's mouseover→active path swaps listbox
-    // content); *clicking* one opens a separate sub-dialog. We want the
-    // preview, not the sub-dialog, so we don't synthesize a click here.
+    // Tab cycling in tabbed panels — opens the next/prev tab as a sub-dialog
+    // via click-sim. The KOTOR Options "tab" buttons aren't real tabs:
+    // clicking one opens its own panel (Feedback-Optionen, Spieleinstellungen,
+    // etc.) where settings are individual buttons navigable via flat chain
+    // nav and activatable via Enter click-sim.
     //
-    // Two engine quirks shape the design (verified in patch-20260502-065848.log):
+    // Engine rule (verified empirically via patch-20260502-073448.log): both
+    // hover and click activate the tab whose center.y is the LARGEST value
+    // strictly less than cursor.y — i.e. the tab visually-prev to the tab
+    // the cursor is on. So to click target T we put the cursor inside the
+    // tab visually-NEXT to T, and the engine's resolution lands on T.
     //
-    //   1. panel.controls order ≠ visual order. The Options strip is
-    //      panel.controls[1..5] = Gameplay, Auto-Pause, Grafik, Sound,
-    //      Feedback, but visually top-to-bottom is Gameplay, Feedback,
-    //      Auto-Pause, Grafik, Sound. Cycling by panel-controls index makes
-    //      Shift+Tab from Gameplay wrap to Feedback (panel idx 5) — which
-    //      the engine refuses to switch to because it's the visually-prev
-    //      of the already-active tab. So we sort by extent.top ascending
-    //      and cycle in visual order.
-    //
-    //   2. The engine's hover→active rule is "activate the tab whose
-    //      center.y is the largest value strictly less than cursor.y"
-    //      (i.e. the bottom-most tab visually above the cursor). Warping
-    //      to target.center activates the tab visually-prev to target, not
-    //      target itself; for the top tab there's nothing to activate at
-    //      all. Solution: warp to (target.cx, target.bottom - 1). At that
-    //      y-coord, target.center.y < cursor.y < next-tab.center.y, so
-    //      target is the bottom-most tab visually above and gets activated.
-    //      Reaches every tab including Sound (bottommost) and Gameplay
-    //      (topmost) — Sound was unreachable in b4a60db.
-    //
-    // Announcement deferred to OnSetActiveControl so the user hears whatever
-    // tab the engine actually activates after the warp.
+    // Cycling order: visual top-to-bottom (extent.top ascending). Cap at
+    // 16 — Options has 5; chargen has at most a handful. Wraps at the ends.
+    // Bottom tab: no visually-next exists, so warp slightly below it; the
+    // engine still finds it as the bottommost tab strictly above cursor.
     if (param_2 != 0 &&
         param_1 == kInputTab &&
         g_tabbedPanel != nullptr && g_tabbedPanel == g_currentPanel &&
@@ -1231,28 +1275,43 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
 
             int targetPanelIdx = order[nextVis].panelIdx;
             void* target = list->data[targetPanelIdx];
-            int* ext = reinterpret_cast<int*>(
+            int* tExt = reinterpret_cast<int*>(
                 reinterpret_cast<unsigned char*>(target) + kControlExtentOffset);
-            int cx    = ext[0] + ext[2] / 2;
-            int warpY = ext[1] + ext[3] - 1;   // bottom edge minus 1
+
+            // Compute warp coord: cursor inside the tab visually-AFTER target
+            // (engine's "visually-prev to cursor" rule then activates target).
+            // For the bottommost tab there's no visually-after; warp 5 pixels
+            // below target's bottom so cursor is past the tab strip.
+            int cx, warpY;
+            if (nextVis + 1 < numTabs) {
+                int afterPanelIdx = order[nextVis + 1].panelIdx;
+                void* afterTab = list->data[afterPanelIdx];
+                int* aExt = reinterpret_cast<int*>(
+                    reinterpret_cast<unsigned char*>(afterTab) + kControlExtentOffset);
+                cx    = aExt[0] + aExt[2] / 2;
+                warpY = aExt[1] + aExt[3] / 2;     // center of after-tab
+            } else {
+                cx    = tExt[0] + tExt[2] / 2;
+                warpY = tExt[1] + tExt[3] + 5;     // 5px past target bottom
+            }
 
             g_pendingX          = cx;
             g_pendingY          = warpY;
             g_pendingTarget     = target;
             g_pendingCursorMove = true;
-            // g_pendingClick stays false — preview only, no click.
+            g_pendingClick      = true;
 
-            // New tab → fresh listbox content. Drop the parsed virtual lines
-            // so the next listbox blob event re-parses them; reset cursor so
-            // the user starts from the top of the new tab's settings.
+            // New tab → sub-dialog opens. The current tabbed-panel state is
+            // about to become irrelevant; reset virtual-line cursor so the
+            // user starts fresh in the sub-dialog.
             g_virtualLineCount = 0;
             g_virtualLineIdx   = -1;
 
             acclog::Write("Tab cycle panel=%p %s curVis=%d nextVis=%d "
-                          "target=%p panelIdx=%d warpTo=(%d,%d) extent=(top=%d h=%d)",
+                          "target=%p panelIdx=%d warpTo=(%d,%d) target.extent=(top=%d h=%d)",
                           g_tabbedPanel, isShift ? "SHIFT" : "FWD",
                           curVis, nextVis, target, targetPanelIdx,
-                          cx, warpY, ext[1], ext[3]);
+                          cx, warpY, tExt[1], tExt[3]);
             consumed = true;
         }
     }
@@ -1281,7 +1340,11 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                       param_1 == kInputNavDown ? "DOWN" : "UP", line);
         consumed = true;
     }
-    // Arrow keys in a non-tabbed panel: existing chain navigation.
+    // Arrow keys in a non-tabbed panel: flat chain navigation.
+    // The chain is built from panel.controls + listbox children (one level)
+    // sorted by extent.top, so arrow-down walks visually top-to-bottom
+    // through every navigable button on the panel — including settings that
+    // live as button children of a CSWGuiListBox in sub-dialogs.
     else if (param_2 != 0 &&
         (param_1 == kInputNavUp || param_1 == kInputNavDown) &&
         g_currentPanel != nullptr)
@@ -1289,39 +1352,24 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         if (g_currentPanel != g_chainPanel) {
             RebindChain(g_currentPanel);
         }
-        if (g_chainSize > 0) {
+        if (g_chainCount > 0) {
             int delta = (param_1 == kInputNavDown) ? +1 : -1;
-            int newIndex = AdvanceChainIndex(g_chainPanel, g_chainIndex, delta);
+            int newIndex = g_chainIndex + delta;
+            if (newIndex < 0)              newIndex = 0;
+            if (newIndex >= g_chainCount)  newIndex = g_chainCount - 1;
             g_chainIndex = newIndex;
 
-            auto* list = reinterpret_cast<CExoArrayList*>(
-                reinterpret_cast<unsigned char*>(g_chainPanel) + kPanelControlsOffset);
-            void* target = (list && list->data) ? list->data[g_chainIndex] : nullptr;
-
-            if (target) {
-                AnnounceControl(target);
-                int cx, cy;
-                if (GetControlCenter(target, cx, cy)) {
-                    g_pendingX = cx;
-                    g_pendingY = cy;
-                    g_pendingTarget = target;
-                    g_pendingCursorMove = true;
-                    acclog::Write("Chain step panel=%p index=%d target=%p center=(%d,%d) %s",
-                                  g_chainPanel, g_chainIndex, target, cx, cy,
-                                  param_1 == kInputNavDown ? "DOWN" : "UP");
-                } else {
-                    acclog::Write("Chain step panel=%p index=%d target=%p extent=degenerate",
-                                  g_chainPanel, g_chainIndex, target);
-                }
-            } else {
-                acclog::Write("Chain step panel=%p index=%d target=NULL %s",
-                              g_chainPanel, g_chainIndex,
-                              param_1 == kInputNavDown ? "DOWN" : "UP");
-            }
+            ChainEntry& e = g_chain[g_chainIndex];
+            AnnounceControl(e.control);
+            g_pendingX          = e.cx;
+            g_pendingY          = e.cy;
+            g_pendingTarget     = e.control;
+            g_pendingCursorMove = true;
+            acclog::Write("Chain step panel=%p index=%d/%d target=%p center=(%d,%d) %s",
+                          g_chainPanel, g_chainIndex, g_chainCount,
+                          e.control, e.cx, e.cy,
+                          param_1 == kInputNavDown ? "DOWN" : "UP");
             // Always consume nav-up/nav-down on a panel with a non-empty chain.
-            // AdvanceChainIndex skips NULL slots and non-navigable controls,
-            // but if the panel has zero navigables we still consume rather
-            // than letting the key fall through to the engine's broken cycle.
             consumed = true;
         }
     }
@@ -1361,12 +1409,22 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
         return;
     }
 
+    // CSWGuiManager mouseOverControl pointer at +0x8 (per the decompilation
+    // in docs/menu-nav-design.md). Reading it directly lets us verify what
+    // the engine's hit-test resolved the cursor to — the difference between
+    // "click landed on tab T" and "click landed on the inline listbox" is
+    // invisible from cursor coords alone.
+    auto getMouseOver = [&]() -> void* {
+        return *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(gm) + 0x8);
+    };
+
     if (g_pendingCursorMove) {
         g_pendingCursorMove = false;
         auto move = reinterpret_cast<PFN_MoveMouseToPosition>(kAddrMoveMouseToPosition);
         move(gm, g_pendingX, g_pendingY);
-        acclog::Write("Update: MoveMouseToPosition(%d, %d) target=%p",
-                      g_pendingX, g_pendingY, g_pendingTarget);
+        acclog::Write("Update: MoveMouseToPosition(%d, %d) target=%p mouseOver=%p",
+                      g_pendingX, g_pendingY, g_pendingTarget, getMouseOver());
     }
 
     // Click-sim. Runs in the same frame as the cursor warp: the warp's
@@ -1379,10 +1437,15 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
         g_pendingClick = false;
         auto down = reinterpret_cast<PFN_ManagerLMouseDown>(kAddrManagerLMouseDown);
         auto up   = reinterpret_cast<PFN_ManagerLMouseUp>(kAddrManagerLMouseUp);
+        void* moBefore = getMouseOver();
         int dResult = down(gm, /*press=*/1);
+        void* moAfterDown = getMouseOver();
         int uResult = up(gm);
-        acclog::Write("Update: click-sim Down=%d Up=%d at (%d,%d) target=%p",
-                      dResult, uResult, g_pendingX, g_pendingY, g_pendingTarget);
+        void* moAfterUp = getMouseOver();
+        acclog::Write("Update: click-sim Down=%d Up=%d at (%d,%d) target=%p "
+                      "mouseOver before=%p afterDown=%p afterUp=%p",
+                      dResult, uResult, g_pendingX, g_pendingY, g_pendingTarget,
+                      moBefore, moAfterDown, moAfterUp);
     }
 }
 
