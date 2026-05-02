@@ -173,14 +173,29 @@ constexpr int kVtableAsButton       = 22;
 constexpr int kVtableAsButtonToggle = 23;
 
 // Generic vtable downcast caller: invokes vtable[index](control) as __thiscall.
+//
+// SEH-wrapped because the per-tick monitors (MonitorPanelContents,
+// MonitorDialogReplies) walk panels[] and call this on every child control.
+// During an engine teardown — e.g. inside FireActivate("Spielen") starting
+// the new-game flow, or FireActivate("OK") on the quit-confirm — the engine
+// frees a panel's child controls synchronously while the panel pointer can
+// still resolve from panels[] on the next MainLoop tick. Reading the freed
+// control's vtable slot then yields garbage (observed: 0xbf800000 = float
+// -1.0 bits, the engine reused the page for model data) and dereferencing
+// vtable[index] crashes. Treating any fault as "not this subclass" lets the
+// caller skip the stale control without taking down the process.
 typedef void* (__thiscall* PFN_Downcast)(void* this_);
 static void* CallDowncast(void* control, int vtableIndex) {
     if (!control) return nullptr;
-    void** vtable = *reinterpret_cast<void***>(control);
-    if (!vtable) return nullptr;
-    auto fn = reinterpret_cast<PFN_Downcast>(vtable[vtableIndex]);
-    if (!fn) return nullptr;
-    return fn(control);
+    __try {
+        void** vtable = *reinterpret_cast<void***>(control);
+        if (!vtable) return nullptr;
+        auto fn = reinterpret_cast<PFN_Downcast>(vtable[vtableIndex]);
+        if (!fn) return nullptr;
+        return fn(control);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
 }
 
 // Read a CExoString at (base + offset) into outBuf. Returns true if non-empty
@@ -543,14 +558,23 @@ static const char* ExtractAnnounceableText(void* control,
     const char* source = nullptr;
 
     // 1. Tooltip on the base class — works for any control that has one.
-    const char* tip;
-    uint32_t    tipLen;
-    int         id;
-    if (ReadControlNameFields(control, tip, tipLen, id) &&
-        tipLen > 0 && tipLen < bufSize) {
-        memcpy(outBuf, tip, tipLen);
-        outBuf[tipLen] = '\0';
-        source = "tooltip";
+    //    SEH-wrapped: the field at +0x28 holds a `char*` that on a stale
+    //    (freed-and-reused) control can be a bogus address; the memcpy
+    //    would then fault reading the source. CallDowncast already SEH-
+    //    protects steps 2-5; this covers the single read path that doesn't
+    //    go through it.
+    __try {
+        const char* tip;
+        uint32_t    tipLen;
+        int         id;
+        if (ReadControlNameFields(control, tip, tipLen, id) &&
+            tipLen > 0 && tipLen < bufSize) {
+            memcpy(outBuf, tip, tipLen);
+            outBuf[tipLen] = '\0';
+            source = "tooltip";
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        source = nullptr;
     }
 
     // 2. CSWGuiButton (most common — also covers CharButton, ActivatedButton,
