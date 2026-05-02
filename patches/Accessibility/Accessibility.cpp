@@ -549,14 +549,19 @@ static int        g_tabsStart         = -1;       // first tab-button index in p
 static int        g_tabsCount         = 0;        // number of contiguous tab buttons
 static VisualTab  g_visualTabs[kMaxVisualTabs];   // sorted by yCenter (top→bottom)
 static int        g_visualTabCount    = 0;
-// GuiManager pointer captured when Tab mode was armed. The engine swaps
-// App→gui_manager between manager-shaped objects across state transitions
-// (verified: after our setActive on a tab, an internal event fires through
-// HandleInputEvent with a different `this` pointer than the one driving
-// real user input). When OnHandleInputEvent sees a Tab event whose `thisPtr`
-// doesn't match this captured value, the event is part of the engine's
-// post-activation cascade — not a user press — and we must NOT re-handle it.
+// GuiManager pointer captured when Tab mode was armed. Used to guard the
+// Tab branch in OnHandleInputEvent against events arriving on a different
+// `thisPtr` than the one driving real user input.
 static void*      g_armedManager      = nullptr;
+
+// Pending Tab activation. Set by the Tab branch in OnHandleInputEvent;
+// applied by OnUpdate on the next per-frame tick. Same defer pattern arrow
+// keys use for their cursor moves: the input dispatcher is still on the
+// stack when our handler runs, so synchronous engine calls recurse through
+// hooks at fragile times. OnUpdate runs in a clean per-frame context after
+// dispatch — the engine can do its post-activation cascade undisturbed.
+static void*      g_pendingTabPanel   = nullptr;
+static void*      g_pendingTabTarget  = nullptr;
 
 // Virtual-line cursor over the listbox's multi-line blob. The Options listbox
 // has controls.size == 1 with all settings concatenated by '\n' into a single
@@ -799,6 +804,8 @@ static void ResetTabbedState() {
     g_virtualLineCount = 0;
     g_virtualLineIdx   = -1;
     g_armedManager     = nullptr;
+    g_pendingTabPanel  = nullptr;
+    g_pendingTabTarget = nullptr;
 }
 
 // Split `text` on '\n' into g_virtualLines[]. Truncates oversize lines to fit;
@@ -1207,35 +1214,26 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     // manager-level HandleInputEvent doesn't pass modifier state with
     // the key code.
     //
-    // We don't announce in the handler. The setActive call fires our
-    // OnSetActiveControl hook synchronously, which speaks the engine's
-    // resulting activation via SpeakIfChanged. By construction that
-    // text matches the new listbox content.
+    // Defer setActive to OnUpdate (next per-frame tick) — same pattern
+    // arrows use for cursor moves. Record target here, return consumed.
+    // The engine's post-activation cascade then runs in a clean context
+    // (not on the input-dispatcher's stack), avoiding whatever fragile
+    // interaction caused crashes when we called setActive synchronously
+    // from inside this handler.
     //
-    // Manager-pointer guard (`thisPtr == g_armedManager`): the engine
-    // swaps App→gui_manager between manager-shaped objects across state
-    // transitions. After our setActive on a tab, the engine fires a
-    // post-activation cascade event back through HandleInputEvent with a
-    // DIFFERENT `thisPtr` (e.g. armed mgr 06CEEF00 vs cascade mgr
-    // 06B93F48 — see patch-20260502-035745 log lines 26 vs 92, plus
-    // CExoInputInternal::BufferEvent diagnosis confirming this event is
-    // not a real Win32 message). That cascade is the engine's normal
-    // post-activation work; if we re-enter our Tab logic on it (or even
-    // just consume it), we corrupt the cascade and crash. Letting it
-    // pass through unchanged is the right behavior.
+    // Announcement: OnSetActiveControl fires when OnUpdate's setActive
+    // commits the change, and SpeakIfChanged speaks the result. By
+    // construction that text matches the new listbox content.
+    //
+    // Manager-pointer guard (`thisPtr == g_armedManager`): defensive,
+    // skips events on a `this` pointer that wasn't the one driving real
+    // user input when Tab mode was armed.
     if (param_1 == kInputTab &&
         g_tabbedPanel != nullptr && g_tabbedPanel == g_currentPanel &&
         g_visualTabCount > 0 &&
         thisPtr == g_armedManager)
     {
-        // Only cycle on val=128 (standard press edge). Releases (val=0)
-        // are consumed without action. Re-entry guard kept as cheap
-        // insurance against any reentry path the manager-pointer guard
-        // doesn't catch.
-        static bool s_inTabHandler = false;
-        if (param_2 == 128 && !s_inTabHandler) {
-            s_inTabHandler = true;
-
+        if (param_2 == 128 && g_pendingTabTarget == nullptr) {
             bool isShift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
             int n = g_visualTabCount;
 
@@ -1249,21 +1247,18 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
 
             void* targetCtl = g_visualTabs[targetVisual].control;
             if (targetCtl && targetCtl != active) {
-                auto setActive = reinterpret_cast<PFN_PanelSetActiveControl>(
-                    kAddrPanelSetActiveControl);
-                acclog::Write("Tab cycle %s: current=%d target=%d ctl=%p "
-                              "(was %p)",
+                acclog::Write("Tab cycle %s queued: current=%d target=%d "
+                              "ctl=%p (was %p)",
                               isShift ? "BACK" : "FWD",
                               currentVisual, targetVisual, targetCtl, active);
-                setActive(g_currentPanel, targetCtl);
+                g_pendingTabPanel  = g_currentPanel;
+                g_pendingTabTarget = targetCtl;
             } else {
                 acclog::Write("Tab cycle %s: current=%d target=%d ctl=%p "
                               "(no change — already active)",
                               isShift ? "BACK" : "FWD",
                               currentVisual, targetVisual, targetCtl);
             }
-
-            s_inTabHandler = false;
         }
         consumed = true;
     }
@@ -1361,6 +1356,22 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
 // hook). We pass EBP as the parameter for clarity even though we also have
 // the global at 0x7A39F4 — both resolve to the same singleton.
 extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
+    // Pending Tab activation: deferred from OnHandleInputEvent so the engine's
+    // post-activation cascade runs in a clean per-frame context, not on the
+    // input dispatcher's stack. Clear pending state BEFORE the call so any
+    // re-entry through this hook on the same tick doesn't re-fire setActive.
+    if (g_pendingTabTarget != nullptr && g_pendingTabPanel != nullptr) {
+        void* panel  = g_pendingTabPanel;
+        void* target = g_pendingTabTarget;
+        g_pendingTabPanel  = nullptr;
+        g_pendingTabTarget = nullptr;
+        auto setActive = reinterpret_cast<PFN_PanelSetActiveControl>(
+            kAddrPanelSetActiveControl);
+        acclog::Write("Update: deferred setActive panel=%p target=%p",
+                      panel, target);
+        setActive(panel, target);
+    }
+
     if (!g_pendingCursorMove) return;
     g_pendingCursorMove = false;
 
