@@ -1,6 +1,10 @@
 # Tab Crash Investigation
 
-Tracking the persistent crash that fires when keyboard-Tab cycles between tabs in the Options menu (and likely all Options-style panels with a button cluster + listbox layout).
+**Status: CLOSED (reframed) — 2026-05-02.** Investigation halted. The crash is real but we were attacking the wrong problem: `CSWGuiPanel::SetActiveControl` is structurally the wrong activation primitive for the unified-cursor model's end goal. See [Conclusion](#conclusion-setactivecontrol-is-the-wrong-primitive) and [Next session](#what-this-means-for-the-next-session) below. The `Things we've ruled out` section is preserved as engine knowledge for the click-simulation work that replaces this.
+
+Original framing (kept for historical context):
+
+> Tracking the persistent crash that fires when keyboard-Tab cycles between tabs in the Options menu (and likely all Options-style panels with a button cluster + listbox layout).
 
 ## What we're trying to do
 
@@ -80,38 +84,23 @@ Hooked `CSWGuiManager::PlayGuiSound (0x40a140)` at function entry to count calls
 
 Result: only 6 PlayGuiSound calls in the entire session, NONE between the deferred setActive (line 82) and the crash. No oscillation, no audio call loop. The 0.5s music stutter is NOT from a PlayGuiSound loop — more likely the engine's main loop is stalling (audio thread starves).
 
-## Current state
+## Conclusion: SetActiveControl is the wrong primitive
 
-Latest commit: `229396a` (cursor warp + deferred setActive + PlayGuiSound diagnostic hook).
+Stepping back from the immediate crash, the strategy itself doesn't fit the project goal. The end goal isn't "Tab cycles tabs"; it's making the Options panel **navigable AND usable** — including the toggles and sliders inside the listbox blob. `CSWGuiPanel::SetActiveControl` cannot reach those:
 
-Working hypotheses still standing:
-- The crash is in pure engine code, in a code path we have no hooks on (no log activity between listbox refresh and crash).
-- The faulting EIP is exactly at the GuiManager struct address + 5 ⇒ some code is treating the manager pointer as a function pointer.
-- The setActive call we make goes through a DIFFERENT path than the natural mouse-click activation; the engine ends up missing some pre/post-activation work, leaving a stale function pointer or vtable entry that gets called next frame.
+- The Options listbox has `controls.size == 1` (one multi-line label blob). Individual settings ("Difficulty: Normal", "Combat Movement: Default", ...) are not separate `CSWGuiControl*`s — they are rendered from internal listbox state.
+- `SetActiveControl(CSWGuiControl*)` requires a control pointer to target. There is nothing to point at for an individual setting.
+- The engine reaches per-setting interactions via mouse clicks dispatched into the listbox, which resolves the click by y-coordinate, not by control pointer.
 
-What works:
-- Tab DOWN press is captured cleanly. Our handler queues, returns consumed.
-- OnUpdate fires next frame, runs cursor warp + deferred setActive cleanly.
-- SetActiveControl fires for the new tab, listbox refreshes for the new tab's content.
-- Then ~0.5s of silence (no log events), then crash.
+So even if the Tab crash were fixed, `SetActiveControl` would unlock tab buttons but no listbox-internal targets. The same engine surface that activates a setting is the one that should activate a tab — for consistency and to satisfy whatever pre/post-click invariants the engine maintains (which is what we've been tripping for seven attempts).
 
-What's still broken:
-- Crash on the first Tab cycle. Same crash address pattern (`mgr+5`) every time.
+**The right primitive is synthesized mouse click at coordinate** (`CSWGuiButton::HandleLMouseDown` + `HandleLMouseUp` for tab buttons; a coordinate-based click into the listbox for individual settings; the same primitive sequenced with a move for slider drag). This serves Tab cycling, per-setting navigation, per-setting activation (toggles), and slider manipulation — the entire Options-panel goal — with one well-defined engine call sequence.
 
-Code state:
-- `patches/Accessibility/Accessibility.cpp`: Tab handler defers via `g_pendingTabPanel` / `g_pendingTabTarget`, also queues cursor warp via `g_pendingCursorMove`/`g_pendingX`/`g_pendingY`. OnUpdate runs warp first, then deferred setActive. Manager-pointer guard kept.
-- `patches/Accessibility/hooks.toml`: `OnPlayGuiSound` diagnostic hook installed.
+Why every attempt crashed at `mgr + 5`: the engine has post-activation invariants set up by the natural click flow (`HandleLMouseDown` → focus → `HandleLMouseUp` → activate → cleanup). `SetActiveControl` skips all of that. Some pointer the click-flow normally writes (vtable slot, callback, transient register state) ends up pointing at the manager. Next frame, the engine does `CALL <that>` and lands inside the manager struct. Switching primitive to the click flow means we don't skip the invariant in the first place.
 
-## What's uncertain
+## Things we've ruled out (preserved — informs the click-sim design)
 
-- WHICH function in the engine is doing the indirect call/jump that lands on the manager pointer. We know WHERE it lands (manager + 5) but not WHO calls it.
-- WHETHER our setActive call is missing some setup that the natural mouse-click path does. Plausible but not proven.
-- WHETHER the corrupted function pointer is in a vtable, a callback registration, or transient register state. The crash being NOT in a loaded module argues against vtable corruption (vtables would normally point inside DLLs/EXE, and an overwrite would still typically point inside a heap-allocated structure that itself contains some valid-looking dispatch). Heap-pointing function pointer is more consistent with a fresh allocation that wasn't initialized properly.
-- WHY the manager pointer specifically. Is the manager being mistaken for some other object type (e.g., a `CSWGuiPanel*` slot getting the manager value)? Or is some piece of state being read AS a pointer when it actually holds the manager value?
-- WHY the 0.5s delay before crash. Indicates the engine does some non-trivial work in the post-activation path before hitting the bad call. Could be one frame of rendering + one frame of input poll + one frame of ... ?
-- WHETHER the music stutter is the engine's main loop stalling, or audio thread issue, or rapid sub-tick activity. We've ruled out PlayGuiSound loops.
-
-## Things we've ruled out (don't re-investigate)
+These remain useful: any future activation primitive must avoid re-introducing them.
 
 - Win32 message `WM_LBUTTONUP` is not the source of `val=514` (verified via BufferEvent hook).
 - Engine framework's selective-POPAD/ESP bug is fixed in our local fork — not the cause.
@@ -119,29 +108,25 @@ Code state:
 - "App→gui_manager pointer is repointed across state transitions" theory — the `this=<different mgr>` events were caused by synchronous nesting from our handler, not by engine state-mgr swapping. With deferred setActive those events stop appearing.
 - Stack corruption from synchronous setActive returning into a corrupted frame — ruled out by clean end-of-function log values after the defer refactor.
 - "Big jump in coordinates causes crash" — every crash so far has been on the FIRST cycle (Gameplay → Feedback, 45-pixel jump). Bottom-tab (Sound) reachability is a separate historical issue.
+- Per-frame oscillation through `CSWGuiPanel::SetActiveControl` — `PlayGuiSound` (the only `CALL` inside) fires only 6 times per session, not in a loop near the crash.
+- Any flavor of deferred-vs-synchronous `SetActiveControl` (sync, deferred-via-OnUpdate, deferred + manager guard, deferred + cursor warp + manager guard) — all crash identically. The defer pattern is fine; the primitive is wrong.
 
-## Next step
+## What this means for the next session
 
-**Investigate the indirect-call lead in the SARIF / Ghidra DB.**
+The Tab handler in `Accessibility.cpp` and the visual-tab-order / manager-guard / pending-tab-target machinery should come out. The `OnPlayGuiSound` diagnostic hook in `hooks.toml` should also come out. The replacement is the click-simulation primitive described in `docs/menu-nav-design.md` Phase 3.
 
-Goal: identify code paths in the engine that perform `CALL <register>` or `CALL [memory]` near the post-tab-activation code path, and could plausibly end up with the manager pointer in the call target.
+Implementation order for next session:
 
-Specific things to look for:
-- Indirect calls inside `CSWGuiPanel::SetActiveControl` (0x40a630) and its callees. The function is small (77 bytes, only calls `PlayGuiSound`) but its early-return branches mean some post-activation work is skipped. What's in the fall-through path?
-- Indirect calls in the engine's per-frame `Update` / `Draw` / mouseover-reconciliation paths that run AFTER our deferred setActive completes. The crash happens during these, not during setActive itself.
-- Any vtable-style call (`CALL [reg+offset]`) where `reg` could plausibly hold the manager pointer at the call site. Particularly suspect: anywhere a `CSWGuiPanel*` is dereferenced for a vtable call but the slot might have been set to the manager pointer by mistake.
-- Check `CSWGuiManager`'s vtable — is there a slot at offset +0 that some panel-like dispatch could call? The manager has fields, not a vtable, so calling `(*manager->vtable[N])` would read the first 4 bytes of `mouse_x` as a vtable pointer, then call into garbage. EIP at manager + 5 is consistent with the engine doing `CALL <mgr>` directly (treating the manager pointer as a function pointer).
-- Search for any data store where a function pointer slot might be initialized FROM the manager pointer by mistake — e.g., wrongly-typed assignments in cascade hooks, or callback registration calls that take the manager pointer.
+1. **Crash-dump analysis subcommand (`kdev analyze-dump`).** ~2-3h of dotnet work using `Microsoft.Diagnostics.Runtime` against the `.dmp` files Windows captures in `%LOCALAPPDATA%\CrashDumps\`. Output: the call stack at the crash, resolved against Lane's Ghidra database. **Purpose has shifted:** this is no longer "the answer that lets us ship Tab" — it tells us *which engine function does the bad indirect call*, which tells us *which pre/post-click invariant `SetActiveControl` was skipping*, which tells us *what state the synthesized click must touch* to be safe. One-time investment, informs the click-sim design.
 
-How to investigate (no code changes):
-- Use `Decompile.java` on candidate functions (engine update/draw cycle, panel update, listbox update for the activated tab).
-- Search SARIF for the pattern `CALL EAX` / `CALL ECX` / `JMP EAX` etc. inside the relevant address ranges.
-- Cross-reference with the address database (`addresses.db`) for any global function-pointer slot that might be set during activation.
+2. **Strip the SetActiveControl-based Tab path.** Remove the Tab branch and its state in `Accessibility.cpp` (`g_visualTabs`, `g_armedManager`, `g_pendingTabPanel`, `g_pendingTabTarget`, `BuildVisualTabOrder`, `FindVisualTabIdx`, `DetectTabsCluster` may stay — still useful for tab-cluster detection in the new path). Remove `OnPlayGuiSound` diagnostic from `hooks.toml`.
 
-If the SARIF lead doesn't pan out within ~1 session of investigation, fall back to crash-dump analysis (next section).
+3. **Build the click-simulation primitive.** Mid-function hooks on `CSWGuiButton::HandleLMouseDown` / `HandleLMouseUp` to verify offsets and arg shapes, then call them directly via `__thiscall` function pointers (same pattern as `MoveMouseToPosition`). Deferred via `OnUpdate` — same reentrancy reasoning as cursor warps. See `docs/menu-nav-design.md` Phase 3 for the full plan.
 
-## Future / fallback options (not pursuing now)
+4. **Validate on Tab cycling first.** Tab buttons are engine-known `CSWGuiControl*`s with well-defined extents — simplest case for the new primitive. If this works, it confirms the primitive is sound.
 
-- **Crash dump analysis (option B from the discussion).** Add a `kdev analyze-dump` subcommand that reads the `.dmp` files Windows is already capturing in `%LOCALAPPDATA%\CrashDumps\`, extracts the call stack at the crash, resolves return addresses against Lane's Ghidra database. Would give us the WHO — which function did the bad call — definitively. Estimated ~2-3h of dotnet dev work using `Microsoft.Diagnostics.Runtime`.
-- **Mouse-click simulation.** Instead of `SetActiveControl`, simulate a real mouse click by calling `CSWGuiButton::HandleLMouseDown` and `HandleLMouseUp` directly. More faithful to the engine's expected activation path; would do whatever pre/post-activation work the click flow does that our shortcut skips.
-- **Ship without keyboard tab cycling.** Defeat-for-now option. Mouse-driven Options would still work; users would lose keyboard access to tabs but the rest of the patch is unaffected. Revisit later when we have better tools or insight.
+5. **Apply to listbox per-setting activation.** Compute line y-coordinate from listbox extent + line index, dispatch click at that coordinate. Per-setting *navigation* (read-only line walk) already works; this adds *activation*.
+
+6. **Sliders** as a follow-up: same primitive sequenced with a cursor move (down at handle, move to target, up). Defer until tabs + toggles are stable.
+
+The work after step 1 is no longer Tab-specific — it's the activation half of the unified-cursor model. The Tab crash falls out as a side effect once the engine sees a proper click sequence.

@@ -294,7 +294,68 @@ is verified by stack-offset arithmetic. Only unknowns: (a) `__thiscall` to
 `MoveMouseToPosition` works first try from the framework's wrapper context;
 (b) the framework extension lands cleanly. Both empirical, cheap to discover.
 
-### Phase 3 — Spatial mode (3D world / non-panel screens)
+### Phase 3 — Activation primitive (synthesized mouse click)
+
+The motivating goal is the Options panel: Tab between tabs, arrow through
+settings within a tab, and *change* settings (toggles, sliders). Phase 1+2
+gives navigation via cursor warp + the engine's natural mouseover-then-active
+cascade. That's enough for plain buttons, but it does not support:
+
+- Tab cluster activation. `MoveMouseToPosition` alone crashes the engine on
+  Options-panel tabs (see `docs/tab-crash-investigation.md`). The
+  `CSWGuiPanel::SetActiveControl` shortcut crashes too. Both skip pre/post-
+  click invariants the engine maintains.
+- Per-setting interaction inside the Options listbox. The listbox has
+  `controls.size == 1` (one multi-line label blob); individual settings are
+  not `CSWGuiControl*`s. Nothing for `SetActiveControl` to target. The engine
+  reaches them only via mouse clicks resolved by y-coordinate.
+
+**Primitive:** synthesize a real click sequence at a coordinate by calling
+`CSWGuiButton::HandleLMouseDown` + `HandleLMouseUp` directly (and analogous
+listbox-side handlers for clicks landing inside a listbox), deferred to
+`OnUpdate` for the same reentrancy reasons as the cursor warp.
+
+This single primitive serves:
+
+- Tab cycling. Click-sim at the next tab's center; engine runs its full
+  click pipeline; whatever invariant `SetActiveControl` was skipping is
+  now satisfied because we're on the engine's expected path.
+- Per-setting activation (toggles). Click-sim at the setting's y-coordinate
+  inside the listbox.
+- Slider drag (later). Click-sim sequence: down at handle → cursor moves
+  via `MoveMouseToPosition` → up at target.
+
+**Prerequisite:** the crash-dump analysis pass described in
+`docs/tab-crash-investigation.md` "Next session" step 1. Output of that pass
+is the engine function doing the indirect call at `mgr+5`, which tells us
+*which* pre/post-click invariant `SetActiveControl` skipped — i.e., which
+state the synthesized click must guarantee. Without that, the click-sim
+primitive risks reproducing the same crash from a different angle.
+
+**Deliverables:**
+
+- New mid-function hooks on `CSWGuiButton::HandleLMouseDown` /
+  `HandleLMouseUp` (addresses TBD via DumpBytes against Lane's gzf;
+  GoG-derived bytes match Steam) — first to verify arg shape, then
+  the functions are called directly via `__thiscall` function pointers
+  (same pattern as `MoveMouseToPosition` and `CSWGuiPanel::SetActiveControl`
+  in current code).
+- Coordinate-based click into a listbox at `(x, y)` — exact engine entry
+  point TBD; candidates: `CSWGuiListBox::HandleLMouseDown` /
+  `HandleLMouseUp` (entry-point hooks on listbox are toxic per session
+  4 finding, so mid-function only) or whatever the parent `CSWGuiPanel`
+  click dispatch resolves to.
+- A small `SimulateClickAt(int x, int y)` helper called from `OnUpdate`
+  alongside (or replacing) the cursor-warp queue.
+- Strip the `SetActiveControl`-based Tab handler (now obsolete) — see
+  `docs/tab-crash-investigation.md` "Next session" step 2.
+
+**Done when:** Tab cycles tabs cleanly without crashing; arrow keys walking
+panel.controls reach tabs without crashing; clicking on a setting via
+synthesized click toggles its value (Easy → Normal → Hard, etc.). Sliders
+deferred to a follow-up.
+
+### Phase 4 — Spatial mode (3D world / non-panel screens)
 
 When `g_currentPanel == nullptr`, switch to Lane's smooth-cursor model:
 - Arrow press/release sets/clears direction-flag bits (`dirBitFlags`).
@@ -324,11 +385,13 @@ surfaces required.
   back-to-back briefly stall audio (reproduced: open Options → arrow down →
   arrow up; second blob trips dedup the first time). Do *not* fix by collapsing
   the burst into one call — that bakes flexibility loss into the workaround
-  site (see `memory/feedback_no_workaround_at_workaround_site.md`). Real fix:
-  proper tab-then-listbox navigation, where listbox content is only read out
-  when the user explicitly enters the listbox (not as a side-effect of tab
-  hover). Belongs in the next nav phase. Until then the stutter is a
-  known accepted cost on Options-panel tab nav.
+  site (see `memory/feedback_no_workaround_at_workaround_site.md`). Real fix
+  lives in **Phase 3**: once arrow nav walks `panel.controls` (tabs included)
+  and the click-sim primitive activates a tab cleanly, the per-setting line
+  walk inside the listbox becomes a sub-mode entered explicitly — listbox
+  content is read line-by-line on demand, not as a side-effect of tab hover.
+  Until Phase 3 lands the stutter is a known accepted cost on Options-panel
+  tab nav.
 
 ## What's at HEAD (Phase 0)
 
@@ -380,11 +443,21 @@ Behavior:
 
 ## Re-entry checklist
 
-1. Read this file + `docs/upstream-prs.md`.
+1. Read this file + `docs/tab-crash-investigation.md` + `docs/upstream-prs.md`.
 2. `git log --oneline -5` for what's at HEAD.
-3. Implement the framework `consumed_exit_address` extension (8 files, ~50 lines).
-   Verify existing hooks still build and run unchanged.
-4. Enable consumption on `OnHandleInputEvent` via `consumed_exit_address = 0x0040cbcb`.
-   Verify engine no longer fires `SetActiveControl(Y)` on arrow keys.
-5. Implement Phase 1+2 (chain + cursor sync) on the clean foundation. One commit.
-6. Phase 3 once Phase 1+2 is stable.
+3. Strip the obsolete `SetActiveControl`-based Tab handler from
+   `Accessibility.cpp` (Tab branch, `g_visualTabs`, `g_armedManager`,
+   `g_pendingTabPanel`, `g_pendingTabTarget`) and the `OnPlayGuiSound`
+   diagnostic from `hooks.toml`. See `docs/tab-crash-investigation.md`
+   "Next session" step 2 for the rationale.
+4. Build the `kdev analyze-dump` subcommand against
+   `Microsoft.Diagnostics.Runtime`. Resolve a captured `.dmp` against
+   Lane's Ghidra DB to identify the engine function doing the bad
+   indirect call. This informs Phase 3's click-sim design.
+5. Implement Phase 1+2 (chain + cursor sync). One commit. Validate on
+   panels where every chain target is a plain button (title screen,
+   chargen, save/load) — Options panel tabs are still expected to fail
+   pending Phase 3.
+6. Implement Phase 3 (click-sim primitive). Validate on Options tabs
+   first; then per-setting toggles inside the listbox.
+7. Phase 4 (spatial mode) once panels are stable.
