@@ -8,7 +8,7 @@
 
 ## Phase status
 
-- **Phase 0 — Refactor.** *In progress.* First lay-off landed; further extractions and the menu regression test still pending.
+- **Phase 0 — Refactor.** *In progress.* Three lay-offs landed (`core_dllmain` + `engine_input`, `engine_offsets` + `engine_reads`, `engine_panels`); further extractions and the menu regression test still pending.
 - **Phase 1 — Foundation.** Pending.
 - **Phase 2 — Playable baseline.** Pending.
 - **Phase 3 — Pillar 1.** Pending.
@@ -55,14 +55,30 @@ Build verified (`kdev build` clean, 6 .cpp files, all exports verified). `Access
 
 Discipline: this is a **mid-phase lay-off**, not Phase 0 exit. Hand-off rule = commit + fresh session for next extraction.
 
+**Lay-off 3** — extract `engine_panels.{h,cpp}`.
+
+Extracted from `Accessibility.cpp`:
+
+- `engine_panels.h` — public API: `PanelKind` enum (file scope, like `engine_input.h`'s codes) + `acc::engine::` functions: `PanelKindName`, `ResolveGuiInGame`, `IdentifyPanel`, `IsPanelKindInGameMenu`.
+- `engine_panels.cpp` — internal: App→Client→Internal→GuiInGame address constants, the `kPanelKindOffsets[]` table + `PanelKindOffset` struct, the `g_panelKindCache` + `kPanelKindCacheSize` state. None of these are part of the public surface — adding a panel kind = enum value in the header + table row in the .cpp.
+
+Non-obvious choice: enum value `MessageBox` renamed to `MessageBoxModal` to dodge the Win32 winuser.h `#define MessageBox MessageBoxA` macro. The original Accessibility.cpp worked by accident because `<windows.h>` was included before the enum, so both definition and references consistently expanded to `MessageBoxA`. With the enum now in a header that may be included before/after `<windows.h>` in different TUs, the literal name avoids inconsistency. Comment in `engine_panels.h` documents the rename.
+
+`Accessibility.cpp` adds `#include "engine_panels.h"`; existing `using namespace acc::engine;` covers the new symbols so callsites (`IdentifyPanel`, `PanelKindName`, etc.) compile unchanged. Forward decl of `IsPanelKindInGameMenu` near the top of `Accessibility.cpp` is dropped — header makes it visible up-front.
+
+Build verified (`kdev build` clean, 7 .cpp files, all exports verified). `Accessibility.cpp` shrank from 3212 → 2994 lines (~218 lines moved out).
+
+Discipline: still a mid-phase lay-off. Commit + fresh session for lay-off 4.
+
 ### Still to extract (future Phase 0 sessions)
 
 Each is its own session (single-topic discipline):
 
-- **Lay-off 3 — `engine_panels.{h,cpp}`.** `PanelKind` enum, `kPanelKindOffsets[]`, `PanelKindName`, `ResolveGuiInGame`, `IdentifyPanel`, `IsPanelKindInGameMenu`, the panel-kind cache.
 - **Lay-off 4 — `engine_manager.{h,cpp}`.** `kAddrGuiManagerPtr`, `kMgrPanels*Offset`, `kMgrModalStack*Offset`, `GetForegroundPanel`, `FindOwningPanel`, `LogManagerStack`, the `MoveMouseToPosition` / click-sim PFN typedefs and addresses.
 - **Lay-off 5 — Rename `Accessibility.cpp` → `menus.cpp`.** Everything left after the engine extraction lands here unchanged. Per plan: incremental refactor — don't decompose the menu-side logic in Phase 0.
 - **Lay-off 6 — Menu regression test.** User runs `kdev dev`, walks the menu paths (main menu, Options tabs+sliders+cycles, in-game menu icons + sub-screen drill, dialog reply selection). Phase 0 cannot exit until this is reported clean. Crash investigation (see below) is *not* a regression — pre-existing — but its disposition before declaring Phase 0 exit is up to the user.
+
+(Lay-offs 4-6 still pending; lay-off 3 landed this session.)
 
 ### Current file inventory (`patches/Accessibility/`)
 
@@ -75,7 +91,8 @@ Each is its own session (single-topic discipline):
 - `engine_input.{h,cpp}` — input code translation *(new in lay-off 1)*
 - `engine_offsets.h` — engine struct/vtable offset constants + `CExoString` / `CExoArrayList` *(new in lay-off 2)*
 - `engine_reads.{h,cpp}` — SEH-guarded readers + element-class identity helpers *(new in lay-off 2)*
-- `Accessibility.cpp` — everything else (~3210 lines after lay-off 2; will shrink across lay-offs 3-4 and rename to `menus.cpp` at lay-off 5)
+- `engine_panels.{h,cpp}` — `PanelKind` enum + CGuiInGame slot classification (`IdentifyPanel`, `PanelKindName`, `ResolveGuiInGame`, `IsPanelKindInGameMenu`, panel-kind cache) *(new in lay-off 3)*
+- `Accessibility.cpp` — everything else (~2994 lines after lay-off 3; will shrink across lay-off 4 and rename to `menus.cpp` at lay-off 5)
 
 ---
 
@@ -133,5 +150,5 @@ A second symptom — audio stutter when pressing *Schließen* in Options — has
 
 Continue Phase 0:
 
-- Open a fresh session, claim "Phase 0 lay-off 3", extract `engine_panels.{h,cpp}` per the spec under "Still to extract" above. Targets: the `PanelKind` enum + `kPanelKindOffsets[]` table, `PanelKindName`, `ResolveGuiInGame`, `IdentifyPanel`, `IsPanelKindInGameMenu`, and the panel-kind cache. These currently live in `Accessibility.cpp` after the chain machinery; the extraction is mechanical (no behavior change).
+- Open a fresh session, claim "Phase 0 lay-off 4", extract `engine_manager.{h,cpp}` per the spec under "Still to extract" above. Targets: `kAddrGuiManagerPtr`, the `kMgr*Offset` constants for `panels` and `modal_stack`, `GetForegroundPanel`, `FindOwningPanel`, `LogManagerStack`, plus the `MoveMouseToPosition` / click-sim PFN typedefs and addresses. These currently live in `Accessibility.cpp` immediately after the panel block we extracted in lay-off 3 (the section with the "Unified-cursor menu navigation" header). Same flat layout convention: file-scope constants in the header, functions in `acc::engine::`.
 - Update this file at session end with the new state.

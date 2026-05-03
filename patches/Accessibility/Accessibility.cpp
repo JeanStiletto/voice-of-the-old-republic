@@ -25,6 +25,7 @@
 #include "tolk.h"
 #include "engine_input.h"
 #include "engine_offsets.h"
+#include "engine_panels.h"
 #include "engine_reads.h"
 
 // Engine readers + offset constants moved to engine_reads.{h,cpp} +
@@ -46,10 +47,6 @@ static const char* FindSiblingLabel(void* panel, void* control,
                                     char* outBuf, size_t bufSize);
 static const char* LookupCycleCategory(void* control);
 static bool IsChainNavigable(void* control);
-// Forward decl helper to keep ExtractAnnounceableText (defined here) decoupled
-// from the PanelKind enum's full definition (defined later in the file). The
-// per-kind hardcoded-name fallback for InGameMenu uses this wrapper.
-static bool IsPanelKindInGameMenu(void* panel);
 
 // Forward decl: find the panel in the manager's panels[] that owns `control`
 // (i.e. has it in its controls[]). Used as a fallback when callers of
@@ -557,221 +554,6 @@ static void SpeakIfChanged(int channel, const char* text) {
     if (strncmp(s_last[channel], text, sizeof(s_last[channel])) == 0) return;
     strncpy_s(s_last[channel], text, _TRUNCATE);
     tolk::Speak(text, /*interrupt=*/false);
-}
-
-// ============================================================================
-// In-game panel identity registry.
-//
-// CGuiInGame at offset +0x40 of CClientExoAppInternal holds named pointers to
-// every persistent in-game GUI panel: tutorial_box, main_interface (HUD),
-// dialog_cinematic, bark_bubble, in_game_pause, message_box, etc. By matching
-// any panel pointer against these named slots we can classify it semantically
-// (e.g. panel 12B04010 → TutorialBox) instead of guessing from layout.
-//
-// Resolution chain (per docs/llm-docs/re/swkotor.exe.h):
-//   *(CAppManager**)0x7A39FC                    → CAppManager*
-//   CAppManager.client            (+0x04)       → CClientExoApp*
-//   CClientExoApp.internal        (+0x04)       → CClientExoAppInternal*
-//   CClientExoAppInternal.gui_in_game (+0x40)   → CGuiInGame*
-//
-// Each step is a single indirect read; we re-resolve on every call so a
-// module transition that destroys/recreates the in-game GUI doesn't leave
-// us holding a stale pointer. Total cost is ~4 memory loads — cheap enough
-// to call from any focus event or per-frame tick.
-//
-// The CGuiInGame field offsets below are derived directly from the struct
-// definition in swkotor.exe.h:10219. If the engine struct layout ever
-// changes (different patch level, different distribution), these offsets
-// need to be re-derived. The PanelKind table is also the single point
-// where we'd add a new in-game panel kind to be recognised — name +
-// offset, and IdentifyPanel picks it up.
-// ============================================================================
-
-constexpr uintptr_t kAddrAppManagerPtr             = 0x007A39FC;
-constexpr size_t    kAppManagerClientOff           = 0x04;
-constexpr size_t    kClientExoAppInternalOff       = 0x04;
-constexpr size_t    kClientExoAppGuiInGameOff      = 0x40;
-
-enum class PanelKind {
-    Unknown = 0,
-    // Persistent always-on UI
-    MainInterface,
-    InGameMenu,
-    // Modal screens accessible from the HUD
-    InGameEquip,
-    InGameInventory,
-    InGameCharacter,
-    InGameAbilities,
-    InGameMessages,
-    InGameJournal,
-    InGameMap,
-    InGameOptions,
-    InGamePause,
-    InGameGalaxyMap,
-    // Dialogue surfaces
-    DialogCinematic,
-    DialogCinematicCopy,
-    DialogComputer,
-    DialogComputerCamera,
-    DialogLetterbox1,
-    DialogLetterbox2,
-    DialogLetterbox3,
-    BarkBubble,
-    // Popups / overlays
-    TutorialBox,
-    MessageBox,
-    SkillInfoBox,
-    ControllerLossBox,
-    StatusSummary,
-    Examine,
-    Container,
-    CreateItemMenu,
-    CreateItemSubMenu,
-    Fade,
-    LoadModuleDebugMenu,
-    PowersFeatsSkillsDebugMenu,
-    PartySelection,
-    Store,
-    SoloModeQuery,
-    AreaTransition,
-    // Dialogue auxiliary panels (the panels that route input during a
-    // CSWGuiDialogCinematic conversation — separate from the rendering
-    // panel that holds the message text).
-    DialogMessagesAux,   // 0xf8: void* messages?
-    DialogMessages,      // 0xfc: CGuiInGameDialogMessage*
-};
-
-struct PanelKindOffset {
-    size_t      offset;
-    PanelKind   kind;
-    const char* name;
-};
-
-static const PanelKindOffset kPanelKindOffsets[] = {
-    { 0x08, PanelKind::InGameMenu,                 "InGameMenu" },
-    { 0x0c, PanelKind::InGameEquip,                "InGameEquip" },
-    { 0x10, PanelKind::InGameInventory,            "InGameInventory" },
-    { 0x14, PanelKind::InGameCharacter,            "InGameCharacter" },
-    { 0x18, PanelKind::InGameAbilities,            "InGameAbilities" },
-    { 0x1c, PanelKind::InGameMessages,             "InGameMessages" },
-    { 0x20, PanelKind::InGameJournal,              "InGameJournal" },
-    { 0x24, PanelKind::InGameMap,                  "InGameMap" },
-    { 0x28, PanelKind::InGameOptions,              "InGameOptions" },
-    { 0x3c, PanelKind::DialogCinematicCopy,        "DialogCinematicCopy" },
-    { 0x40, PanelKind::DialogCinematic,            "DialogCinematic" },
-    { 0x44, PanelKind::DialogComputer,             "DialogComputer" },
-    { 0x48, PanelKind::DialogComputerCamera,       "DialogComputerCamera" },
-    { 0x4c, PanelKind::BarkBubble,                 "BarkBubble" },
-    { 0x50, PanelKind::Examine,                    "Examine" },
-    { 0x54, PanelKind::Container,                  "Container" },
-    { 0x58, PanelKind::CreateItemMenu,             "CreateItemMenu" },
-    { 0x5c, PanelKind::CreateItemSubMenu,          "CreateItemSubMenu" },
-    { 0x60, PanelKind::DialogLetterbox1,           "DialogLetterbox1" },
-    { 0x64, PanelKind::DialogLetterbox2,           "DialogLetterbox2" },
-    { 0x68, PanelKind::DialogLetterbox3,           "DialogLetterbox3" },
-    { 0x6c, PanelKind::Fade,                       "Fade" },
-    { 0x70, PanelKind::LoadModuleDebugMenu,        "LoadModuleDebugMenu" },
-    { 0x74, PanelKind::PowersFeatsSkillsDebugMenu, "PowersFeatsSkillsDebugMenu" },
-    { 0x78, PanelKind::PartySelection,             "PartySelection" },
-    { 0x7c, PanelKind::InGamePause,                "InGamePause" },
-    { 0x80, PanelKind::InGameGalaxyMap,            "InGameGalaxyMap" },
-    { 0x84, PanelKind::Store,                      "Store" },
-    { 0x8c, PanelKind::SoloModeQuery,              "SoloModeQuery" },
-    { 0x90, PanelKind::MainInterface,              "MainInterface" },
-    { 0x94, PanelKind::AreaTransition,             "AreaTransition" },
-    { 0x98, PanelKind::MessageBox,                 "MessageBox" },
-    { 0x9c, PanelKind::SkillInfoBox,               "SkillInfoBox" },
-    { 0xa0, PanelKind::TutorialBox,                "TutorialBox" },
-    { 0xa4, PanelKind::ControllerLossBox,          "ControllerLossBox" },
-    { 0xa8, PanelKind::StatusSummary,              "StatusSummary" },
-    // Dialogue input-routing surfaces (per CGuiInGame layout in
-    // swkotor.exe.h:10282). The in-game session log shows that during
-    // a CSWGuiDialogCinematic conversation, arrow-key input routes to
-    // a separate foreground panel (0FDEE418 in patch-20260502-182804.log)
-    // distinct from the rendering panel (DialogCinematicCopy at +0x3c).
-    // Hypothesis: that routing target is one of these two — registering
-    // both so the next log identifies which.
-    { 0xf8, PanelKind::DialogMessagesAux,          "DialogMessagesAux" },
-    { 0xfc, PanelKind::DialogMessages,             "DialogMessages" },
-};
-constexpr int kPanelKindOffsetCount =
-    sizeof(kPanelKindOffsets) / sizeof(kPanelKindOffsets[0]);
-
-static const char* PanelKindName(PanelKind k) {
-    if (k == PanelKind::Unknown) return "Unknown";
-    for (int i = 0; i < kPanelKindOffsetCount; ++i) {
-        if (kPanelKindOffsets[i].kind == k) return kPanelKindOffsets[i].name;
-    }
-    return "?";
-}
-
-// Resolve CGuiInGame singleton via the CAppManager → CClientExoApp →
-// CClientExoAppInternal indirection chain. Returns nullptr at any step's
-// null — caller must handle (DLL_PROCESS_ATTACH timing, between modules,
-// title screen with no game loaded, etc.).
-static void* ResolveGuiInGame() {
-    void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-    if (!appMgr) return nullptr;
-    void* exoApp = *reinterpret_cast<void**>(
-        reinterpret_cast<unsigned char*>(appMgr) + kAppManagerClientOff);
-    if (!exoApp) return nullptr;
-    void* internal = *reinterpret_cast<void**>(
-        reinterpret_cast<unsigned char*>(exoApp) + kClientExoAppInternalOff);
-    if (!internal) return nullptr;
-    return *reinterpret_cast<void**>(
-        reinterpret_cast<unsigned char*>(internal) + kClientExoAppGuiInGameOff);
-}
-
-// Cache of (panel, kind) pairs we've already logged. Keeps the log tidy
-// when persistent panels (HUD) get re-checked on every input event.
-struct PanelKindCacheEntry {
-    void*     panel;
-    PanelKind kind;
-};
-constexpr int kPanelKindCacheSize = 32;
-static PanelKindCacheEntry g_panelKindCache[kPanelKindCacheSize];
-static int g_panelKindCacheCount = 0;
-
-// Compare panel against every named slot in CGuiInGame. Returns kind on
-// match, PanelKind::Unknown if no match (or if CGuiInGame isn't resolvable
-// yet). Logs each distinct (panel, kind) pair on first sight.
-static PanelKind IdentifyPanel(void* panel) {
-    if (!panel) return PanelKind::Unknown;
-    void* gui = ResolveGuiInGame();
-    if (!gui) return PanelKind::Unknown;
-
-    auto* base = reinterpret_cast<unsigned char*>(gui);
-    for (int i = 0; i < kPanelKindOffsetCount; ++i) {
-        void* slot = *reinterpret_cast<void**>(base + kPanelKindOffsets[i].offset);
-        if (slot != panel) continue;
-
-        PanelKind k = kPanelKindOffsets[i].kind;
-        // First-sight log per (panel, kind) pair.
-        for (int j = 0; j < g_panelKindCacheCount; ++j) {
-            if (g_panelKindCache[j].panel == panel &&
-                g_panelKindCache[j].kind  == k) {
-                return k;  // already logged
-            }
-        }
-        if (g_panelKindCacheCount >= kPanelKindCacheSize) {
-            // FIFO evict oldest entry.
-            memmove(g_panelKindCache, g_panelKindCache + 1,
-                    sizeof(g_panelKindCache[0]) * (kPanelKindCacheSize - 1));
-            g_panelKindCacheCount = kPanelKindCacheSize - 1;
-        }
-        g_panelKindCache[g_panelKindCacheCount++] = { panel, k };
-        acclog::Write("PanelKind: panel=%p identified as %s",
-                      panel, kPanelKindOffsets[i].name);
-        return k;
-    }
-    return PanelKind::Unknown;
-}
-
-// Wrapper used by ExtractAnnounceableText (which is defined earlier in the
-// file before the PanelKind enum is in scope). Forward-declared near the
-// top of the file.
-static bool IsPanelKindInGameMenu(void* panel) {
-    return IdentifyPanel(panel) == PanelKind::InGameMenu;
 }
 
 // ============================================================================
@@ -2612,7 +2394,7 @@ static bool IsContentMonitored(PanelKind k) {
     case PanelKind::DialogComputer:
     case PanelKind::DialogComputerCamera:
     case PanelKind::BarkBubble:
-    case PanelKind::MessageBox:
+    case PanelKind::MessageBoxModal:
     case PanelKind::AreaTransition:
     // In-game sub-screens reached via the icon strip. The icon strip
     // (CSWGuiInGameMenu) stays foreground after activation, so the sub-screen
