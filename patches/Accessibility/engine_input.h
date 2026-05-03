@@ -41,3 +41,15 @@ constexpr int kInputEnter2   = 0xbb;
 constexpr int kInputEsc1     = 0xb4;
 constexpr int kInputEsc2     = 0xdf;
 constexpr int kInputActivate = 0x27;   // KEYBOARD_F1, the engine's activate code
+
+// Raw InputIndices values for unmapped keys — used by the Pillar 4 cycle
+// (Phase 2 lay-off 3). Unmapped keys pass through ManagerTranslateCode
+// unchanged, so they arrive at the manager hook as their InputIndices index
+// (positions in engine_input.cpp's k_names[] table). These exact values are
+// the working assumption from that table; will be confirmed at first
+// in-game test of the cycle keys.
+constexpr int kInputKbLeftShift  = 24;
+constexpr int kInputKbRightShift = 25;
+constexpr int kInputKbMinus      = 94;
+constexpr int kInputKbComma      = 103;
+constexpr int kInputKbPeriod     = 104;

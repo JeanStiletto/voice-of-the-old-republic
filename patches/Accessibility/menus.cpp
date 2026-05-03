@@ -32,6 +32,7 @@
 #include "engine_player.h"   // Phase 1 lay-off 4 (test fixture only)
 #include "engine_reads.h"
 #include "audio_bus.h"       // Phase 1 lay-off 4 (test fixture only)
+#include "cycle_input.h"     // Phase 2 lay-off 3
 
 // Engine readers + offset constants moved to engine_reads.{h,cpp} +
 // engine_offsets.h in Phase 0 lay-off 2. Pull the readers' names into the
@@ -1802,6 +1803,14 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     // comes free from the engine via the normal click pipeline once the
     // cursor is over the chain target.
     bool consumed = false;
+
+    // Pillar 4 cycle keys (`,` `.` `Shift+,` `Shift+.` `-` `Shift+-`) — Phase 2
+    // lay-off 3. Routed first because cycle is in-game-only and the handler
+    // self-gates on GetPlayerPosition; in menus / chargen / dialog it returns
+    // false and the key falls through to the normal menu logic below.
+    if (acc::cycle_input::TryHandleEvent(param_1, param_2)) {
+        consumed = true;
+    }
 
     // Enter-press activation. Two activation primitives, picked per-target:
     //
