@@ -64,7 +64,7 @@ Each is its own session (single-topic discipline):
 
 ### Crash: chargen Class screen, c0000409 stack canary
 
-Status: **pre-existing instability**, not introduced by Phase 0. Reproduces both before and after lay-off 1. Documented here so the next session that addresses it has a complete picture.
+Status: **fixed** in `ReadGuiString` (vtable check on `gui_string` before deref). Verified against the same repro path (`patch-20260503-170800.log`): chain rebuild on `CHARAKTERAUSWAHL` completes cleanly, all 6 vtable=`0x73E658` buttons return empty via the speculative-miss path, user navigates past the panel into the Endar Spire opening dialog without any SEH events. Kept here as the historical record because investigation overturned several earlier hypotheses.
 
 **Repro path (one of two observed):**
 - Title screen → Neues Spiel
@@ -86,34 +86,25 @@ A second symptom — audio stutter when pressing *Schließen* in Options — has
 
 **What the log shows (`patch-20260503-162139.log` tail):**
 - Chain rebind on the chargen Class panel (`074BB1C0`) builds 7 entries
-- 6 of the 7 navigable entries have vtable `0x73E658` — the image-only-button class also used by InGameMenu icons and portrait-pickers
-- State-flag reads in the chain dump show garbage:
-  - `Chain [3] 074BB940 ... bit_flags=0x8000780e`
-  - `Chain [4] 074BBDF8 ... is_active=2147533827`
-  - `Chain [5] 074BBB9C ... bit_flags=0xaaa77e0e`
-  - `is_active` is a 0/1 field; `bit_flags` is single-digit normally — these are random memory
-- "Speculative read miss" events fire repeatedly against these same six controls during chain rebind and again during per-tick monitoring
+- 6 of the 7 navigable entries have vtable `0x73E658`
+- `Speculative read miss` events fire repeatedly against these same six controls during chain rebind and again during per-tick monitoring
 - Last log line is mid-extraction; no panic / shutdown line follows
 
-**Root-cause hypothesis:**
-- Chargen Class buttons (vtable `0x73E658`) are reaching our chain in a state where their fields read as garbage (freshly-allocated-not-yet-initialized, or torn-down-and-reused — same pattern documented for InGameMenu icons in pre-existing memory)
-- `[control + 0x168]` (`gui_string` ptr) returns a non-null garbage value
-- `ReadGuiString` reads `[garbage + 0x14]` → access violation
-- `__try / __except` in `ReadGuiString` *should* absorb this, but the strlen-style scan loop directly after the first deref likely walks into unmapped memory before SEH unwinds
-- During unwind the stack canary is found corrupted → `__fastfail(2)` → c0000409
+**Hypotheses overturned during investigation (kept so future sessions don't relitigate):**
+- *"vtable `0x73E658` is an image-only-button override / different class."* Wrong. Lane's Ghidra DB labels `0x73E658` as `CSWGuiButton_vtable` — it's the standard `CSWGuiButton`, the same class as main-menu buttons. Our offsets (`gui_string` ptr at `+0x168`, etc.) are correct.
+- *"`bit_flags` and `is_active` reading as garbage means the controls are uninitialized."* Wrong. The same garbage pattern (`is_active=2871141504`, `bit_flags=0xffff000e`, etc.) appears in the *successful* main-menu chain dump for working buttons whose text extracts fine. Those offsets (`+0x44` / `+0x4c`) are not actually `bit_flags` / `is_active` for every button instance — likely aliased / unused fields for some configurations. They're not a liveness signal.
+- *"The strlen scan walks into unmapped memory."* Wrong. The fault is at `mov ecx,[ecx+14h]` (the second deref reading `gui_string`'s `c_string`), before the strlen loop runs.
 
-**Why finishing Phase 0 will not fix this:**
-- Lay-offs 2-5 are pure code-relocation. They preserve exact behavior of `ReadGuiString`, `ExtractTextOrStrRefIndirect`, `ExtractAnnounceableText`, the speculative-read paths, and the per-tick monitoring. None of those change.
-- Fix requires actual change to engine-read code: tighter probe before deref (e.g. `IsBadReadPtr` / `VirtualQuery` of the candidate `gui_string` page; OR `__try` inside the strlen scan; OR bypass speculative reads on vtable `0x73E658` controls when their other state fields look corrupt). All three are candidate strategies; pick one in a dedicated session.
+**Actual root cause:**
+- The chargen Class buttons reach our chain in a transient state where `[control + 0x168]` (the `gui_string` ptr) is sometimes null / safe and sometimes a non-null garbage pointer — the same controls successfully read empty during the chain rebind and crash on a subsequent monitor tick. The engine appears to mutate that field between our reads (a write-after-read race or partial deinit of the embedded `CSWGuiText`); we don't have clean instrumentation to identify the exact mutation point.
 
-**Recommended fix-session approach:**
-1. Open as its own session ("debug one bug at a time" discipline).
-2. Decide one strategy from the three above — prefer probe-before-deref because it generalizes to other speculative-read sites.
-3. Single small change to `ReadGuiString` (or its replacement once `engine_reads.cpp` exists), test against the same chargen Class panel, commit.
-4. If the fix lands after lay-off 2 has extracted `engine_reads.cpp`, it goes there directly. If before, it goes into `Accessibility.cpp` at the existing site and migrates with lay-off 2.
+**Fix that landed:**
+- `ReadGuiString` now checks `*(uintptr_t*)guiString == 0x00741878` (`CAurGUIStringInternal_vtable`, from Lane's Ghidra DB) before reading the `c_string` at `+0x14`. Garbage values fail the vtable check and we return `false` instead of dereferencing. SEH wrap kept as defense for the rare case where `guiString` itself points at unmapped memory.
+- Cost: one extra 4-byte read per `ReadGuiString` call when `guiString` is non-null. No syscall, no `VirtualQuery`.
 
 **Artifacts:**
-- Patch log: `<game install>/logs/patch-20260503-162139.log`
+- Pre-fix log: `<game install>/logs/patch-20260503-162139.log`
+- Verification log: `<game install>/logs/patch-20260503-170800.log`
 - Crash dump: `C:\Users\fabia\AppData\Local\CrashDumps\swkotor.exe.14140.dmp`
 - Disassembly snapshot used for analysis: `build/acc_dll.disasm.txt` (regenerate with `dumpbin /DISASM patches/.../accessibility.dll` if rebuilt — the file is overwritten by each run)
 
@@ -121,9 +112,7 @@ A second symptom — audio stutter when pressing *Schließen* in Options — has
 
 ## Next session: where to start
 
-Pick exactly one:
+The chargen Class crash is fixed. Continue Phase 0:
 
-- **Continue Phase 0 (recommended for incremental progress)**: open a fresh session, claim "Phase 0 lay-off 2", extract `engine_reads.{h,cpp}` + `engine_offsets.h` per the spec under "Still to extract" above. Do **not** mix in any crash fix — the fix is its own session.
-- **Address the chargen crash**: open a fresh session, claim the bug above by name, follow the recommended fix-session approach. Phase 0 work pauses until the fix is committed.
-
-Either way: update this file at session end with the new state.
+- Open a fresh session, claim "Phase 0 lay-off 2", extract `engine_reads.{h,cpp}` + `engine_offsets.h` per the spec under "Still to extract" above. The new `kVtableCAurGUIStringInternal` constant + the vtable check inside `ReadGuiString` move with that extraction.
+- Update this file at session end with the new state.

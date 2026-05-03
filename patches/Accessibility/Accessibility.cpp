@@ -166,6 +166,12 @@ constexpr size_t kTextObjectTextOffset     = 0x18;   // CSWGuiText.text_params.t
 constexpr size_t kTextObjectStrRefOffset   = 0x20;   // CSWGuiText.text_params.str_ref
 constexpr size_t kAurGuiStringCStrOffset   = 0x14;   // CAurGUIStringInternal.field5
 
+// CAurGUIStringInternal vtable address (from Lane's Ghidra DB:
+// CAurGUIStringInternal_vtable @ 0x00741878). Used to validate that a
+// gui_string pointer actually refers to a CAurGUIStringInternal object
+// before dereferencing it — see ReadGuiString for why this matters.
+constexpr uintptr_t kVtableCAurGUIStringInternal = 0x00741878;
+
 // Slider class identity by vtable address. Resolved via SARIF xrefs:
 // 0x0073E9D0 is referenced by CSWGuiSlider's constructor (0x41bb0d) and
 // destructor (0x41bb9d) — i.e. it's the slider's vftable. Sliders have no
@@ -315,9 +321,20 @@ static bool ExtractTextOrStrRef(void* control,
 // `CAurGUIStringInternal*` field (i.e. CSWGuiText.gui_string). For
 // CSWGuiLabel that's 0xE4; for CSWGuiButton that's 0x168.
 //
-// SEH-guarded because the gui_string pointer can be null in transient
-// init states and the indirected c_string pointer can theoretically point
-// at freed memory across module transitions.
+// Vtable check on guiString validates this is actually a
+// CAurGUIStringInternal before we deref it at +0x14. Motivation: chargen
+// Class panel buttons (vtable=0x73E658, the standard CSWGuiButton) reach
+// our chain in a state where `[control + 0x168]` is sometimes a non-null
+// garbage value (observed: 0xae0f1673 in patch-20260503-162139.log,
+// crashing at `mov ecx,[ecx+14h]` / DLL RVA 0x2c9e). The same control
+// reads safely as null on a prior tick — i.e. the engine transiently
+// writes an invalid pointer into this field between reads. Verifying the
+// vtable matches CAurGUIStringInternal's known address skips garbage
+// values without depending on SEH to absorb the AV (the crash report
+// shows that under /GS the AV unwind can fastfail with c0000409 instead
+// of being absorbed by our __try/__except). SEH is kept as defense for
+// the rarer case where guiString itself points at unmapped memory and
+// the vtable read faults.
 static bool ReadGuiString(void* control, size_t guiStringPtrOffset,
                           char* outBuf, size_t bufSize) {
     if (!control || bufSize < 2) return false;
@@ -326,6 +343,8 @@ static bool ReadGuiString(void* control, size_t guiStringPtrOffset,
         void* guiString = *reinterpret_cast<void**>(
             reinterpret_cast<unsigned char*>(control) + guiStringPtrOffset);
         if (!guiString) return false;
+        uintptr_t gsVtable = *reinterpret_cast<uintptr_t*>(guiString);
+        if (gsVtable != kVtableCAurGUIStringInternal) return false;
         char* str = *reinterpret_cast<char**>(
             reinterpret_cast<unsigned char*>(guiString) + kAurGuiStringCStrOffset);
         if (!str) return false;
