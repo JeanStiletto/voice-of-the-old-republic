@@ -35,13 +35,30 @@ Extracted from `Accessibility.cpp`:
 
 Build verified (`kdev build` clean, 5 .cpp files, all exports verified).
 
+**Lay-off 2** — extract `engine_reads.{h,cpp}` + `engine_offsets.h`.
+
+Extracted from `Accessibility.cpp`:
+
+- `engine_offsets.h` — file-scope `constexpr` constants and engine-data structs:
+  - GuiControlMethods vtable indices: `kVtableAsLabel`, `kVtableAsLabelHilight`, `kVtableAsButton`, `kVtableAsButtonToggle`
+  - Button/label field offsets: `kButtonTextOffset`, `kButtonStrRefOffset`, `kLabelTextOffset`, `kLabelStrRefOffset`
+  - Element-state offsets: `kButtonToggleStateOffset`, `kSliderMaxValueOffset`, `kSliderCurValueOffset`
+  - CSWGuiText layout offsets: `kLabelGuiStringPtrOffset`, `kLabelTextObjectOffset`, `kButtonGuiStringPtrOffset`, `kButtonTextObjectOffset`, `kTextObjectTextOffset`, `kTextObjectStrRefOffset`, `kAurGuiStringCStrOffset`
+  - Vtable identity addresses: `kVtableCAurGUIStringInternal`, `kVtableSlider`, `kVtableListBox`
+  - Container offsets: `kPanelActiveControlOffset`, `kPanelControlsOffset`, `kListBoxControlsOffset`, `kListBoxBitFlagsOffset`, `kListBoxItemsPerPageOffset`, `kListBoxSelectionIndexOffset`, `kListBoxTopVisibleIndexOffset`, `kControlExtentOffset`
+  - Engine structs: `CExoArrayList`, `CExoString`, `PFN_GetSimpleString`, `kAddrGetSimpleString`, `kAddrTlkTablePtr`
+- `engine_reads.{h,cpp}` — `acc::engine::` namespace functions: `ReadControlNameFields`, `CallDowncast`, `ReadCExoString`, `ReadU32`, `LookupTlk`, `ExtractTextOrStrRef`, `ReadGuiString`, `ExtractTextOrStrRefIndirect`, `IsToggle`, `IsSlider`, `IsListBox`, `ReadToggleState`, `DumpControlVtable`
+
+Convention follows `engine_input.h`: constants at file scope (callsite brevity); functions in `acc::engine::`. `Accessibility.cpp` adds `using namespace acc::engine;` so existing callsites compile unchanged.
+
+Build verified (`kdev build` clean, 6 .cpp files, all exports verified). `Accessibility.cpp` shrank from 3626 → 3212 lines (~414 lines moved out).
+
 Discipline: this is a **mid-phase lay-off**, not Phase 0 exit. Hand-off rule = commit + fresh session for next extraction.
 
 ### Still to extract (future Phase 0 sessions)
 
 Each is its own session (single-topic discipline):
 
-- **Lay-off 2 — `engine_reads.{h,cpp}`.** Pull SEH-guarded readers and the offset constants out of `Accessibility.cpp`. Specifically: `CallDowncast`, `ReadControlNameFields`, `ReadCExoString`, `ReadU32`, `LookupTlk`, `ReadGuiString`, `ExtractTextOrStrRef`, `ExtractTextOrStrRefIndirect`, `ReadToggleState`, `IsToggle`, `IsSlider`, `IsListBox`, `DumpControlVtable`. Plus `engine_offsets.h` carrying the constant pile (`kButton*Offset`, `kLabel*Offset`, `kVtable*`, `kPanelControlsOffset`, `kListBox*Offset`, `kAddrTlkTablePtr`, `kAddrGetSimpleString`, `struct CExoString`, `struct CExoArrayList`, etc.).
 - **Lay-off 3 — `engine_panels.{h,cpp}`.** `PanelKind` enum, `kPanelKindOffsets[]`, `PanelKindName`, `ResolveGuiInGame`, `IdentifyPanel`, `IsPanelKindInGameMenu`, the panel-kind cache.
 - **Lay-off 4 — `engine_manager.{h,cpp}`.** `kAddrGuiManagerPtr`, `kMgrPanels*Offset`, `kMgrModalStack*Offset`, `GetForegroundPanel`, `FindOwningPanel`, `LogManagerStack`, the `MoveMouseToPosition` / click-sim PFN typedefs and addresses.
 - **Lay-off 5 — Rename `Accessibility.cpp` → `menus.cpp`.** Everything left after the engine extraction lands here unchanged. Per plan: incremental refactor — don't decompose the menu-side logic in Phase 0.
@@ -56,7 +73,9 @@ Each is its own session (single-topic discipline):
 - `tolk.{h,cpp}` — screen reader bridge, lazily loaded (unchanged since pre-plan)
 - `core_dllmain.cpp` — DLL entry + Tolk init plumbing *(new in lay-off 1)*
 - `engine_input.{h,cpp}` — input code translation *(new in lay-off 1)*
-- `Accessibility.cpp` — everything else (~3580 lines after lay-off 1; will shrink across lay-offs 2-4 and rename to `menus.cpp` at lay-off 5)
+- `engine_offsets.h` — engine struct/vtable offset constants + `CExoString` / `CExoArrayList` *(new in lay-off 2)*
+- `engine_reads.{h,cpp}` — SEH-guarded readers + element-class identity helpers *(new in lay-off 2)*
+- `Accessibility.cpp` — everything else (~3210 lines after lay-off 2; will shrink across lay-offs 3-4 and rename to `menus.cpp` at lay-off 5)
 
 ---
 
@@ -112,7 +131,7 @@ A second symptom — audio stutter when pressing *Schließen* in Options — has
 
 ## Next session: where to start
 
-The chargen Class crash is fixed. Continue Phase 0:
+Continue Phase 0:
 
-- Open a fresh session, claim "Phase 0 lay-off 2", extract `engine_reads.{h,cpp}` + `engine_offsets.h` per the spec under "Still to extract" above. The new `kVtableCAurGUIStringInternal` constant + the vtable check inside `ReadGuiString` move with that extraction.
+- Open a fresh session, claim "Phase 0 lay-off 3", extract `engine_panels.{h,cpp}` per the spec under "Still to extract" above. Targets: the `PanelKind` enum + `kPanelKindOffsets[]` table, `PanelKindName`, `ResolveGuiInGame`, `IdentifyPanel`, `IsPanelKindInGameMenu`, and the panel-kind cache. These currently live in `Accessibility.cpp` after the chain machinery; the extraction is mechanical (no behavior change).
 - Update this file at session end with the new state.
