@@ -5,16 +5,14 @@
 // re-entry of its own). Sits between engine_area (data) and cycle_state
 // (focus tracking).
 //
-// Phase 2 lay-off 2: kind-only filtering. Sub-state filters (Container needs
-// usable=true OR has_inventory=true; Landmark needs has_map_note=true;
-// Transition needs transition_destination set) are documented in the plan
-// but not enforced here — the per-type offsets land in lay-off 4 alongside
-// per-type name resolution, where runtime verification is available. This
-// lay-off's filter therefore over-includes Containers (every Placeable),
-// Landmarks (every Waypoint), and Transitions (every Trigger). Acceptable
-// as a stepping stone since lay-off 2 + 3 don't speak; the per-tick monitor
-// log will show the over-inclusion clearly when the user audits before
-// lay-off 4 tightens it.
+// Phase 2 lay-off 4: kind + sub-state filtering. Container requires
+// usable=true OR has_inventory=true (CSWSPlaceable +0x328 / +0x334);
+// Landmark requires has_map_note=true (CSWSWaypoint +0x228); Transition
+// requires transition_destination set (CSWSTrigger +0x30c). Sub-state
+// readers live in engine_area.{h,cpp} alongside the kind-aware name
+// resolver. Per-tick monitor logs from lay-off 3 will show what gets
+// included; if false-negatives surface (e.g. a usable scenery placeable
+// that should cycle in), revisit the predicate.
 
 #pragma once
 

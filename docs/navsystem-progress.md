@@ -10,7 +10,7 @@
 
 - **Phase 0 — Refactor.** *Complete (2026-05-03).* All six lay-offs landed: `core_dllmain` + `engine_input`, `engine_offsets` + `engine_reads`, `engine_panels`, `engine_manager`, rename to `menus.cpp`, and the user-driven menu regression test ("everything working as before. no new bugs.").
 - **Phase 1 — Foundation.** *Complete (2026-05-03).* All planned lay-offs landed: `engine_player` (1), CExoSound singleton trace (2), `audio_bus` (3), test fixture + exit gate (4), atmospheric-pass curation + `audio_cues.h` wiring (5), `core_settings` stub (7). Lay-off 6 (`audio_listener`) was dropped at lay-off 4 — engine default listener proved camera-anchored at the gate.
-- **Phase 2 — Playable baseline.** *In progress (started 2026-05-03).* Lay-offs 1 + 2 + 3 landed in one session: `engine_area.{h,cpp}` foundation (object iterator + kind/position reads + GetRoom wrapper); `filter_objects.{h,cpp}` + `cycle_state.{h,cpp}` (Pillar 4 six-category filter + sorted-by-distance listing + focus state singleton); `cycle_input.{h,cpp}` wired into `OnHandleInputEvent` (`,/.` cycle items, `Shift+,/.` cycle categories, `-`/`Shift+-` log-only stubs). First in-game test pending (verifies key-code assumptions for comma/period/minus). Lay-offs 4-8 pending — see Phase 2 section below.
+- **Phase 2 — Playable baseline.** *In progress (started 2026-05-03).* Lay-offs 1+2+3 landed in one session, lay-off 4 closed 2026-05-04 with the gate met in-game (cycle keys announce localised name + 3D cue + clock + distance; sub-state filters tight; German strings centralised). Phase 1 audio test fixture retired by lay-off 4's cue-on-cycle. Lay-offs 5-8 pending — see Phase 2 section below.
 - **Phase 3 — Pillar 1.** Pending.
 - **Phase 4 — Pillar 2 polish + view mode.** Pending.
 - **Phase 5 — Pillar 3 polish.** Pending.
@@ -29,10 +29,10 @@ Make the game playable end-to-end via cycle-and-autowalk. Lands the four pieces 
 
 ### Lay-off plan (drafted 2026-05-03)
 
-1. **`engine_area.{h,cpp}`** — object iterator + kind/position reads + `GetRoom` wrapper. Foundation; no menu-side consumer wired up. *Closed (this lay-off).*
-2. **Pillar 4 filter + cycle state** — `filter_objects.{h,cpp}` (six-category filter over `AreaObjectIterator`) + `cycle_state.{h,cpp}` (current category + focused object + per-tick rebuild). No input wiring yet; pure data layer testable from the per-tick monitor.
-3. **Pillar 4 cycle keys** — `,` / `.` / `Shift+,` / `Shift+.` wired into `OnHandleInputEvent`. Mutates cycle_state; no announcement yet (focus changes go silent until lay-off 4).
-4. **Pillar 4 announce** — `-` keypress speaks "name + direction (clock position) + distance (m)" via Tolk. First user-perceptible Phase 2 milestone. Per-type name resolution (Door, NPC, Container, Item, Landmark, Transition) lands here.
+1. **`engine_area.{h,cpp}`** — object iterator + kind/position reads + `GetRoom` wrapper. Foundation; no menu-side consumer wired up. *Closed.*
+2. **Pillar 4 filter + cycle state** — `filter_objects.{h,cpp}` (six-category filter over `AreaObjectIterator`) + `cycle_state.{h,cpp}` (current category + focused object + per-tick rebuild). No input wiring yet; pure data layer testable from the per-tick monitor. *Closed.*
+3. **Pillar 4 cycle keys** — `,` / `.` / `Shift+,` / `Shift+.` wired into `OnHandleInputEvent`. Mutates cycle_state; no announcement yet (focus changes go silent until lay-off 4). *Closed.*
+4. **Pillar 4 announce** — `-` keypress speaks "name + direction (clock position) + distance (m)" via Tolk. First user-perceptible Phase 2 milestone. Per-type name resolution (Door, NPC, Container, Item, Landmark, Transition) lands here. *Closed (this lay-off).*
 5. **`guidance/autowalk.{h,cpp}`** — `AddMoveToPointAction` wrapper. Cross-cutting subsystem callable with a `Vector` destination.
 6. **Pillar 4 → guidance binding** — `Shift+-` pathfind to currently-focused object via guidance/autowalk. With autowalk-only (beacon comes in Phase 5).
 7. **Pillar 2 transitions** — room transition (per-tick `GetRoomAt` delta, speak room name) + area transition (hook `CClientExoApp::AddMoveToModuleMovie @0x5edb50` for "loading: …", then on area-enter speak the new area name).
@@ -117,6 +117,99 @@ Build verified: `kdev build` clean (15 .cpp files, DLL exports verified).
 In-game verification needed (next session start, single-trip): launch into a save with a player loaded, press `,/./Shift+,/Shift+.` and watch `Cycle:` log lines fire with sensible focused-object data. Confirm `kInputKbComma=103` etc. assumption. If wrong codes, patch `engine_input.h` (the existing per-event log line in `OnHandleInputEvent` will show the actual `param_1` value).
 
 Discipline: third lay-off in one session — chained per the non-testable-lay-offs feedback rule (memory: `feedback_chain_nontestable_layoffs.md`). Strictly speaking lay-off 3 IS testable (verifying key codes), but it's a one-press-per-key-combo sanity check rather than a perceptual evaluation, so chaining is reasonable. The fresh-session boundary is appropriate before lay-off 4 (announce) — that's where TTS quality + per-type name resolution land, both of which warrant un-degraded context for tuning.
+
+**Lay-off 4** — Pillar 4 announce. *Closed 2026-05-04 (gate met in-game).*
+
+The first user-perceptible Phase 2 milestone — `,/.` cycle items, `Shift+,/.` cycle categories, `-` repeats focus, with each cycle key emitting a 3D positional cue at the focused object's world position followed by a Tolk speech announcement of the localized name + clock-position + distance. Verified end-to-end across two test sessions on Endar Spire opening corridors. Scope ballooned well past the original plan due to four engine-side bugs found during gate testing — full bug list below.
+
+### Per-type name resolution (`engine_area.{h,cpp}`)
+
+`acc::engine::GetObjectName(obj, outBuf, bufSize)` — kind-aware resolver. Uses the per-subclass `CExoLocString` offsets locked in investigation Q5 + Q7: Door @+0x39c, Creature via `creature_stats* @+0xa74` → first_name @+0x14, Placeable @+0x228, Item @+0x280, Waypoint @+0x238, Trigger @+0x228. Treats CExoLocString as an 8-byte aggregate equivalent to CExoString at the byte level (per the Q7 "simple read pattern" line) — `engine_reads::ExtractTextOrStrRef` handles both: tries the inline pointer first, falls back to TLK strref at +4. Final fallback: `CSWSObject.tag @+0x18` (CExoString) so unnamed mod scaffolding gets an audible identifier rather than a silent skip. Every dereference SEH-wrapped.
+
+`kCreatureStatsPtrOffset = 0xa74` derived locally from `docs/llm-docs/re/swkotor.exe.h` (Ghidra DATATYPEs dump): `CSWSCreatureAppearanceInfo` is 0x24 bytes starting at +0xa50, so `creature_stats*` lands at +0xa74. Q5 listed `CreatureStats.first_name +0x14` without pinning the parent offset; this is the missing link.
+
+### Sub-state filter tightening (`filter_objects.cpp`)
+
+Container / Landmark / Transition predicates now AND the kind tag with sub-state checks: `usable=1 OR has_inventory=1` at CSWSPlaceable +0x328/+0x334, `has_map_note=1` at CSWSWaypoint +0x228, `transition_destination != (0,0,0)` at CSWSTrigger +0x30c. The lay-off 2 over-inclusion (Container = "every Placeable") is now resolved.
+
+### Clock-position direction frame (`cycle_input.cpp`)
+
+`ClockPosition(playerYawDeg, dx, dy)` — `atan2(dy,dx) - playerYaw` in degrees, negated to flip CCW→CW, bucketed into 12 sectors of 30° each. Returns 1..12 with 12 = directly ahead, 3 = right, 6 = behind, 9 = left. Player yaw read server-side via `GetPlayerYawDegrees` (`CSWSObject.orientation @+0x9c`).
+
+### i18n string table (`strings.{h,cpp}` + `strings_en.cpp` + `strings_de.cpp`)
+
+User-driven course-correction during the gate test: hardcoded English wrapper strings in cycle_input.cpp clashed with German TLK-resolved object names. Centralised every spoken string into a typed-id table:
+
+- Singular category names (used as cycle prefix): "Door", "Tür", etc.
+- Per-category empty messages with localised plurals: "Keine Türen in Reichweite" vs "Keine Türen" (the German singular/plural split — Türen, Personen, Behälter, Gegenstände, Orte, Übergänge — would have been awkward to template).
+- Format templates that carry the unit words and direction idiom: English `"%s, %d o'clock, %d metres"`, German `"%s, auf %d Uhr, %d Meter"` ("auf X Uhr" is the German nav idiom; bare "X Uhr" would read as time-of-day).
+
+Two language files compiled in, runtime switch via `acc::strings::SetLanguage(Lang::De)`. **German is the default** — the user is testing on a German install and the locale-mix issue surfaced live during the gate. Phase 7 (deferred) will surface a runtime UI toggle. Encoding: Windows-1252 hex escapes (`\xFC` for ü, etc.) so literal bytes match Tolk's `MultiByteToWideChar(CP_ACP)` on the user's German install. UTF-8 source would also work but only with `/utf-8`, which `create-patch.bat` doesn't pass.
+
+Logs intentionally stay English regardless of language — `acc::filter::CategoryName` (developer-readable) is *not* routed through the table.
+
+### Auto-announce on cycle (UX correction)
+
+Original lay-off plan: `,/.` step silently, `-` announces. User feedback during gate test: every screen-reader paradigm announces on focus change; silent step is alien. Restructured handlers so:
+
+- `,/.` → step within current category, auto-announce new focus
+- `Shift+,/.` → step to next/prev non-empty category, auto-announce `"{Category}. {item}, {clock}, {distance}"`
+- `-` → repeat current focus (useful when the screen reader was interrupted)
+- `Shift+-` → still log-only stub (lay-off 6 wires guidance/autowalk)
+
+If category cycle exhausts all 6 categories empty, falls through to the localised "Keine Objekte in Reichweite" without a misleading category prefix.
+
+### 3D cue-on-cycle (Phase 1 fixture retirement)
+
+Each cycle-key fire plays the per-category cue from `audio_cues.h` (`gui_close` for doors, `fs_metal_droid2` for NPCs, etc.) at the focused object's world position via `acc::audio::PlayCue3D` *before* speaking. The engine's Miles 3D pipeline pans + attenuates relative to the camera-anchored listener (verified at Phase 1 lay-off 4 gate). User hears spatial direction first, then the localised speech reinforces it.
+
+This satisfies the Phase 2 exit-gate criterion that retires the Phase 1 audio test fixture: "Phase 1 audio test fixture removed once a real Phase 2 consumer (lay-off 4 or 7) demonstrates 3D audio in production code." The throttled `Phase1Test: PlayCue3D ...` block in `OnUpdate` is removed.
+
+### In-world input plumbing (`cycle_input::PollWin32`)
+
+Critical discovery during gate test: **unbound keys in-world bypass `CSWGuiManager::HandleInputEvent` entirely**. The engine's keymap (kotor.ini `[Keymapping]`) drops scancodes that aren't bound to any action before they reach the manager-level dispatcher. `,/./-` are unbound by default. From `patch-20260503-215023.log`: 86 events captured at our manager hook, zero with codes 103/104/105.
+
+Resolution: added a Win32-side polling path in `OnUpdate` using `GetAsyncKeyState(VK_OEM_COMMA / VK_OEM_PERIOD / VK_OEM_2 / VK_OEM_MINUS / VK_SHIFT)`. Edge-detects rising edges (per-key static `prev` flags), self-gates on `GetForegroundWindow()` matching our PID + `GetPlayerPosition` succeeding. The OnHandleInputEvent path stays in place as a backup if anyone ever binds the keys via kotor.ini, sharing the same per-action handlers (`OnCycleItem` / `OnCycleCategory` / `OnAnnounceFocus`) so behaviour is identical regardless of ingestion path.
+
+VK code subtlety: the physical key right of `.` is layout-dependent — `VK_OEM_2` on US QWERTY (`/`), `VK_OEM_MINUS` on German QWERTZ (`-`). Polling listens for both so the same physical "row" of cycle keys works on either layout. Linker: `cycle_input.cpp` adds `#pragma comment(lib, "user32.lib")` for `GetAsyncKeyState` / `GetForegroundWindow` / `GetWindowThreadProcessId`.
+
+### Bug fixes uncovered during gate test
+
+Four engine-side bugs in our reads, all surfaced because the gate test covered the full data-path end-to-end for the first time:
+
+**1. `CSWSArea.game_objects` is a handle array, not a pointer array.** Source-of-truth check via `docs/llm-docs/re/swkotor.exe.h` — the field is typed `ulong *game_objects;` (an array of 32-bit object IDs), not `CSWSObject **`. Initial implementation dereferenced IDs as pointers; the `+0x8` kind read fell on garbage memory and every kind value came back outside the 5/6/7/9/10/12 set we filter on. Verified by `patch-20260503-224102.log`: snapshotSize=219, scanned=219, every kind bucket=0.
+
+Fix: handle resolution via `CServerExoApp::GetObjectArray() → CGameObjectArray::GetGameObject(id, &out)`. The chain reads `*kAddrAppManagerPtr → AppManager + 0x8 → CServerExoApp*` (new — see bug #2). Iterator now resolves each handle to a CSWSObject* before yielding it. Sentinel handles (0 / 0xFFFFFFFF) skipped before resolution.
+
+**2. AppManager wrapper has both client + server pointers.** Investigation Q1 documented `*kAddrAppManagerPtr → CClientExoApp*` via a single deref; lay-off 4's chain-fix corrected this to `+0x4` for the client. Now we also need server-side. Disassembly of `CSWSObject::GetArea @0x4cb120` (which uses `AppManager->server`) shows `mov ecx, [eax+0x8]` — so `AppManager + 0x8 → CServerExoApp*`. Added `kAppManagerServerOffset = 0x8` to engine_area.h and used it in the new `GetServerObjectArray()` helper.
+
+**3. `CGameObjectArray::GetGameObject` returns *true on miss, false on hit*.** Decompiled @0x004d8230 — the function is structured "if found, write game_object and return false; if not found, write NULL and return true". Initial implementation read the bool as "was it found", treating every hit as a miss and returning nullptr unconditionally. Verified by `patch-20260503-225246.log`: snapshotSize=219, scanned=0 (every Next() short-circuited because `ok && out` was always false). Fix: rename the local from `ok` to `miss` and check `if (!miss && out) return out;`.
+
+**4. German `-` key is `VK_OEM_MINUS`, not `VK_OEM_2`.** OEM virtual-key codes are layout-dependent. On US QWERTY, the key right of `.` (`/`) is `VK_OEM_2 (0xBF)`; on German QWERTZ, the same physical key (`-`) is `VK_OEM_MINUS (0xBD)`. From `patch-20260503-223622.log`: cycle of `,` and `.` fired correctly, no `-` events captured. Fix: poll both VK codes for the announce key.
+
+### Decisions captured (deferred from initial gate plan)
+
+- **Clock-position from server-side yaw, not camera**. Plan locks "relative to player facing"; server-side `CSWSObject.orientation @+0x9c` is the authoritative source. Camera-relative (`CSWGuiCamera`) would be a future option if user testing prefers it.
+- **first_name only for Creatures, not first+last**. Most NPCs have only first_name populated. Concatenation introduces empty-last_name code paths; defer until audition shows it'd help.
+- **Fall back to category label when name is empty**. "Tür, auf 3 Uhr, 5 Meter" (with an unnamed door rendering as the kind) more useful than "(unknown), …".
+- **Distance to whole metres, no decimals.** Reads faster via TTS; player's near/far decision threshold is metre-grain anyway.
+- **Interrupt previous speech on every cycle key.** Successive `,/.` presses are common during scan; queueing would lag.
+- **3D cue plays on cycle, not on `-` repeat alone.** The cue carries category identification and spatial direction; making it part of every cycle keystroke gives the user immediate non-verbal feedback per step.
+- **Cue and speech overlap intentionally.** Cue is short (60–300ms); Tolk speech is queued asynchronously by NVDA. They don't conflict — user hears cue first, speech rolls in.
+
+### Files touched
+
+- `patches/Accessibility/engine_area.{h,cpp}` — name resolver, sub-state predicates, handle-resolution iterator.
+- `patches/Accessibility/filter_objects.{h,cpp}` — sub-state filter tightening.
+- `patches/Accessibility/cycle_input.{h,cpp}` — ClockPosition, AnnounceCurrent, Win32 polling, OEM-key handling.
+- `patches/Accessibility/strings.{h,cpp}`, `strings_en.cpp`, `strings_de.cpp` — new i18n table.
+- `patches/Accessibility/engine_input.h` — `kInputKbAnnounce` (slash position) replaces `kInputKbMinus`.
+- `patches/Accessibility/menus.cpp` — wired `cycle_input::PollWin32()` into `OnUpdate`; removed Phase 1 audio test fixture.
+- `docs/navsystems-investigation.md` — Q1 chain note (AppManager+0x8 server pointer).
+
+Build verified: `kdev build` clean (18 .cpp files, DLL exports verified). In-game verified across two sessions: door / NPC / item / placeable cycle hear localised name + 3D cue + clock + distance, German wording correct, sub-state filters work (Container drops scenery), clock updates as player rotates, distance updates as player walks.
+
+Discipline: lay-off 4 ships as one bundled commit. Originally would have split per concern, but the bug-discovery dependency chain (handle-bug → resolution chain → inverted bool → polling-path → German VK → strings refactor → cue wiring) makes incremental commits ship intermediate states that crash or speak garbage. One coherent close-out commit is the cleaner shape. Fresh session for lay-off 5 (`guidance/autowalk`).
 
 ---
 
@@ -481,16 +574,14 @@ A second symptom — audio stutter when pressing *Schließen* in Options — has
 
 ## Next session: where to start
 
-Phase 2 is in progress. Lay-offs 1 + 2 + 3 closed in one session; next session opens with **a brief in-game key-code verification**, then picks up **Phase 2 lay-off 4 — Pillar 4 announce on `-`**.
+Phase 2 is in progress. Lay-off 4 closed in-game 2026-05-04. Next: **Phase 2 lay-off 5 — `guidance/autowalk.{h,cpp}`** (the cross-cutting `AddMoveToPointAction` wrapper).
 
-**In-game verification (start here).** Launch into a save with a player loaded; press `,` `.` `Shift+,` `Shift+.` `-` `Shift+-` while in the world. Confirm the existing per-event `HandleInputEvent` log lines show `key=KEYBOARD_COMMA(103)` / `KEYBOARD_PERIOD(104)` / `KEYBOARD_MINUS(94)` / `KEYBOARD_LEFTSHIFT(24)` etc., and that `Cycle:` log lines fire in response with sensible `category=` + `obj=` + `dist=` values. If any code differs from the working assumption, patch the constant in `engine_input.h` and rebuild. Should be a 5-minute verification.
+**Lay-off 5 — `guidance/autowalk.{h,cpp}`.** Cross-cutting subsystem: `acc::guidance::WalkTo(const Vector& dest)` calls `CSWSCreature::AddMoveToPointAction @0x4f8b60` on the player creature with the destination. Investigation Q3 has the full 17-arg signature decoded. Pure code-base lay-off (no consumer wired up); lay-off 6 binds `Shift+-` to it via the existing pathfind-stub branch in `cycle_input.cpp`.
 
-**Lay-off 4 — Pillar 4 announce.** Plan: `docs/navsystem-longterm-plan.md` §"Per-item announcement" locks the payload as **name + direction (clock-position relative to player facing) + distance (metres)**. Three pieces of work:
+**Lay-off 4 follow-ups parked for later (not blocking lay-off 5):**
 
-1. **Per-type name resolution.** Each game-object subclass has its localised name at a different offset (per investigation Q5): CSWSDoor.loc_name +0x39c, CSWSCreature.CreatureStats.first_name +0x14 / last_name +0x1c, CSWSPlaceable.loc_name +0x228, CSWSItem.localized_name +0x280, CSWSWaypoint.localized_name +0x238, CSWSTrigger.localized_name +0x228. Each is a CExoString or CExoLocString → use the existing `ReadCExoString` / `LookupTlk` chain from `engine_reads.h`. Add to `engine_area.{h,cpp}` (object-type-aware name read) or split into `engine_object_names.{h,cpp}` if it grows.
-2. **Direction frame: clock-position.** `atan2(dy, dx)` of (object - player) in player's facing frame. Player yaw via `GetPlayerYawDegrees`. 12 sectors of 30° each, 12 = directly ahead, 6 = directly behind, 3 = right, 9 = left. Cheap modular-arithmetic.
-3. **Sub-state filter tightening (lay-off 2 TODOs).** Container needs `usable=true OR has_inventory=true` at CSWSPlaceable +0x328 / +0x334; Landmark needs `has_map_note=true` at CSWSWaypoint +0x228; Transition needs `transition_destination` set at CSWSTrigger +0x30c. Folded in here because each offset needs a hearable verification, same trip.
-
-Wire the announce path: replace the `-` log-only stub in `cycle_input.cpp` with `tolk::Speak(formattedString, /*interrupt=*/true)`. Format: `"{name}, {clock} o'clock, {distance:.0f} metres"` — refine wording with the user once it's audible.
+- Cycle scope — the area scan is still whole-area, not "current room + LOS extension" per the plan. Distances of 40-80m to doors across the Spire are fine for a stress-test but produce noisy listings in dense areas. Lay-off 7 (Pillar 2 transitions) will land the room-cluster slice and tighten the cycle scope here.
+- `last_name` concatenation for creatures (NPC main-cast surname display).
+- Camera-relative clock-position option as a `core_settings` knob.
 
 - The chargen Class c0000409 fix and `KPatchManager` LEA-vs-MOV / selective-POPAD ESP bugs (memory-recorded) remain context for future work but are not Phase 2 blockers.

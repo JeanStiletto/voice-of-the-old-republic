@@ -15,24 +15,41 @@
 // in the engine layer; the alternative (panel-kind sniffing) is more
 // invasive and not worth it for a key dispatch decision.
 //
-// Working assumption on key codes: unmapped keys (comma, period, minus,
-// shift) pass through ManagerTranslateCode unchanged and arrive at our hook
-// as their raw InputIndices values (kInputKbComma=103, kInputKbPeriod=104,
-// kInputKbMinus=94, kInputKbLeftShift=24, kInputKbRightShift=25). Confirm
-// at first in-game test by watching the existing per-event log; if the
-// codes differ, patch engine_input.h.
+// Two ingestion paths:
+//
+// 1. `TryHandleEvent` — invoked from OnHandleInputEvent. Sees keys the engine
+//    routes through CSWGuiManager (i.e. anything bound in kotor.ini's
+//    `[Keymapping]`, plus engine logical actions like Up/Down/Confirm/Cancel).
+//    Working assumption on raw codes: unmapped keys arrive as their raw
+//    InputIndices values (kInputKbComma=103, kInputKbPeriod=104,
+//    kInputKbAnnounce=105 [the slash position, labelled `-` on QWERTZ and
+//    `/` on QWERTY], kInputKbLeftShift=24, kInputKbRightShift=25).
+//
+// 2. `PollWin32` — invoked from OnUpdate per-tick. Reads OS-level keyboard
+//    state directly via GetAsyncKeyState and edge-detects rising edges.
+//    Bypasses the engine's keymap entirely, so unbound keys (the default
+//    state for `,/./-` in stock kotor.ini) work in-world. This is the
+//    primary path on a stock install; the OnHandleInputEvent path coexists
+//    for the case where someone has bound the keys to engine actions, in
+//    which case both paths see the press but the per-action handlers
+//    debounce via the existing CycleState singleton (no double-effect).
+//
+// Both paths share the per-action handlers (OnCycleItem / OnCycleCategory /
+// OnAnnounceFocus / OnPathfindFocus), so cycle behaviour is identical no
+// matter how the keystroke arrived.
 
 #pragma once
 
 namespace acc::cycle_input {
 
-// Try to handle a manager-level input event as a Pillar 4 cycle keystroke.
-// Returns true if the event was consumed (caller should swallow it from the
-// engine's downstream dispatch via OnHandleInputEvent's return path).
-//
-// Tracks shift state internally across calls — the caller does not need to
-// pass modifier flags. Press / release of any shift key updates the held
-// flag regardless of whether the event is otherwise consumed.
+// OnHandleInputEvent path. Returns true if the event was consumed.
+// Tracks the engine-side shift flag internally across calls.
 bool TryHandleEvent(int param_1, int param_2);
+
+// OnUpdate per-tick poll. Reads VK_OEM_COMMA / VK_OEM_PERIOD / VK_OEM_2
+// (the physical key right of `.`) and VK_SHIFT via GetAsyncKeyState, fires
+// the per-action handlers on rising edges. Self-gates on
+// GetPlayerPosition; in menus / chargen / pre-spawn, no actions fire.
+void PollWin32();
 
 }  // namespace acc::cycle_input

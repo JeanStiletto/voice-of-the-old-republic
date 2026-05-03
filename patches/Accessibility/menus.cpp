@@ -2666,36 +2666,14 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     MonitorPanelContents();
     MonitorDialogReplies();
 
-    // === TEMPORARY: Phase 1 lay-off 4 audio test fixture ===
-    //
-    // Fires acc::audio::PlayCue3D at the player's current world position
-    // every ~5 seconds, anchored on a known-good engine resref. This is
-    // the Phase 1 exit gate proof: a 3D positional cue at any world
-    // position with a character-anchored listener (engine default —
-    // verified by hearing pan respond to A/D camera rotation).
-    //
-    // Self-gates cleanly: GetPlayerPosition returns false on the main
-    // menu, in chargen pre-spawn, and during area transitions, so the
-    // fixture stays silent in those states (no cue, no log spam). The
-    // throttle runs unconditionally so a chain that's failing doesn't
-    // burn 60 SEH frames per second on a hot engine path.
-    //
-    // Will be removed when Phase 1 closes (or earlier, if Phase 2's real
-    // consumers obviate the fixture).
-    {
-        static DWORD lastTick = 0;
-        DWORD now = GetTickCount();
-        if (now - lastTick >= 5000) {
-            lastTick = now;
-            Vector pos;
-            if (acc::engine::GetPlayerPosition(pos)) {
-                bool ok = acc::audio::PlayCue3D("n_bith_atk1", pos);
-                acclog::Write("Phase1Test: PlayCue3D at (%.2f, %.2f, %.2f) -> %s",
-                              pos.x, pos.y, pos.z, ok ? "OK" : "FAIL");
-            }
-        }
-    }
-    // === END TEMPORARY ===
+    // Pillar 4 cycle keys via Win32 polling. Stock kotor.ini doesn't bind
+    // `,/./-`, so OnHandleInputEvent never sees them in-world (the engine's
+    // keymap drops unbound scancodes before our manager-side hook).
+    // GetAsyncKeyState reads OS-level keyboard state directly, edge-detects
+    // rising edges, and self-gates on GetPlayerPosition. Verified
+    // 2026-05-04 from patch-20260503-215023.log: 86 events captured at the
+    // manager hook, zero with codes 103/104/105.
+    acc::cycle_input::PollWin32();
 
     if (!g_pendingCursorMove && !g_pendingClick && !g_pendingActivate &&
         !g_pendingSliderInput) return;

@@ -59,11 +59,19 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
     if (!acc::engine::GetPlayerPosition(playerPos)) return false;
 
     void* area = acc::engine::GetCurrentArea();
-    if (!area) return false;
+    if (!area) {
+        acclog::Write("Cycle: BuildListing area=NULL");
+        return false;
+    }
 
     bool overflowed = false;
     acc::engine::AreaObjectIterator it(area);
+    int scanned = 0;
+    int kindCounts[16] = {0};
     while (void* obj = it.Next()) {
+        ++scanned;
+        int k = acc::engine::GetObjectKind(obj);
+        if (k >= 0 && k < 16) kindCounts[k]++;
         if (!acc::filter::ObjectMatches(obj, category)) continue;
 
         Vector pos;
@@ -80,6 +88,20 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
     }
 
     SortByDistanceAscending(out);
+
+    // One-shot per category-rebuild diagnostic: dump area + kind histogram
+    // when a build returns empty. Helps localise "no objects found" failures
+    // (wrong area, wrong iterator offsets, sub-state filter too tight, etc.).
+    if (out.count == 0) {
+        acclog::Write("Cycle: BuildListing area=%p category=%s "
+                      "snapshotSize=%d scanned=%d "
+                      "kinds[Creature=5]=%d [Item=6]=%d [Trigger=7]=%d "
+                      "[Placeable=9]=%d [Door=10]=%d [Waypoint=12]=%d",
+                      area, acc::filter::CategoryName(category),
+                      it.SnapshotSize(), scanned,
+                      kindCounts[5], kindCounts[6], kindCounts[7],
+                      kindCounts[9], kindCounts[10], kindCounts[12]);
+    }
 
     if (overflowed) {
         // One-time per build; not throttled because this should be rare in

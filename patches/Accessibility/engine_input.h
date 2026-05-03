@@ -45,11 +45,17 @@ constexpr int kInputActivate = 0x27;   // KEYBOARD_F1, the engine's activate cod
 // Raw InputIndices values for unmapped keys — used by the Pillar 4 cycle
 // (Phase 2 lay-off 3). Unmapped keys pass through ManagerTranslateCode
 // unchanged, so they arrive at the manager hook as their InputIndices index
-// (positions in engine_input.cpp's k_names[] table). These exact values are
-// the working assumption from that table; will be confirmed at first
-// in-game test of the cycle keys.
+// (positions in engine_input.cpp's k_names[] table).
+//
+// `kInputKbAnnounce` is the physical key right of `.` (KEYBOARD_SLASH = 105).
+// On a German QWERTZ keyboard that key is labelled `-`, on US QWERTY it's
+// labelled `/` — same physical position either way. DirectInput uses
+// position-based scancodes, so KEYBOARD_MINUS(94) would hit the `ß` key
+// position on QWERTZ rather than the `-` key the user expects. Pillar 4
+// announce intentionally lives at the slash position to keep `,` `.` `-`
+// in a contiguous row on QWERTZ (and `,` `.` `/` on QWERTY).
 constexpr int kInputKbLeftShift  = 24;
 constexpr int kInputKbRightShift = 25;
-constexpr int kInputKbMinus      = 94;
 constexpr int kInputKbComma      = 103;
 constexpr int kInputKbPeriod     = 104;
+constexpr int kInputKbAnnounce   = 105;  // KEYBOARD_SLASH — see comment above

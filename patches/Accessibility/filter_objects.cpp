@@ -26,19 +26,16 @@ bool ObjectMatches(void* gameObject, CycleCategory category) {
         case CycleCategory::Npc:
             return kind == int(K::Creature);
         case CycleCategory::Container:
-            // TODO lay-off 4: AND on (usable=true OR has_inventory=true) at
-            // CSWSPlaceable +0x328 / +0x334 (investigation Q5).
-            return kind == int(K::Placeable);
+            return kind == int(K::Placeable) &&
+                   acc::engine::IsUsablePlaceable(gameObject);
         case CycleCategory::Item:
             return kind == int(K::Item);
         case CycleCategory::Landmark:
-            // TODO lay-off 4: AND on has_map_note=true at CSWSWaypoint
-            // +0x228 (investigation Q5).
-            return kind == int(K::Waypoint);
+            return kind == int(K::Waypoint) &&
+                   acc::engine::IsLandmarkWaypoint(gameObject);
         case CycleCategory::Transition:
-            // TODO lay-off 4: AND on transition_destination set at
-            // CSWSTrigger +0x30c (investigation Q5).
-            return kind == int(K::Trigger);
+            return kind == int(K::Trigger) &&
+                   acc::engine::IsTransitionTrigger(gameObject);
         case CycleCategory::Count_:
             return false;
     }
