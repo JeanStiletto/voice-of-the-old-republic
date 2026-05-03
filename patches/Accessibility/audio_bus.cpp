@@ -1,4 +1,5 @@
 #include "audio_bus.h"
+#include "audio_cues.h"  // compile-verification of the cue table; no consumer yet
 
 #include <windows.h>
 #include <cstdint>

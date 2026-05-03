@@ -183,6 +183,23 @@ Lane's KOTOR 1 RE bundle from the Google Drive folder linked from his DeadlyStre
 - **Pipeline upstream:** Lane works in Ghidra → exports CSV → `tools/SqliteTools import-ghidra` writes into the DB. Schema and the import command are documented in `third_party/Kotor-Patch-Manager/docs/AddressDatabaseSystem.md`.
 - **Implication:** for "what is the address of `CServerExoApp::MainLoop`?" or "what is the offset of `m_bGamePaused`?" the DB answers directly — Ghidra is only needed for decompilation, comments, and unnamed code. See `docs/llm-docs/accessibility-map.md` for current hook candidates.
 
+## xoreos-tools (resource extraction)
+
+**xoreos-tools 0.0.6 "Elanee"** — CLI suite for unpacking BioWare Aurora-engine archives (KEY/BIF, ERF, RIM, etc.). Used to dump `data/sounds.bif` to loose WAVs for browsing during nav-cue curation; broader use cases: GFF inspection, TLK extraction, NCS disassembly.
+- **Install path:** `C:\Tools\xoreos-tools-0.0.6\`
+- **Source:** `https://github.com/xoreos/xoreos-tools/releases/download/v0.0.6/xoreos-tools-0.0.6-win64.zip` (48 MB zip, expands to ~120 MB)
+- **Key binaries:** `unkeybif.exe` (KEY/BIF extractor), `unerf.exe` (ERF/MOD), `unrim.exe` (RIM), `gff2xml.exe` (GFF → XML), `tlk2xml.exe` (TLK → XML), `ncsdis.exe` (NWScript bytecode disassembler), `convert2da.exe` (2DA binary ↔ ASCII)
+- **Verification:** `"C:/Tools/xoreos-tools-0.0.6/unkeybif.exe" --version` reports `xoreos-tools 0.0.6+0.g87946ab`
+- **Sounds.bif extract recipe:**
+  ```bash
+  cd <output_dir>
+  "C:/Tools/xoreos-tools-0.0.6/unkeybif.exe" e \
+      "C:/Program Files (x86)/Steam/steamapps/common/swkotor/data/sounds.bif" \
+      "C:/Program Files (x86)/Steam/steamapps/common/swkotor/chitin.key"
+  ```
+  Yields 1928 named WAVs in cwd. Categorical prefixes: `gui_*` (UI clicks/beeps), `dr_*` (door open/close), `fs_*` (footsteps), `as_*`, `cb_*`, `cs_*`, `mgs_*`, `bf_*`, etc.
+- **Output location for our use:** `build/sounds-extracted/` (gitignored; regenerate from BIF on demand).
+
 ## Other Lane repos (not yet cloned, noted for reference)
 
 These are upstream — fetch via `gh repo clone <name>` if/when needed.
