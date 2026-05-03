@@ -9,7 +9,7 @@
 ## Phase status
 
 - **Phase 0 — Refactor.** *Complete (2026-05-03).* All six lay-offs landed: `core_dllmain` + `engine_input`, `engine_offsets` + `engine_reads`, `engine_panels`, `engine_manager`, rename to `menus.cpp`, and the user-driven menu regression test ("everything working as before. no new bugs.").
-- **Phase 1 — Foundation.** *Next up.* See `docs/navsystem-longterm-plan.md` for scope.
+- **Phase 1 — Foundation.** *In progress (started 2026-05-03).* See `docs/navsystem-longterm-plan.md` for scope.
 - **Phase 2 — Playable baseline.** Pending.
 - **Phase 3 — Pillar 1.** Pending.
 - **Phase 4 — Pillar 2 polish + view mode.** Pending.
@@ -21,7 +21,65 @@
 
 ## Active phase: Phase 1 — Foundation
 
-Phase 0 closed 2026-05-03. The Phase 0 lay-off log is preserved below as historical record (it documents the engine-layer extraction that the rest of the plan builds on); next-session pointers have moved to "Next session: where to start" at the bottom of this file.
+Phase 0 closed 2026-05-03. The Phase 0 lay-off log is preserved further down as historical record (it documents the engine-layer extraction that the rest of the plan builds on).
+
+### Goal
+
+Lay the foundation that the playable-baseline (Phase 2) and pillar phases (3-5) build on: the audio bus + listener override, player-state readers, settings stub, and audio-cue vocabulary. The exit criterion is a **test fixture that plays a 3D positional cue at any world position with character-anchored listener** — i.e. proof that the audio path works end-to-end before Phase 2 wires it up to a real consumer.
+
+### Scope adjustment from plan (2026-05-03)
+
+The plan grouped `engine_area.{h,cpp}` (area cache: walkmesh edges, object lists, room lookups) into Phase 1 as foundation. We're **moving it out** for two reasons:
+
+- It has no Phase 1 consumer. The exit criterion only needs player position to anchor the listener; area-level state isn't exercised.
+- Its consumers are split across phases: object lists + room lookups are needed in Phase 2 (Pillar 4 cycle, Pillar 2 transitions); walkmesh edges are needed in Phase 3 (Pillar 1 wall cues). Building the right slice with each consumer keeps each phase focused.
+
+Decision: **`engine_area`'s object-list + room-lookup slice lands at the start of Phase 2; the walkmesh-edge slice lands in Phase 3.** `docs/navsystem-longterm-plan.md` has been updated accordingly.
+
+### Sourcing decision — atmospheric pass over authored cues (2026-05-03)
+
+The plan locks 12 authored WAV cues in `Override/`. We're starting with **existing engine resrefs** instead — curate sounds from `streamsounds\` / `streamwaves\` / BIF wave archives that work atmospherically, fall back to authored cues only if too noisy. Two consequences:
+
+- The `kdev apply` Override/ copy hook is off the Phase 1 critical path (deferred until we ship a custom WAV).
+- The 12-WAV authoring lay-off becomes a curation pass — pick existing engine sounds for each of the 12 categories from the locked cross-pillar inventory, document the resref → category mapping.
+
+### Lay-off plan (revised 2026-05-03)
+
+1. **`engine_player.{h,cpp}`** — read player pose + area. Pure addition, foundation for everything else. *(in progress, see below)*
+2. **CExoSound singleton xref-trace** — discovery note resolving the OPEN item from investigation Q8.
+3. **`audio_bus.{h,cpp}`** — 2D + 3D one-shot wrappers around `CExoSound::PlayOneShotSound` / `Play3DOneShotSound`.
+4. **Test fixture** with one curated engine resref → in-game verification → **Phase 1 exit gate**.
+5. **Atmospheric-pass curation** — map existing engine sounds to the 12 cross-pillar audio-vocabulary categories.
+6. *(Conditional)* **`audio_listener.{h,cpp}`** — only if step 4 reveals the engine default isn't enough.
+7. **`core_settings.{h,cpp}`** — minimal stub returning the plan's locked defaults.
+
+Each lay-off = one session = one commit, per the discipline rule.
+
+### Lay-off log
+
+**Lay-off 1** — `engine_player.{h,cpp}`. *Build verified 2026-05-03; awaiting commit.*
+
+Added to `patches/Accessibility/`:
+
+- `engine_offsets.h` — added file-scope `Vector` struct (3 floats; matches investigation Q1's right-handed Z-up world frame). Centralised here because every future engine_* file (audio_bus 3D position, engine_area walkmesh vertices, engine_listener pose) needs it.
+- `engine_player.h` — public surface: `acc::engine::GetPlayerPosition`, `GetPlayerFacing`, `GetPlayerYawDegrees`, `GetPlayerArea`. Plus file-scope addresses (`kAddrAppManagerPtr`, `kAddrGetPlayerCreature`, `kAddrCSWSObjectGetArea`) and offsets (`kClientObjectServerObjectOffset`, `kServerObjectPositionOffset`, `kServerObjectOrientationOffset`). Convention matches `engine_manager.h`.
+- `engine_player.cpp` — implementation. One internal `GetPlayerServerObject` helper centralises the chain walk (`*kAddrAppManagerPtr → CClientExoApp → GetPlayerCreature() → server_object @+0xf8`); each public reader pays one SEH frame. `GetPlayerYawDegrees` mirrors `ExecuteCommandGetFacing`'s `atan2(y,x) * 180/π` + `[0,360)` normalization (Q1).
+
+Decision — **direct struct reads over NWScript-equivalent calls**. Investigation Q1 documents both paths (`ExecuteCommandGetPosition @0x53cae0` etc. vs. raw `+0x90` reads). We picked direct reads because (a) we control the call site so the VM-call layer adds no value, (b) `engine_reads.cpp` already uses the same SEH-guarded direct-read pattern, (c) NWScript paths route through the action queue / VM stack with extra latency we don't need.
+
+Decision — **server-side `CSWSObject` layout, not client `CSWCObject`**. Per Q1 the two have independent offsets and the server is authoritative. We lift via `server_object @+0xf8` once and read positions/orientation server-side.
+
+No menu-side consumer yet — `menus.cpp` is unchanged. Phase 2 will be the first consumer.
+
+Build verified: `kdev build` clean (9 .cpp files, DLL exports verified, log `build-20260503-185129.log`).
+
+Discipline: Phase 0's mid-phase lay-off rule applies. No menu-side runtime change in this lay-off (no consumer wired up yet), so no in-game regression test needed; resume after commit + fresh session for lay-off 2.
+
+### Current file inventory (`patches/Accessibility/`) — Phase 1 additions
+
+Phase 0 inventory (engine_input/offsets/reads/panels/manager + core_dllmain + menus.cpp) carries forward. Phase 1 adds:
+
+- `engine_player.{h,cpp}` — player pose / area readers *(new in lay-off 1)*
 
 ---
 

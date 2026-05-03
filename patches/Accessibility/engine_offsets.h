@@ -170,6 +170,20 @@ struct CExoArrayList {
 };
 
 // ---------------------------------------------------------------------------
+// Vector — Aurora-engine 3D vector. Used for world position, object
+// orientation (heading vector with z=0), audio listener pose, etc.
+//
+// Coordinate frame (investigation Q1 — right-handed, Z-up):
+//   +X = east, +Y = north, +Z = up. 1.0 unit ≈ 1 metre.
+//   Bearing convention for object orientation: 0° = +X = east; CCW positive.
+// ---------------------------------------------------------------------------
+struct Vector {
+    float x;
+    float y;
+    float z;
+};
+
+// ---------------------------------------------------------------------------
 // CTlkTable::GetSimpleString — resolves a TLK str_ref to a localized string.
 // Many KOTOR UI controls (e.g. Options screen "Annehmen"/"Abbrechen", certain
 // chargen labels) leave their CExoString empty and store only a str_ref; the
