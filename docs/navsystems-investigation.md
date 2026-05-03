@@ -1307,11 +1307,56 @@ Step-by-step plan for the next session, given everything above:
 - **Priority groups: STRONG** (data structures known; group-name enumeration deferred)
 - **In-world sound objects (`CSWSSoundObject`): CONFIRMED**
 - **Per-area ambient music (`CSWSAmbientSound`): CONFIRMED**
-- **CExoSound singleton global address: OPEN** (one xref-trace away; pin at hook-design time)
+- **CExoSound singleton global address: CONFIRMED** at `0x007A39EC` — see "Singleton resolution" below.
+
+### Singleton resolution (closed 2026-05-03 during navsystem Phase 1, lay-off 2)
+
+The `CExoSound*` singleton lives at **`0x007A39EC`**, sitting in the engine's singleton table immediately after the resource manager pointer:
+
+- `0x007A39E8` — `EXO_RESOURCE_MANAGER_PTR` (already labeled in Lane's address DB)
+- `0x007A39EC` — **`CExoSound*`** (this discovery)
+- `0x007A39F4` — `CSWGuiManager*` (already labeled)
+- `0x007A39FC` — `CClientExoApp*` (already labeled)
+
+Resolution method: SARIF Recipe 4 returned 33 direct callers of `Play3DOneShotSound @0x5d5e10`. Headless-Ghidra DumpBytes at four randomly-sampled callers (`0x57f070`, `0x57f250`, `0x57f377`, `0x5fdada`) all show the same load-and-call pattern immediately preceding the call site:
+
+```
+8b 0d ec 39 7a 00     MOV ECX, [0x007A39EC]    ; load *singleton into this
+e8 ?? ?? ?? ??        CALL Play3DOneShotSound  ; resolves to 0x5d5e10
+```
+
+Four independent direct callers loading from the same absolute address is conclusive — that's the singleton slot. (A fifth caller pattern at `0x60e21c` and similar wrappers uses `CALL [EAX+0x88]` through a vtable on a CExoSound* held as a member at `[this+0x68]` of some other class. Those don't go through the global because they have a CExoSound* in hand already; they don't help with singleton-address resolution but confirm the facade's vtable layout.)
+
+CExoSound facade layout — confirmed in the same pass by disassembling `0x5d5e00` itself:
+
+```
+8b 09        MOV ECX, [ECX]                 ; this->internal at offset 0
+85 c9        TEST ECX, ECX
+74 05        JZ skip
+e9 45 17 00 00  JMP 0x5d7550                ; CExoSoundInternal::PlayOneShotSound
+33 c0        XOR EAX, EAX
+c2 18 00     RET 0x18
+```
+
+So `CExoSound` is a thin facade carrying a single field `CExoSoundInternal* internal` at offset `0x00`; every method null-checks and tail-calls into the internal. Reading `*reinterpret_cast<void**>(0x007A39EC)` yields the live `CExoSound*`; can be `nullptr` early in DLL-attach before the engine's audio init has run.
+
+Calling pattern from our DLL:
+
+```c++
+typedef void (__thiscall* PFN_PlayOneShotSound)(
+    void* this_, const CResRef* res, uint8_t prio, uint32_t delay,
+    uint8_t loop, float volume, float pan);
+
+void* exoSound = *reinterpret_cast<void**>(0x007A39EC);
+if (!exoSound) return false;  // engine audio not yet up
+auto fn = reinterpret_cast<PFN_PlayOneShotSound>(0x005D5E00);
+fn(exoSound, &res, /*prio=*/0, /*delay=*/0, /*loop=*/0, 1.0f, 0.0f);
+```
+
+Same pattern works for `Play3DOneShotSound @0x5D5E10` with the 3D-specific signature.
 
 ### Open items for follow-up (audio)
 
-- **CExoSound singleton's exact global address.** All callers go through `someGlobal->PlayOneShotSound`; the global pointer hasn't been labeled in the DB. Resolve via xref-trace from one of the `0x5d5e00` callers (already enumerated in the SARIF query above).
 - **Priority-group naming.** Pick a group conservatively (0 or 1) for nav cues; later, dump `priorityGroups.2da` to choose the right name.
 - **Distance falloff curve shape.** Min/max distances are known; the falloff curve in between (linear? exponential? Miles default?) needs measurement, not RE — easier to tune by ear in our first nav-cue test session.
 - **Dynamic ducking of game audio when speaking nav cues.** Probably not worth implementing — the volume sliders already let the user attenuate game audio for accessibility, and screen-reader speech is its own out-of-band channel through Tolk.

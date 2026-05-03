@@ -45,8 +45,8 @@ The plan locks 12 authored WAV cues in `Override/`. We're starting with **existi
 
 ### Lay-off plan (revised 2026-05-03)
 
-1. **`engine_player.{h,cpp}`** — read player pose + area. Pure addition, foundation for everything else. *(in progress, see below)*
-2. **CExoSound singleton xref-trace** — discovery note resolving the OPEN item from investigation Q8.
+1. **`engine_player.{h,cpp}`** — read player pose + area. *Closed (committed `bb43118`).*
+2. **CExoSound singleton xref-trace** — discovery note resolving the OPEN item from investigation Q8. *Closed (singleton at `0x007A39EC`).*
 3. **`audio_bus.{h,cpp}`** — 2D + 3D one-shot wrappers around `CExoSound::PlayOneShotSound` / `Play3DOneShotSound`.
 4. **Test fixture** with one curated engine resref → in-game verification → **Phase 1 exit gate**.
 5. **Atmospheric-pass curation** — map existing engine sounds to the 12 cross-pillar audio-vocabulary categories.
@@ -73,13 +73,23 @@ No menu-side consumer yet — `menus.cpp` is unchanged. Phase 2 will be the firs
 
 Build verified: `kdev build` clean (9 .cpp files, DLL exports verified, log `build-20260503-185129.log`).
 
-Discipline: Phase 0's mid-phase lay-off rule applies. No menu-side runtime change in this lay-off (no consumer wired up yet), so no in-game regression test needed; resume after commit + fresh session for lay-off 2.
+Discipline: Phase 0's mid-phase lay-off rule applies. No menu-side runtime change in this lay-off (no consumer wired up yet), so no in-game regression test needed; resume after commit for lay-off 2.
 
-### Current file inventory (`patches/Accessibility/`) — Phase 1 additions
+Committed `bb43118`.
 
-Phase 0 inventory (engine_input/offsets/reads/panels/manager + core_dllmain + menus.cpp) carries forward. Phase 1 adds:
+**Lay-off 2** — CExoSound singleton xref-trace. *Closed 2026-05-03.*
 
-- `engine_player.{h,cpp}` — player pose / area readers *(new in lay-off 1)*
+The remaining OPEN item from investigation Q8: "CExoSound singleton's exact global address — all callers go through `someGlobal->PlayOneShotSound`; the global pointer hasn't been labeled in the DB."
+
+**Resolution:** singleton lives at **`0x007A39EC`** in the engine's singleton table (right next to the resource manager at `0x007A39E8`, manager at `0x007A39F4`, app at `0x007A39FC`). Method: SARIF Recipe 4 → 33 direct callers of `Play3DOneShotSound @0x5d5e10`; headless-Ghidra DumpBytes at four sampled callers (`0x57f070`, `0x57f250`, `0x57f377`, `0x5fdada`) all show `8b 0d ec 39 7a 00` (`MOV ECX, [0x007A39EC]`) immediately before `CALL 0x5d5e10`. Four independent direct callers loading from the same absolute address is conclusive.
+
+Bonus: by disassembling `0x5d5e00` itself, confirmed CExoSound facade layout — `CExoSoundInternal* internal` at offset 0, every method null-checks and tail-calls into the internal. Matches investigation's TL;DR.
+
+This was a docs-only lay-off — no patch source touched. The audio_bus implementation in lay-off 3 will reference `0x007A39EC` directly.
+
+`docs/navsystems-investigation.md` Q8 updated: status flipped from OPEN to CONFIRMED, with a new "Singleton resolution" subsection capturing the disassembly evidence and the calling pattern recipe.
+
+Discipline: docs-only, low-risk; safe to chain into lay-off 3 same session if context allows.
 
 ---
 
