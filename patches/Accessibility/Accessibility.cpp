@@ -24,6 +24,7 @@
 #include "log.h"
 #include "tolk.h"
 #include "engine_input.h"
+#include "engine_manager.h"
 #include "engine_offsets.h"
 #include "engine_panels.h"
 #include "engine_reads.h"
@@ -47,16 +48,6 @@ static const char* FindSiblingLabel(void* panel, void* control,
                                     char* outBuf, size_t bufSize);
 static const char* LookupCycleCategory(void* control);
 static bool IsChainNavigable(void* control);
-
-// Forward decl: find the panel in the manager's panels[] that owns `control`
-// (i.e. has it in its controls[]). Used as a fallback when callers of
-// ExtractAnnounceableText don't pass an explicit owner — needed because
-// g_currentPanel only updates on SetActiveControl, so transient flows like
-// fg-flipping-back-after-modal-close leave it pointing at the wrong panel
-// while the chain rebinds against a different one (logged in
-// patch-20260502-214100.log: chain dump for InGameMenu printed text="" / src=?
-// because g_currentPanel was still TutorialBox).
-static void* FindOwningPanel(void* control);
 
 static const char* ExtractAnnounceableText(void* control,
                                            char* outBuf, size_t bufSize,
@@ -560,12 +551,10 @@ static void SpeakIfChanged(int channel, const char* text) {
 // Unified-cursor menu navigation (Phase 1+2 — see docs/menu-nav-design.md).
 // ============================================================================
 
-// CSWGuiManager surfaces verified via Lane's SARIF database.
-// `*kAddrGuiManagerPtr` holds the live GuiManager singleton; `MoveMouseToPosition`
-// is the single primitive that does cursor + hover refresh in one call.
-constexpr uintptr_t kAddrGuiManagerPtr        = 0x007A39F4;
-constexpr uintptr_t kAddrMoveMouseToPosition  = 0x0040c790;
-typedef void (__thiscall* PFN_MoveMouseToPosition)(void* gm, int x, int y);
+// CSWGuiManager / cursor / click-sim surfaces moved to engine_manager.{h,cpp}
+// in Phase 0 lay-off 4: kAddrGuiManagerPtr, kMgr*Offset, MoveMouseToPosition
+// + click-sim PFN typedefs and addresses, FindOwningPanel, GetForegroundPanel,
+// LogManagerStack.
 
 // CSWGuiPanel::SetActiveControl @ 0x40a630 — committing selection to a panel.
 // MoveMouseToPosition only updates hover state; panel.activeControl lags
@@ -574,36 +563,6 @@ typedef void (__thiscall* PFN_MoveMouseToPosition)(void* gm, int x, int y);
 // previously-clicked button instead of the cursor target.
 constexpr uintptr_t kAddrPanelSetActiveControl = 0x0040a630;
 typedef void (__thiscall* PFN_PanelSetActiveControl)(void* panel, void* control);
-
-// CSWGuiManager click-sim primitives (Phase 3 — see docs/menu-nav-design.md).
-//
-// Decompilation summary (from Lane's gzf):
-//
-//   HandleLMouseDown(this, int press) @ 0x40c570
-//     - XORs `press & 1` into bit 0 of state field at +0x1c.
-//     - If no control is currently held: broadcasts event 0x1f9 to panels
-//       (input class 3 only), runs UpdateMouseOverControl + tooltip-disable,
-//       then dispatches via the engine's mouseOverControl (manager+0x8) ->
-//       vtable[6] = control's HandleLMouseDown. Button-class HandleLMouseDown
-//       calls CaptureMouse, setting mouseHeldControl (manager+0x10).
-//     - Returns 1 if dispatched, 0 if a click is already in progress.
-//
-//   HandleLMouseUp(this) @ 0x40a170
-//     - If a control is held (manager+0x10 non-null AND manager.mouse_held==1):
-//       dispatches mouseHeldControl -> vtable[7] = control's HandleLMouseUp.
-//       That's the function that fires the actual activate event.
-//     - Clears bit 0 of manager+0x1c. Returns 1 if dispatched, 0 otherwise.
-//
-// Calling them in sequence after MoveMouseToPosition has settled the cursor
-// runs the engine's natural click pipeline end-to-end. This is the
-// replacement for the SetActiveControl-based path that crashed at mgr+5
-// (see docs/tab-crash-investigation.md): we no longer skip the prelude
-// HandleLMouseDown writes, so whatever invariant the engine maintains
-// across press+release stays intact.
-constexpr uintptr_t kAddrManagerLMouseDown = 0x0040c570;
-constexpr uintptr_t kAddrManagerLMouseUp   = 0x0040a170;
-typedef int (__thiscall* PFN_ManagerLMouseDown)(void* gm, int press);
-typedef int (__thiscall* PFN_ManagerLMouseUp)(void* gm);
 
 // CSWGuiControl::HandleInputEvent — vtable slot 15 (offset 0x3C) per the
 // GuiControlMethods struct in docs/llm-docs/re/swkotor.exe.h. Direct fire of
@@ -619,121 +578,6 @@ typedef int (__thiscall* PFN_ManagerLMouseUp)(void* gm);
 // kInputActivate is exported via engine_input.h.
 constexpr int kVtableHandleInputEvent = 15;
 typedef void (__thiscall* PFN_ControlHandleInputEvent)(void* this_, int code, int state);
-
-// CSWGuiManager panel layout — used to resolve the *foreground* panel when
-// multiple panels are walked simultaneously (e.g. character creation pre-
-// instantiates the Default-vs-Custom modal AND both wizard panels in one
-// frame; our chain rebind has been latching onto the LAST walked panel,
-// which is not necessarily the one the user can see/interact with).
-//
-// Verified via Lane's SARIF (docs/llm-docs/re/k1_win_gog_swkotor.exe.sarif,
-// CSWGuiManager DT.Struct entry):
-//   CSWGuiManager.panels      @ 0x88 — CExoArrayList<CSWGuiPanel*> (12 bytes)
-//                                       data ptr (0x88), size (0x8c), cap (0x90)
-//   CSWGuiManager.modal_stack @ 0x94 — GuiManagerModalStack (12 bytes)
-//                                       unnamed (0x94..0x97), size (0x98), cap (0x9c)
-//
-// The first 4 bytes of GuiManagerModalStack are unnamed in the Ghidra DB
-// but the structure is the same shape as CExoArrayList; PushModalPanel
-// (0x0040bd90) and PopModalPanel (0x0040be00) are both RE'd, and
-// GetPosInModalStack (0x0040ab70) implies the engine itself does index
-// lookups against this stack — so it has to be a CSWGuiPanel** array.
-// We treat the unnamed bytes as the data pointer here and emit a
-// diagnostic log so the assumption can be validated against live state
-// before we gate any behavior on it.
-constexpr size_t kMgrPanelsDataOffset      = 0x88;
-constexpr size_t kMgrPanelsSizeOffset      = 0x8c;
-constexpr size_t kMgrModalStackDataOffset  = 0x94;
-constexpr size_t kMgrModalStackSizeOffset  = 0x98;
-
-// Find which panel in the manager's panels[] currently owns `control` —
-// i.e. which one has it in its controls[]. Used by ExtractAnnounceableText
-// when the caller didn't pass an explicit owner: g_currentPanel only updates
-// on SetActiveControl, so chain rebinds and other indirect paths can land
-// here while it still points at a previous focus owner. Returns nullptr if
-// the manager isn't resolvable yet (early DLL_PROCESS_ATTACH) or the control
-// isn't in any current panel.
-//
-// Cheap by design: ≤16 panels × ≤32 children, only fires from the perkind
-// fallback path which itself is gated on every prior extraction step missing.
-static void* FindOwningPanel(void* control) {
-    if (!control) return nullptr;
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return nullptr;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (!panelData || panelCount <= 0) return nullptr;
-    if (panelCount > 16) panelCount = 16;
-    for (int i = 0; i < panelCount; ++i) {
-        void* p = panelData[i];
-        if (!p) continue;
-        auto* list = reinterpret_cast<CExoArrayList*>(
-            reinterpret_cast<unsigned char*>(p) + kPanelControlsOffset);
-        if (!list->data || list->size <= 0) continue;
-        int n = list->size > 32 ? 32 : list->size;
-        for (int j = 0; j < n; ++j) {
-            if (list->data[j] == control) return p;
-        }
-    }
-    return nullptr;
-}
-
-// Resolve the topmost (foreground) panel currently owned by the manager.
-// Order:
-//   1. If modal_stack is non-empty, return its top entry — this is the
-//      modal currently capturing input.
-//   2. Otherwise return the last entry in panels[] — last-pushed panel
-//      is drawn on top in the engine's iteration order.
-//   3. Returns nullptr if both are empty.
-static void* GetForegroundPanel(void* mgr) {
-    if (!mgr) return nullptr;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   modalSize = *reinterpret_cast<int*>(base + kMgrModalStackSizeOffset);
-    void** modalData = *reinterpret_cast<void***>(base + kMgrModalStackDataOffset);
-    if (modalSize > 0 && modalData) {
-        void* top = modalData[modalSize - 1];
-        if (top) return top;
-    }
-    int   panelSize = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (panelSize > 0 && panelData) {
-        return panelData[panelSize - 1];
-    }
-    return nullptr;
-}
-
-// Diagnostic: dump every panel currently on the manager's panels array and
-// modal_stack. Called at panel-walk time so the log captures the engine's
-// view of "which panels exist right now" alongside our own per-panel walks.
-// Also doubles as live verification that kMgrModalStackDataOffset truly
-// points at a CSWGuiPanel** (the SARIF-derived layout assumption).
-static void LogManagerStack(void* mgr, const char* tag) {
-    if (!mgr) {
-        acclog::Write("ManagerStack(%s): mgr=NULL", tag ? tag : "?");
-        return;
-    }
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelSize  = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    int   modalSize  = *reinterpret_cast<int*>(base + kMgrModalStackSizeOffset);
-    void** modalData = *reinterpret_cast<void***>(base + kMgrModalStackDataOffset);
-    void* fg = GetForegroundPanel(mgr);
-    acclog::Write("ManagerStack(%s) mgr=%p panels.size=%d modal.size=%d fg=%p",
-                  tag ? tag : "?", mgr, panelSize, modalSize, fg);
-    int pn = panelSize;
-    if (pn < 0 || pn > 32) pn = (pn < 0) ? 0 : 32;
-    for (int i = 0; i < pn && panelData; ++i) {
-        acclog::Write("ManagerStack(%s)   panels[%d]=%p", tag ? tag : "?",
-                      i, panelData[i]);
-    }
-    int mn = modalSize;
-    if (mn < 0 || mn > 32) mn = (mn < 0) ? 0 : 32;
-    for (int i = 0; i < mn && modalData; ++i) {
-        acclog::Write("ManagerStack(%s)   modal[%d]=%p", tag ? tag : "?",
-                      i, modalData[i]);
-    }
-}
 
 static void FireActivate(void* control) {
     if (!control) return;

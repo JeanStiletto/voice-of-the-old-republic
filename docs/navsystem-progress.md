@@ -8,7 +8,7 @@
 
 ## Phase status
 
-- **Phase 0 — Refactor.** *In progress.* Three lay-offs landed (`core_dllmain` + `engine_input`, `engine_offsets` + `engine_reads`, `engine_panels`); further extractions and the menu regression test still pending.
+- **Phase 0 — Refactor.** *In progress.* Four lay-offs landed (`core_dllmain` + `engine_input`, `engine_offsets` + `engine_reads`, `engine_panels`, `engine_manager`); rename + menu regression test still pending.
 - **Phase 1 — Foundation.** Pending.
 - **Phase 2 — Playable baseline.** Pending.
 - **Phase 3 — Pillar 1.** Pending.
@@ -70,15 +70,32 @@ Build verified (`kdev build` clean, 7 .cpp files, all exports verified). `Access
 
 Discipline: still a mid-phase lay-off. Commit + fresh session for lay-off 4.
 
+**Lay-off 4** — extract `engine_manager.{h,cpp}`.
+
+Extracted from `Accessibility.cpp`:
+
+- `engine_manager.h` — public surface: `kAddrGuiManagerPtr`, `kMgrPanelsDataOffset`/`kMgrPanelsSizeOffset`/`kMgrModalStackDataOffset`/`kMgrModalStackSizeOffset`, `kAddrMoveMouseToPosition` + `PFN_MoveMouseToPosition`, click-sim `kAddrManagerLMouseDown`/`kAddrManagerLMouseUp` + `PFN_ManagerLMouseDown`/`PFN_ManagerLMouseUp`, plus `acc::engine::FindOwningPanel`/`GetForegroundPanel`/`LogManagerStack`.
+- `engine_manager.cpp` — function definitions; pulls `engine_offsets.h` for `CExoArrayList` + `kPanelControlsOffset` (`FindOwningPanel` walks each panel's `controls` list).
+
+Convention follows engine_input.h / engine_offsets.h: file-scope constants and PFN typedefs for callsite brevity; functions in `acc::engine::` (covered by `Accessibility.cpp`'s existing `using namespace acc::engine;`).
+
+Left in `Accessibility.cpp` deliberately (out of scope for this lay-off):
+
+- `kAddrPanelSetActiveControl` / `PFN_PanelSetActiveControl` — currently unused (no callsites). Dead code from the pre-click-sim activation path; not part of the engine_manager spec, and the plan-mandated single-topic discipline says no drive-by deletions.
+- `kVtableHandleInputEvent` / `PFN_ControlHandleInputEvent` + `FireActivate` — these are control-vtable dispatch primitives, not manager surface. They naturally belong with the menu-side activation logic and stay until the rename to `menus.cpp`.
+
+Build verified (`kdev build` clean, 8 .cpp files, all exports verified). `Accessibility.cpp` shrank from 2994 → 2838 lines (~156 lines moved out).
+
+Discipline: still a mid-phase lay-off. Commit + fresh session for lay-off 5.
+
 ### Still to extract (future Phase 0 sessions)
 
 Each is its own session (single-topic discipline):
 
-- **Lay-off 4 — `engine_manager.{h,cpp}`.** `kAddrGuiManagerPtr`, `kMgrPanels*Offset`, `kMgrModalStack*Offset`, `GetForegroundPanel`, `FindOwningPanel`, `LogManagerStack`, the `MoveMouseToPosition` / click-sim PFN typedefs and addresses.
 - **Lay-off 5 — Rename `Accessibility.cpp` → `menus.cpp`.** Everything left after the engine extraction lands here unchanged. Per plan: incremental refactor — don't decompose the menu-side logic in Phase 0.
 - **Lay-off 6 — Menu regression test.** User runs `kdev dev`, walks the menu paths (main menu, Options tabs+sliders+cycles, in-game menu icons + sub-screen drill, dialog reply selection). Phase 0 cannot exit until this is reported clean. Crash investigation (see below) is *not* a regression — pre-existing — but its disposition before declaring Phase 0 exit is up to the user.
 
-(Lay-offs 4-6 still pending; lay-off 3 landed this session.)
+(Lay-offs 5-6 still pending; lay-offs 3-4 landed this session.)
 
 ### Current file inventory (`patches/Accessibility/`)
 
@@ -92,7 +109,8 @@ Each is its own session (single-topic discipline):
 - `engine_offsets.h` — engine struct/vtable offset constants + `CExoString` / `CExoArrayList` *(new in lay-off 2)*
 - `engine_reads.{h,cpp}` — SEH-guarded readers + element-class identity helpers *(new in lay-off 2)*
 - `engine_panels.{h,cpp}` — `PanelKind` enum + CGuiInGame slot classification (`IdentifyPanel`, `PanelKindName`, `ResolveGuiInGame`, `IsPanelKindInGameMenu`, panel-kind cache) *(new in lay-off 3)*
-- `Accessibility.cpp` — everything else (~2994 lines after lay-off 3; will shrink across lay-off 4 and rename to `menus.cpp` at lay-off 5)
+- `engine_manager.{h,cpp}` — CSWGuiManager surface: singleton lookup, panels[]/modal_stack offsets, MoveMouseToPosition + click-sim PFN typedefs, `FindOwningPanel`/`GetForegroundPanel`/`LogManagerStack` *(new in lay-off 4)*
+- `Accessibility.cpp` — everything else (~2838 lines after lay-off 4; renames to `menus.cpp` at lay-off 5)
 
 ---
 
@@ -150,5 +168,6 @@ A second symptom — audio stutter when pressing *Schließen* in Options — has
 
 Continue Phase 0:
 
-- Open a fresh session, claim "Phase 0 lay-off 4", extract `engine_manager.{h,cpp}` per the spec under "Still to extract" above. Targets: `kAddrGuiManagerPtr`, the `kMgr*Offset` constants for `panels` and `modal_stack`, `GetForegroundPanel`, `FindOwningPanel`, `LogManagerStack`, plus the `MoveMouseToPosition` / click-sim PFN typedefs and addresses. These currently live in `Accessibility.cpp` immediately after the panel block we extracted in lay-off 3 (the section with the "Unified-cursor menu navigation" header). Same flat layout convention: file-scope constants in the header, functions in `acc::engine::`.
+- Open a fresh session, claim "Phase 0 lay-off 5", **rename `Accessibility.cpp` → `menus.cpp`**. This is the mechanical rename step from the plan: `git mv patches/Accessibility/Accessibility.cpp patches/Accessibility/menus.cpp`. Verify the build picks up the new file (`kdev build`) — the patch builder globs `*.cpp`, so no manifest changes should be needed, but spot-check `manifest.toml` / `hooks.toml` for any explicit references first.
+- After lay-off 5 lands, lay-off 6 is the **menu regression test** (user-driven), which is the gate to declare Phase 0 done. Do not attempt to exit Phase 0 without that test.
 - Update this file at session end with the new state.
