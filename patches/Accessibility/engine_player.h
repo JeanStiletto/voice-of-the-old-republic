@@ -3,14 +3,26 @@
 // Layer: engine/ (pure read-side helpers, SEH-guarded; no engine re-entry,
 // no menu-side state). Phase 1 foundation; consumers land in Phase 2+.
 //
-// Address chain (investigation Q1, Lane's Ghidra DB CONFIRMED):
+// Address chain (investigation Q1 + Phase 1 lay-off 4 xref-trace
+// re-verification, 2026-05-03):
 //
-//   *kAddrAppManagerPtr → CClientExoApp instance
-//     → CClientExoApp::GetPlayerCreature() @0x5ed540 → CSWCCreature* (client)
-//       → server_object @+0xf8 → CSWSObject* (server)
-//         → position @+0x90 (Vector), orientation @+0x9c (Vector, z=0)
+//   *kAddrAppManagerPtr → AppManager wrapper
+//     → wrapper +0x4 → CClientExoApp* (real app instance)
+//       → CClientExoApp::GetPlayerCreature() @0x5ed540 → CSWCCreature* (client)
+//         → server_object @+0xf8 → CSWSObject* (server)
+//           → position @+0x90 (Vector), orientation @+0x9c (Vector, z=0)
 //
 //   CSWSObject::GetArea() @0x4cb120 → area handle (CSWSArea*; opaque here)
+//
+// The +0x4 indirection between APP_MANAGER_PTR and CClientExoApp wasn't
+// documented in investigation Q1's prose ("APP_MANAGER_PTR (0x7a39fc) →
+// CClientExoApp instance" implied a single deref). DumpBytes at three
+// independent callers of GetPlayerCreature (0x5fba8d, 0x60541a, 0x605451)
+// all show the canonical pattern:
+//   8b 0d fc 39 7a 00      MOV ECX, [0x007A39FC]    ; appManager
+//   8b 49 04               MOV ECX, [ECX+0x4]       ; → CClientExoApp*
+//   e8 ?? ?? ?? ??         CALL GetPlayerCreature
+// — so the +0x4 indirection is real and consistent.
 //
 // We deliberately use the server-side CSWSObject layout (+0x90 / +0x9c) and
 // not the client CSWCObject layout (+0x24 / +0x30) — the two are independent
@@ -56,9 +68,12 @@ void* GetPlayerArea();
 
 }  // namespace acc::engine
 
-// CClientExoApp singleton. *kAddrAppManagerPtr holds the live app instance
-// pointer; nullptr before the engine creates it (early DLL attach).
-constexpr uintptr_t kAddrAppManagerPtr = 0x007A39FC;
+// AppManager wrapper. *kAddrAppManagerPtr holds an AppManager*; the live
+// CClientExoApp* lives at *(appManager + kAppManagerClientAppOffset).
+// Both layers are nullptr early in DLL attach until the engine populates
+// them.
+constexpr uintptr_t kAddrAppManagerPtr           = 0x007A39FC;
+constexpr size_t    kAppManagerClientAppOffset   = 0x4;
 
 // CClientExoApp::GetPlayerCreature — __thiscall(void) -> CSWCCreature*.
 // SARIF CONFIRMED.

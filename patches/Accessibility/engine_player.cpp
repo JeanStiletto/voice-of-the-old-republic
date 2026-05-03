@@ -21,12 +21,17 @@ typedef void* (__thiscall* PFN_CSWSObjectGetArea)(void* this_);
 // per-tick consumers.
 void* GetPlayerServerObject() {
     __try {
-        void* app = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!app) return nullptr;
+        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
+        if (!appManager) return nullptr;
+
+        void* exoApp = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(appManager) +
+            kAppManagerClientAppOffset);
+        if (!exoApp) return nullptr;
 
         auto getCreature = reinterpret_cast<PFN_GetPlayerCreature>(
             kAddrGetPlayerCreature);
-        void* clientCreature = getCreature(app);
+        void* clientCreature = getCreature(exoApp);
         if (!clientCreature) return nullptr;
 
         void* serverObject = *reinterpret_cast<void**>(

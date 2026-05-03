@@ -126,19 +126,30 @@ The engine's *animation/camera* layer uses real `Quaternion`s (16 bytes, `{w,x,y
 
 ### Reading the player's coordinates
 
-Path:
+Path (corrected 2026-05-03 during navsystem Phase 1 lay-off 4 — see "Chain correction" note below):
 
 ```
 APP_MANAGER_PTR (0x7a39fc)
-  -> CClientExoApp instance
-       -> GetPlayerCreature()  @0x5ed540   // returns CSWCCreature *
-            // OR: CSWParty::GetPlayerCharacter() @0x635460 from the party
-            -> server_object (CSWCObject +0xf8)  // lift to CSWSCreature/CSWSObject
-                 -> CSWSObject.position @+0x90  // 3 floats
-                 -> CSWSObject.orientation @+0x9c  // 3 floats
+  -> AppManager wrapper
+       +0x4 -> CClientExoApp instance              // extra indirection
+            -> GetPlayerCreature()  @0x5ed540      // returns CSWCCreature *
+                 // OR: CSWParty::GetPlayerCharacter() @0x635460 from the party
+                 -> server_object (CSWCObject +0xf8)  // lift to CSWSCreature/CSWSObject
+                      -> CSWSObject.position @+0x90  // 3 floats
+                      -> CSWSObject.orientation @+0x9c  // 3 floats
 ```
 
 `CClientExoApp::GetPlayerCreature` is `__thiscall(void) -> CSWCCreature*` (SARIF **CONFIRMED**). `CSWSObject::GetArea` `@0x4cb120` returns the area the object lives in. `CSWSModule::GetArea` `@0x4c30f0` returns the **current** area (singular — KotOR loads one `CSWSArea` per module at a time; sub-areas are rooms within it).
+
+**Chain correction (2026-05-03).** The original prose here implied a single deref (`*0x7a39fc → CClientExoApp`); that was wrong. DumpBytes at three independent callers of `GetPlayerCreature` (0x5fba8d, 0x60541a, 0x605451) all show:
+
+```
+8b 0d fc 39 7a 00     MOV ECX, [0x007A39FC]    ; → AppManager wrapper
+8b 49 04              MOV ECX, [ECX+0x4]       ; → CClientExoApp* (real)
+e8 ?? ?? ?? ??        CALL GetPlayerCreature
+```
+
+So `*0x7a39fc` is an `AppManager` wrapper holding the real `CClientExoApp*` at `+0x4`. Discovered when `engine_player::GetPlayerPosition` returned false on every tick of the Phase 1 test fixture even with a player loaded — log told us the singleton lookups were both non-null, so the indirection had to be wrong. Verified via xref-trace, fixed in `engine_player.cpp` to chain through `+0x4` before calling `GetPlayerCreature`. Subsequent in-game runs returned `gotPos=1 pos=(15.42, 20.12, -1.27)` correctly.
 
 **NWScript-equivalent reuse path** (no inline reads of struct fields):
 
