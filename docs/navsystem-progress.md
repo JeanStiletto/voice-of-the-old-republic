@@ -8,8 +8,8 @@
 
 ## Phase status
 
-- **Phase 0 — Refactor.** *In progress.* Five lay-offs landed (`core_dllmain` + `engine_input`, `engine_offsets` + `engine_reads`, `engine_panels`, `engine_manager`, rename to `menus.cpp`); only the menu regression test (lay-off 6) remains before Phase 0 can exit.
-- **Phase 1 — Foundation.** Pending.
+- **Phase 0 — Refactor.** *Complete (2026-05-03).* All six lay-offs landed: `core_dllmain` + `engine_input`, `engine_offsets` + `engine_reads`, `engine_panels`, `engine_manager`, rename to `menus.cpp`, and the user-driven menu regression test ("everything working as before. no new bugs.").
+- **Phase 1 — Foundation.** *Next up.* See `docs/navsystem-longterm-plan.md` for scope.
 - **Phase 2 — Playable baseline.** Pending.
 - **Phase 3 — Pillar 1.** Pending.
 - **Phase 4 — Pillar 2 polish + view mode.** Pending.
@@ -19,7 +19,13 @@
 
 ---
 
-## Active phase: Phase 0 — Refactor
+## Active phase: Phase 1 — Foundation
+
+Phase 0 closed 2026-05-03. The Phase 0 lay-off log is preserved below as historical record (it documents the engine-layer extraction that the rest of the plan builds on); next-session pointers have moved to "Next session: where to start" at the bottom of this file.
+
+---
+
+## Phase 0 — Refactor (closed 2026-05-03)
 
 ### Goal
 Extract `core/` and `engine/` foundations out of the monolithic `Accessibility.cpp`; split menu code into `menus_*.cpp`. Plan-mandated layout decision: **flat with subsystem-prefix filenames** at the patch root (not literal `src/core/` subdirectories) — see plan decision log, dated 2026-05-03.
@@ -96,11 +102,11 @@ Build verified (`kdev build` clean, 8 .cpp files, all exports verified).
 
 Discipline: this finishes the *code-side* lay-offs. Lay-off 6 (menu regression test) is the only remaining gate before Phase 0 can exit; it's user-driven and cannot be performed by the assistant.
 
-### Still pending (Phase 0 exit)
+**Lay-off 6** — menu regression test. **Passed 2026-05-03.**
 
-- **Lay-off 6 — Menu regression test.** User runs `kdev dev`, walks the menu paths (main menu, Options tabs+sliders+cycles, in-game menu icons + sub-screen drill, dialog reply selection). Phase 0 cannot exit until this is reported clean. Crash investigation (see below) is *not* a regression — pre-existing — but its disposition before declaring Phase 0 exit is up to the user.
+User ran `kdev apply` + `kdev launch --monitor` against the build from lay-off 5 and walked the menu paths. Reported result: "everything working as before. no new bugs." This is the Phase 0 exit gate, so Phase 0 is now closed.
 
-(Lay-offs 3, 4, 5 landed this session; lay-off 6 is the only remaining gate.)
+(All six lay-offs landed; Phase 0 closed.)
 
 ### Current file inventory (`patches/Accessibility/`)
 
@@ -171,14 +177,9 @@ A second symptom — audio stutter when pressing *Schließen* in Options — has
 
 ## Next session: where to start
 
-The remaining Phase 0 work is the **menu regression test** (lay-off 6). This is user-driven and cannot be performed by the assistant.
+Phase 0 is closed. Next session opens **Phase 1 — Foundation**.
 
-To execute:
-
-- User runs `kdev dev` (clean build → install → launch with monitor).
-- Walk every menu path: main menu, Options tabs + sliders + cycles, in-game menu icons + sub-screen drill, dialog reply selection.
-- Confirm each path still announces correctly via the screen reader and no path crashes (the chargen Class panel c0000409 was fixed pre-Phase-0 and verified — see "Open bugs / known issues" below; that's not a regression).
-- If clean: declare Phase 0 done, advance to Phase 1 per `docs/navsystem-longterm-plan.md`.
-- If a regression appears: open a fresh session, treat the regression as Phase 0 work (the refactor must remain behavior-preserving), fix, then re-run the test.
-
-The assistant cannot perform this test — it can only continue with Phase 1 once the user confirms the regression test passed.
+- Read `docs/navsystem-longterm-plan.md` for the Phase 1 scope and exit criteria. The plan lists Phase 1 as the foundation work that the playable-baseline (Phase 2) and pillar phases (3-5) build on.
+- Per plan, the engine layer (`engine_input.{h,cpp}`, `engine_offsets.h`, `engine_reads.{h,cpp}`, `engine_panels.{h,cpp}`, `engine_manager.{h,cpp}`) is the surface Phase 1 features extend; menu-side state lives in `menus.cpp`. New Phase 1 modules should follow the same flat-with-prefix layout convention.
+- Add a "Phase 1 — Foundation" section to this file (mirroring the Phase 0 lay-off log structure) when Phase 1 work begins, so execution state stays trackable.
+- The chargen Class c0000409 fix (pre-Phase-0) and `KPatchManager` LEA-vs-MOV / selective-POPAD ESP bugs (memory-recorded) remain context for future work but are not Phase 1 blockers.
