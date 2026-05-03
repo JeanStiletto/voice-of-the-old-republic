@@ -8,7 +8,7 @@
 
 ## Phase status
 
-- **Phase 0 — Refactor.** *In progress.* Four lay-offs landed (`core_dllmain` + `engine_input`, `engine_offsets` + `engine_reads`, `engine_panels`, `engine_manager`); rename + menu regression test still pending.
+- **Phase 0 — Refactor.** *In progress.* Five lay-offs landed (`core_dllmain` + `engine_input`, `engine_offsets` + `engine_reads`, `engine_panels`, `engine_manager`, rename to `menus.cpp`); only the menu regression test (lay-off 6) remains before Phase 0 can exit.
 - **Phase 1 — Foundation.** Pending.
 - **Phase 2 — Playable baseline.** Pending.
 - **Phase 3 — Pillar 1.** Pending.
@@ -88,14 +88,19 @@ Build verified (`kdev build` clean, 8 .cpp files, all exports verified). `Access
 
 Discipline: still a mid-phase lay-off. Commit + fresh session for lay-off 5.
 
-### Still to extract (future Phase 0 sessions)
+**Lay-off 5** — rename `Accessibility.cpp` → `menus.cpp`.
 
-Each is its own session (single-topic discipline):
+`git mv` only — zero behavior change. Build pipeline globs `*.cpp`, so no manifest/hook updates needed. The file's own header comment was updated to (a) reflect the new layering (mention `engine_panels.{h,cpp}` and `engine_manager.{h,cpp}`) and (b) drop the "will be split further into menus_*.cpp" forward-looking note — per plan, the menu-side logic is NOT decomposed further in Phase 0. Single-file menus.cpp is the steady-state for Phase 0.
 
-- **Lay-off 5 — Rename `Accessibility.cpp` → `menus.cpp`.** Everything left after the engine extraction lands here unchanged. Per plan: incremental refactor — don't decompose the menu-side logic in Phase 0.
+Build verified (`kdev build` clean, 8 .cpp files, all exports verified).
+
+Discipline: this finishes the *code-side* lay-offs. Lay-off 6 (menu regression test) is the only remaining gate before Phase 0 can exit; it's user-driven and cannot be performed by the assistant.
+
+### Still pending (Phase 0 exit)
+
 - **Lay-off 6 — Menu regression test.** User runs `kdev dev`, walks the menu paths (main menu, Options tabs+sliders+cycles, in-game menu icons + sub-screen drill, dialog reply selection). Phase 0 cannot exit until this is reported clean. Crash investigation (see below) is *not* a regression — pre-existing — but its disposition before declaring Phase 0 exit is up to the user.
 
-(Lay-offs 5-6 still pending; lay-offs 3-4 landed this session.)
+(Lay-offs 3, 4, 5 landed this session; lay-off 6 is the only remaining gate.)
 
 ### Current file inventory (`patches/Accessibility/`)
 
@@ -110,7 +115,7 @@ Each is its own session (single-topic discipline):
 - `engine_reads.{h,cpp}` — SEH-guarded readers + element-class identity helpers *(new in lay-off 2)*
 - `engine_panels.{h,cpp}` — `PanelKind` enum + CGuiInGame slot classification (`IdentifyPanel`, `PanelKindName`, `ResolveGuiInGame`, `IsPanelKindInGameMenu`, panel-kind cache) *(new in lay-off 3)*
 - `engine_manager.{h,cpp}` — CSWGuiManager surface: singleton lookup, panels[]/modal_stack offsets, MoveMouseToPosition + click-sim PFN typedefs, `FindOwningPanel`/`GetForegroundPanel`/`LogManagerStack` *(new in lay-off 4)*
-- `Accessibility.cpp` — everything else (~2838 lines after lay-off 4; renames to `menus.cpp` at lay-off 5)
+- `menus.cpp` — menu-accessibility hook handlers (chain navigation, focus events, input dispatch, per-tick monitors). ~2838 lines. Renamed from `Accessibility.cpp` *(in lay-off 5)*. Per plan, NOT decomposed further in Phase 0.
 
 ---
 
@@ -166,8 +171,14 @@ A second symptom — audio stutter when pressing *Schließen* in Options — has
 
 ## Next session: where to start
 
-Continue Phase 0:
+The remaining Phase 0 work is the **menu regression test** (lay-off 6). This is user-driven and cannot be performed by the assistant.
 
-- Open a fresh session, claim "Phase 0 lay-off 5", **rename `Accessibility.cpp` → `menus.cpp`**. This is the mechanical rename step from the plan: `git mv patches/Accessibility/Accessibility.cpp patches/Accessibility/menus.cpp`. Verify the build picks up the new file (`kdev build`) — the patch builder globs `*.cpp`, so no manifest changes should be needed, but spot-check `manifest.toml` / `hooks.toml` for any explicit references first.
-- After lay-off 5 lands, lay-off 6 is the **menu regression test** (user-driven), which is the gate to declare Phase 0 done. Do not attempt to exit Phase 0 without that test.
-- Update this file at session end with the new state.
+To execute:
+
+- User runs `kdev dev` (clean build → install → launch with monitor).
+- Walk every menu path: main menu, Options tabs + sliders + cycles, in-game menu icons + sub-screen drill, dialog reply selection.
+- Confirm each path still announces correctly via the screen reader and no path crashes (the chargen Class panel c0000409 was fixed pre-Phase-0 and verified — see "Open bugs / known issues" below; that's not a regression).
+- If clean: declare Phase 0 done, advance to Phase 1 per `docs/navsystem-longterm-plan.md`.
+- If a regression appears: open a fresh session, treat the regression as Phase 0 work (the refactor must remain behavior-preserving), fix, then re-run the test.
+
+The assistant cannot perform this test — it can only continue with Phase 1 once the user confirms the regression test passed.
