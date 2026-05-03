@@ -998,4 +998,4 @@ These rules apply across all phases. They protect against the real failure modes
 
 Each design decision, once locked, gets one line here with a date and a pointer to the pillar section that holds the detail.
 
-*(empty)*
+- 2026-05-03 — **Code layout: flat-with-prefix at patch root** (`core_*.cpp`, `engine_*.cpp`, `menus_*.cpp`, etc.) rather than `src/core/`, `src/engine/` literal subdirectories. Reason: upstream `create-patch.bat` globs `*.cpp` non-recursively, so subdirs would require modifying vendored upstream OR teaching kdev to flatten — neither is justified by Phase 0 scope. Subsystem semantics from the plan's "Code structure (proposed)" section are preserved exactly via filename prefix; pillars-disappear-from-code-organisation guidance still holds. Revisit if a future phase introduces unavoidable filename collisions (e.g. `view_mode/cursor.cpp` vs `map_ui/cursor.cpp`).

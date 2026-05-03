@@ -1,13 +1,18 @@
-// KOTOR Accessibility — DLL entry point + hook handlers.
+// KOTOR Accessibility — menu-side hook handlers (chain navigation, focus
+// events, input dispatch, per-tick monitors).
 //
 // Layering:
-//   log.{h,cpp}    file/debug logging primitives
-//   tolk.{h,cpp}   screen-reader bridge (LoadLibrary'd lazily)
-//   this file      DllMain + the OnXxx detour entry points
+//   log.{h,cpp}             file/debug logging primitives
+//   tolk.{h,cpp}            screen-reader bridge (LoadLibrary'd lazily)
+//   core_dllmain.cpp        DllMain + OnRulesInit + EnsureTolkInitialized
+//   engine_input.{h,cpp}    InputIndices name table + manager translate
+//   this file               the menu-accessibility hook handlers
 //
-// Tolk is initialized lazily on the first hook fire — NOT inside DllMain —
-// because Tolk_Load loads driver DLLs and initializes COM, both unsafe under
-// the loader lock.
+// Phase 0 of the long-term nav plan extracts the foundation (core/ + engine/)
+// out of the original monolithic Accessibility.cpp. This file holds the
+// remaining menu-accessibility code; it will be split further into
+// menus_*.cpp in subsequent Phase 0 sessions per
+// docs/navsystem-longterm-plan.md.
 
 #include <windows.h>
 #include <cstdint>
@@ -16,136 +21,11 @@
 
 #include "log.h"
 #include "tolk.h"
+#include "engine_input.h"
 
-namespace {
-
-// Keep in sync with manifest.toml [patch].version. We could parse the manifest
-// at runtime, but a single literal is simpler and the build will fail loudly
-// if the two ever drift on a release.
-constexpr const char* kModVersion = "0.1.0";
-
-char g_versionSha[128] = "(unset)";
-
-// Lazy Tolk init. First hook to fire runs it; subsequent calls are no-ops.
-// Speaks a one-line "loaded, version X" greeting on the first successful init
-// so the user knows the patch is active even when no focus events have fired.
-void EnsureTolkInitialized() {
-    static bool done = false;
-    if (done) return;
-    done = true;
-    if (tolk::Init()) {
-        char greeting[128];
-        snprintf(greeting, sizeof(greeting),
-                 "KOTOR accessibility mod loaded, version %s", kModVersion);
-        tolk::Speak(greeting, /*interrupt=*/true);
-    }
-}
-
-// Names for the InputIndices enum (size 132, definition lifted from Lane's
-// Ghidra SARIF: /KotOR Types/Enums/InputIndices). Index = enum value;
-// covers MOUSE_*, KEYBOARD_*, JOYSTICK_*. -1 / 0xFFFFFFFF is INPUTDEVICE_NONE.
-const char* InputIndexName(int code) {
-    static const char* const k_names[] = {
-        "MOUSE_BUTTON0", "MOUSE_BUTTON1", "MOUSE_BUTTON2",
-        "MOUSE_XAXIS", "MOUSE_YAXIS", "MOUSE_ZAXIS",
-        "KEYBOARD_RETURN",
-        "KEYBOARD_LEFT_ARROW", "KEYBOARD_RIGHT_ARROW",
-        "KEYBOARD_UP_ARROW", "KEYBOARD_DOWN_ARROW",
-        "KEYBOARD_NUMPAD1", "KEYBOARD_NUMPAD2", "KEYBOARD_NUMPAD3",
-        "KEYBOARD_NUMPAD4", "KEYBOARD_NUMPAD5", "KEYBOARD_NUMPAD6",
-        "KEYBOARD_NUMPAD7", "KEYBOARD_NUMPAD8", "KEYBOARD_NUMPAD9",
-        "KEYBOARD_NUMPAD0",
-        "KEYBOARD_NUMPADDECIMAL", "KEYBOARD_NUMPADMINUS", "KEYBOARD_NUMPADPLUS",
-        "KEYBOARD_LEFTSHIFT", "KEYBOARD_RIGHTSHIFT",
-        "KEYBOARD_LEFTALT", "KEYBOARD_RIGHTALT",
-        "KEYBOARD_LEFTCTRL", "KEYBOARD_RIGHTCTRL",
-        "KEYBOARD_TAB", "KEYBOARD_ESC",
-        "KEYBOARD_HOME", "KEYBOARD_END",
-        "KEYBOARD_PAGEUP", "KEYBOARD_PAGEDOWN",
-        "KEYBOARD_INSERT", "KEYBOARD_DELETE",
-        "KEYBOARD_PRINTSCREEN",
-        "KEYBOARD_F1", "KEYBOARD_F2", "KEYBOARD_F3", "KEYBOARD_F4",
-        "KEYBOARD_F5", "KEYBOARD_F6", "KEYBOARD_F7", "KEYBOARD_F8",
-        "KEYBOARD_F9", "KEYBOARD_F10", "KEYBOARD_F11", "KEYBOARD_F12",
-        "KEYBOARD_A", "KEYBOARD_B", "KEYBOARD_C", "KEYBOARD_D",
-        "KEYBOARD_E", "KEYBOARD_F", "KEYBOARD_G", "KEYBOARD_H",
-        "KEYBOARD_I", "KEYBOARD_J", "KEYBOARD_K", "KEYBOARD_L",
-        "KEYBOARD_M", "KEYBOARD_N", "KEYBOARD_O", "KEYBOARD_P",
-        "KEYBOARD_Q", "KEYBOARD_R", "KEYBOARD_S", "KEYBOARD_T",
-        "KEYBOARD_U", "KEYBOARD_V", "KEYBOARD_W", "KEYBOARD_X",
-        "KEYBOARD_Y", "KEYBOARD_Z",
-        "KEYBOARD_1", "KEYBOARD_2", "KEYBOARD_3", "KEYBOARD_4",
-        "KEYBOARD_5", "KEYBOARD_6", "KEYBOARD_7", "KEYBOARD_8",
-        "KEYBOARD_9", "KEYBOARD_0",
-        "KEYBOARD_SPACE", "KEYBOARD_NUMPADENTER",
-        "KEYBOARD_CAPSLOCK", "KEYBOARD_PAUSE",
-        "KEYBOARD_F13", "KEYBOARD_F14", "KEYBOARD_F15",
-        "KEYBOARD_MINUS", "KEYBOARD_EQUALS", "KEYBOARD_BACK",
-        "KEYBOARD_LBRACKET", "KEYBOARD_RBRACKET",
-        "KEYBOARD_SEMICOLON", "KEYBOARD_APOSTROPHE",
-        "KEYBOARD_GRAVE", "KEYBOARD_BACKSLASH",
-        "KEYBOARD_COMMA", "KEYBOARD_PERIOD", "KEYBOARD_SLASH",
-        "KEYBOARD_MULTIPLY", "KEYBOARD_NUMPADCOMMA", "KEYBOARD_DIVIDE",
-        "KEYBOARD_OEM_102",
-        "JOYSTICK_XAXIS", "JOYSTICK_YAXIS", "JOYSTICK_HAT",
-        "JOYSTICK_SLIDER0", "JOYSTICK_SLIDER1", "JOYSTICK_SLIDER2",
-        "JOYSTICK_BUTTON0", "JOYSTICK_BUTTON1", "JOYSTICK_BUTTON2",
-        "JOYSTICK_BUTTON3", "JOYSTICK_BUTTON4", "JOYSTICK_BUTTON5",
-        "JOYSTICK_BUTTON6", "JOYSTICK_BUTTON7", "JOYSTICK_BUTTON8",
-        "JOYSTICK_BUTTON9", "JOYSTICK_BUTTON10", "JOYSTICK_BUTTON11",
-        "JOYSTICK_BUTTON12", "JOYSTICK_BUTTON13", "JOYSTICK_BUTTON14",
-    };
-    if (code == -1) return "INPUTDEVICE_NONE";
-    if (code >= 0 && code < (int)(sizeof(k_names) / sizeof(k_names[0]))) {
-        return k_names[code];
-    }
-    // Engine logical-action codes that don't translate to an InputIndices
-    // value (i.e. ManagerTranslateCode passes them through unchanged) and
-    // are therefore neither in the InputIndices array nor in our translator.
-    // Naming them inline keeps the input log readable instead of "?(206)".
-    if (code == 0xCE) return "LOGICAL_TAB";
-    return "?";
-}
-
-// CSWGuiManager::HandleInputEvent receives KOTOR-internal "logical action"
-// codes for navigation / system keys and translates them to InputIndices
-// values via two inline switch statements before dispatching to the active
-// panel's per-class override. Mapping recovered by decompiling the function
-// at 0x0040c8e0:
-//
-//   0xb4 (180), 0xdf (223)   → 0x28 = KEYBOARD_F2  (cancel / back)
-//   0xb5 (181), 0xbb (187)   → 0x27 = KEYBOARD_F1  (confirm / activate)
-//   0xb6 (182)               → 0x3d
-//   0xb7 (183)               → 0x3e
-//   0xb8 (184)               → 0x3f
-//   0xb9 (185)               → 0x40
-//
-// Codes outside this set pass through unchanged. Naming the four
-// 0x3d-0x40 outputs is impossible without knowing the user's `[Keymapping]`
-// — they're the InputIndices values the user has bound to nav-up/nav-down/
-// next/prev (default keys vary by user). Just print "→ KEYBOARD_X(N)" and
-// let the caller correlate against the user's keybindings.
-int ManagerTranslateCode(int code) {
-    switch (code) {
-    case 0xb4: case 0xdf: return 0x28;
-    case 0xb5: case 0xbb: return 0x27;
-    case 0xb6:            return 0x3d;
-    case 0xb7:            return 0x3e;
-    case 0xb8:            return 0x3f;
-    case 0xb9:            return 0x40;
-    default:              return code;
-    }
-}
-
-}  // namespace
-
-extern "C" void __cdecl OnRulesInit(void* /*rulesThis*/) {
-    static bool fired = false;
-    if (fired) return;
-    fired = true;
-    EnsureTolkInitialized();
-    acclog::Write("first CSWRules construction; detour active");
-}
+// Forward decl from core_dllmain.cpp. The first hook to fire calls this so
+// Tolk is loaded the moment any focus / input event reaches us.
+void EnsureTolkInitialized();
 
 // Read CSWGuiControl name fields at known offsets (no engine re-entry).
 // Returns true if the control had non-empty tooltip text.
@@ -1348,9 +1228,10 @@ typedef int (__thiscall* PFN_ManagerLMouseUp)(void* gm);
 // wrong control. By firing 0x27 directly on the button we bypass hit-test
 // entirely. Confirmed safe for non-tab buttons (Schliess, OK, Standard,
 // chain targets in sub-dialogs).
+//
+// kInputActivate is exported via engine_input.h.
 constexpr int kVtableHandleInputEvent = 15;
 typedef void (__thiscall* PFN_ControlHandleInputEvent)(void* this_, int code, int state);
-constexpr int kInputActivate = 0x27;   // KEYBOARD_F1, the engine's activate code
 
 // CSWGuiManager panel layout — used to resolve the *foreground* panel when
 // multiple panels are walked simultaneously (e.g. character creation pre-
@@ -1477,43 +1358,17 @@ static void FireActivate(void* control) {
     fn(control, kInputActivate, 1);
 }
 
-// Logical input codes received pre-translation by CSWGuiManager::HandleInputEvent.
-// 0xb6 / 0xb7 are the engine's "nav-prev / nav-next" actions (Up/Down in
-// menus); 0xb8 / 0xb9 are the horizontal-axis equivalents (Left/Right). All
-// four are contiguous in ManagerTranslateCode's switch statement and translate
-// to 0x3d-0x40 (KEYBOARD_K through KEYBOARD_N — the four post-translation
-// codes the engine uses internally for slider / cycle adjustment).
+// Logical input codes (kInputNav*, kInputEnter1/2, kInputEsc1/2,
+// kInputActivate) are defined in engine_input.h. They're the codes
+// CSWGuiManager::HandleInputEvent receives pre-translation; see
+// ManagerTranslateCode for what each maps to post-translation.
 //
-// Consuming Up/Down prevents the engine's broken `.gui` focus-cycle from
-// running. Left/Right are consumed selectively: on a focused slider we let
-// them pass through (engine's slider HandleInputEvent at 0x0041adf0 expects
-// the post-translation codes and adjusts cur_value natively), elsewhere we
-// consume and dispatch to a same-row empty-text neighbour (cycle arrows).
-constexpr int kInputNavUp    = 0xb6;
-constexpr int kInputNavDown  = 0xb7;
-constexpr int kInputNavLeft  = 0xb8;
-constexpr int kInputNavRight = 0xb9;
-
-// 0xb5 / 0xbb both translate to KEYBOARD_F1 (the engine's "confirm/activate"
-// virtual code). We don't consume Enter — the engine's normal activation
-// pipeline runs the button's onClick — but we force panel.activeControl to
-// match the chain target on press so the right button gets activated.
-// MoveMouseToPosition's hover→active path is unreliable (no event in popups,
-// snaps back to default tab in the Options panel), so a one-shot commit on
-// Enter press is the cleanest way to close that gap without the per-frame
-// oscillation an explicit setActive in OnUpdate caused.
-constexpr int kInputEnter1 = 0xb5;
-constexpr int kInputEnter2 = 0xbb;
-
-// LOGICAL_ESC / "back/cancel" — both translate to 0x28 (KEYBOARD_F2) via
-// ManagerTranslateCode @0x0040c8e0. The engine's natural Esc handling for
-// Options sub-dialogs (CSWGuiOptionsXxx::HandleInputEvent → PopModalPanel)
-// is silently failing for reasons we couldn't pin down — Esc reaches our
-// hook as logical(223), translates to 0x28, but no panel close fires. We
-// route it explicitly via FireActivate(Schliess) instead. See Esc handler
-// in OnHandleInputEvent for trigger conditions.
-constexpr int kInputEsc1 = 0xb4;
-constexpr int kInputEsc2 = 0xdf;
+// Up/Down (0xb6/0xb7) and Left/Right (0xb8/0xb9) are the engine's nav-prev/
+// nav-next and horizontal-axis equivalents — consuming Up/Down prevents the
+// engine's broken `.gui` focus-cycle from running. Left/Right are consumed
+// selectively (slider passes through, otherwise dispatched to a cycle-arrow
+// neighbour). Enter (0xb5/0xbb → KEYBOARD_F1) and Esc (0xb4/0xdf → KEYBOARD_F2)
+// route to our chain-target activation and Schliess-button fallback paths.
 
 // Chain state. g_currentPanel is updated in OnSetActiveControl. g_chainPanel
 // is rebound lazily per arrow press if the focused panel has changed since the
@@ -3034,15 +2889,15 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         }
     }
 
-    int translated = ManagerTranslateCode(param_1);
+    int translated = acc::engine::ManagerTranslateCode(param_1);
     const char* tag = consumed ? " CONSUMED" : "";
     if (translated != param_1) {
         acclog::Write("HandleInputEvent #%d this=%p key=logical(%d) -> %s(%d) val=%d%s",
                       n, thisPtr, param_1,
-                      InputIndexName(translated), translated, param_2, tag);
+                      acc::engine::InputIndexName(translated), translated, param_2, tag);
     } else {
         acclog::Write("HandleInputEvent #%d this=%p key=%s(%d) val=%d%s",
-                      n, thisPtr, InputIndexName(param_1), param_1, param_2, tag);
+                      n, thisPtr, acc::engine::InputIndexName(param_1), param_1, param_2, tag);
     }
     return consumed ? 1 : 0;
 }
@@ -3749,16 +3604,4 @@ extern "C" void __cdecl OnListBoxSetSelectedControl(void* listBox) {
     acclog::Write("ListBox::SetSelectedControl #%d %s (pre-update)", n, state);
 }
 
-BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD reason, LPVOID) {
-    if (reason == DLL_PROCESS_ATTACH) {
-        acclog::Init(hinstDLL);
-        DWORD n = GetEnvironmentVariableA(
-            "KOTOR_VERSION_SHA", g_versionSha, sizeof(g_versionSha));
-        if (n == 0 || n >= sizeof(g_versionSha)) {
-            strncpy_s(g_versionSha, "(unset)", _TRUNCATE);
-        }
-        acclog::Write("DLL_PROCESS_ATTACH sha=%s", g_versionSha);
-        // Tolk init is intentionally deferred to first hook fire — see header.
-    }
-    return TRUE;
-}
+// DllMain + OnRulesInit + EnsureTolkInitialized live in core_dllmain.cpp.
