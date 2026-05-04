@@ -157,6 +157,42 @@ GUI-driven and direct-API failures.
 4. Don't bother with Path C unless A and B both fail — direct
    creature-level equip skips too many checks.
 
+## Implementation pass 1 (UNVERIFIED — 2026-05-04)
+
+Took Path A in hybrid form: rather than calling `OnItemSelected`
+directly (which would no-op on the `+0x4c` gate, same way
+`FireActivate(BTN_EQUIP)` cold did), we **synthesise a click on
+the listbox row** so the engine's own dispatch raises the gates
+as a side effect, then `FireActivate(BTN_EQUIP)` — which now
+finds `+0x4c=1` and `+0x4270 bit 0=1` and runs `OnOKPressed`
+through the normal commit path.
+
+The key fix vs. the prior failed click-sim attempt: row extents
+are **listbox-local**, not screen-absolute (point #3 of "why
+previous attempts failed"). New helper
+`GetListBoxRowScreenCenter(lb, row, ...)` accumulates the
+listbox's own screen-absolute origin onto the row's local
+extent. One accumulation step is sufficient because LB_ITEMS is
+a panel-direct child whose extent is already screen-absolute.
+
+Sequencing: `g_pendingCursorMove` + `g_pendingClick` +
+`g_pendingActivate` are scheduled together. `Update()` processes
+them in order on a single tick, so `OnItemSelected` (synchronous
+inside HandleLMouseUp) raises the gates before FireActivate
+fires.
+
+Risks not yet falsified by play-test:
+- MoveMouseToPosition could exhibit the Options-style hit-test
+  shift on equip rows too. If it does, click lands one row
+  above; will be obvious from selection logs.
+- `row.extent` may not reflect post-scroll position if the
+  engine doesn't relayout listbox children on
+  `top_visible_index` change. Edge case for selections beyond
+  the initial visible window.
+- `ShowCantEquipMessage` not yet hooked, so engine-side
+  rejections are silent. Add the hook if equip seems to no-op
+  and we can't tell why from logs.
+
 ## Container "single-item take" — same shape, less RE done
 
 The Container panel (`CSWGuiContainer`) has `HandleInputEvent`,

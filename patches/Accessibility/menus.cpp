@@ -919,6 +919,13 @@ static int        g_tabsCount         = 0;        // number of contiguous tab bu
 // spacing; 0 for non-tabbed panels (main menu, popups, sub-dialogs) — those
 // panels' MoveMouseToPosition already hits where it should.
 static int        g_tabClickOffsetY   = 0;
+// Hit-test row-shift compensation for InGameEquip slot buttons. Same shape as
+// `g_tabClickOffsetY`: clicking at the chain entry's (cx, cy) hit-tests to a
+// control one row above (the LBL_INV_* label of the slot above), so cursor
+// must be biased down by one row's pitch to actually land on the slot button.
+// Computed at chain rebind time as the y-spacing between two slot buttons in
+// the chain. 0 outside InGameEquip panels.
+static int        g_equipSlotClickOffsetY = 0;
 
 // Virtual-line cursor over the listbox's multi-line blob. The Options listbox
 // has controls.size == 1 with all settings concatenated by '\n' into a single
@@ -952,6 +959,28 @@ static bool GetControlCenter(void* control, int& outCx, int& outCy) {
     if (width <= 0 || height <= 0) return false;
     outCx = ext[0] + width  / 2;
     outCy = ext[1] + height / 2;
+    return true;
+}
+
+// Screen-absolute center of a CSWGuiListBox row. Listbox children's extents
+// are listbox-local (origin at the listbox's top-left, not the screen) so
+// click-sim at row.extent alone lands on dead space. Add the listbox's own
+// extent origin to translate. Listboxes themselves are panel-direct children
+// whose extents are already screen-absolute (panels render at fixed
+// positions), so one accumulation step is sufficient for the InGameEquip
+// LB_ITEMS case. If we ever need to click rows in a deeper-nested listbox,
+// generalise this into a parent-chain walk.
+static bool GetListBoxRowScreenCenter(void* lb, void* row, int& outCx, int& outCy) {
+    if (!lb || !row) return false;
+    auto* lbExt  = reinterpret_cast<int*>(
+        reinterpret_cast<unsigned char*>(lb)  + kControlExtentOffset);
+    auto* rowExt = reinterpret_cast<int*>(
+        reinterpret_cast<unsigned char*>(row) + kControlExtentOffset);
+    int rowW = rowExt[2];
+    int rowH = rowExt[3];
+    if (rowW <= 0 || rowH <= 0) return false;
+    outCx = lbExt[0] + rowExt[0] + rowW / 2;
+    outCy = lbExt[1] + rowExt[1] + rowH / 2;
     return true;
 }
 
@@ -1486,6 +1515,37 @@ static void RebindChain(void* panel) {
         }
     }
 
+    // Compute g_equipSlotClickOffsetY for InGameEquip panels. Walks the chain
+    // looking for two slot buttons (matching the BTN_INV_* id set) at different
+    // y rows; their pitch gives the click-sim row-shift compensation. The grid
+    // is 3x3 so two consecutive chain entries normally share a row — keep
+    // scanning until we find a y-jump.
+    g_equipSlotClickOffsetY = 0;
+    if (IdentifyPanel(panel) == PanelKind::InGameEquip) {
+        int firstSlotIdx = -1;
+        int firstSlotY   = 0;
+        for (int i = 0; i < g_chainCount; ++i) {
+            int cid = *reinterpret_cast<int*>(
+                reinterpret_cast<unsigned char*>(g_chain[i].control) + 0x50);
+            bool isSlot =
+                cid == kEquipBtnHeadId    || cid == kEquipBtnImplantId ||
+                cid == kEquipBtnBodyId    || cid == kEquipBtnArmLId    ||
+                cid == kEquipBtnArmRId    || cid == kEquipBtnWeapLId   ||
+                cid == kEquipBtnWeapRId   || cid == kEquipBtnBeltId    ||
+                cid == kEquipBtnHandsId;
+            if (!isSlot) continue;
+            if (firstSlotIdx < 0) {
+                firstSlotIdx = i;
+                firstSlotY   = g_chain[i].cy;
+            } else if (g_chain[i].cy != firstSlotY) {
+                int spacing = g_chain[i].cy - firstSlotY;
+                if (spacing < 0) spacing = -spacing;
+                g_equipSlotClickOffsetY = spacing;
+                break;
+            }
+        }
+    }
+
     // Anchor at active. ReadPanelActiveControl reads panel.activeControl
     // (only direct panel children); listbox-internal selection isn't
     // exposed there, so when the user enters a sub-dialog with focus on
@@ -1494,8 +1554,10 @@ static void RebindChain(void* panel) {
     int   idx    = FindChainEntry(active);
     g_chainIndex = (idx >= 0) ? idx : 0;
 
-    acclog::Write("Chain rebind panel=%p count=%d index=%d active=%p tabOffsetY=%d",
-                  panel, g_chainCount, g_chainIndex, active, g_tabClickOffsetY);
+    acclog::Write("Chain rebind panel=%p count=%d index=%d active=%p "
+                  "tabOffsetY=%d equipSlotOffsetY=%d",
+                  panel, g_chainCount, g_chainIndex, active,
+                  g_tabClickOffsetY, g_equipSlotClickOffsetY);
     for (int i = 0; i < g_chainCount; ++i) {
         char text[256];
         const char* src = ExtractAnnounceableText(g_chain[i].control,
@@ -2237,36 +2299,70 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                     acclog::Write("EquipPicker: Enter — op already pending; ignoring");
                     consumed = true;
                 } else {
-                    // Equip via BTN_EQUIP is UNRESOLVED. BTN_EQUIP renders
-                    // with is_active=0 / bit_flags=0x8 until a complete
-                    // mouse-driven sequence raises the gate, and we don't
-                    // know yet how to drive that sequence safely. See
-                    // docs/equip-flow-investigation.md.
+                    // Drive the engine's own equip path by replaying the
+                    // mouse sequence sighted players use:
+                    //   1. Click on the selected listbox row → engine's
+                    //      OnItemSelected (@0x006b7920) raises BTN_EQUIP's
+                    //      is_active bit (+0x4c) AND the panel's "ready
+                    //      to equip" flag (this->[+0x4270] |= 1).
+                    //   2. FireActivate(BTN_EQUIP) → OnOKPressed
+                    //      (@0x006b9160) — both gates now satisfied,
+                    //      equip commits via the engine's normal path
+                    //      (slot-fit / prerequisite checks intact;
+                    //      ShowCantEquipMessage on rejection is the
+                    //      engine's own).
+                    // Update() processes pendingCursorMove → pendingClick
+                    // → pendingActivate sequentially in a single tick, so
+                    // by the time FireActivate runs OnItemSelected has
+                    // already raised the gates synchronously.
                     //
-                    // Both tested primitives fail:
-                    //   * FireActivate(BTN_EQUIP) — vtable[15] gates on
-                    //     is_active and silently no-ops.
-                    //   * Click-sim at (320, 424) — cursor lands on
-                    //     LBL_TOHIT instead of BTN_EQUIP (cause TBD —
-                    //     hit-test mismatch we don't understand yet).
-                    //
-                    // Forcing is_active=1 is unsafe — risk of corrupted
-                    // game state per user direction.
-                    //
-                    // Falls back to FireActivate (no-op) so the keypress
-                    // is consumed cleanly. Picker disarms on Enter so user
-                    // returns to slot grid; no equip happens but no harm.
+                    // Earlier failed primitives (kept here as cautionary
+                    // notes — see docs/equip-flow-investigation.md):
+                    //   * FireActivate(BTN_EQUIP) cold — gate not raised,
+                    //     vtable[15] silently no-ops.
+                    //   * Click-sim at BTN_EQUIP center (320,424) — hits
+                    //     LBL_TOHIT instead.
+                    //   * Click-sim at row.extent alone — listbox-local
+                    //     coords land on dead space. Resolved here by
+                    //     GetListBoxRowScreenCenter accumulating the
+                    //     listbox's screen-absolute origin.
+                    void* lb  = FindControlById(activePanel, kEquipLbItemsId);
                     void* btn = FindControlById(activePanel, kEquipBtnEquipId);
-                    if (btn) {
-                        g_pendingActivate       = true;
-                        g_pendingActivateTarget = btn;
-                        acclog::Write("EquipPicker: Enter -> FireActivate BTN_EQUIP "
-                                      "panel=%p target=%p (KNOWN no-op; equip flow "
-                                      "unresolved — see docs/equip-flow-investigation.md)",
-                                      activePanel, btn);
+                    void* row = nullptr;
+                    short selIdx = -1;
+                    int   rowCount = 0;
+                    if (lb) {
+                        auto* lbBase = reinterpret_cast<unsigned char*>(lb);
+                        auto* lbList = reinterpret_cast<CExoArrayList*>(
+                            lbBase + kListBoxControlsOffset);
+                        rowCount = (lbList && lbList->data) ? lbList->size : 0;
+                        selIdx = *reinterpret_cast<short*>(
+                            lbBase + kListBoxSelectionIndexOffset);
+                        if (lbList && lbList->data &&
+                            selIdx >= 1 && selIdx < rowCount) {
+                            row = lbList->data[selIdx];
+                        }
+                    }
+                    int rowCx = 0, rowCy = 0;
+                    if (lb && row && btn &&
+                        GetListBoxRowScreenCenter(lb, row, rowCx, rowCy))
+                    {
+                        g_pendingX                = rowCx;
+                        g_pendingY                = rowCy;
+                        g_pendingTarget           = row;
+                        g_pendingClickTarget      = row;
+                        g_pendingCursorMove       = true;
+                        g_pendingClick            = true;
+                        g_pendingActivate         = true;
+                        g_pendingActivateTarget   = btn;
+                        g_navSpeechSuppressBudget = 2;
+                        acclog::Write("EquipPicker: Enter -> click(row sel=%d %p "
+                                      "at %d,%d) + activate(BTN_EQUIP %p) panel=%p",
+                                      selIdx, row, rowCx, rowCy, btn, activePanel);
                     } else {
-                        acclog::Write("EquipPicker: Enter -- BTN_EQUIP not found on "
-                                      "panel=%p", activePanel);
+                        acclog::Write("EquipPicker: Enter -- can't equip "
+                                      "(lb=%p row=%p btn=%p sel=%d rows=%d) panel=%p",
+                                      lb, row, btn, selIdx, rowCount, activePanel);
                     }
                     g_equipPickerActive = false;
                     g_equipPickerPanel  = nullptr;
@@ -2353,6 +2449,27 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             }
         }
 
+        // Detect equip-screen slot buttons up front. They need the full click
+        // pipeline (cursor warp + LMouseDown/Up) to fire the engine's
+        // OnSelectSlot — which is what populates LB_ITEMS with items matching
+        // the slot. Direct vtable[15] activate on a slot button routes to a
+        // different handler (likely OnEnterSlot, the keyboard shortcut path)
+        // that pops a "no items" modal instead of populating the picker. Same
+        // gate-mismatch shape as Options tab buttons: the mouse path is the
+        // only one that triggers the populate.
+        bool isEquipSlot = false;
+        int equipSlotCid = 0;
+        if (IdentifyPanel(g_chainPanel) == PanelKind::InGameEquip) {
+            equipSlotCid = *reinterpret_cast<int*>(
+                reinterpret_cast<unsigned char*>(e.control) + 0x50);
+            isEquipSlot =
+                equipSlotCid == kEquipBtnHeadId    || equipSlotCid == kEquipBtnImplantId ||
+                equipSlotCid == kEquipBtnBodyId    || equipSlotCid == kEquipBtnArmLId    ||
+                equipSlotCid == kEquipBtnArmRId    || equipSlotCid == kEquipBtnWeapLId   ||
+                equipSlotCid == kEquipBtnWeapRId   || equipSlotCid == kEquipBtnBeltId    ||
+                equipSlotCid == kEquipBtnHandsId;
+        }
+
         if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
             acclog::Write("Enter: op already pending; ignoring (target=%p)", e.control);
             consumed = true;
@@ -2368,6 +2485,27 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             g_navSpeechSuppressBudget = 2;  // see chain-step doc above
             acclog::Write("Enter click-sim panel=%p index=%d target=%p cursorY=%d (tab)",
                           activePanel, g_chainIndex, e.control, cursorY);
+            consumed = true;
+        } else if (isEquipSlot) {
+            int cursorY = e.cy;
+            if (g_equipSlotClickOffsetY > 0) cursorY += g_equipSlotClickOffsetY;
+            g_pendingX           = e.cx;
+            g_pendingY           = cursorY;
+            g_pendingTarget      = e.control;
+            g_pendingClickTarget = e.control;
+            g_pendingCursorMove  = true;
+            g_pendingClick       = true;
+            g_navSpeechSuppressBudget = 2;
+            // Arm the picker zone now: once OnSelectSlot fires (synchronously
+            // inside HandleLMouseUp during Update()), LB_ITEMS will be
+            // populated by the next event the user generates. Self-clears on
+            // panel close, picker Esc, or BTN_EQUIP dispatch.
+            g_equipPickerActive = true;
+            g_equipPickerPanel  = g_chainPanel;
+            acclog::Write("EquipPicker: armed via click-sim (Enter on slot id=%d "
+                          "target=%p panel=%p at %d,%d cursorY=%d offset=%d)",
+                          equipSlotCid, e.control, g_chainPanel,
+                          e.cx, e.cy, cursorY, g_equipSlotClickOffsetY);
             consumed = true;
         } else {
             g_pendingActivate       = true;
@@ -2386,31 +2524,6 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                 g_drilledIntoSubScreen = true;
                 acclog::Write("Drill: armed (Enter on InGameMenu icon target=%p)",
                               e.control);
-            }
-
-            // Arm the equipment item-picker zone when Enter activates a slot
-            // button on the equip screen. The engine's slot-onClick handler
-            // populates LB_ITEMS for that slot synchronously; from here on
-            // arrow keys go to the items list (handled by the InGameEquip
-            // pre-pass at the top of this function on the next event).
-            // Eager-set + self-clears on panel close, picker Esc, or BTN_EQUIP
-            // dispatch.
-            if (IdentifyPanel(g_chainPanel) == PanelKind::InGameEquip) {
-                int cid = *reinterpret_cast<int*>(
-                    reinterpret_cast<unsigned char*>(e.control) + 0x50);
-                bool isSlot =
-                    cid == kEquipBtnHeadId    || cid == kEquipBtnImplantId ||
-                    cid == kEquipBtnBodyId    || cid == kEquipBtnArmLId    ||
-                    cid == kEquipBtnArmRId    || cid == kEquipBtnWeapLId   ||
-                    cid == kEquipBtnWeapRId   || cid == kEquipBtnBeltId    ||
-                    cid == kEquipBtnHandsId;
-                if (isSlot) {
-                    g_equipPickerActive = true;
-                    g_equipPickerPanel  = g_chainPanel;
-                    acclog::Write("EquipPicker: armed (Enter on slot id=%d "
-                                  "target=%p panel=%p)",
-                                  cid, e.control, g_chainPanel);
-                }
             }
 
             acclog::Write("Enter activate panel=%p index=%d target=%p",
