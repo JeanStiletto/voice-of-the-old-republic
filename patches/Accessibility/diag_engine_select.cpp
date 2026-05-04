@@ -2,13 +2,17 @@
 
 #include <windows.h>
 #include <cstdint>
+#include <cstdio>
 
 #pragma comment(lib, "user32.lib")
 
+#include "engine_area.h"        // GetObjectName, GetObjectHandle,
+                                // GetObjectPosition
 #include "engine_offsets.h"     // Vector
-#include "engine_player.h"      // GetPlayerPosition + AppManager / ClientApp
-                                // chain constants
+#include "engine_player.h"      // GetPlayerPosition + GetPlayerServerCreature
+                                // + AppManager / ClientApp chain constants
 #include "log.h"
+#include "tolk.h"
 
 // Same address baked into passive_narrate / interact_hotkey — the engine
 // LastTarget read primitive. Replicated as a constant rather than added to
@@ -48,11 +52,6 @@ uint32_t ReadLastTargetHandle() {
     }
 }
 
-void LogPress(const char* keyName) {
-    uint32_t lastTarget = ReadLastTargetHandle();
-    acclog::Write("DiagSelect: %s pressed; LastTarget=0x%08x", keyName,
-                  lastTarget);
-}
 
 }  // namespace
 
@@ -90,9 +89,50 @@ void Tick() {
     Vector unused;
     if (!acc::engine::GetPlayerPosition(unused)) return;
 
-    if (risingQ)   LogPress("Q");
-    if (risingE)   LogPress("E");
-    if (risingTab) LogPress("Tab");
+    uint32_t lastTarget = ReadLastTargetHandle();
+
+    // Resolve the controlled creature once for whichever key fired this
+    // tick — we want the snapshot AFTER the engine has processed the key,
+    // so this read happens on the next OnUpdate after the engine has had
+    // its own chance to mutate state. Cheap (one chain walk + name read).
+    void*    creature = acc::engine::GetPlayerServerCreature();
+    uint32_t creatureId = creature
+        ? acc::engine::GetObjectHandle(creature) : 0u;
+    char     creatureName[64] = "?";
+    if (creature) {
+        acc::engine::GetObjectName(creature, creatureName,
+                                   sizeof(creatureName));
+    }
+    Vector creaturePos{};
+    bool   havePos = acc::engine::GetPlayerPosition(creaturePos);
+
+    auto logKey = [&](const char* keyName) {
+        if (havePos) {
+            acclog::Write(
+                "DiagSelect: %s pressed; LastTarget=0x%08x "
+                "leader=%p id=0x%08x name=[%s] pos=(%.2f,%.2f,%.2f)",
+                keyName, lastTarget, creature, creatureId, creatureName,
+                creaturePos.x, creaturePos.y, creaturePos.z);
+        } else {
+            acclog::Write(
+                "DiagSelect: %s pressed; LastTarget=0x%08x "
+                "leader=%p id=0x%08x name=[%s] pos=?",
+                keyName, lastTarget, creature, creatureId, creatureName);
+        }
+    };
+
+    if (risingQ)   logKey("Q");
+    if (risingE)   logKey("E");
+    if (risingTab) logKey("Tab");
+
+    // Tab is the suspected leader-swap key — speak the controlled creature
+    // name so the user can tell whether the swap landed. Q/E we still log
+    // but don't announce (those are target-cycle, surfaced via passive
+    // narrate already).
+    if (risingTab && creature && creatureName[0] != '\0' &&
+        creatureName[0] != '?') {
+        tolk::Speak(creatureName, /*interrupt=*/true);
+    }
 }
 
 }  // namespace acc::diag::engine_select

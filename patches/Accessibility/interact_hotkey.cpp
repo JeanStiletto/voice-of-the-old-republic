@@ -202,6 +202,31 @@ void OnInteract() {
                       ? "(unclassified)"
                       : acc::filter::CategoryName(cat));
 
+    // Diagnostic: log the creature that UseObject will dispatch against,
+    // so we can correlate "Tab swapped leader" against "UseObject ran on
+    // X". Open question: does CClientExoApp::GetPlayerCreature @0x5ED540
+    // track the active leader, or always return the chargen PC? Without
+    // this line the log can't tell us.
+    void*    leader     = acc::engine::GetPlayerServerCreature();
+    uint32_t leaderId   = leader ? acc::engine::GetObjectHandle(leader) : 0u;
+    char     leaderName[64] = "?";
+    if (leader) {
+        acc::engine::GetObjectName(leader, leaderName, sizeof(leaderName));
+    }
+    Vector leaderPos{};
+    bool   haveLeaderPos = acc::engine::GetPlayerPosition(leaderPos);
+    if (haveLeaderPos) {
+        acclog::Write(
+            "Interact: dispatch creature=%p id=0x%08x name=[%s] "
+            "pos=(%.2f,%.2f,%.2f)",
+            leader, leaderId, leaderName,
+            leaderPos.x, leaderPos.y, leaderPos.z);
+    } else {
+        acclog::Write(
+            "Interact: dispatch creature=%p id=0x%08x name=[%s] pos=?",
+            leader, leaderId, leaderName);
+    }
+
     // Disable per-tick player-input movement clobber for the duration of
     // the AI walk-to-then-use that AddUseObjectAction will enqueue. Engine's
     // TickPlayerInputRestore auto-restores after ~3s; on dispatch failure we
