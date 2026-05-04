@@ -41,6 +41,7 @@ constexpr int kInputEnter2   = 0xbb;
 constexpr int kInputEsc1     = 0xb4;
 constexpr int kInputEsc2     = 0xdf;
 constexpr int kInputActivate = 0x27;   // KEYBOARD_F1, the engine's activate code
+constexpr int kInputTab      = 0xCE;   // LOGICAL_TAB, pre-translation logical code
 
 // Raw InputIndices values for unmapped keys — used by the Pillar 4 cycle
 // (Phase 2 lay-off 3). Unmapped keys pass through ManagerTranslateCode

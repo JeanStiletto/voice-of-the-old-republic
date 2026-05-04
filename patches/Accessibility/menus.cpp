@@ -39,6 +39,7 @@
 #include "interact_hotkey.h"    // Phase 2 lay-off 9b
 #include "passive_narrate.h"    // Phase 2 lay-off 9a
 #include "probe_world_hover.h"  // Phase 2 lay-off 9-probe (diagnostic)
+#include "strings.h"            // Container loot panel announces
 #include "turn_announce.h"      // Phase 2 ad-hoc — Pillar 2 sub-feature C
 
 // Engine readers + offset constants moved to engine_reads.{h,cpp} +
@@ -992,6 +993,35 @@ static void ParseVirtualLines(const char* text) {
     }
 }
 
+// Container loot panel control IDs from container.gui (extracted via
+// xoreos-tools from data/gui.bif). Stable per panel kind across patch versions.
+// Used by the Container input handler in OnHandleInputEvent and the per-row
+// monitor MonitorContainerSelection further down.
+constexpr int kContainerLbItemsId   = 2;
+constexpr int kContainerBtnOkId     = 3;
+constexpr int kContainerBtnGiveId   = 4;
+constexpr int kContainerBtnCancelId = 5;
+
+// Locate a child control on `panel` by its +0x50 ID field. The .gui-time IDs
+// are stable per panel kind, so this is the canonical way to address a known
+// control in a known panel without text-matching (which breaks across
+// localizations) or relying on panel.controls index (which can shift).
+static void* FindControlById(void* panel, int id) {
+    if (!panel) return nullptr;
+    auto* list = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+    if (!list->data || list->size <= 0) return nullptr;
+    int n = list->size > 64 ? 64 : list->size;
+    for (int i = 0; i < n; ++i) {
+        void* c = list->data[i];
+        if (!c) continue;
+        int cid = *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(c) + 0x50);
+        if (cid == id) return c;
+    }
+    return nullptr;
+}
+
 // Find the "close" button on a panel — the back/Schliess button we'd click
 // to dismiss the panel. Used by the Esc handler to route Esc to the same
 // FireActivate primitive the user triggers manually by Enter-ing Schliess.
@@ -1563,7 +1593,16 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
     if (source) {
         acclog::Write("SetActiveControl #%d panel=%p new=%p id=%d src=%s text=\"%s\"",
                       n, panel, newControl, id, source, text);
-        SpeakIfChanged(/*channel=*/0, text);
+        // Container loot panel: the engine's listbox text concatenates every
+        // row into one giant utterance ("Tarnfeldgen. Computersonde ..."),
+        // which is overwhelming on panel open and drowns the count + per-row
+        // navigation announces from MonitorContainerSelection. Log only.
+        bool suppressForContainer =
+            IsListBox(newControl) &&
+            IdentifyPanel(panel) == PanelKind::Container;
+        if (!suppressForContainer) {
+            SpeakIfChanged(/*channel=*/0, text);
+        }
     } else {
         // Always log unknowns — these are the events we need to debug.
         char vtbl[160];
@@ -1810,6 +1849,65 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     // comes free from the engine via the normal click pipeline once the
     // cursor is over the chain target.
     bool consumed = false;
+
+    // Container loot panel — has its own input semantics that don't fit the
+    // chain-navigation model used elsewhere. Buttons (Nehmen / Ausw. Ablegen /
+    // Schliess.) are addressed by the stable .gui IDs (3 / 4 / 5) and arrow
+    // keys pass through to the engine's CSWGuiListBox handler so the user
+    // walks rows via the engine's native selection_index update (which
+    // MonitorContainerSelection then announces). Returns early to bypass the
+    // generic chain handlers below — chain would walk listbox row controls
+    // without updating the engine's selection_index, so BTN_OK would have
+    // no idea which row to take.
+    if (activePanel != nullptr &&
+        IdentifyPanel(activePanel) == PanelKind::Container)
+    {
+        if (param_2 != 0) {
+            int targetId = -1;
+            const char* what = nullptr;
+            if (param_1 == kInputEnter1 || param_1 == kInputEnter2) {
+                targetId = kContainerBtnOkId;     what = "Enter -> BTN_OK";
+            } else if (param_1 == kInputTab) {
+                targetId = kContainerBtnGiveId;   what = "Tab -> BTN_GIVEITEMS";
+            } else if (param_1 == kInputEsc1 || param_1 == kInputEsc2) {
+                targetId = kContainerBtnCancelId; what = "Esc -> BTN_CANCEL";
+            }
+            if (targetId >= 0) {
+                if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
+                    acclog::Write("Container: %s -- op already pending; ignoring", what);
+                    consumed = true;
+                } else {
+                    void* btn = FindControlById(activePanel, targetId);
+                    if (btn) {
+                        g_pendingActivate       = true;
+                        g_pendingActivateTarget = btn;
+                        acclog::Write("Container: %s panel=%p target=%p",
+                                      what, activePanel, btn);
+                        consumed = true;
+                    } else {
+                        acclog::Write("Container: %s -- button id=%d not found on panel=%p",
+                                      what, targetId, activePanel);
+                    }
+                }
+            }
+            // NavUp/NavDown/NavLeft/NavRight + everything else: pass through
+            // unchanged so the engine's native listbox handler can mutate
+            // selection_index. MonitorContainerSelection picks up the change.
+        }
+
+        // Log + return to skip the generic chain handlers below.
+        int translated = acc::engine::ManagerTranslateCode(param_1);
+        const char* tag = consumed ? " CONSUMED" : "";
+        if (translated != param_1) {
+            acclog::Write("HandleInputEvent #%d this=%p key=logical(%d) -> %s(%d) val=%d%s",
+                          n, thisPtr, param_1,
+                          acc::engine::InputIndexName(translated), translated, param_2, tag);
+        } else {
+            acclog::Write("HandleInputEvent #%d this=%p key=%s(%d) val=%d%s",
+                          n, thisPtr, acc::engine::InputIndexName(param_1), param_1, param_2, tag);
+        }
+        return consumed ? 1 : 0;
+    }
 
     // Pillar 4 cycle keys (`,` `.` `Shift+,` `Shift+.` `-` `Shift+-`) — Phase 2
     // lay-off 3. Routed first because cycle is in-game-only and the handler
@@ -2273,6 +2371,11 @@ static bool IsContentMonitored(PanelKind k) {
     case PanelKind::InGameAbilities:
     case PanelKind::InGameMessages:
     case PanelKind::InGameEquip:
+    // Container loot panel — Tab toggles between take-mode and give-mode,
+    // which swaps LBL_MESSAGE's strref + LB_ITEMS source. Without content
+    // monitoring the user only hears the per-row navigation (via Monitor-
+    // ContainerSelection) and never learns the mode flipped.
+    case PanelKind::Container:
         return true;
     default:
         return false;
@@ -2401,6 +2504,7 @@ static void BuildContentFingerprint(void* panel, char* out, size_t outSize) {
         reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
     if (!list->data || list->size <= 0) return;
     int n = list->size > 32 ? 32 : list->size;
+    PanelKind kind = IdentifyPanel(panel);
     size_t off = 0;
     for (int i = 0; i < n; ++i) {
         void* c = list->data[i];
@@ -2408,6 +2512,12 @@ static void BuildContentFingerprint(void* panel, char* out, size_t outSize) {
         // Skip buttons — hover state mutates their border-rendered text.
         if (CallDowncast(c, kVtableAsButton) != nullptr) continue;
         if (CallDowncast(c, kVtableAsButtonToggle) != nullptr) continue;
+        // Container loot panel: skip the listbox child. Its text is the full
+        // concatenated chest / inventory contents, which MonitorContainer-
+        // Selection announces per-row on Up/Down nav. The remaining LBL_MESSAGE
+        // label still drives the fingerprint diff, so the take \xE2\x86\x94 give
+        // mode-toggle re-announces (the strref swaps when BTN_GIVEITEMS fires).
+        if (kind == PanelKind::Container && IsListBox(c)) continue;
 
         char text[256];
         const char* src = ExtractAnnounceableText(c, text, sizeof(text), panel);
@@ -2487,6 +2597,22 @@ static void MonitorPanelContents() {
         char* last = GetContentSnapshot(p);
         if (strncmp(last, fingerprint, sizeof(g_contentSnapshots[0].text)) == 0) {
             continue;  // unchanged
+        }
+
+        // Container loot panel: AnnouncePanelTitle in OnSetActiveControl
+        // already spoke the LBL_MESSAGE on panel open (the fingerprint here
+        // is just that same title, since BuildContentFingerprint skips the
+        // listbox for Container). Snapshot without speaking on first sight
+        // so we don't double-announce; subsequent changes (mode toggle
+        // strref swap) DO speak — that's the actual signal we monitor for.
+        bool firstSight = (last[0] == '\0');
+        if (firstSight && k == PanelKind::Container) {
+            strncpy_s(last, sizeof(g_contentSnapshots[0].text),
+                      fingerprint, _TRUNCATE);
+            acclog::Write("Container fingerprint snapshot (first sight, deferring "
+                          "to AnnouncePanelTitle): panel=%p \"%.200s\"",
+                          p, fingerprint);
+            continue;
         }
 
         if (fingerprint[0] != '\0') {
@@ -2658,6 +2784,154 @@ static void MonitorDialogReplies() {
     }
 }
 
+// =============================================================================
+// Container loot panel — input + per-row navigation.
+//
+// container.gui (extracted from data/gui.bif via xoreos-tools) defines a
+// CSWGuiPanel with these stable child IDs:
+//
+//   id 0  LBL_MESSAGE     label   — "Inhalt des Beh\xE4lters" (take-mode) or
+//                                   "F\xFCr diesen Beh\xE4lter verf\xFCgbare
+//                                   Gegenst\xE4nde" (give-mode)
+//   id 2  LB_ITEMS        listbox — chest contents OR player inventory
+//                                   depending on mode
+//   id 3  BTN_OK          button  — "Nehmen" (take-mode) / "Ablegen" (give-mode)
+//   id 4  BTN_GIVEITEMS   button  — toggles take \xE2\x86\x94 give mode
+//   id 5  BTN_CANCEL      button  — "Schliess." (close panel)
+//
+// Mode toggle is engine-native: clicking BTN_GIVEITEMS swaps LBL_MESSAGE's
+// strref + LB_ITEMS source + BTN_OK label without our involvement. Our
+// content monitor (Container in IsContentMonitored) catches the title swap.
+//
+// Input model in this panel:
+//   * Up/Down       — pass through; engine's CSWGuiListBox handler mutates
+//                     selection_index in place (no SetActiveControl callback,
+//                     same as dialog-reply listbox — so we poll).
+//   * Enter         — FireActivate BTN_OK (id=3).
+//   * Tab           — FireActivate BTN_GIVEITEMS (id=4).
+//   * Esc           — FireActivate BTN_CANCEL (id=5). Done explicitly here
+//                     (rather than via the generic Esc \xE2\x86\x92 close-button
+//                     heuristic below) so it doesn't depend on g_tabbedPanel
+//                     being set, which only happens after the user has visited
+//                     Options.
+// =============================================================================
+//
+// Constants (kContainerBtnOkId, etc.) and FindControlById live earlier in the
+// file (next to FindCloseButton) — they're shared with the Container input
+// handler in OnHandleInputEvent.
+
+struct ContainerSelState {
+    void* listBox;
+    short lastSelection;
+};
+static ContainerSelState g_containerSelState = { nullptr, -1 };
+
+// Per-tick poll of the Container panel's listbox selection_index. First sight
+// of a new listbox: announce item count (or "leer"), snapshot without reading
+// the current row. Subsequent change: announce "<row text>, <i+1> von <N>".
+//
+// Mirrors MonitorDialogReplies in structure — both monitor a CSWGuiListBox
+// whose selection_index is mutated in place by the engine's arrow-key handler
+// without firing CSWGuiListBox::SetActiveControl.
+static void MonitorContainerSelection() {
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!mgr) return;
+    auto* base = reinterpret_cast<unsigned char*>(mgr);
+    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+
+    void* containerPanel = nullptr;
+    if (panelData && panelCount > 0) {
+        int n = panelCount > 16 ? 16 : panelCount;
+        for (int i = 0; i < n; ++i) {
+            void* p = panelData[i];
+            if (!p) continue;
+            if (IdentifyPanel(p) == PanelKind::Container) {
+                containerPanel = p;
+                break;
+            }
+        }
+    }
+
+    if (!containerPanel) {
+        if (g_containerSelState.listBox) {
+            acclog::Write("Container monitor disarmed: no Container panel in stack");
+            g_containerSelState.listBox = nullptr;
+            g_containerSelState.lastSelection = -1;
+        }
+        return;
+    }
+
+    void* lb = FindListBoxChild(containerPanel);
+    if (!lb) return;
+
+    auto* lbList = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
+    int rowCount = (lbList && lbList->data) ? lbList->size : 0;
+
+    short selIdx = *reinterpret_cast<short*>(
+        reinterpret_cast<unsigned char*>(lb) + kListBoxSelectionIndexOffset);
+
+    // First sight of this listbox — speak count, snapshot, return. The user
+    // already heard the panel title via AnnouncePanelTitle; the count tells
+    // them there is something to navigate. They press Down to start walking.
+    if (g_containerSelState.listBox != lb) {
+        g_containerSelState.listBox       = lb;
+        g_containerSelState.lastSelection = selIdx;
+        if (rowCount <= 0) {
+            tolk::Speak(acc::strings::Get(acc::strings::Id::ContainerEmpty),
+                        /*interrupt=*/false);
+            acclog::Write("Container monitor armed: panel=%p lb=%p empty initialSel=%d",
+                          containerPanel, lb, selIdx);
+        } else if (rowCount == 1) {
+            tolk::Speak(acc::strings::Get(acc::strings::Id::ContainerOneItem),
+                        /*interrupt=*/false);
+            acclog::Write("Container monitor armed: panel=%p lb=%p count=1 initialSel=%d",
+                          containerPanel, lb, selIdx);
+        } else {
+            char msg[64];
+            snprintf(msg, sizeof(msg),
+                     acc::strings::Get(acc::strings::Id::FmtContainerItems),
+                     rowCount);
+            tolk::Speak(msg, /*interrupt=*/false);
+            acclog::Write("Container monitor armed: panel=%p lb=%p count=%d initialSel=%d",
+                          containerPanel, lb, rowCount, selIdx);
+        }
+        return;
+    }
+
+    if (selIdx == g_containerSelState.lastSelection) return;
+    short prev = g_containerSelState.lastSelection;
+    g_containerSelState.lastSelection = selIdx;
+
+    if (selIdx < 0) {
+        acclog::Write("Container selection cleared: lb=%p prev=%d", lb, prev);
+        return;
+    }
+    if (!lbList || !lbList->data || selIdx >= lbList->size) {
+        acclog::Write("Container selection out of range: lb=%p sel=%d size=%d",
+                      lb, selIdx, lbList ? lbList->size : -1);
+        return;
+    }
+    void* row = lbList->data[selIdx];
+    if (!row) return;
+
+    char rowText[256];
+    const char* src = ExtractAnnounceableText(row, rowText, sizeof(rowText));
+    if (!src) {
+        acclog::Write("Container row %d (lb=%p): no announceable text", selIdx, lb);
+        return;
+    }
+
+    char msg[320];
+    snprintf(msg, sizeof(msg),
+             acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
+             rowText, selIdx + 1, rowCount);
+    tolk::Speak(msg, /*interrupt=*/false);
+    acclog::Write("Container row: lb=%p sel=%d (was %d) text=\"%s\"",
+                  lb, selIdx, prev, rowText);
+}
+
 // CSWGuiManager::Update — hooked mid-function at 0x40ce76. Per-frame tick run
 // once after input dispatch by CClientExoAppInternal::MainLoop. Used as a safe
 // callback site for the deferred MoveMouseToPosition triggered by chain
@@ -2672,6 +2946,7 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     MonitorFocusedControl();
     MonitorPanelContents();
     MonitorDialogReplies();
+    MonitorContainerSelection();
 
     // Pillar 4 cycle keys via Win32 polling. Stock kotor.ini doesn't bind
     // `,/./-`, so OnHandleInputEvent never sees them in-world (the engine's

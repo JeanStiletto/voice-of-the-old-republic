@@ -36,6 +36,11 @@ const char* Get(Id id) {
         case Id::FmtInteractTake:      return "Pick up %s";
         case Id::FmtInteractFailed:    return "Interact with %s failed";
 
+        case Id::ContainerEmpty:       return "Empty";
+        case Id::ContainerOneItem:     return "1 item";
+        case Id::FmtContainerItems:    return "%d items";
+        case Id::FmtContainerItemAt:   return "%s, %d of %d";
+
         case Id::DirNorth:             return "North";
         case Id::DirNortheast:         return "Northeast";
         case Id::DirEast:              return "East";

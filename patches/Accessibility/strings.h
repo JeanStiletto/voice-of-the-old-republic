@@ -87,6 +87,20 @@ enum class Id : int {
     FmtInteractTake,
     FmtInteractFailed,
 
+    // ---- Container loot panel announces.
+    //      `ContainerEmpty`        — count == 0.
+    //      `ContainerOneItem`      — count == 1 (German singular has different
+    //                                stem: "Gegenstand" vs "Gegenst\xE4nde";
+    //                                trying to template that with %d would
+    //                                read wrong on the 1-case).
+    //      `FmtContainerItems`     — count >= 2; takes (count_int).
+    //      `FmtContainerItemAt`    — per-row navigation; takes (row_text_str,
+    //                                index_one_based_int, total_int).
+    ContainerEmpty,
+    ContainerOneItem,
+    FmtContainerItems,
+    FmtContainerItemAt,
+
     // ---- Octagonal compass directions for turn announcement
     //      (Pillar 2 sub-feature C). German uses traditional
     //      "Norden / Osten / S\xFCden / Westen" forms with hyphenated
