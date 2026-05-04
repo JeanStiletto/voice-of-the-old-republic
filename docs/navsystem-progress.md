@@ -10,7 +10,7 @@
 
 - **Phase 0 — Refactor.** *Complete (2026-05-03).* All six lay-offs landed: `core_dllmain` + `engine_input`, `engine_offsets` + `engine_reads`, `engine_panels`, `engine_manager`, rename to `menus.cpp`, and the user-driven menu regression test ("everything working as before. no new bugs.").
 - **Phase 1 — Foundation.** *Complete (2026-05-03).* All planned lay-offs landed: `engine_player` (1), CExoSound singleton trace (2), `audio_bus` (3), test fixture + exit gate (4), atmospheric-pass curation + `audio_cues.h` wiring (5), `core_settings` stub (7). Lay-off 6 (`audio_listener`) was dropped at lay-off 4 — engine default listener proved camera-anchored at the gate.
-- **Phase 2 — Playable baseline.** *In progress (started 2026-05-03).* Lay-offs 1-9 landed across two days. Significant **architectural shift** captured 2026-05-04 evening: in-world target-cycle is **delegated to the engine's native Q/E primitive** (`SelectNearestObject @0x005fb050`) rather than our own `,`/`.` filter — the engine already does it, populates `LastTarget`, and our `passive_narrate` watcher catches the change for free. Our `,`/`.`/`Shift+,`/`Shift+.`/`-` cycle is **retained but reassigned to map-side use** (Pillar 3 marker cycle, Phase 5/6). In-world camera direction is announced on A/D via dead-reckoning (`camera_announce`); in-world character facing on W is announced via `turn_announce`. The blocker is now **single-pointed**: `Enter` fires `HandleMouseClickInWorld` cleanly but engine doesn't move the player creature — same parked autowalk-blocker symptom as `AddMoveToPointAction`. Two independent entry points fail the same way → strong evidence for player-control-mode dominance. Phase 2 exit gate now hinges on closing this one blocker.
+- **Phase 2 — Playable baseline.** *In progress (started 2026-05-03).* Lay-offs 1-9 landed; player-control-mode blocker **resolved 2026-05-04** (commit `d578fbe`). Toggle is `CSWPlayerControl::SetEnabled @ 0x006792e0` — wraps a creature-mode write that pairs with `CSWCCreature::SwitchMode`; flip 0 around AI-action dispatch and the per-tick input handler skips the movement-clobber block. Interact path also re-routed: dropped the engine's two-click `HandleMouseClickInWorld` pipeline (which needs a cursor-built action descriptor at `+0x4c8` we couldn't synthesise) for a direct `CSWSObject::AddUseObjectAction @ 0x0057c810` call — same primitive NWScript's `ActionInteractObject` uses. Verified in-game: cycle (`,`/`.`) → Enter opens the Feldkiste; Q/E → Enter now also works after fixing the client-vs-server handle namespace mismatch in the LastTarget fallback. Architectural picture unchanged: in-world target cycle delegated to engine's Q/E (`SelectNearestObject @0x005fb050`) → `LastTarget` → `passive_narrate`; A/D camera-direction announce; W character-facing announce. **Phase 2 exit gate** still pending — needs a solo playthrough confirming end-to-end navigation + transition announcements (lay-off 7).
 - **Phase 3 — Pillar 1.** Pending.
 - **Phase 4 — Pillar 2 polish + view mode.** Pending.
 - **Phase 5 — Pillar 3 polish.** Pending.
@@ -39,7 +39,7 @@ Make the game playable end-to-end via cycle-and-autowalk. Lands the four pieces 
 8. **Phase 2 exit gate** — solo playthrough of one area confirms cycle-and-autowalk loop. Phase 1 audio test fixture removed once a real Phase 2 consumer (lay-off 4 or 7) demonstrates 3D audio in production code.
 9. **Interaction model — Layers A+B** *(scoped 2026-05-04 — see `docs/navsystem-longterm-plan.md` "Cross-cutting — Interaction model")*:
    - **9-probe** (parallel single-trip RE step) — *Closed 2026-05-04 (in-game data captured).* Diagnostic in `patches/Accessibility/probe_world_hover.{h,cpp}` ran live (`patch-20260504-063846.log`). Verdict: **`LastTarget` populates organically** as the player walks (transitions captured: `0x7f000000` ↔ `0x80000004`, `0x80000004` ↔ `0x800000c6` near interactables) — Layer A unblocked. **`MoveMouseToPosition(mgr, 320, 240)` does NOT change world-hover state** (`target_changed=0` and `mover_changed=0` across 8 Alt+P warps) — Layer C dropped. Probe stays in tree until lay-off 9a lands as a working pair (LastTarget watcher *should* fire on the same handles the probe logged); deletable thereafter as a single commit. Investigation Q6 + long-term plan updated 2026-05-04.
-   - **9a — Passive-selection narration loop.** *Build verified 2026-05-04; awaiting in-game test.* Implementation:
+   - **9a — Passive-selection narration loop.** *Closed 2026-05-04 (verified in-game across multiple sessions; PassiveNarrate fires on every LastTarget change as Q/E walks the engine's curated target list).* Implementation:
      - `patches/Accessibility/passive_narrate.{h,cpp}` (~165 lines) — `Tick()` runs from `OnUpdate`, reads `LastTarget` via the same client-app chain the probe used, caches last-seen handle, classifies the resolved object through `acc::filter::ObjectMatches` over the six locked Pillar 4 categories, plays the per-category 3D cue at the object's position, speaks the localised name via Tolk.
      - `engine_area.{h,cpp}` — added public `ResolveObjectHandle(uint32_t)` helper. Walks the same `AppManager → CServerExoApp → CGameObjectArray::GetGameObject` chain `AreaObjectIterator::Next` uses, with the inverted-bool semantics; SEH-guarded; rejects all three engine sentinels (`0`, `0xFFFFFFFF`, `0x7F000000`).
      - Empty-name fallback: speaks the localised category label (`Tür`, `Person`, `Behälter`, …) when the per-kind name resolver returns empty.
@@ -47,13 +47,10 @@ Make the game playable end-to-end via cycle-and-autowalk. Lands the four pieces 
      - Logs every resolved + spoken event as `PassiveNarrate: <prev> -> <new> cat=X name=[Y] pos=(...)`. Same log file as the probe — easy to correlate against the `Probe: LastTarget changed` lines from the same handle stream.
      - **Independent of cycle:** cycle's own narration path keeps firing on cycle keys; 9a adds the ambient channel on top. Double-narration acceptable for first cut; recency-suppress (~500 ms) added later if disruptive.
      - **Run:** `kdev apply` + `kdev launch --monitor`, load a save, walk past doors / NPCs / containers — should hear cue + name as `LastTarget` changes (correlate `PassiveNarrate:` log lines with `Probe: LastTarget changed` lines for the same handles seen in the probe run).
-   - **9b — Combined autowalk+interact hotkey.** *Build verified 2026-05-04; awaiting in-game test.* Single key **Enter** (`VK_RETURN`) reads cycle focus first / engine `LastTarget` fallback, speaks the localised pre-roll ("Sprich mit X" / "Öffne X" / "Hebe X auf"), then routes through the engine's native click pipeline:
-     1. `CClientExoApp::SetLastClickedOnTarget(handle) @0x005ee200` — stamps the target in the engine's click state.
-     2. `CClientExoAppInternal::HandleMouseClickInWorld() @0x00620350` — invokes the engine's own click-on-3D-world dispatcher. Internally enqueues a kind-appropriate AI action against the player creature: walk-to + open / talk / loot / pick-up.
-     - **Decision (2026-05-04):** route through the native click pipeline rather than constructing a `CSWSObjectActionNode` from scratch. The action-node path is documented as "PlaceHolder Structure" in Lane's DB and would require decompiling `AddMoveToPointAction`'s internals to learn the parameter slots. The native click path is what NWScript scripts and the click handler both feed into; if it works, we've found the right layer for free.
-     - `interact_hotkey.{h,cpp}` (~210 lines) + new helpers `engine_area::GetObjectHandle` (CGameObject.id @+0x4) + four new strings (`FmtInteractTalk` / `FmtInteractOpen` / `FmtInteractTake` / `FmtInteractFailed`).
-     - **Side-channel autowalk-blocker test:** if HandleMouseClickInWorld moves the player to a faraway target when raw `AddMoveToPointAction` doesn't, the parked Phase 2 blocker closes — the engine click pipeline is the missing layer. Either result is informative.
-     - **Run:** `kdev apply` + `kdev launch --monitor`, cycle to a thing (`,`/`.` or `Shift+,`/`Shift+.`), press **Enter**. Expect the pre-roll speech, then character walks toward target + interacts. Log lines: `Interact: Enter -> [pre-roll] target=PTR handle=0xH cat=Cat` and `Interact: HandleMouseClickInWorld dispatched cleanly` on the happy path.
+   - **9b — Combined autowalk+interact hotkey.** *Closed 2026-05-04 (verified in-game; commit `d578fbe`).* Single key **Enter** (`VK_RETURN`) reads cycle focus first / engine `LastTarget` fallback, speaks the localised pre-roll ("Sprich mit X" / "Öffne X" / "Hebe X auf"), then dispatches `acc::guidance::UseObject(handle)` — wraps `CSWSObject::AddUseObjectAction @0x0057c810`, the same primitive NWScript's `ActionInteractObject` uses. Engine internally walks the player to the target then triggers the kind-appropriate USE callback (open door / loot container / pick-up / talk). Wrapped in `acc::engine::SetPlayerInputEnabled(false)` so the per-tick player-input loop doesn't clobber the queued move; auto-restored after 3s by `TickPlayerInputRestore` from `OnUpdate`.
+     - **Path retired:** the engine's native `HandleMouseClickInWorld` pipeline turned out to be a two-click hover-then-act flow. The first call only *selects*; the second triggers the cursor-built action descriptor at `+0x4c8`. Without the cursor-hover system populating that descriptor, the ACTION path silently no-ops. We tried calling it directly and got `dispatched cleanly` logs with zero engine response — see the post-mortem decompilation note in this lay-off's commit message. `AddUseObjectAction` is the right layer.
+     - **Files:** `interact_hotkey.{h,cpp}`, `guidance_autowalk.{h,cpp}` (added `UseObject` wrapper next to `WalkTo`/`ForceWalkTo`), `engine_player.{h,cpp}` (`SetPlayerInputEnabled` + `TickPlayerInputRestore`), `menus.cpp` (tick wiring). Strings unchanged from initial cut.
+     - **Side-channel result:** the autowalk blocker (lay-off 6's parked item) and the interact blocker turned out to be the same gating logic — both fixed by `SetEnabled(0)`. See "Engine-side autowalk blocker" further down for the full RE chain (Lane's DB + Ghidra decompile of `CSWPlayerControlCamRelative::Control` confirmed the `enabled != 0` guard on the per-tick movement override).
 
 10. **Octagonal direction-on-turn announcement** *(Phase 4 plan item, pulled forward 2026-05-04 — closed in-game).* Pillar 2 sub-feature C. `turn_announce.{h,cpp}` (~110 lines) reads `GetPlayerYawDegrees`, converts engine frame → compass, buckets into 8 sectors of 45°, speaks the localised cardinal name on sector change with 5° hysteresis. 8 new direction strings. **Verified in-game** (`patch-20260504-074334.log`): all 8 sectors traversed cleanly, hysteresis working. Fires on every W press because KOTOR 1's character has no separate "rotate-in-place" input — the character is yawed to face camera-forward whenever a movement begins. So `turn_announce` correctly catches "you committed to walking in direction X".
 
@@ -262,7 +259,7 @@ Build verified: `kdev build` clean (19 .cpp files, DLL exports verified).
 
 Discipline: pure addition, no behavioural change, no engine indirection at runtime (function only fires when a future consumer calls `WalkTo`). Single coherent commit for the engine_player +1 function + the two new guidance files. Fresh session for lay-off 6 (`Shift+-` binding) — that's where the first runtime test of `WalkTo` lands and warrants un-degraded context for verifying the engine call works against a live player.
 
-**Lay-off 6** — Pillar 4 → guidance binding. *Build verified 2026-05-04; in-game tested 2026-05-04 — code paths land cleanly, but autowalk movement blocked by engine-side player-control-mode dominance. Functional autowalk parked pending RE work (see "Engine-side autowalk blocker" below).*
+**Lay-off 6** — Pillar 4 → guidance binding. *Closed 2026-05-04 (commit `d578fbe`). Code paths verified earlier; engine-side blocker resolved via `CSWPlayerControl::SetEnabled(0)` wrap around the AddMoveToPointAction dispatch. See "Engine-side autowalk blocker — RESOLVED" below for the RE chain.*
 
 Replaces the `Shift+-` log-only stub in `cycle_input.cpp` with a real handler that calls `acc::guidance::WalkTo(focused.position)` (lay-off 5's wrapper) on the Pillar 4 currently-focused object, plays the per-category 3D cue at the destination, and speaks the localized "Guiding to {name}" payload. First runtime test of the lay-off 5 wrapper — first time the engine's AddMoveToPointAction is invoked from our DLL.
 
@@ -288,28 +285,15 @@ In-game verification needed (next session start, single-trip test): launch into 
 
 Cancel-on-second-press test will fail in this lay-off — that's expected; it's the parked follow-up.
 
-### Engine-side autowalk blocker (in-game test 2026-05-04)
+### Engine-side autowalk blocker — RESOLVED 2026-05-04
 
-What works end-to-end:
+**Original symptom:** across 18 dispatch attempts spanning multiple game states, the player creature did not move once as a result of `AddMoveToPointAction` / `ForceMoveToPoint` / `HandleMouseClickInWorld` calls. Engine accepted every call without faulting; manual walking worked between attempts. Three independent entry-point classes failing the same way pointed at gating logic shared across all three.
 
-- `Shift+-` and `Alt+-` (the diagnostic) both fire cleanly. Cycle state, focused-object resolution, `acc::engine::GetObjectName`, distance + clock-position computation, `acc::audio::PlayCue3D` at the destination, Tolk announce, every log line — all of it lands as designed.
-- `acc::guidance::WalkTo` calls `CSWSCreature::AddMoveToPointAction @0x004F8B60`. Engine returns `0x00000001` (success-shaped) every time. No SEH fault.
-- `acc::guidance::ForceWalkTo` calls `CSWSCreature::ForceMoveToPoint @0x004EDBA0` with a populated `CSWSForcedAction` struct (28 bytes, layout per `swkotor.exe.h`). Function is `void`, returns no diagnostic; runs without SEH fault.
+**Resolution:** the gate is `CSWPlayerControl::SetEnabled @ 0x006792e0` — a named API that writes `enabled` at +0xc on the heap `CSWPlayerControl` (reachable via `client_app + 0x4 (Internal) + 0x2a0 (player_control)`) and pairs it with `CSWCCreature::SwitchMode(creature, mode) @ 0x0060f090` to flip the creature's mode tag (0=AI, 1=player, 2=driving). The per-tick input handler `CSWPlayerControlCamRelative::Control @ 0x00679940` gates its movement-application block on `(player_control.enabled != 0)`; while `enabled=1` it overwrites the creature's movement vector every tick before queued AI actions can execute. Setting `enabled=0` skips the clobber and queued actions run.
 
-What doesn't:
+**Implementation:** `acc::engine::SetPlayerInputEnabled(bool)` in `engine_player.{h,cpp}` wraps the thiscall. Auto-restore at +3s via `TickPlayerInputRestore` from `OnUpdate` (no per-caller restore tracking needed; idempotent flip-back is fine). Each guidance dispatch site (`WalkTo` / `ForceWalkTo` / Enter-interact's `UseObject`) flips off before the engine call, restores immediately on SEH-fault paths, and lets the auto-restore handle the success path.
 
-- Across 18 dispatch attempts spanning multiple game states (in-tutorial, post-tutorial Spire corridor, near-target close-range, far-target across-area), **the player creature did not move once** as a result of either dispatch. Watchdog reports `moved=0.00m` at t+1s and `moved=0.00m (still stuck)` at t+3s on every attempt. Manual walking between attempts works fully — the `from=(...)` field of successive dispatches changes as the user repositions, confirming the player creature itself is movable.
-
-What this rules out:
-
-- *Tutorial / cutscene gate* — manual walking works in the same states where autowalk is silent.
-- *Queue contention* — `ForceMoveToPoint` bypasses the action queue entirely; same null result.
-- *Bad creature pointer* — same `engine_player::GetPlayerServerCreature` chain whose position reads (`from=(15.42,20.12)`) are correct.
-- *Bad signature / struct layout* — neither call faults; both engine-side functions accept the call without protest.
-
-What's left as the most plausible cause:
-
-- **Player-control-mode dominance.** Aurora-engine creatures have a control-mode flag separating "player-driven" (input vector clobbers AI per tick) from "AI-driven" (action queue executes). Our raw calls add the move action but the per-tick loop overwrites it with the input-driven vector (zero when no key is held → "stand still"). NWScript's `ExecuteCommandActionMoveToPoint` works on the player because it presumably toggles control mode internally; we don't.
+**Side-effect surface:** `SwitchMode` is a single-field write (54-byte function); `SetEnabled` writes two fields. No script triggers, no save-game state, no item-repository touches, no NPC behavior changes from the engine's perspective. World identity is `CSWSCreatureStats.is_pc` at +0x6c — *not* control mode — so NPCs continue to recognise the player as the PC. Camera-rotation block in `Control` runs unconditionally so `camera_announce` keeps firing during autowalk; `turn_announce` fires from server-side yaw which the AI updates as it walks-to-target. Verified live `2026-05-04`: cycle → Enter opens Feldkiste cleanly, character walks under AI control then triggers the USE callback. See memory entries `project_player_control_toggle.md` + `project_object_handle_namespaces.md` for the RE specifics.
 
 ### Diagnostic instrumentation shipped (permanent)
 
@@ -323,22 +307,14 @@ Watchdog idle-cost is one bool check per `OnUpdate` tick; only fires when a rece
 
 `Alt+-` is wired permanently as the `ForceMoveToPoint` path. Side note: pressing Alt in Windows enters menu-activation mode and produces a "ding" system sound when the next key isn't a menu mnemonic — a Windows-side annoyance, not our code, suppressible only by hooking `WndProc`'s `WM_SYSCHAR`. If the diagnostic path stays as a permanent feature, rebind `Alt+-` to something else (`Ctrl+-` clean, or unmodified `=`) to avoid the ding.
 
-### Path forward (not blocking other Phase 2 work)
-
-The engine-side investigation needed to actually move the player is parallel work, not a hard prerequisite for Phase 2's other lay-offs:
-
-1. **Disassemble `ExecuteCommandActionMoveToPoint`** (a `CClientExoApp` method per investigation Q1) — it's NWScript's wrapper that demonstrably works on the player. Compare what it does before/after `AddMoveToPointAction`. Anything outside the bare AI-action enqueue (control-mode toggle, input-override release, AI flag flip) is the missing ingredient.
-2. **Search for control-mode setters on `CSWSCreature`.** SARIF candidates: `SetAIControlMode`, `EnablePathfindingAI`, `SetPossessed`, `SetPlayerControlled`, anything in the `0x4f0000–0x510000` range that takes a bool and might gate AI execution.
-3. **Compare to `CSWCCreature.moving_orientation +0x1c4`** (investigation Q3) — the *client*-side moving state. Maybe the path-finder gates on the client-side flag mirroring the server's queued action; if there's a missing client-side setup our raw server-side call skips it.
-4. **Worst case fallback: route through NWScript.** If the control-mode toggle isn't trivially decoded, call `ExecuteCommandActionMoveToPoint` directly (same address `0x53cae0`-ish range, listed in Q1). Slower (VM-call overhead), but works because that's the path the engine itself uses.
-
 **Follow-ups parked from lay-off 6 (not blocking lay-off 7):**
 
-- **Engine-side autowalk blocker** — see above. Highest-leverage RE item left in Phase 2; without it, autowalk is silent. Doesn't block other lay-offs because Pillar 1 (Phase 3) and Pillar 2 (lay-off 7) make manual walking comfortable enough that autowalk is a nice-to-have rather than a must-have for the playable-baseline gate.
-- **Explicit Shift+- toggle-cancel** — needs RE of the engine's clear-action / abort-move function. Recipe-4 candidates: trace callers of `AIActionMoveToPoint @0x51f4f0` for an "if cancelled" early-exit, OR look for a sibling of `CSWSObject::AddAction` named `ClearActions` / `RemoveActions`. Once decoded, add `acc::guidance::CancelMovement()` and a state flag in `cycle_input` to dispatch press-twice → cancel. (Moot until the autowalk-doesn't-move blocker is resolved.)
+- **Explicit Shift+- toggle-cancel** — needs RE of the engine's clear-action / abort-move function. Recipe-4 candidates: trace callers of `AIActionMoveToPoint @0x51f4f0` for an "if cancelled" early-exit, OR look for a sibling of `CSWSObject::AddAction` named `ClearActions` / `RemoveActions`. Once decoded, add `acc::guidance::CancelMovement()` and a state flag in `cycle_input` to dispatch press-twice → cancel. (Now actually relevant — autowalk works, so cancel becomes a real ergonomics question.)
+- **Manual-input override during autowalk** — currently a 3-second hard timeout on the input-disable session, set in `TickPlayerInputRestore`. If the user holds W during autowalk it does nothing for ~3s. Acceptable v1; iterate on user feedback. Possible refinement: poll W/A/S/D rising-edge in `OnUpdate` and call `SetPlayerInputEnabled(true)` immediately on detection.
 - **Arrival-facing polish** — pass `dest + obj.facing_offset` as secondary point so the player ends up oriented toward the object's interaction face (e.g. facing the door's open direction, not its back). Needs per-kind facing reads. Defer until first user feedback.
 - **Run-vs-walk knob** — currently locked to walk per lay-off 5's default. If user feedback shows autowalk is too slow for cross-area moves, lift `WalkTo` to take an optional `run` parameter and decide policy at this callsite (e.g. `run = (distance > threshold)`).
 - **Rebind `Alt+-` diagnostic to a non-Alt combination** to silence the Windows menu-activation "ding" sound. Candidate: `Ctrl+-` (no menu interaction in Windows), or unmodified `=`. Keep the Force path as a permanent diagnostic; just on a quieter modifier.
+- **Combat behaviour while input-disabled** — during the 3-second auto-restore window the creature is AI-driven; in combat the AI script may engage hostiles autonomously. Not yet observed (tested on tutorial Endar Spire, no combat). Watch for it once the user reaches a combat-relevant area; if intrusive, gate `SetEnabled(false)` on `combat_mode == 0`.
 
 ---
 
@@ -703,43 +679,27 @@ A second symptom — audio stutter when pressing *Schließen* in Options — has
 
 ## Next session: where to start
 
-Phase 2 is in progress. Lay-off 4 closed in-game 2026-05-04. Lay-offs 5 + 6 partially closed 2026-05-04 — code path lands cleanly, but engine-side player-control-mode dominance prevents the queued/forced action from actually moving the player creature. Functional autowalk is parked pending RE work (see lay-off 6's "Engine-side autowalk blocker" section); permanent diagnostic instrumentation (watchdog + Alt+- ForceMoveToPoint diagnostic) shipped so future investigation across guidance / view-mode / pathfind callers gets the same telemetry.
+Phase 2 is in progress. Lay-offs 1–6 + 9 closed; player-control blocker resolved (`d578fbe`). Two open items remain before the Phase 2 exit gate:
 
-Phase 2 in-world surface is **architecturally closed** as of 2026-05-04 evening. Working features (verified in-game):
-- **`,`/`.` map-side cycle** (in-world use deprecated; survives for map-marker scan in Phase 5/6).
-- **Q/E** native engine target cycle → `LastTarget` → `passive_narrate` speaks.
-- **A/D** camera rotation → `camera_announce` speaks compass direction.
-- **W/S** character forward/back → `turn_announce` speaks character facing.
-- **Passive narrate** loop catches every `LastTarget` change (engine selection + Q/E both feed it).
-- **Cycle keys, autowalk path** still wired (Shift+- ↦ `AddMoveToPointAction` / Alt+- ↦ `ForceMoveToPoint`) — both engine entry points accept calls without faulting but don't move the player creature.
-- **Interact (Enter)** — same blocker symptom: `SetLastClickedOnTarget` + `HandleMouseClickInWorld` dispatch cleanly, engine doesn't move/interact.
+1. **Lay-off 7 — Pillar 2 transitions** (room/area announce). Not started. The room-cluster slice of `engine_area` lands here (per-tick `GetRoomAt` delta → speak room name; hook `CClientExoApp::AddMoveToModuleMovie @0x5edb50` for "loading: …" then on area-enter speak the new area name). This is the next session's primary work.
+2. **Phase 2 exit gate (lay-off 8)** — solo playthrough of one area confirming the cycle-and-autowalk-and-interact loop, plus transition announcements. Lay-off 7 + a play session closes Phase 2.
 
-**Single-pointed Phase 2 blocker:** the engine accepts every entry point we feed it (raw AI queue, force-move, native click pipeline) but the player creature doesn't act on any of them. Three independent entry-point classes failing the same way is strong evidence for **player-control-mode dominance** — the player's per-tick input loop is overwriting whatever AI/click action we queue. Phase 2 exit gate now depends on resolving this one issue.
+Verified working in-game (commits up through `d578fbe`):
+- `,`/`.` map-side cycle (kept for Pillar 3 marker scan in Phase 5/6).
+- Q/E native engine target cycle → `LastTarget` → `passive_narrate` speaks.
+- A/D camera rotation → `camera_announce` speaks compass direction.
+- W/S character forward/back → `turn_announce` speaks character facing.
+- `Shift+-` autowalk and `Alt+-` ForceMove diagnostic — engine now actually moves the player (control-mode toggle wraps the dispatch).
+- **Enter** interact via cycle focus and Q/E LastTarget paths — `acc::guidance::UseObject` queues `ACTION_USEOBJECT` on the player creature; engine walks-to-then-uses. Verified opening Feldkiste / Tür on Endar Spire.
 
-### Next session — make Enter actually work
+**Lay-off 6 follow-ups (parked, not blocking lay-off 7):** see lay-off 6 "Follow-ups parked" section above — Shift+- toggle-cancel, manual-input override during autowalk, arrival-facing polish, run-vs-walk knob, Alt+- ding-rebinding, combat-behaviour-while-disabled monitoring.
 
-Goal: pressing Enter while a target is in `LastTarget` (set by Q/E or by user clicking) should walk the player + interact. The user phrased it: *"if i press q and e i can cycle to an interactable and enter will autowalk and click me"*.
-
-Three RE candidates, in order of expected leverage:
-
-1. **Empirical comparison: hook `CClientExoAppInternal::HandleMouseClickInWorld @0x00620350` and observe a real sighted click vs. our synthesized invocation.** A real click moves the player every time; ours doesn't. Diff tells us what state we're missing — likely a flag set by the input event queue (`CExoArrayList<CExoInputEvent>::Insert @0x00620480` is right next to HandleMouseClickInWorld in the function table). Cheapest signal-per-effort.
-2. **Find the player-control-mode setter.** SARIF candidates: `CSWSCreature::Set*ControlMode`, `SetPossessed`, `EnablePathfindingAI`, anything in 0x4f0000-0x510000 taking a bool. If we can flip a bit before dispatching, it might unlock both autowalk and interact at once.
-3. **NWScript fallback.** Ship a tiny precompiled NCS in Override/ containing `void main() { ActionInteractObject(GetTarget()); }`, call `CVirtualMachine::RunScript @0x005d0fc0` with player-creature handle. NWScript runs vanilla scripts on the player every day; this path is guaranteed to work, just heavier engineering (NWScript compile, RunScript args RE).
-
-**Parked RE item (separate from any specific lay-off):** *the* highest-leverage Phase 2 follow-up — figure out why the player creature ignores raw `AddMoveToPointAction` / `ForceMoveToPoint` calls. See lay-off 6's "Path forward" subsection for the four investigation candidates (`ExecuteCommandActionMoveToPoint` disassembly, control-mode setter search, client-side mirror flag, NWScript fallback). Pickable in any future session; no other lay-off depends on it.
-
-**Lay-off 4 follow-ups parked for later (not blocking lay-off 7):**
+**Lay-off 4 follow-ups (parked, not blocking lay-off 7):**
 
 - Cycle scope — the area scan is still whole-area, not "current room + LOS extension" per the plan. Distances of 40-80m to doors across the Spire are fine for a stress-test but produce noisy listings in dense areas. Lay-off 7 (Pillar 2 transitions) will land the room-cluster slice and tighten the cycle scope here.
 - `last_name` concatenation for creatures (NPC main-cast surname display).
 - Camera-relative clock-position option as a `core_settings` knob.
 
-**Lay-off 6 follow-ups parked for later (not blocking lay-off 7):**
+**Lay-off 9b post-fix follow-up:** dispatch picks an "open" pre-roll for any unclassified target (cat=`(unclassified)`). For NPCs we'll want to dispatch via `ExecuteCommandActionStartConversation` instead; for items, `ActionPickUpItem`. Currently `AddUseObjectAction` covers placeables / doors / containers — the most common case in the tutorial. Per-kind dispatcher when a non-placeable case bites in user testing.
 
-- Engine-side autowalk blocker (see above, top-priority RE item).
-- Explicit Shift+- toggle-cancel — needs RE of the engine's clear-action / abort-move entry point. Moot until the autowalk-doesn't-move blocker is resolved.
-- Arrival-facing polish (secondary point = obj.facing offset).
-- Run-vs-walk knob exposed to the consumer.
-- Rebind Alt+- diagnostic to a quieter modifier (avoids the Windows menu-activation "ding").
-
-- The chargen Class c0000409 fix and `KPatchManager` LEA-vs-MOV / selective-POPAD ESP bugs (memory-recorded) remain context for future work but are not Phase 2 blockers.
+The chargen Class c0000409 fix and `KPatchManager` LEA-vs-MOV / selective-POPAD ESP bugs (memory-recorded) remain context for future work but are not Phase 2 blockers.

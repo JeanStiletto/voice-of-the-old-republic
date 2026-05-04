@@ -148,13 +148,20 @@ void* ResolveInteractTarget(uint32_t* outHandle) {
     }
 
     // Fallback: read engine LastTarget (passive-selection-driven).
+    // LastTarget stores client-side handles (high bit 0x80000000 set);
+    // ResolveClientObjectHandle walks to the matching server CSWSObject*,
+    // and we re-derive the *server-side* id from CGameObject.id+0x4 — that's
+    // the namespace AI-action primitives like AddUseObjectAction operate in.
+    // Passing the original client handle silently no-ops the queued action.
+    // See memory: project_object_handle_namespaces.md.
     uint32_t handle = ReadLastTargetHandle();
     if (handle == 0u || handle == 0xFFFFFFFFu || handle == 0x7F000000u) {
         return nullptr;
     }
     void* obj = acc::engine::ResolveClientObjectHandle(handle);
     if (!obj) return nullptr;
-    *outHandle = handle;
+    *outHandle = acc::engine::GetObjectHandle(obj);
+    if (*outHandle == 0) return nullptr;
     return obj;
 }
 
