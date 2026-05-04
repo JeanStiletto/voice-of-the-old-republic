@@ -289,6 +289,33 @@ A "look around the room without moving the character" mode that reproduces the s
 - Pillar 1 wall tones don't need explicit suspension — character is stationary in view mode, no distance deltas, no cues fire naturally.
 - Collision cue is a *cursor-triggered*, view-mode-only cue, separate from Pillar 1's character-anchored cues.
 
+### Hint — re-evaluate engine "Mouse Look" setting at view-mode design (drafted 2026-05-04)
+
+KOTOR 1 has a vanilla Options-menu toggle **"Mouse Look"** that swaps the default role of the mouse:
+
+- **OFF** (default): mouse is a screen cursor, RMB-held rotates the camera.
+- **ON**: mouse rotates the camera continuously (FPS-style); RMB-held releases the cursor for clicking.
+
+Phase 1 lay-off 4 verified the audio listener is **camera-anchored** (audible pan responds to A/D camera rotation). With Mouse Look ON, the *mouse* effectively drives the camera — and therefore drives the listener — and the cursor's conceptual position is always "the centre of view".
+
+For view mode this is a near-perfect free ride:
+
+- Mouse motion → camera rotation → listener rotation → soundscape repositioning. The user "sweeps" the soundscape with the mouse.
+- Whatever the camera centres on is what the cursor is "over". Hovering an interactable means the soundscape is centred on it (panel/distance audio collapses to centre).
+- A single click activates it (engine's native click pipeline — same as in-world).
+
+So the view-mode plan above (virtual cursor moved by bound movement actions, walkmesh-bounded, our own collision cue) **may be replaceable with**: "force Mouse Look ON for the duration of view mode, let the engine's mouse-driven camera be the cursor". Significantly less code; reuses engine surfaces we already verified.
+
+**Action item when view-mode lay-offs begin:**
+1. Read the Mouse Look toggle state via `CClientOptions` (engine ini surface; address near +0xb0 `mouseCameraRotateToggle` per Lane's DB structures).
+2. Try toggling it ON inside view mode and OFF on exit.
+3. If the soundscape rotates with mouse + cursor visually centres on the camera focus, the engine has done 90% of view mode for us.
+4. Walkmesh-bounded cursor + collision cues become "obstacle cues that fire when the camera ray hits a wall" rather than virtual-cursor-collision.
+
+If this works, it also dovetails with click-to-walk: "click while in view mode" goes through the same engine pipeline as a normal sighted click — same blocker as our current Enter dispatch, but if we've solved that by Phase 4, view mode click-to-walk is free too.
+
+If it doesn't (e.g. Mouse Look is incompatible with our screen-reader workflow, or the engine doesn't expose the toggle to script), fall back to the original virtual-cursor design above.
+
 ### Open sub-questions for view mode
 
 - Cursor speed / fluidity values (likely same as map-cursor; tunable in user options)
