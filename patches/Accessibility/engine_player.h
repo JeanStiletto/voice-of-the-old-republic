@@ -66,6 +66,14 @@ bool GetPlayerYawDegrees(float& out);
 // engine_area lands in a later phase (consumers don't exist yet).
 void* GetPlayerArea();
 
+// Returns the player's server-side creature (CSWSCreature*, downcastable
+// from CSWSObject*) as an opaque pointer, or nullptr if no player is
+// loaded. Same chain walk as the position/facing readers — exposed so
+// other engine_* / guidance_* consumers can call thiscall methods on the
+// player creature (e.g. AddMoveToPointAction) without duplicating the
+// AppManager → CClientExoApp → GetPlayerCreature → server_object chain.
+void* GetPlayerServerCreature();
+
 }  // namespace acc::engine
 
 // AppManager wrapper. *kAddrAppManagerPtr holds an AppManager*; the live

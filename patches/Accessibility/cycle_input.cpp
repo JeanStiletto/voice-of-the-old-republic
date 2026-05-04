@@ -17,6 +17,7 @@
 #include "engine_input.h"
 #include "engine_player.h"
 #include "filter_objects.h"
+#include "guidance_autowalk.h"
 #include "log.h"
 #include "strings.h"
 #include "tolk.h"
@@ -207,22 +208,149 @@ void OnAnnounceFocus() {
     AnnounceCurrent(listing, /*categoryPrefix=*/nullptr);
 }
 
-void OnPathfindFocusStub() {
+// Shift+- — guide the player to the currently-focused Pillar 4 object via
+// the cross-cutting acc::guidance::WalkTo wrapper (lay-off 5). Plays the
+// per-category 3D cue at the destination as spatial confirmation, then
+// speaks the localized "Guiding to {name}" payload.
+//
+// Empty-state: when no item is focused (user hasn't cycled, or the
+// previously-focused object dropped out of scope), speaks the localized
+// "No object focused" phrase and skips the WalkTo call.
+//
+// Cancel behaviour deferred: the plan §"Cancellation" locks Shift+-
+// pressed-again-while-active = cancel, but the engine's clear-action /
+// abort-move entry point isn't decoded yet (investigation Q3 lists move
+// queue entries but no cancel; ForceMoveToPoint bypasses the queue
+// rather than emptying it). Engine-convention cancel — any directional
+// input from the player interrupts auto-walk — already works for free
+// per the long-term plan §"Mode A — Auto-walk". Re-pressing Shift+- in
+// this lay-off re-issues the move (engine queues it; harmless).
+// Explicit toggle-cancel lands in a follow-up lay-off once the cancel
+// entry point is REd.
+void OnPathfindFocus() {
     acc::cycle::CategoryListing listing;
     acc::cycle::RefreshCurrentListing(listing);
     auto& s = acc::cycle::GetState();
-    const char* cat = acc::filter::CategoryName(s.category);
-    if (s.focusedObj && s.focusedIndex >= 0 &&
-        s.focusedIndex < listing.count) {
-        const Vector& p = listing.positions[s.focusedIndex];
-        acclog::Write("Cycle: Shift+- -> %s focused=%p dist=%.2fm "
-                      "pos=(%.2f,%.2f,%.2f) [pathfind stub]",
-                      cat, s.focusedObj,
-                      listing.distances[s.focusedIndex],
-                      p.x, p.y, p.z);
+
+    if (!s.focusedObj || s.focusedIndex < 0 ||
+        s.focusedIndex >= listing.count) {
+        const char* msg = acc::strings::Get(
+            acc::strings::Id::GuidanceNoFocus);
+        tolk::Speak(msg, /*interrupt=*/true);
+        acclog::Write("Cycle: Shift+- -> [%s]", msg);
+        return;
+    }
+
+    const Vector& dest = listing.positions[s.focusedIndex];
+
+    // Per-category 3D cue at the destination — same spatial-confirmation
+    // pattern as the cycle keys produce. Reuses the cycle's category-cue
+    // mapping rather than introducing a guidance-specific cue (the user
+    // already knows the category from the cycle, and Pillar 1 hasn't
+    // shipped a guidance-specific cue yet).
+    auto bindings = BindingsFor(s.category);
+    acc::audio::PlayCue3D(acc::audio::GetNavCueResref(bindings.cue), dest);
+
+    char name[128] = "";
+    if (!acc::engine::GetObjectName(s.focusedObj, name, sizeof(name)) ||
+        name[0] == '\0') {
+        // Fall back to the localized category name when the object's
+        // CExoLocString chain produces nothing — same convention as
+        // AnnounceCurrent so an unnamed door still speaks as "Tür" /
+        // "Door" rather than empty.
+        std::snprintf(name, sizeof(name), "%s",
+                      acc::strings::Get(bindings.name));
+    }
+
+    char msg[192];
+    std::snprintf(msg, sizeof(msg),
+                  acc::strings::Get(acc::strings::Id::FmtGuidingTo),
+                  name);
+
+    bool ok = acc::guidance::WalkTo(dest);
+    if (ok) {
+        tolk::Speak(msg, /*interrupt=*/true);
+        acclog::Write("Cycle: Shift+- -> [%s] obj=%p "
+                      "dest=(%.2f,%.2f,%.2f) dist=%.2fm (queue path)",
+                      msg, s.focusedObj,
+                      dest.x, dest.y, dest.z,
+                      listing.distances[s.focusedIndex]);
     } else {
-        acclog::Write("Cycle: Shift+- -> %s (no focus) [pathfind stub]",
-                      cat);
+        // WalkTo returns false only when no player creature is loaded
+        // (impossible here — TryHandleEvent / PollWin32 already gated on
+        // GetPlayerPosition succeeding) or the engine call faulted under
+        // SEH (engine teardown). Speak the localized failure phrase so
+        // the user can distinguish keypress-eaten from action-failed
+        // (per memory `feedback_never_silence_fallback_announcement`).
+        char failMsg[192];
+        std::snprintf(failMsg, sizeof(failMsg),
+                      acc::strings::Get(acc::strings::Id::FmtGuidingFailed),
+                      name);
+        tolk::Speak(failMsg, /*interrupt=*/true);
+        acclog::Write("Cycle: Shift+- -> [%s] WalkTo FAILED obj=%p "
+                      "dest=(%.2f,%.2f,%.2f)",
+                      failMsg, s.focusedObj, dest.x, dest.y, dest.z);
+    }
+}
+
+// Alt+- — diagnostic alternate path that bypasses the action queue via
+// CSWSCreature::ForceMoveToPoint instead of AddMoveToPointAction. Same
+// payload semantics (cue + Tolk announce); only the engine entry point
+// differs. Used to discriminate "queue contention" from "input-mode /
+// flag-bit" failure modes when WalkTo is silently dropped.
+//
+// Speech is identical to OnPathfindFocus — the user's audible feedback
+// is the same so behaviour comparison is purely about whether the
+// character actually moves. The log distinguishes via "(force path)" /
+// "(queue path)" tags so post-mortem grep finds each path cleanly.
+void OnPathfindFocusForce() {
+    acc::cycle::CategoryListing listing;
+    acc::cycle::RefreshCurrentListing(listing);
+    auto& s = acc::cycle::GetState();
+
+    if (!s.focusedObj || s.focusedIndex < 0 ||
+        s.focusedIndex >= listing.count) {
+        const char* msg = acc::strings::Get(
+            acc::strings::Id::GuidanceNoFocus);
+        tolk::Speak(msg, /*interrupt=*/true);
+        acclog::Write("Cycle: Alt+- -> [%s]", msg);
+        return;
+    }
+
+    const Vector& dest = listing.positions[s.focusedIndex];
+
+    auto bindings = BindingsFor(s.category);
+    acc::audio::PlayCue3D(acc::audio::GetNavCueResref(bindings.cue), dest);
+
+    char name[128] = "";
+    if (!acc::engine::GetObjectName(s.focusedObj, name, sizeof(name)) ||
+        name[0] == '\0') {
+        std::snprintf(name, sizeof(name), "%s",
+                      acc::strings::Get(bindings.name));
+    }
+
+    char msg[192];
+    std::snprintf(msg, sizeof(msg),
+                  acc::strings::Get(acc::strings::Id::FmtGuidingTo),
+                  name);
+
+    bool ok = acc::guidance::ForceWalkTo(dest);
+    if (ok) {
+        tolk::Speak(msg, /*interrupt=*/true);
+        acclog::Write("Cycle: Alt+- -> [%s] obj=%p "
+                      "dest=(%.2f,%.2f,%.2f) dist=%.2fm (force path)",
+                      msg, s.focusedObj,
+                      dest.x, dest.y, dest.z,
+                      listing.distances[s.focusedIndex]);
+    } else {
+        char failMsg[192];
+        std::snprintf(failMsg, sizeof(failMsg),
+                      acc::strings::Get(acc::strings::Id::FmtGuidingFailed),
+                      name);
+        tolk::Speak(failMsg, /*interrupt=*/true);
+        acclog::Write("Cycle: Alt+- -> [%s] ForceWalkTo FAILED obj=%p "
+                      "dest=(%.2f,%.2f,%.2f)",
+                      failMsg, s.focusedObj, dest.x, dest.y, dest.z);
     }
 }
 
@@ -262,7 +390,7 @@ bool TryHandleEvent(int param_1, int param_2) {
         return true;
     }
     if (param_1 == kInputKbAnnounce) {
-        if (g_engineShiftHeld) OnPathfindFocusStub();
+        if (g_engineShiftHeld) OnPathfindFocus();
         else                   OnAnnounceFocus();
         return true;
     }
@@ -293,6 +421,11 @@ void PollWin32() {
     bool period   = down(VK_OEM_PERIOD);
     bool announce = down(VK_OEM_2) || down(VK_OEM_MINUS);
     bool shift    = down(VK_SHIFT);
+    // VK_MENU = either Alt key. Used for the Alt+- diagnostic that routes
+    // through ForceWalkTo (queue-bypass) instead of WalkTo (queue-enqueue).
+    // Note: holding Alt alone activates the Windows menu bar; harmless in
+    // a fullscreen game. Alt+key combinations don't trigger system menus.
+    bool alt      = down(VK_MENU);
 
     bool risingComma    = comma    && !s_prevComma;
     bool risingPeriod   = period   && !s_prevPeriod;
@@ -327,8 +460,13 @@ void PollWin32() {
         else       OnCycleItem    (/*prev=*/false);
     }
     if (risingAnnounce) {
-        if (shift) OnPathfindFocusStub();
-        else       OnAnnounceFocus();
+        // Modifier precedence: Alt routes to the diagnostic Force path
+        // before Shift's queue path. Alt+Shift+- still goes Force —
+        // simpler than introducing a tri-state, and the user would have
+        // to deliberately combine to land in that case.
+        if (alt)        OnPathfindFocusForce();
+        else if (shift) OnPathfindFocus();
+        else            OnAnnounceFocus();
     }
 }
 

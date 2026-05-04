@@ -9,6 +9,12 @@
 // in lay-offs 4 / 6 respectively). Speech is intentionally absent here —
 // the user-perceptible Pillar 4 milestone is lay-off 4.
 //
+// Phase 2 lay-off 4 wired `-` / `Shift+,` / `Shift+.` to speech + 3D cue.
+// Phase 2 lay-off 6 wired `Shift+-` to acc::guidance::WalkTo on the
+// currently-focused Pillar 4 object. Cancel-on-second-press is parked
+// pending RE of the engine's clear-action entry point — engine-convention
+// cancel (any directional input interrupts auto-walk) already works.
+//
 // Gating: cycle keys only fire when the player is in-game (GetPlayerPosition
 // returns true). In menus, chargen, dialog, etc. the keys pass through
 // unchanged. This is the cheapest "are we actually playing?" signal we have

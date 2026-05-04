@@ -95,4 +95,8 @@ void* GetPlayerArea() {
     }
 }
 
+void* GetPlayerServerCreature() {
+    return GetPlayerServerObject();
+}
+
 }  // namespace acc::engine

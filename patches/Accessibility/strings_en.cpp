@@ -27,6 +27,10 @@ const char* Get(Id id) {
         case Id::FmtAnnounceNoClock:   return "%s, %d metres";
         case Id::FmtCategoryItem:      return "%s. %s";
 
+        case Id::FmtGuidingTo:         return "Guiding to %s";
+        case Id::FmtGuidingFailed:     return "Guidance to %s failed";
+        case Id::GuidanceNoFocus:      return "No object focused";
+
         case Id::Count_:               return "";
     }
     return "";

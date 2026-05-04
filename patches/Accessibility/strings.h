@@ -58,6 +58,22 @@ enum class Id : int {
     FmtAnnounceNoClock,
     FmtCategoryItem,
 
+    // ---- Pillar 4 → guidance binding (Shift+-).
+    //      `FmtGuidingTo`     takes the resolved focused-object name (`%s`).
+    //      `FmtGuidingFailed` takes the same `%s` — spoken when WalkTo
+    //                         returns false (engine teardown / SEH fault).
+    //                         Per the user-feedback rule
+    //                         `feedback_never_silence_fallback_announcement`:
+    //                         silent failure leaves the user unable to
+    //                         distinguish keypress-eaten vs. action-failed.
+    //      `GuidanceNoFocus`  is spoken when Shift+- fires with no item
+    //                         focused (e.g. user hasn't cycled yet, or the
+    //                         previously-focused object dropped out of
+    //                         scope).
+    FmtGuidingTo,
+    FmtGuidingFailed,
+    GuidanceNoFocus,
+
     Count_,
 };
 

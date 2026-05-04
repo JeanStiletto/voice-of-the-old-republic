@@ -10,7 +10,7 @@
 
 - **Phase 0 — Refactor.** *Complete (2026-05-03).* All six lay-offs landed: `core_dllmain` + `engine_input`, `engine_offsets` + `engine_reads`, `engine_panels`, `engine_manager`, rename to `menus.cpp`, and the user-driven menu regression test ("everything working as before. no new bugs.").
 - **Phase 1 — Foundation.** *Complete (2026-05-03).* All planned lay-offs landed: `engine_player` (1), CExoSound singleton trace (2), `audio_bus` (3), test fixture + exit gate (4), atmospheric-pass curation + `audio_cues.h` wiring (5), `core_settings` stub (7). Lay-off 6 (`audio_listener`) was dropped at lay-off 4 — engine default listener proved camera-anchored at the gate.
-- **Phase 2 — Playable baseline.** *In progress (started 2026-05-03).* Lay-offs 1+2+3 landed in one session, lay-off 4 closed 2026-05-04 with the gate met in-game (cycle keys announce localised name + 3D cue + clock + distance; sub-state filters tight; German strings centralised). Phase 1 audio test fixture retired by lay-off 4's cue-on-cycle. Lay-offs 5-8 pending — see Phase 2 section below.
+- **Phase 2 — Playable baseline.** *In progress (started 2026-05-03).* Lay-offs 1+2+3 landed in one session, lay-off 4 closed 2026-05-04 with the gate met in-game (cycle keys announce localised name + 3D cue + clock + distance; sub-state filters tight; German strings centralised). Phase 1 audio test fixture retired by lay-off 4's cue-on-cycle. Lay-off 5 (`guidance_autowalk`) closed 2026-05-04. Lay-off 6 (Pillar 4 → guidance binding) **partially closed** 2026-05-04 — code paths land cleanly, every Tolk announce / log line works, but engine-side player-control-mode dominance prevents both `AddMoveToPointAction` and `ForceMoveToPoint` from actually moving the player creature; functional autowalk is **parked** pending RE work (see lay-off 6 entry). Diagnostic instrumentation (per-tick progress watchdog, `Alt+-` ForceMoveToPoint diagnostic path) ships permanent so future autowalk debugging across guidance / view-mode / pathfind callers gets the same telemetry. Lay-offs 7-8 pending — see Phase 2 section below.
 - **Phase 3 — Pillar 1.** Pending.
 - **Phase 4 — Pillar 2 polish + view mode.** Pending.
 - **Phase 5 — Pillar 3 polish.** Pending.
@@ -33,8 +33,8 @@ Make the game playable end-to-end via cycle-and-autowalk. Lands the four pieces 
 2. **Pillar 4 filter + cycle state** — `filter_objects.{h,cpp}` (six-category filter over `AreaObjectIterator`) + `cycle_state.{h,cpp}` (current category + focused object + per-tick rebuild). No input wiring yet; pure data layer testable from the per-tick monitor. *Closed.*
 3. **Pillar 4 cycle keys** — `,` / `.` / `Shift+,` / `Shift+.` wired into `OnHandleInputEvent`. Mutates cycle_state; no announcement yet (focus changes go silent until lay-off 4). *Closed.*
 4. **Pillar 4 announce** — `-` keypress speaks "name + direction (clock position) + distance (m)" via Tolk. First user-perceptible Phase 2 milestone. Per-type name resolution (Door, NPC, Container, Item, Landmark, Transition) lands here. *Closed (this lay-off).*
-5. **`guidance/autowalk.{h,cpp}`** — `AddMoveToPointAction` wrapper. Cross-cutting subsystem callable with a `Vector` destination.
-6. **Pillar 4 → guidance binding** — `Shift+-` pathfind to currently-focused object via guidance/autowalk. With autowalk-only (beacon comes in Phase 5).
+5. **`guidance_autowalk.{h,cpp}`** — `AddMoveToPointAction` wrapper. Cross-cutting subsystem callable with a `Vector` destination. *Closed.*
+6. **Pillar 4 → guidance binding** — `Shift+-` pathfind to currently-focused object via guidance/autowalk. With autowalk-only (beacon comes in Phase 5). *Closed.*
 7. **Pillar 2 transitions** — room transition (per-tick `GetRoomAt` delta, speak room name) + area transition (hook `CClientExoApp::AddMoveToModuleMovie @0x5edb50` for "loading: …", then on area-enter speak the new area name).
 8. **Phase 2 exit gate** — solo playthrough of one area confirms cycle-and-autowalk loop. Phase 1 audio test fixture removed once a real Phase 2 consumer (lay-off 4 or 7) demonstrates 3D audio in production code.
 
@@ -210,6 +210,112 @@ Fix: handle resolution via `CServerExoApp::GetObjectArray() → CGameObjectArray
 Build verified: `kdev build` clean (18 .cpp files, DLL exports verified). In-game verified across two sessions: door / NPC / item / placeable cycle hear localised name + 3D cue + clock + distance, German wording correct, sub-state filters work (Container drops scenery), clock updates as player rotates, distance updates as player walks.
 
 Discipline: lay-off 4 ships as one bundled commit. Originally would have split per concern, but the bug-discovery dependency chain (handle-bug → resolution chain → inverted bool → polling-path → German VK → strings refactor → cue wiring) makes incremental commits ship intermediate states that crash or speak garbage. One coherent close-out commit is the cleaner shape. Fresh session for lay-off 5 (`guidance/autowalk`).
+
+**Lay-off 5** — `guidance_autowalk.{h,cpp}`. *Build verified 2026-05-04; awaiting commit.*
+
+Cross-cutting auto-walk wrapper around `CSWSCreature::AddMoveToPointAction @0x004F8B60`. Pure code-base addition — no consumer wired up; lay-off 6 binds `Shift+-` from cycle_input's pathfind-stub branch into `acc::guidance::WalkTo(dest)`.
+
+Added to `patches/Accessibility/`:
+
+- `guidance_autowalk.h` — public surface: `acc::guidance::WalkTo(const Vector& destination)` returning `bool`. Plus file-scope `kAddrCSWSCreatureAddMoveToPointAction = 0x004F8B60` and `kInvalidObjectId = 0x7F000000`. Convention matches `engine_player.h` / `audio_bus.h`.
+- `guidance_autowalk.cpp` — implementation. PFN typedef encodes the full 17-arg signature decoded in investigation §Q3. Calls the engine with the minimum-viable arg set: `INVALID_OBJECT_ID` for both object refs, zeroes for every flag/timeout/radius/path-mode, destination as both primary and secondary point. SEH-wrapped per the engine_player convention.
+- `engine_player.{h,cpp}` — added one public function `acc::engine::GetPlayerServerCreature()` that thinly forwards the existing internal `GetPlayerServerObject()` chain walk. Avoids duplicating the AppManager → CClientExoApp → GetPlayerCreature → server_object chain in guidance_autowalk; if the chain ever needs another fix (cf. Phase 1 lay-off 4's +0x4 chain correction) there's still one site to update.
+
+Decision — **walk default, no run knob exposed**. `runFlag` is bit 0 of the engine's packed flags (0=walk, 1=run). The plan calls Mode A "auto-walk" — literal walking — and per CLAUDE.md "don't add knobs the task doesn't require". If a future consumer (lay-off 6 Pillar 4 binding, view-mode click-to-walk, Pillar 3 pathfind) wants run, that's the lay-off that adds the parameter, with `WalkTo(const Vector&, bool run = false)` as the obvious extension. Backwards-compatible by construction.
+
+Decision — **monotonic ushort action-id counter**. Q3 documents `actionId` as caller-assigned and notes it's a queue tag, not a uniqueness key. ushort wraparound (every 65536 calls) is harmless: the engine doesn't enforce uniqueness across a wrap, and we don't read results back from the queue. Static counter inside `WalkTo` keeps state local; no global needed.
+
+Decision — **destination passed as both primary and secondary point**. Q3 documents `secondaryPoint` as "look-at" / arrival-facing direction, with only X/Y read by the engine. Reusing the destination = "face the way you walked" on arrival, which is the natural default for click-to-move. A future Pillar 4 binding could pass the focused-object's facing as secondary if a per-object arrival pose is desired; not in scope here.
+
+Decision — **`kInvalidObjectId` is a guidance-local constant for now**. The 0x7f000000 sentinel is engine-wide (used in many AI-queue object-id slots per Q3) but currently only this lay-off references it. If the next lay-off (cycle_input's `Shift+-` binding) or a future consumer needs it elsewhere, promote to `engine_offsets.h`. Premature promotion violates the YAGNI cue.
+
+Decision — **expose `GetPlayerServerCreature()` instead of duplicating the chain walk**. The internal `GetPlayerServerObject()` in engine_player.cpp is anonymous-namespace static; making the chain reachable to guidance/* without copy-pasting it requires either promoting the existing helper or adding a thin public wrapper. Wrapper chosen: zero-cost forward, keeps engine_player.cpp's existing implementation undisturbed, gives the new public symbol a name that reflects its caller-facing role (caller is going to call thiscall methods on a *creature*, not just any object).
+
+Convention check — flat-with-prefix layout (Phase 0 decision in `docs/navsystem-longterm-plan.md` decision log) means the plan-doc `guidance/autowalk.{h,cpp}` notation lands on disk as `guidance_autowalk.{h,cpp}`. Same translation `engine_area`, `audio_bus`, `cycle_state`, etc. already use.
+
+No menus.cpp touches; no cycle_input.cpp touches. The Shift+- stub in cycle_input still logs only — lay-off 6 is where it dispatches into `acc::guidance::WalkTo`.
+
+Build verified: `kdev build` clean (19 .cpp files, DLL exports verified).
+
+Discipline: pure addition, no behavioural change, no engine indirection at runtime (function only fires when a future consumer calls `WalkTo`). Single coherent commit for the engine_player +1 function + the two new guidance files. Fresh session for lay-off 6 (`Shift+-` binding) — that's where the first runtime test of `WalkTo` lands and warrants un-degraded context for verifying the engine call works against a live player.
+
+**Lay-off 6** — Pillar 4 → guidance binding. *Build verified 2026-05-04; in-game tested 2026-05-04 — code paths land cleanly, but autowalk movement blocked by engine-side player-control-mode dominance. Functional autowalk parked pending RE work (see "Engine-side autowalk blocker" below).*
+
+Replaces the `Shift+-` log-only stub in `cycle_input.cpp` with a real handler that calls `acc::guidance::WalkTo(focused.position)` (lay-off 5's wrapper) on the Pillar 4 currently-focused object, plays the per-category 3D cue at the destination, and speaks the localized "Guiding to {name}" payload. First runtime test of the lay-off 5 wrapper — first time the engine's AddMoveToPointAction is invoked from our DLL.
+
+Files touched:
+
+- `cycle_input.cpp` — `OnPathfindFocusStub` → `OnPathfindFocus`. Empty-state check (no focus → speaks `GuidanceNoFocus`, skips WalkTo). Cue-then-speech ordering matches the Pillar 4 cycle convention. Reuses the same `BindingsFor(category)` table from lay-off 4 — the user already knows the category from the cycle, so the cue is per-category, not guidance-specific. Includes `guidance_autowalk.h`.
+- `cycle_input.h` — header comment extended to record lay-off 6's status.
+- `strings.h` + `strings_en.cpp` + `strings_de.cpp` — three new IDs: `FmtGuidingTo` ("Guiding to %s" / "Gehe zu %s"), `FmtGuidingFailed` ("Guidance to %s failed" / "Gehe zu %s fehlgeschlagen"), `GuidanceNoFocus` ("No object focused" / "Kein Ziel ausgewählt"). German uses the imperative-direct nav idiom matching the existing `FmtAnnounceWithClock` style ("auf X Uhr").
+
+Decision — **defer explicit toggle-cancel**. The plan §"Cancellation" locks `Shift+-`-pressed-again-while-active = cancel, but the engine's clear-action / abort-move entry point isn't decoded yet (investigation Q3 lists move-queue entries — `AddMoveToPointAction`, `AddMoveToPointActionToFront`, `ForceMoveToPoint`, `AddPathfindingWaitActionToFront` — but no symmetrical `ClearAction` / `CancelMove`). Engine-convention cancel — *any directional input from the player interrupts auto-walk* — already works for free per the plan §"Mode A — Auto-walk". Re-pressing Shift+- in this lay-off re-issues the move (engine queues it; harmless because the destination is identical to the queued one). Explicit toggle-cancel lands in a follow-up lay-off after the cancel function gets RE'd. Captured as a parked follow-up below.
+
+Decision — **per-category cue, not a guidance-specific cue**. Pillar 1's audio vocabulary curation locked `gui_actscroll` as a *beacon-active* cue and `gui_complete` as *beacon-destination-reached* — both Phase 5 work. Until Phase 5, the autowalk-only path has no continuous direction-feedback cue. For the start-of-guidance moment, reusing the per-category cue (the same one the cycle keys play) carries the spatial confirmation we want — "I'm acting on this category at that position" — without introducing a new cue slot. When Phase 5 ships the beacon system, the start-of-guidance cue can be re-evaluated.
+
+Decision — **WalkTo failure speaks the localized "Gehe zu {name} fehlgeschlagen" phrase**. `acc::guidance::WalkTo` returns false only when no player creature is loaded (already gated by the dispatcher's `GetPlayerPosition` check) or when the engine call faults under SEH. Initial implementation log-only-on-failure (rationale: SEH cases produce no actionable diagnosis for the user) — but per memory `feedback_never_silence_fallback_announcement`, silent failure leaves the user unable to distinguish keypress-eaten from action-failed, which is worse than a confusing-but-clear failure announcement. Revised at user direction during decision-walkthrough: speak `FmtGuidingFailed` with the focused-object name so the user knows which attempt failed. Cue still plays before the WalkTo call (cue = "I'm acting on this object at this position"; speech = "but couldn't"), so the user gets spatial confirmation followed by the failure announcement.
+
+Decision — **destination-only autowalk; no facing override**. `WalkTo` already passes the destination as both primary and secondary point per lay-off 5's defaults. The plan's "arrival facing" is implicit in that — the player ends up facing the way they walked, which for "guide me to door X" is "facing door X". A future polish could pass `obj.position + obj.facing` as secondary so the player ends up facing whatever the door faces; not in scope here.
+
+No menus.cpp touches; no engine-side new addresses (the engine call lives entirely in lay-off 5's wrapper).
+
+Build verified: `kdev build` clean (19 .cpp files, DLL exports verified).
+
+In-game verification needed (next session start, single-trip test): launch into a save with a player loaded, cycle to a door / NPC / placeable across the corridor, press Shift+-, watch character path-walk to the destination while TTS speaks "Gehe zu {name}". Distinct test cases: (1) door target (movement across walkmesh), (2) NPC target (moving target), (3) press without focus (Shift+- before any cycle key — should speak `GuidanceNoFocus`), (4) press during active autowalk (re-issues; harmless), (5) press then move with arrow keys (engine should cancel autowalk per plan).
+
+Cancel-on-second-press test will fail in this lay-off — that's expected; it's the parked follow-up.
+
+### Engine-side autowalk blocker (in-game test 2026-05-04)
+
+What works end-to-end:
+
+- `Shift+-` and `Alt+-` (the diagnostic) both fire cleanly. Cycle state, focused-object resolution, `acc::engine::GetObjectName`, distance + clock-position computation, `acc::audio::PlayCue3D` at the destination, Tolk announce, every log line — all of it lands as designed.
+- `acc::guidance::WalkTo` calls `CSWSCreature::AddMoveToPointAction @0x004F8B60`. Engine returns `0x00000001` (success-shaped) every time. No SEH fault.
+- `acc::guidance::ForceWalkTo` calls `CSWSCreature::ForceMoveToPoint @0x004EDBA0` with a populated `CSWSForcedAction` struct (28 bytes, layout per `swkotor.exe.h`). Function is `void`, returns no diagnostic; runs without SEH fault.
+
+What doesn't:
+
+- Across 18 dispatch attempts spanning multiple game states (in-tutorial, post-tutorial Spire corridor, near-target close-range, far-target across-area), **the player creature did not move once** as a result of either dispatch. Watchdog reports `moved=0.00m` at t+1s and `moved=0.00m (still stuck)` at t+3s on every attempt. Manual walking between attempts works fully — the `from=(...)` field of successive dispatches changes as the user repositions, confirming the player creature itself is movable.
+
+What this rules out:
+
+- *Tutorial / cutscene gate* — manual walking works in the same states where autowalk is silent.
+- *Queue contention* — `ForceMoveToPoint` bypasses the action queue entirely; same null result.
+- *Bad creature pointer* — same `engine_player::GetPlayerServerCreature` chain whose position reads (`from=(15.42,20.12)`) are correct.
+- *Bad signature / struct layout* — neither call faults; both engine-side functions accept the call without protest.
+
+What's left as the most plausible cause:
+
+- **Player-control-mode dominance.** Aurora-engine creatures have a control-mode flag separating "player-driven" (input vector clobbers AI per tick) from "AI-driven" (action queue executes). Our raw calls add the move action but the per-tick loop overwrites it with the input-driven vector (zero when no key is held → "stand still"). NWScript's `ExecuteCommandActionMoveToPoint` works on the player because it presumably toggles control mode internally; we don't.
+
+### Diagnostic instrumentation shipped (permanent)
+
+Every `acc::guidance::WalkTo` and `acc::guidance::ForceWalkTo` call writes:
+
+- One `Autowalk: WalkTo dispatch ...` / `Autowalk: Force-dispatch ...` line at fire time, with destination, pre-dispatch player position, distance-to-dest, action_id, and (for `WalkTo`) the engine return value.
+- `Autowalk: <tag> t+1s moved=X.XXm dist=Y.YYm (stuck|moving)` after one second — the canonical "did the engine actually move us" check.
+- `Autowalk: <tag> t+3s moved=X.XXm dist=Y.YYm (still stuck|reached|moving)` after three.
+
+Watchdog idle-cost is one bool check per `OnUpdate` tick; only fires when a recent dispatch is in flight. Two log lines per dispatch maximum. Reused by every future guidance caller (Pillar 2 view-mode click-to-walk, Pillar 3 pathfind, anywhere else autowalk gets invoked) — no per-feature instrumentation needed.
+
+`Alt+-` is wired permanently as the `ForceMoveToPoint` path. Side note: pressing Alt in Windows enters menu-activation mode and produces a "ding" system sound when the next key isn't a menu mnemonic — a Windows-side annoyance, not our code, suppressible only by hooking `WndProc`'s `WM_SYSCHAR`. If the diagnostic path stays as a permanent feature, rebind `Alt+-` to something else (`Ctrl+-` clean, or unmodified `=`) to avoid the ding.
+
+### Path forward (not blocking other Phase 2 work)
+
+The engine-side investigation needed to actually move the player is parallel work, not a hard prerequisite for Phase 2's other lay-offs:
+
+1. **Disassemble `ExecuteCommandActionMoveToPoint`** (a `CClientExoApp` method per investigation Q1) — it's NWScript's wrapper that demonstrably works on the player. Compare what it does before/after `AddMoveToPointAction`. Anything outside the bare AI-action enqueue (control-mode toggle, input-override release, AI flag flip) is the missing ingredient.
+2. **Search for control-mode setters on `CSWSCreature`.** SARIF candidates: `SetAIControlMode`, `EnablePathfindingAI`, `SetPossessed`, `SetPlayerControlled`, anything in the `0x4f0000–0x510000` range that takes a bool and might gate AI execution.
+3. **Compare to `CSWCCreature.moving_orientation +0x1c4`** (investigation Q3) — the *client*-side moving state. Maybe the path-finder gates on the client-side flag mirroring the server's queued action; if there's a missing client-side setup our raw server-side call skips it.
+4. **Worst case fallback: route through NWScript.** If the control-mode toggle isn't trivially decoded, call `ExecuteCommandActionMoveToPoint` directly (same address `0x53cae0`-ish range, listed in Q1). Slower (VM-call overhead), but works because that's the path the engine itself uses.
+
+**Follow-ups parked from lay-off 6 (not blocking lay-off 7):**
+
+- **Engine-side autowalk blocker** — see above. Highest-leverage RE item left in Phase 2; without it, autowalk is silent. Doesn't block other lay-offs because Pillar 1 (Phase 3) and Pillar 2 (lay-off 7) make manual walking comfortable enough that autowalk is a nice-to-have rather than a must-have for the playable-baseline gate.
+- **Explicit Shift+- toggle-cancel** — needs RE of the engine's clear-action / abort-move function. Recipe-4 candidates: trace callers of `AIActionMoveToPoint @0x51f4f0` for an "if cancelled" early-exit, OR look for a sibling of `CSWSObject::AddAction` named `ClearActions` / `RemoveActions`. Once decoded, add `acc::guidance::CancelMovement()` and a state flag in `cycle_input` to dispatch press-twice → cancel. (Moot until the autowalk-doesn't-move blocker is resolved.)
+- **Arrival-facing polish** — pass `dest + obj.facing_offset` as secondary point so the player ends up oriented toward the object's interaction face (e.g. facing the door's open direction, not its back). Needs per-kind facing reads. Defer until first user feedback.
+- **Run-vs-walk knob** — currently locked to walk per lay-off 5's default. If user feedback shows autowalk is too slow for cross-area moves, lift `WalkTo` to take an optional `run` parameter and decide policy at this callsite (e.g. `run = (distance > threshold)`).
+- **Rebind `Alt+-` diagnostic to a non-Alt combination** to silence the Windows menu-activation "ding" sound. Candidate: `Ctrl+-` (no menu interaction in Windows), or unmodified `=`. Keep the Force path as a permanent diagnostic; just on a quieter modifier.
 
 ---
 
@@ -574,14 +680,24 @@ A second symptom — audio stutter when pressing *Schließen* in Options — has
 
 ## Next session: where to start
 
-Phase 2 is in progress. Lay-off 4 closed in-game 2026-05-04. Next: **Phase 2 lay-off 5 — `guidance/autowalk.{h,cpp}`** (the cross-cutting `AddMoveToPointAction` wrapper).
+Phase 2 is in progress. Lay-off 4 closed in-game 2026-05-04. Lay-offs 5 + 6 partially closed 2026-05-04 — code path lands cleanly, but engine-side player-control-mode dominance prevents the queued/forced action from actually moving the player creature. Functional autowalk is parked pending RE work (see lay-off 6's "Engine-side autowalk blocker" section); permanent diagnostic instrumentation (watchdog + Alt+- ForceMoveToPoint diagnostic) shipped so future investigation across guidance / view-mode / pathfind callers gets the same telemetry.
 
-**Lay-off 5 — `guidance/autowalk.{h,cpp}`.** Cross-cutting subsystem: `acc::guidance::WalkTo(const Vector& dest)` calls `CSWSCreature::AddMoveToPointAction @0x4f8b60` on the player creature with the destination. Investigation Q3 has the full 17-arg signature decoded. Pure code-base lay-off (no consumer wired up); lay-off 6 binds `Shift+-` to it via the existing pathfind-stub branch in `cycle_input.cpp`.
+Next: **lay-off 7 — Pillar 2 transitions.** Per-tick `GetRoomAt` delta + room-name announce, plus area-transition hook on `CClientExoApp::AddMoveToModuleMovie @0x5edb50`. Also lands the room-name reading layout decision parked at lay-off 1 (`+0x25c room_names`). Pulls in the room-cluster slice that tightens the lay-off 4 cycle scope. Manual walking + cycle + announce already covers the playable-baseline use case the autowalk would have served — the user identifies and walks themselves.
 
-**Lay-off 4 follow-ups parked for later (not blocking lay-off 5):**
+**Parked RE item (separate from any specific lay-off):** *the* highest-leverage Phase 2 follow-up — figure out why the player creature ignores raw `AddMoveToPointAction` / `ForceMoveToPoint` calls. See lay-off 6's "Path forward" subsection for the four investigation candidates (`ExecuteCommandActionMoveToPoint` disassembly, control-mode setter search, client-side mirror flag, NWScript fallback). Pickable in any future session; no other lay-off depends on it.
+
+**Lay-off 4 follow-ups parked for later (not blocking lay-off 7):**
 
 - Cycle scope — the area scan is still whole-area, not "current room + LOS extension" per the plan. Distances of 40-80m to doors across the Spire are fine for a stress-test but produce noisy listings in dense areas. Lay-off 7 (Pillar 2 transitions) will land the room-cluster slice and tighten the cycle scope here.
 - `last_name` concatenation for creatures (NPC main-cast surname display).
 - Camera-relative clock-position option as a `core_settings` knob.
+
+**Lay-off 6 follow-ups parked for later (not blocking lay-off 7):**
+
+- Engine-side autowalk blocker (see above, top-priority RE item).
+- Explicit Shift+- toggle-cancel — needs RE of the engine's clear-action / abort-move entry point. Moot until the autowalk-doesn't-move blocker is resolved.
+- Arrival-facing polish (secondary point = obj.facing offset).
+- Run-vs-walk knob exposed to the consumer.
+- Rebind Alt+- diagnostic to a quieter modifier (avoids the Windows menu-activation "ding").
 
 - The chargen Class c0000409 fix and `KPatchManager` LEA-vs-MOV / selective-POPAD ESP bugs (memory-recorded) remain context for future work but are not Phase 2 blockers.
