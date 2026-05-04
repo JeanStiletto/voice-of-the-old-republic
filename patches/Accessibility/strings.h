@@ -138,6 +138,15 @@ enum class Id : int {
     FmtTransitionArea,
     FmtTransitionRoom,
 
+    // Synthesised room label, used when CSWSArea.room_names[index]
+    // resolves to a resref-style identifier (e.g. `m01aa_10`,
+    // `stunt_03_main`) — vanilla KOTOR content uses the .lyt-room
+    // names verbatim, which read as letter-soup noise through a
+    // screen reader. The index is unique-within-area and
+    // pronounceable; takes a single `%d`. See
+    // transitions::IsResrefStyleRoomName for the heuristic.
+    FmtTransitionRoomIndex,
+
     // Pre-load destination announce, fired by the
     // `CServerExoApp::SetMoveToModuleString` detour just before the
     // engine starts the loading-screen movie. Param is the destination

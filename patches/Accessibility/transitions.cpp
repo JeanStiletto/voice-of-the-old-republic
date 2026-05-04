@@ -27,6 +27,48 @@ namespace {
 void* g_prev_area      = nullptr;
 int   g_prev_room_idx  = -1;
 
+// Stability dedup for room transitions. The room-resolver flickers
+// every tick when the player stands at a boundary between rooms —
+// captured live `2026-05-04` in `patch-20260504-203810.log`: 60+
+// transitions m01aa_08d ↔ m01aa_09 over 21 seconds. Filter by
+// requiring the new room to be observed for `kRoomStabilityTicks`
+// consecutive ticks before announcing. At ~60 fps that's ~80ms — too
+// short to feel laggy, long enough to absorb single-tick boundary
+// flickers. Area changes don't need this (rare and definitive).
+constexpr int kRoomStabilityTicks = 5;
+int   g_pending_room_idx   = -1;
+int   g_pending_room_count = 0;
+
+// Heuristic: vanilla KOTOR content stores room names as the .lyt-room
+// identifier (`m01aa_10`, `stunt_03_main`, `unk_m13ab`) — pronounceable
+// but meaningless, and they read as letter-soup noise through a screen
+// reader. We match anything that looks like a resref token and fall
+// back to a synthesised "Raum N" label for those cases. Custom mods
+// that supply human-readable names ("Bridge", "Cargo Hold") fall
+// through the heuristic and read normally.
+//
+// Heuristic rules — all of these flag the name as resref-style:
+//   - Starts with `m\d`, `M\d`, `stunt`, or `Stunt`.
+//   - Contains an underscore.
+//
+// The underscore rule is the catch-all: KOTOR room ids universally
+// contain `_`, while real English / German room names don't.
+bool IsResrefStyleRoomName(const char* name) {
+    if (!name || name[0] == '\0') return true;
+    if ((name[0] == 'm' || name[0] == 'M') && name[1] >= '0' && name[1] <= '9') {
+        return true;
+    }
+    if ((name[0] == 's' || name[0] == 'S') &&
+        (name[1] == 't') && (name[2] == 'u') &&
+        (name[3] == 'n') && (name[4] == 't')) {
+        return true;
+    }
+    for (const char* p = name; *p; ++p) {
+        if (*p == '_') return true;
+    }
+    return false;
+}
+
 void SpeakArea(void* area) {
     char nameBuf[128] = {0};
     if (!acc::engine::GetAreaDisplayName(area, nameBuf, sizeof(nameBuf)) ||
@@ -48,25 +90,29 @@ void SpeakArea(void* area) {
 
 void SpeakRoom(void* area, int roomIndex) {
     char nameBuf[128] = {0};
-    if (!acc::engine::GetRoomDisplayName(area, roomIndex,
-                                         nameBuf, sizeof(nameBuf)) ||
-        nameBuf[0] == '\0') {
-        // Empty room names are common in some areas (a single unnamed
-        // room covering the whole module). Log silently — no speech, no
-        // user-facing fallback. Distinct from the area-name failure case
-        // above where we want to flag the resolve miss.
-        acclog::Write(
-            "Transition: room %d empty/unresolved (areaPtr=%p)",
-            roomIndex, area);
-        return;
-    }
+    bool gotName = acc::engine::GetRoomDisplayName(
+        area, roomIndex, nameBuf, sizeof(nameBuf)) && nameBuf[0] != '\0';
+
     char speech[160] = {0};
-    std::snprintf(speech, sizeof(speech),
-                  acc::strings::Get(acc::strings::Id::FmtTransitionRoom),
-                  nameBuf);
+    if (gotName && !IsResrefStyleRoomName(nameBuf)) {
+        // Modder gave a real human-readable name — speak it as-is.
+        std::snprintf(speech, sizeof(speech),
+                      acc::strings::Get(acc::strings::Id::FmtTransitionRoom),
+                      nameBuf);
+    } else {
+        // Vanilla resref or empty — synthesise "Raum N" / "Room N".
+        // Keep the room index as the user-facing identifier; it's
+        // unique within the area and pronounceable. Resref (when
+        // available) still goes to the log for post-mortem.
+        std::snprintf(speech, sizeof(speech),
+                      acc::strings::Get(
+                          acc::strings::Id::FmtTransitionRoomIndex),
+                      roomIndex);
+    }
     tolk::Speak(speech, /*interrupt=*/false);
     acclog::Write(
-        "Transition: room -> %d '%s' (areaPtr=%p)", roomIndex, nameBuf, area);
+        "Transition: room -> %d '%s' (areaPtr=%p)",
+        roomIndex, gotName ? nameBuf : "(empty)", area);
 }
 
 }  // namespace
@@ -93,17 +139,39 @@ void Tick() {
 
     if (area != g_prev_area) {
         SpeakArea(area);
-        g_prev_area     = area;
-        g_prev_room_idx = -1;  // re-announce room on new area
+        g_prev_area          = area;
+        g_prev_room_idx      = -1;  // re-announce room on new area
+        g_pending_room_idx   = -1;  // and reset stability tracker
+        g_pending_room_count = 0;
     }
 
     int roomIndex = -1;
     void* room = acc::engine::GetRoomAtIndexed(area, pos, roomIndex);
     if (!room || roomIndex < 0) return;  // outside any room (rare; void zones)
 
-    if (roomIndex != g_prev_room_idx) {
+    if (roomIndex == g_prev_room_idx) {
+        // Already-announced room — clear any pending different-room
+        // observation (player wandered toward the boundary then back).
+        g_pending_room_idx   = -1;
+        g_pending_room_count = 0;
+        return;
+    }
+
+    // Different room observed. Require kRoomStabilityTicks consecutive
+    // observations of the SAME new room before announcing — filters
+    // boundary-flicker thrash (m01aa_08d ↔ m01aa_09 type oscillation).
+    if (roomIndex == g_pending_room_idx) {
+        ++g_pending_room_count;
+    } else {
+        g_pending_room_idx   = roomIndex;
+        g_pending_room_count = 1;
+    }
+
+    if (g_pending_room_count >= kRoomStabilityTicks) {
         SpeakRoom(area, roomIndex);
-        g_prev_room_idx = roomIndex;
+        g_prev_room_idx      = roomIndex;
+        g_pending_room_idx   = -1;
+        g_pending_room_count = 0;
     }
 }
 
