@@ -230,3 +230,22 @@ typedef void (__thiscall* PFN_InGameEquipOnSelectSlot)(void* panel, void* slot_b
 constexpr uintptr_t kAddrInGameEquipOnEnterSlot  = 0x006b9470;
 constexpr uintptr_t kAddrInGameEquipOnSelectSlot = 0x006b8eb0;
 constexpr size_t    kControlIsActiveOffset       = 0x4c;
+
+// Picker-side commit handlers.
+//
+//   OnItemSelected(panel, item_entry) — commits the equip. Calls
+//     EquipItem(this, item_id, selected_slot, 1) on the inventory item the
+//     entry wraps. Gates on `item_entry->is_active != 0` AND
+//     `description_listbox.bit_flags & 2 != 0` (set by OnSelectSlot's
+//     ShowDescription) AND `items_listbox.bit_flags & 8 != 0` (set by
+//     OnSelectSlot's SetEnabled(items_listbox, 1)). Also handles
+//     ShowCantEquipMessage on prerequisites failure and stages a swap when
+//     replacing an already-equipped item.
+//   OnOKPressed(panel, btn_equip) — cleanup only. Clears previously_equipped_*,
+//     calls CloseDescription. Does NOT commit; the equip must already have
+//     happened in OnItemSelected. Gates on `btn_equip->is_active != 0` AND
+//     `panel.field33_0x4270 & 1` (latter set by OnSelectSlot).
+typedef void (__thiscall* PFN_InGameEquipOnItemSelected)(void* panel, void* item_entry);
+typedef void (__thiscall* PFN_InGameEquipOnOKPressed)(void* panel, void* btn_equip);
+constexpr uintptr_t kAddrInGameEquipOnItemSelected = 0x006b7920;
+constexpr uintptr_t kAddrInGameEquipOnOKPressed    = 0x006b9160;

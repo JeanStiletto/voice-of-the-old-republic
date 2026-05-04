@@ -146,52 +146,126 @@ Caller xrefs (ANALYSIS xref count would tell us how many call sites)
 likely include `EquipItem` itself — so a hook here captures BOTH
 GUI-driven and direct-API failures.
 
-## Recommended next pass
+## Resolution — direct handler calls (RESOLVED 2026-05-04)
 
-1. Hook `ShowCantEquipMessage` to log every failure (read-only).
-2. Try **Path A** first: call `OnItemSelected` then `OnOKPressed`.
-   If the gates open, we're done — engine handles slot-fit,
-   prerequisites, error messaging.
-3. If Path A's gates don't open, fall back to **Path B** with
-   explicit `CanEquipItem` check before `EquipItem`.
-4. Don't bother with Path C unless A and B both fail — direct
-   creature-level equip skips too many checks.
+End-to-end equip works (user-confirmed: Kleidung → Körper, weapons
+→ left/right hand, Tarnfeldgen → Belt, all show `(Ausgew.)` in
+the inventory afterwards). Took none of the originally proposed
+paths verbatim — the true model only became visible after
+decompiling all four handlers via Ghidra (`tools/ghidra-scripts/
+Decompile.java` against Lane's gzf). The earlier "Conclusion"
+section above documented a guess; the decompiles corrected
+several wrong assumptions, listed at the bottom of this section.
 
-## Implementation pass 1 (UNVERIFIED — 2026-05-04)
+### Final flow (two deferred handler-call pairs)
 
-Took Path A in hybrid form: rather than calling `OnItemSelected`
-directly (which would no-op on the `+0x4c` gate, same way
-`FireActivate(BTN_EQUIP)` cold did), we **synthesise a click on
-the listbox row** so the engine's own dispatch raises the gates
-as a side effect, then `FireActivate(BTN_EQUIP)` — which now
-finds `+0x4c=1` and `+0x4270 bit 0=1` and runs `OnOKPressed`
-through the normal commit path.
+**Slot Enter (user navigates to a BTN_INV_X and presses Enter):**
 
-The key fix vs. the prior failed click-sim attempt: row extents
-are **listbox-local**, not screen-absolute (point #3 of "why
-previous attempts failed"). New helper
-`GetListBoxRowScreenCenter(lb, row, ...)` accumulates the
-listbox's own screen-absolute origin onto the row's local
-extent. One accumulation step is sufficient because LB_ITEMS is
-a panel-direct child whose extent is already screen-absolute.
+1. Set `slot_btn->is_active = 1`. Mouse-driven play sets this in
+   `HandleLMouseDown`; `OnSelectSlot`'s prologue gates on it.
+2. Call `OnEnterSlot(panel, slot_btn)` directly @ `0x006b9470`.
+   This is the function that **populates `items_listbox`** (walks
+   the player's `CItemRepository`, filters by
+   `equipable_slots & slot`, class restriction, prerequisites,
+   appends matching entries via `AddItemEntryToList` +
+   `AddControls`). Sets `panel.selected_slot`.
+3. Call `OnSelectSlot(panel, slot_btn)` directly @ `0x006b8eb0`.
+   Reads `items_listbox.controls.size`: if > 1 (real items), it
+   stages the equip (raises `panel.field33_0x4270 |= 1`,
+   pre-selects row 1, calls `ShowDescription(this, 1)`,
+   `SetEnabled(items_listbox, 1)`, `ShowTutorialWindow`); if == 1
+   (only the protoitem template), pops the engine's "Für diesen
+   Slot hast du keine Gegenstände" modal (strref `0xa569`) — the
+   correct UI feedback for an empty slot.
 
-Sequencing: `g_pendingCursorMove` + `g_pendingClick` +
-`g_pendingActivate` are scheduled together. `Update()` processes
-them in order on a single tick, so `OnItemSelected` (synchronous
-inside HandleLMouseUp) raises the gates before FireActivate
-fires.
+**Item-row Enter (user navigates LB_ITEMS and presses Enter):**
 
-Risks not yet falsified by play-test:
-- MoveMouseToPosition could exhibit the Options-style hit-test
-  shift on equip rows too. If it does, click lands one row
-  above; will be obvious from selection logs.
-- `row.extent` may not reflect post-scroll position if the
-  engine doesn't relayout listbox children on
-  `top_visible_index` change. Edge case for selections beyond
-  the initial visible window.
-- `ShowCantEquipMessage` not yet hooked, so engine-side
-  rejections are silent. Add the hook if equip seems to no-op
-  and we can't tell why from logs.
+1. Set `row->is_active = 1` and `btn_equip->is_active = 1`.
+   Mouse-driven play sets these via `HandleLMouseDown` on the row
+   and (separately) on BTN_EQUIP; both handlers gate on
+   `param_1->is_active != 0`.
+2. Call `OnItemSelected(panel, row)` directly @ `0x006b7920`.
+   **This is the function that commits the equip** — calls
+   `EquipItem(this, item_id, this->selected_slot, 1)` after
+   passing its three gates: `row->is_active != 0`,
+   `description_listbox.bit_flags & 2 != 0` (set by `ShowDescription`
+   above), `items_listbox.bit_flags & 8 != 0` (set by
+   `SetEnabled(items_listbox, 1)` above). Also handles
+   `ShowCantEquipMessage` on prerequisites failure and stages
+   swaps when the slot is occupied.
+3. Call `OnOKPressed(panel, btn_equip)` directly @ `0x006b9160`.
+   **Cleanup only** — clears `previously_equipped_id`/`_item`,
+   `field50_0x42b4`/`field51_0x42b8`, calls `CloseDescription`.
+   Does NOT call `EquipItem`. (Earlier sections of this doc
+   wrongly attributed the commit to `OnOKPressed`; the decompile
+   contradicts that.)
+
+Both pairs are deferred to `OnUpdate` — calling deep engine
+functions from inside the input-dispatch hook would recurse
+through `HandleMouseMove`/`HandleLMouseDown` paths (same toxicity
+class as the listbox-entry hooks from session 4 and the reason
+`MoveMouseToPosition` is deferred).
+
+### What earlier sections of this doc got wrong
+
+For the historical record (these are still in the "Conclusion"
+section above and weren't deleted on resolution):
+
+- **"`OnSelectSlot` sets `selected_slot`."** Actually `OnEnterSlot`
+  sets `selected_slot`. `OnSelectSlot` reads it. The mouse-driven
+  populate happens on hover, not click — that's why our cold
+  click-sim never populated `LB_ITEMS`.
+- **"`OnOKPressed` is what `OnItemSelected` eventually calls."**
+  Wrong direction. `OnItemSelected` calls `EquipItem` directly;
+  `OnOKPressed` is independent cleanup. Path A as originally
+  written (item-select → OK-press) is correct in *order* but
+  misattributes which call commits.
+- **"`OnItemSelected`'s gate is `+0x4c` only."** It actually has
+  three gates: `row->is_active`, `description_listbox.bit_flags
+  & 2`, and (inside the commit branch) `items_listbox.bit_flags
+  & 8`. The latter two are raised by `OnSelectSlot`'s side
+  effects, so the order slot→item is mandatory.
+
+### What `ShowCantEquipMessage` is for
+
+Called by `OnItemSelected` itself with `(this, reason, item_id)`
+when the engine rejects the equip (failed prerequisites, wrong
+class, etc.). Not yet hooked — engine-side rejections are still
+silent for screen-reader purposes. Hook this if/when we want to
+speak rejection reasons; the engine's own modal-popup path also
+fires for the "no items" case so empty-slot feedback is already
+audible without it.
+
+### Aborted intermediate attempts (kept here as cautionary notes)
+
+In rough chronological order, none of these worked end-to-end:
+
+1. `FireActivate(BTN_EQUIP)` cold — vtable[15] silently no-ops
+   because BTN_EQUIP renders with `is_active=0` until something
+   raises the gate.
+2. Click-sim at `BTN_EQUIP`'s reported center `(320, 424)` —
+   hit-test resolved to `LBL_TOHIT` instead.
+3. Click-sim at `LB_ITEMS` row coords with no offset — row
+   extents are listbox-local; cursor landed on dead space.
+4. `GetListBoxRowScreenCenter` (listbox.extent + row.extent.local)
+   — fixed (3) for the cursor coord, but the click still
+   dispatched against the listbox container (`mouseOver=LB_ITEMS`),
+   so `OnItemSelected` never fired against the row.
+5. `FireActivate(slot_btn)` for slot Enter — routed to
+   `OnEnterSlot` (the keyboard-shortcut path, called only from
+   the Q/E character-switch case `0xce` in
+   `CSWGuiInGameEquip::HandleInputEvent`) without raising the
+   intermediate state `OnSelectSlot` needs.
+6. Click-sim at `BTN_INV_X` center — hit-test consistently
+   resolved to one of the `LBL_INV_*` labels (geometry depends on
+   the panel layout; not a clean row-pitch shift). The `+50px`
+   row-pitch compensation produced different wrong hits, not
+   correct ones.
+7. Click-sim at `LBL_INV_X` (id = BTN id + 1) center — hit-test
+   resolved to *yet another* `LBL_INV_*` (the labels overlap and
+   z-order doesn't behave like a simple flat-grid).
+
+The eventual fix bypasses the click pipeline entirely.
 
 ## Container "single-item take" — same shape, less RE done
 
@@ -214,6 +288,12 @@ around it with take-all.
   analysis with full signatures and stack-frame layouts
 - `tools/ghidra-scripts/DumpBytes.java` — headless Ghidra runner
   for raw prologue bytes
+- `tools/ghidra-scripts/Decompile.java` — headless Ghidra runner
+  for full decompiled pseudocode of one or more functions by
+  entry-point address. The decompiles of `OnSelectSlot`,
+  `OnEnterSlot`, `OnItemSelected`, `OnOKPressed` and the panel's
+  `HandleInputEvent` were what unblocked this investigation
+  after the click-sim approaches had run out.
 - Bytes verified at `0x006b9160` (OnOKPressed), `0x006b8eb0`
   (OnSelectSlot), `0x006b9470` (OnEnterSlot), `0x006b7920`
   (OnItemSelected), `0x006b59f0` (ShowCantEquipMessage),

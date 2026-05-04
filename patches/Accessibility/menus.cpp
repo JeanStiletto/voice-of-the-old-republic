@@ -840,6 +840,17 @@ static bool  g_pendingEquipSelect       = false;
 static void* g_pendingEquipSelectPanel  = nullptr;  // CSWGuiInGameEquip*
 static void* g_pendingEquipSelectSlot   = nullptr;  // CSWGuiControl* slot button
 
+// Deferred CSWGuiInGameEquip item-row commit. Calls OnItemSelected then
+// OnOKPressed directly — same reason the slot path bypasses click-sim:
+// click-sim on a listbox row dispatches against the listbox container
+// (mouseOver=LB_ITEMS, not the row), so OnItemSelected never runs and the
+// equip never commits. OnItemSelected is the function that actually calls
+// EquipItem; OnOKPressed is just cleanup (closes the description popup).
+static bool  g_pendingEquipCommit       = false;
+static void* g_pendingEquipCommitPanel  = nullptr;  // CSWGuiInGameEquip*
+static void* g_pendingEquipCommitRow    = nullptr;  // CSWGuiInGameItemEntry*
+static void* g_pendingEquipCommitBtn    = nullptr;  // BTN_EQUIP for OnOKPressed
+
 // Deferred slider value adjustment. Slider's HandleInputEvent at 0x0041adf0
 // recognises logical codes 500 (increment) and 501 (decrement) — both run
 // the full pipeline: SetCurValue + bounds clamp + the slider's gui_object
@@ -2306,37 +2317,26 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                 }
                 consumed = true;
             } else if (param_1 == kInputEnter1 || param_1 == kInputEnter2) {
-                if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
+                if (g_pendingClick || g_pendingActivate || g_pendingCursorMove ||
+                    g_pendingEquipSelect || g_pendingEquipCommit) {
                     acclog::Write("EquipPicker: Enter — op already pending; ignoring");
                     consumed = true;
                 } else {
-                    // Drive the engine's own equip path by replaying the
-                    // mouse sequence sighted players use:
-                    //   1. Click on the selected listbox row → engine's
-                    //      OnItemSelected (@0x006b7920) raises BTN_EQUIP's
-                    //      is_active bit (+0x4c) AND the panel's "ready
-                    //      to equip" flag (this->[+0x4270] |= 1).
-                    //   2. FireActivate(BTN_EQUIP) → OnOKPressed
-                    //      (@0x006b9160) — both gates now satisfied,
-                    //      equip commits via the engine's normal path
-                    //      (slot-fit / prerequisite checks intact;
-                    //      ShowCantEquipMessage on rejection is the
-                    //      engine's own).
-                    // Update() processes pendingCursorMove → pendingClick
-                    // → pendingActivate sequentially in a single tick, so
-                    // by the time FireActivate runs OnItemSelected has
-                    // already raised the gates synchronously.
+                    // Direct call to the engine's commit handlers — bypasses
+                    // click-sim entirely. OnItemSelected (@0x006b7920) does
+                    // the actual EquipItem call; OnOKPressed (@0x006b9160)
+                    // is just cleanup (CloseDescription + clear staging).
+                    // Click-sim on the row dispatched against the listbox
+                    // container, not the row, so OnItemSelected never fired
+                    // and the equip never committed (verified via decompile,
+                    // see docs/equip-flow-investigation.md).
                     //
-                    // Earlier failed primitives (kept here as cautionary
-                    // notes — see docs/equip-flow-investigation.md):
-                    //   * FireActivate(BTN_EQUIP) cold — gate not raised,
-                    //     vtable[15] silently no-ops.
-                    //   * Click-sim at BTN_EQUIP center (320,424) — hits
-                    //     LBL_TOHIT instead.
-                    //   * Click-sim at row.extent alone — listbox-local
-                    //     coords land on dead space. Resolved here by
-                    //     GetListBoxRowScreenCenter accumulating the
-                    //     listbox's screen-absolute origin.
+                    // Both gates that OnItemSelected reads are satisfied
+                    // here: row->is_active is raised by us; the panel's
+                    // description_listbox.bit_flags & 2 was raised by
+                    // OnSelectSlot's ShowDescription(this, 1) call; the
+                    // items_listbox.bit_flags & 8 was raised by
+                    // OnSelectSlot's SetEnabled(items_listbox, 1).
                     void* lb  = FindControlById(activePanel, kEquipLbItemsId);
                     void* btn = FindControlById(activePanel, kEquipBtnEquipId);
                     void* row = nullptr;
@@ -2354,22 +2354,15 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                             row = lbList->data[selIdx];
                         }
                     }
-                    int rowCx = 0, rowCy = 0;
-                    if (lb && row && btn &&
-                        GetListBoxRowScreenCenter(lb, row, rowCx, rowCy))
-                    {
-                        g_pendingX                = rowCx;
-                        g_pendingY                = rowCy;
-                        g_pendingTarget           = row;
-                        g_pendingClickTarget      = row;
-                        g_pendingCursorMove       = true;
-                        g_pendingClick            = true;
-                        g_pendingActivate         = true;
-                        g_pendingActivateTarget   = btn;
-                        g_navSpeechSuppressBudget = 2;
-                        acclog::Write("EquipPicker: Enter -> click(row sel=%d %p "
-                                      "at %d,%d) + activate(BTN_EQUIP %p) panel=%p",
-                                      selIdx, row, rowCx, rowCy, btn, activePanel);
+                    if (lb && row && btn) {
+                        g_pendingEquipCommit       = true;
+                        g_pendingEquipCommitPanel  = activePanel;
+                        g_pendingEquipCommitRow    = row;
+                        g_pendingEquipCommitBtn    = btn;
+                        g_navSpeechSuppressBudget  = 2;
+                        acclog::Write("EquipPicker: Enter -> commit (row sel=%d %p "
+                                      "btn_equip=%p panel=%p)",
+                                      selIdx, row, btn, activePanel);
                     } else {
                         acclog::Write("EquipPicker: Enter -- can't equip "
                                       "(lb=%p row=%p btn=%p sel=%d rows=%d) panel=%p",
@@ -3814,7 +3807,8 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     acc::probe::world_hover::PollHotkey();
 
     if (!g_pendingCursorMove && !g_pendingClick && !g_pendingActivate &&
-        !g_pendingSliderInput && !g_pendingEquipSelect) return;
+        !g_pendingSliderInput && !g_pendingEquipSelect &&
+        !g_pendingEquipCommit) return;
 
     void* gm = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
     if (!gm) {
@@ -3824,11 +3818,15 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
         g_pendingActivate          = false;
         g_pendingSliderInput       = false;
         g_pendingEquipSelect       = false;
+        g_pendingEquipCommit       = false;
         g_pendingTarget            = nullptr;
         g_pendingActivateTarget    = nullptr;
         g_pendingSliderTarget      = nullptr;
         g_pendingEquipSelectPanel  = nullptr;
         g_pendingEquipSelectSlot   = nullptr;
+        g_pendingEquipCommitPanel  = nullptr;
+        g_pendingEquipCommitRow    = nullptr;
+        g_pendingEquipCommitBtn    = nullptr;
         return;
     }
 
@@ -3936,6 +3934,45 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
             onEnter(panel, slotBtn);
             onSelect(panel, slotBtn);
             acclog::Write("Update: EquipSelect done panel=%p slot=%p", panel, slotBtn);
+        }
+    }
+
+    // Equip-row commit. OnItemSelected is the function that calls EquipItem
+    // and actually equips the item; OnOKPressed is just cleanup (closes the
+    // description panel, clears previously_equipped_*). Both gates the
+    // engine cares about (description_listbox.bit_flags & 2,
+    // items_listbox.bit_flags & 8, panel.field33_0x4270 & 1) were raised
+    // earlier by OnSelectSlot — we just need to raise row->is_active and
+    // btn_equip->is_active before invoking, mirroring what HandleLMouseDown
+    // would do in mouse-driven play.
+    if (g_pendingEquipCommit) {
+        g_pendingEquipCommit = false;
+        void* panel = g_pendingEquipCommitPanel;
+        void* row   = g_pendingEquipCommitRow;
+        void* btn   = g_pendingEquipCommitBtn;
+        g_pendingEquipCommitPanel = nullptr;
+        g_pendingEquipCommitRow   = nullptr;
+        g_pendingEquipCommitBtn   = nullptr;
+        if (panel && row && btn) {
+            uint32_t* rowIsActive = reinterpret_cast<uint32_t*>(
+                reinterpret_cast<unsigned char*>(row) + kControlIsActiveOffset);
+            uint32_t* btnIsActive = reinterpret_cast<uint32_t*>(
+                reinterpret_cast<unsigned char*>(btn) + kControlIsActiveOffset);
+            uint32_t prevRowActive = *rowIsActive;
+            uint32_t prevBtnActive = *btnIsActive;
+            *rowIsActive = 1;
+            *btnIsActive = 1;
+            auto onItem = reinterpret_cast<PFN_InGameEquipOnItemSelected>(
+                kAddrInGameEquipOnItemSelected);
+            auto onOK   = reinterpret_cast<PFN_InGameEquipOnOKPressed>(
+                kAddrInGameEquipOnOKPressed);
+            acclog::Write("Update: EquipCommit panel=%p row=%p btn=%p "
+                          "row.is_active=%u->1 btn.is_active=%u->1",
+                          panel, row, btn, prevRowActive, prevBtnActive);
+            onItem(panel, row);
+            onOK(panel, btn);
+            acclog::Write("Update: EquipCommit done panel=%p row=%p btn=%p",
+                          panel, row, btn);
         }
     }
 
