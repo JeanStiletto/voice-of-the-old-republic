@@ -8,7 +8,9 @@
 
 #include "cycle_state.h"
 #include "engine_area.h"
+#include "engine_manager.h"
 #include "engine_offsets.h"
+#include "engine_panels.h"
 #include "engine_player.h"
 #include "filter_objects.h"
 #include "guidance_autowalk.h"
@@ -253,6 +255,63 @@ void PollHotkey() {
 
     Vector unused;
     if (!acc::engine::GetPlayerPosition(unused)) return;
+
+    // Gate on "no true-blocker panel is foreground". GetPlayerPosition only
+    // confirms we're in-world; it doesn't tell us whether a UI panel is
+    // routing input. Without this check, Enter pressed inside the loot UI
+    // fires both BTN_OK (via menus.cpp's Container handler) AND a stale
+    // UseObject on the chest (via this poll).
+    //
+    // BLACKLIST approach (not whitelist). The engine's panels[] keeps stale
+    // entries — closed Options menus, completed Fade overlays, etc. — at
+    // the top of the stack for seconds after the user closed them. A
+    // whitelist of "in-world overlay" kinds underblocks because those stale
+    // entries get reported as fg by GetForegroundPanel. Verified empirically
+    // in patch-20260504-105955.log lines 1750+: fg = Fade (12B77D18) for
+    // 20+ seconds while the user was walking around and cycling targets.
+    //
+    // The blacklist names panels that *actually* route Enter to themselves
+    // when foreground — loot, shop, examine, conversation, tutorial popup,
+    // confirm modal, area-load. If we miss one (Inventory etc. when actually
+    // open) Enter will double-fire; that's recoverable. The reverse — over-
+    // blocking — leaves Enter dead in the world and is the worse failure
+    // mode of the two (already burned us once).
+    //
+    // Always logs the gate decision so future "Enter did nothing" reports
+    // surface here directly without another instrumentation pass.
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (mgr) {
+        void* fgPanel = acc::engine::GetForegroundPanel(mgr);
+        if (fgPanel) {
+            acc::engine::PanelKind fgKind = acc::engine::IdentifyPanel(fgPanel);
+            bool blocking = false;
+            switch (fgKind) {
+            case acc::engine::PanelKind::Container:
+            case acc::engine::PanelKind::Store:
+            case acc::engine::PanelKind::Examine:
+            case acc::engine::PanelKind::DialogCinematic:
+            case acc::engine::PanelKind::DialogCinematicCopy:
+            case acc::engine::PanelKind::DialogComputer:
+            case acc::engine::PanelKind::DialogComputerCamera:
+            case acc::engine::PanelKind::TutorialBox:
+            case acc::engine::PanelKind::MessageBoxModal:
+            case acc::engine::PanelKind::StatusSummary:
+            case acc::engine::PanelKind::AreaTransition:
+                blocking = true;
+                break;
+            default:
+                blocking = false;
+                break;
+            }
+            if (blocking) {
+                acclog::Write("Interact: Enter gate -- BLOCKED, fg=%p kind=%s",
+                              fgPanel, acc::engine::PanelKindName(fgKind));
+                return;
+            }
+            acclog::Write("Interact: Enter gate -- ALLOW, fg=%p kind=%s",
+                          fgPanel, acc::engine::PanelKindName(fgKind));
+        }
+    }
 
     OnInteract();
 }
