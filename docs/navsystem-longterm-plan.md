@@ -557,7 +557,25 @@ This pillar is best understood as a **cross-cutting UI primitive** rather than a
 
 It is kept as its own numbered pillar in this document for design clarity, but in implementation it will likely be one shared cycle/announce engine fed by per-context data providers.
 
-### Keybindings (locked 2026-05-03)
+### Scope revision (2026-05-04) — in-world cycle delegated to engine native Q/E
+
+In-game testing of `diag_engine_select` (`patch-20260504-082141.log`) confirmed: KOTOR 1's vanilla **Q/E target-cycle** (`CClientExoAppInternal::SelectNearestObject @0x005fb050`) populates `CClientExoApp::LastTarget`, which `passive_narrate` already watches and announces via Tolk. The chain works end-to-end without our intervention.
+
+**Decision (2026-05-04):** for in-world play, **delegate target cycling to the engine's native Q/E**. Reasons:
+
+- It's the sighted-player muscle memory (same key, same operation, same engine curation).
+- Pressing Q/E feeds `LastTarget`, which feeds our existing `passive_narrate` watcher → narration is automatic.
+- Removes one whole channel of complexity (we don't classify, sort by distance, or maintain `cycle_state` for in-world purposes).
+
+Our `,`/`.`/`Shift+,`/`Shift+.`/`-`/`Shift+-` cycle is **kept** but **reassigned to map-side use** (Pillar 3 marker cycle, Phase 5/6). The two-channel structure becomes:
+
+- **In-world:** Q/E (engine) cycles all interactables the engine considers visible. Comprehensive enough for sighted play; narrated automatically by `passive_narrate`.
+- **Map UI:** `,`/`.`/`Shift+,`/`Shift+.` cycle map markers / waypoints / quest objectives across the visible area. Different scope (map-curated landmarks, the engine's "important locations"), same key scheme reused.
+- **Backup scan** (open question): if the engine's Q/E hides nav-relevant items its curation excludes (debris, scenery placeables, distant doors), our `,`/`.` filter could be re-enabled in-world as a "give me everything" alternative. Defer until live testing reveals a specific gap.
+
+The Pillar 4 implementation in `cycle_input.cpp` / `cycle_state.cpp` / `filter_objects.cpp` stays in tree; consumers shift from in-world to map. Build cost: zero — the modules already exist and the wiring is cheap. The Phase 2 lay-off plan's "lay-off 9" interaction model layered on top of `LastTarget` (whichever channel populates it), so no architectural unwind needed.
+
+### Keybindings (locked 2026-05-03; in-world scope revised 2026-05-04)
 
 Three keys, single global scheme that works across all surfacing contexts (gameplay / area map / galaxy map):
 

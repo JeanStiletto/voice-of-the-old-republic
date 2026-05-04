@@ -34,6 +34,8 @@
 #include "audio_bus.h"       // Phase 1 lay-off 4 (test fixture only)
 #include "cycle_input.h"     // Phase 2 lay-off 3
 #include "guidance_autowalk.h"  // Phase 2 lay-off 5 (progress watchdog)
+#include "camera_announce.h"    // Phase 2 ad-hoc — camera-direction on A/D
+#include "diag_engine_select.h" // Phase 2 diagnostic — Q/E/Tab observation
 #include "interact_hotkey.h"    // Phase 2 lay-off 9b
 #include "passive_narrate.h"    // Phase 2 lay-off 9a
 #include "probe_world_hover.h"  // Phase 2 lay-off 9-probe (diagnostic)
@@ -2700,6 +2702,25 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     // Q/E are turning the character vs. only the camera). Speaks "north" /
     // "north-east" etc. on sector change with 5° hysteresis.
     acc::turn_announce::Tick();
+
+    // Phase 2 ad-hoc — camera-direction announcement on A/D. KOTOR 1's
+    // verified default control scheme: A/D rotate the *camera* around the
+    // character (NOT character facing), W moves the character in the
+    // camera's forward direction. Without camera feedback the user has
+    // no idea where the camera is pointing. Dead-reckons camera yaw from
+    // observed A/D held state + 200°/s default DPS; resyncs to character
+    // yaw on each character-yaw change (every W press snaps the character
+    // to face camera, anchoring the estimate).
+    acc::camera_announce::Tick();
+
+    // Phase 2 diagnostic — Q/E/Tab logging. Engine has its own
+    // target-cycle on Q/E (CClientExoAppInternal::SelectNearestObject
+    // @0x005fb050) per investigation Q6 + verified web sources. Logs
+    // keypresses with current LastTarget so we can correlate against
+    // passive_narrate's `LastTarget changed` lines and decide whether to
+    // delegate our `,`/`.` cycle to the engine's primitive or keep our
+    // own filter. Removable in one commit once decided.
+    acc::diag::engine_select::Tick();
 
     // Phase 2 lay-off 9b — combined autowalk+interact hotkey (Enter).
     // Resolves cycle focus first / engine LastTarget fallback, speaks
