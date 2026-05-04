@@ -281,6 +281,16 @@ static const char* ExtractAnnounceableText(void* control,
             // Image-only buttons (in-game-menu icons children [8..15],
             // chargen class icons, portrait-picker arrows).
             { 0x0073E658, false, true,  "button-spec" },
+            // PartySelection (Gruppenauswahl) portrait-slot buttons —
+            // children [9..17] of CSWGuiPartySelection in
+            // patch-20260504-160847.log. vtable[22]=0x00641DB0 (AsButton
+            // returns this) but the standard CallDowncast path at the
+            // CSWGuiButton text offsets returns empty, so they show
+            // src=none on the screen-reader pass. Registering here puts
+            // the speculative button-text reads on the allowlist; if the
+            // text sits at non-standard offsets we'll see misses logged
+            // and can chase the right field next.
+            { 0x00756BB8, false, true,  "party-portrait-spec" },
         };
         void** vt = *reinterpret_cast<void***>(control);
         uintptr_t vta = reinterpret_cast<uintptr_t>(vt);
