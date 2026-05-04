@@ -41,6 +41,21 @@ const char* Get(Id id) {
         case Id::FmtContainerItems:    return "%d items";
         case Id::FmtContainerItemAt:   return "%s, %d of %d";
 
+        case Id::EquipSlotHead:        return "Head";
+        case Id::EquipSlotImplant:     return "Implant";
+        case Id::EquipSlotBody:        return "Body";
+        case Id::EquipSlotArmL:        return "Left arm";
+        case Id::EquipSlotArmR:        return "Right arm";
+        case Id::EquipSlotWeapL:       return "Left weapon";
+        case Id::EquipSlotWeapR:       return "Right weapon";
+        case Id::EquipSlotBelt:        return "Belt";
+        case Id::EquipSlotHands:       return "Hands";
+        case Id::EquipTutorial:        return "Use arrow keys to navigate the 9 slots. "
+                                              "Enter opens a list of items that fit the slot. "
+                                              "In the list, arrow keys pick an item, "
+                                              "Enter equips it, Escape returns to the slots. "
+                                              "Close exits the screen.";
+
         case Id::DirNorth:             return "North";
         case Id::DirNortheast:         return "Northeast";
         case Id::DirEast:              return "East";

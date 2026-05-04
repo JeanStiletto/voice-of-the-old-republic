@@ -62,6 +62,27 @@ static const char* FindSiblingLabel(void* panel, void* control,
 static const char* LookupCycleCategory(void* control);
 static bool IsChainNavigable(void* control);
 
+// Equipment screen control IDs from equip.gui (extracted via xoreos-tools
+// gff2xml). The 9 BTN_INV_* slot buttons, the item-picker listbox, and the
+// two action buttons. Used by the per-kind extraction fallback (so empty-
+// text slot buttons announce as "Kopf" / "Implantat" / etc.) and the
+// InGameEquip input handler that drives the modal item-picker zone.
+//
+// Defined here at file scope (rather than next to the Container IDs ~1000
+// lines down) because ExtractAnnounceableText immediately below needs them.
+constexpr int kEquipBtnHeadId    =  7;  // BTN_INV_HEAD     (TLK 31375)
+constexpr int kEquipBtnImplantId =  9;  // BTN_INV_IMPLANT  (literal — no TLK)
+constexpr int kEquipBtnBodyId    = 11;  // BTN_INV_BODY     (TLK 31380)
+constexpr int kEquipBtnArmLId    = 13;  // BTN_INV_ARM_L    (TLK 31376)
+constexpr int kEquipBtnWeapLId   = 15;  // BTN_INV_WEAP_L   (TLK 31378)
+constexpr int kEquipBtnBeltId    = 17;  // BTN_INV_BELT     (TLK 31382)
+constexpr int kEquipBtnWeapRId   = 19;  // BTN_INV_WEAP_R   (TLK 31379)
+constexpr int kEquipBtnArmRId    = 21;  // BTN_INV_ARM_R    (TLK 31377)
+constexpr int kEquipBtnHandsId   = 23;  // BTN_INV_HANDS    (TLK 31383)
+constexpr int kEquipLbItemsId    =  5;  // LB_ITEMS
+constexpr int kEquipBtnBackId    = 36;  // BTN_BACK         (TLK 1582 = Schliess.)
+constexpr int kEquipBtnEquipId   = 37;  // BTN_EQUIP        (TLK 1580 = OK)
+
 static const char* ExtractAnnounceableText(void* control,
                                            char* outBuf, size_t bufSize,
                                            void* ownerPanel = nullptr) {
@@ -469,6 +490,70 @@ static const char* ExtractAnnounceableText(void* control,
         }
     }
 
+    // 9b. Per-kind hardcoded label fallback for the equipment screen. The
+    //     9 BTN_INV_* slot buttons (and the matching LBL_INV_* labels) have
+    //     no inline text and no strref in equip.gui — same situation as the
+    //     InGameMenu strip icons. Use the control's stable .gui ID (read at
+    //     +0x50) to pick a slot name, prefer a dialog.tlk lookup so a non-
+    //     German install reads the engine's own translations, fall back to
+    //     a strings.h literal (which adapts to active language).
+    //
+    //     IDs come from equip.gui via xoreos-tools gff2xml; same .gui maps
+    //     button ID → matching label ID (n+1) so we cover both with one
+    //     spec table by listing both ids for each slot.
+    if (!source && ownerForPerkind &&
+        IdentifyPanel(ownerForPerkind) == PanelKind::InGameEquip) {
+        struct EquipSlotName {
+            int           btnId;
+            int           lblId;
+            uint32_t      strref;     // 0xFFFFFFFF = no TLK, use literal
+            acc::strings::Id literalId;
+        };
+        static const EquipSlotName k_equipSlots[] = {
+            { kEquipBtnHeadId,     kEquipBtnHeadId    + 1, 31375u,      acc::strings::Id::EquipSlotHead    },
+            { kEquipBtnImplantId,  kEquipBtnImplantId + 1, 0xFFFFFFFFu, acc::strings::Id::EquipSlotImplant },
+            { kEquipBtnBodyId,     kEquipBtnBodyId    + 1, 31380u,      acc::strings::Id::EquipSlotBody    },
+            { kEquipBtnArmLId,     kEquipBtnArmLId    + 1, 31376u,      acc::strings::Id::EquipSlotArmL    },
+            { kEquipBtnArmRId,     kEquipBtnArmRId    + 1, 31377u,      acc::strings::Id::EquipSlotArmR    },
+            { kEquipBtnWeapLId,    kEquipBtnWeapLId   + 1, 31378u,      acc::strings::Id::EquipSlotWeapL   },
+            { kEquipBtnWeapRId,    kEquipBtnWeapRId   + 1, 31379u,      acc::strings::Id::EquipSlotWeapR   },
+            { kEquipBtnBeltId,     kEquipBtnBeltId    + 1, 31382u,      acc::strings::Id::EquipSlotBelt    },
+            { kEquipBtnHandsId,    kEquipBtnHandsId   + 1, 31383u,      acc::strings::Id::EquipSlotHands   },
+        };
+        int cid = *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(control) + 0x50);
+        for (const auto& s : k_equipSlots) {
+            if (s.btnId != cid && s.lblId != cid) continue;
+            bool gotTlk = false;
+            if (s.strref != 0xFFFFFFFFu) {
+                char tlkText[256];
+                if (LookupTlk(s.strref, tlkText, sizeof(tlkText))) {
+                    size_t tlen = strnlen(tlkText, sizeof(tlkText));
+                    if (tlen > 0 && tlen + 1 <= bufSize) {
+                        memcpy(outBuf, tlkText, tlen + 1);
+                        source = "perkind-equip-tlk";
+                        gotTlk = true;
+                        acclog::Write("Per-kind InGameEquip TLK: control=%p "
+                                      "id=%d strref=%u -> \"%s\"",
+                                      control, cid, s.strref, outBuf);
+                    }
+                }
+            }
+            if (!gotTlk) {
+                const char* lit = acc::strings::Get(s.literalId);
+                size_t llen = strlen(lit);
+                if (llen > 0 && llen + 1 <= bufSize) {
+                    memcpy(outBuf, lit, llen + 1);
+                    source = "perkind-equip-literal";
+                    acclog::Write("Per-kind InGameEquip literal: control=%p "
+                                  "id=%d strref=%u -> \"%s\"",
+                                  control, cid, s.strref, outBuf);
+                }
+            }
+            break;
+        }
+    }
+
     // 9. Sibling-label fallback for chain-navigable controls with no text.
     //    Image-only icon buttons (vtable=0x0073E658 in CSWGuiInGameMenu —
     //    Equipment / Inventory / Character / Map / Abilities / Journal /
@@ -663,6 +748,18 @@ static int   g_chainCount   = 0;
 // directly (no double-override). Once the modal/sub-tab closes and fg
 // returns to the strip, the override re-engages.
 static bool g_drilledIntoSubScreen = false;
+
+// Equipment picker zone arming. The InGameEquip screen has two interaction
+// zones in one panel: the 9-slot paper-doll grid (default) and the LB_ITEMS
+// item list, entered by pressing Enter on a slot. Arrow keys mean different
+// things in each zone, so OnHandleInputEvent gates routing on this flag.
+//
+// Set when Enter activates a BTN_INV_* slot. Cleared by Esc, by Enter on
+// BTN_EQUIP (after dispatch), by panel close, or by the panel falling out
+// of panels[] (handled in MonitorEquipPickerSelection). The panel pointer
+// guards against stale arming across a close/reopen.
+static bool  g_equipPickerActive = false;
+static void* g_equipPickerPanel  = nullptr;
 
 // Forward decl: find an InGame{X} sub-screen panel currently in panels[].
 // Defined near the sub-screen spec table to share the kind set with
@@ -996,7 +1093,10 @@ static void ParseVirtualLines(const char* text) {
 // Container loot panel control IDs from container.gui (extracted via
 // xoreos-tools from data/gui.bif). Stable per panel kind across patch versions.
 // Used by the Container input handler in OnHandleInputEvent and the per-row
-// monitor MonitorContainerSelection further down.
+// monitor MonitorContainerSelection further down. (Equipment IDs live near
+// the top of the file because ExtractAnnounceableText needs them; container
+// IDs aren't referenced until the input handler ~800 lines below so they
+// stay co-located here with the Container helpers.)
 constexpr int kContainerLbItemsId   = 2;
 constexpr int kContainerBtnOkId     = 3;
 constexpr int kContainerBtnGiveId   = 4;
@@ -2017,6 +2117,126 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         return consumed ? 1 : 0;
     }
 
+    // Equipment screen — modal item-picker zone. Two zones in one panel:
+    //
+    //   * Slot zone (default): chain navigates the 9 BTN_INV_* slot grid +
+    //     BTN_BACK + BTN_EQUIP. Arrow keys + Enter handled by the generic
+    //     handlers below. When Enter activates a BTN_INV_* slot the engine
+    //     repopulates LB_ITEMS for that slot — we then arm the picker so
+    //     subsequent arrows go to the items list, not the slot grid.
+    //
+    //   * Picker zone (g_equipPickerActive): Up/Down drive
+    //     LB_ITEMS.selection_index directly (the engine doesn't bind arrow
+    //     keys to that listbox — same situation as the Container loot list).
+    //     Enter dispatches BTN_EQUIP, then disarms. Esc disarms without
+    //     equipping; chain focus is unchanged so the next arrow press
+    //     resumes slot navigation.
+    //
+    // Arming + disarming runs unconditionally regardless of zone so a panel
+    // close / reopen always resets — see g_equipPickerPanel staleness check.
+    if (activePanel != nullptr &&
+        IdentifyPanel(activePanel) == PanelKind::InGameEquip)
+    {
+        // Self-disarm if the panel pointer drifted (re-open, panel kind
+        // matches but address differs). Picker state is per-panel.
+        if (g_equipPickerActive && g_equipPickerPanel != activePanel) {
+            acclog::Write("EquipPicker: disarm — panel changed (%p -> %p)",
+                          g_equipPickerPanel, activePanel);
+            g_equipPickerActive = false;
+            g_equipPickerPanel  = nullptr;
+        }
+
+        if (g_equipPickerActive && param_2 != 0) {
+            void* lb = FindControlById(activePanel, kEquipLbItemsId);
+            if (lb && (param_1 == kInputNavUp || param_1 == kInputNavDown)) {
+                auto* lbBase = reinterpret_cast<unsigned char*>(lb);
+                auto* lbList = reinterpret_cast<CExoArrayList*>(
+                    lbBase + kListBoxControlsOffset);
+                int rowCount = (lbList && lbList->data) ? lbList->size : 0;
+                if (rowCount > 0) {
+                    short* selPtr = reinterpret_cast<short*>(
+                        lbBase + kListBoxSelectionIndexOffset);
+                    short* topPtr = reinterpret_cast<short*>(
+                        lbBase + kListBoxTopVisibleIndexOffset);
+                    short* ippPtr = reinterpret_cast<short*>(
+                        lbBase + kListBoxItemsPerPageOffset);
+                    short oldSel = *selPtr;
+                    short newSel;
+                    if (oldSel < 0) {
+                        newSel = 0;
+                    } else if (param_1 == kInputNavDown) {
+                        newSel = (short)(oldSel + 1);
+                        if (newSel >= rowCount) newSel = (short)(rowCount - 1);
+                    } else {
+                        newSel = (short)(oldSel - 1);
+                        if (newSel < 0) newSel = 0;
+                    }
+                    if (newSel != oldSel) {
+                        *selPtr = newSel;
+                        short ipp = *ippPtr;
+                        short top = *topPtr;
+                        if (ipp <= 0) ipp = 1;
+                        if (newSel < top) {
+                            *topPtr = newSel;
+                        } else if (newSel >= top + ipp) {
+                            *topPtr = (short)(newSel - ipp + 1);
+                        }
+                    }
+                    acclog::Write("EquipPicker: %s lb=%p sel=%d->%d (rows=%d)",
+                                  param_1 == kInputNavDown ? "Down" : "Up",
+                                  lb, oldSel, newSel, rowCount);
+                } else {
+                    acclog::Write("EquipPicker: %s lb=%p empty; nav ignored",
+                                  param_1 == kInputNavDown ? "Down" : "Up", lb);
+                }
+                consumed = true;
+            } else if (param_1 == kInputEnter1 || param_1 == kInputEnter2) {
+                if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
+                    acclog::Write("EquipPicker: Enter — op already pending; ignoring");
+                    consumed = true;
+                } else {
+                    void* btn = FindControlById(activePanel, kEquipBtnEquipId);
+                    if (btn) {
+                        g_pendingActivate       = true;
+                        g_pendingActivateTarget = btn;
+                        acclog::Write("EquipPicker: Enter -> FireActivate BTN_EQUIP "
+                                      "panel=%p target=%p", activePanel, btn);
+                    } else {
+                        acclog::Write("EquipPicker: Enter -- BTN_EQUIP not found on "
+                                      "panel=%p", activePanel);
+                    }
+                    g_equipPickerActive = false;
+                    g_equipPickerPanel  = nullptr;
+                    consumed = true;
+                }
+            } else if (param_1 == kInputEsc1 || param_1 == kInputEsc2) {
+                acclog::Write("EquipPicker: Esc -> disarm (panel=%p)", activePanel);
+                g_equipPickerActive = false;
+                g_equipPickerPanel  = nullptr;
+                consumed = true;
+            }
+        }
+
+        // If picker handled the event, log + return early (mirrors Container).
+        if (consumed) {
+            int translated = acc::engine::ManagerTranslateCode(param_1);
+            const char* tag = " CONSUMED";
+            if (translated != param_1) {
+                acclog::Write("HandleInputEvent #%d this=%p key=logical(%d) -> %s(%d) val=%d%s",
+                              n, thisPtr, param_1,
+                              acc::engine::InputIndexName(translated), translated, param_2, tag);
+            } else {
+                acclog::Write("HandleInputEvent #%d this=%p key=%s(%d) val=%d%s",
+                              n, thisPtr, acc::engine::InputIndexName(param_1), param_1, param_2, tag);
+            }
+            return 1;
+        }
+        // Not consumed — fall through to generic handlers (slot zone).
+        // Watch for a slot-button Enter to arm the picker; done after the
+        // generic Enter activate block writes g_pendingActivateTarget so we
+        // can see what got selected.
+    }
+
     // Pillar 4 cycle keys (`,` `.` `Shift+,` `Shift+.` `-` `Shift+-`) — Phase 2
     // lay-off 3. Routed first because cycle is in-game-only and the handler
     // self-gates on GetPlayerPosition; in menus / chargen / dialog it returns
@@ -2101,6 +2321,31 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                 g_drilledIntoSubScreen = true;
                 acclog::Write("Drill: armed (Enter on InGameMenu icon target=%p)",
                               e.control);
+            }
+
+            // Arm the equipment item-picker zone when Enter activates a slot
+            // button on the equip screen. The engine's slot-onClick handler
+            // populates LB_ITEMS for that slot synchronously; from here on
+            // arrow keys go to the items list (handled by the InGameEquip
+            // pre-pass at the top of this function on the next event).
+            // Eager-set + self-clears on panel close, picker Esc, or BTN_EQUIP
+            // dispatch.
+            if (IdentifyPanel(g_chainPanel) == PanelKind::InGameEquip) {
+                int cid = *reinterpret_cast<int*>(
+                    reinterpret_cast<unsigned char*>(e.control) + 0x50);
+                bool isSlot =
+                    cid == kEquipBtnHeadId    || cid == kEquipBtnImplantId ||
+                    cid == kEquipBtnBodyId    || cid == kEquipBtnArmLId    ||
+                    cid == kEquipBtnArmRId    || cid == kEquipBtnWeapLId   ||
+                    cid == kEquipBtnWeapRId   || cid == kEquipBtnBeltId    ||
+                    cid == kEquipBtnHandsId;
+                if (isSlot) {
+                    g_equipPickerActive = true;
+                    g_equipPickerPanel  = g_chainPanel;
+                    acclog::Write("EquipPicker: armed (Enter on slot id=%d "
+                                  "target=%p panel=%p)",
+                                  cid, e.control, g_chainPanel);
+                }
             }
 
             acclog::Write("Enter activate panel=%p index=%d target=%p",
@@ -2592,6 +2837,18 @@ static void AnnounceNewSubScreens(void** panels, int count) {
                           p, PanelKindName(k), spec->literal);
             tolk::Speak(spec->literal, /*interrupt=*/false);
         }
+
+        // Per-screen tutorial pre-roll. Spoken once per first-sight (re-open
+        // replays it; that's the desired UX — users opening the screen
+        // probably forgot the keymap). Only the equip screen has one for
+        // now; other sub-screens use the generic chain announcement. Queued
+        // (interrupt=false) so it lands AFTER the localized name.
+        if (k == PanelKind::InGameEquip) {
+            tolk::Speak(acc::strings::Get(acc::strings::Id::EquipTutorial),
+                        /*interrupt=*/false);
+            acclog::Write("SubScreen tutorial: panel=%p kind=%s queued",
+                          p, PanelKindName(k));
+        }
     }
     memcpy(g_visibleSubScreens, nowVisible, sizeof(nowVisible));
     g_visibleSubScreenCount = nowCount;
@@ -2934,6 +3191,18 @@ struct ContainerSelState {
 };
 static ContainerSelState g_containerSelState = { nullptr, -1 };
 
+// Equipment picker selection-tracking state — declared next to
+// g_containerSelState because MonitorEquipPickerSelection mirrors
+// MonitorContainerSelection. The arming flags g_equipPickerActive /
+// g_equipPickerPanel live earlier in the file (next to the other input-
+// pipeline globals like g_drilledIntoSubScreen) because the input handler
+// reads them before this declaration is reached.
+struct EquipSelState {
+    void* listBox;
+    short lastSelection;
+};
+static EquipSelState g_equipSelState = { nullptr, -1 };
+
 // Per-tick poll of the Container panel's listbox selection_index. First sight
 // of a new listbox: announce item count (or "leer"), snapshot without reading
 // the current row. Subsequent change: announce "<row text>, <i+1> von <N>".
@@ -3040,6 +3309,103 @@ static void MonitorContainerSelection() {
                   lb, selIdx, prev, rowText);
 }
 
+// Per-tick poll of the equipment-screen LB_ITEMS selection_index. Mirrors
+// MonitorContainerSelection — same pattern: first sight after a panel
+// transition snapshots without speaking, subsequent index changes speak the
+// new row's text. Wakes up on panel arming (we set selection_index when the
+// engine repopulates LB_ITEMS) and on user arrow-key driven changes.
+//
+// Auto-disarms when the InGameEquip panel falls out of panels[] so a
+// reopen starts fresh.
+static void MonitorEquipPickerSelection() {
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!mgr) return;
+    auto* base = reinterpret_cast<unsigned char*>(mgr);
+    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+
+    void* equipPanel = nullptr;
+    if (panelData && panelCount > 0) {
+        int n = panelCount > 16 ? 16 : panelCount;
+        for (int i = 0; i < n; ++i) {
+            void* p = panelData[i];
+            if (!p) continue;
+            if (IdentifyPanel(p) == PanelKind::InGameEquip) {
+                equipPanel = p;
+                break;
+            }
+        }
+    }
+
+    if (!equipPanel) {
+        if (g_equipSelState.listBox) {
+            acclog::Write("EquipPicker monitor disarmed: no InGameEquip panel in stack");
+            g_equipSelState.listBox       = nullptr;
+            g_equipSelState.lastSelection = -1;
+        }
+        if (g_equipPickerActive) {
+            acclog::Write("EquipPicker: disarm — panel gone from panels[]");
+            g_equipPickerActive = false;
+            g_equipPickerPanel  = nullptr;
+        }
+        return;
+    }
+
+    void* lb = FindControlById(equipPanel, kEquipLbItemsId);
+    if (!lb) return;
+
+    auto* lbList = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
+    int rowCount = (lbList && lbList->data) ? lbList->size : 0;
+
+    short selIdx = *reinterpret_cast<short*>(
+        reinterpret_cast<unsigned char*>(lb) + kListBoxSelectionIndexOffset);
+
+    // First sight of this listbox — snapshot without speaking. Don't speak
+    // a count line on the equip screen: at panel-open the listbox is empty
+    // (the engine fills it after the user activates a slot), and users have
+    // already heard the panel name + tutorial. Re-speak only on changes.
+    if (g_equipSelState.listBox != lb) {
+        g_equipSelState.listBox       = lb;
+        g_equipSelState.lastSelection = selIdx;
+        acclog::Write("EquipPicker monitor armed: panel=%p lb=%p rows=%d initialSel=%d",
+                      equipPanel, lb, rowCount, selIdx);
+        return;
+    }
+
+    if (selIdx == g_equipSelState.lastSelection) return;
+    short prev = g_equipSelState.lastSelection;
+    g_equipSelState.lastSelection = selIdx;
+
+    if (selIdx < 0) {
+        acclog::Write("EquipPicker selection cleared: lb=%p prev=%d", lb, prev);
+        return;
+    }
+    if (!lbList || !lbList->data || selIdx >= lbList->size) {
+        acclog::Write("EquipPicker selection out of range: lb=%p sel=%d size=%d",
+                      lb, selIdx, lbList ? lbList->size : -1);
+        return;
+    }
+    void* row = lbList->data[selIdx];
+    if (!row) return;
+
+    char rowText[256];
+    const char* src = ExtractAnnounceableText(row, rowText, sizeof(rowText));
+    if (!src) {
+        acclog::Write("EquipPicker row %d (lb=%p): no announceable text", selIdx, lb);
+        return;
+    }
+
+    // Reuse the container "X, i von N" format — same UX shape, same words.
+    char msg[320];
+    snprintf(msg, sizeof(msg),
+             acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
+             rowText, selIdx + 1, rowCount);
+    tolk::Speak(msg, /*interrupt=*/false);
+    acclog::Write("EquipPicker row: lb=%p sel=%d (was %d) text=\"%s\"",
+                  lb, selIdx, prev, rowText);
+}
+
 // Container give-mode toggle key — Win32 poll for G. The natural key (Tab)
 // never reaches CSWGuiManager::HandleInputEvent because the engine's player-
 // control / Change-Leader layer consumes Tab before menu-input dispatch
@@ -3104,6 +3470,7 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     MonitorPanelContents();
     MonitorDialogReplies();
     MonitorContainerSelection();
+    MonitorEquipPickerSelection();
     PollContainerGiveModeKey();
 
     // Pillar 4 cycle keys via Win32 polling. Stock kotor.ini doesn't bind

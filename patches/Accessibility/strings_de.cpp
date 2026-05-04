@@ -51,6 +51,21 @@ const char* Get(Id id) {
         case Id::FmtContainerItems:    return "%d Gegenst\xE4nde";              // Gegenstände
         case Id::FmtContainerItemAt:   return "%s, %d von %d";
 
+        case Id::EquipSlotHead:        return "Kopf";
+        case Id::EquipSlotImplant:     return "Implantat";
+        case Id::EquipSlotBody:        return "K\xF6rper";                       // Körper
+        case Id::EquipSlotArmL:        return "Linker Arm";
+        case Id::EquipSlotArmR:        return "Rechter Arm";
+        case Id::EquipSlotWeapL:       return "Linke Waffe";
+        case Id::EquipSlotWeapR:       return "Rechte Waffe";
+        case Id::EquipSlotBelt:        return "G\xFCrtel";                       // Gürtel
+        case Id::EquipSlotHands:       return "H\xE4nde";                        // Hände
+        case Id::EquipTutorial:        return "Mit Pfeiltasten zwischen den 9 Slots navigieren. "
+                                              "Eingabe \xF6" "ffnet die Liste passender Gegenst\xE4nde. "
+                                              "In der Liste mit Pfeiltasten w\xE4hlen, "
+                                              "Eingabe r\xFCstet aus, Escape zur\xFC" "ck. "
+                                              "Schlie\xDF" "en verl\xE4sst den Bildschirm.";
+
         case Id::DirNorth:             return "Norden";
         case Id::DirNortheast:         return "Nord-Ost";
         case Id::DirEast:              return "Osten";

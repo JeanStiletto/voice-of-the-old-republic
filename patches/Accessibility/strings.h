@@ -101,6 +101,33 @@ enum class Id : int {
     FmtContainerItems,
     FmtContainerItemAt,
 
+    // ---- Equipment screen (CSWGuiInGameEquip).
+    //      Slot button names — used as the speech for each of the 9
+    //      paper-doll BTN_INV_* buttons. The .gui file gives them no
+    //      strrefs (all 4294967295), so the per-kind fallback path in
+    //      ExtractAnnounceableText looks up dialog.tlk strrefs first
+    //      (TLK 31375-31383 block, contiguous + locale-stable) and falls
+    //      back to these literals if TLK lookup fails. Keeps a German
+    //      install reading the engine's exact slot names while a non-
+    //      German install still gets a sensible label.
+    //
+    //      `EquipTutorial` is the one-shot pre-roll spoken on first sight
+    //      of the equip panel (after the localized panel name). Walks
+    //      the user through the screen-specific keyboard model — the
+    //      engine has no native keyboard support for equip and the
+    //      flow (focus slot, Enter, navigate items, Enter to equip)
+    //      isn't discoverable without it.
+    EquipSlotHead,
+    EquipSlotImplant,
+    EquipSlotBody,
+    EquipSlotArmL,
+    EquipSlotArmR,
+    EquipSlotWeapL,
+    EquipSlotWeapR,
+    EquipSlotBelt,
+    EquipSlotHands,
+    EquipTutorial,
+
     // ---- Octagonal compass directions for turn announcement
     //      (Pillar 2 sub-feature C). German uses traditional
     //      "Norden / Osten / S\xFCden / Westen" forms with hyphenated
