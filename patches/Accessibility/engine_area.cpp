@@ -354,6 +354,27 @@ bool IsTransitionTrigger(void* trigger) {
     }
 }
 
+bool IsMapNoteEnabled(void* waypoint) {
+    if (!waypoint) return false;
+    __try {
+        return *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(waypoint) +
+            kWaypointMapNoteEnabledOffset) != 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool GetWaypointMapNote(void* waypoint, char* outBuf, size_t bufSize) {
+    if (!waypoint || !outBuf || bufSize < 2) return false;
+    outBuf[0] = '\0';
+    bool ok = ExtractTextOrStrRef(waypoint,
+                                  kWaypointMapNoteLocOffset,
+                                  kWaypointMapNoteLocOffset + 4,
+                                  outBuf, bufSize);
+    return ok && outBuf[0] != '\0';
+}
+
 void* AreaObjectIterator::Next() {
     if (!handles_ || !objectArray_) return nullptr;
     auto resolve = reinterpret_cast<PFN_GetGameObject>(

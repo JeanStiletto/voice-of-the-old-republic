@@ -217,6 +217,27 @@ bool IsUsablePlaceable(void* placeable);
 bool IsLandmarkWaypoint(void* waypoint);
 bool IsTransitionTrigger(void* trigger);
 
+// Reads CSWSWaypoint.map_note_enabled (+0x22c). True if this waypoint's
+// map note is currently visible on the in-game map (engine's fog-of-war
+// model — disabled until the player discovers it via map-pin trigger).
+// Use to gate any feature that surfaces map-note text so we don't spoil
+// locations the player hasn't yet seen on the map.
+//
+// Returns false on null / fault. Caller should already have confirmed
+// the object is a Waypoint kind via GetObjectKind.
+bool IsMapNoteEnabled(void* waypoint);
+
+// Reads CSWSWaypoint.map_note (+0x230, CExoLocString). The Bioware-
+// authored display label (e.g. "Bridge", "Cargo Hold", "Brücke",
+// "Frachtraum") that the in-game map shows. CExoLocString shape matches
+// CExoString at +0x230 + the strref at +0x234, so engine_reads's
+// `ExtractTextOrStrRef` resolves both the inline c_string path and the
+// TLK-strref fallback path.
+//
+// Returns false on null / empty resolution / fault. outBuf must be at
+// least bufSize bytes; on success a null-terminated string is written.
+bool GetWaypointMapNote(void* waypoint, char* outBuf, size_t bufSize);
+
 // Iterator over CSWSArea.game_objects[]. Constructed once per scan; Next()
 // returns successive CSWSObject* values until exhausted (returns nullptr).
 //
@@ -311,3 +332,9 @@ constexpr size_t kPlaceableUsableOffset        = 0x328;  // bool (1 byte)
 constexpr size_t kPlaceableHasInventoryOffset  = 0x334;  // bool (1 byte)
 constexpr size_t kWaypointHasMapNoteOffset     = 0x228;  // bool (1 byte)
 constexpr size_t kTriggerTransitionDestOffset  = 0x30c;  // Vector (12 bytes)
+
+// CSWSWaypoint map-note offsets — Bioware-authored "atmospheric" labels
+// (verified against k1_win_gog_swkotor.exe.xml line 15692, CSWSWaypoint
+// SIZE=0x240).
+constexpr size_t kWaypointMapNoteEnabledOffset = 0x22c;  // int
+constexpr size_t kWaypointMapNoteLocOffset     = 0x230;  // CExoLocString (8 bytes)

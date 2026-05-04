@@ -39,6 +39,31 @@ constexpr int kRoomStabilityTicks = 5;
 int   g_pending_room_idx   = -1;
 int   g_pending_room_count = 0;
 
+// Per-room landmark cache. Built once on each area change by scanning
+// every CSWSWaypoint with has_map_note != 0 AND map_note_enabled != 0,
+// resolving its room via GetRoomAtIndexed, and recording its map_note
+// CExoLocString text. Lookup by room index gives the Bioware-authored
+// "atmospheric" label (e.g. "Brücke", "Frachtraum", "Mannschaftsquartier").
+// Falls back to the resref / synthesised "Raum N" path when no
+// landmark covers a given room.
+//
+// Fog-of-war respect: filtering on map_note_enabled prevents spoiling
+// locations the player hasn't yet discovered on the in-game map. When
+// the player walks into an unrevealed room, our cache won't have an
+// entry and we fall back to "Raum N" — same information channel the
+// sighted player has via the unmarked map slot.
+//
+// First-come wins on collision: if multiple landmark waypoints share
+// a room (rare), the first one encountered during iteration is kept.
+// Refinement (closest-to-room-centre, longest name, etc.) is parked
+// until in-game testing shows ambiguous picks.
+//
+// Sized at kMaxRoomsCache=128 — vanilla KOTOR areas have <50 rooms
+// each. Cache is invalidated (zeroed) on every area change.
+constexpr int kMaxRoomsCache = 128;
+char g_room_landmark[kMaxRoomsCache][128];
+int  g_room_landmark_count = 0;
+
 // Heuristic: vanilla KOTOR content stores room names as the .lyt-room
 // identifier (`m01aa_10`, `stunt_03_main`, `unk_m13ab`) — pronounceable
 // but meaningless, and they read as letter-soup noise through a screen
@@ -88,31 +113,105 @@ void SpeakArea(void* area) {
     acclog::Write("Transition: area -> '%s' (areaPtr=%p)", nameBuf, area);
 }
 
+void RebuildLandmarkCache(void* area) {
+    // Reset cache. Use the index loop instead of memset so we keep
+    // the Vector member alignment guarantees of any future struct
+    // refactor; cheap (128 × 1-byte zero each).
+    for (int i = 0; i < kMaxRoomsCache; ++i) g_room_landmark[i][0] = '\0';
+    g_room_landmark_count = 0;
+
+    if (!area) return;
+
+    int scanned = 0, landmarks = 0, placed = 0;
+    acc::engine::AreaObjectIterator iter(area);
+    void* obj = nullptr;
+    while ((obj = iter.Next()) != nullptr) {
+        ++scanned;
+        int kind = acc::engine::GetObjectKind(obj);
+        if (kind != static_cast<int>(
+                acc::engine::GameObjectKind::Waypoint)) {
+            continue;
+        }
+        // Two gates: must be a landmark (has_map_note bit) AND map note
+        // currently enabled (engine fog-of-war model). The latter is the
+        // spoiler-protection path; without it we'd surface labels for
+        // unrevealed locations.
+        if (!acc::engine::IsLandmarkWaypoint(obj))   continue;
+        if (!acc::engine::IsMapNoteEnabled(obj))     continue;
+        ++landmarks;
+
+        Vector pos;
+        if (!acc::engine::GetObjectPosition(obj, pos)) continue;
+
+        int roomIdx = -1;
+        void* room = acc::engine::GetRoomAtIndexed(area, pos, roomIdx);
+        if (!room || roomIdx < 0 || roomIdx >= kMaxRoomsCache) continue;
+
+        char note[128] = {0};
+        if (!acc::engine::GetWaypointMapNote(obj, note, sizeof(note))) {
+            continue;
+        }
+
+        // First-come wins. Multiple landmarks per room is rare; refine
+        // only if in-game testing shows ambiguous picks (e.g. prefer
+        // closest-to-room-centre, prefer longest name).
+        if (g_room_landmark[roomIdx][0] == '\0') {
+            std::strncpy(g_room_landmark[roomIdx], note,
+                         sizeof(g_room_landmark[roomIdx]) - 1);
+            g_room_landmark[roomIdx]
+                [sizeof(g_room_landmark[roomIdx]) - 1] = '\0';
+            ++g_room_landmark_count;
+            ++placed;
+        }
+    }
+
+    acclog::Write(
+        "Transition: landmark cache rebuilt — scanned=%d landmarks=%d "
+        "placed=%d (areaPtr=%p)",
+        scanned, landmarks, placed, area);
+}
+
+const char* GetLandmarkForRoom(int roomIdx) {
+    if (roomIdx < 0 || roomIdx >= kMaxRoomsCache) return nullptr;
+    if (g_room_landmark[roomIdx][0] == '\0') return nullptr;
+    return g_room_landmark[roomIdx];
+}
+
 void SpeakRoom(void* area, int roomIndex) {
     char nameBuf[128] = {0};
     bool gotName = acc::engine::GetRoomDisplayName(
         area, roomIndex, nameBuf, sizeof(nameBuf)) && nameBuf[0] != '\0';
 
-    char speech[160] = {0};
-    if (gotName && !IsResrefStyleRoomName(nameBuf)) {
-        // Modder gave a real human-readable name — speak it as-is.
+    // Resolution priority (most descriptive first):
+    //   1. Bioware-curated map-note landmark in the same room (preferred).
+    //   2. Modder-supplied room_name when human-readable.
+    //   3. Synthesised "Raum N" — when name is a resref-style ID or empty.
+    const char* landmark = GetLandmarkForRoom(roomIndex);
+
+    char speech[192] = {0};
+    const char* spokenSource = "(none)";
+    if (landmark) {
+        std::snprintf(speech, sizeof(speech),
+                      acc::strings::Get(acc::strings::Id::FmtTransitionRoom),
+                      landmark);
+        spokenSource = "landmark";
+    } else if (gotName && !IsResrefStyleRoomName(nameBuf)) {
         std::snprintf(speech, sizeof(speech),
                       acc::strings::Get(acc::strings::Id::FmtTransitionRoom),
                       nameBuf);
+        spokenSource = "room_name";
     } else {
-        // Vanilla resref or empty — synthesise "Raum N" / "Room N".
-        // Keep the room index as the user-facing identifier; it's
-        // unique within the area and pronounceable. Resref (when
-        // available) still goes to the log for post-mortem.
         std::snprintf(speech, sizeof(speech),
                       acc::strings::Get(
                           acc::strings::Id::FmtTransitionRoomIndex),
                       roomIndex);
+        spokenSource = "index";
     }
     tolk::Speak(speech, /*interrupt=*/false);
     acclog::Write(
-        "Transition: room -> %d '%s' (areaPtr=%p)",
-        roomIndex, gotName ? nameBuf : "(empty)", area);
+        "Transition: room -> %d '%s' src=%s landmark=%s (areaPtr=%p)",
+        roomIndex, gotName ? nameBuf : "(empty)", spokenSource,
+        landmark ? landmark : "-", area);
 }
 
 }  // namespace
@@ -139,6 +238,11 @@ void Tick() {
 
     if (area != g_prev_area) {
         SpeakArea(area);
+        // Rebuild the per-room landmark cache for the new area before
+        // any room-change branch can fire — the first room announce
+        // after an area change should already use the curated label
+        // when one exists.
+        RebuildLandmarkCache(area);
         g_prev_area          = area;
         g_prev_room_idx      = -1;  // re-announce room on new area
         g_pending_room_idx   = -1;  // and reset stability tracker
