@@ -1,10 +1,13 @@
 #include "transitions.h"
 
+#include <windows.h>
 #include <cstdio>
+#include <cstring>
 
 #include "engine_area.h"
 #include "engine_player.h"
 #include "engine_offsets.h"  // Vector
+#include "engine_reads.h"    // ReadCExoString
 #include "log.h"
 #include "strings.h"
 #include "tolk.h"
@@ -102,6 +105,45 @@ void Tick() {
         SpeakRoom(area, roomIndex);
         g_prev_room_idx = roomIndex;
     }
+}
+
+void AnnouncePreLoadDestination(void* exoStringPtr) {
+    if (!exoStringPtr) return;
+
+    // CExoString = { char* c_string; uint32 length } at offset 0.
+    // ReadCExoString already SEH-guards the c_string read.
+    char dest[128] = {0};
+    if (!acc::engine::ReadCExoString(exoStringPtr, /*offset=*/0,
+                                     dest, sizeof(dest))) {
+        acclog::Write(
+            "Transition: pre-load string read failed (exoStr=%p)",
+            exoStringPtr);
+        return;
+    }
+    if (dest[0] == '\0') return;  // empty resref — silently skip
+
+    // Dedup: the engine sometimes fires SetMoveToModuleString more than
+    // once inside the same transition (e.g. once with the raw resref,
+    // once with a normalized form). Suppress repeats of the same
+    // destination within a 2s window so the user hears the announce
+    // exactly once per transition.
+    static char  s_lastDest[128] = {0};
+    static DWORD s_lastTick      = 0;
+    DWORD now = GetTickCount();
+    if (std::strncmp(s_lastDest, dest, sizeof(s_lastDest)) == 0 &&
+        (now - s_lastTick) < 2000u) {
+        return;
+    }
+    std::strncpy(s_lastDest, dest, sizeof(s_lastDest) - 1);
+    s_lastDest[sizeof(s_lastDest) - 1] = '\0';
+    s_lastTick = now;
+
+    char speech[160] = {0};
+    std::snprintf(speech, sizeof(speech),
+                  acc::strings::Get(acc::strings::Id::FmtTransitionLoading),
+                  dest);
+    tolk::Speak(speech, /*interrupt=*/false);
+    acclog::Write("Transition: pre-load -> '%s'", dest);
 }
 
 }  // namespace acc::transitions

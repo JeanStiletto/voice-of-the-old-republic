@@ -217,17 +217,39 @@ void OnAnnounceFocus() {
 // previously-focused object dropped out of scope), speaks the localized
 // "No object focused" phrase and skips the WalkTo call.
 //
-// Cancel behaviour deferred: the plan §"Cancellation" locks Shift+-
-// pressed-again-while-active = cancel, but the engine's clear-action /
-// abort-move entry point isn't decoded yet (investigation Q3 lists move
-// queue entries but no cancel; ForceMoveToPoint bypasses the queue
-// rather than emptying it). Engine-convention cancel — any directional
-// input from the player interrupts auto-walk — already works for free
-// per the long-term plan §"Mode A — Auto-walk". Re-pressing Shift+- in
-// this lay-off re-issues the move (engine queues it; harmless).
-// Explicit toggle-cancel lands in a follow-up lay-off once the cancel
-// entry point is REd.
+// Cancel-on-second-press: when an autowalk is in flight, the next
+// Shift+- press cancels it via `acc::guidance::CancelMovement` (wraps
+// `CSWSObject::ClearAllActions @ 0x004ccd80`). RE'd 2026-05-04;
+// implementation 2026-05-04. Engine-convention cancel — any directional
+// input from the player interrupts auto-walk — also still works.
+// Re-pressing Shift+- when NOT in flight dispatches a fresh walk to
+// the currently-focused Pillar 4 object (or speaks GuidanceNoFocus if
+// nothing is focused).
 void OnPathfindFocus() {
+    // Toggle-cancel branch — runs before the focus check so the user
+    // can cancel with no focus selected (e.g. cycled to a focused
+    // object, walked, then cycled past the end → focus dropped, but
+    // they want to stop the in-flight walk).
+    if (acc::guidance::IsAutowalkInFlight()) {
+        bool ok = acc::guidance::CancelMovement();
+        if (ok) {
+            // Restore manual control immediately rather than waiting
+            // for the 3s auto-restore — the user wants the keyboard
+            // back NOW.
+            acc::engine::SetPlayerInputEnabled(true);
+            const char* msg = acc::strings::Get(
+                acc::strings::Id::MovementCancelled);
+            tolk::Speak(msg, /*interrupt=*/true);
+            acclog::Write("Cycle: Shift+- -> [%s] (cancel path)", msg);
+            return;
+        }
+        // Cancel SEH-faulted — fall through to walk so the second
+        // press at least does *something*. Local in-flight state is
+        // already cleared by CancelMovement's SEH path.
+        acclog::Write(
+            "Cycle: Shift+- cancel SEH-FAULT, falling through to walk");
+    }
+
     acc::cycle::CategoryListing listing;
     acc::cycle::RefreshCurrentListing(listing);
     auto& s = acc::cycle::GetState();

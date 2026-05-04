@@ -74,6 +74,12 @@ enum class Id : int {
     FmtGuidingFailed,
     GuidanceNoFocus,
 
+    // ---- Cancel-on-second-press (Shift+- toggle behaviour). Spoken
+    //      when an in-flight autowalk is cancelled via
+    //      `acc::guidance::CancelMovement`. No format args — fixed
+    //      phrase so the user immediately knows the toggle latched.
+    MovementCancelled,
+
     // ---- Lay-off 9b combined autowalk+interact hotkey (Enter).
     //      Per-kind pre-roll spoken when the hotkey fires on a focused
     //      object, before the engine click pipeline runs.
@@ -131,6 +137,15 @@ enum class Id : int {
     //      arbitrary token.
     FmtTransitionArea,
     FmtTransitionRoom,
+
+    // Pre-load destination announce, fired by the
+    // `CServerExoApp::SetMoveToModuleString` detour just before the
+    // engine starts the loading-screen movie. Param is the destination
+    // module's resref (e.g. `"endar_spire"`, `"tar_m02ac"`) — modder
+    // identifier, not the localized display name. Prefix tells the
+    // user this is the "you're about to load into …" announcement, not
+    // the post-load "you arrived in …" one.
+    FmtTransitionLoading,
 
     // ---- Octagonal compass directions for turn announcement
     //      (Pillar 2 sub-feature C). German uses traditional

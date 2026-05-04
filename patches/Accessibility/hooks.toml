@@ -203,6 +203,56 @@ exclude_from_restore = []
 source = "ebp"
 type = "pointer"
 
+# CServerExoApp::SetMoveToModuleString — hooked at function entry @0x004aecd0.
+# Captures the destination module name (CExoString*) at the start of the
+# area-transition pipeline. Per investigation Q-area-transitions, the engine
+# fires:
+#   SetMoveToModulePending(1) → SetMoveToModuleString(dest_resref)
+#   → SetMoveToModuleStartWaypoint(wp) → AddMoveToModuleMovie(movie)
+# all BEFORE the loading screen renders. Hooking the second of these gives us
+# the destination resref (e.g. "endar_spire", "tar_m02ac") in time to queue a
+# "Lade: …" / "Loading: …" announce ahead of the load.
+#
+# Function entry (0x004aecd0) per Lane's SARIF:
+#   void __thiscall SetMoveToModuleString(CExoString* param_1)
+#
+# Bytes from 0x004aecd0 (DumpBytes 2026-05-04):
+#   8b 49 04                   mov ecx, [ecx+4]       ; this->internal
+#   81 c1 84 00 01 00          add ecx, 0x10084       ; → CExoString field
+#   e9 72 6f 13 00             jmp CExoString::operator=
+#
+# Cut: 9 bytes covering the MOV (3) + ADD (6). Both register-relative — safe
+# to relocate. After our handler, the wrapper executes the cut bytes (so ECX
+# gets transformed to the inner CExoString pointer) then resumes at 0x004aecd9
+# which is the JMP into CExoString::operator=. Function flow undisturbed.
+#
+# Parameters at hook entry (BEFORE the cut bytes execute):
+#   ECX = CServerExoApp*  (the public 8-byte facade — unmodified)
+#   [ESP+4] = CExoString* (the destination module name)
+#
+# **Stack-param caveat (per memory project_kpatchmanager_lea_bug.md):** the
+# upstream wrapper emits LEA (not MOV) for `source = "esp+X"` parameters, so
+# the handler receives the *address* of the stack slot, not its value. The
+# handler dereferences once to get the actual CExoString*. Documented in
+# OnSetMoveToModuleString itself.
+[[hooks]]
+address = 0x004aecd0
+type = "detour"
+function = "OnSetMoveToModuleString"
+
+original_bytes = [0x8b, 0x49, 0x04, 0x81, 0xc1, 0x84, 0x00, 0x01, 0x00]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+4"
+type = "pointer"
+
 # CSWGuiListBox::SetActiveControl — hooked mid-function at 0x0041c16b. Listbox
 # row navigation (race/class/portrait pickers in chargen, save-game list, etc.)
 # does NOT bubble up to CSWGuiPanel::SetActiveControl; the listbox calls its

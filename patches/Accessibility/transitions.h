@@ -54,4 +54,23 @@ namespace acc::transitions {
 // tick).
 void Tick();
 
+// Pre-load destination announce — called from the
+// `OnSetMoveToModuleString` detour (CServerExoApp::SetMoveToModuleString
+// @ 0x004aecd0) at the start of the area-transition pipeline. The
+// engine has just been told *which module the player is moving to*,
+// before the loading-screen movie begins. We read the module resref
+// out of the supplied CExoString and queue a "Lade: …" / "Loading: …"
+// announce via Tolk so the user knows what's coming.
+//
+// `exoStringPtr` is the raw `CExoString*` arg the engine was called
+// with — i.e. the destination module's resref (e.g. `"endar_spire"`,
+// `"tar_m02ac"`). Layout: `{ char* c_string; uint32 length }`. SEH-
+// guarded internally; null / empty / faulting reads silently no-op.
+//
+// Suppresses re-announce within a small dedup window — the engine
+// occasionally re-fires SetMoveToModuleString inside a single
+// transition (e.g. when the destination is normalized). Without
+// dedup the user would hear "Lade: endar_spire" twice.
+void AnnouncePreLoadDestination(void* exoStringPtr);
+
 }  // namespace acc::transitions

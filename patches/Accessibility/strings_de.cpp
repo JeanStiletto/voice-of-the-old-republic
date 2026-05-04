@@ -41,6 +41,8 @@ const char* Get(Id id) {
         case Id::FmtGuidingFailed:     return "Gehe zu %s fehlgeschlagen";
         case Id::GuidanceNoFocus:      return "Kein Ziel ausgew\xE4hlt";  // ausgewählt
 
+        case Id::MovementCancelled:    return "Bewegung abgebrochen";
+
         case Id::FmtInteractTalk:      return "Sprich mit %s";
         case Id::FmtInteractOpen:      return "\xD6" "ffne %s";                 // Öffne
         case Id::FmtInteractTake:      return "Hebe %s auf";
@@ -63,6 +65,7 @@ const char* Get(Id id) {
 
         case Id::FmtTransitionArea:    return "Bereich: %s";
         case Id::FmtTransitionRoom:    return "Raum: %s";
+        case Id::FmtTransitionLoading: return "Lade: %s";
 
         case Id::DirNorth:             return "Norden";
         case Id::DirNortheast:         return "Nord-Ost";

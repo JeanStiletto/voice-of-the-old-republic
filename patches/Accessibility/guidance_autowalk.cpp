@@ -77,6 +77,25 @@ struct WatchdogState {
 };
 WatchdogState g_watchdog;
 
+// In-flight tracker — distinct from the diagnostic watchdog. The
+// watchdog only fires twice (t+1s, t+3s) and self-disengages, but
+// "is the player still autowalking?" can persist far longer (long
+// cross-area moves). We track it independently so cycle_input's
+// toggle-cancel semantics work for the full duration of a walk.
+//
+// Set on successful dispatch (WalkTo / ForceWalkTo). Cleared on:
+//   - explicit CancelMovement,
+//   - per-tick distance check observing arrival (dist < 1.0m),
+//   - player creature unresolvable (un-loaded mid-flight).
+//
+// Single-instance (only one autowalk in flight at a time; new dispatch
+// supersedes prior). No thread safety — patch is single-threaded.
+struct InFlightState {
+    bool   active = false;
+    Vector dest   = {0.0f, 0.0f, 0.0f};
+};
+InFlightState g_inFlight;
+
 // Helper to arm the watchdog after a successful dispatch. Same shape
 // regardless of which engine entry point did the dispatch — only the
 // log prefix differs.
@@ -169,6 +188,9 @@ bool WalkTo(const Vector& destination) {
     // so the prior baseline is no longer the relevant reference point.
     ArmWatchdog(startPos, haveStart, dest, "WalkTo");
 
+    g_inFlight.active = true;
+    g_inFlight.dest   = dest;
+
     float distToDest = haveStart ? HorizontalDistance(startPos, dest) : -1.0f;
     acclog::Write("Autowalk: WalkTo dispatch dest=(%.2f,%.2f,%.2f) "
                   "from=(%.2f,%.2f,%.2f) dist=%.2fm action_id=%u "
@@ -221,6 +243,9 @@ bool ForceWalkTo(const Vector& destination) {
 
     ArmWatchdog(startPos, haveStart, dest, "Force");
 
+    g_inFlight.active = true;
+    g_inFlight.dest   = dest;
+
     float distToDest = haveStart ? HorizontalDistance(startPos, dest) : -1.0f;
     acclog::Write("Autowalk: Force-dispatch dest=(%.2f,%.2f,%.2f) "
                   "from=(%.2f,%.2f,%.2f) dist=%.2fm action_id=%u "
@@ -259,7 +284,60 @@ bool UseObject(unsigned long targetHandle) {
     return ret != 0;
 }
 
+bool CancelMovement() {
+    void* creature = acc::engine::GetPlayerServerCreature();
+    if (!creature) {
+        // Even with no creature, clear our local state — it's
+        // definitively stale.
+        g_inFlight.active = false;
+        g_watchdog.active = false;
+        return false;
+    }
+
+    typedef void (__thiscall* PFN_ClearAllActions)(void* this_, int param_1);
+
+    bool ok = true;
+    __try {
+        auto fn = reinterpret_cast<PFN_ClearAllActions>(
+            kAddrCSWSObjectClearAllActions);
+        // param_1 = 0 — semantics not fully decoded; first attempt with 0
+        // (the safe default for "give me the standard clear behaviour").
+        // If in-game testing shows queued actions persist, escalate to 1.
+        fn(creature, 0);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        ok = false;
+        acclog::Write("Autowalk: CancelMovement SEH-FAULT");
+    }
+
+    // Clear local state regardless of engine call success — at minimum,
+    // the user said "stop", so don't pretend we're still in flight.
+    g_inFlight.active = false;
+    g_watchdog.active = false;
+
+    if (ok) {
+        acclog::Write(
+            "Autowalk: CancelMovement dispatched (ClearAllActions(0))");
+    }
+    return ok;
+}
+
+bool IsAutowalkInFlight() {
+    return g_inFlight.active;
+}
+
 void TickProgressWatchdog() {
+    // In-flight arrival check — runs even when the diagnostic watchdog has
+    // self-disengaged. Cheap (one position read + horizontal-distance
+    // compare) and only when actually in flight.
+    if (g_inFlight.active) {
+        Vector pos;
+        if (!acc::engine::GetPlayerPosition(pos)) {
+            g_inFlight.active = false;  // player gone, definitively done
+        } else if (HorizontalDistance(pos, g_inFlight.dest) < 1.0f) {
+            g_inFlight.active = false;  // arrived
+        }
+    }
+
     if (!g_watchdog.active) return;
 
     DWORD now = GetTickCount();

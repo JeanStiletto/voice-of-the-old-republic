@@ -31,6 +31,8 @@ const char* Get(Id id) {
         case Id::FmtGuidingFailed:     return "Guidance to %s failed";
         case Id::GuidanceNoFocus:      return "No object focused";
 
+        case Id::MovementCancelled:    return "Movement cancelled";
+
         case Id::FmtInteractTalk:      return "Talk to %s";
         case Id::FmtInteractOpen:      return "Use %s";
         case Id::FmtInteractTake:      return "Pick up %s";
@@ -53,6 +55,7 @@ const char* Get(Id id) {
 
         case Id::FmtTransitionArea:    return "Area: %s";
         case Id::FmtTransitionRoom:    return "Room: %s";
+        case Id::FmtTransitionLoading: return "Loading: %s";
 
         case Id::DirNorth:             return "North";
         case Id::DirNortheast:         return "Northeast";

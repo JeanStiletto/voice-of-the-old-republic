@@ -84,6 +84,47 @@ void TickProgressWatchdog();
 // project_player_control_toggle.md).
 bool UseObject(unsigned long targetHandle);
 
+// Cancel any in-flight autowalk by clearing the player creature's full
+// action queue. Wraps `CSWSObject::ClearAllActions @ 0x004ccd80` (named
+// in Lane's DB; bytes verified 2026-05-04 via DumpBytes).
+//
+// Trade-off: ClearAllActions clears the *entire* action queue, not just
+// the autowalk. Acceptable for v1 because (a) the typical "I want to
+// stop" case is during a Shift+- autowalk where the queue holds only
+// our dispatched move, and (b) the more precise primitive
+// `CSWSCreature::RemoveAction(ulong action_id) @ 0x004f76c0` would need
+// us to track engine-side action ids (the value returned from
+// `AddMoveToPointAction` — semantics not yet fully decoded; safer to
+// avoid until needed).
+//
+// Side-effect: also clears `g_inFlight.active` (so `IsAutowalkInFlight`
+// returns false on the next call) and disarms the diagnostic watchdog.
+// Caller should follow with `acc::engine::SetPlayerInputEnabled(true)`
+// to restore manual control immediately rather than waiting for the
+// 3-second auto-restore.
+//
+// Returns true if the dispatch succeeded; false on no player loaded or
+// SEH fault. The internal state is cleared either way — even if the
+// engine call faults, we treat the in-flight tracking as stale.
+bool CancelMovement();
+
+// Reports whether an autowalk dispatch is currently in flight — i.e.
+// `WalkTo` / `ForceWalkTo` was called and the player has neither
+// reached the destination nor been cancelled. Used by `cycle_input`
+// to decide whether the next Shift+- press dispatches a new walk or
+// cancels the current one.
+//
+// "In flight" is set on a successful dispatch and cleared on:
+//   - explicit `CancelMovement()`,
+//   - the watchdog's per-tick distance check observing
+//     `dist < 1.0m` from the destination (player arrived),
+//   - or the player creature becoming unresolvable (un-loaded
+//     mid-flight, area teardown).
+//
+// Idle cost: one bool check. Active cost (in flight): one position
+// read + one horizontal-distance compare per OnUpdate tick.
+bool IsAutowalkInFlight();
+
 }  // namespace acc::guidance
 
 // CSWSCreature::AddMoveToPointAction — __thiscall, 17 stack args.
@@ -100,6 +141,14 @@ constexpr uintptr_t kAddrCSWSCreatureForceMoveToPoint = 0x004EDBA0;
 // `field48_0xe8 != 0` then forwards to AddAction(this, 0x28, 0xffff, 3,
 // &target_id, 0, NULL...). 0x28 == ACTION_USEOBJECT.
 constexpr uintptr_t kAddrCSWSObjectAddUseObjectAction = 0x0057C810;
+
+// CSWSObject::ClearAllActions — __thiscall(int) -> void. SARIF CONFIRMED
+// (named in Lane's DB; entry bytes captured 2026-05-04 via DumpBytes:
+// `a1 1c 28 83 00 83 ec 10 85 c0 56 8b f1 74 22 ...`). The `int param_1`
+// is currently passed as 0 — semantics not fully decoded; first-fire
+// in-game test covers the case where 0 isn't sufficient (we'd see no
+// movement-stop and escalate to 1).
+constexpr uintptr_t kAddrCSWSObjectClearAllActions = 0x004CCD80;
 
 // Engine sentinel for "no object" in AI-queue object-id slots
 // (objectId1/objectId2 of AddMoveToPointAction, the
