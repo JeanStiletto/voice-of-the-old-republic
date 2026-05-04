@@ -1944,26 +1944,58 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             } else {
                 int targetId = -1;
                 const char* what = nullptr;
+                void* preselected = nullptr;  // takes precedence over targetId
+
                 if (param_1 == kInputEnter1 || param_1 == kInputEnter2) {
-                    targetId = kContainerBtnOkId;     what = "Enter -> BTN_OK";
+                    // Per-item take (UNTESTED — fix for the take-all bug
+                    // tracked in docs/known-issues.md). Working hypothesis:
+                    // BTN_OK is "Take All" by engine design, and the per-item
+                    // take in mouse-driven play happens by clicking the row
+                    // itself (the engine treats a row click as "take this
+                    // one item"). So when a row is highlighted, fire the
+                    // row's own activate path; only fall back to BTN_OK when
+                    // selection_index < 0 (preserve the take-all gesture for
+                    // users who press Enter immediately on panel open).
+                    void* lb = FindListBoxChild(activePanel);
+                    if (lb) {
+                        auto* lbBase = reinterpret_cast<unsigned char*>(lb);
+                        auto* lbList = reinterpret_cast<CExoArrayList*>(
+                            lbBase + kListBoxControlsOffset);
+                        int rowCount = (lbList && lbList->data) ? lbList->size : 0;
+                        short sel = *reinterpret_cast<short*>(
+                            lbBase + kListBoxSelectionIndexOffset);
+                        if (sel >= 0 && sel < rowCount) {
+                            preselected = lbList->data[sel];
+                            what = "Enter -> row (take-one)";
+                            acclog::Write("Container: Enter resolves to row "
+                                          "panel=%p lb=%p sel=%d/%d target=%p",
+                                          activePanel, lb, sel, rowCount, preselected);
+                        }
+                    }
+                    if (!preselected) {
+                        targetId = kContainerBtnOkId;
+                        what = "Enter -> BTN_OK (no selection, take-all)";
+                    }
                 } else if (param_1 == kInputEsc1 || param_1 == kInputEsc2) {
                     targetId = kContainerBtnCancelId; what = "Esc -> BTN_CANCEL";
                 }
-                if (targetId >= 0) {
+
+                if (what) {
                     if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
                         acclog::Write("Container: %s -- op already pending; ignoring", what);
                         consumed = true;
                     } else {
-                        void* btn = FindControlById(activePanel, targetId);
-                        if (btn) {
+                        void* tgt = preselected;
+                        if (!tgt && targetId >= 0) tgt = FindControlById(activePanel, targetId);
+                        if (tgt) {
                             g_pendingActivate       = true;
-                            g_pendingActivateTarget = btn;
+                            g_pendingActivateTarget = tgt;
                             acclog::Write("Container: %s panel=%p target=%p",
-                                          what, activePanel, btn);
+                                          what, activePanel, tgt);
                             consumed = true;
                         } else {
-                            acclog::Write("Container: %s -- button id=%d not found on panel=%p",
-                                          what, targetId, activePanel);
+                            acclog::Write("Container: %s -- target not resolved on panel=%p "
+                                          "(targetId=%d)", what, activePanel, targetId);
                         }
                     }
                 }
