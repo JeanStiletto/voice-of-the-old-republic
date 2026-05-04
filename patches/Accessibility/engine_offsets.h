@@ -207,3 +207,26 @@ typedef CExoString* (__thiscall* PFN_GetSimpleString)(void* this_,
                                                       uint32_t strref);
 constexpr uintptr_t kAddrGetSimpleString = 0x0041e8f0;
 constexpr uintptr_t kAddrTlkTablePtr     = 0x007a3a08;
+
+// ---------------------------------------------------------------------------
+// CSWGuiInGameEquip slot handlers — invoked directly to bypass click-sim
+// hit-test problems on the equip panel. See docs/equip-flow-investigation.md
+// (post-2026-05-04 update).
+//
+//   OnEnterSlot(panel, slot_btn) — populates panel.items_listbox with items
+//     from the player's inventory matching slot_btn's slot type. Sets
+//     panel.selected_slot. No is_active gate. Equivalent to mouse-hover.
+//   OnSelectSlot(panel, slot_btn) — stages the equip if items_listbox has
+//     entries (raises panel.field33_0x4270 |= 1 and pre-selects row 1), or
+//     pops the "Für diesen Slot..." modal if empty. Gates on
+//     `slot_btn->is_active != 0` — caller must raise that bit first.
+//     Equivalent to mouse-click after hover.
+//
+// is_active lives at +0x4c on every CSWGuiControl (verified by Ghidra
+// decompile of OnSelectSlot's prologue test).
+// ---------------------------------------------------------------------------
+typedef void (__thiscall* PFN_InGameEquipOnEnterSlot)(void* panel, void* slot_btn);
+typedef void (__thiscall* PFN_InGameEquipOnSelectSlot)(void* panel, void* slot_btn);
+constexpr uintptr_t kAddrInGameEquipOnEnterSlot  = 0x006b9470;
+constexpr uintptr_t kAddrInGameEquipOnSelectSlot = 0x006b8eb0;
+constexpr size_t    kControlIsActiveOffset       = 0x4c;

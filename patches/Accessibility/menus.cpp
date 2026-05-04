@@ -829,6 +829,17 @@ static void* g_pendingClickTarget = nullptr;
 static bool  g_pendingActivate       = false;
 static void* g_pendingActivateTarget = nullptr;
 
+// Deferred CSWGuiInGameEquip slot activation. Calls OnEnterSlot then
+// OnSelectSlot directly via their addresses — bypasses the equip panel's
+// labels-cover-buttons hit-test problem that defeated click-sim. See
+// docs/equip-flow-investigation.md (post-2026-05-04 update) and the
+// engine_offsets.h notes on those two functions. Deferred to OnUpdate for
+// the same reason MoveMouseToPosition is — calling deep engine functions
+// mid-input-dispatch would recurse through HandleMouseMove paths.
+static bool  g_pendingEquipSelect       = false;
+static void* g_pendingEquipSelectPanel  = nullptr;  // CSWGuiInGameEquip*
+static void* g_pendingEquipSelectSlot   = nullptr;  // CSWGuiControl* slot button
+
 // Deferred slider value adjustment. Slider's HandleInputEvent at 0x0041adf0
 // recognises logical codes 500 (increment) and 501 (decrement) — both run
 // the full pipeline: SetCurValue + bounds clamp + the slider's gui_object
@@ -2487,25 +2498,25 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                           activePanel, g_chainIndex, e.control, cursorY);
             consumed = true;
         } else if (isEquipSlot) {
-            int cursorY = e.cy;
-            if (g_equipSlotClickOffsetY > 0) cursorY += g_equipSlotClickOffsetY;
-            g_pendingX           = e.cx;
-            g_pendingY           = cursorY;
-            g_pendingTarget      = e.control;
-            g_pendingClickTarget = e.control;
-            g_pendingCursorMove  = true;
-            g_pendingClick       = true;
-            g_navSpeechSuppressBudget = 2;
-            // Arm the picker zone now: once OnSelectSlot fires (synchronously
-            // inside HandleLMouseUp during Update()), LB_ITEMS will be
-            // populated by the next event the user generates. Self-clears on
+            // Bypass click-sim entirely. Calling OnEnterSlot then
+            // OnSelectSlot directly invokes the same engine path that
+            // mouse-driven hover+click does, but without depending on
+            // hit-test landing on the slot button (the labels cover the
+            // buttons in z-order — see docs/equip-flow-investigation.md
+            // for the hit-test data). Deferred to OnUpdate to stay clear
+            // of mid-input-dispatch recursion.
+            g_pendingEquipSelect       = true;
+            g_pendingEquipSelectPanel  = g_chainPanel;
+            g_pendingEquipSelectSlot   = e.control;
+            g_navSpeechSuppressBudget  = 2;
+            // Arm the picker zone now: OnSelectSlot raises field33_0x4270 |= 1
+            // and the user proceeds to LB_ITEMS browsing. Self-clears on
             // panel close, picker Esc, or BTN_EQUIP dispatch.
             g_equipPickerActive = true;
             g_equipPickerPanel  = g_chainPanel;
-            acclog::Write("EquipPicker: armed via click-sim (Enter on slot id=%d "
-                          "target=%p panel=%p at %d,%d cursorY=%d offset=%d)",
-                          equipSlotCid, e.control, g_chainPanel,
-                          e.cx, e.cy, cursorY, g_equipSlotClickOffsetY);
+            acclog::Write("EquipPicker: armed via direct OnEnterSlot+OnSelectSlot "
+                          "(Enter on slot id=%d btn=%p panel=%p)",
+                          equipSlotCid, e.control, g_chainPanel);
             consumed = true;
         } else {
             g_pendingActivate       = true;
@@ -3803,18 +3814,21 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     acc::probe::world_hover::PollHotkey();
 
     if (!g_pendingCursorMove && !g_pendingClick && !g_pendingActivate &&
-        !g_pendingSliderInput) return;
+        !g_pendingSliderInput && !g_pendingEquipSelect) return;
 
     void* gm = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
     if (!gm) {
         acclog::Write("Update: pending op but GuiManager singleton is NULL");
-        g_pendingCursorMove     = false;
-        g_pendingClick          = false;
-        g_pendingActivate       = false;
-        g_pendingSliderInput    = false;
-        g_pendingTarget         = nullptr;
-        g_pendingActivateTarget = nullptr;
-        g_pendingSliderTarget   = nullptr;
+        g_pendingCursorMove        = false;
+        g_pendingClick             = false;
+        g_pendingActivate          = false;
+        g_pendingSliderInput       = false;
+        g_pendingEquipSelect       = false;
+        g_pendingTarget            = nullptr;
+        g_pendingActivateTarget    = nullptr;
+        g_pendingSliderTarget      = nullptr;
+        g_pendingEquipSelectPanel  = nullptr;
+        g_pendingEquipSelectSlot   = nullptr;
         return;
     }
 
@@ -3886,6 +3900,43 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
         g_pendingActivateTarget = nullptr;
         acclog::Write("Update: FireActivate target=%p", tgt);
         FireActivate(tgt);
+    }
+
+    // Equip-screen slot activation. Mirrors the engine's mouse-driven path:
+    //   1. Raise slot_btn->is_active = 1 (LMouseDown sets this flag normally;
+    //      OnSelectSlot's prologue gates on it and returns early if zero).
+    //   2. OnEnterSlot(panel, slot_btn) — populates panel.items_listbox with
+    //      items matching the slot's type. Sets panel.selected_slot.
+    //   3. OnSelectSlot(panel, slot_btn) — if items_listbox.size > 1, stages
+    //      the equip (raises panel.field33_0x4270 |= 1, pre-selects row 1,
+    //      shows description). If size == 1 (only protoitem template), pops
+    //      the engine's "Für diesen Slot..." modal — which is the correct
+    //      behaviour for a slot the player has no fitting items for.
+    //
+    // Dispatched here (not synchronously from the input hook) for the same
+    // reason MoveMouseToPosition is — these functions reach deep into GUI
+    // state that's mid-update during input dispatch.
+    if (g_pendingEquipSelect) {
+        g_pendingEquipSelect = false;
+        void* panel    = g_pendingEquipSelectPanel;
+        void* slotBtn  = g_pendingEquipSelectSlot;
+        g_pendingEquipSelectPanel = nullptr;
+        g_pendingEquipSelectSlot  = nullptr;
+        if (panel && slotBtn) {
+            uint32_t* isActive = reinterpret_cast<uint32_t*>(
+                reinterpret_cast<unsigned char*>(slotBtn) + kControlIsActiveOffset);
+            uint32_t prevIsActive = *isActive;
+            *isActive = 1;
+            auto onEnter  = reinterpret_cast<PFN_InGameEquipOnEnterSlot>(
+                kAddrInGameEquipOnEnterSlot);
+            auto onSelect = reinterpret_cast<PFN_InGameEquipOnSelectSlot>(
+                kAddrInGameEquipOnSelectSlot);
+            acclog::Write("Update: EquipSelect panel=%p slot=%p is_active=%u->1",
+                          panel, slotBtn, prevIsActive);
+            onEnter(panel, slotBtn);
+            onSelect(panel, slotBtn);
+            acclog::Write("Update: EquipSelect done panel=%p slot=%p", panel, slotBtn);
+        }
     }
 
     // Slider value adjustment via vtable[15].HandleInputEvent(500/501, 1).
