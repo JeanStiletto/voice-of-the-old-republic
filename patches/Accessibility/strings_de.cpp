@@ -60,11 +60,6 @@ const char* Get(Id id) {
         case Id::EquipSlotWeapR:       return "Rechte Waffe";
         case Id::EquipSlotBelt:        return "G\xFCrtel";                       // Gürtel
         case Id::EquipSlotHands:       return "H\xE4nde";                        // Hände
-        case Id::EquipTutorial:        return "Mit Pfeiltasten zwischen den 9 Slots navigieren. "
-                                              "Eingabe \xF6" "ffnet die Liste passender Gegenst\xE4nde. "
-                                              "In der Liste mit Pfeiltasten w\xE4hlen, "
-                                              "Eingabe r\xFCstet aus, Escape zur\xFC" "ck. "
-                                              "Schlie\xDF" "en verl\xE4sst den Bildschirm.";
 
         case Id::DirNorth:             return "Norden";
         case Id::DirNortheast:         return "Nord-Ost";

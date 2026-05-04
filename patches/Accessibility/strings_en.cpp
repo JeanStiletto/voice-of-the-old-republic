@@ -50,11 +50,6 @@ const char* Get(Id id) {
         case Id::EquipSlotWeapR:       return "Right weapon";
         case Id::EquipSlotBelt:        return "Belt";
         case Id::EquipSlotHands:       return "Hands";
-        case Id::EquipTutorial:        return "Use arrow keys to navigate the 9 slots. "
-                                              "Enter opens a list of items that fit the slot. "
-                                              "In the list, arrow keys pick an item, "
-                                              "Enter equips it, Escape returns to the slots. "
-                                              "Close exits the screen.";
 
         case Id::DirNorth:             return "North";
         case Id::DirNortheast:         return "Northeast";

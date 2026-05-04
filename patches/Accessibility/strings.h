@@ -111,12 +111,6 @@ enum class Id : int {
     //      install reading the engine's exact slot names while a non-
     //      German install still gets a sensible label.
     //
-    //      `EquipTutorial` is the one-shot pre-roll spoken on first sight
-    //      of the equip panel (after the localized panel name). Walks
-    //      the user through the screen-specific keyboard model — the
-    //      engine has no native keyboard support for equip and the
-    //      flow (focus slot, Enter, navigate items, Enter to equip)
-    //      isn't discoverable without it.
     EquipSlotHead,
     EquipSlotImplant,
     EquipSlotBody,
@@ -126,7 +120,6 @@ enum class Id : int {
     EquipSlotWeapR,
     EquipSlotBelt,
     EquipSlotHands,
-    EquipTutorial,
 
     // ---- Octagonal compass directions for turn announcement
     //      (Pillar 2 sub-feature C). German uses traditional

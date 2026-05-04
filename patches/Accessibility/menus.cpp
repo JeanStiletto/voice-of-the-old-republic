@@ -785,6 +785,26 @@ static int   g_pendingX = 0;
 static int   g_pendingY = 0;
 static void* g_pendingTarget = nullptr;   // for self-dedup in OnSetActiveControl
 
+// Speech-suppression budget for OnSetActiveControl. After a voluntary nav
+// action (chain step / Enter activate), set to a small N. Each subsequent
+// OnSetActiveControl call decrements and suppresses speech regardless of
+// which control the event targets. Covers two distinct echoes per nav:
+//
+//   1. The engine's own focus handler firing on the keypress (lands on a
+//      DIFFERENT control than our chain target on Options-style sub-dialogs
+//      and InGameEquip — engine's nav order ≠ visual layout).
+//   2. The cursor-warp echo, which lands on our actual target. The existing
+//      g_pendingTarget self-dedup already catches this one cleanly.
+//
+// (1) was the source of the "afterthought" double-speak: chain-step speaks
+// the right thing, then engine SetActiveControl fires for a sibling and
+// speaks it as a second utterance. Match-only dedup couldn't catch (1)
+// because newControl wasn't the pendingTarget. Budget=2 catches both echoes
+// without over-suppressing legitimate later focus changes (mouse hover,
+// next user action), since by the time the next user input arrives the
+// budget has decremented to 0.
+static int g_navSpeechSuppressBudget = 0;
+
 // Deferred click-sim. When set, OnUpdate dispatches click directly to
 // g_pendingClickTarget via its vtable[6] (HandleLMouseDown) and vtable[7]
 // (HandleLMouseUp). We bypass the manager's HandleLMouseDown wrapper because
@@ -1686,6 +1706,28 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
         acclog::Write("SetActiveControl #%d panel=%p new=%p (self-dedup; cursor sync)",
                       n, panel, newControl);
         g_pendingTarget = nullptr;
+        // Cursor-warp echo arrived: our voluntary nav has fully settled.
+        // Drain any remaining budget so legit focus changes after this
+        // resume normal announcement behavior.
+        g_navSpeechSuppressBudget = 0;
+        return;
+    }
+
+    // Voluntary-nav speech-suppression. The chain-step / Enter-activate
+    // handlers set this to a small N; we decrement here on any focus event
+    // and skip speech while > 0. Covers engine-side focus echoes that don't
+    // match the cursor-warp target (e.g. engine's UP handler picking a
+    // sibling on AutoPause / equip panels). See g_navSpeechSuppressBudget
+    // doc above the declaration.
+    if (g_navSpeechSuppressBudget > 0) {
+        int wasBudget = g_navSpeechSuppressBudget;
+        --g_navSpeechSuppressBudget;
+        int sid = *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(newControl) + 0x50);
+        acclog::Write("SetActiveControl #%d panel=%p new=%p id=%d "
+                      "(nav-suppress; budget %d->%d)",
+                      n, panel, newControl, sid, wasBudget,
+                      g_navSpeechSuppressBudget);
         return;
     }
 
@@ -2302,12 +2344,14 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             g_pendingClickTarget = e.control;
             g_pendingCursorMove  = true;
             g_pendingClick       = true;
+            g_navSpeechSuppressBudget = 2;  // see chain-step doc above
             acclog::Write("Enter click-sim panel=%p index=%d target=%p cursorY=%d (tab)",
                           activePanel, g_chainIndex, e.control, cursorY);
             consumed = true;
         } else {
             g_pendingActivate       = true;
             g_pendingActivateTarget = e.control;
+            g_navSpeechSuppressBudget = 2;  // see chain-step doc above
 
             // Arm the drill flag when Enter activates an icon on the InGameMenu
             // strip. The engine's activation path (FireActivate → button
@@ -2429,6 +2473,11 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             g_pendingY          = cursorY;
             g_pendingTarget     = e.control;
             g_pendingCursorMove = true;
+            // Suppress the next two SetActiveControl announces — engine-side
+            // focus echoes that fire after the keypress + cursor warp would
+            // otherwise read out the wrong sibling control as an "afterthought"
+            // after we already announced the chain target above.
+            g_navSpeechSuppressBudget = 2;
             acclog::Write("Chain step panel=%p index=%d/%d target=%p center=(%d,%d) cursorY=%d %s",
                           g_chainPanel, g_chainIndex, g_chainCount,
                           e.control, e.cx, e.cy, cursorY,
@@ -2837,18 +2886,6 @@ static void AnnounceNewSubScreens(void** panels, int count) {
                           p, PanelKindName(k), spec->literal);
             tolk::Speak(spec->literal, /*interrupt=*/false);
         }
-
-        // Per-screen tutorial pre-roll. Spoken once per first-sight (re-open
-        // replays it; that's the desired UX — users opening the screen
-        // probably forgot the keymap). Only the equip screen has one for
-        // now; other sub-screens use the generic chain announcement. Queued
-        // (interrupt=false) so it lands AFTER the localized name.
-        if (k == PanelKind::InGameEquip) {
-            tolk::Speak(acc::strings::Get(acc::strings::Id::EquipTutorial),
-                        /*interrupt=*/false);
-            acclog::Write("SubScreen tutorial: panel=%p kind=%s queued",
-                          p, PanelKindName(k));
-        }
     }
     memcpy(g_visibleSubScreens, nowVisible, sizeof(nowVisible));
     g_visibleSubScreenCount = nowCount;
@@ -2877,12 +2914,15 @@ static void BuildContentFingerprint(void* panel, char* out, size_t outSize) {
         // Skip buttons — hover state mutates their border-rendered text.
         if (CallDowncast(c, kVtableAsButton) != nullptr) continue;
         if (CallDowncast(c, kVtableAsButtonToggle) != nullptr) continue;
-        // Container loot panel: skip the listbox child. Its text is the full
-        // concatenated chest / inventory contents, which MonitorContainer-
-        // Selection announces per-row on Up/Down nav. The remaining LBL_MESSAGE
-        // label still drives the fingerprint diff, so the take \xE2\x86\x94 give
-        // mode-toggle re-announces (the strref swaps when BTN_GIVEITEMS fires).
-        if (kind == PanelKind::Container && IsListBox(c)) continue;
+        // Skip listboxes for panels that have a dedicated per-row monitor.
+        // Their listbox text is the full concatenated row content, which the
+        // per-row monitors (MonitorContainerSelection, MonitorEquipPickerSelection)
+        // already announce as the user navigates. Including them in the
+        // fingerprint causes duplicate speech AND makes the fingerprint diff
+        // fire constantly — the engine flickers LB_ITEMS state on every
+        // mouseOver change, which on InGameEquip happens every chain step.
+        if ((kind == PanelKind::Container ||
+             kind == PanelKind::InGameEquip) && IsListBox(c)) continue;
 
         char text[256];
         const char* src = ExtractAnnounceableText(c, text, sizeof(text), panel);
@@ -2910,6 +2950,61 @@ static void BuildContentFingerprint(void* panel, char* out, size_t outSize) {
         memcpy(out + off, text, tlen);
         off += tlen;
         out[off] = '\0';
+    }
+}
+
+// Check whether `seg` (length `segLen`) appears as a delimited segment
+// in `hay`. Segments in our fingerprint are joined by " | " (sep, len 3),
+// and may be at the start / end of `hay`. Used by SpeakNewSegments to
+// avoid re-speaking content that's already in the previous fingerprint.
+static bool FingerprintContainsSegment(const char* hay, size_t hayLen,
+                                       const char* seg, size_t segLen) {
+    if (segLen == 0 || segLen > hayLen) return false;
+    const char* sep = " | ";
+    const size_t sepLen = 3;
+    size_t i = 0;
+    while (i + segLen <= hayLen) {
+        if (memcmp(hay + i, seg, segLen) == 0) {
+            bool startOk = (i == 0) ||
+                (i >= sepLen && memcmp(hay + i - sepLen, sep, sepLen) == 0);
+            bool endOk = (i + segLen == hayLen) ||
+                (i + segLen + sepLen <= hayLen &&
+                 memcmp(hay + i + segLen, sep, sepLen) == 0);
+            if (startOk && endOk) return true;
+        }
+        ++i;
+    }
+    return false;
+}
+
+// Speak each segment of `curr` that isn't already a segment of `prev`.
+// Segments in the fingerprint are delimited by " | " (BuildContentFingerprint).
+// Order is preserved so the speech matches the panel's physical layout.
+//
+// This replaces the previous "speak the whole concatenated fingerprint on any
+// change" behavior, which caused redundant blob announcements every time any
+// single label in a monitored panel mutated — see LB_ITEMS flicker on the
+// equipment screen as the canonical case (every arrow keystroke triggered
+// a full re-read of every label and listbox item in the panel).
+static void SpeakNewSegments(const char* prev, const char* curr) {
+    const char* sep = " | ";
+    const size_t sepLen = 3;
+    size_t prevLen = strlen(prev);
+    const char* p = curr;
+    while (*p) {
+        const char* end = strstr(p, sep);
+        size_t segLen = end ? (size_t)(end - p) : strlen(p);
+        if (segLen > 0 &&
+            !FingerprintContainsSegment(prev, prevLen, p, segLen)) {
+            char seg[256];
+            size_t cp = segLen < sizeof(seg) - 1 ? segLen : sizeof(seg) - 1;
+            memcpy(seg, p, cp);
+            seg[cp] = '\0';
+            tolk::Speak(seg, /*interrupt=*/false);
+            acclog::Write("ContentChange:   spoke \"%s\"", seg);
+        }
+        if (!end) break;
+        p = end + sepLen;
     }
 }
 
@@ -2964,19 +3059,27 @@ static void MonitorPanelContents() {
             continue;  // unchanged
         }
 
-        // Container loot panel: AnnouncePanelTitle in OnSetActiveControl
-        // already spoke the LBL_MESSAGE on panel open (the fingerprint here
-        // is just that same title, since BuildContentFingerprint skips the
-        // listbox for Container). Snapshot without speaking on first sight
-        // so we don't double-announce; subsequent changes (mode toggle
-        // strref swap) DO speak — that's the actual signal we monitor for.
+        // First-sight suppression. For panels whose appearance is already
+        // announced by another path (Container's LBL_MESSAGE via Announce-
+        // PanelTitle, every InGame{X} sub-screen via AnnounceNewSubScreens),
+        // snapshot without speaking — the user already heard the kind name,
+        // and per-row / per-control monitors take over from there. Subsequent
+        // mutations still drive the diff path below.
+        //
+        // Non-suppressed kinds (TutorialBox, BarkBubble, AreaTransition,
+        // MessageBoxModal, dialog cinematics) DO speak on first sight: their
+        // content IS the announcement signal — no separate kind name path
+        // already covers them.
         bool firstSight = (last[0] == '\0');
-        if (firstSight && k == PanelKind::Container) {
+        bool suppressFirstSight =
+            firstSight &&
+            (k == PanelKind::Container || FindInGameSubScreenSpec(k) != nullptr);
+        if (suppressFirstSight) {
             strncpy_s(last, sizeof(g_contentSnapshots[0].text),
                       fingerprint, _TRUNCATE);
-            acclog::Write("Container fingerprint snapshot (first sight, deferring "
-                          "to AnnouncePanelTitle): panel=%p \"%.200s\"",
-                          p, fingerprint);
+            acclog::Write("ContentChange: panel=%p kind=%s first-sight snapshot "
+                          "(deferring to kind-name path): \"%.200s\"",
+                          p, PanelKindName(k), fingerprint);
             continue;
         }
 
@@ -2985,7 +3088,12 @@ static void MonitorPanelContents() {
                           p, PanelKindName(k));
             acclog::Write("ContentChange:   prev=\"%.300s\"", last);
             acclog::Write("ContentChange:   curr=\"%.300s\"", fingerprint);
-            tolk::Speak(fingerprint, /*interrupt=*/false);
+            // Diff-based speech: only segments present in curr but absent in
+            // prev are spoken. Eliminates the "speak the whole blob on any
+            // change" pattern that surfaced as overlapping afterthought
+            // announcements after every chain step on panels with mutating
+            // labels (stat preview, listbox flicker, etc.).
+            SpeakNewSegments(last, fingerprint);
         } else {
             acclog::Write("ContentChange: panel=%p kind=%s fingerprint cleared "
                           "(prev=\"%.100s\")", p, PanelKindName(k), last);
