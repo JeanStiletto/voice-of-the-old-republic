@@ -297,6 +297,16 @@ void PollHotkey() {
             case acc::engine::PanelKind::MessageBoxModal:
             case acc::engine::PanelKind::StatusSummary:
             case acc::engine::PanelKind::AreaTransition:
+            // The in-game icon strip stays foreground while ANY sub-screen
+            // (Inventory / Map / Equipment / …) is drilled — see the drill
+            // mechanism in menus.cpp. Without this case Enter on a chain
+            // target inside a drilled sub-screen would also be picked up
+            // here and dispatched as an in-world UseObject (verified
+            // 2026-05-04: pressing Enter in equip picker auto-walked the
+            // PC to a chest). The strip's own Enter is owned by the chain
+            // Enter activate path in menus.cpp; in-world Enter never makes
+            // sense while a menu is open.
+            case acc::engine::PanelKind::InGameMenu:
                 blocking = true;
                 break;
             default:

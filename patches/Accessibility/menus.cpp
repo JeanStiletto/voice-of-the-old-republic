@@ -2088,36 +2088,27 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                 const char* what = nullptr;
                 void* preselected = nullptr;  // takes precedence over targetId
 
+                // Container per-item take is currently UNRESOLVED. Both
+                // tested primitives fail:
+                //   * FireActivate(row_ptr) → engine's vtable[15] runs but
+                //     doesn't translate to "take this row" — rowCount stays
+                //     unchanged. Listbox protoitems don't carry the take
+                //     logic at vtable[15].
+                //   * Click-sim at row.GetControlCenter() coords → cursor
+                //     hits dead space (Down=0, Up=0). Row extents are
+                //     listbox-local, not screen-absolute; we'd need parent
+                //     offset accumulation we don't currently do.
+                //
+                // Until we identify the engine's row-take primitive (likely
+                // embedded in CSWGuiContainer::HandleInputEvent at 0x006b92f0
+                // or the protoitem's onClick), Enter dispatches BTN_OK
+                // unconditionally. That's the working "take-all" gesture.
+                // Per-item take = lost feature, deferred. See
+                // docs/equip-flow-investigation.md for the parallel
+                // investigation that landed the same shape on equip.
                 if (param_1 == kInputEnter1 || param_1 == kInputEnter2) {
-                    // Per-item take (UNTESTED — fix for the take-all bug
-                    // tracked in docs/known-issues.md). Working hypothesis:
-                    // BTN_OK is "Take All" by engine design, and the per-item
-                    // take in mouse-driven play happens by clicking the row
-                    // itself (the engine treats a row click as "take this
-                    // one item"). So when a row is highlighted, fire the
-                    // row's own activate path; only fall back to BTN_OK when
-                    // selection_index < 0 (preserve the take-all gesture for
-                    // users who press Enter immediately on panel open).
-                    void* lb = FindListBoxChild(activePanel);
-                    if (lb) {
-                        auto* lbBase = reinterpret_cast<unsigned char*>(lb);
-                        auto* lbList = reinterpret_cast<CExoArrayList*>(
-                            lbBase + kListBoxControlsOffset);
-                        int rowCount = (lbList && lbList->data) ? lbList->size : 0;
-                        short sel = *reinterpret_cast<short*>(
-                            lbBase + kListBoxSelectionIndexOffset);
-                        if (sel >= 0 && sel < rowCount) {
-                            preselected = lbList->data[sel];
-                            what = "Enter -> row (take-one)";
-                            acclog::Write("Container: Enter resolves to row "
-                                          "panel=%p lb=%p sel=%d/%d target=%p",
-                                          activePanel, lb, sel, rowCount, preselected);
-                        }
-                    }
-                    if (!preselected) {
-                        targetId = kContainerBtnOkId;
-                        what = "Enter -> BTN_OK (no selection, take-all)";
-                    }
+                    targetId = kContainerBtnOkId;
+                    what = "Enter -> BTN_OK (take-all; per-item take deferred)";
                 } else if (param_1 == kInputEsc1 || param_1 == kInputEsc2) {
                     targetId = kContainerBtnCancelId; what = "Esc -> BTN_CANCEL";
                 }
@@ -2195,7 +2186,12 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                 auto* lbList = reinterpret_cast<CExoArrayList*>(
                     lbBase + kListBoxControlsOffset);
                 int rowCount = (lbList && lbList->data) ? lbList->size : 0;
-                if (rowCount > 0) {
+                // Equip listbox row 0 is the PROTOITEM template (text "•",
+                // verified empirically — see investigation 2026-05-04). Real
+                // items live at [1..rowCount-1]. Clamp navigation to that
+                // range so arrow keys never land on the template.
+                int realRows = rowCount - 1;  // count of selectable items
+                if (realRows > 0) {
                     short* selPtr = reinterpret_cast<short*>(
                         lbBase + kListBoxSelectionIndexOffset);
                     short* topPtr = reinterpret_cast<short*>(
@@ -2204,14 +2200,16 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                         lbBase + kListBoxItemsPerPageOffset);
                     short oldSel = *selPtr;
                     short newSel;
-                    if (oldSel < 0) {
-                        newSel = 0;
+                    if (oldSel < 1) {
+                        // -1 (no selection) or 0 (template) → land on first
+                        // real item.
+                        newSel = 1;
                     } else if (param_1 == kInputNavDown) {
                         newSel = (short)(oldSel + 1);
                         if (newSel >= rowCount) newSel = (short)(rowCount - 1);
                     } else {
                         newSel = (short)(oldSel - 1);
-                        if (newSel < 0) newSel = 0;
+                        if (newSel < 1) newSel = 1;  // clamp to first real row
                     }
                     if (newSel != oldSel) {
                         *selPtr = newSel;
@@ -2224,12 +2222,14 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                             *topPtr = (short)(newSel - ipp + 1);
                         }
                     }
-                    acclog::Write("EquipPicker: %s lb=%p sel=%d->%d (rows=%d)",
+                    acclog::Write("EquipPicker: %s lb=%p sel=%d->%d (rows=%d, real=%d)",
                                   param_1 == kInputNavDown ? "Down" : "Up",
-                                  lb, oldSel, newSel, rowCount);
+                                  lb, oldSel, newSel, rowCount, realRows);
                 } else {
-                    acclog::Write("EquipPicker: %s lb=%p empty; nav ignored",
-                                  param_1 == kInputNavDown ? "Down" : "Up", lb);
+                    acclog::Write("EquipPicker: %s lb=%p empty; nav ignored "
+                                  "(rows=%d, real=0)",
+                                  param_1 == kInputNavDown ? "Down" : "Up",
+                                  lb, rowCount);
                 }
                 consumed = true;
             } else if (param_1 == kInputEnter1 || param_1 == kInputEnter2) {
@@ -2237,12 +2237,33 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                     acclog::Write("EquipPicker: Enter — op already pending; ignoring");
                     consumed = true;
                 } else {
+                    // Equip via BTN_EQUIP is UNRESOLVED. BTN_EQUIP renders
+                    // with is_active=0 / bit_flags=0x8 until a complete
+                    // mouse-driven sequence raises the gate, and we don't
+                    // know yet how to drive that sequence safely. See
+                    // docs/equip-flow-investigation.md.
+                    //
+                    // Both tested primitives fail:
+                    //   * FireActivate(BTN_EQUIP) — vtable[15] gates on
+                    //     is_active and silently no-ops.
+                    //   * Click-sim at (320, 424) — cursor lands on
+                    //     LBL_TOHIT instead of BTN_EQUIP (cause TBD —
+                    //     hit-test mismatch we don't understand yet).
+                    //
+                    // Forcing is_active=1 is unsafe — risk of corrupted
+                    // game state per user direction.
+                    //
+                    // Falls back to FireActivate (no-op) so the keypress
+                    // is consumed cleanly. Picker disarms on Enter so user
+                    // returns to slot grid; no equip happens but no harm.
                     void* btn = FindControlById(activePanel, kEquipBtnEquipId);
                     if (btn) {
                         g_pendingActivate       = true;
                         g_pendingActivateTarget = btn;
                         acclog::Write("EquipPicker: Enter -> FireActivate BTN_EQUIP "
-                                      "panel=%p target=%p", activePanel, btn);
+                                      "panel=%p target=%p (KNOWN no-op; equip flow "
+                                      "unresolved — see docs/equip-flow-investigation.md)",
+                                      activePanel, btn);
                     } else {
                         acclog::Write("EquipPicker: Enter -- BTN_EQUIP not found on "
                                       "panel=%p", activePanel);
@@ -3489,6 +3510,13 @@ static void MonitorEquipPickerSelection() {
         acclog::Write("EquipPicker selection cleared: lb=%p prev=%d", lb, prev);
         return;
     }
+    if (selIdx == 0) {
+        // Row 0 is the protoitem template — never an item the user can equip.
+        // Should be unreachable now that the picker handler clamps to >=1, but
+        // log if the engine somehow lands here so we notice.
+        acclog::Write("EquipPicker selection on protoitem (sel=0): lb=%p", lb);
+        return;
+    }
     if (!lbList || !lbList->data || selIdx >= lbList->size) {
         acclog::Write("EquipPicker selection out of range: lb=%p sel=%d size=%d",
                       lb, selIdx, lbList ? lbList->size : -1);
@@ -3504,11 +3532,15 @@ static void MonitorEquipPickerSelection() {
         return;
     }
 
-    // Reuse the container "X, i von N" format — same UX shape, same words.
+    // Reuse the container "X, i von N" format. selIdx is offset by 1 because
+    // row 0 is the protoitem template — user-facing position is selIdx (so
+    // sel=1 reads as "1 of N") and the user-facing total is rowCount-1.
+    int userPos   = selIdx;
+    int userTotal = rowCount - 1;
     char msg[320];
     snprintf(msg, sizeof(msg),
              acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
-             rowText, selIdx + 1, rowCount);
+             rowText, userPos, userTotal);
     tolk::Speak(msg, /*interrupt=*/false);
     acclog::Write("EquipPicker row: lb=%p sel=%d (was %d) text=\"%s\"",
                   lb, selIdx, prev, rowText);
