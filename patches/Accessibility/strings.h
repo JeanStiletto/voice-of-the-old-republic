@@ -74,6 +74,33 @@ enum class Id : int {
     FmtGuidingFailed,
     GuidanceNoFocus,
 
+    // ---- Lay-off 9b combined autowalk+interact hotkey (Enter).
+    //      Per-kind pre-roll spoken when the hotkey fires on a focused
+    //      object, before the engine click pipeline runs.
+    //      `FmtInteractTalk`  — NPCs (talk to / start dialog).
+    //      `FmtInteractOpen`  — doors, containers, placeables (use).
+    //      `FmtInteractTake`  — items (pick up).
+    //      `FmtInteractFailed` — generic failure pre-roll if the engine
+    //                            entry point faults under SEH.
+    FmtInteractTalk,
+    FmtInteractOpen,
+    FmtInteractTake,
+    FmtInteractFailed,
+
+    // ---- Octagonal compass directions for turn announcement
+    //      (Pillar 2 sub-feature C). German uses traditional
+    //      "Norden / Osten / S\xFCden / Westen" forms with hyphenated
+    //      intercardinals ("Nord-Ost"). English uses bare "North" /
+    //      "Northeast" so screen readers don't mispronounce hyphens.
+    DirNorth,
+    DirNortheast,
+    DirEast,
+    DirSoutheast,
+    DirSouth,
+    DirSouthwest,
+    DirWest,
+    DirNorthwest,
+
     Count_,
 };
 

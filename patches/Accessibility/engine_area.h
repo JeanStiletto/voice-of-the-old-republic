@@ -95,6 +95,13 @@ void* GetCurrentArea();
 // the read faults. Compare against GameObjectKind values.
 int GetObjectKind(void* gameObject);
 
+// Returns the engine-side handle (CGameObject.id @+0x4) for an object.
+// This is the inverse of ResolveServerObjectHandle / ResolveClientObjectHandle:
+// given a pointer obtained via either resolution path (or via the area
+// iterator), recover the ulong handle the engine itself uses to refer to
+// the object on its action queue, in LastTarget, etc. 0 on null / fault.
+uint32_t GetObjectHandle(void* gameObject);
+
 // Resolve a 32-bit object handle to a CSWSObject*. The engine has two
 // independent handle namespaces — server-side (the array CSWSArea's
 // game_objects[] holds, and the action queue's object-id slots use) and

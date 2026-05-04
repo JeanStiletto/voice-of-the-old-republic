@@ -31,6 +31,20 @@ const char* Get(Id id) {
         case Id::FmtGuidingFailed:     return "Guidance to %s failed";
         case Id::GuidanceNoFocus:      return "No object focused";
 
+        case Id::FmtInteractTalk:      return "Talk to %s";
+        case Id::FmtInteractOpen:      return "Use %s";
+        case Id::FmtInteractTake:      return "Pick up %s";
+        case Id::FmtInteractFailed:    return "Interact with %s failed";
+
+        case Id::DirNorth:             return "North";
+        case Id::DirNortheast:         return "Northeast";
+        case Id::DirEast:              return "East";
+        case Id::DirSoutheast:         return "Southeast";
+        case Id::DirSouth:             return "South";
+        case Id::DirSouthwest:         return "Southwest";
+        case Id::DirWest:              return "West";
+        case Id::DirNorthwest:         return "Northwest";
+
         case Id::Count_:               return "";
     }
     return "";

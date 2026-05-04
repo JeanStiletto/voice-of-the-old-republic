@@ -34,8 +34,10 @@
 #include "audio_bus.h"       // Phase 1 lay-off 4 (test fixture only)
 #include "cycle_input.h"     // Phase 2 lay-off 3
 #include "guidance_autowalk.h"  // Phase 2 lay-off 5 (progress watchdog)
+#include "interact_hotkey.h"    // Phase 2 lay-off 9b
 #include "passive_narrate.h"    // Phase 2 lay-off 9a
 #include "probe_world_hover.h"  // Phase 2 lay-off 9-probe (diagnostic)
+#include "turn_announce.h"      // Phase 2 ad-hoc — Pillar 2 sub-feature C
 
 // Engine readers + offset constants moved to engine_reads.{h,cpp} +
 // engine_offsets.h in Phase 0 lay-off 2. Pull the readers' names into the
@@ -2692,6 +2694,23 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     // on the same object; recency-suppress to be added if double-narration
     // proves disruptive. Self-gates on player-loaded.
     acc::passive_narrate::Tick();
+
+    // Phase 2 ad-hoc — octagonal direction-on-turn announcement (Pillar 2
+    // sub-feature C, pulled forward to give the user feedback that A/D /
+    // Q/E are turning the character vs. only the camera). Speaks "north" /
+    // "north-east" etc. on sector change with 5° hysteresis.
+    acc::turn_announce::Tick();
+
+    // Phase 2 lay-off 9b — combined autowalk+interact hotkey (Enter).
+    // Resolves cycle focus first / engine LastTarget fallback, speaks
+    // localised pre-roll ("Sprich mit X" / "Öffne X" / "Hebe X auf"),
+    // then routes through the engine's native click pipeline:
+    // SetLastClickedOnTarget(handle) + HandleMouseClickInWorld. Engine
+    // walks the player + dispatches kind-appropriate interaction.
+    // Side-channel test of the parked autowalk blocker — if this path
+    // moves the player when raw AddMoveToPointAction doesn't, the engine
+    // click pipeline is the missing layer.
+    acc::interact::PollHotkey();
 
     // Phase 2 lay-off 9-probe — in-world cursor-warp / passive-selection
     // monitor. Probe RESOLVED 2026-05-04 — see investigation Q6 §"RE —

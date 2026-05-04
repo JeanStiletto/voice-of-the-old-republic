@@ -41,6 +41,20 @@ const char* Get(Id id) {
         case Id::FmtGuidingFailed:     return "Gehe zu %s fehlgeschlagen";
         case Id::GuidanceNoFocus:      return "Kein Ziel ausgew\xE4hlt";  // ausgewählt
 
+        case Id::FmtInteractTalk:      return "Sprich mit %s";
+        case Id::FmtInteractOpen:      return "\xD6" "ffne %s";                 // Öffne
+        case Id::FmtInteractTake:      return "Hebe %s auf";
+        case Id::FmtInteractFailed:    return "Interaktion mit %s fehlgeschlagen";
+
+        case Id::DirNorth:             return "Norden";
+        case Id::DirNortheast:         return "Nord-Ost";
+        case Id::DirEast:              return "Osten";
+        case Id::DirSoutheast:         return "S\xFC" "d-Ost";                  // Süd-Ost
+        case Id::DirSouth:             return "S\xFC" "den";                    // Süden
+        case Id::DirSouthwest:         return "S\xFC" "d-West";                 // Süd-West
+        case Id::DirWest:              return "Westen";
+        case Id::DirNorthwest:         return "Nord-West";
+
         case Id::Count_:               return "";
     }
     return "";
