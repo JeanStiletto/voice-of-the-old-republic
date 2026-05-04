@@ -55,6 +55,87 @@ int GetObjectKind(void* gameObject) {
     }
 }
 
+namespace {
+
+// Engine sentinels shared by both resolve paths: 0 (uninitialised),
+// 0xFFFFFFFF (removed), 0x7F000000 (kInvalidObjectId — the "no object"
+// marker the action queue and LastTarget use).
+bool IsSentinelHandle(uint32_t handle) {
+    return handle == 0u || handle == 0xFFFFFFFFu || handle == 0x7F000000u;
+}
+
+}  // namespace
+
+void* ResolveServerObjectHandle(uint32_t handle) {
+    if (IsSentinelHandle(handle)) return nullptr;
+
+    void* objectArray = GetServerObjectArray();
+    if (!objectArray) return nullptr;
+
+    // CGameObjectArray::GetGameObject returns *false on hit, true on miss*
+    // — same inverted-bool convention as AreaObjectIterator::Next. See the
+    // comment at line ~225 of this file for the decompilation evidence.
+    auto resolve = reinterpret_cast<PFN_GetGameObject>(
+        kAddrCGameObjectArrayGetGameObject);
+    void* out = nullptr;
+    bool miss = true;
+    __try {
+        miss = resolve(objectArray, handle, &out);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+    return (!miss && out) ? out : nullptr;
+}
+
+namespace {
+
+// CClientExoApp::GetGameObject — direct one-call resolver. Returns
+// CSWCObject* (client side); caller chains through +0xf8 to reach the
+// matching server CSWSObject* the rest of engine_area expects.
+typedef void* (__thiscall* PFN_CClientGetGameObject)(void* this_,
+                                                    uint32_t handle);
+
+void* GetClientExoApp() {
+    __try {
+        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
+        if (!appManager) return nullptr;
+        return *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(appManager) +
+            kAppManagerClientAppOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+}  // namespace
+
+void* ResolveClientObjectHandle(uint32_t handle) {
+    if (IsSentinelHandle(handle)) return nullptr;
+
+    void* clientApp = GetClientExoApp();
+    if (!clientApp) return nullptr;
+
+    void* clientObject = nullptr;
+    __try {
+        auto fn = reinterpret_cast<PFN_CClientGetGameObject>(
+            kAddrCClientExoAppGetGameObject);
+        clientObject = fn(clientApp, handle);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+    if (!clientObject) return nullptr;
+
+    // CSWCObject.server_object @+0xf8 → CSWSObject*. Same offset
+    // engine_player uses on the player creature's CSWCCreature.
+    __try {
+        return *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(clientObject) +
+            kClientObjectServerObjectOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
 bool GetObjectPosition(void* gameObject, Vector& out) {
     if (!gameObject) return false;
     __try {

@@ -632,6 +632,70 @@ Decision deferred — needs the basic cycle UX shipped and tested first.
 
 ---
 
+## Cross-cutting — Interaction model (drafted 2026-05-04)
+
+### The problem this section solves
+
+Pillar 4 cycle answers "what's there?". After cycling to a thing, the user needs:
+
+- **Ambient narration** — "things come close, hear the name" without explicit cycling. The user wants a passive channel parallel to active scanning.
+- **Interact** — actually open the door, talk to the NPC, loot the container, pick up the item. Until this lands, the cycle is read-only.
+
+Tempting framing: extend the menu-nav unified pattern ("speak whatever's under the mouse cursor") into the open world. **This breaks down** — in menus the cursor is the user's focal point; in open-world the cursor sits idle while the character is the actual focus. Cursor-position narration in normal play would surface scenery/empty space, not what the user cares about.
+
+### The two engine focus signals
+
+The engine itself maintains two independent focus channels, both useful, neither cursor-driven by default:
+
+- **`CClientExoApp::LastTarget`** (`Get @0x005edd80`, `Set @0x005edd70`) — the engine's "currently-targeted object" handle. Click sets it via `SetLastClickedOnTarget @0x005ee200`. Kind-aware actions read it.
+- **Passive selection** — `CClientExoAppInternal::DoPassiveSelection(float) @0x005fa5a0` produces the white outline around nearby interactables. **Character-anchored, not cursor-anchored.** Curates "what's close enough and worth a highlight" against the camera frame.
+- **`CClientExoAppInternal::SelectNearestObject(int, byte) @0x005fb050`** — the Tab-style cycle primitive. Already implements "next nearby interactable".
+
+Plus the cursor-driven channel (separate from above):
+
+- **Hover / tooltip / cursor sprite** — driven by `MoveMouseToPosition @0x40c790` → `HitCheckMouse` → `UpdateMouseOverControl`. Verified inside menus; behaviour in 3D-world space is open (see Open RE item below).
+
+### The three layers — split into independent lay-offs
+
+**Layer A — Passive-selection narration loop (no cursor manipulation).** Poll `LastTarget` (or hook `SetLastTarget` / `SetLastClickedOnTarget`) per tick. On change, debounce, then announce name + cursor-type-derived kind hint via Tolk. Plays the per-category 3D cue from `audio_cues.h` at the object's world position. Reuses the Pillar 4 lay-off 4 cycle's name-resolver + cue table; no new audio vocabulary. The "walk past, hear the door" / "turn around, hear the NPC ahead" experience emerges from the engine's own curation. Free ride; no engine RE beyond confirming `LastTarget` populates passively.
+
+**Layer B — Combined autowalk+interact hotkey via Execute*.** A single key — proposed `Enter` (no in-world binding by default) or unbound `+`. Dispatches by the focused object's kind:
+
+- NPC / Creature → `CSWVirtualMachineCommands::ExecuteCommandActionStartConversation @0x0052d5b0`.
+- Door / Placeable / Container / Item → `CSWVirtualMachineCommands::ExecuteCommandActionInteractObject @0x0052cc70`.
+- Trigger / Transition → either `InteractObject` or fall back to autowalk-into-volume.
+
+Source of truth for "the focused object": **cycle focus wins** if the user explicitly cycled within the last N seconds, **passive-selection LastTarget** otherwise. Two-channel preference resolves cleanly because the user expressing a cycle pick is a stronger signal than ambient proximity.
+
+The Execute* family is the engine's own VM-routed action enqueue — it's what NWScript scripts call, and (relevantly) it includes the walk-to-target step internally. So **one keypress = engine walks the player to the object then interacts**, no separate autowalk wrapping needed at the call site. This also serves as a side-channel test of the parked Phase 2 autowalk blocker: if `ExecuteCommandActionInteractObject` moves the player creature when our raw `AddMoveToPointAction` doesn't, we've found the missing layer.
+
+Spoken pre-roll before dispatch: localised "Sprich mit X" / "Öffne X" / "Hebe X auf" — same i18n table as Pillar 4. Runtime-localisable per `strings.h`.
+
+**Layer C — Cursor-warp polish (DROPPED 2026-05-04).** Original idea: warp the cursor onto the focused object's screen position via `MoveMouseToPosition`, inherit engine tooltip text + cursor sprite + synthesised click for free. Probe (lay-off 9-probe, see investigation Q6 §"RE — does MoveMouseToPosition trigger world-hover?") proved this doesn't work — `MoveMouseToPosition` only walks the GUI-side `HitCheckMouse` + `UpdateMouseOverControl` path; world-hover state (`LastTarget`, manager mouseOverControl) does not respond to programmatic cursor warps. Mechanistically `DoPassiveSelection` is character/camera-frame-driven, not cursor-driven, so the cursor primitive we have is the wrong surface.
+
+Phase 4 view mode is unaffected — its virtual cursor uses our own walkmesh-bounded movement + our own narration loop, as already designed. What's dropped is the "free ride" on engine tooltip + click pipeline. **Layers A+B are sufficient for blind interaction without Layer C.**
+
+### Cycle ↔ passive-selection coherence (revisited 2026-05-04)
+
+Original intent: every cycle keypress also calls `SetLastClickedOnTarget` so cycle focus and passive-selection share one engine-side state. Revisited after lay-off 9-probe data:
+
+- The probe confirmed `LastTarget` populates organically — the engine itself maintains it via passive selection's character/camera-frame-driven update.
+- Cycle and `LastTarget` are now treated as **independent channels** (cycle = active scan, `LastTarget` = ambient awareness). **Double-narration risk** appears if cycle pushes to `LastTarget` and 9a's watcher then fires on the same change.
+- **Decision (2026-05-04):** keep channels independent in lay-off 9a — cycle narrates via cycle path, `LastTarget` watcher narrates via 9a's path. If overlap proves disruptive in practice, simplest fix is to suppress the LastTarget watcher when cycle spoke within the last ~500 ms (recency suppress, not channel coupling). Layer B's interact hotkey reads cycle focus first / `LastTarget` fallback — coherence at the read site, not the write site.
+
+### RE — does `MoveMouseToPosition` trigger world-hover? (resolved 2026-05-04)
+
+**Probe ran 2026-05-04. Result: NO.** See `docs/navsystems-investigation.md` Q6 §"RE — does MoveMouseToPosition trigger world-hover?" for full data + mechanistic explanation. Layer C dropped per "Layer C — Cursor-warp polish" decision above.
+
+### Decisions captured
+
+- 2026-05-04 — interaction model split into three independent layers (A passive narration, B Execute* hotkey, C optional cursor-warp). A+B ship in Phase 2; **C dropped after the lay-off 9-probe** — `MoveMouseToPosition` doesn't reach world-hover state, so the "free ride" on engine tooltip + click pipeline isn't reachable. Phase 4 view mode unaffected; A+B alone are sufficient for blind play.
+- 2026-05-04 — interact dispatch routes through engine VM commands (`ExecuteCommandActionInteractObject` / `…StartConversation`), not raw AI-action enqueue. Inherits walk-to-target leg for free; side-channel probe of autowalk blocker.
+- 2026-05-04 — cycle focus and `LastTarget` stay independent channels (cycle pushes to LastTarget *not* required after probe results). Layer B reads cycle focus first / `LastTarget` fallback — coherence at the read site.
+- 2026-05-04 — cursor-warp narration in normal open-world play **rejected**. Cycle key + passive-selection loop together cover the "what am I focused on" need; view mode keeps its own virtual cursor for explicit "stop and look" scanning.
+
+---
+
 ## Cross-cutting — User options & personalization
 
 ### Initial scope (locked 2026-05-03)

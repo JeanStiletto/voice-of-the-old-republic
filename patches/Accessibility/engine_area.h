@@ -95,6 +95,38 @@ void* GetCurrentArea();
 // the read faults. Compare against GameObjectKind values.
 int GetObjectKind(void* gameObject);
 
+// Resolve a 32-bit object handle to a CSWSObject*. The engine has two
+// independent handle namespaces — server-side (the array CSWSArea's
+// game_objects[] holds, and the action queue's object-id slots use) and
+// client-side (CClientExoApp::LastTarget, the in-world hover/passive-
+// selection target). Use the variant that matches the handle source.
+//
+// Both return nullptr for invalid sentinels (`0`, `0xFFFFFFFF`,
+// `kInvalidObjectId 0x7F000000`) and for any handle the engine reports
+// as missing. Both SEH-guard every dereference. Caller treats the
+// returned pointer opaquely (same downcast rules as the
+// AreaObjectIterator yield).
+//
+// Server-side path: AppManager → CServerExoApp → GetObjectArray →
+// CGameObjectArray::GetGameObject. Same chain AreaObjectIterator uses
+// internally; exposed here for the "I have one server handle" case.
+// Server-side handles in observed traffic look like 0x000000XX (low
+// bits index into the server array).
+void* ResolveServerObjectHandle(uint32_t handle);
+
+// Client-side path: AppManager → CClientExoApp → GetGameObject(handle)
+// returns a CSWCObject* (client-side counterpart). We chain through
+// `CSWCObject.server_object @+0xf8` to recover the server-side
+// CSWSObject* our other helpers (GetObjectKind, GetObjectName,
+// GetObjectPosition) expect. Client-side handles in observed traffic
+// look like 0x800000XX (high bit set; engine packs a side flag).
+//
+// Verified live 2026-05-04 (`patch-20260504-065345.log`): the
+// LastTarget handles 0x80000004 / 0x800000c6 / 0x80000047 fail
+// resolution through the server-side CGameObjectArray — they need this
+// path.
+void* ResolveClientObjectHandle(uint32_t handle);
+
 // Server-side world position read (CSWSObject layout, +0x90). Returns false
 // if obj is null or the read faults.
 bool GetObjectPosition(void* gameObject, Vector& out);
@@ -192,6 +224,14 @@ constexpr uintptr_t kAddrCSWSAreaGetRoom = 0x004BB600;
 constexpr size_t    kAppManagerServerOffset      = 0x8;
 constexpr uintptr_t kAddrCServerExoAppGetObjectArray = 0x004AED70;
 constexpr uintptr_t kAddrCGameObjectArrayGetGameObject = 0x004D8230;
+
+// Client-side resolver: CClientExoApp::GetGameObject(ulong) -> CSWCObject*.
+// Direct one-call wrapper around the client-side game object array (the
+// inner CGameObjectArray pointer is held inside the CClientExoApp
+// instance; we never need to touch it directly because GetGameObject
+// hides the array layer). Verified live 2026-05-04 — see
+// ResolveClientObjectHandle's docs.
+constexpr uintptr_t kAddrCClientExoAppGetGameObject = 0x005ED580;
 
 // CSWSArea field offsets (investigation Q5, CONFIRMED).
 constexpr size_t kAreaGameObjectsOffset      = 0x190;

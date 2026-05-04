@@ -821,6 +821,34 @@ These give us "what is the player looking at right now" for free — exactly the
 - **Tooltip / examine hook surface: STRONG** (suspected in a11y-map; signatures match)
 - **Cursor-type signal on hover: CONFIRMED**
 
+### RE — does `MoveMouseToPosition` trigger world-hover? (resolved 2026-05-04)
+
+**Status:** RESOLVED. Probe ran 2026-05-04 in-game (`patch-20260504-063846.log`). Verdict: **`MoveMouseToPosition` does NOT reach in-world hover state**, but **`LastTarget` populates organically as the player moves**, independent of any cursor manipulation.
+
+**Probe data (lay-off 9-probe; eight Alt+P warps to (320, 240), each near a known interactable):**
+
+- Every Alt+P → `LastTarget` unchanged after warp (`target_changed=0` × 8).
+- Every Alt+P → manager `mouseOverControl` (mgr+0x8) NULL before AND after warp (`mover_changed=0` × 8). In-world the GUI-side hover field stays null because no panel owns it.
+- Without any user interaction, `LastTarget` transitions captured during walking:
+  - `0x7f000000` (engine "no target" sentinel = `kInvalidObjectId`) ↔ `0x80000004` (real handle, high-byte 0x80 = a specific object-array bucket)
+  - `0x80000004` → `0x800000c6` → `0x7f000000` while passing a second interactable
+  - Multiple cycles back through `0x80000004` as the player re-approached.
+
+**Mechanistic explanation:** `DoPassiveSelection(float delta) @0x005fa5a0` takes a tick-time, not cursor coords — character/camera-frame-driven, not cursor-driven. `MoveMouseToPosition` only walks the GUI-side `HitCheckMouse` + `UpdateMouseOverControl` path; world-hover (if it exists as a separate ray-cast pipeline) is a different surface that we don't reach with this primitive. Coord-system caveat (320×240 may land in dead screen space if the system is window-pixels) doesn't change the conclusion — even if the cursor lands on something, GUI hover is the only thing that updates.
+
+**Implications for the interaction model** (see `docs/navsystem-longterm-plan.md`):
+
+- **Layer A (passive-selection narration loop) — VIABLE.** `LastTarget` is the right read source; populates organically; debounced change-detection produces the "things come close, hear the name" cadence the user described. Lay-off 9a unblocked.
+- **Layer B (Execute*-routed interact hotkey) — VIABLE.** Reads cycle focus first / `LastTarget` fallback; engine's VM-routed actions handle walk-to-target internally. Lay-off 9b unblocked.
+- **Layer C (cursor-warp polish for Phase 4 view mode) — DROPPED.** Mirror-tooltip + synthesised-click via `MoveMouseToPosition` is not reachable through the cursor primitive we have. View mode still gets its virtual-cursor-with-our-own-narration path (Phase 4 plan unchanged); the "free ride" off engine tooltip + click pipeline is not.
+
+**Engineering basis (verified or sourced during the probe):**
+- `CClientExoApp::GetLastTarget @0x005edd80` — verified live: returns ulong handle, populates organically.
+- `CClientExoApp::SetLastClickedOnTarget @0x005ee200` — set primitive (untested but symmetric).
+- `CSWGuiManager::MoveMouseToPosition @0x0040c790` — verified: GUI-side hover only.
+- Manager `mouseOverControl` field at `mgr+0x8` — verified null in-world.
+- Cursor sprite enum at `CSWSTrigger.cursor +0x2fc` per Q6 (untested in this probe; remains a CONFIRMED read source for kind hints, not for hover-state inference).
+
 ---
 
 ## Q7 — Human-readable name database (real names, not internal IDs)

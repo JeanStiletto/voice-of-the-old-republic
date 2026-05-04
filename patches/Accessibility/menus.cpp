@@ -34,6 +34,8 @@
 #include "audio_bus.h"       // Phase 1 lay-off 4 (test fixture only)
 #include "cycle_input.h"     // Phase 2 lay-off 3
 #include "guidance_autowalk.h"  // Phase 2 lay-off 5 (progress watchdog)
+#include "passive_narrate.h"    // Phase 2 lay-off 9a
+#include "probe_world_hover.h"  // Phase 2 lay-off 9-probe (diagnostic)
 
 // Engine readers + offset constants moved to engine_reads.{h,cpp} +
 // engine_offsets.h in Phase 0 lay-off 2. Pull the readers' names into the
@@ -2682,6 +2684,24 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     // mode (e.g. tutorial-locked sections, queue blocked by higher-priority
     // action). Permanent instrumentation; reused by every guidance caller.
     acc::guidance::TickProgressWatchdog();
+
+    // Phase 2 lay-off 9a — passive-selection narration loop. Reads engine
+    // LastTarget per tick; on change to a nav-relevant target, speaks the
+    // localised name + plays the per-category 3D cue at the object's
+    // position. Independent of the Pillar 4 cycle channel — both can fire
+    // on the same object; recency-suppress to be added if double-narration
+    // proves disruptive. Self-gates on player-loaded.
+    acc::passive_narrate::Tick();
+
+    // Phase 2 lay-off 9-probe — in-world cursor-warp / passive-selection
+    // monitor. Probe RESOLVED 2026-05-04 — see investigation Q6 §"RE —
+    // does MoveMouseToPosition trigger world-hover?". Layer A viable
+    // (LastTarget populates organically); Layer C dropped. Probe stays in
+    // tree until 9a's narration loop is verified working in production
+    // against the same handle stream the probe logged; deletable in a
+    // single commit thereafter.
+    acc::probe::world_hover::TickMonitor();
+    acc::probe::world_hover::PollHotkey();
 
     if (!g_pendingCursorMove && !g_pendingClick && !g_pendingActivate &&
         !g_pendingSliderInput) return;
