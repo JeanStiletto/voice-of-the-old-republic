@@ -2689,6 +2689,12 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     // action). Permanent instrumentation; reused by every guidance caller.
     acc::guidance::TickProgressWatchdog();
 
+    // Auto-restore player input ~3s after a guidance / interact dispatch
+    // disabled it. Idle when no disable session is active. See
+    // engine_player.h SetPlayerInputEnabled doc + memory entry
+    // project_player_control_toggle.md for the why.
+    acc::engine::TickPlayerInputRestore();
+
     // Phase 2 lay-off 9a — passive-selection narration loop. Reads engine
     // LastTarget per tick; on change to a nav-relevant target, speaks the
     // localised name + plays the per-category 3D cue at the object's

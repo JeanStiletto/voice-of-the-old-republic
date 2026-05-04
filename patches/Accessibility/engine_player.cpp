@@ -99,4 +99,72 @@ void* GetPlayerServerCreature() {
     return GetPlayerServerObject();
 }
 
+namespace {
+
+// Auto-restore session. Set when SetPlayerInputEnabled(false) succeeds;
+// TickPlayerInputRestore flips back to enabled=true once the deadline
+// passes. 3-second window matches the autowalk progress watchdog's
+// t+3s disengage so log lines and lifecycle stay aligned.
+constexpr DWORD kAutoRestoreMs = 3000;
+bool  g_disableActive    = false;
+DWORD g_disableExpiresAt = 0;
+
+typedef void (__thiscall* PFN_CSWPlayerControlSetEnabled)(void* this_, int enabled);
+
+// Walk *kAddrAppManagerPtr → CClientExoApp → CClientExoAppInternal →
+// CSWPlayerControl. Distinct from GetPlayerServerObject's chain — different
+// destination. Returns nullptr on any failure.
+void* GetPlayerControl() {
+    __try {
+        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
+        if (!appManager) return nullptr;
+
+        void* exoApp = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(appManager) +
+            kAppManagerClientAppOffset);
+        if (!exoApp) return nullptr;
+
+        void* internal = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(exoApp) +
+            kClientExoAppInternalOffset);
+        if (!internal) return nullptr;
+
+        return *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(internal) +
+            kClientAppPlayerControlOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+}  // namespace
+
+bool SetPlayerInputEnabled(bool enabled) {
+    void* playerControl = GetPlayerControl();
+    if (!playerControl) return false;
+
+    __try {
+        auto fn = reinterpret_cast<PFN_CSWPlayerControlSetEnabled>(
+            kAddrCSWPlayerControlSetEnabled);
+        fn(playerControl, enabled ? 1 : 0);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+
+    if (enabled) {
+        g_disableActive = false;
+        g_disableExpiresAt = 0;
+    } else {
+        g_disableActive = true;
+        g_disableExpiresAt = GetTickCount() + kAutoRestoreMs;
+    }
+    return true;
+}
+
+void TickPlayerInputRestore() {
+    if (!g_disableActive) return;
+    if (GetTickCount() < g_disableExpiresAt) return;
+    SetPlayerInputEnabled(true);  // flips g_disableActive false on success
+}
+
 }  // namespace acc::engine

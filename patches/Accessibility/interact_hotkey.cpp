@@ -11,6 +11,7 @@
 #include "engine_offsets.h"
 #include "engine_player.h"
 #include "filter_objects.h"
+#include "guidance_autowalk.h"
 #include "log.h"
 #include "strings.h"
 #include "tolk.h"
@@ -33,10 +34,9 @@ constexpr uintptr_t kAddrCClientExoAppSetLastClickedOnTarget = 0x005EE200;
 // open / talk / loot / pick-up. Takes no args (this only).
 constexpr uintptr_t kAddrHandleMouseClickInWorld = 0x00620350;
 
-// CClientExoApp.internal @+0x4 → CClientExoAppInternal* (per
-// /KotOR Types/Star Wars/Client/CClientExoApp size 0x8, vtable@0,
-// internal@4).
-constexpr size_t kClientExoAppInternalOffset = 0x4;
+// kClientExoAppInternalOffset (= 0x4) lives in engine_player.h alongside
+// the other client-app chain constants — same chain we walk for
+// SetPlayerInputEnabled.
 
 namespace acc::interact {
 
@@ -193,49 +193,33 @@ void OnInteract() {
                       ? "(unclassified)"
                       : acc::filter::CategoryName(cat));
 
-    // Step 1: tell the engine which object the "click" is on.
-    void* clientApp = GetClientExoApp();
-    if (clientApp) {
-        __try {
-            auto setTarget =
-                reinterpret_cast<PFN_SetLastClickedOnTarget>(
-                    kAddrCClientExoAppSetLastClickedOnTarget);
-            setTarget(clientApp, handle);
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
-            acclog::Write("Interact: SetLastClickedOnTarget faulted under SEH");
-            // Continue to HandleMouseClickInWorld anyway — the engine
-            // may already have valid LastClicked state from a previous
-            // click.
-        }
+    // Disable per-tick player-input movement clobber for the duration of
+    // the AI walk-to-then-use that AddUseObjectAction will enqueue. Engine's
+    // TickPlayerInputRestore auto-restores after ~3s; on dispatch failure we
+    // restore immediately. See project_player_control_toggle.md.
+    bool inputDisabled = acc::engine::SetPlayerInputEnabled(false);
+
+    // AddUseObjectAction is the same primitive NWScript's
+    // ActionInteractObject calls. Bypasses the engine's two-click
+    // hover-then-click pipeline — that path requires hover-state setup
+    // (last_target, last_clicked_on_target, hovered_target_at+0x4a4, plus
+    // an action descriptor at +0x4c8) which only the cursor-hover system
+    // populates. AddUseObjectAction just enqueues ACTION_USEOBJECT (0x28)
+    // with the target id, and the engine internally walks-to + uses.
+    bool dispatched = acc::guidance::UseObject(handle);
+
+    if (dispatched) {
+        acclog::Write("Interact: UseObject dispatched (input_disabled=%d)",
+                      inputDisabled ? 1 : 0);
     } else {
-        acclog::Write("Interact: GetClientExoApp returned NULL — abort");
-        return;
-    }
-
-    // Step 2: invoke the engine's native click-on-world dispatcher.
-    // This is what `CClientExoAppInternal` runs when the user actually
-    // clicks an object in the 3D view. Internally walks the same path
-    // a real click would: enqueue interact action against player
-    // creature, engine pathfinds + dispatches kind-appropriate behaviour.
-    void* internal = GetClientExoAppInternal();
-    if (!internal) {
-        acclog::Write("Interact: GetClientExoAppInternal returned NULL — abort");
-        return;
-    }
-
-    __try {
-        auto handleClick = reinterpret_cast<PFN_HandleMouseClickInWorld>(
-            kAddrHandleMouseClickInWorld);
-        handleClick(internal);
-        acclog::Write("Interact: HandleMouseClickInWorld dispatched cleanly");
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        if (inputDisabled) acc::engine::SetPlayerInputEnabled(true);
         char failMsg[192];
         std::snprintf(failMsg, sizeof(failMsg),
                       acc::strings::Get(
                           acc::strings::Id::FmtInteractFailed),
                       name);
         tolk::Speak(failMsg, /*interrupt=*/true);
-        acclog::Write("Interact: HandleMouseClickInWorld FAULTED -> [%s]",
+        acclog::Write("Interact: UseObject dispatch FAILED -> [%s]",
                       failMsg);
     }
 }

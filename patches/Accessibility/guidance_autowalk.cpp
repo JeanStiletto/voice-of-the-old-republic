@@ -126,6 +126,12 @@ bool WalkTo(const Vector& destination) {
     unsigned int ret = 0;
     unsigned short thisActionId = s_actionId++;
 
+    // Disable the per-tick player-input movement clobber for the duration
+    // of the AI action — see project_player_control_toggle.md. Engine's
+    // TickPlayerInputRestore auto-restores after ~3s; SEH-fault path
+    // restores immediately.
+    bool inputDisabled = acc::engine::SetPlayerInputEnabled(false);
+
     __try {
         auto fn = reinterpret_cast<PFN_AddMoveToPointAction>(
             kAddrCSWSCreatureAddMoveToPointAction);
@@ -150,6 +156,7 @@ bool WalkTo(const Vector& destination) {
         // Disarm watchdog — no point measuring progress when the call
         // itself faulted.
         g_watchdog.active = false;
+        if (inputDisabled) acc::engine::SetPlayerInputEnabled(true);
         acclog::Write("Autowalk: WalkTo SEH-FAULT action_id=%u "
                       "dest=(%.2f,%.2f,%.2f)",
                       static_cast<unsigned>(thisActionId),
@@ -197,12 +204,15 @@ bool ForceWalkTo(const Vector& destination) {
     Vector startPos = {0.0f, 0.0f, 0.0f};
     bool haveStart = acc::engine::GetPlayerPosition(startPos);
 
+    bool inputDisabled = acc::engine::SetPlayerInputEnabled(false);
+
     __try {
         auto fn = reinterpret_cast<PFN_ForceMoveToPoint>(
             kAddrCSWSCreatureForceMoveToPoint);
         fn(creature, &action);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         g_watchdog.active = false;
+        if (inputDisabled) acc::engine::SetPlayerInputEnabled(true);
         acclog::Write("Autowalk: Force-dispatch SEH-FAULT action_id=%u "
                       "dest=(%.2f,%.2f,%.2f)",
                       action.action_id, dest.x, dest.y, dest.z);
@@ -219,6 +229,34 @@ bool ForceWalkTo(const Vector& destination) {
                   startPos.x, startPos.y, startPos.z,
                   distToDest, action.action_id);
     return true;
+}
+
+bool UseObject(unsigned long targetHandle) {
+    void* creature = acc::engine::GetPlayerServerCreature();
+    if (!creature) return false;
+
+    if (targetHandle == 0u || targetHandle == 0xFFFFFFFFu ||
+        targetHandle == kInvalidObjectId) {
+        return false;
+    }
+
+    typedef int (__thiscall* PFN_AddUseObjectAction)(
+        void* this_, unsigned long target, unsigned long param2);
+
+    int ret = 0;
+    __try {
+        auto fn = reinterpret_cast<PFN_AddUseObjectAction>(
+            kAddrCSWSObjectAddUseObjectAction);
+        ret = fn(creature, targetHandle, 0);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Autowalk: UseObject SEH-FAULT target=0x%08lx",
+                      targetHandle);
+        return false;
+    }
+
+    acclog::Write("Autowalk: UseObject dispatch target=0x%08lx ret=%d",
+                  targetHandle, ret);
+    return ret != 0;
 }
 
 void TickProgressWatchdog() {

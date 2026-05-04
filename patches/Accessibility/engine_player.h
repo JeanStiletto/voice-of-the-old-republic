@@ -74,6 +74,29 @@ void* GetPlayerArea();
 // AppManager → CClientExoApp → GetPlayerCreature → server_object chain.
 void* GetPlayerServerCreature();
 
+// Toggle the per-tick player-input movement clobber. enabled=true =
+// player drives the creature directly (vanilla); enabled=false = input
+// loop skips the per-tick movement override, AI actions execute
+// unimpeded. Wraps CSWPlayerControl::SetEnabled @ 0x006792e0 — two
+// writes happen behind the call: (1) CSWPlayerControl.enabled at +0xc,
+// (2) CSWCCreature::SwitchMode on the live player creature, which
+// updates the creature's mode tag (0=AI, 1=player). See memory entry
+// `project_player_control_toggle.md` for the RE.
+//
+// Returns false on chain failure (no app, no player_control, SEH-caught
+// fault). True if the call dispatched.
+//
+// Auto-restore: SetPlayerInputEnabled(false) arms a module-static timer
+// that flips back to enabled=true after 3 seconds via
+// TickPlayerInputRestore(). Each new disable extends the window. Callers
+// that need to restore earlier (SEH fault on the gated dispatch, manual
+// cancel) can call SetPlayerInputEnabled(true) directly — idempotent.
+bool SetPlayerInputEnabled(bool enabled);
+
+// Per-tick auto-restore. Call from OnUpdate. No-op when no disable
+// session is active. Cheap when idle (one timestamp compare).
+void TickPlayerInputRestore();
+
 }  // namespace acc::engine
 
 // AppManager wrapper. *kAddrAppManagerPtr holds an AppManager*; the live
@@ -97,3 +120,18 @@ constexpr size_t kClientObjectServerObjectOffset = 0xf8;
 // CSWSObject.position / orientation. Server-side layout.
 constexpr size_t kServerObjectPositionOffset    = 0x90;
 constexpr size_t kServerObjectOrientationOffset = 0x9c;
+
+// CClientExoApp.internal @+0x4 → CClientExoAppInternal*. Per Lane's
+// type DB, the public CClientExoApp facade is 8 bytes (vtable@0,
+// internal@4); CClientExoAppInternal carries the real state.
+constexpr size_t kClientExoAppInternalOffset = 0x4;
+
+// CClientExoAppInternal.player_control @+0x2a0 → CSWPlayerControl*.
+// Per Lane's type DB.
+constexpr size_t kClientAppPlayerControlOffset = 0x2a0;
+
+// CSWPlayerControl::SetEnabled — __thiscall(int) -> void. Single named
+// API that gates per-tick input-driven movement and toggles the
+// creature's mode (player/AI/driving). See header doc on
+// SetPlayerInputEnabled for the full xref.
+constexpr uintptr_t kAddrCSWPlayerControlSetEnabled = 0x006792E0;

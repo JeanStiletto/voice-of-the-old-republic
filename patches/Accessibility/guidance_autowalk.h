@@ -70,6 +70,20 @@ bool ForceWalkTo(const Vector& destination);
 // noise when autowalk isn't active. Cheap when idle (one bool check).
 void TickProgressWatchdog();
 
+// Enqueue an ACTION_USEOBJECT (0x28) action on the player creature, with
+// the supplied target handle. Wraps `CSWSObject::AddUseObjectAction
+// @0x0057c810` — the same primitive `ExecuteCommandActionInteractObject`
+// (NWScript's ActionInteractObject) calls. Engine handles walk-to-then-
+// use sequencing internally: pathfinds to target, then triggers the
+// kind-appropriate USE callback (open door, loot container, ...).
+//
+// Returns true if the engine call dispatched cleanly. False on no
+// player loaded or SEH fault. Caller is responsible for the
+// SetPlayerInputEnabled(false) toggle around the dispatch — without it,
+// the per-tick input loop clobbers the queued move (see
+// project_player_control_toggle.md).
+bool UseObject(unsigned long targetHandle);
+
 }  // namespace acc::guidance
 
 // CSWSCreature::AddMoveToPointAction — __thiscall, 17 stack args.
@@ -80,6 +94,12 @@ constexpr uintptr_t kAddrCSWSCreatureAddMoveToPointAction = 0x004F8B60;
 // returns void. SARIF-confirmed signature. Bypasses the per-creature
 // action queue (per investigation §Q3 row); still pathfinds.
 constexpr uintptr_t kAddrCSWSCreatureForceMoveToPoint = 0x004EDBA0;
+
+// CSWSObject::AddUseObjectAction — __thiscall(ulong target_id, ulong
+// param2) -> int. SARIF CONFIRMED. Decompiled body just gates on
+// `field48_0xe8 != 0` then forwards to AddAction(this, 0x28, 0xffff, 3,
+// &target_id, 0, NULL...). 0x28 == ACTION_USEOBJECT.
+constexpr uintptr_t kAddrCSWSObjectAddUseObjectAction = 0x0057C810;
 
 // Engine sentinel for "no object" in AI-queue object-id slots
 // (objectId1/objectId2 of AddMoveToPointAction, the
