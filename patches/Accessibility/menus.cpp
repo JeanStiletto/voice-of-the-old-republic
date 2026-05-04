@@ -40,6 +40,7 @@
 #include "passive_narrate.h"    // Phase 2 lay-off 9a
 #include "probe_world_hover.h"  // Phase 2 lay-off 9-probe (diagnostic)
 #include "strings.h"            // Container loot panel announces
+#include "transitions.h"        // Phase 2 lay-off 7 — Pillar 2 area+room announce
 #include "turn_announce.h"      // Phase 2 ad-hoc — Pillar 2 sub-feature C
 
 // Engine readers + offset constants moved to engine_reads.{h,cpp} +
@@ -3775,6 +3776,13 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     // Q/E are turning the character vs. only the camera). Speaks "north" /
     // "north-east" etc. on sector change with 5° hysteresis.
     acc::turn_announce::Tick();
+
+    // Phase 2 lay-off 7 — Pillar 2 area + room transition announcements.
+    // Per-tick area-pointer + room-index delta detection; speaks "Bereich:
+    // {name}" on area change and "Raum: {name}" on room change. First
+    // observation after player-load also announces (gives orientation cue
+    // on game-load). Self-gates on player+area resolved.
+    acc::transitions::Tick();
 
     // Phase 2 ad-hoc — camera-direction announcement on A/D. KOTOR 1's
     // verified default control scheme: A/D rotate the *camera* around the

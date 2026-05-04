@@ -61,6 +61,9 @@ const char* Get(Id id) {
         case Id::EquipSlotBelt:        return "G\xFCrtel";                       // Gürtel
         case Id::EquipSlotHands:       return "H\xE4nde";                        // Hände
 
+        case Id::FmtTransitionArea:    return "Bereich: %s";
+        case Id::FmtTransitionRoom:    return "Raum: %s";
+
         case Id::DirNorth:             return "Norden";
         case Id::DirNortheast:         return "Nord-Ost";
         case Id::DirEast:              return "Osten";

@@ -121,6 +121,17 @@ enum class Id : int {
     EquipSlotBelt,
     EquipSlotHands,
 
+    // ---- Pillar 2 transitions (room + area). Both take a single `%s`
+    //      with the resolved name. Area names come from CSWSArea.name
+    //      (CExoLocString — localized when the area has a name strref) or
+    //      fall back to the area tag (modder ID like "tar_m02ac"). Room
+    //      names come from CSWSArea.room_names which holds .lyt-room
+    //      identifiers like "m02_03e" — NOT localized; the "Room:"/"Raum:"
+    //      prefix is what tells the user this is a room name and not an
+    //      arbitrary token.
+    FmtTransitionArea,
+    FmtTransitionRoom,
+
     // ---- Octagonal compass directions for turn announcement
     //      (Pillar 2 sub-feature C). German uses traditional
     //      "Norden / Osten / S\xFCden / Westen" forms with hyphenated

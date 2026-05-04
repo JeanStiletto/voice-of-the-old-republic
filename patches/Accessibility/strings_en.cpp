@@ -51,6 +51,9 @@ const char* Get(Id id) {
         case Id::EquipSlotBelt:        return "Belt";
         case Id::EquipSlotHands:       return "Hands";
 
+        case Id::FmtTransitionArea:    return "Area: %s";
+        case Id::FmtTransitionRoom:    return "Room: %s";
+
         case Id::DirNorth:             return "North";
         case Id::DirNortheast:         return "Northeast";
         case Id::DirEast:              return "East";

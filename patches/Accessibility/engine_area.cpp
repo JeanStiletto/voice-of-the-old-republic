@@ -173,6 +173,58 @@ void* GetRoomAt(void* area, const Vector& pos) {
     }
 }
 
+void* GetRoomAtIndexed(void* area, const Vector& pos, int& outIndex) {
+    outIndex = -1;
+    if (!area) return nullptr;
+    Vector local = pos;
+    __try {
+        auto fn = reinterpret_cast<PFN_CSWSAreaGetRoom>(kAddrCSWSAreaGetRoom);
+        return fn(area, &local, &outIndex);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        outIndex = -1;
+        return nullptr;
+    }
+}
+
+bool GetAreaDisplayName(void* area, char* outBuf, size_t bufSize) {
+    if (!area || !outBuf || bufSize < 2) return false;
+    outBuf[0] = '\0';
+    // Localized name first: CExoLocString shape matches CExoString — try
+    // the inline c_string at +0x150, fall back to TLK strref at +0x154.
+    if (ExtractTextOrStrRef(area, kAreaNameLocOffset,
+                            kAreaNameLocOffset + 4, outBuf, bufSize) &&
+        outBuf[0] != '\0') {
+        return true;
+    }
+    // Modder-assigned tag (CExoString at +0x158) — better "tar_m02ac" than
+    // empty silence per feedback_never_silence_fallback_announcement.
+    __try {
+        return ReadCExoString(area, kAreaTagOffset, outBuf, bufSize);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool GetRoomDisplayName(void* area, int roomIndex,
+                        char* outBuf, size_t bufSize) {
+    if (!area || !outBuf || bufSize < 2 || roomIndex < 0) return false;
+    outBuf[0] = '\0';
+    __try {
+        auto* base = reinterpret_cast<unsigned char*>(area);
+        int roomCount = static_cast<int>(*reinterpret_cast<uint32_t*>(
+            base + kAreaRoomCountOffset));
+        if (roomIndex >= roomCount) return false;
+        void* namesArray = *reinterpret_cast<void**>(
+            base + kAreaRoomNamesOffset);
+        if (!namesArray) return false;
+        size_t entryOffset =
+            static_cast<size_t>(roomIndex) * kCExoStringStride;
+        return ReadCExoString(namesArray, entryOffset, outBuf, bufSize);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 AreaObjectIterator::AreaObjectIterator(void* area)
     : handles_(nullptr), size_(0), index_(0), objectArray_(nullptr) {
     if (!area) return;

@@ -144,6 +144,38 @@ bool GetObjectPosition(void* gameObject, Vector& out);
 // (stride 0x4c) is not surfaced until a Phase 2 consumer needs it.
 void* GetRoomAt(void* area, const Vector& pos);
 
+// Same as GetRoomAt but also captures the room index the engine resolved
+// (CSWSArea::GetRoom's third arg is `int* outRoomIndex`, NULL-passable).
+// Index is -1 on miss / fault; usable as the lookup key for room_names[].
+// Returns the CSWSRoom* (or nullptr) just like GetRoomAt.
+void* GetRoomAtIndexed(void* area, const Vector& pos, int& outIndex);
+
+// Player-facing display name for an area. Reads CSWSArea.name
+// (CExoLocString at +0x150) — tries the inline string first, falls back
+// to a TLK lookup of the strref at +0x154; if both empty, falls back to
+// CSWSArea.tag (CExoString at +0x158, modder-assigned identifier).
+//
+// Returns false on null area, every fallback empty, or any read fault
+// (SEH-guarded internally). outBuf must be at least bufSize bytes; on
+// success a null-terminated string is written.
+bool GetAreaDisplayName(void* area, char* outBuf, size_t bufSize);
+
+// Read the i-th room name from CSWSArea.room_names[index]. The engine
+// stores room_names as a `CExoString*` array (stride 8 — char* +
+// uint32 length per CExoString) indexed by the same room index that
+// GetRoomAtIndexed yields and that GetRoom's third arg captures.
+//
+// Note: room names are NOT localized — they are .lyt-room identifiers
+// like "m02_03e" or "stunt_01_main". The transitions consumer wraps
+// the result with a localized "Room:" prefix to keep meaning clear.
+//
+// Returns false on null area, out-of-range index (negative or >=
+// room_count at +0x268), null array pointer, or any read fault. outBuf
+// must be at least bufSize bytes; on success a null-terminated string
+// is written.
+bool GetRoomDisplayName(void* area, int roomIndex,
+                        char* outBuf, size_t bufSize);
+
 // Resolve the player-facing localized name for any game object whose kind
 // is one of the six Pillar 4 categories (Door, Creature, Placeable, Item,
 // Waypoint, Trigger). The chain is per-kind:
@@ -240,11 +272,19 @@ constexpr uintptr_t kAddrCGameObjectArrayGetGameObject = 0x004D8230;
 // ResolveClientObjectHandle's docs.
 constexpr uintptr_t kAddrCClientExoAppGetGameObject = 0x005ED580;
 
-// CSWSArea field offsets (investigation Q5, CONFIRMED).
+// CSWSArea field offsets. game_objects + rooms verified live (lay-off 1+4);
+// name + tag + room_count from Lane's SARIF DATATYPE entry for CSWSArea
+// (k1_win_gog_swkotor.exe.xml line 13428, SIZE=0x2d4) — same DB the rooms +
+// game_objects offsets came from. Per memory:
+// project_ghidra_gog_steam_bytes_match the Steam+GoG layouts agree.
 constexpr size_t kAreaGameObjectsOffset      = 0x190;
 constexpr size_t kAreaGameObjectCountOffset  = 0x194;
 constexpr size_t kAreaRoomsOffset            = 0x230;  // inline CSWSRoom[]
-constexpr size_t kAreaRoomNamesOffset        = 0x25c;  // CExoString* (untested)
+constexpr size_t kAreaNameLocOffset          = 0x150;  // CExoLocString name
+constexpr size_t kAreaTagOffset              = 0x158;  // CExoString tag (fallback)
+constexpr size_t kAreaRoomNamesOffset        = 0x25c;  // CExoString* room_names
+constexpr size_t kAreaRoomCountOffset        = 0x268;  // ulong room_count
+constexpr size_t kCExoStringStride           = 0x8;    // char* + uint32 length
 
 // CSWSRoom inline-array stride. Per investigation §"point-in-room query":
 // "room stride is 0x4c bytes per GetRoom decomp". Used when deriving a

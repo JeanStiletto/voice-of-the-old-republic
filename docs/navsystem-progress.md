@@ -10,7 +10,7 @@
 
 - **Phase 0 — Refactor.** *Complete (2026-05-03).* All six lay-offs landed: `core_dllmain` + `engine_input`, `engine_offsets` + `engine_reads`, `engine_panels`, `engine_manager`, rename to `menus.cpp`, and the user-driven menu regression test ("everything working as before. no new bugs.").
 - **Phase 1 — Foundation.** *Complete (2026-05-03).* All planned lay-offs landed: `engine_player` (1), CExoSound singleton trace (2), `audio_bus` (3), test fixture + exit gate (4), atmospheric-pass curation + `audio_cues.h` wiring (5), `core_settings` stub (7). Lay-off 6 (`audio_listener`) was dropped at lay-off 4 — engine default listener proved camera-anchored at the gate.
-- **Phase 2 — Playable baseline.** *In progress (started 2026-05-03).* Lay-offs 1-9 landed; player-control-mode blocker **resolved 2026-05-04** (commit `d578fbe`). Toggle is `CSWPlayerControl::SetEnabled @ 0x006792e0` — wraps a creature-mode write that pairs with `CSWCCreature::SwitchMode`; flip 0 around AI-action dispatch and the per-tick input handler skips the movement-clobber block. Interact path also re-routed: dropped the engine's two-click `HandleMouseClickInWorld` pipeline (which needs a cursor-built action descriptor at `+0x4c8` we couldn't synthesise) for a direct `CSWSObject::AddUseObjectAction @ 0x0057c810` call — same primitive NWScript's `ActionInteractObject` uses. Verified in-game: cycle (`,`/`.`) → Enter opens the Feldkiste; Q/E → Enter now also works after fixing the client-vs-server handle namespace mismatch in the LastTarget fallback. Architectural picture unchanged: in-world target cycle delegated to engine's Q/E (`SelectNearestObject @0x005fb050`) → `LastTarget` → `passive_narrate`; A/D camera-direction announce; W character-facing announce. **Phase 2 exit gate** still pending — needs a solo playthrough confirming end-to-end navigation + transition announcements (lay-off 7).
+- **Phase 2 — Playable baseline.** *In progress (started 2026-05-03).* Lay-offs 1-9 landed; player-control-mode blocker **resolved 2026-05-04** (commit `d578fbe`). Toggle is `CSWPlayerControl::SetEnabled @ 0x006792e0` — wraps a creature-mode write that pairs with `CSWCCreature::SwitchMode`; flip 0 around AI-action dispatch and the per-tick input handler skips the movement-clobber block. Interact path also re-routed: dropped the engine's two-click `HandleMouseClickInWorld` pipeline (which needs a cursor-built action descriptor at `+0x4c8` we couldn't synthesise) for a direct `CSWSObject::AddUseObjectAction @ 0x0057c810` call — same primitive NWScript's `ActionInteractObject` uses. Verified in-game: cycle (`,`/`.`) → Enter opens the Feldkiste; Q/E → Enter now also works after fixing the client-vs-server handle namespace mismatch in the LastTarget fallback. Architectural picture unchanged: in-world target cycle delegated to engine's Q/E (`SelectNearestObject @0x005fb050`) → `LastTarget` → `passive_narrate`; A/D camera-direction announce; W character-facing announce. **Lay-off 7** (Pillar 2 transitions) **build-verified 2026-05-04**: per-tick area-pointer + room-index delta announces "Bereich: …" / "Raum: …" via Tolk; `AddMoveToModuleMovie` pre-load hook parked as a follow-up (function entry too small for a clean detour). **Phase 2 exit gate** still pending — needs a solo playthrough confirming end-to-end navigation + transition announcements.
 - **Phase 3 — Pillar 1.** Pending.
 - **Phase 4 — Pillar 2 polish + view mode.** Pending.
 - **Phase 5 — Pillar 3 polish.** Pending.
@@ -35,7 +35,7 @@ Make the game playable end-to-end via cycle-and-autowalk. Lands the four pieces 
 4. **Pillar 4 announce** — `-` keypress speaks "name + direction (clock position) + distance (m)" via Tolk. First user-perceptible Phase 2 milestone. Per-type name resolution (Door, NPC, Container, Item, Landmark, Transition) lands here. *Closed (this lay-off).*
 5. **`guidance_autowalk.{h,cpp}`** — `AddMoveToPointAction` wrapper. Cross-cutting subsystem callable with a `Vector` destination. *Closed.*
 6. **Pillar 4 → guidance binding** — `Shift+-` pathfind to currently-focused object via guidance/autowalk. With autowalk-only (beacon comes in Phase 5). *Closed.*
-7. **Pillar 2 transitions** — room transition (per-tick `GetRoomAt` delta, speak room name) + area transition (hook `CClientExoApp::AddMoveToModuleMovie @0x5edb50` for "loading: …", then on area-enter speak the new area name).
+7. **Pillar 2 transitions** — room transition (per-tick `GetRoomAt` delta, speak room name) + area transition (hook `CClientExoApp::AddMoveToModuleMovie @0x5edb50` for "loading: …", then on area-enter speak the new area name). *Build-verified 2026-05-04 with the post-load area + per-room delta paths; the pre-load `AddMoveToModuleMovie` hook is parked as a follow-up (function entry is only 8 bytes, too tight for a clean 5-byte detour cut). In-game verification pending.*
 8. **Phase 2 exit gate** — solo playthrough of one area confirms cycle-and-autowalk loop. Phase 1 audio test fixture removed once a real Phase 2 consumer (lay-off 4 or 7) demonstrates 3D audio in production code.
 9. **Interaction model — Layers A+B** *(scoped 2026-05-04 — see `docs/navsystem-longterm-plan.md` "Cross-cutting — Interaction model")*:
    - **9-probe** (parallel single-trip RE step) — *Closed 2026-05-04 (in-game data captured).* Diagnostic in `patches/Accessibility/probe_world_hover.{h,cpp}` ran live (`patch-20260504-063846.log`). Verdict: **`LastTarget` populates organically** as the player walks (transitions captured: `0x7f000000` ↔ `0x80000004`, `0x80000004` ↔ `0x800000c6` near interactables) — Layer A unblocked. **`MoveMouseToPosition(mgr, 320, 240)` does NOT change world-hover state** (`target_changed=0` and `mover_changed=0` across 8 Alt+P warps) — Layer C dropped. Probe stays in tree until lay-off 9a lands as a working pair (LastTarget watcher *should* fire on the same handles the probe logged); deletable thereafter as a single commit. Investigation Q6 + long-term plan updated 2026-05-04.
@@ -315,6 +315,81 @@ Watchdog idle-cost is one bool check per `OnUpdate` tick; only fires when a rece
 - **Run-vs-walk knob** — currently locked to walk per lay-off 5's default. If user feedback shows autowalk is too slow for cross-area moves, lift `WalkTo` to take an optional `run` parameter and decide policy at this callsite (e.g. `run = (distance > threshold)`).
 - **Rebind `Alt+-` diagnostic to a non-Alt combination** to silence the Windows menu-activation "ding" sound. Candidate: `Ctrl+-` (no menu interaction in Windows), or unmodified `=`. Keep the Force path as a permanent diagnostic; just on a quieter modifier.
 - **Combat behaviour while input-disabled** — during the 3-second auto-restore window the creature is AI-driven; in combat the AI script may engage hostiles autonomously. Not yet observed (tested on tutorial Endar Spire, no combat). Watch for it once the user reaches a combat-relevant area; if intrusive, gate `SetEnabled(false)` on `combat_mode == 0`.
+
+**Lay-off 7** — Pillar 2 area + room transition announcements. *Build verified 2026-05-04 (`build-20260504-191630.log`); in-game verification pending.*
+
+The "you arrived in {area}" / "{room} you just walked into" half of Pillar 2. Per-tick area-pointer + room-index delta detection in a new `transitions.{h,cpp}` (~95 lines) module wired into `OnUpdate` next to `turn_announce::Tick()`. No hooks in this lay-off — pure read-side polling on top of the engine_area room-cluster slice that landed alongside it.
+
+### Room-cluster slice in `engine_area.{h,cpp}`
+
+Three additions (foundation chunk the lay-off plan called out as part of Pillar 2 transitions):
+
+- **`GetRoomAtIndexed(area, pos, &outIndex)`** — same `CSWSArea::GetRoom @0x4bb600` thiscall as the existing `GetRoomAt`, but passes a non-null `int*` as the third arg so the engine writes the room index directly. Avoids pointer-arithmetic on `(room_ptr - rooms_base) / 0x4c` to derive the index — the engine has it on hand, just hand us the slot.
+- **`GetAreaDisplayName(area, ...)`** — reads `CSWSArea.name` (CExoLocString at +0x150). Tries the inline `c_string` first, falls back to a TLK strref lookup at +0x154; if both empty, falls back to `CSWSArea.tag` (CExoString at +0x158, modder-assigned identifier like `tar_m02ac`) per `feedback_never_silence_fallback_announcement`. CExoLocString matches CExoString shape at the byte level so `engine_reads::ExtractTextOrStrRef` handles both paths.
+- **`GetRoomDisplayName(area, roomIndex, ...)`** — reads `CSWSArea.room_names[index]` from the `CExoString*` array at +0x25c, stride 8. Bounds-checks against `room_count` at +0x268. Room names are NOT localized — they are .lyt-room identifiers like `m02_03e` — so the consumer wraps them with a "Raum: " / "Room: " prefix so the user can tell what the spoken token represents.
+
+Offsets sourced from Lane's SARIF DATATYPE entry for CSWSArea (`docs/llm-docs/re/k1_win_gog_swkotor.exe.xml` line 13428, `SIZE=0x2d4`) — same DB the already-verified `game_objects` (+0x190) and `rooms` (+0x230) offsets came from. Per memory `project_ghidra_gog_steam_bytes_match` the Steam + GoG layouts agree, so the new offsets need no per-build splitting.
+
+### `transitions.{h,cpp}` — the consumer
+
+State: two module statics (`g_prev_area` pointer, `g_prev_room_idx` int). Each `Tick()`:
+
+1. Gate on `GetPlayerPosition` — silent in menus / chargen / pre-spawn / between loads. Resets state on player loss so a re-load picks up cleanly (matches `camera_announce`'s reset-on-gate-failure discipline).
+2. Gate on `GetCurrentArea` — non-fatal if just briefly null mid-load (don't reset prev_area; pointer is stable across the brief windows where GetCurrentArea returns null mid-frame, and resetting would re-fire the area announce next tick).
+3. If `area != g_prev_area`: speak `"Bereich: {name}"`, update prev_area, reset prev_room_idx.
+4. Resolve current room via `GetRoomAtIndexed`; if `room_index != g_prev_room_idx`: speak `"Raum: {name}"`, update prev_room_idx.
+
+Speech uses `interrupt=false` — transitions shouldn't talk over an in-flight cycle / interact / passive_narrate announcement. Tolk queues by default.
+
+### First-observation behaviour
+
+The first observation after DLL load (or after a player loads in) speaks. There's no separate first-tick suppression. Rationale: when the player loads a save (or the DLL is injected mid-game), the user wants to hear "you're now in {area} / {room}" immediately as an orientation cue. Silence on initial state is unhelpful per `feedback_never_silence_fallback_announcement`. Same UX choice Pillar 4's auto-announce-on-cycle made — confirm where the player is, always.
+
+### Strings
+
+Two new IDs in `strings.h`, populated in `strings_en.cpp` + `strings_de.cpp`:
+
+- `FmtTransitionArea` — `"Bereich: %s"` / `"Area: %s"`.
+- `FmtTransitionRoom` — `"Raum: %s"` / `"Room: %s"`.
+
+The "Bereich:" / "Raum:" prefix is what tells the user *what* they just heard — area names blend with NPC names without context, room identifiers like `m02_03e` would be unparseable bare. Following the existing `FmtAnnounceWithClock` template style.
+
+### Decision — defer the `AddMoveToModuleMovie` pre-load hook
+
+The longterm plan called out hooking `CClientExoApp::AddMoveToModuleMovie @0x5edb50` for a "Loading: {dest}" announcement *before* the loading screen plays. We deferred it from this lay-off:
+
+- Function entry at `0x005edb50` is only 8 bytes (per Lane's XML `END="005edb57"`); a clean 5-byte detour cut leaves only 3 bytes of margin, no room for a non-relocatable instruction without overflowing into the next function.
+- Lane's XML shows a second range at `0x006027a0`-`0x006027b3` (19 bytes) — likely the actual function body via a thunk. Viable mid-function hook target, but verifying that requires headless Ghidra `DumpBytes` against both ranges and decoding the thunk shape — work that doesn't make sense to chain into this lay-off.
+- The post-load area-name announce already covers the core "you arrived in {area}" UX. The pre-load hook adds "knowing why the screen is black for the next 10 seconds" — useful but not blocking the Phase 2 exit gate.
+
+Parked as a follow-up. If user testing shows the pre-load context is missed, revisit with the mid-function hook on `0x6027a0`.
+
+### Files touched
+
+- `patches/Accessibility/engine_area.{h,cpp}` — three new public APIs (`GetRoomAtIndexed`, `GetAreaDisplayName`, `GetRoomDisplayName`) + four new offset constants (`kAreaNameLocOffset`, `kAreaTagOffset`, `kAreaRoomCountOffset`, `kCExoStringStride`).
+- `patches/Accessibility/transitions.{h,cpp}` — new files. ~95 lines total. No external API beyond `Tick()`.
+- `patches/Accessibility/strings.h` — two new IDs (`FmtTransitionArea`, `FmtTransitionRoom`).
+- `patches/Accessibility/strings_en.cpp` + `strings_de.cpp` — translations for the two new IDs.
+- `patches/Accessibility/menus.cpp` — `#include "transitions.h"` + `acc::transitions::Tick()` call inside `OnUpdate`, sequenced after `turn_announce::Tick()` (closest Pillar 2 sibling).
+
+No `hooks.toml` changes (pure read-side polling). No new `exports.def` entries. No engine indirection at runtime beyond the existing `CSWSArea::GetRoom` thiscall. Build clean: 26 .cpp files (was 25 — `transitions.cpp` added), DLL exports verified.
+
+### In-game verification needed (next session start)
+
+1. **Game-load orientation announce** — load a save in any area; expect to hear `"Bereich: {area name}"` followed by `"Raum: {room name}"` as the first two announcements after the player creature spawns.
+2. **Cross-room walk** — walk across a room boundary inside the same area (Endar Spire's tutorial corridors have multiple rooms). Expect a single `"Raum: {new room name}"` announcement on each crossing; no spurious announces while idle in the same room.
+3. **Area-area transition** — walk through a transition trigger (e.g. door to next module). Expect `"Bereich: {new area name}"` after the loading screen, followed by the starting room name.
+4. **Empty-room area** — some areas have a single unnamed room covering the whole module; expect the area announce but no room announce (logged as `Transition: room N empty/unresolved` in `logs/patch.log`).
+5. **Tag fallback** — areas with no localized name should speak the modder tag (e.g. `tar_m02ac`) prefixed with `Bereich:`. Less pretty but informative; documents the fallback path is reachable.
+
+Logs to watch: every `Transition: …` line in `logs/patch.log`. Both speech-fired and resolution-failed events log; correlate against actual game state.
+
+### Follow-ups parked from lay-off 7
+
+- **`AddMoveToModuleMovie` pre-load announce** — see "Decision — defer" above. Mid-function hook on `0x6027a0` once bytes verified.
+- **Cycle-scope tightening** — the cycle scan (`filter_objects.cpp`) is still whole-area, not "current room + LOS extension" per the plan. Lay-off 7 lands the room-cluster primitive (`GetRoomAtIndexed` + `GetRoomDisplayName`) but doesn't tighten the cycle filter — that's a parked follow-up to lay-off 4 already noted at the bottom of this section. Now actually unblocked: filter_objects can call `GetRoomAtIndexed` for both player position and each candidate object, gate on same-room (with optional LOS extension via the to-be-added walkmesh edge slice in Phase 3).
+- **Spurious-announce guard** — current implementation compares area pointers directly. If the engine ever swaps area pointers under us without changing the actual area (mid-area state restructuring), we'd announce when we shouldn't. Mitigation: also compare resolved area names string-wise. Adds complexity for a case we haven't observed. Defer until reproducible.
+- **Area name caching** — every Tick() does a fresh `GetAreaDisplayName` resolution into a 128-byte stack buffer when an area change fires. Cheap (one event per area transition, maybe one per minute), but if Phase 4's view-mode wants to show the area name elsewhere a cached resolution helper would centralise it.
 
 ---
 
@@ -679,10 +754,10 @@ A second symptom — audio stutter when pressing *Schließen* in Options — has
 
 ## Next session: where to start
 
-Phase 2 is in progress. Lay-offs 1–6 + 9 closed; player-control blocker resolved (`d578fbe`). Two open items remain before the Phase 2 exit gate:
+Phase 2 is in progress. Lay-offs 1–7 + 9 build-verified; player-control blocker resolved (`d578fbe`). Two open items remain before the Phase 2 exit gate:
 
-1. **Lay-off 7 — Pillar 2 transitions** (room/area announce). Not started. The room-cluster slice of `engine_area` lands here (per-tick `GetRoomAt` delta → speak room name; hook `CClientExoApp::AddMoveToModuleMovie @0x5edb50` for "loading: …" then on area-enter speak the new area name). This is the next session's primary work.
-2. **Phase 2 exit gate (lay-off 8)** — solo playthrough of one area confirming the cycle-and-autowalk-and-interact loop, plus transition announcements. Lay-off 7 + a play session closes Phase 2.
+1. **Lay-off 7 in-game verification.** Code landed (build `build-20260504-191630.log` clean, 26 .cpp files). Need a single in-game session to confirm: game-load orientation announce ("Bereich: …" then "Raum: …"), cross-room walk (single room announce per crossing, no spurious announces while idle), area-area transition (announces after the loading screen). Tests + log lines listed in the lay-off 7 entry above. If this session passes, lay-off 7 closes; if room names look unparseable as resref-style identifiers (likely), follow-up: prefer `room_names` only when human-readable, otherwise speak the room *index* + cardinal-direction-from-area-centre as a synthesised label.
+2. **Phase 2 exit gate (lay-off 8)** — solo playthrough of one area confirming the cycle-and-autowalk-and-interact loop, plus transition announcements. Lay-off 7 verification + a play session closes Phase 2.
 
 Verified working in-game (commits up through `d578fbe`):
 - `,`/`.` map-side cycle (kept for Pillar 3 marker scan in Phase 5/6).
@@ -696,7 +771,7 @@ Verified working in-game (commits up through `d578fbe`):
 
 **Lay-off 4 follow-ups (parked, not blocking lay-off 7):**
 
-- Cycle scope — the area scan is still whole-area, not "current room + LOS extension" per the plan. Distances of 40-80m to doors across the Spire are fine for a stress-test but produce noisy listings in dense areas. Lay-off 7 (Pillar 2 transitions) will land the room-cluster slice and tighten the cycle scope here.
+- Cycle scope — the area scan is still whole-area, not "current room + LOS extension" per the plan. Distances of 40-80m to doors across the Spire are fine for a stress-test but produce noisy listings in dense areas. Lay-off 7 (Pillar 2 transitions) landed the room-cluster slice (`GetRoomAtIndexed`); cycle filter can now gate on same-room. Tightening lifted into a follow-up commit after lay-off 7 verifies — see lay-off 7's "Follow-ups parked" above.
 - `last_name` concatenation for creatures (NPC main-cast surname display).
 - Camera-relative clock-position option as a `core_settings` knob.
 
