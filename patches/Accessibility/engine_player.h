@@ -95,6 +95,32 @@ void* GetPlayerServerCreature();
 // stored CExoString is empty (main-menu / pre-chargen state).
 bool GetPlayerCharacterName(char* outBuf, size_t bufSize);
 
+// Resolve the *active leader's* client-side CSWCCreature. Mirrors the
+// chain in GetPlayerServerObject but stops at the client pointer (no
+// chain through +0xf8 to the server object). Walks AppManager →
+// CClientExoApp → GetPlayerCreature() (which the engine wires to the
+// currently-controlled party member, *not* the chargen PC — Tab-swapping
+// to Trask makes this return Trask's CSWCCreature, as confirmed by the
+// DiagSelect Tab probe). Returns nullptr at any null link or fault.
+void* GetClientLeader();
+
+// Resolve the active leader's display name. Calls GetPlayerServerCreature
+// (server-side) → reads first_name + tag via the same path Tab announce
+// uses; falls back to GetPlayerCharacterName when the creature stats
+// name is empty (the PC chargen creature has empty first_name+tag —
+// only its CClientExoApp::PlayerCharacterName slot is populated).
+//
+// Companion NPCs (Trask, Carth, ...) resolve via the first_name path
+// and never reach the fallback. Used for diagnostic logging where we
+// need to know which character the engine considers leader at the
+// moment of an action — `GetPlayerCharacterName` alone always returns
+// the PC's chargen name regardless of who's leading, which made
+// pre-2026-05-05 leader logs in Picker / Radial diagnostics misleading.
+//
+// Returns true on non-empty name written to outBuf. Buffer is always
+// NUL-terminated on entry (outBuf[0] = '\0' even on early-return).
+bool GetActiveLeaderName(char* outBuf, size_t bufSize);
+
 // Toggle the per-tick player-input movement clobber. enabled=true =
 // player drives the creature directly (vanilla); enabled=false = input
 // loop skips the per-tick movement override, AI actions execute

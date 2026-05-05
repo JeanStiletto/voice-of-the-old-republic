@@ -11,7 +11,9 @@
                               // kVtableCAurGUIStringInternal, CExoString
 #include "engine_player.h"    // kAddrAppManagerPtr,
                               // kAppManagerClientAppOffset,
-                              // kClientExoAppInternalOffset
+                              // kClientExoAppInternalOffset,
+                              // kClientObjectServerObjectOffset,
+                              // GetClientLeader (for Security skill check)
 #include "log.h"
 
 namespace {
@@ -73,6 +75,27 @@ constexpr uintptr_t kAddrDoTargetAction   = 0x00689610;
 // engine_picker use. (this, handle) -> CGameObject*.
 constexpr uintptr_t kAddrCClientGetGameObject = 0x005ED580;
 
+// CSWCCreatureStats::GetCanUseSkill @ 0x006477e0 — bool __thiscall
+// (CSWCCreatureStats*, ushort skill_idx). Used by CSWCDoor::GetTargetActions
+// to gate the Security row (skill_idx=6 = Security).
+constexpr uintptr_t kAddrGetCanUseSkill = 0x006477E0;
+
+// CSWCCreature.lvl_up_stats @ +0x2f8 → CSWCLevelUpStats*. The CSWC-
+// CreatureStats inline-member sits at +0x00 of CSWCLevelUpStats, so this
+// pointer can be reinterpreted directly as CSWCCreatureStats*. Verified:
+// swkotor.exe.h:5984 (lvl_up_stats), :6332 (creature_stats inline at +0).
+constexpr size_t kCreatureLvlUpStatsOffset = 0x2F8;
+
+// CSWSDoor.field_0x2d8 — the second Security gate from CSWCDoor::Get-
+// TargetActions decomp: must be 0 for the Security row to populate.
+// Per the door decomp, the field is read as `*(int *)(server_door + 0x2d8)`
+// and compared `== 0`.
+constexpr size_t kServerDoorSecurityGateOffset = 0x2D8;
+
+// Skill index for "Security" — door decomp passes literal `6` to
+// GetCanUseSkill. Re-stated as a constant for log readability.
+constexpr int kSkillSecurity = 6;
+
 // GameObjectMethods vtable indices we care about for runtime-class probing.
 // Layout from swkotor.exe.h:14638. Each entry is one __thiscall pointer
 // (4 bytes on x86); offsets are byte offsets into the vtable.
@@ -107,6 +130,7 @@ constexpr size_t kDoorField17Offset        = 0x138;
 typedef void (__thiscall* PFN_RowOp)(void* this_, int row);
 typedef void* (__thiscall* PFN_GetGameObject)(void* exoApp, uint32_t handle);
 typedef void* (__thiscall* PFN_AsClass)(void* gameObject);
+typedef bool (__thiscall* PFN_GetCanUseSkill)(void* stats, uint16_t skillIdx);
 
 void* GetClientExoApp() {
     __try {
@@ -616,6 +640,68 @@ void LogTargetDiag(uint32_t targetClient, const char* tag) {
             "is_hostile=%d state=%d field17=%d",
             t, asDoor, cannotBash, canUseActions, isHostile, state, field17);
 
+        // Server-side door's Security gate — `*(int *)(server_door + 0x2d8)`
+        // must be 0 for CSWCDoor::GetTargetActions to add the Security row.
+        // Reach via the same +0xf8 chain we use for player creature; the
+        // SWS object lives at the same offset for every client object.
+        void* serverDoor = nullptr;
+        __try {
+            serverDoor = *reinterpret_cast<void**>(
+                reinterpret_cast<unsigned char*>(asDoor) +
+                kClientObjectServerObjectOffset);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            serverDoor = nullptr;
+        }
+        int32_t securityGate = -1;
+        bool gateRead = false;
+        if (serverDoor) {
+            gateRead = ReadInt32(serverDoor,
+                                 kServerDoorSecurityGateOffset, &securityGate);
+        }
+        if (gateRead) {
+            acclog::Write(
+                "Radial.Diag[%s]: server_door=%p +0x2d8(security_gate)=%d "
+                "(must be 0 to add Security row)",
+                t, serverDoor, securityGate);
+        } else {
+            acclog::Write(
+                "Radial.Diag[%s]: server_door=%p — security_gate read failed",
+                t, serverDoor);
+        }
+
+        // Active leader's Security skill check — same call CSWCDoor::Get-
+        // TargetActions makes: GetCanUseSkill(&leader->lvl_up_stats->
+        // creature_stats, 6). lvl_up_stats is a pointer at leader+0x2f8;
+        // CSWCCreatureStats is the inline first member of CSWCLevelUpStats
+        // so the pointer can be passed straight to GetCanUseSkill.
+        void* clientLeader = acc::engine::GetClientLeader();
+        int leaderSecurity = -1;
+        if (clientLeader) {
+            void* lvlUpStats = nullptr;
+            __try {
+                lvlUpStats = *reinterpret_cast<void**>(
+                    reinterpret_cast<unsigned char*>(clientLeader) +
+                    kCreatureLvlUpStatsOffset);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                lvlUpStats = nullptr;
+            }
+            if (lvlUpStats) {
+                __try {
+                    auto fn = reinterpret_cast<PFN_GetCanUseSkill>(
+                        kAddrGetCanUseSkill);
+                    leaderSecurity = fn(lvlUpStats,
+                                        static_cast<uint16_t>(kSkillSecurity))
+                                     ? 1 : 0;
+                } __except (EXCEPTION_EXECUTE_HANDLER) {
+                    leaderSecurity = -1;
+                }
+            }
+        }
+        acclog::Write(
+            "Radial.Diag[%s]: leader=%p has_security_skill=%d "
+            "(skill 6, gates the Security row in CSWCDoor::GetTargetActions)",
+            t, clientLeader, leaderSecurity);
+
         // Annotate which precondition would fail — saves cross-referencing
         // the GetTargetActions decomp every time a log lands.
         if (canUseActions == 0) {
@@ -636,6 +722,19 @@ void LogTargetDiag(uint32_t targetClient, const char* tag) {
                 "Radial.Diag[%s]: door precondition fail — field17=%d "
                 "(blocks Bash row regardless of cannot_bash / can_use_actions)",
                 t, field17);
+        }
+        if (gateRead && securityGate != 0) {
+            acclog::Write(
+                "Radial.Diag[%s]: door precondition fail — server_door+0x2d8 "
+                "= %d != 0 (door rejects Security row at the server-side gate)",
+                t, securityGate);
+        }
+        if (canUseActions != 0 && leaderSecurity == 0) {
+            acclog::Write(
+                "Radial.Diag[%s]: door precondition fail — active leader "
+                "lacks Security skill (skill 6); Security row skipped even "
+                "when door's preconditions allow it",
+                t);
         }
     }
 }

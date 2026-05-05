@@ -332,9 +332,12 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot) {
         // empty, whether the target is in a "no actions remaining" final
         // state (open door, used placeable) or in a state where the engine
         // *should* have surfaced something but didn't (locked door, leader
-        // skill mismatch).
+        // skill mismatch). GetActiveLeaderName resolves the *currently-
+        // controlled* party member — Tab-swapping to Trask is reflected
+        // here, unlike GetPlayerCharacterName which always returns the
+        // PC's chargen name.
         char leaderName[64] = "";
-        acc::engine::GetPlayerCharacterName(leaderName, sizeof(leaderName));
+        acc::engine::GetActiveLeaderName(leaderName, sizeof(leaderName));
         acclog::Write(
             "Picker: empty-descriptor diag — leader=[%s] target=0x%08x",
             leaderName[0] ? leaderName : "?", targetClient);

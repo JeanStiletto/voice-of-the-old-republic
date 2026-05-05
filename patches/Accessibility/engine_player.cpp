@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstdint>
 
+#include "engine_area.h"   // GetObjectName — used by GetActiveLeaderName
+                           // to read first_name+tag from the server creature
 #include "engine_reads.h"  // ReadCExoString
 
 namespace acc::engine {
@@ -100,6 +102,41 @@ void* GetPlayerArea() {
 
 void* GetPlayerServerCreature() {
     return GetPlayerServerObject();
+}
+
+void* GetClientLeader() {
+    __try {
+        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
+        if (!appManager) return nullptr;
+        void* exoApp = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(appManager) +
+            kAppManagerClientAppOffset);
+        if (!exoApp) return nullptr;
+        auto fn = reinterpret_cast<PFN_GetPlayerCreature>(
+            kAddrGetPlayerCreature);
+        return fn(exoApp);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+bool GetActiveLeaderName(char* outBuf, size_t bufSize) {
+    if (!outBuf || bufSize < 2) return false;
+    outBuf[0] = '\0';
+
+    // Try the server creature's first_name + tag first (companions only —
+    // Trask/Carth/etc. have these populated). Same path DiagSelect's Tab
+    // probe uses; we lean on engine_area::GetObjectName for the read.
+    void* server = GetPlayerServerObject();
+    if (server) {
+        GetObjectName(server, outBuf, bufSize);
+        if (outBuf[0] != '\0') return true;
+    }
+
+    // Empty name → the PC chargen creature, which carries its name on
+    // CClientExoApp instead of the creature stats. Same fallback chain
+    // DiagSelect uses.
+    return GetPlayerCharacterName(outBuf, bufSize);
 }
 
 bool GetPlayerCharacterName(char* outBuf, size_t bufSize) {
