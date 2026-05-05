@@ -97,4 +97,14 @@ PanelKind IdentifyPanel(void* panel);
 // Convenience predicate: true iff `panel` identifies as PanelKind::InGameMenu.
 bool IsPanelKindInGameMenu(void* panel);
 
+// True iff any panel in the manager's panels[] identifies as one of the
+// CSWGuiDialog* surfaces (DialogCinematic, DialogCinematicCopy,
+// DialogComputer, DialogComputerCamera). Used by input gates that can't
+// rely on GetForegroundPanel alone — during reply turns the engine swaps
+// fg to a transient Fade overlay while the actual dialog panel stays in
+// panels[]. Mirrors the panels[] scan in MonitorDialogReplies (menus.cpp);
+// dialog panels are removed from the stack when conversations end (proven
+// by that monitor's disarm path), so this does not stale-block.
+bool HasActiveDialogPanel();
+
 }  // namespace acc::engine

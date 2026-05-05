@@ -340,6 +340,20 @@ void PollHotkey() {
     //
     // Always logs the gate decision so future "Enter did nothing" reports
     // surface here directly without another instrumentation pass.
+
+    // Stack-scan blocker: during dialog reply turns the engine briefly swaps
+    // fg to a transient Fade overlay while the actual CSWGuiDialog* panel
+    // stays in panels[]. The fg-only blacklist below misses that window —
+    // verified in patch-20260505-050419.log lines 2511→2531: BLOCKED on
+    // DialogCinematicCopy, then 1s later ALLOW on Fade dispatched
+    // [Dialoge end_trask] action 0x3ea on the in-world target. Mirrors the
+    // panels[] scan that MonitorDialogReplies already uses; dialog panels
+    // do not stay stale (that monitor's disarm path proves it).
+    if (acc::engine::HasActiveDialogPanel()) {
+        acclog::Write("Interact: Enter gate -- BLOCKED, dialog panel in stack");
+        return;
+    }
+
     void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
     if (mgr) {
         void* fgPanel = acc::engine::GetForegroundPanel(mgr);
