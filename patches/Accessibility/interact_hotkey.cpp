@@ -6,6 +6,7 @@
 
 #pragma comment(lib, "user32.lib")
 
+#include "actionbar_menu.h"
 #include "cycle_state.h"
 #include "engine_area.h"
 #include "engine_input.h"   // kInputEnter1 / kInputNavUp/Down/Left/Right
@@ -380,18 +381,34 @@ void PollHotkey() {
     static bool s_prevDown  = false;
     static bool s_prevLeft  = false;
     static bool s_prevRight = false;
+    static bool s_prevK4    = false;
+    static bool s_prevK5    = false;
+    static bool s_prevK6    = false;
+    static bool s_prevK7    = false;
 
     bool enter = down(VK_RETURN);
     bool upK   = down(VK_UP);
     bool dnK   = down(VK_DOWN);
     bool ltK   = down(VK_LEFT);
     bool rtK   = down(VK_RIGHT);
+    // Top-row digits 4..7 — the engine binds these to the player action
+    // bar's column-fire path (DoPersonalAction). With Shift held we
+    // intercept them as the "explore column N" gesture; bare presses are
+    // never seen by us (we don't poll without the modifier).
+    bool k4    = down('4');
+    bool k5    = down('5');
+    bool k6    = down('6');
+    bool k7    = down('7');
 
     bool risingEnter = enter && !s_prevEnter; s_prevEnter = enter;
     bool risingUp    = upK   && !s_prevUp;    s_prevUp    = upK;
     bool risingDown  = dnK   && !s_prevDown;  s_prevDown  = dnK;
     bool risingLeft  = ltK   && !s_prevLeft;  s_prevLeft  = ltK;
     bool risingRight = rtK   && !s_prevRight; s_prevRight = rtK;
+    bool risingK4    = k4    && !s_prevK4;    s_prevK4    = k4;
+    bool risingK5    = k5    && !s_prevK5;    s_prevK5    = k5;
+    bool risingK6    = k6    && !s_prevK6;    s_prevK6    = k6;
+    bool risingK7    = k7    && !s_prevK7;    s_prevK7    = k7;
 
     HWND fg = GetForegroundWindow();
     if (fg) {
@@ -402,6 +419,49 @@ void PollHotkey() {
 
     Vector unused;
     bool inWorld = acc::engine::GetPlayerPosition(unused);
+
+    // Action-bar submenu — Shift+4..Shift+7 opens the column's variant
+    // submenu (drives column up_button/down_button widgets via vtable[15]
+    // activate). Tested before the radial-active block because the action
+    // bar lives independently from the radial: a user could in principle
+    // open the action-bar submenu while the radial is still armed. We
+    // keep the routes distinct by always letting Shift+N take precedence —
+    // pressing it while in the radial closes the radial gate (action-bar
+    // open path doesn't disarm radial; the radial's own Tick() handles
+    // the next disarm via "rows-empty"). Bare 4..7 fall straight through
+    // to the engine-native fast-fire path.
+    bool shift = down(VK_SHIFT) || down(VK_LSHIFT) || down(VK_RSHIFT);
+    if (inWorld && shift) {
+        if (risingK4) acc::actionbar_menu::Open(0);
+        if (risingK5) acc::actionbar_menu::Open(1);
+        if (risingK6) acc::actionbar_menu::Open(2);
+        if (risingK7) acc::actionbar_menu::Open(3);
+    }
+
+    // Action-bar-active path: route Up/Down/Enter/Esc to the submenu. Esc
+    // is included here even though the radial path delegates it to the
+    // manager — the action bar is in-world and unbound, so the manager
+    // never sees Esc presses while no menu panel is foreground (Esc would
+    // normally pop the game menu). Catching it here lets the user back out
+    // cleanly without the game-menu side effect.
+    static bool s_prevEsc = false;
+    bool escK = down(VK_ESCAPE);
+    bool risingEsc = escK && !s_prevEsc; s_prevEsc = escK;
+    if (inWorld && acc::actionbar_menu::IsActive()) {
+        if (risingEnter) {
+            acc::actionbar_menu::HandleInputEvent(kInputEnter1, /*value=*/1);
+        }
+        if (risingUp) {
+            acc::actionbar_menu::HandleInputEvent(kInputNavUp, 1);
+        }
+        if (risingDown) {
+            acc::actionbar_menu::HandleInputEvent(kInputNavDown, 1);
+        }
+        if (risingEsc) {
+            acc::actionbar_menu::HandleInputEvent(kInputEsc1, 1);
+        }
+        return;
+    }
 
     // Radial-active path: route Enter + arrows directly to the radial.
     // In-world Enter / arrows bypass CSWGuiManager (engine keymap drops

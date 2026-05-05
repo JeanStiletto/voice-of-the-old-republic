@@ -50,6 +50,12 @@ const char* Get(Id id) {
         case Id::FmtInteractEngine:    return "%s %s";
         case Id::FmtInteractRadial:    return "Aktionsmen\xFC, %s";          // Aktionsmenü
 
+        case Id::FmtActionBarOpened:      return "Aktionsmen\xFC Spalte %d: %s, %d Optionen"; // Aktionsmenü
+        case Id::FmtActionBarColumnEmpty: return "Spalte %d ist leer";
+        case Id::ActionBarColumnEmpty:    return "Spalte ist leer";
+        case Id::FmtActionBarFired:       return "%s eingesetzt";
+        case Id::ActionBarCancelled:      return "Abgebrochen";
+
         case Id::ContainerEmpty:       return "Leer";
         case Id::ContainerOneItem:     return "1 Gegenstand";
         case Id::FmtContainerItems:    return "%d Gegenst\xE4nde";              // Gegenstände

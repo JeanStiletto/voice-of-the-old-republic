@@ -111,6 +111,31 @@ enum class Id : int {
     //      (Security, Bash, Examine, …). One arg: `%s` target name.
     FmtInteractRadial,
 
+    // ---- Player action bar (Aktionsmenü) submenu, armed by Shift+4..7.
+    //      `FmtActionBarOpened`      — opener pre-roll. Args: column
+    //                                  number 1..6 (`%d`), current variant
+    //                                  label (`%s`), variant count (`%d`).
+    //                                  Spoken once on Open before the user
+    //                                  starts cycling.
+    //      `FmtActionBarColumnEmpty` — empty-column refusal. Arg: column
+    //                                  number 1..6 (`%d`). Spoken when
+    //                                  Shift+N hits a column with no
+    //                                  populated variants (no medikit
+    //                                  equipped, no Force power memorised
+    //                                  in that slot, …).
+    //      `ActionBarColumnEmpty`    — generic empty fallback (no column
+    //                                  number). Spoken when the format
+    //                                  template above is itself empty.
+    //      `FmtActionBarFired`       — fire confirmation. Arg: variant
+    //                                  label (`%s`). Spoken on Enter inside
+    //                                  the submenu.
+    //      `ActionBarCancelled`      — Esc-out without firing. Fixed phrase.
+    FmtActionBarOpened,
+    FmtActionBarColumnEmpty,
+    ActionBarColumnEmpty,
+    FmtActionBarFired,
+    ActionBarCancelled,
+
     // ---- Container loot panel announces.
     //      `ContainerEmpty`        — count == 0.
     //      `ContainerOneItem`      — count == 1 (German singular has different

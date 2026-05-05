@@ -40,6 +40,12 @@ const char* Get(Id id) {
         case Id::FmtInteractEngine:    return "%s %s";
         case Id::FmtInteractRadial:    return "Action menu, %s";
 
+        case Id::FmtActionBarOpened:      return "Action bar column %d: %s, %d options";
+        case Id::FmtActionBarColumnEmpty: return "Column %d is empty";
+        case Id::ActionBarColumnEmpty:    return "Column is empty";
+        case Id::FmtActionBarFired:       return "%s used";
+        case Id::ActionBarCancelled:      return "Cancelled";
+
         case Id::ContainerEmpty:       return "Empty";
         case Id::ContainerOneItem:     return "1 item";
         case Id::FmtContainerItems:    return "%d items";
