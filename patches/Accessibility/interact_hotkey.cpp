@@ -8,6 +8,7 @@
 
 #include "actionbar_menu.h"
 #include "cycle_state.h"
+#include "engine_actionbar.h"
 #include "engine_area.h"
 #include "engine_input.h"   // kInputEnter1 / kInputNavUp/Down/Left/Right
 #include "engine_manager.h"
@@ -15,6 +16,7 @@
 #include "engine_panels.h"
 #include "engine_picker.h"
 #include "engine_player.h"
+#include "engine_radial.h"
 #include "filter_objects.h"
 #include "guidance_autowalk.h"
 #include "log.h"
@@ -365,6 +367,110 @@ void OnInteract(bool forceRadial) {
     }
 }
 
+// Speak "{label} eingesetzt" (or the empty-column phrase) for a bare-press
+// of action-bar key 4..7. Call AFTER the foreground/inWorld gate so the
+// announcement matches what the engine actually fires.
+//
+// Slot mapping per the manual: 4→0 (Friendly Force), 5→1 (Medical),
+// 6→2 (Misc), 7→3 (Mine). Engine struct has 6 slots; only 4 hotkey-bound.
+//
+// We don't suppress the engine's own dispatch (no hook on DoPersonalAction)
+// — both fire in parallel, the engine processes the keypress through its
+// DirectInput handler, we read the column state at announce time. False
+// positives are possible (engine refused to fire e.g. action gated on
+// is_action=0); we mirror that by speaking the empty-column phrase rather
+// than claiming a fire when is_action is 0.
+void AnnounceBarePersonalKey(int slot) {
+    void* mi = acc::engine_actionbar::ResolveMainInterface();
+    if (!mi) {
+        acclog::Write(
+            "ActionBar: bare key slot=%d — main_interface unresolved",
+            slot);
+        return;
+    }
+
+    int isAct = acc::engine_actionbar::IsColumnActive(mi, slot);
+    char label[128] = "";
+    acc::engine_actionbar::ReadColumnLabel(mi, slot, label, sizeof(label));
+
+    if (!isAct || label[0] == '\0') {
+        // Column unpopulated — engine almost certainly refused the keypress.
+        // Speak the same empty phrase the submenu Open path uses, so the
+        // user hears a consistent vocabulary regardless of how they hit
+        // the empty column.
+        char msg[128];
+        std::snprintf(msg, sizeof(msg),
+                      acc::strings::Get(
+                          acc::strings::Id::FmtActionBarColumnEmpty),
+                      slot + 1);
+        tolk::Speak(msg, /*interrupt=*/true);
+        acclog::Write(
+            "ActionBar: bare key slot=%d is_action=%d label=[%s] -> [%s]",
+            slot, isAct, label, msg);
+        return;
+    }
+
+    char msg[192];
+    std::snprintf(msg, sizeof(msg),
+                  acc::strings::Get(acc::strings::Id::FmtActionBarFired),
+                  label);
+    tolk::Speak(msg, /*interrupt=*/true);
+    acclog::Write(
+        "ActionBar: bare key slot=%d label=[%s] -> [%s]",
+        slot, label, msg);
+}
+
+// Speak "{label} eingesetzt" for a bare-press of target-action key 1..3.
+// Same pattern as AnnounceBarePersonalKey but reads target_actions[row]
+// from the embedded CSWGuiTargetActionMenu (which the radial-menu path
+// already wraps via engine_radial::ReadRowActionLabel).
+//
+// Row mapping per the manual: 1→row 0 (leftmost), 2→row 1 (centre),
+// 3→row 2 (rightmost). The radial uses the same indices (kRowCount=3).
+//
+// The radial may be empty when no target is actively cycled (the engine
+// only populates target_actions[] after a passive-selection or click).
+// In that case RowActionCount==0 → empty phrase; matches the personal-
+// column empty path.
+void AnnounceBareTargetKey(int row) {
+    void* tam = acc::engine_radial::ResolveTargetActionMenu();
+    if (!tam) {
+        acclog::Write(
+            "ActionBar: bare target row=%d — TAM unresolved",
+            row);
+        return;
+    }
+
+    int count = acc::engine_radial::RowActionCount(tam, row);
+    char label[128] = "";
+    acc::engine_radial::ReadRowActionLabel(tam, row, label, sizeof(label));
+
+    if (count <= 0 || label[0] == '\0') {
+        // Same empty-column phrase shape — keeps the announce vocabulary
+        // consistent across both action-bar groups. Use row+1 for the
+        // user-visible 1..3 indexing the manual documents.
+        char msg[128];
+        std::snprintf(msg, sizeof(msg),
+                      acc::strings::Get(
+                          acc::strings::Id::FmtActionBarColumnEmpty),
+                      row + 1);
+        tolk::Speak(msg, /*interrupt=*/true);
+        acclog::Write(
+            "ActionBar: bare target row=%d count=%d label=[%s] -> [%s]",
+            row, count, label, msg);
+        return;
+    }
+
+    char msg[192];
+    std::snprintf(msg, sizeof(msg),
+                  acc::strings::Get(acc::strings::Id::FmtActionBarFired),
+                  label);
+    tolk::Speak(msg, /*interrupt=*/true);
+    acclog::Write(
+        "ActionBar: bare target row=%d label=[%s] -> [%s]",
+        row, label, msg);
+}
+
 }  // namespace
 
 void PollHotkey() {
@@ -381,6 +487,9 @@ void PollHotkey() {
     static bool s_prevDown  = false;
     static bool s_prevLeft  = false;
     static bool s_prevRight = false;
+    static bool s_prevK1    = false;
+    static bool s_prevK2    = false;
+    static bool s_prevK3    = false;
     static bool s_prevK4    = false;
     static bool s_prevK5    = false;
     static bool s_prevK6    = false;
@@ -395,6 +504,9 @@ void PollHotkey() {
     // bar's column-fire path (DoPersonalAction). With Shift held we
     // intercept them as the "explore column N" gesture; bare presses are
     // never seen by us (we don't poll without the modifier).
+    bool k1    = down('1');
+    bool k2    = down('2');
+    bool k3    = down('3');
     bool k4    = down('4');
     bool k5    = down('5');
     bool k6    = down('6');
@@ -405,6 +517,9 @@ void PollHotkey() {
     bool risingDown  = dnK   && !s_prevDown;  s_prevDown  = dnK;
     bool risingLeft  = ltK   && !s_prevLeft;  s_prevLeft  = ltK;
     bool risingRight = rtK   && !s_prevRight; s_prevRight = rtK;
+    bool risingK1    = k1    && !s_prevK1;    s_prevK1    = k1;
+    bool risingK2    = k2    && !s_prevK2;    s_prevK2    = k2;
+    bool risingK3    = k3    && !s_prevK3;    s_prevK3    = k3;
     bool risingK4    = k4    && !s_prevK4;    s_prevK4    = k4;
     bool risingK5    = k5    && !s_prevK5;    s_prevK5    = k5;
     bool risingK6    = k6    && !s_prevK6;    s_prevK6    = k6;
@@ -436,6 +551,39 @@ void PollHotkey() {
         if (risingK5) acc::actionbar_menu::Open(1);
         if (risingK6) acc::actionbar_menu::Open(2);
         if (risingK7) acc::actionbar_menu::Open(3);
+    }
+
+    // Bare 1..3 (target action menu) and bare 4..7 (player action bar)
+    // announce path. The engine fires the action through its DirectInput
+    // handler regardless of what we do; this branch only adds the
+    // screen-reader announcement so the user knows what they fired
+    // ("Medikit eingesetzt", "Sicherheit eingesetzt"). No engine-side
+    // suppression — both paths run in parallel, same arrangement as
+    // passive_narrate alongside Q/E target cycles.
+    //
+    // We don't gate on the panel-blocker / dialog-panel check used by
+    // Enter dispatch. The engine itself filters bare 1..7 in those
+    // contexts (e.g. inside a menu screen) — when it doesn't fire, our
+    // announce reads a stale label or speaks the empty-column phrase,
+    // both of which are recoverable. Matching the gate exactly would
+    // require tracking the engine's own input-mode flags, which we don't
+    // currently expose.
+    //
+    // Skip the announce when our own submenu is active for that column
+    // — actionbar_menu's Enter path already speaks "X eingesetzt" via its
+    // explicit Tolk call, and the user pressing bare 5 with the submenu
+    // open for column 1 would otherwise double-announce. The submenu's
+    // Enter consumes via the routing block below, so this only affects
+    // the bare-press during submenu-active state, which is an unlikely
+    // input pattern but worth handling.
+    if (inWorld && !shift && !acc::actionbar_menu::IsActive()) {
+        if (risingK1) AnnounceBareTargetKey(0);
+        if (risingK2) AnnounceBareTargetKey(1);
+        if (risingK3) AnnounceBareTargetKey(2);
+        if (risingK4) AnnounceBarePersonalKey(0);
+        if (risingK5) AnnounceBarePersonalKey(1);
+        if (risingK6) AnnounceBarePersonalKey(2);
+        if (risingK7) AnnounceBarePersonalKey(3);
     }
 
     // Action-bar-active path: route Up/Down/Enter/Esc to the submenu. Esc
