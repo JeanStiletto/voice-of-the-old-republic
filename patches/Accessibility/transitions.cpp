@@ -177,40 +177,23 @@ const char* GetLandmarkForRoom(int roomIdx) {
     return g_room_landmark[roomIdx];
 }
 
-void SpeakRoom(void* area, int roomIndex) {
+// Records a room change in the log without speaking. Audible per-room
+// announcement is intentionally suppressed: KOTOR's .lyt rooms partition
+// areas into corridor- / alcove-sized cells, so the user got "Raum 1 →
+// Raum 65 → Raum …" spam every few steps. Internal tracking is retained
+// (g_prev_room_idx + landmark cache) so future Pillar 2 nav features
+// (waypoint guidance, landmark-on-demand) can consume it.
+void RecordRoomChange(void* area, int roomIndex) {
     char nameBuf[128] = {0};
     bool gotName = acc::engine::GetRoomDisplayName(
         area, roomIndex, nameBuf, sizeof(nameBuf)) && nameBuf[0] != '\0';
-
-    // Resolution priority (most descriptive first):
-    //   1. Bioware-curated map-note landmark in the same room (preferred).
-    //   2. Modder-supplied room_name when human-readable.
-    //   3. Synthesised "Raum N" — when name is a resref-style ID or empty.
     const char* landmark = GetLandmarkForRoom(roomIndex);
-
-    char speech[192] = {0};
-    const char* spokenSource = "(none)";
-    if (landmark) {
-        std::snprintf(speech, sizeof(speech),
-                      acc::strings::Get(acc::strings::Id::FmtTransitionRoom),
-                      landmark);
-        spokenSource = "landmark";
-    } else if (gotName && !IsResrefStyleRoomName(nameBuf)) {
-        std::snprintf(speech, sizeof(speech),
-                      acc::strings::Get(acc::strings::Id::FmtTransitionRoom),
-                      nameBuf);
-        spokenSource = "room_name";
-    } else {
-        std::snprintf(speech, sizeof(speech),
-                      acc::strings::Get(
-                          acc::strings::Id::FmtTransitionRoomIndex),
-                      roomIndex);
-        spokenSource = "index";
-    }
-    tolk::Speak(speech, /*interrupt=*/false);
+    const char* source = landmark
+        ? "landmark"
+        : (gotName && !IsResrefStyleRoomName(nameBuf) ? "room_name" : "index");
     acclog::Write(
-        "Transition: room -> %d '%s' src=%s landmark=%s (areaPtr=%p)",
-        roomIndex, gotName ? nameBuf : "(empty)", spokenSource,
+        "Transition: room -> %d '%s' src=%s landmark=%s (areaPtr=%p) [silent]",
+        roomIndex, gotName ? nameBuf : "(empty)", source,
         landmark ? landmark : "-", area);
 }
 
@@ -272,7 +255,7 @@ void Tick() {
     }
 
     if (g_pending_room_count >= kRoomStabilityTicks) {
-        SpeakRoom(area, roomIndex);
+        RecordRoomChange(area, roomIndex);
         g_prev_room_idx      = roomIndex;
         g_pending_room_idx   = -1;
         g_pending_room_count = 0;
