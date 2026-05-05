@@ -40,6 +40,7 @@
 #include "passive_narrate.h"    // Phase 2 lay-off 9a
 #include "probe_world_hover.h"  // Phase 2 lay-off 9-probe (diagnostic)
 #include "radial_menu.h"        // CSWGuiTargetActionMenu input gate
+#include "spatial_change_detector.h"  // Phase 3 lay-off 3 — Pillar 1 Trigger 1
 #include "strings.h"            // Container loot panel announces
 #include "transitions.h"        // Phase 2 lay-off 7 — Pillar 2 area+room announce
 #include "turn_announce.h"      // Phase 2 ad-hoc — Pillar 2 sub-feature C
@@ -4234,6 +4235,14 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     // observation after player-load also announces (gives orientation cue
     // on game-load). Self-gates on player+area resolved.
     acc::transitions::Tick();
+
+    // Phase 3 lay-off 3 — Pillar 1 Trigger 1 (per-feature distance-delta
+    // change-driven cues). 360° awareness, 5m default range, threshold-
+    // gated so steady-state walking is silent and only "approached new
+    // wall" / "passed corner of obstacle" / "object came into range"
+    // events fire cues. Self-detects area change to rebuild the wall
+    // cache; self-gates on player + area resolved + Pillar 1 setting.
+    acc::spatial::change_detector::Tick();
 
     // Phase 2 ad-hoc — camera-direction announcement on A/D. KOTOR 1's
     // verified default control scheme: A/D rotate the *camera* around the

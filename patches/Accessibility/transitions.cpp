@@ -243,16 +243,6 @@ void Tick() {
         // after an area change should already use the curated label
         // when one exists.
         RebuildLandmarkCache(area);
-        // Phase 3 lay-off 1 diagnostic: extract the wall-edge count
-        // from this area's walkmesh perimeter. No spatial consumer wired
-        // up yet — this is purely a verification check that the
-        // walkmesh-edge slice in engine_area is reading the right
-        // offsets and producing plausible counts (Endar Spire corridor
-        // rooms expected in the dozens-to-low-hundreds range per room).
-        int wallCount = acc::engine::BuildAreaWallCache(area, nullptr, 0);
-        acclog::Write(
-            "Walkmesh: extracted %d wall edges from area (areaPtr=%p)",
-            wallCount, area);
         g_prev_area          = area;
         g_prev_room_idx      = -1;  // re-announce room on new area
         g_pending_room_idx   = -1;  // and reset stability tracker

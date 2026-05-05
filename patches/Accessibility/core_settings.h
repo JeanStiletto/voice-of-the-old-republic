@@ -48,6 +48,13 @@ struct Pillar1Settings {
     float awarenessRangeMeters         = 5.0f;
     float distanceDeltaThresholdMeters = 0.5f;
     int   voiceBudgetMax               = 3;
+    // Per-tick wall-cue cap. Trigger 1 collects every wall that crossed
+    // threshold this tick, then fires only the K nearest. Caps audible
+    // density in dense corridors where 20+ walkmesh-perimeter edges can
+    // simultaneously cross threshold as the player moves. Walls beyond
+    // K still get their `last_cued_distance` updated so they don't pile
+    // back into the candidate pool next tick.
+    int   trigger1MaxWallCuesPerTick   = 3;
 };
 
 // Pillar 2 — medium-scale room/area announcements + view mode.

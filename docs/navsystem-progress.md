@@ -11,7 +11,7 @@
 - **Phase 0 — Refactor.** *Complete (2026-05-03).* All six lay-offs landed: `core_dllmain` + `engine_input`, `engine_offsets` + `engine_reads`, `engine_panels`, `engine_manager`, rename to `menus.cpp`, and the user-driven menu regression test ("everything working as before. no new bugs.").
 - **Phase 1 — Foundation.** *Complete (2026-05-03).* All planned lay-offs landed: `engine_player` (1), CExoSound singleton trace (2), `audio_bus` (3), test fixture + exit gate (4), atmospheric-pass curation + `audio_cues.h` wiring (5), `core_settings` stub (7). Lay-off 6 (`audio_listener`) was dropped at lay-off 4 — engine default listener proved camera-anchored at the gate.
 - **Phase 2 — Playable baseline.** *Complete (2026-05-05).* Lay-offs 1-9 + 6a + 7a + 7b all verified in-game; lay-off 8 (dedicated exit-gate playthrough) skipped per user — same-session verification covered the gate criteria. Player-control-mode blocker resolved 2026-05-04 (commit `d578fbe`); toggle is `CSWPlayerControl::SetEnabled @ 0x006792e0`, wraps a creature-mode write that pairs with `CSWCCreature::SwitchMode`; flip 0 around AI-action dispatch and the per-tick input handler skips the movement-clobber block. Interact path re-routed away from the engine's two-click `HandleMouseClickInWorld` pipeline to a direct `CSWSObject::AddUseObjectAction @ 0x0057c810` call — same primitive NWScript's `ActionInteractObject` uses. Architectural picture: in-world target cycle delegated to engine's Q/E (`SelectNearestObject @0x005fb050`) → `LastTarget` → `passive_narrate`; A/D camera-direction announce; W character-facing announce; cycle (`,`/`.`) reassigned to map-side scan (Pillar 3, Phase 5/6). Pillar 2 transitions: area announce + room announce with stability-dedup (`kRoomStabilityTicks=5` ≈ 80ms), three-tier room resolution (landmark cache via CSWSWaypoint.map_note → human-readable room_name → "Raum N" fallback), pre-load destination announce hooked at `SetMoveToModuleString @0x004aecd0`. User-validated decision (2026-05-04): keep the high-volume "Raum N" announcements as-is — KOTOR's room model is layout-geometry / occlusion-culling chunks (not RPG-named rooms), Bioware places map_notes only at significant landmarks; high-frequency announces still carry "you're moving through space" signal. Revisit if intrusive after more playtime.
-- **Phase 3 — Pillar 1.** *In progress (started 2026-05-05).* Lay-off 1 (walkmesh-edge extraction in `engine_area.{h,cpp}`) **verified in-game 2026-05-05** — `Walkmesh: extracted 405 wall edges from area (areaPtr=07487660)` on Endar Spire Starboard Deck (`patch-20260505-191948.log`); plausible count for a ~15-room corridor area; no SEH faults. Remaining: `audio_cue_player`, `spatial_change_detector` (Trigger 1), `spatial_front_cone` (Trigger 2), `audio_footstep_suppress`, exit-gate free-walk test.
+- **Phase 3 — Pillar 1.** *In progress (started 2026-05-05).* Lay-offs 1-3 verified in-game 2026-05-05. **Lay-off 1** (walkmesh-edge extraction): 405-908 edges per area, no SEH faults. **Lay-off 2** (`audio_cue_player`): per-kind toggle + range gate; debounce gate landed initially then removed (was silencing 84% of wall cues — backstop interfered with normal operation). **Lay-off 3** (`spatial_change_detector` — Trigger 1): four iterations in-session pinned the design — calibration tick (kills entry-flood on save-load), K-cap (max 3 walls/tick), spatial 1m dedup (rejected; replaced by sectors), and finally **sector-based selection** matching the user's stated intuition: bin candidates into 4 character-relative sectors (Front/Left/Back/Right, 90° each), pick closest in each, fire K closest reps. K-saturation dropped from 60% → 15% of active ticks; 79% of ticks fire 1-2 spatially-distinct walls instead of 3 same-wall fragments. Wall cue resref swapped from `fs_dirt_hard1` (footstep, masked by player's own footsteps) to `gui_select` (UI beep, audibly distinct). User reports walls "might be more usable but still not sure" — combat-audio masking + curation choice are tuning concerns parked for next session, not implementation bugs. Remaining: `spatial_front_cone` (Trigger 2), `audio_footstep_suppress`, exit-gate free-walk test, plus user-noted out-of-plan tuning ideas.
 - **Phase 4 — Pillar 2 polish + view mode.** Pending.
 - **Phase 5 — Pillar 3 polish.** Pending.
 - **Phase 6 — Map markers & nice extras.** Pending.
@@ -39,6 +39,37 @@ Each lay-off = one session = one commit, per the discipline rule. Lay-offs 1+2 a
 ### Lay-off log
 
 **Lay-off 1** — Walkmesh-edge extraction. *Verified in-game 2026-05-05.* `patch-20260505-191948.log` line 519: `Walkmesh: extracted 405 wall edges from area (areaPtr=07487660)` on Endar Spire Starboard Deck. Area pointer matches the landmark-cache-rebuild log emitted from the same `Tick()` pass; no SEH fault; fires exactly once per area-load. 405 edges is plausible for a ~15-room corridor deck (~27 edges/room average).
+
+**Lay-off 2** — `audio_cue_player.{h,cpp}`. *Build-verified, exercised via lay-off 3.*
+
+Thin wrapper over `audio_bus::PlayCue3D` adding two gates so Trigger 1 (and the future Trigger 2) don't each reimplement them: (1) per-kind enable from `core_settings::Get().pillar1.cueX` — Wall/HazardLedge/Door/Npc/Container/Item/Landmark/Transition gated; Collision/Beacon* always pass; (2) awareness-range cap (3D Euclidean distance from listener position; per-call so different consumers can pick their own range).
+
+A third "per-NavCue debounce" backstop landed initially but was removed same-session: first in-game test showed it silencing 338/404 wall cues (84%) in dense corridors — when several walls cross threshold within the same 100ms window, a global per-NavCue debounce keeps only the first audible. The change-detector's per-feature `last_cued_distance` is the proper cadence control; debouncing on top destroyed real signal.
+
+**Lay-off 3** — `spatial_change_detector.{h,cpp}` (Trigger 1). *Verified in-game 2026-05-05 across four tuning iterations.*
+
+The first user-perceptible Phase 3 milestone — wall and Pillar-4-vocabulary object cues drive from per-tick distance-delta scans against the cached wall edges + `AreaObjectIterator` objects. State: per-wall `last_cued_distance` (negative sentinel = out-of-range), per-object linear-probed handle table.
+
+Iterative tuning — each iteration validated in-game before next:
+
+- **Iteration 1 (initial Trigger 1)**: 1303 wall cues over 96s on Endar Spire Steuerbord-Deck. User reported walls audible but "hard to judge"; 84% of cues were debounced out (see lay-off 2 note). Wall cue resref `fs_dirt_hard1` indistinguishable from player's own footsteps — masked into the footstep stream.
+- **Iteration 2 (debounce removed + wall resref swap to `gui_select`)**: 1169 walls/96s, 0 drops. Walls now audibly distinct from footsteps. But peak `walls_in_range=120` in open rooms — KOTOR's walkmesh chops single corridor walls into 5-10 floor-edge fragments; with 23+ in-range walls and K=∞ the channel was carpet-bombing.
+- **Iteration 3 (calibration tick + K-nearest cap, K=3)**: First-tick-after-area-load now seeds `last_distance` for all in-range features without firing — eliminates entry flood. Per-tick wall cue count capped at K=3 closest by distance. K-saturation hit 60% of active ticks. *But* in dense areas K-closest typically picked 3 fragments of the *same* physical wall, all panning to the same ear. User's correction: "K=3 was supposed to give me left+right+front, not 3 of the same wall" — exactly right.
+- **Iteration 4 (1m spatial dedup)**: dropped before in-game test in favour of sectors — same-physical-wall collapse via geometric proximity wasn't enforcing angular spread.
+- **Iteration 5 (sector-based selection — final design)**: bin candidates into four cardinal sectors **relative to player heading** — Front (±45°), Left (+45°..+135°), Back (180°±45°), Right (−45°..−135°). Each sector contributes one cue (closest candidate in that sector). K-cap applies to per-sector reps sorted by distance. Verified in-game `patch-20260505-203857.log`: K-saturation dropped 60% → 15%; 79% of active ticks fire 1-2 sectors; sector mix shows healthy 4-way diversity (`L`/`R`/`B`/`F` singletons all common, `RL`+`LR` corridor patterns, `RFB` T-junction patterns).
+
+Object channel runs unchanged — Door/Npc/Container/Item/Landmark/Transition fire on per-handle threshold crossing without sector binning (object population is sparse enough that "K closest" isn't an issue).
+
+User feedback after iteration 5: walls "might be more usable but still not sure" — combat-audio masking + `gui_select` curation choice are tuning concerns parked for next session, plus user-noted out-of-plan tuning ideas to explore. No implementation bugs found in the post-iteration-5 log review. **Solid base; commit + park.**
+
+### Files touched (lay-offs 1-3)
+
+- `patches/Accessibility/engine_area.{h,cpp}` — `WallEdge` struct + `BuildAreaWallCache(area, outBuf, maxEdges)` + new offsets/addresses for `CSWRoomSurfaceMesh` + `CSWCollisionMesh::LocalToWorld @0x596aa0`.
+- `patches/Accessibility/audio_cue_player.{h,cpp}` — new files. Per-kind + range gates over `audio_bus::PlayCue3D`.
+- `patches/Accessibility/audio_cues.h` — `NavCue::Wall` resref swap from `fs_dirt_hard1` → `gui_select`.
+- `patches/Accessibility/spatial_change_detector.{h,cpp}` — new files. Calibration tick + sector-based wall selection + object change detection. Wired in `menus.cpp`'s `OnUpdate`.
+- `patches/Accessibility/core_settings.h` — `trigger1MaxWallCuesPerTick = 3` knob.
+- `patches/Accessibility/transitions.cpp` — dropped redundant lay-off-1 wall-count diagnostic (now logged by `change_detector::OnAreaChange`).
 
 Added to `engine_area.{h,cpp}`:
 
@@ -828,7 +859,9 @@ A second symptom — audio stutter when pressing *Schließen* in Options — has
 
 ## Next session: where to start
 
-**Phase 3 lay-off 1 verified in-game 2026-05-05** (405 wall edges on Endar Spire Starboard Deck). Next: **lay-off 2 (`audio_cue_player`)** — thin wrapper over `audio_bus` + `audio_cues` providing range-clamped 3D playback and a per-cue debounce, the single callsite that lay-offs 3 + 4 will both use. Pure addition; no walkmesh consumer wired in until lay-off 3.
+**Phase 3 lay-offs 1-3 verified in-game 2026-05-05** (sector-based Trigger 1 working; 79% of active ticks fire 1-2 spatially-distinct walls). Next session opens with the user-noted out-of-plan tuning ideas (parked from this session — user has them in mind), then lay-off 4 (`spatial_front_cone` — Trigger 2, ±15° foremost-in-front cone). Trigger 2 will be additive on top of Trigger 1; the locked plan splits 360° awareness (T1) from focused "what's directly ahead" (T2). After T2, lay-off 5 (`audio_footstep_suppress`) for stuck-detection, then exit-gate free-walk test.
+
+**Curation parked**: `NavCue::Wall = gui_select` (UI beep) is a placeholder for the iteration; user-noted that combat-audio masking made it hard to evaluate. Re-curation candidates not yet identified.
 
 **Phase 2 closed 2026-05-05.** All lay-offs 1-9 + 6a + 7a + 7b verified in-game; lay-off 8 (dedicated exit-gate playthrough) skipped per user — same-session verification covered the gate criteria. Phase 2 deliverables working end-to-end:
 

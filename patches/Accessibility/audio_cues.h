@@ -62,7 +62,7 @@ constexpr const char* GetNavCueResref(NavCue cue) {
         case NavCue::Item:                     return "gui_invselect";
         case NavCue::Landmark:                 return "gui_quest";
         case NavCue::TransitionExit:           return "mgs_s1";
-        case NavCue::Wall:                     return "fs_dirt_hard1";
+        case NavCue::Wall:                     return "gui_select";
         case NavCue::HazardLedge:              return "cb_sw_bldlrg1";
         case NavCue::Collision:                return "gui_invdrop";
         case NavCue::BeaconActive:             return "gui_actscroll";
