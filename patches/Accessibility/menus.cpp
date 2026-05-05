@@ -1215,10 +1215,13 @@ static void* FindControlById(void* panel, int id) {
 // FireActivate primitive the user triggers manually by Enter-ing Schliess.
 //
 // Match heuristic: scan panel.controls for a navigable button whose text
-// starts with "Schliess" (German "Schließen"), "Close" (English), or "OK"
-// (universal "accept and dismiss" in confirmation dialogs). KOTOR ships
-// German + English localizations; both texts present here cover the cases
-// we care about. Returns the control pointer or nullptr if none found.
+// starts with "Schliess" (German "Schließen"), "Close" (English), "OK"
+// (universal "accept and dismiss" in confirmation dialogs), or
+// "Weiter" / "Continue" (multi-page TutorialBox advance/dismiss — combat
+// onboarding flips the button label from "OK" to "Weiter" mid-flow).
+// KOTOR ships German + English localizations; both texts present here
+// cover the cases we care about. Returns the control pointer or nullptr
+// if none found.
 static void* FindCloseButton(void* panel) {
     if (!panel) return nullptr;
     auto* list = reinterpret_cast<CExoArrayList*>(
@@ -1232,7 +1235,9 @@ static void* FindCloseButton(void* panel) {
         if (!ExtractAnnounceableText(c, text, sizeof(text), panel)) continue;
         if (strncmp(text, "Schliess", 8) == 0 ||
             strncmp(text, "Close",    5) == 0 ||
-            strncmp(text, "OK",       2) == 0) {
+            strncmp(text, "OK",       2) == 0 ||
+            strncmp(text, "Weiter",   6) == 0 ||
+            strncmp(text, "Continue", 8) == 0) {
             return c;
         }
     }
@@ -2201,6 +2206,20 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                             } else if (newSel >= top + ipp) {
                                 *topPtr = (short)(newSel - ipp + 1);
                             }
+                        } else if (newSel >= 0 && newSel < rowCount) {
+                            // No-op nav (single-item list, or boundary clamp):
+                            // monitor's change detector won't fire. Speak the
+                            // focused row inline so the user gets feedback
+                            // instead of silence.
+                            void* row = lbList->data[newSel];
+                            char rowText[256];
+                            if (row && ExtractAnnounceableText(row, rowText, sizeof(rowText))) {
+                                char msg[320];
+                                snprintf(msg, sizeof(msg),
+                                         acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
+                                         rowText, newSel + 1, rowCount);
+                                tolk::Speak(msg, /*interrupt=*/false);
+                            }
                         }
                         acclog::Write("Container: %s lb=%p sel=%d->%d (rows=%d)",
                                       param_1 == kInputNavDown ? "Down" : "Up",
@@ -2348,6 +2367,20 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                             *topPtr = newSel;
                         } else if (newSel >= top + ipp) {
                             *topPtr = (short)(newSel - ipp + 1);
+                        }
+                    } else if (newSel >= 1 && newSel < rowCount) {
+                        // No-op nav (single-item list, or boundary clamp):
+                        // monitor's change detector won't fire. Speak the
+                        // focused row inline. userPos/userTotal mirror the
+                        // monitor's offset (row 0 is the protoitem template).
+                        void* row = lbList->data[newSel];
+                        char rowText[256];
+                        if (row && ExtractAnnounceableText(row, rowText, sizeof(rowText))) {
+                            char msg[320];
+                            snprintf(msg, sizeof(msg),
+                                     acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
+                                     rowText, newSel, rowCount - 1);
+                            tolk::Speak(msg, /*interrupt=*/false);
                         }
                     }
                     acclog::Write("EquipPicker: %s lb=%p sel=%d->%d (rows=%d, real=%d)",
