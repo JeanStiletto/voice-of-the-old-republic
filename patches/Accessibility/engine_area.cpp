@@ -452,6 +452,162 @@ bool GetWaypointMapNote(void* waypoint, char* outBuf, size_t bufSize) {
     return ok && outBuf[0] != '\0';
 }
 
+namespace {
+
+typedef void (__thiscall* PFN_CollisionMeshLocalToWorld)(void* this_,
+                                                         Vector* output,
+                                                         Vector* localPoint);
+
+// Read a CSWSRoom's surface_mesh pointer. Returns nullptr if the room slot
+// itself is null/garbage or surface_mesh hasn't been populated. SEH-guarded.
+void* GetRoomSurfaceMesh(void* room) {
+    if (!room) return nullptr;
+    __try {
+        return *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(room) + kRoomSurfaceMeshOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+// Walk every triangle of one room's surface mesh, emit a WallEdge for each
+// adjacency==-1 side. Returns the number of edges this room contributed (to
+// the running total — written to outBuf only while there's space).
+int ScanRoomWallEdges(void* surfaceMesh, int roomId,
+                      WallEdge* outBuf, int maxEdges, int alreadyWritten) {
+    if (!surfaceMesh) return 0;
+    auto* mesh = reinterpret_cast<unsigned char*>(surfaceMesh);
+
+    Vector*   vertices     = nullptr;
+    uint32_t  faceCount    = 0;
+    void*     faceIndices  = nullptr;
+    uint32_t* materials    = nullptr;
+    int*      adjacencies  = nullptr;   // flat int[faceCount*3]
+
+    __try {
+        vertices = *reinterpret_cast<Vector**>(
+            mesh + kCollisionMeshVerticesOffset);
+        faceCount = *reinterpret_cast<uint32_t*>(
+            mesh + kCollisionMeshFaceCountOffset);
+        faceIndices = *reinterpret_cast<void**>(
+            mesh + kCollisionMeshFacesOffset);
+        materials = *reinterpret_cast<uint32_t**>(
+            mesh + kCollisionMeshMaterialsOffset);
+        // SurfaceMeshAdjacency lives on the wrapping CSWRoomSurfaceMesh,
+        // not on the embedded CSWCollisionMesh — offset is +0x88 from the
+        // surface_mesh base (which IS the wrapper). Each entry is
+        // `int indices[3]` (12 bytes); we treat the whole thing as a flat
+        // int array indexed via f*3 + e to avoid a local struct typedef.
+        adjacencies = *reinterpret_cast<int**>(
+            mesh + kSurfaceMeshAdjacenciesOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+
+    if (!vertices || !faceIndices || !adjacencies || faceCount == 0) {
+        return 0;
+    }
+
+    auto fnLocalToWorld = reinterpret_cast<PFN_CollisionMeshLocalToWorld>(
+        kAddrCollisionMeshLocalToWorld);
+
+    int emitted = 0;
+    auto* faces = reinterpret_cast<unsigned char*>(faceIndices);
+
+    for (uint32_t f = 0; f < faceCount; ++f) {
+        // Per-face vertex indices (3 × ulong).
+        uint32_t v[3] = {0, 0, 0};
+        int      adj[3] = {0, 0, 0};
+        bool     readOk = true;
+        __try {
+            auto* face = reinterpret_cast<uint32_t*>(
+                faces + static_cast<size_t>(f) * kWalkmeshFaceStride);
+            v[0] = face[0]; v[1] = face[1]; v[2] = face[2];
+            adj[0] = adjacencies[f * 3 + 0];
+            adj[1] = adjacencies[f * 3 + 1];
+            adj[2] = adjacencies[f * 3 + 2];
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            readOk = false;
+        }
+        if (!readOk) continue;
+
+        // surfacemat.2da row for this face — captured once per face (all
+        // three potential edges share the same material).
+        int materialId = -1;
+        __try {
+            materialId = static_cast<int>(materials[f]);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            materialId = -1;
+        }
+
+        for (int e = 0; e < 3; ++e) {
+            if (adj[e] != -1) continue;  // interior edge — has a neighbour
+            // Edge endpoints — face-vertex order, wrap on the third side.
+            uint32_t va = v[e];
+            uint32_t vb = v[(e + 1) % 3];
+
+            Vector localA = {0, 0, 0}, localB = {0, 0, 0};
+            __try {
+                localA = vertices[va];
+                localB = vertices[vb];
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                continue;
+            }
+
+            Vector worldA = localA, worldB = localB;
+            __try {
+                fnLocalToWorld(surfaceMesh, &worldA, &localA);
+                fnLocalToWorld(surfaceMesh, &worldB, &localB);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                // Best-effort: fall back to the local copies (correct only
+                // when world_coords=1, which is the common runtime case for
+                // room walkmeshes anyway).
+                worldA = localA;
+                worldB = localB;
+            }
+
+            int slot = alreadyWritten + emitted;
+            if (outBuf && slot < maxEdges) {
+                outBuf[slot].a           = worldA;
+                outBuf[slot].b           = worldB;
+                outBuf[slot].room_id     = roomId;
+                outBuf[slot].material_id = materialId;
+            }
+            ++emitted;
+        }
+    }
+    return emitted;
+}
+
+}  // namespace
+
+int BuildAreaWallCache(void* area, WallEdge* outBuf, int maxEdges) {
+    if (!area) return 0;
+
+    void*    rooms     = nullptr;
+    uint32_t roomCount = 0;
+    __try {
+        auto* base = reinterpret_cast<unsigned char*>(area);
+        rooms     = *reinterpret_cast<void**>(base + kAreaRoomsOffset);
+        roomCount = *reinterpret_cast<uint32_t*>(base + kAreaRoomCountOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+    if (!rooms || roomCount == 0) return 0;
+
+    auto* roomBase = reinterpret_cast<unsigned char*>(rooms);
+    int total = 0;
+    for (uint32_t i = 0; i < roomCount; ++i) {
+        void* room = roomBase + static_cast<size_t>(i) * kRoomStride;
+        void* sm   = GetRoomSurfaceMesh(room);
+        if (!sm) continue;
+        int contributed = ScanRoomWallEdges(sm, static_cast<int>(i),
+                                            outBuf, maxEdges, total);
+        total += contributed;
+    }
+    return total;
+}
+
 void* AreaObjectIterator::Next() {
     if (!handles_ || !objectArray_) return nullptr;
     auto resolve = reinterpret_cast<PFN_GetGameObject>(

@@ -347,3 +347,99 @@ constexpr size_t kTriggerTransitionDestOffset  = 0x30c;  // Vector (12 bytes)
 // SIZE=0x240).
 constexpr size_t kWaypointMapNoteEnabledOffset = 0x22c;  // int
 constexpr size_t kWaypointMapNoteLocOffset     = 0x230;  // CExoLocString (8 bytes)
+
+// ---------------------------------------------------------------------------
+// Walkmesh wall-edge extraction (Phase 3 lay-off 1, Pillar 1 foundation).
+//
+// CSWSArea
+//   +0x230 rooms        // CSWSRoom* — heap array, stride kRoomStride (0x4c)
+//   +0x268 room_count   // ulong (already declared above as
+//                       //        kAreaRoomCountOffset)
+//
+// CSWSRoom layout (swkotor.exe.h:10397):
+//   +0x00 CSWRoom (vtable + Vector position + Quaternion + CResRef + ...
+//                  — total 0x3c bytes)
+//   +0x3c CSWRoomSurfaceMesh*  surface_mesh
+//
+// CSWRoomSurfaceMesh layout (swkotor.exe.h:15742):
+//   +0x00 CSWCollisionMesh mesh   (embedded; 0x88 bytes)
+//   +0x88 SurfaceMeshAdjacency*   adjacencies   // face_count entries
+//   +0x8c CExoArrayList<SurfaceMeshEdge> edges
+//   ...
+//
+// CSWCollisionMesh layout (swkotor.exe.h:8337) — relevant offsets only:
+//   +0x00 vtable
+//   +0x04 world_coords           // int — 1 = vertices already in world space
+//   +0x50 vertex_count           // ulong
+//   +0x54 vertices               // Vector* (vertex_count × 12 bytes,
+//                                //          mesh-local space unless
+//                                //          world_coords=1)
+//   +0x58 face_count             // ulong
+//   +0x60 face_indices           // WalkmeshFace* (face_count × 12 bytes;
+//                                //                three vertex indices each)
+//   +0x64 materials              // ulong* (face_count entries; index into
+//                                //         surfacemat.2da; per-face material)
+//
+// SurfaceMeshAdjacency (swkotor.exe.h:15583):
+//   int indices[3];   // one per triangle edge
+//                     //   -1                 = perimeter (WALL EDGE)
+//                     //   otherwise edge_id  = neighbour face's edge index;
+//                     //                        face_id = edge_id / 3
+//
+// CSWCollisionMesh::LocalToWorld @0x596aa0 — __thiscall, BYTES_PURGED=8:
+//   void LocalToWorld(this=cm, Vector* output, Vector* local_point)
+//   Internally short-circuits when this->world_coords != 0 (output := input);
+//   we always call it and let it decide.
+// ---------------------------------------------------------------------------
+
+constexpr size_t kRoomSurfaceMeshOffset            = 0x3c;
+constexpr size_t kCollisionMeshVerticesOffset      = 0x54;
+constexpr size_t kCollisionMeshFaceCountOffset     = 0x58;
+constexpr size_t kCollisionMeshFacesOffset         = 0x60;
+constexpr size_t kCollisionMeshMaterialsOffset     = 0x64;
+constexpr size_t kSurfaceMeshAdjacenciesOffset     = 0x88;
+
+constexpr size_t kWalkmeshFaceStride               = 0xc;   // 3 × ulong
+
+constexpr uintptr_t kAddrCollisionMeshLocalToWorld = 0x00596aa0;
+
+namespace acc::engine {
+
+// One perimeter walkmesh edge — a triangle side that has no neighbour
+// (`SurfaceMeshAdjacency.indices[e] == -1`) and therefore corresponds to a
+// physical wall in the room. Endpoints are in WORLD space (LocalToWorld
+// already applied at extraction time, so consumers do not need the room's
+// CSWCollisionMesh anymore — the edge is self-contained).
+struct WallEdge {
+    Vector a;
+    Vector b;
+    int    room_id;       // CSWSArea-local room index (0..room_count-1)
+    int    material_id;   // surfacemat.2da row id for the face this edge bounds
+};
+
+// Walks every room in `area`, then every face in each room's
+// CSWRoomSurfaceMesh, and emits one WallEdge for each triangle side whose
+// adjacency is `-1` (perimeter / wall sentinel). Endpoints are transformed
+// into world space via CSWCollisionMesh::LocalToWorld so callers can compute
+// distances against the player's world position directly.
+//
+// Output:
+//   - returns total perimeter-edge count discovered across all rooms.
+//   - if outBuf is non-null and maxEdges > 0, the first min(total, maxEdges)
+//     edges are written into outBuf. The remaining (total − maxEdges) are
+//     silently dropped from the buffer but still counted, so the caller can
+//     detect overflow via `returned > maxEdges`.
+//   - pass `outBuf=nullptr, maxEdges=0` for a count-only probe.
+//
+// Every read is SEH-guarded internally; faults at any layer (null
+// surface_mesh on a partially-loaded room, garbage face/vertex indices, etc.)
+// abort that single room's contribution and the scan continues with the next
+// room. The function never raises.
+//
+// Cost: O(total_faces * 3) reads + one LocalToWorld engine call per emitted
+// edge. The walkmesh is immutable per area-load (doors are separate
+// collision meshes, not modifications to the room mesh), so this should be
+// called once per area-change and the result cached by the caller.
+int BuildAreaWallCache(void* area, WallEdge* outBuf, int maxEdges);
+
+}  // namespace acc::engine
