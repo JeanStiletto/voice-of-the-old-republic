@@ -34,12 +34,6 @@ struct DiagSchedule {
 };
 DiagSchedule g_diag;
 
-// Crash-safety gate state for the one-shot inner PopulateMenus call.
-// Each ScheduleWideDiag and Tick increments g_tickCounter; the gate
-// rejects if g_lastPopulateTick + cooldown >= g_tickCounter.
-unsigned int g_tickCounter      = 0;
-unsigned int g_lastPopulateTick = 0;
-
 // Find the next/prev row whose action_lists[row].size > 0. Returns -1 if
 // no row has actions (caller treats as "menu empty"). `start` is exclusive
 // — the search begins one step in `dir` direction. Wraps at the
@@ -279,23 +273,7 @@ void ScheduleWideDiag(int frames, const char* tag) {
                   frames, g_diag.tag);
 }
 
-bool CanIssueInnerPopulate(int cooldownFrames) {
-    if (cooldownFrames < 1) cooldownFrames = 1;
-    if (g_lastPopulateTick == 0) return true;  // never populated
-    unsigned int elapsed = g_tickCounter - g_lastPopulateTick;
-    // Unsigned wrap: elapsed is huge if g_tickCounter underflowed (it
-    // doesn't, we only increment), so this comparison is safe.
-    return elapsed >= static_cast<unsigned int>(cooldownFrames);
-}
-
-void MarkPopulateIssued() {
-    g_lastPopulateTick = g_tickCounter;
-}
-
 void Tick() {
-    // Tick first so the diagnostic gets the same counter view callers do.
-    ++g_tickCounter;
-
     // Emit any scheduled wide-diagnostic dumps. Runs independently of
     // g_state.active so we can investigate populate calls that didn't
     // arm (the empty-rows case is exactly when we want the data).

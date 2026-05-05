@@ -85,14 +85,4 @@ void ForceDisarm(const char* reason);
 // SEH-wrapped per acc::engine_radial helpers.
 void ScheduleWideDiag(int frames, const char* tag);
 
-// Crash-safety gate for a one-shot inner CSWGuiTargetActionMenu::PopulateMenus
-// call. Returns true if a populate has NOT been issued in the last
-// `cooldownFrames` ticks; caller should record the populate by calling
-// MarkPopulateIssued on success. Used by engine_picker to ensure we
-// never re-populate the same TAM in back-to-back frames (the triple-
-// populate test crashed the engine's Draw on next frame —
-// patch-20260505-073407.log).
-bool CanIssueInnerPopulate(int cooldownFrames);
-void MarkPopulateIssued();
-
 }  // namespace acc::radial_menu

@@ -16,21 +16,53 @@
 //   never see it. Without this module, "Aktionsmenü" is announced but the
 //   user has no way to select an action.
 //
-// Verified surfaces (k1_win_gog_swkotor.exe.xml, 2026-05-05):
+// Verified surfaces (k1_win_gog_swkotor.exe.xml + headless decomp 2026-05-05):
 //   CSWGuiTargetActionMenu::SelectNextAction @0x006865b0  (row index)
 //   CSWGuiTargetActionMenu::SelectPrevAction @0x00686680  (row index)
 //   CSWGuiTargetActionMenu::DoTargetAction   @0x00689610  (row index)
 //   IsTargetActionMenuControl                @0x00684ed0  (predicate; unused)
 //
-// Struct layout (swkotor.exe.h:10405 + line 11611 MEMBER table):
+// How the radial gets populated (decomp of 0x00689d80 + 0x00689410):
+//   `CSWGuiMainInterface::PopulateMenus(this) @0x00689d80` (no args, this =
+//   main_interface) is the public entry point — it's what
+//   HandleMouseClickInWorld calls on first-click and what we now call from
+//   the empty-descriptor branch of `acc::picker::Drive`.
+//   Internally it:
+//     1. player_creature = GetSWParty()->GetPlayerCharacter()
+//     2. game_object     = CClientExoApp::GetGameObject(field1_0x64)
+//     3. swc_target      = game_object->vtable->AsSWCObject(game_object)
+//        ^^^ this downcast is required — passing a raw CGameObject* to the
+//        inner @0x00689410 corrupts target_type and trips /GS canary on
+//        subsequent SelectNext/Prev/DoTargetAction calls.
+//     4. Refills 6 personal-action lists on main_interface (field5_0x74[0..5])
+//        via `CSWCCreature::GetPersonalActions(player, i, &list)` for i=0..5.
+//     5. Calls inner `CSWGuiTargetActionMenu::PopulateMenus(player, mode,
+//        swc_target, &result) @0x00689410` which populates THIS object's
+//        action_lists[0..2] via `CSWCCreature::GetTargetActions(player,
+//        swc_target, row, &list)` for row=0..2.
+//   So one wrapper call produces both the surrounding UI's personal actions
+//   AND the radial's per-row target actions. We don't need (and shouldn't
+//   make) a direct inner call.
+//
+// Struct layout (swkotor.exe.h:10405 + line 11611 MEMBER table, with
+// field1[12] semantics confirmed by inner-PopulateMenus + SelectNextAction
+// + SelectPrevAction + DoTargetAction decomps):
 //   CSWGuiTargetActionMenu lives at CSWGuiMainInterface + 0xBC.
 //     +0x00  CExoArrayList<CSWGuiInterfaceAction> action_lists[3]   (3*0x0C)
-//     +0x24  int field1[12]
+//     +0x24  int field1[12]   ← 4 target_types × 3 rows = 12 ints. Each
+//                              int is the *currently-selected action_id*
+//                              for (target_type, row); -1 means "none, use
+//                              row default". SelectNext/Prev mutate this
+//                              slot; inner-PopulateMenus + DoTargetAction
+//                              read it to find the active action within
+//                              action_lists[row].
 //     +0x54  CSWGuiMainInterfaceAction target_actions[3]            (3*0x71C)
 //     +0x15A8 CSWGuiMainInterface* main_interface
 //     +0x15CC CSWGuiLabel name_label
 //     +0x1AE4 ulong  failure_reason_strref
-//     +0x1AEA byte   target_type
+//     +0x1AEA byte   target_type        ← set by inner-PopulateMenus from
+//                                         GetTargetInterfaceTargetType.
+//                                         Indexes field1[].
 //
 //   CSWGuiMainInterfaceAction (size 0x71C):
 //     +0x000 CSWGuiButton action_button   ← visible action label (at +0x16C)
@@ -95,38 +127,6 @@ bool ReadRowActionLabel(void* tam, int row, char* outBuf, size_t bufSize);
 // (the engine sets it via SetNameLabel @0x00685af0 during PopulateMenus
 // so a successfully-opened radial always has a name).
 bool ReadTargetName(void* tam, char* outBuf, size_t bufSize);
-
-// Call the inner CSWGuiTargetActionMenu::PopulateMenus @ 0x00689410
-// directly with explicit (creature, mode, target) arguments. The signature
-// is `void __thiscall PopulateMenus(CSWCCreature*, int mode,
-// CSWCObject*, int* outResult)`. Both pointers are *client*-side.
-//
-// MainInterface::PopulateMenus's wrapper resolves leader+target+mode
-// implicitly and calls this, but the wrapper picks mode=0 (default) and
-// can leave the rows empty when GetDefaultActions returned 0. Calling
-// the inner directly with mode 0/1/2 lets us enumerate alternatives the
-// wrapper doesn't expose (the radial in vanilla shows multiple sectors:
-// combat / non-combat / passive — those map to modes).
-//
-// Returns the int the engine wrote to the outResult slot. The caller
-// decides what to do with action_lists/target_actions afterward (caller
-// re-reads TAM state).
-//
-// `tam` may be null (caller's chain failure) — we early-return without
-// calling. SEH-wraps the engine call.
-int PopulateFromArgs(void* tam, void* clientCreature, int mode,
-                     void* clientObject);
-
-// Resolve the *client*-side player creature (CSWCCreature*) without
-// chaining to server_object. Mirrors the chain in engine_player but
-// stops one hop short. Returns nullptr at any null link or fault.
-void* ResolveClientPlayerCreature();
-
-// Resolve a *client*-side game object (CSWCObject*) by handle, without
-// chaining through server_object @ +0xF8. Mirrors engine_area's
-// ResolveClientObjectHandle but stops at the client pointer. Returns
-// nullptr on sentinel handle, miss, or fault.
-void* ResolveClientGameObject(uint32_t clientHandle);
 
 // Diagnostic: dump current TAM state to the patch log (hex window of
 // the first 0x40 bytes, plus the parsed action_lists[0..2] and per-row

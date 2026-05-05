@@ -69,30 +69,7 @@ constexpr uintptr_t kAddrSelectNextAction = 0x006865b0;
 constexpr uintptr_t kAddrSelectPrevAction = 0x00686680;
 constexpr uintptr_t kAddrDoTargetAction   = 0x00689610;
 
-// CSWGuiTargetActionMenu::PopulateMenus @ 0x00689410 — the *inner*
-// populate. Signature from the SARIF user-defined typedef:
-//   void __thiscall PopulateMenus(CSWCCreature*, int mode,
-//                                  CSWCObject*, int* outResult)
-// MainInterface::PopulateMenus (the (void) wrapper at 0x00689d80) calls
-// this internally at 0x00689db8 with mode it picks itself; calling it
-// directly lets us pick the mode and the leader.
-constexpr uintptr_t kAddrInnerTamPopulate = 0x00689410;
-
-// CClientExoApp::GetPlayerCreature @ 0x005ED540 — returns CSWCCreature*
-// (client-side). We already chain through it in engine_player; replicated
-// here so engine_radial doesn't need a friend function dance.
-constexpr uintptr_t kAddrCClientGetPlayerCreature = 0x005ED540;
-
-// CClientExoApp::GetGameObject @ 0x005ED580 — same address engine_area
-// uses; takes (this, handle), returns CSWCObject*.
-constexpr uintptr_t kAddrCClientGetGameObject = 0x005ED580;
-
 typedef void (__thiscall* PFN_RowOp)(void* this_, int row);
-typedef void (__thiscall* PFN_TamPopulate)(void* this_, void* creature,
-                                           int mode, void* target,
-                                           int* outResult);
-typedef void* (__thiscall* PFN_GetPlayerCreatureC)(void* exoApp);
-typedef void* (__thiscall* PFN_GetGameObjectC)(void* exoApp, uint32_t handle);
 
 void* GetClientExoApp() {
     __try {
@@ -488,58 +465,6 @@ bool SelectPrevActionInRow(void* tam, int row) {
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         acclog::Write("Radial: SelectPrevActionInRow SEH-FAULT row=%d", row);
         return false;
-    }
-}
-
-int PopulateFromArgs(void* tam, void* clientCreature, int mode,
-                     void* clientObject) {
-    if (!tam || !clientCreature || !clientObject) {
-        acclog::Write(
-            "Radial: PopulateFromArgs SKIP — tam=%p creature=%p target=%p mode=%d",
-            tam, clientCreature, clientObject, mode);
-        return 0;
-    }
-    int result = 0;
-    __try {
-        auto fn = reinterpret_cast<PFN_TamPopulate>(kAddrInnerTamPopulate);
-        fn(tam, clientCreature, mode, clientObject, &result);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        acclog::Write(
-            "Radial: PopulateFromArgs SEH-FAULT creature=%p mode=%d target=%p",
-            clientCreature, mode, clientObject);
-        return 0;
-    }
-    acclog::Write(
-        "Radial: PopulateFromArgs OK creature=%p mode=%d target=%p result=%d",
-        clientCreature, mode, clientObject, result);
-    return result;
-}
-
-void* ResolveClientPlayerCreature() {
-    void* exoApp = GetClientExoApp();
-    if (!exoApp) return nullptr;
-    __try {
-        auto fn = reinterpret_cast<PFN_GetPlayerCreatureC>(
-            kAddrCClientGetPlayerCreature);
-        return fn(exoApp);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
-void* ResolveClientGameObject(uint32_t clientHandle) {
-    if (clientHandle == 0u || clientHandle == 0xFFFFFFFFu ||
-        clientHandle == 0x7F000000u) {
-        return nullptr;
-    }
-    void* exoApp = GetClientExoApp();
-    if (!exoApp) return nullptr;
-    __try {
-        auto fn = reinterpret_cast<PFN_GetGameObjectC>(
-            kAddrCClientGetGameObject);
-        return fn(exoApp, clientHandle);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
     }
 }
 
