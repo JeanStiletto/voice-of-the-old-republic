@@ -161,4 +161,20 @@ bool SelectNextActionInRow(void* tam, int row);
 bool SelectPrevActionInRow(void* tam, int row);
 bool DispatchRowAction   (void* tam, int row);
 
+// Diagnostic: resolve `targetClient` via CClientExoApp::GetGameObject,
+// downcast through the GameObjectMethods vtable, log target class +
+// per-class fields that the engine's GetTargetActions checks. For doors
+// these include cannot_bash (+0x104), can_use_actions (+0x108), is_hostile
+// (+0x114), state (+0x11c), field17 (+0x138). For creatures we just log
+// "creature" (full diag deferred until a creature target hits the empty-
+// descriptor branch). Used to disambiguate "the engine has no actions
+// because the target is in a final state" (e.g. open door, can_use_actions
+// = 0) from "the engine should have actions but our preconditions are
+// wrong" — the latter would be a bug worth investigating.
+//
+// `tag` is included in each log line for correlation with surrounding
+// state dumps. SEH-wrapped throughout; logs an explanatory line on any
+// fault rather than crashing.
+void LogTargetDiag(uint32_t targetClient, const char* tag);
+
 }  // namespace acc::engine_radial

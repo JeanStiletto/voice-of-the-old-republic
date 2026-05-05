@@ -9,13 +9,16 @@
                                 // kAppManagerClientAppOffset,
                                 // kClientExoAppInternalOffset
 #include "engine_player.h"      // SetPlayerInputEnabled (auto-restore
-                                // gate around the dispatch — same
-                                // pattern guidance::UseObject uses)
-#include "engine_radial.h"      // ResolveTargetActionMenu, LogStateWide —
-                                // used after the empty-descriptor wrapper
-                                // call so the diagnostic captures whatever
-                                // the wrapper's internal inner-PopulateMenus
-                                // wrote into action_lists[].
+                                // gate around the dispatch — same pattern
+                                // guidance::UseObject uses) +
+                                // GetPlayerCharacterName for the empty-
+                                // descriptor diagnostic.
+#include "engine_radial.h"      // ResolveTargetActionMenu, LogStateWide,
+                                // LogTargetDiag — used around the empty-
+                                // descriptor wrapper call to capture both
+                                // the wrapper's TAM output and the input
+                                // target's class+state so empty-rows logs
+                                // are self-explanatory.
 #include "guidance_autowalk.h"  // kInvalidObjectId (the engine sentinel
                                 // used in the engine's own descriptor
                                 // slots and our hover gate)
@@ -324,6 +327,19 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot) {
     SnapshotDescriptor(internal, &localSnap);
 
     if (!localSnap.valid) {
+        // Diagnostic — capture leader name + target class/state BEFORE
+        // calling the wrapper. Lets us tell, when action_lists comes back
+        // empty, whether the target is in a "no actions remaining" final
+        // state (open door, used placeable) or in a state where the engine
+        // *should* have surfaced something but didn't (locked door, leader
+        // skill mismatch).
+        char leaderName[64] = "";
+        acc::engine::GetPlayerCharacterName(leaderName, sizeof(leaderName));
+        acclog::Write(
+            "Picker: empty-descriptor diag — leader=[%s] target=0x%08x",
+            leaderName[0] ? leaderName : "?", targetClient);
+        acc::engine_radial::LogTargetDiag(targetClient, "before-wrapper");
+
         // Engine has no default action for this target (count==0).
         // Vanilla mouse flow at this point opens the radial menu via
         // HandleMouseClickInWorld's NOT-MATCH branch, which calls

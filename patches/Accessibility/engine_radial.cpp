@@ -69,7 +69,44 @@ constexpr uintptr_t kAddrSelectNextAction = 0x006865b0;
 constexpr uintptr_t kAddrSelectPrevAction = 0x00686680;
 constexpr uintptr_t kAddrDoTargetAction   = 0x00689610;
 
+// CClientExoApp::GetGameObject @ 0x005ED580 — same address engine_area /
+// engine_picker use. (this, handle) -> CGameObject*.
+constexpr uintptr_t kAddrCClientGetGameObject = 0x005ED580;
+
+// GameObjectMethods vtable indices we care about for runtime-class probing.
+// Layout from swkotor.exe.h:14638. Each entry is one __thiscall pointer
+// (4 bytes on x86); offsets are byte offsets into the vtable.
+//   [0] _destructor
+//   [1] SetId
+//   [2] ResetUpdateTimes
+//   [3] AsSWCObject     (+0x0C)
+//   [4] AsSWSObject     (+0x10)
+//   [5] AsSWCDoor       (+0x14)
+//   [6] AsSWSDoor       (+0x18)
+//   [10] AsSWCCreature  (+0x28)
+//   [14] AsSWCTrigger   (+0x38)
+//   [18] AsSWCPlaceable (+0x48)
+constexpr size_t kVtableAsSWCDoorOffset      = 0x14;
+constexpr size_t kVtableAsSWCCreatureOffset  = 0x28;
+constexpr size_t kVtableAsSWCTriggerOffset   = 0x38;
+constexpr size_t kVtableAsSWCPlaceableOffset = 0x48;
+
+// CSWCDoor field offsets (swkotor.exe.h:6192 STRUCTURE NAME="CSWCDoor"):
+//   +0x104  cannot_bash       (int) — gates Bash row
+//   +0x108  can_use_actions   (int) — gates BOTH Bash and Security rows
+//                                     (per CSWCDoor::GetTargetActions decomp)
+//   +0x114  is_hostile        (int)
+//   +0x11c  state             (int) — door open/closed state
+//   +0x138  field17           (int) — additional Bash-row gate
+constexpr size_t kDoorCannotBashOffset     = 0x104;
+constexpr size_t kDoorCanUseActionsOffset  = 0x108;
+constexpr size_t kDoorIsHostileOffset      = 0x114;
+constexpr size_t kDoorStateOffset          = 0x11c;
+constexpr size_t kDoorField17Offset        = 0x138;
+
 typedef void (__thiscall* PFN_RowOp)(void* this_, int row);
+typedef void* (__thiscall* PFN_GetGameObject)(void* exoApp, uint32_t handle);
+typedef void* (__thiscall* PFN_AsClass)(void* gameObject);
 
 void* GetClientExoApp() {
     __try {
@@ -477,6 +514,129 @@ bool DispatchRowAction(void* tam, int row) {
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         acclog::Write("Radial: DispatchRowAction SEH-FAULT row=%d", row);
         return false;
+    }
+}
+
+namespace {
+
+// Call vtable->AsSWCxxx(gameObject) at the given vtable byte-offset.
+// Returns nullptr on null input or any fault.
+void* CallVtableAsClass(void* gameObject, size_t vtableOffset) {
+    if (!gameObject) return nullptr;
+    __try {
+        unsigned char** vtablePtr =
+            *reinterpret_cast<unsigned char***>(gameObject);
+        if (!vtablePtr) return nullptr;
+        unsigned char* slot =
+            *reinterpret_cast<unsigned char**>(
+                reinterpret_cast<unsigned char*>(vtablePtr) + vtableOffset);
+        if (!slot) return nullptr;
+        auto fn = reinterpret_cast<PFN_AsClass>(slot);
+        return fn(gameObject);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+}  // namespace
+
+void LogTargetDiag(uint32_t targetClient, const char* tag) {
+    const char* t = tag ? tag : "?";
+
+    if (targetClient == 0u || targetClient == 0xFFFFFFFFu ||
+        targetClient == 0x7F000000u) {
+        acclog::Write("Radial.Diag[%s]: target=0x%08x — sentinel/invalid",
+                      t, targetClient);
+        return;
+    }
+
+    void* exoApp = GetClientExoApp();
+    if (!exoApp) {
+        acclog::Write("Radial.Diag[%s]: target=0x%08x — no client exo app",
+                      t, targetClient);
+        return;
+    }
+
+    void* gameObject = nullptr;
+    __try {
+        auto fn = reinterpret_cast<PFN_GetGameObject>(
+            kAddrCClientGetGameObject);
+        gameObject = fn(exoApp, targetClient);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        gameObject = nullptr;
+    }
+    if (!gameObject) {
+        acclog::Write(
+            "Radial.Diag[%s]: target=0x%08x — GetGameObject returned NULL",
+            t, targetClient);
+        return;
+    }
+
+    // Read the vtable address itself for log identification — different
+    // runtime classes have different vtables, so this is a quick "is the
+    // door we got the same one between calls" check.
+    uintptr_t vtableAddr = 0;
+    __try {
+        vtableAddr = *reinterpret_cast<uintptr_t*>(gameObject);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        vtableAddr = 0;
+    }
+
+    void* asDoor      = CallVtableAsClass(gameObject, kVtableAsSWCDoorOffset);
+    void* asCreature  = CallVtableAsClass(gameObject, kVtableAsSWCCreatureOffset);
+    void* asPlaceable = CallVtableAsClass(gameObject, kVtableAsSWCPlaceableOffset);
+    void* asTrigger   = CallVtableAsClass(gameObject, kVtableAsSWCTriggerOffset);
+
+    const char* kind = "unknown";
+    if      (asDoor)      kind = "door";
+    else if (asCreature)  kind = "creature";
+    else if (asPlaceable) kind = "placeable";
+    else if (asTrigger)   kind = "trigger";
+
+    acclog::Write(
+        "Radial.Diag[%s]: target=0x%08x gameObject=%p vtable=0x%08x kind=%s "
+        "(door=%p creature=%p placeable=%p trigger=%p)",
+        t, targetClient, gameObject,
+        static_cast<uint32_t>(vtableAddr), kind,
+        asDoor, asCreature, asPlaceable, asTrigger);
+
+    if (asDoor) {
+        int32_t cannotBash = -1;
+        int32_t canUseActions = -1;
+        int32_t isHostile = -1;
+        int32_t state = -1;
+        int32_t field17 = -1;
+        ReadInt32(asDoor, kDoorCannotBashOffset,    &cannotBash);
+        ReadInt32(asDoor, kDoorCanUseActionsOffset, &canUseActions);
+        ReadInt32(asDoor, kDoorIsHostileOffset,     &isHostile);
+        ReadInt32(asDoor, kDoorStateOffset,         &state);
+        ReadInt32(asDoor, kDoorField17Offset,       &field17);
+        acclog::Write(
+            "Radial.Diag[%s]: door=%p cannot_bash=%d can_use_actions=%d "
+            "is_hostile=%d state=%d field17=%d",
+            t, asDoor, cannotBash, canUseActions, isHostile, state, field17);
+
+        // Annotate which precondition would fail — saves cross-referencing
+        // the GetTargetActions decomp every time a log lands.
+        if (canUseActions == 0) {
+            acclog::Write(
+                "Radial.Diag[%s]: door precondition fail — can_use_actions=0 "
+                "(door already in final state, e.g. opened); both Bash and "
+                "Security rows skipped by CSWCDoor::GetTargetActions",
+                t);
+        }
+        if (cannotBash != 0) {
+            acclog::Write(
+                "Radial.Diag[%s]: door precondition fail — cannot_bash=%d "
+                "(scripted door, no Bash row even when can_use_actions != 0)",
+                t, cannotBash);
+        }
+        if (field17 != 0) {
+            acclog::Write(
+                "Radial.Diag[%s]: door precondition fail — field17=%d "
+                "(blocks Bash row regardless of cannot_bash / can_use_actions)",
+                t, field17);
+        }
     }
 }
 
