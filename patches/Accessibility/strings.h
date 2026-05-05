@@ -174,6 +174,13 @@ enum class Id : int {
     // the post-load "you arrived in …" one.
     FmtTransitionLoading,
 
+    // ---- Door state suffixes appended by `engine_area::GetObjectName` for
+    //      doors. Only the *informative* states get a suffix — the default
+    //      "closed and unlocked" reads as bare "Tür"/"Door" so common-case
+    //      cycle/narrate stays terse. See `BuildDoorSuffix`.
+    DoorOpen,
+    DoorLocked,
+
     // ---- Octagonal compass directions for turn announcement
     //      (Pillar 2 sub-feature C). German uses traditional
     //      "Norden / Osten / S\xFCden / Westen" forms with hyphenated

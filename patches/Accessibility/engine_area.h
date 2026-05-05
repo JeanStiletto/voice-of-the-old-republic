@@ -320,6 +320,15 @@ constexpr size_t kObjectTagOffset  = 0x18;  // CExoString — modder-assigned st
 // Per-subclass localized-name offsets (CExoLocString unless noted). Values
 // from investigation Q5 + Q7 — all CONFIRMED in the SARIF DATATYPEs table.
 constexpr size_t kDoorLocNameOffset            = 0x39c;
+// Server-side door state + extra-text fields (CSWSDoor). Verified against
+// Lane's SARIF DATATYPE entry for CSWSDoor. Used by `GetObjectName` to
+// enrich the bare loc_name with state ("verriegelt"/"offen"), the
+// transition destination (e.g. "Brücke"), and any description the modder
+// set on the .utd template.
+constexpr size_t kDoorLockedOffset             = 0x2c4;  // undefined4 (treated as bool)
+constexpr size_t kDoorOpenStateOffset          = 0x2cc;  // byte
+constexpr size_t kDoorDescriptionOffset        = 0x3a4;  // CExoLocString
+constexpr size_t kDoorTransitionDestOffset     = 0x3c8;  // CExoLocString
 constexpr size_t kCreatureStatsPtrOffset       = 0xa74;  // CSWSCreatureStats* in CSWSCreature
 constexpr size_t kCreatureStatsFirstNameOffset = 0x14;   // CExoLocString in CSWSCreatureStats
 constexpr size_t kPlaceableLocNameOffset       = 0x228;

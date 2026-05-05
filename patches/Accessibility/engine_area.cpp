@@ -6,6 +6,7 @@
 
 #include "engine_player.h"  // GetPlayerArea, kAddrAppManagerPtr
 #include "engine_reads.h"   // ExtractTextOrStrRef, ReadCExoString
+#include "strings.h"        // door state suffix lookup (DoorOpen/DoorLocked)
 
 namespace acc::engine {
 
@@ -265,6 +266,72 @@ bool TryReadTag(void* obj, char* outBuf, size_t bufSize) {
     }
 }
 
+// Append ", <text>" to outBuf if there's room. No-op when text is empty
+// or outBuf is already at capacity.
+void AppendCommaSeparated(char* outBuf, size_t bufSize, const char* text) {
+    if (!outBuf || bufSize < 3 || !text || !text[0]) return;
+    size_t curLen = 0;
+    while (curLen < bufSize && outBuf[curLen]) ++curLen;
+    if (curLen >= bufSize - 1) return;
+    size_t remaining = bufSize - curLen - 1;
+    if (remaining < 3) return;  // no room for ", x" minimum
+    outBuf[curLen++] = ',';
+    outBuf[curLen++] = ' ';
+    remaining -= 2;
+    for (size_t i = 0; i < remaining && text[i]; ++i) {
+        outBuf[curLen++] = text[i];
+    }
+    outBuf[curLen] = '\0';
+}
+
+// Build the comma-prefixed suffix for a CSWSDoor — state + transition
+// destination + description. Empty when the door is in the boring default
+// state (closed + unlocked) AND has no transition target / description.
+//
+// Order is deliberate: state first ("Tür, verriegelt") because that's the
+// most actionable bit for the player; destination second ("Tür, offen,
+// Brücke") so the user hears it before any long-form description; then
+// description last.
+void BuildDoorSuffix(void* serverDoor, char* outBuf, size_t bufSize) {
+    if (!outBuf || bufSize == 0) return;
+    outBuf[0] = '\0';
+    if (!serverDoor) return;
+
+    uint32_t locked    = 0;
+    uint8_t  openState = 0;
+    __try {
+        auto* base = reinterpret_cast<unsigned char*>(serverDoor);
+        locked    = *reinterpret_cast<uint32_t*>(base + kDoorLockedOffset);
+        openState = *reinterpret_cast<uint8_t*> (base + kDoorOpenStateOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        // leave defaults; suffix will skip the state line
+    }
+
+    if (locked != 0) {
+        AppendCommaSeparated(outBuf, bufSize,
+            acc::strings::Get(acc::strings::Id::DoorLocked));
+    } else if (openState != 0) {
+        // Treat any non-zero open_state as "open enough to mention".
+        // Stock KOTOR uses 0=closed, ≥1=opening/open in our observations
+        // (CSWCDoor.state=2 was the post-open value seen in the May 5
+        // logs); the server-side byte mirrors that. If the value space
+        // turns out wider, the worst case is we read "offen" for an
+        // animating door — better signal than silent.
+        AppendCommaSeparated(outBuf, bufSize,
+            acc::strings::Get(acc::strings::Id::DoorOpen));
+    }
+
+    char buf[128];
+    if (TryReadLocString(serverDoor, kDoorTransitionDestOffset,
+                         buf, sizeof(buf)) && buf[0]) {
+        AppendCommaSeparated(outBuf, bufSize, buf);
+    }
+    if (TryReadLocString(serverDoor, kDoorDescriptionOffset,
+                         buf, sizeof(buf)) && buf[0]) {
+        AppendCommaSeparated(outBuf, bufSize, buf);
+    }
+}
+
 }  // namespace
 
 bool GetObjectName(void* gameObject, char* outBuf, size_t bufSize) {
@@ -280,6 +347,16 @@ bool GetObjectName(void* gameObject, char* outBuf, size_t bufSize) {
         case K::Door:
             got = TryReadLocString(gameObject, kDoorLocNameOffset,
                                    outBuf, bufSize);
+            // Enrich with state ("verriegelt"/"offen") + transition
+            // destination + description. All three are silent on the
+            // common case (closed unlocked in-area door) so cycle
+            // narration stays terse; locked/open doors and module
+            // transitions get a meaningful suffix so the user can tell
+            // them apart without inspecting tags.
+            if (got && outBuf[0] != '\0') {
+                BuildDoorSuffix(gameObject, outBuf + std::strlen(outBuf),
+                                bufSize - std::strlen(outBuf));
+            }
             break;
         case K::Creature: {
             __try {

@@ -60,6 +60,9 @@ const char* Get(Id id) {
         case Id::FmtTransitionRoomIndex: return "Room %d";
         case Id::FmtTransitionLoading: return "Loading: %s";
 
+        case Id::DoorOpen:             return "open";
+        case Id::DoorLocked:           return "locked";
+
         case Id::DirNorth:             return "North";
         case Id::DirNortheast:         return "Northeast";
         case Id::DirEast:              return "East";
