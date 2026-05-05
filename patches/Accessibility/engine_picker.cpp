@@ -73,11 +73,18 @@ constexpr size_t kResRefMaxLen                  = 16;
 constexpr uintptr_t kAddrCClientExoAppInternalGetDefaultActions      = 0x00620620;
 constexpr uintptr_t kAddrCClientExoAppInternalHandleMouseClickInWorld = 0x00620350;
 constexpr uintptr_t kAddrCGuiInGameSetMainInterfaceTarget            = 0x0062b000;
+// CSWGuiMainInterface::PopulateMenus @0x00689d80 — builds the radial
+// action menu. Called by HandleMouseClickInWorld's NOT-MATCH branch
+// (vanilla first-click-on-target behavior). We invoke it directly when
+// the engine descriptor is empty (no default action available) so the
+// user gets the same fallback UI a sighted player would see.
+constexpr uintptr_t kAddrCSWGuiMainInterfacePopulateMenus            = 0x00689d80;
 
 typedef void (__thiscall* PFN_GetDefaultActions)(void* this_);
 typedef void (__thiscall* PFN_HandleMouseClickInWorld)(void* this_);
 typedef void (__thiscall* PFN_SetMainInterfaceTarget)(void* this_,
                                                      uint32_t target);
+typedef void (__thiscall* PFN_PopulateMenus)(void* this_);
 
 void* GetClientExoApp() {
     __try {
@@ -310,15 +317,51 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot) {
     // and for refined pre-roll narration even when we don't end up
     // dispatching.
     SnapshotDescriptor(internal, &localSnap);
-    if (outSnapshot) *outSnapshot = localSnap;
 
     if (!localSnap.valid) {
-        acclog::Write(
-            "Picker: GetDefaultActions returned empty descriptor "
-            "(target=0x%08x count=%d) — dispatch skipped",
-            targetClient, localSnap.count);
-        return false;
+        // Engine has no default action for this target (count==0).
+        // Vanilla mouse flow at this point opens the radial menu via
+        // HandleMouseClickInWorld's NOT-MATCH branch, which calls
+        // CSWGuiMainInterface::PopulateMenus. We do the same so the
+        // user gets the action picker instead of a silent no-op.
+        //
+        // mainIf is the CSWGuiMainInterface*; PopulateMenus reads
+        // its field1_0x64 (already pointed at our target by step 1)
+        // to know which target to enumerate actions for.
+        bool radialOpened = false;
+        __try {
+            auto fn = reinterpret_cast<PFN_PopulateMenus>(
+                kAddrCSWGuiMainInterfacePopulateMenus);
+            fn(mainIf);
+            radialOpened = true;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            acclog::Write(
+                "Picker: PopulateMenus SEH-FAULT target=0x%08x "
+                "(empty-descriptor radial fallback)",
+                targetClient);
+        }
+
+        localSnap.radial_opened = radialOpened;
+        if (outSnapshot) *outSnapshot = localSnap;
+
+        if (radialOpened) {
+            acclog::Write(
+                "Picker: empty descriptor — opened radial via "
+                "PopulateMenus (target=0x%08x count=%d)",
+                targetClient, localSnap.count);
+        } else {
+            acclog::Write(
+                "Picker: GetDefaultActions returned empty descriptor "
+                "(target=0x%08x count=%d) and PopulateMenus faulted",
+                targetClient, localSnap.count);
+        }
+        // Return value: true if we *did something* (radial counts).
+        // Caller's "dispatched" path is now "we drove the engine" —
+        // keep AddUseObjectAction as the last-ditch fallback only when
+        // both the descriptor AND the radial path failed.
+        return radialOpened;
     }
+    if (outSnapshot) *outSnapshot = localSnap;
 
     acclog::Write(
         "Picker: descriptor populated target=0x%08x action_id=0x%x "

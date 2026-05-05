@@ -104,6 +104,13 @@ enum class Id : int {
     //      engine descriptor is empty.
     FmtInteractEngine,
 
+    // ---- Radial-menu opened pre-roll. Used when the engine has no
+    //      default action for the focused target (count==0) and we
+    //      open the action picker (CSWGuiMainInterface::PopulateMenus)
+    //      so the user can pick from the available non-default options
+    //      (Security, Bash, Examine, …). One arg: `%s` target name.
+    FmtInteractRadial,
+
     // ---- Container loot panel announces.
     //      `ContainerEmpty`        — count == 0.
     //      `ContainerOneItem`      — count == 1 (German singular has different

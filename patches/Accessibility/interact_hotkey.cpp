@@ -227,7 +227,12 @@ void OnInteract() {
     bool dispatched = acc::picker::Drive(handle, &snap);
 
     char msg[192];
-    if (snap.valid && snap.label[0] != '\0') {
+    if (snap.radial_opened) {
+        std::snprintf(
+            msg, sizeof(msg),
+            acc::strings::Get(acc::strings::Id::FmtInteractRadial),
+            name);
+    } else if (snap.valid && snap.label[0] != '\0') {
         std::snprintf(
             msg, sizeof(msg),
             acc::strings::Get(acc::strings::Id::FmtInteractEngine),
@@ -241,18 +246,26 @@ void OnInteract() {
 
     acclog::Write(
         "Interact: Enter -> [%s] target=%p handle=0x%08x cat=%s "
-        "engine_label=[%s] engine_action=0x%x engine_count=%d",
+        "engine_label=[%s] engine_action=0x%x engine_count=%d "
+        "radial_opened=%d",
         msg, target, handle,
         cat == acc::filter::CycleCategory::Count_
             ? "(unclassified)"
             : acc::filter::CategoryName(cat),
-        snap.label, snap.action_id, snap.count);
+        snap.label, snap.action_id, snap.count,
+        snap.radial_opened ? 1 : 0);
 
     if (dispatched) {
-        acclog::Write(
-            "Interact: engine picker dispatched action_id=0x%x "
-            "label=[%s] target=0x%08x",
-            snap.action_id, snap.label, handle);
+        if (snap.radial_opened) {
+            acclog::Write(
+                "Interact: radial opened (no default action) target=0x%08x",
+                handle);
+        } else {
+            acclog::Write(
+                "Interact: engine picker dispatched action_id=0x%x "
+                "label=[%s] target=0x%08x",
+                snap.action_id, snap.label, handle);
+        }
         return;
     }
 

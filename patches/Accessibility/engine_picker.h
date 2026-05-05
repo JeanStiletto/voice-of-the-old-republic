@@ -60,6 +60,12 @@ struct ActionSnapshot {
     char     icon[16];      // CResRef text from descriptor +0x20 (16 bytes)
     bool     valid;         // true when descriptor pointer was non-null
                             // AND count > 0
+    bool     radial_opened; // true when Drive() opened the radial
+                            // (CSWGuiMainInterface::PopulateMenus) instead
+                            // of dispatching — happens when the engine
+                            // has no default action for the target
+                            // (count==0). Caller should announce
+                            // "Aktionsmenü" and let the user navigate.
 };
 
 // Drive the engine's default-action picker for `targetServerHandle`.

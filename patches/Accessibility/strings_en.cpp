@@ -38,6 +38,7 @@ const char* Get(Id id) {
         case Id::FmtInteractTake:      return "Pick up %s";
         case Id::FmtInteractFailed:    return "Interact with %s failed";
         case Id::FmtInteractEngine:    return "%s %s";
+        case Id::FmtInteractRadial:    return "Action menu, %s";
 
         case Id::ContainerEmpty:       return "Empty";
         case Id::ContainerOneItem:     return "1 item";

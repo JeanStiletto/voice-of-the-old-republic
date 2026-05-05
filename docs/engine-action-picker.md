@@ -1,6 +1,6 @@
 # Engine Action Picker — driving context-sensitive interactions
 
-**Status: first implementation landed 2026-05-05** — picker drives Enter, falls back to `AddUseObjectAction` if the engine returns no descriptor. Untested in-game. Follow-up to commit `c680ceb`.
+**Status: first implementation landed + first test pass 2026-05-05** — picker drives Enter, falls back to `AddUseObjectAction` if the engine returns no descriptor. Default-action dispatch confirmed working at least once per door. Bug observed where rapid follow-up presses don't move the player. Paused for debugging next session — see "Open issues after first test" below.
 
 ## Premise
 
@@ -98,12 +98,71 @@ Full enum still unmapped, but **we don't need to read it on the dispatch path** 
 
 `strings.{h,en,de}` — new `FmtInteractEngine = "%s %s"` (engine-verb + target-name).
 
-## What's untested
+## What's tested (2026-05-05 first session)
 
-- The whole path. No in-game test yet. First test target: Endar Spire's locked door (Trask's tutorial) — should now speak the engine's "Sicherheit" verb and dispatch the security action via `HandleMouseClickInWorld`.
-- Whether `field283_0x4a4` accepts the same handle form as `last_target` (server handle OR'd with 0x80000000). Decompile suggests yes.
-- Whether `HandleMouseClickInWorld`'s opening gates (`pCVar2->field45_0xb4 == 0`, `gui_in_game->field12_0x30 == 0`, `client_options->camera_mode != 5`) are typically open during normal in-world input. Logs will reveal a silent fall-through.
-- Whether action functions called by HandleMouseClickInWorld correctly enqueue against the active leader (the same Tab-leader question that motivated `c680ceb`'s diagnostic).
+Two test runs against Endar Spire tutorial. Logs `patch-20260505-042007.log` (commit `bc855de`) and `patch-20260505-044525.log` (commit with radial fallback).
+
+**Confirmed working:**
+- Engine descriptor populates for unlocked closed doors (`action_id=0x3f2`, label `[Öffnen]`, icon `i_opendoor`, count=1).
+- Engine descriptor populates for friendly creatures (`action_id=0x3ea`, label `[Dialoge]`, icon `i_dialog`, count=1).
+- Engine descriptor populates for placeables/containers (`action_id=0x3f7`, label `[Öffnen]`, icon `i_openplace`).
+- Engine descriptor populates for armed mine triggers (`action_id=0x402`, label `[Mine entfernen]`, icon `i_recovermine`, count=1) — first observed live action id beyond what `GetDefaultActions` decomp showed. Add to the action-id enum.
+- The dispatch chain runs without faults on every press. `HandleMouseClickInWorld dispatched` log line fires; engine label "Öffnen" / "Dialoge" / "Mine entfernen" speaks before the dispatch.
+- The radial fallback for empty descriptors (`count==0`) compiled and is wired but **did not fire in the second test session** — the disarmed-trigger case from session 1 (line 5244) wasn't reproduced. Validation pending.
+
+**Confirmed regression vs prior `AddUseObjectAction` flow:**
+- *Player creature does not always walk to the target after dispatch.* First press of Enter on a door 7 m away worked (player walked through; pos changed (12.51, 21.40) → (20.17, 20.72) within 4 s). Subsequent presses on the same door from a new position did NOT move the leader, despite identical `Picker: HandleMouseClickInWorld dispatched ... action_id=0x3f2` log lines. Position remained static across 6 rapid Enter presses on door `0x80000047` between 04:48:50–04:48:54 in `patch-20260505-044525.log`.
+- The non-movement events all coincided with `Enter gate -- ALLOW, fg=BarkBubble` (Trask's bark dialog floating). However, BarkBubble is *not sufficient* to explain the failure on its own — door `0x80000046` *did* move the player while BarkBubble was foreground (lines 4055–4127 same log). So BarkBubble correlates but isn't deterministic.
+- Hypothesis (unverified): the engine's action-function call from `HandleMouseClickInWorld` (e.g. `CSWCDoor::ToggleDoorState(action_id, player)`) does not always enqueue the walk-to-target leg the way `AddUseObjectAction` does. When the player happens to be in range or the engine queue happens to also queue the walk, it works; otherwise the dispatch is "executed" but leaves the player standing still.
+
+## Open issues after first test (debug-next-session list)
+
+These need answers before we can ship the picker as the primary dispatch.
+
+### D1 — Why doesn't the engine action function always enqueue a walk-to leg?
+
+- *Open.* The same `Picker: HandleMouseClickInWorld dispatched action_id=0x3f2 [Öffnen]` log line corresponds to "player walks 7 m and opens door" in one case and "player stands still" in another. The dispatch returns successfully both times (no SEH, no fault, no log error).
+- Resolves: whether we need to insert our own walk-to leg before the engine dispatch.
+- Investigation path: decompile `CSWCDoor::ToggleDoorState`, `CSWCCreature::ActionInitiateDialog`, `CSWCPlaceable::UsePlaceable`, `CSWCDoor::MenuActionBash` and check which path they take to enqueue. If they all dispatch via `AddAction(creature, ACTION_*)` they should walk-then-act; if they directly toggle world state, they don't. Look for `AddAction` calls in their bodies.
+- Adjunct: log the player creature's action queue depth before/after each `HandleMouseClickInWorld` call to see if anything was enqueued. Helper: read `CSWSObject.action_queue` (offset TBD; check `swkotor.exe.h` for the field name).
+
+### D2 — Does BarkBubble actually block the dispatch?
+
+- *Open.* Correlation but not causation in session 2 logs. The engine's gate inside `HandleMouseClickInWorld` checks `pCVar2->field45_0xb4 == 0` and `gui_in_game->field12_0x30 == 0` and `client_options->camera_mode != 5` BEFORE doing anything. If any of these is non-zero, the function returns silently without dispatch.
+- We currently log only that the function call returned without faulting — that does NOT prove the engine actually dispatched. The bark bubble could be silently no-op'ing us.
+- Investigation path: hook the dispatch site (or the call inside HandleMouseClickInWorld at the `(*fn)(...)` call) to log "dispatch fn called". Or: read `pCVar2->field45_0xb4` and `gui_in_game->field12_0x30` from our Drive() before dispatch and log them. If either is non-zero during a known-failing press, we found the gate.
+
+### D3 — Is `HandleMouseClickInWorld`'s second-click semantics what we want?
+
+- *Open.* In vanilla mouse flow:
+  - First left-click on target: gate doesn't match → SetLastTarget + PopulateMenus (radial appears).
+  - Second left-click on same target: gate matches → dispatch.
+- We collapse both into one Enter press by always satisfying the gate. That works on the first press but the engine's action function may be designed assuming "the user already saw the radial and confirmed" — i.e., a state we never enter. Subsequent presses might be filtered as "already-handled" or have stale state.
+- Investigation path: compare the AI queue state across (a) vanilla mouse double-click, (b) our single Enter press. Maybe there's a cleanup step the radial flow does that we miss.
+
+### D4 — Cleanest fix candidate (deferred): pre-walk via `AddUseObjectAction`, then engine picker dispatch.
+
+- *Proposal — needs sanity check before implementing.* Call `acc::guidance::UseObject(handle)` first (enqueues `ACTION_USEOBJECT 0x28`, which the engine resolves to walk-to-then-correct-action via the same per-kind logic). Follow with `HandleMouseClickInWorld` for any picker-side state setup the engine expects.
+- Risk: redundant — both paths may queue overlapping actions. Could cause a hitch (stop, re-walk).
+- Risk: defeats the goal — if `AddUseObjectAction` already walks-then-acts correctly for this case, the `HandleMouseClickInWorld` call is redundant. Then we're back to the original primitive and the picker is just narration polish.
+- User preference recorded 2026-05-05: keep the goal of driving the engine picker for non-`USEOBJECT` actions (locked doors via Security, traps, etc.), but the "set engine flag wrong then reset" pattern is too fragile. Want a less brittle approach.
+- Alternative: build a small "is the player already near the target?" check before each press; only call the engine dispatch when in range; otherwise use `acc::guidance::WalkTo(target_position)` first and re-dispatch on a later tick after arrival. Requires a state machine in `interact_hotkey.cpp`, not a one-shot.
+
+### D5 — When does `field292_0x4c8` actually correspond to `field1_0x64`?
+
+- *Open.* `GetDefaultActions` reads `main_interface->field1_0x64` to compute the descriptor. Between our `SetMainInterfaceTarget(targetClient)` call and our `HandleMouseClickInWorld` call, anything (a `DoPassiveSelection` tick, a cursor movement, the engine's update loop) could overwrite either side. We assume same-target invariance but haven't tested concurrency.
+- Investigation path: log the descriptor's `target_id +0x1c` immediately before the `HandleMouseClickInWorld` call and confirm it still matches our intended target. Mismatch ⇒ engine raced us.
+
+### D6 — Action-function calling convention.
+
+- *Open.* `(*action_fn)(*(action+0x8), uVar3)` is decompiled as a 2-arg cdecl call: `(action_id, player_creature*)`. But functions like `CSWCDoor::ToggleDoorState` are declared as `__thiscall` methods. Either (a) the decompiler is misrepresenting and the actual ASM uses ECX = action_id (fastcall), or (b) the function actually takes `(int action_id, player*)` as a free function and uses `last_target` to find the door.
+- Resolves: whether we could safely call action functions directly without going through `HandleMouseClickInWorld`. Currently we don't, so this is informational — but matters for the no-radial fallback discussion in D4.
+- Investigation path: disasm one such function (`CSWCDoor::ToggleDoorState`) prologue and read the ASM directly from `k1_win_gog_swkotor.exe.gzf`.
+
+### D7 — Auto-restore of `SetPlayerInputEnabled` racing the queued action.
+
+- *Open.* We disable player input for 3 s on each press. Rapid presses extend the window. But what if the engine's queued AI action takes longer than 3 s to complete (long walk path)? The auto-restore re-enables input mid-walk, the player input clobber kicks in, action gets cancelled.
+- Investigation path: log queued-action duration vs auto-restore window. If they overlap, extend the window to match the engine's action timeout (or remove the auto-restore for engine-driven actions; the engine handles input-mode itself per `project_player_control_toggle.md`).
 
 ## Polish followups (post-test)
 
