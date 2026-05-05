@@ -220,6 +220,18 @@ enum class Id : int {
     DirWest,
     DirNorthwest,
 
+    // ---- Save / Load game panel (CSWGuiSaveLoad).
+    //      `FmtSaveLoadRow`      — row navigation with location enrichment.
+    //                              Args: row_text (`%s`), planet (`%s`),
+    //                              area (`%s`), index_one_based (`%d`),
+    //                              total (`%d`).
+    //      `FmtSaveLoadRowNoLoc` — row navigation when the entry's areaname
+    //                              and lastmodule are both empty (e.g. an
+    //                              unused slot). Args: row_text (`%s`),
+    //                              index_one_based (`%d`), total (`%d`).
+    FmtSaveLoadRow,
+    FmtSaveLoadRowNoLoc,
+
     // ---- Level-up hotkey (Shift+L). Speaks an opener cue when the user
     //      triggers `CGuiInGame::ShowLevelUpGUI` so the screen-reader
     //      user knows the panel was requested even before its controls

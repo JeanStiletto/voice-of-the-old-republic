@@ -85,6 +85,19 @@ constexpr int kEquipLbItemsId    =  5;  // LB_ITEMS
 constexpr int kEquipBtnBackId    = 36;  // BTN_BACK         (TLK 1582 = Schliess.)
 constexpr int kEquipBtnEquipId   = 37;  // BTN_EQUIP        (TLK 1580 = OK)
 
+// CSWGuiSaveLoad control IDs from saveload.gui (verified against chain logs:
+// patch-20260505-160124.log lines 45-65 et al). Stable across save and load
+// contexts — both render through the same .gui file.
+//
+//   id=0   games_listbox       (CSWGuiListBox; rows are CSWGuiSaveLoadEntry)
+//   id=11  delete_button       ("L\xF6schen" / "Delete")
+//   id=12  back_button         ("Abbrechen" / "Cancel")
+//   id=14  saveload_button     ("Laden" / "Save" / etc.)
+constexpr int kSaveLoadLbGamesId    =  0;
+constexpr int kSaveLoadBtnDeleteId  = 11;
+constexpr int kSaveLoadBtnBackId    = 12;
+constexpr int kSaveLoadBtnSaveLoadId = 14;
+
 static const char* ExtractAnnounceableText(void* control,
                                            char* outBuf, size_t bufSize,
                                            void* ownerPanel = nullptr) {
@@ -1244,6 +1257,179 @@ static void* FindCloseButton(void* panel) {
     return nullptr;
 }
 
+// Detect the CSWGuiSaveLoad panel (the "Spiel laden" / "Spiel speichern"
+// dialog). The panel is allocated dynamically when the user activates the
+// load/save action, has no slot in CGuiInGame, and so doesn't show up via
+// IdentifyPanel.
+//
+// We classify by a *structural* signature — the four .gui-time control IDs
+// the saveload.gui resource declares:
+//
+//   - id=0  games_listbox       (CSWGuiListBox)
+//   - id=11 delete_button       (CSWGuiButton)
+//   - id=12 back_button         (CSWGuiButton)
+//   - id=14 saveload_button     (CSWGuiButton)
+//
+// .gui-time IDs are baked into the resource at build time and identical
+// between the save and load contexts (both render through the same
+// CSWGuiSaveLoad layout). They're language-independent — only the rendered
+// label text is localised, not the IDs — so this matches every locale
+// without enumerating titles. The combined four-ID tuple is specific
+// enough that no other panel we've observed in the chain logs collides.
+//
+// We deliberately do NOT generalise this to "any panel that has a listbox":
+// listbox row semantics vary. Options sub-dialogs render settings as
+// listbox-row buttons whose onClick toggles state directly, dialog replies
+// have engine-bound arrow keys that mutate selection_index already, and
+// description listboxes are read-only. The select-then-confirm-via-button
+// pattern is shared by Container, Equip-picker, and SaveLoad — all three
+// kinds detected per-panel today.
+static bool IsSaveLoadPanel(void* panel) {
+    if (!panel) return false;
+
+    void* lb = FindControlById(panel, kSaveLoadLbGamesId);
+    if (!lb) return false;
+    void** lbVtable = *reinterpret_cast<void***>(lb);
+    if (reinterpret_cast<uintptr_t>(lbVtable) != kVtableListBox) return false;
+
+    return FindControlById(panel, kSaveLoadBtnSaveLoadId) != nullptr &&
+           FindControlById(panel, kSaveLoadBtnBackId)     != nullptr &&
+           FindControlById(panel, kSaveLoadBtnDeleteId)   != nullptr;
+}
+
+// Read the user-visible text of a CExoString-style field on a control. Returns
+// nullptr if the field is empty or the c_string pointer is null. The two
+// fields we care about on CSWGuiSaveLoadEntry (areaname, lastmodule) are plain
+// CExoStrings populated from the save GFF — no TLK indirection, no engine
+// rendering callback needed. Output is borrowed from the engine; valid until
+// the entry is freed (we use it inline within a single input event).
+static const char* ReadSaveLoadEntryString(void* entry, size_t fieldOffset) {
+    if (!entry) return nullptr;
+    auto* base = reinterpret_cast<unsigned char*>(entry);
+    auto* str  = reinterpret_cast<CExoString*>(base + fieldOffset);
+    if (!str || !str->c_string || str->length == 0) return nullptr;
+    return str->c_string;
+}
+
+// Result of a single arrow-key step on a listbox cursor. Filled by
+// DriveListBoxSelection; caller reads `row` to announce, `newSel`/`rowCount`
+// for index reporting, and `oldSel == newSel` to detect a boundary clamp
+// (per-tick monitors that watch selection_index changes won't fire on a
+// no-op step, so callers using a monitor announce inline only on clamp).
+struct ListBoxNavResult {
+    short oldSel;     // selection_index before the step
+    short newSel;     // selection_index after the step
+    int   rowCount;   // listbox.controls.size
+    void* row;        // row pointer at newSel (nullptr iff rowCount == 0)
+};
+
+// Drive a CSWGuiListBox cursor in response to a Nav-Up / Nav-Down keypress.
+// Pure listbox-side effect: writes selection_index and scrolls
+// top_visible_index to keep the new selection visible. Never calls into
+// the engine; in particular, does NOT fire CSWGuiListBox::SetSelectedControl
+// — so the engine's onSelectionChanged callback won't run, and any
+// preview-pane labels that depend on it (e.g. the SaveLoad planet/area
+// labels at id=4 / id=6) stay stale. Callers that need a richer
+// announcement should read fields directly from the row pointer instead
+// of those labels.
+//
+// `minSel` is the lowest selectable row index. Pass 0 for normal listboxes;
+// pass 1 for the equip-picker LB_ITEMS where row 0 is the .gui-time
+// PROTOITEM template (verified empirically — see
+// docs/equip-flow-investigation.md). Existing selection_index < minSel
+// (typically the engine's initial -1) lands on `minSel` regardless of
+// direction, closer to user expectation than wrapping or staying silent.
+//
+// Returns false iff `listbox` is null or has rowCount==0; caller logs +
+// ignores. On true, `out` is fully populated.
+static bool DriveListBoxSelection(void* listbox, bool navDown, short minSel,
+                                  ListBoxNavResult& out)
+{
+    out = {};
+    if (!listbox) return false;
+
+    auto* lbBase = reinterpret_cast<unsigned char*>(listbox);
+    auto* lbList = reinterpret_cast<CExoArrayList*>(
+        lbBase + kListBoxControlsOffset);
+    int rowCount = (lbList && lbList->data) ? lbList->size : 0;
+    if (rowCount <= 0) {
+        out.rowCount = 0;
+        return false;
+    }
+
+    short* selPtr = reinterpret_cast<short*>(
+        lbBase + kListBoxSelectionIndexOffset);
+    short* topPtr = reinterpret_cast<short*>(
+        lbBase + kListBoxTopVisibleIndexOffset);
+    short* ippPtr = reinterpret_cast<short*>(
+        lbBase + kListBoxItemsPerPageOffset);
+
+    short oldSel = *selPtr;
+    short newSel;
+    if (oldSel < minSel) {
+        newSel = minSel;
+    } else if (navDown) {
+        newSel = (short)(oldSel + 1);
+        if (newSel >= rowCount) newSel = (short)(rowCount - 1);
+    } else {
+        newSel = (short)(oldSel - 1);
+        if (newSel < minSel) newSel = minSel;
+    }
+
+    if (newSel != oldSel) {
+        *selPtr = newSel;
+        short ipp = *ippPtr;
+        short top = *topPtr;
+        if (ipp <= 0) ipp = 1;
+        if (newSel < top) {
+            *topPtr = newSel;
+        } else if (newSel >= top + ipp) {
+            *topPtr = (short)(newSel - ipp + 1);
+        }
+    }
+
+    out.oldSel   = oldSel;
+    out.newSel   = newSel;
+    out.rowCount = rowCount;
+    out.row      = (newSel >= 0 && newSel < rowCount) ? lbList->data[newSel]
+                                                       : nullptr;
+    return true;
+}
+
+// Queue activation of the chain-navigable button child of `panel` whose
+// .gui-time id matches `buttonId`. Mirrors the FireActivate path used by
+// chain-Enter elsewhere: writes g_pendingActivate / g_pendingActivateTarget
+// + sets the speech-suppress budget so the post-activation focus echo
+// doesn't double-speak. The actual FireActivate runs one tick later in
+// OnUpdate.
+//
+// Returns false on debounce (a click / activate / cursor-move is already
+// pending) or if the button id isn't found on the panel; caller still
+// consumes the keypress in those cases so the engine's stale activeControl
+// can't take over.
+//
+// `logPrefix` is used in the diagnostic log line — pass something like
+// "Container: Enter -> BTN_OK".
+static bool QueueButtonByIdActivate(void* panel, int buttonId,
+                                    const char* logPrefix)
+{
+    if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
+        acclog::Write("%s -- op already pending; ignoring", logPrefix);
+        return false;
+    }
+    void* tgt = FindControlById(panel, buttonId);
+    if (!tgt) {
+        acclog::Write("%s -- target id=%d not resolved on panel=%p",
+                      logPrefix, buttonId, panel);
+        return false;
+    }
+    g_pendingActivate         = true;
+    g_pendingActivateTarget   = tgt;
+    g_navSpeechSuppressBudget = 2;
+    acclog::Write("%s panel=%p target=%p", logPrefix, panel, tgt);
+    return true;
+}
+
 // Find the closest navigable empty-text neighbour of `focused` in
 // `panel.controls`, on the visual left or right at the same y-row. Used to
 // dispatch Left/Right arrow presses to cycle-button flanker arrows: the
@@ -2166,75 +2352,34 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         IdentifyPanel(activePanel) == PanelKind::Container)
     {
         if (param_2 != 0) {
-            // Arrow up/down: drive listbox.selection_index.
+            // Arrow up/down: drive listbox.selection_index. Container per-tick
+            // monitor announces selection changes, so we only need an inline
+            // speak on a no-op step (single-item list, or boundary clamp) when
+            // the monitor's change detector won't fire.
             if (param_1 == kInputNavUp || param_1 == kInputNavDown) {
                 void* lb = FindListBoxChild(activePanel);
-                if (lb) {
-                    auto* lbBase = reinterpret_cast<unsigned char*>(lb);
-                    auto* lbList = reinterpret_cast<CExoArrayList*>(
-                        lbBase + kListBoxControlsOffset);
-                    int rowCount = (lbList && lbList->data) ? lbList->size : 0;
-                    if (rowCount > 0) {
-                        short* selPtr = reinterpret_cast<short*>(
-                            lbBase + kListBoxSelectionIndexOffset);
-                        short* topPtr = reinterpret_cast<short*>(
-                            lbBase + kListBoxTopVisibleIndexOffset);
-                        short* ippPtr = reinterpret_cast<short*>(
-                            lbBase + kListBoxItemsPerPageOffset);
-                        short oldSel = *selPtr;
-                        short newSel;
-                        if (oldSel < 0) {
-                            // From "no selection" land on first row regardless
-                            // of direction (closer to user expectation than
-                            // wrapping or staying silent).
-                            newSel = 0;
-                        } else if (param_1 == kInputNavDown) {
-                            newSel = (short)(oldSel + 1);
-                            if (newSel >= rowCount) newSel = (short)(rowCount - 1);
-                        } else {
-                            newSel = (short)(oldSel - 1);
-                            if (newSel < 0) newSel = 0;
+                ListBoxNavResult r;
+                if (lb && DriveListBoxSelection(lb, /*navDown=*/param_1 == kInputNavDown,
+                                                /*minSel=*/0, r)) {
+                    if (r.newSel == r.oldSel && r.row) {
+                        char rowText[256];
+                        if (ExtractAnnounceableText(r.row, rowText, sizeof(rowText))) {
+                            char msg[320];
+                            snprintf(msg, sizeof(msg),
+                                     acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
+                                     rowText, r.newSel + 1, r.rowCount);
+                            tolk::Speak(msg, /*interrupt=*/false);
                         }
-                        if (newSel != oldSel) {
-                            *selPtr = newSel;
-                            // Keep the focused row in the visible window.
-                            short ipp = *ippPtr;
-                            short top = *topPtr;
-                            if (ipp <= 0) ipp = 1;
-                            if (newSel < top) {
-                                *topPtr = newSel;
-                            } else if (newSel >= top + ipp) {
-                                *topPtr = (short)(newSel - ipp + 1);
-                            }
-                        } else if (newSel >= 0 && newSel < rowCount) {
-                            // No-op nav (single-item list, or boundary clamp):
-                            // monitor's change detector won't fire. Speak the
-                            // focused row inline so the user gets feedback
-                            // instead of silence.
-                            void* row = lbList->data[newSel];
-                            char rowText[256];
-                            if (row && ExtractAnnounceableText(row, rowText, sizeof(rowText))) {
-                                char msg[320];
-                                snprintf(msg, sizeof(msg),
-                                         acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
-                                         rowText, newSel + 1, rowCount);
-                                tolk::Speak(msg, /*interrupt=*/false);
-                            }
-                        }
-                        acclog::Write("Container: %s lb=%p sel=%d->%d (rows=%d)",
-                                      param_1 == kInputNavDown ? "Down" : "Up",
-                                      lb, oldSel, newSel, rowCount);
-                    } else {
-                        acclog::Write("Container: %s lb=%p empty; nav ignored",
-                                      param_1 == kInputNavDown ? "Down" : "Up", lb);
                     }
+                    acclog::Write("Container: %s lb=%p sel=%d->%d (rows=%d)",
+                                  param_1 == kInputNavDown ? "Down" : "Up",
+                                  lb, r.oldSel, r.newSel, r.rowCount);
+                } else if (lb) {
+                    acclog::Write("Container: %s lb=%p empty; nav ignored",
+                                  param_1 == kInputNavDown ? "Down" : "Up", lb);
                 }
                 consumed = true;  // never let the engine see arrow keys here
             } else {
-                int targetId = -1;
-                const char* what = nullptr;
-                void* preselected = nullptr;  // takes precedence over targetId
-
                 // Container per-item take is currently UNRESOLVED. Both
                 // tested primitives fail:
                 //   * FireActivate(row_ptr) → engine's vtable[15] runs but
@@ -2254,30 +2399,14 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                 // docs/equip-flow-investigation.md for the parallel
                 // investigation that landed the same shape on equip.
                 if (param_1 == kInputEnter1 || param_1 == kInputEnter2) {
-                    targetId = kContainerBtnOkId;
-                    what = "Enter -> BTN_OK (take-all; per-item take deferred)";
+                    QueueButtonByIdActivate(activePanel, kContainerBtnOkId,
+                                            "Container: Enter -> BTN_OK "
+                                            "(take-all; per-item take deferred)");
+                    consumed = true;
                 } else if (param_1 == kInputEsc1 || param_1 == kInputEsc2) {
-                    targetId = kContainerBtnCancelId; what = "Esc -> BTN_CANCEL";
-                }
-
-                if (what) {
-                    if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
-                        acclog::Write("Container: %s -- op already pending; ignoring", what);
-                        consumed = true;
-                    } else {
-                        void* tgt = preselected;
-                        if (!tgt && targetId >= 0) tgt = FindControlById(activePanel, targetId);
-                        if (tgt) {
-                            g_pendingActivate       = true;
-                            g_pendingActivateTarget = tgt;
-                            acclog::Write("Container: %s panel=%p target=%p",
-                                          what, activePanel, tgt);
-                            consumed = true;
-                        } else {
-                            acclog::Write("Container: %s -- target not resolved on panel=%p "
-                                          "(targetId=%d)", what, activePanel, targetId);
-                        }
-                    }
+                    QueueButtonByIdActivate(activePanel, kContainerBtnCancelId,
+                                            "Container: Esc -> BTN_CANCEL");
+                    consumed = true;
                 }
                 // NavLeft/NavRight + everything else: pass through unchanged.
             }
@@ -2295,6 +2424,110 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                           n, thisPtr, acc::engine::InputIndexName(param_1), param_1, param_2, tag);
         }
         return consumed ? 1 : 0;
+    }
+
+    // Save / Load game panel (CSWGuiSaveLoad — "Spiel laden" /
+    // "Spiel speichern"). Same problem shape as Container: chain navigation
+    // visits each save row as a sibling button + FireActivates the row on
+    // Enter, but the engine's row onClick reads listbox.selection_index to
+    // decide which slot to act on. A real mouse click would have updated
+    // selection_index via SetSelectedControl; vtable[15] dispatch alone
+    // doesn't, so every save load fires with stale selection_index and the
+    // wrong save loads. (Reproduced across 8 sessions in
+    // patch-20260505-*.log: chain indexes 3, 4, 6 all loaded the same slot.)
+    //
+    //   * Up/Down — drive games_listbox.selection_index ourselves and
+    //     announce the selected slot inline. Each row's CSWGuiSaveLoadEntry
+    //     carries the planet (lastmodule) and area (areaname) as inline
+    //     CExoStrings — we read those directly so the announce includes
+    //     "<row>, <planet>, <area>, i von N" without depending on the
+    //     right-pane preview labels (which only refresh through the
+    //     engine's onSelectionChanged callback that direct memory writes
+    //     bypass).
+    //   * Enter — FireActivate saveload_button (id=14). With the listbox's
+    //     selection_index now correct, the engine's load path picks the
+    //     right slot.
+    //   * Esc   — FireActivate back_button (id=12). Provides a quick exit
+    //     without forcing the user to chain-navigate to "Abbrechen"; back
+    //     button text doesn't match FindCloseButton's prefix list.
+    //
+    // Returns early to bypass the generic chain handlers below — once the
+    // user is in this panel, arrow keys are a listbox cursor, not a chain
+    // walk. Delete-button activation is left to chain navigation: the user
+    // walks to "L\xF6schen" and presses Enter, same as before.
+    if (activePanel != nullptr && IsSaveLoadPanel(activePanel)) {
+        if (param_2 != 0) {
+            if (param_1 == kInputNavUp || param_1 == kInputNavDown) {
+                void* lb = FindControlById(activePanel, kSaveLoadLbGamesId);
+                ListBoxNavResult r;
+                if (lb && DriveListBoxSelection(lb, /*navDown=*/param_1 == kInputNavDown,
+                                                /*minSel=*/0, r)) {
+                    // No per-tick monitor watches the SaveLoad listbox, so
+                    // announce inline on every step (including no-op clamps)
+                    // — never silence per feedback_never_silence_fallback…
+                    char rowText[256];
+                    const char* rowSrc = r.row ? ExtractAnnounceableText(
+                        r.row, rowText, sizeof(rowText)) : nullptr;
+                    const char* planet = ReadSaveLoadEntryString(
+                        r.row, kSaveLoadEntryLastModuleOffset);
+                    const char* area   = ReadSaveLoadEntryString(
+                        r.row, kSaveLoadEntryAreaNameOffset);
+                    if (rowSrc) {
+                        char msg[512];
+                        if (planet || area) {
+                            snprintf(msg, sizeof(msg),
+                                     acc::strings::Get(acc::strings::Id::FmtSaveLoadRow),
+                                     rowText, planet ? planet : "",
+                                     area ? area : "",
+                                     r.newSel + 1, r.rowCount);
+                        } else {
+                            snprintf(msg, sizeof(msg),
+                                     acc::strings::Get(acc::strings::Id::FmtSaveLoadRowNoLoc),
+                                     rowText, r.newSel + 1, r.rowCount);
+                        }
+                        tolk::Speak(msg, /*interrupt=*/false);
+                    }
+                    acclog::Write("SaveLoad: %s lb=%p sel=%d->%d (rows=%d) "
+                                  "row=%p planet=\"%s\" area=\"%s\"",
+                                  param_1 == kInputNavDown ? "Down" : "Up",
+                                  lb, r.oldSel, r.newSel, r.rowCount, r.row,
+                                  planet ? planet : "", area ? area : "");
+                } else if (lb) {
+                    acclog::Write("SaveLoad: %s lb=%p empty; nav ignored",
+                                  param_1 == kInputNavDown ? "Down" : "Up", lb);
+                }
+                consumed = true;  // never let the engine see arrow keys here
+            } else if (param_1 == kInputEnter1 || param_1 == kInputEnter2) {
+                QueueButtonByIdActivate(activePanel, kSaveLoadBtnSaveLoadId,
+                                        "SaveLoad: Enter -> saveload_button");
+                consumed = true;
+            } else if (param_1 == kInputEsc1 || param_1 == kInputEsc2) {
+                QueueButtonByIdActivate(activePanel, kSaveLoadBtnBackId,
+                                        "SaveLoad: Esc -> back_button");
+                consumed = true;
+            }
+            // NavLeft/NavRight + everything else: pass through unchanged so
+            // chain navigation can still reach Delete (L\xF6schen) when the
+            // user wants it.
+        }
+
+        // Log + return only if we acted; otherwise fall through to the
+        // generic chain handlers so chain navigation (which targets the row
+        // buttons + the three action buttons) keeps working for unhandled
+        // keys.
+        if (consumed) {
+            int translated = acc::engine::ManagerTranslateCode(param_1);
+            const char* tag = " CONSUMED";
+            if (translated != param_1) {
+                acclog::Write("HandleInputEvent #%d this=%p key=logical(%d) -> %s(%d) val=%d%s",
+                              n, thisPtr, param_1,
+                              acc::engine::InputIndexName(translated), translated, param_2, tag);
+            } else {
+                acclog::Write("HandleInputEvent #%d this=%p key=%s(%d) val=%d%s",
+                              n, thisPtr, acc::engine::InputIndexName(param_1), param_1, param_2, tag);
+            }
+            return 1;
+        }
     }
 
     // Equipment screen — modal item-picker zone. Two zones in one panel:
@@ -2329,68 +2562,32 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         if (g_equipPickerActive && param_2 != 0) {
             void* lb = FindControlById(activePanel, kEquipLbItemsId);
             if (lb && (param_1 == kInputNavUp || param_1 == kInputNavDown)) {
-                auto* lbBase = reinterpret_cast<unsigned char*>(lb);
-                auto* lbList = reinterpret_cast<CExoArrayList*>(
-                    lbBase + kListBoxControlsOffset);
-                int rowCount = (lbList && lbList->data) ? lbList->size : 0;
                 // Equip listbox row 0 is the PROTOITEM template (text "•",
                 // verified empirically — see investigation 2026-05-04). Real
-                // items live at [1..rowCount-1]. Clamp navigation to that
-                // range so arrow keys never land on the template.
-                int realRows = rowCount - 1;  // count of selectable items
-                if (realRows > 0) {
-                    short* selPtr = reinterpret_cast<short*>(
-                        lbBase + kListBoxSelectionIndexOffset);
-                    short* topPtr = reinterpret_cast<short*>(
-                        lbBase + kListBoxTopVisibleIndexOffset);
-                    short* ippPtr = reinterpret_cast<short*>(
-                        lbBase + kListBoxItemsPerPageOffset);
-                    short oldSel = *selPtr;
-                    short newSel;
-                    if (oldSel < 1) {
-                        // -1 (no selection) or 0 (template) → land on first
-                        // real item.
-                        newSel = 1;
-                    } else if (param_1 == kInputNavDown) {
-                        newSel = (short)(oldSel + 1);
-                        if (newSel >= rowCount) newSel = (short)(rowCount - 1);
-                    } else {
-                        newSel = (short)(oldSel - 1);
-                        if (newSel < 1) newSel = 1;  // clamp to first real row
-                    }
-                    if (newSel != oldSel) {
-                        *selPtr = newSel;
-                        short ipp = *ippPtr;
-                        short top = *topPtr;
-                        if (ipp <= 0) ipp = 1;
-                        if (newSel < top) {
-                            *topPtr = newSel;
-                        } else if (newSel >= top + ipp) {
-                            *topPtr = (short)(newSel - ipp + 1);
-                        }
-                    } else if (newSel >= 1 && newSel < rowCount) {
-                        // No-op nav (single-item list, or boundary clamp):
-                        // monitor's change detector won't fire. Speak the
-                        // focused row inline. userPos/userTotal mirror the
-                        // monitor's offset (row 0 is the protoitem template).
-                        void* row = lbList->data[newSel];
+                // items live at [1..rowCount-1]. minSel=1 keeps arrow keys
+                // off the template. Per-tick monitor announces selection
+                // changes; inline speak only on no-op clamp. Index reporting
+                // shifts by 1 so the user-visible numbers don't include the
+                // template (newSel=1 becomes "1 of N", with N = rowCount-1).
+                ListBoxNavResult r;
+                if (DriveListBoxSelection(lb, /*navDown=*/param_1 == kInputNavDown,
+                                          /*minSel=*/1, r)) {
+                    if (r.newSel == r.oldSel && r.row) {
                         char rowText[256];
-                        if (row && ExtractAnnounceableText(row, rowText, sizeof(rowText))) {
+                        if (ExtractAnnounceableText(r.row, rowText, sizeof(rowText))) {
                             char msg[320];
                             snprintf(msg, sizeof(msg),
                                      acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
-                                     rowText, newSel, rowCount - 1);
+                                     rowText, r.newSel, r.rowCount - 1);
                             tolk::Speak(msg, /*interrupt=*/false);
                         }
                     }
                     acclog::Write("EquipPicker: %s lb=%p sel=%d->%d (rows=%d, real=%d)",
                                   param_1 == kInputNavDown ? "Down" : "Up",
-                                  lb, oldSel, newSel, rowCount, realRows);
+                                  lb, r.oldSel, r.newSel, r.rowCount, r.rowCount - 1);
                 } else {
-                    acclog::Write("EquipPicker: %s lb=%p empty; nav ignored "
-                                  "(rows=%d, real=0)",
-                                  param_1 == kInputNavDown ? "Down" : "Up",
-                                  lb, rowCount);
+                    acclog::Write("EquipPicker: %s lb=%p empty; nav ignored",
+                                  param_1 == kInputNavDown ? "Down" : "Up", lb);
                 }
                 consumed = true;
             } else if (param_1 == kInputEnter1 || param_1 == kInputEnter2) {

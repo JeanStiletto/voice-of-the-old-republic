@@ -161,6 +161,33 @@ constexpr size_t kListBoxTopVisibleIndexOffset  = 0x2c8;
 constexpr size_t kControlExtentOffset = 0x4;
 
 // ---------------------------------------------------------------------------
+// CSWGuiSaveLoadEntry layout (from swkotor.exe.h:16673). Each row in the
+// CSWGuiSaveLoad.games_listbox is a CSWGuiSaveLoadEntry that embeds a
+// CSWGuiButton at offset 0 and carries the slot's metadata as inline
+// CExoStrings. We read these directly (no engine call) to enrich the row
+// announcement with planet + area names — these aren't in the rendered
+// button text, only in the right-hand preview pane labels which are stale
+// until the engine fires its onSelectionChanged callback (and our direct
+// selection_index write doesn't trigger that callback).
+//
+// Field offsets after the embedded CSWGuiButton (size 0x1c4):
+//   +0x1c4  uint32   bit_field
+//   +0x1c8  uint32   save_number
+//   +0x1cc  uint32   field3
+//   +0x1d0  uint32   field4
+//   +0x1d4  byte     gameplayhint
+//   +0x1d5  byte     storyhint
+//   +0x1d8  CExoString  savegamename     (user-given save name)
+//   +0x1e0  CExoString  save_file_name
+//   +0x1e8  CExoString  areaname         (e.g. "Kommandomodul")
+//   +0x1f0  CExoString  lastmodule       (e.g. "Endar Spire")
+// ---------------------------------------------------------------------------
+constexpr size_t kSaveLoadEntrySaveNumberOffset    = 0x1c8;
+constexpr size_t kSaveLoadEntrySaveGameNameOffset  = 0x1d8;
+constexpr size_t kSaveLoadEntryAreaNameOffset      = 0x1e8;
+constexpr size_t kSaveLoadEntryLastModuleOffset    = 0x1f0;
+
+// ---------------------------------------------------------------------------
 // CExoArrayList<T*> — engine container for arrays of pointers.
 // ---------------------------------------------------------------------------
 struct CExoArrayList {
