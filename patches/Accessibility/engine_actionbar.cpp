@@ -17,35 +17,45 @@ constexpr size_t kGuiInGameMainInterfaceOffset = 0x90;
 // CClientExoAppInternal.gui_in_game offset — same as engine_picker.
 constexpr size_t kInternalGuiInGameOffset = 0x040;
 
-// CSWGuiMainInterface column array. field45_0x771c[6] starts at +0x771C
-// with stride 0x71C (sizeof CSWGuiMainInterfaceAction). Same primitive
-// the radial wraps in target_actions[3].
+// CSWGuiMainInterface.field45_0x771c[6] — kept only as the array base
+// for OnAction*ArrowPressed slot identification (the engine handlers
+// resolve column index from pointer math against this base). The
+// embedded button structure within the column is ignored after the
+// 2026-05-05 in-game test established the widgets are uninitialised.
 constexpr size_t kColumnArrayOffset    = 0x771C;
 constexpr size_t kColumnStride         = 0x71C;
-constexpr size_t kColumnActionButton   = 0x000;
-constexpr size_t kColumnActionLabel    = 0x1C4;
-constexpr size_t kColumnUpButton       = 0x388;
-constexpr size_t kColumnDownButton     = 0x54C;
-constexpr size_t kColumnIsActionOffset = 0x718;
+constexpr size_t kColumnUpButtonOffset = 0x388;  // pointer-identity for handler
+constexpr size_t kColumnDnButtonOffset = 0x54C;  // pointer-identity for handler
 
-// CSWGuiMainInterface.field5_0x74[6] — six CExoArrayList<CSWGuiInterfaceAction>
-// (data/size/capacity = 12 bytes per entry).
-constexpr size_t kPersonalListsOffset = 0x74;
-constexpr size_t kPersonalListStride  = 0x0C;
-constexpr size_t kPersonalListSize    = 0x04;  // .size within CExoArrayList
+// CSWGuiMainInterface.field5_0x74[6] — six CExoArrayList<CSWGuiInterfaceAction>.
+// Verified populated 2026-05-05: slot 1 reported size=2 matching the two
+// medikits in inventory.
+constexpr size_t kPersonalListsOffset    = 0x74;
+constexpr size_t kPersonalListStride     = 0x0C;
+constexpr size_t kPersonalListDataOffset = 0x00;  // T** data
+constexpr size_t kPersonalListSizeOffset = 0x04;  // int size
 
-// Vtable index for HandleInputEvent on every CSWGuiControl. Same constant
-// menus.cpp's FireActivate uses.
-constexpr int kVtableHandleInputEvent = 15;
+// CSWGuiInterfaceAction layout — same as engine_radial / engine_picker.
+constexpr size_t kIfActionLabelOffset    = 0x00;  // CExoString
+constexpr size_t kIfActionIdOffset       = 0x08;  // ulong
+constexpr size_t kIfActionStride         = 0x38;
 
-typedef void (__thiscall* PFN_ControlHandleInputEvent)(
-    void* this_, int code, int state);
+// Engine entry points (verified from k1_win_gog_swkotor.exe.xml +
+// docs/action-menu-investigation.md). GoG bytes match Steam per memory
+// project_ghidra_gog_steam_bytes_match.
+constexpr uintptr_t kAddrOnActionUpArrowPressed   = 0x0068af70;
+constexpr uintptr_t kAddrOnActionDownArrowPressed = 0x0068afe0;
+constexpr uintptr_t kAddrDoPersonalAction         = 0x0068ad60;
 
-// Local chain helpers. The engine_picker and engine_radial modules each
-// have their own copies for the same reason: keeping the engine layer
-// dependency-free so each module can resolve to its own concrete sub-
-// interface (TAM vs. main-interface vs. internal) without cross-module
-// coupling.
+// Function pointer types. Both arrow handlers take a single arg per
+// the SARIF signature; OnActionUp expects CSWGuiControl* (the source
+// button), OnActionDown is annotated `(int param_1)` but lives in the
+// same family — almost certainly the same convention.
+typedef void (__thiscall* PFN_OnActionArrowPressed)(void* this_, void* btn);
+typedef void (__thiscall* PFN_DoPersonalAction)(void* this_,
+                                                int slot, int param_2);
+
+// Local chain helpers (same shape as engine_radial / engine_picker).
 void* GetClientExoApp() {
     __try {
         void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
@@ -102,41 +112,48 @@ bool ReadInt32(void* base, size_t offset, int32_t* out) {
     }
 }
 
-// gui_string read path mirroring engine_radial::ReadGuiStringLocal.
-// CSWGuiButton.gui_string sits at +0x168; CAurGUIStringInternal.c_string
-// at +0x14. Validate the vtable before deref to skip stale embedded
-// buttons (CSWGuiInGameMenu's icon labels are the canonical case where
-// gui_string is null on the embed but the surrounding container caches
-// the rendered text — irrelevant here since action_button always has a
-// live gui_string when the column is populated).
-bool ReadGuiStringLocal(void* control, size_t guiStringPtrOffset,
-                        char* outBuf, size_t bufSize) {
-    if (!control || !outBuf || bufSize == 0) return false;
-    outBuf[0] = '\0';
+void* ReadPtr(void* base, size_t offset) {
+    if (!base) return nullptr;
     __try {
-        void* gs = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(control) + guiStringPtrOffset);
-        if (!gs) return false;
-        uintptr_t vt = *reinterpret_cast<uintptr_t*>(gs);
-        if (vt != kVtableCAurGUIStringInternal) return false;
-        const char* cstr = *reinterpret_cast<const char**>(
-            reinterpret_cast<unsigned char*>(gs) + kAurGuiStringCStrOffset);
-        if (!cstr) return false;
-        size_t i = 0;
-        for (; i + 1 < bufSize; ++i) {
-            char c = cstr[i];
-            outBuf[i] = c;
-            if (c == '\0') return i > 0;
-        }
-        outBuf[i] = '\0';
-        return i > 0;
+        return *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(base) + offset);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        outBuf[0] = '\0';
-        return false;
+        return nullptr;
     }
 }
 
-// CExoString fallback. Same shape as engine_radial / engine_picker.
+// Address of column[slot] in the field45_0x771c array. Used as the
+// pointer-identity argument for OnAction*ArrowPressed handlers — they
+// recover the slot index via pointer math against the array base, so
+// the synthetic offset works even when the embedded widgets within
+// the column aren't fully initialised.
+void* ColumnAddr(void* mi, int slot) {
+    if (!mi || slot < 0 || slot >= acc::engine_actionbar::kColumnCount) {
+        return nullptr;
+    }
+    return reinterpret_cast<unsigned char*>(mi) +
+           kColumnArrayOffset + slot * kColumnStride;
+}
+
+// Address of the descriptor list entry at `index` within slot's
+// personal-actions list. Returns null on null/oor/empty list.
+void* DescriptorAddr(void* mi, int slot, int index) {
+    if (!mi || slot < 0 || slot >= acc::engine_actionbar::kColumnCount) {
+        return nullptr;
+    }
+    if (index < 0) return nullptr;
+
+    size_t listBase = kPersonalListsOffset + slot * kPersonalListStride;
+    void* dataPtr   = ReadPtr(mi, listBase + kPersonalListDataOffset);
+    int32_t size    = 0;
+    ReadInt32(mi, listBase + kPersonalListSizeOffset, &size);
+    if (!dataPtr || index >= size) return nullptr;
+
+    return reinterpret_cast<unsigned char*>(dataPtr) +
+           index * kIfActionStride;
+}
+
+// CExoString (c_string + length) read with NUL-termination guarantee.
 bool ReadCExoStringLocal(void* base, size_t offset,
                          char* outBuf, size_t bufSize) {
     if (!base || !outBuf || bufSize == 0) return false;
@@ -159,31 +176,6 @@ bool ReadCExoStringLocal(void* base, size_t offset,
     }
 }
 
-void* ColumnAddr(void* mi, int slot) {
-    if (!mi || slot < 0 || slot >= acc::engine_actionbar::kColumnCount) {
-        return nullptr;
-    }
-    return reinterpret_cast<unsigned char*>(mi) +
-           kColumnArrayOffset + slot * kColumnStride;
-}
-
-bool FireActivate(void* control) {
-    if (!control) return false;
-    __try {
-        void** vtable = *reinterpret_cast<void***>(control);
-        if (!vtable) return false;
-        auto fn = reinterpret_cast<PFN_ControlHandleInputEvent>(
-            vtable[kVtableHandleInputEvent]);
-        if (!fn) return false;
-        // 0x27 = KEYBOARD_F1 = the engine's activate code (kInputActivate).
-        // value=1 = press edge.
-        fn(control, 0x27, 1);
-        return true;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-}
-
 }  // namespace
 
 namespace acc::engine_actionbar {
@@ -195,55 +187,80 @@ void* ResolveMainInterface() {
     return GetMainInterface(guiIn);
 }
 
-int IsColumnActive(void* mi, int slot) {
-    void* col = ColumnAddr(mi, slot);
-    if (!col) return 0;
-    int32_t v = 0;
-    if (!ReadInt32(col, kColumnIsActionOffset, &v)) return 0;
-    return v;
-}
-
 int VariantCount(void* mi, int slot) {
     if (!mi || slot < 0 || slot >= kColumnCount) return 0;
     int32_t size = 0;
     size_t off = kPersonalListsOffset + slot * kPersonalListStride +
-                 kPersonalListSize;
+                 kPersonalListSizeOffset;
     if (!ReadInt32(mi, off, &size)) return 0;
     if (size < 0) return 0;
     return static_cast<int>(size);
 }
 
-bool ReadColumnLabel(void* mi, int slot, char* outBuf, size_t bufSize) {
+bool ReadVariantLabel(void* mi, int slot, int index,
+                      char* outBuf, size_t bufSize) {
     if (!outBuf || bufSize == 0) return false;
     outBuf[0] = '\0';
-    void* col = ColumnAddr(mi, slot);
-    if (!col) return false;
-    void* btn = reinterpret_cast<unsigned char*>(col) + kColumnActionButton;
-    if (ReadGuiStringLocal(btn, kButtonGuiStringPtrOffset,
-                           outBuf, bufSize)) return true;
-    if (ReadCExoStringLocal(btn, kButtonTextOffset, outBuf, bufSize)) return true;
-    return false;
+    void* desc = DescriptorAddr(mi, slot, index);
+    if (!desc) return false;
+    return ReadCExoStringLocal(desc, kIfActionLabelOffset, outBuf, bufSize);
 }
 
-bool FireUpButton(void* mi, int slot) {
-    void* col = ColumnAddr(mi, slot);
-    if (!col) return false;
-    return FireActivate(reinterpret_cast<unsigned char*>(col) +
-                        kColumnUpButton);
+uint32_t ReadVariantActionId(void* mi, int slot, int index) {
+    void* desc = DescriptorAddr(mi, slot, index);
+    if (!desc) return 0;
+    int32_t v = 0;
+    ReadInt32(desc, kIfActionIdOffset, &v);
+    return static_cast<uint32_t>(v);
 }
 
-bool FireDownButton(void* mi, int slot) {
+bool CycleNextVariant(void* mi, int slot) {
     void* col = ColumnAddr(mi, slot);
     if (!col) return false;
-    return FireActivate(reinterpret_cast<unsigned char*>(col) +
-                        kColumnDownButton);
+    void* btn = reinterpret_cast<unsigned char*>(col) + kColumnUpButtonOffset;
+    __try {
+        auto fn = reinterpret_cast<PFN_OnActionArrowPressed>(
+            kAddrOnActionUpArrowPressed);
+        fn(mi, btn);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write(
+            "ActionBar: CycleNextVariant SEH-FAULT slot=%d", slot);
+        return false;
+    }
 }
 
-bool FireActionButton(void* mi, int slot) {
+bool CyclePrevVariant(void* mi, int slot) {
     void* col = ColumnAddr(mi, slot);
     if (!col) return false;
-    return FireActivate(reinterpret_cast<unsigned char*>(col) +
-                        kColumnActionButton);
+    void* btn = reinterpret_cast<unsigned char*>(col) + kColumnDnButtonOffset;
+    __try {
+        auto fn = reinterpret_cast<PFN_OnActionArrowPressed>(
+            kAddrOnActionDownArrowPressed);
+        fn(mi, btn);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write(
+            "ActionBar: CyclePrevVariant SEH-FAULT slot=%d", slot);
+        return false;
+    }
+}
+
+bool FireSelectedVariant(void* mi, int slot) {
+    if (!mi || slot < 0 || slot >= kColumnCount) return false;
+    __try {
+        auto fn = reinterpret_cast<PFN_DoPersonalAction>(
+            kAddrDoPersonalAction);
+        // param_2 = 0 — initial guess; the engine-native bare-press path
+        // also eventually reaches DoPersonalAction and that path works,
+        // so 0 is plausibly "use the column's currently-selected variant".
+        fn(mi, slot, 0);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write(
+            "ActionBar: FireSelectedVariant SEH-FAULT slot=%d", slot);
+        return false;
+    }
 }
 
 void LogState(void* mi, const char* tag) {
@@ -253,32 +270,14 @@ void LogState(void* mi, const char* tag) {
         return;
     }
     for (int s = 0; s < kColumnCount; ++s) {
-        char actBtn[96] = "";
-        char actLbl[96] = "";
-        char upBtn[96]  = "";
-        char dnBtn[96]  = "";
-        void* col = ColumnAddr(mi, s);
-        if (col) {
-            unsigned char* base = reinterpret_cast<unsigned char*>(col);
-            ReadGuiStringLocal(base + kColumnActionButton,
-                               kButtonGuiStringPtrOffset,
-                               actBtn, sizeof(actBtn));
-            ReadGuiStringLocal(base + kColumnActionLabel,
-                               kButtonGuiStringPtrOffset,
-                               actLbl, sizeof(actLbl));
-            ReadGuiStringLocal(base + kColumnUpButton,
-                               kButtonGuiStringPtrOffset,
-                               upBtn, sizeof(upBtn));
-            ReadGuiStringLocal(base + kColumnDownButton,
-                               kButtonGuiStringPtrOffset,
-                               dnBtn, sizeof(dnBtn));
-        }
-        int isAct  = IsColumnActive(mi, s);
-        int nVar   = VariantCount(mi, s);
+        int nVar = VariantCount(mi, s);
+        char first[96] = "";
+        ReadVariantLabel(mi, s, 0, first, sizeof(first));
+        uint32_t firstId = ReadVariantActionId(mi, s, 0);
         acclog::Write(
-            "ActionBar.State[%s]: col[%d] is_action=%d variants=%d "
-            "action_button=[%s] action_label=[%s] up=[%s] down=[%s]",
-            t, s, isAct, nVar, actBtn, actLbl, upBtn, dnBtn);
+            "ActionBar.State[%s]: col[%d] variants=%d data[0].label=[%s] "
+            "data[0].action_id=0x%x",
+            t, s, nVar, first, firstId);
     }
 }
 

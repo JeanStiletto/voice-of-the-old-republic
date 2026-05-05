@@ -63,4 +63,10 @@ bool HandleInputEvent(int code, int value);
 // owned by the engine itself; we just drop our gate.
 void ForceDisarm(const char* reason);
 
+// Read the persistent per-slot selection index (last variant the user
+// landed on via the submenu's Up/Down cycle, or 0 if the column has
+// never been explored). Used by the bare-key announce path so 4..7
+// reads the same variant the engine fires.
+int CurrentSelection(int slot);
+
 }  // namespace acc::actionbar_menu

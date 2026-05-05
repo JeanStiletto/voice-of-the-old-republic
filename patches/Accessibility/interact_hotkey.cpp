@@ -389,15 +389,11 @@ void AnnounceBarePersonalKey(int slot) {
         return;
     }
 
-    int isAct = acc::engine_actionbar::IsColumnActive(mi, slot);
-    char label[128] = "";
-    acc::engine_actionbar::ReadColumnLabel(mi, slot, label, sizeof(label));
-
-    if (!isAct || label[0] == '\0') {
-        // Column unpopulated — engine almost certainly refused the keypress.
-        // Speak the same empty phrase the submenu Open path uses, so the
-        // user hears a consistent vocabulary regardless of how they hit
-        // the empty column.
+    int nVar = acc::engine_actionbar::VariantCount(mi, slot);
+    if (nVar <= 0) {
+        // Column unpopulated — engine almost certainly refused the
+        // keypress. Speak the same empty phrase the submenu Open path
+        // uses so vocabulary stays consistent across the two routes.
         char msg[128];
         std::snprintf(msg, sizeof(msg),
                       acc::strings::Get(
@@ -405,8 +401,32 @@ void AnnounceBarePersonalKey(int slot) {
                       slot + 1);
         tolk::Speak(msg, /*interrupt=*/true);
         acclog::Write(
-            "ActionBar: bare key slot=%d is_action=%d label=[%s] -> [%s]",
-            slot, isAct, label, msg);
+            "ActionBar: bare key slot=%d variants=0 -> [%s]",
+            slot, msg);
+        return;
+    }
+
+    // Read the variant at the index the submenu last left us on. Submenu
+    // cycle path keeps this index in lock-step with the engine's per-
+    // column "currently selected" state via paired CycleNext/Prev calls,
+    // so this matches what the engine bare-press fires.
+    int idx = acc::actionbar_menu::CurrentSelection(slot);
+    if (idx < 0 || idx >= nVar) idx = 0;
+
+    char label[128] = "";
+    acc::engine_actionbar::ReadVariantLabel(mi, slot, idx,
+                                            label, sizeof(label));
+    if (label[0] == '\0') {
+        char msg[128];
+        std::snprintf(msg, sizeof(msg),
+                      acc::strings::Get(
+                          acc::strings::Id::FmtActionBarColumnEmpty),
+                      slot + 1);
+        tolk::Speak(msg, /*interrupt=*/true);
+        acclog::Write(
+            "ActionBar: bare key slot=%d variants=%d idx=%d "
+            "label=empty -> [%s]",
+            slot, nVar, idx, msg);
         return;
     }
 
@@ -416,8 +436,8 @@ void AnnounceBarePersonalKey(int slot) {
                   label);
     tolk::Speak(msg, /*interrupt=*/true);
     acclog::Write(
-        "ActionBar: bare key slot=%d label=[%s] -> [%s]",
-        slot, label, msg);
+        "ActionBar: bare key slot=%d variants=%d idx=%d label=[%s] -> [%s]",
+        slot, nVar, idx, label, msg);
 }
 
 // Speak "{label} eingesetzt" for a bare-press of target-action key 1..3.

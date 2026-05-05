@@ -56,33 +56,65 @@ constexpr int kColumnCount = 6;
 // tick rather than caching.
 void* ResolveMainInterface();
 
-// Read the column's is_action flag (+0x718). Returns 0 when slot is
-// out of range or main_interface is null.
-int IsColumnActive(void* mainInterface, int slot);
-
 // Number of variants populated for `slot` (0..5). Read from
 // field5_0x74[slot].size at +0x74 + slot*0x0C + 0x04. Returns 0 for
 // out-of-range slots, null main_interface, or read fault.
+//
+// This is the gate-of-truth for "column has anything to fire" — verified
+// 2026-05-05 (slot 1 = 2 medikit variants matches in-game observation).
+// The previously-attempted is_action field (+0x718) returned pointer-
+// like garbage that incremented by the column stride; Ghidra's `?`
+// annotation was correctly hedged. field45_0x771c widget reads
+// (action_button.gui_string, action_label.gui_string, etc.) similarly
+// returned empty — those embedded buttons aren't live widgets in this
+// build, possibly populated lazily by CSWGuiMainInterface::Update on
+// render. We sidestep the whole field45 widget structure and read
+// straight from the descriptor list.
 int VariantCount(void* mainInterface, int slot);
 
-// Read the column's currently-rendered variant label (action_button text
-// via the gui_string path; same indirection as
-// project_kotor_text_indirection). Returns true when at least one byte
+// Read the variant label at `index` within column `slot`'s descriptor
+// list (CSWGuiInterfaceAction.label, CExoString at +0x00 of each entry,
+// stride 0x38). Source of truth — same descriptor layout the engine's
+// own GetPersonalActions populates. Returns true when at least one byte
 // was written. Always NUL-terminates outBuf.
-bool ReadColumnLabel(void* mainInterface, int slot,
-                     char* outBuf, size_t bufSize);
+bool ReadVariantLabel(void* mainInterface, int slot, int index,
+                      char* outBuf, size_t bufSize);
 
-// Drive engine widgets via vtable[15] HandleInputEvent(kInputActivate=0x27).
-// Equivalent to a mouse click on the widget — invokes whatever the widget
-// has bound to its activate handler. Each returns false on null/oor/SEH.
-bool FireUpButton    (void* mainInterface, int slot);
-bool FireDownButton  (void* mainInterface, int slot);
-bool FireActionButton(void* mainInterface, int slot);
+// Read the variant action_id at `index` (CSWGuiInterfaceAction +0x08,
+// ulong). Used for diagnostics + as a candidate `param_2` value if
+// DoPersonalAction(slot, 0) turns out to need an explicit action_id.
+// Returns 0 on read fault / out-of-range index.
+uint32_t ReadVariantActionId(void* mainInterface, int slot, int index);
 
-// Diagnostic: dump per-column state (is_action + action_button label +
-// variant count) to the patch log. Used right after a submenu Open to
-// disambiguate "engine has no variants populated" from "we're reading
-// the wrong fields". Cheap; safe to call on disarm too.
+// Drive the engine's labelled per-column cycle handlers. Each takes
+// the up_button / down_button widget address as a CSWGuiControl* (the
+// handler resolves which slot from the pointer). Even though those
+// embedded widgets read empty when probed, the handler treats them
+// as identity tokens — pointer math against the field45 array base
+// recovers the slot index regardless of whether the widget itself is
+// fully initialised.
+//
+//   OnActionUpArrowPressed   @ 0x0068af70  (this, CSWGuiControl*)
+//   OnActionDownArrowPressed @ 0x0068afe0  (this, int [param_1])
+//
+// Returns false on null/out-of-range/SEH.
+bool CycleNextVariant(void* mainInterface, int slot);
+bool CyclePrevVariant(void* mainInterface, int slot);
+
+// Drive `CSWGuiMainInterface::DoPersonalAction(this, slot, param_2)` at
+// 0x0068ad60. Same entry point engine-native bare 4..7 hotkeys hit.
+// param_2's role is currently undecoded — we pass 0 as the initial
+// guess; if dispatch silently no-ops the next iteration tries the
+// variant's action_id (descriptor +0x08) instead.
+//
+// `slot` is the column index (0..5; only 0..3 are bound to keys 4..7).
+// Returns false on null/out-of-range/SEH.
+bool FireSelectedVariant(void* mainInterface, int slot);
+
+// Diagnostic: dump per-column state (variant count + first-variant
+// label + first-variant action_id) to the patch log. Replaces the
+// older widget-text dump which was reading uninitialised field45
+// widgets.
 void LogState(void* mainInterface, const char* tag);
 
 }  // namespace acc::engine_actionbar

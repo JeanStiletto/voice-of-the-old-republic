@@ -7,6 +7,8 @@
 #include "engine_area.h"   // GetObjectName — used by GetActiveLeaderName
                            // to read first_name+tag from the server creature
 #include "engine_reads.h"  // ReadCExoString
+#include "log.h"           // acclog::Write — diagnostics on the
+                           // SetPlayerInputEnabled toggle / auto-restore tick
 
 namespace acc::engine {
 
@@ -213,6 +215,7 @@ bool SetPlayerInputEnabled(bool enabled) {
         return false;
     }
 
+    bool wasActive = g_disableActive;
     if (enabled) {
         g_disableActive = false;
         g_disableExpiresAt = 0;
@@ -220,12 +223,23 @@ bool SetPlayerInputEnabled(bool enabled) {
         g_disableActive = true;
         g_disableExpiresAt = GetTickCount() + kAutoRestoreMs;
     }
+    acclog::Write(
+        "PlayerInput: SetEnabled(%s) — was disabled=%d, now disabled=%d, "
+        "expires=%lu",
+        enabled ? "true" : "false", wasActive ? 1 : 0,
+        g_disableActive ? 1 : 0,
+        static_cast<unsigned long>(g_disableExpiresAt));
     return true;
 }
 
 void TickPlayerInputRestore() {
     if (!g_disableActive) return;
     if (GetTickCount() < g_disableExpiresAt) return;
+    acclog::Write(
+        "PlayerInput: TickPlayerInputRestore — auto-restoring (now=%lu, "
+        "expired_at=%lu)",
+        static_cast<unsigned long>(GetTickCount()),
+        static_cast<unsigned long>(g_disableExpiresAt));
     SetPlayerInputEnabled(true);  // flips g_disableActive false on success
 }
 
