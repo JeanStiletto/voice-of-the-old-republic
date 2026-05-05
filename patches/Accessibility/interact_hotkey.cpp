@@ -11,6 +11,7 @@
 #include "engine_manager.h"
 #include "engine_offsets.h"
 #include "engine_panels.h"
+#include "engine_picker.h"
 #include "engine_player.h"
 #include "filter_objects.h"
 #include "guidance_autowalk.h"
@@ -187,26 +188,10 @@ void OnInteract() {
     }
 
     auto cat = ClassifyForInteract(target);
-    auto preRollId = PreRollFor(cat);
-    char msg[192];
-    std::snprintf(msg, sizeof(msg),
-                  acc::strings::Get(preRollId), name);
-    tolk::Speak(msg, /*interrupt=*/true);
 
-    // Pre-fire log — captures intent before the engine call so we can
-    // discriminate "engine entry faulted" from "engine entry ran but
-    // didn't do anything visible".
-    acclog::Write("Interact: Enter -> [%s] target=%p handle=0x%08x cat=%s",
-                  msg, target, handle,
-                  cat == acc::filter::CycleCategory::Count_
-                      ? "(unclassified)"
-                      : acc::filter::CategoryName(cat));
-
-    // Diagnostic: log the creature that UseObject will dispatch against,
-    // so we can correlate "Tab swapped leader" against "UseObject ran on
-    // X". Open question: does CClientExoApp::GetPlayerCreature @0x5ED540
-    // track the active leader, or always return the chargen PC? Without
-    // this line the log can't tell us.
+    // Diagnostic: log the creature that the dispatched action will run
+    // against, so we can correlate "Tab swapped leader" against the
+    // engine action that fires.
     void*    leader     = acc::engine::GetPlayerServerCreature();
     uint32_t leaderId   = leader ? acc::engine::GetObjectHandle(leader) : 0u;
     char     leaderName[64] = "?";
@@ -227,24 +212,63 @@ void OnInteract() {
             leader, leaderId, leaderName);
     }
 
-    // Disable per-tick player-input movement clobber for the duration of
-    // the AI walk-to-then-use that AddUseObjectAction will enqueue. Engine's
-    // TickPlayerInputRestore auto-restores after ~3s; on dispatch failure we
-    // restore immediately. See project_player_control_toggle.md.
-    bool inputDisabled = acc::engine::SetPlayerInputEnabled(false);
+    // First: try the engine action picker. It runs the same picker the
+    // cursor uses on hover (open / talk / Security / Bash / Disable Trap
+    // / …) and dispatches the result through the engine's own click
+    // pipeline — no per-kind logic in our patch. See
+    // docs/engine-action-picker.md.
+    //
+    // Pre-roll narration: the picker returns the engine's localised verb
+    // (e.g. "Sicherheit") in snap.label. We speak that prefixed to the
+    // target name when valid; otherwise we keep the per-category fallback
+    // string (which still tells the user *something* happened even when
+    // the engine refuses to enumerate actions).
+    acc::picker::ActionSnapshot snap = {};
+    bool dispatched = acc::picker::Drive(handle, &snap);
 
-    // AddUseObjectAction is the same primitive NWScript's
-    // ActionInteractObject calls. Bypasses the engine's two-click
-    // hover-then-click pipeline — that path requires hover-state setup
-    // (last_target, last_clicked_on_target, hovered_target_at+0x4a4, plus
-    // an action descriptor at +0x4c8) which only the cursor-hover system
-    // populates. AddUseObjectAction just enqueues ACTION_USEOBJECT (0x28)
-    // with the target id, and the engine internally walks-to + uses.
-    bool dispatched = acc::guidance::UseObject(handle);
+    char msg[192];
+    if (snap.valid && snap.label[0] != '\0') {
+        std::snprintf(
+            msg, sizeof(msg),
+            acc::strings::Get(acc::strings::Id::FmtInteractEngine),
+            snap.label, name);
+    } else {
+        std::snprintf(
+            msg, sizeof(msg),
+            acc::strings::Get(PreRollFor(cat)), name);
+    }
+    tolk::Speak(msg, /*interrupt=*/true);
+
+    acclog::Write(
+        "Interact: Enter -> [%s] target=%p handle=0x%08x cat=%s "
+        "engine_label=[%s] engine_action=0x%x engine_count=%d",
+        msg, target, handle,
+        cat == acc::filter::CycleCategory::Count_
+            ? "(unclassified)"
+            : acc::filter::CategoryName(cat),
+        snap.label, snap.action_id, snap.count);
 
     if (dispatched) {
-        acclog::Write("Interact: UseObject dispatched (input_disabled=%d)",
-                      inputDisabled ? 1 : 0);
+        acclog::Write(
+            "Interact: engine picker dispatched action_id=0x%x "
+            "label=[%s] target=0x%08x",
+            snap.action_id, snap.label, handle);
+        return;
+    }
+
+    // Picker either had no descriptor (engine has no default action for
+    // this leader/target) or faulted. Fall back to AddUseObjectAction —
+    // it's the right primitive for the simple "walk over and open / talk
+    // / pick up" cases that have always worked, and avoids regressing
+    // those while the picker is still being shaken down.
+    bool inputDisabled = acc::engine::SetPlayerInputEnabled(false);
+    bool fallbackOk    = acc::guidance::UseObject(handle);
+
+    if (fallbackOk) {
+        acclog::Write(
+            "Interact: fallback UseObject dispatched (input_disabled=%d) "
+            "after picker returned valid=%d count=%d",
+            inputDisabled ? 1 : 0, snap.valid ? 1 : 0, snap.count);
     } else {
         if (inputDisabled) acc::engine::SetPlayerInputEnabled(true);
         char failMsg[192];
@@ -253,8 +277,7 @@ void OnInteract() {
                           acc::strings::Id::FmtInteractFailed),
                       name);
         tolk::Speak(failMsg, /*interrupt=*/true);
-        acclog::Write("Interact: UseObject dispatch FAILED -> [%s]",
-                      failMsg);
+        acclog::Write("Interact: dispatch FAILED -> [%s]", failMsg);
     }
 }
 

@@ -1,6 +1,6 @@
 # Engine Action Picker — driving context-sensitive interactions
 
-**Status: investigation — opened 2026-05-05.** Follow-up to commit `c680ceb`. Owner: next session.
+**Status: first implementation landed 2026-05-05** — picker drives Enter, falls back to `AddUseObjectAction` if the engine returns no descriptor. Untested in-game. Follow-up to commit `c680ceb`.
 
 ## Premise
 
@@ -33,55 +33,84 @@ Acceptance: the Endar Spire locked door (Trask + Security) opens via Enter witho
 - Direct `HandleMouseClickInWorld` call without descriptor population is silent. *Verified — commit `d578fbe`.* The function executes, returns, no engine state change.
 - Setting `LastTarget` via `SetLastClickedOnTarget(handle)` alone does not populate `+0x4c8`. *Inferred from commit `d578fbe`.* The two operations are decoupled in the engine; the descriptor is computed from passive selection, not from the last-clicked target.
 
-## What's open
+## What we resolved (2026-05-05, this session)
 
-These are the blockers for next session, ordered by what unblocks what.
+Decompiled `HandleMouseClickInWorld @0x620350`, `GetDefaultActions @0x620620`, `DoPassiveSelection @0x5fa5a0`, `SelectNearestObject @0x5fb050`, `SetMainInterfaceTarget @0x62b000`, `PopulateMenus @0x689d80`, `CSWGuiInterfaceAction::CSWGuiInterfaceAction @0x4eae30`, and `ServerToClientObjectId @0x5eda50` from Lane's Ghidra DB. Cross-referenced against `swkotor.exe.h` for struct layouts.
 
-### O1 — Where exactly is `+0x4c8` and what does it hold?
+### O1 — *Resolved.* Descriptor lives on `CClientExoAppInternal`.
 
-- *Open.* Comment thread in `interact_hotkey.cpp:215` names the offset but not the owning type. Two candidates: `CClientExoAppInternal` (where `LastTarget` and the click handler live) or `CSWGuiManager` (where the cursor lives). Field layout unknown.
-- Resolves: whether we can read the descriptor from a hook and route on it.
-- Investigation path: dump bytes at `HandleMouseClickInWorld` entry to see which `this` field it dereferences for the descriptor. The function is `__thiscall(void)` so the descriptor lives somewhere in `this+offset`.
+- `field292_0x4c8` = `CSWGuiInterfaceAction*` — pointer into the per-target action array.
+- `field293_0x4cc` = `int` count, gates the dispatch (`(int)count > 0 && desc != 0`).
+- `CSWGuiInterfaceAction` layout (`swkotor.exe.h:5437`, stride 0x38):
+  - `+0x00` `CExoString label` — engine-localised verb ("Sicherheit", "Sprich", "Öffne", …)
+  - `+0x08` `ulong action_id` — engine action enum (0x404 noop, 0x3ea talk, 0x3f7 use placeable, 0x3f5 bash, 0x3f2 toggle door, 0x3f4 disable mine, 0x3eb security?, …)
+  - `+0x0c` `void* action_function` — function pointer (e.g. `CSWCDoor::ToggleDoorState`, `CSWCCreature::ActionInitiateDialog`, `CSWCPlaceable::UsePlaceable`/`BashPlaceable`, `CSWCDoor::MenuActionBash`, `CSWCTrigger::ActionMenuDisableMine`)
+  - `+0x1c` `ulong target_id` — client-side handle (high bit 0x80000000 set)
+  - `+0x20` `CResRef icon` — engine icon name ("i_dialog", "i_opendoor", "i_useplace", "i_attack", "i_disablemine", "i_noaction", …)
 
-### O2 — Does `+0x4c8` get populated for cycle targets (Q/E/Tab) or only for camera-framed passive-selection?
+`HandleMouseClickInWorld` dispatch (when the gate matches): `(*(action+0xc))(*(action+0x8), playerCharId)` after `CClientExoApp::GetGameObject(*(action+0x1c))` validates the target. So the action function is called with `(action_id, player_creature)` — likely `__cdecl` or `__stdcall`. We do not call action functions directly.
 
-- *Open.* `DoPassiveSelection` is character/camera-frame-driven. Q/E target cycle (`SelectNearestObject @0x005FB050`) populates `LastTarget` but might not populate the descriptor slot — the two paths could be independent. If they're independent, even with cycle focus on the right target the descriptor would stay tied to whatever passive-selection picked.
-- Resolves: whether cycling-then-pressing-Enter is enough, or whether we additionally have to coax the engine to pick the cycle target as its passive-selection focus.
-- Investigation path: read the suspected descriptor slot every tick after a cycle press and log it; correlate against passive-selection output.
+### O2 — *Mooted.* We bypass `DoPassiveSelection` entirely.
 
-### O3 — Can we force the engine to evaluate a specific target through its picker?
+`SelectNearestObject` (Q/E cycle) sets `last_target` but does NOT touch `field292_0x4c8`. `DoPassiveSelection` updates `field283_0x4a4` + the descriptor for the camera-framed target. The cycle and hover paths are independent.
 
-- *Open.* If O2 lands "no, descriptor only follows passive selection", we need a way to say "engine, compute the default action for *this* target as if I had hovered it". Two candidate paths:
-  - Find the function `DoPassiveSelection` calls internally to compute the descriptor for one object — that's our injection point.
-  - Manipulate the inputs `DoPassiveSelection` reads (camera frame? proximity gate? whitelist?) so it picks our cycle target the next tick.
-- Resolves: the dispatch path itself.
+We don't need to coax `DoPassiveSelection` to pick our target — `GetDefaultActions(this)` reads `gui_in_game->main_interface->field1_0x64` (the "main interface target") to decide which target to compute actions for. We set that explicitly via `CGuiInGame::SetMainInterfaceTarget` and then call `GetDefaultActions` ourselves.
 
-### O4 — Descriptor lifecycle.
+### O3 — *Resolved.* The engine's own picker entry point is `CClientExoAppInternal::GetDefaultActions @0x00620620`.
 
-- *Open.* When does `+0x4c8` clear? Per-tick? On click? Persistent until next hover? Affects how aggressively we have to time the populate-then-click sequence.
-- Investigation path: tick-rate logging of the descriptor slot across known-state transitions (approach door → cycle to door → press Enter → after dispatch).
+Reads `main_interface->field1_0x64` (the hovered target id), `CSWParty::GetPlayerCharacter` (the leader), then `CSWCCreature::GetInterfaceTargetType(leader, target)` to switch into per-kind branches: NONE / DOOR_OR_PLACEABLE / TARGET_SWITCHING / MINE / ... Each branch allocates 1-2 `CSWGuiInterfaceAction` entries into `field292_0x4c8` with the appropriate verb, action_id, function pointer, and icon. So the engine's *picker* is a single function we can call after pointing `main_interface->field1_0x64` at our target.
 
-### O5 — Action ids beyond `ACTION_USEOBJECT`.
+### O4 — *Partially open, not blocking.* Descriptor lifecycle.
 
-- *Suspected, not formally enumerated.* NWScript names exist (`ActionUnlockObject`, `ActionAttack`, `ActionUseSkill`, `ActionPickUpItem`, …) but the binary `ACTION_*` enum values are needed if we end up reading the descriptor and re-dispatching directly.
-- Resolves: optional fallback path — if we can read the descriptor's action id but can't trigger the engine's own dispatcher, we can still dispatch the named action ourselves. Less generic than driving the picker but still avoids per-kind logic in our patch.
-- Investigation path: extract from Lane's Ghidra DB (`k1_win_gog_swkotor.exe.gzf`, not pulled locally per `CLAUDE.md` — pull into `docs/llm-docs/re/` first).
+- `field292_0x4c8` is freed and re-allocated on every `GetDefaultActions` call (the function `_eh_vector_destructor_iterator_`s the prior array, frees, then `Allocate`s the new size). So calling it back-to-back is safe — each call re-derives.
+- The dispatch branch in `HandleMouseClickInWorld` clears `last_clicked_on_target = 0x7f000000` immediately before calling the action function. So one Enter press = one action.
+- We don't yet know what clears `field283_0x4a4` between hovers; not relevant since we overwrite it ourselves.
 
-## Suspected investigation order
+### O5 — *Partial.* Engine action ids enumerated by what we saw in `GetDefaultActions`:
 
-This is the cheapest-first ordering of next-session work. Each step is a checkpoint — stop and reassess after.
+- `0x404` — NONE (no-op, "i_noaction")
+- `0x3ea` — talk to creature
+- `0x3f2` — open/close door
+- `0x3f4` — disable mine
+- `0x3f5` — bash/attack
+- `0x3f7` — use placeable
+- `0x5fb` — recover mine (TLK strref)
 
-1. **Pin owning struct of `+0x4c8`.** *(O1)* Disasm the prologue of `HandleMouseClickInWorld @0x620350`; the first few instructions will deref `this` → some field. That field is the descriptor base. ~15 min if Ghidra DB is at hand.
+Full enum still unmapped, but **we don't need to read it on the dispatch path** — the engine reads `+0x08` itself. We only log it for diagnostics.
 
-2. **Dump descriptor layout.** *(O1)* Once O1 has the offset+owning-struct, pattern-match against known click handlers (the engine's own click code reads the descriptor too — its access pattern reveals the field shape: action_id, target_id, sub-skill, item, etc.). ~30 min.
+## What we built (first version)
 
-3. **Tick-rate logging probe.** *(O2 + O4)* Hook `DoPassiveSelection` exit and log the descriptor slot. User walks past the locked door, cycles to it with Q/E/Tab, holds before pressing Enter — we capture whether the descriptor reflects cycle focus or only spatial hover. ~one in-game session.
+`patches/Accessibility/engine_picker.h/.cpp` — `acc::picker::Drive(serverHandle, &snapshot)`:
 
-4. **Decision branch:**
-   - If descriptor follows cycle focus organically → **route Enter through `HandleMouseClickInWorld`** (re-enable the retired path, this time with confirmed pre-state). Single dispatch primitive replaces `AddUseObjectAction`. *(O3 collapses.)*
-   - If descriptor only follows passive selection → **find `DoPassiveSelection`'s inner action-computation call**, bind it to our cycle target. *(O3 expands into O3a: locate inner call.)*
+1. Convert server handle → client handle (`server | 0x80000000`).
+2. Walk `AppManager → CClientExoApp → CClientExoAppInternal → gui_in_game → main_interface`.
+3. `CGuiInGame::SetMainInterfaceTarget(guiInGame, targetClient)` — installs hover target.
+4. `CClientExoAppInternal::GetDefaultActions(internal)` — populates `+0x4c8` / `+0x4cc`.
+5. Snapshot the descriptor (label, icon, action_id, target_id, count) for narration + log.
+6. Write `last_target = last_clicked_on_target = field283_0x4a4 = targetClient` to satisfy the dispatch gate.
+7. `SetPlayerInputEnabled(false)` (auto-restore in 3s) and `CClientExoAppInternal::HandleMouseClickInWorld(internal)` — engine dispatches the picked action.
+8. SEH-wrapped at every step; on any fault we restore input and log.
 
-5. **Polish:** descriptor read provides the picked action id and target name — use it to refine our pre-roll text (instead of always saying "Öffne Tür", say "Sicherheit Tür" / "Angriff" / "Sprich" based on what the engine actually picked). This is a free win once we can read the descriptor, even before we can drive the click.
+`interact_hotkey.cpp::OnInteract` now:
+- Calls `picker::Drive` first.
+- Pre-roll uses the engine's own localised verb (snap.label) when descriptor is valid: "Sicherheit Türschloss" instead of "Öffne Türschloss".
+- Falls back to `AddUseObjectAction` if the engine returned an empty descriptor or faulted — the simple "open / talk / pick up" cases keep working as before.
+
+`strings.{h,en,de}` — new `FmtInteractEngine = "%s %s"` (engine-verb + target-name).
+
+## What's untested
+
+- The whole path. No in-game test yet. First test target: Endar Spire's locked door (Trask's tutorial) — should now speak the engine's "Sicherheit" verb and dispatch the security action via `HandleMouseClickInWorld`.
+- Whether `field283_0x4a4` accepts the same handle form as `last_target` (server handle OR'd with 0x80000000). Decompile suggests yes.
+- Whether `HandleMouseClickInWorld`'s opening gates (`pCVar2->field45_0xb4 == 0`, `gui_in_game->field12_0x30 == 0`, `client_options->camera_mode != 5`) are typically open during normal in-world input. Logs will reveal a silent fall-through.
+- Whether action functions called by HandleMouseClickInWorld correctly enqueue against the active leader (the same Tab-leader question that motivated `c680ceb`'s diagnostic).
+
+## Polish followups (post-test)
+
+- Replace the per-kind `PreRollFor` mapping when we confirm the engine label always reads cleanly. Currently it's still the fallback when descriptor is empty.
+- Wire `picker::ReadCurrent` into a passive narrator so that hovering a target with the cursor (or holding cycle focus while the cursor happens to overlap) speaks the engine's chosen action without pressing Enter.
+- If `HandleMouseClickInWorld` consistently dispatches cleanly, retire the `AddUseObjectAction` fallback in `interact_hotkey.cpp` — single dispatch path, no per-kind code anywhere.
+- Map remaining `action_id` values from `GetDefaultActions` so log lines are interpretable without cross-referencing the decompile.
 
 ## Anti-pattern to avoid
 

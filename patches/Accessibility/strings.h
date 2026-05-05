@@ -93,6 +93,17 @@ enum class Id : int {
     FmtInteractTake,
     FmtInteractFailed,
 
+    // ---- Engine-picked action pre-roll. Used when the engine action
+    //      picker (CClientExoAppInternal::GetDefaultActions) returns a
+    //      localised verb for the focused target (e.g. "Sicherheit",
+    //      "Angriff", "Bash", "Disable Trap"). Two args:
+    //      `%s` action verb (already localised by the engine via
+    //          dialog.tlk; we pass it through unmodified), then
+    //      `%s` target name (CSWSObject tag / first_name).
+    //      Falls back to the per-kind FmtInteract* phrases when the
+    //      engine descriptor is empty.
+    FmtInteractEngine,
+
     // ---- Container loot panel announces.
     //      `ContainerEmpty`        — count == 0.
     //      `ContainerOneItem`      — count == 1 (German singular has different

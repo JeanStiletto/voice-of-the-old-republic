@@ -47,6 +47,7 @@ const char* Get(Id id) {
         case Id::FmtInteractOpen:      return "\xD6" "ffne %s";                 // Öffne
         case Id::FmtInteractTake:      return "Hebe %s auf";
         case Id::FmtInteractFailed:    return "Interaktion mit %s fehlgeschlagen";
+        case Id::FmtInteractEngine:    return "%s %s";
 
         case Id::ContainerEmpty:       return "Leer";
         case Id::ContainerOneItem:     return "1 Gegenstand";
