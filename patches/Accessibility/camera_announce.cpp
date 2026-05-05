@@ -31,6 +31,18 @@ constexpr float kSectorSize  = 45.0f;
 constexpr float kHalfSector  = 22.5f;
 constexpr float kHysteresis  = 5.0f;
 
+// Final-state debounce (matches turn_announce). Speak only when the
+// sector has been stable this long. Collapses transient sector flips
+// during fast rotation to a single announcement.
+constexpr DWORD kQuietMs = 250;
+
+// Held-key override: while exactly one of A/D is held, announce at most
+// once per this interval even if the sector keeps changing. At the
+// default 200°/s DPS, the camera crosses a sector every ~225ms — without
+// this override, dedup would suppress announcements indefinitely while
+// rotating. ≈600ms gives one short German direction word per beat.
+constexpr DWORD kMinIntervalHeldMs = 600;
+
 acc::strings::Id SectorString(int sector) {
     using S = acc::strings::Id;
     switch (sector) {
@@ -74,10 +86,13 @@ void NormalizeYaw(float& yaw) {
 void Tick() {
     // -1 sentinels = "first usable tick this DLL load — initialise + suppress
     // first speech".
-    static float s_camYawCompass    = -1.0f;
-    static float s_lastCharCompass  = -1.0f;
-    static int   s_lastSector       = -1;
-    static DWORD s_lastTick         = 0;
+    static float s_camYawCompass     = -1.0f;
+    static float s_lastCharCompass   = -1.0f;
+    static int   s_lastSpokenSector  = -1;
+    static int   s_pendingSector     = -1;
+    static DWORD s_lastChangeAt      = 0;
+    static DWORD s_lastSpokenAt      = 0;
+    static DWORD s_lastTick          = 0;
 
     // Self-gate: silent in menus / chargen / pre-spawn / degenerate facing.
     float charEngineYaw = 0.0f;
@@ -85,9 +100,10 @@ void Tick() {
         // While not in-game, reset estimate so the first in-game tick
         // re-anchors cleanly rather than carrying stale state across
         // saves / area transitions.
-        s_camYawCompass = -1.0f;
-        s_lastSector    = -1;
-        s_lastTick      = 0;
+        s_camYawCompass     = -1.0f;
+        s_lastSpokenSector  = -1;
+        s_pendingSector     = -1;
+        s_lastTick          = 0;
         return;
     }
 
@@ -97,13 +113,16 @@ void Tick() {
     // First-tick init: anchor camera estimate to current character yaw,
     // log it, but suppress speech (the user hasn't rotated yet).
     if (s_camYawCompass < 0.0f) {
-        s_camYawCompass   = charCompass;
-        s_lastCharCompass = charCompass;
-        s_lastSector      = CompassToSector(charCompass);
-        s_lastTick        = now;
+        s_camYawCompass    = charCompass;
+        s_lastCharCompass  = charCompass;
+        s_lastSpokenSector = CompassToSector(charCompass);
+        s_pendingSector    = s_lastSpokenSector;
+        s_lastChangeAt     = now;
+        s_lastSpokenAt     = now;
+        s_lastTick         = now;
         acclog::Write(
             "CameraAnnounce: first-tick anchor; charCompass=%.1f sector=%d",
-            charCompass, s_lastSector);
+            charCompass, s_lastSpokenSector);
         return;
     }
 
@@ -146,32 +165,58 @@ void Tick() {
     // recency check: if charDelta > 1 on this tick (resync fired), skip
     // sector announce — turn_announce will handle it.
     if (charDelta > 1.0f) {
-        // Update s_lastSector so the next genuine A/D rotation registers
+        // Update spoken/pending so the next genuine A/D rotation registers
         // against the post-resync sector, not the pre-resync one.
         int snappedSector = CompassToSector(s_camYawCompass);
-        if (snappedSector != s_lastSector) {
-            s_lastSector = snappedSector;
+        if (snappedSector != s_lastSpokenSector) {
+            s_lastSpokenSector = snappedSector;
+            s_pendingSector    = snappedSector;
+            s_lastChangeAt     = now;
+            s_lastSpokenAt     = now;  // suppress immediate held-override fire
         }
         return;
     }
 
-    float lastCentre   = s_lastSector * kSectorSize;
+    // Hysteresis around last spoken sector.
+    float lastCentre   = s_lastSpokenSector * kSectorSize;
     float distFromLast = std::fabs(AngularDelta(s_camYawCompass, lastCentre));
-    if (distFromLast <= kHalfSector + kHysteresis) return;
+    int   currentSector = (distFromLast <= kHalfSector + kHysteresis)
+                              ? s_lastSpokenSector
+                              : CompassToSector(s_camYawCompass);
 
-    int newSector = CompassToSector(s_camYawCompass);
-    if (newSector == s_lastSector) return;
+    if (currentSector != s_pendingSector) {
+        s_pendingSector = currentSector;
+        s_lastChangeAt  = now;
+    }
 
-    auto id = SectorString(newSector);
+    if (s_pendingSector == s_lastSpokenSector) return;
+
+    // Two paths to speech:
+    //   (a) sector stable for kQuietMs — final-state announcement after
+    //       a burst (e.g. brief A/D tap that crossed a boundary then
+    //       settled, or releasing the held key partway through a sector).
+    //   (b) exactly one of A/D held AND kMinIntervalHeldMs since last
+    //       announcement — keeps the user oriented during sustained
+    //       rotation instead of going silent until they release.
+    bool stable       = (now - s_lastChangeAt >= kQuietMs);
+    bool relevantHeld = (aHeld != dHeld);  // XOR — both held = no rotation
+    bool heldOverride = relevantHeld &&
+                        (now - s_lastSpokenAt >= kMinIntervalHeldMs);
+
+    if (!stable && !heldOverride) return;
+
+    auto id = SectorString(s_pendingSector);
     const char* phrase = acc::strings::Get(id);
     tolk::Speak(phrase, /*interrupt=*/false);
     acclog::Write(
         "CameraAnnounce: sector %d -> %d (%s); estCamYaw=%.1f "
-        "charCompass=%.1f (a=%d d=%d)",
-        s_lastSector, newSector, phrase, s_camYawCompass, charCompass,
-        aHeld ? 1 : 0, dHeld ? 1 : 0);
+        "charCompass=%.1f (a=%d d=%d %s)",
+        s_lastSpokenSector, s_pendingSector, phrase, s_camYawCompass,
+        charCompass, aHeld ? 1 : 0, dHeld ? 1 : 0,
+        stable ? "quiet" : "held");
 
-    s_lastSector = newSector;
+    s_lastSpokenSector = s_pendingSector;
+    s_lastSpokenAt     = now;
 }
 
 }  // namespace acc::camera_announce

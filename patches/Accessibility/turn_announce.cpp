@@ -26,6 +26,11 @@ constexpr float kSectorSize  = 45.0f;   // 360 / 8
 constexpr float kHalfSector  = 22.5f;   // strict boundary
 constexpr float kHysteresis  = 5.0f;    // sticky boundary = 22.5 + 5
 
+// Final-state debounce: only speak after the sector has been stable for
+// this many ms. Collapses bursts like W→S (character spins 180° across
+// 4 sectors in <1s) to a single announcement of the final direction.
+constexpr DWORD kQuietMs = 250;
+
 acc::strings::Id SectorString(int sector) {
     using S = acc::strings::Id;
     switch (sector) {
@@ -76,29 +81,44 @@ void Tick() {
     if (!acc::engine::GetPlayerYawDegrees(engineYawDeg)) return;
 
     float compass = EngineYawToCompass(engineYawDeg);
+    DWORD now = GetTickCount();
 
     // -1 = "first observation since DLL load — set sector but don't speak".
-    static int s_lastSector = -1;
+    static int   s_lastSpokenSector = -1;
+    static int   s_pendingSector    = -1;
+    static DWORD s_lastChangeAt     = 0;
 
-    if (s_lastSector < 0) {
-        s_lastSector = CompassToSector(compass);
+    if (s_lastSpokenSector < 0) {
+        s_lastSpokenSector = CompassToSector(compass);
+        s_pendingSector    = s_lastSpokenSector;
+        s_lastChangeAt     = now;
         acclog::Write(
             "TurnAnnounce: first-tick suppress; engineYaw=%.1f compass=%.1f "
-            "sector=%d", engineYawDeg, compass, s_lastSector);
+            "sector=%d", engineYawDeg, compass, s_lastSpokenSector);
         return;
     }
 
-    // Hysteresis: stay in last sector while within (kHalfSector +
-    // kHysteresis)° of its centre. Only re-evaluate when we leave that
-    // band.
-    float lastCentre = s_lastSector * kSectorSize;
+    // Hysteresis around last *spoken* sector: while within (kHalfSector +
+    // kHysteresis)° of its centre, treat current sector as unchanged.
+    // Outside the band, compute the strict nearest sector.
+    float lastCentre   = s_lastSpokenSector * kSectorSize;
     float distFromLast = std::fabs(AngularDelta(compass, lastCentre));
-    if (distFromLast <= kHalfSector + kHysteresis) return;
+    int   currentSector = (distFromLast <= kHalfSector + kHysteresis)
+                              ? s_lastSpokenSector
+                              : CompassToSector(compass);
 
-    int newSector = CompassToSector(compass);
-    if (newSector == s_lastSector) return;  // jitter near far boundary
+    // Track most-recent-observed sector + when it last changed. While the
+    // player is mid-turn (e.g. W→S 180° spin), this fires every ~50ms and
+    // keeps last_change_at moving — no announcement until the spin ends.
+    if (currentSector != s_pendingSector) {
+        s_pendingSector = currentSector;
+        s_lastChangeAt  = now;
+    }
 
-    auto id = SectorString(newSector);
+    if (s_pendingSector == s_lastSpokenSector) return;
+    if (now - s_lastChangeAt < kQuietMs)        return;  // not stable yet
+
+    auto id = SectorString(s_pendingSector);
     const char* phrase = acc::strings::Get(id);
 
     // interrupt=false — direction shouldn't talk over an in-flight
@@ -106,10 +126,12 @@ void Tick() {
     tolk::Speak(phrase, /*interrupt=*/false);
 
     acclog::Write(
-        "TurnAnnounce: sector %d -> %d (%s); engineYaw=%.1f compass=%.1f",
-        s_lastSector, newSector, phrase, engineYawDeg, compass);
+        "TurnAnnounce: sector %d -> %d (%s); engineYaw=%.1f compass=%.1f "
+        "(debounced %ums)",
+        s_lastSpokenSector, s_pendingSector, phrase, engineYawDeg, compass,
+        static_cast<unsigned>(now - s_lastChangeAt));
 
-    s_lastSector = newSector;
+    s_lastSpokenSector = s_pendingSector;
 }
 
 }  // namespace acc::turn_announce
