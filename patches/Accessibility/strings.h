@@ -220,6 +220,17 @@ enum class Id : int {
     DirWest,
     DirNorthwest,
 
+    // ---- Level-up hotkey (Shift+L). Speaks an opener cue when the user
+    //      triggers `CGuiInGame::ShowLevelUpGUI` so the screen-reader
+    //      user knows the panel was requested even before its controls
+    //      register with our chain walker. `LevelUpFailed` is spoken on
+    //      SEH fault inside the engine call (chain unresolved, or the
+    //      call faulted) — mirrors the autowalk "fehlgeschlagen" pattern
+    //      so silent failure can't leave the user wondering whether the
+    //      key did anything.
+    LevelUpOpen,
+    LevelUpFailed,
+
     Count_,
 };
 

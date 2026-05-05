@@ -47,6 +47,34 @@ void EnsureTolkInitialized() {
     }
 }
 
+// One-shot RE helper: dump the runtime-decrypted bytes of a function so we
+// can disassemble offline. The on-disk swkotor.exe is packed (random-looking
+// bytes in the .text section) — only the live process has the unpacked
+// instructions, and we run inside that process. Logged as a single line of
+// hex so the patch log becomes the source of truth for any RE work that
+// Lane's Ghidra DB doesn't expose decompiled.
+//
+// Removable in one commit once the targeted RE finishes.
+static void DumpFunctionBytes(const char* tag, uintptr_t va, size_t len) {
+    if (len == 0 || len > 0x400) return;  // sanity cap; one log line ~3*len chars
+    char hex[0x400 * 3 + 1];
+    size_t off = 0;
+    __try {
+        const unsigned char* p = reinterpret_cast<const unsigned char*>(va);
+        for (size_t i = 0; i < len && off + 3 < sizeof(hex); ++i) {
+            unsigned b = p[i];
+            const char* hexDigits = "0123456789abcdef";
+            hex[off++] = hexDigits[(b >> 4) & 0xf];
+            hex[off++] = hexDigits[b & 0xf];
+            hex[off++] = ' ';
+        }
+        hex[off] = '\0';
+        acclog::Write("RE-peek %s VA=0x%08zx len=%zu: %s", tag, va, len, hex);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("RE-peek %s VA=0x%08zx FAULT", tag, va);
+    }
+}
+
 // CSWRules::CSWRules first-construction infrastructure-test detour. Logs
 // the first fire as a "patch is alive" signal and ensures Tolk is loaded
 // before any focus event hits us. Hook is registered in hooks.toml at
@@ -57,6 +85,16 @@ extern "C" void __cdecl OnRulesInit(void* /*rulesThis*/) {
     fired = true;
     EnsureTolkInitialized();
     acclog::Write("first CSWRules construction; detour active");
+
+    // RE: dump CSWGuiInGameCharacter::ShowLevelUpGUI (btn_levelup click
+    // handler) — currently returns 0 with no panel visible. Need to find
+    // the gate. Function range 0x006b0bb0..0x006b0ca1 (0xf1 bytes). Also
+    // dump CGuiInGame::ShowLevelUpGUI (0x0062dc00..0x0062dd13, 0x113
+    // bytes) since it's the dispatcher we tried first.
+    DumpFunctionBytes("CSWGuiInGameCharacter::ShowLevelUpGUI",
+                      0x006b0bb0, 0xf1);
+    DumpFunctionBytes("CGuiInGame::ShowLevelUpGUI",
+                      0x0062dc00, 0x113);
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD reason, LPVOID) {

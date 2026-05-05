@@ -11,6 +11,7 @@
 #include "engine_actionbar.h"
 #include "engine_area.h"
 #include "engine_input.h"   // kInputEnter1 / kInputNavUp/Down/Left/Right
+#include "engine_levelup.h"
 #include "engine_manager.h"
 #include "engine_offsets.h"
 #include "engine_panels.h"
@@ -514,6 +515,7 @@ void PollHotkey() {
     static bool s_prevK5    = false;
     static bool s_prevK6    = false;
     static bool s_prevK7    = false;
+    static bool s_prevL     = false;
 
     bool enter = down(VK_RETURN);
     bool upK   = down(VK_UP);
@@ -531,6 +533,7 @@ void PollHotkey() {
     bool k5    = down('5');
     bool k6    = down('6');
     bool k7    = down('7');
+    bool kL    = down('L');
 
     bool risingEnter = enter && !s_prevEnter; s_prevEnter = enter;
     bool risingUp    = upK   && !s_prevUp;    s_prevUp    = upK;
@@ -544,6 +547,7 @@ void PollHotkey() {
     bool risingK5    = k5    && !s_prevK5;    s_prevK5    = k5;
     bool risingK6    = k6    && !s_prevK6;    s_prevK6    = k6;
     bool risingK7    = k7    && !s_prevK7;    s_prevK7    = k7;
+    bool risingL     = kL    && !s_prevL;     s_prevL     = kL;
 
     HWND fg = GetForegroundWindow();
     if (fg) {
@@ -571,6 +575,32 @@ void PollHotkey() {
         if (risingK5) acc::actionbar_menu::Open(1);
         if (risingK6) acc::actionbar_menu::Open(2);
         if (risingK7) acc::actionbar_menu::Open(3);
+
+        // Shift+L — open the engine's level-up panel directly
+        // (CGuiInGame::ShowLevelUpGUI). First-version escape hatch for
+        // the tutorial level: navigating into the Charakterblatt and
+        // hitting btn_levelup is the vanilla path, but currently the
+        // user's chain-walker Enter on the InGameAbilities Powers tab
+        // crashes (CSWGuiInGameAbilities::OnEnterPower null deref) —
+        // see logs/swkotor.exe.7848.dmp. Bypassing navigation via the
+        // engine surface lets the user reach the level-up panel
+        // regardless of which screen they're on. The level-up panel
+        // itself enumerates as a normal CSWGuiPanel so the existing
+        // chain walker handles its child controls once it opens.
+        if (risingL) {
+            const char* opener = acc::strings::Get(
+                acc::strings::Id::LevelUpOpen);
+            tolk::Speak(opener, /*interrupt=*/true);
+            bool ok = acc::engine_levelup::TriggerLevelUp();
+            acclog::Write(
+                "Interact: Shift+L -> [%s] level-up dispatch ok=%d",
+                opener, ok ? 1 : 0);
+            if (!ok) {
+                tolk::Speak(
+                    acc::strings::Get(acc::strings::Id::LevelUpFailed),
+                    /*interrupt=*/true);
+            }
+        }
     }
 
     // Bare 1..3 (target action menu) and bare 4..7 (player action bar)
@@ -723,6 +753,34 @@ void PollHotkey() {
         if (fgPanel) {
             acc::engine::PanelKind fgKind = acc::engine::IdentifyPanel(fgPanel);
             bool blocking = false;
+
+            // Modal-stack gate: if `fgPanel` came from the manager's
+            // modal_stack rather than panels[], the engine has elevated
+            // it to capture all input — by definition no in-world
+            // dispatch should fire while a modal is up. Catches every
+            // panel that gets pushed via PushModalPanel @0x40bd90
+            // (level-up wizard, message-box modals, dialog confirms,
+            // engine-side popups we haven't classified yet) without
+            // needing each kind to be enumerated here.
+            //
+            // Reuses the existing CSWGuiManager constants from
+            // engine_manager.h (kMgrModalStack*Offset). The check is
+            // just the same modal_stack[top] read GetForegroundPanel
+            // already does internally, repeated here only to know
+            // *whether* the result came from modal_stack vs panels[].
+            // Cheap (two memory reads, no chain walk).
+            auto* mgrBase = reinterpret_cast<unsigned char*>(mgr);
+            int   modalSize = *reinterpret_cast<int*>(
+                mgrBase + kMgrModalStackSizeOffset);
+            void** modalData = *reinterpret_cast<void***>(
+                mgrBase + kMgrModalStackDataOffset);
+            bool fgIsModal = false;
+            if (modalSize > 0 && modalData &&
+                modalData[modalSize - 1] == fgPanel) {
+                fgIsModal = true;
+                blocking  = true;
+            }
+
             switch (fgKind) {
             case acc::engine::PanelKind::Container:
             case acc::engine::PanelKind::Store:
@@ -748,8 +806,20 @@ void PollHotkey() {
                 blocking = true;
                 break;
             default:
-                blocking = false;
+                // Non-modal Unknown / unclassified panels still fall through
+                // to allow in-world Enter — the panels[] blacklist above
+                // handles the kinds we know want to capture input, and
+                // bare-MainInterface in-world is the common case here.
                 break;
+            }
+            if (fgIsModal) {
+                acclog::Write(
+                    "Interact: %s gate -- BLOCKED, fg=%p kind=%s "
+                    "(modal_stack[%d] top)",
+                    keyTag, fgPanel,
+                    acc::engine::PanelKindName(fgKind),
+                    modalSize - 1);
+                return;
             }
             if (blocking) {
                 acclog::Write(

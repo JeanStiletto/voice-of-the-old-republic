@@ -88,6 +88,9 @@ const char* Get(Id id) {
         case Id::DirWest:              return "Westen";
         case Id::DirNorthwest:         return "Nord-West";
 
+        case Id::LevelUpOpen:          return "Stufenaufstieg";
+        case Id::LevelUpFailed:        return "Stufenaufstieg fehlgeschlagen";
+
         case Id::Count_:               return "";
     }
     return "";
