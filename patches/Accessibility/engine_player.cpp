@@ -4,12 +4,15 @@
 #include <cmath>
 #include <cstdint>
 
+#include "engine_reads.h"  // ReadCExoString
+
 namespace acc::engine {
 
 namespace {
 
 typedef void* (__thiscall* PFN_GetPlayerCreature)(void* this_);
 typedef void* (__thiscall* PFN_CSWSObjectGetArea)(void* this_);
+typedef void* (__thiscall* PFN_GetPlayerCharacterName)(void* this_);
 
 // Walk *kAddrAppManagerPtr → CClientExoApp → GetPlayerCreature() →
 // server_object (+0xf8) and return the CSWSObject*. nullptr at any failure
@@ -97,6 +100,28 @@ void* GetPlayerArea() {
 
 void* GetPlayerServerCreature() {
     return GetPlayerServerObject();
+}
+
+bool GetPlayerCharacterName(char* outBuf, size_t bufSize) {
+    if (!outBuf || bufSize < 2) return false;
+    outBuf[0] = '\0';
+    __try {
+        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
+        if (!appManager) return false;
+        void* exoApp = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(appManager) +
+            kAppManagerClientAppOffset);
+        if (!exoApp) return false;
+        auto fn = reinterpret_cast<PFN_GetPlayerCharacterName>(
+            kAddrCClientExoAppGetPlayerCharacterName);
+        void* exoStr = fn(exoApp);
+        if (!exoStr) return false;
+        // CExoString layout (c_string @+0, length @+4) — same shape every
+        // other reader hits via ReadCExoString.
+        return ReadCExoString(exoStr, /*offset=*/0, outBuf, bufSize);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
 }
 
 namespace {

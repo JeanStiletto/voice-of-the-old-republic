@@ -102,6 +102,20 @@ void Tick() {
     if (creature) {
         acc::engine::GetObjectName(creature, creatureName,
                                    sizeof(creatureName));
+        // Player creature: CSWSCreatureStats.first_name + tag are both
+        // empty in vanilla saves (chargen writes the chosen name to
+        // CClientExoAppInternal::player_character_name @+0x294, not the
+        // creature stats). Fall back to the dedicated accessor so Tab
+        // announces "Test" / "Revan" / etc. instead of silence when the
+        // PC is the active leader. Companion NPCs (Trask, Carth, ...)
+        // resolve via the generic path above and never reach this branch.
+        // GetObjectName always rewrites outBuf[0] (sets '\0' on failure),
+        // so the "?" sentinel above is overwritten on entry — only the
+        // empty-string case reaches the fallback.
+        if (creatureName[0] == '\0') {
+            acc::engine::GetPlayerCharacterName(creatureName,
+                                                sizeof(creatureName));
+        }
     }
     Vector creaturePos{};
     bool   havePos = acc::engine::GetPlayerPosition(creaturePos);

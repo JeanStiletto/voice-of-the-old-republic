@@ -74,6 +74,27 @@ void* GetPlayerArea();
 // AppManager → CClientExoApp → GetPlayerCreature → server_object chain.
 void* GetPlayerServerCreature();
 
+// Reads the player's chosen character name (the first name entered at
+// chargen). Wraps `CClientExoApp::GetPlayerCharacterName @0x5edab0`,
+// which returns the live `CExoString*` backed by
+// `CClientExoAppInternal::player_character_name @+0x294`. Bytes are
+// copied into the caller's buffer; the engine-owned CExoString stays
+// alive for the session.
+//
+// Why a dedicated path rather than going through `GetObjectName` on the
+// player creature: the player's `CSWSCreatureStats.first_name`
+// CExoLocString is empty in vanilla saves (chargen writes the chosen
+// name to `CClientExoAppInternal::player_character_name`, not the stats
+// field), so the generic creature-name path falls all the way through
+// to `tag` which is also empty for the PC. Confirmed live 2026-05-05
+// via diag_engine_select Tab logs: `id=0x7fffffff name=[]` for the
+// player creature, while companion NPCs (e.g. Trask, `name=[end_trask]`)
+// resolve normally through the generic path.
+//
+// Returns false on chain failure (no app, SEH-caught fault) OR when the
+// stored CExoString is empty (main-menu / pre-chargen state).
+bool GetPlayerCharacterName(char* outBuf, size_t bufSize);
+
 // Toggle the per-tick player-input movement clobber. enabled=true =
 // player drives the creature directly (vanilla); enabled=false = input
 // loop skips the per-tick movement override, AI actions execute
@@ -135,3 +156,9 @@ constexpr size_t kClientAppPlayerControlOffset = 0x2a0;
 // creature's mode (player/AI/driving). See header doc on
 // SetPlayerInputEnabled for the full xref.
 constexpr uintptr_t kAddrCSWPlayerControlSetEnabled = 0x006792E0;
+
+// CClientExoApp::GetPlayerCharacterName — __thiscall(void) -> CExoString*.
+// SARIF CONFIRMED ("CExoString * __thiscall GetPlayerCharacterName(void)").
+// Returns the live CExoString* for the chargen-set player name, backed by
+// CClientExoAppInternal::player_character_name @+0x294.
+constexpr uintptr_t kAddrCClientExoAppGetPlayerCharacterName = 0x005EDAB0;
