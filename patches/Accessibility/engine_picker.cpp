@@ -250,7 +250,8 @@ void SnapshotDescriptor(void* internal, acc::picker::ActionSnapshot* snap) {
 
 namespace acc::picker {
 
-bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot) {
+bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot,
+           bool forceRadial) {
     ActionSnapshot localSnap = {};
 
     if (targetServerHandle == 0u || targetServerHandle == 0xFFFFFFFFu ||
@@ -326,7 +327,7 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot) {
     // dispatching.
     SnapshotDescriptor(internal, &localSnap);
 
-    if (!localSnap.valid) {
+    if (!localSnap.valid || forceRadial) {
         // Diagnostic — capture leader name + target class/state BEFORE
         // calling the wrapper. Lets us tell, when action_lists comes back
         // empty, whether the target is in a "no actions remaining" final
@@ -336,11 +337,14 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot) {
         // controlled* party member — Tab-swapping to Trask is reflected
         // here, unlike GetPlayerCharacterName which always returns the
         // PC's chargen name.
+        const char* tag = forceRadial ? "force-radial diag"
+                                      : "empty-descriptor diag";
         char leaderName[64] = "";
         acc::engine::GetActiveLeaderName(leaderName, sizeof(leaderName));
         acclog::Write(
-            "Picker: empty-descriptor diag — leader=[%s] target=0x%08x",
-            leaderName[0] ? leaderName : "?", targetClient);
+            "Picker: %s — leader=[%s] target=0x%08x descriptor_count=%d",
+            tag, leaderName[0] ? leaderName : "?", targetClient,
+            localSnap.count);
         acc::engine_radial::LogTargetDiag(targetClient, "before-wrapper");
 
         // Engine has no default action for this target (count==0).
@@ -389,13 +393,17 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot) {
 
         if (radialOpened) {
             acclog::Write(
-                "Picker: empty descriptor — opened radial via "
-                "PopulateMenus (target=0x%08x count=%d)",
+                "Picker: %s — opened radial via PopulateMenus "
+                "(target=0x%08x descriptor_count=%d)",
+                forceRadial ? "force-radial"
+                            : "empty descriptor",
                 targetClient, localSnap.count);
         } else {
             acclog::Write(
-                "Picker: GetDefaultActions returned empty descriptor "
-                "(target=0x%08x count=%d) and PopulateMenus faulted",
+                "Picker: %s (target=0x%08x descriptor_count=%d) and "
+                "PopulateMenus faulted",
+                forceRadial ? "force-radial requested"
+                            : "GetDefaultActions returned empty descriptor",
                 targetClient, localSnap.count);
         }
         return radialOpened;

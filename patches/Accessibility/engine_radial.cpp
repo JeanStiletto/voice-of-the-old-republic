@@ -65,6 +65,19 @@ constexpr size_t kResRefMaxLen           = 16;
 // kLabelGuiStringPtrOffset (0xE4) for the rendered c_string.
 constexpr size_t kTamNameLabelOffset      = 0x15CC;
 
+// field1[12] = 4 target_types × 3 rows; each int is the selected action_id
+// for that combination (-1 = use first item). Used by inner-PopulateMenus
+// + SelectNext/Prev/DoTargetAction to mark the active action in
+// action_lists[row]. Source-of-truth for "which descriptor is selected
+// right now"; the rendered target_actions[r].action_button only catches
+// up after the engine's next paint pass, which is why we sometimes see
+// `gui_string=[] action_button=[]` immediately after PopulateMenus even
+// though the data is fully populated.
+constexpr size_t kTamField1Offset         = 0x24;
+constexpr size_t kTamTargetTypeOffset     = 0x1AEA;
+constexpr int    kActionIdNone            = -1;
+constexpr size_t kIfActionStride          = 0x38;
+
 // Engine entry points (k1_win_gog_swkotor.exe.xml symbol table; GoG bytes
 // match Steam per project_ghidra_gog_steam_bytes_match).
 constexpr uintptr_t kAddrSelectNextAction = 0x006865b0;
@@ -279,6 +292,51 @@ int RowActionCount(void* tam, int row) {
     return static_cast<int>(size);
 }
 
+namespace {
+
+// Find the CSWGuiInterfaceAction* in action_lists[row].data that matches
+// the engine's currently-selected action_id (field1[target_type*3 + row]).
+// Returns data[0] when field1 holds -1 ("no selection, use default") or
+// when no entry matches the stored id (engine fallback). Returns nullptr
+// when the row is empty / the data pointer is null / a fault occurs.
+void* FindSelectedActionDescriptor(void* tam, int row) {
+    if (!tam || row < 0 || row >= acc::engine_radial::kRowCount) return nullptr;
+    __try {
+        auto* base = reinterpret_cast<unsigned char*>(tam);
+        size_t listOff = kTamActionListsOffset + row * kActionListStride;
+        void* dataPtr = *reinterpret_cast<void**>(base + listOff);
+        int32_t size  = *reinterpret_cast<int32_t*>(base + listOff + kActionListSizeOffset);
+        if (!dataPtr || size <= 0) return nullptr;
+
+        uint8_t targetType = *(base + kTamTargetTypeOffset);
+        int32_t selectedId = kActionIdNone;
+        if (targetType < 4) {
+            selectedId = *reinterpret_cast<int32_t*>(
+                base + kTamField1Offset +
+                (static_cast<size_t>(targetType) * 3 + row) * sizeof(int32_t));
+        }
+
+        // -1 = "no selection, default to first"; otherwise scan for match
+        // and fall through to data[0] when no entry has the stored id
+        // (mirrors what the engine does in SelectNextAction's lookup loop).
+        if (selectedId != kActionIdNone) {
+            auto* entries = reinterpret_cast<unsigned char*>(dataPtr);
+            for (int i = 0; i < size; ++i) {
+                int32_t id = *reinterpret_cast<int32_t*>(
+                    entries + i * kIfActionStride + kIfActionIdOffset);
+                if (id == selectedId) {
+                    return entries + i * kIfActionStride;
+                }
+            }
+        }
+        return dataPtr;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+}  // namespace
+
 bool ReadRowActionLabel(void* tam, int row, char* outBuf, size_t bufSize) {
     if (!outBuf || bufSize == 0) return false;
     outBuf[0] = '\0';
@@ -295,11 +353,20 @@ bool ReadRowActionLabel(void* tam, int row, char* outBuf, size_t bufSize) {
     if (ReadCExoStringLocal(btn, kButtonTextOffset, outBuf, bufSize)) {
         return true;
     }
-    // strref / TLK fallback intentionally omitted in this first cut. The
-    // engine populates target_actions[row].action_button via SetText with
-    // a localised CExoString from the action descriptor, so the strref
-    // path is rarely the source of truth here. Adding it is a follow-up
-    // if logs show the inline CExoString empty in real usage.
+    // Source-of-truth fallback: read the label directly from
+    // action_lists[row].data[selected]. This is the descriptor the engine
+    // *will* render into action_button on its next paint pass — at populate
+    // time the rendered button text is empty (verified in
+    // patch-20260505-101621.log: action_lists[1].data[0] peek showed
+    // [Sicherheit] while target_actions[1].action_button was []). Without
+    // this fallback the user hears "Aktion 1/1" with no label on the very
+    // first arm of a freshly-populated row.
+    void* descriptor = FindSelectedActionDescriptor(tam, row);
+    if (descriptor &&
+        ReadCExoStringLocal(descriptor, kIfActionLabelOffset,
+                            outBuf, bufSize)) {
+        return true;
+    }
     return false;
 }
 

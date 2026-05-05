@@ -8,6 +8,7 @@
 
 #include "cycle_state.h"
 #include "engine_area.h"
+#include "engine_input.h"   // kInputEnter1 / kInputNavUp/Down/Left/Right
 #include "engine_manager.h"
 #include "engine_offsets.h"
 #include "engine_panels.h"
@@ -218,7 +219,7 @@ void* ResolveInteractTarget(uint32_t* outHandle) {
     return obj;
 }
 
-void OnInteract() {
+void OnInteract(bool forceRadial) {
     uint32_t handle = 0;
     void* target = ResolveInteractTarget(&handle);
 
@@ -226,7 +227,8 @@ void OnInteract() {
         const char* msg = acc::strings::Get(
             acc::strings::Id::GuidanceNoFocus);
         tolk::Speak(msg, /*interrupt=*/true);
-        acclog::Write("Interact: Enter -> [%s] no target", msg);
+        acclog::Write("Interact: %s -> [%s] no target",
+                      forceRadial ? "Shift+Enter" : "Enter", msg);
         return;
     }
 
@@ -274,7 +276,7 @@ void OnInteract() {
     // string (which still tells the user *something* happened even when
     // the engine refuses to enumerate actions).
     acc::picker::ActionSnapshot snap = {};
-    bool dispatched = acc::picker::Drive(handle, &snap);
+    bool dispatched = acc::picker::Drive(handle, &snap, forceRadial);
 
     // Radial-opened path: arm the input gate and speak the row+action
     // announce in one call. ArmAfterPopulate handles the speech itself
@@ -312,9 +314,10 @@ void OnInteract() {
     }
 
     acclog::Write(
-        "Interact: Enter -> [%s] target=%p handle=0x%08x cat=%s "
+        "Interact: %s -> [%s] target=%p handle=0x%08x cat=%s "
         "engine_label=[%s] engine_action=0x%x engine_count=%d "
         "radial_opened=%d",
+        forceRadial ? "Shift+Enter" : "Enter",
         msg, target, handle,
         cat == acc::filter::CycleCategory::Count_
             ? "(unclassified)"
@@ -368,11 +371,27 @@ void PollHotkey() {
         return (GetAsyncKeyState(vk) & 0x8000) != 0;
     };
 
+    // Persistent rising-edge state for every key we manage. Tracked on
+    // every tick (not gated on radial-active) so that releasing a key
+    // outside the radial doesn't desync the next press once the radial
+    // arms.
     static bool s_prevEnter = false;
+    static bool s_prevUp    = false;
+    static bool s_prevDown  = false;
+    static bool s_prevLeft  = false;
+    static bool s_prevRight = false;
+
     bool enter = down(VK_RETURN);
-    bool risingEnter = enter && !s_prevEnter;
-    s_prevEnter = enter;
-    if (!risingEnter) return;
+    bool upK   = down(VK_UP);
+    bool dnK   = down(VK_DOWN);
+    bool ltK   = down(VK_LEFT);
+    bool rtK   = down(VK_RIGHT);
+
+    bool risingEnter = enter && !s_prevEnter; s_prevEnter = enter;
+    bool risingUp    = upK   && !s_prevUp;    s_prevUp    = upK;
+    bool risingDown  = dnK   && !s_prevDown;  s_prevDown  = dnK;
+    bool risingLeft  = ltK   && !s_prevLeft;  s_prevLeft  = ltK;
+    bool risingRight = rtK   && !s_prevRight; s_prevRight = rtK;
 
     HWND fg = GetForegroundWindow();
     if (fg) {
@@ -382,18 +401,55 @@ void PollHotkey() {
     }
 
     Vector unused;
-    if (!acc::engine::GetPlayerPosition(unused)) return;
+    bool inWorld = acc::engine::GetPlayerPosition(unused);
 
-    // Radial gate: when our action-menu input gate is armed, the manager-
-    // hook in menus.cpp owns Enter (it dispatches DoTargetAction on the
-    // current row). The Win32 poll must NOT fire OnInteract here too, or
-    // we'd open a fresh radial on top of the live one. The manager hook
-    // resolves Enter on the same engine tick as this poll — small race
-    // either way; the IsActive check is the durable gate.
-    if (acc::radial_menu::IsActive()) {
-        acclog::Write("Interact: Enter gate -- BLOCKED, radial menu active");
+    // Radial-active path: route Enter + arrows directly to the radial.
+    // In-world Enter / arrows bypass CSWGuiManager (engine keymap drops
+    // unbound scancodes per memory project_inworld_input_pipeline), so the
+    // manager hook in menus.cpp never sees them. We translate the Win32
+    // events directly into the radial's logical input vocabulary
+    // (kInputEnter1 / kInputNav*). Esc keeps its existing route through
+    // the manager hook — Esc IS bound by the engine keymap (pause/options)
+    // and reaches the manager normally; routing it here too would
+    // double-fire.
+    if (inWorld && acc::radial_menu::IsActive()) {
+        if (risingEnter) {
+            acclog::Write(
+                "Interact: Enter — radial active, dispatching kInputEnter1");
+            acc::radial_menu::HandleInputEvent(kInputEnter1, /*value=*/1);
+        }
+        if (risingUp) {
+            acclog::Write(
+                "Interact: Up — radial active, dispatching kInputNavUp");
+            acc::radial_menu::HandleInputEvent(kInputNavUp, 1);
+        }
+        if (risingDown) {
+            acclog::Write(
+                "Interact: Down — radial active, dispatching kInputNavDown");
+            acc::radial_menu::HandleInputEvent(kInputNavDown, 1);
+        }
+        if (risingLeft) {
+            acclog::Write(
+                "Interact: Left — radial active, dispatching kInputNavLeft");
+            acc::radial_menu::HandleInputEvent(kInputNavLeft, 1);
+        }
+        if (risingRight) {
+            acclog::Write(
+                "Interact: Right — radial active, dispatching kInputNavRight");
+            acc::radial_menu::HandleInputEvent(kInputNavRight, 1);
+        }
         return;
     }
+
+    // Non-radial path: Enter (with optional Shift) drives interact.
+    if (!risingEnter) return;
+    if (!inWorld) return;
+
+    // Sample Shift at the moment of the rising edge so a held-Shift +
+    // tap-Enter combo unambiguously routes to the force-radial path.
+    // Either Shift key counts (engine doesn't distinguish them).
+    bool forceRadial = down(VK_SHIFT) || down(VK_LSHIFT) || down(VK_RSHIFT);
+    const char* keyTag = forceRadial ? "Shift+Enter" : "Enter";
 
     // Gate on "no true-blocker panel is foreground". GetPlayerPosition only
     // confirms we're in-world; it doesn't tell us whether a UI panel is
@@ -428,7 +484,8 @@ void PollHotkey() {
     // panels[] scan that MonitorDialogReplies already uses; dialog panels
     // do not stay stale (that monitor's disarm path proves it).
     if (acc::engine::HasActiveDialogPanel()) {
-        acclog::Write("Interact: Enter gate -- BLOCKED, dialog panel in stack");
+        acclog::Write("Interact: %s gate -- BLOCKED, dialog panel in stack",
+                      keyTag);
         return;
     }
 
@@ -467,16 +524,20 @@ void PollHotkey() {
                 break;
             }
             if (blocking) {
-                acclog::Write("Interact: Enter gate -- BLOCKED, fg=%p kind=%s",
-                              fgPanel, acc::engine::PanelKindName(fgKind));
+                acclog::Write(
+                    "Interact: %s gate -- BLOCKED, fg=%p kind=%s",
+                    keyTag, fgPanel,
+                    acc::engine::PanelKindName(fgKind));
                 return;
             }
-            acclog::Write("Interact: Enter gate -- ALLOW, fg=%p kind=%s",
-                          fgPanel, acc::engine::PanelKindName(fgKind));
+            acclog::Write(
+                "Interact: %s gate -- ALLOW, fg=%p kind=%s",
+                keyTag, fgPanel,
+                acc::engine::PanelKindName(fgKind));
         }
     }
 
-    OnInteract();
+    OnInteract(forceRadial);
 }
 
 }  // namespace acc::interact

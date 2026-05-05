@@ -82,6 +82,14 @@ struct ActionSnapshot {
 //   per-category strings, which is the "free win" item 5 from
 //   docs/engine-action-picker.md.
 //
+// forceRadial: when true, skip the default-action dispatch entirely and
+//   always open the radial (CSWGuiMainInterface::PopulateMenus) so the
+//   user can pick from all available actions — mirrors the vanilla
+//   right-click semantics. Bound to Shift+Enter in the hotkey poll;
+//   without this the radial only opens on `count==0`, which excludes
+//   the most useful case (a locked door that has both Bash and Security
+//   in the radial but is collapsed to a single "Öffnen" default).
+//
 // Returns true when the engine descriptor was populated AND we called
 // HandleMouseClickInWorld. False on:
 //   - chain failure (no app loaded yet),
@@ -91,11 +99,16 @@ struct ActionSnapshot {
 //     own picker would also do nothing),
 //   - any SEH fault during the call sequence.
 //
+// When forceRadial=true the return value reflects "did the radial open"
+// via the same `snap.radial_opened` flag — caller's radial-arm path
+// kicks in identically to the empty-descriptor case.
+//
 // Side effect: writes engine state (main-interface target,
 // last_target, last_clicked_on_target, hover_target, +0x4c8 array).
 // All writes are reversible by normal cursor hover (the next
 // DoPassiveSelection tick re-derives them).
-bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot);
+bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot,
+           bool forceRadial = false);
 
 // Read the current descriptor at +0x4c8 without driving anything. Used
 // to observe the engine's own picker selection (cursor-hover or

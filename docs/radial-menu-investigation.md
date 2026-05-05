@@ -1,6 +1,6 @@
 # Radial menu — TAM populate + navigation
 
-**Status: 2026-05-05 — wrapper-only path landed (UNTESTED in-game).** The crashing inner-PopulateMenus call has been removed in favour of `CSWGuiMainInterface::PopulateMenus(main_interface)` (wrapper, no args). Decomp evidence below; runtime verification pending.
+**Status: 2026-05-05 — TESTED end-to-end.** Shift+Enter on a locked Endar Spire door (handle 0x46) populated `action_lists[1]` with one Sicherheit action (`action_id=0x3f3`, icon `isk_security`); pressing Enter dispatched it via `DoTargetAction`, the PC walked to the door, performed the security check, and the door opened. `patch-20260505-101621.log` has the full trace.
 
 ## Premise
 
@@ -104,31 +104,34 @@ The fix is to drop the direct inner call entirely. The wrapper at 0x00689d80 alr
 - Enter — `DispatchRowAction` (DoTargetAction). Speak label, drop active flag.
 - Esc — drop active flag, no engine teardown.
 
-## Open after the fix
+## Findings from live test (2026-05-05)
 
-These are testable now that the crash is gone:
+### F1 — Engine descriptor count collapses multi-action targets to a single default
 
-### O1 — Does the wrapper alone populate `action_lists` for our test target?
+Even on a locked door where vanilla mouse right-click would show Bash + Security + …, `GetDefaultActions` returns `count=1` with the highest-priority verb (e.g. `[Öffnen]` action 0x3f2) whenever any party member can perform that verb. Our `engine_count==0` heuristic for opening the radial therefore *never* fires on live locked doors — only on already-open doors where the engine has zero applicable actions left.
 
-The previous test (commit 651adf7) reported empty action_lists *after* both wrapper AND inner. Inner was poisoning state; the wrapper's output may have already been empty before the inner ran, or it may have been populated and then overwritten. We don't know yet.
+**Fix landed**: `picker::Drive(handle, snap, /*forceRadial=*/true)` skips the descriptor check and always calls the wrapper. Bound to **Shift+Enter** in `interact_hotkey::PollHotkey`. Mirrors vanilla right-click semantics: explicit "show me everything regardless of default".
 
-Investigation: launch with the wrapper-only path, walk to the Endar Spire Security door, press Enter, read `Radial.StateW[after-wrapper]:` lines. Expected: `action_lists[r]` non-empty for at least one row.
+### F2 — In-world Enter / arrows bypass `CSWGuiManager`, never reach the manager hook
 
-### O2 — Are all 4 target_types covered by field1_0x24's 12 ints?
+Per memory `project_inworld_input_pipeline`: the engine keymap drops scancodes not bound in `kotor.ini`. In-world Enter and the four arrow keys aren't bound, so `CSWGuiManager::HandleInputEvent` never fires — verified zero `RADIAL-CONSUMED`/`RADIAL-PASS` log lines for in-world Enter presses while the radial was armed. Esc IS bound (pause/options) and reaches the manager normally.
 
-`(char)target_type * 3 + row` indexes field1[12]. `(char)0..3 * 3 + 0..2` = 0..11, fits. `(char)4 * 3 + 2 = 14` overflows. So target_type is enumerated 0..3. Need to confirm what those four are by reading `GetTargetInterfaceTargetType`. Hypothesis: 0 = creature, 1 = door, 2 = placeable, 3 = trigger (matches the `case '\0'` / `case '\x03'` branches in DoTargetAction).
+**Fix landed**: `PollHotkey` Win32-polls Enter + Up/Down/Left/Right with rising-edge detection on every tick. When `radial_menu::IsActive()`, it routes those keys directly to `radial_menu::HandleInputEvent(kInputEnter1 / kInputNav*)` — same vocabulary the manager hook would use. Esc keeps its existing manager route to avoid double-firing.
 
-Investigation: decomp `CSWCCreature::GetTargetInterfaceTargetType` and read the switch. Cheap follow-up.
+### F3 — `target_actions[r].action_button` is empty at populate-time; data is the source of truth
 
-### O3 — Does the wrapper need a re-populate when the player picks a different target?
+Right after the wrapper returns, `action_lists[r].data[k]` is fully populated (label, action_id, target_id, icon) but the rendered `target_actions[r].action_button.gui_string` and inline `CExoString` are both `[]` — the engine paints them on a later tick. Reading the button at arm-time therefore announces `Aktion 1/N: ` with an empty label.
 
-The wrapper reads `main_interface->field1_0x64` to know *which* target to populate against. Our `SetMainInterfaceTarget(targetClient)` sets that. If the user closes the radial (Esc), walks to a new door, and presses Enter, our picker calls SetMainInterfaceTarget again with the new handle, then GetDefaultActions, then (on empty descriptor) the wrapper. So a fresh PopulateMenus per Enter — should be self-correcting. Verify in test.
+**Fix landed**: `engine_radial::ReadRowActionLabel` falls through to `action_lists[row].data[selectedIndex].label` after the button paths return empty. `selectedIndex` is computed from `field1[target_type * 3 + row]` (matching `action_id`), or `data[0]` when field1 is `-1` / no entry matches — same lookup the engine's own `SelectNextAction` uses.
 
-### O4 — field1_0x24 stickiness across radial opens
+### F4 — Door A vs Door B: scripted-vs-unscripted security gates
 
-Inner-PopulateMenus does NOT reset field1_0x24. So if you opened the radial on Door A and selected Security (field1_0x24[1*3 + 0] = security_action_id), then close, walk to Door B, open radial — Security stays selected on Door B as long as it's available (target_type matches, action_id is in action_lists[0]). If not available, the search falls through to "default to action_lists[0].data[0]". This is by design — vanilla mouse users see the same.
+Endar Spire Door A (handle 0x47) has `server_door+0x2d8 = 1` AND `cannot_bash = 1` → both Bash and Security rows are blocked at the server-side gate, even though the leader has Security skill. The radial is correctly empty on Door A. Door B (handle 0x46) has `server_door+0x2d8 = 0` → Security row appears. The first door in the corridor is scripted to *only* open via Trask's personal-action "Öffnen" (an action that lives in the surrounding `field5_0x74[0..5]`, not in TAM's `action_lists[]`). Field-mod content uses `field_0x2d8` to gate "skill-based unlocking is allowed" independently of the leader's skill.
 
-No work needed; just be aware that the announced "Aktion 1/N: <label>" on first open may not be the row's first action — it'll be whatever was last selected for this target_type+row. If that's confusing, we could explicitly write -1 to field1_0x24[type*3 + row] before announcing, but defer until a user reports it.
+## Resolved earlier hypotheses
+
+- target_type is enumerated 0..3 (creature / door / placeable / trigger) per the inner-PopulateMenus decomp `case '\0'` / `case '\x03'` branches. `(char)target_type * 3 + row` indexes field1[12] safely. (Was Q2.)
+- `field1_0x24` stickiness across opens IS the engine's design — when the previously-selected action is still in `action_lists[row]`, it stays selected; otherwise the engine falls through to `data[0]`. Confirmed live: opening a fresh radial on Door B with -1 in all field1 slots speaks `data[0].label` correctly.
 
 ## Anti-patterns to avoid
 
