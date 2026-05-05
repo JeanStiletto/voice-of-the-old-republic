@@ -24,6 +24,12 @@ namespace acc::passive_narrate {
 
 namespace {
 
+// Most recent GetTickCount() at which LastTarget transitioned to a
+// non-sentinel handle. Read by interact_hotkey to break cycle-vs-engine
+// focus ties. File-scope so the getter below can return it without
+// threading through Tick()'s static.
+unsigned int g_lastTargetChangeTick = 0;
+
 typedef uint32_t (__thiscall* PFN_GetLastTarget)(void* this_);
 
 // AppManager → +0x4 → CClientExoApp* — same chain as engine_player's
@@ -135,6 +141,12 @@ void Tick() {
         return;
     }
 
+    // Stamp the tie-break clock — handle changed AND landed on a real
+    // object. Must run regardless of first-tick suppression below: if the
+    // engine has a target at DLL load, that's still a "current engine
+    // focus" for tie-break purposes, even though we don't speak it.
+    g_lastTargetChangeTick = GetTickCount();
+
     // First-tick suppression — don't speak the very first non-sentinel
     // target after DLL load. The user already knows what they were
     // pointed at when they last saved; speaking on resume is noise.
@@ -197,6 +209,10 @@ void Tick() {
         "pos=(%.2f,%.2f,%.2f) havePos=%d",
         prev, handle, acc::filter::CategoryName(cat), name,
         pos.x, pos.y, pos.z, havePos ? 1 : 0);
+}
+
+unsigned int LastTargetChangeTick() {
+    return g_lastTargetChangeTick;
 }
 
 }  // namespace acc::passive_narrate

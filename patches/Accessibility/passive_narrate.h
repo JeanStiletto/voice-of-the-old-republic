@@ -40,4 +40,12 @@ namespace acc::passive_narrate {
 // cycle_input::PollWin32 doesn't matter (channels are independent).
 void Tick();
 
+// GetTickCount() snapshot of the last time engine LastTarget transitioned
+// to a non-sentinel value (i.e. the user's mouse / Q/E / passive selection
+// landed on a real object). interact_hotkey compares this against
+// cycle_state.mutationTick to resolve cycle-vs-engine focus conflicts —
+// most-recent-event wins. 0 = never transitioned to a real target since
+// load. Comparisons must use signed-diff to survive GetTickCount wrap.
+unsigned int LastTargetChangeTick();
+
 }  // namespace acc::passive_narrate

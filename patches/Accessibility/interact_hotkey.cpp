@@ -16,6 +16,7 @@
 #include "filter_objects.h"
 #include "guidance_autowalk.h"
 #include "log.h"
+#include "passive_narrate.h"
 #include "strings.h"
 #include "tolk.h"
 
@@ -123,10 +124,17 @@ acc::filter::CycleCategory ClassifyForInteract(void* obj) {
     return C::Count_;
 }
 
-// Resolve the "what does the user want to interact with" target. Cycle
-// focus wins if the user has cycled (signal of explicit intent); else
-// fall back to engine LastTarget (passive selection's character-relative
-// pick). Returns nullptr if neither is available.
+// Resolve the "what does the user want to interact with" target.
+//
+// Most-recent-event wins between the two independent focus channels:
+//   - cycle_state.focusedObj   (mutated by `,`/`.`/Shift+`,`/`.`)
+//   - engine LastTarget        (mutated by Q/E, mouse, passive selection)
+//
+// Without this tie-break, a stale cycle target shadows a fresher Q/E pick:
+// e.g. user `,` cycles to a Tür, then Q/E moves engine focus to a Feldkiste,
+// presses Enter — Enter would walk to the Tür because cycle_state still
+// holds it. Both systems stay live (each finds objects the other can't);
+// the timestamp picks whichever the user touched last.
 //
 // outHandle is populated whenever the resolved object has a usable
 // engine handle (CGameObject.id +0x4); needed for the
@@ -135,7 +143,17 @@ void* ResolveInteractTarget(uint32_t* outHandle) {
     *outHandle = 0;
 
     auto& s = acc::cycle::GetState();
-    if (s.focusedObj) {
+
+    // Compare ticks via signed difference so wraparound (~49.7d) doesn't
+    // flip the order. cycleNewer == true when cycle.mutationTick is at-or-
+    // after engine LastTarget's last change — cycle wins ties (it's the
+    // explicit nav action; engine LastTarget can be set by passive selection
+    // the user didn't initiate).
+    unsigned int cycleTick  = s.mutationTick;
+    unsigned int engineTick = acc::passive_narrate::LastTargetChangeTick();
+    bool cycleNewer = static_cast<int>(cycleTick - engineTick) >= 0;
+
+    if (s.focusedObj && cycleNewer) {
         // RefreshCurrentListing picks up area changes; without it
         // focusedObj could be stale (we haven't cycled keys this tick
         // and the engine moved/destroyed the object). The refresh
@@ -146,12 +164,19 @@ void* ResolveInteractTarget(uint32_t* outHandle) {
             s.focusedIndex < listing.count) {
             void* obj = s.focusedObj;
             *outHandle = acc::engine::GetObjectHandle(obj);
-            if (*outHandle != 0) return obj;
+            if (*outHandle != 0) {
+                acclog::Write(
+                    "Interact: target source=cycle (cycleTick=%u engineTick=%u) "
+                    "obj=%p handle=0x%08x",
+                    cycleTick, engineTick, obj, *outHandle);
+                return obj;
+            }
         }
     }
 
-    // Fallback: read engine LastTarget (passive-selection-driven).
-    // LastTarget stores client-side handles (high bit 0x80000000 set);
+    // Engine LastTarget path — taken when (a) cycle has no focus, or
+    // (b) engine LastTarget changed more recently than cycle. LastTarget
+    // stores client-side handles (high bit 0x80000000 set);
     // ResolveClientObjectHandle walks to the matching server CSWSObject*,
     // and we re-derive the *server-side* id from CGameObject.id+0x4 — that's
     // the namespace AI-action primitives like AddUseObjectAction operate in.
@@ -159,12 +184,36 @@ void* ResolveInteractTarget(uint32_t* outHandle) {
     // See memory: project_object_handle_namespaces.md.
     uint32_t handle = ReadLastTargetHandle();
     if (handle == 0u || handle == 0xFFFFFFFFu || handle == 0x7F000000u) {
+        // Engine has nothing — last fallback is a stale cycle focus, even
+        // when its tick is older than the engine's. Better than dropping
+        // the user's interact action entirely.
+        if (s.focusedObj) {
+            acc::cycle::CategoryListing listing;
+            acc::cycle::RefreshCurrentListing(listing);
+            if (s.focusedObj && s.focusedIndex >= 0 &&
+                s.focusedIndex < listing.count) {
+                void* obj = s.focusedObj;
+                *outHandle = acc::engine::GetObjectHandle(obj);
+                if (*outHandle != 0) {
+                    acclog::Write(
+                        "Interact: target source=cycle-fallback "
+                        "(engine sentinel; cycleTick=%u engineTick=%u) "
+                        "obj=%p handle=0x%08x",
+                        cycleTick, engineTick, obj, *outHandle);
+                    return obj;
+                }
+            }
+        }
         return nullptr;
     }
     void* obj = acc::engine::ResolveClientObjectHandle(handle);
     if (!obj) return nullptr;
     *outHandle = acc::engine::GetObjectHandle(obj);
     if (*outHandle == 0) return nullptr;
+    acclog::Write(
+        "Interact: target source=engine (cycleTick=%u engineTick=%u) "
+        "lastTarget=0x%08x -> obj=%p handle=0x%08x",
+        cycleTick, engineTick, handle, obj, *outHandle);
     return obj;
 }
 

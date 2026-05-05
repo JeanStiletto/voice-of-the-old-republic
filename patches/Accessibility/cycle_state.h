@@ -47,6 +47,16 @@ struct CycleState {
     acc::filter::CycleCategory category   = acc::filter::CycleCategory::Door;
     void*                      focusedObj = nullptr;  // CSWSObject* (may be stale across rebuilds)
     int                        focusedIndex = -1;     // -1 = nothing focused
+
+    // GetTickCount() snapshot of the last user-driven `,`/`.`/Shift+`,`/`.`
+    // mutation. Compared against passive_narrate::LastTargetChangeTick() in
+    // interact_hotkey to resolve cycle-vs-engine focus conflicts (e.g. user
+    // cycled to a Tür with `,`, then Q/E moved engine LastTarget to a Feldkiste
+    // — Enter should target the Feldkiste). Bumped only by user-action mutation
+    // paths, NOT by RefreshCurrentListing (refreshes are housekeeping, not
+    // intent). 0 = never mutated; comparisons must use signed-diff to survive
+    // GetTickCount wrap.
+    unsigned int               mutationTick = 0;
 };
 
 // Returns the singleton state. Mutations via the cycle helpers below.
