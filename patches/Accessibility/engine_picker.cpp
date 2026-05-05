@@ -11,7 +11,17 @@
 #include "engine_player.h"      // SetPlayerInputEnabled (auto-restore
                                 // gate around the dispatch — same
                                 // pattern guidance::UseObject uses)
+#include "engine_radial.h"      // ResolveTargetActionMenu, ResolveClient*,
+                                // PopulateFromArgs, LogState — used in the
+                                // empty-descriptor branch to populate the
+                                // radial via the inner TAM-level entry
+                                // point with explicit (creature, mode,
+                                // target) args.
 #include "guidance_autowalk.h"  // kInvalidObjectId (the engine sentinel
+#include "radial_menu.h"        // CanIssueInnerPopulate / MarkPopulateIssued /
+                                // ScheduleWideDiag — guards the one-shot
+                                // inner call against same-frame re-entry
+                                // and schedules multi-frame state reads.
                                 // used in the engine's own descriptor
                                 // slots and our hover gate)
 #include "log.h"
@@ -323,11 +333,8 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot) {
         // Vanilla mouse flow at this point opens the radial menu via
         // HandleMouseClickInWorld's NOT-MATCH branch, which calls
         // CSWGuiMainInterface::PopulateMenus. We do the same so the
-        // user gets the action picker instead of a silent no-op.
-        //
-        // mainIf is the CSWGuiMainInterface*; PopulateMenus reads
-        // its field1_0x64 (already pointed at our target by step 1)
-        // to know which target to enumerate actions for.
+        // engine-side UI scaffolding (name_label, target_actions[].is_action,
+        // capacity reservations) gets set up.
         bool radialOpened = false;
         __try {
             auto fn = reinterpret_cast<PFN_PopulateMenus>(
@@ -338,6 +345,76 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot) {
             acclog::Write(
                 "Picker: PopulateMenus SEH-FAULT target=0x%08x "
                 "(empty-descriptor radial fallback)",
+                targetClient);
+        }
+
+        // SYNCHRONOUS wide diagnostic — fires inline before/after the
+        // inner call so we capture state even when the *next* frame
+        // crashes (which is what happened on patch-20260505-080045.log:
+        // ScheduleWideDiag ran but the next OnUpdate tick never came).
+        // Both points are observed against the same TAM in the same
+        // frame; the next-frame schedule remains for async writes the
+        // engine might do during render.
+        void* dtam0 = acc::engine_radial::ResolveTargetActionMenu();
+        if (dtam0) {
+            acc::engine_radial::LogStateWide(dtam0, "after-wrapper-sync");
+        }
+
+        // Inner CSWGuiTargetActionMenu::PopulateMenus @ 0x00689410 with
+        // explicit (creature, mode=0, target). The wrapper above sets
+        // up UI scaffolding but leaves action_lists empty for targets
+        // without a default action — even ones the engine clearly knows
+        // about (Endar Spire Security door: dialog literally tells the
+        // user to apply Security skill, but our GetDefaultActions
+        // returns count=0 and the wrapper PopulateMenus produces empty
+        // rows).
+        //
+        // CRASH HISTORY (project_inner_populate_menus_crashes.md):
+        //   * 0/1/2 mode iteration crashes Draw next frame.
+        //   * Single mode=0 call followed by user Esc + second Enter
+        //     crashes with STATUS_STACK_BUFFER_OVERRUN somewhere in the
+        //     script-tick path (DestroyObject seen on stack scan).
+        //
+        // Until we find the right teardown / pre-state, this path is
+        // expected to crash on the second invocation. We accept the
+        // crash for now — the goal is to capture diagnostic data BEFORE
+        // it crashes, so we can find what the engine actually wrote.
+        // The wide-diagnostic dump above runs synchronously and survives
+        // even if the inner call corrupts state. The post-inner sync
+        // dump below MAY survive (wrapper's render hasn't fired yet) or
+        // may itself crash — either outcome is informative.
+        if (radialOpened &&
+            acc::radial_menu::CanIssueInnerPopulate(/*cooldownFrames=*/3)) {
+            void* tam       = acc::engine_radial::ResolveTargetActionMenu();
+            void* cCreature = acc::engine_radial::ResolveClientPlayerCreature();
+            void* cTarget   = acc::engine_radial::ResolveClientGameObject(
+                targetClient);
+            if (tam && cCreature && cTarget) {
+                int rv = acc::engine_radial::PopulateFromArgs(
+                    tam, cCreature, /*mode=*/0, cTarget);
+                acclog::Write(
+                    "Picker: inner PopulateMenus single-call mode=0 "
+                    "result=%d (cooldown 3 frames)", rv);
+                acc::radial_menu::MarkPopulateIssued();
+                // Synchronous post-inner dump — captures whatever the
+                // inner call wrote BEFORE the next frame's render gets
+                // a chance to crash on it.
+                acc::engine_radial::LogStateWide(tam, "after-inner-sync");
+                // Also schedule async dumps — these only fire if we
+                // survive the next 3 frames, telling us if the engine
+                // performs lazy writes.
+                acc::radial_menu::ScheduleWideDiag(/*frames=*/3,
+                                                   "after-inner-async");
+            } else {
+                acclog::Write(
+                    "Picker: inner PopulateMenus skipped — "
+                    "tam=%p creature=%p target=%p",
+                    tam, cCreature, cTarget);
+            }
+        } else if (radialOpened) {
+            acclog::Write(
+                "Picker: inner PopulateMenus on cooldown (target=0x%08x); "
+                "skipping to avoid re-populate crash",
                 targetClient);
         }
 

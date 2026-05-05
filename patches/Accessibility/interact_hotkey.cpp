@@ -17,6 +17,7 @@
 #include "guidance_autowalk.h"
 #include "log.h"
 #include "passive_narrate.h"
+#include "radial_menu.h"
 #include "strings.h"
 #include "tolk.h"
 
@@ -275,23 +276,40 @@ void OnInteract() {
     acc::picker::ActionSnapshot snap = {};
     bool dispatched = acc::picker::Drive(handle, &snap);
 
+    // Radial-opened path: arm the input gate and speak the row+action
+    // announce in one call. ArmAfterPopulate handles the speech itself
+    // (so we get "Aktionsmenü, Tür. Aktion 1/N: Öffnen" instead of just
+    // "Aktionsmenü, Tür" with no follow-up). Falls back to the static
+    // pre-roll string when arming fails (no rows populated → menu isn't
+    // actually navigable; keeps prior behaviour).
     char msg[192];
+    bool radialArmed = false;
     if (snap.radial_opened) {
-        std::snprintf(
-            msg, sizeof(msg),
-            acc::strings::Get(acc::strings::Id::FmtInteractRadial),
-            name);
+        radialArmed = acc::radial_menu::ArmAfterPopulate(name);
+        if (!radialArmed) {
+            std::snprintf(
+                msg, sizeof(msg),
+                acc::strings::Get(acc::strings::Id::FmtInteractRadial),
+                name);
+            tolk::Speak(msg, /*interrupt=*/true);
+        } else {
+            // ArmAfterPopulate spoke; build a placeholder for the log line
+            // so the existing "engine_label=[…]" diagnostic still has a
+            // human-readable msg field.
+            std::snprintf(msg, sizeof(msg), "Aktionsmenü(%s)", name);
+        }
     } else if (snap.valid && snap.label[0] != '\0') {
         std::snprintf(
             msg, sizeof(msg),
             acc::strings::Get(acc::strings::Id::FmtInteractEngine),
             snap.label, name);
+        tolk::Speak(msg, /*interrupt=*/true);
     } else {
         std::snprintf(
             msg, sizeof(msg),
             acc::strings::Get(PreRollFor(cat)), name);
+        tolk::Speak(msg, /*interrupt=*/true);
     }
-    tolk::Speak(msg, /*interrupt=*/true);
 
     acclog::Write(
         "Interact: Enter -> [%s] target=%p handle=0x%08x cat=%s "
@@ -365,6 +383,17 @@ void PollHotkey() {
 
     Vector unused;
     if (!acc::engine::GetPlayerPosition(unused)) return;
+
+    // Radial gate: when our action-menu input gate is armed, the manager-
+    // hook in menus.cpp owns Enter (it dispatches DoTargetAction on the
+    // current row). The Win32 poll must NOT fire OnInteract here too, or
+    // we'd open a fresh radial on top of the live one. The manager hook
+    // resolves Enter on the same engine tick as this poll — small race
+    // either way; the IsActive check is the durable gate.
+    if (acc::radial_menu::IsActive()) {
+        acclog::Write("Interact: Enter gate -- BLOCKED, radial menu active");
+        return;
+    }
 
     // Gate on "no true-blocker panel is foreground". GetPlayerPosition only
     // confirms we're in-world; it doesn't tell us whether a UI panel is

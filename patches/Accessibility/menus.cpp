@@ -39,6 +39,7 @@
 #include "interact_hotkey.h"    // Phase 2 lay-off 9b
 #include "passive_narrate.h"    // Phase 2 lay-off 9a
 #include "probe_world_hover.h"  // Phase 2 lay-off 9-probe (diagnostic)
+#include "radial_menu.h"        // CSWGuiTargetActionMenu input gate
 #include "strings.h"            // Container loot panel announces
 #include "transitions.h"        // Phase 2 lay-off 7 — Pillar 2 area+room announce
 #include "turn_announce.h"      // Phase 2 ad-hoc — Pillar 2 sub-feature C
@@ -2104,6 +2105,38 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     // cursor is over the chain target.
     bool consumed = false;
 
+    // Radial action menu — embedded inside CSWGuiMainInterface, NOT a
+    // separate panel. Run its gate before the panel-kind switch: when the
+    // gate is armed (acc::picker::Drive opened a radial via PopulateMenus
+    // and it has at least one populated row) Up/Down switches rows,
+    // Left/Right cycles within a row via the engine's SelectNext/Prev,
+    // Enter dispatches via DoTargetAction, Esc disarms. See radial_menu.h
+    // for the full contract. Returns early because no other handler down
+    // this function knows about the radial.
+    if (acc::radial_menu::IsActive()) {
+        bool radialConsumed =
+            acc::radial_menu::HandleInputEvent(param_1, param_2);
+        // Always log the event so we can correlate keyboard pressure
+        // against the radial's state transitions in the patch log.
+        int translated = acc::engine::ManagerTranslateCode(param_1);
+        const char* tag = radialConsumed ? " RADIAL-CONSUMED" : " RADIAL-PASS";
+        if (translated != param_1) {
+            acclog::Write("HandleInputEvent #%d this=%p key=logical(%d) -> %s(%d) val=%d%s",
+                          n, thisPtr, param_1,
+                          acc::engine::InputIndexName(translated), translated,
+                          param_2, tag);
+        } else {
+            acclog::Write("HandleInputEvent #%d this=%p key=%s(%d) val=%d%s",
+                          n, thisPtr, acc::engine::InputIndexName(param_1),
+                          param_1, param_2, tag);
+        }
+        if (radialConsumed) return 1;
+        // Not consumed (e.g. release edge, or unhandled key like Tab):
+        // fall through to the existing handlers below so unrelated input
+        // still works while the radial is mounted (rare in practice; the
+        // user's hands are on Up/Down/Enter while navigating the radial).
+    }
+
     // Container loot panel — has its own input semantics that don't fit the
     // chain-navigation model used elsewhere.
     //
@@ -3802,6 +3835,12 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     // delegate our `,`/`.` cycle to the engine's primitive or keep our
     // own filter. Removable in one commit once decided.
     acc::diag::engine_select::Tick();
+
+    // Radial action menu — verify the engine still has at least one
+    // populated row; auto-disarm when it's been cleared (action dispatched,
+    // target lost, etc.). Cheap (chain walk + 3 reads); idle when our gate
+    // is already disarmed.
+    acc::radial_menu::Tick();
 
     // Phase 2 lay-off 9b — combined autowalk+interact hotkey (Enter).
     // Resolves cycle focus first / engine LastTarget fallback, speaks
