@@ -1,14 +1,35 @@
-// Pillar 1 Trigger 1 — per-feature distance-delta change detector.
+// Pillar 1 Triggers 1 + 2 — per-feature change detection.
 //
 // Layer: spatial/ (cross-cutting; consumes engine_area's walkmesh-edge
 // cache + AreaObjectIterator + filter_objects' six-category predicate;
 // dispatches via audio_cue_player). One per-tick scan that maintains a
-// per-feature `last_cued_distance` and fires a cue only when distance
-// changes by more than `core_settings.pillar1.distanceDeltaThresholdMeters`.
+// per-feature `last_cued_distance` (T1) + per-feature `last_cued_at`
+// timestamp (shared T1/T2) + a single foremost-in-front debounce state
+// (T2).
 //
-// Awareness model is 360° around the character — no sight cone, no front
-// bias. Range cap from `core_settings.pillar1.awarenessRangeMeters` (5m
-// default per the locked plan).
+// **Trigger 1 — 360° distance-delta.** Fires a cue when |Δdistance| to
+// any in-range feature exceeds `core_settings.pillar1.distanceDelta-
+// ThresholdMeters`. Range cap from `awarenessRangeMeters` (5m default).
+// Wall candidates are binned into 4 character-relative sectors (Front /
+// Left / Back / Right) and only the closest in each sector contributes a
+// cue, capped at `trigger1MaxWallCuesPerTick` per tick. Object cues fire
+// on per-handle threshold crossing without sector binning (population is
+// sparse enough that K-closest is not an issue).
+//
+// **Trigger 2 — foremost-in-front (±45° = T1 Front sector).** Picks the
+// closest wall-or-object in the Front sector each tick. When the foremost
+// identity changes and stays stable for `kT2QuietMs` (~250ms), fires a
+// single cue. Three-variable debounce pattern from `turn_announce.cpp`
+// collapses snap-rotation chains (W↔S 180° spins, fast Q/E sweeps) to
+// one cue for the resolved foremost. Cone-clear = silence (rotation
+// confirmation comes from `turn_announce`).
+//
+// **T1/T2 coordination via shared `last_cued_at` stamp.** T1 fires on
+// distance-delta and stamps `last_cued_at` for the cued feature. T2 only
+// fires if `now - last_cued_at > kT2QuietMs` for the foremost feature
+// (then also stamps it). Result: approach reads as Trigger-1-only
+// (motion-driven cadence wins); T2 only adds audio when T1 is silent —
+// stationary-rotation, or rotation across already-stamped features.
 //
 // Two feature streams are scanned each tick:
 //
@@ -24,11 +45,11 @@
 //      ambient and discrete channels stay consistent. Object position is
 //      the cue position; engine pan handles direction.
 //
-// The "first time in range" case fires once on entry; subsequent in-range
-// observations fire only on threshold crossing. Leaving range drops the
-// tracked state so re-entering range fires fresh.
+// First-tick suppression on area-load (post-CalibrateInRange) seeds T2
+// state without firing — mirrors `turn_announce`'s "first observation
+// since DLL load" handling.
 //
-// Phase 3 lay-off 3.
+// Phase 3 lay-offs 3 (T1) + 4 (T2).
 
 #pragma once
 

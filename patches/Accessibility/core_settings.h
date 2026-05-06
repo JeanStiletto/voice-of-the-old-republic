@@ -41,7 +41,7 @@ struct Pillar1Settings {
     bool cueTransition        = true;
     // Trigger toggles.
     bool trigger1DistanceDelta = true;  // 360° distance-delta
-    bool trigger2FrontCone     = true;  // ±15° foremost-in-front cone
+    bool trigger2FrontCone     = true;  // ±45° foremost-in-front cone (= T1 Front sector)
     // Stuck-detection footstep gating (plan §Pillar 1 stuck-detection).
     bool footstepSuppression   = true;
     // Numeric tunables (plan-locked starting values; tune live).

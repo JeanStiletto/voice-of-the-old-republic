@@ -1,5 +1,7 @@
 #include "filter_objects.h"
 
+#include "engine_player.h"   // GetPlayerServerCreature
+
 namespace acc::filter {
 
 const char* CategoryName(CycleCategory c) {
@@ -16,6 +18,18 @@ const char* CategoryName(CycleCategory c) {
 }
 
 bool ObjectMatches(void* gameObject, CycleCategory category) {
+    // Player creature is in the area object list and classifies as a
+    // Creature (so it would otherwise pass Npc) — but it's at the
+    // listener's exact position (pan-center, no spatial info) and the
+    // user shouldn't see themselves as a cyclable object either.
+    // Single source of truth for "is this a Pillar 4 vocabulary object";
+    // every consumer (T1, T2, cycle, passive_narrate) inherits the
+    // exclusion.
+    if (gameObject != nullptr &&
+        gameObject == acc::engine::GetPlayerServerCreature()) {
+        return false;
+    }
+
     int kind = acc::engine::GetObjectKind(gameObject);
     if (kind < 0) return false;
 

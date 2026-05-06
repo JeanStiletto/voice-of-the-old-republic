@@ -1,5 +1,6 @@
 #include "spatial_change_detector.h"
 
+#include <windows.h>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -9,7 +10,7 @@
 #include "core_settings.h"
 #include "engine_area.h"
 #include "engine_offsets.h"       // Vector
-#include "engine_player.h"        // GetPlayerPosition
+#include "engine_player.h"        // GetPlayerPosition / GetPlayerYawDegrees
 #include "filter_objects.h"
 #include "log.h"
 
@@ -36,6 +37,13 @@ int                   g_wall_count = 0;
 // player motion past the threshold.
 float g_wall_last_distance[kMaxWallEdges];
 
+// Per-wall last-cued timestamp (ms via GetTickCount). Shared between T1
+// and T2: T1 stamps when it fires a wall; T2 reads to gate its own fire
+// (and stamps too). 0 = never cued. On area change all entries reset to
+// 0 so the first T2 candidate post-load is allowed to fire after the
+// T2 first-tick suppression is cleared.
+DWORD g_wall_last_cued_at[kMaxWallEdges];
+
 // --- Object state -------------------------------------------------------
 //
 // In-range Pillar 1 vocabulary objects (Door / Npc / Container / Item /
@@ -46,10 +54,57 @@ float g_wall_last_distance[kMaxWallEdges];
 struct ObjectState {
     uint32_t handle;
     float    last_distance;
+    DWORD    last_cued_at;   // 0 = never cued (shared T1/T2)
 };
 
 constexpr int kMaxTrackedObjects = 256;
 ObjectState g_object_state[kMaxTrackedObjects];
+
+// --- Trigger 2 — foremost-in-front debounce state ----------------------
+//
+// Three-variable pattern ported from turn_announce.cpp. The "feature
+// identity" can be a wall (by index into g_walls) or an object (by
+// engine handle) or None (cone clear). Equality compares (kind +
+// discriminator) so a wall and an object with happenstance-matching
+// integers are distinguishable.
+
+constexpr DWORD kT2QuietMs = 250;
+
+enum class FeatureKind : int {
+    None   = 0,
+    Wall   = 1,
+    Object = 2,
+};
+
+struct Foremost {
+    FeatureKind kind;
+    int         wall_index;
+    uint32_t    object_handle;
+};
+
+bool ForemostEqual(const Foremost& a, const Foremost& b) {
+    if (a.kind != b.kind) return false;
+    switch (a.kind) {
+        case FeatureKind::Wall:   return a.wall_index    == b.wall_index;
+        case FeatureKind::Object: return a.object_handle == b.object_handle;
+        case FeatureKind::None:   return true;
+    }
+    return false;
+}
+
+const char* ForemostKindTag(FeatureKind k) {
+    switch (k) {
+        case FeatureKind::None:   return "none";
+        case FeatureKind::Wall:   return "wall";
+        case FeatureKind::Object: return "obj";
+    }
+    return "?";
+}
+
+Foremost g_t2_last_fired      = { FeatureKind::None, -1, 0 };
+Foremost g_t2_pending         = { FeatureKind::None, -1, 0 };
+DWORD    g_t2_pending_changed_at = 0;
+bool     g_t2_initialised     = false;
 
 // --- Geometry -----------------------------------------------------------
 
@@ -115,11 +170,20 @@ ObjectState* FindOrAddObjectState(uint32_t handle, bool& outIsNew) {
         if (s.handle == 0) {
             s.handle        = handle;
             s.last_distance = 0.0f;
+            s.last_cued_at  = 0;
             outIsNew        = true;
             return &s;
         }
     }
     return nullptr;  // table full
+}
+
+ObjectState* FindObjectState(uint32_t handle) {
+    if (handle == 0) return nullptr;
+    for (auto& s : g_object_state) {
+        if (s.handle == handle) return &s;
+    }
+    return nullptr;
 }
 
 void RemoveObjectState(uint32_t handle) {
@@ -128,6 +192,7 @@ void RemoveObjectState(uint32_t handle) {
         if (s.handle == handle) {
             s.handle        = 0;
             s.last_distance = 0.0f;
+            s.last_cued_at  = 0;
             return;
         }
     }
@@ -177,6 +242,10 @@ WallCandidate g_candidates[kMaxWallCandidates];
 // frame, 0° = +X = east, CCW positive. Relative bearing = world bearing
 // from player to candidate, minus player yaw, normalised to [0, 360).
 // Left = +90° (CCW) because both yaw and atan2 are CCW-positive.
+//
+// Trigger 2's ±45° front cone equals the Front sector exactly — both
+// triggers share this classifier so the same in-front candidate set
+// drives T2 firing decisions.
 enum class WallSector : int {
     Front = 0,
     Left  = 1,
@@ -218,11 +287,23 @@ void OnAreaChange(void* area) {
     int totalDiscovered = acc::engine::BuildAreaWallCache(area, nullptr, 0);
     bool overflow = (totalDiscovered > kMaxWallEdges);
 
-    for (int i = 0; i < kMaxWallEdges; ++i) g_wall_last_distance[i] = -1.0f;
+    for (int i = 0; i < kMaxWallEdges; ++i) {
+        g_wall_last_distance[i] = -1.0f;
+        g_wall_last_cued_at[i]  = 0;
+    }
     for (int i = 0; i < kMaxTrackedObjects; ++i) {
         g_object_state[i].handle        = 0;
         g_object_state[i].last_distance = 0.0f;
+        g_object_state[i].last_cued_at  = 0;
     }
+
+    // T2 first-tick suppression: clear identity state. The first
+    // post-CalibrateInRange tick will seed g_t2_last_fired without
+    // firing.
+    g_t2_last_fired         = { FeatureKind::None, -1, 0 };
+    g_t2_pending            = { FeatureKind::None, -1, 0 };
+    g_t2_pending_changed_at = 0;
+    g_t2_initialised        = false;
 
     if (overflow) {
         acclog::Write(
@@ -318,13 +399,20 @@ void Tick() {
     }
 
     const auto& settings = acc::core::Get().pillar1;
-    if (!settings.trigger1DistanceDelta) return;
+    if (!settings.trigger1DistanceDelta && !settings.trigger2FrontCone) return;
 
     float range     = settings.awarenessRangeMeters;
     float threshold = settings.distanceDeltaThresholdMeters;
     float rangeSq   = range * range;
     int   maxCues   = settings.trigger1MaxWallCuesPerTick;
     if (maxCues < 0) maxCues = 0;
+
+    DWORD now = GetTickCount();
+
+    // Hoisted yaw — used for both T1 wall-sector binning and T2 Front-cone
+    // candidate detection. One read per tick.
+    float playerYaw = 0.0f;
+    if (!acc::engine::GetPlayerYawDegrees(playerYaw)) playerYaw = 0.0f;
 
     int walls_in_range    = 0;
     int wall_candidates   = 0;
@@ -334,6 +422,16 @@ void Tick() {
     int objs_in_range     = 0;
     int objs_cued         = 0;
     char sector_log[8]    = {0};   // "F-L-B-R" mask string for diagnostic
+
+    // T2 foremost-in-front candidate (best across walls + objects).
+    // Tracked inline during the T1 passes — every in-range feature is
+    // a T2 candidate, regardless of whether its distance crossed the
+    // T1 threshold this tick.
+    Foremost           t2_best        = { FeatureKind::None, -1, 0 };
+    float              t2_best_dist   = 1e30f;
+    Vector             t2_best_pos    = { 0.0f, 0.0f, 0.0f };
+    acc::audio::NavCue t2_best_cue    = acc::audio::NavCue::Wall;
+    const bool         t2_enabled     = settings.trigger2FrontCone;
 
     // --- Walls: pass 1 — collect candidates, update references ---------
     //
@@ -352,6 +450,26 @@ void Tick() {
         }
         ++walls_in_range;
         float dist = std::sqrt(distSq);
+
+        // T2 candidate detection — every in-range wall whose closest
+        // point lies in the Front sector competes for foremost.
+        if (t2_enabled) {
+            float dx = closest.x - playerPos.x;
+            float dy = closest.y - playerPos.y;
+            float wb = std::atan2(dy, dx) * 57.29577951308232f;
+            if (ClassifyRelativeBearing(wb - playerYaw) ==
+                    WallSector::Front &&
+                dist < t2_best_dist) {
+                t2_best_dist          = dist;
+                t2_best.kind          = FeatureKind::Wall;
+                t2_best.wall_index    = i;
+                t2_best.object_handle = 0;
+                t2_best_pos           = closest;
+                t2_best_cue           = acc::audio::NavCue::Wall;
+            }
+        }
+
+        if (!settings.trigger1DistanceDelta) continue;
 
         bool crossed = false;
         if (g_wall_last_distance[i] < 0.0f) {
@@ -385,9 +503,6 @@ void Tick() {
     // T-junction with walls in three sectors fires three cues panned
     // to three different directions.
     if (wall_candidates > 0) {
-        float playerYaw = 0.0f;
-        if (!acc::engine::GetPlayerYawDegrees(playerYaw)) playerYaw = 0.0f;
-
         int sectorWinner[static_cast<int>(WallSector::Count_)] = {-1,-1,-1,-1};
         for (int i = 0; i < wall_candidates; ++i) {
             const auto& c = g_candidates[i];
@@ -447,6 +562,9 @@ void Tick() {
                     acc::audio::NavCue::Wall, c.closest_point,
                     playerPos, range)) {
                 ++walls_cued;
+                // Stamp shared last_cued_at so T2 sees this wall as
+                // recently-cued and skips it.
+                g_wall_last_cued_at[c.wall_index] = now;
             }
         }
         sector_log[logIdx] = '\0';
@@ -476,6 +594,25 @@ void Tick() {
         if (handle == 0) continue;
         float dist = std::sqrt(distSq);
 
+        // T2 candidate detection — Front-sector + closer than current
+        // best wins. atan2 with horizontal delta only (Z ignored to
+        // match the cycle/passive-narrate horizontal convention).
+        if (t2_enabled) {
+            float wb = std::atan2(dy, dx) * 57.29577951308232f;
+            if (ClassifyRelativeBearing(wb - playerYaw) ==
+                    WallSector::Front &&
+                dist < t2_best_dist) {
+                t2_best_dist          = dist;
+                t2_best.kind          = FeatureKind::Object;
+                t2_best.wall_index    = -1;
+                t2_best.object_handle = handle;
+                t2_best_pos           = pos;
+                t2_best_cue           = cue;
+            }
+        }
+
+        if (!settings.trigger1DistanceDelta) continue;
+
         bool isNew = false;
         ObjectState* s = FindOrAddObjectState(handle, isNew);
         if (!s) continue;
@@ -485,32 +622,103 @@ void Tick() {
         if (fire) {
             if (acc::audio::PlayCueAtPosition(cue, pos, playerPos, range)) {
                 ++objs_cued;
+                s->last_cued_at = now;
             }
             s->last_distance = dist;
         }
     }
 
+    // --- Trigger 2: foremost-in-front debounce + fire ------------------
+    //
+    // First-tick suppression: on the first tick after area-change (or
+    // first tick since DLL load), seed g_t2_last_fired = current
+    // foremost without firing. Mirrors turn_announce's "first
+    // observation since DLL load" handling.
+    bool t2_fired = false;
+    if (t2_enabled) {
+        if (!g_t2_initialised) {
+            g_t2_last_fired         = t2_best;
+            g_t2_pending            = t2_best;
+            g_t2_pending_changed_at = now;
+            g_t2_initialised        = true;
+            acclog::Write(
+                "ChangeDetector: T2 first-tick suppress; foremost=%s",
+                ForemostKindTag(t2_best.kind));
+        } else {
+            // Track most-recent-observed foremost + when it last
+            // changed. While the player is mid-rotation across multiple
+            // features, this fires every tick and keeps changed_at
+            // moving — no announcement until the rotation settles.
+            if (!ForemostEqual(t2_best, g_t2_pending)) {
+                g_t2_pending            = t2_best;
+                g_t2_pending_changed_at = now;
+            }
+
+            if (!ForemostEqual(g_t2_pending, g_t2_last_fired) &&
+                now - g_t2_pending_changed_at >= kT2QuietMs) {
+                // Settled on a new foremost. Three exit paths:
+                //   1. None  → cone-clear silence (record, don't fire).
+                //   2. Wall  → check g_wall_last_cued_at[index].
+                //   3. Object → check ObjectState.last_cued_at.
+                bool fire = false;
+                if (g_t2_pending.kind == FeatureKind::Wall &&
+                    g_t2_pending.wall_index >= 0 &&
+                    g_t2_pending.wall_index < g_wall_count) {
+                    DWORD lastAt = g_wall_last_cued_at[
+                        g_t2_pending.wall_index];
+                    if (lastAt == 0 || now - lastAt > kT2QuietMs) fire = true;
+                } else if (g_t2_pending.kind == FeatureKind::Object) {
+                    ObjectState* s = FindObjectState(
+                        g_t2_pending.object_handle);
+                    DWORD lastAt = s ? s->last_cued_at : 0;
+                    if (lastAt == 0 || now - lastAt > kT2QuietMs) fire = true;
+                }
+                // None → fall through with fire=false (record only).
+
+                if (fire) {
+                    bool ok = acc::audio::PlayCueAtPosition(
+                        t2_best_cue, t2_best_pos, playerPos, range);
+                    if (ok) {
+                        t2_fired = true;
+                        if (g_t2_pending.kind == FeatureKind::Wall) {
+                            g_wall_last_cued_at[g_t2_pending.wall_index] = now;
+                        } else if (g_t2_pending.kind == FeatureKind::Object) {
+                            ObjectState* s = FindObjectState(
+                                g_t2_pending.object_handle);
+                            if (s) s->last_cued_at = now;
+                        }
+                    }
+                    acclog::Write(
+                        "ChangeDetector: T2 fire kind=%s dist=%.2f "
+                        "played=%d (%s -> %s)",
+                        ForemostKindTag(g_t2_pending.kind),
+                        t2_best_dist, ok ? 1 : 0,
+                        ForemostKindTag(g_t2_last_fired.kind),
+                        ForemostKindTag(g_t2_pending.kind));
+                }
+                g_t2_last_fired = g_t2_pending;
+            }
+        }
+    }
+
     // Tick summary — emitted only when something actually fired this
-    // tick, so per-tick log volume scales with cue activity, not
-    // framerate.
-    // Tick summary — emitted only when something actually fired this
-    // tick. Wall and object summaries are split so the per-sector
+    // tick. Wall, object, and T2 summaries are split so the per-sector
     // diagnostic only shows when walls actually fired (drops the
-    // confusing "sectors=-" placeholder for object-only ticks).
+    // confusing "sectors=-" placeholder for object-only / T2-only ticks).
     if (walls_cued > 0) {
         acclog::Write(
             "ChangeDetector: tick walls_in_range=%d wall_candidates=%d "
             "sectors_active=%d wall_overflow=%d walls_cued=%d sectors=%s "
-            "objs_in_range=%d objs_cued=%d",
+            "objs_in_range=%d objs_cued=%d t2_fired=%d",
             walls_in_range, wall_candidates, sectors_active, wall_overflow,
             walls_cued, sector_log,
-            objs_in_range, objs_cued);
-    } else if (objs_cued > 0) {
+            objs_in_range, objs_cued, t2_fired ? 1 : 0);
+    } else if (objs_cued > 0 || t2_fired) {
         acclog::Write(
             "ChangeDetector: tick walls_in_range=%d wall_candidates=%d "
-            "objs_in_range=%d objs_cued=%d",
+            "objs_in_range=%d objs_cued=%d t2_fired=%d",
             walls_in_range, wall_candidates,
-            objs_in_range, objs_cued);
+            objs_in_range, objs_cued, t2_fired ? 1 : 0);
     }
 }
 

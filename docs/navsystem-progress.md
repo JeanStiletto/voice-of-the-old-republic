@@ -30,7 +30,7 @@ Free walking is genuinely informative. Pillar 1 covers walls / static obstacles 
 1. **Walkmesh-edge extraction** — `engine_area.{h,cpp}` extension reading the `CSWRoomSurfaceMesh` perimeter (adjacency `-1` sentinel) and emitting world-space `WallEdge[]` via `CSWCollisionMesh::LocalToWorld`. Diagnostic-only consumer in `transitions::Tick()` logs the per-area total. *Verified in-game 2026-05-05 (405 edges, Endar Spire Starboard Deck).*
 2. **`audio_cue_player.{h,cpp}`** — thin wrapper over `audio_bus` + `audio_cues` adding range-clamped 3D play and a per-cue debounce. One callsite for "play NavCue X at world pos P".
 3. **`spatial_change_detector.{h,cpp}`** — Trigger 1 (per-feature distance-delta, 360°, range-cap ~5m). Per-tick scan over the cached wall edges + `AreaObjectIterator` objects; per-feature `last_cued_distance`; on `|delta| > threshold` fire cue at feature world pos. First user-perceptible Phase 3 milestone.
-4. **Trigger 2 — folded into `spatial_change_detector.cpp`** (decision 2026-05-06; original lay-off plan said separate `spatial_front_cone.{h,cpp}`, retired in favour of fold — same per-tick scan, same Front-sector candidate, same per-feature stamp table; splitting would only export internals across a header for no benefit. Revisit only if `change_detector` outgrows ~600-800 lines or T2 sprouts independent state). Foremost-in-front, ±45° cone = Trigger 1's Front sector. Single cue when the foremost feature in the cone changes identity. Shares Trigger 1's per-feature cues. Cone-clear = silence. Coordination + debounce details:
+4. **Trigger 2 — folded into `spatial_change_detector.cpp`.** *Closed 2026-05-06.* (decision 2026-05-06; original lay-off plan said separate `spatial_front_cone.{h,cpp}`, retired in favour of fold — same per-tick scan, same Front-sector candidate, same per-feature stamp table; splitting would only export internals across a header for no benefit. Revisit only if `change_detector` outgrows ~600-800 lines or T2 sprouts independent state). Foremost-in-front, ±45° cone = Trigger 1's Front sector. Single cue when the foremost feature in the cone changes identity. Shares Trigger 1's per-feature cues. Cone-clear = silence. Coordination + debounce details:
    - **Shared `last_cued_at` per feature.** T1 fires on distance-delta and updates the stamp; T2 fires only if foremost-identity-changed AND debounce expired AND `now - last_cued_at > kQuietMs` (then also updates the stamp). Result: approach reads as Trigger-1-only; T2 only adds audio when T1 is silent (stationary/turning).
    - **Final-state debounce (`kQuietMs ~250ms`).** Three-variable pattern from `turn_announce.cpp` (`last_fired_foremost` / `pending_foremost` / `pending_changed_at`). Collapses snap-rotation chains (W↔S 180° spins, fast Q/E sweeps) to a single cue for the resolved final state.
    - **First-tick suppression on area-load.** First observation post-cache-rebuild seeds state without firing — mirrors `turn_announce`'s "first observation since DLL load" handling.
@@ -70,6 +70,44 @@ Object channel runs unchanged — Door/Npc/Container/Item/Landmark/Transition fi
 
 User feedback after iteration 5: walls "might be more usable but still not sure" — combat-audio masking + `gui_select` curation choice are tuning concerns parked for next session, plus user-noted out-of-plan tuning ideas to explore. No implementation bugs found in the post-iteration-5 log review. **Solid base; commit + park.**
 
+**Lay-off 4** — Trigger 2 (foremost-in-front) folded into `spatial_change_detector.cpp`. *Verified in-game 2026-05-06.*
+
+Adds a single foremost-in-front cue on top of Trigger 1's per-tick scan. No new `.cpp`/`.h` files per the 2026-05-06 fold decision — the same per-tick wall + object iteration that drives T1 also collects the foremost Front-sector candidate, with T2 firing handled at the end of `Tick()`.
+
+Implementation:
+
+- **Cone definition.** ±45° = exactly Trigger 1's `WallSector::Front` classifier; reused unchanged. Both triggers see the same in-front candidate set.
+- **Foremost selection.** During T1's wall pass 1 + object pass, every in-range feature whose horizontal bearing-relative-to-yaw lands in `Front` competes for foremost. Closest by Euclidean distance wins. Walls use the closest-point-on-segment as the cue position; objects use object position. Wall and object foremosts unify into a single `Foremost` (kind + index/handle + cached cue + position).
+- **Three-variable debounce.** `g_t2_last_fired` / `g_t2_pending` / `g_t2_pending_changed_at` ported from `turn_announce.cpp`. Pending updates every tick with the new foremost (and resets the timestamp on change). Fire only when `pending != last_fired AND now - changed_at >= kT2QuietMs`. Constant `kT2QuietMs = 250ms` matches `turn_announce`'s.
+- **Shared per-feature `last_cued_at`.** Added `DWORD g_wall_last_cued_at[kMaxWallEdges]` parallel to `g_wall_last_distance`, and a `last_cued_at` field on `ObjectState`. T1's fire path stamps the slot on a true `PlayCueAtPosition` return. T2 reads the slot for its foremost candidate; if `lastAt == 0 || now - lastAt > kT2QuietMs` it fires (and stamps too). Effect: an approaching wall reads as Trigger-1-only because T1 keeps the stamp fresh; T2 only fills silence (stationary rotation, or rotation across already-stamped features).
+- **First-tick suppression.** `g_t2_initialised = false` after `OnAreaChange`. The first non-area-change tick seeds `last_fired = pending = current foremost` and returns silently — mirrors `turn_announce`'s "first observation since DLL load" handling.
+- **Cone-clear = silence.** Foremost = `None` is a valid identity in the equality comparator. When pending settles on `None`, the debounce expires normally and `g_t2_last_fired` updates to `None` *without* firing — silence is the design intent (rotation confirmation comes from `turn_announce`'s spoken sector).
+- **Yaw source.** `acc::engine::GetPlayerYawDegrees` hoisted to once per tick at the top of `Tick()` (previously computed only inside T1's pass 2 when `wall_candidates > 0`). Same yaw drives T1's sector binning and T2's Front-cone classification.
+- **Cue selection.** T2 reuses `NavCue::Wall` for wall foremost and the per-category cue (`Door`/`NpcCreature`/etc) for object foremost — same `CategoryToNavCue` mapping T1 uses. No new resrefs; the user hears "the foremost feature in front" with the same per-kind sound vocabulary.
+
+Diagnostics:
+
+- `ChangeDetector: T2 first-tick suppress; foremost=<kind>` on the seed tick.
+- `ChangeDetector: T2 fire kind=<kind> dist=<d> played=<0/1> (<prev> -> <new>)` on every fire decision (whether or not the cue actually reached `audio_bus`).
+- Tick-summary log line gains a `t2_fired=<0/1>` field; the object-only/T2-only branch fires on `objs_cued > 0 || t2_fired` (was `objs_cued > 0`).
+
+Tunables not yet locked (per the lay-off plan's "Tune-live" list):
+
+- `kT2QuietMs` value (250ms borrowed from `turn_announce`; re-tune if rotation cadence feels off).
+- Behaviour during walkmesh-fragmented sideways walking (T2's foremost may flicker between adjacent wall fragments mid-strafe).
+- Behaviour during compound W+A (turn while walking — T1 keeps stamps fresh on the moving foremost, so T2 should stay silent; verify in-game).
+- Behaviour with fast tap-turns (debounce should collapse to single cue at final yaw).
+
+None block the implementation. Live observation in the next session will resolve them.
+
+**Player-creature self-fire fix (same session).** First in-game run (`patch-20260506-093253.log`) showed 7/25 T2 fires (~28%) at `kind=obj dist=0.00` — alternating with wall fires every ~2s as the player rotated. Root cause: the player's own creature is in `AreaObjectIterator`'s output and `filter::ObjectMatches` accepted it as `Npc` (kind == Creature, no identity check). At distance 0 it always won the foremost slot whenever `atan2(0, 0) - playerYaw` happened to land in the Front sector (typically when the character faced near-east). T1 was protected by its threshold-crossing gate (dist=0 never crosses); T2 picks foremost every tick regardless of motion, so it self-fired.
+
+Fix: one-line guard at the top of `filter::ObjectMatches` — `if (gameObject == acc::engine::GetPlayerServerCreature()) return false;`. Single source of truth for "is this a Pillar 4 vocabulary object"; propagates to T1, T2, cycle, and passive_narrate without touching the consumers.
+
+Second in-game run (`patch-20260506-094411.log`) confirmed: 9 T2 fires, all `kind=wall` at distances 0.32–0.38m. Zero `kind=obj dist=0.00`. No SEH faults, no cache overflow, no regressions in PassiveNarrate / FootstepSup behaviour.
+
+User-experience verdict (2026-05-06): "system improves, I imagined I got some spatial information but this is not sure" — directional signal real but subtle through background ambient. Further perceptual tuning (resref distinctness, volume balance vs. ambient music/VO) parked for the Phase 3 exit-gate session along with the original "Tune-live" list.
+
 **Lay-off 5** — `audio_footstep_suppress.{h,cpp}` (stuck-detection via footstep suppression). *Verified in-game 2026-05-06.*
 
 Done out-of-order before lay-off 4 (front cone) — closes the per-step audio masking issue that was making free-walking feel undifferentiated.
@@ -94,7 +132,7 @@ Per-tick + per-call diagnostic logging left in (per `feedback_log_no_rate_limits
 
 **Framework PR opportunity:** the wrapper's `TEST EAX, EAX` should be wrapped in `PUSHFD/POPFD` so cut bytes' flags survive across the consume check. Documented in `docs/upstream-prs.md`.
 
-### Files touched (lay-offs 1-3, 5)
+### Files touched (lay-offs 1-5)
 
 - `patches/Accessibility/audio_footstep_suppress.{h,cpp}` — new files (lay-off 5). Per-tick velocity tracker + OnPlayFootstep handler. Wired in `menus.cpp`'s `OnUpdate`.
 - `patches/Accessibility/diag_play3doneshotsound.{h,cpp}` — new files (lay-off 5 instrumentation). Diagnostic resref-logger handler; hook commented out in hooks.toml. Kept for future audio-path RE.
@@ -104,8 +142,9 @@ Per-tick + per-call diagnostic logging left in (per `feedback_log_no_rate_limits
 - `patches/Accessibility/engine_area.{h,cpp}` — `WallEdge` struct + `BuildAreaWallCache(area, outBuf, maxEdges)` + new offsets/addresses for `CSWRoomSurfaceMesh` + `CSWCollisionMesh::LocalToWorld @0x596aa0`.
 - `patches/Accessibility/audio_cue_player.{h,cpp}` — new files. Per-kind + range gates over `audio_bus::PlayCue3D`.
 - `patches/Accessibility/audio_cues.h` — `NavCue::Wall` resref swap from `fs_dirt_hard1` → `gui_select`.
-- `patches/Accessibility/spatial_change_detector.{h,cpp}` — new files. Calibration tick + sector-based wall selection + object change detection. Wired in `menus.cpp`'s `OnUpdate`.
-- `patches/Accessibility/core_settings.h` — `trigger1MaxWallCuesPerTick = 3` knob.
+- `patches/Accessibility/spatial_change_detector.{h,cpp}` — Trigger 1 (lay-off 3) + Trigger 2 fold (lay-off 4). Calibration tick, sector-based wall selection, object change detection, foremost-in-front debounce. Wired in `menus.cpp`'s `OnUpdate`.
+- `patches/Accessibility/core_settings.h` — `trigger1MaxWallCuesPerTick = 3` knob; lay-off 4 corrected the `trigger2FrontCone` comment from "±15°" to "±45° (= T1 Front sector)" to match the refined design.
+- `patches/Accessibility/filter_objects.cpp` — lay-off 4 added a player-creature exclusion at the top of `ObjectMatches` (`if (gameObject == acc::engine::GetPlayerServerCreature()) return false;`). Propagates to T1, T2, cycle, passive_narrate.
 - `patches/Accessibility/transitions.cpp` — dropped redundant lay-off-1 wall-count diagnostic (now logged by `change_detector::OnAreaChange`).
 
 Added to `engine_area.{h,cpp}`:
