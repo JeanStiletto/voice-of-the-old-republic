@@ -30,7 +30,15 @@ Free walking is genuinely informative. Pillar 1 covers walls / static obstacles 
 1. **Walkmesh-edge extraction** — `engine_area.{h,cpp}` extension reading the `CSWRoomSurfaceMesh` perimeter (adjacency `-1` sentinel) and emitting world-space `WallEdge[]` via `CSWCollisionMesh::LocalToWorld`. Diagnostic-only consumer in `transitions::Tick()` logs the per-area total. *Verified in-game 2026-05-05 (405 edges, Endar Spire Starboard Deck).*
 2. **`audio_cue_player.{h,cpp}`** — thin wrapper over `audio_bus` + `audio_cues` adding range-clamped 3D play and a per-cue debounce. One callsite for "play NavCue X at world pos P".
 3. **`spatial_change_detector.{h,cpp}`** — Trigger 1 (per-feature distance-delta, 360°, range-cap ~5m). Per-tick scan over the cached wall edges + `AreaObjectIterator` objects; per-feature `last_cued_distance`; on `|delta| > threshold` fire cue at feature world pos. First user-perceptible Phase 3 milestone.
-4. **`spatial_front_cone.{h,cpp}`** — Trigger 2 (foremost-in-front, ±15° cone around character heading). Single cue when "what's directly ahead" changes. Layered on top of (3).
+4. **Trigger 2 — folded into `spatial_change_detector.cpp`** (decision 2026-05-06; original lay-off plan said separate `spatial_front_cone.{h,cpp}`, retired in favour of fold — same per-tick scan, same Front-sector candidate, same per-feature stamp table; splitting would only export internals across a header for no benefit. Revisit only if `change_detector` outgrows ~600-800 lines or T2 sprouts independent state). Foremost-in-front, ±45° cone = Trigger 1's Front sector. Single cue when the foremost feature in the cone changes identity. Shares Trigger 1's per-feature cues. Cone-clear = silence. Coordination + debounce details:
+   - **Shared `last_cued_at` per feature.** T1 fires on distance-delta and updates the stamp; T2 fires only if foremost-identity-changed AND debounce expired AND `now - last_cued_at > kQuietMs` (then also updates the stamp). Result: approach reads as Trigger-1-only; T2 only adds audio when T1 is silent (stationary/turning).
+   - **Final-state debounce (`kQuietMs ~250ms`).** Three-variable pattern from `turn_announce.cpp` (`last_fired_foremost` / `pending_foremost` / `pending_changed_at`). Collapses snap-rotation chains (W↔S 180° spins, fast Q/E sweeps) to a single cue for the resolved final state.
+   - **First-tick suppression on area-load.** First observation post-cache-rebuild seeds state without firing — mirrors `turn_announce`'s "first observation since DLL load" handling.
+   - **Snap-into-clear case** (face-wall → face-open-corridor) leaves T2 silent; rotation confirmation comes from `turn_announce`'s spoken sector. Design assumes `turn_announce` enabled (default).
+   - **Yaw source:** `acc::engine::GetPlayerYawDegrees` (server-side, same as `turn_announce`).
+   - **Tune-live:** `kQuietMs` value; behaviour during walkmesh-fragmented sideways walking; behaviour during compound W+A movement; behaviour with fast tap-turns. None block the implementation; observe in solo testing.
+
+   (Design refined 2026-05-06; see longterm plan.)
 5. **`audio_footstep_suppress.{h,cpp}`** — RE the engine's footstep audio trigger, suppress when player has movement intent + zero displacement. Discipline budget: half a session of RE; if it overruns, fall back to reusing the collision cue when stuck (per locked plan).
 6. **Exit gate** — solo Endar Spire corridor walk; tune `delta_threshold` and range cap from the live log.
 
@@ -888,7 +896,7 @@ A second symptom — audio stutter when pressing *Schließen* in Options — has
 
 ## Next session: where to start
 
-**Phase 3 lay-offs 1-3 verified in-game 2026-05-05** (sector-based Trigger 1 working; 79% of active ticks fire 1-2 spatially-distinct walls). Next session opens with the user-noted out-of-plan tuning ideas (parked from this session — user has them in mind), then lay-off 4 (`spatial_front_cone` — Trigger 2, ±15° foremost-in-front cone). Trigger 2 will be additive on top of Trigger 1; the locked plan splits 360° awareness (T1) from focused "what's directly ahead" (T2). After T2, lay-off 5 (`audio_footstep_suppress`) for stuck-detection, then exit-gate free-walk test.
+**Phase 3 lay-offs 1-3 verified in-game 2026-05-05** (sector-based Trigger 1 working; 79% of active ticks fire 1-2 spatially-distinct walls). Next session opens with the user-noted out-of-plan tuning ideas (parked from this session — user has them in mind), then lay-off 4 (Trigger 2 — foremost-in-front, ±45° cone, folded into `spatial_change_detector.cpp`). Trigger 2 will be additive on top of Trigger 1; the design splits 360° awareness (T1) from focused "what's directly ahead" (T2), with shared per-feature stamp coordination and a final-state debounce. After T2, lay-off 5 (`audio_footstep_suppress`) for stuck-detection, then exit-gate free-walk test.
 
 **Curation parked**: `NavCue::Wall = gui_select` (UI beep) is a placeholder for the iteration; user-noted that combat-audio masking made it hard to evaluate. Re-curation candidates not yet identified.
 
@@ -904,7 +912,7 @@ A second symptom — audio stutter when pressing *Schließen* in Options — has
 
 ### Phase 3 — Pillar 1 (next up)
 
-Per `docs/navsystem-longterm-plan.md`: walkmesh-edge slice extension to `engine_area.{h,cpp}`; `spatial/change_detector` + `spatial/front_cone`; `audio/cue_player` + `audio/footstep_suppress`. Initial implementation omits pitch — volume-only test first. Exit criterion: free walking is genuinely informative; wall / hazard / object cues fire correctly without spam.
+Per `docs/navsystem-longterm-plan.md`: walkmesh-edge slice extension to `engine_area.{h,cpp}`; `spatial/change_detector` (Trigger 1 + folded Trigger 2 per 2026-05-06 fold decision); `audio/cue_player` + `audio/footstep_suppress`. Initial implementation omits pitch — volume-only test first. Exit criterion: free walking is genuinely informative; wall / hazard / object cues fire correctly without spam.
 
 Open the longterm plan's Phase 3 section to draft the lay-off plan. The walkmesh-edge slice is the foundation chunk and unblocks both the cycle-scope tightening (lay-off 4 follow-up: same-room + LOS extension via walkmesh edges) and the spatial-change-detector itself.
 

@@ -115,11 +115,36 @@ Two complementary sub-features:
   - Distance to a tracked feature changes by more than `delta_threshold` (approaching, walking past the end of a wall)
   - A feature exits the awareness range
 
-  **Trigger 2 — Foremost-in-front delta (locked 2026-05-03, narrow ±15° forward cone).** A single cue plays when *which feature is foremost in the player's narrow front cone* changes. This captures the "what is now in my path" signal that pure distance-delta misses on rotation:
+  **Trigger 2 — Foremost-in-front delta (locked 2026-05-03, refined 2026-05-06).** A single cue plays when *which feature is foremost in the player's front cone* changes identity. This captures the "what is now in my path" signal that pure distance-delta misses on rotation:
   - A new feature becomes foremost (rotation brings something into your path; or you walk past one corner and another wall comes into front)
-  - Front cone becomes clear (no in-range feature in the cone — possibly a distinct "clear" cue, possibly just silence)
-  - Cone width: **±15° around character heading** (narrow, reads as "path channel" rather than sighted FOV)
-  - At most one cue per rotation milestone, regardless of total feature count → no rotation spam
+  - Front cone becomes clear: **silence** — no distinct "clear" cue. The absence of further wall sounds during rotation is itself the "open path ahead" signal.
+  - Cone width: **±45° around character heading**, matching Trigger 1's Front sector (refined 2026-05-06 from initial ±15°). Both triggers select the same foremost feature; they diverge only in firing condition. Implementation reuses Trigger 1's Front sector candidate selection.
+  - At most one cue per foremost-identity-change, regardless of total feature count → no rotation spam
+
+  **Trigger 2 shares Trigger 1's per-feature cues** (refined 2026-05-06). Same wall = same resref; Trigger 2 doesn't introduce a distinct sound. The two triggers coordinate via a **shared per-feature `last_cued_at` timestamp** (refined 2026-05-06):
+  - Trigger 1 fires on distance-delta crossing → updates the feature's `last_cued_at = now`.
+  - Trigger 2 fires only if foremost-identity-changed AND its debounce expired (see below) AND `now - foremost.last_cued_at > kQuietMs`. On fire, also updates `last_cued_at`.
+
+  Net effect:
+  - **Approach phase:** Trigger 1 fires distance-delta on entry → stamp updated → Trigger 2's later stability fire sees recent stamp → Trigger 2 skips. Approach sounds Trigger-1-only.
+  - **Stationary / turning rotation:** Trigger 1 fires nothing (no distance changes) → stamps stay old → Trigger 2 fires when foremost stabilizes. Trigger 2 carries the announcement.
+  - **Compound walking + turning:** mixed; whichever trigger reaches a fresh feature first claims it via the stamp; the other skips for `kQuietMs` after.
+
+  **Trigger 2 final-state debounce** (refined 2026-05-06). Foremost-identity-change does not fire immediately; it fires only after the foremost has been stable for `kQuietMs` (starting value 250ms, mirroring `turn_announce.cpp`). Implementation is the same three-variable pattern proven in `turn_announce.cpp`:
+  - `last_fired_foremost` — the feature whose cue we last played
+  - `pending_foremost` — what we currently observe in the cone
+  - `pending_changed_at` — when `pending_foremost` last changed
+  - Per tick: if observed foremost ≠ `pending_foremost`, update `pending_foremost` and reset `pending_changed_at = now`. If `pending_foremost == last_fired_foremost`, return. If `now - pending_changed_at < kQuietMs`, return (still moving). Otherwise fire the cue and update `last_fired_foremost`.
+
+  This collapses snap-rotation chains (W↔S 180° spins, fast Q/E sweeps) to a single cue describing the *final* state. While the cone is sweeping, observed foremost flips through wall fragments faster than `kQuietMs`, the timer keeps resetting, no cue fires. When rotation settles, the timer expires, one cue fires for the resolved foremost.
+
+  **First-tick suppression on area-load** (refined 2026-05-06). Mirrors `turn_announce.cpp`'s "first observation since DLL load" handling. On area-change (cache rebuild), the first observation seeds `pending_foremost = last_fired_foremost = current_foremost` and sets `pending_changed_at = now` without firing. Otherwise Trigger 2 would announce the foremost wall on the first frame of every area-load, even when the player hasn't rotated or moved.
+
+  **Snap-into-clear case relies on `turn_announce`.** If the snap ends with the cone clear (e.g. spin from facing-wall to facing-open-corridor), Trigger 2 fires nothing — silence is consistent with the cone-clear rule above. The user's confirmation that the rotation actually happened comes from `turn_announce` speaking the new compass sector ("South"). The two channels are complementary:
+  - Trigger 2 confirms *what's now in your path* (silent if nothing)
+  - `turn_announce` confirms *you rotated* (always speaks on stable sector change)
+
+  This means **Trigger 2's design assumes `turn_announce` is enabled** (it is, by default per locked Pillar 2 settings). If the user disables `turn_announce`, the "snap-into-clear" case becomes silent end-to-end — acceptable trade-off, but worth flagging in user-options docs.
 
   **Trigger 2 is additive, not restrictive.** Trigger 1's 360° awareness is preserved in full; Trigger 2 layers a focused "what's directly ahead" annotation on top.
 
@@ -179,7 +204,7 @@ The novel work is the **per-tick "nearest feature in each direction-sector + del
 - ~~Pitch direction~~ — **resolved 2026-05-03**: close=low, far=high (spatial-mass semantics). Locked per user preference.
 - ~~Does pitch need to encode distance at all?~~ — **resolved 2026-05-03**: initial implementation omits pitch entirely; volume-only test first. Add pitch later only if solo testing shows volume alone is insufficient.
 - **`delta_threshold` value** — what magnitude of distance change is "worth a cue". Calibrate in live testing.
-- ~~Rotation-while-stationary behaviour~~ — **resolved**: handled by Trigger 2 (foremost-in-front delta, ±15° cone). Rotation that brings a new feature into the front cone fires one cue. Pure silence-on-rotation rejected — would lose the "space opens up in front of me" use case.
+- ~~Rotation-while-stationary behaviour~~ — **resolved**: handled by Trigger 2 (foremost-in-front delta, ±45° cone = Trigger 1's Front sector). Rotation that brings a new feature into the front cone fires one cue. Pure silence-on-rotation rejected — would lose the "space opens up in front of me" use case.
 - **Awareness range / cap value** — default starting point likely ~5m, user-tunable. Per-kind override (e.g. hazards audible further than placeables)? Tune in live testing.
 - ~~Direction resolution~~ — **resolved**: continuous via engine 3D audio with character-anchored listener.
 - **What features become "obstacles"?** Walls confirmed. Non-walkable areas (pits / ledges / lava) confirmed. Placeable colliders (chests, debris)? Doors as obstacles vs doors as interactables? Open.
@@ -227,6 +252,10 @@ The novel work is the **per-tick "nearest feature in each direction-sector + del
 - 2026-05-03 — **Rotation while stationary** — handled by Trigger 2 (foremost-in-front delta, ±15° cone). One cue per rotation milestone, no spam, captures "space opens before me" use case while preserving 360° awareness via Trigger 1.
 - 2026-05-03 — **Two trigger types:** Trigger 1 = distance-delta (360°, all in-range features); Trigger 2 = foremost-in-front delta (±15° narrow cone, additive). Trigger 2 is a path-channel signal, not a sight cone — Trigger 1's 360° awareness is preserved.
 - 2026-05-03 — Per-feature-kind **distinct audio identity** (timbre / WAV varies; pitch axis reserved for distance).
+- 2026-05-06 — **Trigger 2 cone widened to ±45°** (= Trigger 1's Front sector). Initial ±15° was too narrow for KOTOR's typical turn rate to dwell on; the narrow "path channel" semantic is parked for later if testing shows ±45° is too coarse. Implementation: Trigger 2 reuses Trigger 1's Front sector candidate selection; only firing condition differs (foremost-identity-change vs distance-delta).
+- 2026-05-06 — **Trigger 2 shares per-feature cues with Trigger 1** (no distinct resref). Coordination via shared per-feature `last_cued_at` stamp: T1 fires on distance-delta + updates stamp; T2 fires only if foremost-identity-changed AND debounce expired AND `now - last_cued_at > kQuietMs` (then also updates stamp). Approach phase sounds Trigger-1-identical (T1 entry-cue updates stamp, T2 stability-fire skips); Trigger 2 only adds audible cues when Trigger 1 is silent (stationary/turning rotation).
+- 2026-05-06 — **Cone-clear semantics: silence** (no distinct "clear" cue). The absence of further wall sounds during rotation is itself the open-path signal.
+- 2026-05-06 — **Trigger 2 final-state debounce** (`kQuietMs ~250ms`, pattern ported from `turn_announce.cpp`). Foremost-identity-change fires only after the foremost has been stable for the quiet window — collapses snap-rotation chains (W↔S 180° spins) to a single cue for the final state. Snap-into-clear case relies on `turn_announce` for rotation confirmation since Trigger 2 itself stays silent. First-tick suppression on area-load mirrors `turn_announce`'s first-observation seeding (no fire on first frame post-cache-rebuild).
 
 ---
 
@@ -754,7 +783,7 @@ For first implementation, **ship with one fixed set of defaults** — no preset 
 **Pillar 1 — small-scale**
 - All 8 per-kind sounds: ON (walls, hazards, doors, NPCs, placeables, items, landmarks, transitions)
 - Trigger 1 (distance-delta, 360°): ON
-- Trigger 2 (foremost-in-front, ±15° cone): ON
+- Trigger 2 (foremost-in-front, ±45° cone = Trigger 1's Front sector): ON
 - Footstep suppression on stuck: ON
 - Awareness range: **5m** (starting; tune live)
 - Distance-delta threshold: **0.5m** (starting; tune live)
@@ -793,7 +822,7 @@ For first implementation, **ship with one fixed set of defaults** — no preset 
 - Pathfind trigger Shift+-: enabled
 
 **Cross-pillar**
-- Movement key swap (A/D = strafe, Q/E = turn): shipped via engine keybind config
+- Sideways-key default (strafe-default vs turn-default for A/D): **TBD pending live testing** — see Movement model section
 - Combat verbosity reduction: ON
 - Cutscene nav cues: mostly OFF (only Pillar 2 transition announcements may fire if triggered mid-cutscene)
 - Audio mixing: nav cues use SoundEffect slider category (engine-managed); priority groups conservative (will calibrate live)
@@ -808,59 +837,55 @@ For first implementation, **ship with one fixed set of defaults** — no preset 
 
 ---
 
-## Cross-pillar — Movement model (locked 2026-05-03)
+## Cross-pillar — Movement model
 
-Affects every pillar. Decided after evaluating grid-step vs free-form vs hybrid.
+Affects every pillar.
 
-**Decision: stay with the engine's natural free-form continuous movement, with A/D ↔ Q/E key swap so default movement is non-rotating.**
+### What's settled (locked 2026-05-03)
 
-### Why not grid
+- **Free-form continuous movement, not discrete grid-step.** Considered grid-step (player presses direction → engine auto-walks one grid unit) and rejected because:
+  - Pressing a direction key implying "character now faces that direction" creates an **audio-frame discontinuity**: a wall on the player's "left" suddenly becomes "in front" because the character turned. Cognitive load disproportionate to the simplicity gain.
+  - Lately-blinded users — likely a large share of our audience — bring sighted-gaming muscle memory. Engine-natural WASD movement preserves that.
+  - Open exteriors, ramps, narrow precision sequences fit the engine's continuous model better than any discrete grid step.
+- **Configure via the engine's existing keybind system. No hooks on player movement.** Whatever sideways-key default we ship is set through KotOR's normal keybind config; the engine handles WASD-equivalent movement at full native fidelity. KotOR's keybind UI — already part of the menu-accessibility work — lets users remap however they want, no separate toggle required. Map-cursor (Pillar 3) is the only input surface that still requires a hook because it's not an engine feature.
 
-Considered grid-step (player presses direction → engine auto-walks one grid unit). Rejected because:
+### Open: strafe-default vs turn-default for the sideways keys
 
-- Pressing a direction key implying "character now faces that direction" creates an **audio-frame discontinuity**: a wall on the player's "left" suddenly becomes "in front" because the character turned. Cognitive load disproportionate to the simplicity gain.
-- Lately-blinded users — likely a large share of our audience — bring sighted-gaming muscle memory. Engine-natural WASD movement preserves that.
-- Open exteriors, ramps, narrow precision sequences fit the engine's continuous model better than any discrete grid step.
+KotOR's vanilla default puts character-turn on A/D. The engine also exposes strafe as a separate movement action. **The unresolved question is which we ship as default** for the sideways keys. The choice has cross-pillar implications because Trigger 2 (Pillar 1, foremost-in-front delta) fires on heading changes, and how often heading changes during normal play depends on which model is the default.
 
-### Why the A/D ↔ Q/E swap
+The two options:
 
-KotOR's default movement bindings:
+**Option A — strafe-default.** W / A / S / D = forward / strafe-left / back / strafe-right relative to character heading. Sideways keys do not rotate the character. Turn moves to a separate binding (free key, held-modifier, or mouse-look — also open).
 
-- W / S — forward / back
-- **A / D — turn left / right** (rotates character)
-- **Q / E — strafe left / right** (sidesteps without rotating)
+**Option B — turn-default (vanilla).** W / A / S / D = forward / turn-left / back / turn-right. Sideways keys rotate the character. Strafe moves to a separate binding.
 
-Default A/D rotation is the source of the audio-frame instability problem: any sideways movement intent ends up rotating the character, so spatial cues shift their reference frame mid-movement.
+### Decision conditions
 
-After the swap:
+The choice will come from live solo testing, not paper reasoning. Pick from these signals:
 
-- W / S — forward / back (unchanged)
-- **A / D — strafe** (sidestep, **no rotation**)
-- **Q / E — turn** (explicit, deliberate rotation)
+**Tip toward Option A (strafe-default) if:**
 
-Default movement (W/A/S/D) never rotates the character. The audio frame stays stable. Trigger 2 (foremost-in-front delta) only fires when the player explicitly chose to rotate via Q/E, which is exactly the semantic we want — a deliberate "look around" action.
+- Sustained Trigger 2 firing under turn-default reads as noise rather than information.
+- Wall cues drifting around the player during normal walking destroys the spatial mental map (the wall on your left becoming "front" then "right" within one corridor walk).
+- Players don't need to face interaction targets often in practice — most interactions trigger from cycle + autowalk, which orients automatically.
 
-### Implementation note (locked 2026-05-03)
+**Tip toward Option B (turn-default) if:**
 
-**Use the engine's existing keybind system. No hooks on player movement.**
+- Audio-frame instability turns out to be tolerable — character-anchored listener + Trigger 2 re-locate the soundscape fast enough that the player tracks it.
+- Strafe-default proves disorienting because players lose track of which way they're facing for the interactions that *do* require facing.
+- Camera behaviour under strafe-default is visually wrong in a way that affects partial-sighted users.
+- User feedback strongly prefers vanilla muscle memory once tested.
 
-- Our patch ships **swapped defaults** for the move actions (A/D bound to strafe, Q/E bound to turn) via KotOR's normal keybind config.
-- KotOR's keybind UI — already part of the menu-accessibility work — lets the user rebind however they want, exactly like a sighted player would.
-- We do **not** hook the input layer for player movement. Engine handles WASD-equivalent movement at full native fidelity.
-- Map cursor (Pillar 3) still requires a hook because it's not an engine feature; that's a separate, narrow surface.
-- Camera control hooks — deferred until we know whether we need them for any feature.
+### Mitigations available either way
 
-This aligns with the user's standing preference for driving existing tooling rather than reimplementing.
-
-### Personalization
-
-Defaults swapped (the swap *is* the default in our patch). Anyone who wants KotOR-original bindings remaps in the engine's standard keybind UI. No special toggle required — the engine's own settings page already does this job.
+- The decision can ship as a **user-options toggle** if testing produces split feedback rather than a clear winner.
+- KotOR's keybind UI lets any user override either default, so the shipped default doesn't lock anyone in.
 
 ### Implications for the four pillars
 
-- **Pillar 1** — audio frame is stable under default movement; Trigger 2 cues fire only on intentional rotation or genuine path-geometry changes. The whole rotation-cognitive-load worry from earlier discussions resolves naturally.
-- **Pillar 2 / 3 / 4** — unchanged in design; just inherit a more predictable audio-frame from the swap.
-- **Map-cursor mode in Pillar 3** — already designed to follow the player's bound movement actions. With the swap, A/D-strafe naturally becomes the X-axis cursor mover; works as previously specified.
+- **Pillar 1** — Trigger 2 firing rate is the main consequence: frequent under turn-default, sparse under strafe-default. The design works either way; the choice affects cue-density tuning, not the trigger logic.
+- **Pillar 2 / 3 / 4** — design unaffected by the choice; they inherit whichever audio-frame stability the movement model produces.
+- **Map-cursor mode in Pillar 3** — follows the player's bound movement actions, so works under either default. The X-axis cursor binding goes wherever sideways movement lands.
 
 ---
 
@@ -1009,8 +1034,7 @@ patches/Accessibility/
 │   │   ├── cue_player.cpp       # 12-WAV vocabulary playback
 │   │   └── footstep_suppress.cpp # stuck-detection footstep gating
 │   ├── spatial/               # change-driven spatial awareness
-│   │   ├── change_detector.cpp  # per-tick distance-delta sampling (Trigger 1)
-│   │   ├── front_cone.cpp       # foremost-in-front (Trigger 2, ±15°)
+│   │   ├── change_detector.cpp  # per-tick scan: Trigger 1 (distance-delta, 360°) + Trigger 2 (foremost-in-front identity-change, ±45°, folded 2026-05-06)
 │   │   └── awareness_range.cpp  # range-throttled feature query
 │   ├── announce/              # TTS announcements
 │   │   ├── transitions.cpp      # room + area transition announcements
@@ -1049,7 +1073,7 @@ patches/Accessibility/
 
 ### Pillar → subsystem mapping (traceability for the design doc)
 
-- **Pillar 1** = `spatial/` (change_detector + front_cone) + `audio/cue_player` + `audio/footstep_suppress`
+- **Pillar 1** = `spatial/change_detector` (Trigger 1 distance-delta + folded Trigger 2 foremost-in-front per 2026-05-06) + `audio/cue_player` + `audio/footstep_suppress`
 - **Pillar 2** = `announce/` (transitions + compass + orientation + degrees) + `view_mode/`
 - **Pillar 3** = `guidance/` + `map_ui/` + `announce/transitions` (on cross-area)
 - **Pillar 4** = `filter/` + `input/cycle_keys` + `announce/` (name + direction + distance) + invokes `guidance/` on Shift+-
@@ -1083,7 +1107,7 @@ The "single chunk" is **planning + implementation cohesion**, not session count.
 - **Phase 0 — Refactor.** Extract `core/` + `engine/` from monolithic `Accessibility.cpp`; split menu code into `menus/`. Verify menu accessibility regression. **Exit criterion:** new structure in place; existing menu features still work end-to-end. Commit.
 - **Phase 1 — Foundation.** `audio_bus.{h,cpp}`; `engine_player.{h,cpp}`; `core_settings.{h,cpp}` (stub); curate the 12-cue audio vocabulary from existing engine resrefs (atmospheric pass) — fall back to authored WAVs in `Override/` only if curation proves too noisy. **Exit criterion:** test fixture can play a 3D positional cue at any world position with character-anchored listener. Commit. *(Revised 2026-05-03 (a): `engine_area` moved out — split between Phase 2 and Phase 3 by consumer, see below. Sourcing approach revised from authored-into-Override to curated-from-existing-engine-resrefs. Revised 2026-05-03 (b): `audio_listener.{h,cpp}` dropped — engine default listener is camera-anchored, verified at the gate by audible camera-relative pan; no override needed for any planned phase. Re-add only if a future user need surfaces.)*
 - **Phase 2 — Playable baseline.** `engine_area.{h,cpp}` *object-list + room-lookup slice* (foundation for this phase's consumers); Pillar 4 cycle (`filter/` + `input/cycle_keys` + `announce/` for name+direction+distance) + cross-cutting `guidance/autowalk` + Pillar 2 `announce/transitions` (room + area). **Exit criterion:** game is playable end-to-end via cycle-and-autowalk. Solo playthrough of an area works. Commit.
-- **Phase 3 — Pillar 1.** `engine_area.{h,cpp}` *walkmesh-edge slice extension*; `spatial/change_detector` + `spatial/front_cone` + `audio/cue_player` + `audio/footstep_suppress` (with RE work for footstep function; fall back to collision-cue reuse if RE proves fragile). **Initial implementation omits pitch**; volume-only test first. **Exit criterion:** free walking is genuinely informative; solo test confirms wall/hazard/object cues fire correctly without spam. Commit.
+- **Phase 3 — Pillar 1.** `engine_area.{h,cpp}` *walkmesh-edge slice extension*; `spatial/change_detector` (Trigger 1 + folded Trigger 2 per 2026-05-06) + `audio/cue_player` + `audio/footstep_suppress` (with RE work for footstep function; fall back to collision-cue reuse if RE proves fragile). **Initial implementation omits pitch**; volume-only test first. **Exit criterion:** free walking is genuinely informative; solo test confirms wall/hazard/object cues fire correctly without spam. Commit.
 - **Phase 4 — Pillar 2 polish + view mode.** `announce/compass` + `announce/orientation` + `announce/degrees` + `view_mode/` (cursor + continuous loops + click-walk). **Exit criterion:** rotation announcements work; view mode lets player inspect rooms without moving character. Commit.
 - **Phase 5 — Pillar 3 polish.** `guidance/beacon` + `guidance/pathfind` + `guidance/description` + `map_ui/cursor`. **Exit criterion:** Shift+- triggers pathfind with audio beacon and autowalk; map cursor explores fullscreen map. Commit.
 - **Phase 6 — Map markers & nice extras.** `map_ui/markers` (saved user markers); planet picker accessibility integration; multi-area route choice prompt remains future. **Exit criterion:** named markers persist across saves; full feature set shipped. Commit + release.
