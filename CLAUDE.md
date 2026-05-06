@@ -14,6 +14,7 @@ Accessibility mod/contribution for **Star Wars: Knights of the Old Republic** (K
 - Use headings and bullet lists for comparisons
 - Present information linearly, one item per line
 - Group related info under clear labels
+- Don't write raw memory addresses in chat answers. Use the function name, field name, or a short recognisable description instead ("PlayFootstep's field6_0x20 check", "the engine's natural early-out JZ", "the wrapper's TEST EAX,EAX"). Addresses bloat answers without informing the reader. Only include an address when it is itself the point — e.g. when distinguishing two adjacent hook candidates by their exact offset, or when reporting a finding that has to be re-typed into Ghidra/hooks.toml. In code, hooks.toml comments, memory entries, and docs, addresses are still encouraged.
 
 Example - instead of tables, format like this:
 **Item Name**
