@@ -203,7 +203,7 @@ void* GetPlayerControl() {
 
 }  // namespace
 
-bool SetPlayerInputEnabled(bool enabled) {
+bool SetPlayerInputEnabled(bool enabled, bool armAutoRestore) {
     void* playerControl = GetPlayerControl();
     if (!playerControl) return false;
 
@@ -217,17 +217,22 @@ bool SetPlayerInputEnabled(bool enabled) {
 
     bool wasActive = g_disableActive;
     if (enabled) {
+        // Re-enable always clears the timer regardless of the flag.
         g_disableActive = false;
         g_disableExpiresAt = 0;
-    } else {
+    } else if (armAutoRestore) {
         g_disableActive = true;
         g_disableExpiresAt = GetTickCount() + kAutoRestoreMs;
+    } else {
+        // Sustained disable — caller manages the lifecycle (view mode).
+        g_disableActive = false;
+        g_disableExpiresAt = 0;
     }
     acclog::Write(
-        "PlayerInput: SetEnabled(%s) — was disabled=%d, now disabled=%d, "
-        "expires=%lu",
-        enabled ? "true" : "false", wasActive ? 1 : 0,
-        g_disableActive ? 1 : 0,
+        "PlayerInput: SetEnabled(%s, armAutoRestore=%d) — was disabled=%d, "
+        "now disabled=%d, expires=%lu",
+        enabled ? "true" : "false", armAutoRestore ? 1 : 0,
+        wasActive ? 1 : 0, g_disableActive ? 1 : 0,
         static_cast<unsigned long>(g_disableExpiresAt));
     return true;
 }

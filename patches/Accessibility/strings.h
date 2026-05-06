@@ -234,6 +234,17 @@ enum class Id : int {
     MouseLookOn,
     MouseLookOff,
 
+    // ---- Phase 4 lay-off 3 — view mode toggle (B). The "stop and look
+    //      around" mode: character is frozen, camera stays under the
+    //      user's control, no triggers / combat fire while active. The
+    //      skeleton lay-off captures Mouse Look state + cursor position
+    //      on enter; further input mapping (keyboard-driven camera) lands
+    //      in lay-off 4 once the camera-behavior probe (Shift+B) tells
+    //      us whether we drive the engine's native Free Look or fall
+    //      back to forcing Mouse Look ON.
+    ViewModeOn,
+    ViewModeOff,
+
     // ---- Save / Load game panel (CSWGuiSaveLoad).
     //      `FmtSaveLoadRow`      — row navigation with location enrichment.
     //                              Args: row_text (`%s`), planet (`%s`),

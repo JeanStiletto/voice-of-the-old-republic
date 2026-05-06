@@ -93,6 +93,9 @@ const char* Get(Id id) {
         case Id::MouseLookOn:          return "Maussteuerung an";
         case Id::MouseLookOff:         return "Maussteuerung aus";
 
+        case Id::ViewModeOn:           return "Umsehen-Modus an";
+        case Id::ViewModeOff:          return "Umsehen-Modus aus";
+
         case Id::FmtSaveLoadRow:       return "%s, %s, %s, %d von %d";
         case Id::FmtSaveLoadRowNoLoc:  return "%s, %d von %d";
 

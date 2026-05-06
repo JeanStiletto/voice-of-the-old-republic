@@ -133,12 +133,22 @@ bool GetActiveLeaderName(char* outBuf, size_t bufSize);
 // Returns false on chain failure (no app, no player_control, SEH-caught
 // fault). True if the call dispatched.
 //
-// Auto-restore: SetPlayerInputEnabled(false) arms a module-static timer
-// that flips back to enabled=true after 3 seconds via
-// TickPlayerInputRestore(). Each new disable extends the window. Callers
-// that need to restore earlier (SEH fault on the gated dispatch, manual
-// cancel) can call SetPlayerInputEnabled(true) directly — idempotent.
-bool SetPlayerInputEnabled(bool enabled);
+// Auto-restore (autowalk lifecycle): when enabled=false and
+// armAutoRestore=true (default), arms a module-static timer that flips
+// back to enabled=true after 3 seconds via TickPlayerInputRestore().
+// Each new disable extends the window. This is the autowalk shape —
+// "disable for one engine dispatch, auto-restore so we don't strand
+// the player if the dispatch faults / the user moves on".
+//
+// Sustained-disable (view mode lifecycle): callers needing the disable
+// to last until they explicitly re-enable should pass armAutoRestore=
+// false. The timer stays inert; the caller is responsible for the
+// matching SetPlayerInputEnabled(true) — failing to do so leaves the
+// player permanently frozen (modulo a future disable + auto-restore).
+//
+// Calling SetPlayerInputEnabled(true) always clears the timer
+// regardless of armAutoRestore — explicit re-enable wins.
+bool SetPlayerInputEnabled(bool enabled, bool armAutoRestore = true);
 
 // Per-tick auto-restore. Call from OnUpdate. No-op when no disable
 // session is active. Cheap when idle (one timestamp compare).

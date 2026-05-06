@@ -34,6 +34,7 @@
 #include "audio_bus.h"       // Phase 1 lay-off 4 (test fixture only)
 #include "announce_degrees.h" // Phase 4 sub-feature D
 #include "probe_mouselook.h"  // Phase 4 lay-off 2 — view-mode probe
+#include "view_mode.h"        // Phase 4 lay-off 3 — view-mode skeleton
 #include "cycle_input.h"     // Phase 2 lay-off 3
 #include "guidance_autowalk.h"  // Phase 2 lay-off 5 (progress watchdog)
 #include "camera_announce.h"    // Phase 2 ad-hoc — camera-direction on A/D
@@ -4221,6 +4222,15 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     // locked.
     acc::probe_mouselook::PollWin32();
     acc::probe_mouselook::TickSweep();
+
+    // Phase 4 lay-off 3 — view-mode skeleton. B toggles the "stop and
+    // look around without budging the character" mode (lifecycle only;
+    // keyboard-driven camera input lands in lay-off 4). Shift+B fires
+    // the camera-behavior probe — snapshot CClientOptions for diffing
+    // before / after a manual Caps Lock press, to find where the engine
+    // stores Free Look state. Same Win32-polling rationale as the cycle
+    // keys: B is unbound in stock kotor.ini.
+    acc::view_mode::PollWin32();
 
     // Autowalk progress watchdog. No-op when no recent WalkTo dispatch;
     // emits at most two log lines (t+1s, t+3s) per dispatch to detect

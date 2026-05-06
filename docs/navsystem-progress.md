@@ -37,11 +37,10 @@ Pillar 2 polish — orientation/zone announcement on demand — plus the new "vi
 
 1. **`announce_degrees` (Pillar 2 sub-feature D — plain press half).** AltGr speaks current compass-frame degrees. *Closed 2026-05-06 — verified in-game.* Zone-hierarchy half (Shift+AltGr / etc.) deferred; not requested in this lay-off.
 2. **View mode — Mouse Look probe.** Read/write `CClientOptions.mouse_look`; toggle from hotkey; inject synthetic mouse sweep with `SendInput`; observe spatial-audio pan. *Closed 2026-05-06 — strong positive.* Engine reacts to runtime bit-flip + synthetic deltas; view-mode design path locked to lightweight Mouse Look orchestration (see lay-off log entry below for the chain + offsets, and below for the resulting next-up lay-offs).
-3. **View-mode skeleton — `view_mode.{h,cpp}` + cursor recentring helper.** New `view_mode` module owns the on/off state machine; `engine_window.{h,cpp}` (or extension to existing `engine_*` files) provides `GetGameWindowCenter` + `RecentreCursor`. Activation key: V (toggle, in-world gated). On enter: capture prior `mouse_look` state, force ON, capture cursor position, recentre to window centre. On exit: restore prior state + cursor. Speaks "View mode on / off" via `acc::strings`. No look-around input yet — pure state-management + cursor handling, verifies the entry/exit lifecycle is clean before adding driven motion.
-4. **Synthesised look-around input — Q/E rotate camera.** While view mode is active, poll Q/E (or another bound pair — confirm vs. engine's own Q/E target-cycle which is NOT a bound key in stock kotor.ini per `project_engine_native_qe_cycle`); held-state emits a small relative dx every tick (~30-50px/tick proportional to a `core_settings.viewMode.sensitivity` knob), recentre cursor after each emit. Verify continuous left/right pan in view mode without cursor drift.
-5. **Auto-exit on movement intent.** Pressing W/S/A/D while in view mode auto-exits before the engine processes the key, so character motion is unaffected by leftover Mouse Look state. Robust to mid-tick exits (cancel any in-flight look). Closes the contract that the long-term plan calls "auto-exit when player starts actually walking".
-6. **Vertical look (W/S in view mode → dy emit), or skip if engine pitch is locked.** KOTOR's `CSWCameraOnAStick` may be horizon-locked (no free pitch). Cheap probe at the start of this lay-off: toggle Mouse Look ON outside view mode, drive a synthetic dy sweep via `SendInput`, listen for vertical pan in any 3D-positioned source. If the camera doesn't pitch, skip this lay-off and document; if it does, mirror the Q/E shape but for dy. (Deferring vertical look does not block view mode shipping — yaw alone covers most of the "look around the room" use case.)
-7. **Click-to-walk in view mode.** Pressing Enter (or whatever interact key we settle on) while in view mode hands the camera-centre target to the existing autowalk path (`acc::guidance::WalkTo`) — closes the "click somewhere on screen to walk there" experience. Depends on the focused-target resolution we already have via `LastTarget` updating from camera-centred objects (verify this happens in view mode; if not, a separate raycast lay-off lands first).
+3. **View-mode skeleton — `view_mode.{h,cpp}`.** *Closed 2026-05-06 — verified in-game.* B toggles `SetPlayerInputEnabled(false, armAutoRestore=false)` lifecycle. A/D camera-pan + Q/E target-cycle work natively without intervention; the freeze on W/S is sufficient. Mouse Look forcing + cursor recentring + Free Look behavior swap all proved unnecessary after the blind A/D audio test. Hotkey B (V is "Solo Mode" in stock kotor.ini, taken). Shift+B snapshot probe of `CClientOptions` retained as a cheap diagnostic.
+4. **Click-to-walk in view mode.** Pressing Enter while in view mode hands the focused target (cycle's `focusedObj` or `LastTarget` fallback) to the existing autowalk path (`acc::guidance::WalkTo`) — closes the "I noticed something interesting while looking around → walk to it" experience. Mostly composes existing primitives (cycle focus, `interact_hotkey` shape, autowalk wrapper); the only new piece is "view-mode-active gate on Enter routing".
+
+(Lay-offs renumbered 2026-05-06 over the course of lay-off 3's three in-game iterations: original lay-off 4 "Q/E look-around" → not needed, engine A/D is the look-around primitive. Original lay-off 5 "auto-exit on WASD" → not needed, WASD-in-view-mode is intentional camera-pan. Original lay-off 6 "vertical look" → not needed, A/D yaw covers the room-scan case. Original lay-off 7 "click-to-walk" → renumbered to 4.)
 
 ### Lay-off log
 
@@ -110,6 +109,96 @@ In-game verification:
 - Park-at-apex iteration (`patch-20260506-103551.log`): two press/sweep cycles, 14 emits each (7 ramp-up to apex, 1500ms hold gap with no emits, 6 ramp-down + residual). User report: "strong confirmation, mouse sweep while an ambient sound played heared it going from one side of the audio field to the other and than back". Decisive.
 
 Discipline: pure addition + one targeted gate edit (`announce_degrees`'s Shift-not-held). No engine hooks, no behavioural change in non-probe paths. Probe-only this session — view-mode build-out lay-offs (3+) split into a fresh session per the lay-off discipline rule.
+
+**Lay-off 3** — view-mode skeleton. *Verified in-game 2026-05-06.*
+
+Skeleton lifecycle for the "stop and look around without budging the character" mode, plus a Shift+B diagnostic probe to locate where the engine stores Free Look state. Hotkey choice + scope reframed mid-session after a design discussion:
+
+### Design discussion (2026-05-06)
+
+User clarified the view-mode mental model differed from the original lay-off plan: view mode = *freeze the character, repurpose movement keys as camera input*, so the player can scan a room without committing to anything (no walking, no triggering combat / pressure plates / scripted areas). Q/E in this model = engine's native target-cycle (useful "snap to next interesting thing"), *not* the synthetic mouse-dx emitter the original plan had earmarked.
+
+Ahead of code, did a keybind audit against `docs/controls-and-input.md`: V is "Solo Mode" in stock kotor.ini (taken); strafe is Z/C, not Q/E; A/D rotates camera-and-character (couples via the camera-on-a-stick rig). Most importantly, the manual documents two engine-native features the original plan had ignored:
+
+- **Caps Lock — Toggle Free Look**
+- **Hold Ctrl (or Mouse 2) — Look About**
+
+These sound exactly like what view mode wants. **Static probe of Lane's K1 RE database confirmed `CSWCameraFreeLook` exists in KOTOR 1**: struct definition + ctor at `0x0063a5d0`, `Control` at `0x00639d00`, `UpdateCamraStyle` at `0x006383c0` (370 bytes), `GetType` at `0x0063a6b0`, dtor at `0x0063a6c0` / `0x0063bad0`. The camera is a `CAurBehavior`-using object (alongside `CSWCameraOnAStick` and `CSWCameraNavigate`) and `Camera::SetBehavior(CAurBehavior*) @0x0045c230` swaps behaviors. So Free Look is a **swap-the-active-behavior** primitive in K1 — not a CClientOptions bit and not a flag inside OnAStick. "Look About" had no string match in symbols and may be folded into `CSWCameraOnAStick`'s input handling rather than its own behavior class — runtime probe will catch it if it flips a bit visible to us.
+
+Lane's vendored `third_party/KeyMouseAccessibilityTest` (a generic numpad-driven `SetCursorPos` cursor driver) was reviewed. Useful patterns for lay-off 4: 8-direction bit-flag state with proper diagonal vector normalisation, per-tick continuous motion driven by held-key state. Not directly used in this lay-off — the skeleton has no held-key input — but the long-term plan now references it as the held-key driver shape for lay-off 4.
+
+### Shape shipped this lay-off
+
+Pure code-base addition + one wire-up in `menus.cpp`. No engine hooks, no behavioural change outside the explicit B / Shift+B paths.
+
+- **Hotkey: B (toggle).** Win32-polled (`GetAsyncKeyState('B')`), edge-detected, foreground-window-gated, in-world-gated (`GetPlayerPosition` non-null). Same polling rationale as `cycle_input::PollWin32` and `announce_degrees::PollWin32` — B is unbound in stock kotor.ini, so the engine keymap drops the scancode before our manager-side hook sees it.
+- **On enter.** Capture prior `mouse_look` via `acc::engine::GetMouseLook`; force ON via `SetMouseLook(true)`; capture cursor via `GetCursorPos`; recentre cursor to the foreground window's client-area centre via `GetClientRect` + `ClientToScreen` + `SetCursorPos`. Speak "View mode on" / "Umsehen-Modus an" via Tolk.
+- **On exit.** `SetMouseLook(prior_state)`, `SetCursorPos(cursor_at_enter)`, speak "View mode off" / "Umsehen-Modus aus". Idempotent restore — re-pressing B before any state changes lands a clean round-trip.
+- **Lifecycle invariants.** Don't half-enter: if `GetMouseLook` fails (chain unresolved during attach / area-load), skip the toggle silently with a log line — we'd otherwise have no "prior" to restore on exit. If `SetMouseLook` fails after a successful read, abort and don't enter (avoids a half-state where Mouse Look reads as ON but `g_state.active=false`).
+- **Cursor recentring is best-effort.** A failed `ClientToScreen` or `SetCursorPos` is logged but doesn't block entry — view mode still works (cursor stays where the user left it), the recentre is just convenience.
+
+### Camera-behavior probe (Shift+B)
+
+Diagnostic-only hotkey on the same poll. Snapshots `CClientOptions` bitfield (full uint32 + decoded auto_level / mouse_look / autosave / minigame_yaxis / combat_movement bits + a residual mask of undocumented bits) plus four neighbouring uint32 slots (@+0x4, @+0xc, @+0x10, @+0x14), all SEH-wrapped. Intended workflow:
+
+1. Press Shift+B once → snapshot A logged.
+2. Press Caps Lock manually in-game (engine's "Toggle Free Look").
+3. Press Shift+B again → snapshot B logged.
+4. Diff log lines.
+
+If a CClientOptions bit flips, that's the runtime gate (lay-off 4 reduces to "flip the bit + freeze player input + drive A/D yaw via SendInput"). If nothing in the snapshot changes, Free Look state lives outside our currently-walked chain — likely in the Camera / CSWCameraOnAStick / behavior chain we haven't located yet — and lay-off 4 either RE's that chain or falls back to forced Mouse Look + SendInput like the lay-off 2 probe shape.
+
+### Files touched
+
+- `patches/Accessibility/view_mode.{h,cpp}` — new files. Skeleton + Shift+B probe. ~270 lines total.
+- `patches/Accessibility/engine_options.h` — exposed `acc::engine::GetClientOptions()` (was anonymous-namespace internal). One public function so the probe doesn't duplicate the AppManager → CClientExoApp → CClientExoAppInternal → client_options chain walk.
+- `patches/Accessibility/engine_options.cpp` — moved `GetClientOptions` out of the anonymous namespace; no logic change.
+- `patches/Accessibility/strings.h` — added `Id::ViewModeOn` / `Id::ViewModeOff`.
+- `patches/Accessibility/strings_en.cpp` / `strings_de.cpp` — "View mode on/off" / "Umsehen-Modus an/aus".
+- `patches/Accessibility/menus.cpp` — included `view_mode.h`; called `acc::view_mode::PollWin32()` from `OnUpdate` after the lay-off 2 probe poll.
+
+### Lay-off plan reframe (downstream of this lay-off)
+
+Original lay-off plan had 7 lay-offs total; reduced to 5 (lay-off 1, 2, 3, 4, 5):
+
+- **Original lay-off 5 "auto-exit on W/S/A/D" dropped.** Under the user's clarified model, WASD in view mode = intentional camera-pan, not "I want to leave". Exit gesture is B again.
+- **Original lay-off 6 "vertical look" folded into the new lay-off 4** as a same-session pitch probe (Mouse Look + SendInput dy → does camera pitch?). Skipped within lay-off 4 if pitch is locked.
+- **Lay-off 7 "click-to-walk" renumbered to lay-off 5.**
+
+### In-game test results (2026-05-06)
+
+**First iteration — Mouse Look forcing (failed gracefully):**
+Initial skeleton captured + forced `CClientOptions.mouse_look` ON, recentred cursor to client-area centre, restored on exit. Caps Lock probe (Shift+B before / after manual Caps Lock press) showed no `CClientOptions` bit changes — Free Look state lives outside the AppManager → CClientExoApp → CClientOptions chain we walk. Cursor recentre hit a window-size bug (centre = (68, 31), foreground window picked up was the wrong HWND in our process). User-blind audio test then revealed the bigger reframe — see below.
+
+**Second iteration — `SetPlayerInputEnabled(false, armAutoRestore=false)`:**
+User-blind audio test (AltGr's `announce_degrees` heading announce + held A/D press) exposed two facts that simplified the design:
+1. **A/D in stock KOTOR rotates camera only**, not the character. Character only "snaps" to camera yaw when W or S commits forward motion.
+2. **Caps Lock has no audible effect** on this behaviour. Either cut from K1, visual-only, or reachable through a different path; not pursued.
+
+So view mode reduced to "freeze the W/S movement clobber" — A/D's camera-pan path runs unconditionally (per memory `project_player_control_toggle`: the camera-rotation block in `CSWPlayerControlCamRelative::Control` runs regardless of `player_control.enabled`). No Mouse Look forcing, no SendInput, no cursor recentring.
+
+**Third iteration — auto-restore-timer bug + fix:**
+Default `SetPlayerInputEnabled(false)` arms a 3-second auto-restore timer (autowalk lifecycle). View mode is sustained-disable until the user toggles off — the 3s timer would silently re-enable mid-session (verified in `patch-20260506-113051.log` lines 41+44). Fixed by extending `SetPlayerInputEnabled`'s signature with an `armAutoRestore` parameter (default `true` keeps autowalk callers unchanged); view mode passes `armAutoRestore=false`.
+
+**Verified working:** B toggles freeze cleanly; W/S can't walk while view mode active (held >5s); A/D pans camera freely in both modes; `announce_degrees` (server-side player yaw) confirms character heading is stable across arbitrary A/D presses in both modes; B again restores normal walk.
+
+### Files touched
+
+- `patches/Accessibility/view_mode.{h,cpp}` — new files. ~150 lines total. Lifecycle wrap of `SetPlayerInputEnabled(false/true)` + Shift+B `CClientOptions` snapshot probe (kept as a cheap reusable observer, not load-bearing for view mode).
+- `patches/Accessibility/engine_options.h`/`.cpp` — promoted `GetClientOptions()` from anonymous namespace to public `acc::engine::GetClientOptions` so the probe doesn't duplicate the chain walk.
+- `patches/Accessibility/engine_player.h`/`.cpp` — extended `SetPlayerInputEnabled(bool enabled, bool armAutoRestore = true)`. Default keeps autowalk's 3s auto-restore timer; sustained callers (view mode) opt out via `armAutoRestore=false` and manage their own lifecycle.
+- `patches/Accessibility/strings.h` + `strings_en.cpp`/`strings_de.cpp` — `Id::ViewModeOn` / `Id::ViewModeOff` ("View mode on/off" / "Umsehen-Modus an/aus").
+- `patches/Accessibility/menus.cpp` — included `view_mode.h`; called `acc::view_mode::PollWin32()` from `OnUpdate` after the lay-off 2 probe poll.
+
+### Lay-off plan reframe (downstream of this lay-off)
+
+Original lay-off plan had 7 lay-offs total; reduced to **4** (lay-offs 1, 2, 3, 4):
+
+- **Original lay-off 5 "auto-exit on W/S/A/D" dropped.** Under the user's clarified model + verified A/D-rotates-camera-only behaviour, view mode in stock KOTOR is just "character frozen while looking around". WASD in view mode is intentional camera-pan, not exit intent.
+- **Original lay-off 6 "vertical look" dropped.** A/D yaw alone covers the "look around the room" use case verified in-game; no synthesised pitch path needed.
+- **Original lay-offs 4 "Q/E look-around" and 7 "click-to-walk" merged into the new lay-off 4.** Q/E target-cycle is engine-native (no work needed); click-to-walk in view mode (Enter on focused target → autowalk) is the only remaining feature work.
+
+Discipline: shipped over three in-game iterations in a single session — first tried Mouse Look forcing, pivoted to `SetPlayerInputEnabled` after blind audio test revealed the simpler primitive, finally fixed the auto-restore-timer interaction. Final shape is 4 commits-worth of work in one session, but the design pivots are exactly what the lay-off discipline expected to surface.
 
 ---
 

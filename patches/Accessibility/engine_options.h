@@ -41,6 +41,15 @@ namespace acc::engine {
 // app, no options, SEH-caught fault); writes to *out only on success.
 bool GetMouseLook(bool& out);
 
+// Resolve the live CClientOptions* via the AppManager → CClientExoApp →
+// CClientExoAppInternal → client_options chain, SEH-guarded. Returns
+// nullptr on any null link or fault. Exposed for diagnostic probes
+// (Phase 4 view-mode camera-state probe) — caller treats the pointer
+// opaquely and reads field offsets (kClientOptionsBitFieldOffset etc.)
+// at its own site, ideally inside an SEH wrapper. Production read/write
+// of the documented bits should go through Get/Set/ToggleMouseLook.
+void* GetClientOptions();
+
 // Write the "Mouse Look" toggle. Sets/clears bit 1 of CClientOptions's
 // int bitfield @+0x8. Returns false on chain failure.
 bool SetMouseLook(bool enabled);

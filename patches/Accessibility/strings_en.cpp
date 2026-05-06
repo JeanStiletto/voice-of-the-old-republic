@@ -83,6 +83,9 @@ const char* Get(Id id) {
         case Id::MouseLookOn:          return "Mouse Look on";
         case Id::MouseLookOff:         return "Mouse Look off";
 
+        case Id::ViewModeOn:           return "View mode on";
+        case Id::ViewModeOff:          return "View mode off";
+
         case Id::FmtSaveLoadRow:       return "%s, %s, %s, %d of %d";
         case Id::FmtSaveLoadRowNoLoc:  return "%s, %d of %d";
 

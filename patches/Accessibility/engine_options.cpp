@@ -8,8 +8,6 @@
 
 namespace acc::engine {
 
-namespace {
-
 // Walk *kAddrAppManagerPtr → CClientExoApp → CClientExoAppInternal →
 // CClientOptions. Distinct from GetPlayerServerObject's chain (different
 // final destination). Returns nullptr at any null link or SEH fault.
@@ -35,8 +33,6 @@ void* GetClientOptions() {
         return nullptr;
     }
 }
-
-}  // namespace
 
 bool GetMouseLook(bool& out) {
     void* options = GetClientOptions();
