@@ -227,6 +227,13 @@ enum class Id : int {
     //      glyph so screen readers pronounce it consistently.
     FmtCompassDegrees,
 
+    // ---- Phase 4 lay-off 2 — view-mode Mouse Look probe (Shift+AltGr).
+    //      Diagnostic-only; spoken on toggle so the user knows the
+    //      keypress landed and can correlate it with whatever the
+    //      engine then does (or doesn't) with mouse motion.
+    MouseLookOn,
+    MouseLookOff,
+
     // ---- Save / Load game panel (CSWGuiSaveLoad).
     //      `FmtSaveLoadRow`      — row navigation with location enrichment.
     //                              Args: row_text (`%s`), planet (`%s`),

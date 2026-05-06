@@ -33,6 +33,7 @@
 #include "engine_reads.h"
 #include "audio_bus.h"       // Phase 1 lay-off 4 (test fixture only)
 #include "announce_degrees.h" // Phase 4 sub-feature D
+#include "probe_mouselook.h"  // Phase 4 lay-off 2 — view-mode probe
 #include "cycle_input.h"     // Phase 2 lay-off 3
 #include "guidance_autowalk.h"  // Phase 2 lay-off 5 (progress watchdog)
 #include "camera_announce.h"    // Phase 2 ad-hoc — camera-direction on A/D
@@ -4209,6 +4210,17 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     // stock kotor.ini, so the engine keymap drops the scancode before our
     // manager hook sees it.
     acc::announce_degrees::PollWin32();
+
+    // Phase 4 lay-off 2 view-mode probe — Shift+AltGr toggles the engine
+    // CClientOptions.mouse_look bit and announces the new state, so we
+    // can observe whether forcing Mouse Look ON gives us a free virtual
+    // cursor for view mode. On a toggle-to-ON, kicks off a synthetic
+    // mouse-sweep state machine driven by TickSweep; the user listens
+    // for spatial-audio pan to determine whether the engine reacts.
+    // Diagnostic-only; rebinds or goes away when view-mode design is
+    // locked.
+    acc::probe_mouselook::PollWin32();
+    acc::probe_mouselook::TickSweep();
 
     // Autowalk progress watchdog. No-op when no recent WalkTo dispatch;
     // emits at most two log lines (t+1s, t+3s) per dispatch to detect

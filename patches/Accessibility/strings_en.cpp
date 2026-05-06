@@ -80,6 +80,9 @@ const char* Get(Id id) {
 
         case Id::FmtCompassDegrees:    return "%d degrees";
 
+        case Id::MouseLookOn:          return "Mouse Look on";
+        case Id::MouseLookOff:         return "Mouse Look off";
+
         case Id::FmtSaveLoadRow:       return "%s, %s, %s, %d of %d";
         case Id::FmtSaveLoadRowNoLoc:  return "%s, %d of %d";
 

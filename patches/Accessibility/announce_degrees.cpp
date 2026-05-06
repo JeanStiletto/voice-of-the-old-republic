@@ -62,8 +62,15 @@ void PollWin32() {
         return (GetAsyncKeyState(vk) & 0x8000) != 0;
     };
 
+    // Gate against Shift held — Shift+AltGr is owned by the Phase 4
+    // lay-off 2 Mouse Look probe (`probe_mouselook::PollWin32`). Without
+    // this gate, every probe press would also speak the current heading
+    // before / alongside the "Mouse Look on/off" cue. Plain AltGr
+    // (no shift) → degrees announce; Shift+AltGr → probe.
+    bool shift = down(VK_SHIFT) || down(VK_LSHIFT) || down(VK_RSHIFT);
+
     static bool s_prev = false;
-    bool now = down(VK_RMENU);
+    bool now = down(VK_RMENU) && !shift;
     bool rising = now && !s_prev;
     s_prev = now;
     if (!rising) return;
