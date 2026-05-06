@@ -51,6 +51,8 @@ typedef void (__thiscall* PFN_Play3DOneShotSound)(
     float    volume,
     float    max_distance);
 
+typedef void (__thiscall* PFN_SetListenerPosition)(void* this_, Vector* pos);
+
 void* GetCExoSound() {
     __try {
         return *reinterpret_cast<void**>(kAddrCExoSoundPtr);
@@ -78,6 +80,35 @@ bool PlayCue(const char* resref) {
            /*looping=*/0,
            /*volume=*/1.0f,
            /*pan=*/0.0f);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool SetListener(const Vector& pos) {
+    void* exoSound = GetCExoSound();
+    if (!exoSound) return false;
+    Vector copy = pos;
+    __try {
+        auto fn = reinterpret_cast<PFN_SetListenerPosition>(
+            kAddrCExoSoundSetListenerPosition);
+        fn(exoSound, &copy);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool GetListener(Vector& out) {
+    void* exoSound = GetCExoSound();
+    if (!exoSound) return false;
+    __try {
+        void* internal = *reinterpret_cast<void**>(exoSound);
+        if (!internal) return false;
+        out = *reinterpret_cast<Vector*>(
+            reinterpret_cast<unsigned char*>(internal) +
+            kCExoSoundInternalListenerPosOffset);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;

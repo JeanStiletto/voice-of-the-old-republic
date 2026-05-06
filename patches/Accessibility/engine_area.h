@@ -442,4 +442,37 @@ struct WallEdge {
 // called once per area-change and the result cached by the caller.
 int BuildAreaWallCache(void* area, WallEdge* outBuf, int maxEdges);
 
+// 2D segment-vs-walkmesh-perimeter test in the XY plane (Z is ignored —
+// rooms in K1 are layout-flat enough that planar collision matches the
+// engine's own walkability behaviour for the room-scale virtual cursor).
+//
+// Walks `walls[0..wallCount)` testing each perimeter edge against the
+// movement segment a→b. Returns the *closest* hit along a→b (smallest t
+// in [0,1] where movement reaches the wall) — for a slow-moving cursor
+// every tick, the closest hit is the only physically meaningful one.
+//
+// Output:
+//   - returns true if any edge intersects the segment a→b; outHitPoint
+//     is written with the world-space intersection point for the
+//     closest-along-a→b hit (suitable for both clamping the cursor and
+//     placing a 3D collision cue).
+//   - returns false if the segment is fully clear; outHitPoint is
+//     untouched.
+//
+// Degenerate inputs:
+//   - walls == nullptr or wallCount <= 0  → false (no walls cached yet).
+//   - a == b                                → false (cursor is stationary;
+//                                              avoid divide-by-zero).
+//   - degenerate edge (wall.a == wall.b)  → that edge is skipped.
+//
+// Phase 4 lay-off 4 — view-mode virtual cursor. Pulls the wall buffer
+// from `acc::spatial::change_detector::GetCachedWalls` (the cache lives
+// there since the change-detector built it in Phase 3 lay-off 3); we
+// only consume the data here, no rebuild path of our own.
+bool SegmentCrossesWalkmesh(const WallEdge* walls,
+                            int wallCount,
+                            const Vector& a,
+                            const Vector& b,
+                            Vector& outHitPoint);
+
 }  // namespace acc::engine

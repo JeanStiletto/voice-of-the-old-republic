@@ -163,9 +163,10 @@ Two complementary sub-features:
 - **Direction (pan):** automatic, same call. The engine derives pan from source-position-relative-to-listener. We do not implement spatial math.
 - **Pitch — initial implementation OMITS pitch encoding** (locked 2026-05-03). Test volume-only first; volume already encodes distance via 3D attenuation. If solo testing shows volume alone is sufficient, pitch never needs implementation. If solo testing shows distance is hard to read from volume alone, add pitch using the locked direction below.
 - **Pitch direction (locked for future implementation if needed):** **close = low pitch, far = high pitch** (spatial-mass semantics — close solid mass = deep frequency; distant openness = airy frequency). Decided by user preference; community input no longer needed.
-- **Listener pose: overridden to character body every tick** (locked 2026-05-03). KotOR's default is camera-anchored — but the camera sits ~3–5m behind the character and can rotate independently of character facing, which would produce misleading distances and pans. We call `CExoSound::SetListenerPosition(character_pos)` and `SetListenerOrientation(character_forward, world_up)` per tick to anchor 3D audio to the character's body. Two consequences:
-  - Cues report distances and directions relative to **where the player thinks they are** (the character).
-  - **Camera rotation is invisible to Pillar 1.** Player can move the camera freely without affecting cues.
+- **Listener pose: engine default (camera-anchored) in normal play; overridden to virtual cursor only in view mode** (corrected 2026-05-06; original 2026-05-03 design intent was per-tick character override but it was dropped at Phase 1 lay-off 4 — the engine default proved sufficient at the in-game gate, audio pan responded correctly to A/D camera rotation, and no override was implemented). Two consequences for Pillar 1:
+  - Cue source positions are world coords (the wall, the door, the NPC); pan + attenuation are computed by the engine relative to the camera-anchored listener. The camera trails the character within ~3–5m, so for normal forward-walking the perceived direction is close enough to "from the character's standpoint" that the gate test couldn't tell them apart.
+  - **Camera rotation does affect the soundscape** in normal play (rotating A/D pans 3D sources). This is by design now: the original "camera rotation invisible" intent is reversed, because (a) the engine default works, (b) blind playtest confirmed audible pan response is useful directional info, (c) we save the override budget for view mode where it actually matters.
+  - **View mode is the one place we override the listener**, to the virtual cursor's world position (per the view-mode mechanics section under Pillar 2). Engine APIs `CExoSound::SetListenerPosition @0x5d5df0` / `SetListenerOrientation @0x5d5de0`; backing field `CExoSoundInternal.listener_position +0x98`.
 - **Awareness model: 360° around the character with a uniform range cap** (locked 2026-05-03). No sight cone, no front-bias. Reasoning:
   - A sighted player has a forward cone because eyes face forward — biological constraint we don't share.
   - Blind players don't naturally rotate the camera; forcing rotation to "discover behind" breaks fluid navigation.
@@ -247,7 +248,7 @@ The novel work is the **per-tick "nearest feature in each direction-sector + del
 - 2026-05-03 — Cue **volume + pan** are engine-managed via `Play3DOneShotSound` from a world-space source position; we do not implement spatial math.
 - 2026-05-03 — Cue **pitch direction deferred** pending community input from blind players. Whether pitch encodes distance at all is also open (volume already does via 3D attenuation).
 - 2026-05-03 — **Sampling = per-engine-tick** with per-feature delta threshold. Cue cadence emerges from sampling × threshold × player speed; distance-milestone behaviour is implicit.
-- 2026-05-03 — **Listener pose overridden to character body each tick** (not the engine default of camera). All cues are character-anchored; camera rotation invisible to Pillar 1.
+- 2026-05-03 — ~~**Listener pose overridden to character body each tick** (not the engine default of camera). All cues are character-anchored; camera rotation invisible to Pillar 1.~~ **Superseded 2026-05-06**: override was dropped at Phase 1 lay-off 4 — engine default (camera-anchored) proved sufficient at the in-game gate, no override shipped to code. Listener stays engine-default in normal play; the only override site is **view mode**, where listener tracks the virtual cursor (see view-mode mechanics under Pillar 2).
 - 2026-05-03 — **Awareness model = 360° around character, range-throttled** (no sight cone). Default range conservative (~5m, user-tunable). Optional rear-attenuation parked as a later refinement.
 - 2026-05-03 — **Rotation while stationary** — handled by Trigger 2 (foremost-in-front delta, ±15° cone). One cue per rotation milestone, no spam, captures "space opens before me" use case while preserving 360° awareness via Trigger 1.
 - 2026-05-03 — **Two trigger types:** Trigger 1 = distance-delta (360°, all in-range features); Trigger 2 = foremost-in-front delta (±15° narrow cone, additive). Trigger 2 is a path-channel signal, not a sight cone — Trigger 1's 360° awareness is preserved.
@@ -275,82 +276,91 @@ The pillar enables **spatial decision-making**, not just survival:
 
 **Intent:** give the player the same room-scale spatial picture a sighted player gets at a glance, so they can make informed movement choices.
 
-### Mechanics — view mode (drafted 2026-05-03)
+### Mechanics — view mode (locked 2026-05-06)
 
-A "look around the room without moving the character" mode that reproduces the sighted-player experience of pausing, mousing the cursor around, and inspecting objects.
+A "look around the room without moving the character" mode that reproduces the sighted-player experience of pausing, looking around, and inspecting objects — adapted for keyboard-only blind play. The user **steers a virtual body** through the world: same input grammar as walking (W/S forward-back, A/D turn), but the character stays put and we move a virtual point ("cursor") instead.
 
 **Distinct from existing modes:**
 - Pillar 4 cycle = discrete list-of-objects step-through
 - Pillar 3 map-cursor = 2D scan on the map UI
-- View mode = continuous 3D scan in normal gameplay view, from the player's standpoint, without budging the character
+- View mode = continuous 3D scan in normal gameplay view, *as if* the player walked around the room, without committing the character to anything (no scripts, triggers, combat hand-off, walkmesh entry events)
 
-**Activation:**
-- Toggle key (suggested **V**, TBD finalize)
-- On entry: virtual cursor placed at character world position
-- Exit: V again, OR any character-movement key (auto-exit when player starts actually walking)
+**Locked model: virtual cursor + listener override + camera-tracks-cursor.** Three layers, one design:
 
-**Cursor movement:**
-- Same key scheme as map-cursor (bound movement actions: forward / back / strafe / turn keys all map to XY-plane movement)
-- Cursor moves in world XY plane at character's Z height
-- Continuous motion at configurable speed (same fluidity model as map-cursor)
+1. **Virtual cursor** — our own state (`Vector cursor_pos` + `float cursor_yaw`), not an engine entity. Movable through walkmesh under our walkmesh-bounded logic. The character does not move; the engine doesn't know the cursor exists.
+2. **Audio listener override** — every tick while view mode active, write `CExoSound::SetListenerPosition(cursor_pos)` so the engine pans + attenuates *all* 3D audio (our cues, ambient, NPC voices, machinery, doors) relative to the cursor. Restore: stop writing on exit; engine resumes its own camera-anchored update next frame.
+3. **Engine camera tracks cursor heading** — A/D rotates the engine camera as it natively does (around the frozen character). We sync the cursor's `cursor_yaw` to whatever yaw the engine ends up at. Cosmetic for blind users; useful for sighted helpers, dev loop, demos. Camera position stays leashed to the (frozen) character — this is fine; listener override decouples audio from camera position.
 
-**Wall collision:**
-- Per-tick walkmesh check on cursor target. If movement would cross a wall edge (data already cached from Pillar 1), block and emit a **collision cue** at the wall point.
-- Cursor's reachable region ≈ current room + open doorways into adjacent rooms — matches sighted line-of-sight from the character's standpoint.
-- Spoiler-safe by construction: can't peek into undiscovered rooms because cursor can't pass through walls.
+**Why a virtual cursor and not "just move the engine camera":**
+- KOTOR's camera is `CSWCameraOnAStick` — leashed to the character every tick. There's no engine-native "free-fly" primitive we can reach (`CSWCameraFreeLook` exists in the binary but Caps Lock probe failed to engage it; status: cut content / unreachable).
+- Free-flying via behaviour swap or Control-hook fights the engine's per-tick re-leash; net cost is high and uncertain.
+- The engine click pipeline (`HandleMouseClickInWorld`, `MoveMouseToPosition`) was already proved non-free for in-world targeting at Phase 2 lay-off 9 — even *with* a co-located camera, "click in view mode" wouldn't be free anyway.
+- Virtual cursor is cheap: we own position state, the engine cooperates only via a single `SetListenerPosition` call per tick, navigation is our walkmesh-bounded logic.
 
-**Per-tick info while cursor moves:**
-- Tooltip / examine-box info for the object under cursor — read via TTS using engine's existing tooltip + `ShowExamineBox` data sources.
-- Room transitions announced (same logic as sub-feature A, but cursor-driven instead of character-driven).
-- TTS rate-limit: probably "speak on hover-pause" rather than every tick to avoid spam (TBD calibration).
+**Activation (as shipped at Phase 4 lay-off 3):**
+- **Hotkey: B (toggle).** V is "Solo Mode" in stock kotor.ini — taken. B is unbound per `docs/controls-and-input.md` and visually mnemonic for "Behold / look around".
+- **On entry:** initialise `cursor_pos = GetPlayerPosition()`, `cursor_yaw = GetPlayerYawDegrees()`. Disable per-tick movement clobber via `SetPlayerInputEnabled(false, armAutoRestore=false)` so W/S can't walk the character. Begin per-tick listener override write. Speak "View mode on" / "Umsehen-Modus an".
+- **On exit:** `SetPlayerInputEnabled(true)`, stop listener-override writes (engine reclaims the listener field next frame), speak "View mode off" / "Umsehen-Modus aus". Cursor state discarded.
+- **Auto-exit?** Not in this design. WASD in view mode is intentional cursor input, not "I want to leave." Exit gesture is B again.
 
-**Continuous object findability sounds (view-mode only):**
-- Small ambient loops on key objects (interactables, NPCs, doors, containers) within cursor's reachable area.
-- Played via owned `CExoSoundSource` voices anchored to each object's world position; engine pans + attenuates per cursor / character listener.
-- **Justification for the divergence from Pillar 1's "no constant audio" rule:** view mode is *explicit active scanning*. The user opted in. Constant ambient is appropriate when the user is actively looking; not appropriate when they're just walking.
-- Stops immediately on view-mode exit; normal change-driven Pillar 1 resumes.
+**Cursor input grammar:**
+- **W / S** — translate cursor along its current heading: `cursor_pos.xy += forward(cursor_yaw) * speed * dt` (W) or `-= ...` (S).
+- **A / D** — rotate the engine camera natively (engine's stock A/D-rotates-camera path runs unchanged). We read the resulting yaw each tick and store it as `cursor_yaw`. Net effect: A/D turns the virtual body *and* the camera in sync.
+- **Strafe** (Z/C or whatever the user has bound) — sideways translation along `right(cursor_yaw)`. Optional first-cut; can land in a follow-up lay-off.
+- **Z height locked to character Z** for the first cut (matches the original 2D-scan intent and avoids walkmesh edge cases). Vertical look-around parked as later refinement; not needed for room-scale exploration.
+- **Continuous motion at configurable speed.** Default tune-live; share user-options entry with map-cursor speed.
 
-**Click-to-walk:**
-- A hotkey (TBD — could be same V to "walk and exit", or a separate dedicated key) hands cursor's world position to the cross-cutting guidance service (auto-walk + audio beacon).
-- Effectively reproduces the sighted "click somewhere on screen to walk there" interaction.
+**Walkmesh collision:**
+- Per-tick check on the cursor's tentative target position. If the segment from `cursor_pos` to `cursor_pos + delta` crosses a walkmesh edge (data already cached from Pillar 1's `BuildAreaWallCache`), block movement and emit a **collision cue** at the wall point. Cue resref TBD; reuse Pillar 1's `NavCue::Wall` for the first cut.
+- Cursor's reachable region = current room + open doorways into adjacent rooms (matches sighted line-of-sight from the character's standpoint).
+- Spoiler-safe by construction: cursor can't pass through walls into undiscovered rooms.
+
+**Per-tick narration of the object under / nearest the cursor:**
+- Run our own filter pass each tick (same `filter::ObjectMatches` + `engine_area::AreaObjectIterator` shape Pillar 4 uses), find the closest matching object within a small radius (~1m) of `cursor_pos`. On change of "object nearest cursor", speak its localised name + kind via Tolk.
+- TTS rate-limit: hover-pause-debounced (~300 ms quiet → speak), pattern from `turn_announce.cpp`'s stability-debounce. Avoids spam during continuous sweep.
+- This replaces the original 2026-05-03 "tooltip / `ShowExamineBox`" plan — that plan needed engine cursor surfaces we already proved unreachable in lay-off 9. Our own filter pass over the existing object iterator gives the same information without depending on engine cursor state.
+
+**World audio as a free spatial probe (consequence of the listener override):**
+- Because `CExoSound`'s listener position is global, overriding it to the cursor pans + attenuates *all* 3D audio in the engine relative to the cursor: ambient room tones, machinery hums, water drips, NPC chatter, door creaks, our own cues. Moving the cursor naturally creates a "scan with your ears" experience without us authoring continuous loops.
+- The original 2026-05-03 plan to author per-object findability loops becomes unnecessary in the first cut — the engine's existing audio bed already provides spatial probing once the listener follows the cursor. Revisit only if live testing shows the engine's audio bed is too sparse for useful scanning (in which case we'd add author-time looped sources on key interactables).
+- Side-effects to be aware of:
+  - 2D audio (UI, music, scripted cinematic VO) is unaffected — doesn't use listener pose.
+  - 3D-positioned NPC dialogue pans to the speaker relative to cursor; not a concern because view mode is intended for non-dialogue exploration.
+  - Distance falloff cuts sound to silence past range — desirable for "scan and hear what's nearby"; in practice means cursor-far sources fade out, which is exactly what scanning wants.
+  - The engine writes the listener every frame from the camera. Our override has to land *after* the engine's write each tick, or it gets stomped. Hook into `OnUpdate` late enough; verify with an in-game probe before committing the override.
+
+**Click-to-walk (autowalk handoff from view mode):**
+- **Hotkey: Enter** while view mode is active.
+- **Resolution order:**
+  1. If the cursor's "object nearest cursor" filter has a current target → autowalk to that object (`acc::guidance::UseObject(handle)` if the kind has a USE action; `WalkTo(object_pos)` otherwise).
+  2. Else → autowalk to the cursor's current world position (`acc::guidance::WalkTo(cursor_pos)`).
+- Resolves the "I noticed something interesting → walk to it" flow and the "I want to walk to that point in the room" flow with one key.
+- Reuses existing primitives (`guidance/autowalk` + `interact_hotkey`'s pre-roll speech shape); the only new piece is the view-mode-active gate on Enter routing and the cursor-position fallback path.
 
 **Pillar 1 interaction:**
-- Pillar 1 wall tones don't need explicit suspension — character is stationary in view mode, no distance deltas, no cues fire naturally.
-- Collision cue is a *cursor-triggered*, view-mode-only cue, separate from Pillar 1's character-anchored cues.
+- Character is stationary → no Pillar 1 cues fire from the character (no distance deltas, no foremost-in-front change). Pillar 1 effectively goes silent at the character.
+- Pillar 1's per-tick scan continues running but its outputs route through the (now-cursor-anchored) listener — so any cue that *did* fire would be spatialised relative to cursor, which is correct.
+- Collision cue is a *cursor-triggered*, view-mode-only cue, distinct from Pillar 1's character-anchored cues. Same WAV vocabulary may be reused (`NavCue::Wall`) since the semantic event is identical.
 
-### Hint — re-evaluate engine "Mouse Look" setting at view-mode design (drafted 2026-05-04)
+### Engineering basis
 
-KOTOR 1 has a vanilla Options-menu toggle **"Mouse Look"** that swaps the default role of the mouse:
+- Walkmesh edges cached at area-load via `engine_area::BuildAreaWallCache` (Phase 3 lay-off 1 — already shipped).
+- Object iteration via `AreaObjectIterator` + `filter::ObjectMatches` (Phase 2 lay-off 2 — already shipped).
+- Listener override APIs: `CExoSound::SetListenerPosition @0x5d5df0`, `SetListenerOrientation @0x5d5de0`, backing field `CExoSoundInternal.listener_position +0x98` (investigation Q8 — confirmed in decomp).
+- Player-input freeze: `CSWPlayerControl::SetEnabled @0x6792e0`, with `armAutoRestore=false` for sustained mode (Phase 4 lay-off 3 — already shipped).
+- Native A/D camera rotation: stock engine path runs unconditionally; no hook needed (memory `project_player_control_toggle.md` — verified at lay-off 3).
+- Autowalk + interact handoff: `acc::guidance::WalkTo` / `acc::guidance::UseObject` (Phase 2 lay-offs 5, 6, 9b — already shipped).
 
-- **OFF** (default): mouse is a screen cursor, RMB-held rotates the camera.
-- **ON**: mouse rotates the camera continuously (FPS-style); RMB-held releases the cursor for clicking.
-
-Phase 1 lay-off 4 verified the audio listener is **camera-anchored** (audible pan responds to A/D camera rotation). With Mouse Look ON, the *mouse* effectively drives the camera — and therefore drives the listener — and the cursor's conceptual position is always "the centre of view".
-
-For view mode this is a near-perfect free ride:
-
-- Mouse motion → camera rotation → listener rotation → soundscape repositioning. The user "sweeps" the soundscape with the mouse.
-- Whatever the camera centres on is what the cursor is "over". Hovering an interactable means the soundscape is centred on it (panel/distance audio collapses to centre).
-- A single click activates it (engine's native click pipeline — same as in-world).
-
-So the view-mode plan above (virtual cursor moved by bound movement actions, walkmesh-bounded, our own collision cue) **may be replaceable with**: "force Mouse Look ON for the duration of view mode, let the engine's mouse-driven camera be the cursor". Significantly less code; reuses engine surfaces we already verified.
-
-**Action item when view-mode lay-offs begin:**
-1. Read the Mouse Look toggle state via `CClientOptions` (engine ini surface; address near +0xb0 `mouseCameraRotateToggle` per Lane's DB structures).
-2. Try toggling it ON inside view mode and OFF on exit.
-3. If the soundscape rotates with mouse + cursor visually centres on the camera focus, the engine has done 90% of view mode for us.
-4. Walkmesh-bounded cursor + collision cues become "obstacle cues that fire when the camera ray hits a wall" rather than virtual-cursor-collision.
-
-If this works, it also dovetails with click-to-walk: "click while in view mode" goes through the same engine pipeline as a normal sighted click — same blocker as our current Enter dispatch, but if we've solved that by Phase 4, view mode click-to-walk is free too.
-
-If it doesn't (e.g. Mouse Look is incompatible with our screen-reader workflow, or the engine doesn't expose the toggle to script), fall back to the original virtual-cursor design above.
+The novel work for view mode is just (a) cursor-position state machine + walkmesh-bounded W/S/strafe translation, (b) per-tick listener override, (c) cursor-yaw read-back from engine camera each tick, (d) hover-pause-debounced "object nearest cursor" narration, (e) Enter routing gated on view-mode-active. All other primitives exist.
 
 ### Open sub-questions for view mode
 
-- Cursor speed / fluidity values (likely same as map-cursor; tunable in user options)
-- ~~Which objects get continuous loops~~ — **resolved direction:** reuse engine's curation. Filter = objects in passive-selection range AND with tooltip/cursor-type set. No new "is this important" classifier needed. Final tuning live.
-- Click-to-walk key choice (V again, or separate key)
-- Per-cursor-tick TTS strategy (hover-pause-debounced vs continuous)
+- **Cursor speed / fluidity values.** Default likely matches map-cursor when that ships; tune live. User-options-overridable later.
+- **Strafe key choice.** Z/C? User's actual keybinds? Defer to first lay-off that ships strafe; not blocking the forward-back-turn first cut.
+- **Listener-override OnUpdate ordering.** Engine writes listener per frame from camera; our override must land after. Probe in-game before the override commits to behaviour code.
+- **Per-tick hover-pause debounce constant.** ~300 ms borrowed from `turn_announce`; tune live.
+- **Collision cue resref.** Reuse `NavCue::Wall` first; consider a distinct WAV later if it conflicts with Pillar 1's wall identity.
+- **Z height policy if cursor crosses an elevation boundary.** First cut: cursor stays at character Z; collision blocks any segment that crosses a walkmesh edge regardless of Z. Refinement (sample walkmesh height under cursor) deferred.
 
 ### Engine curation sources we reuse (don't reinvent)
 
@@ -408,8 +418,11 @@ Four sub-features, all reading from existing engine state:
 - 2026-05-03 — Pillar 2 includes: room-transition announcement, area-transition announcement (load + arrive), optional octagonal direction-on-turn (default OFF), on-demand hotkey for degrees / zone-hierarchy.
 - 2026-05-03 — Zone hierarchy is typically 3 levels (room → area → planet) in KotOR; not always 4. Announcement adapts to what's available.
 - 2026-05-03 — Auto octagonal direction-on-turn defaults **ON** (user preference; disable available in user options for users who dislike it).
-- 2026-05-03 — **View mode** added to Pillar 2: toggle key (V), virtual cursor starts at character, walkmesh-bounded with collision cue, optional continuous object findability sounds, click-to-walk via guidance service. Reproduces sighted "stop and look around" experience. Distinct from Pillar 4 cycle (discrete list) and Pillar 3 map-cursor (2D map).
-- 2026-05-03 — View mode is the **only context where continuous ambient cues are appropriate** — user opted in via mode toggle. Normal play remains change-driven per Pillar 1's locked model.
+- 2026-05-03 — **View mode** added to Pillar 2: virtual cursor starts at character, walkmesh-bounded with collision cue, click-to-walk via guidance service. Reproduces sighted "stop and look around" experience. Distinct from Pillar 4 cycle (discrete list) and Pillar 3 map-cursor (2D map).
+- 2026-05-03 — ~~View mode is the only context where continuous ambient cues are appropriate — user opted in via mode toggle.~~ **Superseded 2026-05-06**: continuous author-time loops are no longer the primary findability mechanism — listener override to cursor turns the engine's existing 3D audio bed (ambient, NPC, machinery, etc.) into the scanning probe for free. Author-time loops parked as a fallback if live testing shows the bed is too sparse.
+- 2026-05-06 — **View mode locked** as: virtual cursor (our own pos+yaw state) + per-tick listener override to cursor + engine camera tracks cursor heading via stock A/D rotation. Hotkey **B** (V is "Solo Mode" — taken). W/S translate cursor forward/back along its heading; A/D rotates engine camera and we read yaw back. Walkmesh-bounded with collision cue. Per-tick "object nearest cursor" narration with hover-pause debounce (~300ms). Enter = autowalk to object-under-cursor or, if none, to cursor world position.
+- 2026-05-06 — **Engine camera translation rejected** (vs. the virtual-cursor approach). KOTOR's `CSWCameraOnAStick` is leashed; `CSWCameraFreeLook` exists in the binary but is unreachable via Caps Lock probe (likely cut content). Free-flying via behaviour swap or Control-hook is high-cost and uncertain. Engine click pipeline already proved non-free at Phase 2 lay-off 9, so a co-located camera wouldn't earn back the cost. Virtual cursor is the cheap, reliable path; engine cooperation needed only for `SetListenerPosition`.
+- 2026-05-06 — **Mouse Look forcing for view mode rejected.** Phase 4 lay-off 2 probe confirmed the engine bit-flip + `SendInput` works, but the user's blind audio test at lay-off 3 showed forced Mouse Look with synthetic deltas was less reliable than just driving the cursor + listener override directly. Mouse Look state is left untouched in view mode.
 
 ### Calibration anchor
 

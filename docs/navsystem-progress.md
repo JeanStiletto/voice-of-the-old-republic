@@ -12,7 +12,7 @@
 - **Phase 1 — Foundation.** *Complete (2026-05-03).* All planned lay-offs landed: `engine_player` (1), CExoSound singleton trace (2), `audio_bus` (3), test fixture + exit gate (4), atmospheric-pass curation + `audio_cues.h` wiring (5), `core_settings` stub (7). Lay-off 6 (`audio_listener`) was dropped at lay-off 4 — engine default listener proved camera-anchored at the gate.
 - **Phase 2 — Playable baseline.** *Complete (2026-05-05).* Lay-offs 1-9 + 6a + 7a + 7b all verified in-game; lay-off 8 (dedicated exit-gate playthrough) skipped per user — same-session verification covered the gate criteria. Player-control-mode blocker resolved 2026-05-04 (commit `d578fbe`); toggle is `CSWPlayerControl::SetEnabled @ 0x006792e0`, wraps a creature-mode write that pairs with `CSWCCreature::SwitchMode`; flip 0 around AI-action dispatch and the per-tick input handler skips the movement-clobber block. Interact path re-routed away from the engine's two-click `HandleMouseClickInWorld` pipeline to a direct `CSWSObject::AddUseObjectAction @ 0x0057c810` call — same primitive NWScript's `ActionInteractObject` uses. Architectural picture: in-world target cycle delegated to engine's Q/E (`SelectNearestObject @0x005fb050`) → `LastTarget` → `passive_narrate`; A/D camera-direction announce; W character-facing announce; cycle (`,`/`.`) reassigned to map-side scan (Pillar 3, Phase 5/6). Pillar 2 transitions: area announce + room announce with stability-dedup (`kRoomStabilityTicks=5` ≈ 80ms), three-tier room resolution (landmark cache via CSWSWaypoint.map_note → human-readable room_name → "Raum N" fallback), pre-load destination announce hooked at `SetMoveToModuleString @0x004aecd0`. User-validated decision (2026-05-04): keep the high-volume "Raum N" announcements as-is — KOTOR's room model is layout-geometry / occlusion-culling chunks (not RPG-named rooms), Bioware places map_notes only at significant landmarks; high-frequency announces still carry "you're moving through space" signal. Revisit if intrusive after more playtime.
 - **Phase 3 — Pillar 1.** *In progress (started 2026-05-05).* Lay-offs 1-3 verified in-game 2026-05-05. **Lay-off 1** (walkmesh-edge extraction): 405-908 edges per area, no SEH faults. **Lay-off 2** (`audio_cue_player`): per-kind toggle + range gate; debounce gate landed initially then removed (was silencing 84% of wall cues — backstop interfered with normal operation). **Lay-off 3** (`spatial_change_detector` — Trigger 1): four iterations in-session pinned the design — calibration tick (kills entry-flood on save-load), K-cap (max 3 walls/tick), spatial 1m dedup (rejected; replaced by sectors), and finally **sector-based selection** matching the user's stated intuition: bin candidates into 4 character-relative sectors (Front/Left/Back/Right, 90° each), pick closest in each, fire K closest reps. K-saturation dropped from 60% → 15% of active ticks; 79% of ticks fire 1-2 spatially-distinct walls instead of 3 same-wall fragments. Wall cue resref swapped from `fs_dirt_hard1` (footstep, masked by player's own footsteps) to `gui_select` (UI beep, audibly distinct). User reports walls "might be more usable but still not sure" — combat-audio masking + curation choice are tuning concerns parked for next session, not implementation bugs. Remaining: `spatial_front_cone` (Trigger 2), `audio_footstep_suppress`, exit-gate free-walk test, plus user-noted out-of-plan tuning ideas.
-- **Phase 4 — Pillar 2 polish + view mode.** *In progress (started 2026-05-06).* Most of the plan's Phase 4 surface landed early during Phase 2 (octagonal compass on turn, A/D camera direction, room+area transitions). **Lay-off 1**: `announce_degrees` — AltGr speaks exact compass-frame heading. Verified 2026-05-06. **Lay-off 2** (this session): view-mode "Mouse Look" probe — strong positive. `CClientOptions.mouse_look` (bitfield int @+0x8 mask 0x2, reachable via AppManager → CClientExoApp → CClientExoAppInternal+0x4 → CClientOptions) IS the runtime gate; flipping it from our DLL takes effect immediately without menu interaction. `SendInput`-injected relative-motion deltas DO reach the engine through Mouse Look ON and rotate the camera; the camera-anchored listener then pans spatial audio audibly. View-mode design path locked: lightweight orchestration over engine's existing Mouse Look (force ON, synthesise mouse motion from look-around keys, ride existing audio plumbing) instead of building a virtual cursor with walkmesh-bounded movement. Cursor-escape gotcha noted: KOTOR doesn't capture the cursor in Mouse Look mode, so view-mode lay-offs need explicit `SetCursorPos` recentring between emits. Remaining: lay-offs 3+ for the actual view-mode build-out + zone-hierarchy half of sub-feature D (deferred from lay-off 1).
+- **Phase 4 — Pillar 2 polish + view mode.** *In progress (started 2026-05-06; lay-off 4 partial — listener stomp identified, rework next).* Most of the plan's Phase 4 surface landed early during Phase 2 (octagonal compass on turn, A/D camera direction, room+area transitions). **Lay-off 1**: `announce_degrees` — AltGr speaks exact compass-frame heading. *Closed 2026-05-06, verified.* **Lay-off 2**: Mouse Look probe — strong positive (engine reacts to `CClientOptions.mouse_look` bit-flip + `SendInput`); path subsequently rejected at lay-off 3 in favour of `SetPlayerInputEnabled(false)`, then **rejected for view mode entirely** at the 2026-05-06b design lock when listener-override replaced camera-driven Mouse Look as the spatial mechanism. **Lay-off 3**: view-mode skeleton — B toggles `SetPlayerInputEnabled(false, armAutoRestore=false)` lifecycle; W/S character-snap suppressed, A/D rotates camera natively. *Closed 2026-05-06, verified in-game.* **Lay-off 4a**: T2 cone tracks camera in view mode — Pillar 1 Trigger 2's foremost-in-front cone follows camera yaw while view mode is active, so the cone scans where the player is looking during stationary inspection. *Closed 2026-05-06 (commit `81ff451`); UNVERIFIED in-game — verify alongside lay-off 4.* **2026-05-06b — view mode design locked** (see `docs/navsystem-longterm-plan.md` "Mechanics — view mode (locked 2026-05-06)" + this doc's "Lay-off plan" section): three-layer model = virtual cursor (`Vector cursor_pos` + `float cursor_yaw`, our state) + per-tick `CExoSound::SetListenerPosition(cursor_pos)` override + engine camera tracks cursor heading via stock A/D. Original 2026-05-03 "listener overridden to character body" was never implemented (Phase 1 lay-off 4 dropped it; engine default camera-anchored proved sufficient at the gate); reality reconciled in long-term plan 2026-05-06b. **Remaining: lay-off 4** (virtual cursor core — cursor state, listener override, walkmesh collision, hover-pause object narration; full plan in this doc's "Next session — lay-off 4 plan" subsection) + **lay-off 5** (Enter routing → autowalk to object-under-cursor or cursor world position).
 - **Phase 5 — Pillar 3 polish.** Pending.
 - **Phase 6 — Map markers & nice extras.** Pending.
 - **Phase 7 — User options UI.** Deferred per plan.
@@ -36,11 +36,80 @@ Pillar 2 polish — orientation/zone announcement on demand — plus the new "vi
 ### Lay-off plan
 
 1. **`announce_degrees` (Pillar 2 sub-feature D — plain press half).** AltGr speaks current compass-frame degrees. *Closed 2026-05-06 — verified in-game.* Zone-hierarchy half (Shift+AltGr / etc.) deferred; not requested in this lay-off.
-2. **View mode — Mouse Look probe.** Read/write `CClientOptions.mouse_look`; toggle from hotkey; inject synthetic mouse sweep with `SendInput`; observe spatial-audio pan. *Closed 2026-05-06 — strong positive.* Engine reacts to runtime bit-flip + synthetic deltas; view-mode design path locked to lightweight Mouse Look orchestration (see lay-off log entry below for the chain + offsets, and below for the resulting next-up lay-offs).
-3. **View-mode skeleton — `view_mode.{h,cpp}`.** *Closed 2026-05-06 — verified in-game.* B toggles `SetPlayerInputEnabled(false, armAutoRestore=false)` lifecycle. A/D camera-pan + Q/E target-cycle work natively without intervention; the freeze on W/S is sufficient. Mouse Look forcing + cursor recentring + Free Look behavior swap all proved unnecessary after the blind A/D audio test. Hotkey B (V is "Solo Mode" in stock kotor.ini, taken). Shift+B snapshot probe of `CClientOptions` retained as a cheap diagnostic.
-4. **Click-to-walk in view mode.** Pressing Enter while in view mode hands the focused target (cycle's `focusedObj` or `LastTarget` fallback) to the existing autowalk path (`acc::guidance::WalkTo`) — closes the "I noticed something interesting while looking around → walk to it" experience. Mostly composes existing primitives (cycle focus, `interact_hotkey` shape, autowalk wrapper); the only new piece is "view-mode-active gate on Enter routing".
+2. **View mode — Mouse Look probe.** Read/write `CClientOptions.mouse_look`; toggle from hotkey; inject synthetic mouse sweep with `SendInput`; observe spatial-audio pan. *Closed 2026-05-06 — strong positive.* Engine reacts to runtime bit-flip + synthetic deltas. **Path subsequently rejected at lay-off 3** in favour of the simpler `SetPlayerInputEnabled(false)` primitive; revisited again 2026-05-06b and **rejected for view mode entirely** when the locked design moved to listener-override (no need to drive the camera via mouse).
+3. **View-mode skeleton — `view_mode.{h,cpp}`.** *Closed 2026-05-06 — verified in-game.* B toggles `SetPlayerInputEnabled(false, armAutoRestore=false)` lifecycle. Hotkey B (V is "Solo Mode" in stock kotor.ini, taken). Shift+B snapshot probe of `CClientOptions` retained as a cheap diagnostic.
+4a. **T2 cone tracks camera in view mode.** *Closed 2026-05-06 (commit `81ff451`, marked UNVERIFIED in-game).* Piggybacked on lay-off 3's `view_mode::GetEffectiveOrientationYawDegrees` getter; Pillar 1 Trigger 2's foremost-in-front cone follows camera yaw while view mode is active, so the cone tracks where the player is *looking* during stationary scan, not where the character is statically facing. Verify in-game alongside lay-off 4.
+4. **Virtual cursor core (locked-design implementation).** *Partial 2026-05-06 — cursor + collision + hover narration verified in-game; listener override stomped by engine camera-driven write per probe. Rework planned: detour the camera→listener write site so our cursor-override lands after.* Promotes the lay-off-3 skeleton from "freeze W/S" to the real Pillar 2 view mode: virtual cursor state (`Vector cursor_pos` + `float cursor_yaw`), W/S translation along heading, A/D yaw read-back from engine camera, walkmesh-bounded movement with collision cue, listener override to cursor (`CExoSound::SetListenerPosition` per tick — currently stomped, see lay-off log), object-nearest-cursor narration with hover-pause debounce.
+5. **Click-to-walk Enter routing.** *Pending — outline below.* Enter while view mode is active resolves to (a) `UseObject(handle)` if the cursor has a nearest-object target with a USE action, (b) `WalkTo(object_pos)` if it has a target without one, (c) `WalkTo(cursor_pos)` otherwise. Auto-exits view mode so the autowalk can run.
 
-(Lay-offs renumbered 2026-05-06 over the course of lay-off 3's three in-game iterations: original lay-off 4 "Q/E look-around" → not needed, engine A/D is the look-around primitive. Original lay-off 5 "auto-exit on WASD" → not needed, WASD-in-view-mode is intentional camera-pan. Original lay-off 6 "vertical look" → not needed, A/D yaw covers the room-scan case. Original lay-off 7 "click-to-walk" → renumbered to 4.)
+(Lay-off plan reframed 2026-05-06b after the view-mode design lock — see `docs/navsystem-longterm-plan.md` "Mechanics — view mode (locked 2026-05-06)". Original lay-off 4 "Click-to-walk via cycle's focusedObj / LastTarget" is rejected: that was the old design where view mode = "freeze W/S, ride engine cycle focus". The locked design has its own cursor target, so Enter routing becomes lay-off 5 and the cursor itself is the new lay-off 4. Lay-off 4a numbering preserved to keep the existing commit's reference stable. Earlier renumbering history: original lay-off 4 "Q/E look-around" → not needed at lay-off 3, engine A/D is the look-around primitive. Original lay-off 5 "auto-exit on WASD" → not needed, WASD-in-view-mode is intentional cursor input. Original lay-off 6 "vertical look" → parked, room-scale Z-locked cursor is sufficient for first cut.)
+
+### Next session — lay-off 4 plan (drafted 2026-05-06)
+
+**Goal of the session:** lay-off 3's skeleton (B-toggle + W/S freeze) becomes a usable view mode — the user enters view mode, "walks around" with WASD, hears the world reposition relative to the cursor, hears object names as the cursor sweeps past them, hears a collision cue when the cursor hits a wall. One commit, one in-game verification, the same shape as lay-off 3.
+
+**Order of work within the session:**
+
+1. **Investigation: listener-override OnUpdate ordering** *(probe-first, ~30 min budget)*. The engine writes `CExoSoundInternal.listener_position +0x98` every frame from the camera. Our override has to land *after* the engine's write or it gets stomped. Probe shape: in `view_mode::Tick()`, write a sentinel position `(999, 999, 999)` once per second; on the next tick, read the field back and log it. If still `(999, 999, 999)` → engine doesn't overwrite mid-frame → we're free to write from `OnUpdate`. If reverted → we're racing; pivot to either (a) hooking the camera→listener write site, or (b) finding a later-ticking call site. The probe is a throwaway diagnostic; rip it out before committing the behaviour.
+   - Engine surfaces: `CExoSound::SetListenerPosition @0x5d5df0` (read + write via the singleton), backing field `+0x98`, instance via `CExoSound::GetInstance` (singleton — investigation §Q8 has the chain).
+   - Fallback if probe shows racing: xref `SetListenerPosition` in Lane's gzf to find the camera-driven call site and hook there. Adds RE budget but doesn't blow up the lay-off — the locked design depends on this working.
+
+2. **Cursor state + W/S translation.** Add to `view_mode.cpp`'s anonymous namespace: `Vector g_cursor_pos`, `float g_cursor_yaw`, `DWORD g_last_tick_ms`. Initialise in `EnterViewMode` from `GetPlayerPosition` + `GetPlayerYawDegrees`. New `Tick()` runs from `OnUpdate` (after `PollWin32`):
+   - `dt = (now - g_last_tick_ms) / 1000.0f`; cap at e.g. 0.1s to handle frame stalls.
+   - Read held W/S via `GetAsyncKeyState('W')`, `GetAsyncKeyState('S')` (foreground-window-gated like the existing pollers).
+   - Read engine camera yaw via `acc::camera_announce::TryGetCameraEngineYawDegrees(out)` — already exists, no new RE. Update `g_cursor_yaw`.
+   - Compute `forward = (cos(yaw_rad), sin(yaw_rad), 0)`; `tentative = g_cursor_pos + forward * speed * dt * (W ? +1 : S ? -1 : 0)`.
+   - Walkmesh-bounded segment test: see step 3.
+   - Speed default `2.0 m/s` (matches KOTOR walk speed); single user-options knob shared with future map-cursor speed.
+
+3. **Walkmesh collision.** New helper in `engine_area.{h,cpp}` (or `walkmesh_collision.{h,cpp}` if it grows): `bool SegmentCrossesWalkmesh(const Vector& a, const Vector& b, Vector& outHitPoint)`. Walks the cached `WallEdge[]` (`engine_area::GetCachedWallEdges()` if not exposed, expose it; lay-off 3's Phase 3 cache is the source). 2D segment-vs-segment intersection (XY plane); ignore Z. Returns nearest hit along `a→b` if any. If `Tick()` gets a hit, set `g_cursor_pos` to just before the hit point (e.g. 5 cm back along the segment) and emit a collision cue at the hit point via `acc::audio::PlayCue3D(NavCue::Wall, hit_pt)`. Else `g_cursor_pos = tentative`.
+
+4. **Listener override.** New helper in `audio_bus.{h,cpp}` (extend it; don't add a new file): `void SetListener(const Vector& pos)`. Calls `CExoSound::SetListenerPosition` via the singleton chain (engine_offsets has the address; investigation Q8 has the chain). `view_mode::Tick()` calls it every tick while active, after the cursor update. On exit, no explicit restore — engine reclaims the listener field next frame.
+
+5. **Object-nearest-cursor narration.** Per-tick: walk `AreaObjectIterator`, pass each object through `acc::filter::ObjectMatches`, compute distance from `g_cursor_pos`, track closest within ~1.0m radius. Hover-pause debounce three-variable pattern from `turn_announce.cpp` (`last_spoken`, `pending`, `pending_changed_at`); fire only when pending stable for ~300ms AND differs from last-spoken. Speak localised name via Tolk on fire (resolve through the same per-kind name path `passive_narrate` already uses; reuse the empty-name fallback).
+
+6. **Wire `Tick()` into `OnUpdate`.** Add `acc::view_mode::Tick()` after `acc::view_mode::PollWin32()` in `menus.cpp`. `Tick()` self-gates on `IsActive()`.
+
+**Files touched (expected):**
+
+- `patches/Accessibility/view_mode.{h,cpp}` — major expansion: cursor state, `Tick()`, hover-pause debounce, collision cue dispatch.
+- `patches/Accessibility/audio_bus.{h,cpp}` — add `SetListener(const Vector&)` helper + chain walk to `CExoSoundInternal.listener_position`.
+- `patches/Accessibility/engine_area.{h,cpp}` — expose cached wall edges (if not already public) + `SegmentCrossesWalkmesh` helper.
+- `patches/Accessibility/menus.cpp` — wire `view_mode::Tick()` into `OnUpdate`.
+- `patches/Accessibility/strings.{h,_de.cpp,_en.cpp}` — only if new user-facing strings are needed; the cursor-narration path can reuse existing per-kind localisations.
+
+**In-game verification (single end-to-end test):**
+
+1. Boot to Endar Spire, load a save in any explored room.
+2. Press B → "View mode on". Character should freeze.
+3. Hold W → ambient audio should reposition (machinery hum, water drip, etc.) as the cursor advances. The user should hear the soundscape "walk forward" without the character moving.
+4. Press A or D → camera rotates → cursor heading rotates with it. Hold W after rotating → cursor advances in the new direction; soundscape repositions accordingly.
+5. Drive cursor toward a known wall → collision cue fires → cursor stops short. Holding W against the wall: continuous collision cues at sensible cadence (per-tick is too spammy; debounce or only fire on first contact — tune live).
+6. Drive cursor near a door / NPC / container → after ~300ms hover, name spoken.
+7. Press B again → "View mode off". Listener returns to camera (engine reclaims). Character control restored.
+
+**Pre-commit gates:**
+- All seven steps audibly behave as expected (per `feedback_no_untested_commits`).
+- Listener-override probe removed from the build.
+- Build clean (no new warnings; .cpp count reflects additions).
+- Logs at full fidelity per `feedback_log_no_rate_limits` (every cursor tick + every collision + every narration event in `kdev logs`).
+
+### Lay-off 5 outline (drafted 2026-05-06)
+
+Pending lay-off 4 verification. Smaller than lay-off 4 — pure routing on top of existing primitives.
+
+- **Activity:** add Enter rising-edge handling inside `view_mode::Tick()` (or a dedicated `view_mode::PollEnter()` if cleaner). Resolution order:
+  1. If lay-off 4's "object nearest cursor" tracker has a target *and* the kind has a USE action (Door / Container / Item / NPC-talk) → `acc::guidance::UseObject(handle)`.
+  2. Else if it has a target (placeable / waypoint without USE) → `acc::guidance::WalkTo(object_pos)`.
+  3. Else → `acc::guidance::WalkTo(g_cursor_pos)`.
+  4. In all three cases: speak pre-roll (reuse `interact_hotkey`'s string shape) + auto-exit view mode so the autowalk runs against the unfrozen character.
+- **Coordination with `interact_hotkey`:** existing `interact_hotkey::PollWin32` handles Enter when view mode is *not* active. Gate: out-of-view-mode Enter falls through to `interact_hotkey`; in-view-mode Enter routes to `view_mode`'s dispatcher first. Single-source-of-truth gate via `view_mode::IsActive()`.
+- **Files touched (expected):** `view_mode.{h,cpp}` (Enter dispatcher), `interact_hotkey.cpp` (gate addition), `menus.cpp` (no change if Tick wiring already covers it), strings if pre-roll needs view-mode-specific phrasing.
+- **In-game verification:**
+  1. View mode + cursor toward door → name spoken → Enter → "Going to door" + autowalk + door opens. View mode auto-exits.
+  2. View mode + cursor in open space (no nearby object) → Enter → autowalk to cursor location. View mode auto-exits.
+  3. Out of view mode → Enter on existing focused target → unchanged `interact_hotkey` flow.
+- **No new RE.** All primitives (`UseObject`, `WalkTo`, view-mode active gate) exist.
 
 ### Lay-off log
 
@@ -199,6 +268,44 @@ Original lay-off plan had 7 lay-offs total; reduced to **4** (lay-offs 1, 2, 3, 
 - **Original lay-offs 4 "Q/E look-around" and 7 "click-to-walk" merged into the new lay-off 4.** Q/E target-cycle is engine-native (no work needed); click-to-walk in view mode (Enter on focused target → autowalk) is the only remaining feature work.
 
 Discipline: shipped over three in-game iterations in a single session — first tried Mouse Look forcing, pivoted to `SetPlayerInputEnabled` after blind audio test revealed the simpler primitive, finally fixed the auto-restore-timer interaction. Final shape is 4 commits-worth of work in one session, but the design pivots are exactly what the lay-off discipline expected to surface.
+
+**Lay-off 4** — virtual cursor core. *Partial 2026-05-06 — cursor + collision + hover narration verified in-game; listener override stomped by engine, rework next session.*
+
+Three of the four cursor mechanics work as designed; the fourth — listener override — failed the probe and needs a hooked write site.
+
+What works (`patch-20260506-125543.log`):
+
+- **Cursor lifecycle.** B enters at player position; W translates the cursor along the camera-yaw heading; A/D rotates the camera (`camera_announce::TryGetCameraEngineYawDegrees`) and the cursor's heading reads back from it on the next W step. Log line `ViewMode: ENTER cursor=(39.21,136.41,-0.00) yaw=245.0`.
+- **Walkmesh collision.** New `engine_area::SegmentCrossesWalkmesh` (2D segment-vs-perimeter-edge in XY plane) walks the existing per-area wall cache via the new `spatial_change_detector::GetCachedWalls` accessor. On hit the cursor clamps 5 cm short of the intersection and emits `NavCue::Wall` at the hit point with a 250 ms quiet window. Log: `ViewMode: collision at (41.39,139.26,0.00) cursor clamped to (41.37,139.27,-0.00)` (~4 fires/sec held against a wall — at the edge of "spammy"; tune knob lives in `kCollisionCueQuietMs`).
+- **Hover-pause narration.** `AreaObjectIterator` × `filter::ObjectMatches` × distance-from-cursor; closest-within-1.0 m wins. Three-variable debounce (`hover_last_spoken` / `hover_pending` / `hover_pending_started`) mirrors `turn_announce`'s shape, 300 ms stable window, speaks via Tolk on stable change. Log: `ViewMode: hover narrate handle=0x0000004d cat=Door name=[Tür, verriegelt] dist=0.87` and `handle=0x00000165 cat=NPC name=[end_trask] dist=0.65` — door gets the engine-resolved localised name + locked-state suffix; Trask resolves through the creature first-name path. Empty-name fallback to category label landed clean (no logs hit it in the test session, but the path is in place for unnamed placeables).
+
+What didn't work (the listener-override probe answer):
+
+- **Per-tick `CExoSound::SetListenerPosition` writes get stomped by the engine before they take effect.** The plan's step-1 probe (write `(999, 999, 999)` at end of tick T, read back at start of tick T+1) consistently logs `survived=0`; the readback shows `engine=(40.01, 136.47, 1.70)` — z=1.70 is the camera height, not the cursor (z=0). Engine writes its camera-driven listener every frame as part of its render-side update, which runs AFTER our `OnUpdate` callsite. Our `SetListener` call is correctly wired but lands on a field the engine immediately overwrites, so 3D audio (ambient, NPC voice, machinery, our own cues) is still panned and attenuated relative to the camera, not the cursor.
+- **Probe shipped intact in this commit** so the next session can validate the rework against the same diagnostic. It writes one sentinel per second + reads it back; once the rework lands and `survived=1` shows in the log, the probe block (`TickListenerProbe`, `g_probe_*`, `kListenerProbeEnabled`, `audio_bus::GetListener`) gets stripped in the same commit.
+
+Rework plan (next session): xref `SetListenerPosition @0x5d5df0` in Lane's gzf to find the camera-driven write site, install a detour there that conditionally redirects the position arg to `g_state.cursor_pos` while view mode is active. Locked-design choice: hook the camera→listener pipe, don't try to "win the race" from `OnUpdate` — there is no clean win against the engine's per-frame rewrite.
+
+Files touched (this lay-off):
+
+- `patches/Accessibility/audio_bus.{h,cpp}` — added `SetListener(const Vector&)` calling `CExoSound::SetListenerPosition @0x5d5df0`, plus `GetListener(Vector&)` reading `CExoSoundInternal.listener_position +0x98` (used by the probe; rip together once the probe is stripped). New constants `kAddrCExoSoundSetListenerPosition`, `kCExoSoundInternalListenerPosOffset`.
+- `patches/Accessibility/engine_area.{h,cpp}` — added `SegmentCrossesWalkmesh(walls, count, a, b, &outHit)` — 2D segment-vs-segment intersection over XY, returns the closest-along-a→b hit. Reuses the existing `WallEdge` struct + the change-detector's per-area cache.
+- `patches/Accessibility/spatial_change_detector.{h,cpp}` — added `GetCachedWalls(outBuf, outCount)` accessor; the cache stays owned by the change detector (built in Phase 3 lay-off 3), view mode borrows the pointer for the lifetime of the area.
+- `patches/Accessibility/view_mode.{h,cpp}` — major expansion. New `Tick()` driver: dt-clamped W/S translation along camera yaw at 2.0 m/s (matches KOTOR walk speed), foreground gate, walkmesh-bounded movement with backoff, per-tick listener override (currently stomped — see above), hover-pause narration. Throwaway `TickListenerProbe` block sits inside `Tick()` with the same `kListenerProbeEnabled` constant gating it; production callers should never see this code once stripped.
+- `patches/Accessibility/menus.cpp` — wired `acc::view_mode::Tick()` into `OnUpdate` *after* `change_detector::Tick()` (so the wall cache is fresh) and *after* `camera_announce::Tick()` (so the dead-reckoned camera yaw is current). Self-gates on `IsActive()`.
+
+In-game verification status (against the plan's seven steps):
+
+1. ✅ B → "View mode on", character freezes (per `SetPlayerInputEnabled(false, armAutoRestore=false)`).
+2. ❌ Hold W → soundscape repositions. **Failed — listener stomp.** Cursor advances + cursor logs are correct, but 3D audio stayed camera-anchored.
+3. ❌ A/D + W → soundscape repositions in new direction. **Failed — same stomp.**
+4. ✅ Cursor into wall → collision cue + clamp. Verified in log.
+5. ✅ Door / NPC hover → name spoken after ~300 ms. Verified in log.
+6. ✅ B again → "View mode off", input restored.
+
+Steps 2-3 are the listener-stomp finding. Recovery is the next-session rework, not a re-design — the locked design itself is sound; the implementation needs the right hook point.
+
+Discipline: this commit closes the "what we built" question and pins down "what we still need". The probe deliberately stays in: stripping it would mean re-adding for the rework's verification. Standalone commit (rework will be its own lay-off 4-followup commit, also containing the probe-strip).
 
 ---
 

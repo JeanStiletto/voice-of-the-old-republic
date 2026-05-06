@@ -732,4 +732,11 @@ void Tick() {
     }
 }
 
+bool GetCachedWalls(const acc::engine::WallEdge*& outBuf, int& outCount) {
+    if (g_wall_count <= 0) return false;
+    outBuf   = g_walls;
+    outCount = g_wall_count;
+    return true;
+}
+
 }  // namespace acc::spatial::change_detector

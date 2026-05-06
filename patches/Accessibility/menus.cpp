@@ -4289,6 +4289,15 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
 
     acc::spatial::change_detector::Tick();
 
+    // Phase 4 lay-off 4 — view-mode virtual cursor. Self-gates on
+    // IsActive(); idle when view mode is off. Runs *after*
+    // change_detector so the per-area wall cache is fresh (cursor
+    // collision tests against it). Order vs. camera_announce is also
+    // deliberate: cursor reads camera yaw via
+    // `camera_announce::TryGetCameraEngineYawDegrees`, which Tick()
+    // anchored a few lines above.
+    acc::view_mode::Tick();
+
     // Phase 3 lay-off 5 — Pillar 1 stuck-detection. Per-tick
     // displacement check seeds g_was_stuck for the OnPlayFootstep handler;
     // when the character has movement intent (engine drives the walk

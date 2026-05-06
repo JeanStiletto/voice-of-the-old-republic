@@ -53,11 +53,25 @@
 
 #pragma once
 
+#include "engine_area.h"  // WallEdge
+
 namespace acc::spatial::change_detector {
 
 // Per-tick entry. Self-gates on player + area resolved; self-detects area
 // change and rebuilds the wall cache + resets per-feature state on the
 // fly. Idempotent on null player / null area (silent return).
 void Tick();
+
+// Expose the in-area perimeter-wall cache built per-area-change inside
+// Tick(). Phase 4 lay-off 4 (view-mode virtual cursor) walks the same
+// edges to bound the cursor to walkable space. Returns false until the
+// first Tick() since DLL load / area-change has populated the cache;
+// `outBuf` / `outCount` are untouched on false.
+//
+// The pointer is borrowed — it points into the detector's static
+// storage and stays valid for the lifetime of the area (next
+// area-change rebuilds the buffer in place). Callers should not retain
+// the pointer across area transitions.
+bool GetCachedWalls(const acc::engine::WallEdge*& outBuf, int& outCount);
 
 }  // namespace acc::spatial::change_detector

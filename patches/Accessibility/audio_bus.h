@@ -39,6 +39,30 @@ bool PlayCue(const char* resref);
 // (investigation: not measured; tune by ear if needed).
 bool PlayCue3D(const char* resref, const Vector& worldPosition);
 
+// Override the engine's 3D-audio listener to a chosen world position.
+// Wraps `CExoSound::SetListenerPosition @0x5d5df0`, which writes
+// `CExoSoundInternal.listener_position +0x98`. The engine writes the
+// camera-driven listener every frame as part of its render-side update;
+// callers must therefore re-issue this every tick they want the override
+// to hold (see `view_mode::Tick`). On stopping the per-tick re-issue,
+// the engine reclaims the field on its next pass and 3D pan / attenuation
+// resume tracking the camera. Returns false on null singleton or SEH
+// fault inside the engine call.
+//
+// Phase 4 lay-off 4 view mode is the only consumer; if anything else
+// ever wants the override, gate against view-mode active so we don't
+// stomp each other.
+bool SetListener(const Vector& pos);
+
+// Read the engine's current listener position
+// (`CExoSoundInternal.listener_position +0x98`). Used by the lay-off-4
+// scaffolding probe to verify whether our `SetListener` write survives
+// the next engine update or gets stomped before our next tick. Returns
+// false on null singleton, null internal pointer, or SEH fault. The
+// probe call site is throwaway diagnostic code; production callers
+// should not need this — keep it private to view-mode bring-up.
+bool GetListener(Vector& out);
+
 }  // namespace acc::audio
 
 // CExoSound singleton. *kAddrCExoSoundPtr holds the live facade pointer;
@@ -60,3 +84,16 @@ constexpr uintptr_t kAddrCExoSoundPlayOneShotSound   = 0x005D5E00;
 // RET 0x28 = 40 bytes of stack args (CResRef* + Vector + 7 × 4-byte
 // slots). Dispatches identically to the 2D variant after a null-check.
 constexpr uintptr_t kAddrCExoSoundPlay3DOneShotSound = 0x005D5E10;
+
+// CExoSound::SetListenerPosition(Vector*) — __thiscall, decomp CONFIRMED
+// (investigation §"Listener pose — already managed by the engine").
+// Delegates to CExoSoundInternal; backing field at +0x98 inside the
+// internal. Used by view mode to override the listener to the virtual
+// cursor; engine re-writes every frame from the camera, so callers must
+// re-issue per tick.
+constexpr uintptr_t kAddrCExoSoundSetListenerPosition = 0x005D5DF0;
+
+// CExoSoundInternal.listener_position — Vector @+0x98 inside the
+// instance reached via *((void**)CExoSound) (CExoSound::internal at +0).
+// Read directly by GetListener; written via SetListenerPosition.
+constexpr size_t    kCExoSoundInternalListenerPosOffset = 0x98;

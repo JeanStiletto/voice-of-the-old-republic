@@ -37,7 +37,7 @@
 //   0x0063a5d0, Control at 0x00639d00) but appears unreachable via
 //   Caps Lock in the runtime path.
 //
-// Lay-off 3 ships:
+// Lay-off 3 shipped:
 // - Hotkey: B (V is "Solo Mode" in stock kotor.ini — taken; B is
 //   unbound per `docs/controls-and-input.md`).
 // - On enter: SetPlayerInputEnabled(false), speak "View mode on".
@@ -45,6 +45,24 @@
 // - Diagnostic Shift+B probe: snapshots CClientOptions bitfield + four
 //   neighbouring slots (kept from the earlier design as a cheap
 //   reusable observer; not load-bearing for view mode itself).
+//
+// Lay-off 4 (this lay-off) layers the locked virtual-cursor design on
+// top:
+// - Cursor state: `Vector cursor_pos` + `float cursor_yaw` initialised
+//   from player position / camera yaw on enter; W/S translate the
+//   cursor along `cursor_yaw`, A/D rotate via stock engine input
+//   (camera_announce reads the same engine yaw back for us).
+// - Walkmesh-bounded movement via `engine_area::SegmentCrossesWalkmesh`
+//   + Pillar 1 wall cache. On collision the cursor stops short of the
+//   wall and emits a `NavCue::Wall` cue at the hit point.
+// - Listener override every tick: `audio_bus::SetListener(cursor_pos)`
+//   so 3D audio (ambient, NPC voice, machinery, our cues) pans /
+//   attenuates relative to the cursor — the engine's "soundscape walks
+//   forward" without the character moving.
+// - Object-nearest-cursor narration: walk `AreaObjectIterator` through
+//   `filter::ObjectMatches`, find the closest in-radius object, three-
+//   variable hover-pause debounce identical to `turn_announce`'s
+//   pattern; speak the per-kind localised name once stable.
 
 #pragma once
 
@@ -82,5 +100,33 @@ bool GetEffectiveOrientationYawDegrees(float& out);
 // menus / chargen / pre-spawn). Same shape as cycle_input::PollWin32
 // and announce_degrees::PollWin32.
 void PollWin32();
+
+// Per-tick driver for the virtual cursor while view mode is active.
+// Self-gates on `IsActive()`; idle when view mode is off.
+//
+// Each call:
+//   1. Computes dt from GetTickCount() since the previous call,
+//      capped to avoid teleport-on-stall.
+//   2. Reads camera yaw via `camera_announce::TryGetCameraEngineYawDegrees`
+//      (A/D rotates camera natively in K1; we read the engine value
+//      rather than re-deriving the keys ourselves).
+//   3. Reads W/S held state via `GetAsyncKeyState`, foreground-gated.
+//   4. Steps the cursor along the heading at the configured speed
+//      (default 2.0 m/s, KOTOR walk speed); if the step crosses a
+//      walkmesh perimeter edge, clamps the cursor short of the hit
+//      point and emits `NavCue::Wall` at the hit position.
+//   5. Writes the cursor position to the engine's listener via
+//      `audio_bus::SetListener` so 3D audio repositions to the cursor.
+//   6. Walks `AreaObjectIterator` for the nearest in-radius object
+//      passing `filter::ObjectMatches`; if the same object is
+//      "hovered" continuously for kHoverPauseMs and differs from the
+//      last spoken target, speaks its localised name.
+//
+// Order of work in `OnUpdate` matters: this must run AFTER
+// `camera_announce::Tick()` (so the dead-reckoned camera yaw is
+// up-to-date this tick) and AFTER `view_mode::PollWin32()` (so a
+// rising-edge B-toggle this tick takes effect immediately, not next
+// tick).
+void Tick();
 
 }  // namespace acc::view_mode

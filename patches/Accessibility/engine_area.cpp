@@ -608,6 +608,59 @@ int BuildAreaWallCache(void* area, WallEdge* outBuf, int maxEdges) {
     return total;
 }
 
+bool SegmentCrossesWalkmesh(const WallEdge* walls,
+                            int wallCount,
+                            const Vector& a,
+                            const Vector& b,
+                            Vector& outHitPoint) {
+    if (!walls || wallCount <= 0) return false;
+
+    // Movement direction in 2D. abx/aby form the player segment; if both
+    // are ~0 the cursor isn't actually moving and there's nothing to
+    // test (avoids the divide-by-zero in the parametric formula below).
+    float abx = b.x - a.x;
+    float aby = b.y - a.y;
+    if (abx * abx + aby * aby < 1e-10f) return false;
+
+    bool   anyHit       = false;
+    float  bestT        = 1e30f;
+    Vector bestHit      = a;
+
+    for (int i = 0; i < wallCount; ++i) {
+        const WallEdge& w = walls[i];
+        float cdx = w.b.x - w.a.x;
+        float cdy = w.b.y - w.a.y;
+
+        // Standard 2D segment-segment intersection in the XY plane.
+        // Solve for parametric t (along a→b) and u (along w.a→w.b):
+        //   a + t * (b - a) == w.a + u * (w.b - w.a)
+        // → denom = abx*cdy - aby*cdx (≈ 0 means the segments are
+        //   parallel; treat as no hit — sliding-along is fine for our
+        //   cursor scale).
+        float denom = abx * cdy - aby * cdx;
+        if (denom > -1e-8f && denom < 1e-8f) continue;
+
+        float dx = w.a.x - a.x;
+        float dy = w.a.y - a.y;
+        float t  = (dx * cdy - dy * cdx) / denom;
+        float u  = (dx * aby - dy * abx) / denom;
+
+        if (t < 0.0f || t > 1.0f) continue;
+        if (u < 0.0f || u > 1.0f) continue;
+
+        if (t < bestT) {
+            bestT      = t;
+            bestHit.x  = a.x + t * abx;
+            bestHit.y  = a.y + t * aby;
+            bestHit.z  = a.z + t * (b.z - a.z);
+            anyHit     = true;
+        }
+    }
+
+    if (anyHit) outHitPoint = bestHit;
+    return anyHit;
+}
+
 void* AreaObjectIterator::Next() {
     if (!handles_ || !objectArray_) return nullptr;
     auto resolve = reinterpret_cast<PFN_GetGameObject>(
