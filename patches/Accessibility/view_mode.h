@@ -56,6 +56,24 @@ namespace acc::view_mode {
 // consume this value beyond the lifecycle sanity checks below.
 bool IsActive();
 
+// Effective orientation yaw in engine frame (0° = +X = East, CCW positive)
+// for cue systems whose semantics should follow the camera in view mode
+// and the character otherwise.
+//
+// - View mode active + camera yaw anchored → camera yaw (per
+//   `acc::camera_announce::TryGetCameraEngineYawDegrees`).
+// - Otherwise (or camera yaw not yet anchored) → player yaw
+//   (per `acc::engine::GetPlayerYawDegrees`).
+//
+// Returns false only when both readers fail (pre-spawn / area-load) —
+// caller treats that as "no cue this tick", same shape as the existing
+// `GetPlayerYawDegrees`-fail short-circuits.
+//
+// Phase 4 lay-off 4a — Trigger 2 (foremost-in-front) consumes this so
+// the cone tracks where the user is *looking* during view mode, not
+// where the character is statically facing.
+bool GetEffectiveOrientationYawDegrees(float& out);
+
 // OnUpdate per-tick poll. Reads VK_B + VK_SHIFT via GetAsyncKeyState,
 // edge-detects rising edges, and dispatches:
 //   plain B  → ToggleViewMode (skeleton enter / exit)

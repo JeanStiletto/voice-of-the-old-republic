@@ -11,6 +11,9 @@
 #include "engine_area.h"
 #include "engine_offsets.h"       // Vector
 #include "engine_player.h"        // GetPlayerPosition / GetPlayerYawDegrees
+#include "view_mode.h"            // GetEffectiveOrientationYawDegrees —
+                                  // routes T2 cone through camera yaw
+                                  // when view mode is active
 #include "filter_objects.h"
 #include "log.h"
 
@@ -411,8 +414,15 @@ void Tick() {
 
     // Hoisted yaw — used for both T1 wall-sector binning and T2 Front-cone
     // candidate detection. One read per tick.
-    float playerYaw = 0.0f;
-    if (!acc::engine::GetPlayerYawDegrees(playerYaw)) playerYaw = 0.0f;
+    //
+    // Camera yaw when view mode is active (T2 tracks where the user is
+    // looking as they pan A/D); player yaw otherwise. T1 distance-delta
+    // doesn't fire in view mode anyway (character not moving), so its
+    // sector binning riding the same value is fine.
+    float effectiveYaw = 0.0f;
+    if (!acc::view_mode::GetEffectiveOrientationYawDegrees(effectiveYaw)) {
+        effectiveYaw = 0.0f;
+    }
 
     int walls_in_range    = 0;
     int wall_candidates   = 0;
@@ -457,7 +467,7 @@ void Tick() {
             float dx = closest.x - playerPos.x;
             float dy = closest.y - playerPos.y;
             float wb = std::atan2(dy, dx) * 57.29577951308232f;
-            if (ClassifyRelativeBearing(wb - playerYaw) ==
+            if (ClassifyRelativeBearing(wb - effectiveYaw) ==
                     WallSector::Front &&
                 dist < t2_best_dist) {
                 t2_best_dist          = dist;
@@ -511,7 +521,7 @@ void Tick() {
             // World-frame bearing (atan2(dy,dx) — same convention as
             // GetPlayerYawDegrees: 0° = +X, CCW positive).
             float worldBearingDeg = std::atan2(dy, dx) * 57.29577951308232f;
-            float relBearing = worldBearingDeg - playerYaw;
+            float relBearing = worldBearingDeg - effectiveYaw;
             int s = static_cast<int>(ClassifyRelativeBearing(relBearing));
             if (sectorWinner[s] < 0 ||
                 g_candidates[i].distance <
@@ -554,7 +564,7 @@ void Tick() {
             float dx = c.closest_point.x - playerPos.x;
             float dy = c.closest_point.y - playerPos.y;
             float wb = std::atan2(dy, dx) * 57.29577951308232f;
-            WallSector s = ClassifyRelativeBearing(wb - playerYaw);
+            WallSector s = ClassifyRelativeBearing(wb - effectiveYaw);
             if (logIdx < static_cast<int>(sizeof(sector_log)) - 1) {
                 sector_log[logIdx++] = SectorTag(s)[0];
             }
@@ -599,7 +609,7 @@ void Tick() {
         // match the cycle/passive-narrate horizontal convention).
         if (t2_enabled) {
             float wb = std::atan2(dy, dx) * 57.29577951308232f;
-            if (ClassifyRelativeBearing(wb - playerYaw) ==
+            if (ClassifyRelativeBearing(wb - effectiveYaw) ==
                     WallSector::Front &&
                 dist < t2_best_dist) {
                 t2_best_dist          = dist;

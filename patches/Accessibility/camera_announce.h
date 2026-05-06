@@ -40,4 +40,19 @@ namespace acc::camera_announce {
 // in menus / chargen / pre-spawn / degenerate facing).
 void Tick();
 
+// Read the dead-reckoned camera yaw in engine frame (0° = +X = East,
+// CCW positive — same convention as `engine_player::GetPlayerYawDegrees`).
+// Returns false until the first usable in-game tick has anchored the
+// estimate (out untouched on false). Tick() must run at least once
+// per call site that wants a fresh value — the integration is ticked
+// in-line.
+//
+// Phase 4 lay-off 4a consumer: spatial_change_detector's Trigger 2
+// (foremost-in-front) reads this via view_mode::GetEffectiveOrientation
+// YawDegrees while view mode is active, so panning A/D pans the
+// foremost-in-front cone with the camera. Without this, character yaw
+// is frozen during view mode (per SetPlayerInputEnabled disable) and
+// Trigger 2 wouldn't fire as the user explores.
+bool TryGetCameraEngineYawDegrees(float& out);
+
 }  // namespace acc::camera_announce

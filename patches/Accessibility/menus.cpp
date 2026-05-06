@@ -4272,15 +4272,6 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     // wall" / "passed corner of obstacle" / "object came into range"
     // events fire cues. Self-detects area change to rebuild the wall
     // cache; self-gates on player + area resolved + Pillar 1 setting.
-    acc::spatial::change_detector::Tick();
-
-    // Phase 3 lay-off 5 — Pillar 1 stuck-detection. Per-tick
-    // displacement check seeds g_was_stuck for the OnPlayFootstep handler;
-    // when the character has movement intent (engine drives the walk
-    // anim → PlayFootstep fires) but didn't actually move, audio + visual
-    // footprint + rumble are suppressed for that step.
-    acc::audio::footstep_suppress::Tick();
-
     // Phase 2 ad-hoc — camera-direction announcement on A/D. KOTOR 1's
     // verified default control scheme: A/D rotate the *camera* around the
     // character (NOT character facing), W moves the character in the
@@ -4289,7 +4280,21 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     // observed A/D held state + 200°/s default DPS; resyncs to character
     // yaw on each character-yaw change (every W press snaps the character
     // to face camera, anchoring the estimate).
+    //
+    // Order: runs *before* `spatial::change_detector::Tick()` so the
+    // dead-reckoned yaw is up-to-date this tick. Trigger 2 reads it via
+    // `view_mode::GetEffectiveOrientationYawDegrees` while view mode is
+    // active (Phase 4 lay-off 4a).
     acc::camera_announce::Tick();
+
+    acc::spatial::change_detector::Tick();
+
+    // Phase 3 lay-off 5 — Pillar 1 stuck-detection. Per-tick
+    // displacement check seeds g_was_stuck for the OnPlayFootstep handler;
+    // when the character has movement intent (engine drives the walk
+    // anim → PlayFootstep fires) but didn't actually move, audio + visual
+    // footprint + rumble are suppressed for that step.
+    acc::audio::footstep_suppress::Tick();
 
     // Phase 2 diagnostic — Q/E/Tab logging. Engine has its own
     // target-cycle on Q/E (CClientExoAppInternal::SelectNearestObject

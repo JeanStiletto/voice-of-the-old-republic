@@ -4,6 +4,8 @@
 
 #pragma comment(lib, "user32.lib")
 
+#include "camera_announce.h"  // dead-reckoned camera yaw for view-mode
+                              // override of cue-system orientation
 #include "engine_options.h"
 #include "engine_player.h"
 #include "log.h"
@@ -141,6 +143,21 @@ void DumpCameraStateProbe() {
 }  // namespace
 
 bool IsActive() { return g_state.active; }
+
+bool GetEffectiveOrientationYawDegrees(float& out) {
+    if (g_state.active) {
+        float cameraYaw = 0.0f;
+        if (acc::camera_announce::TryGetCameraEngineYawDegrees(cameraYaw)) {
+            out = cameraYaw;
+            return true;
+        }
+        // Fall through to player yaw — happens on the very first ticks
+        // of view mode if the user toggled in before camera_announce::
+        // Tick() ran a single anchoring pass. Acceptable: T2 cone uses
+        // character yaw for one tick, then switches to camera yaw.
+    }
+    return acc::engine::GetPlayerYawDegrees(out);
+}
 
 void PollWin32() {
     auto down = [](int vk) -> bool {

@@ -81,18 +81,26 @@ void NormalizeYaw(float& yaw) {
     while (yaw >= 360.0f) yaw -= 360.0f;
 }
 
+// Dead-reckoned camera-yaw state. Lifted from function-static to
+// namespace-static (Phase 4 lay-off 4a) so `TryGetCameraEngineYawDegrees`
+// can read it without bouncing through Tick(). Tick() owns all writes;
+// the getter is read-only.
+//
+// `s_camYawCompass = -1.0f` is the "not yet anchored" sentinel — first
+// in-game tick replaces it with the live character compass yaw, and the
+// "lost player" branch resets it back to -1 so the next save / area
+// load re-anchors cleanly.
+float s_camYawCompass     = -1.0f;
+float s_lastCharCompass   = -1.0f;
+int   s_lastSpokenSector  = -1;
+int   s_pendingSector     = -1;
+DWORD s_lastChangeAt      = 0;
+DWORD s_lastSpokenAt      = 0;
+DWORD s_lastTick          = 0;
+
 }  // namespace
 
 void Tick() {
-    // -1 sentinels = "first usable tick this DLL load — initialise + suppress
-    // first speech".
-    static float s_camYawCompass     = -1.0f;
-    static float s_lastCharCompass   = -1.0f;
-    static int   s_lastSpokenSector  = -1;
-    static int   s_pendingSector     = -1;
-    static DWORD s_lastChangeAt      = 0;
-    static DWORD s_lastSpokenAt      = 0;
-    static DWORD s_lastTick          = 0;
 
     // Self-gate: silent in menus / chargen / pre-spawn / degenerate facing.
     float charEngineYaw = 0.0f;
@@ -217,6 +225,18 @@ void Tick() {
 
     s_lastSpokenSector = s_pendingSector;
     s_lastSpokenAt     = now;
+}
+
+bool TryGetCameraEngineYawDegrees(float& out) {
+    if (s_camYawCompass < 0.0f) return false;  // not yet anchored
+    // Compass → engine: engine = (90 - compass + 360) mod 360. The
+    // formula is its own inverse (same as EngineYawToCompass above)
+    // because both frames are degree-rotations on the unit circle —
+    // a 180° + sign-flip composition is involutive.
+    float engine = std::fmod(90.0f - s_camYawCompass + 360.0f, 360.0f);
+    if (engine < 0.0f) engine += 360.0f;
+    out = engine;
+    return true;
 }
 
 }  // namespace acc::camera_announce
