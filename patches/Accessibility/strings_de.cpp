@@ -88,6 +88,8 @@ const char* Get(Id id) {
         case Id::DirWest:              return "Westen";
         case Id::DirNorthwest:         return "Nord-West";
 
+        case Id::FmtCompassDegrees:    return "%d Grad";
+
         case Id::FmtSaveLoadRow:       return "%s, %s, %s, %d von %d";
         case Id::FmtSaveLoadRowNoLoc:  return "%s, %d von %d";
 

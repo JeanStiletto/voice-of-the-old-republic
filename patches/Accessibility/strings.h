@@ -220,6 +220,13 @@ enum class Id : int {
     DirWest,
     DirNorthwest,
 
+    // ---- On-demand exact-heading announce (Pillar 2 sub-feature D —
+    //      `announce_degrees`). Single `%d` argument: compass-frame
+    //      degrees in [0, 359]. German speaks "47 Grad", English speaks
+    //      "47 degrees" — using "Grad"/"degrees" rather than the "°"
+    //      glyph so screen readers pronounce it consistently.
+    FmtCompassDegrees,
+
     // ---- Save / Load game panel (CSWGuiSaveLoad).
     //      `FmtSaveLoadRow`      — row navigation with location enrichment.
     //                              Args: row_text (`%s`), planet (`%s`),

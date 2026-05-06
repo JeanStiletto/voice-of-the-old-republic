@@ -12,10 +12,59 @@
 - **Phase 1 — Foundation.** *Complete (2026-05-03).* All planned lay-offs landed: `engine_player` (1), CExoSound singleton trace (2), `audio_bus` (3), test fixture + exit gate (4), atmospheric-pass curation + `audio_cues.h` wiring (5), `core_settings` stub (7). Lay-off 6 (`audio_listener`) was dropped at lay-off 4 — engine default listener proved camera-anchored at the gate.
 - **Phase 2 — Playable baseline.** *Complete (2026-05-05).* Lay-offs 1-9 + 6a + 7a + 7b all verified in-game; lay-off 8 (dedicated exit-gate playthrough) skipped per user — same-session verification covered the gate criteria. Player-control-mode blocker resolved 2026-05-04 (commit `d578fbe`); toggle is `CSWPlayerControl::SetEnabled @ 0x006792e0`, wraps a creature-mode write that pairs with `CSWCCreature::SwitchMode`; flip 0 around AI-action dispatch and the per-tick input handler skips the movement-clobber block. Interact path re-routed away from the engine's two-click `HandleMouseClickInWorld` pipeline to a direct `CSWSObject::AddUseObjectAction @ 0x0057c810` call — same primitive NWScript's `ActionInteractObject` uses. Architectural picture: in-world target cycle delegated to engine's Q/E (`SelectNearestObject @0x005fb050`) → `LastTarget` → `passive_narrate`; A/D camera-direction announce; W character-facing announce; cycle (`,`/`.`) reassigned to map-side scan (Pillar 3, Phase 5/6). Pillar 2 transitions: area announce + room announce with stability-dedup (`kRoomStabilityTicks=5` ≈ 80ms), three-tier room resolution (landmark cache via CSWSWaypoint.map_note → human-readable room_name → "Raum N" fallback), pre-load destination announce hooked at `SetMoveToModuleString @0x004aecd0`. User-validated decision (2026-05-04): keep the high-volume "Raum N" announcements as-is — KOTOR's room model is layout-geometry / occlusion-culling chunks (not RPG-named rooms), Bioware places map_notes only at significant landmarks; high-frequency announces still carry "you're moving through space" signal. Revisit if intrusive after more playtime.
 - **Phase 3 — Pillar 1.** *In progress (started 2026-05-05).* Lay-offs 1-3 verified in-game 2026-05-05. **Lay-off 1** (walkmesh-edge extraction): 405-908 edges per area, no SEH faults. **Lay-off 2** (`audio_cue_player`): per-kind toggle + range gate; debounce gate landed initially then removed (was silencing 84% of wall cues — backstop interfered with normal operation). **Lay-off 3** (`spatial_change_detector` — Trigger 1): four iterations in-session pinned the design — calibration tick (kills entry-flood on save-load), K-cap (max 3 walls/tick), spatial 1m dedup (rejected; replaced by sectors), and finally **sector-based selection** matching the user's stated intuition: bin candidates into 4 character-relative sectors (Front/Left/Back/Right, 90° each), pick closest in each, fire K closest reps. K-saturation dropped from 60% → 15% of active ticks; 79% of ticks fire 1-2 spatially-distinct walls instead of 3 same-wall fragments. Wall cue resref swapped from `fs_dirt_hard1` (footstep, masked by player's own footsteps) to `gui_select` (UI beep, audibly distinct). User reports walls "might be more usable but still not sure" — combat-audio masking + curation choice are tuning concerns parked for next session, not implementation bugs. Remaining: `spatial_front_cone` (Trigger 2), `audio_footstep_suppress`, exit-gate free-walk test, plus user-noted out-of-plan tuning ideas.
-- **Phase 4 — Pillar 2 polish + view mode.** Pending.
+- **Phase 4 — Pillar 2 polish + view mode.** *In progress (started 2026-05-06).* Most of the plan's Phase 4 surface landed early during Phase 2 (octagonal compass on turn, A/D camera direction, room+area transitions). Lay-off 1 (this session): `announce_degrees` — AltGr speaks the player's exact compass-frame heading (e.g. "47 Grad" / "47 degrees"). Win32-polling path; foreground gate; in-world gate. Verified in-game 2026-05-06. Remaining: zone-hierarchy half of sub-feature D (Shift+AltGr or similar — not requested in lay-off 1) + view mode (cursor / continuous loops / click-walk; first session is the "force Mouse Look ON" probe per the long-term plan).
 - **Phase 5 — Pillar 3 polish.** Pending.
 - **Phase 6 — Map markers & nice extras.** Pending.
 - **Phase 7 — User options UI.** Deferred per plan.
+
+---
+
+## Phase 4 — Pillar 2 polish + view mode (in progress 2026-05-06)
+
+### Goal
+
+Pillar 2 polish — orientation/zone announcement on demand — plus the new "view mode" (stop-and-look-around, continuous 3D scan from the character's standpoint without budging the character). Note: most of Phase 4's compass/orientation/transitions surface landed *early* during Phase 2 (lay-offs 7, 10, 11) — Phase 4 in this doc tracks the remaining pieces.
+
+**Exit criterion (per long-term plan):** "rotation announcements work; view mode lets player inspect rooms without moving character."
+
+### Carried-over status
+
+- ✅ **`announce/compass`** — octagonal direction-on-turn (`turn_announce.cpp`) — Phase 2 lay-off 10. Verified in-game 2026-05-04; later refined with stability-debounce (commit `8d95b4d`).
+- ✅ **`announce/orientation`** — A/D camera-direction continuous announce (`camera_announce.cpp`) — Phase 2 lay-off 11.
+- ✅ **`announce/transitions`** (room + area) — Phase 2 lay-off 7. Per-room churn silenced 2026-05-06 (commit `04d880d`); area transitions still speak.
+
+### Lay-off plan
+
+1. **`announce_degrees` (Pillar 2 sub-feature D — plain press half).** AltGr speaks current compass-frame degrees. *Closed 2026-05-06 — verified in-game.* Zone-hierarchy half (Shift+AltGr / etc.) deferred; not requested in this lay-off.
+2. **View mode — Mouse Look probe.** Read `CClientOptions.mouseCameraRotateToggle`; toggle it from a hotkey; observe whether the engine's mouse-driven camera + soundscape rotation gives 90% of view mode for free. Decisive cheap probe per the long-term plan §"Re-evaluate engine 'Mouse Look' setting" (2026-05-04 hint). Outcome picks the implementation path for the rest of view mode.
+3. **View mode lay-offs (TBD after probe).** Either the lightweight "force Mouse Look ON + lightweight orchestration" path, or the full virtual-cursor path with walkmesh-bounded movement and collision cues. Activation key, click-to-walk binding, continuous object findability loops all design-pending until probe completes.
+
+### Lay-off log
+
+**Lay-off 1** — `announce_degrees.{h,cpp}` (sub-feature D, plain press). *Verified in-game 2026-05-06.*
+
+AltGr (right Alt — the key directly right of space on a German QWERTZ keyboard) speaks the player's current heading in compass-frame degrees, e.g. "47 Grad" / "47 degrees". Plain numeric readout, no quantisation, no hysteresis — complements the octagonal sector announce (`turn_announce`) which only speaks on sector change with 5° hysteresis: when the user wants to know exactly where the character faces *right now*, AltGr gives it.
+
+Implementation:
+
+- **Yaw source.** `acc::engine::GetPlayerYawDegrees` (server-side, same as `turn_announce` and the `passive_narrate` clock-position math).
+- **Frame conversion.** Engine yaw (0° = +X = East, CCW positive) → compass (0° = North, CW positive) via the same `EngineYawToCompass` formula `turn_announce` uses. So spoken degrees and spoken cardinal direction are always in the same frame — pressing AltGr after a *"Norden"* announcement shows a value near 0°.
+- **Trigger path.** Win32 polling (`GetAsyncKeyState(VK_RMENU)`), edge-detected, gated on foreground window + `GetPlayerPosition`. Same rationale as the cycle keys: AltGr is unbound in stock kotor.ini, so the engine keymap drops the scancode before our manager-side `OnHandleInputEvent` hook sees it (per `project_inworld_input_pipeline.md`).
+- **VK_RMENU specifically, not VK_MENU.** Left Alt is reserved by `cycle_input::PollWin32` (Alt+- → ForceWalkTo diagnostic path). VK_RMENU isolates AltGr.
+- **AltGr-as-typing-modifier note.** AltGr is heavily used outside the game for German special characters (AltGr+E = €, AltGr+Q = @). The foreground-window gate prevents stray fires when the user types in another window. Inside the game, the only AltGr use on a German install is the chargen / save-name text field — edge case, not blocking.
+
+Strings:
+
+- `Id::FmtCompassDegrees` — German `"%d Grad"`, English `"%d degrees"`. Glyph `°` would screen-reader-pronounce inconsistently across NVDA/JAWS/Narrator.
+
+Files touched:
+
+- `patches/Accessibility/announce_degrees.{h,cpp}` — new files. ~85 lines total.
+- `patches/Accessibility/strings.h` — added `Id::FmtCompassDegrees`.
+- `patches/Accessibility/strings_de.cpp` / `strings_en.cpp` — added per-language template.
+- `patches/Accessibility/menus.cpp` — included `announce_degrees.h`; added `acc::announce_degrees::PollWin32()` to `OnUpdate` directly after `cycle_input::PollWin32`.
+
+Discipline: pure addition, single subsystem (`announce/`), no engine RE, no hooks. Build verified clean (37 .cpp files); user-tested AltGr → speaks heading correctly.
 
 ---
 

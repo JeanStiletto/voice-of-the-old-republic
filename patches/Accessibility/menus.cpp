@@ -32,6 +32,7 @@
 #include "engine_player.h"   // Phase 1 lay-off 4 (test fixture only)
 #include "engine_reads.h"
 #include "audio_bus.h"       // Phase 1 lay-off 4 (test fixture only)
+#include "announce_degrees.h" // Phase 4 sub-feature D
 #include "cycle_input.h"     // Phase 2 lay-off 3
 #include "guidance_autowalk.h"  // Phase 2 lay-off 5 (progress watchdog)
 #include "camera_announce.h"    // Phase 2 ad-hoc — camera-direction on A/D
@@ -4202,6 +4203,12 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     // 2026-05-04 from patch-20260503-215023.log: 86 events captured at the
     // manager hook, zero with codes 103/104/105.
     acc::cycle_input::PollWin32();
+
+    // Pillar 2 sub-feature D — AltGr speaks exact compass heading. Same
+    // Win32-polling rationale as the cycle keys: AltGr is unbound in
+    // stock kotor.ini, so the engine keymap drops the scancode before our
+    // manager hook sees it.
+    acc::announce_degrees::PollWin32();
 
     // Autowalk progress watchdog. No-op when no recent WalkTo dispatch;
     // emits at most two log lines (t+1s, t+3s) per dispatch to detect
