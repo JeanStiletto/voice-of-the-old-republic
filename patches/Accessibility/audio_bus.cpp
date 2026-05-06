@@ -88,7 +88,8 @@ bool PlayCue(const char* resref) {
     }
 }
 
-bool PlayCue3D(const char* resref, const Vector& worldPosition) {
+bool PlayCue3D(const char* resref, const Vector& worldPosition,
+               float volume) {
     if (!resref || !*resref) return false;
     void* exoSound = GetCExoSound();
     if (!exoSound) return false;
@@ -106,7 +107,7 @@ bool PlayCue3D(const char* resref, const Vector& worldPosition) {
            /*priority_group=*/0,
            /*delay_ms=*/0,
            /*looping=*/0,
-           /*volume=*/1.0f,
+           volume,
            /*max_distance=*/50.0f);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {

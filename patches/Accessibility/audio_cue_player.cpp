@@ -93,7 +93,8 @@ bool PlayCueAtPosition(NavCue cue,
         return false;
     }
 
-    // All gates passed — hand off to audio_bus.
+    // All gates passed — hand off to audio_bus. Volume gain is centralised
+    // in kAccCueGain (audio_bus.h) so all accessibility cue paths match.
     bool ok = PlayCue3D(GetNavCueResref(cue), worldPos);
 
     // sqrt only on the log path.

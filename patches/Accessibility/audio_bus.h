@@ -32,12 +32,29 @@ namespace acc::audio {
 //           streamsounds\ → streammusic\ → BIF/RIM.
 bool PlayCue(const char* resref);
 
+// Default amplitude multiplier for accessibility cues. The engine's
+// Play3DOneShotSound `volume` slot is a linear amplitude scalar — 1.0
+// is unity, 2.0 is +6 dB, 4.0 is +12 dB. The curated Pillar 1 vocabulary
+// (gui_select, gui_close, fs_metal_droid2, ...) is sourced from in-game
+// SFX that were mixed for occasional UI/combat use, not for sustained
+// navigation playback, so they sit too quiet against ambient/footstep
+// audio at unity. 4.0× was confirmed audible-but-clean at the Pillar 1
+// callsite (2026-05-06); kept centralised here so cycle/passive-narrate/
+// view-mode cues match the spatial-change cues' loudness.
+constexpr float kAccCueGain = 4.0f;
+
 // Fire a 3D positional one-shot cue at a world position. The engine pans
 // and attenuates relative to the current listener — by default the
 // player-camera anchor; see future audio_listener.{h,cpp} if we ever
 // override. Distance falloff curve is the engine's Miles default
 // (investigation: not measured; tune by ear if needed).
-bool PlayCue3D(const char* resref, const Vector& worldPosition);
+//
+// `volume` is forwarded to the engine's Play3DOneShotSound `volume` slot.
+// Defaults to kAccCueGain so all accessibility cues land at the same
+// loudness; pass an explicit value if a specific cue needs different
+// gain.
+bool PlayCue3D(const char* resref, const Vector& worldPosition,
+               float volume = kAccCueGain);
 
 }  // namespace acc::audio
 
