@@ -297,6 +297,92 @@ type = "pointer"
 source = "eax"
 type = "int"
 
+# CExoSound::Play3DOneShotSound @0x005D5E16 — DIAGNOSTIC, currently disabled.
+# When enabled, logs every Play3DOneShotSound fire (`Play3DOneShot:
+# caller=0x... resref=[...]`) so the per-step humanoid footstep audio caller
+# can be identified by frequency-bucketing fs_* resrefs. Run 2026-05-06
+# pinned 0x0061a5b6 (inside CSWCCreature::PlayFootstep) as THE caller; the
+# OnPlayFootstep hook below uses that result. Re-enable for any future
+# audio-path RE; keep disabled in normal builds (~250 fires/sec spams the
+# log).
+#
+# [[hooks]]
+# address = 0x005D5E16
+# type = "detour"
+# function = "OnPlay3DOneShotSound"
+# original_bytes = [0x8b, 0x44, 0x24, 0x28, 0xd9, 0x44, 0x24, 0x10]
+# skip_original_bytes = false
+# exclude_from_restore = []
+# [[hooks.parameters]]
+# source = "esp+4"
+# type = "pointer"
+
+# CSWCCreature::PlayFootstep — detour @0x0061a31a. Phase 3 lay-off 5 (Pillar
+# 1 stuck-detection via footstep suppression). Replaces the engine's own
+# field6_0x20==0 early-out JZ with a handler that combines the engine's
+# original check WITH our stuck-suppression decision.
+#
+# THE WRAPPER-EFLAGS / WRAPPER-EAX BUG (two prior dead-end attempts):
+#
+#   Attempt 1 (0x0061a30c, cut = MOV EDI,[ESI+0x20] + CMP EDI,EBX):
+#     The wrapper appends `TEST EAX, EAX` after the relocated cut bytes
+#     to dispatch on the handler's return. That TEST clobbers ZF, which
+#     the engine's downstream `JZ +0x312` (0x0061a31a) needed from the
+#     cut's CMP. Result: in verdict=0 (don't suppress), EAX=0 → ZF=1 →
+#     engine's JZ takes the early-out unconditionally → no audio ever.
+#
+#   Attempt 2 (0x0061a320, cut = MOV EAX,[ESI+0x21c]):
+#     Cut starts with a write to EAX, OVERWRITING the handler's return
+#     value before the wrapper's TEST EAX,EAX runs. TEST then tested
+#     the appearance pointer (always non-null) → JMP rel32 consumed_exit
+#     ALWAYS taken → no audio ever (this time via consume path).
+#
+#   Both confirmed live 2026-05-06 via per-tick logging — 70+ player
+#   verdict=0 events fired but no footsteps were audible.
+#
+# THIS DESIGN (works around both):
+#
+#   * Hook AT the engine's JZ itself (0x0061a31a) with `skip_original_bytes
+#     = true`. The wrapper emits NO cut bytes, so neither EFLAGS nor EAX
+#     gets clobbered by relocated engine code.
+#   * The handler emulates the engine's check: read `[ESI+0x20]` itself
+#     and return 1 (consume) to mimic the natural early-out. AND adds the
+#     stuck-suppression check on top.
+#   * `consumed_exit_address = 0x0061a632` — handler return 1 jumps to the
+#     same destructor cascade the engine's JZ would have taken.
+#   * Natural fall-through (handler return 0) lands at 0x0061a31a + 6 =
+#     0x0061a320, exactly where engine flow continues for the "play audio"
+#     case. The first instruction there is `MOV EAX, [ESI+0x21c]` which
+#     immediately overwrites the wrapper's leftover EAX=0, so the engine
+#     doesn't notice.
+#
+# Bytes at 0x0061a31a (DumpBytes — provided for the framework's natural-
+# resume size calculation only; not emitted because skip_original_bytes):
+#   0f 84 12 03 00 00       JZ +0x312 → 0x0061a632
+#
+# Stack / register state at hook entry: ESI = `this` (set by `MOV ESI, ECX`
+# at 0x0061a2f1, callee-saved across both CExoString constructor calls AND
+# the engine's MOV+CMP+MOV+MOV at 0x0061a30c-0x0061a316). EAX,ECX,EDX,EFLAGS
+# are caller-clobbered — handler ignores them.
+#
+# Framework upstream-PR opportunity: the wrapper's TEST EAX,EAX should be
+# wrapped in PUSHFD/POPFD so cut bytes' flags survive — see
+# docs/upstream-prs.md.
+[[hooks]]
+address = 0x0061a31a
+type = "detour"
+function = "OnPlayFootstep"
+
+original_bytes = [0x0f, 0x84, 0x12, 0x03, 0x00, 0x00]
+
+skip_original_bytes = true
+exclude_from_restore = ["eax"]
+consumed_exit_address = 0x0061a632
+
+[[hooks.parameters]]
+source = "esi"
+type = "pointer"
+
 # CSWGuiListBox::HandleLMouseDown @0x0041c4a0 — DISABLED. Even when this hook
 # never fires (no mouse click occurred), its mere installation causes the
 # title-screen panel to oscillate focus on every arrow press: arrow press

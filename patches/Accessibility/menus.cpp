@@ -41,6 +41,7 @@
 #include "probe_world_hover.h"  // Phase 2 lay-off 9-probe (diagnostic)
 #include "radial_menu.h"        // CSWGuiTargetActionMenu input gate
 #include "spatial_change_detector.h"  // Phase 3 lay-off 3 — Pillar 1 Trigger 1
+#include "audio_footstep_suppress.h"  // Phase 3 lay-off 5 — stuck-detection
 #include "strings.h"            // Container loot panel announces
 #include "transitions.h"        // Phase 2 lay-off 7 — Pillar 2 area+room announce
 #include "turn_announce.h"      // Phase 2 ad-hoc — Pillar 2 sub-feature C
@@ -4243,6 +4244,13 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     // events fire cues. Self-detects area change to rebuild the wall
     // cache; self-gates on player + area resolved + Pillar 1 setting.
     acc::spatial::change_detector::Tick();
+
+    // Phase 3 lay-off 5 — Pillar 1 stuck-detection. Per-tick
+    // displacement check seeds g_was_stuck for the OnPlayFootstep handler;
+    // when the character has movement intent (engine drives the walk
+    // anim → PlayFootstep fires) but didn't actually move, audio + visual
+    // footprint + rumble are suppressed for that step.
+    acc::audio::footstep_suppress::Tick();
 
     // Phase 2 ad-hoc — camera-direction announcement on A/D. KOTOR 1's
     // verified default control scheme: A/D rotate the *camera* around the

@@ -62,8 +62,37 @@ Object channel runs unchanged — Door/Npc/Container/Item/Landmark/Transition fi
 
 User feedback after iteration 5: walls "might be more usable but still not sure" — combat-audio masking + `gui_select` curation choice are tuning concerns parked for next session, plus user-noted out-of-plan tuning ideas to explore. No implementation bugs found in the post-iteration-5 log review. **Solid base; commit + park.**
 
-### Files touched (lay-offs 1-3)
+**Lay-off 5** — `audio_footstep_suppress.{h,cpp}` (stuck-detection via footstep suppression). *Verified in-game 2026-05-06.*
 
+Done out-of-order before lay-off 4 (front cone) — closes the per-step audio masking issue that was making free-walking feel undifferentiated.
+
+The RE chain ran through three function targets before landing on the working hook:
+
+1. **First attempt (prior session — rolled back):** `CSWCCreature::PlayRollingFootstepSound @0x006107c0`. Hook installed cleanly but never fired during normal play. The `*RollingFootstepSound` family is for vehicles / wheeled units, not humanoid steps. Memory entry `project_rolling_footstep_is_vehicle_only.md`.
+2. **Diagnostic instrumentation:** added a hook at `CExoSound::Play3DOneShotSound @0x005d5e16` logging every fire as `caller=0x... resref=[...]`. ~10s of in-game walking + standing yielded a clean frequency table — `0x0061a5b6` was the per-step caller for all `fs_metal_*` resrefs (203 fires, 7 surface variants). `FindFunction.java` resolved that EIP to `CSWCCreature::PlayFootstep @0x0061a2d0` — Lane HAD labelled it; the prior session's "Rolling" name was the lure.
+3. **Hook design — three iterations on the same function:**
+
+   - **0x0061a30c (cut = MOV EDI,[ESI+0x20] + CMP EDI,EBX):** the obvious spot — replace the engine's own `field6_0x20==0` early-out check. Failed in-game: 75 player verdict=0 events fired but no audio audible. The framework wrapper appends `TEST EAX, EAX` after the relocated cut bytes to dispatch on the handler's return; that TEST clobbers ZF, which the engine's downstream `JZ +0x312` at 0x0061a31a depended on from the cut's CMP. Result: in verdict=0 (don't suppress), EAX=0 → ZF=1 → engine's JZ took the early-out unconditionally → audio never reached `Play3DOneShotSound`.
+
+   - **0x0061a320 (cut = MOV EAX,[ESI+0x21c]):** moved past the engine's JZ. Failed differently: cut starts with a write to EAX, OVERWRITING the handler's return value before the wrapper's TEST EAX,EAX runs. TEST then tested the appearance pointer (always non-null) → wrapper's `JMP rel32 consumed_exit` always fired → 100% routed to 0x0061a632. 501 player verdict=0 events fired, no audio audible.
+
+   - **0x0061a31a, `skip_original_bytes = true` (working):** hook AT the engine's existing JZ. With `skip_original_bytes = true` the wrapper emits NO cut bytes, dodging both the EFLAGS-clobber and EAX-clobber issues. The handler emulates the engine's `field6_0x20==0` check itself (returns 1 to mimic JZ taken) and adds the stuck-suppression on top. `consumed_exit_address = 0x0061a632` (same destructor cascade the engine's JZ would reach); natural fall-through (0x0061a31a + 6 = 0x0061a320) is the audio entry point, where the engine's first instruction (`MOV EAX, [ESI+0x21c]`) overwrites the wrapper's leftover EAX=0 immediately.
+
+**Stuck-detection model (2026-05-06):** velocity-based, frame-rate-independent. The locked plan's `~1cm per tick` epsilon assumed a 30Hz tick that the engine doesn't actually have — `CSWGuiManager::Update` fires per render frame (60-144+ fps on modern hardware), so per-frame displacement is fps-coupled. A 1cm threshold over-suppresses walks at high refresh rates (e.g. 1 m/s @ 144 fps = 0.7cm/frame, below threshold). `audio_footstep_suppress::Tick()` instead tracks (pos, GetTickCount64) per sample, computes speed = displacement / elapsed milliseconds, compares against `kStuckSpeedMetersPerSec = 0.3f`. KOTOR walk ~2 m/s, run ~5 m/s — both far above; wall-sliding while engine-physics-stuck typically <0.2 m/s. Z component excluded (vertical jitter on uneven walkmesh).
+
+**NPC filter:** `is_leader = (creature == GetClientLeader())` — non-leader creatures (companions, enemies) always pass through with verdict=0 so their footsteps remain. Verified live: 207 NPC fires + 294 player verdict=0 + 17 player verdict=1 in the working session.
+
+Per-tick + per-call diagnostic logging left in (per `feedback_log_no_rate_limits.md`) — small enough to keep, useful for future tuning if the speed threshold needs adjustment.
+
+**Framework PR opportunity:** the wrapper's `TEST EAX, EAX` should be wrapped in `PUSHFD/POPFD` so cut bytes' flags survive across the consume check. Documented in `docs/upstream-prs.md`.
+
+### Files touched (lay-offs 1-3, 5)
+
+- `patches/Accessibility/audio_footstep_suppress.{h,cpp}` — new files (lay-off 5). Per-tick velocity tracker + OnPlayFootstep handler. Wired in `menus.cpp`'s `OnUpdate`.
+- `patches/Accessibility/diag_play3doneshotsound.{h,cpp}` — new files (lay-off 5 instrumentation). Diagnostic resref-logger handler; hook commented out in hooks.toml. Kept for future audio-path RE.
+- `patches/Accessibility/hooks.toml` — added `OnPlayFootstep` detour at 0x0061a31a; commented-out `OnPlay3DOneShotSound` diagnostic at 0x005d5e16.
+- `patches/Accessibility/exports.def` — added `OnPlay3DOneShotSound`, `OnPlayFootstep`.
+- `tools/ghidra-scripts/FindFunction.java` — new helper. Resolves call-site EIP → containing function entry (used to convert `0x0061a5b6` → `CSWCCreature::PlayFootstep @0x0061a2d0`).
 - `patches/Accessibility/engine_area.{h,cpp}` — `WallEdge` struct + `BuildAreaWallCache(area, outBuf, maxEdges)` + new offsets/addresses for `CSWRoomSurfaceMesh` + `CSWCollisionMesh::LocalToWorld @0x596aa0`.
 - `patches/Accessibility/audio_cue_player.{h,cpp}` — new files. Per-kind + range gates over `audio_bus::PlayCue3D`.
 - `patches/Accessibility/audio_cues.h` — `NavCue::Wall` resref swap from `fs_dirt_hard1` → `gui_select`.

@@ -204,6 +204,88 @@ mid-function and use register sources (per
 
 ---
 
+### PR-4. Wrapper `consumed_exit_address` clobbers EFLAGS via `TEST EAX, EAX`
+
+**Repo:** `LaneDibello/Kotor-Patch-Manager`
+**Status:** Bug confirmed via in-game suppression failure (Phase 3 lay-off 5,
+2026-05-06).
+**Discovered:** While hooking `CSWCCreature::PlayFootstep` for stuck-detection.
+
+**What.** When `consumed_exit_address` is set, the wrapper currently emits
+`TEST EAX, EAX` after running the relocated cut bytes, then dispatches on
+the resulting ZF (`JZ +5; JMP rel32 consumed_exit`). That TEST clobbers
+EFLAGS — including any flags the cut bytes set that the engine's downstream
+code at `natural_resume` depends on. The fix is to wrap the TEST in
+`PUSHFD/POPFD` so cut-flag state survives the consume check.
+
+**Why.** Many natural cut points in compiled C++ end with a flag-setting
+instruction (CMP, TEST, ADD, SUB) whose result is consumed by the very next
+engine instruction (a Jcc). Hooking such cuts with `consumed_exit_address`
+silently breaks the downstream Jcc — the wrapper's TEST overwrites the cut's
+ZF/SF/CF/etc. with `(EAX == 0)`. The handler can't observe this; it just
+sees the engine taking the wrong branch.
+
+**Concrete failure (ours).** Phase 3 lay-off 5 hooked
+`CSWCCreature::PlayFootstep` at `0x0061a30c` to suppress player footsteps
+when stuck. Cut bytes: `MOV EDI, [ESI+0x20]; CMP EDI, EBX` (5 bytes). The
+engine's downstream `JZ +0x312` at 0x0061a31a tested ZF from the cut's CMP.
+After the wrapper's TEST EAX, EAX, ZF = (handler_return == 0) — so verdict=0
+caused the engine's JZ to take the early-out unconditionally → no audio EVER
+played. 75 player verdict=0 events fired silently before the bug was traced.
+
+**Concrete failure mode 2 (related EAX-clobber).** A second iteration moved
+the hook to `0x0061a320` (cut = `MOV EAX, [ESI+0x21c]`). That cut's first
+instruction overwrites EAX *before* the wrapper's TEST EAX, EAX runs, so
+TEST tests the appearance pointer (always non-null) instead of the handler
+return → JMP consumed_exit always taken → 501 player verdict=0 events fired
+silently. This is a corollary of the same root issue: the wrapper's
+EAX-as-consume-signal protocol is fragile because cut bytes can clobber EAX
+without the user realising.
+
+**Files to change:**
+
+- `src/KotorPatcher/src/wrappers/wrapper_x86_win32.cpp` — in the
+  `consumedExitAddress != 0` block (~line 230), wrap the TEST + JZ + JMP
+  consumed_exit sequence in PUSHFD/POPFD. The fall-through path also needs
+  POPFD before its JMP rel32 natural_resume to symmetrically restore.
+
+**Wrapper assembly change:**
+
+```
+Before:
+  [run cut bytes]                     ; sets some flags
+  TEST EAX, EAX                       ; clobbers ZF/SF/...
+  JZ +5                               ; skip JMP rel32
+  JMP rel32 consumed_exit
+  JMP rel32 natural_resume
+
+After:
+  [run cut bytes]                     ; sets some flags
+  PUSHFD                              ; save cut's flags
+  TEST EAX, EAX                       ; clobbers flags (no longer matters)
+  JZ +6                               ; skip POPFD (1) + JMP rel32 (5) = 6
+  POPFD                               ; restore cut's flags
+  JMP rel32 consumed_exit
+  POPFD                               ; restore cut's flags (fall-through)
+  JMP rel32 natural_resume
+```
+
+(The EAX-clobber issue is a separate constraint: the user MUST design cut
+bytes that don't write to EAX before the wrapper's TEST runs. A full fix
+would also wrap the consume-signal in a different register or use a stack
+slot, but that's a larger redesign — the EFLAGS fix alone closes the
+PlayFootstep-style failure mode.)
+
+**Workaround we currently use.** When the natural cut would set
+flags-the-engine-depends-on AND there's no way to satisfy the EAX-clean
+constraint either, hook AT the engine's flag-consuming Jcc with
+`skip_original_bytes = true` and emulate the engine's check inside the
+handler. The wrapper then emits no cut bytes, dodging both bugs entirely.
+See `OnPlayFootstep` in `audio_footstep_suppress.cpp` for the working
+pattern.
+
+---
+
 ## Conventions
 
 - One PR per coherent change. Keep them small and reviewable.
