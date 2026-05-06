@@ -55,16 +55,22 @@
 // - Walkmesh-bounded movement via `engine_area::SegmentCrossesWalkmesh`
 //   + Pillar 1 wall cache. On collision the cursor stops short of the
 //   wall and emits a `NavCue::Wall` cue at the hit point.
-// - Listener override every tick: `audio_bus::SetListener(cursor_pos)`
-//   so 3D audio (ambient, NPC voice, machinery, our cues) pans /
+// - Listener override via `OnSetListenerPosition` detour at the engine's
+//   own per-frame `CExoSound::SetListenerPosition` write site
+//   (hooks.toml entry @0x5d5df0). When view mode is active the hook
+//   substitutes the cursor position for the engine's camera-derived
+//   Vector so 3D audio (ambient, NPC voice, machinery, our cues) pans /
 //   attenuates relative to the cursor — the engine's "soundscape walks
-//   forward" without the character moving.
+//   forward" without the character moving. Engine reclaims the listener
+//   on view-mode exit because the substitution stops happening.
 // - Object-nearest-cursor narration: walk `AreaObjectIterator` through
 //   `filter::ObjectMatches`, find the closest in-radius object, three-
 //   variable hover-pause debounce identical to `turn_announce`'s
 //   pattern; speak the per-kind localised name once stable.
 
 #pragma once
+
+#include "engine_offsets.h"  // Vector
 
 namespace acc::view_mode {
 
@@ -73,6 +79,14 @@ namespace acc::view_mode {
 // to camera-pan and freeze the character. Lay-off 3 itself doesn't
 // consume this value beyond the lifecycle sanity checks below.
 bool IsActive();
+
+// Read the current virtual-cursor world position. Returns false when
+// view mode isn't active (no meaningful cursor) — callers should fall
+// back to whatever default the engine would have used. The lay-off-4
+// listener-override hook is the primary consumer: when view mode is
+// active it substitutes this position for the engine's camera-derived
+// listener Vector.
+bool TryGetCursorPosition(Vector& out);
 
 // Effective orientation yaw in engine frame (0° = +X = East, CCW positive)
 // for cue systems whose semantics should follow the camera in view mode
@@ -115,8 +129,11 @@ void PollWin32();
 //      (default 2.0 m/s, KOTOR walk speed); if the step crosses a
 //      walkmesh perimeter edge, clamps the cursor short of the hit
 //      point and emits `NavCue::Wall` at the hit position.
-//   5. Writes the cursor position to the engine's listener via
-//      `audio_bus::SetListener` so 3D audio repositions to the cursor.
+//   5. (Listener override happens in `OnSetListenerPosition`, not here
+//      — the engine's own per-frame call site is detoured; while view
+//      mode is active the hook substitutes `cursor_pos` for the
+//      engine's camera-derived Vector. No per-tick call from this
+//      function.)
 //   6. Walks `AreaObjectIterator` for the nearest in-radius object
 //      passing `filter::ObjectMatches`; if the same object is
 //      "hovered" continuously for kHoverPauseMs and differs from the

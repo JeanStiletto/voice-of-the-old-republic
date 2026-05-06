@@ -383,6 +383,57 @@ consumed_exit_address = 0x0061a632
 source = "esi"
 type = "pointer"
 
+# CExoSound::SetListenerPosition @0x005d5df0 — Phase 4 lay-off 4 rework.
+# The per-frame camera-driven listener write goes through this function
+# (single xref from CClientExoAppInternal::UpdateSoundEngine at
+# 0x005f5626). Without this detour, our OnUpdate-time listener writes
+# from view_mode::Tick get stomped within one tick — verified at lay-off
+# 4 by the throwaway probe (`survived=0` every iteration). Detouring
+# the camera-driven write site itself is the only design that wins the
+# race against the engine's render-phase update.
+#
+# Bytes from DumpBytes 2026-05-06 (function = 14 bytes total):
+#   0x5d5df0: 8b 09              MOV  ECX, [ECX]
+#   0x5d5df2: 85 c9              TEST ECX, ECX
+#   0x5d5df4: 74 05              JZ   +5  -> 0x5d5dfb
+#   0x5d5df6: e9 05 08 00 00     JMP  CExoSoundInternal::SetListenerPosition
+#   0x5d5dfb: c2 04 00           RET  4
+#
+# Hook shape: skip_original_bytes=true at function entry; handler
+# replicates the body (null-check + dispatch to inner @0x5d6600) but
+# substitutes view_mode's cursor position for the Vector arg when view
+# mode is active. consumed_exit_address = 0x5d5dfb (the natural RET 4)
+# so the function's stack convention is preserved and we never let the
+# (advisory) cut bytes execute. Avoids relocating the rel8 JZ + rel32
+# JMP that would otherwise sit in the cut.
+#
+# Cut-byte advisory: the JZ + JMP make up the engine's body; we declare
+# 6 bytes (MOV+TEST+JZ) so the wrapper sizes the natural-resume hop
+# correctly even though we always consume.
+#
+# Calling convention: __thiscall, ECX = this (CExoSound*), [ESP+4] =
+# Vector* param_1. The esp+4 source emits LEA per
+# project_kpatchmanager_lea_bug.md — handler dereferences once to
+# recover the actual Vector*.
+[[hooks]]
+address = 0x005d5df0
+type = "detour"
+function = "OnSetListenerPosition"
+
+original_bytes = [0x8b, 0x09, 0x85, 0xc9, 0x74, 0x05]
+
+skip_original_bytes = true
+exclude_from_restore = ["eax"]
+consumed_exit_address = 0x005d5dfb
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+4"
+type = "pointer"
+
 # CSWGuiListBox::HandleLMouseDown @0x0041c4a0 — DISABLED. Even when this hook
 # never fires (no mouse click occurred), its mere installation causes the
 # title-screen panel to oscillate focus on every arrow press: arrow press

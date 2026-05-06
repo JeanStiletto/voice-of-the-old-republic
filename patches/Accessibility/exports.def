@@ -9,3 +9,4 @@ EXPORTS
     OnSetMoveToModuleString
     OnPlay3DOneShotSound
     OnPlayFootstep
+    OnSetListenerPosition

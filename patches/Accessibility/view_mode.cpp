@@ -70,21 +70,25 @@ struct ViewModeState {
 
 ViewModeState g_state;
 
-// Throwaway listener-override probe (see plan step 1). On the first
-// Tick() each second writes a sentinel listener position; the next
-// Tick() reads it back to verify the engine doesn't stomp the field
-// between our write and the next frame's render. Strip before
-// committing once the probe has answered.
+// Listener override path (post-rework, 2026-05-06):
 //
-// 2026-05-06b plan: writes (999, 999, 999), reads it back, logs
-// `survived=1` if the field still holds the sentinel — that means our
-// per-tick override is sufficient. `survived=0` would force us to
-// hook the camera-driven write site instead.
-constexpr bool kListenerProbeEnabled = true;
-DWORD g_probe_last_emit_ms = 0;
-bool  g_probe_pending      = false;
-Vector g_probe_sentinel    = { 999.0f, 999.0f, 999.0f };
-
+// Lay-off 4 first attempt wrote `CExoSound::SetListenerPosition` from
+// our OnUpdate `view_mode::Tick` every tick. The probe (sentinel
+// `(999,999,999)` written, read back next tick) consistently logged
+// `survived=0`: the engine's own per-frame camera-driven listener write
+// in `CClientExoAppInternal::UpdateSoundEngine` runs *after* our
+// OnUpdate callsite and overwrites the field before any 3D-audio render
+// can see our value.
+//
+// The fix is structural: we detour `CExoSound::SetListenerPosition`
+// itself (single xref from UpdateSoundEngine; see hooks.toml entry).
+// `OnSetListenerPosition` substitutes the cursor position for the
+// engine's Vector when view mode is active and dispatches the inner
+// `CExoSoundInternal::SetListenerPosition` directly. The engine's
+// per-frame call now acts as our heartbeat — every camera-driven write
+// becomes a cursor-driven write while view mode is active. No
+// additional per-tick listener call needed from this file.
+//
 // Why no Mouse Look forcing / cursor recentring:
 //
 // User-verified 2026-05-06: in stock KOTOR (regardless of Caps Lock /
@@ -232,55 +236,6 @@ void DumpCameraStateProbe() {
         bitfield & ~static_cast<unsigned int>(0x1f),
         neighbour_4, neighbour_c, neighbour_10, neighbour_14,
         g_state.active ? 1 : 0);
-}
-
-// Probe step. Writes (999,999,999) once a second; the *next* Tick() call
-// reads the listener back to see whether the engine stomped it. Logs
-// the survived/stomped result and the engine value when stomped.
-//
-// Sequencing: this runs at the *start* of Tick() — so the read it
-// performs sees what the engine did between the previous Tick()'s
-// listener write (whether sentinel or normal cursor pos) and now,
-// which is exactly the question we need answered. We then write the
-// real cursor-listener at the end of Tick() (or sentinel if we just
-// re-armed the probe). Once we know the answer, the entire probe
-// block is stripped and `audio_bus::GetListener` can be removed.
-void TickListenerProbe() {
-    if (!kListenerProbeEnabled) return;
-
-    DWORD now = GetTickCount();
-
-    if (g_probe_pending) {
-        Vector readBack;
-        if (acc::audio::GetListener(readBack)) {
-            bool survived =
-                std::fabs(readBack.x - g_probe_sentinel.x) < 0.5f &&
-                std::fabs(readBack.y - g_probe_sentinel.y) < 0.5f &&
-                std::fabs(readBack.z - g_probe_sentinel.z) < 0.5f;
-            acclog::Write(
-                "ViewModeProbe: listener survived=%d engine=(%.2f,%.2f,%.2f) "
-                "sentinel=(%.2f,%.2f,%.2f)",
-                survived ? 1 : 0,
-                readBack.x, readBack.y, readBack.z,
-                g_probe_sentinel.x, g_probe_sentinel.y, g_probe_sentinel.z);
-        } else {
-            acclog::Write(
-                "ViewModeProbe: listener read failed (singleton/internal "
-                "null); cannot decide");
-        }
-        g_probe_pending = false;
-    }
-
-    if (now - g_probe_last_emit_ms >= 1000) {
-        if (acc::audio::SetListener(g_probe_sentinel)) {
-            g_probe_pending      = true;
-            g_probe_last_emit_ms = now;
-            acclog::Write(
-                "ViewModeProbe: listener sentinel written "
-                "(%.2f,%.2f,%.2f); will read back next tick",
-                g_probe_sentinel.x, g_probe_sentinel.y, g_probe_sentinel.z);
-        }
-    }
 }
 
 void StepCursor(float dt) {
@@ -468,6 +423,12 @@ void NarrateNearestObject(void* area, const Vector& cursor) {
 
 bool IsActive() { return g_state.active; }
 
+bool TryGetCursorPosition(Vector& out) {
+    if (!g_state.active) return false;
+    out = g_state.cursor_pos;
+    return true;
+}
+
 bool GetEffectiveOrientationYawDegrees(float& out) {
     if (g_state.active) {
         float cameraYaw = 0.0f;
@@ -534,23 +495,16 @@ void Tick() {
 
     // Foreground gate — same rationale as the cycle / view-mode pollers:
     // don't consume W/S held state when the user is alt-tabbed into a
-    // browser typing about the bug they just hit.
+    // browser typing about the bug they just hit. Even when foreground-
+    // gated out, the OnSetListenerPosition hook keeps writing
+    // g_state.cursor_pos every frame, so the soundscape stays anchored
+    // to wherever the cursor was when focus was lost.
     HWND fg = GetForegroundWindow();
     if (fg) {
         DWORD pid = 0;
         GetWindowThreadProcessId(fg, &pid);
-        if (pid != GetCurrentProcessId()) {
-            // Don't translate, but still write the listener so the
-            // soundscape stays anchored to the cursor.
-            acc::audio::SetListener(g_state.cursor_pos);
-            return;
-        }
+        if (pid != GetCurrentProcessId()) return;
     }
-
-    // Step 1 (probe): read back the previous tick's sentinel write
-    // before we issue any new listener writes this tick. Strip once
-    // the probe answer lands in logs.
-    TickListenerProbe();
 
     DWORD now = GetTickCount();
     DWORD elapsedMs = now - g_state.last_tick_ms;
@@ -564,17 +518,11 @@ void Tick() {
     void* area = acc::engine::GetCurrentArea();
     NarrateNearestObject(area, g_state.cursor_pos);
 
-    // Listener override — last write of the tick wins. While the probe
-    // is enabled and pending, the sentinel write happens here so the
-    // *next* tick's read can verify it survived. Once the probe is
-    // stripped this branch becomes the only listener write.
-    if (kListenerProbeEnabled && g_probe_pending) {
-        // TickListenerProbe has already issued the sentinel write this
-        // tick; leave it in place so the engine has a full frame to
-        // potentially overwrite it before we read back.
-    } else {
-        acc::audio::SetListener(g_state.cursor_pos);
-    }
+    // No per-tick SetListener call here — the OnSetListenerPosition
+    // detour at 0x5d5df0 substitutes the cursor position into the
+    // engine's own per-frame listener write, which runs after this
+    // OnUpdate path. That's the whole point of the rework: stop
+    // racing the engine, intercept its own write site instead.
 }
 
 }  // namespace acc::view_mode

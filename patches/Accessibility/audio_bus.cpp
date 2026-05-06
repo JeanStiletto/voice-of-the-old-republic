@@ -5,6 +5,10 @@
 #include <cstdint>
 #include <cstring>
 
+#include "log.h"
+#include "view_mode.h"  // IsActive + TryGetCursorPosition for the listener
+                        // override hook
+
 namespace acc::audio {
 
 namespace {
@@ -51,8 +55,6 @@ typedef void (__thiscall* PFN_Play3DOneShotSound)(
     float    volume,
     float    max_distance);
 
-typedef void (__thiscall* PFN_SetListenerPosition)(void* this_, Vector* pos);
-
 void* GetCExoSound() {
     __try {
         return *reinterpret_cast<void**>(kAddrCExoSoundPtr);
@@ -86,35 +88,6 @@ bool PlayCue(const char* resref) {
     }
 }
 
-bool SetListener(const Vector& pos) {
-    void* exoSound = GetCExoSound();
-    if (!exoSound) return false;
-    Vector copy = pos;
-    __try {
-        auto fn = reinterpret_cast<PFN_SetListenerPosition>(
-            kAddrCExoSoundSetListenerPosition);
-        fn(exoSound, &copy);
-        return true;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-}
-
-bool GetListener(Vector& out) {
-    void* exoSound = GetCExoSound();
-    if (!exoSound) return false;
-    __try {
-        void* internal = *reinterpret_cast<void**>(exoSound);
-        if (!internal) return false;
-        out = *reinterpret_cast<Vector*>(
-            reinterpret_cast<unsigned char*>(internal) +
-            kCExoSoundInternalListenerPosOffset);
-        return true;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-}
-
 bool PlayCue3D(const char* resref, const Vector& worldPosition) {
     if (!resref || !*resref) return false;
     void* exoSound = GetCExoSound();
@@ -142,3 +115,128 @@ bool PlayCue3D(const char* resref, const Vector& worldPosition) {
 }
 
 }  // namespace acc::audio
+
+// CExoSound::SetListenerPosition detour @0x005d5df0. Phase 4 lay-off 4
+// rework — the per-frame camera-driven listener write goes through this
+// function (single xref from CClientExoAppInternal::UpdateSoundEngine
+// at 0x005f5626). Lay-off 4's per-tick OnUpdate listener write was
+// stomped because the engine writes here every frame AFTER our OnUpdate
+// callsite; the only winning move is to detour the engine's write
+// itself.
+//
+// Bytes verified via DumpBytes 2026-05-06:
+//   0x5d5df0: 8b 09             MOV  ECX, [ECX]      ; this->internal
+//   0x5d5df2: 85 c9             TEST ECX, ECX
+//   0x5d5df4: 74 05             JZ   +5  -> 0x5d5dfb (RET 4)
+//   0x5d5df6: e9 05 08 00 00    JMP  CExoSoundInternal::SetListenerPosition (0x5d6600)
+//   0x5d5dfb: c2 04 00          RET  4
+//
+// Hook design: skip_original_bytes=true at 0x5d5df0 — handler replicates
+// the entire function body (null-check on this->internal, then dispatch
+// to CExoSoundInternal::SetListenerPosition @0x5d6600), substituting
+// the virtual cursor's position for the engine's camera-derived Vector
+// when view mode is active. consumed_exit_address = 0x5d5dfb so we
+// always exit through the function's natural RET 4. Avoids relocating
+// the rel8 JZ + rel32 JMP in the cut.
+//
+// Calling convention: __thiscall, ECX = this (CExoSound*), one stack
+// arg = Vector* param_1. The framework's `source = "esp+4"` for a
+// pointer gives us the *address of the slot* per
+// project_kpatchmanager_lea_bug.md — we deref once to get Vector*.
+//
+// Always returns 1 to take the consumed exit (we did the work
+// ourselves; never let the original cut bytes "execute").
+namespace acc::audio {
+namespace {
+
+typedef void (__thiscall* PFN_InternalSetListenerPosition)(
+    void* internal_, Vector* pos);
+
+// CExoSoundInternal::SetListenerPosition — the inner function the
+// CExoSound wrapper jumps to once it has resolved this->internal. We
+// dispatch to it manually after substituting the position vector.
+constexpr uintptr_t kAddrCExoSoundInternalSetListenerPosition = 0x005D6600;
+
+}  // namespace
+}  // namespace acc::audio
+
+extern "C" int __cdecl OnSetListenerPosition(void* exoSound,
+                                             Vector** posSlot) {
+    // posSlot is the address of the stack slot holding the Vector*
+    // param (per the framework's LEA-vs-MOV behaviour for esp+X
+    // sources). One deref to recover the engine's argument.
+    Vector* enginePos = nullptr;
+    if (posSlot) {
+        __try {
+            enginePos = *posSlot;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            enginePos = nullptr;
+        }
+    }
+
+    // Pick the position to forward. View-mode active → cursor; else
+    // passthrough engine value.
+    Vector chosen = { 0.0f, 0.0f, 0.0f };
+    bool   override_active = false;
+    if (acc::view_mode::IsActive() &&
+        acc::view_mode::TryGetCursorPosition(chosen)) {
+        override_active = true;
+    } else if (enginePos) {
+        __try {
+            chosen = *enginePos;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            return 1;  // bad pointer; consume to avoid further dispatch
+        }
+    } else {
+        return 1;  // null arg; consume (matches engine's behaviour with
+                   // null this->internal: RET 4 with no work)
+    }
+
+    // Replicate the engine's `this->internal` null-check before
+    // dispatching to the inner function.
+    if (!exoSound) return 1;
+    void* internal = nullptr;
+    __try {
+        internal = *reinterpret_cast<void**>(exoSound);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 1;
+    }
+    if (!internal) return 1;
+
+    __try {
+        auto fn = reinterpret_cast<acc::audio::PFN_InternalSetListenerPosition>(
+            acc::audio::kAddrCExoSoundInternalSetListenerPosition);
+        fn(internal, &chosen);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        // Engine internal faulted — consume anyway; nothing else for us
+        // to do at this layer.
+    }
+
+    // Diagnostic kept long-term but quiet: edge-trigger on override
+    // state change (so view-mode enter/exit lands one line each), plus
+    // a 30-second heartbeat so a long session still shows "yes the
+    // hook is alive and the engine is still calling it." That's
+    // sufficient signal to debug a silent-failure scenario without the
+    // per-frame spam the bring-up build needed.
+    static int   s_last_logged_state    = -1;
+    static DWORD s_last_heartbeat_ms    = 0;
+    DWORD now_ms = GetTickCount();
+    int   state  = override_active ? 1 : 0;
+    bool  edge   = (state != s_last_logged_state);
+    bool  beat   = (now_ms - s_last_heartbeat_ms >= 30000u);
+    if (edge || beat) {
+        acclog::Write(
+            "ListenerHook: override=%d engine_at=(%.2f,%.2f,%.2f) "
+            "chosen=(%.2f,%.2f,%.2f) reason=%s",
+            state,
+            enginePos ? enginePos->x : 0.0f,
+            enginePos ? enginePos->y : 0.0f,
+            enginePos ? enginePos->z : 0.0f,
+            chosen.x, chosen.y, chosen.z,
+            edge ? "transition" : "heartbeat");
+        s_last_logged_state = state;
+        s_last_heartbeat_ms = now_ms;
+    }
+
+    return 1;  // consumed_exit_address — wrapper jumps to RET 4
+}
