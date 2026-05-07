@@ -748,6 +748,12 @@ struct ChainEntry {
     void* control;
     int   cx;
     int   cy;
+    // True when this entry represents a non-activatable body text — currently
+    // the body listbox of a modal popup (MessageBoxModal / TutorialBox /
+    // AreaTransition). Arrow keys land on it so the user can re-hear the
+    // message; Enter re-announces instead of firing vtable[15] (the listbox
+    // has no activate handler).
+    bool  textOnly;
 };
 constexpr int kMaxChainEntries = 64;
 static ChainEntry g_chain[kMaxChainEntries];
@@ -1640,7 +1646,42 @@ static void AppendChainEntry(void* control) {
     if (!IsChainNavigable(control))       return;
     int cx, cy;
     if (!GetControlCenter(control, cx, cy)) return;
-    g_chain[g_chainCount++] = { control, cx, cy };
+    g_chain[g_chainCount++] = { control, cx, cy, /*textOnly=*/false };
+}
+
+// True for "informational popup" panel kinds that wrap their body text in a
+// single-row listbox. RebindChain promotes that listbox into a chain entry
+// for these panels so arrow keys can land on it for re-announce.
+static bool IsModalTextPanel(PanelKind k) {
+    switch (k) {
+    case PanelKind::MessageBoxModal:
+    case PanelKind::TutorialBox:
+    case PanelKind::AreaTransition:
+        return true;
+    default:
+        return false;
+    }
+}
+
+// Append a non-activatable text-bearing control (typically a single-row
+// listbox holding a modal's body text) as a text-only chain entry. The
+// listbox is rejected by IsChainNavigable so AppendChainEntry would skip
+// it; this helper bypasses that filter while still requiring extractable
+// text so we don't pollute the chain with empty rows.
+//
+// Probe buffer is 512 bytes — tutorial bodies routinely exceed 200 chars
+// (e.g. the "Im Bildschirm GRUPPENGEPÄCK..." inventory tutorial is ~175),
+// and ExtractAnnounceableText's listbox aggregator refuses to truncate
+// (breaks out instead, leaving the buffer empty and returning nullptr).
+// A too-small probe would silently skip exactly the modals we care about.
+static void AppendChainTextOnly(void* control, void* panel) {
+    if (g_chainCount >= kMaxChainEntries) return;
+    if (!control) return;
+    char tmp[512];
+    if (!ExtractAnnounceableText(control, tmp, sizeof(tmp), panel)) return;
+    int cx, cy;
+    if (!GetControlCenter(control, cx, cy)) return;
+    g_chain[g_chainCount++] = { control, cx, cy, /*textOnly=*/true };
 }
 
 // (Re)bind the chain to the currently focused panel.
@@ -1666,6 +1707,8 @@ static void RebindChain(void* panel) {
     if (!list->data || list->size <= 0) return;
     int n = list->size > 256 ? 256 : list->size;
 
+    bool modalText = IsModalTextPanel(IdentifyPanel(panel));
+
     for (int i = 0; i < n; ++i) {
         void* c = list->data[i];
         if (!c) continue;
@@ -1676,19 +1719,31 @@ static void RebindChain(void* panel) {
             continue;
         }
 
-        // Listbox with size > 1 — sub-dialogs put their settings here as
-        // button children. Recurse one level. Listboxes with size == 1
-        // are descriptive multi-line label blobs (the inline tab preview
-        // or the per-setting hint pane); their single child is a label,
-        // not a button, so AppendChainEntry would skip it anyway.
+        // Listboxes:
+        //   * size > 1 — sub-dialog settings list, recurse one level into
+        //     its button children.
+        //   * size == 1 in a modal popup (MessageBoxModal / TutorialBox /
+        //     AreaTransition) — the engine wraps the body text in a single-
+        //     row listbox. Promote the listbox itself to a text-only chain
+        //     entry so the user can land on it via arrow keys to re-hear the
+        //     message. Without this, single-button popups (e.g. death-screen
+        //     "OK" only) leave the chain with no text element to revisit
+        //     once the open-time announce has played.
+        //   * size == 1 elsewhere — descriptive label blob (inline tab
+        //     preview, per-setting hint pane); skipped, its single label
+        //     child gets surfaced through other paths.
         void** vt = *reinterpret_cast<void***>(c);
         if (reinterpret_cast<uintptr_t>(vt) == kVtableListBox) {
             auto* lbList = reinterpret_cast<CExoArrayList*>(
                 reinterpret_cast<unsigned char*>(c) + kListBoxControlsOffset);
-            if (lbList && lbList->data && lbList->size > 1) {
-                int lbN = lbList->size > 256 ? 256 : lbList->size;
-                for (int j = 0; j < lbN; ++j) {
-                    AppendChainEntry(lbList->data[j]);
+            if (lbList && lbList->data) {
+                if (lbList->size > 1) {
+                    int lbN = lbList->size > 256 ? 256 : lbList->size;
+                    for (int j = 0; j < lbN; ++j) {
+                        AppendChainEntry(lbList->data[j]);
+                    }
+                } else if (lbList->size == 1 && modalText) {
+                    AppendChainTextOnly(c, panel);
                 }
             }
         }
@@ -1834,8 +1889,9 @@ static void RebindChain(void* panel) {
         unsigned int bitFlags =
             *reinterpret_cast<unsigned int*>(
                 reinterpret_cast<unsigned char*>(g_chain[i].control) + 0x44);
-        acclog::Write("Chain   [%d] %p (%d,%d) %s text=\"%s\" is_active=%u bit_flags=0x%x",
+        acclog::Write("Chain   [%d] %p (%d,%d)%s %s text=\"%s\" is_active=%u bit_flags=0x%x",
                       i, g_chain[i].control, g_chain[i].cx, g_chain[i].cy,
+                      g_chain[i].textOnly ? " text-only" : "",
                       src ? src : "?", src ? text : "", isActive, bitFlags);
     }
 }
@@ -2786,6 +2842,14 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
             acclog::Write("Enter: op already pending; ignoring (target=%p)", e.control);
             consumed = true;
+        } else if (e.textOnly) {
+            // Modal body text — non-activatable. Re-speak so a user who
+            // missed the open-time announce can hear it again. Don't fire
+            // vtable[15] (the listbox has no activate handler).
+            AnnounceControl(e.control);
+            acclog::Write("Enter re-announce panel=%p index=%d target=%p (text-only)",
+                          activePanel, g_chainIndex, e.control);
+            consumed = true;
         } else if (isTabButton) {
             int cursorY = e.cy;
             if (g_tabClickOffsetY > 0) cursorY += g_tabClickOffsetY;
@@ -2913,21 +2977,31 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             ChainEntry& e = g_chain[g_chainIndex];
             AnnounceControl(e.control);
             int cursorY = e.cy;
-            if (IsTabButton(e.control) && g_tabClickOffsetY > 0) {
-                cursorY += g_tabClickOffsetY;
+            if (!e.textOnly) {
+                // Cursor warp + suppress-budget exist to make hover-to-focus
+                // work for activatable controls. Text-only entries (modal
+                // body listboxes) have no hover semantics worth chasing —
+                // skipping keeps the cursor stable on whatever button the
+                // user just left, and avoids spurious engine-side
+                // SetActiveControl echoes from the listbox under the cursor.
+                if (IsTabButton(e.control) && g_tabClickOffsetY > 0) {
+                    cursorY += g_tabClickOffsetY;
+                }
+                g_pendingX          = e.cx;
+                g_pendingY          = cursorY;
+                g_pendingTarget     = e.control;
+                g_pendingCursorMove = true;
+                // Suppress the next two SetActiveControl announces — engine-
+                // side focus echoes that fire after the keypress + cursor
+                // warp would otherwise read out the wrong sibling control as
+                // an "afterthought" after we already announced the chain
+                // target above.
+                g_navSpeechSuppressBudget = 2;
             }
-            g_pendingX          = e.cx;
-            g_pendingY          = cursorY;
-            g_pendingTarget     = e.control;
-            g_pendingCursorMove = true;
-            // Suppress the next two SetActiveControl announces — engine-side
-            // focus echoes that fire after the keypress + cursor warp would
-            // otherwise read out the wrong sibling control as an "afterthought"
-            // after we already announced the chain target above.
-            g_navSpeechSuppressBudget = 2;
-            acclog::Write("Chain step panel=%p index=%d/%d target=%p center=(%d,%d) cursorY=%d %s",
+            acclog::Write("Chain step panel=%p index=%d/%d target=%p center=(%d,%d) cursorY=%d%s %s",
                           g_chainPanel, g_chainIndex, g_chainCount,
                           e.control, e.cx, e.cy, cursorY,
+                          e.textOnly ? " text-only" : "",
                           param_1 == kInputNavDown ? "DOWN" : "UP");
             // Always consume nav-up/nav-down on a panel with a non-empty chain.
             consumed = true;
