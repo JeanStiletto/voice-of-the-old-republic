@@ -1171,6 +1171,33 @@ static void ResetTabbedState() {
     g_virtualLineIdx   = -1;
 }
 
+// Per-tick guard against a dangling g_tabbedPanel. The engine frees
+// CSWGuiPanel objects across hard game-state transitions (e.g. death →
+// main menu) without us seeing a clearance event, so the "persist until
+// DetectTabsCluster overwrites" lifecycle breaks the moment the next
+// panel isn't itself tabbed. IsTabButton + the inline tab-cluster
+// dereference in the Enter-dispatch path then read [g_tabbedPanel+0x20]
+// from freed memory and access-violate.
+//
+// Cheap: ≤16 panels × pointer-compare, never derefs g_tabbedPanel itself.
+static void ValidateTabbedPanel() {
+    if (!g_tabbedPanel) return;
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!mgr) return;  // engine not up yet — leave state untouched
+    auto* base = reinterpret_cast<unsigned char*>(mgr);
+    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+    if (panelData && panelCount > 0) {
+        int n = panelCount > 16 ? 16 : panelCount;
+        for (int i = 0; i < n; ++i) {
+            if (panelData[i] == g_tabbedPanel) return;  // still live
+        }
+    }
+    acclog::Write("ValidateTabbedPanel: %p not in panels[]; clearing tabbed-mode state",
+                  g_tabbedPanel);
+    ResetTabbedState();
+}
+
 // Split `text` on '\n' into g_virtualLines[]. Truncates oversize lines to fit;
 // caps total line count at kMaxVirtualLines (Options Gameplay tab has 8, no
 // observed listbox blob > 16 in any KOTOR menu — 32 is comfortable headroom).
@@ -1897,9 +1924,12 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
     // etc.); clicking a different tab from inside a sub-dialog is the
     // engine's normal "switch tabs" gesture for mouse users. So we only
     // clear the per-event virtual-line cursor on panel change; g_tabbedPanel/
-    // g_tabsStart/g_tabsCount persist until DetectTabsCluster overwrites
-    // them on a different tabbed panel, or a long-running session re-arms
-    // them naturally.
+    // g_tabsStart/g_tabsCount persist until either DetectTabsCluster
+    // overwrites them on a different tabbed panel, or ValidateTabbedPanel
+    // (in OnUpdate) drops them when the engine frees the underlying panel
+    // — the latter covers hard transitions like death → main menu, where
+    // the next foreground panel isn't tabbed and would otherwise leave
+    // g_tabbedPanel dangling.
     if (panel != prevPanel) {
         g_virtualLineCount = 0;
         g_virtualLineIdx   = -1;
@@ -4190,6 +4220,11 @@ static void PollContainerGiveModeKey() {
 // hook). We pass EBP as the parameter for clarity even though we also have
 // the global at 0x7A39F4 — both resolve to the same singleton.
 extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
+    // Defensive — if the engine freed the panel that DetectTabsCluster
+    // last latched onto, drop the stale pointer before any input handler
+    // can deref it.
+    ValidateTabbedPanel();
+
     MonitorFocusedControl();
     MonitorPanelContents();
     MonitorDialogReplies();
