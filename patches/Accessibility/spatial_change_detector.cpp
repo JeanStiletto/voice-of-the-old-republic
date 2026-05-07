@@ -281,6 +281,19 @@ const char* SectorTag(WallSector s) {
 
 void* g_prev_area = nullptr;
 
+// Reference-frame tracking for view-mode transitions. T1 / T2 measure
+// distances from the *user's effective position* — the player creature
+// when walking normally, and the virtual cursor when view mode is
+// active (matches the listener-override hook in audio_bus.cpp:
+// 3D audio attenuates from the cursor in view mode, so the cue gates
+// should too). When the reference swaps between the two, every
+// in-range feature's `last_distance` is anchored against the OLD
+// reference; without re-seeding, the next tick would observe a delta
+// equal to the player↔cursor separation and fire a wall-of-sound. We
+// edge-detect the swap and run CalibrateInRange against the new
+// reference before the change-detection body sees it.
+bool g_was_using_cursor = false;
+
 void OnAreaChange(void* area) {
     if (!area) {
         g_wall_count = 0;
@@ -327,10 +340,17 @@ void OnAreaChange(void* area) {
 // user experienced on every save-load (when 23+ in-range walls all
 // fired their first-observation entry cue on the same frame).
 //
+// Also reused on view-mode enter/exit transitions: the reference
+// position swaps between the player creature and the virtual cursor,
+// and the per-feature deltas need to re-anchor against the new
+// reference or every wall would appear to "jump" by metres on the
+// transition tick and fire a flood of T1 cues.
+//
 // After calibration, the next normal Tick() fires only on actual
-// player motion past the threshold (or on features that newly enter
-// the awareness bubble during play).
-void CalibrateInRange(void* area, const Vector& playerPos) {
+// reference motion past the threshold (or on features that newly
+// enter the awareness bubble during play).
+void CalibrateInRange(void* area, const Vector& referencePos,
+                      const char* reason) {
     if (!area) return;
     const auto& settings = acc::core::Get().pillar1;
     float range   = settings.awarenessRangeMeters;
@@ -341,7 +361,7 @@ void CalibrateInRange(void* area, const Vector& playerPos) {
         const auto& w = g_walls[i];
         Vector closest;
         float distSq = ClosestPointDistanceSquared(
-            playerPos, w.a, w.b, closest);
+            referencePos, w.a, w.b, closest);
         if (distSq > rangeSq) continue;
         g_wall_last_distance[i] = std::sqrt(distSq);
         ++wallsCalibrated;
@@ -355,9 +375,9 @@ void CalibrateInRange(void* area, const Vector& playerPos) {
         if (!ClassifyObject(obj, cue)) continue;
         Vector pos;
         if (!acc::engine::GetObjectPosition(obj, pos)) continue;
-        float dx = pos.x - playerPos.x;
-        float dy = pos.y - playerPos.y;
-        float dz = pos.z - playerPos.z;
+        float dx = pos.x - referencePos.x;
+        float dy = pos.y - referencePos.y;
+        float dz = pos.z - referencePos.z;
         float distSq = dx * dx + dy * dy + dz * dz;
         if (distSq > rangeSq) continue;
         uint32_t handle = acc::engine::GetObjectHandle(obj);
@@ -370,10 +390,10 @@ void CalibrateInRange(void* area, const Vector& playerPos) {
     }
 
     acclog::Write(
-        "ChangeDetector: calibrated walls=%d objects=%d at "
-        "playerPos=(%.2f,%.2f,%.2f)",
-        wallsCalibrated, objectsCalibrated,
-        playerPos.x, playerPos.y, playerPos.z);
+        "ChangeDetector: calibrated (%s) walls=%d objects=%d at "
+        "ref=(%.2f,%.2f,%.2f)",
+        reason ? reason : "?", wallsCalibrated, objectsCalibrated,
+        referencePos.x, referencePos.y, referencePos.z);
 }
 
 }  // namespace
@@ -390,14 +410,42 @@ void Tick() {
     void* area = acc::engine::GetCurrentArea();
     if (!area) return;
 
+    // Pick the reference position. View mode swaps in the virtual
+    // cursor as the user's effective listener, so T1 distance-deltas
+    // and T2 cone tests track cursor motion (W/S translates the cursor
+    // along camera yaw) — without this, the player creature is frozen
+    // by view-mode's SetPlayerInputEnabled(false) and T1 never fires.
+    Vector referencePos = playerPos;
+    bool   usingCursor  = false;
+    if (acc::view_mode::IsActive()) {
+        Vector cursor;
+        if (acc::view_mode::TryGetCursorPosition(cursor)) {
+            referencePos = cursor;
+            usingCursor  = true;
+        }
+    }
+
     if (area != g_prev_area) {
         OnAreaChange(area);
-        CalibrateInRange(area, playerPos);
+        CalibrateInRange(area, referencePos, "area-change");
+        g_was_using_cursor = usingCursor;
         g_prev_area = area;
         // Calibration completed silently — last_distance now reflects
         // the as-loaded position for every in-range feature, so the
         // first cue we fire on the next tick will be a real motion
         // event, not the area-load entry flood.
+        return;
+    }
+
+    // Reference-frame swap (view-mode enter/exit). Re-seed last_distance
+    // against the new reference so the body's distance-delta test
+    // doesn't observe the player↔cursor separation as a synthetic
+    // motion event. Mirrors the area-change calibration shape.
+    if (usingCursor != g_was_using_cursor) {
+        CalibrateInRange(area, referencePos,
+                         usingCursor ? "view-mode-enter"
+                                     : "view-mode-exit");
+        g_was_using_cursor = usingCursor;
         return;
     }
 
@@ -413,12 +461,11 @@ void Tick() {
     DWORD now = GetTickCount();
 
     // Hoisted yaw — used for both T1 wall-sector binning and T2 Front-cone
-    // candidate detection. One read per tick.
-    //
-    // Camera yaw when view mode is active (T2 tracks where the user is
-    // looking as they pan A/D); player yaw otherwise. T1 distance-delta
-    // doesn't fire in view mode anyway (character not moving), so its
-    // sector binning riding the same value is fine.
+    // candidate detection. One read per tick. Camera yaw when view mode
+    // is active (T2 tracks where the user is looking as they pan A/D);
+    // player yaw otherwise. T1 distance-delta now also follows the
+    // cursor in view mode (see referencePos above), so its sector
+    // binning riding the same camera-yaw is the right pairing.
     float effectiveYaw = 0.0f;
     if (!acc::view_mode::GetEffectiveOrientationYawDegrees(effectiveYaw)) {
         effectiveYaw = 0.0f;
@@ -453,7 +500,7 @@ void Tick() {
         const auto& w = g_walls[i];
         Vector closest;
         float distSq = ClosestPointDistanceSquared(
-            playerPos, w.a, w.b, closest);
+            referencePos, w.a, w.b, closest);
         if (distSq > rangeSq) {
             g_wall_last_distance[i] = -1.0f;
             continue;
@@ -464,8 +511,8 @@ void Tick() {
         // T2 candidate detection — every in-range wall whose closest
         // point lies in the Front sector competes for foremost.
         if (t2_enabled) {
-            float dx = closest.x - playerPos.x;
-            float dy = closest.y - playerPos.y;
+            float dx = closest.x - referencePos.x;
+            float dy = closest.y - referencePos.y;
             float wb = std::atan2(dy, dx) * 57.29577951308232f;
             if (ClassifyRelativeBearing(wb - effectiveYaw) ==
                     WallSector::Front &&
@@ -516,8 +563,8 @@ void Tick() {
         int sectorWinner[static_cast<int>(WallSector::Count_)] = {-1,-1,-1,-1};
         for (int i = 0; i < wall_candidates; ++i) {
             const auto& c = g_candidates[i];
-            float dx = c.closest_point.x - playerPos.x;
-            float dy = c.closest_point.y - playerPos.y;
+            float dx = c.closest_point.x - referencePos.x;
+            float dy = c.closest_point.y - referencePos.y;
             // World-frame bearing (atan2(dy,dx) — same convention as
             // GetPlayerYawDegrees: 0° = +X, CCW positive).
             float worldBearingDeg = std::atan2(dy, dx) * 57.29577951308232f;
@@ -561,8 +608,8 @@ void Tick() {
             const auto& c = g_candidates[winners[k]];
             // Recompute sector for the fired winner — cheap, no need
             // to thread it through the winners array.
-            float dx = c.closest_point.x - playerPos.x;
-            float dy = c.closest_point.y - playerPos.y;
+            float dx = c.closest_point.x - referencePos.x;
+            float dy = c.closest_point.y - referencePos.y;
             float wb = std::atan2(dy, dx) * 57.29577951308232f;
             WallSector s = ClassifyRelativeBearing(wb - effectiveYaw);
             if (logIdx < static_cast<int>(sizeof(sector_log)) - 1) {
@@ -570,7 +617,7 @@ void Tick() {
             }
             if (acc::audio::PlayCueAtPosition(
                     acc::audio::NavCue::Wall, c.closest_point,
-                    playerPos, range)) {
+                    referencePos, range)) {
                 ++walls_cued;
                 // Stamp shared last_cued_at so T2 sees this wall as
                 // recently-cued and skips it.
@@ -589,9 +636,9 @@ void Tick() {
         Vector pos;
         if (!acc::engine::GetObjectPosition(obj, pos)) continue;
 
-        float dx = pos.x - playerPos.x;
-        float dy = pos.y - playerPos.y;
-        float dz = pos.z - playerPos.z;
+        float dx = pos.x - referencePos.x;
+        float dy = pos.y - referencePos.y;
+        float dz = pos.z - referencePos.z;
         float distSq = dx * dx + dy * dy + dz * dz;
 
         uint32_t handle = acc::engine::GetObjectHandle(obj);
@@ -630,7 +677,7 @@ void Tick() {
         bool fire = isNew ||
                     (std::fabs(dist - s->last_distance) > threshold);
         if (fire) {
-            if (acc::audio::PlayCueAtPosition(cue, pos, playerPos, range)) {
+            if (acc::audio::PlayCueAtPosition(cue, pos, referencePos, range)) {
                 ++objs_cued;
                 s->last_cued_at = now;
             }
@@ -687,7 +734,7 @@ void Tick() {
 
                 if (fire) {
                     bool ok = acc::audio::PlayCueAtPosition(
-                        t2_best_cue, t2_best_pos, playerPos, range);
+                        t2_best_cue, t2_best_pos, referencePos, range);
                     if (ok) {
                         t2_fired = true;
                         if (g_t2_pending.kind == FeatureKind::Wall) {
