@@ -46,7 +46,7 @@ struct Pillar1Settings {
     bool footstepSuppression   = true;
     // Numeric tunables (plan-locked starting values; tune live).
     float awarenessRangeMeters         = 5.0f;
-    float distanceDeltaThresholdMeters = 0.5f;
+    float distanceDeltaThresholdMeters = 1.5f;
     int   voiceBudgetMax               = 3;
     // Per-tick wall-cue cap. Trigger 1 collects every wall that crossed
     // threshold this tick, then fires only the K nearest. Caps audible

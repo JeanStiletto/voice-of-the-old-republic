@@ -33,19 +33,79 @@ constexpr int kMaxWallEdges = 4096;
 acc::engine::WallEdge g_walls[kMaxWallEdges];
 int                   g_wall_count = 0;
 
-// Per-wall last-cued distance. Negative sentinel = "wall is currently
-// out of range" (or "we haven't observed it in range yet this area").
-// On area change CalibrateInRange seeds this for every in-range wall
-// without firing cues, so the next normal tick fires only on actual
-// player motion past the threshold.
-float g_wall_last_distance[kMaxWallEdges];
+// --- Wall surface clustering -------------------------------------------
+//
+// The walkmesh stores wall geometry as many short edges (Endar Spire
+// corridors are ~0.7-1m per edge). Tracking per-edge distance produces
+// permanent chatter as the player walks parallel to a wall: each edge's
+// closest-point distance jumps when the player passes its endpoint, even
+// though the *physical wall surface* hasn't changed distance to the
+// player. We solve this by clustering adjacent collinear edges into
+// surfaces at area-load time and tracking distance per *surface*. A
+// player walking along a corridor sees the left/right surface's
+// minimum distance stay roughly constant — no spurious fires.
+//
+// Cluster rule: two edges merge if they share an endpoint AND their
+// direction vectors are within kSurfaceCollinearityCosThreshold (i.e.
+// the angle between them is small enough to count as "same wall"). An
+// L-junction at a corner has two adjacent edges with perpendicular
+// directions; those stay in separate surfaces because the dot product
+// of their direction vectors is near zero, well below the cos(15°)
+// threshold. A long straight wall split into 5 short edges all collapse
+// into one surface.
+//
+// Endpoint-sharing is detected with a small tolerance (kEndpointTolMeters)
+// to absorb floating-point noise in the walkmesh extractor's world-space
+// transform.
 
-// Per-wall last-cued timestamp (ms via GetTickCount). Shared between T1
-// and T2: T1 stamps when it fires a wall; T2 reads to gate its own fire
-// (and stamps too). 0 = never cued. On area change all entries reset to
-// 0 so the first T2 candidate post-load is allowed to fire after the
-// T2 first-tick suppression is cleared.
-DWORD g_wall_last_cued_at[kMaxWallEdges];
+constexpr int kMaxWallSurfaces = 1024;
+
+// cos(15°) ≈ 0.966 — direction vectors that disagree by more than 15°
+// are different surfaces. Generous enough to absorb walkmesh dicing
+// noise on smooth corridor walls, tight enough to keep L-junctions
+// distinct (90° → cos=0, well below threshold).
+constexpr float kSurfaceCollinearityCosThreshold = 0.966f;
+
+// Endpoint coincidence tolerance — 5cm. Walkmesh world-space transforms
+// can introduce sub-mm float noise; 5cm is well below any realistic
+// edge spacing in KOTOR's hand-authored layouts.
+constexpr float kEndpointTolMeters    = 0.05f;
+constexpr float kEndpointTolSquared   = kEndpointTolMeters * kEndpointTolMeters;
+
+// Per-tick same-closest-point dedup tolerance — 5cm. T- and X-junction
+// vertices have 3+ edges meeting at a single point; each edge clusters
+// into its own surface (correctly, since the edges go off in different
+// directions). When the player is closest to the shared vertex, every
+// one of those surfaces independently reports that vertex as its
+// closest point, and our K-cap fires several near-identical cues from
+// the same world location. We collapse them at candidate-collection
+// time: any surface whose closest point coincides with an already-
+// pending candidate within this tolerance merges into that candidate
+// (keeping the smaller distance).
+constexpr float kFireDedupTolMeters   = 0.05f;
+constexpr float kFireDedupTolSquared  = kFireDedupTolMeters * kFireDedupTolMeters;
+
+// Per-edge surface-id mapping. Filled by the area-load clustering pass.
+// -1 = "edge not assigned" (only seen briefly during clustering or if
+// kMaxWallSurfaces overflowed).
+int g_edge_surface_id[kMaxWallEdges];
+
+// Number of distinct surfaces clustered for the current area.
+int g_surface_count = 0;
+
+// Per-surface last-cued distance. Negative sentinel = "surface is
+// currently out of range" (or "we haven't observed it in range yet this
+// area"). On area change CalibrateInRange seeds this for every in-range
+// surface without firing cues, so the next normal tick fires only on
+// actual player motion past the threshold.
+float g_surface_last_distance[kMaxWallSurfaces];
+
+// Per-surface last-cued timestamp (ms via GetTickCount). Shared between
+// T1 and T2: T1 stamps when it fires a surface; T2 reads to gate its
+// own fire (and stamps too). 0 = never cued. On area change all entries
+// reset to 0 so the first T2 candidate post-load is allowed to fire
+// after the T2 first-tick suppression is cleared.
+DWORD g_surface_last_cued_at[kMaxWallSurfaces];
 
 // --- Object state -------------------------------------------------------
 //
@@ -66,7 +126,7 @@ ObjectState g_object_state[kMaxTrackedObjects];
 // --- Trigger 2 — foremost-in-front debounce state ----------------------
 //
 // Three-variable pattern ported from turn_announce.cpp. The "feature
-// identity" can be a wall (by index into g_walls) or an object (by
+// identity" can be a wall surface (by surface index) or an object (by
 // engine handle) or None (cone clear). Equality compares (kind +
 // discriminator) so a wall and an object with happenstance-matching
 // integers are distinguishable.
@@ -81,15 +141,15 @@ enum class FeatureKind : int {
 
 struct Foremost {
     FeatureKind kind;
-    int         wall_index;
+    int         wall_surface_index;
     uint32_t    object_handle;
 };
 
 bool ForemostEqual(const Foremost& a, const Foremost& b) {
     if (a.kind != b.kind) return false;
     switch (a.kind) {
-        case FeatureKind::Wall:   return a.wall_index    == b.wall_index;
-        case FeatureKind::Object: return a.object_handle == b.object_handle;
+        case FeatureKind::Wall:   return a.wall_surface_index == b.wall_surface_index;
+        case FeatureKind::Object: return a.object_handle      == b.object_handle;
         case FeatureKind::None:   return true;
     }
     return false;
@@ -104,8 +164,8 @@ const char* ForemostKindTag(FeatureKind k) {
     return "?";
 }
 
-Foremost g_t2_last_fired      = { FeatureKind::None, -1, 0 };
-Foremost g_t2_pending         = { FeatureKind::None, -1, 0 };
+Foremost g_t2_last_fired      = { FeatureKind::None, -1, 0u };
+Foremost g_t2_pending         = { FeatureKind::None, -1, 0u };
 DWORD    g_t2_pending_changed_at = 0;
 bool     g_t2_initialised     = false;
 
@@ -132,6 +192,129 @@ float ClosestPointDistanceSquared(const Vector& p,
     Vector diff = {
         p.x - outClosest.x, p.y - outClosest.y, p.z - outClosest.z };
     return diff.x * diff.x + diff.y * diff.y + diff.z * diff.z;
+}
+
+// Squared distance between two Vectors in XY only (clustering ignores
+// vertical noise — KOTOR walkmesh edges are flat per-room and a small Z
+// jitter on the seam would otherwise prevent endpoint coincidence).
+float DistanceSquaredXY(const Vector& a, const Vector& b) {
+    float dx = a.x - b.x;
+    float dy = a.y - b.y;
+    return dx * dx + dy * dy;
+}
+
+// Returns true if the two edges should belong to the same wall surface:
+// they share an endpoint (within kEndpointTolMeters) AND their direction
+// vectors are roughly collinear (cosine within
+// kSurfaceCollinearityCosThreshold). Direction is taken in XY only;
+// walkmesh edges within a single room are co-planar enough that
+// vertical components add noise without information.
+bool EdgesAreSameSurface(const acc::engine::WallEdge& e1,
+                         const acc::engine::WallEdge& e2) {
+    bool share_aa = DistanceSquaredXY(e1.a, e2.a) <= kEndpointTolSquared;
+    bool share_ab = DistanceSquaredXY(e1.a, e2.b) <= kEndpointTolSquared;
+    bool share_ba = DistanceSquaredXY(e1.b, e2.a) <= kEndpointTolSquared;
+    bool share_bb = DistanceSquaredXY(e1.b, e2.b) <= kEndpointTolSquared;
+    if (!(share_aa || share_ab || share_ba || share_bb)) return false;
+
+    float d1x = e1.b.x - e1.a.x;
+    float d1y = e1.b.y - e1.a.y;
+    float d2x = e2.b.x - e2.a.x;
+    float d2y = e2.b.y - e2.a.y;
+    float len1 = std::sqrt(d1x * d1x + d1y * d1y);
+    float len2 = std::sqrt(d2x * d2x + d2y * d2y);
+    if (len1 < 1e-4f || len2 < 1e-4f) return true;  // degenerate, accept
+    float cos_unsigned =
+        std::fabs((d1x * d2x + d1y * d2y) / (len1 * len2));
+    return cos_unsigned >= kSurfaceCollinearityCosThreshold;
+}
+
+// --- Union-find over edges (small-N implementation) --------------------
+//
+// Iterative path compression with union-by-rank. We use it once per
+// area-load to cluster edges into surfaces; runtime is O(N² α(N)) in
+// the worst case (we do N² pair tests; the union/find calls are
+// effectively constant). For 900 edges that's ~800k pair tests + O(N)
+// union-find ops, which finishes in well under 100ms — runs once per
+// zone, never on a hot path.
+
+int g_uf_parent[kMaxWallEdges];
+int g_uf_rank[kMaxWallEdges];
+
+int UfFind(int i) {
+    while (g_uf_parent[i] != i) {
+        g_uf_parent[i] = g_uf_parent[g_uf_parent[i]];  // path compress
+        i = g_uf_parent[i];
+    }
+    return i;
+}
+
+void UfUnion(int i, int j) {
+    int ri = UfFind(i);
+    int rj = UfFind(j);
+    if (ri == rj) return;
+    if (g_uf_rank[ri] < g_uf_rank[rj]) {
+        g_uf_parent[ri] = rj;
+    } else if (g_uf_rank[ri] > g_uf_rank[rj]) {
+        g_uf_parent[rj] = ri;
+    } else {
+        g_uf_parent[rj] = ri;
+        ++g_uf_rank[ri];
+    }
+}
+
+// Cluster the cached wall edges (g_walls[0..g_wall_count-1]) into
+// connected-and-collinear surfaces. Fills g_edge_surface_id[] and sets
+// g_surface_count. Each unique cluster representative is assigned a
+// dense surface index in [0, g_surface_count). Surfaces beyond
+// kMaxWallSurfaces are coalesced into surface index 0 (degraded but
+// safe; logs a warning).
+void ClusterEdgesIntoSurfaces() {
+    g_surface_count = 0;
+    for (int i = 0; i < g_wall_count; ++i) {
+        g_uf_parent[i] = i;
+        g_uf_rank[i]   = 0;
+        g_edge_surface_id[i] = -1;
+    }
+    // Cross-room merging is intentional. KOTOR's "room" is an internal
+    // .lyt segmentation of an area (not a literal room), and a single
+    // physical corridor wall regularly spans multiple rooms. Refusing
+    // to cluster across room_id leaves long walls split into per-room
+    // fragments, each firing its own threshold crossings. We let the
+    // geometric tests (shared endpoint + collinearity) decide alone.
+    for (int i = 0; i < g_wall_count; ++i) {
+        for (int j = i + 1; j < g_wall_count; ++j) {
+            if (EdgesAreSameSurface(g_walls[i], g_walls[j])) {
+                UfUnion(i, j);
+            }
+        }
+    }
+    // Densify: walk roots in iteration order, assigning surface indices
+    // 0..N-1.
+    int root_to_surface[kMaxWallEdges];
+    for (int i = 0; i < g_wall_count; ++i) root_to_surface[i] = -1;
+    int overflow_collisions = 0;
+    for (int i = 0; i < g_wall_count; ++i) {
+        int r = UfFind(i);
+        if (root_to_surface[r] < 0) {
+            if (g_surface_count < kMaxWallSurfaces) {
+                root_to_surface[r] = g_surface_count++;
+            } else {
+                root_to_surface[r] = 0;  // degrade to bucket 0
+                ++overflow_collisions;
+            }
+        }
+        g_edge_surface_id[i] = root_to_surface[r];
+    }
+    if (overflow_collisions > 0) {
+        acclog::Write(
+            "ChangeDetector: surface overflow — %d edges collapsed to "
+            "bucket 0 (raise kMaxWallSurfaces above %d)",
+            overflow_collisions, kMaxWallSurfaces);
+    }
+    acclog::Write(
+        "ChangeDetector: clustered %d edges into %d surfaces",
+        g_wall_count, g_surface_count);
 }
 
 // --- Object classification ---------------------------------------------
@@ -201,23 +384,29 @@ void RemoveObjectState(uint32_t handle) {
     }
 }
 
-// --- K-nearest candidate pool ------------------------------------------
+// --- Per-tick surface scratch ------------------------------------------
 //
-// Per-tick scratch buffer for "walls that crossed threshold this tick".
-// Sized at 256 — peak observed in-range count was 65 (line 19:56:16 of
-// patch-20260505-195454.log); 4× headroom for hypothetical dense areas.
-// Overflow drops the extra candidates from selection but their
-// last_distance still gets updated below so they don't re-queue next
-// tick.
+// Per-tick best-closest-point for each surface. Reset at the start of
+// every Tick. Used to find each surface's closest edge this tick before
+// applying the distance-delta threshold check.
 
-struct WallCandidate {
-    int    wall_index;
+struct SurfaceScratch {
+    bool   in_range;
+    float  best_distance;
+    Vector best_closest_point;
+};
+
+SurfaceScratch g_surface_scratch[kMaxWallSurfaces];
+
+// Per-tick "surfaces that crossed the threshold this tick" — used to
+// pick the K closest for actual cue firing. Sized to surface count cap.
+struct SurfaceCandidate {
+    int    surface_index;
     float  distance;
     Vector closest_point;
 };
 
-constexpr int kMaxWallCandidates = 256;
-WallCandidate g_candidates[kMaxWallCandidates];
+SurfaceCandidate g_surface_candidates[kMaxWallSurfaces];
 
 // --- Direction sectors for "one cue per direction" selection -----------
 //
@@ -296,16 +485,22 @@ bool g_was_using_cursor = false;
 
 void OnAreaChange(void* area) {
     if (!area) {
-        g_wall_count = 0;
+        g_wall_count    = 0;
+        g_surface_count = 0;
         return;
     }
     g_wall_count = acc::engine::BuildAreaWallCache(area, g_walls, kMaxWallEdges);
     int totalDiscovered = acc::engine::BuildAreaWallCache(area, nullptr, 0);
     bool overflow = (totalDiscovered > kMaxWallEdges);
 
-    for (int i = 0; i < kMaxWallEdges; ++i) {
-        g_wall_last_distance[i] = -1.0f;
-        g_wall_last_cued_at[i]  = 0;
+    // Cluster edges into wall surfaces. After this, g_edge_surface_id[i]
+    // gives the surface index for edge i, and g_surface_count is the
+    // total number of distinct surfaces.
+    ClusterEdgesIntoSurfaces();
+
+    for (int i = 0; i < kMaxWallSurfaces; ++i) {
+        g_surface_last_distance[i] = -1.0f;
+        g_surface_last_cued_at[i]  = 0;
     }
     for (int i = 0; i < kMaxTrackedObjects; ++i) {
         g_object_state[i].handle        = 0;
@@ -316,8 +511,8 @@ void OnAreaChange(void* area) {
     // T2 first-tick suppression: clear identity state. The first
     // post-CalibrateInRange tick will seed g_t2_last_fired without
     // firing.
-    g_t2_last_fired         = { FeatureKind::None, -1, 0 };
-    g_t2_pending            = { FeatureKind::None, -1, 0 };
+    g_t2_last_fired         = { FeatureKind::None, -1, 0u };
+    g_t2_pending            = { FeatureKind::None, -1, 0u };
     g_t2_pending_changed_at = 0;
     g_t2_initialised        = false;
 
@@ -356,15 +551,28 @@ void CalibrateInRange(void* area, const Vector& referencePos,
     float range   = settings.awarenessRangeMeters;
     float rangeSq = range * range;
 
-    int wallsCalibrated = 0;
+    // Reset per-surface scratch and last_distance, then walk every edge
+    // and propagate its distance into its surface's per-area minimum.
+    for (int i = 0; i < g_surface_count; ++i) {
+        g_surface_last_distance[i] = -1.0f;
+    }
     for (int i = 0; i < g_wall_count; ++i) {
         const auto& w = g_walls[i];
         Vector closest;
         float distSq = ClosestPointDistanceSquared(
             referencePos, w.a, w.b, closest);
         if (distSq > rangeSq) continue;
-        g_wall_last_distance[i] = std::sqrt(distSq);
-        ++wallsCalibrated;
+        int sid = g_edge_surface_id[i];
+        if (sid < 0 || sid >= g_surface_count) continue;
+        float dist = std::sqrt(distSq);
+        if (g_surface_last_distance[sid] < 0.0f ||
+            dist < g_surface_last_distance[sid]) {
+            g_surface_last_distance[sid] = dist;
+        }
+    }
+    int wallsCalibrated = 0;
+    for (int i = 0; i < g_surface_count; ++i) {
+        if (g_surface_last_distance[i] >= 0.0f) ++wallsCalibrated;
     }
 
     int objectsCalibrated = 0;
@@ -471,143 +679,167 @@ void Tick() {
         effectiveYaw = 0.0f;
     }
 
-    int walls_in_range    = 0;
-    int wall_candidates   = 0;
-    int wall_overflow     = 0;
-    int sectors_active    = 0;
+    int walls_in_range    = 0;       // surfaces in range (not edges)
+    int surface_candidates= 0;
     int walls_cued        = 0;
     int objs_in_range     = 0;
     int objs_cued         = 0;
-    char sector_log[8]    = {0};   // "F-L-B-R" mask string for diagnostic
+    char sector_log[16]   = {0};   // F/L/B/R per fired surface
 
     // T2 foremost-in-front candidate (best across walls + objects).
-    // Tracked inline during the T1 passes — every in-range feature is
+    // Tracked inline during the T1 passes — every in-range surface is
     // a T2 candidate, regardless of whether its distance crossed the
     // T1 threshold this tick.
-    Foremost           t2_best        = { FeatureKind::None, -1, 0 };
+    Foremost           t2_best        = { FeatureKind::None, -1, 0u };
     float              t2_best_dist   = 1e30f;
     Vector             t2_best_pos    = { 0.0f, 0.0f, 0.0f };
     acc::audio::NavCue t2_best_cue    = acc::audio::NavCue::Wall;
     const bool         t2_enabled     = settings.trigger2FrontCone;
 
-    // --- Walls: pass 1 — collect candidates, update references ---------
+    // --- Walls: pass 1 — fold edge distances into per-surface minimum -
     //
-    // Update last_distance immediately for every threshold-crossing wall,
-    // even if the candidate buffer is full or the wall later loses the
-    // K-nearest cut. Otherwise unfired walls would keep crossing the
-    // same threshold every tick and starve the K-selection forever.
+    // Each physical wall is one or more collinear-adjacent edges that
+    // were clustered into a single "surface" at area-load. Per tick we
+    // walk all edges, compute each edge's closest-point distance to the
+    // reference position, and feed it into its surface's per-tick
+    // minimum. Walking parallel to a corridor wall keeps each surface's
+    // minimum stable across ticks because the next edge along is
+    // already at the same perpendicular distance — no spurious deltas
+    // from edge endpoints jumping past the player.
+    for (int i = 0; i < g_surface_count; ++i) {
+        g_surface_scratch[i].in_range      = false;
+        g_surface_scratch[i].best_distance = 1e30f;
+    }
     for (int i = 0; i < g_wall_count; ++i) {
         const auto& w = g_walls[i];
         Vector closest;
         float distSq = ClosestPointDistanceSquared(
             referencePos, w.a, w.b, closest);
-        if (distSq > rangeSq) {
-            g_wall_last_distance[i] = -1.0f;
+        if (distSq > rangeSq) continue;
+        int sid = g_edge_surface_id[i];
+        if (sid < 0 || sid >= g_surface_count) continue;
+        float dist = std::sqrt(distSq);
+        SurfaceScratch& ss = g_surface_scratch[sid];
+        if (!ss.in_range || dist < ss.best_distance) {
+            ss.in_range           = true;
+            ss.best_distance      = dist;
+            ss.best_closest_point = closest;
+        }
+    }
+
+    // --- Walls: pass 2 — surface-level threshold check + T2 foremost --
+    for (int s = 0; s < g_surface_count; ++s) {
+        SurfaceScratch& ss = g_surface_scratch[s];
+        if (!ss.in_range) {
+            g_surface_last_distance[s] = -1.0f;
             continue;
         }
         ++walls_in_range;
-        float dist = std::sqrt(distSq);
 
-        // T2 candidate detection — every in-range wall whose closest
+        // T2 candidate detection — every in-range surface whose closest
         // point lies in the Front sector competes for foremost.
         if (t2_enabled) {
-            float dx = closest.x - referencePos.x;
-            float dy = closest.y - referencePos.y;
+            float dx = ss.best_closest_point.x - referencePos.x;
+            float dy = ss.best_closest_point.y - referencePos.y;
             float wb = std::atan2(dy, dx) * 57.29577951308232f;
             if (ClassifyRelativeBearing(wb - effectiveYaw) ==
                     WallSector::Front &&
-                dist < t2_best_dist) {
-                t2_best_dist          = dist;
-                t2_best.kind          = FeatureKind::Wall;
-                t2_best.wall_index    = i;
-                t2_best.object_handle = 0;
-                t2_best_pos           = closest;
-                t2_best_cue           = acc::audio::NavCue::Wall;
+                ss.best_distance < t2_best_dist) {
+                t2_best_dist                = ss.best_distance;
+                t2_best.kind                = FeatureKind::Wall;
+                t2_best.wall_surface_index  = s;
+                t2_best.object_handle       = 0;
+                t2_best_pos                 = ss.best_closest_point;
+                t2_best_cue                 = acc::audio::NavCue::Wall;
             }
         }
 
         if (!settings.trigger1DistanceDelta) continue;
 
+        // Threshold check on the surface minimum. Walking parallel to a
+        // long wall holds best_distance ≈ constant → no fire. Approach
+        // / retreat from the wall changes the minimum smoothly → fires
+        // on each `threshold` step.
         bool crossed = false;
-        if (g_wall_last_distance[i] < 0.0f) {
+        if (g_surface_last_distance[s] < 0.0f) {
             crossed = true;  // first observation in range during play
-        } else if (std::fabs(dist - g_wall_last_distance[i]) > threshold) {
+        } else if (std::fabs(ss.best_distance - g_surface_last_distance[s])
+                   > threshold) {
             crossed = true;
         }
         if (!crossed) continue;
 
-        // Record the new reference distance now — applies to all
-        // candidates regardless of fate (kept, deduped, K-cut, overflow).
-        g_wall_last_distance[i] = dist;
+        g_surface_last_distance[s] = ss.best_distance;
 
-        if (wall_candidates < kMaxWallCandidates) {
-            g_candidates[wall_candidates].wall_index    = i;
-            g_candidates[wall_candidates].distance      = dist;
-            g_candidates[wall_candidates].closest_point = closest;
-            ++wall_candidates;
-        } else {
-            ++wall_overflow;
+        // Per-tick same-closest-point dedup. Vertex-sharing T- / X-
+        // junctions produce multiple surfaces whose best_closest_point
+        // coincides at the shared corner. Without this merge, all of
+        // them eat slots in the K-cap and fire near-identical cues at
+        // the same world position. Keep the smaller-distance entry; the
+        // surface losing the merge still has its last_distance updated
+        // above, so it doesn't immediately re-trip the threshold.
+        bool merged = false;
+        for (int c = 0; c < surface_candidates; ++c) {
+            float dx = g_surface_candidates[c].closest_point.x -
+                       ss.best_closest_point.x;
+            float dy = g_surface_candidates[c].closest_point.y -
+                       ss.best_closest_point.y;
+            float dz = g_surface_candidates[c].closest_point.z -
+                       ss.best_closest_point.z;
+            if (dx * dx + dy * dy + dz * dz < kFireDedupTolSquared) {
+                if (ss.best_distance < g_surface_candidates[c].distance) {
+                    g_surface_candidates[c].surface_index  = s;
+                    g_surface_candidates[c].distance       = ss.best_distance;
+                    g_surface_candidates[c].closest_point  =
+                        ss.best_closest_point;
+                }
+                merged = true;
+                break;
+            }
+        }
+        if (merged) continue;
+
+        if (surface_candidates < kMaxWallSurfaces) {
+            g_surface_candidates[surface_candidates].surface_index = s;
+            g_surface_candidates[surface_candidates].distance      =
+                ss.best_distance;
+            g_surface_candidates[surface_candidates].closest_point =
+                ss.best_closest_point;
+            ++surface_candidates;
         }
     }
 
-    // --- Walls: pass 2 — sector-binning + fire K closest sector reps ---
+    // --- Walls: pass 3 — fire K closest surfaces by distance ----------
     //
-    // Bin each candidate into one of four character-relative sectors
-    // (Front/Left/Back/Right). Each sector contributes at most one
-    // cue — the closest candidate in that sector. After binning, sort
-    // the per-sector reps by distance and fire the K closest. Same-wall
-    // fragments collapse automatically (they all share a sector); a
-    // T-junction with walls in three sectors fires three cues panned
-    // to three different directions.
-    if (wall_candidates > 0) {
-        int sectorWinner[static_cast<int>(WallSector::Count_)] = {-1,-1,-1,-1};
-        for (int i = 0; i < wall_candidates; ++i) {
-            const auto& c = g_candidates[i];
-            float dx = c.closest_point.x - referencePos.x;
-            float dy = c.closest_point.y - referencePos.y;
-            // World-frame bearing (atan2(dy,dx) — same convention as
-            // GetPlayerYawDegrees: 0° = +X, CCW positive).
-            float worldBearingDeg = std::atan2(dy, dx) * 57.29577951308232f;
-            float relBearing = worldBearingDeg - effectiveYaw;
-            int s = static_cast<int>(ClassifyRelativeBearing(relBearing));
-            if (sectorWinner[s] < 0 ||
-                g_candidates[i].distance <
-                    g_candidates[sectorWinner[s]].distance) {
-                sectorWinner[s] = i;
-            }
-        }
-
-        // Pack winners into a small array and sort ascending by distance.
-        int winners[static_cast<int>(WallSector::Count_)];
-        int winnerCount = 0;
-        for (int s = 0; s < static_cast<int>(WallSector::Count_); ++s) {
-            if (sectorWinner[s] >= 0) winners[winnerCount++] = sectorWinner[s];
-        }
-        sectors_active = winnerCount;
-        for (int i = 0; i + 1 < winnerCount; ++i) {
+    // No sector binning: surfaces ARE the spatial diversity (each
+    // surface is a distinct physical wall with a distinct bearing).
+    // K-closest selection ensures we never spam more than K cues per
+    // tick even in dense rooms; surfaces that lost the cut keep their
+    // last_distance updated above so they don't immediately re-queue
+    // next tick.
+    if (surface_candidates > 0) {
+        // Selection sort the first K candidates by ascending distance.
+        // K is small (default 3); selection sort is cheap.
+        int firedCount = surface_candidates < maxCues ? surface_candidates
+                                                      : maxCues;
+        for (int i = 0; i < firedCount; ++i) {
             int minIdx = i;
-            for (int j = i + 1; j < winnerCount; ++j) {
-                if (g_candidates[winners[j]].distance <
-                    g_candidates[winners[minIdx]].distance) {
+            for (int j = i + 1; j < surface_candidates; ++j) {
+                if (g_surface_candidates[j].distance <
+                    g_surface_candidates[minIdx].distance) {
                     minIdx = j;
                 }
             }
             if (minIdx != i) {
-                int tmp = winners[i];
-                winners[i] = winners[minIdx];
-                winners[minIdx] = tmp;
+                SurfaceCandidate tmp = g_surface_candidates[i];
+                g_surface_candidates[i]      = g_surface_candidates[minIdx];
+                g_surface_candidates[minIdx] = tmp;
             }
         }
 
-        // Build a "F-L-B-R" diagnostic mask string in fired-order so the
-        // log shows which sectors fired this tick (e.g. "RLF" = right
-        // closest, left next, front third).
-        int firedCount = winnerCount < maxCues ? winnerCount : maxCues;
         int logIdx = 0;
         for (int k = 0; k < firedCount; ++k) {
-            const auto& c = g_candidates[winners[k]];
-            // Recompute sector for the fired winner — cheap, no need
-            // to thread it through the winners array.
+            const auto& c = g_surface_candidates[k];
             float dx = c.closest_point.x - referencePos.x;
             float dy = c.closest_point.y - referencePos.y;
             float wb = std::atan2(dy, dx) * 57.29577951308232f;
@@ -619,9 +851,7 @@ void Tick() {
                     acc::audio::NavCue::Wall, c.closest_point,
                     referencePos, range)) {
                 ++walls_cued;
-                // Stamp shared last_cued_at so T2 sees this wall as
-                // recently-cued and skips it.
-                g_wall_last_cued_at[c.wall_index] = now;
+                g_surface_last_cued_at[c.surface_index] = now;
             }
         }
         sector_log[logIdx] = '\0';
@@ -659,12 +889,12 @@ void Tick() {
             if (ClassifyRelativeBearing(wb - effectiveYaw) ==
                     WallSector::Front &&
                 dist < t2_best_dist) {
-                t2_best_dist          = dist;
-                t2_best.kind          = FeatureKind::Object;
-                t2_best.wall_index    = -1;
-                t2_best.object_handle = handle;
-                t2_best_pos           = pos;
-                t2_best_cue           = cue;
+                t2_best_dist                = dist;
+                t2_best.kind                = FeatureKind::Object;
+                t2_best.wall_surface_index  = -1;
+                t2_best.object_handle       = handle;
+                t2_best_pos                 = pos;
+                t2_best_cue                 = cue;
             }
         }
 
@@ -719,10 +949,10 @@ void Tick() {
                 //   3. Object → check ObjectState.last_cued_at.
                 bool fire = false;
                 if (g_t2_pending.kind == FeatureKind::Wall &&
-                    g_t2_pending.wall_index >= 0 &&
-                    g_t2_pending.wall_index < g_wall_count) {
-                    DWORD lastAt = g_wall_last_cued_at[
-                        g_t2_pending.wall_index];
+                    g_t2_pending.wall_surface_index >= 0 &&
+                    g_t2_pending.wall_surface_index < g_surface_count) {
+                    DWORD lastAt = g_surface_last_cued_at[
+                        g_t2_pending.wall_surface_index];
                     if (lastAt == 0 || now - lastAt > kT2QuietMs) fire = true;
                 } else if (g_t2_pending.kind == FeatureKind::Object) {
                     ObjectState* s = FindObjectState(
@@ -738,7 +968,8 @@ void Tick() {
                     if (ok) {
                         t2_fired = true;
                         if (g_t2_pending.kind == FeatureKind::Wall) {
-                            g_wall_last_cued_at[g_t2_pending.wall_index] = now;
+                            g_surface_last_cued_at[
+                                g_t2_pending.wall_surface_index] = now;
                         } else if (g_t2_pending.kind == FeatureKind::Object) {
                             ObjectState* s = FindObjectState(
                                 g_t2_pending.object_handle);
@@ -764,17 +995,17 @@ void Tick() {
     // confusing "sectors=-" placeholder for object-only / T2-only ticks).
     if (walls_cued > 0) {
         acclog::Write(
-            "ChangeDetector: tick walls_in_range=%d wall_candidates=%d "
-            "sectors_active=%d wall_overflow=%d walls_cued=%d sectors=%s "
-            "objs_in_range=%d objs_cued=%d t2_fired=%d",
-            walls_in_range, wall_candidates, sectors_active, wall_overflow,
+            "ChangeDetector: tick surfaces_in_range=%d surface_candidates=%d "
+            "walls_cued=%d sectors=%s objs_in_range=%d objs_cued=%d "
+            "t2_fired=%d",
+            walls_in_range, surface_candidates,
             walls_cued, sector_log,
             objs_in_range, objs_cued, t2_fired ? 1 : 0);
     } else if (objs_cued > 0 || t2_fired) {
         acclog::Write(
-            "ChangeDetector: tick walls_in_range=%d wall_candidates=%d "
+            "ChangeDetector: tick surfaces_in_range=%d surface_candidates=%d "
             "objs_in_range=%d objs_cued=%d t2_fired=%d",
-            walls_in_range, wall_candidates,
+            walls_in_range, surface_candidates,
             objs_in_range, objs_cued, t2_fired ? 1 : 0);
     }
 }
