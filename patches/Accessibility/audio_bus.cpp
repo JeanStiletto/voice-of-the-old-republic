@@ -5,6 +5,10 @@
 #include <cstdint>
 #include <cstring>
 
+#include "audio_pitch.h"  // BeginScopedZero / EndScopedZero — flips the
+                          // per-thread flag the pitch-variance detour
+                          // reads so only the source THIS call creates
+                          // gets jitter neutralised
 #include "log.h"
 #include "view_mode.h"  // IsActive + TryGetCursorPosition for the listener
                         // override hook
@@ -73,6 +77,7 @@ bool PlayCue(const char* resref) {
     CResRef res;
     FillResRef(res, resref);
 
+    pitch::BeginScopedZero();
     __try {
         auto fn = reinterpret_cast<PFN_PlayOneShotSound>(
             kAddrCExoSoundPlayOneShotSound);
@@ -82,8 +87,10 @@ bool PlayCue(const char* resref) {
            /*looping=*/0,
            /*volume=*/1.0f,
            /*pan=*/0.0f);
+        pitch::EndScopedZero();
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
+        pitch::EndScopedZero();
         return false;
     }
 }
@@ -98,6 +105,7 @@ bool PlayCue3D(const char* resref, const Vector& worldPosition,
     FillResRef(res, resref);
     Vector pos = worldPosition;  // copy out before SEH frame (no aliasing)
 
+    pitch::BeginScopedZero();
     __try {
         auto fn = reinterpret_cast<PFN_Play3DOneShotSound>(
             kAddrCExoSoundPlay3DOneShotSound);
@@ -109,8 +117,10 @@ bool PlayCue3D(const char* resref, const Vector& worldPosition,
            /*looping=*/0,
            volume,
            /*max_distance=*/50.0f);
+        pitch::EndScopedZero();
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
+        pitch::EndScopedZero();
         return false;
     }
 }

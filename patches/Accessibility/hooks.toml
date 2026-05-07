@@ -434,6 +434,69 @@ type = "pointer"
 source = "esp+4"
 type = "pointer"
 
+# CExoSoundSourceInternal::CalculatePitchVarianceFrequency @0x005db3d0 —
+# pitch-variance neutraliser, scoped to our own Play*OneShotSound calls.
+# The engine applies a per-fire random pitch shift to every sound source
+# (anti-repetition cosmetic) which degrades accessibility-cue
+# localisation: HRTF response is frequency-dependent, so jittered pitch
+# shifts the perceived spatial cue from one fire to the next, and breaks
+# the per-cue timbre identification (Wall vs Door vs Item) the user
+# relies on. We replace the function with one that returns
+# this->base_frequency unchanged — but only when the calling thread is
+# inside a BeginScopedZero / EndScopedZero window (set by audio_bus's
+# PlayCue / PlayCue3D wrappers). Other engine sounds (footsteps, sword
+# swings, GUI clicks the engine itself triggers, dialogue, ambient
+# one-shots, mid-playback chorus on the audio thread) keep their
+# jitter — the handler returns 0 in those cases and falls through to
+# the original function.
+#
+# Bytes from runtime DumpBytes 2026-05-07 (function body 125 bytes):
+#   0x005db3d0: 51              PUSH ECX        ; allocate 4-byte local
+#   0x005db3d1: 56              PUSH ESI
+#   0x005db3d2: 57              PUSH EDI
+#   0x005db3d3: 8b f1           MOV  ESI, ECX   ; ESI = this
+#   0x005db3d5: e8 6d 10 12 00  CALL random()
+#   ... (FPU multiply by [ESI+0x74] pitch_variance + base_frequency-
+#        derived bias; updates [ESI+0x54] pitch_variance_frequency) ...
+#   0x005db449: 5f              POP EDI         ; ← shared epilogue
+#   0x005db44a: 5e              POP ESI
+#   0x005db44b: 59              POP ECX
+#   0x005db44c: c3              RET
+#
+# Hook design (skip_original_bytes=false, consumed-exit pattern):
+#   * 5-byte cut at function entry: PUSH ECX; PUSH ESI; PUSH EDI; MOV
+#     ESI, ECX. None of those depend on flags or use rel-offsets, so
+#     they relocate cleanly into the wrapper.
+#   * exclude_from_restore = ["eax"] so the handler's int return reaches
+#     the wrapper's `TEST EAX,EAX; JZ +5; JMP rel32 consumed_exit`
+#     dispatch.
+#   * consumed_exit_address = 0x005db449 (epilogue) — pops the 12 bytes
+#     the cut just pushed and RETs with EAX still holding base_frequency.
+#   * Handler returns 0 to fall through to the original function when
+#     the scope flag is clear, OR returns base_frequency (or 1 in the
+#     edge-cases of null-this / read-fault) to consume when the flag is
+#     set.
+#
+# Scope: per-call, via thread_local depth counter in audio_pitch.cpp.
+# Only sources the engine creates synchronously on a thread that is
+# currently inside our PlayCue / PlayCue3D wrappers get jitter
+# neutralised. Every other engine sound — including engine-driven plays
+# of the same gui_* resrefs — keeps its jitter.
+[[hooks]]
+address = 0x005db3d0
+type = "detour"
+function = "OnCalculatePitchVarianceFrequency"
+
+original_bytes = [0x51, 0x56, 0x57, 0x8b, 0xf1]
+
+skip_original_bytes = false
+exclude_from_restore = ["eax"]
+consumed_exit_address = 0x005db449
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
 # CSWGuiListBox::HandleLMouseDown @0x0041c4a0 — DISABLED. Even when this hook
 # never fires (no mouse click occurred), its mere installation causes the
 # title-screen panel to oscillate focus on every arrow press: arrow press

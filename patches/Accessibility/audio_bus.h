@@ -86,3 +86,19 @@ constexpr uintptr_t kAddrCExoSoundPlay3DOneShotSound = 0x005D5E10;
 // mode (the engine writes this every frame from the camera, so we
 // detour rather than try to win the OnUpdate race).
 constexpr uintptr_t kAddrCExoSoundSetListenerPosition = 0x005D5DF0;
+
+// CExoSoundSourceInternal::CalculatePitchVarianceFrequency() — __thiscall,
+// returns int (the per-fire pitch-randomised playback frequency). The
+// engine calls this when a fresh source instance starts so each play of
+// the same WAV sample lands at a slightly-different pitch (anti-
+// repetition cosmetic). For accessibility cues, that randomisation
+// degrades localisation — HRTF response is frequency-dependent, so
+// jittered pitch shifts the perceived spatial cue from one fire to the
+// next, and breaks "high beep = Wall, low thunk = Door"-style
+// per-cue identification. The detour at this address neutralises the
+// randomisation so each fire of a given resref is sample-identical.
+//
+// Function range per Lane's SARIF: 0x005db3d0..0x005db44d (125 bytes).
+// Used from the Phase 4 pitch-stability hook.
+constexpr uintptr_t kAddrCExoSoundSourceInternalCalculatePitchVarianceFrequency
+    = 0x005DB3D0;

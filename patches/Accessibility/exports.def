@@ -10,3 +10,4 @@ EXPORTS
     OnPlay3DOneShotSound
     OnPlayFootstep
     OnSetListenerPosition
+    OnCalculatePitchVarianceFrequency
