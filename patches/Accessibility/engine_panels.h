@@ -107,4 +107,15 @@ bool IsPanelKindInGameMenu(void* panel);
 // by that monitor's disarm path), so this does not stale-block.
 bool HasActiveDialogPanel();
 
+// True iff any panel in the manager's panels[] identifies as a drilled
+// in-game sub-screen (InGameInventory, InGameMap, InGameEquip,
+// InGameCharacter, InGameAbilities, InGameJournal, InGameOptions,
+// InGameMessages). Used for the same reason as HasActiveDialogPanel:
+// when a sub-screen is drilled, the engine reports a stale Fade overlay
+// as foreground while the actual sub-screen panel stays in panels[],
+// so a fg.kind check alone misses it. Sub-screens are removed from the
+// stack on close (the SwitchToSWInGameGui drill chain pops the previous
+// one before adding the next), so this does not stale-block.
+bool HasActiveSubScreen();
+
 }  // namespace acc::engine

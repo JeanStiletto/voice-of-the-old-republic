@@ -11,6 +11,10 @@
 #include "camera_announce.h"      // dead-reckoned camera yaw for view-mode
                                   // override of cue-system orientation
 #include "engine_area.h"          // AreaObjectIterator, GetCurrentArea,
+#include "engine_manager.h"       // kAddrGuiManagerPtr, kMgrModalStack*Offset,
+                                  // GetForegroundPanel
+#include "engine_panels.h"        // HasActiveDialogPanel, HasActiveSubScreen,
+                                  // IdentifyPanel, PanelKind
                                   // GetObjectName, GetObjectPosition,
                                   // SegmentCrossesWalkmesh
 #include "engine_options.h"
@@ -678,6 +682,61 @@ void PollWin32() {
         DWORD pid = 0;
         GetWindowThreadProcessId(fg, &pid);
         if (pid != GetCurrentProcessId()) return;
+    }
+
+    // UI-claim gate. Mirror of (and stricter than) interact_hotkey's Enter
+    // gate. Toggling view mode flips engine-level CSWPlayerControl input
+    // state via SetPlayerInputEnabled — doing that while any UI panel
+    // claims input corrupts the engine's gate (post-modal-close lockup
+    // observed in patch-20260507-203839.log line 20905+: ViewMode toggled
+    // inside InGameOptions, then quit-confirm Cancel left movement dead).
+    //
+    // Strict version: panels[] scan for sub-screens AND for dialog panels
+    // (stale-Fade-as-fg defeats fg-only checks), modal_stack non-empty,
+    // and a foreground-kind blacklist for the remaining UI panels that
+    // claim Enter directly. Differs from the Enter gate in that the Enter
+    // gate accepts double-fire as recoverable; for view mode the failure
+    // is engine-state corruption, so we lean toward block.
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    const char* blockReason = nullptr;
+    if (acc::engine::HasActiveDialogPanel()) {
+        blockReason = "dialog panel in stack";
+    } else if (acc::engine::HasActiveSubScreen()) {
+        blockReason = "sub-screen drilled";
+    } else if (mgr) {
+        auto* mgrBase = reinterpret_cast<unsigned char*>(mgr);
+        int modalSize = *reinterpret_cast<int*>(
+            mgrBase + kMgrModalStackSizeOffset);
+        if (modalSize > 0) {
+            blockReason = "modal popup up";
+        } else {
+            void* fgPanel = acc::engine::GetForegroundPanel(mgr);
+            if (fgPanel) {
+                switch (acc::engine::IdentifyPanel(fgPanel)) {
+                case acc::engine::PanelKind::Container:
+                case acc::engine::PanelKind::Store:
+                case acc::engine::PanelKind::Examine:
+                case acc::engine::PanelKind::TutorialBox:
+                case acc::engine::PanelKind::MessageBoxModal:
+                case acc::engine::PanelKind::StatusSummary:
+                case acc::engine::PanelKind::SkillInfoBox:
+                case acc::engine::PanelKind::ControllerLossBox:
+                case acc::engine::PanelKind::SoloModeQuery:
+                case acc::engine::PanelKind::PartySelection:
+                case acc::engine::PanelKind::AreaTransition:
+                case acc::engine::PanelKind::InGameMenu:
+                    blockReason = "UI panel foreground";
+                    break;
+                default:
+                    break;
+                }
+            }
+        }
+    }
+    if (blockReason) {
+        acclog::Write("ViewMode: B (shift=%d) blocked — %s",
+                      shift ? 1 : 0, blockReason);
+        return;
     }
 
     Vector playerPos;

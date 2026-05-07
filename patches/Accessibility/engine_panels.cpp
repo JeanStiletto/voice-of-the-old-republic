@@ -166,4 +166,32 @@ bool HasActiveDialogPanel() {
     return false;
 }
 
+bool HasActiveSubScreen() {
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!mgr) return false;
+    auto* base = reinterpret_cast<unsigned char*>(mgr);
+    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+    if (!panelData || panelCount <= 0) return false;
+    int n = panelCount > 16 ? 16 : panelCount;
+    for (int i = 0; i < n; ++i) {
+        void* p = panelData[i];
+        if (!p) continue;
+        switch (IdentifyPanel(p)) {
+        case PanelKind::InGameEquip:
+        case PanelKind::InGameInventory:
+        case PanelKind::InGameCharacter:
+        case PanelKind::InGameAbilities:
+        case PanelKind::InGameMessages:
+        case PanelKind::InGameJournal:
+        case PanelKind::InGameMap:
+        case PanelKind::InGameOptions:
+            return true;
+        default:
+            break;
+        }
+    }
+    return false;
+}
+
 }  // namespace acc::engine
