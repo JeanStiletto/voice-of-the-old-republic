@@ -17,6 +17,8 @@
 #include "engine_offsets.h"       // Vector
 #include "engine_player.h"
 #include "filter_objects.h"       // ObjectMatches
+#include "guidance_autowalk.h"    // WalkTo — empty-cursor Enter target
+#include "interact_hotkey.h"      // DispatchInteract — Enter on hover target
 #include "log.h"
 #include "spatial_change_detector.h"  // GetCachedWalls
 #include "strings.h"
@@ -65,10 +67,56 @@ struct ViewModeState {
     // Hover-pause object debounce.
     uint32_t hover_last_spoken     = 0;  // 0 = none spoken this session
     uint32_t hover_pending         = 0;  // 0 = cone clear / no candidate
+    void*    hover_pending_obj     = nullptr;  // CSWSObject* matching
+                                               // hover_pending; captured
+                                               // alongside the handle so
+                                               // lay-off-5 Enter dispatch
+                                               // can hand it to
+                                               // DispatchInteract without
+                                               // re-resolving.
     DWORD    hover_pending_started = 0;
 };
 
 ViewModeState g_state;
+
+// Lay-off-5 single-tick Enter ownership flag. Set by `PollEnter` whenever
+// it handles a rising VK_RETURN; read-and-cleared by
+// `acc::view_mode::ConsumedEnterThisTick()` from
+// `interact_hotkey::PollHotkey` so the same press can't be processed
+// twice in one tick. See header doc on the public getter for the why.
+bool g_enter_consumed_this_tick = false;
+
+// Lay-off-5 deferred-dispatch state. View-mode-exit autowalk via
+// AddMoveToPointAction silently no-ops when SetPlayerInputEnabled has
+// been held at 0 for many ticks (verified patch-20260507-064544.log:
+// `WalkTo dispatch ret=0x00000001` but `moved=0.00m` at t+3s for every
+// dispatch). The cycle_input Shift+- path works because input has been
+// settled at 1 for many ticks before WalkTo flips it to 0 — the engine
+// needs that 1→0 transition immediately before AI dispatch.
+//
+// Synchronous round-trip (SetEnabled(true) then SetEnabled(false) in
+// the same tick) didn't work either: the engine never actually
+// processed the `enabled=1` state. So we exit view mode + re-enable
+// input synchronously, arm this pending-dispatch struct, and process
+// it on the *next* OnUpdate tick after the engine has had a frame
+// to settle into `enabled=1` and we then transition cleanly to 0
+// inside the dispatch path.
+struct PendingDispatch {
+    bool     active        = false;
+    bool     hasHover      = false;
+    void*    hover_obj     = nullptr;
+    uint32_t hover_handle  = 0;
+    Vector   cursor_pos    = {0.0f, 0.0f, 0.0f};
+    bool     forceRadial   = false;
+    DWORD    armed_at_ms   = 0;   // GetTickCount() when armed
+};
+PendingDispatch g_pending;
+
+// Min elapsed time before processing a pending dispatch. ~1 frame at
+// 60fps; ensures at least one engine tick processes the input
+// re-enable before we dispatch the AI action. Concrete tick rate
+// varies; this is a lower bound rather than a fixed delay.
+constexpr DWORD kPendingDispatchMinElapsedMs = 16;
 
 // Listener override path (post-rework, 2026-05-06):
 //
@@ -147,6 +195,7 @@ void EnterViewMode() {
     g_state.last_collision_ms  = 0;
     g_state.hover_last_spoken     = 0;
     g_state.hover_pending         = 0;
+    g_state.hover_pending_obj     = nullptr;
     g_state.hover_pending_started = 0;
 
     g_state.active = true;
@@ -167,6 +216,10 @@ void ExitViewMode() {
                 /*interrupt=*/true);
     acclog::Write("ViewMode: EXIT restored=%d", restored ? 1 : 0);
 }
+
+// (ExitViewModeQuiet was inlined into PollEnter as part of the lay-off-5
+// deferred-dispatch rework — exit lifecycle is now coupled to the
+// dispatch arming rather than being a standalone helper.)
 
 void ToggleViewMode() {
     if (g_state.active) ExitViewMode();
@@ -339,8 +392,10 @@ acc::strings::Id CategoryNameId(acc::filter::CycleCategory c) {
 void NarrateNearestObject(void* area, const Vector& cursor) {
     if (!area) {
         // Reset hover state when area drops; otherwise a stale handle
-        // would compare-equal across area transitions.
+        // would compare-equal across area transitions, and a stale obj
+        // pointer would dangle into a freed CSWSObject.
         g_state.hover_pending         = 0;
+        g_state.hover_pending_obj     = nullptr;
         g_state.hover_pending_started = 0;
         return;
     }
@@ -389,8 +444,14 @@ void NarrateNearestObject(void* area, const Vector& cursor) {
     // turn_announce's pending pattern: any rapid sweep keeps changing
     // pending so the stable-window timer keeps resetting and we stay
     // silent until the cursor actually settles.
+    //
+    // Capture both the handle (for change detection + DispatchInteract's
+    // engine-side seeding) and the CSWSObject* (for DispatchInteract's
+    // name resolution + classification). Both are written together so
+    // they never go out of sync — Enter dispatch reads them as a pair.
     if (bestHandle != g_state.hover_pending) {
         g_state.hover_pending         = bestHandle;
+        g_state.hover_pending_obj     = bestObj;
         g_state.hover_pending_started = now;
     }
 
@@ -419,9 +480,145 @@ void NarrateNearestObject(void* area, const Vector& cursor) {
         pos.x, pos.y, pos.z);
 }
 
+// Lay-off 5 — Enter / Shift+Enter dispatch while view mode is active.
+// Edge-detected on VK_RETURN; when it fires:
+//
+//   - hover target present (cursor's hover-pause tracker has a non-zero
+//     handle + obj) → exit view mode quietly, then call
+//     `acc::interact::DispatchInteract(obj, handle, forceRadial)`. Same
+//     engine-action-picker pipeline Enter / Shift+Enter run outside
+//     view mode, so behaviour ("does pressing Enter on a door open
+//     it?") is identical between the two modes. forceRadial=true
+//     (Shift+Enter) opens the radial action menu so the user can pick
+//     from all available actions instead of the engine's default —
+//     matches outside-view-mode Shift+Enter semantics.
+//
+//   - no hover target → exit view mode quietly, speak "Walking to point"
+//     / "Gehe zum Punkt", dispatch `acc::guidance::WalkTo(cursor_pos)`.
+//     Same path Shift+- uses for the cycle's focused-object case but
+//     without a target name. Shift+Enter behaves identically here
+//     (no radial to open with no target).
+//
+// Lifecycle: exit happens BEFORE dispatch so the autowalk runs against
+// an unfrozen character (decision (a) from the lay-off 5 plan). Use
+// the no-announce ExitViewModeQuiet so the dispatch announce isn't
+// preempted by a "View mode off" interrupt.
+//
+// Foreground gate is inherited from the caller (Tick) — Enter polled
+// here only fires on the same tick Tick() decided to run.
+//
+// Coordination with `interact_hotkey::PollHotkey`: PollHotkey gates its
+// own Enter branch on `!view_mode::IsActive()` so the same VK_RETURN
+// rising edge can't double-dispatch via both paths.
+void PollEnter() {
+    static bool s_prevEnter = false;
+    bool enter = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
+    bool risingEnter = enter && !s_prevEnter;
+    s_prevEnter = enter;
+    if (!risingEnter) return;
+
+    // Claim this tick's Enter press before doing any work that exits
+    // view mode — interact_hotkey::PollHotkey runs later in the same
+    // OnUpdate and reads-and-clears this flag to skip its own Enter
+    // branch, preventing the double-dispatch verified in
+    // patch-20260506-142103.log.
+    g_enter_consumed_this_tick = true;
+
+    bool forceRadial = ((GetAsyncKeyState(VK_SHIFT)  & 0x8000) != 0) ||
+                       ((GetAsyncKeyState(VK_LSHIFT) & 0x8000) != 0) ||
+                       ((GetAsyncKeyState(VK_RSHIFT) & 0x8000) != 0);
+    const char* keyTag = forceRadial ? "Shift+Enter" : "Enter";
+
+    // Snapshot hover + cursor — these are about to leave the live
+    // ViewModeState as we exit view mode, but we need them when the
+    // deferred dispatch fires next tick.
+    Vector   cursor_pos   = g_state.cursor_pos;
+    void*    hover_obj    = g_state.hover_pending_obj;
+    uint32_t hover_handle = g_state.hover_pending;
+    bool     hasHover     = hover_obj != nullptr && hover_handle != 0;
+
+    // Exit view mode + re-enable player input synchronously. The actual
+    // AI-action dispatch (WalkTo / DispatchInteract) is deferred to the
+    // next tick via g_pending so the engine has a real frame to process
+    // `enabled=1` before the dispatch path's SetEnabled(false) creates
+    // the 1→0 transition the engine needs to fire AI walks.
+    g_state.active = false;
+    bool restored = acc::engine::SetPlayerInputEnabled(true);
+    acclog::Write(
+        "ViewMode: EXIT (deferred dispatch) input_restored=%d hasHover=%d",
+        restored ? 1 : 0, hasHover ? 1 : 0);
+
+    g_pending.active        = true;
+    g_pending.hasHover      = hasHover;
+    g_pending.hover_obj     = hover_obj;
+    g_pending.hover_handle  = hover_handle;
+    g_pending.cursor_pos    = cursor_pos;
+    g_pending.forceRadial   = forceRadial;
+    g_pending.armed_at_ms   = GetTickCount();
+
+    acclog::Write(
+        "ViewMode: %s -> dispatch armed for next tick "
+        "(hover_obj=%p handle=0x%08x cursor=(%.2f,%.2f,%.2f) forceRadial=%d)",
+        keyTag, hover_obj, hover_handle,
+        cursor_pos.x, cursor_pos.y, cursor_pos.z,
+        forceRadial ? 1 : 0);
+}
+
+// Process any pending dispatch armed by a prior PollEnter. Runs at the
+// top of Tick BEFORE the IsActive() gate so it fires even when view
+// mode is no longer active (which is precisely when it's needed —
+// PollEnter exits view mode synchronously and arms this for the next
+// tick). One-frame minimum delay enforced via kPendingDispatchMinElapsedMs.
+void ProcessPendingDispatch() {
+    if (!g_pending.active) return;
+
+    DWORD elapsed = GetTickCount() - g_pending.armed_at_ms;
+    if (elapsed < kPendingDispatchMinElapsedMs) return;
+
+    // Snapshot then clear before dispatch — the dispatch path may itself
+    // re-enter our hooks (e.g. picker::Drive can fire other monitors)
+    // and we don't want re-entry to see g_pending as still active.
+    bool     hasHover     = g_pending.hasHover;
+    void*    hover_obj    = g_pending.hover_obj;
+    uint32_t hover_handle = g_pending.hover_handle;
+    Vector   cursor_pos   = g_pending.cursor_pos;
+    bool     forceRadial  = g_pending.forceRadial;
+    g_pending.active = false;
+
+    const char* keyTag = forceRadial ? "Shift+Enter" : "Enter";
+
+    if (hasHover) {
+        acclog::Write(
+            "ViewMode: %s deferred -> DispatchInteract obj=%p handle=0x%08x "
+            "elapsed=%lums (hover target)",
+            keyTag, hover_obj, hover_handle,
+            static_cast<unsigned long>(elapsed));
+        acc::interact::DispatchInteract(hover_obj, hover_handle, forceRadial);
+        return;
+    }
+
+    // Empty cursor — raw walk-to-position. Speak the localised pre-roll
+    // before WalkTo (cf. `feedback_never_silence_fallback_announcement`).
+    const char* preroll = acc::strings::Get(acc::strings::Id::GuidingToPoint);
+    tolk::Speak(preroll, /*interrupt=*/true);
+
+    bool ok = acc::guidance::WalkTo(cursor_pos);
+    acclog::Write(
+        "ViewMode: %s deferred -> WalkTo cursor=(%.2f,%.2f,%.2f) ok=%d "
+        "elapsed=%lums (no hover target)",
+        keyTag, cursor_pos.x, cursor_pos.y, cursor_pos.z, ok ? 1 : 0,
+        static_cast<unsigned long>(elapsed));
+}
+
 }  // namespace
 
 bool IsActive() { return g_state.active; }
+
+bool ConsumedEnterThisTick() {
+    bool was = g_enter_consumed_this_tick;
+    g_enter_consumed_this_tick = false;
+    return was;
+}
 
 bool TryGetCursorPosition(Vector& out) {
     if (!g_state.active) return false;
@@ -491,6 +688,11 @@ void PollWin32() {
 }
 
 void Tick() {
+    // Process any deferred dispatch from a prior PollEnter BEFORE the
+    // active-gate. The dispatch fires after view mode has exited, so
+    // gating this on g_state.active would never let it run.
+    ProcessPendingDispatch();
+
     if (!g_state.active) return;
 
     // Foreground gate — same rationale as the cycle / view-mode pollers:
@@ -517,6 +719,15 @@ void Tick() {
 
     void* area = acc::engine::GetCurrentArea();
     NarrateNearestObject(area, g_state.cursor_pos);
+
+    // Lay-off 5 — Enter / Shift+Enter routing. Polled inside Tick (which
+    // is already foreground- and active-gated) so we don't repeat the
+    // gates. Runs AFTER NarrateNearestObject so the hover state read
+    // here reflects the cursor position computed this same tick — no
+    // one-tick lag between "cursor moved over door" and "Enter dispatches
+    // to that door". PollEnter may exit view mode and dispatch — fields
+    // we touched above (cursor_pos, hover_*) get reset on next entry.
+    PollEnter();
 
     // No per-tick SetListener call here — the OnSetListenerPosition
     // detour at 0x5d5df0 substitutes the cursor position into the

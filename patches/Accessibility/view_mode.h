@@ -46,8 +46,7 @@
 //   neighbouring slots (kept from the earlier design as a cheap
 //   reusable observer; not load-bearing for view mode itself).
 //
-// Lay-off 4 (this lay-off) layers the locked virtual-cursor design on
-// top:
+// Lay-off 4 layers the locked virtual-cursor design on top:
 // - Cursor state: `Vector cursor_pos` + `float cursor_yaw` initialised
 //   from player position / camera yaw on enter; W/S translate the
 //   cursor along `cursor_yaw`, A/D rotate via stock engine input
@@ -67,6 +66,28 @@
 //   `filter::ObjectMatches`, find the closest in-radius object, three-
 //   variable hover-pause debounce identical to `turn_announce`'s
 //   pattern; speak the per-kind localised name once stable.
+//
+// Lay-off 5 (this lay-off) routes Enter / Shift+Enter while view mode is
+// active:
+// - Enter on a hover target → exit view mode, then call
+//   `acc::interact::DispatchInteract(hover_obj, hover_handle, false)` —
+//   identical to outside-view-mode Enter (engine action picker walks +
+//   opens / talks / loots / picks up). Hover target comes from the
+//   lay-off-4 hover-pause tracker.
+// - Shift+Enter on a hover target → same call with forceRadial=true,
+//   identical to outside-view-mode Shift+Enter (radial menu opens and
+//   the user picks an action). Gives the user agency: Shift+Enter on
+//   an NPC walks but doesn't auto-talk.
+// - Enter or Shift+Enter on empty cursor (no hover target in the 1.0 m
+//   radius) → exit view mode, then `acc::guidance::WalkTo(cursor_pos)` —
+//   raw walk to the cursor's world position, no action.
+// - In all cases view mode auto-exits BEFORE dispatch (decision (a) of
+//   the lay-off plan: clean lifecycle, autowalk runs against an
+//   unfrozen character). The exit is silent (no "View mode off"
+//   announce) so the dispatch announce isn't preempted.
+// - Coordination with `interact_hotkey::PollHotkey`: PollHotkey gates
+//   its own Enter branch on `!IsActive()` so the same VK_RETURN rising
+//   edge can't double-dispatch via both paths.
 
 #pragma once
 
@@ -79,6 +100,25 @@ namespace acc::view_mode {
 // to camera-pan and freeze the character. Lay-off 3 itself doesn't
 // consume this value beyond the lifecycle sanity checks below.
 bool IsActive();
+
+// True if `PollEnter` (lay-off 5 Enter / Shift+Enter dispatch) handled
+// the current tick's VK_RETURN rising edge. AUTO-CLEARS on read so the
+// flag can't outlive its tick.
+//
+// Why this exists: `view_mode::Tick` runs earlier in OnUpdate than
+// `interact_hotkey::PollHotkey`, and `PollEnter` exits view mode before
+// dispatching. So by the time PollHotkey checks `IsActive()` the answer
+// is already false, and PollHotkey would re-fire the same Enter press
+// through `OnInteract` — double-dispatch (verified in
+// patch-20260506-142103.log: empty-cursor WalkTo immediately followed by
+// OnInteract-on-stale-LastTarget cancelling it). PollHotkey now checks
+// `ConsumedEnterThisTick()` in addition to `IsActive()` so the press is
+// owned end-to-end by view_mode.
+//
+// Read-and-clear semantics: PollHotkey is the only consumer; clearing
+// on read is fine because no other code path needs to observe the flag
+// across ticks.
+bool ConsumedEnterThisTick();
 
 // Read the current virtual-cursor world position. Returns false when
 // view mode isn't active (no meaningful cursor) — callers should fall
@@ -115,7 +155,8 @@ bool GetEffectiveOrientationYawDegrees(float& out);
 // and announce_degrees::PollWin32.
 void PollWin32();
 
-// Per-tick driver for the virtual cursor while view mode is active.
+// Per-tick driver for the virtual cursor + Enter dispatch while view
+// mode is active.
 // Self-gates on `IsActive()`; idle when view mode is off.
 //
 // Each call:
@@ -137,13 +178,22 @@ void PollWin32();
 //   6. Walks `AreaObjectIterator` for the nearest in-radius object
 //      passing `filter::ObjectMatches`; if the same object is
 //      "hovered" continuously for kHoverPauseMs and differs from the
-//      last spoken target, speaks its localised name.
+//      last spoken target, speaks its localised name. Captures both
+//      the handle and the CSWSObject* so lay-off-5 Enter dispatch
+//      can hand the obj+handle pair to `DispatchInteract` without
+//      re-resolving.
+//   7. (Lay-off 5) Polls VK_RETURN; on rising edge dispatches Enter /
+//      Shift+Enter (see file header). This runs LAST in the tick so
+//      the hover state read by the Enter handler reflects the cursor
+//      position computed earlier this same tick — no one-tick lag.
 //
 // Order of work in `OnUpdate` matters: this must run AFTER
 // `camera_announce::Tick()` (so the dead-reckoned camera yaw is
 // up-to-date this tick) and AFTER `view_mode::PollWin32()` (so a
 // rising-edge B-toggle this tick takes effect immediately, not next
-// tick).
+// tick). It must also run BEFORE `interact_hotkey::PollHotkey()` so
+// our Enter dispatch is observed before PollHotkey's gate-on-IsActive
+// short-circuit kicks in for the same press.
 void Tick();
 
 }  // namespace acc::view_mode

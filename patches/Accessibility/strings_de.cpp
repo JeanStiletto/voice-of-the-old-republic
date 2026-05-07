@@ -40,6 +40,7 @@ const char* Get(Id id) {
         case Id::FmtGuidingTo:         return "Gehe zu %s";
         case Id::FmtGuidingFailed:     return "Gehe zu %s fehlgeschlagen";
         case Id::GuidanceNoFocus:      return "Kein Ziel ausgew\xE4hlt";  // ausgewählt
+        case Id::GuidingToPoint:       return "Gehe zum Punkt";
 
         case Id::MovementCancelled:    return "Bewegung abgebrochen";
 

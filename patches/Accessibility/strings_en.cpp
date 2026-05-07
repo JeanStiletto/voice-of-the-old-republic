@@ -30,6 +30,7 @@ const char* Get(Id id) {
         case Id::FmtGuidingTo:         return "Guiding to %s";
         case Id::FmtGuidingFailed:     return "Guidance to %s failed";
         case Id::GuidanceNoFocus:      return "No object focused";
+        case Id::GuidingToPoint:       return "Walking to point";
 
         case Id::MovementCancelled:    return "Movement cancelled";
 

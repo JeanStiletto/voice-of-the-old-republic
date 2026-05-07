@@ -70,9 +70,15 @@ enum class Id : int {
     //                         focused (e.g. user hasn't cycled yet, or the
     //                         previously-focused object dropped out of
     //                         scope).
+    //      `GuidingToPoint`   is spoken when view-mode Enter / Shift+Enter
+    //                         dispatches a raw walk-to-cursor (no hover
+    //                         target under the virtual cursor). No format
+    //                         args — the destination is the cursor's world
+    //                         position, which has no name.
     FmtGuidingTo,
     FmtGuidingFailed,
     GuidanceNoFocus,
+    GuidingToPoint,
 
     // ---- Cancel-on-second-press (Shift+- toggle behaviour). Spoken
     //      when an in-flight autowalk is cancelled via

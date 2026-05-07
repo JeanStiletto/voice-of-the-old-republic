@@ -25,6 +25,8 @@
 #include "radial_menu.h"
 #include "strings.h"
 #include "tolk.h"
+#include "view_mode.h"      // IsActive() — Enter is owned by view_mode
+                            // while active (lay-off 5)
 
 // Engine entry points used by 9b. Kept at file scope for callsite
 // brevity, matching engine_manager.h / engine_player.h convention.
@@ -223,6 +225,21 @@ void* ResolveInteractTarget(uint32_t* outHandle) {
     return obj;
 }
 
+// Lay-off-5 refactor (2026-05-06): the post-resolution dispatch flow
+// (classify + name + picker + speak + UseObject fallback) is now exposed
+// publicly via `acc::interact::DispatchInteract` so view_mode can drive
+// the same Enter pipeline with its own target channel (the virtual
+// cursor's hover-pause tracker). DispatchInteractImpl keeps the body
+// here in the anonymous namespace so it can use the file-internal
+// helpers (ClassifyForInteract, PreRollFor, ...); the public symbol
+// at the bottom of the file is a thin forwarder.
+void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial);
+
+// PollHotkey's per-press handler. Resolves the target via the
+// cycle/LastTarget recency tie-break, then forwards to
+// DispatchInteractImpl for the shared dispatch flow. View mode bypasses
+// this resolver entirely (its hover channel is the truth) and calls the
+// public `acc::interact::DispatchInteract` directly with its own target.
 void OnInteract(bool forceRadial) {
     uint32_t handle = 0;
     void* target = ResolveInteractTarget(&handle);
@@ -233,6 +250,24 @@ void OnInteract(bool forceRadial) {
         tolk::Speak(msg, /*interrupt=*/true);
         acclog::Write("Interact: %s -> [%s] no target",
                       forceRadial ? "Shift+Enter" : "Enter", msg);
+        return;
+    }
+
+    DispatchInteractImpl(target, handle, forceRadial);
+}
+
+void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
+    if (!target || handle == 0) {
+        // Defensive — callers should resolve before dispatching, but if
+        // they don't, speak the same fallback OnInteract uses so silence
+        // isn't ambiguous (cf. `feedback_never_silence_fallback_announcement`).
+        const char* msg = acc::strings::Get(
+            acc::strings::Id::GuidanceNoFocus);
+        tolk::Speak(msg, /*interrupt=*/true);
+        acclog::Write(
+            "Interact: DispatchInteract called with no target "
+            "(forceRadial=%d) -> [%s]",
+            forceRadial ? 1 : 0, msg);
         return;
     }
 
@@ -494,6 +529,13 @@ void AnnounceBareTargetKey(int row) {
 
 }  // namespace
 
+// Public seam introduced 2026-05-06 (lay-off 5). Thin forwarder into the
+// anonymous-namespace implementation so view_mode can drive the same
+// dispatch path PollHotkey runs after its own target resolution.
+void DispatchInteract(void* target, uint32_t handle, bool forceRadial) {
+    DispatchInteractImpl(target, handle, forceRadial);
+}
+
 void PollHotkey() {
     auto down = [](int vk) -> bool {
         return (GetAsyncKeyState(vk) & 0x8000) != 0;
@@ -702,6 +744,30 @@ void PollHotkey() {
     // Non-radial path: Enter (with optional Shift) drives interact.
     if (!risingEnter) return;
     if (!inWorld) return;
+
+    // View mode owns Enter / Shift+Enter routing while active — its hover
+    // channel is the truth for what should be acted on, not cycle_state /
+    // engine LastTarget. View_mode::Tick polls VK_RETURN itself and
+    // dispatches into `DispatchInteract` (or `WalkTo` for empty cursor)
+    // earlier in the OnUpdate ordering.
+    //
+    // Two cases to skip:
+    //  1. View mode currently active (rare for Enter to reach here, but
+    //     possible if PollEnter's foreground / active gates dropped
+    //     somehow).
+    //  2. View mode handed Enter off this tick (PollEnter exited view
+    //     mode before dispatching, so IsActive() is now false even
+    //     though view_mode owns this press). ConsumedEnterThisTick auto-
+    //     clears so the flag can't outlive the tick. Verified failure
+    //     mode if not gated: WalkTo dispatched then immediately
+    //     preempted by OnInteract's stale-LastTarget Dialog action
+    //     (patch-20260506-142103.log).
+    if (acc::view_mode::IsActive() || acc::view_mode::ConsumedEnterThisTick()) {
+        acclog::Write(
+            "Interact: Enter rising — view mode owns this press, "
+            "deferring to view_mode::Tick");
+        return;
+    }
 
     // Sample Shift at the moment of the rising edge so a held-Shift +
     // tap-Enter combo unambiguously routes to the force-radial path.
