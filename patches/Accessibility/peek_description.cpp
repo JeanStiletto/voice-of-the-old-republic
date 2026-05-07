@@ -49,10 +49,23 @@ typedef void (__thiscall* PFN_PanelOnControl)(void* panel, void* control);
 
 // CSWGuiInGameInventory::OnControlEntered @ 0x006b3d10. Takes the
 // hovered CSWGuiInGameItemEntry* and updates the panel's
-// description_listbox + item-stats labels for that item. Used here to
-// force a refresh after our chain-nav cursor warp didn't actually
-// land on the row (mouseOver=NULL after MoveMouseToPosition is the
-// recurring symptom in the patch log).
+// description_listbox + item-stats labels for that item.
+//
+// **Gate**: the function decompiles (Decompile.java) to a single
+// outer `if (param_1->button.navigable.control.is_active != 0)`
+// — when the entry's is_active flag is 0, the entire body is
+// skipped. The mouse-driven HandleLMouseDown sets is_active=1 via
+// CaptureMouse on click, which is why hover-after-click works for
+// sighted players. Our keyboard chain step bypasses HandleLMouseDown
+// entirely, and the equipped row is the canonical case where
+// is_active stays 0 throughout a session — it never gets clicked,
+// so calling OnControlEntered on it from peek always no-ops.
+//
+// Fix: save → force is_active=1 → call OnControlEntered → restore.
+// The flag is read by other engine paths (border rendering, focus
+// chain, click activation gates), so we narrowly scope the override
+// to the call window. Decompile shows OnControlEntered itself does
+// not modify the entry's is_active.
 //
 // `focused` is the chain target, which IS the item entry pointer for
 // inventory rows (CSWGuiInGameItemEntry embeds CSWGuiButton at
@@ -65,8 +78,16 @@ constexpr std::uintptr_t kAddrInventoryOnControlEntered = 0x006b3d10;
 
 static void RefreshInventory(void* panel, void* focused) {
     if (!panel || !focused) return;
+
+    auto* isActivePtr = reinterpret_cast<std::uint32_t*>(
+        reinterpret_cast<unsigned char*>(focused) + kControlIsActiveOffset);
+    std::uint32_t saved = *isActivePtr;
+    if (saved == 0) *isActivePtr = 1;
+
     auto fn = reinterpret_cast<PFN_PanelOnControl>(kAddrInventoryOnControlEntered);
     fn(panel, focused);
+
+    *isActivePtr = saved;
 }
 
 // Map a panel kind to where its description listbox lives within the
