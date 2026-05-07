@@ -47,47 +47,70 @@ int g_blockIdx = kCursorReset;
 // the right engine function.
 typedef void (__thiscall* PFN_PanelOnControl)(void* panel, void* control);
 
-// CSWGuiInGameInventory::OnControlEntered @ 0x006b3d10. Takes the
-// hovered CSWGuiInGameItemEntry* and updates the panel's
-// description_listbox + item-stats labels for that item.
+// Several panel `OnControlEntered` overrides decompile to a body
+// gated by `if (param_1->...->is_active != 0)`. The mouse-driven
+// HandleLMouseDown sets is_active=1 on click, but our keyboard chain
+// step bypasses HandleLMouseDown — the equipped inventory row is the
+// canonical case where is_active stays 0 forever (never clicked in
+// normal play), so the description-stage code always skipped it.
 //
-// **Gate**: the function decompiles (Decompile.java) to a single
-// outer `if (param_1->button.navigable.control.is_active != 0)`
-// — when the entry's is_active flag is 0, the entire body is
-// skipped. The mouse-driven HandleLMouseDown sets is_active=1 via
-// CaptureMouse on click, which is why hover-after-click works for
-// sighted players. Our keyboard chain step bypasses HandleLMouseDown
-// entirely, and the equipped row is the canonical case where
-// is_active stays 0 throughout a session — it never gets clicked,
-// so calling OnControlEntered on it from peek always no-ops.
+// Fix shape: save → force is_active=1 → call → restore. The flag is
+// read by other engine paths (border rendering, focus chain, click
+// activation gates), so we narrowly scope the override to the call
+// window. Decompiles confirm OnControlEntered itself does not write
+// to the entry's is_active. See memory:
+// project_oncontrolentered_is_active_gate.
 //
-// Fix: save → force is_active=1 → call OnControlEntered → restore.
-// The flag is read by other engine paths (border rendering, focus
-// chain, click activation gates), so we narrowly scope the override
-// to the call window. Decompile shows OnControlEntered itself does
-// not modify the entry's is_active.
-//
-// `focused` is the chain target, which IS the item entry pointer for
-// inventory rows (CSWGuiInGameItemEntry embeds CSWGuiButton at
-// offset 0, so the chain stores the same pointer either way). Using
-// panel.activeControl instead crashes — that field tracks a different
-// helper control during chain nav (verified empirically: refresh
-// faulted on every Shift+arrow press in patch-20260507-192332.log
-// when we read activeControl).
-constexpr std::uintptr_t kAddrInventoryOnControlEntered = 0x006b3d10;
-
-static void RefreshInventory(void* panel, void* focused) {
-    if (!panel || !focused) return;
-
+// `focused` is the chain target. For inventory/store/journal rows
+// the row IS a CSWGuiButton-derived control (item entries embed
+// CSWGuiButton at offset 0), so the chain pointer + is_active offset
+// resolves correctly either way.
+static void CallOnControlEnteredWithActive(std::uintptr_t addr,
+                                           void* panel, void* focused)
+{
     auto* isActivePtr = reinterpret_cast<std::uint32_t*>(
         reinterpret_cast<unsigned char*>(focused) + kControlIsActiveOffset);
     std::uint32_t saved = *isActivePtr;
     if (saved == 0) *isActivePtr = 1;
 
-    auto fn = reinterpret_cast<PFN_PanelOnControl>(kAddrInventoryOnControlEntered);
+    auto fn = reinterpret_cast<PFN_PanelOnControl>(addr);
     fn(panel, focused);
 
     *isActivePtr = saved;
+}
+
+// CSWGuiInGameInventory::OnControlEntered @ 0x006b3d10. is_active gate
+// applies (decompiled).
+constexpr std::uintptr_t kAddrInventoryOnControlEntered = 0x006b3d10;
+
+static void RefreshInventory(void* panel, void* focused) {
+    if (!panel || !focused) return;
+    CallOnControlEnteredWithActive(kAddrInventoryOnControlEntered,
+                                   panel, focused);
+}
+
+// CSWGuiStore::OnControlEntered @ 0x006c0aa0. Same is_active gate as
+// Inventory (decompile: `if (param_1->is_active != 0) { ... }`).
+// Takes a CSWGuiControl* — the focused store row in either
+// shopitems_listbox or invitems_listbox.
+constexpr std::uintptr_t kAddrStoreOnControlEntered = 0x006c0aa0;
+
+static void RefreshStore(void* panel, void* focused) {
+    if (!panel || !focused) return;
+    CallOnControlEnteredWithActive(kAddrStoreOnControlEntered,
+                                   panel, focused);
+}
+
+// CSWGuiInGameJournal::OnControlEntered @ 0x00645100. Differs from
+// Inventory/Store: the outer gate is `if (param_1 != NULL)` only —
+// no is_active check (decompiled). Direct call is sufficient.
+constexpr std::uintptr_t kAddrJournalOnControlEntered = 0x00645100;
+
+static void RefreshJournal(void* panel, void* focused) {
+    if (!panel || !focused) return;
+    auto fn = reinterpret_cast<PFN_PanelOnControl>(
+        kAddrJournalOnControlEntered);
+    fn(panel, focused);
 }
 
 // Map a panel kind to where its description listbox lives within the
@@ -122,9 +145,9 @@ struct PanelPeekInfo {
 constexpr PanelPeekInfo kPanels[] = {
     { acc::engine::PanelKind::InGameEquip,      0x33b8, nullptr           },  // CSWGuiInGameEquip.description_listbox
     { acc::engine::PanelKind::InGameInventory,  0x0844, RefreshInventory  },  // CSWGuiInGameInventory.description_listbox
-    { acc::engine::PanelKind::InGameJournal,    0x01a4, nullptr           },  // CSWGuiInGameJournal.item_description_label (a CSWGuiListBox)
+    { acc::engine::PanelKind::InGameJournal,    0x01a4, RefreshJournal    },  // CSWGuiInGameJournal.item_description_label (a CSWGuiListBox)
     { acc::engine::PanelKind::InGameAbilities,  0x33bc, nullptr           },  // CSWGuiInGameAbilities.description_listbox
-    { acc::engine::PanelKind::Store,            0x1a40, nullptr           },  // CSWGuiStore.description_listbox
+    { acc::engine::PanelKind::Store,            0x1a40, RefreshStore      },  // CSWGuiStore.description_listbox
 };
 
 const PanelPeekInfo* LookupPanel(acc::engine::PanelKind k) {
