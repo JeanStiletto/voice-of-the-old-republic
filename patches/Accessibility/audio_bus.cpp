@@ -168,6 +168,15 @@ typedef void (__thiscall* PFN_InternalSetListenerPosition)(
 // dispatch to it manually after substituting the position vector.
 constexpr uintptr_t kAddrCExoSoundInternalSetListenerPosition = 0x005D6600;
 
+// Diagnostic toggle introduced 2026-05-07. Tested innocent in
+// patch-20260507-082230.log: with the override gated off (always
+// passthrough), view-mode empty-cursor WalkTo still silently no-ops AND
+// Trigger-1 3D cues remain inaudible. Both failures are independent of
+// this substitution. Restored to true so the listener stays cursor-
+// anchored during view mode (the original purpose). The flag stays as
+// a quick toggle if a future regression re-implicates the override.
+constexpr bool kSubstituteCursorForListener = true;
+
 }  // namespace
 }  // namespace acc::audio
 
@@ -187,9 +196,16 @@ extern "C" int __cdecl OnSetListenerPosition(void* exoSound,
 
     // Pick the position to forward. View-mode active → cursor; else
     // passthrough engine value.
+    //
+    // Diagnostic gate (2026-05-07): kSubstituteCursorForListener=false
+    // forces passthrough even while view mode is active. Used to isolate
+    // the listener-override hook as suspect for empty-cursor WalkTo
+    // silently no-oping after view-mode-exit, and Trigger-1 3D cues
+    // being inaudible during view mode.
     Vector chosen = { 0.0f, 0.0f, 0.0f };
     bool   override_active = false;
-    if (acc::view_mode::IsActive() &&
+    if (acc::audio::kSubstituteCursorForListener &&
+        acc::view_mode::IsActive() &&
         acc::view_mode::TryGetCursorPosition(chosen)) {
         override_active = true;
     } else if (enginePos) {

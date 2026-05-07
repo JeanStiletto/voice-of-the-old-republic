@@ -14,11 +14,22 @@
 //
 // Swap procedure: change the string literal on the relevant case line below.
 // The resref is bound by CResRef's 16-char hard limit (audio_bus.cpp's
-// FillResRef silently truncates beyond that); longest current pick is
-// "fs_metal_droid2" (15 chars). The engine's resource-resolution chain is
-// case-insensitive and walks Override → streamwaves → streamsounds →
-// streammusic → BIF/RIM, so a custom Override/ WAV with the same resref
-// will shadow the engine asset transparently.
+// FillResRef silently truncates beyond that); current longest pick is
+// "as_nt_wtrdrip_09" at exactly 16 chars (any longer = silent truncation
+// = resolution miss = silent cue, see project_pitchhook_silent_resref
+// memory). The engine's resource-resolution chain is case-insensitive
+// and walks Override → streamwaves → streamsounds → streammusic →
+// BIF/RIM, so a custom Override/ WAV with the same resref will shadow
+// the engine asset transparently.
+//
+// Verifying a resref before using it: every cue resref MUST resolve to
+// a real file in the chitin.key index, otherwise Play3DOneShotSound
+// silently no-ops (creates no source, makes no sound). The previous
+// Wall pick "gui_select" was missing from chitin.key for the entire
+// install — confirmed via the per-fire PitchHook diagnostic on
+// 2026-05-07 (958 play cue=Wall logs, 0 source creations). The full
+// extraction at build/sounds-extracted-full/ is the source of truth for
+// "does this resref resolve?".
 //
 // Phase 1 lay-off 5 closeout. No runtime consumer in this lay-off — the
 // header is included by audio_bus.cpp for compile-verification only. The
@@ -62,7 +73,7 @@ constexpr const char* GetNavCueResref(NavCue cue) {
         case NavCue::Item:                     return "gui_invselect";
         case NavCue::Landmark:                 return "gui_quest";
         case NavCue::TransitionExit:           return "mgs_s1";
-        case NavCue::Wall:                     return "gui_select";
+        case NavCue::Wall:                     return "as_nt_wtrdrip_09";
         case NavCue::HazardLedge:              return "cb_sw_bldlrg1";
         case NavCue::Collision:                return "gui_invdrop";
         case NavCue::BeaconActive:             return "gui_actscroll";

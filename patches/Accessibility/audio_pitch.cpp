@@ -108,13 +108,14 @@ extern "C" int __cdecl OnCalculatePitchVarianceFrequency(void* source) {
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return 1;
     }
+    DWORD now_ms = GetTickCount();
 
     // Heartbeat — once per second, only when our scope is active. Tells
     // us the hook is firing on cue-creation calls and gives us the
     // actual base_frequency value the engine uses (useful future-tuning
-    // signal).
+    // signal). For per-fire resref logging (used 2026-05-07 to confirm
+    // missing-resref no-op behaviour), see git log on this file.
     static DWORD s_last_heartbeat_ms = 0;
-    DWORD now_ms = GetTickCount();
     if (now_ms - s_last_heartbeat_ms >= 1000u) {
         acclog::Write(
             "PitchHook: scoped fire — source=%p base_freq=%d (heartbeat)",

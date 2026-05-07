@@ -602,9 +602,20 @@ void ProcessPendingDispatch() {
     const char* preroll = acc::strings::Get(acc::strings::Id::GuidingToPoint);
     tolk::Speak(preroll, /*interrupt=*/true);
 
-    bool ok = acc::guidance::WalkTo(cursor_pos);
+    // Diagnostic 2026-05-07: try ForceWalkTo (queue-bypass) instead of
+    // WalkTo. patch-20260507-083116.log proved the per-creature action
+    // queue is innocent — clearing it before WalkTo still produced
+    // moved=0.00m (stuck) on 4.07m and 5.99m dispatches. ForceWalkTo
+    // uses CSWSCreature::ForceMoveToPoint, a different engine entry
+    // point that doesn't enqueue. If the player walks via Force here
+    // but not via WalkTo, the queue-processing path is asleep after
+    // view-mode's sustained SetEnabled(false). If Force also fails,
+    // the player creature itself is in a state that blocks movement
+    // dispatch from any engine surface, and we need to look at what
+    // view mode does to the creature's control state beyond input.
+    bool ok = acc::guidance::ForceWalkTo(cursor_pos);
     acclog::Write(
-        "ViewMode: %s deferred -> WalkTo cursor=(%.2f,%.2f,%.2f) ok=%d "
+        "ViewMode: %s deferred -> ForceWalkTo cursor=(%.2f,%.2f,%.2f) ok=%d "
         "elapsed=%lums (no hover target)",
         keyTag, cursor_pos.x, cursor_pos.y, cursor_pos.z, ok ? 1 : 0,
         static_cast<unsigned long>(elapsed));

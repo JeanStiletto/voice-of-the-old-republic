@@ -151,6 +151,42 @@ bool WalkTo(const Vector& destination) {
     // restores immediately.
     bool inputDisabled = acc::engine::SetPlayerInputEnabled(false);
 
+    // Diagnostic 2026-05-07: read state on the player creature so we can
+    // tell which branch AIActionMoveToPoint takes after dispatch.
+    //
+    // `field427_0xa8c` is the most informative signal — AddMoveToPointAction
+    // sets it to 2 unconditionally. AIActionMoveToPoint's various exits
+    // leave it at distinct values:
+    //   - 2  : function never ran (action sat in queue, scheduler skipped it)
+    //   - 1  : switch case (target object found via GetGameObject; CREATURE/
+    //          PLACEABLE/DOOR/TRIGGER handler fired, AddMoveToPointActionToFront
+    //          re-enqueued with refined destination)
+    //   - 0  : reached short-branch tail (line 690 unconditional write)
+    //   - -1 : long-branch reset (field101_0x1f8==0 → line 107)
+    //
+    // We sample at three points: pre-dispatch (after AddMove sets it to 2),
+    // and t+1s / t+3s in the watchdog. If field427 stays at 2 forever, the
+    // scheduler isn't even picking up our action. If it changes, comparing
+    // the value tells us which branch took over.
+    //
+    // `field101_0x1f8` is on the CSWSObject base. The short-branch abort
+    // (line 691-693) gates on `field101 != 0` — if non-zero, return 1
+    // without calling WalkUpdateLocation. Reading it tells us if that's
+    // the blocker.
+    constexpr size_t kCSWSCreatureField427Offset = 0xa8c;
+    constexpr size_t kCSWSObjectField101Offset   = 0x1f8;
+    uint32_t preField427 = 0;
+    uint32_t preField101 = 0;
+    __try {
+        auto* base = reinterpret_cast<unsigned char*>(creature);
+        preField427 = *reinterpret_cast<uint32_t*>(
+            base + kCSWSCreatureField427Offset);
+        preField101 = *reinterpret_cast<uint32_t*>(
+            base + kCSWSObjectField101Offset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        // Bad pointer — log will show 0/0, dispatch attempt continues.
+    }
+
     __try {
         auto fn = reinterpret_cast<PFN_AddMoveToPointAction>(
             kAddrCSWSCreatureAddMoveToPointAction);
@@ -158,7 +194,13 @@ bool WalkTo(const Vector& destination) {
            thisActionId,
            &dest,
            kInvalidObjectId, kInvalidObjectId,
-           /*runFlag=*/0,
+           /*runFlag=*/1,   // 2026-05-07 diagnostic: was 0 (walk).
+                            // Cycle Shift+- + view-mode WalkTo silently
+                            // no-op despite SetEnabled(false). Picker
+                            // path (HandleMouseClickInWorld → composite
+                            // AI action) walks player same engine state.
+                            // Test whether walk-flag specifically is
+                            // rejected and run-flag is accepted.
            /*radius=*/0.0f,
            /*followDistance=*/0.0f,
            /*forceFlag=*/0,
@@ -192,6 +234,26 @@ bool WalkTo(const Vector& destination) {
     g_inFlight.dest   = dest;
 
     float distToDest = haveStart ? HorizontalDistance(startPos, dest) : -1.0f;
+
+    // Read post-dispatch state for diagnostic. AddMoveToPointAction sets
+    // field427 to 2 unconditionally; if we already see something else by
+    // the time WalkTo returns, the scheduler interleaved AIActionMoveToPoint
+    // before we logged.
+    uint32_t postField427 = 0;
+    __try {
+        postField427 = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(creature) +
+            kCSWSCreatureField427Offset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    acclog::Write(
+        "Autowalk: pre-dispatch field427_0xa8c=%d field101_0x1f8=0x%08x; "
+        "post-dispatch field427=%d (AddMove sets it to 2; "
+        "AIActionMoveToPoint exits: switch=1, short-tail=0, long-reset=-1, "
+        "never-ran=2)",
+        static_cast<int>(preField427),
+        static_cast<unsigned>(preField101),
+        static_cast<int>(postField427));
+
     acclog::Write("Autowalk: WalkTo dispatch dest=(%.2f,%.2f,%.2f) "
                   "from=(%.2f,%.2f,%.2f) dist=%.2fm action_id=%u "
                   "ret=0x%08x",
@@ -358,18 +420,40 @@ void TickProgressWatchdog() {
     // ("did the engine actually move us?") is already answered by t+1s.
     if (!g_watchdog.firedAt1s && elapsedMs >= 1000) {
         g_watchdog.firedAt1s = true;
+
+        // Diagnostic: read the same fields we sampled at dispatch so we
+        // can see if AIActionMoveToPoint ran (and which branch).
+        // field427_0xa8c value codes: 2=never ran, 1=switch case took it,
+        // 0=short-tail or long-branch path, -1=long-branch reset.
+        int32_t  curField427 = 0;
+        uint32_t curField101 = 0;
+        void* creature = acc::engine::GetPlayerServerCreature();
+        if (creature) {
+            __try {
+                auto* base = reinterpret_cast<unsigned char*>(creature);
+                curField427 = *reinterpret_cast<int32_t*>(base + 0xa8c);
+                curField101 = *reinterpret_cast<uint32_t*>(base + 0x1f8);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {}
+        }
+
         if (g_watchdog.haveStartPos) {
             float moved = HorizontalDistance(g_watchdog.startPos, pos);
             float distToDest = HorizontalDistance(pos, g_watchdog.dest);
             const char* state = (moved < 0.1f) ? "stuck" : "moving";
-            acclog::Write("Autowalk: %s t+1s moved=%.2fm dist=%.2fm (%s)",
-                          g_watchdog.tag, moved, distToDest, state);
+            acclog::Write(
+                "Autowalk: %s t+1s moved=%.2fm dist=%.2fm (%s) "
+                "field427=%d field101=0x%08x",
+                g_watchdog.tag, moved, distToDest, state,
+                curField427, static_cast<unsigned>(curField101));
         } else {
             // No baseline: still useful — we know whether we're near the
             // destination at the 1s mark.
             float distToDest = HorizontalDistance(pos, g_watchdog.dest);
-            acclog::Write("Autowalk: %s t+1s dist=%.2fm (no baseline)",
-                          g_watchdog.tag, distToDest);
+            acclog::Write(
+                "Autowalk: %s t+1s dist=%.2fm (no baseline) "
+                "field427=%d field101=0x%08x",
+                g_watchdog.tag, distToDest,
+                curField427, static_cast<unsigned>(curField101));
         }
     }
 
