@@ -1296,6 +1296,45 @@ static void* FindCloseButton(void* panel) {
     return nullptr;
 }
 
+// Cancel-intent button finder for confirm-style popups (yes/no, OK/Cancel).
+// Esc on a confirm dialog should mean "back out / no", which is the cancel
+// button — NOT the affirmative OK that FindCloseButton would match first.
+// Used as a higher-priority probe by the Esc handler before falling back
+// to FindCloseButton; that way single-button info popups (Schliess/OK
+// only) still work, while two-button confirms (OK + Abbrechen) route Esc
+// to Abbrechen.
+//
+// Confirm-dialog buttons we route Esc to:
+//   - "Abbrechen" — German Cancel
+//   - "Cancel"    — English Cancel
+//   - "Nein"      — German No (yes/no confirm variants)
+//   - "No"        — English No
+//
+// Same strncmp-prefix matching shape as FindCloseButton; KOTOR labels
+// are fixed and short enough that prefix collisions are not a concern
+// (no German word in this UI starts with "Abbrech", "Nein" + space/end,
+// etc.).
+static void* FindCancelButton(void* panel) {
+    if (!panel) return nullptr;
+    auto* list = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+    if (!list->data || list->size <= 0) return nullptr;
+    int n = list->size > 256 ? 256 : list->size;
+    for (int i = 0; i < n; ++i) {
+        void* c = list->data[i];
+        if (!IsChainNavigable(c)) continue;
+        char text[256];
+        if (!ExtractAnnounceableText(c, text, sizeof(text), panel)) continue;
+        if (strncmp(text, "Abbrechen", 9) == 0 ||
+            strncmp(text, "Cancel",    6) == 0 ||
+            strncmp(text, "Nein",      4) == 0 ||
+            strncmp(text, "No",        2) == 0) {
+            return c;
+        }
+    }
+    return nullptr;
+}
+
 // Detect the CSWGuiSaveLoad panel (the "Spiel laden" / "Spiel speichern"
 // dialog). The panel is allocated dynamically when the user activates the
 // load/save action, has no slot in CGuiInGame, and so doesn't show up via
@@ -1658,6 +1697,34 @@ static bool IsModalTextPanel(PanelKind k) {
     case PanelKind::MessageBoxModal:
     case PanelKind::TutorialBox:
     case PanelKind::AreaTransition:
+        return true;
+    default:
+        return false;
+    }
+}
+
+// True for engine-pushed modal popup panels that the user dismisses via a
+// close button (Schliess / OK / Weiter / Continue). Used by the Esc handler
+// to know when to fall back to FindCloseButton on standalone modals — the
+// older "tabbed sub-dialog" gate only covers Esc inside Options sub-tabs,
+// missing the post-action info popups (StatusSummary after a skill check,
+// the engine's quit-confirm MessageBox, AreaTransition prompts, …) which
+// the engine never auto-dismisses on Esc.
+//
+// Distinct from IsModalTextPanel: that one identifies popups whose body
+// text the engine wraps in a single-row listbox (so RebindChain can promote
+// it to a text-only chain entry); this one identifies popups that need a
+// keyboard dismiss path. Overlap exists (MessageBoxModal/TutorialBox/
+// AreaTransition are in both) but each is asked a different question.
+static bool IsModalPopupPanel(PanelKind k) {
+    switch (k) {
+    case PanelKind::MessageBoxModal:
+    case PanelKind::TutorialBox:
+    case PanelKind::AreaTransition:
+    case PanelKind::StatusSummary:
+    case PanelKind::ControllerLossBox:
+    case PanelKind::SkillInfoBox:
+    case PanelKind::SoloModeQuery:
         return true;
     default:
         return false;
@@ -2821,6 +2888,26 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     //
     // Consume Enter either way so the engine doesn't ALSO fire F1 against
     // panel.activeControl (which can be stale or wrong).
+    //
+    // Lazy rebind: the Up/Down handler below rebinds the chain when the
+    // active panel changes, but Enter previously required a prior arrow
+    // press. That stranded engine-pushed modals that the user reasonably
+    // tries to dismiss with Enter alone (StatusSummary after a skill
+    // check, the post-quit-confirm MessageBox, an AreaTransition prompt):
+    // chain stayed bound to the previous panel, the gate below failed,
+    // and the engine's own F1 dispatch silently no-ops on those popups
+    // too — total lockup. Mirroring the Up/Down rebind here lifts that
+    // restriction. RebindChain anchors g_chainIndex on
+    // panel.activeControl when present, so popups the engine pre-focuses
+    // (quit-confirm pre-focused on Abbrechen) activate the focused
+    // button on Enter without arrow-key priming.
+    if (param_2 != 0 &&
+        (param_1 == kInputEnter1 || param_1 == kInputEnter2) &&
+        activePanel != nullptr &&
+        g_chainPanel != activePanel)
+    {
+        RebindChain(activePanel);
+    }
     if (param_2 != 0 &&
         (param_1 == kInputEnter1 || param_1 == kInputEnter2) &&
         activePanel != nullptr &&
@@ -3147,10 +3234,22 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     // Schliess and presses Enter, so routing Esc through it gives deterministic
     // close behavior.
     //
-    // Gated on activePanel != g_tabbedPanel: only fires inside a sub-dialog
-    // of a tabbed parent. On the parent Options panel itself, Esc passes
-    // through to the engine (which opens the "Möchtest du wirklich aufhören?"
-    // quit confirmation — desired existing behavior).
+    // Gate covers two kinds of activePanel:
+    //   1. A sub-dialog of a tabbed parent (e.g. Options' Auto-Pause /
+    //      Grafik / Sound / … sub-screens). Original use case;
+    //      `activePanel != g_tabbedPanel` keeps Esc on the parent Options
+    //      panel itself passing through to the engine, which then opens
+    //      the "Möchtest du wirklich aufhören?" quit confirmation —
+    //      desired existing behavior.
+    //   2. A standalone modal popup pushed by the engine — IsModalPopupPanel
+    //      lists the kinds. Without this branch, Esc on a StatusSummary or
+    //      a MessageBoxModal does nothing (engine's own Esc handling on
+    //      these is to open the quit-confirm sibling, which is also a
+    //      MessageBoxModal — leaving the user stacked deeper instead of
+    //      backing out). FindCloseButton resolves to Schliess/OK/Weiter
+    //      reliably for these panels (verified for StatusSummary in
+    //      patch-20260506-073143.log); same primitive that already works
+    //      for sub-dialog Esc.
     //
     // We use activePanel (resolved from the manager's modal_stack/panels[]
     // at the top of this function) rather than g_currentPanel. The latter is
@@ -3162,24 +3261,36 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     if (param_2 != 0 &&
         (param_1 == kInputEsc1 || param_1 == kInputEsc2) &&
         activePanel != nullptr &&
-        g_tabbedPanel != nullptr &&
-        activePanel != g_tabbedPanel)
+        ((g_tabbedPanel != nullptr && activePanel != g_tabbedPanel) ||
+         IsModalPopupPanel(IdentifyPanel(activePanel))))
     {
         if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
             acclog::Write("Esc: op already pending; ignoring");
             consumed = true;
         } else {
-            void* closeBtn = FindCloseButton(activePanel);
-            if (closeBtn) {
+            // Probe order matters: confirm-style popups (OK + Abbrechen,
+            // Yes + No, …) carry BOTH a cancel-intent button AND the
+            // affirmative that FindCloseButton matches as "OK". Esc is a
+            // back-out gesture, never a confirm — try Abbrechen/Cancel
+            // first so the quit-confirm and save-overwrite-style dialogs
+            // route Esc to the safe choice. Single-button info popups
+            // (StatusSummary's lone Schliess, AreaTransition's Weiter)
+            // have no cancel button, so the FindCloseButton fallback
+            // handles them.
+            void* cancelBtn = FindCancelButton(activePanel);
+            void* tgt       = cancelBtn ? cancelBtn : FindCloseButton(activePanel);
+            if (tgt) {
                 g_pendingActivate       = true;
-                g_pendingActivateTarget = closeBtn;
-                acclog::Write("Esc close panel=%p kind=%s Schliess=%p",
-                              activePanel, PanelKindName(IdentifyPanel(activePanel)),
-                              closeBtn);
+                g_pendingActivateTarget = tgt;
+                acclog::Write("Esc %s panel=%p kind=%s target=%p",
+                              cancelBtn ? "cancel" : "close",
+                              activePanel,
+                              PanelKindName(IdentifyPanel(activePanel)),
+                              tgt);
                 consumed = true;
             } else {
                 acclog::Write("Esc on sub-dialog panel=%p kind=%s but no "
-                              "close button found; passing through",
+                              "cancel/close button found; passing through",
                               activePanel, PanelKindName(IdentifyPanel(activePanel)));
             }
         }
