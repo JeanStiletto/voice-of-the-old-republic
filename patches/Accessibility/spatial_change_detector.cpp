@@ -93,19 +93,87 @@ int g_edge_surface_id[kMaxWallEdges];
 // Number of distinct surfaces clustered for the current area.
 int g_surface_count = 0;
 
-// Per-surface last-cued distance. Negative sentinel = "surface is
-// currently out of range" (or "we haven't observed it in range yet this
-// area"). On area change CalibrateInRange seeds this for every in-range
-// surface without firing cues, so the next normal tick fires only on
-// actual player motion past the threshold.
-float g_surface_last_distance[kMaxWallSurfaces];
-
-// Per-surface last-cued timestamp (ms via GetTickCount). Shared between
-// T1 and T2: T1 stamps when it fires a surface; T2 reads to gate its
-// own fire (and stamps too). 0 = never cued. On area change all entries
-// reset to 0 so the first T2 candidate post-load is allowed to fire
-// after the T2 first-tick suppression is cleared.
+// Per-surface last-cued timestamp (ms via GetTickCount). T2's
+// foremost-in-front debounce reads this to avoid double-firing a surface
+// the per-sector T1 just announced. Stamped by T1 (the "best surface"
+// in the sector that fired) and by T2 itself. 0 = never cued.
 DWORD g_surface_last_cued_at[kMaxWallSurfaces];
+
+// --- Per-sector continuous distance-delta ----------------------------
+//
+// Final design (2026-05-07): no discrete zones. Each cardinal sector
+// (Front / Left / Back / Right, relative to player heading) tracks the
+// distance at which its closest wall last fired a cue and refires
+// whenever the current distance has changed by
+// `distanceDeltaThresholdMeters` since then. 3D audio handles distance
+// + direction nuance — a cue at 4 m plays quieter than a cue at 1 m,
+// panned to the wall's bearing. The trigger only needs to know "did
+// distance change enough to be worth a fresh cue." Discrete zones
+// (Close/Mid/Far) added complexity without adding meaning — they were
+// pure firing gates and the same gate is expressible as a single
+// threshold against the last fire.
+//
+// State per sector:
+//   - last_fired_surface: identity of the surface whose distance we
+//     last announced. -1 means "sector is currently out of range" or
+//     "never fired in this area." Tracking identity is critical: as the
+//     player walks, the bearing to each surface changes, and the
+//     "closest in this sector" can swap identity from one surface to
+//     another in adjacent ticks. Without identity tracking, the swap
+//     looks like a phantom multi-metre distance jump and fires
+//     spuriously even though the world didn't change.
+//   - last_fired_distance: the distance at which last_fired_surface was
+//     announced. Used for threshold-crossing test against the *same*
+//     surface only.
+//   - last_closest_point: cached so an in-range → out-of-range fire
+//     ("wall ended on the left") plays at the wall's last position.
+//   - last_cued_at: cooldown stamp.
+//
+// Fire rules (per sector, applied independently):
+//   - Sector stays in range with the SAME closest surface and
+//     |current - last_fired| > threshold → fire.
+//   - All other transitions (enter, exit, identity swap) silently
+//     retrack. Reasoning:
+//       * Entry: the sector just gained a wall. The next threshold
+//         crossing on that wall fires naturally as the player
+//         approaches. An explicit "entry ping" at 4.99 m on the edge
+//         of awareness mostly announces walls the player will never
+//         care about (they'll walk past at the bubble's edge).
+//       * Exit: silence after the last threshold delta is itself the
+//         signal — the player heard the wall fade as it receded,
+//         then nothing. No need for an explicit ping.
+//       * Identity swap: not a real-world event, just bookkeeping
+//         (closest fragment changed). Always silent.
+//   - Per-sector cooldown caps absolute refire rate at one per
+//     kSectorCooldownMs even if rapid motion produces back-to-back
+//     threshold crossings.
+//
+// Walking parallel to a corridor wall keeps the side sector's distance
+// roughly constant (closest-point slides along) → no fire. Approaching
+// a front wall makes Front's distance shrink linearly → fires every
+// `threshold` metres of approach. Each successive fire plays at the
+// wall's current closest point and is louder than the previous because
+// the wall is closer.
+
+constexpr DWORD kSectorCooldownMs = 1000;
+
+// Hysteresis on the awareness-range boundary itself. A wall enters the
+// 5 m bubble at the configured range; once in, it has to recede past
+// range + this band before it counts as having left. Stops sectors
+// from flapping enter/exit when a wall sits right at 5.0 m and the
+// player nudges back and forth across that line.
+//
+// 0.3 m chosen as the smallest gap that visibly stops the flapping in
+// captured logs without dragging the "wall left" event noticeably
+// late. Easy to bump if it still feels twitchy.
+constexpr float kAwarenessRangeHysteresisMeters = 0.3f;
+
+constexpr int kSectorCount = 4;  // Front, Left, Back, Right (matches WallSector enum)
+
+int    g_sector_last_fired_surface [kSectorCount];  // -1 = out of range / never fired
+float  g_sector_last_fired_distance[kSectorCount];
+Vector g_sector_last_closest_point [kSectorCount];
+DWORD  g_sector_last_cued_at       [kSectorCount];
 
 // --- Object state -------------------------------------------------------
 //
@@ -168,6 +236,14 @@ Foremost g_t2_last_fired      = { FeatureKind::None, -1, 0u };
 Foremost g_t2_pending         = { FeatureKind::None, -1, 0u };
 DWORD    g_t2_pending_changed_at = 0;
 bool     g_t2_initialised     = false;
+
+// Timestamp of the last T1 wall fire (any sector). T2 wall fires are
+// suppressed within kSectorCooldownMs of this — when T1 has just
+// announced wall geometry, the player is already getting wall info this
+// beat and a T2 "wall in front" cue is a duplicate even if it's a
+// different surface than T1 picked. Object T2 fires are NOT gated by
+// this (they carry distinct semantic content). 0 = never fired.
+DWORD    g_t1_wall_last_fired_at = 0;
 
 // --- Geometry -----------------------------------------------------------
 
@@ -398,46 +474,59 @@ struct SurfaceScratch {
 
 SurfaceScratch g_surface_scratch[kMaxWallSurfaces];
 
-// Per-tick "surfaces that crossed the threshold this tick" — used to
-// pick the K closest for actual cue firing. Sized to surface count cap.
-struct SurfaceCandidate {
-    int    surface_index;
-    float  distance;
+// Per-tick "sectors whose distance crossed the threshold this tick" —
+// at most one entry per sector. Fired at the closest-point of the
+// sector's closest surface (or the cached last-known point for
+// out-of-range fires).
+struct SectorCandidate {
+    int    sector_index;
+    int    best_surface_index;  // for stamping g_surface_last_cued_at (T2 reads it)
+    float  distance;             // current distance (or -1 = out of range)
+    float  last_fired_distance;  // for log; -1 = first fire
     Vector closest_point;
 };
 
-SurfaceCandidate g_surface_candidates[kMaxWallSurfaces];
+SectorCandidate g_sector_candidates[kSectorCount];
 
 // --- Direction sectors for "one cue per direction" selection -----------
 //
-// The plan locks Trigger 1 as 360° awareness, but the user-visible cue
-// budget is K=3 per tick (settings: trigger1MaxWallCuesPerTick). With
-// raw "K closest by distance" selection in dense areas, all K picks
-// can land on fragments of the *same* physical wall (the closest one),
-// leaving the user with three near-identical pans on one ear.
+// T1 uses **world-frame** sectors as a cue-grouping mechanism: each
+// sector contributes at most one fire per tick, ensuring simultaneous
+// events in different physical directions don't mask each other. The
+// sectors are NOT user-perceptible directions — the audio pan is
+// computed from the cue's world position and the listener's
+// orientation by the engine's 3D audio, so a wall to your physical
+// left always pans left regardless of which world-frame bin it lives
+// in. World-frame is preferred over player-relative because KOTOR's
+// engine drifts the player's yaw on plain W/S/strafe motion (the
+// character body slowly rotates to face movement direction even with
+// no rotate-key input), and player-relative sectors would treat that
+// drift as the world rotating, causing cascade enter/exit fires
+// every time you take a few steps. World-frame sectors only shift
+// when the player's *position* moves enough to put a wall on the
+// other side of a 90° world quadrant — much rarer than yaw drift.
 //
-// We instead bin candidates into four cardinal sectors *relative to
-// player heading* — front, left, back, right — and pick the closest
-// candidate in each sector. Each sector contributes at most one cue,
-// so a corridor wall fragmented into N pieces on the right collapses
-// to one "right" cue regardless of N. The K-cap then picks the K
-// closest among the per-sector reps; in a 4-walls-around-you room
-// the furthest sector (typically "back") is the one silenced first.
+// T2's "is this in front of me?" cone is genuinely a player-relative
+// question (the user wants to know what's in their *view direction*),
+// so T2 uses the same ClassifyRelativeBearing helper but feeds it
+// `worldBearing - effectiveYaw` to get player-frame Front membership.
+// Two callers, two frames; one classifier.
 //
-// Sectors are defined relative to player heading:
-//   Front: rel bearing in [-45°, +45°)  i.e. [315°, 360°) ∪ [0°, 45°)
-//   Left : rel bearing in [+45°, +135°)
-//   Back : rel bearing in [+135°, +225°)
-//   Right: rel bearing in [+225°, +315°)
+// Sector bins (numerically identical, just interpreted differently
+// per caller):
+//   Bin 0 (Q0):  bearing in [-45°, +45°)     ≈ around world-east  / player-front
+//   Bin 1 (Q1):  bearing in [+45°, +135°)    ≈ around world-north / player-left
+//   Bin 2 (Q2):  bearing in [+135°, +225°)   ≈ around world-west  / player-back
+//   Bin 3 (Q3):  bearing in [+225°, +315°)   ≈ around world-south / player-right
 //
-// Bearing convention follows engine_player::GetPlayerYawDegrees: world
-// frame, 0° = +X = east, CCW positive. Relative bearing = world bearing
-// from player to candidate, minus player yaw, normalised to [0, 360).
-// Left = +90° (CCW) because both yaw and atan2 are CCW-positive.
+// Bearing convention: world frame, 0° = +X = east, CCW positive
+// (matches engine_player::GetPlayerYawDegrees). Player-relative
+// bearing = world bearing - yaw.
 //
-// Trigger 2's ±45° front cone equals the Front sector exactly — both
-// triggers share this classifier so the same in-front candidate set
-// drives T2 firing decisions.
+// Enum names retained as Front/Left/Back/Right to keep T2's "Front
+// cone" code readable (T2 *does* use them as player-frame). For T1
+// they're abstract bin indices; the SectorTag helper labels them
+// E/N/W/S to make T1 logs unambiguously world-frame.
 enum class WallSector : int {
     Front = 0,
     Left  = 1,
@@ -456,12 +545,15 @@ WallSector ClassifyRelativeBearing(float relBearingDeg) {
     return WallSector::Front;
 }
 
+// Tag used in T1 logs — world-frame quadrant labels. The enum slots
+// happen to be named Front/Left/Back/Right but for T1's use those names
+// are misleading; this gives the log unambiguous E/N/W/S labels.
 const char* SectorTag(WallSector s) {
     switch (s) {
-        case WallSector::Front: return "F";
-        case WallSector::Left:  return "L";
-        case WallSector::Back:  return "B";
-        case WallSector::Right: return "R";
+        case WallSector::Front: return "E";  // world-east bin
+        case WallSector::Left:  return "N";
+        case WallSector::Back:  return "W";
+        case WallSector::Right: return "S";
         default:                return "?";
     }
 }
@@ -499,8 +591,13 @@ void OnAreaChange(void* area) {
     ClusterEdgesIntoSurfaces();
 
     for (int i = 0; i < kMaxWallSurfaces; ++i) {
-        g_surface_last_distance[i] = -1.0f;
-        g_surface_last_cued_at[i]  = 0;
+        g_surface_last_cued_at[i] = 0;
+    }
+    for (int i = 0; i < kSectorCount; ++i) {
+        g_sector_last_fired_surface[i]  = -1;
+        g_sector_last_fired_distance[i] = -1.0f;
+        g_sector_last_closest_point[i]  = { 0.0f, 0.0f, 0.0f };
+        g_sector_last_cued_at[i]        = 0;
     }
     for (int i = 0; i < kMaxTrackedObjects; ++i) {
         g_object_state[i].handle        = 0;
@@ -515,6 +612,7 @@ void OnAreaChange(void* area) {
     g_t2_pending            = { FeatureKind::None, -1, 0u };
     g_t2_pending_changed_at = 0;
     g_t2_initialised        = false;
+    g_t1_wall_last_fired_at = 0;
 
     if (overflow) {
         acclog::Write(
@@ -551,10 +649,29 @@ void CalibrateInRange(void* area, const Vector& referencePos,
     float range   = settings.awarenessRangeMeters;
     float rangeSq = range * range;
 
-    // Reset per-surface scratch and last_distance, then walk every edge
-    // and propagate its distance into its surface's per-area minimum.
+    // Reset per-sector state, then walk every edge to derive the
+    // per-sector minimum distance and closest point. Then seed each
+    // sector's zone from that distance — first observation uses
+    // prev=Open (no hysteresis carry), so subsequent Tick() calls fire
+    // only on actual zone transitions caused by player motion.
+    //
+    // Per-sector aggregation is world-frame, so no yaw read needed
+    // here (Tick() uses the same convention).
+
+    struct SeedAggregate { bool has; float dist; Vector pos; int surface_index; };
+    SeedAggregate seed[kSectorCount] = {};
+    for (int i = 0; i < kSectorCount; ++i) {
+        seed[i] = { false, 1e30f, { 0, 0, 0 }, -1 };
+    }
+
+    // Per-surface min distance + closest point (transient — we only
+    // need it to drive the per-sector aggregation below).
+    float  surfBestDist[kMaxWallSurfaces];
+    Vector surfBestPt[kMaxWallSurfaces];
+    bool   surfHasData[kMaxWallSurfaces];
     for (int i = 0; i < g_surface_count; ++i) {
-        g_surface_last_distance[i] = -1.0f;
+        surfBestDist[i] = 1e30f;
+        surfHasData[i]  = false;
     }
     for (int i = 0; i < g_wall_count; ++i) {
         const auto& w = g_walls[i];
@@ -565,14 +682,43 @@ void CalibrateInRange(void* area, const Vector& referencePos,
         int sid = g_edge_surface_id[i];
         if (sid < 0 || sid >= g_surface_count) continue;
         float dist = std::sqrt(distSq);
-        if (g_surface_last_distance[sid] < 0.0f ||
-            dist < g_surface_last_distance[sid]) {
-            g_surface_last_distance[sid] = dist;
+        if (!surfHasData[sid] || dist < surfBestDist[sid]) {
+            surfHasData[sid] = true;
+            surfBestDist[sid] = dist;
+            surfBestPt[sid]   = closest;
         }
     }
+
+    // Aggregate surfaces into world-frame sectors. (Tick uses world-
+    // frame too — keeps calibration aligned with runtime semantics so
+    // the first tick after calibration doesn't see phantom transitions
+    // due to a frame mismatch.)
+    for (int s = 0; s < g_surface_count; ++s) {
+        if (!surfHasData[s]) continue;
+        float dx = surfBestPt[s].x - referencePos.x;
+        float dy = surfBestPt[s].y - referencePos.y;
+        float worldBearing = std::atan2(dy, dx) * 57.29577951308232f;
+        WallSector sec = ClassifyRelativeBearing(worldBearing);
+        int idx = static_cast<int>(sec);
+        if (!seed[idx].has || surfBestDist[s] < seed[idx].dist) {
+            seed[idx].has           = true;
+            seed[idx].dist          = surfBestDist[s];
+            seed[idx].pos           = surfBestPt[s];
+            seed[idx].surface_index = s;
+        }
+    }
+
     int wallsCalibrated = 0;
-    for (int i = 0; i < g_surface_count; ++i) {
-        if (g_surface_last_distance[i] >= 0.0f) ++wallsCalibrated;
+    for (int i = 0; i < kSectorCount; ++i) {
+        if (seed[i].has) {
+            g_sector_last_fired_surface[i]  = seed[i].surface_index;
+            g_sector_last_fired_distance[i] = seed[i].dist;
+            g_sector_last_closest_point[i]  = seed[i].pos;
+            ++wallsCalibrated;
+        } else {
+            g_sector_last_fired_surface[i]  = -1;
+            g_sector_last_fired_distance[i] = -1.0f;
+        }
     }
 
     int objectsCalibrated = 0;
@@ -598,9 +744,15 @@ void CalibrateInRange(void* area, const Vector& referencePos,
     }
 
     acclog::Write(
-        "ChangeDetector: calibrated (%s) walls=%d objects=%d at "
-        "ref=(%.2f,%.2f,%.2f)",
-        reason ? reason : "?", wallsCalibrated, objectsCalibrated,
+        "ChangeDetector: calibrated (%s) sectors_with_walls=%d/%d "
+        "(F=%.2f/s%d L=%.2f/s%d B=%.2f/s%d R=%.2f/s%d) objects=%d "
+        "at ref=(%.2f,%.2f,%.2f)",
+        reason ? reason : "?", wallsCalibrated, kSectorCount,
+        g_sector_last_fired_distance[0], g_sector_last_fired_surface[0],
+        g_sector_last_fired_distance[1], g_sector_last_fired_surface[1],
+        g_sector_last_fired_distance[2], g_sector_last_fired_surface[2],
+        g_sector_last_fired_distance[3], g_sector_last_fired_surface[3],
+        objectsCalibrated,
         referencePos.x, referencePos.y, referencePos.z);
 }
 
@@ -660,10 +812,16 @@ void Tick() {
     const auto& settings = acc::core::Get().pillar1;
     if (!settings.trigger1DistanceDelta && !settings.trigger2FrontCone) return;
 
-    float range     = settings.awarenessRangeMeters;
-    float threshold = settings.distanceDeltaThresholdMeters;
-    float rangeSq   = range * range;
-    int   maxCues   = settings.trigger1MaxWallCuesPerTick;
+    float range       = settings.awarenessRangeMeters;
+    float threshold   = settings.distanceDeltaThresholdMeters;
+    float rangeSq     = range * range;
+    // Outer hysteresis ring — surfaces between range and rangeExit are
+    // tracked-but-only-keep-existing-sectors-in-range. Walls in this
+    // band can't initiate a new "sector entered awareness" cue but can
+    // delay the corresponding exit cue.
+    float rangeExit   = range + kAwarenessRangeHysteresisMeters;
+    float rangeExitSq = rangeExit * rangeExit;
+    int   maxCues     = settings.trigger1MaxWallCuesPerTick;
     if (maxCues < 0) maxCues = 0;
 
     DWORD now = GetTickCount();
@@ -679,12 +837,12 @@ void Tick() {
         effectiveYaw = 0.0f;
     }
 
-    int walls_in_range    = 0;       // surfaces in range (not edges)
-    int surface_candidates= 0;
-    int walls_cued        = 0;
-    int objs_in_range     = 0;
-    int objs_cued         = 0;
-    char sector_log[16]   = {0};   // F/L/B/R per fired surface
+    int walls_in_range     = 0;      // surfaces in range (not edges)
+    int sector_candidates  = 0;
+    int walls_cued         = 0;
+    int objs_in_range      = 0;
+    int objs_cued          = 0;
+    char sector_log[16]    = {0};    // F/L/B/R per fired sector
 
     // T2 foremost-in-front candidate (best across walls + objects).
     // Tracked inline during the T1 passes — every in-range surface is
@@ -715,7 +873,12 @@ void Tick() {
         Vector closest;
         float distSq = ClosestPointDistanceSquared(
             referencePos, w.a, w.b, closest);
-        if (distSq > rangeSq) continue;
+        // rangeExitSq, not rangeSq — surfaces in the hysteresis band still
+        // need to flow through aggregation so a previously-in-range
+        // sector keeps its tracking surface visible (Pass 3 decides
+        // whether the sector still "counts" as in range based on prior
+        // state).
+        if (distSq > rangeExitSq) continue;
         int sid = g_edge_surface_id[i];
         if (sid < 0 || sid >= g_surface_count) continue;
         float dist = std::sqrt(distSq);
@@ -727,123 +890,179 @@ void Tick() {
         }
     }
 
-    // --- Walls: pass 2 — surface-level threshold check + T2 foremost --
+    // --- Walls: pass 2 — surface → sector aggregation + T2 foremost ----
+    //
+    // T1 sector aggregation uses **world-frame** quadrants — surfaces
+    // don't migrate sectors when the player's yaw drifts (a recurring
+    // false-fire source). T2's Front cone is genuinely player-frame
+    // (the user wants to know what's in their *view direction*), so we
+    // compute both bearings per surface.
+    struct SectorAggregate {
+        bool   has_data;
+        float  best_distance;
+        int    best_surface_index;
+        Vector best_closest_point;
+    };
+    SectorAggregate sectorAgg[kSectorCount];
+    for (int i = 0; i < kSectorCount; ++i) {
+        sectorAgg[i] = { false, 1e30f, -1, { 0, 0, 0 } };
+    }
+
     for (int s = 0; s < g_surface_count; ++s) {
         SurfaceScratch& ss = g_surface_scratch[s];
-        if (!ss.in_range) {
-            g_surface_last_distance[s] = -1.0f;
-            continue;
-        }
+        if (!ss.in_range) continue;
         ++walls_in_range;
 
-        // T2 candidate detection — every in-range surface whose closest
-        // point lies in the Front sector competes for foremost.
-        if (t2_enabled) {
-            float dx = ss.best_closest_point.x - referencePos.x;
-            float dy = ss.best_closest_point.y - referencePos.y;
-            float wb = std::atan2(dy, dx) * 57.29577951308232f;
-            if (ClassifyRelativeBearing(wb - effectiveYaw) ==
-                    WallSector::Front &&
+        float dx = ss.best_closest_point.x - referencePos.x;
+        float dy = ss.best_closest_point.y - referencePos.y;
+        float worldBearing = std::atan2(dy, dx) * 57.29577951308232f;
+
+        WallSector worldSec  = ClassifyRelativeBearing(worldBearing);
+        WallSector playerSec = ClassifyRelativeBearing(worldBearing - effectiveYaw);
+
+        // T2 candidate — player-relative Front cone (in front of the
+        // user's view direction, not world-east).
+        if (t2_enabled && playerSec == WallSector::Front &&
                 ss.best_distance < t2_best_dist) {
-                t2_best_dist                = ss.best_distance;
-                t2_best.kind                = FeatureKind::Wall;
-                t2_best.wall_surface_index  = s;
-                t2_best.object_handle       = 0;
-                t2_best_pos                 = ss.best_closest_point;
-                t2_best_cue                 = acc::audio::NavCue::Wall;
-            }
+            t2_best_dist                = ss.best_distance;
+            t2_best.kind                = FeatureKind::Wall;
+            t2_best.wall_surface_index  = s;
+            t2_best.object_handle       = 0;
+            t2_best_pos                 = ss.best_closest_point;
+            t2_best_cue                 = acc::audio::NavCue::Wall;
         }
 
-        if (!settings.trigger1DistanceDelta) continue;
-
-        // Threshold check on the surface minimum. Walking parallel to a
-        // long wall holds best_distance ≈ constant → no fire. Approach
-        // / retreat from the wall changes the minimum smoothly → fires
-        // on each `threshold` step.
-        bool crossed = false;
-        if (g_surface_last_distance[s] < 0.0f) {
-            crossed = true;  // first observation in range during play
-        } else if (std::fabs(ss.best_distance - g_surface_last_distance[s])
-                   > threshold) {
-            crossed = true;
-        }
-        if (!crossed) continue;
-
-        g_surface_last_distance[s] = ss.best_distance;
-
-        // Per-tick same-closest-point dedup. Vertex-sharing T- / X-
-        // junctions produce multiple surfaces whose best_closest_point
-        // coincides at the shared corner. Without this merge, all of
-        // them eat slots in the K-cap and fire near-identical cues at
-        // the same world position. Keep the smaller-distance entry; the
-        // surface losing the merge still has its last_distance updated
-        // above, so it doesn't immediately re-trip the threshold.
-        bool merged = false;
-        for (int c = 0; c < surface_candidates; ++c) {
-            float dx = g_surface_candidates[c].closest_point.x -
-                       ss.best_closest_point.x;
-            float dy = g_surface_candidates[c].closest_point.y -
-                       ss.best_closest_point.y;
-            float dz = g_surface_candidates[c].closest_point.z -
-                       ss.best_closest_point.z;
-            if (dx * dx + dy * dy + dz * dz < kFireDedupTolSquared) {
-                if (ss.best_distance < g_surface_candidates[c].distance) {
-                    g_surface_candidates[c].surface_index  = s;
-                    g_surface_candidates[c].distance       = ss.best_distance;
-                    g_surface_candidates[c].closest_point  =
-                        ss.best_closest_point;
-                }
-                merged = true;
-                break;
-            }
-        }
-        if (merged) continue;
-
-        if (surface_candidates < kMaxWallSurfaces) {
-            g_surface_candidates[surface_candidates].surface_index = s;
-            g_surface_candidates[surface_candidates].distance      =
-                ss.best_distance;
-            g_surface_candidates[surface_candidates].closest_point =
-                ss.best_closest_point;
-            ++surface_candidates;
+        // T1 per-sector aggregation — world-frame to immunise against
+        // yaw drift.
+        int idx = static_cast<int>(worldSec);
+        if (idx < 0 || idx >= kSectorCount) continue;
+        if (!sectorAgg[idx].has_data ||
+            ss.best_distance < sectorAgg[idx].best_distance) {
+            sectorAgg[idx].has_data           = true;
+            sectorAgg[idx].best_distance      = ss.best_distance;
+            sectorAgg[idx].best_surface_index = s;
+            sectorAgg[idx].best_closest_point = ss.best_closest_point;
         }
     }
 
-    // --- Walls: pass 3 — fire K closest surfaces by distance ----------
+    // --- Walls: pass 3 — per-sector distance-delta check + queue fires
     //
-    // No sector binning: surfaces ARE the spatial diversity (each
-    // surface is a distinct physical wall with a distinct bearing).
-    // K-closest selection ensures we never spam more than K cues per
-    // tick even in dense rooms; surfaces that lost the cut keep their
-    // last_distance updated above so they don't immediately re-queue
-    // next tick.
-    if (surface_candidates > 0) {
-        // Selection sort the first K candidates by ascending distance.
-        // K is small (default 3); selection sort is cheap.
-        int firedCount = surface_candidates < maxCues ? surface_candidates
-                                                      : maxCues;
+    // For each cardinal sector:
+    //   - If the sector entered range from out-of-range → fire (new wall
+    //     came within awareness on this side).
+    //   - If the sector left range from in-range → fire at the cached
+    //     last-known position ("wall ended on the left" event).
+    //   - If still in range and |current - last_fired| > threshold → fire
+    //     (meaningful distance change since the previous announcement).
+    //   - Per-sector cooldown caps refire rate to one per kSectorCooldownMs.
+    //
+    // Approaching a wall produces evenly-spaced "approach pings," each
+    // played at the wall's actual current closest-point position so 3D
+    // attenuation makes them louder as the wall draws closer.
+    if (settings.trigger1DistanceDelta) {
+        for (int sec = 0; sec < kSectorCount; ++sec) {
+            int   lastSurf   = g_sector_last_fired_surface[sec];
+            float lastDist   = g_sector_last_fired_distance[sec];
+
+            // Hysteresis on the awareness boundary: a sector that was
+            // out of range only enters when distance ≤ range; a sector
+            // already in range stays in range until distance > rangeExit.
+            // Stops back-and-forth flapping when a wall sits right at the
+            // 5 m line.
+            bool wasInRange = (lastSurf >= 0);
+            float effectiveRange = wasInRange ? rangeExit : range;
+            bool  inRange    = sectorAgg[sec].has_data &&
+                               sectorAgg[sec].best_distance <= effectiveRange;
+            float curDist    = inRange ? sectorAgg[sec].best_distance      : -1.0f;
+            int   curSurf    = inRange ? sectorAgg[sec].best_surface_index : -1;
+
+            // Fire only on threshold crossings of the SAME tracked
+            // surface in this sector. Entry / exit / identity-swap are
+            // all silent retracks (state updates, no audio).
+            bool sameSurface = inRange && curSurf == lastSurf && lastSurf >= 0;
+            bool fire = sameSurface &&
+                        std::fabs(curDist - lastDist) > threshold;
+
+            if (!fire) {
+                // Silent retrack — update tracking state so the next
+                // tick's compare is correct. Three sub-cases:
+                //   - entry:        lastSurf < 0, inRange → adopt curSurf at curDist
+                //   - exit:         !inRange, lastSurf ≥ 0 → clear to -1
+                //   - identity swap: inRange, curSurf ≠ lastSurf → adopt new surface
+                //   - same surface, sub-threshold motion → leave state unchanged
+                //     so accumulated drift can eventually cross threshold
+                if (inRange && (lastSurf < 0 || curSurf != lastSurf)) {
+                    g_sector_last_fired_surface[sec]  = curSurf;
+                    g_sector_last_fired_distance[sec] = curDist;
+                    g_sector_last_closest_point[sec]  = sectorAgg[sec].best_closest_point;
+                } else if (!inRange && lastSurf >= 0) {
+                    g_sector_last_fired_surface[sec]  = -1;
+                    g_sector_last_fired_distance[sec] = -1.0f;
+                }
+                continue;
+            }
+
+            // Cooldown gate — suppress the fire. We do NOT update
+            // last_fired_distance here: pinning it at the truly
+            // last-fired value means a future threshold compare measures
+            // motion since the last *audible* announcement, not since
+            // the last suppressed sample. Otherwise an approach during
+            // cooldown silently advances the baseline, and a retreat
+            // back to the original distance fires (perceptually
+            // backwards: player heard a "wall further" cue after
+            // walking towards the wall).
+            DWORD lastCued = g_sector_last_cued_at[sec];
+            if (lastCued != 0 && now - lastCued < kSectorCooldownMs) {
+                continue;
+            }
+
+            // Cue plays at the current closest fragment. (Fires only
+            // happen on same-surface threshold crossings now, so
+            // inRange is always true here.)
+            if (sector_candidates < kSectorCount) {
+                g_sector_candidates[sector_candidates].sector_index        = sec;
+                g_sector_candidates[sector_candidates].best_surface_index  = curSurf;
+                g_sector_candidates[sector_candidates].distance            = curDist;
+                g_sector_candidates[sector_candidates].last_fired_distance = lastDist;
+                g_sector_candidates[sector_candidates].closest_point       = sectorAgg[sec].best_closest_point;
+                ++sector_candidates;
+            }
+
+            // Commit new state — same surface advances to current dist.
+            g_sector_last_fired_distance[sec] = curDist;
+            g_sector_last_closest_point[sec]  = sectorAgg[sec].best_closest_point;
+        }
+    }
+
+    // --- Walls: pass 4 — fire K closest sector candidates -------------
+    //
+    // At most kSectorCount=4 candidates per tick. K=maxCues caps further
+    // (default 3). Sorting by ascending distance ensures that when
+    // multiple sectors transition the same tick (e.g. player enters a
+    // small room and Front + Left + Right all enter Close together),
+    // we prioritise the closer ones if K runs out.
+    if (sector_candidates > 0) {
+        int firedCount = sector_candidates < maxCues ? sector_candidates
+                                                     : maxCues;
         for (int i = 0; i < firedCount; ++i) {
             int minIdx = i;
-            for (int j = i + 1; j < surface_candidates; ++j) {
-                if (g_surface_candidates[j].distance <
-                    g_surface_candidates[minIdx].distance) {
+            for (int j = i + 1; j < sector_candidates; ++j) {
+                if (g_sector_candidates[j].distance <
+                    g_sector_candidates[minIdx].distance) {
                     minIdx = j;
                 }
             }
             if (minIdx != i) {
-                SurfaceCandidate tmp = g_surface_candidates[i];
-                g_surface_candidates[i]      = g_surface_candidates[minIdx];
-                g_surface_candidates[minIdx] = tmp;
+                SectorCandidate tmp = g_sector_candidates[i];
+                g_sector_candidates[i]      = g_sector_candidates[minIdx];
+                g_sector_candidates[minIdx] = tmp;
             }
         }
 
         int logIdx = 0;
         for (int k = 0; k < firedCount; ++k) {
-            const auto& c = g_surface_candidates[k];
-            float dx = c.closest_point.x - referencePos.x;
-            float dy = c.closest_point.y - referencePos.y;
-            float wb = std::atan2(dy, dx) * 57.29577951308232f;
-            WallSector s = ClassifyRelativeBearing(wb - effectiveYaw);
+            const auto& c = g_sector_candidates[k];
+            WallSector s = static_cast<WallSector>(c.sector_index);
             if (logIdx < static_cast<int>(sizeof(sector_log)) - 1) {
                 sector_log[logIdx++] = SectorTag(s)[0];
             }
@@ -851,8 +1070,19 @@ void Tick() {
                     acc::audio::NavCue::Wall, c.closest_point,
                     referencePos, range)) {
                 ++walls_cued;
-                g_surface_last_cued_at[c.surface_index] = now;
+                g_sector_last_cued_at[c.sector_index] = now;
+                g_t1_wall_last_fired_at = now;
+                if (c.best_surface_index >= 0 &&
+                    c.best_surface_index < kMaxWallSurfaces) {
+                    g_surface_last_cued_at[c.best_surface_index] = now;
+                }
             }
+            acclog::Write(
+                "ChangeDetector: T1 sector=%s dist=%.2f "
+                "(was %.2f, dt=%+.2f) surface=%d",
+                SectorTag(s), c.distance, c.last_fired_distance,
+                c.distance - c.last_fired_distance,
+                c.best_surface_index);
         }
         sector_log[logIdx] = '\0';
     }
@@ -873,7 +1103,16 @@ void Tick() {
 
         uint32_t handle = acc::engine::GetObjectHandle(obj);
 
-        if (distSq > rangeSq) {
+        // Hysteresis on the awareness-range boundary, mirroring the
+        // wall sector path. Previously-tracked objects use the wider
+        // rangeExit; untracked objects must enter the inner range.
+        // Stops doors / NPCs sitting near the 5 m line from flapping
+        // in / out and re-firing every entry.
+        ObjectState* existing =
+            (handle != 0) ? FindObjectState(handle) : nullptr;
+        float effRangeSq = (existing != nullptr) ? rangeExitSq : rangeSq;
+
+        if (distSq > effRangeSq) {
             if (handle != 0) RemoveObjectState(handle);
             continue;
         }
@@ -901,18 +1140,39 @@ void Tick() {
         if (!settings.trigger1DistanceDelta) continue;
 
         bool isNew = false;
-        ObjectState* s = FindOrAddObjectState(handle, isNew);
+        ObjectState* s = existing;
+        if (!s) s = FindOrAddObjectState(handle, isNew);
         if (!s) continue;
 
-        bool fire = isNew ||
-                    (std::fabs(dist - s->last_distance) > threshold);
-        if (fire) {
-            if (acc::audio::PlayCueAtPosition(cue, pos, referencePos, range)) {
-                ++objs_cued;
-                s->last_cued_at = now;
-            }
+        // First observation in range: silent retrack. The next
+        // threshold crossing on approach fires naturally and is
+        // distance-correct via 3D audio. Mirrors the wall-sector
+        // silent-retrack-on-entry behaviour and removes the entry
+        // ping cluster after view rotation / area load.
+        if (isNew) {
             s->last_distance = dist;
+            continue;
         }
+
+        if (std::fabs(dist - s->last_distance) <= threshold) continue;
+
+        // Per-object cooldown — same kSectorCooldownMs (1 s) as the
+        // wall pipeline. Pin last_distance on the suppressed sample
+        // so the next threshold check measures motion since the
+        // last *audible* fire (matches walls; otherwise an approach
+        // during cooldown silently advances the baseline and a
+        // retreat to the original distance fires perceptually
+        // backwards).
+        if (s->last_cued_at != 0 &&
+            now - s->last_cued_at < kSectorCooldownMs) {
+            continue;
+        }
+
+        if (acc::audio::PlayCueAtPosition(cue, pos, referencePos, range)) {
+            ++objs_cued;
+            s->last_cued_at = now;
+        }
+        s->last_distance = dist;
     }
 
     // --- Trigger 2: foremost-in-front debounce + fire ------------------
@@ -945,15 +1205,56 @@ void Tick() {
                 now - g_t2_pending_changed_at >= kT2QuietMs) {
                 // Settled on a new foremost. Three exit paths:
                 //   1. None  → cone-clear silence (record, don't fire).
-                //   2. Wall  → check g_wall_last_cued_at[index].
+                //   2. Wall  → fire only on `none → wall` AND no recent
+                //              T1 wall fire (kSectorCooldownMs).
                 //   3. Object → check ObjectState.last_cued_at.
                 bool fire = false;
                 if (g_t2_pending.kind == FeatureKind::Wall &&
                     g_t2_pending.wall_surface_index >= 0 &&
                     g_t2_pending.wall_surface_index < g_surface_count) {
+                    // (C) Only announce walls when the cone transitions
+                    // from clear/object → wall. `wall → wall` (foremost
+                    // wall identity changed because the player panned
+                    // or walked) is mostly noise: T1 already announces
+                    // per-direction wall distance changes, so the
+                    // player isn't missing wall info on those beats.
+                    bool coneEnteredWall =
+                        g_t2_last_fired.kind != FeatureKind::Wall;
+                    // (B) Suppress within the T1 wall cooldown window.
+                    // When T1 just announced any wall in any sector,
+                    // adding a T2 "wall in front" cue is a duplicate
+                    // signal even if it's a different surface — the
+                    // player is already being told about wall geometry
+                    // this beat.
+                    bool t1Quiet =
+                        g_t1_wall_last_fired_at == 0 ||
+                        now - g_t1_wall_last_fired_at >= kSectorCooldownMs;
                     DWORD lastAt = g_surface_last_cued_at[
                         g_t2_pending.wall_surface_index];
-                    if (lastAt == 0 || now - lastAt > kT2QuietMs) fire = true;
+                    bool surfaceQuiet =
+                        lastAt == 0 || now - lastAt > kT2QuietMs;
+                    if (coneEnteredWall && t1Quiet && surfaceQuiet) {
+                        fire = true;
+                    } else {
+                        // Diagnostic: the foremost wall settled on a
+                        // new value but a gate suppressed the cue.
+                        // Lets us tell "no T2 wall fires because the
+                        // cone never sees one" (correct silence) from
+                        // "T2 wanted to fire but was gated" (also
+                        // correct, just useful to see). Only logs on
+                        // actual transition events, not every tick.
+                        acclog::Write(
+                            "ChangeDetector: T2 wall blocked "
+                            "coneEnteredWall=%d t1Quiet=%d "
+                            "surfaceQuiet=%d (%s -> wall) surface=%d "
+                            "dist=%.2f",
+                            coneEnteredWall ? 1 : 0,
+                            t1Quiet ? 1 : 0,
+                            surfaceQuiet ? 1 : 0,
+                            ForemostKindTag(g_t2_last_fired.kind),
+                            g_t2_pending.wall_surface_index,
+                            t2_best_dist);
+                    }
                 } else if (g_t2_pending.kind == FeatureKind::Object) {
                     ObjectState* s = FindObjectState(
                         g_t2_pending.object_handle);
@@ -995,17 +1296,17 @@ void Tick() {
     // confusing "sectors=-" placeholder for object-only / T2-only ticks).
     if (walls_cued > 0) {
         acclog::Write(
-            "ChangeDetector: tick surfaces_in_range=%d surface_candidates=%d "
+            "ChangeDetector: tick surfaces_in_range=%d sector_candidates=%d "
             "walls_cued=%d sectors=%s objs_in_range=%d objs_cued=%d "
             "t2_fired=%d",
-            walls_in_range, surface_candidates,
+            walls_in_range, sector_candidates,
             walls_cued, sector_log,
             objs_in_range, objs_cued, t2_fired ? 1 : 0);
     } else if (objs_cued > 0 || t2_fired) {
         acclog::Write(
-            "ChangeDetector: tick surfaces_in_range=%d surface_candidates=%d "
+            "ChangeDetector: tick surfaces_in_range=%d sector_candidates=%d "
             "objs_in_range=%d objs_cued=%d t2_fired=%d",
-            walls_in_range, surface_candidates,
+            walls_in_range, sector_candidates,
             objs_in_range, objs_cued, t2_fired ? 1 : 0);
     }
 }

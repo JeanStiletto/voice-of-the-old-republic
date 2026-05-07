@@ -257,6 +257,7 @@ The novel work is the **per-tick "nearest feature in each direction-sector + del
 - 2026-05-06 — **Trigger 2 shares per-feature cues with Trigger 1** (no distinct resref). Coordination via shared per-feature `last_cued_at` stamp: T1 fires on distance-delta + updates stamp; T2 fires only if foremost-identity-changed AND debounce expired AND `now - last_cued_at > kQuietMs` (then also updates stamp). Approach phase sounds Trigger-1-identical (T1 entry-cue updates stamp, T2 stability-fire skips); Trigger 2 only adds audible cues when Trigger 1 is silent (stationary/turning rotation).
 - 2026-05-06 — **Cone-clear semantics: silence** (no distinct "clear" cue). The absence of further wall sounds during rotation is itself the open-path signal.
 - 2026-05-06 — **Trigger 2 final-state debounce** (`kQuietMs ~250ms`, pattern ported from `turn_announce.cpp`). Foremost-identity-change fires only after the foremost has been stable for the quiet window — collapses snap-rotation chains (W↔S 180° spins) to a single cue for the final state. Snap-into-clear case relies on `turn_announce` for rotation confirmation since Trigger 2 itself stays silent. First-tick suppression on area-load mirrors `turn_announce`'s first-observation seeding (no fire on first frame post-cache-rebuild).
+- 2026-05-07 — **Cadence reshape (Phase 3 close-out, full detail in `docs/pillar1-wall-cue-tuning.md`).** Per-feature continuous distance-delta replaced by **per-sector world-frame distance-delta** (4 cardinal sectors, one tracked surface per sector). **Silent retracks on enter / exit / identity-swap** — explicit entry pings dropped; the next threshold crossing on the same tracked surface fires naturally with correct 3D audio distance. Range hysteresis (0.3 m) on the awareness boundary; per-sector cooldown 1000 ms; same shape mirrored onto the object pipeline. **T2 walls gated by (B) global T1 wall cooldown + (C) cone transition shape** (only `none → wall` / `obj → wall` fire; `wall → wall` silently retracked). T2 object fires unchanged. Distance-delta threshold 1.5 m and 5 m awareness range remain locked. Effect: cue rate ~4.3/sec → ~2/sec in dense corridors, no information loss reported. Parked alternatives (zones, raycasting, speed-gating, distance-gated T2 walls, lower threshold) preserved in the tuning doc.
 
 ---
 
@@ -795,12 +796,15 @@ For first implementation, **ship with one fixed set of defaults** — no preset 
 
 **Pillar 1 — small-scale**
 - All 8 per-kind sounds: ON (walls, hazards, doors, NPCs, placeables, items, landmarks, transitions)
-- Trigger 1 (distance-delta, 360°): ON
-- Trigger 2 (foremost-in-front, ±45° cone = Trigger 1's Front sector): ON
+- Trigger 1 (distance-delta, per cardinal sector world-frame): ON
+- Trigger 2 (foremost-in-front, ±45° cone = T1 Front sector, gated to `none → wall` / `obj → wall` plus T1 wall cooldown): ON
 - Footstep suppression on stuck: ON
-- Awareness range: **5m** (starting; tune live)
-- Distance-delta threshold: **0.5m** (starting; tune live)
-- Voice budget: **3 simultaneous max** (starting; tune live)
+- Awareness range: **5m** (locked 2026-05-07, tune-live remains an option)
+- Awareness range hysteresis: **0.3m** (locked 2026-05-07)
+- Distance-delta threshold: **1.5m** (raised from 0.5m on 2026-05-07; sub-threshold motion silently accumulates against the same tracked surface)
+- Per-sector / per-object cooldown: **1000 ms** (locked 2026-05-07)
+- T2 quiet window (foremost stability + same-surface guard): **250 ms** (locked 2026-05-06)
+- Voice budget: **K = 3 sectors per tick** (locked 2026-05-07; objects uncapped — population is sparse)
 
 **Pillar 2 — medium-scale**
 - Room transition announcement: ON
