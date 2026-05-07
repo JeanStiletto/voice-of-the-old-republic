@@ -41,6 +41,7 @@
 #include "diag_engine_select.h" // Phase 2 diagnostic — Q/E/Tab observation
 #include "interact_hotkey.h"    // Phase 2 lay-off 9b
 #include "passive_narrate.h"    // Phase 2 lay-off 9a
+#include "peek_description.h"   // Shift+arrow description peek
 #include "probe_world_hover.h"  // Phase 2 lay-off 9-probe (diagnostic)
 #include "radial_menu.h"        // CSWGuiTargetActionMenu input gate
 #include "spatial_change_detector.h"  // Phase 3 lay-off 3 — Pillar 1 Trigger 1
@@ -2417,6 +2418,29 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         // fall through to the existing handlers below so unrelated input
         // still works while the radial is mounted (rare in practice; the
         // user's hands are on Up/Down/Enter while navigating the radial).
+    }
+
+    // Shift+Up / Shift+Down description peek. Runs before any panel
+    // handler that consumes Up/Down (Container, equip picker, generic
+    // chain) so a held Shift is read as "peek the focused item's
+    // description" rather than navigating rows. Panels not in the
+    // peek registry pass through unchanged. See peek_description.h.
+    //
+    // Pass the chain's current focus pointer when valid — peek's
+    // panel-specific refresh functions need it to re-stage the
+    // description for the focused row (panel.activeControl tracks a
+    // different helper control during chain nav, not the item entry).
+    {
+        void* peekFocus = nullptr;
+        if (g_chainPanel == activePanel &&
+            g_chainIndex >= 0 &&
+            g_chainIndex < g_chainCount) {
+            peekFocus = g_chain[g_chainIndex].control;
+        }
+        if (acc::peek::HandleShiftArrow(param_1, param_2, activePanel,
+                                        peekFocus)) {
+            return 1;
+        }
     }
 
     // Container loot panel — has its own input semantics that don't fit the
