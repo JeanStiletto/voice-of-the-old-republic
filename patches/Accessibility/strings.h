@@ -282,13 +282,33 @@ enum class Id : int {
     //      so the user hears both the cycle direction and the current
     //      portrait name on focus, and the diff-monitor re-speaks the
     //      composed string when the engine cycles to the next portrait.
+    // PortraitLabel — value-display prefix used when the cycle pattern
+    //                 lands on a single anchor (left_arrow, with right_arrow
+    //                 squashed). Reads as "Porträt" / "Portrait" — the
+    //                 user hears the noun, then the cycled value.
+    // PortraitArrowPrev / PortraitArrowNext — kept for the
+    //                 directional-fallback path (single-arrow chains where
+    //                 the anchor consolidation isn't possible).
+    PortraitLabel,
     PortraitArrowPrev,
     PortraitArrowNext,
     FmtPortraitArrow,
-    // FmtPortraitArrowId — fallback when portrait_label.gui_string is empty
-    // (the engine doesn't actually fill the label even though the struct has
-    // one). Args: direction (`%s`), portrait_id one-based (`%d`).
+    // FmtPortraitArrowId — final fallback when neither portrait_label nor
+    // the resref-derived description resolve. Args: direction (`%s`),
+    // portrait_id one-based (`%d`).
     FmtPortraitArrowId,
+    // Portrait description tokens — composed from the engine's live
+    // portrait resref on CSWCObject (+0xa8 inline CResRef). The chargen
+    // resrefs follow `po_p[mf]h[abc]\d` (gender + race code + variant);
+    // mapping each character to a localised word lets us build a screen-
+    // reader-friendly name without hard-coding the 30 PC portrait rows.
+    // FmtPortraitDescription: 2 `%s` (gender, race) + 1 `%d` (variant).
+    PortraitGenderFemale,
+    PortraitGenderMale,
+    PortraitRaceAsian,
+    PortraitRaceDark,
+    PortraitRaceLight,
+    FmtPortraitDescription,
 
     // ---- Character sheet sub-screen opener (CSWGuiInGameCharacter).
     //      One announce on first-sight per panel-open cycle, built by

@@ -1584,16 +1584,44 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                               activePanel, focused, code);
             }
         } else {
-            void* neighbor = FindAdjacentArrow(activePanel, focused, toRight);
+            // Panel-aware cycle override: in CSWGuiPortraitCharGen the
+            // chain holds left_arrow as the lone anchor (right_arrow is
+            // filtered out in RebindChain). FindAdjacentArrow can pick up
+            // the right_arrow as a same-row neighbour when going right,
+            // but going left there's nothing to the left of x=272 — so we
+            // resolve the targets directly from the panel offsets:
+            //   Left  → activate left_arrow (cycles -1)
+            //   Right → activate right_arrow (cycles +1)
+            // Engine's UpdatePortraitButton writes the new resref to
+            // creature.portrait, the per-frame focus monitor re-reads, and
+            // the diff fires the new "Porträt: …" announcement.
+            void* portraitTarget = nullptr;
+            {
+                void** pVt = *reinterpret_cast<void***>(activePanel);
+                if (reinterpret_cast<uintptr_t>(pVt) ==
+                        kVtableCSWGuiPortraitCharGen) {
+                    auto* base = reinterpret_cast<unsigned char*>(activePanel);
+                    void* leftArrow  = base + kPortraitLeftArrowOffset;
+                    if (focused == leftArrow) {
+                        portraitTarget = toRight
+                            ? (void*)(base + kPortraitRightArrowOffset)
+                            : leftArrow;
+                    }
+                }
+            }
+            void* neighbor = portraitTarget
+                ? portraitTarget
+                : FindAdjacentArrow(activePanel, focused, toRight);
             if (neighbor) {
                 if (acc::menus::pending::IsPending()) {
                     acclog::Write("Menus.Cycle", "%s: op already pending; ignoring",
                                   toRight ? "right" : "left");
                 } else {
                     acc::menus::pending::QueueActivate(neighbor);
-                    acclog::Write("Menus.Cycle", "%s panel=%p focus=%p neighbor=%p",
+                    acclog::Write("Menus.Cycle", "%s panel=%p focus=%p neighbor=%p%s",
                                   toRight ? "right" : "left",
-                                  activePanel, focused, neighbor);
+                                  activePanel, focused, neighbor,
+                                  portraitTarget ? " (portrait-anchor)" : "");
                 }
             } else {
                 acclog::Write("Menus.Cycle", "%s: no adjacent arrow for focus=%p",

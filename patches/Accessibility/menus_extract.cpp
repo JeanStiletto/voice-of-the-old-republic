@@ -815,15 +815,34 @@ const char* FromControl(void* control,
         }
     }
 
-    // 9d. Per-kind label override for the chargen portrait-selection panel
-    //     (CSWGuiPortraitCharGen, vtable=0x00759ea8). The left/right arrow
-    //     buttons (image-only, empty inline text) cycle the portrait; the
-    //     engine maintains the currently-shown portrait name in the parent's
-    //     portrait_label. Compose a directional prefix + the portrait name
-    //     so the user hears both the cycle direction on focus AND the new
-    //     name when the engine cycles (the per-frame focused-control monitor
-    //     re-extracts on every tick — when portrait_label changes, the
-    //     composed string changes too, and the diff fires speech).
+    // 9d. Per-kind value-display for the chargen portrait-selection panel
+    //     (CSWGuiPortraitCharGen, vtable=0x00759ea8). The two arrow buttons
+    //     (image-only, empty inline text) cycle the portrait but have no
+    //     own readable label — the visible "value" between them is a 3D
+    //     head scene. We anchor the chain on the LEFT arrow only (the
+    //     RIGHT arrow gets filtered out in RebindChain) and announce just
+    //     the current portrait value off the panel here, so the cycle UX
+    //     mirrors a normal `[◀] value [▶]` widget: one chain entry, Left
+    //     and Right cycle, focus on it reads the value.
+    //
+    //     The RIGHT arrow is intentionally returned without text — that's
+    //     what FindAdjacentArrow keys on (it skips controls that have
+    //     announceable text), so Left/Right routing in menus.cpp can find
+    //     the right_arrow as the cycle neighbour.
+    //
+    //     Live cycle state lives on the chargen creature: UpdatePortrait-
+    //     Button (0x006f8ad0) writes the new resref into CSWCObject.portrait
+    //     (+0xa8, inline CSWPortrait = CResRef = char[16]) on every cycle.
+    //     Reading those 16 bytes and parsing the `po_p[mf]h[abc]\d` pattern
+    //     gives us a localised description (e.g. "weiblich asiatisch 3").
+    //     The per-frame focused-control monitor re-extracts every tick —
+    //     when the resref changes, the composed string changes and the
+    //     diff fires speech.
+    //
+    //     Fallback ladder for the value: portrait_label.gui_string
+    //     (defensive — engine doesn't populate it today) → resref-pattern
+    //     parse → raw resref (non-PC / modded portraits) → numeric
+    //     portrait_id+1 (last resort, stable but uninformative).
     if (!source && ownerForPerkind) {
         void** ownerVt = *reinterpret_cast<void***>(ownerForPerkind);
         if (reinterpret_cast<uintptr_t>(ownerVt) ==
@@ -831,54 +850,106 @@ const char* FromControl(void* control,
             auto* panelBase = reinterpret_cast<unsigned char*>(ownerForPerkind);
             auto* ctrlBase  = reinterpret_cast<unsigned char*>(control);
             ptrdiff_t off   = ctrlBase - panelBase;
-            acc::strings::Id directionId = acc::strings::Id::Count_;
+
+            // Only the left_arrow is the value-display anchor. The
+            // right_arrow returns nullptr from FromControl so it (a) gets
+            // skipped by the chain rebind's text-presence check downstream,
+            // and (b) is discoverable by FindAdjacentArrow as a text-less
+            // cycle neighbour.
             if (off == (ptrdiff_t)kPortraitLeftArrowOffset) {
-                directionId = acc::strings::Id::PortraitArrowPrev;
-            } else if (off == (ptrdiff_t)kPortraitRightArrowOffset) {
-                directionId = acc::strings::Id::PortraitArrowNext;
-            }
-            if (directionId != acc::strings::Id::Count_) {
-                // The struct has a portrait_label field, but in observed runs
-                // the engine never populates its gui_string / inline CExoString
-                // (portrait_label is essentially an empty CSWGuiLabel — the
-                // visible portrait is a 3D head scene + cycle index, with no
-                // text caption rendered). Try the label first in case a
-                // future install/locale fills it; otherwise fall back to
-                // portrait_id, which IS maintained (UpdatePortraitButton
-                // increments it on each cycle activation) and gives the user
-                // a stable cycle position to count by.
+                // Try the panel's portrait_label first — engine doesn't
+                // populate it today but we don't lose anything by checking.
                 void* portraitLabel = panelBase + kPortraitLabelOffset;
                 char portraitText[256];
-                bool gotPortrait = ExtractTextOrStrRefIndirect(
+                bool gotLabel = ExtractTextOrStrRefIndirect(
                     portraitLabel,
                     kLabelTextOffset,
                     kLabelStrRefOffset,
                     kLabelTextObjectOffset,
                     portraitText, sizeof(portraitText));
-                const char* direction = acc::strings::Get(directionId);
-                if (gotPortrait && portraitText[0] != '\0') {
-                    snprintf(outBuf, bufSize,
-                             acc::strings::Get(
-                                 acc::strings::Id::FmtPortraitArrow),
-                             direction, portraitText);
+
+                // Read the live portrait resref off panel.creature. SEH-
+                // wrapped because the chargen creature pointer can be null
+                // briefly during panel teardown / reinit between sub-screens.
+                char resref[kResRefSize + 1] = {0};
+                __try {
+                    void* creature = *reinterpret_cast<void**>(
+                        panelBase + kPortraitCharGenCreatureOffset);
+                    if (creature) {
+                        const char* src = reinterpret_cast<const char*>(
+                            reinterpret_cast<unsigned char*>(creature) +
+                            kCreaturePortraitResRefOffset);
+                        memcpy(resref, src, kResRefSize);
+                        resref[kResRefSize] = '\0';
+                    }
+                } __except (EXCEPTION_EXECUTE_HANDLER) {
+                    resref[0] = '\0';
+                }
+
+                // Parse the regular chargen pattern: "po_p[mf]h[abc]\d".
+                // Index map:
+                //   [0..3] = "po_p"
+                //   [4]    = gender ('m'|'f')
+                //   [5]    = 'h'
+                //   [6]    = race code ('a'|'b'|'c')
+                //   [7]    = variant digit '1'..'5'
+                // Anything else (companion portraits like po_pcarth, modded
+                // skins) flows through to the raw-resref fallback.
+                char description[128] = {0};
+                bool parsedPattern = false;
+                if (resref[0] == 'p' && resref[1] == 'o' &&
+                    resref[2] == '_' && resref[3] == 'p' &&
+                    resref[5] == 'h' &&
+                    (resref[4] == 'm' || resref[4] == 'f') &&
+                    (resref[6] == 'a' || resref[6] == 'b' || resref[6] == 'c') &&
+                    resref[7] >= '0' && resref[7] <= '9') {
+                    auto genderId = (resref[4] == 'f')
+                        ? acc::strings::Id::PortraitGenderFemale
+                        : acc::strings::Id::PortraitGenderMale;
+                    acc::strings::Id raceId = acc::strings::Id::Count_;
+                    switch (resref[6]) {
+                        case 'a': raceId = acc::strings::Id::PortraitRaceAsian; break;
+                        case 'b': raceId = acc::strings::Id::PortraitRaceDark;  break;
+                        case 'c': raceId = acc::strings::Id::PortraitRaceLight; break;
+                    }
+                    if (raceId != acc::strings::Id::Count_) {
+                        snprintf(description, sizeof(description),
+                                 acc::strings::Get(
+                                     acc::strings::Id::FmtPortraitDescription),
+                                 acc::strings::Get(genderId),
+                                 acc::strings::Get(raceId),
+                                 (int)(resref[7] - '0'));
+                        parsedPattern = true;
+                    }
+                }
+
+                const char* label =
+                    acc::strings::Get(acc::strings::Id::PortraitLabel);
+                const char* fmtArrow =
+                    acc::strings::Get(acc::strings::Id::FmtPortraitArrow);
+                if (gotLabel && portraitText[0] != '\0') {
+                    snprintf(outBuf, bufSize, fmtArrow,
+                             label, portraitText);
+                } else if (parsedPattern) {
+                    snprintf(outBuf, bufSize, fmtArrow,
+                             label, description);
+                } else if (resref[0] != '\0') {
+                    snprintf(outBuf, bufSize, fmtArrow,
+                             label, resref);
                 } else {
                     uint32_t portraitId =
                         ReadU32(ownerForPerkind, kPortraitIdOffset);
                     snprintf(outBuf, bufSize,
                              acc::strings::Get(
                                  acc::strings::Id::FmtPortraitArrowId),
-                             direction, (int)(portraitId + 1));
+                             label, (int)(portraitId + 1));
                 }
                 if (outBuf[0] != '\0') {
                     source = "perkind-portrait";
                     acclog::Write("Menus.PerKind",
-                                  "PortraitCharGen control=%p direction=%s "
-                                  "-> \"%s\"",
-                                  control,
-                                  directionId ==
-                                      acc::strings::Id::PortraitArrowPrev
-                                      ? "prev" : "next",
-                                  outBuf);
+                                  "PortraitCharGen control=%p anchor=left "
+                                  "resref=\"%s\" -> \"%s\"",
+                                  control, resref, outBuf);
                 }
             }
         }

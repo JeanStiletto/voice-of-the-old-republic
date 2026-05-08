@@ -165,25 +165,44 @@ constexpr size_t    kClassSelectionClassLabelOffset  = 0x1254;
 // k1_win_gog_swkotor.exe.xml SYMBOL @ 0x00759ea8 + STRUCTURE size 0x1240.
 //
 //   +0x00..+0x64   CSWGuiPanel panel
+//   +0x64          CSWCCreature* creature   ← chargen creature being built
 //   +0x6c          CSWGuiLabel main_title
 //   +0x1ac         CSWGuiLabel sub_title
-//   +0x2ec         CSWGuiLabel portrait_label  ← engine-maintained portrait name
+//   +0x2ec         CSWGuiLabel portrait_label  (named in SARIF but never
+//                                                populated at runtime —
+//                                                gui_string stays empty)
 //   +0xafc         CSWGuiButton accept_button
 //   +0xcc0         CSWGuiButton back_button
 //   +0xe84         CSWGuiButton right_arrow_button (image-only, cycles +1)
 //   +0x1048        CSWGuiButton left_arrow_button  (image-only, cycles -1)
-//   +0x1238        ulong portrait_id              (raw cycle index)
+//   +0x1238        ulong portrait_id              (named portrait_id, but
+//                                                NOT the live cycle index —
+//                                                observed stuck at first
+//                                                value across cycles. Likely
+//                                                the committed-on-accept
+//                                                slot. Kept here only as a
+//                                                last-resort fallback.)
 //
-// The arrow buttons have no own text. The engine updates portrait_label
-// as the user cycles (via UpdatePortraitButton @ 0x006f8ad0); we read its
-// gui_string and prefix with a localised cycle-direction phrase so the
-// user hears both the direction and the new portrait name on each cycle.
+// Live cycle state lives on `creature.portrait` (CSWPortrait inline =
+// CResRef = char[16]) at CSWCObject offset 0xa8 — UpdatePortraitButton
+// (0x006f8ad0) writes the new resref there on every cycle. Reading 16
+// bytes at panel.creature + 0xa8 yields a string like "po_pmhc3" which
+// we parse into a localised description (gender + race + variant).
 // ---------------------------------------------------------------------------
 constexpr uintptr_t kVtableCSWGuiPortraitCharGen     = 0x00759ea8;
+constexpr size_t    kPortraitCharGenCreatureOffset   = 0x64;
 constexpr size_t    kPortraitLabelOffset             = 0x2ec;
 constexpr size_t    kPortraitRightArrowOffset        = 0xe84;
 constexpr size_t    kPortraitLeftArrowOffset         = 0x1048;
 constexpr size_t    kPortraitIdOffset                = 0x1238;
+
+// CSWCObject.portrait at +0xa8 (CSWPortrait, inline 16-byte CResRef).
+// CSWCCreature embeds CSWCObject at offset 0, so the same offset reads the
+// resref off any creature. Resref is char[16], may not be null-terminated
+// at the boundary (KOTOR resrefs are <= 16 chars + implicit terminator
+// only when shorter than 16).
+constexpr size_t    kCreaturePortraitResRefOffset    = 0xa8;
+constexpr size_t    kResRefSize                      = 16;
 
 // ---------------------------------------------------------------------------
 // Container offsets verified against Lane's SARIF (DATATYPE entries for

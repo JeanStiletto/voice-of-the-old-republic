@@ -93,10 +93,17 @@ const char* Get(Id id) {
         case Id::LevelUpOpen:          return "Level Up";
         case Id::LevelUpFailed:        return "Level Up failed";
 
+        case Id::PortraitLabel:        return "Portrait";
         case Id::PortraitArrowPrev:    return "Previous portrait";
         case Id::PortraitArrowNext:    return "Next portrait";
         case Id::FmtPortraitArrow:     return "%s: %s";
         case Id::FmtPortraitArrowId:   return "%s %d";
+        case Id::PortraitGenderFemale: return "female";
+        case Id::PortraitGenderMale:   return "male";
+        case Id::PortraitRaceAsian:    return "Asian";
+        case Id::PortraitRaceDark:     return "dark-skinned";
+        case Id::PortraitRaceLight:    return "light-skinned";
+        case Id::FmtPortraitDescription: return "%s %s %d";
 
         case Id::FmtCharSheetClass:    return "%s. ";
         case Id::FmtCharSheetLevel:    return "Level %s. ";

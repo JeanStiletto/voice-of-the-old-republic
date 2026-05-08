@@ -308,9 +308,27 @@ void RebindChain(void* panel) {
 
     bool modalText = IsModalTextPanel(IdentifyPanel(panel));
 
+    // Panel-aware chain filter: in CSWGuiPortraitCharGen we anchor the chain
+    // on the left_arrow alone (announces the current portrait via the
+    // PerKind path in menus_extract.cpp's section 9d) and consolidate the
+    // right_arrow out of the chain entirely. The user lands on one entry,
+    // hears the value, and presses Left/Right to cycle — matching the
+    // existing `[◀] value [▶]` UX without needing the head_3d_scene_control
+    // (a non-button, IsChainNavigable would reject it) as a chain anchor.
+    void* portraitChargenSkip = nullptr;
+    {
+        void** pVt = *reinterpret_cast<void***>(panel);
+        if (reinterpret_cast<uintptr_t>(pVt) ==
+                kVtableCSWGuiPortraitCharGen) {
+            portraitChargenSkip = reinterpret_cast<unsigned char*>(panel) +
+                                  kPortraitRightArrowOffset;
+        }
+    }
+
     for (int i = 0; i < n; ++i) {
         void* c = list->data[i];
         if (!c) continue;
+        if (c == portraitChargenSkip) continue;
 
         if (IsChainNavigable(c)) {
             AppendChainEntry(c);
