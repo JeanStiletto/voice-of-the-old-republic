@@ -31,6 +31,7 @@
 #include "menus_internal.h"  // Step 2B — shared seam with menus_extract
 #include "menus_pending.h"   // Step 3 — deferred-op queue lifted out
 #include "menus_listbox.h"   // Step 4 — listbox-driven panel dispatcher
+#include "menus_chain.h"     // Step 5 — chain navigation lifted out
 #include "engine_input.h"
 #include "engine_manager.h"
 #include "engine_offsets.h"
@@ -83,6 +84,40 @@ using acc::menus::detail::ReadSaveLoadEntryString;
 using acc::menus::detail::DriveListBoxSelection;
 using acc::menus::detail::ListBoxNavResult;
 using acc::menus::detail::QueueButtonByIdActivate;
+
+// Step 5 seam: chain state + helpers live in menus_chain.cpp. Bring all
+// the names into unqualified scope so the dense reads in OnHandleInputEvent
+// / OnSetActiveControl / monitors stay as they were. Writes to the
+// externs (g_chainIndex on chain-step advance, virtual-line state on
+// panel change) work the same way through using-declarations.
+using acc::menus::chain::ChainEntry;
+using acc::menus::chain::kMaxChainEntries;
+using acc::menus::chain::g_chain;
+using acc::menus::chain::g_chainPanel;
+using acc::menus::chain::g_chainIndex;
+using acc::menus::chain::g_chainCount;
+using acc::menus::chain::g_tabbedPanel;
+using acc::menus::chain::g_tabsStart;
+using acc::menus::chain::g_tabsCount;
+using acc::menus::chain::g_tabClickOffsetY;
+using acc::menus::chain::g_equipSlotClickOffsetY;
+using acc::menus::chain::g_classIconClickOffsetX;
+using acc::menus::chain::g_virtualLines;
+using acc::menus::chain::g_virtualLineCount;
+using acc::menus::chain::g_virtualLineIdx;
+using acc::menus::chain::kMaxVirtualLines;
+using acc::menus::chain::kMaxVirtualLineLen;
+using acc::menus::chain::RebindChain;
+using acc::menus::chain::ResetTabbedState;
+using acc::menus::chain::ValidateTabbedPanel;
+using acc::menus::chain::DetectTabsCluster;
+using acc::menus::chain::IsTabButton;
+using acc::menus::chain::FindAdjacentArrow;
+using acc::menus::chain::FindCloseButton;
+using acc::menus::chain::FindCancelButton;
+using acc::menus::chain::FindChainEntry;
+using acc::menus::chain::ReadPanelActiveControl;
+using acc::menus::chain::ParseVirtualLines;
 
 // Forward decl from core_dllmain.cpp. The first hook to fire calls this so
 // Tolk is loaded the moment any focus / input event reaches us.
@@ -165,41 +200,15 @@ typedef void (__thiscall* PFN_PanelSetActiveControl)(void* panel, void* control)
 // neighbour). Enter (0xb5/0xbb → KEYBOARD_F1) and Esc (0xb4/0xdf → KEYBOARD_F2)
 // route to our chain-target activation and Schliess-button fallback paths.
 
-// Chain state. g_currentPanel is updated in OnSetActiveControl. g_chainPanel
-// is rebound lazily per arrow press if the focused panel has changed since the
-// last navigation. A null current panel disables chain nav (fall through to
-// the engine for unsupported screens — e.g. the title-screen K/L cycle still
-// works, per Decision 7).
+// Chain state (g_chain, g_chainPanel/Index/Count, ChainEntry struct,
+// kMaxChainEntries) moved to menus_chain.cpp in Step 5; brought back into
+// unqualified scope at the top via using-declarations.
 //
-// The chain is FLAT: each entry is one navigable button, even if that button
-// lives inside a CSWGuiListBox (Options-style sub-dialogs put their settings
-// as button children of a listbox at panel.controls[N]). Building the chain
-// recurses one level into listboxes when their controls.size > 1 and their
-// children are buttons — sub-dialogs in KOTOR don't nest deeper than that.
-// Entries are sorted by extent.top ascending so arrow-down walks visually
-// top-to-bottom (panel.controls order doesn't always match visual order:
-// in Feedback-Optionen, Schliess+Standard come before the settings listbox
-// in panel.controls but render below it).
-struct ChainEntry {
-    void* control;
-    int   cx;
-    int   cy;
-    // True when this entry represents a non-activatable body text — currently
-    // the body listbox of a modal popup (MessageBoxModal / TutorialBox /
-    // AreaTransition). Arrow keys land on it so the user can re-hear the
-    // message; Enter re-announces instead of firing vtable[15] (the listbox
-    // has no activate handler).
-    bool  textOnly;
-};
-constexpr int kMaxChainEntries = 64;
-static ChainEntry g_chain[kMaxChainEntries];
-// Default-linkage so ExtractAnnounceableText can forward-declare it via
-// extern (function is defined earlier in the file but needs the panel
-// pointer for slider sibling-label / cycle-category lookups).
+// g_currentPanel stays here — it's set by OnSetActiveControl (focus
+// tracking) and read across chain code, monitors, and extract::FromControl.
+// Default-linkage so menus_extract.cpp + menus_chain.cpp see it via the
+// extern decl in menus_internal.h.
 void* g_currentPanel = nullptr;
-static void* g_chainPanel   = nullptr;
-static int   g_chainIndex   = 0;
-static int   g_chainCount   = 0;
 
 // Sub-screen drill state. The InGameMenu icon strip is kept in foreground by
 // the engine: each icon's onClick (OnInvButtonPressed @0x624d10 etc.) jumps
@@ -284,81 +293,12 @@ static void* g_lastTitledPanel = nullptr;
 static void* g_focusMonitorControl = nullptr;
 static char  g_focusMonitorText[256] = {0};
 
-// Tabbed-panel detection state (Options-menu style: a CSWGuiListBox at
-// controls[0] holds the current tab's content, button cluster after [0] = tabs).
-// Detection runs in OnListBoxSetActiveControl and identifies the layout so the
-// per-line virtual-cursor mode can engage on arrow keys. Tab cycling itself is
-// no longer an explicit handler — the click-sim primitive (Phase 3) replaces
-// the SetActiveControl-based path that crashed at mgr+5 (see
-// docs/tab-crash-investigation.md).
-//
-// Detection deliberately keys off "controls[0] is a non-empty CSWGuiListBox"
-// rather than "panel has buttons" — the main menu also has buttons but no
-// active listbox, and arrow-keys must continue to drive chain navigation
-// there. kVtableListBox itself is declared earlier alongside kVtableSlider
-// because the listbox-content extraction step in ExtractAnnounceableText
-// needs it; future builds will need updating if Lane's SARIF reports a
-// different value.
-
-static void*      g_tabbedPanel       = nullptr;  // panel currently in tabbed mode
-static int        g_tabsStart         = -1;       // first tab-button index in panel.controls
-static int        g_tabsCount         = 0;        // number of contiguous tab buttons
-
-// Cursor-y offset to compensate for the engine's hit-test shift in tab-cluster
-// panels. MoveMouseToPosition(x, y) on the Options panel hit-tests at the
-// button whose center is at (y - tabSpacing) — consistently 45 px on Steam
-// 1.0.3 (matches the tab pitch). Cause is unverified (best guess: cursor
-// hotspot coord-system mismatch — see chat investigation in
-// patch-20260502-122734.log line 91 where before=NULL after=Gameplay confirms
-// MoveMouseToPosition itself produces the shifted hit-test result, not stale
-// engine state). Real mouse usage is unaffected, so the engine ships fine for
-// sighted players. We compensate by adding this offset to y when warping the
-// cursor to a tab button. Computed in RebindChain from the chain's tab-cluster
-// spacing; 0 for non-tabbed panels (main menu, popups, sub-dialogs) — those
-// panels' MoveMouseToPosition already hits where it should.
-static int        g_tabClickOffsetY   = 0;
-// Hit-test row-shift compensation for InGameEquip slot buttons. Same shape as
-// `g_tabClickOffsetY`: clicking at the chain entry's (cx, cy) hit-tests to a
-// control one row above (the LBL_INV_* label of the slot above), so cursor
-// must be biased down by one row's pitch to actually land on the slot button.
-// Computed at chain rebind time as the y-spacing between two slot buttons in
-// the chain. 0 outside InGameEquip panels.
-static int        g_equipSlotClickOffsetY = 0;
-// Hit-test column-shift compensation for the chargen class-selection panel.
-// Same shape as the two y offsets above, but on x: MoveMouseToPosition(x, y)
-// at a class icon's center hit-tests to the icon to its LEFT (consistently
-// shifted by one icon's pitch — about 87 px on Steam 1.0.3, matching the
-// visual icon spacing). For all icons but the rightmost the engine still
-// eventually settles SetActiveControl on the chain target via its own
-// late-resolution path, but the rightmost icon's correct hit position
-// would be off the strip's right edge under that path, so it never gets
-// SetActiveControl'd and stays uncached → silent. Bias cursor x by this
-// offset on chargen-class chain steps to land the hit-test on the
-// intended icon and let the engine fire SetActiveControl normally.
-// Computed at chain rebind time as the x-spacing between two consecutive
-// same-row class icons; 0 outside CSWGuiClassSelection panels.
-static int        g_classIconClickOffsetX = 0;
-
-// Virtual-line cursor over the listbox's multi-line blob. The Options listbox
-// has controls.size == 1 with all settings concatenated by '\n' into a single
-// CSWGuiLabel row. We can't activate individual lines (engine has no per-line
-// click target — see project_listbox_click_flow.md) but we can present them as
-// readable navigable items.
-constexpr int kMaxVirtualLines  = 32;
-constexpr int kMaxVirtualLineLen = 256;
-static char g_virtualLines[kMaxVirtualLines][kMaxVirtualLineLen];
-static int  g_virtualLineCount = 0;
-static int  g_virtualLineIdx   = -1;  // -1 = not yet entered (cursor at tab level)
-
-// Read panel.activeControl @ +0x1c. Used to anchor the chain index when we
-// rebind to a panel — start at the engine's current selection so the first
-// arrow press doesn't snap the cursor away from where the user was looking.
-static void* ReadPanelActiveControl(void* panel) {
-    if (!panel) return nullptr;
-    return *reinterpret_cast<void**>(
-        reinterpret_cast<unsigned char*>(panel) + kPanelActiveControlOffset);
-}
-
+// Tabbed-panel state (g_tabbedPanel, g_tabsStart, g_tabsCount), the three
+// click-offset compensations (g_tabClickOffsetY, g_equipSlotClickOffsetY,
+// g_classIconClickOffsetX), and the virtual-line cursor state moved to
+// menus_chain.cpp in Step 5. Brought back into unqualified scope via the
+// using-declarations at the top of this file. See menus_chain.h for the
+// rationale.
 // Center pixel of a control's hit area. Returns false on null control or
 // degenerate extent (zero/negative width/height — sometimes seen on hidden
 // panels and templated control prototypes).
@@ -413,17 +353,6 @@ bool acc::menus::detail::IsChainNavigable(void* control) {
     if (CallDowncast(control, kVtableAsButtonToggle)  != nullptr) return true;
     if (IsSlider(control))                                        return true;
     return false;
-}
-
-// Linear scan g_chain for `control`. Returns the chain index or -1.
-// Used to anchor the chain at the engine's currently active control on
-// rebind so the first arrow press doesn't snap the cursor to chain[0].
-static int FindChainEntry(void* control) {
-    if (!control) return -1;
-    for (int i = 0; i < g_chainCount; ++i) {
-        if (g_chain[i].control == control) return i;
-    }
-    return -1;
 }
 
 // Pull the announceable text of a control (tooltip → button → label → ...);
@@ -491,106 +420,9 @@ static void AnnouncePanelTitle(void* panel) {
     }
 }
 
-// Detect whether `panel` is laid out as Options-style: a CSWGuiListBox at
-// controls[0] (currently displayed tab content) followed by a contiguous
-// cluster of buttons (the tab strip). Returns true and fills outStart/outCount
-// with the cluster's first index and length on success.
-//
-// Refusing the detection when the listbox is empty keeps main-menu-style
-// panels (which also have a CSWGuiListBox at [0], for the news scroller, but
-// no tab content) on the existing chain-navigation path.
-static bool DetectTabsCluster(void* panel, int& outStart, int& outCount) {
-    outStart = -1;
-    outCount = 0;
-    if (!panel) return false;
-
-    auto* panelList = reinterpret_cast<CExoArrayList*>(
-        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
-    if (!panelList->data || panelList->size < 2) return false;
-
-    void* lb = panelList->data[0];
-    if (!lb) return false;
-    void** vt = *reinterpret_cast<void***>(lb);
-    if (reinterpret_cast<uintptr_t>(vt) != kVtableListBox) return false;
-
-    auto* lbList = reinterpret_cast<CExoArrayList*>(
-        reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
-    if (!lbList->data || lbList->size <= 0) return false;
-
-    int n = panelList->size > 256 ? 256 : panelList->size;
-    int start = -1, end = -1;
-    for (int i = 1; i < n; ++i) {
-        void* c = panelList->data[i];
-        if (c && IsChainNavigable(c)) {
-            if (start < 0) start = i;
-            end = i;
-        } else if (start >= 0) {
-            break;  // first non-navigable after the cluster ends it
-        }
-    }
-    if (start < 0 || (end - start + 1) < 2) return false;
-    outStart = start;
-    outCount = end - start + 1;
-    return true;
-}
-
-// Reset all tabbed-mode state. Called when the focused panel changes to a
-// different one — the new panel may or may not be tabbed; OnListBoxSetActive-
-// Control re-runs detection lazily on its first listbox event.
-static void ResetTabbedState() {
-    g_tabbedPanel      = nullptr;
-    g_tabsStart        = -1;
-    g_tabsCount        = 0;
-    g_virtualLineCount = 0;
-    g_virtualLineIdx   = -1;
-}
-
-// Per-tick guard against a dangling g_tabbedPanel. The engine frees
-// CSWGuiPanel objects across hard game-state transitions (e.g. death →
-// main menu) without us seeing a clearance event, so the "persist until
-// DetectTabsCluster overwrites" lifecycle breaks the moment the next
-// panel isn't itself tabbed. IsTabButton + the inline tab-cluster
-// dereference in the Enter-dispatch path then read [g_tabbedPanel+0x20]
-// from freed memory and access-violate.
-//
-// Cheap: ≤16 panels × pointer-compare, never derefs g_tabbedPanel itself.
-static void ValidateTabbedPanel() {
-    if (!g_tabbedPanel) return;
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return;  // engine not up yet — leave state untouched
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (panelData && panelCount > 0) {
-        int n = panelCount > 16 ? 16 : panelCount;
-        for (int i = 0; i < n; ++i) {
-            if (panelData[i] == g_tabbedPanel) return;  // still live
-        }
-    }
-    acclog::Write("ValidateTabbedPanel", "%p not in panels[]; clearing tabbed-mode state",
-                  g_tabbedPanel);
-    ResetTabbedState();
-}
-
-// Split `text` on '\n' into g_virtualLines[]. Truncates oversize lines to fit;
-// caps total line count at kMaxVirtualLines (Options Gameplay tab has 8, no
-// observed listbox blob > 16 in any KOTOR menu — 32 is comfortable headroom).
-static void ParseVirtualLines(const char* text) {
-    g_virtualLineCount = 0;
-    g_virtualLineIdx   = -1;
-    if (!text) return;
-    const char* p = text;
-    while (*p && g_virtualLineCount < kMaxVirtualLines) {
-        const char* end = strchr(p, '\n');
-        size_t len = end ? (size_t)(end - p) : strlen(p);
-        if (len >= kMaxVirtualLineLen) len = kMaxVirtualLineLen - 1;
-        memcpy(g_virtualLines[g_virtualLineCount], p, len);
-        g_virtualLines[g_virtualLineCount][len] = '\0';
-        ++g_virtualLineCount;
-        if (!end) break;
-        p = end + 1;
-    }
-}
+// DetectTabsCluster, ResetTabbedState, ValidateTabbedPanel, and
+// ParseVirtualLines moved to menus_chain.cpp in Step 5. Brought back into
+// unqualified scope via the using-declarations at the top of this file.
 
 // Container loot panel control IDs from container.gui (extracted via
 // xoreos-tools from data/gui.bif). Stable per panel kind across patch versions.
@@ -636,78 +468,10 @@ void* acc::menus::detail::FindControlById(void* panel, int id) {
     return nullptr;
 }
 
-// Find the "close" button on a panel — the back/Schliess button we'd click
-// to dismiss the panel. Used by the Esc handler to route Esc to the same
-// FireActivate primitive the user triggers manually by Enter-ing Schliess.
-//
-// Match heuristic: scan panel.controls for a navigable button whose text
-// starts with "Schliess" (German "Schließen"), "Close" (English), "OK"
-// (universal "accept and dismiss" in confirmation dialogs), or
-// "Weiter" / "Continue" (multi-page TutorialBox advance/dismiss — combat
-// onboarding flips the button label from "OK" to "Weiter" mid-flow).
-// KOTOR ships German + English localizations; both texts present here
-// cover the cases we care about. Returns the control pointer or nullptr
-// if none found.
-static void* FindCloseButton(void* panel) {
-    if (!panel) return nullptr;
-    auto* list = reinterpret_cast<CExoArrayList*>(
-        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
-    if (!list->data || list->size <= 0) return nullptr;
-    int n = list->size > 256 ? 256 : list->size;
-    for (int i = 0; i < n; ++i) {
-        void* c = list->data[i];
-        if (!IsChainNavigable(c)) continue;
-        char text[256];
-        if (!acc::menus::extract::FromControl(c, text, sizeof(text), panel)) continue;
-        if (strncmp(text, "Schliess", 8) == 0 ||
-            strncmp(text, "Close",    5) == 0 ||
-            strncmp(text, "OK",       2) == 0 ||
-            strncmp(text, "Weiter",   6) == 0 ||
-            strncmp(text, "Continue", 8) == 0) {
-            return c;
-        }
-    }
-    return nullptr;
-}
-
-// Cancel-intent button finder for confirm-style popups (yes/no, OK/Cancel).
-// Esc on a confirm dialog should mean "back out / no", which is the cancel
-// button — NOT the affirmative OK that FindCloseButton would match first.
-// Used as a higher-priority probe by the Esc handler before falling back
-// to FindCloseButton; that way single-button info popups (Schliess/OK
-// only) still work, while two-button confirms (OK + Abbrechen) route Esc
-// to Abbrechen.
-//
-// Confirm-dialog buttons we route Esc to:
-//   - "Abbrechen" — German Cancel
-//   - "Cancel"    — English Cancel
-//   - "Nein"      — German No (yes/no confirm variants)
-//   - "No"        — English No
-//
-// Same strncmp-prefix matching shape as FindCloseButton; KOTOR labels
-// are fixed and short enough that prefix collisions are not a concern
-// (no German word in this UI starts with "Abbrech", "Nein" + space/end,
-// etc.).
-static void* FindCancelButton(void* panel) {
-    if (!panel) return nullptr;
-    auto* list = reinterpret_cast<CExoArrayList*>(
-        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
-    if (!list->data || list->size <= 0) return nullptr;
-    int n = list->size > 256 ? 256 : list->size;
-    for (int i = 0; i < n; ++i) {
-        void* c = list->data[i];
-        if (!IsChainNavigable(c)) continue;
-        char text[256];
-        if (!acc::menus::extract::FromControl(c, text, sizeof(text), panel)) continue;
-        if (strncmp(text, "Abbrechen", 9) == 0 ||
-            strncmp(text, "Cancel",    6) == 0 ||
-            strncmp(text, "Nein",      4) == 0 ||
-            strncmp(text, "No",        2) == 0) {
-            return c;
-        }
-    }
-    return nullptr;
-}
+// FindCloseButton / FindCancelButton moved to menus_chain.cpp in Step 5.
+// They're heuristic finders for the back-out / cancel buttons used by the
+// Esc handler in OnHandleInputEvent. Brought back into unqualified scope
+// via the using-declarations at the top of this file.
 
 // Detect the CSWGuiSaveLoad panel (the "Spiel laden" / "Spiel speichern"
 // dialog). The panel is allocated dynamically when the user activates the
@@ -935,102 +699,11 @@ void acc::menus::detail::ClassLabelCacheStore(void* panel, void* icon, const cha
     strncpy_s(g_classLabelCache[slot].text, text, _TRUNCATE);
 }
 
-// Find the closest navigable empty-text neighbour of `focused` in
-// `panel.controls`, on the visual left or right at the same y-row. Used to
-// dispatch Left/Right arrow presses to cycle-button flanker arrows: the
-// Difficulty cycle (and similar) renders as `[◀] Normal [▶]` — three plain
-// CSWGuiButtons, where the middle one carries the value text and the flanks
-// carry an image overlay only. We want Left/Right on the value-display button
-// to fire the corresponding flanker so the engine cycles the value.
-//
-// Heuristic:
-//   - Same-row: |cy_neighbour - cy_focused| <= 5 px (allows for off-by-one
-//     baseline alignment; KOTOR cycle layouts visually match much tighter).
-//   - Empty-text: ExtractAnnounceableText returns nullptr. Real labels and
-//     toggles are excluded so the "neighbour" is unambiguously a flanker.
-//   - Closest by signed dx: smaller |dx| wins among candidates strictly to
-//     the right (toRight=true) or left (toRight=false) of the focused control.
-//
-// Returns nullptr if no flanker found — caller falls back to "consume the
-// keypress with no action" so we don't trigger surprising native behaviour.
-static void* FindAdjacentArrow(void* panel, void* focused, bool toRight) {
-    if (!panel || !focused) return nullptr;
-
-    auto* list = reinterpret_cast<CExoArrayList*>(
-        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
-    if (!list->data || list->size <= 0) return nullptr;
-
-    int focusCx, focusCy;
-    if (!GetControlCenter(focused, focusCx, focusCy)) return nullptr;
-
-    void* best = nullptr;
-    int bestDx = 0x7fffffff;
-
-    int n = list->size > 256 ? 256 : list->size;
-    for (int i = 0; i < n; ++i) {
-        void* c = list->data[i];
-        if (!c || c == focused) continue;
-        if (!IsChainNavigable(c)) continue;
-
-        int cx, cy;
-        if (!GetControlCenter(c, cx, cy)) continue;
-        if (cy - focusCy > 5 || focusCy - cy > 5) continue;
-
-        int dx = toRight ? (cx - focusCx) : (focusCx - cx);
-        if (dx <= 0) continue;
-
-        // Only consider empty-text neighbours — real labels / toggles are not
-        // cycle flankers.
-        char tmp[64];
-        if (acc::menus::extract::FromControl(c, tmp, sizeof(tmp), panel)) continue;
-
-        if (dx < bestDx) {
-            bestDx = dx;
-            best   = c;
-        }
-    }
-    return best;
-}
-
-// True if `control` is one of the current panel's tab-cluster buttons.
-// Used to gate the cursor-y offset (g_tabClickOffsetY) — only tab buttons
-// suffer the engine's hit-test shift; close/standard buttons in the same
-// panel are in a different x column or row layout and don't need the offset.
-static bool IsTabButton(void* control) {
-    if (!control || !g_tabbedPanel || g_tabsCount < 2) return false;
-    auto* tlist = reinterpret_cast<CExoArrayList*>(
-        reinterpret_cast<unsigned char*>(g_tabbedPanel) + kPanelControlsOffset);
-    if (!tlist || !tlist->data) return false;
-    for (int i = g_tabsStart;
-         i < g_tabsStart + g_tabsCount && i < tlist->size; ++i) {
-        if (tlist->data[i] == control) return true;
-    }
-    return false;
-}
-
-// Append a navigable control to the chain (skipping null/degenerate-extent).
-// Internal helper for RebindChain.
-static void AppendChainEntry(void* control) {
-    if (g_chainCount >= kMaxChainEntries) return;
-    if (!IsChainNavigable(control))       return;
-    int cx, cy;
-    if (!GetControlCenter(control, cx, cy)) return;
-    g_chain[g_chainCount++] = { control, cx, cy, /*textOnly=*/false };
-}
-
-// True for "informational popup" panel kinds that wrap their body text in a
-// single-row listbox. RebindChain promotes that listbox into a chain entry
-// for these panels so arrow keys can land on it for re-announce.
-static bool IsModalTextPanel(PanelKind k) {
-    switch (k) {
-    case PanelKind::MessageBoxModal:
-    case PanelKind::TutorialBox:
-    case PanelKind::AreaTransition:
-        return true;
-    default:
-        return false;
-    }
-}
+// FindAdjacentArrow, IsTabButton, AppendChainEntry, and IsModalTextPanel
+// moved to menus_chain.cpp in Step 5. Brought back into unqualified scope
+// via the using-declarations at the top of this file. IsModalPopupPanel
+// (next function below) stays here because its only caller is the Esc
+// handler in OnHandleInputEvent.
 
 // True for engine-pushed modal popup panels that the user dismisses via a
 // close button (Schliess / OK / Weiter / Continue). Used by the Esc handler
@@ -1060,277 +733,12 @@ static bool IsModalPopupPanel(PanelKind k) {
     }
 }
 
-// Append a non-activatable text-bearing control (typically a single-row
-// listbox holding a modal's body text) as a text-only chain entry. The
-// listbox is rejected by IsChainNavigable so AppendChainEntry would skip
-// it; this helper bypasses that filter while still requiring extractable
-// text so we don't pollute the chain with empty rows.
-//
-// Probe buffer is 512 bytes — tutorial bodies routinely exceed 200 chars
-// (e.g. the "Im Bildschirm GRUPPENGEPÄCK..." inventory tutorial is ~175),
-// and ExtractAnnounceableText's listbox aggregator refuses to truncate
-// (breaks out instead, leaving the buffer empty and returning nullptr).
-// A too-small probe would silently skip exactly the modals we care about.
-static void AppendChainTextOnly(void* control, void* panel) {
-    if (g_chainCount >= kMaxChainEntries) return;
-    if (!control) return;
-    char tmp[512];
-    if (!acc::menus::extract::FromControl(control, tmp, sizeof(tmp), panel)) return;
-    int cx, cy;
-    if (!GetControlCenter(control, cx, cy)) return;
-    g_chain[g_chainCount++] = { control, cx, cy, /*textOnly=*/true };
-}
-
-// (Re)bind the chain to the currently focused panel.
-//
-// Walks panel.controls; for each entry:
-//   - direct navigable button → append.
-//   - CSWGuiListBox with controls.size > 1 → recurse one level into its
-//     children, appending any navigable buttons found there.
-// Then sorts entries by extent.top ascending (visual top-to-bottom order)
-// because panel.controls order doesn't match visual order in sub-dialogs.
-//
-// Finally anchors g_chainIndex on the engine's current activeControl when
-// present, so the first arrow press moves one step from where the user
-// was, not from chain[0].
-static void RebindChain(void* panel) {
-    g_chainPanel  = panel;
-    g_chainIndex  = 0;
-    g_chainCount  = 0;
-    if (!panel) return;
-
-    auto* list = reinterpret_cast<CExoArrayList*>(
-        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
-    if (!list->data || list->size <= 0) return;
-    int n = list->size > 256 ? 256 : list->size;
-
-    bool modalText = IsModalTextPanel(IdentifyPanel(panel));
-
-    for (int i = 0; i < n; ++i) {
-        void* c = list->data[i];
-        if (!c) continue;
-
-        // Direct navigable button — typical case (tabs, OK/Cancel, menu items).
-        if (IsChainNavigable(c)) {
-            AppendChainEntry(c);
-            continue;
-        }
-
-        // Listboxes:
-        //   * size > 1 — sub-dialog settings list, recurse one level into
-        //     its button children.
-        //   * size == 1 in a modal popup (MessageBoxModal / TutorialBox /
-        //     AreaTransition) — the engine wraps the body text in a single-
-        //     row listbox. Promote the listbox itself to a text-only chain
-        //     entry so the user can land on it via arrow keys to re-hear the
-        //     message. Without this, single-button popups (e.g. death-screen
-        //     "OK" only) leave the chain with no text element to revisit
-        //     once the open-time announce has played.
-        //   * size == 1 elsewhere — descriptive label blob (inline tab
-        //     preview, per-setting hint pane); skipped, its single label
-        //     child gets surfaced through other paths.
-        void** vt = *reinterpret_cast<void***>(c);
-        if (reinterpret_cast<uintptr_t>(vt) == kVtableListBox) {
-            auto* lbList = reinterpret_cast<CExoArrayList*>(
-                reinterpret_cast<unsigned char*>(c) + kListBoxControlsOffset);
-            if (lbList && lbList->data) {
-                if (lbList->size > 1) {
-                    int lbN = lbList->size > 256 ? 256 : lbList->size;
-                    for (int j = 0; j < lbN; ++j) {
-                        AppendChainEntry(lbList->data[j]);
-                    }
-                } else if (lbList->size == 1 && modalText) {
-                    AppendChainTextOnly(c, panel);
-                }
-            }
-        }
-    }
-
-    // Insertion sort by cy ascending. Stable; n^2 is fine for n<=64.
-    for (int i = 1; i < g_chainCount; ++i) {
-        for (int j = i; j > 0 && g_chain[j].cy < g_chain[j-1].cy; --j) {
-            ChainEntry tmp = g_chain[j];
-            g_chain[j]   = g_chain[j-1];
-            g_chain[j-1] = tmp;
-        }
-    }
-
-    // Squash cycle-arrow flankers from the chain. An empty-text navigable
-    // entry that shares a y-row with a NEARBY text-bearing entry is a
-    // cycle arrow (left/right of a value-display button: `[◀] Normal [▶]`).
-    // The user reaches them via Left/Right cycle dispatch on the value-
-    // display entry — having them in the chain just produces "control N"
-    // placeholders Up/Down would land on.
-    //
-    // Two thresholds gate the squash:
-    //   - Same-row dy <= 5 (matches FindAdjacentArrow's tolerance).
-    //   - Same x-distance <= 80 (also FindAdjacentArrow's reach). Without
-    //     the x-bound, parallel-choice rows like the chargen class-icon
-    //     row collapse to the single icon whose text resolves first
-    //     (initial active_control), squashing the other 5 image-only
-    //     icons as if they were cycle flankers of it.
-    //
-    // Lone empty-text entries with no NEARBY text-bearing same-row
-    // neighbour are kept.
-    {
-        int writeIdx = 0;
-        for (int i = 0; i < g_chainCount; ++i) {
-            char tmp[64];
-            bool hasText = acc::menus::extract::FromControl(g_chain[i].control,
-                                                   tmp, sizeof(tmp),
-                                                   panel) != nullptr;
-            if (hasText) {
-                g_chain[writeIdx++] = g_chain[i];
-                continue;
-            }
-            constexpr int kSquashDxMax = 80;
-            bool sameRowWithText = false;
-            for (int j = 0; j < g_chainCount; ++j) {
-                if (j == i) continue;
-                int dy = g_chain[j].cy - g_chain[i].cy;
-                if (dy < 0) dy = -dy;
-                if (dy > 5) continue;
-                int dx = g_chain[j].cx - g_chain[i].cx;
-                if (dx < 0) dx = -dx;
-                if (dx == 0 || dx > kSquashDxMax) continue;
-                char tmp2[64];
-                if (acc::menus::extract::FromControl(g_chain[j].control,
-                                            tmp2, sizeof(tmp2),
-                                            panel) != nullptr) {
-                    sameRowWithText = true;
-                    break;
-                }
-            }
-            if (!sameRowWithText) {
-                g_chain[writeIdx++] = g_chain[i];
-            }
-        }
-        g_chainCount = writeIdx;
-    }
-
-    // Cycle category capture lives in OnSetActiveControl's panel-walk path,
-    // not here — RebindChain runs only on the first arrow press in a panel
-    // (typically several seconds after panel open), and by then the engine
-    // has already replaced cycle buttons' .gui-default category text with
-    // the persisted value (e.g. "Difficulty" -> "Normal"). Capture has to
-    // happen at panel-walk time to catch the .gui state before the
-    // .ini-driven update.
-
-    // Compute g_tabClickOffsetY from adjacent tab entries' visual spacing.
-    // The chain is now sorted top-to-bottom, so the first two consecutive
-    // tab-cluster entries give us the pitch directly. Non-tabbed panels (no
-    // g_tabbedPanel set, or only one tab) keep offset=0 — their hit-test
-    // works without compensation.
-    g_tabClickOffsetY = 0;
-    if (g_tabbedPanel == panel && g_tabsCount >= 2) {
-        int firstTabIdx = -1;
-        for (int i = 0; i < g_chainCount; ++i) {
-            if (!IsTabButton(g_chain[i].control)) continue;
-            if (firstTabIdx < 0) {
-                firstTabIdx = i;
-            } else {
-                int spacing = g_chain[i].cy - g_chain[firstTabIdx].cy;
-                if (spacing > 0) g_tabClickOffsetY = spacing;
-                break;
-            }
-        }
-    }
-
-    // Compute g_equipSlotClickOffsetY for InGameEquip panels. Walks the chain
-    // looking for two slot buttons (matching the BTN_INV_* id set) at different
-    // y rows; their pitch gives the click-sim row-shift compensation. The grid
-    // is 3x3 so two consecutive chain entries normally share a row — keep
-    // scanning until we find a y-jump.
-    g_equipSlotClickOffsetY = 0;
-    if (IdentifyPanel(panel) == PanelKind::InGameEquip) {
-        int firstSlotIdx = -1;
-        int firstSlotY   = 0;
-        for (int i = 0; i < g_chainCount; ++i) {
-            int cid = *reinterpret_cast<int*>(
-                reinterpret_cast<unsigned char*>(g_chain[i].control) + 0x50);
-            bool isSlot =
-                cid == kEquipBtnHeadId    || cid == kEquipBtnImplantId ||
-                cid == kEquipBtnBodyId    || cid == kEquipBtnArmLId    ||
-                cid == kEquipBtnArmRId    || cid == kEquipBtnWeapLId   ||
-                cid == kEquipBtnWeapRId   || cid == kEquipBtnBeltId    ||
-                cid == kEquipBtnHandsId;
-            if (!isSlot) continue;
-            if (firstSlotIdx < 0) {
-                firstSlotIdx = i;
-                firstSlotY   = g_chain[i].cy;
-            } else if (g_chain[i].cy != firstSlotY) {
-                int spacing = g_chain[i].cy - firstSlotY;
-                if (spacing < 0) spacing = -spacing;
-                g_equipSlotClickOffsetY = spacing;
-                break;
-            }
-        }
-    }
-
-    // Compute g_classIconClickOffsetX for the chargen class-selection panel.
-    // Walk chain entries that resolve to class icons (positional check via
-    // IsClassSelectionIcon) and pick the spacing between the first two
-    // consecutive same-row entries — that's the icon pitch we need to add
-    // to cursor x so the engine's hit-test lands on the right icon. 0 for
-    // any other panel kind.
-    g_classIconClickOffsetX = 0;
-    {
-        void** pVt = panel ? *reinterpret_cast<void***>(panel) : nullptr;
-        if (reinterpret_cast<uintptr_t>(pVt) ==
-                kVtableCSWGuiClassSelection) {
-            int firstIconIdx = -1;
-            for (int i = 0; i < g_chainCount; ++i) {
-                if (!IsClassSelectionIcon(panel, g_chain[i].control)) continue;
-                if (firstIconIdx < 0) {
-                    firstIconIdx = i;
-                } else if (g_chain[i].cy == g_chain[firstIconIdx].cy) {
-                    int spacing = g_chain[i].cx - g_chain[firstIconIdx].cx;
-                    if (spacing < 0) spacing = -spacing;
-                    if (spacing > 0) g_classIconClickOffsetX = spacing;
-                    break;
-                }
-            }
-        }
-    }
-
-    // Anchor at active. ReadPanelActiveControl reads panel.activeControl
-    // (only direct panel children); listbox-internal selection isn't
-    // exposed there, so when the user enters a sub-dialog with focus on
-    // a listbox child the anchor falls through to chain[0].
-    void* active = ReadPanelActiveControl(panel);
-    int   idx    = FindChainEntry(active);
-    g_chainIndex = (idx >= 0) ? idx : 0;
-
-    acclog::Write("Menus.Chain", "rebind panel=%p count=%d index=%d active=%p "
-                  "tabOffsetY=%d equipSlotOffsetY=%d classIconOffsetX=%d",
-                  panel, g_chainCount, g_chainIndex, active,
-                  g_tabClickOffsetY, g_equipSlotClickOffsetY,
-                  g_classIconClickOffsetX);
-    for (int i = 0; i < g_chainCount; ++i) {
-        char text[256];
-        const char* src = acc::menus::extract::FromControl(g_chain[i].control,
-                                                  text, sizeof(text),
-                                                  panel);
-        // Read CSWGuiControl.is_active (+0x4c) and bit_flags (+0x44) per
-        // SARIF struct layout. Hypothesis for chargen wizard buttons that
-        // silently no-op on Enter (Talente/Name/Spielen): step-gated, with
-        // is_active==0 until prereqs met. We already know `is_active` is
-        // what blocks vtable[15] FireActivate on tabs (set only by
-        // HandleLMouseDown's CaptureMouse path) — same flag, different
-        // gate. If Name shows is_active=0 alongside Fähigkeiten=1, we
-        // have our answer.
-        unsigned int isActive =
-            *reinterpret_cast<unsigned int*>(
-                reinterpret_cast<unsigned char*>(g_chain[i].control) + 0x4c);
-        unsigned int bitFlags =
-            *reinterpret_cast<unsigned int*>(
-                reinterpret_cast<unsigned char*>(g_chain[i].control) + 0x44);
-        acclog::Write("Menus.Chain", "  [%d] %p (%d,%d)%s %s text=\"%s\" is_active=%u bit_flags=0x%x",
-                      i, g_chain[i].control, g_chain[i].cx, g_chain[i].cy,
-                      g_chain[i].textOnly ? " text-only" : "",
-                      src ? src : "?", src ? text : "", isActive, bitFlags);
-    }
-}
+// AppendChainTextOnly + RebindChain moved to menus_chain.cpp in Step 5.
+// RebindChain is the heart of chain navigation: walks panel.controls,
+// recurses into sub-dialog listboxes, sorts by visual y, squashes
+// cycle-arrow flankers, computes click-offset compensations, anchors the
+// cursor on the engine's current activeControl. Brought back into
+// unqualified scope via the using-declarations at the top of this file.
 
 // Walk a CExoArrayList<CSWGuiControl*> embedded at parent+offset and log every
 // child. Used as a diagnostic when the focused panel/listbox changes — gives us
