@@ -52,6 +52,55 @@ void ClassLabelCacheStore(void* panel, void* icon, const char* text);
 // and by FindAdjacentArrow / AppendChain* in menus.cpp.
 bool GetControlCenter(void* control, int& outCx, int& outCy);
 
+// Locate a child control on `panel` by its +0x50 ID field. Stable across
+// localizations and panel.controls reordering.
+// Defined in menus.cpp; used there + in menus_listbox.cpp (Step 4 spec
+// callbacks for Container/SaveLoad/EquipPicker).
+void* FindControlById(void* panel, int id);
+
+// Find the first CSWGuiListBox among panel.controls. Container's input
+// handler + the dialog/container monitors use it; the spec dispatcher in
+// menus_listbox.cpp's Container entry calls it on every Up/Down step.
+void* FindListBoxChild(void* panel);
+
+// Detect the CSWGuiSaveLoad panel by structural signature (saveload.gui
+// IDs are baked into the resource at build time, language-independent).
+// Used by the SaveLoad spec entry's `matches` callback.
+bool IsSaveLoadPanel(void* panel);
+
+// Read a CExoString-style field on a control by byte offset. Used by the
+// SaveLoad announce callback to pull planet (lastmodule) + area (areaname)
+// from each save-row entry. Returns nullptr on empty field.
+const char* ReadSaveLoadEntryString(void* entry, size_t fieldOffset);
+
+// Result of a single arrow-key step on a listbox cursor. Filled by
+// DriveListBoxSelection; caller reads `row` to announce, `newSel`/`rowCount`
+// for index reporting, and `oldSel == newSel` to detect a boundary clamp
+// (per-tick monitors that watch selection_index changes won't fire on a
+// no-op step, so callers using a monitor announce inline only on clamp).
+struct ListBoxNavResult {
+    short oldSel;     // selection_index before the step
+    short newSel;     // selection_index after the step
+    int   rowCount;   // listbox.controls.size
+    void* row;        // row pointer at newSel (nullptr iff rowCount == 0)
+};
+
+// Drive a CSWGuiListBox cursor in response to Nav-Up / Nav-Down. Pure
+// listbox-side effect: writes selection_index + scrolls top_visible_index
+// to keep the new selection visible. Does NOT call SetSelectedControl, so
+// the engine's onSelectionChanged callback won't run. minSel = first valid
+// selection (0 normally, 1 for equip-picker LB_ITEMS to skip the protoitem
+// template at row 0). Returns false iff listbox is null or rowCount == 0.
+bool DriveListBoxSelection(void* listbox, bool navDown, short minSel,
+                           ListBoxNavResult& out);
+
+// Queue activation of the chain-navigable button child of `panel` whose
+// +0x50 ID matches `buttonId`. Reserved for select-then-confirm panels
+// (Container / SaveLoad spec entries). Returns false on debounce or
+// missing target — caller still consumes the keypress so the engine's
+// stale activeControl can't take over.
+bool QueueButtonByIdActivate(void* panel, int buttonId, const char* logPrefix);
+
 }  // namespace acc::menus::detail
 
 // File-scope global maintained by OnSetActiveControl in menus.cpp.

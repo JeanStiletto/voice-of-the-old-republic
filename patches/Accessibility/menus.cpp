@@ -30,6 +30,7 @@
 #include "menus_extract.h"   // Step 2B — text extraction lifted out
 #include "menus_internal.h"  // Step 2B — shared seam with menus_extract
 #include "menus_pending.h"   // Step 3 — deferred-op queue lifted out
+#include "menus_listbox.h"   // Step 4 — listbox-driven panel dispatcher
 #include "engine_input.h"
 #include "engine_manager.h"
 #include "engine_offsets.h"
@@ -69,6 +70,19 @@ using acc::menus::detail::IsClassSelectionIcon;
 using acc::menus::detail::ClassLabelCacheLookup;
 using acc::menus::detail::ClassLabelCacheStore;
 using acc::menus::detail::GetControlCenter;
+
+// Step 4 seam: the listbox-driven panel handlers live in menus_listbox.cpp,
+// but their helpers (FindControlById, FindListBoxChild, IsSaveLoadPanel,
+// ReadSaveLoadEntryString, DriveListBoxSelection, QueueButtonByIdActivate)
+// stay defined here because they're called from menus.cpp's monitors and
+// chain code too. Same using-declaration pattern as Step 2B.
+using acc::menus::detail::FindControlById;
+using acc::menus::detail::FindListBoxChild;
+using acc::menus::detail::IsSaveLoadPanel;
+using acc::menus::detail::ReadSaveLoadEntryString;
+using acc::menus::detail::DriveListBoxSelection;
+using acc::menus::detail::ListBoxNavResult;
+using acc::menus::detail::QueueButtonByIdActivate;
 
 // Forward decl from core_dllmain.cpp. The first hook to fire calls this so
 // Tolk is loaded the moment any focus / input event reaches us.
@@ -207,17 +221,11 @@ static int   g_chainCount   = 0;
 // returns to the strip, the override re-engages.
 static bool g_drilledIntoSubScreen = false;
 
-// Equipment picker zone arming. The InGameEquip screen has two interaction
-// zones in one panel: the 9-slot paper-doll grid (default) and the LB_ITEMS
-// item list, entered by pressing Enter on a slot. Arrow keys mean different
-// things in each zone, so OnHandleInputEvent gates routing on this flag.
-//
-// Set when Enter activates a BTN_INV_* slot. Cleared by Esc, by Enter on
-// BTN_EQUIP (after dispatch), by panel close, or by the panel falling out
-// of panels[] (handled in MonitorEquipPickerSelection). The panel pointer
-// guards against stale arming across a close/reopen.
-static bool  g_equipPickerActive = false;
-static void* g_equipPickerPanel  = nullptr;
+// Equipment picker zone arming state moved to menus_listbox.cpp in Step 4
+// of the refactor (state ownership follows the spec entry that primarily
+// uses it). Two outside touch sites in this file — the slot-Enter arming
+// site below and MonitorEquipPickerSelection's "panel gone, disarm"
+// cleanup — go through the acc::menus::listbox accessors.
 
 // Forward decl: find an InGame{X} sub-screen panel currently in panels[].
 // Defined near the sub-screen spec table to share the kind set with
@@ -599,13 +607,20 @@ constexpr int kContainerBtnCancelId = 5;
 // Forward declaration — body lives next to MonitorDialogReplies (which is
 // the long-standing first-and-only caller). Container input handler in
 // OnHandleInputEvent now also uses it for arrow-key selection_index drive.
-static void* FindListBoxChild(void* panel);
+//
+// Step 4: now in acc::menus::detail (cross-TU seam — menus_listbox.cpp's
+// Container spec entry calls it via FindListBoxChild forwarded by
+// menus_internal.h). Definition is further down in this TU.
 
 // Locate a child control on `panel` by its +0x50 ID field. The .gui-time IDs
 // are stable per panel kind, so this is the canonical way to address a known
 // control in a known panel without text-matching (which breaks across
 // localizations) or relying on panel.controls index (which can shift).
-static void* FindControlById(void* panel, int id) {
+//
+// Step 4 of the refactor lifted the listbox-driven panel handlers
+// (Container / SaveLoad / EquipPicker) into menus_listbox.cpp; this helper
+// now spans both TUs via menus_internal.h.
+void* acc::menus::detail::FindControlById(void* panel, int id) {
     if (!panel) return nullptr;
     auto* list = reinterpret_cast<CExoArrayList*>(
         reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
@@ -721,7 +736,7 @@ static void* FindCancelButton(void* panel) {
 // description listboxes are read-only. The select-then-confirm-via-button
 // pattern is shared by Container, Equip-picker, and SaveLoad — all three
 // kinds detected per-panel today.
-static bool IsSaveLoadPanel(void* panel) {
+bool acc::menus::detail::IsSaveLoadPanel(void* panel) {
     if (!panel) return false;
 
     void* lb = FindControlById(panel, kSaveLoadLbGamesId);
@@ -740,7 +755,7 @@ static bool IsSaveLoadPanel(void* panel) {
 // CExoStrings populated from the save GFF — no TLK indirection, no engine
 // rendering callback needed. Output is borrowed from the engine; valid until
 // the entry is freed (we use it inline within a single input event).
-static const char* ReadSaveLoadEntryString(void* entry, size_t fieldOffset) {
+const char* acc::menus::detail::ReadSaveLoadEntryString(void* entry, size_t fieldOffset) {
     if (!entry) return nullptr;
     auto* base = reinterpret_cast<unsigned char*>(entry);
     auto* str  = reinterpret_cast<CExoString*>(base + fieldOffset);
@@ -748,27 +763,10 @@ static const char* ReadSaveLoadEntryString(void* entry, size_t fieldOffset) {
     return str->c_string;
 }
 
-// Result of a single arrow-key step on a listbox cursor. Filled by
-// DriveListBoxSelection; caller reads `row` to announce, `newSel`/`rowCount`
-// for index reporting, and `oldSel == newSel` to detect a boundary clamp
-// (per-tick monitors that watch selection_index changes won't fire on a
-// no-op step, so callers using a monitor announce inline only on clamp).
-struct ListBoxNavResult {
-    short oldSel;     // selection_index before the step
-    short newSel;     // selection_index after the step
-    int   rowCount;   // listbox.controls.size
-    void* row;        // row pointer at newSel (nullptr iff rowCount == 0)
-};
-
-// Drive a CSWGuiListBox cursor in response to a Nav-Up / Nav-Down keypress.
-// Pure listbox-side effect: writes selection_index and scrolls
-// top_visible_index to keep the new selection visible. Never calls into
-// the engine; in particular, does NOT fire CSWGuiListBox::SetSelectedControl
-// — so the engine's onSelectionChanged callback won't run, and any
-// preview-pane labels that depend on it (e.g. the SaveLoad planet/area
-// labels at id=4 / id=6) stay stale. Callers that need a richer
-// announcement should read fields directly from the row pointer instead
-// of those labels.
+// ListBoxNavResult struct + DriveListBoxSelection signature now live in
+// menus_internal.h (Step 4 — listbox-driven panels lifted to
+// menus_listbox.cpp). The function is still defined here because the
+// dialog/container monitors call it too.
 //
 // `minSel` is the lowest selectable row index. Pass 0 for normal listboxes;
 // pass 1 for the equip-picker LB_ITEMS where row 0 is the .gui-time
@@ -779,8 +777,9 @@ struct ListBoxNavResult {
 //
 // Returns false iff `listbox` is null or has rowCount==0; caller logs +
 // ignores. On true, `out` is fully populated.
-static bool DriveListBoxSelection(void* listbox, bool navDown, short minSel,
-                                  ListBoxNavResult& out)
+bool acc::menus::detail::DriveListBoxSelection(void* listbox, bool navDown,
+                                               short minSel,
+                                               ListBoxNavResult& out)
 {
     out = {};
     if (!listbox) return false;
@@ -846,8 +845,8 @@ static bool DriveListBoxSelection(void* listbox, bool navDown, short minSel,
 //
 // `logPrefix` is used in the diagnostic log line — pass something like
 // "Container: Enter -> BTN_OK".
-static bool QueueButtonByIdActivate(void* panel, int buttonId,
-                                    const char* logPrefix)
+bool acc::menus::detail::QueueButtonByIdActivate(void* panel, int buttonId,
+                                                 const char* logPrefix)
 {
     if (acc::menus::pending::IsPending()) {
         acclog::Write(logPrefix, "-- op already pending; ignoring");
@@ -1923,347 +1922,21 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         }
     }
 
-    // Container loot panel — has its own input semantics that don't fit the
-    // chain-navigation model used elsewhere.
-    //
-    //   * Up/Down — we drive listbox.selection_index ourselves. The engine's
-    //     CSWGuiListBox does NOT bind arrow keys for the Container loot list
-    //     (verified empirically: arrows reach the manager but selection_index
-    //     stays at -1 with no OnListBoxSetActiveControl event). Without this
-    //     write, BTN_OK fires with sel == -1 and the engine's onClick takes
-    //     EVERY row in the chest (a fallback "take all" semantic).
-    //     MonitorContainerSelection picks up the change next tick and speaks
-    //     "<row>, i von N".
-    //   * Enter — FireActivate BTN_OK (id=3). With selection_index now driven,
-    //     the engine takes just the highlighted row.
-    //   * Esc — FireActivate BTN_CANCEL (id=5).
-    //   * Tab — DOES NOT REACH this hook. The engine's player-control layer
-    //     (Change-Leader) consumes Tab before the menu manager dispatches.
-    //     The give-mode toggle (BTN_GIVEITEMS) is bound to G via Win32 poll
-    //     in PollContainerGiveModeKey() instead.
-    //
-    // Returns early to bypass the generic chain handlers below.
-    if (activePanel != nullptr &&
-        IdentifyPanel(activePanel) == PanelKind::Container)
+    // Listbox-driven panels (Container loot, SaveLoad, EquipPicker)
+    // dispatch through menus_listbox::TryHandleInput. Step 4 of the
+    // refactor: three structurally similar handlers (~340 lines inline)
+    // collapsed into a spec-table-driven dispatcher with one entry per
+    // panel. See menus_listbox.h for the contract; the spec entries in
+    // menus_listbox.cpp are where each panel's quirks (announce format,
+    // Enter/Esc dispatch, fall-through behaviour) live.
     {
-        if (param_2 != 0) {
-            // Arrow up/down: drive listbox.selection_index. Container per-tick
-            // monitor announces selection changes, so we only need an inline
-            // speak on a no-op step (single-item list, or boundary clamp) when
-            // the monitor's change detector won't fire.
-            if (param_1 == kInputNavUp || param_1 == kInputNavDown) {
-                void* lb = FindListBoxChild(activePanel);
-                ListBoxNavResult r;
-                if (lb && DriveListBoxSelection(lb, /*navDown=*/param_1 == kInputNavDown,
-                                                /*minSel=*/0, r)) {
-                    if (r.newSel == r.oldSel && r.row) {
-                        char rowText[256];
-                        if (acc::menus::extract::FromControl(r.row, rowText, sizeof(rowText))) {
-                            char msg[320];
-                            snprintf(msg, sizeof(msg),
-                                     acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
-                                     rowText, r.newSel + 1, r.rowCount);
-                            tolk::Speak(msg, /*interrupt=*/false);
-                        }
-                    }
-                    acclog::Write("Container", "%s lb=%p sel=%d->%d (rows=%d)",
-                                  param_1 == kInputNavDown ? "Down" : "Up",
-                                  lb, r.oldSel, r.newSel, r.rowCount);
-                } else if (lb) {
-                    acclog::Write("Container", "%s lb=%p empty; nav ignored",
-                                  param_1 == kInputNavDown ? "Down" : "Up", lb);
-                }
-                consumed = true;  // never let the engine see arrow keys here
-            } else {
-                // Container per-item take is currently UNRESOLVED. Both
-                // tested primitives fail:
-                //   * FireActivate(row_ptr) → engine's vtable[15] runs but
-                //     doesn't translate to "take this row" — rowCount stays
-                //     unchanged. Listbox protoitems don't carry the take
-                //     logic at vtable[15].
-                //   * Click-sim at row.GetControlCenter() coords → cursor
-                //     hits dead space (Down=0, Up=0). Row extents are
-                //     listbox-local, not screen-absolute; we'd need parent
-                //     offset accumulation we don't currently do.
-                //
-                // Until we identify the engine's row-take primitive (likely
-                // embedded in CSWGuiContainer::HandleInputEvent at 0x006b92f0
-                // or the protoitem's onClick), Enter dispatches BTN_OK
-                // unconditionally. That's the working "take-all" gesture.
-                // Per-item take = lost feature, deferred. See
-                // docs/equip-flow-investigation.md for the parallel
-                // investigation that landed the same shape on equip.
-                if (param_1 == kInputEnter1 || param_1 == kInputEnter2) {
-                    QueueButtonByIdActivate(activePanel, kContainerBtnOkId,
-                                            "Container: Enter -> BTN_OK "
-                                            "(take-all; per-item take deferred)");
-                    consumed = true;
-                } else if (param_1 == kInputEsc1 || param_1 == kInputEsc2) {
-                    QueueButtonByIdActivate(activePanel, kContainerBtnCancelId,
-                                            "Container: Esc -> BTN_CANCEL");
-                    consumed = true;
-                }
-                // NavLeft/NavRight + everything else: pass through unchanged.
-            }
-        }
-
-        // Log + return to skip the generic chain handlers below.
-        int translated = acc::engine::ManagerTranslateCode(param_1);
-        const char* tag = consumed ? " CONSUMED" : "";
-        if (translated != param_1) {
-            acclog::Write("Menus.Input", "#%d this=%p key=logical(%d) -> %s(%d) val=%d%s",
-                          n, thisPtr, param_1,
-                          acc::engine::InputIndexName(translated), translated, param_2, tag);
-        } else {
-            acclog::Write("Menus.Input", "#%d this=%p key=%s(%d) val=%d%s",
-                          n, thisPtr, acc::engine::InputIndexName(param_1), param_1, param_2, tag);
-        }
-        return consumed ? 1 : 0;
-    }
-
-    // Save / Load game panel (CSWGuiSaveLoad — "Spiel laden" /
-    // "Spiel speichern"). Same problem shape as Container: chain navigation
-    // visits each save row as a sibling button + FireActivates the row on
-    // Enter, but the engine's row onClick reads listbox.selection_index to
-    // decide which slot to act on. A real mouse click would have updated
-    // selection_index via SetSelectedControl; vtable[15] dispatch alone
-    // doesn't, so every save load fires with stale selection_index and the
-    // wrong save loads. (Reproduced across 8 sessions in
-    // patch-20260505-*.log: chain indexes 3, 4, 6 all loaded the same slot.)
-    //
-    //   * Up/Down — drive games_listbox.selection_index ourselves and
-    //     announce the selected slot inline. Each row's CSWGuiSaveLoadEntry
-    //     carries the planet (lastmodule) and area (areaname) as inline
-    //     CExoStrings — we read those directly so the announce includes
-    //     "<row>, <planet>, <area>, i von N" without depending on the
-    //     right-pane preview labels (which only refresh through the
-    //     engine's onSelectionChanged callback that direct memory writes
-    //     bypass).
-    //   * Enter — FireActivate saveload_button (id=14). With the listbox's
-    //     selection_index now correct, the engine's load path picks the
-    //     right slot.
-    //   * Esc   — FireActivate back_button (id=12). Provides a quick exit
-    //     without forcing the user to chain-navigate to "Abbrechen"; back
-    //     button text doesn't match FindCloseButton's prefix list.
-    //
-    // Returns early to bypass the generic chain handlers below — once the
-    // user is in this panel, arrow keys are a listbox cursor, not a chain
-    // walk. Delete-button activation is left to chain navigation: the user
-    // walks to "L\xF6schen" and presses Enter, same as before.
-    if (activePanel != nullptr && IsSaveLoadPanel(activePanel)) {
-        if (param_2 != 0) {
-            if (param_1 == kInputNavUp || param_1 == kInputNavDown) {
-                void* lb = FindControlById(activePanel, kSaveLoadLbGamesId);
-                ListBoxNavResult r;
-                if (lb && DriveListBoxSelection(lb, /*navDown=*/param_1 == kInputNavDown,
-                                                /*minSel=*/0, r)) {
-                    // No per-tick monitor watches the SaveLoad listbox, so
-                    // announce inline on every step (including no-op clamps)
-                    // — never silence per feedback_never_silence_fallback…
-                    char rowText[256];
-                    const char* rowSrc = r.row ? acc::menus::extract::FromControl(
-                        r.row, rowText, sizeof(rowText)) : nullptr;
-                    const char* planet = ReadSaveLoadEntryString(
-                        r.row, kSaveLoadEntryLastModuleOffset);
-                    const char* area   = ReadSaveLoadEntryString(
-                        r.row, kSaveLoadEntryAreaNameOffset);
-                    if (rowSrc) {
-                        char msg[512];
-                        if (planet || area) {
-                            snprintf(msg, sizeof(msg),
-                                     acc::strings::Get(acc::strings::Id::FmtSaveLoadRow),
-                                     rowText, planet ? planet : "",
-                                     area ? area : "",
-                                     r.newSel + 1, r.rowCount);
-                        } else {
-                            snprintf(msg, sizeof(msg),
-                                     acc::strings::Get(acc::strings::Id::FmtSaveLoadRowNoLoc),
-                                     rowText, r.newSel + 1, r.rowCount);
-                        }
-                        tolk::Speak(msg, /*interrupt=*/false);
-                    }
-                    acclog::Write("SaveLoad", "%s lb=%p sel=%d->%d (rows=%d) "
-                                  "row=%p planet=\"%s\" area=\"%s\"",
-                                  param_1 == kInputNavDown ? "Down" : "Up",
-                                  lb, r.oldSel, r.newSel, r.rowCount, r.row,
-                                  planet ? planet : "", area ? area : "");
-                } else if (lb) {
-                    acclog::Write("SaveLoad", "%s lb=%p empty; nav ignored",
-                                  param_1 == kInputNavDown ? "Down" : "Up", lb);
-                }
-                consumed = true;  // never let the engine see arrow keys here
-            } else if (param_1 == kInputEnter1 || param_1 == kInputEnter2) {
-                QueueButtonByIdActivate(activePanel, kSaveLoadBtnSaveLoadId,
-                                        "SaveLoad: Enter -> saveload_button");
-                consumed = true;
-            } else if (param_1 == kInputEsc1 || param_1 == kInputEsc2) {
-                QueueButtonByIdActivate(activePanel, kSaveLoadBtnBackId,
-                                        "SaveLoad: Esc -> back_button");
-                consumed = true;
-            }
-            // NavLeft/NavRight + everything else: pass through unchanged so
-            // chain navigation can still reach Delete (L\xF6schen) when the
-            // user wants it.
-        }
-
-        // Log + return only if we acted; otherwise fall through to the
-        // generic chain handlers so chain navigation (which targets the row
-        // buttons + the three action buttons) keeps working for unhandled
-        // keys.
-        if (consumed) {
-            int translated = acc::engine::ManagerTranslateCode(param_1);
-            const char* tag = " CONSUMED";
-            if (translated != param_1) {
-                acclog::Write("Menus.Input", "#%d this=%p key=logical(%d) -> %s(%d) val=%d%s",
-                              n, thisPtr, param_1,
-                              acc::engine::InputIndexName(translated), translated, param_2, tag);
-            } else {
-                acclog::Write("Menus.Input", "#%d this=%p key=%s(%d) val=%d%s",
-                              n, thisPtr, acc::engine::InputIndexName(param_1), param_1, param_2, tag);
-            }
-            return 1;
+        int rv = 0;
+        if (acc::menus::listbox::TryHandleInput(n, thisPtr, activePanel,
+                                                 param_1, param_2, rv)) {
+            return rv;
         }
     }
 
-    // Equipment screen — modal item-picker zone. Two zones in one panel:
-    //
-    //   * Slot zone (default): chain navigates the 9 BTN_INV_* slot grid +
-    //     BTN_BACK + BTN_EQUIP. Arrow keys + Enter handled by the generic
-    //     handlers below. When Enter activates a BTN_INV_* slot the engine
-    //     repopulates LB_ITEMS for that slot — we then arm the picker so
-    //     subsequent arrows go to the items list, not the slot grid.
-    //
-    //   * Picker zone (g_equipPickerActive): Up/Down drive
-    //     LB_ITEMS.selection_index directly (the engine doesn't bind arrow
-    //     keys to that listbox — same situation as the Container loot list).
-    //     Enter dispatches BTN_EQUIP, then disarms. Esc disarms without
-    //     equipping; chain focus is unchanged so the next arrow press
-    //     resumes slot navigation.
-    //
-    // Arming + disarming runs unconditionally regardless of zone so a panel
-    // close / reopen always resets — see g_equipPickerPanel staleness check.
-    if (activePanel != nullptr &&
-        IdentifyPanel(activePanel) == PanelKind::InGameEquip)
-    {
-        // Self-disarm if the panel pointer drifted (re-open, panel kind
-        // matches but address differs). Picker state is per-panel.
-        if (g_equipPickerActive && g_equipPickerPanel != activePanel) {
-            acclog::Write("EquipPicker", "disarm — panel changed (%p -> %p)",
-                          g_equipPickerPanel, activePanel);
-            g_equipPickerActive = false;
-            g_equipPickerPanel  = nullptr;
-        }
-
-        if (g_equipPickerActive && param_2 != 0) {
-            void* lb = FindControlById(activePanel, kEquipLbItemsId);
-            if (lb && (param_1 == kInputNavUp || param_1 == kInputNavDown)) {
-                // Equip listbox row 0 is the PROTOITEM template (text "•",
-                // verified empirically — see investigation 2026-05-04). Real
-                // items live at [1..rowCount-1]. minSel=1 keeps arrow keys
-                // off the template. Per-tick monitor announces selection
-                // changes; inline speak only on no-op clamp. Index reporting
-                // shifts by 1 so the user-visible numbers don't include the
-                // template (newSel=1 becomes "1 of N", with N = rowCount-1).
-                ListBoxNavResult r;
-                if (DriveListBoxSelection(lb, /*navDown=*/param_1 == kInputNavDown,
-                                          /*minSel=*/1, r)) {
-                    if (r.newSel == r.oldSel && r.row) {
-                        char rowText[256];
-                        if (acc::menus::extract::FromControl(r.row, rowText, sizeof(rowText))) {
-                            char msg[320];
-                            snprintf(msg, sizeof(msg),
-                                     acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
-                                     rowText, r.newSel, r.rowCount - 1);
-                            tolk::Speak(msg, /*interrupt=*/false);
-                        }
-                    }
-                    acclog::Write("EquipPicker", "%s lb=%p sel=%d->%d (rows=%d, real=%d)",
-                                  param_1 == kInputNavDown ? "Down" : "Up",
-                                  lb, r.oldSel, r.newSel, r.rowCount, r.rowCount - 1);
-                } else {
-                    acclog::Write("EquipPicker", "%s lb=%p empty; nav ignored",
-                                  param_1 == kInputNavDown ? "Down" : "Up", lb);
-                }
-                consumed = true;
-            } else if (param_1 == kInputEnter1 || param_1 == kInputEnter2) {
-                if (acc::menus::pending::IsPending()) {
-                    acclog::Write("EquipPicker", "Enter — op already pending; ignoring");
-                    consumed = true;
-                } else {
-                    // Direct call to the engine's commit handlers — bypasses
-                    // click-sim entirely. OnItemSelected (@0x006b7920) does
-                    // the actual EquipItem call; OnOKPressed (@0x006b9160)
-                    // is just cleanup (CloseDescription + clear staging).
-                    // Click-sim on the row dispatched against the listbox
-                    // container, not the row, so OnItemSelected never fired
-                    // and the equip never committed (verified via decompile,
-                    // see docs/equip-flow-investigation.md).
-                    //
-                    // Both gates that OnItemSelected reads are satisfied
-                    // here: row->is_active is raised by us; the panel's
-                    // description_listbox.bit_flags & 2 was raised by
-                    // OnSelectSlot's ShowDescription(this, 1) call; the
-                    // items_listbox.bit_flags & 8 was raised by
-                    // OnSelectSlot's SetEnabled(items_listbox, 1).
-                    void* lb  = FindControlById(activePanel, kEquipLbItemsId);
-                    void* btn = FindControlById(activePanel, kEquipBtnEquipId);
-                    void* row = nullptr;
-                    short selIdx = -1;
-                    int   rowCount = 0;
-                    if (lb) {
-                        auto* lbBase = reinterpret_cast<unsigned char*>(lb);
-                        auto* lbList = reinterpret_cast<CExoArrayList*>(
-                            lbBase + kListBoxControlsOffset);
-                        rowCount = (lbList && lbList->data) ? lbList->size : 0;
-                        selIdx = *reinterpret_cast<short*>(
-                            lbBase + kListBoxSelectionIndexOffset);
-                        if (lbList && lbList->data &&
-                            selIdx >= 1 && selIdx < rowCount) {
-                            row = lbList->data[selIdx];
-                        }
-                    }
-                    if (lb && row && btn) {
-                        acc::menus::pending::QueueEquipCommit(activePanel, row, btn);
-                        g_navSpeechSuppressBudget  = 2;
-                        acclog::Write("EquipPicker", "Enter -> commit (row sel=%d %p "
-                                      "btn_equip=%p panel=%p)",
-                                      selIdx, row, btn, activePanel);
-                    } else {
-                        acclog::Write("EquipPicker", "Enter -- can't equip "
-                                      "(lb=%p row=%p btn=%p sel=%d rows=%d) panel=%p",
-                                      lb, row, btn, selIdx, rowCount, activePanel);
-                    }
-                    g_equipPickerActive = false;
-                    g_equipPickerPanel  = nullptr;
-                    consumed = true;
-                }
-            } else if (param_1 == kInputEsc1 || param_1 == kInputEsc2) {
-                acclog::Write("EquipPicker", "Esc -> disarm (panel=%p)", activePanel);
-                g_equipPickerActive = false;
-                g_equipPickerPanel  = nullptr;
-                consumed = true;
-            }
-        }
-
-        // If picker handled the event, log + return early (mirrors Container).
-        if (consumed) {
-            int translated = acc::engine::ManagerTranslateCode(param_1);
-            const char* tag = " CONSUMED";
-            if (translated != param_1) {
-                acclog::Write("Menus.Input", "#%d this=%p key=logical(%d) -> %s(%d) val=%d%s",
-                              n, thisPtr, param_1,
-                              acc::engine::InputIndexName(translated), translated, param_2, tag);
-            } else {
-                acclog::Write("Menus.Input", "#%d this=%p key=%s(%d) val=%d%s",
-                              n, thisPtr, acc::engine::InputIndexName(param_1), param_1, param_2, tag);
-            }
-            return 1;
-        }
-        // Not consumed — fall through to generic handlers (slot zone).
-        // Watch for a slot-button Enter to arm the picker; done after the
-        // generic Enter activate block queues its Activate op so we
-        // can see what got selected.
-    }
 
     // Pillar 4 cycle keys (`,` `.` `Shift+,` `Shift+.` `-` `Shift+-`) — Phase 2
     // lay-off 3. Routed first because cycle is in-game-only and the handler
@@ -2391,8 +2064,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             // Arm the picker zone now: OnSelectSlot raises field33_0x4270 |= 1
             // and the user proceeds to LB_ITEMS browsing. Self-clears on
             // panel close, picker Esc, or BTN_EQUIP dispatch.
-            g_equipPickerActive = true;
-            g_equipPickerPanel  = g_chainPanel;
+            acc::menus::listbox::ArmEquipPicker(g_chainPanel);
             acclog::Write("EquipPicker", "armed via direct OnEnterSlot+OnSelectSlot "
                           "(Enter on slot id=%d btn=%p panel=%p)",
                           equipSlotCid, e.control, g_chainPanel);
@@ -3227,7 +2899,7 @@ static bool IsDialogPanelKind(PanelKind k) {
 // nullptr if none. CSWGuiDialog::replies_listbox is at child[1] in
 // observed panels (preceded by the message_label at child[0]); first-
 // match on IsListBox is robust enough for the dialog case.
-static void* FindListBoxChild(void* panel) {
+void* acc::menus::detail::FindListBoxChild(void* panel) {
     if (!panel) return nullptr;
     auto* list = reinterpret_cast<CExoArrayList*>(
         reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
@@ -3383,10 +3055,9 @@ static ContainerSelState g_containerSelState = { nullptr, -1 };
 
 // Equipment picker selection-tracking state — declared next to
 // g_containerSelState because MonitorEquipPickerSelection mirrors
-// MonitorContainerSelection. The arming flags g_equipPickerActive /
-// g_equipPickerPanel live earlier in the file (next to the other input-
-// pipeline globals like g_drilledIntoSubScreen) because the input handler
-// reads them before this declaration is reached.
+// MonitorContainerSelection. The arming flags moved into menus_listbox.cpp
+// in Step 4 of the refactor; the disarm-on-panel-gone hook below uses
+// the acc::menus::listbox accessors.
 struct EquipSelState {
     void* listBox;
     short lastSelection;
@@ -3533,10 +3204,9 @@ static void MonitorEquipPickerSelection() {
             g_equipSelState.listBox       = nullptr;
             g_equipSelState.lastSelection = -1;
         }
-        if (g_equipPickerActive) {
+        if (acc::menus::listbox::IsEquipPickerArmed()) {
             acclog::Write("EquipPicker", "disarm — panel gone from panels[]");
-            g_equipPickerActive = false;
-            g_equipPickerPanel  = nullptr;
+            acc::menus::listbox::DisarmEquipPicker();
         }
         return;
     }
