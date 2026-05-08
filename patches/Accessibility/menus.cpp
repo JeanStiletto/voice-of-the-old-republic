@@ -25,6 +25,7 @@
 
 #include "log.h"
 #include "tolk.h"
+#include "menus.h"           // public surface — Step 1 mod-wide tick split
 #include "engine_input.h"
 #include "engine_manager.h"
 #include "engine_offsets.h"
@@ -4859,173 +4860,43 @@ static void PollContainerGiveModeKey() {
                   fgPanel, btn);
 }
 
-// CSWGuiManager::Update — hooked mid-function at 0x40ce76. Per-frame tick run
-// once after input dispatch by CClientExoAppInternal::MainLoop. Used as a safe
-// callback site for the deferred MoveMouseToPosition triggered by chain
-// navigation: the engine's input pipeline is NOT mid-flight here, so cursor
-// updates can recurse through HandleMouseMove without re-entrancy.
+// Step 1 of the menus.cpp refactor (mod-wide tick dispatcher split):
 //
-// The cut byte is `mov eax, [ebp+0x8c]` (a panel-list field load); EBP is the
-// manager pointer (the engine's `mov ebp, ecx` at 0x40ce74 happens before our
-// hook). We pass EBP as the parameter for clarity even though we also have
-// the global at 0x7A39F4 — both resolve to the same singleton.
-extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
+//   * The OnUpdate detour entry and the per-tick fan-out across all
+//     mod subsystems now live in core_tick.cpp / core_tick.h. The
+//     hook contract (CSWGuiManager::Update @ 0x40ce76, function name
+//     "OnUpdate") is unchanged — the symbol just resolves to a
+//     different TU.
+//   * The three callables exposed below are what core_tick::Dispatch
+//     consumes from the menu-side. Internal helpers (ValidateTabbedPanel,
+//     MonitorFocusedControl, … and the file-static g_pending* state)
+//     stay file-static because the drain is glued to them; subsequent
+//     refactor steps split state and helpers further.
+
+namespace acc::menus {
+
+void ValidatePanels() {
     // Defensive — if the engine freed the panel that DetectTabsCluster
     // last latched onto, drop the stale pointer before any input handler
     // can deref it.
     ValidateTabbedPanel();
+}
 
+void TickMonitors() {
     MonitorFocusedControl();
     MonitorPanelContents();
     MonitorDialogReplies();
     MonitorContainerSelection();
     MonitorEquipPickerSelection();
     PollContainerGiveModeKey();
+}
 
-    // Pillar 4 cycle keys via Win32 polling. Stock kotor.ini doesn't bind
-    // `,/./-`, so OnHandleInputEvent never sees them in-world (the engine's
-    // keymap drops unbound scancodes before our manager-side hook).
-    // GetAsyncKeyState reads OS-level keyboard state directly, edge-detects
-    // rising edges, and self-gates on GetPlayerPosition. Verified
-    // 2026-05-04 from patch-20260503-215023.log: 86 events captured at the
-    // manager hook, zero with codes 103/104/105.
-    acc::cycle_input::PollWin32();
-
-    // Pillar 2 sub-feature D — AltGr speaks exact compass heading. Same
-    // Win32-polling rationale as the cycle keys: AltGr is unbound in
-    // stock kotor.ini, so the engine keymap drops the scancode before our
-    // manager hook sees it.
-    acc::announce_degrees::PollWin32();
-
-    // Phase 4 lay-off 2 view-mode probe — Shift+AltGr toggles the engine
-    // CClientOptions.mouse_look bit and announces the new state, so we
-    // can observe whether forcing Mouse Look ON gives us a free virtual
-    // cursor for view mode. On a toggle-to-ON, kicks off a synthetic
-    // mouse-sweep state machine driven by TickSweep; the user listens
-    // for spatial-audio pan to determine whether the engine reacts.
-    // Diagnostic-only; rebinds or goes away when view-mode design is
-    // locked.
-    acc::probe_mouselook::PollWin32();
-    acc::probe_mouselook::TickSweep();
-
-    // Phase 4 lay-off 3 — view-mode skeleton. B toggles the "stop and
-    // look around without budging the character" mode (lifecycle only;
-    // keyboard-driven camera input lands in lay-off 4). Shift+B fires
-    // the camera-behavior probe — snapshot CClientOptions for diffing
-    // before / after a manual Caps Lock press, to find where the engine
-    // stores Free Look state. Same Win32-polling rationale as the cycle
-    // keys: B is unbound in stock kotor.ini.
-    acc::view_mode::PollWin32();
-
-    // Autowalk progress watchdog. No-op when no recent WalkTo dispatch;
-    // emits at most two log lines (t+1s, t+3s) per dispatch to detect
-    // "engine accepted but didn't move" — the canonical autowalk failure
-    // mode (e.g. tutorial-locked sections, queue blocked by higher-priority
-    // action). Permanent instrumentation; reused by every guidance caller.
-    acc::guidance::TickProgressWatchdog();
-
-    // Auto-restore player input ~3s after a guidance / interact dispatch
-    // disabled it. Idle when no disable session is active. See
-    // engine_player.h SetPlayerInputEnabled doc + memory entry
-    // project_player_control_toggle.md for the why.
-    acc::engine::TickPlayerInputRestore();
-
-    // Phase 2 lay-off 9a — passive-selection narration loop. Reads engine
-    // LastTarget per tick; on change to a nav-relevant target, speaks the
-    // localised name + plays the per-category 3D cue at the object's
-    // position. Independent of the Pillar 4 cycle channel — both can fire
-    // on the same object; recency-suppress to be added if double-narration
-    // proves disruptive. Self-gates on player-loaded.
-    acc::passive_narrate::Tick();
-
-    // Phase 2 ad-hoc — octagonal direction-on-turn announcement (Pillar 2
-    // sub-feature C, pulled forward to give the user feedback that A/D /
-    // Q/E are turning the character vs. only the camera). Speaks "north" /
-    // "north-east" etc. on sector change with 5° hysteresis.
-    acc::turn_announce::Tick();
-
-    // Phase 2 lay-off 7 — Pillar 2 area + room transition announcements.
-    // Per-tick area-pointer + room-index delta detection; speaks "Bereich:
-    // {name}" on area change and "Raum: {name}" on room change. First
-    // observation after player-load also announces (gives orientation cue
-    // on game-load). Self-gates on player+area resolved.
-    acc::transitions::Tick();
-
-    // Phase 3 lay-off 3 — Pillar 1 Trigger 1 (per-feature distance-delta
-    // change-driven cues). 360° awareness, 5m default range, threshold-
-    // gated so steady-state walking is silent and only "approached new
-    // wall" / "passed corner of obstacle" / "object came into range"
-    // events fire cues. Self-detects area change to rebuild the wall
-    // cache; self-gates on player + area resolved + Pillar 1 setting.
-    // Phase 2 ad-hoc — camera-direction announcement on A/D. KOTOR 1's
-    // verified default control scheme: A/D rotate the *camera* around the
-    // character (NOT character facing), W moves the character in the
-    // camera's forward direction. Without camera feedback the user has
-    // no idea where the camera is pointing. Dead-reckons camera yaw from
-    // observed A/D held state + 200°/s default DPS; resyncs to character
-    // yaw on each character-yaw change (every W press snaps the character
-    // to face camera, anchoring the estimate).
-    //
-    // Order: runs *before* `spatial::change_detector::Tick()` so the
-    // dead-reckoned yaw is up-to-date this tick. Trigger 2 reads it via
-    // `view_mode::GetEffectiveOrientationYawDegrees` while view mode is
-    // active (Phase 4 lay-off 4a).
-    acc::camera_announce::Tick();
-
-    acc::spatial::change_detector::Tick();
-
-    // Phase 4 lay-off 4 — view-mode virtual cursor. Self-gates on
-    // IsActive(); idle when view mode is off. Runs *after*
-    // change_detector so the per-area wall cache is fresh (cursor
-    // collision tests against it). Order vs. camera_announce is also
-    // deliberate: cursor reads camera yaw via
-    // `camera_announce::TryGetCameraEngineYawDegrees`, which Tick()
-    // anchored a few lines above.
-    acc::view_mode::Tick();
-
-    // Phase 3 lay-off 5 — Pillar 1 stuck-detection. Per-tick
-    // displacement check seeds g_was_stuck for the OnPlayFootstep handler;
-    // when the character has movement intent (engine drives the walk
-    // anim → PlayFootstep fires) but didn't actually move, audio + visual
-    // footprint + rumble are suppressed for that step.
-    acc::audio::footstep_suppress::Tick();
-
-    // Phase 2 diagnostic — Q/E/Tab logging. Engine has its own
-    // target-cycle on Q/E (CClientExoAppInternal::SelectNearestObject
-    // @0x005fb050) per investigation Q6 + verified web sources. Logs
-    // keypresses with current LastTarget so we can correlate against
-    // passive_narrate's `LastTarget changed` lines and decide whether to
-    // delegate our `,`/`.` cycle to the engine's primitive or keep our
-    // own filter. Removable in one commit once decided.
-    acc::diag::engine_select::Tick();
-
-    // Radial action menu — verify the engine still has at least one
-    // populated row; auto-disarm when it's been cleared (action dispatched,
-    // target lost, etc.). Cheap (chain walk + 3 reads); idle when our gate
-    // is already disarmed.
-    acc::radial_menu::Tick();
-
-    // Phase 2 lay-off 9b — combined autowalk+interact hotkey (Enter).
-    // Resolves cycle focus first / engine LastTarget fallback, speaks
-    // localised pre-roll ("Sprich mit X" / "Öffne X" / "Hebe X auf"),
-    // then routes through the engine's native click pipeline:
-    // SetLastClickedOnTarget(handle) + HandleMouseClickInWorld. Engine
-    // walks the player + dispatches kind-appropriate interaction.
-    // Side-channel test of the parked autowalk blocker — if this path
-    // moves the player when raw AddMoveToPointAction doesn't, the engine
-    // click pipeline is the missing layer.
-    acc::interact::PollHotkey();
-
-    // Phase 2 lay-off 9-probe — in-world cursor-warp / passive-selection
-    // monitor. Probe RESOLVED 2026-05-04 — see investigation Q6 §"RE —
-    // does MoveMouseToPosition trigger world-hover?". Layer A viable
-    // (LastTarget populates organically); Layer C dropped. Probe stays in
-    // tree until 9a's narration loop is verified working in production
-    // against the same handle stream the probe logged; deletable in a
-    // single commit thereafter.
-    acc::probe::world_hover::TickMonitor();
-    acc::probe::world_hover::PollHotkey();
-
+// Drain the menu-side pending-op queue. Called from core_tick::Dispatch
+// after all monitors have run. Each queued operation was set by an
+// input handler (chain Enter, Esc, Left/Right) on this or a recent
+// tick; dispatching here keeps deep engine re-entry off the input-hook
+// stack.
+void TickPendingOps() {
     if (!g_pendingCursorMove && !g_pendingClick && !g_pendingActivate &&
         !g_pendingSliderInput && !g_pendingEquipSelect &&
         !g_pendingEquipCommit) return;
@@ -5222,6 +5093,8 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
     }
 
 }
+
+}  // namespace acc::menus
 
 // Read a snapshot of the listbox's cursor / flags / size into a string. Shared
 // between the click and key handlers so all listbox events log the same fields.
