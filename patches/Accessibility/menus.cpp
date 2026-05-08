@@ -69,6 +69,10 @@ static const char* FindSiblingLabel(void* panel, void* control,
                                     char* outBuf, size_t bufSize);
 static const char* LookupCycleCategory(void* control);
 static bool IsChainNavigable(void* control);
+static bool IsCycleFlankerArrow(void* panel, void* control);
+static bool IsClassSelectionIcon(void* panel, void* control);
+static const char* ClassLabelCacheLookup(void* panel, void* icon);
+static void ClassLabelCacheStore(void* panel, void* icon, const char* text);
 
 // Equipment screen control IDs from equip.gui (extracted via xoreos-tools
 // gff2xml). The 9 BTN_INV_* slot buttons, the item-picker listbox, and the
@@ -584,6 +588,160 @@ static const char* ExtractAnnounceableText(void* control,
         }
     }
 
+    // 9c. Per-kind label override for the chargen class-selection panel
+    //     (CSWGuiClassSelection, vtable=0x00758020). Panel hosts 6
+    //     image-only class-icon buttons (vtable=0x0073E658, empty text)
+    //     in class_selections[6]; the engine maintains the currently-
+    //     hovered class name in the parent's class_label, which it
+    //     updates via OnEnterButton.
+    //
+    //     Two timing hazards we work around:
+    //
+    //     1. STALE READ on focus event. SetActiveControl fires before the
+    //        engine's OnEnterButton has updated class_label, so reading
+    //        class_label at chain-step / SetActive time returns the
+    //        PREVIOUSLY focused icon's class. The chain step's
+    //        AnnounceControl would then speak "previous icon's class" —
+    //        an audible echo of the prior selection.
+    //
+    //     2. ECHO REVERT. After the engine briefly updates class_label
+    //        for the user's target icon, an internal bounce / re-select
+    //        chain (engine sets active_control back to a different
+    //        "selected" icon) reverts class_label to that other icon's
+    //        class. The per-frame focused-control monitor catches the
+    //        revert and speaks it as a phantom "echo of an earlier
+    //        navigated entry."
+    //
+    //     The fix: cache (icon → class_text) lazily — only populate when
+    //     active_control == icon AND class_label is non-empty AND the
+    //     nav-suppress budget has settled. Once cached, lock the entry:
+    //     subsequent extracts return the cached text regardless of the
+    //     engine's transient class_label state, so the revert can't fire
+    //     a phantom utterance. Combine with chain-step gating in the
+    //     navigation handler (skip AnnounceControl for class icons; let
+    //     the per-frame monitor speak when the cache is populated) to
+    //     also kill the stale-read echo.
+    //
+    //     Detection is positional: CSWGuiClassSelection isn't a CGuiInGame
+    //     slot (it's a top-level chargen panel), so IdentifyPanel never
+    //     resolves it. We check the panel's vtable directly and confirm
+    //     the focused control pointer lands on a multiple-of-0x25c offset
+    //     inside the class_selections[] array.
+    if (!source && IsClassSelectionIcon(ownerForPerkind, control)) {
+        const char* cached = ClassLabelCacheLookup(ownerForPerkind, control);
+        if (cached && cached[0] != '\0') {
+            size_t clen = strnlen(cached, 64);
+            if (clen + 1 <= bufSize) {
+                memcpy(outBuf, cached, clen + 1);
+                source = "perkind-classsel";
+            }
+        } else {
+            // Cache miss. Populate only when active_control == icon AND
+            // class_label is non-empty. CSWGuiClassSelection runs
+            // OnEnterButton synchronously inside its SetActiveControl
+            // override, so by the time active_control == icon is
+            // observable, class_label has already been updated to the
+            // matching class — this gives us the icon's CORRECT class
+            // text in a single read. First-write-wins locking on the
+            // cache then keeps subsequent reads stable, immune to the
+            // engine's later bounces / class_label reverts.
+            void* activeCtrl = *reinterpret_cast<void**>(
+                reinterpret_cast<unsigned char*>(ownerForPerkind) +
+                kPanelActiveControlOffset);
+            if (activeCtrl == control) {
+                void* classLabel =
+                    reinterpret_cast<unsigned char*>(ownerForPerkind) +
+                    kClassSelectionClassLabelOffset;
+                char text[256];
+                if (ExtractTextOrStrRefIndirect(classLabel,
+                                                kLabelTextOffset,
+                                                kLabelStrRefOffset,
+                                                kLabelTextObjectOffset,
+                                                text, sizeof(text)) &&
+                    text[0] != '\0') {
+                    size_t tlen = strnlen(text, sizeof(text));
+                    if (tlen + 1 <= bufSize) {
+                        ClassLabelCacheStore(ownerForPerkind, control, text);
+                        memcpy(outBuf, text, tlen + 1);
+                        source = "perkind-classsel";
+                        acclog::Write("Menus.PerKind",
+                                      "ClassSelection cache+speak control=%p "
+                                      "-> \"%s\"", control, outBuf);
+                    }
+                }
+            }
+        }
+    }
+
+    // 9d. Per-kind label override for the chargen portrait-selection panel
+    //     (CSWGuiPortraitCharGen, vtable=0x00759ea8). The left/right arrow
+    //     buttons (image-only, empty inline text) cycle the portrait; the
+    //     engine maintains the currently-shown portrait name in the parent's
+    //     portrait_label. Compose a directional prefix + the portrait name
+    //     so the user hears both the cycle direction on focus AND the new
+    //     name when the engine cycles (the per-frame focused-control monitor
+    //     re-extracts on every tick — when portrait_label changes, the
+    //     composed string changes too, and the diff fires speech).
+    if (!source && ownerForPerkind) {
+        void** ownerVt = *reinterpret_cast<void***>(ownerForPerkind);
+        if (reinterpret_cast<uintptr_t>(ownerVt) ==
+                kVtableCSWGuiPortraitCharGen) {
+            auto* panelBase = reinterpret_cast<unsigned char*>(ownerForPerkind);
+            auto* ctrlBase  = reinterpret_cast<unsigned char*>(control);
+            ptrdiff_t off   = ctrlBase - panelBase;
+            acc::strings::Id directionId = acc::strings::Id::Count_;
+            if (off == (ptrdiff_t)kPortraitLeftArrowOffset) {
+                directionId = acc::strings::Id::PortraitArrowPrev;
+            } else if (off == (ptrdiff_t)kPortraitRightArrowOffset) {
+                directionId = acc::strings::Id::PortraitArrowNext;
+            }
+            if (directionId != acc::strings::Id::Count_) {
+                // The struct has a portrait_label field, but in observed runs
+                // the engine never populates its gui_string / inline CExoString
+                // (portrait_label is essentially an empty CSWGuiLabel — the
+                // visible portrait is a 3D head scene + cycle index, with no
+                // text caption rendered). Try the label first in case a
+                // future install/locale fills it; otherwise fall back to
+                // portrait_id, which IS maintained (UpdatePortraitButton
+                // increments it on each cycle activation) and gives the user
+                // a stable cycle position to count by.
+                void* portraitLabel = panelBase + kPortraitLabelOffset;
+                char portraitText[256];
+                bool gotPortrait = ExtractTextOrStrRefIndirect(
+                    portraitLabel,
+                    kLabelTextOffset,
+                    kLabelStrRefOffset,
+                    kLabelTextObjectOffset,
+                    portraitText, sizeof(portraitText));
+                const char* direction = acc::strings::Get(directionId);
+                if (gotPortrait && portraitText[0] != '\0') {
+                    snprintf(outBuf, bufSize,
+                             acc::strings::Get(
+                                 acc::strings::Id::FmtPortraitArrow),
+                             direction, portraitText);
+                } else {
+                    uint32_t portraitId =
+                        ReadU32(ownerForPerkind, kPortraitIdOffset);
+                    snprintf(outBuf, bufSize,
+                             acc::strings::Get(
+                                 acc::strings::Id::FmtPortraitArrowId),
+                             direction, (int)(portraitId + 1));
+                }
+                if (outBuf[0] != '\0') {
+                    source = "perkind-portrait";
+                    acclog::Write("Menus.PerKind",
+                                  "PortraitCharGen control=%p direction=%s "
+                                  "-> \"%s\"",
+                                  control,
+                                  directionId ==
+                                      acc::strings::Id::PortraitArrowPrev
+                                      ? "prev" : "next",
+                                  outBuf);
+                }
+            }
+        }
+    }
+
     // 9. Sibling-label fallback for chain-navigable controls with no text.
     //    Image-only icon buttons (vtable=0x0073E658 in CSWGuiInGameMenu —
     //    Equipment / Inventory / Character / Map / Abilities / Journal /
@@ -596,7 +754,14 @@ static const char* ExtractAnnounceableText(void* control,
     //    Gated on IsChainNavigable(control) so we only fire for buttons
     //    the user can actually focus — a label on its own (already
     //    extractable elsewhere) wouldn't hit this path.
-    if (!source && g_currentPanel && IsChainNavigable(control)) {
+    //
+    //    Cycle flanker arrows (chargen ± and Difficulty-style left/right)
+    //    are suppressed here so the cycle-mechanism's empty-text predicate
+    //    engages. Without the suppression the nearest plain label would
+    //    paint both flankers (e.g. "Stärke" for the + and the -),
+    //    defeating both the chain squash and FindAdjacentArrow.
+    if (!source && g_currentPanel && IsChainNavigable(control) &&
+        !IsCycleFlankerArrow(g_currentPanel, control)) {
         char label[256];
         if (FindSiblingLabel(g_currentPanel, control,
                              label, sizeof(label))) {
@@ -841,7 +1006,7 @@ static void* g_pendingTarget = nullptr;   // for self-dedup in OnSetActiveContro
 // without over-suppressing legitimate later focus changes (mouse hover,
 // next user action), since by the time the next user input arrives the
 // budget has decremented to 0.
-static int g_navSpeechSuppressBudget = 0;
+int g_navSpeechSuppressBudget = 0;
 
 // Deferred click-sim. When set, OnUpdate dispatches click directly to
 // g_pendingClickTarget via its vtable[6] (HandleLMouseDown) and vtable[7]
@@ -1083,6 +1248,20 @@ static void AnnounceControl(void* control) {
     const char* source = ExtractAnnounceableText(control, text, sizeof(text));
     if (source) {
         tolk::Speak(text, /*interrupt=*/false);
+        // Sync MonitorFocusedControl's same-control state so its diff loop
+        // doesn't re-speak this control's text on the next tick. Without
+        // this, the monitor would treat the focus change as new (else
+        // branch) and speak again.
+        g_focusMonitorControl = control;
+        strncpy_s(g_focusMonitorText, text, _TRUNCATE);
+        return;
+    }
+    // Chargen class icons reach here when their cache hasn't been populated
+    // yet (first-time visit, before any SetActiveControl has trailed past
+    // them and the OnSetActiveControl prefill has cached their class).
+    // Stay silent and let the per-frame monitor speak when the cache
+    // populates — better than reading "control 11" out loud.
+    if (g_currentPanel && IsClassSelectionIcon(g_currentPanel, control)) {
         return;
     }
     int id = *reinterpret_cast<int*>(
@@ -1509,6 +1688,77 @@ static bool QueueButtonByIdActivate(void* panel, int buttonId,
     return true;
 }
 
+// Positional detector for chargen class-icon buttons. The 6 class icons
+// are CSWGuiClassSelChar[6] starting at panel+0x6c with stride 0x25c, and
+// each CSWGuiClassSelChar embeds a CSWGuiButton at offset 0 — so a focused
+// class-icon control pointer lands exactly on `panel + 0x6c + i * 0x25c`
+// for some 0 ≤ i < 6.
+static bool IsClassSelectionIcon(void* panel, void* control) {
+    if (!panel || !control) return false;
+    void** vt = *reinterpret_cast<void***>(panel);
+    if (reinterpret_cast<uintptr_t>(vt) != kVtableCSWGuiClassSelection) {
+        return false;
+    }
+    auto* panelBase = reinterpret_cast<unsigned char*>(panel);
+    auto* ctrlBase  = reinterpret_cast<unsigned char*>(control);
+    ptrdiff_t off = ctrlBase - panelBase;
+    ptrdiff_t arrayEnd = (ptrdiff_t)(kClassSelectionsArrayOffset +
+                                     kClassSelectionsCount * kClassSelCharSize);
+    if (off < (ptrdiff_t)kClassSelectionsArrayOffset || off >= arrayEnd) {
+        return false;
+    }
+    return ((off - (ptrdiff_t)kClassSelectionsArrayOffset) %
+            (ptrdiff_t)kClassSelCharSize) == 0;
+}
+
+// Per-icon class-name cache for CSWGuiClassSelection. See the long
+// comment in ExtractAnnounceableText step 9c for why this exists. Sized
+// to hold all 6 icons of a single panel; key is (panel, icon). Keyed by
+// panel as well as icon so a chargen restart on a new panel instance
+// doesn't surface stale entries from the previous run. First-write
+// wins — once an entry is locked, subsequent updates are ignored so the
+// engine's transient class_label revert can't corrupt a settled value.
+struct ClassLabelCacheEntry {
+    void* panel;
+    void* icon;
+    char  text[64];
+};
+static constexpr int kClassLabelCacheSize = 8;
+static ClassLabelCacheEntry g_classLabelCache[kClassLabelCacheSize];
+
+static const char* ClassLabelCacheLookup(void* panel, void* icon) {
+    for (int i = 0; i < kClassLabelCacheSize; ++i) {
+        const auto& e = g_classLabelCache[i];
+        if (e.panel == panel && e.icon == icon && e.text[0] != '\0') {
+            return e.text;
+        }
+    }
+    return nullptr;
+}
+
+static void ClassLabelCacheStore(void* panel, void* icon, const char* text) {
+    if (!panel || !icon || !text || text[0] == '\0') return;
+    // First-write wins for a (panel, icon) pair: bail out if already cached.
+    for (int i = 0; i < kClassLabelCacheSize; ++i) {
+        const auto& e = g_classLabelCache[i];
+        if (e.panel == panel && e.icon == icon) return;
+    }
+    // Find a free slot, evicting any entry from a different panel if full.
+    int slot = -1;
+    for (int i = 0; i < kClassLabelCacheSize; ++i) {
+        if (g_classLabelCache[i].panel == nullptr) { slot = i; break; }
+    }
+    if (slot < 0) {
+        for (int i = 0; i < kClassLabelCacheSize; ++i) {
+            if (g_classLabelCache[i].panel != panel) { slot = i; break; }
+        }
+    }
+    if (slot < 0) return;
+    g_classLabelCache[slot].panel = panel;
+    g_classLabelCache[slot].icon  = icon;
+    strncpy_s(g_classLabelCache[slot].text, text, _TRUNCATE);
+}
+
 // Find the closest navigable empty-text neighbour of `focused` in
 // `panel.controls`, on the visual left or right at the same y-row. Used to
 // dispatch Left/Right arrow presses to cycle-button flanker arrows: the
@@ -1564,6 +1814,75 @@ static void* FindAdjacentArrow(void* panel, void* focused, bool toRight) {
         }
     }
     return best;
+}
+
+// True if `control` is a chain-navigable button-like widget with empty
+// own text AND has a same-row text-bearing CSWGuiButton neighbour within
+// FindAdjacentArrow's tolerance. Identifies the bare flanker arrows of a
+// cycle widget (Difficulty, chargen attribute ±, chargen skill ±, …) so
+// the sibling-label fallback can suppress its match — the squash logic
+// in RebindChain and FindAdjacentArrow's empty-text predicate both
+// require ExtractAnnounceableText to return null on these flankers, but
+// the sibling-label fallback would otherwise paint them with the nearest
+// CSWGuiLabel (e.g. "Stärke" for both ± arrows around an attribute value
+// button), defeating the cycle mechanism: the squash skips the arrows
+// (they stay in the chain), and FindAdjacentArrow skips them as
+// candidates (Left/Right on the value button finds no neighbour).
+//
+// CSWGuiInGameMenu icons are NOT affected: their same-row neighbours are
+// CSWGuiLabelHilight, not buttons. CSWGuiSlider category resolution uses
+// FindSiblingLabel against a slider control, never a button, so this
+// predicate never fires there either.
+static bool IsCycleFlankerArrow(void* panel, void* control) {
+    if (!panel || !control) return false;
+    if (CallDowncast(control, kVtableAsButton) == nullptr) return false;
+
+    // Self must have empty own text — real cycle value buttons (carrying
+    // "Normal", "8", "Aus", …) keep the sibling-label fallback off the
+    // table anyway, so this check guards the "image-only" classification.
+    char selfTxt[64];
+    if (ExtractTextOrStrRefIndirect(control,
+                                    kButtonTextOffset,
+                                    kButtonStrRefOffset,
+                                    kButtonTextObjectOffset,
+                                    selfTxt, sizeof(selfTxt))) {
+        return false;
+    }
+
+    int focusCx, focusCy;
+    if (!GetControlCenter(control, focusCx, focusCy)) return false;
+
+    auto* list = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+    if (!list || !list->data || list->size <= 0) return false;
+
+    constexpr int kSameRowDyTol = 5;
+    constexpr int kMaxDxPx      = 80;  // matches FindAdjacentArrow's reach
+
+    int n = list->size > 256 ? 256 : list->size;
+    for (int i = 0; i < n; ++i) {
+        void* c = list->data[i];
+        if (!c || c == control) continue;
+        if (CallDowncast(c, kVtableAsButton) == nullptr) continue;
+
+        int cx, cy;
+        if (!GetControlCenter(c, cx, cy)) continue;
+        int dy = cy - focusCy;
+        if (dy < -kSameRowDyTol || dy > kSameRowDyTol) continue;
+        int dx = cx - focusCx;
+        int adx = dx < 0 ? -dx : dx;
+        if (adx == 0 || adx > kMaxDxPx) continue;
+
+        char nbrTxt[64];
+        if (ExtractTextOrStrRefIndirect(c,
+                                        kButtonTextOffset,
+                                        kButtonStrRefOffset,
+                                        kButtonTextObjectOffset,
+                                        nbrTxt, sizeof(nbrTxt))) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // Find the closest label-like sibling of `control` on the panel. Two
@@ -1828,14 +2147,22 @@ static void RebindChain(void* panel) {
     }
 
     // Squash cycle-arrow flankers from the chain. An empty-text navigable
-    // entry that shares a y-row with a text-bearing entry is a cycle arrow
-    // (left/right of a value-display button: `[◀] Normal [▶]`). The user
-    // reaches them via Left/Right cycle dispatch on the value-display
-    // entry — having them in the chain just produces "control N"
-    // placeholders Up/Down would land on. Lone empty-text entries are
-    // kept (we can't say what they are, but the user might want to reach
-    // them for Enter activation). Same-row threshold matches
-    // FindAdjacentArrow's tolerance.
+    // entry that shares a y-row with a NEARBY text-bearing entry is a
+    // cycle arrow (left/right of a value-display button: `[◀] Normal [▶]`).
+    // The user reaches them via Left/Right cycle dispatch on the value-
+    // display entry — having them in the chain just produces "control N"
+    // placeholders Up/Down would land on.
+    //
+    // Two thresholds gate the squash:
+    //   - Same-row dy <= 5 (matches FindAdjacentArrow's tolerance).
+    //   - Same x-distance <= 80 (also FindAdjacentArrow's reach). Without
+    //     the x-bound, parallel-choice rows like the chargen class-icon
+    //     row collapse to the single icon whose text resolves first
+    //     (initial active_control), squashing the other 5 image-only
+    //     icons as if they were cycle flankers of it.
+    //
+    // Lone empty-text entries with no NEARBY text-bearing same-row
+    // neighbour are kept.
     {
         int writeIdx = 0;
         for (int i = 0; i < g_chainCount; ++i) {
@@ -1847,12 +2174,16 @@ static void RebindChain(void* panel) {
                 g_chain[writeIdx++] = g_chain[i];
                 continue;
             }
+            constexpr int kSquashDxMax = 80;
             bool sameRowWithText = false;
             for (int j = 0; j < g_chainCount; ++j) {
                 if (j == i) continue;
                 int dy = g_chain[j].cy - g_chain[i].cy;
                 if (dy < 0) dy = -dy;
                 if (dy > 5) continue;
+                int dx = g_chain[j].cx - g_chain[i].cx;
+                if (dx < 0) dx = -dx;
+                if (dx == 0 || dx > kSquashDxMax) continue;
                 char tmp2[64];
                 if (ExtractAnnounceableText(g_chain[j].control,
                                             tmp2, sizeof(tmp2),
@@ -2035,6 +2366,51 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
 
     static int n = 0;
     ++n;
+
+    // Chargen class-icon cache pump. The hook fires at the very entry of
+    // CSWGuiPanel::SetActiveControl — before the function writes the new
+    // active_control and before any OnEnterButton runs for the new icon.
+    // So at this moment:
+    //   - panel.active_control still points at the OUTGOING icon (the one
+    //     the user is leaving)
+    //   - class_label still carries that outgoing icon's class string
+    //     (the engine populated it when that icon previously took focus)
+    //
+    // Caching (outgoing_icon -> class_label) on every transition closes
+    // the gap that the per-frame monitor leaves under rapid arrow input:
+    // the monitor only catches icons the user dwells on, but each
+    // SetActiveControl event is fired regardless of how briefly the user
+    // passed through. The icon the user finally settles on remains
+    // un-cached by this path (no subsequent SetActiveControl trails it),
+    // and the existing monitor-side cache populate covers that one.
+    if (panel) {
+        void** pVt = *reinterpret_cast<void***>(panel);
+        if (reinterpret_cast<uintptr_t>(pVt) ==
+                kVtableCSWGuiClassSelection) {
+            void* outgoing = *reinterpret_cast<void**>(
+                reinterpret_cast<unsigned char*>(panel) +
+                kPanelActiveControlOffset);
+            if (outgoing && outgoing != newControl &&
+                IsClassSelectionIcon(panel, outgoing) &&
+                ClassLabelCacheLookup(panel, outgoing) == nullptr) {
+                void* classLabel =
+                    reinterpret_cast<unsigned char*>(panel) +
+                    kClassSelectionClassLabelOffset;
+                char text[256];
+                if (ExtractTextOrStrRefIndirect(classLabel,
+                                                kLabelTextOffset,
+                                                kLabelStrRefOffset,
+                                                kLabelTextObjectOffset,
+                                                text, sizeof(text)) &&
+                    text[0] != '\0') {
+                    ClassLabelCacheStore(panel, outgoing, text);
+                    acclog::Write("Menus.PerKind",
+                                  "ClassSelection prefill outgoing=%p "
+                                  "-> \"%s\"", outgoing, text);
+                }
+            }
+        }
+    }
 
     // Track the currently-focused panel for the chain-navigation handler.
     // Even NULL newControl events update this — what matters is which panel
@@ -3087,6 +3463,13 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             g_chainIndex = newIndex;
 
             ChainEntry& e = g_chain[g_chainIndex];
+            // For chargen class icons AnnounceControl bails silently when
+            // the cache for this icon hasn't been populated yet (first-time
+            // visit). On revisits the cache hits and speech fires
+            // immediately, sidestepping the OnEnterButton race that would
+            // otherwise speak the previous icon's class. See
+            // ExtractAnnounceableText step 9c and the OnSetActiveControl
+            // prefill path.
             AnnounceControl(e.control);
             int cursorY = e.cy;
             if (!e.textOnly) {
@@ -3358,8 +3741,19 @@ static void MonitorFocusedControl() {
                           focused, text);
         }
     } else {
+        // Focus changed since the last tick. Speak the new text — covers
+        // chain targets that AnnounceControl skipped (chargen class icons,
+        // where the cache is empty at chain-step time and only populates
+        // on a later tick once active_control matches and the engine has
+        // run OnEnterButton). AnnounceControl pre-populates this state
+        // on its own announce path, so non-class chain steps that already
+        // spoke fall into the same-control branch above instead and avoid
+        // double-speak.
         g_focusMonitorControl = focused;
         strncpy_s(g_focusMonitorText, text, _TRUNCATE);
+        tolk::Speak(text, /*interrupt=*/false);
+        acclog::Write("Monitor", "focus changed -> %p text=\"%s\"",
+                      focused, text);
     }
 }
 

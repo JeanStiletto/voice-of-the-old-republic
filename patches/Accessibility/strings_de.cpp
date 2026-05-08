@@ -103,6 +103,11 @@ const char* Get(Id id) {
         case Id::LevelUpOpen:          return "Stufenaufstieg";
         case Id::LevelUpFailed:        return "Stufenaufstieg fehlgeschlagen";
 
+        case Id::PortraitArrowPrev:    return "Vorheriges Portr\xE4t";  // Porträt
+        case Id::PortraitArrowNext:    return "N\xE4" "chstes Portr\xE4t"; // Nächstes Porträt
+        case Id::FmtPortraitArrow:     return "%s: %s";
+        case Id::FmtPortraitArrowId:   return "%s %d";
+
         case Id::Count_:               return "";
     }
     return "";

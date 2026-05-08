@@ -274,6 +274,22 @@ enum class Id : int {
     LevelUpOpen,
     LevelUpFailed,
 
+    // ---- Chargen portrait selection (CSWGuiPortraitCharGen).
+    //      The left/right arrow buttons have no own text (image-only);
+    //      the engine maintains the current portrait name in the parent's
+    //      portrait_label. ExtractAnnounceableText composes:
+    //        FmtPortraitArrow(direction_label, portrait_name)
+    //      so the user hears both the cycle direction and the current
+    //      portrait name on focus, and the diff-monitor re-speaks the
+    //      composed string when the engine cycles to the next portrait.
+    PortraitArrowPrev,
+    PortraitArrowNext,
+    FmtPortraitArrow,
+    // FmtPortraitArrowId — fallback when portrait_label.gui_string is empty
+    // (the engine doesn't actually fill the label even though the struct has
+    // one). Args: direction (`%s`), portrait_id one-based (`%d`).
+    FmtPortraitArrowId,
+
     Count_,
 };
 

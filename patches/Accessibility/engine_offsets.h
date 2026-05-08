@@ -130,6 +130,62 @@ constexpr uintptr_t kVtableSlider = 0x0073E9D0;
 constexpr uintptr_t kVtableListBox = 0x0073E840;
 
 // ---------------------------------------------------------------------------
+// CSWGuiClassSelection (chargen "Klassenauswahl" panel — also backs the
+// second-level "Standard- vs. Eigener Charakter" prompt). Verified against
+// k1_win_gog_swkotor.exe.xml SYMBOL @ 0x00758020 + STRUCTURE size 0x1560.
+//
+//   +0x00..+0x64   CSWGuiPanel panel
+//   +0x64          undefined4
+//   +0x68          CSWCCreature* char_gen_creature
+//   +0x6c          CSWGuiClassSelChar class_selections[6]   (6 * 0x25c = 0xe28)
+//   +0xe94         CSWGuiLabel character_gen_label
+//   +0xfd4         CSWGuiLabel instruction_label
+//   +0x1114        CSWGuiLabel description_label
+//   +0x1254        CSWGuiLabel class_label  ← currently-focused class name
+//   +0x1394        CSWGuiButton back_button
+//
+// CSWGuiClassSelChar embeds CSWGuiButton at offset 0; panel.controls[]
+// stores pointers to that embedded button (single inheritance), so a
+// focused class-icon control pointer lands on a multiple-of-0x25c offset
+// inside the class_selections[] range.
+//
+// `class_label` is the engine's source of truth for the focused class name
+// (engine updates it on hover/focus via CSWGuiClassSelection::OnEnterButton
+// @ 0x006dba70). Read its gui_string instead of the icon button's empty
+// inline text or the misleading sibling-label fallback.
+// ---------------------------------------------------------------------------
+constexpr uintptr_t kVtableCSWGuiClassSelection      = 0x00758020;
+constexpr size_t    kClassSelectionsArrayOffset      = 0x6c;
+constexpr size_t    kClassSelCharSize                = 0x25c;
+constexpr int       kClassSelectionsCount            = 6;
+constexpr size_t    kClassSelectionClassLabelOffset  = 0x1254;
+
+// ---------------------------------------------------------------------------
+// CSWGuiPortraitCharGen (chargen "Porträtauswahl" panel). Verified against
+// k1_win_gog_swkotor.exe.xml SYMBOL @ 0x00759ea8 + STRUCTURE size 0x1240.
+//
+//   +0x00..+0x64   CSWGuiPanel panel
+//   +0x6c          CSWGuiLabel main_title
+//   +0x1ac         CSWGuiLabel sub_title
+//   +0x2ec         CSWGuiLabel portrait_label  ← engine-maintained portrait name
+//   +0xafc         CSWGuiButton accept_button
+//   +0xcc0         CSWGuiButton back_button
+//   +0xe84         CSWGuiButton right_arrow_button (image-only, cycles +1)
+//   +0x1048        CSWGuiButton left_arrow_button  (image-only, cycles -1)
+//   +0x1238        ulong portrait_id              (raw cycle index)
+//
+// The arrow buttons have no own text. The engine updates portrait_label
+// as the user cycles (via UpdatePortraitButton @ 0x006f8ad0); we read its
+// gui_string and prefix with a localised cycle-direction phrase so the
+// user hears both the direction and the new portrait name on each cycle.
+// ---------------------------------------------------------------------------
+constexpr uintptr_t kVtableCSWGuiPortraitCharGen     = 0x00759ea8;
+constexpr size_t    kPortraitLabelOffset             = 0x2ec;
+constexpr size_t    kPortraitRightArrowOffset        = 0xe84;
+constexpr size_t    kPortraitLeftArrowOffset         = 0x1048;
+constexpr size_t    kPortraitIdOffset                = 0x1238;
+
+// ---------------------------------------------------------------------------
 // Container offsets verified against Lane's SARIF (DATATYPE entries for
 // CSWGuiPanel and CSWGuiListBox). CExoArrayList layout:
 //   +0x00  T**      data         (heap array of element pointers)
