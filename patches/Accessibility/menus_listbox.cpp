@@ -1,16 +1,17 @@
 // KOTOR Accessibility — listbox-driven panel input dispatcher.
 //
-// Step 4 of the menus.cpp refactor. See menus_listbox.h for the
-// motivation. This file holds:
+// Step 4 of the menus.cpp refactor (with post-Step-5 monitor co-location).
+// See menus_listbox.h for the motivation. This file holds:
 //
 //   * The ListBoxPanelSpec struct (private) — one entry per panel kind.
 //   * Three spec entries: Container, SaveLoad, EquipPicker. Each carries
 //     ~5-6 small static callbacks that capture its quirks (announce
 //     format, button IDs, custom Enter dispatch, etc.).
 //   * The dispatcher TryHandleInput that walks the table.
-//   * The EquipPicker armed/panel state + accessors (state ownership
-//     follows the handler that primarily uses it; menus.cpp's two outside
-//     touch sites — slot-arm + monitor-disarm — go through accessors).
+//   * The EquipPicker armed/panel state + accessors.
+//   * The 3 subsystem-paired monitors (container, equip-picker, container
+//     give-mode key poll) — co-located with the spec entries that own the
+//     state they watch.
 
 #include <windows.h>
 #include <cstdint>
@@ -19,6 +20,7 @@
 #include "menus_listbox.h"
 
 #include "engine_input.h"
+#include "engine_manager.h"
 #include "engine_offsets.h"
 #include "engine_panels.h"
 #include "engine_reads.h"
@@ -45,6 +47,7 @@ using acc::menus::detail::QueueButtonByIdActivate;
 // .gui-resource-baked, stable across localizations.
 namespace {
 constexpr int kContainerBtnOkId      = 3;
+constexpr int kContainerBtnGiveId    = 4;
 constexpr int kContainerBtnCancelId  = 5;
 
 constexpr int kSaveLoadLbGamesId     =  0;
@@ -522,6 +525,256 @@ bool TryHandleInput(int n, void* thisPtr, void* activePanel,
         return false;
     }
     return false;
+}
+
+// ============================================================================
+// Subsystem-paired monitors. Each watches state owned by one of the spec
+// entries above and announces changes per tick. Co-located here as of the
+// post-Step-5 cleanup so state + handler + monitor live in one TU. Called
+// from TickListboxMonitors below, which is fanned out from menus.cpp's
+// TickMonitors.
+// ============================================================================
+
+namespace {
+
+struct ContainerSelState {
+    void* listBox;
+    short lastSelection;
+};
+ContainerSelState s_containerSelState = { nullptr, -1 };
+
+struct EquipSelState {
+    void* listBox;
+    short lastSelection;
+};
+EquipSelState s_equipSelState = { nullptr, -1 };
+
+void MonitorContainerSelection() {
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!mgr) return;
+    auto* base = reinterpret_cast<unsigned char*>(mgr);
+    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+
+    void* containerPanel = nullptr;
+    if (panelData && panelCount > 0) {
+        int n = panelCount > 16 ? 16 : panelCount;
+        for (int i = 0; i < n; ++i) {
+            void* p = panelData[i];
+            if (!p) continue;
+            if (IdentifyPanel(p) == PanelKind::Container) {
+                containerPanel = p;
+                break;
+            }
+        }
+    }
+
+    if (!containerPanel) {
+        if (s_containerSelState.listBox) {
+            acclog::Write("Menus.Container", "monitor disarmed: no Container panel in stack");
+            s_containerSelState.listBox = nullptr;
+            s_containerSelState.lastSelection = -1;
+        }
+        return;
+    }
+
+    void* lb = FindListBoxChild(containerPanel);
+    if (!lb) return;
+
+    auto* lbList = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
+    int rowCount = (lbList && lbList->data) ? lbList->size : 0;
+
+    short selIdx = *reinterpret_cast<short*>(
+        reinterpret_cast<unsigned char*>(lb) + kListBoxSelectionIndexOffset);
+
+    if (s_containerSelState.listBox != lb) {
+        s_containerSelState.listBox       = lb;
+        s_containerSelState.lastSelection = selIdx;
+        if (rowCount <= 0) {
+            tolk::Speak(acc::strings::Get(acc::strings::Id::ContainerEmpty),
+                        /*interrupt=*/false);
+            acclog::Write("Menus.Container", "monitor armed: panel=%p lb=%p empty initialSel=%d",
+                          containerPanel, lb, selIdx);
+        } else if (rowCount == 1) {
+            tolk::Speak(acc::strings::Get(acc::strings::Id::ContainerOneItem),
+                        /*interrupt=*/false);
+            acclog::Write("Menus.Container", "monitor armed: panel=%p lb=%p count=1 initialSel=%d",
+                          containerPanel, lb, selIdx);
+        } else {
+            char msg[64];
+            snprintf(msg, sizeof(msg),
+                     acc::strings::Get(acc::strings::Id::FmtContainerItems),
+                     rowCount);
+            tolk::Speak(msg, /*interrupt=*/false);
+            acclog::Write("Menus.Container", "monitor armed: panel=%p lb=%p count=%d initialSel=%d",
+                          containerPanel, lb, rowCount, selIdx);
+        }
+        return;
+    }
+
+    if (selIdx == s_containerSelState.lastSelection) return;
+    short prev = s_containerSelState.lastSelection;
+    s_containerSelState.lastSelection = selIdx;
+
+    if (selIdx < 0) {
+        acclog::Write("Menus.Container", "selection cleared: lb=%p prev=%d", lb, prev);
+        return;
+    }
+    if (!lbList || !lbList->data || selIdx >= lbList->size) {
+        acclog::Write("Menus.Container", "selection out of range: lb=%p sel=%d size=%d",
+                      lb, selIdx, lbList ? lbList->size : -1);
+        return;
+    }
+    void* row = lbList->data[selIdx];
+    if (!row) return;
+
+    char rowText[256];
+    const char* src = acc::menus::extract::FromControl(row, rowText, sizeof(rowText));
+    if (!src) {
+        acclog::Write("Menus.Container", "row %d (lb=%p) no announceable text", selIdx, lb);
+        return;
+    }
+
+    char msg[320];
+    snprintf(msg, sizeof(msg),
+             acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
+             rowText, selIdx + 1, rowCount);
+    tolk::Speak(msg, /*interrupt=*/false);
+    acclog::Write("Menus.Container", "row lb=%p sel=%d (was %d) text=\"%s\"",
+                  lb, selIdx, prev, rowText);
+}
+
+void MonitorEquipPickerSelection() {
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!mgr) return;
+    auto* base = reinterpret_cast<unsigned char*>(mgr);
+    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+
+    void* equipPanel = nullptr;
+    if (panelData && panelCount > 0) {
+        int n = panelCount > 16 ? 16 : panelCount;
+        for (int i = 0; i < n; ++i) {
+            void* p = panelData[i];
+            if (!p) continue;
+            if (IdentifyPanel(p) == PanelKind::InGameEquip) {
+                equipPanel = p;
+                break;
+            }
+        }
+    }
+
+    if (!equipPanel) {
+        if (s_equipSelState.listBox) {
+            acclog::Write("Menus.EquipPicker", "monitor disarmed: no InGameEquip panel in stack");
+            s_equipSelState.listBox       = nullptr;
+            s_equipSelState.lastSelection = -1;
+        }
+        if (s_equipPickerActive) {
+            acclog::Write("EquipPicker", "disarm — panel gone from panels[]");
+            s_equipPickerActive = false;
+            s_equipPickerPanel  = nullptr;
+        }
+        return;
+    }
+
+    void* lb = FindControlById(equipPanel, kEquipLbItemsId);
+    if (!lb) return;
+
+    auto* lbList = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
+    int rowCount = (lbList && lbList->data) ? lbList->size : 0;
+
+    short selIdx = *reinterpret_cast<short*>(
+        reinterpret_cast<unsigned char*>(lb) + kListBoxSelectionIndexOffset);
+
+    if (s_equipSelState.listBox != lb) {
+        s_equipSelState.listBox       = lb;
+        s_equipSelState.lastSelection = selIdx;
+        acclog::Write("Menus.EquipPicker", "monitor armed: panel=%p lb=%p rows=%d initialSel=%d",
+                      equipPanel, lb, rowCount, selIdx);
+        return;
+    }
+
+    if (selIdx == s_equipSelState.lastSelection) return;
+    short prev = s_equipSelState.lastSelection;
+    s_equipSelState.lastSelection = selIdx;
+
+    if (selIdx < 0) {
+        acclog::Write("Menus.EquipPicker", "selection cleared: lb=%p prev=%d", lb, prev);
+        return;
+    }
+    if (selIdx == 0) {
+        acclog::Write("Menus.EquipPicker", "selection on protoitem (sel=0) lb=%p", lb);
+        return;
+    }
+    if (!lbList || !lbList->data || selIdx >= lbList->size) {
+        acclog::Write("Menus.EquipPicker", "selection out of range: lb=%p sel=%d size=%d",
+                      lb, selIdx, lbList ? lbList->size : -1);
+        return;
+    }
+    void* row = lbList->data[selIdx];
+    if (!row) return;
+
+    char rowText[256];
+    const char* src = acc::menus::extract::FromControl(row, rowText, sizeof(rowText));
+    if (!src) {
+        acclog::Write("Menus.EquipPicker", "row %d (lb=%p) no announceable text", selIdx, lb);
+        return;
+    }
+
+    int userPos   = selIdx;
+    int userTotal = rowCount - 1;
+    char msg[320];
+    snprintf(msg, sizeof(msg),
+             acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
+             rowText, userPos, userTotal);
+    tolk::Speak(msg, /*interrupt=*/false);
+    acclog::Write("Menus.EquipPicker", "row lb=%p sel=%d (was %d) text=\"%s\"",
+                  lb, selIdx, prev, rowText);
+}
+
+void PollContainerGiveModeKey() {
+    static bool s_prevG = false;
+    bool g = (GetAsyncKeyState('G') & 0x8000) != 0;
+    bool risingG = g && !s_prevG;
+    s_prevG = g;
+    if (!risingG) return;
+
+    HWND fgWnd = GetForegroundWindow();
+    if (fgWnd) {
+        DWORD pid = 0;
+        GetWindowThreadProcessId(fgWnd, &pid);
+        if (pid != GetCurrentProcessId()) return;
+    }
+
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!mgr) return;
+    void* fgPanel = acc::engine::GetForegroundPanel(mgr);
+    if (!fgPanel || IdentifyPanel(fgPanel) != PanelKind::Container) return;
+
+    if (acc::menus::pending::IsPending()) {
+        acclog::Write("Container", "G (give-mode) -- op already pending; ignoring");
+        return;
+    }
+    void* btn = FindControlById(fgPanel, kContainerBtnGiveId);
+    if (!btn) {
+        acclog::Write("Container", "G (give-mode) -- BTN_GIVEITEMS not found on panel=%p",
+                      fgPanel);
+        return;
+    }
+    acc::menus::pending::QueueActivate(btn);
+    acclog::Write("Container", "G (give-mode) -> FireActivate BTN_GIVEITEMS panel=%p target=%p",
+                  fgPanel, btn);
+}
+
+}  // namespace
+
+void TickListboxMonitors() {
+    MonitorContainerSelection();
+    MonitorEquipPickerSelection();
+    PollContainerGiveModeKey();
 }
 
 }  // namespace acc::menus::listbox

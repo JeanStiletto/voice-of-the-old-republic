@@ -51,13 +51,20 @@ bool TryHandleInput(int n, void* thisPtr, void* activePanel,
 // equip slot button (BTN_INV_*); it stays armed until Enter commits a row,
 // Esc disarms, or the panel disappears from CSWGuiManager.panels[].
 //
-// menus.cpp's slot-Enter handler calls Arm; MonitorEquipPickerSelection
-// calls IsArmed + Disarm when the equip panel is gone. The spec's
-// onEnter/onEsc/resetStale callbacks read+write directly via the file-
-// statics in menus_listbox.cpp.
+// menus.cpp's slot-Enter handler calls Arm; the per-tick equip-picker
+// monitor (in this TU as of post-Step-5 cleanup) calls IsArmed + Disarm
+// when the equip panel is gone.
 bool  IsEquipPickerArmed();
 void* EquipPickerPanel();
 void  ArmEquipPicker(void* panel);
 void  DisarmEquipPicker();
+
+// Per-tick fan-out for the 3 listbox-paired monitors:
+// MonitorContainerSelection (per-row navigation announces),
+// MonitorEquipPickerSelection (mirror for the equip-picker LB_ITEMS), and
+// PollContainerGiveModeKey (Win32 poll for the give-mode toggle key — the
+// engine's player-control layer eats Tab before menu dispatch). Called
+// from menus.cpp's TickMonitors, alongside the general-monitor tick.
+void TickListboxMonitors();
 
 }  // namespace acc::menus::listbox

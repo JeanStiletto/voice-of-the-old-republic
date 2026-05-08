@@ -32,6 +32,7 @@
 #include "menus_pending.h"   // Step 3 — deferred-op queue lifted out
 #include "menus_listbox.h"   // Step 4 — listbox-driven panel dispatcher
 #include "menus_chain.h"     // Step 5 — chain navigation lifted out
+#include "menus_monitors.h"  // Post-Step-5 — general per-tick monitors
 #include "engine_input.h"
 #include "engine_manager.h"
 #include "engine_offsets.h"
@@ -118,6 +119,11 @@ using acc::menus::chain::FindCancelButton;
 using acc::menus::chain::FindChainEntry;
 using acc::menus::chain::ReadPanelActiveControl;
 using acc::menus::chain::ParseVirtualLines;
+
+// Post-Step-5 cleanup: general-monitor TU and listbox-monitor extension.
+// AnnounceControl (writes monitor state) lives in menus_monitors; chain
+// handlers in OnHandleInputEvent below call it through this using-decl.
+using acc::menus::monitors::AnnounceControl;
 
 // Forward decl from core_dllmain.cpp. The first hook to fire calls this so
 // Tolk is loaded the moment any focus / input event reaches us.
@@ -236,18 +242,11 @@ static bool g_drilledIntoSubScreen = false;
 // site below and MonitorEquipPickerSelection's "panel gone, disarm"
 // cleanup — go through the acc::menus::listbox accessors.
 
-// Forward decl: find an InGame{X} sub-screen panel currently in panels[].
-// Defined near the sub-screen spec table to share the kind set with
-// AnnounceNewSubScreens. Returns the lowest-index match, or nullptr if no
-// sub-screen is currently pushed.
-static void* FindActiveSubScreenPanel();
-
-// Forward decl matching the InGameSubScreenSpec table defined alongside the
-// content-monitor whitelist. Used by the Esc-drill handler to test
-// "is this panel one of the in-game sub-screens we drill into?" without
-// depending on the spec struct's definition order.
-struct InGameSubScreenSpec;
-static const InGameSubScreenSpec* FindInGameSubScreenSpec(PanelKind k);
+// Sub-screen tracking (InGameSubScreenSpec, FindActiveSubScreenPanel,
+// AnnounceNewSubScreens) moved to menus_monitors.cpp. The drill router
+// in OnHandleInputEvent calls acc::menus::monitors::FindActiveSubScreenPanel
+// and acc::menus::monitors::IsInGameSubScreenKind through the public
+// surface; no using-decl needed since both call sites are explicit and few.
 
 // The deferred-op queue (cursor-warp / click-at-point / activate / equip-
 // slot / equip-commit / slider-input) lives in menus_pending.{h,cpp} as of
@@ -281,17 +280,11 @@ int g_navSpeechSuppressBudget = 0;
 // diagnostic WalkChildren logging.
 static void* g_lastTitledPanel = nullptr;
 
-// Per-frame focus state monitor. Snapshots the announceable text of the
-// focused chain entry on each focus change; on every OnUpdate tick re-extracts
-// and re-announces if the text has changed since the snapshot. This is the
-// generic mechanism that catches every state mutation visible through
-// ExtractAnnounceableText: toggle on/off flips, cycle-button value changes
-// (engine rewrites the value-display button's CExoString in place when the
-// user activates a flanking arrow), slider cur_value adjustments, etc. New
-// widget types get the behaviour for free as soon as their text/state
-// extraction lands in ExtractAnnounceableText.
-static void* g_focusMonitorControl = nullptr;
-static char  g_focusMonitorText[256] = {0};
+// Per-frame focus monitor + its last-seen state moved to
+// menus_monitors.cpp. AnnounceControl (which writes that state to keep
+// the monitor in sync with voluntary speak events) moved with it; chain
+// handlers below call it via the using-declaration at the top of this
+// file.
 
 // Tabbed-panel state (g_tabbedPanel, g_tabsStart, g_tabsCount), the three
 // click-offset compensations (g_tabClickOffsetY, g_equipSlotClickOffsetY,
@@ -355,37 +348,9 @@ bool acc::menus::detail::IsChainNavigable(void* control) {
     return false;
 }
 
-// Pull the announceable text of a control (tooltip → button → label → ...);
-// fall back to "control N" using the control's id field. Never silently
-// drops — per feedback_never_silence_fallback_announcement.md.
-static void AnnounceControl(void* control) {
-    if (!control) return;
-    char text[256];
-    const char* source = acc::menus::extract::FromControl(control, text, sizeof(text));
-    if (source) {
-        tolk::Speak(text, /*interrupt=*/false);
-        // Sync MonitorFocusedControl's same-control state so its diff loop
-        // doesn't re-speak this control's text on the next tick. Without
-        // this, the monitor would treat the focus change as new (else
-        // branch) and speak again.
-        g_focusMonitorControl = control;
-        strncpy_s(g_focusMonitorText, text, _TRUNCATE);
-        return;
-    }
-    // Chargen class icons reach here when their cache hasn't been populated
-    // yet (first-time visit, before any SetActiveControl has trailed past
-    // them and the OnSetActiveControl prefill has cached their class).
-    // Stay silent and let the per-frame monitor speak when the cache
-    // populates — better than reading "control 11" out loud.
-    if (g_currentPanel && IsClassSelectionIcon(g_currentPanel, control)) {
-        return;
-    }
-    int id = *reinterpret_cast<int*>(
-        reinterpret_cast<unsigned char*>(control) + 0x50);
-    char placeholder[64];
-    snprintf(placeholder, sizeof(placeholder), "control %d", id);
-    tolk::Speak(placeholder, /*interrupt=*/false);
-}
+// AnnounceControl moved to menus_monitors.cpp (writes the focus monitor's
+// last-seen state to keep voluntary speech in sync). Brought back into
+// unqualified scope via the using-declaration at the top of this file.
 
 // First focus into a panel speaks the panel's "title" — the first label-like
 // child we can find — so the user knows which menu they're in. Subsequent
@@ -805,243 +770,209 @@ static void WalkChildren(const char* label, void* parent, size_t offset) {
 //     vtable pointer, because that's the data we need to identify which
 //     subclasses fall through (Slider, Editbox, ListBox row, etc.).
 //   * NULL newControl events are also throttled.
-extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
-    EnsureTolkInitialized();
-
-    static int n = 0;
-    ++n;
-
-    // Chargen class-icon cache pump. The hook fires at the very entry of
-    // CSWGuiPanel::SetActiveControl — before the function writes the new
-    // active_control and before any OnEnterButton runs for the new icon.
-    // So at this moment:
-    //   - panel.active_control still points at the OUTGOING icon (the one
-    //     the user is leaving)
-    //   - class_label still carries that outgoing icon's class string
-    //     (the engine populated it when that icon previously took focus)
-    //
-    // Caching (outgoing_icon -> class_label) on every transition closes
-    // the gap that the per-frame monitor leaves under rapid arrow input:
-    // the monitor only catches icons the user dwells on, but each
-    // SetActiveControl event is fired regardless of how briefly the user
-    // passed through. The icon the user finally settles on remains
-    // un-cached by this path (no subsequent SetActiveControl trails it),
-    // and the existing monitor-side cache populate covers that one.
-    if (panel) {
-        void** pVt = *reinterpret_cast<void***>(panel);
-        if (reinterpret_cast<uintptr_t>(pVt) ==
-                kVtableCSWGuiClassSelection) {
-            void* outgoing = *reinterpret_cast<void**>(
-                reinterpret_cast<unsigned char*>(panel) +
-                kPanelActiveControlOffset);
-            if (outgoing && outgoing != newControl &&
-                IsClassSelectionIcon(panel, outgoing) &&
-                ClassLabelCacheLookup(panel, outgoing) == nullptr) {
-                void* classLabel =
-                    reinterpret_cast<unsigned char*>(panel) +
-                    kClassSelectionClassLabelOffset;
-                char text[256];
-                if (ExtractTextOrStrRefIndirect(classLabel,
-                                                kLabelTextOffset,
-                                                kLabelStrRefOffset,
-                                                kLabelTextObjectOffset,
-                                                text, sizeof(text)) &&
-                    text[0] != '\0') {
-                    ClassLabelCacheStore(panel, outgoing, text);
-                    acclog::Write("Menus.PerKind",
-                                  "ClassSelection prefill outgoing=%p "
-                                  "-> \"%s\"", outgoing, text);
-                }
-            }
-        }
+// Chargen class-icon cache pump. The hook fires at the very entry of
+// CSWGuiPanel::SetActiveControl — before the function writes the new
+// active_control and before any OnEnterButton runs for the new icon. At
+// this moment panel.active_control still points at the OUTGOING icon
+// (the one the user is leaving) and class_label still carries that
+// icon's class string. Caching (outgoing -> label) on every transition
+// closes the gap that the per-frame monitor leaves under rapid arrow
+// input: the monitor only catches icons the user dwells on, but every
+// SetActiveControl event fires regardless of duration.
+static void PrefillClassIconCacheOnTransition(void* panel, void* newControl) {
+    if (!panel) return;
+    void** pVt = *reinterpret_cast<void***>(panel);
+    if (reinterpret_cast<uintptr_t>(pVt) != kVtableCSWGuiClassSelection) return;
+    void* outgoing = *reinterpret_cast<void**>(
+        reinterpret_cast<unsigned char*>(panel) + kPanelActiveControlOffset);
+    if (!outgoing || outgoing == newControl) return;
+    if (!IsClassSelectionIcon(panel, outgoing)) return;
+    if (ClassLabelCacheLookup(panel, outgoing) != nullptr) return;
+    void* classLabel = reinterpret_cast<unsigned char*>(panel) +
+                       kClassSelectionClassLabelOffset;
+    char text[256];
+    if (ExtractTextOrStrRefIndirect(classLabel,
+                                    kLabelTextOffset,
+                                    kLabelStrRefOffset,
+                                    kLabelTextObjectOffset,
+                                    text, sizeof(text)) &&
+        text[0] != '\0') {
+        ClassLabelCacheStore(panel, outgoing, text);
+        acclog::Write("Menus.PerKind",
+                      "ClassSelection prefill outgoing=%p -> \"%s\"",
+                      outgoing, text);
     }
+}
 
-    // Track the currently-focused panel for the chain-navigation handler.
-    // Even NULL newControl events update this — what matters is which panel
-    // the manager is dispatching focus on.
+// Update g_currentPanel and clear the virtual-line cursor on panel
+// transitions. Tabbed-mode tab-cluster state DELIBERATELY persists across
+// transitions into sub-dialogs of the tabbed panel — the tab strip lives
+// on the parent panel (Options) and is still the right thing for Tab/
+// Shift+Tab while the user is inside one of its sub-dialogs. ValidateTabbed-
+// Panel drops the cluster state when the engine frees the underlying panel.
+static void UpdateFocusedPanelState(void* panel) {
     void* prevPanel = g_currentPanel;
     g_currentPanel = panel;
-
-    // Tabbed-mode state survives transitions into sub-dialogs of the tabbed
-    // panel. The tab strip lives on the PARENT panel (e.g. Options) and is
-    // still the right thing for Tab/Shift+Tab to operate on while the user
-    // is inside one of its sub-dialogs (Spieleinstellungen, Feedback-Optionen,
-    // etc.); clicking a different tab from inside a sub-dialog is the
-    // engine's normal "switch tabs" gesture for mouse users. So we only
-    // clear the per-event virtual-line cursor on panel change; g_tabbedPanel/
-    // g_tabsStart/g_tabsCount persist until either DetectTabsCluster
-    // overwrites them on a different tabbed panel, or ValidateTabbedPanel
-    // (in OnUpdate) drops them when the engine frees the underlying panel
-    // — the latter covers hard transitions like death → main menu, where
-    // the next foreground panel isn't tabbed and would otherwise leave
-    // g_tabbedPanel dangling.
     if (panel != prevPanel) {
         g_virtualLineCount = 0;
         g_virtualLineIdx   = -1;
     }
+}
 
-    // First focus event into a previously-unseen panel: dump every child
-    // control on it. Lets us see widgets the user can't reach with arrow
-    // keys (mouse-only labels, hidden tabs, off-cursor inputs, etc.).
-    //
-    // Also captures cycle-button category text. Cycle widgets (Difficulty
-    // etc.) carry their localized category in their CExoString at panel
-    // construction time (e.g. "Schwierigkeitsgrad" / "Difficulty"); the
-    // engine replaces it with the persisted value (e.g. "Normal") shortly
-    // after, and our FireActivate calls overwrite it again on each cycle.
-    // SetActiveControl's first fire on a new panel happens before any of
-    // those updates, so this is the earliest reachable capture point.
+// First focus event into a previously-unseen panel: dump every child
+// control + capture cycle-button category text. Cycle widgets carry their
+// localized category in their CExoString at panel construction time; the
+// engine replaces it with the persisted value (e.g. "Difficulty" -> "Normal")
+// shortly after, and our FireActivate calls overwrite it again on each
+// cycle. SetActiveControl's first fire on a new panel is the earliest
+// reachable capture point.
+static void WalkAndCaptureOnFirstSight(void* panel) {
     static void* s_lastPanel = nullptr;
-    if (panel && panel != s_lastPanel) {
-        s_lastPanel = panel;
-        // Dump manager-level panels + modal_stack alongside the per-panel
-        // walk. Lets us correlate "the engine just walked panel X" with
-        // "panels[] and modal_stack[] currently look like this", which is
-        // what we need to validate GetForegroundPanel against the actual
-        // visible foreground (especially in flows like character creation
-        // where multiple panels are walked in the same frame).
-        LogManagerStack(*reinterpret_cast<void**>(kAddrGuiManagerPtr),
-                        "panel-walk");
-        // Identify the panel via the in-game registry. First-sight log
-        // happens inside IdentifyPanel. The kind here is purely diagnostic
-        // — actual per-kind handling lives in MonitorPanelContents on each
-        // OnUpdate tick.
-        PanelKind kind = IdentifyPanel(panel);
-        acclog::Write("Menus.PanelWalk", "panel=%p kind=%s",
-                      panel, PanelKindName(kind));
-        WalkChildren("Menus.PanelWalk", panel, kPanelControlsOffset);
+    if (!panel || panel == s_lastPanel) return;
+    s_lastPanel = panel;
 
-        // Capture the cycle-button category labels BEFORE any activation
-        // has rewritten the value-display button's CExoString. The cache
-        // lives in menus_extract.cpp; we write through its public setter
-        // so the read path (acc::menus::extract::FromControl) sees them.
-        acc::menus::extract::ResetCycleCategoryCache();
-        auto* plist = reinterpret_cast<CExoArrayList*>(
-            reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
-        if (plist && plist->data && plist->size > 0) {
-            int pn = plist->size > 256 ? 256 : plist->size;
-            for (int i = 0; i < pn; ++i) {
-                void* c = plist->data[i];
-                if (!c) continue;
-                if (CallDowncast(c, kVtableAsButton) == nullptr) continue;
-                if (IsToggle(c)) continue;
+    LogManagerStack(*reinterpret_cast<void**>(kAddrGuiManagerPtr),
+                    "panel-walk");
+    PanelKind kind = IdentifyPanel(panel);
+    acclog::Write("Menus.PanelWalk", "panel=%p kind=%s",
+                  panel, PanelKindName(kind));
+    WalkChildren("Menus.PanelWalk", panel, kPanelControlsOffset);
 
-                void* leftN  = FindAdjacentArrow(panel, c, /*toRight=*/false);
-                void* rightN = FindAdjacentArrow(panel, c, /*toRight=*/true);
-                if (!leftN && !rightN) continue;
+    // Capture cycle-button categories before any activation rewrites the
+    // value-display button's CExoString. The cache lives in
+    // menus_extract.cpp; we write through its public setter.
+    acc::menus::extract::ResetCycleCategoryCache();
+    auto* plist = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+    if (!plist || !plist->data || plist->size <= 0) return;
 
-                char text[128];
-                bool gotText = false;
-                uint32_t strref = ReadU32(c, kButtonStrRefOffset);
-                if (LookupTlk(strref, text, sizeof(text))) {
-                    gotText = true;
-                } else if (ReadCExoString(c, kButtonTextOffset,
-                                          text, sizeof(text))) {
-                    gotText = true;
-                }
-                if (gotText) {
-                    acc::menus::extract::CaptureCycleCategory(c, text);
-                    acclog::Write("Menus.CycleCategory", "control=%p text=\"%s\" strref=%u",
-                                  c, text, strref);
-                }
-            }
+    int pn = plist->size > 256 ? 256 : plist->size;
+    for (int i = 0; i < pn; ++i) {
+        void* c = plist->data[i];
+        if (!c) continue;
+        if (CallDowncast(c, kVtableAsButton) == nullptr) continue;
+        if (IsToggle(c)) continue;
+        void* leftN  = FindAdjacentArrow(panel, c, /*toRight=*/false);
+        void* rightN = FindAdjacentArrow(panel, c, /*toRight=*/true);
+        if (!leftN && !rightN) continue;
+
+        char text[128];
+        bool gotText = false;
+        uint32_t strref = ReadU32(c, kButtonStrRefOffset);
+        if (LookupTlk(strref, text, sizeof(text))) {
+            gotText = true;
+        } else if (ReadCExoString(c, kButtonTextOffset, text, sizeof(text))) {
+            gotText = true;
+        }
+        if (gotText) {
+            acc::menus::extract::CaptureCycleCategory(c, text);
+            acclog::Write("Menus.CycleCategory", "control=%p text=\"%s\" strref=%u",
+                          c, text, strref);
         }
     }
+}
 
-    // First focus into a new panel: speak its title (label child) once.
-    // The focused control's announcement below still fires, so the user
-    // hears "<panel title>, <focused control>" on entry.
-    if (panel && panel != g_lastTitledPanel) {
-        g_lastTitledPanel = panel;
-        AnnouncePanelTitle(panel);
+// First focus into a new panel: speak its title once. The focused
+// control's announcement still fires after, so the user hears
+// "<panel title>, <focused control>" on entry.
+static void SpeakPanelTitleOnFirstSight(void* panel) {
+    if (!panel || panel == g_lastTitledPanel) return;
+    g_lastTitledPanel = panel;
+    AnnouncePanelTitle(panel);
+}
+
+// Self-dedup: if this SetActiveControl was caused by our deferred
+// MoveMouseToPosition, the input hook already announced the target.
+// Skip Tolk and clear the pending marker. Returns true if dedup fired.
+static bool ConsumeCursorWarpDedup(int n, void* panel, void* newControl) {
+    if (!newControl || newControl != acc::menus::pending::CursorMoveTarget()) {
+        return false;
     }
+    acclog::Write("Menus.SetActive", "#%d panel=%p new=%p (self-dedup; cursor sync)",
+                  n, panel, newControl);
+    acc::menus::pending::ClearCursorMoveTarget();
+    // Cursor-warp echo arrived: voluntary nav has fully settled.
+    g_navSpeechSuppressBudget = 0;
+    return true;
+}
+
+// Voluntary-nav speech-suppression. Chain-step / Enter-activate handlers
+// set the budget to a small N; decrement on any focus event and skip
+// speech while > 0. Covers engine-side focus echoes that don't match the
+// cursor-warp target (e.g. engine's UP handler picking a sibling on
+// AutoPause / equip panels). Returns true if suppressed.
+static bool ConsumeNavSpeechBudget(int n, void* panel, void* newControl) {
+    if (g_navSpeechSuppressBudget <= 0) return false;
+    int wasBudget = g_navSpeechSuppressBudget;
+    --g_navSpeechSuppressBudget;
+    int sid = *reinterpret_cast<int*>(
+        reinterpret_cast<unsigned char*>(newControl) + 0x50);
+    acclog::Write("Menus.SetActive", "#%d panel=%p new=%p id=%d "
+                  "(nav-suppress; budget %d->%d)",
+                  n, panel, newControl, sid, wasBudget,
+                  g_navSpeechSuppressBudget);
+    return true;
+}
+
+// Speak the focused control's text (or "control N" placeholder), with
+// Container-listbox suppression to keep the panel-open announce clean.
+static void AnnounceNewFocusedControl(int n, void* panel, void* newControl) {
+    int id = *reinterpret_cast<int*>(
+        reinterpret_cast<unsigned char*>(newControl) + 0x50);
+
+    char text[256];
+    const char* source = acc::menus::extract::FromControl(
+        newControl, text, sizeof(text), panel);
+
+    // Container loot panel: the engine's listbox text concatenates every
+    // row into one giant utterance, which would drown the count + per-row
+    // navigation announces from the container monitor. Log only.
+    bool suppressForContainer =
+        IsListBox(newControl) &&
+        IdentifyPanel(panel) == PanelKind::Container;
+
+    if (source) {
+        acclog::Write("Menus.SetActive", "#%d panel=%p new=%p id=%d src=%s text=\"%s\"",
+                      n, panel, newControl, id, source, text);
+        if (!suppressForContainer) {
+            SpeakIfChanged(/*channel=*/0, text);
+        }
+        return;
+    }
+
+    char vtbl[160];
+    DumpControlVtable(newControl, vtbl, sizeof(vtbl));
+    acclog::Write("Menus.SetActive", "#%d panel=%p new=%p id=%d src=none %s",
+                  n, panel, newControl, id, vtbl);
+    if (!suppressForContainer) {
+        // Bypass SpeakIfChanged dedup deliberately: a non-readable focus
+        // change deserves *some* announcement every time. Better to hear
+        // "control 11" repeated than to silently skip a focus event.
+        char placeholder[64];
+        snprintf(placeholder, sizeof(placeholder), "control %d", id);
+        tolk::Speak(placeholder, /*interrupt=*/false);
+    }
+}
+
+extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
+    EnsureTolkInitialized();
+    static int n = 0;
+    ++n;
+
+    PrefillClassIconCacheOnTransition(panel, newControl);
+    UpdateFocusedPanelState(panel);
+    WalkAndCaptureOnFirstSight(panel);
+    SpeakPanelTitleOnFirstSight(panel);
 
     if (!newControl) {
         acclog::Write("Menus.SetActive", "#%d panel=%p newControl=NULL", n, panel);
         return;
     }
 
-    // Self-dedup: if this SetActiveControl was caused by our deferred
-    // MoveMouseToPosition, we already announced the target from the input
-    // hook. Skip the Tolk path here and clear the pending marker. This is
-    // self-suppression, not engine suppression — the engine wouldn't fire
-    // SetActiveControl on consumed arrow keys at all (the wrapper JMPs past
-    // dispatch). It only fires here when our own move triggered the engine
-    // to reselect.
-    if (newControl != nullptr && newControl == acc::menus::pending::CursorMoveTarget()) {
-        acclog::Write("Menus.SetActive", "#%d panel=%p new=%p (self-dedup; cursor sync)",
-                      n, panel, newControl);
-        acc::menus::pending::ClearCursorMoveTarget();
-        // Cursor-warp echo arrived: our voluntary nav has fully settled.
-        // Drain any remaining budget so legit focus changes after this
-        // resume normal announcement behavior.
-        g_navSpeechSuppressBudget = 0;
-        return;
-    }
+    if (ConsumeCursorWarpDedup(n, panel, newControl)) return;
+    if (ConsumeNavSpeechBudget(n, panel, newControl)) return;
 
-    // Voluntary-nav speech-suppression. The chain-step / Enter-activate
-    // handlers set this to a small N; we decrement here on any focus event
-    // and skip speech while > 0. Covers engine-side focus echoes that don't
-    // match the cursor-warp target (e.g. engine's UP handler picking a
-    // sibling on AutoPause / equip panels). See g_navSpeechSuppressBudget
-    // doc above the declaration.
-    if (g_navSpeechSuppressBudget > 0) {
-        int wasBudget = g_navSpeechSuppressBudget;
-        --g_navSpeechSuppressBudget;
-        int sid = *reinterpret_cast<int*>(
-            reinterpret_cast<unsigned char*>(newControl) + 0x50);
-        acclog::Write("Menus.SetActive", "#%d panel=%p new=%p id=%d "
-                      "(nav-suppress; budget %d->%d)",
-                      n, panel, newControl, sid, wasBudget,
-                      g_navSpeechSuppressBudget);
-        return;
-    }
-
-    int id = *reinterpret_cast<int*>(reinterpret_cast<unsigned char*>(newControl) + 0x50);
-
-    char text[256];
-    const char* source = acc::menus::extract::FromControl(newControl, text, sizeof(text),
-                                                 panel);
-
-    if (source) {
-        acclog::Write("Menus.SetActive", "#%d panel=%p new=%p id=%d src=%s text=\"%s\"",
-                      n, panel, newControl, id, source, text);
-        // Container loot panel: the engine's listbox text concatenates every
-        // row into one giant utterance ("Tarnfeldgen. Computersonde ..."),
-        // which is overwhelming on panel open and drowns the count + per-row
-        // navigation announces from MonitorContainerSelection. Log only.
-        bool suppressForContainer =
-            IsListBox(newControl) &&
-            IdentifyPanel(panel) == PanelKind::Container;
-        if (!suppressForContainer) {
-            SpeakIfChanged(/*channel=*/0, text);
-        }
-    } else {
-        // Always log unknowns — these are the events we need to debug.
-        char vtbl[160];
-        DumpControlVtable(newControl, vtbl, sizeof(vtbl));
-        acclog::Write("Menus.SetActive", "#%d panel=%p new=%p id=%d src=none %s",
-                      n, panel, newControl, id, vtbl);
-        // Container loot panel: skip the placeholder for the listbox child
-        // too — when the chest is empty the listbox has no row text and
-        // ExtractAnnounceableText returns null, which would land here and
-        // speak "control 2" on top of the panel's "Der Beh\xE4lter ist leer"
-        // title that AnnouncePanelTitle / MonitorPanelContents already
-        // surfaced. Symmetrical to the suppression in the source-present
-        // branch above.
-        bool suppressForContainer =
-            IsListBox(newControl) &&
-            IdentifyPanel(panel) == PanelKind::Container;
-        if (!suppressForContainer) {
-            // Bypass SpeakIfChanged dedup deliberately: a non-readable focus
-            // change deserves *some* announcement every time, even if it's
-            // nonsense. Better to hear "control 11" repeated than to silently
-            // skip a focus event the user can't otherwise perceive.
-            char placeholder[64];
-            snprintf(placeholder, sizeof(placeholder), "control %d", id);
-            tolk::Speak(placeholder, /*interrupt=*/false);
-        }
-    }
+    AnnounceNewFocusedControl(n, panel, newControl);
 }
 
 // CSWGuiListBox::SetActiveControl — hooked mid-function at 0x0041c16b.
@@ -1256,7 +1187,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         // right) routing through fg directly.
         if (g_drilledIntoSubScreen) {
             if (IdentifyPanel(activePanel) == PanelKind::InGameMenu) {
-                void* sub = FindActiveSubScreenPanel();
+                void* sub = acc::menus::monitors::FindActiveSubScreenPanel();
                 if (sub) {
                     activePanel = sub;
                 } else {
@@ -1702,7 +1633,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         // sub-tabs first; once activePanel resolves back to the sub-screen,
         // the next Esc lands here and clears the drill.
         PanelKind apk = IdentifyPanel(activePanel);
-        if (FindInGameSubScreenSpec(apk)) {
+        if (acc::menus::monitors::IsInGameSubScreenKind(apk)) {
             g_drilledIntoSubScreen = false;
             acclog::Write("Drill", "Esc -> back to strip (sub-screen panel=%p "
                           "kind=%s left in panels[])",
@@ -1795,513 +1726,11 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     return consumed ? 1 : 0;
 }
 
-// Per-frame focus state monitor. Re-extracts the focused chain entry's
-// announceable text and re-announces if it has changed since the last
-// snapshot. Generic mechanism for state-change announcements — toggle
-// on/off, cycle button value, slider position, and any future widget whose
-// state shows up through ExtractAnnounceableText all flow through here, no
-// per-widget code needed.
-//
-// On focus moving to a different control we only update the snapshot. The
-// initial announcement is handled by the chain step path (OnHandleInputEvent)
-// or OnSetActiveControl; this monitor's job is strictly "same control, text
-// changed since last tick". That's precisely the "state mutated under our
-// focus" case — Enter on a toggle flips +0x1c8 bit 0 synchronously inside
-// FireActivate, the engine's slider HandleInputEvent rewrites cur_value
-// synchronously when Left/Right reach the slider, and a cycle activation
-// rewrites the value-display button's CExoString in place. All three
-// produce a different ExtractAnnounceableText output on the very next tick.
-//
-// Empty-text controls (cycle arrows, controls we don't yet know how to
-// extract) bypass the snapshot entirely so we don't accidentally announce
-// transient placeholders. The chain step path already announced "control N"
-// for them when focus arrived.
-static void MonitorFocusedControl() {
-    if (g_chainCount <= 0 ||
-        g_chainIndex < 0 ||
-        g_chainIndex >= g_chainCount) {
-        return;
-    }
-    if (g_chainPanel != g_currentPanel) {
-        // Chain stale (panel transition mid-flight); skip until rebind.
-        return;
-    }
-    void* focused = g_chain[g_chainIndex].control;
-    if (!focused) return;
-
-    char text[256];
-    const char* source = acc::menus::extract::FromControl(focused, text, sizeof(text),
-                                                 g_chainPanel);
-    if (!source) return;
-
-    if (focused == g_focusMonitorControl) {
-        if (strncmp(g_focusMonitorText, text,
-                    sizeof(g_focusMonitorText)) != 0) {
-            tolk::Speak(text, /*interrupt=*/false);
-            strncpy_s(g_focusMonitorText, text, _TRUNCATE);
-            acclog::Write("Monitor", "focused=%p text changed -> \"%s\"",
-                          focused, text);
-        }
-    } else {
-        // Focus changed since the last tick. Speak the new text — covers
-        // chain targets that AnnounceControl skipped (chargen class icons,
-        // where the cache is empty at chain-step time and only populates
-        // on a later tick once active_control matches and the engine has
-        // run OnEnterButton). AnnounceControl pre-populates this state
-        // on its own announce path, so non-class chain steps that already
-        // spoke fall into the same-control branch above instead and avoid
-        // double-speak.
-        g_focusMonitorControl = focused;
-        strncpy_s(g_focusMonitorText, text, _TRUNCATE);
-        tolk::Speak(text, /*interrupt=*/false);
-        acclog::Write("Monitor", "focus changed -> %p text=\"%s\"",
-                      focused, text);
-    }
-}
-
-// =============================================================================
-// Per-panel content-change monitor.
-//
-// MonitorFocusedControl above watches the focused chain entry's text for
-// state-mutation announcements (toggle flip, cycle value, slider position).
-// That's the right thing for INTERACTIVE focus targets, but blind to two
-// classes of events:
-//
-//   1. Panels that have no focused control (newControl=NULL throughout).
-//      The tutorial popup is the canonical case — panel 12B04010 has a
-//      label child carrying the hint text but no focusable child; the
-//      engine never fires SetActiveControl with a non-null target. The
-//      label text is also late-bound: the panel appears with " " in the
-//      label, then the engine writes the actual hint string seconds later.
-//      Our pointer-keyed gates in OnSetActiveControl (s_lastPanel,
-//      g_lastTitledPanel) only fire once per panel address, so we miss
-//      the late text binding entirely.
-//
-//   2. Always-on panels at the bottom of panels[] (the HUD, persistent
-//      overlays). These never receive SetActiveControl, so they're never
-//      walked, never titled, never monitored.
-//
-// MonitorPanelContents fills both gaps generically: every OnUpdate tick,
-// walk the manager's panels[], identify each by IdentifyPanel, and for
-// the ones flagged as content-monitored compute a fingerprint of their
-// label-bearing children (concatenation of every label and listbox text).
-// Diff against last snapshot, announce changes.
-//
-// Per-kind whitelist (IsContentMonitored) keeps the cost down — we don't
-// fingerprint every panel every frame, only the ones whose content actually
-// changes meaningfully (tutorials, dialogue text, transition text, modal
-// messages). MainInterface (HUD vitals, queue, combat-mode) deserves a
-// dedicated polling layer with named-offset reads instead of full-panel
-// fingerprinting; deferred to a follow-up.
-// =============================================================================
-
-struct ContentSnapshot {
-    void* panel;
-    char  text[512];
-};
-constexpr int kMaxContentSnapshots = 8;
-static ContentSnapshot g_contentSnapshots[kMaxContentSnapshots];
-static int g_contentSnapshotCount = 0;
-
-static bool IsContentMonitored(PanelKind k) {
-    switch (k) {
-    case PanelKind::TutorialBox:
-    case PanelKind::DialogCinematic:
-    case PanelKind::DialogCinematicCopy:
-    case PanelKind::DialogComputer:
-    case PanelKind::DialogComputerCamera:
-    case PanelKind::BarkBubble:
-    case PanelKind::MessageBoxModal:
-    case PanelKind::AreaTransition:
-    // In-game sub-screens reached via the icon strip. The icon strip
-    // (CSWGuiInGameMenu) stays foreground after activation, so the sub-screen
-    // never becomes the chain target — without content monitoring the user
-    // hears the strip but nothing about what's INSIDE the screen they just
-    // opened. Buttons are filtered by BuildContentFingerprint so the strip's
-    // own buttons don't pollute the fingerprint.
-    case PanelKind::InGameInventory:
-    case PanelKind::InGameMap:
-    case PanelKind::InGameJournal:
-    case PanelKind::InGameCharacter:
-    case PanelKind::InGameAbilities:
-    case PanelKind::InGameMessages:
-    case PanelKind::InGameEquip:
-    // Container loot panel — Tab toggles between take-mode and give-mode,
-    // which swaps LBL_MESSAGE's strref + LB_ITEMS source. Without content
-    // monitoring the user only hears the per-row navigation (via Monitor-
-    // ContainerSelection) and never learns the mode flipped.
-    case PanelKind::Container:
-        return true;
-    default:
-        return false;
-    }
-}
-
-// Localized name of an in-game sub-screen, indexed by PanelKind. Reuses
-// the same dialog.tlk strrefs as the perkind icon-label table in
-// ExtractAnnounceableText (verified by parsing the user's dialog.tlk —
-// memory/reference_dialog_tlk_menu_strrefs.md). Returns spec on hit, nullptr
-// if the kind isn't a tracked sub-screen.
-struct InGameSubScreenSpec {
-    PanelKind   kind;
-    uint32_t    strref;     // 0xFFFFFFFF = no strref, use literal
-    const char* literal;
-};
-static const InGameSubScreenSpec k_inGameSubScreens[] = {
-    { PanelKind::InGameEquip,     0xFFFFFFFFu, "Ausr\xfcstung" },
-    { PanelKind::InGameInventory, 48220u,      "Inventar" },
-    { PanelKind::InGameCharacter, 48225u,      "Charakterblatt" },
-    { PanelKind::InGameMap,       48221u,      "Karte" },
-    { PanelKind::InGameAbilities, 48224u,      "F\xe4higkeiten" },
-    { PanelKind::InGameJournal,   48218u,      "Auftr\xe4ge" },
-    { PanelKind::InGameOptions,   48222u,      "Optionen" },
-    { PanelKind::InGameMessages,  48223u,      "Nachrichten" },
-};
-static const InGameSubScreenSpec* FindInGameSubScreenSpec(PanelKind k) {
-    for (const auto& s : k_inGameSubScreens) {
-        if (s.kind == k) return &s;
-    }
-    return nullptr;
-}
-
-// Walk the manager's panels[] for any in-game sub-screen panel
-// (CSWGuiInGameInventory / Map / Journal / …). Used by the drill router to
-// retarget the chain when g_drilledIntoSubScreen is set and the strip is fg.
-//
-// Returns the lowest-index match. CSWGuiManager::SendPanelToBack inserts at
-// front of panels[], so the most recently opened sub-screen typically lives
-// at index 0 — which is also what the user expects to navigate. Multiple
-// sub-screens shouldn't normally coexist (SwitchToSWInGameGui pops the
-// previous one before adding the new one), but if it ever happens we pick
-// the first match deterministically.
-static void* FindActiveSubScreenPanel() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return nullptr;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (!panelData || panelCount <= 0) return nullptr;
-    if (panelCount > 16) panelCount = 16;
-    for (int i = 0; i < panelCount; ++i) {
-        void* p = panelData[i];
-        if (!p) continue;
-        PanelKind k = IdentifyPanel(p);
-        if (FindInGameSubScreenSpec(k)) return p;
-    }
-    return nullptr;
-}
-
-// Tracks which sub-screen panel pointers are currently in the manager's
-// panels[]. Panels added since last tick → speak the screen's localized
-// name once. Removed → drop from the tracked set so a re-open re-announces.
-// Panels[] is small (≤16 in our cap) and turnover is human-paced, so a flat
-// array is fine.
-static void* g_visibleSubScreens[16];
-static int   g_visibleSubScreenCount = 0;
-
-static bool IsSubScreenTracked(void* p) {
-    for (int i = 0; i < g_visibleSubScreenCount; ++i) {
-        if (g_visibleSubScreens[i] == p) return true;
-    }
-    return false;
-}
-
-// Walk current panels[], speak on additions of any tracked sub-screen kind,
-// drop removals from the tracked set. Called from MonitorPanelContents per
-// tick, before the per-panel content fingerprint pass — the kind name lands
-// first, then the fingerprint diff fills in the actual labels/items.
-static void AnnounceNewSubScreens(void** panels, int count) {
-    void* nowVisible[16];
-    int   nowCount = 0;
-    for (int i = 0; i < count && nowCount < 16; ++i) {
-        void* p = panels[i];
-        if (!p) continue;
-        PanelKind k = IdentifyPanel(p);
-        const InGameSubScreenSpec* spec = FindInGameSubScreenSpec(k);
-        if (!spec) continue;
-        nowVisible[nowCount++] = p;
-        if (IsSubScreenTracked(p)) continue;
-        // First sight in panels[] for this address+kind — speak the screen's
-        // localized name. The user already heard the icon's name on focus
-        // before activating; this is the "you are now in this screen"
-        // confirmation.
-        char text[128];
-        bool spoke = false;
-        if (spec->strref != 0xFFFFFFFFu &&
-            LookupTlk(spec->strref, text, sizeof(text))) {
-            acclog::Write("Menus.SubScreen", "panel=%p kind=%s strref=%u text=\"%s\"",
-                          p, PanelKindName(k), spec->strref, text);
-            tolk::Speak(text, /*interrupt=*/false);
-            spoke = true;
-        }
-        if (!spoke) {
-            acclog::Write("Menus.SubScreen", "panel=%p kind=%s text=\"%s\" (literal)",
-                          p, PanelKindName(k), spec->literal);
-            tolk::Speak(spec->literal, /*interrupt=*/false);
-        }
-
-        // Charakterblatt-specific structured opener — pairs the value /
-        // modifier / category labels into intelligible speech. Queues
-        // (interrupt=false) so it lands AFTER the kind name above.
-        // Other sub-screens fall through and rely on the generic
-        // ContentChange path.
-        if (k == acc::engine::PanelKind::InGameCharacter) {
-            acc::menus::charsheet::MaybeAnnounce(p);
-        }
-    }
-    memcpy(g_visibleSubScreens, nowVisible, sizeof(nowVisible));
-    g_visibleSubScreenCount = nowCount;
-}
-
-// Build a fingerprint of the panel's label/listbox content. Buttons are
-// skipped because their text mutates on hover (rendered border changes
-// would create false-positive content changes). Whitespace-only fields
-// are skipped (engine uses " " as a "not-yet-bound" placeholder).
-//
-// Output is the concatenation of contents separated by ' | ', truncated
-// at outSize.
-static void BuildContentFingerprint(void* panel, char* out, size_t outSize) {
-    if (outSize == 0) return;
-    out[0] = '\0';
-    if (!panel) return;
-    auto* list = reinterpret_cast<CExoArrayList*>(
-        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
-    if (!list->data || list->size <= 0) return;
-    int n = list->size > 32 ? 32 : list->size;
-    PanelKind kind = IdentifyPanel(panel);
-    size_t off = 0;
-    for (int i = 0; i < n; ++i) {
-        void* c = list->data[i];
-        if (!c) continue;
-        // Skip buttons — hover state mutates their border-rendered text.
-        if (CallDowncast(c, kVtableAsButton) != nullptr) continue;
-        if (CallDowncast(c, kVtableAsButtonToggle) != nullptr) continue;
-        // Skip listboxes for panels that have a dedicated per-row monitor.
-        // Their listbox text is the full concatenated row content, which the
-        // per-row monitors (MonitorContainerSelection, MonitorEquipPickerSelection)
-        // already announce as the user navigates. Including them in the
-        // fingerprint causes duplicate speech AND makes the fingerprint diff
-        // fire constantly — the engine flickers LB_ITEMS state on every
-        // mouseOver change, which on InGameEquip happens every chain step.
-        if ((kind == PanelKind::Container ||
-             kind == PanelKind::InGameEquip) && IsListBox(c)) continue;
-
-        char text[256];
-        const char* src = acc::menus::extract::FromControl(c, text, sizeof(text), panel);
-        if (!src) continue;
-        size_t tlen = strnlen(text, sizeof(text));
-        if (tlen == 0) continue;
-
-        // Skip whitespace-only.
-        bool allWs = true;
-        for (size_t k = 0; k < tlen; ++k) {
-            char ch = text[k];
-            if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r') {
-                allWs = false; break;
-            }
-        }
-        if (allWs) continue;
-
-        size_t needed = (off > 0 ? 3 : 0) + tlen;
-        if (off + needed + 1 >= outSize) break;
-        if (off > 0) {
-            out[off++] = ' ';
-            out[off++] = '|';
-            out[off++] = ' ';
-        }
-        memcpy(out + off, text, tlen);
-        off += tlen;
-        out[off] = '\0';
-    }
-}
-
-// Check whether `seg` (length `segLen`) appears as a delimited segment
-// in `hay`. Segments in our fingerprint are joined by " | " (sep, len 3),
-// and may be at the start / end of `hay`. Used by SpeakNewSegments to
-// avoid re-speaking content that's already in the previous fingerprint.
-static bool FingerprintContainsSegment(const char* hay, size_t hayLen,
-                                       const char* seg, size_t segLen) {
-    if (segLen == 0 || segLen > hayLen) return false;
-    const char* sep = " | ";
-    const size_t sepLen = 3;
-    size_t i = 0;
-    while (i + segLen <= hayLen) {
-        if (memcmp(hay + i, seg, segLen) == 0) {
-            bool startOk = (i == 0) ||
-                (i >= sepLen && memcmp(hay + i - sepLen, sep, sepLen) == 0);
-            bool endOk = (i + segLen == hayLen) ||
-                (i + segLen + sepLen <= hayLen &&
-                 memcmp(hay + i + segLen, sep, sepLen) == 0);
-            if (startOk && endOk) return true;
-        }
-        ++i;
-    }
-    return false;
-}
-
-// Speak each segment of `curr` that isn't already a segment of `prev`.
-// Segments in the fingerprint are delimited by " | " (BuildContentFingerprint).
-// Order is preserved so the speech matches the panel's physical layout.
-//
-// This replaces the previous "speak the whole concatenated fingerprint on any
-// change" behavior, which caused redundant blob announcements every time any
-// single label in a monitored panel mutated — see LB_ITEMS flicker on the
-// equipment screen as the canonical case (every arrow keystroke triggered
-// a full re-read of every label and listbox item in the panel).
-static void SpeakNewSegments(const char* prev, const char* curr) {
-    const char* sep = " | ";
-    const size_t sepLen = 3;
-    size_t prevLen = strlen(prev);
-    const char* p = curr;
-    while (*p) {
-        const char* end = strstr(p, sep);
-        size_t segLen = end ? (size_t)(end - p) : strlen(p);
-        if (segLen > 0 &&
-            !FingerprintContainsSegment(prev, prevLen, p, segLen)) {
-            char seg[256];
-            size_t cp = segLen < sizeof(seg) - 1 ? segLen : sizeof(seg) - 1;
-            memcpy(seg, p, cp);
-            seg[cp] = '\0';
-            tolk::Speak(seg, /*interrupt=*/false);
-            acclog::Write("ContentChange", "  spoke \"%s\"", seg);
-        }
-        if (!end) break;
-        p = end + sepLen;
-    }
-}
-
-// Get-or-create the snapshot slot for a panel. FIFO-evicts when full.
-static char* GetContentSnapshot(void* panel) {
-    for (int i = 0; i < g_contentSnapshotCount; ++i) {
-        if (g_contentSnapshots[i].panel == panel) {
-            return g_contentSnapshots[i].text;
-        }
-    }
-    if (g_contentSnapshotCount >= kMaxContentSnapshots) {
-        memmove(g_contentSnapshots, g_contentSnapshots + 1,
-                sizeof(g_contentSnapshots[0]) * (kMaxContentSnapshots - 1));
-        g_contentSnapshotCount = kMaxContentSnapshots - 1;
-    }
-    int idx = g_contentSnapshotCount++;
-    g_contentSnapshots[idx].panel = panel;
-    g_contentSnapshots[idx].text[0] = '\0';
-    return g_contentSnapshots[idx].text;
-}
-
-// Per-tick content scan. Walks the manager's panels[] (top to bottom),
-// finds any panel of an interesting kind, snapshots its content
-// fingerprint, announces diffs. Persistent panels with stable content
-// (dialog-letterbox borders, etc.) settle to a fingerprint that matches
-// the snapshot and stay quiet; only changes speak.
-static void MonitorPanelContents() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (!panelData || panelCount <= 0) return;
-    if (panelCount > 16) panelCount = 16;
-
-    // Speak on first sight of an in-game sub-screen (Inventory, Map, …).
-    // Runs before the content-fingerprint loop so the kind name lands
-    // before the per-panel label dump for the same panel.
-    AnnounceNewSubScreens(panelData, panelCount);
-
-    for (int i = 0; i < panelCount; ++i) {
-        void* p = panelData[i];
-        if (!p) continue;
-        PanelKind k = IdentifyPanel(p);
-        if (!IsContentMonitored(k)) continue;
-
-        char fingerprint[512];
-        BuildContentFingerprint(p, fingerprint, sizeof(fingerprint));
-
-        char* last = GetContentSnapshot(p);
-        if (strncmp(last, fingerprint, sizeof(g_contentSnapshots[0].text)) == 0) {
-            continue;  // unchanged
-        }
-
-        // First-sight suppression. For panels whose appearance is already
-        // announced by another path (Container's LBL_MESSAGE via Announce-
-        // PanelTitle, every InGame{X} sub-screen via AnnounceNewSubScreens),
-        // snapshot without speaking — the user already heard the kind name,
-        // and per-row / per-control monitors take over from there. Subsequent
-        // mutations still drive the diff path below.
-        //
-        // Non-suppressed kinds (TutorialBox, BarkBubble, AreaTransition,
-        // MessageBoxModal, dialog cinematics) DO speak on first sight: their
-        // content IS the announcement signal — no separate kind name path
-        // already covers them.
-        bool firstSight = (last[0] == '\0');
-        bool suppressFirstSight =
-            firstSight &&
-            (k == PanelKind::Container || FindInGameSubScreenSpec(k) != nullptr);
-        if (suppressFirstSight) {
-            strncpy_s(last, sizeof(g_contentSnapshots[0].text),
-                      fingerprint, _TRUNCATE);
-            acclog::Write("ContentChange", "panel=%p kind=%s first-sight snapshot "
-                          "(deferring to kind-name path): \"%.200s\"",
-                          p, PanelKindName(k), fingerprint);
-            continue;
-        }
-
-        if (fingerprint[0] != '\0') {
-            acclog::Write("ContentChange", "panel=%p kind=%s",
-                          p, PanelKindName(k));
-            acclog::Write("ContentChange", "  prev=\"%.300s\"", last);
-            acclog::Write("ContentChange", "  curr=\"%.300s\"", fingerprint);
-            // Diff-based speech: only segments present in curr but absent in
-            // prev are spoken. Eliminates the "speak the whole blob on any
-            // change" pattern that surfaced as overlapping afterthought
-            // announcements after every chain step on panels with mutating
-            // labels (stat preview, listbox flicker, etc.).
-            SpeakNewSegments(last, fingerprint);
-        } else {
-            acclog::Write("ContentChange", "panel=%p kind=%s fingerprint cleared "
-                          "(prev=\"%.100s\")", p, PanelKindName(k), last);
-        }
-        strncpy_s(last, sizeof(g_contentSnapshots[0].text),
-                  fingerprint, _TRUNCATE);
-    }
-}
-
-// =============================================================================
-// Dialog-reply selection monitor.
-//
-// During an in-game conversation, the foreground panel is a CSWGuiDialog
-// subclass (CSWGuiDialogCinematic, DialogComputer, etc.) whose child[1] is
-// a CSWGuiListBox holding the player's reply choices. The engine's per-row
-// arrow-key navigation mutates listbox.selection_index in place WITHOUT
-// firing either CSWGuiPanel::SetActiveControl or CSWGuiListBox::
-// SetActiveControl — so without a poll we never hear which reply is
-// currently highlighted. The user sees the visual highlight move but we
-// stay silent.
-//
-// MonitorDialogReplies snapshots selection_index per-listbox, announces
-// the row's extracted text on change. State resets when we leave a dialog
-// (so re-entering a new one announces from the new initial state). The
-// content monitor (Layer 3) still handles the one-shot announcement of the
-// full reply list when it first appears; this monitor is purely for
-// per-row navigation announcements.
-// =============================================================================
-
-struct DialogReplyState {
-    void* listBox;
-    short lastSelection;
-};
-static DialogReplyState g_dialogReplyState = { nullptr, -1 };
-
-static bool IsDialogPanelKind(PanelKind k) {
-    switch (k) {
-    case PanelKind::DialogCinematic:
-    case PanelKind::DialogCinematicCopy:
-    case PanelKind::DialogComputer:
-    case PanelKind::DialogComputerCamera:
-        return true;
-    default:
-        return false;
-    }
-}
+// MonitorFocusedControl + MonitorPanelContents + their helpers (content
+// fingerprint, sub-screen tracking, segment-diff speech) moved to
+// menus_monitors.cpp post-Step-5. menus.cpp's drill router calls
+// acc::menus::monitors::FindActiveSubScreenPanel /
+// IsInGameSubScreenKind through the public surface.
 
 // Find the first CSWGuiListBox child in a panel's controls. Returns
 // nullptr if none. CSWGuiDialog::replies_listbox is at child[1] in
@@ -2320,418 +1749,12 @@ void* acc::menus::detail::FindListBoxChild(void* panel) {
     return nullptr;
 }
 
-static void MonitorDialogReplies() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return;
-
-    // Scan ALL panels in the manager's panels[] for a dialog-kind panel.
-    // Was previously gating on fg, which fails because during arrow-key
-    // navigation in a dialog the foreground panel switches to a separate
-    // auxiliary panel (Unknown kind) — the actual dialog-cinematic panel
-    // stays in panels[] but isn't fg, so the old fg-only check rejected
-    // the dialog and reset the monitor state on every keystroke. Verified
-    // in patch-20260502-192712.log: the same listbox 0FE2D434 stayed
-    // allocated through all 8 reply turns; selection_index successfully
-    // changed (initialSel went from -1 → 1 → 0 across turns) but every
-    // change was missed because the monitor reset between them.
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-
-    void* dialogPanel = nullptr;
-    PanelKind dialogKind = PanelKind::Unknown;
-    if (panelData && panelCount > 0) {
-        int n = panelCount > 16 ? 16 : panelCount;
-        for (int i = 0; i < n; ++i) {
-            void* p = panelData[i];
-            if (!p) continue;
-            PanelKind pk = IdentifyPanel(p);
-            if (IsDialogPanelKind(pk)) {
-                dialogPanel = p;
-                dialogKind  = pk;
-                break;
-            }
-        }
-    }
-
-    if (!dialogPanel) {
-        if (g_dialogReplyState.listBox) {
-            acclog::Write("Menus.DialogReply", "monitor disarmed: no dialog panel in stack");
-            g_dialogReplyState.listBox = nullptr;
-            g_dialogReplyState.lastSelection = -1;
-        }
-        return;
-    }
-
-    void* lb = FindListBoxChild(dialogPanel);
-    if (!lb) return;
-    PanelKind k = dialogKind;
-    void* fg = dialogPanel;  // for log-line compatibility below
-
-    short selIdx = *reinterpret_cast<short*>(
-        reinterpret_cast<unsigned char*>(lb) + kListBoxSelectionIndexOffset);
-
-    // First sight of this listbox: snapshot only (don't announce — the
-    // content monitor already spoke the full reply list when the dialog
-    // entered the reply state).
-    if (g_dialogReplyState.listBox != lb) {
-        g_dialogReplyState.listBox = lb;
-        g_dialogReplyState.lastSelection = selIdx;
-        acclog::Write("Menus.DialogReply", "monitor armed: panel=%p kind=%s listbox=%p "
-                      "initialSel=%d", fg, PanelKindName(k), lb, selIdx);
-        return;
-    }
-
-    if (selIdx == g_dialogReplyState.lastSelection) return;
-    short prev = g_dialogReplyState.lastSelection;
-    g_dialogReplyState.lastSelection = selIdx;
-
-    if (selIdx < 0) {
-        acclog::Write("Menus.DialogReply", "selection cleared: listbox=%p prev=%d",
-                      lb, prev);
-        return;
-    }
-
-    auto* lbList = reinterpret_cast<CExoArrayList*>(
-        reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
-    if (!lbList || !lbList->data || selIdx >= lbList->size) {
-        acclog::Write("Menus.DialogReply", "selection out of range: listbox=%p sel=%d "
-                      "size=%d", lb, selIdx,
-                      (lbList ? lbList->size : -1));
-        return;
-    }
-
-    void* row = lbList->data[selIdx];
-    if (!row) return;
-
-    char text[256];
-    const char* src = acc::menus::extract::FromControl(row, text, sizeof(text));
-    if (src) {
-        acclog::Write("Menus.DialogReply", "selected: panel=%p kind=%s listbox=%p "
-                      "sel=%d (was %d) src=%s text=\"%s\"",
-                      fg, PanelKindName(k), lb, selIdx, prev, src, text);
-        tolk::Speak(text, /*interrupt=*/false);
-    } else {
-        char vtbl[160];
-        DumpControlVtable(row, vtbl, sizeof(vtbl));
-        acclog::Write("Menus.DialogReply", "selected (src=none): panel=%p listbox=%p "
-                      "sel=%d row=%p %s", fg, lb, selIdx, row, vtbl);
-    }
-}
-
-// =============================================================================
-// Container loot panel — input + per-row navigation.
-//
-// container.gui (extracted from data/gui.bif via xoreos-tools) defines a
-// CSWGuiPanel with these stable child IDs:
-//
-//   id 0  LBL_MESSAGE     label   — "Inhalt des Beh\xE4lters" (take-mode) or
-//                                   "F\xFCr diesen Beh\xE4lter verf\xFCgbare
-//                                   Gegenst\xE4nde" (give-mode)
-//   id 2  LB_ITEMS        listbox — chest contents OR player inventory
-//                                   depending on mode
-//   id 3  BTN_OK          button  — "Nehmen" (take-mode) / "Ablegen" (give-mode)
-//   id 4  BTN_GIVEITEMS   button  — toggles take \xE2\x86\x94 give mode
-//   id 5  BTN_CANCEL      button  — "Schliess." (close panel)
-//
-// Mode toggle is engine-native: clicking BTN_GIVEITEMS swaps LBL_MESSAGE's
-// strref + LB_ITEMS source + BTN_OK label without our involvement. Our
-// content monitor (Container in IsContentMonitored) catches the title swap.
-//
-// Input model in this panel:
-//   * Up/Down       — pass through; engine's CSWGuiListBox handler mutates
-//                     selection_index in place (no SetActiveControl callback,
-//                     same as dialog-reply listbox — so we poll).
-//   * Enter         — FireActivate BTN_OK (id=3).
-//   * Tab           — FireActivate BTN_GIVEITEMS (id=4).
-//   * Esc           — FireActivate BTN_CANCEL (id=5). Done explicitly here
-//                     (rather than via the generic Esc \xE2\x86\x92 close-button
-//                     heuristic below) so it doesn't depend on g_tabbedPanel
-//                     being set, which only happens after the user has visited
-//                     Options.
-// =============================================================================
-//
-// Constants (kContainerBtnOkId, etc.) and FindControlById live earlier in the
-// file (next to FindCloseButton) — they're shared with the Container input
-// handler in OnHandleInputEvent.
-
-struct ContainerSelState {
-    void* listBox;
-    short lastSelection;
-};
-static ContainerSelState g_containerSelState = { nullptr, -1 };
-
-// Equipment picker selection-tracking state — declared next to
-// g_containerSelState because MonitorEquipPickerSelection mirrors
-// MonitorContainerSelection. The arming flags moved into menus_listbox.cpp
-// in Step 4 of the refactor; the disarm-on-panel-gone hook below uses
-// the acc::menus::listbox accessors.
-struct EquipSelState {
-    void* listBox;
-    short lastSelection;
-};
-static EquipSelState g_equipSelState = { nullptr, -1 };
-
-// Per-tick poll of the Container panel's listbox selection_index. First sight
-// of a new listbox: announce item count (or "leer"), snapshot without reading
-// the current row. Subsequent change: announce "<row text>, <i+1> von <N>".
-//
-// Mirrors MonitorDialogReplies in structure — both monitor a CSWGuiListBox
-// whose selection_index is mutated in place by the engine's arrow-key handler
-// without firing CSWGuiListBox::SetActiveControl.
-static void MonitorContainerSelection() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-
-    void* containerPanel = nullptr;
-    if (panelData && panelCount > 0) {
-        int n = panelCount > 16 ? 16 : panelCount;
-        for (int i = 0; i < n; ++i) {
-            void* p = panelData[i];
-            if (!p) continue;
-            if (IdentifyPanel(p) == PanelKind::Container) {
-                containerPanel = p;
-                break;
-            }
-        }
-    }
-
-    if (!containerPanel) {
-        if (g_containerSelState.listBox) {
-            acclog::Write("Menus.Container", "monitor disarmed: no Container panel in stack");
-            g_containerSelState.listBox = nullptr;
-            g_containerSelState.lastSelection = -1;
-        }
-        return;
-    }
-
-    void* lb = FindListBoxChild(containerPanel);
-    if (!lb) return;
-
-    auto* lbList = reinterpret_cast<CExoArrayList*>(
-        reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
-    int rowCount = (lbList && lbList->data) ? lbList->size : 0;
-
-    short selIdx = *reinterpret_cast<short*>(
-        reinterpret_cast<unsigned char*>(lb) + kListBoxSelectionIndexOffset);
-
-    // First sight of this listbox — speak count, snapshot, return. The user
-    // already heard the panel title via AnnouncePanelTitle; the count tells
-    // them there is something to navigate. They press Down to start walking.
-    if (g_containerSelState.listBox != lb) {
-        g_containerSelState.listBox       = lb;
-        g_containerSelState.lastSelection = selIdx;
-        if (rowCount <= 0) {
-            tolk::Speak(acc::strings::Get(acc::strings::Id::ContainerEmpty),
-                        /*interrupt=*/false);
-            acclog::Write("Menus.Container", "monitor armed: panel=%p lb=%p empty initialSel=%d",
-                          containerPanel, lb, selIdx);
-        } else if (rowCount == 1) {
-            tolk::Speak(acc::strings::Get(acc::strings::Id::ContainerOneItem),
-                        /*interrupt=*/false);
-            acclog::Write("Menus.Container", "monitor armed: panel=%p lb=%p count=1 initialSel=%d",
-                          containerPanel, lb, selIdx);
-        } else {
-            char msg[64];
-            snprintf(msg, sizeof(msg),
-                     acc::strings::Get(acc::strings::Id::FmtContainerItems),
-                     rowCount);
-            tolk::Speak(msg, /*interrupt=*/false);
-            acclog::Write("Menus.Container", "monitor armed: panel=%p lb=%p count=%d initialSel=%d",
-                          containerPanel, lb, rowCount, selIdx);
-        }
-        return;
-    }
-
-    if (selIdx == g_containerSelState.lastSelection) return;
-    short prev = g_containerSelState.lastSelection;
-    g_containerSelState.lastSelection = selIdx;
-
-    if (selIdx < 0) {
-        acclog::Write("Menus.Container", "selection cleared: lb=%p prev=%d", lb, prev);
-        return;
-    }
-    if (!lbList || !lbList->data || selIdx >= lbList->size) {
-        acclog::Write("Menus.Container", "selection out of range: lb=%p sel=%d size=%d",
-                      lb, selIdx, lbList ? lbList->size : -1);
-        return;
-    }
-    void* row = lbList->data[selIdx];
-    if (!row) return;
-
-    char rowText[256];
-    const char* src = acc::menus::extract::FromControl(row, rowText, sizeof(rowText));
-    if (!src) {
-        acclog::Write("Menus.Container", "row %d (lb=%p) no announceable text", selIdx, lb);
-        return;
-    }
-
-    char msg[320];
-    snprintf(msg, sizeof(msg),
-             acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
-             rowText, selIdx + 1, rowCount);
-    tolk::Speak(msg, /*interrupt=*/false);
-    acclog::Write("Menus.Container", "row lb=%p sel=%d (was %d) text=\"%s\"",
-                  lb, selIdx, prev, rowText);
-}
-
-// Per-tick poll of the equipment-screen LB_ITEMS selection_index. Mirrors
-// MonitorContainerSelection — same pattern: first sight after a panel
-// transition snapshots without speaking, subsequent index changes speak the
-// new row's text. Wakes up on panel arming (we set selection_index when the
-// engine repopulates LB_ITEMS) and on user arrow-key driven changes.
-//
-// Auto-disarms when the InGameEquip panel falls out of panels[] so a
-// reopen starts fresh.
-static void MonitorEquipPickerSelection() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-
-    void* equipPanel = nullptr;
-    if (panelData && panelCount > 0) {
-        int n = panelCount > 16 ? 16 : panelCount;
-        for (int i = 0; i < n; ++i) {
-            void* p = panelData[i];
-            if (!p) continue;
-            if (IdentifyPanel(p) == PanelKind::InGameEquip) {
-                equipPanel = p;
-                break;
-            }
-        }
-    }
-
-    if (!equipPanel) {
-        if (g_equipSelState.listBox) {
-            acclog::Write("Menus.EquipPicker", "monitor disarmed: no InGameEquip panel in stack");
-            g_equipSelState.listBox       = nullptr;
-            g_equipSelState.lastSelection = -1;
-        }
-        if (acc::menus::listbox::IsEquipPickerArmed()) {
-            acclog::Write("EquipPicker", "disarm — panel gone from panels[]");
-            acc::menus::listbox::DisarmEquipPicker();
-        }
-        return;
-    }
-
-    void* lb = FindControlById(equipPanel, kEquipLbItemsId);
-    if (!lb) return;
-
-    auto* lbList = reinterpret_cast<CExoArrayList*>(
-        reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
-    int rowCount = (lbList && lbList->data) ? lbList->size : 0;
-
-    short selIdx = *reinterpret_cast<short*>(
-        reinterpret_cast<unsigned char*>(lb) + kListBoxSelectionIndexOffset);
-
-    // First sight of this listbox — snapshot without speaking. Don't speak
-    // a count line on the equip screen: at panel-open the listbox is empty
-    // (the engine fills it after the user activates a slot), and users have
-    // already heard the panel name + tutorial. Re-speak only on changes.
-    if (g_equipSelState.listBox != lb) {
-        g_equipSelState.listBox       = lb;
-        g_equipSelState.lastSelection = selIdx;
-        acclog::Write("Menus.EquipPicker", "monitor armed: panel=%p lb=%p rows=%d initialSel=%d",
-                      equipPanel, lb, rowCount, selIdx);
-        return;
-    }
-
-    if (selIdx == g_equipSelState.lastSelection) return;
-    short prev = g_equipSelState.lastSelection;
-    g_equipSelState.lastSelection = selIdx;
-
-    if (selIdx < 0) {
-        acclog::Write("Menus.EquipPicker", "selection cleared: lb=%p prev=%d", lb, prev);
-        return;
-    }
-    if (selIdx == 0) {
-        // Row 0 is the protoitem template — never an item the user can equip.
-        // Should be unreachable now that the picker handler clamps to >=1, but
-        // log if the engine somehow lands here so we notice.
-        acclog::Write("Menus.EquipPicker", "selection on protoitem (sel=0) lb=%p", lb);
-        return;
-    }
-    if (!lbList || !lbList->data || selIdx >= lbList->size) {
-        acclog::Write("Menus.EquipPicker", "selection out of range: lb=%p sel=%d size=%d",
-                      lb, selIdx, lbList ? lbList->size : -1);
-        return;
-    }
-    void* row = lbList->data[selIdx];
-    if (!row) return;
-
-    char rowText[256];
-    const char* src = acc::menus::extract::FromControl(row, rowText, sizeof(rowText));
-    if (!src) {
-        acclog::Write("Menus.EquipPicker", "row %d (lb=%p) no announceable text", selIdx, lb);
-        return;
-    }
-
-    // Reuse the container "X, i von N" format. selIdx is offset by 1 because
-    // row 0 is the protoitem template — user-facing position is selIdx (so
-    // sel=1 reads as "1 of N") and the user-facing total is rowCount-1.
-    int userPos   = selIdx;
-    int userTotal = rowCount - 1;
-    char msg[320];
-    snprintf(msg, sizeof(msg),
-             acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
-             rowText, userPos, userTotal);
-    tolk::Speak(msg, /*interrupt=*/false);
-    acclog::Write("Menus.EquipPicker", "row lb=%p sel=%d (was %d) text=\"%s\"",
-                  lb, selIdx, prev, rowText);
-}
-
-// Container give-mode toggle key — Win32 poll for G. The natural key (Tab)
-// never reaches CSWGuiManager::HandleInputEvent because the engine's player-
-// control / Change-Leader layer consumes Tab before menu-input dispatch
-// (verified empirically: three Tab presses logged only by DiagSelect; zero
-// LOGICAL_TAB events at the manager hook in patch-20260504-103242.log lines
-// 1380-1382). Win32 GetAsyncKeyState bypasses the engine's input pipeline
-// entirely, so we always see the press regardless of what the engine is
-// doing with it.
-//
-// G is "Stealth Mode" in-world but is a harmless no-op while a menu panel
-// is foreground, so claiming it for give-mode toggle inside the Container
-// panel doesn't fight the existing keymap. Gated to Container-panel-fg so
-// the binding is scoped — outside the loot UI G still triggers its in-world
-// stealth behaviour.
-static void PollContainerGiveModeKey() {
-    static bool s_prevG = false;
-    bool g = (GetAsyncKeyState('G') & 0x8000) != 0;
-    bool risingG = g && !s_prevG;
-    s_prevG = g;
-    if (!risingG) return;
-
-    HWND fgWnd = GetForegroundWindow();
-    if (fgWnd) {
-        DWORD pid = 0;
-        GetWindowThreadProcessId(fgWnd, &pid);
-        if (pid != GetCurrentProcessId()) return;
-    }
-
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return;
-    void* fgPanel = acc::engine::GetForegroundPanel(mgr);
-    if (!fgPanel || IdentifyPanel(fgPanel) != PanelKind::Container) return;
-
-    if (acc::menus::pending::IsPending()) {
-        acclog::Write("Container", "G (give-mode) -- op already pending; ignoring");
-        return;
-    }
-    void* btn = FindControlById(fgPanel, kContainerBtnGiveId);
-    if (!btn) {
-        acclog::Write("Container", "G (give-mode) -- BTN_GIVEITEMS not found on panel=%p",
-                      fgPanel);
-        return;
-    }
-    acc::menus::pending::QueueActivate(btn);
-    acclog::Write("Container", "G (give-mode) -> FireActivate BTN_GIVEITEMS panel=%p target=%p",
-                  fgPanel, btn);
-}
+// MonitorDialogReplies, MonitorContainerSelection,
+// MonitorEquipPickerSelection, PollContainerGiveModeKey, and their per-
+// monitor state structs moved out post-Step-5. Dialog-reply monitor lives
+// in menus_monitors.cpp; the three subsystem-paired monitors (Container,
+// EquipPicker, give-mode key poll) co-locate with their listbox spec
+// entries in menus_listbox.cpp.
 
 // Step 1 of the menus.cpp refactor (mod-wide tick dispatcher split):
 //
@@ -2756,12 +1779,12 @@ void ValidatePanels() {
 }
 
 void TickMonitors() {
-    MonitorFocusedControl();
-    MonitorPanelContents();
-    MonitorDialogReplies();
-    MonitorContainerSelection();
-    MonitorEquipPickerSelection();
-    PollContainerGiveModeKey();
+    // Post-Step-5 cleanup: monitors split across two TUs. General monitors
+    // (focus / panel-contents / dialog-reply) live in menus_monitors.cpp;
+    // listbox-paired monitors (Container, EquipPicker, give-mode key poll)
+    // co-locate with their spec entries in menus_listbox.cpp.
+    acc::menus::monitors::TickGeneralMonitors();
+    acc::menus::listbox::TickListboxMonitors();
 }
 
 // Drain the menu-side pending-op queue. Called from core_tick::Dispatch
