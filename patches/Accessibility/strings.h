@@ -290,6 +290,40 @@ enum class Id : int {
     // one). Args: direction (`%s`), portrait_id one-based (`%d`).
     FmtPortraitArrowId,
 
+    // ---- Character sheet sub-screen opener (CSWGuiInGameCharacter).
+    //      One announce on first-sight per panel-open cycle, built by
+    //      menus_charsheet::MaybeAnnounce. Each Fmt* below is one sentence
+    //      fragment in the composed line; fields the engine renders as
+    //      empty are skipped at the call site so we don't speak bare
+    //      labels with no value.
+    //
+    //      Class line: takes 1 `%s` (class name as the engine renders it,
+    //      e.g. "Soldat" / "Soldier" — already localised via dialog.tlk).
+    //      Trailing ". " makes screen readers pause before the next field.
+    //      Class name needs no own prefix — coming first, it gives natural
+    //      context.
+    FmtCharSheetClass,
+    // Level: 1 `%s` (numeric value as engine-rendered string).
+    FmtCharSheetLevel,
+    // Experience: 2 `%s` (current / threshold, both engine-rendered).
+    FmtCharSheetXp,
+    // Hit points / Force points: 1 `%s` each (typically "999/999").
+    FmtCharSheetHp,
+    FmtCharSheetFp,
+    // Attribute lines (Str/Dex/Con/Int/Wis/Cha): 3 `%s` each — value,
+    // separator (", " when a modifier is present, "" otherwise), and
+    // pre-formatted modifier ("+2" / "-1") read straight from the engine
+    // (so we don't reimplement the +N/-N formatting).
+    FmtCharSheetStr,
+    FmtCharSheetDex,
+    FmtCharSheetCon,
+    FmtCharSheetInt,
+    FmtCharSheetWis,
+    FmtCharSheetCha,
+    // Alignment slider: 2 `%u` (cur / max). Vanilla range is 0..100;
+    // 50 = neutral, 0 = Dark Side, 100 = Light Side.
+    FmtCharSheetAlignment,
+
     Count_,
 };
 

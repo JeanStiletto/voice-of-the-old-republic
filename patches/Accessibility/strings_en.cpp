@@ -98,6 +98,19 @@ const char* Get(Id id) {
         case Id::FmtPortraitArrow:     return "%s: %s";
         case Id::FmtPortraitArrowId:   return "%s %d";
 
+        case Id::FmtCharSheetClass:    return "%s. ";
+        case Id::FmtCharSheetLevel:    return "Level %s. ";
+        case Id::FmtCharSheetXp:       return "Experience %s of %s. ";
+        case Id::FmtCharSheetHp:       return "Hit points %s. ";
+        case Id::FmtCharSheetFp:       return "Force points %s. ";
+        case Id::FmtCharSheetStr:      return "Strength %s%s%s. ";
+        case Id::FmtCharSheetDex:      return "Dexterity %s%s%s. ";
+        case Id::FmtCharSheetCon:      return "Constitution %s%s%s. ";
+        case Id::FmtCharSheetInt:      return "Intelligence %s%s%s. ";
+        case Id::FmtCharSheetWis:      return "Wisdom %s%s%s. ";
+        case Id::FmtCharSheetCha:      return "Charisma %s%s%s. ";
+        case Id::FmtCharSheetAlignment: return "Alignment %u of %u.";
+
         case Id::Count_:               return "";
     }
     return "";

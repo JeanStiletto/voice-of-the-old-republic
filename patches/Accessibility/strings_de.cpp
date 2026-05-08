@@ -108,6 +108,19 @@ const char* Get(Id id) {
         case Id::FmtPortraitArrow:     return "%s: %s";
         case Id::FmtPortraitArrowId:   return "%s %d";
 
+        case Id::FmtCharSheetClass:    return "%s. ";
+        case Id::FmtCharSheetLevel:    return "Stufe %s. ";
+        case Id::FmtCharSheetXp:       return "Erfahrung %s von %s. ";
+        case Id::FmtCharSheetHp:       return "Lebenspunkte %s. ";
+        case Id::FmtCharSheetFp:       return "Machtpunkte %s. ";
+        case Id::FmtCharSheetStr:      return "St\xE4rke %s%s%s. ";          // Stärke
+        case Id::FmtCharSheetDex:      return "Geschicklichkeit %s%s%s. ";
+        case Id::FmtCharSheetCon:      return "Verfassung %s%s%s. ";
+        case Id::FmtCharSheetInt:      return "Intelligenz %s%s%s. ";
+        case Id::FmtCharSheetWis:      return "Weisheit %s%s%s. ";
+        case Id::FmtCharSheetCha:      return "Charisma %s%s%s. ";
+        case Id::FmtCharSheetAlignment: return "Gesinnung %u von %u.";
+
         case Id::Count_:               return "";
     }
     return "";
