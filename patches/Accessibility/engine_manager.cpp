@@ -49,8 +49,9 @@ void* GetForegroundPanel(void* mgr) {
 }
 
 void LogManagerStack(void* mgr, const char* tag) {
+    const char* ctx = tag ? tag : "?";
     if (!mgr) {
-        acclog::Write("ManagerStack(%s): mgr=NULL", tag ? tag : "?");
+        acclog::Write("ManagerStack", "(%s) mgr=NULL", ctx);
         return;
     }
     auto* base = reinterpret_cast<unsigned char*>(mgr);
@@ -59,18 +60,19 @@ void LogManagerStack(void* mgr, const char* tag) {
     int   modalSize  = *reinterpret_cast<int*>(base + kMgrModalStackSizeOffset);
     void** modalData = *reinterpret_cast<void***>(base + kMgrModalStackDataOffset);
     void* fg = GetForegroundPanel(mgr);
-    acclog::Write("ManagerStack(%s) mgr=%p panels.size=%d modal.size=%d fg=%p",
-                  tag ? tag : "?", mgr, panelSize, modalSize, fg);
+    acclog::Write("ManagerStack",
+                  "(%s) mgr=%p panels.size=%d modal.size=%d fg=%p",
+                  ctx, mgr, panelSize, modalSize, fg);
     int pn = panelSize;
     if (pn < 0 || pn > 32) pn = (pn < 0) ? 0 : 32;
     for (int i = 0; i < pn && panelData; ++i) {
-        acclog::Write("ManagerStack(%s)   panels[%d]=%p", tag ? tag : "?",
+        acclog::Write("ManagerStack", "(%s)   panels[%d]=%p", ctx,
                       i, panelData[i]);
     }
     int mn = modalSize;
     if (mn < 0 || mn > 32) mn = (mn < 0) ? 0 : 32;
     for (int i = 0; i < mn && modalData; ++i) {
-        acclog::Write("ManagerStack(%s)   modal[%d]=%p", tag ? tag : "?",
+        acclog::Write("ManagerStack", "(%s)   modal[%d]=%p", ctx,
                       i, modalData[i]);
     }
 }

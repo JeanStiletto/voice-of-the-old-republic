@@ -385,7 +385,7 @@ bool ReadTargetName(void* tam, char* outBuf, size_t bufSize) {
 
 void LogState(void* tam, const char* tag) {
     if (!tam) {
-        acclog::Write("Radial.State[%s]: tam=NULL", tag ? tag : "?");
+        acclog::Write("Radial.State", "[%s] tam=NULL", tag ? tag : "?");
         return;
     }
 
@@ -401,10 +401,10 @@ void LogState(void* tam, const char* tag) {
             w[i] = static_cast<uint32_t>(tmp);
         }
         std::snprintf(hex, sizeof(hex),
-                      "Radial.State[%s]: tam+%02x: %08x %08x %08x %08x",
+                      "[%s] tam+%02x: %08x %08x %08x %08x",
                       tag ? tag : "?", static_cast<unsigned>(off),
                       w[0], w[1], w[2], w[3]);
-        acclog::Write("%s", hex);
+        acclog::Write("Radial.State", "%s", hex);
     }
 
     // Parsed action_lists.
@@ -414,8 +414,7 @@ void LogState(void* tam, const char* tag) {
         ReadInt32(tam, base + 0x00, &dataPtr);
         ReadInt32(tam, base + 0x04, &size);
         ReadInt32(tam, base + 0x08, &cap);
-        acclog::Write(
-            "Radial.State[%s]: action_lists[%d] data=0x%08x size=%d cap=%d",
+        acclog::Write("Radial.State", "[%s] action_lists[%d] data=0x%08x size=%d cap=%d",
             tag ? tag : "?", r,
             static_cast<uint32_t>(dataPtr), size, cap);
     }
@@ -434,15 +433,14 @@ void LogState(void* tam, const char* tag) {
         size_t labelLen = 0;
         for (; labelLen < sizeof(label) && label[labelLen]; ++labelLen) {}
 
-        acclog::Write(
-            "Radial.State[%s]: target_actions[%d] is_action=%d "
+        acclog::Write("Radial.State", "[%s] target_actions[%d] is_action=%d "
             "action_button.gui_string=[%s] (len=%zu)",
             tag ? tag : "?", r, isAction, label, labelLen);
     }
 
     char nameBuf[64] = "";
     acc::engine_radial::ReadTargetName(tam, nameBuf, sizeof(nameBuf));
-    acclog::Write("Radial.State[%s]: name_label.text=[%s]",
+    acclog::Write("Radial.State", "[%s] name_label.text=[%s]",
                   tag ? tag : "?", nameBuf);
 }
 
@@ -498,8 +496,7 @@ void LogStateWide(void* tam, const char* tag) {
         for (int i = 0; i < 12; ++i) {
             ReadInt32(tam, 0x24 + i * 4, &f[i]);
         }
-        acclog::Write(
-            "Radial.StateW[%s]: field1[0..3]=%d,%d,%d,%d "
+        acclog::Write("Radial.StateW", "[%s] field1[0..3]=%d,%d,%d,%d "
             "[4..7]=%d,%d,%d,%d [8..11]=%d,%d,%d,%d",
             tag ? tag : "?",
             f[0], f[1], f[2], f[3],
@@ -525,17 +522,14 @@ void LogStateWide(void* tam, const char* tag) {
         ReadInt32(tam, rowBase + kRowField5Offset, &f5);
         ReadInt32(tam, rowBase + kRowIsActionOffset, &isAct);
 
-        acclog::Write(
-            "Radial.StateW[%s]: target_actions[%d] is_action=%d "
+        acclog::Write("Radial.StateW", "[%s] target_actions[%d] is_action=%d "
             "field4=0x%08x field5=0x%08x",
             tag ? tag : "?", r, isAct,
             static_cast<uint32_t>(f4), static_cast<uint32_t>(f5));
-        acclog::Write(
-            "Radial.StateW[%s]: target_actions[%d] action_button=[%s] "
+        acclog::Write("Radial.StateW", "[%s] target_actions[%d] action_button=[%s] "
             "action_label=[%s]",
             tag ? tag : "?", r, actBtn, actLbl);
-        acclog::Write(
-            "Radial.StateW[%s]: target_actions[%d] up_button=[%s] "
+        acclog::Write("Radial.StateW", "[%s] target_actions[%d] up_button=[%s] "
             "down_button=[%s]",
             tag ? tag : "?", r, upBtn, downBtn);
     }
@@ -561,8 +555,7 @@ void LogStateWide(void* tam, const char* tag) {
         ReadInt32(peek, kIfActionTargetOffset, &targetId);
         ReadResRefLocal(peek, kIfActionIconOffset, icon, sizeof(icon));
 
-        acclog::Write(
-            "Radial.StateW[%s]: action_lists[%d].data[0] peek "
+        acclog::Write("Radial.StateW", "[%s] action_lists[%d].data[0] peek "
             "label=[%s] action_id=0x%x target_id=0x%08x icon=[%s] "
             "(size=%d cap=%d data=0x%08x)",
             tag ? tag : "?", r, label,
@@ -579,7 +572,7 @@ bool SelectNextActionInRow(void* tam, int row) {
         fn(tam, row);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        acclog::Write("Radial: SelectNextActionInRow SEH-FAULT row=%d", row);
+        acclog::Write("Radial", "SelectNextActionInRow SEH-FAULT row=%d", row);
         return false;
     }
 }
@@ -591,7 +584,7 @@ bool SelectPrevActionInRow(void* tam, int row) {
         fn(tam, row);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        acclog::Write("Radial: SelectPrevActionInRow SEH-FAULT row=%d", row);
+        acclog::Write("Radial", "SelectPrevActionInRow SEH-FAULT row=%d", row);
         return false;
     }
 }
@@ -603,7 +596,7 @@ bool DispatchRowAction(void* tam, int row) {
         fn(tam, row);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        acclog::Write("Radial: DispatchRowAction SEH-FAULT row=%d", row);
+        acclog::Write("Radial", "DispatchRowAction SEH-FAULT row=%d", row);
         return false;
     }
 }
@@ -636,14 +629,14 @@ void LogTargetDiag(uint32_t targetClient, const char* tag) {
 
     if (targetClient == 0u || targetClient == 0xFFFFFFFFu ||
         targetClient == 0x7F000000u) {
-        acclog::Write("Radial.Diag[%s]: target=0x%08x — sentinel/invalid",
+        acclog::Write("Radial.Diag", "[%s] target=0x%08x — sentinel/invalid",
                       t, targetClient);
         return;
     }
 
     void* exoApp = GetClientExoApp();
     if (!exoApp) {
-        acclog::Write("Radial.Diag[%s]: target=0x%08x — no client exo app",
+        acclog::Write("Radial.Diag", "[%s] target=0x%08x — no client exo app",
                       t, targetClient);
         return;
     }
@@ -657,8 +650,7 @@ void LogTargetDiag(uint32_t targetClient, const char* tag) {
         gameObject = nullptr;
     }
     if (!gameObject) {
-        acclog::Write(
-            "Radial.Diag[%s]: target=0x%08x — GetGameObject returned NULL",
+        acclog::Write("Radial.Diag", "[%s] target=0x%08x — GetGameObject returned NULL",
             t, targetClient);
         return;
     }
@@ -684,8 +676,7 @@ void LogTargetDiag(uint32_t targetClient, const char* tag) {
     else if (asPlaceable) kind = "placeable";
     else if (asTrigger)   kind = "trigger";
 
-    acclog::Write(
-        "Radial.Diag[%s]: target=0x%08x gameObject=%p vtable=0x%08x kind=%s "
+    acclog::Write("Radial.Diag", "[%s] target=0x%08x gameObject=%p vtable=0x%08x kind=%s "
         "(door=%p creature=%p placeable=%p trigger=%p)",
         t, targetClient, gameObject,
         static_cast<uint32_t>(vtableAddr), kind,
@@ -702,8 +693,7 @@ void LogTargetDiag(uint32_t targetClient, const char* tag) {
         ReadInt32(asDoor, kDoorIsHostileOffset,     &isHostile);
         ReadInt32(asDoor, kDoorStateOffset,         &state);
         ReadInt32(asDoor, kDoorField17Offset,       &field17);
-        acclog::Write(
-            "Radial.Diag[%s]: door=%p cannot_bash=%d can_use_actions=%d "
+        acclog::Write("Radial.Diag", "[%s] door=%p cannot_bash=%d can_use_actions=%d "
             "is_hostile=%d state=%d field17=%d",
             t, asDoor, cannotBash, canUseActions, isHostile, state, field17);
 
@@ -726,13 +716,11 @@ void LogTargetDiag(uint32_t targetClient, const char* tag) {
                                  kServerDoorSecurityGateOffset, &securityGate);
         }
         if (gateRead) {
-            acclog::Write(
-                "Radial.Diag[%s]: server_door=%p +0x2d8(security_gate)=%d "
+            acclog::Write("Radial.Diag", "[%s] server_door=%p +0x2d8(security_gate)=%d "
                 "(must be 0 to add Security row)",
                 t, serverDoor, securityGate);
         } else {
-            acclog::Write(
-                "Radial.Diag[%s]: server_door=%p — security_gate read failed",
+            acclog::Write("Radial.Diag", "[%s] server_door=%p — security_gate read failed",
                 t, serverDoor);
         }
 
@@ -764,41 +752,35 @@ void LogTargetDiag(uint32_t targetClient, const char* tag) {
                 }
             }
         }
-        acclog::Write(
-            "Radial.Diag[%s]: leader=%p has_security_skill=%d "
+        acclog::Write("Radial.Diag", "[%s] leader=%p has_security_skill=%d "
             "(skill 6, gates the Security row in CSWCDoor::GetTargetActions)",
             t, clientLeader, leaderSecurity);
 
         // Annotate which precondition would fail — saves cross-referencing
         // the GetTargetActions decomp every time a log lands.
         if (canUseActions == 0) {
-            acclog::Write(
-                "Radial.Diag[%s]: door precondition fail — can_use_actions=0 "
+            acclog::Write("Radial.Diag", "[%s] door precondition fail — can_use_actions=0 "
                 "(door already in final state, e.g. opened); both Bash and "
                 "Security rows skipped by CSWCDoor::GetTargetActions",
                 t);
         }
         if (cannotBash != 0) {
-            acclog::Write(
-                "Radial.Diag[%s]: door precondition fail — cannot_bash=%d "
+            acclog::Write("Radial.Diag", "[%s] door precondition fail — cannot_bash=%d "
                 "(scripted door, no Bash row even when can_use_actions != 0)",
                 t, cannotBash);
         }
         if (field17 != 0) {
-            acclog::Write(
-                "Radial.Diag[%s]: door precondition fail — field17=%d "
+            acclog::Write("Radial.Diag", "[%s] door precondition fail — field17=%d "
                 "(blocks Bash row regardless of cannot_bash / can_use_actions)",
                 t, field17);
         }
         if (gateRead && securityGate != 0) {
-            acclog::Write(
-                "Radial.Diag[%s]: door precondition fail — server_door+0x2d8 "
+            acclog::Write("Radial.Diag", "[%s] door precondition fail — server_door+0x2d8 "
                 "= %d != 0 (door rejects Security row at the server-side gate)",
                 t, securityGate);
         }
         if (canUseActions != 0 && leaderSecurity == 0) {
-            acclog::Write(
-                "Radial.Diag[%s]: door precondition fail — active leader "
+            acclog::Write("Radial.Diag", "[%s] door precondition fail — active leader "
                 "lacks Security skill (skill 6); Security row skipped even "
                 "when door's preconditions allow it",
                 t);

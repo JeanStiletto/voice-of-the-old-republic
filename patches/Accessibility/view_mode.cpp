@@ -169,8 +169,7 @@ void EnterViewMode() {
     // restore after 3s — verified 2026-05-06 in patch-20260506-113051.log
     // line 41+44 (W/S regained walkability mid-session).
     if (!acc::engine::SetPlayerInputEnabled(false, /*armAutoRestore=*/false)) {
-        acclog::Write(
-            "ViewMode: enter REFUSED — SetPlayerInputEnabled(false) "
+        acclog::Write("ViewMode", "enter REFUSED — SetPlayerInputEnabled(false) "
             "failed (chain unresolved or SEH); skipping toggle");
         return;
     }
@@ -182,8 +181,7 @@ void EnterViewMode() {
     Vector pos;
     if (!acc::engine::GetPlayerPosition(pos)) {
         acc::engine::SetPlayerInputEnabled(true);  // undo the disable
-        acclog::Write(
-            "ViewMode: enter REFUSED — player position unavailable "
+        acclog::Write("ViewMode", "enter REFUSED — player position unavailable "
             "post-disable; rolled back");
         return;
     }
@@ -205,8 +203,7 @@ void EnterViewMode() {
     g_state.active = true;
     tolk::Speak(acc::strings::Get(acc::strings::Id::ViewModeOn),
                 /*interrupt=*/true);
-    acclog::Write(
-        "ViewMode: ENTER cursor=(%.2f,%.2f,%.2f) yaw=%.1f",
+    acclog::Write("ViewMode", "ENTER cursor=(%.2f,%.2f,%.2f) yaw=%.1f",
         pos.x, pos.y, pos.z, yaw);
 }
 
@@ -218,7 +215,7 @@ void ExitViewMode() {
     // would race that update.
     tolk::Speak(acc::strings::Get(acc::strings::Id::ViewModeOff),
                 /*interrupt=*/true);
-    acclog::Write("ViewMode: EXIT restored=%d", restored ? 1 : 0);
+    acclog::Write("ViewMode", "EXIT restored=%d", restored ? 1 : 0);
 }
 
 // (ExitViewModeQuiet was inlined into PollEnter as part of the lay-off-5
@@ -245,8 +242,7 @@ void ToggleViewMode() {
 void DumpCameraStateProbe() {
     void* clientOptions = acc::engine::GetClientOptions();
     if (!clientOptions) {
-        acclog::Write(
-            "ViewModeProbe: Shift+B — GetClientOptions returned null "
+        acclog::Write("ViewModeProbe", "Shift+B — GetClientOptions returned null "
             "(chain unresolved or SEH); nothing to snapshot");
         return;
     }
@@ -270,8 +266,7 @@ void DumpCameraStateProbe() {
     }
 
     if (fault) {
-        acclog::Write(
-            "ViewModeProbe: Shift+B — SEH fault while reading "
+        acclog::Write("ViewModeProbe", "Shift+B — SEH fault while reading "
             "CClientOptions @%p; field-by-field dump aborted",
             clientOptions);
         return;
@@ -281,8 +276,7 @@ void DumpCameraStateProbe() {
         return (bitfield & mask) != 0 ? 1 : 0;
     };
 
-    acclog::Write(
-        "ViewModeProbe: Shift+B SNAPSHOT options=%p bitfield=0x%08x "
+    acclog::Write("ViewModeProbe", "Shift+B SNAPSHOT options=%p bitfield=0x%08x "
         "[auto_level=%d mouse_look=%d autosave=%d minigame_yaxis=%d "
         "combat_movement=%d undocumented_bits=0x%08x] "
         "neighbours @+0x4=0x%08x @+0xc=0x%08x @+0x10=0x%08x "
@@ -366,8 +360,7 @@ void StepCursor(float dt) {
                 acc::audio::GetNavCueResref(acc::audio::NavCue::Wall),
                 hit);
             g_state.last_collision_ms = now;
-            acclog::Write(
-                "ViewMode: collision at (%.2f,%.2f,%.2f) cursor clamped "
+            acclog::Write("ViewMode", "collision at (%.2f,%.2f,%.2f) cursor clamped "
                 "to (%.2f,%.2f,%.2f)",
                 hit.x, hit.y, hit.z,
                 g_state.cursor_pos.x, g_state.cursor_pos.y,
@@ -475,8 +468,7 @@ void NarrateNearestObject(void* area, const Vector& cursor) {
 
     Vector pos = { 0.0f, 0.0f, 0.0f };
     acc::engine::GetObjectPosition(bestObj, pos);
-    acclog::Write(
-        "ViewMode: hover narrate handle=0x%08x cat=%s name=[%s] "
+    acclog::Write("ViewMode", "hover narrate handle=0x%08x cat=%s name=[%s] "
         "dist=%.2f cursor=(%.2f,%.2f,%.2f) obj=(%.2f,%.2f,%.2f)",
         bestHandle, acc::filter::CategoryName(bestCat), name,
         std::sqrt(bestDistSq),
@@ -548,8 +540,7 @@ void PollEnter() {
     // the 1→0 transition the engine needs to fire AI walks.
     g_state.active = false;
     bool restored = acc::engine::SetPlayerInputEnabled(true);
-    acclog::Write(
-        "ViewMode: EXIT (deferred dispatch) input_restored=%d hasHover=%d",
+    acclog::Write("ViewMode", "EXIT (deferred dispatch) input_restored=%d hasHover=%d",
         restored ? 1 : 0, hasHover ? 1 : 0);
 
     g_pending.active        = true;
@@ -560,8 +551,7 @@ void PollEnter() {
     g_pending.forceRadial   = forceRadial;
     g_pending.armed_at_ms   = GetTickCount();
 
-    acclog::Write(
-        "ViewMode: %s -> dispatch armed for next tick "
+    acclog::Write("ViewMode", "%s -> dispatch armed for next tick "
         "(hover_obj=%p handle=0x%08x cursor=(%.2f,%.2f,%.2f) forceRadial=%d)",
         keyTag, hover_obj, hover_handle,
         cursor_pos.x, cursor_pos.y, cursor_pos.z,
@@ -592,8 +582,7 @@ void ProcessPendingDispatch() {
     const char* keyTag = forceRadial ? "Shift+Enter" : "Enter";
 
     if (hasHover) {
-        acclog::Write(
-            "ViewMode: %s deferred -> DispatchInteract obj=%p handle=0x%08x "
+        acclog::Write("ViewMode", "%s deferred -> DispatchInteract obj=%p handle=0x%08x "
             "elapsed=%lums (hover target)",
             keyTag, hover_obj, hover_handle,
             static_cast<unsigned long>(elapsed));
@@ -618,8 +607,7 @@ void ProcessPendingDispatch() {
     // dispatch from any engine surface, and we need to look at what
     // view mode does to the creature's control state beyond input.
     bool ok = acc::guidance::ForceWalkTo(cursor_pos);
-    acclog::Write(
-        "ViewMode: %s deferred -> ForceWalkTo cursor=(%.2f,%.2f,%.2f) ok=%d "
+    acclog::Write("ViewMode", "%s deferred -> ForceWalkTo cursor=(%.2f,%.2f,%.2f) ok=%d "
         "elapsed=%lums (no hover target)",
         keyTag, cursor_pos.x, cursor_pos.y, cursor_pos.z, ok ? 1 : 0,
         static_cast<unsigned long>(elapsed));
@@ -734,15 +722,14 @@ void PollWin32() {
         }
     }
     if (blockReason) {
-        acclog::Write("ViewMode: B (shift=%d) blocked — %s",
+        acclog::Write("ViewMode", "B (shift=%d) blocked — %s",
                       shift ? 1 : 0, blockReason);
         return;
     }
 
     Vector playerPos;
     if (!acc::engine::GetPlayerPosition(playerPos)) {
-        acclog::Write(
-            "ViewMode: B (shift=%d) fired without player loaded; "
+        acclog::Write("ViewMode", "B (shift=%d) fired without player loaded; "
             "skipping", shift ? 1 : 0);
         return;
     }

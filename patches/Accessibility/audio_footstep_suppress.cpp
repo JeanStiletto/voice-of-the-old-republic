@@ -63,7 +63,7 @@ void Tick() {
         g_last_tick_ms = now_ms;
         g_have_last_sample = true;
         g_was_stuck = false;
-        acclog::Write("FootstepSup: Tick seed pos=(%.3f,%.3f,%.3f)",
+        acclog::Write("FootstepSup", "Tick seed pos=(%.3f,%.3f,%.3f)",
                       pos.x, pos.y, pos.z);
         return;
     }
@@ -85,15 +85,18 @@ void Tick() {
     const bool prev_stuck = g_was_stuck;
     g_was_stuck = (speedSq < kStuckSpeedSq);
 
-    // Full-fidelity diagnostic per feedback_log_no_rate_limits.md.
-    acclog::Write(
-        "FootstepSup: Tick pos=(%.3f,%.3f) d=(%.4f,%.4f) "
-        "dt_ms=%llu speed=%.3f m/s stuck=%d%s",
+    // Edge fires only on the stuck-flag transition; the framework reports
+    // how many ticks the previous state held so full per-tick fidelity is
+    // preserved without per-tick spam. Position/speed go in the line so
+    // the value at transition time is recorded; held ticks comes from the
+    // edge framework on the next flip. Per feedback_log_no_rate_limits.md.
+    (void)prev_stuck;
+    acclog::Edge("FootstepSup.stuck", g_was_stuck ? 1 : 0,
+        "Tick pos=(%.3f,%.3f) d=(%.4f,%.4f) dt_ms=%llu speed=%.3f m/s stuck=%d",
         pos.x, pos.y, dx, dy,
         static_cast<unsigned long long>(dt_ms),
         sqrtf(speedSq),
-        g_was_stuck ? 1 : 0,
-        (prev_stuck != g_was_stuck) ? " <-- TRANSITION" : "");
+        g_was_stuck ? 1 : 0);
 
     g_last_pos = pos;
     g_last_tick_ms = now_ms;
@@ -155,8 +158,7 @@ extern "C" int __cdecl OnPlayFootstep(void* creature) {
     const bool stuck = acc::audio::footstep_suppress::WasStuckLastTick();
     const int verdict = (is_leader && stuck) ? 1 : 0;
 
-    acclog::Write(
-        "FootstepSup: PlayFootstep this=%p leader=%p field20=0x%x "
+    acclog::Write("FootstepSup", "PlayFootstep this=%p leader=%p field20=0x%x "
         "is_leader=%d stuck=%d verdict=%d",
         creature, leader, field20,
         is_leader ? 1 : 0, stuck ? 1 : 0, verdict);

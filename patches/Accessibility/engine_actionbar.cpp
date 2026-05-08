@@ -224,8 +224,7 @@ bool CycleNextVariant(void* mi, int slot) {
         fn(mi, btn);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        acclog::Write(
-            "ActionBar: CycleNextVariant SEH-FAULT slot=%d", slot);
+        acclog::Write("ActionBar", "CycleNextVariant SEH-FAULT slot=%d", slot);
         return false;
     }
 }
@@ -240,8 +239,7 @@ bool CyclePrevVariant(void* mi, int slot) {
         fn(mi, btn);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        acclog::Write(
-            "ActionBar: CyclePrevVariant SEH-FAULT slot=%d", slot);
+        acclog::Write("ActionBar", "CyclePrevVariant SEH-FAULT slot=%d", slot);
         return false;
     }
 }
@@ -257,8 +255,7 @@ bool FireSelectedVariant(void* mi, int slot) {
         fn(mi, slot, 0);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        acclog::Write(
-            "ActionBar: FireSelectedVariant SEH-FAULT slot=%d", slot);
+        acclog::Write("ActionBar", "FireSelectedVariant SEH-FAULT slot=%d", slot);
         return false;
     }
 }
@@ -266,7 +263,7 @@ bool FireSelectedVariant(void* mi, int slot) {
 void LogState(void* mi, const char* tag) {
     const char* t = tag ? tag : "?";
     if (!mi) {
-        acclog::Write("ActionBar.State[%s]: main_interface=NULL", t);
+        acclog::Write("ActionBar.State", "[%s] main_interface=NULL", t);
         return;
     }
     for (int s = 0; s < kColumnCount; ++s) {
@@ -274,9 +271,8 @@ void LogState(void* mi, const char* tag) {
         char first[96] = "";
         ReadVariantLabel(mi, s, 0, first, sizeof(first));
         uint32_t firstId = ReadVariantActionId(mi, s, 0);
-        acclog::Write(
-            "ActionBar.State[%s]: col[%d] variants=%d data[0].label=[%s] "
-            "data[0].action_id=0x%x",
+        acclog::Write("ActionBar.State",
+            "[%s] col[%d] variants=%d data[0].label=[%s] data[0].action_id=0x%x",
             t, s, nVar, first, firstId);
     }
 }

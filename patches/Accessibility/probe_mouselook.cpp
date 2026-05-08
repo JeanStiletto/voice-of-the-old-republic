@@ -77,8 +77,7 @@ void EmitMouseDelta(int dx) {
     input.mi.dwFlags = MOUSEEVENTF_MOVE;  // relative motion
     UINT sent = SendInput(1, &input, sizeof(INPUT));
     if (sent != 1) {
-        acclog::Write(
-            "ProbeMouseLook: SendInput returned %u (expected 1) for dx=%d "
+        acclog::Write("ProbeMouseLook", "SendInput returned %u (expected 1) for dx=%d "
             "lastErr=%lu",
             sent, dx, static_cast<unsigned long>(GetLastError()));
     }
@@ -90,8 +89,7 @@ void StartSweep() {
     g_sweep.emitted_dx = 0;
     g_sweep.emit_count = 0;
     g_sweep.cursor_captured = (GetCursorPos(&g_sweep.cursor_at_start) != 0);
-    acclog::Write(
-        "ProbeMouseLook: sweep START t=%lu shape=park ramp_ms=%lu "
+    acclog::Write("ProbeMouseLook", "sweep START t=%lu shape=park ramp_ms=%lu "
         "hold_ms=%lu apex_px=%d total_ms=%lu cursor_at_start=(%ld,%ld) "
         "captured=%d",
         static_cast<unsigned long>(g_sweep.started_at),
@@ -128,24 +126,21 @@ void PollWin32() {
 
     Vector playerPos;
     if (!acc::engine::GetPlayerPosition(playerPos)) {
-        acclog::Write(
-            "ProbeMouseLook: Shift+AltGr fired without player loaded; "
+        acclog::Write("ProbeMouseLook", "Shift+AltGr fired without player loaded; "
             "skipping toggle");
         return;
     }
 
     bool before = false;
     if (!acc::engine::GetMouseLook(before)) {
-        acclog::Write(
-            "ProbeMouseLook: Shift+AltGr fired but GetMouseLook failed "
+        acclog::Write("ProbeMouseLook", "Shift+AltGr fired but GetMouseLook failed "
             "(chain null or SEH); skipping toggle");
         return;
     }
 
     bool after = false;
     if (!acc::engine::ToggleMouseLook(after)) {
-        acclog::Write(
-            "ProbeMouseLook: Shift+AltGr — pre-state=%d but ToggleMouseLook "
+        acclog::Write("ProbeMouseLook", "Shift+AltGr — pre-state=%d but ToggleMouseLook "
             "failed (chain null or SEH on write)", before ? 1 : 0);
         return;
     }
@@ -153,8 +148,7 @@ void PollWin32() {
     bool readback = false;
     bool readbackOk = acc::engine::GetMouseLook(readback);
 
-    acclog::Write(
-        "ProbeMouseLook: Shift+AltGr toggle: before=%d after=%d readback=%d "
+    acclog::Write("ProbeMouseLook", "Shift+AltGr toggle: before=%d after=%d readback=%d "
         "(readbackOk=%d)",
         before ? 1 : 0, after ? 1 : 0, readback ? 1 : 0,
         readbackOk ? 1 : 0);
@@ -192,8 +186,7 @@ void TickSweep() {
             restored = (SetCursorPos(g_sweep.cursor_at_start.x,
                                      g_sweep.cursor_at_start.y) != 0);
         }
-        acclog::Write(
-            "ProbeMouseLook: sweep END elapsed_ms=%lu emits=%d net_dx=%d "
+        acclog::Write("ProbeMouseLook", "sweep END elapsed_ms=%lu emits=%d net_dx=%d "
             "(residual=%d) cursor_restored=%d",
             static_cast<unsigned long>(elapsed), g_sweep.emit_count,
             g_sweep.emitted_dx + residual, residual,
@@ -208,8 +201,7 @@ void TickSweep() {
         EmitMouseDelta(chunk);
         g_sweep.emitted_dx += chunk;
         g_sweep.emit_count++;
-        acclog::Write(
-            "ProbeMouseLook: sweep emit t_ms=%lu chunk=%d cum_dx=%d "
+        acclog::Write("ProbeMouseLook", "sweep emit t_ms=%lu chunk=%d cum_dx=%d "
             "emits=%d",
             static_cast<unsigned long>(elapsed), chunk, g_sweep.emitted_dx,
             g_sweep.emit_count);

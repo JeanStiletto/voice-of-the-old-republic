@@ -90,7 +90,7 @@ void TickMonitor() {
     uint32_t handle = ReadLastTargetHandle();
     if (handle == s_lastLogged) return;
 
-    acclog::Write("Probe: LastTarget changed: 0x%08x -> 0x%08x",
+    acclog::Write("Probe", "LastTarget changed: 0x%08x -> 0x%08x",
                   s_lastLogged, handle);
     s_lastLogged = handle;
 }
@@ -122,14 +122,14 @@ void PollHotkey() {
 
     void* mgr = GetGuiManager();
     if (!mgr) {
-        acclog::Write("Probe: Alt+P -> GuiManager NULL, abort");
+        acclog::Write("Probe", "Alt+P -> GuiManager NULL, abort");
         return;
     }
 
     uint32_t targetBefore = ReadLastTargetHandle();
     void*    moverBefore  = ReadMouseOverControl(mgr);
 
-    acclog::Write("Probe: Alt+P warp BEFORE LastTarget=0x%08x mouseOver=%p",
+    acclog::Write("Probe", "Alt+P warp BEFORE LastTarget=0x%08x mouseOver=%p",
                   targetBefore, moverBefore);
 
     // Centre of 640×480 reference frame. The engine's GUI hit-testing uses
@@ -145,7 +145,7 @@ void PollHotkey() {
             kAddrMoveMouseToPosition);
         warp(mgr, kProbeX, kProbeY);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        acclog::Write("Probe: Alt+P -> MoveMouseToPosition faulted under SEH");
+        acclog::Write("Probe", "Alt+P -> MoveMouseToPosition faulted under SEH");
         return;
     }
 
@@ -155,7 +155,7 @@ void PollHotkey() {
     bool targetChanged = (targetAfter != targetBefore);
     bool moverChanged  = (moverAfter  != moverBefore);
 
-    acclog::Write("Probe: Alt+P warp AFTER  LastTarget=0x%08x mouseOver=%p "
+    acclog::Write("Probe", "Alt+P warp AFTER  LastTarget=0x%08x mouseOver=%p "
                   "(target_changed=%d mover_changed=%d) warp=(%d,%d)",
                   targetAfter, moverAfter,
                   targetChanged ? 1 : 0,
@@ -163,11 +163,11 @@ void PollHotkey() {
                   kProbeX, kProbeY);
 
     if (targetChanged || moverChanged) {
-        acclog::Write("Probe: VERDICT MoveMouseToPosition reaches in-world "
+        acclog::Write("Probe", "VERDICT MoveMouseToPosition reaches in-world "
                       "hover state — Layer C cursor-warp polish is a free "
                       "ride for Phase 4 view mode");
     } else {
-        acclog::Write("Probe: VERDICT MoveMouseToPosition did NOT change "
+        acclog::Write("Probe", "VERDICT MoveMouseToPosition did NOT change "
                       "world-hover state — Layer C requires a separate "
                       "world-hover hook (or a different coord system; try "
                       "the same probe at varied coords before concluding)");

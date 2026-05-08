@@ -62,7 +62,7 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
 
     void* area = acc::engine::GetCurrentArea();
     if (!area) {
-        acclog::Write("Cycle: BuildListing area=NULL");
+        acclog::Write("Cycle", "BuildListing area=NULL");
         return false;
     }
 
@@ -95,7 +95,7 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
     // when a build returns empty. Helps localise "no objects found" failures
     // (wrong area, wrong iterator offsets, sub-state filter too tight, etc.).
     if (out.count == 0) {
-        acclog::Write("Cycle: BuildListing area=%p category=%s "
+        acclog::Write("Cycle", "BuildListing area=%p category=%s "
                       "snapshotSize=%d scanned=%d "
                       "kinds[Creature=5]=%d [Item=6]=%d [Trigger=7]=%d "
                       "[Placeable=9]=%d [Door=10]=%d [Waypoint=12]=%d",
@@ -109,7 +109,7 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
         // One-time per build; not throttled because this should be rare in
         // practice (only crowded named scenes hit it). When it does fire,
         // we want to know the exact category that overflowed.
-        acclog::Write("Cycle: %s listing truncated to %d objects (cap)",
+        acclog::Write("Cycle", "%s listing truncated to %d objects (cap)",
                       acc::filter::CategoryName(category),
                       CategoryListing::kMaxObjects);
     }

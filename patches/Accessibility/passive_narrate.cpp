@@ -134,8 +134,7 @@ void Tick() {
     if (handle == 0u || handle == 0xFFFFFFFFu || handle == 0x7F000000u) {
         // Log only — silent for the user. Useful for post-mortem.
         if (prev != 0xDEADBEEFu) {
-            acclog::Write(
-                "PassiveNarrate: focus lost (0x%08x -> sentinel 0x%08x), silent",
+            acclog::Write("PassiveNarrate", "focus lost (0x%08x -> sentinel 0x%08x), silent",
                 prev, handle);
         }
         return;
@@ -151,8 +150,7 @@ void Tick() {
     // target after DLL load. The user already knows what they were
     // pointed at when they last saved; speaking on resume is noise.
     if (prev == 0xDEADBEEFu) {
-        acclog::Write(
-            "PassiveNarrate: first-tick handle=0x%08x, suppressed", handle);
+        acclog::Write("PassiveNarrate", "first-tick handle=0x%08x, suppressed", handle);
         return;
     }
 
@@ -162,8 +160,7 @@ void Tick() {
     // that the rest of engine_area can read against.
     void* obj = acc::engine::ResolveClientObjectHandle(handle);
     if (!obj) {
-        acclog::Write(
-            "PassiveNarrate: handle 0x%08x failed to resolve, silent",
+        acclog::Write("PassiveNarrate", "handle 0x%08x failed to resolve, silent",
             handle);
         return;
     }
@@ -172,8 +169,7 @@ void Tick() {
     if (cat == acc::filter::CycleCategory::Count_) {
         // Not a nav-relevant kind — combat target / etc. Silent.
         int kind = acc::engine::GetObjectKind(obj);
-        acclog::Write(
-            "PassiveNarrate: handle 0x%08x kind=%d not a nav category, silent",
+        acclog::Write("PassiveNarrate", "handle 0x%08x kind=%d not a nav category, silent",
             handle, kind);
         return;
     }
@@ -204,8 +200,7 @@ void Tick() {
     // `,`/`.` (Pillar 4 active-scan path).
     tolk::Speak(name, /*interrupt=*/true);
 
-    acclog::Write(
-        "PassiveNarrate: 0x%08x -> 0x%08x cat=%s name=[%s] "
+    acclog::Write("PassiveNarrate", "0x%08x -> 0x%08x cat=%s name=[%s] "
         "pos=(%.2f,%.2f,%.2f) havePos=%d",
         prev, handle, acc::filter::CategoryName(cat), name,
         pos.x, pos.y, pos.z, havePos ? 1 : 0);

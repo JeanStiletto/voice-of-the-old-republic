@@ -274,8 +274,7 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot,
     void* mainIf   = GetMainInterface(guiIn);
 
     if (!internal || !guiIn) {
-        acclog::Write(
-            "Picker: chain unresolved (target=0x%08x exoApp=%p "
+        acclog::Write("Picker", "chain unresolved (target=0x%08x exoApp=%p "
             "internal=%p guiIn=%p mainIf=%p)",
             targetClient, exoApp, internal, guiIn, mainIf);
         if (outSnapshot) *outSnapshot = localSnap;
@@ -293,15 +292,13 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot,
             // main_interface — the wrapper resolves through this.
             fn(guiIn, targetClient);
         } __except (EXCEPTION_EXECUTE_HANDLER) {
-            acclog::Write(
-                "Picker: SetMainInterfaceTarget SEH-FAULT target=0x%08x",
+            acclog::Write("Picker", "SetMainInterfaceTarget SEH-FAULT target=0x%08x",
                 targetClient);
             if (outSnapshot) *outSnapshot = localSnap;
             return false;
         }
     } else {
-        acclog::Write(
-            "Picker: main_interface null (in-world too early?); "
+        acclog::Write("Picker", "main_interface null (in-world too early?); "
             "target=0x%08x — skipping Drive",
             targetClient);
         if (outSnapshot) *outSnapshot = localSnap;
@@ -315,8 +312,7 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot,
             kAddrCClientExoAppInternalGetDefaultActions);
         fn(internal);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        acclog::Write(
-            "Picker: GetDefaultActions SEH-FAULT target=0x%08x",
+        acclog::Write("Picker", "GetDefaultActions SEH-FAULT target=0x%08x",
             targetClient);
         if (outSnapshot) *outSnapshot = localSnap;
         return false;
@@ -341,8 +337,7 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot,
                                       : "empty-descriptor diag";
         char leaderName[64] = "";
         acc::engine::GetActiveLeaderName(leaderName, sizeof(leaderName));
-        acclog::Write(
-            "Picker: %s — leader=[%s] target=0x%08x descriptor_count=%d",
+        acclog::Write("Picker", "%s — leader=[%s] target=0x%08x descriptor_count=%d",
             tag, leaderName[0] ? leaderName : "?", targetClient,
             localSnap.count);
         acc::engine_radial::LogTargetDiag(targetClient, "before-wrapper");
@@ -374,8 +369,7 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot,
             fn(mainIf);
             radialOpened = true;
         } __except (EXCEPTION_EXECUTE_HANDLER) {
-            acclog::Write(
-                "Picker: PopulateMenus SEH-FAULT target=0x%08x "
+            acclog::Write("Picker", "PopulateMenus SEH-FAULT target=0x%08x "
                 "(empty-descriptor radial fallback)",
                 targetClient);
         }
@@ -392,15 +386,13 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot,
         if (outSnapshot) *outSnapshot = localSnap;
 
         if (radialOpened) {
-            acclog::Write(
-                "Picker: %s — opened radial via PopulateMenus "
+            acclog::Write("Picker", "%s — opened radial via PopulateMenus "
                 "(target=0x%08x descriptor_count=%d)",
                 forceRadial ? "force-radial"
                             : "empty descriptor",
                 targetClient, localSnap.count);
         } else {
-            acclog::Write(
-                "Picker: %s (target=0x%08x descriptor_count=%d) and "
+            acclog::Write("Picker", "%s (target=0x%08x descriptor_count=%d) and "
                 "PopulateMenus faulted",
                 forceRadial ? "force-radial requested"
                             : "GetDefaultActions returned empty descriptor",
@@ -410,8 +402,7 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot,
     }
     if (outSnapshot) *outSnapshot = localSnap;
 
-    acclog::Write(
-        "Picker: descriptor populated target=0x%08x action_id=0x%x "
+    acclog::Write("Picker", "descriptor populated target=0x%08x action_id=0x%x "
         "label=[%s] icon=[%s] count=%d",
         targetClient, localSnap.action_id,
         localSnap.label, localSnap.icon, localSnap.count);
@@ -441,15 +432,13 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot,
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         dispatched = false;
         if (inputDisabled) acc::engine::SetPlayerInputEnabled(true);
-        acclog::Write(
-            "Picker: HandleMouseClickInWorld SEH-FAULT target=0x%08x "
+        acclog::Write("Picker", "HandleMouseClickInWorld SEH-FAULT target=0x%08x "
             "action_id=0x%x label=[%s]",
             targetClient, localSnap.action_id, localSnap.label);
     }
 
     if (dispatched) {
-        acclog::Write(
-            "Picker: HandleMouseClickInWorld dispatched target=0x%08x "
+        acclog::Write("Picker", "HandleMouseClickInWorld dispatched target=0x%08x "
             "action_id=0x%x label=[%s] (input_disabled=%d)",
             targetClient, localSnap.action_id, localSnap.label,
             inputDisabled ? 1 : 0);

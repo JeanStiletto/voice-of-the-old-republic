@@ -29,7 +29,7 @@ void OnAnnounceDegrees() {
     if (!acc::engine::GetPlayerYawDegrees(engineYaw)) {
         // Yaw degenerate (mid-spawn / area-load). Stay silent — the
         // user pressed during a transient, no sensible answer.
-        acclog::Write("AnnounceDegrees: yaw unavailable, skipping");
+        acclog::Write("AnnounceDegrees", "yaw unavailable, skipping");
         return;
     }
     float compass = EngineYawToCompass(engineYaw);
@@ -41,8 +41,7 @@ void OnAnnounceDegrees() {
                   acc::strings::Get(acc::strings::Id::FmtCompassDegrees),
                   degrees);
     tolk::Speak(msg, /*interrupt=*/true);
-    acclog::Write(
-        "AnnounceDegrees: -> [%s] (engineYaw=%.1f compass=%.1f)",
+    acclog::Write("AnnounceDegrees", "-> [%s] (engineYaw=%.1f compass=%.1f)",
         msg, engineYaw, compass);
 }
 

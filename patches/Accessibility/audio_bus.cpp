@@ -252,8 +252,7 @@ extern "C" int __cdecl OnSetListenerPosition(void* exoSound,
     bool  edge   = (state != s_last_logged_state);
     bool  beat   = (now_ms - s_last_heartbeat_ms >= 30000u);
     if (edge || beat) {
-        acclog::Write(
-            "ListenerHook: override=%d engine_at=(%.2f,%.2f,%.2f) "
+        acclog::Write("ListenerHook", "override=%d engine_at=(%.2f,%.2f,%.2f) "
             "chosen=(%.2f,%.2f,%.2f) reason=%s",
             state,
             enginePos ? enginePos->x : 0.0f,

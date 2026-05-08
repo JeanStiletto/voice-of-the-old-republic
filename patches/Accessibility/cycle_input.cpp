@@ -120,7 +120,7 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
         // either, since there's no object to localise spatially.
         const char* msg = acc::strings::Get(bindings.empty);
         tolk::Speak(msg, /*interrupt=*/true);
-        acclog::Write("Cycle: -> [%s]", msg);
+        acclog::Write("Cycle", "-> [%s]", msg);
         return;
     }
 
@@ -166,7 +166,7 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
         std::snprintf(fullMsg, sizeof(fullMsg), "%s", itemMsg);
     }
     tolk::Speak(fullMsg, /*interrupt=*/true);
-    acclog::Write("Cycle: -> [%s]", fullMsg);
+    acclog::Write("Cycle", "-> [%s]", fullMsg);
 }
 
 // ---- Per-action handlers (shared by both ingestion paths) ----
@@ -192,7 +192,7 @@ void OnCycleCategory(bool prev) {
     if (!found) {
         const char* msg = acc::strings::Get(acc::strings::Id::EmptyAll);
         tolk::Speak(msg, /*interrupt=*/true);
-        acclog::Write("Cycle: -> [%s] (all empty)", msg);
+        acclog::Write("Cycle", "-> [%s] (all empty)", msg);
         return;
     }
     auto& s = acc::cycle::GetState();
@@ -241,14 +241,13 @@ void OnPathfindFocus() {
             const char* msg = acc::strings::Get(
                 acc::strings::Id::MovementCancelled);
             tolk::Speak(msg, /*interrupt=*/true);
-            acclog::Write("Cycle: Shift+- -> [%s] (cancel path)", msg);
+            acclog::Write("Cycle", "Shift+- -> [%s] (cancel path)", msg);
             return;
         }
         // Cancel SEH-faulted — fall through to walk so the second
         // press at least does *something*. Local in-flight state is
         // already cleared by CancelMovement's SEH path.
-        acclog::Write(
-            "Cycle: Shift+- cancel SEH-FAULT, falling through to walk");
+        acclog::Write("Cycle", "Shift+- cancel SEH-FAULT, falling through to walk");
     }
 
     acc::cycle::CategoryListing listing;
@@ -260,7 +259,7 @@ void OnPathfindFocus() {
         const char* msg = acc::strings::Get(
             acc::strings::Id::GuidanceNoFocus);
         tolk::Speak(msg, /*interrupt=*/true);
-        acclog::Write("Cycle: Shift+- -> [%s]", msg);
+        acclog::Write("Cycle", "Shift+- -> [%s]", msg);
         return;
     }
 
@@ -293,7 +292,7 @@ void OnPathfindFocus() {
     bool ok = acc::guidance::WalkTo(dest);
     if (ok) {
         tolk::Speak(msg, /*interrupt=*/true);
-        acclog::Write("Cycle: Shift+- -> [%s] obj=%p "
+        acclog::Write("Cycle", "Shift+- -> [%s] obj=%p "
                       "dest=(%.2f,%.2f,%.2f) dist=%.2fm (queue path)",
                       msg, s.focusedObj,
                       dest.x, dest.y, dest.z,
@@ -310,7 +309,7 @@ void OnPathfindFocus() {
                       acc::strings::Get(acc::strings::Id::FmtGuidingFailed),
                       name);
         tolk::Speak(failMsg, /*interrupt=*/true);
-        acclog::Write("Cycle: Shift+- -> [%s] WalkTo FAILED obj=%p "
+        acclog::Write("Cycle", "Shift+- -> [%s] WalkTo FAILED obj=%p "
                       "dest=(%.2f,%.2f,%.2f)",
                       failMsg, s.focusedObj, dest.x, dest.y, dest.z);
     }
@@ -336,7 +335,7 @@ void OnPathfindFocusForce() {
         const char* msg = acc::strings::Get(
             acc::strings::Id::GuidanceNoFocus);
         tolk::Speak(msg, /*interrupt=*/true);
-        acclog::Write("Cycle: Alt+- -> [%s]", msg);
+        acclog::Write("Cycle", "Alt+- -> [%s]", msg);
         return;
     }
 
@@ -360,7 +359,7 @@ void OnPathfindFocusForce() {
     bool ok = acc::guidance::ForceWalkTo(dest);
     if (ok) {
         tolk::Speak(msg, /*interrupt=*/true);
-        acclog::Write("Cycle: Alt+- -> [%s] obj=%p "
+        acclog::Write("Cycle", "Alt+- -> [%s] obj=%p "
                       "dest=(%.2f,%.2f,%.2f) dist=%.2fm (force path)",
                       msg, s.focusedObj,
                       dest.x, dest.y, dest.z,
@@ -371,7 +370,7 @@ void OnPathfindFocusForce() {
                       acc::strings::Get(acc::strings::Id::FmtGuidingFailed),
                       name);
         tolk::Speak(failMsg, /*interrupt=*/true);
-        acclog::Write("Cycle: Alt+- -> [%s] ForceWalkTo FAILED obj=%p "
+        acclog::Write("Cycle", "Alt+- -> [%s] ForceWalkTo FAILED obj=%p "
                       "dest=(%.2f,%.2f,%.2f)",
                       failMsg, s.focusedObj, dest.x, dest.y, dest.z);
     }

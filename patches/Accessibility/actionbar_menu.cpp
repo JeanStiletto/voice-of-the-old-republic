@@ -51,12 +51,12 @@ void SpeakCurrentVariant(void* mi, int slot) {
     acc::engine_actionbar::ReadVariantLabel(mi, slot, idx,
                                             label, sizeof(label));
     if (label[0] == '\0') {
-        acclog::Write("ActionBar: speak col=%d idx=%d -> empty",
+        acclog::Write("ActionBar", "speak col=%d idx=%d -> empty",
                       slot, idx);
         return;
     }
     tolk::Speak(label, /*interrupt=*/true);
-    acclog::Write("ActionBar: speak col=%d idx=%d [%s]",
+    acclog::Write("ActionBar", "speak col=%d idx=%d [%s]",
                   slot, idx, label);
 }
 
@@ -69,7 +69,7 @@ int CurrentSelection(int slot) {
 
 bool Open(int slot) {
     if (slot < 0 || slot >= acc::engine_actionbar::kColumnCount) {
-        acclog::Write("ActionBar: Open slot=%d out of range; ignoring", slot);
+        acclog::Write("ActionBar", "Open slot=%d out of range; ignoring", slot);
         return false;
     }
 
@@ -88,15 +88,14 @@ bool Open(int slot) {
     // a dialog is up, decline and speak nothing — the user already has
     // dialog reply hotkeys (1..9) for that context.
     if (acc::engine::HasActiveDialogPanel()) {
-        acclog::Write(
-            "ActionBar: Open slot=%d — dialog panel in stack; not arming",
+        acclog::Write("ActionBar", "Open slot=%d — dialog panel in stack; not arming",
             slot);
         return false;
     }
 
     void* mi = acc::engine_actionbar::ResolveMainInterface();
     if (!mi) {
-        acclog::Write("ActionBar: Open slot=%d — main_interface unresolved; "
+        acclog::Write("ActionBar", "Open slot=%d — main_interface unresolved; "
                       "not arming",
                       slot);
         return false;
@@ -112,8 +111,7 @@ bool Open(int slot) {
                           acc::strings::Id::FmtActionBarColumnEmpty),
                       slot + 1);
         tolk::Speak(fmt, /*interrupt=*/true);
-        acclog::Write(
-            "ActionBar: Open slot=%d variants=0 — empty, not arming",
+        acclog::Write("ActionBar", "Open slot=%d variants=0 — empty, not arming",
             slot);
         return false;
     }
@@ -131,8 +129,7 @@ bool Open(int slot) {
                   acc::strings::Get(acc::strings::Id::FmtActionBarOpened),
                   slot + 1, label[0] ? label : "?", nVar);
     tolk::Speak(msg, /*interrupt=*/true);
-    acclog::Write(
-        "ActionBar: ARMED slot=%d variants=%d idx=%d label=[%s]",
+    acclog::Write("ActionBar", "ARMED slot=%d variants=%d idx=%d label=[%s]",
         slot, nVar, idx, label);
     return true;
 }
@@ -148,8 +145,7 @@ bool HandleInputEvent(int code, int value) {
 
     void* mi = acc::engine_actionbar::ResolveMainInterface();
     if (!mi) {
-        acclog::Write(
-            "ActionBar: HandleInputEvent — main_interface unresolved on "
+        acclog::Write("ActionBar", "HandleInputEvent — main_interface unresolved on "
             "key=%d; force-disarming",
             code);
         ForceDisarm("mi-unresolved");
@@ -163,8 +159,7 @@ bool HandleInputEvent(int code, int value) {
         case kInputNavUp:
         case kInputNavDown: {
             if (nVar <= 1) {
-                acclog::Write(
-                    "ActionBar: %s slot=%d variants=%d — nothing to cycle",
+                acclog::Write("ActionBar", "%s slot=%d variants=%d — nothing to cycle",
                     code == kInputNavDown ? "NavDown" : "NavUp",
                     slot, nVar);
                 SpeakCurrentVariant(mi, slot);
@@ -187,8 +182,7 @@ bool HandleInputEvent(int code, int value) {
                 g_selectedIndex[slot] =
                     (g_selectedIndex[slot] - 1 + nVar) % nVar;
             }
-            acclog::Write(
-                "ActionBar: %s slot=%d variants=%d idx %d -> %d ok=%d",
+            acclog::Write("ActionBar", "%s slot=%d variants=%d idx %d -> %d ok=%d",
                 code == kInputNavUp ? "NavUp" : "NavDown",
                 slot, nVar, prevIdx, g_selectedIndex[slot], ok ? 1 : 0);
             SpeakCurrentVariant(mi, slot);
@@ -209,8 +203,7 @@ bool HandleInputEvent(int code, int value) {
                               acc::strings::Id::FmtActionBarFired),
                           label[0] ? label : "?");
             tolk::Speak(msg, /*interrupt=*/true);
-            acclog::Write(
-                "ActionBar: ENTER slot=%d idx=%d label=[%s] ok=%d -> [%s]",
+            acclog::Write("ActionBar", "ENTER slot=%d idx=%d label=[%s] ok=%d -> [%s]",
                 slot, idx, label, ok ? 1 : 0, msg);
 
             ForceDisarm("enter");
@@ -221,7 +214,7 @@ bool HandleInputEvent(int code, int value) {
             const char* msg = acc::strings::Get(
                 acc::strings::Id::ActionBarCancelled);
             tolk::Speak(msg, /*interrupt=*/true);
-            acclog::Write("ActionBar: ESC slot=%d -> [%s]",
+            acclog::Write("ActionBar", "ESC slot=%d -> [%s]",
                           slot, msg);
             ForceDisarm("esc");
             return true;
@@ -233,7 +226,7 @@ bool HandleInputEvent(int code, int value) {
 
 void ForceDisarm(const char* reason) {
     if (!g_state.active) return;
-    acclog::Write("ActionBar: disarm — reason=%s", reason ? reason : "?");
+    acclog::Write("ActionBar", "disarm — reason=%s", reason ? reason : "?");
     g_state.active  = false;
     g_state.curSlot = 0;
 }

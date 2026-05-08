@@ -218,7 +218,7 @@ bool WalkTo(const Vector& destination) {
         // itself faulted.
         g_watchdog.active = false;
         if (inputDisabled) acc::engine::SetPlayerInputEnabled(true);
-        acclog::Write("Autowalk: WalkTo SEH-FAULT action_id=%u "
+        acclog::Write("Autowalk", "WalkTo SEH-FAULT action_id=%u "
                       "dest=(%.2f,%.2f,%.2f)",
                       static_cast<unsigned>(thisActionId),
                       dest.x, dest.y, dest.z);
@@ -245,8 +245,7 @@ bool WalkTo(const Vector& destination) {
             reinterpret_cast<unsigned char*>(creature) +
             kCSWSCreatureField427Offset);
     } __except (EXCEPTION_EXECUTE_HANDLER) {}
-    acclog::Write(
-        "Autowalk: pre-dispatch field427_0xa8c=%d field101_0x1f8=0x%08x; "
+    acclog::Write("Autowalk", "pre-dispatch field427_0xa8c=%d field101_0x1f8=0x%08x; "
         "post-dispatch field427=%d (AddMove sets it to 2; "
         "AIActionMoveToPoint exits: switch=1, short-tail=0, long-reset=-1, "
         "never-ran=2)",
@@ -254,7 +253,7 @@ bool WalkTo(const Vector& destination) {
         static_cast<unsigned>(preField101),
         static_cast<int>(postField427));
 
-    acclog::Write("Autowalk: WalkTo dispatch dest=(%.2f,%.2f,%.2f) "
+    acclog::Write("Autowalk", "WalkTo dispatch dest=(%.2f,%.2f,%.2f) "
                   "from=(%.2f,%.2f,%.2f) dist=%.2fm action_id=%u "
                   "ret=0x%08x",
                   dest.x, dest.y, dest.z,
@@ -297,7 +296,7 @@ bool ForceWalkTo(const Vector& destination) {
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         g_watchdog.active = false;
         if (inputDisabled) acc::engine::SetPlayerInputEnabled(true);
-        acclog::Write("Autowalk: Force-dispatch SEH-FAULT action_id=%u "
+        acclog::Write("Autowalk", "Force-dispatch SEH-FAULT action_id=%u "
                       "dest=(%.2f,%.2f,%.2f)",
                       action.action_id, dest.x, dest.y, dest.z);
         return false;
@@ -309,7 +308,7 @@ bool ForceWalkTo(const Vector& destination) {
     g_inFlight.dest   = dest;
 
     float distToDest = haveStart ? HorizontalDistance(startPos, dest) : -1.0f;
-    acclog::Write("Autowalk: Force-dispatch dest=(%.2f,%.2f,%.2f) "
+    acclog::Write("Autowalk", "Force-dispatch dest=(%.2f,%.2f,%.2f) "
                   "from=(%.2f,%.2f,%.2f) dist=%.2fm action_id=%u "
                   "(no ret — void)",
                   dest.x, dest.y, dest.z,
@@ -336,12 +335,12 @@ bool UseObject(unsigned long targetHandle) {
             kAddrCSWSObjectAddUseObjectAction);
         ret = fn(creature, targetHandle, 0);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        acclog::Write("Autowalk: UseObject SEH-FAULT target=0x%08lx",
+        acclog::Write("Autowalk", "UseObject SEH-FAULT target=0x%08lx",
                       targetHandle);
         return false;
     }
 
-    acclog::Write("Autowalk: UseObject dispatch target=0x%08lx ret=%d",
+    acclog::Write("Autowalk", "UseObject dispatch target=0x%08lx ret=%d",
                   targetHandle, ret);
     return ret != 0;
 }
@@ -368,7 +367,7 @@ bool CancelMovement() {
         fn(creature, 0);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         ok = false;
-        acclog::Write("Autowalk: CancelMovement SEH-FAULT");
+        acclog::Write("Autowalk", "CancelMovement SEH-FAULT");
     }
 
     // Clear local state regardless of engine call success — at minimum,
@@ -377,8 +376,7 @@ bool CancelMovement() {
     g_watchdog.active = false;
 
     if (ok) {
-        acclog::Write(
-            "Autowalk: CancelMovement dispatched (ClearAllActions(0))");
+        acclog::Write("Autowalk", "CancelMovement dispatched (ClearAllActions(0))");
     }
     return ok;
 }
@@ -440,8 +438,7 @@ void TickProgressWatchdog() {
             float moved = HorizontalDistance(g_watchdog.startPos, pos);
             float distToDest = HorizontalDistance(pos, g_watchdog.dest);
             const char* state = (moved < 0.1f) ? "stuck" : "moving";
-            acclog::Write(
-                "Autowalk: %s t+1s moved=%.2fm dist=%.2fm (%s) "
+            acclog::Write("Autowalk", "%s t+1s moved=%.2fm dist=%.2fm (%s) "
                 "field427=%d field101=0x%08x",
                 g_watchdog.tag, moved, distToDest, state,
                 curField427, static_cast<unsigned>(curField101));
@@ -449,8 +446,7 @@ void TickProgressWatchdog() {
             // No baseline: still useful — we know whether we're near the
             // destination at the 1s mark.
             float distToDest = HorizontalDistance(pos, g_watchdog.dest);
-            acclog::Write(
-                "Autowalk: %s t+1s dist=%.2fm (no baseline) "
+            acclog::Write("Autowalk", "%s t+1s dist=%.2fm (no baseline) "
                 "field427=%d field101=0x%08x",
                 g_watchdog.tag, distToDest,
                 curField427, static_cast<unsigned>(curField101));
@@ -466,11 +462,11 @@ void TickProgressWatchdog() {
                 (distToDest < 1.0f) ? "reached"      :
                 (moved      < 0.1f) ? "still stuck"  :
                                        "moving";
-            acclog::Write("Autowalk: %s t+3s moved=%.2fm dist=%.2fm (%s)",
+            acclog::Write("Autowalk", "%s t+3s moved=%.2fm dist=%.2fm (%s)",
                           g_watchdog.tag, moved, distToDest, state);
         } else {
             const char* state = (distToDest < 1.0f) ? "reached" : "unknown";
-            acclog::Write("Autowalk: %s t+3s dist=%.2fm (%s, no baseline)",
+            acclog::Write("Autowalk", "%s t+3s dist=%.2fm (%s, no baseline)",
                           g_watchdog.tag, distToDest, state);
         }
         // Disengage. Future user actions (next Shift+-, etc.) will re-arm.

@@ -122,14 +122,12 @@ void Tick() {
 
     auto logKey = [&](const char* keyName) {
         if (havePos) {
-            acclog::Write(
-                "DiagSelect: %s pressed; LastTarget=0x%08x "
+            acclog::Write("DiagSelect", "%s pressed; LastTarget=0x%08x "
                 "leader=%p id=0x%08x name=[%s] pos=(%.2f,%.2f,%.2f)",
                 keyName, lastTarget, creature, creatureId, creatureName,
                 creaturePos.x, creaturePos.y, creaturePos.z);
         } else {
-            acclog::Write(
-                "DiagSelect: %s pressed; LastTarget=0x%08x "
+            acclog::Write("DiagSelect", "%s pressed; LastTarget=0x%08x "
                 "leader=%p id=0x%08x name=[%s] pos=?",
                 keyName, lastTarget, creature, creatureId, creatureName);
         }

@@ -37,7 +37,7 @@ template <typename T>
 bool Resolve(T& fn, const char* name) {
     fn = reinterpret_cast<T>(GetProcAddress(g_lib, name));
     if (!fn) {
-        acclog::Write("Tolk: GetProcAddress(%s) failed", name);
+        acclog::Write("Tolk", "GetProcAddress(%s) failed", name);
         return false;
     }
     return true;
@@ -51,7 +51,7 @@ bool Init() {
 
     const char* patchDir = acclog::PatchDir();
     if (!patchDir || !*patchDir) {
-        acclog::Write("Tolk: patch dir unknown; aborting init");
+        acclog::Write("Tolk", "patch dir unknown; aborting init");
         return false;
     }
 
@@ -62,7 +62,7 @@ bool Init() {
     char tolkPath[MAX_PATH];
     int written = snprintf(tolkPath, sizeof(tolkPath), "%s\\Tolk.dll", patchDir);
     if (written <= 0 || written >= (int)sizeof(tolkPath)) {
-        acclog::Write("Tolk: tolk.dll path overflow");
+        acclog::Write("Tolk", "tolk.dll path overflow");
         return false;
     }
 
@@ -72,7 +72,7 @@ bool Init() {
 
     g_lib = LoadLibraryA(tolkPath);
     if (!g_lib) {
-        acclog::Write("Tolk: LoadLibrary(%s) failed err=%lu", tolkPath, GetLastError());
+        acclog::Write("Tolk", "LoadLibrary(%s) failed err=%lu", tolkPath, GetLastError());
         SetDllDirectoryA(prevLen > 0 ? prevDir : nullptr);
         return false;
     }
@@ -101,9 +101,9 @@ bool Init() {
         // wprintf into ANSI for the log; screen reader names are ASCII in practice.
         char nameA[64] = "?";
         if (name) WideCharToMultiByte(CP_UTF8, 0, name, -1, nameA, sizeof(nameA), nullptr, nullptr);
-        acclog::Write("Tolk: loaded, screen reader = %s", nameA);
+        acclog::Write("Tolk", "loaded, screen reader = %s", nameA);
     } else {
-        acclog::Write("Tolk: loaded, but no screen reader with speech detected (running silent)");
+        acclog::Write("Tolk", "loaded, but no screen reader with speech detected (running silent)");
     }
 
     SetDllDirectoryA(prevLen > 0 ? prevDir : nullptr);
@@ -114,13 +114,26 @@ bool IsAvailable() {
     return g_available;
 }
 
+// Self-log every Speak call so the patch log carries one canonical record
+// of what NVDA was asked to say, in chronological order. Trace dedups
+// consecutive identical strings (the "control 5" placeholder fired 7 times
+// in a row case) while still preserving the count via the (repeated Nx)
+// flush on change. "[!]" prefix marks interrupt=true so the audit also
+// shows when speech preempted in-flight output.
 void Speak(const wchar_t* text, bool interrupt) {
     if (!g_available || !text) return;
+    char audit[512];
+    int conv = WideCharToMultiByte(CP_UTF8, 0, text, -1, audit, sizeof(audit),
+                                   nullptr, nullptr);
+    if (conv > 0) {
+        acclog::Trace("Tolk.spoke", "%s%s", interrupt ? "[!] " : "", audit);
+    }
     pTolk_Output(text, interrupt);
 }
 
 void Speak(const char* text, bool interrupt) {
     if (!g_available || !text || !*text) return;
+    acclog::Trace("Tolk.spoke", "%s%s", interrupt ? "[!] " : "", text);
     wchar_t buf[512];
     int n = MultiByteToWideChar(CP_ACP, 0, text, -1, buf, (int)(sizeof(buf) / sizeof(buf[0])));
     if (n <= 0) return;
@@ -129,6 +142,7 @@ void Speak(const char* text, bool interrupt) {
 
 void Silence() {
     if (!g_available) return;
+    acclog::Trace("Tolk.spoke", "(silenced)");
     pTolk_Silence();
 }
 

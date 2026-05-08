@@ -173,8 +173,7 @@ void* ResolveInteractTarget(uint32_t* outHandle) {
             void* obj = s.focusedObj;
             *outHandle = acc::engine::GetObjectHandle(obj);
             if (*outHandle != 0) {
-                acclog::Write(
-                    "Interact: target source=cycle (cycleTick=%u engineTick=%u) "
+                acclog::Write("Interact", "target source=cycle (cycleTick=%u engineTick=%u) "
                     "obj=%p handle=0x%08x",
                     cycleTick, engineTick, obj, *outHandle);
                 return obj;
@@ -203,8 +202,7 @@ void* ResolveInteractTarget(uint32_t* outHandle) {
                 void* obj = s.focusedObj;
                 *outHandle = acc::engine::GetObjectHandle(obj);
                 if (*outHandle != 0) {
-                    acclog::Write(
-                        "Interact: target source=cycle-fallback "
+                    acclog::Write("Interact", "target source=cycle-fallback "
                         "(engine sentinel; cycleTick=%u engineTick=%u) "
                         "obj=%p handle=0x%08x",
                         cycleTick, engineTick, obj, *outHandle);
@@ -218,8 +216,7 @@ void* ResolveInteractTarget(uint32_t* outHandle) {
     if (!obj) return nullptr;
     *outHandle = acc::engine::GetObjectHandle(obj);
     if (*outHandle == 0) return nullptr;
-    acclog::Write(
-        "Interact: target source=engine (cycleTick=%u engineTick=%u) "
+    acclog::Write("Interact", "target source=engine (cycleTick=%u engineTick=%u) "
         "lastTarget=0x%08x -> obj=%p handle=0x%08x",
         cycleTick, engineTick, handle, obj, *outHandle);
     return obj;
@@ -248,7 +245,7 @@ void OnInteract(bool forceRadial) {
         const char* msg = acc::strings::Get(
             acc::strings::Id::GuidanceNoFocus);
         tolk::Speak(msg, /*interrupt=*/true);
-        acclog::Write("Interact: %s -> [%s] no target",
+        acclog::Write("Interact", "%s -> [%s] no target",
                       forceRadial ? "Shift+Enter" : "Enter", msg);
         return;
     }
@@ -264,8 +261,7 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
         const char* msg = acc::strings::Get(
             acc::strings::Id::GuidanceNoFocus);
         tolk::Speak(msg, /*interrupt=*/true);
-        acclog::Write(
-            "Interact: DispatchInteract called with no target "
+        acclog::Write("Interact", "DispatchInteract called with no target "
             "(forceRadial=%d) -> [%s]",
             forceRadial ? 1 : 0, msg);
         return;
@@ -292,14 +288,12 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
     Vector leaderPos{};
     bool   haveLeaderPos = acc::engine::GetPlayerPosition(leaderPos);
     if (haveLeaderPos) {
-        acclog::Write(
-            "Interact: dispatch creature=%p id=0x%08x name=[%s] "
+        acclog::Write("Interact", "dispatch creature=%p id=0x%08x name=[%s] "
             "pos=(%.2f,%.2f,%.2f)",
             leader, leaderId, leaderName,
             leaderPos.x, leaderPos.y, leaderPos.z);
     } else {
-        acclog::Write(
-            "Interact: dispatch creature=%p id=0x%08x name=[%s] pos=?",
+        acclog::Write("Interact", "dispatch creature=%p id=0x%08x name=[%s] pos=?",
             leader, leaderId, leaderName);
     }
 
@@ -352,8 +346,7 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
         tolk::Speak(msg, /*interrupt=*/true);
     }
 
-    acclog::Write(
-        "Interact: %s -> [%s] target=%p handle=0x%08x cat=%s "
+    acclog::Write("Interact", "%s -> [%s] target=%p handle=0x%08x cat=%s "
         "engine_label=[%s] engine_action=0x%x engine_count=%d "
         "radial_opened=%d",
         forceRadial ? "Shift+Enter" : "Enter",
@@ -366,12 +359,10 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
 
     if (dispatched) {
         if (snap.radial_opened) {
-            acclog::Write(
-                "Interact: radial opened (no default action) target=0x%08x",
+            acclog::Write("Interact", "radial opened (no default action) target=0x%08x",
                 handle);
         } else {
-            acclog::Write(
-                "Interact: engine picker dispatched action_id=0x%x "
+            acclog::Write("Interact", "engine picker dispatched action_id=0x%x "
                 "label=[%s] target=0x%08x",
                 snap.action_id, snap.label, handle);
         }
@@ -387,8 +378,7 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
     bool fallbackOk    = acc::guidance::UseObject(handle);
 
     if (fallbackOk) {
-        acclog::Write(
-            "Interact: fallback UseObject dispatched (input_disabled=%d) "
+        acclog::Write("Interact", "fallback UseObject dispatched (input_disabled=%d) "
             "after picker returned valid=%d count=%d",
             inputDisabled ? 1 : 0, snap.valid ? 1 : 0, snap.count);
     } else {
@@ -399,7 +389,7 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
                           acc::strings::Id::FmtInteractFailed),
                       name);
         tolk::Speak(failMsg, /*interrupt=*/true);
-        acclog::Write("Interact: dispatch FAILED -> [%s]", failMsg);
+        acclog::Write("Interact", "dispatch FAILED -> [%s]", failMsg);
     }
 }
 
@@ -419,8 +409,7 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
 void AnnounceBarePersonalKey(int slot) {
     void* mi = acc::engine_actionbar::ResolveMainInterface();
     if (!mi) {
-        acclog::Write(
-            "ActionBar: bare key slot=%d — main_interface unresolved",
+        acclog::Write("ActionBar", "bare key slot=%d — main_interface unresolved",
             slot);
         return;
     }
@@ -436,8 +425,7 @@ void AnnounceBarePersonalKey(int slot) {
                           acc::strings::Id::FmtActionBarColumnEmpty),
                       slot + 1);
         tolk::Speak(msg, /*interrupt=*/true);
-        acclog::Write(
-            "ActionBar: bare key slot=%d variants=0 -> [%s]",
+        acclog::Write("ActionBar", "bare key slot=%d variants=0 -> [%s]",
             slot, msg);
         return;
     }
@@ -459,8 +447,7 @@ void AnnounceBarePersonalKey(int slot) {
                           acc::strings::Id::FmtActionBarColumnEmpty),
                       slot + 1);
         tolk::Speak(msg, /*interrupt=*/true);
-        acclog::Write(
-            "ActionBar: bare key slot=%d variants=%d idx=%d "
+        acclog::Write("ActionBar", "bare key slot=%d variants=%d idx=%d "
             "label=empty -> [%s]",
             slot, nVar, idx, msg);
         return;
@@ -471,8 +458,7 @@ void AnnounceBarePersonalKey(int slot) {
                   acc::strings::Get(acc::strings::Id::FmtActionBarFired),
                   label);
     tolk::Speak(msg, /*interrupt=*/true);
-    acclog::Write(
-        "ActionBar: bare key slot=%d variants=%d idx=%d label=[%s] -> [%s]",
+    acclog::Write("ActionBar", "bare key slot=%d variants=%d idx=%d label=[%s] -> [%s]",
         slot, nVar, idx, label, msg);
 }
 
@@ -491,8 +477,7 @@ void AnnounceBarePersonalKey(int slot) {
 void AnnounceBareTargetKey(int row) {
     void* tam = acc::engine_radial::ResolveTargetActionMenu();
     if (!tam) {
-        acclog::Write(
-            "ActionBar: bare target row=%d — TAM unresolved",
+        acclog::Write("ActionBar", "bare target row=%d — TAM unresolved",
             row);
         return;
     }
@@ -511,8 +496,7 @@ void AnnounceBareTargetKey(int row) {
                           acc::strings::Id::FmtActionBarColumnEmpty),
                       row + 1);
         tolk::Speak(msg, /*interrupt=*/true);
-        acclog::Write(
-            "ActionBar: bare target row=%d count=%d label=[%s] -> [%s]",
+        acclog::Write("ActionBar", "bare target row=%d count=%d label=[%s] -> [%s]",
             row, count, label, msg);
         return;
     }
@@ -522,8 +506,7 @@ void AnnounceBareTargetKey(int row) {
                   acc::strings::Get(acc::strings::Id::FmtActionBarFired),
                   label);
     tolk::Speak(msg, /*interrupt=*/true);
-    acclog::Write(
-        "ActionBar: bare target row=%d label=[%s] -> [%s]",
+    acclog::Write("ActionBar", "bare target row=%d label=[%s] -> [%s]",
         row, label, msg);
 }
 
@@ -634,8 +617,7 @@ void PollHotkey() {
                 acc::strings::Id::LevelUpOpen);
             tolk::Speak(opener, /*interrupt=*/true);
             bool ok = acc::engine_levelup::TriggerLevelUp();
-            acclog::Write(
-                "Interact: Shift+L -> [%s] level-up dispatch ok=%d",
+            acclog::Write("Interact", "Shift+L -> [%s] level-up dispatch ok=%d",
                 opener, ok ? 1 : 0);
             if (!ok) {
                 tolk::Speak(
@@ -714,28 +696,23 @@ void PollHotkey() {
     // double-fire.
     if (inWorld && acc::radial_menu::IsActive()) {
         if (risingEnter) {
-            acclog::Write(
-                "Interact: Enter — radial active, dispatching kInputEnter1");
+            acclog::Write("Interact", "Enter — radial active, dispatching kInputEnter1");
             acc::radial_menu::HandleInputEvent(kInputEnter1, /*value=*/1);
         }
         if (risingUp) {
-            acclog::Write(
-                "Interact: Up — radial active, dispatching kInputNavUp");
+            acclog::Write("Interact", "Up — radial active, dispatching kInputNavUp");
             acc::radial_menu::HandleInputEvent(kInputNavUp, 1);
         }
         if (risingDown) {
-            acclog::Write(
-                "Interact: Down — radial active, dispatching kInputNavDown");
+            acclog::Write("Interact", "Down — radial active, dispatching kInputNavDown");
             acc::radial_menu::HandleInputEvent(kInputNavDown, 1);
         }
         if (risingLeft) {
-            acclog::Write(
-                "Interact: Left — radial active, dispatching kInputNavLeft");
+            acclog::Write("Interact", "Left — radial active, dispatching kInputNavLeft");
             acc::radial_menu::HandleInputEvent(kInputNavLeft, 1);
         }
         if (risingRight) {
-            acclog::Write(
-                "Interact: Right — radial active, dispatching kInputNavRight");
+            acclog::Write("Interact", "Right — radial active, dispatching kInputNavRight");
             acc::radial_menu::HandleInputEvent(kInputNavRight, 1);
         }
         return;
@@ -763,8 +740,7 @@ void PollHotkey() {
     //     preempted by OnInteract's stale-LastTarget Dialog action
     //     (patch-20260506-142103.log).
     if (acc::view_mode::IsActive() || acc::view_mode::ConsumedEnterThisTick()) {
-        acclog::Write(
-            "Interact: Enter rising — view mode owns this press, "
+        acclog::Write("Interact", "Enter rising — view mode owns this press, "
             "deferring to view_mode::Tick");
         return;
     }
@@ -808,7 +784,7 @@ void PollHotkey() {
     // panels[] scan that MonitorDialogReplies already uses; dialog panels
     // do not stay stale (that monitor's disarm path proves it).
     if (acc::engine::HasActiveDialogPanel()) {
-        acclog::Write("Interact: %s gate -- BLOCKED, dialog panel in stack",
+        acclog::Write("Interact", "%s gate -- BLOCKED, dialog panel in stack",
                       keyTag);
         return;
     }
@@ -879,8 +855,7 @@ void PollHotkey() {
                 break;
             }
             if (fgIsModal) {
-                acclog::Write(
-                    "Interact: %s gate -- BLOCKED, fg=%p kind=%s "
+                acclog::Write("Interact", "%s gate -- BLOCKED, fg=%p kind=%s "
                     "(modal_stack[%d] top)",
                     keyTag, fgPanel,
                     acc::engine::PanelKindName(fgKind),
@@ -888,14 +863,12 @@ void PollHotkey() {
                 return;
             }
             if (blocking) {
-                acclog::Write(
-                    "Interact: %s gate -- BLOCKED, fg=%p kind=%s",
+                acclog::Write("Interact", "%s gate -- BLOCKED, fg=%p kind=%s",
                     keyTag, fgPanel,
                     acc::engine::PanelKindName(fgKind));
                 return;
             }
-            acclog::Write(
-                "Interact: %s gate -- ALLOW, fg=%p kind=%s",
+            acclog::Write("Interact", "%s gate -- ALLOW, fg=%p kind=%s",
                 keyTag, fgPanel,
                 acc::engine::PanelKindName(fgKind));
         }

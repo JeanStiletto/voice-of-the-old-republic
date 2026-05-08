@@ -87,7 +87,7 @@ void SpeakRowAction(void* tam, int row, const char* prefix) {
                       "Aktion", rowOrdinal, total, label[0] ? label : "?");
     }
     tolk::Speak(msg, /*interrupt=*/true);
-    acclog::Write("Radial: speak row=%d ordinal=%d/%d label=[%s]",
+    acclog::Write("Radial", "speak row=%d ordinal=%d/%d label=[%s]",
                   row, rowOrdinal, total, label);
 }
 
@@ -98,11 +98,11 @@ void SpeakCurrentLabel(void* tam, int row) {
     char label[128] = "";
     acc::engine_radial::ReadRowActionLabel(tam, row, label, sizeof(label));
     if (label[0] == '\0') {
-        acclog::Write("Radial: speak label row=%d -> empty", row);
+        acclog::Write("Radial", "speak label row=%d -> empty", row);
         return;
     }
     tolk::Speak(label, /*interrupt=*/true);
-    acclog::Write("Radial: speak label row=%d [%s]", row, label);
+    acclog::Write("Radial", "speak label row=%d [%s]", row, label);
 }
 
 }  // namespace
@@ -110,7 +110,7 @@ void SpeakCurrentLabel(void* tam, int row) {
 bool ArmAfterPopulate(const char* targetName) {
     void* tam = acc::engine_radial::ResolveTargetActionMenu();
     if (!tam) {
-        acclog::Write("Radial: ArmAfterPopulate — TAM unresolved; not arming");
+        acclog::Write("Radial", "ArmAfterPopulate — TAM unresolved; not arming");
         return false;
     }
 
@@ -123,7 +123,7 @@ bool ArmAfterPopulate(const char* targetName) {
 
     int firstRow = FirstPopulatedRow(tam);
     if (firstRow < 0) {
-        acclog::Write("Radial: ArmAfterPopulate — no rows populated "
+        acclog::Write("Radial", "ArmAfterPopulate — no rows populated "
                       "(action_lists size all=0); not arming");
         return false;
     }
@@ -147,8 +147,7 @@ bool ArmAfterPopulate(const char* targetName) {
                   acc::strings::Get(acc::strings::Id::FmtInteractRadial),
                   g_state.target);
 
-    acclog::Write(
-        "Radial: ARMED target=[%s] engineName=[%s] row=%d "
+    acclog::Write("Radial", "ARMED target=[%s] engineName=[%s] row=%d "
         "counts={r0=%d, r1=%d, r2=%d}",
         g_state.target, engineTargetName, firstRow,
         acc::engine_radial::RowActionCount(tam, 0),
@@ -177,8 +176,7 @@ bool HandleInputEvent(int code, int value) {
 
     void* tam = acc::engine_radial::ResolveTargetActionMenu();
     if (!tam) {
-        acclog::Write(
-            "Radial: HandleInputEvent — TAM unresolved on key=%d; "
+        acclog::Write("Radial", "HandleInputEvent — TAM unresolved on key=%d; "
             "force-disarming",
             code);
         ForceDisarm("tam-unresolved");
@@ -191,14 +189,13 @@ bool HandleInputEvent(int code, int value) {
             int dir = (code == kInputNavDown) ? +1 : -1;
             int next = FindPopulatedRow(tam, g_state.curRow, dir);
             if (next < 0 || next == g_state.curRow) {
-                acclog::Write(
-                    "Radial: %s — no other populated row; ignoring",
+                acclog::Write("Radial", "%s — no other populated row; ignoring",
                     code == kInputNavDown ? "NavDown" : "NavUp");
                 return true;
             }
             int prev = g_state.curRow;
             g_state.curRow = next;
-            acclog::Write("Radial: row %s %d -> %d",
+            acclog::Write("Radial", "row %s %d -> %d",
                           dir > 0 ? "down" : "up", prev, next);
             SpeakRowAction(tam, next, /*prefix=*/nullptr);
             return true;
@@ -211,8 +208,7 @@ bool HandleInputEvent(int code, int value) {
             // back gives us the new label.
             int count = acc::engine_radial::RowActionCount(tam, g_state.curRow);
             if (count <= 1) {
-                acclog::Write(
-                    "Radial: %s row=%d count=%d — nothing to cycle",
+                acclog::Write("Radial", "%s row=%d count=%d — nothing to cycle",
                     code == kInputNavRight ? "NavRight" : "NavLeft",
                     g_state.curRow, count);
                 return true;
@@ -225,7 +221,7 @@ bool HandleInputEvent(int code, int value) {
                 ok = acc::engine_radial::SelectPrevActionInRow(
                     tam, g_state.curRow);
             }
-            acclog::Write("Radial: %s row=%d count=%d ok=%d",
+            acclog::Write("Radial", "%s row=%d count=%d ok=%d",
                           code == kInputNavRight ? "NavRight" : "NavLeft",
                           g_state.curRow, count, ok ? 1 : 0);
             SpeakCurrentLabel(tam, g_state.curRow);
@@ -238,7 +234,7 @@ bool HandleInputEvent(int code, int value) {
                 tam, g_state.curRow, label, sizeof(label));
             bool ok = acc::engine_radial::DispatchRowAction(
                 tam, g_state.curRow);
-            acclog::Write("Radial: ENTER dispatch row=%d label=[%s] ok=%d",
+            acclog::Write("Radial", "ENTER dispatch row=%d label=[%s] ok=%d",
                           g_state.curRow, label, ok ? 1 : 0);
             // The dispatch may or may not visually clear the radial. Drop
             // our gate either way so a subsequent Enter on a new target
@@ -249,7 +245,7 @@ bool HandleInputEvent(int code, int value) {
         }
         case kInputEsc1:
         case kInputEsc2: {
-            acclog::Write("Radial: ESC — disarming (no engine cleanup)");
+            acclog::Write("Radial", "ESC — disarming (no engine cleanup)");
             ForceDisarm("esc");
             return true;
         }
@@ -269,7 +265,7 @@ void ScheduleWideDiag(int frames, const char* tag) {
     } else {
         g_diag.tag[0] = '\0';
     }
-    acclog::Write("Radial: ScheduleWideDiag frames=%d tag=[%s]",
+    acclog::Write("Radial", "ScheduleWideDiag frames=%d tag=[%s]",
                   frames, g_diag.tag);
 }
 
@@ -287,7 +283,7 @@ void Tick() {
         if (dtam) {
             acc::engine_radial::LogStateWide(dtam, framedTag);
         } else {
-            acclog::Write("Radial.StateW[%s]: tam=NULL (chain failed this tick)",
+            acclog::Write("Radial.StateW", "[%s] tam=NULL (chain failed this tick)",
                           framedTag);
         }
         --g_diag.framesRemaining;
@@ -313,7 +309,7 @@ void Tick() {
     if (acc::engine_radial::RowActionCount(tam, g_state.curRow) <= 0) {
         int r = FirstPopulatedRow(tam);
         if (r >= 0) {
-            acclog::Write("Radial: tick — current row drained, slot %d -> %d",
+            acclog::Write("Radial", "tick — current row drained, slot %d -> %d",
                           g_state.curRow, r);
             g_state.curRow = r;
         }
@@ -322,7 +318,7 @@ void Tick() {
 
 void ForceDisarm(const char* reason) {
     if (!g_state.active) return;
-    acclog::Write("Radial: disarm — reason=%s", reason ? reason : "?");
+    acclog::Write("Radial", "disarm — reason=%s", reason ? reason : "?");
     g_state.active = false;
     g_state.curRow = 0;
     g_state.target[0] = '\0';

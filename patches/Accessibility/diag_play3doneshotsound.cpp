@@ -48,10 +48,10 @@ extern "C" void __cdecl OnPlay3DOneShotSound(void* arg_addr) {
             }
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        acclog::Write("Play3DOneShot: deref faulted (arg_addr=%p)", arg_addr);
+        acclog::Write("Play3DOneShot", "deref faulted (arg_addr=%p)", arg_addr);
         return;
     }
 
-    acclog::Write("Play3DOneShot: caller=0x%08x resref=[%s]",
+    acclog::Write("Play3DOneShot", "caller=0x%08x resref=[%s]",
                   caller_eip, resref);
 }

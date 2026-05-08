@@ -82,7 +82,7 @@ bool LookupTlk(uint32_t strref, char* outBuf, size_t bufSize) {
             ok = true;
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        acclog::Write("TLK lookup raised SEH exception for strref=%u", strref);
+        acclog::Write("Engine.Reads", "TLK lookup raised SEH exception for strref=%u", strref);
         ok = false;
     }
     return ok;
@@ -116,7 +116,7 @@ bool ReadGuiString(void* control, size_t guiStringPtrOffset,
         outBuf[len] = '\0';
         got = true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        acclog::Write("ReadGuiString SEH for control=%p offset=0x%x",
+        acclog::Write("Engine.Reads", "ReadGuiString SEH for control=%p offset=0x%x",
                       control, (unsigned)guiStringPtrOffset);
         got = false;
     }
@@ -149,7 +149,7 @@ bool ExtractTextOrStrRefIndirect(void* control,
                                       outBuf, bufSize);
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        acclog::Write("text_object indirection SEH for control=%p "
+        acclog::Write("Engine.Reads", "text_object indirection SEH for control=%p "
                       "(textObjectOffset=0x%x)", control, (unsigned)textObjectOffset);
         got = false;
     }

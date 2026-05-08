@@ -131,7 +131,7 @@ PanelKind IdentifyPanel(void* panel) {
             g_panelKindCacheCount = kPanelKindCacheSize - 1;
         }
         g_panelKindCache[g_panelKindCacheCount++] = { panel, k };
-        acclog::Write("PanelKind: panel=%p identified as %s",
+        acclog::Write("PanelKind", "panel=%p identified as %s",
                       panel, kPanelKindOffsets[i].name);
         return k;
     }

@@ -69,9 +69,9 @@ static void DumpFunctionBytes(const char* tag, uintptr_t va, size_t len) {
             hex[off++] = ' ';
         }
         hex[off] = '\0';
-        acclog::Write("RE-peek %s VA=0x%08zx len=%zu: %s", tag, va, len, hex);
+        acclog::Write("Init.REPeek", "%s VA=0x%08zx len=%zu: %s", tag, va, len, hex);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        acclog::Write("RE-peek %s VA=0x%08zx FAULT", tag, va);
+        acclog::Write("Init.REPeek", "%s VA=0x%08zx FAULT", tag, va);
     }
 }
 
@@ -84,7 +84,7 @@ extern "C" void __cdecl OnRulesInit(void* /*rulesThis*/) {
     if (fired) return;
     fired = true;
     EnsureTolkInitialized();
-    acclog::Write("first CSWRules construction; detour active");
+    acclog::Write("Init", "first CSWRules construction; detour active");
 
     // RE: dump CSWGuiInGameCharacter::ShowLevelUpGUI (btn_levelup click
     // handler) — currently returns 0 with no panel visible. Need to find
@@ -105,7 +105,7 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD reason, LPVOID) {
         if (n == 0 || n >= sizeof(g_versionSha)) {
             strncpy_s(g_versionSha, "(unset)", _TRUNCATE);
         }
-        acclog::Write("DLL_PROCESS_ATTACH sha=%s", g_versionSha);
+        acclog::Write("Init", "DLL_PROCESS_ATTACH sha=%s", g_versionSha);
         // Tolk init is intentionally deferred to first hook fire — see header.
     }
     return TRUE;

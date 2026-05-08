@@ -77,7 +77,7 @@ bool SetLevelUpMode(void* gui, int mode) {
         fn(gui, mode);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        acclog::Write("LevelUp: SetLevelUpMode(%d) faulted gui=%p", mode, gui);
+        acclog::Write("LevelUp", "SetLevelUpMode(%d) faulted gui=%p", mode, gui);
         return false;
     }
 }
@@ -87,7 +87,7 @@ bool SetLevelUpMode(void* gui, int mode) {
 bool TriggerLevelUp() {
     void* gui = acc::engine::ResolveGuiInGame();
     if (!gui) {
-        acclog::Write("LevelUp: TriggerLevelUp -- CGuiInGame unresolved");
+        acclog::Write("LevelUp", "TriggerLevelUp -- CGuiInGame unresolved");
         return false;
     }
 
@@ -98,10 +98,10 @@ bool TriggerLevelUp() {
     // mode==0 indefinitely. The mode goes back to 0 inside the level-up
     // panel's commit/cancel paths so this latch is one-shot per dispatch.
     if (!SetLevelUpMode(gui, 1)) {
-        acclog::Write("LevelUp: SetLevelUpMode(1) failed; aborting");
+        acclog::Write("LevelUp", "SetLevelUpMode(1) failed; aborting");
         return false;
     }
-    acclog::Write("LevelUp: SetLevelUpMode(1) ok gui=%p", gui);
+    acclog::Write("LevelUp", "SetLevelUpMode(1) ok gui=%p", gui);
 
     // First-choice path: CSWGuiInGameCharacter::ShowLevelUpGUI — the
     // btn_levelup click handler. Calls SetStats + new CSWGuiLevelUpPanel
@@ -115,21 +115,18 @@ bool TriggerLevelUp() {
             auto fn = reinterpret_cast<PFN_ShowLevelUpGUI>(
                 kAddrCSWGuiInGameCharacterShowLevelUpGUI);
             uint32_t ret = fn(charPanel, 0);
-            acclog::Write(
-                "LevelUp: CSWGuiInGameCharacter::ShowLevelUpGUI "
+            acclog::Write("LevelUp", "CSWGuiInGameCharacter::ShowLevelUpGUI "
                 "dispatched panel=%p ret=0x%08x",
                 charPanel, ret);
             return true;
         } __except (EXCEPTION_EXECUTE_HANDLER) {
-            acclog::Write(
-                "LevelUp: CSWGuiInGameCharacter::ShowLevelUpGUI faulted "
+            acclog::Write("LevelUp", "CSWGuiInGameCharacter::ShowLevelUpGUI faulted "
                 "panel=%p — falling back to CGuiInGame variant",
                 charPanel);
             // fall through
         }
     } else {
-        acclog::Write(
-            "LevelUp: in_game_character slot is null "
+        acclog::Write("LevelUp", "in_game_character slot is null "
             "(panel never opened this session) — falling back");
     }
 
@@ -140,13 +137,12 @@ bool TriggerLevelUp() {
         auto fn = reinterpret_cast<PFN_ShowLevelUpGUI>(
             kAddrCGuiInGameShowLevelUpGUI);
         uint32_t ret = fn(gui, 0);
-        acclog::Write(
-            "LevelUp: CGuiInGame::ShowLevelUpGUI dispatched gui=%p "
+        acclog::Write("LevelUp", "CGuiInGame::ShowLevelUpGUI dispatched gui=%p "
             "ret=0x%08x",
             gui, ret);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        acclog::Write("LevelUp: CGuiInGame::ShowLevelUpGUI faulted gui=%p",
+        acclog::Write("LevelUp", "CGuiInGame::ShowLevelUpGUI faulted gui=%p",
                       gui);
         return false;
     }

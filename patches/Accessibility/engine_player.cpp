@@ -228,8 +228,7 @@ bool SetPlayerInputEnabled(bool enabled, bool armAutoRestore) {
         g_disableActive = false;
         g_disableExpiresAt = 0;
     }
-    acclog::Write(
-        "PlayerInput: SetEnabled(%s, armAutoRestore=%d) — was disabled=%d, "
+    acclog::Write("PlayerInput", "SetEnabled(%s, armAutoRestore=%d) — was disabled=%d, "
         "now disabled=%d, expires=%lu",
         enabled ? "true" : "false", armAutoRestore ? 1 : 0,
         wasActive ? 1 : 0, g_disableActive ? 1 : 0,
@@ -240,8 +239,7 @@ bool SetPlayerInputEnabled(bool enabled, bool armAutoRestore) {
 void TickPlayerInputRestore() {
     if (!g_disableActive) return;
     if (GetTickCount() < g_disableExpiresAt) return;
-    acclog::Write(
-        "PlayerInput: TickPlayerInputRestore — auto-restoring (now=%lu, "
+    acclog::Write("PlayerInput", "TickPlayerInputRestore — auto-restoring (now=%lu, "
         "expired_at=%lu)",
         static_cast<unsigned long>(GetTickCount()),
         static_cast<unsigned long>(g_disableExpiresAt));

@@ -207,7 +207,7 @@ bool ShiftHeld() {
 
 void OnShiftReleased() {
     if (g_blockIdx != kCursorReset) {
-        acclog::Write("Peek: shift release; reset block cursor (was %d)",
+        acclog::Write("Peek", "shift release; reset block cursor (was %d)",
                       g_blockIdx);
     }
     g_blockIdx = kCursorReset;
@@ -234,7 +234,7 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
         __try {
             info->refresh(activePanel, focusedControl);
         } __except (EXCEPTION_EXECUTE_HANDLER) {
-            acclog::Write("Peek: panel=%s refresh SEH (focused=%p); "
+            acclog::Write("Peek", "panel=%s refresh SEH (focused=%p); "
                           "reading stale rows",
                           acc::engine::PanelKindName(kind), focusedControl);
         }
@@ -256,7 +256,7 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
         // doesn't fire on top of a Shift+arrow the user thought went
         // somewhere — predictable behaviour beats "Shift+arrow does
         // nothing here, but the un-shifted nav fires anyway".
-        acclog::Write("Peek: panel=%s lb=%p rowCount=0; silent",
+        acclog::Write("Peek", "panel=%s lb=%p rowCount=0; silent",
                       acc::engine::PanelKindName(kind), lb);
         return true;
     }
@@ -288,11 +288,11 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
         // play both blocks back to back, which obscures which one is
         // current.
         tolk::Speak(text, /*interrupt=*/true);
-        acclog::Write("Peek: panel=%s block %d/%d (was %d) src=%s text=\"%s\"",
+        acclog::Write("Peek", "panel=%s block %d/%d (was %d) src=%s text=\"%s\"",
                       acc::engine::PanelKindName(kind),
                       g_blockIdx, rowCount, prev, src, text);
     } else {
-        acclog::Write("Peek: panel=%s block %d/%d (was %d) row=%p no-text; silent",
+        acclog::Write("Peek", "panel=%s block %d/%d (was %d) row=%p no-text; silent",
                       acc::engine::PanelKindName(kind),
                       g_blockIdx, rowCount, prev, row);
     }

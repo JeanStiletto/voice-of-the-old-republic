@@ -128,8 +128,7 @@ void Tick() {
         s_lastChangeAt     = now;
         s_lastSpokenAt     = now;
         s_lastTick         = now;
-        acclog::Write(
-            "CameraAnnounce: first-tick anchor; charCompass=%.1f sector=%d",
+        acclog::Write("CameraAnnounce", "first-tick anchor; charCompass=%.1f sector=%d",
             charCompass, s_lastSpokenSector);
         return;
     }
@@ -216,8 +215,7 @@ void Tick() {
     auto id = SectorString(s_pendingSector);
     const char* phrase = acc::strings::Get(id);
     tolk::Speak(phrase, /*interrupt=*/false);
-    acclog::Write(
-        "CameraAnnounce: sector %d -> %d (%s); estCamYaw=%.1f "
+    acclog::Write("CameraAnnounce", "sector %d -> %d (%s); estCamYaw=%.1f "
         "charCompass=%.1f (a=%d d=%d %s)",
         s_lastSpokenSector, s_pendingSector, phrase, s_camYawCompass,
         charCompass, aHeld ? 1 : 0, dHeld ? 1 : 0,

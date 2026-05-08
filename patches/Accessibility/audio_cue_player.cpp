@@ -76,7 +76,7 @@ bool PlayCueAtPosition(NavCue cue,
                        float rangeMax) {
     // Gate 1 — per-kind toggle.
     if (!IsCueEnabled(cue)) {
-        acclog::Write("CuePlayer: drop cue=%s reason=disabled",
+        acclog::Write("CuePlayer", "drop cue=%s reason=disabled",
                       CueLabel(cue));
         return false;
     }
@@ -86,8 +86,7 @@ bool PlayCueAtPosition(NavCue cue,
     float distSq  = DistanceSquared(worldPos, listenerPos);
     float rangeSq = rangeMax * rangeMax;
     if (distSq > rangeSq) {
-        acclog::Write(
-            "CuePlayer: drop cue=%s reason=out-of-range "
+        acclog::Write("CuePlayer", "drop cue=%s reason=out-of-range "
             "distSq=%.2f rangeSq=%.2f",
             CueLabel(cue), distSq, rangeSq);
         return false;
@@ -99,8 +98,7 @@ bool PlayCueAtPosition(NavCue cue,
 
     // sqrt only on the log path.
     float dist = (distSq > 0.0f) ? std::sqrt(distSq) : 0.0f;
-    acclog::Write(
-        "CuePlayer: %s cue=%s pos=(%.2f,%.2f,%.2f) dist=%.2f",
+    acclog::Write("CuePlayer", "%s cue=%s pos=(%.2f,%.2f,%.2f) dist=%.2f",
         ok ? "play" : "drop-engine-fail", CueLabel(cue),
         worldPos.x, worldPos.y, worldPos.z, dist);
     return ok;

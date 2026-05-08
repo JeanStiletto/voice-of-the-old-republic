@@ -353,7 +353,7 @@ static const char* ExtractAnnounceableText(void* control,
                         }
                     }
                 } __except (EXCEPTION_EXECUTE_HANDLER) {
-                    acclog::Write("Speculative label read SEH for vtable=0x%x "
+                    acclog::Write("Menus.SpecRead", "label SEH for vtable=0x%x "
                                   "control=%p", (unsigned)vta, control);
                     got = false;
                 }
@@ -387,7 +387,7 @@ static const char* ExtractAnnounceableText(void* control,
                         }
                     }
                 } __except (EXCEPTION_EXECUTE_HANDLER) {
-                    acclog::Write("Speculative button read SEH for vtable=0x%x "
+                    acclog::Write("Menus.SpecRead", "button SEH for vtable=0x%x "
                                   "control=%p", (unsigned)vta, control);
                     got = false;
                 }
@@ -397,24 +397,23 @@ static const char* ExtractAnnounceableText(void* control,
                 if (tlen > 0 && tlen + 1 <= bufSize) {
                     memcpy(outBuf, text, tlen + 1);
                     source = ov.tag;
-                    acclog::Write("Speculative read hit: vtable=0x%x control=%p "
-                                  "text=\"%s\"", (unsigned)vta, control, outBuf);
+                    // Trace: chain rebind / step / fingerprint all visit the
+                    // same control multiple times per arrow press; collapse
+                    // identical hit/empty/miss runs while preserving the
+                    // suppressed count.
+                    acclog::Trace("Menus.SpecRead",
+                                  "hit vtable=0x%x control=%p text=\"%s\"",
+                                  (unsigned)vta, control, outBuf);
                     break;
                 }
-                // got=true but text is empty/whitespace — log so we can see
-                // the read path is wired but the field is genuinely empty.
-                acclog::Write("Speculative read empty: vtable=0x%x control=%p "
+                acclog::Trace("Menus.SpecRead",
+                              "empty vtable=0x%x control=%p "
                               "(read returned but text was empty)",
                               (unsigned)vta, control);
             } else {
-                // Distinct from SEH: read paths returned cleanly, text just
-                // wasn't there. Could mean the offset is wrong for this
-                // class, the CExoString is genuinely empty, or the strref is
-                // 0/0xFFFFFFFF (LookupTlk silently returns false). Logging
-                // every miss helps confirm the speculative path runs and
-                // that reads aren't faulting silently.
-                acclog::Write("Speculative read miss: vtable=0x%x control=%p "
-                              "tag=%s", (unsigned)vta, control, ov.tag);
+                acclog::Trace("Menus.SpecRead",
+                              "miss vtable=0x%x control=%p tag=%s",
+                              (unsigned)vta, control, ov.tag);
             }
         }
     }
@@ -501,7 +500,7 @@ static const char* ExtractAnnounceableText(void* control,
                             memcpy(outBuf, tlkText, tlen + 1);
                             source = "perkind-tlk";
                             gotTlk = true;
-                            acclog::Write("Per-kind InGameMenu TLK: control=%p "
+                            acclog::Write("Menus.PerKind", "InGameMenu TLK control=%p "
                                           "panelIdx=%d strref=%u -> \"%s\"",
                                           control, idx, spec.strref, outBuf);
                         }
@@ -512,7 +511,7 @@ static const char* ExtractAnnounceableText(void* control,
                     if (nlen + 1 <= bufSize) {
                         memcpy(outBuf, spec.literal, nlen + 1);
                         source = "perkind-literal";
-                        acclog::Write("Per-kind InGameMenu literal: control=%p "
+                        acclog::Write("Menus.PerKind", "InGameMenu literal control=%p "
                                       "panelIdx=%d strref=%u -> \"%s\"",
                                       control, idx, spec.strref, outBuf);
                     }
@@ -564,7 +563,7 @@ static const char* ExtractAnnounceableText(void* control,
                         memcpy(outBuf, tlkText, tlen + 1);
                         source = "perkind-equip-tlk";
                         gotTlk = true;
-                        acclog::Write("Per-kind InGameEquip TLK: control=%p "
+                        acclog::Write("Menus.PerKind", "InGameEquip TLK control=%p "
                                       "id=%d strref=%u -> \"%s\"",
                                       control, cid, s.strref, outBuf);
                     }
@@ -576,7 +575,7 @@ static const char* ExtractAnnounceableText(void* control,
                 if (llen > 0 && llen + 1 <= bufSize) {
                     memcpy(outBuf, lit, llen + 1);
                     source = "perkind-equip-literal";
-                    acclog::Write("Per-kind InGameEquip literal: control=%p "
+                    acclog::Write("Menus.PerKind", "InGameEquip literal control=%p "
                                   "id=%d strref=%u -> \"%s\"",
                                   control, cid, s.strref, outBuf);
                 }
@@ -605,8 +604,10 @@ static const char* ExtractAnnounceableText(void* control,
             if (llen > 0 && llen + 1 <= bufSize) {
                 memcpy(outBuf, label, llen + 1);
                 source = "siblinglabel-fallback";
-                acclog::Write("Sibling-label fallback hit: control=%p label=\"%s\"",
-                              control, outBuf);
+                // Trace: fired for every chain entry on every arrow press,
+                // resolves to the same (control, label) tuple in tight bursts.
+                acclog::Trace("Menus.SiblingFallback",
+                              "control=%p label=\"%s\"", control, outBuf);
             }
         }
     }
@@ -1116,7 +1117,7 @@ static void AnnouncePanelTitle(void* panel) {
         }
         char text[256];
         if (ExtractAnnounceableText(child, text, sizeof(text), panel)) {
-            acclog::Write("Panel title parent=%p label=%p text=\"%s\"",
+            acclog::Write("Menus.PanelWalk", "title parent=%p label=%p text=\"%s\"",
                           panel, child, text);
             tolk::Speak(text, /*interrupt=*/false);
             return;
@@ -1200,7 +1201,7 @@ static void ValidateTabbedPanel() {
             if (panelData[i] == g_tabbedPanel) return;  // still live
         }
     }
-    acclog::Write("ValidateTabbedPanel: %p not in panels[]; clearing tabbed-mode state",
+    acclog::Write("ValidateTabbedPanel", "%p not in panels[]; clearing tabbed-mode state",
                   g_tabbedPanel);
     ResetTabbedState();
 }
@@ -1492,19 +1493,19 @@ static bool QueueButtonByIdActivate(void* panel, int buttonId,
                                     const char* logPrefix)
 {
     if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
-        acclog::Write("%s -- op already pending; ignoring", logPrefix);
+        acclog::Write(logPrefix, "-- op already pending; ignoring");
         return false;
     }
     void* tgt = FindControlById(panel, buttonId);
     if (!tgt) {
-        acclog::Write("%s -- target id=%d not resolved on panel=%p",
-                      logPrefix, buttonId, panel);
+        acclog::Write(logPrefix, "-- target id=%d not resolved on panel=%p",
+                      buttonId, panel);
         return false;
     }
     g_pendingActivate         = true;
     g_pendingActivateTarget   = tgt;
     g_navSpeechSuppressBudget = 2;
-    acclog::Write("%s panel=%p target=%p", logPrefix, panel, tgt);
+    acclog::Write(logPrefix, "panel=%p target=%p", panel, tgt);
     return true;
 }
 
@@ -1934,7 +1935,7 @@ static void RebindChain(void* panel) {
     int   idx    = FindChainEntry(active);
     g_chainIndex = (idx >= 0) ? idx : 0;
 
-    acclog::Write("Chain rebind panel=%p count=%d index=%d active=%p "
+    acclog::Write("Menus.Chain", "rebind panel=%p count=%d index=%d active=%p "
                   "tabOffsetY=%d equipSlotOffsetY=%d",
                   panel, g_chainCount, g_chainIndex, active,
                   g_tabClickOffsetY, g_equipSlotClickOffsetY);
@@ -1957,7 +1958,7 @@ static void RebindChain(void* panel) {
         unsigned int bitFlags =
             *reinterpret_cast<unsigned int*>(
                 reinterpret_cast<unsigned char*>(g_chain[i].control) + 0x44);
-        acclog::Write("Chain   [%d] %p (%d,%d)%s %s text=\"%s\" is_active=%u bit_flags=0x%x",
+        acclog::Write("Menus.Chain", "  [%d] %p (%d,%d)%s %s text=\"%s\" is_active=%u bit_flags=0x%x",
                       i, g_chain[i].control, g_chain[i].cx, g_chain[i].cy,
                       g_chain[i].textOnly ? " text-only" : "",
                       src ? src : "?", src ? text : "", isActive, bitFlags);
@@ -1977,19 +1978,19 @@ static void WalkChildren(const char* label, void* parent, size_t offset) {
     auto* list = reinterpret_cast<CExoArrayList*>(
         reinterpret_cast<unsigned char*>(parent) + offset);
     if (!list->data || list->size <= 0) {
-        acclog::Write("%s walk parent=%p children=0", label, parent);
+        acclog::Write(label, "walk parent=%p children=0", parent);
         return;
     }
     int count = list->size;
     if (count > 256) {
-        acclog::Write("%s walk parent=%p size_oob=%d (capped)", label, parent, count);
+        acclog::Write(label, "walk parent=%p size_oob=%d (capped)", parent, count);
         count = 256;
     }
-    acclog::Write("%s walk parent=%p children=%d", label, parent, list->size);
+    acclog::Write(label, "walk parent=%p children=%d", parent, list->size);
     for (int i = 0; i < count; ++i) {
         void* child = list->data[i];
         if (!child) {
-            acclog::Write("%s   [%d]=NULL", label, i);
+            acclog::Write(label, "  [%d]=NULL", i);
             continue;
         }
         int id = *reinterpret_cast<int*>(
@@ -2002,13 +2003,13 @@ static void WalkChildren(const char* label, void* parent, size_t offset) {
         const char* source = ExtractAnnounceableText(child, text, sizeof(text),
                                                      parent);
         if (source) {
-            acclog::Write("%s   [%d] %p id=%d src=%s text=\"%s\"",
-                          label, i, child, id, source, text);
+            acclog::Write(label, "  [%d] %p id=%d src=%s text=\"%s\"",
+                          i, child, id, source, text);
         } else {
             char vtbl[160];
             DumpControlVtable(child, vtbl, sizeof(vtbl));
-            acclog::Write("%s   [%d] %p id=%d src=none %s",
-                          label, i, child, id, vtbl);
+            acclog::Write(label, "  [%d] %p id=%d src=none %s",
+                          i, child, id, vtbl);
         }
     }
 }
@@ -2086,9 +2087,9 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
         // — actual per-kind handling lives in MonitorPanelContents on each
         // OnUpdate tick.
         PanelKind kind = IdentifyPanel(panel);
-        acclog::Write("Panel walk panel=%p kind=%s",
+        acclog::Write("Menus.PanelWalk", "panel=%p kind=%s",
                       panel, PanelKindName(kind));
-        WalkChildren("Panel", panel, kPanelControlsOffset);
+        WalkChildren("Menus.PanelWalk", panel, kPanelControlsOffset);
 
         g_cycleCategoryCount = 0;
         auto* plist = reinterpret_cast<CExoArrayList*>(
@@ -2121,7 +2122,7 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
                     strncpy_s(g_cycleCategories[g_cycleCategoryCount].category,
                               text, _TRUNCATE);
                     ++g_cycleCategoryCount;
-                    acclog::Write("Cycle category captured: control=%p text=\"%s\" strref=%u",
+                    acclog::Write("Menus.CycleCategory", "control=%p text=\"%s\" strref=%u",
                                   c, text, strref);
                 }
             }
@@ -2137,7 +2138,7 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
     }
 
     if (!newControl) {
-        acclog::Write("SetActiveControl #%d panel=%p newControl=NULL", n, panel);
+        acclog::Write("Menus.SetActive", "#%d panel=%p newControl=NULL", n, panel);
         return;
     }
 
@@ -2149,7 +2150,7 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
     // dispatch). It only fires here when our own move triggered the engine
     // to reselect.
     if (newControl == g_pendingTarget) {
-        acclog::Write("SetActiveControl #%d panel=%p new=%p (self-dedup; cursor sync)",
+        acclog::Write("Menus.SetActive", "#%d panel=%p new=%p (self-dedup; cursor sync)",
                       n, panel, newControl);
         g_pendingTarget = nullptr;
         // Cursor-warp echo arrived: our voluntary nav has fully settled.
@@ -2170,7 +2171,7 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
         --g_navSpeechSuppressBudget;
         int sid = *reinterpret_cast<int*>(
             reinterpret_cast<unsigned char*>(newControl) + 0x50);
-        acclog::Write("SetActiveControl #%d panel=%p new=%p id=%d "
+        acclog::Write("Menus.SetActive", "#%d panel=%p new=%p id=%d "
                       "(nav-suppress; budget %d->%d)",
                       n, panel, newControl, sid, wasBudget,
                       g_navSpeechSuppressBudget);
@@ -2184,7 +2185,7 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
                                                  panel);
 
     if (source) {
-        acclog::Write("SetActiveControl #%d panel=%p new=%p id=%d src=%s text=\"%s\"",
+        acclog::Write("Menus.SetActive", "#%d panel=%p new=%p id=%d src=%s text=\"%s\"",
                       n, panel, newControl, id, source, text);
         // Container loot panel: the engine's listbox text concatenates every
         // row into one giant utterance ("Tarnfeldgen. Computersonde ..."),
@@ -2200,7 +2201,7 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
         // Always log unknowns — these are the events we need to debug.
         char vtbl[160];
         DumpControlVtable(newControl, vtbl, sizeof(vtbl));
-        acclog::Write("SetActiveControl #%d panel=%p new=%p id=%d src=none %s",
+        acclog::Write("Menus.SetActive", "#%d panel=%p new=%p id=%d src=none %s",
                       n, panel, newControl, id, vtbl);
         // Container loot panel: skip the placeholder for the listbox child
         // too — when the chest is empty the listbox has no row text and
@@ -2258,7 +2259,7 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
     static void* s_lastListBox = nullptr;
     if (listBox && listBox != s_lastListBox) {
         s_lastListBox = listBox;
-        WalkChildren("ListBox", listBox, kListBoxControlsOffset);
+        WalkChildren("Menus.ListBox", listBox, kListBoxControlsOffset);
     }
 
     // Always log the listbox's internal cursor + flags state. selection_index
@@ -2279,14 +2280,14 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
         auto* ctrls = reinterpret_cast<CExoArrayList*>(
             base + kListBoxControlsOffset);
         int ctrlsSize = ctrls ? ctrls->size : -1;
-        acclog::Write("ListBox::cursor list=%p sel=%d top=%d perPage=%d "
+        acclog::Write("Menus.ListBox", "cursor list=%p sel=%d top=%d perPage=%d "
                       "size=%d flags=0x%x",
                       listBox, selIdx, topVisible, itemsPerPage,
                       ctrlsSize, bitFlags);
     }
 
     if (!newRow) {
-        acclog::Write("ListBox::SetActiveControl #%d list=%p newRow=NULL p2=%d",
+        acclog::Write("Menus.ListBox", "SetActive #%d list=%p newRow=NULL p2=%d",
                       n, listBox, param2);
         return;
     }
@@ -2297,7 +2298,7 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
     const char* source = ExtractAnnounceableText(newRow, text, sizeof(text));
 
     if (source) {
-        acclog::Write("ListBox::SetActiveControl #%d list=%p row=%p id=%d "
+        acclog::Write("Menus.ListBox", "SetActive #%d list=%p row=%p id=%d "
                       "p2=%d src=%s text=\"%s\"",
                       n, listBox, newRow, id, param2, source, text);
 
@@ -2312,7 +2313,7 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
                 g_tabbedPanel = g_currentPanel;
                 g_tabsStart   = tabsStart;
                 g_tabsCount   = tabsCount;
-                acclog::Write("Tabbed panel detected: panel=%p tabsStart=%d tabsCount=%d",
+                acclog::Write("Menus.Tabs", "detected panel=%p tabsStart=%d tabsCount=%d",
                               g_currentPanel, tabsStart, tabsCount);
             }
         }
@@ -2326,12 +2327,12 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
             // ever needs per-line nav, that's a future feature.
             if (g_tabbedPanel == g_currentPanel) {
                 ParseVirtualLines(text);
-                acclog::Write("ListBox blob silenced (tabbed mode); %d virtual lines parsed",
+                acclog::Write("Menus.ListBox", "blob silenced (tabbed mode); %d virtual lines parsed",
                               g_virtualLineCount);
             } else {
                 int lines = 1;
                 for (const char* p = text; *p; ++p) if (*p == '\n') ++lines;
-                acclog::Write("ListBox blob silenced (non-tabbed); lines=%d",
+                acclog::Write("Menus.ListBox", "blob silenced (non-tabbed); lines=%d",
                               lines);
             }
         } else {
@@ -2340,7 +2341,7 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
     } else {
         char vtbl[160];
         DumpControlVtable(newRow, vtbl, sizeof(vtbl));
-        acclog::Write("ListBox::SetActiveControl #%d list=%p row=%p id=%d "
+        acclog::Write("Menus.ListBox", "SetActive #%d list=%p row=%p id=%d "
                       "p2=%d src=none %s",
                       n, listBox, newRow, id, param2, vtbl);
         // Suppress placeholder for single-row listboxes (description blobs
@@ -2373,7 +2374,7 @@ extern "C" void __cdecl OnHandleFocusChange(void* thisPtr, int param_1) {
     ++n;
     const char* tip; uint32_t tipLen; int id;
     ReadControlNameFields(thisPtr, tip, tipLen, id);
-    acclog::Write("HandleFocusChange #%d this=%p p1=%d id=%d tip[%u]=\"%s\"",
+    acclog::Write("Menus.FocusChange", "#%d this=%p p1=%d id=%d tip[%u]=\"%s\"",
                   n, thisPtr, param_1, id, tipLen,
                   (tip && tipLen > 0) ? tip : "");
 }
@@ -2422,7 +2423,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             static void* s_lastFg = nullptr;
             static void* s_lastCp = nullptr;
             if (fg != s_lastFg || g_currentPanel != s_lastCp) {
-                acclog::Write("Routing: fg=%p current=%p (using fg)",
+                acclog::Write("Routing", "fg=%p current=%p (using fg)",
                               fg, g_currentPanel);
                 s_lastFg = fg;
                 s_lastCp = g_currentPanel;
@@ -2441,7 +2442,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                     activePanel = sub;
                 } else {
                     g_drilledIntoSubScreen = false;
-                    acclog::Write("Drill: sub-screen gone from panels[]; "
+                    acclog::Write("Drill", "sub-screen gone from panels[]; "
                                   "returning to strip");
                 }
             }
@@ -2471,12 +2472,12 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         int translated = acc::engine::ManagerTranslateCode(param_1);
         const char* tag = radialConsumed ? " RADIAL-CONSUMED" : " RADIAL-PASS";
         if (translated != param_1) {
-            acclog::Write("HandleInputEvent #%d this=%p key=logical(%d) -> %s(%d) val=%d%s",
+            acclog::Write("Menus.Input", "#%d this=%p key=logical(%d) -> %s(%d) val=%d%s",
                           n, thisPtr, param_1,
                           acc::engine::InputIndexName(translated), translated,
                           param_2, tag);
         } else {
-            acclog::Write("HandleInputEvent #%d this=%p key=%s(%d) val=%d%s",
+            acclog::Write("Menus.Input", "#%d this=%p key=%s(%d) val=%d%s",
                           n, thisPtr, acc::engine::InputIndexName(param_1),
                           param_1, param_2, tag);
         }
@@ -2553,11 +2554,11 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                             tolk::Speak(msg, /*interrupt=*/false);
                         }
                     }
-                    acclog::Write("Container: %s lb=%p sel=%d->%d (rows=%d)",
+                    acclog::Write("Container", "%s lb=%p sel=%d->%d (rows=%d)",
                                   param_1 == kInputNavDown ? "Down" : "Up",
                                   lb, r.oldSel, r.newSel, r.rowCount);
                 } else if (lb) {
-                    acclog::Write("Container: %s lb=%p empty; nav ignored",
+                    acclog::Write("Container", "%s lb=%p empty; nav ignored",
                                   param_1 == kInputNavDown ? "Down" : "Up", lb);
                 }
                 consumed = true;  // never let the engine see arrow keys here
@@ -2598,11 +2599,11 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         int translated = acc::engine::ManagerTranslateCode(param_1);
         const char* tag = consumed ? " CONSUMED" : "";
         if (translated != param_1) {
-            acclog::Write("HandleInputEvent #%d this=%p key=logical(%d) -> %s(%d) val=%d%s",
+            acclog::Write("Menus.Input", "#%d this=%p key=logical(%d) -> %s(%d) val=%d%s",
                           n, thisPtr, param_1,
                           acc::engine::InputIndexName(translated), translated, param_2, tag);
         } else {
-            acclog::Write("HandleInputEvent #%d this=%p key=%s(%d) val=%d%s",
+            acclog::Write("Menus.Input", "#%d this=%p key=%s(%d) val=%d%s",
                           n, thisPtr, acc::engine::InputIndexName(param_1), param_1, param_2, tag);
         }
         return consumed ? 1 : 0;
@@ -2669,13 +2670,13 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                         }
                         tolk::Speak(msg, /*interrupt=*/false);
                     }
-                    acclog::Write("SaveLoad: %s lb=%p sel=%d->%d (rows=%d) "
+                    acclog::Write("SaveLoad", "%s lb=%p sel=%d->%d (rows=%d) "
                                   "row=%p planet=\"%s\" area=\"%s\"",
                                   param_1 == kInputNavDown ? "Down" : "Up",
                                   lb, r.oldSel, r.newSel, r.rowCount, r.row,
                                   planet ? planet : "", area ? area : "");
                 } else if (lb) {
-                    acclog::Write("SaveLoad: %s lb=%p empty; nav ignored",
+                    acclog::Write("SaveLoad", "%s lb=%p empty; nav ignored",
                                   param_1 == kInputNavDown ? "Down" : "Up", lb);
                 }
                 consumed = true;  // never let the engine see arrow keys here
@@ -2701,11 +2702,11 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             int translated = acc::engine::ManagerTranslateCode(param_1);
             const char* tag = " CONSUMED";
             if (translated != param_1) {
-                acclog::Write("HandleInputEvent #%d this=%p key=logical(%d) -> %s(%d) val=%d%s",
+                acclog::Write("Menus.Input", "#%d this=%p key=logical(%d) -> %s(%d) val=%d%s",
                               n, thisPtr, param_1,
                               acc::engine::InputIndexName(translated), translated, param_2, tag);
             } else {
-                acclog::Write("HandleInputEvent #%d this=%p key=%s(%d) val=%d%s",
+                acclog::Write("Menus.Input", "#%d this=%p key=%s(%d) val=%d%s",
                               n, thisPtr, acc::engine::InputIndexName(param_1), param_1, param_2, tag);
             }
             return 1;
@@ -2735,7 +2736,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         // Self-disarm if the panel pointer drifted (re-open, panel kind
         // matches but address differs). Picker state is per-panel.
         if (g_equipPickerActive && g_equipPickerPanel != activePanel) {
-            acclog::Write("EquipPicker: disarm — panel changed (%p -> %p)",
+            acclog::Write("EquipPicker", "disarm — panel changed (%p -> %p)",
                           g_equipPickerPanel, activePanel);
             g_equipPickerActive = false;
             g_equipPickerPanel  = nullptr;
@@ -2764,18 +2765,18 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                             tolk::Speak(msg, /*interrupt=*/false);
                         }
                     }
-                    acclog::Write("EquipPicker: %s lb=%p sel=%d->%d (rows=%d, real=%d)",
+                    acclog::Write("EquipPicker", "%s lb=%p sel=%d->%d (rows=%d, real=%d)",
                                   param_1 == kInputNavDown ? "Down" : "Up",
                                   lb, r.oldSel, r.newSel, r.rowCount, r.rowCount - 1);
                 } else {
-                    acclog::Write("EquipPicker: %s lb=%p empty; nav ignored",
+                    acclog::Write("EquipPicker", "%s lb=%p empty; nav ignored",
                                   param_1 == kInputNavDown ? "Down" : "Up", lb);
                 }
                 consumed = true;
             } else if (param_1 == kInputEnter1 || param_1 == kInputEnter2) {
                 if (g_pendingClick || g_pendingActivate || g_pendingCursorMove ||
                     g_pendingEquipSelect || g_pendingEquipCommit) {
-                    acclog::Write("EquipPicker: Enter — op already pending; ignoring");
+                    acclog::Write("EquipPicker", "Enter — op already pending; ignoring");
                     consumed = true;
                 } else {
                     // Direct call to the engine's commit handlers — bypasses
@@ -2816,11 +2817,11 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                         g_pendingEquipCommitRow    = row;
                         g_pendingEquipCommitBtn    = btn;
                         g_navSpeechSuppressBudget  = 2;
-                        acclog::Write("EquipPicker: Enter -> commit (row sel=%d %p "
+                        acclog::Write("EquipPicker", "Enter -> commit (row sel=%d %p "
                                       "btn_equip=%p panel=%p)",
                                       selIdx, row, btn, activePanel);
                     } else {
-                        acclog::Write("EquipPicker: Enter -- can't equip "
+                        acclog::Write("EquipPicker", "Enter -- can't equip "
                                       "(lb=%p row=%p btn=%p sel=%d rows=%d) panel=%p",
                                       lb, row, btn, selIdx, rowCount, activePanel);
                     }
@@ -2829,7 +2830,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                     consumed = true;
                 }
             } else if (param_1 == kInputEsc1 || param_1 == kInputEsc2) {
-                acclog::Write("EquipPicker: Esc -> disarm (panel=%p)", activePanel);
+                acclog::Write("EquipPicker", "Esc -> disarm (panel=%p)", activePanel);
                 g_equipPickerActive = false;
                 g_equipPickerPanel  = nullptr;
                 consumed = true;
@@ -2841,11 +2842,11 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             int translated = acc::engine::ManagerTranslateCode(param_1);
             const char* tag = " CONSUMED";
             if (translated != param_1) {
-                acclog::Write("HandleInputEvent #%d this=%p key=logical(%d) -> %s(%d) val=%d%s",
+                acclog::Write("Menus.Input", "#%d this=%p key=logical(%d) -> %s(%d) val=%d%s",
                               n, thisPtr, param_1,
                               acc::engine::InputIndexName(translated), translated, param_2, tag);
             } else {
-                acclog::Write("HandleInputEvent #%d this=%p key=%s(%d) val=%d%s",
+                acclog::Write("Menus.Input", "#%d this=%p key=%s(%d) val=%d%s",
                               n, thisPtr, acc::engine::InputIndexName(param_1), param_1, param_2, tag);
             }
             return 1;
@@ -2951,14 +2952,14 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         }
 
         if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
-            acclog::Write("Enter: op already pending; ignoring (target=%p)", e.control);
+            acclog::Write("Enter", "op already pending; ignoring (target=%p)", e.control);
             consumed = true;
         } else if (e.textOnly) {
             // Modal body text — non-activatable. Re-speak so a user who
             // missed the open-time announce can hear it again. Don't fire
             // vtable[15] (the listbox has no activate handler).
             AnnounceControl(e.control);
-            acclog::Write("Enter re-announce panel=%p index=%d target=%p (text-only)",
+            acclog::Write("Menus.Enter", "re-announce panel=%p index=%d target=%p (text-only)",
                           activePanel, g_chainIndex, e.control);
             consumed = true;
         } else if (isTabButton) {
@@ -2971,7 +2972,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             g_pendingCursorMove  = true;
             g_pendingClick       = true;
             g_navSpeechSuppressBudget = 2;  // see chain-step doc above
-            acclog::Write("Enter click-sim panel=%p index=%d target=%p cursorY=%d (tab)",
+            acclog::Write("Menus.Enter", "click-sim panel=%p index=%d target=%p cursorY=%d (tab)",
                           activePanel, g_chainIndex, e.control, cursorY);
             consumed = true;
         } else if (isEquipSlot) {
@@ -2991,7 +2992,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             // panel close, picker Esc, or BTN_EQUIP dispatch.
             g_equipPickerActive = true;
             g_equipPickerPanel  = g_chainPanel;
-            acclog::Write("EquipPicker: armed via direct OnEnterSlot+OnSelectSlot "
+            acclog::Write("EquipPicker", "armed via direct OnEnterSlot+OnSelectSlot "
                           "(Enter on slot id=%d btn=%p panel=%p)",
                           equipSlotCid, e.control, g_chainPanel);
             consumed = true;
@@ -3010,11 +3011,11 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             // next route.
             if (IdentifyPanel(g_chainPanel) == PanelKind::InGameMenu) {
                 g_drilledIntoSubScreen = true;
-                acclog::Write("Drill: armed (Enter on InGameMenu icon target=%p)",
+                acclog::Write("Drill", "armed (Enter on InGameMenu icon target=%p)",
                               e.control);
             }
 
-            acclog::Write("Enter activate panel=%p index=%d target=%p",
+            acclog::Write("Menus.Enter", "activate panel=%p index=%d target=%p",
                           activePanel, g_chainIndex, e.control);
             consumed = true;
         }
@@ -3055,7 +3056,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             // path). For now: log only, leave the input unconsumed so the
             // engine sees it.
             PanelKind emptyKind = IdentifyPanel(activePanel);
-            acclog::Write("Chain empty: panel=%p kind=%s has no navigable "
+            acclog::Write("Menus.Chain", "empty panel=%p kind=%s has no navigable "
                           "controls; input not consumed",
                           activePanel, PanelKindName(emptyKind));
 
@@ -3072,9 +3073,9 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             }
             if (!walked && s_walkedEmptyCount < 16) {
                 s_walkedEmptyPanels[s_walkedEmptyCount++] = activePanel;
-                acclog::Write("EmptyChainPanel walk panel=%p kind=%s",
+                acclog::Write("Menus.EmptyChain", "walk panel=%p kind=%s",
                               activePanel, PanelKindName(emptyKind));
-                WalkChildren("EmptyChainPanel", activePanel,
+                WalkChildren("Menus.EmptyChain", activePanel,
                              kPanelControlsOffset);
             }
         }
@@ -3109,7 +3110,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                 // target above.
                 g_navSpeechSuppressBudget = 2;
             }
-            acclog::Write("Chain step panel=%p index=%d/%d target=%p center=(%d,%d) cursorY=%d%s %s",
+            acclog::Write("Menus.Chain", "step panel=%p index=%d/%d target=%p center=(%d,%d) cursorY=%d%s %s",
                           g_chainPanel, g_chainIndex, g_chainCount,
                           e.control, e.cx, e.cy, cursorY,
                           e.textOnly ? " text-only" : "",
@@ -3154,13 +3155,13 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         if (IsSlider(focused)) {
             if (g_pendingClick || g_pendingActivate || g_pendingCursorMove ||
                 g_pendingSliderInput) {
-                acclog::Write("Slider %s: op already pending; ignoring",
+                acclog::Write("Menus.Slider", "%s: op already pending; ignoring",
                               toRight ? "right" : "left");
             } else {
                 g_pendingSliderInput  = true;
                 g_pendingSliderTarget = focused;
                 g_pendingSliderCode   = toRight ? 500 : 501;
-                acclog::Write("Slider %s panel=%p focus=%p code=%d",
+                acclog::Write("Menus.Slider", "%s panel=%p focus=%p code=%d",
                               toRight ? "right" : "left",
                               activePanel, focused, g_pendingSliderCode);
             }
@@ -3168,17 +3169,17 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             void* neighbor = FindAdjacentArrow(activePanel, focused, toRight);
             if (neighbor) {
                 if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
-                    acclog::Write("Cycle %s: op already pending; ignoring",
+                    acclog::Write("Menus.Cycle", "%s: op already pending; ignoring",
                                   toRight ? "right" : "left");
                 } else {
                     g_pendingActivate       = true;
                     g_pendingActivateTarget = neighbor;
-                    acclog::Write("Cycle %s panel=%p focus=%p neighbor=%p",
+                    acclog::Write("Menus.Cycle", "%s panel=%p focus=%p neighbor=%p",
                                   toRight ? "right" : "left",
                                   activePanel, focused, neighbor);
                 }
             } else {
-                acclog::Write("Cycle %s: no adjacent arrow for focus=%p",
+                acclog::Write("Menus.Cycle", "%s: no adjacent arrow for focus=%p",
                               toRight ? "right" : "left", focused);
             }
         }
@@ -3217,7 +3218,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         PanelKind apk = IdentifyPanel(activePanel);
         if (FindInGameSubScreenSpec(apk)) {
             g_drilledIntoSubScreen = false;
-            acclog::Write("Drill: Esc -> back to strip (sub-screen panel=%p "
+            acclog::Write("Drill", "Esc -> back to strip (sub-screen panel=%p "
                           "kind=%s left in panels[])",
                           activePanel, PanelKindName(apk));
             consumed = true;
@@ -3265,7 +3266,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
          IsModalPopupPanel(IdentifyPanel(activePanel))))
     {
         if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
-            acclog::Write("Esc: op already pending; ignoring");
+            acclog::Write("Esc", "op already pending; ignoring");
             consumed = true;
         } else {
             // Probe order matters: confirm-style popups (OK + Abbrechen,
@@ -3282,14 +3283,14 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             if (tgt) {
                 g_pendingActivate       = true;
                 g_pendingActivateTarget = tgt;
-                acclog::Write("Esc %s panel=%p kind=%s target=%p",
+                acclog::Write("Menus.Esc", "%s panel=%p kind=%s target=%p",
                               cancelBtn ? "cancel" : "close",
                               activePanel,
                               PanelKindName(IdentifyPanel(activePanel)),
                               tgt);
                 consumed = true;
             } else {
-                acclog::Write("Esc on sub-dialog panel=%p kind=%s but no "
+                acclog::Write("Menus.Esc", "sub-dialog panel=%p kind=%s but no "
                               "cancel/close button found; passing through",
                               activePanel, PanelKindName(IdentifyPanel(activePanel)));
             }
@@ -3299,11 +3300,11 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     int translated = acc::engine::ManagerTranslateCode(param_1);
     const char* tag = consumed ? " CONSUMED" : "";
     if (translated != param_1) {
-        acclog::Write("HandleInputEvent #%d this=%p key=logical(%d) -> %s(%d) val=%d%s",
+        acclog::Write("Menus.Input", "#%d this=%p key=logical(%d) -> %s(%d) val=%d%s",
                       n, thisPtr, param_1,
                       acc::engine::InputIndexName(translated), translated, param_2, tag);
     } else {
-        acclog::Write("HandleInputEvent #%d this=%p key=%s(%d) val=%d%s",
+        acclog::Write("Menus.Input", "#%d this=%p key=%s(%d) val=%d%s",
                       n, thisPtr, acc::engine::InputIndexName(param_1), param_1, param_2, tag);
     }
     return consumed ? 1 : 0;
@@ -3353,7 +3354,7 @@ static void MonitorFocusedControl() {
                     sizeof(g_focusMonitorText)) != 0) {
             tolk::Speak(text, /*interrupt=*/false);
             strncpy_s(g_focusMonitorText, text, _TRUNCATE);
-            acclog::Write("Monitor: focused=%p text changed -> \"%s\"",
+            acclog::Write("Monitor", "focused=%p text changed -> \"%s\"",
                           focused, text);
         }
     } else {
@@ -3679,13 +3680,13 @@ static void MaybeAnnounceCharacterSheet(void* panel) {
     }
 
     if (off == 0) {
-        acclog::Write("CharSheet opener: panel=%p — all fields empty, skip",
+        acclog::Write("Menus.CharSheet", "panel=%p — all fields empty, skip",
                       panel);
         return;
     }
 
     tolk::Speak(msg, /*interrupt=*/false);
-    acclog::Write("CharSheet opener: panel=%p text=\"%.500s\"", panel, msg);
+    acclog::Write("Menus.CharSheet", "panel=%p text=\"%.500s\"", panel, msg);
 }
 
 // Walk current panels[], speak on additions of any tracked sub-screen kind,
@@ -3711,13 +3712,13 @@ static void AnnounceNewSubScreens(void** panels, int count) {
         bool spoke = false;
         if (spec->strref != 0xFFFFFFFFu &&
             LookupTlk(spec->strref, text, sizeof(text))) {
-            acclog::Write("SubScreen open: panel=%p kind=%s strref=%u text=\"%s\"",
+            acclog::Write("Menus.SubScreen", "panel=%p kind=%s strref=%u text=\"%s\"",
                           p, PanelKindName(k), spec->strref, text);
             tolk::Speak(text, /*interrupt=*/false);
             spoke = true;
         }
         if (!spoke) {
-            acclog::Write("SubScreen open: panel=%p kind=%s text=\"%s\" (literal)",
+            acclog::Write("Menus.SubScreen", "panel=%p kind=%s text=\"%s\" (literal)",
                           p, PanelKindName(k), spec->literal);
             tolk::Speak(spec->literal, /*interrupt=*/false);
         }
@@ -3845,7 +3846,7 @@ static void SpeakNewSegments(const char* prev, const char* curr) {
             memcpy(seg, p, cp);
             seg[cp] = '\0';
             tolk::Speak(seg, /*interrupt=*/false);
-            acclog::Write("ContentChange:   spoke \"%s\"", seg);
+            acclog::Write("ContentChange", "  spoke \"%s\"", seg);
         }
         if (!end) break;
         p = end + sepLen;
@@ -3921,17 +3922,17 @@ static void MonitorPanelContents() {
         if (suppressFirstSight) {
             strncpy_s(last, sizeof(g_contentSnapshots[0].text),
                       fingerprint, _TRUNCATE);
-            acclog::Write("ContentChange: panel=%p kind=%s first-sight snapshot "
+            acclog::Write("ContentChange", "panel=%p kind=%s first-sight snapshot "
                           "(deferring to kind-name path): \"%.200s\"",
                           p, PanelKindName(k), fingerprint);
             continue;
         }
 
         if (fingerprint[0] != '\0') {
-            acclog::Write("ContentChange: panel=%p kind=%s",
+            acclog::Write("ContentChange", "panel=%p kind=%s",
                           p, PanelKindName(k));
-            acclog::Write("ContentChange:   prev=\"%.300s\"", last);
-            acclog::Write("ContentChange:   curr=\"%.300s\"", fingerprint);
+            acclog::Write("ContentChange", "  prev=\"%.300s\"", last);
+            acclog::Write("ContentChange", "  curr=\"%.300s\"", fingerprint);
             // Diff-based speech: only segments present in curr but absent in
             // prev are spoken. Eliminates the "speak the whole blob on any
             // change" pattern that surfaced as overlapping afterthought
@@ -3939,7 +3940,7 @@ static void MonitorPanelContents() {
             // labels (stat preview, listbox flicker, etc.).
             SpeakNewSegments(last, fingerprint);
         } else {
-            acclog::Write("ContentChange: panel=%p kind=%s fingerprint cleared "
+            acclog::Write("ContentChange", "panel=%p kind=%s fingerprint cleared "
                           "(prev=\"%.100s\")", p, PanelKindName(k), last);
         }
         strncpy_s(last, sizeof(g_contentSnapshots[0].text),
@@ -4038,7 +4039,7 @@ static void MonitorDialogReplies() {
 
     if (!dialogPanel) {
         if (g_dialogReplyState.listBox) {
-            acclog::Write("Dialog reply monitor disarmed: no dialog panel in stack");
+            acclog::Write("Menus.DialogReply", "monitor disarmed: no dialog panel in stack");
             g_dialogReplyState.listBox = nullptr;
             g_dialogReplyState.lastSelection = -1;
         }
@@ -4059,7 +4060,7 @@ static void MonitorDialogReplies() {
     if (g_dialogReplyState.listBox != lb) {
         g_dialogReplyState.listBox = lb;
         g_dialogReplyState.lastSelection = selIdx;
-        acclog::Write("Dialog reply monitor armed: panel=%p kind=%s listbox=%p "
+        acclog::Write("Menus.DialogReply", "monitor armed: panel=%p kind=%s listbox=%p "
                       "initialSel=%d", fg, PanelKindName(k), lb, selIdx);
         return;
     }
@@ -4069,7 +4070,7 @@ static void MonitorDialogReplies() {
     g_dialogReplyState.lastSelection = selIdx;
 
     if (selIdx < 0) {
-        acclog::Write("Dialog reply selection cleared: listbox=%p prev=%d",
+        acclog::Write("Menus.DialogReply", "selection cleared: listbox=%p prev=%d",
                       lb, prev);
         return;
     }
@@ -4077,7 +4078,7 @@ static void MonitorDialogReplies() {
     auto* lbList = reinterpret_cast<CExoArrayList*>(
         reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
     if (!lbList || !lbList->data || selIdx >= lbList->size) {
-        acclog::Write("Dialog reply selection out of range: listbox=%p sel=%d "
+        acclog::Write("Menus.DialogReply", "selection out of range: listbox=%p sel=%d "
                       "size=%d", lb, selIdx,
                       (lbList ? lbList->size : -1));
         return;
@@ -4089,14 +4090,14 @@ static void MonitorDialogReplies() {
     char text[256];
     const char* src = ExtractAnnounceableText(row, text, sizeof(text));
     if (src) {
-        acclog::Write("Dialog reply selected: panel=%p kind=%s listbox=%p "
+        acclog::Write("Menus.DialogReply", "selected: panel=%p kind=%s listbox=%p "
                       "sel=%d (was %d) src=%s text=\"%s\"",
                       fg, PanelKindName(k), lb, selIdx, prev, src, text);
         tolk::Speak(text, /*interrupt=*/false);
     } else {
         char vtbl[160];
         DumpControlVtable(row, vtbl, sizeof(vtbl));
-        acclog::Write("Dialog reply selected (src=none): panel=%p listbox=%p "
+        acclog::Write("Menus.DialogReply", "selected (src=none): panel=%p listbox=%p "
                       "sel=%d row=%p %s", fg, lb, selIdx, row, vtbl);
     }
 }
@@ -4184,7 +4185,7 @@ static void MonitorContainerSelection() {
 
     if (!containerPanel) {
         if (g_containerSelState.listBox) {
-            acclog::Write("Container monitor disarmed: no Container panel in stack");
+            acclog::Write("Menus.Container", "monitor disarmed: no Container panel in stack");
             g_containerSelState.listBox = nullptr;
             g_containerSelState.lastSelection = -1;
         }
@@ -4210,12 +4211,12 @@ static void MonitorContainerSelection() {
         if (rowCount <= 0) {
             tolk::Speak(acc::strings::Get(acc::strings::Id::ContainerEmpty),
                         /*interrupt=*/false);
-            acclog::Write("Container monitor armed: panel=%p lb=%p empty initialSel=%d",
+            acclog::Write("Menus.Container", "monitor armed: panel=%p lb=%p empty initialSel=%d",
                           containerPanel, lb, selIdx);
         } else if (rowCount == 1) {
             tolk::Speak(acc::strings::Get(acc::strings::Id::ContainerOneItem),
                         /*interrupt=*/false);
-            acclog::Write("Container monitor armed: panel=%p lb=%p count=1 initialSel=%d",
+            acclog::Write("Menus.Container", "monitor armed: panel=%p lb=%p count=1 initialSel=%d",
                           containerPanel, lb, selIdx);
         } else {
             char msg[64];
@@ -4223,7 +4224,7 @@ static void MonitorContainerSelection() {
                      acc::strings::Get(acc::strings::Id::FmtContainerItems),
                      rowCount);
             tolk::Speak(msg, /*interrupt=*/false);
-            acclog::Write("Container monitor armed: panel=%p lb=%p count=%d initialSel=%d",
+            acclog::Write("Menus.Container", "monitor armed: panel=%p lb=%p count=%d initialSel=%d",
                           containerPanel, lb, rowCount, selIdx);
         }
         return;
@@ -4234,11 +4235,11 @@ static void MonitorContainerSelection() {
     g_containerSelState.lastSelection = selIdx;
 
     if (selIdx < 0) {
-        acclog::Write("Container selection cleared: lb=%p prev=%d", lb, prev);
+        acclog::Write("Menus.Container", "selection cleared: lb=%p prev=%d", lb, prev);
         return;
     }
     if (!lbList || !lbList->data || selIdx >= lbList->size) {
-        acclog::Write("Container selection out of range: lb=%p sel=%d size=%d",
+        acclog::Write("Menus.Container", "selection out of range: lb=%p sel=%d size=%d",
                       lb, selIdx, lbList ? lbList->size : -1);
         return;
     }
@@ -4248,7 +4249,7 @@ static void MonitorContainerSelection() {
     char rowText[256];
     const char* src = ExtractAnnounceableText(row, rowText, sizeof(rowText));
     if (!src) {
-        acclog::Write("Container row %d (lb=%p): no announceable text", selIdx, lb);
+        acclog::Write("Menus.Container", "row %d (lb=%p) no announceable text", selIdx, lb);
         return;
     }
 
@@ -4257,7 +4258,7 @@ static void MonitorContainerSelection() {
              acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
              rowText, selIdx + 1, rowCount);
     tolk::Speak(msg, /*interrupt=*/false);
-    acclog::Write("Container row: lb=%p sel=%d (was %d) text=\"%s\"",
+    acclog::Write("Menus.Container", "row lb=%p sel=%d (was %d) text=\"%s\"",
                   lb, selIdx, prev, rowText);
 }
 
@@ -4291,12 +4292,12 @@ static void MonitorEquipPickerSelection() {
 
     if (!equipPanel) {
         if (g_equipSelState.listBox) {
-            acclog::Write("EquipPicker monitor disarmed: no InGameEquip panel in stack");
+            acclog::Write("Menus.EquipPicker", "monitor disarmed: no InGameEquip panel in stack");
             g_equipSelState.listBox       = nullptr;
             g_equipSelState.lastSelection = -1;
         }
         if (g_equipPickerActive) {
-            acclog::Write("EquipPicker: disarm — panel gone from panels[]");
+            acclog::Write("EquipPicker", "disarm — panel gone from panels[]");
             g_equipPickerActive = false;
             g_equipPickerPanel  = nullptr;
         }
@@ -4320,7 +4321,7 @@ static void MonitorEquipPickerSelection() {
     if (g_equipSelState.listBox != lb) {
         g_equipSelState.listBox       = lb;
         g_equipSelState.lastSelection = selIdx;
-        acclog::Write("EquipPicker monitor armed: panel=%p lb=%p rows=%d initialSel=%d",
+        acclog::Write("Menus.EquipPicker", "monitor armed: panel=%p lb=%p rows=%d initialSel=%d",
                       equipPanel, lb, rowCount, selIdx);
         return;
     }
@@ -4330,18 +4331,18 @@ static void MonitorEquipPickerSelection() {
     g_equipSelState.lastSelection = selIdx;
 
     if (selIdx < 0) {
-        acclog::Write("EquipPicker selection cleared: lb=%p prev=%d", lb, prev);
+        acclog::Write("Menus.EquipPicker", "selection cleared: lb=%p prev=%d", lb, prev);
         return;
     }
     if (selIdx == 0) {
         // Row 0 is the protoitem template — never an item the user can equip.
         // Should be unreachable now that the picker handler clamps to >=1, but
         // log if the engine somehow lands here so we notice.
-        acclog::Write("EquipPicker selection on protoitem (sel=0): lb=%p", lb);
+        acclog::Write("Menus.EquipPicker", "selection on protoitem (sel=0) lb=%p", lb);
         return;
     }
     if (!lbList || !lbList->data || selIdx >= lbList->size) {
-        acclog::Write("EquipPicker selection out of range: lb=%p sel=%d size=%d",
+        acclog::Write("Menus.EquipPicker", "selection out of range: lb=%p sel=%d size=%d",
                       lb, selIdx, lbList ? lbList->size : -1);
         return;
     }
@@ -4351,7 +4352,7 @@ static void MonitorEquipPickerSelection() {
     char rowText[256];
     const char* src = ExtractAnnounceableText(row, rowText, sizeof(rowText));
     if (!src) {
-        acclog::Write("EquipPicker row %d (lb=%p): no announceable text", selIdx, lb);
+        acclog::Write("Menus.EquipPicker", "row %d (lb=%p) no announceable text", selIdx, lb);
         return;
     }
 
@@ -4365,7 +4366,7 @@ static void MonitorEquipPickerSelection() {
              acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
              rowText, userPos, userTotal);
     tolk::Speak(msg, /*interrupt=*/false);
-    acclog::Write("EquipPicker row: lb=%p sel=%d (was %d) text=\"%s\"",
+    acclog::Write("Menus.EquipPicker", "row lb=%p sel=%d (was %d) text=\"%s\"",
                   lb, selIdx, prev, rowText);
 }
 
@@ -4403,18 +4404,18 @@ static void PollContainerGiveModeKey() {
     if (!fgPanel || IdentifyPanel(fgPanel) != PanelKind::Container) return;
 
     if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
-        acclog::Write("Container: G (give-mode) -- op already pending; ignoring");
+        acclog::Write("Container", "G (give-mode) -- op already pending; ignoring");
         return;
     }
     void* btn = FindControlById(fgPanel, kContainerBtnGiveId);
     if (!btn) {
-        acclog::Write("Container: G (give-mode) -- BTN_GIVEITEMS not found on panel=%p",
+        acclog::Write("Container", "G (give-mode) -- BTN_GIVEITEMS not found on panel=%p",
                       fgPanel);
         return;
     }
     g_pendingActivate       = true;
     g_pendingActivateTarget = btn;
-    acclog::Write("Container: G (give-mode) -> FireActivate BTN_GIVEITEMS panel=%p target=%p",
+    acclog::Write("Container", "G (give-mode) -> FireActivate BTN_GIVEITEMS panel=%p target=%p",
                   fgPanel, btn);
 }
 
@@ -4591,7 +4592,7 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
 
     void* gm = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
     if (!gm) {
-        acclog::Write("Update: pending op but GuiManager singleton is NULL");
+        acclog::Write("Update", "pending op but GuiManager singleton is NULL");
         g_pendingCursorMove        = false;
         g_pendingClick             = false;
         g_pendingActivate          = false;
@@ -4629,7 +4630,7 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
         // never refreshed by our move at all). See chat.
         void* moBefore = getMouseOver();
         move(gm, g_pendingX, g_pendingY);
-        acclog::Write("Update: MoveMouseToPosition(%d, %d) target=%p mouseOver before=%p after=%p",
+        acclog::Write("Update", "MoveMouseToPosition(%d, %d) target=%p mouseOver before=%p after=%p",
                       g_pendingX, g_pendingY, g_pendingTarget,
                       moBefore, getMouseOver());
     }
@@ -4655,7 +4656,7 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
         void* moAfterDown = getMouseOver();
         int uResult = up(gm);
         void* moAfterUp = getMouseOver();
-        acclog::Write("Update: click-sim Down=%d Up=%d at (%d,%d) target=%p "
+        acclog::Write("Update", "click-sim Down=%d Up=%d at (%d,%d) target=%p "
                       "mouseOver before=%p afterDown=%p afterUp=%p",
                       dResult, uResult, g_pendingX, g_pendingY, g_pendingTarget,
                       moBefore, moAfterDown, moAfterUp);
@@ -4675,7 +4676,7 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
         g_pendingActivate = false;
         void* tgt = g_pendingActivateTarget;
         g_pendingActivateTarget = nullptr;
-        acclog::Write("Update: FireActivate target=%p", tgt);
+        acclog::Write("Update", "FireActivate target=%p", tgt);
         FireActivate(tgt);
     }
 
@@ -4708,11 +4709,11 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
                 kAddrInGameEquipOnEnterSlot);
             auto onSelect = reinterpret_cast<PFN_InGameEquipOnSelectSlot>(
                 kAddrInGameEquipOnSelectSlot);
-            acclog::Write("Update: EquipSelect panel=%p slot=%p is_active=%u->1",
+            acclog::Write("Update", "EquipSelect panel=%p slot=%p is_active=%u->1",
                           panel, slotBtn, prevIsActive);
             onEnter(panel, slotBtn);
             onSelect(panel, slotBtn);
-            acclog::Write("Update: EquipSelect done panel=%p slot=%p", panel, slotBtn);
+            acclog::Write("Update", "EquipSelect done panel=%p slot=%p", panel, slotBtn);
         }
     }
 
@@ -4745,12 +4746,12 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
                 kAddrInGameEquipOnItemSelected);
             auto onOK   = reinterpret_cast<PFN_InGameEquipOnOKPressed>(
                 kAddrInGameEquipOnOKPressed);
-            acclog::Write("Update: EquipCommit panel=%p row=%p btn=%p "
+            acclog::Write("Update", "EquipCommit panel=%p row=%p btn=%p "
                           "row.is_active=%u->1 btn.is_active=%u->1",
                           panel, row, btn, prevRowActive, prevBtnActive);
             onItem(panel, row);
             onOK(panel, btn);
-            acclog::Write("Update: EquipCommit done panel=%p row=%p btn=%p",
+            acclog::Write("Update", "EquipCommit done panel=%p row=%p btn=%p",
                           panel, row, btn);
         }
     }
@@ -4772,7 +4773,7 @@ extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
                 auto fn = reinterpret_cast<PFN_ControlHandleInputEvent>(
                     vtable[kVtableHandleInputEvent]);
                 if (fn) {
-                    acclog::Write("Update: slider HandleInputEvent target=%p code=%d",
+                    acclog::Write("Update", "slider HandleInputEvent target=%p code=%d",
                                   tgt, code);
                     fn(tgt, code, 1);
                 }
@@ -4808,7 +4809,7 @@ extern "C" void __cdecl OnListBoxLMouseDown(void* listBox) {
     ++n;
     char state[160];
     DumpListBoxState(listBox, state, sizeof(state));
-    acclog::Write("ListBox::LMouseDown #%d %s", n, state);
+    acclog::Write("Menus.ListBox", "LMouseDown #%d %s", n, state);
 }
 
 // CSWGuiListBox::HandleLMouseUp — entry hook @0x0041a700. Click release; this
@@ -4821,7 +4822,7 @@ extern "C" void __cdecl OnListBoxLMouseUp(void* listBox) {
     ++n;
     char state[160];
     DumpListBoxState(listBox, state, sizeof(state));
-    acclog::Write("ListBox::LMouseUp #%d %s", n, state);
+    acclog::Write("Menus.ListBox", "LMouseUp #%d %s", n, state);
 }
 
 // CSWGuiListBox::HandleInputEvent — entry hook @0x0041ce20. Per-listbox key
@@ -4836,7 +4837,7 @@ extern "C" void __cdecl OnListBoxHandleInput(void* listBox) {
     ++n;
     char state[160];
     DumpListBoxState(listBox, state, sizeof(state));
-    acclog::Write("ListBox::HandleInputEvent #%d %s", n, state);
+    acclog::Write("Menus.ListBox", "HandleInputEvent #%d %s", n, state);
 }
 
 // CSWGuiListBox::SetSelectedControl — entry hook @0x0041c040. Fires whenever
@@ -4849,7 +4850,7 @@ extern "C" void __cdecl OnListBoxSetSelectedControl(void* listBox) {
     ++n;
     char state[160];
     DumpListBoxState(listBox, state, sizeof(state));
-    acclog::Write("ListBox::SetSelectedControl #%d %s (pre-update)", n, state);
+    acclog::Write("Menus.ListBox", "SetSelected #%d %s (pre-update)", n, state);
 }
 
 // CServerExoApp::SetMoveToModuleString — entry hook @0x004aecd0. Fires once
@@ -4875,8 +4876,7 @@ extern "C" void __cdecl OnSetMoveToModuleString(void* /*serverApp*/,
     __try {
         exoStringPtr = *reinterpret_cast<void**>(arg_addr);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        acclog::Write(
-            "Transition: pre-load arg deref faulted (arg_addr=%p)",
+        acclog::Write("Transition", "pre-load arg deref faulted (arg_addr=%p)",
             arg_addr);
         return;
     }

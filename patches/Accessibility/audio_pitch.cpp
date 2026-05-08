@@ -117,8 +117,7 @@ extern "C" int __cdecl OnCalculatePitchVarianceFrequency(void* source) {
     // missing-resref no-op behaviour), see git log on this file.
     static DWORD s_last_heartbeat_ms = 0;
     if (now_ms - s_last_heartbeat_ms >= 1000u) {
-        acclog::Write(
-            "PitchHook: scoped fire — source=%p base_freq=%d (heartbeat)",
+        acclog::Write("PitchHook", "scoped fire — source=%p base_freq=%d (heartbeat)",
             source, base_frequency);
         s_last_heartbeat_ms = now_ms;
     }

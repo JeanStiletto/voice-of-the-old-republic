@@ -92,8 +92,7 @@ void Tick() {
         s_lastSpokenSector = CompassToSector(compass);
         s_pendingSector    = s_lastSpokenSector;
         s_lastChangeAt     = now;
-        acclog::Write(
-            "TurnAnnounce: first-tick suppress; engineYaw=%.1f compass=%.1f "
+        acclog::Write("TurnAnnounce", "first-tick suppress; engineYaw=%.1f compass=%.1f "
             "sector=%d", engineYawDeg, compass, s_lastSpokenSector);
         return;
     }
@@ -125,8 +124,7 @@ void Tick() {
     // passive_narrate / cycle announcement. NVDA queues by default.
     tolk::Speak(phrase, /*interrupt=*/false);
 
-    acclog::Write(
-        "TurnAnnounce: sector %d -> %d (%s); engineYaw=%.1f compass=%.1f "
+    acclog::Write("TurnAnnounce", "sector %d -> %d (%s); engineYaw=%.1f compass=%.1f "
         "(debounced %ums)",
         s_lastSpokenSector, s_pendingSector, phrase, engineYawDeg, compass,
         static_cast<unsigned>(now - s_lastChangeAt));

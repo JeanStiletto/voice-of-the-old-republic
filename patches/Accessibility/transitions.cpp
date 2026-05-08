@@ -100,8 +100,7 @@ void SpeakArea(void* area) {
         nameBuf[0] == '\0') {
         // Even when name resolution fails entirely, log the event so
         // post-mortem can correlate the silence against an area change.
-        acclog::Write(
-            "Transition: area change detected but name resolve failed; "
+        acclog::Write("Transition", "area change detected but name resolve failed; "
             "areaPtr=%p", area);
         return;
     }
@@ -110,7 +109,7 @@ void SpeakArea(void* area) {
                   acc::strings::Get(acc::strings::Id::FmtTransitionArea),
                   nameBuf);
     tolk::Speak(speech, /*interrupt=*/false);
-    acclog::Write("Transition: area -> '%s' (areaPtr=%p)", nameBuf, area);
+    acclog::Write("Transition", "area -> '%s' (areaPtr=%p)", nameBuf, area);
 }
 
 void RebuildLandmarkCache(void* area) {
@@ -165,8 +164,7 @@ void RebuildLandmarkCache(void* area) {
         }
     }
 
-    acclog::Write(
-        "Transition: landmark cache rebuilt — scanned=%d landmarks=%d "
+    acclog::Write("Transition", "landmark cache rebuilt — scanned=%d landmarks=%d "
         "placed=%d (areaPtr=%p)",
         scanned, landmarks, placed, area);
 }
@@ -191,8 +189,7 @@ void RecordRoomChange(void* area, int roomIndex) {
     const char* source = landmark
         ? "landmark"
         : (gotName && !IsResrefStyleRoomName(nameBuf) ? "room_name" : "index");
-    acclog::Write(
-        "Transition: room -> %d '%s' src=%s landmark=%s (areaPtr=%p) [silent]",
+    acclog::Write("Transition", "room -> %d '%s' src=%s landmark=%s (areaPtr=%p) [silent]",
         roomIndex, gotName ? nameBuf : "(empty)", source,
         landmark ? landmark : "-", area);
 }
@@ -270,8 +267,7 @@ void AnnouncePreLoadDestination(void* exoStringPtr) {
     char dest[128] = {0};
     if (!acc::engine::ReadCExoString(exoStringPtr, /*offset=*/0,
                                      dest, sizeof(dest))) {
-        acclog::Write(
-            "Transition: pre-load string read failed (exoStr=%p)",
+        acclog::Write("Transition", "pre-load string read failed (exoStr=%p)",
             exoStringPtr);
         return;
     }
@@ -298,7 +294,7 @@ void AnnouncePreLoadDestination(void* exoStringPtr) {
                   acc::strings::Get(acc::strings::Id::FmtTransitionLoading),
                   dest);
     tolk::Speak(speech, /*interrupt=*/false);
-    acclog::Write("Transition: pre-load -> '%s'", dest);
+    acclog::Write("Transition", "pre-load -> '%s'", dest);
 }
 
 }  // namespace acc::transitions

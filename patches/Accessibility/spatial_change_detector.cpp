@@ -383,13 +383,11 @@ void ClusterEdgesIntoSurfaces() {
         g_edge_surface_id[i] = root_to_surface[r];
     }
     if (overflow_collisions > 0) {
-        acclog::Write(
-            "ChangeDetector: surface overflow — %d edges collapsed to "
+        acclog::Write("ChangeDetector", "surface overflow — %d edges collapsed to "
             "bucket 0 (raise kMaxWallSurfaces above %d)",
             overflow_collisions, kMaxWallSurfaces);
     }
-    acclog::Write(
-        "ChangeDetector: clustered %d edges into %d surfaces",
+    acclog::Write("ChangeDetector", "clustered %d edges into %d surfaces",
         g_wall_count, g_surface_count);
 }
 
@@ -615,13 +613,11 @@ void OnAreaChange(void* area) {
     g_t1_wall_last_fired_at = 0;
 
     if (overflow) {
-        acclog::Write(
-            "ChangeDetector: area change — walls cached=%d/%d (OVERFLOW; "
+        acclog::Write("ChangeDetector", "area change — walls cached=%d/%d (OVERFLOW; "
             "increase kMaxWallEdges) areaPtr=%p",
             g_wall_count, totalDiscovered, area);
     } else {
-        acclog::Write(
-            "ChangeDetector: area change — walls cached=%d areaPtr=%p",
+        acclog::Write("ChangeDetector", "area change — walls cached=%d areaPtr=%p",
             g_wall_count, area);
     }
 }
@@ -743,8 +739,7 @@ void CalibrateInRange(void* area, const Vector& referencePos,
         ++objectsCalibrated;
     }
 
-    acclog::Write(
-        "ChangeDetector: calibrated (%s) sectors_with_walls=%d/%d "
+    acclog::Write("ChangeDetector", "calibrated (%s) sectors_with_walls=%d/%d "
         "(F=%.2f/s%d L=%.2f/s%d B=%.2f/s%d R=%.2f/s%d) objects=%d "
         "at ref=(%.2f,%.2f,%.2f)",
         reason ? reason : "?", wallsCalibrated, kSectorCount,
@@ -1077,8 +1072,7 @@ void Tick() {
                     g_surface_last_cued_at[c.best_surface_index] = now;
                 }
             }
-            acclog::Write(
-                "ChangeDetector: T1 sector=%s dist=%.2f "
+            acclog::Write("ChangeDetector", "T1 sector=%s dist=%.2f "
                 "(was %.2f, dt=%+.2f) surface=%d",
                 SectorTag(s), c.distance, c.last_fired_distance,
                 c.distance - c.last_fired_distance,
@@ -1188,8 +1182,7 @@ void Tick() {
             g_t2_pending            = t2_best;
             g_t2_pending_changed_at = now;
             g_t2_initialised        = true;
-            acclog::Write(
-                "ChangeDetector: T2 first-tick suppress; foremost=%s",
+            acclog::Write("ChangeDetector", "T2 first-tick suppress; foremost=%s",
                 ForemostKindTag(t2_best.kind));
         } else {
             // Track most-recent-observed foremost + when it last
@@ -1243,8 +1236,7 @@ void Tick() {
                         // "T2 wanted to fire but was gated" (also
                         // correct, just useful to see). Only logs on
                         // actual transition events, not every tick.
-                        acclog::Write(
-                            "ChangeDetector: T2 wall blocked "
+                        acclog::Write("ChangeDetector", "T2 wall blocked "
                             "coneEnteredWall=%d t1Quiet=%d "
                             "surfaceQuiet=%d (%s -> wall) surface=%d "
                             "dist=%.2f",
@@ -1277,8 +1269,7 @@ void Tick() {
                             if (s) s->last_cued_at = now;
                         }
                     }
-                    acclog::Write(
-                        "ChangeDetector: T2 fire kind=%s dist=%.2f "
+                    acclog::Write("ChangeDetector", "T2 fire kind=%s dist=%.2f "
                         "played=%d (%s -> %s)",
                         ForemostKindTag(g_t2_pending.kind),
                         t2_best_dist, ok ? 1 : 0,
@@ -1295,16 +1286,14 @@ void Tick() {
     // diagnostic only shows when walls actually fired (drops the
     // confusing "sectors=-" placeholder for object-only / T2-only ticks).
     if (walls_cued > 0) {
-        acclog::Write(
-            "ChangeDetector: tick surfaces_in_range=%d sector_candidates=%d "
+        acclog::Write("ChangeDetector", "tick surfaces_in_range=%d sector_candidates=%d "
             "walls_cued=%d sectors=%s objs_in_range=%d objs_cued=%d "
             "t2_fired=%d",
             walls_in_range, sector_candidates,
             walls_cued, sector_log,
             objs_in_range, objs_cued, t2_fired ? 1 : 0);
     } else if (objs_cued > 0 || t2_fired) {
-        acclog::Write(
-            "ChangeDetector: tick surfaces_in_range=%d sector_candidates=%d "
+        acclog::Write("ChangeDetector", "tick surfaces_in_range=%d sector_candidates=%d "
             "objs_in_range=%d objs_cued=%d t2_fired=%d",
             walls_in_range, sector_candidates,
             objs_in_range, objs_cued, t2_fired ? 1 : 0);
