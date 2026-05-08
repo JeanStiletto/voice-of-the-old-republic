@@ -1151,6 +1151,20 @@ static int        g_tabClickOffsetY   = 0;
 // Computed at chain rebind time as the y-spacing between two slot buttons in
 // the chain. 0 outside InGameEquip panels.
 static int        g_equipSlotClickOffsetY = 0;
+// Hit-test column-shift compensation for the chargen class-selection panel.
+// Same shape as the two y offsets above, but on x: MoveMouseToPosition(x, y)
+// at a class icon's center hit-tests to the icon to its LEFT (consistently
+// shifted by one icon's pitch — about 87 px on Steam 1.0.3, matching the
+// visual icon spacing). For all icons but the rightmost the engine still
+// eventually settles SetActiveControl on the chain target via its own
+// late-resolution path, but the rightmost icon's correct hit position
+// would be off the strip's right edge under that path, so it never gets
+// SetActiveControl'd and stays uncached → silent. Bias cursor x by this
+// offset on chargen-class chain steps to land the hit-test on the
+// intended icon and let the engine fire SetActiveControl normally.
+// Computed at chain rebind time as the x-spacing between two consecutive
+// same-row class icons; 0 outside CSWGuiClassSelection panels.
+static int        g_classIconClickOffsetX = 0;
 
 // Virtual-line cursor over the listbox's multi-line blob. The Options listbox
 // has controls.size == 1 with all settings concatenated by '\n' into a single
@@ -2258,6 +2272,32 @@ static void RebindChain(void* panel) {
         }
     }
 
+    // Compute g_classIconClickOffsetX for the chargen class-selection panel.
+    // Walk chain entries that resolve to class icons (positional check via
+    // IsClassSelectionIcon) and pick the spacing between the first two
+    // consecutive same-row entries — that's the icon pitch we need to add
+    // to cursor x so the engine's hit-test lands on the right icon. 0 for
+    // any other panel kind.
+    g_classIconClickOffsetX = 0;
+    {
+        void** pVt = panel ? *reinterpret_cast<void***>(panel) : nullptr;
+        if (reinterpret_cast<uintptr_t>(pVt) ==
+                kVtableCSWGuiClassSelection) {
+            int firstIconIdx = -1;
+            for (int i = 0; i < g_chainCount; ++i) {
+                if (!IsClassSelectionIcon(panel, g_chain[i].control)) continue;
+                if (firstIconIdx < 0) {
+                    firstIconIdx = i;
+                } else if (g_chain[i].cy == g_chain[firstIconIdx].cy) {
+                    int spacing = g_chain[i].cx - g_chain[firstIconIdx].cx;
+                    if (spacing < 0) spacing = -spacing;
+                    if (spacing > 0) g_classIconClickOffsetX = spacing;
+                    break;
+                }
+            }
+        }
+    }
+
     // Anchor at active. ReadPanelActiveControl reads panel.activeControl
     // (only direct panel children); listbox-internal selection isn't
     // exposed there, so when the user enters a sub-dialog with focus on
@@ -2267,9 +2307,10 @@ static void RebindChain(void* panel) {
     g_chainIndex = (idx >= 0) ? idx : 0;
 
     acclog::Write("Menus.Chain", "rebind panel=%p count=%d index=%d active=%p "
-                  "tabOffsetY=%d equipSlotOffsetY=%d",
+                  "tabOffsetY=%d equipSlotOffsetY=%d classIconOffsetX=%d",
                   panel, g_chainCount, g_chainIndex, active,
-                  g_tabClickOffsetY, g_equipSlotClickOffsetY);
+                  g_tabClickOffsetY, g_equipSlotClickOffsetY,
+                  g_classIconClickOffsetX);
     for (int i = 0; i < g_chainCount; ++i) {
         char text[256];
         const char* src = ExtractAnnounceableText(g_chain[i].control,
@@ -3471,6 +3512,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             // ExtractAnnounceableText step 9c and the OnSetActiveControl
             // prefill path.
             AnnounceControl(e.control);
+            int cursorX = e.cx;
             int cursorY = e.cy;
             if (!e.textOnly) {
                 // Cursor warp + suppress-budget exist to make hover-to-focus
@@ -3482,7 +3524,11 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                 if (IsTabButton(e.control) && g_tabClickOffsetY > 0) {
                     cursorY += g_tabClickOffsetY;
                 }
-                g_pendingX          = e.cx;
+                if (IsClassSelectionIcon(g_chainPanel, e.control) &&
+                    g_classIconClickOffsetX > 0) {
+                    cursorX += g_classIconClickOffsetX;
+                }
+                g_pendingX          = cursorX;
                 g_pendingY          = cursorY;
                 g_pendingTarget     = e.control;
                 g_pendingCursorMove = true;
@@ -3493,9 +3539,9 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                 // target above.
                 g_navSpeechSuppressBudget = 2;
             }
-            acclog::Write("Menus.Chain", "step panel=%p index=%d/%d target=%p center=(%d,%d) cursorY=%d%s %s",
+            acclog::Write("Menus.Chain", "step panel=%p index=%d/%d target=%p center=(%d,%d) cursor=(%d,%d)%s %s",
                           g_chainPanel, g_chainIndex, g_chainCount,
-                          e.control, e.cx, e.cy, cursorY,
+                          e.control, e.cx, e.cy, cursorX, cursorY,
                           e.textOnly ? " text-only" : "",
                           param_1 == kInputNavDown ? "DOWN" : "UP");
             // Always consume nav-up/nav-down on a panel with a non-empty chain.
