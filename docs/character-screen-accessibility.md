@@ -349,13 +349,27 @@ Each milestone is independently testable end-to-end (start a new chargen,
 run through the relevant tab, verify announcements). Built in order so
 each unblocks the next.
 
-1. **M1 — class label override (small, fastest win)**
-   - Add `CSWGuiClassSelection` panel-kind detection.
-   - Override the focused-control name with `class_label.gui_string` for
-     the 6 class icons.
-   - Don't touch the rest of the panel (Abbrechen / description label
-     keep working).
-   - Ship: chargen step 1 reads correctly.
+1. **M1 — class label override (DONE, TESTED)**
+   - Added `CSWGuiClassSelection` vtable detection (0x00758020) +
+     positional check on the `class_selections[6]` array offset.
+   - Per-icon class-name cache populated lazily on each
+     `OnSetActiveControl` transition (caches the OUTGOING icon's
+     `class_label` since the engine writes it during the
+     `CSWGuiClassSelection::OnEnterButton` that ran for the previous
+     focus). First-write-wins lock prevents the engine's later
+     `class_label` reverts from echoing earlier icons.
+   - Cursor x-offset compensation (`g_classIconClickOffsetX`) added —
+     same shape as the existing `g_tabClickOffsetY` /
+     `g_equipSlotClickOffsetY` patterns. Engine's hit-test consistently
+     resolved cursor x one icon pitch (~87 px) to the LEFT, so the
+     rightmost icon was unreachable and stayed silent. Compensation
+     biases cursor x by the chain-measured pitch so the engine's
+     `SetActiveControl` lands on the chain target.
+   - Chain-squash gained an x-distance bound (≤80 px) so parallel-
+     choice rows like the class-icon row stop collapsing into a single
+     chain entry when only one icon's text has resolved.
+   - All 6 icons announce their class on focus, including the
+     rightmost one previously silent.
 
 2. **M2 — portrait label override + arrow naming**
    - Add `CSWGuiPortraitCharGen` panel-kind detection.
