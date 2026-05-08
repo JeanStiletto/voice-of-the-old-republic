@@ -29,6 +29,7 @@
 #include "menus_charsheet.h" // Step 2A — character-sheet opener lifted out
 #include "menus_extract.h"   // Step 2B — text extraction lifted out
 #include "menus_internal.h"  // Step 2B — shared seam with menus_extract
+#include "menus_pending.h"   // Step 3 — deferred-op queue lifted out
 #include "engine_input.h"
 #include "engine_manager.h"
 #include "engine_offsets.h"
@@ -133,30 +134,10 @@ static void SpeakIfChanged(int channel, const char* text) {
 constexpr uintptr_t kAddrPanelSetActiveControl = 0x0040a630;
 typedef void (__thiscall* PFN_PanelSetActiveControl)(void* panel, void* control);
 
-// CSWGuiControl::HandleInputEvent — vtable slot 15 (offset 0x3C) per the
-// GuiControlMethods struct in docs/llm-docs/re/swkotor.exe.h. Direct fire of
-// event 0x27 (KEYBOARD_F1 / "activate") on a control invokes its onClick
-// pipeline without going through the click-sim path. Needed when the button
-// we want to activate is rendered behind/under a CSWGuiListBox whose extent
-// covers the button's hit area: the engine's hit-test resolves the cursor
-// to the listbox instead of the button, and click-sim ends up clicking the
-// wrong control. By firing 0x27 directly on the button we bypass hit-test
-// entirely. Confirmed safe for non-tab buttons (Schliess, OK, Standard,
-// chain targets in sub-dialogs).
-//
-// kInputActivate is exported via engine_input.h.
-constexpr int kVtableHandleInputEvent = 15;
-typedef void (__thiscall* PFN_ControlHandleInputEvent)(void* this_, int code, int state);
-
-static void FireActivate(void* control) {
-    if (!control) return;
-    void** vtable = *reinterpret_cast<void***>(control);
-    if (!vtable) return;
-    auto fn = reinterpret_cast<PFN_ControlHandleInputEvent>(
-        vtable[kVtableHandleInputEvent]);
-    if (!fn) return;
-    fn(control, kInputActivate, 1);
-}
+// The "fire activate" primitive (vtable[15].HandleInputEvent(0x27, 1)) used
+// to live here as `FireActivate(control)`. It moved with the deferred-op
+// queue in Step 3 of the refactor — the only caller was the Activate-op
+// drain, which now lives inline in menus_pending.cpp.
 
 // Logical input codes (kInputNav*, kInputEnter1/2, kInputEsc1/2,
 // kInputActivate) are defined in engine_input.h. They're the codes
@@ -251,16 +232,10 @@ static void* FindActiveSubScreenPanel();
 struct InGameSubScreenSpec;
 static const InGameSubScreenSpec* FindInGameSubScreenSpec(PanelKind k);
 
-// Deferred MoveMouseToPosition. Called from OnHandleInputEvent would recurse
-// through HandleMouseMove → UpdateMouseOverControl mid-input-dispatch — same
-// class of toxicity as the listbox-entry hooks from session 4. Defer to the
-// next CSWGuiManager::Update tick (~16ms at 60fps; inaudible). Tolk speech
-// still fires synchronously from the input hook so the audible response feels
-// instantaneous.
-static bool  g_pendingCursorMove = false;
-static int   g_pendingX = 0;
-static int   g_pendingY = 0;
-static void* g_pendingTarget = nullptr;   // for self-dedup in OnSetActiveControl
+// The deferred-op queue (cursor-warp / click-at-point / activate / equip-
+// slot / equip-commit / slider-input) lives in menus_pending.{h,cpp} as of
+// Step 3. Input handlers below call `pending::Queue*`; the queue drains
+// once per tick from `TickPendingOps`.
 
 // Speech-suppression budget for OnSetActiveControl. After a voluntary nav
 // action (chain step / Enter activate), set to a small N. Each subsequent
@@ -270,76 +245,18 @@ static void* g_pendingTarget = nullptr;   // for self-dedup in OnSetActiveContro
 //   1. The engine's own focus handler firing on the keypress (lands on a
 //      DIFFERENT control than our chain target on Options-style sub-dialogs
 //      and InGameEquip — engine's nav order ≠ visual layout).
-//   2. The cursor-warp echo, which lands on our actual target. The existing
-//      g_pendingTarget self-dedup already catches this one cleanly.
+//   2. The cursor-warp echo, which lands on our actual target. The
+//      pending::CursorMoveTarget() self-dedup in OnSetActiveControl already
+//      catches this one cleanly.
 //
 // (1) was the source of the "afterthought" double-speak: chain-step speaks
 // the right thing, then engine SetActiveControl fires for a sibling and
 // speaks it as a second utterance. Match-only dedup couldn't catch (1)
-// because newControl wasn't the pendingTarget. Budget=2 catches both echoes
+// because newControl wasn't the pending target. Budget=2 catches both echoes
 // without over-suppressing legitimate later focus changes (mouse hover,
 // next user action), since by the time the next user input arrives the
 // budget has decremented to 0.
 int g_navSpeechSuppressBudget = 0;
-
-// Deferred click-sim. When set, OnUpdate dispatches click directly to
-// g_pendingClickTarget via its vtable[6] (HandleLMouseDown) and vtable[7]
-// (HandleLMouseUp). We bypass the manager's HandleLMouseDown wrapper because
-// its UpdateMouseOverControl misidentifies the cursor's hit target on tabbed
-// panels (consistent 45-px shift in Options panel — see chat investigation
-// in patch-20260502-114830.log). The button's own HandleLMouseDown still
-// runs CaptureMouse + state setup, and HandleLMouseUp fires the actual
-// onClick — that's what the manager's wrapper would have called once it
-// resolved the right button. We just provide the target ourselves.
-//
-// Distinct from g_pendingActivate (vtable[15] FireActivate path): tabs gate
-// on `is_active` which only HandleLMouseDown sets, so direct activate no-ops
-// for tabs (see comment block below).
-static bool  g_pendingClick       = false;
-static void* g_pendingClickTarget = nullptr;
-
-// Deferred direct-activate via vtable[15].HandleInputEvent(0x27, 1). Used for
-// targets whose click hit-area is covered by an overlapping CSWGuiListBox
-// (Schliess. and Standard inside Options sub-dialogs, chain-navigated
-// settings buttons, etc.) — click-sim would land on the listbox instead of
-// the button. Direct activate bypasses hit-test entirely.
-static bool  g_pendingActivate       = false;
-static void* g_pendingActivateTarget = nullptr;
-
-// Deferred CSWGuiInGameEquip slot activation. Calls OnEnterSlot then
-// OnSelectSlot directly via their addresses — bypasses the equip panel's
-// labels-cover-buttons hit-test problem that defeated click-sim. See
-// docs/equip-flow-investigation.md (post-2026-05-04 update) and the
-// engine_offsets.h notes on those two functions. Deferred to OnUpdate for
-// the same reason MoveMouseToPosition is — calling deep engine functions
-// mid-input-dispatch would recurse through HandleMouseMove paths.
-static bool  g_pendingEquipSelect       = false;
-static void* g_pendingEquipSelectPanel  = nullptr;  // CSWGuiInGameEquip*
-static void* g_pendingEquipSelectSlot   = nullptr;  // CSWGuiControl* slot button
-
-// Deferred CSWGuiInGameEquip item-row commit. Calls OnItemSelected then
-// OnOKPressed directly — same reason the slot path bypasses click-sim:
-// click-sim on a listbox row dispatches against the listbox container
-// (mouseOver=LB_ITEMS, not the row), so OnItemSelected never runs and the
-// equip never commits. OnItemSelected is the function that actually calls
-// EquipItem; OnOKPressed is just cleanup (closes the description popup).
-static bool  g_pendingEquipCommit       = false;
-static void* g_pendingEquipCommitPanel  = nullptr;  // CSWGuiInGameEquip*
-static void* g_pendingEquipCommitRow    = nullptr;  // CSWGuiInGameItemEntry*
-static void* g_pendingEquipCommitBtn    = nullptr;  // BTN_EQUIP for OnOKPressed
-
-// Deferred slider value adjustment. Slider's HandleInputEvent at 0x0041adf0
-// recognises logical codes 500 (increment) and 501 (decrement) — both run
-// the full pipeline: SetCurValue + bounds clamp + the slider's gui_object
-// callback (which is what actually changes the audio system's volume for
-// Music/Voice/SFX/Movie sliders) + PlayGuiSound feedback. We dispatch via
-// vtable[15] from OnUpdate rather than synchronously from OnHandleInputEvent
-// to stay clear of mid-input-dispatch re-entrancy (same reason
-// MoveMouseToPosition is deferred). Per-frame focus monitor catches the
-// resulting cur_value change on the next tick and re-announces.
-static bool  g_pendingSliderInput       = false;
-static void* g_pendingSliderTarget      = nullptr;
-static int   g_pendingSliderCode        = 0;
 
 // Tracks the last panel for which we spoke the title (AnnouncePanelTitle).
 // Re-entering the same panel pointer must not re-announce. A distinct static
@@ -917,23 +834,22 @@ static bool DriveListBoxSelection(void* listbox, bool navDown, short minSel,
 }
 
 // Queue activation of the chain-navigable button child of `panel` whose
-// .gui-time id matches `buttonId`. Mirrors the FireActivate path used by
-// chain-Enter elsewhere: writes g_pendingActivate / g_pendingActivateTarget
-// + sets the speech-suppress budget so the post-activation focus echo
-// doesn't double-speak. The actual FireActivate runs one tick later in
-// OnUpdate.
+// .gui-time id matches `buttonId`. Mirrors the activate path used by
+// chain-Enter elsewhere: queues an Activate op via menus_pending and sets
+// the speech-suppress budget so the post-activation focus echo doesn't
+// double-speak. The actual vtable[15].HandleInputEvent runs one tick later
+// in TickPendingOps.
 //
-// Returns false on debounce (a click / activate / cursor-move is already
-// pending) or if the button id isn't found on the panel; caller still
-// consumes the keypress in those cases so the engine's stale activeControl
-// can't take over.
+// Returns false on debounce (any op already pending) or if the button id
+// isn't found on the panel; caller still consumes the keypress in those
+// cases so the engine's stale activeControl can't take over.
 //
 // `logPrefix` is used in the diagnostic log line — pass something like
 // "Container: Enter -> BTN_OK".
 static bool QueueButtonByIdActivate(void* panel, int buttonId,
                                     const char* logPrefix)
 {
-    if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
+    if (acc::menus::pending::IsPending()) {
         acclog::Write(logPrefix, "-- op already pending; ignoring");
         return false;
     }
@@ -943,8 +859,7 @@ static bool QueueButtonByIdActivate(void* panel, int buttonId,
                       buttonId, panel);
         return false;
     }
-    g_pendingActivate         = true;
-    g_pendingActivateTarget   = tgt;
+    acc::menus::pending::QueueActivate(tgt);
     g_navSpeechSuppressBudget = 2;
     acclog::Write(logPrefix, "panel=%p target=%p", panel, tgt);
     return true;
@@ -1646,10 +1561,10 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
     // SetActiveControl on consumed arrow keys at all (the wrapper JMPs past
     // dispatch). It only fires here when our own move triggered the engine
     // to reselect.
-    if (newControl == g_pendingTarget) {
+    if (newControl != nullptr && newControl == acc::menus::pending::CursorMoveTarget()) {
         acclog::Write("Menus.SetActive", "#%d panel=%p new=%p (self-dedup; cursor sync)",
                       n, panel, newControl);
-        g_pendingTarget = nullptr;
+        acc::menus::pending::ClearCursorMoveTarget();
         // Cursor-warp echo arrived: our voluntary nav has fully settled.
         // Drain any remaining budget so legit focus changes after this
         // resume normal announcement behavior.
@@ -2271,8 +2186,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                 }
                 consumed = true;
             } else if (param_1 == kInputEnter1 || param_1 == kInputEnter2) {
-                if (g_pendingClick || g_pendingActivate || g_pendingCursorMove ||
-                    g_pendingEquipSelect || g_pendingEquipCommit) {
+                if (acc::menus::pending::IsPending()) {
                     acclog::Write("EquipPicker", "Enter — op already pending; ignoring");
                     consumed = true;
                 } else {
@@ -2309,10 +2223,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                         }
                     }
                     if (lb && row && btn) {
-                        g_pendingEquipCommit       = true;
-                        g_pendingEquipCommitPanel  = activePanel;
-                        g_pendingEquipCommitRow    = row;
-                        g_pendingEquipCommitBtn    = btn;
+                        acc::menus::pending::QueueEquipCommit(activePanel, row, btn);
                         g_navSpeechSuppressBudget  = 2;
                         acclog::Write("EquipPicker", "Enter -> commit (row sel=%d %p "
                                       "btn_equip=%p panel=%p)",
@@ -2350,7 +2261,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         }
         // Not consumed — fall through to generic handlers (slot zone).
         // Watch for a slot-button Enter to arm the picker; done after the
-        // generic Enter activate block writes g_pendingActivateTarget so we
+        // generic Enter activate block queues its Activate op so we
         // can see what got selected.
     }
 
@@ -2448,7 +2359,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                 equipSlotCid == kEquipBtnHandsId;
         }
 
-        if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
+        if (acc::menus::pending::IsPending()) {
             acclog::Write("Enter", "op already pending; ignoring (target=%p)", e.control);
             consumed = true;
         } else if (e.textOnly) {
@@ -2462,12 +2373,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         } else if (isTabButton) {
             int cursorY = e.cy;
             if (g_tabClickOffsetY > 0) cursorY += g_tabClickOffsetY;
-            g_pendingX           = e.cx;
-            g_pendingY           = cursorY;
-            g_pendingTarget      = e.control;
-            g_pendingClickTarget = e.control;
-            g_pendingCursorMove  = true;
-            g_pendingClick       = true;
+            acc::menus::pending::QueueClickAt(e.cx, cursorY, e.control);
             g_navSpeechSuppressBudget = 2;  // see chain-step doc above
             acclog::Write("Menus.Enter", "click-sim panel=%p index=%d target=%p cursorY=%d (tab)",
                           activePanel, g_chainIndex, e.control, cursorY);
@@ -2480,9 +2386,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             // buttons in z-order — see docs/equip-flow-investigation.md
             // for the hit-test data). Deferred to OnUpdate to stay clear
             // of mid-input-dispatch recursion.
-            g_pendingEquipSelect       = true;
-            g_pendingEquipSelectPanel  = g_chainPanel;
-            g_pendingEquipSelectSlot   = e.control;
+            acc::menus::pending::QueueEquipSelect(g_chainPanel, e.control);
             g_navSpeechSuppressBudget  = 2;
             // Arm the picker zone now: OnSelectSlot raises field33_0x4270 |= 1
             // and the user proceeds to LB_ITEMS browsing. Self-clears on
@@ -2494,8 +2398,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                           equipSlotCid, e.control, g_chainPanel);
             consumed = true;
         } else {
-            g_pendingActivate       = true;
-            g_pendingActivateTarget = e.control;
+            acc::menus::pending::QueueActivate(e.control);
             g_navSpeechSuppressBudget = 2;  // see chain-step doc above
 
             // Arm the drill flag when Enter activates an icon on the InGameMenu
@@ -2608,10 +2511,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                     g_classIconClickOffsetX > 0) {
                     cursorX += g_classIconClickOffsetX;
                 }
-                g_pendingX          = cursorX;
-                g_pendingY          = cursorY;
-                g_pendingTarget     = e.control;
-                g_pendingCursorMove = true;
+                acc::menus::pending::QueueMoveCursor(cursorX, cursorY, e.control);
                 // Suppress the next two SetActiveControl announces — engine-
                 // side focus echoes that fire after the keypress + cursor
                 // warp would otherwise read out the wrong sibling control as
@@ -2662,27 +2562,24 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         bool toRight = (param_1 == kInputNavRight);
 
         if (IsSlider(focused)) {
-            if (g_pendingClick || g_pendingActivate || g_pendingCursorMove ||
-                g_pendingSliderInput) {
+            if (acc::menus::pending::IsPending()) {
                 acclog::Write("Menus.Slider", "%s: op already pending; ignoring",
                               toRight ? "right" : "left");
             } else {
-                g_pendingSliderInput  = true;
-                g_pendingSliderTarget = focused;
-                g_pendingSliderCode   = toRight ? 500 : 501;
+                int code = toRight ? 500 : 501;
+                acc::menus::pending::QueueSliderInput(focused, code);
                 acclog::Write("Menus.Slider", "%s panel=%p focus=%p code=%d",
                               toRight ? "right" : "left",
-                              activePanel, focused, g_pendingSliderCode);
+                              activePanel, focused, code);
             }
         } else {
             void* neighbor = FindAdjacentArrow(activePanel, focused, toRight);
             if (neighbor) {
-                if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
+                if (acc::menus::pending::IsPending()) {
                     acclog::Write("Menus.Cycle", "%s: op already pending; ignoring",
                                   toRight ? "right" : "left");
                 } else {
-                    g_pendingActivate       = true;
-                    g_pendingActivateTarget = neighbor;
+                    acc::menus::pending::QueueActivate(neighbor);
                     acclog::Write("Menus.Cycle", "%s panel=%p focus=%p neighbor=%p",
                                   toRight ? "right" : "left",
                                   activePanel, focused, neighbor);
@@ -2774,7 +2671,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         ((g_tabbedPanel != nullptr && activePanel != g_tabbedPanel) ||
          IsModalPopupPanel(IdentifyPanel(activePanel))))
     {
-        if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
+        if (acc::menus::pending::IsPending()) {
             acclog::Write("Esc", "op already pending; ignoring");
             consumed = true;
         } else {
@@ -2790,8 +2687,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             void* cancelBtn = FindCancelButton(activePanel);
             void* tgt       = cancelBtn ? cancelBtn : FindCloseButton(activePanel);
             if (tgt) {
-                g_pendingActivate       = true;
-                g_pendingActivateTarget = tgt;
+                acc::menus::pending::QueueActivate(tgt);
                 acclog::Write("Menus.Esc", "%s panel=%p kind=%s target=%p",
                               cancelBtn ? "cancel" : "close",
                               activePanel,
@@ -3744,7 +3640,7 @@ static void PollContainerGiveModeKey() {
     void* fgPanel = acc::engine::GetForegroundPanel(mgr);
     if (!fgPanel || IdentifyPanel(fgPanel) != PanelKind::Container) return;
 
-    if (g_pendingClick || g_pendingActivate || g_pendingCursorMove) {
+    if (acc::menus::pending::IsPending()) {
         acclog::Write("Container", "G (give-mode) -- op already pending; ignoring");
         return;
     }
@@ -3754,8 +3650,7 @@ static void PollContainerGiveModeKey() {
                       fgPanel);
         return;
     }
-    g_pendingActivate       = true;
-    g_pendingActivateTarget = btn;
+    acc::menus::pending::QueueActivate(btn);
     acclog::Write("Container", "G (give-mode) -> FireActivate BTN_GIVEITEMS panel=%p target=%p",
                   fgPanel, btn);
 }
@@ -3769,9 +3664,9 @@ static void PollContainerGiveModeKey() {
 //     different TU.
 //   * The three callables exposed below are what core_tick::Dispatch
 //     consumes from the menu-side. Internal helpers (ValidateTabbedPanel,
-//     MonitorFocusedControl, … and the file-static g_pending* state)
-//     stay file-static because the drain is glued to them; subsequent
-//     refactor steps split state and helpers further.
+//     MonitorFocusedControl, …) stay file-static; the deferred-op queue
+//     state was split out in Step 3 (menus_pending.{h,cpp}); subsequent
+//     refactor steps split listbox handlers and chain navigation further.
 
 namespace acc::menus {
 
@@ -3792,206 +3687,16 @@ void TickMonitors() {
 }
 
 // Drain the menu-side pending-op queue. Called from core_tick::Dispatch
-// after all monitors have run. Each queued operation was set by an
-// input handler (chain Enter, Esc, Left/Right) on this or a recent
-// tick; dispatching here keeps deep engine re-entry off the input-hook
-// stack.
+// after all monitors have run. The queued op was set by an input handler
+// (chain Enter, Esc, Left/Right) on this or a recent tick; dispatching
+// here keeps deep engine re-entry off the input-hook stack.
+//
+// Step 3 of the refactor: queue state + drain logic moved to
+// menus_pending.{h,cpp}. This wrapper just resolves the GuiManager
+// singleton and forwards.
 void TickPendingOps() {
-    if (!g_pendingCursorMove && !g_pendingClick && !g_pendingActivate &&
-        !g_pendingSliderInput && !g_pendingEquipSelect &&
-        !g_pendingEquipCommit) return;
-
     void* gm = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!gm) {
-        acclog::Write("Update", "pending op but GuiManager singleton is NULL");
-        g_pendingCursorMove        = false;
-        g_pendingClick             = false;
-        g_pendingActivate          = false;
-        g_pendingSliderInput       = false;
-        g_pendingEquipSelect       = false;
-        g_pendingEquipCommit       = false;
-        g_pendingTarget            = nullptr;
-        g_pendingActivateTarget    = nullptr;
-        g_pendingSliderTarget      = nullptr;
-        g_pendingEquipSelectPanel  = nullptr;
-        g_pendingEquipSelectSlot   = nullptr;
-        g_pendingEquipCommitPanel  = nullptr;
-        g_pendingEquipCommitRow    = nullptr;
-        g_pendingEquipCommitBtn    = nullptr;
-        return;
-    }
-
-    // CSWGuiManager mouseOverControl pointer at +0x8 (per the decompilation
-    // in docs/menu-nav-design.md). Reading it directly lets us verify what
-    // the engine's hit-test resolved the cursor to — the difference between
-    // "click landed on tab T" and "click landed on the inline listbox" is
-    // invisible from cursor coords alone.
-    auto getMouseOver = [&]() -> void* {
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(gm) + 0x8);
-    };
-
-    if (g_pendingCursorMove) {
-        g_pendingCursorMove = false;
-        auto move = reinterpret_cast<PFN_MoveMouseToPosition>(kAddrMoveMouseToPosition);
-        // Capture mouseOver BEFORE the move. Disambiguates whether
-        // MoveMouseToPosition itself produces the 45-px-shifted hit-test
-        // result (before==something-else, after==shifted-button) vs. the
-        // engine pre-setting mouseOver during panel init (before==after,
-        // never refreshed by our move at all). See chat.
-        void* moBefore = getMouseOver();
-        move(gm, g_pendingX, g_pendingY);
-        acclog::Write("Update", "MoveMouseToPosition(%d, %d) target=%p mouseOver before=%p after=%p",
-                      g_pendingX, g_pendingY, g_pendingTarget,
-                      moBefore, getMouseOver());
-    }
-
-    // Click-sim via manager's HandleLMouseDown/Up. Dispatches against
-    // mouseOverControl, which on Options-style tabbed panels resolves to
-    // the button one step above the chain target (consistent 45-px hit-test
-    // shift — see chat investigation). That activates the wrong tab.
-    //
-    // Direct vtable[6]/[7] on the chain target was tried as a workaround
-    // (commit reverted) — it crashes the game on the second tab+ click.
-    // The button's own HandleLMouseDown/Up depend on manager-side state
-    // (probably the +0x1c mouse_held bit and/or other setup we'd skip).
-    // Need a different approach for the off-by-1; for now keep the original
-    // pipeline so behavior is at least stable.
-    if (g_pendingClick) {
-        g_pendingClick = false;
-        g_pendingClickTarget = nullptr;
-        auto down = reinterpret_cast<PFN_ManagerLMouseDown>(kAddrManagerLMouseDown);
-        auto up   = reinterpret_cast<PFN_ManagerLMouseUp>(kAddrManagerLMouseUp);
-        void* moBefore = getMouseOver();
-        int dResult = down(gm, /*press=*/1);
-        void* moAfterDown = getMouseOver();
-        int uResult = up(gm);
-        void* moAfterUp = getMouseOver();
-        acclog::Write("Update", "click-sim Down=%d Up=%d at (%d,%d) target=%p "
-                      "mouseOver before=%p afterDown=%p afterUp=%p",
-                      dResult, uResult, g_pendingX, g_pendingY, g_pendingTarget,
-                      moBefore, moAfterDown, moAfterUp);
-    }
-
-    // Direct activate via vtable[15].HandleInputEvent(0x27, 1). Bypasses
-    // hit-test, so a button covered by a listbox extent (e.g. Schliess.
-    // in an Options sub-dialog) still fires its onClick when we target it.
-    //
-    // Post-activation re-announce is handled generically by
-    // MonitorFocusedControl on the next tick: toggles flip +0x1c8 bit 0
-    // synchronously inside FireActivate, cycles rewrite the value-display
-    // button's CExoString in place, sliders mutate cur_value at +0x74. All
-    // three produce a different ExtractAnnounceableText on next entry, and
-    // the monitor speaks the diff.
-    if (g_pendingActivate) {
-        g_pendingActivate = false;
-        void* tgt = g_pendingActivateTarget;
-        g_pendingActivateTarget = nullptr;
-        acclog::Write("Update", "FireActivate target=%p", tgt);
-        FireActivate(tgt);
-    }
-
-    // Equip-screen slot activation. Mirrors the engine's mouse-driven path:
-    //   1. Raise slot_btn->is_active = 1 (LMouseDown sets this flag normally;
-    //      OnSelectSlot's prologue gates on it and returns early if zero).
-    //   2. OnEnterSlot(panel, slot_btn) — populates panel.items_listbox with
-    //      items matching the slot's type. Sets panel.selected_slot.
-    //   3. OnSelectSlot(panel, slot_btn) — if items_listbox.size > 1, stages
-    //      the equip (raises panel.field33_0x4270 |= 1, pre-selects row 1,
-    //      shows description). If size == 1 (only protoitem template), pops
-    //      the engine's "Für diesen Slot..." modal — which is the correct
-    //      behaviour for a slot the player has no fitting items for.
-    //
-    // Dispatched here (not synchronously from the input hook) for the same
-    // reason MoveMouseToPosition is — these functions reach deep into GUI
-    // state that's mid-update during input dispatch.
-    if (g_pendingEquipSelect) {
-        g_pendingEquipSelect = false;
-        void* panel    = g_pendingEquipSelectPanel;
-        void* slotBtn  = g_pendingEquipSelectSlot;
-        g_pendingEquipSelectPanel = nullptr;
-        g_pendingEquipSelectSlot  = nullptr;
-        if (panel && slotBtn) {
-            uint32_t* isActive = reinterpret_cast<uint32_t*>(
-                reinterpret_cast<unsigned char*>(slotBtn) + kControlIsActiveOffset);
-            uint32_t prevIsActive = *isActive;
-            *isActive = 1;
-            auto onEnter  = reinterpret_cast<PFN_InGameEquipOnEnterSlot>(
-                kAddrInGameEquipOnEnterSlot);
-            auto onSelect = reinterpret_cast<PFN_InGameEquipOnSelectSlot>(
-                kAddrInGameEquipOnSelectSlot);
-            acclog::Write("Update", "EquipSelect panel=%p slot=%p is_active=%u->1",
-                          panel, slotBtn, prevIsActive);
-            onEnter(panel, slotBtn);
-            onSelect(panel, slotBtn);
-            acclog::Write("Update", "EquipSelect done panel=%p slot=%p", panel, slotBtn);
-        }
-    }
-
-    // Equip-row commit. OnItemSelected is the function that calls EquipItem
-    // and actually equips the item; OnOKPressed is just cleanup (closes the
-    // description panel, clears previously_equipped_*). Both gates the
-    // engine cares about (description_listbox.bit_flags & 2,
-    // items_listbox.bit_flags & 8, panel.field33_0x4270 & 1) were raised
-    // earlier by OnSelectSlot — we just need to raise row->is_active and
-    // btn_equip->is_active before invoking, mirroring what HandleLMouseDown
-    // would do in mouse-driven play.
-    if (g_pendingEquipCommit) {
-        g_pendingEquipCommit = false;
-        void* panel = g_pendingEquipCommitPanel;
-        void* row   = g_pendingEquipCommitRow;
-        void* btn   = g_pendingEquipCommitBtn;
-        g_pendingEquipCommitPanel = nullptr;
-        g_pendingEquipCommitRow   = nullptr;
-        g_pendingEquipCommitBtn   = nullptr;
-        if (panel && row && btn) {
-            uint32_t* rowIsActive = reinterpret_cast<uint32_t*>(
-                reinterpret_cast<unsigned char*>(row) + kControlIsActiveOffset);
-            uint32_t* btnIsActive = reinterpret_cast<uint32_t*>(
-                reinterpret_cast<unsigned char*>(btn) + kControlIsActiveOffset);
-            uint32_t prevRowActive = *rowIsActive;
-            uint32_t prevBtnActive = *btnIsActive;
-            *rowIsActive = 1;
-            *btnIsActive = 1;
-            auto onItem = reinterpret_cast<PFN_InGameEquipOnItemSelected>(
-                kAddrInGameEquipOnItemSelected);
-            auto onOK   = reinterpret_cast<PFN_InGameEquipOnOKPressed>(
-                kAddrInGameEquipOnOKPressed);
-            acclog::Write("Update", "EquipCommit panel=%p row=%p btn=%p "
-                          "row.is_active=%u->1 btn.is_active=%u->1",
-                          panel, row, btn, prevRowActive, prevBtnActive);
-            onItem(panel, row);
-            onOK(panel, btn);
-            acclog::Write("Update", "EquipCommit done panel=%p row=%p btn=%p",
-                          panel, row, btn);
-        }
-    }
-
-    // Slider value adjustment via vtable[15].HandleInputEvent(500/501, 1).
-    // The slider's HandleInputEvent runs SetCurValue (clamped to
-    // [0, max_value]) and the gui_object callback that propagates to the
-    // audio system, then plays the click feedback sound. Per-frame focus
-    // monitor catches the cur_value change at +0x74 on the next tick.
-    if (g_pendingSliderInput) {
-        g_pendingSliderInput = false;
-        void* tgt  = g_pendingSliderTarget;
-        int   code = g_pendingSliderCode;
-        g_pendingSliderTarget = nullptr;
-        g_pendingSliderCode   = 0;
-        if (tgt) {
-            void** vtable = *reinterpret_cast<void***>(tgt);
-            if (vtable) {
-                auto fn = reinterpret_cast<PFN_ControlHandleInputEvent>(
-                    vtable[kVtableHandleInputEvent]);
-                if (fn) {
-                    acclog::Write("Update", "slider HandleInputEvent target=%p code=%d",
-                                  tgt, code);
-                    fn(tgt, code, 1);
-                }
-            }
-        }
-    }
-
+    pending::Drain(gm);
 }
 
 }  // namespace acc::menus
