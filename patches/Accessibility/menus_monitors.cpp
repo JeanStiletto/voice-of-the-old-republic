@@ -73,7 +73,22 @@ void MonitorFocusedControl() {
         return;
     }
     if (acc::menus::chain::g_chainPanel != g_currentPanel) {
-        return;
+        // CSWGuiPortraitCharGen is pushed by the parent chargen sub-menu
+        // (Eigener Charakter) without firing our OnSetActiveControl hook,
+        // so g_currentPanel stays on the parent and the gate would
+        // suppress text-change re-announce on every cycle. Bypass the
+        // gate when the chain panel itself is a PortraitCharGen — its
+        // chain rebind is the authoritative signal that we're on it.
+        // Without this, the user has to nav-down + nav-up to refocus
+        // and force a fresh AnnounceControl just to hear the cycled
+        // value.
+        void* chainPanel = acc::menus::chain::g_chainPanel;
+        if (!chainPanel) return;
+        void** vt = *reinterpret_cast<void***>(chainPanel);
+        if (reinterpret_cast<uintptr_t>(vt) !=
+                kVtableCSWGuiPortraitCharGen) {
+            return;
+        }
     }
     void* focused = acc::menus::chain::g_chain[acc::menus::chain::g_chainIndex].control;
     if (!focused) return;

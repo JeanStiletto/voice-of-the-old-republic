@@ -42,6 +42,12 @@ namespace {
 // opaque; the accessor is the only reliable source.
 typedef uint32_t (__thiscall* PFN_CSWCCreatureGetPortraitId)(void*);
 
+// CSWCCreature::GetPortrait — fills caller-supplied 16-byte CResRef.
+// `side` is 0 for the default (light-side) baseresref. The function
+// returns the same outBuf pointer; we don't use the return value.
+typedef void* (__thiscall* PFN_CSWCCreatureGetPortrait)(
+    void* this_, void* outBuf, int side);
+
 // portraits.2da row → baseresref. Indices 0..31 cover the chargen PC
 // rows (5 variants × 3 race codes × 2 genders, with two interleaved
 // non-PC rows — 12 = po_pt3m3, 13 = po_pcarth — left as nullptr because
@@ -895,14 +901,27 @@ const char* FromControl(void* control,
                     kLabelTextObjectOffset,
                     portraitText, sizeof(portraitText));
 
-                // Get the live portrait_id via the engine accessor on
-                // panel.creature. Direct field reads on the creature
+                // Get the live portrait state from panel.creature via the
+                // engine accessors. Direct field reads on the creature
                 // (+0xa8 CSWCObject.portrait, +0x14/+0x24 CSWCPlayer-style)
                 // and on the panel (+0x1238 portrait_id) all stay zero
-                // through cycling — only this accessor returns the moving
-                // value (verified 2026-05-09 in patch-20260509-053256.log:
-                // 24 → 25 across a Right+Right+Left sequence).
+                // through cycling — only the engine accessors return live
+                // values (verified 2026-05-09 in patch-20260509-053256.log).
+                //
+                // GetPortrait fills a CResRef (16-byte char[]) with the
+                // baseresref string for the currently-selected portrait,
+                // regardless of the underlying storage location. This is
+                // our preferred source — works for any portrait id the
+                // engine cycles through, including rows our static
+                // kPortraitByRow table is unsure about (e.g. id=32 turned
+                // out to be a male PC portrait, not po_pbastila as the
+                // data-section ordering had suggested).
+                //
+                // GetPortraitId is logged alongside as diagnostic context;
+                // kPortraitByRow remains a defensive fallback for the
+                // (theoretical) case where GetPortrait fails.
                 uint32_t portraitId = 0xFFFFFFFFu;
+                char liveResref[kResRefSize + 1] = {0};
                 __try {
                     void* creature = *reinterpret_cast<void**>(
                         panelBase + kPortraitCharGenCreatureOffset);
@@ -911,17 +930,27 @@ const char* FromControl(void* control,
                             PFN_CSWCCreatureGetPortraitId>(
                                 kAddrCSWCCreatureGetPortraitId);
                         portraitId = getPid(creature) & 0xFFFFu;
+
+                        auto getP = reinterpret_cast<
+                            PFN_CSWCCreatureGetPortrait>(
+                                kAddrCSWCCreatureGetPortrait);
+                        char tmp[kResRefSize] = {0};
+                        getP(creature, tmp, /*side=*/0);
+                        memcpy(liveResref, tmp, kResRefSize);
+                        liveResref[kResRefSize] = '\0';
                     }
                 } __except (EXCEPTION_EXECUTE_HANDLER) {
-                    portraitId = 0xFFFFFFFFu;
+                    portraitId  = 0xFFFFFFFFu;
+                    liveResref[0] = '\0';
                 }
 
-                // Map row → baseresref (kPortraitByRow covers PC rows
-                // 0..31). Indices 12, 13 (T3-M3, Carth) are nullptr; rows
-                // 32+ (companions) and out-of-range values fall through
-                // to the numeric fallback below.
+                // Pick the source: live resref from engine if non-empty,
+                // else the static row → baseresref table for the rows we
+                // know are correct.
                 const char* mappedResref = nullptr;
-                if (portraitId < 32 && kPortraitByRow[portraitId]) {
+                if (liveResref[0] != '\0') {
+                    mappedResref = liveResref;
+                } else if (portraitId < 32 && kPortraitByRow[portraitId]) {
                     mappedResref = kPortraitByRow[portraitId];
                 }
 

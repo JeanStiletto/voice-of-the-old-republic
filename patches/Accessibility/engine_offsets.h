@@ -212,6 +212,16 @@ constexpr size_t    kResRefSize                      = 16;
 // — this accessor is the only reliable read-side primitive we have.
 constexpr uintptr_t kAddrCSWCCreatureGetPortraitId   = 0x00617070;
 
+// CSWCCreature::GetPortrait — __thiscall, fills caller-supplied CResRef
+// (16 bytes) with the current portrait baseresref (e.g. "po_pmhc3").
+// Signature per SARIF: `CResRef* __thiscall(CResRef* outBuf, byte side)`.
+// `side` selects the alignment variant (0 = light/default, 1..4 = darker
+// variants matching the baseresrefe / baseresrefve / etc. columns); we
+// only ever pass 0 since chargen doesn't ladder dark side. Caller-pops
+// 8 bytes (BYTES_PURGED=8). Resref is 16 bytes, NOT necessarily null-
+// terminated when length == 16, so we always reserve a 17-byte buffer.
+constexpr uintptr_t kAddrCSWCCreatureGetPortrait     = 0x00617030;
+
 // ---------------------------------------------------------------------------
 // Container offsets verified against Lane's SARIF (DATATYPE entries for
 // CSWGuiPanel and CSWGuiListBox). CExoArrayList layout:
