@@ -124,6 +124,9 @@ const char* Get(Id id) {
         case Id::FmtChargenAttrValueChangeWithCost:      return "%s, remaining points %s, Cost %s";
         case Id::FmtChargenAttrValueChangeWithModAndCost: return "%s, Modifier %s, remaining points %s, Cost %s";
 
+        case Id::FmtChargenSkillInfoSuffix:  return "Cost %s";
+        case Id::FmtChargenSkillValueChange: return "%s, remaining points %s";
+
         case Id::Count_:               return "";
     }
     return "";

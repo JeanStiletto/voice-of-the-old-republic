@@ -274,6 +274,65 @@ constexpr size_t    kCSWGuiButtonSize                      = 0x1c4;
 // Callee-pops 4 bytes (BYTES_PURGED=4).
 constexpr uintptr_t kAddrCSWGuiAbilitiesCharGenGetCost = 0x006f6bb0;
 
+// ---------------------------------------------------------------------------
+// CSWGuiSkillsCharGen (chargen "Fähigkeiten" panel — step 3 of Eigener
+// Charakter). Same shape as CSWGuiAbilitiesCharGen — three info-pair
+// labels, value buttons, +/- buttons, an int "currently focused" index
+// — just 8 skills instead of 6 abilities and no modifier concept.
+// Verified against k1_win_gog_swkotor.exe.xml SYMBOL @ 0x00759990 +
+// STRUCTURE size 0x49d0.
+//
+//   +0x70C  remaining-points VALUE (label, mirrors skill_points int)
+//   +0xC0C  cost-points VALUE (label, 1 or 2 in vanilla)
+//   +0xFCC..+0x19CC   skill_labels[8]   (CSWGuiLabel[8], 0x140 each)
+//   +0x19CC..+0x27EC  skill_buttons[8]  (CSWGuiButton[8], 0x1c4 each)
+//   +0x2D38..+0x3B58  plus_buttons[8]
+//   +0x3B58..+0x4978  minus_buttons[8]
+//   +0x49B8           int skill_points (remaining budget)
+//   +0x49BC           ulong selected_skill_index (analog of
+//                                                 selected_ability)
+//
+// Skill order matches struct order matches visual top-to-bottom (no
+// swap as on the Attribute panel): Computer, Demolitions, Stealth,
+// Awareness, Persuade, Repair, Security, Treat Injury.
+// ---------------------------------------------------------------------------
+constexpr uintptr_t kVtableCSWGuiSkillsCharGen           = 0x00759990;
+constexpr size_t    kSkillsCharGenLabelsArrayOffset      = 0xfcc;
+constexpr size_t    kSkillsCharGenButtonsArrayOffset     = 0x19cc;
+constexpr size_t    kSkillsCharGenSelectedSkillOffset    = 0x49bc;
+constexpr int       kSkillsCharGenSkillCount             = 8;
+constexpr size_t    kSkillsCharGenRemainingValueOffset   = 0x70c;
+constexpr size_t    kSkillsCharGenCostValueOffset        = 0xc0c;
+
+// CSWGuiSkillsCharGen::IsClassSkill — engine predicate for whether the
+// skill at index `param_1` (ushort) is a class skill for the chargen
+// creature's class. Class skills cost 1 point per +1; cross-class
+// skills cost 2. We use this to compute cost ourselves rather than
+// reading the engine's cost_value label, which has the same hit-test
+// shift / refresh-timing race the Attribute panel taught us about.
+//
+// Signature per SARIF (SYMBOL @ 0x006f4b60):
+//   int __thiscall IsClassSkill(ushort param_1)
+// Callee-pops 4 bytes (param is widened to dword on the stack).
+constexpr uintptr_t kAddrCSWGuiSkillsCharGenIsClassSkill = 0x006f4b60;
+
+// CSWGuiSkillsCharGen::OnEnterPointsButton — engine handler that
+// populates description_list_box with the description for the given
+// skill button. We call this synchronously with the focused button to
+// bypass the engine's hover-driven path, which is off-by-one on this
+// panel (the cursor warp's hit-test resolves to skill_labels[i-1]
+// regardless of Y compensation — labels overlap the cursor's row in a
+// way Attribute labels don't). After the call, the listbox row holds
+// the correct description and we read + speak it ourselves.
+//
+// Signature per SARIF (SYMBOL @ 0x006f4bf0):
+//   void __thiscall OnEnterPointsButton(CSWGuiControl* param_1)
+// Callee-pops 4 bytes.
+constexpr uintptr_t kAddrCSWGuiSkillsCharGenOnEnterPointsButton = 0x006f4bf0;
+
+// description_list_box offset within CSWGuiSkillsCharGen (per SARIF).
+constexpr size_t    kSkillsCharGenDescriptionListBoxOffset      = 0x6c;
+
 // Three info-pair labels on this panel that aren't in the chain (they're
 // CSWGuiLabels, not buttons) but carry per-row state the user needs:
 //

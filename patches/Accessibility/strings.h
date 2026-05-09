@@ -378,6 +378,24 @@ enum class Id : int {
     FmtChargenAttrValueChangeWithCost,
     FmtChargenAttrValueChangeWithModAndCost,
 
+    // ---- Chargen Fähigkeiten panel (CSWGuiSkillsCharGen).
+    //      Same shape as the Attribute panel but skills don't have a
+    //      D&D modifier — only rank + per-+1 cost (1 for class
+    //      skills, 2 for cross-class). The cost is constant per row
+    //      throughout the skill's normal range, so the value-change
+    //      announce never includes it (the user heard it in the
+    //      chain-step suffix).
+    //
+    //          FmtChargenSkillInfoSuffix — per-row info on chain
+    //              step. One `%s` (cost — 1 for class, 2 for
+    //              cross-class).
+    //          FmtChargenSkillValueChange — value-change announce
+    //              after a +/- press. Two `%s` (new value, remaining
+    //              budget). No cost / no row label — fresh in
+    //              context.
+    FmtChargenSkillInfoSuffix,
+    FmtChargenSkillValueChange,
+
     Count_,
 };
 

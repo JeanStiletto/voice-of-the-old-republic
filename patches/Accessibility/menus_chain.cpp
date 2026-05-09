@@ -19,6 +19,7 @@
 #include "engine_reads.h"
 #include "log.h"
 #include "menus_chargen_attr.h"
+#include "menus_chargen_skills.h"
 #include "menus_extract.h"
 #include "menus_internal.h"
 #include "tolk.h"
@@ -484,6 +485,8 @@ void RebindChain(void* panel) {
     // ability. No-op on every other panel. The chain-step handler in
     // menus.cpp keeps the field in sync as the user navigates.
     acc::menus::chargen_attr::SyncSelectedAbilityFromChainFocus();
+    // Same on the Skills panel.
+    acc::menus::chargen_skills::SyncSelectedSkillFromChainFocus();
 
     acclog::Write("Menus.Chain", "rebind panel=%p count=%d index=%d active=%p "
                   "tabOffsetY=%d equipSlotOffsetY=%d classIconOffsetX=%d",

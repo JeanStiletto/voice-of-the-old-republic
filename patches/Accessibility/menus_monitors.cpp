@@ -18,6 +18,7 @@
 #include "log.h"
 #include "menus_charsheet.h"
 #include "menus_chargen_attr.h"
+#include "menus_chargen_skills.h"
 #include "menus_chain.h"
 #include "menus_extract.h"
 #include "menus_internal.h"
@@ -101,22 +102,26 @@ void MonitorFocusedControl() {
 
     if (focused == s_focusMonitorControl) {
         if (strncmp(s_focusMonitorText, text, sizeof(s_focusMonitorText)) != 0) {
-            // Chargen Attribute panel: when a +/- press changes the
-            // focused row's value, override the default
-            // "{label}, {new_value}" re-announce with
-            // "{new_value}, verbleibende Punkte {remaining}". Returns
-            // true on the chargen-attr ability-button path; we still
-            // update the monitor's last-text snapshot so the next tick
-            // doesn't re-fire on the same diff.
-            bool handled = acc::menus::chargen_attr::AnnounceValueChange(
-                acc::menus::chain::g_chainPanel, focused);
+            // Chargen Attribute / Skills panels: when a +/- press
+            // changes the focused row's value, override the default
+            // "{label}, {new_value}" re-announce with the panel's
+            // own value-change format. Returns true when a panel-
+            // specific override fired; we still update the monitor's
+            // last-text snapshot so the next tick doesn't re-fire on
+            // the same diff.
+            void* chainPanel = acc::menus::chain::g_chainPanel;
+            bool handled =
+                acc::menus::chargen_attr::AnnounceValueChange(
+                    chainPanel, focused) ||
+                acc::menus::chargen_skills::AnnounceValueChange(
+                    chainPanel, focused);
             if (!handled) {
                 tolk::Speak(text, /*interrupt=*/false);
             }
             strncpy_s(s_focusMonitorText, text, _TRUNCATE);
             acclog::Write("Monitor", "focused=%p text changed -> \"%s\"%s",
                           focused, text,
-                          handled ? " (chargen-attr override)" : "");
+                          handled ? " (chargen override)" : "");
         }
     } else {
         s_focusMonitorControl = focused;
@@ -521,6 +526,9 @@ void TickGeneralMonitors() {
     // correct value when the FireActivate fires. No-op on every other
     // panel.
     acc::menus::chargen_attr::SyncSelectedAbilityFromChainFocus();
+    // Same defense on the Skills panel — different field
+    // (selected_skill_index) but same engine-overwrite race.
+    acc::menus::chargen_skills::SyncSelectedSkillFromChainFocus();
 }
 
 void* FindActiveSubScreenPanel() {

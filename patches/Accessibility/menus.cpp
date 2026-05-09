@@ -28,6 +28,7 @@
 #include "menus.h"           // public surface — Step 1 mod-wide tick split
 #include "menus_charsheet.h" // Step 2A — character-sheet opener lifted out
 #include "menus_chargen_attr.h" // Chargen "Attribute" panel label + selected_ability sync
+#include "menus_chargen_skills.h" // Chargen "Fähigkeiten" panel — same shape as Attribute
 #include "menus_extract.h"   // Step 2B — text extraction lifted out
 #include "menus_internal.h"  // Step 2B — shared seam with menus_extract
 #include "menus_pending.h"   // Step 3 — deferred-op queue lifted out
@@ -878,6 +879,11 @@ static void WalkAndCaptureOnFirstSight(void* panel) {
     // ability_labels[i] for each ability_buttons[i] and binding the pair
     // into the cycle-category cache so FromControl produces "Stärke, 8".
     acc::menus::chargen_attr::CaptureLabelsIfApplicable(panel);
+
+    // Same for the Skills panel — value buttons all read "0" initially
+    // and would otherwise resolve to "0" as the category. Bind the
+    // skill_labels[i] text in instead.
+    acc::menus::chargen_skills::CaptureLabelsIfApplicable(panel);
 }
 
 // First focus into a new panel: speak its title once. The focused
@@ -1076,7 +1082,20 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
             }
         }
 
-        if (strchr(text, '\n')) {
+        // Chargen Fähigkeiten description_list_box: silence everything
+        // the engine pushes here. The hover-driven population is
+        // off-by-one on this panel (the cursor warp's hit-test
+        // resolves to skill_labels[i-1] regardless of Y compensation
+        // — labels overlap the cursor's row in a way Attribute labels
+        // don't), so any text the engine writes corresponds to the
+        // wrong row. We speak the focused row's description from the
+        // chain-step handler via skill_descriptions[i] direct read.
+        if (acc::menus::chargen_skills::IsChargenSkillsDescriptionListbox(
+                listBox)) {
+            acclog::Write("Menus.ListBox",
+                          "chargen-skills description silenced "
+                          "(handled by chain-step direct read)");
+        } else if (strchr(text, '\n')) {
             // Multi-line listbox blob (Options-style: all settings concatenated
             // by '\n' into a single CSWGuiLabel row). In tabbed mode we parse
             // the lines into a virtual cursor and speak them one-at-a-time on
@@ -1513,12 +1532,30 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             // otherwise speak the previous icon's class. See
             // ExtractAnnounceableText step 9c and the OnSetActiveControl
             // prefill path.
+            // Chargen Fähigkeiten descriptions are long (~10s of
+            // speech each) but the user navigates Up/Down faster than
+            // they can read. With interrupt=false (our default), each
+            // step queues "label, suffix, description" behind the
+            // previous step's still-playing description — the user
+            // hears descriptions one row behind their focus. Silence
+            // any in-flight speech before announcing the new row, so
+            // each chain step starts fresh and the just-arrived focus
+            // wins the speech channel. No-op on every other panel
+            // (their descriptions are short enough to drain naturally).
+            if (acc::menus::chargen_skills::IsChargenSkillsPanel(
+                    g_chainPanel)) {
+                tolk::Silence();
+            }
             AnnounceControl(e.control);
             // Mirror chain focus into the chargen Attributes panel's
             // selected_ability so the next Left/Right press routes
             // OnPlusButton / OnMinusButton to the focused ability rather
             // than the default top row (STR). No-op on every other panel.
             acc::menus::chargen_attr::SyncSelectedAbilityFromChainFocus();
+            // Same for the chargen Skills panel — different field
+            // (selected_skill_index) on a different panel, same
+            // mechanism.
+            acc::menus::chargen_skills::SyncSelectedSkillFromChainFocus();
             // Chargen Attribute panel: speak the per-row info suffix
             // ("Modifikator -1, Preis 1") synchronously, right after
             // the regular "Stärke, 8" announce. Computes the modifier
@@ -1527,6 +1564,16 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             // for the timing/rendering reasons. No-op on every other
             // panel.
             acc::menus::chargen_attr::AnnounceChainStepSuffix(
+                g_chainPanel, e.control);
+            // Skills panel suffix is just "Preis N" — no modifier
+            // concept; cost is computed from IsClassSkill.
+            acc::menus::chargen_skills::AnnounceChainStepSuffix(
+                g_chainPanel, e.control);
+            // And the description: read directly from
+            // skill_descriptions[i] in the panel struct because the
+            // engine's hover-driven listbox population is off-by-one
+            // here. See menus_chargen_skills.h.
+            acc::menus::chargen_skills::AnnounceChainStepDescription(
                 g_chainPanel, e.control);
             int cursorX = e.cx;
             int cursorY = e.cy;
@@ -1553,6 +1600,13 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                         acc::menus::chargen_attr::RowPitchForCursorWarp(
                             g_chainPanel, e.control);
                     if (abilityPitch > 0) cursorY += abilityPitch;
+                }
+                // Same hit-test compensation on the Skills panel.
+                {
+                    int skillPitch =
+                        acc::menus::chargen_skills::RowPitchForCursorWarp(
+                            g_chainPanel, e.control);
+                    if (skillPitch > 0) cursorY += skillPitch;
                 }
                 acc::menus::pending::QueueMoveCursor(cursorX, cursorY, e.control);
                 // Suppress the next two SetActiveControl announces — engine-
