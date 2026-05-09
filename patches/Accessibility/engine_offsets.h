@@ -260,6 +260,20 @@ constexpr int       kAbilitiesCharGenAbilityCount          = 6;
 constexpr size_t    kCSWGuiLabelSize                       = 0x140;
 constexpr size_t    kCSWGuiButtonSize                      = 0x1c4;
 
+// CSWGuiAbilitiesCharGen::GetAbilityPointCost — engine accessor for the
+// point-buy cost of the next +1 increment on a given ability. Returns
+// cost as int; takes ability index (0..5 in struct order, same as
+// selected_ability). Calling this beats hardcoding the D&D 3.5 PHB
+// table in our code: a mod that rebalances the curve via 2DA edits
+// would still get the correct number, and we don't have to extrapolate
+// values we never observed in a log (the table is small enough that
+// 16-17 was always going to be guesswork without verification).
+//
+// Signature per SARIF (k1_win_gog_swkotor.exe.xml SYMBOL @ 0x006f6bb0):
+//   int __thiscall GetAbilityPointCost(int param_1)
+// Callee-pops 4 bytes (BYTES_PURGED=4).
+constexpr uintptr_t kAddrCSWGuiAbilitiesCharGenGetCost = 0x006f6bb0;
+
 // Three info-pair labels on this panel that aren't in the chain (they're
 // CSWGuiLabels, not buttons) but carry per-row state the user needs:
 //

@@ -118,8 +118,11 @@ const char* Get(Id id) {
         case Id::FmtCharSheetCha:      return "Charisma %s%s%s. ";
         case Id::FmtCharSheetAlignment: return "Alignment %u of %u.";
 
-        case Id::FmtChargenAttrInfoSuffix:  return "Modifier %s, Cost %s";
-        case Id::FmtChargenAttrValueChange: return "%s, remaining points %s, Cost %s";
+        case Id::FmtChargenAttrInfoSuffix:               return "Modifier %s, Cost %s";
+        case Id::FmtChargenAttrValueChangeBare:          return "%s, remaining points %s";
+        case Id::FmtChargenAttrValueChangeWithMod:       return "%s, Modifier %s, remaining points %s";
+        case Id::FmtChargenAttrValueChangeWithCost:      return "%s, remaining points %s, Cost %s";
+        case Id::FmtChargenAttrValueChangeWithModAndCost: return "%s, Modifier %s, remaining points %s, Cost %s";
 
         case Id::Count_:               return "";
     }

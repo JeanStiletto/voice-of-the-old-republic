@@ -354,16 +354,29 @@ enum class Id : int {
     //          "{label}, {value}" announce. Two `%s` (modifier text
     //          rendered by the engine — e.g. "-1", "+2", "0" — and the
     //          per-row cost the next +1 would charge).
-    //      `FmtChargenAttrValueChange` — replaces the default
-    //          label-prefixed re-announce when a +/- press changes the
-    //          focused row's value. Two `%s` (the new value and the
-    //          updated remaining-points budget). The label name is
-    //          omitted on this path: the user just navigated to this
-    //          row and pressed +/- — the row identity is fresh in
-    //          context, what they need to hear is the result and
-    //          how much budget is left.
+    //      Four `FmtChargenAttrValueChange*` variants are picked at
+    //      runtime based on whether the +/- press crossed a modifier
+    //      breakpoint, a cost breakpoint, both, or neither. The
+    //      modifier and cost are NOISY when they don't change (most
+    //      presses don't), so we only insert them when their value
+    //      differs from the last-announced value on this ability.
+    //      The label name is omitted on every path: the user just
+    //      navigated to and acted on this row, so the identity is
+    //      fresh in context.
+    //
+    //          Bare           — 2 `%s` (value, remaining).
+    //          WithMod        — 3 `%s` (value, modifier, remaining).
+    //          WithCost       — 3 `%s` (value, remaining, cost).
+    //          WithModAndCost — 4 `%s` (value, modifier, remaining,
+    //                                   cost).
+    //      Modifier is placed next to the value (it's what changed
+    //      the value's effect); cost is at the end (it's the next
+    //      forward-looking number).
     FmtChargenAttrInfoSuffix,
-    FmtChargenAttrValueChange,
+    FmtChargenAttrValueChangeBare,
+    FmtChargenAttrValueChangeWithMod,
+    FmtChargenAttrValueChangeWithCost,
+    FmtChargenAttrValueChangeWithModAndCost,
 
     Count_,
 };

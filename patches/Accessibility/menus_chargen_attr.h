@@ -73,11 +73,26 @@ void SyncSelectedAbilityFromChainFocus();
 // No-op when `panel` isn't a chargen attributes panel.
 void CaptureLabelsIfApplicable(void* panel);
 
-// Speak the per-row info suffix ("Modifikator -1, Preis 1") right after
-// the chain-step's regular AnnounceControl utterance. Reads the panel's
-// modifier_value (+0xE8C) and cost_value (+0xC0C) labels — both refresh
-// as the engine fires OnEnterPointsButton on the focus change. No-op
-// when `panel` isn't chargen-attr or `control` isn't an ability_button.
+// Speak the per-row info suffix ("Modifikator -1, Preis 1") synchronously
+// from the chain-step input handler, right after the existing
+// "Stärke, 8" announce. We compute the modifier and cost ourselves
+// from the focused button's current value rather than reading the
+// engine's modifier_value / cost_value labels:
+//
+//   * The engine only refreshes those labels later, in the same
+//     OnUpdate's TickPendingOps when the cursor warp from this chain
+//     step fires — synchronous reads here got stale data from the
+//     previously focused row (off-by-one bug).
+//   * Even when the labels do refresh, the engine renders modifier=0
+//     as a bare "-" (no digit), which sounds broken.
+//   * Speaking later (post-pending) put the suffix AFTER the long
+//     description listbox utterance the engine queues from
+//     SetDescription — the user heard the suffix only after waiting
+//     through ~80 words of description.
+//
+// Hardcoding the D&D modifier rule + KOTOR's chargen point-buy curve
+// gives the same numbers the engine would produce, available
+// synchronously, with a clean "0" instead of "-".
 void AnnounceChainStepSuffix(void* panel, void* control);
 
 // On a +/- press, override the default "{label}, {value}"
