@@ -196,13 +196,21 @@ constexpr size_t    kPortraitRightArrowOffset        = 0xe84;
 constexpr size_t    kPortraitLeftArrowOffset         = 0x1048;
 constexpr size_t    kPortraitIdOffset                = 0x1238;
 
-// CSWCObject.portrait at +0xa8 (CSWPortrait, inline 16-byte CResRef).
-// CSWCCreature embeds CSWCObject at offset 0, so the same offset reads the
-// resref off any creature. Resref is char[16], may not be null-terminated
-// at the boundary (KOTOR resrefs are <= 16 chars + implicit terminator
-// only when shorter than 16).
+// CSWCObject.portrait at +0xa8 (CSWPortrait, inline 16-byte CResRef) —
+// reserved kept for the resref direct-read path even though the chargen
+// flow (verified 2026-05-09 in patch-20260509-053256.log) leaves this
+// field zero throughout cycling. The live cycle index is only reachable
+// via the engine accessor below.
 constexpr size_t    kCreaturePortraitResRefOffset    = 0xa8;
 constexpr size_t    kResRefSize                      = 16;
+
+// CSWCCreature::GetPortraitId — __thiscall, no args, returns the portrait
+// row index into portraits.2da (verified live: returned 24 → 25 across a
+// Right+Right+Left cycle in the chargen Porträtauswahl panel). The named
+// CSWCCreatureStats.portrait_id at +0x11c, CSWGuiPortraitCharGen.portrait_id
+// at +0x1238, and CSWCObject.portrait at +0xa8 are all stale during chargen
+// — this accessor is the only reliable read-side primitive we have.
+constexpr uintptr_t kAddrCSWCCreatureGetPortraitId   = 0x00617070;
 
 // ---------------------------------------------------------------------------
 // Container offsets verified against Lane's SARIF (DATATYPE entries for

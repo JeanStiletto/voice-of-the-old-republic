@@ -37,6 +37,33 @@ namespace acc::menus::extract {
 
 namespace {
 
+// CSWCCreature::GetPortraitId thiscall typedef — verified moving in the
+// chargen probe (24 → 25 across a net +1 cycle). Storage location is
+// opaque; the accessor is the only reliable source.
+typedef uint32_t (__thiscall* PFN_CSWCCreatureGetPortraitId)(void*);
+
+// portraits.2da row → baseresref. Indices 0..31 cover the chargen PC
+// rows (5 variants × 3 race codes × 2 genders, with two interleaved
+// non-PC rows — 12 = po_pt3m3, 13 = po_pcarth — left as nullptr because
+// the chargen filter (forpc=1) skips them and they aren't reachable
+// via the cycle. Companion rows 32+ (po_pbastila, po_phk47, etc.) are
+// also unreachable.
+//
+// Order derived from the data section of build/2da-extracted/portraits.2da
+// (string offsets monotonic in row order). Verified in-game:
+// portrait_id=24 is reached when cycling male portraits and matches
+// "po_pmhc3" (parsed → "männlich hellhäutig 3" / "male light-skinned 3").
+constexpr const char* kPortraitByRow[32] = {
+    "po_pfha1", "po_pfha2", "po_pfha3", "po_pfha4", "po_pfha5",  //  0..4
+    "po_pfhc1", "po_pfhc2", "po_pfhc3", "po_pfhc4", "po_pfhc5",  //  5..9
+    "po_pfhb1", "po_pfhb2",                                       // 10..11
+    nullptr, nullptr,                                             // 12..13 (T3, Carth)
+    "po_pfhb3", "po_pfhb4", "po_pfhb5",                          // 14..16
+    "po_pmha1", "po_pmha2", "po_pmha3", "po_pmha4", "po_pmha5",  // 17..21
+    "po_pmhc1", "po_pmhc2", "po_pmhc3", "po_pmhc4", "po_pmhc5",  // 22..26
+    "po_pmhb1", "po_pmhb2", "po_pmhb3", "po_pmhb4", "po_pmhb5",  // 27..31
+};
+
 // Cycle-category cache. Cycle widgets render as `[◀] value [▶]`; on each
 // activation the engine rewrites the middle button's CExoString to the
 // new value, losing the category name. We capture the (control →
@@ -868,22 +895,34 @@ const char* FromControl(void* control,
                     kLabelTextObjectOffset,
                     portraitText, sizeof(portraitText));
 
-                // Read the live portrait resref off panel.creature. SEH-
-                // wrapped because the chargen creature pointer can be null
-                // briefly during panel teardown / reinit between sub-screens.
-                char resref[kResRefSize + 1] = {0};
+                // Get the live portrait_id via the engine accessor on
+                // panel.creature. Direct field reads on the creature
+                // (+0xa8 CSWCObject.portrait, +0x14/+0x24 CSWCPlayer-style)
+                // and on the panel (+0x1238 portrait_id) all stay zero
+                // through cycling — only this accessor returns the moving
+                // value (verified 2026-05-09 in patch-20260509-053256.log:
+                // 24 → 25 across a Right+Right+Left sequence).
+                uint32_t portraitId = 0xFFFFFFFFu;
                 __try {
                     void* creature = *reinterpret_cast<void**>(
                         panelBase + kPortraitCharGenCreatureOffset);
                     if (creature) {
-                        const char* src = reinterpret_cast<const char*>(
-                            reinterpret_cast<unsigned char*>(creature) +
-                            kCreaturePortraitResRefOffset);
-                        memcpy(resref, src, kResRefSize);
-                        resref[kResRefSize] = '\0';
+                        auto getPid = reinterpret_cast<
+                            PFN_CSWCCreatureGetPortraitId>(
+                                kAddrCSWCCreatureGetPortraitId);
+                        portraitId = getPid(creature) & 0xFFFFu;
                     }
                 } __except (EXCEPTION_EXECUTE_HANDLER) {
-                    resref[0] = '\0';
+                    portraitId = 0xFFFFFFFFu;
+                }
+
+                // Map row → baseresref (kPortraitByRow covers PC rows
+                // 0..31). Indices 12, 13 (T3-M3, Carth) are nullptr; rows
+                // 32+ (companions) and out-of-range values fall through
+                // to the numeric fallback below.
+                const char* mappedResref = nullptr;
+                if (portraitId < 32 && kPortraitByRow[portraitId]) {
+                    mappedResref = kPortraitByRow[portraitId];
                 }
 
                 // Parse the regular chargen pattern: "po_p[mf]h[abc]\d".
@@ -893,21 +932,21 @@ const char* FromControl(void* control,
                 //   [5]    = 'h'
                 //   [6]    = race code ('a'|'b'|'c')
                 //   [7]    = variant digit '1'..'5'
-                // Anything else (companion portraits like po_pcarth, modded
-                // skins) flows through to the raw-resref fallback.
                 char description[128] = {0};
                 bool parsedPattern = false;
-                if (resref[0] == 'p' && resref[1] == 'o' &&
-                    resref[2] == '_' && resref[3] == 'p' &&
-                    resref[5] == 'h' &&
-                    (resref[4] == 'm' || resref[4] == 'f') &&
-                    (resref[6] == 'a' || resref[6] == 'b' || resref[6] == 'c') &&
-                    resref[7] >= '0' && resref[7] <= '9') {
-                    auto genderId = (resref[4] == 'f')
+                if (mappedResref &&
+                    mappedResref[0] == 'p' && mappedResref[1] == 'o' &&
+                    mappedResref[2] == '_' && mappedResref[3] == 'p' &&
+                    mappedResref[5] == 'h' &&
+                    (mappedResref[4] == 'm' || mappedResref[4] == 'f') &&
+                    (mappedResref[6] == 'a' || mappedResref[6] == 'b' ||
+                     mappedResref[6] == 'c') &&
+                    mappedResref[7] >= '0' && mappedResref[7] <= '9') {
+                    auto genderId = (mappedResref[4] == 'f')
                         ? acc::strings::Id::PortraitGenderFemale
                         : acc::strings::Id::PortraitGenderMale;
                     acc::strings::Id raceId = acc::strings::Id::Count_;
-                    switch (resref[6]) {
+                    switch (mappedResref[6]) {
                         case 'a': raceId = acc::strings::Id::PortraitRaceAsian; break;
                         case 'b': raceId = acc::strings::Id::PortraitRaceDark;  break;
                         case 'c': raceId = acc::strings::Id::PortraitRaceLight; break;
@@ -918,7 +957,7 @@ const char* FromControl(void* control,
                                      acc::strings::Id::FmtPortraitDescription),
                                  acc::strings::Get(genderId),
                                  acc::strings::Get(raceId),
-                                 (int)(resref[7] - '0'));
+                                 (int)(mappedResref[7] - '0'));
                         parsedPattern = true;
                     }
                 }
@@ -933,23 +972,33 @@ const char* FromControl(void* control,
                 } else if (parsedPattern) {
                     snprintf(outBuf, bufSize, fmtArrow,
                              label, description);
-                } else if (resref[0] != '\0') {
+                } else if (mappedResref) {
                     snprintf(outBuf, bufSize, fmtArrow,
-                             label, resref);
-                } else {
-                    uint32_t portraitId =
-                        ReadU32(ownerForPerkind, kPortraitIdOffset);
+                             label, mappedResref);
+                } else if (portraitId != 0xFFFFFFFFu) {
                     snprintf(outBuf, bufSize,
                              acc::strings::Get(
                                  acc::strings::Id::FmtPortraitArrowId),
                              label, (int)(portraitId + 1));
+                } else {
+                    // Couldn't even read GetPortraitId — fall back to
+                    // the panel's stale portrait_id field as a last
+                    // resort so the chain entry isn't text-less.
+                    uint32_t fallbackId =
+                        ReadU32(ownerForPerkind, kPortraitIdOffset);
+                    snprintf(outBuf, bufSize,
+                             acc::strings::Get(
+                                 acc::strings::Id::FmtPortraitArrowId),
+                             label, (int)(fallbackId + 1));
                 }
                 if (outBuf[0] != '\0') {
                     source = "perkind-portrait";
                     acclog::Write("Menus.PerKind",
                                   "PortraitCharGen control=%p anchor=left "
-                                  "resref=\"%s\" -> \"%s\"",
-                                  control, resref, outBuf);
+                                  "id=%u resref=%s -> \"%s\"",
+                                  control, portraitId,
+                                  mappedResref ? mappedResref : "<null>",
+                                  outBuf);
                 }
             }
         }
