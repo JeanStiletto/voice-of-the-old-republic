@@ -29,6 +29,7 @@
 #include "menus_charsheet.h" // Step 2A — character-sheet opener lifted out
 #include "menus_chargen_attr.h" // Chargen "Attribute" panel label + selected_ability sync
 #include "menus_chargen_skills.h" // Chargen "Fähigkeiten" panel — same shape as Attribute
+#include "menus_chargen_feats.h"  // Chargen "Talente" panel — 2D feat-tree chart
 #include "menus_extract.h"   // Step 2B — text extraction lifted out
 #include "menus_internal.h"  // Step 2B — shared seam with menus_extract
 #include "menus_pending.h"   // Step 3 — deferred-op queue lifted out
@@ -366,6 +367,12 @@ bool acc::menus::detail::IsChainNavigable(void* control) {
 // SetActiveControl announcement of the focused child to orient the user.
 static void AnnouncePanelTitle(void* panel) {
     if (!panel) return;
+
+    // Diagnostic: one-shot dump of CSWGuiFeatsCharGen structure (chart
+    // rows × cols, the four feat lists). No-ops on non-feat panels +
+    // dedups per panel pointer. Used to plan main-panel accessibility
+    // before the picker spec gets extended.
+    acc::menus::listbox::DumpFeatsCharGenStructureIfNeeded(panel);
 
     // Listbox-spec title override: any spec in menus_listbox.cpp can
     // declare its own title speech (used when the panel's .gui-baked
@@ -1315,6 +1322,18 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         int rv = 0;
         if (acc::menus::listbox::TryHandleInput(n, thisPtr, activePanel,
                                                  param_1, param_2, rv)) {
+            return rv;
+        }
+    }
+
+    // Chargen "Talente" main panel — 2D feat-tree chart navigation. Not
+    // a listbox-shaped surface (the chart is a single chart-control
+    // child of feats_listbox), so it has its own dispatcher rather than
+    // a listbox spec entry. See menus_chargen_feats.h for the design.
+    {
+        int rv = 0;
+        if (acc::menus::chargen_feats::HandleInput(
+                n, thisPtr, activePanel, param_1, param_2, rv)) {
             return rv;
         }
     }

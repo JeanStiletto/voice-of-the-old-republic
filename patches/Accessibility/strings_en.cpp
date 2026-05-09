@@ -130,6 +130,13 @@ const char* Get(Id id) {
         case Id::ChargenFeatGrantedTitle:    return "You receive these Talents";
         case Id::FmtChargenFeatGrantedRow:   return "%s, %d of %d";
 
+        case Id::FmtChargenFeatChartCell:    return "%s, %s";
+        case Id::ChargenFeatStatusAvailable: return "available";
+        case Id::ChargenFeatStatusExisting:  return "already learned";
+        case Id::ChargenFeatStatusGranted:   return "automatically granted";
+        case Id::ChargenFeatStatusLocked:    return "prerequisite missing";
+        case Id::ChargenFeatStatusChosen:    return "chosen";
+
         case Id::Count_:               return "";
     }
     return "";

@@ -412,6 +412,21 @@ enum class Id : int {
     ChargenFeatGrantedTitle,
     FmtChargenFeatGrantedRow,
 
+    // ---- Chargen Talente main panel (CSWGuiFeatsCharGen).
+    //      Each chart cell announces its feat name + a status word from
+    //      the cell's status byte (0=avail, 1=existing, 2=granted,
+    //      3=locked, 4=chosen).
+    //
+    //          FmtChargenFeatChartCell — "%s, %s" (feat name, status word)
+    //          ChargenFeatStatusAvailable / Existing / Granted / Locked /
+    //              Chosen — five status words, no args.
+    FmtChargenFeatChartCell,
+    ChargenFeatStatusAvailable,
+    ChargenFeatStatusExisting,
+    ChargenFeatStatusGranted,
+    ChargenFeatStatusLocked,
+    ChargenFeatStatusChosen,
+
     Count_,
 };
 

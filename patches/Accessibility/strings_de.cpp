@@ -140,6 +140,13 @@ const char* Get(Id id) {
         case Id::ChargenFeatGrantedTitle:    return "Du erh\xE4ltst diese Talente";  // erhältst
         case Id::FmtChargenFeatGrantedRow:   return "%s, %d von %d";
 
+        case Id::FmtChargenFeatChartCell:    return "%s, %s";
+        case Id::ChargenFeatStatusAvailable: return "verf\xFCgbar";              // verfügbar
+        case Id::ChargenFeatStatusExisting:  return "bereits gelernt";
+        case Id::ChargenFeatStatusGranted:   return "automatisch erhalten";
+        case Id::ChargenFeatStatusLocked:    return "Voraussetzung fehlt";
+        case Id::ChargenFeatStatusChosen:    return "ausgew\xE4hlt";              // ausgewählt
+
         case Id::Count_:               return "";
     }
     return "";

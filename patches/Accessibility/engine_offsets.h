@@ -384,6 +384,56 @@ constexpr size_t    kFeatsCharGenSelectButtonOffset     = 0x1238;
 constexpr size_t    kFeatsCharGenFeatsListBoxOffset     = 0x13fc;
 constexpr size_t    kFeatsCharGenDescriptionListBoxOffset = 0x16dc;
 
+// Four parallel feat lists tracked on the panel — each a
+// CExoArrayList<ushort> { ushort* data, int size, int capacity }
+// inline-stored 12 bytes apart. Together they partition every feat the
+// panel cares about so DetermineFeat can return a status byte:
+//
+//   field19 @ +0x19bc  data; @ +0x19c0 size  — existing  (creature already has)
+//   field20 @ +0x19c8  data; @ +0x19cc size  — granted   (auto-given this level)
+//   field23 @ +0x19d4  data; @ +0x19d8 size  — available (BuildAvailableList output)
+//   field26 @ +0x19e0  data; @ +0x19e4 size  — chosen    (picked this session)
+constexpr size_t    kFeatsCharGenExistingListDataOffset    = 0x19bc;
+constexpr size_t    kFeatsCharGenExistingListSizeOffset    = 0x19c0;
+constexpr size_t    kFeatsCharGenGrantedListDataOffset     = 0x19c8;
+constexpr size_t    kFeatsCharGenGrantedListSizeOffset     = 0x19cc;
+constexpr size_t    kFeatsCharGenAvailableListDataOffset   = 0x19d4;
+constexpr size_t    kFeatsCharGenAvailableListSizeOffset   = 0x19d8;
+constexpr size_t    kFeatsCharGenChosenListDataOffset      = 0x19e0;
+constexpr size_t    kFeatsCharGenChosenListSizeOffset      = 0x19e4;
+
+// CSWGuiSkillFlowChart embedded at +0x1a08 (struct size 0x10). It's the
+// 2D scrollable feat-tree grid: a CExoArrayList-shaped header + a
+// (selected_col, selected_row) pair packed into the trailing bytes.
+//
+//   chart +0x00  CSWGuiSkillFlow** rows_data
+//   chart +0x04  int               rows_size
+//   chart +0x08  int               rows_capacity
+//   chart +0x0c  byte              selected_col   (0..2 in BuildButtons)
+//   chart +0x0d  byte              selected_row
+constexpr size_t    kFeatsCharGenChartOffset               = 0x1a08;
+constexpr size_t    kSkillFlowChartRowsDataOffset          = 0x0;
+constexpr size_t    kSkillFlowChartRowsSizeOffset          = 0x4;
+constexpr size_t    kSkillFlowChartSelectedColOffset       = 0xc;
+constexpr size_t    kSkillFlowChartSelectedRowOffset       = 0xd;
+
+// CSWGuiSkillFlow row (1148 bytes). Three CSWGuiFlowSkillStruct columns
+// at +0x5c, +0x184, +0x2ac (stride 0x128) plus 2 connector-line images
+// at +0x3d4 / +0x428 the renderer uses to draw progression arrows.
+constexpr size_t    kSkillFlowFirstColumnOffset            = 0x5c;
+constexpr size_t    kSkillFlowColumnStride                 = 0x128;
+constexpr int       kSkillFlowColumnsPerRow                = 3;
+
+// Within a CSWGuiFlowSkillStruct (a single chart cell, 0x128 bytes):
+//   +0x11c  ulong  feat ID  (or 0xffffffff for an empty cell)
+//   +0x120  ulong  status   (0 avail, 1 chosen-this-level, 2 granted,
+//                            3 existing, 4 locked — same enum DetermineFeat
+//                            returns)
+//   +0x124  ulong  selection bits (bit 0 = currently selected)
+constexpr size_t    kFlowSkillStructFeatIdOffset           = 0x11c;
+constexpr size_t    kFlowSkillStructStatusOffset           = 0x120;
+constexpr unsigned  kFlowSkillStructEmptyFeatId            = 0xffffffff;
+
 // CSWRules / CSWSRules — the global rules object holds the feats array.
 // Global slot at 0x007a3a28 holds a CSWSRules* (which is a thin wrapper
 // containing CSWRules at offset 0, so the pointer doubles as a CSWRules*).
@@ -416,6 +466,34 @@ constexpr size_t    kFeatNameStrRefOffset         = 0x08;
 //   void __thiscall OnEnterFeat(ushort param_1)
 // Callee-pops 4 bytes (ushort widened to dword on stack).
 constexpr uintptr_t kAddrCSWGuiFeatsCharGenOnEnterFeat   = 0x006f2fb0;
+
+// CSWGuiFeatsCharGen::OnFeatPicked — the canonical "user clicked this
+// feat" engine entry point. Calls DetermineFeat to derive the user's
+// current intent (status byte: 0=add, 1=remove, 2/3/4=can't-change msg
+// box), then dispatches AddChosenFeat / RemoveChosenFeat / shows a
+// "you can't change this" popup. Calling it directly with the focused
+// cell's feat ID lets us bypass BTN_SELECT entirely — saves a chart
+// SetSelectedSkill round-trip (BTN_SELECT reads the chart's selected
+// (col,row) to derive the feat ID, but we already have the ID).
+//
+// Signature per Ghidra decomp (DECOMP @0x006f3c20):
+//   void __thiscall OnFeatPicked(ulong param_1)
+// Callee-pops 4 bytes.
+constexpr uintptr_t kAddrCSWGuiFeatsCharGenOnFeatPicked  = 0x006f3c20;
+
+// CSWGuiSkillFlowChart::SetSelectedSkill — sets the chart's render-side
+// selection state by feat ID. Walks rows × cols looking for the matching
+// feat, updates the chart's (selected_col, selected_row) pair and the
+// cell's selection bit. We call this AFTER OnEnterFeat to keep the chart's
+// visual highlight in sync with our keyboard focus — without it the user's
+// nav cursor and the rendered highlight diverge (engine treats the chart
+// as still pointing at the old cell, which matters if a later mouse-side
+// event reads back through the chart).
+//
+// Signature per Ghidra decomp (DECOMP @0x006cdc00):
+//   void __thiscall SetSelectedSkill(ulong param_1)
+// Callee-pops 4 bytes.
+constexpr uintptr_t kAddrCSWGuiSkillFlowChartSetSelectedSkill = 0x006cdc00;
 
 // ---------------------------------------------------------------------------
 // Container offsets verified against Lane's SARIF (DATATYPE entries for
