@@ -36,6 +36,17 @@ bool IsChargenAttributesPanel(void* panel);
 // WIS, INT, CHA — selected_ability uses the same order.
 int AbilityIndexFromButton(void* panel, void* control);
 
+// Cursor-Y compensation for the chain-step click-sim when the focus
+// is one of the ability_buttons[]. Returns the row pitch (~45 px)
+// computed from ability_buttons[0]/[1] extents, or 0 when no
+// compensation applies. The engine's hit-test on this panel resolves
+// one row ABOVE the cursor (same shift Options' tab cluster needs);
+// without this offset the engine fires OnEnterPointsButton for the
+// row above the focused row, which (a) shows the wrong description
+// in description_listbox and (b) overwrites selected_ability to the
+// wrong index. Mirror of g_tabClickOffsetY's role on Options panels.
+int RowPitchForCursorWarp(void* panel, void* control);
+
 // Write selected_ability for the chain's currently-focused button.
 // No-op when the chain panel isn't a chargen attributes panel or
 // chain focus isn't on a value button.

@@ -1535,6 +1535,16 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                     g_classIconClickOffsetX > 0) {
                     cursorX += g_classIconClickOffsetX;
                 }
+                // Chargen Attribute panel: same hit-test-shifts-up-one-row
+                // problem as Options tabs. Without this the cursor lands
+                // on the row above and the engine's OnEnterPointsButton
+                // populates description_listbox for the wrong ability.
+                {
+                    int abilityPitch =
+                        acc::menus::chargen_attr::RowPitchForCursorWarp(
+                            g_chainPanel, e.control);
+                    if (abilityPitch > 0) cursorY += abilityPitch;
+                }
                 acc::menus::pending::QueueMoveCursor(cursorX, cursorY, e.control);
                 // Suppress the next two SetActiveControl announces — engine-
                 // side focus echoes that fire after the keypress + cursor

@@ -72,6 +72,32 @@ void SyncSelectedAbilityFromChainFocus() {
     }
 }
 
+int RowPitchForCursorWarp(void* panel, void* control) {
+    if (AbilityIndexFromButton(panel, control) < 0) return 0;
+    auto* base = reinterpret_cast<unsigned char*>(panel);
+    int top0 = 0, top1 = 0;
+    __try {
+        // CSWGuiControl extent: { left, top, width, height } as four ints
+        // starting at +kControlExtentOffset. We want top, which is the
+        // second int (offset +0x4 within the extent struct).
+        auto* ext0 = reinterpret_cast<int*>(
+            base + kAbilitiesCharGenButtonsArrayOffset + kControlExtentOffset);
+        auto* ext1 = reinterpret_cast<int*>(
+            base + kAbilitiesCharGenButtonsArrayOffset + kCSWGuiButtonSize +
+            kControlExtentOffset);
+        top0 = ext0[1];
+        top1 = ext1[1];
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+    int pitch = top1 - top0;
+    // Sanity-bound: real pitch is ~45 px; reject anything outside a
+    // plausible UI row spacing range to avoid garbage offsets if a
+    // future build moves the layout.
+    if (pitch <= 0 || pitch > 100) return 0;
+    return pitch;
+}
+
 void CaptureLabelsIfApplicable(void* panel) {
     if (!IsChargenAttributesPanel(panel)) return;
     auto* base = reinterpret_cast<unsigned char*>(panel);
