@@ -260,6 +260,25 @@ constexpr int       kAbilitiesCharGenAbilityCount          = 6;
 constexpr size_t    kCSWGuiLabelSize                       = 0x140;
 constexpr size_t    kCSWGuiButtonSize                      = 0x1c4;
 
+// Three info-pair labels on this panel that aren't in the chain (they're
+// CSWGuiLabels, not buttons) but carry per-row state the user needs:
+//
+//   +0x70C  remaining-points VALUE  ("30" → "14" as the user spends).
+//           Mirrors the int at +0x3DB8 (ability_points_remaining); we
+//           read the rendered label so format quirks (commas, locale)
+//           pass through unchanged.
+//   +0xC0C  cost-points VALUE       ("0", "1", "3"). Refreshed per
+//           focused ability AND per +/- press. Reflects the cost in
+//           ability_points_remaining to push the FOCUSED ability up by
+//           one (D&D point-buy curve: 8→14 costs 1 each, 14→16 costs 2,
+//           16→18 costs 3).
+//   +0xE8C  modifier VALUE          ("0", "-1", "+4"). D&D modifier of
+//           the focused ability at its current value. Engine pre-formats
+//           the sign so we pass through unmodified.
+constexpr size_t    kAbilitiesCharGenRemainingValueOffset = 0x70c;
+constexpr size_t    kAbilitiesCharGenCostValueOffset      = 0xc0c;
+constexpr size_t    kAbilitiesCharGenModifierValueOffset  = 0xe8c;
+
 // ---------------------------------------------------------------------------
 // Container offsets verified against Lane's SARIF (DATATYPE entries for
 // CSWGuiPanel and CSWGuiListBox). CExoArrayList layout:

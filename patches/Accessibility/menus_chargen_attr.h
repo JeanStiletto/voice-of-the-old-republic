@@ -73,4 +73,24 @@ void SyncSelectedAbilityFromChainFocus();
 // No-op when `panel` isn't a chargen attributes panel.
 void CaptureLabelsIfApplicable(void* panel);
 
+// Speak the per-row info suffix ("Modifikator -1, Preis 1") right after
+// the chain-step's regular AnnounceControl utterance. Reads the panel's
+// modifier_value (+0xE8C) and cost_value (+0xC0C) labels — both refresh
+// as the engine fires OnEnterPointsButton on the focus change. No-op
+// when `panel` isn't chargen-attr or `control` isn't an ability_button.
+void AnnounceChainStepSuffix(void* panel, void* control);
+
+// On a +/- press, override the default "{label}, {value}"
+// re-announcement with "{value}, verbleibende Punkte {remaining}".
+// Returns true when the override fired (caller should NOT also speak
+// the default text), false otherwise. The label is intentionally
+// omitted on this path: the user just navigated to and acted on this
+// row, so the identity is fresh — what they need is the new value
+// and the remaining budget.
+//
+// Caller is responsible for keeping the focus monitor's last-text
+// snapshot in sync regardless of return value, so the next tick's
+// diff doesn't re-fire.
+bool AnnounceValueChange(void* panel, void* control);
+
 }  // namespace acc::menus::chargen_attr

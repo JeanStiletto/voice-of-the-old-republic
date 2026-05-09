@@ -101,10 +101,22 @@ void MonitorFocusedControl() {
 
     if (focused == s_focusMonitorControl) {
         if (strncmp(s_focusMonitorText, text, sizeof(s_focusMonitorText)) != 0) {
-            tolk::Speak(text, /*interrupt=*/false);
+            // Chargen Attribute panel: when a +/- press changes the
+            // focused row's value, override the default
+            // "{label}, {new_value}" re-announce with
+            // "{new_value}, verbleibende Punkte {remaining}". Returns
+            // true on the chargen-attr ability-button path; we still
+            // update the monitor's last-text snapshot so the next tick
+            // doesn't re-fire on the same diff.
+            bool handled = acc::menus::chargen_attr::AnnounceValueChange(
+                acc::menus::chain::g_chainPanel, focused);
+            if (!handled) {
+                tolk::Speak(text, /*interrupt=*/false);
+            }
             strncpy_s(s_focusMonitorText, text, _TRUNCATE);
-            acclog::Write("Monitor", "focused=%p text changed -> \"%s\"",
-                          focused, text);
+            acclog::Write("Monitor", "focused=%p text changed -> \"%s\"%s",
+                          focused, text,
+                          handled ? " (chargen-attr override)" : "");
         }
     } else {
         s_focusMonitorControl = focused;

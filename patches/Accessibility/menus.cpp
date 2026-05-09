@@ -1519,6 +1519,11 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             // OnPlusButton / OnMinusButton to the focused ability rather
             // than the default top row (STR). No-op on every other panel.
             acc::menus::chargen_attr::SyncSelectedAbilityFromChainFocus();
+            // Chargen Attribute panel: append the per-row info suffix
+            // ("Modifikator -1, Preis 1") right after the regular
+            // "Stärke, 8" announce. No-op on every other panel.
+            acc::menus::chargen_attr::AnnounceChainStepSuffix(
+                g_chainPanel, e.control);
             int cursorX = e.cx;
             int cursorY = e.cy;
             if (!e.textOnly) {

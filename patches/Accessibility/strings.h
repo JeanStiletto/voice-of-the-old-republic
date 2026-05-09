@@ -344,6 +344,27 @@ enum class Id : int {
     // 50 = neutral, 0 = Dark Side, 100 = Light Side.
     FmtCharSheetAlignment,
 
+    // ---- Chargen Attribute panel (CSWGuiAbilitiesCharGen).
+    //      The panel exposes per-row info that isn't in the chain
+    //      (Modifier, Cost) and a panel-level budget (Remaining points)
+    //      the user needs to budget allocations.
+    //
+    //      `FmtChargenAttrInfoSuffix` — appended on every chain step
+    //          into an ability button, after the existing
+    //          "{label}, {value}" announce. Two `%s` (modifier text
+    //          rendered by the engine — e.g. "-1", "+2", "0" — and the
+    //          per-row cost the next +1 would charge).
+    //      `FmtChargenAttrValueChange` — replaces the default
+    //          label-prefixed re-announce when a +/- press changes the
+    //          focused row's value. Two `%s` (the new value and the
+    //          updated remaining-points budget). The label name is
+    //          omitted on this path: the user just navigated to this
+    //          row and pressed +/- — the row identity is fresh in
+    //          context, what they need to hear is the result and
+    //          how much budget is left.
+    FmtChargenAttrInfoSuffix,
+    FmtChargenAttrValueChange,
+
     Count_,
 };
 
