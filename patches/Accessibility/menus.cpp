@@ -34,6 +34,7 @@
 #include "menus_internal.h"  // Step 2B — shared seam with menus_extract
 #include "menus_pending.h"   // Step 3 — deferred-op queue lifted out
 #include "menus_listbox.h"   // Step 4 — listbox-driven panel dispatcher
+#include "menus_editbox.h"   // Editbox (chargen Name) dispatcher + monitor
 #include "menus_chain.h"     // Step 5 — chain navigation lifted out
 #include "menus_monitors.h"  // Post-Step-5 — general per-tick monitors
 #include "engine_input.h"
@@ -384,6 +385,18 @@ static void AnnouncePanelTitle(void* panel) {
             acc::menus::listbox::GetTitleOverride(panel)) {
         acclog::Write("Menus.PanelWalk",
                       "title parent=%p (spec override) text=\"%s\"",
+                      panel, override);
+        tolk::Speak(override, /*interrupt=*/false);
+        return;
+    }
+
+    // Same hook for editbox-owning panels — CSWGuiNameChargen substitutes
+    // subtitle_label ("Name") for the stale main_title_label
+    // ("CHARAKTERAUSWAHL") that the generic walk would otherwise pick.
+    if (const char* override =
+            acc::menus::editbox::GetTitleOverride(panel)) {
+        acclog::Write("Menus.PanelWalk",
+                      "title parent=%p (editbox spec override) text=\"%s\"",
                       panel, override);
         tolk::Speak(override, /*interrupt=*/false);
         return;
@@ -1326,6 +1339,21 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         }
     }
 
+    // Editbox (input field) — when the editbox spec is in edit mode it
+    // claims Up/Down (re-speak text), Enter (submit), Esc (silent exit).
+    // Letters / Backspace / Left / Right are not consumed and reach the
+    // engine's editbox handler unchanged; the per-tick monitor catches
+    // their effects via the (text, caret) diff. Sits before chain nav so
+    // an in-edit-mode Up/Down re-read fires before chain nav would
+    // otherwise step focus on the same key.
+    {
+        int rv = 0;
+        if (acc::menus::editbox::TryHandleInput(n, thisPtr, activePanel,
+                                                 param_1, param_2, rv)) {
+            return rv;
+        }
+    }
+
     // Chargen "Talente" main panel — 2D feat-tree chart navigation. Not
     // a listbox-shaped surface (the chart is a single chart-control
     // child of feats_listbox), so it has its own dispatcher rather than
@@ -1934,6 +1962,7 @@ void TickMonitors() {
     // co-locate with their spec entries in menus_listbox.cpp.
     acc::menus::monitors::TickGeneralMonitors();
     acc::menus::listbox::TickListboxMonitors();
+    acc::menus::editbox::TickEditboxMonitors();
 }
 
 // Drain the menu-side pending-op queue. Called from core_tick::Dispatch

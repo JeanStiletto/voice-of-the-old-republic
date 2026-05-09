@@ -130,6 +130,73 @@ constexpr uintptr_t kVtableSlider = 0x0073E9D0;
 constexpr uintptr_t kVtableListBox = 0x0073E840;
 
 // ---------------------------------------------------------------------------
+// CSWGuiEditbox layout (verified against k1_win_gog_swkotor.exe.xml SYMBOL
+// CSWGuiEditbox_vtable @ 0x0073EAC8 + STRUCTURE size 0x160 + swkotor.exe.h
+// CSWGuiEditbox/CSWGuiEditText). The editbox is single-instance in vanilla
+// KOTOR — it appears only on the chargen Name panel as `name_editbox`.
+//
+//   +0x00..+0x6c   CSWGuiNavigable navigable
+//   +0x6c..+0xe0   CSWGuiBorder    border  (single border, not the dual-
+//                                           border CSWGuiButton has)
+//   +0xe0..+0x160  CSWGuiEditText  edit_text:
+//      +0xe0..+0x150  CSWGuiText text  (gui_string ptr at +0xf4 absolute,
+//                                       same shape as label/button)
+//      +0x150  short  caret-or-selection short A
+//      +0x152  short  caret-or-selection short B
+//      +0x154  undefined4
+//      +0x158  CExoString string (the *typed* text — c_string + length)
+//        +0x158  char* c_string
+//        +0x15c  uint32 length
+//
+// The two shorts at +0x150 / +0x152 are caret index and selection length
+// (in some order). swkotor.exe.h labels them `field1_0x70` / `field2_0x72`
+// without further specifying which is which. Initial assumption: +0x150 =
+// caret, +0x152 = selection length. The polling monitor logs both values
+// on every diff so we can verify on first run; once confirmed, we strip
+// the diagnostic.
+// ---------------------------------------------------------------------------
+constexpr uintptr_t kVtableEditbox             = 0x0073EAC8;
+constexpr size_t    kEditboxShortA             = 0x150;
+constexpr size_t    kEditboxShortB             = 0x152;
+constexpr size_t    kEditboxStringCStrOffset   = 0x158;
+constexpr size_t    kEditboxStringLengthOffset = 0x15c;
+
+// ---------------------------------------------------------------------------
+// CSWGuiNameChargen (chargen "Name eingeben" panel — step 5 of Eigener
+// Charakter, also reused in the Standard-Charakter quick flow). Verified
+// against k1_win_gog_swkotor.exe.xml SYMBOL CSWGuiNameChargen_vtable @
+// 0x00759F38 + STRUCTURE size 0x9C4 + swkotor.exe.h CSWGuiNameChargen.
+//
+//   +0x00..+0x64   CSWGuiPanel    panel
+//   +0x64          undefined4 field1
+//   +0x68          undefined4 field2
+//   +0x6c          CSWGuiButton   end_button   (BTN_OK — "Annehmen")
+//   +0x230         CSWGuiEditbox  name_editbox (the only editbox in vanilla)
+//   +0x390         CSWGuiLabel    main_title_label
+//   +0x4d0         CSWGuiLabel    subtitle_label
+//   +0x610         CSWGuiButton   back_button  (BTN_CANCEL — "Abbrechen")
+//   +0x7d4         CSWGuiButton   random_button ("Zufallsname")
+//   ...
+//
+// `name_editbox` is at a fixed offset within the panel struct (not just in
+// panel.controls[]), so the spec's findEditbox callback can index directly
+// rather than walking children for the unique vtable.
+// ---------------------------------------------------------------------------
+constexpr uintptr_t kVtableCSWGuiNameChargen   = 0x00759F38;
+constexpr size_t    kNameChargenEditboxOffset  = 0x230;
+constexpr size_t    kNameChargenEndButtonOffset = 0x6c;
+
+// CSWGuiNameChargen carries a `main_title_label` ("CHARAKTERAUSWAHL") and a
+// `subtitle_label` ("Name") at distinct fixed offsets. The first one is the
+// stale parent-flow header that BioWare reuses across all chargen sub-
+// panels; the second is the screen-specific title. Our title-walk picks
+// the first announceable label by panel-controls index, which lands on
+// main_title_label first — wrong for any user trying to know which step
+// they're on. The editbox spec's titleOverride reads subtitle_label
+// directly via this offset to substitute the correct title speech.
+constexpr size_t    kNameChargenSubtitleLabelOffset = 0x4d0;
+
+// ---------------------------------------------------------------------------
 // CSWGuiClassSelection (chargen "Klassenauswahl" panel — also backs the
 // second-level "Standard- vs. Eigener Charakter" prompt). Verified against
 // k1_win_gog_swkotor.exe.xml SYMBOL @ 0x00758020 + STRUCTURE size 0x1560.

@@ -399,6 +399,35 @@ const char* FromControl(void* control,
         source = "slider";
     }
 
+    // 6b. CSWGuiEditbox — same vtable-identity pattern as slider (no AsEditbox
+    //     accessor exists). The chargen Name screen's `name_editbox` is the
+    //     only editbox in vanilla KOTOR. Speech format: "{role}. {value}" so
+    //     the screen-reader user immediately knows they've landed in an input
+    //     field plus the current contents. The per-tick poll in
+    //     menus_editbox.cpp owns subsequent text-change announcements (single
+    //     char on insert/delete, full re-read on Up/Down or Random-button
+    //     replacement) — this branch only handles the focus-enter announce.
+    if (!source && IsEditbox(control)) {
+        const char* role  = acc::strings::Get(acc::strings::Id::EditboxRole);
+        const char* empty = acc::strings::Get(acc::strings::Id::EditboxEmpty);
+        const char* cstr =
+            *reinterpret_cast<const char**>(
+                static_cast<unsigned char*>(control) + kEditboxStringCStrOffset);
+        uint32_t len = *reinterpret_cast<uint32_t*>(
+            static_cast<unsigned char*>(control) + kEditboxStringLengthOffset);
+        if (cstr && len > 0) {
+            // Bound the copy so a corrupted length can't blow past outBuf.
+            char text[128];
+            uint32_t copyLen = len < sizeof(text) - 1 ? len : sizeof(text) - 1;
+            memcpy(text, cstr, copyLen);
+            text[copyLen] = '\0';
+            snprintf(outBuf, bufSize, "%s. %s", role, text);
+        } else {
+            snprintf(outBuf, bufSize, "%s. %s", role, empty);
+        }
+        source = "editbox";
+    }
+
     // 7. CSWGuiListBox content. The listbox is a container; its "text" is
     //    the concatenation of its row controls' texts. Many in-game modals
     //    (CSWGuiMessageBox-style — including the recurring 07434E40 OK/Cancel

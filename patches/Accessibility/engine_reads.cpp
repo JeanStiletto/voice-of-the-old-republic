@@ -172,6 +172,12 @@ bool IsListBox(void* control) {
     return reinterpret_cast<uintptr_t>(vt) == kVtableListBox;
 }
 
+bool IsEditbox(void* control) {
+    if (!control) return false;
+    void** vt = *reinterpret_cast<void***>(control);
+    return reinterpret_cast<uintptr_t>(vt) == kVtableEditbox;
+}
+
 bool ReadToggleState(void* toggle) {
     return (ReadU32(toggle, kButtonToggleStateOffset) & 1u) != 0;
 }

@@ -137,6 +137,10 @@ const char* Get(Id id) {
         case Id::ChargenFeatStatusLocked:    return "prerequisite missing";
         case Id::ChargenFeatStatusChosen:    return "chosen";
 
+        case Id::EditboxRole:                return "edit field";
+        case Id::EditboxEmpty:               return "empty";
+        case Id::EditboxEnd:                 return "end";
+
         case Id::Count_:               return "";
     }
     return "";

@@ -115,6 +115,7 @@ bool ExtractTextOrStrRefIndirect(void* control,
 bool IsToggle(void* control);
 bool IsSlider(void* control);
 bool IsListBox(void* control);
+bool IsEditbox(void* control);
 
 // Read CSWGuiButtonToggle.field2_0x1c8's bit 0. Decompiled HandleInputEvent
 // XOR's this bit on every activate, and SetSelected masks param to bit 0;

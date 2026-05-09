@@ -427,6 +427,23 @@ enum class Id : int {
     ChargenFeatStatusLocked,
     ChargenFeatStatusChosen,
 
+    // ---- Editbox / input field (only the chargen Name screen has one
+    //      in vanilla KOTOR, but the speech is shaped to suit any future
+    //      editbox).
+    //
+    //      EditboxRole  — role word ("Eingabefeld" / "edit field"). Spoken
+    //                     on focus-enter, separated from the current value
+    //                     by ". " in the announce path.
+    //      EditboxEmpty — placeholder spoken instead of an empty value
+    //                     ("leer" / "empty"). Used both on focus-enter and
+    //                     on Up/Down re-read when the field has no text.
+    //      EditboxEnd   — caret-at-end-of-string marker ("Ende" / "end").
+    //                     Spoken when Right arrow lands the caret past the
+    //                     last character (no char to read at the new caret).
+    EditboxRole,
+    EditboxEmpty,
+    EditboxEnd,
+
     Count_,
 };
 
