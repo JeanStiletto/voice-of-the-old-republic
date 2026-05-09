@@ -17,6 +17,7 @@
 #include "engine_reads.h"
 #include "log.h"
 #include "menus_charsheet.h"
+#include "menus_chargen_attr.h"
 #include "menus_chain.h"
 #include "menus_extract.h"
 #include "menus_internal.h"
@@ -500,6 +501,14 @@ void TickGeneralMonitors() {
     MonitorFocusedControl();
     MonitorPanelContents();
     MonitorDialogReplies();
+    // Re-assert chargen Attribute panel's selected_ability against chain
+    // focus. The engine's cursor-warp → OnEnterPointsButton path silently
+    // overwrites this field between our chain-step sync and the queued
+    // FireActivate from Left/Right; this monitor runs before
+    // TickPendingOps in the same OnUpdate, so OnPlusButton reads the
+    // correct value when the FireActivate fires. No-op on every other
+    // panel.
+    acc::menus::chargen_attr::SyncSelectedAbilityFromChainFocus();
 }
 
 void* FindActiveSubScreenPanel() {

@@ -27,6 +27,7 @@
 #include "tolk.h"
 #include "menus.h"           // public surface — Step 1 mod-wide tick split
 #include "menus_charsheet.h" // Step 2A — character-sheet opener lifted out
+#include "menus_chargen_attr.h" // Chargen "Attribute" panel label + selected_ability sync
 #include "menus_extract.h"   // Step 2B — text extraction lifted out
 #include "menus_internal.h"  // Step 2B — shared seam with menus_extract
 #include "menus_pending.h"   // Step 3 — deferred-op queue lifted out
@@ -870,6 +871,13 @@ static void WalkAndCaptureOnFirstSight(void* panel) {
                           c, text, strref);
         }
     }
+
+    // Chargen "Attribute" panel: each value button has an inline text "8"
+    // (the current value), so the generic capture above resolves the
+    // category to the value itself (useless). Override here by reading
+    // ability_labels[i] for each ability_buttons[i] and binding the pair
+    // into the cycle-category cache so FromControl produces "Stärke, 8".
+    acc::menus::chargen_attr::CaptureLabelsIfApplicable(panel);
 }
 
 // First focus into a new panel: speak its title once. The focused
@@ -1506,6 +1514,11 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             // ExtractAnnounceableText step 9c and the OnSetActiveControl
             // prefill path.
             AnnounceControl(e.control);
+            // Mirror chain focus into the chargen Attributes panel's
+            // selected_ability so the next Left/Right press routes
+            // OnPlusButton / OnMinusButton to the focused ability rather
+            // than the default top row (STR). No-op on every other panel.
+            acc::menus::chargen_attr::SyncSelectedAbilityFromChainFocus();
             int cursorX = e.cx;
             int cursorY = e.cy;
             if (!e.textOnly) {

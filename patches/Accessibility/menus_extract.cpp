@@ -276,6 +276,18 @@ void ResetCycleCategoryCache() {
 
 void CaptureCycleCategory(void* control, const char* category) {
     if (!control || !category) return;
+    // Upsert: if `control` is already in the cache, replace its category
+    // text. This lets a panel-specific override (e.g. chargen Attribute's
+    // ability_button → ability_label binding in menus_chargen_attr.cpp)
+    // replace whatever the generic capture loop registered earlier this
+    // panel-walk pass — without an upsert, `LookupCycleCategory` returns
+    // the first hit and the override silently loses.
+    for (int i = 0; i < s_cycleCategoryCount; ++i) {
+        if (s_cycleCategories[i].control == control) {
+            strncpy_s(s_cycleCategories[i].category, category, _TRUNCATE);
+            return;
+        }
+    }
     if (s_cycleCategoryCount >= kMaxCycleCategoryEntries) return;
     s_cycleCategories[s_cycleCategoryCount].control = control;
     strncpy_s(s_cycleCategories[s_cycleCategoryCount].category,

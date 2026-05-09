@@ -223,6 +223,44 @@ constexpr uintptr_t kAddrCSWCCreatureGetPortraitId   = 0x00617070;
 constexpr uintptr_t kAddrCSWCCreatureGetPortrait     = 0x00617030;
 
 // ---------------------------------------------------------------------------
+// CSWGuiAbilitiesCharGen (chargen "Attribute" panel — step 2 of Eigener
+// Charakter). Verified against k1_win_gog_swkotor.exe.xml SYMBOL @
+// 0x00759c68 + STRUCTURE size 0x3df4.
+//
+//   +0x110c..+0x1ba4   ability_labels[6]   (CSWGuiLabel[6], 0x140 each)
+//   +0x188c..+0x2324   ability_buttons[6]  (CSWGuiButton[6], 0x1c4 each)
+//   +0x2870..+0x3308   ability_plus_buttons[6]
+//   +0x3308..+0x3da0   ability_minus_buttons[6]
+//   +0x3dec            int selected_ability  ← the field +/- handlers read
+//
+// Struct order is STR(0), DEX(1), CON(2), WIS(3), INT(4), CHA(5) — matched
+// 1:1 against the addresses in patch-20260509-055548.log:1233-1241 by
+// computing button - panel_base for each chain entry. Note that this
+// differs from the visual top-to-bottom order: row 4 (INT) is struct
+// index 4, row 5 (WIS) is struct index 3. selected_ability uses struct
+// order, so derive the index from the button's offset (not its chain
+// position).
+//
+// Why we touch this panel: OnPlusButton (0x6f8670) / OnMinusButton
+// (0x6f8480) are zero-arg thiscalls that read selected_ability — the
+// fired button's identity is NOT used to pick which ability changes. The
+// engine only writes selected_ability on a real mouse click (or via the
+// engine's own OnEnterPointsButton on hover, which our chain-step cursor
+// warp doesn't reliably trigger because the engine's hit-test resolves
+// one row above the warp coords here too — same pattern as the Options
+// tab cluster). With selected_ability stuck at 0, every Left/Right press
+// modifies STR. We mirror chain focus into the field on every chain
+// rebind / step so +/- targets the focused row.
+// ---------------------------------------------------------------------------
+constexpr uintptr_t kVtableCSWGuiAbilitiesCharGen          = 0x00759c68;
+constexpr size_t    kAbilitiesCharGenLabelsArrayOffset     = 0x110c;
+constexpr size_t    kAbilitiesCharGenButtonsArrayOffset    = 0x188c;
+constexpr size_t    kAbilitiesCharGenSelectedAbilityOffset = 0x3dec;
+constexpr int       kAbilitiesCharGenAbilityCount          = 6;
+constexpr size_t    kCSWGuiLabelSize                       = 0x140;
+constexpr size_t    kCSWGuiButtonSize                      = 0x1c4;
+
+// ---------------------------------------------------------------------------
 // Container offsets verified against Lane's SARIF (DATATYPE entries for
 // CSWGuiPanel and CSWGuiListBox). CExoArrayList layout:
 //   +0x00  T**      data         (heap array of element pointers)
