@@ -353,6 +353,71 @@ constexpr size_t    kAbilitiesCharGenCostValueOffset      = 0xc0c;
 constexpr size_t    kAbilitiesCharGenModifierValueOffset  = 0xe8c;
 
 // ---------------------------------------------------------------------------
+// CSWGuiFeatsCharGen (chargen "Talente" panel — step 5 of Eigener Charakter,
+// also reused at level-up). Verified against k1_win_gog_swkotor.exe.xml
+// SYMBOL CSWGuiFeatsCharGen_vtable @ 0x007598b0 + STRUCTURE size 0x1a1c.
+//
+// Unlike the Skills/Abilities panels (fixed 8/6 row arrays of buttons), the
+// Feats panel renders feats through a single CSWGuiListBox (feats_listbox)
+// whose contents are built at runtime by BuildAvailableList based on the
+// chargen creature's class. A second listbox (description_listbox) holds
+// the multi-line description of the currently focused feat, and name_label
+// mirrors that feat's name.
+//
+//   +0xbac   CSWGuiLabel  name_label              (focused feat's name)
+//   +0xcec   CSWGuiButton accept_button           (BTN_ACCEPT, "OK")
+//   +0xeb0   CSWGuiButton back_button             (BTN_BACK, "Abbrechen")
+//   +0x1074  CSWGuiButton reccomended_button      (BTN_RECOMMENDED)
+//   +0x1238  CSWGuiButton select_button           (BTN_SELECT, "Hinzuf./Entf.")
+//   +0x13fc  CSWGuiListBox feats_listbox          (LB_FEATS — picker rows)
+//   +0x16dc  CSWGuiListBox description_listbox    (LB_DESC — wrapped text)
+//
+// The "second popup" the user sees when entering Talente isn't the main
+// panel — it's the SkillInfoBox-slot ShowGranted overlay (skillinfo.gui)
+// rendered on top, with its own listbox of granted feats. The main panel
+// stays underneath; its description_listbox.controls[0] mirrors the picker
+// selection so reading from there gives the focused-feat description.
+// ---------------------------------------------------------------------------
+constexpr uintptr_t kVtableCSWGuiFeatsCharGen           = 0x007598b0;
+constexpr size_t    kFeatsCharGenNameLabelOffset        = 0xbac;
+constexpr size_t    kFeatsCharGenSelectButtonOffset     = 0x1238;
+constexpr size_t    kFeatsCharGenFeatsListBoxOffset     = 0x13fc;
+constexpr size_t    kFeatsCharGenDescriptionListBoxOffset = 0x16dc;
+
+// CSWRules / CSWSRules — the global rules object holds the feats array.
+// Global slot at 0x007a3a28 holds a CSWSRules* (which is a thin wrapper
+// containing CSWRules at offset 0, so the pointer doubles as a CSWRules*).
+// Used to reverse-lookup a feat ID from a row's name strref:
+//
+//   feats   @ +0x90  CSWFeat[]   (each entry 0x48 bytes)
+//   field   @ +0xa4  ushort      feat_count (live count of valid entries)
+//
+// Within CSWFeat:
+//   +0x08   ulong   name_strref (the TLK strref the engine writes onto a
+//                                SkillEntry row's text_params)
+constexpr uintptr_t kAddrRulesGlobal              = 0x007a3a28;
+constexpr size_t    kRulesFeatsArrayOffset        = 0x90;
+constexpr size_t    kRulesFeatCountOffset         = 0xa4;
+constexpr size_t    kFeatStructSize               = 0x48;
+constexpr size_t    kFeatNameStrRefOffset         = 0x08;
+
+// CSWGuiFeatsCharGen::OnEnterFeat — engine handler that, given a feat
+// ID, runs DetermineFeat (sets the select-button label/colour for the
+// owned/can-add/granted/locked state), writes the feat's name strref
+// into name_label, and calls SetDescription(feat->description) to
+// repopulate description_listbox with the wrapped text. Calling this
+// synchronously after a programmatic picker selection_index write is
+// the equivalent of OnEnterPointsButton on the chargen Skills panel —
+// it bypasses the engine's hover-driven path that DriveListBoxSelection
+// short-circuits (no onSelectionChanged callback fires from a direct
+// selection_index store).
+//
+// Signature per Ghidra decomp (DECOMP @0x006f2fb0):
+//   void __thiscall OnEnterFeat(ushort param_1)
+// Callee-pops 4 bytes (ushort widened to dword on stack).
+constexpr uintptr_t kAddrCSWGuiFeatsCharGenOnEnterFeat   = 0x006f2fb0;
+
+// ---------------------------------------------------------------------------
 // Container offsets verified against Lane's SARIF (DATATYPE entries for
 // CSWGuiPanel and CSWGuiListBox). CExoArrayList layout:
 //   +0x00  T**      data         (heap array of element pointers)

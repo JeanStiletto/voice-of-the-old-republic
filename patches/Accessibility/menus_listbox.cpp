@@ -127,6 +127,23 @@ struct ListBoxPanelSpec {
     // moves), SaveLoad speaks on every step (no monitor watches it).
     void (*announce)(void* lb, const ListBoxNavResult& r);
 
+    // Optional per-row enrichment, fired AFTER `announce`. Used when the
+    // spec needs to fetch supplementary speech text from an auxiliary
+    // engine source — e.g. the SkillInfoBox spec calls
+    // CSWGuiFeatsCharGen::OnEnterFeat(featId) on the underlying main panel
+    // to repopulate its description_listbox, then reads + speaks it.
+    //
+    // Why split off `announce`: the row-name-and-position speech is a
+    // common shape across all specs, but the "fetch from elsewhere and
+    // speak extra context" path is intentionally a side-channel — it can
+    // call into the engine, can fault, can early-return, and shouldn't
+    // pollute the simpler announce path. Keeping the two callbacks
+    // separate means a spec that just wants to speak a row title (Container)
+    // doesn't have to think about enrichment, and vice versa.
+    //
+    // nullptr = no enrichment (most specs).
+    void (*enrichRow)(void* panel, const ListBoxNavResult& r);
+
     // Optional extra text appended to the standard nav log line.
     // SaveLoad uses it to log planet/area; others leave it nullptr.
     void (*logExtra)(char* out, size_t outN, const ListBoxNavResult& r);
@@ -137,6 +154,19 @@ struct ListBoxPanelSpec {
 
     // Handle Esc. Returns true if consumed. nullptr = don't handle Esc.
     bool (*onEsc)(void* panel);
+
+    // Optional title-speech override. Called from menus.cpp's
+    // AnnouncePanelTitle when a panel that this spec matches gets focus
+    // for the first time. Returning a non-null string substitutes that
+    // string for the generic title-walk speech; returning nullptr falls
+    // back to the generic walk (first announceable label child).
+    //
+    // Used by the SkillInfoBox spec to replace the BioWare-leftover
+    // placeholder ("Items Available to Place in Container and blah blah
+    // blah") that the chargen flow doesn't override at runtime.
+    //
+    // nullptr = no override (most specs — the generic title walk works).
+    const char* (*titleOverride)(void* panel);
 
     // After dispatch, if the event was NOT consumed, should the caller
     // still return (skipping all subsequent handlers)?
@@ -212,9 +242,11 @@ constexpr ListBoxPanelSpec kContainerSpec = {
     /*findListBox*/             ContainerFindLb,
     /*minSel*/                  0,
     /*announce*/                ContainerAnnounce,
+    /*enrichRow*/               nullptr,
     /*logExtra*/                nullptr,
     /*onEnter*/                 ContainerOnEnter,
     /*onEsc*/                   ContainerOnEsc,
+    /*titleOverride*/           nullptr,
     /*alwaysReturnFromHandler*/ true,
 };
 
@@ -286,9 +318,11 @@ constexpr ListBoxPanelSpec kSaveLoadSpec = {
     /*findListBox*/             SaveLoadFindLb,
     /*minSel*/                  0,
     /*announce*/                SaveLoadAnnounce,
+    /*enrichRow*/               nullptr,
     /*logExtra*/                SaveLoadLogExtra,
     /*onEnter*/                 SaveLoadOnEnter,
     /*onEsc*/                   SaveLoadOnEsc,
+    /*titleOverride*/           nullptr,
     /*alwaysReturnFromHandler*/ false,  // fall through so chain-nav can reach Delete
 };
 
@@ -402,21 +436,265 @@ constexpr ListBoxPanelSpec kEquipPickerSpec = {
     /*findListBox*/             EquipPickerFindLb,
     /*minSel*/                  1,  // skip protoitem template at row 0
     /*announce*/                EquipPickerAnnounce,
+    /*enrichRow*/               nullptr,
     /*logExtra*/                EquipPickerLogExtra,
     /*onEnter*/                 EquipPickerOnEnter,
     /*onEsc*/                   EquipPickerOnEsc,
+    /*titleOverride*/           nullptr,
     /*alwaysReturnFromHandler*/ false,  // fall through so slot-zone nav still works
+};
+
+// ============================================================================
+// SkillInfoBox — engine slot for "info popups" with a row list and OK.
+//
+// skillinfo.gui mounted on the engine's SkillInfoBox slot. Three live
+// controls: title label (id=0), LB_SKILLS listbox (id=2), BTN_OK (id=4).
+// The .gui's title is hard-baked to the BioWare placeholder "Items
+// Available to Place in Container and blah blah blah" — the chargen flow
+// doesn't override it at runtime, so we substitute via titleOverride.
+//
+// In the chargen Talente flow this surfaces as the "ShowGranted" popup —
+// CSWGuiFeatsCharGen mounts skillinfo.gui to dump the class's auto-granted
+// feats (different per class — Soldat, Schurke, Späher) before letting the
+// user proceed to actual feat selection on the underlying main panel.
+// Each row carries only icon + name strref; the feat ID itself isn't
+// stored on the row, so we recover it by reverse-lookup against the
+// rules' CSWFeat[] array (matching name strrefs).
+//
+// The underlying CSWGuiFeatsCharGen panel sits below this overlay on the
+// modal stack — calling its OnEnterFeat(featId) repopulates its
+// description_listbox.controls[0] with the wrapped feat description,
+// which we then read for the per-row enrichment speech.
+// ============================================================================
+
+constexpr int kSkillInfoBoxLbSkillsId = 2;
+constexpr int kSkillInfoBoxBtnOkId    = 4;
+
+bool SkillInfoBoxMatches(void* p) {
+    return IdentifyPanel(p) == PanelKind::SkillInfoBox;
+}
+
+void* SkillInfoBoxFindLb(void* p) {
+    return FindControlById(p, kSkillInfoBoxLbSkillsId);
+}
+
+// Walk the manager's panels[] for a CSWGuiFeatsCharGen instance. Returns
+// nullptr when none is mounted (e.g. SkillInfoBox shown from a different
+// chargen substep). Cheap — panels.size is ≤16 in practice and we only
+// fire from picker arrow steps.
+void* FindFeatsCharGenPanel() {
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!mgr) return nullptr;
+    auto* base = reinterpret_cast<unsigned char*>(mgr);
+    void** panelsData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+    int    panelsSize = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+    if (!panelsData || panelsSize <= 0) return nullptr;
+    int n = panelsSize > 32 ? 32 : panelsSize;
+    for (int i = 0; i < n; ++i) {
+        void* panel = panelsData[i];
+        if (!panel) continue;
+        void** vt = nullptr;
+        __try {
+            vt = *reinterpret_cast<void***>(panel);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            continue;
+        }
+        if (reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiFeatsCharGen) {
+            return panel;
+        }
+    }
+    return nullptr;
+}
+
+// Best-effort read of a CSWGuiLabel's rendered text via the engine's
+// resolved gui_string path with a strref/exostring fallback. Same shape
+// the chargen Skills helpers use.
+bool ReadLabelText(void* label, char* out, size_t outN) {
+    if (!label || !out || outN == 0) return false;
+    out[0] = '\0';
+    __try {
+        if (acc::engine::ReadGuiString(label, kLabelGuiStringPtrOffset,
+                                       out, outN) && out[0] != '\0') {
+            return true;
+        }
+        if (acc::engine::ExtractTextOrStrRefIndirect(
+                label, kLabelTextOffset, kLabelStrRefOffset,
+                kLabelTextObjectOffset, out, outN) && out[0] != '\0') {
+            return true;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        out[0] = '\0';
+    }
+    return false;
+}
+
+// Reverse-lookup: given the strref the engine wrote onto a SkillEntry row
+// (kLabelStrRefOffset within the SkillEntry — its label_hilight.label.text
+// .text_params.str_ref), find the matching feat in Rules->feats[] and
+// return the feat ID. Returns -1 on miss (row strref unset, lookup fault,
+// or no feat with matching name strref — happens in non-feat contexts
+// where SkillInfoBox would be reused for skills/force-powers).
+int ResolveFeatIdFromRowStrref(void* row, int& outRowStrref) {
+    outRowStrref = 0;
+    if (!row) return -1;
+    __try {
+        outRowStrref = *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(row) + kLabelStrRefOffset);
+        if (outRowStrref == -1 || outRowStrref == 0) return -1;
+        void* rules = *reinterpret_cast<void**>(kAddrRulesGlobal);
+        if (!rules) return -1;
+        auto* rulesBase = reinterpret_cast<unsigned char*>(rules);
+        auto* feats = *reinterpret_cast<unsigned char**>(
+            rulesBase + kRulesFeatsArrayOffset);
+        int featCount = *reinterpret_cast<unsigned short*>(
+            rulesBase + kRulesFeatCountOffset);
+        if (!feats || featCount <= 0 || featCount > 0x4000) return -1;
+        for (int i = 0; i < featCount; ++i) {
+            int s = *reinterpret_cast<int*>(
+                feats + i * kFeatStructSize + kFeatNameStrRefOffset);
+            if (s == outRowStrref) return i;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+    return -1;
+}
+
+// Standard per-row speech: just "feat name, N of M". The
+// fetch-and-speak-description side-channel runs in the enrichRow callback
+// below.
+void SkillInfoBoxAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
+    if (!r.row) return;
+    char rowText[128];
+    rowText[0] = '\0';
+    if (!acc::menus::extract::FromControl(r.row, rowText, sizeof(rowText))) {
+        return;
+    }
+    char head[200];
+    snprintf(head, sizeof(head),
+             acc::strings::Get(acc::strings::Id::FmtChargenFeatGrantedRow),
+             rowText, r.newSel + 1, r.rowCount);
+    tolk::Speak(head, /*interrupt=*/false);
+}
+
+// Per-row enrichment: refresh the underlying CSWGuiFeatsCharGen's
+// description_listbox via OnEnterFeat(featId), then read + speak that
+// description. Quietly no-ops in non-feat contexts (no main panel
+// mounted, or row strref doesn't resolve to a known feat).
+void SkillInfoBoxEnrichRow(void* /*panel*/, const ListBoxNavResult& r) {
+    if (!r.row) return;
+
+    void* fcp = FindFeatsCharGenPanel();
+    if (!fcp) {
+        // SkillInfoBox shown from a non-feat context — silent skip.
+        return;
+    }
+
+    int rowStrref = 0;
+    int featIdx = ResolveFeatIdFromRowStrref(r.row, rowStrref);
+    if (featIdx < 0) {
+        acclog::Write("SkillInfoBox",
+                      "feat-id lookup miss fcp=%p sel=%d strref=%d",
+                      fcp, r.newSel, rowStrref);
+        return;
+    }
+    unsigned short featId = static_cast<unsigned short>(featIdx);
+
+    // Synchronous engine call — fires DetermineFeat → SetDescription →
+    // ClearItems + AddControls on description_listbox. After this returns,
+    // description_listbox.controls[0] holds the wrapped text for featId.
+    typedef void (__thiscall* PFN_OnEnterFeat)(void* this_,
+                                               unsigned short featId);
+    __try {
+        auto fn = reinterpret_cast<PFN_OnEnterFeat>(
+            kAddrCSWGuiFeatsCharGenOnEnterFeat);
+        fn(fcp, featId);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("SkillInfoBox",
+                      "OnEnterFeat faulted fcp=%p featId=%u",
+                      fcp, (unsigned)featId);
+        return;
+    }
+
+    auto* fcpBase = reinterpret_cast<unsigned char*>(fcp);
+    void* descLb  = fcpBase + kFeatsCharGenDescriptionListBoxOffset;
+    auto* descList = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(descLb) + kListBoxControlsOffset);
+    void* descRow = nullptr;
+    __try {
+        if (descList && descList->data && descList->size > 0) {
+            descRow = descList->data[0];
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        descRow = nullptr;
+    }
+
+    char desc[1024];
+    if (descRow && ReadLabelText(descRow, desc, sizeof(desc)) &&
+        desc[0] != '\0') {
+        tolk::Speak(desc, /*interrupt=*/false);
+        // Newline-flatten for the diagnostic log line.
+        char dump[1024];
+        size_t dn = strnlen(desc, sizeof(desc) - 1);
+        if (dn >= sizeof(dump)) dn = sizeof(dump) - 1;
+        for (size_t i = 0; i < dn; ++i) {
+            char c = desc[i];
+            dump[i] = (c == '\n' || c == '\r') ? ' ' : c;
+        }
+        dump[dn] = '\0';
+        acclog::Write("SkillInfoBox",
+                      "desc fcp=%p featId=%u (first 300 chars: \"%.300s\")",
+                      fcp, (unsigned)featId, dump);
+    } else {
+        acclog::Write("SkillInfoBox",
+                      "desc fcp=%p featId=%u empty or unreadable",
+                      fcp, (unsigned)featId);
+    }
+}
+
+bool SkillInfoBoxOnEnter(void* panel) {
+    QueueButtonByIdActivate(panel, kSkillInfoBoxBtnOkId,
+                            "SkillInfoBox: Enter -> BTN_OK");
+    return true;
+}
+
+// Title override: substitute the localised "Du erhältst diese Talente"
+// string for the BioWare placeholder text baked into skillinfo.gui.
+// Only applies in the chargen Feats flow — gated by FindFeatsCharGenPanel
+// so future Force-Powers / Skills reuse can layer on different titles.
+const char* SkillInfoBoxTitleOverride(void* /*panel*/) {
+    if (FindFeatsCharGenPanel()) {
+        return acc::strings::Get(acc::strings::Id::ChargenFeatGrantedTitle);
+    }
+    return nullptr;  // unknown SkillInfoBox host — let the generic walk run
+}
+
+constexpr ListBoxPanelSpec kSkillInfoBoxSpec = {
+    /*logTag*/                  "SkillInfoBox",
+    /*matches*/                 SkillInfoBoxMatches,
+    /*armed*/                   nullptr,
+    /*resetStale*/              nullptr,
+    /*findListBox*/             SkillInfoBoxFindLb,
+    /*minSel*/                  0,
+    /*announce*/                SkillInfoBoxAnnounce,
+    /*enrichRow*/               SkillInfoBoxEnrichRow,
+    /*logExtra*/                nullptr,
+    /*onEnter*/                 SkillInfoBoxOnEnter,
+    /*onEsc*/                   nullptr,            // no Cancel button on this overlay
+    /*titleOverride*/           SkillInfoBoxTitleOverride,
+    /*alwaysReturnFromHandler*/ true,               // modal popup — don't fall through
 };
 
 // Spec table. Probe order matters: SaveLoad's structural matcher
 // (FindControlById signature check) is a superset that could in principle
 // match other panels with the same control IDs — Container and EquipPicker
 // have distinct PanelKind values, so they probe first by identity. In
-// practice the three matchers are disjoint; ordering here is just defensive.
+// practice the matchers are disjoint; ordering here is just defensive.
 constexpr const ListBoxPanelSpec* kSpecs[] = {
     &kContainerSpec,
     &kSaveLoadSpec,
     &kEquipPickerSpec,
+    &kSkillInfoBoxSpec,
 };
 constexpr int kNumSpecs = static_cast<int>(sizeof(kSpecs) / sizeof(kSpecs[0]));
 
@@ -428,13 +706,14 @@ constexpr int kNumSpecs = static_cast<int>(sizeof(kSpecs) / sizeof(kSpecs[0]));
 bool DispatchKeyDownEdge(const ListBoxPanelSpec& spec, void* panel,
                          int param_1)
 {
-    // Up / Down: drive the listbox cursor + announce.
+    // Up / Down: drive the listbox cursor + announce + optional enrichment.
     if (param_1 == kInputNavUp || param_1 == kInputNavDown) {
         void* lb = spec.findListBox(panel);
         ListBoxNavResult r;
         if (lb && DriveListBoxSelection(lb, /*navDown=*/param_1 == kInputNavDown,
                                         static_cast<short>(spec.minSel), r)) {
             spec.announce(lb, r);
+            if (spec.enrichRow) spec.enrichRow(panel, r);
             char extra[128] = {0};
             if (spec.logExtra) spec.logExtra(extra, sizeof(extra), r);
             acclog::Write(spec.logTag, "%s lb=%p sel=%d->%d (rows=%d)%s",
@@ -775,6 +1054,17 @@ void TickListboxMonitors() {
     MonitorContainerSelection();
     MonitorEquipPickerSelection();
     PollContainerGiveModeKey();
+}
+
+const char* GetTitleOverride(void* panel) {
+    if (!panel) return nullptr;
+    for (int i = 0; i < kNumSpecs; ++i) {
+        const ListBoxPanelSpec& spec = *kSpecs[i];
+        if (!spec.matches(panel)) continue;
+        if (!spec.titleOverride) return nullptr;
+        return spec.titleOverride(panel);
+    }
+    return nullptr;
 }
 
 }  // namespace acc::menus::listbox

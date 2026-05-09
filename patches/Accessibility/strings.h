@@ -396,6 +396,22 @@ enum class Id : int {
     FmtChargenSkillInfoSuffix,
     FmtChargenSkillValueChange,
 
+    // ---- Chargen Talente panel (CSWGuiFeatsCharGen).
+    //      The "second popup" on entry is skillinfo.gui mounted on the
+    //      engine's SkillInfoBox slot, populated via ShowGranted with the
+    //      feats the chargen class auto-grants at level 1 (different per
+    //      class, e.g. Soldat vs. Schurke). Its title label carries a
+    //      BioWare dev placeholder ("Items Available to Place in Container
+    //      and blah blah blah") that never gets overwritten — substitute
+    //      ChargenFeatGrantedTitle. Each row announces with
+    //      FmtChargenFeatGrantedRow.
+    //
+    //          ChargenFeatGrantedTitle — fixed phrase, no args.
+    //          FmtChargenFeatGrantedRow — one `%s` (feat name) and two
+    //              `%d` (1-based row index, total row count).
+    ChargenFeatGrantedTitle,
+    FmtChargenFeatGrantedRow,
+
     Count_,
 };
 

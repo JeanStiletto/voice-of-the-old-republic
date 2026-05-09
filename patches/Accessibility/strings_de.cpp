@@ -137,6 +137,9 @@ const char* Get(Id id) {
         case Id::FmtChargenSkillInfoSuffix:  return "Preis %s";
         case Id::FmtChargenSkillValueChange: return "%s, verbleibende Punkte %s";
 
+        case Id::ChargenFeatGrantedTitle:    return "Du erh\xE4ltst diese Talente";  // erhältst
+        case Id::FmtChargenFeatGrantedRow:   return "%s, %d von %d";
+
         case Id::Count_:               return "";
     }
     return "";

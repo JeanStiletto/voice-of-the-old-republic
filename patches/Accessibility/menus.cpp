@@ -366,6 +366,22 @@ bool acc::menus::detail::IsChainNavigable(void* control) {
 // SetActiveControl announcement of the focused child to orient the user.
 static void AnnouncePanelTitle(void* panel) {
     if (!panel) return;
+
+    // Listbox-spec title override: any spec in menus_listbox.cpp can
+    // declare its own title speech (used when the panel's .gui-baked
+    // title is wrong — e.g. SkillInfoBox carries a BioWare placeholder
+    // the chargen flow doesn't overwrite). Returns nullptr when no spec
+    // matches or the matched spec has no override, in which case the
+    // generic label-walk below runs.
+    if (const char* override =
+            acc::menus::listbox::GetTitleOverride(panel)) {
+        acclog::Write("Menus.PanelWalk",
+                      "title parent=%p (spec override) text=\"%s\"",
+                      panel, override);
+        tolk::Speak(override, /*interrupt=*/false);
+        return;
+    }
+
     auto* list = reinterpret_cast<CExoArrayList*>(
         reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
     if (!list->data || list->size <= 0) return;

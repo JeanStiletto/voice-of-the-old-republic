@@ -47,6 +47,19 @@ namespace acc::menus::listbox {
 bool TryHandleInput(int n, void* thisPtr, void* activePanel,
                     int param_1, int param_2, int& outRv);
 
+// Title-speech override lookup. If `panel` matches a listbox spec that
+// supplies its own title text (e.g. SkillInfoBox carries a BioWare dev
+// placeholder string baked into skillinfo.gui — see
+// `ChargenFeatGrantedTitle`), returns the localised replacement string.
+// Returns nullptr if no spec matches or the matched spec has no override.
+//
+// Called from menus.cpp's AnnouncePanelTitle before the generic
+// label-walk so any spec that knows its title is broken-by-default can
+// substitute correct speech. Lifting this hook into the spec table
+// keeps panel-specific knowledge in one place per panel, instead of
+// scattering `if (kind == X) speak("…")` checks into the title path.
+const char* GetTitleOverride(void* panel);
+
 // EquipPicker zone state. The picker arms when chain Enter activates an
 // equip slot button (BTN_INV_*); it stays armed until Enter commits a row,
 // Esc disarms, or the panel disappears from CSWGuiManager.panels[].
