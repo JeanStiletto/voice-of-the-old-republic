@@ -122,22 +122,47 @@ bool IsAvailable() {
 // shows when speech preempted in-flight output.
 void Speak(const wchar_t* text, bool interrupt) {
     if (!g_available || !text) return;
-    char audit[512];
-    int conv = WideCharToMultiByte(CP_UTF8, 0, text, -1, audit, sizeof(audit),
+    // Size the audit buffer to fit the input so long strings show in full
+    // in patch.log instead of silently failing the conversion (the speech
+    // path above is unaffected — pTolk_Output gets the original wide text).
+    char stack_audit[512];
+    char* audit = stack_audit;
+    char* heap_audit = nullptr;
+    int needed = WideCharToMultiByte(CP_UTF8, 0, text, -1, nullptr, 0,
+                                     nullptr, nullptr);
+    if (needed > (int)sizeof(stack_audit)) {
+        heap_audit = (char*)malloc((size_t)needed);
+        if (heap_audit) audit = heap_audit;
+        else needed = (int)sizeof(stack_audit);  // fall back: truncated log
+    }
+    int conv = WideCharToMultiByte(CP_UTF8, 0, text, -1, audit, needed,
                                    nullptr, nullptr);
     if (conv > 0) {
         acclog::Trace("Tolk.spoke", "%s%s", interrupt ? "[!] " : "", audit);
     }
+    if (heap_audit) free(heap_audit);
     pTolk_Output(text, interrupt);
 }
 
 void Speak(const char* text, bool interrupt) {
     if (!g_available || !text || !*text) return;
     acclog::Trace("Tolk.spoke", "%s%s", interrupt ? "[!] " : "", text);
-    wchar_t buf[512];
-    int n = MultiByteToWideChar(CP_ACP, 0, text, -1, buf, (int)(sizeof(buf) / sizeof(buf[0])));
-    if (n <= 0) return;
-    pTolk_Output(buf, interrupt);
+    // Size the wide buffer to fit the input — chargen-skill descriptions are
+    // ~600+ ANSI chars, so a fixed 512-wchar buffer silently dropped the
+    // longer ones (MultiByteToWideChar returned 0 / ERROR_INSUFFICIENT_BUFFER).
+    wchar_t stack_buf[256];
+    wchar_t* buf = stack_buf;
+    wchar_t* heap_buf = nullptr;
+    int needed = MultiByteToWideChar(CP_ACP, 0, text, -1, nullptr, 0);
+    if (needed <= 0) return;
+    if ((size_t)needed > sizeof(stack_buf) / sizeof(stack_buf[0])) {
+        heap_buf = (wchar_t*)malloc((size_t)needed * sizeof(wchar_t));
+        if (!heap_buf) return;
+        buf = heap_buf;
+    }
+    int n = MultiByteToWideChar(CP_ACP, 0, text, -1, buf, needed);
+    if (n > 0) pTolk_Output(buf, interrupt);
+    if (heap_buf) free(heap_buf);
 }
 
 void Silence() {
