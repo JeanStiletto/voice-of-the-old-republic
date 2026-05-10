@@ -709,3 +709,204 @@ typedef void (__thiscall* PFN_InGameEquipOnItemSelected)(void* panel, void* item
 typedef void (__thiscall* PFN_InGameEquipOnOKPressed)(void* panel, void* btn_equip);
 constexpr uintptr_t kAddrInGameEquipOnItemSelected = 0x006b7920;
 constexpr uintptr_t kAddrInGameEquipOnOKPressed    = 0x006b9160;
+
+// ---------------------------------------------------------------------------
+// Combat system — engine surfaces (per docs/combat-system.md, all
+// "suspected" / "known (DB)" until live-validated).
+//
+// The four combat pillars share a small set of engine layout knowledge:
+//
+//   CSWSCreature
+//     +0x9c8  CSWSCombatRound* combat_round
+//     +0xa74  CSWSCreatureStats* creature_stats
+//
+//   CSWSObject (base of CSWSCreature)
+//     +0xe0   short hit_points  (current; SetCurrentHitPoints writes here)
+//     +0x124  CExoArrayList<CSWSEffect*> effects
+//
+//   CSWSCombatRound  (size driven by largest field offset @0x9d0+1)
+//     +0x4    CSWSCombatAttackData attacks_list[7]   (each ~0xb0 bytes)
+//     +0x944  int   timer
+//     +0x94c  int   round_length
+//     +0x96c  byte  current_attack
+//     +0x9b0  CExoLinkedList<CSWSCombatRoundAction>* actions
+//     +0x9b4  CSWSCreature* player_creature  (back-pointer)
+//     +0x9b8  int   engaged
+//     +0x9d0  byte  current_action
+//
+//   CSWSCombatAttackData (per attack, ~0xb0 bytes)
+//     +0xc    ulong react_object   (target id)
+//     +0x18   short missed_by
+//     +0x38   short base_damage
+//     +0x3a   byte  weapon_attack_type
+//     +0x3b   byte  attack_mode
+//     +0x50   int   critical_threat
+//     +0x54   int   attack_deflected
+//     +0x5c   int   attack_result   (0=pending / 1=hit / 2=miss / 3=crit
+//                                    / 4=deflected — INFERRED, see plan)
+//     +0x64   int   attack_type
+//
+//   CSWSCombatRoundAction (linked-list node, ~0x84 bytes)
+//     +0x10   byte  action_type     (enum — see QueueVerb mapping below)
+//     +0x14   ulong target          (handle)
+//     +0x18   int   retargettable
+//     +0x38   Vector move_to_position
+//     +0x7c   int   attack_result
+//     +0x80   int   damage
+//
+// Action-type byte enum (ATTACK / SPELL / EQUIP / etc.) is suspected — the
+// values aren't pinned without a probe session. The mapping table in
+// combat_queue.cpp uses a best-effort guess matching the order the engine's
+// AddX adders are declared in (CSWSCombatRound::Add* @0x4d3660+).
+// ---------------------------------------------------------------------------
+
+constexpr size_t kCreatureCombatRoundOffset           = 0x9c8;
+constexpr size_t kObjectHitPointsOffset               = 0xe0;
+constexpr size_t kObjectEffectsOffset                 = 0x124;
+
+constexpr size_t kCombatRoundAttacksListOffset        = 0x4;
+constexpr size_t kCombatRoundTimerOffset              = 0x944;
+constexpr size_t kCombatRoundLengthOffset             = 0x94c;
+constexpr size_t kCombatRoundCurrentAttackOffset      = 0x96c;
+constexpr size_t kCombatRoundActionsOffset            = 0x9b0;
+constexpr size_t kCombatRoundEngagedOffset            = 0x9b8;
+constexpr size_t kCombatRoundCurrentActionOffset      = 0x9d0;
+
+// CSWSCombatAttackData stride. The header declares attacks_list as 7 fixed
+// entries; the field offsets above land inside one entry. Stride is the
+// distance between consecutive entries, derived from the +0xac
+// `sub_attacks` field (last named field) plus a CExoArrayList header
+// (~0x10 bytes). Conservative round-up to the next 16-byte slot.
+constexpr size_t kCombatAttackDataStride              = 0xc0;
+constexpr int    kCombatAttackDataCount               = 7;
+constexpr size_t kAttackDataReactObjectOffset         = 0xc;
+constexpr size_t kAttackDataMissedByOffset            = 0x18;
+constexpr size_t kAttackDataBaseDamageOffset          = 0x38;
+constexpr size_t kAttackDataAttackResultOffset        = 0x5c;
+constexpr size_t kAttackDataCriticalThreatOffset      = 0x50;
+constexpr size_t kAttackDataAttackDeflectedOffset     = 0x54;
+constexpr size_t kAttackDataAttackTypeOffset          = 0x64;
+
+// Inferred attack_result enum. Values guessed from the named conditions
+// (critical_threat, attack_deflected) — confirm via a one-shot probe per
+// the combat-system.md "open" list.
+constexpr int kAttackResultPending   = 0;
+constexpr int kAttackResultHit       = 1;
+constexpr int kAttackResultMiss      = 2;
+constexpr int kAttackResultCrit      = 3;
+constexpr int kAttackResultDeflected = 4;
+
+// CExoLinkedList layout — kept minimal for the queue walker. Nodes are
+// `{ next, prev, data }` (12 bytes). The `actions` member holds the head
+// node pointer; iterating via `next` until null yields each
+// CSWSCombatRoundAction.
+constexpr size_t kLinkedListHeadOffset   = 0x0;
+constexpr size_t kLinkedListNodeNextOff  = 0x0;
+constexpr size_t kLinkedListNodeDataOff  = 0x8;
+
+constexpr size_t kCombatRoundActionTypeOffset       = 0x10;
+constexpr size_t kCombatRoundActionTargetOffset     = 0x14;
+constexpr size_t kCombatRoundActionRetargetOffset   = 0x18;
+constexpr size_t kCombatRoundActionMoveToPosOffset  = 0x38;
+constexpr size_t kCombatRoundActionResultOffset     = 0x7c;
+constexpr size_t kCombatRoundActionDamageOffset     = 0x80;
+
+// Inferred action_type byte mapping. The engine's AddX adders on
+// CSWSCombatRound are declared in this order; matches typical enum-by-
+// declaration patterns. Validate via DumpBytes on each AddX path.
+constexpr unsigned char kActionTypeAttack          = 0;
+constexpr unsigned char kActionTypeSpellCast       = 1;
+constexpr unsigned char kActionTypeItemCast        = 2;
+constexpr unsigned char kActionTypeEquip           = 3;
+constexpr unsigned char kActionTypeUnequip         = 4;
+constexpr unsigned char kActionTypeMove            = 5;
+constexpr unsigned char kActionTypeUseTalent       = 6;
+constexpr unsigned char kActionTypeHeal            = 7;
+constexpr unsigned char kActionTypeCutscene        = 8;
+
+// Server-side combat-mode global. Read via accessor for safety; the
+// CClientExoApp facade is 8 bytes (vtable + internal), and the actual
+// flag lives on the internal struct.
+constexpr uintptr_t kAddrGetCombatMode                = 0x005ede70;
+constexpr uintptr_t kAddrGetPausedByCombat            = 0x005edc10;
+
+// CSWSCreature engine getters — Phase 2A snapshot path.
+constexpr uintptr_t kAddrCSWSCreatureGetMaxHitPoints  = 0x004ed310;
+constexpr uintptr_t kAddrCSWSCreatureGetArmorClass    = 0x004ed1d0;
+constexpr uintptr_t kAddrCSWSCreatureGetMaxForcePoints = 0x004fd490;
+constexpr uintptr_t kAddrCSWSCreatureGetDead          = 0x004ef820;
+constexpr uintptr_t kAddrCSWSObjectGetCurrentHitPoints = 0x004caec0;
+
+// CSWSCreatureStats getters — saves + attribute scores. CSWSCreatureStats
+// lives at CSWSCreature +0xa74 (kCreatureStatsPtrOffset).
+constexpr uintptr_t kAddrStatsGetSTR                  = 0x005a6190;
+constexpr uintptr_t kAddrStatsGetDEX                  = 0x005a61a0;  // tentative — adjacent slots
+constexpr uintptr_t kAddrStatsGetCON                  = 0x005a61b0;
+constexpr uintptr_t kAddrStatsGetINT                  = 0x005a61c0;
+constexpr uintptr_t kAddrStatsGetWIS                  = 0x005a61d0;
+constexpr uintptr_t kAddrStatsGetCHA                  = 0x005a61e0;
+constexpr uintptr_t kAddrStatsGetFortSave             = 0x005ab810;
+constexpr uintptr_t kAddrStatsGetWillSave             = 0x005ab880;
+constexpr uintptr_t kAddrStatsGetReflexSave           = 0x005ab8f0;
+constexpr uintptr_t kAddrStatsGetSimpleAlignmentGoodEvil = 0x005a5110;
+
+// CSWSCreatureStats inline attribute-total bytes (post-mod totals). Read
+// these directly to avoid relying on the GetXStat dispatch table (some of
+// the addresses above are tentative — adjacent-symbol guesses pending
+// SARIF confirmation). Field offsets per swkotor.exe.h (CSWCCreatureStats
+// has the same layout as CSWSCreatureStats at the byte level for these
+// fields per `accessibility-investigation.md`).
+constexpr size_t kStatsAttrTotalsOffset               = 0x34;  // 6 bytes: STR/DEX/CON/INT/WIS/CHA
+
+// CSWSCreature::GetFaction → CSWSFaction*. We don't decode the faction
+// struct here; faction-relation classification is deferred to a later
+// probe (Phase 2B "open"). The address is kept for the future hookup.
+constexpr uintptr_t kAddrCSWSCreatureGetFaction       = 0x00513fc0;
+
+// CGuiInGame::ShowExamineBox — DO NOT CALL DIRECTLY (skeleton).
+// Verified 2026-05-10 from Lane's symbol table: this is a 2-parameter
+// __thiscall — `void(ulong handle, int param_2)` with BYTES_PURGED=8.
+// param_2's purpose is unknown; the engine populates the panel via a
+// server roundtrip (`SendServerToPlayerExamineGui_CreatureData @0x56ebe0`
+// and 4 sister functions per object kind), so calling ShowExamineBox
+// without the prior server request leaves the panel showing stale text
+// from the last examine. The Phase 2C hotkey now reads stats directly
+// instead of trying to drive the panel.
+constexpr uintptr_t kAddrCGuiInGameShowExamineBox     = 0x0062d3e0;
+constexpr uintptr_t kAddrCGuiInGameHideExamineBox     = 0x0062d440;
+
+// CClientExoApp::GetObjectName — universal display-name accessor.
+// __thiscall(ulong handle, CExoString* outName) -> int. BYTES_PURGED=8
+// (verified 2026-05-10 from Lane's symbol table). Returns a localized
+// display name for any object kind, falling through the engine's own
+// name-resolution chain (template FirstName / appearance.2da
+// displayname / racialtypes.2da name / tag). Use this in preference to
+// engine_area::GetObjectName when working from a handle (queue targets,
+// LastTarget) — the latter falls back to the modder-assigned tag for
+// generic enemies whose `first_name` strref is empty.
+constexpr uintptr_t kAddrCClientExoAppGetObjectName   = 0x005ed350;
+
+// CSWGuiInGameMessages — combat log + dialog history panel.
+//   panel        @+0x0
+//   messages_lb  @+0x64    (combat-feedback log)
+//   dialog_lb    @+0x344   (dialog history)
+//   show_button  @+0x76c   (toggles between feedback / dialog view)
+//   exit_button  @+0x930
+constexpr size_t kInGameMessagesMessagesListBoxOffset = 0x64;
+constexpr size_t kInGameMessagesDialogListBoxOffset   = 0x344;
+constexpr size_t kInGameMessagesShowButtonOffset      = 0x76c;
+constexpr size_t kInGameMessagesExitButtonOffset      = 0x930;
+
+// CSWGuiDialog (and Cinematic / ComputerCamera variants which share base
+// layout):
+//   panel             @+0x0
+//   replies_listbox   @+0x19c4
+//   message_label     @+0x1ca4
+constexpr size_t kDialogRepliesListBoxOffset          = 0x19c4;
+constexpr size_t kDialogMessageLabelOffset            = 0x1ca4;
+
+// CSWGuiDialogComputer adds a terminal-output listbox above the embedded
+// replies listbox.
+//   message_listbox  @+0x2cfc   (terminal output text)
+//   obscure_label    @+0x34dc
+constexpr size_t kDialogComputerMessageListBoxOffset  = 0x2cfc;

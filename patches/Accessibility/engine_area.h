@@ -199,6 +199,24 @@ bool GetRoomDisplayName(void* area, int roomIndex,
 // (SEH-guarded internally).
 bool GetObjectName(void* gameObject, char* outBuf, size_t bufSize);
 
+// Localized display name lookup by object handle. Wraps the engine's
+// universal accessor `CClientExoApp::GetObjectName(ulong, CExoString*)`
+// — which returns the same name the in-game UI shows for any object
+// kind (creatures, items, doors, ...). Better than calling
+// GetObjectName(gameObject, ...) when working from a handle because
+// the engine's own resolution chain handles the cases where
+// `first_name` is empty (template FirstName + appearance.2da
+// displayname + racialtypes.2da fallbacks).
+//
+// `handle` accepts both client-side (high bit set) and server-side
+// (low bit) handles — the engine routes either correctly.
+//
+// Returns true on non-empty result; false on engine accessor failure
+// or empty name. outBuf is always NUL-terminated on entry (outBuf[0]
+// = '\0' even on failure path).
+bool GetObjectDisplayNameByHandle(uint32_t handle,
+                                  char* outBuf, size_t bufSize);
+
 // Pillar 4 sub-state predicates. The category-kind filter alone over-includes
 // — these refine to the player-relevant subset locked in the plan §"Categories":
 //

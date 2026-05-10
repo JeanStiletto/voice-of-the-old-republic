@@ -151,6 +151,69 @@ const char* Get(Id id) {
         case Id::EditboxEmpty:               return "leer";
         case Id::EditboxEnd:                 return "Ende";
 
+        case Id::CombatBegins:               return "Kampf beginnt";
+        case Id::CombatEnds:                 return "Kampf beendet";
+
+        case Id::PcStatHeader:               return "Status.";
+        case Id::FmtPcStatHpFp:              return "Lebenspunkte %d von %d, Machtpunkte %d von %d.";
+        case Id::FmtPcStatAc:                return "Verteidigung %d.";
+        case Id::FmtPcStatAttrs:             return "St\xE4rke %d, Geschicklichkeit %d, Verfassung %d, Intelligenz %d, Weisheit %d, Charisma %d.";
+        case Id::FmtPcStatSaves:             return "Rettungswurf: Z\xE4higkeit %d, Reflex %d, Willen %d.";
+        case Id::FmtPcStatAlignment:         return "Gesinnung %d.";
+        case Id::FmtPcStatEffectsHeader:     return "Aktive Effekte: %d.";
+        case Id::PcStatNoCharacter:          return "Kein Status verf\xFCgbar.";
+
+        // Skeleton: max-HP / AC reads are not yet safe (suspected engine
+        // accessors). Args reduced to (name, faction_word, hp_cur).
+        case Id::FmtTargetCombatBrief:       return "%s, %s, %d Lebenspunkte.";
+        case Id::FactionHostile:             return "feindlich";
+        case Id::FactionFriendly:            return "freundlich";
+        case Id::FactionNeutral:             return "neutral";
+        case Id::TargetIsDead:               return "tot";
+
+        case Id::ExamineOpened:              return "Untersuchen.";
+        case Id::ExamineNoTarget:            return "Kein Ziel zum Untersuchen.";
+        case Id::ExamineFailed:              return "Untersuchen fehlgeschlagen.";
+
+        case Id::FmtQueueOpen:               return "Aktionsschlange, %d Aktionen.";
+        case Id::QueueEmpty:                 return "Aktionsschlange ist leer.";
+        case Id::FmtQueueRow:                return "%s %s, %d von %d.";
+        case Id::FmtQueueRemoved:            return "Entfernt: %s.";
+        case Id::QueueCleared:               return "Schlange geleert.";
+        case Id::QueueClosed:                return "Schlange geschlossen.";
+        case Id::QueueRemoveFailed:          return "Aktion kann nicht entfernt werden.";
+        case Id::QueueVerbAttack:            return "Angriff";
+        case Id::QueueVerbCastForce:         return "Macht einsetzen";
+        case Id::QueueVerbItemCast:          return "Gegenstand benutzen";
+        case Id::QueueVerbEquip:             return "Anlegen";
+        case Id::QueueVerbUnequip:           return "Ablegen";
+        case Id::QueueVerbMove:              return "Bewegen";
+        case Id::QueueVerbHeal:              return "Heilen";
+        case Id::QueueVerbUseTalent:         return "Talent einsetzen";
+        case Id::QueueVerbCutscene:          return "Zwischensequenz";
+        case Id::QueueVerbUnknown:           return "Aktion";
+
+        // Skeleton: max-HP is not yet read safely (suspected engine
+        // accessor), so the hit / crit messages omit the "%s bei N von M"
+        // tail. Args reduced to (attacker, target, damage).
+        case Id::FmtAttackHit:               return "%s trifft %s f\xFCr %d Schaden.";
+        case Id::FmtAttackMiss:              return "%s verfehlt %s.";
+        case Id::FmtAttackCrit:              return "Kritischer Treffer! %s trifft %s f\xFCr %d Schaden.";
+        case Id::FmtAttackDeflected:         return "%s wird von %s pariert.";
+
+        case Id::FmtSavingThrowSucceeded:    return "%s besteht: %s %d gegen %d.";
+        case Id::FmtSavingThrowFailed:       return "%s scheitert: %s %d gegen %d.";
+        case Id::SaveTypeFort:               return "Z\xE4higkeit";
+        case Id::SaveTypeReflex:             return "Reflex";
+        case Id::SaveTypeWill:               return "Willen";
+
+        case Id::FmtDialogReplies:           return "%d Antworten verf\xFCgbar.";
+        case Id::DialogReplyUnavailable:     return "nicht verf\xFCgbar";
+        case Id::FmtDialogReplyUnavailableRow: return "%s, %s, %d von %d";
+
+        case Id::MessagesTitleCombatLog:     return "Kampfprotokoll.";
+        case Id::MessagesTitleDialogLog:     return "Dialogverlauf.";
+
         case Id::Count_:               return "";
     }
     return "";

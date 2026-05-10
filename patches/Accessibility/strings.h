@@ -444,6 +444,124 @@ enum class Id : int {
     EditboxEmpty,
     EditboxEnd,
 
+    // ---- Combat system, Phase 1A — combat-mode entry/exit announcement.
+    //      Spoken when CClientExoApp.combat_mode transitions; debounced via
+    //      the stability pattern in turn_announce.cpp.
+    CombatBegins,
+    CombatEnds,
+
+    // ---- Combat system, Phase 2A — selected-PC full stat block hotkey.
+    //      Composed line; each fragment is one Fmt* below. Same pattern
+    //      MaybeAnnounce in menus_charsheet.cpp uses.
+    //      `FmtPcStatHpFp` — 4 `%d` (hpCur, hpMax, fpCur, fpMax).
+    //      `FmtPcStatAc` — 1 `%d` (ac).
+    //      `FmtPcStatAttrs` — 6 `%d` (str, dex, con, int, wis, cha).
+    //      `FmtPcStatSaves` — 3 `%d` (fort, refl, will).
+    //      `FmtPcStatAlignment` — 1 `%d` (alignment 0..100).
+    //      `FmtPcStatEffectsHeader` — 1 `%d` (active effect count).
+    //      `PcStatHeader` — fixed; spoken first ("Status").
+    //      `PcStatNoCharacter` — fallback when no player creature resolved.
+    PcStatHeader,
+    FmtPcStatHpFp,
+    FmtPcStatAc,
+    FmtPcStatAttrs,
+    FmtPcStatSaves,
+    FmtPcStatAlignment,
+    FmtPcStatEffectsHeader,
+    PcStatNoCharacter,
+
+    // ---- Combat system, Phase 2B — opponent cycle-announcement
+    //      enrichment. Appended to the existing passive_narrate target
+    //      announce when the target is a creature (hostile or neutral).
+    //      Args `FmtTargetCombatBrief`: target_name (`%s`), HP_cur (`%d`),
+    //      HP_max (`%d`), AC (`%d`), faction word (`%s`).
+    //      `FactionHostile` / `FactionFriendly` / `FactionNeutral` —
+    //      faction-relation words.
+    //      `TargetIsDead` — appended when the creature is dead.
+    FmtTargetCombatBrief,
+    FactionHostile,
+    FactionFriendly,
+    FactionNeutral,
+    TargetIsDead,
+
+    // ---- Combat system, Phase 2C — examine hotkey (Shift+H). Spoken on
+    //      open / close / no-target failure.
+    ExamineOpened,
+    ExamineNoTarget,
+    ExamineFailed,
+
+    // ---- Combat system, Phase 3A — action queue submenu.
+    //      `FmtQueueOpen` — opener pre-roll. Args: queue length (`%d`).
+    //      `QueueEmpty` — fixed; spoken on Open with no queue.
+    //      `FmtQueueRow` — per-row announce on Up/Down. Args: action verb
+    //                      (`%s`), target name (`%s`), 1-based index (`%d`),
+    //                      total (`%d`).
+    //      `FmtQueueRemoved` — confirmation after Enter remove. Args: verb.
+    //      `QueueCleared` — confirmation after Shift+Enter wipe.
+    //      `QueueClosed` — Esc-out without changes.
+    //      `QueueRemoveFailed` — spoken if remove primitive fails.
+    //      Action verbs (resolved from action_type byte): one per kind.
+    FmtQueueOpen,
+    QueueEmpty,
+    FmtQueueRow,
+    FmtQueueRemoved,
+    QueueCleared,
+    QueueClosed,
+    QueueRemoveFailed,
+    QueueVerbAttack,
+    QueueVerbCastForce,
+    QueueVerbItemCast,
+    QueueVerbEquip,
+    QueueVerbUnequip,
+    QueueVerbMove,
+    QueueVerbHeal,
+    QueueVerbUseTalent,
+    QueueVerbCutscene,
+    QueueVerbUnknown,
+
+    // ---- Combat system, Phase 4A — per-attack resolved callout.
+    //      `FmtAttackHit` — args: attacker (`%s`), target (`%s`), damage
+    //                       (`%d`), target_hp_cur (`%d`), target_hp_max
+    //                       (`%d`).
+    //      `FmtAttackMiss` — args: attacker, target.
+    //      `FmtAttackCrit` — args: attacker, target, damage, hp_cur, hp_max.
+    //      `FmtAttackDeflected` — args: attacker, target.
+    //      Used by combat::Phase4Tick when an attack record's attack_result
+    //      transitions from pending (0) to resolved.
+    FmtAttackHit,
+    FmtAttackMiss,
+    FmtAttackCrit,
+    FmtAttackDeflected,
+
+    // ---- Combat system, Phase 4B — saving-throw callout.
+    //      `FmtSavingThrowSucceeded` / `FmtSavingThrowFailed` — args:
+    //      target (`%s`), saveType (`%s`), roll (`%d`), dc (`%d`).
+    //      `SaveTypeFort` / `SaveTypeReflex` / `SaveTypeWill` — type words.
+    FmtSavingThrowSucceeded,
+    FmtSavingThrowFailed,
+    SaveTypeFort,
+    SaveTypeReflex,
+    SaveTypeWill,
+
+    // ---- Dialog screen, Phase 1D — live conversation replies count cue.
+    //      `FmtDialogReplies` — spoken on entry to a node with replies.
+    //      Arg: count (`%d`).
+    //      `DialogReplyUnavailable` — suffix appended via enrichRow when a
+    //      reply is gated (active=0).
+    FmtDialogReplies,
+    DialogReplyUnavailable,
+    // Per-row reply announce when the entry is greyed (active=0). Args:
+    // row_text (`%s`), unavailable_word (`%s`), index (`%d`), total
+    // (`%d`). Separate from FmtContainerItemAt so the localised "von" /
+    // "of" stays in the table.
+    FmtDialogReplyUnavailableRow,
+
+    // ---- Messages-panel review titles. Spoken when the InGameMessages
+    //      panel becomes foreground (titleOverride). Two channels — the
+    //      combat log and the dialog history.
+    MessagesTitleCombatLog,
+    MessagesTitleDialogLog,
+
     Count_,
 };
 

@@ -141,6 +141,69 @@ const char* Get(Id id) {
         case Id::EditboxEmpty:               return "empty";
         case Id::EditboxEnd:                 return "end";
 
+        case Id::CombatBegins:               return "Combat begins";
+        case Id::CombatEnds:                 return "Combat ends";
+
+        case Id::PcStatHeader:               return "Status.";
+        case Id::FmtPcStatHpFp:              return "Hit points %d of %d, Force points %d of %d.";
+        case Id::FmtPcStatAc:                return "Defense %d.";
+        case Id::FmtPcStatAttrs:             return "Strength %d, Dexterity %d, Constitution %d, Intelligence %d, Wisdom %d, Charisma %d.";
+        case Id::FmtPcStatSaves:             return "Saves: Fortitude %d, Reflex %d, Will %d.";
+        case Id::FmtPcStatAlignment:         return "Alignment %d.";
+        case Id::FmtPcStatEffectsHeader:     return "Active effects: %d.";
+        case Id::PcStatNoCharacter:          return "No character status available.";
+
+        // Skeleton: max-HP / AC reads are not yet safe (suspected engine
+        // accessors). Args reduced to (name, faction_word, hp_cur).
+        case Id::FmtTargetCombatBrief:       return "%s, %s, %d hit points.";
+        case Id::FactionHostile:             return "hostile";
+        case Id::FactionFriendly:            return "friendly";
+        case Id::FactionNeutral:             return "neutral";
+        case Id::TargetIsDead:               return "dead";
+
+        case Id::ExamineOpened:              return "Examine.";
+        case Id::ExamineNoTarget:            return "No target to examine.";
+        case Id::ExamineFailed:              return "Examine failed.";
+
+        case Id::FmtQueueOpen:               return "Action queue, %d actions.";
+        case Id::QueueEmpty:                 return "Action queue is empty.";
+        case Id::FmtQueueRow:                return "%s %s, %d of %d.";
+        case Id::FmtQueueRemoved:            return "Removed: %s.";
+        case Id::QueueCleared:               return "Queue cleared.";
+        case Id::QueueClosed:                return "Queue closed.";
+        case Id::QueueRemoveFailed:          return "Cannot remove this action.";
+        case Id::QueueVerbAttack:            return "Attack";
+        case Id::QueueVerbCastForce:         return "Cast Force power";
+        case Id::QueueVerbItemCast:          return "Use item";
+        case Id::QueueVerbEquip:             return "Equip";
+        case Id::QueueVerbUnequip:           return "Unequip";
+        case Id::QueueVerbMove:              return "Move";
+        case Id::QueueVerbHeal:              return "Heal";
+        case Id::QueueVerbUseTalent:         return "Use talent";
+        case Id::QueueVerbCutscene:          return "Cutscene";
+        case Id::QueueVerbUnknown:           return "Action";
+
+        // Skeleton: max-HP is not yet read safely (suspected engine
+        // accessor), so the hit / crit messages omit the "X of Y hp"
+        // tail. Args reduced to (attacker, target, damage).
+        case Id::FmtAttackHit:               return "%s hits %s for %d damage.";
+        case Id::FmtAttackMiss:              return "%s misses %s.";
+        case Id::FmtAttackCrit:              return "Critical! %s strikes %s for %d damage.";
+        case Id::FmtAttackDeflected:         return "%s's attack on %s is deflected.";
+
+        case Id::FmtSavingThrowSucceeded:    return "%s saves: %s %d versus %d.";
+        case Id::FmtSavingThrowFailed:       return "%s fails save: %s %d versus %d.";
+        case Id::SaveTypeFort:               return "Fortitude";
+        case Id::SaveTypeReflex:             return "Reflex";
+        case Id::SaveTypeWill:               return "Will";
+
+        case Id::FmtDialogReplies:           return "%d replies available.";
+        case Id::DialogReplyUnavailable:     return "unavailable";
+        case Id::FmtDialogReplyUnavailableRow: return "%s, %s, %d of %d";
+
+        case Id::MessagesTitleCombatLog:     return "Combat log.";
+        case Id::MessagesTitleDialogLog:     return "Dialog log.";
+
         case Id::Count_:               return "";
     }
     return "";

@@ -334,6 +334,78 @@ void BuildDoorSuffix(void* serverDoor, char* outBuf, size_t bufSize) {
 
 }  // namespace
 
+// Inner: one engine call with the exact handle we got. Returns true
+// on a non-empty resolved name. Empty result and engine-side faults
+// fold into a single false return so the outer can retry.
+static bool TryResolveDisplayNameOnce(void* clientApp, uint32_t handle,
+                                      char* outBuf, size_t bufSize) {
+    typedef int (__thiscall* PFN_GetObjectName)(void* this_, uint32_t handle,
+                                                CExoString* outStr);
+    CExoString out{nullptr, 0};
+    __try {
+        auto fn = reinterpret_cast<PFN_GetObjectName>(
+            kAddrCClientExoAppGetObjectName);
+        fn(clientApp, handle, &out);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (!out.c_string || out.length == 0 || out.length >= bufSize) {
+        return false;
+    }
+    __try {
+        memcpy(outBuf, out.c_string, out.length);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        outBuf[0] = '\0';
+        return false;
+    }
+    outBuf[out.length] = '\0';
+    return outBuf[0] != '\0';
+}
+
+bool GetObjectDisplayNameByHandle(uint32_t handle,
+                                  char* outBuf, size_t bufSize) {
+    if (!outBuf || bufSize < 2) return false;
+    outBuf[0] = '\0';
+    if (handle == 0u || handle == 0xFFFFFFFFu || handle == 0x7F000000u) {
+        return false;
+    }
+
+    void* clientApp = nullptr;
+    __try {
+        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
+        if (!appManager) return false;
+        clientApp = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(appManager) +
+            kAppManagerClientAppOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (!clientApp) return false;
+
+    // Try the handle as-is first. Then, if that fails AND the handle
+    // looked server-side (high bit clear), retry with the high bit
+    // set. CClientExoApp::GetObjectName resolves only the client-side
+    // namespace (verified 2026-05-10 in patch-20260510-003647.log:
+    // 0x8000002c → "Sith-Soldat" succeeded; 0x0000002c → empty/tag
+    // fallback). Server-side IDs with high bit cleared share their
+    // low 24 bits with the matching client handle per
+    // memory:project_object_handle_namespaces, so OR'ing 0x80000000
+    // is the namespace-cross conversion.
+    if (TryResolveDisplayNameOnce(clientApp, handle, outBuf, bufSize)) {
+        return true;
+    }
+    if ((handle & 0x80000000u) == 0u) {
+        outBuf[0] = '\0';
+        if (TryResolveDisplayNameOnce(clientApp,
+                                      handle | 0x80000000u,
+                                      outBuf, bufSize)) {
+            return true;
+        }
+    }
+    outBuf[0] = '\0';
+    return false;
+}
+
 bool GetObjectName(void* gameObject, char* outBuf, size_t bufSize) {
     if (!gameObject || !outBuf || bufSize < 2) return false;
     outBuf[0] = '\0';

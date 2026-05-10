@@ -7,6 +7,8 @@
 #pragma comment(lib, "user32.lib")
 
 #include "actionbar_menu.h"
+#include "combat_query.h"   // Phase 2C — Shift+H Examine + Phase 2A PC stat read
+#include "combat_queue.h"   // Phase 3A — action-queue submenu (Shift+K)
 #include "cycle_state.h"
 #include "engine_actionbar.h"
 #include "engine_area.h"
@@ -660,15 +662,61 @@ void PollHotkey() {
         if (risingK7) AnnounceBarePersonalKey(3);
     }
 
-    // Action-bar-active path: route Up/Down/Enter/Esc to the submenu. Esc
-    // is included here even though the radial path delegates it to the
-    // manager — the action bar is in-world and unbound, so the manager
-    // never sees Esc presses while no menu panel is foreground (Esc would
-    // normally pop the game menu). Catching it here lets the user back out
-    // cleanly without the game-menu side effect.
+    // Combat system, Phase 2C — Shift+H Examine. Self-gated on
+    // foreground + in-world inside the helper.
+    acc::combat::query::PollWin32Hotkey();
+
+    // Combat system, Phase 3A — Shift+K opens the action-queue submenu.
+    // The Open path also self-gates internally; route the submenu's
+    // input dispatch below so Up/Down/Enter/Esc reach it while armed.
+    acc::combat::queue::PollWin32Hotkey();
+
+    // Combat system, Phase 2A — Shift+S reads the selected-PC full
+    // stat block (one-shot speak; no menu state). Same Win32 polling
+    // pattern as the other in-world hotkeys.
+    static bool s_prevS = false;
+    bool sK     = down('S');
+    bool sShift = down(VK_SHIFT) || down(VK_LSHIFT) || down(VK_RSHIFT);
+    bool risingS = sK && !s_prevS;
+    s_prevS = sK;
+    if (inWorld && sShift && risingS) {
+        acc::combat::query::SpeakSelectedPcStatBlock();
+    }
+
+    // Esc edge — captured up front so both the combat-queue submenu and
+    // the action-bar submenu can consume it. Both submenus are in-world
+    // and unbound by the engine keymap; without this catch, Esc would
+    // pop the game menu while either is active.
     static bool s_prevEsc = false;
     bool escK = down(VK_ESCAPE);
     bool risingEsc = escK && !s_prevEsc; s_prevEsc = escK;
+
+    // Combat-queue submenu input routing — runs BEFORE actionbar so the
+    // queue submenu wins ties (it's a more recent context). Mirrors the
+    // actionbar route: Up/Down/Enter/Esc are translated into engine
+    // logical input codes and dispatched at the gate handler.
+    if (inWorld && acc::combat::queue::IsActive()) {
+        if (risingEnter) {
+            acc::combat::queue::HandleInputEvent(kInputEnter1, /*value=*/1);
+        }
+        if (risingUp) {
+            acc::combat::queue::HandleInputEvent(kInputNavUp, 1);
+        }
+        if (risingDown) {
+            acc::combat::queue::HandleInputEvent(kInputNavDown, 1);
+        }
+        if (risingEsc) {
+            acc::combat::queue::HandleInputEvent(kInputEsc1, 1);
+        }
+        return;
+    }
+
+    // Action-bar-active path: route Up/Down/Enter/Esc to the submenu.
+    // Esc is included here even though the radial path delegates it to
+    // the manager — the action bar is in-world and unbound, so the
+    // manager never sees Esc presses while no menu panel is foreground
+    // (Esc would normally pop the game menu). Catching it here lets the
+    // user back out cleanly without the game-menu side effect.
     if (inWorld && acc::actionbar_menu::IsActive()) {
         if (risingEnter) {
             acc::actionbar_menu::HandleInputEvent(kInputEnter1, /*value=*/1);

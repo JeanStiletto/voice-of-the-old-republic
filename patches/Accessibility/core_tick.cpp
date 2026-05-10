@@ -11,8 +11,12 @@
 #include "announce_degrees.h"
 #include "audio_footstep_suppress.h"
 #include "camera_announce.h"
+#include "combat.h"
+#include "combat_query.h"
+#include "combat_queue.h"
 #include "cycle_input.h"
 #include "diag_engine_select.h"
+#include "dialog_speech.h"
 #include "engine_player.h"
 #include "guidance_autowalk.h"
 #include "interact_hotkey.h"
@@ -141,6 +145,35 @@ void Dispatch() {
     // target lost, etc.). Cheap (chain walk + 3 reads); idle when our gate
     // is already disarmed.
     acc::radial_menu::Tick();
+
+    // Combat system, Phase 1A/1B — combat-mode entry/exit announce + live
+    // combat-log narration. Both are poll-based; cheap (one chain walk
+    // each) and silent when no combat is active / no Messages panel
+    // is mounted.
+    acc::combat::TickCombatMode();
+    acc::combat::TickCombatLog();
+
+    // Combat system, Phase 4A — per-attack callout. Walks the player
+    // creature's combat_round.attacks_list[7] each tick; announces on
+    // attack_result transition from pending to resolved.
+    acc::combat::TickAttackResolutions();
+
+    // Combat system, Phase 4B — saving-throw callout. Skeleton no-op
+    // until the SavingThrowRoll hook lands; see combat.cpp.
+    acc::combat::TickSavingThrows();
+
+    // Combat system, Phase 2A — auto-announce on party-leader change.
+    // Also services the user-triggered Shift+H Examine panel monitor.
+    acc::combat::query::TickLeaderChangeAutoAnnounce();
+    acc::combat::query::TickExaminePanel();
+
+    // Combat system, Phase 3A — action-queue submenu auto-disarm probe.
+    acc::combat::queue::Tick();
+
+    // Combat system, Phase 1D — live dialog screen narration. Polls
+    // active CSWGuiDialog* panels for new NPC lines / reply count
+    // changes and the BarkBubble for new bark text.
+    acc::dialog_speech::Tick();
 
     // Phase 2 lay-off 9b — combined autowalk+interact hotkey (Enter).
     // Resolves cycle focus first / engine LastTarget fallback, speaks

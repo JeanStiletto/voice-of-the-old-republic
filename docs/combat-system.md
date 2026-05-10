@@ -7,11 +7,18 @@ A discovery doc for the combat-accessibility pillar. Same format as
 - **suspected** — DB / SARIF / swkotor.exe.h says it exists and the type fits, but unvalidated
 - **open** — we know we need this; no candidate yet
 
-Status as of 2026-05-10: nothing combat-side is hooked yet. Everything below
-this line is **suspected** unless explicitly tagged otherwise. The map is built
-from `third_party/Kotor-Patch-Manager/AddressDatabases/kotor1_0_3.db`,
-`docs/llm-docs/re/swkotor.exe.h` (Lane's Ghidra-exported types), and
-SARIF decompilation excerpts pulled in this session.
+Status as of 2026-05-10: **Phases 1–4 skeleton implemented and live-tested
+across 3 in-game iterations.** Combat-mode entry/exit, combat-log narration,
+attack resolutions, dialog speech, queue submenu, PC stats, and Examine
+hotkey all function. Several plan-doc assumptions were corrected against
+runtime behaviour — see the "Implementation status & validated findings"
+section immediately below for the running diff between this plan and what
+the code actually ships. Sources used to build the original plan:
+`third_party/Kotor-Patch-Manager/AddressDatabases/kotor1_0_3.db`,
+`docs/llm-docs/re/swkotor.exe.h` (Lane's Ghidra-exported types), Lane's
+SARIF excerpts, and `docs/llm-docs/re/k1_win_gog_swkotor.exe.xml`
+(Lane's full symbol/function table — most useful single source for
+verifying suspected addresses).
 
 The four investigation tracks the user asked for map cleanly to four pillars:
 
@@ -24,6 +31,270 @@ Plus an **adjacent** section on the in-game dialog screen — same listbox-spec
 pattern as the combat-log review-on-demand path, ships in the same Phase 1.
 
 A **Plan** section at the bottom captures the phased implementation approach.
+
+---
+
+## Implementation status & validated findings
+
+This section reconciles the original plan against three iterations of
+in-game testing. Subsequent sections (the per-pillar maps + the Plan)
+remain as originally written — they are the design intent. Read THIS
+section first for what's been live-tested, what was wrong in the plan,
+and what's still skeleton.
+
+### Per-phase implementation status
+
+**Phase 1A — combat-mode entry/exit.** Working. Implemented as a per-tick
+poll of `CClientExoApp::GetCombatMode @0x5ede70` (no hook needed) with the
+stability-debounce pattern from `turn_announce.cpp`. Speaks
+`Kampf beginnt` / `Kampf beendet` cleanly across rapid combat-mode
+oscillation. TU: `combat.cpp::TickCombatMode`.
+
+**Phase 1B — live combat-log narration.** Working. Implemented via per-tick
+poll of `CSWGuiInGameMessages.messages_listbox @+0x64` row-count diff. New
+rows are read via `menus_extract::FromControl` and pushed to TTS. Per-tick
+budget cap of 8 entries to avoid speech-queue flood. TU:
+`combat.cpp::TickCombatLog`. The plan's primary suggestion (hook
+`AddMessages @0x626920`) would deliver one frame earlier; polling is the
+safer skeleton path.
+
+**Phase 1C — Messages-panel review-on-demand.** Working. Single
+`ListBoxPanelSpec` entry in `menus_listbox.cpp` for `InGameMessages`
+routing to `messages_listbox`. The dialog_listbox toggle (engine
+show_button) is **not yet implemented** — the spec routes only to
+messages_listbox.
+
+**Phase 1D — live dialog screen.** Working. Per-tick poll of dialog panels
+in `dialog_speech.cpp` for NPC line / reply count / bark text changes,
+plus four `ListBoxPanelSpec` entries (DialogCinematic /
+DialogCinematicCopy / DialogComputer / DialogComputerCamera) routing to
+`replies_listbox @+0x19c4`. Reply-row spec adds `(unavailable)` suffix
+for inactive rows via `is_active @+0x4c` read.
+
+**Phase 2A — selected-PC stat block (Shift+S).** Working in user-triggered
+path. The `TickLeaderChangeAutoAnnounce` was originally meant to
+auto-fire the full stat block on Tab; it now only speaks the leader name
+because the suspected engine accessors used in `SpeakSelectedPcStatBlock`
+(GetMaxHitPoints, GetArmorClass, save accessors) had not been live-
+validated and a wrong-address call could __fastfail uncatchably. Manual
+Shift+S still calls them — user accepts the risk per session.
+
+**Phase 2B — opponent cycle-announcement enrichment.** Working. Hooked
+into `passive_narrate.cpp` which calls `combat_query::BuildTargetCombatBrief`
+when the cycle target is a Creature. Skeleton output:
+`<name>, neutral, <hp_cur> Lebenspunkte`. The faction word is
+hardcoded "neutral" pending CSWSFaction decode (open). HP-current via
+direct field read at `CSWSObject.hit_points @+0xe0`; AC and HP-max
+stripped from the format until those engine accessors are validated.
+
+**Phase 2C — Shift+H Examine.** Working in a redesigned shape. Original
+plan called for driving `CGuiInGame::ShowExamineBox @0x62d3e0` and
+reading the populated panel. **The plan was wrong on two counts:**
+(1) `ShowExamineBox` is `void(ulong, int)` with `BYTES_PURGED=8`, not
+the single-arg signature the plan implied — calling with 1 arg created
+stack imbalance and likely contributed to the 2026-05-09 crash;
+(2) the panel is **server-driven** via 5 sister functions
+`SendServerToPlayerExamineGui_{Creature,Item,Door,Placeable,Mine}Data`
+(0x56ebe0..0x56f370) — `ShowExamineBox` only opens the slot, server
+must push the data. Working implementation in `combat_query.cpp::HotkeyShiftH`
+skips ShowExamineBox entirely and reads stats directly via the same
+helpers Phase 2A uses, then speaks `<name>, neutral, <hp_cur> hp`.
+Verified live 2026-05-10 against `Sith-Soldat` (kind=5) and
+`Überreste` (kind=9 placeable corpse).
+
+**Phase 3A — action queue submenu (Shift+K).** Working. Pattern lifted
+from `actionbar_menu.cpp`. Walks `combat_round.actions` linked list,
+filters out the leading `type=0xFF` placeholder entry the engine
+maintains (the "currently dispatching action" slot, target=0 when idle).
+Up/Down nav works; Enter removes tail entries (non-tail still returns
+"Aktion kann nicht entfernt werden" pending positional-remove
+primitive); Shift+Enter clears all via repeat-RemoveLast loop;
+Esc closes. **Action-type byte enum mapping is currently disabled** —
+the inferred values were wrong (type=1 mapped to SpellCast was actually
+a basic attack); all entries render as generic "Aktion" until probed.
+
+**Phase 4A — per-attack callout.** Working. Per-tick poll of player
+creature's `combat_round.attacks_list[7]`, edge-detected on
+(target, result, baseDamage) tuple change. `result IN [1,4]` and
+combat-mode-active gates filter false fires. Plan was wrong about the
+edge condition (`Pending(0) → Resolved` only) — the engine reuses slots
+without going through Pending. Tuple-change with damage-settle gate
+(skip when baseDamage == -1, the engine's "not yet computed" sentinel)
+is the working pattern.
+
+**Phase 4B — saving-throw callout.** Skeleton no-op. Real signal needs
+a hook on `SavingThrowRoll @0x5b92b0` or `BroadcastSavingThrowData
+@0x4ec760`; polling for save-field changes is too noisy.
+
+### Validated engine surfaces (anchor table)
+
+Confirmed live during iteration testing. All addresses verified against
+`docs/llm-docs/re/k1_win_gog_swkotor.exe.xml` — Lane's symbol table is
+high-confidence and addresses paste straight into our hooks/code.
+
+- **`CClientExoApp::GetCombatMode @0x005ede70`** — `int __thiscall(void)`.
+  Returns 0 = peace, !=0 = combat. Used in `combat::TickCombatMode` and
+  as the auto-firing-path gate in `combat::TickAttackResolutions`.
+- **`CClientExoApp::GetObjectName @0x005ed350`** — `int __thiscall(ulong handle, CExoString* outName)`,
+  `BYTES_PURGED=8`. Universal localized-name accessor; resolves the full
+  template/appearance/racial-type chain so generic enemies whose
+  `first_name` strref is empty still get a proper display name (e.g.
+  "Sith-Soldat" instead of the modder tag "end_cut2_sith2"). **Caveat:
+  resolves only client-side handles** (high bit `0x80000000` set). For
+  server-side handles, `acc::engine::GetObjectDisplayNameByHandle`
+  retries with `handle | 0x80000000` per
+  `memory:project_object_handle_namespaces`.
+- **`CSWSObject.hit_points @+0xe0` (short)** — current HP. Direct read
+  is safe and used by every auto-firing read path (Phase 4A,
+  Phase 2B brief, Phase 2C examine).
+- **`CSWSCreature.combat_round @+0x9c8` → `CSWSCombatRound*`** — round
+  state; null when no round is active. Used by Phase 3A queue and
+  Phase 4A attacks.
+- **`CSWSCombatRound.actions @+0x9b0` → `CExoLinkedList*`** — confirmed
+  walkable as `{head, tail, count}` followed by `{next, prev, data}`
+  nodes. The engine maintains a leading sentinel entry with
+  `action_type=0xFF, target=0` representing the "currently dispatching"
+  slot — must be filtered when presenting the queue to the user.
+- **`CSWSCombatAttackData` per slot @ `combat_round + 0x4 + slot*0xc0`,
+  7 fixed slots.** Field offsets `react_object @+0xc`, `base_damage @+0x38` (short),
+  `attack_deflected @+0x54` (int), `attack_result @+0x5c` (int),
+  `critical_threat @+0x50` (int) all live-verified.
+- **`CGuiInGame::ShowExamineBox @0x0062d3e0`** — `void __thiscall(ulong handle, int param_2)`,
+  `BYTES_PURGED=8`. **DO NOT CALL DIRECTLY** in the skeleton: panel
+  population is server-driven (5 sister `SendServerToPlayerExamineGui_*Data`
+  functions @ `0x0056ebe0..0x0056f370`) and `param_2`'s purpose isn't
+  documented. Calling with the wrong arg count produces stack imbalance.
+- **`CSWGuiExamine` panel layout** (validated via panel-walk dump):
+  `controls.size = 6`. Children: `[1] id=1 listbox` (vtable=0x0073E840 =
+  `CSWGuiListBox_vtable` — actual stat-block content lives here as
+  rows), `[3] id=3 button "Schliess."`, `[4] id=4 button "Abbrechen"`,
+  `[5] id=-1 label` (vtable=0x0073E5B8 = `CSWGuiLabel_vtable`,
+  contents vary). The skeleton picks the listbox by vtable match
+  rather than by id, then concatenates rows.
+- **`CSWGuiInGameMessages.messages_listbox @+0x64`** — combat log feed.
+  Row count diff per tick; new rows go to TTS via `menus_extract::FromControl`.
+- **`CSWGuiDialog.replies_listbox @+0x19c4`** + **`message_label @+0x1ca4`** —
+  dialog panel offsets confirmed working across Cinematic / CinematicCopy /
+  Computer / ComputerCamera variants (all share base layout).
+
+### Validated enum values
+
+- **`CSWSCombatAttackData.attack_result`**:
+  - `-1` = unused slot (engine sentinel; verified 2026-05-09)
+  - `1` = Hit (verified 2026-05-10 with positive damage 1, 5)
+  - `2` = Miss (verified 2026-05-10 — first anchor)
+  - `3` = Critical (still unconfirmed but likely; the inferred guess
+    in `engine_offsets.h::kAttackResultCrit`)
+  - `4` = Deflected / parried (verified 2026-05-10 in
+    `test wird von end_cut2_sith2 pariert.` callouts)
+- **`CSWSCombatAttackData.base_damage`**:
+  - `-1` = "not yet computed" sentinel; the engine sometimes publishes
+    `attack_result` before damage settles. Phase 4A skips the Hit/Crit
+    speak when damage is -1 and waits for the next-tick value.
+  - Hit and Miss have different conventions: a Miss carries `dmg=-1` as
+    the steady value (no damage on miss); a Hit carries `dmg=-1` only
+    transiently before it lands on the rolled positive value.
+- **`CSWSCombatRoundAction.action_type`**:
+  - `0xFF` (255) = "currently dispatching action" placeholder entry
+    the engine maintains as the queue head when nothing is mid-dispatch;
+    must be filtered.
+  - `1` = NOT SpellCast (the originally inferred value). Real value
+    pending probe — observed in tutorial-level Trask attacks (creature
+    with no Force powers). Likely a flavour of Attack.
+  - `11` = also unmapped; observed pointing at Sith creature handles.
+    Likely another Attack flavour.
+
+### Auto-firing path safety rules
+
+Learned the hard way during the 2026-05-09 crash investigation
+(STATUS_STACK_BUFFER_OVERRUN, /GS canary fastfail, uncatchable by SEH):
+
+1. **Never call a "suspected" engine accessor address from an
+   auto-firing path** (per-tick poll, hotkey routed automatically on
+   game state changes). A wrong address may not crash on the call
+   itself, but can corrupt the stack canary leading to fastfail on
+   epilogue elsewhere. SEH does not catch /GS fastfail. Restrict
+   suspected accessors to user-pressed hotkeys where the user gets
+   immediate feedback if it fails.
+2. **Always gate combat-data reads on `GetCombatMode != 0`** before
+   touching `attacks_list[7]`. Outside combat the array contains
+   uninitialized heap bytes; reading and acting on them led to the
+   2026-05-09 false-fire (`test wird von ? pariert.` against a garbage
+   handle on the very first tick of area-load).
+3. **First-observation suppression per tracked slot** — adopt the
+   first-seen value as baseline silently, never as a "transition to
+   speak". Without this, leftover state from a prior session reads as
+   a spurious edge.
+4. **Validate target before speaking** — the resolved object pointer
+   must be non-null AND the name must resolve to non-empty text.
+   Speaking "X attacks ?" against a wild handle is a clear smell that
+   we're misinterpreting state.
+
+### Skeleton gaps still open
+
+Tracked here so the next iteration knows exactly where to dig:
+
+- **Action-type byte enum** — needs DumpBytes probe in a controlled
+  scenario (queue an attack, dump action's +0x10; queue Force, dump;
+  etc.). Until then `combat_queue::VerbForActionType` returns
+  generic "Aktion" for everything.
+- **CSWSFaction decode for hostile/friendly/neutral classification** —
+  Phase 2B currently hardcodes "neutral". Open in plan §Pillar 2.
+- **Max HP / AC / saves engine accessors** — addresses are in Lane's
+  table (validated against `k1_win_gog_swkotor.exe.xml`) but their
+  call signatures haven't been live-tested. Currently called only
+  from the manual `Shift+S` path (`SpeakSelectedPcStatBlock`); the
+  auto-firing paths use direct-field-read for HP-current only.
+- **Saving-throw event** — Phase 4B will need a hook on
+  `SavingThrowRoll @0x5b92b0` or `BroadcastSavingThrowData @0x4ec760`.
+  Polling save fields per-tick is too noisy to be useful.
+- **Per-index queue removal primitive** — `RemoveLastAction @0x4d37b0`
+  only removes tail; mid-queue Enter currently speaks
+  "Aktion kann nicht entfernt werden". Investigate splice / repeat-
+  remove + re-queue / SARIF for a positional remove.
+- **Examine sister-function trigger** — to drive a real engine
+  Examine without ShowExamineBox guesswork, we'd need to invoke the
+  SendServerToPlayer*Data path directly OR find the higher-level
+  client→server "request examine" message that triggers it. Out of
+  scope for skeleton; current direct-stat-read approach works fine.
+- **Messages-panel dialog_listbox toggle** — the spec only routes to
+  messages_listbox. The toggle button @+0x76c needs a state read so
+  we can switch the spec's `findListBox` callback to `dialog_listbox`
+  when the user toggles the view.
+- **Validated names in Phase 4A callouts pre-iteration-4** —
+  `tgt=[end_cut2_sith2]`-style tags appeared because the original
+  helper called `engine_area::GetObjectName` which falls through to
+  `CSWSObject.tag` for generic enemies. The fix (use
+  `GetObjectDisplayNameByHandle` with high-bit conversion) landed
+  iteration 4 and is build-validated but not yet in-game tested.
+
+### Files added by the implementation
+
+Skeleton lives in 4 new TUs plus targeted edits to existing files:
+
+- `patches/Accessibility/combat.{h,cpp}` — Phases 1A, 1B, 4A, 4B.
+- `patches/Accessibility/combat_query.{h,cpp}` — Phases 2A, 2B, 2C.
+- `patches/Accessibility/combat_queue.{h,cpp}` — Phase 3A submenu.
+- `patches/Accessibility/dialog_speech.{h,cpp}` — Phase 1D polls.
+- `patches/Accessibility/menus_listbox.cpp` — 5 new listbox specs
+  (InGameMessages, DialogCinematic, DialogCinematicCopy,
+  DialogComputer, DialogComputerCamera).
+- `patches/Accessibility/passive_narrate.cpp` — Phase 2B integration.
+- `patches/Accessibility/core_tick.cpp` — wires the new Tick calls.
+- `patches/Accessibility/interact_hotkey.cpp` — Win32 hotkey poll
+  for Shift+H (Examine), Shift+S (PC stats), Shift+K (queue submenu)
+  + queue-submenu input routing.
+- `patches/Accessibility/engine_area.{h,cpp}` —
+  `GetObjectDisplayNameByHandle` helper.
+- `patches/Accessibility/engine_offsets.h` — combat-system addresses,
+  enum constants, struct offsets (annotated with validation status).
+- `patches/Accessibility/strings.h`, `strings_en.cpp`, `strings_de.cpp`
+  — every user-facing string for the skeleton.
+
+No new hooks were added in `hooks.toml` — the skeleton is entirely
+poll-based. Hook upgrades for AddMessages / ResolveAttack /
+SetDialogMessage / SetReplies / SetBark are documented as one-line
+follow-ups once their bytes are captured.
 
 ---
 
@@ -218,6 +489,26 @@ attack records. Each record:
   `killing_blow @+0x4c`-area, `attack_type @+0x64`, `ranged_target_pos @+0x68`.
 - open: validate the `attack_result` enum experimentally. `attack_debug_text`
   may already be the highest-level user-friendly read and avoid the enum.
+- **Partial validation (2026-05-10, from crash log
+  `patch-20260509-235058.log`):** unused-slot sentinel is **-1**
+  (0xFFFFFFFF), NOT 0. Confirmed against attacks_list[7] read on the
+  very first tick of Endar Spire load — every slot returned
+  `result=-1 dmg=0 defl=-1 crit=-1`. Implication: the "is this slot
+  populated" check is `attack_result != -1`; the pending/resolved
+  enum values still need validation when an actual attack lands.
+- **Confirmed (2026-05-10, from `patch-20260510-000722.log`):**
+  attack_result = **2 confirms Miss** (live observation of player
+  attack that whiffed in tutorial combat). `defl=0 crit=0` for a
+  normal miss (NOT -1 as in unused slots — those flags only sentinel
+  in unused state). `dmg=-1` accompanies a miss. Hit / crit / deflect
+  enum values still need validation but `2 = miss` is now anchor-
+  confirmed.
+- **Confirmed (2026-05-10):** the engine reuses attacks_list[7] slots
+  *transitioning resolved→resolved without going back through pending*.
+  An edge detector that only fires on Pending(0)→Resolved misses every
+  attack after the first. Use a `(target, result, base_damage)` tuple
+  diff with `result IN valid resolved range` instead — that's the
+  approach in the current `combat::TickAttackResolutions`.
 
 The action-list mirror (`CSWSCombatRoundAction`, swkotor.exe.h:22829) carries
 its own copies of the resolved fields — these are what the UI watches:
@@ -573,6 +864,16 @@ action_type byte through a static table built once we know the enum.
 
 - open: action_type byte enum values — needs DumpBytes in a controlled
   scenario (queue an attack, dump 0x10; queue a spell, dump 0x10; etc.).
+- **Partial finding (2026-05-10):** the inferred enum mapping
+  (Attack=0 / SpellCast=1 / ItemCast=2 / Equip=3 / ...) was WRONG. In
+  tutorial-level play with no Force powers learned, `type=1` rendered
+  as "Macht einsetzen" (the user's actual complaint), so type=1 is
+  NOT SpellCast. Real values seen in the queue: `1`, `11`, and
+  `255 (0xFF)` — the last is a placeholder leading entry on every
+  queue ("current dispatching action" slot the engine maintains, with
+  target=0 when nothing is dispatching). The current
+  `combat_queue.cpp` filters type=0xFF and renders all other types as
+  generic "Aktion" until the enum is pinned.
 - open: the icon ResRef → human-readable name mapping. `iact_attack`,
   `iact_cast_spell` etc. are GUI layer; the description text comes from
   somewhere localised (likely TLK via a 2DA or via the action handler's
@@ -792,6 +1093,46 @@ Phased implementation plan for combat + dialog accessibility. Phase numbers
 indicate landing order, not parallelism within a phase. Each phase is
 shippable on its own; later phases enrich rather than depend on earlier ones.
 
+**Status (2026-05-10):** Skeleton for Phases 1–4 landed in one pass — all
+phases compile clean and load via the existing kpatch pipeline; in-game
+behaviour is **untested**. New TUs:
+- `patches/Accessibility/combat.{h,cpp}` — Phase 1A combat-mode poll,
+  Phase 1B combat-log poll, Phase 4A per-attack poll, Phase 4B saving-
+  throw stub (no-op until the SavingThrowRoll hook lands).
+- `patches/Accessibility/combat_query.{h,cpp}` — Phase 2A PC stat
+  block (Shift+S + auto-on-leader-change), Phase 2B target enrichment
+  (consumed by `passive_narrate.cpp`), Phase 2C Examine hotkey
+  (Shift+H + ShowExamineBox call + per-tick panel reader).
+- `patches/Accessibility/combat_queue.{h,cpp}` — Phase 3A action-queue
+  submenu (Shift+K opens; Up/Down navigate; Enter removes tail entry,
+  non-tail returns "cannot remove" until positional-remove primitive
+  is found; Shift+Enter wipes; Esc closes).
+- `patches/Accessibility/dialog_speech.{h,cpp}` — Phase 1D NPC line +
+  reply count + bark bubble polls.
+- `patches/Accessibility/menus_listbox.cpp` — five new
+  `ListBoxPanelSpec` entries for `InGameMessages` and four dialog
+  variants (Phase 1C/1D listbox plumbing).
+
+Skeleton gaps explicitly deferred (each tagged in code with a TODO):
+- Hook-based delivery for Phase 1B (`AddMessages @0x626920`), Phase 1D
+  (`SetDialogMessage @0x6a7010`, `SetReplies @0x6a86a0`,
+  `SetBark @0x6a9920`), and Phase 4 (`ResolveAttack @0x5bba80`,
+  `SavingThrowRoll @0x5b92b0`). Polling delivers the same data one
+  frame later — acceptable for skeleton; hook upgrade is a one-line
+  wiring change once bytes are captured.
+- `attack_result` enum values + `action_type` byte enum values are
+  inferred (placeholders in `engine_offsets.h`); validate via the
+  one-shot probe session listed below before relying on the verb /
+  outcome strings.
+- Faction relation classification (Phase 2B "open"): currently every
+  non-dead creature reads as "neutral" until `CSWSFaction` is
+  decoded.
+- Non-tail queue removal (Phase 3A): only tail-remove and full clear
+  work; mid-queue Enter speaks "cannot remove this action."
+- InGameMessages dialog-history view toggle: spec routes to
+  `messages_listbox` only; `dialog_listbox` swap pending engine-side
+  toggle-button state read.
+
 ### Phase 1 — Free wins from existing engine infrastructure
 
 Three landing pads, all reusing infrastructure we've already built. None
@@ -933,6 +1274,25 @@ closed via `HideExamineBox @0x62d440`). Internally it's a thin wrapper
 around a message box (`CSWGuiExamine.message_box @+0x0`) that the
 engine populates with a fully-formatted, fully-localised stat block
 covering everything 2B intentionally skipped.
+
+**Live panel layout (validated 2026-05-10, `patch-20260510-000722.log`
+panel-walk dump):**
+
+- panel `controls.size = 6`
+- `[0]` NULL
+- `[1] id=1` — listbox (vtable=0073E840) — **the rendered stat block;
+  one row per line of text**
+- `[2]` NULL
+- `[3] id=3` — button "Schliess." (Close)
+- `[4] id=4` — button "Abbrechen" (Cancel)
+- `[5] id=-1` — label-like control (vtable=0073E5B8); contents vary
+  per examine (e.g. "Laserschwert werfen" — possibly a
+  default-action label)
+
+The reader in `combat_query::TickExaminePanel` walks `[1]`'s rows and
+concatenates them; the original "first non-empty short text" walk
+landed on `[3] / [4] / [5]` and read the button label / default-action
+label, not the actual stat block.
 
 Plan:
 

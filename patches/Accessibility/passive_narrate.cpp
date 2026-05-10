@@ -6,6 +6,7 @@
 
 #include "audio_bus.h"
 #include "audio_cues.h"
+#include "combat_query.h"   // Phase 2B — BuildTargetCombatBrief enrichment
 #include "engine_area.h"
 #include "engine_offsets.h"
 #include "engine_player.h"
@@ -193,12 +194,22 @@ void Tick() {
             acc::audio::GetNavCueResref(CueForCategory(cat)), pos);
     }
 
-    // Speak just the name. Distance / clock are intentionally omitted
-    // here — passive narration is ambient, not directional. The cue
-    // carries spatial direction via 3D pan; speech carries identity.
-    // If the user wants distance/clock, they cycle to the object via
-    // `,`/`.` (Pillar 4 active-scan path).
-    tolk::Speak(name, /*interrupt=*/true);
+    // Phase 2B — for Creature kind, enrich the announcement with the
+    // combat brief (HP / AC / faction / dead). For other kinds, speech
+    // is bare-name only; combat data isn't relevant.
+    char enriched[320];
+    if (acc::combat::query::BuildTargetCombatBrief(
+            obj, name, enriched, sizeof(enriched)) &&
+        enriched[0] != '\0') {
+        tolk::Speak(enriched, /*interrupt=*/true);
+    } else {
+        // Speak just the name. Distance / clock are intentionally omitted
+        // here — passive narration is ambient, not directional. The cue
+        // carries spatial direction via 3D pan; speech carries identity.
+        // If the user wants distance/clock, they cycle to the object via
+        // `,`/`.` (Pillar 4 active-scan path).
+        tolk::Speak(name, /*interrupt=*/true);
+    }
 
     acclog::Write("PassiveNarrate", "0x%08x -> 0x%08x cat=%s name=[%s] "
         "pos=(%.2f,%.2f,%.2f) havePos=%d",

@@ -685,6 +685,182 @@ constexpr ListBoxPanelSpec kSkillInfoBoxSpec = {
     /*alwaysReturnFromHandler*/ true,               // modal popup — don't fall through
 };
 
+// ============================================================================
+// InGameMessages — combat-feedback log + dialog history. Two listboxes
+// inside the same panel (messages_listbox @+0x64, dialog_listbox @+0x344);
+// the user toggles which is shown via show_button @+0x76c.
+//
+// Phase 1C of the combat-system plan. Skeleton routes Up/Down to
+// messages_listbox by default — switching to dialog_listbox requires a
+// state bit we don't yet capture from the toggle button. The user can
+// still navigate the active view via the engine's mouse-driven toggle;
+// the spec-driven keyboard nav follows the messages_listbox until that
+// state-tracking lands.
+// ============================================================================
+
+bool InGameMessagesMatches(void* p) {
+    return IdentifyPanel(p) == PanelKind::InGameMessages;
+}
+
+void* InGameMessagesFindLb(void* p) {
+    if (!p) return nullptr;
+    return reinterpret_cast<unsigned char*>(p) +
+           kInGameMessagesMessagesListBoxOffset;
+}
+
+void InGameMessagesAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
+    if (!r.row) return;
+    char rowText[512];
+    if (!acc::menus::extract::FromControl(r.row, rowText, sizeof(rowText))) {
+        return;
+    }
+    char msg[640];
+    snprintf(msg, sizeof(msg),
+             acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
+             rowText, r.newSel + 1, r.rowCount);
+    tolk::Speak(msg, /*interrupt=*/false);
+}
+
+const char* InGameMessagesTitleOverride(void* /*panel*/) {
+    return acc::strings::Get(acc::strings::Id::MessagesTitleCombatLog);
+}
+
+constexpr ListBoxPanelSpec kInGameMessagesSpec = {
+    /*logTag*/                  "InGameMessages",
+    /*matches*/                 InGameMessagesMatches,
+    /*armed*/                   nullptr,
+    /*resetStale*/              nullptr,
+    /*findListBox*/             InGameMessagesFindLb,
+    /*minSel*/                  0,
+    /*announce*/                InGameMessagesAnnounce,
+    /*enrichRow*/               nullptr,
+    /*logExtra*/                nullptr,
+    /*onEnter*/                 nullptr,
+    /*onEsc*/                   nullptr,
+    /*titleOverride*/           InGameMessagesTitleOverride,
+    /*alwaysReturnFromHandler*/ false,
+};
+
+// ============================================================================
+// CSWGuiDialog — replies_listbox @+0x19c4. Phase 1D of the combat-system
+// plan. Same shape applies to DialogCinematic / DialogCinematicCopy /
+// DialogComputer / DialogComputerCamera variants — registered as four
+// matchers all pointing at the shared listbox locator.
+// ============================================================================
+
+bool DialogCinematicMatches(void* p) {
+    return IdentifyPanel(p) == PanelKind::DialogCinematic;
+}
+bool DialogCinematicCopyMatches(void* p) {
+    return IdentifyPanel(p) == PanelKind::DialogCinematicCopy;
+}
+bool DialogComputerMatches(void* p) {
+    return IdentifyPanel(p) == PanelKind::DialogComputer;
+}
+bool DialogComputerCameraMatches(void* p) {
+    return IdentifyPanel(p) == PanelKind::DialogComputerCamera;
+}
+
+void* DialogFindRepliesLb(void* p) {
+    if (!p) return nullptr;
+    return reinterpret_cast<unsigned char*>(p) + kDialogRepliesListBoxOffset;
+}
+
+void DialogReplyAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
+    if (!r.row) return;
+    char rowText[512];
+    if (!acc::menus::extract::FromControl(r.row, rowText, sizeof(rowText))) {
+        return;
+    }
+    // is_active gate (CSWGuiControl.is_active @+0x4c) — when non-zero the
+    // reply is selectable; zero means the engine greyed it out
+    // (skill-check / alignment-locked). Append a "(unavailable)" suffix
+    // so the user knows.
+    bool active = true;
+    __try {
+        active = *(reinterpret_cast<unsigned char*>(r.row) +
+                   kControlIsActiveOffset) != 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        active = true;
+    }
+    char msg[640];
+    if (active) {
+        snprintf(msg, sizeof(msg),
+                 acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
+                 rowText, r.newSel + 1, r.rowCount);
+    } else {
+        snprintf(msg, sizeof(msg),
+                 acc::strings::Get(
+                     acc::strings::Id::FmtDialogReplyUnavailableRow),
+                 rowText,
+                 acc::strings::Get(
+                     acc::strings::Id::DialogReplyUnavailable),
+                 r.newSel + 1, r.rowCount);
+    }
+    tolk::Speak(msg, /*interrupt=*/false);
+}
+
+constexpr ListBoxPanelSpec kDialogCinematicSpec = {
+    /*logTag*/                  "DialogCinematic",
+    /*matches*/                 DialogCinematicMatches,
+    /*armed*/                   nullptr,
+    /*resetStale*/              nullptr,
+    /*findListBox*/             DialogFindRepliesLb,
+    /*minSel*/                  0,
+    /*announce*/                DialogReplyAnnounce,
+    /*enrichRow*/               nullptr,
+    /*logExtra*/                nullptr,
+    /*onEnter*/                 nullptr,
+    /*onEsc*/                   nullptr,
+    /*titleOverride*/           nullptr,
+    /*alwaysReturnFromHandler*/ false,
+};
+constexpr ListBoxPanelSpec kDialogCinematicCopySpec = {
+    /*logTag*/                  "DialogCinematicCopy",
+    /*matches*/                 DialogCinematicCopyMatches,
+    /*armed*/                   nullptr,
+    /*resetStale*/              nullptr,
+    /*findListBox*/             DialogFindRepliesLb,
+    /*minSel*/                  0,
+    /*announce*/                DialogReplyAnnounce,
+    /*enrichRow*/               nullptr,
+    /*logExtra*/                nullptr,
+    /*onEnter*/                 nullptr,
+    /*onEsc*/                   nullptr,
+    /*titleOverride*/           nullptr,
+    /*alwaysReturnFromHandler*/ false,
+};
+constexpr ListBoxPanelSpec kDialogComputerSpec = {
+    /*logTag*/                  "DialogComputer",
+    /*matches*/                 DialogComputerMatches,
+    /*armed*/                   nullptr,
+    /*resetStale*/              nullptr,
+    /*findListBox*/             DialogFindRepliesLb,
+    /*minSel*/                  0,
+    /*announce*/                DialogReplyAnnounce,
+    /*enrichRow*/               nullptr,
+    /*logExtra*/                nullptr,
+    /*onEnter*/                 nullptr,
+    /*onEsc*/                   nullptr,
+    /*titleOverride*/           nullptr,
+    /*alwaysReturnFromHandler*/ false,
+};
+constexpr ListBoxPanelSpec kDialogComputerCameraSpec = {
+    /*logTag*/                  "DialogComputerCamera",
+    /*matches*/                 DialogComputerCameraMatches,
+    /*armed*/                   nullptr,
+    /*resetStale*/              nullptr,
+    /*findListBox*/             DialogFindRepliesLb,
+    /*minSel*/                  0,
+    /*announce*/                DialogReplyAnnounce,
+    /*enrichRow*/               nullptr,
+    /*logExtra*/                nullptr,
+    /*onEnter*/                 nullptr,
+    /*onEsc*/                   nullptr,
+    /*titleOverride*/           nullptr,
+    /*alwaysReturnFromHandler*/ false,
+};
+
 // Spec table. Probe order matters: SaveLoad's structural matcher
 // (FindControlById signature check) is a superset that could in principle
 // match other panels with the same control IDs — Container and EquipPicker
@@ -695,6 +871,12 @@ constexpr const ListBoxPanelSpec* kSpecs[] = {
     &kSaveLoadSpec,
     &kEquipPickerSpec,
     &kSkillInfoBoxSpec,
+    // Combat-system plan, Phase 1C/1D — read-only review screens.
+    &kInGameMessagesSpec,
+    &kDialogCinematicSpec,
+    &kDialogCinematicCopySpec,
+    &kDialogComputerSpec,
+    &kDialogComputerCameraSpec,
 };
 constexpr int kNumSpecs = static_cast<int>(sizeof(kSpecs) / sizeof(kSpecs[0]));
 
