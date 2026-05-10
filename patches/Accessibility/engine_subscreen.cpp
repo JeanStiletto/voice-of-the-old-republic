@@ -104,3 +104,33 @@ extern "C" void __cdecl OnHideSWInGameGui(void* thisPtr, void* p1_addr) {
                   "this=%p param_1=%d caller=0x%08x",
                   thisPtr, param_1, caller_eip);
 }
+
+// Diagnostic: every CSWGuiInGameOptions::HandleInputEvent entry logs
+// (param_1, param_2, caller_eip). Pause auto-close investigation —
+// resolves the contradiction between the decompile (Hide gated on
+// param_2 != 0) and our manager log (Hide fires immediately after a
+// val=0 release).
+extern "C" void __cdecl OnInGameOptionsHandleInput(void* thisPtr,
+                                                    void* p1_addr,
+                                                    void* p2_addr) {
+    if (!p1_addr || !p2_addr) return;
+
+    int param_1 = -1;
+    int param_2 = -1;
+    uint32_t caller_eip = 0;
+
+    __try {
+        param_1 = *reinterpret_cast<int*>(p1_addr);
+        param_2 = *reinterpret_cast<int*>(p2_addr);
+        caller_eip = *(reinterpret_cast<uint32_t*>(p1_addr) - 1);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("SubScreen.OptInput",
+                      "deref faulted (this=%p p1=%p p2=%p)",
+                      thisPtr, p1_addr, p2_addr);
+        return;
+    }
+
+    acclog::Write("SubScreen.OptInput",
+                  "this=%p p1=0x%x p2=%d caller=0x%08x",
+                  thisPtr, param_1, param_2, caller_eip);
+}

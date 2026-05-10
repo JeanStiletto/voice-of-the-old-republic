@@ -189,17 +189,34 @@ namespace KotorPatcher {
                         // past the saved-ESP slot. Emitting `POP ESP` (0x5C)
                         // here would write ESP from the saved value, jumping
                         // past the remaining EBX/EDX/ECX/EAX slots and reading
-                        // them from random stack memory. Always emit ADD ESP,4
-                        // for the ESP slot regardless of exclude_from_restore.
+                        // them from random stack memory. Always skip the ESP
+                        // slot regardless of exclude_from_restore.
                         if (i != kEspSlot && config.ShouldRestoreRegister(regOrder[i])) {
                             EmitByte(code, popOpcodes[i]);  // POP reg
                         } else {
                             // Skip this register (matches POPAD's ESP semantics
                             // for the ESP slot, or honors the user's exclusion
                             // for other slots).
-                            EmitByte(code, 0x83);  // ADD ESP, 4
-                            EmitByte(code, 0xC4);
-                            EmitByte(code, 0x04);
+                            //
+                            // Use LEA ESP, [ESP+4] instead of ADD ESP, 4. ADD
+                            // sets EFLAGS based on the result (ZF/SF/CF/OF),
+                            // which silently corrupts the flags POPFD restored
+                            // a few instructions earlier. LEA is the standard
+                            // flag-preserving alternative for stack
+                            // adjustments. PR-4 fixed the TEST EAX,EAX
+                            // clobber but missed this one — selective POPAD
+                            // was also clobbering ZF, which made the
+                            // CSWGuiManager Esc dispatch take the press path
+                            // for release events (val=0 → ZF=1 from engine's
+                            // CMP, but ADD ESP,4 reset ZF=0, so the
+                            // downstream JZ saw "press" and translated
+                            // 0xdf→0x28 + val→1, auto-closing pause on
+                            // every Esc release). 4 bytes vs 3 — minor
+                            // size cost for correctness.
+                            EmitByte(code, 0x8D);  // LEA r32, m
+                            EmitByte(code, 0x64);  // ModRM: ESP, [ESP+disp8] (SIB follows)
+                            EmitByte(code, 0x24);  // SIB: [ESP]
+                            EmitByte(code, 0x04);  // disp8 = 4
                         }
                     }
                 }

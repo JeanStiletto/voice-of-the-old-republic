@@ -661,7 +661,42 @@ Live verification incomplete — a 3-second user-input gap in the test
 session means we don't yet have data on whether walk+Enter still break
 after dismiss. Need focused repro.
 
-### Bug 1 (Esc opens pause then "closes itself") — **ROOT CAUSE LOCATED, NOT FIXED**
+### Bug 1 (Esc opens pause then "closes itself") — **FIXED 2026-05-10 (PR-4 extension)**
+
+**Root cause:** the framework wrapper's selective-POPAD path
+(`exclude_from_restore=["eax"]`) used `ADD ESP, 4` to skip register
+slots. `ADD` is a flag-modifying instruction — it sets ZF/SF/CF/OF
+based on the result. With ESP non-zero, `ADD ESP, 4` reset ZF=0,
+silently clobbering the engine's CMP-set ZF that the downstream JZ
+at 0x0040c90d reads. PR-4 fixed the TEST EAX,EAX clobber but missed
+this companion clobber.
+
+**Why it manifested as "Esc auto-closes":**
+- User presses Esc in-world → upstream's `case 0xdf` → opens pause.
+- User releases Esc → manager hook fires with val=0.
+- Engine's `CMP EAX, EBP` correctly set ZF=1 (val=0).
+- Wrapper PUSHFD'd the ZF=1, called handler, POPFD'd correctly.
+- **Selective POPAD's `ADD ESP, 4` (for ESP slot + EAX-skip slot) reset
+  ZF=0**, propagated through the second PUSHFD/POPFD pair to natural-
+  resume.
+- Engine's `JZ +0xdf` saw ZF=0, didn't take → press path ran for a
+  release event.
+- Press path forced `param_2 = 1` (hardcoded) and translated 0xdf → 0x28.
+- Panels dispatched with (0x28, 1) → `CSWGuiInGameOptions::HandleInputEvent`
+  fell into `case 0x28` → `HideSWInGameGui` → pause closed.
+
+**Fix:** replace `ADD ESP, 4` with `LEA ESP, [ESP+4]` in the selective-
+POPAD codegen. Same stack-pointer effect, no flag side-effects. 4 bytes
+vs 3. Lives in
+`third_party/Kotor-Patch-Manager/src/KotorPatcher/src/wrappers/wrapper_x86_win32.cpp`
+alongside the existing PR-4 PUSHFD/POPFD addition. Should be filed
+upstream as a follow-up to PR-4.
+
+**Verified in-game 2026-05-10:** Esc now opens pause; second Esc and
+beyond cycle through panels (vanilla strip nav). The auto-close on
+release is gone.
+
+### Bug 1 — original investigation notes (preserved for context)
 
 The investigation uncovered a path the engine's published model doesn't
 mention and we didn't anticipate.
@@ -798,6 +833,16 @@ Reviewed three architectural options for the in-game menu:
 
 ### Next session — verifying the Bug 1 root cause
 
+**Status 2026-05-10 (next-session start):** the entry-time hook
+described below has been **scaffolded and built** —
+`OnInGameOptionsHandleInput` ships in `engine_subscreen.{h,cpp}`,
+hooked at 0x006aaec0 via hooks.toml (cut: PUSH EBX + MOV EBX,[ESP+8],
+5 bytes). Logs every call as `SubScreen.OptInput: this=… p1=0x…
+p2=… caller=0x…`. **Awaiting in-game capture** — pause flicker
+needs to be reproduced and the resulting `patch.log` inspected.
+
+Original plan (still applies):
+
 To unblock Bug 1, the next diagnostic step is to add an **entry-time
 hook on `CSWGuiInGameOptions::HandleInputEvent` @ 0x006aaec0**. Log
 every call with `(param_1, param_2, caller_eip)`. The log will tell
@@ -838,7 +883,8 @@ int return.
   `CoolDownInputEvent()` wrapping `CExoInput::CoolDownEvent`
   @ 0x005df4b0 via the global slot at 0x007A39FC.
 - `patches/Accessibility/engine_subscreen.{h,cpp}` — added
-  `OnSetSWGuiStatus` and `OnHideSWInGameGui` diagnostic handlers.
+  `OnSetSWGuiStatus`, `OnHideSWInGameGui`, and
+  `OnInGameOptionsHandleInput` diagnostic handlers.
 - `patches/Accessibility/menus.{h,cpp}` — added
   `IsDrilledIntoSubScreen()` / `SetDrilledIntoSubScreen()`
   accessors; synthesised-Esc passthrough; seq= stamping on every

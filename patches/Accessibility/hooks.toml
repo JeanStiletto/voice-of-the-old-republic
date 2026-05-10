@@ -803,3 +803,59 @@ type = "pointer"
 [[hooks.parameters]]
 source = "esp+4"
 type = "pointer"
+
+# CSWGuiInGameOptions::HandleInputEvent @ 0x006aaec0 — diagnostic.
+# Pause-flicker investigation, third-link probe (after SetSWGuiStatus
+# and HideSWInGameGui established that pause auto-close goes through
+# this function's case 0xdf branch at +0x40). The decompile gates the
+# Hide call on `param_2 != 0` (PRESS only) but our manager log shows
+# Hide firing right after a val=0 release with no observed press.
+# Logging every entry into this function with (param_1, param_2,
+# caller_eip) tells us which dispatch path is firing the close — see
+# header doc on OnInGameOptionsHandleInput for the three possible
+# outcomes.
+#
+# Bytes from DumpBytes 2026-05-10:
+#   0x006aaec0: 53                 PUSH EBX
+#   0x006aaec1: 8b 5c 24 08        MOV  EBX, [ESP+8]   ; param_1 (post-PUSH)
+#   0x006aaec5: 56                 PUSH ESI
+#   0x006aaec6: 57                 PUSH EDI
+#   0x006aaec7: 8b 7c 24 14        MOV  EDI, [ESP+0x14] ; param_2
+#   0x006aaecb: 85 ff              TEST EDI, EDI
+#   0x006aaecd: 8b f1              MOV  ESI, ECX        ; this
+#   0x006aaecf: 74 52              JZ   +0x52
+#
+# Cut: 5 bytes covering PUSH EBX (1) + MOV EBX, [ESP+8] (4). Register-
+# only push + stack-relative load — both relocate cleanly. ECX is
+# untouched (only written at +0xd via MOV ESI, ECX, well past the cut),
+# so `this` survives in ECX through our handler. ESP at hook entry is
+# at the standard call layout (ret addr at [ESP+0], param_1 at [ESP+4],
+# param_2 at [ESP+8]), so the stack-param sources address those slots.
+#
+# Read-only, no consume — pure passthrough. The handler doesn't change
+# input flow; just logs.
+#
+# Calling convention: __thiscall, ECX = this, [esp+4] = param_1 (int),
+# [esp+8] = param_2 (int). Stack params use `esp+X` LEA per
+# project_kpatchmanager_lea_bug — handler dereferences once.
+[[hooks]]
+address = 0x006aaec0
+type = "detour"
+function = "OnInGameOptionsHandleInput"
+
+original_bytes = [0x53, 0x8b, 0x5c, 0x24, 0x08]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+4"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+8"
+type = "pointer"
