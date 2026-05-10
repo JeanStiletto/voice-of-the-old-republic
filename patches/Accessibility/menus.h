@@ -29,4 +29,22 @@ void TickMonitors();
 // monitor sees a partially-applied state.
 void TickPendingOps();
 
+// Drill-flag accessors (state lives in menus.cpp).
+//
+// `g_drilledIntoSubScreen` controls whether the chain router retargets
+// arrow-key navigation from the InGameMenu strip (where focus naturally
+// lands due to engine's strip-stays-fg pattern) to the actual visible
+// sub-screen content. Originally armed only when the user pressed Enter
+// on a strip icon. Sub-screens that open via direct paths (Esc → pause,
+// M → map, I → inventory etc.) bypass that arm, leaving chain nav
+// pointing at the strip instead of the just-opened sub-screen — the
+// user perceives this as "menu won't navigate" because the sub-screen
+// has no chain anchor.
+//
+// The SubScreen monitor uses these to auto-arm drill on any newly-
+// detected sub-screen, so direct-open paths get the same chain
+// retargeting behaviour as strip-icon Enter.
+bool IsDrilledIntoSubScreen();
+void SetDrilledIntoSubScreen(bool drilled);
+
 }  // namespace acc::menus

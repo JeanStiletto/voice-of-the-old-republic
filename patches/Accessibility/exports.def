@@ -12,3 +12,7 @@ EXPORTS
     OnSetListenerPosition
     OnCalculatePitchVarianceFrequency
     OnSwitchToSWInGameGui
+    OnProcessInput
+    OnClientHandleInputEvent
+    OnSetSWGuiStatus
+    OnHideSWInGameGui

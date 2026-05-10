@@ -16,6 +16,7 @@
 #include "engine_panels.h"
 #include "engine_reads.h"
 #include "log.h"
+#include "menus.h"            // SetDrilledIntoSubScreen — auto-drill on direct opens
 #include "menus_charsheet.h"
 #include "menus_chargen_attr.h"
 #include "menus_chargen_skills.h"
@@ -175,6 +176,7 @@ bool IsSubScreenTracked(void* p) {
 void AnnounceNewSubScreens(void** panels, int count) {
     void* nowVisible[16];
     int   nowCount = 0;
+    bool  newSubScreenDetected = false;
     for (int i = 0; i < count && nowCount < 16; ++i) {
         void* p = panels[i];
         if (!p) continue;
@@ -183,6 +185,7 @@ void AnnounceNewSubScreens(void** panels, int count) {
         if (!spec) continue;
         nowVisible[nowCount++] = p;
         if (IsSubScreenTracked(p)) continue;
+        newSubScreenDetected = true;
         char text[128];
         bool spoke = false;
         if (spec->strref != 0xFFFFFFFFu &&
@@ -204,6 +207,26 @@ void AnnounceNewSubScreens(void** panels, int count) {
     }
     memcpy(s_visibleSubScreens, nowVisible, sizeof(nowVisible));
     s_visibleSubScreenCount = nowCount;
+
+    // Auto-arm drill on any newly-visible sub-screen. Sub-screens that
+    // open via direct paths (Esc → InGameOptions, M → InGameMap, I →
+    // InGameInventory, …) bypass the strip-icon Enter site that
+    // originally armed the drill flag in menus.cpp::OnHandleInputEvent.
+    // Without drill armed, the chain router targets the InGameMenu strip
+    // (which keeps fg per the strip-stays-fg pattern) and arrow keys
+    // navigate the icon row instead of the visible sub-screen content —
+    // user-visible symptom: pause appears to "freeze" because nothing
+    // responds (verified via patch-20260510-130303.log: every Esc →
+    // SetActive #N panel=InGameOptions newControl=NULL leaves the
+    // sub-screen with no chain anchor). Strip-icon Enter still arms
+    // eagerly upstream (line 1630 in menus.cpp) — this just covers the
+    // direct-open paths uniformly.
+    if (newSubScreenDetected && !acc::menus::IsDrilledIntoSubScreen()) {
+        acc::menus::SetDrilledIntoSubScreen(true);
+        acclog::Write("Drill",
+                      "auto-armed on direct sub-screen open "
+                      "(no preceding strip-icon Enter)");
+    }
 }
 
 // ============================================================================

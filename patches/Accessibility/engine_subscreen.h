@@ -40,3 +40,35 @@ extern bool g_switchHookEverFired;
 // table. `thisPtr` ← ECX (CGuiInGame*); `guiId` ← EBX (int, the requested
 // sub-screen GUI_id).
 extern "C" void __cdecl OnSwitchToSWInGameGui(void* thisPtr, int guiId);
+
+// Diagnostic detour for CGuiInGame::HideSWInGameGui @ 0x0062cba0. Pause
+// flicker investigation: SetSWGuiStatus diagnostic identified that pause
+// auto-close goes through HideSWInGameGui (caller EIP 0x0062cbe2 lands
+// inside it). Hooking entry here lets us see WHO calls HideSWInGameGui
+// — the caller_eip in our handler is the engine address that invoked
+// the close. Read-only, passes through.
+//
+// Cut: 9 bytes covering PUSH ESI (1) + MOV ESI,ECX (2) + MOV EAX,[ESI+0x108]
+// (6). All register/memory-relative; relocate cleanly. ECX still holds
+// `this` after our handler returns.
+//
+// Calling convention: __thiscall, ECX = this (CGuiInGame*),
+// [esp+4] = param_1 (int — close-mode flag, exact semantics TBD).
+extern "C" void __cdecl OnHideSWInGameGui(void* thisPtr, void* p1_addr);
+
+// Diagnostic detour for CGuiInGame::SetSWGuiStatus @ 0x0062aa00. The
+// engine flips sw_gui_status via this single setter — 1 (in-world), 2
+// (main menu), 3 (sub-screen showing). Pause-flicker investigation:
+// the status sometimes goes 3→1 within 1 second of pause opening
+// without any visible cause in our log. Hooking at function entry logs
+// every transition with the calling instruction's return EIP so we can
+// identify the engine path that's auto-closing pause.
+//
+// Pure read-only diagnostic — does not consume, does not modify any
+// arguments. Cut at function entry, 5 bytes `8b 44 24 04 56`
+// (MOV EAX,[ESP+4]; PUSH ESI). Stack-relative MOV + register-only PUSH;
+// safe to relocate. Params: this (ECX), new_status (esp+4 LEA), param_2
+// (esp+8 LEA).
+extern "C" void __cdecl OnSetSWGuiStatus(void* thisPtr,
+                                          void* p1_addr,
+                                          void* p2_addr);

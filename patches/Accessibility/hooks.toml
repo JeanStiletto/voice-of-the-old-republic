@@ -632,3 +632,174 @@ type = "int"
 # [[hooks.parameters]]
 # source = "ecx"
 # type = "pointer"
+
+# CClientExoAppInternal::ProcessInput @ 0x006227e0 — frame entry marker.
+# Per-frame call site that pulls events from CExoInput and dispatches them
+# to either the upstream client-app HandleInputEvent or the manager
+# HandleInputEvent based on routing rules in
+# docs/in-game-menu-input-investigation.md. Hooking here gives us a frame
+# delimiter that lets the input log distinguish "two events in one frame"
+# from "two events across two frames" — the open question for the
+# held-Esc repeat-press hypothesis (Q2 in the doc).
+#
+# Function entry @ 0x006227e0 has SEH frame setup + 0x114 of locals (too
+# big and contains absolute addresses to safely cut). We hook AFTER the
+# SEH+locals are in place at 0x006227fb, where the register-save sequence
+# is starting. ECX still holds `this` because nothing between function
+# entry and 0x006227fb writes ECX (the FS:[0] / SUB ESP / SEH register
+# operations are all stack/segment-relative).
+#
+# Bytes from 0x006227fb (DumpBytes 2026-05-10):
+#   0x006227fb: 53           PUSH EBX
+#   0x006227fc: 55           PUSH EBP
+#   0x006227fd: 56           PUSH ESI
+#   0x006227fe: 8b f1        MOV  ESI, ECX     ; this → esi
+#   0x00622800: 33 db        XOR  EBX, EBX     ; (post-cut)
+#
+# Cut: 5 bytes covering PUSH EBX + PUSH EBP + PUSH ESI + MOV ESI,ECX. All
+# register-only, position-independent — relocates cleanly.
+[[hooks]]
+address = 0x006227fb
+type = "detour"
+function = "OnProcessInput"
+
+original_bytes = [0x53, 0x55, 0x56, 0x8b, 0xf1]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+# CClientExoAppInternal::HandleInputEvent @ 0x00621210 — upstream client-app
+# input handler. Sees in-world hotkeys, screenshot, pause, party-cycle,
+# target-actions, the Esc-from-world path (case 0xdf), and the hotkeys
+# 0xd1-0xd8 that open InGame sub-screens. Pair with the existing manager
+# HandleInputEvent hook at 0x0040c907 to verify the val=1 vs val=128
+# routing hypothesis from
+# docs/in-game-menu-input-investigation.md.
+#
+# Function entry (0x00621210) per Lane's SARIF + DumpBytes 2026-05-10:
+#   0x00621210: 51           PUSH ECX           ; local-var slot
+#   0x00621211: 53           PUSH EBX
+#   0x00621212: 55           PUSH EBP
+#   0x00621213: 56           PUSH ESI
+#   0x00621214: 57           PUSH EDI
+#   0x00621215: 8b 7c 24 18  MOV  EDI, [ESP+0x18]   ; param_1 (post-pushes)
+#
+# Cut at function entry: 5 PUSHes (5 bytes). Register-only,
+# position-independent — relocates cleanly. At hook entry no pushes have
+# run yet, so the calling-convention layout is still:
+#   ECX = this
+#   [esp+0] = return address
+#   [esp+4] = param_1 (eventID)
+#   [esp+8] = param_2 (inputActive)
+#
+# The two stack params come through `source = "esp+X"` which emits LEA
+# (per project_kpatchmanager_lea_bug.md) — the handler receives the
+# *address* of each slot and dereferences once. Same pattern as
+# OnPlay3DOneShotSound / OnSetMoveToModuleString / OnSetListenerPosition.
+[[hooks]]
+address = 0x00621210
+type = "detour"
+function = "OnClientHandleInputEvent"
+
+original_bytes = [0x51, 0x53, 0x55, 0x56, 0x57]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+4"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+8"
+type = "pointer"
+
+# CGuiInGame::SetSWGuiStatus @ 0x0062aa00 — diagnostic only, finds the
+# caller that flips sw_gui_status from 3 (sub-screen showing) to 1
+# (in-world) and auto-closes pause within ~1s of opening. The status
+# setter is a single chokepoint for state transitions, so logging here
+# captures every path including ones we don't have hooks on.
+#
+# Function entry per Lane's SARIF + DumpBytes 2026-05-10:
+#   0x0062aa00: 8b 44 24 04        MOV  EAX, [ESP+4]    ; param_1 (new status)
+#   0x0062aa04: 56                 PUSH ESI
+#   0x0062aa05: 8b f1               MOV  ESI, ECX        ; this
+#   0x0062aa07: 48                 DEC  EAX
+#   0x0062aa08: b9 03 00 00 00     MOV  ECX, 3
+#   0x0062aa0d: 3b c1               CMP  EAX, ECX
+#   0x0062aa0f: 0f 87 fd 00 00 00  JA   ...            ; rel32 — must NOT be in cut
+#
+# Cut: 5 bytes covering MOV EAX,[ESP+4] (4) + PUSH ESI (1). Stack-relative
+# load + register-only push — both relocate cleanly. ECX still holds
+# `this` after our handler returns (cut bytes don't touch ECX); MOV ESI,ECX
+# at +5 still works as expected.
+#
+# Calling convention: __thiscall, ECX = this, [esp+4] = new status (int),
+# [esp+8] = unused/reason (int). Both stack params come through `esp+X`
+# which emits LEA per project_kpatchmanager_lea_bug — handler dereferences.
+[[hooks]]
+address = 0x0062aa00
+type = "detour"
+function = "OnSetSWGuiStatus"
+
+original_bytes = [0x8b, 0x44, 0x24, 0x04, 0x56]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+4"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+8"
+type = "pointer"
+
+# CGuiInGame::HideSWInGameGui @ 0x0062cba0 — diagnostic. SetSWGuiStatus
+# hook revealed pause auto-close goes through HideSWInGameGui (caller
+# EIP 0x0062cbe2 = HideSWInGameGui+0x42). Hooking entry here captures
+# WHICH engine path calls HideSWInGameGui in the first place — the
+# caller_eip the handler reads is the return address of the upstream
+# CALL, so we can identify and suppress that path.
+#
+# Function entry per Lane's SARIF + DumpBytes 2026-05-10:
+#   0x0062cba0: 56                 PUSH ESI
+#   0x0062cba1: 8b f1               MOV  ESI, ECX        ; this
+#   0x0062cba3: 8b 86 08 01 00 00  MOV  EAX, [ESI+0x108] ; some field
+#   0x0062cba9: 85 c0               TEST EAX, EAX
+#   0x0062cbab: 57                 PUSH EDI
+#   0x0062cbac: 0f 84 15 01 00 00  JZ   ...           ; rel32 — must NOT be in cut
+#
+# Cut: 9 bytes covering PUSH ESI (1) + MOV ESI,ECX (2) + MOV EAX,[ESI+0x108]
+# (6). Register-only + memory-relative; relocate cleanly. After cut runs:
+# ESI=this, EAX=[this+0x108]. Resume at 0x0062cba9 (TEST EAX,EAX) is the
+# engine's natural next instruction.
+[[hooks]]
+address = 0x0062cba0
+type = "detour"
+function = "OnHideSWInGameGui"
+
+original_bytes = [0x56, 0x8b, 0xf1, 0x8b, 0x86, 0x08, 0x01, 0x00, 0x00]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+4"
+type = "pointer"

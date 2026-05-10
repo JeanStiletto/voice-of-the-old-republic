@@ -51,6 +51,7 @@
 #include "guidance_autowalk.h"  // Phase 2 lay-off 5 (progress watchdog)
 #include "camera_announce.h"    // Phase 2 ad-hoc — camera-direction on A/D
 #include "diag_engine_select.h" // Phase 2 diagnostic — Q/E/Tab observation
+#include "diag_input_pipeline.h"  // Cross-stream seq counter for input diag
 #include "interact_hotkey.h"    // Phase 2 lay-off 9b
 #include "passive_narrate.h"    // Phase 2 lay-off 9a
 #include "peek_description.h"   // Shift+arrow description peek
@@ -1208,6 +1209,12 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     EnsureTolkInitialized();
     static int n = 0;
     ++n;
+    // Shared seq counter — lets readers correlate Menus.Input lines with
+    // Diag.ClientHIE / Diag.ProcInput entries to verify the val=1 vs
+    // val=128 routing hypothesis from
+    // docs/in-game-menu-input-investigation.md. Bumped once per call so a
+    // synthesised pair (upstream → manager) reads as two adjacent seqs.
+    unsigned int seq = acc::diag::input::NextSeq();
 
     // Press-release pairing. When OUR handler consumes a press (Enter on
     // a chain entry → QueueActivate, Esc on a tabbed sub-dialog → drill
@@ -1265,20 +1272,57 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         int translated = acc::engine::ManagerTranslateCode(param_1);
         if (translated != param_1) {
             acclog::Write("Menus.Input",
-                          "#%d this=%p key=logical(%d) -> %s(%d) val=%d "
+                          "#%d seq=%u this=%p key=logical(%d) -> %s(%d) val=%d "
                           "PAIR-CONSUMED (matches consumed press)",
-                          n, thisPtr, param_1,
+                          n, seq, thisPtr, param_1,
                           acc::engine::InputIndexName(translated), translated,
                           param_2);
         } else {
             acclog::Write("Menus.Input",
-                          "#%d this=%p key=%s(%d) val=%d "
+                          "#%d seq=%u this=%p key=%s(%d) val=%d "
                           "PAIR-CONSUMED (matches consumed press)",
-                          n, thisPtr, acc::engine::InputIndexName(param_1),
+                          n, seq, thisPtr, acc::engine::InputIndexName(param_1),
                           param_1, param_2);
         }
         s_lastConsumedPress = 0;
         return 1;
+    }
+
+    // Synthesised-Esc passthrough. CClientExoAppInternal::HandleInputEvent's
+    // case 0xdf falls to LAB_00622111 when its in-world Esc handling can't
+    // run (typically: a MessageBox is up, gating field45_0xb4 != 0). That
+    // path reissues to the manager with a hard-coded `param_1=0xb4,
+    // param_2=1`. The val=1 is the synthesis fingerprint — vanilla
+    // DirectInput presses always carry val=128 (raw 0x80). So
+    // (param_2 == 1) AND Esc-code is unique to upstream synthesis.
+    //
+    // Why pass through instead of acting on it: the engine is using this
+    // path to deliver Esc to whatever modal is currently blocking input
+    // (the MessageBox). The engine's natural panel dispatch will:
+    //   1. Translate 0xb4 → 0x28 (Esc)
+    //   2. Forward to modal_stack[top]'s HandleInputEvent
+    //   3. Run the modal's own Esc handler — which closes the popup AND
+    //      resets input_class / mouse-shown / sw_gui_status correctly via
+    //      the engine's own pop-modal cleanup chain.
+    //
+    // Our previous behaviour (recognise MessageBox-cancel, queue
+    // FireActivate(cancel), CONSUME) duplicated step 3's effect via a
+    // different primitive that does NOT run the engine's cleanup chain.
+    // After Esc-dismiss the user reported "walking + Enter break" — this
+    // is the engine ending up in input_class=2 / mouse shown / etc. with
+    // no popup left to drive cleanup. Verified live in
+    // patch-20260510-093604.log @ seq=491.
+    //
+    // Skip the pair-consume tracker for synthesis events: we're not
+    // consuming the press, so there's nothing for the matching release
+    // (which goes back through upstream's case 0xdf, returns immediately
+    // on val=0, never reaches us) to pair against.
+    if (param_2 == 1 && (param_1 == kInputEsc1 || param_1 == kInputEsc2)) {
+        acclog::Write("Menus.Input",
+                      "#%d seq=%u this=%p key=logical(%d) val=1 "
+                      "SYNTHESISED-PASSTHROUGH (upstream case 0xdf reissue)",
+                      n, seq, thisPtr, param_1);
+        return 0;
     }
 
     // Resolve the foreground panel via the manager's modal_stack / panels[].
@@ -1357,13 +1401,13 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         int translated = acc::engine::ManagerTranslateCode(param_1);
         const char* tag = radialConsumed ? " RADIAL-CONSUMED" : " RADIAL-PASS";
         if (translated != param_1) {
-            acclog::Write("Menus.Input", "#%d this=%p key=logical(%d) -> %s(%d) val=%d%s",
-                          n, thisPtr, param_1,
+            acclog::Write("Menus.Input", "#%d seq=%u this=%p key=logical(%d) -> %s(%d) val=%d%s",
+                          n, seq, thisPtr, param_1,
                           acc::engine::InputIndexName(translated), translated,
                           param_2, tag);
         } else {
-            acclog::Write("Menus.Input", "#%d this=%p key=%s(%d) val=%d%s",
-                          n, thisPtr, acc::engine::InputIndexName(param_1),
+            acclog::Write("Menus.Input", "#%d seq=%u this=%p key=%s(%d) val=%d%s",
+                          n, seq, thisPtr, acc::engine::InputIndexName(param_1),
                           param_1, param_2, tag);
         }
         if (radialConsumed) return trackPress(1);
@@ -1998,12 +2042,12 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     int translated = acc::engine::ManagerTranslateCode(param_1);
     const char* tag = consumed ? " CONSUMED" : "";
     if (translated != param_1) {
-        acclog::Write("Menus.Input", "#%d this=%p key=logical(%d) -> %s(%d) val=%d%s",
-                      n, thisPtr, param_1,
+        acclog::Write("Menus.Input", "#%d seq=%u this=%p key=logical(%d) -> %s(%d) val=%d%s",
+                      n, seq, thisPtr, param_1,
                       acc::engine::InputIndexName(translated), translated, param_2, tag);
     } else {
-        acclog::Write("Menus.Input", "#%d this=%p key=%s(%d) val=%d%s",
-                      n, thisPtr, acc::engine::InputIndexName(param_1), param_1, param_2, tag);
+        acclog::Write("Menus.Input", "#%d seq=%u this=%p key=%s(%d) val=%d%s",
+                      n, seq, thisPtr, acc::engine::InputIndexName(param_1), param_1, param_2, tag);
     }
     return trackPress(consumed ? 1 : 0);
 }
@@ -2081,6 +2125,11 @@ void TickMonitors() {
 void TickPendingOps() {
     void* gm = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
     pending::Drain(gm);
+}
+
+bool IsDrilledIntoSubScreen() { return g_drilledIntoSubScreen; }
+void SetDrilledIntoSubScreen(bool drilled) {
+    g_drilledIntoSubScreen = drilled;
 }
 
 }  // namespace acc::menus

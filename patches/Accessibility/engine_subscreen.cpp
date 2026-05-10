@@ -1,5 +1,8 @@
 #include "engine_subscreen.h"
 
+#include <windows.h>
+#include <cstdint>
+
 #include "engine_panels.h"  // HasActiveSubScreen, CallPrevSWInGameGui
 #include "log.h"
 
@@ -42,4 +45,62 @@ extern "C" void __cdecl OnSwitchToSWInGameGui(void* thisPtr, int guiId) {
                   "sub-screen via PrevSWInGameGui)",
                   thisPtr, guiId);
     acc::engine::CallPrevSWInGameGui();
+}
+
+// Diagnostic: every CGuiInGame::SetSWGuiStatus call logs the new status
+// value plus the calling instruction's return EIP. Read-only — passes
+// through to the original function. The return EIP lets us identify
+// which engine code path is closing pause (status 3→1 transitions) so
+// we can either suppress that path or compensate.
+extern "C" void __cdecl OnSetSWGuiStatus(void* thisPtr,
+                                          void* p1_addr,
+                                          void* p2_addr) {
+    if (!p1_addr || !p2_addr) return;
+
+    int new_status = -1;
+    int param_2 = -1;
+    uint32_t caller_eip = 0;
+
+    __try {
+        new_status = *reinterpret_cast<int*>(p1_addr);
+        param_2    = *reinterpret_cast<int*>(p2_addr);
+        // [esp+0] (one slot below esp+4) is the return address.
+        caller_eip = *(reinterpret_cast<uint32_t*>(p1_addr) - 1);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("SubScreen.Status",
+                      "deref faulted (this=%p p1=%p p2=%p)",
+                      thisPtr, p1_addr, p2_addr);
+        return;
+    }
+
+    acclog::Write("SubScreen.Status",
+                  "this=%p new_status=%d p2=%d caller=0x%08x",
+                  thisPtr, new_status, param_2, caller_eip);
+}
+
+// Diagnostic: every CGuiInGame::HideSWInGameGui call logs the caller
+// EIP. Pause-flicker: pause auto-closes via HideSWInGameGui within ~1s
+// of opening. The SetSWGuiStatus log confirms HideSWInGameGui's body is
+// running (sets status to 4). This hook tells us WHICH engine path
+// invokes HideSWInGameGui — the caller_eip is the return address of the
+// CALL instruction, so we can identify the engine function that's
+// closing pause and decide how to suppress it.
+extern "C" void __cdecl OnHideSWInGameGui(void* thisPtr, void* p1_addr) {
+    if (!p1_addr) return;
+
+    int param_1 = -1;
+    uint32_t caller_eip = 0;
+
+    __try {
+        param_1 = *reinterpret_cast<int*>(p1_addr);
+        caller_eip = *(reinterpret_cast<uint32_t*>(p1_addr) - 1);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("SubScreen.Hide",
+                      "deref faulted (this=%p p1=%p)", thisPtr, p1_addr);
+        return;
+    }
+
+    acclog::Write("SubScreen.Hide",
+                  "this=%p param_1=%d caller=0x%08x",
+                  thisPtr, param_1, caller_eip);
 }
