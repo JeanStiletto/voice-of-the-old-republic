@@ -18,6 +18,7 @@
 #include "diag_engine_select.h"
 #include "dialog_speech.h"
 #include "engine_player.h"
+#include "engine_subscreen.h"
 #include "guidance_autowalk.h"
 #include "interact_hotkey.h"
 #include "menus.h"
@@ -195,6 +196,14 @@ void Dispatch() {
     // single commit thereafter.
     acc::probe::world_hover::TickMonitor();
     acc::probe::world_hover::PollHotkey();
+
+    // input_class re-assert. Edge-triggered on menu→in-world transition.
+    // Compensates for the MessageBoxModal close path not calling
+    // SetInputClass(client, 0, 1) the way CSWGuiInGameOptions does on
+    // case 0x28 — without this, Alt+F4 quit-confirm Esc-dismiss leaves
+    // input_class stuck at 2 and walking gated off. Idempotent for menus
+    // that already reset on close.
+    acc::engine::TickInputClassReassert();
 
     // Pending-op drain runs LAST: every queued action was queued by an
     // input handler this tick or the previous one, and is dispatched only

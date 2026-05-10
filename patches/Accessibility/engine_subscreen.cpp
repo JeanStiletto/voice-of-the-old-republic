@@ -3,12 +3,91 @@
 #include <windows.h>
 #include <cstdint>
 
-#include "engine_panels.h"  // HasActiveSubScreen, CallPrevSWInGameGui
+#include "engine_manager.h"  // kAddrGuiManagerPtr, kMgrModalStackSizeOffset
+#include "engine_panels.h"   // HasActiveSubScreen, CallPrevSWInGameGui
 #include "log.h"
 
 namespace acc::engine {
 
 bool g_switchHookEverFired = false;
+
+namespace {
+
+// CSWCMessage::SendPlayerToServerInput_TogglePauseRequest @ 0x00677800.
+// Static function (no `this` needed — reaches AppManager via the global
+// pointer slot). Toggles the server-side game-world pause state — when
+// game is paused, walking, NPC AI, time-based events all freeze.
+//
+// Call chain: SendPlayerToServerInput_TogglePauseRequest → AppManager
+// →server → CServerExoApp::TogglePauseState(2). The "2" is a bitmask
+// for the "menu pause" source (other bits cover other pause sources
+// like dialog auto-pause, console pause, etc.).
+//
+// Why we need this: HideSWInGameGui (the universal sub-screen close
+// primitive) calls TogglePauseRequest on its pause-screen branch
+// (`field119_0xb38 == 0`) — that's how Esc-on-pause unpauses the
+// world. Alt+F4 / save-overwrite / dialog-skip popups go through
+// MessageBoxModal close, NOT HideSWInGameGui — so the engine's
+// pause-coupled toggle never fires on close, leaving the world paused
+// after the popup dismisses. Walking is gated on the world ticking,
+// so it stays frozen.
+//
+// Signature: undefined4 SendPlayerToServerInput_TogglePauseRequest(void).
+// __cdecl (no `this`) per the decompile.
+constexpr uintptr_t kAddrTogglePauseRequest = 0x00677800;
+using PFN_TogglePauseRequest = int(*)(void);
+
+}  // namespace
+
+void TickInputClassReassert() {
+    // Edge-triggered separately for two transitions:
+    //   * modal_stack non-zero → 0  (popup just closed)
+    //   * any-menu non-zero → 0     (any menu condition just cleared)
+    //
+    // The popup-close transition is the one that needs the pause toggle:
+    // engine's HideSWInGameGui (sub-screen close primitive) calls
+    // TogglePauseRequest on its pause-screen branch — but Alt+F4 /
+    // save-overwrite / dialog-skip popups go through MessageBoxModal
+    // close instead, never hitting that branch. Game stays paused →
+    // walking blocked. We compensate by sending TogglePauseRequest
+    // ourselves when modal_stack pops to empty.
+    //
+    // Pause-screen lives in panels[], not modal_stack — so its
+    // open/close cycle keeps modal_stack at 0 throughout. Our trigger
+    // doesn't fire for it; the engine's HideSWInGameGui correctly
+    // unpauses, no double-toggle.
+    static int s_prevModalSize = 0;
+
+    int modalSize = 0;
+    __try {
+        void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+        if (mgr) {
+            modalSize = *reinterpret_cast<int*>(
+                static_cast<unsigned char*>(mgr) + kMgrModalStackSizeOffset);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return;
+    }
+
+    if (s_prevModalSize > 0 && modalSize == 0) {
+        // Modal popup just closed. Engine's MessageBoxModal close path
+        // doesn't toggle pause; we do it here.
+        auto fn = reinterpret_cast<PFN_TogglePauseRequest>(
+            kAddrTogglePauseRequest);
+        __try {
+            fn();
+            acclog::Write("PauseToggle",
+                          "popup closed (modal_stack %d->0): "
+                          "sent TogglePauseRequest to unpause world",
+                          s_prevModalSize);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            acclog::Write("PauseToggle",
+                          "fault calling TogglePauseRequest");
+        }
+    }
+
+    s_prevModalSize = modalSize;
+}
 
 }  // namespace acc::engine
 

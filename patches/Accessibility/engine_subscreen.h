@@ -29,6 +29,25 @@ namespace acc::engine {
 // "redrill cleanup never armed" from "armed but didn't fire on this event".
 extern bool g_switchHookEverFired;
 
+// Per-frame monitor: when modal_stack pops to empty, send
+// CSWCMessage::SendPlayerToServerInput_TogglePauseRequest to unpause
+// the world. The engine's HideSWInGameGui calls TogglePauseRequest on
+// its pause-screen branch (sub-screen close), but the MessageBoxModal
+// close path (Alt+F4 quit-confirm, save-overwrite, dialog-skip, …)
+// has no equivalent — leaving the world paused after popup-dismiss.
+// Walking gates on world ticking, so it stays frozen.
+//
+// Pause-screen lives in panels[] not modal_stack — its open/close
+// cycle keeps modal_stack at 0 throughout, so this trigger doesn't
+// fire on it (engine's HideSWInGameGui correctly toggles pause for
+// pause-screen). Only modal popups put items in modal_stack.
+//
+// Edge-triggered on modal_stack non-zero → 0 transition. Steady-
+// state does nothing.
+//
+// Called once per frame from core_tick::Dispatch.
+void TickInputClassReassert();
+
 }  // namespace acc::engine
 
 // Detour handler for CGuiInGame::SwitchToSWInGameGui at 0x0062cf2d (5-byte
