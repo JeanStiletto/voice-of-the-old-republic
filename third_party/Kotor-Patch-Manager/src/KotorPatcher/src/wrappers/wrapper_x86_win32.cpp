@@ -222,21 +222,37 @@ namespace KotorPatcher {
 
             // ===== CONDITIONAL CONSUMED-EVENT EXIT =====
             // If the hook config specifies a consumed_exit_address, emit:
-            //   TEST EAX, EAX
-            //   JZ +5                     ; skip the consumed jump, fall through
+            //   PUSHFD                    ; preserve cut-bytes' EFLAGS state
+            //   TEST EAX, EAX             ; clobbers ZF/SF/PF/CF/OF
+            //   JZ +6                     ; skip POPFD + JMP rel32, fall through
+            //   POPFD                     ; consumed path: restore EFLAGS
             //   JMP rel32 consumed_exit   ; handler returned non-zero -> consumed
-            // Caller is responsible for excluding "eax" from POPAD restoration so
-            // the handler's return value reaches this point.
+            //   POPFD                     ; fall-through path: restore EFLAGS
+            //
+            // PUSHFD/POPFD wraps the TEST so that the cut bytes' flag state
+            // (e.g. a CMP whose ZF the engine's downstream Jcc reads) survives
+            // through to the natural-resume JMP. Without this, hooks whose cut
+            // ends in or directly precedes a Jcc were silently misrouted —
+            // documented in `docs/upstream-prs.md` (PR-4) and the project
+            // memory `project_kpatchmanager_consume_test_bugs.md` (Phase 3
+            // lay-off 5 footstep hook + Esc dispatch in CSWGuiManager were
+            // both bitten by this).
+            //
+            // Caller is responsible for excluding "eax" from POPAD restoration
+            // so the handler's return value reaches the TEST.
             if (config.consumedExitAddress != 0) {
+                EmitByte(code, 0x9C);  // PUSHFD — save cut bytes' EFLAGS
                 EmitByte(code, 0x85);  // TEST r/m32, r32
                 EmitByte(code, 0xC0);  // ModRM: EAX, EAX
                 EmitByte(code, 0x74);  // JZ rel8
-                EmitByte(code, 0x05);  // skip the next 5 bytes (JMP rel32)
+                EmitByte(code, 0x06);  // skip POPFD (1) + JMP rel32 (5) = 6 bytes
+                EmitByte(code, 0x9D);  // POPFD — restore EFLAGS for consumed path
                 EmitByte(code, 0xE9);  // JMP rel32
                 DWORD consumedOffset = CalculateRelativeOffset(
                     code - 1,
                     reinterpret_cast<void*>(config.consumedExitAddress));
                 EmitDword(code, consumedOffset);
+                EmitByte(code, 0x9D);  // POPFD — restore EFLAGS for fall-through
 
                 char debugMsg[256];
                 sprintf_s(debugMsg, "[Wrapper] Conditional consumed-exit -> 0x%08X emitted\n",

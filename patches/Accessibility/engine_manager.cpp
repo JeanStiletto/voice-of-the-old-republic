@@ -4,9 +4,29 @@
 #include <cstdint>
 
 #include "engine_offsets.h"  // CExoArrayList, kPanelControlsOffset
+#include "engine_panels.h"   // PanelKind, IdentifyPanel
 #include "log.h"
 
 namespace acc::engine {
+
+// Panels that exist in the engine's panels[] for rendering reasons but never
+// receive input. Picking the topmost panel for foreground purposes should
+// see through them to whatever interactive panel sits underneath. Currently
+// just Fade — the screen-fade-to-black overlay slot at CGuiInGame+0x6c.
+// After an area transition the engine pushes Fade onto panels[] and never
+// pops it; if a higher-priority panel later closes, Fade ends up as
+// panels[top] and our fg routing would otherwise return it, causing input
+// (notably Esc) to fall through to the engine's last-resort handler (the
+// quit-confirm dialog). See docs/in-game-menu-stack-investigation notes
+// in the patch-20260510-003647.log review.
+static bool IsTransparentForegroundKind(PanelKind k) {
+    switch (k) {
+    case PanelKind::Fade:
+        return true;
+    default:
+        return false;
+    }
+}
 
 void* FindOwningPanel(void* control) {
     if (!control) return nullptr;
@@ -43,6 +63,18 @@ void* GetForegroundPanel(void* mgr) {
     int   panelSize = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
     void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
     if (panelSize > 0 && panelData) {
+        // Walk down from the top, skipping render-only kinds (Fade) so the
+        // returned fg is the topmost panel that actually accepts input.
+        // Bound the walk to a sane limit just in case panelSize is corrupt.
+        int n = panelSize > 32 ? 32 : panelSize;
+        for (int i = n - 1; i >= 0; --i) {
+            void* p = panelData[i];
+            if (!p) continue;
+            if (IsTransparentForegroundKind(IdentifyPanel(p))) continue;
+            return p;
+        }
+        // Every entry was either null or transparent — return the actual
+        // top so callers still see *something* and can decide what to do.
         return panelData[panelSize - 1];
     }
     return nullptr;

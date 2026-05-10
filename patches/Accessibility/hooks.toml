@@ -497,6 +497,70 @@ consumed_exit_address = 0x005db449
 source = "ecx"
 type = "pointer"
 
+# CGuiInGame::SwitchToSWInGameGui — detour at 0x0062cf2d (mid-function,
+# 5-byte cut). This is the engine's universal sub-screen-open primitive:
+# called by strip icon onClicks, in-game keymap hotkeys (M for Map, I for
+# Inventory, etc.), and any other engine path that opens an InGame*
+# sub-screen. Detouring here gives us a single cleanup site that covers
+# every entry path uniformly.
+#
+# Why we detour: when a sub-screen is already open and the user invokes a
+# different one, SwitchToSWInGameGui does NOT pop the previous panel — it
+# just pushes the new one on top. For most sub-screens (Map, Equip, …)
+# the natural close-button path eventually pops them; InGameOptions in
+# particular has an OnQuit handler at 0x006ab1b0 that reorders panels[]
+# without actually popping, so Options accumulates as undead-in-stack
+# across multiple drills. Our handler calls PrevSWInGameGui (the engine's
+# own dual at 0x0062cdf0) to pop any active sub-screen BEFORE the original
+# SwitchToSWInGameGui runs, so the new one lands on a clean panels[].
+#
+# Function entry (0x0062cf10) per Lane's SARIF:
+#   void __thiscall SwitchToSWInGameGui(int GUI_id)
+#
+# Bytes from the running process (Steam .exe is DRM-encrypted on disk so
+# the dump came via OpenProcess/ReadProcessMemory at runtime; the .gzf
+# would yield the same):
+#   0x0062cf10: 64 a1 00 00 00 00       MOV  EAX, FS:[0]      ; SEH frame
+#   0x0062cf16: 6a ff                   PUSH 0xffffffff
+#   0x0062cf18: 68 28 93 72 00          PUSH 0x00729328       ; SEH handler
+#   0x0062cf1d: 50                      PUSH EAX
+#   0x0062cf1e: 64 89 25 00 00 00 00    MOV  FS:[0], ESP
+#   0x0062cf25: 83 ec 08                SUB  ESP, 8
+#   0x0062cf28: 53                      PUSH EBX
+#   0x0062cf29: 8b 5c 24 1c             MOV  EBX, [ESP+0x1c]  ; EBX = GUI_id
+#   0x0062cf2d: 85 db                   TEST EBX, EBX         ← hook here
+#   0x0062cf2f: 56                      PUSH ESI
+#   0x0062cf30: 8b f1                   MOV  ESI, ECX         ; ESI = this
+#   0x0062cf32: 0f 8c f4 00 00 00       JL   +0xf4             (rel32 — must
+#                                                                stay outside
+#                                                                cut)
+#
+# Cut: TEST EBX,EBX (2) + PUSH ESI (1) + MOV ESI,ECX (2) = 5 bytes. All
+# register-only, position-independent — relocates cleanly. We hook AFTER
+# the engine has loaded GUI_id into EBX (so we can capture it from a
+# register source rather than [ESP+4] which is subject to the framework's
+# LEA-vs-MOV stack-param bug, see project_kpatchmanager_lea_bug.md).
+#
+# At hook entry: ECX = this (still — nothing in the prologue writes ECX),
+# EBX = GUI_id. Both register-sourced.
+[[hooks]]
+address = 0x0062cf2d
+type = "detour"
+function = "OnSwitchToSWInGameGui"
+
+original_bytes = [0x85, 0xdb, 0x56, 0x8b, 0xf1]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "ebx"
+type = "int"
+
 # CSWGuiListBox::HandleLMouseDown @0x0041c4a0 — DISABLED. Even when this hook
 # never fires (no mouse click occurred), its mere installation causes the
 # title-screen panel to oscillate focus on every arrow press: arrow press

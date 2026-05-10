@@ -11,3 +11,4 @@ EXPORTS
     OnPlayFootstep
     OnSetListenerPosition
     OnCalculatePitchVarianceFrequency
+    OnSwitchToSWInGameGui

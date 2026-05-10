@@ -19,6 +19,7 @@
 #include "engine_input.h"
 #include "engine_manager.h"
 #include "engine_offsets.h"
+#include "engine_panels.h"   // CallPrevSWInGameGui
 #include "log.h"
 
 namespace acc::menus::pending {
@@ -33,6 +34,7 @@ enum class Kind {
     EquipSelect,   // a = panel, b = slot
     EquipCommit,   // a = panel, b = row, c = btn
     SliderInput,   // a = target, code = direction (500 inc / 501 dec)
+    PrevSWInGameGui, // no payload — pops current in-game sub-screen
 };
 
 struct PendingOp {
@@ -106,6 +108,12 @@ bool QueueSliderInput(void* target, int code) {
     g_op.kind = Kind::SliderInput;
     g_op.a = target;
     g_op.code = code;
+    return true;
+}
+
+bool QueuePrevSWInGameGui() {
+    if (g_op.kind != Kind::None) return false;
+    g_op.kind = Kind::PrevSWInGameGui;
     return true;
 }
 
@@ -316,6 +324,15 @@ void Drain(void* gm) {
                 }
             }
         }
+        break;
+    }
+
+    // Pop the active in-game sub-screen via the engine's own primitive.
+    // CallPrevSWInGameGui resolves CGuiInGame and dispatches; logs its own
+    // diagnostic line. Used by the drill-back Esc handler and (when the
+    // close-on-redrill path lands) the strip-icon Enter handler.
+    case Kind::PrevSWInGameGui: {
+        acc::engine::CallPrevSWInGameGui();
         break;
     }
     }

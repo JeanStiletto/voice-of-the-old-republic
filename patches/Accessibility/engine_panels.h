@@ -78,6 +78,12 @@ enum class PanelKind {
     // panel that holds the message text).
     DialogMessagesAux,   // 0xf8: void* messages?
     DialogMessages,      // 0xfc: CGuiInGameDialogMessage*
+
+    // Heap-allocated panels with no fixed CGuiInGame slot. Identified
+    // structurally (vtable/.gui-id signature) inside IdentifyPanel after
+    // the slot table misses, so menu-side code can branch on kind instead
+    // of reaching for a separate IsXxxPanel predicate.
+    SaveLoad,            // CSWGuiSaveLoad: load/save dialog (saveload.gui)
 };
 
 // Return the registered name for `k`, or "Unknown" / "?" if not found.
@@ -117,5 +123,18 @@ bool HasActiveDialogPanel();
 // stack on close (the SwitchToSWInGameGui drill chain pops the previous
 // one before adding the next), so this does not stale-block.
 bool HasActiveSubScreen();
+
+// Pop the current in-game sub-screen via CGuiInGame::PrevSWInGameGui
+// (0x0062cdf0 — the engine-internal counterpart to SwitchToSWInGameGui).
+// This is the engine's own "back to strip" primitive: it removes the
+// sub-screen from panels[] cleanly across all kinds (Options, Map, Equip,
+// Abilities, Journal, Character, Messages), not relying on the per-screen
+// Schliess button onClick (which silent-fails on InGameOptions — the
+// Schliess handler there reorders panels[] without actually popping).
+//
+// Returns true on dispatch (CGuiInGame resolvable + no-op gate cleared),
+// false if CGuiInGame can't be resolved yet (DLL attach, between modules).
+// The caller is responsible for clearing local drill state.
+bool CallPrevSWInGameGui();
 
 }  // namespace acc::engine

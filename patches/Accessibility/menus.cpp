@@ -1209,6 +1209,78 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     static int n = 0;
     ++n;
 
+    // Press-release pairing. When OUR handler consumes a press (Enter on
+    // a chain entry → QueueActivate, Esc on a tabbed sub-dialog → drill
+    // close, etc.), the engine never sees that press. But the matching
+    // RELEASE event still arrives, and the engine's release path fires
+    // onClick on whatever is focused at release-time — which is usually
+    // a different control than at press-time, because our QueueActivate
+    // just opened a sub-screen / drilled / etc.
+    //
+    // Concrete observed double-fire:
+    //   * Enter on "Spiel laden" → QueueActivate opens SaveLoad → engine
+    //     release fires onClick on the now-focused row 0 → first save
+    //     auto-loads.
+    //
+    // Fix: track which key code we consumed on press, pair-consume the
+    // matching release before the handler chain runs.
+    //
+    // Scope is intentionally narrow. We DO NOT pair-consume releases for
+    // presses that our handler didn't consume — those presses reached
+    // the engine and the engine expects to see the matching release for
+    // its own state machine (e.g. press+release click cycle, key-held
+    // tracking). Suppressing them would change vanilla behaviour for
+    // keys we explicitly chose not to intercept, which is the wrong
+    // direction architecturally: extra accessibility hooks shouldn't
+    // perturb the engine's natural flow.
+    //
+    // Single-slot tracking is enough — the engine drives input events
+    // strictly press-then-release per key, and any new press overwrites
+    // the tracker (same logic as a hardware key-state register).
+    //
+    // Pre-wrapper-fix (PR-4 in docs/upstream-prs.md) builds saw both
+    // press and release routed to the engine's RELEASE path due to
+    // EFLAGS clobber. That bug accidentally masked the double-fire by
+    // making the press path a no-op. Now both paths are correctly hit,
+    // we have to clean up after our own consumption.
+    static int s_lastConsumedPress = 0;
+
+    // Helper used by every consume path to keep the press-release tracker
+    // in sync. All early returns from this function — radial, peek,
+    // listbox dispatcher, editbox, and the bottom-of-function fall-through
+    // — funnel through this so a release can never race past stale
+    // tracker state. Press: set the tracker to `param_1` if we consumed,
+    // clear it otherwise (stale tracker from an earlier consumed press
+    // mustn't survive into an unrelated release later). Release: leave
+    // the tracker alone — it's cleared by the early-out at the top of
+    // the next call.
+    auto trackPress = [&](int rv) -> int {
+        if (param_2 != 0) {
+            s_lastConsumedPress = (rv == 1) ? param_1 : 0;
+        }
+        return rv;
+    };
+
+    if (param_2 == 0 && s_lastConsumedPress != 0 && s_lastConsumedPress == param_1) {
+        int translated = acc::engine::ManagerTranslateCode(param_1);
+        if (translated != param_1) {
+            acclog::Write("Menus.Input",
+                          "#%d this=%p key=logical(%d) -> %s(%d) val=%d "
+                          "PAIR-CONSUMED (matches consumed press)",
+                          n, thisPtr, param_1,
+                          acc::engine::InputIndexName(translated), translated,
+                          param_2);
+        } else {
+            acclog::Write("Menus.Input",
+                          "#%d this=%p key=%s(%d) val=%d "
+                          "PAIR-CONSUMED (matches consumed press)",
+                          n, thisPtr, acc::engine::InputIndexName(param_1),
+                          param_1, param_2);
+        }
+        s_lastConsumedPress = 0;
+        return 1;
+    }
+
     // Resolve the foreground panel via the manager's modal_stack / panels[].
     // g_currentPanel tracks "last panel that received SetActiveControl" — fine
     // for per-instance state (sibling-label lookup, cycle-category capture)
@@ -1294,7 +1366,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                           n, thisPtr, acc::engine::InputIndexName(param_1),
                           param_1, param_2, tag);
         }
-        if (radialConsumed) return 1;
+        if (radialConsumed) return trackPress(1);
         // Not consumed (e.g. release edge, or unhandled key like Tab):
         // fall through to the existing handlers below so unrelated input
         // still works while the radial is mounted (rare in practice; the
@@ -1320,7 +1392,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         }
         if (acc::peek::HandleShiftArrow(param_1, param_2, activePanel,
                                         peekFocus)) {
-            return 1;
+            return trackPress(1);
         }
     }
 
@@ -1335,7 +1407,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         int rv = 0;
         if (acc::menus::listbox::TryHandleInput(n, thisPtr, activePanel,
                                                  param_1, param_2, rv)) {
-            return rv;
+            return trackPress(rv);
         }
     }
 
@@ -1350,7 +1422,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         int rv = 0;
         if (acc::menus::editbox::TryHandleInput(n, thisPtr, activePanel,
                                                  param_1, param_2, rv)) {
-            return rv;
+            return trackPress(rv);
         }
     }
 
@@ -1780,19 +1852,33 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         consumed = true;
     }
 
-    // Esc in drill mode: return chain to the strip without closing the
-    // sub-screen. User flow:
+    // Esc in drill mode: close the sub-screen and return chain to the strip.
+    // User flow:
     //   1. On strip, Enter on Inventory → engine pushes InGameInventory,
     //      strip stays fg, drill arms, chain retargets to inventory listbox.
     //   2. User navigates inventory items.
-    //   3. Esc → drill clears, next arrow press rebinds chain to strip.
+    //   3. Esc → CGuiInGame::PrevSWInGameGui pops the sub-screen, drill
+    //      clears, strip resumes foreground for the next arrow press.
     //   4. From strip, Right-arrow + Enter to switch to a different sub-screen.
     //
-    // We deliberately don't fire the sub-screen's exit_button here — leaving
-    // the sub-screen alive in panels[] means re-pressing Enter on the same
-    // icon is a cheap re-drill (no tutorial replay, no engine-side teardown).
-    // Closing the screen is what the sub-screen's own exit_button is for; the
-    // user can navigate to it explicitly while drilled.
+    // Implementation history:
+    //   v1: Cleared drill flag only — sub-screen left alive in panels[].
+    //       Theory: cheap re-drill on re-Enter, no engine teardown/rebuild.
+    //       Cost: stale sub-screen panels stacked across drills, the
+    //       recycled MessageBox slot, and the post-area-load Fade overlay.
+    //       fg routing went unpredictable — Esc in Options hit the engine's
+    //       quit-confirm fallback because Fade dominated panels[].
+    //   v2: FireActivate(Schliess) on the sub-screen's close button.
+    //       Worked for InGameAbilities/Map/Equip/Journal/Character (each
+    //       Schliess.onClick calls into the proper engine teardown path),
+    //       but NOT for InGameOptions — its OnQuit handler at 0x006ab1b0
+    //       reorders panels[] without actually popping the panel, so
+    //       Options accumulated as undead-in-stack across multiple drills.
+    //   v3 (current): CGuiInGame::PrevSWInGameGui (0x0062cdf0).
+    //       Engine-internal "go back to strip" — the dual of
+    //       SwitchToSWInGameGui that the strip's icon onClicks call when
+    //       drilling forward. Pops the active sub-screen uniformly across
+    //       all kinds. No reliance on per-screen onClick wiring.
     //
     // Routes BEFORE the tabbed-panel Esc handler below: drilled mode is the
     // outer state, sub-tab close is the inner. If both could match (drilled
@@ -1808,14 +1894,33 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         // Only fire when activePanel is the sub-screen itself, not a sub-tab
         // or modal sitting on top of it. Tabbed-Esc handler below will close
         // sub-tabs first; once activePanel resolves back to the sub-screen,
-        // the next Esc lands here and clears the drill.
+        // the next Esc lands here and closes it.
         PanelKind apk = IdentifyPanel(activePanel);
         if (acc::menus::monitors::IsInGameSubScreenKind(apk)) {
-            g_drilledIntoSubScreen = false;
-            acclog::Write("Drill", "Esc -> back to strip (sub-screen panel=%p "
-                          "kind=%s left in panels[])",
-                          activePanel, PanelKindName(apk));
-            consumed = true;
+            // Queue PrevSWInGameGui via pending so it runs from Drain after
+            // the input hook returns. PrevSWInGameGui modifies panels[]; the
+            // existing FireActivate path already defers for the same reason
+            // (avoid re-entry through the engine's hover/focus paths).
+            if (acc::menus::pending::IsPending()) {
+                acclog::Write("Drill", "Esc -> sub-screen close deferred "
+                              "(pending op already queued); drill cleared");
+                g_drilledIntoSubScreen = false;
+                consumed = true;
+            } else if (acc::menus::pending::QueuePrevSWInGameGui()) {
+                g_drilledIntoSubScreen = false;
+                acclog::Write("Drill", "Esc -> queued PrevSWInGameGui "
+                              "panel=%p kind=%s",
+                              activePanel, PanelKindName(apk));
+                consumed = true;
+            } else {
+                // QueuePrevSWInGameGui only fails when an op is already
+                // pending; the IsPending() branch above covers that. This
+                // arm is unreachable but kept as a defensive log site.
+                g_drilledIntoSubScreen = false;
+                acclog::Write("Drill", "Esc -> queue refused "
+                              "(unexpected); drill cleared");
+                consumed = true;
+            }
         }
     }
 
@@ -1900,7 +2005,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         acclog::Write("Menus.Input", "#%d this=%p key=%s(%d) val=%d%s",
                       n, thisPtr, acc::engine::InputIndexName(param_1), param_1, param_2, tag);
     }
-    return consumed ? 1 : 0;
+    return trackPress(consumed ? 1 : 0);
 }
 
 // MonitorFocusedControl + MonitorPanelContents + their helpers (content

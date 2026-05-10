@@ -66,6 +66,15 @@ bool QueueEquipCommit(void* panel, void* row, void* btn);
 // change at +0x74 on the next tick and re-announces.
 bool QueueSliderInput(void* target, int code);
 
+// Queue a CGuiInGame::PrevSWInGameGui dispatch. On drain calls
+// acc::engine::CallPrevSWInGameGui() which pops the active in-game
+// sub-screen via the engine's own primitive (cleaner than FireActivate on
+// each sub-screen's Schliess button — see drill-back Esc handler in
+// menus.cpp). Deferred to drain for the same reason as the other ops:
+// modifying panels[] mid-input-dispatch can re-enter through the engine's
+// hover/focus paths.
+bool QueuePrevSWInGameGui();
+
 // True if an op is currently queued. All input-handler debounce sites
 // uniformly check this before queueing — single-slot queue means there's
 // no per-kind discrimination to do (the old code's per-site debounce
