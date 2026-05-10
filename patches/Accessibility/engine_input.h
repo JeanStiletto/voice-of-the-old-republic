@@ -21,17 +21,6 @@ const char* InputIndexName(int code);
 // unchanged.
 int ManagerTranslateCode(int code);
 
-// Wrapper around CExoInput::CoolDownEvent @ 0x005df4b0. Suppresses future
-// emits of `eventID` from CExoInput::GetEvents for `ms` milliseconds. The
-// engine itself uses this for state-changing keys (vanilla quickload sets
-// CoolDownEvent(0x107, 1000) so a held key doesn't re-fire) — we use it
-// to suppress held-Esc repeats after the upstream's case 0xdf fires.
-//
-// Resolves the CExoInput* through the global pointer slot at 0x007A39FC;
-// returns silently if uninitialised (e.g. very early in DLL load before
-// the engine builds its input subsystem). SEH-guarded.
-void CoolDownInputEvent(int eventID, int ms);
-
 }  // namespace acc::engine
 
 // Logical input codes received pre-translation by CSWGuiManager::HandleInputEvent.

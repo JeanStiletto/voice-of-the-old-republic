@@ -5,27 +5,6 @@
 
 namespace acc::engine {
 
-namespace {
-
-// CExoInput global slot. The engine stores a CExoInput* here at startup;
-// every engine call site loads `MOV EAX, [0x007A39FC]; MOV ECX, [EAX+4]` to
-// reach the internal subsystem. Verified by disassembling the case-0xdf
-// ClearEvents call site in CClientExoAppInternal::HandleInputEvent.
-constexpr uintptr_t kAddrExoInputGlobalSlot = 0x007A39FC;
-
-// CExoInput::CoolDownEvent — public facade @ 0x005df4b0. Forwards to
-// CExoInputInternal::CoolDownEvent. Calling convention: __thiscall, so ECX
-// receives `this` (the CExoInput public ptr) and the two ulong args go on
-// the stack in left-to-right order (right-most pushed first).
-//
-// Signature per Lane's SARIF:
-//   void __thiscall CExoInput::CoolDownEvent(ulong eventID, ulong ms);
-using CoolDownEventFn = void(__thiscall*)(void* self, unsigned int eventID,
-                                          unsigned int ms);
-constexpr uintptr_t kAddrCExoInputCoolDownEvent = 0x005df4b0;
-
-}  // namespace
-
 // Names for the InputIndices enum (size 132, definition lifted from Lane's
 // Ghidra SARIF: /KotOR Types/Enums/InputIndices). Index = enum value;
 // covers MOUSE_*, KEYBOARD_*, JOYSTICK_*. -1 / 0xFFFFFFFF is INPUTDEVICE_NONE.
@@ -119,25 +98,6 @@ int ManagerTranslateCode(int code) {
     case 0xb8:            return 0x3f;
     case 0xb9:            return 0x40;
     default:              return code;
-    }
-}
-
-void CoolDownInputEvent(int eventID, int ms) {
-    void* exoInput = nullptr;
-    __try {
-        exoInput = *reinterpret_cast<void**>(kAddrExoInputGlobalSlot);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return;
-    }
-    if (!exoInput) return;
-
-    auto fn = reinterpret_cast<CoolDownEventFn>(kAddrCExoInputCoolDownEvent);
-    __try {
-        fn(exoInput, static_cast<unsigned int>(eventID),
-           static_cast<unsigned int>(ms));
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        // Swallow — diagnostic; the worst case is a stale repeat-press
-        // sneaking through, which is exactly the pre-fix behaviour.
     }
 }
 

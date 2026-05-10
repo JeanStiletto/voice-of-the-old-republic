@@ -56,48 +56,6 @@ extern "C" void __cdecl OnSwitchToSWInGameGui(void* thisPtr, int guiId);
 // [esp+4] = param_1 (int — close-mode flag, exact semantics TBD).
 extern "C" void __cdecl OnHideSWInGameGui(void* thisPtr, void* p1_addr);
 
-// Diagnostic detour for CSWGuiInGameOptions::HandleInputEvent @ 0x006aaec0.
-// Pause-flicker investigation, third-link probe.
-//
-// Prior steps in the chain (see docs/in-game-menu-input-investigation.md
-// "Bug 1 root cause located"):
-//   1. SetSWGuiStatus log showed pause flips 1→3→4 within ~1s of Esc.
-//   2. The 3→4 caller_eip lands inside HideSWInGameGui (+0x42).
-//   3. HideSWInGameGui's caller_eip = 0x006aaf00, which is inside
-//      CSWGuiInGameOptions::HandleInputEvent (case 0xdf branch).
-//   4. The decompile gates that branch on `param_2 != 0` (PRESS only),
-//      but our manager log shows Hide firing immediately after a RELEASE
-//      (`val=0`) with no observed PRESS. Contradiction.
-//
-// This hook resolves the contradiction by logging EVERY entry into
-// CSWGuiInGameOptions::HandleInputEvent with (param_1, param_2,
-// caller_eip). Three outcomes possible:
-//
-//   (a) Hide fires from a `param_2 == 0` invocation — contradicts the
-//       decompile, suggests engine state we haven't accounted for.
-//   (b) Hide fires from a `param_2 != 0` invocation our manager hook
-//       didn't see — separate dispatch path bypassing the mid-function
-//       manager hook at 0x0040c907; would warrant a function-entry
-//       manager hook.
-//   (c) caller_eip on the offending entry identifies the engine path
-//       that's invoking InGameOptions::HandleInputEvent itself — likely
-//       CSWGuiPanel::HandleInputEvent @ 0x00409e60 forwarding from
-//       active control. Tells us which control's release-handler
-//       synchronously re-fires the press path.
-//
-// Pure read-only, no consume, no modification. Cut at function entry,
-// 5 bytes: PUSH EBX (1) + MOV EBX, [ESP+8] (4). Both register/stack-
-// relative — relocate cleanly. ECX still holds `this` after the cut
-// (no instruction in the cut writes ECX).
-//
-// Calling convention: __thiscall, ECX = this (CSWGuiInGameOptions*),
-// [esp+4] = param_1 (eventID, int), [esp+8] = param_2 (inputActive,
-// int). Stack params via `esp+X` emit LEA per
-// project_kpatchmanager_lea_bug.md — handler dereferences once.
-extern "C" void __cdecl OnInGameOptionsHandleInput(void* thisPtr,
-                                                    void* p1_addr,
-                                                    void* p2_addr);
-
 // Diagnostic detour for CGuiInGame::SetSWGuiStatus @ 0x0062aa00. The
 // engine flips sw_gui_status via this single setter — 1 (in-world), 2
 // (main menu), 3 (sub-screen showing). Pause-flicker investigation:

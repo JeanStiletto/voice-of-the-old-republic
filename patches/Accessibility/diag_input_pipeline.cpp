@@ -99,37 +99,6 @@ extern "C" void __cdecl OnClientHandleInputEvent(void* this_ptr,
                       acc::engine::InputIndexName(param_1), param_1, param_2);
     }
 
-    // Bug-1 fix: kill held-Esc auto-repeat. Vanilla case 0xdf calls
-    // ClearEvents on the open-pause path but NOT on the close path, and
-    // ClearEvents only drains events already in the buffer — it doesn't
-    // stop the engine's per-key repeat loop (CExoInputInternal::GetEvents
-    // LAB_005e2d32) from emitting a fresh held-key event on the next
-    // frame. The user can't release Esc in <300ms (Windows' default
-    // repeat threshold), so the second emit reaches the manager (or
-    // upstream, depending on the just-changed sw_gui_status) and triggers
-    // the inverse state change — pause flickers open then closes, or
-    // vice versa.
-    //
-    // Engine-native cure: CExoInput::CoolDownEvent(eventID, ms) — vanilla
-    // already uses this for case 0xda quickload (1000ms). We apply it on
-    // every Esc PRESS the upstream sees, covering both 0xdf (Esc2) and
-    // 0xb4 (Esc1) since either binding can produce the same symptom.
-    // Trade-off: deliberate Esc-double-tap within the cooldown window
-    // is suppressed. 350ms covers the OS repeat threshold while leaving
-    // headroom for fast double-tap, which is rare for screen-reader users.
-    //
-    // Skip val=0 (releases) and val=1 (synthesised reissues — those don't
-    // come from the held-state tracker so cooldown wouldn't help anyway,
-    // and we don't want to swallow the engine's internal re-dispatch).
-    if (param_2 == 0x80 &&
-        (param_1 == 0xb4 || param_1 == 0xdf))
-    {
-        acc::engine::CoolDownInputEvent(0xb4, 350);
-        acc::engine::CoolDownInputEvent(0xdf, 350);
-        acclog::Write("Diag.ClientHIE",
-                      "seq=%u Esc cooldown armed (0xb4 + 0xdf, 350ms)", seq);
-    }
-
     // Bug-2a fix: arrow-key navigation in modal popups. When the engine
     // pushes a MessageBox (Alt+F4 quit-confirm, save-overwrite warning,
     // dialog-skip prompt, …) it lands on modal_stack but DOES NOT change

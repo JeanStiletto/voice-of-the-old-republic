@@ -780,32 +780,41 @@ indicates 0x28 is a separately-bound key — maybe pressing release of
 0xdf gets re-issued internally as 0x28 PRESS via some legacy keymap
 translation we haven't decoded.
 
-### Verified-but-no-longer-load-bearing fixes shipped this session
+### Final state after Bug 1 fix (2026-05-10)
 
-These are in `patches/Accessibility/` and built clean, but didn't
-resolve the reported bug:
+Kept in tree:
+- **Arrow-forward-to-manager when modal is up** (Bug 2a fix in
+  `diag_input_pipeline.cpp`). Vanilla engine bug — `ProcessInput`
+  routes arrow keys to upstream when only `modal_stack` has the popup
+  (sw_gui_status stays at 1). Upstream's switch has no nav-direction
+  cases → arrows dropped silently. Our forward fixes it. Independent
+  of Bug 1, still load-bearing.
+- **Synthesised-Esc passthrough** in `menus.cpp::OnHandleInputEvent`.
+  Cheap diagnostic log line + explicit `return 0` on `(val=1, Esc)`.
+  Documents that the upstream-synth path is real and that we don't
+  consume it.
+- **`SubScreen.Status` / `SubScreen.Hide` diagnostics** — kept for
+  future investigation (Alt+F4 popup walking-break, status=4
+  semantics).
+- **`OnProcessInput` / `OnClientHandleInputEvent` cross-stream seq
+  counter + frame markers** — useful correlation tool for any future
+  input-pipeline work.
+- **Auto-drill on direct sub-screen open** in `menus_monitors.cpp`.
+  Still required for chain routing (when a sub-screen is open, chain
+  retargets from the strip to the sub-screen).
 
-- **Esc cooldown** in `diag_input_pipeline.cpp::OnClientHandleInputEvent`
-  — `CExoInput::CoolDownEvent(0xb4, 350)` + `(0xdf, 350)` on every Esc
-  PRESS. Mechanically correct (suppresses repeat-emits per engine
-  cooldown semantics), but the bug isn't a held-Esc-repeat issue.
-- **Synthesised-Esc passthrough** in `menus.cpp::OnHandleInputEvent`
-  — recognises `param_2==1 && Esc` and returns 0 without consuming,
-  so the engine's natural modal-dispatch handles popup-cancel and
-  state cleanup. Live verification incomplete.
-- **Auto-drill on direct sub-screen open** in
-  `menus_monitors.cpp::AnnounceNewSubScreens` — calls
-  `acc::menus::SetDrilledIntoSubScreen(true)` whenever a new
-  sub-screen panel is detected. Verified firing in
-  `patch-20260510-132024.log` line 6076 / `patch-20260510-140950.log`.
-- **`SubScreen.Status` diagnostic** — every
-  `CGuiInGame::SetSWGuiStatus` call logs `(this, new_status, p2,
-  caller_eip)`. Stays in the build for future investigation.
-- **`SubScreen.Hide` diagnostic** — every
-  `CGuiInGame::HideSWInGameGui` call logs `(this, param_1,
-  caller_eip)`. Stays in the build.
-- **Arrow-forward-to-manager when modal is up** — covers Bug 2a, the
-  one fix in this session that genuinely resolved a user-visible bug.
+Removed during cleanup:
+- **Esc cooldown** — was a speculative fix for a held-Esc-repeat
+  hypothesis (Q2) that turned out to be DISPROVED. Wrapper fix made
+  it irrelevant.
+- **`CoolDownInputEvent` helper in `engine_input.{h,cpp}`** — only
+  consumer was the cooldown block.
+- **Drill-Esc handler in `menus.cpp`** — pre-fix workaround that
+  invoked `CGuiInGame::PrevSWInGameGui` (which actually CYCLES
+  sub-screens, not exits). With wrapper fix, vanilla
+  `case 0x28 → HideSWInGameGui` closes pause/sub-screens cleanly.
+- **`OnInGameOptionsHandleInput` diagnostic** — confirmed the wrapper
+  bug; served its purpose.
 
 ### UX design discussion (not yet implemented)
 
@@ -831,69 +840,32 @@ Reviewed three architectural options for the in-game menu:
    only. Risk: an unbound or rebound-away sub-screen becomes
    unreachable.
 
-### Next session — verifying the Bug 1 root cause
+### Open follow-up — Alt+F4 quit-confirm popup walking break
 
-**Status 2026-05-10 (next-session start):** the entry-time hook
-described below has been **scaffolded and built** —
-`OnInGameOptionsHandleInput` ships in `engine_subscreen.{h,cpp}`,
-hooked at 0x006aaec0 via hooks.toml (cut: PUSH EBX + MOV EBX,[ESP+8],
-5 bytes). Logs every call as `SubScreen.OptInput: this=… p1=0x…
-p2=… caller=0x…`. **Awaiting in-game capture** — pause flicker
-needs to be reproduced and the resulting `patch.log` inspected.
+**Symptom:** Alt+F4 → "Möchtest du wirklich aufhören?" popup. Press Esc
+to dismiss. Popup closes, but the player can no longer walk in the
+open world. Other Esc-dismissed sub-screens (pause, map, inventory,
+…) restore walking correctly.
 
-Original plan (still applies):
+**From `patch-20260510-192745.log` lines 2700-2870:**
+- Esc reaches upstream's case 0xdf at val=128.
+- Upstream sees popup is up (field45_0xb4 != 0), reissues `(0xb4, 1)`
+  to manager.
+- Manager translates → 0x28, dispatches to modal_stack[top] (the
+  popup).
+- Popup handles Esc, closes itself.
+- `SubScreen.Status: new_status=4 caller=0x0062026c` — different
+  caller than the `0x0062cbe2` we saw in HideSWInGameGui. So the
+  popup-close path doesn't go through HideSWInGameGui.
 
-To unblock Bug 1, the next diagnostic step is to add an **entry-time
-hook on `CSWGuiInGameOptions::HandleInputEvent` @ 0x006aaec0**. Log
-every call with `(param_1, param_2, caller_eip)`. The log will tell
-us:
+The cleanup path that resets `input_class` back to 1 (in-world) lives
+in `CSWGuiInGameOptions::HandleInputEvent`'s case 0x28 branch
+(`SetInputClass(client, 0, 1)` after `HideSWInGameGui` returns
+non-zero). The MessageBoxModal close path apparently doesn't have an
+equivalent — `input_class` stays at whatever it was when the popup
+opened, which gates walking.
 
-- Whether Hide fires from a `param_2==0` invocation (contradicts the
-  decompile — would suggest engine state I haven't accounted for) or
-  a `param_2!=0` invocation we didn't observe in the manager log
-  (suggests a separate dispatch path).
-- The caller_eip for `CSWGuiInGameOptions::HandleInputEvent` itself —
-  i.e. who's calling THAT function. If it's
-  `CSWGuiPanel::HandleInputEvent` @ 0x00409e60 (forwarding from
-  active control), that points us at the active control's
-  HandleInputEvent — probably a button.
-
-Once the trigger is identified, the fix is one of:
-
-- (a) Suppress the `case 0xdf` branch in
-  `CSWGuiInGameOptions::HandleInputEvent` from firing when we just
-  opened pause via Esc (debounce window via Hide-suppress flag).
-- (b) Patch the engine code byte-level to skip the Hide call (risky
-  — could break the legitimate close-on-Esc-in-pause path).
-- (c) Hook `CGuiInGame::HideSWInGameGui` itself to consume when
-  invoked within N ms of the corresponding pause-open via Esc.
-
-Option (c) is mechanically simplest — extend the existing diagnostic
-hook on HideSWInGameGui to *consume* with `consumed_exit_address`
-when the suppression window is active. Already have the hook in place,
-just need to add a state-machine flag and convert from void return to
-int return.
-
-### File map of changes shipped this session
-
-- `patches/Accessibility/diag_input_pipeline.{h,cpp}` (NEW) —
-  cross-stream seq counter + ProcessInput / ClientHandleInputEvent
-  diagnostic hooks + Esc cooldown + arrow-forward.
-- `patches/Accessibility/engine_input.{h,cpp}` — added
-  `CoolDownInputEvent()` wrapping `CExoInput::CoolDownEvent`
-  @ 0x005df4b0 via the global slot at 0x007A39FC.
-- `patches/Accessibility/engine_subscreen.{h,cpp}` — added
-  `OnSetSWGuiStatus`, `OnHideSWInGameGui`, and
-  `OnInGameOptionsHandleInput` diagnostic handlers.
-- `patches/Accessibility/menus.{h,cpp}` — added
-  `IsDrilledIntoSubScreen()` / `SetDrilledIntoSubScreen()`
-  accessors; synthesised-Esc passthrough; seq= stamping on every
-  Menus.Input log line.
-- `patches/Accessibility/menus_monitors.cpp` — auto-drill-arm in
-  `AnnounceNewSubScreens` when a new sub-screen is detected without
-  drill already armed.
-- `patches/Accessibility/hooks.toml` — five new `[[hooks]]` entries:
-  `OnProcessInput`, `OnClientHandleInputEvent`, `OnSetSWGuiStatus`,
-  `OnHideSWInGameGui`. (`OnSwitchToSWInGameGui` was already present.)
-- `patches/Accessibility/exports.def` — exports for the four new
-  handlers.
+Probably needs either (a) a dedicated hook on the popup's
+HandleInputEvent that resets `input_class=1` after Esc-close, or
+(b) a frame monitor that asserts `input_class==1` whenever
+`sw_gui_status==1` and modal_stack is empty.

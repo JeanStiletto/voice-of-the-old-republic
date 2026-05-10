@@ -1896,77 +1896,20 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         consumed = true;
     }
 
-    // Esc in drill mode: close the sub-screen and return chain to the strip.
-    // User flow:
-    //   1. On strip, Enter on Inventory → engine pushes InGameInventory,
-    //      strip stays fg, drill arms, chain retargets to inventory listbox.
-    //   2. User navigates inventory items.
-    //   3. Esc → CGuiInGame::PrevSWInGameGui pops the sub-screen, drill
-    //      clears, strip resumes foreground for the next arrow press.
-    //   4. From strip, Right-arrow + Enter to switch to a different sub-screen.
+    // Drill-Esc handler removed 2026-05-10 after the wrapper LEA-ESP fix
+    // (extension to PR-4 in framework wrapper_x86_win32.cpp). Pre-fix the
+    // engine's case 0x28 → HideSWInGameGui path on InGameOptions was
+    // silently misrouted (selective POPAD's ADD ESP,4 clobbered ZF, manager
+    // took press path on releases AND release path on presses), so we
+    // synthesised "close" via PrevSWInGameGui. Post-fix the engine's
+    // vanilla Esc-closes-sub-screen behaviour works correctly for all
+    // sub-screens, AND PrevSWInGameGui turned out to actually CYCLE
+    // through sub-screens rather than exit (function name was misleading).
+    // Pass Esc through to the engine — vanilla closes pause cleanly.
     //
-    // Implementation history:
-    //   v1: Cleared drill flag only — sub-screen left alive in panels[].
-    //       Theory: cheap re-drill on re-Enter, no engine teardown/rebuild.
-    //       Cost: stale sub-screen panels stacked across drills, the
-    //       recycled MessageBox slot, and the post-area-load Fade overlay.
-    //       fg routing went unpredictable — Esc in Options hit the engine's
-    //       quit-confirm fallback because Fade dominated panels[].
-    //   v2: FireActivate(Schliess) on the sub-screen's close button.
-    //       Worked for InGameAbilities/Map/Equip/Journal/Character (each
-    //       Schliess.onClick calls into the proper engine teardown path),
-    //       but NOT for InGameOptions — its OnQuit handler at 0x006ab1b0
-    //       reorders panels[] without actually popping the panel, so
-    //       Options accumulated as undead-in-stack across multiple drills.
-    //   v3 (current): CGuiInGame::PrevSWInGameGui (0x0062cdf0).
-    //       Engine-internal "go back to strip" — the dual of
-    //       SwitchToSWInGameGui that the strip's icon onClicks call when
-    //       drilling forward. Pops the active sub-screen uniformly across
-    //       all kinds. No reliance on per-screen onClick wiring.
-    //
-    // Routes BEFORE the tabbed-panel Esc handler below: drilled mode is the
-    // outer state, sub-tab close is the inner. If both could match (drilled
-    // into Options with a sub-tab open), close the sub-tab first via the
-    // existing handler — drill stays armed because activePanel is still
-    // a sub-tab modal at that point, not the strip.
-    if (param_2 != 0 &&
-        (param_1 == kInputEsc1 || param_1 == kInputEsc2) &&
-        g_drilledIntoSubScreen &&
-        activePanel != nullptr &&
-        IdentifyPanel(activePanel) != PanelKind::InGameMenu)
-    {
-        // Only fire when activePanel is the sub-screen itself, not a sub-tab
-        // or modal sitting on top of it. Tabbed-Esc handler below will close
-        // sub-tabs first; once activePanel resolves back to the sub-screen,
-        // the next Esc lands here and closes it.
-        PanelKind apk = IdentifyPanel(activePanel);
-        if (acc::menus::monitors::IsInGameSubScreenKind(apk)) {
-            // Queue PrevSWInGameGui via pending so it runs from Drain after
-            // the input hook returns. PrevSWInGameGui modifies panels[]; the
-            // existing FireActivate path already defers for the same reason
-            // (avoid re-entry through the engine's hover/focus paths).
-            if (acc::menus::pending::IsPending()) {
-                acclog::Write("Drill", "Esc -> sub-screen close deferred "
-                              "(pending op already queued); drill cleared");
-                g_drilledIntoSubScreen = false;
-                consumed = true;
-            } else if (acc::menus::pending::QueuePrevSWInGameGui()) {
-                g_drilledIntoSubScreen = false;
-                acclog::Write("Drill", "Esc -> queued PrevSWInGameGui "
-                              "panel=%p kind=%s",
-                              activePanel, PanelKindName(apk));
-                consumed = true;
-            } else {
-                // QueuePrevSWInGameGui only fails when an op is already
-                // pending; the IsPending() branch above covers that. This
-                // arm is unreachable but kept as a defensive log site.
-                g_drilledIntoSubScreen = false;
-                acclog::Write("Drill", "Esc -> queue refused "
-                              "(unexpected); drill cleared");
-                consumed = true;
-            }
-        }
-    }
+    // The drill flag still auto-clears via the existing branch in the
+    // foreground-resolution block above (when fg becomes the InGameMenu
+    // strip with no sub-screen alive in panels[]).
 
     // Esc / Backspace (when bound to "back/cancel" via the in-game Key Mapping
     // screen): close the current sub-dialog by FireActivate-ing its Schliess
