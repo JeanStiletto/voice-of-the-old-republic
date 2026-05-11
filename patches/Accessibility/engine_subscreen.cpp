@@ -6,6 +6,7 @@
 #include "engine_manager.h"  // kAddrGuiManagerPtr, kMgrModalStackSizeOffset
 #include "engine_panels.h"   // HasActiveSubScreen, CallPrevSWInGameGui
 #include "log.h"
+#include "tolk.h"
 
 namespace acc::engine {
 
@@ -13,49 +14,40 @@ bool g_switchHookEverFired = false;
 
 namespace {
 
-// CSWCMessage::SendPlayerToServerInput_TogglePauseRequest @ 0x00677800.
-// Static function (no `this` needed — reaches AppManager via the global
-// pointer slot). Toggles the server-side game-world pause state — when
-// game is paused, walking, NPC AI, time-based events all freeze.
+// Runtime toggle for the modal-pop close-handler. Default ON. Alt+U at
+// runtime flips this so we can A/B test against "no hook" without
+// rebuilding. When OFF, TickInputClassReassert still tracks modal_stack
+// edges and logs the transition (so the log records that the popup-close
+// was detected) but does not call HideSWInGameGui — keeping the two
+// halves of the test comparable.
 //
-// Call chain: SendPlayerToServerInput_TogglePauseRequest → AppManager
-// →server → CServerExoApp::TogglePauseState(2). The "2" is a bitmask
-// for the "menu pause" source (other bits cover other pause sources
-// like dialog auto-pause, console pause, etc.).
-//
-// Why we need this: HideSWInGameGui (the universal sub-screen close
-// primitive) calls TogglePauseRequest on its pause-screen branch
-// (`field119_0xb38 == 0`) — that's how Esc-on-pause unpauses the
-// world. Alt+F4 / save-overwrite / dialog-skip popups go through
-// MessageBoxModal close, NOT HideSWInGameGui — so the engine's
-// pause-coupled toggle never fires on close, leaving the world paused
-// after the popup dismisses. Walking is gated on the world ticking,
-// so it stays frozen.
-//
-// Signature: undefined4 SendPlayerToServerInput_TogglePauseRequest(void).
-// __cdecl (no `this`) per the decompile.
-constexpr uintptr_t kAddrTogglePauseRequest = 0x00677800;
-using PFN_TogglePauseRequest = int(*)(void);
+// Earlier iteration of this hook called
+// CSWCMessage::SendPlayerToServerInput_TogglePauseRequest (0x00677800)
+// directly. That only flipped the pause bitmask and left the audio
+// subsystem out of sync — walking + NPC narration resumed but footstep
+// audio and nav cues stayed silent until the user manually pressed Space
+// twice. Current iteration mimics the Esc-menu close path exactly:
+// CSWGuiInGameOptions::HandleInputEvent (0x006aaec0) calls
+// CGuiInGame::HideSWInGameGui(this, 0) on Esc — and that path produces
+// the full unpause + audio resync.
+bool s_pauseToggleEnabled = true;
 
 }  // namespace
 
 void TickInputClassReassert() {
-    // Edge-triggered separately for two transitions:
-    //   * modal_stack non-zero → 0  (popup just closed)
-    //   * any-menu non-zero → 0     (any menu condition just cleared)
+    // Edge-triggered on modal_stack non-zero → 0 (popup just closed).
     //
-    // The popup-close transition is the one that needs the pause toggle:
-    // engine's HideSWInGameGui (sub-screen close primitive) calls
-    // TogglePauseRequest on its pause-screen branch — but Alt+F4 /
-    // save-overwrite / dialog-skip popups go through MessageBoxModal
-    // close instead, never hitting that branch. Game stays paused →
-    // walking blocked. We compensate by sending TogglePauseRequest
-    // ourselves when modal_stack pops to empty.
+    // Engine's HideSWInGameGui is invoked by CSWGuiInGameOptions on Esc-
+    // close of the in-game save/load menu and does the full unpause +
+    // audio resync. MessageBoxModal close (Alt+F4 quit-confirm, save-
+    // overwrite, dialog-skip, …) skips HideSWInGameGui — world stays
+    // half-paused. Mirror the engine's path by invoking
+    // HideSWInGameGui(this, 0) on modal pop.
     //
-    // Pause-screen lives in panels[], not modal_stack — so its
-    // open/close cycle keeps modal_stack at 0 throughout. Our trigger
-    // doesn't fire for it; the engine's HideSWInGameGui correctly
-    // unpauses, no double-toggle.
+    // Pause-screen / sub-screens live in panels[], not modal_stack — so
+    // their open/close cycle keeps modal_stack at 0 throughout. Our
+    // trigger doesn't fire for them; the engine's own HideSWInGameGui
+    // path runs on its own and we don't double-invoke.
     static int s_prevModalSize = 0;
 
     int modalSize = 0;
@@ -70,23 +62,51 @@ void TickInputClassReassert() {
     }
 
     if (s_prevModalSize > 0 && modalSize == 0) {
-        // Modal popup just closed. Engine's MessageBoxModal close path
-        // doesn't toggle pause; we do it here.
-        auto fn = reinterpret_cast<PFN_TogglePauseRequest>(
-            kAddrTogglePauseRequest);
-        __try {
-            fn();
+        if (s_pauseToggleEnabled) {
             acclog::Write("PauseToggle",
                           "popup closed (modal_stack %d->0): "
-                          "sent TogglePauseRequest to unpause world",
+                          "invoking HideSWInGameGui(0) (Esc-menu mirror)",
                           s_prevModalSize);
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            CallHideSWInGameGui(0);
+        } else {
             acclog::Write("PauseToggle",
-                          "fault calling TogglePauseRequest");
+                          "popup closed (modal_stack %d->0): "
+                          "DISABLED (Alt+U) — hook suppressed",
+                          s_prevModalSize);
         }
     }
 
     s_prevModalSize = modalSize;
+}
+
+void PollPauseToggleHotkey() {
+    auto down = [](int vk) -> bool {
+        return (GetAsyncKeyState(vk) & 0x8000) != 0;
+    };
+
+    static bool s_prevU = false;
+    bool alt = down(VK_MENU);
+    bool u   = down('U');
+    bool risingU = u && !s_prevU;
+    s_prevU = u;
+
+    if (!risingU || !alt) return;
+
+    // Foreground-window gate — don't fire if KOTOR isn't focused.
+    HWND fg = GetForegroundWindow();
+    if (fg) {
+        DWORD pid = 0;
+        GetWindowThreadProcessId(fg, &pid);
+        if (pid != GetCurrentProcessId()) return;
+    }
+
+    s_pauseToggleEnabled = !s_pauseToggleEnabled;
+    acclog::Write("PauseToggle",
+                  "Alt+U: hook %s",
+                  s_pauseToggleEnabled ? "ENABLED" : "DISABLED");
+    tolk::Speak(s_pauseToggleEnabled ? L"Pausen-Hook an"
+                                     : L"Pausen-Hook aus",
+                /*interrupt=*/true);
 }
 
 }  // namespace acc::engine

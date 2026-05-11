@@ -48,6 +48,15 @@ extern bool g_switchHookEverFired;
 // Called once per frame from core_tick::Dispatch.
 void TickInputClassReassert();
 
+// Alt+U runtime A/B toggle for the modal-pop pause-toggle. Flips a
+// process-static bool that gates the TogglePauseRequest call inside
+// TickInputClassReassert. Either way the modal-pop transition still
+// gets logged so the test halves stay comparable. Audible feedback
+// via Tolk: "Pausen-Hook an" / "Pausen-Hook aus".
+//
+// Called once per frame from core_tick::Dispatch.
+void PollPauseToggleHotkey();
+
 }  // namespace acc::engine
 
 // Detour handler for CGuiInGame::SwitchToSWInGameGui at 0x0062cf2d (5-byte

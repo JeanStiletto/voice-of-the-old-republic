@@ -1,5 +1,6 @@
 #include "engine_panels.h"
 
+#include <windows.h>  // SEH __try / __except
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -254,6 +255,38 @@ bool CallPrevSWInGameGui() {
     fn(gui);
     acclog::Write("PrevSWInGameGui", "dispatched gui=%p", gui);
     return true;
+}
+
+// CGuiInGame::HideSWInGameGui @ 0x0062cba0. Engine's universal sub-screen
+// close primitive — invoked by CSWGuiInGameOptions::HandleInputEvent
+// (0x006aaec0) with param_1=0 when Esc dismisses the in-game save/load
+// menu. Empirically that path fully resyncs audio/pause; the matching
+// MessageBoxModal close path skips HideSWInGameGui and leaves the world
+// half-paused, which is what this call is meant to fix.
+//
+// __thiscall, this in ECX, single int parameter on the stack, undefined4
+// return.
+static constexpr uintptr_t kAddrHideSWInGameGui = 0x0062cba0;
+typedef int (__thiscall* PFN_HideSWInGameGui)(void* gui, int param_1);
+
+bool CallHideSWInGameGui(int param_1) {
+    void* gui = ResolveGuiInGame();
+    if (!gui) {
+        acclog::Write("HideSWInGameGui",
+                      "skipped: CGuiInGame not resolvable yet");
+        return false;
+    }
+    auto fn = reinterpret_cast<PFN_HideSWInGameGui>(kAddrHideSWInGameGui);
+    __try {
+        fn(gui, param_1);
+        acclog::Write("HideSWInGameGui",
+                      "dispatched gui=%p param_1=%d", gui, param_1);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("HideSWInGameGui",
+                      "fault dispatching gui=%p param_1=%d", gui, param_1);
+        return false;
+    }
 }
 
 bool HasActiveSubScreen() {

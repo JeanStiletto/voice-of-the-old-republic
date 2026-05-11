@@ -137,4 +137,18 @@ bool HasActiveSubScreen();
 // The caller is responsible for clearing local drill state.
 bool CallPrevSWInGameGui();
 
+// Invoke CGuiInGame::HideSWInGameGui (0x0062cba0) directly with the given
+// param_1. This is the engine's "close current sub-screen" primitive —
+// CSWGuiInGameOptions::HandleInputEvent calls it with param_1=0 when the
+// user presses Esc on the in-game save/load menu. That path produces a
+// full unpause + audio resync; the equivalent action on a MessageBoxModal
+// close (Alt+F4 quit-confirm) goes through a different code path that
+// skips HideSWInGameGui entirely and leaves the world half-paused.
+// Calling this on modal-pop is the experiment to make MessageBoxModal
+// close behave like Esc-menu close.
+//
+// Returns true on dispatch, false if CGuiInGame can't be resolved.
+// SEH-wrapped; faults log a line and return false instead of crashing.
+bool CallHideSWInGameGui(int param_1);
+
 }  // namespace acc::engine
