@@ -43,11 +43,25 @@ bool PlayCue(const char* resref);
 // view-mode cues match the spatial-change cues' loudness.
 constexpr float kAccCueGain = 4.0f;
 
-// Fire a 3D positional one-shot cue at a world position. The engine pans
-// and attenuates relative to the current listener — by default the
-// player-camera anchor; see future audio_listener.{h,cpp} if we ever
-// override. Distance falloff curve is the engine's Miles default
-// (investigation: not measured; tune by ear if needed).
+// Fire a 3D positional one-shot cue at a world position. The engine
+// listener is the gameplay camera (~3m behind the character, orbits
+// during rotation, springs on wall collision); leaving cue positions
+// raw means distance + pan are camera-relative, which produces a
+// constant ~3m forward bias and lateral swing as the camera orbits.
+//
+// This wrapper compensates by shifting the source position by
+// (camera - character) before handing it to the engine. By construction
+// listener-to-shifted equals character-to-source, so the engine's 3D
+// math produces character-relative distance + direction without any
+// listener-side change. All other engine audio (footsteps, ambient,
+// dialogue, combat) is unaffected.
+//
+// During view mode the offset is skipped — the OnSetListenerPosition
+// detour already substitutes the virtual cursor for the listener, and
+// cues in that mode are intended to be cursor-relative.
+//
+// Distance falloff curve is the engine's Miles default (investigation:
+// not measured; tune by ear if needed).
 //
 // `volume` is forwarded to the engine's Play3DOneShotSound `volume` slot.
 // Defaults to kAccCueGain so all accessibility cues land at the same

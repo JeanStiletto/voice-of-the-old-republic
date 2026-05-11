@@ -9,6 +9,9 @@
                           // per-thread flag the pitch-variance detour
                           // reads so only the source THIS call creates
                           // gets jitter neutralised
+#include "engine_player.h"  // GetPlayerPosition / GetCameraPosition for
+                            // the character-relative listener offset
+                            // applied to PlayCue3D source positions
 #include "log.h"
 #include "view_mode.h"  // IsActive + TryGetCursorPosition for the listener
                         // override hook
@@ -104,6 +107,41 @@ bool PlayCue3D(const char* resref, const Vector& worldPosition,
     CResRef res;
     FillResRef(res, resref);
     Vector pos = worldPosition;  // copy out before SEH frame (no aliasing)
+
+    // Character-relative listener emulation. The engine's listener follows
+    // the gameplay camera (3m behind the character, orbits during rotation,
+    // springs in/out on wall collision). For navigation cues we want
+    // listener-to-source = character-to-source so distance and direction
+    // are stable and tied to where the player actually *is*, not where
+    // the camera happens to be looking from.
+    //
+    // Trick: shift the source position by (camera - character). By
+    // construction, listener-to-shifted = source-to-character (both
+    // magnitude and direction). The engine's 3D pipeline runs untouched
+    // against the engine's own camera listener; only the coordinates we
+    // hand it are pre-biased. All other engine audio (footsteps, ambient,
+    // dialogue, combat) keeps using its native world positions — the
+    // engine listener is unchanged.
+    //
+    // Skipped while view mode is active: the OnSetListenerPosition detour
+    // already substitutes the virtual cursor for the camera listener,
+    // and cues fired in view mode are intended to sound cursor-relative
+    // (the cursor IS the user's frame of reference there). Applying the
+    // offset on top would double-compensate. View mode keeps the raw
+    // world position.
+    //
+    // Fail-safe: if either position read fails (pre-spawn, area-load,
+    // engine teardown) we fall through to the raw world position — the
+    // pre-2026-05-11 behaviour. No silent breakage on chain failure.
+    if (!acc::view_mode::IsActive()) {
+        Vector charPos, camPos;
+        if (acc::engine::GetPlayerPosition(charPos) &&
+            acc::engine::GetCameraPosition(camPos)) {
+            pos.x += (camPos.x - charPos.x);
+            pos.y += (camPos.y - charPos.y);
+            pos.z += (camPos.z - charPos.z);
+        }
+    }
 
     pitch::BeginScopedZero();
     __try {
