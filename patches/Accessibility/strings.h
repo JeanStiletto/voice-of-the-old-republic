@@ -86,6 +86,36 @@ enum class Id : int {
     //      phrase so the user immediately knows the toggle latched.
     MovementCancelled,
 
+    // ---- Pillar 3 Mode B beacon (Ctrl+-).
+    //      `FmtBeaconStarted`     — opener spoken when StartBeacon arms.
+    //                               One `%s` (resolved destination name).
+    //      `BeaconCancelled`      — cancel-on-second-press toggle. Fixed.
+    //      `FmtBeaconNoPath`      — A* returned empty / no path found.
+    //                               One `%s` (destination name).
+    //      `BeaconAlreadyAtDest`  — player is already within reach of the
+    //                               focused object; no path to describe.
+    //      `FmtRouteHeader`       — assembled route description sentence.
+    //                               Args: name (`%s`), total metres (`%d`),
+    //                               comma-joined segment list (`%s`), and
+    //                               the transition-note tail (`%s`).
+    //      `FmtRouteSegment`      — single segment payload. Args: metres
+    //                               (`%d`), localised compass direction
+    //                               word (`%s` — DirNorth.. via strings.Get).
+    //      `RouteJoinSeparator`   — joiner between segments (typically
+    //                               ", " in both languages; centralised so
+    //                               punctuation tweaks happen here).
+    //      `RouteOneTransition`   — tail "1 Übergang" / "1 transition".
+    //      `RouteNoTransition`    — tail "kein Übergang" / "no transition".
+    FmtBeaconStarted,
+    BeaconCancelled,
+    FmtBeaconNoPath,
+    BeaconAlreadyAtDest,
+    FmtRouteHeader,
+    FmtRouteSegment,
+    RouteJoinSeparator,
+    RouteOneTransition,
+    RouteNoTransition,
+
     // ---- Lay-off 9b combined autowalk+interact hotkey (Enter).
     //      Per-kind pre-roll spoken when the hotkey fires on a focused
     //      object, before the engine click pipeline runs.

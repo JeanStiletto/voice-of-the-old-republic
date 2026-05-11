@@ -6,6 +6,7 @@
 
 #pragma comment(lib, "user32.lib")
 
+#include "engine_compass.h"
 #include "engine_player.h"
 #include "log.h"
 #include "strings.h"
@@ -15,15 +16,6 @@ namespace acc::announce_degrees {
 
 namespace {
 
-// Engine yaw frame: 0° = +X = East, CCW positive ([0, 360)).
-// Compass frame:    0° = North,    CW positive (matches turn_announce).
-// Conversion: compass = (90 - engine + 360) mod 360.
-float EngineYawToCompass(float engineYawDeg) {
-    float c = std::fmod(90.0f - engineYawDeg + 360.0f, 360.0f);
-    if (c < 0.0f) c += 360.0f;
-    return c;
-}
-
 void OnAnnounceDegrees() {
     float engineYaw = 0.0f;
     if (!acc::engine::GetPlayerYawDegrees(engineYaw)) {
@@ -32,7 +24,7 @@ void OnAnnounceDegrees() {
         acclog::Write("AnnounceDegrees", "yaw unavailable, skipping");
         return;
     }
-    float compass = EngineYawToCompass(engineYaw);
+    float compass = acc::engine::EngineYawToCompass(engineYaw);
     int degrees = static_cast<int>(std::floor(compass + 0.5f)) % 360;
     if (degrees < 0) degrees += 360;
 

@@ -2,7 +2,9 @@
 
 #include <windows.h>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
+#include <vector>
 
 // user32.lib for GetAsyncKeyState / GetForegroundWindow /
 // GetWindowThreadProcessId. The patch build script (create-patch.bat) links
@@ -18,6 +20,9 @@
 #include "engine_player.h"
 #include "filter_objects.h"
 #include "guidance_autowalk.h"
+#include "guidance_beacon.h"
+#include "guidance_description.h"
+#include "guidance_pathfind.h"
 #include "log.h"
 #include "peek_description.h"
 #include "strings.h"
@@ -209,28 +214,48 @@ void OnAnnounceFocus() {
     AnnounceCurrent(listing, /*categoryPrefix=*/nullptr);
 }
 
+// Per-kind pre-roll Id picker. Mirrors interact_hotkey's PreRollFor (kept
+// local because that one's in an anon namespace) — the Shift+- autowalk
+// speech uses the same vocabulary as Enter ("Sprich mit X", "Öffne X",
+// "Hebe X auf") so users hear consistent verbs across the two paths.
+acc::strings::Id GuidancePreRollFor(acc::filter::CycleCategory c) {
+    using C = acc::filter::CycleCategory;
+    using S = acc::strings::Id;
+    switch (c) {
+        case C::Door:       return S::FmtInteractOpen;
+        case C::Npc:        return S::FmtInteractTalk;
+        case C::Container:  return S::FmtInteractOpen;
+        case C::Item:       return S::FmtInteractTake;
+        case C::Landmark:   return S::FmtInteractOpen;
+        case C::Transition: return S::FmtInteractOpen;
+        case C::Count_:     break;
+    }
+    return S::FmtInteractOpen;
+}
+
 // Shift+- — guide the player to the currently-focused Pillar 4 object via
-// the cross-cutting acc::guidance::WalkTo wrapper (lay-off 5). Plays the
-// per-category 3D cue at the destination as spatial confirmation, then
-// speaks the localized "Guiding to {name}" payload.
+// `acc::guidance::UseObject`. Plays the per-category 3D cue as spatial
+// confirmation, then speaks the per-kind pre-roll ("Sprich mit X", "Öffne X",
+// "Hebe X auf"). The engine pathfinds + walks the player + triggers the
+// kind-appropriate USE callback (door open, container loot, item pickup,
+// NPC dialog start, transition cross-load).
 //
-// Empty-state: when no item is focused (user hasn't cycled, or the
-// previously-focused object dropped out of scope), speaks the localized
-// "No object focused" phrase and skips the WalkTo call.
+// Migrated 2026-05-11 from `WalkTo` (AddMoveToPointAction) to `UseObject`
+// (AddUseObjectAction) per Phase 5 architectural pivot — the
+// AddMoveToPointAction queue silently no-ops for the leader (engine routes
+// it through the FollowLeader path). UseObject is engine-proven for the
+// leader case; same primitive the Enter interact hotkey falls back to.
 //
-// Cancel-on-second-press: when an autowalk is in flight, the next
-// Shift+- press cancels it via `acc::guidance::CancelMovement` (wraps
-// `CSWSObject::ClearAllActions @ 0x004ccd80`). RE'd 2026-05-04;
-// implementation 2026-05-04. Engine-convention cancel — any directional
-// input from the player interrupts auto-walk — also still works.
-// Re-pressing Shift+- when NOT in flight dispatches a fresh walk to
-// the currently-focused Pillar 4 object (or speaks GuidanceNoFocus if
-// nothing is focused).
+// Empty-state: when no item is focused, speaks GuidanceNoFocus and bails.
+//
+// Cancel-on-second-press: when an autowalk is in flight, the next press
+// cancels it via `acc::guidance::CancelMovement` (ClearAllActions). The
+// `destHint` we pass to UseObject arms in-flight tracking so this toggle
+// works for the new path as well.
 void OnPathfindFocus() {
     // Toggle-cancel branch — runs before the focus check so the user
-    // can cancel with no focus selected (e.g. cycled to a focused
-    // object, walked, then cycled past the end → focus dropped, but
-    // they want to stop the in-flight walk).
+    // can cancel with no focus selected (cycled past the end, focus
+    // dropped, but they want to stop the in-flight walk).
     if (acc::guidance::IsAutowalkInFlight()) {
         bool ok = acc::guidance::CancelMovement();
         if (ok) {
@@ -244,10 +269,9 @@ void OnPathfindFocus() {
             acclog::Write("Cycle", "Shift+- -> [%s] (cancel path)", msg);
             return;
         }
-        // Cancel SEH-faulted — fall through to walk so the second
-        // press at least does *something*. Local in-flight state is
-        // already cleared by CancelMovement's SEH path.
-        acclog::Write("Cycle", "Shift+- cancel SEH-FAULT, falling through to walk");
+        // Cancel SEH-faulted — fall through to dispatch so the second
+        // press at least does *something*.
+        acclog::Write("Cycle", "Shift+- cancel SEH-FAULT, falling through to UseObject");
     }
 
     acc::cycle::CategoryListing listing;
@@ -263,56 +287,163 @@ void OnPathfindFocus() {
         return;
     }
 
-    const Vector& dest = listing.positions[s.focusedIndex];
+    const Vector& dest    = listing.positions[s.focusedIndex];
+    uint32_t      handle  = acc::engine::GetObjectHandle(s.focusedObj);
+    if (handle == 0u || handle == 0xFFFFFFFFu) {
+        // Object resolved at scan time but its engine-side handle slot
+        // is now sentinel — happens during teardown or after the engine
+        // removed the object mid-frame. Speak the localised failure so
+        // the user knows the key landed but the action couldn't run.
+        const char* msg = acc::strings::Get(acc::strings::Id::GuidanceNoFocus);
+        tolk::Speak(msg, /*interrupt=*/true);
+        acclog::Write("Cycle", "Shift+- -> [%s] (handle sentinel for obj=%p)",
+                      msg, s.focusedObj);
+        return;
+    }
 
     // Per-category 3D cue at the destination — same spatial-confirmation
-    // pattern as the cycle keys produce. Reuses the cycle's category-cue
-    // mapping rather than introducing a guidance-specific cue (the user
-    // already knows the category from the cycle, and Pillar 1 hasn't
-    // shipped a guidance-specific cue yet).
+    // pattern as the cycle keys produce.
     auto bindings = BindingsFor(s.category);
     acc::audio::PlayCue3D(acc::audio::GetNavCueResref(bindings.cue), dest);
 
     char name[128] = "";
     if (!acc::engine::GetObjectName(s.focusedObj, name, sizeof(name)) ||
         name[0] == '\0') {
-        // Fall back to the localized category name when the object's
-        // CExoLocString chain produces nothing — same convention as
-        // AnnounceCurrent so an unnamed door still speaks as "Tür" /
-        // "Door" rather than empty.
         std::snprintf(name, sizeof(name), "%s",
                       acc::strings::Get(bindings.name));
     }
 
     char msg[192];
     std::snprintf(msg, sizeof(msg),
-                  acc::strings::Get(acc::strings::Id::FmtGuidingTo),
+                  acc::strings::Get(GuidancePreRollFor(s.category)),
                   name);
 
-    bool ok = acc::guidance::WalkTo(dest);
+    // Disable per-tick player-input clobber for the duration of the AI
+    // action; engine's TickPlayerInputRestore auto-flips back after ~3s.
+    bool inputDisabled = acc::engine::SetPlayerInputEnabled(false);
+
+    bool ok = acc::guidance::UseObject(handle, dest);
     if (ok) {
         tolk::Speak(msg, /*interrupt=*/true);
-        acclog::Write("Cycle", "Shift+- -> [%s] obj=%p "
-                      "dest=(%.2f,%.2f,%.2f) dist=%.2fm (queue path)",
-                      msg, s.focusedObj,
+        acclog::Write("Cycle", "Shift+- -> [%s] obj=%p handle=0x%08x "
+                      "dest=(%.2f,%.2f,%.2f) dist=%.2fm input_disabled=%d",
+                      msg, s.focusedObj, handle,
                       dest.x, dest.y, dest.z,
-                      listing.distances[s.focusedIndex]);
+                      listing.distances[s.focusedIndex],
+                      inputDisabled ? 1 : 0);
     } else {
-        // WalkTo returns false only when no player creature is loaded
-        // (impossible here — TryHandleEvent / PollWin32 already gated on
-        // GetPlayerPosition succeeding) or the engine call faulted under
-        // SEH (engine teardown). Speak the localized failure phrase so
-        // the user can distinguish keypress-eaten from action-failed
-        // (per memory `feedback_never_silence_fallback_announcement`).
+        if (inputDisabled) acc::engine::SetPlayerInputEnabled(true);
         char failMsg[192];
         std::snprintf(failMsg, sizeof(failMsg),
-                      acc::strings::Get(acc::strings::Id::FmtGuidingFailed),
+                      acc::strings::Get(acc::strings::Id::FmtInteractFailed),
                       name);
         tolk::Speak(failMsg, /*interrupt=*/true);
-        acclog::Write("Cycle", "Shift+- -> [%s] WalkTo FAILED obj=%p "
-                      "dest=(%.2f,%.2f,%.2f)",
-                      failMsg, s.focusedObj, dest.x, dest.y, dest.z);
+        acclog::Write("Cycle", "Shift+- -> [%s] UseObject FAILED obj=%p "
+                      "handle=0x%08x",
+                      failMsg, s.focusedObj, handle);
     }
+}
+
+// Ctrl+- — start an audio beacon to the currently-focused Pillar 4 object
+// via our own A* over the static per-area nav graph (engine refuses to
+// plot for the leader). Speaks a turn-by-turn route description as a
+// sanity-check on the calculated path, then arms the beacon — heartbeat
+// cues at each next waypoint, reach cues on arrival.
+//
+// Toggle-cancel: when a beacon is already armed, the second press
+// cancels via `acc::guidance::beacon::CancelBeacon` and speaks the
+// localised "Beacon cancelled" phrase.
+//
+// Independent of Shift+- autowalk — the user can dispatch both in any
+// order (engine walks via UseObject, our beacon pulses cues in parallel
+// for spatial reinforcement).
+void OnBeaconFocus() {
+    if (acc::guidance::beacon::IsActive()) {
+        acc::guidance::beacon::CancelBeacon();
+        const char* msg = acc::strings::Get(
+            acc::strings::Id::BeaconCancelled);
+        tolk::Speak(msg, /*interrupt=*/true);
+        acclog::Write("Cycle", "Ctrl+- -> [%s] (cancel beacon)", msg);
+        return;
+    }
+
+    acc::cycle::CategoryListing listing;
+    acc::cycle::RefreshCurrentListing(listing);
+    auto& s = acc::cycle::GetState();
+
+    if (!s.focusedObj || s.focusedIndex < 0 ||
+        s.focusedIndex >= listing.count) {
+        const char* msg = acc::strings::Get(
+            acc::strings::Id::GuidanceNoFocus);
+        tolk::Speak(msg, /*interrupt=*/true);
+        acclog::Write("Cycle", "Ctrl+- -> [%s]", msg);
+        return;
+    }
+
+    const Vector& dest = listing.positions[s.focusedIndex];
+
+    Vector playerPos;
+    if (!acc::engine::GetPlayerPosition(playerPos)) {
+        // Should be impossible — caller gated on GetPlayerPosition — but
+        // defend so the failure path speaks rather than going silent.
+        const char* msg = acc::strings::Get(
+            acc::strings::Id::GuidanceNoFocus);
+        tolk::Speak(msg, /*interrupt=*/true);
+        acclog::Write("Cycle", "Ctrl+- -> [%s] (player pos unavailable)", msg);
+        return;
+    }
+
+    void* area = acc::engine::GetCurrentArea();
+    char  name[128] = "";
+    if (!acc::engine::GetObjectName(s.focusedObj, name, sizeof(name)) ||
+        name[0] == '\0') {
+        auto bindings = BindingsFor(s.category);
+        std::snprintf(name, sizeof(name), "%s",
+                      acc::strings::Get(bindings.name));
+    }
+
+    // Per-category 3D cue at the destination — same spatial-confirmation
+    // pattern as Shift+-. Plays before any speech so the user hears the
+    // category cue → opener → description in audible order.
+    auto bindings = BindingsFor(s.category);
+    acc::audio::PlayCue3D(acc::audio::GetNavCueResref(bindings.cue), dest);
+
+    std::vector<Vector> waypoints;
+    bool pathOk = acc::guidance::ComputePath(area, playerPos, dest, waypoints);
+
+    if (!pathOk || waypoints.empty()) {
+        char msg[192];
+        std::snprintf(msg, sizeof(msg),
+                      acc::strings::Get(acc::strings::Id::FmtBeaconNoPath),
+                      name);
+        tolk::Speak(msg, /*interrupt=*/true);
+        acclog::Write("Cycle", "Ctrl+- -> [%s] obj=%p (ComputePath failed)",
+                      msg, s.focusedObj);
+        return;
+    }
+
+    // Speak the opener ("Beacon zu {name}") first, then the turn-by-turn
+    // route description. Two separate Tolk calls so screen readers can
+    // queue them in order without interrupt-mid-sentence behaviour. The
+    // opener uses interrupt=true (preempt any in-flight speech); the
+    // description uses interrupt=false so it queues behind the opener.
+    char opener[192];
+    std::snprintf(opener, sizeof(opener),
+                  acc::strings::Get(acc::strings::Id::FmtBeaconStarted),
+                  name);
+    tolk::Speak(opener, /*interrupt=*/true);
+
+    bool isTransition = acc::filter::ObjectMatches(
+        s.focusedObj, acc::filter::CycleCategory::Transition);
+    acc::guidance::description::Speak(playerPos, waypoints, name,
+                                      isTransition, /*interrupt=*/false);
+
+    acc::guidance::beacon::StartBeacon(waypoints);
+
+    acclog::Write("Cycle", "Ctrl+- -> [%s] obj=%p waypoints=%zu "
+                  "dest=(%.2f,%.2f,%.2f) transition=%d",
+                  opener, s.focusedObj, waypoints.size(),
+                  dest.x, dest.y, dest.z, isTransition ? 1 : 0);
 }
 
 // Alt+- — diagnostic alternate path that bypasses the action queue via
@@ -454,6 +585,11 @@ void PollWin32() {
     // Note: holding Alt alone activates the Windows menu bar; harmless in
     // a fullscreen game. Alt+key combinations don't trigger system menus.
     bool alt      = down(VK_MENU);
+    // VK_CONTROL = either Ctrl key — used for Ctrl+- → beacon. AltGr on
+    // a German keyboard synthesises a phantom LCtrl alongside RAlt; we
+    // suppress that combination so AltGr+- doesn't also fire the beacon
+    // when the user invokes announce_degrees with plain AltGr.
+    bool ctrl     = down(VK_CONTROL) && !down(VK_RMENU);
 
     bool risingComma    = comma    && !s_prevComma;
     bool risingPeriod   = period   && !s_prevPeriod;
@@ -488,11 +624,15 @@ void PollWin32() {
         else       OnCycleItem    (/*prev=*/false);
     }
     if (risingAnnounce) {
-        // Modifier precedence: Alt routes to the diagnostic Force path
-        // before Shift's queue path. Alt+Shift+- still goes Force —
-        // simpler than introducing a tri-state, and the user would have
-        // to deliberately combine to land in that case.
-        if (alt)        OnPathfindFocusForce();
+        // Modifier precedence: Ctrl > Alt > Shift > bare. Ctrl wins ties
+        // (Ctrl+Shift+- routes to beacon, not autowalk) so the user has
+        // a deterministic "beacon on this key, period" mapping. Alt is
+        // the diagnostic ForceWalkTo path (queue-bypass — leader path is
+        // broken but the entry-point is kept for any future companion-
+        // NPC nudges). Shift = autowalk via UseObject. Bare = repeat
+        // current focus announce.
+        if (ctrl)       OnBeaconFocus();
+        else if (alt)   OnPathfindFocusForce();
         else if (shift) OnPathfindFocus();
         else            OnAnnounceFocus();
     }

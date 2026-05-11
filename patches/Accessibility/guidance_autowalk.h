@@ -82,7 +82,17 @@ void TickProgressWatchdog();
 // SetPlayerInputEnabled(false) toggle around the dispatch — without it,
 // the per-tick input loop clobbers the queued move (see
 // project_player_control_toggle.md).
-bool UseObject(unsigned long targetHandle);
+//
+// `destHint` is an optional arrival anchor — non-default values arm the
+// shared in-flight tracker (g_inFlight) so `IsAutowalkInFlight` returns
+// true while the engine walks the player to the target, and the
+// per-tick watchdog clears the tracker on arrival via the same 1m
+// horizontal-distance check WalkTo uses. Passing a zero vector (the
+// default) disables in-flight arming; useful for callers that do not
+// have a sensible target position (interact_hotkey's picker fallback,
+// where the engine itself picks the geometry).
+bool UseObject(unsigned long targetHandle,
+               const Vector& destHint = {0.0f, 0.0f, 0.0f});
 
 // Cancel any in-flight autowalk by clearing the player creature's full
 // action queue. Wraps `CSWSObject::ClearAllActions @ 0x004ccd80` (named

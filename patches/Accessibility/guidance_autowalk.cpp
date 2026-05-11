@@ -187,6 +187,15 @@ bool WalkTo(const Vector& destination) {
         // Bad pointer — log will show 0/0, dispatch attempt continues.
     }
 
+    // 2026-05-11: tried writing field101=0 before dispatch to force the
+    // engine onto WalkUpdateLocation (regular) instead of WalkUpdateLocation
+    // _QuickWalk_FollowLeader (which silently no-ops for the leader, per
+    // memory project_addmovetopoint_leader_broken). The engine re-sets
+    // field101 to 1 within a frame and the bailout path still wins. The
+    // hack didn't help; removed. Path-finding for the player goes through
+    // UseObject (CSWSObject::AddUseObjectAction) instead — see Phase 5
+    // architectural pivot in docs/navsystem-progress.md.
+
     __try {
         auto fn = reinterpret_cast<PFN_AddMoveToPointAction>(
             kAddrCSWSCreatureAddMoveToPointAction);
@@ -317,7 +326,7 @@ bool ForceWalkTo(const Vector& destination) {
     return true;
 }
 
-bool UseObject(unsigned long targetHandle) {
+bool UseObject(unsigned long targetHandle, const Vector& destHint) {
     void* creature = acc::engine::GetPlayerServerCreature();
     if (!creature) return false;
 
@@ -340,8 +349,22 @@ bool UseObject(unsigned long targetHandle) {
         return false;
     }
 
-    acclog::Write("Autowalk", "UseObject dispatch target=0x%08lx ret=%d",
-                  targetHandle, ret);
+    // Arm in-flight tracking when caller supplied a destination hint.
+    // The shared TickProgressWatchdog clears the flag when the player
+    // reaches within 1m, so cycle_input's Shift+- toggle-cancel sees
+    // the same "in flight" state UseObject paths set as WalkTo paths.
+    bool destValid = destHint.x != 0.0f || destHint.y != 0.0f ||
+                     destHint.z != 0.0f;
+    if (ret != 0 && destValid) {
+        g_inFlight.active = true;
+        g_inFlight.dest   = destHint;
+    }
+
+    acclog::Write("Autowalk", "UseObject dispatch target=0x%08lx ret=%d "
+                  "destHint=(%.2f,%.2f,%.2f) inFlightArmed=%d",
+                  targetHandle, ret,
+                  destHint.x, destHint.y, destHint.z,
+                  (ret != 0 && destValid) ? 1 : 0);
     return ret != 0;
 }
 

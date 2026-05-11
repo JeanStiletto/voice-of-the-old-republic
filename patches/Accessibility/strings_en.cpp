@@ -34,6 +34,20 @@ const char* Get(Id id) {
 
         case Id::MovementCancelled:    return "Movement cancelled";
 
+        // Beacon (Ctrl+-).
+        case Id::FmtBeaconStarted:     return "Beacon to %s";
+        case Id::BeaconCancelled:      return "Beacon cancelled";
+        case Id::FmtBeaconNoPath:      return "No path to %s";
+        case Id::BeaconAlreadyAtDest:  return "Already at destination";
+        // Route description.
+        // Example: "Route to Door (25 metres): 5 metres North,
+        //           4 metres Northeast, 6 metres East. No transition."
+        case Id::FmtRouteHeader:       return "Route to %s (%d metres): %s. %s.";
+        case Id::FmtRouteSegment:      return "%d metres %s";
+        case Id::RouteJoinSeparator:   return ", ";
+        case Id::RouteOneTransition:   return "One transition";
+        case Id::RouteNoTransition:    return "No transition";
+
         case Id::FmtInteractTalk:      return "Talk to %s";
         case Id::FmtInteractOpen:      return "Use %s";
         case Id::FmtInteractTake:      return "Pick up %s";

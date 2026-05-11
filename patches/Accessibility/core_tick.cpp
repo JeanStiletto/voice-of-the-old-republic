@@ -15,17 +15,17 @@
 #include "combat_query.h"
 #include "combat_queue.h"
 #include "cycle_input.h"
-#include "diag_engine_select.h"
 #include "dialog_speech.h"
 #include "engine_player.h"
 #include "engine_subscreen.h"
 #include "guidance_autowalk.h"
+#include "guidance_beacon.h"
 #include "interact_hotkey.h"
 #include "menus.h"
 #include "party_leader_announce.h"
 #include "passive_narrate.h"
 #include "probe_mouselook.h"
-#include "probe_world_hover.h"
+#include "probe_pathfind.h"
 #include "radial_menu.h"
 #include "spatial_change_detector.h"
 #include "transitions.h"
@@ -69,6 +69,15 @@ void Dispatch() {
     acc::probe_mouselook::PollWin32();
     acc::probe_mouselook::TickSweep();
 
+    // Phase 5 lay-off 1 — path-data RE probe. F9 dispatches WalkTo to a
+    // point 10m ahead and dumps CSWSCreature+0x340 region plus the area's
+    // path_points / path_connections triples across a tick cascade
+    // (pre / +100ms / +500ms / +1500ms / +3500ms) so we can locate the
+    // computed-path waypoint list. Diagnostic-only; goes away once the
+    // result locks the design fork (read engine solution vs re-solve A*).
+    acc::probe_pathfind::PollWin32();
+    acc::probe_pathfind::Tick();
+
     // Phase 4 lay-off 3 — view-mode skeleton. B toggles the "stop and
     // look around without budging the character" mode (lifecycle only;
     // keyboard-driven camera input lands in lay-off 4). Shift+B fires
@@ -84,6 +93,12 @@ void Dispatch() {
     // mode (e.g. tutorial-locked sections, queue blocked by higher-priority
     // action). Permanent instrumentation; reused by every guidance caller.
     acc::guidance::TickProgressWatchdog();
+
+    // Phase 5 Pillar 3 Mode B — audio beacon driver. Reads player
+    // position once per tick, emits BeaconActive heartbeat / Reached /
+    // DestinationReached cues as the user walks the path Ctrl+- armed.
+    // Self-gates on `IsActive()`; idle cost is one bool check.
+    acc::guidance::beacon::Tick();
 
     // Auto-restore player input ~3s after a guidance / interact dispatch
     // disabled it. Idle when no disable session is active. See
@@ -140,15 +155,6 @@ void Dispatch() {
     // footprint + rumble are suppressed for that step.
     acc::audio::footstep_suppress::Tick();
 
-    // Phase 2 diagnostic — Q/E/Tab logging. Engine has its own
-    // target-cycle on Q/E (CClientExoAppInternal::SelectNearestObject
-    // @0x005fb050) per investigation Q6 + verified web sources. Logs
-    // keypresses with current LastTarget so we can correlate against
-    // passive_narrate's `LastTarget changed` lines and decide whether to
-    // delegate our `,`/`.` cycle to the engine's primitive or keep our
-    // own filter. Removable in one commit once decided.
-    acc::diag::engine_select::Tick();
-
     // Radial action menu — verify the engine still has at least one
     // populated row; auto-disarm when it's been cleared (action dispatched,
     // target lost, etc.). Cheap (chain walk + 3 reads); idle when our gate
@@ -194,16 +200,6 @@ void Dispatch() {
     // moves the player when raw AddMoveToPointAction doesn't, the engine
     // click pipeline is the missing layer.
     acc::interact::PollHotkey();
-
-    // Phase 2 lay-off 9-probe — in-world cursor-warp / passive-selection
-    // monitor. Probe RESOLVED 2026-05-04 — see investigation Q6 §"RE —
-    // does MoveMouseToPosition trigger world-hover?". Layer A viable
-    // (LastTarget populates organically); Layer C dropped. Probe stays in
-    // tree until 9a's narration loop is verified working in production
-    // against the same handle stream the probe logged; deletable in a
-    // single commit thereafter.
-    acc::probe::world_hover::TickMonitor();
-    acc::probe::world_hover::PollHotkey();
 
     // MessageBoxModal-close cleanup. Edge-triggered on modal_stack
     // non-zero → 0. The engine's MessageBoxModal close path (Alt+F4

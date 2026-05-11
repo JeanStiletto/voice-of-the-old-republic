@@ -44,6 +44,21 @@ const char* Get(Id id) {
 
         case Id::MovementCancelled:    return "Bewegung abgebrochen";
 
+        // Beacon (Ctrl+-).
+        case Id::FmtBeaconStarted:     return "Beacon zu %s";
+        case Id::BeaconCancelled:      return "Beacon abgebrochen";
+        case Id::FmtBeaconNoPath:      return "Kein Pfad zu %s";
+        case Id::BeaconAlreadyAtDest:  return "Bereits am Ziel";
+        // Route description.
+        // Args: name, total metres, joined segment list, transition tail.
+        // Example: "Route zu T\xFCr (25 Meter): 5 Meter Norden,
+        //           4 Meter Nord-Ost, 6 Meter Osten. Kein \xDC" "bergang."
+        case Id::FmtRouteHeader:       return "Route zu %s (%d Meter): %s. %s.";
+        case Id::FmtRouteSegment:      return "%d Meter %s";
+        case Id::RouteJoinSeparator:   return ", ";
+        case Id::RouteOneTransition:   return "Ein \xDC" "bergang";          // Übergang
+        case Id::RouteNoTransition:    return "Kein \xDC" "bergang";         // Übergang
+
         case Id::FmtInteractTalk:      return "Sprich mit %s";
         case Id::FmtInteractOpen:      return "\xD6" "ffne %s";                 // Öffne
         case Id::FmtInteractTake:      return "Hebe %s auf";

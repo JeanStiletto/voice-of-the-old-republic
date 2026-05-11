@@ -5,6 +5,7 @@
 
 #pragma comment(lib, "user32.lib")
 
+#include "engine_compass.h"
 #include "engine_player.h"
 #include "log.h"
 #include "strings.h"
@@ -25,8 +26,8 @@ constexpr float kCameraDpsDefault = 200.0f;
 constexpr float kSignA = -1.0f;  // A = rotate CCW = compass yaw decreases
 constexpr float kSignD = +1.0f;  // D = rotate CW  = compass yaw increases
 
-// Sector geometry — same parameters as turn_announce.
-constexpr int   kSectorCount = 8;
+// Sector geometry — same parameters as turn_announce. Conversion math
+// lives in engine_compass.{h,cpp}; only the hysteresis state stays here.
 constexpr float kSectorSize  = 45.0f;
 constexpr float kHalfSector  = 22.5f;
 constexpr float kHysteresis  = 5.0f;
@@ -43,37 +44,8 @@ constexpr DWORD kQuietMs = 250;
 // rotating. ≈600ms gives one short German direction word per beat.
 constexpr DWORD kMinIntervalHeldMs = 600;
 
-acc::strings::Id SectorString(int sector) {
-    using S = acc::strings::Id;
-    switch (sector) {
-        case 0: return S::DirNorth;
-        case 1: return S::DirNortheast;
-        case 2: return S::DirEast;
-        case 3: return S::DirSoutheast;
-        case 4: return S::DirSouth;
-        case 5: return S::DirSouthwest;
-        case 6: return S::DirWest;
-        case 7: return S::DirNorthwest;
-    }
-    return S::DirNorth;
-}
-
 float AngularDelta(float a, float b) {
     return std::fmod(a - b + 540.0f, 360.0f) - 180.0f;
-}
-
-float EngineYawToCompass(float engineYawDeg) {
-    float c = std::fmod(90.0f - engineYawDeg + 360.0f, 360.0f);
-    if (c < 0.0f) c += 360.0f;
-    return c;
-}
-
-int CompassToSector(float compassDeg) {
-    float adj = std::fmod(compassDeg + kHalfSector + 360.0f, 360.0f);
-    int s = static_cast<int>(adj / kSectorSize);
-    if (s < 0)              s = 0;
-    if (s >= kSectorCount)  s = kSectorCount - 1;
-    return s;
 }
 
 void NormalizeYaw(float& yaw) {
@@ -115,7 +87,7 @@ void Tick() {
         return;
     }
 
-    float charCompass = EngineYawToCompass(charEngineYaw);
+    float charCompass = acc::engine::EngineYawToCompass(charEngineYaw);
     DWORD now = GetTickCount();
 
     // First-tick init: anchor camera estimate to current character yaw,
@@ -123,7 +95,7 @@ void Tick() {
     if (s_camYawCompass < 0.0f) {
         s_camYawCompass    = charCompass;
         s_lastCharCompass  = charCompass;
-        s_lastSpokenSector = CompassToSector(charCompass);
+        s_lastSpokenSector = acc::engine::CompassToSector(charCompass);
         s_pendingSector    = s_lastSpokenSector;
         s_lastChangeAt     = now;
         s_lastSpokenAt     = now;
@@ -174,7 +146,7 @@ void Tick() {
     if (charDelta > 1.0f) {
         // Update spoken/pending so the next genuine A/D rotation registers
         // against the post-resync sector, not the pre-resync one.
-        int snappedSector = CompassToSector(s_camYawCompass);
+        int snappedSector = acc::engine::CompassToSector(s_camYawCompass);
         if (snappedSector != s_lastSpokenSector) {
             s_lastSpokenSector = snappedSector;
             s_pendingSector    = snappedSector;
@@ -189,7 +161,7 @@ void Tick() {
     float distFromLast = std::fabs(AngularDelta(s_camYawCompass, lastCentre));
     int   currentSector = (distFromLast <= kHalfSector + kHysteresis)
                               ? s_lastSpokenSector
-                              : CompassToSector(s_camYawCompass);
+                              : acc::engine::CompassToSector(s_camYawCompass);
 
     if (currentSector != s_pendingSector) {
         s_pendingSector = currentSector;
@@ -212,7 +184,7 @@ void Tick() {
 
     if (!stable && !heldOverride) return;
 
-    auto id = SectorString(s_pendingSector);
+    auto id = acc::engine::SectorString(s_pendingSector);
     const char* phrase = acc::strings::Get(id);
     tolk::Speak(phrase, /*interrupt=*/false);
     acclog::Write("CameraAnnounce", "sector %d -> %d (%s); estCamYaw=%.1f "
@@ -228,7 +200,7 @@ void Tick() {
 bool TryGetCameraEngineYawDegrees(float& out) {
     if (s_camYawCompass < 0.0f) return false;  // not yet anchored
     // Compass → engine: engine = (90 - compass + 360) mod 360. The
-    // formula is its own inverse (same as EngineYawToCompass above)
+    // formula is its own inverse (same as engine_compass::EngineYawToCompass)
     // because both frames are degree-rotations on the unit circle —
     // a 180° + sign-flip composition is involutive.
     float engine = std::fmod(90.0f - s_camYawCompass + 360.0f, 360.0f);
