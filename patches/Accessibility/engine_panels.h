@@ -171,4 +171,37 @@ bool CallSwitchToSWInGameGui(int guiId);
 // SEH-wrapped; faults log a line and return false instead of crashing.
 bool CallHideSWInGameGui(int param_1);
 
+// "Is the foreground UI capturing input" predicate — shared between every
+// in-world hotkey gate (Enter via interact_hotkey, Tab leader-announce via
+// party_leader_announce, etc.). Returns true if any of:
+//   - a CSWGuiDialog* panel is alive anywhere in panels[]
+//   - the foreground panel is modal_stack[top]
+//   - the foreground panel is one of: Container, Store, Examine, Dialog*,
+//     TutorialBox, MessageBoxModal, StatusSummary, AreaTransition,
+//     InGameMenu (strip stays fg while any sub-screen is drilled)
+//
+// Uses a blacklist rather than whitelist: panels[] keeps stale entries
+// (closed Fade overlays, dismissed Options menus) at the top of the
+// stack for seconds, so a whitelist of "in-world overlay kinds"
+// underblocks because those stale entries get reported as fg by
+// GetForegroundPanel.
+enum class UiBlockReason {
+    NotBlocked,
+    DialogInStack,
+    ForegroundModal,
+    ForegroundBlockingKind,
+};
+
+struct UiBlockState {
+    UiBlockReason reason   = UiBlockReason::NotBlocked;
+    void*         fgPanel  = nullptr;
+    PanelKind     fgKind   = PanelKind::Unknown;
+    int           modalStackTop = -1;  // index in modal_stack when reason == ForegroundModal
+};
+
+// Optional `outState` is filled with diagnostic detail for the caller's
+// log line (fg panel + kind, modal index, why it's blocked). Pass nullptr
+// when only the bool answer is needed.
+bool IsForegroundUiBlocking(UiBlockState* outState = nullptr);
+
 }  // namespace acc::engine

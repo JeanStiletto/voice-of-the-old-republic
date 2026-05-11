@@ -22,6 +22,7 @@
 #include "guidance_autowalk.h"
 #include "interact_hotkey.h"
 #include "menus.h"
+#include "party_leader_announce.h"
 #include "passive_narrate.h"
 #include "probe_mouselook.h"
 #include "probe_world_hover.h"
@@ -97,6 +98,13 @@ void Dispatch() {
     // on the same object; recency-suppress to be added if double-narration
     // proves disruptive. Self-gates on player-loaded.
     acc::passive_narrate::Tick();
+
+    // Tab leader announce — Win32-polled Tab rising edge speaks the
+    // controlled creature's name (after the engine has cycled to it).
+    // Gates: foreground-window, player-loaded, IsForegroundUiBlocking
+    // (skip while drilled in a panel — manager-side Tab handles panel
+    // cycling there). Repetition intentional (solo-mode confirmation).
+    acc::party_leader_announce::Tick();
 
     // Phase 2 ad-hoc — octagonal direction-on-turn announcement (Pillar 2
     // sub-feature C, pulled forward to give the user feedback that A/D /

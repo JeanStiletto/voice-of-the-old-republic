@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <cstring>
 
-#include "engine_manager.h"  // kAddrGuiManagerPtr, kMgrPanels*Offset
+#include "engine_manager.h"  // kAddrGuiManagerPtr, kMgrPanels*Offset, GetForegroundPanel
 #include "engine_offsets.h"  // CExoArrayList, kPanelControlsOffset, kVtableListBox
 #include "log.h"
 
@@ -338,6 +338,67 @@ bool HasActiveSubScreen() {
         }
     }
     return false;
+}
+
+bool IsForegroundUiBlocking(UiBlockState* outState) {
+    if (outState) *outState = UiBlockState{};
+
+    // (1) Dialog panel anywhere in panels[]. Dialog reply turns briefly
+    // swap fg to a transient Fade overlay while the actual CSWGuiDialog*
+    // panel stays in panels[]; a pure fg-kind check misses that window.
+    if (HasActiveDialogPanel()) {
+        if (outState) outState->reason = UiBlockReason::DialogInStack;
+        return true;
+    }
+
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!mgr) return false;
+    void* fgPanel = GetForegroundPanel(mgr);
+    if (!fgPanel) return false;
+    PanelKind fgKind = IdentifyPanel(fgPanel);
+
+    if (outState) {
+        outState->fgPanel = fgPanel;
+        outState->fgKind  = fgKind;
+    }
+
+    // (2) Foreground is modal_stack[top] — engine has elevated it to capture
+    // all input. Catches every PushModalPanel target without enumeration.
+    auto* mgrBase = reinterpret_cast<unsigned char*>(mgr);
+    int   modalSize = *reinterpret_cast<int*>(
+        mgrBase + kMgrModalStackSizeOffset);
+    void** modalData = *reinterpret_cast<void***>(
+        mgrBase + kMgrModalStackDataOffset);
+    if (modalSize > 0 && modalData && modalData[modalSize - 1] == fgPanel) {
+        if (outState) {
+            outState->reason        = UiBlockReason::ForegroundModal;
+            outState->modalStackTop = modalSize - 1;
+        }
+        return true;
+    }
+
+    // (3) Foreground kind blacklist. InGameMenu strip stays foreground while
+    // any sub-screen (Inventory / Map / Equip / …) is drilled — covers them
+    // transitively. Strip itself routes Enter to its chain handler in
+    // menus.cpp; in-world hotkeys never make sense while a menu is open.
+    switch (fgKind) {
+    case PanelKind::Container:
+    case PanelKind::Store:
+    case PanelKind::Examine:
+    case PanelKind::DialogCinematic:
+    case PanelKind::DialogCinematicCopy:
+    case PanelKind::DialogComputer:
+    case PanelKind::DialogComputerCamera:
+    case PanelKind::TutorialBox:
+    case PanelKind::MessageBoxModal:
+    case PanelKind::StatusSummary:
+    case PanelKind::AreaTransition:
+    case PanelKind::InGameMenu:
+        if (outState) outState->reason = UiBlockReason::ForegroundBlockingKind;
+        return true;
+    default:
+        return false;
+    }
 }
 
 }  // namespace acc::engine

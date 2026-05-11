@@ -801,125 +801,40 @@ void PollHotkey() {
 
     // Gate on "no true-blocker panel is foreground". GetPlayerPosition only
     // confirms we're in-world; it doesn't tell us whether a UI panel is
-    // routing input. Without this check, Enter pressed inside the loot UI
-    // fires both BTN_OK (via menus.cpp's Container handler) AND a stale
-    // UseObject on the chest (via this poll).
-    //
-    // BLACKLIST approach (not whitelist). The engine's panels[] keeps stale
-    // entries — closed Options menus, completed Fade overlays, etc. — at
-    // the top of the stack for seconds after the user closed them. A
-    // whitelist of "in-world overlay" kinds underblocks because those stale
-    // entries get reported as fg by GetForegroundPanel. Verified empirically
-    // in patch-20260504-105955.log lines 1750+: fg = Fade (12B77D18) for
-    // 20+ seconds while the user was walking around and cycling targets.
-    //
-    // The blacklist names panels that *actually* route Enter to themselves
-    // when foreground — loot, shop, examine, conversation, tutorial popup,
-    // confirm modal, area-load. If we miss one (Inventory etc. when actually
-    // open) Enter will double-fire; that's recoverable. The reverse — over-
-    // blocking — leaves Enter dead in the world and is the worse failure
-    // mode of the two (already burned us once).
-    //
-    // Always logs the gate decision so future "Enter did nothing" reports
-    // surface here directly without another instrumentation pass.
-
-    // Stack-scan blocker: during dialog reply turns the engine briefly swaps
-    // fg to a transient Fade overlay while the actual CSWGuiDialog* panel
-    // stays in panels[]. The fg-only blacklist below misses that window —
-    // verified in patch-20260505-050419.log lines 2511→2531: BLOCKED on
-    // DialogCinematicCopy, then 1s later ALLOW on Fade dispatched
-    // [Dialoge end_trask] action 0x3ea on the in-world target. Mirrors the
-    // panels[] scan that MonitorDialogReplies already uses; dialog panels
-    // do not stay stale (that monitor's disarm path proves it).
-    if (acc::engine::HasActiveDialogPanel()) {
-        acclog::Write("Interact", "%s gate -- BLOCKED, dialog panel in stack",
-                      keyTag);
+    // routing input. Shared predicate IsForegroundUiBlocking() lives in
+    // engine_panels — same blacklist used by party_leader_announce's Tab
+    // gate so the two stay in sync.
+    acc::engine::UiBlockState ui;
+    if (acc::engine::IsForegroundUiBlocking(&ui)) {
+        switch (ui.reason) {
+        case acc::engine::UiBlockReason::DialogInStack:
+            acclog::Write("Interact",
+                          "%s gate -- BLOCKED, dialog panel in stack",
+                          keyTag);
+            break;
+        case acc::engine::UiBlockReason::ForegroundModal:
+            acclog::Write("Interact",
+                          "%s gate -- BLOCKED, fg=%p kind=%s "
+                          "(modal_stack[%d] top)",
+                          keyTag, ui.fgPanel,
+                          acc::engine::PanelKindName(ui.fgKind),
+                          ui.modalStackTop);
+            break;
+        case acc::engine::UiBlockReason::ForegroundBlockingKind:
+            acclog::Write("Interact",
+                          "%s gate -- BLOCKED, fg=%p kind=%s",
+                          keyTag, ui.fgPanel,
+                          acc::engine::PanelKindName(ui.fgKind));
+            break;
+        default:
+            break;
+        }
         return;
     }
-
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (mgr) {
-        void* fgPanel = acc::engine::GetForegroundPanel(mgr);
-        if (fgPanel) {
-            acc::engine::PanelKind fgKind = acc::engine::IdentifyPanel(fgPanel);
-            bool blocking = false;
-
-            // Modal-stack gate: if `fgPanel` came from the manager's
-            // modal_stack rather than panels[], the engine has elevated
-            // it to capture all input — by definition no in-world
-            // dispatch should fire while a modal is up. Catches every
-            // panel that gets pushed via PushModalPanel @0x40bd90
-            // (level-up wizard, message-box modals, dialog confirms,
-            // engine-side popups we haven't classified yet) without
-            // needing each kind to be enumerated here.
-            //
-            // Reuses the existing CSWGuiManager constants from
-            // engine_manager.h (kMgrModalStack*Offset). The check is
-            // just the same modal_stack[top] read GetForegroundPanel
-            // already does internally, repeated here only to know
-            // *whether* the result came from modal_stack vs panels[].
-            // Cheap (two memory reads, no chain walk).
-            auto* mgrBase = reinterpret_cast<unsigned char*>(mgr);
-            int   modalSize = *reinterpret_cast<int*>(
-                mgrBase + kMgrModalStackSizeOffset);
-            void** modalData = *reinterpret_cast<void***>(
-                mgrBase + kMgrModalStackDataOffset);
-            bool fgIsModal = false;
-            if (modalSize > 0 && modalData &&
-                modalData[modalSize - 1] == fgPanel) {
-                fgIsModal = true;
-                blocking  = true;
-            }
-
-            switch (fgKind) {
-            case acc::engine::PanelKind::Container:
-            case acc::engine::PanelKind::Store:
-            case acc::engine::PanelKind::Examine:
-            case acc::engine::PanelKind::DialogCinematic:
-            case acc::engine::PanelKind::DialogCinematicCopy:
-            case acc::engine::PanelKind::DialogComputer:
-            case acc::engine::PanelKind::DialogComputerCamera:
-            case acc::engine::PanelKind::TutorialBox:
-            case acc::engine::PanelKind::MessageBoxModal:
-            case acc::engine::PanelKind::StatusSummary:
-            case acc::engine::PanelKind::AreaTransition:
-            // The in-game icon strip stays foreground while ANY sub-screen
-            // (Inventory / Map / Equipment / …) is drilled — see the drill
-            // mechanism in menus.cpp. Without this case Enter on a chain
-            // target inside a drilled sub-screen would also be picked up
-            // here and dispatched as an in-world UseObject (verified
-            // 2026-05-04: pressing Enter in equip picker auto-walked the
-            // PC to a chest). The strip's own Enter is owned by the chain
-            // Enter activate path in menus.cpp; in-world Enter never makes
-            // sense while a menu is open.
-            case acc::engine::PanelKind::InGameMenu:
-                blocking = true;
-                break;
-            default:
-                // Non-modal Unknown / unclassified panels still fall through
-                // to allow in-world Enter — the panels[] blacklist above
-                // handles the kinds we know want to capture input, and
-                // bare-MainInterface in-world is the common case here.
-                break;
-            }
-            if (fgIsModal) {
-                acclog::Write("Interact", "%s gate -- BLOCKED, fg=%p kind=%s "
-                    "(modal_stack[%d] top)",
-                    keyTag, fgPanel,
-                    acc::engine::PanelKindName(fgKind),
-                    modalSize - 1);
-                return;
-            }
-            if (blocking) {
-                acclog::Write("Interact", "%s gate -- BLOCKED, fg=%p kind=%s",
-                    keyTag, fgPanel,
-                    acc::engine::PanelKindName(fgKind));
-                return;
-            }
-            acclog::Write("Interact", "%s gate -- ALLOW, fg=%p kind=%s",
-                keyTag, fgPanel,
-                acc::engine::PanelKindName(fgKind));
-        }
+    if (ui.fgPanel) {
+        acclog::Write("Interact", "%s gate -- ALLOW, fg=%p kind=%s",
+                      keyTag, ui.fgPanel,
+                      acc::engine::PanelKindName(ui.fgKind));
     }
 
     OnInteract(forceRadial);

@@ -12,7 +12,6 @@
 #include "engine_player.h"      // GetPlayerPosition + GetPlayerServerCreature
                                 // + AppManager / ClientApp chain constants
 #include "log.h"
-#include "tolk.h"
 
 // Same address baked into passive_narrate / interact_hotkey — the engine
 // LastTarget read primitive. Replicated as a constant rather than added to
@@ -137,14 +136,10 @@ void Tick() {
     if (risingE)   logKey("E");
     if (risingTab) logKey("Tab");
 
-    // Tab is the suspected leader-swap key — speak the controlled creature
-    // name so the user can tell whether the swap landed. Q/E we still log
-    // but don't announce (those are target-cycle, surfaced via passive
-    // narrate already).
-    if (risingTab && creature && creatureName[0] != '\0' &&
-        creatureName[0] != '?') {
-        tolk::Speak(creatureName, /*interrupt=*/true);
-    }
+    // Speech moved out to party_leader_announce (2026-05-11) — that TU
+    // owns the user-facing leader announce + foreground-blocking gate.
+    // This file stays as pure diagnostic logging for the Q/E/Tab
+    // investigation context.
 }
 
 }  // namespace acc::diag::engine_select
