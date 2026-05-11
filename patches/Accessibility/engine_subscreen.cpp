@@ -167,10 +167,29 @@ void TickInputClassReassert() {
     }
 
     if (s_prevModalSize > 0 && modalSize == 0) {
-        char tag[64];
-        snprintf(tag, sizeof(tag),
-                 "popup closed (modal_stack %d->0)", s_prevModalSize);
-        DispatchUnpauseCleanup(tag);
+        // Suppress modal-edge unpause when a sub-screen is still alive:
+        // TutorialBox / MessageBoxModal popups can fire on top of an open
+        // panel (e.g. a tutorial that appears while the user is in
+        // Inventar, or an in-Options confirm dialog). Dismissing the
+        // popup leaves the user still inside a panel — pause must stay
+        // until the sub-screen itself closes. The sub-screen edge below
+        // handles the eventual unpause when panels[] empties of
+        // sub-screens.
+        //
+        // Counter-cases this still covers: Alt+F4 quit-confirm with no
+        // sub-screen open (modal pops, dismiss → unpause); save-overwrite
+        // confirm during in-world save (same shape).
+        if (!hasSubScreen) {
+            char tag[64];
+            snprintf(tag, sizeof(tag),
+                     "popup closed (modal_stack %d->0)", s_prevModalSize);
+            DispatchUnpauseCleanup(tag);
+        } else {
+            acclog::Write("PauseToggle",
+                          "popup closed (modal_stack %d->0): SUPPRESSED — "
+                          "sub-screen still in panels[]",
+                          s_prevModalSize);
+        }
     }
 
     if (s_prevHasSubScreen && !hasSubScreen) {
