@@ -433,7 +433,7 @@ KotOR world units are floats; engine convention is **1.0 unit = 1 metre** (per i
 
 ## Pillar 3 — Large-scale navigation
 
-### Scope (locked 2026-05-03)
+### Scope (locked 2026-05-03; refined 2026-05-11)
 
 **"How do I get there" routing at long-distance scale.** Star-map and town/planet-map level navigation — the kind of overview a sighted player gets from the in-game galaxy map or the full-screen area map of a hub planet (Taris upper city, Manaan docks, etc.).
 
@@ -444,6 +444,10 @@ Covers:
 - Planet-to-planet travel (galaxy map)
 
 **Intent:** the player can plan and execute long journeys without getting lost between intermediate landmarks. Player retains full agency — what target to pick, which landmarks to visit / avoid, preferred path.
+
+**2026-05-11 architectural refinement — every guidance target is a game object.** A session of engine RE established that the engine's `AddMoveToPointAction` is permanently NPC-only for the leader (it bails before plotting a path; the alternate branch routes to a party-follow-leader function that no-ops on the leader). This makes "walk to an arbitrary coordinate" infeasible for the player. The architectural response: **all Pillar 3 targets are game objects** (doors, NPCs, containers, items, waypoints, transitions). Targets always come with a handle; the autowalk leg dispatches via `CSWSObject::AddUseObjectAction @0x0057c810` (wrapper: `acc::guidance::UseObject(handle)`) which DOES walk the player and is already shipped via Phase 2 lay-off 9b. The pathfind/beacon leg runs A* over the engine's authoritative per-area nav graph (`CSWSArea.path_points` + `path_connections`, fully decoded — CSR adjacency, 16-byte node stride) — we use the engine's data, just run the search ourselves since the engine's solver refuses to plot for the leader.
+
+Implication for the design below: Mode A (auto-walk) and Mode B (audio beacon) remain as described, but **both operate on object targets**, never on free-form coordinates. Cross-area routes are handled by the engine in Mode A (UseObject on a transition trigger cross-loads the destination module); Mode B first-cut anchors on the current area's graph only — the user re-fires the beacon in the next area after a transition. The "Open RE item" about decoding the engine's per-creature path solution is closed: it's not retrievable for the leader; the static graph + our own A* is the path forward.
 
 ### Mechanics — guidance to a selected target (drafted 2026-05-03)
 
@@ -485,14 +489,23 @@ Although the user introduced this in Pillar 3 (large-scale), the guidance mechan
 - Cross-area: `AIActionCheckInterAreaPathfinding`, `SetMoveToModulePending`, `SetMoveToModuleStartWaypoint` chain (investigation §Q3) — handles trigger-crossings and module loads
 - Per-creature path query state on `CSWSCreature.path_find_info +0x340`
 
-### Open RE item
+### Open RE item — CLOSED 2026-05-11
 
-The **computed path solution** (the specific waypoint sequence the solver picked for *this* query, not just the global graph) lives on `path_find_info` per investigation §Q3 but the exact field offset for the "current path waypoint list" is not yet decoded. Two paths forward, both viable:
+The **computed path solution** lookup (per investigation §Q3) is **closed** after a session of probe work + Ghidra-headless decompilation of `CSWSCreature::AIActionMoveToPoint @0x51f4f0`. Findings:
 
-1. RE the field at hook-development time, read the engine's solution directly.
-2. Re-solve A* ourselves over the `path_points` / `path_connections` graph (cheap — graph is already in memory). Trade-off: parameters might diverge from engine's path slightly.
+- The engine's solver refuses to plot a path for our `AddMoveToPointAction` dispatches when the dispatcher is the leader. The function writes `CPathfindInformation.end_point = player.position` (the bailout case) and exits before populating any waypoint solution. Confirmed across multiple probe runs.
+- The gate is `CSWSObject.field101_0x1f8 != 0` routing to `WalkUpdateLocation_QuickWalk_FollowLeader_FindPath @0x51ac10` — the party-follow-leader path, a no-op for the leader. Forcing `field101 = 0` doesn't help; the engine re-sets it and the path still doesn't populate.
+- Ghidra's named guess `path_count? +0x8c` / `paths? +0x90` stayed zero. Some fields at `+0xC0..+0xC8` populate but the bailout pattern (`end_point = player.position`) confirms the engine isn't actually computing a path for our dispatch.
 
-Flagged so it's not forgotten. Does not block design.
+**Decision (2026-05-11): use path 2** (re-solve A* over the engine's static graph). The static graph is fully decoded:
+
+- `CSWSArea.path_points_count +0x238` (ulong) + `CSWSArea.path_points +0x23c` (PathPoint*, 16-byte stride)
+- `CSWSArea.path_connections_count +0x240` (ulong) + `CSWSArea.path_connections +0x244` (ulong*, flat array)
+- PathPoint stride: `Vector position (12 bytes) + uint32 csr_offset (4 bytes)`
+- CSR adjacency: node N's neighbours = `path_connections[meta_N .. meta_{N+1}-1]`; last node's terminator = `path_connections_count`
+- Edges symmetric undirected; sample areas show 51 nodes / 104 connections and 104 nodes — small enough that linear-scan nearest-node + A* is trivial.
+
+Memory entry `project_kotor_nav_graph_layout` carries the offsets for future sessions. The lay-off plan lives in `docs/navsystem-progress.md` Phase 5.
 
 ### Pathfind trigger key (locked 2026-05-03)
 
@@ -1126,7 +1139,7 @@ The "single chunk" is **planning + implementation cohesion**, not session count.
 - **Phase 2 — Playable baseline.** `engine_area.{h,cpp}` *object-list + room-lookup slice* (foundation for this phase's consumers); Pillar 4 cycle (`filter/` + `input/cycle_keys` + `announce/` for name+direction+distance) + cross-cutting `guidance/autowalk` + Pillar 2 `announce/transitions` (room + area). **Exit criterion:** game is playable end-to-end via cycle-and-autowalk. Solo playthrough of an area works. Commit.
 - **Phase 3 — Pillar 1.** `engine_area.{h,cpp}` *walkmesh-edge slice extension*; `spatial/change_detector` (Trigger 1 + folded Trigger 2 per 2026-05-06) + `audio/cue_player` + `audio/footstep_suppress` (with RE work for footstep function; fall back to collision-cue reuse if RE proves fragile). **Initial implementation omits pitch**; volume-only test first. **Exit criterion:** free walking is genuinely informative; solo test confirms wall/hazard/object cues fire correctly without spam. Commit.
 - **Phase 4 — Pillar 2 polish + view mode.** `announce/compass` + `announce/orientation` + `announce/degrees` + `view_mode/` (cursor + continuous loops + click-walk). **Exit criterion:** rotation announcements work; view mode lets player inspect rooms without moving character. Commit.
-- **Phase 5 — Pillar 3 polish.** `guidance/beacon` + `guidance/pathfind` + `guidance/description` + `map_ui/cursor`. **Exit criterion:** Shift+- triggers pathfind with audio beacon and autowalk; map cursor explores fullscreen map. Commit.
+- **Phase 5 — Pillar 3 polish.** *Pivoted 2026-05-11; full lay-off plan in `docs/navsystem-progress.md` § Phase 5.* `guidance/pathfind` (A* over engine's static per-area nav graph) + `guidance/beacon` (waypoint cues via Pillar 1 audio) + `guidance/description` (Brief TTS fallback) + `map_ui/cursor`. Mode A autowalk reuses the already-shipped `acc::guidance::UseObject(handle)` primitive (Phase 2 lay-off 9b); no new RE needed. **Exit criterion:** Shift+- triggers UseObject autowalk to focused object (works cross-area); Ctrl+- triggers our pathfind + audio beacon; map cursor explores fullscreen map. Commit.
 - **Phase 6 — Map markers & nice extras.** `map_ui/markers` (saved user markers); planet picker accessibility integration; multi-area route choice prompt remains future. **Exit criterion:** named markers persist across saves; full feature set shipped. Commit + release.
 - **Phase 7 — User options UI.** Deferred. Build only if needed. Hardcoded defaults from the User Options section may be sufficient indefinitely.
 
@@ -1149,3 +1162,7 @@ These rules apply across all phases. They protect against the real failure modes
 Each design decision, once locked, gets one line here with a date and a pointer to the pillar section that holds the detail.
 
 - 2026-05-03 — **Code layout: flat-with-prefix at patch root** (`core_*.cpp`, `engine_*.cpp`, `menus_*.cpp`, etc.) rather than `src/core/`, `src/engine/` literal subdirectories. Reason: upstream `create-patch.bat` globs `*.cpp` non-recursively, so subdirs would require modifying vendored upstream OR teaching kdev to flatten — neither is justified by Phase 0 scope. Subsystem semantics from the plan's "Code structure (proposed)" section are preserved exactly via filename prefix; pillars-disappear-from-code-organisation guidance still holds. Revisit if a future phase introduces unavoidable filename collisions (e.g. `view_mode/cursor.cpp` vs `map_ui/cursor.cpp`).
+- 2026-05-11 — **Pillar 3 architectural pivot: drop autowalk-to-empty-coordinate.** Every Pillar 3 target is a game object. Mode A (autowalk) uses `acc::guidance::UseObject(handle)` which dispatches `CSWSObject::AddUseObjectAction @0x0057c810` — already shipped via Phase 2 lay-off 9b, works for the player, handles cross-area transitions internally. Mode B (beacon) runs our own A* over the engine's static per-area nav graph (`CSWSArea.path_points` + `path_connections`, fully decoded — CSR adjacency, 16-byte stride). Driven by a session of engine RE that closed §"Open RE item": engine's `AddMoveToPointAction` refuses to plot a path for leader dispatches (bails before populating any waypoint solution). Memory entry `project_kotor_nav_graph_layout` carries the static-graph offsets.
+- 2026-05-11 — **`AddMoveToPointAction` is permanently NPC-only for the leader.** Confirmed via Ghidra-headless decompile of `CSWSCreature::AIActionMoveToPoint @0x51f4f0` plus in-game probe data. The function routes leader dispatches through `WalkUpdateLocation_QuickWalk_FollowLeader_FindPath @0x51ac10` (party-follow-leader, no-op for leader) when `CSWSObject.field101_0x1f8 != 0`, and writes `end_point = player.position` (bailout) when forced through the other branch. Existing `acc::guidance::WalkTo` / `ForceWalkTo` parked as known-broken-for-leader; useful only if we ever need to drive companion NPC movement.
+- 2026-05-11 — **Phase 4 lay-off 5 (click-to-walk in view mode) deeply parked.** Under the always-object-target lock the "walk to empty cursor coordinate" use case has limited accessibility value. Outline preserved in `docs/navsystem-progress.md` for potential revisit; not driving any downstream phase planning.
+- 2026-05-11 — **Cross-area pathfinding deferred** for Mode B beacon first-cut. Beacon anchors on the current area's nav graph only; user re-fires Ctrl+- in the new area after a transition. Mode A (UseObject autowalk) handles cross-area natively via the engine. Multi-area pathfind shape revisited only if user need surfaces.

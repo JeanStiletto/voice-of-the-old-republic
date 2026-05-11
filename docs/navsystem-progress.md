@@ -12,14 +12,113 @@
 - **Phase 1 — Foundation.** *Complete (2026-05-03).* All planned lay-offs landed: `engine_player` (1), CExoSound singleton trace (2), `audio_bus` (3), test fixture + exit gate (4), atmospheric-pass curation + `audio_cues.h` wiring (5), `core_settings` stub (7). Lay-off 6 (`audio_listener`) was dropped at lay-off 4 — engine default listener proved camera-anchored at the gate.
 - **Phase 2 — Playable baseline.** *Complete (2026-05-05).* Lay-offs 1-9 + 6a + 7a + 7b all verified in-game; lay-off 8 (dedicated exit-gate playthrough) skipped per user — same-session verification covered the gate criteria. Player-control-mode blocker resolved 2026-05-04 (commit `d578fbe`); toggle is `CSWPlayerControl::SetEnabled @ 0x006792e0`, wraps a creature-mode write that pairs with `CSWCCreature::SwitchMode`; flip 0 around AI-action dispatch and the per-tick input handler skips the movement-clobber block. Interact path re-routed away from the engine's two-click `HandleMouseClickInWorld` pipeline to a direct `CSWSObject::AddUseObjectAction @ 0x0057c810` call — same primitive NWScript's `ActionInteractObject` uses. Architectural picture: in-world target cycle delegated to engine's Q/E (`SelectNearestObject @0x005fb050`) → `LastTarget` → `passive_narrate`; A/D camera-direction announce; W character-facing announce; cycle (`,`/`.`) reassigned to map-side scan (Pillar 3, Phase 5/6). Pillar 2 transitions: area announce + room announce with stability-dedup (`kRoomStabilityTicks=5` ≈ 80ms), three-tier room resolution (landmark cache via CSWSWaypoint.map_note → human-readable room_name → "Raum N" fallback), pre-load destination announce hooked at `SetMoveToModuleString @0x004aecd0`. User-validated decision (2026-05-04): keep the high-volume "Raum N" announcements as-is — KOTOR's room model is layout-geometry / occlusion-culling chunks (not RPG-named rooms), Bioware places map_notes only at significant landmarks; high-frequency announces still carry "you're moving through space" signal. Revisit if intrusive after more playtime.
 - **Phase 3 — Pillar 1.** *Closed 2026-05-07.* All planned lay-offs landed and verified; informal exit-gate met by the 2026-05-07 tuning session (user signed off "way quieter now ... I would try this now"). Lay-off summary: **1** walkmesh-edge extraction (405-908 edges per area, no SEH); **2** `audio_cue_player` per-kind toggle + range gate; **3** Trigger 1 distance-delta with sector-based selection; **4** Trigger 2 foremost-in-front folded into `spatial_change_detector.cpp`; **5** `audio_footstep_suppress` (velocity-based stuck detection, hooked at `CSWCCreature::PlayFootstep+0x4a`). Final 2026-05-07 tuning session reshaped the cue cadence from ~4.3 cues/sec to ~2/sec without losing information: switched walls from per-surface continuous to per-sector world-frame with silent enter/exit/identity-swap retracks + range hysteresis + per-sector cooldown; mirrored the same shape onto the object pipeline; gated T2 walls with B (global T1 wall cooldown) + C (only `none → wall` / `obj → wall` transitions); added a `T2 wall blocked` diagnostic line. Full design history + parked alternatives (zones, raycasting, speed-gating, distance-gated T2) preserved in `docs/pillar1-wall-cue-tuning.md`. Future tuning will revisit; system is good enough to keep playing as-is.
-- **Phase 4 — Pillar 2 polish + view mode.** *In progress (started 2026-05-06; lay-off 4 + rework verified 2026-05-06; only lay-off 5 click-to-walk routing remains).* Most of the plan's Phase 4 surface landed early during Phase 2 (octagonal compass on turn, A/D camera direction, room+area transitions). **Lay-off 1**: `announce_degrees` — AltGr speaks exact compass-frame heading. *Closed 2026-05-06, verified.* **Lay-off 2**: Mouse Look probe — strong positive (engine reacts to `CClientOptions.mouse_look` bit-flip + `SendInput`); path subsequently rejected at lay-off 3 in favour of `SetPlayerInputEnabled(false)`, then **rejected for view mode entirely** at the 2026-05-06b design lock when listener-override replaced camera-driven Mouse Look as the spatial mechanism. **Lay-off 3**: view-mode skeleton — B toggles `SetPlayerInputEnabled(false, armAutoRestore=false)` lifecycle; W/S character-snap suppressed, A/D rotates camera natively. *Closed 2026-05-06, verified in-game.* **Lay-off 4a**: T2 cone tracks camera in view mode — Pillar 1 Trigger 2's foremost-in-front cone follows camera yaw while view mode is active, so the cone scans where the player is looking during stationary inspection. *Closed 2026-05-06 (commit `81ff451`); UNVERIFIED in-game — verify alongside lay-off 4.* **2026-05-06b — view mode design locked** (see `docs/navsystem-longterm-plan.md` "Mechanics — view mode (locked 2026-05-06)" + this doc's "Lay-off plan" section): three-layer model = virtual cursor (`Vector cursor_pos` + `float cursor_yaw`, our state) + per-tick `CExoSound::SetListenerPosition(cursor_pos)` override + engine camera tracks cursor heading via stock A/D. Original 2026-05-03 "listener overridden to character body" was never implemented (Phase 1 lay-off 4 dropped it; engine default camera-anchored proved sufficient at the gate); reality reconciled in long-term plan 2026-05-06b. **Remaining: lay-off 4** (virtual cursor core — cursor state, listener override, walkmesh collision, hover-pause object narration; full plan in this doc's "Next session — lay-off 4 plan" subsection) + **lay-off 5** (Enter routing → autowalk to object-under-cursor or cursor world position).
-- **Phase 5 — Pillar 3 polish.** Pending.
+- **Phase 4 — Pillar 2 polish + view mode.** *Effectively closed 2026-05-11; lay-off 5 deeply parked.* Lay-offs 1-4 + 4-rework verified in-game. Lay-off 5 (click-to-walk Enter routing in view mode) deferred indefinitely after the 2026-05-11 Phase 5 architectural pivot — see Phase 4 section + Phase 5 below. Phase 4 is treated as closed for sequencing purposes; future revisits to lay-off 5 don't gate downstream work. Most of the plan's Phase 4 surface landed early during Phase 2 (octagonal compass on turn, A/D camera direction, room+area transitions). **Lay-off 1**: `announce_degrees` — AltGr speaks exact compass-frame heading. *Closed 2026-05-06, verified.* **Lay-off 2**: Mouse Look probe — strong positive (engine reacts to `CClientOptions.mouse_look` bit-flip + `SendInput`); path subsequently rejected at lay-off 3 in favour of `SetPlayerInputEnabled(false)`, then **rejected for view mode entirely** at the 2026-05-06b design lock when listener-override replaced camera-driven Mouse Look as the spatial mechanism. **Lay-off 3**: view-mode skeleton — B toggles `SetPlayerInputEnabled(false, armAutoRestore=false)` lifecycle; W/S character-snap suppressed, A/D rotates camera natively. *Closed 2026-05-06, verified in-game.* **Lay-off 4a**: T2 cone tracks camera in view mode — Pillar 1 Trigger 2's foremost-in-front cone follows camera yaw while view mode is active, so the cone scans where the player is looking during stationary inspection. *Closed 2026-05-06 (commit `81ff451`); UNVERIFIED in-game — verify alongside lay-off 4.* **2026-05-06b — view mode design locked** (see `docs/navsystem-longterm-plan.md` "Mechanics — view mode (locked 2026-05-06)" + this doc's "Lay-off plan" section): three-layer model = virtual cursor (`Vector cursor_pos` + `float cursor_yaw`, our state) + per-tick `CExoSound::SetListenerPosition(cursor_pos)` override + engine camera tracks cursor heading via stock A/D. Original 2026-05-03 "listener overridden to character body" was never implemented (Phase 1 lay-off 4 dropped it; engine default camera-anchored proved sufficient at the gate); reality reconciled in long-term plan 2026-05-06b. **Lay-off 4** (virtual cursor core) closed 2026-05-06 (commit `657d7b1` + rework). **Lay-off 5** (Enter routing) deeply parked 2026-05-11 under the always-object-target architectural lock — see Phase 5 § "2026-05-11 architectural pivot" + Phase 4 § "Lay-off 5 — DEEPLY PARKED".
+- **Phase 5 — Pillar 3 polish.** *Lay-off 1 closed 2026-05-11 (probe served its purpose); pivot locked; lay-offs 2+ ready to implement next session.* Engine path RE revealed `AddMoveToPointAction` is permanently NPC-only for the leader — the engine refuses to plot a path for our dispatch. Architectural response: drop autowalk-to-empty-coordinate; **every autowalk target is a game object**, dispatched via `UseObject` (which already works for the player). Beacon mode (Mode B) runs A* over the engine's authoritative per-area nav graph (`CSWSArea.path_points` + `path_connections`, fully decoded — CSR adjacency, 16-byte stride). See Phase 5 section below for the full lay-off plan + handoff package.
 - **Phase 6 — Map markers & nice extras.** Pending.
 - **Phase 7 — User options UI.** Deferred per plan.
 
 ---
 
-## Phase 4 — Pillar 2 polish + view mode (in progress 2026-05-06)
+## Phase 5 — Pillar 3 (lay-off 1 closed; lay-offs 2+ ready 2026-05-11)
+
+### Goal
+
+Make long-distance navigation accessible: pick a distant target (a door across the map, a transition out of the area, a quest objective) → engine walks the player there OR audio beacon guides the player walking themselves. Per the long-term plan §"Pillar 3" the two modes are independently toggleable; per the locked Pillar 3 batch decisions, Shift+- triggers pathfind on the Pillar 4 currently-focused target.
+
+### 2026-05-11 architectural pivot — context for next session
+
+A full session of engine RE + probe work converged on the following picture. The next session can ship Phase 5 lay-offs 2+ with this knowledge intact; no need to redo the RE.
+
+**Engine constraint locked: `AddMoveToPointAction` is permanently NPC-only for the leader.** Probed via Ghidra-headless decompilation of `CSWSCreature::AIActionMoveToPoint @0x51f4f0`, with in-game cascade dumps verifying behaviour. Key facts:
+
+- Dispatching `AddMoveToPointAction` for the player creature populates `field427_0xa8c` (action-state marker) and triggers one or two engine ticks of `AIActionMoveToPoint`, but the engine then writes `CPathfindInformation.end_point = player.position` (the **bailout case** — engine "gave up on the destination, you're already there") and never computes a path solution.
+- The branch that would compute the path solution is gated on `CSWSObject.field101_0x1f8 == 0`. We can force this with a direct write before dispatch (SEH-wrapped), but even then the engine re-sets `field101` to 1 within a frame and the path computation never completes. The decomp shows the alternate branch (when `field101 != 0`) routes to `WalkUpdateLocation_QuickWalk_FollowLeader_FindPath @0x51ac10` — the **party-follow-leader** flavour. The PC is the leader; that branch silently no-ops for the leader.
+- Memory `project_player_creature_ignores_ai_moves` already documented this at a high level; this session confirmed it via decompile + probe data.
+- Practical conclusion: **do not try to make `AddMoveToPointAction` walk the player.** The existing `acc::guidance::WalkTo` / `ForceWalkTo` in `guidance_autowalk.cpp` remain in the tree as known-broken-for-leader; useful only if we ever need to drive companion NPC movement (which we don't currently).
+
+**What DOES walk the player: `CSWSObject::AddUseObjectAction @0x0057c810`.** Phase 2 lay-off 9b (Enter → focused target → walk-and-USE) verified this works end-to-end: engine pathfinds the player to the target, including across area transitions (transition triggers as targets cross-load the destination module). Wrapped by `acc::guidance::UseObject(handle)` in `guidance_autowalk.cpp`. **This is the autowalk primitive for Mode A.**
+
+**Engine path solution is NOT readable from `CPathfindInformation` for our leader dispatches.** Ghidra's named fields `path_count? +0x8c` and `paths? +0x90` stay zero — Ghidra's guess was wrong, OR they only populate for NPC-driven pathfind cycles. Field at `+0xC0` (count=10 in observed probe) plus `+0xC4` / `+0xC8` (heap pointers) ARE populated after our dispatch but `end_point` written to player.position confirms the bailout path. We cannot get the engine's solution out of this code path for the player.
+
+**Static per-area nav graph IS fully decoded (the win).** Lives on `CSWSArea`. Layout:
+
+- `CSWSArea.path_points_count` at `+0x238` (ulong) — node count
+- `CSWSArea.path_points` at `+0x23c` (PathPoint*) — heap array, **16-byte stride**: `Vector position (12 bytes) + uint32 csr_offset (4 bytes)`
+- `CSWSArea.path_connections_count` at `+0x240` (ulong) — total connection-array length
+- `CSWSArea.path_connections` at `+0x244` (ulong*) — flat array of neighbour node indices
+
+The 16-byte PathPoint stride is **CSR-adjacency-encoded**: node N's neighbours live at `path_connections[meta_N .. meta_{N+1}-1]`. For example with observed meta sequence `0, 1, 2, 5, 8, 10, 11, 14`:
+- node 0 neighbours = `path_connections[0..0]` (1 neighbour)
+- node 1 neighbours = `path_connections[1..1]` (1)
+- node 2 neighbours = `path_connections[2..4]` (3)
+- node 3 neighbours = `path_connections[5..7]` (3)
+- etc.
+
+For the last node, the "next" CSR offset is implicit-`path_connections_count`. Sample data confirms symmetric undirected edges (0↔2, 1↔3, etc.). Sample area: Endar Spire start, 51 nodes / 104 connections; another sample: 104 nodes (different area). All in plausible map-coord magnitudes for the respective areas.
+
+**Architectural lock (2026-05-11): every autowalk target is a game object.** Drops the "walk to empty coordinate" use case entirely; removes the need for free-form path dispatch:
+
+- **Mode A (autowalk):** Pillar 4 cycle → Shift+- → `acc::guidance::UseObject(focused.handle)`. Engine pathfinds + walks + triggers the kind-appropriate USE. Works for doors, NPCs, containers, items, waypoints (no-op USE = navigation-only), transitions (engine cross-loads). Already shipped; just needs wiring confirmation on Shift+-.
+- **Mode B (beacon):** Pillar 4 cycle → Ctrl+- → our own A* over `area.path_points` + `area.path_connections` → emit Pillar 1-style 3D cues at each waypoint (`audio_cues.h` already provisions `BeaconActive` / `BeaconWaypointReached` / `BeaconDestinationReached`; `audio_cue_player` passes Beacon* without range cap). User walks themselves with W/S; we surface waypoint events as they're reached.
+
+Phase 4 lay-off 5 (click-to-walk in view mode) deeply parked under this lock — no more "walk to cursor coordinate"; if a user need surfaces later, revisit.
+
+### Lay-off plan (re-shaped 2026-05-11)
+
+1. **Path-data RE probe.** *Closed 2026-05-11.* Probe at `probe_pathfind.{h,cpp}` + the field101=0 hack in `guidance_autowalk.cpp::WalkTo` answered the design fork: engine refuses to plot for the leader, use the static graph. Both can be stripped in a cleanup commit before lay-off 2 starts (or kept gated for future diagnostics — author's choice). See "Probe-stripping cleanup" below.
+
+2. **`guidance_pathfind.{h,cpp}`** — A* runner over the static nav graph.
+   - **Public surface:** `bool ComputePath(void* area, const Vector& start, const Vector& goal, std::vector<Vector>& outWaypoints);`
+   - **Implementation:** read area's `path_points_count` / `path_points` / `path_connections_count` / `path_connections` at the offsets above. Find nearest path_point to `start` (linear scan, ≤200 nodes per area — trivial cost). Same for `goal`. A* with euclidean-distance heuristic over the CSR adjacency. Output: world-space Vectors of the visited path-point sequence (plus optionally the original `goal` appended as the terminal anchor).
+   - **Edge cases:** start == goal (return single-point path), no path (return empty), area pointer null (return false).
+   - **No new hooks; no engine entry.** Pure read-side over engine data.
+   - **Verification:** call once on a known area (Taris Upper City / Endar Spire) with start=player.position and goal=10m-ahead; log the resulting waypoint sequence; eyeball that the waypoints stay on plausible corridor centerlines.
+
+3. **`guidance_beacon.{h,cpp}`** — consume the waypoint sequence, drive Pillar 1-style cues.
+   - **State:** `std::vector<Vector> g_path; size_t g_nextIdx;` Singleton (only one beacon active at a time; new Ctrl+- supersedes).
+   - **`StartBeacon(const std::vector<Vector>& waypoints)` / `CancelBeacon()`.**
+   - **Per-tick (`Tick()` from `core_tick::Dispatch`):** read player position. If `dist(player, g_path[g_nextIdx]) < kReachToleranceMeters` (start with `1.5f`, tune live), fire `BeaconWaypointReached` cue at the waypoint position, advance `g_nextIdx`. When `g_nextIdx == g_path.size() - 1` (last waypoint), fire `BeaconDestinationReached` and disarm.
+   - **Continuous beacon cue:** before reaching the next waypoint, emit a `BeaconActive` cue at the next waypoint's position every `kBeaconHeartbeatMs` (start with `800ms`). Uses `audio_cue_player::PlayCue3D` which already routes through `audio_bus` for 3D pan + attenuation.
+   - **Cross-area:** Phase 5 first-cut does NOT handle cross-area paths. If the target is in another area, beacon points to the area transition (whose position IS in the current area's `path_points`). After transition, beacon re-anchors on the next area's graph (user re-dispatches Ctrl+- in the new area). Multi-area path-finding is future work.
+
+4. **Wire Ctrl+- + Shift+- routing.** In `cycle_input.cpp`:
+   - **Shift+-** → confirm wired to `guidance::UseObject(cycle_state.focusedObj.handle)`. If currently calls `WalkTo`, switch to `UseObject`. Speak pre-roll ("Sprich mit X" / "Öffne X" / "Hebe X auf") using the existing `interact_hotkey` string shape.
+   - **Ctrl+-** (new) → `guidance::ComputePath(...)` from player position to focused object's position, then `guidance::beacon::StartBeacon(path)`. Speak `Id::BeaconStarted` ("Wegpunkte gesetzt zu {name}" / "Beacon set to {name}").
+   - **Both hotkeys toggle.** Pressing again while active = cancel (`CancelMovement` for Shift+- still works; new `beacon::CancelBeacon` for Ctrl+-).
+   - **Verification:** in-game, cycle to a door across the room; Ctrl+- → audible cues fire as user walks toward door. Shift+- → engine walks player to door + opens.
+
+5. **`guidance_description.{h,cpp}`** — Brief TTS readout (total distance + destination name + transition count) as the "both modes off" fallback. Per locked Pillar 3 batch decisions. Trivial after pathfind exists: count waypoints, sum euclidean distances along the path, count waypoints that are area-transition kind. Bound to its own key (TBD; not Shift+- or Ctrl+-).
+
+6. **`map_ui_cursor.{h,cpp}`** — virtual cursor on the area map driven by player-bound movement actions. Separate surface, its own session. Lower priority than 2-5.
+
+7. **Saved markers + quest-objective shortcut** — nice-extras, last.
+
+### Probe-stripping cleanup (before lay-off 2)
+
+Today's session added a path-data probe + a known-non-fix-for-leader workaround. Both should be cleaned up before lay-off 2 lands:
+
+- `patches/Accessibility/probe_pathfind.{h,cpp}` — strip entirely. Information extracted; no further diagnostic value. Remove from `core_tick.cpp` Dispatch.
+- `patches/Accessibility/guidance_autowalk.cpp::WalkTo` — strip the `field101 = 0` write (lines added 2026-05-11). It doesn't help; the engine re-sets it. The diagnostic field-state log lines around it (preField427/preField101/postField427) can stay or go — they're useful for any future autowalk debugging but they fire on every WalkTo. Author's call. The `runFlag=1` setting from 2026-05-07 should stay (no evidence yet that walk-flag works better; live as-is).
+- Phase 5 lay-off 1 in this doc — keep the closed status, condense the "Engineering basis" / "Decisions captured" notes into one-line summaries before lay-off 2 starts so the doc doesn't bloat.
+
+### Engineering basis (verified 2026-05-11)
+
+- **Nav-graph offsets**: `CSWSArea.path_points_count +0x238, path_points +0x23c, path_connections_count +0x240, path_connections +0x244` — confirmed via `swkotor.exe.h:9184-9190` (Lane's Ghidra DB) and in-game probe dumps. PathPoint stride = 16 bytes, CSR adjacency. See memory `project_kotor_nav_graph_layout`.
+- **`UseObject` autowalk primitive**: `CSWSObject::AddUseObjectAction @0x0057c810`. Wrapped by `acc::guidance::UseObject(handle)`. Verified Phase 2 lay-off 9b.
+- **Decompile workflow**: `analyzeHeadless.bat` + `tools/ghidra-scripts/Decompile.java` on project `C:/Tools/ghidra-projects/kotor1`. ~100s per cold run (analysis cache), then function decomp prints to stdout. See memory `project_ghidra_headless_decompile_workflow`.
+
+### Decisions captured (2026-05-11)
+
+- **Drop autowalk-to-empty-coordinate.** All Pillar 3 targets are game objects.
+- **Mode A = `UseObject(handle)`.** Already-shipped primitive; engine walks the player + triggers USE. Handles cross-area transitions internally.
+- **Mode B = our A* over engine's static graph.** Engine's solver refuses to plot for the leader; static graph data IS available, fully decoded.
+- **Phase 4 lay-off 5 deeply parked.** Not on the critical path.
+- **AddMoveToPointAction permanently parked** as known-broken-for-player. May be useful for companion AI nudges later; not removed.
+- **Cross-area pathfinding deferred.** First-cut beacon anchors on the current area's nav graph only; user re-fires Ctrl+- in the next area after a transition.
+
+---
+
+## Phase 4 — Pillar 2 polish + view mode (effectively closed 2026-05-11)
 
 ### Goal
 
@@ -40,7 +139,7 @@ Pillar 2 polish — orientation/zone announcement on demand — plus the new "vi
 3. **View-mode skeleton — `view_mode.{h,cpp}`.** *Closed 2026-05-06 — verified in-game.* B toggles `SetPlayerInputEnabled(false, armAutoRestore=false)` lifecycle. Hotkey B (V is "Solo Mode" in stock kotor.ini, taken). Shift+B snapshot probe of `CClientOptions` retained as a cheap diagnostic.
 4a. **T2 cone tracks camera in view mode.** *Closed 2026-05-06 (commit `81ff451`, marked UNVERIFIED in-game).* Piggybacked on lay-off 3's `view_mode::GetEffectiveOrientationYawDegrees` getter; Pillar 1 Trigger 2's foremost-in-front cone follows camera yaw while view mode is active, so the cone tracks where the player is *looking* during stationary scan, not where the character is statically facing. Verify in-game alongside lay-off 4.
 4. **Virtual cursor core (locked-design implementation).** *Verified in-game 2026-05-06 (initial commit `657d7b1` shipped partial; rework commit detoured the engine's per-frame `CExoSound::SetListenerPosition` write at function entry, intercepted single-xref camera-driven path).* Promotes the lay-off-3 skeleton from "freeze W/S" to the real Pillar 2 view mode: virtual cursor state, W/S translation along heading, A/D yaw read-back, walkmesh-bounded movement with collision cue, listener override via `OnSetListenerPosition` detour (substitutes cursor position in the engine's own per-frame write), object-nearest-cursor narration with hover-pause debounce.
-5. **Click-to-walk Enter routing.** *Pending — outline below.* Enter while view mode is active resolves to (a) `UseObject(handle)` if the cursor has a nearest-object target with a USE action, (b) `WalkTo(object_pos)` if it has a target without one, (c) `WalkTo(cursor_pos)` otherwise. Auto-exits view mode so the autowalk can run.
+5. **Click-to-walk Enter routing.** *Deeply parked 2026-05-11 — see "Lay-off 5 — DEEPLY PARKED" subsection below.* Originally: Enter while view mode is active resolves to (a) `UseObject(handle)` if the cursor has a nearest-object target with a USE action, (b) `WalkTo(object_pos)` if target without USE, (c) `WalkTo(cursor_pos)` otherwise. Under the 2026-05-11 always-object-target architectural lock, branches (b) + (c) collapse to "no-op for empty space"; the lay-off's remaining value (branch (a) only) is small enough that it's not driving any downstream phase planning.
 
 (Lay-off plan reframed 2026-05-06b after the view-mode design lock — see `docs/navsystem-longterm-plan.md` "Mechanics — view mode (locked 2026-05-06)". Original lay-off 4 "Click-to-walk via cycle's focusedObj / LastTarget" is rejected: that was the old design where view mode = "freeze W/S, ride engine cycle focus". The locked design has its own cursor target, so Enter routing becomes lay-off 5 and the cursor itself is the new lay-off 4. Lay-off 4a numbering preserved to keep the existing commit's reference stable. Earlier renumbering history: original lay-off 4 "Q/E look-around" → not needed at lay-off 3, engine A/D is the look-around primitive. Original lay-off 5 "auto-exit on WASD" → not needed, WASD-in-view-mode is intentional cursor input. Original lay-off 6 "vertical look" → parked, room-scale Z-locked cursor is sufficient for first cut.)
 
@@ -94,22 +193,19 @@ Pillar 2 polish — orientation/zone announcement on demand — plus the new "vi
 - Build clean (no new warnings; .cpp count reflects additions).
 - Logs at full fidelity per `feedback_log_no_rate_limits` (every cursor tick + every collision + every narration event in `kdev logs`).
 
-### Lay-off 5 outline (drafted 2026-05-06)
+### Lay-off 5 — DEEPLY PARKED (2026-05-11)
 
-Pending lay-off 4 verification. Smaller than lay-off 4 — pure routing on top of existing primitives.
+**Status: deferred indefinitely; nice-to-have, not on the critical path.** Originally drafted 2026-05-06 as Enter-routing in view mode (resolve object-under-cursor → `UseObject`, else cursor-position → `WalkTo`). The 2026-05-11 Phase 5 architectural pivot makes this lay-off's value much smaller — the rest of the navsystem now operates on the premise that **every autowalk target is a game object** (door, NPC, container, item, waypoint, transition), never an empty coordinate. With that assumption locked, the only thing lay-off 5 would buy is the "walk to empty floor cursor" branch — a sighted-user click-to-walk affordance that has limited accessibility value (a blind user has no use for "walk to the patch of floor I'm pointing at" without semantic content there). Revisit only if a concrete user need surfaces.
+
+Original outline kept below for the revisit; the engineering constraint that originally blocked it is now resolved (Mode A autowalk uses `UseObject` which works for the player; see Phase 5 below).
 
 - **Activity:** add Enter rising-edge handling inside `view_mode::Tick()` (or a dedicated `view_mode::PollEnter()` if cleaner). Resolution order:
   1. If lay-off 4's "object nearest cursor" tracker has a target *and* the kind has a USE action (Door / Container / Item / NPC-talk) → `acc::guidance::UseObject(handle)`.
-  2. Else if it has a target (placeable / waypoint without USE) → `acc::guidance::WalkTo(object_pos)`.
-  3. Else → `acc::guidance::WalkTo(g_cursor_pos)`.
-  4. In all three cases: speak pre-roll (reuse `interact_hotkey`'s string shape) + auto-exit view mode so the autowalk runs against the unfrozen character.
+  2. Else if it has a target (placeable / waypoint without USE) → `acc::guidance::UseObject(handle)` (engine walks to it then no-ops on USE; navigation-only targets).
+  3. Else → no-op (formerly `WalkTo(g_cursor_pos)`; dropped per 2026-05-11 pivot because `AddMoveToPointAction` is permanently NPC-only for the player — see Phase 5).
+  4. Speak pre-roll (reuse `interact_hotkey`'s string shape) + auto-exit view mode.
 - **Coordination with `interact_hotkey`:** existing `interact_hotkey::PollWin32` handles Enter when view mode is *not* active. Gate: out-of-view-mode Enter falls through to `interact_hotkey`; in-view-mode Enter routes to `view_mode`'s dispatcher first. Single-source-of-truth gate via `view_mode::IsActive()`.
-- **Files touched (expected):** `view_mode.{h,cpp}` (Enter dispatcher), `interact_hotkey.cpp` (gate addition), `menus.cpp` (no change if Tick wiring already covers it), strings if pre-roll needs view-mode-specific phrasing.
-- **In-game verification:**
-  1. View mode + cursor toward door → name spoken → Enter → "Going to door" + autowalk + door opens. View mode auto-exits.
-  2. View mode + cursor in open space (no nearby object) → Enter → autowalk to cursor location. View mode auto-exits.
-  3. Out of view mode → Enter on existing focused target → unchanged `interact_hotkey` flow.
-- **No new RE.** All primitives (`UseObject`, `WalkTo`, view-mode active gate) exist.
+- **No new RE.** All primitives exist.
 
 ### Lay-off log
 
@@ -1274,11 +1370,20 @@ A second symptom — audio stutter when pressing *Schließen* in Options — has
 
 ## Next session: where to start
 
+**Open with Phase 5 lay-off 2** — `guidance_pathfind.{h,cpp}` (A* over the static per-area nav graph). The full handoff package for next session lives in the Phase 5 section near the top of this doc:
+- Engine constraint (`AddMoveToPointAction` permanently NPC-only for leader)
+- Replacement primitive (`UseObject(handle)`) — already shipped
+- Fully decoded static nav graph offsets + CSR adjacency layout
+- New lay-off ordering (1 closed; 2 = A*; 3 = beacon; 4 = wire-up; 5 = description; 6 = map cursor; 7 = markers)
+- Probe-stripping cleanup (do FIRST in the new session: strip `probe_pathfind.{h,cpp}` and the field101=0 hack in `WalkTo`)
+
+**Pre-step before lay-off 2:** strip the path-data probe (`patches/Accessibility/probe_pathfind.{h,cpp}` + its core_tick.cpp wiring) and the `field101=0` hack in `guidance_autowalk.cpp::WalkTo`. Both were diagnostic-only and have served their purpose; the answer they revealed is now in the Phase 5 section. Leave the diagnostic `preField427`/`postField427` log lines if you find them useful, strip if noisy.
+
 **Phase 3 closed 2026-05-07.** Pillar 1 free-walking now lands at ~2 cues/sec in dense Endar Spire corridors (was ~4.3 pre-tune); user signed off as good enough to keep playing. Wall + object pipelines aligned on the same shape (silent enter/exit retracks, range hysteresis, per-feature 1 s cooldown). T2 walls strongly gated (B+C). Diagnostic `T2 wall blocked` line lets future logs distinguish "cone is genuinely all-wall" from "T2 wanted to fire but was gated." Full design + parked alternatives in `docs/pillar1-wall-cue-tuning.md`.
 
-**Phase 4 lay-off 5 is the only remaining open feature work** in the current phase plan: Enter routing while view mode is active (autowalk to object-under-cursor or to cursor world position). Outline lives in `navsystem-progress.md` Phase 4 section.
+**Phase 4 effectively closed 2026-05-11.** Lay-off 5 (Enter routing in view mode) deeply parked under the 2026-05-11 pivot — see Phase 4 § "Lay-off 5 — DEEPLY PARKED". Not a critical-path follow-up; revisit only if user need surfaces.
 
-After lay-off 5: Phase 5 opens (`guidance/beacon` + `guidance/pathfind` + `guidance/description` + `map_ui/cursor`).
+**Crash fix landed 2026-05-11** (commit `63ff69f`): "Drop chain on sub-screen teardown + SEH-guard vtable predicates". Was blocking every area transition via party-select-OK and every MessageBox-OK panel close. Layer 1 (SEH on `IsSlider`/`IsListBox`/`IsEditbox`) plus Layer 2b (`InvalidateChain()` on `OnSetSWGuiStatus(new_status=4)`). Game now loads across area transitions cleanly.
 
 **Phase 2 closed 2026-05-05.** Phase 1 closed 2026-05-03. Phase 0 closed 2026-05-03. Working deliverables across the three:
 
