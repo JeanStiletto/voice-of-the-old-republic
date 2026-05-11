@@ -7,6 +7,7 @@
 #include "engine_manager.h"  // kAddrGuiManagerPtr, kMgrModalStackSizeOffset
 #include "engine_panels.h"   // HasActiveSubScreen, CallPrevSWInGameGui
 #include "log.h"
+#include "menus_chain.h"     // InvalidateChain — teardown-window stale-pointer guard
 
 namespace acc::engine {
 
@@ -278,6 +279,23 @@ extern "C" void __cdecl OnSetSWGuiStatus(void* thisPtr,
     acclog::Write("SubScreen.Status",
                   "this=%p new_status=%d p2=%d caller=0x%08x",
                   thisPtr, new_status, param_2, caller_eip);
+
+    // Teardown-window stale-pointer guard. status=4 = sub-screen finishing.
+    // The engine is about to free the active panel's child controls; any
+    // pointer in g_chain (cached at the last SetActiveControl) becomes
+    // stale within the same tick. Drop the chain so MonitorFocusedControl
+    // short-circuits on its g_chainCount > 0 gate until OnSetActiveControl
+    // rebuilds it against the next live panel.
+    //
+    // thisPtr here is the CGuiInGame singleton, not the panel — same
+    // value across status changes. We invalidate unconditionally on
+    // status=4; the chain rebuilds on the very next active-control event
+    // (typically the parent panel re-taking focus, or the next screen's
+    // first control), so the brief empty-chain window is invisible at
+    // the announce layer.
+    if (new_status == 4) {
+        acc::menus::chain::InvalidateChain();
+    }
 }
 
 // Diagnostic: every CGuiInGame::HideSWInGameGui call logs the caller

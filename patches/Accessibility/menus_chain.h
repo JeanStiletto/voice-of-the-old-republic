@@ -84,6 +84,19 @@ extern int g_classIconClickOffsetX;    // chargen class-icon column pitch
 // on the engine's current activeControl.
 void RebindChain(void* panel);
 
+// Drop all chain state without rebuilding. Called from the sub-screen
+// status hook on `new_status == 4` (teardown begin): the engine is about
+// to free the focused panel's child controls, so any pointer in g_chain
+// becomes stale. Setting g_chainCount = 0 makes MonitorFocusedControl
+// short-circuit on its first gate; the chain rebuilds on the next
+// OnSetActiveControl when a fresh panel takes focus. Without this, the
+// monitor dereferences g_chain[g_chainIndex].control on the tick between
+// teardown and the next SetActiveControl, and that pointer is now in
+// freed memory (crash analysed 2026-05-11, dump swkotor.exe.18312.dmp).
+//
+// Safe to call multiple times; idempotent when already empty.
+void InvalidateChain();
+
 // Reset tabbed-mode state (tab cluster fields). Called when the focused
 // panel changes to a different one.
 void ResetTabbedState();

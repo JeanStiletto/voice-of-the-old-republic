@@ -127,6 +127,13 @@ void ResetTabbedState() {
     g_tabsCount   = 0;
 }
 
+void InvalidateChain() {
+    g_chainPanel = nullptr;
+    g_chainIndex = 0;
+    g_chainCount = 0;
+    ResetTabbedState();
+}
+
 void ValidateTabbedPanel() {
     if (!g_tabbedPanel) return;
     void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);

@@ -160,22 +160,43 @@ bool IsToggle(void* control) {
     return CallDowncast(control, kVtableAsButtonToggle) != nullptr;
 }
 
+// Vtable-identity predicates run from per-tick menu monitors. A null-check
+// alone isn't enough: panel-teardown windows (e.g. modal close → area load)
+// can leave a freed-but-non-null control pointer in cached monitor state
+// for one extra Dispatch() tick. Crash analysed 2026-05-11 (dump
+// swkotor.exe.14028.dmp): IsSlider faulted at the vtable read on a freed
+// PartySelection OK button right after `SubScreen.Status new_status=4`.
+// SEH-guard the dereference so a stale pointer returns false (same as
+// a real type mismatch) instead of access-violation-ing the process.
+// CallDowncast above uses the same pattern for the IsToggle path.
 bool IsSlider(void* control) {
     if (!control) return false;
-    void** vt = *reinterpret_cast<void***>(control);
-    return reinterpret_cast<uintptr_t>(vt) == kVtableSlider;
+    __try {
+        void** vt = *reinterpret_cast<void***>(control);
+        return reinterpret_cast<uintptr_t>(vt) == kVtableSlider;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
 }
 
 bool IsListBox(void* control) {
     if (!control) return false;
-    void** vt = *reinterpret_cast<void***>(control);
-    return reinterpret_cast<uintptr_t>(vt) == kVtableListBox;
+    __try {
+        void** vt = *reinterpret_cast<void***>(control);
+        return reinterpret_cast<uintptr_t>(vt) == kVtableListBox;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
 }
 
 bool IsEditbox(void* control) {
     if (!control) return false;
-    void** vt = *reinterpret_cast<void***>(control);
-    return reinterpret_cast<uintptr_t>(vt) == kVtableEditbox;
+    __try {
+        void** vt = *reinterpret_cast<void***>(control);
+        return reinterpret_cast<uintptr_t>(vt) == kVtableEditbox;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
 }
 
 bool ReadToggleState(void* toggle) {
