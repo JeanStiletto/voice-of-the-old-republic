@@ -16,7 +16,7 @@
 #include "engine_panels.h"
 #include "engine_reads.h"
 #include "log.h"
-#include "menus.h"            // SetDrilledIntoSubScreen — auto-drill on direct opens
+#include "menus.h"            // SetDrilledIntoSubScreen — sole drill-arm site
 #include "menus_charsheet.h"
 #include "menus_chargen_attr.h"
 #include "menus_chargen_skills.h"
@@ -139,22 +139,32 @@ void MonitorFocusedControl() {
 // (exposed via FindActiveSubScreenPanel + IsInGameSubScreenKind below).
 // ============================================================================
 
+// Spec order = the icon strip's left-to-right visual order, which is what
+// Tab / Shift+Tab cycle through. `guiId` is the engine's own sub-screen
+// index used by CGuiInGame::SwitchToSWInGameGui — not the same as strip
+// position (CGuiInGame allocates its slots in 0x0c..0x28 order, which
+// puts Map and Messages in the "wrong" spots from a strip POV). Keeping
+// both in one row lets the Tab handler look up the next strip neighbour
+// and the engine GUI_id in a single pass.
 struct InGameSubScreenSpec {
     PanelKind   kind;
+    int         guiId;
     uint32_t    strref;
     const char* literal;
 };
 
 const InGameSubScreenSpec k_inGameSubScreens[] = {
-    { PanelKind::InGameEquip,     0xFFFFFFFFu, "Ausr\xfcstung" },
-    { PanelKind::InGameInventory, 48220u,      "Inventar" },
-    { PanelKind::InGameCharacter, 48225u,      "Charakterblatt" },
-    { PanelKind::InGameMap,       48221u,      "Karte" },
-    { PanelKind::InGameAbilities, 48224u,      "F\xe4higkeiten" },
-    { PanelKind::InGameJournal,   48218u,      "Auftr\xe4ge" },
-    { PanelKind::InGameOptions,   48222u,      "Optionen" },
-    { PanelKind::InGameMessages,  48223u,      "Nachrichten" },
+    { PanelKind::InGameEquip,     0, 0xFFFFFFFFu, "Ausr\xfcstung" },
+    { PanelKind::InGameInventory, 1, 48220u,      "Inventar" },
+    { PanelKind::InGameCharacter, 2, 48225u,      "Charakterblatt" },
+    { PanelKind::InGameMap,       6, 48221u,      "Karte" },
+    { PanelKind::InGameAbilities, 3, 48224u,      "F\xe4higkeiten" },
+    { PanelKind::InGameJournal,   5, 48218u,      "Auftr\xe4ge" },
+    { PanelKind::InGameOptions,   7, 48222u,      "Optionen" },
+    { PanelKind::InGameMessages,  4, 48223u,      "Nachrichten" },
 };
+constexpr int k_inGameSubScreenCount =
+    sizeof(k_inGameSubScreens) / sizeof(k_inGameSubScreens[0]);
 
 const InGameSubScreenSpec* FindSpec(PanelKind k) {
     for (const auto& s : k_inGameSubScreens) {
@@ -208,24 +218,21 @@ void AnnounceNewSubScreens(void** panels, int count) {
     memcpy(s_visibleSubScreens, nowVisible, sizeof(nowVisible));
     s_visibleSubScreenCount = nowCount;
 
-    // Auto-arm drill on any newly-visible sub-screen. Sub-screens that
-    // open via direct paths (Esc → InGameOptions, M → InGameMap, I →
-    // InGameInventory, …) bypass the strip-icon Enter site that
-    // originally armed the drill flag in menus.cpp::OnHandleInputEvent.
-    // Without drill armed, the chain router targets the InGameMenu strip
-    // (which keeps fg per the strip-stays-fg pattern) and arrow keys
-    // navigate the icon row instead of the visible sub-screen content —
-    // user-visible symptom: pause appears to "freeze" because nothing
-    // responds (verified via patch-20260510-130303.log: every Esc →
-    // SetActive #N panel=InGameOptions newControl=NULL leaves the
-    // sub-screen with no chain anchor). Strip-icon Enter still arms
-    // eagerly upstream (line 1630 in menus.cpp) — this just covers the
-    // direct-open paths uniformly.
+    // Sole drill-arm site. Triggers on any newly-visible sub-screen kind
+    // (Inventar, Karte, Auftraege, …) regardless of which engine function
+    // opened it — ShowSWInGameGui (cold path, e.g. Esc → Options),
+    // SwitchToSWInGameGui (warm path, strip-icon Enter / hotkey while a
+    // sub-screen is already up), our own Tab cycle queue, or any future
+    // engine path. Polling panels[] is the only single-site approach that
+    // covers them all (we tried hooking SwitchToSWInGameGui as the single
+    // event source — it missed the cold path entirely and left the strip
+    // chain-navigable on first Esc). One-tick latency between push and
+    // arm is invisible to the user. Idempotent — Tab cycling re-detects
+    // the same sub-screen the next tick but the guard skips.
     if (newSubScreenDetected && !acc::menus::IsDrilledIntoSubScreen()) {
         acc::menus::SetDrilledIntoSubScreen(true);
         acclog::Write("Drill",
-                      "auto-armed on direct sub-screen open "
-                      "(no preceding strip-icon Enter)");
+                      "auto-armed on new sub-screen in panels[]");
     }
 }
 
@@ -573,6 +580,20 @@ void* FindActiveSubScreenPanel() {
 
 bool IsInGameSubScreenKind(PanelKind k) {
     return FindSpec(k) != nullptr;
+}
+
+int NextStripSubScreenGuiId(PanelKind current, int direction) {
+    if (direction == 0) return -1;
+    int idx = -1;
+    for (int i = 0; i < k_inGameSubScreenCount; ++i) {
+        if (k_inGameSubScreens[i].kind == current) { idx = i; break; }
+    }
+    if (idx < 0) return -1;
+    int step = direction > 0 ? +1 : -1;
+    int next = idx + step;
+    if (next < 0) next = k_inGameSubScreenCount - 1;
+    if (next >= k_inGameSubScreenCount) next = 0;
+    return k_inGameSubScreens[next].guiId;
 }
 
 }  // namespace acc::menus::monitors

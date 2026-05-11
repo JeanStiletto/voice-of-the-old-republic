@@ -28,13 +28,14 @@ namespace {
 
 enum class Kind {
     None,
-    MoveCursor,    // x, y, a = target (self-dedup)
-    ClickAt,       // x, y, a = target (self-dedup)
-    Activate,      // a = target
-    EquipSelect,   // a = panel, b = slot
-    EquipCommit,   // a = panel, b = row, c = btn
-    SliderInput,   // a = target, code = direction (500 inc / 501 dec)
-    PrevSWInGameGui, // no payload — pops current in-game sub-screen
+    MoveCursor,        // x, y, a = target (self-dedup)
+    ClickAt,           // x, y, a = target (self-dedup)
+    Activate,          // a = target
+    EquipSelect,       // a = panel, b = slot
+    EquipCommit,       // a = panel, b = row, c = btn
+    SliderInput,       // a = target, code = direction (500 inc / 501 dec)
+    PrevSWInGameGui,   // no payload — pops current in-game sub-screen
+    SwitchSubScreen,   // code = engine GUI_id (0..7)
 };
 
 struct PendingOp {
@@ -114,6 +115,13 @@ bool QueueSliderInput(void* target, int code) {
 bool QueuePrevSWInGameGui() {
     if (g_op.kind != Kind::None) return false;
     g_op.kind = Kind::PrevSWInGameGui;
+    return true;
+}
+
+bool QueueSwitchSubScreen(int guiId) {
+    if (g_op.kind != Kind::None) return false;
+    g_op.kind = Kind::SwitchSubScreen;
+    g_op.code = guiId;
     return true;
 }
 
@@ -333,6 +341,14 @@ void Drain(void* gm) {
     // close-on-redrill path lands) the strip-icon Enter handler.
     case Kind::PrevSWInGameGui: {
         acc::engine::CallPrevSWInGameGui();
+        break;
+    }
+
+    // Switch to a different in-game sub-screen (Tab / Shift+Tab cycle).
+    // CallSwitchToSWInGameGui goes through our 0x62cf2d detour, which pops
+    // any active sub-screen first, so panels[] ends with just the new one.
+    case Kind::SwitchSubScreen: {
+        acc::engine::CallSwitchToSWInGameGui(op.code);
         break;
     }
     }

@@ -137,6 +137,26 @@ bool HasActiveSubScreen();
 // The caller is responsible for clearing local drill state.
 bool CallPrevSWInGameGui();
 
+// Invoke CGuiInGame::SwitchToSWInGameGui (0x0062cf10) directly with the
+// requested GUI_id. The engine indexes sub-screens 0..7 in CGuiInGame slot
+// order (offsets 0x0c..0x28):
+//
+//   0 = InGameEquip       (0x0c)
+//   1 = InGameInventory   (0x10)
+//   2 = InGameCharacter   (0x14)
+//   3 = InGameAbilities   (0x18)
+//   4 = InGameMessages    (0x1c)
+//   5 = InGameJournal     (0x20)
+//   6 = InGameMap         (0x24)
+//   7 = InGameOptions     (0x28)
+//
+// Our OnSwitchToSWInGameGui detour (mid-function at 0x62cf2d) pops any
+// active sub-screen first, so the new one lands on a clean panels[]. The
+// caller does not need to invoke PrevSWInGameGui itself.
+//
+// Returns true on dispatch, false if CGuiInGame can't be resolved.
+bool CallSwitchToSWInGameGui(int guiId);
+
 // Invoke CGuiInGame::HideSWInGameGui (0x0062cba0) directly with the given
 // param_1. This is the engine's "close current sub-screen" primitive —
 // CSWGuiInGameOptions::HandleInputEvent calls it with param_1=0 when the

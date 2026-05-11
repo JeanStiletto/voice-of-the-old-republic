@@ -49,23 +49,6 @@ extern bool g_switchHookEverFired;
 // The engine's HideSWInGameGui handles their pause/audio cleanup
 // natively. Only MessageBoxModal popups push to modal_stack.
 //
-// Iteration history (each rejected in favour of the next):
-//   v1 — only called TogglePauseRequest. Walking + NPC narration came
-//        back but audio (footsteps, nav cues) stayed muted; user
-//        needed Space x2 to fully restore.
-//   v2 — called HideSWInGameGui(this, 0). Fired too late (engine had
-//        already set status=4 via SetInputClass), so the function's
-//        field119==0 / param_1==0 branch was missed and TogglePause
-//        was never called from inside. Hook effectively a no-op;
-//        world stayed paused.
-//   v3 — called TogglePauseRequest + SetSoundMode(0). Audio came
-//        back, walking came back — but TogglePauseRequest XORs bit 2,
-//        so on consecutive popup-closes (without anything resetting
-//        bit 2 between) the state alternated unpaused→paused→…
-//   v4 (current) — replaced TogglePauseRequest with idempotent
-//        SetPauseState(2, 0). Every close ends with bit 2 = 0
-//        regardless of prior state. Audio resync unchanged.
-//
 // Edge-triggered on modal_stack non-zero → 0 transition. Steady-
 // state does nothing.
 //
@@ -75,15 +58,6 @@ extern bool g_switchHookEverFired;
 // re-assert input_class. The behaviour is now strictly pause-state
 // cleanup. Keep an eye on it if a future refactor renames things.)
 void TickInputClassReassert();
-
-// Alt+U runtime A/B toggle for the modal-pop cleanup. Flips a
-// process-static bool that gates the SetPauseState + SetSoundMode
-// calls inside TickInputClassReassert. Either way the modal-pop
-// transition still gets logged so the test halves stay comparable.
-// Audible feedback via Tolk: "Pausen-Hook an" / "Pausen-Hook aus".
-//
-// Called once per frame from core_tick::Dispatch.
-void PollPauseToggleHotkey();
 
 }  // namespace acc::engine
 

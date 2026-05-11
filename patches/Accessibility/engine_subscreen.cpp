@@ -6,36 +6,12 @@
 #include "engine_manager.h"  // kAddrGuiManagerPtr, kMgrModalStackSizeOffset
 #include "engine_panels.h"   // HasActiveSubScreen, CallPrevSWInGameGui
 #include "log.h"
-#include "tolk.h"
 
 namespace acc::engine {
 
 bool g_switchHookEverFired = false;
 
 namespace {
-
-// Runtime toggle for the modal-pop close-handler. Default ON. Alt+U at
-// runtime flips this so we can A/B test against "no hook" without
-// rebuilding. When OFF, TickInputClassReassert still tracks modal_stack
-// edges and logs the transition (so the log records that the popup-close
-// was detected) but does not run the unpause — keeping the two halves
-// of the test comparable.
-//
-// Iteration history:
-//  - v1 (commit 8401763): called SendPlayerToServerInput_TogglePauseRequest
-//    only. Server unpaused + walking resumed, but client audio (footstep
-//    sounds, nav cues) stayed muted because client-side SetSoundMode was
-//    never reset. User had to press Space twice for full resync.
-//  - v2 (commit 66dc1dd): called HideSWInGameGui(this, 0) to mirror the
-//    Esc-menu close path. Fired too late (engine had already set status=4
-//    via SetInputClass) and ran into the field119_0xb38 branch — for
-//    popup-close field119 is nonzero, so HideSWInGameGui took the "add
-//    pause panel back" branch and skipped TogglePauseRequest entirely.
-//    Hook effectively a no-op; world stayed paused.
-//  - v3 (this): call BOTH primitives directly, the same primitives
-//    HideSWInGameGui's field119==0 / param_1==0 branch and end-of-function
-//    call. Bypasses the state-precondition problem entirely.
-bool s_pauseToggleEnabled = true;
 
 // CServerExoApp::SetPauseState @ 0x004ae9a0. __thiscall.
 // `this` = AppManager->server (CServerExoApp*, at AppManager + 0x08).
@@ -108,103 +84,66 @@ void TickInputClassReassert() {
     }
 
     if (s_prevModalSize > 0 && modalSize == 0) {
-        if (s_pauseToggleEnabled) {
-            acclog::Write("PauseToggle",
-                          "popup closed (modal_stack %d->0): "
-                          "SetPauseState(2,0) + SetSoundMode(0)",
-                          s_prevModalSize);
+        acclog::Write("PauseToggle",
+                      "popup closed (modal_stack %d->0): "
+                      "SetPauseState(2,0) + SetSoundMode(0)",
+                      s_prevModalSize);
 
-            // 1. Server-side unpause: SET pause source bit 2 = 0
-            //    (idempotent — no-op if already clear). Server then
-            //    resumes world timers and sends SetPauseState back to
-            //    the client; client handler re-enables animations and
-            //    timer ticks. We use SetPauseState rather than
-            //    TogglePauseRequest because Toggle XORs the bit and so
-            //    alternates the state on consecutive popup-closes when
-            //    the popup-open path doesn't itself touch bit 2 (which
-            //    is what we observed empirically — odd cycles unpaused,
-            //    even cycles paused).
-            __try {
-                void* appMgr =
-                    *reinterpret_cast<void**>(kAddrAppManagerPtrLocal);
-                if (appMgr) {
-                    void* server = *reinterpret_cast<void**>(
-                        static_cast<unsigned char*>(appMgr) +
-                        kAppManagerServerOff);
-                    if (server) {
-                        auto fn = reinterpret_cast<PFN_SetPauseState>(
-                            kAddrSetPauseState);
-                        fn(server, 2, 0);
-                    } else {
-                        acclog::Write("PauseToggle",
-                                      "SetPauseState skipped: server NULL");
-                    }
+        // 1. Server-side unpause: SET pause source bit 2 = 0
+        //    (idempotent — no-op if already clear). Server then
+        //    resumes world timers and sends SetPauseState back to
+        //    the client; client handler re-enables animations and
+        //    timer ticks. We use SetPauseState rather than
+        //    TogglePauseRequest because Toggle XORs the bit and so
+        //    alternates the state on consecutive popup-closes when
+        //    the popup-open path doesn't itself touch bit 2 (which
+        //    is what we observed empirically — odd cycles unpaused,
+        //    even cycles paused).
+        __try {
+            void* appMgr =
+                *reinterpret_cast<void**>(kAddrAppManagerPtrLocal);
+            if (appMgr) {
+                void* server = *reinterpret_cast<void**>(
+                    static_cast<unsigned char*>(appMgr) +
+                    kAppManagerServerOff);
+                if (server) {
+                    auto fn = reinterpret_cast<PFN_SetPauseState>(
+                        kAddrSetPauseState);
+                    fn(server, 2, 0);
                 } else {
                     acclog::Write("PauseToggle",
-                                  "SetPauseState skipped: AppManager NULL");
+                                  "SetPauseState skipped: server NULL");
                 }
-            } __except (EXCEPTION_EXECUTE_HANDLER) {
-                acclog::Write("PauseToggle", "fault in SetPauseState");
+            } else {
+                acclog::Write("PauseToggle",
+                              "SetPauseState skipped: AppManager NULL");
             }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            acclog::Write("PauseToggle", "fault in SetPauseState");
+        }
 
-            // 2. Client-side audio resync: SetSoundMode(0) un-mutes the
-            //    audio mixer. The server roundtrip in step 1 does NOT
-            //    automatically touch SetSoundMode — that's done
-            //    separately by SetPausedByCombat (which has gates we
-            //    can't reliably satisfy), or directly here.
-            __try {
-                void* exoSound =
-                    *reinterpret_cast<void**>(kAddrExoSoundPtr);
-                if (exoSound) {
-                    auto fn = reinterpret_cast<PFN_SetSoundMode>(
-                        kAddrSetSoundMode);
-                    fn(exoSound, 0);
-                } else {
-                    acclog::Write("PauseToggle",
-                                  "SetSoundMode skipped: ExoSound NULL");
-                }
-            } __except (EXCEPTION_EXECUTE_HANDLER) {
-                acclog::Write("PauseToggle", "fault in SetSoundMode");
+        // 2. Client-side audio resync: SetSoundMode(0) un-mutes the
+        //    audio mixer. The server roundtrip in step 1 does NOT
+        //    automatically touch SetSoundMode — that's done
+        //    separately by SetPausedByCombat (which has gates we
+        //    can't reliably satisfy), or directly here.
+        __try {
+            void* exoSound =
+                *reinterpret_cast<void**>(kAddrExoSoundPtr);
+            if (exoSound) {
+                auto fn = reinterpret_cast<PFN_SetSoundMode>(
+                    kAddrSetSoundMode);
+                fn(exoSound, 0);
+            } else {
+                acclog::Write("PauseToggle",
+                              "SetSoundMode skipped: ExoSound NULL");
             }
-        } else {
-            acclog::Write("PauseToggle",
-                          "popup closed (modal_stack %d->0): "
-                          "DISABLED (Alt+U) — hook suppressed",
-                          s_prevModalSize);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            acclog::Write("PauseToggle", "fault in SetSoundMode");
         }
     }
 
     s_prevModalSize = modalSize;
-}
-
-void PollPauseToggleHotkey() {
-    auto down = [](int vk) -> bool {
-        return (GetAsyncKeyState(vk) & 0x8000) != 0;
-    };
-
-    static bool s_prevU = false;
-    bool alt = down(VK_MENU);
-    bool u   = down('U');
-    bool risingU = u && !s_prevU;
-    s_prevU = u;
-
-    if (!risingU || !alt) return;
-
-    // Foreground-window gate — don't fire if KOTOR isn't focused.
-    HWND fg = GetForegroundWindow();
-    if (fg) {
-        DWORD pid = 0;
-        GetWindowThreadProcessId(fg, &pid);
-        if (pid != GetCurrentProcessId()) return;
-    }
-
-    s_pauseToggleEnabled = !s_pauseToggleEnabled;
-    acclog::Write("PauseToggle",
-                  "Alt+U: hook %s",
-                  s_pauseToggleEnabled ? "ENABLED" : "DISABLED");
-    tolk::Speak(s_pauseToggleEnabled ? L"Pausen-Hook an"
-                                     : L"Pausen-Hook aus",
-                /*interrupt=*/true);
 }
 
 }  // namespace acc::engine
@@ -219,6 +158,18 @@ extern "C" void __cdecl OnSwitchToSWInGameGui(void* thisPtr, int guiId) {
                       "first fire: this=%p GUI_id=%d (hook is alive)",
                       thisPtr, guiId);
     }
+
+    // Drill-arm lives in the menus_monitors per-tick poll (AnnounceNewSubScreens),
+    // not here. SwitchToSWInGameGui is only the WARM path (sub-screen already
+    // showing → switching to a different one); the COLD path is
+    // ShowSWInGameGui (in-world → first sub-screen, e.g. Esc → Options), which
+    // we don't hook. Arming the flag here would have left first Esc opens
+    // un-armed and walked the user through the InGameMenu strip instead of
+    // the Options panel. The monitor catches BOTH paths because it polls the
+    // resulting state (panels[] contains a sub-screen kind) — robust to any
+    // current or future engine open path. This hook stays for its
+    // close-on-redrill cleanup role (a real mutation: pop prior sub-screen
+    // before the new one pushes).
 
     // Only act if there's already a sub-screen alive in panels[]. The
     // very first sub-screen open (cold path: world → strip → Inventory)

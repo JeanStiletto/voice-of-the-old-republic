@@ -49,10 +49,6 @@ int g_tabClickOffsetY        = 0;
 int g_equipSlotClickOffsetY  = 0;
 int g_classIconClickOffsetX  = 0;
 
-char g_virtualLines[kMaxVirtualLines][kMaxVirtualLineLen];
-int  g_virtualLineCount = 0;
-int  g_virtualLineIdx   = -1;
-
 // IsModalTextPanel was a file-static helper inside menus.cpp; only
 // RebindChain calls it, so it lives here now (anonymous namespace).
 namespace {
@@ -126,11 +122,9 @@ bool DetectTabsCluster(void* panel, int& outStart, int& outCount) {
 }
 
 void ResetTabbedState() {
-    g_tabbedPanel      = nullptr;
-    g_tabsStart        = -1;
-    g_tabsCount        = 0;
-    g_virtualLineCount = 0;
-    g_virtualLineIdx   = -1;
+    g_tabbedPanel = nullptr;
+    g_tabsStart   = -1;
+    g_tabsCount   = 0;
 }
 
 void ValidateTabbedPanel() {
@@ -149,27 +143,6 @@ void ValidateTabbedPanel() {
     acclog::Write("ValidateTabbedPanel", "%p not in panels[]; clearing tabbed-mode state",
                   g_tabbedPanel);
     ResetTabbedState();
-}
-
-// ============================================================================
-// Virtual-line cursor (multi-line listbox blob).
-// ============================================================================
-
-void ParseVirtualLines(const char* text) {
-    g_virtualLineCount = 0;
-    g_virtualLineIdx   = -1;
-    if (!text) return;
-    const char* p = text;
-    while (*p && g_virtualLineCount < kMaxVirtualLines) {
-        const char* end = strchr(p, '\n');
-        size_t len = end ? (size_t)(end - p) : strlen(p);
-        if (len >= kMaxVirtualLineLen) len = kMaxVirtualLineLen - 1;
-        memcpy(g_virtualLines[g_virtualLineCount], p, len);
-        g_virtualLines[g_virtualLineCount][len] = '\0';
-        ++g_virtualLineCount;
-        if (!end) break;
-        p = end + 1;
-    }
 }
 
 // ============================================================================

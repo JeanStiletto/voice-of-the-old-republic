@@ -14,12 +14,10 @@
 //     listbox at controls[0], buttons after) plus the click-offset
 //     compensations RebindChain computes for cursor-warp hit-test
 //     correction (tab-y, equip-slot-y, class-icon-x).
-//   * Virtual-line cursor for tabbed-panel listbox content (multi-line
-//     blob split on \n into per-line entries the user can walk).
 //   * The geometry helpers that build and walk the chain: DetectTabsCluster,
 //     ResetTabbedState, ValidateTabbedPanel, IsTabButton, AppendChainEntry/
 //     TextOnly, RebindChain, FindAdjacentArrow, FindCloseButton/Cancel,
-//     FindChainEntry, ReadPanelActiveControl, ParseVirtualLines.
+//     FindChainEntry, ReadPanelActiveControl.
 //
 // What stays in menus.cpp:
 //
@@ -79,16 +77,6 @@ extern int g_tabClickOffsetY;          // tab-cluster row pitch (Options-style)
 extern int g_equipSlotClickOffsetY;    // InGameEquip slot row pitch
 extern int g_classIconClickOffsetX;    // chargen class-icon column pitch
 
-// Virtual-line cursor over a tabbed-panel listbox's multi-line blob. The
-// Options listbox renders all settings as a single CSWGuiLabel with '\n'
-// separators; ParseVirtualLines splits it into addressable lines, the
-// per-event arrow handlers walk the cursor.
-constexpr int kMaxVirtualLines   = 32;
-constexpr int kMaxVirtualLineLen = 256;
-extern char g_virtualLines[kMaxVirtualLines][kMaxVirtualLineLen];
-extern int  g_virtualLineCount;
-extern int  g_virtualLineIdx;
-
 // (Re)bind the chain to the currently focused panel. Walks panel.controls,
 // recurses one level into sub-dialog listboxes, sorts by extent.top, then
 // squashes cycle-arrow flankers (empty-text neighbours of value-display
@@ -96,8 +84,8 @@ extern int  g_virtualLineIdx;
 // on the engine's current activeControl.
 void RebindChain(void* panel);
 
-// Reset all tabbed-mode state (tab cluster fields + virtual-line cursor).
-// Called when the focused panel changes to a different one.
+// Reset tabbed-mode state (tab cluster fields). Called when the focused
+// panel changes to a different one.
 void ResetTabbedState();
 
 // Per-tick guard against a dangling g_tabbedPanel. Cheap pointer-compare
@@ -132,9 +120,5 @@ int FindChainEntry(void* control);
 // Read panel.activeControl. Defined here because RebindChain anchors on
 // it; menus.cpp's OnSetActiveControl uses its own focus-tracking instead.
 void* ReadPanelActiveControl(void* panel);
-
-// Split `text` on '\n' into g_virtualLines[]. Truncates oversize lines;
-// caps total line count at kMaxVirtualLines.
-void ParseVirtualLines(const char* text);
 
 }  // namespace acc::menus::chain

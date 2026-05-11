@@ -75,6 +75,14 @@ bool QueueSliderInput(void* target, int code);
 // hover/focus paths.
 bool QueuePrevSWInGameGui();
 
+// Queue a CGuiInGame::SwitchToSWInGameGui dispatch with the given engine
+// GUI_id (0..7 — see acc::engine::CallSwitchToSWInGameGui for the mapping).
+// On drain calls acc::engine::CallSwitchToSWInGameGui(guiId), which goes
+// through our redrill-cleanup detour at 0x62cf2d, so the previous
+// sub-screen is popped from panels[] before the new one is pushed.
+// Used by the Tab / Shift+Tab inter-panel cycle handler in menus.cpp.
+bool QueueSwitchSubScreen(int guiId);
+
 // True if an op is currently queued. All input-handler debounce sites
 // uniformly check this before queueing — single-slot queue means there's
 // no per-kind discrimination to do (the old code's per-site debounce

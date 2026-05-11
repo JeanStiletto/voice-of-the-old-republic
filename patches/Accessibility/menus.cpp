@@ -94,8 +94,8 @@ using acc::menus::detail::QueueButtonByIdActivate;
 // Step 5 seam: chain state + helpers live in menus_chain.cpp. Bring all
 // the names into unqualified scope so the dense reads in OnHandleInputEvent
 // / OnSetActiveControl / monitors stay as they were. Writes to the
-// externs (g_chainIndex on chain-step advance, virtual-line state on
-// panel change) work the same way through using-declarations.
+// externs (g_chainIndex on chain-step advance) work the same way through
+// using-declarations.
 using acc::menus::chain::ChainEntry;
 using acc::menus::chain::kMaxChainEntries;
 using acc::menus::chain::g_chain;
@@ -108,11 +108,6 @@ using acc::menus::chain::g_tabsCount;
 using acc::menus::chain::g_tabClickOffsetY;
 using acc::menus::chain::g_equipSlotClickOffsetY;
 using acc::menus::chain::g_classIconClickOffsetX;
-using acc::menus::chain::g_virtualLines;
-using acc::menus::chain::g_virtualLineCount;
-using acc::menus::chain::g_virtualLineIdx;
-using acc::menus::chain::kMaxVirtualLines;
-using acc::menus::chain::kMaxVirtualLineLen;
 using acc::menus::chain::RebindChain;
 using acc::menus::chain::ResetTabbedState;
 using acc::menus::chain::ValidateTabbedPanel;
@@ -123,7 +118,6 @@ using acc::menus::chain::FindCloseButton;
 using acc::menus::chain::FindCancelButton;
 using acc::menus::chain::FindChainEntry;
 using acc::menus::chain::ReadPanelActiveControl;
-using acc::menus::chain::ParseVirtualLines;
 
 // Post-Step-5 cleanup: general-monitor TU and listbox-monitor extension.
 // AnnounceControl (writes monitor state) lives in menus_monitors; chain
@@ -291,12 +285,11 @@ static void* g_lastTitledPanel = nullptr;
 // handlers below call it via the using-declaration at the top of this
 // file.
 
-// Tabbed-panel state (g_tabbedPanel, g_tabsStart, g_tabsCount), the three
-// click-offset compensations (g_tabClickOffsetY, g_equipSlotClickOffsetY,
-// g_classIconClickOffsetX), and the virtual-line cursor state moved to
-// menus_chain.cpp in Step 5. Brought back into unqualified scope via the
-// using-declarations at the top of this file. See menus_chain.h for the
-// rationale.
+// Tabbed-panel state (g_tabbedPanel, g_tabsStart, g_tabsCount) and the
+// three click-offset compensations (g_tabClickOffsetY,
+// g_equipSlotClickOffsetY, g_classIconClickOffsetX) moved to menus_chain.cpp
+// in Step 5. Brought back into unqualified scope via the using-declarations
+// at the top of this file. See menus_chain.h for the rationale.
 // Center pixel of a control's hit area. Returns false on null control or
 // degenerate extent (zero/negative width/height — sometimes seen on hidden
 // panels and templated control prototypes).
@@ -424,9 +417,9 @@ static void AnnouncePanelTitle(void* panel) {
     }
 }
 
-// DetectTabsCluster, ResetTabbedState, ValidateTabbedPanel, and
-// ParseVirtualLines moved to menus_chain.cpp in Step 5. Brought back into
-// unqualified scope via the using-declarations at the top of this file.
+// DetectTabsCluster, ResetTabbedState, and ValidateTabbedPanel moved to
+// menus_chain.cpp in Step 5. Brought back into unqualified scope via the
+// using-declarations at the top of this file.
 
 // Container loot panel control IDs from container.gui (extracted via
 // xoreos-tools from data/gui.bif). Stable per panel kind across patch versions.
@@ -843,19 +836,14 @@ static void PrefillClassIconCacheOnTransition(void* panel, void* newControl) {
     }
 }
 
-// Update g_currentPanel and clear the virtual-line cursor on panel
-// transitions. Tabbed-mode tab-cluster state DELIBERATELY persists across
-// transitions into sub-dialogs of the tabbed panel — the tab strip lives
-// on the parent panel (Options) and is still the right thing for Tab/
-// Shift+Tab while the user is inside one of its sub-dialogs. ValidateTabbed-
-// Panel drops the cluster state when the engine frees the underlying panel.
+// Update g_currentPanel on panel transitions. Tabbed-mode tab-cluster
+// state DELIBERATELY persists across transitions into sub-dialogs of the
+// tabbed panel — the tab strip lives on the parent panel (Options) and is
+// still the right thing while the user is inside one of its sub-dialogs.
+// ValidateTabbedPanel drops the cluster state when the engine frees the
+// underlying panel.
 static void UpdateFocusedPanelState(void* panel) {
-    void* prevPanel = g_currentPanel;
     g_currentPanel = panel;
-    if (panel != prevPanel) {
-        g_virtualLineCount = 0;
-        g_virtualLineIdx   = -1;
-    }
 }
 
 // First focus event into a previously-unseen panel: dump every child
@@ -1013,6 +1001,31 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
     PrefillClassIconCacheOnTransition(panel, newControl);
     UpdateFocusedPanelState(panel);
     WalkAndCaptureOnFirstSight(panel);
+
+    // The InGameMenu strip is architecturally invisible: we never surface
+    // it as a navigable menu — hotkeys + Tab/Shift+Tab drill the user
+    // directly into the sub-screens it would otherwise route to. Engine
+    // still fires SetActiveControl on it (panel-open and panelIdx=7
+    // "Nachrichten" once per first open) which previously produced spurious
+    // "Ausrüstung" + "Nachrichten" utterances over the actual sub-screen's
+    // title/focus speech. Diagnostic walk above stays; only speech-side
+    // paths get the gate.
+    if (IdentifyPanel(panel) == PanelKind::InGameMenu) {
+        if (newControl) {
+            int sid = *reinterpret_cast<int*>(
+                reinterpret_cast<unsigned char*>(newControl) + 0x50);
+            acclog::Write("Menus.SetActive",
+                          "#%d panel=%p new=%p id=%d (InGameMenu strip — "
+                          "speech suppressed)",
+                          n, panel, newControl, sid);
+        } else {
+            acclog::Write("Menus.SetActive",
+                          "#%d panel=%p newControl=NULL (InGameMenu strip)",
+                          n, panel);
+        }
+        return;
+    }
+
     SpeakPanelTitleOnFirstSight(panel);
 
     if (!newControl) {
@@ -1105,9 +1118,9 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
 
         // Lazy tabbed-mode detection: first listbox event after a panel
         // change probes whether the focused panel has the Options-style
-        // listbox-at-[0] + button-cluster layout. If so we arm the tab/
-        // virtual-line nav path and silence blob speech (the user navigates
-        // lines explicitly with arrow keys instead).
+        // listbox-at-[0] + button-cluster layout. Used by the chain-step
+        // Y-offset compensation for tab buttons; no longer drives a
+        // virtual-line cursor.
         if (g_currentPanel && g_tabbedPanel != g_currentPanel) {
             int tabsStart = -1, tabsCount = 0;
             if (DetectTabsCluster(g_currentPanel, tabsStart, tabsCount)) {
@@ -1134,21 +1147,13 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
                           "(handled by chain-step direct read)");
         } else if (strchr(text, '\n')) {
             // Multi-line listbox blob (Options-style: all settings concatenated
-            // by '\n' into a single CSWGuiLabel row). In tabbed mode we parse
-            // the lines into a virtual cursor and speak them one-at-a-time on
-            // arrow keys. In non-tabbed mode we silence them too — bulk
-            // enumeration is too noisy. If a non-tabbed multi-line listbox
-            // ever needs per-line nav, that's a future feature.
-            if (g_tabbedPanel == g_currentPanel) {
-                ParseVirtualLines(text);
-                acclog::Write("Menus.ListBox", "blob silenced (tabbed mode); %d virtual lines parsed",
-                              g_virtualLineCount);
-            } else {
-                int lines = 1;
-                for (const char* p = text; *p; ++p) if (*p == '\n') ++lines;
-                acclog::Write("Menus.ListBox", "blob silenced (non-tabbed); lines=%d",
-                              lines);
-            }
+            // by '\n' into a single CSWGuiLabel row). Always silenced — bulk
+            // enumeration is too noisy. Per-line nav was never wired up after
+            // the Options listbox turned out to be decorative; if a future
+            // panel ever needs it, that's a new feature.
+            int lines = 1;
+            for (const char* p = text; *p; ++p) if (*p == '\n') ++lines;
+            acclog::Write("Menus.ListBox", "blob silenced; lines=%d", lines);
         } else {
             SpeakIfChanged(/*channel=*/1, text);
         }
@@ -1617,39 +1622,74 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         } else {
             acc::menus::pending::QueueActivate(e.control);
             g_navSpeechSuppressBudget = 2;  // see chain-step doc above
-
-            // Arm the drill flag when Enter activates an icon on the InGameMenu
-            // strip. The engine's activation path (FireActivate → button
-            // onClick → SwitchToSWInGameGui) pushes the sub-screen to back; on
-            // the next arrow press, the drill router will retarget the chain
-            // to it. Set EAGERLY: if the engine no-ops the activation (e.g.
-            // re-press of the same icon, GUI_id unchanged), the override
-            // self-clears via FindActiveSubScreenPanel-returns-null on the
-            // next route.
-            if (IdentifyPanel(g_chainPanel) == PanelKind::InGameMenu) {
-                g_drilledIntoSubScreen = true;
-                acclog::Write("Drill", "armed (Enter on InGameMenu icon target=%p)",
-                              e.control);
-            }
-
+            // Drill flag is armed centrally inside the
+            // OnSwitchToSWInGameGui detour — every path that opens a
+            // sub-screen (strip-icon Enter, vanilla M/I/J hotkeys, our
+            // own Tab cycle) flows through that one function, so no
+            // per-caller arm is needed here.
             acclog::Write("Menus.Enter", "activate panel=%p index=%d target=%p",
                           activePanel, g_chainIndex, e.control);
             consumed = true;
         }
     }
 
-    // Tab key falls through to the engine. We previously implemented a
-    // Tab-cycle two-step here (FireActivate(Schliess) → schedule click-sim on
-    // next tab), but it crashed: compressing close-old-subdialog + open-new
-    // into a single ~16ms window pressured the GL driver (Grafik specifically
-    // re-runs gamma-ramp via OnMoveGammaSlider in its constructor) until the
-    // NVIDIA driver fast-failed mid-frame. See docs/tab-crash-investigation.md.
+    // Tab / Shift+Tab inter-panel cycle (drilled-in only). Reproduces the
+    // vanilla "click a different strip icon" behaviour for keyboard users:
+    // current sub-screen closes, the next one in strip order opens. The
+    // engine's own SwitchToSWInGameGui primitive does both — our
+    // OnSwitchToSWInGameGui detour pops the prior sub-screen before the new
+    // push, so panels[] ends with just the new sub-screen.
     //
-    // Replacement UX: arrow keys walk tab buttons via the chain (they're
-    // already in panel.controls of the tabbed parent), Enter opens a tab via
-    // click-sim (above), Esc closes a sub-dialog via FireActivate(Schliess)
-    // (handler below) — keeping every action user-paced and never collapsing
-    // close+open into the same frame.
+    // Strip order (left → right) is the spec table in menus_monitors.cpp:
+    //   Ausrüstung → Inventar → Charakterblatt → Karte → Fähigkeiten →
+    //   Aufträge → Optionen → Nachrichten → wraps to Ausrüstung
+    //
+    // Tab is the engine's logical TAB code (0xce) — it reaches the manager
+    // directly regardless of sw_gui_status, the upstream client-app handler
+    // doesn't claim it. Shift modifier is read via GetAsyncKeyState (same
+    // pattern as peek_description / cycle_input). Queued through the
+    // pending-op surface so the panels[] mutation runs on the next OnUpdate
+    // tick rather than mid-input-dispatch.
+    //
+    // Distinct from the long-removed Tab-cycle inside Options sub-dialogs
+    // (Gameplay/Grafik/…): that one closed+reopened a child panel in one
+    // 16ms window and crashed the NVIDIA driver via gamma-ramp re-runs;
+    // see docs/tab-crash-investigation.md. The engine's sub-screen cycle
+    // here is the path the vanilla mouse path already takes, so the same
+    // re-entrancy risk doesn't apply.
+    if (param_2 != 0 &&
+        param_1 == kInputTab &&
+        g_drilledIntoSubScreen &&
+        activePanel != nullptr &&
+        acc::menus::monitors::IsInGameSubScreenKind(
+            IdentifyPanel(activePanel)))
+    {
+        // Gate on activePanel itself being the bare sub-screen kind. When
+        // the user is in a nested sub-dialog (e.g. InGameOptions → Grafik),
+        // activePanel resolves to the sub-dialog instead — Tab there should
+        // fall through (vanilla behaviour, no-op) rather than tear the
+        // sub-dialog off and warp to another sub-screen.
+        PanelKind subKind = IdentifyPanel(activePanel);
+        bool shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+        int dir = shift ? -1 : +1;
+        int nextGuiId =
+            acc::menus::monitors::NextStripSubScreenGuiId(subKind, dir);
+        if (nextGuiId >= 0) {
+            if (acc::menus::pending::IsPending()) {
+                acclog::Write("StripCycle",
+                              "%s: op already pending; ignoring",
+                              shift ? "shift+tab" : "tab");
+            } else {
+                acc::menus::pending::QueueSwitchSubScreen(nextGuiId);
+                acclog::Write("StripCycle",
+                              "%s panel=%p kind=%s -> GUI_id=%d",
+                              shift ? "shift+tab" : "tab",
+                              activePanel, PanelKindName(subKind),
+                              nextGuiId);
+            }
+            consumed = true;
+        }
+    }
 
     // Arrow keys: flat chain navigation. Chain is built from panel.controls
     // + listbox children (one level) sorted by extent.top, so arrow-down

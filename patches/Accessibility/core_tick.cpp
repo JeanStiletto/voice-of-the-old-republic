@@ -207,7 +207,6 @@ void Dispatch() {
     // full iteration history and Esc-menu vs Alt+F4 close-path
     // comparison.
     acc::engine::TickInputClassReassert();
-    acc::engine::PollPauseToggleHotkey();
 
     // Pending-op drain runs LAST: every queued action was queued by an
     // input handler this tick or the previous one, and is dispatched only
