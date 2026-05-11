@@ -36,10 +36,13 @@
 namespace acc::guidance::beacon {
 
 // Reach tolerance — the horizontal distance below which a waypoint is
-// considered "reached". 1.5m matches the engine's own action-arrival
-// threshold and keeps the user from getting stuck on a waypoint that
-// the walkmesh routes them slightly off-centre from.
-constexpr float kReachToleranceMeters = 1.5f;
+// considered "reached". 3.0m gives margin for "the walkmesh routes me
+// past the waypoint without going through its exact node position" —
+// observed live with a corridor-turn waypoint that the player walked
+// within ~2m of but never <1.5m (log patch-20260511-163145). Tighter
+// values left the beacon stuck on waypoint N forever as the player
+// grazed past it.
+constexpr float kReachToleranceMeters = 3.0f;
 
 // Heartbeat cadence — how often the BeaconActive cue fires while between
 // waypoints. 800ms = roughly one cue per 1.6m at KOTOR walk speed, which

@@ -3,7 +3,8 @@
 #include <windows.h>
 #include <cmath>
 
-#include "audio_cue_player.h"
+#include "audio_bus.h"          // PlayCue (2D) for arrival confirmations
+#include "audio_cue_player.h"   // PlayCueAtPosition (3D) for heartbeat
 #include "audio_cues.h"
 #include "engine_player.h"
 #include "log.h"
@@ -26,19 +27,37 @@ float DistXY(const Vector& a, const Vector& b) {
     return std::sqrt(dx * dx + dy * dy);
 }
 
-// Audio range for beacon cues. Beacon* are non-Pillar-1 cues so
-// audio_cue_player::IsCueEnabled always allows them; the range gate
-// still applies. Use a generous cap — the user *wants* to hear the
-// beacon even when the next waypoint is across the room.
-constexpr float kBeaconRangeMeters = 80.0f;
+// Heartbeat gain — boosted 2× over the default kAccCueGain so the
+// directional cue carries against ambient + Pillar 1 voice-budget
+// pressure at 15–25m distances (where the engine's falloff curve
+// significantly attenuates). 8.0× scalar = +18 dB vs unity; we don't
+// pass through audio_cue_player here because its 80m range gate is
+// always satisfied for our use and we want explicit volume control.
+constexpr float kBeaconHeartbeatGain = 8.0f;
 
-void EmitCue(acc::audio::NavCue cue, const Vector& worldPos,
-             const Vector& listenerPos, const char* tag) {
-    bool ok = acc::audio::PlayCueAtPosition(cue, worldPos, listenerPos,
-                                            kBeaconRangeMeters);
-    acclog::Write("Beacon", "%s cue=%d at=(%.2f,%.2f,%.2f) ok=%d",
-                  tag, static_cast<int>(cue),
-                  worldPos.x, worldPos.y, worldPos.z, ok ? 1 : 0);
+// Fire the directional heartbeat. 3D-positional so the user can
+// localise the next waypoint by pan + falloff. Bypasses
+// audio_cue_player to pass explicit volume.
+void EmitHeartbeat(const Vector& worldPos, const Vector& listenerPos) {
+    bool ok = acc::audio::PlayCue3D(
+        acc::audio::GetNavCueResref(acc::audio::NavCue::BeaconActive),
+        worldPos, kBeaconHeartbeatGain);
+    acclog::Write("Beacon", "heartbeat at=(%.2f,%.2f,%.2f) "
+                  "listener=(%.2f,%.2f,%.2f) gain=%.1f ok=%d",
+                  worldPos.x, worldPos.y, worldPos.z,
+                  listenerPos.x, listenerPos.y, listenerPos.z,
+                  kBeaconHeartbeatGain, ok ? 1 : 0);
+}
+
+// Fire an arrival confirmation. 2D-centred (not 3D-positional) — the
+// user IS at the waypoint, so direction information is moot, and 3D pan
+// at the listener position would attenuate against ambient + Pillar 1
+// audio under voice-budget pressure. 2D plays at unity, full centred
+// stereo, which the user always hears cleanly.
+void EmitArrivalCue(acc::audio::NavCue cue, const char* tag) {
+    bool ok = acc::audio::PlayCue(acc::audio::GetNavCueResref(cue));
+    acclog::Write("Beacon", "%s cue=%d (2D) ok=%d",
+                  tag, static_cast<int>(cue), ok ? 1 : 0);
 }
 
 }  // namespace
@@ -97,19 +116,21 @@ void Tick() {
     const Vector& targetWp = g_state.path[g_state.nextIdx];
     float dist = DistXY(playerPos, targetWp);
 
-    // Reach check — fire the per-waypoint cue and advance.
+    // Reach check — fire the per-waypoint cue and advance. Arrival cues
+    // are 2D-centred so they're always audible regardless of camera pan
+    // or Pillar 1 voice-budget pressure.
     if (dist < kReachToleranceMeters) {
         bool isFinal = (g_state.nextIdx + 1 == g_state.path.size());
         if (isFinal) {
-            EmitCue(acc::audio::NavCue::BeaconDestinationReached, targetWp,
-                    playerPos, "destination-reached");
+            EmitArrivalCue(acc::audio::NavCue::BeaconDestinationReached,
+                           "destination-reached");
             acclog::Write("Beacon", "reached destination (idx=%zu of %zu)",
                           g_state.nextIdx, g_state.path.size());
             CancelBeacon();
             return;
         }
-        EmitCue(acc::audio::NavCue::BeaconWaypointReached, targetWp,
-                playerPos, "waypoint-reached");
+        EmitArrivalCue(acc::audio::NavCue::BeaconWaypointReached,
+                       "waypoint-reached");
         acclog::Write("Beacon", "reached waypoint %zu of %zu, advancing",
                       g_state.nextIdx, g_state.path.size());
         g_state.nextIdx++;
@@ -120,12 +141,13 @@ void Tick() {
         return;
     }
 
-    // Heartbeat cadence — fire the "follow me" cue at the next waypoint
-    // every kHeartbeatMs.
+    // Heartbeat cadence — fire the directional "follow me" cue at the
+    // next waypoint every kHeartbeatMs. 3D-positional so the user can
+    // localise the next hop by pan + falloff against the camera-anchored
+    // listener.
     DWORD now = GetTickCount();
     if (now - g_state.lastHeartbeat >= kHeartbeatMs) {
-        EmitCue(acc::audio::NavCue::BeaconActive, targetWp, playerPos,
-                "heartbeat");
+        EmitHeartbeat(targetWp, playerPos);
         g_state.lastHeartbeat = now;
     }
 }
