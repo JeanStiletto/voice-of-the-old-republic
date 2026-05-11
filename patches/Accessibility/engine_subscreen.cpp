@@ -18,19 +18,65 @@ namespace {
 // runtime flips this so we can A/B test against "no hook" without
 // rebuilding. When OFF, TickInputClassReassert still tracks modal_stack
 // edges and logs the transition (so the log records that the popup-close
-// was detected) but does not call HideSWInGameGui — keeping the two
-// halves of the test comparable.
+// was detected) but does not run the unpause — keeping the two halves
+// of the test comparable.
 //
-// Earlier iteration of this hook called
-// CSWCMessage::SendPlayerToServerInput_TogglePauseRequest (0x00677800)
-// directly. That only flipped the pause bitmask and left the audio
-// subsystem out of sync — walking + NPC narration resumed but footstep
-// audio and nav cues stayed silent until the user manually pressed Space
-// twice. Current iteration mimics the Esc-menu close path exactly:
-// CSWGuiInGameOptions::HandleInputEvent (0x006aaec0) calls
-// CGuiInGame::HideSWInGameGui(this, 0) on Esc — and that path produces
-// the full unpause + audio resync.
+// Iteration history:
+//  - v1 (commit 8401763): called SendPlayerToServerInput_TogglePauseRequest
+//    only. Server unpaused + walking resumed, but client audio (footstep
+//    sounds, nav cues) stayed muted because client-side SetSoundMode was
+//    never reset. User had to press Space twice for full resync.
+//  - v2 (commit 66dc1dd): called HideSWInGameGui(this, 0) to mirror the
+//    Esc-menu close path. Fired too late (engine had already set status=4
+//    via SetInputClass) and ran into the field119_0xb38 branch — for
+//    popup-close field119 is nonzero, so HideSWInGameGui took the "add
+//    pause panel back" branch and skipped TogglePauseRequest entirely.
+//    Hook effectively a no-op; world stayed paused.
+//  - v3 (this): call BOTH primitives directly, the same primitives
+//    HideSWInGameGui's field119==0 / param_1==0 branch and end-of-function
+//    call. Bypasses the state-precondition problem entirely.
 bool s_pauseToggleEnabled = true;
+
+// CServerExoApp::SetPauseState @ 0x004ae9a0. __thiscall.
+// `this` = AppManager->server (CServerExoApp*, at AppManager + 0x08).
+// param_1 = source bit (we use 2 = "menu pause" source).
+// param_2 = on/off (0 = unpause, 1 = pause).
+//
+// Idempotent: the internal handler returns early if the bit is already
+// at the requested value, so calling SetPauseState(2, 0) on a popup
+// close is safe regardless of whether bit 2 was actually set by the
+// popup-open path. This is the critical fix over TogglePauseRequest,
+// which XOR-toggles and therefore alternates the state on consecutive
+// calls when the popup-open path does NOT touch bit 2 itself.
+//
+// We pass source bit 2 to match the engine's own usage:
+// CSWCMessage::SendPlayerToServerInput_TogglePauseRequest passes 2 to
+// CServerExoApp::TogglePauseState, so bit 2 is the "menu pause" source
+// the Esc-menu close path also clears.
+constexpr uintptr_t kAddrSetPauseState = 0x004ae9a0;
+using PFN_SetPauseState =
+    void(__thiscall *)(void* server, int source_bit, unsigned long on_off);
+
+// AppManager global @ 0x007A39FC (pointer slot, dereference to get the
+// CAppManager* singleton). AppManager.server lives at offset 0x08
+// (struct definition in docs/llm-docs/re/k1_win_gog_swkotor.exe.xml).
+// We duplicate the constant locally instead of including engine_panels.cpp's
+// internal constants because the latter are file-local.
+constexpr uintptr_t kAddrAppManagerPtrLocal = 0x007A39FC;
+constexpr size_t    kAppManagerServerOff    = 0x08;
+
+// CExoSoundInternal::SetSoundMode @ 0x005d5e80. __thiscall.
+// `this` = global ExoSound (CExoSoundInternal*). Mode 0 = playing,
+// mode 2 = paused-by-combat-mute. CClientExoAppInternal::SetPausedByCombat
+// is the engine's canonical caller — it flips mode 2 <-> 0 when entering
+// or leaving combat-style pauses. We call it with mode 0 to unmute the
+// audio mixer after a MessageBoxModal close.
+constexpr uintptr_t kAddrSetSoundMode = 0x005d5e80;
+using PFN_SetSoundMode = void(__thiscall *)(void* self, int mode);
+
+// ExoSound global @ 0x007a39ec. Pointer to the CExoSoundInternal
+// singleton. Dereference to get the `this` for SetSoundMode.
+constexpr uintptr_t kAddrExoSoundPtr = 0x007a39ec;
 
 }  // namespace
 
@@ -65,9 +111,61 @@ void TickInputClassReassert() {
         if (s_pauseToggleEnabled) {
             acclog::Write("PauseToggle",
                           "popup closed (modal_stack %d->0): "
-                          "invoking HideSWInGameGui(0) (Esc-menu mirror)",
+                          "SetPauseState(2,0) + SetSoundMode(0)",
                           s_prevModalSize);
-            CallHideSWInGameGui(0);
+
+            // 1. Server-side unpause: SET pause source bit 2 = 0
+            //    (idempotent — no-op if already clear). Server then
+            //    resumes world timers and sends SetPauseState back to
+            //    the client; client handler re-enables animations and
+            //    timer ticks. We use SetPauseState rather than
+            //    TogglePauseRequest because Toggle XORs the bit and so
+            //    alternates the state on consecutive popup-closes when
+            //    the popup-open path doesn't itself touch bit 2 (which
+            //    is what we observed empirically — odd cycles unpaused,
+            //    even cycles paused).
+            __try {
+                void* appMgr =
+                    *reinterpret_cast<void**>(kAddrAppManagerPtrLocal);
+                if (appMgr) {
+                    void* server = *reinterpret_cast<void**>(
+                        static_cast<unsigned char*>(appMgr) +
+                        kAppManagerServerOff);
+                    if (server) {
+                        auto fn = reinterpret_cast<PFN_SetPauseState>(
+                            kAddrSetPauseState);
+                        fn(server, 2, 0);
+                    } else {
+                        acclog::Write("PauseToggle",
+                                      "SetPauseState skipped: server NULL");
+                    }
+                } else {
+                    acclog::Write("PauseToggle",
+                                  "SetPauseState skipped: AppManager NULL");
+                }
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                acclog::Write("PauseToggle", "fault in SetPauseState");
+            }
+
+            // 2. Client-side audio resync: SetSoundMode(0) un-mutes the
+            //    audio mixer. The server roundtrip in step 1 does NOT
+            //    automatically touch SetSoundMode — that's done
+            //    separately by SetPausedByCombat (which has gates we
+            //    can't reliably satisfy), or directly here.
+            __try {
+                void* exoSound =
+                    *reinterpret_cast<void**>(kAddrExoSoundPtr);
+                if (exoSound) {
+                    auto fn = reinterpret_cast<PFN_SetSoundMode>(
+                        kAddrSetSoundMode);
+                    fn(exoSound, 0);
+                } else {
+                    acclog::Write("PauseToggle",
+                                  "SetSoundMode skipped: ExoSound NULL");
+                }
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                acclog::Write("PauseToggle", "fault in SetSoundMode");
+            }
         } else {
             acclog::Write("PauseToggle",
                           "popup closed (modal_stack %d->0): "

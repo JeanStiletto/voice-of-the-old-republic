@@ -29,30 +29,58 @@ namespace acc::engine {
 // "redrill cleanup never armed" from "armed but didn't fire on this event".
 extern bool g_switchHookEverFired;
 
-// Per-frame monitor: when modal_stack pops to empty, send
-// CSWCMessage::SendPlayerToServerInput_TogglePauseRequest to unpause
-// the world. The engine's HideSWInGameGui calls TogglePauseRequest on
-// its pause-screen branch (sub-screen close), but the MessageBoxModal
-// close path (Alt+F4 quit-confirm, save-overwrite, dialog-skip, …)
-// has no equivalent — leaving the world paused after popup-dismiss.
-// Walking gates on world ticking, so it stays frozen.
+// Per-frame monitor: when modal_stack pops to empty (any MessageBoxModal
+// close — Alt+F4 quit-confirm, save-overwrite, dialog-skip, …),
+// dispatch the two engine primitives that together fully unpause the
+// world:
 //
-// Pause-screen lives in panels[] not modal_stack — its open/close
-// cycle keeps modal_stack at 0 throughout, so this trigger doesn't
-// fire on it (engine's HideSWInGameGui correctly toggles pause for
-// pause-screen). Only modal popups put items in modal_stack.
+//   1. CServerExoApp::SetPauseState(server, 2, 0) — idempotently clears
+//      pause source bit 2 (the "menu pause" source). Server resumes
+//      world timers; server→client SetPauseState message re-enables
+//      animations and client-side timer ticks asynchronously.
+//   2. CExoSoundInternal::SetSoundMode(ExoSound, 0) — un-mutes the
+//      audio mixer. Step 1's server message does NOT touch SetSoundMode
+//      (that path goes through SetPausedByCombat, which has gates we
+//      can't reliably satisfy), so we set it directly.
+//
+// Pause-screen and sub-screens (Inventory, Map, InGameOptions, …) live
+// in panels[] not modal_stack — their open/close cycle keeps
+// modal_stack at 0 throughout, so this trigger doesn't fire on them.
+// The engine's HideSWInGameGui handles their pause/audio cleanup
+// natively. Only MessageBoxModal popups push to modal_stack.
+//
+// Iteration history (each rejected in favour of the next):
+//   v1 — only called TogglePauseRequest. Walking + NPC narration came
+//        back but audio (footsteps, nav cues) stayed muted; user
+//        needed Space x2 to fully restore.
+//   v2 — called HideSWInGameGui(this, 0). Fired too late (engine had
+//        already set status=4 via SetInputClass), so the function's
+//        field119==0 / param_1==0 branch was missed and TogglePause
+//        was never called from inside. Hook effectively a no-op;
+//        world stayed paused.
+//   v3 — called TogglePauseRequest + SetSoundMode(0). Audio came
+//        back, walking came back — but TogglePauseRequest XORs bit 2,
+//        so on consecutive popup-closes (without anything resetting
+//        bit 2 between) the state alternated unpaused→paused→…
+//   v4 (current) — replaced TogglePauseRequest with idempotent
+//        SetPauseState(2, 0). Every close ends with bit 2 = 0
+//        regardless of prior state. Audio resync unchanged.
 //
 // Edge-triggered on modal_stack non-zero → 0 transition. Steady-
 // state does nothing.
 //
 // Called once per frame from core_tick::Dispatch.
+//
+// (Function name is historical — its earliest iteration tried to
+// re-assert input_class. The behaviour is now strictly pause-state
+// cleanup. Keep an eye on it if a future refactor renames things.)
 void TickInputClassReassert();
 
-// Alt+U runtime A/B toggle for the modal-pop pause-toggle. Flips a
-// process-static bool that gates the TogglePauseRequest call inside
-// TickInputClassReassert. Either way the modal-pop transition still
-// gets logged so the test halves stay comparable. Audible feedback
-// via Tolk: "Pausen-Hook an" / "Pausen-Hook aus".
+// Alt+U runtime A/B toggle for the modal-pop cleanup. Flips a
+// process-static bool that gates the SetPauseState + SetSoundMode
+// calls inside TickInputClassReassert. Either way the modal-pop
+// transition still gets logged so the test halves stay comparable.
+// Audible feedback via Tolk: "Pausen-Hook an" / "Pausen-Hook aus".
 //
 // Called once per frame from core_tick::Dispatch.
 void PollPauseToggleHotkey();

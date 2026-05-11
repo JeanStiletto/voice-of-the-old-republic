@@ -840,32 +840,71 @@ Reviewed three architectural options for the in-game menu:
    only. Risk: an unbound or rebound-away sub-screen becomes
    unreachable.
 
-### Open follow-up — Alt+F4 quit-confirm popup walking break
+### Alt+F4 quit-confirm popup walking break — **FIXED** (2026-05-11)
 
 **Symptom:** Alt+F4 → "Möchtest du wirklich aufhören?" popup. Press Esc
 to dismiss. Popup closes, but the player can no longer walk in the
 open world. Other Esc-dismissed sub-screens (pause, map, inventory,
 …) restore walking correctly.
 
-**From `patch-20260510-192745.log` lines 2700-2870:**
-- Esc reaches upstream's case 0xdf at val=128.
-- Upstream sees popup is up (field45_0xb4 != 0), reissues `(0xb4, 1)`
-  to manager.
-- Manager translates → 0x28, dispatches to modal_stack[top] (the
-  popup).
-- Popup handles Esc, closes itself.
-- `SubScreen.Status: new_status=4 caller=0x0062026c` — different
-  caller than the `0x0062cbe2` we saw in HideSWInGameGui. So the
-  popup-close path doesn't go through HideSWInGameGui.
+**Initial hypothesis (wrong):** `input_class` stayed stuck at 2 because
+the MessageBoxModal close path didn't reset it. The `SetInputClass`
+call was actually being made by the engine — logged at
+`status=4 caller=0x0062026c` (inside `CClientExoAppInternal::SetInputClass`).
+The real broken piece was elsewhere.
 
-The cleanup path that resets `input_class` back to 1 (in-world) lives
-in `CSWGuiInGameOptions::HandleInputEvent`'s case 0x28 branch
-(`SetInputClass(client, 0, 1)` after `HideSWInGameGui` returns
-non-zero). The MessageBoxModal close path apparently doesn't have an
-equivalent — `input_class` stays at whatever it was when the popup
-opened, which gates walking.
+**Actual root cause (decompiled `CGuiInGame::HideSWInGameGui` @
+`0x0062cba0` and `CClientExoAppInternal::SetPauseState` @ `0x004b8110`):**
 
-Probably needs either (a) a dedicated hook on the popup's
-HandleInputEvent that resets `input_class=1` after Esc-close, or
-(b) a frame monitor that asserts `input_class==1` whenever
-`sw_gui_status==1` and modal_stack is empty.
+When the Esc save/load menu is closed via Esc,
+`CSWGuiInGameOptions::HandleInputEvent` (`0x006aaec0`) calls
+`CGuiInGame::HideSWInGameGui(this, 0)`. That function does three things
+relevant to unpausing:
+
+1. On the `field119_0xb38 == 0` branch (pause-screen close case):
+   calls `CSWCMessage::SendPlayerToServerInput_TogglePauseRequest()`
+   → server flips `pause_state_` bit 2 → world timer resumes →
+   server pushes `SendServerToPlayerModule_SetPauseState` back to
+   client → `CClientExoAppInternal::SetPauseState` re-enables
+   animations and client-side timer ticks.
+2. At the function tail (LAB_0062cc99): calls
+   `CExoSoundInternal::SetSoundMode(ExoSound, 0)` to un-mute the
+   audio mixer. The server message in step 1 does NOT touch
+   SetSoundMode — that's done separately by SetPausedByCombat or
+   directly here.
+3. Cleanup: `CSWGuiBarkBubble::Resume`, `PlayGuiSound`, etc.
+
+The MessageBoxModal (Alt+F4 popup) close path goes through
+`CSWGuiMessageBox::HandleInputEvent` (`0x006250f0`) →
+`CSWGuiManager::PopModalPanel`. It NEVER calls `HideSWInGameGui`. So
+neither `TogglePauseRequest` nor `SetSoundMode(0)` fires on close. The
+world stays paused, audio stays muted.
+
+**Fix iterations** (in `patches/Accessibility/engine_subscreen.cpp`,
+function `TickInputClassReassert` — name is historical):
+
+| v | Approach | Result |
+|---|---|---|
+| 1 | `TogglePauseRequest()` only | Walking + NPC narration back; footstep audio + nav cues stayed muted (needed Space x2 to fully resync) |
+| 2 | `HideSWInGameGui(this, 0)` mirroring the Esc-menu path | Fired AFTER `SetInputClass` had set status=4, ran into the `field119 != 0` else-branch, never called `TogglePauseRequest`. No-op. |
+| 3 | `TogglePauseRequest()` + `SetSoundMode(ExoSound, 0)` | Audio came back. But `TogglePauseRequest` XORs bit 2 — on consecutive popup-closes the state alternated (odd cycles unpaused, even cycles paused). |
+| 4 (shipped) | `SetPauseState(server, 2, 0)` (idempotent) + `SetSoundMode(ExoSound, 0)` | Every close ends with bit 2 = 0 regardless of prior state. Full fix. |
+
+Critical hook addresses for future reference:
+- `CServerExoApp::SetPauseState` @ `0x004ae9a0` — thunk to internal at
+  `0x004b8110`. Signature: `__thiscall(server, int source_bit, ulong on_off)`.
+  Idempotent (early-returns if `(state & bit) != 0) == on_off`).
+- `CExoSoundInternal::SetSoundMode` @ `0x005d5e80`. `__thiscall(self, int)`.
+  Mode 2 = paused-by-combat-mute, mode 0 = playing.
+- `ExoSound` global @ `0x007a39ec` — pointer slot, dereference for `self`.
+- `CSWCMessage::SendPlayerToServerInput_TogglePauseRequest` @ `0x00677800`
+  — kept in the address space if a future caller needs a true toggle,
+  but **do not** wire it to an edge-triggered monitor; XOR semantics
+  cause alternation as in iteration 3.
+
+Trigger is `modal_stack: non-zero → 0` (edge-triggered, single fire per
+edge). Pause-screen and sub-screens live in `panels[]` not
+`modal_stack`, so they don't trip the monitor; engine's own
+`HideSWInGameGui` handles them correctly. Alt+U runtime toggle
+(`PollPauseToggleHotkey`) flips the cleanup on/off for A/B testing
+without rebuilding.

@@ -197,12 +197,15 @@ void Dispatch() {
     acc::probe::world_hover::TickMonitor();
     acc::probe::world_hover::PollHotkey();
 
-    // input_class re-assert. Edge-triggered on menu→in-world transition.
-    // Compensates for the MessageBoxModal close path not calling
-    // SetInputClass(client, 0, 1) the way CSWGuiInGameOptions does on
-    // case 0x28 — without this, Alt+F4 quit-confirm Esc-dismiss leaves
-    // input_class stuck at 2 and walking gated off. Idempotent for menus
-    // that already reset on close.
+    // MessageBoxModal-close cleanup. Edge-triggered on modal_stack
+    // non-zero → 0. The engine's MessageBoxModal close path (Alt+F4
+    // quit-confirm, save-overwrite, dialog-skip, …) never calls
+    // CServerExoApp::SetPauseState(2, 0) or CExoSoundInternal::SetSoundMode(0),
+    // so the world stays paused and audio stays muted after popup
+    // dismiss. We dispatch both directly. Idempotent — calling on
+    // already-clean state is a no-op. See engine_subscreen.h for the
+    // full iteration history and Esc-menu vs Alt+F4 close-path
+    // comparison.
     acc::engine::TickInputClassReassert();
     acc::engine::PollPauseToggleHotkey();
 
