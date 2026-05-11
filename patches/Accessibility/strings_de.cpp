@@ -58,6 +58,7 @@ const char* Get(Id id) {
         case Id::RouteJoinSeparator:   return ", ";
         case Id::RouteOneTransition:   return "Ein \xDC" "bergang";          // Übergang
         case Id::RouteNoTransition:    return "Kein \xDC" "bergang";         // Übergang
+        case Id::FmtBeaconNextSegment: return "Weiter %d Meter %s";
 
         case Id::FmtInteractTalk:      return "Sprich mit %s";
         case Id::FmtInteractOpen:      return "\xD6" "ffne %s";                 // Öffne

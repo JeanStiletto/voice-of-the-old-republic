@@ -115,6 +115,13 @@ enum class Id : int {
     RouteJoinSeparator,
     RouteOneTransition,
     RouteNoTransition,
+    // `FmtBeaconNextSegment` — re-announced after each waypoint-reached
+    // event so the user doesn't have to keep the full multi-segment
+    // route description in working memory. Args: metres (`%d`),
+    // localised compass direction word (`%s`). Distinct phrasing from
+    // FmtRouteSegment ("Weiter X Meter Y" vs the raw "X Meter Y")
+    // marks it as an in-flight cue, not part of the opening overview.
+    FmtBeaconNextSegment,
 
     // ---- Lay-off 9b combined autowalk+interact hotkey (Enter).
     //      Per-kind pre-roll spoken when the hotkey fires on a focused

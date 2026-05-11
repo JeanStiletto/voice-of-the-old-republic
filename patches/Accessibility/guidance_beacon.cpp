@@ -2,12 +2,16 @@
 
 #include <windows.h>
 #include <cmath>
+#include <cstdio>
 
 #include "audio_bus.h"          // PlayCue (2D) for arrival confirmations
 #include "audio_cue_player.h"   // PlayCueAtPosition (3D) for heartbeat
 #include "audio_cues.h"
+#include "engine_compass.h"
 #include "engine_player.h"
 #include "log.h"
+#include "strings.h"
+#include "tolk.h"
 
 namespace acc::guidance::beacon {
 
@@ -58,6 +62,39 @@ void EmitArrivalCue(acc::audio::NavCue cue, const char* tag) {
     bool ok = acc::audio::PlayCue(acc::audio::GetNavCueResref(cue));
     acclog::Write("Beacon", "%s cue=%d (2D) ok=%d",
                   tag, static_cast<int>(cue), ok ? 1 : 0);
+}
+
+constexpr float kRadToDeg = 57.29577951308232f;
+
+// Speak the current segment's distance + compass direction. Called
+// after each waypoint reach so the user doesn't have to keep the full
+// multi-segment description in working memory: they hear "Weiter 20
+// Meter Westen" exactly when they need to act on it. Uses the same
+// compass-sector math as guidance_description so on-route announcements
+// match the opening overview's vocabulary.
+//
+// interrupt=false so this queues behind the just-emitted 2D arrival
+// cue and any in-flight Pillar 1 / passive narration. The user hears:
+//   <arrival cue> -> <Weiter X Meter Y> -> <heartbeat resumes>
+void SpeakNextSegment(const Vector& playerPos, const Vector& nextWp) {
+    float dx = nextWp.x - playerPos.x;
+    float dy = nextWp.y - playerPos.y;
+    float distance = std::sqrt(dx * dx + dy * dy);
+    int metres = static_cast<int>(distance + 0.5f);
+    if (metres < 1) metres = 1;
+
+    float engineYaw = std::atan2(dy, dx) * kRadToDeg;
+    float compass   = acc::engine::EngineYawToCompass(engineYaw);
+    int   sector    = acc::engine::CompassToSector(compass);
+    const char* dir = acc::strings::Get(acc::engine::SectorString(sector));
+
+    char msg[128];
+    std::snprintf(msg, sizeof(msg),
+                  acc::strings::Get(acc::strings::Id::FmtBeaconNextSegment),
+                  metres, dir);
+    tolk::Speak(msg, /*interrupt=*/false);
+    acclog::Write("Beacon", "next-segment -> [%s] dist=%.2fm sector=%d",
+                  msg, distance, sector);
 }
 
 }  // namespace
@@ -134,6 +171,10 @@ void Tick() {
         acclog::Write("Beacon", "reached waypoint %zu of %zu, advancing",
                       g_state.nextIdx, g_state.path.size());
         g_state.nextIdx++;
+        // Re-announce the new current segment (distance + direction) so
+        // the user has a fresh single-segment direction in mind instead
+        // of having to recall it from the opening description.
+        SpeakNextSegment(playerPos, g_state.path[g_state.nextIdx]);
         // Reset heartbeat clock so the next waypoint's heartbeat fires
         // on the very next tick — gives the user immediate spatial
         // re-anchoring after a reach event.
