@@ -21,6 +21,7 @@
 #include "engine_offsets.h"
 #include "engine_panels.h"
 #include "engine_reads.h"
+#include "hotkeys.h"
 #include "log.h"
 #include "menus_extract.h"
 #include "menus_pending.h"
@@ -164,28 +165,10 @@ ArmedState s_state = {nullptr, nullptr, nullptr, false, {0}, 0, 0, 0, 0};
 // virtual cursor pointed). Cleanest: leave Left/Right unbound — the
 // user has Up/Down for full-text re-read and Backspace from end works
 // as expected.
-struct ModalKeyState {
-    bool up;
-    bool down;
-    bool enter;
-    bool esc;
-};
-ModalKeyState s_lastKeyState = {false, false, false, false};
-
-// Snapshot the current OS keyboard state into `out`. Used at arm-time to
-// suppress edge-detection on keys the user is already holding — e.g. the
-// Enter that activated the parent's "Name" button to enter the editbox is
-// often still down when the first poll runs, which would otherwise be
-// detected as a fresh Enter edge and immediately submit the empty form.
-void SnapshotKeyState(ModalKeyState& out) {
-    auto down = [](int vk) {
-        return (GetAsyncKeyState(vk) & 0x8000) != 0;
-    };
-    out.up    = down(VK_UP);
-    out.down  = down(VK_DOWN);
-    out.enter = down(VK_RETURN);
-    out.esc   = down(VK_ESCAPE);
-}
+// (Modal-key rising-edge detection used to live here as `ModalKeyState` +
+// `s_lastKeyState`; both replaced by the central registry's BeginTick/
+// EndTick + Pressed() lifecycle. Arm-time suppression is now handled via
+// `acc::hotkeys::Consume(Action::Editbox*)` in the focus-enter branch.)
 
 // ============================================================================
 // Live editbox reads.
@@ -317,31 +300,26 @@ void PollAndAnnounceDiff(ArmedState& s) {
 }
 
 // ============================================================================
-// Modal-key Win32 polling. See s_lastKeyState comment for why polling vs.
-// the input dispatcher.
+// Modal-key Win32 polling. We poll Win32 rather than route through the
+// engine's input dispatcher because in-world Enter/Up/Down/Esc bypass
+// CSWGuiManager — see `project_inworld_input_pipeline` memory. Edge
+// detection and foreground gating live in `acc::hotkeys::Pressed()`.
 // ============================================================================
 
 void PollModalKeys(ArmedState& s) {
-    // Skip while the game window doesn't have focus — Alt-Tab to another
-    // app shouldn't trigger our handlers.
-    HWND fg = GetForegroundWindow();
-    if (fg == nullptr) {
-        s_lastKeyState = {false, false, false, false};
-        return;
-    }
+    // Rising-edge detection comes from the central registry — BeginTick /
+    // EndTick advance `last` every frame so a key the user is holding at
+    // arm-time can't masquerade as a fresh edge until it's released and
+    // re-pressed. Foreground gating is baked into Pressed().
+    namespace hk = acc::hotkeys;
+    bool upEdge    = hk::Pressed(hk::Action::EditboxReReadUp);
+    bool downEdge  = hk::Pressed(hk::Action::EditboxReReadDown);
+    bool enterEdge = hk::Pressed(hk::Action::EditboxSubmit);
+    bool escEdge   = hk::Pressed(hk::Action::EditboxCancel);
 
-    ModalKeyState now;
-    SnapshotKeyState(now);
-
-    bool upEdge    = now.up    && !s_lastKeyState.up;
-    bool downEdge  = now.down  && !s_lastKeyState.down;
-    bool enterEdge = now.enter && !s_lastKeyState.enter;
-    bool escEdge   = now.esc   && !s_lastKeyState.esc;
-
-    s_lastKeyState = now;
-
-    // Only act in edit mode. Edges are still tracked above so re-entering
-    // edit mode mid-press doesn't mistake a held key for a fresh press.
+    // Only act in edit mode. The registry tracks edges unconditionally so
+    // re-entering edit mode mid-press doesn't mistake a held key for a
+    // fresh press.
     if (!s.editMode || !s.spec) return;
 
     if (upEdge || downEdge) {
@@ -526,10 +504,14 @@ void TickEditboxMonitors() {
             // a fresh Enter edge → submit → close the panel they just
             // opened (verified against patch-20260509-201147.log lines
             // 518-519 / 976-977: arm + VK_RETURN submit at the same
-            // second). Snapshotting current state into s_lastKeyState
-            // makes the first poll see no edge transitions on any held
-            // key.
-            SnapshotKeyState(s_lastKeyState);
+            // second). Consume each editbox-relevant edge so the first
+            // PollModalKeys call this tick sees no rising edges on keys
+            // the user happened to be holding when we armed.
+            namespace hk = acc::hotkeys;
+            hk::Consume(hk::Action::EditboxReReadUp);
+            hk::Consume(hk::Action::EditboxReReadDown);
+            hk::Consume(hk::Action::EditboxSubmit);
+            hk::Consume(hk::Action::EditboxCancel);
 
             // Speak the focus-enter announce directly here. Chain nav's
             // AnnounceNewFocusedControl path also produces the same string

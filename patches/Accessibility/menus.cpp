@@ -43,6 +43,7 @@
 #include "engine_panels.h"
 #include "engine_player.h"   // Phase 1 lay-off 4 (test fixture only)
 #include "engine_reads.h"
+#include "hotkeys.h"
 #include "audio_bus.h"       // Phase 1 lay-off 4 (test fixture only)
 #include "announce_degrees.h" // Phase 4 sub-feature D
 #include "probe_mouselook.h"  // Phase 4 lay-off 2 — view-mode probe
@@ -50,12 +51,10 @@
 #include "cycle_input.h"     // Phase 2 lay-off 3
 #include "guidance_autowalk.h"  // Phase 2 lay-off 5 (progress watchdog)
 #include "camera_announce.h"    // Phase 2 ad-hoc — camera-direction on A/D
-#include "diag_engine_select.h" // Phase 2 diagnostic — Q/E/Tab observation
 #include "diag_input_pipeline.h"  // Cross-stream seq counter for input diag
 #include "interact_hotkey.h"    // Phase 2 lay-off 9b
 #include "passive_narrate.h"    // Phase 2 lay-off 9a
 #include "peek_description.h"   // Shift+arrow description peek
-#include "probe_world_hover.h"  // Phase 2 lay-off 9-probe (diagnostic)
 #include "radial_menu.h"        // CSWGuiTargetActionMenu input gate
 #include "spatial_change_detector.h"  // Phase 3 lay-off 3 — Pillar 1 Trigger 1
 #include "audio_footstep_suppress.h"  // Phase 3 lay-off 5 — stuck-detection
@@ -1670,7 +1669,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         // fall through (vanilla behaviour, no-op) rather than tear the
         // sub-dialog off and warp to another sub-screen.
         PanelKind subKind = IdentifyPanel(activePanel);
-        bool shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+        bool shift = acc::hotkeys::ShiftHeld();
         int dir = shift ? -1 : +1;
         int nextGuiId =
             acc::menus::monitors::NextStripSubScreenGuiId(subKind, dir);

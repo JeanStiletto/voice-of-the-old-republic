@@ -9,6 +9,7 @@
 #include "audio_bus.h"
 #include "engine_compass.h"
 #include "engine_player.h"
+#include "hotkeys.h"
 #include "log.h"
 #include "strings.h"
 #include "tolk.h"
@@ -17,8 +18,6 @@ namespace acc::probe_audio_frame {
 
 namespace {
 
-constexpr int   kVK_F10         = 0x79;
-constexpr int   kVK_F11         = 0x7A;
 constexpr float kProbeDistance  = 5.0f;
 constexpr float kProbeGain      = 8.0f;
 constexpr float kPi             = 3.14159265358979f;
@@ -28,17 +27,7 @@ constexpr float kPi             = 3.14159265358979f;
 // ~14 KB, a clean UI bloop with no spatial connotation in stock content.
 constexpr const char* kProbeResref = "gui_open";
 
-bool g_prevF10       = false;
-bool g_prevF11       = false;
 int  g_nextDirection = 0;  // 0..7, advances per press
-
-bool IsForegroundOurs() {
-    HWND fg = GetForegroundWindow();
-    if (!fg) return false;
-    DWORD pid = 0;
-    GetWindowThreadProcessId(fg, &pid);
-    return pid == GetCurrentProcessId();
-}
 
 // Compute the world-space offset 5m in compass sector `sector` from
 // origin. Our compass convention: 0=N (+Y), 1=NE (+X,+Y), 2=E (+X),
@@ -95,21 +84,12 @@ void FireProbe(int sector, const char* tag) {
 }
 
 void PollWin32() {
-    if (!IsForegroundOurs()) {
-        g_prevF10 = false;
-        g_prevF11 = false;
-        return;
-    }
+    namespace hk = acc::hotkeys;
 
     // F10 — advancing sector probe.
-    {
-        bool now    = (GetAsyncKeyState(kVK_F10) & 0x8000) != 0;
-        bool rising = now && !g_prevF10;
-        g_prevF10 = now;
-        if (rising) {
-            FireProbe(g_nextDirection, "F10");
-            g_nextDirection = (g_nextDirection + 1) % 8;
-        }
+    if (hk::Pressed(hk::Action::ProbeAudioCycle)) {
+        FireProbe(g_nextDirection, "F10");
+        g_nextDirection = (g_nextDirection + 1) % 8;
     }
 
     // F11 — fixed-North probe. Used to disambiguate listener-orientation
@@ -117,11 +97,8 @@ void PollWin32() {
     // should produce different pans only if the engine's listener
     // orientation is camera-driven. If pan stays the same regardless of
     // camera rotation, listener is character-anchored or world-fixed.
-    {
-        bool now    = (GetAsyncKeyState(kVK_F11) & 0x8000) != 0;
-        bool rising = now && !g_prevF11;
-        g_prevF11 = now;
-        if (rising) FireProbe(/*sector=*/0, "F11");
+    if (hk::Pressed(hk::Action::ProbeAudioFire)) {
+        FireProbe(/*sector=*/0, "F11");
     }
 }
 

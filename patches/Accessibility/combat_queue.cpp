@@ -1,6 +1,5 @@
 #include "combat_queue.h"
 
-#include <windows.h>
 #include <cstdint>
 #include <cstdio>
 
@@ -8,6 +7,7 @@
 #include "engine_input.h"
 #include "engine_offsets.h"
 #include "engine_player.h"    // GetPlayerServerCreature
+#include "hotkeys.h"
 #include "log.h"
 #include "strings.h"
 #include "tolk.h"
@@ -372,12 +372,11 @@ bool HandleInputEvent(int code, int value) {
             return true;
         case kInputEnter1:
         case kInputEnter2: {
-            // Shift gate: if Shift is held, treat as "clear all". Polled
-            // via Win32 since manager-level Shift state isn't surfaced
-            // by the input dispatcher's `code`/`value` convention.
-            bool shift = (GetAsyncKeyState(VK_SHIFT)  & 0x8000) ||
-                         (GetAsyncKeyState(VK_LSHIFT) & 0x8000) ||
-                         (GetAsyncKeyState(VK_RSHIFT) & 0x8000);
+            // Shift gate: if Shift is held, treat as "clear all". The
+            // manager-level event doesn't surface modifier state, so we
+            // read it directly via the central registry's ShiftHeld()
+            // helper (covers L/R/either shift).
+            bool shift = acc::hotkeys::ShiftHeld();
             if (shift) {
                 bool ok = ClearAllActions(round, creature);
                 tolk::Speak(acc::strings::Get(
@@ -464,24 +463,11 @@ void Tick() {
 }
 
 void PollWin32Hotkey() {
-    // Default open hotkey: Shift+K. Wakes Open(); rest of the input
-    // routing happens through interact_hotkey.cpp's submenu-active
-    // dispatch (same shape as actionbar_menu).
-    static bool s_prevK = false;
-    bool k     = (GetAsyncKeyState('K') & 0x8000) != 0;
-    bool shift = (GetAsyncKeyState(VK_SHIFT)  & 0x8000) ||
-                 (GetAsyncKeyState(VK_LSHIFT) & 0x8000) ||
-                 (GetAsyncKeyState(VK_RSHIFT) & 0x8000);
-    bool risingK = k && !s_prevK;
-    s_prevK = k;
-    if (!risingK || !shift) return;
+    // Default open hotkey: Shift+K (Action::CombatQueueOpen). Wakes Open();
+    // rest of the input routing happens through interact_hotkey.cpp's
+    // submenu-active dispatch (same shape as actionbar_menu).
+    if (!acc::hotkeys::Pressed(acc::hotkeys::Action::CombatQueueOpen)) return;
 
-    HWND fg = GetForegroundWindow();
-    if (fg) {
-        DWORD pid = 0;
-        GetWindowThreadProcessId(fg, &pid);
-        if (pid != GetCurrentProcessId()) return;
-    }
     Vector unused;
     if (!acc::engine::GetPlayerPosition(unused)) return;
 

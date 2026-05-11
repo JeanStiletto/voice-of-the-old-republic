@@ -23,6 +23,7 @@
 #include "guidance_beacon.h"
 #include "guidance_description.h"
 #include "guidance_pathfind.h"
+#include "hotkeys.h"
 #include "log.h"
 #include "peek_description.h"
 #include "strings.h"
@@ -557,85 +558,46 @@ bool TryHandleEvent(int param_1, int param_2) {
 }
 
 void PollWin32() {
-    // VK codes for the three cycle keys.
-    //   VK_OEM_COMMA  (0xBC) — `,<` key (same VK on QWERTY + QWERTZ)
-    //   VK_OEM_PERIOD (0xBE) — `.>` key (same VK on QWERTY + QWERTZ)
-    //   announce      — physical key right of `.`. Layout-dependent VK:
-    //                   · US QWERTY: `/?` → VK_OEM_2     (0xBF)
-    //                   · DE QWERTZ: `-_` → VK_OEM_MINUS (0xBD)
-    //                   We listen for either so the same physical row works
-    //                   on both layouts. (On US QWERTY VK_OEM_MINUS is the
-    //                   key right of `0`, which becomes a secondary "announce"
-    //                   binding — harmless.)
-    // VK_SHIFT is the OS-level "either shift" virtual key.
-    auto down = [](int vk) -> bool {
-        return (GetAsyncKeyState(vk) & 0x8000) != 0;
-    };
+    // All bindings live in `hotkeys.cpp`. Modifier-precedence at the
+    // announce / autowalk / force / beacon key is encoded via per-Action
+    // `modsRequired` + `modsForbidden`, so each Action::* below is
+    // mutually exclusive given the current keyboard state.
+    namespace hk = acc::hotkeys;
 
-    static bool s_prevComma    = false;
-    static bool s_prevPeriod   = false;
-    static bool s_prevAnnounce = false;
+    bool risingCommaItem     = hk::Pressed(hk::Action::CycleItemPrev);
+    bool risingCommaCategory = hk::Pressed(hk::Action::CycleCategoryPrev);
+    bool risingPeriodItem    = hk::Pressed(hk::Action::CycleItemNext);
+    bool risingPeriodCategory= hk::Pressed(hk::Action::CycleCategoryNext);
+    bool risingAnnounce      = hk::Pressed(hk::Action::AnnounceFocus);
+    bool risingPathfind      = hk::Pressed(hk::Action::PathfindFocus);
+    bool risingPathfindForce = hk::Pressed(hk::Action::PathfindFocusForce);
+    bool risingBeacon        = hk::Pressed(hk::Action::BeaconFocus);
 
-    bool comma    = down(VK_OEM_COMMA);
-    bool period   = down(VK_OEM_PERIOD);
-    bool announce = down(VK_OEM_2) || down(VK_OEM_MINUS);
-    bool shift    = down(VK_SHIFT);
-    // VK_MENU = either Alt key. Used for the Alt+- diagnostic that routes
-    // through ForceWalkTo (queue-bypass) instead of WalkTo (queue-enqueue).
-    // Note: holding Alt alone activates the Windows menu bar; harmless in
-    // a fullscreen game. Alt+key combinations don't trigger system menus.
-    bool alt      = down(VK_MENU);
-    // VK_CONTROL = either Ctrl key — used for Ctrl+- → beacon. AltGr on
-    // a German keyboard synthesises a phantom LCtrl alongside RAlt; we
-    // suppress that combination so AltGr+- doesn't also fire the beacon
-    // when the user invokes announce_degrees with plain AltGr.
-    bool ctrl     = down(VK_CONTROL) && !down(VK_RMENU);
-
-    bool risingComma    = comma    && !s_prevComma;
-    bool risingPeriod   = period   && !s_prevPeriod;
-    bool risingAnnounce = announce && !s_prevAnnounce;
-
-    s_prevComma    = comma;
-    s_prevPeriod   = period;
-    s_prevAnnounce = announce;
-
-    if (!risingComma && !risingPeriod && !risingAnnounce) return;
-
-    // Ignore presses while the game window doesn't have foreground focus
-    // — otherwise we'd fire when the user types `,/./-` in another app.
-    HWND fg = GetForegroundWindow();
-    if (fg) {
-        DWORD pid = 0;
-        GetWindowThreadProcessId(fg, &pid);
-        if (pid != GetCurrentProcessId()) return;
-    }
+    if (!risingCommaItem && !risingCommaCategory &&
+        !risingPeriodItem && !risingPeriodCategory &&
+        !risingAnnounce && !risingPathfind &&
+        !risingPathfindForce && !risingBeacon) return;
 
     // Gate on in-world. In menus / chargen / pre-spawn this short-circuits
-    // before any cycle effect.
+    // before any cycle effect. (Foreground gate already applied by Pressed().)
     Vector playerPos;
     if (!acc::engine::GetPlayerPosition(playerPos)) return;
 
-    if (risingComma) {
-        if (shift) OnCycleCategory(/*prev=*/true);
-        else       OnCycleItem    (/*prev=*/true);
-    }
-    if (risingPeriod) {
-        if (shift) OnCycleCategory(/*prev=*/false);
-        else       OnCycleItem    (/*prev=*/false);
-    }
-    if (risingAnnounce) {
-        // Modifier precedence: Ctrl > Alt > Shift > bare. Ctrl wins ties
-        // (Ctrl+Shift+- routes to beacon, not autowalk) so the user has
-        // a deterministic "beacon on this key, period" mapping. Alt is
-        // the diagnostic ForceWalkTo path (queue-bypass — leader path is
-        // broken but the entry-point is kept for any future companion-
-        // NPC nudges). Shift = autowalk via UseObject. Bare = repeat
-        // current focus announce.
-        if (ctrl)       OnBeaconFocus();
-        else if (alt)   OnPathfindFocusForce();
-        else if (shift) OnPathfindFocus();
-        else            OnAnnounceFocus();
-    }
+    if (risingCommaItem)      OnCycleItem    (/*prev=*/true);
+    if (risingCommaCategory)  OnCycleCategory(/*prev=*/true);
+    if (risingPeriodItem)     OnCycleItem    (/*prev=*/false);
+    if (risingPeriodCategory) OnCycleCategory(/*prev=*/false);
+
+    // Precedence: Ctrl > Alt > Shift > bare. The Action bindings encode
+    // this via mutually-exclusive modifier masks, so at most one of these
+    // four can be true on a given tick. Beacon wins ties (Ctrl+Shift+-
+    // routes to beacon, not autowalk), then ForceWalkTo (Alt — diagnostic
+    // queue-bypass kept for future companion-NPC nudges), then autowalk
+    // via UseObject (Shift), then bare repeat-announce.
+    if (risingBeacon)             OnBeaconFocus();
+    else if (risingPathfindForce) OnPathfindFocusForce();
+    else if (risingPathfind)      OnPathfindFocus();
+    else if (risingAnnounce)      OnAnnounceFocus();
 }
 
 }  // namespace acc::cycle_input

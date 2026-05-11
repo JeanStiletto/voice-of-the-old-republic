@@ -147,6 +147,89 @@ Roughly aligned with story-progression criticality:
 
 Items 1–6 are 2D listbox/button widgets — likely solvable in the same way we did the main menu (hook focus changes on the panel + appropriate vtable downcasts + synthesize keyboard nav where the widget doesn't already accept arrow keys). Items 9–10 are spatial mouse work and will reuse / extend Lane's prototype.
 
+## Mod hotkeys (Accessibility patch)
+
+Bindings introduced by the Accessibility mod itself. All polled via Win32 `GetAsyncKeyState` (the engine's keymap drops unbound scancodes before our manager hook can see them — see `project_inworld_input_pipeline`). Single source of truth at runtime lives in `patches/Accessibility/hotkeys.h` (the `Action` enum) and `hotkeys.cpp` (the default `Binding` table). Every per-tick poll in the mod queries the registry — there is no longer a place where bindings are hardcoded outside `hotkeys.cpp`.
+
+When this document and `hotkeys.cpp` disagree, `hotkeys.cpp` wins. Update both together.
+
+### World interaction
+
+- Enter — Interact with current target (engine click-pipeline path: SetLastClickedOnTarget + HandleMouseClickInWorld). Routes to view-mode owner if active.
+- Shift+Enter — Force-open radial action menu on current target instead of default action.
+- 1 / 2 / 3 — Bare announce of the target-action menu (engine fires the action; we add the speech). Not consumed.
+- 4 / 5 / 6 / 7 — Bare announce of the player action bar column (engine fires; we add the speech). Not consumed.
+- Shift+4 / Shift+5 / Shift+6 / Shift+7 — Open the action-bar submenu for column N (cycle column variants).
+- Shift+L — Open the engine's level-up panel directly (bypass chargen-tab chain — escape hatch for the tutorial level).
+- Shift+H — Open the Examine panel for the currently-selected target.
+- Shift+K — Open the combat-queue submenu (review / clear queued actions).
+- Shift+S — Speak the selected PC's full stat block.
+
+### In-world cycle (Pillar 4)
+
+- `,` (comma) — Cycle to previous item within the current category.
+- Shift+`,` — Cycle to previous category.
+- `.` (period) — Cycle to next item within the current category.
+- Shift+`.` — Cycle to next category.
+- `-` (QWERTZ) / `/` (QWERTY) — Announce the currently-focused cycle target. Same physical key right of `.` on both layouts; we listen for both VKs so the binding stays consistent.
+- Shift+`-` / Shift+`/` — Autowalk to focus via UseObject (engine click-pipeline).
+- Alt+`-` / Alt+`/` — ForceWalkTo (queue-bypass) — diagnostic / future companion-NPC nudge entry point.
+- Ctrl+`-` / Ctrl+`/` — Arm audio beacon to current focus. Excludes AltGr (which Windows synthesises as Ctrl+RAlt on QWERTZ); plain LCtrl required.
+
+### Orientation & party
+
+- AltGr (right Alt alone, no Shift) — Speak current facing as compass degrees.
+- Tab — Speak the party-leader name (after the engine has processed Tab's leader-cycle).
+- Shift+Tab — Cycle to previous in-game sub-screen (when drilled into Karte / Inventar / Charakter / etc.). Tab alone cycles forward; engine handles party-cycle outside the sub-screen drill.
+
+### View mode (look-around without moving)
+
+- B — Toggle view mode (freezes character W/S, A/D pans camera natively).
+- Enter (in view mode) — Interact with hover target or autowalk to cursor point.
+- Shift+Enter (in view mode) — Force-radial on hover target.
+
+### Submenu navigation (active only when a mod submenu is up)
+
+When the actionbar submenu, combat-queue submenu, or radial action menu is armed, these consume rather than passing through to the engine:
+
+- Up / Down — Move focus within the submenu.
+- Left / Right — (radial only) Move focus across the 4×3 grid.
+- Enter — Activate focused row / commit action.
+- Shift+Enter (combat-queue only) — Clear all queued actions.
+- Esc — Close the submenu.
+
+### Container panel
+
+- G — Activate the panel's "Give Items" button. Single key (no modifier) is acceptable here because the binding is gated on a Container panel being foreground — pressing G outside that context is a no-op.
+
+### Editbox modal (chargen name entry, future text-input panels)
+
+When the editbox monitor has armed edit mode:
+
+- Up / Down — Re-read the current text from the start.
+- Enter — Submit (activate the panel's Done/OK button).
+- Esc — Cancel (drop edit mode; engine cancel-button handles panel close).
+
+### Diagnostic probes (developer keys — NOT user-rebindable)
+
+These are intentionally outside the rebindable set and stay on direct Win32 polling. They emit log lines, not speech / gameplay effects:
+
+- F9 — Pathfind probe (dump path_points / path_connections region across a tick cascade).
+- F10 — Audio-frame probe: cycle next compass sector for spatial-audio direction-name test.
+- F11 — Audio-frame probe: fire the 3D cue at the current sector.
+- F12 — Camera-state dump (engine yaw vs character yaw vs dead-reckoned compass).
+- Shift+AltGr — Toggle the engine's `CClientOptions.mouse_look` bit (mouse-look ON probe + synthetic mouse-sweep state machine).
+
+### Layout notes (QWERTZ vs QWERTY)
+
+- `,` and `.` are at the same VK on both layouts (`VK_OEM_COMMA` / `VK_OEM_PERIOD`).
+- The "announce focus" key is the physical key right of `.`: `VK_OEM_2` on US QWERTY (`/`), `VK_OEM_MINUS` on German QWERTZ (`-`). The mod binds both so the same physical position works on either layout.
+- AltGr is `VK_RMENU` only. Windows synthesises a phantom `VK_LCONTROL` alongside `VK_RMENU` when AltGr is pressed on QWERTZ; the Ctrl-modifier binding (Ctrl+`-` → beacon) explicitly excludes the case where `VK_RMENU` is also held, so AltGr+`-` doesn't double-fire as beacon.
+
+### Foreground gating
+
+Every mod hotkey self-gates on `GetForegroundWindow()->pid == GetCurrentProcessId()`. AltGr in particular is heavily used outside the game (German typing: AltGr+Q = @, AltGr+E = €, …) — without the foreground gate we would speak the heading whenever the user typed special characters in another window. The shared `acc::hotkeys::Pressed(Action)` API bakes this gate in so individual callers can't forget it.
+
 ## Open questions
 
 - Does the engine accept arrow-key navigation on Galaxy Map / Quest Journal arrows out of the box, and we just need to announce the newly-selected item? Or are those widgets genuinely mouse-only with no keyboard handler? Answer with a hooked `HandleInputEvent` on the relevant panel.

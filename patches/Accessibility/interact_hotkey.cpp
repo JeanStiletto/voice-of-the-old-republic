@@ -22,6 +22,7 @@
 #include "engine_radial.h"
 #include "filter_objects.h"
 #include "guidance_autowalk.h"
+#include "hotkeys.h"
 #include "log.h"
 #include "passive_narrate.h"
 #include "radial_menu.h"
@@ -522,66 +523,37 @@ void DispatchInteract(void* target, uint32_t handle, bool forceRadial) {
 }
 
 void PollHotkey() {
-    auto down = [](int vk) -> bool {
-        return (GetAsyncKeyState(vk) & 0x8000) != 0;
-    };
+    // Every rising-edge below comes from the central hotkey registry —
+    // see hotkeys.h / hotkeys.cpp for the binding table. The registry
+    // tracks per-Action `last` state internally so this function no
+    // longer carries its own `s_prev*` statics.
+    namespace hk = acc::hotkeys;
 
-    // Persistent rising-edge state for every key we manage. Tracked on
-    // every tick (not gated on radial-active) so that releasing a key
-    // outside the radial doesn't desync the next press once the radial
-    // arms.
-    static bool s_prevEnter = false;
-    static bool s_prevUp    = false;
-    static bool s_prevDown  = false;
-    static bool s_prevLeft  = false;
-    static bool s_prevRight = false;
-    static bool s_prevK1    = false;
-    static bool s_prevK2    = false;
-    static bool s_prevK3    = false;
-    static bool s_prevK4    = false;
-    static bool s_prevK5    = false;
-    static bool s_prevK6    = false;
-    static bool s_prevK7    = false;
-    static bool s_prevL     = false;
+    bool risingEnterPlain = hk::Pressed(hk::Action::InteractTarget);
+    bool risingEnterForce = hk::Pressed(hk::Action::InteractForceRadial);
+    bool risingEnter      = risingEnterPlain || risingEnterForce;
+    bool risingUp    = hk::Pressed(hk::Action::NavUp);
+    bool risingDown  = hk::Pressed(hk::Action::NavDown);
+    bool risingLeft  = hk::Pressed(hk::Action::NavLeft);
+    bool risingRight = hk::Pressed(hk::Action::NavRight);
+    bool risingK1    = hk::Pressed(hk::Action::TargetKey1);
+    bool risingK2    = hk::Pressed(hk::Action::TargetKey2);
+    bool risingK3    = hk::Pressed(hk::Action::TargetKey3);
+    bool risingK4    = hk::Pressed(hk::Action::PersonalKey1);
+    bool risingK5    = hk::Pressed(hk::Action::PersonalKey2);
+    bool risingK6    = hk::Pressed(hk::Action::PersonalKey3);
+    bool risingK7    = hk::Pressed(hk::Action::PersonalKey4);
+    bool risingOpen1 = hk::Pressed(hk::Action::ActionBarOpen1);
+    bool risingOpen2 = hk::Pressed(hk::Action::ActionBarOpen2);
+    bool risingOpen3 = hk::Pressed(hk::Action::ActionBarOpen3);
+    bool risingOpen4 = hk::Pressed(hk::Action::ActionBarOpen4);
+    bool risingL     = hk::Pressed(hk::Action::LevelUpOpen);
+    bool risingS     = hk::Pressed(hk::Action::StatBlockSpeak);
+    bool risingEsc   = hk::Pressed(hk::Action::SubmenuEsc);
 
-    bool enter = down(VK_RETURN);
-    bool upK   = down(VK_UP);
-    bool dnK   = down(VK_DOWN);
-    bool ltK   = down(VK_LEFT);
-    bool rtK   = down(VK_RIGHT);
-    // Top-row digits 4..7 — the engine binds these to the player action
-    // bar's column-fire path (DoPersonalAction). With Shift held we
-    // intercept them as the "explore column N" gesture; bare presses are
-    // never seen by us (we don't poll without the modifier).
-    bool k1    = down('1');
-    bool k2    = down('2');
-    bool k3    = down('3');
-    bool k4    = down('4');
-    bool k5    = down('5');
-    bool k6    = down('6');
-    bool k7    = down('7');
-    bool kL    = down('L');
-
-    bool risingEnter = enter && !s_prevEnter; s_prevEnter = enter;
-    bool risingUp    = upK   && !s_prevUp;    s_prevUp    = upK;
-    bool risingDown  = dnK   && !s_prevDown;  s_prevDown  = dnK;
-    bool risingLeft  = ltK   && !s_prevLeft;  s_prevLeft  = ltK;
-    bool risingRight = rtK   && !s_prevRight; s_prevRight = rtK;
-    bool risingK1    = k1    && !s_prevK1;    s_prevK1    = k1;
-    bool risingK2    = k2    && !s_prevK2;    s_prevK2    = k2;
-    bool risingK3    = k3    && !s_prevK3;    s_prevK3    = k3;
-    bool risingK4    = k4    && !s_prevK4;    s_prevK4    = k4;
-    bool risingK5    = k5    && !s_prevK5;    s_prevK5    = k5;
-    bool risingK6    = k6    && !s_prevK6;    s_prevK6    = k6;
-    bool risingK7    = k7    && !s_prevK7;    s_prevK7    = k7;
-    bool risingL     = kL    && !s_prevL;     s_prevL     = kL;
-
-    HWND fg = GetForegroundWindow();
-    if (fg) {
-        DWORD pid = 0;
-        GetWindowThreadProcessId(fg, &pid);
-        if (pid != GetCurrentProcessId()) return;
-    }
+    // Pressed() already self-gates on foreground; if every action is
+    // false we can still need to fall through to combat_query /
+    // combat_queue (those self-gate). So don't early-return on no edges.
 
     Vector unused;
     bool inWorld = acc::engine::GetPlayerPosition(unused);
@@ -596,12 +568,11 @@ void PollHotkey() {
     // open path doesn't disarm radial; the radial's own Tick() handles
     // the next disarm via "rows-empty"). Bare 4..7 fall straight through
     // to the engine-native fast-fire path.
-    bool shift = down(VK_SHIFT) || down(VK_LSHIFT) || down(VK_RSHIFT);
-    if (inWorld && shift) {
-        if (risingK4) acc::actionbar_menu::Open(0);
-        if (risingK5) acc::actionbar_menu::Open(1);
-        if (risingK6) acc::actionbar_menu::Open(2);
-        if (risingK7) acc::actionbar_menu::Open(3);
+    if (inWorld) {
+        if (risingOpen1) acc::actionbar_menu::Open(0);
+        if (risingOpen2) acc::actionbar_menu::Open(1);
+        if (risingOpen3) acc::actionbar_menu::Open(2);
+        if (risingOpen4) acc::actionbar_menu::Open(3);
 
         // Shift+L — open the engine's level-up panel directly
         // (CGuiInGame::ShowLevelUpGUI). First-version escape hatch for
@@ -652,7 +623,7 @@ void PollHotkey() {
     // Enter consumes via the routing block below, so this only affects
     // the bare-press during submenu-active state, which is an unlikely
     // input pattern but worth handling.
-    if (inWorld && !shift && !acc::actionbar_menu::IsActive()) {
+    if (inWorld && !acc::actionbar_menu::IsActive()) {
         if (risingK1) AnnounceBareTargetKey(0);
         if (risingK2) AnnounceBareTargetKey(1);
         if (risingK3) AnnounceBareTargetKey(2);
@@ -672,24 +643,10 @@ void PollHotkey() {
     acc::combat::queue::PollWin32Hotkey();
 
     // Combat system, Phase 2A — Shift+S reads the selected-PC full
-    // stat block (one-shot speak; no menu state). Same Win32 polling
-    // pattern as the other in-world hotkeys.
-    static bool s_prevS = false;
-    bool sK     = down('S');
-    bool sShift = down(VK_SHIFT) || down(VK_LSHIFT) || down(VK_RSHIFT);
-    bool risingS = sK && !s_prevS;
-    s_prevS = sK;
-    if (inWorld && sShift && risingS) {
+    // stat block (one-shot speak; no menu state).
+    if (inWorld && risingS) {
         acc::combat::query::SpeakSelectedPcStatBlock();
     }
-
-    // Esc edge — captured up front so both the combat-queue submenu and
-    // the action-bar submenu can consume it. Both submenus are in-world
-    // and unbound by the engine keymap; without this catch, Esc would
-    // pop the game menu while either is active.
-    static bool s_prevEsc = false;
-    bool escK = down(VK_ESCAPE);
-    bool risingEsc = escK && !s_prevEsc; s_prevEsc = escK;
 
     // Combat-queue submenu input routing — runs BEFORE actionbar so the
     // queue submenu wins ties (it's a more recent context). Mirrors the
@@ -793,10 +750,10 @@ void PollHotkey() {
         return;
     }
 
-    // Sample Shift at the moment of the rising edge so a held-Shift +
-    // tap-Enter combo unambiguously routes to the force-radial path.
-    // Either Shift key counts (engine doesn't distinguish them).
-    bool forceRadial = down(VK_SHIFT) || down(VK_LSHIFT) || down(VK_RSHIFT);
+    // The registry split the rising-edge into plain Enter vs Shift+Enter
+    // up front (Action::InteractTarget vs Action::InteractForceRadial),
+    // so `risingEnterForce` is authoritative — no need to re-poll Shift.
+    bool forceRadial = risingEnterForce;
     const char* keyTag = forceRadial ? "Shift+Enter" : "Enter";
 
     // Gate on "no true-blocker panel is foreground". GetPlayerPosition only

@@ -6,6 +6,7 @@
 
 #include "engine_options.h"
 #include "engine_player.h"
+#include "hotkeys.h"
 #include "log.h"
 #include "strings.h"
 #include "tolk.h"
@@ -104,25 +105,7 @@ void StartSweep() {
 }  // namespace
 
 void PollWin32() {
-    auto down = [](int vk) -> bool {
-        return (GetAsyncKeyState(vk) & 0x8000) != 0;
-    };
-
-    bool shift = down(VK_SHIFT) || down(VK_LSHIFT) || down(VK_RSHIFT);
-    bool altGr = down(VK_RMENU);
-
-    static bool s_prev = false;
-    bool now = shift && altGr;
-    bool rising = now && !s_prev;
-    s_prev = now;
-    if (!rising) return;
-
-    HWND fg = GetForegroundWindow();
-    if (fg) {
-        DWORD pid = 0;
-        GetWindowThreadProcessId(fg, &pid);
-        if (pid != GetCurrentProcessId()) return;
-    }
+    if (!acc::hotkeys::Pressed(acc::hotkeys::Action::ProbeMouseLookToggle)) return;
 
     Vector playerPos;
     if (!acc::engine::GetPlayerPosition(playerPos)) {

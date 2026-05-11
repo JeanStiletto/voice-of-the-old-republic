@@ -1,13 +1,11 @@
 #include "announce_degrees.h"
 
-#include <windows.h>
 #include <cmath>
 #include <cstdio>
 
-#pragma comment(lib, "user32.lib")
-
 #include "engine_compass.h"
 #include "engine_player.h"
+#include "hotkeys.h"
 #include "log.h"
 #include "strings.h"
 #include "tolk.h"
@@ -40,42 +38,11 @@ void OnAnnounceDegrees() {
 }  // namespace
 
 void PollWin32() {
-    // VK_RMENU = right Alt only. On German QWERTZ this is the AltGr key
-    // directly right of the spacebar. Windows synthesises a phantom
-    // VK_LCONTROL alongside RMENU when AltGr is pressed (Win32-message
-    // back-compat) — irrelevant here, we look at the right-Alt scancode
-    // directly.
-    //
-    // Deliberately NOT VK_MENU (either Alt): left Alt is on the other
-    // side of space and we don't want to poach it — it's also already
-    // used as a modifier in `cycle_input::PollWin32` (Alt+- → Force path).
-    auto down = [](int vk) -> bool {
-        return (GetAsyncKeyState(vk) & 0x8000) != 0;
-    };
-
-    // Gate against Shift held — Shift+AltGr is owned by the Phase 4
-    // lay-off 2 Mouse Look probe (`probe_mouselook::PollWin32`). Without
-    // this gate, every probe press would also speak the current heading
-    // before / alongside the "Mouse Look on/off" cue. Plain AltGr
-    // (no shift) → degrees announce; Shift+AltGr → probe.
-    bool shift = down(VK_SHIFT) || down(VK_LSHIFT) || down(VK_RSHIFT);
-
-    static bool s_prev = false;
-    bool now = down(VK_RMENU) && !shift;
-    bool rising = now && !s_prev;
-    s_prev = now;
-    if (!rising) return;
-
-    // Foreground gate — same pattern as `cycle_input::PollWin32`. AltGr
-    // is heavily used outside the game (German typing: AltGr+Q = @,
-    // AltGr+E = €, etc.) so a global rising-edge would speak whenever
-    // the user typed special characters in another window.
-    HWND fg = GetForegroundWindow();
-    if (fg) {
-        DWORD pid = 0;
-        GetWindowThreadProcessId(fg, &pid);
-        if (pid != GetCurrentProcessId()) return;
-    }
+    // Binding lives in `hotkeys.cpp` as Action::AnnounceDegrees — AltGr
+    // (VK_RMENU) alone, Shift forbidden so it stays distinct from the
+    // Shift+AltGr Mouse Look probe. `Pressed()` covers rising-edge,
+    // modifier match, and the KOTOR-foreground gate.
+    if (!acc::hotkeys::Pressed(acc::hotkeys::Action::AnnounceDegrees)) return;
 
     // In-world gate — speak only when a player creature is loaded. In
     // menus / chargen / mid-load there's no meaningful "facing" to read.

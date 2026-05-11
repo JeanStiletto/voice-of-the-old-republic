@@ -20,6 +20,7 @@
 #include "engine_subscreen.h"
 #include "guidance_autowalk.h"
 #include "guidance_beacon.h"
+#include "hotkeys.h"
 #include "interact_hotkey.h"
 #include "menus.h"
 #include "party_leader_announce.h"
@@ -37,6 +38,11 @@
 namespace acc::tick {
 
 void Dispatch() {
+    // Snapshot every registered hotkey's down-state once per tick so all
+    // pollers see a consistent view of "did the edge fire this frame".
+    // EndTick at the bottom shifts `now` into `last`.
+    acc::hotkeys::BeginTick();
+
     // Defensive — drop stale pointers before any handler dereferences them.
     acc::menus::ValidatePanels();
 
@@ -234,6 +240,11 @@ void Dispatch() {
     // after all monitors have run so no monitor sees a partially-applied
     // state.
     acc::menus::TickPendingOps();
+
+    // Hotkey edge-state commit. Every Pressed() query above is now done;
+    // shift `now` into `last` so next tick's rising-edge math sees the
+    // correct prior state.
+    acc::hotkeys::EndTick();
 }
 
 }  // namespace acc::tick

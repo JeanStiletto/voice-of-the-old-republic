@@ -1,40 +1,23 @@
 #include "party_leader_announce.h"
 
-#include <windows.h>
 #include <cstdint>
-
-#pragma comment(lib, "user32.lib")
 
 #include "engine_area.h"      // GetObjectName
 #include "engine_offsets.h"   // Vector (global struct)
 #include "engine_panels.h"    // IsForegroundUiBlocking
 #include "engine_player.h"    // GetPlayerPosition, GetPlayerServerCreature,
                               // GetPlayerCharacterName
+#include "hotkeys.h"
 #include "log.h"
 #include "tolk.h"
 
 namespace acc::party_leader_announce {
 
 void Tick() {
-    auto down = [](int vk) -> bool {
-        return (GetAsyncKeyState(vk) & 0x8000) != 0;
-    };
-
-    static bool s_prevTab = false;
-    bool tab = down(VK_TAB);
-    bool risingTab = tab && !s_prevTab;
-    s_prevTab = tab;
-    if (!risingTab) return;
-
-    // Foreground-window gate — don't fire when KOTOR isn't focused (Tab
-    // is the universal alt-tab modifier; user is switching windows, not
-    // cycling party).
-    HWND fg = GetForegroundWindow();
-    if (fg) {
-        DWORD pid = 0;
-        GetWindowThreadProcessId(fg, &pid);
-        if (pid != GetCurrentProcessId()) return;
-    }
+    // Tab rising edge + foreground gate via the central registry. Tab is
+    // the universal alt-tab modifier outside KOTOR, so the foreground
+    // gate matters; Pressed() covers it.
+    if (!acc::hotkeys::Pressed(acc::hotkeys::Action::PartyLeaderAnnounce)) return;
 
     // Player-loaded gate — title screen / module-load have no party.
     Vector unused;

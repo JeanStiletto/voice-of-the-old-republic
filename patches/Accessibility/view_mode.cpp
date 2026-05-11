@@ -22,6 +22,7 @@
 #include "engine_player.h"
 #include "filter_objects.h"       // ObjectMatches
 #include "guidance_autowalk.h"    // WalkTo — empty-cursor Enter target
+#include "hotkeys.h"
 #include "interact_hotkey.h"      // DispatchInteract — Enter on hover target
 #include "log.h"
 #include "spatial_change_detector.h"  // GetCachedWalls
@@ -507,11 +508,14 @@ void NarrateNearestObject(void* area, const Vector& cursor) {
 // own Enter branch on `!view_mode::IsActive()` so the same VK_RETURN
 // rising edge can't double-dispatch via both paths.
 void PollEnter() {
-    static bool s_prevEnter = false;
-    bool enter = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
-    bool risingEnter = enter && !s_prevEnter;
-    s_prevEnter = enter;
-    if (!risingEnter) return;
+    // Either Enter or Shift+Enter — both fire while view mode owns Enter.
+    // Action::InteractTarget covers bare Enter (Shift forbidden);
+    // Action::InteractForceRadial covers Shift+Enter (Shift required).
+    bool risingPlain  = acc::hotkeys::Pressed(
+                            acc::hotkeys::Action::InteractTarget);
+    bool risingForce  = acc::hotkeys::Pressed(
+                            acc::hotkeys::Action::InteractForceRadial);
+    if (!risingPlain && !risingForce) return;
 
     // Claim this tick's Enter press before doing any work that exits
     // view mode — interact_hotkey::PollHotkey runs later in the same
@@ -520,9 +524,7 @@ void PollEnter() {
     // patch-20260506-142103.log.
     g_enter_consumed_this_tick = true;
 
-    bool forceRadial = ((GetAsyncKeyState(VK_SHIFT)  & 0x8000) != 0) ||
-                       ((GetAsyncKeyState(VK_LSHIFT) & 0x8000) != 0) ||
-                       ((GetAsyncKeyState(VK_RSHIFT) & 0x8000) != 0);
+    bool forceRadial = risingForce;
     const char* keyTag = forceRadial ? "Shift+Enter" : "Enter";
 
     // Snapshot hover + cursor — these are about to leave the live
@@ -645,32 +647,14 @@ bool GetEffectiveOrientationYawDegrees(float& out) {
 }
 
 void PollWin32() {
-    auto down = [](int vk) -> bool {
-        return (GetAsyncKeyState(vk) & 0x8000) != 0;
-    };
-
-    bool b     = down('B');
-    bool shift = down(VK_SHIFT) || down(VK_LSHIFT) || down(VK_RSHIFT);
-
-    static bool s_prevAlone = false;
-    static bool s_prevShift = false;
-
-    bool nowAlone = b && !shift;
-    bool nowShift = b &&  shift;
-
-    bool risingAlone = nowAlone && !s_prevAlone;
-    bool risingShift = nowShift && !s_prevShift;
-    s_prevAlone = nowAlone;
-    s_prevShift = nowShift;
-
+    // Action::ViewModeToggle = bare B (Shift forbidden).
+    // Action::CameraStateProbe = Shift+B.
+    bool risingAlone = acc::hotkeys::Pressed(
+                           acc::hotkeys::Action::ViewModeToggle);
+    bool risingShift = acc::hotkeys::Pressed(
+                           acc::hotkeys::Action::CameraStateProbe);
     if (!risingAlone && !risingShift) return;
-
-    HWND fg = GetForegroundWindow();
-    if (fg) {
-        DWORD pid = 0;
-        GetWindowThreadProcessId(fg, &pid);
-        if (pid != GetCurrentProcessId()) return;
-    }
+    bool shift = risingShift;
 
     // UI-claim gate. Mirror of (and stricter than) interact_hotkey's Enter
     // gate. Toggling view mode flips engine-level CSWPlayerControl input

@@ -24,6 +24,7 @@
 #include "engine_offsets.h"
 #include "engine_panels.h"
 #include "engine_reads.h"
+#include "hotkeys.h"
 #include "log.h"
 #include "menus_extract.h"
 #include "menus_internal.h"
@@ -1197,18 +1198,7 @@ void MonitorEquipPickerSelection() {
 }
 
 void PollContainerGiveModeKey() {
-    static bool s_prevG = false;
-    bool g = (GetAsyncKeyState('G') & 0x8000) != 0;
-    bool risingG = g && !s_prevG;
-    s_prevG = g;
-    if (!risingG) return;
-
-    HWND fgWnd = GetForegroundWindow();
-    if (fgWnd) {
-        DWORD pid = 0;
-        GetWindowThreadProcessId(fgWnd, &pid);
-        if (pid != GetCurrentProcessId()) return;
-    }
+    if (!acc::hotkeys::Pressed(acc::hotkeys::Action::ContainerGiveMode)) return;
 
     void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
     if (!mgr) return;

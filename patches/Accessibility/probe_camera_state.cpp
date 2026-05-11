@@ -9,13 +9,13 @@
 #include "camera_announce.h"  // TryGetCameraEngineYawDegrees
 #include "engine_compass.h"
 #include "engine_player.h"
+#include "hotkeys.h"
 #include "log.h"
 
 namespace acc::probe_camera_state {
 
 namespace {
 
-constexpr int  kVK_F12                            = 0x7B;
 constexpr size_t kClientInternalModuleOffset      = 0x18;
 constexpr size_t kCSWCModuleCameraYawOffset       = 0x98;
 constexpr size_t kCSWPlayerControlCameraOffset    = 0x08;  // CAurCamera*
@@ -26,15 +26,6 @@ constexpr size_t kCameraYawOffsetA                = 0x90;
 constexpr size_t kCameraYawOffsetB                = 0x94;
 constexpr size_t kCameraYawOffsetC                = 0x40;
 
-bool g_prevF12 = false;
-
-bool IsForegroundOurs() {
-    HWND fg = GetForegroundWindow();
-    if (!fg) return false;
-    DWORD pid = 0;
-    GetWindowThreadProcessId(fg, &pid);
-    return pid == GetCurrentProcessId();
-}
 
 void* GetClientInternal() {
     __try {
@@ -92,14 +83,7 @@ T SafeRead(void* base, size_t offset, T fallback) {
 }  // namespace
 
 void PollWin32() {
-    if (!IsForegroundOurs()) {
-        g_prevF12 = false;
-        return;
-    }
-    bool now    = (GetAsyncKeyState(kVK_F12) & 0x8000) != 0;
-    bool rising = now && !g_prevF12;
-    g_prevF12 = now;
-    if (!rising) return;
+    if (!acc::hotkeys::Pressed(acc::hotkeys::Action::ProbeCameraDump)) return;
 
     void* clientInternal = GetClientInternal();
     void* module         = GetCSWCModule(clientInternal);

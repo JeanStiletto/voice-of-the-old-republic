@@ -4,6 +4,7 @@
 #include "engine_offsets.h"
 #include "engine_panels.h"
 #include "engine_reads.h"
+#include "hotkeys.h"
 #include "log.h"
 #include "tolk.h"
 
@@ -11,9 +12,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
 
 namespace acc::peek {
 
@@ -194,13 +192,10 @@ const char* ReadRowText(void* row, char* outBuf, std::size_t bufSize) {
 }
 
 bool ShiftHeld() {
-    // VK_SHIFT covers both left and right shift. Win32 query is the
-    // robust source — the engine-side g_engineShiftHeld flag in
-    // cycle_input.cpp tracks the same state but only updates from
-    // CSWGuiManager-level shift events; if a panel transition swallows
-    // the up edge, that flag latches stale, whereas GetAsyncKeyState
-    // reflects the OS-level keyboard state directly.
-    return (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+    // Central registry's OS-level shift query — same rationale as before
+    // (engine-side g_engineShiftHeld latches stale on swallowed up-edges;
+    // GetAsyncKeyState is authoritative).
+    return acc::hotkeys::ShiftHeld();
 }
 
 }  // namespace

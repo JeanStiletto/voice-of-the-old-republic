@@ -1,6 +1,5 @@
 #include "combat_query.h"
 
-#include <windows.h>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -11,6 +10,7 @@
 #include "engine_panels.h"    // PanelKind / IdentifyPanel
 #include "engine_player.h"    // GetPlayerServerCreature, GetActiveLeaderName
 #include "engine_reads.h"
+#include "hotkeys.h"
 #include "log.h"
 #include "menus_extract.h"    // FromControl — for Examine message-box read
 #include "strings.h"
@@ -519,23 +519,7 @@ void TickExaminePanel() {
 // ----------------------------------------------------------------------------
 
 void PollWin32Hotkey() {
-    static bool s_prevH = false;
-    bool h     = (GetAsyncKeyState('H') & 0x8000) != 0;
-    bool shift = (GetAsyncKeyState(VK_SHIFT)  & 0x8000) != 0 ||
-                 (GetAsyncKeyState(VK_LSHIFT) & 0x8000) != 0 ||
-                 (GetAsyncKeyState(VK_RSHIFT) & 0x8000) != 0;
-
-    bool risingH = h && !s_prevH;
-    s_prevH = h;
-    if (!risingH) return;
-    if (!shift) return;
-
-    HWND fg = GetForegroundWindow();
-    if (fg) {
-        DWORD pid = 0;
-        GetWindowThreadProcessId(fg, &pid);
-        if (pid != GetCurrentProcessId()) return;
-    }
+    if (!acc::hotkeys::Pressed(acc::hotkeys::Action::ExamineOpen)) return;
 
     // Self-gate on player-loaded — Shift+H is only meaningful in-world.
     Vector unused;

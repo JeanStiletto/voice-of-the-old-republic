@@ -12,6 +12,7 @@
 #include "engine_offsets.h"
 #include "engine_player.h"
 #include "guidance_autowalk.h"
+#include "hotkeys.h"
 #include "log.h"
 
 namespace acc::probe_pathfind {
@@ -305,14 +306,7 @@ void DumpCheckpoint(const char* checkpointTag) {
 }  // namespace
 
 void PollWin32() {
-    if (!IsForegroundOurs()) {
-        g_prevF9 = false;
-        return;
-    }
-    bool nowF9 = (GetAsyncKeyState(kVK_F9) & 0x8000) != 0;
-    bool rising = nowF9 && !g_prevF9;
-    g_prevF9 = nowF9;
-    if (!rising) return;
+    if (!acc::hotkeys::Pressed(acc::hotkeys::Action::ProbePathfind)) return;
 
     Vector playerPos{0.0f, 0.0f, 0.0f};
     if (!acc::engine::GetPlayerPosition(playerPos)) {
