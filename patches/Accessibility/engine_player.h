@@ -66,6 +66,32 @@ bool GetPlayerYawDegrees(float& out);
 // engine_area lands in a later phase (consumers don't exist yet).
 void* GetPlayerArea();
 
+// World-space position of the gameplay camera. KOTOR's orbital camera
+// follows the player at a ~3m offset (and orbits around the player when
+// A/D is pressed), so this position is distinct from the player's. The
+// pair (player_pos, camera_pos) gives us the camera's look direction
+// without dead-reckoning: `normalize(player_pos - camera_pos)` is the
+// direction the camera is currently pointing, because KOTOR's orbital
+// camera always looks at the character.
+//
+// Chain walk:
+//   *kAddrAppManagerPtr  -> AppManager
+//     +0x04             -> CClientExoApp
+//       +0x04           -> CClientExoAppInternal
+//         +0x18         -> CSWCModule
+//           +0x40       -> Camera*
+//             +0x7C     -> Vector position (Gob.position at Gob+0x78,
+//                          Gob embedded in Camera at Camera+0x04)
+//
+// Verified live 2026-05-11 via the probe_camera_state F12 probe:
+// three samples around a stationary player showed camera positions
+// 3.2m / 3.2m / 1.1m from the player and visibly orbiting around the
+// player as A/D was held.
+//
+// Returns false on null at any chain link or SEH fault. The output
+// is in the same world frame as GetPlayerPosition.
+bool GetCameraPosition(Vector& out);
+
 // Returns the player's server-side creature (CSWSCreature*, downcastable
 // from CSWSObject*) as an opaque pointer, or nullptr if no player is
 // loaded. Same chain walk as the position/facing readers — exposed so

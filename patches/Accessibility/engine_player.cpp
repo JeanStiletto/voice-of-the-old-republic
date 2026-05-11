@@ -102,6 +102,38 @@ void* GetPlayerArea() {
     }
 }
 
+bool GetCameraPosition(Vector& out) {
+    constexpr size_t kClientInternalModuleOffset = 0x18;
+    constexpr size_t kCSWCModuleCameraOffset     = 0x40;
+    constexpr size_t kCameraGobPositionOffset    = 0x7c;  // Camera+0x04 + Gob+0x78
+    __try {
+        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
+        if (!appManager) return false;
+        void* clientApp = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(appManager) +
+            kAppManagerClientAppOffset);
+        if (!clientApp) return false;
+        void* clientInternal = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(clientApp) +
+            kClientExoAppInternalOffset);
+        if (!clientInternal) return false;
+        void* module = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(clientInternal) +
+            kClientInternalModuleOffset);
+        if (!module) return false;
+        void* camera = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(module) +
+            kCSWCModuleCameraOffset);
+        if (!camera) return false;
+        out = *reinterpret_cast<Vector*>(
+            reinterpret_cast<unsigned char*>(camera) +
+            kCameraGobPositionOffset);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 void* GetPlayerServerCreature() {
     return GetPlayerServerObject();
 }

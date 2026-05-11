@@ -24,6 +24,8 @@
 #include "menus.h"
 #include "party_leader_announce.h"
 #include "passive_narrate.h"
+#include "probe_audio_frame.h"
+#include "probe_camera_state.h"
 #include "probe_mouselook.h"
 #include "probe_pathfind.h"
 #include "radial_menu.h"
@@ -77,6 +79,21 @@ void Dispatch() {
     // result locks the design fork (read engine solution vs re-solve A*).
     acc::probe_pathfind::PollWin32();
     acc::probe_pathfind::Tick();
+
+    // Audio-frame diagnostic — F10 emits a 3D cue 5m from the player in
+    // the next compass sector (N → NE → … → NW → repeat) along with a
+    // spoken direction name, so the user can verify whether the
+    // engine's audio pan matches our compass convention. Used to
+    // characterise the listener-frame mismatch the user reported at
+    // Phase 5 lay-off 4 in-game testing.
+    acc::probe_audio_frame::PollWin32();
+
+    // Camera-state probe — F12 dumps the engine's cached camera yaw
+    // (CSWCModule + 0x98, written by AcclTurnCamera) so we can compare
+    // it to our dead-reckoned compass estimate and the player's
+    // character yaw. Used to calibrate units and frame for a
+    // production camera_yaw reader (replaces dead-reckoning).
+    acc::probe_camera_state::PollWin32();
 
     // Phase 4 lay-off 3 — view-mode skeleton. B toggles the "stop and
     // look around without budging the character" mode (lifecycle only;
