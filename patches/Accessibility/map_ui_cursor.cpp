@@ -717,9 +717,20 @@ bool ClassifyTerrainShape(const acc::engine::WallEdge* walls, int wallCount,
             dirList[dirLen++] = ' ';
             dirList[dirLen]   = '\0';
         }
-        int n = std::snprintf(dirList + dirLen,
-                              bufSize - dirLen, "%s", dir);
-        if (n > 0) dirLen += static_cast<size_t>(n);
+        size_t remaining = (bufSize > dirLen) ? (bufSize - dirLen) : 0;
+        if (remaining == 0) return;
+        int n = std::snprintf(dirList + dirLen, remaining, "%s", dir);
+        if (n > 0) {
+            // snprintf returns the count it WOULD HAVE written, not the
+            // count actually written when truncating. Cap the advance at
+            // remaining-1 (excluding the null terminator) so a future
+            // append can't read/write past the buffer if a localised
+            // direction name ever grew.
+            size_t advanced = (static_cast<size_t>(n) < remaining)
+                                  ? static_cast<size_t>(n)
+                                  : (remaining - 1);
+            dirLen += advanced;
+        }
         sigDirMask |= (1 << i);
     };
 
@@ -829,59 +840,19 @@ void BuildRoomShapeCache(void* area, void* areaMap) {
     }
     g_room_cache.room_count = roomCount;
 
-    // Classify EVERY room, regardless of current fog-of-war state.
-    // Fog-of-war gating happens at lookup-time in Tick (the cache is
-    // only consulted when cursorExplored is true), so building shapes
-    // for unexplored rooms doesn't leak — but skipping them at build
-    // time DOES break the cache: the first revisit to the map after
-    // walking through a previously-unexplored room would fall through
-    // to the per-tick probe instead of using the cache (which is what
-    // happened in patch-20260512-155249.log: area had 17 rooms,
-    // populated=0 because every representative centroid landed in
-    // fog at build time). The build is cheap (one classification per
-    // room) — just do them all.
-    int populated = 0;
-    for (int r = 0; r < roomCount; ++r) {
-        Vector rep;
-        if (!acc::engine::GetRoomRepresentativeWorld(area, r, rep)) continue;
-        char text[128] = {0};
-        int  sig = 0;
-        if (ClassifyTerrainShape(walls, wallCount, rep,
-                                 text, sizeof(text), sig)) {
-            std::snprintf(g_room_cache.text[r],
-                          sizeof(g_room_cache.text[r]),
-                          "%s", text);
-            g_room_cache.sig[r] = sig;
-            g_room_cache.present[r] = true;
-            g_room_cache.rep[r] = rep;
-            ++populated;
-            acclog::Write("MapCursor",
-                          "room %d shape=\"%s\" sig=%d rep=(%.2f,%.2f,%.2f)",
-                          r, text, sig, rep.x, rep.y, rep.z);
-        }
-    }
     // -------------------------------------------------------------
-    // Adjacency-based openings override.
-    //
-    // The walkmesh-probe shape classifier sees one room at a time and
-    // can't perceive doorways into adjacent rooms: a room's walkmesh
-    // perimeter has walls flanking every doorway, and from a small
-    // room's centroid those flanking walls are within 2 m and read as
-    // "no opening that direction". patch-20260512-170401.log §17:28
-    // example: Room 9 cached as "Kreuzung, Nord, Ost" while it's
-    // actually navigable West-to-Room-0 (a 5 m corridor).
-    //
-    // Path graph fixes this: K1's per-area navigation graph has edges
-    // between path_points that span doorways. If a path connection's
-    // two endpoints are in different walkmesh rooms, those rooms are
-    // adjacent. Compass direction from A's centroid to B's centroid
-    // tells us which way A "opens" toward B.
-    //
-    // We only override Junction / DeadEnd shapes (sig low byte 5 or
-    // 6) — corridor and open-area shapes keep their walkmesh-derived
-    // text since the width / axis info still matters and the openings
-    // list isn't the primary content there.
+    // Phase A — read path-graph metadata + resolve every path point's
+    // containing room. This runs BEFORE the per-room classification
+    // loop so we can use any path point inside a room as a fallback
+    // representative when its walkmesh has no surface_mesh (K1's "void"
+    // rooms — likely skybox helpers or partition placeholders). Same
+    // resolved pointRoom[]/pointCsr[] are reused for adjacency-edge
+    // building in Phase C below, instead of running GetRoomAtIndexed
+    // for every path point twice as the previous code did.
     uint64_t adjacency[RoomShapeCache::kMaxRooms] = {0};
+    int      pointCountByRoom[RoomShapeCache::kMaxRooms] = {0};
+    Vector   sampleByRoom[RoomShapeCache::kMaxRooms]     = {};
+    bool     hasSample[RoomShapeCache::kMaxRooms]        = {};
 
     uint32_t pathPointsCount = 0;
     void* pathPointsPtr = nullptr;
@@ -901,25 +872,19 @@ void BuildRoomShapeCache(void* area, void* areaMap) {
         pathPointsCount = 0;
     }
 
-    int adjEdges = 0;
-    if (pathPointsCount > 0 && pathPointsPtr &&
-        pathConnectionsCount > 0 && pathConnectionsPtr) {
-        // Cap point count to a sane upper bound — Endar Spire was 51,
-        // larger areas reach ~104 per guidance_pathfind comments.
-        constexpr uint32_t kMaxPathPoints = 512;
-        if (pathPointsCount > kMaxPathPoints) {
-            pathPointsCount = kMaxPathPoints;
-        }
+    constexpr uint32_t kMaxPathPoints = 512;
+    if (pathPointsCount > kMaxPathPoints) pathPointsCount = kMaxPathPoints;
 
-        // Resolve every path point's containing room in one pass.
-        // Stack budget: 512 ints + 512 uint32s + 512 Vectors ≈ 8 KB.
-        // Fine for this build path which runs at most once per area.
-        int       pointRoom[kMaxPathPoints];
-        uint32_t  pointCsr[kMaxPathPoints];
+    int      pointRoom[kMaxPathPoints];
+    uint32_t pointCsr [kMaxPathPoints];
+    for (uint32_t i = 0; i < kMaxPathPoints; ++i) {
+        pointRoom[i] = -1;
+        pointCsr[i]  = 0;
+    }
+
+    if (pathPointsCount > 0 && pathPointsPtr) {
         auto* pointsBase = reinterpret_cast<unsigned char*>(pathPointsPtr);
         for (uint32_t i = 0; i < pathPointsCount; ++i) {
-            pointRoom[i] = -1;
-            pointCsr[i]  = 0;
             Vector pos;
             __try {
                 pos = *reinterpret_cast<Vector*>(
@@ -934,11 +899,87 @@ void BuildRoomShapeCache(void* area, void* areaMap) {
             int roomIdx = -1;
             acc::engine::GetRoomAtIndexed(area, pos, roomIdx);
             pointRoom[i] = roomIdx;
+            if (roomIdx >= 0 && roomIdx < RoomShapeCache::kMaxRooms) {
+                ++pointCountByRoom[roomIdx];
+                if (!hasSample[roomIdx]) {
+                    sampleByRoom[roomIdx] = pos;
+                    hasSample[roomIdx]    = true;
+                }
+            }
+        }
+    }
+
+    // -------------------------------------------------------------
+    // Phase B — classify every room. Try walkmesh-centroid first; on
+    // failure (most commonly missing surface_mesh — a "void" room in
+    // K1's layout), fall back to any path-graph point that
+    // GetRoomAtIndexed resolved to this room in Phase A. Path points
+    // sit on the walkable surface by construction (the engine uses
+    // them for AI routing), so they're a sound substitute for a
+    // walkmesh-derived centroid.
+    //
+    // Classify all rooms regardless of current fog-of-war state. Fog
+    // gating happens at lookup-time in Tick (the cache is only
+    // consulted when cursorExplored is true), so building shapes for
+    // unexplored rooms doesn't leak — but skipping them at build time
+    // breaks the cache: the first revisit to the map after walking
+    // through a previously-unexplored room would fall through to the
+    // per-tick probe instead of using the cache (patch-20260512-155249.log:
+    // 17 rooms, populated=0 because every centroid landed in fog at
+    // build time).
+    int populated = 0;
+    int recovered = 0;
+    for (int r = 0; r < roomCount; ++r) {
+        Vector rep;
+        int failReason = 0;
+        bool gotRep = acc::engine::GetRoomRepresentativeWorld(
+            area, r, rep, &failReason);
+        const char* repSource = "walkmesh";
+
+        if (!gotRep) {
+            if (hasSample[r]) {
+                rep = sampleByRoom[r];
+                gotRep = true;
+                repSource = "pathpoint";
+                ++recovered;
+                acclog::Write("MapCursor",
+                              "room %d walkmesh-rep failed (reason=%d) — "
+                              "using path-point rep=(%.2f,%.2f,%.2f)",
+                              r, failReason, rep.x, rep.y, rep.z);
+            } else {
+                acclog::Write("MapCursor",
+                              "room %d walkmesh-rep failed (reason=%d), "
+                              "no path-point in this room — skipping",
+                              r, failReason);
+                continue;
+            }
         }
 
-        // Walk every (i → connections[k]) directed edge. Since the
-        // engine's graph is symmetric, we'd see (i, j) and (j, i) as
-        // separate edges; mark adjacency on both endpoints either way.
+        char text[128] = {0};
+        int  sig = 0;
+        if (ClassifyTerrainShape(walls, wallCount, rep,
+                                 text, sizeof(text), sig)) {
+            std::snprintf(g_room_cache.text[r],
+                          sizeof(g_room_cache.text[r]),
+                          "%s", text);
+            g_room_cache.sig[r]     = sig;
+            g_room_cache.present[r] = true;
+            g_room_cache.rep[r]     = rep;
+            ++populated;
+            acclog::Write("MapCursor",
+                          "room %d shape=\"%s\" sig=%d rep=(%.2f,%.2f,%.2f) "
+                          "source=%s",
+                          r, text, sig, rep.x, rep.y, rep.z, repSource);
+        }
+    }
+
+    // -------------------------------------------------------------
+    // Phase C — build adjacency edges from path connections. Uses the
+    // pointRoom[] / pointCsr[] arrays Phase A already filled, so we
+    // don't pay GetRoomAtIndexed twice per path point.
+    int adjEdges = 0;
+    if (pathPointsCount > 0 && pathPointsPtr &&
+        pathConnectionsCount > 0 && pathConnectionsPtr) {
         auto* connBase = reinterpret_cast<uint32_t*>(pathConnectionsPtr);
         for (uint32_t i = 0; i < pathPointsCount; ++i) {
             int roomA = pointRoom[i];
@@ -966,13 +1007,37 @@ void BuildRoomShapeCache(void* area, void* areaMap) {
             }
         }
     }
-    acclog::Write("MapCursor",
-                  "Adjacency: pathPoints=%u pathConns=%u edges=%d",
-                  pathPointsCount, pathConnectionsCount, adjEdges);
 
-    // For each Junction / DeadEnd room, rebuild text + sig from
-    // adjacency. Junction kind = 6; DeadEnd kind = 5. Other kinds
-    // (corridor, open area, wall) keep their walkmesh-derived text.
+    acclog::Write("MapCursor",
+                  "Adjacency: pathPoints=%u pathConns=%u edges=%d "
+                  "recovered=%d",
+                  pathPointsCount, pathConnectionsCount, adjEdges,
+                  recovered);
+
+    // Union policy: the walkmesh probe is the source of truth for "is
+    // there an opening this direction?". A four-ray probe finds real
+    // walkable corridors leaving the room — if a ray flies ≥ 2 m without
+    // hitting a perimeter wall, the engine renders walkable floor that
+    // way. The path graph, by contrast, is the source of truth for "which
+    // named room does that opening lead to" — but it's a sparse subset
+    // (nodes only where AI routing needed them). Rooms 7 and 9 in Taris
+    // South both classify as junctions via walkmesh (corridors N+S resp.
+    // N+E open) yet have zero path-graph edges to neighbours — the graph
+    // is incomplete for them, not the walkmesh hallucinating.
+    //
+    // Therefore: adjacency may ADD a direction the walkmesh missed
+    // (single-room myopia case — when both flanking walls of a doorway
+    // sit ≤ 2 m from the centroid, the probe reads "no opening" but the
+    // door is real). Adjacency may NEVER REMOVE a direction the walkmesh
+    // found. The earlier replace-walkmesh-with-adjacency policy demoted
+    // room 5 ("Kreuzung, Nord, Ost") to "Sackgasse, Nord" because the
+    // graph only had a north neighbour — but the east corridor is real
+    // and the user could walk it.
+    //
+    // Only junction (kind=6) and dead-end (kind=5) are eligible. Corridor
+    // / Open area / Wand keep walkmesh text — the width/axis info is the
+    // primary content there and a perpendicular branch would be a niche
+    // upgrade we'd rather catch in tuning of the corridor classifier.
     using acc::strings::Id;
     Id cardinalIds[4] = {
         Id::DirNorth, Id::DirEast, Id::DirSouth, Id::DirWest
@@ -984,11 +1049,22 @@ void BuildRoomShapeCache(void* area, void* areaMap) {
         int kind = g_room_cache.sig[r] & 0xff;
         if (kind != 5 && kind != 6) continue;  // only junction / dead-end
 
-        // Bucket each adjacent room into one of 4 cardinals — pick
-        // the dominant axis (largest of |dx|, |dy|). Multiple
-        // adjacent rooms in the same direction collapse to one bit
-        // in the mask.
-        int dirMask = 0;
+        // Recover walkmesh dirMask from the existing sig.
+        //   Dead-end (kind=5): stored longIdx ∈ {0..3} (single direction) in byte 1.
+        //   Junction (kind=6): stored dirMask (bitmask) in byte 1.
+        int wmMask = 0;
+        int sigByte1 = (g_room_cache.sig[r] >> 8) & 0xff;
+        if (kind == 5) {
+            if (sigByte1 >= 0 && sigByte1 < 4) {
+                wmMask = (1 << sigByte1);
+            }
+        } else {  // kind == 6
+            wmMask = sigByte1 & 0x0f;
+        }
+
+        // Compute adjacency dirMask via dominant-axis bucketing. Multiple
+        // neighbours in the same cardinal collapse to one bit.
+        int adjMask = 0;
         int adjCount = 0;
         Vector myRep = g_room_cache.rep[r];
         for (int b = 0; b < RoomShapeCache::kMaxRooms; ++b) {
@@ -1004,16 +1080,41 @@ void BuildRoomShapeCache(void* area, void* areaMap) {
             } else {
                 dirIdx = (dy > 0.0f) ? 0 /*N*/ : 2 /*S*/;
             }
-            dirMask |= (1 << dirIdx);
+            adjMask |= (1 << dirIdx);
         }
 
-        if (adjCount == 0 || dirMask == 0) continue;  // keep walkmesh text
+        int addedMask = adjMask & ~wmMask;  // directions adjacency adds
+        int unionMask = wmMask | adjMask;
 
-        // Build "Dir1, Dir2, ..." in the order the bits appear (N,E,S,W).
+        // Diagnostic: log walkmesh mask, adjacency mask, path-point
+        // count, and what the union decision is, for every
+        // junction/dead-end room. Lets us see at a glance whether a room
+        // with zero adjacency edges has zero path points (rooms 7/9
+        // expected case) or has points that just don't connect outward.
+        const char* policy =
+            (addedMask != 0) ? "adj-augment" :
+            (adjCount == 0)  ? "walkmesh-only-no-adj" :
+                               "walkmesh-only-adj-subset";
+        acclog::Write("MapCursor",
+                      "room %d kind=%d wmMask=0x%X adjMask=0x%X "
+                      "addedMask=0x%X adjCount=%d points=%d policy=%s",
+                      r, kind, wmMask, adjMask, addedMask, adjCount,
+                      pointCountByRoom[r], policy);
+
+        // If adjacency added nothing new, keep the walkmesh-derived text
+        // and sig as-is. This is the path that fixes the room 5 regression
+        // (walkmesh said N+E, adjacency said N only — addedMask=0, no
+        // override, walkmesh wins).
+        if (addedMask == 0) continue;
+
+        // Render union as a comma-separated direction list in N,E,S,W
+        // order. Length-safe accumulation: cap snprintf return at
+        // remaining buffer so out-of-bounds is impossible even if
+        // localised strings grow.
         char dirList[96] = {0};
         size_t dirLen = 0;
         for (int d = 0; d < 4; ++d) {
-            if (!(dirMask & (1 << d))) continue;
+            if (!(unionMask & (1 << d))) continue;
             const char* name = acc::strings::Get(cardinalIds[d]);
             if (!name || !name[0]) continue;
             if (dirLen > 0 && dirLen + 2 < sizeof(dirList)) {
@@ -1021,22 +1122,31 @@ void BuildRoomShapeCache(void* area, void* areaMap) {
                 dirList[dirLen++] = ' ';
                 dirList[dirLen]   = '\0';
             }
-            int n = std::snprintf(dirList + dirLen,
-                                  sizeof(dirList) - dirLen, "%s", name);
-            if (n > 0) dirLen += static_cast<size_t>(n);
+            size_t remaining = sizeof(dirList) - dirLen;
+            int n = std::snprintf(dirList + dirLen, remaining, "%s", name);
+            if (n > 0) {
+                size_t advanced = (static_cast<size_t>(n) < remaining)
+                                      ? static_cast<size_t>(n)
+                                      : (remaining > 0 ? remaining - 1 : 0);
+                dirLen += advanced;
+            }
         }
 
-        // Single adjacency → Sackgasse with that direction; multiple
-        // → Kreuzung. This re-classifies based on actual navigability
-        // (the walkmesh probe may have labelled a 1-exit room as
-        // junction; adjacency knows better).
-        if (__popcnt(static_cast<unsigned>(dirMask)) == 1) {
+        // popcount(unionMask): 1 → Sackgasse, ≥ 2 → Kreuzung. The union
+        // can upgrade Sackgasse → Kreuzung (walkmesh saw 1 exit, adjacency
+        // revealed a second) but never downgrade.
+        int popcount = 0;
+        for (int d = 0; d < 4; ++d) {
+            if (unionMask & (1 << d)) ++popcount;
+        }
+
+        if (popcount == 1) {
             const char* fmt = acc::strings::Get(Id::FmtMapCursorDeadEnd);
             if (fmt && fmt[0]) {
                 std::snprintf(g_room_cache.text[r],
                               sizeof(g_room_cache.text[r]),
                               fmt, dirList);
-                g_room_cache.sig[r] = (5) | ((dirMask & 0xff) << 8);
+                g_room_cache.sig[r] = (5) | ((unionMask & 0xff) << 8);
             }
         } else {
             const char* fmt = acc::strings::Get(Id::FmtMapCursorJunctionDirs);
@@ -1044,17 +1154,19 @@ void BuildRoomShapeCache(void* area, void* areaMap) {
                 std::snprintf(g_room_cache.text[r],
                               sizeof(g_room_cache.text[r]),
                               fmt, dirList);
-                g_room_cache.sig[r] = (6) | ((dirMask & 0xff) << 8) |
+                g_room_cache.sig[r] = (6) | ((unionMask & 0xff) << 8) |
                                        ((adjCount & 0xff) << 16);
             }
         }
         ++overrides;
         acclog::Write("MapCursor",
-                      "room %d adjacency-override → \"%s\" (adjCount=%d)",
-                      r, g_room_cache.text[r], adjCount);
+                      "room %d union-override → \"%s\" "
+                      "(wmMask=0x%X adjMask=0x%X unionMask=0x%X)",
+                      r, g_room_cache.text[r],
+                      wmMask, adjMask, unionMask);
     }
     acclog::Write("MapCursor",
-                  "Adjacency-override applied to %d rooms", overrides);
+                  "Union-augmentation applied to %d rooms", overrides);
 
     g_room_cache.built = true;
     acclog::Write("MapCursor",

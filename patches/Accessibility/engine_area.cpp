@@ -188,26 +188,32 @@ void* GetRoomAtIndexed(void* area, const Vector& pos, int& outIndex) {
     }
 }
 
-bool GetRoomRepresentativeWorld(void* area, int roomIdx, Vector& outWorld) {
-    if (!area || roomIdx < 0) return false;
+bool GetRoomRepresentativeWorld(void* area, int roomIdx, Vector& outWorld,
+                                int* outFailReason) {
+    if (outFailReason) *outFailReason = 0;
+    auto fail = [&](int code) -> bool {
+        if (outFailReason) *outFailReason = code;
+        return false;
+    };
+    if (!area || roomIdx < 0) return fail(1);
     __try {
         auto* base = reinterpret_cast<unsigned char*>(area);
         int roomCount = static_cast<int>(*reinterpret_cast<uint32_t*>(
             base + kAreaRoomCountOffset));
-        if (roomIdx >= roomCount) return false;
+        if (roomIdx >= roomCount) return fail(2);
 
         // kAreaRoomsOffset holds a POINTER to the inline-stride rooms
         // buffer, not the rooms themselves. (Header comment was
         // misleading — see BuildAreaWallCache for the canonical access
         // pattern.)
         void* rooms = *reinterpret_cast<void**>(base + kAreaRoomsOffset);
-        if (!rooms) return false;
+        if (!rooms) return fail(3);
         auto* roomBase = reinterpret_cast<unsigned char*>(rooms);
         void* room = roomBase +
                      static_cast<size_t>(roomIdx) * kRoomStride;
         void* mesh = *reinterpret_cast<void**>(
             reinterpret_cast<unsigned char*>(room) + kRoomSurfaceMeshOffset);
-        if (!mesh) return false;
+        if (!mesh) return fail(4);
 
         auto* meshBytes = reinterpret_cast<unsigned char*>(mesh);
         Vector* vertices = *reinterpret_cast<Vector**>(
@@ -216,7 +222,7 @@ bool GetRoomRepresentativeWorld(void* area, int roomIdx, Vector& outWorld) {
             meshBytes + kCollisionMeshFaceCountOffset);
         void* faceIndices = *reinterpret_cast<void**>(
             meshBytes + kCollisionMeshFacesOffset);
-        if (!vertices || !faceIndices || faceCount == 0) return false;
+        if (!vertices || !faceIndices || faceCount == 0) return fail(5);
 
         // Middle face — less likely to sit on the room boundary than
         // face 0 (which often corresponds to a corner triangle in
@@ -252,7 +258,7 @@ bool GetRoomRepresentativeWorld(void* area, int roomIdx, Vector& outWorld) {
         outWorld = worldCentroid;
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
+        return fail(6);
     }
 }
 

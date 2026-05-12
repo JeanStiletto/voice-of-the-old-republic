@@ -157,7 +157,19 @@ void* GetRoomAtIndexed(void* area, const Vector& pos, int& outIndex);
 // firmly inside the walkable surface and far from boundary edges in
 // the common case. Returns false on null area, out-of-range roomIdx,
 // missing surface_mesh, or any read fault (SEH-guarded internally).
-bool GetRoomRepresentativeWorld(void* area, int roomIdx, Vector& outWorld);
+//
+// Optional `outFailReason` captures why derivation failed (when the
+// return value is false). 0 means success; non-zero codes:
+//   1  bad args (area null or roomIdx < 0)
+//   2  roomIdx >= roomCount
+//   3  rooms array pointer null
+//   4  surface_mesh null on the room — most likely cause of K1 "void"
+//      rooms (skybox helpers / placeholders) which have no walkmesh
+//   5  vertices/faceIndices null or faceCount == 0
+//   6  SEH fault during any read
+// Pass nullptr if the caller doesn't care.
+bool GetRoomRepresentativeWorld(void* area, int roomIdx, Vector& outWorld,
+                                int* outFailReason = nullptr);
 
 // Player-facing display name for an area. Reads CSWSArea.name
 // (CExoLocString at +0x150) — tries the inline string first, falls back
