@@ -618,6 +618,25 @@ enum class Id : int {
     // that case — fog-of-war must stay spoiler-correct.
     MapCursorUnexplored,
 
+    // Fallback when the cursor sits on an explicit map-note waypoint
+    // (HasMapNote=1, MapNoteEnabled=1) whose localised text and TLK
+    // strref are both empty. Earlier behaviour kept silent which hid
+    // the marker entirely from the user — generic "Point of Interest"
+    // is the honest default per feedback_never_silence_fallback_announcement.
+    MapCursorWaypointPOI,
+
+    // Terrain shape vocabulary spoken when the cursor sits over an
+    // explored, walkable cell with no explicit waypoint/landmark/named-
+    // room match. The 4-direction wall probe in map_ui_cursor classifies
+    // local walkmesh extents and resolves to one of these.
+    MapCursorOpenArea,
+    MapCursorJunction,
+    MapCursorOffPath,
+    FmtMapCursorCorridor,     // "Corridor along %s axis, about %.0f m wide"
+    FmtMapCursorDeadEnd,      // "Dead end opening %s"
+    AxisNorthSouth,
+    AxisEastWest,
+
     Count_,
 };
 

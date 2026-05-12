@@ -234,6 +234,14 @@ const char* Get(Id id) {
         case Id::MapNextNote:                return "N\xE4""chster Hinweis";  // Nächster
 
         case Id::MapCursorUnexplored:        return "Nebel des Krieges";
+        case Id::MapCursorWaypointPOI:       return "Punkt von Interesse";
+        case Id::MapCursorOpenArea:          return "Offene Fl\xE4""che";   // Offene Fläche
+        case Id::MapCursorJunction:          return "Kreuzung";
+        case Id::MapCursorOffPath:           return "Auf einer Wand";
+        case Id::FmtMapCursorCorridor:       return "Korridor entlang %s, etwa %.0f Meter breit";
+        case Id::FmtMapCursorDeadEnd:        return "Sackgasse, \xD6""ffnung nach %s";   // Öffnung
+        case Id::AxisNorthSouth:             return "Nord-S\xFC""d-Achse";   // Nord-Süd
+        case Id::AxisEastWest:               return "Ost-West-Achse";
 
         case Id::Count_:               return "";
     }
