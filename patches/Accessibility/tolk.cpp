@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <cstdio>
 #include <cstring>
+#include <type_traits>
 
 #include "log.h"
 
@@ -21,9 +22,54 @@ typedef bool          (__cdecl* PFN_Tolk_Output)(const wchar_t*, bool);
 typedef bool          (__cdecl* PFN_Tolk_Silence)();
 typedef const wchar_t*(__cdecl* PFN_Tolk_DetectScreenReader)();
 
+// Prism (the C ABI from include/prism.h). We use Prism's SAPI backend to
+// deliver urgent map-side speech via a path NVDA does not manage — so the
+// announcement can't be cancelled by NVDA's typed-character interrupt. We
+// keep the regular Tolk path for everything else (so NVDA stays the
+// voice the user picked for the rest of the mod).
+//
+// All function pointers are resolved via LoadLibrary + GetProcAddress so
+// the patch DLL build doesn't need to link against prism.lib — and a
+// missing prism.dll degrades silently to the existing Tolk_Output path.
+//
+// Subset of the API we actually call. Matches prism.h verbatim; the
+// full surface is documented in `third_party/prism-dist/include/prism.h`.
+
+struct PrismConfig { uint8_t version; };
+typedef struct PrismContext PrismContext;
+typedef struct PrismBackend PrismBackend;
+typedef uint64_t PrismBackendId;
+typedef int PrismError;  // 0 == PRISM_OK
+
+constexpr uint8_t kPrismConfigVersion        = 2;
+constexpr uint64_t kPrismBackendIdSapi       = 0x1D6DF72422CEEE66ull;
+
+typedef PrismConfig    (__cdecl* PFN_prism_config_init)(void);
+typedef PrismContext*  (__cdecl* PFN_prism_init)(PrismConfig*);
+typedef void           (__cdecl* PFN_prism_shutdown)(PrismContext*);
+typedef bool           (__cdecl* PFN_prism_registry_exists)(PrismContext*, PrismBackendId);
+typedef PrismBackend*  (__cdecl* PFN_prism_registry_acquire)(PrismContext*, PrismBackendId);
+typedef PrismError     (__cdecl* PFN_prism_backend_initialize)(PrismBackend*);
+typedef PrismError     (__cdecl* PFN_prism_backend_speak)(PrismBackend*, const char*, bool);
+typedef PrismError     (__cdecl* PFN_prism_backend_stop)(PrismBackend*);
+
 HMODULE g_lib       = nullptr;
 bool    g_initTried = false;
 bool    g_available = false;
+
+HMODULE g_prismLib                            = nullptr;
+PrismContext* g_prismCtx                      = nullptr;
+PrismBackend* g_prismSapi                     = nullptr;
+bool g_prismResolveTried                      = false;
+bool g_prismSapiReady                         = false;
+PFN_prism_config_init        pPrism_config_init        = nullptr;
+PFN_prism_init               pPrism_init               = nullptr;
+PFN_prism_shutdown           pPrism_shutdown           = nullptr;
+PFN_prism_registry_exists    pPrism_registry_exists    = nullptr;
+PFN_prism_registry_acquire   pPrism_registry_acquire   = nullptr;
+PFN_prism_backend_initialize pPrism_backend_initialize = nullptr;
+PFN_prism_backend_speak      pPrism_backend_speak      = nullptr;
+PFN_prism_backend_stop       pPrism_backend_stop       = nullptr;
 
 PFN_Tolk_Load                pTolk_Load                = nullptr;
 PFN_Tolk_Unload              pTolk_Unload              = nullptr;
@@ -42,6 +88,10 @@ bool Resolve(T& fn, const char* name) {
     }
     return true;
 }
+
+// Forward decl — defined further down. Eager-called from Init() so the
+// SAPI backend readiness is logged at startup.
+bool TryResolvePrismSapi();
 
 }  // namespace
 
@@ -95,6 +145,12 @@ bool Init() {
 
     pTolk_Load();
     g_available = pTolk_IsLoaded() && pTolk_HasSpeech();
+
+    // Eagerly probe Prism so we know at startup whether the SAPI bypass
+    // path is wired up. Without this the first probe runs lazily on the
+    // first urgent-speech call, which means we don't see the success /
+    // failure log line until a map-cursor scan actually hits a waypoint.
+    (void)TryResolvePrismSapi();
 
     const wchar_t* name = pTolk_DetectScreenReader();
     if (g_available) {
@@ -162,6 +218,136 @@ void Speak(const char* text, bool interrupt) {
     }
     int n = MultiByteToWideChar(CP_ACP, 0, text, -1, buf, needed);
     if (n > 0) pTolk_Output(buf, interrupt);
+    if (heap_buf) free(heap_buf);
+}
+
+namespace {
+
+bool TryResolvePrismSapi() {
+    if (g_prismResolveTried) return g_prismSapiReady;
+    g_prismResolveTried = true;
+
+    const char* patchDir = acclog::PatchDir();
+    if (!patchDir || !*patchDir) return false;
+    char path[MAX_PATH];
+    int written = snprintf(path, sizeof(path), "%s\\prism.dll", patchDir);
+    if (written <= 0 || written >= (int)sizeof(path)) return false;
+
+    // Same DLL-search-path dance as Tolk_Load: prism.dll's own delay-
+    // loaded backend bridges (orca, speech_dispatcher) use bare DLL
+    // names; pointing the search path at our dir means they resolve
+    // against bundled neighbours, not whatever's in WindowsApps.
+    char prevDir[MAX_PATH] = {0};
+    DWORD prevLen = GetDllDirectoryA(MAX_PATH, prevDir);
+    SetDllDirectoryA(patchDir);
+
+    g_prismLib = LoadLibraryA(path);
+    if (!g_prismLib) {
+        acclog::Write("Tolk",
+                      "SpeakUrgent: prism.dll not loadable from %s (err=%lu); "
+                      "falling back to Tolk_Output",
+                      path, GetLastError());
+        SetDllDirectoryA(prevLen > 0 ? prevDir : nullptr);
+        return false;
+    }
+    SetDllDirectoryA(prevLen > 0 ? prevDir : nullptr);
+
+    auto resolveP = [](auto& fnPtr, const char* name) -> bool {
+        fnPtr = reinterpret_cast<std::remove_reference_t<decltype(fnPtr)>>(
+            GetProcAddress(g_prismLib, name));
+        if (!fnPtr) {
+            acclog::Write("Tolk", "SpeakUrgent: prism missing %s", name);
+            return false;
+        }
+        return true;
+    };
+
+    if (!resolveP(pPrism_config_init,        "prism_config_init")        ||
+        !resolveP(pPrism_init,               "prism_init")               ||
+        !resolveP(pPrism_shutdown,           "prism_shutdown")           ||
+        !resolveP(pPrism_registry_exists,    "prism_registry_exists")    ||
+        !resolveP(pPrism_registry_acquire,   "prism_registry_acquire")   ||
+        !resolveP(pPrism_backend_initialize, "prism_backend_initialize") ||
+        !resolveP(pPrism_backend_speak,      "prism_backend_speak")      ||
+        !resolveP(pPrism_backend_stop,       "prism_backend_stop")) {
+        return false;
+    }
+
+    // prism_init wants a PrismConfig*. Initialise from prism_config_init
+    // so we pick up the current version sentinel rather than guessing.
+    PrismConfig cfg = pPrism_config_init();
+    g_prismCtx = pPrism_init(&cfg);
+    if (!g_prismCtx) {
+        acclog::Write("Tolk", "SpeakUrgent: prism_init returned NULL");
+        return false;
+    }
+
+    if (!pPrism_registry_exists(g_prismCtx, kPrismBackendIdSapi)) {
+        acclog::Write("Tolk",
+                      "SpeakUrgent: PRISM_BACKEND_SAPI not in registry; "
+                      "SAPI fallback unavailable");
+        return false;
+    }
+
+    g_prismSapi = pPrism_registry_acquire(g_prismCtx, kPrismBackendIdSapi);
+    if (!g_prismSapi) {
+        acclog::Write("Tolk", "SpeakUrgent: prism_registry_acquire(SAPI) returned NULL");
+        return false;
+    }
+
+    PrismError rc = pPrism_backend_initialize(g_prismSapi);
+    if (rc != 0) {
+        acclog::Write("Tolk",
+                      "SpeakUrgent: prism_backend_initialize(SAPI) failed rc=%d",
+                      rc);
+        return false;
+    }
+
+    g_prismSapiReady = true;
+    acclog::Write("Tolk",
+                  "SpeakUrgent: Prism SAPI backend ready — urgent speech "
+                  "now bypasses NVDA's typed-character cancel");
+    return true;
+}
+
+}  // namespace
+
+void SpeakUrgent(const char* text) {
+    if (!g_available || !text || !*text) return;
+
+    if (TryResolvePrismSapi() && g_prismSapi) {
+        // SAPI runs in a separate audio path that NVDA's input handlers
+        // cannot cancel. interrupt=true so each new urgent message
+        // replaces the previous (no queue pile-up while panning).
+        PrismError rc = pPrism_backend_speak(g_prismSapi, text, /*interrupt=*/true);
+        if (rc == 0) {
+            acclog::Trace("Tolk.spoke", "[SAPI] %s", text);
+            return;
+        }
+        acclog::Trace("Tolk",
+                      "SpeakUrgent: prism_backend_speak rc=%d; "
+                      "falling back to Tolk_Output for this utterance",
+                      rc);
+    }
+
+    // Fallback path — NVDA route. Subject to typed-character cancel, but
+    // at least the announcement attempts to dispatch. Same path as
+    // Speak(const char*).
+    int needed = MultiByteToWideChar(CP_ACP, 0, text, -1, nullptr, 0);
+    if (needed <= 0) return;
+    wchar_t stack_buf[256];
+    wchar_t* buf = stack_buf;
+    wchar_t* heap_buf = nullptr;
+    if ((size_t)needed > sizeof(stack_buf) / sizeof(stack_buf[0])) {
+        heap_buf = (wchar_t*)malloc((size_t)needed * sizeof(wchar_t));
+        if (!heap_buf) return;
+        buf = heap_buf;
+    }
+    int n = MultiByteToWideChar(CP_ACP, 0, text, -1, buf, needed);
+    if (n > 0) {
+        acclog::Trace("Tolk.spoke", "%s", text);
+        pTolk_Output(buf, /*interrupt=*/false);
+    }
     if (heap_buf) free(heap_buf);
 }
 

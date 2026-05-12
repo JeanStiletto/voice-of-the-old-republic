@@ -44,3 +44,13 @@ Thumbs.db
 /third_party/KotorMessageInjector/
 /third_party/KotOR_IO/
 /third_party/DLZ-Tool/
+
+# Prism — vendored source clone at third_party/prism/ for rebuildability,
+# vendored prebuilt artifacts at third_party/prism-dist/ for kdev apply.
+# Build trees + clone metadata are throwaway; the prebuilt artifacts ARE
+# committed so the patch ships without requiring users to build Prism.
+/third_party/prism/build_*/
+/third_party/prism/.git/
+/third_party/prism/.github/
+/third_party/prism/.cache/
+/third_party/prism/gdextension/godot-cpp/

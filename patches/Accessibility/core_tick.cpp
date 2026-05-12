@@ -22,6 +22,7 @@
 #include "guidance_beacon.h"
 #include "hotkeys.h"
 #include "interact_hotkey.h"
+#include "map_ui_cursor.h"
 #include "menus.h"
 #include "party_leader_announce.h"
 #include "passive_narrate.h"
@@ -170,6 +171,13 @@ void Dispatch() {
     acc::camera_announce::Tick();
     acc::spatial::change_detector::Tick();
     acc::view_mode::Tick();
+
+    // Phase 5 lay-off 6 — virtual cursor on the in-game area-map UI.
+    // Self-gates on PanelKind::InGameMap being the foreground panel.
+    // Movement keys W/A/S/D translate the cursor in map-pixel space;
+    // hover-pause speaks the nearest explored map note. Runs AFTER the
+    // menu monitors have built the foreground-panel snapshot.
+    acc::map_ui_cursor::Tick();
 
     // Phase 3 lay-off 5 — Pillar 1 stuck-detection. Per-tick
     // displacement check seeds g_was_stuck for the OnPlayFootstep handler;

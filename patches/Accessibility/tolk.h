@@ -25,6 +25,35 @@ void Speak(const wchar_t* text, bool interrupt);
 // point for strings we lift from game memory.
 void Speak(const char* text, bool interrupt);
 
+// Urgent speech — bypasses NVDA's typed-character-cancels-speech behaviour.
+//
+// Tolk_Output runs at NVDA's NORMAL priority. NVDA's typed-character speech
+// also runs at NORMAL, so when the user holds a movement key NVDA cancels
+// our utterance on every keystroke. There's no Tolk flag to override that.
+//
+// `SpeakUrgent` instead routes through `nvdaController_speakSsml`
+// (NVDA 2024.1+, see the controller-client IDL) with priority
+// `SPEECH_PRIORITY_NOW` — per NVDA's documented semantics, NOW utterances
+// cannot be interrupted by lower-priority (NORMAL) speech such as the
+// typed-character announces. After the NOW utterance completes, any
+// queued NORMAL speech resumes.
+//
+// Falls back to `Speak(text, /*interrupt=*/false)` when:
+//   - nvdaControllerClient32.dll is missing (silent / no NVDA installed)
+//   - nvdaController_speakSsml is not exported (NVDA < 2024.1)
+//   - speakSsml returns a non-zero error (RPC_S_UNKNOWN_IF == 1717 on
+//     older NVDA; any RPC failure also fails over)
+//   - The active screen reader isn't NVDA (JAWS / Narrator / SAPI all
+//     take the Tolk_Output path and accept the cancellation reality
+//     until each driver grows an equivalent priority API)
+//
+// Use for short, single-shot announcements during keyboard panning
+// (map cursor, future map data narration). NOT for long continuous
+// content — NOW priority forces a queue interruption every time it
+// fires, so spamming this would make the user lose every other
+// utterance.
+void SpeakUrgent(const char* text);
+
 // Cancel any in-progress speech.
 void Silence();
 

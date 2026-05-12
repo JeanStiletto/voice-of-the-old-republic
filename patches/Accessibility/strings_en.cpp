@@ -219,6 +219,9 @@ const char* Get(Id id) {
         case Id::MessagesTitleCombatLog:     return "Combat log.";
         case Id::MessagesTitleDialogLog:     return "Dialog log.";
 
+        case Id::MapPrevNote:                return "Previous map note";
+        case Id::MapNextNote:                return "Next map note";
+
         case Id::Count_:               return "";
     }
     return "";

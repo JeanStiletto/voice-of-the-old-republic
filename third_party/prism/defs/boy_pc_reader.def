@@ -1,0 +1,25 @@
+LIBRARY "BoyCtrl-x64.dll"
+EXPORTS
+    BoyCtrlActivateYTApp
+    BoyCtrlCancelTextToAudio
+    BoyCtrlGetReaderState
+    BoyCtrlInitialize
+    BoyCtrlInitializeAnsi
+    BoyCtrlInitializeU8
+    BoyCtrlIsReaderRunning
+    BoyCtrlPauseScreenReader
+    BoyCtrlReportInfo
+    BoyCtrlSetAnyKeyStopSpeaking
+    BoyCtrlSpeak
+    BoyCtrlSpeak2
+    BoyCtrlSpeak3
+    BoyCtrlSpeakAnsi
+    BoyCtrlSpeakEx
+    BoyCtrlSpeakU8
+    BoyCtrlStartTextToAudio
+    BoyCtrlStopSpeaking
+    BoyCtrlStopSpeaking2
+    BoyCtrlStopSpeaking3
+    BoyCtrlStopSpeakingEx
+    BoyCtrlUninitialize
+    BoyCtrlVerify

@@ -230,6 +230,9 @@ const char* Get(Id id) {
         case Id::MessagesTitleCombatLog:     return "Kampfprotokoll.";
         case Id::MessagesTitleDialogLog:     return "Dialogverlauf.";
 
+        case Id::MapPrevNote:                return "Vorheriger Hinweis";
+        case Id::MapNextNote:                return "N\xE4""chster Hinweis";  // Nächster
+
         case Id::Count_:               return "";
     }
     return "";

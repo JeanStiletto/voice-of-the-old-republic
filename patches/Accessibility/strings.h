@@ -599,6 +599,19 @@ enum class Id : int {
     MessagesTitleCombatLog,
     MessagesTitleDialogLog,
 
+    // ---- In-game map UI (CSWGuiInGameMap, Phase 5 lay-off 6).
+    //      Two image-only buttons sit on either side of the map render
+    //      (struct fields up_button @+0xab0, down_button @+0xc74). Their
+    //      OnUpArrowPressed / OnDownArrowPressed handlers dispatch
+    //      HandleInputEvent(0x31/0x32) which route to
+    //      CSWGuiMapHider::GetPrevMapNote / GetNextMapNote — i.e. they
+    //      cycle the engine's filtered list of explored map-note
+    //      waypoints (already spoiler-correct: GetPrev/Next skip nodes
+    //      where IsWorldPointExplored is false). The per-kind label
+    //      fallback in menus_extract resolves them by panel-base offset.
+    MapPrevNote,
+    MapNextNote,
+
     Count_,
 };
 

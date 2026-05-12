@@ -1,0 +1,9 @@
+This project is licensed under the Mozilla Public License version 2.0. Full details are available in the LICENSE file.
+
+This project uses code from other projects. Specifically:
+
+* The SAPI bridge is credited to the [NVGT](https://github.com/samtupy/nvgt) project, as well as the functions `range_convert` and `range_convert_midpoint` in utils.h and utils.cpp. Similar attribution goes to NVGT for the Android screen reader backend.
+* The `simdutf` library is licensed under the Apache-2.0 license.
+* On Windows, Prism includes NVDA controller client RPC definitions originally under LGPL-2.1 (and generated RPC stubs from those inputs). The Prism project has received permission to license the IDL files (and there generated outputs) under the MPL-2.0 regardless of the original license. Thus, you may assume that they are licensed under the MPL-2.0. The LGPL headers and license file in the LICENSES directory remain for providing attribution.
+
+All licenses may be found under the LICENSES directory.

@@ -804,6 +804,50 @@ const char* FromControl(void* control,
         }
     }
 
+    // 9b2. Per-kind label fallback for the in-game map (CSWGuiInGameMap).
+    //     The panel has two image-only buttons on either side of the map
+    //     render — `up_button` at struct offset +0xab0 and `down_button`
+    //     at +0xc74 (verified 2026-05-12 via the GoG xml MEMBER offsets +
+    //     Ghidra decomp of the panel's OnUpArrowPressed @0x006927b0 and
+    //     OnDownArrowPressed @0x006927c0 which both dispatch
+    //     CSWGuiPanel::HandleInputEvent(0x31/0x32, 1) → the InGameMap
+    //     override routes 0x31 → CSWGuiMapHider::GetPrevMapNote and
+    //     0x32 → CSWGuiMapHider::GetNextMapNote, cycling the engine's
+    //     filtered list of explored map-note waypoints).
+    //
+    //     Both buttons share vtable 0x0073E658 (CSWGuiButton) with empty
+    //     text and no strref — the speculative button-spec read at 9 hits
+    //     "miss" on both. Identify them by panel-base offset (analogous
+    //     to InGameEquip identifying slot buttons by .gui ID). The other
+    //     three buttons (return / partyselect / exit) have real text and
+    //     never reach this fallback.
+    if (!source && ownerForPerkind &&
+        IdentifyPanel(ownerForPerkind) == PanelKind::InGameMap) {
+        constexpr uintptr_t kInGameMapUpButtonOffset   = 0xab0;
+        constexpr uintptr_t kInGameMapDownButtonOffset = 0xc74;
+        uintptr_t panelBase = reinterpret_cast<uintptr_t>(ownerForPerkind);
+        uintptr_t ctrl      = reinterpret_cast<uintptr_t>(control);
+        acc::strings::Id sid = acc::strings::Id::Count_;
+        const char* tag = nullptr;
+        if (ctrl == panelBase + kInGameMapUpButtonOffset) {
+            sid = acc::strings::Id::MapPrevNote;
+            tag = "MapPrevNote";
+        } else if (ctrl == panelBase + kInGameMapDownButtonOffset) {
+            sid = acc::strings::Id::MapNextNote;
+            tag = "MapNextNote";
+        }
+        if (sid != acc::strings::Id::Count_) {
+            const char* lit = acc::strings::Get(sid);
+            size_t llen = strlen(lit);
+            if (llen > 0 && llen + 1 <= bufSize) {
+                memcpy(outBuf, lit, llen + 1);
+                source = "perkind-map";
+                acclog::Write("Menus.PerKind", "InGameMap control=%p kind=%s -> \"%s\"",
+                              control, tag, outBuf);
+            }
+        }
+    }
+
     // 9c. Per-kind label override for the chargen class-selection panel
     //     (CSWGuiClassSelection, vtable=0x00758020). Panel hosts 6
     //     image-only class-icon buttons (vtable=0x0073E658, empty text)

@@ -1,0 +1,146 @@
+[project]
+name = "prismatoid"
+version = "0.14.4"
+description = "The Platform-Agnostic Reader Interface for Speech and Messages"
+readme = "README.md"
+authors = [
+    { name = "Ethin Probst", email = "ethindp@pm.me" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "cffi>=2.0.0",
+    "win32more>=0.8.0 ; sys_platform == 'win32'",
+]
+license = "MPL-2.0"
+license-files = [
+    "LICENSE",
+    "LICENSES/**/*",
+    "NOTICE"
+]
+
+[tool.uv]
+cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.{h,c,hpp,cpp}" }, { file = "CMakeLists.txt" }]
+
+[build-system]
+requires = ["scikit-build-core>=0.10"]
+build-backend = "scikit_build_core.build"
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.151.4",
+    "numpy>=2.2.6",
+    "packaging>=26.0",
+    "pytest>=9.0.2",
+    "torch>=2.10.0",
+    "torchaudio>=2.10.0",
+]
+
+[tool.scikit-build]
+minimum-version = "build-system.requires"
+build-dir = "build/{wheel_tag}"
+cmake.version = ">=3.31.0"
+cmake.define = { PRISM_ENABLE_TESTS = "OFF", PRISM_ENABLE_GDEXTENSION = "OFF", PRISM_ENABLE_LEGACY_BACKENDS = "ON"}
+cmake.source-dir = "."
+build.verbose = true
+wheel.packages = ["bindings/py/prism/prism"]
+sdist.include = [
+  "CMakeLists.txt",
+  "cmake/**",
+  "include/**",
+  "source/**",
+  "defs/**",
+  "android/**",
+  "bindings/py/**",
+  "doc/**",
+  "gradle/**",
+  "tests/**",
+  "build.gradle",
+  "gradle.properties",
+  "gradlew",
+  "gradlew.bat",
+  "pyproject.toml",
+  ".python-version",
+  "settings.gradle",
+  "uv.lock",
+  "LICENSE",
+  "LICENSES",
+  "NOTICE",
+  "idl",
+  "demos",
+  "dbus",
+  "pytest.ini",
+]
+sdist.exclude = [
+  ".venv",
+  ".git",
+  ".vscode",
+  ".idea",
+  "build",
+  "dist",
+  "__pycache__",
+  "*.egg-info",
+]
+
+[tool.cibuildwheel]
+build = "cp310-* cp311-* cp312-* cp313-* cp314-* cp313t-* cp314t-*"
+build-verbosity = 1
+container-engine = "podman"
+manylinux-x86_64-image = "manylinux_2_34"
+manylinux-i686-image = "manylinux_2_34"
+manylinux-pypy_x86_64-image = "manylinux_2_34"
+manylinux-aarch64-image = "manylinux_2_34"
+manylinux-ppc64le-image = "manylinux_2_34"
+manylinux-s390x-image = "manylinux_2_34"
+manylinux-riscv64-image = "manylinux_2_39"
+manylinux-pypy_aarch64-image = "manylinux_2_34"
+manylinux-pypy_i686-image = "manylinux_2_34"
+enable = ["cpython-freethreading"]
+
+[tool.cibuildwheel.linux]
+archs = ["x86_64", "i686", "aarch64", "riscv64", "ppc64le", "s390x"]
+before-all = [
+    """
+    set -e
+    if command -v dnf >/dev/null 2>&1; then
+        rhel_ver=$(rpm -E %rhel 2>/dev/null)
+        if [[ "$rhel_ver" =~ ^[0-9]+$ ]]; then
+            dnf install -y dnf-plugins-core || true
+            dnf config-manager --set-enabled crb 2>/dev/null || dnf config-manager --set-enabled powertools 2>/dev/null || true
+            dnf install -y "https://dl.fedoraproject.org/pub/epel/epel-release-latest-${rhel_ver}.noarch.rpm" || true
+        fi
+        dnf install -y speech-dispatcher-devel
+    elif command -v apk >/dev/null 2>&1; then
+        apk add --no-cache speech-dispatcher-dev
+    elif command -v apt-get >/dev/null 2>&1; then
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update || true
+        apt-get install -y libspeechd-dev
+    fi
+    """,
+]
+environment = { CMAKE_BUILD_PARALLEL_LEVEL = "4" }
+
+[tool.cibuildwheel.macos]
+archs = ["arm64", "x86_64"]
+environment = { MACOSX_DEPLOYMENT_TARGET = "11.0", CMAKE_OSX_DEPLOYMENT_TARGET = "11.0", CMAKE_BUILD_PARALLEL_LEVEL = "4"}
+before-build = ["xcode-select --print-path || xcode-select --install"]
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64", "ARM64", "X86"]
+environment = { CMAKE_BUILD_PARALLEL_LEVEL = "4" }
+
+[[tool.cibuildwheel.overrides]]
+select = "*-macosx_arm64"
+environment = { MACOSX_DEPLOYMENT_TARGET = "15.0", CMAKE_OSX_ARCHITECTURES = "arm64", CMAKE_Swift_COMPILER_TARGET = "arm64-apple-macosx15.0"}
+
+[[tool.cibuildwheel.overrides]]
+select = "*-macosx_x86_64"
+environment = {MACOSX_DEPLOYMENT_TARGET = "15.0", CMAKE_OSX_ARCHITECTURES = "x86_64", CMAKE_Swift_COMPILER_TARGET = "x86_64-apple-macosx15.0"}
+
+[[tool.cibuildwheel.overrides]]
+select = "*-win_arm64"
+environment = { CMAKE_SYSTEM_PROCESSOR = "ARM64", CMAKE_BUILD_PARALLEL_LEVEL = "4"}
+
+[[tool.cibuildwheel.overrides]]
+select = "*-manylinux_aarch64"
+environment = { CMAKE_BUILD_PARALLEL_LEVEL = "4" }
