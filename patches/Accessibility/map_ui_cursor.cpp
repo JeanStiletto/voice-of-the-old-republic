@@ -23,6 +23,7 @@
 #include "engine_panels.h"
 #include "engine_player.h"
 #include "engine_reads.h"             // ReadCExoString — waypoint tag log
+#include "guidance_pathfind.h"        // path-graph offsets for adjacency
 #include "log.h"
 #include "spatial_change_detector.h"  // GetCachedWalls
 #include "strings.h"
@@ -859,6 +860,202 @@ void BuildRoomShapeCache(void* area, void* areaMap) {
                           r, text, sig, rep.x, rep.y, rep.z);
         }
     }
+    // -------------------------------------------------------------
+    // Adjacency-based openings override.
+    //
+    // The walkmesh-probe shape classifier sees one room at a time and
+    // can't perceive doorways into adjacent rooms: a room's walkmesh
+    // perimeter has walls flanking every doorway, and from a small
+    // room's centroid those flanking walls are within 2 m and read as
+    // "no opening that direction". patch-20260512-170401.log §17:28
+    // example: Room 9 cached as "Kreuzung, Nord, Ost" while it's
+    // actually navigable West-to-Room-0 (a 5 m corridor).
+    //
+    // Path graph fixes this: K1's per-area navigation graph has edges
+    // between path_points that span doorways. If a path connection's
+    // two endpoints are in different walkmesh rooms, those rooms are
+    // adjacent. Compass direction from A's centroid to B's centroid
+    // tells us which way A "opens" toward B.
+    //
+    // We only override Junction / DeadEnd shapes (sig low byte 5 or
+    // 6) — corridor and open-area shapes keep their walkmesh-derived
+    // text since the width / axis info still matters and the openings
+    // list isn't the primary content there.
+    uint64_t adjacency[RoomShapeCache::kMaxRooms] = {0};
+
+    uint32_t pathPointsCount = 0;
+    void* pathPointsPtr = nullptr;
+    uint32_t pathConnectionsCount = 0;
+    void* pathConnectionsPtr = nullptr;
+    __try {
+        auto* abase = reinterpret_cast<unsigned char*>(area);
+        pathPointsCount = *reinterpret_cast<uint32_t*>(
+            abase + kAreaPathPointsCountOffset);
+        pathPointsPtr = *reinterpret_cast<void**>(
+            abase + kAreaPathPointsPtrOffset);
+        pathConnectionsCount = *reinterpret_cast<uint32_t*>(
+            abase + kAreaPathConnectionsCountOffset);
+        pathConnectionsPtr = *reinterpret_cast<void**>(
+            abase + kAreaPathConnectionsPtrOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        pathPointsCount = 0;
+    }
+
+    int adjEdges = 0;
+    if (pathPointsCount > 0 && pathPointsPtr &&
+        pathConnectionsCount > 0 && pathConnectionsPtr) {
+        // Cap point count to a sane upper bound — Endar Spire was 51,
+        // larger areas reach ~104 per guidance_pathfind comments.
+        constexpr uint32_t kMaxPathPoints = 512;
+        if (pathPointsCount > kMaxPathPoints) {
+            pathPointsCount = kMaxPathPoints;
+        }
+
+        // Resolve every path point's containing room in one pass.
+        // Stack budget: 512 ints + 512 uint32s + 512 Vectors ≈ 8 KB.
+        // Fine for this build path which runs at most once per area.
+        int       pointRoom[kMaxPathPoints];
+        uint32_t  pointCsr[kMaxPathPoints];
+        auto* pointsBase = reinterpret_cast<unsigned char*>(pathPointsPtr);
+        for (uint32_t i = 0; i < pathPointsCount; ++i) {
+            pointRoom[i] = -1;
+            pointCsr[i]  = 0;
+            Vector pos;
+            __try {
+                pos = *reinterpret_cast<Vector*>(
+                    pointsBase + i * kPathPointStride +
+                    kPathPointPositionOffset);
+                pointCsr[i] = *reinterpret_cast<uint32_t*>(
+                    pointsBase + i * kPathPointStride +
+                    kPathPointCsrOffset);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                continue;
+            }
+            int roomIdx = -1;
+            acc::engine::GetRoomAtIndexed(area, pos, roomIdx);
+            pointRoom[i] = roomIdx;
+        }
+
+        // Walk every (i → connections[k]) directed edge. Since the
+        // engine's graph is symmetric, we'd see (i, j) and (j, i) as
+        // separate edges; mark adjacency on both endpoints either way.
+        auto* connBase = reinterpret_cast<uint32_t*>(pathConnectionsPtr);
+        for (uint32_t i = 0; i < pathPointsCount; ++i) {
+            int roomA = pointRoom[i];
+            if (roomA < 0 || roomA >= RoomShapeCache::kMaxRooms) continue;
+            uint32_t start = pointCsr[i];
+            uint32_t end = (i + 1 < pathPointsCount)
+                ? pointCsr[i + 1] : pathConnectionsCount;
+            if (start > pathConnectionsCount) continue;
+            if (end > pathConnectionsCount) end = pathConnectionsCount;
+            for (uint32_t k = start; k < end; ++k) {
+                uint32_t j = 0;
+                __try {
+                    j = connBase[k];
+                } __except (EXCEPTION_EXECUTE_HANDLER) {
+                    continue;
+                }
+                if (j >= pathPointsCount) continue;
+                int roomB = pointRoom[j];
+                if (roomB < 0 || roomB >= RoomShapeCache::kMaxRooms) continue;
+                if (roomA == roomB) continue;
+                if (!(adjacency[roomA] & (1ULL << roomB))) {
+                    adjacency[roomA] |= (1ULL << roomB);
+                    ++adjEdges;
+                }
+            }
+        }
+    }
+    acclog::Write("MapCursor",
+                  "Adjacency: pathPoints=%u pathConns=%u edges=%d",
+                  pathPointsCount, pathConnectionsCount, adjEdges);
+
+    // For each Junction / DeadEnd room, rebuild text + sig from
+    // adjacency. Junction kind = 6; DeadEnd kind = 5. Other kinds
+    // (corridor, open area, wall) keep their walkmesh-derived text.
+    using acc::strings::Id;
+    Id cardinalIds[4] = {
+        Id::DirNorth, Id::DirEast, Id::DirSouth, Id::DirWest
+    };
+
+    int overrides = 0;
+    for (int r = 0; r < roomCount; ++r) {
+        if (!g_room_cache.present[r]) continue;
+        int kind = g_room_cache.sig[r] & 0xff;
+        if (kind != 5 && kind != 6) continue;  // only junction / dead-end
+
+        // Bucket each adjacent room into one of 4 cardinals — pick
+        // the dominant axis (largest of |dx|, |dy|). Multiple
+        // adjacent rooms in the same direction collapse to one bit
+        // in the mask.
+        int dirMask = 0;
+        int adjCount = 0;
+        Vector myRep = g_room_cache.rep[r];
+        for (int b = 0; b < RoomShapeCache::kMaxRooms; ++b) {
+            if (!(adjacency[r] & (1ULL << b))) continue;
+            if (b >= roomCount) continue;
+            if (!g_room_cache.present[b]) continue;
+            ++adjCount;
+            float dx = g_room_cache.rep[b].x - myRep.x;
+            float dy = g_room_cache.rep[b].y - myRep.y;
+            int dirIdx;
+            if (std::fabs(dx) > std::fabs(dy)) {
+                dirIdx = (dx > 0.0f) ? 1 /*E*/ : 3 /*W*/;
+            } else {
+                dirIdx = (dy > 0.0f) ? 0 /*N*/ : 2 /*S*/;
+            }
+            dirMask |= (1 << dirIdx);
+        }
+
+        if (adjCount == 0 || dirMask == 0) continue;  // keep walkmesh text
+
+        // Build "Dir1, Dir2, ..." in the order the bits appear (N,E,S,W).
+        char dirList[96] = {0};
+        size_t dirLen = 0;
+        for (int d = 0; d < 4; ++d) {
+            if (!(dirMask & (1 << d))) continue;
+            const char* name = acc::strings::Get(cardinalIds[d]);
+            if (!name || !name[0]) continue;
+            if (dirLen > 0 && dirLen + 2 < sizeof(dirList)) {
+                dirList[dirLen++] = ',';
+                dirList[dirLen++] = ' ';
+                dirList[dirLen]   = '\0';
+            }
+            int n = std::snprintf(dirList + dirLen,
+                                  sizeof(dirList) - dirLen, "%s", name);
+            if (n > 0) dirLen += static_cast<size_t>(n);
+        }
+
+        // Single adjacency → Sackgasse with that direction; multiple
+        // → Kreuzung. This re-classifies based on actual navigability
+        // (the walkmesh probe may have labelled a 1-exit room as
+        // junction; adjacency knows better).
+        if (__popcnt(static_cast<unsigned>(dirMask)) == 1) {
+            const char* fmt = acc::strings::Get(Id::FmtMapCursorDeadEnd);
+            if (fmt && fmt[0]) {
+                std::snprintf(g_room_cache.text[r],
+                              sizeof(g_room_cache.text[r]),
+                              fmt, dirList);
+                g_room_cache.sig[r] = (5) | ((dirMask & 0xff) << 8);
+            }
+        } else {
+            const char* fmt = acc::strings::Get(Id::FmtMapCursorJunctionDirs);
+            if (fmt && fmt[0]) {
+                std::snprintf(g_room_cache.text[r],
+                              sizeof(g_room_cache.text[r]),
+                              fmt, dirList);
+                g_room_cache.sig[r] = (6) | ((dirMask & 0xff) << 8) |
+                                       ((adjCount & 0xff) << 16);
+            }
+        }
+        ++overrides;
+        acclog::Write("MapCursor",
+                      "room %d adjacency-override → \"%s\" (adjCount=%d)",
+                      r, g_room_cache.text[r], adjCount);
+    }
+    acclog::Write("MapCursor",
+                  "Adjacency-override applied to %d rooms", overrides);
+
     g_room_cache.built = true;
     acclog::Write("MapCursor",
                   "BuildRoomShapeCache: built area=%p rooms=%d populated=%d",
