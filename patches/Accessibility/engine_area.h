@@ -441,13 +441,24 @@ struct WallEdge {
 // into world space via CSWCollisionMesh::LocalToWorld so callers can compute
 // distances against the player's world position directly.
 //
+// Seam filtering: when called with a buffer (outBuf != nullptr), the
+// raw per-room scan is followed by a pairwise pass that drops "edges"
+// where two different rooms emit the same world-space endpoints. K1
+// joins rooms through portals/AABB rather than via triangle adjacency,
+// so room-boundary triangles in both rooms carry adjacency=-1 and would
+// otherwise appear as walls — even though the engine considers them
+// walkable. This pass eliminates those phantom walls. Endpoint match
+// uses ~1cm tolerance to absorb LocalToWorld floating-point variance.
+//
 // Output:
-//   - returns total perimeter-edge count discovered across all rooms.
-//   - if outBuf is non-null and maxEdges > 0, the first min(total, maxEdges)
-//     edges are written into outBuf. The remaining (total − maxEdges) are
-//     silently dropped from the buffer but still counted, so the caller can
-//     detect overflow via `returned > maxEdges`.
-//   - pass `outBuf=nullptr, maxEdges=0` for a count-only probe.
+//   - if outBuf is non-null and maxEdges > 0: writes up to min(emitted,
+//     maxEdges) post-seam-filtered edges and returns the post-filter
+//     count. (Effectively the count of REAL walls in the area, bounded
+//     by buffer size.)
+//   - if outBuf is null OR maxEdges <= 0: returns the pre-seam-filter
+//     discovered count — useful for buffer-sizing telemetry. Note this
+//     differs from the buffer-mode return value; callers comparing the
+//     two should expect filtered ≤ discovered.
 //
 // Every read is SEH-guarded internally; faults at any layer (null
 // surface_mesh on a partially-loaded room, garbage face/vertex indices, etc.)

@@ -6,7 +6,9 @@
 #include <cstring>
 #include <limits>
 
+#include "engine_area.h"                // WallEdge, SegmentCrossesWalkmesh
 #include "log.h"
+#include "spatial_change_detector.h"    // GetCachedWalls
 
 namespace acc::guidance {
 
@@ -161,6 +163,46 @@ int FindNearestNode(const PathPointSnapshot* nodes, int nodeCount,
         }
     }
     return best;
+}
+
+// Diagnostic: find the closest (smallest-t along a→b) walkmesh edge that
+// blocks the segment a→b. Mirrors SegmentCrossesWalkmesh's geometry but
+// returns the offending edge instead of just the hit point. Returns -1
+// when no edge blocks (segment is clear).
+//
+// Used only for smoothing-pass logging — we want to know WHICH edge
+// rejected a candidate skip, so we can tell legitimate corridor walls
+// apart from spurious room-mesh seams. Linear cost (same as the
+// underlying test); fired at most O(N²) times per ComputePath where N
+// is the raw waypoint count (typically <10), so total cost negligible.
+int FindBlockingEdge(const acc::engine::WallEdge* walls, int wallCount,
+                     const Vector& a, const Vector& b, float& outT) {
+    if (!walls || wallCount <= 0) return -1;
+    float abx = b.x - a.x;
+    float aby = b.y - a.y;
+    if (abx * abx + aby * aby < 1e-10f) return -1;
+
+    int   bestIdx = -1;
+    float bestT   = 1e30f;
+    for (int i = 0; i < wallCount; ++i) {
+        const acc::engine::WallEdge& w = walls[i];
+        float cdx = w.b.x - w.a.x;
+        float cdy = w.b.y - w.a.y;
+        float denom = abx * cdy - aby * cdx;
+        if (denom > -1e-8f && denom < 1e-8f) continue;
+        float dx = w.a.x - a.x;
+        float dy = w.a.y - a.y;
+        float t  = (dx * cdy - dy * cdx) / denom;
+        float u  = (dx * aby - dy * abx) / denom;
+        if (t < 0.0f || t > 1.0f) continue;
+        if (u < 0.0f || u > 1.0f) continue;
+        if (t < bestT) {
+            bestT   = t;
+            bestIdx = i;
+        }
+    }
+    outT = bestT;
+    return bestIdx;
 }
 
 // Resolve node N's CSR-adjacency neighbour range. Lower bound is
@@ -336,8 +378,125 @@ bool ComputePath(void* area,
     outWaypoints.push_back(goal);
 
     acclog::Write("Pathfind", "ComputePath: solved len=%d expanded=%d "
-                  "startNode=%d goalNode=%d (waypoints incl. goal=%zu)",
+                  "startNode=%d goalNode=%d (raw waypoints incl. goal=%zu)",
                   len, expanded, startNode, goalNode, outWaypoints.size());
+
+    // String-pull pass with `start` (player position) as the implicit
+    // anchor. The raw A* output is `[nearestNodeToStart, ..., goal]`,
+    // which means the first beacon target is the closest *graph* node —
+    // which can sit behind / sideways of the player when the player is
+    // mid-corridor between two nav-graph nodes. Walking the path triples
+    // (anchor, B, C) and dropping B whenever anchor→C is walkmesh-clear
+    // eliminates that backwards-first-hop case (and any other redundant
+    // graph-node bounce along the route).
+    //
+    // Anchor is the player's current position, not outWaypoints[0]: that
+    // is exactly the asymmetry that motivates the pass. We do NOT prepend
+    // `start` to the output — the consumer already knows where the player
+    // is; the path is "where to go from here", not "current position +
+    // where to go".
+    //
+    // Wall cache pulled from spatial::change_detector (built once per
+    // area-load by Pillar 1's BuildAreaWallCache); if it isn't ready
+    // yet (rare — would mean smoothing requested before the
+    // change-detector ticked once after area enter), skip smoothing
+    // and return the raw path. Safe degradation: first beacon target
+    // is the previous behaviour.
+    const acc::engine::WallEdge* walls = nullptr;
+    int wallCount = 0;
+    bool haveWalls = acc::spatial::change_detector::GetCachedWalls(
+                         walls, wallCount)
+                     && walls != nullptr && wallCount > 0;
+    if (haveWalls && outWaypoints.size() >= 2) {
+        acclog::Write("Pathfind", "Smooth: begin anchor=(%.2f,%.2f) "
+                      "wallCount=%d raw=%zu",
+                      start.x, start.y, wallCount, outWaypoints.size());
+        std::vector<Vector> smoothed;
+        smoothed.reserve(outWaypoints.size());
+        Vector anchor = start;
+        size_t i = 0;
+        const size_t n = outWaypoints.size();
+        while (i < n) {
+            // Extend anchor → outWaypoints[j] as far as LOS allows.
+            // bestJ tracks the farthest still-clear index from anchor.
+            size_t bestJ = i;
+            for (size_t j = i; j < n; ++j) {
+                Vector hit{};
+                bool blocked = acc::engine::SegmentCrossesWalkmesh(
+                    walls, wallCount, anchor, outWaypoints[j], hit);
+                if (blocked) {
+                    // Diagnostic: log the specific edge that rejected this
+                    // skip. We want to spot spurious room-mesh seams (edges
+                    // sitting at the middle of an open corridor) vs.
+                    // legitimate walls.
+                    float blockT = 0.0f;
+                    int   eIdx   = FindBlockingEdge(walls, wallCount,
+                                                    anchor,
+                                                    outWaypoints[j],
+                                                    blockT);
+                    if (eIdx >= 0) {
+                        const acc::engine::WallEdge& e = walls[eIdx];
+                        acclog::Write("Pathfind",
+                            "Smooth: BLOCK anchor=(%.2f,%.2f) -> wp[%zu]"
+                            "=(%.2f,%.2f) at t=%.3f hit~(%.2f,%.2f) "
+                            "edge#%d a=(%.2f,%.2f) b=(%.2f,%.2f) "
+                            "room=%d mat=%d",
+                            anchor.x, anchor.y, j,
+                            outWaypoints[j].x, outWaypoints[j].y,
+                            blockT, hit.x, hit.y,
+                            eIdx, e.a.x, e.a.y, e.b.x, e.b.y,
+                            e.room_id, e.material_id);
+                    } else {
+                        acclog::Write("Pathfind",
+                            "Smooth: BLOCK anchor=(%.2f,%.2f) -> wp[%zu]"
+                            "=(%.2f,%.2f) hit~(%.2f,%.2f) (no edge "
+                            "resolved — mismatch with primary test?)",
+                            anchor.x, anchor.y, j,
+                            outWaypoints[j].x, outWaypoints[j].y,
+                            hit.x, hit.y);
+                    }
+                    break;
+                }
+                acclog::Write("Pathfind",
+                    "Smooth: CLEAR anchor=(%.2f,%.2f) -> wp[%zu]"
+                    "=(%.2f,%.2f)",
+                    anchor.x, anchor.y, j,
+                    outWaypoints[j].x, outWaypoints[j].y);
+                bestJ = j;
+            }
+            if (bestJ == i) {
+                // Even outWaypoints[i] is blocked from anchor — keep it
+                // and advance. This shouldn't normally happen because A*
+                // already routed through walkable graph nodes; if it does,
+                // our wall-cache geometry disagrees with the engine's nav
+                // graph for that segment, and we'd rather keep the engine-
+                // approved node than drop it on a possibly-wrong test.
+                acclog::Write("Pathfind",
+                    "Smooth: KEEP wp[%zu]=(%.2f,%.2f) (first-step blocked)",
+                    i, outWaypoints[i].x, outWaypoints[i].y);
+                smoothed.push_back(outWaypoints[i]);
+                anchor = outWaypoints[i];
+                ++i;
+            } else {
+                acclog::Write("Pathfind",
+                    "Smooth: ADVANCE to wp[%zu]=(%.2f,%.2f) "
+                    "(skipped %zu intermediate)",
+                    bestJ, outWaypoints[bestJ].x, outWaypoints[bestJ].y,
+                    bestJ - i);
+                smoothed.push_back(outWaypoints[bestJ]);
+                anchor = outWaypoints[bestJ];
+                i = bestJ + 1;
+            }
+        }
+        acclog::Write("Pathfind", "ComputePath: smoothed %zu -> %zu waypoints",
+                      outWaypoints.size(), smoothed.size());
+        outWaypoints = std::move(smoothed);
+    } else if (!haveWalls) {
+        acclog::Write("Pathfind", "ComputePath: wall cache unavailable "
+                      "(walls=%p count=%d) — skipping smoothing",
+                      walls, wallCount);
+    }
+
     return true;
 }
 

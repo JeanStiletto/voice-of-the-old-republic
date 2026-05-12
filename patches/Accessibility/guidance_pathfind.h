@@ -49,12 +49,28 @@ namespace acc::guidance {
 // Compute the shortest walkmesh-respecting path from `start` to `goal`
 // over `area`'s static nav graph. On success, `outWaypoints` is populated
 // with the sequence of world-space positions the user should walk
-// through, in order — the first entry is the nav-graph node nearest to
-// `start`, the last is the original `goal` (appended as the terminal
-// anchor so the consumer doesn't have to special-case the last segment).
-// The user's current position is NOT prepended; callers needing the
-// "from where I'm standing to first waypoint" hop should compute it
-// themselves (cheap; one Vector subtract).
+// through, in order. The last entry is always the original `goal`
+// (appended as the terminal anchor so the consumer doesn't have to
+// special-case the last segment). The user's current position is NOT
+// prepended.
+//
+// First-entry semantics: the raw A* output starts with the nav-graph
+// node nearest `start`, which can sit behind / sideways of the player
+// when they're mid-corridor between two graph nodes (first beacon
+// played "8m behind me"). After A* we run a string-pulling pass that
+// uses `start` as the implicit pre-path anchor: triples (anchor, B, C)
+// where anchor→C is walkmesh-clear collapse to (anchor, C), dropping
+// any backwards-first-hop and any redundant graph-node bounces along
+// the route. So in practice the first entry is the first turn-point
+// the user actually needs to hear about — typically a doorway, junction,
+// or corner, not the nearest graph node.
+//
+// Smoothing uses the wall cache from `spatial::change_detector::
+// GetCachedWalls` (Pillar 1). If the cache isn't ready yet (rare — only
+// before the change-detector has ticked once after area enter), the
+// raw A* output is returned unsmoothed; degraded behaviour matches the
+// pre-smoothing version, never wrong, just less useful for that one
+// call.
 //
 // Returns:
 //   true  — non-empty waypoint sequence written to outWaypoints (degenerate

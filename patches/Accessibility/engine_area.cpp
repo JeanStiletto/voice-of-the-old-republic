@@ -6,6 +6,7 @@
 
 #include "engine_player.h"  // GetPlayerArea, kAddrAppManagerPtr
 #include "engine_reads.h"   // ExtractTextOrStrRef, ReadCExoString
+#include "log.h"            // seam-filter telemetry
 #include "strings.h"        // door state suffix lookup (DoorOpen/DoorLocked)
 
 namespace acc::engine {
@@ -677,7 +678,99 @@ int BuildAreaWallCache(void* area, WallEdge* outBuf, int maxEdges) {
                                             outBuf, maxEdges, total);
         total += contributed;
     }
-    return total;
+
+    // Count-only probe — no buffer to filter. Return pre-filter total so
+    // callers can detect "would have overflowed the buffer" telemetry.
+    if (!outBuf || maxEdges <= 0) return total;
+
+    // Seam filtering. KOTOR's walkmesh joins rooms via portals / AABB
+    // structures, NOT via per-triangle adjacency. When room A and room B
+    // share a walkable boundary, both rooms' meshes mark their side of
+    // the shared edge with adjacency=-1, so the per-room scan above
+    // emits the same world edge twice — once from each room — and both
+    // copies look like perimeter walls. The engine treats those edges
+    // as walkable through the portal mechanism; we have to too, or
+    // Pillar 1 narrates phantom walls, Pillar 2 collision blocks the
+    // virtual cursor on them, and Pillar 3 path-smoothing refuses to
+    // skip nav nodes through them (the case that motivated this fix —
+    // confirmed via Pathfind smoothing log 2026-05-12, Endar Spire
+    // edge #342 emitted from room 9 blocking diagonals that the engine
+    // itself routes nav-graph connections through).
+    //
+    // Detection: pair every emitted edge with every other one in a
+    // different room. If endpoints match within a small epsilon (either
+    // direction), mark both as seams. Then compact the buffer in-place,
+    // dropping seam-marked entries.
+    //
+    // Cost: O(N²) for N ≤ maxEdges. Observed N ≈ 500 → 125k cheap
+    // comparisons; runs once per area-load. Negligible.
+    int written = (total < maxEdges) ? total : maxEdges;
+
+    // Endpoint match tolerance. LocalToWorld involves matrix math, so a
+    // pair of "identical" edges from two different rooms may not be
+    // bit-equal — allow ~1cm of slack per coordinate. Squared so we can
+    // compare against squared distance and avoid a sqrt.
+    constexpr float kSeamEpsSq = 1e-4f;  // ~1cm² in world units
+    auto coincident = [&](const Vector& p, const Vector& q) {
+        float dx = p.x - q.x, dy = p.y - q.y, dz = p.z - q.z;
+        return (dx * dx + dy * dy + dz * dz) < kSeamEpsSq;
+    };
+
+    // Seam-flag scratch. Sized for the largest plausible per-area edge
+    // count we've observed (K1 areas top out around 500). Static so we
+    // don't burden the stack at the BuildAreaWallCache scope; single-
+    // threaded patch ⇒ no reentrancy concern.
+    constexpr int kMaxSeamFlags = 8192;
+    static bool s_isSeam[kMaxSeamFlags];
+    int flagN = (written < kMaxSeamFlags) ? written : kMaxSeamFlags;
+    for (int i = 0; i < flagN; ++i) s_isSeam[i] = false;
+
+    int seamPairs = 0;
+    for (int i = 0; i < flagN; ++i) {
+        for (int j = i + 1; j < flagN; ++j) {
+            if (outBuf[i].room_id == outBuf[j].room_id) continue;
+            bool match =
+                (coincident(outBuf[i].a, outBuf[j].a) &&
+                 coincident(outBuf[i].b, outBuf[j].b)) ||
+                (coincident(outBuf[i].a, outBuf[j].b) &&
+                 coincident(outBuf[i].b, outBuf[j].a));
+            if (match) {
+                s_isSeam[i] = true;
+                s_isSeam[j] = true;
+                ++seamPairs;
+                // Continue scanning — at 3+ room corners (rare but
+                // possible), one edge may match multiple counterparts;
+                // we want every copy of the shared boundary marked.
+            }
+        }
+    }
+
+    int kept = 0;
+    for (int i = 0; i < flagN; ++i) {
+        if (s_isSeam[i]) continue;
+        if (kept != i) outBuf[kept] = outBuf[i];
+        ++kept;
+    }
+    // Tail beyond kMaxSeamFlags (only possible if maxEdges > kMaxSeamFlags
+    // AND the area has that many edges) — unfilterable, append unchanged.
+    // Pathological; we log if it ever happens.
+    if (written > flagN) {
+        int tail = written - flagN;
+        for (int i = 0; i < tail; ++i) {
+            outBuf[kept + i] = outBuf[flagN + i];
+        }
+        kept += tail;
+        acclog::Write("AreaWalls",
+            "seam filter exceeded flag buffer (written=%d flagN=%d) — "
+            "%d trailing edges unfiltered",
+            written, flagN, tail);
+    }
+
+    acclog::Write("AreaWalls",
+        "seam filter: emitted=%d -> kept=%d (dropped %d via %d seam pairs)",
+        written, kept, written - kept, seamPairs);
+
+    return kept;
 }
 
 bool SegmentCrossesWalkmesh(const WallEdge* walls,

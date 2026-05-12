@@ -612,13 +612,18 @@ void OnAreaChange(void* area) {
     g_t2_initialised        = false;
     g_t1_wall_last_fired_at = 0;
 
+    // Telemetry: g_wall_count is post-seam-filter (real walls); the
+    // overflow check uses the pre-filter discovered count vs buffer size,
+    // because edges dropped during the scan never reach the seam filter.
     if (overflow) {
-        acclog::Write("ChangeDetector", "area change — walls cached=%d/%d (OVERFLOW; "
-            "increase kMaxWallEdges) areaPtr=%p",
+        acclog::Write("ChangeDetector", "area change — walls cached=%d "
+            "(discovered=%d, OVERFLOW pre-seam-filter; increase "
+            "kMaxWallEdges) areaPtr=%p",
             g_wall_count, totalDiscovered, area);
     } else {
-        acclog::Write("ChangeDetector", "area change — walls cached=%d areaPtr=%p",
-            g_wall_count, area);
+        acclog::Write("ChangeDetector", "area change — walls cached=%d "
+            "(seam-filtered from discovered=%d) areaPtr=%p",
+            g_wall_count, totalDiscovered, area);
     }
 }
 
