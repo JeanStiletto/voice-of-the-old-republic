@@ -178,6 +178,13 @@ struct CursorState {
     DWORD       pending_ambient_started_ms   = 0;
     AmbientKind last_spoken_ambient_kind     = AmbientKind::None;
     int         last_spoken_ambient_room_idx = -1;
+    // Text-based dedup overlay: when adjacent rooms produce identical
+    // labels ("Kreuzung, Nord, Ost" in three Taris rooms with
+    // different signatures), the (kind, sig) comparator alone treats
+    // them as distinct and re-announces on every crossing. Storing
+    // the last-spoken text and comparing case-sensitively collapses
+    // those into one logical region — same text, no re-announce.
+    char        last_spoken_ambient_text[128] = {0};
 
     // TerrainShape de-dupe + speak buffer: the classified description is
     // built at probe time (when we arm the hover-pause), cached on the
@@ -513,6 +520,7 @@ void ResetSessionState() {
     g_state.pending_ambient_started_ms    = 0;
     g_state.last_spoken_ambient_kind      = AmbientKind::None;
     g_state.last_spoken_ambient_room_idx  = -1;
+    g_state.last_spoken_ambient_text[0]   = '\0';
     g_state.pending_shape_text[0]         = '\0';
     g_state.pending_shape_signature       = 0;
 }
@@ -920,6 +928,7 @@ void Tick() {
         g_state.pending_ambient_started_ms    = 0;
         g_state.last_spoken_ambient_kind      = AmbientKind::None;
         g_state.last_spoken_ambient_room_idx  = -1;
+        g_state.last_spoken_ambient_text[0]   = '\0';
         g_state.pending_shape_text[0]         = '\0';
         g_state.pending_shape_signature       = 0;
         acclog::Write("MapCursor",
@@ -1188,6 +1197,7 @@ void Tick() {
                 // as an "intervening event" that re-arms ambient).
                 g_state.last_spoken_ambient_kind     = AmbientKind::None;
                 g_state.last_spoken_ambient_room_idx = -1;
+                g_state.last_spoken_ambient_text[0]  = '\0';
             }
         } else {
             g_state.pending_note_waypoint   = hit;
@@ -1273,9 +1283,55 @@ void Tick() {
             classifyRoomIdx = -1;
         }
 
+        // Resolve the text we'd speak for this ambient, eagerly. Used
+        // both for the text-based dedup overlay (so adjacent rooms
+        // with identical labels collapse to one announce) and as the
+        // backing text for the speak path (so we don't have to re-
+        // resolve it later). For TerrainShape: shapeTextLocal already
+        // built. For Landmark / RoomName / Unexplored: look up here.
+        char currentAmbientText[128] = {0};
+        switch (currentKind) {
+            case AmbientKind::Unexplored: {
+                const char* t = acc::strings::Get(
+                    acc::strings::Id::MapCursorUnexplored);
+                if (t) std::snprintf(currentAmbientText,
+                                     sizeof(currentAmbientText), "%s", t);
+                break;
+            }
+            case AmbientKind::Landmark: {
+                const char* lm = acc::transitions::GetLandmarkForRoom(
+                    currentRoomIdx);
+                if (lm) std::snprintf(currentAmbientText,
+                                      sizeof(currentAmbientText), "%s", lm);
+                break;
+            }
+            case AmbientKind::RoomName: {
+                void* a = acc::engine::GetCurrentArea();
+                if (a) acc::engine::GetRoomDisplayName(
+                    a, currentRoomIdx,
+                    currentAmbientText, sizeof(currentAmbientText));
+                break;
+            }
+            case AmbientKind::TerrainShape:
+                std::snprintf(currentAmbientText,
+                              sizeof(currentAmbientText), "%s",
+                              shapeTextLocal);
+                break;
+            case AmbientKind::None:
+                break;
+        }
+
+        // Dedup overlay: text-equality OR (kind, sig) equality.
+        // The text path collapses adjacent rooms whose cache labels
+        // happen to be identical (multiple "Kreuzung, Nord, Ost"
+        // rooms in Taris South Apartments). The sig path stays as a
+        // belt-and-braces match for the existing flow.
         bool sameAsLastSpoken =
             currentKind == g_state.last_spoken_ambient_kind &&
-            classifyRoomIdx == g_state.last_spoken_ambient_room_idx;
+            (classifyRoomIdx == g_state.last_spoken_ambient_room_idx ||
+             (currentAmbientText[0] != '\0' &&
+              strcmp(currentAmbientText,
+                     g_state.last_spoken_ambient_text) == 0));
         // sameAsPending uses *kind-only* match for TerrainShape. Strict
         // (kind+signature) match prevented re-announce after a Nebel/
         // waypoint: as the cursor sweeps a curved corridor the quantised
@@ -1305,6 +1361,7 @@ void Tick() {
             g_state.pending_ambient_started_ms   = 0;
             g_state.last_spoken_ambient_kind     = AmbientKind::None;
             g_state.last_spoken_ambient_room_idx = -1;
+            g_state.last_spoken_ambient_text[0]  = '\0';
             g_state.pending_shape_text[0]        = '\0';
             g_state.pending_shape_signature      = 0;
         } else if (sameAsLastSpoken) {
@@ -1392,6 +1449,9 @@ void Tick() {
                 }
                 g_state.last_spoken_ambient_kind     = currentKind;
                 g_state.last_spoken_ambient_room_idx = classifyRoomIdx;
+                std::snprintf(g_state.last_spoken_ambient_text,
+                              sizeof(g_state.last_spoken_ambient_text),
+                              "%s", currentAmbientText);
                 g_state.pending_ambient_kind         = AmbientKind::None;
                 g_state.pending_ambient_room_idx     = -1;
                 g_state.pending_ambient_started_ms   = 0;
