@@ -352,23 +352,47 @@ void SpeakUrgent(const char* text) {
     if (!g_available || !text || !*text) return;
 
     if (TryResolvePrismSapi() && g_prismSapi) {
-        // SAPI runs in a separate audio path that NVDA's input handlers
-        // cannot cancel. interrupt=true so each new urgent message
-        // replaces the previous (no queue pile-up while panning).
+        // interrupt=true: each new urgent utterance cancels the prior
+        // one's audio. With the map cursor sweeping across rooms
+        // rapidly, this means the user hears fragments of intermediate
+        // announces and the final state's announce in full when motion
+        // stops. The earlier rate-limit gate (dropped utterances if
+        // <900 ms since prior dispatch) is removed deliberately — it
+        // hid announces from Prism entirely, so the cancel-and-replace
+        // behaviour never had a chance to express itself. Per user
+        // preference 2026-05-12: "I like interrupting more than
+        // cueing, having stale information is bad".
+        //
+        // rc != 0 is logged but never produces speech via the NVDA
+        // fallback (would re-introduce the double-speak the user hit
+        // earlier). The next SpeakUrgent call will retry naturally.
         PrismError rc = pPrism_backend_speak(g_prismSapi, text, /*interrupt=*/true);
         if (rc == 0) {
             acclog::Trace("Tolk.spoke", "[SAPI] %s", text);
-            return;
+        } else {
+            // Do NOT fall back to Tolk_Output here. prism_backend_speak
+            // dispatches to SAPI asynchronously — by the time it returns
+            // a non-zero rc, SAPI may already be mid-utterance. Calling
+            // Tolk_Output additionally would route the same string to
+            // NVDA, producing the double-speak ("SAPI voice + NVDA
+            // voice both saying Korridor...") observed in
+            // patch-20260512-152803.log. NVDA fallback is only useful
+            // when Prism never initialised in the first place — that
+            // path is exercised below (return suppressed only when
+            // Prism resolved). Drop the utterance; the next announce
+            // will get a fresh dispatch.
+            acclog::Trace("Tolk",
+                          "SpeakUrgent: prism_backend_speak rc=%d; "
+                          "dropping utterance (Prism-only mode, no NVDA fallback)",
+                          rc);
         }
-        acclog::Trace("Tolk",
-                      "SpeakUrgent: prism_backend_speak rc=%d; "
-                      "falling back to Tolk_Output for this utterance",
-                      rc);
+        return;
     }
 
-    // Fallback path — NVDA route. Subject to typed-character cancel, but
-    // at least the announcement attempts to dispatch. Same path as
-    // Speak(const char*).
+    // Fallback path — NVDA route, ONLY when Prism never resolved
+    // (missing prism.dll, init failed at load time). Subject to typed-
+    // character cancel, but at least the announcement attempts to
+    // dispatch. Same path as Speak(const char*).
     int needed = MultiByteToWideChar(CP_ACP, 0, text, -1, nullptr, 0);
     if (needed <= 0) return;
     wchar_t stack_buf[256];

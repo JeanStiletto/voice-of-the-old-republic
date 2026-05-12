@@ -193,6 +193,34 @@ struct CursorState {
 
 CursorState g_state;
 
+// Per-room shape cache. Replaces the per-tick walkmesh probe with a
+// one-time classification at map activation: each room in the current
+// area is sampled at its representative point (middle-face centroid in
+// world space) and classified once. The cursor then looks up shape by
+// room index — same room, same shape, always, no matter where in the
+// room the cursor sits. Trade-off vs. per-tick:
+//   - Loses sub-room granularity: a layout-room that contains both a
+//     corridor section and a junction collapses to one shape (whichever
+//     the centroid sample resolved to).
+//   - Gains stability: the user gets a deterministic label per room
+//     instead of a different one for every cursor pixel. They explicitly
+//     asked for "not position-dependent — calculate once on map open".
+//   - Gains performance: zero raycasts in the hot path. Per-area cost
+//     is one classification per room at activation (cheap).
+// Cache invalidates when the area pointer changes (entering a new
+// scene). Cleared on DLL load by zero-initialisation.
+struct RoomShapeCache {
+    void* area_owner = nullptr;   // CSWSArea* this cache was built for
+    bool  built      = false;
+    int   room_count = 0;
+    static constexpr int kMaxRooms = 64;
+    char   text[kMaxRooms][128] = {};
+    int    sig[kMaxRooms] = {};
+    bool   present[kMaxRooms] = {};  // false = no shape (e.g. unexplored room at build time)
+    Vector rep[kMaxRooms] = {};      // world-space centroid stored so cache misses can snap to nearest cached room
+};
+RoomShapeCache g_room_cache;
+
 // Foreground-window gate. Same pattern as cycle_input::PollWin32 — only
 // consume keys while KOTOR has focus so alt-tabbing doesn't steal
 // movement from other apps.
@@ -623,7 +651,14 @@ bool ClassifyTerrainShape(const acc::engine::WallEdge* walls, int wallCount,
         return false;
     }
 
-    // Dead end — three of four directions short, one long.
+    // Dead end — exactly three directions short (≤ 2 m), one open.
+    // Previously also required longLen ≥ 5 m, which leaked single-
+    // direction "Kreuzung" announces for 3 m alcoves
+    // (patch-20260512-164059.log sig=328198 "Kreuzung, Ost"). Drop that
+    // requirement: if 3 of 4 sides are walled in ≤ 2 m, semantically
+    // it's a dead-end regardless of how far the one open direction
+    // continues. The open distance becomes part of the dedup signature
+    // so 3 m vs. 12 m dead-ends still differentiate.
     int shortCount = 0;
     int longIdx = -1;     // 0=N 1=E 2=S 3=W
     float longLen = 0.0f;
@@ -632,7 +667,7 @@ bool ClassifyTerrainShape(const acc::engine::WallEdge* walls, int wallCount,
         if (arr[i] <= 2.0f) ++shortCount;
         if (arr[i] > longLen) { longLen = arr[i]; longIdx = i; }
     }
-    if (shortCount == 3 && longLen >= 5.0f && longIdx >= 0) {
+    if (shortCount == 3 && longIdx >= 0 && longLen > 2.0f) {
         Id dirIds[4] = { Id::DirNorth, Id::DirEast,
                          Id::DirSouth, Id::DirWest };
         const char* dir = acc::strings::Get(dirIds[longIdx]);
@@ -645,7 +680,84 @@ bool ClassifyTerrainShape(const acc::engine::WallEdge* walls, int wallCount,
         return false;
     }
 
-    // Catch-all — junction / complex geometry.
+    // Junction / complex geometry — list the open directions instead
+    // of just saying "Kreuzung", so the user knows which way each
+    // branch leads.
+    //
+    // Threshold history: started at 3.0 m to exclude wall-hugging
+    // micro-openings, but the user encountered rooms (e.g. room 4 in
+    // patch-20260512-160753.log with axes 1×2 m — likely a doorway
+    // chamber) where every direction is < 3 m and the announce
+    // collapsed to a bare uninformative "Kreuzung". Now at 2.0 m,
+    // which catches almost all real walk-throughs.
+    //
+    // Fallback when even 2.0 m isn't met by any direction: pick the
+    // two widest directions and list them anyway. "Kreuzung mit
+    // Öffnungen nach Norden, Westen" with a 1 m N and 1.5 m W beats
+    // "Kreuzung" silence — the user already inferred junction from
+    // the kind, the directions are the actionable part.
+    constexpr float kOpeningThresholdM = 2.0f;
+    Id dirIds[4] = { Id::DirNorth, Id::DirEast, Id::DirSouth, Id::DirWest };
+
+    auto appendDir = [&](char* dirList, size_t bufSize, size_t& dirLen,
+                         int& sigDirMask, int i) {
+        const char* dir = acc::strings::Get(dirIds[i]);
+        if (!dir || !dir[0]) return;
+        if (dirLen > 0 && dirLen + 2 < bufSize) {
+            dirList[dirLen++] = ',';
+            dirList[dirLen++] = ' ';
+            dirList[dirLen]   = '\0';
+        }
+        int n = std::snprintf(dirList + dirLen,
+                              bufSize - dirLen, "%s", dir);
+        if (n > 0) dirLen += static_cast<size_t>(n);
+        sigDirMask |= (1 << i);
+    };
+
+    char dirList[96] = {0};
+    size_t dirLen = 0;
+    int sigDirMask = 0;
+    for (int i = 0; i < 4; ++i) {
+        if (arr[i] < kOpeningThresholdM) continue;
+        appendDir(dirList, sizeof(dirList), dirLen, sigDirMask, i);
+    }
+
+    // No direction met the threshold — pick the two widest as a
+    // honest fallback. Sort indices descending by distance.
+    if (sigDirMask == 0) {
+        int order[4] = {0, 1, 2, 3};
+        for (int i = 0; i < 4; ++i) {
+            for (int j = i + 1; j < 4; ++j) {
+                if (arr[order[j]] > arr[order[i]]) {
+                    int tmp = order[i]; order[i] = order[j]; order[j] = tmp;
+                }
+            }
+        }
+        // List the top 2 only if they're non-trivial (≥ 0.5 m — even
+        // a closet has SOME extent, and below 0.5 m we're really just
+        // measuring numerical noise inside a wall).
+        int listed = 0;
+        for (int k = 0; k < 4 && listed < 2; ++k) {
+            if (arr[order[k]] < 0.5f) break;
+            appendDir(dirList, sizeof(dirList), dirLen, sigDirMask,
+                      order[k]);
+            ++listed;
+        }
+    }
+
+    if (sigDirMask != 0) {
+        const char* fmt = acc::strings::Get(Id::FmtMapCursorJunctionDirs);
+        if (fmt && fmt[0]) {
+            std::snprintf(outBuf, bufSize, fmt, dirList);
+            outSig = pack(6, sigDirMask,
+                          QuantiseMetres(axisNS + axisEW));
+            return true;
+        }
+    }
+    // Final fallback — bare "Junction". With the top-2 fallback above
+    // this should be rare in practice (only when ALL four directions
+    // are < 0.5 m, which essentially means "inside a wall"). Keep
+    // honest rather than silent.
     const char* s = acc::strings::Get(Id::MapCursorJunction);
     if (s && s[0]) {
         std::snprintf(outBuf, bufSize, "%s", s);
@@ -655,6 +767,94 @@ bool ClassifyTerrainShape(const acc::engine::WallEdge* walls, int wallCount,
         return true;
     }
     return false;
+}
+
+// Build (or rebuild) the per-room shape cache for `area`. Walks every
+// CSWSRoom in the area, derives a representative point inside it via
+// engine::GetRoomRepresentativeWorld, and classifies the room's shape
+// once using the cached wall buffer. Stored by room index for O(1)
+// lookup in Tick. Rooms whose centroid isn't yet explored are recorded
+// as `present=false` — when the cursor pans into them later we still
+// fall through to the per-tick probe rather than re-running the build
+// (the user already revealed the cell, the cache might just predate
+// that reveal). Skipping unexplored rooms also keeps the cache build
+// spoiler-correct against future fog reveals.
+void BuildRoomShapeCache(void* area, void* areaMap) {
+    g_room_cache.built = false;
+    g_room_cache.room_count = 0;
+    for (int i = 0; i < RoomShapeCache::kMaxRooms; ++i) {
+        g_room_cache.text[i][0] = '\0';
+        g_room_cache.sig[i]     = 0;
+        g_room_cache.present[i] = false;
+    }
+    g_room_cache.area_owner = area;
+    if (!area || !areaMap) return;
+
+    const acc::engine::WallEdge* walls = nullptr;
+    int wallCount = 0;
+    if (!acc::spatial::change_detector::GetCachedWalls(walls, wallCount) ||
+        !walls || wallCount <= 0) {
+        acclog::Write("MapCursor",
+                      "BuildRoomShapeCache: wall cache not ready — "
+                      "cache empty for this activation; per-tick probe "
+                      "fallback remains in place");
+        return;
+    }
+
+    int roomCount = 0;
+    __try {
+        // kAreaRoomCountOffset is at file scope in engine_area.h (between
+        // two acc::engine namespace blocks) — reference unqualified.
+        roomCount = static_cast<int>(*reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(area) +
+            kAreaRoomCountOffset));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        roomCount = 0;
+    }
+    if (roomCount > RoomShapeCache::kMaxRooms) {
+        acclog::Write("MapCursor",
+                      "BuildRoomShapeCache: area reports %d rooms — "
+                      "truncating to cache capacity %d",
+                      roomCount, RoomShapeCache::kMaxRooms);
+        roomCount = RoomShapeCache::kMaxRooms;
+    }
+    g_room_cache.room_count = roomCount;
+
+    // Classify EVERY room, regardless of current fog-of-war state.
+    // Fog-of-war gating happens at lookup-time in Tick (the cache is
+    // only consulted when cursorExplored is true), so building shapes
+    // for unexplored rooms doesn't leak — but skipping them at build
+    // time DOES break the cache: the first revisit to the map after
+    // walking through a previously-unexplored room would fall through
+    // to the per-tick probe instead of using the cache (which is what
+    // happened in patch-20260512-155249.log: area had 17 rooms,
+    // populated=0 because every representative centroid landed in
+    // fog at build time). The build is cheap (one classification per
+    // room) — just do them all.
+    int populated = 0;
+    for (int r = 0; r < roomCount; ++r) {
+        Vector rep;
+        if (!acc::engine::GetRoomRepresentativeWorld(area, r, rep)) continue;
+        char text[128] = {0};
+        int  sig = 0;
+        if (ClassifyTerrainShape(walls, wallCount, rep,
+                                 text, sizeof(text), sig)) {
+            std::snprintf(g_room_cache.text[r],
+                          sizeof(g_room_cache.text[r]),
+                          "%s", text);
+            g_room_cache.sig[r] = sig;
+            g_room_cache.present[r] = true;
+            g_room_cache.rep[r] = rep;
+            ++populated;
+            acclog::Write("MapCursor",
+                          "room %d shape=\"%s\" sig=%d rep=(%.2f,%.2f,%.2f)",
+                          r, text, sig, rep.x, rep.y, rep.z);
+        }
+    }
+    g_room_cache.built = true;
+    acclog::Write("MapCursor",
+                  "BuildRoomShapeCache: built area=%p rooms=%d populated=%d",
+                  area, roomCount, populated);
 }
 
 // Read CSWSWaypoint.Tag for diagnostic logging. CExoString at
@@ -731,8 +931,8 @@ void Tick() {
         // player gets from the green banner ("Taris - Südliche
         // Apartments"); blind players need it announced or they lose the
         // "which map am I looking at" anchor.
+        void* area = acc::engine::GetCurrentArea();
         if (!g_state.announced_area_name) {
-            void* area = acc::engine::GetCurrentArea();
             if (area) {
                 char nameBuf[160] = {0};
                 if (acc::engine::GetAreaDisplayName(area, nameBuf,
@@ -743,6 +943,17 @@ void Tick() {
                 }
             }
             g_state.announced_area_name = true;
+        }
+
+        // Build the per-room shape cache once per area. If the area is
+        // the same as last build, keep the existing cache (cheap when
+        // the user re-opens the map repeatedly in the same scene). If
+        // the cache wasn't built last time (wall cache wasn't ready
+        // yet, build was skipped), try again — the cache is the user's
+        // primary stability mechanism for shape descriptions.
+        if (area && (area != g_room_cache.area_owner ||
+                     !g_room_cache.built)) {
+            BuildRoomShapeCache(area, areaMap);
         }
     }
 
@@ -837,28 +1048,69 @@ void Tick() {
                       scannedCount, hit);
     }
 
-    // Probe the terrain shape once per tick, regardless of which tier
-    // (waypoint / landmark / room / none) ultimately wins. The result
-    // is appended to the primary announce as a "...and the surrounding
-    // shape" tail — per user feedback the landmark and the shape are
-    // both useful at the same time, the landmark just goes first.
-    // Spoiler-safe: only probe when the cursor's cell is explored;
-    // fog cells leave haveShape=false and the tail vanishes.
+    // Resolve the terrain shape via the per-room cache built at map
+    // activation. The room cache trades per-pixel granularity for
+    // stability — the user explicitly asked for "calculate once on map
+    // open, not position-dependent". Look up by the cursor's current
+    // room index; if the room wasn't classified at build time (fog at
+    // build, then explored later, or the room sits outside cache
+    // capacity), fall through to a live per-tick probe so the user
+    // still hears something for newly-revealed rooms.
     bool cursorExplored = IsWorldPointExplored(areaMap, g_state.world);
     char shapeTextLocal[128] = {0};
     int  shapeSigLocal = 0;
     bool haveShape = false;
     if (cursorExplored) {
-        const acc::engine::WallEdge* walls = nullptr;
-        int wallCount = 0;
-        if (acc::spatial::change_detector::GetCachedWalls(
-                walls, wallCount) &&
-            walls && wallCount > 0) {
-            haveShape = ClassifyTerrainShape(walls, wallCount,
-                                             g_state.world,
-                                             shapeTextLocal,
-                                             sizeof(shapeTextLocal),
-                                             shapeSigLocal);
+        int cursorRoomIdx = -1;
+        void* areaForRoom = acc::engine::GetCurrentArea();
+        if (areaForRoom) {
+            acc::engine::GetRoomAtIndexed(areaForRoom, g_state.world,
+                                          cursorRoomIdx);
+        }
+        bool cacheUsable = g_room_cache.built &&
+                           g_room_cache.area_owner == areaForRoom;
+        if (cacheUsable &&
+            cursorRoomIdx >= 0 &&
+            cursorRoomIdx < RoomShapeCache::kMaxRooms &&
+            g_room_cache.present[cursorRoomIdx]) {
+            // Direct cache hit — cursor is inside a cached room.
+            std::snprintf(shapeTextLocal, sizeof(shapeTextLocal),
+                          "%s", g_room_cache.text[cursorRoomIdx]);
+            shapeSigLocal = g_room_cache.sig[cursorRoomIdx];
+            haveShape = true;
+        } else if (cacheUsable) {
+            // Cache miss — either cursorRoomIdx == -1 (cursor on a
+            // portal seam between rooms), or the cursor's room failed
+            // to populate (rooms 6 and 16 in patch-20260512-164059.log
+            // — likely null surface_mesh). The previous behaviour was a
+            // live per-tick probe at the cursor's world position, which
+            // produced new "Offene Fläche" / "Korridor 4m" / single-
+            // direction "Kreuzung" labels at each pixel and destroyed
+            // orientation — the user pan back-and-forth in a small
+            // area hit 6 different shapes for the same physical region.
+            //
+            // Instead: snap to the nearest cached room's representative
+            // point and reuse its already-cached label. Same room from
+            // any nearby cursor position; transitions between cached
+            // rooms still announce because the nearest changes.
+            float bestDist2 = 1e30f;
+            int bestRoom = -1;
+            for (int r = 0; r < g_room_cache.room_count; ++r) {
+                if (!g_room_cache.present[r]) continue;
+                float dx = g_room_cache.rep[r].x - g_state.world.x;
+                float dy = g_room_cache.rep[r].y - g_state.world.y;
+                float d2 = dx * dx + dy * dy;
+                if (d2 < bestDist2) {
+                    bestDist2 = d2;
+                    bestRoom = r;
+                }
+            }
+            if (bestRoom >= 0) {
+                std::snprintf(shapeTextLocal, sizeof(shapeTextLocal),
+                              "%s", g_room_cache.text[bestRoom]);
+                shapeSigLocal = g_room_cache.sig[bestRoom];
+                haveShape = true;
+            }
         }
     }
 

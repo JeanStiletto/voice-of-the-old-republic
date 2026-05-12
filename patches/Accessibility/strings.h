@@ -630,10 +630,11 @@ enum class Id : int {
     // room match. The 4-direction wall probe in map_ui_cursor classifies
     // local walkmesh extents and resolves to one of these.
     MapCursorOpenArea,
-    MapCursorJunction,
+    MapCursorJunction,        // bare "Junction" / "Kreuzung" — fallback only
     MapCursorOffPath,
     FmtMapCursorCorridor,     // "Corridor along %s axis, about %.0f m wide"
     FmtMapCursorDeadEnd,      // "Dead end opening %s"
+    FmtMapCursorJunctionDirs, // "Junction, openings %s" — comma-separated direction list
     AxisNorthSouth,
     AxisEastWest,
 

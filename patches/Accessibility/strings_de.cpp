@@ -96,13 +96,13 @@ const char* Get(Id id) {
         case Id::DoorOpen:             return "offen";
         case Id::DoorLocked:           return "verriegelt";
 
-        case Id::DirNorth:             return "Norden";
+        case Id::DirNorth:             return "Nord";
         case Id::DirNortheast:         return "Nord-Ost";
-        case Id::DirEast:              return "Osten";
+        case Id::DirEast:              return "Ost";
         case Id::DirSoutheast:         return "S\xFC" "d-Ost";                  // Süd-Ost
-        case Id::DirSouth:             return "S\xFC" "den";                    // Süden
+        case Id::DirSouth:             return "S\xFC" "d";                      // Süd
         case Id::DirSouthwest:         return "S\xFC" "d-West";                 // Süd-West
-        case Id::DirWest:              return "Westen";
+        case Id::DirWest:              return "West";
         case Id::DirNorthwest:         return "Nord-West";
 
         case Id::FmtCompassDegrees:    return "%d Grad";
@@ -237,11 +237,12 @@ const char* Get(Id id) {
         case Id::MapCursorWaypointPOI:       return "Punkt von Interesse";
         case Id::MapCursorOpenArea:          return "Offene Fl\xE4""che";   // Offene Fläche
         case Id::MapCursorJunction:          return "Kreuzung";
-        case Id::MapCursorOffPath:           return "Auf einer Wand";
-        case Id::FmtMapCursorCorridor:       return "Korridor entlang %s, etwa %.0f Meter breit";
-        case Id::FmtMapCursorDeadEnd:        return "Sackgasse, \xD6""ffnung nach %s";   // Öffnung
-        case Id::AxisNorthSouth:             return "Nord-S\xFC""d-Achse";   // Nord-Süd
-        case Id::AxisEastWest:               return "Ost-West-Achse";
+        case Id::MapCursorOffPath:           return "Wand";
+        case Id::FmtMapCursorCorridor:       return "Korridor %s, %.0f Meter";
+        case Id::FmtMapCursorDeadEnd:        return "Sackgasse, %s";
+        case Id::FmtMapCursorJunctionDirs:   return "Kreuzung, %s";
+        case Id::AxisNorthSouth:             return "Nord-S\xFC""d";   // Nord-Süd
+        case Id::AxisEastWest:               return "Ost-West";
 
         case Id::Count_:               return "";
     }

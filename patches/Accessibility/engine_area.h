@@ -150,6 +150,15 @@ void* GetRoomAt(void* area, const Vector& pos);
 // Returns the CSWSRoom* (or nullptr) just like GetRoomAt.
 void* GetRoomAtIndexed(void* area, const Vector& pos, int& outIndex);
 
+// Compute a "representative" point inside the room (used as input to
+// per-room walkmesh probes — terrain shape classification, etc.). The
+// returned point is the centroid of the middle face of the room's
+// walkmesh in world space (LocalToWorld already applied), which sits
+// firmly inside the walkable surface and far from boundary edges in
+// the common case. Returns false on null area, out-of-range roomIdx,
+// missing surface_mesh, or any read fault (SEH-guarded internally).
+bool GetRoomRepresentativeWorld(void* area, int roomIdx, Vector& outWorld);
+
 // Player-facing display name for an area. Reads CSWSArea.name
 // (CExoLocString at +0x150) — tries the inline string first, falls back
 // to a TLK lookup of the strref at +0x154; if both empty, falls back to
@@ -318,7 +327,7 @@ constexpr uintptr_t kAddrCClientExoAppGetGameObject = 0x005ED580;
 // project_ghidra_gog_steam_bytes_match the Steam+GoG layouts agree.
 constexpr size_t kAreaGameObjectsOffset      = 0x190;
 constexpr size_t kAreaGameObjectCountOffset  = 0x194;
-constexpr size_t kAreaRoomsOffset            = 0x230;  // inline CSWSRoom[]
+constexpr size_t kAreaRoomsOffset            = 0x230;  // CSWSRoom* (pointer to inline-stride buffer; deref before indexing)
 constexpr size_t kAreaNameLocOffset          = 0x150;  // CExoLocString name
 constexpr size_t kAreaTagOffset              = 0x158;  // CExoString tag (fallback)
 constexpr size_t kAreaRoomNamesOffset        = 0x25c;  // CExoString* room_names
