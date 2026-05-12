@@ -233,6 +233,8 @@ const char* Get(Id id) {
         case Id::MapPrevNote:                return "Vorheriger Hinweis";
         case Id::MapNextNote:                return "N\xE4""chster Hinweis";  // Nächster
 
+        case Id::MapCursorUnexplored:        return "Nebel des Krieges";
+
         case Id::Count_:               return "";
     }
     return "";

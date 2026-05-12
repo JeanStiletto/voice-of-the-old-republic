@@ -10,9 +10,24 @@
 // While the in-game area-map UI is open (CSWGuiInGameMap is foreground),
 // the player's bound movement keys (W/A/S/D-equivalents) no longer move
 // the character — they move a virtual cursor across the map's pixel
-// space. The cursor speaks the nearest explored map note when it
-// hover-pauses on one, the room name when it hover-pauses on empty map,
-// and "unexplored" when it sits over fog-of-war area.
+// space. After a 300 ms hover-pause the cursor speaks whatever sits
+// underneath, classified by priority:
+//
+//   1. An explored map-note waypoint (CSWSWaypoint with map_note_enabled
+//      != 0) under the cursor pin — speak its localized map_note text
+//      ("Brücke", "Mannschaftsquartier", "Cargo Hold", ...).
+//   2. Fog-of-war (CSWSAreaMap::IsWorldPointExplored returns false) —
+//      speak the localized "Unexplored" / "Nebel des Krieges" string.
+//      Spoiler-correct: never reveal the room/landmark name underneath.
+//   3. Explored layout-room with a cached Bioware landmark covering it
+//      — speak the landmark text (Tier 1, reuses transitions.cpp's
+//      per-area RebuildLandmarkCache).
+//   4. Explored layout-room whose CSWSArea.room_names[] entry is a
+//      mod-supplied human-readable string (passes IsResrefStyleRoomName
+//      false) — speak the room name (Tier 2; rare in vanilla, present
+//      in some mods).
+//   5. Otherwise silent — vanilla resref-style room ids never reach the
+//      voice channel.
 //
 // Distinct from the engine's built-in prev/next-note cycle (up_button /
 // down_button — engine HandleInputEvent 0x31 / 0x32 → CSWGuiMapHider::

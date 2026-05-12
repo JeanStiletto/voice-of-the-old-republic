@@ -73,4 +73,32 @@ void Tick();
 // dedup the user would hear "Lade: endar_spire" twice.
 void AnnouncePreLoadDestination(void* exoStringPtr);
 
+// Returns the cached Bioware-authored landmark label (e.g. "Bridge",
+// "Crew Quarters", localized to the active language) covering the given
+// layout-room, or nullptr if no landmark waypoint is registered for
+// that room. The cache is populated on each area-change by scanning the
+// area's CSWSWaypoint objects with `has_map_note != 0` AND
+// `map_note_enabled != 0` (engine fog-of-war filter), resolving each to
+// a layout-room via GetRoomAtIndexed.
+//
+// First-come wins on collision (multiple landmarks per room rare).
+// Returned pointer is stable until the next area-change rebuild.
+// Out-of-range or unmapped room indices return nullptr.
+//
+// Public so the map-cursor (and any future Pillar 2/3 consumer) can
+// reuse the same cache the in-world room-transition path builds.
+const char* GetLandmarkForRoom(int roomIdx);
+
+// Heuristic: vanilla KOTOR content stores `CSWSArea.room_names[]` as
+// the .lyt-room identifier (`m01aa_10`, `stunt_03_main`, `unk_m13ab`)
+// — pronounceable but meaningless. Returns true for those resref-style
+// tokens (starts with `m\d` / `Stunt`, OR contains an underscore, OR
+// is empty/null). Returns false for human-readable strings that mods
+// occasionally supply for their custom rooms ("Bridge", "MainHangar").
+//
+// Public so the map-cursor's ambient announce can reuse the same
+// filter the room-transition path uses — both want to surface mod-
+// supplied friendly names while hiding vanilla layout-id noise.
+bool IsResrefStyleRoomName(const char* name);
+
 }  // namespace acc::transitions

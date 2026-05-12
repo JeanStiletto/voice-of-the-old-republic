@@ -78,21 +78,9 @@ int  g_room_landmark_count = 0;
 //
 // The underscore rule is the catch-all: KOTOR room ids universally
 // contain `_`, while real English / German room names don't.
-bool IsResrefStyleRoomName(const char* name) {
-    if (!name || name[0] == '\0') return true;
-    if ((name[0] == 'm' || name[0] == 'M') && name[1] >= '0' && name[1] <= '9') {
-        return true;
-    }
-    if ((name[0] == 's' || name[0] == 'S') &&
-        (name[1] == 't') && (name[2] == 'u') &&
-        (name[3] == 'n') && (name[4] == 't')) {
-        return true;
-    }
-    for (const char* p = name; *p; ++p) {
-        if (*p == '_') return true;
-    }
-    return false;
-}
+//
+// Definition moved out of the anonymous namespace (below) so the
+// map-cursor can reuse the same filter for its ambient announce.
 
 void SpeakArea(void* area) {
     char nameBuf[128] = {0};
@@ -169,11 +157,8 @@ void RebuildLandmarkCache(void* area) {
         scanned, landmarks, placed, area);
 }
 
-const char* GetLandmarkForRoom(int roomIdx) {
-    if (roomIdx < 0 || roomIdx >= kMaxRoomsCache) return nullptr;
-    if (g_room_landmark[roomIdx][0] == '\0') return nullptr;
-    return g_room_landmark[roomIdx];
-}
+// Definition of GetLandmarkForRoom moved out of the anonymous
+// namespace (below) so the map-cursor can read the same cache.
 
 // Records a room change in the log without speaking. Audible per-room
 // announcement is intentionally suppressed: KOTOR's .lyt rooms partition
@@ -195,6 +180,28 @@ void RecordRoomChange(void* area, int roomIndex) {
 }
 
 }  // namespace
+
+bool IsResrefStyleRoomName(const char* name) {
+    if (!name || name[0] == '\0') return true;
+    if ((name[0] == 'm' || name[0] == 'M') && name[1] >= '0' && name[1] <= '9') {
+        return true;
+    }
+    if ((name[0] == 's' || name[0] == 'S') &&
+        (name[1] == 't') && (name[2] == 'u') &&
+        (name[3] == 'n') && (name[4] == 't')) {
+        return true;
+    }
+    for (const char* p = name; *p; ++p) {
+        if (*p == '_') return true;
+    }
+    return false;
+}
+
+const char* GetLandmarkForRoom(int roomIdx) {
+    if (roomIdx < 0 || roomIdx >= kMaxRoomsCache) return nullptr;
+    if (g_room_landmark[roomIdx][0] == '\0') return nullptr;
+    return g_room_landmark[roomIdx];
+}
 
 void Tick() {
     Vector pos = {};

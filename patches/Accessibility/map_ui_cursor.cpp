@@ -25,6 +25,7 @@
 #include "log.h"
 #include "strings.h"
 #include "tolk.h"
+#include "transitions.h"
 
 namespace acc::map_ui_cursor {
 
@@ -51,15 +52,26 @@ constexpr float kMaxDtSec = 0.1f;
 constexpr DWORD kHoverPauseMs = 300;
 
 // Radius (in map pixels) within which a map-note waypoint counts as
-// "under the cursor". Roughly half a 16-px map-pin icon — generous
-// enough that the user doesn't have to land pixel-perfect, tight
-// enough that hover-pause discrimination still works between adjacent
-// notes.
-constexpr int kHoverHitRadiusPx = 24;
+// "under the cursor". A 16-px map-pin icon plus generous slack —
+// landmarks on the in-game map are sparse enough that 36 px overlap
+// between adjacent pins is rare even on landmark-dense maps, and the
+// hover-pause debounce discriminates anyway (the closer-of-two scan in
+// FindNearestExploredMapNote always picks the nearest pin to the
+// cursor centre). Tested live: 24 px was hard to pinpoint without
+// sighted feedback; 36 px lets the cursor catch landmarks reliably.
+constexpr int kHoverHitRadiusPx = 36;
 
 // Walked-into-edge cue debounce. Sustained edge-hugging would otherwise
-// emit a NavCue::Wall every tick.
+// emit a cue every tick.
 constexpr DWORD kEdgeCueQuietMs = 250;
+
+// Volume scalar for the map-edge collision cue. kAccCueGain (4.0) was
+// inaudible in the paused map-UI sub-screen (verified in
+// patch-20260512-143327.log: 28 successive PlayCue3D_ok=1 fires with
+// zero perceived output). guidance_beacon ran into the same paused-
+// context attenuation and uses 8.0×; same level applied here for the
+// same reason — UI feedback has to win against pause-mode audio dampening.
+constexpr float kEdgeCueGain = 8.0f;
 
 // CSWSModule.area_map field offset (field89_0x218 in Lane's typed
 // struct — investigation §Q4 + engine decomp of MapHider::Draw which
@@ -113,6 +125,26 @@ using PFN_CServerExoApp_GetModule = void* (__thiscall*)(void* /*serverApp*/);
 using PFN_CSWSAreaMap_IsWorldPointExplored =
     bool (__thiscall*)(void* /*areaMap*/, Vector /*pos*/);
 
+// Ambient categories the cursor can sit on when it is NOT directly over
+// a discrete map-note waypoint. Mutually exclusive: cursor is either in
+// fog of war (Unexplored), or in an explored layout-room that has a
+// cached Bioware-authored landmark (Landmark — Tier 1), or in an
+// explored layout-room whose CSWSArea.room_names[] entry is a mod-
+// supplied human-readable label (RoomName — Tier 2, rare in vanilla),
+// or none of the above (None — silent).
+//
+// Vanilla resref-style room ids (`m02_03e`, `stunt_01_main`, ...) never
+// reach RoomName because IsResrefStyleRoomName filters them out — those
+// rooms classify as None and the cursor stays quiet over them, by
+// design. The cursor surface is "what's HERE" — silence over a chunk
+// the engine couldn't name is honest.
+enum class AmbientKind {
+    None,
+    Unexplored,
+    Landmark,
+    RoomName,
+};
+
 struct CursorState {
     bool   active                  = false;
     float  px                      = 220.0f;   // (kMapPixelMaxX / 2.0f)
@@ -120,10 +152,24 @@ struct CursorState {
     Vector world                   = {0, 0, 0};
     DWORD  last_tick_ms            = 0;
     DWORD  last_edge_cue_ms        = 0;
+
+    // Waypoint hover-pause (explicit map-note overlay — Tier 1
+    // landmark-as-game-object).
     void*  pending_note_waypoint   = nullptr;
     DWORD  pending_note_started_ms = 0;
     void*  last_spoken_waypoint    = nullptr;
-    bool   last_announced_unexplored = false;
+
+    // Ambient hover-pause (fog-of-war + layout-room labels). A single
+    // timer covers all three kinds so flipping between e.g. Landmark
+    // and RoomName doesn't double-debounce. last_spoken_* latches the
+    // most recent ambient announcement; the cursor stays silent while
+    // it sits inside the same ambient zone, and re-arms the moment a
+    // different kind/room is observed.
+    AmbientKind pending_ambient_kind         = AmbientKind::None;
+    int         pending_ambient_room_idx     = -1;
+    DWORD       pending_ambient_started_ms   = 0;
+    AmbientKind last_spoken_ambient_kind     = AmbientKind::None;
+    int         last_spoken_ambient_room_idx = -1;
 };
 
 CursorState g_state;
@@ -408,13 +454,27 @@ void SeedCursorAtPlayer(void* areaMap) {
 }
 
 void ResetSessionState() {
-    g_state.active                    = false;
-    g_state.last_tick_ms              = 0;
-    g_state.last_edge_cue_ms          = 0;
-    g_state.pending_note_waypoint     = nullptr;
-    g_state.pending_note_started_ms   = 0;
-    g_state.last_spoken_waypoint      = nullptr;
-    g_state.last_announced_unexplored = false;
+    g_state.active                        = false;
+    g_state.last_tick_ms                  = 0;
+    g_state.last_edge_cue_ms              = 0;
+    g_state.pending_note_waypoint         = nullptr;
+    g_state.pending_note_started_ms       = 0;
+    g_state.last_spoken_waypoint          = nullptr;
+    g_state.pending_ambient_kind          = AmbientKind::None;
+    g_state.pending_ambient_room_idx      = -1;
+    g_state.pending_ambient_started_ms    = 0;
+    g_state.last_spoken_ambient_kind      = AmbientKind::None;
+    g_state.last_spoken_ambient_room_idx  = -1;
+}
+
+const char* AmbientKindStr(AmbientKind k) {
+    switch (k) {
+        case AmbientKind::None:       return "none";
+        case AmbientKind::Unexplored: return "unexplored";
+        case AmbientKind::Landmark:   return "landmark";
+        case AmbientKind::RoomName:   return "room_name";
+    }
+    return "?";
 }
 
 bool KeyDown(int vk) {
@@ -454,12 +514,16 @@ void Tick() {
     if (!g_state.active) {
         SeedCursorAtPlayer(areaMap);
         PixelToWorld(areaMap, g_state.px, g_state.py, g_state.world.z, g_state.world);
-        g_state.active                  = true;
-        g_state.last_tick_ms            = now;
-        g_state.last_spoken_waypoint    = nullptr;
-        g_state.pending_note_waypoint   = nullptr;
-        g_state.pending_note_started_ms = 0;
-        g_state.last_announced_unexplored = false;
+        g_state.active                        = true;
+        g_state.last_tick_ms                  = now;
+        g_state.last_spoken_waypoint          = nullptr;
+        g_state.pending_note_waypoint         = nullptr;
+        g_state.pending_note_started_ms       = 0;
+        g_state.pending_ambient_kind          = AmbientKind::None;
+        g_state.pending_ambient_room_idx      = -1;
+        g_state.pending_ambient_started_ms    = 0;
+        g_state.last_spoken_ambient_kind      = AmbientKind::None;
+        g_state.last_spoken_ambient_room_idx  = -1;
         acclog::Write("MapCursor",
                       "activated — seed pixel=(%.1f,%.1f) world=(%.2f,%.2f,%.2f)",
                       g_state.px, g_state.py,
@@ -509,12 +573,36 @@ void Tick() {
 
     // Edge collision cue. Fires only when the user is actively pressing
     // into the map boundary — not on idle clamp.
+    //
+    // Cue choice: NavCue::Collision (gui_invdrop), not NavCue::Wall
+    // (as_nt_wtrdrip_09). Wall is a quiet 3D ambient water-drip designed
+    // to ride underneath gameplay audio at low gain; the map UI runs in
+    // a paused sub-screen where the engine attenuates 3D audio further,
+    // and the cue silently inaudibles. gui_invdrop is the GUI-path
+    // inventory-drop sound, designed to be heard during menu interaction
+    // — fits the "UI boundary, not a worldly wall" semantics.
+    //
+    // Source position: anchor at the player so PlayCue3D's
+    // (camera - character) shift produces listener-to-source = 0,
+    // sidestepping max_distance attenuation entirely.
     if ((clampedX || clampedY) && (vx != 0.0f || vy != 0.0f)) {
         if (g_state.last_edge_cue_ms == 0 ||
             now - g_state.last_edge_cue_ms > kEdgeCueQuietMs) {
-            acc::audio::PlayCue3D(
-                acc::audio::GetNavCueResref(acc::audio::NavCue::Wall),
-                g_state.world);
+            Vector cuePos;
+            if (!acc::engine::GetPlayerPosition(cuePos)) {
+                cuePos = g_state.world;  // best-effort fallback
+            }
+            const char* cueResref =
+                acc::audio::GetNavCueResref(acc::audio::NavCue::Collision);
+            bool ok = acc::audio::PlayCue3D(cueResref, cuePos,
+                                            kEdgeCueGain);
+            acclog::Write("MapCursor",
+                          "edge cue clampX=%d clampY=%d resref=%s "
+                          "cuePos=(%.2f,%.2f,%.2f) gain=%.1f "
+                          "PlayCue3D_ok=%d",
+                          (int)clampedX, (int)clampedY, cueResref,
+                          cuePos.x, cuePos.y, cuePos.z,
+                          kEdgeCueGain, (int)ok);
             g_state.last_edge_cue_ms = now;
         }
     }
@@ -534,8 +622,17 @@ void Tick() {
     }
 
     if (hit) {
-        // Reset unexplored-state announcement if we move onto a note.
-        g_state.last_announced_unexplored = false;
+        // Cursor sits directly on an explicit map-note waypoint. This
+        // overrides ambient announce (fog / room label) — the waypoint
+        // is the more specific information and the user is clearly
+        // pointing at it.
+        //
+        // Drop any in-flight ambient pending so the next time we leave
+        // this waypoint the ambient timer starts fresh, not stale.
+        g_state.pending_ambient_kind       = AmbientKind::None;
+        g_state.pending_ambient_room_idx   = -1;
+        g_state.pending_ambient_started_ms = 0;
+
         if (hit == g_state.last_spoken_waypoint) {
             // Already spoken — keep silence.
             g_state.pending_note_waypoint = nullptr;
@@ -557,28 +654,162 @@ void Tick() {
                 g_state.last_spoken_waypoint    = hit;
                 g_state.pending_note_waypoint   = nullptr;
                 g_state.pending_note_started_ms = 0;
+                // Crossing into a waypoint resets ambient latching — if
+                // the user then leaves back into the same fog/room they
+                // came from, the ambient re-announces (waypoint counts
+                // as an "intervening event" that re-arms ambient).
+                g_state.last_spoken_ambient_kind     = AmbientKind::None;
+                g_state.last_spoken_ambient_room_idx = -1;
             }
         } else {
             g_state.pending_note_waypoint   = hit;
             g_state.pending_note_started_ms = now;
         }
     } else {
-        // Cursor not over a map note. Drop any pending. If cursor sits
-        // on an unexplored point AND we haven't already announced that,
-        // wait the hover-pause and speak it once.
+        // Cursor not over a map note. Drop waypoint pending; classify
+        // current ambient and run the unified hover-pause.
         if (g_state.pending_note_waypoint != nullptr) {
             g_state.pending_note_waypoint   = nullptr;
             g_state.pending_note_started_ms = 0;
         }
         if (g_state.last_spoken_waypoint != nullptr && moved) {
-            // We left a note — clear the "already spoken" so re-entering
-            // the same note announces again.
+            // Left a note — re-arm so coming back to the same note
+            // announces again.
             g_state.last_spoken_waypoint = nullptr;
         }
-        // Unexplored-area cue. Held silent while user is moving — only
-        // fires when cursor settles for a beat over fog-of-war.
-        // Implementation deferred to a follow-up; the first cut focuses
-        // on note-hover speech to verify the basic geometry path.
+
+        // ---- Classify the current ambient state at the cursor.
+        //
+        // Order: fog-of-war wins outright (spoiler guard — never speak
+        // a room/landmark name for an unrevealed cell, even though the
+        // engine has both readily available). For explored cells, try
+        // Tier 1 landmark (Bioware-authored map-note label, localized,
+        // sparse), then Tier 2 mod-supplied friendly room name. Vanilla
+        // resref-style room ids fall through to None and stay silent.
+        AmbientKind currentKind    = AmbientKind::None;
+        int         currentRoomIdx = -1;
+
+        bool explored = IsWorldPointExplored(areaMap, g_state.world);
+        if (!explored) {
+            currentKind = AmbientKind::Unexplored;
+        } else {
+            void* area = acc::engine::GetCurrentArea();
+            int roomIdx = -1;
+            if (area) {
+                acc::engine::GetRoomAtIndexed(area, g_state.world, roomIdx);
+            }
+            if (roomIdx >= 0) {
+                currentRoomIdx = roomIdx;
+                const char* landmark =
+                    acc::transitions::GetLandmarkForRoom(roomIdx);
+                if (landmark) {
+                    currentKind = AmbientKind::Landmark;
+                } else if (area) {
+                    char roomBuf[128] = {0};
+                    if (acc::engine::GetRoomDisplayName(
+                            area, roomIdx, roomBuf, sizeof(roomBuf)) &&
+                        roomBuf[0] != '\0' &&
+                        !acc::transitions::IsResrefStyleRoomName(roomBuf)) {
+                        currentKind = AmbientKind::RoomName;
+                    }
+                }
+            }
+        }
+
+        // For Unexplored, room_idx is meaningless (fog spans the cell
+        // grid, not the layout-room partition) — collapse to -1 so the
+        // "same as last spoken" comparison treats all fog cells as one
+        // category. For Landmark / RoomName, room_idx is part of the
+        // identity (different rooms re-announce).
+        int classifyRoomIdx =
+            (currentKind == AmbientKind::Landmark ||
+             currentKind == AmbientKind::RoomName)
+            ? currentRoomIdx : -1;
+
+        bool sameAsLastSpoken =
+            currentKind == g_state.last_spoken_ambient_kind &&
+            classifyRoomIdx == g_state.last_spoken_ambient_room_idx;
+        bool sameAsPending =
+            currentKind == g_state.pending_ambient_kind &&
+            classifyRoomIdx == g_state.pending_ambient_room_idx;
+
+        if (currentKind == AmbientKind::None) {
+            // Nothing to say — clear pending. Also clear last_spoken so
+            // the next named ambient (fog, landmark, friendly room) gets
+            // re-armed. Vanilla KOTOR areas are mostly None territory
+            // (resref-style room ids dominate); without the last_spoken
+            // clear, leaving a fog cell into a None room and panning
+            // back to fog later would stay silent — the latch wins.
+            // The 300 ms hover-pause still suppresses chatter on micro-
+            // wiggles across the fog edge (cursor needs to dwell 300 ms
+            // in the new ambient before announcing).
+            g_state.pending_ambient_kind         = AmbientKind::None;
+            g_state.pending_ambient_room_idx     = -1;
+            g_state.pending_ambient_started_ms   = 0;
+            g_state.last_spoken_ambient_kind     = AmbientKind::None;
+            g_state.last_spoken_ambient_room_idx = -1;
+        } else if (sameAsLastSpoken) {
+            // Already announced this exact ambient zone; stay silent
+            // until something else interrupts (waypoint, different
+            // room, fog↔explored flip).
+            g_state.pending_ambient_kind       = AmbientKind::None;
+            g_state.pending_ambient_room_idx   = -1;
+            g_state.pending_ambient_started_ms = 0;
+        } else if (sameAsPending) {
+            if (g_state.pending_ambient_started_ms != 0 &&
+                now - g_state.pending_ambient_started_ms >= kHoverPauseMs) {
+                // Hover-pause elapsed — resolve the text to speak.
+                // RoomName re-reads GetRoomDisplayName at speak time so
+                // the buffer's lifetime is tick-local.
+                const char* text = nullptr;
+                char roomBuf[128] = {0};
+                switch (currentKind) {
+                    case AmbientKind::Unexplored:
+                        text = acc::strings::Get(
+                            acc::strings::Id::MapCursorUnexplored);
+                        break;
+                    case AmbientKind::Landmark:
+                        text = acc::transitions::GetLandmarkForRoom(
+                            currentRoomIdx);
+                        break;
+                    case AmbientKind::RoomName: {
+                        void* area = acc::engine::GetCurrentArea();
+                        if (area && acc::engine::GetRoomDisplayName(
+                                area, currentRoomIdx,
+                                roomBuf, sizeof(roomBuf)) &&
+                            roomBuf[0] != '\0') {
+                            text = roomBuf;
+                        }
+                        break;
+                    }
+                    case AmbientKind::None:
+                        break;
+                }
+                if (text && text[0] != '\0') {
+                    // Same Prism+SAPI urgent path the waypoint announce
+                    // uses — survives NVDA's typed-character cancel
+                    // while the user holds WASD.
+                    tolk::SpeakUrgent(text);
+                    acclog::Write("MapCursor",
+                                  "speak ambient kind=%s roomIdx=%d "
+                                  "text=\"%s\" cursor=(%.1f,%.1f)",
+                                  AmbientKindStr(currentKind),
+                                  currentRoomIdx, text,
+                                  g_state.px, g_state.py);
+                }
+                g_state.last_spoken_ambient_kind     = currentKind;
+                g_state.last_spoken_ambient_room_idx = classifyRoomIdx;
+                g_state.pending_ambient_kind         = AmbientKind::None;
+                g_state.pending_ambient_room_idx     = -1;
+                g_state.pending_ambient_started_ms   = 0;
+            }
+        } else {
+            // New ambient category (or new room within
+            // Landmark/RoomName) — arm the hover-pause.
+            g_state.pending_ambient_kind       = currentKind;
+            g_state.pending_ambient_room_idx   = classifyRoomIdx;
+            g_state.pending_ambient_started_ms = now;
+        }
     }
 }
 

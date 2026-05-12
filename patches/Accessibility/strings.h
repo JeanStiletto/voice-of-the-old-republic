@@ -612,6 +612,12 @@ enum class Id : int {
     MapPrevNote,
     MapNextNote,
 
+    // Spoken by the virtual map cursor when it hover-pauses on a cell
+    // the player hasn't yet revealed (CSWSAreaMap::IsWorldPointExplored
+    // returns false). Never speak the room/landmark name underneath in
+    // that case — fog-of-war must stay spoiler-correct.
+    MapCursorUnexplored,
+
     Count_,
 };
 

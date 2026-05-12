@@ -222,6 +222,8 @@ const char* Get(Id id) {
         case Id::MapPrevNote:                return "Previous map note";
         case Id::MapNextNote:                return "Next map note";
 
+        case Id::MapCursorUnexplored:        return "Unexplored";
+
         case Id::Count_:               return "";
     }
     return "";

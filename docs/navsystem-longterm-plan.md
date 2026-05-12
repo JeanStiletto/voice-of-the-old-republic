@@ -960,6 +960,7 @@ Sub-states (locked door, hostile NPC, opened container) handled by TTS modifiers
 - Pitch / timbre variants for sub-states
 - Continuous-mode wall pulse variant (alternative to change-driven, for users who prefer that pattern)
 - Per-material walking-surface footstep enhancement (already supplied by engine via `surfacemat.2da`; not new authoring needed)
+- **LOS-occluded cue attenuation.** Lower cue volume (or apply a low-pass) when a walkmesh wall sits between listener and source — communicates "this NPC is in another room" without adding a new cue kind. Trigger condition: only earns its keep if `awarenessRangeMeters` widens past ~8 m. At the current 5 m bubble in KotOR's geometry, "within 5 m Euclidean" and "in the same walkable region" overlap so heavily that occlusion would fire on a handful of edge cases and add complexity for very little benefit; the engine's distance falloff already makes the rare blocked-but-in-range cue quiet. Walkmesh data + clustered surface cache from §"Engine RE notes — wall / LOS surfaces" in `pillar1-wall-cue-tuning.md` is the natural geometry source if/when this lights up. Origin: comparison with DigimonNOAccess, which solves this via Steam Audio scene meshes + per-source raycast occlusion — overkill for our awareness range, worth revisiting if we widen Pillar 2 cues.
 
 ---
 

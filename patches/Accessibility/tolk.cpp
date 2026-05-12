@@ -44,6 +44,15 @@ typedef int PrismError;  // 0 == PRISM_OK
 constexpr uint8_t kPrismConfigVersion        = 2;
 constexpr uint64_t kPrismBackendIdSapi       = 0x1D6DF72422CEEE66ull;
 
+// SAPI speech rate for urgent-channel speech. Prism maps [0.0..1.0] to
+// SAPI's -10..+10 with 0.5 = SAPI default (midpoint-linear). 0.7 lands
+// at roughly SAPI +4 — distinctly faster than out-of-the-box SAPI so
+// urgent map-cursor cues don't drag during continuous WASD panning,
+// still well within intelligibility for the bundled Microsoft voices.
+// Tune live; if a future user-options surface lands, this becomes the
+// default backing it.
+constexpr float kPrismSapiUrgentRate = 0.7f;
+
 typedef PrismConfig    (__cdecl* PFN_prism_config_init)(void);
 typedef PrismContext*  (__cdecl* PFN_prism_init)(PrismConfig*);
 typedef void           (__cdecl* PFN_prism_shutdown)(PrismContext*);
@@ -52,6 +61,7 @@ typedef PrismBackend*  (__cdecl* PFN_prism_registry_acquire)(PrismContext*, Pris
 typedef PrismError     (__cdecl* PFN_prism_backend_initialize)(PrismBackend*);
 typedef PrismError     (__cdecl* PFN_prism_backend_speak)(PrismBackend*, const char*, bool);
 typedef PrismError     (__cdecl* PFN_prism_backend_stop)(PrismBackend*);
+typedef PrismError     (__cdecl* PFN_prism_backend_set_rate)(PrismBackend*, float);
 
 HMODULE g_lib       = nullptr;
 bool    g_initTried = false;
@@ -70,6 +80,7 @@ PFN_prism_registry_acquire   pPrism_registry_acquire   = nullptr;
 PFN_prism_backend_initialize pPrism_backend_initialize = nullptr;
 PFN_prism_backend_speak      pPrism_backend_speak      = nullptr;
 PFN_prism_backend_stop       pPrism_backend_stop       = nullptr;
+PFN_prism_backend_set_rate   pPrism_backend_set_rate   = nullptr;
 
 PFN_Tolk_Load                pTolk_Load                = nullptr;
 PFN_Tolk_Unload              pTolk_Unload              = nullptr;
@@ -272,6 +283,11 @@ bool TryResolvePrismSapi() {
         !resolveP(pPrism_backend_stop,       "prism_backend_stop")) {
         return false;
     }
+    // set_rate is optional — older Prism builds may lack the export, and
+    // backends without SUPPORTS_SET_RATE return an error at call time.
+    // We treat resolution failure as "leave SAPI at default rate" rather
+    // than failing the whole bring-up.
+    (void)resolveP(pPrism_backend_set_rate,  "prism_backend_set_rate");
 
     // prism_init wants a PrismConfig*. Initialise from prism_config_init
     // so we pick up the current version sentinel rather than guessing.
@@ -301,6 +317,26 @@ bool TryResolvePrismSapi() {
                       "SpeakUrgent: prism_backend_initialize(SAPI) failed rc=%d",
                       rc);
         return false;
+    }
+
+    // Bump the SAPI rate. Bare default (SAPI 0) sounds slow next to
+    // NVDA's user-tuned cadence; the rate set here is the one the user
+    // will hear for every urgent map-cursor cue. Failure is non-fatal —
+    // we just keep the default rate.
+    if (pPrism_backend_set_rate) {
+        PrismError rrc = pPrism_backend_set_rate(g_prismSapi,
+                                                 kPrismSapiUrgentRate);
+        if (rrc != 0) {
+            acclog::Write("Tolk",
+                          "SpeakUrgent: prism_backend_set_rate(%.2f) rc=%d "
+                          "(SAPI staying at default rate)",
+                          kPrismSapiUrgentRate, rrc);
+        } else {
+            acclog::Write("Tolk",
+                          "SpeakUrgent: SAPI rate set to %.2f "
+                          "(0.0=slowest, 0.5=default, 1.0=fastest)",
+                          kPrismSapiUrgentRate);
+        }
     }
 
     g_prismSapiReady = true;
