@@ -15,6 +15,9 @@
 #include "region_classifier.h"  // BuildCacheForArea + LookupRoomShape
 #include "strings.h"
 #include "tolk.h"
+#include "wall_topology.h"      // EXPERIMENTAL — parallel observer on this
+                                // branch; runs alongside the region cache
+                                // and logs its decomposition for tuning
 
 namespace acc::transitions {
 
@@ -516,6 +519,7 @@ void Tick() {
         g_lm_prox_pending_count    = 0;
         g_lm_prox_last_spoken_idx  = -1;
         acc::region::Reset();
+        acc::wall_topology::Reset();
         return;
     }
 
@@ -547,6 +551,11 @@ void Tick() {
         // leaves the cache empty when that's the case; we retry below
         // on every tick until it builds successfully.
         acc::region::BuildCacheForArea(area);
+        // EXPERIMENTAL parallel observer — build the wall-topology
+        // decomposition for the new area and dump its graph to the
+        // log. Not wired to any speech path yet; this branch is
+        // iterating the algorithm in isolation.
+        acc::wall_topology::BuildForArea(area);
         g_prev_area          = area;
         g_prev_room_idx      = -1;  // re-announce room on new area
         g_pending_room_idx   = -1;  // and reset stability tracker
