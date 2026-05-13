@@ -960,6 +960,325 @@ int BuildAreaWallCache(void* area, WallEdge* outBuf, int maxEdges) {
     return kept;
 }
 
+namespace {
+
+// Read one room's surface mesh into geometry pointers + counts. Returns
+// true on a complete read; false if any read faulted or any required
+// pointer is null. Caller may pass nullptr for `outMaterials` /
+// `outAdjacencies` when those aren't needed.
+bool ReadRoomMeshGeometry(void* surfaceMesh,
+                          Vector*&   outVertices,
+                          uint32_t&  outFaceCount,
+                          void*&     outFaceIndices,
+                          uint32_t*& outMaterials,
+                          int*&      outAdjacencies) {
+    outVertices    = nullptr;
+    outFaceCount   = 0;
+    outFaceIndices = nullptr;
+    outMaterials   = nullptr;
+    outAdjacencies = nullptr;
+    if (!surfaceMesh) return false;
+    auto* mesh = reinterpret_cast<unsigned char*>(surfaceMesh);
+    __try {
+        outVertices    = *reinterpret_cast<Vector**>(
+            mesh + kCollisionMeshVerticesOffset);
+        outFaceCount   = *reinterpret_cast<uint32_t*>(
+            mesh + kCollisionMeshFaceCountOffset);
+        outFaceIndices = *reinterpret_cast<void**>(
+            mesh + kCollisionMeshFacesOffset);
+        outMaterials   = *reinterpret_cast<uint32_t**>(
+            mesh + kCollisionMeshMaterialsOffset);
+        outAdjacencies = *reinterpret_cast<int**>(
+            mesh + kSurfaceMeshAdjacenciesOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return outVertices && outFaceIndices && outAdjacencies && outFaceCount > 0;
+}
+
+}  // namespace
+
+int BuildAreaFaceCache(void* area, WalkmeshFace* outBuf, int maxFaces) {
+    if (!area) return 0;
+
+    void*    rooms     = nullptr;
+    uint32_t roomCount = 0;
+    __try {
+        auto* base = reinterpret_cast<unsigned char*>(area);
+        rooms     = *reinterpret_cast<void**>(base + kAreaRoomsOffset);
+        roomCount = *reinterpret_cast<uint32_t*>(base + kAreaRoomCountOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+    if (!rooms || roomCount == 0) return 0;
+
+    auto* roomBase = reinterpret_cast<unsigned char*>(rooms);
+    auto fnLocalToWorld = reinterpret_cast<PFN_CollisionMeshLocalToWorld>(
+        kAddrCollisionMeshLocalToWorld);
+
+    // Per-room starting global index — needed so a room's local
+    // adjacency entry `face_id*3 + edge_id` can be converted to a
+    // global face index via room_face_offset[room_id] + face_id.
+    // Sized at the same bound as `kMaxSeamFlags` in BuildAreaWallCache;
+    // K1 areas don't approach this.
+    constexpr int kMaxRooms = 256;
+    int roomFaceOffset[kMaxRooms];
+    int roomLocalCount[kMaxRooms];
+    for (int i = 0; i < kMaxRooms; ++i) {
+        roomFaceOffset[i] = 0;
+        roomLocalCount[i] = 0;
+    }
+    int effectiveRoomCount = (static_cast<int>(roomCount) < kMaxRooms)
+                                 ? static_cast<int>(roomCount)
+                                 : kMaxRooms;
+
+    // First, accumulate per-room face counts so we can lay out global
+    // indices BEFORE we start writing faces.
+    int discovered = 0;
+    for (int r = 0; r < effectiveRoomCount; ++r) {
+        void* room = roomBase + static_cast<size_t>(r) * kRoomStride;
+        void* sm   = GetRoomSurfaceMesh(room);
+        if (!sm) continue;
+        Vector*   verts = nullptr;
+        uint32_t  fc    = 0;
+        void*     fi    = nullptr;
+        uint32_t* mats  = nullptr;
+        int*      adj   = nullptr;
+        if (!ReadRoomMeshGeometry(sm, verts, fc, fi, mats, adj)) continue;
+        roomFaceOffset[r] = discovered;
+        roomLocalCount[r] = static_cast<int>(fc);
+        discovered += static_cast<int>(fc);
+    }
+
+    // Count-only probe: don't write any output buffer or run the
+    // cross-room linker. Lets callers size their static cache.
+    if (!outBuf || maxFaces <= 0) return discovered;
+
+    if (discovered > maxFaces) {
+        acclog::Write("AreaFaces",
+            "face cache overflow: %d discovered > %d cap; truncating "
+            "(later rooms' faces dropped — adjacency graph will be "
+            "incomplete for those rooms)",
+            discovered, maxFaces);
+    }
+
+    // Second pass: emit faces with room-local adjacencies remapped to
+    // global indices. -1 stays -1 (boundary), to be patched by the
+    // cross-room linking step below.
+    int written = 0;
+    for (int r = 0; r < effectiveRoomCount && written < maxFaces; ++r) {
+        void* room = roomBase + static_cast<size_t>(r) * kRoomStride;
+        void* sm   = GetRoomSurfaceMesh(room);
+        if (!sm) continue;
+        Vector*   verts = nullptr;
+        uint32_t  fc    = 0;
+        void*     fi    = nullptr;
+        uint32_t* mats  = nullptr;
+        int*      adj   = nullptr;
+        if (!ReadRoomMeshGeometry(sm, verts, fc, fi, mats, adj)) continue;
+        auto* faces = reinterpret_cast<unsigned char*>(fi);
+
+        for (uint32_t f = 0; f < fc && written < maxFaces; ++f) {
+            uint32_t v[3]    = {0, 0, 0};
+            int      adj3[3] = {-1, -1, -1};
+            __try {
+                auto* face = reinterpret_cast<uint32_t*>(
+                    faces + static_cast<size_t>(f) * kWalkmeshFaceStride);
+                v[0] = face[0]; v[1] = face[1]; v[2] = face[2];
+                adj3[0] = adj[f * 3 + 0];
+                adj3[1] = adj[f * 3 + 1];
+                adj3[2] = adj[f * 3 + 2];
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                continue;
+            }
+            int materialId = -1;
+            __try {
+                materialId = static_cast<int>(mats[f]);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                materialId = -1;
+            }
+
+            Vector localV[3] = {{0,0,0}, {0,0,0}, {0,0,0}};
+            Vector worldV[3] = {{0,0,0}, {0,0,0}, {0,0,0}};
+            bool readVerts = true;
+            __try {
+                localV[0] = verts[v[0]];
+                localV[1] = verts[v[1]];
+                localV[2] = verts[v[2]];
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                readVerts = false;
+            }
+            if (!readVerts) continue;
+            for (int k = 0; k < 3; ++k) worldV[k] = localV[k];
+            __try {
+                fnLocalToWorld(sm, &worldV[0], &localV[0]);
+                fnLocalToWorld(sm, &worldV[1], &localV[1]);
+                fnLocalToWorld(sm, &worldV[2], &localV[2]);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                // best-effort: keep local copies
+                for (int k = 0; k < 3; ++k) worldV[k] = localV[k];
+            }
+
+            WalkmeshFace& wf = outBuf[written++];
+            wf.v[0] = worldV[0];
+            wf.v[1] = worldV[1];
+            wf.v[2] = worldV[2];
+            wf.room_id     = r;
+            wf.material_id = materialId;
+            for (int e = 0; e < 3; ++e) {
+                if (adj3[e] < 0) {
+                    wf.adj[e] = -1;
+                } else {
+                    int neighbourLocal = adj3[e] / 3;
+                    if (neighbourLocal < 0 ||
+                        neighbourLocal >= roomLocalCount[r]) {
+                        wf.adj[e] = -1;  // bogus local index
+                    } else {
+                        wf.adj[e] = roomFaceOffset[r] + neighbourLocal;
+                    }
+                }
+            }
+        }
+    }
+
+    // Cross-room (+ same-room non-manifold) edge linking. For every
+    // face with an adj=-1 edge, look for another face whose adj=-1
+    // edge endpoints match in 3D within ~1cm; link both sides with
+    // each other's global index.
+    //
+    // Endpoint match tolerance matches the BuildAreaWallCache seam
+    // filter (1cm²). To keep cost bounded, we first index the
+    // boundary edges by their midpoint into a uniform grid; the
+    // pairwise scan then only compares edges in the same cell.
+    constexpr float kSeamEpsSq = 1e-4f;
+    auto coincident3D = [&](const Vector& p, const Vector& q) {
+        float dx = p.x - q.x, dy = p.y - q.y, dz = p.z - q.z;
+        return (dx * dx + dy * dy + dz * dz) < kSeamEpsSq;
+    };
+
+    // Boundary-edge list. We materialise it once (linear pass over
+    // every face × every edge) instead of nested scanning over all
+    // face×edge pairs — keeps the per-pair compares cheap.
+    struct BoundaryEdge {
+        int face;
+        int edge;
+        Vector a;
+        Vector b;
+        int    cell;   // spatial-grid cell index
+    };
+    // Plenty of headroom: K1's wall counts top out around 500.
+    constexpr int kMaxBoundary = 8192;
+    static BoundaryEdge s_boundary[kMaxBoundary];
+    int boundaryCount = 0;
+    for (int f = 0; f < written && boundaryCount < kMaxBoundary; ++f) {
+        for (int e = 0; e < 3 && boundaryCount < kMaxBoundary; ++e) {
+            if (outBuf[f].adj[e] != -1) continue;
+            BoundaryEdge& be = s_boundary[boundaryCount++];
+            be.face = f;
+            be.edge = e;
+            be.a    = outBuf[f].v[e];
+            be.b    = outBuf[f].v[(e + 1) % 3];
+            be.cell = 0;  // filled below once bounds are known
+        }
+    }
+
+    // Uniform-grid index over the boundary-edge midpoints. Cell size
+    // matches the engine's typical edge length (~1m); coarse enough
+    // that K1 areas fit in a few hundred cells.
+    if (boundaryCount > 0) {
+        float minX =  1e30f, minY =  1e30f;
+        float maxX = -1e30f, maxY = -1e30f;
+        for (int i = 0; i < boundaryCount; ++i) {
+            float mx = 0.5f * (s_boundary[i].a.x + s_boundary[i].b.x);
+            float my = 0.5f * (s_boundary[i].a.y + s_boundary[i].b.y);
+            if (mx < minX) minX = mx;
+            if (mx > maxX) maxX = mx;
+            if (my < minY) minY = my;
+            if (my > maxY) maxY = my;
+        }
+        constexpr float kCellSize = 2.0f;
+        int gridW = static_cast<int>((maxX - minX) / kCellSize) + 1;
+        int gridH = static_cast<int>((maxY - minY) / kCellSize) + 1;
+        if (gridW < 1) gridW = 1;
+        if (gridH < 1) gridH = 1;
+        if (gridW > 256) gridW = 256;
+        if (gridH > 256) gridH = 256;
+
+        for (int i = 0; i < boundaryCount; ++i) {
+            float mx = 0.5f * (s_boundary[i].a.x + s_boundary[i].b.x);
+            float my = 0.5f * (s_boundary[i].a.y + s_boundary[i].b.y);
+            int gx = static_cast<int>((mx - minX) / kCellSize);
+            int gy = static_cast<int>((my - minY) / kCellSize);
+            if (gx < 0) gx = 0;
+            if (gy < 0) gy = 0;
+            if (gx >= gridW) gx = gridW - 1;
+            if (gy >= gridH) gy = gridH - 1;
+            s_boundary[i].cell = gy * gridW + gx;
+        }
+
+        // Sort by cell so each cell's edges are contiguous. Tiny N
+        // (a few thousand), simple insertion sort keeps the code
+        // small; runs once per area-load.
+        for (int i = 1; i < boundaryCount; ++i) {
+            BoundaryEdge tmp = s_boundary[i];
+            int j = i - 1;
+            while (j >= 0 && s_boundary[j].cell > tmp.cell) {
+                s_boundary[j + 1] = s_boundary[j];
+                --j;
+            }
+            s_boundary[j + 1] = tmp;
+        }
+
+        // Pair-scan within cells. For each cell, every edge pair gets
+        // a 3D-coincidence test; on match, link the two faces' adj
+        // entries across the boundary.
+        int linkedPairs = 0;
+        int i = 0;
+        while (i < boundaryCount) {
+            int cellEnd = i + 1;
+            while (cellEnd < boundaryCount &&
+                   s_boundary[cellEnd].cell == s_boundary[i].cell) {
+                ++cellEnd;
+            }
+            for (int a = i; a < cellEnd; ++a) {
+                if (s_boundary[a].face < 0) continue;
+                for (int b = a + 1; b < cellEnd; ++b) {
+                    if (s_boundary[b].face < 0) continue;
+                    const BoundaryEdge& A = s_boundary[a];
+                    const BoundaryEdge& B = s_boundary[b];
+                    bool match =
+                        (coincident3D(A.a, B.a) && coincident3D(A.b, B.b)) ||
+                        (coincident3D(A.a, B.b) && coincident3D(A.b, B.a));
+                    if (!match) continue;
+                    // Link both sides. Skip if either side has been
+                    // claimed already (rare three-way overlap at a
+                    // pillar corner) — first-come wins.
+                    if (outBuf[A.face].adj[A.edge] != -1) continue;
+                    if (outBuf[B.face].adj[B.edge] != -1) continue;
+                    outBuf[A.face].adj[A.edge] = B.face;
+                    outBuf[B.face].adj[B.edge] = A.face;
+                    ++linkedPairs;
+                    s_boundary[a].face = -1;  // consume so a later
+                    s_boundary[b].face = -1;  // pair can't re-link.
+                    break;
+                }
+            }
+            i = cellEnd;
+        }
+        acclog::Write("AreaFaces",
+            "face cache: rooms=%d emitted=%d boundary_edges=%d "
+            "cross_seam_links=%d grid=%dx%d areaPtr=%p",
+            effectiveRoomCount, written, boundaryCount, linkedPairs,
+            gridW, gridH, area);
+    } else {
+        acclog::Write("AreaFaces",
+            "face cache: rooms=%d emitted=%d boundary_edges=0 areaPtr=%p",
+            effectiveRoomCount, written, area);
+    }
+
+    return written;
+}
+
 bool SegmentCrossesWalkmesh(const WallEdge* walls,
                             int wallCount,
                             const Vector& a,

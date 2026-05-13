@@ -2,19 +2,20 @@
 //
 // EXPERIMENTAL — alternative-direction-calculation-system branch.
 //
-// Phase 1 (segment input) now consumes Pillar 1's already-clustered
-// wall surfaces from `acc::spatial::change_detector` instead of
-// re-running its own collinear-merge pass over the raw edge list.
-// Pillar 1's union-find clustering is ~2× more aggressive on the same
-// input (462 edges → 121 surfaces vs walltopo's prior 237 segments),
-// and getting longer / cleaner segments out of Phase 1 is a strict
-// precondition for the parallel-pair sweep in Phase 4 to find real
-// corridors rather than tiny corner fragments.
+// Phase 1 (segment input) consumes Pillar 1's already-clustered wall
+// surfaces from `acc::spatial::change_detector` instead of re-running
+// its own merge pass over the raw edge list.
 //
-// Phases 4-5 (corridor detection, junction clustering) and the lookup
-// path still use the old "two parallel walls forming a 1.5-6m gap"
-// model; that's the next thing to redesign (toward face-graph cell
-// decomposition — see chat 2026-05-13).
+// Phase 2 (this revision, 2026-05-13) replaces the parallel-pair
+// corridor sweep with walkmesh-face cell decomposition. The previous
+// "two walls forming a 1.5-6m gap" model fell back to "Offene Fläche"
+// in 100% of the WallTopo.Compare logs because real K1 corridors are
+// wider than 6m and the player walks through the open middle, not
+// between the wall fragments at the perimeter. The face-graph model
+// uses the same triangulated walkmesh the engine itself uses for
+// movement — connected walkable faces form perceptual cells whose
+// shape (long+narrow vs small+square vs large+square) is the
+// classification signal.
 
 #include "wall_topology.h"
 
@@ -23,6 +24,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "engine_area.h"
 #include "log.h"
 #include "spatial_change_detector.h"
 #include "strings.h"
@@ -33,167 +35,112 @@ namespace {
 
 // ---------------------------------------------------------------------
 // Tunable parameters. Pull these out into a settings struct once the
-// algorithm stabilises; for now constants make it easy to A/B with the
-// log output.
+// algorithm stabilises.
 // ---------------------------------------------------------------------
 
-// Drop wall surfaces shorter than this — noise / single-tile artefacts.
-// Pillar 1's clustering already collapses chains of collinear edges
-// into one surface, so a "short" surface here is genuinely a short
-// physical wall (a 50cm jut, not a few unmerged dicing artefacts).
-// Threshold matches the value used by walltopo's prior in-house merge
-// pass; refine after we see a few more areas with the cleaner
-// upstream segments.
-constexpr float kMinSegmentLengthM = 0.5f;
+// Material classifier. K1's surfacemat.2da uses small integer rows;
+// row 7 is the "non-walkable" / wall-fill row in most areas we've
+// inspected. Treat that as a hard boundary; everything else is
+// walkable until in-game testing shows otherwise.
+//
+// TODO: replace this with a surfacemat.2da lookup once we wire one
+// up. For now the magic constant is documented loudly enough that the
+// next reader can refine it.
+constexpr int kNonWalkableMaterial = 7;
 
-// Corridor parallel-pair detection (Phase 2). Two segments form a
-// corridor candidate if they are roughly parallel, separated by a
-// distance within the corridor-width band, and their projections
-// onto the parallel direction overlap by at least min-overlap.
-constexpr float kCorridorParallelTolDeg = 10.0f;
-constexpr float kCorridorMinWidthM      = 1.5f;
-constexpr float kCorridorMaxWidthM      = 6.0f;
-constexpr float kCorridorMinOverlapM    = 2.0f;
+bool MaterialIsWalkable(int materialId) {
+    if (materialId < 0) return false;
+    return materialId != kNonWalkableMaterial;
+}
+
+// Cell-classification thresholds. Tuned for KOTOR's metric-scale
+// authoring (walkmesh triangles are typically 0.5-3m on a side, rooms
+// run 5-20m, major corridors 15-40m).
+//
+// `kCorridorAspectRatio`: a cell whose long axis is at least this
+// many times its short axis is corridor-shaped.
+// `kCorridorMaxShortAxisM`: even high-aspect cells stop being
+// "corridor" once they're wider than this — that's a long room, not a
+// corridor.
+// `kSmallCellMaxAreaSqM`: cells below this become "Raum" (small
+// enclosed room) regardless of aspect ratio. Above it, the cell is
+// "Offene Fläche" or corridor depending on aspect.
+constexpr float kCorridorAspectRatio    = 2.5f;
+constexpr float kCorridorMaxShortAxisM  = 6.0f;
+constexpr float kSmallCellMaxAreaSqM    = 80.0f;
+
+// Capacity for the cached face graph + cells. K1 areas have
+// hand-authored walkmeshes; vanilla content tops out well below these.
+constexpr int kMaxFaces = 8192;
+constexpr int kMaxCells = 256;
+
+// Spatial-index parameters for point-in-cell lookup. The grid covers
+// the area's XY bounding box; each cell holds face indices that
+// overlap that grid cell. 2m cell size matches typical face dimensions.
+constexpr float kGridCellSize = 2.0f;
+constexpr int   kGridWidth    = 96;
+constexpr int   kGridHeight   = 96;
+constexpr int   kMaxFacesPerGridCell = 32;
 
 // ---------------------------------------------------------------------
-// Internal data types.
+// Cached state for the current area.
 // ---------------------------------------------------------------------
 
-// A merged wall — a chain of one or more collinear edges represented
-// as two endpoints (a, b) and a cached direction unit-vector. We keep
-// it as straight segments rather than polylines for the first pass;
-// curved corridors will need polyline support, but the K1 geometry
-// we've inspected so far is overwhelmingly axis-aligned.
-struct WallSegment {
-    Vector a;
-    Vector b;
-    float  dirx;     // unit direction (b - a) / length
-    float  diry;
-    float  length;
+struct AreaGraph {
+    void*                       area_owner   = nullptr;
+    bool                        built        = false;
+    int                         face_count   = 0;
+    acc::engine::WalkmeshFace   faces[kMaxFaces];
+    int                         face_cell_id[kMaxFaces];
+
+    int                         cell_count = 0;
+    struct Cell {
+        // Geometry summary.
+        float min_x, min_y, max_x, max_y;
+        float centroid_x, centroid_y;
+        // PCA axis (primary orientation of the cell).
+        float axis_x, axis_y;
+        float long_extent;
+        float short_extent;
+        float area_sq_m;
+        // Connectivity.
+        int   face_count;
+        int   exit_count;     // edges where neighbour is in a different cell
+        // Pre-rendered localised label + a small signature for dedup.
+        char  label[128];
+        int   sig;
+    };
+    Cell cells[kMaxCells];
+
+    // Spatial index for point-in-cell lookup. `face_lists[cell]` is a
+    // run of face indices stored densely; `cell_offset[cell]` /
+    // `cell_count_in[cell]` index into it.
+    float origin_x, origin_y;
+    int   cell_offset[kGridWidth * kGridHeight];
+    int   cell_count_in[kGridWidth * kGridHeight];
+    int   face_lists[kGridWidth * kGridHeight * kMaxFacesPerGridCell];
 };
 
-constexpr int kMaxSegments = 1024;
-
-// A detected corridor formed by two parallel segments. Stored as the
-// indices of the two segments plus the corridor's derived geometry:
-// axis direction, perpendicular width, and overlap range (start / end
-// parameters along the axis). Label is pre-rendered at build time
-// from the geometry + localized strings.
-struct CorridorCell {
-    int   seg_a;            // index into Graph.segments
-    int   seg_b;
-    float axis_x, axis_y;   // unit direction along corridor length
-    float perp_x, perp_y;   // unit direction perpendicular (a → b side)
-    float width;            // perpendicular distance between walls
-    float midline_x, midline_y;   // axis-zero point on corridor midline
-    float overlap_start;    // start parameter along axis (from midline)
-    float overlap_end;      // end parameter
-    float length;           // overlap_end - overlap_start
-    char  label[128];       // Phase 4: pre-rendered "Korridor {axis}, {w}m"
-    int   sig;              // signature for dedup
-};
-
-// A junction in the floor-plan graph — a cluster of corridor endpoints
-// that lie within kJunctionClusterRadiusM of each other. Degree =
-// number of corridors meeting at this cluster. Label is pre-rendered:
-//   degree 1 → "Sackgasse, {direction}"
-//   degree ≥ 3 → "Kreuzung, {directions}"
-// Degree 2 (pass-through / corner) is intentionally label-less; the
-// adjacent corridor labels carry the information.
-struct JunctionNode {
-    float pos_x, pos_y;
-    int   corridor_count;
-    static constexpr int kMaxCorridorsPerNode = 8;
-    int   corridor_idx[kMaxCorridorsPerNode];
-    // Direction from this node toward each connected corridor's centre
-    // (used for label rendering — "Kreuzung, Nord, Ost, ...").
-    float corridor_dir_x[kMaxCorridorsPerNode];
-    float corridor_dir_y[kMaxCorridorsPerNode];
-    char  label[128];       // empty when degree==2
-    int   sig;
-};
-
-constexpr int kMaxCorridors  = 256;
-constexpr int kMaxJunctions  = 256;
-
-// Junction-clustering radius. Corridor endpoints within this distance
-// fold into one node. 3m matches the typical corridor-width / corner-
-// blob size in K1 geometry.
-constexpr float kJunctionClusterRadiusM = 3.0f;
-
-// Spatial lookup tolerances.
-constexpr float kJunctionLookupRadiusM = 3.0f;
-
-struct Graph {
-    void*        area_owner     = nullptr;
-    bool         built          = false;
-    int          segment_count  = 0;
-    WallSegment  segments[kMaxSegments];
-    int          corridor_count = 0;
-    CorridorCell corridors[kMaxCorridors];
-    int          junction_count = 0;
-    JunctionNode junctions[kMaxJunctions];
-};
-
-Graph g_graph;
+AreaGraph g_graph;
 
 // ---------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------
 
-// Dot product of two unit vectors, clamped to [-1, 1] to keep acos
-// numerically safe under float drift.
-float UnitDot(float ax, float ay, float bx, float by) {
-    float d = ax * bx + ay * by;
-    if (d >  1.0f) d =  1.0f;
-    if (d < -1.0f) d = -1.0f;
-    return d;
+float TriangleArea2D(const Vector& a, const Vector& b, const Vector& c) {
+    float ux = b.x - a.x, uy = b.y - a.y;
+    float vx = c.x - a.x, vy = c.y - a.y;
+    return 0.5f * std::fabs(ux * vy - uy * vx);
 }
 
-// Returns true if two unit vectors are within `tolDeg` degrees of
-// being collinear (either same direction OR opposite). Wall segments
-// don't have a natural "forward" — we care about line direction, not
-// ray direction.
-bool NearCollinear(float ax, float ay, float bx, float by, float tolDeg) {
-    float d = UnitDot(ax, ay, bx, by);
-    // |d| close to 1 means parallel-or-antiparallel.
-    float cosTol = std::cos(tolDeg * 0.017453292519943295f);
-    return std::fabs(d) >= cosTol;
+void TriangleCentroid2D(const Vector& a, const Vector& b, const Vector& c,
+                        float& outX, float& outY) {
+    outX = (a.x + b.x + c.x) / 3.0f;
+    outY = (a.y + b.y + c.y) / 3.0f;
 }
 
-// Project a world-space point onto the line through `s` along its
-// direction; return the parameter `t` (distance from s.a, signed
-// along s.dir). Also returns the perpendicular signed distance.
-void ProjectPointOnto(const WallSegment& s, float px, float py,
-                      float& outT, float& outPerp) {
-    float dx = px - s.a.x;
-    float dy = py - s.a.y;
-    outT    = dx * s.dirx + dy * s.diry;
-    outPerp = dx * (-s.diry) + dy * s.dirx;  // 90° CCW rotation of dir
-}
-
-// Compute the 1D interval [start, end] that's the *intersection*
-// of the projections of A and B onto a shared axis (direction
-// axisDir originating at origin). Returns false if no overlap.
-bool ProjectionOverlap(const WallSegment& a, const WallSegment& b,
-                       float originX, float originY,
-                       float axisX, float axisY,
-                       float& outStart, float& outEnd) {
-    auto proj = [&](const Vector& p) -> float {
-        return (p.x - originX) * axisX + (p.y - originY) * axisY;
-    };
-    float a_lo = proj(a.a), a_hi = proj(a.b);
-    if (a_lo > a_hi) { float t = a_lo; a_lo = a_hi; a_hi = t; }
-    float b_lo = proj(b.a), b_hi = proj(b.b);
-    if (b_lo > b_hi) { float t = b_lo; b_lo = b_hi; b_hi = t; }
-    outStart = a_lo > b_lo ? a_lo : b_lo;
-    outEnd   = a_hi < b_hi ? a_hi : b_hi;
-    return outEnd > outStart;
-}
-
-// 4-way cardinal name from a 2D unit-ish vector. Picks the dominant
-// axis (|dx| vs |dy|). Caller already knows the engine's frame
-// (0° = +X = East). Returns a localized Id.
+// 4-way cardinal from an XY unit-ish vector. Engine frame:
+// 0° = +X = East, +Y = North.
 acc::strings::Id CardinalFromVector(float dx, float dy) {
     using acc::strings::Id;
     if (std::fabs(dx) > std::fabs(dy)) {
@@ -202,27 +149,8 @@ acc::strings::Id CardinalFromVector(float dx, float dy) {
     return dy >= 0.0f ? Id::DirNorth : Id::DirSouth;
 }
 
-// Render the corridor's localized label into c.label.
-// Format reused from the room-cache classifier so the user experience
-// stays consistent.
-void RenderCorridorLabel(CorridorCell& c) {
-    using acc::strings::Id;
-    bool axisIsEW = std::fabs(c.axis_x) > std::fabs(c.axis_y);
-    const char* axisStr = acc::strings::Get(
-        axisIsEW ? Id::AxisEastWest : Id::AxisNorthSouth);
-    const char* fmt = acc::strings::Get(Id::FmtMapCursorCorridor);
-    if (fmt && fmt[0] && axisStr && axisStr[0]) {
-        std::snprintf(c.label, sizeof(c.label), fmt, axisStr, c.width);
-    } else {
-        c.label[0] = '\0';
-    }
-    int kind = axisIsEW ? 4 : 3;
-    int w    = static_cast<int>(c.width + 0.5f);
-    c.sig = (kind & 0xff) | ((w & 0xff) << 8);
-}
-
-// Append a direction word into a comma-separated list, growing dirList
-// until it's full. Returns the new length.
+// Append a direction word to a comma-separated list. Returns the new
+// length of `dirList`.
 size_t AppendDirWord(char* dirList, size_t bufSize, size_t dirLen,
                      acc::strings::Id dirId) {
     const char* word = acc::strings::Get(dirId);
@@ -244,140 +172,412 @@ size_t AppendDirWord(char* dirList, size_t bufSize, size_t dirLen,
     return dirLen;
 }
 
-// Render a junction node's label. Degree 1 → "Sackgasse, {dir}".
-// Degree ≥ 3 → "Kreuzung, {dirs}". Degree 2 → no label.
-void RenderJunctionLabel(JunctionNode& n) {
-    using acc::strings::Id;
-    if (n.corridor_count == 2) {
-        n.label[0] = '\0';
-        n.sig = 0;
-        return;
-    }
-
-    if (n.corridor_count == 1) {
-        Id dirId = CardinalFromVector(n.corridor_dir_x[0],
-                                      n.corridor_dir_y[0]);
-        const char* dir = acc::strings::Get(dirId);
-        const char* fmt = acc::strings::Get(Id::FmtMapCursorDeadEnd);
-        if (fmt && fmt[0] && dir && dir[0]) {
-            std::snprintf(n.label, sizeof(n.label), fmt, dir);
-        } else {
-            n.label[0] = '\0';
-        }
-        n.sig = 5 | (static_cast<int>(dirId) << 8);
-        return;
-    }
-
-    // degree ≥ 3 — collect unique cardinal directions.
-    char dirList[96] = {0};
-    size_t dirLen = 0;
-    int mask = 0;
-    for (int i = 0; i < n.corridor_count; ++i) {
-        Id dirId = CardinalFromVector(n.corridor_dir_x[i],
-                                      n.corridor_dir_y[i]);
-        int bit = 0;
-        switch (dirId) {
-            case Id::DirNorth: bit = 0; break;
-            case Id::DirEast:  bit = 1; break;
-            case Id::DirSouth: bit = 2; break;
-            case Id::DirWest:  bit = 3; break;
-            default: continue;
-        }
-        if (mask & (1 << bit)) continue;
-        mask |= (1 << bit);
-        dirLen = AppendDirWord(dirList, sizeof(dirList), dirLen, dirId);
-    }
-    const char* fmt = acc::strings::Get(Id::FmtMapCursorJunctionDirs);
-    if (fmt && fmt[0] && dirList[0] != '\0') {
-        std::snprintf(n.label, sizeof(n.label), fmt, dirList);
-    } else {
-        n.label[0] = '\0';
-    }
-    n.sig = 6 | ((mask & 0xff) << 8) | ((n.corridor_count & 0xff) << 16);
+// 2D point-in-triangle test using barycentric coordinates with a
+// tiny tolerance to absorb float drift near edges.
+bool PointInTriangle2D(const Vector& a, const Vector& b, const Vector& c,
+                       float px, float py) {
+    float v0x = c.x - a.x, v0y = c.y - a.y;
+    float v1x = b.x - a.x, v1y = b.y - a.y;
+    float v2x = px  - a.x, v2y = py  - a.y;
+    float dot00 = v0x * v0x + v0y * v0y;
+    float dot01 = v0x * v1x + v0y * v1y;
+    float dot02 = v0x * v2x + v0y * v2y;
+    float dot11 = v1x * v1x + v1y * v1y;
+    float dot12 = v1x * v2x + v1y * v2y;
+    float denom = dot00 * dot11 - dot01 * dot01;
+    if (denom > -1e-12f && denom < 1e-12f) return false;
+    float invDenom = 1.0f / denom;
+    float u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+    float v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+    constexpr float eps = 1e-4f;
+    return u >= -eps && v >= -eps && (u + v) <= 1.0f + eps;
 }
 
-// Phase 3: cluster corridor endpoints into junction nodes.
-void BuildJunctionNodes() {
-    g_graph.junction_count = 0;
-    for (int i = 0; i < g_graph.corridor_count; ++i) {
-        const CorridorCell& c = g_graph.corridors[i];
-        // Two endpoints along axis at overlap_start / overlap_end.
-        struct EP {
-            float x, y;
-            float dir_x, dir_y;   // direction from endpoint toward corridor centre
-        };
-        EP eps[2];
-        eps[0].x = c.midline_x + c.axis_x * c.overlap_start;
-        eps[0].y = c.midline_y + c.axis_y * c.overlap_start;
-        eps[0].dir_x = c.axis_x;   // start endpoint points toward +axis (centre)
-        eps[0].dir_y = c.axis_y;
-        eps[1].x = c.midline_x + c.axis_x * c.overlap_end;
-        eps[1].y = c.midline_y + c.axis_y * c.overlap_end;
-        eps[1].dir_x = -c.axis_x;  // end endpoint points toward -axis
-        eps[1].dir_y = -c.axis_y;
+// ---------------------------------------------------------------------
+// Phase 2A: flood-fill connected walkable faces into cells.
+// ---------------------------------------------------------------------
 
-        for (int e = 0; e < 2; ++e) {
-            // Find an existing node within cluster radius.
-            int found = -1;
-            float bestD2 = kJunctionClusterRadiusM *
-                           kJunctionClusterRadiusM;
-            for (int n = 0; n < g_graph.junction_count; ++n) {
-                float dx = g_graph.junctions[n].pos_x - eps[e].x;
-                float dy = g_graph.junctions[n].pos_y - eps[e].y;
-                float d2 = dx * dx + dy * dy;
-                if (d2 < bestD2) {
-                    bestD2 = d2;
-                    found  = n;
+void BuildCellsFromFaceGraph() {
+    int n = g_graph.face_count;
+    for (int i = 0; i < n; ++i) g_graph.face_cell_id[i] = -1;
+    g_graph.cell_count = 0;
+
+    // Scratch BFS queue. Sized to face count.
+    static int s_queue[kMaxFaces];
+
+    for (int start = 0; start < n; ++start) {
+        if (g_graph.face_cell_id[start] != -1) continue;
+        if (!MaterialIsWalkable(g_graph.faces[start].material_id)) continue;
+
+        if (g_graph.cell_count >= kMaxCells) {
+            acclog::Write("WallTopo",
+                          "BuildCellsFromFaceGraph: cell cap %d reached, "
+                          "remaining faces unassigned", kMaxCells);
+            break;
+        }
+        int cellId = g_graph.cell_count++;
+        int head = 0, tail = 0;
+        s_queue[tail++] = start;
+        g_graph.face_cell_id[start] = cellId;
+        while (head < tail) {
+            int f = s_queue[head++];
+            const auto& face = g_graph.faces[f];
+            for (int e = 0; e < 3; ++e) {
+                int nb = face.adj[e];
+                if (nb < 0 || nb >= n) continue;
+                if (g_graph.face_cell_id[nb] != -1) continue;
+                if (!MaterialIsWalkable(g_graph.faces[nb].material_id)) continue;
+                g_graph.face_cell_id[nb] = cellId;
+                if (tail < kMaxFaces) s_queue[tail++] = nb;
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------
+// Phase 2B: classify each cell — shape, exits, label.
+// ---------------------------------------------------------------------
+
+void ClassifyCells() {
+    using acc::strings::Id;
+    int n = g_graph.face_count;
+
+    for (int c = 0; c < g_graph.cell_count; ++c) {
+        AreaGraph::Cell& cell = g_graph.cells[c];
+        cell.min_x =  1e30f; cell.min_y =  1e30f;
+        cell.max_x = -1e30f; cell.max_y = -1e30f;
+        cell.centroid_x = 0.0f; cell.centroid_y = 0.0f;
+        cell.axis_x = 1.0f; cell.axis_y = 0.0f;
+        cell.long_extent = 0.0f;
+        cell.short_extent = 0.0f;
+        cell.area_sq_m = 0.0f;
+        cell.face_count = 0;
+        cell.exit_count = 0;
+        cell.label[0] = '\0';
+        cell.sig = 0;
+    }
+
+    // First pass: bbox + face-centroid sum + face area, weighted by
+    // area for the cell centroid + PCA. Area-weighting avoids letting
+    // a cell's tiny triangulation slivers dominate the geometric
+    // summary.
+    static float s_sum_xx[kMaxCells];
+    static float s_sum_xy[kMaxCells];
+    static float s_sum_yy[kMaxCells];
+    for (int c = 0; c < g_graph.cell_count; ++c) {
+        s_sum_xx[c] = s_sum_xy[c] = s_sum_yy[c] = 0.0f;
+    }
+    for (int f = 0; f < n; ++f) {
+        int cid = g_graph.face_cell_id[f];
+        if (cid < 0) continue;
+        const auto& face = g_graph.faces[f];
+        float fa = TriangleArea2D(face.v[0], face.v[1], face.v[2]);
+        float fcx = 0.0f, fcy = 0.0f;
+        TriangleCentroid2D(face.v[0], face.v[1], face.v[2], fcx, fcy);
+        auto& cell = g_graph.cells[cid];
+        for (int k = 0; k < 3; ++k) {
+            if (face.v[k].x < cell.min_x) cell.min_x = face.v[k].x;
+            if (face.v[k].y < cell.min_y) cell.min_y = face.v[k].y;
+            if (face.v[k].x > cell.max_x) cell.max_x = face.v[k].x;
+            if (face.v[k].y > cell.max_y) cell.max_y = face.v[k].y;
+        }
+        cell.area_sq_m  += fa;
+        cell.face_count += 1;
+        cell.centroid_x += fcx * fa;  // area-weighted; normalised below
+        cell.centroid_y += fcy * fa;
+
+        // Count exits while we're walking edges.
+        for (int e = 0; e < 3; ++e) {
+            int nb = face.adj[e];
+            if (nb < 0 || nb >= n) continue;
+            if (g_graph.face_cell_id[nb] != cid) {
+                cell.exit_count += 1;
+            }
+        }
+    }
+
+    // Normalise centroid + compute PCA in a second pass that knows
+    // the cell centroid.
+    for (int c = 0; c < g_graph.cell_count; ++c) {
+        auto& cell = g_graph.cells[c];
+        if (cell.area_sq_m > 1e-6f) {
+            cell.centroid_x /= cell.area_sq_m;
+            cell.centroid_y /= cell.area_sq_m;
+        }
+    }
+    for (int f = 0; f < n; ++f) {
+        int cid = g_graph.face_cell_id[f];
+        if (cid < 0) continue;
+        const auto& face = g_graph.faces[f];
+        float fa = TriangleArea2D(face.v[0], face.v[1], face.v[2]);
+        float fcx = 0.0f, fcy = 0.0f;
+        TriangleCentroid2D(face.v[0], face.v[1], face.v[2], fcx, fcy);
+        const auto& cell = g_graph.cells[cid];
+        float dx = fcx - cell.centroid_x;
+        float dy = fcy - cell.centroid_y;
+        s_sum_xx[cid] += fa * dx * dx;
+        s_sum_xy[cid] += fa * dx * dy;
+        s_sum_yy[cid] += fa * dy * dy;
+    }
+
+    for (int c = 0; c < g_graph.cell_count; ++c) {
+        auto& cell = g_graph.cells[c];
+
+        // PCA on the 2×2 covariance — closed form. The principal
+        // eigenvector gives the cell's long axis.
+        float a = s_sum_xx[c];
+        float b = s_sum_xy[c];
+        float d = s_sum_yy[c];
+        float tr   = a + d;
+        float det  = a * d - b * b;
+        float disc = std::sqrt(std::fmax(0.0f, tr * tr * 0.25f - det));
+        float l1 = tr * 0.5f + disc;   // larger eigenvalue
+        float l2 = tr * 0.5f - disc;   // smaller
+        if (l1 < 0.0f) l1 = 0.0f;
+        if (l2 < 0.0f) l2 = 0.0f;
+
+        // Eigenvector for l1. Use the more numerically stable branch.
+        float ex, ey;
+        if (std::fabs(b) > 1e-6f) {
+            ex = l1 - d;
+            ey = b;
+        } else if (a >= d) {
+            ex = 1.0f; ey = 0.0f;
+        } else {
+            ex = 0.0f; ey = 1.0f;
+        }
+        float emag = std::sqrt(ex * ex + ey * ey);
+        if (emag > 1e-6f) {
+            cell.axis_x = ex / emag;
+            cell.axis_y = ey / emag;
+        }
+
+        // Extent = 2 * sqrt(eigenvalue / area) gives the standard
+        // deviation along each axis; doubled for a coarse "half-width"
+        // → "full width" expansion. Matches the player's perception of
+        // cell width better than the bbox dimensions (which over-state
+        // diagonal cells).
+        float weight = std::fmax(cell.area_sq_m, 1e-3f);
+        cell.long_extent  = 2.0f * std::sqrt(l1 / weight);
+        cell.short_extent = 2.0f * std::sqrt(l2 / weight);
+
+        // ---- Classification -----------------------------------------
+        const char* axisStr = (std::fabs(cell.axis_x) > std::fabs(cell.axis_y))
+                                  ? acc::strings::Get(Id::AxisEastWest)
+                                  : acc::strings::Get(Id::AxisNorthSouth);
+        bool axisIsEW = (std::fabs(cell.axis_x) > std::fabs(cell.axis_y));
+
+        bool isCorridor =
+            cell.short_extent > 1e-3f &&
+            cell.short_extent < kCorridorMaxShortAxisM &&
+            (cell.long_extent / cell.short_extent) >= kCorridorAspectRatio;
+        bool isSmallRoom = cell.area_sq_m < kSmallCellMaxAreaSqM;
+
+        // Exit count drives the dead-end / junction variant. A cell
+        // with 0 or 1 *cell-level* exits is a dead end; the exit_count
+        // we tracked above is edge-level (a thick portal counts 3+).
+        // Convert to cell-level by walking faces once more — cheaper to
+        // compute as a set of neighbour cell ids.
+        int neighbourCells[8];
+        int neighbourCellCount = 0;
+        for (int f = 0; f < n && neighbourCellCount < 8; ++f) {
+            if (g_graph.face_cell_id[f] != c) continue;
+            const auto& face = g_graph.faces[f];
+            for (int e = 0; e < 3; ++e) {
+                int nb = face.adj[e];
+                if (nb < 0 || nb >= n) continue;
+                int ncid = g_graph.face_cell_id[nb];
+                if (ncid == c || ncid < 0) continue;
+                bool seen = false;
+                for (int k = 0; k < neighbourCellCount; ++k) {
+                    if (neighbourCells[k] == ncid) { seen = true; break; }
+                }
+                if (!seen && neighbourCellCount < 8) {
+                    neighbourCells[neighbourCellCount++] = ncid;
                 }
             }
-            JunctionNode* node = nullptr;
-            if (found < 0) {
-                if (g_graph.junction_count >= kMaxJunctions) continue;
-                node = &g_graph.junctions[g_graph.junction_count++];
-                node->pos_x = eps[e].x;
-                node->pos_y = eps[e].y;
-                node->corridor_count = 0;
-                node->label[0] = '\0';
-                node->sig = 0;
-            } else {
-                node = &g_graph.junctions[found];
-                // Re-centre as running average.
-                float n_old = static_cast<float>(node->corridor_count);
-                float n_new = n_old + 1.0f;
-                node->pos_x = (node->pos_x * n_old + eps[e].x) / n_new;
-                node->pos_y = (node->pos_y * n_old + eps[e].y) / n_new;
+        }
+
+        if (isCorridor) {
+            const char* fmt = acc::strings::Get(Id::FmtMapCursorCorridor);
+            if (fmt && fmt[0] && axisStr && axisStr[0]) {
+                std::snprintf(cell.label, sizeof(cell.label),
+                              fmt, axisStr, cell.short_extent);
             }
-            if (node->corridor_count <
-                JunctionNode::kMaxCorridorsPerNode) {
-                int slot = node->corridor_count++;
-                node->corridor_idx[slot]   = i;
-                node->corridor_dir_x[slot] = eps[e].dir_x;
-                node->corridor_dir_y[slot] = eps[e].dir_y;
+            int kindByte = axisIsEW ? 4 : 3;
+            int w        = static_cast<int>(cell.short_extent + 0.5f);
+            cell.sig = (kindByte & 0xff) | ((w & 0xff) << 8);
+        } else if (neighbourCellCount >= 3) {
+            // Junction. Build a comma-separated direction list from
+            // the vectors centroid → each neighbour-cell centroid.
+            char dirList[96] = {0};
+            size_t dirLen = 0;
+            int mask = 0;
+            for (int k = 0; k < neighbourCellCount; ++k) {
+                const auto& nb = g_graph.cells[neighbourCells[k]];
+                float ddx = nb.centroid_x - cell.centroid_x;
+                float ddy = nb.centroid_y - cell.centroid_y;
+                Id dirId = CardinalFromVector(ddx, ddy);
+                int bit = 0;
+                switch (dirId) {
+                    case Id::DirNorth: bit = 0; break;
+                    case Id::DirEast:  bit = 1; break;
+                    case Id::DirSouth: bit = 2; break;
+                    case Id::DirWest:  bit = 3; break;
+                    default: continue;
+                }
+                if (mask & (1 << bit)) continue;
+                mask |= (1 << bit);
+                dirLen = AppendDirWord(dirList, sizeof(dirList),
+                                       dirLen, dirId);
             }
+            const char* fmt =
+                acc::strings::Get(Id::FmtMapCursorJunctionDirs);
+            if (fmt && fmt[0] && dirList[0] != '\0') {
+                std::snprintf(cell.label, sizeof(cell.label),
+                              fmt, dirList);
+            }
+            cell.sig = 6 | ((mask & 0xff) << 8) |
+                       ((neighbourCellCount & 0xff) << 16);
+        } else if (neighbourCellCount == 1) {
+            // Dead-end pointing at the single neighbour cell.
+            const auto& nb = g_graph.cells[neighbourCells[0]];
+            float ddx = nb.centroid_x - cell.centroid_x;
+            float ddy = nb.centroid_y - cell.centroid_y;
+            Id dirId = CardinalFromVector(ddx, ddy);
+            const char* dir = acc::strings::Get(dirId);
+            const char* fmt = acc::strings::Get(Id::FmtMapCursorDeadEnd);
+            if (fmt && fmt[0] && dir && dir[0]) {
+                std::snprintf(cell.label, sizeof(cell.label),
+                              fmt, dir);
+            }
+            cell.sig = 5 | (static_cast<int>(dirId) << 8);
+        } else if (isSmallRoom) {
+            // Small enclosed cell with 0 or 2 exits — read as a room.
+            // No localised "Raum" key yet; fall back to "Offene Fläche"
+            // until we add one. Sig distinguishes for log post-mortem.
+            const char* fallback =
+                acc::strings::Get(Id::MapCursorOpenArea);
+            if (fallback && fallback[0]) {
+                std::snprintf(cell.label, sizeof(cell.label),
+                              "%s", fallback);
+            }
+            cell.sig = 7;
+        } else {
+            // Large + low-aspect = open area.
+            const char* fallback =
+                acc::strings::Get(Id::MapCursorOpenArea);
+            if (fallback && fallback[0]) {
+                std::snprintf(cell.label, sizeof(cell.label),
+                              "%s", fallback);
+            }
+            cell.sig = 2;
         }
     }
 }
 
-// Point-in-corridor test using the corridor's axis + perp frame.
-bool PointInCorridor(const CorridorCell& c, float px, float py,
-                     float& outPerpDist) {
-    float dx = px - c.midline_x;
-    float dy = py - c.midline_y;
-    float axisT = dx * c.axis_x + dy * c.axis_y;
-    float perpT = dx * c.perp_x + dy * c.perp_y;
-    if (axisT < c.overlap_start || axisT > c.overlap_end) return false;
-    float halfW = c.width * 0.5f;
-    if (perpT < -halfW || perpT > halfW) return false;
-    outPerpDist = std::fabs(perpT);
-    return true;
+// ---------------------------------------------------------------------
+// Phase 2C: spatial index — coarse uniform grid over the area bbox.
+// ---------------------------------------------------------------------
+
+void BuildSpatialIndex() {
+    int total = kGridWidth * kGridHeight;
+    for (int i = 0; i < total; ++i) {
+        g_graph.cell_offset[i]   = 0;
+        g_graph.cell_count_in[i] = 0;
+    }
+
+    // Find area bbox from face vertices.
+    float minX =  1e30f, minY =  1e30f;
+    float maxX = -1e30f, maxY = -1e30f;
+    for (int f = 0; f < g_graph.face_count; ++f) {
+        const auto& face = g_graph.faces[f];
+        for (int k = 0; k < 3; ++k) {
+            if (face.v[k].x < minX) minX = face.v[k].x;
+            if (face.v[k].y < minY) minY = face.v[k].y;
+            if (face.v[k].x > maxX) maxX = face.v[k].x;
+            if (face.v[k].y > maxY) maxY = face.v[k].y;
+        }
+    }
+    g_graph.origin_x = minX;
+    g_graph.origin_y = minY;
+
+    // First pass: count entries per grid cell.
+    auto faceGridRange = [&](const acc::engine::WalkmeshFace& face,
+                             int& gx0, int& gy0, int& gx1, int& gy1) {
+        float fminX = face.v[0].x, fminY = face.v[0].y;
+        float fmaxX = face.v[0].x, fmaxY = face.v[0].y;
+        for (int k = 1; k < 3; ++k) {
+            if (face.v[k].x < fminX) fminX = face.v[k].x;
+            if (face.v[k].y < fminY) fminY = face.v[k].y;
+            if (face.v[k].x > fmaxX) fmaxX = face.v[k].x;
+            if (face.v[k].y > fmaxY) fmaxY = face.v[k].y;
+        }
+        gx0 = static_cast<int>((fminX - g_graph.origin_x) / kGridCellSize);
+        gy0 = static_cast<int>((fminY - g_graph.origin_y) / kGridCellSize);
+        gx1 = static_cast<int>((fmaxX - g_graph.origin_x) / kGridCellSize);
+        gy1 = static_cast<int>((fmaxY - g_graph.origin_y) / kGridCellSize);
+        if (gx0 < 0) gx0 = 0;
+        if (gy0 < 0) gy0 = 0;
+        if (gx1 >= kGridWidth)  gx1 = kGridWidth  - 1;
+        if (gy1 >= kGridHeight) gy1 = kGridHeight - 1;
+    };
+
+    for (int f = 0; f < g_graph.face_count; ++f) {
+        if (g_graph.face_cell_id[f] < 0) continue;  // skip non-walkable
+        int gx0, gy0, gx1, gy1;
+        faceGridRange(g_graph.faces[f], gx0, gy0, gx1, gy1);
+        for (int gy = gy0; gy <= gy1; ++gy) {
+            for (int gx = gx0; gx <= gx1; ++gx) {
+                int c = gy * kGridWidth + gx;
+                if (g_graph.cell_count_in[c] < kMaxFacesPerGridCell) {
+                    g_graph.cell_count_in[c]++;
+                }
+            }
+        }
+    }
+
+    // Layout offsets via prefix-sum, then reset counts so the fill
+    // pass below can use them as write cursors.
+    int cursor = 0;
+    for (int i = 0; i < total; ++i) {
+        g_graph.cell_offset[i] = cursor;
+        cursor += g_graph.cell_count_in[i];
+        g_graph.cell_count_in[i] = 0;
+    }
+    if (cursor > kGridWidth * kGridHeight * kMaxFacesPerGridCell) {
+        cursor = kGridWidth * kGridHeight * kMaxFacesPerGridCell;
+        acclog::Write("WallTopo",
+                      "BuildSpatialIndex: face-list capacity exceeded; "
+                      "truncating index (lookup may miss faces near "
+                      "dense regions)");
+    }
+
+    // Second pass: fill the dense face-list array.
+    for (int f = 0; f < g_graph.face_count; ++f) {
+        if (g_graph.face_cell_id[f] < 0) continue;
+        int gx0, gy0, gx1, gy1;
+        faceGridRange(g_graph.faces[f], gx0, gy0, gx1, gy1);
+        for (int gy = gy0; gy <= gy1; ++gy) {
+            for (int gx = gx0; gx <= gx1; ++gx) {
+                int c = gy * kGridWidth + gx;
+                int slot = g_graph.cell_offset[c] + g_graph.cell_count_in[c];
+                if (slot < kGridWidth * kGridHeight * kMaxFacesPerGridCell) {
+                    g_graph.face_lists[slot] = f;
+                    g_graph.cell_count_in[c]++;
+                }
+            }
+        }
+    }
 }
 
 }  // namespace
 
 void Reset() {
-    g_graph.area_owner    = nullptr;
-    g_graph.built         = false;
-    g_graph.segment_count = 0;
+    g_graph.area_owner = nullptr;
+    g_graph.built      = false;
+    g_graph.face_count = 0;
+    g_graph.cell_count = 0;
 }
 
 bool HasGraphForArea(void* area) {
@@ -393,171 +593,26 @@ void BuildForArea(void* area) {
     Reset();
     g_graph.area_owner = area;
 
-    // ---------------------------------------------------------------
-    // Phase 1: consume Pillar 1's wall-surface clustering.
-    //
-    // The change-detector already runs union-find over the raw wall
-    // edges at area-load time, merging collinear endpoint-sharing
-    // edges across rooms into logical wall surfaces (see the "Wall
-    // surface clustering" block in spatial_change_detector.cpp).
-    // Each surface reduces to a single straight segment with two
-    // extreme endpoints + unit direction + length — exactly what
-    // walltopo previously rebuilt in-house with a weaker O(N²)
-    // iterative-merge + dedup pipeline.
-    //
-    // Pillar 1 produces noticeably cleaner output than the old
-    // in-house pass: same input (462 edges on Apartments) reduces to
-    // 121 surfaces vs walltopo's 237 segments — roughly 2× more
-    // aggressive merging, achieved by union-find with a looser 15°
-    // collinearity threshold instead of 10° iterative sweeps.
-    //
-    // We still self-gate on the cache being ready: change_detector::
-    // Tick runs BEFORE transitions::Tick in core_tick.cpp, but on
-    // the area-change tick the surface table can still be empty if
-    // BuildAreaWallCache faulted partway through; the retry path in
-    // transitions::Tick re-calls BuildForArea each tick until both
-    // caches populate.
-    // ---------------------------------------------------------------
-    int surfaceCount = acc::spatial::change_detector::GetWallSurfaceCount();
-    if (surfaceCount <= 0) {
+    // Pull the walkmesh face cache directly from engine_area. We
+    // build it once per area-load; the walkmesh is immutable so the
+    // cache survives until the player leaves the area.
+    int faceCount = acc::engine::BuildAreaFaceCache(
+        area, g_graph.faces, kMaxFaces);
+    if (faceCount <= 0) {
         acclog::Write("WallTopo",
-                      "BuildForArea: Pillar 1 wall surfaces not ready — "
-                      "leaving graph empty (will retry on next call)");
+                      "BuildForArea: face cache empty (areaPtr=%p) — "
+                      "leaving graph unbuilt", area);
         return;
     }
+    g_graph.face_count = faceCount;
 
-    int segCount   = 0;
-    int skippedShort      = 0;
-    int skippedDegenerate = 0;
-    for (int s = 0; s < surfaceCount && segCount < kMaxSegments; ++s) {
-        acc::spatial::change_detector::WallSurfaceDesc desc;
-        if (!acc::spatial::change_detector::GetWallSurfaceDesc(s, desc)) {
-            ++skippedDegenerate;  // closed-loop / branching / overflow
-            continue;
-        }
-        if (desc.length < kMinSegmentLengthM) {
-            ++skippedShort;
-            continue;
-        }
-        WallSegment& seg = g_graph.segments[segCount++];
-        seg.a      = desc.a;
-        seg.b      = desc.b;
-        seg.dirx   = desc.dir_x;
-        seg.diry   = desc.dir_y;
-        seg.length = desc.length;
-    }
-    g_graph.segment_count = segCount;
-    if (surfaceCount > kMaxSegments) {
-        acclog::Write("WallTopo",
-                      "BuildForArea: surface count %d exceeds cap %d — "
-                      "truncating", surfaceCount, kMaxSegments);
-    }
+    BuildCellsFromFaceGraph();
+    ClassifyCells();
+    BuildSpatialIndex();
 
     acclog::Write("WallTopo",
-                  "BuildForArea: area=%p consumed %d Pillar 1 surfaces -> "
-                  "%d segments (skipped %d short, %d degenerate)",
-                  area, surfaceCount, g_graph.segment_count,
-                  skippedShort, skippedDegenerate);
-
-    // ---------------------------------------------------------------
-    // Phase 4: parallel-pair corridor detection.
-    //
-    // For each unordered pair (i, j) of segments:
-    //   - test parallelism (within kCorridorParallelTolDeg)
-    //   - compute perpendicular distance between their lines
-    //   - if width is in [kCorridorMinWidthM, kCorridorMaxWidthM]
-    //   - test projection overlap along the shared axis
-    //   - if overlap ≥ kCorridorMinOverlapM → record corridor
-    //
-    // O(N²) over segments — fine for the few-dozen-segment scale of
-    // K1 areas.
-    // ---------------------------------------------------------------
-    g_graph.corridor_count = 0;
-    for (int i = 0; i < g_graph.segment_count; ++i) {
-        const WallSegment& sa = g_graph.segments[i];
-        for (int j = i + 1; j < g_graph.segment_count; ++j) {
-            if (g_graph.corridor_count >= kMaxCorridors) break;
-            const WallSegment& sb = g_graph.segments[j];
-
-            if (!NearCollinear(sa.dirx, sa.diry, sb.dirx, sb.diry,
-                               kCorridorParallelTolDeg)) {
-                continue;
-            }
-
-            // Perpendicular distance between the two parallel lines.
-            // Project sb.a onto sa's axis to get the orthogonal
-            // component; that's the signed perpendicular distance.
-            float t = 0.0f, perp = 0.0f;
-            ProjectPointOnto(sa, sb.a.x, sb.a.y, t, perp);
-            float width = std::fabs(perp);
-            if (width < kCorridorMinWidthM || width > kCorridorMaxWidthM) {
-                continue;
-            }
-
-            // Choose the corridor axis = sa.dir. Project both
-            // segments' endpoints onto this axis (origin = sa.a) and
-            // intersect the parameter ranges.
-            float start = 0.0f, end = 0.0f;
-            if (!ProjectionOverlap(sa, sb,
-                                   sa.a.x, sa.a.y, sa.dirx, sa.diry,
-                                   start, end)) {
-                continue;
-            }
-            float overlap = end - start;
-            if (overlap < kCorridorMinOverlapM) continue;
-
-            // Record corridor. Midline = midpoint between the two
-            // walls at the projected origin. Perpendicular unit
-            // points from sa toward sb.
-            float perpSign = (perp >= 0.0f) ? 1.0f : -1.0f;
-            float perpX = -sa.diry * perpSign;
-            float perpY =  sa.dirx * perpSign;
-
-            CorridorCell& c = g_graph.corridors[g_graph.corridor_count++];
-            c.seg_a = i;
-            c.seg_b = j;
-            c.axis_x = sa.dirx;
-            c.axis_y = sa.diry;
-            c.perp_x = perpX;
-            c.perp_y = perpY;
-            c.width  = width;
-            c.midline_x = sa.a.x + perpX * (width * 0.5f);
-            c.midline_y = sa.a.y + perpY * (width * 0.5f);
-            c.overlap_start = start;
-            c.overlap_end   = end;
-            c.length        = overlap;
-        }
-        if (g_graph.corridor_count >= kMaxCorridors) {
-            acclog::Write("WallTopo",
-                          "BuildForArea: corridor cap %d reached, "
-                          "remaining segments not paired",
-                          kMaxCorridors);
-            break;
-        }
-    }
-
-    acclog::Write("WallTopo",
-                  "BuildForArea: phase 4 found %d corridor candidates",
-                  g_graph.corridor_count);
-
-    // ---------------------------------------------------------------
-    // Phase 4b: render labels for each corridor.
-    // ---------------------------------------------------------------
-    for (int i = 0; i < g_graph.corridor_count; ++i) {
-        RenderCorridorLabel(g_graph.corridors[i]);
-    }
-
-    // ---------------------------------------------------------------
-    // Phase 5: cluster corridor endpoints into junction nodes; render
-    // each node's label (dead-end / junction / silent pass-through).
-    // ---------------------------------------------------------------
-    BuildJunctionNodes();
-    for (int i = 0; i < g_graph.junction_count; ++i) {
-        RenderJunctionLabel(g_graph.junctions[i]);
-    }
-    acclog::Write("WallTopo",
-                  "BuildForArea: phase 5 clustered %d junction nodes",
-                  g_graph.junction_count);
+                  "BuildForArea: area=%p faces=%d cells=%d",
+                  area, g_graph.face_count, g_graph.cell_count);
 
     g_graph.built = true;
     DumpGraphToLog();
@@ -569,88 +624,57 @@ void DumpGraphToLog() {
         return;
     }
     acclog::Write("WallTopo",
-                  "graph dump area=%p segments=%d corridors=%d "
-                  "junctions=%d",
-                  g_graph.area_owner, g_graph.segment_count,
-                  g_graph.corridor_count, g_graph.junction_count);
-    // Bucket segment lengths to get a quick distribution.
-    int bucket_le_2  = 0;
-    int bucket_le_5  = 0;
-    int bucket_le_10 = 0;
-    int bucket_gt_10 = 0;
-    for (int i = 0; i < g_graph.segment_count; ++i) {
-        float L = g_graph.segments[i].length;
-        if      (L <= 2.0f)  ++bucket_le_2;
-        else if (L <= 5.0f)  ++bucket_le_5;
-        else if (L <= 10.0f) ++bucket_le_10;
-        else                 ++bucket_gt_10;
+                  "graph dump area=%p faces=%d cells=%d",
+                  g_graph.area_owner, g_graph.face_count,
+                  g_graph.cell_count);
+
+    // Tally cell shape buckets for telemetry.
+    int corridors = 0, junctions = 0, deadEnds = 0;
+    int smallRooms = 0, openAreas = 0, other = 0;
+    for (int i = 0; i < g_graph.cell_count; ++i) {
+        int sigKind = g_graph.cells[i].sig & 0xff;
+        switch (sigKind) {
+            case 3: case 4: ++corridors;   break;
+            case 5:         ++deadEnds;    break;
+            case 6:         ++junctions;   break;
+            case 7:         ++smallRooms;  break;
+            case 2:         ++openAreas;   break;
+            default:        ++other;       break;
+        }
     }
     acclog::Write("WallTopo",
-                  "length buckets: <=2m=%d <=5m=%d <=10m=%d >10m=%d",
-                  bucket_le_2, bucket_le_5, bucket_le_10, bucket_gt_10);
+                  "cell shapes: corridor=%d junction=%d dead-end=%d "
+                  "small-room=%d open=%d other=%d",
+                  corridors, junctions, deadEnds, smallRooms,
+                  openAreas, other);
 
-    // Log the top-N longest segments (interesting in their own right —
-    // these are usually the major corridor walls).
-    constexpr int kTopN = 12;
-    int order[kMaxSegments];
-    for (int i = 0; i < g_graph.segment_count; ++i) order[i] = i;
-    // Selection-sort the top kTopN by length descending.
-    int limit = g_graph.segment_count < kTopN ? g_graph.segment_count : kTopN;
+    // Largest few cells — usually the most informative entries (the
+    // main hub, big corridors). Selection-sort top-N by face count
+    // descending.
+    constexpr int kTopN = 16;
+    int order[kMaxCells];
+    for (int i = 0; i < g_graph.cell_count; ++i) order[i] = i;
+    int limit = g_graph.cell_count < kTopN ? g_graph.cell_count : kTopN;
     for (int i = 0; i < limit; ++i) {
         int best = i;
-        for (int j = i + 1; j < g_graph.segment_count; ++j) {
-            if (g_graph.segments[order[j]].length >
-                g_graph.segments[order[best]].length) {
+        for (int j = i + 1; j < g_graph.cell_count; ++j) {
+            if (g_graph.cells[order[j]].face_count >
+                g_graph.cells[order[best]].face_count) {
                 best = j;
             }
         }
         if (best != i) {
             int t = order[i]; order[i] = order[best]; order[best] = t;
         }
-        const auto& s = g_graph.segments[order[i]];
+        const auto& cell = g_graph.cells[order[i]];
         acclog::Write("WallTopo",
-                      "  seg[%d] len=%.2fm a=(%.2f,%.2f) b=(%.2f,%.2f) "
-                      "dir=(%.2f,%.2f)",
-                      order[i], s.length, s.a.x, s.a.y, s.b.x, s.b.y,
-                      s.dirx, s.diry);
-    }
-
-    // Dump corridors — every candidate, since their count is bounded.
-    int corLimit = g_graph.corridor_count > 32 ? 32 : g_graph.corridor_count;
-    for (int i = 0; i < corLimit; ++i) {
-        const CorridorCell& c = g_graph.corridors[i];
-        acclog::Write("WallTopo",
-                      "  cor[%d] segs=%d,%d width=%.2fm len=%.2fm "
-                      "mid=(%.2f,%.2f) axis=(%.2f,%.2f)",
-                      i, c.seg_a, c.seg_b, c.width, c.length,
-                      c.midline_x, c.midline_y, c.axis_x, c.axis_y);
-    }
-    if (g_graph.corridor_count > 32) {
-        acclog::Write("WallTopo",
-                      "  ... (%d more corridors truncated)",
-                      g_graph.corridor_count - 32);
-    }
-
-    // Dump junctions — show degree distribution + every labelled node.
-    int deg1 = 0, deg2 = 0, deg3plus = 0;
-    for (int i = 0; i < g_graph.junction_count; ++i) {
-        int c = g_graph.junctions[i].corridor_count;
-        if      (c == 1) ++deg1;
-        else if (c == 2) ++deg2;
-        else if (c >= 3) ++deg3plus;
-    }
-    acclog::Write("WallTopo",
-                  "junction degrees: dead-end=%d pass-through=%d "
-                  "junction=%d",
-                  deg1, deg2, deg3plus);
-    int juncLimit = g_graph.junction_count > 32
-                        ? 32 : g_graph.junction_count;
-    for (int i = 0; i < juncLimit; ++i) {
-        const JunctionNode& n = g_graph.junctions[i];
-        if (n.label[0] == '\0') continue;
-        acclog::Write("WallTopo",
-                      "  junc[%d] deg=%d pos=(%.2f,%.2f) label=\"%s\"",
-                      i, n.corridor_count, n.pos_x, n.pos_y, n.label);
+                      "  cell[%d] faces=%d area=%.1fm² long=%.1fm short=%.1fm "
+                      "exits=%d centroid=(%.1f,%.1f) axis=(%.2f,%.2f) "
+                      "label=\"%s\"",
+                      order[i], cell.face_count, cell.area_sq_m,
+                      cell.long_extent, cell.short_extent, cell.exit_count,
+                      cell.centroid_x, cell.centroid_y,
+                      cell.axis_x, cell.axis_y, cell.label);
     }
 }
 
@@ -660,57 +684,43 @@ bool LookupAt(void* area, const Vector& worldPos,
     outSig = 0;
     if (!HasGraphForArea(area)) return false;
 
-    // 1. Corridor footprint — point-in-rectangle. If multiple match
-    //    (corridors can overlap at junctions), pick the one whose
-    //    midline is closest.
-    int   bestCor      = -1;
-    float bestCorPerp  = 1e30f;
-    for (int i = 0; i < g_graph.corridor_count; ++i) {
-        float perp = 0.0f;
-        if (PointInCorridor(g_graph.corridors[i],
-                            worldPos.x, worldPos.y, perp)) {
-            if (perp < bestCorPerp) {
-                bestCorPerp = perp;
-                bestCor     = i;
+    int gx = static_cast<int>((worldPos.x - g_graph.origin_x) / kGridCellSize);
+    int gy = static_cast<int>((worldPos.y - g_graph.origin_y) / kGridCellSize);
+    if (gx < 0 || gy < 0 || gx >= kGridWidth || gy >= kGridHeight) {
+        // Outside the indexed region — fall through to "open area".
+        const char* fallback =
+            acc::strings::Get(acc::strings::Id::MapCursorOpenArea);
+        if (fallback && fallback[0]) {
+            std::snprintf(outBuf, bufSize, "%s", fallback);
+            outSig = 2;
+            return true;
+        }
+        return false;
+    }
+
+    int gridCell = gy * kGridWidth + gx;
+    int base = g_graph.cell_offset[gridCell];
+    int cnt  = g_graph.cell_count_in[gridCell];
+    for (int i = 0; i < cnt; ++i) {
+        int f = g_graph.face_lists[base + i];
+        const auto& face = g_graph.faces[f];
+        if (PointInTriangle2D(face.v[0], face.v[1], face.v[2],
+                              worldPos.x, worldPos.y)) {
+            int cid = g_graph.face_cell_id[f];
+            if (cid < 0) continue;
+            const auto& cell = g_graph.cells[cid];
+            if (cell.label[0] != '\0') {
+                std::snprintf(outBuf, bufSize, "%s", cell.label);
+                outSig = cell.sig;
+                return true;
             }
         }
     }
-    if (bestCor >= 0) {
-        const CorridorCell& c = g_graph.corridors[bestCor];
-        if (c.label[0] != '\0') {
-            std::snprintf(outBuf, bufSize, "%s", c.label);
-            outSig = c.sig;
-            return true;
-        }
-    }
 
-    // 2. Nearest junction node within kJunctionLookupRadiusM. This
-    //    catches the case where the player sits at the meeting point
-    //    of multiple corridors (where the corridor rectangles end /
-    //    overlap) — they should hear the junction label, not the
-    //    nearest corridor's.
-    int   bestJunc = -1;
-    float bestJuncD2 = kJunctionLookupRadiusM * kJunctionLookupRadiusM;
-    for (int i = 0; i < g_graph.junction_count; ++i) {
-        const JunctionNode& n = g_graph.junctions[i];
-        if (n.label[0] == '\0') continue;  // degree-2 silent nodes
-        float dx = worldPos.x - n.pos_x;
-        float dy = worldPos.y - n.pos_y;
-        float d2 = dx * dx + dy * dy;
-        if (d2 < bestJuncD2) {
-            bestJuncD2 = d2;
-            bestJunc   = i;
-        }
-    }
-    if (bestJunc >= 0) {
-        const JunctionNode& n = g_graph.junctions[bestJunc];
-        std::snprintf(outBuf, bufSize, "%s", n.label);
-        outSig = n.sig;
-        return true;
-    }
-
-    // 3. Fall back to "Offene Fläche" — the player is in space the
-    //    decomposition didn't identify as a corridor or a junction.
+    // No face contained the point — player is standing on
+    // non-walkable geometry or in the gap between faces. Fall back to
+    // "Offene Fläche" so the user hears something rather than the
+    // tier-collapse silence.
     const char* fallback =
         acc::strings::Get(acc::strings::Id::MapCursorOpenArea);
     if (fallback && fallback[0]) {
