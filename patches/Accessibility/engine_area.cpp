@@ -506,6 +506,22 @@ bool GetObjectName(void* gameObject, char* outBuf, size_t bufSize) {
             }
             break;
         case K::Creature: {
+            // Prefer the engine's universal display-name accessor (same
+            // string a sighted user sees in tooltip / target reticle —
+            // localized via dialog.tlk). Generic spawns like
+            // tar02_woman02 / tar02_maintdrd have empty first_name
+            // strrefs, so the per-stats path below would otherwise fall
+            // through to the raw tag. Verified in combat.cpp /
+            // combat_queue.cpp where the same accessor returns
+            // "Sith-Soldat" etc.
+            uint32_t handle = GetObjectHandle(gameObject);
+            if (handle != 0u &&
+                GetObjectDisplayNameByHandle(handle, outBuf, bufSize) &&
+                outBuf[0] != '\0') {
+                got = true;
+                break;
+            }
+            outBuf[0] = '\0';
             __try {
                 void* stats = *reinterpret_cast<void**>(
                     reinterpret_cast<unsigned char*>(gameObject) +
