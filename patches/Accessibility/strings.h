@@ -644,6 +644,19 @@ enum class Id : int {
     // name in transitions.cpp.
     FmtMapCursorCorridorDir,  // "Korridor %s" / "Corridor %s"
     MapCursorTransitionDoor,  // "Türschwelle" / "Doorway"
+    // Junction-edge annotation: when a junction's direction leads
+    // directly to a degree-1 dead-end neighbour, the direction word
+    // is wrapped to flag the dead-end so the user doesn't waste a
+    // walk attempting it. Single `%s` (the direction word).
+    FmtMapCursorJunctionDeadEndExit, // "%s (Sackgasse)" / "%s (dead end)"
+    // Merged-junction announce. Used in place of FmtMapCursorJunctionDirs
+    // when a multi-node cluster has 3+ external exits — semantically the
+    // player is at a wider hub area, not a single point junction.
+    // wall_topology's announce path delays this label by ~1s so the
+    // player has time to walk further into the cluster before the
+    // direction list (computed from the cluster centroid) fires —
+    // gives more accurate centroid-relative direction perception.
+    FmtMapCursorPlazaDirs, // "Platz, %s" / "Place, %s"
     AxisNorthSouth,
     AxisEastWest,
 

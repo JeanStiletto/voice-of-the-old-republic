@@ -68,6 +68,23 @@
 
 namespace acc::wall_topology {
 
+// Kind codes packed into the low byte of the `sig` value returned by
+// LookupAt. Consumers (transitions.cpp uses this to detect Platz
+// clusters for the delayed-announce path) read the kind via
+// `sig & 0xff`.
+//
+// kKindTransition is reserved but currently unused (cross-room
+// degree-2 detection was retired 2026-05-13 after empirical evidence
+// that K1's .lyt-room boundaries don't correspond to doorways).
+enum Kind {
+    KindDeadEnd     = 0,
+    KindCorridor    = 1,
+    KindJunction    = 2,
+    KindTransition  = 3,
+    KindOpenArea    = 4,
+    KindPlatz       = 5,
+};
+
 // Build the wall-topology decomposition for `area`. Idempotent on the
 // same area pointer. Requires `acc::spatial::change_detector::
 // GetCachedWalls()` to be populated; silently no-ops with an empty

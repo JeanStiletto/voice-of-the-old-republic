@@ -45,20 +45,31 @@ constexpr int kMaxNodes = acc::engine::navgraph::kMaxNodes;
 // case where the nav graph is sparse. Tune from log evidence.
 constexpr float kMaxSnapM = 15.0f;
 
-// Kind bytes packed into the low byte of `sig`. Upper bytes vary by
-// kind (mask, octant index, etc.) — purely for log post-mortem.
+// Junction-merge thresholds. Two directly-connected nav-graph nodes
+// that are both degree-≥3 and pass these gates are merged into one
+// composite cluster: the cluster's announce describes the union of
+// their external exits, computed from the centroid of the cluster
+// members. K1 places nav-graph nodes densely around hub areas (Dias
+// Apartment at Taris Apartments has 2 junctions 6m apart, both reading
+// as Kreuzung in sequence); merging collapses these to one perceptual
+// "hub" announce.
 //
-// kKindTransition is deliberately retired: empirical Oberstadt data
-// (patch-20260513-102829.log) showed K1's .lyt-room boundaries don't
-// correspond to doorways — they're authoring units. Cross-room
-// degree-2 nodes were over-firing as "Türschwelle" along a 40m
-// east-west street, swallowing every corridor announce via
-// text-dedup. Real doorway detection would need wall-geometry
-// constriction sensing, which is a separate problem.
-constexpr int kKindDeadEnd  = 0;
-constexpr int kKindCorridor = 1;
-constexpr int kKindJunction = 2;
-constexpr int kKindOpenArea = 4;
+// - kMergeMaxDistanceM: planar distance gate. 8m matches K1's typical
+//   inter-junction spacing in hub clusters; wider corridors should not
+//   merge their endpoints.
+// - kMergeMaxZM: vertical gate. Stops multi-floor stacks (Sith base,
+//   Endar Spire decks) from collapsing vertically-aligned junctions.
+constexpr float kMergeMaxDistanceM = 8.0f;
+constexpr float kMergeMaxZM        = 1.0f;
+
+// Kind values now live in the public header (wall_topology.h) so
+// transitions.cpp can branch on Platz for the delayed-announce path.
+// Aliases here keep the local code compact.
+constexpr int kKindDeadEnd  = KindDeadEnd;
+constexpr int kKindCorridor = KindCorridor;
+constexpr int kKindJunction = KindJunction;
+constexpr int kKindOpenArea = KindOpenArea;
+constexpr int kKindPlatz    = KindPlatz;
 
 // ---------------------------------------------------------------------
 // Cached state for the current area.
@@ -163,103 +174,239 @@ int OctantBit(acc::strings::Id dir) {
     }
 }
 
-// ---------------------------------------------------------------------
-// Per-node classification (degree-driven).
-// ---------------------------------------------------------------------
-
-void ClassifyDeadEnd(int node, int neighbour,
-                     const acc::engine::navgraph::NavGraphSnapshot& g) {
+// Reverse of OctantBit: bit index → direction Id. Used when emitting
+// directions in canonical order rather than encounter order.
+acc::strings::Id BitToOctant(int bit) {
     using acc::strings::Id;
-    float dx = g.nodes[neighbour].pos.x - g.nodes[node].pos.x;
-    float dy = g.nodes[neighbour].pos.y - g.nodes[node].pos.y;
-    Id dir = OctantFromVector(dx, dy);
-    const char* word = acc::strings::Get(dir);
-    const char* fmt  = acc::strings::Get(Id::FmtMapCursorDeadEnd);
-    if (fmt && fmt[0] && word && word[0]) {
-        std::snprintf(g_graph.node_label[node],
-                      sizeof(g_graph.node_label[node]),
-                      fmt, word);
+    switch (bit) {
+        case 0: return Id::DirEast;
+        case 1: return Id::DirNortheast;
+        case 2: return Id::DirNorth;
+        case 3: return Id::DirNorthwest;
+        case 4: return Id::DirWest;
+        case 5: return Id::DirSouthwest;
+        case 6: return Id::DirSouth;
+        case 7: return Id::DirSoutheast;
     }
-    g_graph.node_kind[node] = kKindDeadEnd;
-    int octBit = OctantBit(dir);
-    g_graph.node_sig[node] = (kKindDeadEnd & 0xff) |
-                             ((octBit & 0xff) << 8);
+    return Id::DirEast;
 }
 
-void ClassifyCorridor(int node, int nbA, int nbB,
-                      const acc::engine::navgraph::NavGraphSnapshot& g) {
-    using acc::strings::Id;
-    float dx = g.nodes[nbB].pos.x - g.nodes[nbA].pos.x;
-    float dy = g.nodes[nbB].pos.y - g.nodes[nbA].pos.y;
-    Id dir = NordedOutAxisOctant(dx, dy);
+// Order in which we emit direction words at junctions / plazas. N
+// first then clockwise (NE, E, SE, S, SW, W, NW) — feels natural for
+// a player who orients on a compass and reads exits clockwise.
+constexpr int kOctantEmitOrder[8] = {
+    2, 1, 0, 7, 6, 5, 4, 3
+};
 
-    // A corridor axis is a line, not a direction. For the two cardinal
-    // cases swap in the proper axis word ("Nord-Süd" / "Ost-West") so
-    // the user doesn't read "Korridor Ost" as a one-way passage. The
-    // diagonal cases stay as their hyphenated single-octant word
-    // ("Nord-Ost", "Nord-West") on user direction — the hyphenated
-    // form already reads less directional than the cardinals.
-    Id wordId = dir;
-    if (dir == Id::DirNorth) wordId = Id::AxisNorthSouth;
-    else if (dir == Id::DirEast) wordId = Id::AxisEastWest;
+// ---------------------------------------------------------------------
+// Cluster classification (degree-driven, with junction-merge support).
+// ---------------------------------------------------------------------
 
-    const char* word = acc::strings::Get(wordId);
-    const char* fmt  = acc::strings::Get(Id::FmtMapCursorCorridorDir);
-    if (fmt && fmt[0] && word && word[0]) {
-        std::snprintf(g_graph.node_label[node],
-                      sizeof(g_graph.node_label[node]),
-                      fmt, word);
-    }
-    g_graph.node_kind[node] = kKindCorridor;
-    int octBit = OctantBit(dir);
-    g_graph.node_sig[node] = (kKindCorridor & 0xff) |
-                             ((octBit & 0xff) << 8);
+// Per-node degree from the snapshot. Tiny helper — every classifier
+// path needs this and it keeps the call sites self-documenting.
+int Degree(const acc::engine::navgraph::NavGraphSnapshot& g, int node) {
+    int lo = 0, hi = 0;
+    acc::engine::navgraph::NeighbourRange(g, node, lo, hi);
+    return hi - lo;
 }
 
-void ClassifyJunction(int node,
-                      const acc::engine::navgraph::NavGraphSnapshot& g,
-                      int lo, int hi) {
-    using acc::strings::Id;
-    char dirList[96] = {0};
-    size_t dirLen = 0;
-    int mask = 0;
+// Union-find over node ids. Used to merge directly-connected junctions
+// into single perceptual clusters. Reused for every BuildForArea
+// invocation (reset at the start of the function).
+int s_uf_parent[kMaxNodes];
 
-    // Walk neighbours in the order the engine stored them — produces a
-    // stable, repeatable order for the same area across runs (helps
-    // when comparing logs).
-    for (int e = lo; e < hi; ++e) {
-        int nb = static_cast<int>(g.conns[e]);
-        if (nb < 0 || nb >= static_cast<int>(g.nodes.size())) continue;
-        float dx = g.nodes[nb].pos.x - g.nodes[node].pos.x;
-        float dy = g.nodes[nb].pos.y - g.nodes[node].pos.y;
+int UFFind(int x) {
+    while (s_uf_parent[x] != x) {
+        s_uf_parent[x] = s_uf_parent[s_uf_parent[x]];  // path halving
+        x = s_uf_parent[x];
+    }
+    return x;
+}
+
+void UFUnite(int a, int b) {
+    int ra = UFFind(a);
+    int rb = UFFind(b);
+    if (ra == rb) return;
+    // Use smaller index as the cluster root so the dump output is
+    // stable across runs (the root is also used as the cluster's id).
+    if (ra < rb) s_uf_parent[rb] = ra;
+    else         s_uf_parent[ra] = rb;
+}
+
+// Append one direction entry to `dirList`. When `markDeadEnd` is set,
+// the direction word is wrapped via FmtMapCursorJunctionDeadEndExit
+// ("%s (Sackgasse)") so the user knows that exit doesn't lead onward
+// (option 1 from the 2026-05-13 Dias-cluster discussion — junctions
+// whose edges include degree-1 stubs should call them out).
+size_t AppendDirEntry(char* dirList, size_t bufSize, size_t dirLen,
+                      acc::strings::Id dirId, bool markDeadEnd) {
+    const char* word = acc::strings::Get(dirId);
+    if (!word || !word[0]) return dirLen;
+
+    char entry[64];
+    if (markDeadEnd) {
+        const char* fmt = acc::strings::Get(
+            acc::strings::Id::FmtMapCursorJunctionDeadEndExit);
+        if (fmt && fmt[0]) {
+            std::snprintf(entry, sizeof(entry), fmt, word);
+        } else {
+            std::snprintf(entry, sizeof(entry), "%s", word);
+        }
+    } else {
+        std::snprintf(entry, sizeof(entry), "%s", word);
+    }
+
+    if (dirLen > 0 && dirLen + 2 < bufSize) {
+        dirList[dirLen++] = ',';
+        dirList[dirLen++] = ' ';
+        dirList[dirLen]   = '\0';
+    }
+    size_t remaining = bufSize > dirLen ? bufSize - dirLen : 0;
+    if (remaining == 0) return dirLen;
+    int n = std::snprintf(dirList + dirLen, remaining, "%s", entry);
+    if (n > 0) {
+        size_t advanced = static_cast<size_t>(n) < remaining
+                              ? static_cast<size_t>(n)
+                              : (remaining > 0 ? remaining - 1 : 0);
+        dirLen += advanced;
+    }
+    return dirLen;
+}
+
+// Classify a cluster (1 or more nodes) by its centroid and the list of
+// external neighbour nodes (nodes outside this cluster that share an
+// edge with some member). `clusterSize` is the count of nodes in the
+// cluster — used only to distinguish singleton junctions ("Kreuzung")
+// from merged ones ("Platz"). Renders the label + kind + sig into the
+// out-params.
+//
+//   externalCount == 0  → isolated / open area
+//   externalCount == 1  → dead-end (direction = centroid → that exit)
+//   externalCount == 2  → corridor (axis between the two exits,
+//                                   cardinal cases use "Nord-Süd" /
+//                                   "Ost-West" axis words)
+//   externalCount >= 3  → junction (singleton) or Platz (merged).
+//                         8-octant bucketing with passable-wins:
+//                         per-octant aggregation marks the octant as
+//                         dead-end only when EVERY exit in it leads
+//                         to a degree-1 neighbour. Any passable exit
+//                         in the octant suppresses the marker — fixes
+//                         the order-dependent first-wins bug from the
+//                         initial revision.
+void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
+                     const Vector& centroid, int clusterSize,
+                     const int* externalNbs, int externalCount,
+                     char* outLabel, size_t outLabelSize,
+                     int& outKind, int& outSig) {
+    using acc::strings::Id;
+    if (outLabelSize > 0) outLabel[0] = '\0';
+    outKind = kKindOpenArea;
+    outSig  = kKindOpenArea;
+    if (outLabelSize == 0) return;
+    int n = static_cast<int>(g.nodes.size());
+
+    if (externalCount == 0) {
+        const char* s = acc::strings::Get(Id::MapCursorOpenArea);
+        if (s && s[0]) std::snprintf(outLabel, outLabelSize, "%s", s);
+        return;
+    }
+    if (externalCount == 1) {
+        int nb = externalNbs[0];
+        if (nb < 0 || nb >= n) return;
+        float dx = g.nodes[nb].pos.x - centroid.x;
+        float dy = g.nodes[nb].pos.y - centroid.y;
+        Id dir = OctantFromVector(dx, dy);
+        const char* word = acc::strings::Get(dir);
+        const char* fmt  = acc::strings::Get(Id::FmtMapCursorDeadEnd);
+        if (fmt && fmt[0] && word && word[0]) {
+            std::snprintf(outLabel, outLabelSize, fmt, word);
+        }
+        outKind = kKindDeadEnd;
+        int octBit = OctantBit(dir);
+        outSig = (kKindDeadEnd & 0xff) | ((octBit & 0xff) << 8);
+        return;
+    }
+    if (externalCount == 2) {
+        int nbA = externalNbs[0];
+        int nbB = externalNbs[1];
+        if (nbA < 0 || nbA >= n || nbB < 0 || nbB >= n) return;
+        float dx = g.nodes[nbB].pos.x - g.nodes[nbA].pos.x;
+        float dy = g.nodes[nbB].pos.y - g.nodes[nbA].pos.y;
+        Id dir = NordedOutAxisOctant(dx, dy);
+        Id wordId = dir;
+        if (dir == Id::DirNorth) wordId = Id::AxisNorthSouth;
+        else if (dir == Id::DirEast) wordId = Id::AxisEastWest;
+        const char* word = acc::strings::Get(wordId);
+        const char* fmt  = acc::strings::Get(Id::FmtMapCursorCorridorDir);
+        if (fmt && fmt[0] && word && word[0]) {
+            std::snprintf(outLabel, outLabelSize, fmt, word);
+        }
+        outKind = kKindCorridor;
+        int octBit = OctantBit(dir);
+        outSig = (kKindCorridor & 0xff) | ((octBit & 0xff) << 8);
+        return;
+    }
+
+    // 3+ external edges = junction or Platz. First pass: per-octant
+    // aggregation. octantHasExit[bit] is set whenever any external
+    // neighbour bucket-classifies into `bit`. octantAllDeadEnd[bit]
+    // starts true and gets cleared the moment a non-dead-end exit
+    // appears in that octant — so it stays true only when EVERY exit
+    // in the bucket is a degree-1 stub. This fixes the order-dependent
+    // first-wins issue where a passable exit could be silently masked
+    // by a co-located dead-end (or vice versa).
+    bool octantHasExit[8]    = {false, false, false, false,
+                                false, false, false, false};
+    bool octantAllDeadEnd[8] = {true, true, true, true,
+                                true, true, true, true};
+    for (int k = 0; k < externalCount; ++k) {
+        int nb = externalNbs[k];
+        if (nb < 0 || nb >= n) continue;
+        float dx = g.nodes[nb].pos.x - centroid.x;
+        float dy = g.nodes[nb].pos.y - centroid.y;
         Id dir = OctantFromVector(dx, dy);
         int bit = OctantBit(dir);
         if (bit < 0) continue;
-        if (mask & (1 << bit)) continue;
-        mask |= (1 << bit);
-        dirLen = AppendDirWord(dirList, sizeof(dirList), dirLen, dir);
+        octantHasExit[bit] = true;
+        if (Degree(g, nb) != 1) octantAllDeadEnd[bit] = false;
     }
 
-    const char* fmt = acc::strings::Get(Id::FmtMapCursorJunctionDirs);
+    // Second pass: emit octants in canonical order (N, NE, E, SE, S,
+    // SW, W, NW). Stable across runs; matches the way a compass-oriented
+    // player scans for exits clockwise.
+    char dirList[96] = {0};
+    size_t dirLen = 0;
+    int mask = 0;
+    int deadEndMask = 0;
+    for (int idx = 0; idx < 8; ++idx) {
+        int bit = kOctantEmitOrder[idx];
+        if (!octantHasExit[bit]) continue;
+        mask |= (1 << bit);
+        bool markDeadEnd = octantAllDeadEnd[bit];
+        if (markDeadEnd) deadEndMask |= (1 << bit);
+        Id dirId = BitToOctant(bit);
+        dirLen = AppendDirEntry(dirList, sizeof(dirList), dirLen,
+                                dirId, markDeadEnd);
+    }
+
+    bool isPlatz = clusterSize > 1;
+    Id fmtId = isPlatz ? Id::FmtMapCursorPlazaDirs
+                       : Id::FmtMapCursorJunctionDirs;
+    int kind = isPlatz ? kKindPlatz : kKindJunction;
+
+    const char* fmt = acc::strings::Get(fmtId);
     if (fmt && fmt[0] && dirList[0] != '\0') {
-        std::snprintf(g_graph.node_label[node],
-                      sizeof(g_graph.node_label[node]),
-                      fmt, dirList);
+        std::snprintf(outLabel, outLabelSize, fmt, dirList);
     } else {
-        // Fall back to the bare "Kreuzung" / "Junction" word when the
-        // direction list came out empty (every neighbour mapped to the
-        // same octant after dedup — unusual but possible at very
-        // densely-packed nodes).
         const char* bare = acc::strings::Get(Id::MapCursorJunction);
         if (bare && bare[0]) {
-            std::snprintf(g_graph.node_label[node],
-                          sizeof(g_graph.node_label[node]),
-                          "%s", bare);
+            std::snprintf(outLabel, outLabelSize, "%s", bare);
         }
     }
-    g_graph.node_kind[node] = kKindJunction;
-    g_graph.node_sig[node]  = (kKindJunction & 0xff) |
-                              ((mask & 0xff) << 8);
+    outKind = kind;
+    outSig  = (kind & 0xff) |
+              ((mask & 0xff) << 8) |
+              ((deadEndMask & 0xff) << 16);
 }
 
 }  // namespace
@@ -301,38 +448,115 @@ void BuildForArea(void* area) {
         g_graph.node_kind[i]     = kKindOpenArea;
     }
 
-    int deadEnds = 0, corridors = 0, junctions = 0;
+    // Pass 1: union-find merge of directly-connected degree-≥3 nodes
+    // within the distance + z gates. The cluster classifier in pass 2
+    // then treats each cluster (singletons included) as one perceptual
+    // place — adjacent same-octant junctions collapse to a single
+    // "Kreuzung" announce with the union of their external exits.
+    for (int i = 0; i < n; ++i) s_uf_parent[i] = i;
+    int mergeEdges = 0;
     for (int i = 0; i < n; ++i) {
+        if (Degree(g, i) < 3) continue;
         int lo = 0, hi = 0;
         acc::engine::navgraph::NeighbourRange(g, i, lo, hi);
-        int degree = hi - lo;
-        if (degree <= 0) {
-            // Isolated node — no exits. Leave as "open area"; the
-            // fallback path catches it.
-            continue;
+        for (int e = lo; e < hi; ++e) {
+            int j = static_cast<int>(g.conns[e]);
+            if (j < 0 || j >= n) continue;
+            if (j <= i) continue;  // process each unordered pair once
+            if (Degree(g, j) < 3) continue;
+            float dx = g.nodes[i].pos.x - g.nodes[j].pos.x;
+            float dy = g.nodes[i].pos.y - g.nodes[j].pos.y;
+            float dz = g.nodes[i].pos.z - g.nodes[j].pos.z;
+            if (dx * dx + dy * dy >
+                kMergeMaxDistanceM * kMergeMaxDistanceM) continue;
+            if (std::fabs(dz) > kMergeMaxZM) continue;
+            UFUnite(i, j);
+            ++mergeEdges;
         }
-        if (degree == 1) {
-            int nb = static_cast<int>(g.conns[lo]);
-            if (nb < 0 || nb >= n) continue;
-            ClassifyDeadEnd(i, nb, g);
-            ++deadEnds;
-        } else if (degree == 2) {
-            int nbA = static_cast<int>(g.conns[lo]);
-            int nbB = static_cast<int>(g.conns[lo + 1]);
-            if (nbA < 0 || nbA >= n || nbB < 0 || nbB >= n) continue;
-            ClassifyCorridor(i, nbA, nbB, g);
-            ++corridors;
-        } else {
-            ClassifyJunction(i, g, lo, hi);
-            ++junctions;
+    }
+
+    // Pass 2: per-cluster classification. For each cluster root (the
+    // smallest node id in its union-find class), compute the centroid,
+    // collect external neighbours (dedup by node id), classify via
+    // ClassifyCluster, and write the result to every member.
+    int clusters = 0, multiNodeClusters = 0;
+    int deadEnds = 0, corridors = 0, junctions = 0, openAreas = 0;
+    for (int root = 0; root < n; ++root) {
+        if (UFFind(root) != root) continue;
+        ++clusters;
+
+        // Centroid of all members.
+        Vector centroid = {0.0f, 0.0f, 0.0f};
+        int size = 0;
+        for (int m = 0; m < n; ++m) {
+            if (UFFind(m) != root) continue;
+            centroid.x += g.nodes[m].pos.x;
+            centroid.y += g.nodes[m].pos.y;
+            centroid.z += g.nodes[m].pos.z;
+            ++size;
+        }
+        if (size > 0) {
+            centroid.x /= size;
+            centroid.y /= size;
+            centroid.z /= size;
+        }
+        if (size > 1) ++multiNodeClusters;
+
+        // External neighbours: edges from any member to a non-member.
+        // Dedup by node id so multi-edge connections to the same
+        // outside node only register once.
+        constexpr int kMaxExternal = 16;
+        int externalNbs[kMaxExternal];
+        int externalCount = 0;
+        for (int m = 0; m < n; ++m) {
+            if (UFFind(m) != root) continue;
+            int lo = 0, hi = 0;
+            acc::engine::navgraph::NeighbourRange(g, m, lo, hi);
+            for (int e = lo; e < hi; ++e) {
+                int nb = static_cast<int>(g.conns[e]);
+                if (nb < 0 || nb >= n) continue;
+                if (UFFind(nb) == root) continue;  // internal edge
+                bool seen = false;
+                for (int k = 0; k < externalCount; ++k) {
+                    if (externalNbs[k] == nb) { seen = true; break; }
+                }
+                if (!seen && externalCount < kMaxExternal) {
+                    externalNbs[externalCount++] = nb;
+                }
+            }
+        }
+
+        char label[96] = {0};
+        int kind = kKindOpenArea, sig = 0;
+        ClassifyCluster(g, centroid, size, externalNbs, externalCount,
+                        label, sizeof(label), kind, sig);
+
+        switch (kind) {
+            case kKindDeadEnd:  ++deadEnds;  break;
+            case kKindCorridor: ++corridors; break;
+            case kKindJunction: ++junctions; break;
+            case kKindPlatz:    ++junctions; break;  // tally w/ junctions
+            default:            ++openAreas; break;
+        }
+
+        // Write to every cluster member.
+        for (int m = 0; m < n; ++m) {
+            if (UFFind(m) != root) continue;
+            std::strncpy(g_graph.node_label[m], label,
+                         sizeof(g_graph.node_label[m]) - 1);
+            g_graph.node_label[m][sizeof(g_graph.node_label[m]) - 1] = '\0';
+            g_graph.node_kind[m] = kind;
+            g_graph.node_sig[m]  = sig;
         }
     }
 
     g_graph.built = true;
     acclog::Write("WallTopo",
-                  "BuildForArea: area=%p nodes=%d (dead=%d corridor=%d "
-                  "junction=%d)",
-                  area, n, deadEnds, corridors, junctions);
+                  "BuildForArea: area=%p nodes=%d clusters=%d "
+                  "merged-pairs=%d multi-node-clusters=%d "
+                  "(dead=%d corridor=%d junction=%d open=%d)",
+                  area, n, clusters, mergeEdges, multiNodeClusters,
+                  deadEnds, corridors, junctions, openAreas);
     DumpGraphToLog();
 }
 
@@ -342,10 +566,11 @@ void DumpGraphToLog() {
         return;
     }
     for (int i = 0; i < g_graph.node_count; ++i) {
+        int root = UFFind(i);
         acclog::Write("WallTopo",
-                      "  node[%d] kind=%d sig=%d pos=(%.1f,%.1f,%.1f) "
-                      "label=\"%s\"",
-                      i, g_graph.node_kind[i], g_graph.node_sig[i],
+                      "  node[%d] cluster=%d kind=%d sig=%d "
+                      "pos=(%.1f,%.1f,%.1f) label=\"%s\"",
+                      i, root, g_graph.node_kind[i], g_graph.node_sig[i],
                       g_graph.node_pos[i].x, g_graph.node_pos[i].y,
                       g_graph.node_pos[i].z, g_graph.node_label[i]);
     }

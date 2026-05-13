@@ -232,6 +232,8 @@ const char* Get(Id id) {
         case Id::FmtMapCursorJunctionDirs:   return "Junction, %s";
         case Id::FmtMapCursorCorridorDir:    return "Corridor %s";
         case Id::MapCursorTransitionDoor:    return "Doorway";
+        case Id::FmtMapCursorJunctionDeadEndExit: return "%s (dead end)";
+        case Id::FmtMapCursorPlazaDirs:      return "Place, %s";
         case Id::AxisNorthSouth:             return "north-south";
         case Id::AxisEastWest:               return "east-west";
 

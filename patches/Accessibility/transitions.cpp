@@ -210,6 +210,23 @@ char g_last_spoken_room_text[128] = {0};
 Vector g_last_spoken_pos       = {0.0f, 0.0f, 0.0f};
 bool   g_last_spoken_pos_valid = false;
 
+// Platz delayed-announce state. When a multi-node Path 3 cluster
+// resolves (kind == KindPlatz) we defer the SAPI announce for
+// kPlatzDelayMs ms so the player has time to walk further into the
+// cluster — by the time the announce fires they're closer to the
+// centroid, so the centroid-relative direction list (West, Nord, …)
+// matches their actual perception of "which way is which" better.
+//
+// We re-resolve at fire time: if the player has crossed into a
+// different cluster meanwhile, the new label fires instead of the
+// stale one.
+char   g_pending_platz_text[128] = {0};
+DWORD  g_pending_platz_tick      = 0;
+bool   g_pending_platz_valid     = false;
+int    g_pending_platz_room      = -1;
+Vector g_pending_platz_pos       = {0.0f, 0.0f, 0.0f};
+constexpr DWORD kPlatzDelayMs = 1000;
+
 // Proximity-based landmark fire state. Patch-20260513-045034 showed
 // the player walked 1.5m from the "Zu deinem Apartment" waypoint at
 // (91.98, 134.42) but never crossed into the .lyt-room that owns
@@ -348,6 +365,12 @@ void LogWallTopoComparison(void* area, int roomIndex,
 // identical labels (corridor cells, repeated junctions). Gated by the
 // caller via combat / UI-blocking checks — `Tick` decides whether to
 // invoke us, this function speaks unconditionally once called.
+//
+// Platz delay: when the resolved label is a multi-node Path 3 cluster
+// (kind == KindPlatz), defer the SAPI announce for kPlatzDelayMs. The
+// label + room + position are stashed; `TickPendingPlatz` fires the
+// announce later, re-resolving at the current player position so a
+// player who walked through doesn't get a stale label.
 void SpeakRoomChange(void* area, int roomIndex, const Vector& worldPos) {
     char speechBuf[128] = {0};
     const char* source = "none";
@@ -368,10 +391,48 @@ void SpeakRoomChange(void* area, int roomIndex, const Vector& worldPos) {
         return;
     }
 
-    // Walking-adapter room change uses Prism+SAPI urgent so it survives
-    // NVDA's typed-character cancellation while W/S is held. Same
-    // rationale as the map cursor's ambient announce — sustained WASD
-    // input would otherwise silently cancel a queued Tolk_Output call.
+    // Peek at the Path 3 kind to decide between immediate announce and
+    // Platz-delay path. Re-runs LookupAt — cheap (linear scan over ~50
+    // nodes); avoids threading the sig back through ResolveRoomSpeech.
+    char   peekBuf[128] = {0};
+    int    peekSig      = 0;
+    int    peekKind     = -1;
+    if (acc::wall_topology::LookupAt(area, worldPos,
+                                     peekBuf, sizeof(peekBuf),
+                                     peekSig)) {
+        peekKind = peekSig & 0xff;
+    }
+
+    if (peekKind == acc::wall_topology::KindPlatz) {
+        // Defer: stash the resolved label + context for the timer in
+        // Tick to fire. Advance g_last_spoken_room_text now so further
+        // .lyt-room transitions inside the cluster (same label) get
+        // text-deduped out — we only fire once per Platz entry.
+        std::strncpy(g_pending_platz_text, speechBuf,
+                     sizeof(g_pending_platz_text) - 1);
+        g_pending_platz_text[sizeof(g_pending_platz_text) - 1] = '\0';
+        g_pending_platz_tick  = GetTickCount();
+        g_pending_platz_room  = roomIndex;
+        g_pending_platz_pos   = worldPos;
+        g_pending_platz_valid = true;
+        std::strncpy(g_last_spoken_room_text, speechBuf,
+                     sizeof(g_last_spoken_room_text) - 1);
+        g_last_spoken_room_text[sizeof(g_last_spoken_room_text) - 1] = '\0';
+        acclog::Write("Transition",
+                      "room -> %d '%s' src=%s — Platz, deferred %lums "
+                      "(areaPtr=%p)",
+                      roomIndex, speechBuf, source,
+                      (unsigned long)kPlatzDelayMs, area);
+        LogWallTopoComparison(area, roomIndex, worldPos, speechBuf, source);
+        return;
+    }
+
+    // Non-Platz path: walking-adapter room change uses Prism+SAPI
+    // urgent so it survives NVDA's typed-character cancellation while
+    // W/S is held. Cancel any pending Platz announce (we just entered
+    // a different shape, the deferred Platz no longer applies).
+    g_pending_platz_valid = false;
+
     tolk::SpeakUrgent(speechBuf);
     std::strncpy(g_last_spoken_room_text, speechBuf,
                  sizeof(g_last_spoken_room_text) - 1);
@@ -382,6 +443,68 @@ void SpeakRoomChange(void* area, int roomIndex, const Vector& worldPos) {
                   "room -> %d '%s' src=%s (areaPtr=%p)",
                   roomIndex, speechBuf, source, area);
     LogWallTopoComparison(area, roomIndex, worldPos, speechBuf, source);
+}
+
+// Fire any pending Platz announce whose delay has elapsed. Re-resolves
+// the label at the player's CURRENT position so a player who walked
+// through the cluster in <1s gets the label they actually ended up at
+// (or no announce, if they're now somewhere with the same label as the
+// pending one — that already got committed to last_spoken_room_text on
+// enqueue, so text-dedup eats the re-fire).
+void TickPendingPlatz(void* area, const Vector& playerPos) {
+    if (!g_pending_platz_valid) return;
+    DWORD now = GetTickCount();
+    if ((now - g_pending_platz_tick) < kPlatzDelayMs) return;
+
+    // Re-resolve at current position.
+    int roomIdx = -1;
+    acc::engine::GetRoomAtIndexed(area, playerPos, roomIdx);
+
+    char fireBuf[128] = {0};
+    const char* source = "none";
+    bool resolved = ResolveRoomSpeech(area, roomIdx, playerPos,
+                                      fireBuf, sizeof(fireBuf), source) &&
+                    fireBuf[0] != '\0';
+
+    if (resolved &&
+        std::strncmp(fireBuf, g_pending_platz_text,
+                     sizeof(g_pending_platz_text)) == 0) {
+        // Same Platz still under the player. Fire the announce now.
+        tolk::SpeakUrgent(fireBuf);
+        g_last_spoken_pos       = playerPos;
+        g_last_spoken_pos_valid = true;
+        acclog::Write("Transition",
+                      "Platz announce fired after %lums: '%s' (room=%d "
+                      "areaPtr=%p)",
+                      (unsigned long)(now - g_pending_platz_tick),
+                      fireBuf, roomIdx, area);
+    } else if (resolved &&
+               std::strncmp(fireBuf, g_last_spoken_room_text,
+                            sizeof(g_last_spoken_room_text)) != 0) {
+        // Player has moved on to a different shape during the delay.
+        // Fire the NEW label so we don't leave them unannounced.
+        tolk::SpeakUrgent(fireBuf);
+        std::strncpy(g_last_spoken_room_text, fireBuf,
+                     sizeof(g_last_spoken_room_text) - 1);
+        g_last_spoken_room_text[sizeof(g_last_spoken_room_text) - 1] = '\0';
+        g_last_spoken_pos       = playerPos;
+        g_last_spoken_pos_valid = true;
+        acclog::Write("Transition",
+                      "Platz announce superseded after %lums: pending='%s' "
+                      "current='%s' src=%s (room=%d areaPtr=%p)",
+                      (unsigned long)(now - g_pending_platz_tick),
+                      g_pending_platz_text, fireBuf, source, roomIdx, area);
+    } else {
+        // Either resolution failed or text-dedups against the same
+        // last-spoken label (we already advanced last_spoken to the
+        // pending Platz label on enqueue, so this branch fires when
+        // the player is back where they started — same label).
+        acclog::Write("Transition",
+                      "Platz announce expired (no new label) pending='%s' "
+                      "(room=%d areaPtr=%p)",
+                      g_pending_platz_text, roomIdx, area);
+    }
+    g_pending_platz_valid = false;
 }
 
 // Forward declaration so TickProximityLandmarks can call it.
@@ -527,6 +650,7 @@ void Tick() {
         g_lm_prox_pending_idx      = -1;
         g_lm_prox_pending_count    = 0;
         g_lm_prox_last_spoken_idx  = -1;
+        g_pending_platz_valid      = false;
         acc::region::Reset();
         acc::wall_topology::Reset();
         return;
@@ -574,6 +698,7 @@ void Tick() {
         g_lm_prox_pending_idx      = -1;
         g_lm_prox_pending_count    = 0;
         g_lm_prox_last_spoken_idx  = -1;
+        g_pending_platz_valid      = false;
     } else if (!acc::region::HasCacheForArea(area) ||
                !acc::wall_topology::HasGraphForArea(area)) {
         // Same area as last tick but at least one cache still isn't
@@ -594,6 +719,13 @@ void Tick() {
     // run BEFORE the room-transition early-returns so it isn't gated
     // by the player standing still in one .lyt-room.
     TickProximityLandmarks(pos);
+
+    // Pending Platz announce: fires whenever its delay elapses,
+    // regardless of whether a new .lyt-room transition triggered this
+    // tick. Lives outside the room-stability gate below so the
+    // deferred speech reliably lands ~1s after entering a Platz
+    // cluster.
+    TickPendingPlatz(area, pos);
 
     int roomIndex = -1;
     void* room = acc::engine::GetRoomAtIndexed(area, pos, roomIndex);
