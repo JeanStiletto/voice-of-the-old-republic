@@ -151,6 +151,26 @@ void Dispatch() {
     // "north-east" etc. on sector change with 5° hysteresis.
     acc::turn_announce::Tick();
 
+    // ----- ORDER LOAD-BEARING -----
+    // camera_announce → spatial::change_detector → transitions → view_mode.
+    //   * camera_announce dead-reckons camera yaw from A/D held state;
+    //     anchors the estimate on character-yaw changes.
+    //   * change_detector reads camera yaw via
+    //     camera_announce::TryGetCameraEngineYawDegrees for direction-
+    //     aware filtering, and rebuilds the per-area wall cache.
+    //   * transitions builds the region_classifier + wall_topology
+    //     caches that depend on the wall cache. Must run AFTER
+    //     change_detector or it reads stale walls from the previous
+    //     area on the first tick of an area change — confirmed by
+    //     patch-20260513-054417 (Oberstadt got built with Apartments
+    //     walls, edge counts matched exactly).
+    //   * view_mode reads BOTH the camera yaw and the wall cache (cursor
+    //     collision tests) and the region/landmark caches (cursor
+    //     announce). Must run AFTER transitions for the latter.
+    // Do not reorder these four without revisiting their consumers.
+    acc::camera_announce::Tick();
+    acc::spatial::change_detector::Tick();
+
     // Phase 2 lay-off 7 — Pillar 2 area + room transition announcements.
     // Per-tick area-pointer + room-index delta detection; speaks "Bereich:
     // {name}" on area change and "Raum: {name}" on room change. First
@@ -158,18 +178,6 @@ void Dispatch() {
     // on game-load). Self-gates on player+area resolved.
     acc::transitions::Tick();
 
-    // ----- ORDER LOAD-BEARING -----
-    // camera_announce → spatial::change_detector → view_mode.
-    //   * camera_announce dead-reckons camera yaw from A/D held state;
-    //     anchors the estimate on character-yaw changes.
-    //   * change_detector reads camera yaw via
-    //     camera_announce::TryGetCameraEngineYawDegrees for direction-
-    //     aware filtering, and rebuilds the per-area wall cache.
-    //   * view_mode reads BOTH the camera yaw and the wall cache (cursor
-    //     collision tests).
-    // Do not reorder these three without revisiting their consumers.
-    acc::camera_announce::Tick();
-    acc::spatial::change_detector::Tick();
     acc::view_mode::Tick();
 
     // Phase 5 lay-off 6 — virtual cursor on the in-game area-map UI.
