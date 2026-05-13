@@ -1,6 +1,7 @@
 #include "transitions.h"
 
 #include <windows.h>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -192,6 +193,37 @@ void RebuildLandmarkCache(void* area) {
 // area change.
 char g_last_spoken_room_text[128] = {0};
 
+// Coordinate hysteresis state. Patch-20260513-045034 had bursts like
+// 6 announcements in 6 seconds while crossing 5 small .lyt-rooms — the
+// stability + text-dedup gates passed because each room had a distinct
+// label, but the player perceived it as spam. Requiring N metres of
+// player displacement from the previous announcement collapses these
+// bursts to a much calmer cadence. Walking at 2 m/s with a 4 m gate
+// caps speech at one announce per 2s along continuous travel.
+// Stationary movement (boundary flickering at a doorway) is already
+// caught by the stability-tick gate; this catches the orthogonal
+// "moving fast through small cells" case.
+Vector g_last_spoken_pos       = {0.0f, 0.0f, 0.0f};
+bool   g_last_spoken_pos_valid = false;
+constexpr float kMinAnnounceDistanceM = 4.0f;
+
+// Proximity-based landmark fire state. Patch-20260513-045034 showed
+// the player walked 1.5m from the "Zu deinem Apartment" waypoint at
+// (91.98, 134.42) but never crossed into the .lyt-room that owns
+// the landmark — room 11 is a thin sliver around the door. Result:
+// the landmark never fired. Decouple landmark firing from .lyt-room
+// crossing entirely: each tick, find the nearest landmark within
+// enter-range; if stable for N ticks and not the last-spoken one,
+// speak it. Exit at a larger range so a landmark re-announces when
+// the player walks away and comes back, but not when standing
+// nearby for a long time.
+constexpr float kLandmarkEnterRangeM     = 8.0f;
+constexpr float kLandmarkExitRangeM      = 12.0f;
+constexpr int   kLandmarkStabilityTicks  = 5;
+int   g_lm_prox_pending_idx     = -1;
+int   g_lm_prox_pending_count   = 0;
+int   g_lm_prox_last_spoken_idx = -1;
+
 // Maximum distance (world units; KOTOR = metres) between the player /
 // cursor and a landmark waypoint for the landmark tier to fire. .lyt-
 // rooms in K1 stretch across long thin transition strips, so "same
@@ -233,13 +265,14 @@ bool ResolveRoomSpeech(void* area, int roomIndex,
     outBuf[0] = '\0';
     outSource = "none";
 
-    const char* landmark = GetLandmarkForRoom(roomIndex);
-    if (landmark && landmark[0] != '\0' &&
-        PlayerInLandmarkRange(roomIndex, worldPos)) {
-        std::snprintf(outBuf, bufSize, "%s", landmark);
-        outSource = "landmark";
-        return true;
-    }
+    // Landmark tier removed from the room-transition path 2026-05-13.
+    // Landmarks now fire via TickProximityLandmarks below, which scans
+    // every waypoint each tick and triggers on geometric proximity to
+    // the waypoint position — not on .lyt-room crossing. This catches
+    // landmarks whose .lyt-room is a thin sliver the player passes
+    // *next to* without crossing into ("Zu deinem Apartment" case in
+    // patch-20260513-045034). Room-tier kept for shape + friendly
+    // room name only.
 
     char nameBuf[128] = {0};
     if (acc::engine::GetRoomDisplayName(area, roomIndex,
@@ -296,6 +329,34 @@ void SpeakRoomChange(void* area, int roomIndex, const Vector& worldPos) {
         return;
     }
 
+    // Coordinate hysteresis. Suppress shape / room-name announcements
+    // when the player hasn't moved far from the previous spoken
+    // position — collapses the "rapid burst through small cells"
+    // pattern (patch-20260513-045034 had 6/6s peaks crossing 5 .lyt-
+    // rooms). Landmarks bypass: they're rare, high-value, and already
+    // gated to within 15m of the actual waypoint.
+    bool isLandmark = (std::strcmp(source, "landmark") == 0);
+    if (!isLandmark && g_last_spoken_pos_valid) {
+        float dx = worldPos.x - g_last_spoken_pos.x;
+        float dy = worldPos.y - g_last_spoken_pos.y;
+        float d2 = dx * dx + dy * dy;
+        float minD2 = kMinAnnounceDistanceM * kMinAnnounceDistanceM;
+        if (d2 < minD2) {
+            acclog::Write("Transition",
+                          "room -> %d '%s' src=%s — hysteresis "
+                          "(%.2fm < %.1fm), silent",
+                          roomIndex, speechBuf, source,
+                          std::sqrt(d2), kMinAnnounceDistanceM);
+            // Advance text-dedup state so the *next* qualifying
+            // announce treats this label as already-known.
+            std::strncpy(g_last_spoken_room_text, speechBuf,
+                         sizeof(g_last_spoken_room_text) - 1);
+            g_last_spoken_room_text[
+                sizeof(g_last_spoken_room_text) - 1] = '\0';
+            return;
+        }
+    }
+
     // Walking-adapter room change uses Prism+SAPI urgent so it survives
     // NVDA's typed-character cancellation while W/S is held. Same
     // rationale as the map cursor's ambient announce — sustained WASD
@@ -304,9 +365,100 @@ void SpeakRoomChange(void* area, int roomIndex, const Vector& worldPos) {
     std::strncpy(g_last_spoken_room_text, speechBuf,
                  sizeof(g_last_spoken_room_text) - 1);
     g_last_spoken_room_text[sizeof(g_last_spoken_room_text) - 1] = '\0';
+    g_last_spoken_pos       = worldPos;
+    g_last_spoken_pos_valid = true;
     acclog::Write("Transition",
                   "room -> %d '%s' src=%s (areaPtr=%p)",
                   roomIndex, speechBuf, source, area);
+}
+
+// Forward declaration so TickProximityLandmarks can call it.
+bool IsWorldSpeechGatedImpl();
+
+// Per-tick scan over the landmark cache. Decoupled from .lyt-room
+// crossings so landmarks whose room is a thin sliver still announce
+// when the player walks close to the waypoint. Three-state machine
+// mirroring turn_announce: pending idx + pending count for stability,
+// last-spoken idx for "already announced this approach" suppression;
+// last-spoken resets when the player walks past `kLandmarkExitRangeM`
+// so a return visit re-announces.
+void TickProximityLandmarks(const Vector& playerPos) {
+    // Re-arm: if the last-spoken landmark is now beyond exit range,
+    // clear it so we can re-announce on a future approach.
+    if (g_lm_prox_last_spoken_idx >= 0) {
+        int i = g_lm_prox_last_spoken_idx;
+        if (i >= 0 && i < kMaxRoomsCache && g_room_landmark_has_pos[i]) {
+            float dx = playerPos.x - g_room_landmark_pos[i].x;
+            float dy = playerPos.y - g_room_landmark_pos[i].y;
+            float d2 = dx * dx + dy * dy;
+            if (d2 > kLandmarkExitRangeM * kLandmarkExitRangeM) {
+                acclog::Write("Transition",
+                              "landmark proximity re-arm idx=%d "
+                              "(dist=%.2fm > %.1fm exit)",
+                              i, std::sqrt(d2), kLandmarkExitRangeM);
+                g_lm_prox_last_spoken_idx = -1;
+            }
+        } else {
+            // Stale index after area change.
+            g_lm_prox_last_spoken_idx = -1;
+        }
+    }
+
+    // Find the nearest landmark inside enter range.
+    int   nearest = -1;
+    float bestD2  = kLandmarkEnterRangeM * kLandmarkEnterRangeM;
+    for (int i = 0; i < kMaxRoomsCache; ++i) {
+        if (!g_room_landmark_has_pos[i])    continue;
+        if (g_room_landmark[i][0] == '\0')  continue;
+        float dx = playerPos.x - g_room_landmark_pos[i].x;
+        float dy = playerPos.y - g_room_landmark_pos[i].y;
+        float d2 = dx * dx + dy * dy;
+        if (d2 < bestD2) {
+            bestD2  = d2;
+            nearest = i;
+        }
+    }
+
+    if (nearest < 0) {
+        // No landmark in range — clear pending.
+        g_lm_prox_pending_idx   = -1;
+        g_lm_prox_pending_count = 0;
+        return;
+    }
+
+    if (nearest == g_lm_prox_last_spoken_idx) {
+        // Same landmark we already announced this approach.
+        g_lm_prox_pending_idx   = -1;
+        g_lm_prox_pending_count = 0;
+        return;
+    }
+
+    if (nearest == g_lm_prox_pending_idx) {
+        ++g_lm_prox_pending_count;
+    } else {
+        g_lm_prox_pending_idx   = nearest;
+        g_lm_prox_pending_count = 1;
+    }
+
+    if (g_lm_prox_pending_count < kLandmarkStabilityTicks) return;
+
+    // Fire — unless gated by combat / blocking UI. We still advance
+    // last-spoken so the gate releasing doesn't trigger a burst of
+    // stale landmarks for a player who stood still during combat.
+    if (IsWorldSpeechGatedImpl()) {
+        acclog::Write("Transition",
+                      "landmark proximity -> '%s' (idx=%d dist=%.2fm) "
+                      "gated, state advanced silently",
+                      g_room_landmark[nearest], nearest, std::sqrt(bestD2));
+    } else {
+        tolk::SpeakUrgent(g_room_landmark[nearest]);
+        acclog::Write("Transition",
+                      "landmark proximity -> '%s' (idx=%d dist=%.2fm)",
+                      g_room_landmark[nearest], nearest, std::sqrt(bestD2));
+    }
+    g_lm_prox_last_spoken_idx = nearest;
+    g_lm_prox_pending_idx     = -1;
+    g_lm_prox_pending_count   = 0;
 }
 
 // Forward declaration of the public predicate (defined at file scope
@@ -359,6 +511,10 @@ void Tick() {
         g_prev_area     = nullptr;
         g_prev_room_idx = -1;
         g_last_spoken_room_text[0] = '\0';
+        g_last_spoken_pos_valid    = false;
+        g_lm_prox_pending_idx      = -1;
+        g_lm_prox_pending_count    = 0;
+        g_lm_prox_last_spoken_idx  = -1;
         acc::region::Reset();
         return;
     }
@@ -396,6 +552,10 @@ void Tick() {
         g_pending_room_idx   = -1;  // and reset stability tracker
         g_pending_room_count = 0;
         g_last_spoken_room_text[0] = '\0';
+        g_last_spoken_pos_valid    = false;
+        g_lm_prox_pending_idx      = -1;
+        g_lm_prox_pending_count    = 0;
+        g_lm_prox_last_spoken_idx  = -1;
     } else if (!acc::region::HasCacheForArea(area)) {
         // Same area as last tick but the cache still isn't built — wall
         // cache wasn't ready when the area-change branch fired. Retry
@@ -404,6 +564,13 @@ void Tick() {
         // populated.
         acc::region::BuildCacheForArea(area);
     }
+
+    // Proximity-based landmark scan runs every tick, independent of
+    // .lyt-room crossings. Fires when the player enters within 8m of
+    // any landmark waypoint, with stability + exit-hysteresis. Must
+    // run BEFORE the room-transition early-returns so it isn't gated
+    // by the player standing still in one .lyt-room.
+    TickProximityLandmarks(pos);
 
     int roomIndex = -1;
     void* room = acc::engine::GetRoomAtIndexed(area, pos, roomIndex);
