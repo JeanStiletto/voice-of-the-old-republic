@@ -79,6 +79,8 @@ const char* const kActionNames[static_cast<int>(Action::COUNT)] = {
     "ProbeAudioFire",
     "ProbeCameraDump",
     "ProbeMouseLookToggle",
+    "ProbeCameraDistDump",
+    "ProbeCameraDistClampToggle",
 };
 
 bool IsDownVk(int vk) {
@@ -212,11 +214,23 @@ void InitDefaults() {
     bind(Action::EditboxCancel,        VK_ESCAPE, 0, 0, 0);
 
     // ----- Diagnostic probes -----
-    bind(Action::ProbePathfind,        VK_F9,  0, 0, 0);
-    bind(Action::ProbeAudioCycle,      VK_F10, 0, 0, 0);
-    bind(Action::ProbeAudioFire,       VK_F11, 0, 0, 0);
-    bind(Action::ProbeCameraDump,      VK_F12, 0, 0, 0);
+    // Plain F9-F12 forbid Ctrl so the Option-B distance probes below can
+    // own Ctrl+F11 / Ctrl+F12 without double-firing the bare-F-key probes.
+    bind(Action::ProbePathfind,        VK_F9,  0, 0, kModCtrl);
+    bind(Action::ProbeAudioCycle,      VK_F10, 0, 0, kModCtrl);
+    // F11 unbound — the camera-distance clamp toggle (Ctrl+F11) needs the
+    // key free for sustained per-mode testing; the fixed-North audio probe
+    // it formerly hosted was getting in the way. Rebind here when re-
+    // investigating the listener-frame question.
+    bind(Action::ProbeAudioFire,       0,      0, 0, 0);
+    bind(Action::ProbeCameraDump,      VK_F12, 0, 0, kModCtrl);
     bind(Action::ProbeMouseLookToggle, VK_RMENU, 0, kModShift, 0);
+
+    // Option-B camera-distance probes. Ctrl-modified to disambiguate from
+    // the bare F-key probes above. See probe_camera_distance.h for the
+    // engine surfaces and intent.
+    bind(Action::ProbeCameraDistDump,        VK_F12, 0, kModCtrl, 0);
+    bind(Action::ProbeCameraDistClampToggle, VK_F11, 0, kModCtrl, 0);
 }
 
 }  // namespace
@@ -314,6 +328,8 @@ bool IsUserRebindable(Action a) {
     case Action::ProbeAudioFire:
     case Action::ProbeCameraDump:
     case Action::ProbeMouseLookToggle:
+    case Action::ProbeCameraDistDump:
+    case Action::ProbeCameraDistClampToggle:
         return false;
     default:
         return true;

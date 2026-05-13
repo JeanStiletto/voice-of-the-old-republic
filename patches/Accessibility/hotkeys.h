@@ -95,11 +95,13 @@ enum class Action : int {
     EditboxCancel,         // Esc  while edit-mode armed
 
     // ----- Diagnostic probes (NOT user-rebindable) -----
-    ProbePathfind,         // F9
-    ProbeAudioCycle,       // F10
-    ProbeAudioFire,        // F11
-    ProbeCameraDump,       // F12
-    ProbeMouseLookToggle,  // Shift+AltGr
+    ProbePathfind,             // F9     (Ctrl forbidden)
+    ProbeAudioCycle,           // F10    (Ctrl forbidden)
+    ProbeAudioFire,            // F11    (Ctrl forbidden)
+    ProbeCameraDump,           // F12    (Ctrl forbidden)
+    ProbeMouseLookToggle,      // Shift+AltGr
+    ProbeCameraDistDump,       // Ctrl+F12 — Option-B camera-distance snapshot
+    ProbeCameraDistClampToggle,// Ctrl+F11 — cycle distance clamp modes
 
     // ----- Sentinel -----
     COUNT

@@ -27,6 +27,7 @@
 #include "party_leader_announce.h"
 #include "passive_narrate.h"
 #include "probe_audio_frame.h"
+#include "probe_camera_distance.h"
 #include "probe_camera_state.h"
 #include "probe_mouselook.h"
 #include "probe_pathfind.h"
@@ -101,6 +102,14 @@ void Dispatch() {
     // character yaw. Used to calibrate units and frame for a
     // production camera_yaw reader (replaces dead-reckoning).
     acc::probe_camera_state::PollWin32();
+
+    // Option-B camera-distance probe — Ctrl+F12 snapshots the active
+    // camera behavior's target-distance field; Ctrl+F11 cycles per-tick
+    // clamp modes (off/0.0/0.5/2.0 m) and logs whether the engine's
+    // per-frame recompute stomps the clamp. Feasibility check for
+    // "collapse camera distance to 0 → listener ends up at character"
+    // — see probe_camera_distance.h for the engine surfaces.
+    acc::probe_camera_distance::Tick();
 
     // Phase 4 lay-off 3 — view-mode skeleton. B toggles the "stop and
     // look around without budging the character" mode (lifecycle only;
