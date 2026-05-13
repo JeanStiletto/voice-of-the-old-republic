@@ -635,6 +635,15 @@ enum class Id : int {
     FmtMapCursorCorridor,     // "Corridor along %s axis, about %.0f m wide"
     FmtMapCursorDeadEnd,      // "Dead end opening %s"
     FmtMapCursorJunctionDirs, // "Junction, openings %s" — comma-separated direction list
+    // Path-3 nav-graph topology vocabulary. Corridor labels are
+    // norded-out (always point toward the northern half of the world
+    // map) so the player never hears "south-corridor"; the axis is a
+    // line, not a vector, and showing both ends would double the
+    // vocabulary for zero information. Transitions speak as a doorway
+    // ("Türschwelle") and optionally compose with the friendly room
+    // name in transitions.cpp.
+    FmtMapCursorCorridorDir,  // "Korridor %s" / "Corridor %s"
+    MapCursorTransitionDoor,  // "Türschwelle" / "Doorway"
     AxisNorthSouth,
     AxisEastWest,
 

@@ -348,6 +348,49 @@ bool TryResolvePrismSapi() {
 
 }  // namespace
 
+// Re-encode a CP_ACP (Windows-1252 on this build) byte string as UTF-8.
+// Prism's SAPI backend rejects any input that isn't valid UTF-8 with
+// PRISM_ERROR_INVALID_UTF8 (=13), which on a German install meant every
+// announce containing "ü", "ö", "ä", "ß", etc. was silently dropped
+// (patch-20260513-105958.log: 14× "(repeated 1x more)" on the rc=13
+// dedup tag over a 4-minute session; Korridor Nord-Süd, Sackgasse Süd,
+// Türschwelle, etc. all dropped).
+//
+// On success writes a NUL-terminated UTF-8 string into `outBuf` and
+// returns true. The caller passes a stack buffer large enough for the
+// 4×-worst-case expansion plus NUL (UTF-8 codepoints from CP_ACP top
+// out at 3 bytes, but we allow headroom). Returns false on overflow or
+// any conversion failure — the announce is then dropped, same as before
+// the fix would have left it.
+static bool ReencodeAcpToUtf8(const char* in, char* outBuf, size_t outBufSize) {
+    if (!in || !outBuf || outBufSize == 0) return false;
+    int wideLen = MultiByteToWideChar(CP_ACP, 0, in, -1, nullptr, 0);
+    if (wideLen <= 0) return false;
+    wchar_t wStack[256];
+    wchar_t* w = wStack;
+    wchar_t* wHeap = nullptr;
+    if (static_cast<size_t>(wideLen) > sizeof(wStack) / sizeof(wStack[0])) {
+        wHeap = (wchar_t*)malloc(static_cast<size_t>(wideLen) * sizeof(wchar_t));
+        if (!wHeap) return false;
+        w = wHeap;
+    }
+    int gotWide = MultiByteToWideChar(CP_ACP, 0, in, -1, w, wideLen);
+    if (gotWide <= 0) {
+        if (wHeap) free(wHeap);
+        return false;
+    }
+    int needed = WideCharToMultiByte(CP_UTF8, 0, w, -1, nullptr, 0, nullptr, nullptr);
+    if (needed <= 0 || static_cast<size_t>(needed) > outBufSize) {
+        if (wHeap) free(wHeap);
+        return false;
+    }
+    int got = WideCharToMultiByte(CP_UTF8, 0, w, -1, outBuf,
+                                  static_cast<int>(outBufSize),
+                                  nullptr, nullptr);
+    if (wHeap) free(wHeap);
+    return got > 0;
+}
+
 void SpeakUrgent(const char* text) {
     if (!g_available || !text || !*text) return;
 
@@ -366,8 +409,28 @@ void SpeakUrgent(const char* text) {
         // rc != 0 is logged but never produces speech via the NVDA
         // fallback (would re-introduce the double-speak the user hit
         // earlier). The next SpeakUrgent call will retry naturally.
-        PrismError rc = pPrism_backend_speak(g_prismSapi, text, /*interrupt=*/true);
+        //
+        // Encoding: Prism's SAPI backend strict-validates UTF-8 and
+        // returns rc=13 (PRISM_ERROR_INVALID_UTF8) on any non-UTF-8
+        // byte. Our string literals are CP_ACP (Windows-1252 on the
+        // German build), so any umlaut byte (0xFC etc.) is an invalid
+        // UTF-8 lead byte → whole utterance dropped. Re-encode here
+        // before dispatch.
+        char utf8Buf[512];
+        const char* speakText = text;
+        if (ReencodeAcpToUtf8(text, utf8Buf, sizeof(utf8Buf))) {
+            speakText = utf8Buf;
+        }
+        // If re-encode failed we still attempt the dispatch with the
+        // original bytes — for pure-ASCII strings the byte sequence is
+        // identical to UTF-8, so the dispatch succeeds and we don't
+        // lose the announce just because the conversion happened to
+        // overflow the buffer.
+
+        PrismError rc = pPrism_backend_speak(g_prismSapi, speakText, /*interrupt=*/true);
         if (rc == 0) {
+            // Log the original CP_ACP text so the patch log stays
+            // readable in the same encoding as every other log line.
             acclog::Trace("Tolk.spoke", "[SAPI] %s", text);
         } else {
             // Do NOT fall back to Tolk_Output here. prism_backend_speak

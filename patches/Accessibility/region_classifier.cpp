@@ -13,7 +13,7 @@
 #include <cstring>
 
 #include "engine_area.h"
-#include "guidance_pathfind.h"        // path-graph offsets for adjacency
+#include "engine_navgraph.h"          // shared nav-graph snapshot
 #include "log.h"
 #include "spatial_change_detector.h"  // GetCachedWalls
 #include "strings.h"
@@ -236,6 +236,24 @@ bool HasCacheForArea(void* area) {
            g_cache.area_owner == area;
 }
 
+namespace {
+
+// SEH-isolated read of CSWSArea.room_count. Pulled out of
+// BuildCacheForArea because that function now holds C++ objects with
+// destructors (the navgraph snapshot's vectors), which MSVC refuses to
+// mix with __try in the same scope.
+int ReadRoomCount(void* area) {
+    __try {
+        return static_cast<int>(*reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(area) +
+            kAreaRoomCountOffset));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
+}  // namespace
+
 void BuildCacheForArea(void* area) {
     if (!area) return;
     if (HasCacheForArea(area)) return;  // idempotent on the same area
@@ -253,14 +271,7 @@ void BuildCacheForArea(void* area) {
         return;
     }
 
-    int roomCount = 0;
-    __try {
-        roomCount = static_cast<int>(*reinterpret_cast<uint32_t*>(
-            reinterpret_cast<unsigned char*>(area) +
-            kAreaRoomCountOffset));
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        roomCount = 0;
-    }
+    int roomCount = ReadRoomCount(area);
     if (roomCount > kMaxRooms) {
         acclog::Write("Region",
                       "BuildCacheForArea: area reports %d rooms — "
@@ -279,57 +290,27 @@ void BuildCacheForArea(void* area) {
     Vector   sampleByRoom[kMaxRooms]     = {};
     bool     hasSample[kMaxRooms]        = {};
 
-    uint32_t pathPointsCount = 0;
-    void* pathPointsPtr = nullptr;
-    uint32_t pathConnectionsCount = 0;
-    void* pathConnectionsPtr = nullptr;
-    __try {
-        auto* abase = reinterpret_cast<unsigned char*>(area);
-        pathPointsCount = *reinterpret_cast<uint32_t*>(
-            abase + kAreaPathPointsCountOffset);
-        pathPointsPtr = *reinterpret_cast<void**>(
-            abase + kAreaPathPointsPtrOffset);
-        pathConnectionsCount = *reinterpret_cast<uint32_t*>(
-            abase + kAreaPathConnectionsCountOffset);
-        pathConnectionsPtr = *reinterpret_cast<void**>(
-            abase + kAreaPathConnectionsPtrOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        pathPointsCount = 0;
-    }
+    acc::engine::navgraph::NavGraphSnapshot navGraph;
+    acc::engine::navgraph::SnapshotNavGraph(area, navGraph);
+    const uint32_t pathPointsCount      = static_cast<uint32_t>(navGraph.nodes.size());
+    const uint32_t pathConnectionsCount = static_cast<uint32_t>(navGraph.conns.size());
 
     constexpr uint32_t kMaxPathPoints = 512;
-    if (pathPointsCount > kMaxPathPoints) pathPointsCount = kMaxPathPoints;
-
     int      pointRoom[kMaxPathPoints];
-    uint32_t pointCsr [kMaxPathPoints];
     for (uint32_t i = 0; i < kMaxPathPoints; ++i) {
         pointRoom[i] = -1;
-        pointCsr[i]  = 0;
     }
 
-    if (pathPointsCount > 0 && pathPointsPtr) {
-        auto* pointsBase = reinterpret_cast<unsigned char*>(pathPointsPtr);
-        for (uint32_t i = 0; i < pathPointsCount; ++i) {
-            Vector pos;
-            __try {
-                pos = *reinterpret_cast<Vector*>(
-                    pointsBase + i * kPathPointStride +
-                    kPathPointPositionOffset);
-                pointCsr[i] = *reinterpret_cast<uint32_t*>(
-                    pointsBase + i * kPathPointStride +
-                    kPathPointCsrOffset);
-            } __except (EXCEPTION_EXECUTE_HANDLER) {
-                continue;
-            }
-            int roomIdx = -1;
-            acc::engine::GetRoomAtIndexed(area, pos, roomIdx);
-            pointRoom[i] = roomIdx;
-            if (roomIdx >= 0 && roomIdx < kMaxRooms) {
-                ++pointCountByRoom[roomIdx];
-                if (!hasSample[roomIdx]) {
-                    sampleByRoom[roomIdx] = pos;
-                    hasSample[roomIdx]    = true;
-                }
+    for (uint32_t i = 0; i < pathPointsCount && i < kMaxPathPoints; ++i) {
+        Vector pos = navGraph.nodes[i].pos;
+        int roomIdx = -1;
+        acc::engine::GetRoomAtIndexed(area, pos, roomIdx);
+        pointRoom[i] = roomIdx;
+        if (roomIdx >= 0 && roomIdx < kMaxRooms) {
+            ++pointCountByRoom[roomIdx];
+            if (!hasSample[roomIdx]) {
+                sampleByRoom[roomIdx] = pos;
+                hasSample[roomIdx]    = true;
             }
         }
     }
@@ -410,25 +391,16 @@ void BuildCacheForArea(void* area) {
     // -------------------------------------------------------------
     // Phase C — build adjacency edges from path connections.
     int adjEdges = 0;
-    if (pathPointsCount > 0 && pathPointsPtr &&
-        pathConnectionsCount > 0 && pathConnectionsPtr) {
-        auto* connBase = reinterpret_cast<uint32_t*>(pathConnectionsPtr);
-        for (uint32_t i = 0; i < pathPointsCount; ++i) {
+    if (pathPointsCount > 0 && pathConnectionsCount > 0) {
+        for (uint32_t i = 0; i < pathPointsCount && i < kMaxPathPoints; ++i) {
             int roomA = pointRoom[i];
             if (roomA < 0 || roomA >= kMaxRooms) continue;
-            uint32_t start = pointCsr[i];
-            uint32_t end = (i + 1 < pathPointsCount)
-                ? pointCsr[i + 1] : pathConnectionsCount;
-            if (start > pathConnectionsCount) continue;
-            if (end > pathConnectionsCount) end = pathConnectionsCount;
-            for (uint32_t k = start; k < end; ++k) {
-                uint32_t j = 0;
-                __try {
-                    j = connBase[k];
-                } __except (EXCEPTION_EXECUTE_HANDLER) {
-                    continue;
-                }
-                if (j >= pathPointsCount) continue;
+            int lo = 0, hi = 0;
+            acc::engine::navgraph::NeighbourRange(
+                navGraph, static_cast<int>(i), lo, hi);
+            for (int k = lo; k < hi; ++k) {
+                uint32_t j = navGraph.conns[k];
+                if (j >= pathPointsCount || j >= kMaxPathPoints) continue;
                 int roomB = pointRoom[j];
                 if (roomB < 0 || roomB >= kMaxRooms) continue;
                 if (roomA == roomB) continue;

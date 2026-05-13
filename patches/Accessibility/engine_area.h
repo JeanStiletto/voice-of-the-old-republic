@@ -492,55 +492,6 @@ struct WallEdge {
 // called once per area-change and the result cached by the caller.
 int BuildAreaWallCache(void* area, WallEdge* outBuf, int maxEdges);
 
-// One walkmesh face — a triangle whose three vertices are stored in
-// WORLD space (LocalToWorld already applied at extraction time) plus
-// the surfacemat.2da row id and the room the face belongs to. The
-// `adj[e]` neighbour array indexes into the global WalkmeshFace buffer:
-//   * adj[e] >= 0  : neighbour face that shares edge e (engine treats
-//                    them as walkable-connected — same room via the
-//                    SurfaceMeshAdjacency table, or different rooms
-//                    joined through a portal seam reconstructed during
-//                    extraction).
-//   * adj[e] == -1 : exterior perimeter — corresponds to a physical
-//                    wall (the same data BuildAreaWallCache emits as
-//                    WallEdge).
-//
-// Edge e runs from vertex e to vertex (e+1)%3, matching K1's
-// SurfaceMeshAdjacency convention.
-struct WalkmeshFace {
-    Vector v[3];          // world-space triangle vertices
-    int    room_id;       // CSWSArea-local room index
-    int    material_id;   // surfacemat.2da row
-    int    adj[3];        // global WalkmeshFace indices, -1 for wall
-};
-
-// Walks every room → every face of the room's surface mesh and emits
-// one WalkmeshFace per triangle. Cross-room connectivity (portal seams)
-// AND same-room non-manifold pairs (step/slope, duplicate authoring)
-// are reconstructed by pairwise edge matching over the boundary edges:
-// when two faces in different rooms (or non-manifold faces in the same
-// room) both mark a shared edge with adj==-1, the matched pair gets
-// linked by overwriting both adjacency slots with each other's global
-// face index. The result is a single face-adjacency graph spanning the
-// entire area, where the only remaining adj==-1 slots are real walls.
-//
-// Output:
-//   - if outBuf is non-null and maxFaces > 0: writes up to min(emitted,
-//     maxFaces) faces and returns the count actually written.
-//   - if outBuf is null OR maxFaces <= 0: returns the total face count
-//     discovered (useful for buffer-sizing telemetry; in this mode no
-//     adjacency patching runs).
-//
-// SEH-guarded throughout; faults on a single room (null surface_mesh,
-// garbage vertex/material indices) skip that room's contribution and
-// continue.
-//
-// Cost: O(total_faces) reads + one LocalToWorld engine call per vertex
-// emitted (faces × 3) + O(boundary_edges²) for the cross-room linking
-// pass (boundary edges = same data set BuildAreaWallCache emits, so a
-// few hundred to a couple thousand per area).
-int BuildAreaFaceCache(void* area, WalkmeshFace* outBuf, int maxFaces);
-
 // 2D segment-vs-walkmesh-perimeter test in the XY plane (Z is ignored —
 // rooms in K1 are layout-flat enough that planar collision matches the
 // engine's own walkability behaviour for the room-scale virtual cursor).

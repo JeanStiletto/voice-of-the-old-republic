@@ -196,19 +196,19 @@ void RebuildLandmarkCache(void* area) {
 // area change.
 char g_last_spoken_room_text[128] = {0};
 
-// Coordinate hysteresis state. Patch-20260513-045034 had bursts like
-// 6 announcements in 6 seconds while crossing 5 small .lyt-rooms — the
-// stability + text-dedup gates passed because each room had a distinct
-// label, but the player perceived it as spam. Requiring N metres of
-// player displacement from the previous announcement collapses these
-// bursts to a much calmer cadence. Walking at 2 m/s with a 4 m gate
-// caps speech at one announce per 2s along continuous travel.
-// Stationary movement (boundary flickering at a doorway) is already
-// caught by the stability-tick gate; this catches the orthogonal
-// "moving fast through small cells" case.
+// Coordinate hysteresis retired 2026-05-13. The original problem it
+// solved — 6 announcements in 6 seconds across 5 small .lyt-rooms with
+// distinct labels — doesn't exist under Path 3, which collapses
+// adjacent same-type regions onto a single nav-graph node. Text-dedup
+// alone now handles the only remaining "spam" case (repeated same
+// label). With the gate at 4m the system was silencing genuine
+// junction-to-junction crossings in dense layouts (Apartments at the
+// Dias Apartment cluster, 2026-05-13 patch-20260513-111345.log line
+// 11:15:49 "Kreuzung, West, Ost, Nord" silenced by 1.95m displacement).
+// The pos-valid/pos fields stay defined for log compatibility but are
+// no longer consulted.
 Vector g_last_spoken_pos       = {0.0f, 0.0f, 0.0f};
 bool   g_last_spoken_pos_valid = false;
-constexpr float kMinAnnounceDistanceM = 4.0f;
 
 // Proximity-based landmark fire state. Patch-20260513-045034 showed
 // the player walked 1.5m from the "Zu deinem Apartment" waypoint at
@@ -252,14 +252,22 @@ bool PlayerInLandmarkRange(int roomIdx, const Vector& worldPos) {
     return d2 <= (kLandmarkProximityMetres * kLandmarkProximityMetres);
 }
 
-// Resolve the speech for a room using the same tier order the map
-// cursor's ambient announce uses:
-//   1. Bioware-authored landmark   (e.g. "Brücke", "Mannschaftsquartier")
-//   2. Mod-supplied friendly name  (filters resref-style ids)
-//   3. Region-cache shape label    (e.g. "Korridor, Nord-Süd, 4 Meter")
-// Returns false (and leaves outBuf empty) when no tier resolves — vanilla
-// resref-style rooms with no shape classification stay silent rather than
-// announce a meaningless engine-internal id.
+// Resolve the speech for a room using a two-tier order:
+//   1. Friendly room name (filters resref-style ids) → tier1_text
+//   2. wall_topology::LookupAt (Path 3 nav-graph topology) → path3_text
+// region_classifier is a silent observer — logged via
+// LogWallTopoComparison for tuning, not consumed for speech.
+//
+// Returns false (and leaves outBuf empty) when no tier resolves. Vanilla
+// resref-style rooms with no Path 3 classification stay silent rather
+// than announce a meaningless engine-internal id.
+//
+// Transition / doorway composition was removed 2026-05-13 after
+// empirical evidence (Oberstadt 40m east-west street labelled
+// "Türschwelle" 14 times in a row) showed K1's .lyt-room boundaries
+// don't correspond to doorways. The Path 3 classifier now treats every
+// degree-2 node as a corridor; real doorway detection would need
+// wall-geometry constriction sensing.
 bool ResolveRoomSpeech(void* area, int roomIndex,
                        const Vector& worldPos,
                        char* outBuf, size_t bufSize,
@@ -271,63 +279,68 @@ bool ResolveRoomSpeech(void* area, int roomIndex,
     // Landmark tier removed from the room-transition path 2026-05-13.
     // Landmarks now fire via TickProximityLandmarks below, which scans
     // every waypoint each tick and triggers on geometric proximity to
-    // the waypoint position — not on .lyt-room crossing. This catches
-    // landmarks whose .lyt-room is a thin sliver the player passes
-    // *next to* without crossing into ("Zu deinem Apartment" case in
-    // patch-20260513-045034). Room-tier kept for shape + friendly
-    // room name only.
+    // the waypoint position — not on .lyt-room crossing.
 
-    char nameBuf[128] = {0};
+    char tier1Buf[128] = {0};
     if (acc::engine::GetRoomDisplayName(area, roomIndex,
-                                        nameBuf, sizeof(nameBuf)) &&
-        nameBuf[0] != '\0' &&
-        !IsResrefStyleRoomName(nameBuf)) {
-        std::snprintf(outBuf, bufSize, "%s", nameBuf);
+                                        tier1Buf, sizeof(tier1Buf)) &&
+        tier1Buf[0] != '\0' &&
+        !IsResrefStyleRoomName(tier1Buf)) {
+        std::snprintf(outBuf, bufSize, "%s", tier1Buf);
         outSource = "room_name";
         return true;
     }
 
-    char shapeBuf[128] = {0};
-    int  shapeSig = 0;
-    // Prefer the direct room-index lookup (the resolved index is
-    // authoritative); fall through to position-based lookup with
-    // nearest-room snap if the room isn't populated in the cache.
-    if (acc::region::LookupRoomShape(area, roomIndex,
-                                     shapeBuf, sizeof(shapeBuf),
-                                     shapeSig) ||
-        acc::region::LookupShapeAt(area, worldPos,
-                                   shapeBuf, sizeof(shapeBuf),
-                                   shapeSig)) {
-        if (shapeBuf[0] != '\0') {
-            std::snprintf(outBuf, bufSize, "%s", shapeBuf);
-            outSource = "shape";
-            return true;
-        }
+    char path3Buf[128] = {0};
+    int  path3Sig = 0;
+    if (acc::wall_topology::LookupAt(area, worldPos,
+                                     path3Buf, sizeof(path3Buf),
+                                     path3Sig) &&
+        path3Buf[0] != '\0') {
+        std::snprintf(outBuf, bufSize, "%s", path3Buf);
+        outSource = "shape";
+        return true;
     }
     return false;
 }
 
-// Diagnostic — log what the wall-topology decomposition would have
-// said at this position alongside the room-tier resolution. Lets us
-// compare both algorithms on the same player decisions before any
-// production wiring change.
-void LogWallTopoComparison(void* area, const Vector& worldPos,
-                           const char* roomSpoken,
-                           const char* roomSource) {
-    char wt[128] = {0};
-    int  wtSig = 0;
-    bool got = acc::wall_topology::LookupAt(
-        area, worldPos, wt, sizeof(wt), wtSig);
-    if (!got) {
-        acclog::Write("WallTopo.Compare",
-                      "room=\"%s\" (%s) | walltopo=<no graph>",
-                      roomSpoken ? roomSpoken : "", roomSource);
-        return;
-    }
+// Diagnostic — log what the silent observer (region_classifier) would
+// have said at this position alongside whatever the resolved speech was
+// (Path 3 nav-graph topology, friendly room name, or transition compose).
+// region_classifier is now silent: its label never feeds speech, but its
+// build path stays intact so we can flip back fast if Path 3 misbehaves.
+void LogWallTopoComparison(void* area, int roomIndex,
+                           const Vector& worldPos,
+                           const char* spoken,
+                           const char* source) {
+    // Path 3 details: include nearest-node + kind + sig so we can read
+    // every announce as a triple in the log.
+    char path3[128] = {0};
+    int  path3Sig   = 0;
+    bool havePath3 = acc::wall_topology::LookupAt(
+        area, worldPos, path3, sizeof(path3), path3Sig);
+    const int path3Kind = havePath3 ? (path3Sig & 0xff) : -1;
+
+    // Silent observer: tier-3 region_classifier. Prefer direct-room
+    // lookup; fall back to position-based with nearest-room snap.
+    char regionBuf[128] = {0};
+    int  regionSig = 0;
+    bool haveRegion =
+        acc::region::LookupRoomShape(area, roomIndex,
+                                     regionBuf, sizeof(regionBuf),
+                                     regionSig) ||
+        acc::region::LookupShapeAt(area, worldPos,
+                                   regionBuf, sizeof(regionBuf),
+                                   regionSig);
+
     acclog::Write("WallTopo.Compare",
-                  "pos=(%.2f,%.2f) room=\"%s\" (%s) | walltopo=\"%s\"",
-                  worldPos.x, worldPos.y,
-                  roomSpoken ? roomSpoken : "", roomSource, wt);
+                  "pos=(%.2f,%.2f) room=%d spoken=\"%s\" src=%s | "
+                  "path3=\"%s\" kind=%d sig=%d | region=\"%s\" sig=%d",
+                  worldPos.x, worldPos.y, roomIndex,
+                  spoken ? spoken : "", source ? source : "",
+                  havePath3 ? path3 : "<no graph>",
+                  path3Kind, path3Sig,
+                  haveRegion ? regionBuf : "<n/a>", regionSig);
 }
 
 // Speak a room change. Tier-based label resolution; text-equality dedup
@@ -355,34 +368,6 @@ void SpeakRoomChange(void* area, int roomIndex, const Vector& worldPos) {
         return;
     }
 
-    // Coordinate hysteresis. Suppress shape / room-name announcements
-    // when the player hasn't moved far from the previous spoken
-    // position — collapses the "rapid burst through small cells"
-    // pattern (patch-20260513-045034 had 6/6s peaks crossing 5 .lyt-
-    // rooms). Landmarks bypass: they're rare, high-value, and already
-    // gated to within 15m of the actual waypoint.
-    bool isLandmark = (std::strcmp(source, "landmark") == 0);
-    if (!isLandmark && g_last_spoken_pos_valid) {
-        float dx = worldPos.x - g_last_spoken_pos.x;
-        float dy = worldPos.y - g_last_spoken_pos.y;
-        float d2 = dx * dx + dy * dy;
-        float minD2 = kMinAnnounceDistanceM * kMinAnnounceDistanceM;
-        if (d2 < minD2) {
-            acclog::Write("Transition",
-                          "room -> %d '%s' src=%s — hysteresis "
-                          "(%.2fm < %.1fm), silent",
-                          roomIndex, speechBuf, source,
-                          std::sqrt(d2), kMinAnnounceDistanceM);
-            // Advance text-dedup state so the *next* qualifying
-            // announce treats this label as already-known.
-            std::strncpy(g_last_spoken_room_text, speechBuf,
-                         sizeof(g_last_spoken_room_text) - 1);
-            g_last_spoken_room_text[
-                sizeof(g_last_spoken_room_text) - 1] = '\0';
-            return;
-        }
-    }
-
     // Walking-adapter room change uses Prism+SAPI urgent so it survives
     // NVDA's typed-character cancellation while W/S is held. Same
     // rationale as the map cursor's ambient announce — sustained WASD
@@ -396,7 +381,7 @@ void SpeakRoomChange(void* area, int roomIndex, const Vector& worldPos) {
     acclog::Write("Transition",
                   "room -> %d '%s' src=%s (areaPtr=%p)",
                   roomIndex, speechBuf, source, area);
-    LogWallTopoComparison(area, worldPos, speechBuf, source);
+    LogWallTopoComparison(area, roomIndex, worldPos, speechBuf, source);
 }
 
 // Forward declaration so TickProximityLandmarks can call it.
