@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 
 #pragma comment(lib, "user32.lib")
 
@@ -25,9 +26,12 @@
 #include "hotkeys.h"
 #include "interact_hotkey.h"      // DispatchInteract — Enter on hover target
 #include "log.h"
+#include "region_classifier.h"    // shared region cache for cursor announce
 #include "spatial_change_detector.h"  // GetCachedWalls
 #include "strings.h"
 #include "tolk.h"
+#include "transitions.h"          // IsWorldSpeechGated, GetLandmarkForRoom,
+                                  // IsResrefStyleRoomName
 
 namespace acc::view_mode {
 
@@ -80,6 +84,15 @@ struct ViewModeState {
                                                // DispatchInteract without
                                                // re-resolving.
     DWORD    hover_pending_started = 0;
+
+    // Region-cursor announce (2026-05-13). Same three-variable hover-
+    // pause pattern as the object hover-pause: pending text + start
+    // timestamp, last spoken text for dedup. Compared by text equality
+    // — adjacent .lyt-rooms with identical labels collapse to one
+    // announce, just like the map cursor's ambient flow.
+    char  region_pending_text[128]   = {0};
+    DWORD region_pending_started_ms  = 0;
+    char  region_last_spoken_text[128] = {0};
 };
 
 ViewModeState g_state;
@@ -200,6 +213,9 @@ void EnterViewMode() {
     g_state.hover_pending         = 0;
     g_state.hover_pending_obj     = nullptr;
     g_state.hover_pending_started = 0;
+    g_state.region_pending_text[0]      = '\0';
+    g_state.region_pending_started_ms   = 0;
+    g_state.region_last_spoken_text[0]  = '\0';
 
     g_state.active = true;
     tolk::Speak(acc::strings::Get(acc::strings::Id::ViewModeOn),
@@ -385,6 +401,135 @@ acc::strings::Id CategoryNameId(acc::filter::CycleCategory c) {
         case C::Count_:     break;
     }
     return S::CategoryItem;
+}
+
+// Resolve a region label for `cursor` in `area` using the same tier order
+// the in-world walking adapter uses:
+//   landmark → friendly room name → shape cache.
+// Returns false when no tier resolves (caller stays silent).
+bool ResolveCursorRegionLabel(void* area, const Vector& cursor,
+                              char* outBuf, size_t bufSize,
+                              const char*& outSource) {
+    if (!outBuf || bufSize == 0) return false;
+    outBuf[0] = '\0';
+    outSource = "none";
+
+    int roomIdx = -1;
+    acc::engine::GetRoomAtIndexed(area, cursor, roomIdx);
+
+    if (roomIdx >= 0) {
+        const char* landmark = acc::transitions::GetLandmarkForRoom(roomIdx);
+        if (landmark && landmark[0] != '\0') {
+            // Same proximity gate the walking adapter applies. If the
+            // landmark waypoint is recorded with a world position, only
+            // fire when the cursor sits within 15m of it — otherwise
+            // the .lyt-room sliver shape would over-fire the landmark
+            // across the whole partition.
+            Vector lp;
+            bool inRange = true;
+            if (acc::transitions::GetLandmarkPositionForRoom(roomIdx, lp)) {
+                float dx = cursor.x - lp.x;
+                float dy = cursor.y - lp.y;
+                constexpr float kLandmarkRangeM = 15.0f;
+                inRange = (dx * dx + dy * dy) <=
+                          (kLandmarkRangeM * kLandmarkRangeM);
+            }
+            if (inRange) {
+                std::snprintf(outBuf, bufSize, "%s", landmark);
+                outSource = "landmark";
+                return true;
+            }
+        }
+
+        char nameBuf[128] = {0};
+        if (acc::engine::GetRoomDisplayName(area, roomIdx,
+                                            nameBuf, sizeof(nameBuf)) &&
+            nameBuf[0] != '\0' &&
+            !acc::transitions::IsResrefStyleRoomName(nameBuf)) {
+            std::snprintf(outBuf, bufSize, "%s", nameBuf);
+            outSource = "room_name";
+            return true;
+        }
+    }
+
+    char shapeBuf[128] = {0};
+    int  shapeSig = 0;
+    if (acc::region::LookupShapeAt(area, cursor,
+                                   shapeBuf, sizeof(shapeBuf),
+                                   shapeSig, /*outRoomIdx=*/nullptr) &&
+        shapeBuf[0] != '\0') {
+        std::snprintf(outBuf, bufSize, "%s", shapeBuf);
+        outSource = "shape";
+        return true;
+    }
+    return false;
+}
+
+// Per-tick region cursor announce. Mirrors the map-cursor ambient flow:
+// classify the region under the cursor, text-equality dedup against the
+// last spoken label, hover-pause (300 ms) before speaking so micro-
+// crossings on a room seam don't fire. Gates on the shared world-speech
+// predicate so combat / blocking-UI never bypasses the user's attention.
+void AnnounceCursorRegion(void* area, const Vector& cursor) {
+    if (!area) {
+        g_state.region_pending_text[0]    = '\0';
+        g_state.region_pending_started_ms = 0;
+        return;
+    }
+    if (acc::transitions::IsWorldSpeechGated()) {
+        // Hold pending state — when the gate releases we don't want a
+        // fresh classification to spam if the cursor has been sitting
+        // on the same region the whole time.
+        return;
+    }
+
+    char label[128] = {0};
+    const char* source = "none";
+    bool resolved = ResolveCursorRegionLabel(area, cursor,
+                                             label, sizeof(label),
+                                             source);
+    if (!resolved || label[0] == '\0') {
+        g_state.region_pending_text[0]    = '\0';
+        g_state.region_pending_started_ms = 0;
+        return;
+    }
+
+    if (std::strncmp(label, g_state.region_last_spoken_text,
+                     sizeof(g_state.region_last_spoken_text)) == 0) {
+        // Already announced — keep silent until the cursor walks into a
+        // differently-labelled region.
+        g_state.region_pending_text[0]    = '\0';
+        g_state.region_pending_started_ms = 0;
+        return;
+    }
+
+    DWORD now = GetTickCount();
+    if (std::strncmp(label, g_state.region_pending_text,
+                     sizeof(g_state.region_pending_text)) == 0 &&
+        g_state.region_pending_started_ms != 0) {
+        if (now - g_state.region_pending_started_ms >= kHoverPauseMs) {
+            tolk::SpeakUrgent(label);
+            std::strncpy(g_state.region_last_spoken_text, label,
+                         sizeof(g_state.region_last_spoken_text) - 1);
+            g_state.region_last_spoken_text[
+                sizeof(g_state.region_last_spoken_text) - 1] = '\0';
+            g_state.region_pending_text[0]    = '\0';
+            g_state.region_pending_started_ms = 0;
+            acclog::Write("ViewMode",
+                          "region speak src=%s text=\"%s\" cursor=(%.2f,%.2f,%.2f)",
+                          source, label,
+                          cursor.x, cursor.y, cursor.z);
+        }
+        return;
+    }
+
+    // New pending region (different from both last-spoken and previously-
+    // pending). Arm the timer.
+    std::strncpy(g_state.region_pending_text, label,
+                 sizeof(g_state.region_pending_text) - 1);
+    g_state.region_pending_text[
+        sizeof(g_state.region_pending_text) - 1] = '\0';
+    g_state.region_pending_started_ms = now;
 }
 
 void NarrateNearestObject(void* area, const Vector& cursor) {
@@ -760,6 +905,16 @@ void Tick() {
 
     void* area = acc::engine::GetCurrentArea();
     NarrateNearestObject(area, g_state.cursor_pos);
+
+    // Region cursor announce — speak the .lyt-room landmark / friendly
+    // name / shape label when the cursor settles on a region different
+    // from the last one spoken. Same shared region cache the in-world
+    // walking adapter and map cursor read; same gating (combat /
+    // blocking UI silences it). Order: after NarrateNearestObject so
+    // an object directly under the cursor still wins the audio bus —
+    // both can announce in the same tick if both have moved into new
+    // hover-pause completions.
+    AnnounceCursorRegion(area, g_state.cursor_pos);
 
     // Lay-off 5 — Enter / Shift+Enter routing. Polled inside Tick (which
     // is already foreground- and active-gated) so we don't repeat the

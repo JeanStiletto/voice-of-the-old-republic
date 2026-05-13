@@ -52,6 +52,12 @@ constexpr DWORD kCombatModeQuietMs = 200;  // collapse oscillation near edges
 
 }  // namespace
 
+bool IsCombatActive() {
+    int mode = 0;
+    if (!ReadCombatMode(mode)) return false;
+    return mode != 0;
+}
+
 void TickCombatMode() {
     int mode = 0;
     if (!ReadCombatMode(mode)) return;

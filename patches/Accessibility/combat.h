@@ -39,6 +39,14 @@
 
 namespace acc::combat {
 
+// Live combat-mode read for cross-feature gating (transitions / region
+// announce / view-mode walking adapter). Wraps the same
+// `CClientExoApp::GetCombatMode @0x5ede70` accessor TickCombatMode uses;
+// shares no state with the debounced spoken transition. Returns false
+// when the chain faults (pre-spawn / between-area load); treat false as
+// "not in combat" for gating purposes.
+bool IsCombatActive();
+
 // Phase 1A — per-tick combat-mode poll. Reads the engine's combat-mode
 // flag; debounces and speaks on stable transitions only. Idle when no
 // player is loaded.

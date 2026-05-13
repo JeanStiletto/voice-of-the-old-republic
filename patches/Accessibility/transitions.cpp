@@ -4,11 +4,14 @@
 #include <cstdio>
 #include <cstring>
 
+#include "combat.h"          // IsCombatActive — gate room-change speech
 #include "engine_area.h"
+#include "engine_panels.h"   // IsForegroundUiBlocking — gate vs. menus / dialogs
 #include "engine_player.h"
 #include "engine_offsets.h"  // Vector
 #include "engine_reads.h"    // ReadCExoString
 #include "log.h"
+#include "region_classifier.h"  // BuildCacheForArea + LookupRoomShape
 #include "strings.h"
 #include "tolk.h"
 
@@ -58,11 +61,22 @@ int   g_pending_room_count = 0;
 // Refinement (closest-to-room-centre, longest name, etc.) is parked
 // until in-game testing shows ambiguous picks.
 //
+// Position storage (2026-05-13): the waypoint's world position is
+// stored alongside the text so callers can gate the landmark tier on
+// proximity to the actual waypoint, not just "any point in the same
+// .lyt-room". K1 ships .lyt-rooms shaped as long thin transition
+// strips (the "Zur Oberstadt" doorway sliver covers rooms 50+ metres
+// apart inside Taris South Apartments); without proximity gating the
+// landmark fires every time the player crosses the sliver, regardless
+// of how far they are from the actual waypoint.
+//
 // Sized at kMaxRoomsCache=128 — vanilla KOTOR areas have <50 rooms
 // each. Cache is invalidated (zeroed) on every area change.
 constexpr int kMaxRoomsCache = 128;
-char g_room_landmark[kMaxRoomsCache][128];
-int  g_room_landmark_count = 0;
+char   g_room_landmark[kMaxRoomsCache][128];
+Vector g_room_landmark_pos[kMaxRoomsCache];
+bool   g_room_landmark_has_pos[kMaxRoomsCache];
+int    g_room_landmark_count = 0;
 
 // Heuristic: vanilla KOTOR content stores room names as the .lyt-room
 // identifier (`m01aa_10`, `stunt_03_main`, `unk_m13ab`) — pronounceable
@@ -104,7 +118,11 @@ void RebuildLandmarkCache(void* area) {
     // Reset cache. Use the index loop instead of memset so we keep
     // the Vector member alignment guarantees of any future struct
     // refactor; cheap (128 × 1-byte zero each).
-    for (int i = 0; i < kMaxRoomsCache; ++i) g_room_landmark[i][0] = '\0';
+    for (int i = 0; i < kMaxRoomsCache; ++i) {
+        g_room_landmark[i][0]     = '\0';
+        g_room_landmark_pos[i]    = {0, 0, 0};
+        g_room_landmark_has_pos[i] = false;
+    }
     g_room_landmark_count = 0;
 
     if (!area) return;
@@ -147,8 +165,13 @@ void RebuildLandmarkCache(void* area) {
                          sizeof(g_room_landmark[roomIdx]) - 1);
             g_room_landmark[roomIdx]
                 [sizeof(g_room_landmark[roomIdx]) - 1] = '\0';
+            g_room_landmark_pos[roomIdx]     = pos;
+            g_room_landmark_has_pos[roomIdx] = true;
             ++g_room_landmark_count;
             ++placed;
+            acclog::Write("Transition",
+                          "landmark room=%d '%s' pos=(%.2f,%.2f,%.2f)",
+                          roomIdx, note, pos.x, pos.y, pos.z);
         }
     }
 
@@ -160,23 +183,140 @@ void RebuildLandmarkCache(void* area) {
 // Definition of GetLandmarkForRoom moved out of the anonymous
 // namespace (below) so the map-cursor can read the same cache.
 
-// Records a room change in the log without speaking. Audible per-room
-// announcement is intentionally suppressed: KOTOR's .lyt rooms partition
-// areas into corridor- / alcove-sized cells, so the user got "Raum 1 →
-// Raum 65 → Raum …" spam every few steps. Internal tracking is retained
-// (g_prev_room_idx + landmark cache) so future Pillar 2 nav features
-// (waypoint guidance, landmark-on-demand) can consume it.
-void RecordRoomChange(void* area, int roomIndex) {
-    char nameBuf[128] = {0};
-    bool gotName = acc::engine::GetRoomDisplayName(
-        area, roomIndex, nameBuf, sizeof(nameBuf)) && nameBuf[0] != '\0';
+// Last spoken room label, used as the text-equality dedup key. The .lyt-
+// room partition over-segments KOTOR areas (Endar Spire bridge is split
+// into 6 indices that all classify as the same junction); raw room-
+// index comparison would re-announce on every micro-crossing. Comparing
+// the resolved label collapses the spam: as long as the player walks
+// through cells whose label matches, transitions stays quiet. Resets on
+// area change.
+char g_last_spoken_room_text[128] = {0};
+
+// Maximum distance (world units; KOTOR = metres) between the player /
+// cursor and a landmark waypoint for the landmark tier to fire. .lyt-
+// rooms in K1 stretch across long thin transition strips, so "same
+// .lyt-room as the waypoint" alone over-fires (room 8 in Taris South
+// Apartments covers a 50m sliver per patch-20260512-223500). 15m
+// matches the typical room-diagonal in vanilla content while excluding
+// the long sliver case. Tune from in-game testing.
+constexpr float kLandmarkProximityMetres = 15.0f;
+
+bool PlayerInLandmarkRange(int roomIdx, const Vector& worldPos) {
+    Vector lp;
+    if (!GetLandmarkPositionForRoom(roomIdx, lp)) {
+        // No recorded waypoint position — treat as "always in range"
+        // so we don't suppress speech for rooms whose position read
+        // faulted at cache build. The position write happens
+        // immediately after GetObjectPosition succeeds, so this is
+        // only the SEH fault path.
+        return true;
+    }
+    float dx = worldPos.x - lp.x;
+    float dy = worldPos.y - lp.y;
+    float d2 = dx * dx + dy * dy;
+    return d2 <= (kLandmarkProximityMetres * kLandmarkProximityMetres);
+}
+
+// Resolve the speech for a room using the same tier order the map
+// cursor's ambient announce uses:
+//   1. Bioware-authored landmark   (e.g. "Brücke", "Mannschaftsquartier")
+//   2. Mod-supplied friendly name  (filters resref-style ids)
+//   3. Region-cache shape label    (e.g. "Korridor, Nord-Süd, 4 Meter")
+// Returns false (and leaves outBuf empty) when no tier resolves — vanilla
+// resref-style rooms with no shape classification stay silent rather than
+// announce a meaningless engine-internal id.
+bool ResolveRoomSpeech(void* area, int roomIndex,
+                       const Vector& worldPos,
+                       char* outBuf, size_t bufSize,
+                       const char*& outSource) {
+    if (!outBuf || bufSize == 0) return false;
+    outBuf[0] = '\0';
+    outSource = "none";
+
     const char* landmark = GetLandmarkForRoom(roomIndex);
-    const char* source = landmark
-        ? "landmark"
-        : (gotName && !IsResrefStyleRoomName(nameBuf) ? "room_name" : "index");
-    acclog::Write("Transition", "room -> %d '%s' src=%s landmark=%s (areaPtr=%p) [silent]",
-        roomIndex, gotName ? nameBuf : "(empty)", source,
-        landmark ? landmark : "-", area);
+    if (landmark && landmark[0] != '\0' &&
+        PlayerInLandmarkRange(roomIndex, worldPos)) {
+        std::snprintf(outBuf, bufSize, "%s", landmark);
+        outSource = "landmark";
+        return true;
+    }
+
+    char nameBuf[128] = {0};
+    if (acc::engine::GetRoomDisplayName(area, roomIndex,
+                                        nameBuf, sizeof(nameBuf)) &&
+        nameBuf[0] != '\0' &&
+        !IsResrefStyleRoomName(nameBuf)) {
+        std::snprintf(outBuf, bufSize, "%s", nameBuf);
+        outSource = "room_name";
+        return true;
+    }
+
+    char shapeBuf[128] = {0};
+    int  shapeSig = 0;
+    // Prefer the direct room-index lookup (the resolved index is
+    // authoritative); fall through to position-based lookup with
+    // nearest-room snap if the room isn't populated in the cache.
+    if (acc::region::LookupRoomShape(area, roomIndex,
+                                     shapeBuf, sizeof(shapeBuf),
+                                     shapeSig) ||
+        acc::region::LookupShapeAt(area, worldPos,
+                                   shapeBuf, sizeof(shapeBuf),
+                                   shapeSig)) {
+        if (shapeBuf[0] != '\0') {
+            std::snprintf(outBuf, bufSize, "%s", shapeBuf);
+            outSource = "shape";
+            return true;
+        }
+    }
+    return false;
+}
+
+// Speak a room change. Tier-based label resolution; text-equality dedup
+// against `g_last_spoken_room_text` collapses adjacent .lyt-rooms with
+// identical labels (corridor cells, repeated junctions). Gated by the
+// caller via combat / UI-blocking checks — `Tick` decides whether to
+// invoke us, this function speaks unconditionally once called.
+void SpeakRoomChange(void* area, int roomIndex, const Vector& worldPos) {
+    char speechBuf[128] = {0};
+    const char* source = "none";
+    if (!ResolveRoomSpeech(area, roomIndex, worldPos,
+                           speechBuf, sizeof(speechBuf), source) ||
+        speechBuf[0] == '\0') {
+        acclog::Write("Transition",
+                      "room -> %d unresolved (src=none) — staying silent "
+                      "(areaPtr=%p)", roomIndex, area);
+        return;
+    }
+
+    if (std::strncmp(speechBuf, g_last_spoken_room_text,
+                     sizeof(g_last_spoken_room_text)) == 0) {
+        acclog::Write("Transition",
+                      "room -> %d '%s' src=%s — text-dedup match, silent",
+                      roomIndex, speechBuf, source);
+        return;
+    }
+
+    // Walking-adapter room change uses Prism+SAPI urgent so it survives
+    // NVDA's typed-character cancellation while W/S is held. Same
+    // rationale as the map cursor's ambient announce — sustained WASD
+    // input would otherwise silently cancel a queued Tolk_Output call.
+    tolk::SpeakUrgent(speechBuf);
+    std::strncpy(g_last_spoken_room_text, speechBuf,
+                 sizeof(g_last_spoken_room_text) - 1);
+    g_last_spoken_room_text[sizeof(g_last_spoken_room_text) - 1] = '\0';
+    acclog::Write("Transition",
+                  "room -> %d '%s' src=%s (areaPtr=%p)",
+                  roomIndex, speechBuf, source, area);
+}
+
+// Forward declaration of the public predicate (defined at file scope
+// below namespace). Used internally by Tick before going through the
+// indirection.
+bool IsWorldSpeechGatedImpl() {
+    if (acc::combat::IsCombatActive()) return true;
+    acc::engine::UiBlockState ui;
+    if (acc::engine::IsForegroundUiBlocking(&ui)) return true;
+    return false;
 }
 
 }  // namespace
@@ -203,6 +343,13 @@ const char* GetLandmarkForRoom(int roomIdx) {
     return g_room_landmark[roomIdx];
 }
 
+bool GetLandmarkPositionForRoom(int roomIdx, Vector& outPos) {
+    if (roomIdx < 0 || roomIdx >= kMaxRoomsCache) return false;
+    if (!g_room_landmark_has_pos[roomIdx])        return false;
+    outPos = g_room_landmark_pos[roomIdx];
+    return true;
+}
+
 void Tick() {
     Vector pos = {};
     if (!acc::engine::GetPlayerPosition(pos)) {
@@ -211,6 +358,8 @@ void Tick() {
         // discipline).
         g_prev_area     = nullptr;
         g_prev_room_idx = -1;
+        g_last_spoken_room_text[0] = '\0';
+        acc::region::Reset();
         return;
     }
 
@@ -230,10 +379,30 @@ void Tick() {
         // after an area change should already use the curated label
         // when one exists.
         RebuildLandmarkCache(area);
+        // Build the region-classifier shape cache for the new area at
+        // the same moment. Single source of truth shared with the map-
+        // cursor and view-mode adapters; built once on area-enter so
+        // walking, view-mode panning, and map-cursor exploration all
+        // see the same labels.
+        //
+        // The wall-edge cache the classifier depends on may not be
+        // ready on this exact tick (spatial_change_detector::Tick runs
+        // later in the dispatch order). BuildCacheForArea silently
+        // leaves the cache empty when that's the case; we retry below
+        // on every tick until it builds successfully.
+        acc::region::BuildCacheForArea(area);
         g_prev_area          = area;
         g_prev_room_idx      = -1;  // re-announce room on new area
         g_pending_room_idx   = -1;  // and reset stability tracker
         g_pending_room_count = 0;
+        g_last_spoken_room_text[0] = '\0';
+    } else if (!acc::region::HasCacheForArea(area)) {
+        // Same area as last tick but the cache still isn't built — wall
+        // cache wasn't ready when the area-change branch fired. Retry
+        // cheaply each tick until the build succeeds. BuildCacheForArea
+        // self-gates on the wall cache so this is a no-op until that's
+        // populated.
+        acc::region::BuildCacheForArea(area);
     }
 
     int roomIndex = -1;
@@ -259,11 +428,26 @@ void Tick() {
     }
 
     if (g_pending_room_count >= kRoomStabilityTicks) {
-        RecordRoomChange(area, roomIndex);
+        // Gate speech (not state) on combat / blocking-UI. We still
+        // commit g_prev_room_idx so the player walking back-and-forth
+        // during combat doesn't queue up a burst of room announcements
+        // for the moment combat ends; the room they're standing in
+        // when combat ends becomes the new baseline.
+        if (IsWorldSpeechGatedImpl()) {
+            acclog::Write("Transition",
+                          "room -> %d gated (combat / blocking UI), "
+                          "state advanced silently", roomIndex);
+        } else {
+            SpeakRoomChange(area, roomIndex, pos);
+        }
         g_prev_room_idx      = roomIndex;
         g_pending_room_idx   = -1;
         g_pending_room_count = 0;
     }
+}
+
+bool IsWorldSpeechGated() {
+    return IsWorldSpeechGatedImpl();
 }
 
 void AnnouncePreLoadDestination(void* exoStringPtr) {

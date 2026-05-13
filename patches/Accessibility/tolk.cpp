@@ -45,13 +45,13 @@ constexpr uint8_t kPrismConfigVersion        = 2;
 constexpr uint64_t kPrismBackendIdSapi       = 0x1D6DF72422CEEE66ull;
 
 // SAPI speech rate for urgent-channel speech. Prism maps [0.0..1.0] to
-// SAPI's -10..+10 with 0.5 = SAPI default (midpoint-linear). 0.7 lands
-// at roughly SAPI +4 — distinctly faster than out-of-the-box SAPI so
-// urgent map-cursor cues don't drag during continuous WASD panning,
-// still well within intelligibility for the bundled Microsoft voices.
-// Tune live; if a future user-options surface lands, this becomes the
-// default backing it.
-constexpr float kPrismSapiUrgentRate = 0.7f;
+// SAPI's -10..+10 with 0.5 = SAPI default (midpoint-linear). 0.8 lands
+// at roughly SAPI +6 — distinctly faster than out-of-the-box SAPI so
+// urgent map-cursor / region-cursor / walking cues don't drag during
+// continuous WASD panning, still well within intelligibility for the
+// bundled Microsoft voices. Tune live; if a future user-options surface
+// lands, this becomes the default backing it.
+constexpr float kPrismSapiUrgentRate = 0.8f;
 
 typedef PrismConfig    (__cdecl* PFN_prism_config_init)(void);
 typedef PrismContext*  (__cdecl* PFN_prism_init)(PrismConfig*);

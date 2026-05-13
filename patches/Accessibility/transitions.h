@@ -47,6 +47,8 @@
 
 #pragma once
 
+#include "engine_offsets.h"  // Vector
+
 namespace acc::transitions {
 
 // Per-tick poll. Self-gates on GetPlayerPosition / GetCurrentArea
@@ -89,6 +91,17 @@ void AnnouncePreLoadDestination(void* exoStringPtr);
 // reuse the same cache the in-world room-transition path builds.
 const char* GetLandmarkForRoom(int roomIdx);
 
+// Look up the world-space position of the landmark waypoint that
+// supplied `roomIdx`'s label. Returns true and writes `outPos` when a
+// position is recorded for the room (cache stores it alongside the
+// label since the 2026-05-13 proximity gate). Returns false for rooms
+// without a landmark or when the position read faulted at cache build.
+// Walking and view-mode consumers use this to suppress the landmark
+// tier when the player / cursor is far from the actual waypoint —
+// .lyt-room partitions can stretch 50m across thin transition strips,
+// so "same room" alone over-fires the landmark.
+bool GetLandmarkPositionForRoom(int roomIdx, Vector& outPos);
+
 // Heuristic: vanilla KOTOR content stores `CSWSArea.room_names[]` as
 // the .lyt-room identifier (`m01aa_10`, `stunt_03_main`, `unk_m13ab`)
 // — pronounceable but meaningless. Returns true for those resref-style
@@ -100,5 +113,17 @@ const char* GetLandmarkForRoom(int roomIdx);
 // filter the room-transition path uses — both want to surface mod-
 // supplied friendly names while hiding vanilla layout-id noise.
 bool IsResrefStyleRoomName(const char* name);
+
+// True iff in-world ambient announcements (room transitions, view-mode
+// region cursor) should stay silent this tick. Currently gates on:
+//   - `acc::combat::IsCombatActive()` (no distractions mid-fight)
+//   - `acc::engine::IsForegroundUiBlocking()` (panels / modals / dialog)
+// Area-name transitions intentionally bypass this gate — the player just
+// changed module, the orientation cue is always worth speaking.
+//
+// Shared by the walking-adapter (transitions::Tick) and the view-mode
+// region-announce so both surfaces have identical "is the player ready
+// to listen?" semantics — only one predicate to maintain.
+bool IsWorldSpeechGated();
 
 }  // namespace acc::transitions
