@@ -565,13 +565,18 @@ void Tick() {
         g_lm_prox_pending_idx      = -1;
         g_lm_prox_pending_count    = 0;
         g_lm_prox_last_spoken_idx  = -1;
-    } else if (!acc::region::HasCacheForArea(area)) {
-        // Same area as last tick but the cache still isn't built — wall
-        // cache wasn't ready when the area-change branch fired. Retry
-        // cheaply each tick until the build succeeds. BuildCacheForArea
-        // self-gates on the wall cache so this is a no-op until that's
-        // populated.
+    } else if (!acc::region::HasCacheForArea(area) ||
+               !acc::wall_topology::HasGraphForArea(area)) {
+        // Same area as last tick but at least one cache still isn't
+        // built — wall cache wasn't ready when the area-change branch
+        // fired. Retry cheaply each tick until both builds succeed.
+        // Both builders self-gate on the wall cache so they're no-ops
+        // until that's populated, and idempotent on a same-area call
+        // once they have built. Patch-20260513-052738 had the
+        // Apartments WallTopo build skipped because retry only
+        // covered the Region cache.
         acc::region::BuildCacheForArea(area);
+        acc::wall_topology::BuildForArea(area);
     }
 
     // Proximity-based landmark scan runs every tick, independent of

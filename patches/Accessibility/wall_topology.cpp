@@ -313,6 +313,42 @@ void BuildForArea(void* area) {
     }
 
     // ---------------------------------------------------------------
+    // Phase 2.5: dedupe — the engine emits each shared wall once per
+    // adjacent room (a perimeter edge with adjacency=-1 fires from
+    // each room's local perspective, with opposite endpoint
+    // orientation). Two segments that share endpoints in either
+    // direction are the same physical wall and must collapse to one.
+    //
+    // Without this pass, Phase 4 explodes: a wall paired with its own
+    // reverse looks like a corridor of tiny width, multiplying
+    // corridor candidates by 4-8x. Patch-20260513-052738 Oberstadt
+    // produced 362 segments / 121 corridors; expected ~half / order-
+    // of-magnitude fewer after dedup.
+    //
+    // O(N²); safe because N is hundreds of segments, not thousands.
+    // ---------------------------------------------------------------
+    int dedupCount = 0;
+    for (int i = 0; i < g_graph.segment_count; ++i) {
+        const WallSegment& si = g_graph.segments[i];
+        int j = i + 1;
+        while (j < g_graph.segment_count) {
+            const WallSegment& sj = g_graph.segments[j];
+            bool dup =
+                (SamePoint(si.a, sj.a) && SamePoint(si.b, sj.b)) ||
+                (SamePoint(si.a, sj.b) && SamePoint(si.b, sj.a));
+            if (dup) {
+                g_graph.segments[j] =
+                    g_graph.segments[g_graph.segment_count - 1];
+                --g_graph.segment_count;
+                ++dedupCount;
+                // Re-check this index (it now holds the moved entry).
+            } else {
+                ++j;
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------
     // Phase 3: drop noise segments (shorter than min length).
     // ---------------------------------------------------------------
     int kept = 0;
@@ -329,10 +365,10 @@ void BuildForArea(void* area) {
 
     acclog::Write("WallTopo",
                   "BuildForArea: area=%p edges=%d -> initial segs=%d "
-                  "(skipped %d degenerate) merged in %d passes -> %d "
-                  "(dropped %d short)",
+                  "(skipped %d degenerate) merged in %d passes "
+                  "(deduped %d) -> %d (dropped %d short)",
                   area, wallCount, initialSegCount, skipped, passes,
-                  g_graph.segment_count, dropped);
+                  dedupCount, g_graph.segment_count, dropped);
 
     // ---------------------------------------------------------------
     // Phase 4: parallel-pair corridor detection.
