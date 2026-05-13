@@ -53,7 +53,8 @@
 
 #pragma once
 
-#include "engine_area.h"  // WallEdge
+#include "engine_offsets.h"  // Vector
+#include "engine_area.h"     // WallEdge
 
 namespace acc::spatial::change_detector {
 
@@ -73,5 +74,46 @@ void Tick();
 // area-change rebuilds the buffer in place). Callers should not retain
 // the pointer across area transitions.
 bool GetCachedWalls(const acc::engine::WallEdge*& outBuf, int& outCount);
+
+// One wall surface — a chain of collinear endpoint-sharing edges
+// clustered at area-load time. See the "Wall surface clustering" block
+// in spatial_change_detector.cpp for the merge rule (union-find over
+// edges that share an endpoint within ~5cm AND have direction vectors
+// within ~15°, applied across rooms).
+//
+// `a` and `b` are the two extreme endpoints of the chain — the only
+// endpoints used by exactly one edge in the surface. `dir_{x,y}` is
+// the unit XY direction from `a` toward `b`. `length` is |b - a| in
+// metres. `edge_count` is the number of underlying wall edges in
+// this surface.
+//
+// Consumed by acc::wall_topology to skip a redundant merge pass over
+// the raw edge list. See `wall_topology.cpp` for the rationale.
+struct WallSurfaceDesc {
+    Vector a;
+    Vector b;
+    float  dir_x;
+    float  dir_y;
+    float  length;
+    int    edge_count;
+};
+
+// Number of wall surfaces clustered for the current area. Returns 0
+// until the first Tick() since DLL load / area-change has populated
+// the cache.
+int GetWallSurfaceCount();
+
+// Reads surface `idx`'s descriptor into `outDesc`. Returns false if
+// `idx` is out of range, the descriptor cache hasn't been built yet,
+// or the surface couldn't be reduced to a single straight segment
+// (degenerate closed-loop or branching cases — extremely rare under
+// the collinearity filter; surfaces in this state are flagged with
+// `edge_count == 0`).
+bool GetWallSurfaceDesc(int idx, WallSurfaceDesc& outDesc);
+
+// Read the surface index for cached edge `edgeIdx`. Edge indices
+// correspond to the buffer returned by `GetCachedWalls`. Returns -1
+// on invalid input or before clustering has run.
+int GetEdgeSurfaceId(int edgeIdx);
 
 }  // namespace acc::spatial::change_detector

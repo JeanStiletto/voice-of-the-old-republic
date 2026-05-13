@@ -93,6 +93,14 @@ int g_edge_surface_id[kMaxWallEdges];
 // Number of distinct surfaces clustered for the current area.
 int g_surface_count = 0;
 
+// Per-surface segment descriptor built right after clustering. Each entry
+// reduces a chain of collinear edges to a single straight segment with
+// two extreme endpoints + unit direction + length. Consumed by
+// acc::wall_topology so it doesn't have to re-merge the edge soup.
+// `edge_count == 0` flags a degenerate surface (closed loop or zero
+// free endpoints) — `GetWallSurfaceDesc` returns false for those.
+WallSurfaceDesc g_surface_descriptors[kMaxWallSurfaces];
+
 // Per-surface last-cued timestamp (ms via GetTickCount). T2's
 // foremost-in-front debounce reads this to avoid double-firing a surface
 // the per-sector T1 just announced. Stamped by T1 (the "best surface"
@@ -391,6 +399,205 @@ void ClusterEdgesIntoSurfaces() {
         g_wall_count, g_surface_count);
 }
 
+// Reduce each surface (a chain of collinear endpoint-sharing edges) to
+// a single straight segment `a → b`. The two extreme endpoints are the
+// only endpoints used by exactly one edge in the surface; interior
+// endpoints are shared between two adjacent edges.
+//
+// Algorithm per surface:
+//   1. Walk every edge with this surface id; bucket its two endpoints
+//      into a small dedup'd point table (XY tolerance = kEndpointTol).
+//   2. The two endpoints with count==1 are the segment ends.
+//   3. Closed loops (zero count==1 endpoints) or anomalies (>2) leave
+//      the descriptor flagged `edge_count = 0` so GetWallSurfaceDesc
+//      reports false for them.
+//
+// Bounded per-surface point table at 64 — far above the typical chain
+// length (a few edges per surface). Surfaces with more get truncated
+// and fall into the anomaly path; we log a warning if this ever bites.
+constexpr int kMaxPointsPerSurface = 64;
+
+void BuildSurfaceDescriptors() {
+    // Anomaly breakdown counters — each anomalous surface increments
+    // exactly one of these so we can tell which case dominates the
+    // 15-33% flagged rate seen on Apartments / Upper City. Phase 1
+    // diagnostic; remove once the cause is understood.
+    int anomCount     = 0;
+    int anomZeroFree  = 0;  // closed loop — every endpoint shared
+    int anomOneFree   = 0;  // odd half-loop (one end attaches to itself)
+    int anomThreeFree = 0;  // Y-fork (silently truncated previously)
+    int anomFourFree  = 0;  // X-fork / cross
+    int anomMoreFree  = 0;  // tree with 5+ leaves
+    int anomOverflow  = 0;  // >64 distinct endpoints
+
+    // Multi-elevation tag: an anomalous surface whose edges span
+    // distinctly different Z values (>kMultiElevThreshold) is a legit
+    // 3D feature — multi-floor walls, balcony rails over a hall, etc.
+    // — not a bug. We can't reduce these to one 2D segment because
+    // they aren't one in 3D space; downstream consumers that need to
+    // distinguish elevations would have to operate per-Z-band rather
+    // than over a single segment. Tracked separately from "broken"
+    // anomalies so the diagnostic doesn't lump them together.
+    constexpr float kMultiElevThreshold = 0.5f;
+    int anomMultiElevation = 0;
+
+    // Sample the first few anomalies per category for log dump.
+    constexpr int kSampleLimit = 4;
+    struct AnomalySample {
+        int    surface_idx;
+        int    edge_count;
+        int    point_count;
+        int    free_count;
+        bool   overflow;
+        bool   multi_elevation;
+        float  z_spread;
+        Vector first_point;
+    };
+    AnomalySample samples[kSampleLimit];
+    int sampleCount = 0;
+
+    for (int s = 0; s < g_surface_count; ++s) {
+        g_surface_descriptors[s]            = {};
+        g_surface_descriptors[s].edge_count = 0;
+
+        struct EndpointCount {
+            Vector pos;
+            int    count;
+        };
+        EndpointCount points[kMaxPointsPerSurface];
+        int           pointCount = 0;
+        int           edgeCount  = 0;
+        bool          overflow   = false;
+
+        auto bumpEndpoint = [&](const Vector& p) {
+            for (int k = 0; k < pointCount; ++k) {
+                if (DistanceSquaredXY(points[k].pos, p) <= kEndpointTolSquared) {
+                    ++points[k].count;
+                    return;
+                }
+            }
+            if (pointCount >= kMaxPointsPerSurface) {
+                overflow = true;
+                return;
+            }
+            points[pointCount].pos   = p;
+            points[pointCount].count = 1;
+            ++pointCount;
+        };
+
+        // Track Z range for multi-elevation classification of any
+        // anomaly we end up flagging.
+        float minZ = 1e30f;
+        float maxZ = -1e30f;
+        for (int i = 0; i < g_wall_count; ++i) {
+            if (g_edge_surface_id[i] != s) continue;
+            ++edgeCount;
+            bumpEndpoint(g_walls[i].a);
+            bumpEndpoint(g_walls[i].b);
+            if (g_walls[i].a.z < minZ) minZ = g_walls[i].a.z;
+            if (g_walls[i].b.z < minZ) minZ = g_walls[i].b.z;
+            if (g_walls[i].a.z > maxZ) maxZ = g_walls[i].a.z;
+            if (g_walls[i].b.z > maxZ) maxZ = g_walls[i].b.z;
+        }
+        float zSpread = (edgeCount > 0) ? (maxZ - minZ) : 0.0f;
+        bool multiElevation = zSpread > kMultiElevThreshold;
+
+        // Count free endpoints (no cap — we want the true count for
+        // diagnostics). Pick the first two for the segment endpoints
+        // (used only on the freeCount==2 happy path).
+        int    totalFreeCount = 0;
+        Vector freeEnds[2] = {{0, 0, 0}, {0, 0, 0}};
+        for (int k = 0; k < pointCount; ++k) {
+            if (points[k].count == 1) {
+                if (totalFreeCount < 2) {
+                    freeEnds[totalFreeCount] = points[k].pos;
+                }
+                ++totalFreeCount;
+            }
+        }
+
+        if (totalFreeCount == 2 && !overflow) {
+            WallSurfaceDesc& d = g_surface_descriptors[s];
+            d.a = freeEnds[0];
+            d.b = freeEnds[1];
+            float dx  = d.b.x - d.a.x;
+            float dy  = d.b.y - d.a.y;
+            float len = std::sqrt(dx * dx + dy * dy);
+            d.length = len;
+            if (len > 1e-6f) {
+                d.dir_x = dx / len;
+                d.dir_y = dy / len;
+            }
+            d.edge_count = edgeCount;
+            continue;
+        }
+
+        // Anomaly — categorise + sample.
+        ++anomCount;
+        if      (overflow)              ++anomOverflow;
+        else if (totalFreeCount == 0)   ++anomZeroFree;
+        else if (totalFreeCount == 1)   ++anomOneFree;
+        else if (totalFreeCount == 3)   ++anomThreeFree;
+        else if (totalFreeCount == 4)   ++anomFourFree;
+        else                            ++anomMoreFree;
+        if (multiElevation) ++anomMultiElevation;
+
+        if (sampleCount < kSampleLimit) {
+            AnomalySample& smp = samples[sampleCount++];
+            smp.surface_idx     = s;
+            smp.edge_count      = edgeCount;
+            smp.point_count     = pointCount;
+            smp.free_count      = totalFreeCount;
+            smp.overflow        = overflow;
+            smp.multi_elevation = multiElevation;
+            smp.z_spread        = zSpread;
+            smp.first_point     = (pointCount > 0) ? points[0].pos
+                                                   : Vector{0.0f, 0.0f, 0.0f};
+        }
+    }
+
+    if (anomCount > 0) {
+        int anomBroken = anomCount - anomMultiElevation;
+        acclog::Write("ChangeDetector",
+                      "surface-descriptor anomalies: %d/%d flagged "
+                      "(multi-elev=%d broken=%d — 0free=%d 1free=%d "
+                      "3free=%d 4free=%d 5+free=%d overflow=%d)",
+                      anomCount, g_surface_count,
+                      anomMultiElevation, anomBroken,
+                      anomZeroFree, anomOneFree, anomThreeFree,
+                      anomFourFree, anomMoreFree, anomOverflow);
+        for (int i = 0; i < sampleCount; ++i) {
+            const AnomalySample& smp = samples[i];
+            acclog::Write("ChangeDetector",
+                          "  anom[%d] surf=%d edges=%d points=%d free=%d "
+                          "overflow=%d %s(zSpread=%.2fm) sample_pt=(%.2f,%.2f)",
+                          i, smp.surface_idx, smp.edge_count,
+                          smp.point_count, smp.free_count,
+                          smp.overflow ? 1 : 0,
+                          smp.multi_elevation ? "multi-elev " : "",
+                          smp.z_spread,
+                          smp.first_point.x, smp.first_point.y);
+            // Dump the underlying edges of this anomalous surface so
+            // we can see whether the lens pairs are same-room or
+            // cross-room, and how the endpoints actually relate.
+            int dumped = 0;
+            constexpr int kEdgeDumpLimit = 6;
+            for (int e = 0; e < g_wall_count && dumped < kEdgeDumpLimit;
+                 ++e) {
+                if (g_edge_surface_id[e] != smp.surface_idx) continue;
+                acclog::Write("ChangeDetector",
+                              "    edge[%d] room=%d a=(%.4f,%.4f,%.4f) "
+                              "b=(%.4f,%.4f,%.4f) mat=%d",
+                              e, g_walls[e].room_id,
+                              g_walls[e].a.x, g_walls[e].a.y, g_walls[e].a.z,
+                              g_walls[e].b.x, g_walls[e].b.y, g_walls[e].b.z,
+                              g_walls[e].material_id);
+                ++dumped;
+            }
+        }
+    }
+}
+
 // --- Object classification ---------------------------------------------
 
 acc::audio::NavCue CategoryToNavCue(acc::filter::CycleCategory c) {
@@ -587,6 +794,11 @@ void OnAreaChange(void* area) {
     // gives the surface index for edge i, and g_surface_count is the
     // total number of distinct surfaces.
     ClusterEdgesIntoSurfaces();
+
+    // Reduce each surface to a single straight segment for outside
+    // consumers (acc::wall_topology). Cheap (single linear walk per
+    // surface plus a small per-surface dedup table).
+    BuildSurfaceDescriptors();
 
     for (int i = 0; i < kMaxWallSurfaces; ++i) {
         g_surface_last_cued_at[i] = 0;
@@ -1310,6 +1522,23 @@ bool GetCachedWalls(const acc::engine::WallEdge*& outBuf, int& outCount) {
     outBuf   = g_walls;
     outCount = g_wall_count;
     return true;
+}
+
+int GetWallSurfaceCount() {
+    return g_surface_count;
+}
+
+bool GetWallSurfaceDesc(int idx, WallSurfaceDesc& outDesc) {
+    if (idx < 0 || idx >= g_surface_count) return false;
+    const WallSurfaceDesc& d = g_surface_descriptors[idx];
+    if (d.edge_count <= 0) return false;
+    outDesc = d;
+    return true;
+}
+
+int GetEdgeSurfaceId(int edgeIdx) {
+    if (edgeIdx < 0 || edgeIdx >= g_wall_count) return -1;
+    return g_edge_surface_id[edgeIdx];
 }
 
 }  // namespace acc::spatial::change_detector

@@ -713,6 +713,29 @@ int ScanRoomWallEdges(void* surfaceMesh, int roomId,
                 worldB = localB;
             }
 
+            // Skip vertical / near-vertical edges — those with negligible
+            // XY extent. K1's walkmesh contains 3D edges that run
+            // essentially straight up/down at one XY position (the side
+            // of a step or small cliff), some with sub-cm horizontal
+            // drift at the step foot (e.g. patch-20260513-082240
+            // Apartments edge[73]: Z=2.275→0 with 1.23cm of XY drift at
+            // (126.90, 130.06)). They're not navigable walls in 2D and
+            // they break downstream XY-only clustering: Pillar 1's
+            // `EdgesAreSameSurface` treats zero-XY-length edges as
+            // "always collinear" and glues together unrelated walls
+            // that happen to share the vertical's XY foot.
+            //
+            // 5cm² threshold matches Pillar 1's `kEndpointTolMeters` —
+            // anything below the endpoint-coincidence tolerance is
+            // geometrically not a meaningful 2D wall. K1's authored
+            // geometry doesn't have intentional sub-5cm wall segments
+            // (way below any architectural feature scale).
+            float xy_dx = worldB.x - worldA.x;
+            float xy_dy = worldB.y - worldA.y;
+            if (xy_dx * xy_dx + xy_dy * xy_dy < 2.5e-3f) {
+                continue;
+            }
+
             int slot = alreadyWritten + emitted;
             if (outBuf && slot < maxEdges) {
                 outBuf[slot].a           = worldA;
@@ -843,6 +866,96 @@ int BuildAreaWallCache(void* area, WallEdge* outBuf, int maxEdges) {
     acclog::Write("AreaWalls",
         "seam filter: emitted=%d -> kept=%d (dropped %d via %d seam pairs)",
         written, kept, written - kept, seamPairs);
+
+    // Same-room duplicate dedup. K1's walkmesh has two recurring
+    // patterns where the per-room scan above emits a wall edge twice
+    // from the same room:
+    //
+    //   1. Exact 3D duplicate. Two faces in one room both have
+    //      adjacency=-1 on the same physical edge with different
+    //      `materials[]` entries (non-manifold authoring). Both edges
+    //      have the same 3D endpoints (possibly reversed direction).
+    //
+    //   2. Step / slanted-face pair. The bottom edge of a step is
+    //      stored as a flat wall at Z=0, AND the slanted face of the
+    //      step is stored as a separate wall going from the step's
+    //      top (Z=2.25 typical) down to the same Z=0 foot. The two
+    //      edges share one 3D endpoint exactly (the foot where flat
+    //      meets slanted) and the other endpoint matches in XY but
+    //      not Z. Same 2D footprint either way.
+    //
+    // We dedup both: drop the second copy per matched pair, keep the
+    // first. material_id isn't read by any production path (logging
+    // only), so the surviving copy's material is irrelevant.
+    //
+    // The match rule is:
+    //   - 2D XY footprints match (either direction), AND
+    //   - at least one endpoint pair matches in full 3D within
+    //     `kSeamEpsSq` tolerance.
+    //
+    // The 3D-shared-endpoint requirement distinguishes step/slope
+    // pairs (always share the foot at Z=0) from genuine multi-floor
+    // geometry — lower-corridor wall vs upper-corridor wall at the
+    // same XY but with both endpoints at different Z. Multi-floor
+    // pairs have no 3D-shared endpoint and survive this pass, which
+    // matters when an area has decks / balconies / overhead walkways
+    // (Endar Spire, Manaan habitat domes, etc.).
+    //
+    // The cross-room seam pass above explicitly skips same-room pairs
+    // because dropping BOTH copies (the cross-room rule for portal
+    // seams) would lose the wall entirely. Here we drop just ONE.
+    //
+    // Diagnostic motivation: per-edge anomaly dumps from patch-
+    // 20260513-080349 + -081234 showed the two patterns above. After
+    // this pass, Pillar 1's clustering produces single straight-
+    // segment surfaces instead of 2-edge "lens" anomalies, and
+    // walltopo gets clean inputs.
+    //
+    // O(N²) over `kept`. Same cost class as the cross-room pass; runs
+    // once per area-load.
+    auto xyCoincident = [&](const Vector& p, const Vector& q) {
+        float dx = p.x - q.x, dy = p.y - q.y;
+        return (dx * dx + dy * dy) < kSeamEpsSq;
+    };
+    int sameRoomDups = 0;
+    int i = 0;
+    while (i < kept) {
+        int j = i + 1;
+        while (j < kept) {
+            if (outBuf[i].room_id != outBuf[j].room_id) {
+                ++j;
+                continue;
+            }
+            // 2D footprint match in either direction.
+            bool xyMatch =
+                (xyCoincident(outBuf[i].a, outBuf[j].a) &&
+                 xyCoincident(outBuf[i].b, outBuf[j].b)) ||
+                (xyCoincident(outBuf[i].a, outBuf[j].b) &&
+                 xyCoincident(outBuf[i].b, outBuf[j].a));
+            // At least one endpoint pair shared exactly in 3D —
+            // distinguishes step/slope pairs (always share the foot)
+            // from multi-floor walls (no 3D endpoint in common).
+            bool sharesEndpoint3D =
+                coincident(outBuf[i].a, outBuf[j].a) ||
+                coincident(outBuf[i].a, outBuf[j].b) ||
+                coincident(outBuf[i].b, outBuf[j].a) ||
+                coincident(outBuf[i].b, outBuf[j].b);
+            if (xyMatch && sharesEndpoint3D) {
+                outBuf[j] = outBuf[--kept];   // swap-remove
+                ++sameRoomDups;
+            } else {
+                ++j;
+            }
+        }
+        ++i;
+    }
+    if (sameRoomDups > 0) {
+        acclog::Write("AreaWalls",
+            "same-room dedup: dropped %d duplicate wall edges "
+            "(non-manifold faces / step+slanted-face pairs; multi-floor "
+            "walls preserved)",
+            sameRoomDups);
+    }
 
     return kept;
 }

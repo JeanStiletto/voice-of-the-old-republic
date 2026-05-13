@@ -2,10 +2,19 @@
 //
 // EXPERIMENTAL — alternative-direction-calculation-system branch.
 //
-// First commit: Phase 1 (segment grouping) implemented + logged so we
-// can inspect the segment graph on real K1 maps. Phases 2-5 (junction
-// clustering, corridor detection, classification, spatial index) are
-// stubbed with TODOs and will land iteratively.
+// Phase 1 (segment input) now consumes Pillar 1's already-clustered
+// wall surfaces from `acc::spatial::change_detector` instead of
+// re-running its own collinear-merge pass over the raw edge list.
+// Pillar 1's union-find clustering is ~2× more aggressive on the same
+// input (462 edges → 121 surfaces vs walltopo's prior 237 segments),
+// and getting longer / cleaner segments out of Phase 1 is a strict
+// precondition for the parallel-pair sweep in Phase 4 to find real
+// corridors rather than tiny corner fragments.
+//
+// Phases 4-5 (corridor detection, junction clustering) and the lookup
+// path still use the old "two parallel walls forming a 1.5-6m gap"
+// model; that's the next thing to redesign (toward face-graph cell
+// decomposition — see chat 2026-05-13).
 
 #include "wall_topology.h"
 
@@ -14,7 +23,6 @@
 #include <cstdio>
 #include <cstring>
 
-#include "engine_area.h"
 #include "log.h"
 #include "spatial_change_detector.h"
 #include "strings.h"
@@ -29,21 +37,13 @@ namespace {
 // log output.
 // ---------------------------------------------------------------------
 
-// Endpoint-join tolerance: two segment endpoints within this distance
-// are treated as the same vertex during merging + junction clustering.
-// Walkmesh perimeter edges share endpoints exactly in well-formed
-// content, but float drift through LocalToWorld can introduce a few
-// mm of slop.
-constexpr float kJoinToleranceM = 0.10f;
-
-// Angle tolerance for "collinear" — when merging two edges that share
-// an endpoint, their direction vectors must agree within this
-// half-angle.
-constexpr float kCollinearAngleDeg = 10.0f;
-
-// Drop merged segments shorter than this — noise edges, single-tile
-// artefacts, etc. Threshold chosen by inspection of K1 walkmesh
-// geometry; refine after we see the first few areas.
+// Drop wall surfaces shorter than this — noise / single-tile artefacts.
+// Pillar 1's clustering already collapses chains of collinear edges
+// into one surface, so a "short" surface here is genuinely a short
+// physical wall (a 50cm jut, not a few unmerged dicing artefacts).
+// Threshold matches the value used by walltopo's prior in-house merge
+// pass; refine after we see a few more areas with the cleaner
+// upstream segments.
 constexpr float kMinSegmentLengthM = 0.5f;
 
 // Corridor parallel-pair detection (Phase 2). Two segments form a
@@ -73,7 +73,6 @@ struct WallSegment {
 };
 
 constexpr int kMaxSegments = 1024;
-constexpr int kMaxEdgesIn  = 4096;
 
 // A detected corridor formed by two parallel segments. Stored as the
 // indices of the two segments plus the corridor's derived geometry:
@@ -141,16 +140,6 @@ Graph g_graph;
 // ---------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------
-
-float Distance(const Vector& a, const Vector& b) {
-    float dx = a.x - b.x;
-    float dy = a.y - b.y;
-    return std::sqrt(dx * dx + dy * dy);
-}
-
-bool SamePoint(const Vector& a, const Vector& b) {
-    return Distance(a, b) <= kJoinToleranceM;
-}
 
 // Dot product of two unit vectors, clamped to [-1, 1] to keep acos
 // numerically safe under float drift.
@@ -383,70 +372,6 @@ bool PointInCorridor(const CorridorCell& c, float px, float py,
     return true;
 }
 
-bool BuildSegmentFromEdge(const acc::engine::WallEdge& e, WallSegment& out) {
-    out.a = e.a;
-    out.b = e.b;
-    float dx = e.b.x - e.a.x;
-    float dy = e.b.y - e.a.y;
-    float len = std::sqrt(dx * dx + dy * dy);
-    if (len < 1e-6f) return false;  // degenerate edge
-    out.dirx   = dx / len;
-    out.diry   = dy / len;
-    out.length = len;
-    return true;
-}
-
-// Attempt to merge segment B into segment A. Returns true on success;
-// A is updated in place. Four endpoint configurations to handle:
-//   1. A.b ≈ B.a   — append B to A's end
-//   2. A.b ≈ B.b   — append B reversed
-//   3. A.a ≈ B.a   — prepend B reversed
-//   4. A.a ≈ B.b   — prepend B
-// In each case the join direction must be near-collinear.
-bool TryMerge(WallSegment& a, const WallSegment& b) {
-    // Configuration 1: a.b -> b.a -> b.b
-    if (SamePoint(a.b, b.a) &&
-        NearCollinear(a.dirx, a.diry, b.dirx, b.diry, kCollinearAngleDeg)) {
-        a.b = b.b;
-        float dx = a.b.x - a.a.x;
-        float dy = a.b.y - a.a.y;
-        a.length = std::sqrt(dx * dx + dy * dy);
-        if (a.length > 1e-6f) { a.dirx = dx / a.length; a.diry = dy / a.length; }
-        return true;
-    }
-    // Configuration 2: a.b -> b.b -> b.a  (B reversed)
-    if (SamePoint(a.b, b.b) &&
-        NearCollinear(a.dirx, a.diry, -b.dirx, -b.diry, kCollinearAngleDeg)) {
-        a.b = b.a;
-        float dx = a.b.x - a.a.x;
-        float dy = a.b.y - a.a.y;
-        a.length = std::sqrt(dx * dx + dy * dy);
-        if (a.length > 1e-6f) { a.dirx = dx / a.length; a.diry = dy / a.length; }
-        return true;
-    }
-    // Configuration 3: a.a -> b.a -> b.b (B reversed prepend)
-    if (SamePoint(a.a, b.a) &&
-        NearCollinear(a.dirx, a.diry, -b.dirx, -b.diry, kCollinearAngleDeg)) {
-        a.a = b.b;
-        float dx = a.b.x - a.a.x;
-        float dy = a.b.y - a.a.y;
-        a.length = std::sqrt(dx * dx + dy * dy);
-        if (a.length > 1e-6f) { a.dirx = dx / a.length; a.diry = dy / a.length; }
-        return true;
-    }
-    // Configuration 4: a.a -> b.b -> b.a (prepend)
-    if (SamePoint(a.a, b.b) &&
-        NearCollinear(a.dirx, a.diry, b.dirx, b.diry, kCollinearAngleDeg)) {
-        a.a = b.a;
-        float dx = a.b.x - a.a.x;
-        float dy = a.b.y - a.a.y;
-        a.length = std::sqrt(dx * dx + dy * dy);
-        if (a.length > 1e-6f) { a.dirx = dx / a.length; a.diry = dy / a.length; }
-        return true;
-    }
-    return false;
-}
-
 }  // namespace
 
 void Reset() {
@@ -468,122 +393,71 @@ void BuildForArea(void* area) {
     Reset();
     g_graph.area_owner = area;
 
-    const acc::engine::WallEdge* walls = nullptr;
-    int wallCount = 0;
-    if (!acc::spatial::change_detector::GetCachedWalls(walls, wallCount) ||
-        !walls || wallCount <= 0) {
+    // ---------------------------------------------------------------
+    // Phase 1: consume Pillar 1's wall-surface clustering.
+    //
+    // The change-detector already runs union-find over the raw wall
+    // edges at area-load time, merging collinear endpoint-sharing
+    // edges across rooms into logical wall surfaces (see the "Wall
+    // surface clustering" block in spatial_change_detector.cpp).
+    // Each surface reduces to a single straight segment with two
+    // extreme endpoints + unit direction + length — exactly what
+    // walltopo previously rebuilt in-house with a weaker O(N²)
+    // iterative-merge + dedup pipeline.
+    //
+    // Pillar 1 produces noticeably cleaner output than the old
+    // in-house pass: same input (462 edges on Apartments) reduces to
+    // 121 surfaces vs walltopo's 237 segments — roughly 2× more
+    // aggressive merging, achieved by union-find with a looser 15°
+    // collinearity threshold instead of 10° iterative sweeps.
+    //
+    // We still self-gate on the cache being ready: change_detector::
+    // Tick runs BEFORE transitions::Tick in core_tick.cpp, but on
+    // the area-change tick the surface table can still be empty if
+    // BuildAreaWallCache faulted partway through; the retry path in
+    // transitions::Tick re-calls BuildForArea each tick until both
+    // caches populate.
+    // ---------------------------------------------------------------
+    int surfaceCount = acc::spatial::change_detector::GetWallSurfaceCount();
+    if (surfaceCount <= 0) {
         acclog::Write("WallTopo",
-                      "BuildForArea: wall cache not ready — leaving graph "
-                      "empty (will retry on next call)");
+                      "BuildForArea: Pillar 1 wall surfaces not ready — "
+                      "leaving graph empty (will retry on next call)");
         return;
     }
 
-    int edgeCap = wallCount > kMaxEdgesIn ? kMaxEdgesIn : wallCount;
-    if (wallCount > kMaxEdgesIn) {
-        acclog::Write("WallTopo",
-                      "BuildForArea: %d edges exceeds cap %d — truncating",
-                      wallCount, kMaxEdgesIn);
-    }
-
-    // ---------------------------------------------------------------
-    // Phase 1: load each edge as a degenerate-zero-extent segment.
-    // ---------------------------------------------------------------
-    int    segCount = 0;
-    int    skipped  = 0;
-    for (int i = 0; i < edgeCap && segCount < kMaxSegments; ++i) {
-        WallSegment s;
-        if (!BuildSegmentFromEdge(walls[i], s)) {
-            ++skipped;
+    int segCount   = 0;
+    int skippedShort      = 0;
+    int skippedDegenerate = 0;
+    for (int s = 0; s < surfaceCount && segCount < kMaxSegments; ++s) {
+        acc::spatial::change_detector::WallSurfaceDesc desc;
+        if (!acc::spatial::change_detector::GetWallSurfaceDesc(s, desc)) {
+            ++skippedDegenerate;  // closed-loop / branching / overflow
             continue;
         }
-        g_graph.segments[segCount++] = s;
+        if (desc.length < kMinSegmentLengthM) {
+            ++skippedShort;
+            continue;
+        }
+        WallSegment& seg = g_graph.segments[segCount++];
+        seg.a      = desc.a;
+        seg.b      = desc.b;
+        seg.dirx   = desc.dir_x;
+        seg.diry   = desc.dir_y;
+        seg.length = desc.length;
     }
     g_graph.segment_count = segCount;
-    int initialSegCount = segCount;
-
-    // ---------------------------------------------------------------
-    // Phase 2: iteratively merge collinear adjacent segments.
-    //
-    // Greedy O(N²) per pass; repeat until no merges in a full sweep.
-    // Each merge collapses two segments to one, so total work is
-    // bounded by O(N³) worst case (rarely hit in practice — most
-    // merges happen in the first 1-2 passes).
-    // ---------------------------------------------------------------
-    int passes = 0;
-    while (passes < 16) {
-        ++passes;
-        bool merged = false;
-        for (int i = 0; i < g_graph.segment_count && !merged; ++i) {
-            for (int j = i + 1; j < g_graph.segment_count && !merged; ++j) {
-                if (TryMerge(g_graph.segments[i], g_graph.segments[j])) {
-                    // Swap-remove j.
-                    g_graph.segments[j] =
-                        g_graph.segments[g_graph.segment_count - 1];
-                    --g_graph.segment_count;
-                    merged = true;
-                }
-            }
-        }
-        if (!merged) break;
+    if (surfaceCount > kMaxSegments) {
+        acclog::Write("WallTopo",
+                      "BuildForArea: surface count %d exceeds cap %d — "
+                      "truncating", surfaceCount, kMaxSegments);
     }
-
-    // ---------------------------------------------------------------
-    // Phase 2.5: dedupe — the engine emits each shared wall once per
-    // adjacent room (a perimeter edge with adjacency=-1 fires from
-    // each room's local perspective, with opposite endpoint
-    // orientation). Two segments that share endpoints in either
-    // direction are the same physical wall and must collapse to one.
-    //
-    // Without this pass, Phase 4 explodes: a wall paired with its own
-    // reverse looks like a corridor of tiny width, multiplying
-    // corridor candidates by 4-8x. Patch-20260513-052738 Oberstadt
-    // produced 362 segments / 121 corridors; expected ~half / order-
-    // of-magnitude fewer after dedup.
-    //
-    // O(N²); safe because N is hundreds of segments, not thousands.
-    // ---------------------------------------------------------------
-    int dedupCount = 0;
-    for (int i = 0; i < g_graph.segment_count; ++i) {
-        const WallSegment& si = g_graph.segments[i];
-        int j = i + 1;
-        while (j < g_graph.segment_count) {
-            const WallSegment& sj = g_graph.segments[j];
-            bool dup =
-                (SamePoint(si.a, sj.a) && SamePoint(si.b, sj.b)) ||
-                (SamePoint(si.a, sj.b) && SamePoint(si.b, sj.a));
-            if (dup) {
-                g_graph.segments[j] =
-                    g_graph.segments[g_graph.segment_count - 1];
-                --g_graph.segment_count;
-                ++dedupCount;
-                // Re-check this index (it now holds the moved entry).
-            } else {
-                ++j;
-            }
-        }
-    }
-
-    // ---------------------------------------------------------------
-    // Phase 3: drop noise segments (shorter than min length).
-    // ---------------------------------------------------------------
-    int kept = 0;
-    int dropped = 0;
-    for (int i = 0; i < g_graph.segment_count; ++i) {
-        if (g_graph.segments[i].length >= kMinSegmentLengthM) {
-            if (kept != i) g_graph.segments[kept] = g_graph.segments[i];
-            ++kept;
-        } else {
-            ++dropped;
-        }
-    }
-    g_graph.segment_count = kept;
 
     acclog::Write("WallTopo",
-                  "BuildForArea: area=%p edges=%d -> initial segs=%d "
-                  "(skipped %d degenerate) merged in %d passes "
-                  "(deduped %d) -> %d (dropped %d short)",
-                  area, wallCount, initialSegCount, skipped, passes,
-                  dedupCount, g_graph.segment_count, dropped);
+                  "BuildForArea: area=%p consumed %d Pillar 1 surfaces -> "
+                  "%d segments (skipped %d short, %d degenerate)",
+                  area, surfaceCount, g_graph.segment_count,
+                  skippedShort, skippedDegenerate);
 
     // ---------------------------------------------------------------
     // Phase 4: parallel-pair corridor detection.
