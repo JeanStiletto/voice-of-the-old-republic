@@ -307,6 +307,29 @@ bool ResolveRoomSpeech(void* area, int roomIndex,
     return false;
 }
 
+// Diagnostic — log what the wall-topology decomposition would have
+// said at this position alongside the room-tier resolution. Lets us
+// compare both algorithms on the same player decisions before any
+// production wiring change.
+void LogWallTopoComparison(void* area, const Vector& worldPos,
+                           const char* roomSpoken,
+                           const char* roomSource) {
+    char wt[128] = {0};
+    int  wtSig = 0;
+    bool got = acc::wall_topology::LookupAt(
+        area, worldPos, wt, sizeof(wt), wtSig);
+    if (!got) {
+        acclog::Write("WallTopo.Compare",
+                      "room=\"%s\" (%s) | walltopo=<no graph>",
+                      roomSpoken ? roomSpoken : "", roomSource);
+        return;
+    }
+    acclog::Write("WallTopo.Compare",
+                  "pos=(%.2f,%.2f) room=\"%s\" (%s) | walltopo=\"%s\"",
+                  worldPos.x, worldPos.y,
+                  roomSpoken ? roomSpoken : "", roomSource, wt);
+}
+
 // Speak a room change. Tier-based label resolution; text-equality dedup
 // against `g_last_spoken_room_text` collapses adjacent .lyt-rooms with
 // identical labels (corridor cells, repeated junctions). Gated by the
@@ -373,6 +396,7 @@ void SpeakRoomChange(void* area, int roomIndex, const Vector& worldPos) {
     acclog::Write("Transition",
                   "room -> %d '%s' src=%s (areaPtr=%p)",
                   roomIndex, speechBuf, source, area);
+    LogWallTopoComparison(area, worldPos, speechBuf, source);
 }
 
 // Forward declaration so TickProximityLandmarks can call it.

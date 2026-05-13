@@ -17,6 +17,7 @@
 #include "engine_area.h"
 #include "log.h"
 #include "spatial_change_detector.h"
+#include "strings.h"
 
 namespace acc::wall_topology {
 
@@ -77,29 +78,62 @@ constexpr int kMaxEdgesIn  = 4096;
 // A detected corridor formed by two parallel segments. Stored as the
 // indices of the two segments plus the corridor's derived geometry:
 // axis direction, perpendicular width, and overlap range (start / end
-// parameters along the axis). The 4-corner footprint can be derived
-// from these on demand for point-in-polygon tests at lookup time.
+// parameters along the axis). Label is pre-rendered at build time
+// from the geometry + localized strings.
 struct CorridorCell {
     int   seg_a;            // index into Graph.segments
     int   seg_b;
     float axis_x, axis_y;   // unit direction along corridor length
     float perp_x, perp_y;   // unit direction perpendicular (a → b side)
     float width;            // perpendicular distance between walls
-    float midline_x, midline_y;   // a point on the corridor midline
-    float overlap_start;    // start parameter along axis (from origin midline_*)
+    float midline_x, midline_y;   // axis-zero point on corridor midline
+    float overlap_start;    // start parameter along axis (from midline)
     float overlap_end;      // end parameter
     float length;           // overlap_end - overlap_start
+    char  label[128];       // Phase 4: pre-rendered "Korridor {axis}, {w}m"
+    int   sig;              // signature for dedup
 };
 
-constexpr int kMaxCorridors = 256;
+// A junction in the floor-plan graph — a cluster of corridor endpoints
+// that lie within kJunctionClusterRadiusM of each other. Degree =
+// number of corridors meeting at this cluster. Label is pre-rendered:
+//   degree 1 → "Sackgasse, {direction}"
+//   degree ≥ 3 → "Kreuzung, {directions}"
+// Degree 2 (pass-through / corner) is intentionally label-less; the
+// adjacent corridor labels carry the information.
+struct JunctionNode {
+    float pos_x, pos_y;
+    int   corridor_count;
+    static constexpr int kMaxCorridorsPerNode = 8;
+    int   corridor_idx[kMaxCorridorsPerNode];
+    // Direction from this node toward each connected corridor's centre
+    // (used for label rendering — "Kreuzung, Nord, Ost, ...").
+    float corridor_dir_x[kMaxCorridorsPerNode];
+    float corridor_dir_y[kMaxCorridorsPerNode];
+    char  label[128];       // empty when degree==2
+    int   sig;
+};
+
+constexpr int kMaxCorridors  = 256;
+constexpr int kMaxJunctions  = 256;
+
+// Junction-clustering radius. Corridor endpoints within this distance
+// fold into one node. 3m matches the typical corridor-width / corner-
+// blob size in K1 geometry.
+constexpr float kJunctionClusterRadiusM = 3.0f;
+
+// Spatial lookup tolerances.
+constexpr float kJunctionLookupRadiusM = 3.0f;
 
 struct Graph {
-    void*        area_owner    = nullptr;
-    bool         built         = false;
-    int          segment_count = 0;
+    void*        area_owner     = nullptr;
+    bool         built          = false;
+    int          segment_count  = 0;
     WallSegment  segments[kMaxSegments];
     int          corridor_count = 0;
     CorridorCell corridors[kMaxCorridors];
+    int          junction_count = 0;
+    JunctionNode junctions[kMaxJunctions];
 };
 
 Graph g_graph;
@@ -166,6 +200,187 @@ bool ProjectionOverlap(const WallSegment& a, const WallSegment& b,
     outStart = a_lo > b_lo ? a_lo : b_lo;
     outEnd   = a_hi < b_hi ? a_hi : b_hi;
     return outEnd > outStart;
+}
+
+// 4-way cardinal name from a 2D unit-ish vector. Picks the dominant
+// axis (|dx| vs |dy|). Caller already knows the engine's frame
+// (0° = +X = East). Returns a localized Id.
+acc::strings::Id CardinalFromVector(float dx, float dy) {
+    using acc::strings::Id;
+    if (std::fabs(dx) > std::fabs(dy)) {
+        return dx >= 0.0f ? Id::DirEast : Id::DirWest;
+    }
+    return dy >= 0.0f ? Id::DirNorth : Id::DirSouth;
+}
+
+// Render the corridor's localized label into c.label.
+// Format reused from the room-cache classifier so the user experience
+// stays consistent.
+void RenderCorridorLabel(CorridorCell& c) {
+    using acc::strings::Id;
+    bool axisIsEW = std::fabs(c.axis_x) > std::fabs(c.axis_y);
+    const char* axisStr = acc::strings::Get(
+        axisIsEW ? Id::AxisEastWest : Id::AxisNorthSouth);
+    const char* fmt = acc::strings::Get(Id::FmtMapCursorCorridor);
+    if (fmt && fmt[0] && axisStr && axisStr[0]) {
+        std::snprintf(c.label, sizeof(c.label), fmt, axisStr, c.width);
+    } else {
+        c.label[0] = '\0';
+    }
+    int kind = axisIsEW ? 4 : 3;
+    int w    = static_cast<int>(c.width + 0.5f);
+    c.sig = (kind & 0xff) | ((w & 0xff) << 8);
+}
+
+// Append a direction word into a comma-separated list, growing dirList
+// until it's full. Returns the new length.
+size_t AppendDirWord(char* dirList, size_t bufSize, size_t dirLen,
+                     acc::strings::Id dirId) {
+    const char* word = acc::strings::Get(dirId);
+    if (!word || !word[0]) return dirLen;
+    if (dirLen > 0 && dirLen + 2 < bufSize) {
+        dirList[dirLen++] = ',';
+        dirList[dirLen++] = ' ';
+        dirList[dirLen]   = '\0';
+    }
+    size_t remaining = bufSize > dirLen ? bufSize - dirLen : 0;
+    if (remaining == 0) return dirLen;
+    int n = std::snprintf(dirList + dirLen, remaining, "%s", word);
+    if (n > 0) {
+        size_t advanced = static_cast<size_t>(n) < remaining
+                              ? static_cast<size_t>(n)
+                              : (remaining > 0 ? remaining - 1 : 0);
+        dirLen += advanced;
+    }
+    return dirLen;
+}
+
+// Render a junction node's label. Degree 1 → "Sackgasse, {dir}".
+// Degree ≥ 3 → "Kreuzung, {dirs}". Degree 2 → no label.
+void RenderJunctionLabel(JunctionNode& n) {
+    using acc::strings::Id;
+    if (n.corridor_count == 2) {
+        n.label[0] = '\0';
+        n.sig = 0;
+        return;
+    }
+
+    if (n.corridor_count == 1) {
+        Id dirId = CardinalFromVector(n.corridor_dir_x[0],
+                                      n.corridor_dir_y[0]);
+        const char* dir = acc::strings::Get(dirId);
+        const char* fmt = acc::strings::Get(Id::FmtMapCursorDeadEnd);
+        if (fmt && fmt[0] && dir && dir[0]) {
+            std::snprintf(n.label, sizeof(n.label), fmt, dir);
+        } else {
+            n.label[0] = '\0';
+        }
+        n.sig = 5 | (static_cast<int>(dirId) << 8);
+        return;
+    }
+
+    // degree ≥ 3 — collect unique cardinal directions.
+    char dirList[96] = {0};
+    size_t dirLen = 0;
+    int mask = 0;
+    for (int i = 0; i < n.corridor_count; ++i) {
+        Id dirId = CardinalFromVector(n.corridor_dir_x[i],
+                                      n.corridor_dir_y[i]);
+        int bit = 0;
+        switch (dirId) {
+            case Id::DirNorth: bit = 0; break;
+            case Id::DirEast:  bit = 1; break;
+            case Id::DirSouth: bit = 2; break;
+            case Id::DirWest:  bit = 3; break;
+            default: continue;
+        }
+        if (mask & (1 << bit)) continue;
+        mask |= (1 << bit);
+        dirLen = AppendDirWord(dirList, sizeof(dirList), dirLen, dirId);
+    }
+    const char* fmt = acc::strings::Get(Id::FmtMapCursorJunctionDirs);
+    if (fmt && fmt[0] && dirList[0] != '\0') {
+        std::snprintf(n.label, sizeof(n.label), fmt, dirList);
+    } else {
+        n.label[0] = '\0';
+    }
+    n.sig = 6 | ((mask & 0xff) << 8) | ((n.corridor_count & 0xff) << 16);
+}
+
+// Phase 3: cluster corridor endpoints into junction nodes.
+void BuildJunctionNodes() {
+    g_graph.junction_count = 0;
+    for (int i = 0; i < g_graph.corridor_count; ++i) {
+        const CorridorCell& c = g_graph.corridors[i];
+        // Two endpoints along axis at overlap_start / overlap_end.
+        struct EP {
+            float x, y;
+            float dir_x, dir_y;   // direction from endpoint toward corridor centre
+        };
+        EP eps[2];
+        eps[0].x = c.midline_x + c.axis_x * c.overlap_start;
+        eps[0].y = c.midline_y + c.axis_y * c.overlap_start;
+        eps[0].dir_x = c.axis_x;   // start endpoint points toward +axis (centre)
+        eps[0].dir_y = c.axis_y;
+        eps[1].x = c.midline_x + c.axis_x * c.overlap_end;
+        eps[1].y = c.midline_y + c.axis_y * c.overlap_end;
+        eps[1].dir_x = -c.axis_x;  // end endpoint points toward -axis
+        eps[1].dir_y = -c.axis_y;
+
+        for (int e = 0; e < 2; ++e) {
+            // Find an existing node within cluster radius.
+            int found = -1;
+            float bestD2 = kJunctionClusterRadiusM *
+                           kJunctionClusterRadiusM;
+            for (int n = 0; n < g_graph.junction_count; ++n) {
+                float dx = g_graph.junctions[n].pos_x - eps[e].x;
+                float dy = g_graph.junctions[n].pos_y - eps[e].y;
+                float d2 = dx * dx + dy * dy;
+                if (d2 < bestD2) {
+                    bestD2 = d2;
+                    found  = n;
+                }
+            }
+            JunctionNode* node = nullptr;
+            if (found < 0) {
+                if (g_graph.junction_count >= kMaxJunctions) continue;
+                node = &g_graph.junctions[g_graph.junction_count++];
+                node->pos_x = eps[e].x;
+                node->pos_y = eps[e].y;
+                node->corridor_count = 0;
+                node->label[0] = '\0';
+                node->sig = 0;
+            } else {
+                node = &g_graph.junctions[found];
+                // Re-centre as running average.
+                float n_old = static_cast<float>(node->corridor_count);
+                float n_new = n_old + 1.0f;
+                node->pos_x = (node->pos_x * n_old + eps[e].x) / n_new;
+                node->pos_y = (node->pos_y * n_old + eps[e].y) / n_new;
+            }
+            if (node->corridor_count <
+                JunctionNode::kMaxCorridorsPerNode) {
+                int slot = node->corridor_count++;
+                node->corridor_idx[slot]   = i;
+                node->corridor_dir_x[slot] = eps[e].dir_x;
+                node->corridor_dir_y[slot] = eps[e].dir_y;
+            }
+        }
+    }
+}
+
+// Point-in-corridor test using the corridor's axis + perp frame.
+bool PointInCorridor(const CorridorCell& c, float px, float py,
+                     float& outPerpDist) {
+    float dx = px - c.midline_x;
+    float dy = py - c.midline_y;
+    float axisT = dx * c.axis_x + dy * c.axis_y;
+    float perpT = dx * c.perp_x + dy * c.perp_y;
+    if (axisT < c.overlap_start || axisT > c.overlap_end) return false;
+    float halfW = c.width * 0.5f;
+    if (perpT < -halfW || perpT > halfW) return false;
+    outPerpDist = std::fabs(perpT);
+    return true;
 }
 
 bool BuildSegmentFromEdge(const acc::engine::WallEdge& e, WallSegment& out) {
@@ -451,12 +666,24 @@ void BuildForArea(void* area) {
                   "BuildForArea: phase 4 found %d corridor candidates",
                   g_graph.corridor_count);
 
-    // TODO Phase 5: junction clustering — group corridor endpoints
-    //               into junction nodes; classify each node by its
-    //               degree (1=dead-end, 3+=junction).
-    // TODO Phase 6: classification + label rendering.
-    // TODO Phase 7: spatial index (uniform grid or polygon walk for
-    //               position → region lookup).
+    // ---------------------------------------------------------------
+    // Phase 4b: render labels for each corridor.
+    // ---------------------------------------------------------------
+    for (int i = 0; i < g_graph.corridor_count; ++i) {
+        RenderCorridorLabel(g_graph.corridors[i]);
+    }
+
+    // ---------------------------------------------------------------
+    // Phase 5: cluster corridor endpoints into junction nodes; render
+    // each node's label (dead-end / junction / silent pass-through).
+    // ---------------------------------------------------------------
+    BuildJunctionNodes();
+    for (int i = 0; i < g_graph.junction_count; ++i) {
+        RenderJunctionLabel(g_graph.junctions[i]);
+    }
+    acclog::Write("WallTopo",
+                  "BuildForArea: phase 5 clustered %d junction nodes",
+                  g_graph.junction_count);
 
     g_graph.built = true;
     DumpGraphToLog();
@@ -468,9 +695,10 @@ void DumpGraphToLog() {
         return;
     }
     acclog::Write("WallTopo",
-                  "graph dump area=%p segments=%d corridors=%d",
+                  "graph dump area=%p segments=%d corridors=%d "
+                  "junctions=%d",
                   g_graph.area_owner, g_graph.segment_count,
-                  g_graph.corridor_count);
+                  g_graph.corridor_count, g_graph.junction_count);
     // Bucket segment lengths to get a quick distribution.
     int bucket_le_2  = 0;
     int bucket_le_5  = 0;
@@ -528,6 +756,28 @@ void DumpGraphToLog() {
                       "  ... (%d more corridors truncated)",
                       g_graph.corridor_count - 32);
     }
+
+    // Dump junctions — show degree distribution + every labelled node.
+    int deg1 = 0, deg2 = 0, deg3plus = 0;
+    for (int i = 0; i < g_graph.junction_count; ++i) {
+        int c = g_graph.junctions[i].corridor_count;
+        if      (c == 1) ++deg1;
+        else if (c == 2) ++deg2;
+        else if (c >= 3) ++deg3plus;
+    }
+    acclog::Write("WallTopo",
+                  "junction degrees: dead-end=%d pass-through=%d "
+                  "junction=%d",
+                  deg1, deg2, deg3plus);
+    int juncLimit = g_graph.junction_count > 32
+                        ? 32 : g_graph.junction_count;
+    for (int i = 0; i < juncLimit; ++i) {
+        const JunctionNode& n = g_graph.junctions[i];
+        if (n.label[0] == '\0') continue;
+        acclog::Write("WallTopo",
+                      "  junc[%d] deg=%d pos=(%.2f,%.2f) label=\"%s\"",
+                      i, n.corridor_count, n.pos_x, n.pos_y, n.label);
+    }
 }
 
 bool LookupAt(void* area, const Vector& worldPos,
@@ -535,10 +785,65 @@ bool LookupAt(void* area, const Vector& worldPos,
     if (outBuf && bufSize > 0) outBuf[0] = '\0';
     outSig = 0;
     if (!HasGraphForArea(area)) return false;
-    // TODO: spatial index lookup. For now this returns false so
-    // nothing is wired up yet; the decomposition runs as a parallel
-    // observer until the algorithm is complete.
-    (void)worldPos;
+
+    // 1. Corridor footprint — point-in-rectangle. If multiple match
+    //    (corridors can overlap at junctions), pick the one whose
+    //    midline is closest.
+    int   bestCor      = -1;
+    float bestCorPerp  = 1e30f;
+    for (int i = 0; i < g_graph.corridor_count; ++i) {
+        float perp = 0.0f;
+        if (PointInCorridor(g_graph.corridors[i],
+                            worldPos.x, worldPos.y, perp)) {
+            if (perp < bestCorPerp) {
+                bestCorPerp = perp;
+                bestCor     = i;
+            }
+        }
+    }
+    if (bestCor >= 0) {
+        const CorridorCell& c = g_graph.corridors[bestCor];
+        if (c.label[0] != '\0') {
+            std::snprintf(outBuf, bufSize, "%s", c.label);
+            outSig = c.sig;
+            return true;
+        }
+    }
+
+    // 2. Nearest junction node within kJunctionLookupRadiusM. This
+    //    catches the case where the player sits at the meeting point
+    //    of multiple corridors (where the corridor rectangles end /
+    //    overlap) — they should hear the junction label, not the
+    //    nearest corridor's.
+    int   bestJunc = -1;
+    float bestJuncD2 = kJunctionLookupRadiusM * kJunctionLookupRadiusM;
+    for (int i = 0; i < g_graph.junction_count; ++i) {
+        const JunctionNode& n = g_graph.junctions[i];
+        if (n.label[0] == '\0') continue;  // degree-2 silent nodes
+        float dx = worldPos.x - n.pos_x;
+        float dy = worldPos.y - n.pos_y;
+        float d2 = dx * dx + dy * dy;
+        if (d2 < bestJuncD2) {
+            bestJuncD2 = d2;
+            bestJunc   = i;
+        }
+    }
+    if (bestJunc >= 0) {
+        const JunctionNode& n = g_graph.junctions[bestJunc];
+        std::snprintf(outBuf, bufSize, "%s", n.label);
+        outSig = n.sig;
+        return true;
+    }
+
+    // 3. Fall back to "Offene Fläche" — the player is in space the
+    //    decomposition didn't identify as a corridor or a junction.
+    const char* fallback =
+        acc::strings::Get(acc::strings::Id::MapCursorOpenArea);
+    if (fallback && fallback[0]) {
+        std::snprintf(outBuf, bufSize, "%s", fallback);
+        outSig = 2;
+        return true;
+    }
     return false;
 }
 
