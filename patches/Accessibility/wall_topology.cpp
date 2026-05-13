@@ -45,6 +45,15 @@ constexpr float kCollinearAngleDeg = 10.0f;
 // geometry; refine after we see the first few areas.
 constexpr float kMinSegmentLengthM = 0.5f;
 
+// Corridor parallel-pair detection (Phase 2). Two segments form a
+// corridor candidate if they are roughly parallel, separated by a
+// distance within the corridor-width band, and their projections
+// onto the parallel direction overlap by at least min-overlap.
+constexpr float kCorridorParallelTolDeg = 10.0f;
+constexpr float kCorridorMinWidthM      = 1.5f;
+constexpr float kCorridorMaxWidthM      = 6.0f;
+constexpr float kCorridorMinOverlapM    = 2.0f;
+
 // ---------------------------------------------------------------------
 // Internal data types.
 // ---------------------------------------------------------------------
@@ -65,11 +74,32 @@ struct WallSegment {
 constexpr int kMaxSegments = 1024;
 constexpr int kMaxEdgesIn  = 4096;
 
+// A detected corridor formed by two parallel segments. Stored as the
+// indices of the two segments plus the corridor's derived geometry:
+// axis direction, perpendicular width, and overlap range (start / end
+// parameters along the axis). The 4-corner footprint can be derived
+// from these on demand for point-in-polygon tests at lookup time.
+struct CorridorCell {
+    int   seg_a;            // index into Graph.segments
+    int   seg_b;
+    float axis_x, axis_y;   // unit direction along corridor length
+    float perp_x, perp_y;   // unit direction perpendicular (a → b side)
+    float width;            // perpendicular distance between walls
+    float midline_x, midline_y;   // a point on the corridor midline
+    float overlap_start;    // start parameter along axis (from origin midline_*)
+    float overlap_end;      // end parameter
+    float length;           // overlap_end - overlap_start
+};
+
+constexpr int kMaxCorridors = 256;
+
 struct Graph {
-    void*       area_owner = nullptr;
-    bool        built      = false;
-    int         segment_count = 0;
-    WallSegment segments[kMaxSegments];
+    void*        area_owner    = nullptr;
+    bool         built         = false;
+    int          segment_count = 0;
+    WallSegment  segments[kMaxSegments];
+    int          corridor_count = 0;
+    CorridorCell corridors[kMaxCorridors];
 };
 
 Graph g_graph;
@@ -106,6 +136,36 @@ bool NearCollinear(float ax, float ay, float bx, float by, float tolDeg) {
     // |d| close to 1 means parallel-or-antiparallel.
     float cosTol = std::cos(tolDeg * 0.017453292519943295f);
     return std::fabs(d) >= cosTol;
+}
+
+// Project a world-space point onto the line through `s` along its
+// direction; return the parameter `t` (distance from s.a, signed
+// along s.dir). Also returns the perpendicular signed distance.
+void ProjectPointOnto(const WallSegment& s, float px, float py,
+                      float& outT, float& outPerp) {
+    float dx = px - s.a.x;
+    float dy = py - s.a.y;
+    outT    = dx * s.dirx + dy * s.diry;
+    outPerp = dx * (-s.diry) + dy * s.dirx;  // 90° CCW rotation of dir
+}
+
+// Compute the 1D interval [start, end] that's the *intersection*
+// of the projections of A and B onto a shared axis (direction
+// axisDir originating at origin). Returns false if no overlap.
+bool ProjectionOverlap(const WallSegment& a, const WallSegment& b,
+                       float originX, float originY,
+                       float axisX, float axisY,
+                       float& outStart, float& outEnd) {
+    auto proj = [&](const Vector& p) -> float {
+        return (p.x - originX) * axisX + (p.y - originY) * axisY;
+    };
+    float a_lo = proj(a.a), a_hi = proj(a.b);
+    if (a_lo > a_hi) { float t = a_lo; a_lo = a_hi; a_hi = t; }
+    float b_lo = proj(b.a), b_hi = proj(b.b);
+    if (b_lo > b_hi) { float t = b_lo; b_lo = b_hi; b_hi = t; }
+    outStart = a_lo > b_lo ? a_lo : b_lo;
+    outEnd   = a_hi < b_hi ? a_hi : b_hi;
+    return outEnd > outStart;
 }
 
 bool BuildSegmentFromEdge(const acc::engine::WallEdge& e, WallSegment& out) {
@@ -274,11 +334,93 @@ void BuildForArea(void* area) {
                   area, wallCount, initialSegCount, skipped, passes,
                   g_graph.segment_count, dropped);
 
-    // TODO Phase 4: junction clustering (find endpoint clusters).
-    // TODO Phase 5: corridor detection (parallel-segment pairs with
-    //               overlapping projections, width 2-6m).
+    // ---------------------------------------------------------------
+    // Phase 4: parallel-pair corridor detection.
+    //
+    // For each unordered pair (i, j) of segments:
+    //   - test parallelism (within kCorridorParallelTolDeg)
+    //   - compute perpendicular distance between their lines
+    //   - if width is in [kCorridorMinWidthM, kCorridorMaxWidthM]
+    //   - test projection overlap along the shared axis
+    //   - if overlap ≥ kCorridorMinOverlapM → record corridor
+    //
+    // O(N²) over segments — fine for the few-dozen-segment scale of
+    // K1 areas.
+    // ---------------------------------------------------------------
+    g_graph.corridor_count = 0;
+    for (int i = 0; i < g_graph.segment_count; ++i) {
+        const WallSegment& sa = g_graph.segments[i];
+        for (int j = i + 1; j < g_graph.segment_count; ++j) {
+            if (g_graph.corridor_count >= kMaxCorridors) break;
+            const WallSegment& sb = g_graph.segments[j];
+
+            if (!NearCollinear(sa.dirx, sa.diry, sb.dirx, sb.diry,
+                               kCorridorParallelTolDeg)) {
+                continue;
+            }
+
+            // Perpendicular distance between the two parallel lines.
+            // Project sb.a onto sa's axis to get the orthogonal
+            // component; that's the signed perpendicular distance.
+            float t = 0.0f, perp = 0.0f;
+            ProjectPointOnto(sa, sb.a.x, sb.a.y, t, perp);
+            float width = std::fabs(perp);
+            if (width < kCorridorMinWidthM || width > kCorridorMaxWidthM) {
+                continue;
+            }
+
+            // Choose the corridor axis = sa.dir. Project both
+            // segments' endpoints onto this axis (origin = sa.a) and
+            // intersect the parameter ranges.
+            float start = 0.0f, end = 0.0f;
+            if (!ProjectionOverlap(sa, sb,
+                                   sa.a.x, sa.a.y, sa.dirx, sa.diry,
+                                   start, end)) {
+                continue;
+            }
+            float overlap = end - start;
+            if (overlap < kCorridorMinOverlapM) continue;
+
+            // Record corridor. Midline = midpoint between the two
+            // walls at the projected origin. Perpendicular unit
+            // points from sa toward sb.
+            float perpSign = (perp >= 0.0f) ? 1.0f : -1.0f;
+            float perpX = -sa.diry * perpSign;
+            float perpY =  sa.dirx * perpSign;
+
+            CorridorCell& c = g_graph.corridors[g_graph.corridor_count++];
+            c.seg_a = i;
+            c.seg_b = j;
+            c.axis_x = sa.dirx;
+            c.axis_y = sa.diry;
+            c.perp_x = perpX;
+            c.perp_y = perpY;
+            c.width  = width;
+            c.midline_x = sa.a.x + perpX * (width * 0.5f);
+            c.midline_y = sa.a.y + perpY * (width * 0.5f);
+            c.overlap_start = start;
+            c.overlap_end   = end;
+            c.length        = overlap;
+        }
+        if (g_graph.corridor_count >= kMaxCorridors) {
+            acclog::Write("WallTopo",
+                          "BuildForArea: corridor cap %d reached, "
+                          "remaining segments not paired",
+                          kMaxCorridors);
+            break;
+        }
+    }
+
+    acclog::Write("WallTopo",
+                  "BuildForArea: phase 4 found %d corridor candidates",
+                  g_graph.corridor_count);
+
+    // TODO Phase 5: junction clustering — group corridor endpoints
+    //               into junction nodes; classify each node by its
+    //               degree (1=dead-end, 3+=junction).
     // TODO Phase 6: classification + label rendering.
-    // TODO Phase 7: spatial index (uniform grid or polygon walk).
+    // TODO Phase 7: spatial index (uniform grid or polygon walk for
+    //               position → region lookup).
 
     g_graph.built = true;
     DumpGraphToLog();
@@ -290,8 +432,9 @@ void DumpGraphToLog() {
         return;
     }
     acclog::Write("WallTopo",
-                  "graph dump area=%p segments=%d",
-                  g_graph.area_owner, g_graph.segment_count);
+                  "graph dump area=%p segments=%d corridors=%d",
+                  g_graph.area_owner, g_graph.segment_count,
+                  g_graph.corridor_count);
     // Bucket segment lengths to get a quick distribution.
     int bucket_le_2  = 0;
     int bucket_le_5  = 0;
@@ -332,6 +475,22 @@ void DumpGraphToLog() {
                       "dir=(%.2f,%.2f)",
                       order[i], s.length, s.a.x, s.a.y, s.b.x, s.b.y,
                       s.dirx, s.diry);
+    }
+
+    // Dump corridors — every candidate, since their count is bounded.
+    int corLimit = g_graph.corridor_count > 32 ? 32 : g_graph.corridor_count;
+    for (int i = 0; i < corLimit; ++i) {
+        const CorridorCell& c = g_graph.corridors[i];
+        acclog::Write("WallTopo",
+                      "  cor[%d] segs=%d,%d width=%.2fm len=%.2fm "
+                      "mid=(%.2f,%.2f) axis=(%.2f,%.2f)",
+                      i, c.seg_a, c.seg_b, c.width, c.length,
+                      c.midline_x, c.midline_y, c.axis_x, c.axis_y);
+    }
+    if (g_graph.corridor_count > 32) {
+        acclog::Write("WallTopo",
+                      "  ... (%d more corridors truncated)",
+                      g_graph.corridor_count - 32);
     }
 }
 
