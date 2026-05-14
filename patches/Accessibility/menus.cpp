@@ -934,9 +934,19 @@ static void WalkAndCaptureOnFirstSight(void* panel) {
 // First focus into a new panel: speak its title once. The focused
 // control's announcement still fires after, so the user hears
 // "<panel title>, <focused control>" on entry.
+//
+// In-game sub-screens (Inventar, Karte, Optionen, …) are skipped here:
+// AnnounceNewSubScreens in menus_monitors.cpp announces them with the
+// TLK-localized strref name on push. Doing both produces "Optionen,
+// Spiel speichern, Optionen" on Options open (panel title + focus +
+// sub-screen monitor) instead of the intended "Optionen, Spiel
+// speichern" sequence.
 static void SpeakPanelTitleOnFirstSight(void* panel) {
     if (!panel || panel == g_lastTitledPanel) return;
     g_lastTitledPanel = panel;
+    if (acc::menus::monitors::IsInGameSubScreenKind(IdentifyPanel(panel))) {
+        return;
+    }
     AnnouncePanelTitle(panel);
 }
 
@@ -1132,7 +1142,28 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
             for (const char* p = text; *p; ++p) if (*p == '\n') ++lines;
             acclog::Write("Menus.ListBox", "blob silenced; lines=%d", lines);
         } else {
-            SpeakIfChanged(/*channel=*/1, text);
+            // In-game sub-screens (InGameOptions, InGameInventory, …)
+            // pair their button chain with a single-row description
+            // listbox whose text updates each time the user changes
+            // focus. The engine fires SetActiveControl on the row on
+            // panel-open + every focus change → would announce the
+            // description on every nav. Silence here; if a future
+            // sub-screen wants the description, expose it via the
+            // chain-step extract path (like chargen-skills does).
+            auto* ctrls = reinterpret_cast<CExoArrayList*>(
+                reinterpret_cast<unsigned char*>(listBox) +
+                kListBoxControlsOffset);
+            int ctrlsSize = ctrls ? ctrls->size : 0;
+            if (ctrlsSize == 1 && g_currentPanel &&
+                acc::menus::monitors::IsInGameSubScreenKind(
+                    IdentifyPanel(g_currentPanel))) {
+                acclog::Write("Menus.ListBox",
+                              "sub-screen description listbox silenced "
+                              "(panel kind=%s)",
+                              PanelKindName(IdentifyPanel(g_currentPanel)));
+            } else {
+                SpeakIfChanged(/*channel=*/1, text);
+            }
         }
     } else {
         char vtbl[160];
@@ -2088,12 +2119,45 @@ void TickPendingOps() {
 // triple, cursor-warp echo after voluntary nav) collapses to one
 // announcement of the final settled focus. Channel-0 dedup short-circuits
 // when the voluntary AnnounceControl path already spoke the same text.
+//
+// Chain-coherence drop: if the slot points at a chain entry on the bound
+// panel that is NOT g_chainIndex (i.e. the engine fired SetActive on a
+// sibling control after a voluntary chain step), suppress speech. This is
+// the InGameOptions cursor-warp hit-test miss pattern — chain steps to
+// "Gameplay" (index 2), engine's own DOWN handler / hit-test miss fires
+// SetActive on "Spiel laden" (chain[0]) instead. The chain handler's
+// AnnounceControl has already spoken the intended target; drop the
+// engine's wrong-sibling echo so the user doesn't hear two button names.
+//
+// Doesn't suppress: legitimate user-driven focus changes (mouse hover /
+// click on a non-chain control or on a chain control via direct cursor) —
+// those land on the chain's matching index (handled by SpeakIfChanged
+// dedup matching) or on a non-chain control (gate fails open and speaks).
 void DrainPendingAnnounce() {
     void* panel   = s_pendingAnnouncePanel;
     void* control = s_pendingAnnounceControl;
     s_pendingAnnouncePanel   = nullptr;
     s_pendingAnnounceControl = nullptr;
     if (!control) return;
+
+    if (g_chainPanel == panel && g_chainCount > 0 &&
+        g_chainIndex >= 0 && g_chainIndex < g_chainCount &&
+        g_chain[g_chainIndex].control != control)
+    {
+        int slotIdx = -1;
+        for (int i = 0; i < g_chainCount; ++i) {
+            if (g_chain[i].control == control) { slotIdx = i; break; }
+        }
+        if (slotIdx >= 0) {
+            acclog::Write("Announce",
+                          "chain-coherence drop: slot=%p (chain[%d]) != "
+                          "chain[%d]=%p; engine sibling-focus echo "
+                          "after voluntary nav",
+                          control, slotIdx, g_chainIndex,
+                          g_chain[g_chainIndex].control);
+            return;
+        }
+    }
 
     char text[256];
     const char* source = acc::menus::extract::FromControl(
