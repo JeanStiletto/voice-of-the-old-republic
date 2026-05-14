@@ -307,12 +307,36 @@ void RebindChain(void* panel) {
         }
     }
 
+    // Per-kind decorative filter. Identifies non-interactive icon buttons
+    // that the engine drops in panel.controls[] but the user has no reason
+    // to focus — IsChainNavigable can't tell them from real buttons (same
+    // CSWGuiButton vtable). Keyed on (panel kind, .gui id at +0x50) so
+    // adding a new entry is one line per kind.
+    //
+    // Currently registered:
+    //   InGameCharacter id=64 (btn_change1) and id=67 (btn_change2) —
+    //     portrait crossfade slots. The OnSwitchLeft/Right handlers mutate
+    //     these as decoration during a party-member cycle; the user clicks
+    //     btn_charleft (id=66) or btn_charright (id=65) to trigger the
+    //     cycle, not these. Skipping them removes two "control 64" /
+    //     "control 67" dead-ends from the chain.
+    auto isDecorative = [&](void* c) -> bool {
+        PanelKind pk = IdentifyPanel(panel);
+        int cid = *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(c) + 0x50);
+        if (pk == PanelKind::InGameCharacter && (cid == 64 || cid == 67)) {
+            return true;
+        }
+        return false;
+    };
+
     for (int i = 0; i < n; ++i) {
         void* c = list->data[i];
         if (!c) continue;
         if (c == portraitChargenSkip) continue;
 
         if (IsChainNavigable(c)) {
+            if (isDecorative(c)) continue;
             AppendChainEntry(c);
             continue;
         }

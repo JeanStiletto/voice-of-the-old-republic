@@ -53,6 +53,22 @@ bool IsSaveLoadStructural(void* panel) {
            FindControlByGuiId(panel, kIdDeleteButton)   != nullptr;
 }
 
+// CSWGuiLevelUpPanel identity by vtable. The panel is heap-allocated by
+// CSWGuiInGameCharacter::ShowLevelUpGUI when the user clicks Levelaufst.,
+// so it has no CGuiInGame slot. Lane's SARIF labels the vtable at
+// 0x00759568 (verified via Ghidra ListSymbolsByName 2026-05-14).
+constexpr uintptr_t kVtableCSWGuiLevelUpPanel = 0x00759568;
+
+bool IsLevelUpStructural(void* panel) {
+    if (!panel) return false;
+    __try {
+        void** vt = *reinterpret_cast<void***>(panel);
+        return reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiLevelUpPanel;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 }  // namespace
 
 // CGuiInGame resolution chain. Address values verified against Lane's
@@ -129,6 +145,7 @@ static const PanelKindOffset kPanelKindOffsets[] = {
     // friendly name, and IdentifyPanel falls through to a structural
     // detector below.
     { kNoSlotOffset, PanelKind::SaveLoad,          "SaveLoad" },
+    { kNoSlotOffset, PanelKind::InGameLevelUp,     "InGameLevelUp" },
 };
 static constexpr int kPanelKindOffsetCount =
     sizeof(kPanelKindOffsets) / sizeof(kPanelKindOffsets[0]);
@@ -204,6 +221,9 @@ PanelKind IdentifyPanel(void* panel) {
     // when the slot table didn't classify the panel.
     if (IsSaveLoadStructural(panel)) {
         return recordAndReturn(PanelKind::SaveLoad, "SaveLoad");
+    }
+    if (IsLevelUpStructural(panel)) {
+        return recordAndReturn(PanelKind::InGameLevelUp, "InGameLevelUp");
     }
 
     return PanelKind::Unknown;

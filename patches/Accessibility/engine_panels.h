@@ -84,6 +84,15 @@ enum class PanelKind {
     // the slot table misses, so menu-side code can branch on kind instead
     // of reaching for a separate IsXxxPanel predicate.
     SaveLoad,            // CSWGuiSaveLoad: load/save dialog (saveload.gui)
+    InGameLevelUp,       // CSWGuiLevelUpPanel: vtable 0x00759568 — opened
+                         //   from Charakterblatt's "Levelaufst." button.
+                         //   Hosts the 5 step navigation buttons (Kräfte,
+                         //   Attribute, Fähigkeiten, Talente, Annehmen) +
+                         //   Zurück. Each step's click handler gates on
+                         //   `button->is_active != 0` (decompiled at
+                         //   0x006ee350..0x006ee500), so disabled steps
+                         //   silently drop the click — the disabled-state
+                         //   suffix in the extract path tells the user.
 };
 
 // Return the registered name for `k`, or "Unknown" / "?" if not found.

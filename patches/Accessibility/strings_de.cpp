@@ -131,6 +131,10 @@ const char* Get(Id id) {
         case Id::PortraitRaceLight:    return "hellh\xE4utig";            // hellhäutig
         case Id::FmtPortraitDescription: return "%s %s %d";
 
+        case Id::CharSwitchPrev:       return "Vorheriger Charakter";
+        case Id::CharSwitchNext:       return "N\xE4""chster Charakter";  // Nächster
+        case Id::DisabledSuffix:       return ", nicht verf\xFC""gbar";   // nicht verfügbar
+
         case Id::FmtCharSheetClass:    return "%s. ";
         case Id::FmtCharSheetLevel:    return "Stufe %s. ";
         case Id::FmtCharSheetXp:       return "Erfahrung %s von %s. ";

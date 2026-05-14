@@ -347,6 +347,27 @@ enum class Id : int {
     PortraitRaceLight,
     FmtPortraitDescription,
 
+    // ---- Character sheet (CSWGuiInGameCharacter) — party-member carousel
+    //      buttons. The bottom-row icon arrows (btn_charleft / btn_charright
+    //      in swkotor.exe.h:9840-9841) cycle the displayed character among
+    //      the party via OnSwitchLeft/Right (engine handlers @0x006af450 /
+    //      @0x006af6d0). Image-only with no inline text — surfaced through
+    //      the per-kind name fallback in menus_extract.
+    CharSwitchPrev,
+    CharSwitchNext,
+
+    // ---- Disabled-button suffix. Appended (with leading ", ") to the
+    //      announced text when a chain-navigable button's is_active field
+    //      (CSWGuiControl +0x4C) reads zero — the engine's universal
+    //      enabled/disabled flag. Verified against the four LevelUp step
+    //      handlers (CSWGuiLevelUpPanel::OnSelectAbilitiesButton etc. at
+    //      0x006ee350-0x006ee500), all of which gate `if (is_active != 0)`
+    //      and silently drop the click otherwise. The suffix turns the
+    //      silent drop into an audible "Attribute, nicht verfügbar" /
+    //      "Attribute, unavailable" so the user understands why Enter
+    //      does nothing.
+    DisabledSuffix,
+
     // ---- Character sheet sub-screen opener (CSWGuiInGameCharacter).
     //      One announce on first-sight per panel-open cycle, built by
     //      menus_charsheet::MaybeAnnounce. Each Fmt* below is one sentence

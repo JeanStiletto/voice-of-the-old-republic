@@ -1118,6 +1118,76 @@ const char* FromControl(void* control,
         }
     }
 
+    // 9e. Per-kind label fallback for the character sheet (CSWGuiInGameCharacter).
+    //     The bottom-row icon strip has 4 unlabeled CSWGuiButtons:
+    //       btn_change1  (GUI id 64) — portrait crossfade slot A (decorative)
+    //       btn_charright(GUI id 65) — next-party-member arrow → OnSwitchRight
+    //       btn_charleft (GUI id 66) — prev-party-member arrow → OnSwitchLeft
+    //       btn_change2  (GUI id 67) — portrait crossfade slot B (decorative)
+    //
+    //     btn_change1/btn_change2 are decorative animation slots — the
+    //     OnSwitch handlers mutate them as the portrait transitions, the
+    //     user doesn't click them. They're suppressed from the chain
+    //     entirely in RebindChain via IsDecorativeForChain; that filter
+    //     lives there so navigation skips them outright. Here we only
+    //     wire the readable names for the two arrow buttons the user
+    //     actually focuses (btn_charleft / btn_charright).
+    //
+    //     IDs come from the panel walk's `Tolk.spoke: control 64..67`
+    //     fallback line in patch-20260514-150455.log + the four-step
+    //     mapping above (struct-order in swkotor.exe.h:9838-9841 against
+    //     ascending CSWGuiButton instance addresses in the panel walk).
+    if (!source && ownerForPerkind &&
+        IdentifyPanel(ownerForPerkind) == PanelKind::InGameCharacter) {
+        int cid = *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(control) + 0x50);
+        acc::strings::Id sid = acc::strings::Id::Count_;
+        const char* tag = nullptr;
+        if (cid == 66) {
+            sid = acc::strings::Id::CharSwitchPrev;
+            tag = "btn_charleft";
+        } else if (cid == 65) {
+            sid = acc::strings::Id::CharSwitchNext;
+            tag = "btn_charright";
+        }
+        if (sid != acc::strings::Id::Count_) {
+            const char* lit = acc::strings::Get(sid);
+            size_t llen = strlen(lit);
+            if (llen > 0 && llen + 1 <= bufSize) {
+                memcpy(outBuf, lit, llen + 1);
+                source = "perkind-charsheet";
+                acclog::Write("Menus.PerKind",
+                              "InGameCharacter control=%p id=%d kind=%s -> \"%s\"",
+                              control, cid, tag, outBuf);
+            }
+        }
+        // sld_align — the alignment slider has no inline label but does
+        // hold the live cur_value / max_value (typically 50/100, 0=Dark
+        // Side, 100=Light Side). CSWGuiSlider layout (swkotor.exe.h:
+        // CSWGuiSlider) puts max @+0x70, cur @+0x74. The slider is the
+        // only chain-navigable CSWGuiSlider in the Charakterblatt, so
+        // the IsSlider predicate suffices for identification — no need
+        // to chase the field offset within the panel struct.
+        //
+        // The CharSheet first-sight snapshot already speaks the same
+        // info as part of the panel-open announcement; this entry
+        // exists so the user can step back to the slider during
+        // navigation and re-hear just the alignment value.
+        if (!source && IsSlider(control)) {
+            uint32_t curVal = *reinterpret_cast<uint32_t*>(
+                reinterpret_cast<unsigned char*>(control) + 0x74);
+            uint32_t maxVal = *reinterpret_cast<uint32_t*>(
+                reinterpret_cast<unsigned char*>(control) + 0x70);
+            snprintf(outBuf, bufSize,
+                     acc::strings::Get(acc::strings::Id::FmtCharSheetAlignment),
+                     curVal, maxVal);
+            source = "perkind-charsheet-align";
+            acclog::Write("Menus.PerKind",
+                          "InGameCharacter sld_align control=%p cur=%u max=%u -> \"%s\"",
+                          control, curVal, maxVal, outBuf);
+        }
+    }
+
     // 9. Sibling-label fallback for chain-navigable controls with no text.
     //    Image-only icon buttons (vtable=0x0073E658 in CSWGuiInGameMenu —
     //    Equipment / Inventory / Character / Map / Abilities / Journal /
@@ -1190,6 +1260,56 @@ const char* FromControl(void* control,
         size_t suffixLen = strlen(suffix);
         if (len + suffixLen + 1 <= bufSize) {
             memcpy(outBuf + len, suffix, suffixLen + 1);
+        }
+    }
+
+    // Append "nicht verfügbar" / "unavailable" suffix when the focused
+    // button is engine-disabled. The signal is bit 1 (mask 0x2) of
+    // CSWGuiControl.bit_flags (+0x44). Empirically the only bit that
+    // splits "click-dispatch fires" from "click is silently dropped"
+    // across every observed control:
+    //
+    //   bit 0 (0x1) — selection state (CSWGuiControl::SetActive)
+    //   bit 1 (0x2) — interactive / accepts click (this gate)
+    //   bit 2 (0x4) — visible           (CSWGuiPanel::SetVisible)
+    //   bit 3 (0x8) — enabled flag      (CSWGuiControl::SetEnabled)
+    //
+    // SetEnabled toggles bit 3 but the actual runtime click gate uses
+    // bit 1: CSWGuiLevelUpPanel's step buttons have bit_flags=0x6 when
+    // enabled and 0x4 when disabled, bit 3 stays cleared on all of them
+    // (SetEnabled is never called). Test corpus:
+    //   working: Talente 0x6, Annehmen 0x6, Levelaufst 0xa, Spiel laden
+    //            0x10e, Schliess 0xa, Charakter-arrows 0xa, Auto-Pause 0xe
+    //   disabled: Attribute 0x4, Kräfte 0x4
+    //
+    // Edge case — Zurück on LevelUp panel has bit_flags=0x2 (bit 1 set,
+    // bit 2 clear). The engine routes its click but CSWGuiLevelUpPanel::
+    // OnCancelPressed @0x006ee5f0 gates internally on `field16_0x1ce8`
+    // and no-ops until allocations are pending. We can't detect that
+    // internal gate from the control's bit_flags, so Zurück labels as
+    // "enabled" by this check even when it's effectively a no-op.
+    //
+    // Earlier attempts used (a) is_active (the idle-vs-active selection
+    // state, not enabled/disabled), (b) bit 3 (set only when SetEnabled
+    // is called, miss on Talente/Annehmen), and (c) GetIsSelectable
+    // (gui_object path produces false on enabled step buttons). All three
+    // were wrong on different button sets; bit 1 matches the actual
+    // engine dispatch outcome.
+    //
+    // Skipped for toggles — their ", ein" / ", aus" suffix already
+    // disambiguates state. Gated on IsChainNavigable so labels don't get
+    // the suffix.
+    if (source && !IsToggle(control) && IsChainNavigable(control)) {
+        uint32_t bitFlags = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(control) + 0x44);
+        if ((bitFlags & 0x2) == 0) {
+            const char* suffix = acc::strings::Get(
+                acc::strings::Id::DisabledSuffix);
+            size_t len = strnlen(outBuf, bufSize);
+            size_t suffixLen = strlen(suffix);
+            if (suffixLen > 0 && len + suffixLen + 1 <= bufSize) {
+                memcpy(outBuf + len, suffix, suffixLen + 1);
+            }
         }
     }
 

@@ -43,7 +43,14 @@ void* FindOwningPanel(void* control) {
         auto* list = reinterpret_cast<CExoArrayList*>(
             reinterpret_cast<unsigned char*>(p) + kPanelControlsOffset);
         if (!list->data || list->size <= 0) continue;
-        int n = list->size > 32 ? 32 : list->size;
+        // CSWGuiInGameCharacter alone has 60+ children (47 labels +
+        // lbl_goods[10] + 4 more labels + 8 buttons + slider + scene +
+        // btn_3dchar). The 32-child cap was masking the panel from
+        // AnnounceControl's owner-resolution path, which was forcing
+        // perkind extraction to fall back to "control N" placeholders
+        // for buttons at indices > 32. 256 matches the cap used by the
+        // chain walker in menus_chain.cpp's RebindChain.
+        int n = list->size > 256 ? 256 : list->size;
         for (int j = 0; j < n; ++j) {
             if (list->data[j] == control) return p;
         }
