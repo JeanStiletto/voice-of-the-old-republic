@@ -32,9 +32,17 @@ namespace {
 //   - lbl_class @ 0x1A4 holds the HEADING "Klasse", not "Soldat"
 //   - lbl_class1 @ 0x2E4 holds the actual class name ("Soldat")
 //   - lbl_level @ 0x564 holds heading "Level", actual value at lbl_level1
-//   - lbl_exp_stat / lbl_needed_xp returned 3001 / 6000 respectively, but
-//     the player has 6000 current XP and 3001 is the next-level threshold
-//     → so lbl_exp_stat IS the threshold, lbl_needed_xp IS current XP
+// XP slots: Lane's naming holds — lbl_exp_stat @0x11e4 is the current
+// XP value, lbl_needed_xp @0x1464 is the threshold for the next level.
+// A prior commit swapped these based on a session where the dev
+// believed the player had 6000 current XP and 3001 was the threshold;
+// reversed the assignment so lbl_exp_stat became "threshold" and
+// lbl_needed_xp became "current". Verified wrong in session 20260514-
+// 201250: Gauner level 1 with 1275 XP (above the 1000 threshold so
+// CAN level) read 0x11e4 = "1275" and 0x1464 = "1000", matching
+// Lane's naming. The earlier "6000 current XP" assumption was the
+// confused step — the dev's character was actually at 3001 current
+// XP with 6000 being the level-4 threshold.
 // Comments below state what each offset ACTUALLY contains.
 //
 // HP / FP: Lane's lbl_force_stat (0x16e4) holds FP, lbl_vitality_stat
@@ -50,8 +58,8 @@ constexpr size_t kCharSheetLblLevel    = 0x06a4;  // level number "1" (lbl_level
 constexpr size_t kCharSheetLblFort     = 0x0924;  // fortitude save val
 constexpr size_t kCharSheetLblRef      = 0x0a64;  // reflex save val
 constexpr size_t kCharSheetLblWill     = 0x0ba4;  // will save val
-constexpr size_t kCharSheetLblXpThresh = 0x11e4;  // next-level threshold ("3001")
-constexpr size_t kCharSheetLblXpCur    = 0x1464;  // current XP ("6000")
+constexpr size_t kCharSheetLblXpCur    = 0x11e4;  // current XP — Lane: lbl_exp_stat
+constexpr size_t kCharSheetLblXpThresh = 0x1464;  // next-level threshold — Lane: lbl_needed_xp
 constexpr size_t kCharSheetLblDefStat  = 0x15a4;  // defense val
 constexpr size_t kCharSheetLblFp       = 0x16e4;  // FP — Lane: lbl_force_stat
 constexpr size_t kCharSheetLblHp       = 0x1824;  // HP — Lane: lbl_vitality_stat
@@ -96,48 +104,62 @@ void ReadCharSheetLabel(void* panel, size_t offset,
 }
 
 // Stat-row anchor table. The chain inserts a virtual entry for each
-// `valueOffset` and the extractor routes through `format`. modOffset is
-// 0 when the row has no modifier; otherwise the modifier label (e.g.
-// "+2") is read alongside the value.
+// row; the extractor dispatches on `kind` to decide which engine fields
+// to read and how to format them.
 //
 // `sortCy` is the synthetic y-coordinate used to position the virtual
 // entry in the navigable chain. Real button entries on Charakterblatt
-// sit at cy >= 237; we anchor the stat block ABOVE those at cy 1..11
+// sit at cy >= 237; we anchor the stat block ABOVE those at cy 1..12
 // so Up/Down navigation reads:
 //
 //   [stats: Klasse, Stufe, Erfahrung, HP, FP, Str, Dex, Con, Int, Wis,
-//    Cha] then [real buttons: Autom., sld_align, Levelaufst, Schliess,
+//    Cha, Gesinnung] then [real buttons: Autom., Levelaufst, Schliess,
 //    Kurzbefehle, Vorheriger, Nächster].
 //
 // Synthetic cy lets us enforce reading order independent of the engine's
 // label coordinates (which would otherwise interleave stats with buttons:
 // Stufe at panel y=112 lands ABOVE Gauner at y=120, Erfahrung at y=392
 // lands AFTER attributes etc.). Mouse warp goes via cx which we still
-// read from the real label position, so cursor lands on the label.
+// read from the real label/slider position, so cursor lands on it.
+enum class StatRowKind {
+    LabelValue,         // single label: %s
+    LabelValueMod,      // value + modifier (attributes): %s, %s
+    LabelValueThresh,   // value + threshold (XP): %s von %s
+    Slider,             // CSWGuiSlider cur_value / max_value (alignment)
+};
+
 struct StatRowSpec {
-    size_t           valueOffset;
-    size_t           modOffset;     // 0 = no modifier
+    size_t           valueOffset;  // label control offset, OR slider offset for Slider kind
+    size_t           modOffset;    // 2nd label offset (mod / threshold); 0 if unused
     acc::strings::Id formatId;
     int              sortCy;
+    StatRowKind      kind;
 };
 
 constexpr StatRowSpec k_statRowSpecs[] = {
     // Identity block — class, level, experience.
-    { kCharSheetLblClass,  0,                    acc::strings::Id::FmtCharSheetClass,  1 },
-    { kCharSheetLblLevel,  0,                    acc::strings::Id::FmtCharSheetLevel,  2 },
+    { kCharSheetLblClass,  0,                     acc::strings::Id::FmtCharSheetClass,      1, StatRowKind::LabelValue },
+    { kCharSheetLblLevel,  0,                     acc::strings::Id::FmtCharSheetLevel,      2, StatRowKind::LabelValue },
     // XP — value + threshold rendered as 2× %s. Both labels live at
     // different offsets; we anchor on XpCur and read XpThresh inline.
-    { kCharSheetLblXpCur,  kCharSheetLblXpThresh, acc::strings::Id::FmtCharSheetXp,    3 },
+    { kCharSheetLblXpCur,  kCharSheetLblXpThresh, acc::strings::Id::FmtCharSheetXp,         3, StatRowKind::LabelValueThresh },
     // Resource pools (HP + FP) — single value labels.
-    { kCharSheetLblHp,     0,                    acc::strings::Id::FmtCharSheetHp,     4 },
-    { kCharSheetLblFp,     0,                    acc::strings::Id::FmtCharSheetFp,     5 },
+    { kCharSheetLblHp,     0,                     acc::strings::Id::FmtCharSheetHp,         4, StatRowKind::LabelValue },
+    { kCharSheetLblFp,     0,                     acc::strings::Id::FmtCharSheetFp,         5, StatRowKind::LabelValue },
     // Six attributes — value + modifier each.
-    { kCharSheetLblStr,    kCharSheetLblStrMod,  acc::strings::Id::FmtCharSheetStr,    6 },
-    { kCharSheetLblDex,    kCharSheetLblDexMod,  acc::strings::Id::FmtCharSheetDex,    7 },
-    { kCharSheetLblCon,    kCharSheetLblConMod,  acc::strings::Id::FmtCharSheetCon,    8 },
-    { kCharSheetLblInt,    kCharSheetLblIntMod,  acc::strings::Id::FmtCharSheetInt,    9 },
-    { kCharSheetLblWis,    kCharSheetLblWisMod,  acc::strings::Id::FmtCharSheetWis,   10 },
-    { kCharSheetLblCha,    kCharSheetLblChaMod,  acc::strings::Id::FmtCharSheetCha,   11 },
+    { kCharSheetLblStr,    kCharSheetLblStrMod,   acc::strings::Id::FmtCharSheetStr,        6, StatRowKind::LabelValueMod },
+    { kCharSheetLblDex,    kCharSheetLblDexMod,   acc::strings::Id::FmtCharSheetDex,        7, StatRowKind::LabelValueMod },
+    { kCharSheetLblCon,    kCharSheetLblConMod,   acc::strings::Id::FmtCharSheetCon,        8, StatRowKind::LabelValueMod },
+    { kCharSheetLblInt,    kCharSheetLblIntMod,   acc::strings::Id::FmtCharSheetInt,        9, StatRowKind::LabelValueMod },
+    { kCharSheetLblWis,    kCharSheetLblWisMod,   acc::strings::Id::FmtCharSheetWis,       10, StatRowKind::LabelValueMod },
+    { kCharSheetLblCha,    kCharSheetLblChaMod,   acc::strings::Id::FmtCharSheetCha,       11, StatRowKind::LabelValueMod },
+    // Alignment slider — exposed as a virtual chain entry because
+    // sld_align isn't IsChainNavigable (our IsSlider vtable-equality
+    // check rejects whatever subclass the panel embeds), so the user
+    // can't reach it through the normal chain. The slider control
+    // itself is the anchor; ExtractStatRow reads cur_value / max_value
+    // off it via the standard CSWGuiSlider offsets.
+    { kCharSheetSldAlign,  0,                     acc::strings::Id::FmtCharSheetAlignment, 12, StatRowKind::Slider },
 };
 constexpr int k_statRowCount = static_cast<int>(
     sizeof(k_statRowSpecs) / sizeof(k_statRowSpecs[0]));
@@ -182,6 +204,27 @@ bool ExtractStatRow(void* panel, void* labelControl,
     const StatRowSpec* spec = FindSpecForControl(panel, labelControl);
     if (!spec) return false;
 
+    using acc::strings::Get;
+
+    // Slider rows: read cur/max directly off the CSWGuiSlider struct
+    // at panel + valueOffset. cur_value @+0x74, max_value @+0x70 per
+    // swkotor.exe.h. Two %u in the format (FmtCharSheetAlignment).
+    if (spec->kind == StatRowKind::Slider) {
+        uint32_t curVal = 0, maxVal = 0;
+        __try {
+            auto* sld = reinterpret_cast<unsigned char*>(panel) +
+                        spec->valueOffset;
+            curVal = acc::engine::ReadU32(sld, kSliderCurValueOffset);
+            maxVal = acc::engine::ReadU32(sld, kSliderMaxValueOffset);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            return false;
+        }
+        if (maxVal == 0) return false;
+        snprintf(outBuf, bufSize, Get(spec->formatId), curVal, maxVal);
+        return true;
+    }
+
+    // Label rows: read value (and optionally mod / threshold) text.
     char value[64];
     ReadCharSheetLabel(panel, spec->valueOffset, value, sizeof(value));
     if (value[0] == '\0') return false;
@@ -192,33 +235,22 @@ bool ExtractStatRow(void* panel, void* labelControl,
         ReadCharSheetLabel(panel, spec->modOffset, mod, sizeof(mod));
     }
 
-    using acc::strings::Get;
-    using acc::strings::Id;
-
-    // XP format takes (cur, threshold) — the mod slot holds the threshold
-    // here, not a +/- modifier. Same shape (%s, %s); using mod as the
-    // second arg keeps the dispatch uniform without a separate code path.
-    if (spec->formatId == Id::FmtCharSheetXp) {
+    switch (spec->kind) {
+    case StatRowKind::LabelValueThresh:
+        // FmtCharSheetXp: 2× %s (current, threshold).
         if (mod[0] == '\0') return false;
-        snprintf(outBuf, bufSize, Get(Id::FmtCharSheetXp), value, mod);
+        snprintf(outBuf, bufSize, Get(spec->formatId), value, mod);
         return true;
-    }
-
-    // Attribute rows take 3× %s (value, separator, modifier). The
-    // separator is ", " when the modifier is non-empty and "" otherwise
-    // — same shape MaybeAnnounce uses for the snapshot. Class / Level /
-    // HP / FP formats take a single %s and ignore the extras.
-    switch (spec->formatId) {
-    case Id::FmtCharSheetStr:
-    case Id::FmtCharSheetDex:
-    case Id::FmtCharSheetCon:
-    case Id::FmtCharSheetInt:
-    case Id::FmtCharSheetWis:
-    case Id::FmtCharSheetCha:
+    case StatRowKind::LabelValueMod:
+        // FmtCharSheet{Str,Dex,…}: 3× %s (value, separator, modifier).
+        // Same shape MaybeAnnounce uses for the snapshot — the
+        // separator is ", " when the modifier is non-empty, "" otherwise.
         snprintf(outBuf, bufSize, Get(spec->formatId),
                  value, mod[0] ? ", " : "", mod);
         return true;
+    case StatRowKind::LabelValue:
     default:
+        // Single-value formats (Class, Level, HP, FP).
         snprintf(outBuf, bufSize, Get(spec->formatId), value);
         return true;
     }

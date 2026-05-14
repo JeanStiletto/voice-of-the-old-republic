@@ -1198,31 +1198,10 @@ const char* FromControl(void* control,
                               control, cid, tag, outBuf);
             }
         }
-        // sld_align — the alignment slider has no inline label but does
-        // hold the live cur_value / max_value (typically 50/100, 0=Dark
-        // Side, 100=Light Side). CSWGuiSlider layout (swkotor.exe.h:
-        // CSWGuiSlider) puts max @+0x70, cur @+0x74. The slider is the
-        // only chain-navigable CSWGuiSlider in the Charakterblatt, so
-        // the IsSlider predicate suffices for identification — no need
-        // to chase the field offset within the panel struct.
-        //
-        // The CharSheet first-sight snapshot already speaks the same
-        // info as part of the panel-open announcement; this entry
-        // exists so the user can step back to the slider during
-        // navigation and re-hear just the alignment value.
-        if (!source && IsSlider(control)) {
-            uint32_t curVal = *reinterpret_cast<uint32_t*>(
-                reinterpret_cast<unsigned char*>(control) + 0x74);
-            uint32_t maxVal = *reinterpret_cast<uint32_t*>(
-                reinterpret_cast<unsigned char*>(control) + 0x70);
-            snprintf(outBuf, bufSize,
-                     acc::strings::Get(acc::strings::Id::FmtCharSheetAlignment),
-                     curVal, maxVal);
-            source = "perkind-charsheet-align";
-            acclog::Write("Menus.PerKind",
-                          "InGameCharacter sld_align control=%p cur=%u max=%u -> \"%s\"",
-                          control, curVal, maxVal, outBuf);
-        }
+        // Alignment slider is now exposed via the virtual stat-row chain
+        // (StatRowKind::Slider in menus_charsheet's spec table). Section 0
+        // routes through ExtractStatRow for it, so no separate handler
+        // here.
     }
 
     // 9. Sibling-label fallback for chain-navigable controls with no text.

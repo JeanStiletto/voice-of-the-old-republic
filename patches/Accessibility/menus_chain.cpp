@@ -315,6 +315,10 @@ void RebindChain(void* panel) {
     // adding a new entry is one line per kind.
     //
     // Currently registered:
+    //   InGameCharacter id=1  (btn_3dchar)   — interaction button for the
+    //     3D character model rotator. Image-only with no caption; mouse-
+    //     drives the model spin which isn't a screen-reader-useful action.
+    //     Without the filter it appears as "control 1" in the chain.
     //   InGameCharacter id=64 (btn_change1) and id=67 (btn_change2) —
     //     portrait crossfade slots. The OnSwitchLeft/Right handlers mutate
     //     these as decoration during a party-member cycle; the user clicks
@@ -325,7 +329,8 @@ void RebindChain(void* panel) {
         PanelKind pk = IdentifyPanel(panel);
         int cid = *reinterpret_cast<int*>(
             reinterpret_cast<unsigned char*>(c) + 0x50);
-        if (pk == PanelKind::InGameCharacter && (cid == 64 || cid == 67)) {
+        if (pk == PanelKind::InGameCharacter &&
+            (cid == 1 || cid == 64 || cid == 67)) {
             return true;
         }
         return false;

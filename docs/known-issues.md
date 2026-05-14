@@ -16,6 +16,8 @@ When an entry is closed, move it out of this file (the corresponding fix or comm
 
 - **Container Enter takes ALL items (FIX SHIPPED, UNTESTED).** Original behaviour: Enter on the loot panel fired `BTN_OK` (id=3, "Nehmen"), which emptied the entire chest in one shot. Working hypothesis was that `BTN_OK` is "Take All" by engine design and per-item take happens by clicking the listbox row directly. Implemented fix in `menus.cpp` (Container input block): if `selection_index >= 0`, `FireActivate` the row at `lb.controls[selection_index]` instead of `BTN_OK`; if `selection_index < 0` (no row navigated yet), still fall back to `BTN_OK` so the take-all gesture is reachable by pressing Enter immediately on panel open. Verify next session by reading the `Container: Enter resolves to row ...` log line and checking whether the chest shrinks by exactly one item per Enter or still empties wholesale. If the fix doesn't work, escalate to investigating the engine's `CSWGuiListBox::SetSelectedControl` / `OnRowClicked` path — row activation may need a different vtable slot than the standard `kInputActivate` (0x27) FireActivate.
 
+- **Charakterblatt character carousel doesn't actually swap the displayed character.** Pressing Enter on `Vorheriger Charakter` / `Nächster Charakter` dispatches `FireActivate` cleanly (log shows `is_active=0->1`), and the engine handlers `CSWGuiInGameCharacter::OnSwitchLeft` @0x006af450 / `OnSwitchRight` @0x006af6d0 do fire, but the panel labels don't rewrite — no `ContentChange` follows, no new snapshot is announced. OnSwitchLeft's decompile shows an early-out when `(char)btn_change1.custom_value == -2`, which may be the no-op gate on a single-character party (only Trask present on Endar Spire / pre-Taris). Retest with a multi-character party (post-Taris) before chasing further: if the engine swap fires there, the existing content-fingerprint diff in `MonitorPanelContents` should pick up the label rewrite and re-snapshot. If it stays silent even with a real party, the click likely needs to route through a different engine entry (the carousel may animate via `btn_change1`/`btn_change2` decoration buttons rather than firing the OnSwitch handlers under our `kInputActivate` dispatch).
+
 ## Planned
 
 ### Map
@@ -46,7 +48,7 @@ When an entry is closed, move it out of this file (the corresponding fix or comm
 - Support for planet picker.
 - Support for group selector.
 - Support for fast travel.
-- Support for leveling up.
+- **Force powers picker (Dantooine onward).** The 5th LevelUp step button `Kräfte` opens `CSWGuiPowersLevelUp` (constructed by `CSWGuiLevelUpPanel::OnSelectPowersButton` @0x006ee350, `operator new(0x1a10)`). It's locked for non-Force classes — only navigable after the player becomes a Jedi on Dantooine. Untested layout; expect similar shape to the Feats/Skills/Attributes pickers (description listbox + chart of available powers + accept/back). Investigate the panel structure once a Jedi-class save is available.
 
 ### Game modes
 
