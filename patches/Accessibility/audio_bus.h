@@ -26,11 +26,31 @@
 
 namespace acc::audio {
 
-// Fire a 2D one-shot cue (no spatial position; centred, full volume).
-//   resref: ≤16-char .wav resource tag, case-insensitive. Resolution
-//           chain (investigation Q8): Override\ → streamwaves\ →
-//           streamsounds\ → streammusic\ → BIF/RIM.
-bool PlayCue(const char* resref);
+// Fire a 2D one-shot cue (no spatial position; centred).
+//   resref:        ≤16-char .wav resource tag, case-insensitive.
+//                  Resolution chain (investigation Q8): Override\ →
+//                  streamwaves\ → streamsounds\ → streammusic\ →
+//                  BIF/RIM.
+//   priorityGroup: 0..N index into the engine's CPriorityGroup table.
+//                  Each group has its OWN volume scalar / pitch
+//                  variance / 3D falloff. The group determines both
+//                  voice-eviction priority AND the implicit volume
+//                  scaling, so changing the group can implicitly
+//                  amplify the cue several × without touching
+//                  volumeByte. Empirical values observed in engine
+//                  callers (decompile 2026-05-14):
+//                    0x0F (15) — weapon swing
+//                    0x13 (19) — player footstep
+//                    0x17 (23) — minigame blaster fire
+//                    0x18 (24) — death (mgs_accelpad uses 0x17)
+//                  Default 0 keeps the legacy nav-cue behaviour.
+//   volumeByte:    0..127 per-source volume on top of the group bus.
+//                  0 = use group default (127, i.e. max).
+//                  Final amplitude ≈ group_volume × volumeByte / 127²
+//                  × SFX-slider, so the levers compound.
+bool PlayCue(const char* resref,
+             uint8_t priorityGroup = 0,
+             uint8_t volumeByte    = 0);
 
 // Default amplitude multiplier for accessibility cues. The engine's
 // Play3DOneShotSound `volume` slot is a linear amplitude scalar — 1.0

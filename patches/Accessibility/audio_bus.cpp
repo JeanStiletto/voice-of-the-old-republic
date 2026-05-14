@@ -42,15 +42,40 @@ void FillResRef(CResRef& out, const char* tag) {
     }
 }
 
+// CExoSound::PlayOneShotSound signature — CONFIRMED 2026-05-14 by
+// decompiling CExoSoundInternal::PlayOneShotSound @0x005d7550. The
+// engine internals are:
+//   SetPriorityGroup(source, param_2)                  ← priority bucket
+//   if (param_4 != 0) SetVolume(source, param_4, ...)  ← volume byte
+//   if (param_5 != 0) SetFixedVariance(source, param_5) ← pitch
+//   if (param_6 != 0) SetPitchVariance(source, param_6) ← pitch
+//   if (param_3 == 0) Play(...) else SetOneShotDelay(param_3)
+//
+// Our previous typedef labelled param_4 as "looping" and param_5/6 as
+// "volume"/"pan" — both were WRONG. Live consequence: callers passing
+// `volume=4.0f` were actually setting fixed_variance (pitch jitter),
+// which is then suppressed by the pitch-stability detour, so the
+// "amplification" was always a no-op. Volume stayed at
+// priority_group[0].volume × default-byte (127) regardless of what
+// callers thought they were setting.
 typedef void (__thiscall* PFN_PlayOneShotSound)(
     void*    this_,
     const CResRef* res,
     uint8_t  priority_group,
     uint32_t delay_ms,
-    uint8_t  looping,
-    float    volume,
-    float    pan);
+    uint8_t  volume_byte,     // 0 = use priority-group default (127);
+                              // 1-127 = explicit per-source volume
+    float    fixed_variance,  // 0 = use priority-group default
+    float    pitch_variance); // 0 = use priority-group default
 
+// CExoSound::Play3DOneShotSound — same mislabel bug as the 2D variant.
+// Confirmed signature via Ghidra decompile @0x005d5e10 (2026-05-14):
+//   param_4=byte priority_group, param_5=ulong delay_ms,
+//   param_6=byte volume_byte (0=use default), param_7=fixed_variance,
+//   param_8=pitch_variance.
+// Previous "looping/volume/max_distance" labels caused the same kind
+// of silent no-op as the 2D path — `volume=4.0f` was landing in
+// fixed_variance which the pitch-stability detour neutralises.
 typedef void (__thiscall* PFN_Play3DOneShotSound)(
     void*    this_,
     const CResRef* res,
@@ -58,9 +83,9 @@ typedef void (__thiscall* PFN_Play3DOneShotSound)(
     float    z_offset,
     uint8_t  priority_group,
     uint32_t delay_ms,
-    uint8_t  looping,
-    float    volume,
-    float    max_distance);
+    uint8_t  volume_byte,     // 0 = use priority-group default (127)
+    float    fixed_variance,  // 0 = use priority-group default
+    float    pitch_variance); // 0 = use priority-group default
 
 void* GetCExoSound() {
     __try {
@@ -72,7 +97,8 @@ void* GetCExoSound() {
 
 }  // namespace
 
-bool PlayCue(const char* resref) {
+bool PlayCue(const char* resref, uint8_t priorityGroup,
+             uint8_t volumeByte) {
     if (!resref || !*resref) return false;
     void* exoSound = GetCExoSound();
     if (!exoSound) return false;
@@ -85,11 +111,11 @@ bool PlayCue(const char* resref) {
         auto fn = reinterpret_cast<PFN_PlayOneShotSound>(
             kAddrCExoSoundPlayOneShotSound);
         fn(exoSound, &res,
-           /*priority_group=*/0,
+           priorityGroup,
            /*delay_ms=*/0,
-           /*looping=*/0,
-           /*volume=*/1.0f,
-           /*pan=*/0.0f);
+           volumeByte,
+           /*fixed_variance=*/0.0f,
+           /*pitch_variance=*/0.0f);
         pitch::EndScopedZero();
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -143,6 +169,24 @@ bool PlayCue3D(const char* resref, const Vector& worldPosition,
         }
     }
 
+    // The legacy `volume` float is now vestigial. Before the typedef
+    // fix it was being passed into the engine's fixed_variance slot
+    // (pitch jitter), which the pitch-stability detour neutralises
+    // to 0 — so the float was always a no-op. Now that the typedef
+    // is correct, callers' constants (kAccCueGain=4.0, kProbeGain=
+    // 8.0, kEdgeCueGain=8.0) would otherwise be taken literally as
+    // a volume_byte and crush all nav cues to 3-6% loudness — a
+    // silent regression on the existing audible behaviour.
+    //
+    // To preserve the pre-fix audible result exactly, we ignore the
+    // float and pass volume_byte=0 — the engine special-cases 0 as
+    // "use priority_group default volume" (127 for group 0), which
+    // is what every nav cue has been getting all along. Keeping the
+    // float in the signature avoids touching 13 call sites; the
+    // long-term cleanup is API option 2 (uint8_t volumeByte) once
+    // this is confirmed working.
+    (void)volume;
+
     pitch::BeginScopedZero();
     __try {
         auto fn = reinterpret_cast<PFN_Play3DOneShotSound>(
@@ -150,11 +194,13 @@ bool PlayCue3D(const char* resref, const Vector& worldPosition,
         fn(exoSound, &res,
            pos,
            /*z_offset=*/0.0f,
-           /*priority_group=*/0,
+           /*priority_group=*/0,    // restored to pre-change tier;
+                                    // group 0 vol=106, what every
+                                    // nav cue used historically
            /*delay_ms=*/0,
-           /*looping=*/0,
-           volume,
-           /*max_distance=*/50.0f);
+           /*volume_byte=*/0,       // 0 = engine default = 127
+           /*fixed_variance=*/0.0f,
+           /*pitch_variance=*/0.0f);
         pitch::EndScopedZero();
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
