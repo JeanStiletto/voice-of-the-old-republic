@@ -268,6 +268,36 @@ bool SetPlayerInputEnabled(bool enabled, bool armAutoRestore) {
     return true;
 }
 
+int GetPartyMembers(uint32_t* outHandles, int maxCount) {
+    if (!outHandles || maxCount <= 0) return 0;
+    __try {
+        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
+        if (!appManager) return 0;
+        void* serverApp = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(appManager) +
+            kAppManagerServerOffsetPlayer);
+        if (!serverApp) return 0;
+        auto* partyTable = reinterpret_cast<unsigned char*>(serverApp) +
+                           kServerExoAppPartyTableOffset;
+        uint32_t numMembers = *reinterpret_cast<uint32_t*>(
+            partyTable + kPartyTableNumMembersOffset);
+        if (numMembers == 0 ||
+            numMembers > static_cast<uint32_t>(kPartyTableMaxMembers)) {
+            return 0;
+        }
+        int take = static_cast<int>(numMembers);
+        if (take > maxCount) take = maxCount;
+        auto* ids = reinterpret_cast<int32_t*>(
+            partyTable + kPartyTableMemberIdsOffset);
+        for (int i = 0; i < take; ++i) {
+            outHandles[i] = static_cast<uint32_t>(ids[i]);
+        }
+        return take;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
 void TickPlayerInputRestore() {
     if (!g_disableActive) return;
     if (GetTickCount() < g_disableExpiresAt) return;

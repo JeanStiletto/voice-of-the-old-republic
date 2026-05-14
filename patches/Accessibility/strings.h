@@ -528,16 +528,25 @@ enum class Id : int {
     ExamineFailed,
 
     // ---- Combat system, Phase 3A — action queue submenu.
-    //      `FmtQueueOpen` — opener pre-roll. Args: queue length (`%d`).
-    //      `QueueEmpty` — fixed; spoken on Open with no queue.
-    //      `FmtQueueRow` — per-row announce on Up/Down. Args: action verb
-    //                      (`%s`), target name (`%s`), 1-based index (`%d`),
-    //                      total (`%d`).
+    //      `FmtQueueOpen` — opener pre-roll. Args: total queue length
+    //                       across all party members (`%d`).
+    //      `QueueEmpty` — fixed; spoken on Open with no queued actions
+    //                     across any party member.
+    //      `FmtQueueRow` — per-row announce on Up/Down. Args: character
+    //                      name (`%s`), action verb (`%s`), target name
+    //                      (`%s`), 1-based index (`%d`), total (`%d`).
+    //                      The leading character name distinguishes whose
+    //                      queue this row belongs to — the submenu is
+    //                      party-wide (walks all CSWPartyTable members'
+    //                      combat_round.actions).
     //      `FmtQueueRemoved` — confirmation after Enter remove. Args: verb.
     //      `QueueCleared` — confirmation after Shift+Enter wipe.
     //      `QueueClosed` — Esc-out without changes.
     //      `QueueRemoveFailed` — spoken if remove primitive fails.
-    //      Action verbs (resolved from action_type byte): one per kind.
+    //      Action verbs are mapped from the `action_type` byte enum
+    //      (Ghidra-confirmed 2026-05-14 via GetActionIcon decompile):
+    //      1=Attack, 6=Equip, 7=Unequip, 9=Cast Force Power, 10=Use Item,
+    //      11=Use Feat. Other / unknown bytes render as QueueVerbUnknown.
     FmtQueueOpen,
     QueueEmpty,
     FmtQueueRow,

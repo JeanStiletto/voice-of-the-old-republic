@@ -193,7 +193,7 @@ const char* Get(Id id) {
 
         case Id::FmtQueueOpen:               return "Aktionsschlange, %d Aktionen.";
         case Id::QueueEmpty:                 return "Aktionsschlange ist leer.";
-        case Id::FmtQueueRow:                return "%s %s, %d von %d.";
+        case Id::FmtQueueRow:                return "%s: %s %s, %d von %d.";
         case Id::FmtQueueRemoved:            return "Entfernt: %s.";
         case Id::QueueCleared:               return "Schlange geleert.";
         case Id::QueueClosed:                return "Schlange geschlossen.";

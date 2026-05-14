@@ -180,6 +180,24 @@ bool SetPlayerInputEnabled(bool enabled, bool armAutoRestore = true);
 // session is active. Cheap when idle (one timestamp compare).
 void TickPlayerInputRestore();
 
+// Snapshot the active party-member roster. Walks
+// `CServerExoApp.party_table @+0x1b770` (CSWPartyTable):
+//   pt_num_members @+0x0  — current member count (1..3 in normal play)
+//   pt_member_ids[11] @+0x4 — handles to the member creatures, index 0
+//     is the chargen PC, then the recruited companions in roster order.
+//
+// Writes up to `maxCount` handles into `outHandles` and returns the
+// actual count (clamped to `maxCount`). 0 on early-init / SEH fault /
+// when pt_num_members is implausible (>11). Handles can then be
+// resolved via engine_area::ResolveServerObjectHandle to reach the
+// server creature for combat_round walks etc.
+//
+// Handle namespace: pt_member_ids are server-side game object ids
+// (low bit; high-bit-clear). The chain matches every other server-
+// side handle reader we have. Callers needing the client-side variant
+// can pass the result through ResolveClientObjectHandle directly.
+int GetPartyMembers(uint32_t* outHandles, int maxCount);
+
 }  // namespace acc::engine
 
 // AppManager wrapper. *kAddrAppManagerPtr holds an AppManager*; the live
@@ -224,3 +242,14 @@ constexpr uintptr_t kAddrCSWPlayerControlSetEnabled = 0x006792E0;
 // Returns the live CExoString* for the chargen-set player name, backed by
 // CClientExoAppInternal::player_character_name @+0x294.
 constexpr uintptr_t kAddrCClientExoAppGetPlayerCharacterName = 0x005EDAB0;
+
+// CServerExoApp.party_table @+0x1b770 → CSWPartyTable. Same AppManager
+// indirection map_ui_cursor.cpp uses (AppManager + 0x8 → server app).
+// Type DB layout: pt_num_members ulong @+0x0, pt_member_ids int[11]
+// @+0x4 (first two are MC + co-leader). Rest of the struct is roster
+// availability flags and game-progression state — irrelevant here.
+constexpr size_t    kAppManagerServerOffsetPlayer  = 0x8;  // mirror of engine_area
+constexpr size_t    kServerExoAppPartyTableOffset  = 0x1b770;
+constexpr size_t    kPartyTableNumMembersOffset    = 0x0;
+constexpr size_t    kPartyTableMemberIdsOffset     = 0x4;
+constexpr int       kPartyTableMaxMembers          = 11;

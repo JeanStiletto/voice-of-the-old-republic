@@ -2,11 +2,14 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
-#include "engine_area.h"      // ResolveServerObjectHandle, GetObjectName
+#include "engine_area.h"      // ResolveServerObjectHandle, GetObjectName,
+                              // GetObjectDisplayNameByHandle
 #include "engine_input.h"
 #include "engine_offsets.h"
-#include "engine_player.h"    // GetPlayerServerCreature
+#include "engine_player.h"    // GetPlayerServerCreature, GetPartyMembers,
+                              // GetPlayerCharacterName
 #include "hotkeys.h"
 #include "log.h"
 #include "strings.h"
@@ -21,12 +24,9 @@ namespace {
 // ---------------------------------------------------------------------------
 
 typedef int  (__thiscall* PFN_RemoveLastAction)(void* combatRound);
-typedef void (__thiscall* PFN_ClearAllQueuedCombatActions)(void* clientObj);
 
 constexpr uintptr_t kAddrCombatRoundRemoveLastAction =
     0x004d37b0;  // CSWSCombatRound::RemoveLastAction
-constexpr uintptr_t kAddrCSWCObjectClearAllQueuedCombatActions =
-    0x0063d490;  // CSWCObject::ClearAllQueuedCombatActions (client-side wipe)
 
 // Read CSWSCreature.combat_round @+0x9c8.
 void* ReadCombatRound(void* serverCreature) {
@@ -132,23 +132,35 @@ void* GetQueueAction(void* combatRound, int index) {
 
 // Map an action_type byte to a localised verb.
 //
-// **Skeleton:** the numeric enum values inferred from the AddX adder
-// declaration order in docs/combat-system.md were WRONG (validated
-// 2026-05-10 from in-game observations: type=1 mapped to SpellCast was
-// actually a basic attack — the user heard "Macht einsetzen" while in
-// the tutorial level with no Force powers; type=11 was unmapped). Until
-// a probe session pins the real enum, return QueueVerbUnknown
-// ("Aktion") for everything to avoid speaking actively misleading
-// verbs. The user can still see WHAT they queued via the target name +
-// position; they just don't get an action-kind word.
+// Enum confirmed 2026-05-14 by decompiling CSWGuiMainInterface::GetActionIcon
+// @0x686fb0 — the engine's own per-slot icon resolver. The switch in
+// case 0xc (the standard combat-round path the strip uses) decodes:
 //
-// Once the enum is validated, restore the kActionType* case mappings
-// (or replace this lookup with a per-row icon-resref read via
-// GetActionIcon @0x686fb0 which gives a visible "iact_attack" /
-// "iact_cast_spell" string straight from the engine).
+//   action_type=1   → i_attack  / i_attackm   ("Bash door" is just an
+//                                              attack with a door target)
+//   action_type=6   → i_equip   / i_equipm
+//   action_type=7   → i_unequip / i_equipm
+//   action_type=9   → SpellArray lookup / i_powerm  (Cast Force Power)
+//   action_type=10  → ItemArray lookup / i_useitemm (Use Item)
+//   action_type=11  → FeatArray lookup / i_featm    (Use Feat — includes
+//                                                    the player's
+//                                                    Power Attack /
+//                                                    Flurry / etc.)
+//
+// QueueVerbUseTalent serves as our "Use Feat" word since the existing
+// table already groups feat/talent activations under that ID (TSL
+// renamed them "talents" anyway, and the German "Talent einsetzen"
+// reads correctly for both feats and force-power adjacent talents).
 acc::strings::Id VerbForActionType(unsigned char actionType) {
-    (void)actionType;
-    return acc::strings::Id::QueueVerbUnknown;
+    switch (actionType) {
+        case 1:  return acc::strings::Id::QueueVerbAttack;
+        case 6:  return acc::strings::Id::QueueVerbEquip;
+        case 7:  return acc::strings::Id::QueueVerbUnequip;
+        case 9:  return acc::strings::Id::QueueVerbCastForce;
+        case 10: return acc::strings::Id::QueueVerbItemCast;
+        case 11: return acc::strings::Id::QueueVerbUseTalent;
+        default: return acc::strings::Id::QueueVerbUnknown;
+    }
 }
 
 // Read action_type byte + target handle from a CSWSCombatRoundAction.
@@ -170,21 +182,140 @@ bool ReadActionFields(void* action, unsigned char& outType,
     }
 }
 
+// ---------------------------------------------------------------------------
+// Flat row model.
+// ---------------------------------------------------------------------------
+
+// One row per queued action, across every party member's combat round.
+// Built at Open() and rebuilt after every mutation (remove / clear).
+//
+// The party walk uses CSWPartyTable.pt_member_ids (engine_player.h).
+// pt_member_ids[0] is the chargen PC (its display-name lookup returns
+// empty so we fall back to GetPlayerCharacterName for that slot only).
+struct Row {
+    void*    creature;     // CSWSCreature* — owner of this action
+    void*    combatRound;  // CSWSCombatRound* — for tail-remove dispatch
+    int      perCreatureIdx;  // 0-based index of this row within the
+                              // owner's local queue (used for the count
+                              // we tail-remove against)
+    int      perCreatureCount;  // total queued on this owner (snapshot)
+    char     charName[64];
+};
+
+constexpr int kMaxRows = 32;  // 3 members × up to ~10 actions each, with
+                              // headroom for transient additions
+
+struct State {
+    bool active   = false;
+    int  focusIdx = 0;  // 0-based focus into rows[0..count)
+    int  count    = 0;
+    Row  rows[kMaxRows];
+};
+
+State g_state;
+
+// Resolve the display name for a party member by handle.
+// pt_member_ids[0] is the chargen PC — GetObjectDisplayNameByHandle
+// returns the engine's universal name which is empty for the PC stats
+// (see engine_player::GetPlayerCharacterName header for the reason).
+// We pass isPC=true for that slot so the fallback hits the chargen
+// name slot.
+void ResolveMemberName(uint32_t handle, bool isPC,
+                       char* outBuf, size_t bufSize) {
+    if (!outBuf || bufSize == 0) return;
+    outBuf[0] = '\0';
+    if (!isPC) {
+        if (acc::engine::GetObjectDisplayNameByHandle(handle, outBuf,
+                                                     bufSize) &&
+            outBuf[0] != '\0') {
+            return;
+        }
+    }
+    // PC slot, or display-name path returned empty — fall back to the
+    // chargen-name accessor. This is the same fallback chain
+    // GetActiveLeaderName uses for the controlled creature.
+    acc::engine::GetPlayerCharacterName(outBuf, bufSize);
+}
+
+// Rebuild g_state.rows from live engine state. Returns the row count.
+// Preserves the focus if possible (clamped to the new size).
+int BuildRows() {
+    g_state.count = 0;
+
+    uint32_t handles[kPartyTableMaxMembers] = {};
+    int      n = acc::engine::GetPartyMembers(
+        handles, kPartyTableMaxMembers);
+
+    // Fallback: if the party table is unreadable (early init, very
+    // first beat of a new save), at least surface the controlled
+    // creature's queue rather than going silent.
+    if (n <= 0) {
+        void* leader = acc::engine::GetPlayerServerCreature();
+        if (!leader) return 0;
+        void* round = ReadCombatRound(leader);
+        if (!round) return 0;
+        int local = CountQueueEntries(round);
+        for (int i = 0; i < local && g_state.count < kMaxRows; ++i) {
+            Row& r = g_state.rows[g_state.count++];
+            r.creature = leader;
+            r.combatRound = round;
+            r.perCreatureIdx = i;
+            r.perCreatureCount = local;
+            r.charName[0] = '\0';
+            acc::engine::GetActiveLeaderName(r.charName, sizeof(r.charName));
+        }
+        return g_state.count;
+    }
+
+    for (int m = 0; m < n; ++m) {
+        uint32_t handle = handles[m];
+        if (handle == 0u || handle == 0xFFFFFFFFu ||
+            handle == 0x7F000000u) {
+            continue;
+        }
+        void* creature = acc::engine::ResolveServerObjectHandle(handle);
+        if (!creature) {
+            // Some handles come from the engine in the client-side
+            // namespace — fold through the client resolver, which
+            // returns the server CSWSObject* directly.
+            creature = acc::engine::ResolveClientObjectHandle(handle);
+        }
+        if (!creature) continue;
+        void* round = ReadCombatRound(creature);
+        if (!round) continue;
+        int local = CountQueueEntries(round);
+        if (local <= 0) continue;
+
+        char name[64] = "";
+        ResolveMemberName(handle, /*isPC=*/m == 0, name, sizeof(name));
+
+        for (int i = 0; i < local && g_state.count < kMaxRows; ++i) {
+            Row& r = g_state.rows[g_state.count++];
+            r.creature = creature;
+            r.combatRound = round;
+            r.perCreatureIdx = i;
+            r.perCreatureCount = local;
+            std::strncpy(r.charName, name, sizeof(r.charName) - 1);
+            r.charName[sizeof(r.charName) - 1] = '\0';
+        }
+    }
+    return g_state.count;
+}
+
 // Speak the focused row at index `idx` (0-based) of `count` total.
-void SpeakRow(void* combatRound, int idx, int count) {
-    void* action = GetQueueAction(combatRound, idx);
+void SpeakRow(int idx) {
+    if (idx < 0 || idx >= g_state.count) return;
+    const Row& row = g_state.rows[idx];
+    void* action = GetQueueAction(row.combatRound, row.perCreatureIdx);
+
     unsigned char type = 0xff;
     uint32_t target = 0;
     ReadActionFields(action, type, target);
 
     const char* verb = acc::strings::Get(VerbForActionType(type));
+
     char tgtName[64] = "";
     if (target != 0u && target != 0x7F000000u) {
-        // Try the engine's universal display-name accessor first — it
-        // returns the localized name (e.g. "Sith-Soldat") even for
-        // generic enemies whose `first_name` strref is empty (the user-
-        // observed "end_cut2_sith1"-style tags came from the
-        // GetObjectName tag fallback).
         if (!acc::engine::GetObjectDisplayNameByHandle(
                 target, tgtName, sizeof(tgtName)) ||
             tgtName[0] == '\0') {
@@ -194,84 +325,68 @@ void SpeakRow(void* combatRound, int idx, int count) {
             }
         }
     }
+
     char msg[256];
     std::snprintf(msg, sizeof(msg),
                   acc::strings::Get(acc::strings::Id::FmtQueueRow),
-                  verb, tgtName, idx + 1, count);
+                  row.charName, verb, tgtName, idx + 1, g_state.count);
     tolk::Speak(msg, /*interrupt=*/true);
-    acclog::Write("Combat.Queue", "row %d/%d type=%u target=0x%08x [%s]",
-                  idx + 1, count, (unsigned)type, target, msg);
+    acclog::Write("Combat.Queue",
+                  "row %d/%d char=[%s] type=%u target=0x%08x verb=[%s] "
+                  "tgt=[%s]",
+                  idx + 1, g_state.count, row.charName, (unsigned)type,
+                  target, verb, tgtName);
 }
 
-// Try to remove the action at `index`. Returns true on success.
-//
-// Engine surface caveat (docs/combat-system.md Phase 3 "Clear one"):
-// only RemoveLastAction is exposed by name. As a skeleton, the only
-// reliably-removable index is the last one. For other indices we return
-// false; the user hears QueueRemoveFailed.
-bool RemoveActionAtIndex(void* combatRound, void* clientCreature,
-                         int index, int count) {
-    if (!combatRound || count <= 0) return false;
-    if (index != count - 1) {
-        // Skeleton limitation — we only know the tail-remove primitive.
-        // A real implementation either splices the linked list manually
-        // or repeat-RemoveLast + re-queues the tail.
+// Try to remove the action at row `idx`. Tail-only — the engine's
+// only public per-round primitive is RemoveLastAction. Returns true
+// on dispatch success.
+bool RemoveRow(int idx) {
+    if (idx < 0 || idx >= g_state.count) return false;
+    const Row& row = g_state.rows[idx];
+    // Tail-only — see docs/combat-system.md Phase 3 "Clear one" item.
+    // We compare against the per-creature index so that the user's
+    // current row maps to the tail of *that creature's* queue (not
+    // the flat-list tail).
+    if (row.perCreatureIdx != row.perCreatureCount - 1) {
         acclog::Write("Combat.Queue",
-                      "remove index=%d count=%d -> non-tail removal not "
-                      "implemented yet",
-                      index, count);
+                      "remove flat=%d char=[%s] local=%d/%d -> non-tail "
+                      "remove not implemented",
+                      idx, row.charName, row.perCreatureIdx,
+                      row.perCreatureCount);
         return false;
     }
     __try {
         auto fn = reinterpret_cast<PFN_RemoveLastAction>(
             kAddrCombatRoundRemoveLastAction);
-        fn(combatRound);
+        fn(row.combatRound);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
-    (void)clientCreature;  // reserved for the future client-side wipe path
 }
 
-// Wipe the entire queue via the client-side ClearAllQueuedCombatActions.
-// Falls back to repeat-RemoveLast if the client wipe faults.
-bool ClearAllActions(void* combatRound, void* serverCreature) {
-    // Find the matching client creature — chain is server +0xf8 not used
-    // here; the reverse direction needs a CGameObjectArray client-side
-    // resolve. For the skeleton, prefer the server-side RemoveLastAction
-    // loop which we already have.
-    int count = CountQueueEntries(combatRound);
+// Clear every party member's queue via repeated RemoveLastAction calls
+// against each row's combat round.
+bool ClearAllRows() {
+    int total = g_state.count;
     int removed = 0;
-    for (int i = 0; i < count; ++i) {
+    // Iterate rows back-to-front so each per-creature tail-remove
+    // matches the engine's only primitive.
+    for (int i = total - 1; i >= 0; --i) {
         __try {
             auto fn = reinterpret_cast<PFN_RemoveLastAction>(
                 kAddrCombatRoundRemoveLastAction);
-            fn(combatRound);
+            fn(g_state.rows[i].combatRound);
             ++removed;
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             break;
         }
     }
-    acclog::Write("Combat.Queue", "ClearAllActions removed=%d/%d",
-                  removed, count);
-    (void)serverCreature;
+    acclog::Write("Combat.Queue", "ClearAllRows removed=%d/%d",
+                  removed, total);
     return removed > 0;
 }
-
-// ---------------------------------------------------------------------------
-// State machine.
-// ---------------------------------------------------------------------------
-
-struct State {
-    bool  active   = false;
-    int   focusIdx = 0;     // 0-based focus into the queue
-};
-
-State g_state;
-
-// Bind the active session's creature pointer at Open time so per-tick
-// auto-disarm can detect a leader swap.
-void* g_boundCreature = nullptr;
 
 }  // namespace
 
@@ -281,54 +396,31 @@ void ForceDisarm(const char* reason) {
     if (!g_state.active) return;
     acclog::Write("Combat.Queue", "disarm reason=%s",
                   reason ? reason : "?");
-    g_state.active   = false;
+    g_state.active = false;
     g_state.focusIdx = 0;
-    g_boundCreature  = nullptr;
+    g_state.count = 0;
 }
 
 bool Open() {
-    void* creature = acc::engine::GetPlayerServerCreature();
-    if (!creature) {
-        acclog::Write("Combat.Queue",
-                      "Open — no player creature; not arming");
-        return false;
-    }
-    void* round = ReadCombatRound(creature);
-    if (!round) {
-        acclog::Write("Combat.Queue",
-                      "Open — no combat_round on creature=%p; not arming",
-                      creature);
-        // Speak the empty cue regardless so the user knows the keypress
-        // landed.
-        tolk::Speak(acc::strings::Get(acc::strings::Id::QueueEmpty),
-                    /*interrupt=*/true);
-        return false;
-    }
-
-    int count = CountQueueEntries(round);
+    int count = BuildRows();
     if (count <= 0) {
         tolk::Speak(acc::strings::Get(acc::strings::Id::QueueEmpty),
                     /*interrupt=*/true);
-        acclog::Write("Combat.Queue",
-                      "Open — queue empty creature=%p; not arming",
-                      creature);
+        acclog::Write("Combat.Queue", "Open — party queue empty; not arming");
         return false;
     }
 
     g_state.active   = true;
     g_state.focusIdx = 0;
-    g_boundCreature  = creature;
 
     char msg[128];
     std::snprintf(msg, sizeof(msg),
                   acc::strings::Get(acc::strings::Id::FmtQueueOpen),
                   count);
     tolk::Speak(msg, /*interrupt=*/true);
-    acclog::Write("Combat.Queue",
-                  "ARMED creature=%p round=%p count=%d -> [%s]",
-                  creature, round, count, msg);
+    acclog::Write("Combat.Queue", "ARMED rows=%d -> [%s]", count, msg);
 
-    SpeakRow(round, 0, count);
+    SpeakRow(0);
     return true;
 }
 
@@ -336,23 +428,11 @@ bool HandleInputEvent(int code, int value) {
     if (!g_state.active) return false;
     if (value == 0) return false;  // press-edge only
 
-    void* creature = acc::engine::GetPlayerServerCreature();
-    if (!creature) {
-        ForceDisarm("creature-unresolved");
-        return false;
-    }
-    if (creature != g_boundCreature) {
-        ForceDisarm("creature-changed");
-        return false;
-    }
-    void* round = ReadCombatRound(creature);
-    if (!round) {
-        ForceDisarm("round-unresolved");
-        return false;
-    }
-    int count = CountQueueEntries(round);
+    // Refresh on every keypress — the engine can drain the queue between
+    // ticks (combat round advancing) and we don't want to dispatch a
+    // remove against a stale row.
+    int count = BuildRows();
     if (count <= 0) {
-        // Queue drained while submenu was open.
         tolk::Speak(acc::strings::Get(acc::strings::Id::QueueEmpty),
                     /*interrupt=*/true);
         ForceDisarm("queue-emptied");
@@ -364,21 +444,17 @@ bool HandleInputEvent(int code, int value) {
     switch (code) {
         case kInputNavUp:
             if (g_state.focusIdx > 0) --g_state.focusIdx;
-            SpeakRow(round, g_state.focusIdx, count);
+            SpeakRow(g_state.focusIdx);
             return true;
         case kInputNavDown:
             if (g_state.focusIdx + 1 < count) ++g_state.focusIdx;
-            SpeakRow(round, g_state.focusIdx, count);
+            SpeakRow(g_state.focusIdx);
             return true;
         case kInputEnter1:
         case kInputEnter2: {
-            // Shift gate: if Shift is held, treat as "clear all". The
-            // manager-level event doesn't surface modifier state, so we
-            // read it directly via the central registry's ShiftHeld()
-            // helper (covers L/R/either shift).
             bool shift = acc::hotkeys::ShiftHeld();
             if (shift) {
-                bool ok = ClearAllActions(round, creature);
+                bool ok = ClearAllRows();
                 tolk::Speak(acc::strings::Get(
                                 ok ? acc::strings::Id::QueueCleared
                                    : acc::strings::Id::QueueRemoveFailed),
@@ -389,16 +465,17 @@ bool HandleInputEvent(int code, int value) {
                 return true;
             }
 
-            // Single-row remove. Lookup verb before the remove for the
-            // confirmation phrase.
-            void* action = GetQueueAction(round, g_state.focusIdx);
+            // Capture the verb before the remove so the confirmation
+            // phrase still has it.
+            const Row& row = g_state.rows[g_state.focusIdx];
+            void* action = GetQueueAction(row.combatRound,
+                                          row.perCreatureIdx);
             unsigned char type = 0xff;
-            uint32_t      target = 0;
+            uint32_t target = 0;
             ReadActionFields(action, type, target);
             const char* verb = acc::strings::Get(VerbForActionType(type));
 
-            bool ok = RemoveActionAtIndex(round, creature,
-                                          g_state.focusIdx, count);
+            bool ok = RemoveRow(g_state.focusIdx);
             if (!ok) {
                 tolk::Speak(acc::strings::Get(
                                 acc::strings::Id::QueueRemoveFailed),
@@ -412,11 +489,10 @@ bool HandleInputEvent(int code, int value) {
                           verb);
             tolk::Speak(msg, /*interrupt=*/true);
             acclog::Write("Combat.Queue",
-                          "Removed idx=%d/%d type=%u verb=[%s]",
-                          g_state.focusIdx + 1, count, (unsigned)type, verb);
+                          "Removed flat=%d type=%u verb=[%s]",
+                          g_state.focusIdx + 1, (unsigned)type, verb);
 
-            // Refresh queue + focus; if empty close.
-            int newCount = CountQueueEntries(round);
+            int newCount = BuildRows();
             if (newCount <= 0) {
                 ForceDisarm("queue-emptied-after-remove");
                 return true;
@@ -424,7 +500,7 @@ bool HandleInputEvent(int code, int value) {
             if (g_state.focusIdx >= newCount) {
                 g_state.focusIdx = newCount - 1;
             }
-            SpeakRow(round, g_state.focusIdx, newCount);
+            SpeakRow(g_state.focusIdx);
             return true;
         }
         case kInputEsc1:
@@ -442,19 +518,8 @@ bool HandleInputEvent(int code, int value) {
 
 void Tick() {
     if (!g_state.active) return;
-    void* creature = acc::engine::GetPlayerServerCreature();
-    if (!creature || creature != g_boundCreature) {
-        ForceDisarm("tick-creature-drift");
-        return;
-    }
-    void* round = ReadCombatRound(creature);
-    if (!round) {
-        ForceDisarm("tick-round-gone");
-        return;
-    }
-    int count = CountQueueEntries(round);
+    int count = BuildRows();
     if (count <= 0) {
-        // Queue drained organically (engine processed all actions).
         tolk::Speak(acc::strings::Get(acc::strings::Id::QueueEmpty),
                     /*interrupt=*/false);
         ForceDisarm("tick-queue-empty");
@@ -463,9 +528,7 @@ void Tick() {
 }
 
 void PollWin32Hotkey() {
-    // Default open hotkey: Shift+K (Action::CombatQueueOpen). Wakes Open();
-    // rest of the input routing happens through interact_hotkey.cpp's
-    // submenu-active dispatch (same shape as actionbar_menu).
+    // Default open hotkey: Shift+K (Action::CombatQueueOpen).
     if (!acc::hotkeys::Pressed(acc::hotkeys::Action::CombatQueueOpen)) return;
 
     Vector unused;
