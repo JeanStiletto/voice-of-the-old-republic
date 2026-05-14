@@ -35,11 +35,16 @@ namespace {
 //   - lbl_exp_stat / lbl_needed_xp returned 3001 / 6000 respectively, but
 //     the player has 6000 current XP and 3001 is the next-level threshold
 //     → so lbl_exp_stat IS the threshold, lbl_needed_xp IS current XP
-//   - lbl_vitality_stat returned 36/36 (force) and lbl_force_stat returned
-//     999/999 (HP) — Lane's names are reversed; we use the values, not the
-//     names
-// Comments below state what each offset ACTUALLY contains, not what Lane
-// labelled it.
+// Comments below state what each offset ACTUALLY contains.
+//
+// HP / FP: Lane's lbl_force_stat (0x16e4) holds FP, lbl_vitality_stat
+// (0x1824) holds HP — Lane's naming is correct. An earlier commit
+// reversed these two based on a session where the user had godmoded
+// FP=999/999 and normal HP=36/36 — the dev concluded "Lane's names
+// are reversed" but the actually-godmoded slot was FP, not HP.
+// Verified via session 20260514-201250: Soldat level 3 with infinite-
+// force cheat shows 0x16e4 = "999/999" (godmoded FP) and 0x1824 =
+// "30/36" (normal HP for that class+level). Names match Lane.
 constexpr size_t kCharSheetLblClass    = 0x02e4;  // class name "Soldat" (lbl_class1)
 constexpr size_t kCharSheetLblLevel    = 0x06a4;  // level number "1" (lbl_level1)
 constexpr size_t kCharSheetLblFort     = 0x0924;  // fortitude save val
@@ -48,8 +53,8 @@ constexpr size_t kCharSheetLblWill     = 0x0ba4;  // will save val
 constexpr size_t kCharSheetLblXpThresh = 0x11e4;  // next-level threshold ("3001")
 constexpr size_t kCharSheetLblXpCur    = 0x1464;  // current XP ("6000")
 constexpr size_t kCharSheetLblDefStat  = 0x15a4;  // defense val
-constexpr size_t kCharSheetLblHp       = 0x16e4;  // HP "999/999" (Lane: lbl_force_stat)
-constexpr size_t kCharSheetLblFp       = 0x1824;  // FP "36/36" (Lane: lbl_vitality_stat)
+constexpr size_t kCharSheetLblFp       = 0x16e4;  // FP — Lane: lbl_force_stat
+constexpr size_t kCharSheetLblHp       = 0x1824;  // HP — Lane: lbl_vitality_stat
 constexpr size_t kCharSheetLblStr      = 0x1d24;  // "14"
 constexpr size_t kCharSheetLblStrMod   = 0x1fa4;  // "+2"
 constexpr size_t kCharSheetLblWis      = 0x20e4;
@@ -90,7 +95,134 @@ void ReadCharSheetLabel(void* panel, size_t offset,
     }
 }
 
+// Stat-row anchor table. The chain inserts a virtual entry for each
+// `valueOffset` and the extractor routes through `format`. modOffset is
+// 0 when the row has no modifier; otherwise the modifier label (e.g.
+// "+2") is read alongside the value.
+//
+// `sortCy` is the synthetic y-coordinate used to position the virtual
+// entry in the navigable chain. Real button entries on Charakterblatt
+// sit at cy >= 237; we anchor the stat block ABOVE those at cy 1..11
+// so Up/Down navigation reads:
+//
+//   [stats: Klasse, Stufe, Erfahrung, HP, FP, Str, Dex, Con, Int, Wis,
+//    Cha] then [real buttons: Autom., sld_align, Levelaufst, Schliess,
+//    Kurzbefehle, Vorheriger, Nächster].
+//
+// Synthetic cy lets us enforce reading order independent of the engine's
+// label coordinates (which would otherwise interleave stats with buttons:
+// Stufe at panel y=112 lands ABOVE Gauner at y=120, Erfahrung at y=392
+// lands AFTER attributes etc.). Mouse warp goes via cx which we still
+// read from the real label position, so cursor lands on the label.
+struct StatRowSpec {
+    size_t           valueOffset;
+    size_t           modOffset;     // 0 = no modifier
+    acc::strings::Id formatId;
+    int              sortCy;
+};
+
+constexpr StatRowSpec k_statRowSpecs[] = {
+    // Identity block — class, level, experience.
+    { kCharSheetLblClass,  0,                    acc::strings::Id::FmtCharSheetClass,  1 },
+    { kCharSheetLblLevel,  0,                    acc::strings::Id::FmtCharSheetLevel,  2 },
+    // XP — value + threshold rendered as 2× %s. Both labels live at
+    // different offsets; we anchor on XpCur and read XpThresh inline.
+    { kCharSheetLblXpCur,  kCharSheetLblXpThresh, acc::strings::Id::FmtCharSheetXp,    3 },
+    // Resource pools (HP + FP) — single value labels.
+    { kCharSheetLblHp,     0,                    acc::strings::Id::FmtCharSheetHp,     4 },
+    { kCharSheetLblFp,     0,                    acc::strings::Id::FmtCharSheetFp,     5 },
+    // Six attributes — value + modifier each.
+    { kCharSheetLblStr,    kCharSheetLblStrMod,  acc::strings::Id::FmtCharSheetStr,    6 },
+    { kCharSheetLblDex,    kCharSheetLblDexMod,  acc::strings::Id::FmtCharSheetDex,    7 },
+    { kCharSheetLblCon,    kCharSheetLblConMod,  acc::strings::Id::FmtCharSheetCon,    8 },
+    { kCharSheetLblInt,    kCharSheetLblIntMod,  acc::strings::Id::FmtCharSheetInt,    9 },
+    { kCharSheetLblWis,    kCharSheetLblWisMod,  acc::strings::Id::FmtCharSheetWis,   10 },
+    { kCharSheetLblCha,    kCharSheetLblChaMod,  acc::strings::Id::FmtCharSheetCha,   11 },
+};
+constexpr int k_statRowCount = static_cast<int>(
+    sizeof(k_statRowSpecs) / sizeof(k_statRowSpecs[0]));
+
+// Resolve `labelControl` to a StatRowSpec for `panel`. Returns nullptr
+// if the address isn't one of the registered anchors.
+const StatRowSpec* FindSpecForControl(void* panel, void* labelControl) {
+    if (!panel || !labelControl) return nullptr;
+    uintptr_t panelBase = reinterpret_cast<uintptr_t>(panel);
+    uintptr_t ctrl      = reinterpret_cast<uintptr_t>(labelControl);
+    if (ctrl < panelBase) return nullptr;
+    size_t offset = static_cast<size_t>(ctrl - panelBase);
+    for (int i = 0; i < k_statRowCount; ++i) {
+        if (k_statRowSpecs[i].valueOffset == offset) {
+            return &k_statRowSpecs[i];
+        }
+    }
+    return nullptr;
+}
+
 }  // namespace
+
+bool IsStatRowAnchor(void* panel, void* labelControl) {
+    return FindSpecForControl(panel, labelControl) != nullptr;
+}
+
+void ForEachStatRowAnchor(void* panel,
+                          bool (*callback)(void* labelControl, int sortCy,
+                                           void* userData),
+                          void* userData) {
+    if (!panel || !callback) return;
+    auto* base = reinterpret_cast<unsigned char*>(panel);
+    for (int i = 0; i < k_statRowCount; ++i) {
+        void* label = base + k_statRowSpecs[i].valueOffset;
+        if (!callback(label, k_statRowSpecs[i].sortCy, userData)) return;
+    }
+}
+
+bool ExtractStatRow(void* panel, void* labelControl,
+                    char* outBuf, size_t bufSize) {
+    if (bufSize == 0) return false;
+    const StatRowSpec* spec = FindSpecForControl(panel, labelControl);
+    if (!spec) return false;
+
+    char value[64];
+    ReadCharSheetLabel(panel, spec->valueOffset, value, sizeof(value));
+    if (value[0] == '\0') return false;
+
+    char mod[16];
+    mod[0] = '\0';
+    if (spec->modOffset != 0) {
+        ReadCharSheetLabel(panel, spec->modOffset, mod, sizeof(mod));
+    }
+
+    using acc::strings::Get;
+    using acc::strings::Id;
+
+    // XP format takes (cur, threshold) — the mod slot holds the threshold
+    // here, not a +/- modifier. Same shape (%s, %s); using mod as the
+    // second arg keeps the dispatch uniform without a separate code path.
+    if (spec->formatId == Id::FmtCharSheetXp) {
+        if (mod[0] == '\0') return false;
+        snprintf(outBuf, bufSize, Get(Id::FmtCharSheetXp), value, mod);
+        return true;
+    }
+
+    // Attribute rows take 3× %s (value, separator, modifier). The
+    // separator is ", " when the modifier is non-empty and "" otherwise
+    // — same shape MaybeAnnounce uses for the snapshot. Class / Level /
+    // HP / FP formats take a single %s and ignore the extras.
+    switch (spec->formatId) {
+    case Id::FmtCharSheetStr:
+    case Id::FmtCharSheetDex:
+    case Id::FmtCharSheetCon:
+    case Id::FmtCharSheetInt:
+    case Id::FmtCharSheetWis:
+    case Id::FmtCharSheetCha:
+        snprintf(outBuf, bufSize, Get(spec->formatId),
+                 value, mod[0] ? ", " : "", mod);
+        return true;
+    default:
+        snprintf(outBuf, bufSize, Get(spec->formatId), value);
+        return true;
+    }
+}
 
 void MaybeAnnounce(void* panel) {
     if (!panel) return;

@@ -20,6 +20,7 @@
 #include "engine_panels.h"
 #include "engine_reads.h"
 #include "log.h"
+#include "menus_charsheet.h"
 #include "menus_internal.h"
 #include "strings.h"
 
@@ -301,6 +302,42 @@ const char* FromControl(void* control,
     if (!control || bufSize < 2) return nullptr;
 
     const char* source = nullptr;
+
+    // 0. Per-kind row formatter for virtual chain entries. Runs BEFORE
+    //    the standard text-extraction ladder because the formatted
+    //    phrase must OVERRIDE the bare label text. lbl_class's inline
+    //    CExoString is "Soldat"; the user navigating the stat chain
+    //    expects "Klasse: Soldat" with the context word, so without
+    //    this early hook the AsLabel path (section 4) would return the
+    //    bare value and never reach the per-kind handler.
+    //
+    //    Only fires when `control` is a registered anchor for the
+    //    owning panel's kind (IsStatRowAnchor short-circuits otherwise),
+    //    so non-virtual controls in InGameCharacter still hit the
+    //    standard ladder.
+    //
+    //    Owner is resolved inline rather than at line 669 because that
+    //    block is after the standard extract sections; we need owner
+    //    here. Cost is one extra FindOwningPanel call when ownerPanel
+    //    is null (announce-control path).
+    {
+        void* owner = ownerPanel;
+        if (!owner) owner = FindOwningPanel(control);
+        if (!owner) owner = g_currentPanel;
+        if (owner && IdentifyPanel(owner) ==
+                PanelKind::InGameCharacter &&
+            acc::menus::charsheet::IsStatRowAnchor(owner, control)) {
+            __try {
+                if (acc::menus::charsheet::ExtractStatRow(
+                        owner, control, outBuf, bufSize) &&
+                    outBuf[0] != '\0') {
+                    source = "perkind-charsheet-row";
+                }
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                source = nullptr;
+            }
+        }
+    }
 
     // 1. Tooltip on the base class — works for any control that has one.
     //    SEH-wrapped: the field at +0x28 holds a `char*` that on a stale

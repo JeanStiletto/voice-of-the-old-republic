@@ -20,6 +20,7 @@
 #include "log.h"
 #include "menus_chargen_attr.h"
 #include "menus_chargen_skills.h"
+#include "menus_charsheet.h"
 #include "menus_extract.h"
 #include "menus_internal.h"
 #include "tolk.h"
@@ -362,6 +363,52 @@ void RebindChain(void* panel) {
                 }
             }
         }
+    }
+
+    // Per-kind virtual chain entries. For InGameCharacter the panel
+    // hosts a dense value-label cluster (Klasse, Stufe, Erfahrung, HP,
+    // FP, six attributes) that the snapshot announce already covers
+    // but the chain doesn't expose — labels aren't IsChainNavigable.
+    // ForEachStatRowAnchor visits each value-label control; we register
+    // it as a text-only chain entry at its real (cx, cy). The y-sort
+    // below then drops them into top-to-bottom reading order alongside
+    // the real buttons (Autom. Levelaufst., Levelaufst., bottom-row
+    // navigation).
+    //
+    // Text-only flag means Enter re-announces (calls AnnounceControl
+    // again) instead of firing vtable[15] — safe for label controls
+    // that have no activate handler. FromControl routes through
+    // ExtractStatRow at section 0 so the user hears the composed phrase
+    // ("Stärke 14, +2") rather than the bare label text ("14").
+    if (IdentifyPanel(panel) == PanelKind::InGameCharacter) {
+        auto onAnchor = [](void* labelControl, int sortCy,
+                           void* userData) -> bool {
+            void* p = userData;
+            if (g_chainCount >= kMaxChainEntries) return false;
+            int cx, cy;
+            // cx comes from the real label position so a cursor warp on
+            // chain step lands the mouse on the actual on-screen text;
+            // cy is overridden to sortCy so the y-sort produces the
+            // logical reading order (Klasse → ... → Charisma at cy 1..11)
+            // instead of interleaving with real buttons (cy 237+).
+            if (!GetControlCenter(labelControl, cx, cy)) {
+                cx = 0;
+            }
+            // Label may be present but empty (mid-frame race during a
+            // re-snapshot, or a not-yet-populated field). Skip silently;
+            // the row reappears on the next rebind once the label has
+            // text.
+            char probe[8];
+            if (!acc::menus::charsheet::ExtractStatRow(
+                    p, labelControl, probe, sizeof(probe))) {
+                return true;
+            }
+            g_chain[g_chainCount++] = {
+                labelControl, cx, sortCy, /*textOnly=*/true
+            };
+            return true;
+        };
+        acc::menus::charsheet::ForEachStatRowAnchor(panel, onAnchor, panel);
     }
 
     // Insertion sort by cy ascending. Stable; n^2 is fine for n<=64.
