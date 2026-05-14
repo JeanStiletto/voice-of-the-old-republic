@@ -14,6 +14,7 @@
 #include "combat.h"
 #include "combat_query.h"
 #include "combat_queue.h"
+#include "combat_special_watch.h"
 #include "cycle_input.h"
 #include "dialog_speech.h"
 #include "engine_player.h"
@@ -27,6 +28,7 @@
 #include "party_leader_announce.h"
 #include "passive_narrate.h"
 #include "probe_audio_frame.h"
+#include "probe_priority_groups.h"
 #include "probe_camera_distance.h"
 #include "probe_camera_state.h"
 #include "probe_mouselook.h"
@@ -232,6 +234,16 @@ void Dispatch() {
 
     // Combat system, Phase 3A — action-queue submenu auto-disarm probe.
     acc::combat::queue::Tick();
+
+    // Combat system, Phase 3B — specials-empty heartbeat. Peripheral
+    // "you can act now" cue when the party-wide queue holds only
+    // routine auto-attacks. Edge-triggered immediate + 6s repeat,
+    // first-round gated so "Kampf beginnt" gets clean air.
+    acc::combat::special_watch::Tick();
+
+    // One-shot probe: dump CExoSoundInternal.priority_groups[N] so we
+    // can identify the loudest bus. Self-disarms after one dump.
+    acc::probe::priority_groups::Tick();
 
     // Combat system, Phase 1D — live dialog screen narration. Polls
     // active CSWGuiDialog* panels for new NPC lines / reply count
