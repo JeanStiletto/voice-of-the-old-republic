@@ -23,6 +23,7 @@
 #include "engine_reads.h"
 #include "hotkeys.h"
 #include "log.h"
+#include "menus.h"            // ClearPendingAnnounce — editbox arm owns the announce
 #include "menus_extract.h"
 #include "menus_pending.h"
 #include "strings.h"
@@ -513,19 +514,11 @@ void TickEditboxMonitors() {
             hk::Consume(hk::Action::EditboxSubmit);
             hk::Consume(hk::Action::EditboxCancel);
 
-            // Speak the focus-enter announce directly here. Chain nav's
-            // AnnounceNewFocusedControl path also produces the same string
-            // (via FromControl step 6b in menus_extract.cpp), but it's
-            // gated by ConsumeNavSpeechBudget — and the only way to reach
-            // this editbox in chargen flow is by Enter-activating the
-            // parent's "Name" button, which sets the suppress budget such
-            // that the editbox-focus event is exactly what gets eaten.
-            // Result: without this direct speak, the user lands on the
-            // editbox in silence after hearing the panel title only.
-            // Speaking from the monitor makes the announce robust to that
-            // suppression. If a future re-entry path delivers BOTH speeches
-            // we accept a one-shot duplicate over the current "silent
-            // editbox" failure.
+            // Speak the focus-enter announce directly here with the
+            // "Editbox. <value>" format the user expects. The drain path
+            // (DrainPendingAnnounce) would otherwise also fire with bare
+            // FromControl text on the next tick — clear the slot so we
+            // own the announce.
             char msg[160];
             const char* role  = acc::strings::Get(acc::strings::Id::EditboxRole);
             const char* empty = acc::strings::Get(acc::strings::Id::EditboxEmpty);
@@ -535,6 +528,7 @@ void TickEditboxMonitors() {
                 snprintf(msg, sizeof(msg), "%s. %s", role, empty);
             }
             tolk::Speak(msg, /*interrupt=*/false);
+            acc::menus::ClearPendingAnnounce();
 
             acclog::Write("Editbox", "%s arm: panel=%p editbox=%p "
                           "initialText=\"%s\" len=%u rawLen=%u "

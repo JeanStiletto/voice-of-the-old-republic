@@ -29,6 +29,30 @@ void TickMonitors();
 // monitor sees a partially-applied state.
 void TickPendingOps();
 
+// Pending-announce slot drain. Hook handler `OnSetActiveControl` writes
+// the slot on every panel-level focus event; this drains it once per tick.
+// Runs early in TickMonitors so multiple intra-tick SetActive events
+// collapse to a single announcement (last write wins). The hook never
+// speaks directly — that was the source of the "OK, Abbrechen" double-
+// announce on MessageBox open, where the engine fires NULL → OK →
+// Abbrechen back-to-back during init and the hook spoke each one.
+void DrainPendingAnnounce();
+
+// Drop the pending slot without speaking. For subsystems that took over
+// announcing a focus event with their own format (e.g. editbox arm
+// speaking "Editbox. <value>") and want to suppress the drain's plain-text
+// re-announce of the same control.
+void ClearPendingAnnounce();
+
+// Channel-keyed speak-if-text-changed dedup, shared between the panel-
+// focus drain (channel 0) and the listbox-row hook (channel 1).
+// Non-static so the focus-monitor's voluntary AnnounceControl can prime
+// channel 0's last-spoken cache via MarkSpoken — that's what stops the
+// engine's post-nav SetActive echo from re-announcing the same control
+// the chain handler just spoke.
+void SpeakIfChanged(int channel, const char* text);
+void MarkSpoken(int channel, const char* text);
+
 // Drill-flag accessors (state lives in menus.cpp).
 //
 // `g_drilledIntoSubScreen` controls whether the chain router retargets

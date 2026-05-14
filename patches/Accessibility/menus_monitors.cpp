@@ -53,6 +53,10 @@ void AnnounceControl(void* control) {
     const char* source = acc::menus::extract::FromControl(control, text, sizeof(text));
     if (source) {
         tolk::Speak(text, /*interrupt=*/false);
+        // Prime channel-0 dedup so the engine's post-nav SetActive echo
+        // (which lands in the pending-announce slot and gets drained next
+        // tick) sees the same text as last-spoken and stays silent.
+        acc::menus::MarkSpoken(/*channel=*/0, text);
         s_focusMonitorControl = control;
         strncpy_s(s_focusMonitorText, text, _TRUNCATE);
         return;
@@ -545,6 +549,11 @@ void MonitorDialogReplies() {
 // ============================================================================
 
 void TickGeneralMonitors() {
+    // First: drain the pending-announce slot. Multiple SetActive events
+    // fired within this tick collapsed to the last write — speak it now
+    // (or stay silent if the voluntary AnnounceControl path already spoke
+    // matching text and primed the channel-0 dedup).
+    acc::menus::DrainPendingAnnounce();
     MonitorFocusedControl();
     MonitorPanelContents();
     MonitorDialogReplies();

@@ -129,19 +129,6 @@ bool IsPending() {
     return g_op.kind != Kind::None;
 }
 
-void* CursorMoveTarget() {
-    if (g_op.kind == Kind::MoveCursor || g_op.kind == Kind::ClickAt) {
-        return g_op.a;
-    }
-    return nullptr;
-}
-
-void ClearCursorMoveTarget() {
-    if (g_op.kind == Kind::MoveCursor || g_op.kind == Kind::ClickAt) {
-        g_op.a = nullptr;
-    }
-}
-
 void Drain(void* gm) {
     if (g_op.kind == Kind::None) return;
 
@@ -224,6 +211,18 @@ void Drain(void* gm) {
     // hit-test, so a button covered by a listbox extent (e.g. Schliess.
     // in an Options sub-dialog) still fires its onClick when we target it.
     //
+    // Raise is_active=1 before the dispatch to mirror what HandleLMouseDown
+    // does in the engine's mouse pipeline. Several engine onClick handlers
+    // gate on `this->is_active != 0` (memory: oncontrolentered_is_active_gate)
+    // and silently divert to a different code path when the flag is zero.
+    // For MessageBox OK buttons that divergent path appeared to corrupt
+    // engine state during close — three Windows __fastfail dumps today all
+    // landed between this FireActivate and the next frame, with the same
+    // MessageBox foreground each time (quit-confirm, save-overwrite,
+    // tutorial-hint — all the same engine MessageBox singleton). Forcing
+    // is_active=1 keeps the dispatch on the same code path the mouse
+    // pipeline takes.
+    //
     // Post-activation re-announce is handled generically by
     // MonitorFocusedControl on the next tick: toggles flip +0x1c8 bit 0
     // synchronously inside FireActivate, cycles rewrite the value-display
@@ -231,14 +230,21 @@ void Drain(void* gm) {
     // three produce a different ExtractAnnounceableText on next entry, and
     // the monitor speaks the diff.
     case Kind::Activate: {
-        acclog::Write("Update", "FireActivate target=%p", op.a);
         if (op.a) {
+            uint32_t* isActive = reinterpret_cast<uint32_t*>(
+                reinterpret_cast<unsigned char*>(op.a) + kControlIsActiveOffset);
+            uint32_t prevIsActive = *isActive;
+            *isActive = 1;
+            acclog::Write("Update", "FireActivate target=%p is_active=%u->1",
+                          op.a, prevIsActive);
             void** vtable = *reinterpret_cast<void***>(op.a);
             if (vtable) {
                 auto fn = reinterpret_cast<PFN_ControlHandleInputEvent>(
                     vtable[kVtableHandleInputEvent]);
                 if (fn) fn(op.a, kInputActivate, 1);
             }
+        } else {
+            acclog::Write("Update", "FireActivate target=NULL (skipped)");
         }
         break;
     }

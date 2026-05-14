@@ -56,12 +56,6 @@ constexpr int kSaveLoadBtnBackId     = 12;
 constexpr int kSaveLoadBtnSaveLoadId = 14;
 }
 
-// Speech-suppress budget shared with menus.cpp. Defined there; we set it
-// from the EquipPicker commit callback so the post-activation focus echo
-// doesn't double-speak. Mirrors how menus.cpp's other queueing sites
-// behave.
-extern int g_navSpeechSuppressBudget;
-
 namespace acc::menus::listbox {
 
 // ============================================================================
@@ -408,7 +402,6 @@ bool EquipPickerOnEnter(void* panel) {
         // ShowDescription; items_listbox.bit_flags & 8 was raised by
         // OnSelectSlot's SetEnabled.
         acc::menus::pending::QueueEquipCommit(panel, row, btn);
-        g_navSpeechSuppressBudget = 2;
         acclog::Write("EquipPicker", "Enter -> commit (row sel=%d %p "
                       "btn_equip=%p panel=%p)",
                       selIdx, row, btn, panel);

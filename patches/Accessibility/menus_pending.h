@@ -27,18 +27,17 @@
 namespace acc::menus::pending {
 
 // Queue a cursor-warp to (x, y). On drain calls MoveMouseToPosition(gm, x, y).
-// `target` is the chain control we're warping to — exposed via
-// CursorMoveTarget() for the OnSetActiveControl self-dedup, since the engine
-// fires SetActiveControl as a consequence of the warp and we'd otherwise
-// re-announce the same control we already spoke from the input handler.
+// `target` is the chain control we're warping to — kept on the op struct
+// for diagnostic logging only (the self-dedup that used to consume it via
+// CursorMoveTarget() / ClearCursorMoveTarget() was replaced by the
+// channel-0 dedup primed from AnnounceControl's MarkSpoken call).
 bool QueueMoveCursor(int x, int y, void* target);
 
 // Queue a click-at-point. On drain runs MoveMouseToPosition(gm, x, y) then
 // the manager's LMouseDown(gm, 1) + LMouseUp(gm). Used for tab-button
 // activation, where direct vtable[15] FireActivate no-ops (tabs gate on
 // is_active which only HandleLMouseDown sets). `target` is the intended
-// click target — exposed via CursorMoveTarget() for the self-dedup, same
-// reason as MoveCursor.
+// click target — diagnostic logging only (see QueueMoveCursor above).
 bool QueueClickAt(int x, int y, void* target);
 
 // Queue a direct-activate via vtable[15].HandleInputEvent(0x27, 1). Bypasses
@@ -88,18 +87,6 @@ bool QueueSwitchSubScreen(int guiId);
 // no per-kind discrimination to do (the old code's per-site debounce
 // subsets were inconsistent; uniformly safe now).
 bool IsPending();
-
-// The cursor-warp target of a queued MoveCursor or ClickAt op (or nullptr
-// if none / queued op isn't a cursor-warp kind). OnSetActiveControl reads
-// this to suppress its re-announce when the engine fires SetActiveControl
-// as a consequence of our deferred cursor warp.
-void* CursorMoveTarget();
-
-// Clear the cursor-warp self-dedup target without dropping the rest of the
-// queued op. Called from OnSetActiveControl after the dedup match fires —
-// the move's audible work is already done; we just don't want a second
-// dedup hit on a later focus event.
-void ClearCursorMoveTarget();
 
 // Drain the queue. Called once per tick from TickPendingOps after all
 // monitors have run. `gm` is the CSWGuiManager singleton; if null, the

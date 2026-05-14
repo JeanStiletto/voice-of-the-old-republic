@@ -160,15 +160,35 @@ constexpr int kSaveLoadBtnSaveLoadId = 14;
 //
 // Channels keep dedup state independent so a listbox row update doesn't
 // silence the parent panel's announcement and vice-versa:
-//   0 = panel SetActiveControl
+//   0 = panel SetActiveControl  (slot drain + voluntary AnnounceControl)
 //   1 = listbox row SetActiveControl
-static void SpeakIfChanged(int channel, const char* text) {
-    static char s_last[2][256] = {{0}, {0}};
+//
+// Exposed publicly via menus.h so the focus-monitor's AnnounceControl can
+// MarkSpoken(0, text) after voluntary speech, which lets the slot drain
+// suppress the engine's echo of the same nav.
+namespace acc::menus {
+
+namespace {
+char s_lastSpoken[2][256] = {{0}, {0}};
+}
+
+void MarkSpoken(int channel, const char* text) {
     if (channel < 0 || channel >= 2 || !text) return;
-    if (strncmp(s_last[channel], text, sizeof(s_last[channel])) == 0) return;
-    strncpy_s(s_last[channel], text, _TRUNCATE);
+    strncpy_s(s_lastSpoken[channel], text, _TRUNCATE);
+}
+
+void SpeakIfChanged(int channel, const char* text) {
+    if (channel < 0 || channel >= 2 || !text) return;
+    if (strncmp(s_lastSpoken[channel], text,
+                sizeof(s_lastSpoken[channel])) == 0) return;
+    strncpy_s(s_lastSpoken[channel], text, _TRUNCATE);
     tolk::Speak(text, /*interrupt=*/false);
 }
+
+}  // namespace acc::menus
+
+using acc::menus::SpeakIfChanged;
+using acc::menus::MarkSpoken;
 
 // ============================================================================
 // Unified-cursor menu navigation (Phase 1+2 — see docs/menu-nav-design.md).
@@ -251,26 +271,28 @@ static bool g_drilledIntoSubScreen = false;
 // Step 3. Input handlers below call `pending::Queue*`; the queue drains
 // once per tick from `TickPendingOps`.
 
-// Speech-suppression budget for OnSetActiveControl. After a voluntary nav
-// action (chain step / Enter activate), set to a small N. Each subsequent
-// OnSetActiveControl call decrements and suppresses speech regardless of
-// which control the event targets. Covers two distinct echoes per nav:
+// Pending-announce slot for the panel-focus path. OnSetActiveControl writes
+// the slot on every event; DrainPendingAnnounce reads + clears it once per
+// tick from TickMonitors. Multiple intra-tick events overwrite the slot —
+// natural last-write-wins coalesce.
 //
-//   1. The engine's own focus handler firing on the keypress (lands on a
-//      DIFFERENT control than our chain target on Options-style sub-dialogs
-//      and InGameEquip — engine's nav order ≠ visual layout).
-//   2. The cursor-warp echo, which lands on our actual target. The
-//      pending::CursorMoveTarget() self-dedup in OnSetActiveControl already
-//      catches this one cleanly.
+// Two reasons this beats the old "decrement a budget on every event" knob:
 //
-// (1) was the source of the "afterthought" double-speak: chain-step speaks
-// the right thing, then engine SetActiveControl fires for a sibling and
-// speaks it as a second utterance. Match-only dedup couldn't catch (1)
-// because newControl wasn't the pending target. Budget=2 catches both echoes
-// without over-suppressing legitimate later focus changes (mouse hover,
-// next user action), since by the time the next user input arrives the
-// budget has decremented to 0.
-int g_navSpeechSuppressBudget = 0;
+//   1. Triple-burst panel-open events (NULL → first child → engine's actual
+//      default focus) used to produce two utterances ("OK, Abbrechen" on
+//      MessageBox open). With the slot, the first two writes get overwritten
+//      by the third before the next tick reads.
+//   2. Voluntary-nav echoes (chain step + cursor warp → engine echoes a
+//      SetActive on the same control) used to need a separate suppress
+//      counter. Now AnnounceControl calls MarkSpoken(0, text) after speaking,
+//      which primes the channel-0 dedup; the slot drain sees the same text
+//      and stays silent.
+namespace acc::menus {
+namespace {
+void* s_pendingAnnouncePanel   = nullptr;
+void* s_pendingAnnounceControl = nullptr;
+}
+}
 
 // Tracks the last panel for which we spoke the title (AnnouncePanelTitle).
 // Re-entering the same panel pointer must not re-announce. A distinct static
@@ -619,7 +641,6 @@ bool acc::menus::detail::QueueButtonByIdActivate(void* panel, int buttonId,
         return false;
     }
     acc::menus::pending::QueueActivate(tgt);
-    g_navSpeechSuppressBudget = 2;
     acclog::Write(logPrefix, "panel=%p target=%p", panel, tgt);
     return true;
 }
@@ -919,41 +940,11 @@ static void SpeakPanelTitleOnFirstSight(void* panel) {
     AnnouncePanelTitle(panel);
 }
 
-// Self-dedup: if this SetActiveControl was caused by our deferred
-// MoveMouseToPosition, the input hook already announced the target.
-// Skip Tolk and clear the pending marker. Returns true if dedup fired.
-static bool ConsumeCursorWarpDedup(int n, void* panel, void* newControl) {
-    if (!newControl || newControl != acc::menus::pending::CursorMoveTarget()) {
-        return false;
-    }
-    acclog::Write("Menus.SetActive", "#%d panel=%p new=%p (self-dedup; cursor sync)",
-                  n, panel, newControl);
-    acc::menus::pending::ClearCursorMoveTarget();
-    // Cursor-warp echo arrived: voluntary nav has fully settled.
-    g_navSpeechSuppressBudget = 0;
-    return true;
-}
-
-// Voluntary-nav speech-suppression. Chain-step / Enter-activate handlers
-// set the budget to a small N; decrement on any focus event and skip
-// speech while > 0. Covers engine-side focus echoes that don't match the
-// cursor-warp target (e.g. engine's UP handler picking a sibling on
-// AutoPause / equip panels). Returns true if suppressed.
-static bool ConsumeNavSpeechBudget(int n, void* panel, void* newControl) {
-    if (g_navSpeechSuppressBudget <= 0) return false;
-    int wasBudget = g_navSpeechSuppressBudget;
-    --g_navSpeechSuppressBudget;
-    int sid = *reinterpret_cast<int*>(
-        reinterpret_cast<unsigned char*>(newControl) + 0x50);
-    acclog::Write("Menus.SetActive", "#%d panel=%p new=%p id=%d "
-                  "(nav-suppress; budget %d->%d)",
-                  n, panel, newControl, sid, wasBudget,
-                  g_navSpeechSuppressBudget);
-    return true;
-}
-
-// Speak the focused control's text (or "control N" placeholder), with
-// Container-listbox suppression to keep the panel-open announce clean.
+// Record the new focused control into the pending-announce slot for the
+// drain to read on the next tick. Logs the event diagnostically — the
+// announce itself happens in DrainPendingAnnounce. Container-listbox
+// suppression stays at write-time: drowning the per-row container monitor
+// would still be wrong, so we just don't queue.
 static void AnnounceNewFocusedControl(int n, void* panel, void* newControl) {
     int id = *reinterpret_cast<int*>(
         reinterpret_cast<unsigned char*>(newControl) + 0x50);
@@ -962,9 +953,6 @@ static void AnnounceNewFocusedControl(int n, void* panel, void* newControl) {
     const char* source = acc::menus::extract::FromControl(
         newControl, text, sizeof(text), panel);
 
-    // Container loot panel: the engine's listbox text concatenates every
-    // row into one giant utterance, which would drown the count + per-row
-    // navigation announces from the container monitor. Log only.
     bool suppressForContainer =
         IsListBox(newControl) &&
         IdentifyPanel(panel) == PanelKind::Container;
@@ -972,24 +960,17 @@ static void AnnounceNewFocusedControl(int n, void* panel, void* newControl) {
     if (source) {
         acclog::Write("Menus.SetActive", "#%d panel=%p new=%p id=%d src=%s text=\"%s\"",
                       n, panel, newControl, id, source, text);
-        if (!suppressForContainer) {
-            SpeakIfChanged(/*channel=*/0, text);
-        }
-        return;
+    } else {
+        char vtbl[160];
+        DumpControlVtable(newControl, vtbl, sizeof(vtbl));
+        acclog::Write("Menus.SetActive", "#%d panel=%p new=%p id=%d src=none %s",
+                      n, panel, newControl, id, vtbl);
     }
 
-    char vtbl[160];
-    DumpControlVtable(newControl, vtbl, sizeof(vtbl));
-    acclog::Write("Menus.SetActive", "#%d panel=%p new=%p id=%d src=none %s",
-                  n, panel, newControl, id, vtbl);
-    if (!suppressForContainer) {
-        // Bypass SpeakIfChanged dedup deliberately: a non-readable focus
-        // change deserves *some* announcement every time. Better to hear
-        // "control 11" repeated than to silently skip a focus event.
-        char placeholder[64];
-        snprintf(placeholder, sizeof(placeholder), "control %d", id);
-        tolk::Speak(placeholder, /*interrupt=*/false);
-    }
+    if (suppressForContainer) return;
+
+    acc::menus::s_pendingAnnouncePanel   = panel;
+    acc::menus::s_pendingAnnounceControl = newControl;
 }
 
 extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
@@ -1031,9 +1012,6 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
         acclog::Write("Menus.SetActive", "#%d panel=%p newControl=NULL", n, panel);
         return;
     }
-
-    if (ConsumeCursorWarpDedup(n, panel, newControl)) return;
-    if (ConsumeNavSpeechBudget(n, panel, newControl)) return;
 
     AnnounceNewFocusedControl(n, panel, newControl);
 }
@@ -1596,7 +1574,6 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             int cursorY = e.cy;
             if (g_tabClickOffsetY > 0) cursorY += g_tabClickOffsetY;
             acc::menus::pending::QueueClickAt(e.cx, cursorY, e.control);
-            g_navSpeechSuppressBudget = 2;  // see chain-step doc above
             acclog::Write("Menus.Enter", "click-sim panel=%p index=%d target=%p cursorY=%d (tab)",
                           activePanel, g_chainIndex, e.control, cursorY);
             consumed = true;
@@ -1609,7 +1586,6 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             // for the hit-test data). Deferred to OnUpdate to stay clear
             // of mid-input-dispatch recursion.
             acc::menus::pending::QueueEquipSelect(g_chainPanel, e.control);
-            g_navSpeechSuppressBudget  = 2;
             // Arm the picker zone now: OnSelectSlot raises field33_0x4270 |= 1
             // and the user proceeds to LB_ITEMS browsing. Self-clears on
             // panel close, picker Esc, or BTN_EQUIP dispatch.
@@ -1620,7 +1596,6 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             consumed = true;
         } else {
             acc::menus::pending::QueueActivate(e.control);
-            g_navSpeechSuppressBudget = 2;  // see chain-step doc above
             // Drill flag is armed centrally inside the
             // OnSwitchToSWInGameGui detour — every path that opens a
             // sub-screen (strip-icon Enter, vanilla M/I/J hotkeys, our
@@ -1827,12 +1802,11 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                     if (skillPitch > 0) cursorY += skillPitch;
                 }
                 acc::menus::pending::QueueMoveCursor(cursorX, cursorY, e.control);
-                // Suppress the next two SetActiveControl announces — engine-
-                // side focus echoes that fire after the keypress + cursor
-                // warp would otherwise read out the wrong sibling control as
-                // an "afterthought" after we already announced the chain
-                // target above.
-                g_navSpeechSuppressBudget = 2;
+                // No explicit suppress needed for the engine-side focus
+                // echo: AnnounceControl above primed channel-0 dedup via
+                // MarkSpoken, so DrainPendingAnnounce will short-circuit
+                // when the cursor-warp's SetActive echo arrives with the
+                // same text.
             }
             acclog::Write("Menus.Chain", "step panel=%p index=%d/%d target=%p center=(%d,%d) cursor=(%d,%d)%s %s",
                           g_chainPanel, g_chainIndex, g_chainCount,
@@ -2107,6 +2081,42 @@ void TickMonitors() {
 void TickPendingOps() {
     void* gm = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
     pending::Drain(gm);
+}
+
+// Drain the pending-announce slot. Called early in TickMonitors so any
+// intra-tick burst of SetActive events (panel-open NULL/first/settled
+// triple, cursor-warp echo after voluntary nav) collapses to one
+// announcement of the final settled focus. Channel-0 dedup short-circuits
+// when the voluntary AnnounceControl path already spoke the same text.
+void DrainPendingAnnounce() {
+    void* panel   = s_pendingAnnouncePanel;
+    void* control = s_pendingAnnounceControl;
+    s_pendingAnnouncePanel   = nullptr;
+    s_pendingAnnounceControl = nullptr;
+    if (!control) return;
+
+    char text[256];
+    const char* source = acc::menus::extract::FromControl(
+        control, text, sizeof(text), panel);
+    if (source) {
+        SpeakIfChanged(/*channel=*/0, text);
+        return;
+    }
+
+    // No extractable text: announce a "control N" placeholder. Bypasses
+    // SpeakIfChanged dedup deliberately (memory:
+    // feedback_never_silence_fallback_announcement) — better to hear
+    // repeated "control 11" than to silently drop a focus event.
+    int id = *reinterpret_cast<int*>(
+        reinterpret_cast<unsigned char*>(control) + 0x50);
+    char placeholder[64];
+    snprintf(placeholder, sizeof(placeholder), "control %d", id);
+    tolk::Speak(placeholder, /*interrupt=*/false);
+}
+
+void ClearPendingAnnounce() {
+    s_pendingAnnouncePanel   = nullptr;
+    s_pendingAnnounceControl = nullptr;
 }
 
 bool IsDrilledIntoSubScreen() { return g_drilledIntoSubScreen; }
