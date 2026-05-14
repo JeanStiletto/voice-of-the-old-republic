@@ -223,6 +223,18 @@ void Drain(void* gm) {
     // is_active=1 keeps the dispatch on the same code path the mouse
     // pipeline takes.
     //
+    // ONLY raise from 0 → 1: HandleLMouseDown's actual behaviour is a
+    // conditional raise, not an unconditional write. Some controls (tab
+    // buttons in InGameOptions, equip-slot buttons in InGameEquip) carry
+    // non-zero engine-bookkeeping values in this field (selected-tab
+    // marker, equip-state flags). Clobbering those with 1 corrupts the
+    // engine's view of which tab is selected, which surfaces later as a
+    // crash in unrelated subsystems on the next render/physics tick. A
+    // session FireActivate audit across 9 events found 5→1 (Feedback tab)
+    // was the only non-trivial clobber across all of testing, and the only
+    // session it appeared in is the one that crashed in CSWRoomSurfaceMesh
+    // AABB traversal moments after a tab-subdialog close.
+    //
     // Post-activation re-announce is handled generically by
     // MonitorFocusedControl on the next tick: toggles flip +0x1c8 bit 0
     // synchronously inside FireActivate, cycles rewrite the value-display
@@ -234,9 +246,10 @@ void Drain(void* gm) {
             uint32_t* isActive = reinterpret_cast<uint32_t*>(
                 reinterpret_cast<unsigned char*>(op.a) + kControlIsActiveOffset);
             uint32_t prevIsActive = *isActive;
-            *isActive = 1;
-            acclog::Write("Update", "FireActivate target=%p is_active=%u->1",
-                          op.a, prevIsActive);
+            if (prevIsActive == 0) *isActive = 1;
+            acclog::Write("Update", "FireActivate target=%p is_active=%u%s",
+                          op.a, prevIsActive,
+                          prevIsActive == 0 ? "->1" : " (preserved)");
             void** vtable = *reinterpret_cast<void***>(op.a);
             if (vtable) {
                 auto fn = reinterpret_cast<PFN_ControlHandleInputEvent>(
@@ -270,13 +283,18 @@ void Drain(void* gm) {
             uint32_t* isActive = reinterpret_cast<uint32_t*>(
                 reinterpret_cast<unsigned char*>(slotBtn) + kControlIsActiveOffset);
             uint32_t prevIsActive = *isActive;
-            *isActive = 1;
+            // Conditional raise — see Kind::Activate above for the
+            // 5→1 corruption rationale. Equip slot buttons can carry
+            // non-zero engine state (slot.equipped_state) we mustn't
+            // clobber.
+            if (prevIsActive == 0) *isActive = 1;
             auto onEnter  = reinterpret_cast<PFN_InGameEquipOnEnterSlot>(
                 kAddrInGameEquipOnEnterSlot);
             auto onSelect = reinterpret_cast<PFN_InGameEquipOnSelectSlot>(
                 kAddrInGameEquipOnSelectSlot);
-            acclog::Write("Update", "EquipSelect panel=%p slot=%p is_active=%u->1",
-                          panel, slotBtn, prevIsActive);
+            acclog::Write("Update", "EquipSelect panel=%p slot=%p is_active=%u%s",
+                          panel, slotBtn, prevIsActive,
+                          prevIsActive == 0 ? "->1" : " (preserved)");
             onEnter(panel, slotBtn);
             onSelect(panel, slotBtn);
             acclog::Write("Update", "EquipSelect done panel=%p slot=%p", panel, slotBtn);
@@ -303,15 +321,20 @@ void Drain(void* gm) {
                 reinterpret_cast<unsigned char*>(btn) + kControlIsActiveOffset);
             uint32_t prevRowActive = *rowIsActive;
             uint32_t prevBtnActive = *btnIsActive;
-            *rowIsActive = 1;
-            *btnIsActive = 1;
+            // Conditional raise — see Kind::Activate above.
+            if (prevRowActive == 0) *rowIsActive = 1;
+            if (prevBtnActive == 0) *btnIsActive = 1;
             auto onItem = reinterpret_cast<PFN_InGameEquipOnItemSelected>(
                 kAddrInGameEquipOnItemSelected);
             auto onOK   = reinterpret_cast<PFN_InGameEquipOnOKPressed>(
                 kAddrInGameEquipOnOKPressed);
             acclog::Write("Update", "EquipCommit panel=%p row=%p btn=%p "
-                          "row.is_active=%u->1 btn.is_active=%u->1",
-                          panel, row, btn, prevRowActive, prevBtnActive);
+                          "row.is_active=%u%s btn.is_active=%u%s",
+                          panel, row, btn,
+                          prevRowActive,
+                          prevRowActive == 0 ? "->1" : " (preserved)",
+                          prevBtnActive,
+                          prevBtnActive == 0 ? "->1" : " (preserved)");
             onItem(panel, row);
             onOK(panel, btn);
             acclog::Write("Update", "EquipCommit done panel=%p row=%p btn=%p",
