@@ -55,6 +55,8 @@ Example - instead of tables, format like this:
 - **Project root:** `C:\Users\fabia\Dev\kotor`
 - **`tools/kdev/`** — internal dev CLI (.NET 10), drives the full build → install → launch loop for our patch
 - **`patches/Accessibility/`** — our patch source (currently empty; awaiting first hooks)
+- **`installer/KotorAccessibilityInstaller/`** — end-user installer (.NET 8 WinForms, self-contained single-file EXE). References KPatchCore directly; modelled on the arena installer at `C:\Users\fabia\Dev\arena\installer\AccessibleArenaInstaller\IMPLEMENTATION.md` — read that first if touching this code.
+- **`installer/release.ps1`** — local release pipeline (kdev build → publish installer → tag → gh release)
 - **`third_party/`** — read-only clones of `Kotor-Patch-Manager` and `KotorMessageInjector`
 - **`docs/`** — see Documentation below
 - **`build/`, `logs/`** — generated; gitignored

@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>KotorAccessibilityInstaller</AssemblyName>
+    <RootNamespace>KotorAccessibilityInstaller</RootNamespace>
+    <Version>1.0.0</Version>
+    <Company>KOTOR Accessibility Project</Company>
+    <Product>KOTOR Accessibility Installer</Product>
+    <Description>Installer for the KOTOR 1 Accessibility Mod - lets blind players play Knights of the Old Republic.</Description>
+    <Copyright>2026</Copyright>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+
+    <!-- Release: produce one self-contained EXE for end users -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <!-- Bundled binaries extracted at install time -->
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\KotorPatcher.dll" />
+    <EmbeddedResource Include="Resources\sqlite3.dll" />
+    <EmbeddedResource Include="Resources\prism.dll" />
+    <EmbeddedResource Include="Resources\kotor1_0_3.db" />
+  </ItemGroup>
+
+  <!-- Locale files embedded as resources -->
+  <ItemGroup>
+    <EmbeddedResource Include="Locales\*.json" LogicalName="locale.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!-- KPatchCore does the heavy lifting for kpatch install -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\third_party\Kotor-Patch-Manager\src\KPatchCore\KPatchCore.csproj" />
+  </ItemGroup>
+
+</Project>
