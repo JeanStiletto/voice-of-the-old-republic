@@ -780,9 +780,9 @@ void Tick() {
                                       "%s. %s", text, shapeTextLocal);
                         speakStr = combined;
                     }
-                    // NOW-priority via NVDA SSML — survives the typed-
-                    // character cancellation that NORMAL-priority
-                    // Tolk_Output suffers from while WASD is held.
+                    // Routed via the SAPI urgent channel — survives the
+                    // typed-character cancellation that the NORMAL screen-
+                    // reader path suffers from while WASD is held.
                     tolk::SpeakUrgent(speakStr);
                     acclog::Write("MapCursor",
                                   "speak note=\"%s\" tag=\"%s\" "

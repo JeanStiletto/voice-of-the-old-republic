@@ -80,7 +80,7 @@ void FlushAll();
 
 // Absolute path of the directory that hosts our patch DLL
 // (<install>\patches). Empty before Init runs. Used by tolk.cpp to point
-// SetDllDirectory at the bundled Tolk.dll + nvdaControllerClient32.dll.
+// SetDllDirectory at the bundled prism.dll and its delay-loaded bridges.
 const char* PatchDir();
 
 }  // namespace acclog

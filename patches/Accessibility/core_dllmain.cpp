@@ -1,9 +1,10 @@
 // KOTOR Accessibility — DLL entry + lazy-init plumbing.
 //
 // Layer: core/ (high-trust, stable). DllMain runs under the loader lock so
-// nothing here may load DLLs, init COM, or open files. The actual screen-
-// reader bridge (Tolk) is loaded lazily on the first hook fire — see
-// EnsureTolkInitialized below.
+// nothing here may load DLLs, init COM, or open files. The actual speech
+// bridge (Prism) is loaded lazily on the first hook fire — see
+// EnsureTolkInitialized below. (Function name is a historical hold-over
+// from the pre-migration Tolk-based path; the underlying init is Prism.)
 //
 // This file is the smallest of the patch — it defines the DLL boundary and
 // the OnRulesInit infrastructure-test detour. Everything else (engine
@@ -28,7 +29,7 @@ char g_versionSha[128] = "(unset)";
 
 }  // namespace
 
-// Lazy Tolk init. First hook to fire runs it; subsequent calls are no-ops.
+// Lazy speech-bridge init. First hook to fire runs it; subsequent calls are no-ops.
 // Speaks a one-line "loaded, version X" greeting on the first successful init
 // so the user knows the patch is active even when no focus events have fired.
 //
@@ -106,7 +107,7 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD reason, LPVOID) {
             strncpy_s(g_versionSha, "(unset)", _TRUNCATE);
         }
         acclog::Write("Init", "DLL_PROCESS_ATTACH sha=%s", g_versionSha);
-        // Tolk init is intentionally deferred to first hook fire — see header.
+        // Speech-bridge init is intentionally deferred to first hook fire — see header.
     }
     return TRUE;
 }
