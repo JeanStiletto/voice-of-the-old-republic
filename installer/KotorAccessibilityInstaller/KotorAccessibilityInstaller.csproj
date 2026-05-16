@@ -30,6 +30,8 @@
     <EmbeddedResource Include="Resources\sqlite3.dll" />
     <EmbeddedResource Include="Resources\prism.dll" />
     <EmbeddedResource Include="Resources\kotor1_0_3.db" />
+    <!-- HoloPatcher is NOT bundled. It's downloaded from upstream
+         NickHugi/PyKotor @ pinned tag at install time (see HoloPatcherProvider). -->
   </ItemGroup>
 
   <!-- Locale files embedded as resources -->

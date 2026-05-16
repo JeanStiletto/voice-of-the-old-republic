@@ -1,9 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using KotorAccessibilityInstaller.ModInstallers;
 
 namespace KotorAccessibilityInstaller
 {
@@ -203,6 +206,7 @@ namespace KotorAccessibilityInstaller
             string stagingRoot = null;
             string downloadedKpatch = null;
             string latestVersion = null;
+            string holoPatcherPath = null;
             var installationManager = new InstallationManager(_gamePath);
 
             using var githubClient = new GitHubClient();
@@ -282,11 +286,37 @@ namespace KotorAccessibilityInstaller
                 // still works without these tweaks, the user just doesn't get the
                 // stability boost.
                 UpdateStatus(InstallerLocale.Get("Main_StatusTweakingIni"));
-                UpdateProgress(90);
+                UpdateProgress(87);
                 var iniResult = await Task.Run(() => SwkotorIniTweaker.ApplyAccessibilityDefaults(_gamePath));
                 if (!iniResult.Success)
                 {
                     Logger.Warning($"Stability tweaks failed: {iniResult.Error}");
+                }
+
+                // Step 4.6: install user-selected optional mods (K1CP today, more later).
+                // _modSelection is null on the update-only path — the coordinator
+                // handles that by returning an empty result list and short-circuiting.
+                var modResults = new List<ModInstallResult>();
+                if (_modSelection != null && AnyOptionalSelected(_modSelection))
+                {
+                    // HoloPatcher download — only fetch when at least one optional mod
+                    // is selected. Same GitHub-release flow as the .kpatch download
+                    // above; cached in temp for this install run only.
+                    UpdateStatus(InstallerLocale.Get("Main_StatusDownloadingHoloPatcher"));
+                    UpdateProgress(88);
+                    holoPatcherPath = await HoloPatcherProvider.DownloadAsync(
+                        githubClient,
+                        p => UpdateProgress(88 + (p * 2 / 100))); // 88..90 slot for HoloPatcher download
+
+                    UpdateStatus(InstallerLocale.Get("Main_StatusInstallingMods"));
+                    UpdateProgress(90);
+                    modResults = await ModInstallerCoordinator.InstallSelectedAsync(
+                        ModInstallerCoordinator.BuildPipeline(),
+                        _modSelection,
+                        _gamePath,
+                        holoPatcherPath,
+                        p => UpdateProgress(90 + (p * 4 / 100)), // 90..94 slot for all mods combined
+                        UpdateStatus);
                 }
 
                 // Step 5: persistent uninstaller + registry
@@ -304,6 +334,24 @@ namespace KotorAccessibilityInstaller
                 string completionMessage = InstallerLocale.Get(
                     _updateOnly ? "Main_CompleteUpdate_Text" : "Main_CompleteInstall_Text");
                 completionMessage += InstallerLocale.Get(_updateOnly ? "Main_CompleteModUpdated" : "Main_CompleteModInstalled");
+
+                if (modResults.Count > 0)
+                {
+                    var summary = new StringBuilder();
+                    summary.AppendLine();
+                    summary.AppendLine();
+                    summary.AppendLine(InstallerLocale.Get("ModInstall_SummaryHeading"));
+                    foreach (var r in modResults)
+                    {
+                        if (r.Skipped)
+                            summary.AppendLine(InstallerLocale.Format("ModInstall_SummarySkipped_Format", r.Id));
+                        else if (r.Success)
+                            summary.AppendLine(InstallerLocale.Format("ModInstall_SummaryOk_Format", r.Id));
+                        else
+                            summary.AppendLine(InstallerLocale.Format("ModInstall_SummaryFailed_Format", r.Id, r.Error ?? "(no detail)"));
+                    }
+                    completionMessage += summary.ToString();
+                }
 
                 MessageBox.Show(
                     completionMessage,
@@ -343,6 +391,7 @@ namespace KotorAccessibilityInstaller
                 }
                 if (stagingRoot != null)
                     installationManager.CleanupStaging(stagingRoot);
+                HoloPatcherProvider.Cleanup(holoPatcherPath);
             }
         }
 
@@ -368,6 +417,9 @@ namespace KotorAccessibilityInstaller
             _launchCheckBox.Enabled = enabled;
             _readmeCheckBox.Enabled = enabled;
         }
+
+        private static bool AnyOptionalSelected(ModSelection selection) =>
+            selection != null && (selection.K1cp || selection.RestoredCutContent || selection.CompanionAndSwoopUpgrades);
 
         private void OpenReadme()
         {

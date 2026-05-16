@@ -68,7 +68,17 @@
     "Main_StatusApplying": "Patch wird auf swkotor.exe angewendet...",
     "Main_StatusCopyingPrism": "Sprachausgabe-Bridge (Prism) wird installiert...",
     "Main_StatusTweakingIni": "Stabilitäts-Tweaks für swkotor.ini werden angewendet...",
+    "Main_StatusInstallingMods": "Optionale Mods werden installiert...",
+    "Main_StatusDownloadingHoloPatcher": "HoloPatcher (Mod-Installer-Treiber) wird heruntergeladen...",
     "Main_StatusRegistering": "Installation wird registriert...",
+
+    "ModInstall_K1cpDownloading": "KOTOR 1 Community Patch wird von GitHub heruntergeladen...",
+    "ModInstall_K1cpStaging": "K1CP wird ins Staging entpackt...",
+    "ModInstall_K1cpApplying": "K1CP wird per HoloPatcher angewendet (kann eine Minute dauern)...",
+    "ModInstall_SummaryHeading": "Optionale Mods:",
+    "ModInstall_SummaryOk_Format": "  OK  {0}",
+    "ModInstall_SummarySkipped_Format": "  --  {0} (übersprungen)",
+    "ModInstall_SummaryFailed_Format": "  FEHLER  {0}: {1}",
     "Main_StatusInstallComplete": "Installation abgeschlossen.",
     "Main_StatusUpdateComplete": "Aktualisierung abgeschlossen.",
 

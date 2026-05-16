@@ -45,5 +45,63 @@ namespace KotorAccessibilityInstaller
         /// original download is deleted.
         /// </summary>
         public const string UninstallerExeName = "KotorAccessibility_Uninstaller.exe";
+
+        // ---------------------------------------------------------------------
+        // K1CP (KOTOR 1 Community Patch) — source pin
+        // ---------------------------------------------------------------------
+        // We pull from the GitHub repo's source tarball at a pinned commit SHA
+        // rather than `master`. This avoids surprise regressions if K1CP cuts
+        // a bad commit between our releases; bumping requires editing this
+        // constant and re-cutting an installer release.
+        //
+        // Current pin: 2026-02-09 commit, which IS the v1.10.1 release point
+        // (DeadlyStream uploaded 2 days later on 2026-02-11 with the same
+        // tslpatchdata content). See docs/installer.md for the recipe.
+
+        public const string K1cpRepoOwner = "KOTORCommunityPatches";
+        public const string K1cpRepoName = "K1_Community_Patch";
+        public const string K1cpPinnedRef = "4778ae5e2f5facc2bb6449cf7ffa3720e35a5b0f";
+        public const string K1cpDisplayVersion = "v1.10.1";
+
+        /// <summary>
+        /// HoloPatcher binary filename used at install time to drive
+        /// TSLPatcher-style mod installs headlessly (K1CP and similar).
+        /// Extracted from <see cref="HoloPatcherAssetName"/> in the system
+        /// temp dir; cached for the install run only.
+        /// </summary>
+        public const string HoloPatcherExeName = "HoloPatcher.exe";
+
+        /// <summary>
+        /// Upstream GitHub repo whose releases hold the HoloPatcher Windows
+        /// binary. The canonical OpenKotOR/PyKotor repo (formerly
+        /// OldRepublicDevs/PyKotor) re-tagged v1.80-patcher in 2025 but
+        /// attached no binary assets, so we pull from NickHugi/PyKotor —
+        /// the last upstream point with a real HoloPatcher_Windows_x64.zip.
+        /// </summary>
+        public const string HoloPatcherRepositoryUrl = "https://github.com/NickHugi/PyKotor";
+
+        /// <summary>
+        /// Pinned release tag on <see cref="HoloPatcherRepositoryUrl"/>.
+        /// We pin (rather than resolving "latest") because that repo's
+        /// "latest" release is the Holocron Toolset, not HoloPatcher.
+        /// </summary>
+        public const string HoloPatcherPinnedTag = "v1.60-patcher-beta4";
+
+        /// <summary>Display version surfaced in logs/UI.</summary>
+        public const string HoloPatcherDisplayVersion = "v1.60-beta4";
+
+        /// <summary>
+        /// Asset filename on the GitHub release. Upstream ships HoloPatcher
+        /// as a per-platform zip; we extract <see cref="HoloPatcherExeName"/>
+        /// out of <see cref="HoloPatcherExePathInsideZip"/>.
+        /// </summary>
+        public const string HoloPatcherAssetName = "HoloPatcher_Windows_x64.zip";
+
+        /// <summary>
+        /// Path inside <see cref="HoloPatcherAssetName"/> at which the
+        /// HoloPatcher.exe lives. The zip wraps the exe in a top-level
+        /// folder matching the asset name.
+        /// </summary>
+        public const string HoloPatcherExePathInsideZip = "HoloPatcher_Windows_x64/HoloPatcher.exe";
     }
 }

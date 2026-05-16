@@ -68,7 +68,17 @@
     "Main_StatusApplying": "Applying patch to swkotor.exe...",
     "Main_StatusCopyingPrism": "Installing speech bridge (Prism)...",
     "Main_StatusTweakingIni": "Applying stability tweaks to swkotor.ini...",
+    "Main_StatusInstallingMods": "Installing optional mods...",
+    "Main_StatusDownloadingHoloPatcher": "Downloading HoloPatcher (mod installer driver)...",
     "Main_StatusRegistering": "Registering installation...",
+
+    "ModInstall_K1cpDownloading": "Downloading KOTOR 1 Community Patch from GitHub...",
+    "ModInstall_K1cpStaging": "Unpacking K1CP into staging dir...",
+    "ModInstall_K1cpApplying": "Applying K1CP via HoloPatcher (this can take a minute)...",
+    "ModInstall_SummaryHeading": "Optional mods:",
+    "ModInstall_SummaryOk_Format": "  OK  {0}",
+    "ModInstall_SummarySkipped_Format": "  --  {0} (skipped)",
+    "ModInstall_SummaryFailed_Format": "  FAIL  {0}: {1}",
     "Main_StatusInstallComplete": "Installation complete.",
     "Main_StatusUpdateComplete": "Update complete.",
 
