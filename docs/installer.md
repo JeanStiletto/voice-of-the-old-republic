@@ -23,11 +23,10 @@ These filters collapse the ~50-mod kotor.neocities.org Spoiler-Free build down t
 
 **KOTOR 1 Community Patch (K1CP)** — the foundational bugfix compilation. Fixes hundreds of softlocks, broken triggers, missing scripts, quest-blocking issues. Without it, a blind playthrough is at real risk of hitting an unrecoverable state (Tatooine quest break, Manaan trial logic, etc.).
 
-- Source: DeadlyStream (`https://deadlystream.com/files/file/1258-kotor-1-community-patch/`)
-- Mirror: GitHub (`https://github.com/KOTORCommunityPatches/K1_Community_Patch`) — likely more automation-friendly than DeadlyStream's cookie-gated CDN
-- Installer: TSLPatcher (`tslpatchdata/` payload), drivable by HoloPatcher / PyKotor headlessly
-- Language story: base archive edits `dialog.tlk` in English. Official translation patches exist for German (Ian Starrider), French (Harlockin), Russian (two variants). Workflow is "extract base, drop translation patch contents into the `tslpatchdata` folder, then run TSLPatcher". Our installer needs to detect the game language and apply the matching patch.
-- Italian / Spanish: no official translation patch as of writing. Open question how to handle those locales — either ship English K1CP (breaks localised text) or skip K1CP for those users (leaves the softlocks). Needs decision.
+- Source: GitHub master at `https://github.com/KOTORCommunityPatches/K1_Community_Patch` — confirmed current with the latest DeadlyStream upload (K1CP v1.10.1, Feb 2026). DeadlyStream (`https://deadlystream.com/files/file/1258-kotor-1-community-patch/`) is the same content but cookie-gated. We pull the master tarball; no DeadlyStream auth needed.
+- Installer: HoloPatcher (K1CP migrated from TSLPatcher in v1.10.0; the bundled `INSTALL.exe` *is* HoloPatcher with `tslpatchdata/` next to it). HoloPatcher has a headless CLI: `holopatcher <game-path> <tslpatchdata-path>`.
+- Language story: base archive edits `dialog.tlk` in English. The repo's `tslpatchdata/translation_{german,french,russian}/` subfolders carry locale-specific `append.tlk` + `info.rtf` (translations by Ian Starrider, Harlockin, olegkuz1997, JayDominus). Our installer detects the locale via `dialog.tlk` header (offset 8, language ID 0=EN/1=FR/2=DE/3=IT/4=ES) and copies the matching `translation_*/append.tlk` over `tslpatchdata/append.tlk` before invoking HoloPatcher.
+- Italian / Spanish: no official translation patch. For those locales we install K1CP in English — the bugfix text appears in English even though the rest of the game stays localised. Tracked as a known limitation in `docs/known-issues.md` and surfaced to the user on the modding-info screen footnote.
 
 **Swoop Bike Upgrades** — restores two cut upgrade items (acceleration, obstacle damage reduction) that were referenced by the original swoop racing code but never shipped. Pure 2DA / UTI changes, no dialog, language-agnostic. Low-risk inclusion.
 
@@ -157,8 +156,8 @@ After a successful install of a Steam KOTOR copy, the install root contains:
 
 ### Open questions
 
-- Auto-download vs bundled redistribution: DeadlyStream forbids hotlinking/redistribution; their CDN uses cookies. Can we (a) use the GitHub mirror for K1CP, (b) get author permission to redistribute, or (c) script a "user clicks a link, file lands in our staging folder" flow? Permission is the cleanest path.
-- Localisation detection: read `swkotor.ini` or `dialog.tlk` header to pick the K1CP translation patch. Italian / Spanish fallback strategy needed.
+- Auto-download vs bundled redistribution: **resolved for K1CP** — pull from GitHub master at install time, same flow as our own `.kpatch`. No bundling, no DeadlyStream auth. Other survivors still TBD per-mod: Swoop Bike Upgrades, JDR, Party Conversations on Ebon Hawk, Thematic Companions are DeadlyStream-only as of this writing; widescreen (UniWS) is hosted on WSGF and KOTOR High Resolution Menus is DeadlyStream-only. Permission requests where needed.
+- Localisation detection: `dialog.tlk` header at offset 8 carries a uint32 language ID (0=EN, 1=FR, 2=DE, 3=IT, 4=ES). The installer already has `LanguageDetector` for its own UI; mod-side detection should reuse the same lookup.
 - Strict-vanilla toggle: minimum (K1CP only) vs vanilla+ (K1CP + Swoop + Thematic). Surface in installer UI in screen-reader-friendly form.
-- Update story: K1CP versions itself frequently. Pin a known-good version per installer release rather than always pulling latest, to avoid surprise regressions for users.
+- Update story: K1CP versions itself frequently. Pin a known-good commit SHA (not `master`) per installer release so a mid-release K1CP regression doesn't break new installs.
 - Uninstall: TSLPatcher mods write a backup folder. Our installer needs to expose a clean uninstall path that restores those backups in reverse order.

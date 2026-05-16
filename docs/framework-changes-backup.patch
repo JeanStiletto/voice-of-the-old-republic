@@ -282,5 +282,67 @@ index a25ef16..7015436 100644
 +                    OutputDebugStringA(debugMsg);
 +                }
              }
- 
+
              // Flush instruction cache
+
+# ---------------------------------------------------------------------------
+# Added 2026-05-16 — PR-5 (AllowVersionMismatch opt-in).
+# See docs/upstream-prs.md PR-5 for rationale. Lets the installer proceed when
+# swkotor.exe has been legitimately modified (UniWS widescreen) and the SHA
+# would otherwise mismatch the manifest. Per-hook original_bytes verification
+# remains as the actual safety net.
+diff --git a/src/KPatchCore/Applicators/PatchApplicator.cs b/src/KPatchCore/Applicators/PatchApplicator.cs
+index af35b32..1efd4cc 100644
+--- a/src/KPatchCore/Applicators/PatchApplicator.cs
++++ b/src/KPatchCore/Applicators/PatchApplicator.cs
+@@ -37,6 +37,19 @@ public class PatchApplicator
+         /// Path to KotorPatcher.dll (if null, assumes it's in same directory as game exe)
+         /// </summary>
+         public string? PatcherDllPath { get; init; }
++
++        /// <summary>
++        /// When true, a SHA-256 mismatch between the detected swkotor.exe and the
++        /// manifest's supported_versions becomes a warning instead of a hard error.
++        /// Per-hook original_bytes verification (in StaticHookApplicator) remains
++        /// the gate against applying static hooks to bytes that don't match.
++        ///
++        /// Intended for callers that have legitimately modified the executable
++        /// before our install — e.g. an installer that applied UniWS widescreen
++        /// patches first and knows the resulting hash will not match any baked
++        /// supported_versions entry.
++        /// </summary>
++        public bool AllowVersionMismatch { get; init; } = false;
+     }
+
+     /// <summary>
+@@ -190,13 +203,24 @@ public class PatchApplicator
+             var versionCheckResult = GameVersionValidator.ValidateAllPatchesSupported(manifests, gameVersion);
+             if (!versionCheckResult.Success)
+             {
+-                return new InstallResult
++                if (options.AllowVersionMismatch)
+                 {
+-                    Success = false,
+-                    Error = versionCheckResult.Error,
+-                    DetectedVersion = gameVersion,
+-                    Messages = messages
+-                };
++                    // Per-hook original_bytes verification (StaticHookApplicator) is
++                    // the real safety net; surface the mismatch as a warning so the
++                    // operator sees it in the log and continue.
++                    messages.Add("WARNING: " + versionCheckResult.Error);
++                    messages.Add("  AllowVersionMismatch=true — proceeding with per-hook byte verification only.");
++                }
++                else
++                {
++                    return new InstallResult
++                    {
++                        Success = false,
++                        Error = versionCheckResult.Error,
++                        DetectedVersion = gameVersion,
++                        Messages = messages
++                    };
++                }
+             }
+
+             // Check for hook conflicts

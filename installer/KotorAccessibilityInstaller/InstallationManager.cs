@@ -110,7 +110,10 @@ namespace KotorAccessibilityInstaller
                     GameExePath = gameExe,
                     PatchIds = new List<string> { Config.PatchId },
                     PatcherDllPath = patcherDll,
-                    CreateBackup = true
+                    // No backup: KOTOR is always reacquirable via Steam ("Verify integrity
+                    // of game files") or by reinstalling from GoG. Avoids cluttering the
+                    // game folder with timestamped swkotor.exe.backup.* files.
+                    CreateBackup = false
                 });
             }
             finally

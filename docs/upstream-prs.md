@@ -286,6 +286,74 @@ pattern.
 
 ---
 
+### PR-5. `PatchApplicator.InstallOptions.AllowVersionMismatch`
+
+**Repo:** `LaneDibello/Kotor-Patch-Manager`
+**Status:** Designed, applied locally, not yet drafted. Unblocks installer interop
+with widescreen and other community exe-modifying mods.
+**Discovered:** Session 11 (2026-05-16) while designing the bundled-mods install
+flow in our accessibility installer.
+
+**What.** Add `bool AllowVersionMismatch { get; init; } = false;` to
+`PatchApplicator.InstallOptions`. When the caller sets it true, a SHA-256
+mismatch between the detected `swkotor.exe` and any patch manifest's
+`[patch.supported_versions]` dict is demoted from a hard error to a warning
+in `InstallResult.Messages`. The install proceeds and relies on the per-hook
+`original_bytes` verification at `StaticHookApplicator.cs:74` as the actual
+safety net for static hooks.
+
+**Why.** KPatchCore's current `GameVersionValidator.ValidateAllPatchesSupported`
+gate at `PatchApplicator.cs:190` short-circuits the install with "unsupported
+game version" for any exe whose SHA-256 isn't pre-baked into the manifest.
+This is overly strict given that:
+
+- `StaticHookApplicator` already performs a byte-level check at apply time —
+  for each static hook it reads `OriginalBytes.Length` bytes at `hook.Address`
+  and aborts with a clear mismatch error if they differ. That's the real
+  safety net; the SHA check is a friendlier early failure for the common case.
+- DLL-only patches (no static hooks) don't actually corrupt anything when run
+  on an unexpected exe — at worst the runtime hooks miss their targets and
+  the DLL silently no-ops. Degradation, not corruption.
+- Any modification of `swkotor.exe` outside the patcher's awareness (UniWS
+  widescreen, ndix UR's HR Menus, future Aspyr/Steam updates) trips the gate
+  even when our hooks would still apply cleanly because the modifications
+  touched unrelated bytes.
+
+**Concrete use case (ours).** Our accessibility installer wants to bundle the
+canonical community widescreen mods (UniWS + KOTOR High Resolution Menus, per
+the neocities full build's "Essential / 1" tier). Both patch `swkotor.exe`.
+Without this PR, installing widescreen first changes the exe hash and our
+accessibility `.kpatch` refuses to apply afterwards. Re-implementing widescreen
+as a KPatchCore patch would diverge from the community-canonical setup the user
+explicitly wants.
+
+**Files to change:**
+
+- `src/KPatchCore/Applicators/PatchApplicator.cs` — `InstallOptions` record gains
+  `AllowVersionMismatch` (default false), and the post-validator branch demotes
+  the failure to a `Messages.Add("WARNING: ...")` + continue when the flag is
+  true.
+
+Total: 1 file, ~15 lines, fully additive. Default behavior unchanged for every
+existing caller (`kdev apply`, upstream `cli-kpatch`, etc.).
+
+**Risks.** Low. The opt-in is the caller's affirmative statement that the
+modified-exe scenario is expected. For static-hook patches the byte verification
+at `StaticHookApplicator.cs:74` is a strict gate and will fail any hook whose
+original bytes don't match. For DLL-only patches the worst case is silently
+inert hooks at runtime — a regression compared to "early refusal" but not a
+corruption risk.
+
+**Open questions.**
+
+- Whether the warning text should also recommend a manifest update path
+  (i.e., "add hash X to your supported_versions to suppress this warning").
+  Probably yes — surfaces the cleaner long-term fix.
+- Whether to add the same flag to `cli-kpatch` as `--allow-version-mismatch`
+  so command-line callers have parity. Trivial follow-up.
+
+---
+
 ## Conventions
 
 - One PR per coherent change. Keep them small and reviewable.

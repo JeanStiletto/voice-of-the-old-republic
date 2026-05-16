@@ -183,7 +183,8 @@ namespace KotorAccessibilityInstaller
         }
 
         /// <summary>
-        /// Welcome → Modding-info screen → Main install. Each form can cancel the chain.
+        /// Welcome → Base-components info → Optional-mods checkboxes → Main install.
+        /// Each form can cancel the chain.
         /// </summary>
         private static void RunFullInstallFlow(string gamePath, string pathArgOverride, string latestVersion)
         {
@@ -195,17 +196,26 @@ namespace KotorAccessibilityInstaller
                 return;
             }
 
-            // New: modding-info screen between welcome and main install.
+            // Base-components info: accessibility mod + Prism + widescreen (always installed).
             var infoForm = new ModdingInfoForm();
             Application.Run(infoForm);
             if (!infoForm.ProceedWithInstall)
             {
-                Logger.Info("Installation cancelled from modding-info screen");
+                Logger.Info("Installation cancelled from base-components screen");
+                return;
+            }
+
+            // Optional mods: K1CP / cut content / companion + swoop. All default on.
+            var selectionForm = new ModSelectionForm();
+            Application.Run(selectionForm);
+            if (!selectionForm.ProceedWithInstall)
+            {
+                Logger.Info("Installation cancelled from mod-selection screen");
                 return;
             }
 
             string resolvedPath = pathArgOverride ?? DetectGamePath() ?? gamePath;
-            Application.Run(new MainForm(resolvedPath, language: welcomeForm.SelectedLanguage));
+            Application.Run(new MainForm(resolvedPath, language: welcomeForm.SelectedLanguage, modSelection: selectionForm.Selection));
         }
 
         public static void PerformUninstall(string gamePath)
@@ -214,10 +224,9 @@ namespace KotorAccessibilityInstaller
 
             try
             {
-                // Restore swkotor.exe from the most recent install-time backup, if any.
-                // Backups land next to swkotor.exe as swkotor.exe.backup.YYYYMMDD_HHMMSS,
-                // written by KPatchCore.BackupManager.
-                RestoreLatestBackup(gamePath);
+                // No restore: install no longer creates swkotor.exe.backup.* files.
+                // The uninstall confirmation text tells the user to verify game
+                // files via Steam or reinstall from GoG to get vanilla back.
 
                 // Remove patcher runtime files from game root.
                 string[] runtimeFiles =
@@ -257,39 +266,6 @@ namespace KotorAccessibilityInstaller
                 Logger.Error("Uninstallation failed", ex);
                 Logger.Flush();
                 throw;
-            }
-        }
-
-        private static void RestoreLatestBackup(string gamePath)
-        {
-            try
-            {
-                string exePath = Path.Combine(gamePath, GameExeName);
-                var backups = Directory.GetFiles(gamePath, GameExeName + ".backup.*");
-                if (backups.Length == 0)
-                {
-                    Logger.Warning("No backup of swkotor.exe found; leaving current exe in place.");
-                    return;
-                }
-
-                // KPatchCore writes timestamped backup names. Picking the newest by name
-                // (lexicographic == chronological for the YYYYMMDD_HHMMSS format).
-                Array.Sort(backups);
-                string newest = backups[^1];
-                // Skip the sidecar JSON file the backup manager writes (.backup.<ts>.json)
-                if (newest.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (backups.Length < 2) return;
-                    newest = backups[^2];
-                }
-
-                Logger.Info($"Restoring {GameExeName} from backup: {Path.GetFileName(newest)}");
-                File.Copy(newest, exePath, overwrite: true);
-            }
-            catch (Exception ex)
-            {
-                Logger.Warning($"Could not restore swkotor.exe backup: {ex.Message}. " +
-                               "Verify game files via Steam if the executable is corrupted.");
             }
         }
 

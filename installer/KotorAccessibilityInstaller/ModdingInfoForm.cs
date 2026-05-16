@@ -6,13 +6,14 @@ using System.Windows.Forms;
 namespace KotorAccessibilityInstaller
 {
     /// <summary>
-    /// Screen inserted between the welcome wizard and the main install form.
-    /// Surfaces the "Mods to bundle" section from docs/installer.md in a
-    /// screen-reader-friendly form (linear list, group headings, no tables).
+    /// Screen inserted between the welcome wizard and the mod-selection screen.
+    /// Informs the user about the components that are ALWAYS installed
+    /// (accessibility mod, Prism speech bridge, widescreen patches) — these are
+    /// not user-selectable because the mod depends on them for basic functionality.
+    /// User-optional mods live in <see cref="ModSelectionForm"/>.
     ///
-    /// Uses a single read-only TextBox so screen readers can navigate the
-    /// content line-by-line with arrow keys rather than fighting non-focusable
-    /// Labels.
+    /// Uses a single read-only TextBox so screen readers can navigate the content
+    /// line-by-line with arrow keys rather than fighting non-focusable Labels.
     /// </summary>
     public class ModdingInfoForm : Form
     {
@@ -31,8 +32,13 @@ namespace KotorAccessibilityInstaller
             InstallerLocale.OnLanguageChanged += ApplyLocale;
             FormClosing += (s, e) =>
             {
+                if (!ProceedWithInstall && !CancelConfirm.ConfirmCancel(this))
+                {
+                    e.Cancel = true;
+                    return;
+                }
                 InstallerLocale.OnLanguageChanged -= ApplyLocale;
-                if (!ProceedWithInstall) Logger.Info("User closed modding-info dialog without proceeding");
+                if (!ProceedWithInstall) Logger.Info("User closed base-components dialog without proceeding");
             };
         }
 
@@ -109,25 +115,25 @@ namespace KotorAccessibilityInstaller
 
         private static string BuildContent()
         {
-            // Read order matches the section flow in docs/installer.md: bundle,
-            // exclusions, optional add-ons, l10n footnote.
+            // Read order: accessibility mod → Prism → widescreen. Each section
+            // gives a short blurb plus a credit line where relevant.
             var sb = new StringBuilder();
 
             AppendSection(sb,
-                InstallerLocale.Get("ModdingInfo_BundleHeading"),
-                InstallerLocale.Get("ModdingInfo_BundleBody"));
+                InstallerLocale.Get("ModdingInfo_AccessibilityHeading"),
+                InstallerLocale.Get("ModdingInfo_AccessibilityBody"));
 
             AppendSection(sb,
-                InstallerLocale.Get("ModdingInfo_FiltersHeading"),
-                InstallerLocale.Get("ModdingInfo_FiltersBody"));
+                InstallerLocale.Get("ModdingInfo_PrismHeading"),
+                InstallerLocale.Get("ModdingInfo_PrismBody"));
 
             AppendSection(sb,
-                InstallerLocale.Get("ModdingInfo_OptionalHeading"),
-                InstallerLocale.Get("ModdingInfo_OptionalBody"));
+                InstallerLocale.Get("ModdingInfo_WidescreenHeading"),
+                InstallerLocale.Get("ModdingInfo_WidescreenBody"));
 
             AppendSection(sb,
-                InstallerLocale.Get("ModdingInfo_FootnoteHeading"),
-                InstallerLocale.Get("ModdingInfo_FootnoteBody"));
+                InstallerLocale.Get("ModdingInfo_IniTweaksHeading"),
+                InstallerLocale.Get("ModdingInfo_IniTweaksBody"));
 
             return sb.ToString().TrimEnd();
         }

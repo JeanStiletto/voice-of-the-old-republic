@@ -12,6 +12,8 @@ namespace KotorAccessibilityInstaller
         private string _gamePath;
         private readonly bool _updateOnly;
         private readonly string _language;
+        private readonly ModSelection _modSelection;
+        private bool _installFinished;
 
         private Label _titleLabel;
         private Label _statusLabel;
@@ -24,13 +26,16 @@ namespace KotorAccessibilityInstaller
         private CheckBox _launchCheckBox;
         private CheckBox _readmeCheckBox;
 
-        public MainForm(string detectedGamePath, bool updateOnly = false, string language = null)
+        public MainForm(string detectedGamePath, bool updateOnly = false, string language = null, ModSelection modSelection = null)
         {
             _gamePath = detectedGamePath;
             _updateOnly = updateOnly;
             _language = language;
+            // Null modSelection happens on the update-only path (we don't re-prompt for
+            // optional mods on a kpatch update). Treat as "skip optional installs".
+            _modSelection = modSelection;
             InitializeComponents();
-            Logger.Info($"MainForm initialized (updateOnly: {updateOnly}, language: {language ?? "none"})");
+            Logger.Info($"MainForm initialized (updateOnly: {updateOnly}, language: {language ?? "none"}, modSelection: {modSelection?.ToString() ?? "none"})");
         }
 
         private void InitializeComponents()
@@ -132,6 +137,14 @@ namespace KotorAccessibilityInstaller
             string body = $"{_titleLabel.Text}. {_statusLabel.Text}";
             AccessibleDescription = body;
             _installButton.AccessibleDescription = body;
+
+            FormClosing += (s, e) =>
+            {
+                if (!_installFinished && !CancelConfirm.ConfirmCancel(this))
+                {
+                    e.Cancel = true;
+                }
+            };
         }
 
         private void BrowseButton_Click(object sender, EventArgs e)
@@ -263,6 +276,19 @@ namespace KotorAccessibilityInstaller
                 UpdateProgress(85);
                 await Task.Run(() => installationManager.InstallPrismRuntime());
 
+                // Step 4.5: apply community-recommended stability tweaks to swkotor.ini
+                // (V-Sync, Frame Buffer, Disable Vertex Buffer Objects, FullScreen).
+                // Best-effort: a failure here doesn't roll back the install — the mod
+                // still works without these tweaks, the user just doesn't get the
+                // stability boost.
+                UpdateStatus(InstallerLocale.Get("Main_StatusTweakingIni"));
+                UpdateProgress(90);
+                var iniResult = await Task.Run(() => SwkotorIniTweaker.ApplyAccessibilityDefaults(_gamePath));
+                if (!iniResult.Success)
+                {
+                    Logger.Warning($"Stability tweaks failed: {iniResult.Error}");
+                }
+
                 // Step 5: persistent uninstaller + registry
                 string uninstallerPath = installationManager.CopyUninstaller();
 
@@ -290,6 +316,7 @@ namespace KotorAccessibilityInstaller
                 if (_readmeCheckBox.Checked) OpenReadme();
                 if (_launchCheckBox.Checked) LaunchGame();
 
+                _installFinished = true;
                 Close();
             }
             catch (Exception ex)

@@ -7,8 +7,9 @@ namespace KotorAccessibilityInstaller
 {
     public class WelcomeForm : Form
     {
-        // KOTOR 1 store page; works regardless of regional Steam locale.
+        // KOTOR 1 store pages; both work regardless of regional locale.
         private const string KotorSteamPageUrl = "https://store.steampowered.com/app/32370/";
+        private const string KotorGogPageUrl = "https://www.gog.com/en/game/star_wars_knights_of_the_old_republic";
 
         private ComboBox _languageComboBox;
         private Label _titleLabel;
@@ -20,6 +21,7 @@ namespace KotorAccessibilityInstaller
         private Label _gameTitleLabel;
         private Label _gameDescriptionLabel;
         private Button _openSteamPageButton;
+        private Button _openGogPageButton;
         private Button _backButton;
         private Button _installButton;
 
@@ -131,6 +133,13 @@ namespace KotorAccessibilityInstaller
                 Process.Start(new ProcessStartInfo(KotorSteamPageUrl) { UseShellExecute = true });
             };
 
+            _openGogPageButton = new Button { Location = new Point(250, 185), Size = new Size(220, 35) };
+            _openGogPageButton.Click += (s, e) =>
+            {
+                Logger.Info($"Opening KOTOR GoG page: {KotorGogPageUrl}");
+                Process.Start(new ProcessStartInfo(KotorGogPageUrl) { UseShellExecute = true });
+            };
+
             _backButton = new Button { Location = new Point(20, 245), Size = new Size(140, 35) };
             _backButton.Click += (s, e) => ShowPage1();
 
@@ -143,7 +152,7 @@ namespace KotorAccessibilityInstaller
 
             _page2.Controls.AddRange(new Control[]
             {
-                _gameTitleLabel, _gameDescriptionLabel, _openSteamPageButton, _backButton, _installButton
+                _gameTitleLabel, _gameDescriptionLabel, _openSteamPageButton, _openGogPageButton, _backButton, _installButton
             });
 
             Controls.Add(_page1);
@@ -151,6 +160,11 @@ namespace KotorAccessibilityInstaller
 
             FormClosing += (s, e) =>
             {
+                if (!ProceedWithInstall && !CancelConfirm.ConfirmCancel(this))
+                {
+                    e.Cancel = true;
+                    return;
+                }
                 InstallerLocale.OnLanguageChanged -= ApplyLocale;
                 if (!ProceedWithInstall) Logger.Info("User closed welcome dialog without proceeding");
             };
@@ -185,6 +199,7 @@ namespace KotorAccessibilityInstaller
             _gameTitleLabel.Text = InstallerLocale.Get("Welcome_GameTitle");
             _gameDescriptionLabel.Text = InstallerLocale.Get("Welcome_GameDescription");
             _openSteamPageButton.Text = InstallerLocale.Get("Welcome_OpenSteamPage");
+            _openGogPageButton.Text = InstallerLocale.Get("Welcome_OpenGogPage");
             _backButton.Text = InstallerLocale.Get("Welcome_BackButton");
             _installButton.Text = InstallerLocale.Get("Welcome_NextButton");
 
