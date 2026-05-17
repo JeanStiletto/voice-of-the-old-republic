@@ -23,6 +23,7 @@
 #include "menus_charsheet.h"
 #include "menus_extract.h"
 #include "menus_internal.h"
+#include "menus_store.h"
 #include "tolk.h"
 
 using namespace acc::engine;  // IdentifyPanel, PanelKind, kInput*, etc.
@@ -355,6 +356,17 @@ void RebindChain(void* panel) {
         //   * size == 1 elsewhere — descriptive label blob; skipped.
         void** vt = *reinterpret_cast<void***>(c);
         if (reinterpret_cast<uintptr_t>(vt) == kVtableListBox) {
+            // Store mode filter: the engine keeps BOTH shopitems and
+            // invitems listboxes in panel.controls regardless of which
+            // is currently visible. Walking the hidden one's children
+            // bleeds unreachable rows into the chain — the user nav
+            // would land on items they can neither examine nor trade.
+            // Skip the listbox entirely if it's the hidden one. The
+            // three action buttons live in panel.controls (not in a
+            // listbox) so they stay in the chain.
+            if (acc::menus::store::IsHiddenStoreListBox(panel, c)) {
+                continue;
+            }
             auto* lbList = reinterpret_cast<CExoArrayList*>(
                 reinterpret_cast<unsigned char*>(c) + kListBoxControlsOffset);
             if (lbList && lbList->data) {

@@ -690,6 +690,27 @@ enum class Id : int {
     AxisNorthSouth,
     AxisEastWest,
 
+    // ---- Store / trading panel (CSWGuiStore).
+    //      The store has two modes (Buy / Sell) toggled by the
+    //      examine_button; mode is detected from
+    //      shopitems_listbox.bit_flags bit 1 (language-agnostic — see
+    //      engine_offsets.h). The chain-step suffix appends price + stock
+    //      to each item announce:
+    //
+    //          FmtStorePriceBuyFinite    — buy mode, finite shop stock.
+    //              Two `%d` (price, stock count).
+    //          FmtStorePriceBuyUnlimited — buy mode, infinite shop stock.
+    //              One `%d` (price).
+    //          FmtStorePriceSell         — sell mode (your inventory).
+    //              Two `%d` (merchant's offer, count you own).
+    //          StoreModeBuy / StoreModeSell — spoken when the mode bit
+    //              flips. No args.
+    FmtStorePriceBuyFinite,
+    FmtStorePriceBuyUnlimited,
+    FmtStorePriceSell,
+    StoreModeBuy,
+    StoreModeSell,
+
     Count_,
 };
 

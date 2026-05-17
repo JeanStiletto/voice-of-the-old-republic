@@ -910,3 +910,71 @@ constexpr size_t kDialogMessageLabelOffset            = 0x1ca4;
 //   message_listbox  @+0x2cfc   (terminal output text)
 //   obscure_label    @+0x34dc
 constexpr size_t kDialogComputerMessageListBoxOffset  = 0x2cfc;
+
+// ---------------------------------------------------------------------------
+// CSWGuiStore — merchant/trading panel (PanelKind::Store, slot 0x84 in
+// CGuiInGame). Two listboxes plus a description listbox; the mode-toggle
+// flips which one is visible.
+//
+// Mode detection is language-agnostic: ShowBuyGUI sets bit 1 of
+// shopitems_listbox.navigable.control.bit_flags (and clears it on
+// invitems_listbox); ShowSellGUI does the inverse. We read either
+// listbox's CSWGuiControl-level bit_flags (offset +0x44 within the
+// listbox, identical to every other CSWGuiControl) and decide.
+//
+// Row entries (rows of shopitems / invitems listboxes) are
+// CSWGuiStoreItemEntry (size 0x394) whose first 0x1c4 bytes are the
+// row's CSWGuiButton — same as the chain sees. The item handle lives
+// at +0x1c4 within the entry.
+//
+// GetItemBuyValue / GetItemSellValue take a CSWSItem*, not a handle. The
+// handle is *client*-side, so we run it through CServerExoApp::
+// ClientToServerObjectId before CServerExoApp::GetItemByGameObjectID.
+// CSWSItem.stack_size + bit_flags expose the stock count / infinite-stock
+// flag (bit 2 = infinite, per CSWGuiStore::OnControlEntered).
+// ---------------------------------------------------------------------------
+constexpr uintptr_t kVtableCSWGuiStore                     = 0x00756e38;
+constexpr uintptr_t kVtableCSWGuiStoreItemEntry            = 0x00756850;
+
+constexpr size_t    kStoreShopItemsListBoxOffset           = 0x1480;
+constexpr size_t    kStoreInvItemsListBoxOffset            = 0x1760;
+constexpr size_t    kStoreDescriptionListBoxOffset         = 0x1a40;
+constexpr size_t    kStoreCancelButtonOffset               = 0x1d20;
+constexpr size_t    kStoreToggleButtonOffset               = 0x1ee4;  // examine_button in struct DB
+constexpr size_t    kStoreAcceptButtonOffset               = 0x20a8;
+constexpr size_t    kStoreItemIdOffset                     = 0x226c;
+constexpr size_t    kStoreCostValueLabelOffset             = 0xbc0;
+constexpr size_t    kStoreStockValueLabelOffset            = 0xe40;
+constexpr size_t    kStoreCreditsValueLabelOffset          = 0x1200;
+
+// Bit 1 (0x02) of the listbox's CSWGuiControl.bit_flags is set on the
+// "visible" listbox by ShowBuyGUI / ShowSellGUI. Same offset (+0x44)
+// every other CSWGuiControl uses.
+constexpr size_t    kControlBitFlagsOffset                 = 0x44;
+constexpr uint32_t  kStoreListBoxVisibleBit                = 0x2;
+
+// CSWGuiStoreItemEntry.obj_id @ +0x1c4 — the client-side game-object
+// handle for the row's CSWSItem. Resolve via ClientToServerObjectId then
+// GetItemByGameObjectID.
+constexpr size_t    kStoreItemEntryObjIdOffset             = 0x1c4;
+
+// CSWSItem.stack_size @ +0xfc, CSWSItem.bit_flags @ +0x108. bit 2 (0x04)
+// in bit_flags = infinite stock (decomp branch in
+// CSWGuiStore::OnControlEntered: `if ((item->bit_flags & 4) == 0)`).
+constexpr size_t    kSwsItemStackSizeOffset                = 0xfc;
+constexpr size_t    kSwsItemBitFlagsOffset                 = 0x108;
+constexpr uint32_t  kSwsItemInfiniteStockBit               = 0x4;
+
+// CSWGuiStore::GetItemBuyValue / GetItemSellValue — __thiscall returning
+// ulong, single CSWSItem* argument. Both pop 4 bytes (callee).
+constexpr uintptr_t kAddrCSWGuiStoreGetItemBuyValue        = 0x006c0790;
+constexpr uintptr_t kAddrCSWGuiStoreGetItemSellValue       = 0x006c07f0;
+
+// CServerExoApp::ClientToServerObjectId — __thiscall(ulong) -> ulong.
+// CServerExoApp::GetItemByGameObjectID — __thiscall(ulong) -> CSWSItem*.
+constexpr uintptr_t kAddrServerExoAppClientToServerObjectId = 0x004aea30;
+constexpr uintptr_t kAddrServerExoAppGetItemByGameObjectID  = 0x004ae760;
+
+// AppManager indirection to CServerExoApp. AppManager+0x8 → CServerExoApp*.
+// (Same constant as engine_player.h's kAppManagerServerOffsetPlayer.)
+constexpr size_t    kAppManagerServerExoAppOffset          = 0x8;

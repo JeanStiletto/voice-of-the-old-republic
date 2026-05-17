@@ -37,6 +37,7 @@
 #include "menus_editbox.h"   // Editbox (chargen Name) dispatcher + monitor
 #include "menus_chain.h"     // Step 5 — chain navigation lifted out
 #include "menus_monitors.h"  // Post-Step-5 — general per-tick monitors
+#include "menus_store.h"     // Store / trading panel — price+stock suffix + mode announce
 #include "engine_input.h"
 #include "engine_manager.h"
 #include "engine_offsets.h"
@@ -1799,6 +1800,13 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             // here. See menus_chargen_skills.h.
             acc::menus::chargen_skills::AnnounceChainStepDescription(
                 g_chainPanel, e.control);
+            // Store panel: append " — Preis N Credits, Lager M" after
+            // the item-name announce. Mode (Buy/Sell) is read from the
+            // listbox visibility bit, item handle from the row, price
+            // via GetItemBuyValue/GetItemSellValue thiscall. No-op on
+            // every other panel and on the three action buttons.
+            acc::menus::store::AnnounceChainStepSuffix(
+                g_chainPanel, e.control);
             int cursorX = e.cx;
             int cursorY = e.cy;
             if (!e.textOnly) {
@@ -2099,6 +2107,9 @@ void TickMonitors() {
     acc::menus::monitors::TickGeneralMonitors();
     acc::menus::listbox::TickListboxMonitors();
     acc::menus::editbox::TickEditboxMonitors();
+    // Store-panel mode flip (Buy↔Sell) — read the visibility bit on the
+    // active store panel's listboxes each tick and announce on change.
+    acc::menus::store::TickMonitorMode();
 }
 
 // Drain the menu-side pending-op queue. Called from core_tick::Dispatch

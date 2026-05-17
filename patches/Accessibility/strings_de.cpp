@@ -252,6 +252,12 @@ const char* Get(Id id) {
         case Id::AxisNorthSouth:             return "Nord-S\xFC""d";   // Nord-Süd
         case Id::AxisEastWest:               return "Ost-West";
 
+        case Id::FmtStorePriceBuyFinite:    return "Preis %d Credits, Lager %d";
+        case Id::FmtStorePriceBuyUnlimited: return "Preis %d Credits, Lager unbegrenzt";
+        case Id::FmtStorePriceSell:         return "Preis %d Credits, du besitzt %d";
+        case Id::StoreModeBuy:              return "Modus Kaufen";
+        case Id::StoreModeSell:             return "Modus Verkaufen";
+
         case Id::Count_:               return "";
     }
     return "";
