@@ -968,6 +968,18 @@ static void AnnounceNewFocusedControl(int n, void* panel, void* newControl) {
         IsListBox(newControl) &&
         IdentifyPanel(panel) == PanelKind::Container;
 
+    // Store mode flip (ShowBuyGUI / ShowSellGUI) ends with the engine
+    // calling SetActiveControl on whichever item-listbox just became
+    // visible. FromControl on a listbox returns the concatenation of
+    // every row label — for a merchant with 30 items that's a full
+    // inventory dump after every G press. We already announce "Modus
+    // Kaufen" / "Modus Verkaufen" from TickMonitorMode and rebind the
+    // chain; the user can Up/Down to hear individual items. Suppress
+    // the listbox-blob speech the same way Container does.
+    bool suppressForStore =
+        IsListBox(newControl) &&
+        acc::menus::store::IsStorePanel(panel);
+
     if (source) {
         acclog::Write("Menus.SetActive", "#%d panel=%p new=%p id=%d src=%s text=\"%s\"",
                       n, panel, newControl, id, source, text);
@@ -978,7 +990,7 @@ static void AnnounceNewFocusedControl(int n, void* panel, void* newControl) {
                       n, panel, newControl, id, vtbl);
     }
 
-    if (suppressForContainer) return;
+    if (suppressForContainer || suppressForStore) return;
 
     acc::menus::s_pendingAnnouncePanel   = panel;
     acc::menus::s_pendingAnnounceControl = newControl;
@@ -2135,12 +2147,18 @@ void TickMonitors() {
     // (focus / panel-contents / dialog-reply) live in menus_monitors.cpp;
     // listbox-paired monitors (Container, EquipPicker, give-mode key poll)
     // co-locate with their spec entries in menus_listbox.cpp.
+    //
+    // Store runs FIRST so its trade-outcome speech ("Verkauft" /
+    // "Gekauft" / "Kann nicht …") and chain rebind land before the focus
+    // monitor's per-tick re-extract of the focused chain row. Without
+    // this ordering, a successful sell speaks the next item's name
+    // (focus monitor saw the row's text mutate when the listbox
+    // repopulated) BEFORE the outcome — sounds like the announce is
+    // about a different item than the user just sold.
+    acc::menus::store::TickMonitorMode();
     acc::menus::monitors::TickGeneralMonitors();
     acc::menus::listbox::TickListboxMonitors();
     acc::menus::editbox::TickEditboxMonitors();
-    // Store-panel mode flip (Buy↔Sell) — read the visibility bit on the
-    // active store panel's listboxes each tick and announce on change.
-    acc::menus::store::TickMonitorMode();
 }
 
 // Drain the menu-side pending-op queue. Called from core_tick::Dispatch
