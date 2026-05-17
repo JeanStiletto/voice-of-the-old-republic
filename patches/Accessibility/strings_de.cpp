@@ -261,6 +261,9 @@ const char* Get(Id id) {
         case Id::StoreBought:               return "Gekauft";
         case Id::StoreCannotSell:           return "Kann nicht verkauft werden";
         case Id::StoreCannotBuy:            return "Kann nicht gekauft werden";
+        case Id::FmtStoreSoldFor:           return "Verkauft f\xFC""r %d Credits";  // für
+        case Id::FmtStoreBoughtFor:         return "Gekauft f\xFC""r %d Credits";   // für
+        case Id::FmtStoreNotEnoughCredits:  return "Nicht genug Credits, brauchst %d, hast %d";
 
         case Id::Count_:               return "";
     }

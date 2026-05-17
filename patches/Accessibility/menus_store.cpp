@@ -200,12 +200,25 @@ int g_lastSeenActiveListBoxSize = -1;
 // ticks with no delta (failure). The mode at queue time decides which
 // success/fail phrase fires — if the user toggles mode mid-watch, the
 // arm is dropped silently so we don't speak a stale phrase.
-bool g_tradeWatchArmed         = false;
-Mode g_tradeWatchMode          = Mode::Unknown;
-int  g_tradeWatchSizeAtArm     = -1;
-int  g_tradeWatchTicksRemaining = 0;
+bool     g_tradeWatchArmed          = false;
+Mode     g_tradeWatchMode           = Mode::Unknown;
+int      g_tradeWatchSizeAtArm      = -1;
+int      g_tradeWatchTicksRemaining = 0;
+// Price of the item at dispatch time. Reused for the success speech so
+// the user hears "Verkauft für 16 Credits" instead of plain "Verkauft".
+uint32_t g_tradeWatchPrice          = 0;
 
 constexpr int kTradeWatchTicks = 4;  // ~64ms at 60fps — engine commits sync
+
+uint32_t ReadStorePlayerGold(void* panel) {
+    if (!panel) return 0;
+    __try {
+        return *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(panel) + kStorePlayerGoldOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
 
 }  // namespace
 
@@ -393,14 +406,18 @@ void TickMonitorMode() {
         acc::menus::chain::RebindChainPreserveIndex(fg);
 
         if (g_tradeWatchArmed && g_tradeWatchMode == current) {
-            const char* word = acc::strings::Get(current == Mode::Buy
-                ? acc::strings::Id::StoreBought
-                : acc::strings::Id::StoreSold);
-            tolk::Speak(word, /*interrupt=*/false);
+            char msg[96];
+            snprintf(msg, sizeof(msg),
+                     acc::strings::Get(current == Mode::Buy
+                         ? acc::strings::Id::FmtStoreBoughtFor
+                         : acc::strings::Id::FmtStoreSoldFor),
+                     (int)g_tradeWatchPrice);
+            tolk::Speak(msg, /*interrupt=*/false);
             acclog::Write("Menus.Store",
-                          "trade success mode=%s (size delta %d)",
+                          "trade success mode=%s (size delta %d, price=%u)",
                           current == Mode::Buy ? "buy" : "sell",
-                          currentSize - g_tradeWatchSizeAtArm);
+                          currentSize - g_tradeWatchSizeAtArm,
+                          g_tradeWatchPrice);
         }
         g_tradeWatchArmed = false;
         return;
@@ -447,6 +464,48 @@ void DispatchTradeAction(void* panel, void* row) {
                       panel);
         return;
     }
+
+    // Resolve the item up front so we can both pre-check credits (buy
+    // mode) and report the transaction price on success. The engine's
+    // OnControl{Inv,Store}AButton does the same resolution internally;
+    // doing it here means a single thiscall to GetItem{Buy,Sell}Value
+    // gets us the number we need without re-entering the engine's
+    // confirmation-vs-direct branching.
+    uint32_t handle = ReadRowObjId(row);
+    void* item = ResolveItemFromHandle(handle);
+    uint32_t price = 0;
+    if (item) {
+        uintptr_t valueFn = (mode == Mode::Buy)
+            ? kAddrCSWGuiStoreGetItemBuyValue
+            : kAddrCSWGuiStoreGetItemSellValue;
+        price = CallGetItemValue(valueFn, panel, item);
+    }
+
+    // Buy mode: pre-check player gold against price. If insufficient,
+    // speak our localised line and skip the engine call entirely. The
+    // engine's own path here pops a CGuiInGame::ShowExamineBox (strref
+    // 0xa3de) which is a visual-only popup not in our chain — letting
+    // it fire would leave a stranded modal the user can't easily
+    // dismiss. Speaking + skipping is cleaner for keyboard play.
+    if (mode == Mode::Buy && item) {
+        uint32_t gold = ReadStorePlayerGold(panel);
+        if (gold < price) {
+            char msg[128];
+            snprintf(msg, sizeof(msg),
+                     acc::strings::Get(
+                         acc::strings::Id::FmtStoreNotEnoughCredits),
+                     (int)price, (int)gold);
+            tolk::Speak(msg, /*interrupt=*/false);
+            acclog::Write("Menus.Store",
+                          "DispatchTradeAction buy refused (gold=%u price=%u) panel=%p",
+                          gold, price, panel);
+            // Drop any stale watcher so a previous trade's outcome
+            // can't double up with this refusal.
+            g_tradeWatchArmed = false;
+            return;
+        }
+    }
+
     uintptr_t fnAddr = (mode == Mode::Buy)
         ? kAddrCSWGuiStoreOnControlStoreAButton
         : kAddrCSWGuiStoreOnControlInvAButton;
@@ -463,18 +522,20 @@ void DispatchTradeAction(void* panel, void* row) {
     g_tradeWatchMode           = mode;
     g_tradeWatchSizeAtArm      = ReadListBoxSize(panel, (size_t)activeOffset);
     g_tradeWatchTicksRemaining = kTradeWatchTicks;
+    g_tradeWatchPrice          = price;
 
     __try {
         auto fn = reinterpret_cast<PFN_StoreOnControlButton>(fnAddr);
         acclog::Write("Menus.Store",
                       "DispatchTradeAction panel=%p row=%p mode=%s -> %s "
-                      "(watch size=%d, ticks=%d)",
+                      "(watch size=%d, ticks=%d, price=%u)",
                       panel, row,
                       mode == Mode::Buy ? "buy" : "sell",
                       mode == Mode::Buy
                           ? "OnControlStoreAButton" : "OnControlInvAButton",
                       g_tradeWatchSizeAtArm,
-                      g_tradeWatchTicksRemaining);
+                      g_tradeWatchTicksRemaining,
+                      price);
         fn(panel, row);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         acclog::Write("Menus.Store",

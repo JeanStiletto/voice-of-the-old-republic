@@ -250,6 +250,9 @@ const char* Get(Id id) {
         case Id::StoreBought:               return "Bought";
         case Id::StoreCannotSell:           return "Cannot be sold";
         case Id::StoreCannotBuy:            return "Cannot be bought";
+        case Id::FmtStoreSoldFor:           return "Sold for %d credits";
+        case Id::FmtStoreBoughtFor:         return "Bought for %d credits";
+        case Id::FmtStoreNotEnoughCredits:  return "Not enough credits, need %d, have %d";
 
         case Id::Count_:               return "";
     }

@@ -721,6 +721,14 @@ enum class Id : int {
     StoreBought,
     StoreCannotSell,
     StoreCannotBuy,
+    // ---- Per-trade speech with price.
+    //      `FmtStoreSoldFor`   — successful sell. One `%d` (credits received).
+    //      `FmtStoreBoughtFor` — successful buy.  One `%d` (credits paid).
+    //      `FmtStoreNotEnoughCredits` — buy refused, player can't afford.
+    //          Two `%d` (price required, credits the player has).
+    FmtStoreSoldFor,
+    FmtStoreBoughtFor,
+    FmtStoreNotEnoughCredits,
 
     Count_,
 };

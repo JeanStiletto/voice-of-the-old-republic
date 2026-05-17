@@ -947,6 +947,15 @@ constexpr size_t    kStoreCostValueLabelOffset             = 0xbc0;
 constexpr size_t    kStoreStockValueLabelOffset            = 0xe40;
 constexpr size_t    kStoreCreditsValueLabelOffset          = 0x1200;
 
+// CSWGuiStore.field31_0x2270 — int — the player's gold cached on the
+// store struct. Written by PopulateStore via CSWSCreature::GetGold,
+// updated again after every SellItem / BuyItem. OnControlStoreAButton
+// reads this to decide whether the player can afford the trade:
+//   if (field31_0x2270 < GetItemBuyValue(item)) ShowExamineBox(strref 0xa3de)
+// We use it for the same gate, but speak our own "not enough credits"
+// line instead of letting the engine pop its examine box.
+constexpr size_t    kStorePlayerGoldOffset                 = 0x2270;
+
 // Bit 1 (0x02) of the listbox's CSWGuiControl.bit_flags is set on the
 // "visible" listbox by ShowBuyGUI / ShowSellGUI. Same offset (+0x44)
 // every other CSWGuiControl uses.
