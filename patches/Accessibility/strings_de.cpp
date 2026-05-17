@@ -249,7 +249,7 @@ const char* Get(Id id) {
         case Id::FmtMapCursorDoor:           return "T\xFC""r %s";        // Tür %s
         case Id::FmtMapCursorDoorTransition: return "T\xFC""r %s nach %s";// Tür %s nach %s
         case Id::MapCursorTransitionDoor:    return "T\xFC""rschwelle";  // Türschwelle
-        case Id::FmtMapCursorJunctionDeadEndExit: return "%s (Sackgasse)";
+        case Id::FmtMapCursorJunctionDeadEndExit: return "Sackgasse %s";
         case Id::FmtMapCursorPlazaDirs:      return "Platz, %s";
         case Id::AxisNorthSouth:             return "Nord-S\xFC""d";   // Nord-Süd
         case Id::AxisEastWest:               return "Ost-West";

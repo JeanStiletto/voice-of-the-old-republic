@@ -143,6 +143,17 @@ enum class ShapeKind : uint8_t {
 // to whatever you'd do without me".
 ShapeKind ProbeShapeAt(const Vector& pos);
 
+// Raw single-ray walkmesh probe. Casts from `pos` in direction `(dx,dy)`
+// (need not be unit-length; normalised internally) and returns the
+// distance in metres at which it first crosses a walkmesh edge, or
+// `kProbeLenWu` (25m) if the ray clears the probe range. Used for ad-
+// hoc geometry queries — e.g. wall_topology's per-door diagnostic that
+// reports how far walkmesh extends in 4 directions from a door.
+//
+// Returns -1.0 when the wall cache isn't built yet (caller should
+// treat -1 as "no data").
+float ProbeDistance(const Vector& pos, float dx, float dy);
+
 // Rotated-axis alcove test. Probes at `pos` with the 4-ray pattern (one
 // "forward" along the supplied axis, two perpendicular, one back) and
 // returns true when the result matches the alcove signature: forward

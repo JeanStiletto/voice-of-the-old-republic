@@ -564,6 +564,18 @@ ShapeKind ProbeShapeAt(const Vector& pos) {
     return static_cast<ShapeKind>(sig & 0xff);
 }
 
+float ProbeDistance(const Vector& pos, float dx, float dy) {
+    const acc::engine::WallEdge* walls = nullptr;
+    int wallCount = 0;
+    if (!acc::spatial::change_detector::GetCachedWalls(walls, wallCount) ||
+        !walls || wallCount <= 0) {
+        return -1.0f;
+    }
+    float mag = std::sqrt(dx * dx + dy * dy);
+    if (mag < 1e-6f) return -1.0f;
+    return ProbeWall(walls, wallCount, pos, dx / mag, dy / mag);
+}
+
 bool IsAlcoveAlongAxis(const Vector& pos, float forwardX, float forwardY) {
     const acc::engine::WallEdge* walls = nullptr;
     int wallCount = 0;

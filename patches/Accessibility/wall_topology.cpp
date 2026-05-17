@@ -286,6 +286,66 @@ void SnapshotDoors(void* area) {
                       "  door[%d] pos=(%.1f,%.1f,%.1f) transition=\"%s\"",
                       i, d.pos.x, d.pos.y, d.pos.z,
                       d.transitionDest[0] ? d.transitionDest : "(none)");
+
+        // Diagnostic: what's the geometry around this door? We answer:
+        //   1. Which .lyt-room is the door IN (engine resolves point→room)
+        //   2. Which .lyt-room sits 2m PAST the door (back side)
+        //   3. Walkmesh probe distances on 4 cardinal axes from the
+        //      door position (room walkmesh excludes door collision
+        //      meshes, so probes can pass through where the door is)
+        //
+        // The approach direction is estimated from the nearest nav-
+        // graph node — the player walks toward the door from a corridor
+        // node, so (door - nearestNode) is the "into" direction. The
+        // 2m past-the-door point lives along that same axis. Comparing
+        // front_room to back_room tells us whether the door has any
+        // walkable interior behind it (front != back AND back is
+        // valid → stub room exists) or is pure decoration (back == -1
+        // or back == front).
+        int nearestNode = -1;
+        float bestSq = 1e30f;
+        for (int n = 0; n < g_graph.node_count; ++n) {
+            float ndx = g_graph.node_pos[n].x - d.pos.x;
+            float ndy = g_graph.node_pos[n].y - d.pos.y;
+            float d2 = ndx * ndx + ndy * ndy;
+            if (d2 < bestSq) { bestSq = d2; nearestNode = n; }
+        }
+        Vector approachVec = {0.0f, 0.0f, 0.0f};
+        if (nearestNode >= 0) {
+            approachVec.x = d.pos.x - g_graph.node_pos[nearestNode].x;
+            approachVec.y = d.pos.y - g_graph.node_pos[nearestNode].y;
+            float mag = std::sqrt(approachVec.x * approachVec.x +
+                                  approachVec.y * approachVec.y);
+            if (mag > 1e-3f) {
+                approachVec.x /= mag;
+                approachVec.y /= mag;
+            }
+        }
+        Vector behindPos;
+        behindPos.x = d.pos.x + approachVec.x * 2.0f;
+        behindPos.y = d.pos.y + approachVec.y * 2.0f;
+        behindPos.z = d.pos.z;
+
+        int frontRoom = -1, backRoom = -1;
+        acc::engine::GetRoomAtIndexed(area, d.pos,     frontRoom);
+        acc::engine::GetRoomAtIndexed(area, behindPos, backRoom);
+
+        float dN = acc::region::ProbeDistance(d.pos,  0.0f,  1.0f);
+        float dE = acc::region::ProbeDistance(d.pos,  1.0f,  0.0f);
+        float dS = acc::region::ProbeDistance(d.pos,  0.0f, -1.0f);
+        float dW = acc::region::ProbeDistance(d.pos, -1.0f,  0.0f);
+
+        acclog::Write(
+            "WallTopo",
+            "    door[%d] diag: nearestNode=%d (%.1f,%.1f) approach=(%.2f,%.2f) "
+            "front_room=%d back_room=%d (2m past at %.1f,%.1f) | "
+            "probes N=%.1fm E=%.1fm S=%.1fm W=%.1fm",
+            i, nearestNode,
+            nearestNode >= 0 ? g_graph.node_pos[nearestNode].x : 0.0f,
+            nearestNode >= 0 ? g_graph.node_pos[nearestNode].y : 0.0f,
+            approachVec.x, approachVec.y,
+            frontRoom, backRoom, behindPos.x, behindPos.y,
+            dN, dE, dS, dW);
     }
 }
 
@@ -428,9 +488,11 @@ void UFUnite(int a, int b) {
 
 // Append one direction entry to `dirList`. When `markDeadEnd` is set,
 // the direction word is wrapped via FmtMapCursorJunctionDeadEndExit
-// ("%s (Sackgasse)") so the user knows that exit doesn't lead onward
+// ("Sackgasse %s") so the user knows that exit doesn't lead onward
 // (option 1 from the 2026-05-13 Dias-cluster discussion — junctions
-// whose edges include degree-1 stubs should call them out).
+// whose edges include degree-1 stubs should call them out). Prefix
+// form mirrors the door rewrite ("Tür %s nach %s") so every special
+// exit reads NOUN-then-direction within the junction list.
 size_t AppendDirEntry(char* dirList, size_t bufSize, size_t dirLen,
                       acc::strings::Id dirId, bool markDeadEnd) {
     const char* word = acc::strings::Get(dirId);
@@ -816,8 +878,22 @@ void BuildForArea(void* area) {
     // then treats each cluster (singletons included) as one perceptual
     // place — adjacent same-octant junctions collapse to a single
     // "Kreuzung" announce with the union of their external exits.
+    //
+    // Door-on-edge veto: a nav edge that crosses a CSWSDoor separates
+    // two distinct visual rooms (often a security door into a small
+    // loot room ~12m deep — see tar_m02aa cases for door[1]/[5]/[6]).
+    // Sighted players read each side as its own space; merging hides
+    // the door entirely. Skip the merge; the door surfaces as a "Tür
+    // DIR" exit on each side via ClassifyCluster's external-edge loop.
+    //
+    // We tried .wok room-id veto first (build 22:59:21) but engine
+    // rooms in K1 are authoring chunks, not visual rooms — central
+    // hubs split into 4+ adjacent rooms with no real divider between
+    // them, and even single visual rooms can be 2 .wok chunks. Door
+    // presence is the more reliable visual-boundary signal.
     for (int i = 0; i < n; ++i) s_uf_parent[i] = i;
     int mergeEdges = 0;
+    int mergeVetoedByDoor = 0;
     for (int i = 0; i < n; ++i) {
         if (Degree(g, i) < 3) continue;
         int lo = 0, hi = 0;
@@ -833,6 +909,16 @@ void BuildForArea(void* area) {
             if (dx * dx + dy * dy >
                 kMergeMaxDistanceM * kMergeMaxDistanceM) continue;
             if (std::fabs(dz) > kMergeMaxZM) continue;
+            if (FindDoorOnEdge(g.nodes[i].pos, g.nodes[j].pos) >= 0) {
+                ++mergeVetoedByDoor;
+                acclog::Write(
+                    "WallTopo",
+                    "  merge VETOED (door on edge): node[%d] (%.1f,%.1f) "
+                    "<-/-> node[%d] (%.1f,%.1f)",
+                    i, g.nodes[i].pos.x, g.nodes[i].pos.y,
+                    j, g.nodes[j].pos.x, g.nodes[j].pos.y);
+                continue;
+            }
             UFUnite(i, j);
             ++mergeEdges;
         }
@@ -928,10 +1014,64 @@ void BuildForArea(void* area) {
     g_graph.built = true;
     acclog::Write("WallTopo",
                   "BuildForArea: area=%p nodes=%d clusters=%d "
-                  "merged-pairs=%d multi-node-clusters=%d "
+                  "merged-pairs=%d merge-vetoed-by-door=%d "
+                  "multi-node-clusters=%d "
                   "(dead=%d corridor=%d junction=%d open=%d)",
-                  area, n, clusters, mergeEdges, multiNodeClusters,
+                  area, n, clusters, mergeEdges, mergeVetoedByDoor,
+                  multiNodeClusters,
                   deadEnds, corridors, junctions, openAreas);
+
+    // Diagnostic: per multi-node cluster, dump member adjacency. For
+    // each member node, list its graph neighbours split into
+    // internal (same cluster) and external (cross-cluster), and mark
+    // any edge that crosses a door via FindDoorOnEdge. This exposes
+    // whether dividing doors split a merged cluster into a "junction
+    // side" (member with external neighbours other than the door) and
+    // a "room side" (member whose only off-cluster path is through
+    // the door itself).
+    for (int root = 0; root < n; ++root) {
+        if (UFFind(root) != root) continue;
+        int size = 0;
+        for (int m = 0; m < n; ++m) if (UFFind(m) == root) ++size;
+        if (size < 2) continue;
+        acclog::Write("WallTopo",
+                      "  cluster[%d] size=%d label=\"%s\"",
+                      root, size, g_graph.node_label[root]);
+        for (int m = 0; m < n; ++m) {
+            if (UFFind(m) != root) continue;
+            int lo = 0, hi = 0;
+            acc::engine::navgraph::NeighbourRange(g, m, lo, hi);
+            for (int e = lo; e < hi; ++e) {
+                int nb = static_cast<int>(g.conns[e]);
+                if (nb < 0 || nb >= n) continue;
+                bool internal = (UFFind(nb) == root);
+                int doorIdx = FindDoorOnEdge(g.nodes[m].pos,
+                                             g.nodes[nb].pos);
+                if (doorIdx >= 0) {
+                    acclog::Write(
+                        "WallTopo",
+                        "    member[%d] (%.1f,%.1f) -> nb[%d] (%.1f,%.1f) "
+                        "%s door[%d] transition=\"%s\"",
+                        m, g.nodes[m].pos.x, g.nodes[m].pos.y,
+                        nb, g.nodes[nb].pos.x, g.nodes[nb].pos.y,
+                        internal ? "INTERNAL" : "EXTERNAL",
+                        doorIdx,
+                        g_graph.doors[doorIdx].transitionDest[0]
+                            ? g_graph.doors[doorIdx].transitionDest
+                            : "(none)");
+                } else {
+                    acclog::Write(
+                        "WallTopo",
+                        "    member[%d] (%.1f,%.1f) -> nb[%d] (%.1f,%.1f) "
+                        "%s no-door",
+                        m, g.nodes[m].pos.x, g.nodes[m].pos.y,
+                        nb, g.nodes[nb].pos.x, g.nodes[nb].pos.y,
+                        internal ? "INTERNAL" : "EXTERNAL");
+                }
+            }
+        }
+    }
+
     DumpGraphToLog();
 }
 

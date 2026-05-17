@@ -685,7 +685,7 @@ enum class Id : int {
     // directly to a degree-1 dead-end neighbour, the direction word
     // is wrapped to flag the dead-end so the user doesn't waste a
     // walk attempting it. Single `%s` (the direction word).
-    FmtMapCursorJunctionDeadEndExit, // "%s (Sackgasse)" / "%s (dead end)"
+    FmtMapCursorJunctionDeadEndExit, // "Sackgasse %s" / "dead end %s" — prefix-style, matches "Tür %s" so junction list reads NOUN-then-direction
     // Merged-junction announce. Used in place of FmtMapCursorJunctionDirs
     // when a multi-node cluster has 3+ external exits — semantically the
     // player is at a wider hub area, not a single point junction.
