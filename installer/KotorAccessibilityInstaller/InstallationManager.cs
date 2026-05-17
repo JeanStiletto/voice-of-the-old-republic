@@ -37,6 +37,7 @@ namespace KotorAccessibilityInstaller
         ///   &lt;stagingRoot&gt;/bin/sqlite3.dll
         ///   &lt;stagingRoot&gt;/AddressDatabases/*.db
         ///   &lt;stagingRoot&gt;/patches/Accessibility.kpatch
+        ///   &lt;stagingRoot&gt;/patches/Widescreen.kpatch
         ///
         /// Returns the staging root path. Caller should clean up later.
         /// </summary>
@@ -66,10 +67,15 @@ namespace KotorAccessibilityInstaller
             // inside ApplyKPatch so that relative lookup hits the dir we just
             // populated above.
 
-            // Stage the .kpatch as the only patch in this dir so PatchRepository
-            // picks it up cleanly.
+            // Stage the downloaded accessibility .kpatch alongside the bundled
+            // widescreen .kpatch. PatchRepository picks both up; ApplyKPatch
+            // installs both in one PatchApplicator call.
             string stagedKpatch = Path.Combine(patchesDir, Path.GetFileName(kpatchSourcePath));
             File.Copy(kpatchSourcePath, stagedKpatch, overwrite: true);
+
+            ExtractEmbeddedResource(
+                Config.WidescreenKPatchAssetName,
+                Path.Combine(patchesDir, Config.WidescreenKPatchAssetName));
 
             Logger.Info($"Staged patcher runtime into: {stagingRoot}");
             return stagingRoot;
@@ -96,7 +102,8 @@ namespace KotorAccessibilityInstaller
                 };
             }
 
-            Logger.Info($"Installing {Config.PatchId} into {gameExe}...");
+            var patchIds = new List<string> { Config.PatchId, Config.WidescreenPatchId };
+            Logger.Info($"Installing [{string.Join(", ", patchIds)}] into {gameExe}...");
             var applicator = new PatchApplicator(repository);
 
             // Swap CWD so KPatchCore's relative "AddressDatabases" lookup hits
@@ -108,7 +115,7 @@ namespace KotorAccessibilityInstaller
                 return applicator.InstallPatches(new PatchApplicator.InstallOptions
                 {
                     GameExePath = gameExe,
-                    PatchIds = new List<string> { Config.PatchId },
+                    PatchIds = patchIds,
                     PatcherDllPath = patcherDll,
                     // No backup: KOTOR is always reacquirable via Steam ("Verify integrity
                     // of game files") or by reinstalling from GoG. Avoids cluttering the

@@ -30,6 +30,9 @@
     <EmbeddedResource Include="Resources\sqlite3.dll" />
     <EmbeddedResource Include="Resources\prism.dll" />
     <EmbeddedResource Include="Resources\kotor1_0_3.db" />
+    <!-- Lane's Widescreen patch (runtime-detour DLL @ IsValidResolution).
+         Tiny + pinned + SHA-gated; bundled rather than downloaded. -->
+    <EmbeddedResource Include="Resources\Widescreen.kpatch" />
     <!-- HoloPatcher is NOT bundled. It's downloaded from upstream
          NickHugi/PyKotor @ pinned tag at install time (see HoloPatcherProvider). -->
   </ItemGroup>

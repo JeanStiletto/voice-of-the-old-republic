@@ -30,6 +30,19 @@ namespace KotorAccessibilityInstaller
         public const string PatchId = "accessibility";
 
         /// <summary>
+        /// Filename of the bundled Widescreen .kpatch embedded as a resource.
+        /// Source: third_party/Kotor-Patch-Manager/Patches/Widescreen (Lane).
+        /// Built artifact mirrored from build/patches/ at packaging time.
+        /// </summary>
+        public const string WidescreenKPatchAssetName = "Widescreen.kpatch";
+
+        /// <summary>
+        /// Patch ID for Lane's Widescreen patch. Matches the manifest.toml
+        /// inside third_party/Kotor-Patch-Manager/Patches/Widescreen.
+        /// </summary>
+        public const string WidescreenPatchId = "widescreen";
+
+        /// <summary>
         /// Publisher name for registry entries.
         /// </summary>
         public const string Publisher = "KOTOR Accessibility Project";
