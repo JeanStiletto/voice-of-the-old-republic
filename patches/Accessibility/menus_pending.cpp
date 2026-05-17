@@ -21,6 +21,7 @@
 #include "engine_offsets.h"
 #include "engine_panels.h"   // CallPrevSWInGameGui
 #include "log.h"
+#include "menus_store.h"     // DispatchTradeAction for StoreItemActivate
 
 namespace acc::menus::pending {
 
@@ -36,6 +37,7 @@ enum class Kind {
     SliderInput,       // a = target, code = direction (500 inc / 501 dec)
     PrevSWInGameGui,   // no payload — pops current in-game sub-screen
     SwitchSubScreen,   // code = engine GUI_id (0..7)
+    StoreItemActivate, // a = panel (CSWGuiStore), b = row (StoreItemEntry)
 };
 
 struct PendingOp {
@@ -122,6 +124,14 @@ bool QueueSwitchSubScreen(int guiId) {
     if (g_op.kind != Kind::None) return false;
     g_op.kind = Kind::SwitchSubScreen;
     g_op.code = guiId;
+    return true;
+}
+
+bool QueueStoreItemActivate(void* panel, void* row) {
+    if (g_op.kind != Kind::None) return false;
+    g_op.kind = Kind::StoreItemActivate;
+    g_op.a = panel;
+    g_op.b = row;
     return true;
 }
 
@@ -378,6 +388,18 @@ void Drain(void* gm) {
     // any active sub-screen first, so panels[] ends with just the new one.
     case Kind::SwitchSubScreen: {
         acc::engine::CallSwitchToSWInGameGui(op.code);
+        break;
+    }
+
+    // Store item Enter — dispatch the engine's per-mode click handler
+    // with the row as param_1. The engine reads the row's obj_id at
+    // +0x1c4 and either opens the confirmation MessageBox or sells/buys
+    // directly (depending on its internal cost vs. level threshold).
+    // After the engine call, PopulateInventoryItemListBox /
+    // PopulateStoreItemListBox repopulates rows; menus_store's per-tick
+    // monitor detects the listbox size change and rebinds the chain.
+    case Kind::StoreItemActivate: {
+        acc::menus::store::DispatchTradeAction(op.a, op.b);
         break;
     }
     }

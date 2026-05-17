@@ -82,6 +82,22 @@ bool QueuePrevSWInGameGui();
 // Used by the Tab / Shift+Tab inter-panel cycle handler in menus.cpp.
 bool QueueSwitchSubScreen(int guiId);
 
+// Queue a Store item row trade action. On drain dispatches to the
+// engine's per-mode click handler with the row as param_1:
+//   * Buy mode  → CSWGuiStore::OnControlStoreAButton(store, row)
+//   * Sell mode → CSWGuiStore::OnControlInvAButton(store, row)
+// Both engine functions read the row's obj_id at +0x1c4, resolve the
+// CSWSItem*, and either pop the confirmation MessageBox or commit the
+// trade directly depending on cost vs. player level threshold. Vanilla
+// keyboard Enter on a row goes through vtable[15] HandleInputEvent
+// which just refreshes the description listbox — never sells. This op
+// is the dedicated Enter-on-store-row path.
+//
+// The mode is re-resolved at drain time from the listbox visibility
+// bit, in case the user toggled Verkaufsliste between the input event
+// and the next tick.
+bool QueueStoreItemActivate(void* panel, void* row);
+
 // True if an op is currently queued. All input-handler debounce sites
 // uniformly check this before queueing — single-slot queue means there's
 // no per-kind discrimination to do (the old code's per-site debounce

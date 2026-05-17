@@ -58,6 +58,7 @@ const char* const kActionNames[static_cast<int>(Action::COUNT)] = {
     "SubmenuEsc",
     "QueueClearAll",
     "ContainerGiveMode",
+    "StoreModeToggle",
     "CycleItemPrev",
     "CycleCategoryPrev",
     "CycleItemNext",
@@ -171,6 +172,11 @@ void InitDefaults() {
 
     // ----- Container give-mode -----
     bind(Action::ContainerGiveMode,    'G', 0, 0, 0);
+
+    // ----- Store mode toggle. Same key as ContainerGiveMode — the two
+    // handlers gate on the foreground panel kind, so only one fires per
+    // press.
+    bind(Action::StoreModeToggle,      'G', 0, 0, 0);
 
     // ----- In-world cycle -----
     // Cycle navigate keys use VK_OEM_COMMA / VK_OEM_PERIOD — same VK on

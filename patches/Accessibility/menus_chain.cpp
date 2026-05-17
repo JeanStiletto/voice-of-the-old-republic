@@ -93,6 +93,16 @@ bool DetectTabsCluster(void* panel, int& outStart, int& outCount) {
     outCount = 0;
     if (!panel) return false;
 
+    // Store is structurally tab-cluster-shaped (listbox @ controls[0],
+    // three navigable buttons clumped further down) but the three buttons
+    // are Verkaufsliste / Schliess. / Kaufen — distinct action buttons,
+    // not page tabs. Flagging them as tabs makes the chain Enter handler
+    // route through click-sim (the tab path) instead of FireActivate,
+    // which lands the click on whatever overlay sits at the button's
+    // y-coordinate — in the wild that misroutes Schliess. into the engine
+    // quit-confirm popup.
+    if (acc::menus::store::IsStorePanel(panel)) return false;
+
     auto* panelList = reinterpret_cast<CExoArrayList*>(
         reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
     if (!panelList->data || panelList->size < 2) return false;
@@ -127,6 +137,18 @@ void ResetTabbedState() {
     g_tabbedPanel = nullptr;
     g_tabsStart   = -1;
     g_tabsCount   = 0;
+}
+
+void RebindChainPreserveIndex(void* panel) {
+    int savedIndex = g_chainIndex;
+    RebindChain(panel);
+    if (g_chainCount <= 0) {
+        g_chainIndex = 0;
+        return;
+    }
+    if (savedIndex < 0) savedIndex = 0;
+    if (savedIndex >= g_chainCount) savedIndex = g_chainCount - 1;
+    g_chainIndex = savedIndex;
 }
 
 void InvalidateChain() {
@@ -337,10 +359,28 @@ void RebindChain(void* panel) {
         return false;
     };
 
+    // Store-panel action buttons (Schliess. / Verkaufsliste / Kaufen).
+    // These live at fixed struct offsets and we drive them via dedicated
+    // hotkeys (Esc to close, G to toggle mode, Enter on item to trade)
+    // rather than chain navigation. Walking past the inventory rows into
+    // them just adds three dead entries the user has to skip, so filter
+    // them out of the chain entirely.
+    void* storeCancelBtn  = nullptr;
+    void* storeToggleBtn  = nullptr;
+    void* storeAcceptBtn  = nullptr;
+    if (acc::menus::store::IsStorePanel(panel)) {
+        auto* p = reinterpret_cast<unsigned char*>(panel);
+        storeCancelBtn = p + kStoreCancelButtonOffset;
+        storeToggleBtn = p + kStoreToggleButtonOffset;
+        storeAcceptBtn = p + kStoreAcceptButtonOffset;
+    }
+
     for (int i = 0; i < n; ++i) {
         void* c = list->data[i];
         if (!c) continue;
         if (c == portraitChargenSkip) continue;
+        if (c == storeCancelBtn || c == storeToggleBtn ||
+            c == storeAcceptBtn) continue;
 
         if (IsChainNavigable(c)) {
             if (isDecorative(c)) continue;

@@ -246,6 +246,10 @@ const char* Get(Id id) {
         case Id::FmtStorePriceSell:         return "Price %d credits, you own %d";
         case Id::StoreModeBuy:              return "Buy mode";
         case Id::StoreModeSell:             return "Sell mode";
+        case Id::StoreSold:                 return "Sold";
+        case Id::StoreBought:               return "Bought";
+        case Id::StoreCannotSell:           return "Cannot be sold";
+        case Id::StoreCannotBuy:            return "Cannot be bought";
 
         case Id::Count_:               return "";
     }

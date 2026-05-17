@@ -970,6 +970,22 @@ constexpr uint32_t  kSwsItemInfiniteStockBit               = 0x4;
 constexpr uintptr_t kAddrCSWGuiStoreGetItemBuyValue        = 0x006c0790;
 constexpr uintptr_t kAddrCSWGuiStoreGetItemSellValue       = 0x006c07f0;
 
+// CSWGuiStore::OnControlInvAButton / OnControlStoreAButton — the engine
+// click handlers attached to the accept_button in Sell / Buy mode
+// respectively (see ShowSellGUI / ShowBuyGUI, which switch the binding
+// via CSWGuiControl::AddEvent). Both are __thiscall(this, CSWGuiControl*
+// param_1) and read the item handle from param_1+0x1c4 — which works
+// for an accept_button (lands on store->item_id) OR a row pointer
+// (lands on row.obj_id). Calling either with a store-item row as
+// param_1 is the keyboard-Enter shortcut that bypasses the accept-button
+// step entirely.
+//
+// Both open the engine's confirmation MessageBox if the price exceeds
+// the player's level threshold; otherwise they commit the trade
+// immediately via SellItem / BuyItem.
+constexpr uintptr_t kAddrCSWGuiStoreOnControlInvAButton    = 0x006c0f40;
+constexpr uintptr_t kAddrCSWGuiStoreOnControlStoreAButton  = 0x006c1130;
+
 // CServerExoApp::ClientToServerObjectId — __thiscall(ulong) -> ulong.
 // CServerExoApp::GetItemByGameObjectID — __thiscall(ulong) -> CSWSItem*.
 constexpr uintptr_t kAddrServerExoAppClientToServerObjectId = 0x004aea30;

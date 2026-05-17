@@ -710,6 +710,17 @@ enum class Id : int {
     FmtStorePriceSell,
     StoreModeBuy,
     StoreModeSell,
+    // ---- Per-trade speech, fired after Enter on a Store row.
+    //      `StoreSold` / `StoreBought`     — fired when the active
+    //          listbox shrinks/grows within ~2 ticks of DispatchTradeAction
+    //          (the trade actually committed).
+    //      `StoreCannotSell` / `StoreCannotBuy` — fired when the engine's
+    //          handler returned without changing the listbox (item not
+    //          sellable / not buyable — plot item, no funds, equipped, etc.).
+    StoreSold,
+    StoreBought,
+    StoreCannotSell,
+    StoreCannotBuy,
 
     Count_,
 };

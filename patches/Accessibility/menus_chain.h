@@ -84,6 +84,18 @@ extern int g_classIconClickOffsetX;    // chargen class-icon column pitch
 // on the engine's current activeControl.
 void RebindChain(void* panel);
 
+// Same as RebindChain, but after the rebuild restore the chain cursor to
+// the position it held before the call (clamped to chainCount-1). Used
+// when the rebind is triggered by an in-place listbox repopulate
+// (e.g. Store sell/buy removes one row without changing the user's
+// logical position — the row that was at index N is gone; the next item
+// shifted up to take its slot, so the user's cursor should stay at N).
+//
+// Defaults to clamping high; if the user was on the last row and it got
+// removed, lands on the new last row (one above). If the saved index
+// no longer fits (chain shrank to 0), falls back to 0.
+void RebindChainPreserveIndex(void* panel);
+
 // Drop all chain state without rebuilding. Called from the sub-screen
 // status hook on `new_status == 4` (teardown begin): the engine is about
 // to free the focused panel's child controls, so any pointer in g_chain

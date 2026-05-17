@@ -1591,8 +1591,25 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                 equipSlotCid == kEquipBtnHandsId;
         }
 
+        // Store item row Enter — route to the engine's trade-action
+        // handler (OnControlInvAButton / OnControlStoreAButton based on
+        // mode) instead of the generic FireActivate. The default
+        // vtable[15] event 0x27 path just refreshes the description
+        // listbox via OnControlEntered — never actually sells or buys.
+        // Action buttons (Verkaufsliste / Schliess. / Kaufen) fall
+        // through to the default activate path below; they're plain
+        // CSWGuiButton instances, not CSWGuiStoreItemEntry rows.
+        bool isStoreItemRow =
+            acc::menus::store::IsStorePanel(g_chainPanel) &&
+            acc::menus::store::IsStoreItemRow(e.control);
+
         if (acc::menus::pending::IsPending()) {
             acclog::Write("Enter", "op already pending; ignoring (target=%p)", e.control);
+            consumed = true;
+        } else if (isStoreItemRow) {
+            acc::menus::pending::QueueStoreItemActivate(g_chainPanel, e.control);
+            acclog::Write("Menus.Enter", "store-item-activate panel=%p index=%d target=%p",
+                          g_chainPanel, g_chainIndex, e.control);
             consumed = true;
         } else if (e.textOnly) {
             // Modal body text — non-activatable. Re-speak so a user who
@@ -1997,6 +2014,20 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     // until a new one takes focus — and Esc would keep firing FireActivate
     // against the popped panel. activePanel always reflects the current
     // foreground per the manager.
+    // Store-specific Esc: route to cancel_button (Schliess.) directly.
+    // The store isn't in IsModalPopupPanel (it's the foreground modal,
+    // not a popup on top), and the chain doesn't include the cancel
+    // button anymore (we filter it out so it doesn't clutter Up/Down
+    // nav), so without this Esc would no-op on the store.
+    if (param_2 != 0 &&
+        (param_1 == kInputEsc1 || param_1 == kInputEsc2) &&
+        acc::menus::store::IsStorePanel(activePanel))
+    {
+        if (acc::menus::store::CloseFromEsc()) {
+            consumed = true;
+        }
+    }
+
     if (param_2 != 0 &&
         (param_1 == kInputEsc1 || param_1 == kInputEsc2) &&
         activePanel != nullptr &&
