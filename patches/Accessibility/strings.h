@@ -673,6 +673,13 @@ enum class Id : int {
     // ("Türschwelle") and optionally compose with the friendly room
     // name in transitions.cpp.
     FmtMapCursorCorridorDir,  // "Korridor %s" / "Corridor %s"
+    // Door announce — replaces the corridor/dead-end/junction-octant
+    // direction word when a CSWSDoor in the area sits on the relevant
+    // nav-graph edge. Single `%s` = direction word ("Nord", "Nord-Süd",
+    // "Süd-West", …). Transition form adds the cross-area destination
+    // ("Brücke", "Manaan-Dock") as the second `%s`.
+    FmtMapCursorDoor,            // "Tür %s" / "Door %s"
+    FmtMapCursorDoorTransition,  // "Tür %s nach %s" / "Door %s to %s"
     MapCursorTransitionDoor,  // "Türschwelle" / "Doorway"
     // Junction-edge annotation: when a junction's direction leads
     // directly to a degree-1 dead-end neighbour, the direction word

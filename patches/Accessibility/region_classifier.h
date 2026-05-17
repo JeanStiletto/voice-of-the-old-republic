@@ -118,4 +118,46 @@ bool LookupShapeAt(void* area, const Vector& world,
                    char* outBuf, size_t bufSize, int& outSig,
                    int* outRoomIdx = nullptr);
 
+// Walkmesh-shape kind from the 4-ray probe at a position. Values match the
+// `kind` byte that `LookupRoomShape` / `LookupShapeAt` pack into outSig's
+// low byte (documented above). Exposed as a typed enum so non-cache
+// consumers (wall_topology, future shape gates) can sanity-check graph-
+// derived classifications against the actual walkmesh geometry without
+// going through the per-room cache.
+enum class ShapeKind : uint8_t {
+    Unknown    = 0,  // wall cache not ready / probe failed (treat as
+                     // "trust the caller's other signal")
+    OffPath    = 1,
+    OpenArea   = 2,
+    CorridorNS = 3,
+    CorridorEW = 4,
+    DeadEnd    = 5,
+    Junction   = 6,
+};
+
+// One-shot walkmesh probe at `pos`. Pulls the cached wall edges from
+// spatial::change_detector internally, runs the same 4-ray classifier the
+// per-room cache uses, returns just the kind byte. Returns ShapeKind::
+// Unknown when the wall cache isn't built yet — callers should NOT use
+// Unknown as a "geometry says X" signal; treat it as "no data, fall back
+// to whatever you'd do without me".
+ShapeKind ProbeShapeAt(const Vector& pos);
+
+// Rotated-axis alcove test. Probes at `pos` with the 4-ray pattern (one
+// "forward" along the supplied axis, two perpendicular, one back) and
+// returns true when the result matches the alcove signature: forward
+// probe > 2m AND the other three ≤ 2m.
+//
+// Designed for wall_topology to check whether a graph-degree-1 nav node
+// is a real alcove the player can walk into. The default `ProbeShapeAt`
+// uses cardinal N/E/S/W axes and misses alcoves whose entrance is on a
+// diagonal (e.g. NW) — those read as junctions because the cardinal
+// rays clip walls at oblique angles. Spinning the probe set to align
+// with the actual graph-edge direction (parent → dead-end) removes that
+// bias.
+//
+// Returns true if the wall cache isn't available (fail-open: callers
+// should not over-filter on missing data).
+bool IsAlcoveAlongAxis(const Vector& pos, float forwardX, float forwardY);
+
 }  // namespace acc::region

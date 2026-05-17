@@ -549,6 +549,52 @@ bool LookupRoomShape(void* area, int roomIdx,
     return true;
 }
 
+ShapeKind ProbeShapeAt(const Vector& pos) {
+    const acc::engine::WallEdge* walls = nullptr;
+    int wallCount = 0;
+    if (!acc::spatial::change_detector::GetCachedWalls(walls, wallCount) ||
+        !walls || wallCount <= 0) {
+        return ShapeKind::Unknown;
+    }
+    char buf[128];
+    int sig = 0;
+    if (!ClassifyTerrainShape(walls, wallCount, pos, buf, sizeof(buf), sig)) {
+        return ShapeKind::Unknown;
+    }
+    return static_cast<ShapeKind>(sig & 0xff);
+}
+
+bool IsAlcoveAlongAxis(const Vector& pos, float forwardX, float forwardY) {
+    const acc::engine::WallEdge* walls = nullptr;
+    int wallCount = 0;
+    if (!acc::spatial::change_detector::GetCachedWalls(walls, wallCount) ||
+        !walls || wallCount <= 0) {
+        return true;  // no data — fail open (caller's other signal wins)
+    }
+    float magSq = forwardX * forwardX + forwardY * forwardY;
+    if (magSq < 1e-6f) return true;
+    float inv = 1.0f / std::sqrt(magSq);
+    float fx  = forwardX * inv;
+    float fy  = forwardY * inv;
+    // Perpendiculars: 90° CW = (fy, -fx); 90° CCW = (-fy, fx).
+    float px = fy;
+    float py = -fx;
+
+    float dF = ProbeWall(walls, wallCount, pos,  fx,  fy);
+    float dB = ProbeWall(walls, wallCount, pos, -fx, -fy);
+    float dR = ProbeWall(walls, wallCount, pos,  px,  py);
+    float dL = ProbeWall(walls, wallCount, pos, -px, -py);
+
+    // Same threshold tuple `ClassifyTerrainShape` uses for the cardinal
+    // dead-end check, just spun to align with the supplied forward axis:
+    //   forward > 2.0m  AND  back/left/right all ≤ 2.0m
+    int shortCount = 0;
+    if (dB <= 2.0f) ++shortCount;
+    if (dR <= 2.0f) ++shortCount;
+    if (dL <= 2.0f) ++shortCount;
+    return shortCount == 3 && dF > 2.0f;
+}
+
 bool LookupShapeAt(void* area, const Vector& world,
                    char* outBuf, size_t bufSize, int& outSig,
                    int* outRoomIdx) {
