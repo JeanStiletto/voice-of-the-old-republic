@@ -675,6 +675,13 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
     // direction word for the "Tür DIR" / "Tür DIR nach DEST" rewrite
     // and skips the (Sackgasse) marker for that octant — door wins.
     int octantDoorIdx[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+    // Representative onward/door neighbour per octant. Captured by the
+    // per-neighbour loop and consumed by the demote gate below: when a
+    // junction collapses to ≤2 real walkable exits after octant dedup
+    // + walkmesh-shape gating, we need the actual neighbour positions
+    // to compute the demoted corridor's axis. -1 = no real exit in
+    // this octant (only wall-curves or pure dead-end stubs).
+    int octantRepNb[8]  = {-1, -1, -1, -1, -1, -1, -1, -1};
     // Per-neighbour classification accumulates into per-octant counters.
     // Per the user's "don't announce nonsense" rule:
     //   - real onward exit (degree ≥ 2)     → octant emits direction
@@ -747,6 +754,12 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
         // marker (the real dead-end carries it); mixed real-dead-end +
         // onward exit doesn't (the onward exit dominates).
         if (isOnwardExit) octantAllDeadEnd[bit] = false;
+        // Capture first onward/door neighbour position per octant for
+        // the demote-to-corridor axis computation. Skip pure-dead-end
+        // stubs — they're annotations, not the actual walk vector.
+        if ((isOnwardExit || hasDoor) && octantRepNb[bit] < 0) {
+            octantRepNb[bit] = nb;
+        }
 
         if (isWallCurve && !hasDoor) {
             acclog::Write(
@@ -757,6 +770,82 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
                 centroid.x, centroid.y, bit,
                 nb, g.nodes[nb].pos.x, g.nodes[nb].pos.y,
                 src, edgeStart.x, edgeStart.y);
+        }
+    }
+
+    // Demote gate: count octants the player can actually walk into
+    // (onward neighbours + doors). Pure-dead-end stubs and wall-curve
+    // octants are annotations, not choices. If the effective exit count
+    // drops below 3 (octant collisions or walkmesh gates having eaten
+    // the rest), the cluster isn't a junction — it's a corridor or
+    // dead-end. Demote so the spoken type matches the decision space
+    // and drop dead-end stubs from the demoted label (they're noise in
+    // a small space — what the player flagged as overdescription in
+    // the loot rooms behind security doors).
+    int realExitCount = 0;
+    int realExitBits[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+    int firstDoorBit = -1;
+    for (int bit = 0; bit < 8; ++bit) {
+        bool hasOnward = octantHasExit[bit] && !octantAllDeadEnd[bit];
+        bool hasDoor   = octantDoorIdx[bit] >= 0;
+        if (!hasOnward && !hasDoor) continue;
+        realExitBits[realExitCount++] = bit;
+        if (hasDoor && firstDoorBit < 0) firstDoorBit = bit;
+    }
+
+    if (realExitCount == 1) {
+        int bit = realExitBits[0];
+        Id dirId = BitToOctant(bit);
+        const char* dirWord = acc::strings::Get(dirId);
+        if (octantDoorIdx[bit] >= 0) {
+            RenderDoorDirection(octantDoorIdx[bit], dirWord ? dirWord : "",
+                                outLabel, outLabelSize);
+        } else {
+            const char* fmt = acc::strings::Get(Id::FmtMapCursorDeadEnd);
+            if (fmt && fmt[0] && dirWord && dirWord[0]) {
+                std::snprintf(outLabel, outLabelSize, fmt, dirWord);
+            }
+        }
+        outKind = kKindDeadEnd;
+        outSig  = (kKindDeadEnd & 0xff) | ((bit & 0xff) << 8);
+        acclog::Write(
+            "WallTopo",
+            "ClassifyCluster: junction at (%.1f,%.1f) DEMOTED to Sackgasse "
+            "(real-exits=1) → \"%s\"",
+            centroid.x, centroid.y, outLabel);
+        return;
+    }
+
+    if (realExitCount == 2) {
+        int bitA = realExitBits[0];
+        int bitB = realExitBits[1];
+        int nbA = octantRepNb[bitA];
+        int nbB = octantRepNb[bitB];
+        if (nbA >= 0 && nbA < n && nbB >= 0 && nbB < n) {
+            float dx = g.nodes[nbB].pos.x - g.nodes[nbA].pos.x;
+            float dy = g.nodes[nbB].pos.y - g.nodes[nbA].pos.y;
+            Id dir = NordedOutAxisOctant(dx, dy);
+            Id wordId = dir;
+            if (dir == Id::DirNorth) wordId = Id::AxisNorthSouth;
+            else if (dir == Id::DirEast) wordId = Id::AxisEastWest;
+            const char* word = acc::strings::Get(wordId);
+            if (firstDoorBit >= 0 && word && word[0]) {
+                RenderDoorDirection(octantDoorIdx[firstDoorBit], word,
+                                    outLabel, outLabelSize);
+            } else {
+                const char* fmt = acc::strings::Get(Id::FmtMapCursorCorridorDir);
+                if (fmt && fmt[0] && word && word[0]) {
+                    std::snprintf(outLabel, outLabelSize, fmt, word);
+                }
+            }
+            outKind = kKindCorridor;
+            outSig  = (kKindCorridor & 0xff) | ((OctantBit(dir) & 0xff) << 8);
+            acclog::Write(
+                "WallTopo",
+                "ClassifyCluster: junction at (%.1f,%.1f) DEMOTED to Korridor "
+                "(real-exits=2, axis=%s) → \"%s\"",
+                centroid.x, centroid.y, word ? word : "?", outLabel);
+            return;
         }
     }
 
