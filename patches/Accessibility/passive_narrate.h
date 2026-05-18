@@ -38,14 +38,10 @@ namespace acc::passive_narrate {
 // speaks. Cheap when idle (one engine call + one comparison). Call from
 // OnUpdate before any path-relevant per-tick work; ordering with
 // cycle_input::PollWin32 doesn't matter (channels are independent).
+//
+// On a real narration (post first-tick suppression, post category filter)
+// the announced object is stamped into `acc::narrated_target::Stamp` so
+// the activation keys can read the same focus the user just heard.
 void Tick();
-
-// GetTickCount() snapshot of the last time engine LastTarget transitioned
-// to a non-sentinel value (i.e. the user's mouse / Q/E / passive selection
-// landed on a real object). interact_hotkey compares this against
-// cycle_state.mutationTick to resolve cycle-vs-engine focus conflicts —
-// most-recent-event wins. 0 = never transitioned to a real target since
-// load. Comparisons must use signed-diff to survive GetTickCount wrap.
-unsigned int LastTargetChangeTick();
 
 }  // namespace acc::passive_narrate

@@ -1,7 +1,5 @@
 #include "cycle_state.h"
 
-#include <windows.h>  // GetTickCount for mutationTick stamping
-
 #include <cmath>
 #include <cstdint>
 
@@ -118,7 +116,6 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
 
 void* CycleNextItem(const CategoryListing& listing) {
     auto& s = GetState();
-    s.mutationTick = GetTickCount();
     if (listing.count == 0) {
         s.focusedIndex = -1;
         s.focusedObj   = nullptr;
@@ -134,7 +131,6 @@ void* CycleNextItem(const CategoryListing& listing) {
 
 void* CyclePrevItem(const CategoryListing& listing) {
     auto& s = GetState();
-    s.mutationTick = GetTickCount();
     if (listing.count == 0) {
         s.focusedIndex = -1;
         s.focusedObj   = nullptr;
@@ -151,7 +147,6 @@ namespace {
 
 bool CycleCategoryDirectional(CategoryListing& outListing, bool forward) {
     auto& s = GetState();
-    s.mutationTick = GetTickCount();
     auto start = s.category;
     int n = int(acc::filter::CycleCategory::Count_);
     for (int tries = 0; tries < n; ++tries) {

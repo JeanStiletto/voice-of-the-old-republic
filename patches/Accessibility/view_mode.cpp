@@ -26,6 +26,7 @@
 #include "hotkeys.h"
 #include "interact_hotkey.h"      // DispatchInteract — Enter on hover target
 #include "log.h"
+#include "narrated_target.h"      // Stamp on hover speech (unified focus slot)
 #include "region_classifier.h"    // shared region cache for cursor announce
 #include "spatial_change_detector.h"  // GetCachedWalls
 #include "strings.h"
@@ -119,11 +120,15 @@ bool g_enter_consumed_this_tick = false;
 // it on the *next* OnUpdate tick after the engine has had a frame
 // to settle into `enabled=1` and we then transition cleanly to 0
 // inside the dispatch path.
+// Hover obj/handle are NOT snapshotted here anymore — view_mode's hover
+// speech stamps the unified `acc::narrated_target` slot every time it
+// narrates, so ProcessPendingDispatch reads from there at dispatch time.
+// Only the empty-cursor WalkTo path keeps a snapshot: that destination is
+// a raw world position (no associated object) and view-mode-local, so it
+// has no home in the narrated-target model.
 struct PendingDispatch {
     bool     active        = false;
-    bool     hasHover      = false;
-    void*    hover_obj     = nullptr;
-    uint32_t hover_handle  = 0;
+    bool     hasHover      = false;     // cursor had a hover target at PollEnter
     Vector   cursor_pos    = {0.0f, 0.0f, 0.0f};
     bool     forceRadial   = false;
     DWORD    armed_at_ms   = 0;   // GetTickCount() when armed
@@ -612,6 +617,11 @@ void NarrateNearestObject(void* area, const Vector& cursor) {
     tolk::Speak(name, /*interrupt=*/true);
     g_state.hover_last_spoken = bestHandle;
 
+    // Stamp the unified activation slot so Enter / Shift+Enter / Shift+- /
+    // Ctrl+- / `-` all act on whatever the user just heard. bestHandle is
+    // already the server-side handle (`GetObjectHandle(obj)` derived).
+    acc::narrated_target::Stamp(bestObj, bestHandle);
+
     Vector pos = { 0.0f, 0.0f, 0.0f };
     acc::engine::GetObjectPosition(bestObj, pos);
     acclog::Write("ViewMode", "hover narrate handle=0x%08x cat=%s name=[%s] "
@@ -672,13 +682,16 @@ void PollEnter() {
     bool forceRadial = risingForce;
     const char* keyTag = forceRadial ? "Shift+Enter" : "Enter";
 
-    // Snapshot hover + cursor — these are about to leave the live
-    // ViewModeState as we exit view mode, but we need them when the
-    // deferred dispatch fires next tick.
-    Vector   cursor_pos   = g_state.cursor_pos;
-    void*    hover_obj    = g_state.hover_pending_obj;
-    uint32_t hover_handle = g_state.hover_pending;
-    bool     hasHover     = hover_obj != nullptr && hover_handle != 0;
+    // Snapshot only what's view-mode-local: cursor world position (for
+    // the empty-cursor WalkTo path), and the "did the cursor have a
+    // hover target?" flag. The hover obj/handle themselves are NOT
+    // snapshotted — the hover-pause speech in TickHoverNearestObject
+    // stamps the unified narrated_target slot every time it speaks, and
+    // ProcessPendingDispatch reads from there. This removes the
+    // duplicate hover state that previously lived in g_pending.
+    Vector cursor_pos = g_state.cursor_pos;
+    bool   hasHover   = g_state.hover_pending_obj != nullptr &&
+                        g_state.hover_pending != 0;
 
     // Exit view mode + re-enable player input synchronously. The actual
     // AI-action dispatch (WalkTo / DispatchInteract) is deferred to the
@@ -692,15 +705,13 @@ void PollEnter() {
 
     g_pending.active        = true;
     g_pending.hasHover      = hasHover;
-    g_pending.hover_obj     = hover_obj;
-    g_pending.hover_handle  = hover_handle;
     g_pending.cursor_pos    = cursor_pos;
     g_pending.forceRadial   = forceRadial;
     g_pending.armed_at_ms   = GetTickCount();
 
     acclog::Write("ViewMode", "%s -> dispatch armed for next tick "
-        "(hover_obj=%p handle=0x%08x cursor=(%.2f,%.2f,%.2f) forceRadial=%d)",
-        keyTag, hover_obj, hover_handle,
+        "(hasHover=%d cursor=(%.2f,%.2f,%.2f) forceRadial=%d)",
+        keyTag, hasHover ? 1 : 0,
         cursor_pos.x, cursor_pos.y, cursor_pos.z,
         forceRadial ? 1 : 0);
 }
@@ -719,21 +730,37 @@ void ProcessPendingDispatch() {
     // Snapshot then clear before dispatch — the dispatch path may itself
     // re-enter our hooks (e.g. picker::Drive can fire other monitors)
     // and we don't want re-entry to see g_pending as still active.
-    bool     hasHover     = g_pending.hasHover;
-    void*    hover_obj    = g_pending.hover_obj;
-    uint32_t hover_handle = g_pending.hover_handle;
-    Vector   cursor_pos   = g_pending.cursor_pos;
-    bool     forceRadial  = g_pending.forceRadial;
+    bool     hasHover    = g_pending.hasHover;
+    Vector   cursor_pos  = g_pending.cursor_pos;
+    bool     forceRadial = g_pending.forceRadial;
     g_pending.active = false;
 
     const char* keyTag = forceRadial ? "Shift+Enter" : "Enter";
 
     if (hasHover) {
+        // Read the hover target live from the unified narrated_target slot
+        // — TickHoverNearestObject stamped it on the speech that fired
+        // before PollEnter armed us. Reading at dispatch time (instead of
+        // from a g_pending snapshot) means a later passive_narrate stamp
+        // between PollEnter and now wins — consistent with the unified
+        // "last narrated wins" principle. If the slot is stale (object
+        // destroyed across the one-tick gap, very rare) we speak
+        // GuidanceNoFocus rather than dispatching against a zombie pointer.
+        acc::narrated_target::Slot slot;
+        if (!acc::narrated_target::TryGet(slot)) {
+            const char* msg = acc::strings::Get(
+                acc::strings::Id::GuidanceNoFocus);
+            tolk::Speak(msg, /*interrupt=*/true);
+            acclog::Write("ViewMode", "%s deferred -> [%s] (hover stale at dispatch) "
+                "elapsed=%lums",
+                keyTag, msg, static_cast<unsigned long>(elapsed));
+            return;
+        }
         acclog::Write("ViewMode", "%s deferred -> DispatchInteract obj=%p handle=0x%08x "
-            "elapsed=%lums (hover target)",
-            keyTag, hover_obj, hover_handle,
+            "elapsed=%lums (narrated target)",
+            keyTag, slot.obj, slot.handle,
             static_cast<unsigned long>(elapsed));
-        acc::interact::DispatchInteract(hover_obj, hover_handle, forceRadial);
+        acc::interact::DispatchInteract(slot.obj, slot.handle, forceRadial);
         return;
     }
 

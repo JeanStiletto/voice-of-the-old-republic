@@ -43,20 +43,17 @@ struct CategoryListing {
 
 // Mutable singleton — one shared cycle state across the patch. Default
 // category is Door (matches the order used by NextCategory/PrevCategory).
+//
+// Cycle's focusedObj/focusedIndex are LOCAL CURSOR state — they exist so
+// `,`/`.` know where to step next within the current sorted listing.
+// They are NOT the global activation target (that lives in
+// `acc::narrated_target`). The cycle-input announce path stamps the
+// narrated-target slot every time it speaks an item, which is what
+// Enter / Shift+- / Ctrl+- / `-` read from.
 struct CycleState {
     acc::filter::CycleCategory category   = acc::filter::CycleCategory::Door;
     void*                      focusedObj = nullptr;  // CSWSObject* (may be stale across rebuilds)
     int                        focusedIndex = -1;     // -1 = nothing focused
-
-    // GetTickCount() snapshot of the last user-driven `,`/`.`/Shift+`,`/`.`
-    // mutation. Compared against passive_narrate::LastTargetChangeTick() in
-    // interact_hotkey to resolve cycle-vs-engine focus conflicts (e.g. user
-    // cycled to a Tür with `,`, then Q/E moved engine LastTarget to a Feldkiste
-    // — Enter should target the Feldkiste). Bumped only by user-action mutation
-    // paths, NOT by RefreshCurrentListing (refreshes are housekeeping, not
-    // intent). 0 = never mutated; comparisons must use signed-diff to survive
-    // GetTickCount wrap.
-    unsigned int               mutationTick = 0;
 };
 
 // Returns the singleton state. Mutations via the cycle helpers below.

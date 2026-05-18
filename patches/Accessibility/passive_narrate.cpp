@@ -12,6 +12,7 @@
 #include "engine_player.h"
 #include "filter_objects.h"
 #include "log.h"
+#include "narrated_target.h"
 #include "strings.h"
 #include "tolk.h"
 
@@ -24,12 +25,6 @@ constexpr uintptr_t kAddrCClientExoAppGetLastTarget = 0x005EDD80;
 namespace acc::passive_narrate {
 
 namespace {
-
-// Most recent GetTickCount() at which LastTarget transitioned to a
-// non-sentinel handle. Read by interact_hotkey to break cycle-vs-engine
-// focus ties. File-scope so the getter below can return it without
-// threading through Tick()'s static.
-unsigned int g_lastTargetChangeTick = 0;
 
 typedef uint32_t (__thiscall* PFN_GetLastTarget)(void* this_);
 
@@ -141,15 +136,12 @@ void Tick() {
         return;
     }
 
-    // Stamp the tie-break clock — handle changed AND landed on a real
-    // object. Must run regardless of first-tick suppression below: if the
-    // engine has a target at DLL load, that's still a "current engine
-    // focus" for tie-break purposes, even though we don't speak it.
-    g_lastTargetChangeTick = GetTickCount();
-
     // First-tick suppression — don't speak the very first non-sentinel
     // target after DLL load. The user already knows what they were
     // pointed at when they last saved; speaking on resume is noise.
+    // Skipped narrations don't stamp narrated_target either — the user
+    // hasn't been told about this object, so it shouldn't claim the
+    // activation slot.
     if (prev == 0xDEADBEEFu) {
         acclog::Write("PassiveNarrate", "first-tick handle=0x%08x, suppressed", handle);
         return;
@@ -211,14 +203,18 @@ void Tick() {
         tolk::Speak(name, /*interrupt=*/true);
     }
 
-    acclog::Write("PassiveNarrate", "0x%08x -> 0x%08x cat=%s name=[%s] "
-        "pos=(%.2f,%.2f,%.2f) havePos=%d",
-        prev, handle, acc::filter::CategoryName(cat), name,
-        pos.x, pos.y, pos.z, havePos ? 1 : 0);
-}
+    // Stamp the unified activation slot. We speak the bare object name,
+    // which means the user "knows" this is what they're hearing about —
+    // Enter / Shift+- / Ctrl+- / `-` should now target it. The stamp
+    // takes the SERVER-side handle (re-derived via GetObjectHandle),
+    // matching the namespace the AI-action primitives use.
+    uint32_t serverHandle = acc::engine::GetObjectHandle(obj);
+    acc::narrated_target::Stamp(obj, serverHandle);
 
-unsigned int LastTargetChangeTick() {
-    return g_lastTargetChangeTick;
+    acclog::Write("PassiveNarrate", "0x%08x -> 0x%08x cat=%s name=[%s] "
+        "pos=(%.2f,%.2f,%.2f) havePos=%d serverHandle=0x%08x",
+        prev, handle, acc::filter::CategoryName(cat), name,
+        pos.x, pos.y, pos.z, havePos ? 1 : 0, serverHandle);
 }
 
 }  // namespace acc::passive_narrate

@@ -9,7 +9,6 @@
 #include "actionbar_menu.h"
 #include "combat_query.h"   // Phase 2C — Shift+H Examine + Phase 2A PC stat read
 #include "combat_queue.h"   // Phase 3A — action-queue submenu (Shift+K)
-#include "cycle_state.h"
 #include "engine_actionbar.h"
 #include "engine_area.h"
 #include "engine_input.h"   // kInputEnter1 / kInputNavUp/Down/Left/Right
@@ -24,86 +23,16 @@
 #include "guidance_autowalk.h"
 #include "hotkeys.h"
 #include "log.h"
-#include "passive_narrate.h"
+#include "narrated_target.h"
 #include "radial_menu.h"
 #include "strings.h"
 #include "tolk.h"
 #include "view_mode.h"      // IsActive() — Enter is owned by view_mode
                             // while active (lay-off 5)
 
-// Engine entry points used by 9b. Kept at file scope for callsite
-// brevity, matching engine_manager.h / engine_player.h convention.
-//
-// CClientExoApp::SetLastClickedOnTarget(ulong) — sets the engine's
-// "last clicked target" handle. The setter the engine itself calls
-// every time the user clicks an object in 3D world. Verified live
-// 2026-05-04 (probe `Probe: LastTarget changed:` lines logged
-// 0x80000004 / 0x800000c6 transitions; the read side is the matching
-// CClientExoApp::GetLastTarget @0x005edd80).
-constexpr uintptr_t kAddrCClientExoAppSetLastClickedOnTarget = 0x005EE200;
-
-// CClientExoAppInternal::HandleMouseClickInWorld(void) — the engine's
-// native click-on-3D-world dispatcher. Reads its target from internal
-// click state (LastClickedOnTarget + cursor) and enqueues the
-// kind-appropriate AI action against the player creature: walk-to +
-// open / talk / loot / pick-up. Takes no args (this only).
-constexpr uintptr_t kAddrHandleMouseClickInWorld = 0x00620350;
-
-// kClientExoAppInternalOffset (= 0x4) lives in engine_player.h alongside
-// the other client-app chain constants — same chain we walk for
-// SetPlayerInputEnabled.
-
 namespace acc::interact {
 
 namespace {
-
-typedef void (__thiscall* PFN_SetLastClickedOnTarget)(void* this_,
-                                                     uint32_t handle);
-typedef void (__thiscall* PFN_HandleMouseClickInWorld)(void* this_);
-typedef uint32_t (__thiscall* PFN_GetLastTarget)(void* this_);
-
-// Same chain as engine_player's prelude, repeated locally so we don't
-// pull in an include cycle for a four-line walk.
-void* GetClientExoApp() {
-    __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
-void* GetClientExoAppInternal() {
-    void* clientApp = GetClientExoApp();
-    if (!clientApp) return nullptr;
-    __try {
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(clientApp) +
-            kClientExoAppInternalOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
-// CClientExoApp::GetLastTarget — matches the address baked into
-// passive_narrate.cpp. We re-read it as the fallback target when the
-// user hasn't cycled (cycle_state has no focus).
-constexpr uintptr_t kAddrCClientExoAppGetLastTarget = 0x005EDD80;
-
-uint32_t ReadLastTargetHandle() {
-    void* exoApp = GetClientExoApp();
-    if (!exoApp) return 0;
-    __try {
-        auto fn = reinterpret_cast<PFN_GetLastTarget>(
-            kAddrCClientExoAppGetLastTarget);
-        return fn(exoApp);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return 0;
-    }
-}
 
 // Pick the per-kind pre-roll string. Mirrors the cycle/passive_narrate
 // kind classification but produces an action verb instead of a label.
@@ -137,92 +66,32 @@ acc::filter::CycleCategory ClassifyForInteract(void* obj) {
 
 // Resolve the "what does the user want to interact with" target.
 //
-// Most-recent-event wins between the two independent focus channels:
-//   - cycle_state.focusedObj   (mutated by `,`/`.`/Shift+`,`/`.`)
-//   - engine LastTarget        (mutated by Q/E, mouse, passive selection)
+// Unified focus model: the activation target is whatever was last *spoken*
+// to the user as a target name. passive_narrate, cycle_input's announce
+// path, and view_mode's hover speech all stamp `narrated_target` on a
+// successful announcement. This collapses the three previously-independent
+// focus channels (cycle_state.focusedObj, engine LastTarget, view-mode
+// hover) into a single source of truth keyed on "what did I just hear?".
 //
-// Without this tie-break, a stale cycle target shadows a fresher Q/E pick:
-// e.g. user `,` cycles to a Tür, then Q/E moves engine focus to a Feldkiste,
-// presses Enter — Enter would walk to the Tür because cycle_state still
-// holds it. Both systems stay live (each finds objects the other can't);
-// the timestamp picks whichever the user touched last.
+// No fallback: when the slot is empty / stale, the caller treats it as
+// "no focus" and speaks GuidanceNoFocus. Falling back to engine LastTarget
+// would re-introduce the very inconsistency the unified slot exists to
+// remove — engine LastTarget can be set by passive selection / Q/E even
+// when the candidate was filtered out (combat target, non-nav kind) and
+// never narrated. If the user didn't hear it, Enter shouldn't act on it.
 //
-// outHandle is populated whenever the resolved object has a usable
-// engine handle (CGameObject.id +0x4); needed for the
-// SetLastClickedOnTarget call.
+// outHandle is populated with the server-side handle (AI-action namespace).
 void* ResolveInteractTarget(uint32_t* outHandle) {
     *outHandle = 0;
 
-    auto& s = acc::cycle::GetState();
+    acc::narrated_target::Slot slot;
+    if (!acc::narrated_target::TryGet(slot)) return nullptr;
 
-    // Compare ticks via signed difference so wraparound (~49.7d) doesn't
-    // flip the order. cycleNewer == true when cycle.mutationTick is at-or-
-    // after engine LastTarget's last change — cycle wins ties (it's the
-    // explicit nav action; engine LastTarget can be set by passive selection
-    // the user didn't initiate).
-    unsigned int cycleTick  = s.mutationTick;
-    unsigned int engineTick = acc::passive_narrate::LastTargetChangeTick();
-    bool cycleNewer = static_cast<int>(cycleTick - engineTick) >= 0;
-
-    if (s.focusedObj && cycleNewer) {
-        // RefreshCurrentListing picks up area changes; without it
-        // focusedObj could be stale (we haven't cycled keys this tick
-        // and the engine moved/destroyed the object). The refresh
-        // re-validates by reslotting.
-        acc::cycle::CategoryListing listing;
-        acc::cycle::RefreshCurrentListing(listing);
-        if (s.focusedObj && s.focusedIndex >= 0 &&
-            s.focusedIndex < listing.count) {
-            void* obj = s.focusedObj;
-            *outHandle = acc::engine::GetObjectHandle(obj);
-            if (*outHandle != 0) {
-                acclog::Write("Interact", "target source=cycle (cycleTick=%u engineTick=%u) "
-                    "obj=%p handle=0x%08x",
-                    cycleTick, engineTick, obj, *outHandle);
-                return obj;
-            }
-        }
-    }
-
-    // Engine LastTarget path — taken when (a) cycle has no focus, or
-    // (b) engine LastTarget changed more recently than cycle. LastTarget
-    // stores client-side handles (high bit 0x80000000 set);
-    // ResolveClientObjectHandle walks to the matching server CSWSObject*,
-    // and we re-derive the *server-side* id from CGameObject.id+0x4 — that's
-    // the namespace AI-action primitives like AddUseObjectAction operate in.
-    // Passing the original client handle silently no-ops the queued action.
-    // See memory: project_object_handle_namespaces.md.
-    uint32_t handle = ReadLastTargetHandle();
-    if (handle == 0u || handle == 0xFFFFFFFFu || handle == 0x7F000000u) {
-        // Engine has nothing — last fallback is a stale cycle focus, even
-        // when its tick is older than the engine's. Better than dropping
-        // the user's interact action entirely.
-        if (s.focusedObj) {
-            acc::cycle::CategoryListing listing;
-            acc::cycle::RefreshCurrentListing(listing);
-            if (s.focusedObj && s.focusedIndex >= 0 &&
-                s.focusedIndex < listing.count) {
-                void* obj = s.focusedObj;
-                *outHandle = acc::engine::GetObjectHandle(obj);
-                if (*outHandle != 0) {
-                    acclog::Write("Interact", "target source=cycle-fallback "
-                        "(engine sentinel; cycleTick=%u engineTick=%u) "
-                        "obj=%p handle=0x%08x",
-                        cycleTick, engineTick, obj, *outHandle);
-                    return obj;
-                }
-            }
-        }
-        return nullptr;
-    }
-    void* obj = acc::engine::ResolveClientObjectHandle(handle);
-    if (!obj) return nullptr;
-    *outHandle = acc::engine::GetObjectHandle(obj);
-    if (*outHandle == 0) return nullptr;
-    acclog::Write("Interact", "target source=engine (cycleTick=%u engineTick=%u) "
-        "lastTarget=0x%08x -> obj=%p handle=0x%08x",
-        cycleTick, engineTick, handle, obj, *outHandle);
-    return obj;
+    *outHandle = slot.handle;
+    acclog::Write("Interact", "target source=narrated (tickStamp=%u) "
+        "obj=%p handle=0x%08x",
+        slot.tickStamp, slot.obj, slot.handle);
+    return slot.obj;
 }
 
 // Lay-off-5 refactor (2026-05-06): the post-resolution dispatch flow

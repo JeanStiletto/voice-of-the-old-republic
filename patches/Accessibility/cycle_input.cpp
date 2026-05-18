@@ -25,6 +25,7 @@
 #include "guidance_pathfind.h"
 #include "hotkeys.h"
 #include "log.h"
+#include "narrated_target.h"
 #include "peek_description.h"
 #include "strings.h"
 #include "tolk.h"
@@ -172,7 +173,16 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
         std::snprintf(fullMsg, sizeof(fullMsg), "%s", itemMsg);
     }
     tolk::Speak(fullMsg, /*interrupt=*/true);
-    acclog::Write("Cycle", "-> [%s]", fullMsg);
+
+    // Stamp the unified activation slot — the user just heard the
+    // object's name (with distance + clock), so Enter / Shift+- / Ctrl+- /
+    // `-` should target it. Server-side handle is what the AI primitives
+    // need; cycle stores CSWSObject* directly so GetObjectHandle re-derives.
+    uint32_t serverHandle = acc::engine::GetObjectHandle(s.focusedObj);
+    acc::narrated_target::Stamp(s.focusedObj, serverHandle);
+
+    acclog::Write("Cycle", "-> [%s] obj=%p handle=0x%08x",
+                  fullMsg, s.focusedObj, serverHandle);
 }
 
 // ---- Per-action handlers (shared by both ingestion paths) ----
@@ -206,13 +216,99 @@ void OnCycleCategory(bool prev) {
     AnnounceCurrent(listing, acc::strings::Get(bindings.name));
 }
 
-// `-` repeats the current focus (same payload as the cycle keys produce
-// on the most recent step). Useful when the user wants to re-hear after
-// the screen reader was interrupted by something else.
+// Classify a stamped object the same way cycle keys do. Returns Count_
+// when the object falls outside the six locked nav categories — callers
+// fall back to a generic vocabulary (default-open verb, Item cue) since
+// passive_narrate would already have filtered any non-nav classification
+// before stamping, so we shouldn't see Count_ in practice.
+acc::filter::CycleCategory ClassifyForCycle(void* obj) {
+    using C = acc::filter::CycleCategory;
+    for (int i = 0; i < static_cast<int>(C::Count_); ++i) {
+        auto c = static_cast<C>(i);
+        if (acc::filter::ObjectMatches(obj, c)) return c;
+    }
+    return C::Count_;
+}
+
+// Resolve the narrated-target slot into the bundle every dash-family
+// handler needs: object, server handle, current world position, current
+// localised name, and current category. Returns false (and populates the
+// out struct with zeroed fields) when the slot is empty or stale, in
+// which case the caller speaks GuidanceNoFocus.
+//
+// "Current" matters here: cycle-input stamped at announce time, but the
+// player may have walked since then, and the object may have moved.
+// Always re-read pos / name on use so the activation payload reflects
+// the world state at activation time, not stamp time.
+struct NarratedActivation {
+    void*    obj      = nullptr;
+    uint32_t handle   = 0;
+    Vector   pos      = {0.0f, 0.0f, 0.0f};
+    char     name[128] = {};
+    acc::filter::CycleCategory category = acc::filter::CycleCategory::Count_;
+};
+
+bool ResolveNarratedActivation(NarratedActivation& out) {
+    out = {};
+    acc::narrated_target::Slot slot;
+    if (!acc::narrated_target::TryGet(slot)) return false;
+    if (!acc::engine::GetObjectPosition(slot.obj, out.pos)) return false;
+
+    out.obj      = slot.obj;
+    out.handle   = slot.handle;
+    out.category = ClassifyForCycle(slot.obj);
+    if (!acc::engine::GetObjectName(slot.obj, out.name, sizeof(out.name)) ||
+        out.name[0] == '\0') {
+        // Fall back to the localised category name when the object name
+        // is empty — same pattern AnnounceCurrent uses for cycle-stepped
+        // items.
+        const char* fallback = acc::strings::Get(
+            BindingsFor(out.category).name);
+        std::snprintf(out.name, sizeof(out.name), "%s", fallback);
+    }
+    return true;
+}
+
+// `-` repeats the last narrated target with fresh distance + clock. Reads
+// the unified narrated_target slot rather than cycle_state directly — so
+// `-` after a passive-narrate announcement re-announces the passive
+// target, not whatever cycle was last focused on. Re-stamps the slot so
+// the activation tick refreshes (same target, but the user just renewed
+// their "this is what I'm thinking about" claim).
 void OnAnnounceFocus() {
-    acc::cycle::CategoryListing listing;
-    acc::cycle::RefreshCurrentListing(listing);
-    AnnounceCurrent(listing, /*categoryPrefix=*/nullptr);
+    NarratedActivation a;
+    if (!ResolveNarratedActivation(a)) {
+        const char* msg = acc::strings::Get(
+            acc::strings::Id::GuidanceNoFocus);
+        tolk::Speak(msg, /*interrupt=*/true);
+        acclog::Write("Cycle", "- (repeat) -> [%s] (no narrated target)",
+                      msg);
+        return;
+    }
+
+    auto bindings = BindingsFor(a.category);
+    acc::audio::PlayCue3D(acc::audio::GetNavCueResref(bindings.cue), a.pos);
+
+    Vector playerPos;
+    float yaw = 0.0f;
+    bool haveYaw = acc::engine::GetPlayerPosition(playerPos) &&
+                   acc::engine::GetPlayerYawDegrees(yaw);
+    int clock = 12;
+    if (haveYaw) {
+        clock = ClockPosition(yaw, a.pos.x - playerPos.x,
+                              a.pos.y - playerPos.y);
+    }
+    float dx = a.pos.x - playerPos.x;
+    float dy = a.pos.y - playerPos.y;
+    int metres = static_cast<int>(std::sqrt(dx * dx + dy * dy) + 0.5f);
+
+    char msg[192];
+    FormatItemPayload(a.name, haveYaw, clock, metres, msg, sizeof(msg));
+    tolk::Speak(msg, /*interrupt=*/true);
+
+    acc::narrated_target::Stamp(a.obj, a.handle);
+    acclog::Write("Cycle", "- (repeat) -> [%s] obj=%p handle=0x%08x",
+                  msg, a.obj, a.handle);
 }
 
 // Per-kind pre-roll Id picker. Mirrors interact_hotkey's PreRollFor (kept
@@ -275,73 +371,47 @@ void OnPathfindFocus() {
         acclog::Write("Cycle", "Shift+- cancel SEH-FAULT, falling through to UseObject");
     }
 
-    acc::cycle::CategoryListing listing;
-    acc::cycle::RefreshCurrentListing(listing);
-    auto& s = acc::cycle::GetState();
-
-    if (!s.focusedObj || s.focusedIndex < 0 ||
-        s.focusedIndex >= listing.count) {
+    NarratedActivation a;
+    if (!ResolveNarratedActivation(a)) {
         const char* msg = acc::strings::Get(
             acc::strings::Id::GuidanceNoFocus);
         tolk::Speak(msg, /*interrupt=*/true);
-        acclog::Write("Cycle", "Shift+- -> [%s]", msg);
-        return;
-    }
-
-    const Vector& dest    = listing.positions[s.focusedIndex];
-    uint32_t      handle  = acc::engine::GetObjectHandle(s.focusedObj);
-    if (handle == 0u || handle == 0xFFFFFFFFu) {
-        // Object resolved at scan time but its engine-side handle slot
-        // is now sentinel — happens during teardown or after the engine
-        // removed the object mid-frame. Speak the localised failure so
-        // the user knows the key landed but the action couldn't run.
-        const char* msg = acc::strings::Get(acc::strings::Id::GuidanceNoFocus);
-        tolk::Speak(msg, /*interrupt=*/true);
-        acclog::Write("Cycle", "Shift+- -> [%s] (handle sentinel for obj=%p)",
-                      msg, s.focusedObj);
+        acclog::Write("Cycle", "Shift+- -> [%s] (no narrated target)", msg);
         return;
     }
 
     // Per-category 3D cue at the destination — same spatial-confirmation
-    // pattern as the cycle keys produce.
-    auto bindings = BindingsFor(s.category);
-    acc::audio::PlayCue3D(acc::audio::GetNavCueResref(bindings.cue), dest);
-
-    char name[128] = "";
-    if (!acc::engine::GetObjectName(s.focusedObj, name, sizeof(name)) ||
-        name[0] == '\0') {
-        std::snprintf(name, sizeof(name), "%s",
-                      acc::strings::Get(bindings.name));
-    }
+    // pattern the announce path uses.
+    auto bindings = BindingsFor(a.category);
+    acc::audio::PlayCue3D(acc::audio::GetNavCueResref(bindings.cue), a.pos);
 
     char msg[192];
     std::snprintf(msg, sizeof(msg),
-                  acc::strings::Get(GuidancePreRollFor(s.category)),
-                  name);
+                  acc::strings::Get(GuidancePreRollFor(a.category)),
+                  a.name);
 
     // Disable per-tick player-input clobber for the duration of the AI
     // action; engine's TickPlayerInputRestore auto-flips back after ~3s.
     bool inputDisabled = acc::engine::SetPlayerInputEnabled(false);
 
-    bool ok = acc::guidance::UseObject(handle, dest);
+    bool ok = acc::guidance::UseObject(a.handle, a.pos);
     if (ok) {
         tolk::Speak(msg, /*interrupt=*/true);
         acclog::Write("Cycle", "Shift+- -> [%s] obj=%p handle=0x%08x "
-                      "dest=(%.2f,%.2f,%.2f) dist=%.2fm input_disabled=%d",
-                      msg, s.focusedObj, handle,
-                      dest.x, dest.y, dest.z,
-                      listing.distances[s.focusedIndex],
+                      "dest=(%.2f,%.2f,%.2f) input_disabled=%d",
+                      msg, a.obj, a.handle,
+                      a.pos.x, a.pos.y, a.pos.z,
                       inputDisabled ? 1 : 0);
     } else {
         if (inputDisabled) acc::engine::SetPlayerInputEnabled(true);
         char failMsg[192];
         std::snprintf(failMsg, sizeof(failMsg),
                       acc::strings::Get(acc::strings::Id::FmtInteractFailed),
-                      name);
+                      a.name);
         tolk::Speak(failMsg, /*interrupt=*/true);
         acclog::Write("Cycle", "Shift+- -> [%s] UseObject FAILED obj=%p "
                       "handle=0x%08x",
-                      failMsg, s.focusedObj, handle);
+                      failMsg, a.obj, a.handle);
     }
 }
 
@@ -368,20 +438,14 @@ void OnBeaconFocus() {
         return;
     }
 
-    acc::cycle::CategoryListing listing;
-    acc::cycle::RefreshCurrentListing(listing);
-    auto& s = acc::cycle::GetState();
-
-    if (!s.focusedObj || s.focusedIndex < 0 ||
-        s.focusedIndex >= listing.count) {
+    NarratedActivation a;
+    if (!ResolveNarratedActivation(a)) {
         const char* msg = acc::strings::Get(
             acc::strings::Id::GuidanceNoFocus);
         tolk::Speak(msg, /*interrupt=*/true);
-        acclog::Write("Cycle", "Ctrl+- -> [%s]", msg);
+        acclog::Write("Cycle", "Ctrl+- -> [%s] (no narrated target)", msg);
         return;
     }
-
-    const Vector& dest = listing.positions[s.focusedIndex];
 
     Vector playerPos;
     if (!acc::engine::GetPlayerPosition(playerPos)) {
@@ -395,31 +459,24 @@ void OnBeaconFocus() {
     }
 
     void* area = acc::engine::GetCurrentArea();
-    char  name[128] = "";
-    if (!acc::engine::GetObjectName(s.focusedObj, name, sizeof(name)) ||
-        name[0] == '\0') {
-        auto bindings = BindingsFor(s.category);
-        std::snprintf(name, sizeof(name), "%s",
-                      acc::strings::Get(bindings.name));
-    }
 
     // Per-category 3D cue at the destination — same spatial-confirmation
     // pattern as Shift+-. Plays before any speech so the user hears the
     // category cue → opener → description in audible order.
-    auto bindings = BindingsFor(s.category);
-    acc::audio::PlayCue3D(acc::audio::GetNavCueResref(bindings.cue), dest);
+    auto bindings = BindingsFor(a.category);
+    acc::audio::PlayCue3D(acc::audio::GetNavCueResref(bindings.cue), a.pos);
 
     std::vector<Vector> waypoints;
-    bool pathOk = acc::guidance::ComputePath(area, playerPos, dest, waypoints);
+    bool pathOk = acc::guidance::ComputePath(area, playerPos, a.pos, waypoints);
 
     if (!pathOk || waypoints.empty()) {
         char msg[192];
         std::snprintf(msg, sizeof(msg),
                       acc::strings::Get(acc::strings::Id::FmtBeaconNoPath),
-                      name);
+                      a.name);
         tolk::Speak(msg, /*interrupt=*/true);
         acclog::Write("Cycle", "Ctrl+- -> [%s] obj=%p (ComputePath failed)",
-                      msg, s.focusedObj);
+                      msg, a.obj);
         return;
     }
 
@@ -431,20 +488,19 @@ void OnBeaconFocus() {
     char opener[192];
     std::snprintf(opener, sizeof(opener),
                   acc::strings::Get(acc::strings::Id::FmtBeaconStarted),
-                  name);
+                  a.name);
     tolk::Speak(opener, /*interrupt=*/true);
 
-    bool isTransition = acc::filter::ObjectMatches(
-        s.focusedObj, acc::filter::CycleCategory::Transition);
-    acc::guidance::description::Speak(playerPos, waypoints, name,
+    bool isTransition = (a.category == acc::filter::CycleCategory::Transition);
+    acc::guidance::description::Speak(playerPos, waypoints, a.name,
                                       isTransition, /*interrupt=*/false);
 
     acc::guidance::beacon::StartBeacon(waypoints);
 
     acclog::Write("Cycle", "Ctrl+- -> [%s] obj=%p waypoints=%zu "
                   "dest=(%.2f,%.2f,%.2f) transition=%d",
-                  opener, s.focusedObj, waypoints.size(),
-                  dest.x, dest.y, dest.z, isTransition ? 1 : 0);
+                  opener, a.obj, waypoints.size(),
+                  a.pos.x, a.pos.y, a.pos.z, isTransition ? 1 : 0);
 }
 
 // Alt+- — diagnostic alternate path that bypasses the action queue via
@@ -458,53 +514,39 @@ void OnBeaconFocus() {
 // character actually moves. The log distinguishes via "(force path)" /
 // "(queue path)" tags so post-mortem grep finds each path cleanly.
 void OnPathfindFocusForce() {
-    acc::cycle::CategoryListing listing;
-    acc::cycle::RefreshCurrentListing(listing);
-    auto& s = acc::cycle::GetState();
-
-    if (!s.focusedObj || s.focusedIndex < 0 ||
-        s.focusedIndex >= listing.count) {
+    NarratedActivation a;
+    if (!ResolveNarratedActivation(a)) {
         const char* msg = acc::strings::Get(
             acc::strings::Id::GuidanceNoFocus);
         tolk::Speak(msg, /*interrupt=*/true);
-        acclog::Write("Cycle", "Alt+- -> [%s]", msg);
+        acclog::Write("Cycle", "Alt+- -> [%s] (no narrated target)", msg);
         return;
     }
 
-    const Vector& dest = listing.positions[s.focusedIndex];
-
-    auto bindings = BindingsFor(s.category);
-    acc::audio::PlayCue3D(acc::audio::GetNavCueResref(bindings.cue), dest);
-
-    char name[128] = "";
-    if (!acc::engine::GetObjectName(s.focusedObj, name, sizeof(name)) ||
-        name[0] == '\0') {
-        std::snprintf(name, sizeof(name), "%s",
-                      acc::strings::Get(bindings.name));
-    }
+    auto bindings = BindingsFor(a.category);
+    acc::audio::PlayCue3D(acc::audio::GetNavCueResref(bindings.cue), a.pos);
 
     char msg[192];
     std::snprintf(msg, sizeof(msg),
                   acc::strings::Get(acc::strings::Id::FmtGuidingTo),
-                  name);
+                  a.name);
 
-    bool ok = acc::guidance::ForceWalkTo(dest);
+    bool ok = acc::guidance::ForceWalkTo(a.pos);
     if (ok) {
         tolk::Speak(msg, /*interrupt=*/true);
         acclog::Write("Cycle", "Alt+- -> [%s] obj=%p "
-                      "dest=(%.2f,%.2f,%.2f) dist=%.2fm (force path)",
-                      msg, s.focusedObj,
-                      dest.x, dest.y, dest.z,
-                      listing.distances[s.focusedIndex]);
+                      "dest=(%.2f,%.2f,%.2f) (force path)",
+                      msg, a.obj,
+                      a.pos.x, a.pos.y, a.pos.z);
     } else {
         char failMsg[192];
         std::snprintf(failMsg, sizeof(failMsg),
                       acc::strings::Get(acc::strings::Id::FmtGuidingFailed),
-                      name);
+                      a.name);
         tolk::Speak(failMsg, /*interrupt=*/true);
         acclog::Write("Cycle", "Alt+- -> [%s] ForceWalkTo FAILED obj=%p "
                       "dest=(%.2f,%.2f,%.2f)",
-                      failMsg, s.focusedObj, dest.x, dest.y, dest.z);
+                      failMsg, a.obj, a.pos.x, a.pos.y, a.pos.z);
     }
 }
 

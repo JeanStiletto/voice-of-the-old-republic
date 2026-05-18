@@ -12,6 +12,7 @@
 #include "engine_offsets.h"  // Vector
 #include "engine_reads.h"    // ReadCExoString
 #include "log.h"
+#include "narrated_target.h" // clear on area transition
 #include "region_classifier.h"  // BuildCacheForArea + LookupRoomShape
 #include "strings.h"
 #include "tolk.h"
@@ -667,6 +668,13 @@ void Tick() {
 
     if (area != g_prev_area) {
         SpeakArea(area);
+        // Drop the unified narrated-target slot — any object from the old
+        // area is now invalid. Stale pointers would survive otherwise
+        // (TryGet's handle round-trip resolves through the active area's
+        // game-object array, so a cross-area stale obj could in principle
+        // get a false-positive validation). Explicit Clear is the safe
+        // path.
+        acc::narrated_target::Clear();
         // Rebuild the per-room landmark cache for the new area before
         // any room-change branch can fire — the first room announce
         // after an area change should already use the curated label
