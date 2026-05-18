@@ -430,6 +430,83 @@ void RenderDoorDirection(int doorIdx,
     }
 }
 
+// Render a corridor's axis label into outBuf. Branches by corridor
+// symmetry so the spoken form stays terse for clean axes but exposes
+// both endpoints when the corridor turns:
+//   - opposite octants (bit XOR == 4) = symmetric corridor → single
+//     label. Cardinal pairs (N+S, E+W) use the dedicated axis words
+//     ("Nord-Süd" / "Ost-West"); diagonal pairs (NE+SW, NW+SE) use
+//     the northern-half octant word ("Nord-Ost" / "Nord-West") —
+//     diagonals are symmetric enough that the abbreviation reads
+//     naturally.
+//   - non-opposite octants = asymmetric / L-shaped corridor → both
+//     direction words rendered, more-northern-first ("Korridor West,
+//     Süd-Ost"). Caught the "Korridor West" failure mode where the
+//     old NordedOutAxisOctant collapsed an asymmetric corridor to a
+//     single direction and lost the other endpoint.
+// When `doorIdx` >= 0 the picked label is wrapped via
+// RenderDoorDirection so corridors that pass through doors read as
+// "Tür <axis>" / "Tür <axis> nach <DEST>".
+void RenderCorridorAxis(int bitA, int bitB, int doorIdx,
+                        char* outBuf, size_t bufSize) {
+    using acc::strings::Id;
+    if (!outBuf || bufSize == 0) return;
+    outBuf[0] = '\0';
+    if (bitA < 0 || bitB < 0 || bitA == bitB) return;
+
+    if ((bitA ^ bitB) == 4) {
+        Id wordId;
+        if (bitA == 2 || bitB == 2) {
+            wordId = Id::AxisNorthSouth;  // N <-> S
+        } else if (bitA == 0 || bitB == 0) {
+            wordId = Id::AxisEastWest;    // E <-> W
+        } else {
+            // Diagonal pair: NE(1)+SW(5) or NW(3)+SE(7). Northern
+            // half always has the lower bit number in these pairs.
+            int northBit = (bitA < bitB) ? bitA : bitB;
+            wordId = BitToOctant(northBit);
+        }
+        const char* word = acc::strings::Get(wordId);
+        if (doorIdx >= 0 && word && word[0]) {
+            RenderDoorDirection(doorIdx, word, outBuf, bufSize);
+        } else {
+            const char* fmt = acc::strings::Get(Id::FmtMapCursorCorridorDir);
+            if (fmt && fmt[0] && word && word[0]) {
+                std::snprintf(outBuf, bufSize, fmt, word);
+            }
+        }
+        return;
+    }
+
+    // Non-opposite octants: render both endpoints. Order by
+    // y-component descending, x-component descending on ties — keeps
+    // the more-northern, then more-eastern, end first.
+    static const int octant_y[8] = { 0,  1,  2,  1,  0, -1, -2, -1};
+    static const int octant_x[8] = { 2,  1,  0, -1, -2, -1,  0,  1};
+    int first = bitA, second = bitB;
+    if (octant_y[bitB] > octant_y[first] ||
+        (octant_y[bitB] == octant_y[first] &&
+         octant_x[bitB] >  octant_x[first])) {
+        first = bitB;
+        second = bitA;
+    }
+    const char* wordA = acc::strings::Get(BitToOctant(first));
+    const char* wordB = acc::strings::Get(BitToOctant(second));
+    if (!wordA || !wordA[0] || !wordB || !wordB[0]) return;
+
+    char combo[64];
+    std::snprintf(combo, sizeof(combo), "%s, %s", wordA, wordB);
+
+    if (doorIdx >= 0) {
+        RenderDoorDirection(doorIdx, combo, outBuf, bufSize);
+    } else {
+        const char* fmt = acc::strings::Get(Id::FmtMapCursorCorridorDir);
+        if (fmt && fmt[0]) {
+            std::snprintf(outBuf, bufSize, fmt, combo);
+        }
+    }
+}
+
 // "Is this node a *real* dead-end the player can step into, or is it a
 // graph artefact pinned to a wall curve in a bigger open area?"
 //
@@ -626,35 +703,30 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
         int nbA = externalNbs[0];
         int nbB = externalNbs[1];
         if (nbA < 0 || nbA >= n || nbB < 0 || nbB >= n) return;
-        float dx = g.nodes[nbB].pos.x - g.nodes[nbA].pos.x;
-        float dy = g.nodes[nbB].pos.y - g.nodes[nbA].pos.y;
-        Id dir = NordedOutAxisOctant(dx, dy);
-        Id wordId = dir;
-        if (dir == Id::DirNorth) wordId = Id::AxisNorthSouth;
-        else if (dir == Id::DirEast) wordId = Id::AxisEastWest;
-        const char* word = acc::strings::Get(wordId);
-
-        // Door-on-edge: corridor segment passes through a door → relabel.
-        // Query is across the whole corridor (nbA → nbB) because the
-        // cluster node sits between them; a door anywhere on that span
-        // is the one the player would walk through.
+        // Octant per endpoint, relative to the centroid (cluster
+        // member's position). RenderCorridorAxis picks the right
+        // form — single axis word for symmetric corridors, two-end
+        // form for L-shaped / asymmetric corridors.
+        int bitA = OctantBit(OctantFromVector(g.nodes[nbA].pos.x - centroid.x,
+                                              g.nodes[nbA].pos.y - centroid.y));
+        int bitB = OctantBit(OctantFromVector(g.nodes[nbB].pos.x - centroid.x,
+                                              g.nodes[nbB].pos.y - centroid.y));
+        // Door anywhere on the corridor segment counts — cluster node
+        // sits between the endpoints so a door on the span is the one
+        // the player walks through.
         int doorIdx = FindDoorOnEdge(g.nodes[nbA].pos, g.nodes[nbB].pos);
-        if (doorIdx >= 0 && word && word[0]) {
-            RenderDoorDirection(doorIdx, word, outLabel, outLabelSize);
+        RenderCorridorAxis(bitA, bitB, doorIdx, outLabel, outLabelSize);
+        if (doorIdx >= 0) {
             acclog::Write(
                 "WallTopo",
                 "ClassifyCluster: degree-2 corridor at (%.1f,%.1f,%.1f) "
                 "HIT door idx=%d on segment → \"%s\"",
                 centroid.x, centroid.y, centroid.z, doorIdx, outLabel);
-        } else {
-            const char* fmt  = acc::strings::Get(Id::FmtMapCursorCorridorDir);
-            if (fmt && fmt[0] && word && word[0]) {
-                std::snprintf(outLabel, outLabelSize, fmt, word);
-            }
         }
         outKind = kKindCorridor;
-        int octBit = OctantBit(dir);
-        outSig = (kKindCorridor & 0xff) | ((octBit & 0xff) << 8);
+        int sigBit = (bitA < bitB) ? bitA : bitB;
+        outSig = (kKindCorridor & 0xff) | ((sigBit & 0xff) << 8) |
+                 ((((bitA < bitB) ? bitB : bitA) & 0xff) << 16);
         return;
     }
 
@@ -675,13 +747,6 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
     // direction word for the "Tür DIR" / "Tür DIR nach DEST" rewrite
     // and skips the (Sackgasse) marker for that octant — door wins.
     int octantDoorIdx[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
-    // Representative onward/door neighbour per octant. Captured by the
-    // per-neighbour loop and consumed by the demote gate below: when a
-    // junction collapses to ≤2 real walkable exits after octant dedup
-    // + walkmesh-shape gating, we need the actual neighbour positions
-    // to compute the demoted corridor's axis. -1 = no real exit in
-    // this octant (only wall-curves or pure dead-end stubs).
-    int octantRepNb[8]  = {-1, -1, -1, -1, -1, -1, -1, -1};
     // Per-neighbour classification accumulates into per-octant counters.
     // Per the user's "don't announce nonsense" rule:
     //   - real onward exit (degree ≥ 2)     → octant emits direction
@@ -754,12 +819,6 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
         // marker (the real dead-end carries it); mixed real-dead-end +
         // onward exit doesn't (the onward exit dominates).
         if (isOnwardExit) octantAllDeadEnd[bit] = false;
-        // Capture first onward/door neighbour position per octant for
-        // the demote-to-corridor axis computation. Skip pure-dead-end
-        // stubs — they're annotations, not the actual walk vector.
-        if ((isOnwardExit || hasDoor) && octantRepNb[bit] < 0) {
-            octantRepNb[bit] = nb;
-        }
 
         if (isWallCurve && !hasDoor) {
             acclog::Write(
@@ -819,34 +878,22 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
     if (realExitCount == 2) {
         int bitA = realExitBits[0];
         int bitB = realExitBits[1];
-        int nbA = octantRepNb[bitA];
-        int nbB = octantRepNb[bitB];
-        if (nbA >= 0 && nbA < n && nbB >= 0 && nbB < n) {
-            float dx = g.nodes[nbB].pos.x - g.nodes[nbA].pos.x;
-            float dy = g.nodes[nbB].pos.y - g.nodes[nbA].pos.y;
-            Id dir = NordedOutAxisOctant(dx, dy);
-            Id wordId = dir;
-            if (dir == Id::DirNorth) wordId = Id::AxisNorthSouth;
-            else if (dir == Id::DirEast) wordId = Id::AxisEastWest;
-            const char* word = acc::strings::Get(wordId);
-            if (firstDoorBit >= 0 && word && word[0]) {
-                RenderDoorDirection(octantDoorIdx[firstDoorBit], word,
-                                    outLabel, outLabelSize);
-            } else {
-                const char* fmt = acc::strings::Get(Id::FmtMapCursorCorridorDir);
-                if (fmt && fmt[0] && word && word[0]) {
-                    std::snprintf(outLabel, outLabelSize, fmt, word);
-                }
-            }
-            outKind = kKindCorridor;
-            outSig  = (kKindCorridor & 0xff) | ((OctantBit(dir) & 0xff) << 8);
-            acclog::Write(
-                "WallTopo",
-                "ClassifyCluster: junction at (%.1f,%.1f) DEMOTED to Korridor "
-                "(real-exits=2, axis=%s) → \"%s\"",
-                centroid.x, centroid.y, word ? word : "?", outLabel);
-            return;
-        }
+        int doorIdx = (firstDoorBit >= 0)
+                          ? octantDoorIdx[firstDoorBit]
+                          : -1;
+        RenderCorridorAxis(bitA, bitB, doorIdx, outLabel, outLabelSize);
+        outKind = kKindCorridor;
+        int sigBitLo = (bitA < bitB) ? bitA : bitB;
+        int sigBitHi = (bitA < bitB) ? bitB : bitA;
+        outSig = (kKindCorridor & 0xff) |
+                 ((sigBitLo & 0xff) << 8) |
+                 ((sigBitHi & 0xff) << 16);
+        acclog::Write(
+            "WallTopo",
+            "ClassifyCluster: junction at (%.1f,%.1f) DEMOTED to Korridor "
+            "(real-exits=2, octants=%d+%d) → \"%s\"",
+            centroid.x, centroid.y, bitA, bitB, outLabel);
+        return;
     }
 
     // Second pass: emit octants in canonical order (N, NE, E, SE, S,
