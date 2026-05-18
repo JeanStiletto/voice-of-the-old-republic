@@ -332,6 +332,32 @@ bool CallHideSWInGameGui(int param_1) {
     }
 }
 
+bool HasActiveMapPanel(void** outPanel) {
+    if (outPanel) *outPanel = nullptr;
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!mgr) return false;
+    auto* base = reinterpret_cast<unsigned char*>(mgr);
+    int   panelCount = 0;
+    void** panelData = nullptr;
+    __try {
+        panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+        panelData  = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (!panelData || panelCount <= 0) return false;
+    int n = panelCount > 16 ? 16 : panelCount;
+    for (int i = 0; i < n; ++i) {
+        void* p = panelData[i];
+        if (!p) continue;
+        if (IdentifyPanel(p) == PanelKind::InGameMap) {
+            if (outPanel) *outPanel = p;
+            return true;
+        }
+    }
+    return false;
+}
+
 bool HasActiveSubScreen() {
     void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
     if (!mgr) return false;

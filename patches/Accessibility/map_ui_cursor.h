@@ -104,4 +104,17 @@ bool IsActive();
 // pixel-space internals.
 bool TryGetCursorWorldPosition(Vector& out);
 
+// Pan the virtual cursor to `world`. No-op if the cursor is not active
+// (e.g. the map sub-screen isn't foreground). When the caller has just
+// announced a map-note waypoint via the cycle, `suppressWaypoint` should
+// point at that CSWSWaypoint* so the cursor's own hover-pause does not
+// re-announce the same name on the next tick. For non-waypoint pans
+// (Door / Transition / map pin / party member), pass nullptr — the
+// ambient hover-pause will fall through to terrain-shape narration if
+// the cursor sits still, which is informative rather than duplicate.
+//
+// Used by cycle_input::AnnounceCurrent in map context so the cursor's
+// position stays coherent with the cycle's spoken focus.
+void PanToWorld(const Vector& world, void* suppressWaypoint);
+
 }  // namespace acc::map_ui_cursor

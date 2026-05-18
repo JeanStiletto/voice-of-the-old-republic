@@ -133,6 +133,18 @@ bool HasActiveDialogPanel();
 // one before adding the next), so this does not stale-block.
 bool HasActiveSubScreen();
 
+// True iff PanelKind::InGameMap sits somewhere in the manager's panels[]
+// stack. Mirrors HasActiveSubScreen but specialised to the area-map sub-
+// screen; the InGameMap panel hides UNDER the InGameMenu strip when
+// drilled in, so a foreground check alone misses it (same reason
+// HasActiveSubScreen / map_ui_cursor::IsMapPanelActive scan the stack).
+//
+// `outPanel`, if non-null, receives the matching panel pointer (or
+// nullptr when no map panel is active). Useful for callers that need to
+// reach into the panel's CSWGuiInGameMap layout afterwards (e.g. the
+// map-note list).
+bool HasActiveMapPanel(void** outPanel = nullptr);
+
 // Pop the current in-game sub-screen via CGuiInGame::PrevSWInGameGui
 // (0x0062cdf0 — the engine-internal counterpart to SwitchToSWInGameGui).
 // This is the engine's own "back to strip" primitive: it removes the

@@ -75,13 +75,12 @@ constexpr DWORD kEdgeCueQuietMs = 250;
 // same reason — UI feedback has to win against pause-mode audio dampening.
 constexpr float kEdgeCueGain = 8.0f;
 
-// CSWSModule.area_map field offset (field89_0x218 in Lane's typed
-// struct — investigation §Q4 + engine decomp of MapHider::Draw which
-// reads exactly this offset to acquire the CSWSAreaMap*).
-constexpr size_t kModuleAreaMapOffset = 0x218;
-
 // CSWSAreaMap field layout (subset). Full layout in
-// docs/navsystems-investigation.md §Q4.
+// docs/navsystems-investigation.md §Q4. The module → area_map indirection
+// and the IsWorldPointExplored entry point live in engine_area now
+// (shared with the map-context cycle filter); the transform-field
+// offsets stay local because the inverse projection is unique to the
+// cursor.
 constexpr size_t kAreaMapOrientationOffset      = 0x10;
 constexpr size_t kAreaMapWorldUnitsPerXPxOffset = 0x18;
 constexpr size_t kAreaMapWorldUnitsPerYPxOffset = 0x1c;
@@ -118,14 +117,9 @@ constexpr size_t kWaypointPositionOffset = 0x90;
 constexpr size_t kWaypointHasMapNoteOff  = 0x22c;
 constexpr size_t kWaypointMapNoteLocOff  = 0x230;
 
-// Engine function addresses verified 2026-05-12 against
-// k1_win_gog_swkotor.exe.xml.
-constexpr uintptr_t kAddrCServerExoAppGetModule        = 0x004ae6b0;
-constexpr uintptr_t kAddrCSWSAreaMapIsWorldPointExplored = 0x00579210;
-
-using PFN_CServerExoApp_GetModule = void* (__thiscall*)(void* /*serverApp*/);
-using PFN_CSWSAreaMap_IsWorldPointExplored =
-    bool (__thiscall*)(void* /*areaMap*/, Vector /*pos*/);
+// GetAreaMap / IsWorldPointExplored entry points moved to engine_area.
+// engine_area.h carries the shared constants (kAddrCServerExoAppGetModule,
+// kModuleAreaMapOffset, kAddrCSWSAreaMapIsWorldPointExplored).
 
 // Ambient categories the cursor can sit on when it is NOT directly over
 // a discrete map-note waypoint. Mutually exclusive: cursor is either in
@@ -248,43 +242,9 @@ bool IsMapPanelActive(void** outPanel) {
     return false;
 }
 
-void* GetServerApp() {
-    __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerServerOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
-void* GetAreaMap() {
-    void* serverApp = GetServerApp();
-    if (!serverApp) return nullptr;
-    __try {
-        auto fn = reinterpret_cast<PFN_CServerExoApp_GetModule>(
-            kAddrCServerExoAppGetModule);
-        void* module = fn(serverApp);
-        if (!module) return nullptr;
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(module) + kModuleAreaMapOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
-bool IsWorldPointExplored(void* areaMap, const Vector& pos) {
-    if (!areaMap) return false;
-    __try {
-        auto fn = reinterpret_cast<PFN_CSWSAreaMap_IsWorldPointExplored>(
-            kAddrCSWSAreaMapIsWorldPointExplored);
-        return fn(areaMap, pos);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-}
+// GetServerApp / GetAreaMap / IsWorldPointExplored lifted to engine_area
+// in Phase 6 lay-off 1a so cycle_state can fog-of-war filter on map
+// context. The cursor calls those shared helpers via acc::engine::*.
 
 // Read CSWSAreaMap pixel-transform fields. Returns false on any read
 // fault (SEH-guarded). All four scalars are required to invert; one
@@ -384,8 +344,9 @@ void* FindNearestExploredMapNote(void* mapPanel, void* areaMap,
     }
     if (!internal) return nullptr;
 
-    void* serverApp = GetServerApp();
-    if (!serverApp) return nullptr;
+    // serverApp gate removed when GetServerApp lifted to engine_area
+    // (Phase 6 lay-off 1a). ResolveServerObjectHandle handles its own
+    // chain bail-out on null AppManager / CServerExoApp internally.
 
     void* bestObj = nullptr;
     float bestDist2 = (float)(kHoverHitRadiusPx * kHoverHitRadiusPx);
@@ -442,7 +403,7 @@ void* FindNearestExploredMapNote(void* mapPanel, void* areaMap,
             node = nextNode; continue;
         }
         if (hasNote == 0) { node = nextNode; continue; }
-        if (!IsWorldPointExplored(areaMap, pos)) {
+        if (!acc::engine::IsWorldPointExplored(areaMap, pos)) {
             node = nextNode; continue;
         }
 
@@ -545,6 +506,59 @@ bool TryGetCursorWorldPosition(Vector& out) {
     return true;
 }
 
+void PanToWorld(const Vector& world, void* suppressWaypoint) {
+    if (!g_state.active) return;
+
+    void* areaMap = acc::engine::GetAreaMap();
+    if (!areaMap) return;
+
+    float px, py;
+    if (!WorldToPixel(areaMap, world, px, py)) return;
+
+    // Clamp inside the map-pixel rectangle so the cursor visibly settles
+    // on the object even if the projection falls slightly off-bounds
+    // (rare, but happens for transitions sitting at the world-edge of an
+    // area's mapped region).
+    if (px < 0.0f) px = 0.0f;
+    if (px > (float)kMapPixelMaxX) px = (float)kMapPixelMaxX;
+    if (py < 0.0f) py = 0.0f;
+    if (py > (float)kMapPixelMaxY) py = (float)kMapPixelMaxY;
+
+    g_state.px    = px;
+    g_state.py    = py;
+    g_state.world = world;
+
+    // Cancel any in-flight hover-pause — the cycle just spoke. We don't
+    // want the cursor's own debounce to fire 300 ms later and re-announce
+    // the same name (waypoint case) or contradict the cycle's category
+    // narration with a terrain-shape tail (door / transition case).
+    g_state.pending_note_waypoint      = nullptr;
+    g_state.pending_note_started_ms    = 0;
+    g_state.pending_ambient_kind       = AmbientKind::None;
+    g_state.pending_ambient_room_idx   = -1;
+    g_state.pending_ambient_started_ms = 0;
+    g_state.pending_shape_text[0]      = '\0';
+    g_state.pending_shape_signature    = 0;
+
+    // Waypoint landing — latch as already-spoken so the cursor stays
+    // silent on this pin until the user pans away and back. Non-
+    // waypoint landings (Door / Transition) leave last_spoken_waypoint
+    // untouched so coming off the pan back onto a real map-note still
+    // announces. Ambient latching cleared so the user does get a fresh
+    // surrounding-room cue if they sit still after the pan.
+    if (suppressWaypoint) {
+        g_state.last_spoken_waypoint = suppressWaypoint;
+    }
+    g_state.last_spoken_ambient_kind     = AmbientKind::None;
+    g_state.last_spoken_ambient_room_idx = -1;
+    g_state.last_spoken_ambient_text[0]  = '\0';
+
+    acclog::Write("MapCursor",
+                  "pan to=(%.2f,%.2f) pixel=(%.1f,%.1f) "
+                  "suppressWaypoint=%p",
+                  world.x, world.y, px, py, suppressWaypoint);
+}
+
 void Tick() {
     void* mapPanel = nullptr;
     if (!IsForegroundProcess() || !IsMapPanelActive(&mapPanel)) {
@@ -555,7 +569,7 @@ void Tick() {
         return;
     }
 
-    void* areaMap = GetAreaMap();
+    void* areaMap = acc::engine::GetAreaMap();
     if (!areaMap) {
         if (g_state.active) {
             acclog::Write("MapCursor", "deactivated — area_map vanished");
@@ -714,7 +728,7 @@ void Tick() {
     // gets a deterministic label per region rather than per pixel.
     // Fog-of-war gate applied first — never expose a shape label for a
     // cell the player hasn't revealed.
-    bool cursorExplored = IsWorldPointExplored(areaMap, g_state.world);
+    bool cursorExplored = acc::engine::IsWorldPointExplored(areaMap, g_state.world);
     char shapeTextLocal[128] = {0};
     int  shapeSigLocal = 0;
     bool haveShape = false;
@@ -832,7 +846,7 @@ void Tick() {
         AmbientKind currentKind    = AmbientKind::None;
         int         currentRoomIdx = -1;
 
-        bool explored = IsWorldPointExplored(areaMap, g_state.world);
+        bool explored = acc::engine::IsWorldPointExplored(areaMap, g_state.world);
         if (!explored) {
             currentKind = AmbientKind::Unexplored;
         } else {

@@ -266,6 +266,21 @@ bool IsTransitionTrigger(void* trigger);
 // the object is a Waypoint kind via GetObjectKind.
 bool IsMapNoteEnabled(void* waypoint);
 
+// Resolve the per-area CSWSAreaMap* that owns the fog-of-war bitfield +
+// pixel transform. Reached via AppManager → CServerExoApp →
+// GetModule() → CSWSModule.area_map (+0x218). Returns nullptr on any
+// null link (DLL attach, between modules, no current game) or SEH
+// fault. Shared by map_ui_cursor (cursor projection + fog read) and
+// cycle_state (map-context fog-of-war filter).
+void* GetAreaMap();
+
+// Wraps CSWSAreaMap::IsWorldPointExplored @0x00579210 — the engine's
+// fog-of-war read. Returns true iff `pos` lies in a map cell the player
+// has revealed (and the map cell exists). False on null areaMap, off-
+// map positions, or SEH fault. Used to filter map-context cycle output
+// so we never narrate landmarks the player hasn't seen yet.
+bool IsWorldPointExplored(void* areaMap, const Vector& pos);
+
 // Reads CSWSWaypoint.map_note (+0x230, CExoLocString). The Bioware-
 // authored display label (e.g. "Bridge", "Cargo Hold", "Brücke",
 // "Frachtraum") that the in-game map shows. CExoLocString shape matches
@@ -331,6 +346,15 @@ constexpr uintptr_t kAddrCGameObjectArrayGetGameObject = 0x004D8230;
 // hides the array layer). Verified live 2026-05-04 — see
 // ResolveClientObjectHandle's docs.
 constexpr uintptr_t kAddrCClientExoAppGetGameObject = 0x005ED580;
+
+// Per-area map-and-fog-of-war singleton chain.
+//   CServerExoApp::GetModule @0x004ae6b0 → CSWSModule*
+//   CSWSModule.area_map (+0x218)         → CSWSAreaMap*
+//   CSWSAreaMap::IsWorldPointExplored @0x00579210 — fog-of-war read.
+// See navsystems-investigation.md §Q4 for the full layout.
+constexpr uintptr_t kAddrCServerExoAppGetModule          = 0x004AE6B0;
+constexpr size_t    kModuleAreaMapOffset                 = 0x218;
+constexpr uintptr_t kAddrCSWSAreaMapIsWorldPointExplored = 0x00579210;
 
 // CSWSArea field offsets. game_objects + rooms verified live (lay-off 1+4);
 // name + tag + room_count from Lane's SARIF DATATYPE entry for CSWSArea

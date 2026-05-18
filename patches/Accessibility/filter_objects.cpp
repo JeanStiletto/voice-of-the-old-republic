@@ -67,4 +67,19 @@ CycleCategory PrevCategory(CycleCategory c) {
     return CycleCategory(prev);
 }
 
+bool IsMapCycleable(CycleCategory c) {
+    switch (c) {
+        case CycleCategory::Door:
+        case CycleCategory::Landmark:
+        case CycleCategory::Transition:
+            return true;
+        case CycleCategory::Npc:
+        case CycleCategory::Container:
+        case CycleCategory::Item:
+        case CycleCategory::Count_:
+            return false;
+    }
+    return false;
+}
+
 }  // namespace acc::filter

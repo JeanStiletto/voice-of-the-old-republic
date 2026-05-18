@@ -41,8 +41,9 @@ struct CategoryListing {
     int count = 0;
 };
 
-// Mutable singleton — one shared cycle state across the patch. Default
-// category is Door (matches the order used by NextCategory/PrevCategory).
+// Mutable per-context state. World and Map keep independent focus so
+// flipping the area map open + cycling doesn't pollute the in-world
+// cycle's last focus and vice versa.
 //
 // Cycle's focusedObj/focusedIndex are LOCAL CURSOR state — they exist so
 // `,`/`.` know where to step next within the current sorted listing.
@@ -56,29 +57,48 @@ struct CycleState {
     int                        focusedIndex = -1;     // -1 = nothing focused
 };
 
-// Returns the singleton state. Mutations via the cycle helpers below.
-CycleState& GetState();
+// Returns the singleton state for the given context (defaults to World
+// for backwards-compat with call sites that pre-date Phase 6's map
+// cycle). World and Map slots are independent — separate categories,
+// separate focus indices.
+CycleState& GetState(acc::filter::CycleContext ctx =
+                         acc::filter::CycleContext::World);
 
 // Build a sorted-by-distance-ascending listing for `category` from the
 // current player area. Returns false if no area / no player position; in
 // that case `out.count` is set to 0 and the caller should treat the listing
 // as empty.
 //
+// `ctx` selects what filtering applies on top of `ObjectMatches`:
+//   - World: no extra filtering.
+//   - Map:   restricts to map-cycleable categories (returns empty
+//            immediately for Npc/Container/Item) and fog-of-war-gates
+//            survivors via IsWorldPointExplored against the per-area
+//            CSWSAreaMap. Spoiler-correct by construction — the player
+//            never hears the name of a landmark they haven't revealed.
+//
 // Side effects: none. Re-entrant. Safe to call from per-tick monitors.
 bool BuildCategoryListing(acc::filter::CycleCategory category,
-                          CategoryListing& out);
+                          CategoryListing& out,
+                          acc::filter::CycleContext ctx =
+                              acc::filter::CycleContext::World);
 
-// Cycle the focused item within the current category. Mutates state's
-// focusedIndex + focusedObj based on the supplied (already-built) listing.
-// Returns the new focusedObj (nullptr if the listing is empty).
+// Cycle the focused item within the current category. Mutates the
+// matching context's state's focusedIndex + focusedObj based on the
+// supplied (already-built) listing. Returns the new focusedObj
+// (nullptr if the listing is empty).
 //
 // Behaviour at boundaries: clamps. `,` at index 0 stays at index 0 (no
 // wraparound); `.` at last index stays at last index. Per the plan §"Open
 // design questions": wraparound vs. clamp is not yet locked — chose clamp
 // for first impl because it's the more conservative default (doesn't
 // surprise the user with a "back to start" jump).
-void* CycleNextItem(const CategoryListing& listing);
-void* CyclePrevItem(const CategoryListing& listing);
+void* CycleNextItem(const CategoryListing& listing,
+                    acc::filter::CycleContext ctx =
+                        acc::filter::CycleContext::World);
+void* CyclePrevItem(const CategoryListing& listing,
+                    acc::filter::CycleContext ctx =
+                        acc::filter::CycleContext::World);
 
 // Cycle the category. Empty-category silent skip per the plan §"Locked
 // defaults — Pillar 4": Shift+,/. skips empty categories silently. Builds
@@ -90,8 +110,12 @@ void* CyclePrevItem(const CategoryListing& listing);
 // announcement / log.
 //
 // Returns true if a non-empty category was found.
-bool CycleNextCategory(CategoryListing& outListing);
-bool CyclePrevCategory(CategoryListing& outListing);
+bool CycleNextCategory(CategoryListing& outListing,
+                       acc::filter::CycleContext ctx =
+                           acc::filter::CycleContext::World);
+bool CyclePrevCategory(CategoryListing& outListing,
+                       acc::filter::CycleContext ctx =
+                           acc::filter::CycleContext::World);
 
 // Refresh the listing for the current category (e.g. between cycle keys to
 // pick up object movement / additions). Re-finds the previously-focused
@@ -99,6 +123,8 @@ bool CyclePrevCategory(CategoryListing& outListing);
 // resets focus to closest (index 0).
 //
 // Returns false if no area / no player position.
-bool RefreshCurrentListing(CategoryListing& outListing);
+bool RefreshCurrentListing(CategoryListing& outListing,
+                           acc::filter::CycleContext ctx =
+                               acc::filter::CycleContext::World);
 
 }  // namespace acc::cycle

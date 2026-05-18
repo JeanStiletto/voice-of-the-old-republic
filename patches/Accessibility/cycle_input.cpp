@@ -17,6 +17,7 @@
 #include "cycle_state.h"
 #include "engine_area.h"
 #include "engine_input.h"
+#include "engine_panels.h"
 #include "engine_player.h"
 #include "filter_objects.h"
 #include "guidance_autowalk.h"
@@ -25,6 +26,7 @@
 #include "guidance_pathfind.h"
 #include "hotkeys.h"
 #include "log.h"
+#include "map_ui_cursor.h"
 #include "narrated_target.h"
 #include "peek_description.h"
 #include "strings.h"
@@ -115,9 +117,11 @@ int FormatItemPayload(const char* name, bool haveYaw, int clock,
 // (avoids "0 metres"). When player yaw is unavailable (degenerate
 // facing during spawn / mid-load), the clock segment is dropped.
 void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
-                     const char* categoryPrefix) {
-    auto& s = acc::cycle::GetState();
+                     const char* categoryPrefix,
+                     acc::filter::CycleContext ctx) {
+    auto& s = acc::cycle::GetState(ctx);
     auto bindings = BindingsFor(s.category);
+    const bool mapCtx = (ctx == acc::filter::CycleContext::Map);
 
     if (!s.focusedObj || s.focusedIndex < 0 ||
         s.focusedIndex >= listing.count) {
@@ -125,9 +129,15 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
         // category-prefix wrapper is intentionally NOT applied here:
         // EmptyDoors etc. are full sentences, not item names. No 3D cue
         // either, since there's no object to localise spatially.
+        //
+        // Speech path: normal Tolk (NVDA primary) in both contexts.
+        // SpeakUrgent stays reserved for sustained-key-hold scenarios
+        // (map cursor WASD pan); single-press cycle keys don't suffer
+        // the typed-character cancel feedback loop in practice.
         const char* msg = acc::strings::Get(bindings.empty);
         tolk::Speak(msg, /*interrupt=*/true);
-        acclog::Write("Cycle", "-> [%s]", msg);
+        acclog::Write("Cycle", "-> [%s] (ctx=%s)", msg,
+                      mapCtx ? "Map" : "World");
         return;
     }
 
@@ -181,39 +191,54 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
     uint32_t serverHandle = acc::engine::GetObjectHandle(s.focusedObj);
     acc::narrated_target::Stamp(s.focusedObj, serverHandle);
 
-    acclog::Write("Cycle", "-> [%s] obj=%p handle=0x%08x",
-                  fullMsg, s.focusedObj, serverHandle);
+    // Map-context: pan the virtual cursor to the focused object so the
+    // cursor stays coherent with the cycle (otherwise the cursor would
+    // sit at its last WASD position, contradicting the spoken focus).
+    // The cursor suppresses its own re-announce when handed a waypoint
+    // we just spoke, so no duplicate output.
+    if (mapCtx) {
+        acc::map_ui_cursor::PanToWorld(
+            objPos,
+            s.category == acc::filter::CycleCategory::Landmark
+                ? s.focusedObj
+                : nullptr);
+    }
+
+    acclog::Write("Cycle", "-> [%s] obj=%p handle=0x%08x ctx=%s",
+                  fullMsg, s.focusedObj, serverHandle,
+                  mapCtx ? "Map" : "World");
 }
 
 // ---- Per-action handlers (shared by both ingestion paths) ----
 
 // Step within the current category and announce the new focused item.
-void OnCycleItem(bool prev) {
+void OnCycleItem(bool prev, acc::filter::CycleContext ctx) {
     acc::cycle::CategoryListing listing;
-    acc::cycle::RefreshCurrentListing(listing);
-    if (prev) acc::cycle::CyclePrevItem(listing);
-    else      acc::cycle::CycleNextItem(listing);
-    AnnounceCurrent(listing, /*categoryPrefix=*/nullptr);
+    acc::cycle::RefreshCurrentListing(listing, ctx);
+    if (prev) acc::cycle::CyclePrevItem(listing, ctx);
+    else      acc::cycle::CycleNextItem(listing, ctx);
+    AnnounceCurrent(listing, /*categoryPrefix=*/nullptr, ctx);
 }
 
 // Step to the next/prev non-empty category and announce
 // "{Category}. {closest item name}, {clock}, {metres}". When all six
 // categories are empty, speaks the EmptyAll string without a prefix
 // (the prefix would be misleading — no category was actually landed on).
-void OnCycleCategory(bool prev) {
+void OnCycleCategory(bool prev, acc::filter::CycleContext ctx) {
     acc::cycle::CategoryListing listing;
     bool found = prev
-        ? acc::cycle::CyclePrevCategory(listing)
-        : acc::cycle::CycleNextCategory(listing);
+        ? acc::cycle::CyclePrevCategory(listing, ctx)
+        : acc::cycle::CycleNextCategory(listing, ctx);
     if (!found) {
         const char* msg = acc::strings::Get(acc::strings::Id::EmptyAll);
         tolk::Speak(msg, /*interrupt=*/true);
-        acclog::Write("Cycle", "-> [%s] (all empty)", msg);
+        acclog::Write("Cycle", "-> [%s] (all empty, ctx=%s)", msg,
+                      ctx == acc::filter::CycleContext::Map ? "Map" : "World");
         return;
     }
-    auto& s = acc::cycle::GetState();
+    auto& s = acc::cycle::GetState(ctx);
     auto bindings = BindingsFor(s.category);
-    AnnounceCurrent(listing, acc::strings::Get(bindings.name));
+    AnnounceCurrent(listing, acc::strings::Get(bindings.name), ctx);
 }
 
 // Classify a stamped object the same way cycle keys do. Returns Count_
@@ -581,14 +606,23 @@ bool TryHandleEvent(int param_1, int param_2) {
     Vector playerPos;
     if (!acc::engine::GetPlayerPosition(playerPos)) return false;
 
+    // Map sub-screen captures the cycle keys when it's foreground (under
+    // the InGameMenu strip — same scan pattern map_ui_cursor uses). World
+    // and Map cycle states are independent; the user can return to
+    // in-world cycle exactly where they left off after closing the map.
+    acc::filter::CycleContext ctx =
+        acc::engine::HasActiveMapPanel()
+            ? acc::filter::CycleContext::Map
+            : acc::filter::CycleContext::World;
+
     if (param_1 == kInputKbComma) {
-        if (g_engineShiftHeld) OnCycleCategory(/*prev=*/true);
-        else                   OnCycleItem    (/*prev=*/true);
+        if (g_engineShiftHeld) OnCycleCategory(/*prev=*/true,  ctx);
+        else                   OnCycleItem    (/*prev=*/true,  ctx);
         return true;
     }
     if (param_1 == kInputKbPeriod) {
-        if (g_engineShiftHeld) OnCycleCategory(/*prev=*/false);
-        else                   OnCycleItem    (/*prev=*/false);
+        if (g_engineShiftHeld) OnCycleCategory(/*prev=*/false, ctx);
+        else                   OnCycleItem    (/*prev=*/false, ctx);
         return true;
     }
     if (param_1 == kInputKbAnnounce) {
@@ -625,10 +659,17 @@ void PollWin32() {
     Vector playerPos;
     if (!acc::engine::GetPlayerPosition(playerPos)) return;
 
-    if (risingCommaItem)      OnCycleItem    (/*prev=*/true);
-    if (risingCommaCategory)  OnCycleCategory(/*prev=*/true);
-    if (risingPeriodItem)     OnCycleItem    (/*prev=*/false);
-    if (risingPeriodCategory) OnCycleCategory(/*prev=*/false);
+    // Same context split as TryHandleEvent — map foreground routes cycle
+    // keys to the map-cycle state singleton, otherwise world.
+    acc::filter::CycleContext ctx =
+        acc::engine::HasActiveMapPanel()
+            ? acc::filter::CycleContext::Map
+            : acc::filter::CycleContext::World;
+
+    if (risingCommaItem)      OnCycleItem    (/*prev=*/true,  ctx);
+    if (risingCommaCategory)  OnCycleCategory(/*prev=*/true,  ctx);
+    if (risingPeriodItem)     OnCycleItem    (/*prev=*/false, ctx);
+    if (risingPeriodCategory) OnCycleCategory(/*prev=*/false, ctx);
 
     // Precedence: Ctrl > Alt > Shift > bare. The Action bindings encode
     // this via mutually-exclusive modifier masks, so at most one of these

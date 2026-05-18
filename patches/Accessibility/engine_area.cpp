@@ -617,6 +617,52 @@ bool GetWaypointMapNote(void* waypoint, char* outBuf, size_t bufSize) {
 
 namespace {
 
+typedef void* (__thiscall* PFN_CServerExoApp_GetModule)(void* /*serverApp*/);
+typedef bool  (__thiscall* PFN_CSWSAreaMap_IsWorldPointExplored)(
+    void* /*areaMap*/, Vector /*pos*/);
+
+void* GetServerApp() {
+    __try {
+        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
+        if (!appManager) return nullptr;
+        return *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(appManager) +
+            kAppManagerServerOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+}  // namespace
+
+void* GetAreaMap() {
+    void* serverApp = GetServerApp();
+    if (!serverApp) return nullptr;
+    __try {
+        auto fn = reinterpret_cast<PFN_CServerExoApp_GetModule>(
+            kAddrCServerExoAppGetModule);
+        void* module = fn(serverApp);
+        if (!module) return nullptr;
+        return *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(module) + kModuleAreaMapOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+bool IsWorldPointExplored(void* areaMap, const Vector& pos) {
+    if (!areaMap) return false;
+    __try {
+        auto fn = reinterpret_cast<PFN_CSWSAreaMap_IsWorldPointExplored>(
+            kAddrCSWSAreaMapIsWorldPointExplored);
+        return fn(areaMap, pos);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+namespace {
+
 typedef void (__thiscall* PFN_CollisionMeshLocalToWorld)(void* this_,
                                                          Vector* output,
                                                          Vector* localPoint);

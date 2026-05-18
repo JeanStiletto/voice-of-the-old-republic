@@ -44,4 +44,26 @@ bool ObjectMatches(void* gameObject, CycleCategory category);
 CycleCategory NextCategory(CycleCategory c);
 CycleCategory PrevCategory(CycleCategory c);
 
+// Which surface the cycle is currently driving. World = the in-world
+// cycle that scans CSWSArea object-list; Map = the map-UI cycle that
+// projects the same data onto the in-game area map, fog-of-war-gated.
+// Carried through cycle_state / cycle_input so a single set of helpers
+// handles both surfaces without duplicating the iteration loop.
+enum class CycleContext : int {
+    World = 0,
+    Map   = 1,
+};
+
+// Which CycleCategory values render as discrete icons on the in-game
+// area map. Sighted players see: door icons, transition arrows, named
+// map-note pins. NPCs / items / non-quest containers don't render on
+// the K1 map, so the map cycle silently skips them (the cycle-category
+// loop already skips empty categories, so this just biases empty hard
+// for non-map-cycleable kinds when the context is Map).
+//
+// Lay-off 1b will extend this with MapPin (quest markers) + Party
+// (companion arrows) once the RE pass for CSWCArea.map_pins[] and
+// GetPartyMemberMapLocation lands.
+bool IsMapCycleable(CycleCategory c);
+
 }  // namespace acc::filter

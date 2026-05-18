@@ -46,13 +46,15 @@ float HorizontalDistance(const Vector& a, const Vector& b) {
 
 }  // namespace
 
-CycleState& GetState() {
-    static CycleState s;
-    return s;
+CycleState& GetState(acc::filter::CycleContext ctx) {
+    static CycleState sWorld;
+    static CycleState sMap;
+    return ctx == acc::filter::CycleContext::Map ? sMap : sWorld;
 }
 
 bool BuildCategoryListing(acc::filter::CycleCategory category,
-                          CategoryListing& out) {
+                          CategoryListing& out,
+                          acc::filter::CycleContext ctx) {
     out.count = 0;
 
     Vector playerPos;
@@ -63,6 +65,23 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
         acclog::Write("Cycle", "BuildListing area=NULL");
         return false;
     }
+
+    // Map-context guard: bias categories the in-game map doesn't render
+    // hard-empty so the cycle-category loop skips them silently. Saves
+    // a full area scan + sort per disallowed step on Shift+,/.
+    bool mapCtx = (ctx == acc::filter::CycleContext::Map);
+    if (mapCtx && !acc::filter::IsMapCycleable(category)) {
+        acclog::Write("Cycle",
+                      "BuildListing(map) category=%s not-map-cycleable",
+                      acc::filter::CategoryName(category));
+        return true;
+    }
+
+    // Resolve the per-area map struct once per build for the fog gate.
+    // Read-only over engine state; if the lookup faults we degrade to
+    // "no fog gate" rather than hiding everything.
+    void* areaMap = mapCtx ? acc::engine::GetAreaMap() : nullptr;
+    int   fogFiltered = 0;
 
     bool overflowed = false;
     acc::engine::AreaObjectIterator it(area);
@@ -76,6 +95,15 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
 
         Vector pos;
         if (!acc::engine::GetObjectPosition(obj, pos)) continue;
+
+        // Map-context fog-of-war gate. Spoiler-correct by construction:
+        // a landmark/door/transition in an unexplored cell stays out of
+        // the cycle until the player walks within map-reveal range.
+        if (mapCtx && areaMap &&
+            !acc::engine::IsWorldPointExplored(areaMap, pos)) {
+            ++fogFiltered;
+            continue;
+        }
 
         if (out.count >= CategoryListing::kMaxObjects) {
             overflowed = true;
@@ -93,12 +121,13 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
     // when a build returns empty. Helps localise "no objects found" failures
     // (wrong area, wrong iterator offsets, sub-state filter too tight, etc.).
     if (out.count == 0) {
-        acclog::Write("Cycle", "BuildListing area=%p category=%s "
-                      "snapshotSize=%d scanned=%d "
+        acclog::Write("Cycle", "BuildListing area=%p ctx=%s category=%s "
+                      "snapshotSize=%d scanned=%d fogFiltered=%d "
                       "kinds[Creature=5]=%d [Item=6]=%d [Trigger=7]=%d "
                       "[Placeable=9]=%d [Door=10]=%d [Waypoint=12]=%d",
-                      area, acc::filter::CategoryName(category),
-                      it.SnapshotSize(), scanned,
+                      area, mapCtx ? "Map" : "World",
+                      acc::filter::CategoryName(category),
+                      it.SnapshotSize(), scanned, fogFiltered,
                       kindCounts[5], kindCounts[6], kindCounts[7],
                       kindCounts[9], kindCounts[10], kindCounts[12]);
     }
@@ -114,8 +143,9 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
     return true;
 }
 
-void* CycleNextItem(const CategoryListing& listing) {
-    auto& s = GetState();
+void* CycleNextItem(const CategoryListing& listing,
+                    acc::filter::CycleContext ctx) {
+    auto& s = GetState(ctx);
     if (listing.count == 0) {
         s.focusedIndex = -1;
         s.focusedObj   = nullptr;
@@ -129,8 +159,9 @@ void* CycleNextItem(const CategoryListing& listing) {
     return s.focusedObj;
 }
 
-void* CyclePrevItem(const CategoryListing& listing) {
-    auto& s = GetState();
+void* CyclePrevItem(const CategoryListing& listing,
+                    acc::filter::CycleContext ctx) {
+    auto& s = GetState(ctx);
     if (listing.count == 0) {
         s.focusedIndex = -1;
         s.focusedObj   = nullptr;
@@ -145,14 +176,16 @@ void* CyclePrevItem(const CategoryListing& listing) {
 
 namespace {
 
-bool CycleCategoryDirectional(CategoryListing& outListing, bool forward) {
-    auto& s = GetState();
+bool CycleCategoryDirectional(CategoryListing& outListing,
+                              bool forward,
+                              acc::filter::CycleContext ctx) {
+    auto& s = GetState(ctx);
     auto start = s.category;
     int n = int(acc::filter::CycleCategory::Count_);
     for (int tries = 0; tries < n; ++tries) {
         s.category = forward ? acc::filter::NextCategory(s.category)
                              : acc::filter::PrevCategory(s.category);
-        if (BuildCategoryListing(s.category, outListing) &&
+        if (BuildCategoryListing(s.category, outListing, ctx) &&
             outListing.count > 0) {
             s.focusedIndex = 0;
             s.focusedObj   = outListing.objs[0];
@@ -168,17 +201,20 @@ bool CycleCategoryDirectional(CategoryListing& outListing, bool forward) {
 
 }  // namespace
 
-bool CycleNextCategory(CategoryListing& outListing) {
-    return CycleCategoryDirectional(outListing, /*forward=*/true);
+bool CycleNextCategory(CategoryListing& outListing,
+                       acc::filter::CycleContext ctx) {
+    return CycleCategoryDirectional(outListing, /*forward=*/true, ctx);
 }
 
-bool CyclePrevCategory(CategoryListing& outListing) {
-    return CycleCategoryDirectional(outListing, /*forward=*/false);
+bool CyclePrevCategory(CategoryListing& outListing,
+                       acc::filter::CycleContext ctx) {
+    return CycleCategoryDirectional(outListing, /*forward=*/false, ctx);
 }
 
-bool RefreshCurrentListing(CategoryListing& outListing) {
-    auto& s = GetState();
-    if (!BuildCategoryListing(s.category, outListing)) return false;
+bool RefreshCurrentListing(CategoryListing& outListing,
+                           acc::filter::CycleContext ctx) {
+    auto& s = GetState(ctx);
+    if (!BuildCategoryListing(s.category, outListing, ctx)) return false;
 
     if (outListing.count == 0) {
         s.focusedIndex = -1;
