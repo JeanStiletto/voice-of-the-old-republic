@@ -12,6 +12,7 @@ const char* CategoryName(CycleCategory c) {
         case CycleCategory::Item:        return "Item";
         case CycleCategory::Landmark:    return "Landmark";
         case CycleCategory::Transition:  return "Transition";
+        case CycleCategory::MapPin:      return "MapPin";
         case CycleCategory::Count_:      return "?";
     }
     return "?";
@@ -50,6 +51,13 @@ bool ObjectMatches(void* gameObject, CycleCategory category) {
         case CycleCategory::Transition:
             return kind == int(K::Trigger) &&
                    acc::engine::IsTransitionTrigger(gameObject);
+        case CycleCategory::MapPin:
+            // Map pins are NOT in CSWSArea.game_objects[] — they live
+            // on CSWCArea.map_pins[]. cycle_state has the out-of-band
+            // iterator for the map context; in-band ObjectMatches
+            // never sees one, and World context returns empty for this
+            // category (so Shift+,/. in-world skips it silently).
+            return false;
         case CycleCategory::Count_:
             return false;
     }
@@ -72,6 +80,7 @@ bool IsMapCycleable(CycleCategory c) {
         case CycleCategory::Door:
         case CycleCategory::Landmark:
         case CycleCategory::Transition:
+        case CycleCategory::MapPin:
             return true;
         case CycleCategory::Npc:
         case CycleCategory::Container:

@@ -33,6 +33,7 @@ enum class Id : int {
     CategoryItem,
     CategoryLandmark,
     CategoryTransition,
+    CategoryMapPin,
 
     // ---- Empty-category messages — full pre-formatted phrases. The
     //      plural form differs per category (German: T\xFCren, Personen,
@@ -45,7 +46,19 @@ enum class Id : int {
     EmptyItems,
     EmptyLandmarks,
     EmptyTransitions,
+    EmptyMapPins,
     EmptyAll,
+
+    // Map-pin specific phrases — Shift+- (autowalk) is not supported for
+    // map pins because there's no game-object to USE; the user is
+    // redirected to Ctrl+- which beacons to the pin's world position.
+    // Generic "Quest marker" fallback when the pin's note text is
+    // empty (server-side pins always carry text; quest-script pins
+    // sometimes start with strref=0 + empty inline).
+    MapPinNoText,
+    MapPinShiftDashHint,
+    MapPinAltDashUnsupported,
+    MapPinInteractHint,
 
     // ---- Per-item announce format templates.
     //      `WithClock`   takes (name, clock_int, metres_int).

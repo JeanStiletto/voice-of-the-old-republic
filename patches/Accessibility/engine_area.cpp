@@ -661,6 +661,78 @@ bool IsWorldPointExplored(void* areaMap, const Vector& pos) {
     }
 }
 
+void* GetClientArea(void* serverArea) {
+    if (!serverArea) return nullptr;
+    __try {
+        return *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(serverArea) +
+            kAreaClientAreaBackOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+int GetMapPinCount(void* clientArea) {
+    if (!clientArea) return 0;
+    __try {
+        return *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(clientArea) +
+            kClientAreaMapPinsCountOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
+void* GetMapPinAt(void* clientArea, int i) {
+    if (!clientArea || i < 0) return nullptr;
+    __try {
+        void** pinArray = *reinterpret_cast<void***>(
+            reinterpret_cast<unsigned char*>(clientArea) +
+            kClientAreaMapPinsOffset);
+        if (!pinArray) return nullptr;
+        return pinArray[i];
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+bool GetMapPinPosition(void* mapPin, Vector& out) {
+    if (!mapPin) return false;
+    __try {
+        out = *reinterpret_cast<Vector*>(
+            reinterpret_cast<unsigned char*>(mapPin) + kMapPinPositionOffset);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool IsMapPinEnabled(void* mapPin) {
+    if (!mapPin) return false;
+    __try {
+        return *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(mapPin) + kMapPinEnabledOffset)
+            != 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool GetMapPinNoteText(void* mapPin, char* outBuf, size_t bufSize) {
+    if (!mapPin || !outBuf || bufSize < 2) return false;
+    outBuf[0] = '\0';
+    // CExoString at +0x100; engine_reads::ExtractTextOrStrRef tries the
+    // inline c_string first, falls back to the strref at the same
+    // CExoString's +0x04 slot via TLK lookup. Map pins served over the
+    // wire from the server carry inline text; quest-script-created pins
+    // may carry strref-only. ExtractTextOrStrRef handles both.
+    bool ok = ExtractTextOrStrRef(mapPin,
+                                  kMapPinNoteTextOffset,
+                                  kMapPinNoteStrrefOffset,
+                                  outBuf, bufSize);
+    return ok && outBuf[0] != '\0';
+}
+
 namespace {
 
 typedef void (__thiscall* PFN_CollisionMeshLocalToWorld)(void* this_,

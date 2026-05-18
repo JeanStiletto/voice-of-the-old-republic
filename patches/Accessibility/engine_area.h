@@ -281,6 +281,47 @@ void* GetAreaMap();
 // so we never narrate landmarks the player hasn't seen yet.
 bool IsWorldPointExplored(void* areaMap, const Vector& pos);
 
+// Resolve the client-side CSWCArea that mirrors a CSWSArea via the
+// back-pointer at CSWSArea +0x2d0. CSWCArea owns the dynamic map-pin
+// array (quest objective markers, NWScript-placed pins). Returns
+// nullptr on null serverArea / SEH fault. The mirror is set at
+// area-load and stays valid until the next area transition.
+void* GetClientArea(void* serverArea);
+
+// Number of map-pin slots populated in `clientArea->map_pins[]`.
+// Returns 0 on null / fault.
+int GetMapPinCount(void* clientArea);
+
+// Read CSWCMapPin* at index `i` from `clientArea->map_pins[]`. Returns
+// nullptr on null / out-of-range / fault. Map pins live as pointer-
+// array entries (CSWCMapPin**) despite Lane's PlaceHolder struct
+// typing the field as a singular pointer; AddMapPin + ClearAllMapPins
+// + GetMapPin decomps all confirm pointer-array semantics (4-byte
+// stride, each slot holds a heap-allocated 0x110-byte pin).
+void* GetMapPinAt(void* clientArea, int i);
+
+// CSWCMapPin embeds CSWCObject at +0x00, so position lives at +0x24
+// (the standard CGameObject world-position offset). Returns false on
+// null / fault. Z is the live Z written by the server (pins inherit
+// the placing entity's elevation in 3D areas).
+bool GetMapPinPosition(void* mapPin, Vector& out);
+
+// Read CSWCMapPin.enabled (+0xfc, int). Pins toggle off via the
+// SetMapPinEnabled NWScript command without being removed from the
+// array, so disabled pins persist as dormant slots; filter callers
+// must check this before surfacing pin text.
+bool IsMapPinEnabled(void* mapPin);
+
+// Read CSWCMapPin.note_text (CExoString @+0x100). Confirmed via decomp
+// of CSWCMessage::HandleServerToPlayerMapPinReferenceNumber @0x652d60:
+// the network handler stores the wire packet's note CExoString into
+// pin +0x100 after constructing the pin via operator_new(0x110). Falls
+// back to "" on null inline text — caller decides between empty and
+// a generic placeholder.
+//
+// Returns false on null / faulted read / empty resolved text.
+bool GetMapPinNoteText(void* mapPin, char* outBuf, size_t bufSize);
+
 // Reads CSWSWaypoint.map_note (+0x230, CExoLocString). The Bioware-
 // authored display label (e.g. "Bridge", "Cargo Hold", "Brücke",
 // "Frachtraum") that the in-game map shows. CExoLocString shape matches
@@ -355,6 +396,38 @@ constexpr uintptr_t kAddrCClientExoAppGetGameObject = 0x005ED580;
 constexpr uintptr_t kAddrCServerExoAppGetModule          = 0x004AE6B0;
 constexpr size_t    kModuleAreaMapOffset                 = 0x218;
 constexpr uintptr_t kAddrCSWSAreaMapIsWorldPointExplored = 0x00579210;
+
+// Server→client back-pointer used to reach CSWCArea (which owns
+// map_pins[]) from a CSWSArea we already have via GetCurrentArea.
+// Field comment from Lane's typed struct: `struct CSWCArea
+// *client_area;` — value confirmed via the CSWSArea declaration
+// ending at +0x2d0 (preceded by field101_0x2cc CPathfindInformation*).
+constexpr size_t kAreaClientAreaBackOffset = 0x2d0;
+
+// CSWCArea map-pin array (pointer-array semantics, see GetMapPinAt).
+// CSWCArea +0x1c4 holds the base pointer (typed as CSWCMapPin* in
+// Lane's struct but indexed as CSWCMapPin** in AddMapPin /
+// ClearAllMapPins / GetMapPin decomps — 4-byte stride confirmed via
+// GetMapPin's `pCVar2 = &pCVar2->object.game_object.id;` post-step).
+constexpr size_t kClientAreaMapPinsOffset       = 0x1c4;
+constexpr size_t kClientAreaMapPinsCountOffset  = 0x1c8;
+constexpr size_t kClientAreaMapPinsCapOffset    = 0x1cc;
+
+// CSWCMapPin layout (all confirmed via decomp of HandleServerToPlayer
+// MapPinReferenceNumber @0x652d60 + HandleServerToPlayerMapPinEnabled
+// @0x652d00 — see lay-off 1b investigation log).
+constexpr size_t kMapPinPositionOffset = 0x24;   // Vector — CGameObject base
+constexpr size_t kMapPinEnabledOffset  = 0xfc;   // int — toggled by SetMapPinEnabled
+constexpr size_t kMapPinNoteTextOffset = 0x100;  // CExoString — wire-packet note
+// CExoString stride is 8 (char* + uint32). Literal here so this block
+// stays self-contained — kCExoStringStride is declared further down the
+// file (after CSWSArea offsets), so a symbolic reference would be a
+// forward-ref. Identity verified: every other CExoString offset pair in
+// this header (door loc_name, waypoint map_note, etc.) uses +0x04 for
+// the strref slot.
+constexpr size_t kMapPinNoteStrrefOffset = kMapPinNoteTextOffset + 0x4;
+// kMapPinFlagsOffset = 0x108 / kMapPinSubtypeOffset = 0x10c (unused by
+// us — GetMapPin uses them as a (flags, subtype) lookup pair).
 
 // CSWSArea field offsets. game_objects + rooms verified live (lay-off 1+4);
 // name + tag + room_count from Lane's SARIF DATATYPE entry for CSWSArea

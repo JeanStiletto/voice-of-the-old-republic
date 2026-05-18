@@ -37,27 +37,48 @@
 
 #include <cstdint>
 
+#include "engine_offsets.h"  // Vector
+
 namespace acc::narrated_target {
 
+// Two slot shapes — game-object and map-pin. Activation handlers read
+// `isMapPin` and branch: map pins go to Ctrl+- beacon (no UseObject
+// path exists since the pin isn't a CSWSObject), game objects keep
+// the full Enter / Shift+- / Ctrl+- / Alt+- vocabulary.
 struct Slot {
-    void*        obj        = nullptr;  // CSWSObject* (server-side)
-    uint32_t     handle     = 0;        // server-side handle
+    void*        obj        = nullptr;  // CSWSObject* OR CSWCMapPin*
+    uint32_t     handle     = 0;        // server-side handle (0 for map pin)
+    Vector       pos        = {0, 0, 0};// stamp-time position (cached for
+                                        // map pin where no server handle
+                                        // resolves to a position later)
     unsigned int tickStamp  = 0;        // GetTickCount() at stamp time
+    bool         isMapPin   = false;    // discriminator
 };
 
-// Stamp the slot. Both args must be the server-side pair (use
-// `acc::engine::GetObjectHandle(obj)` if you only have a client-side
-// handle). No-op when either is zero; call sites that hit empty-state
-// fallbacks shouldn't stamp.
+// Stamp a game-object slot. Both args must be the server-side pair
+// (use `acc::engine::GetObjectHandle(obj)` if you only have a client-
+// side handle). No-op when either is zero; call sites that hit empty-
+// state fallbacks shouldn't stamp.
 void Stamp(void* obj, uint32_t serverHandle);
+
+// Stamp a map-pin slot. `pin` is a CSWCMapPin* (out-of-band — not
+// resolvable through ResolveServerObjectHandle); `pos` is the pin's
+// world position at the moment of stamping (frozen — pins don't move
+// once placed). Used by the map cycle's MapPin announcement so
+// activation keys can route Ctrl+- to the pin's coordinates and
+// reject Shift+-/Enter with a localized hint.
+void StampMapPin(void* pin, const Vector& pos);
 
 // Clear the slot. Called on area transition; also safe to call defensively.
 void Clear();
 
 // Read the current slot with validation. Returns false when:
 //   - Slot has never been stamped (or was cleared)
-//   - Stored handle no longer resolves to the stored object (destroyed,
-//     area changed without our Clear catching it, etc.)
+//   - Game-object slot: stored handle no longer resolves to the
+//     stored object (destroyed, area changed without our Clear
+//     catching it, etc.)
+//   - Map-pin slot: pin pointer no longer appears in the current
+//     client area's map_pins[] (pin removed, area changed).
 // Output is zero'd on false return so callers don't need to check the
 // fields after a false.
 bool TryGet(Slot& out);

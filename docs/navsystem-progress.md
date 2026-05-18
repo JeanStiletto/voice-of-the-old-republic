@@ -14,8 +14,127 @@
 - **Phase 3 — Pillar 1.** *Closed 2026-05-07.* All planned lay-offs landed and verified; informal exit-gate met by the 2026-05-07 tuning session (user signed off "way quieter now ... I would try this now"). Lay-off summary: **1** walkmesh-edge extraction (405-908 edges per area, no SEH); **2** `audio_cue_player` per-kind toggle + range gate; **3** Trigger 1 distance-delta with sector-based selection; **4** Trigger 2 foremost-in-front folded into `spatial_change_detector.cpp`; **5** `audio_footstep_suppress` (velocity-based stuck detection, hooked at `CSWCCreature::PlayFootstep+0x4a`). Final 2026-05-07 tuning session reshaped the cue cadence from ~4.3 cues/sec to ~2/sec without losing information: switched walls from per-surface continuous to per-sector world-frame with silent enter/exit/identity-swap retracks + range hysteresis + per-sector cooldown; mirrored the same shape onto the object pipeline; gated T2 walls with B (global T1 wall cooldown) + C (only `none → wall` / `obj → wall` transitions); added a `T2 wall blocked` diagnostic line. Full design history + parked alternatives (zones, raycasting, speed-gating, distance-gated T2) preserved in `docs/pillar1-wall-cue-tuning.md`. Future tuning will revisit; system is good enough to keep playing as-is.
 - **Phase 4 — Pillar 2 polish + view mode.** *Effectively closed 2026-05-11; lay-off 5 deeply parked.* Lay-offs 1-4 + 4-rework verified in-game. Lay-off 5 (click-to-walk Enter routing in view mode) deferred indefinitely after the 2026-05-11 Phase 5 architectural pivot — see Phase 4 section + Phase 5 below. Phase 4 is treated as closed for sequencing purposes; future revisits to lay-off 5 don't gate downstream work. Most of the plan's Phase 4 surface landed early during Phase 2 (octagonal compass on turn, A/D camera direction, room+area transitions). **Lay-off 1**: `announce_degrees` — AltGr speaks exact compass-frame heading. *Closed 2026-05-06, verified.* **Lay-off 2**: Mouse Look probe — strong positive (engine reacts to `CClientOptions.mouse_look` bit-flip + `SendInput`); path subsequently rejected at lay-off 3 in favour of `SetPlayerInputEnabled(false)`, then **rejected for view mode entirely** at the 2026-05-06b design lock when listener-override replaced camera-driven Mouse Look as the spatial mechanism. **Lay-off 3**: view-mode skeleton — B toggles `SetPlayerInputEnabled(false, armAutoRestore=false)` lifecycle; W/S character-snap suppressed, A/D rotates camera natively. *Closed 2026-05-06, verified in-game.* **Lay-off 4a**: T2 cone tracks camera in view mode — Pillar 1 Trigger 2's foremost-in-front cone follows camera yaw while view mode is active, so the cone scans where the player is looking during stationary inspection. *Closed 2026-05-06 (commit `81ff451`); UNVERIFIED in-game — verify alongside lay-off 4.* **2026-05-06b — view mode design locked** (see `docs/navsystem-longterm-plan.md` "Mechanics — view mode (locked 2026-05-06)" + this doc's "Lay-off plan" section): three-layer model = virtual cursor (`Vector cursor_pos` + `float cursor_yaw`, our state) + per-tick `CExoSound::SetListenerPosition(cursor_pos)` override + engine camera tracks cursor heading via stock A/D. Original 2026-05-03 "listener overridden to character body" was never implemented (Phase 1 lay-off 4 dropped it; engine default camera-anchored proved sufficient at the gate); reality reconciled in long-term plan 2026-05-06b. **Lay-off 4** (virtual cursor core) closed 2026-05-06 (commit `657d7b1` + rework). **Lay-off 5** (Enter routing) deeply parked 2026-05-11 under the always-object-target architectural lock — see Phase 5 § "2026-05-11 architectural pivot" + Phase 4 § "Lay-off 5 — DEEPLY PARKED".
 - **Phase 5 — Pillar 3 polish.** *Lay-offs 1-4 + 6 closed; lay-off 5 parked pending hotkey rework.* Engine path RE revealed `AddMoveToPointAction` is permanently NPC-only for the leader — the engine refuses to plot a path for our dispatch. Architectural response: drop autowalk-to-empty-coordinate; **every autowalk target is a game object**, dispatched via `UseObject` (which already works for the player). Beacon mode (Mode B) runs A* over the engine's authoritative per-area nav graph. Mode A (Shift+-) + Mode B (Ctrl+-) verified in-game 2026-05-12. Lay-off 6 closed 2026-05-12 — map cursor + InGameMap button labels + Prism-SAPI speech-cancellation bypass; verified in-game. See Phase 5 section below for the lay-off log + open work.
-- **Phase 6 — Map markers & nice extras.** Pending.
+- **Phase 6 — Map cycle + parity.** *Lay-offs 1a + 1b verified in-game (2026-05-18).* Pillar 4 cycle keys (`,`/`.`/`Shift+,`/`Shift+.`/`-`/`Shift+-`/`Ctrl+-`/`Alt+-`/Enter) now route to a separate map-context state singleton when `engine::HasActiveMapPanel()` is true. Map context restricts categories to **Door / Landmark / Transition / MapPin** — the four things sighted players actually see rendered on the in-game area map — and fog-of-war-gates every survivor via `CSWSAreaMap::IsWorldPointExplored`. MapPin (`CSWCArea.map_pins[]`, Lay-off 1b) is the first "quest markers / objective pins" surface — note text + position read from `CSWCMapPin +0x100` / `+0x24`, server→client back-pointer at `CSWSArea +0x2d0`. `narrated_target::Slot` grew an `isMapPin` discriminator + frozen `pos` so Ctrl+- beacon works against pin coordinates while Shift+- / Alt+- / Enter speak localized hints redirecting to Ctrl+-. World cycle state untouched (separate singleton — closing the map and pressing `.` resumes in-world cycling). Cursor pans to the cycle's focused item; hover-pause suppressed on landed Landmark waypoints to avoid double-announce. Reshaped scope vs the original plan: party arrows skipped (user call — companions are within 1m of player 95% of normal play), saved-user-markers + quest-objective shortcut moved to lay-off 3. Next lay-offs in Phase 6 section below.
 - **Phase 7 — User options UI.** Deferred per plan.
+
+---
+
+## Phase 6 — Map cycle + parity (lay-offs 1a + 1b verified 2026-05-18)
+
+### Goal
+
+Make the in-game area map equally useful for blind users as it is for sighted users. Two halves:
+
+1. **Cycling keys work on the map.** The same `,`/`.`/`Shift+,`/`Shift+.` cycle the user uses in-world routes to a map-side state singleton while the InGameMap sub-screen is foreground. Same key vocabulary, same audio cue + speech shape, different data provider.
+2. **Parity with what sighted players see rendered on the map.** Map context surfaces only what the engine actually renders on the map texture (Doors, Landmarks, Transitions, Quest pins) — fog-of-war gated so nothing leaks before the player has revealed it. Activation keys (`-`, `Shift+-`, `Ctrl+-`) work on whatever the cycle just announced.
+
+**Exit criterion (per long-term plan, refreshed 2026-05-18):** Cycling + announce + Ctrl+- beacon work for all map-rendered categories. Map UI is a self-sufficient surface — a blind user can explore "what's on this map" without needing to leave it.
+
+### Reshaped scope vs the 2026-05-03 plan
+
+Original Phase 6 was framed as "Map markers & nice extras" with saved user markers as the headline. The 2026-05-18 reshape: the headline is **cycle + parity**; saved markers + quest-objective shortcut are now lay-off 3 (nice extras). Party-member arrows skipped entirely per user decision (companions are within ~1m of the player in 95% of normal play — surfacing them as cyclable would be high-frequency noise vs low-value information; the rare split-party cases like Solo Mode are covered by the player's existing in-world `Tab` leader-announce).
+
+### Engineering basis (verified 2026-05-18)
+
+- **Map foreground detection**: `engine_panels::HasActiveMapPanel()` scans `panels[]` for `PanelKind::InGameMap`. The InGameMap sub-screen sits *under* the CSWGuiInGameMenu strip — a `GetForegroundPanel` check alone misses it.
+- **Per-area map struct**: `engine_area::GetAreaMap()` resolves `AppManager → CServerExoApp → GetModule (@0x004AE6B0) → CSWSModule.area_map (+0x218) → CSWSAreaMap*`. Lifted from `map_ui_cursor` to engine_area so cycle_state can read fog-of-war without coupling.
+- **Fog-of-war read**: `CSWSAreaMap::IsWorldPointExplored @0x00579210` — single engine call per candidate, SEH-guarded.
+- **Server→client back-pointer**: `CSWSArea.client_area (+0x2d0)` reaches `CSWCArea` (which owns dynamic map_pins[]).
+- **Map-pin array layout** (confirmed via Ghidra decomp of `AddMapPin @0x606d90`, `ClearAllMapPins @0x606dd0`, `GetMapPin @0x605ac0`, `HandleServerToPlayerMapPinReferenceNumber @0x652d60`, `HandleServerToPlayerMapPinEnabled @0x652d00`):
+  - `CSWCArea +0x1c4` = `CSWCMapPin**` (pointer-array; Lane's PlaceHolder struct types it as `CSWCMapPin*` but the engine indexes it with 4-byte stride). `+0x1c8` = count, `+0x1cc` = capacity.
+  - `CSWCMapPin` size 0x110 bytes. `+0x24` = position (Vector, inherits via CGameObject base). `+0xfc` = `enabled` (int — flipped by SetMapPinEnabled). `+0x100` = `note_text` (CExoString — wire-packet display text). `+0x104` = strref slot (CExoLocString tail; `engine_reads::ExtractTextOrStrRef` handles both).
+
+### Lay-off plan
+
+1. **Lay-off 1a — Context-routed cycle (Door/Landmark/Transition).** *Closed 2026-05-18 (commit `a1d18f7`).* Filter+state surface for map context; covered below.
+2. **Lay-off 1b — MapPin category.** *Closed 2026-05-18.* Quest-marker iteration over `CSWCArea.map_pins[]`; new `narrated_target` map-pin slot; activation-key branches; covered below.
+3. **Lay-off 2 — Map-state announcement keys.** *Pending.* Reuse existing AnnounceDegrees + repeat keys with map-context-specific payloads. Player-on-map narrative ("Du bist im Raum X, blickst nach N° auf der Karte"). Quick win because the infrastructure (map foreground detection, map-frame compass via `CSWSAreaMap::GetMapRotateCCWFromWorldOrientation @0x578ed0`) is already present from lay-off 1 + the cursor. No new hotkeys; reuses existing.
+4. **Lay-off 3 — Saved user markers + quest-objective shortcut.** *Pending.* Original Phase 6 scope, now last because cycle+parity is more valuable per the 2026-05-18 reshape. Saved markers live in `CSWGlobalVariableTable.locations` per the 2026-05-03 batch lock. Quest-objective shortcut needs a Ghidra pass on `CSWSPlayerJournalQuest` (currently `PlaceHolder Structure` in Lane's `.h`) — decompile `AddJournalQuestEntry` / `GetJournalEntry` to recover layout, then `(key1, key2)` lookup against `CSWCArea::GetMapPin @0x605ac0` to find the matching pin and hand to the beacon. Bound to a new hotkey slot (TBD pending the broader hotkey-registry pass parked from Phase 5 lay-off 5).
+
+### Lay-off log
+
+**Lay-off 1a** — Context-routed cycle (Door / Landmark / Transition). *Verified in-game 2026-05-18, committed `a1d18f7`.*
+
+Files touched:
+- `engine_area.{h,cpp}` — `GetAreaMap()` + `IsWorldPointExplored(areaMap, pos)` lifted from `map_ui_cursor` so cycle_state can fog-gate without TU coupling.
+- `engine_panels.{h,cpp}` — `HasActiveMapPanel(void** outPanel = nullptr)`. Same panels[] scan shape as `HasActiveSubScreen`.
+- `filter_objects.{h,cpp}` — `enum class CycleContext { World, Map }` + `IsMapCycleable(c)`. Map context restricts to Door / Landmark / Transition (MapPin added in 1b).
+- `cycle_state.{h,cpp}` — `GetState(ctx)` returns separate World/Map state singletons; `BuildCategoryListing` / `CycleNextItem` / `CyclePrevItem` / `CycleNextCategory` / `CyclePrevCategory` / `RefreshCurrentListing` all take a `CycleContext` (default World for back-compat). Map context applies the fog-of-war gate via engine_area helpers.
+- `cycle_input.cpp` — `PollWin32` + `TryHandleEvent` resolve context once via `HasActiveMapPanel()` and pass through to handlers. `AnnounceCurrent` calls `map_ui_cursor::PanToWorld(...)` so the cursor follows cycle focus.
+- `map_ui_cursor.{h,cpp}` — new `PanToWorld(world, suppressWaypoint)`. Latches `last_spoken_waypoint` when the pan lands on a Landmark cycle just announced, so the cursor's own hover-pause stays silent.
+
+Speech path correction (in-session): initial 1a used `tolk::SpeakUrgent` in map context to bypass NVDA's typed-character cancel, but the user wanted normal NVDA-primary speech. Reverted — `SpeakUrgent` stays reserved for the cursor's WASD-pan hover-pause where typed-char cancel actually bites; single-press cycle keys don't suffer it in practice.
+
+**Lay-off 1b** — MapPin category (quest markers). *Verified in-game 2026-05-18.*
+
+Files touched:
+- `engine_area.{h,cpp}` — `GetClientArea(serverArea)` (+0x2d0 back-pointer), `GetMapPinCount`, `GetMapPinAt` (pointer-array indexing), `GetMapPinPosition` (+0x24), `IsMapPinEnabled` (+0xfc), `GetMapPinNoteText` (+0x100 via ExtractTextOrStrRef).
+- `filter_objects.{h,cpp}` — `CycleCategory::MapPin` added; `ObjectMatches(MapPin)` returns false (out-of-band iteration); `IsMapCycleable(MapPin)` true; `CategoryName` covers it.
+- `strings.{h,cpp_de,cpp_en}` — `CategoryMapPin`, `EmptyMapPins`, `MapPinNoText`, `MapPinShiftDashHint`, `MapPinAltDashUnsupported`, `MapPinInteractHint`. DE + EN.
+- `cycle_state.cpp` — `BuildCategoryListing` special-cases `category == MapPin`: World context returns empty; Map context resolves `clientArea`, iterates pin array, filters enabled+fog, sorts by distance.
+- `cycle_input.cpp` — `BindingsFor(MapPin)` reuses Landmark cue (semantically same family); `AnnounceCurrent` switches name resolution to `GetMapPinNoteText` for MapPin; stamps `narrated_target::StampMapPin(pin, pos)` instead of the handle path.
+- `narrated_target.{h,cpp}` — `Slot` grew `isMapPin` discriminator + frozen `pos`. New `StampMapPin(pin, pos)`. `TryGet` validates map-pin slot by walking `CSWCArea.map_pins[]` (catches pin removal by quest scripts).
+- `cycle_input.cpp` activation handlers branch on `a.isMapPin`:
+  - `-` (repeat): re-speak pin note + distance + clock.
+  - `Shift+-` (autowalk): play cue + speak `MapPinShiftDashHint`, no UseObject attempted.
+  - `Ctrl+-` (beacon): no special-case needed — A* + StartBeacon work directly from the frozen pin position.
+  - `Alt+-` (force walk): speak `MapPinAltDashUnsupported`.
+- `interact_hotkey.cpp::OnInteract` — pre-resolve check; map-pin focus speaks `MapPinInteractHint` and bails (Enter has nothing to dispatch to).
+
+### Decisions captured (2026-05-18)
+
+- **Map context = separate state.** Closing the map and pressing `.` resumes in-world cycling exactly where it was. Discoverable, no surprises.
+- **Map context = strict map-render parity.** Only Door / Landmark / Transition / MapPin (the four kinds the engine actually draws on the map). Skipping NPCs / items / containers (don't render) is intentional — surfacing them would diverge from sighted-player experience, and noise from off-map kinds drowns out the relevant ones.
+- **Map pins use Ctrl+- only.** No UseObject path exists (pins aren't game objects). Shift+- / Alt+- / Enter all speak localized hints redirecting to Ctrl+-. `narrated_target::Slot.isMapPin` discriminator lets all activation handlers branch cleanly.
+- **Pin position frozen at stamp time.** Pins don't move (NWScript places them with a Vector; the engine never updates the position post-creation). Stamping the position alongside the pin pointer means TryGet doesn't need to re-resolve a position from the pin struct at activation time.
+- **Party arrows skipped.** Companions hug the player 95% of normal play; surfacing them in the map cycle would be high-noise / low-value. Split-party rare cases (Solo Mode, scripted splits) are covered by the existing in-world Tab leader-announce.
+- **Plan revision: cycle + parity is the Phase 6 headline.** Saved markers + quest-objective shortcut moved to lay-off 3. Original framing was "Map markers & nice extras" — that's still accurate for lay-off 3 but misframes the more valuable lay-offs 1 + 2.
+
+### Open work — next sessions
+
+**Lay-off 2 — Map-state announcement keys** (smaller; pure-reuse).
+
+The existing `AnnounceDegrees` (Pillar 2 sub-feature D, AltGr) speaks the player's exact world-frame yaw. On the map, the natural payload is *map-frame* yaw + current room name + maybe "of N unexplored regions adjacent": "Du bist im Raum X. Du blickst nach 47° (Nordosten) auf der Karte." Same key, different payload triggered by `HasActiveMapPanel()`.
+
+Engineering basis:
+- `CSWSAreaMap::GetMapRotateCCWFromWorldOrientation @0x578ed0` — converts player world yaw to map-frame yaw in degrees CCW. Already documented in Q4; not yet consumed by our code. Wraps the per-area rotation field.
+- Room name: existing `engine_area::GetRoomDisplayName(area, roomIdx, ...)` + `transitions::GetLandmarkForRoom` (Tier 1 / Tier 2 already wired in `map_ui_cursor`).
+- Octagonal sector names: already in `announce_degrees` / `engine_compass`.
+
+Files likely touched:
+- `announce_degrees.cpp` — context branch on `HasActiveMapPanel()`; build the map-frame payload via the helpers above.
+- New strings if needed for the multi-segment announcement format.
+
+Estimated session: half. No new RE work.
+
+**Lay-off 3 — Saved user markers + quest-objective shortcut** (larger; has RE).
+
+Two sub-pieces, ordered:
+
+3a. **Quest-objective shortcut.** Single key that picks the active quest's pin without cycling. Useful when there are many pins on the map.
+
+RE needed: `CSWSPlayerJournalQuest` layout (currently `PlaceHolder Structure` in Lane's `.h`). Decompile `AddJournalQuestEntry` / `GetJournalEntry` (NWScript-callable entry points; addresses in the enum at swkotor.exe.h:4267-4269) to recover offsets to the active-entry list. Each entry has a `plot_index` + `planet_id` that should map to a `(key1, key2)` query against `CSWCArea::GetMapPin @0x605ac0` — but this needs verification: the SARIF DATATYPE for `SJournalEntry` lists `plot_index` and `planet_id` at +0x34 / +0x38, but whether those are the same keys GetMapPin uses is unconfirmed. Plan: decomp + log first, code second.
+
+Key allocation: TBD pending the broader hotkey-registry pass parked from Phase 5 lay-off 5. Don't burn another modifier-laden chord until the rework lands.
+
+3b. **Saved user markers.** User stamps the cursor's current world position with a TTS-prompted name; persists across saves via `CSWGlobalVariableTable.locations` (2026-05-03 batch lock). Cycles as a 5th map category (`SavedMarker`).
+
+Engineering basis: `CSWGlobalVariableTable` is the game's NWScript-accessible global variable store — already used by every save game; per the 2026-05-03 plan §"Pillar 3 batch lock", it's the durable storage path. Need to confirm read/write API + format.
+
+Estimated session: full. RE-heavy.
+
+### Files touched (lay-offs 1a + 1b combined)
+
+Summary:
+- `patches/Accessibility/engine_area.{h,cpp}` — new GetAreaMap / IsWorldPointExplored / GetClientArea / map-pin helpers.
+- `patches/Accessibility/engine_panels.{h,cpp}` — HasActiveMapPanel.
+- `patches/Accessibility/filter_objects.{h,cpp}` — CycleContext + MapPin category + IsMapCycleable.
+- `patches/Accessibility/cycle_state.{h,cpp}` — context-aware Build + Cycle helpers, separate Map state singleton.
+- `patches/Accessibility/cycle_input.cpp` — context routing in PollWin32 + TryHandleEvent; map-pin branches in activation handlers.
+- `patches/Accessibility/narrated_target.{h,cpp}` — Slot grew isMapPin + pos; StampMapPin; map-pin validation in TryGet.
+- `patches/Accessibility/interact_hotkey.cpp` — map-pin early-return in OnInteract.
+- `patches/Accessibility/map_ui_cursor.{h,cpp}` — PanToWorld; local GetAreaMap/IsWorldPointExplored removed in favour of engine_area.
+- `patches/Accessibility/strings.h` + `strings_de.cpp` + `strings_en.cpp` — CategoryMapPin / EmptyMapPins / MapPin* hints.
 
 ---
 

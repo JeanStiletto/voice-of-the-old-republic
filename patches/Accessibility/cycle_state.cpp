@@ -83,6 +83,52 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
     void* areaMap = mapCtx ? acc::engine::GetAreaMap() : nullptr;
     int   fogFiltered = 0;
 
+    // MapPin lives on the client-area's dynamic pin array, NOT in
+    // CSWSArea.game_objects[]. Out-of-band iteration in map context;
+    // World context skips this category entirely (returns empty so the
+    // category-loop's silent-skip kicks in).
+    if (category == acc::filter::CycleCategory::MapPin) {
+        if (!mapCtx) {
+            // In-world Shift+,/. should not surface map pins (they're
+            // a map-UI affordance only). Return success with empty.
+            return true;
+        }
+        void* clientArea = acc::engine::GetClientArea(area);
+        int   pinCount   = acc::engine::GetMapPinCount(clientArea);
+        int   pinFog     = 0;
+        int   pinDisabled = 0;
+        bool  pinOverflow = false;
+        for (int i = 0; i < pinCount; ++i) {
+            void* pin = acc::engine::GetMapPinAt(clientArea, i);
+            if (!pin) continue;
+            if (!acc::engine::IsMapPinEnabled(pin)) {
+                ++pinDisabled;
+                continue;
+            }
+            Vector pos;
+            if (!acc::engine::GetMapPinPosition(pin, pos)) continue;
+            if (areaMap && !acc::engine::IsWorldPointExplored(areaMap, pos)) {
+                ++pinFog;
+                continue;
+            }
+            if (out.count >= CategoryListing::kMaxObjects) {
+                pinOverflow = true;
+                continue;
+            }
+            out.objs[out.count]      = pin;
+            out.positions[out.count] = pos;
+            out.distances[out.count] = HorizontalDistance(pos, playerPos);
+            ++out.count;
+        }
+        SortByDistanceAscending(out);
+        acclog::Write("Cycle",
+                      "BuildListing(map) MapPin clientArea=%p pinCount=%d "
+                      "disabled=%d fog=%d kept=%d overflow=%d",
+                      clientArea, pinCount, pinDisabled, pinFog,
+                      out.count, (int)pinOverflow);
+        return true;
+    }
+
     bool overflowed = false;
     acc::engine::AreaObjectIterator it(area);
     int scanned = 0;

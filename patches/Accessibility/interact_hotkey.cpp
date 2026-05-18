@@ -110,6 +110,25 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial);
 // this resolver entirely (its hover channel is the truth) and calls the
 // public `acc::interact::DispatchInteract` directly with its own target.
 void OnInteract(bool forceRadial) {
+    // Map-pin focus: Enter has nothing to dispatch to — pins are
+    // destinations, not interactables. Speak the localized hint and
+    // redirect to Ctrl+- (beacon) instead of falling into the "no
+    // target" silent path. Read the slot directly here because
+    // ResolveInteractTarget treats handle=0 as no-target and returns
+    // nullptr.
+    {
+        acc::narrated_target::Slot slot;
+        if (acc::narrated_target::TryGet(slot) && slot.isMapPin) {
+            const char* msg = acc::strings::Get(
+                acc::strings::Id::MapPinInteractHint);
+            tolk::Speak(msg, /*interrupt=*/true);
+            acclog::Write("Interact",
+                          "%s -> [%s] (map-pin focus, no interact)",
+                          forceRadial ? "Shift+Enter" : "Enter", msg);
+            return;
+        }
+    }
+
     uint32_t handle = 0;
     void* target = ResolveInteractTarget(&handle);
 

@@ -29,7 +29,13 @@ enum class CycleCategory : int {
     Item         = 3,
     Landmark     = 4,
     Transition   = 5,
-    Count_       = 6,
+    // MapPin is map-context only — server-side game_objects[] doesn't
+    // hold map pins (they live in CSWCArea.map_pins[]), so the iterator
+    // never sees them and World-context BuildCategoryListing returns
+    // empty for this category. cycle_state special-cases it in Map
+    // context to walk the client-area pin array directly.
+    MapPin       = 6,
+    Count_       = 7,
 };
 
 // Human-readable category name for logs / future TTS prefixing.
