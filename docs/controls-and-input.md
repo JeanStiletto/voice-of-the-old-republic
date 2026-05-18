@@ -188,6 +188,10 @@ When this document and `hotkeys.cpp` disagree, `hotkeys.cpp` wins. Update both t
 - Enter (in view mode) — Interact with hover target or autowalk to cursor point.
 - Shift+Enter (in view mode) — Force-radial on hover target.
 
+### Map UI (only active when InGameMap panel is foreground)
+
+- Shift+N — Drop a saved marker at the map cursor's current world position. Auto-named "{room or landmark} - Marke N" (DE) / "Marker N" (EN) using the same room-resolution chain transitions::Tick uses. The new pin enters the existing MapPin cycle (`,`/`.`) immediately and Ctrl+`-` beacons to it. N was picked because it has zero engine-vanilla binding — the semantically obvious Shift+M ruled out because the engine swallows M (its map-toggle key) regardless of Shift state, which closed the very panel the marker was meant to drop on. Provisional chord — moves once the parked Phase 5 lay-off 5 hotkey-registry rework lands. **Not yet persistent across save/reload** — engine pins live in `CSWCArea.map_pins[]` only; first slice ships per-session markers, ScriptVarTable write path (`NW_MAP_PIN_*_{N}`) is a follow-up sub-lay-off.
+
 ### Submenu navigation (active only when a mod submenu is up)
 
 When the actionbar submenu, combat-queue submenu, or radial action menu is armed, these consume rather than passing through to the engine:

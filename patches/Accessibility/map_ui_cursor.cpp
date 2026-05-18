@@ -157,9 +157,17 @@ struct CursorState {
 
     // Waypoint hover-pause (explicit map-note overlay — Tier 1
     // landmark-as-game-object).
+    // `pending_note_is_pin` / `last_spoken_is_pin` discriminate
+    // CSWSWaypoint hits (pin=false) from CSWCMapPin hits (pin=true).
+    // The state machine keys off the pointer identity for dedup; the
+    // kind flag only steers the text-read at speak time so the right
+    // engine_area accessor (GetWaypointMapNote vs GetMapPinNoteText)
+    // gets called.
     void*  pending_note_waypoint   = nullptr;
+    bool   pending_note_is_pin     = false;
     DWORD  pending_note_started_ms = 0;
     void*  last_spoken_waypoint    = nullptr;
+    bool   last_spoken_is_pin      = false;
 
     // Ambient hover-pause (fog-of-war + layout-room labels + terrain
     // shape). A single timer covers all kinds so flipping between e.g.
@@ -329,7 +337,8 @@ bool PixelToWorld(void* areaMap, float px, float py, float zSeed, Vector& outWor
 // not sequential hit detection.
 void* FindNearestExploredMapNote(void* mapPanel, void* areaMap,
                                  float cursorPx, float cursorPy,
-                                 int* outScannedCount = nullptr) {
+                                 int* outScannedCount = nullptr,
+                                 float* outBestDist2 = nullptr) {
     if (!mapPanel || !areaMap) return nullptr;
     void* mapHider = reinterpret_cast<unsigned char*>(mapPanel) +
                      kInGameMapHiderOffset;
@@ -425,7 +434,60 @@ void* FindNearestExploredMapNote(void* mapPanel, void* areaMap,
         node = nextNode;
     }
     if (outScannedCount) *outScannedCount = scanned;
+    if (outBestDist2) *outBestDist2 = bestObj ? bestDist2 : 1e30f;
     return bestObj;
+}
+
+// Hit-test against `CSWCArea.map_pins[]`. Map pins (both engine-placed
+// quest markers and our user markers) are not in the waypoint list so
+// FindNearestExploredMapNote misses them entirely — the cursor would
+// pan straight over a pin without speaking. Scanning the pin array
+// here closes the gap.
+//
+// Fog filter mirrors cycle_state.cpp: skip engine pins in unrevealed
+// cells (spoiler protection), surface user pins (flags >= 0x80000000)
+// regardless of fog since the user explicitly placed them. `outBestDist2`
+// returns the squared pixel distance of the best hit, or 1e30 on miss,
+// so the cursor's main hover loop can pick the closer of the waypoint
+// and pin scans.
+void* FindNearestMapPin(void* clientArea, void* areaMap,
+                        float cursorPx, float cursorPy,
+                        int* outScannedCount = nullptr,
+                        float* outBestDist2 = nullptr) {
+    if (outBestDist2) *outBestDist2 = 1e30f;
+    if (!clientArea || !areaMap) {
+        if (outScannedCount) *outScannedCount = 0;
+        return nullptr;
+    }
+    int pinCount = acc::engine::GetMapPinCount(clientArea);
+    void* bestPin = nullptr;
+    float bestDist2 = (float)(kHoverHitRadiusPx * kHoverHitRadiusPx);
+    int scanned = 0;
+    for (int i = 0; i < pinCount; ++i) {
+        void* pin = acc::engine::GetMapPinAt(clientArea, i);
+        if (!pin) continue;
+        ++scanned;
+        if (!acc::engine::IsMapPinEnabled(pin)) continue;
+        Vector pos;
+        if (!acc::engine::GetMapPinPosition(pin, pos)) continue;
+        uint32_t flags = acc::engine::GetMapPinFlags(pin);
+        bool isUserPin = (flags & 0x80000000u) != 0;
+        if (!isUserPin && !acc::engine::IsWorldPointExplored(areaMap, pos)) {
+            continue;
+        }
+        float ppx, ppy;
+        if (!WorldToPixel(areaMap, pos, ppx, ppy)) continue;
+        float dx = ppx - cursorPx;
+        float dy = ppy - cursorPy;
+        float d2 = dx * dx + dy * dy;
+        if (d2 < bestDist2) {
+            bestDist2 = d2;
+            bestPin = pin;
+        }
+    }
+    if (outScannedCount) *outScannedCount = scanned;
+    if (outBestDist2) *outBestDist2 = bestPin ? bestDist2 : 1e30f;
+    return bestPin;
 }
 
 bool ReadWaypointMapNoteText(void* waypoint, char* outBuf, size_t bufSize) {
@@ -707,18 +769,50 @@ void Tick() {
         }
     }
 
-    // Hover-pause map-note narration. Three-variable pattern.
-    int scannedCount = 0;
-    void* hit = FindNearestExploredMapNote(mapPanel, areaMap,
-                                           g_state.px, g_state.py,
-                                           &scannedCount);
+    // Hover-pause narration — three-variable pattern. Two parallel
+    // scans:
+    //   1) FindNearestExploredMapNote — CSWSWaypoint map-notes (Tier 1
+    //      landmark overlay).
+    //   2) FindNearestMapPin — CSWCArea.map_pins[] entries (engine quest
+    //      markers + our user-placed saved markers).
+    // Whichever is closer in pixel space wins. `hitIsPin` propagates to
+    // the speak path so the right text accessor gets called.
+    int   scannedCount   = 0;
+    int   scannedPins    = 0;
+    float bestDistWay2   = 1e30f;
+    float bestDistPin2   = 1e30f;
+    void* hitWaypoint = FindNearestExploredMapNote(mapPanel, areaMap,
+                                                   g_state.px, g_state.py,
+                                                   &scannedCount,
+                                                   &bestDistWay2);
+    void* clientAreaForPins = nullptr;
+    {
+        void* serverArea = acc::engine::GetCurrentArea();
+        if (serverArea) clientAreaForPins = acc::engine::GetClientArea(serverArea);
+    }
+    void* hitPin = FindNearestMapPin(clientAreaForPins, areaMap,
+                                     g_state.px, g_state.py,
+                                     &scannedPins, &bestDistPin2);
+
+    void* hit       = nullptr;
+    bool  hitIsPin  = false;
+    if (hitWaypoint && hitPin) {
+        if (bestDistPin2 < bestDistWay2) { hit = hitPin; hitIsPin = true; }
+        else                              { hit = hitWaypoint; }
+    } else if (hitPin) {
+        hit = hitPin; hitIsPin = true;
+    } else {
+        hit = hitWaypoint;
+    }
+
     if (moved) {
         acclog::Trace("MapCursor",
                       "tick pixel=(%.1f,%.1f) world=(%.2f,%.2f) "
-                      "scanned=%d hit=%p",
+                      "scanned=%d pins=%d hit=%p kind=%s",
                       g_state.px, g_state.py,
                       g_state.world.x, g_state.world.y,
-                      scannedCount, hit);
+                      scannedCount, scannedPins,
+                      hit, hitIsPin ? "pin" : "waypoint");
     }
 
     // Resolve the terrain shape via the shared region cache (built once
@@ -764,23 +858,43 @@ void Tick() {
             if (g_state.pending_note_started_ms != 0 &&
                 now - g_state.pending_note_started_ms >= kHoverPauseMs) {
                 char text[256] = {0};
-                bool haveText = ReadWaypointMapNoteText(hit, text,
-                                                        sizeof(text)) &&
-                                text[0] != '\0';
+                bool haveText = false;
                 char tagBuf[128] = {0};
-                bool haveTag = ReadWaypointTag(hit, tagBuf, sizeof(tagBuf));
-                if (!haveText) {
-                    // Honest fallback per feedback_never_silence_fallback_-
-                    // announcement: an enabled map-note pin with empty
-                    // localised text would otherwise vanish for blind
-                    // players even though the engine still renders the
-                    // coloured dot. Speak the generic POI label so the
-                    // marker is at least surfaced. Tag goes to the log
-                    // for investigation of which waypoints fall here.
-                    const char* poi = acc::strings::Get(
-                        acc::strings::Id::MapCursorWaypointPOI);
-                    if (poi && poi[0]) {
-                        std::snprintf(text, sizeof(text), "%s", poi);
+                bool haveTag = false;
+                bool kindIsPin = g_state.pending_note_is_pin;
+                if (kindIsPin) {
+                    // Map-pin path — note_text CExoString @+0x100.
+                    haveText = acc::engine::GetMapPinNoteText(
+                                   hit, text, sizeof(text)) &&
+                               text[0] != '\0';
+                    if (!haveText) {
+                        // Same honest-fallback intent as waypoints —
+                        // user pins should always carry text, but
+                        // engine pins served with strref-only sometimes
+                        // resolve to empty.
+                        const char* generic = acc::strings::Get(
+                            acc::strings::Id::MapPinNoText);
+                        if (generic && generic[0]) {
+                            std::snprintf(text, sizeof(text), "%s", generic);
+                        }
+                    }
+                } else {
+                    // Waypoint path — unchanged.
+                    haveText = ReadWaypointMapNoteText(hit, text,
+                                                       sizeof(text)) &&
+                               text[0] != '\0';
+                    haveTag = ReadWaypointTag(hit, tagBuf, sizeof(tagBuf));
+                    if (!haveText) {
+                        // Honest fallback per feedback_never_silence_-
+                        // fallback_announcement: an enabled map-note pin
+                        // with empty localised text would otherwise
+                        // vanish for blind players even though the
+                        // engine still renders the coloured dot.
+                        const char* poi = acc::strings::Get(
+                            acc::strings::Id::MapCursorWaypointPOI);
+                        if (poi && poi[0]) {
+                            std::snprintf(text, sizeof(text), "%s", poi);
+                        }
                     }
                 }
                 if (text[0] != '\0') {
@@ -799,27 +913,31 @@ void Tick() {
                     // reader path suffers from while WASD is held.
                     tolk::SpeakUrgent(speakStr);
                     acclog::Write("MapCursor",
-                                  "speak note=\"%s\" tag=\"%s\" "
+                                  "speak %s=\"%s\" tag=\"%s\" "
                                   "shape=\"%s\" haveText=%d "
                                   "cursor=(%.1f,%.1f)",
+                                  kindIsPin ? "pin" : "note",
                                   text, haveTag ? tagBuf : "",
                                   haveShape ? shapeTextLocal : "",
                                   (int)haveText,
                                   g_state.px, g_state.py);
                 }
                 g_state.last_spoken_waypoint    = hit;
+                g_state.last_spoken_is_pin      = kindIsPin;
                 g_state.pending_note_waypoint   = nullptr;
+                g_state.pending_note_is_pin     = false;
                 g_state.pending_note_started_ms = 0;
-                // Crossing into a waypoint resets ambient latching — if
+                // Crossing into a waypoint/pin resets ambient latching — if
                 // the user then leaves back into the same fog/room they
-                // came from, the ambient re-announces (waypoint counts
-                // as an "intervening event" that re-arms ambient).
+                // came from, the ambient re-announces (the hover hit
+                // counts as an "intervening event" that re-arms ambient).
                 g_state.last_spoken_ambient_kind     = AmbientKind::None;
                 g_state.last_spoken_ambient_room_idx = -1;
                 g_state.last_spoken_ambient_text[0]  = '\0';
             }
         } else {
             g_state.pending_note_waypoint   = hit;
+            g_state.pending_note_is_pin     = hitIsPin;
             g_state.pending_note_started_ms = now;
         }
     } else {

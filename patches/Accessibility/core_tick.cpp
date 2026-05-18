@@ -24,6 +24,7 @@
 #include "hotkeys.h"
 #include "interact_hotkey.h"
 #include "map_ui_cursor.h"
+#include "map_user_markers.h"
 #include "menus.h"
 #include "party_leader_announce.h"
 #include "passive_narrate.h"
@@ -69,6 +70,11 @@ void Dispatch() {
     // stock kotor.ini, so the engine keymap drops the scancode before our
     // manager hook sees it.
     acc::announce_degrees::PollWin32();
+
+    // Phase 6 lay-off 3 — Shift+Q in map context drops a saved marker
+    // at the cursor's current world position. Self-gates on
+    // HasActiveMapPanel + cursor active; in-world Shift+Q stays silent.
+    acc::map_user_markers::PollWin32();
 
     // Phase 4 lay-off 2 view-mode probe — Shift+AltGr toggles the engine
     // CClientOptions.mouse_look bit and announces the new state, so we

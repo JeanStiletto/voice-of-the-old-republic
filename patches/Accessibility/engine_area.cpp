@@ -620,6 +620,14 @@ namespace {
 typedef void* (__thiscall* PFN_CServerExoApp_GetModule)(void* /*serverApp*/);
 typedef bool  (__thiscall* PFN_CSWSAreaMap_IsWorldPointExplored)(
     void* /*areaMap*/, Vector /*pos*/);
+// MSVC compiles `long double` returns through ST(0) (same register the
+// engine pushes its float10 result into), then converts on the receiving
+// side. Treating the return as `double` is equivalent at the binary
+// level — the FPU push lands in ST(0); the compiler emits an fstp to
+// the receiving stack slot. The 80→64-bit precision loss is well below
+// the ~1-degree announcement granularity.
+typedef double (__thiscall* PFN_CSWSAreaMap_GetMapRotateCCW)(
+    void* /*areaMap*/, Vector /*orientation*/);
 
 void* GetServerApp() {
     __try {
@@ -656,6 +664,21 @@ bool IsWorldPointExplored(void* areaMap, const Vector& pos) {
         auto fn = reinterpret_cast<PFN_CSWSAreaMap_IsWorldPointExplored>(
             kAddrCSWSAreaMapIsWorldPointExplored);
         return fn(areaMap, pos);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool GetMapRotateCCWFromWorldOrientation(void* areaMap,
+                                         const Vector& orientation,
+                                         float& outDegCCW) {
+    if (!areaMap) return false;
+    __try {
+        auto fn = reinterpret_cast<PFN_CSWSAreaMap_GetMapRotateCCW>(
+            kAddrCSWSAreaMapGetMapRotateCCW);
+        double deg = fn(areaMap, orientation);
+        outDegCCW = static_cast<float>(deg);
+        return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
@@ -707,6 +730,16 @@ bool GetMapPinPosition(void* mapPin, Vector& out) {
     }
 }
 
+uint32_t GetMapPinFlags(void* mapPin) {
+    if (!mapPin) return 0;
+    __try {
+        return *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(mapPin) + 0x108);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
 bool IsMapPinEnabled(void* mapPin) {
     if (!mapPin) return false;
     __try {
@@ -731,6 +764,69 @@ bool GetMapPinNoteText(void* mapPin, char* outBuf, size_t bufSize) {
                                   kMapPinNoteStrrefOffset,
                                   outBuf, bufSize);
     return ok && outBuf[0] != '\0';
+}
+
+namespace {
+
+typedef void* (__cdecl*    PFN_OperatorNew)(size_t /*size*/);
+typedef void* (__thiscall* PFN_CSWCMapPinCtor)(void* /*this*/);
+typedef void* (__thiscall* PFN_CExoStringAssignFromCString)(
+    void* /*this CExoString*/, const char* /*rhs*/);
+typedef void  (__thiscall* PFN_CSWCAreaAddMapPin)(void* /*this CSWCArea*/,
+                                                  void* /*pin*/);
+
+}  // namespace
+
+bool CreateMapPin(void* clientArea, const Vector& pos, const char* name,
+                  uint32_t referenceNumber, void** outPin) {
+    if (outPin) *outPin = nullptr;
+    if (!clientArea) return false;
+
+    void* pin = nullptr;
+    __try {
+        // 1) operator_new(0x110)
+        auto opNew = reinterpret_cast<PFN_OperatorNew>(kAddrOperatorNew);
+        pin = opNew(0x110);
+        if (!pin) return false;
+
+        // 2) CSWCMapPin::CSWCMapPin() — initialises vtable + zero-fields.
+        auto ctor = reinterpret_cast<PFN_CSWCMapPinCtor>(kAddrCSWCMapPinCtor);
+        ctor(pin);
+
+        // 3) Direct field writes — match the engine's own pattern in
+        //    HandleServerToPlayerMapPinReferenceNumber. Position via
+        //    direct write (the engine uses a vtable[35] setter that
+        //    ultimately writes +0x24; bypassing it is safe because the
+        //    pin isn't yet attached to the area and no other thread
+        //    races us).
+        auto* p = reinterpret_cast<unsigned char*>(pin);
+        *reinterpret_cast<Vector*>(p + kMapPinPositionOffset) = pos;
+        *reinterpret_cast<int*>  (p + kMapPinEnabledOffset)   = 1;
+        *reinterpret_cast<uint32_t*>(p + 0x108)               = referenceNumber;
+        *reinterpret_cast<int*>  (p + 0x10c)                  = 1;  // subtype
+
+        // note_text CExoString — operator=(char*) handles the heap
+        // allocation + strcpy. Pass our string in; the engine owns the
+        // copy from this point on.
+        if (name && name[0] != '\0') {
+            auto exoAssign =
+                reinterpret_cast<PFN_CExoStringAssignFromCString>(
+                    kAddrCExoStringAssignFromCString);
+            exoAssign(p + kMapPinNoteTextOffset, name);
+        }
+
+        // 4) Append to clientArea->map_pins[].
+        auto add = reinterpret_cast<PFN_CSWCAreaAddMapPin>(
+            kAddrCSWCAreaAddMapPin);
+        add(clientArea, pin);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        // Pin was alloc'd but engine path faulted before AddMapPin —
+        // leaking 0x110 bytes is preferable to mismatched delete.
+        if (outPin) *outPin = nullptr;
+        return false;
+    }
+    if (outPin) *outPin = pin;
+    return true;
 }
 
 namespace {

@@ -30,6 +30,11 @@ const char* Get(Id id) {
         case Id::MapPinAltDashUnsupported: return "Quest marker: Alt+Dash not supported";
         case Id::MapPinInteractHint:  return "Quest marker. Press Ctrl+Dash to beacon.";
 
+        case Id::FmtSavedMarkerAutoNumber:   return "Marker %d";
+        case Id::FmtSavedMarkerAutoWithRoom: return "%s - Marker %d";
+        case Id::FmtSavedMarkerPlaced:       return "Marker saved: %s";
+        case Id::SavedMarkerFailed:          return "Could not save marker";
+
         case Id::FmtAnnounceWithClock: return "%s, %d o'clock, %d metres";
         case Id::FmtAnnounceNoClock:   return "%s, %d metres";
         case Id::FmtCategoryItem:      return "%s. %s";
@@ -102,6 +107,9 @@ const char* Get(Id id) {
         case Id::DirNorthwest:         return "Northwest";
 
         case Id::FmtCompassDegrees:    return "%d degrees";
+
+        case Id::FmtMapStateOriented:    return "%s. Facing %d degrees on the map, %s.";
+        case Id::FmtMapStateUnknownRoom: return "Facing %d degrees on the map, %s.";
 
         case Id::MouseLookOn:          return "Mouse Look on";
         case Id::MouseLookOff:         return "Mouse Look off";

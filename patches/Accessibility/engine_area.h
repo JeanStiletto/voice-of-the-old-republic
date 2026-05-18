@@ -281,6 +281,26 @@ void* GetAreaMap();
 // so we never narrate landmarks the player hasn't seen yet.
 bool IsWorldPointExplored(void* areaMap, const Vector& pos);
 
+// Wraps CSWSAreaMap::GetMapRotateCCWFromWorldOrientation @0x00578ed0
+// — the engine's world-orientation → map-frame angle conversion.
+// Takes a heading Vector in world space (e.g. CSWSObject.orientation;
+// z is engine-zeroed for object facings), runs Yaw(facing), and adds
+// 0/90/180/270 depending on the area map's own orientation tag.
+// Returns the rotation (degrees, CCW) one would apply to the compass-
+// arrow sprite — i.e. the player's facing expressed in map-local
+// space, in the same CCW-from-+X convention as engine yaw.
+//
+// Callers convert to compass-frame (CW from North) via
+// engine_compass::EngineYawToCompass.
+//
+// Returns true with `outDegCCW` on success; false on null areaMap or
+// SEH fault. The engine returns a float10 (x87 long double via ST(0));
+// the wrapper down-casts to float, which is sufficient for an integer-
+// degree announcement.
+bool GetMapRotateCCWFromWorldOrientation(void* areaMap,
+                                         const Vector& orientation,
+                                         float& outDegCCW);
+
 // Resolve the client-side CSWCArea that mirrors a CSWSArea via the
 // back-pointer at CSWSArea +0x2d0. CSWCArea owns the dynamic map-pin
 // array (quest objective markers, NWScript-placed pins). Returns
@@ -306,6 +326,16 @@ void* GetMapPinAt(void* clientArea, int i);
 // the placing entity's elevation in 3D areas).
 bool GetMapPinPosition(void* mapPin, Vector& out);
 
+// Read CSWCMapPin.flags (+0x108, uint32). Engine pins use a monotonic
+// counter starting at 1 (`NW_TOTAL_MAP_PINS`-derived) so engine flags
+// always sit in [1, ~few hundred]. Our user-placed markers reserve the
+// high-half range (`map_user_markers::kUserMarkerReferenceBase` =
+// 0x80000000) so cycle/cursor consumers can distinguish them with a
+// single bit-test:
+//   isUserMarker = (flags & 0x80000000) != 0
+// Returns 0 on null / fault.
+uint32_t GetMapPinFlags(void* mapPin);
+
 // Read CSWCMapPin.enabled (+0xfc, int). Pins toggle off via the
 // SetMapPinEnabled NWScript command without being removed from the
 // array, so disabled pins persist as dormant slots; filter callers
@@ -321,6 +351,48 @@ bool IsMapPinEnabled(void* mapPin);
 //
 // Returns false on null / faulted read / empty resolved text.
 bool GetMapPinNoteText(void* mapPin, char* outBuf, size_t bufSize);
+
+// Create a new CSWCMapPin and append it to `clientArea->map_pins[]`.
+// Replicates the engine's own creation pattern exactly (decoded from
+// `HandleServerToPlayerMapPinReferenceNumber @0x652d60`):
+//   1. `operator_new(0x110)` (engine's allocator, matched to its free).
+//   2. `CSWCMapPin::CSWCMapPin()` ctor — initialises vtable + zero-fields.
+//   3. Direct field writes — position @+0x24, enabled @+0xfc, note_text
+//      via `CExoString::operator=(this, char*)` @+0x100, flags
+//      (reference number) @+0x108, subtype @+0x10c.
+//   4. `CSWCArea::AddMapPin(this_, pin)` @0x606d90 — pointer append.
+//
+// `referenceNumber` is the unique id the engine uses to key
+// SetMapPinEnabled / GetMapPin calls; pick a value that doesn't collide
+// with anything the engine has previously placed (the engine itself
+// uses a per-player monotonic counter via `NW_TOTAL_MAP_PINS`). For
+// the accessibility "saved marker" path we pick a high-half range
+// (e.g. 0x80000000-up) so we don't trip the engine's own counter.
+//
+// `name` is a UTF-8 / Windows-1252 string copied into a heap CExoString
+// via the engine's own `operator=` — same allocator that `~CSWCMapPin`
+// will eventually free, so alloc/free are matched.
+//
+// Returns true on success and writes the freshly-allocated pin pointer
+// (still owned by the area's map_pins[] array) to `outPin` when non-
+// null. False if `clientArea` is null, the engine alloc fails, or any
+// engine call faults under SEH.
+//
+// Lifetime: the pin is owned by the area from the moment AddMapPin
+// returns; it survives until area unload / ClearAllMapPins, both of
+// which call `operator_delete` matched to the alloc here.
+//
+// Persistence: this path does NOT write the per-player ScriptVarTable
+// strings (`NW_MAP_PIN_*_{N}`) that the engine's own user-pin flow
+// uses to round-trip across save/load. Pins created via this wrapper
+// vanish on area transition. The persistence path is a separate
+// follow-up; for the initial saved-marker hotkey, in-area-only is
+// acceptable.
+bool CreateMapPin(void*       clientArea,
+                  const Vector& pos,
+                  const char* name,
+                  uint32_t    referenceNumber,
+                  void**      outPin = nullptr);
 
 // Reads CSWSWaypoint.map_note (+0x230, CExoLocString). The Bioware-
 // authored display label (e.g. "Bridge", "Cargo Hold", "Brücke",
@@ -396,6 +468,21 @@ constexpr uintptr_t kAddrCClientExoAppGetGameObject = 0x005ED580;
 constexpr uintptr_t kAddrCServerExoAppGetModule          = 0x004AE6B0;
 constexpr size_t    kModuleAreaMapOffset                 = 0x218;
 constexpr uintptr_t kAddrCSWSAreaMapIsWorldPointExplored = 0x00579210;
+// CSWSAreaMap::GetMapRotateCCWFromWorldOrientation — __thiscall(this,
+// Vector orientation by value). Returns float10 via ST(0); we cast
+// down to a normal float. BYTES_PURGED=12 = callee pops the 3-float
+// Vector args off the stack.
+constexpr uintptr_t kAddrCSWSAreaMapGetMapRotateCCW       = 0x00578ED0;
+
+// CSWCMapPin allocation + initialisation chain (decoded from
+// `HandleServerToPlayerMapPinReferenceNumber @0x00652d60`). All matched —
+// `operator_new` at 0x43e1b0 pairs with the `_free` calls
+// `CExoString::operator=` and `~CSWCMapPin` invoke, so a pin allocated
+// through this chain is safe for the engine to eventually free.
+constexpr uintptr_t kAddrOperatorNew                = 0x0043E1B0;  // __cdecl(ulong)
+constexpr uintptr_t kAddrCSWCMapPinCtor             = 0x00692540;  // __thiscall()
+constexpr uintptr_t kAddrCExoStringAssignFromCString= 0x005E5140;  // __thiscall(CExoString*, char*)
+constexpr uintptr_t kAddrCSWCAreaAddMapPin          = 0x00606D90;  // __thiscall(CSWCArea*, CSWCMapPin*)
 
 // Server→client back-pointer used to reach CSWCArea (which owns
 // map_pins[]) from a CSWSArea we already have via GetCurrentArea.

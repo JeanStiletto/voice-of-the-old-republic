@@ -94,9 +94,10 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
             return true;
         }
         void* clientArea = acc::engine::GetClientArea(area);
-        int   pinCount   = acc::engine::GetMapPinCount(clientArea);
-        int   pinFog     = 0;
+        int   pinCount    = acc::engine::GetMapPinCount(clientArea);
+        int   pinFog      = 0;
         int   pinDisabled = 0;
+        int   pinUser     = 0;  // count of user-placed markers (refnum >= 0x80000000)
         bool  pinOverflow = false;
         for (int i = 0; i < pinCount; ++i) {
             void* pin = acc::engine::GetMapPinAt(clientArea, i);
@@ -107,7 +108,17 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
             }
             Vector pos;
             if (!acc::engine::GetMapPinPosition(pin, pos)) continue;
-            if (areaMap && !acc::engine::IsWorldPointExplored(areaMap, pos)) {
+            // Skip fog gate for user-placed markers: the player
+            // explicitly dropped them, so there's no spoiler concern,
+            // and gating them out makes the dropped pin un-refindable
+            // when the cursor landed in an unrevealed cell at drop time
+            // (observed live 2026-05-18 — see logs/patch-...-193939.log
+            // line 2525 vs line 3684 in the diagnosis trail).
+            uint32_t flags = acc::engine::GetMapPinFlags(pin);
+            bool isUserPin = (flags & 0x80000000u) != 0;
+            if (isUserPin) ++pinUser;
+            if (!isUserPin &&
+                areaMap && !acc::engine::IsWorldPointExplored(areaMap, pos)) {
                 ++pinFog;
                 continue;
             }
@@ -123,9 +134,9 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
         SortByDistanceAscending(out);
         acclog::Write("Cycle",
                       "BuildListing(map) MapPin clientArea=%p pinCount=%d "
-                      "disabled=%d fog=%d kept=%d overflow=%d",
+                      "disabled=%d fog=%d user=%d kept=%d overflow=%d",
                       clientArea, pinCount, pinDisabled, pinFog,
-                      out.count, (int)pinOverflow);
+                      pinUser, out.count, (int)pinOverflow);
         return true;
     }
 

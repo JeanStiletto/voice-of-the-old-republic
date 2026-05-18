@@ -87,6 +87,13 @@ enum class Action : int {
     AnnounceDegrees,       // AltGr alone (Shift forbidden)
     PartyLeaderAnnounce,   // Tab
 
+    // ----- Map saved markers (Phase 6 lay-off 3) -----
+    // Temporary chord per the 2026-05-18 user directive while the parked
+    // Phase 5 lay-off 5 hotkey-registry rework is still outstanding. Drop
+    // a marker at the map cursor's current world position. Only meaningful
+    // when the InGameMap panel is foreground; the handler self-gates.
+    SaveMarkerAtCursor,    // Shift+N (no Ctrl, no Alt, no AltGr — N has zero engine binding)
+
     // ----- View mode -----
     ViewModeToggle,        // B   (Shift forbidden)
     CameraStateProbe,      // Shift+B (diagnostic)

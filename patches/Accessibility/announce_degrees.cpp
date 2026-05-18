@@ -3,18 +3,33 @@
 #include <cmath>
 #include <cstdio>
 
+#include "engine_area.h"
 #include "engine_compass.h"
+#include "engine_panels.h"
 #include "engine_player.h"
 #include "hotkeys.h"
 #include "log.h"
 #include "strings.h"
 #include "tolk.h"
+#include "transitions.h"
 
 namespace acc::announce_degrees {
 
 namespace {
 
-void OnAnnounceDegrees() {
+int CompassDegreesFromEngineYaw(float engineYaw) {
+    float compass = acc::engine::EngineYawToCompass(engineYaw);
+    int degrees = static_cast<int>(std::floor(compass + 0.5f)) % 360;
+    if (degrees < 0) degrees += 360;
+    return degrees;
+}
+
+const char* SectorWord(int compassDegrees) {
+    int sector = acc::engine::CompassToSector(static_cast<float>(compassDegrees));
+    return acc::strings::Get(acc::engine::SectorString(sector));
+}
+
+void OnAnnounceWorldDegrees() {
     float engineYaw = 0.0f;
     if (!acc::engine::GetPlayerYawDegrees(engineYaw)) {
         // Yaw degenerate (mid-spawn / area-load). Stay silent — the
@@ -22,17 +37,113 @@ void OnAnnounceDegrees() {
         acclog::Write("AnnounceDegrees", "yaw unavailable, skipping");
         return;
     }
-    float compass = acc::engine::EngineYawToCompass(engineYaw);
-    int degrees = static_cast<int>(std::floor(compass + 0.5f)) % 360;
-    if (degrees < 0) degrees += 360;
+    int degrees = CompassDegreesFromEngineYaw(engineYaw);
 
     char msg[32];
     std::snprintf(msg, sizeof(msg),
                   acc::strings::Get(acc::strings::Id::FmtCompassDegrees),
                   degrees);
     tolk::Speak(msg, /*interrupt=*/true);
-    acclog::Write("AnnounceDegrees", "-> [%s] (engineYaw=%.1f compass=%.1f)",
-        msg, engineYaw, compass);
+    acclog::Write("AnnounceDegrees", "world -> [%s] (engineYaw=%.1f)",
+        msg, engineYaw);
+}
+
+// Resolve a display name for the layout-room the player currently
+// stands in, using the same three-tier chain transitions::Tick uses
+// for in-world room announcement (Bioware landmark → friendly room
+// name → "Raum N" synthetic). Writes a null-terminated string to
+// outBuf and returns true; returns false when no resolvable room
+// (player off-walkmesh / area null).
+bool ResolveRoomNameForPlayer(char* outBuf, size_t bufSize) {
+    if (!outBuf || bufSize < 2) return false;
+    outBuf[0] = '\0';
+
+    Vector pos;
+    if (!acc::engine::GetPlayerPosition(pos)) return false;
+    void* area = acc::engine::GetCurrentArea();
+    if (!area) return false;
+
+    int roomIdx = -1;
+    acc::engine::GetRoomAtIndexed(area, pos, roomIdx);
+    if (roomIdx < 0) return false;
+
+    // Tier 1 — Bioware landmark waypoint (localized, sparse).
+    const char* landmark = acc::transitions::GetLandmarkForRoom(roomIdx);
+    if (landmark && landmark[0] != '\0') {
+        std::snprintf(outBuf, bufSize, "%s", landmark);
+        return true;
+    }
+    // Tier 2 — mod-supplied friendly room_names entry. Skip vanilla
+    // resref-style noise ("m02_03e").
+    char roomBuf[128] = {0};
+    if (acc::engine::GetRoomDisplayName(area, roomIdx,
+                                        roomBuf, sizeof(roomBuf)) &&
+        roomBuf[0] != '\0' &&
+        !acc::transitions::IsResrefStyleRoomName(roomBuf)) {
+        std::snprintf(outBuf, bufSize, "%s", roomBuf);
+        return true;
+    }
+    // Tier 3 — synthetic "Raum N" so the user always hears a place
+    // marker even when authoring data is bare.
+    std::snprintf(outBuf, bufSize,
+                  acc::strings::Get(acc::strings::Id::FmtTransitionRoomIndex),
+                  roomIdx);
+    return true;
+}
+
+void OnAnnounceMapDegrees() {
+    // Need both the player facing and the area-map singleton to convert
+    // the heading into map-frame space. Either failing falls back to
+    // the world-frame announcement so the key never feels eaten.
+    Vector facing;
+    if (!acc::engine::GetPlayerFacing(facing) ||
+        (facing.x == 0.0f && facing.y == 0.0f)) {
+        acclog::Write("AnnounceDegrees",
+            "map: facing unavailable; falling back to world");
+        OnAnnounceWorldDegrees();
+        return;
+    }
+    void* areaMap = acc::engine::GetAreaMap();
+    if (!areaMap) {
+        acclog::Write("AnnounceDegrees",
+            "map: areaMap unavailable; falling back to world");
+        OnAnnounceWorldDegrees();
+        return;
+    }
+
+    float mapYawCCW = 0.0f;
+    if (!acc::engine::GetMapRotateCCWFromWorldOrientation(
+            areaMap, facing, mapYawCCW)) {
+        acclog::Write("AnnounceDegrees",
+            "map: GetMapRotateCCW failed; falling back to world");
+        OnAnnounceWorldDegrees();
+        return;
+    }
+
+    // Engine returns CCW-from-+X in map space — same convention as
+    // engine yaw. EngineYawToCompass converts to CW-from-North so the
+    // sector word + degrees match what a sighted player reads off the
+    // map's compass arrow.
+    int degrees = CompassDegreesFromEngineYaw(mapYawCCW);
+    const char* sector = SectorWord(degrees);
+
+    char roomBuf[160];
+    bool haveRoom = ResolveRoomNameForPlayer(roomBuf, sizeof(roomBuf));
+
+    char msg[384];
+    if (haveRoom) {
+        std::snprintf(msg, sizeof(msg),
+            acc::strings::Get(acc::strings::Id::FmtMapStateOriented),
+            roomBuf, degrees, sector);
+    } else {
+        std::snprintf(msg, sizeof(msg),
+            acc::strings::Get(acc::strings::Id::FmtMapStateUnknownRoom),
+            degrees, sector);
+    }
+    tolk::Speak(msg, /*interrupt=*/true);
+    acclog::Write("AnnounceDegrees",
+        "map -> [%s] (mapYawCCW=%.1f, deg=%d, room=\"%s\")",
+        msg, mapYawCCW, degrees, haveRoom ? roomBuf : "");
 }
 
 }  // namespace
@@ -49,7 +160,13 @@ void PollWin32() {
     Vector playerPos;
     if (!acc::engine::GetPlayerPosition(playerPos)) return;
 
-    OnAnnounceDegrees();
+    // Phase 6 lay-off 2: route to the map-frame payload when the
+    // InGameMap panel is foreground. World-frame branch unchanged.
+    if (acc::engine::HasActiveMapPanel()) {
+        OnAnnounceMapDegrees();
+    } else {
+        OnAnnounceWorldDegrees();
+    }
 }
 
 }  // namespace acc::announce_degrees

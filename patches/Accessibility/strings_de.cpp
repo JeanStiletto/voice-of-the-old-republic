@@ -40,6 +40,11 @@ const char* Get(Id id) {
         case Id::MapPinAltDashUnsupported: return "Quest-Markierung: Alt+Bindestrich nicht unterst\xFCtzt"; // unterstützt
         case Id::MapPinInteractHint:  return "Quest-Markierung. Strg+Bindestrich f\xFCr Beacon."; // für
 
+        case Id::FmtSavedMarkerAutoNumber:   return "Marke %d";
+        case Id::FmtSavedMarkerAutoWithRoom: return "%s - Marke %d";
+        case Id::FmtSavedMarkerPlaced:       return "Marke gespeichert: %s";
+        case Id::SavedMarkerFailed:          return "Marke konnte nicht gespeichert werden";
+
         case Id::FmtAnnounceWithClock: return "%s, auf %d Uhr, %d Meter";
         case Id::FmtAnnounceNoClock:   return "%s, %d Meter";
         case Id::FmtCategoryItem:      return "%s. %s";
@@ -113,6 +118,9 @@ const char* Get(Id id) {
         case Id::DirNorthwest:         return "Nord-West";
 
         case Id::FmtCompassDegrees:    return "%d Grad";
+
+        case Id::FmtMapStateOriented:    return "%s. Blick auf der Karte nach %d Grad, %s.";
+        case Id::FmtMapStateUnknownRoom: return "Blick auf der Karte nach %d Grad, %s.";
 
         case Id::MouseLookOn:          return "Maussteuerung an";
         case Id::MouseLookOff:         return "Maussteuerung aus";

@@ -60,6 +60,30 @@ enum class Id : int {
     MapPinAltDashUnsupported,
     MapPinInteractHint,
 
+    // Phase 6 lay-off 3 — saved user markers. Shift+Q on the map drops
+    // a pin at the cursor's world position; the pin enters the existing
+    // MapPin cycle category (lay-off 1b) immediately.
+    //
+    //   FmtSavedMarkerAutoNumber   — fallback name when no room context
+    //                                resolves at the cursor. 1 `%d`
+    //                                (per-area sequence). Ex: "Marker 1".
+    //   FmtSavedMarkerAutoWithRoom — combined name when a landmark /
+    //                                friendly room name covers the
+    //                                cursor's room. 1 `%s` (room name)
+    //                                + 1 `%d` (sequence). Ex: "Brücke -
+    //                                Marke 1".
+    //   FmtSavedMarkerPlaced       — confirmation spoken on success.
+    //                                1 `%s` (the resolved name).
+    //   SavedMarkerFailed          — spoken when CreateMapPin returns
+    //                                false (engine alloc fault or area
+    //                                resolution failure). Per
+    //                                feedback_never_silence_fallback_
+    //                                announcement: speak, don't drop.
+    FmtSavedMarkerAutoNumber,
+    FmtSavedMarkerAutoWithRoom,
+    FmtSavedMarkerPlaced,
+    SavedMarkerFailed,
+
     // ---- Per-item announce format templates.
     //      `WithClock`   takes (name, clock_int, metres_int).
     //      `NoClock`     takes (name, metres_int) — used when the player
@@ -282,6 +306,28 @@ enum class Id : int {
     //      "47 degrees" — using "Grad"/"degrees" rather than the "°"
     //      glyph so screen readers pronounce it consistently.
     FmtCompassDegrees,
+
+    // ---- Phase 6 lay-off 2 — map-state announcement (AltGr while the
+    //      InGameMap panel is foreground). Builds a multi-segment line
+    //      describing where the player is + how they're oriented in the
+    //      *map* frame (which may be rotated 0/90/180/270° from world
+    //      space, per CSWSAreaMap::GetMapRotateCCWFromWorldOrientation
+    //      @0x00578ed0). The room name uses the same three-tier
+    //      resolution the in-world Pillar 2 transition path uses —
+    //      Bioware landmark waypoint → friendly room_name → Raum-N
+    //      synthetic fallback.
+    //
+    //      `FmtMapStateOriented`   — full line. Args: room/landmark
+    //                                name (`%s`), compass-frame degrees
+    //                                in [0,359] (`%d`), sector word
+    //                                (`%s` — DirNorth.. via strings.Get).
+    //      `FmtMapStateUnknownRoom` — same line but without the room
+    //                                portion (player is outside any
+    //                                room walk-zone — rare; happens on
+    //                                transition strips). Args: degrees
+    //                                (`%d`), sector word (`%s`).
+    FmtMapStateOriented,
+    FmtMapStateUnknownRoom,
 
     // ---- Phase 4 lay-off 2 — view-mode Mouse Look probe (Shift+AltGr).
     //      Diagnostic-only; spoken on toggle so the user knows the
