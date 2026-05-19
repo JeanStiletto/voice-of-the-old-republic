@@ -1,12 +1,8 @@
 #include "party_leader_announce.h"
 
-#include <cstdint>
-
-#include "engine_area.h"      // GetObjectName
 #include "engine_offsets.h"   // Vector (global struct)
 #include "engine_panels.h"    // IsForegroundUiBlocking
-#include "engine_player.h"    // GetPlayerPosition, GetPlayerServerCreature,
-                              // GetPlayerCharacterName
+#include "engine_player.h"    // GetPlayerPosition, GetActiveLeaderName
 #include "hotkeys.h"
 #include "log.h"
 #include "tolk.h"
@@ -36,29 +32,15 @@ void Tick() {
         return;
     }
 
-    // Read the controlled creature AFTER the engine has processed Tab
-    // (this Tick runs from the per-frame dispatcher, which runs once per
-    // frame after input). Same chain passive_narrate / interact_hotkey
-    // use for resolving the leader.
-    void*    creature   = acc::engine::GetPlayerServerCreature();
-    char     creatureName[64] = {0};
-    if (creature) {
-        acc::engine::GetObjectName(creature, creatureName,
-                                   sizeof(creatureName));
-        // Player creature: CSWSCreatureStats.first_name + tag are empty in
-        // vanilla saves (chargen writes the chosen name to
-        // CClientExoAppInternal::player_character_name @+0x294, not the
-        // creature stats). Fall back to the dedicated accessor so the PC
-        // announces as "Test" / "Revan" / etc. instead of silence.
-        if (creatureName[0] == '\0') {
-            acc::engine::GetPlayerCharacterName(creatureName,
-                                                sizeof(creatureName));
-        }
-    }
-    if (creatureName[0] == '\0') {
-        acclog::Write("PartyLeader",
-                      "Tab — no leader name resolved (creature=%p)",
-                      creature);
+    // Resolve the leader name via the single-sourced policy entry-point.
+    // GetActiveLeaderName today returns the PC's CClientExoApp name slot
+    // and intentionally avoids the engine's GetObjectName path: that path
+    // overruns the caller's stack frame and trips the /GS canary during
+    // the chargen→world transient (freezes new-game Play). When companion
+    // leader support lands, GetActiveLeaderName grows the safe variant.
+    char creatureName[64] = {0};
+    if (!acc::engine::GetActiveLeaderName(creatureName, sizeof(creatureName))) {
+        acclog::Write("PartyLeader", "Tab — no leader name resolved");
         return;
     }
 
@@ -67,9 +49,7 @@ void Tick() {
     // solo-mode toggle active), each Tab press speaks the same name; the
     // user reads that as "still solo / no swap available". Suppressing on
     // diff would silently swallow that confirmation.
-    acclog::Write("PartyLeader",
-                  "Tab — speaking leader=%p name=[%s]",
-                  creature, creatureName);
+    acclog::Write("PartyLeader", "Tab — speaking leader=[%s]", creatureName);
     tolk::Speak(creatureName, /*interrupt=*/true);
 }
 

@@ -158,19 +158,30 @@ bool GetActiveLeaderName(char* outBuf, size_t bufSize) {
     if (!outBuf || bufSize < 2) return false;
     outBuf[0] = '\0';
 
-    // Try the server creature's first_name + tag first (companions only —
-    // Trask/Carth/etc. have these populated). Same path DiagSelect's Tab
-    // probe uses; we lean on engine_area::GetObjectName for the read.
-    void* server = GetPlayerServerObject();
-    if (server) {
-        GetObjectName(server, outBuf, bufSize);
-        if (outBuf[0] != '\0') return true;
+    // Try the CClientExoApp accessor FIRST. That's the PC's authoritative
+    // name slot (per memory project_pc_name_lives_in_client_exoapp) and it
+    // covers the only solo-leader scenario the engine has — every save and
+    // every fresh chargen ends up with a PC whose name lives there.
+    //
+    // We intentionally do NOT fall through to GetObjectName on the player
+    // server creature. GetObjectName routes through
+    // GetObjectDisplayNameByHandle → CClientExoApp::GetObjectName, which
+    // writes through a stack CExoString. During the chargen→world transient
+    // (player creature spawned with empty first_name + tag, client handle
+    // not yet fully registered), that engine accessor takes a path that
+    // overruns the caller's stack frame and trips the /GS canary →
+    // __fastfail (uncatchable by SEH). Reliably reproduced on every
+    // chargen→world today; bisected to this code path on 2026-05-19.
+    //
+    // TODO: when adding companion-leader support, fetch the actual active
+    // leader (not GetPlayerServerObject, which is always the PC), and for
+    // a companion call GetObjectName on THEIR server creature — companions
+    // have populated first_name/tag and the unsafe engine accessor never
+    // gets reached.
+    if (GetPlayerCharacterName(outBuf, bufSize) && outBuf[0] != '\0') {
+        return true;
     }
-
-    // Empty name → the PC chargen creature, which carries its name on
-    // CClientExoApp instead of the creature stats. Same fallback chain
-    // DiagSelect uses.
-    return GetPlayerCharacterName(outBuf, bufSize);
+    return false;
 }
 
 bool GetPlayerCharacterName(char* outBuf, size_t bufSize) {

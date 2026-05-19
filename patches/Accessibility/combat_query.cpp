@@ -213,6 +213,18 @@ void TickLeaderChangeAutoAnnounce() {
     // Once the accessor addresses are validated against a live binary,
     // restore the auto-fire path by replacing the leader-name speak
     // below with `SpeakSelectedPcStatBlock();`.
+
+    // Player-loaded gate — don't probe CClientExoApp::GetPlayerCharacterName
+    // until the world has actually loaded. During the chargen→world
+    // transient, the player slot is half-initialised and hammering the
+    // engine accessor every frame intermittently wedges the load (the
+    // world never spins up, engine alive but no module ever loads).
+    // Reproduced 2026-05-19 on chargen→world: Combat.PcStat fires once
+    // with "temp" at frame ~667, then 1300+ frames tick with no further
+    // engine state change until the user gives up and quits.
+    Vector unused;
+    if (!acc::engine::GetPlayerPosition(unused)) return;
+
     static char s_lastLeader[64] = "";
     char now[64] = "";
     if (!acc::engine::GetActiveLeaderName(now, sizeof(now))) return;
