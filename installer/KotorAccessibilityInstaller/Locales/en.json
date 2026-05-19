@@ -75,6 +75,8 @@
     "ModInstall_K1cpDownloading": "Downloading KOTOR 1 Community Patch from GitHub...",
     "ModInstall_K1cpStaging": "Unpacking K1CP into staging dir...",
     "ModInstall_K1cpApplying": "Applying K1CP via HoloPatcher (this can take a minute)...",
+    "ModInstall_K1cpApplyingHeartbeat_Format": "K1CP install running ({0} sec elapsed)...",
+    "ModInstall_K1cpProgress_Format": "K1CP: {0}",
     "ModInstall_SummaryHeading": "Optional mods:",
     "ModInstall_SummaryOk_Format": "  OK  {0}",
     "ModInstall_SummarySkipped_Format": "  --  {0} (skipped)",

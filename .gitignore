@@ -1,6 +1,6 @@
 # Build artifacts and run logs
 /build/
-/logs/
+**/logs/
 
 # .NET build output (kdev, dbgcapture)
 **/bin/

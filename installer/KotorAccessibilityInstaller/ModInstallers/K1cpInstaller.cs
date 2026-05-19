@@ -1,21 +1,28 @@
 using System;
 using System.Diagnostics;
-using System.Formats.Tar;
 using System.IO;
-using System.IO.Compression;
 using System.Linq;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace KotorAccessibilityInstaller.ModInstallers
 {
     /// <summary>
-    /// Installs KOTOR 1 Community Patch (K1CP) from the GitHub source tarball
-    /// at the pinned commit SHA in <see cref="Config.K1cpPinnedRef"/>.
+    /// Installs KOTOR 1 Community Patch (K1CP) from the GitHub repo at the
+    /// pinned commit SHA in <see cref="Config.K1cpPinnedRef"/>.
+    ///
+    /// K1CP's <c>.gitattributes</c> tags <c>/tslpatchdata export-ignore</c>, so
+    /// GitHub's source tarball/zip strips the directory we need. K1CP also
+    /// publishes no GitHub releases (DeadlyStream-only distribution), so there
+    /// is no release-asset fallback. We reconstruct <c>tslpatchdata/</c>
+    /// file-by-file via the git tree API + raw.githubusercontent.com.
     ///
     /// Steps:
     /// <list type="number">
-    ///   <item>Download repo tarball from GitHub (pinned commit SHA).</item>
-    ///   <item>Extract <c>tslpatchdata/</c> into a staging dir.</item>
+    ///   <item>List blobs under <c>tslpatchdata/</c> at the pinned commit via git tree API.</item>
+    ///   <item>Download each blob via raw.githubusercontent.com into a staging dir,
+    ///         with bounded concurrency and per-file retry on transient failure.</item>
     ///   <item>If the install locale has a packaged translation (DE/FR/RU), overlay
     ///         <c>translation_&lt;lang&gt;/append.tlk</c> onto <c>tslpatchdata/append.tlk</c>.
     ///         IT/ES installs: install K1CP in English; the bugfix strings appear in
@@ -35,7 +42,6 @@ namespace KotorAccessibilityInstaller.ModInstallers
         public async Task<ModInstallResult> InstallAsync(ModInstallContext ctx)
         {
             string stagingRoot = null;
-            string tarballPath = null;
 
             try
             {
@@ -46,21 +52,24 @@ namespace KotorAccessibilityInstaller.ModInstallers
                         "installer/KotorAccessibilityInstaller/Resources/HoloPatcher.exe and rebuild.");
                 }
 
+                stagingRoot = Path.Combine(Path.GetTempPath(), $"kotor_acc_k1cp_{Guid.NewGuid():N}");
+                string tslpatchdataDir = Path.Combine(stagingRoot, "tslpatchdata");
+                Directory.CreateDirectory(tslpatchdataDir);
+
                 ctx.StatusUpdate?.Invoke(InstallerLocale.Get("ModInstall_K1cpDownloading"));
-                ctx.Progress?.Invoke(5);
+                ctx.Progress?.Invoke(0);
 
                 using var gh = new GitHubClient();
-                tarballPath = await gh.DownloadRepoTarballAsync(
+                await FetchTslpatchdataAsync(
+                    gh,
                     Config.K1cpRepoOwner,
                     Config.K1cpRepoName,
                     Config.K1cpPinnedRef,
-                    p => ctx.Progress?.Invoke(5 + (p * 35 / 100)));
+                    tslpatchdataDir,
+                    p => ctx.Progress?.Invoke(p * 55 / 100)); // 0..55 covers download
 
                 ctx.StatusUpdate?.Invoke(InstallerLocale.Get("ModInstall_K1cpStaging"));
-                ctx.Progress?.Invoke(45);
-
-                stagingRoot = await Task.Run(() => ExtractTarballToStaging(tarballPath));
-                string tslpatchdataDir = FindTslpatchdataDir(stagingRoot);
+                ctx.Progress?.Invoke(55);
                 Logger.Info($"K1CP tslpatchdata staged at: {tslpatchdataDir}");
 
                 ApplyLocaleOverlay(tslpatchdataDir, ctx.Locale);
@@ -68,8 +77,8 @@ namespace KotorAccessibilityInstaller.ModInstallers
                 ctx.StatusUpdate?.Invoke(InstallerLocale.Get("ModInstall_K1cpApplying"));
                 ctx.Progress?.Invoke(60);
 
-                var holoResult = await Task.Run(() =>
-                    RunHoloPatcher(ctx.HoloPatcherExePath, ctx.GameDir, tslpatchdataDir));
+                var holoResult = await RunHoloPatcherAsync(
+                    ctx.HoloPatcherExePath, ctx.GameDir, tslpatchdataDir, ctx.StatusUpdate);
 
                 if (!holoResult.Success)
                 {
@@ -87,11 +96,7 @@ namespace KotorAccessibilityInstaller.ModInstallers
             }
             finally
             {
-                if (tarballPath != null)
-                {
-                    try { File.Delete(tarballPath); } catch { /* best-effort */ }
-                }
-                if (stagingRoot != null)
+                if (stagingRoot != null && Directory.Exists(stagingRoot))
                 {
                     try { Directory.Delete(stagingRoot, recursive: true); }
                     catch (Exception cleanupEx)
@@ -102,41 +107,71 @@ namespace KotorAccessibilityInstaller.ModInstallers
             }
         }
 
-        private static string ExtractTarballToStaging(string tarballPath)
+        /// <summary>
+        /// Reconstructs <c>tslpatchdata/</c> from the K1CP repo at the pinned
+        /// commit. Uses the git tree API to enumerate blobs, then downloads
+        /// each one via raw.githubusercontent.com (which, unlike the source
+        /// archive, is not subject to <c>.gitattributes export-ignore</c>).
+        /// Concurrency-throttled to keep memory + connection count bounded.
+        /// </summary>
+        private static async Task FetchTslpatchdataAsync(
+            GitHubClient gh, string owner, string repo, string commitSha,
+            string destDir, Action<int> progress)
         {
-            string stagingRoot = Path.Combine(Path.GetTempPath(), $"kotor_acc_k1cp_{Guid.NewGuid():N}");
-            Directory.CreateDirectory(stagingRoot);
-
-            // GitHub tarballs are gzipped. Decompress in-stream then extract via .NET's
-            // built-in TarFile (.NET 7+) — avoids pulling in SharpZipLib.
-            using (var fs = new FileStream(tarballPath, FileMode.Open, FileAccess.Read))
-            using (var gz = new GZipStream(fs, CompressionMode.Decompress))
+            Logger.Info($"K1CP: enumerating tslpatchdata blobs at {owner}/{repo}@{commitSha.Substring(0, 7)}");
+            var blobs = await gh.ListTreeBlobsAsync(owner, repo, commitSha, "tslpatchdata");
+            if (blobs.Count == 0)
             {
-                TarFile.ExtractToDirectory(gz, stagingRoot, overwriteFiles: true);
+                throw new InvalidOperationException(
+                    $"No files found under tslpatchdata/ at {owner}/{repo}@{commitSha}. " +
+                    "K1CP repo layout may have changed; bump Config.K1cpPinnedRef.");
             }
 
-            Logger.Info($"Extracted K1CP tarball to: {stagingRoot}");
-            return stagingRoot;
-        }
+            long totalBytes = blobs.Sum(b => b.Size);
+            Logger.Info($"K1CP: downloading {blobs.Count} files, {totalBytes / 1024 / 1024} MB total");
 
-        private static string FindTslpatchdataDir(string stagingRoot)
-        {
-            // GitHub wraps the repo in a top-level directory named
-            // "<owner>-<repo>-<short-sha>/". Walk one level down to find it.
-            var topDirs = Directory.GetDirectories(stagingRoot);
-            if (topDirs.Length == 0)
-                throw new InvalidOperationException("K1CP tarball staging is empty — extraction produced no directories");
+            long downloadedBytes = 0;
+            int reportedPct = -1;
 
-            // Typically exactly one top-level dir. If multiple, pick the one containing tslpatchdata/.
-            foreach (var topDir in topDirs)
+            // Concurrency cap: 8 is a sweet spot — fast enough to saturate most
+            // home connections without slamming raw.githubusercontent.com.
+            using var sem = new SemaphoreSlim(8);
+            var tasks = blobs.Select(async blob =>
             {
-                string candidate = Path.Combine(topDir, "tslpatchdata");
-                if (Directory.Exists(candidate)) return candidate;
-            }
+                await sem.WaitAsync();
+                try
+                {
+                    // Blob paths are relative to tslpatchdata/. Mirror the layout
+                    // under destDir; create parent dirs as needed.
+                    string destPath = Path.Combine(destDir, blob.Path.Replace('/', Path.DirectorySeparatorChar));
+                    string parent = Path.GetDirectoryName(destPath);
+                    if (!string.IsNullOrEmpty(parent))
+                        Directory.CreateDirectory(parent);
 
-            throw new InvalidOperationException(
-                $"K1CP tarball does not contain a tslpatchdata/ folder under any of: " +
-                string.Join(", ", topDirs.Select(Path.GetFileName)));
+                    string rawUrl =
+                        $"https://raw.githubusercontent.com/{owner}/{repo}/{commitSha}/tslpatchdata/{blob.Path}";
+                    await gh.DownloadRawAsync(rawUrl, destPath);
+
+                    long after = Interlocked.Add(ref downloadedBytes, blob.Size);
+                    if (totalBytes > 0 && progress != null)
+                    {
+                        int pct = (int)((after * 100) / totalBytes);
+                        // Coarse rate-limit progress callbacks; cheap interlocked
+                        // CAS gate avoids hammering the UI thread on every blob.
+                        if (pct != reportedPct &&
+                            Interlocked.Exchange(ref reportedPct, pct) != pct)
+                        {
+                            progress(pct);
+                        }
+                    }
+                }
+                finally
+                {
+                    sem.Release();
+                }
+            });
+            await Task.WhenAll(tasks);
+            progress?.Invoke(100);
         }
 
         private static void ApplyLocaleOverlay(string tslpatchdataDir, GameLocale locale)
@@ -190,8 +225,19 @@ namespace KotorAccessibilityInstaller.ModInstallers
             Logger.Info($"K1CP: locale overlay applied — {translationDir}/append.tlk -> tslpatchdata/append.tlk");
         }
 
-        private static (bool Success, string Error) RunHoloPatcher(
-            string holoPatcherExe, string gameDir, string tslpatchdataDir)
+        // Forward HoloPatcher stdout lines as status updates at most this often.
+        // Lower = more responsive, more screen-reader interruption. Higher = more
+        // perceived stall during a verbose install phase.
+        private const int HoloPatcherForwardThrottleMs = 2500;
+
+        // Heartbeat tick when HoloPatcher hasn't said anything forwardable.
+        // Set just under the forward throttle so an "any progress?" update lands
+        // at predictable intervals even when HoloPatcher goes quiet.
+        private const int HoloPatcherHeartbeatMs = 5000;
+
+        private static async Task<(bool Success, string Error)> RunHoloPatcherAsync(
+            string holoPatcherExe, string gameDir, string tslpatchdataDir,
+            Action<string> statusUpdate)
         {
             // CLI verified against PyKotor master:
             //   HoloPatcher.exe --game-dir <game> --tslpatchdata <dir> --install [--console]
@@ -216,19 +262,93 @@ namespace KotorAccessibilityInstaller.ModInstallers
 
             try
             {
-                using var proc = Process.Start(psi);
-                if (proc == null)
-                    return (false, "Failed to start HoloPatcher.exe (Process.Start returned null)");
+                using var proc = new Process { StartInfo = psi };
+                var stdoutBuffer = new StringBuilder();
+                var stderrBuffer = new StringBuilder();
 
-                string stdout = proc.StandardOutput.ReadToEnd();
-                string stderr = proc.StandardError.ReadToEnd();
-                // HoloPatcher installs are typically under a minute; give a generous bound
-                // before declaring it hung.
-                if (!proc.WaitForExit(milliseconds: 10 * 60 * 1000))
+                // Shared "last forwarded status" timestamp coordinates the
+                // stdout-forward path and the heartbeat. Tick64 is monotonic
+                // and safe to read/write via Interlocked.
+                long lastForwardTicks = 0;
+
+                proc.OutputDataReceived += (s, e) =>
+                {
+                    if (e.Data == null) return; // null Data signals EOF
+                    lock (stdoutBuffer) stdoutBuffer.AppendLine(e.Data);
+
+                    string line = e.Data.Trim();
+                    if (line.Length == 0) return;
+
+                    long now = Environment.TickCount64;
+                    if (now - Interlocked.Read(ref lastForwardTicks) < HoloPatcherForwardThrottleMs)
+                        return;
+                    Interlocked.Exchange(ref lastForwardTicks, now);
+
+                    // Cap length so screen readers don't spend 10 seconds on
+                    // one update; a leading ellipsis on the right is fine.
+                    if (line.Length > 100) line = line.Substring(0, 97) + "...";
+                    statusUpdate?.Invoke(InstallerLocale.Format("ModInstall_K1cpProgress_Format", line));
+                };
+
+                proc.ErrorDataReceived += (s, e) =>
+                {
+                    if (e.Data == null) return;
+                    lock (stderrBuffer) stderrBuffer.AppendLine(e.Data);
+                };
+
+                proc.Start();
+                proc.BeginOutputReadLine();
+                proc.BeginErrorReadLine();
+
+                // Heartbeat: keep the UI feeling alive even if HoloPatcher
+                // goes quiet for a long stretch (or never speaks at all).
+                // Fires only when nothing else has updated status recently.
+                using var heartbeatCts = new CancellationTokenSource();
+                var heartbeatStarted = Environment.TickCount64;
+                Task heartbeat = Task.Run(async () =>
+                {
+                    try
+                    {
+                        while (!heartbeatCts.IsCancellationRequested)
+                        {
+                            await Task.Delay(HoloPatcherHeartbeatMs, heartbeatCts.Token);
+                            long now = Environment.TickCount64;
+                            // Quiet window: emit only if no forward in ~last tick.
+                            if (now - Interlocked.Read(ref lastForwardTicks) < HoloPatcherHeartbeatMs - 500)
+                                continue;
+                            Interlocked.Exchange(ref lastForwardTicks, now);
+                            int elapsedSec = (int)((now - heartbeatStarted) / 1000);
+                            statusUpdate?.Invoke(InstallerLocale.Format(
+                                "ModInstall_K1cpApplyingHeartbeat_Format", elapsedSec));
+                        }
+                    }
+                    catch (OperationCanceledException) { /* normal shutdown */ }
+                });
+
+                using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+                try
+                {
+                    await proc.WaitForExitAsync(timeoutCts.Token);
+                }
+                catch (OperationCanceledException)
                 {
                     try { proc.Kill(entireProcessTree: true); } catch { /* best-effort */ }
+                    heartbeatCts.Cancel();
+                    try { await heartbeat; } catch { /* swallow */ }
                     return (false, "HoloPatcher timed out after 10 minutes; killed.");
                 }
+
+                // Per MS docs: after WaitForExitAsync returns, call WaitForExit()
+                // synchronously so any in-flight OutputDataReceived /
+                // ErrorDataReceived events flush before we read their buffers.
+                proc.WaitForExit();
+
+                heartbeatCts.Cancel();
+                try { await heartbeat; } catch { /* swallow */ }
+
+                string stdout, stderr;
+                lock (stdoutBuffer) stdout = stdoutBuffer.ToString();
+                lock (stderrBuffer) stderr = stderrBuffer.ToString();
 
                 if (!string.IsNullOrWhiteSpace(stdout)) Logger.Info($"HoloPatcher stdout: {stdout.Trim()}");
                 if (!string.IsNullOrWhiteSpace(stderr)) Logger.Warning($"HoloPatcher stderr: {stderr.Trim()}");

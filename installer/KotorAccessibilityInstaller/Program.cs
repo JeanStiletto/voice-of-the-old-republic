@@ -62,13 +62,30 @@ namespace KotorAccessibilityInstaller
             bool uninstallMode = false;
             bool quietMode = false;
             string pathArg = null;
+            string localKpatchPath = null;
 
             for (int i = 0; i < args.Length; i++)
             {
                 string arg = args[i].ToLowerInvariant();
                 if (arg == "/uninstall" || arg == "-uninstall" || arg == "--uninstall") uninstallMode = true;
                 else if (arg == "/quiet" || arg == "-quiet" || arg == "--quiet" || arg == "/q" || arg == "-q") quietMode = true;
+                else if (arg == "--local-kpatch" && i + 1 < args.Length) localKpatchPath = args[++i];
                 else if (!arg.StartsWith("/") && !arg.StartsWith("-")) pathArg = args[i];
+            }
+
+            if (localKpatchPath != null)
+            {
+                if (!File.Exists(localKpatchPath))
+                {
+                    Logger.Error($"--local-kpatch path does not exist: {localKpatchPath}");
+                    MessageBox.Show(
+                        $"--local-kpatch path does not exist:\n{localKpatchPath}",
+                        "Installer (dev)",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                    return;
+                }
+                Logger.Info($"DEV: --local-kpatch override active; using {localKpatchPath} instead of GitHub release");
             }
 
             if (uninstallMode)
@@ -144,12 +161,12 @@ namespace KotorAccessibilityInstaller
                 {
                     case UpdateChoice.UpdateOnly:
                         Logger.Info("User chose to update mod only");
-                        Application.Run(new MainForm(detectedGamePath, updateOnly: true));
+                        Application.Run(new MainForm(detectedGamePath, updateOnly: true, localKpatchPath: localKpatchPath));
                         break;
 
                     case UpdateChoice.FullInstall:
                         Logger.Info("User chose full install");
-                        RunFullInstallFlow(detectedGamePath, pathArg, latestVersion);
+                        RunFullInstallFlow(detectedGamePath, pathArg, latestVersion, localKpatchPath);
                         break;
 
                     case UpdateChoice.Close:
@@ -174,11 +191,11 @@ namespace KotorAccessibilityInstaller
                 if (result != DialogResult.Yes) return;
 
                 Logger.Info("User chose full reinstall");
-                RunFullInstallFlow(detectedGamePath, pathArg, latestVersion);
+                RunFullInstallFlow(detectedGamePath, pathArg, latestVersion, localKpatchPath);
             }
             else
             {
-                RunFullInstallFlow(detectedGamePath, pathArg, latestVersion);
+                RunFullInstallFlow(detectedGamePath, pathArg, latestVersion, localKpatchPath);
             }
         }
 
@@ -186,7 +203,7 @@ namespace KotorAccessibilityInstaller
         /// Welcome → Base-components info → Optional-mods checkboxes → Main install.
         /// Each form can cancel the chain.
         /// </summary>
-        private static void RunFullInstallFlow(string gamePath, string pathArgOverride, string latestVersion)
+        private static void RunFullInstallFlow(string gamePath, string pathArgOverride, string latestVersion, string localKpatchPath)
         {
             var welcomeForm = new WelcomeForm { LatestModVersion = latestVersion };
             Application.Run(welcomeForm);
@@ -215,7 +232,7 @@ namespace KotorAccessibilityInstaller
             }
 
             string resolvedPath = pathArgOverride ?? DetectGamePath() ?? gamePath;
-            Application.Run(new MainForm(resolvedPath, language: welcomeForm.SelectedLanguage, modSelection: selectionForm.Selection));
+            Application.Run(new MainForm(resolvedPath, language: welcomeForm.SelectedLanguage, modSelection: selectionForm.Selection, localKpatchPath: localKpatchPath));
         }
 
         public static void PerformUninstall(string gamePath)

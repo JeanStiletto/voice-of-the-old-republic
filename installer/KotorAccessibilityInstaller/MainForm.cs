@@ -6,6 +6,7 @@ using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Windows.Forms.Automation;
 using KotorAccessibilityInstaller.ModInstallers;
 
 namespace KotorAccessibilityInstaller
@@ -16,6 +17,7 @@ namespace KotorAccessibilityInstaller
         private readonly bool _updateOnly;
         private readonly string _language;
         private readonly ModSelection _modSelection;
+        private readonly string _localKpatchPath;
         private bool _installFinished;
 
         private Label _titleLabel;
@@ -29,7 +31,7 @@ namespace KotorAccessibilityInstaller
         private CheckBox _launchCheckBox;
         private CheckBox _readmeCheckBox;
 
-        public MainForm(string detectedGamePath, bool updateOnly = false, string language = null, ModSelection modSelection = null)
+        public MainForm(string detectedGamePath, bool updateOnly = false, string language = null, ModSelection modSelection = null, string localKpatchPath = null)
         {
             _gamePath = detectedGamePath;
             _updateOnly = updateOnly;
@@ -37,8 +39,9 @@ namespace KotorAccessibilityInstaller
             // Null modSelection happens on the update-only path (we don't re-prompt for
             // optional mods on a kpatch update). Treat as "skip optional installs".
             _modSelection = modSelection;
+            _localKpatchPath = localKpatchPath;
             InitializeComponents();
-            Logger.Info($"MainForm initialized (updateOnly: {updateOnly}, language: {language ?? "none"}, modSelection: {modSelection?.ToString() ?? "none"})");
+            Logger.Info($"MainForm initialized (updateOnly: {updateOnly}, language: {language ?? "none"}, modSelection: {modSelection?.ToString() ?? "none"}, localKpatch: {localKpatchPath ?? "none"})");
         }
 
         private void InitializeComponents()
@@ -216,37 +219,49 @@ namespace KotorAccessibilityInstaller
                 Logger.Info($"Starting {(_updateOnly ? "update" : "installation")} to: {_gamePath}");
 
                 // Step 1: download .kpatch from GitHub releases
+                // DEV override: --local-kpatch <path> short-circuits the GitHub
+                // fetch and uses a locally-built .kpatch. Useful for testing the
+                // installer end-to-end before a real release exists.
                 UpdateStatus(InstallerLocale.Get("Main_StatusDownloading"));
                 UpdateProgress(5);
 
-                try
+                if (_localKpatchPath != null)
                 {
-                    latestVersion = await githubClient.GetLatestModVersionAsync(Config.ModRepositoryUrl);
-                    Logger.Info($"Latest mod version for registry: {latestVersion ?? "unknown"}");
+                    Logger.Info($"DEV: skipping GitHub download; using local kpatch at {_localKpatchPath}");
+                    downloadedKpatch = _localKpatchPath;
+                    UpdateProgress(40);
                 }
-                catch (Exception ex)
+                else
                 {
-                    Logger.Warning($"Could not fetch latest version: {ex.Message}");
-                }
+                    try
+                    {
+                        latestVersion = await githubClient.GetLatestModVersionAsync(Config.ModRepositoryUrl);
+                        Logger.Info($"Latest mod version for registry: {latestVersion ?? "unknown"}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Warning($"Could not fetch latest version: {ex.Message}");
+                    }
 
-                try
-                {
-                    downloadedKpatch = await githubClient.DownloadKPatchAsync(
-                        Config.ModRepositoryUrl,
-                        Config.KPatchAssetName,
-                        p => UpdateProgress(5 + (p * 35 / 100)));
-                }
-                catch (Exception modEx)
-                {
-                    Logger.Error("Failed to download kpatch", modEx);
-                    MessageBox.Show(
-                        InstallerLocale.Format("Main_ModDownloadFailed_Format", modEx.Message, Config.ModRepositoryUrl),
-                        InstallerLocale.Get("Main_ModDownloadFailed_Title"),
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Error);
-                    SetControlsEnabled(true);
-                    _progressBar.Visible = false;
-                    return;
+                    try
+                    {
+                        downloadedKpatch = await githubClient.DownloadKPatchAsync(
+                            Config.ModRepositoryUrl,
+                            Config.KPatchAssetName,
+                            p => UpdateProgress(5 + (p * 35 / 100)));
+                    }
+                    catch (Exception modEx)
+                    {
+                        Logger.Error("Failed to download kpatch", modEx);
+                        MessageBox.Show(
+                            InstallerLocale.Format("Main_ModDownloadFailed_Format", modEx.Message, Config.ModRepositoryUrl),
+                            InstallerLocale.Get("Main_ModDownloadFailed_Title"),
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Error);
+                        SetControlsEnabled(true);
+                        _progressBar.Visible = false;
+                        return;
+                    }
                 }
 
                 // Step 2: stage bundled patcher runtime + downloaded kpatch
@@ -385,7 +400,9 @@ namespace KotorAccessibilityInstaller
             }
             finally
             {
-                if (downloadedKpatch != null)
+                // Don't delete the source path when --local-kpatch is in effect —
+                // that's the user's locally-built .kpatch, not a temp download.
+                if (downloadedKpatch != null && downloadedKpatch != _localKpatchPath)
                 {
                     try { File.Delete(downloadedKpatch); } catch { }
                 }
@@ -401,6 +418,28 @@ namespace KotorAccessibilityInstaller
             _statusLabel.Text = message;
             _statusLabel.ForeColor = SystemColors.ControlText;
             Logger.Info(message);
+
+            // WinForms Labels are not UIA live regions, so just changing
+            // `_statusLabel.Text` is invisible to NVDA / JAWS / Narrator until
+            // the user navigates to it. Raise a UIA notification on the label
+            // so screen readers speak each update as it lands.
+            //
+            // MostRecent processing means a fresh update interrupts a pending
+            // one — important during the K1CP step where heartbeat + stdout
+            // forwards can fire in quick succession.
+            try
+            {
+                _statusLabel.AccessibilityObject?.RaiseAutomationNotification(
+                    AutomationNotificationKind.ActionCompleted,
+                    AutomationNotificationProcessing.MostRecent,
+                    message);
+            }
+            catch (Exception ex)
+            {
+                // Older Windows or no UIA at runtime — degrade silently so
+                // missing announcements don't take down the install.
+                Logger.Warning($"Could not raise automation notification: {ex.Message}");
+            }
         }
 
         private void UpdateProgress(int value)

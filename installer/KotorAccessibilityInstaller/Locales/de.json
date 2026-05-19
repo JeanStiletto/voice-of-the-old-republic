@@ -75,6 +75,8 @@
     "ModInstall_K1cpDownloading": "KOTOR 1 Community Patch wird von GitHub heruntergeladen...",
     "ModInstall_K1cpStaging": "K1CP wird ins Staging entpackt...",
     "ModInstall_K1cpApplying": "K1CP wird per HoloPatcher angewendet (kann eine Minute dauern)...",
+    "ModInstall_K1cpApplyingHeartbeat_Format": "K1CP-Installation läuft ({0} Sek)...",
+    "ModInstall_K1cpProgress_Format": "K1CP: {0}",
     "ModInstall_SummaryHeading": "Optionale Mods:",
     "ModInstall_SummaryOk_Format": "  OK  {0}",
     "ModInstall_SummarySkipped_Format": "  --  {0} (übersprungen)",
