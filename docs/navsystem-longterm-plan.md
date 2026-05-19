@@ -658,7 +658,57 @@ Our `,`/`.`/`Shift+,`/`Shift+.`/`-`/`Shift+-` cycle is **kept** but **reassigned
 
 The Pillar 4 implementation in `cycle_input.cpp` / `cycle_state.cpp` / `filter_objects.cpp` stays in tree; consumers shift from in-world to map. Build cost: zero — the modules already exist and the wiring is cheap. The Phase 2 lay-off plan's "lay-off 9" interaction model layered on top of `LastTarget` (whichever channel populates it), so no architectural unwind needed.
 
-### Keybindings (locked 2026-05-03; in-world scope revised 2026-05-04)
+### Scope revision (2026-05-19) — Q/E filter decompiled; in-world `,`/`.` becomes the *residual* channel
+
+**Why revisit:** the 2026-05-03 "current room + LOS extension" lock was written before we discovered (per `project_wok_rooms_not_visual_rooms`) that K1's authoring rooms are NOT visual rooms — `GetRoomAtIndexed` splits one visual junction across multiple rooms and you can cross multiple engine-rooms in two steps. The room-graph + `los_material_mask` plan was therefore **unimplementable as designed** — there's no stable room cluster to walk. At the same time, in-world testing made it clear the current placeholder ("whole area, no filter") over-includes spoilery foresight: the blind player cycles things 100m away around corners that no sighted player would know about.
+
+**What we found by decompiling Q/E (2026-05-19, decompile output in this commit's session memory):**
+
+- **`SelectNearestObject @0x005fb050`** is a thin stepper over `CClientExoAppInternal.field164_0x2a8` — it doesn't scan; it walks an already-curated list with LOS pruning.
+- **`DoPassiveSelection @0x005fa5a0`** rebuilds that list each tick from `CSWSCreature::GetNearestObjects(player, 30.0, 30.0, &front_cone, &halo)`. The *halo* (360° around player, 30-unit radius, sorted by clockwise yaw from facing) is what Q/E walks. The forward cone is separate, used only for white-outline + combat enemy_sighted, not Q/E.
+- **LOS** is `CSWParty::GetPlayerCharacter(party)->CanSee(obj)`, applied lazily in `SelectNearestObject` (cached in `field164`'s +4 byte). Occluded entries get `deleteAt`'d.
+- **Kind filter** is `CSWSCreature::ValidNearestObjectType @0x004f2c30`, switch on `object_type`:
+  - **DOOR** — included when `+0x2cc == 0` (not hidden) and `+0x3c0 == 0` (not disabled).
+  - **CREATURE** — included when alive + (in visibility list OR `DoSpotDetection` passes). Stealth respected. Hostility flag set iff `GetAIStateReputation == 2`.
+  - **PLACEABLE** — included when `.usable != 0`. (Containers, switches, terminals, levers.)
+  - **TRIGGER** — included **only** when `is_trap_ != 0` AND (already in trap-detection list OR faction-match OR reputation ≥ 0x5a).
+  - default → 0. So WAYPOINT, ITEM, **non-trap TRIGGER (incl. area transitions)**, ENCOUNTER, STORE, SOUND, AREA_OF_EFFECT are all out.
+
+**Implications:**
+
+1. The room-graph + `los_material_mask` plan is **superseded** by the `CanSee` primitive. We don't need rooms at all; engine LOS is per-object and already handles walls, occluders, elevation, dynamic doors. No rooms, no walkmesh edges, no adjacency walking.
+2. Q/E is **already** the channel a sighted player uses for "step up and click the next interactable" — doors, NPCs, containers, detected traps. Spoiler-correct because engine handles stealth + trap-detection. Our `narrated_target` already stamps on Q/E focus via `passive_narrate`, so `-` / `Shift+-` / `Ctrl+-` / `Alt+-` / Enter all act on it with no glue.
+3. The natural job for our own in-world `,`/`.` is the **residual** — categories Q/E doesn't cover:
+   - **Transitions / Exits** (non-trap triggers — engine-excluded).
+   - **Waypoints / map-notes** (engine-excluded; spoiler-gated by `CSWGuiMapHider`).
+   - **Ground items** (engine-excluded; usually empty in K1, but covered for completeness).
+
+**Locked design (2026-05-19):**
+
+- **In-world cycle channels:**
+  - **Q/E (engine native, untouched)** = doors / NPCs / usable placeables / detected traps. 30u 360° halo, engine LOS. Narrated by `passive_narrate` watching `LastTarget`. Dash family acts on it via `narrated_target` stamp. *Zero work on our side.*
+  - **`,` / `.` (our cycle)** = the residual: transitions, waypoints/map-notes, ground items. Same `,`/`.`/`Shift+,`/`Shift+.`/`-`/`Shift+-`/`Ctrl+-`/`Alt+-` keys. Sort by distance from player, no LOS filter needed (the residual categories are stable map-level features that the player should know exist whether they're behind a wall or not — that's the *orientation* channel, not the *action* channel).
+- **Map cycle (foreground = map UI)**: unchanged. `,`/`.` route to the `CycleContext::Map` state singleton, restricted to `IsMapCycleable` categories (Door / Landmark / Transition / MapPin), fog-gated via `IsWorldPointExplored`. Already shipped (Phase 6 lay-off 1).
+
+**Migration / fallback during transition:**
+
+For testing the new restricted scope without losing safety, the current six-category in-world cycle (`Door`, `NPC`, `Container`, `Item`, `Landmark`, `Transition`) **stays in tree as the fallback path**. The shift to "residual only" lands incrementally:
+
+1. **Phase A (next):** ship Q/E delegation more visibly — confirm `passive_narrate` covers doors/NPCs/containers in real play, validate dash-family activation on Q/E focus.
+2. **Phase B:** narrow `,`/`.` defaults to the residual categories (Transition, Landmark, Item) but keep all six categories reachable via `Shift+,`/`Shift+.` cycling. Lets the user "get stuck" out by stepping into Door/NPC/Container categories manually if Q/E missed something.
+3. **Phase C:** once Phase B has logged a session or two without falling back to the broader categories, retire the Q/E-overlapping ones from in-world cycle (keep them in map cycle, where they're still useful at map-curated scope). `filter_objects::IsInWorldCycleable` becomes the new gate.
+
+Phase A is implicit (Q/E already works); Phase B is the next concrete code change and is non-destructive (just a default-category change + maybe a startup-time toast saying "Q/E covers most interactables; , and . cover transitions and landmarks"). Phase C is deletion of unused branches.
+
+**Implementation notes for when Phase B lands:**
+
+- `filter_objects::CycleCategory` enum stays as-is (all six categories still listed).
+- New helper `IsInWorldDefaultCategory(c)`: returns true for `Transition`, `Landmark`, `Item` only. Used by initial-state and `Shift+.` skip logic.
+- All six categories still reachable via repeated `Shift+,`/`Shift+.` — the "fallback when stuck" path. The default just doesn't *land* on them.
+- Map context unchanged — uses `IsMapCycleable` as before.
+- No engine probe / hook work required. Pure category-routing change in `cycle_input.cpp`.
+
+### Keybindings (locked 2026-05-03; in-world scope revised 2026-05-04, 2026-05-19)
 
 Three keys, single global scheme that works across all surfacing contexts (gameplay / area map / galaxy map):
 
@@ -712,8 +762,7 @@ Decision deferred — needs the basic cycle UX shipped and tested first.
 
 ### Open design questions
 
-- ~~Cycle scope~~ — **resolved 2026-05-03**: in normal gameplay, **current room + line-of-sight extension** (objects visible through open doors / openings count as "in scope"). Translates the camera-view channel of sighted play. On map UI, scope shifts to map-curated landmarks across the whole area (translates the map channel). Different scopes for different contexts; same keybindings.
-  - **LOS engineering note:** engine has `CSWRoomSurfaceMesh.los_material_mask +0xd8` for which walkmesh materials are line-of-sight transparent. Implementation likely walks adjacency edges from current room and includes adjacent rooms whose connecting edges are LOS-transparent (cheap), rather than per-object raycasts (expensive). Refresh when player crosses room boundary.
+- ~~Cycle scope~~ — **superseded 2026-05-19** (see *Scope revision (2026-05-19)* above). Original 2026-05-03 lock was "current room + LOS extension" via `los_material_mask`; unimplementable because K1 authoring rooms are not visual rooms (`project_wok_rooms_not_visual_rooms`). New design: Q/E (engine native, `CanSee` LOS, 30u halo, engine-curated kinds) handles doors/NPCs/containers; our `,`/`.` handles the residual (transitions, waypoints, items) with no LOS pass needed.
 - **Sort order within category** — by distance from player, by direction (e.g. clockwise sweep), or stable by object id?
 - **Empty categories** — when `Shift+.` lands on a category with zero items, skip to the next non-empty, or land and announce "0 doors"?
 - **Direction frame** — clock position relative to player facing ("door at 10 o'clock"), or compass relative to map-north ("door to NW")? Player-relative is likely more useful for actually moving toward it.
@@ -729,7 +778,9 @@ Decision deferred — needs the basic cycle UX shipped and tested first.
 - 2026-05-03 — categories sourced from engine `GAME_OBJECT_TYPES` (curation TBD).
 - 2026-05-03 — same key scheme reused across gameplay / area map / galaxy map.
 - 2026-05-03 — **Six categories locked**: Door, NPC, Container/Placeable, Item, Landmark (waypoint+map_note), Transition/Exit. Curated from engine `GAME_OBJECT_TYPES`. Sub-states (locked, hostile, etc.) handled by TTS modifiers, not separate categories.
-- 2026-05-03 — **Cycle scope** = **current room + line-of-sight extension** in normal gameplay (translates camera channel); curated landmarks across whole area when map UI is open (translates map channel). Same keybindings, different data per context.
+- 2026-05-03 — ~~**Cycle scope** = **current room + line-of-sight extension** in normal gameplay~~ — **superseded 2026-05-19**. Replaced by Q/E-handles-action + `,`/`.`-handles-residual split (see *Scope revision (2026-05-19)*).
+- 2026-05-19 — **In-world cycle split**: Q/E (engine native, 30u halo, `CanSee` LOS-pruned) covers doors / NPCs / usable placeables / detected traps; our `,`/`.` covers the residual (transitions, waypoints/map-notes, items). Map-context cycle (foreground = map UI) unchanged.
+- 2026-05-19 — **Migration path**: keep all six categories in tree as fallback during Phase B; Phase B default-restricts in-world cycle to residual categories but leaves all six reachable via `Shift+.`. Phase C retires Q/E-overlapping categories from in-world cycle after a session validates Q/E coverage.
 
 ---
 
