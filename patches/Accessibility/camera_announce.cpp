@@ -5,6 +5,7 @@
 
 #pragma comment(lib, "user32.lib")
 
+#include "camera_orient.h"   // IsActive — suppress sector-cross speech during auto-rotate
 #include "engine_compass.h"
 #include "engine_player.h"
 #include "log.h"
@@ -107,6 +108,24 @@ void Tick() {
 
     s_lastCamCompass = camCompass;
     DWORD now = GetTickCount();
+
+    // Auto-rotation suppression — while camera_orient is driving the
+    // camera to a specific target yaw (Hotkey N), skip per-sector
+    // speech entirely. s_lastSpokenSector is preserved through the
+    // mute window; once the rotation releases, the normal hysteresis
+    // path resumes and announces the final sector iff it differs from
+    // the pre-rotation one. s_lastCamCompass is still updated above so
+    // camera_orient's own closed-loop yaw read (which goes through
+    // TryGetCameraEngineYawDegrees) keeps working.
+    //
+    // s_prevRelevantHeld is intentionally NOT updated while muted —
+    // when the synthesised A/D keypress releases on rotation end, we
+    // don't want the release-edge announce to fire mid-settle. The
+    // hysteresis + kQuietMs gives the engine ~250ms to drain remaining
+    // input-pipeline latency before we commit to a final-sector speak.
+    if (acc::camera_orient::IsActive()) {
+        return;
+    }
 
     // First valid tick — anchor and suppress speech (the user hasn't
     // rotated yet; no transition to announce).

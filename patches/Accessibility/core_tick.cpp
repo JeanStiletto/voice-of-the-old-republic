@@ -169,12 +169,6 @@ void Dispatch() {
     // "north-east" etc. on sector change with 5° hysteresis.
     acc::turn_announce::Tick();
 
-    // Camera-orient hotkey (N) — runs BEFORE camera_announce so the
-    // sector announcement on the same tick reflects the post-rotation
-    // direction. Beacon-mode speaks its own "Beacon, <dir>" cue inline;
-    // cardinal-cycle mode relies on camera_announce's sector cross.
-    acc::camera_orient::Tick();
-
     // ----- ORDER LOAD-BEARING -----
     // camera_announce → spatial::change_detector → transitions → view_mode.
     //   * camera_announce dead-reckons camera yaw from A/D held state;
@@ -193,6 +187,14 @@ void Dispatch() {
     //     announce). Must run AFTER transitions for the latter.
     // Do not reorder these four without revisiting their consumers.
     acc::camera_announce::Tick();
+
+    // Camera-orient hotkey (N) — runs AFTER camera_announce so the
+    // closed-loop arrival check (TryGetCameraEngineYawDegrees) reads
+    // the SAME frame's freshly-derived yaw, not last frame's. Saves
+    // ~16ms of release latency vs the previous order and is what
+    // makes rate-based predictive release land within tolerance.
+    acc::camera_orient::Tick();
+
     acc::spatial::change_detector::Tick();
 
     // Phase 2 lay-off 7 — Pillar 2 area + room transition announcements.

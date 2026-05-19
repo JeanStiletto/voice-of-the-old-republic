@@ -64,4 +64,13 @@ namespace acc::camera_orient {
 // silent no-op.
 void Tick();
 
+// True while an auto-rotation is in flight (between the hotkey press
+// that armed it and the closed-loop release). Consumers use this to
+// distinguish "user is holding A/D" (announce per-sector crossing) from
+// "we're driving the camera ourselves" (silent until landed). The
+// canonical consumer is camera_announce::Tick, which suppresses its
+// sector-cross speech while we're rotating so the user only hears the
+// final direction once the camera settles.
+bool IsActive();
+
 }  // namespace acc::camera_orient

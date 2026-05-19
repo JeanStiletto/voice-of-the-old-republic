@@ -64,21 +64,49 @@ constexpr WORD kDikD = 0x20;   // DIK_D
 // (~3.3°/frame at 60fps + 200°/s default) so we never miss the target
 // arc by more than one frame.
 struct Rotation {
-    bool   active            = false;
-    WORD   holdScan          = 0;       // DIK scan code (kDikA / kDikD)
-    char   debugKey          = 0;       // 'A' / 'D' for log readability
+    bool   active             = false;
+    WORD   holdScan           = 0;       // DIK scan code (kDikA / kDikD)
+    char   debugKey           = 0;       // 'A' / 'D' for log readability
     float  targetEngineYawRad = 0.0f;
-    float  initialAbsDeltaRad = 0.0f;   // for overshoot detection
-    bool   beaconAnnounce    = false;
-    DWORD  startedMs         = 0;
+    float  initialAbsDeltaRad = 0.0f;    // for overshoot detection
+    bool   beaconAnnounce     = false;
+    DWORD  startedMs          = 0;
+    // Rate-based predictive-release state. Each tick stores the
+    // observed yaw + timestamp so the next tick can derive a per-ms
+    // angular speed and decide whether to release the key NOW so the
+    // engine's in-flight rotation lands ON the target rather than
+    // past it. Without prediction, the user perceives "swings over"
+    // — we'd release at "remaining < tolerance" but the engine kept
+    // rotating for another 30-50ms of input-pipeline latency.
+    float  prevYawRad         = 0.0f;
+    DWORD  prevTickMs         = 0;
+    bool   haveRateSample     = false;
 };
 Rotation g_rot;
 
-// Arrival window — release the key when the remaining arc is within
-// kArrivalRad of zero. 0.05 rad ≈ 2.9°, less than one engine frame at
-// default keyboard DPS (200°/s → 3.3°/frame at 60fps), so a release
-// here lands the camera within ~one frame's overshoot of the target.
-constexpr float kArrivalRad = 0.05f;
+// Release-lookahead budget — how far in the future (in ms) we project
+// the camera's position when deciding to release. Set to swallow the
+// SendInput keyup → DirectInput sees-release → engine stops applying
+// AcclTurnCamera round-trip plus our own ~1 frame of remaining
+// processing. 40ms at 200°/s = 8° of look-ahead, which lines up with
+// the overshoot the user reported in patch-20260518-215110.log.
+//
+// camera_announce → camera_orient ordering already gives us SAME-tick
+// freshness on the yaw read, so this budget is pure "engine still
+// applying input after our keyup" latency.
+constexpr DWORD kReleaseLookaheadMs = 40;
+
+// Fallback static arrival window — used when we don't have a usable
+// rate sample yet (first tick after arm) or when the rate is too
+// small to project (rotation stalled / not started). 0.05 rad ≈ 2.9°.
+constexpr float kFallbackArrivalRad = 0.05f;
+
+// Minimum |rate| in rad/ms before we trust the rate-based projection.
+// Below this we fall back to the static arrival window — projecting
+// "time to target" with a near-zero rate explodes to garbage values.
+// 1e-5 rad/ms = ~0.57°/s, well below any real keyboard rotation rate
+// (engine default 200°/s = 3.5e-3 rad/ms).
+constexpr float kMinRateRadPerMs = 1e-5f;
 
 // Safety cap — even at 0°/s DPS the engine should resolve a half-turn
 // in well under 2 seconds at default 200°/s. 3 seconds catches the
@@ -237,6 +265,8 @@ void ReleaseAndDisarm(const char* reason, float curYawRad) {
 
 }  // namespace
 
+bool IsActive() { return g_rot.active; }
+
 void Tick() {
     void* camera = GetCamera();
 
@@ -258,23 +288,68 @@ void Tick() {
             } else {
                 float remaining = NormaliseRad(
                     g_rot.targetEngineYawRad - curYawRad);
-                bool arrived = std::fabs(remaining) <= kArrivalRad;
+                DWORD nowMs = GetTickCount();
 
-                // Overshoot detection — when the absolute remaining
-                // exceeds the initial delta by more than half a sector
-                // we've passed through the target in the wrong direction
-                // (engine probably ignored our input and the user's own
-                // A/D drove the camera the other way). Bail.
+                // Rate-based predictive release. NormaliseRad on the
+                // delta-yaw between samples handles the wrap at ±π so
+                // a rotation crossing 180° doesn't flip sign on us.
+                bool   useRate     = false;
+                float  rateRadPerMs = 0.0f;
+                float  ttaMs       = 0.0f;
+                if (g_rot.haveRateSample) {
+                    DWORD dtMs = nowMs - g_rot.prevTickMs;
+                    if (dtMs > 0) {
+                        float dyaw = NormaliseRad(
+                            curYawRad - g_rot.prevYawRad);
+                        rateRadPerMs = dyaw / static_cast<float>(dtMs);
+                        if (std::fabs(rateRadPerMs) >= kMinRateRadPerMs &&
+                            // Same sign on rate + remaining = rotating
+                            // TOWARD target. Opposite signs = rotating
+                            // away (engine ignored us or wrong-direction
+                            // user input); fall back to static window so
+                            // we don't release prematurely on the wrong
+                            // side of the wrap.
+                            ((remaining > 0.0f) == (rateRadPerMs > 0.0f))) {
+                            ttaMs = remaining / rateRadPerMs;
+                            useRate = true;
+                        }
+                    }
+                }
+
+                bool arrived = useRate
+                    ? (ttaMs <= static_cast<float>(kReleaseLookaheadMs))
+                    : (std::fabs(remaining) <= kFallbackArrivalRad);
+
+                // Overshoot detection — |remaining| growing past the
+                // initial delta by more than a 45° margin means we've
+                // sailed past target in the wrong direction (engine
+                // ignored input + user's own A/D drove the other way).
                 bool overshot = std::fabs(remaining) >
                                 g_rot.initialAbsDeltaRad + kPi * 0.25f;
 
-                DWORD elapsed = GetTickCount() - g_rot.startedMs;
+                DWORD elapsed = nowMs - g_rot.startedMs;
                 bool timedOut = elapsed >= kTimeoutMs;
+
+                // Roll the rate-sample window forward AFTER the decision
+                // so the next tick's projection sees a fresh ~16ms
+                // baseline.
+                g_rot.prevYawRad     = curYawRad;
+                g_rot.prevTickMs     = nowMs;
+                g_rot.haveRateSample = true;
 
                 if (arrived || overshot || timedOut) {
                     const char* reason = arrived ? "arrived"
                                        : overshot ? "overshot"
                                        : "timeout";
+                    acclog::Write("CameraOrient",
+                                  "decide: %s remaining=%.2f° "
+                                  "rate=%.3f°/ms tta=%.0fms "
+                                  "(useRate=%d)",
+                                  reason,
+                                  remaining * kRadToDeg,
+                                  rateRadPerMs * kRadToDeg,
+                                  ttaMs,
+                                  useRate ? 1 : 0);
                     ReleaseAndDisarm(reason, curYawRad);
                 }
             }
@@ -328,7 +403,7 @@ void Tick() {
     }
 
     float delta = NormaliseRad(targetEngineYawRad - curYawRad);
-    if (std::fabs(delta) <= kArrivalRad) {
+    if (std::fabs(delta) <= kFallbackArrivalRad) {
         // Already pointing where we'd send it — still speak the
         // confirmation in beacon mode so the user knows the orient
         // ran. Skip the input synthesis.
@@ -360,13 +435,22 @@ void Tick() {
     WORD scan = isA ? kDikA : kDikD;
     char debugKey = isA ? 'A' : 'D';
 
-    g_rot.active             = true;
-    g_rot.holdScan           = scan;
-    g_rot.debugKey           = debugKey;
-    g_rot.targetEngineYawRad = targetEngineYawRad;
-    g_rot.initialAbsDeltaRad = std::fabs(delta);
-    g_rot.beaconAnnounce     = beaconMode;
-    g_rot.startedMs          = GetTickCount();
+    DWORD nowMs = GetTickCount();
+    g_rot.active              = true;
+    g_rot.holdScan            = scan;
+    g_rot.debugKey            = debugKey;
+    g_rot.targetEngineYawRad  = targetEngineYawRad;
+    g_rot.initialAbsDeltaRad  = std::fabs(delta);
+    g_rot.beaconAnnounce      = beaconMode;
+    g_rot.startedMs           = nowMs;
+    // Seed the rate-sample window with the arm-time yaw so the first
+    // in-flight tick can already derive a rate (rather than burning
+    // one tick waiting for a baseline). The first sample's dt will be
+    // ~16ms, which is the actual frame period — same accuracy as
+    // every subsequent sample.
+    g_rot.prevYawRad          = curYawRad;
+    g_rot.prevTickMs          = nowMs;
+    g_rot.haveRateSample      = true;
 
     SendKey(scan, /*down=*/true);
 
