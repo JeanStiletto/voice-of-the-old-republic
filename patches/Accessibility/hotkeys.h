@@ -86,6 +86,14 @@ enum class Action : int {
     // ----- Orientation & party -----
     AnnounceDegrees,       // AltGr alone (Shift forbidden)
     PartyLeaderAnnounce,   // Tab
+    // N alone — when a beacon is armed, point the camera at the beacon's
+    // next waypoint (so walking forward advances along the route). When no
+    // beacon is armed, advance the camera CW to the next cardinal
+    // direction (N → E → S → W → N). Bare N has zero engine binding
+    // (verified against controls-and-input.md "Default keyboard controls"
+    // survey); Shift+N is already taken by SaveMarkerAtCursor on the map,
+    // so the binding forbids Shift to keep the two routes separate.
+    CameraOrient,          // N (Shift / Ctrl / Alt / AltGr forbidden)
 
     // ----- Map saved markers (Phase 6 lay-off 3) -----
     // Temporary chord per the 2026-05-18 user directive while the parked

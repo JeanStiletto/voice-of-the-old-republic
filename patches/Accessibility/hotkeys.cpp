@@ -69,6 +69,7 @@ const char* const kActionNames[static_cast<int>(Action::COUNT)] = {
     "BeaconFocus",
     "AnnounceDegrees",
     "PartyLeaderAnnounce",
+    "CameraOrient",
     "SaveMarkerAtCursor",
     "ViewModeToggle",
     "CameraStateProbe",
@@ -207,6 +208,11 @@ void InitDefaults() {
     // the two routes distinct.
     bind(Action::AnnounceDegrees,      VK_RMENU, 0, 0, kModShift);
     bind(Action::PartyLeaderAnnounce,  VK_TAB,   0, 0, 0);
+    // N alone — camera-orient (face beacon's next waypoint when armed,
+    // else cycle camera CW to the next cardinal). Shift forbidden so we
+    // don't fight SaveMarkerAtCursor (Shift+N drops a map marker).
+    bind(Action::CameraOrient,         'N', 0, 0,
+                                       kModShift | kModCtrl | kModAlt | kModAltGr);
 
     // ----- Map saved markers (Phase 6 lay-off 3) -----
     // Shift+N drops a marker at the map cursor's current world position.

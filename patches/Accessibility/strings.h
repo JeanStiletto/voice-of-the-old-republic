@@ -796,6 +796,15 @@ enum class Id : int {
     FmtStoreBoughtFor,
     FmtStoreNotEnoughCredits,
 
+    // ---- Camera orient hotkey (N). When a beacon is armed we face the
+    //      camera at the beacon's next waypoint and prefix-speak this so
+    //      the user can distinguish a beacon-orient from a plain cardinal
+    //      cycle. One `%s`: the resolved compass-sector word
+    //      (DirNorth..DirNorthwest) for the new camera facing. The
+    //      cardinal-cycle path doesn't speak — camera_announce's sector
+    //      cross fires naturally on the rotation.
+    FmtCameraOrientBeacon,
+
     Count_,
 };
 

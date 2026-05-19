@@ -181,6 +181,7 @@ When this document and `hotkeys.cpp` disagree, `hotkeys.cpp` wins. Update both t
 - AltGr (right Alt alone, no Shift) — Speak current facing as compass degrees.
 - Tab — Speak the party-leader name (after the engine has processed Tab's leader-cycle).
 - Shift+Tab — Cycle to previous in-game sub-screen (when drilled into Karte / Inventar / Charakter / etc.). Tab alone cycles forward; engine handles party-cycle outside the sub-screen drill.
+- N — Camera orient. If an audio beacon is armed (Ctrl+`-`), point the camera at the beacon's next waypoint and speak "Beacon, <direction>". Otherwise advance the camera clockwise to the next cardinal direction (N → E → S → W → N) — silent; camera_announce's sector cross fires the new direction word naturally. Bare N has no engine binding (the engine ignores it in-world); Shift+N is reserved for SaveMarkerAtCursor on the map, so the binding forbids Shift. Engine surface: `CSWCModule::AcclTurnCamera @0x00640090` (relative-delta yaw setter in radians).
 
 ### View mode (look-around without moving)
 

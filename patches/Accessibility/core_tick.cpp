@@ -11,6 +11,7 @@
 #include "announce_degrees.h"
 #include "audio_footstep_suppress.h"
 #include "camera_announce.h"
+#include "camera_orient.h"
 #include "combat.h"
 #include "combat_query.h"
 #include "combat_queue.h"
@@ -167,6 +168,12 @@ void Dispatch() {
     // Q/E are turning the character vs. only the camera). Speaks "north" /
     // "north-east" etc. on sector change with 5° hysteresis.
     acc::turn_announce::Tick();
+
+    // Camera-orient hotkey (N) — runs BEFORE camera_announce so the
+    // sector announcement on the same tick reflects the post-rotation
+    // direction. Beacon-mode speaks its own "Beacon, <dir>" cue inline;
+    // cardinal-cycle mode relies on camera_announce's sector cross.
+    acc::camera_orient::Tick();
 
     // ----- ORDER LOAD-BEARING -----
     // camera_announce → spatial::change_detector → transitions → view_mode.

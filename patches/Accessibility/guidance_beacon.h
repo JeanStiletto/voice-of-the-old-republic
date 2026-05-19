@@ -68,6 +68,12 @@ void CancelBeacon();
 // CancelBeacon (already active).
 bool IsActive();
 
+// World position of the waypoint the beacon is currently steering toward
+// (the heartbeat's 3D source). Returns false when no beacon is armed or
+// the path has been drained. Used by camera_orient to face the camera
+// at "where the beacon is taking me right now".
+bool GetCurrentTarget(Vector& out);
+
 // Per-tick driver. Reads player position, fires waypoint-reached /
 // destination-reached cues, schedules the next heartbeat. Cheap when
 // idle (one bool check). Self-gates on player-position resolvable —

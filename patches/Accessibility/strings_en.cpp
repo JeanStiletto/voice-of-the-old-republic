@@ -271,6 +271,8 @@ const char* Get(Id id) {
         case Id::FmtStoreBoughtFor:         return "Bought for %d credits";
         case Id::FmtStoreNotEnoughCredits:  return "Not enough credits, need %d, have %d";
 
+        case Id::FmtCameraOrientBeacon:     return "Beacon, %s";
+
         case Id::Count_:               return "";
     }
     return "";

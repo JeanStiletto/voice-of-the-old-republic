@@ -127,6 +127,13 @@ bool IsActive() {
     return g_state.active;
 }
 
+bool GetCurrentTarget(Vector& out) {
+    if (!g_state.active) return false;
+    if (g_state.nextIdx >= g_state.path.size()) return false;
+    out = g_state.path[g_state.nextIdx];
+    return true;
+}
+
 void Tick() {
     if (!g_state.active) return;
 
