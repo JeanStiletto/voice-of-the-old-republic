@@ -248,6 +248,12 @@ void ReleaseAndDisarm(const char* reason, float curYawRad) {
                           acc::strings::Id::FmtCameraOrientBeacon),
                       dir);
         tolk::Speak(msg, /*interrupt=*/true);
+        // Seed camera_announce so the post-release hysteresis doesn't
+        // immediately re-announce the same direction word we just
+        // spoke as part of the beacon cue. Cardinal mode (else branch)
+        // intentionally lets camera_announce announce — that IS the
+        // cardinal-cycle speech.
+        acc::camera_announce::SeedLastSpokenSector(curSector);
     }
 
     acclog::Write("CameraOrient",
@@ -265,7 +271,25 @@ void ReleaseAndDisarm(const char* reason, float curYawRad) {
 
 }  // namespace
 
-bool IsActive() { return g_rot.active; }
+// Reports true whenever camera_announce should stay muted. Covers two
+// windows the in-flight `g_rot.active` flag alone misses:
+//
+//   1. The rising-edge tick itself. camera_announce::Tick runs BEFORE
+//      camera_orient::Tick in core_tick (so closed-loop arrival reads
+//      this-frame's fresh yaw). On the very tick the user presses N,
+//      camera_announce would otherwise run while `g_rot.active` is
+//      still false from the previous tick — and announce the pre-
+//      rotation sector word a beat before our mute kicks in. Held()
+//      catches the press synchronously regardless of dispatch order.
+//
+//   2. The brief gap between camera_orient::ReleaseAndDisarm and the
+//      physical key release (typically 0-1 ticks). Not strictly needed
+//      since g_rot.active drops at release, but Held() coverage costs
+//      nothing.
+bool IsActive() {
+    if (g_rot.active) return true;
+    return acc::hotkeys::Held(acc::hotkeys::Action::CameraOrient);
+}
 
 void Tick() {
     void* camera = GetCamera();
