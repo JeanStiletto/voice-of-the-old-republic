@@ -418,6 +418,20 @@ static void AnnouncePanelTitle(void* panel) {
         return;
     }
 
+    // Skip short numeric labels (tab indicators "1".."6", stat values "12",
+    // skill values, etc.). They're never panel titles and pre-empt the real
+    // ones — patch-20260519-154827.log frame 12586 hit this on the chargen
+    // tab strip (1484E768): the first label child was "1" (the tab number
+    // next to "Portrait"), so the user heard just "1" after submitting the
+    // name. Bound: text up to 3 chars, every byte ASCII-digit.
+    auto isShortNumeric = [](const char* s) {
+        size_t n = 0;
+        for (; s[n]; ++n) {
+            if (n >= 3 || s[n] < '0' || s[n] > '9') return false;
+        }
+        return n > 0;
+    };
+
     auto* list = reinterpret_cast<CExoArrayList*>(
         reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
     if (!list->data || list->size <= 0) return;
@@ -431,6 +445,13 @@ static void AnnouncePanelTitle(void* panel) {
         }
         char text[256];
         if (acc::menus::extract::FromControl(child, text, sizeof(text), panel)) {
+            if (isShortNumeric(text)) {
+                acclog::Write("Menus.PanelWalk",
+                              "title parent=%p label=%p text=\"%s\" "
+                              "(skipped: short numeric)",
+                              panel, child, text);
+                continue;
+            }
             acclog::Write("Menus.PanelWalk", "title parent=%p label=%p text=\"%s\"",
                           panel, child, text);
             tolk::Speak(text, /*interrupt=*/false);

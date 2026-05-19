@@ -332,17 +332,20 @@ void PollModalKeys(ArmedState& s) {
     }
 
     if (enterEdge) {
-        // Submit. Engine likely also fires OK on Enter via its own panel
-        // handler (CSWGuiNameChargen::HandleDoneButton @0x006f9cd0); our
-        // QueueActivate is redundant but harmless — pending::Drain dedups
-        // by IsPending() so the same op queued twice runs once. Drop edit
-        // mode immediately so the next poll doesn't re-fire.
-        void* btn = s.spec->findSubmitButton(s.panel);
-        if (btn) {
-            acc::menus::pending::QueueActivate(btn);
-            acclog::Write("Editbox", "%s VK_RETURN (Win32) -> submit btn=%p",
-                          s.spec->logTag, btn);
-        }
+        // Drop edit mode so the next poll stops announcing keystrokes. We do
+        // NOT QueueActivate the submit button here: the engine's own editbox
+        // dispatcher fires HandleDoneButton on Enter natively, then snaps
+        // focus back to the originating panel button. Queuing a second
+        // FireActivate on the same OK button runs one frame later, by which
+        // point the editbox panel has already been demoted out of the modal
+        // stack — the second activation cascades through the closing logic
+        // and pops the underlying panel (e.g. the chargen tab strip),
+        // leaving routing stranded on a non-navigable parent frame and
+        // locking the user out. patch-20260519-154827.log frames 12586-12614
+        // captured this exact lockup.
+        acclog::Write("Editbox", "%s VK_RETURN (Win32) -> edit-mode off "
+                      "(engine handles submit natively)",
+                      s.spec->logTag);
         s.editMode = false;
     }
 
@@ -425,20 +428,19 @@ bool TryHandleInput(int /*n*/, void* /*thisPtr*/, void* activePanel,
         return true;
     }
 
-    // Enter — submit. Queue the panel's BTN_OK activation through the
-    // deferred-op pump (same pattern as listbox specs use). Drop edit mode
-    // immediately so the polling monitor doesn't emit one more diff after
-    // the panel transitions out.
+    // Enter — drop edit mode, let the engine's editbox handler commit the
+    // name natively. We used to QueueActivate the panel's OK button here,
+    // but that double-activates against the engine's own HandleDoneButton
+    // path and breaks the modal stack (see the PollModalKeys Enter branch
+    // for the full incident). In practice this branch is unreachable while
+    // editMode is true (engine swallows Enter at the editbox before it
+    // reaches the manager-level input hook — the user verified zero
+    // Menus.Input lines fire during typing), but we keep the handler
+    // consistent in case a future editbox spec routes Enter differently.
     if (param_1 == kInputEnter1 || param_1 == kInputEnter2) {
-        void* btn = s_state.spec->findSubmitButton(s_state.panel);
-        if (btn) {
-            acc::menus::pending::QueueActivate(btn);
-            acclog::Write("Editbox", "%s Enter -> submit btn=%p",
-                          s_state.spec->logTag, btn);
-        } else {
-            acclog::Write("Editbox", "%s Enter -> no submit button",
-                          s_state.spec->logTag);
-        }
+        acclog::Write("Editbox", "%s Enter -> edit-mode off "
+                      "(engine handles submit natively)",
+                      s_state.spec->logTag);
         s_state.editMode = false;
         outRv = 1;
         return true;
