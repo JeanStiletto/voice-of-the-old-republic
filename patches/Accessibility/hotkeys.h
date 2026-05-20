@@ -174,6 +174,17 @@ bool Held(Action a);
 // edit" handler on the very first poll after arming.
 void Consume(Action a);
 
+// Mark the *next* rising edge for `a` as already claimed. Used from sites
+// that fire BEFORE BeginTick on the tick where the rising edge will land —
+// most importantly, the manager's CSWGuiManager::HandleInputEvent hook,
+// which the engine drives between EndTick of one OnUpdate and BeginTick of
+// the next. Calling Consume() from there has no effect (both `now` and
+// `last` still hold the previous tick's state). ClaimRisingEdge sets a
+// guard bit that survives BeginTick and forces Pressed() to return false
+// on the next tick's queries; EndTick clears the bit so subsequent
+// presses fire normally.
+void ClaimRisingEdge(Action a);
+
 // ---------------------------------------------------------------------------
 // Modifier convenience queries. Some sites need raw modifier state without
 // binding to a specific Action (e.g. `cycle_input::HandleInputEventEngine`

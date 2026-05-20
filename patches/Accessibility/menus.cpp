@@ -1374,6 +1374,34 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         return 0;
     }
 
+    // Enter delivered to the manager belongs to the GUI, not to the world
+    // Interact path. Claim the InteractTarget / InteractForceRadial rising
+    // edges so acc::interact::PollHotkey() (which runs from the next
+    // OnUpdate tick) can't re-fire on the same keypress.
+    //
+    // Without this, every Enter that ended a dialog reply would tear the
+    // dialog down via the engine's native handler, then PollHotkey would see
+    // the dialog gone (gate=ALLOW), pick the still-stamped narrated target
+    // (Trask / Feldkiste / …) and dispatch the default world action on it.
+    // patch-20260520-074837.log lines 10325→10341 captured a Trask cycle;
+    // patch-20260520-083257.log line 1032 captured a Feldkiste door open
+    // bleed-through after a clean dialog end.
+    //
+    // ClaimRisingEdge (not Consume) is required: the engine fires manager
+    // input dispatch BETWEEN our EndTick and the next BeginTick. At that
+    // moment both `now` and `last` still hold the previous tick's values,
+    // so Consume(last=now) has no effect — the upcoming BeginTick will
+    // sample `now=true` and Pressed sees a fresh rising edge. Claim sets
+    // a guard bit that survives BeginTick and is cleared by EndTick.
+    //
+    // Scope: any Enter rising-edge that reaches the manager. We don't gate
+    // on panel kind — the manager only sees input the engine intended for
+    // GUI, so claiming the world-Interact edge here is always correct.
+    if (param_2 != 0 && (param_1 == kInputEnter1 || param_1 == kInputEnter2)) {
+        acc::hotkeys::ClaimRisingEdge(acc::hotkeys::Action::InteractTarget);
+        acc::hotkeys::ClaimRisingEdge(acc::hotkeys::Action::InteractForceRadial);
+    }
+
     // Resolve the foreground panel via the manager's modal_stack / panels[].
     // g_currentPanel tracks "last panel that received SetActiveControl" — fine
     // for per-instance state (sibling-label lookup, cycle-category capture)

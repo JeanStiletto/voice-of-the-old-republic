@@ -24,9 +24,16 @@ Binding g_bindings[static_cast<int>(Action::COUNT)] = {};
 // so an Action's index lookup is a single subscript. `now` is sampled in
 // BeginTick; `last` is shifted from `now` in EndTick. `Pressed` returns
 // `now && !last` (plus foreground gate).
+//
+// `claimed` is a one-shot guard set by ClaimRisingEdge from sites that
+// fire between EndTick and BeginTick (the engine's input-dispatch window),
+// where Consume() can't suppress the upcoming rising edge because
+// BeginTick hasn't run yet. EndTick clears the guard so the next genuine
+// rising edge fires normally.
 struct EdgeState {
     bool now;
     bool last;
+    bool claimed;
 };
 EdgeState g_edge[static_cast<int>(Action::COUNT)] = {};
 
@@ -275,6 +282,7 @@ void BeginTick() {
 void EndTick() {
     for (int i = 0; i < static_cast<int>(Action::COUNT); ++i) {
         g_edge[i].last = g_edge[i].now;
+        g_edge[i].claimed = false;
     }
 }
 
@@ -292,6 +300,7 @@ bool Pressed(Action a) {
     InitDefaults();
     int idx = static_cast<int>(a);
     if (idx < 0 || idx >= static_cast<int>(Action::COUNT)) return false;
+    if (g_edge[idx].claimed) return false;
     if (!g_edge[idx].now || g_edge[idx].last) return false;
     return IsForegroundGame();
 }
@@ -310,6 +319,13 @@ void Consume(Action a) {
     // Force `last == now` so Pressed() returns false for the rest of this
     // tick. EndTick will re-run `last = now`, which is idempotent here.
     g_edge[idx].last = g_edge[idx].now;
+}
+
+void ClaimRisingEdge(Action a) {
+    InitDefaults();
+    int idx = static_cast<int>(a);
+    if (idx < 0 || idx >= static_cast<int>(Action::COUNT)) return;
+    g_edge[idx].claimed = true;
 }
 
 bool ShiftHeld() {
@@ -344,8 +360,9 @@ void Set(Action a, Binding b) {
     g_bindings[idx] = b;
     // Reset edge state — a brand-new binding shouldn't fire on the keys
     // the user happens to be holding at the moment of the rebind.
-    g_edge[idx].now  = false;
-    g_edge[idx].last = false;
+    g_edge[idx].now     = false;
+    g_edge[idx].last    = false;
+    g_edge[idx].claimed = false;
 }
 
 bool IsUserRebindable(Action a) {
