@@ -721,6 +721,13 @@ void Tick() {
         acc::wall_topology::BuildForArea(area);
     }
 
+    // Door snapshot stabiliser. The initial SnapshotDoors call inside
+    // BuildForArea can lose late-arriving door handles to a partially-
+    // populated server-object array; this per-tick refresh keeps
+    // re-snapshotting until the count settles. No-op once the door
+    // set commits or until the graph itself is built.
+    acc::wall_topology::MaybeRefreshDoors(area);
+
     // Proximity-based landmark scan runs every tick, independent of
     // .lyt-room crossings. Fires when the player enters within 8m of
     // any landmark waypoint, with stability + exit-hysteresis. Must

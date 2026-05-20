@@ -92,6 +92,16 @@ enum Kind {
 // same as region_classifier).
 void BuildForArea(void* area);
 
+// Per-tick door re-snapshot until the door set stabilises. The initial
+// SnapshotDoors call inside BuildForArea can race a partially-populated
+// server-object array — doors whose handles haven't resolved yet are
+// silently skipped by AreaObjectIterator. This call re-runs the door
+// snapshot each tick and commits once the count repeats for N ticks
+// (or a hard cap is hit). No-op once committed, when the area doesn't
+// have a built graph yet, or when `area` doesn't match the cached
+// owner.
+void MaybeRefreshDoors(void* area);
+
 // True iff a decomposition exists for `area`.
 bool HasGraphForArea(void* area);
 

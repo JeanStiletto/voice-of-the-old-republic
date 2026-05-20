@@ -146,6 +146,39 @@ struct AreaGraph {
 
 AreaGraph g_graph;
 
+// Door-snapshot stability tracking. The initial SnapshotDoors call from
+// BuildForArea races the engine's per-area object population: doors whose
+// handles haven't been registered yet in CGameObjectArray are silently
+// skipped by AreaObjectIterator (the resolver returns "miss" on an
+// unregistered id, see project_csws_area_handles.md). Pre-fix we'd lock
+// in that incomplete door set for the rest of the session and not even
+// re-entering the area recovered — only a full game restart.
+//
+// MaybeRefreshDoors re-snapshots each tick until the count stays
+// constant for `kDoorStabilityRequiredStreak` ticks in a row, then
+// commits. A hard cap exists for the edge case of script-spawned doors
+// that genuinely arrive late: rather than retry forever, we commit
+// whatever we have and log that we hit the cap.
+//
+// Cluster-classification (ClassifyCluster's FindDoorOnEdge calls) runs
+// once during BuildForArea against whatever door set was visible at
+// that moment. Door-set updates after the initial build don't
+// retro-classify clusters. This is accepted lossy behaviour: any
+// late-arriving door still shows up as a "Tür" exit through the
+// per-edge query, and the worst case is that a cluster's classification
+// is one door short — strictly better than missing the door entirely as
+// today.
+constexpr int kDoorStabilityRequiredStreak = 2;
+constexpr int kDoorRetryCapTicks           = 60;
+
+struct DoorStabilityState {
+    bool committed   = false;
+    int  last_count  = -1;
+    int  streak      = 0;
+    int  retry_ticks = 0;
+};
+DoorStabilityState g_doors_stability;
+
 // ---------------------------------------------------------------------
 // Direction helpers.
 // ---------------------------------------------------------------------
@@ -281,13 +314,16 @@ int Degree(const acc::engine::navgraph::NavGraphSnapshot& g, int node) {
 // All reads are SEH-bounded through the underlying engine helpers.
 // Faulted reads just skip the door; the snapshot truncates rather than
 // fails so a partial set is still usable for the edge-near-door query.
+//
+// Collection-only — no logging. Callers handle the summary line (cadence
+// differs between the initial build and the per-tick refresh loop) and
+// the per-door diagnostic dump via LogDoorSnapshotDetails.
 void SnapshotDoors(void* area) {
     g_graph.door_count = 0;
     if (!area) return;
 
     acc::engine::AreaObjectIterator iter(area);
     void* obj = nullptr;
-    int withTransition = 0;
     while ((obj = iter.Next()) != nullptr) {
         if (g_graph.door_count >= kMaxDoors) {
             acclog::Write("WallTopo",
@@ -308,15 +344,24 @@ void SnapshotDoors(void* area) {
         // Transition destination CExoLocString lives at +0x3c8 (text)
         // with the strref at +0x3cc; ExtractTextOrStrRef walks both.
         // Empty result is fine — most doors aren't transitions.
-        if (acc::engine::ExtractTextOrStrRef(
-                obj,
-                kDoorTransitionDestOffset,
-                kDoorTransitionDestOffset + 4,
-                rec.transitionDest, sizeof(rec.transitionDest)) &&
-            rec.transitionDest[0]) {
-            ++withTransition;
-        }
+        acc::engine::ExtractTextOrStrRef(
+            obj,
+            kDoorTransitionDestOffset,
+            kDoorTransitionDestOffset + 4,
+            rec.transitionDest, sizeof(rec.transitionDest));
         ++g_graph.door_count;
+    }
+}
+
+// Per-door diagnostic dump. Position + transition string + geometry
+// probe block (nearest nav-graph node, approach direction, .lyt-room
+// in front/behind, 4 cardinal walkmesh probes). Requires the nav
+// graph to already be built (uses g_graph.node_pos) and the wall
+// cache populated (region::ProbeDistance needs it).
+void LogDoorSnapshotDetails(void* area) {
+    int withTransition = 0;
+    for (int i = 0; i < g_graph.door_count; ++i) {
+        if (g_graph.doors[i].transitionDest[0]) ++withTransition;
     }
     acclog::Write("WallTopo",
                   "SnapshotDoors: collected %d doors (%d transition)",
@@ -1182,12 +1227,48 @@ void Reset() {
     s_class_blocked = 0;
     s_caveat1_hits  = 0;
     s_caveat2_hits  = 0;
+    g_doors_stability = DoorStabilityState{};
 }
 
 bool HasGraphForArea(void* area) {
     return area != nullptr &&
            g_graph.built &&
            g_graph.area_owner == area;
+}
+
+void MaybeRefreshDoors(void* area) {
+    if (!HasGraphForArea(area))      return;
+    if (g_doors_stability.committed) return;
+
+    int prevCount = g_graph.door_count;
+    SnapshotDoors(area);
+    ++g_doors_stability.retry_ticks;
+
+    if (g_graph.door_count == g_doors_stability.last_count) {
+        ++g_doors_stability.streak;
+    } else {
+        // Door set changed — log the new details so we can grep
+        // exactly what arrived (or, less likely, what disappeared).
+        acclog::Write("WallTopo",
+                      "MaybeRefreshDoors: count changed %d -> %d at retry tick %d",
+                      prevCount, g_graph.door_count,
+                      g_doors_stability.retry_ticks);
+        LogDoorSnapshotDetails(area);
+        g_doors_stability.last_count = g_graph.door_count;
+        g_doors_stability.streak     = 1;
+    }
+
+    bool stable  = g_doors_stability.streak >= kDoorStabilityRequiredStreak;
+    bool capHit  = g_doors_stability.retry_ticks >= kDoorRetryCapTicks;
+    if (stable || capHit) {
+        g_doors_stability.committed = true;
+        acclog::Write("WallTopo",
+                      "MaybeRefreshDoors: %s — final door_count=%d after %d retry tick%s",
+                      capHit && !stable ? "cap reached" : "stable",
+                      g_graph.door_count,
+                      g_doors_stability.retry_ticks,
+                      g_doors_stability.retry_ticks == 1 ? "" : "s");
+    }
 }
 
 void BuildForArea(void* area) {
@@ -1216,8 +1297,18 @@ void BuildForArea(void* area) {
     }
 
     // Snapshot doors before classifying clusters — ClassifyCluster's
-    // FindDoorOnEdge calls consume g_graph.doors[].
+    // FindDoorOnEdge calls consume g_graph.doors[]. The initial snapshot
+    // can race a partially-populated server-object array; the per-tick
+    // MaybeRefreshDoors loop catches late-arriving doors. Initial
+    // cluster classification is locked to whatever was visible now
+    // (accepted lossy behaviour — late doors still show up as "Tür"
+    // exits via the per-edge query).
     SnapshotDoors(area);
+    LogDoorSnapshotDetails(area);
+    g_doors_stability.last_count  = g_graph.door_count;
+    g_doors_stability.streak      = 0;
+    g_doors_stability.retry_ticks = 0;
+    g_doors_stability.committed   = false;
 
     // Pass 1: union-find merge of directly-connected degree-≥3 nodes
     // within the distance + z gates. The cluster classifier in pass 2
