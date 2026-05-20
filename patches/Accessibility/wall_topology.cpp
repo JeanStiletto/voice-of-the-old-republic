@@ -65,6 +65,46 @@ constexpr float kMaxSnapM = 15.0f;
 constexpr float kMergeMaxDistanceM = 8.0f;
 constexpr float kMergeMaxZM        = 1.0f;
 
+// Density-based merge: nav-nodes packed into a small radius (typical of
+// BioWare's AI patrol authoring inside small enclosed rooms) collapse
+// into one cluster regardless of degree. A node is "dense" iff at least
+// `kDensityMinNeighbours` other nodes sit within `kDensityRadiusM` of
+// it in the XY plane. Two graph-connected dense nodes merge.
+//
+// Why both density flag AND graph edge:
+//   - density alone would merge across walls in adjacent rooms with
+//     nearby nav nodes through a wall;
+//   - graph edge alone is the existing degree-≥3 merge — misses the
+//     bedroom case where degree-2 patrol nodes pack densely.
+// Both conditions catch packed-rooms but not linear corridors.
+//
+// R = 3m: K1 packs ~5 patrol points within ~3m radius inside small
+// rooms (Endar Spire quarters, Taris apartments). Real corridor nodes
+// sit ~5m apart so their close-neighbour count is 0–1, well below the
+// gate. Tune from log evidence.
+constexpr float kDensityRadiusM       = 3.0f;
+constexpr int   kDensityMinNeighbours = 3;
+
+// Hub absorption (Pass 1c): degree-≤2 spokes hanging off a multi-node
+// hub cluster (Pass 1 / 1b output) absorb into the hub. Targets the
+// K1 "two-hub star" small-room pattern: Endar Spire quarters has two
+// deg-4 nodes already merged into one cluster, but 5 surrounding
+// degree-1/2 patrol spokes label independently, producing 5 different
+// shape readings as the player walks. Absorbing the spokes folds the
+// whole room into one cluster with one label.
+//
+// Safety relies on three gates:
+//   - the target cluster must already be multi-node (size ≥ 2 in the
+//     pre-absorption snapshot) — singleton T-junctions don't trigger
+//     absorption, which would eat the corridor arms entering them;
+//   - distance ≤ kHubAbsorptionRadiusM — keeps absorption local;
+//   - no door on the spoke→hub edge — preserves authored room boundaries.
+//
+// R = 7m: covers the bedroom's furthest spoke distance (node 11 sits
+// 6.35m from node 10 in Endar Spire quarters). Tighter risks losing
+// long spokes; looser risks eating short corridor entries.
+constexpr float kHubAbsorptionRadiusM = 7.0f;
+
 // Kind values now live in the public header (wall_topology.h) so
 // transitions.cpp can branch on Platz for the delayed-announce path.
 // Aliases here keep the local code compact.
@@ -1058,6 +1098,248 @@ void BuildForArea(void* area) {
             UFUnite(i, j);
             ++mergeEdges;
         }
+    }
+
+    // Pass 1b: density-based merge. Independent of node degree — folds
+    // graph-connected pairs whose endpoints are both "dense" (≥N close
+    // neighbours within R metres). Fixes the small-enclosed-room case
+    // where BioWare packed degree-2 patrol nodes into ~80m² and each
+    // would otherwise label as its own corridor.
+    //
+    // Identical gates to Pass 1 (distance, z, door-on-edge). The density
+    // pre-filter is the only difference: only nodes already known to sit
+    // in a dense local subgraph can participate, so corridors with their
+    // ~5m node spacing are untouched (close-neighbour count 0-1, below
+    // the gate).
+    int closeCounts[kMaxNodes] = {0};
+    bool isDense[kMaxNodes]    = {false};
+    const float kDenseRadSq = kDensityRadiusM * kDensityRadiusM;
+    for (int i = 0; i < n; ++i) {
+        int count = 0;
+        for (int j = 0; j < n; ++j) {
+            if (i == j) continue;
+            float dx = g.nodes[i].pos.x - g.nodes[j].pos.x;
+            float dy = g.nodes[i].pos.y - g.nodes[j].pos.y;
+            if (dx * dx + dy * dy <= kDenseRadSq) ++count;
+        }
+        closeCounts[i] = count;
+        isDense[i]     = (count >= kDensityMinNeighbours);
+    }
+
+    int densityMergeEdges       = 0;
+    int densityMergeVetoedDoor  = 0;
+    int densityMergeAlreadyDone = 0;
+    for (int i = 0; i < n; ++i) {
+        if (!isDense[i]) continue;
+        int lo = 0, hi = 0;
+        acc::engine::navgraph::NeighbourRange(g, i, lo, hi);
+        for (int e = lo; e < hi; ++e) {
+            int j = static_cast<int>(g.conns[e]);
+            if (j < 0 || j >= n) continue;
+            if (j <= i) continue;
+            if (!isDense[j]) continue;
+            if (UFFind(i) == UFFind(j)) { ++densityMergeAlreadyDone; continue; }
+            float dx = g.nodes[i].pos.x - g.nodes[j].pos.x;
+            float dy = g.nodes[i].pos.y - g.nodes[j].pos.y;
+            float dz = g.nodes[i].pos.z - g.nodes[j].pos.z;
+            if (dx * dx + dy * dy >
+                kMergeMaxDistanceM * kMergeMaxDistanceM) continue;
+            if (std::fabs(dz) > kMergeMaxZM) continue;
+            if (FindDoorOnEdge(g.nodes[i].pos, g.nodes[j].pos) >= 0) {
+                ++densityMergeVetoedDoor;
+                acclog::Write(
+                    "WallTopo",
+                    "  density-merge VETOED (door on edge): node[%d] "
+                    "(%.1f,%.1f, close=%d) <-/-> node[%d] "
+                    "(%.1f,%.1f, close=%d)",
+                    i, g.nodes[i].pos.x, g.nodes[i].pos.y, closeCounts[i],
+                    j, g.nodes[j].pos.x, g.nodes[j].pos.y, closeCounts[j]);
+                continue;
+            }
+            UFUnite(i, j);
+            ++densityMergeEdges;
+            acclog::Write(
+                "WallTopo",
+                "  density-merge: node[%d] (%.1f,%.1f, close=%d) + "
+                "node[%d] (%.1f,%.1f, close=%d)",
+                i, g.nodes[i].pos.x, g.nodes[i].pos.y, closeCounts[i],
+                j, g.nodes[j].pos.x, g.nodes[j].pos.y, closeCounts[j]);
+        }
+    }
+    acclog::Write(
+        "WallTopo",
+        "  density-pass: radius=%.1fm minN=%d → merged=%d "
+        "vetoedByDoor=%d alreadyMerged=%d",
+        kDensityRadiusM, kDensityMinNeighbours,
+        densityMergeEdges, densityMergeVetoedDoor,
+        densityMergeAlreadyDone);
+
+    // Pass 1c: hub absorption. After Pass 1 + 1b produce multi-node
+    // clusters, absorb any degree-≤2 spoke that hangs off such a cluster
+    // into the cluster's root. K1's authoring style packs no cycles into
+    // nav graphs (topology dump on Endar Spire + Taris confirmed zero
+    // triangles, near-zero 4-cycles), but small rooms appear as a "two-
+    // hub star" — two adjacent deg-≥3 nodes (the hubs, already merged
+    // in Pass 1) with deg-1/2 spokes radiating around them. Absorbing
+    // the spokes collapses the whole room into one cluster.
+    //
+    // Frozen snapshot prevents cascade. If we used live UFFind, a spoke
+    // X that absorbed into multi-node-cluster-C would make X look multi-
+    // node to X's chain-neighbour Y, which would then absorb too — and
+    // we'd eat whatever corridor X belonged to. The snapshot freezes the
+    // cluster membership/size at the post-1b moment, so Y still sees X
+    // as part of its original singleton cluster and stays put.
+    int absorbSnapshotRoot [kMaxNodes] = {0};
+    int absorbSnapshotSize [kMaxNodes] = {0};
+    for (int i = 0; i < n; ++i) absorbSnapshotRoot[i] = UFFind(i);
+    for (int i = 0; i < n; ++i) {
+        int r = absorbSnapshotRoot[i];
+        if (r >= 0 && r < n) ++absorbSnapshotSize[r];
+    }
+
+    int absorbEdges          = 0;
+    int absorbVetoedByDoor   = 0;
+    int absorbVetoedDistance = 0;
+    for (int i = 0; i < n; ++i) {
+        int degI = Degree(g, i);
+        if (degI >= 3) continue;  // hubs absorb others, not the reverse
+        // Already in a multi-node cluster (per snapshot)? Nothing to do.
+        if (absorbSnapshotSize[absorbSnapshotRoot[i]] >= 2) continue;
+
+        int lo = 0, hi = 0;
+        acc::engine::navgraph::NeighbourRange(g, i, lo, hi);
+        for (int e = lo; e < hi; ++e) {
+            int j = static_cast<int>(g.conns[e]);
+            if (j < 0 || j >= n || j == i) continue;
+            int jRoot = absorbSnapshotRoot[j];
+            if (jRoot < 0 || jRoot >= n) continue;
+            if (absorbSnapshotSize[jRoot] < 2) continue;  // singleton — skip
+            if (UFFind(i) == UFFind(j)) continue;         // already same
+            float dx = g.nodes[i].pos.x - g.nodes[j].pos.x;
+            float dy = g.nodes[i].pos.y - g.nodes[j].pos.y;
+            if (dx * dx + dy * dy >
+                kHubAbsorptionRadiusM * kHubAbsorptionRadiusM) {
+                ++absorbVetoedDistance;
+                continue;
+            }
+            if (FindDoorOnEdge(g.nodes[i].pos, g.nodes[j].pos) >= 0) {
+                ++absorbVetoedByDoor;
+                acclog::Write(
+                    "WallTopo",
+                    "  absorb VETOED (door): node[%d] (%.1f,%.1f) deg=%d "
+                    "<-/-> node[%d] (%.1f,%.1f) hub-cluster=%d size=%d",
+                    i, g.nodes[i].pos.x, g.nodes[i].pos.y, degI,
+                    j, g.nodes[j].pos.x, g.nodes[j].pos.y,
+                    jRoot, absorbSnapshotSize[jRoot]);
+                continue;
+            }
+            UFUnite(i, j);
+            ++absorbEdges;
+            acclog::Write(
+                "WallTopo",
+                "  absorb: node[%d] (%.1f,%.1f) deg=%d → hub-cluster=%d "
+                "(via node[%d] at %.1f,%.1f, hub size=%d)",
+                i, g.nodes[i].pos.x, g.nodes[i].pos.y, degI,
+                jRoot, j, g.nodes[j].pos.x, g.nodes[j].pos.y,
+                absorbSnapshotSize[jRoot]);
+            break;  // X is absorbed; don't try other neighbours
+        }
+    }
+    acclog::Write(
+        "WallTopo",
+        "  hub-absorption: radius=%.1fm → absorbed=%d "
+        "vetoedByDoor=%d vetoedByDistance=%d",
+        kHubAbsorptionRadiusM,
+        absorbEdges, absorbVetoedByDoor, absorbVetoedDistance);
+
+    // Diagnostic-only pass: dump per-node topology metrics so we can
+    // pick a principled gate later. NO MERGE LOGIC USES THESE COUNTS.
+    // For each node we log:
+    //   - degree                       (existing nav-graph degree)
+    //   - triangles                    (3-cycles touching the node — pairs
+    //                                   of neighbours that are directly
+    //                                   connected to each other)
+    //   - 4-cycles                     (4-cycles touching the node — pairs
+    //                                   of neighbours that share a common
+    //                                   neighbour ≠ the node itself, and
+    //                                   not already counted as a triangle)
+    //   - 2-hop reach                  (distinct nodes reachable within
+    //                                   2 graph-hops, excluding self)
+    // Goal: separate "linear corridor" (triangles=0, 4-cycles=0, low reach)
+    // from "looped room patrol points" (triangles or 4-cycles ≥1) from
+    // "T-junction" (high reach, but triangles=0, 4-cycles=0). Run on
+    // Endar Spire quarters + corridors + bridge and Taris South
+    // Apartments to compare topology signatures before tuning any gate.
+    auto navIsConnected = [&](int a, int b) -> bool {
+        if (a < 0 || a >= n || b < 0 || b >= n || a == b) return false;
+        int lo = 0, hi = 0;
+        acc::engine::navgraph::NeighbourRange(g, a, lo, hi);
+        for (int e = lo; e < hi; ++e) {
+            if (static_cast<int>(g.conns[e]) == b) return true;
+        }
+        return false;
+    };
+    bool reachVisited[kMaxNodes] = {false};
+    acclog::Write(
+        "WallTopo",
+        "  topology-dump: per-node degree / triangles / 4-cycles / "
+        "2-hop reach (diagnostic only — no behaviour change)");
+    for (int i = 0; i < n; ++i) {
+        int lo = 0, hi = 0;
+        acc::engine::navgraph::NeighbourRange(g, i, lo, hi);
+        int deg = hi - lo;
+
+        int triangles = 0;
+        int fourCycles = 0;
+        // For each unordered pair (Y, Z) of i's neighbours.
+        for (int a = lo; a < hi; ++a) {
+            int Y = static_cast<int>(g.conns[a]);
+            if (Y < 0 || Y >= n || Y == i) continue;
+            for (int b = a + 1; b < hi; ++b) {
+                int Z = static_cast<int>(g.conns[b]);
+                if (Z < 0 || Z >= n || Z == i || Z == Y) continue;
+                if (navIsConnected(Y, Z)) {
+                    ++triangles;
+                    continue;  // triangle, not a 4-cycle through this pair
+                }
+                // 4-cycle: do Y and Z share a common neighbour W ≠ i?
+                int yLo = 0, yHi = 0;
+                acc::engine::navgraph::NeighbourRange(g, Y, yLo, yHi);
+                bool found4 = false;
+                for (int c = yLo; c < yHi && !found4; ++c) {
+                    int W = static_cast<int>(g.conns[c]);
+                    if (W < 0 || W >= n) continue;
+                    if (W == i || W == Y || W == Z) continue;
+                    if (navIsConnected(W, Z)) found4 = true;
+                }
+                if (found4) ++fourCycles;
+            }
+        }
+
+        // 2-hop reach: BFS depth 2 from node i, count distinct.
+        for (int k = 0; k < n; ++k) reachVisited[k] = false;
+        reachVisited[i] = true;
+        int reach = 0;
+        for (int a = lo; a < hi; ++a) {
+            int Y = static_cast<int>(g.conns[a]);
+            if (Y < 0 || Y >= n || reachVisited[Y]) continue;
+            reachVisited[Y] = true;
+            ++reach;
+            int yLo = 0, yHi = 0;
+            acc::engine::navgraph::NeighbourRange(g, Y, yLo, yHi);
+            for (int b = yLo; b < yHi; ++b) {
+                int Z = static_cast<int>(g.conns[b]);
+                if (Z < 0 || Z >= n || reachVisited[Z]) continue;
+                reachVisited[Z] = true;
+                ++reach;
+            }
+        }
+
+        acclog::Write(
+            "WallTopo",
+            "    node[%d] (%.1f,%.1f) deg=%d tri=%d c4=%d reach2=%d",
+            i, g.nodes[i].pos.x, g.nodes[i].pos.y,
+            deg, triangles, fourCycles, reach);
     }
 
     // Pass 2: per-cluster classification. For each cluster root (the
