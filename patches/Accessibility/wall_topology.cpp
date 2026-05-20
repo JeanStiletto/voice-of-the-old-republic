@@ -23,11 +23,12 @@
 #include <cstdio>
 #include <cstring>
 
-#include "engine_area.h"        // AreaObjectIterator, GetObjectKind, GameObjectKind::Door, GetObjectPosition, kDoorTransitionDestOffset
+#include "engine_area.h"        // AreaObjectIterator, GetObjectKind, GameObjectKind::Door, GetObjectPosition, kDoorTransitionDestOffset, SegmentCrossesWalkmesh
 #include "engine_navgraph.h"
 #include "engine_reads.h"       // ExtractTextOrStrRef — transition-destination loc-string read
 #include "log.h"
 #include "region_classifier.h"  // ProbeShapeAt — walkmesh gate on graph-only dead-ends
+#include "spatial_change_detector.h"  // GetCachedWalls — seam-filtered perimeter cache
 #include "strings.h"
 
 namespace acc::wall_topology {
@@ -439,6 +440,160 @@ int FindDoorOnEdge(const Vector& a, const Vector& b) {
     return -1;
 }
 
+// ---------------------------------------------------------------------
+// Unified edge classifier — Clear / Door / Blocked.
+// ---------------------------------------------------------------------
+
+// Edge verdict for a nav-graph segment AB. Drives both merge-veto gates
+// (Pass 1 / 1b / 1c) and external-neighbour filtering in Pass 2:
+//   - kEdgeClear   → free movement; contributes its direction unmodified
+//   - kEdgeDoor    → free movement through a CSWSDoor (doorIdx valid);
+//                    contributes direction wrapped as "Tür X" / "Tür X
+//                    nach DEST"
+//   - kEdgeBlocked → the segment crosses immovable walkmesh geometry;
+//                    the edge is dropped entirely (no merge, no
+//                    external-edge contribution).
+enum EdgeClass {
+    kEdgeClear   = 0,
+    kEdgeDoor    = 1,
+    kEdgeBlocked = 2,
+};
+
+struct EdgeResult {
+    EdgeClass kind;
+    int       doorIdx;  // valid only when kind == kEdgeDoor
+};
+
+// Tallies for the end-of-build summary. Counts are multi-fire across
+// passes (an edge classified by Pass 1 and again by Pass 2 contributes
+// twice); the summary log line documents this. Reset at BuildForArea
+// entry; we never read them outside the same BuildForArea call.
+int s_class_clear     = 0;
+int s_class_door      = 0;
+int s_class_blocked   = 0;
+int s_caveat1_hits    = 0;  // door inside walkmesh wall
+int s_caveat2_hits    = 0;  // walk-clear edge between distinct .wok rooms
+
+// Find the door nearest to `p` within `maxDistM`. Returns the door
+// index or -1. Used as the belt-and-braces fallback in ClassifyEdge:
+// if SegmentCrossesWalkmesh reports a wall hit AND a door lives within
+// 1m of the hit point, treat the edge as Door rather than Blocked —
+// catches the rare "door inside solid walkmesh" authoring case (memory
+// caveat from the 2026-05-20 design discussion).
+int FindDoorNearPoint(const Vector& p, float maxDistM) {
+    if (g_graph.door_count <= 0) return -1;
+    float maxSq  = maxDistM * maxDistM;
+    int   bestIx = -1;
+    float bestSq = maxSq;
+    for (int i = 0; i < g_graph.door_count; ++i) {
+        float dx = g_graph.doors[i].pos.x - p.x;
+        float dy = g_graph.doors[i].pos.y - p.y;
+        float d2 = dx * dx + dy * dy;
+        if (d2 <= bestSq) { bestSq = d2; bestIx = i; }
+    }
+    return bestIx;
+}
+
+// Classify a nav-graph segment AB against walls + doors. Optional
+// `areaForDiag` enables the caveat-2 cross-room logging — pass nullptr
+// when caveat-2 noise would dominate (e.g. corridor-span tests where
+// crossing rooms is by design). Logs caveat-1 hits unconditionally
+// because they're rare and high-signal.
+//
+// Multi-fire note: a graph edge (i, j) may be classified from multiple
+// passes (merge veto Pass 1 / 1b / 1c, then external-edge Pass 2). All
+// fires hit the same logic and tally the same counters; the summary
+// line documents the multiplication so a reader doesn't mistake it for
+// per-edge truth. Caveat-1 / caveat-2 LOG ENTRIES include their caller
+// context so the same edge appearing multiple times reads naturally.
+EdgeResult ClassifyEdge(void* areaForDiag,
+                        const Vector& a, const Vector& b,
+                        const char* callerCtx) {
+    EdgeResult r{kEdgeClear, -1};
+
+    const acc::engine::WallEdge* walls = nullptr;
+    int wallCount = 0;
+    bool haveWalls = acc::spatial::change_detector::GetCachedWalls(
+        walls, wallCount);
+    Vector hit{};
+    bool wallHit = haveWalls &&
+                   acc::engine::SegmentCrossesWalkmesh(walls, wallCount,
+                                                      a, b, hit);
+
+    if (wallHit) {
+        // Caveat 1: walkmesh hole convention says doors sit in
+        // walkable gaps. If the wall hit is within 1m of a known
+        // door, the convention failed for this door (or the seam
+        // filter mis-classified a door-frame edge). Reclassify as
+        // Door so we keep the actionable label.
+        int nearestDoor = FindDoorNearPoint(hit, 1.0f);
+        if (nearestDoor >= 0) {
+            ++s_caveat1_hits;
+            float ddx = g_graph.doors[nearestDoor].pos.x - hit.x;
+            float ddy = g_graph.doors[nearestDoor].pos.y - hit.y;
+            float dist = std::sqrt(ddx * ddx + ddy * ddy);
+            acclog::Write(
+                "WallTopo",
+                "ClassifyEdge HOLE-IN-WALL [%s] — segment (%.1f,%.1f) -> "
+                "(%.1f,%.1f): wall hit at (%.1f,%.1f), door[%d] at "
+                "(%.1f,%.1f) %.2fm away, transition=\"%s\" → "
+                "reclassifying Blocked → Door",
+                callerCtx ? callerCtx : "?",
+                a.x, a.y, b.x, b.y,
+                hit.x, hit.y,
+                nearestDoor,
+                g_graph.doors[nearestDoor].pos.x,
+                g_graph.doors[nearestDoor].pos.y,
+                dist,
+                g_graph.doors[nearestDoor].transitionDest[0]
+                    ? g_graph.doors[nearestDoor].transitionDest
+                    : "(none)");
+            r.kind    = kEdgeDoor;
+            r.doorIdx = nearestDoor;
+            ++s_class_door;
+            return r;
+        }
+        r.kind = kEdgeBlocked;
+        ++s_class_blocked;
+        return r;
+    }
+
+    // Walkmesh-clear. Check whether a door sits on the segment for
+    // label rewriting.
+    int doorIdx = FindDoorOnEdge(a, b);
+    if (doorIdx >= 0) {
+        r.kind    = kEdgeDoor;
+        r.doorIdx = doorIdx;
+        ++s_class_door;
+        return r;
+    }
+
+    // Clear, no door. Caveat 2: log when the two endpoints sit in
+    // different .wok rooms. Noisy in hubs (plazas span 4 .wok rooms),
+    // but the pattern of WHICH edges fire repeatedly across areas is
+    // the diagnostic signal — see commit comment for the read pattern.
+    if (areaForDiag) {
+        int roomA = -1, roomB = -1;
+        acc::engine::GetRoomAtIndexed(areaForDiag, a, roomA);
+        acc::engine::GetRoomAtIndexed(areaForDiag, b, roomB);
+        if (roomA != roomB && roomA >= 0 && roomB >= 0) {
+            ++s_caveat2_hits;
+            float ex = b.x - a.x, ey = b.y - a.y;
+            float dist = std::sqrt(ex * ex + ey * ey);
+            acclog::Write(
+                "WallTopo",
+                "ClassifyEdge CROSS-ROOM-CLEAR [%s] — (%.1f,%.1f,room=%d) "
+                "-> (%.1f,%.1f,room=%d), distance=%.1fm, no wall, no door. "
+                "Possible undetected archway / .wok seam noise.",
+                callerCtx ? callerCtx : "?",
+                a.x, a.y, roomA, b.x, b.y, roomB, dist);
+        }
+    }
+
+    ++s_class_clear;
+    return r;
+}
+
 // Render the door-flavoured replacement of a direction word. Picks the
 // transition format when the matched door carries a destination name,
 // otherwise the bare "Tür %s" form. Single source of truth for the
@@ -669,6 +824,7 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
                      const Vector& centroid, int clusterSize,
                      const int* externalNbs,
                      const int* externalSrcs,
+                     const int* externalDoorIdx,
                      int externalCount,
                      char* outLabel, size_t outLabelSize,
                      int& outKind, int& outSig) {
@@ -715,12 +871,12 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
         Id dir = OctantFromVector(dx, dy);
         const char* word = acc::strings::Get(dir);
 
-        // Door-on-edge check: if a CSWSDoor sits on the segment from
-        // this dead-end's centroid to its single neighbour, the label
-        // shifts from "Sackgasse, X" to "Tür X" (or "Tür X nach DEST"
-        // for transition doors). Door wins over Sackgasse — more
-        // actionable for the player.
-        int doorIdx = FindDoorOnEdge(centroid, g.nodes[nb].pos);
+        // Door verdict was precomputed during external-edge collection
+        // (ClassifyEdge ran the wall + door tests once per real graph
+        // edge). Read the cached doorIdx rather than re-querying — that
+        // keeps walls + doors decided by the same primitive instead of
+        // running parallel checks here.
+        int doorIdx = externalDoorIdx ? externalDoorIdx[0] : -1;
         if (doorIdx >= 0 && word && word[0]) {
             RenderDoorDirection(doorIdx, word, outLabel, outLabelSize);
             acclog::Write(
@@ -751,10 +907,18 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
                                               g.nodes[nbA].pos.y - centroid.y));
         int bitB = OctantBit(OctantFromVector(g.nodes[nbB].pos.x - centroid.x,
                                               g.nodes[nbB].pos.y - centroid.y));
-        // Door anywhere on the corridor segment counts — cluster node
-        // sits between the endpoints so a door on the span is the one
-        // the player walks through.
-        int doorIdx = FindDoorOnEdge(g.nodes[nbA].pos, g.nodes[nbB].pos);
+        // Prefer the door verdicts precomputed on the actual graph
+        // edges (member→nbA, member→nbB). If neither edge carried a
+        // door, fall back to the corridor-span test for doors that
+        // sit off both graph edges but still on the spanning line.
+        int doorIdx = -1;
+        if (externalDoorIdx) {
+            doorIdx = externalDoorIdx[0];
+            if (doorIdx < 0) doorIdx = externalDoorIdx[1];
+        }
+        if (doorIdx < 0) {
+            doorIdx = FindDoorOnEdge(g.nodes[nbA].pos, g.nodes[nbB].pos);
+        }
         RenderCorridorAxis(bitA, bitB, doorIdx, outLabel, outLabelSize);
         if (doorIdx >= 0) {
             acclog::Write(
@@ -824,14 +988,15 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
                              WalkmeshAgreesDeadEnd(g.nodes[nb].pos, edgeStart);
         bool isWallCurve   = (deg == 1) && !isRealDeadEnd;
 
-        // Door test runs regardless of dead-end / wall-curve status —
-        // a door is the player-actionable signal even when the nav
-        // node behind it is a wall-curve patrol anchor.
+        // Door verdict precomputed during external-edge collection
+        // (one ClassifyEdge call per graph edge, walls + doors decided
+        // together). Read the cached doorIdx so we don't run a second
+        // parallel door test here.
         bool hasDoor = false;
+        int precomputedDoor = externalDoorIdx ? externalDoorIdx[k] : -1;
         if (octantDoorIdx[bit] < 0) {
-            int doorIdx = FindDoorOnEdge(edgeStart, g.nodes[nb].pos);
-            if (doorIdx >= 0) {
-                octantDoorIdx[bit] = doorIdx;
+            if (precomputedDoor >= 0) {
+                octantDoorIdx[bit] = precomputedDoor;
                 hasDoor = true;
                 acclog::Write(
                     "WallTopo",
@@ -841,9 +1006,9 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
                     centroid.x, centroid.y, bit,
                     src, edgeStart.x, edgeStart.y,
                     nb, g.nodes[nb].pos.x, g.nodes[nb].pos.y,
-                    doorIdx,
-                    g_graph.doors[doorIdx].pos.x,
-                    g_graph.doors[doorIdx].pos.y);
+                    precomputedDoor,
+                    g_graph.doors[precomputedDoor].pos.x,
+                    g_graph.doors[precomputedDoor].pos.y);
             }
         } else {
             hasDoor = true;
@@ -1012,6 +1177,11 @@ void Reset() {
     g_graph.built      = false;
     g_graph.node_count = 0;
     g_graph.door_count = 0;
+    s_class_clear   = 0;
+    s_class_door    = 0;
+    s_class_blocked = 0;
+    s_caveat1_hits  = 0;
+    s_caveat2_hits  = 0;
 }
 
 bool HasGraphForArea(void* area) {
@@ -1085,12 +1255,16 @@ void BuildForArea(void* area) {
             if (dx * dx + dy * dy >
                 kMergeMaxDistanceM * kMergeMaxDistanceM) continue;
             if (std::fabs(dz) > kMergeMaxZM) continue;
-            if (FindDoorOnEdge(g.nodes[i].pos, g.nodes[j].pos) >= 0) {
+            EdgeResult er = ClassifyEdge(area,
+                                         g.nodes[i].pos, g.nodes[j].pos,
+                                         "merge-pass1");
+            if (er.kind != kEdgeClear) {
                 ++mergeVetoedByDoor;
                 acclog::Write(
                     "WallTopo",
-                    "  merge VETOED (door on edge): node[%d] (%.1f,%.1f) "
+                    "  merge VETOED (%s on edge): node[%d] (%.1f,%.1f) "
                     "<-/-> node[%d] (%.1f,%.1f)",
+                    er.kind == kEdgeDoor ? "door" : "wall",
                     i, g.nodes[i].pos.x, g.nodes[i].pos.y,
                     j, g.nodes[j].pos.x, g.nodes[j].pos.y);
                 continue;
@@ -1145,13 +1319,17 @@ void BuildForArea(void* area) {
             if (dx * dx + dy * dy >
                 kMergeMaxDistanceM * kMergeMaxDistanceM) continue;
             if (std::fabs(dz) > kMergeMaxZM) continue;
-            if (FindDoorOnEdge(g.nodes[i].pos, g.nodes[j].pos) >= 0) {
+            EdgeResult er = ClassifyEdge(area,
+                                         g.nodes[i].pos, g.nodes[j].pos,
+                                         "merge-pass1b");
+            if (er.kind != kEdgeClear) {
                 ++densityMergeVetoedDoor;
                 acclog::Write(
                     "WallTopo",
-                    "  density-merge VETOED (door on edge): node[%d] "
+                    "  density-merge VETOED (%s on edge): node[%d] "
                     "(%.1f,%.1f, close=%d) <-/-> node[%d] "
                     "(%.1f,%.1f, close=%d)",
+                    er.kind == kEdgeDoor ? "door" : "wall",
                     i, g.nodes[i].pos.x, g.nodes[i].pos.y, closeCounts[i],
                     j, g.nodes[j].pos.x, g.nodes[j].pos.y, closeCounts[j]);
                 continue;
@@ -1222,12 +1400,16 @@ void BuildForArea(void* area) {
                 ++absorbVetoedDistance;
                 continue;
             }
-            if (FindDoorOnEdge(g.nodes[i].pos, g.nodes[j].pos) >= 0) {
+            EdgeResult er = ClassifyEdge(area,
+                                         g.nodes[i].pos, g.nodes[j].pos,
+                                         "merge-pass1c");
+            if (er.kind != kEdgeClear) {
                 ++absorbVetoedByDoor;
                 acclog::Write(
                     "WallTopo",
-                    "  absorb VETOED (door): node[%d] (%.1f,%.1f) deg=%d "
+                    "  absorb VETOED (%s): node[%d] (%.1f,%.1f) deg=%d "
                     "<-/-> node[%d] (%.1f,%.1f) hub-cluster=%d size=%d",
+                    er.kind == kEdgeDoor ? "door" : "wall",
                     i, g.nodes[i].pos.x, g.nodes[i].pos.y, degI,
                     j, g.nodes[j].pos.x, g.nodes[j].pos.y,
                     jRoot, absorbSnapshotSize[jRoot]);
@@ -1251,6 +1433,197 @@ void BuildForArea(void* area) {
         "vetoedByDoor=%d vetoedByDistance=%d",
         kHubAbsorptionRadiusM,
         absorbEdges, absorbVetoedByDoor, absorbVetoedDistance);
+
+    // Pass 1d: bounding-box absorption. Targets the K1 authoring style
+    // where designers place enough nav points for an NPC to patrol part
+    // of a room (back-and-forth + scripted exit) without fledging out
+    // the room's full geometry. The unfledged corners become degree-≤2
+    // singletons whose Voronoi cells stick into what the player
+    // perceives as one room, flipping the announce as the player
+    // crosses the cluster boundary (Endar Spire start: node[3] and
+    // node[6] sit on the Platz's north edge but Pass 1c can't absorb
+    // them — they only connect to each other and to door-vetoed
+    // neighbours, never directly to a Platz member).
+    //
+    // Rule: a singleton X is absorbed into a multi-node cluster C iff:
+    //   - X.pos lies inside C's axis-aligned bounding box (XY plane);
+    //   - some member of C sits within kMergeMaxZM (1 m) of X in Z
+    //     (multi-floor protection — stops a stairwell node above the
+    //      Platz from being folded in just because it shares X/Y);
+    //   - the segment X → nearest_member is wall-clear (`ClassifyEdge`);
+    //   - no door on that segment (preserves authored boundaries).
+    //
+    // Single pass over a frozen snapshot taken AFTER Pass 1c. Bbox is
+    // computed once from the snapshot; absorbing a candidate does NOT
+    // recompute the bbox or re-test other candidates. Iteration could
+    // chain-absorb everything into one cluster, which we explicitly
+    // don't want — a real corridor sticking out of the Platz with
+    // multiple degree-2 nodes shouldn't disappear because the first
+    // one happens to sit on the bbox edge.
+    int bboxSnapRoot[kMaxNodes];
+    int bboxSnapSize[kMaxNodes];
+    for (int i = 0; i < n; ++i) {
+        bboxSnapRoot[i] = UFFind(i);
+        bboxSnapSize[i] = 0;
+    }
+    for (int i = 0; i < n; ++i) {
+        int r = bboxSnapRoot[i];
+        if (r >= 0 && r < n) ++bboxSnapSize[r];
+    }
+
+    struct ClusterBbox {
+        float minX, maxX, minY, maxY;
+        bool  valid;
+    };
+    ClusterBbox bboxByRoot[kMaxNodes];
+    for (int i = 0; i < n; ++i) bboxByRoot[i].valid = false;
+    for (int m = 0; m < n; ++m) {
+        int root = bboxSnapRoot[m];
+        if (root < 0 || root >= n) continue;
+        if (bboxSnapSize[root] < 2) continue;
+        ClusterBbox& bb = bboxByRoot[root];
+        const Vector p = g.nodes[m].pos;
+        if (!bb.valid) {
+            bb.minX = bb.maxX = p.x;
+            bb.minY = bb.maxY = p.y;
+            bb.valid = true;
+        } else {
+            if (p.x < bb.minX) bb.minX = p.x;
+            if (p.x > bb.maxX) bb.maxX = p.x;
+            if (p.y < bb.minY) bb.minY = p.y;
+            if (p.y > bb.maxY) bb.maxY = p.y;
+        }
+    }
+
+    int bboxAbsorbed       = 0;
+    int bboxVetoedByWall   = 0;
+    int bboxVetoedByDoor   = 0;
+    int bboxNoZMatch       = 0;
+    int bboxAmbiguous      = 0;
+    for (int x = 0; x < n; ++x) {
+        // Candidate gate: x is a singleton in the post-1c snapshot.
+        // Nodes already merged into a multi-node cluster are skipped —
+        // bbox-absorption only folds in unattached singletons.
+        if (bboxSnapSize[bboxSnapRoot[x]] != 1) continue;
+        const Vector px = g.nodes[x].pos;
+
+        // Walk every multi-node cluster's bbox; collect candidates
+        // whose box contains x (XY) AND have a member within Z range.
+        int   bestRoot   = -1;
+        int   bestMember = -1;
+        float bestD2     = 1e30f;
+        int   containing = 0;
+        for (int root = 0; root < n; ++root) {
+            const ClusterBbox& bb = bboxByRoot[root];
+            if (!bb.valid) continue;
+            if (px.x < bb.minX || px.x > bb.maxX) continue;
+            if (px.y < bb.minY || px.y > bb.maxY) continue;
+
+            // Nearest member of this cluster, with Z gate. If no
+            // member is within kMergeMaxZM in Z, this cluster doesn't
+            // qualify even though its bbox contains x.
+            int   nearestMember = -1;
+            float nearestD2     = 1e30f;
+            for (int m = 0; m < n; ++m) {
+                if (bboxSnapRoot[m] != root) continue;
+                float dz = g.nodes[m].pos.z - px.z;
+                if (std::fabs(dz) > kMergeMaxZM) continue;
+                float dx = g.nodes[m].pos.x - px.x;
+                float dy = g.nodes[m].pos.y - px.y;
+                float d2 = dx * dx + dy * dy;
+                if (d2 < nearestD2) {
+                    nearestD2     = d2;
+                    nearestMember = m;
+                }
+            }
+            if (nearestMember < 0) continue;
+
+            ++containing;
+            if (nearestD2 < bestD2) {
+                bestD2     = nearestD2;
+                bestRoot   = root;
+                bestMember = nearestMember;
+            }
+        }
+
+        if (bestRoot < 0) {
+            // Either no containing cluster, or every containing
+            // cluster's members are out of Z range. Skip silently
+            // unless we found XY containment but failed Z — that's
+            // worth logging as the multi-floor protection firing.
+            // We track XY-contained-but-no-Z by re-scanning quickly.
+            for (int root = 0; root < n; ++root) {
+                const ClusterBbox& bb = bboxByRoot[root];
+                if (!bb.valid) continue;
+                if (px.x < bb.minX || px.x > bb.maxX) continue;
+                if (px.y < bb.minY || px.y > bb.maxY) continue;
+                ++bboxNoZMatch;
+                acclog::Write(
+                    "WallTopo",
+                    "  bbox-absorption VETOED (z): node[%d] (%.1f,%.1f,%.1f) "
+                    "inside bbox of cluster=%d but no member within "
+                    "%.1fm in Z — multi-floor protection",
+                    x, px.x, px.y, px.z, root, kMergeMaxZM);
+                break;
+            }
+            continue;
+        }
+
+        if (containing > 1) {
+            ++bboxAmbiguous;
+            acclog::Write(
+                "WallTopo",
+                "  bbox-absorption AMBIGUOUS: node[%d] (%.1f,%.1f) sits "
+                "inside %d cluster bboxes; picking nearest (cluster=%d "
+                "via member[%d] at %.1fm)",
+                x, px.x, px.y, containing,
+                bestRoot, bestMember, std::sqrt(bestD2));
+        }
+
+        // Safety gates on the absorb edge x → bestMember.
+        EdgeResult er = ClassifyEdge(area, px, g.nodes[bestMember].pos,
+                                     "bbox-pass1d");
+        if (er.kind == kEdgeBlocked) {
+            ++bboxVetoedByWall;
+            acclog::Write(
+                "WallTopo",
+                "  bbox-absorption VETOED (wall): node[%d] (%.1f,%.1f) "
+                "inside cluster=%d bbox but segment to member[%d] "
+                "(%.1f,%.1f) crosses a wall",
+                x, px.x, px.y, bestRoot,
+                bestMember, g.nodes[bestMember].pos.x,
+                g.nodes[bestMember].pos.y);
+            continue;
+        }
+        if (er.kind == kEdgeDoor) {
+            ++bboxVetoedByDoor;
+            acclog::Write(
+                "WallTopo",
+                "  bbox-absorption VETOED (door): node[%d] (%.1f,%.1f) "
+                "inside cluster=%d bbox but segment to member[%d] "
+                "(%.1f,%.1f) crosses door[%d]",
+                x, px.x, px.y, bestRoot,
+                bestMember, g.nodes[bestMember].pos.x,
+                g.nodes[bestMember].pos.y, er.doorIdx);
+            continue;
+        }
+
+        UFUnite(x, bestMember);
+        ++bboxAbsorbed;
+        acclog::Write(
+            "WallTopo",
+            "  bbox-absorption: node[%d] (%.1f,%.1f,%.1f) → cluster=%d "
+            "(nearest member[%d] at %.1f,%.1f, distance %.1fm)",
+            x, px.x, px.y, px.z, bestRoot,
+            bestMember, g.nodes[bestMember].pos.x,
+            g.nodes[bestMember].pos.y, std::sqrt(bestD2));
+    }
+    acclog::Write(
+        "WallTopo",
+        "  bbox-absorption: absorbed=%d vetoedByWall=%d vetoedByDoor=%d "
+        "vetoedByZ=%d ambiguous-bbox=%d",
+        bboxAbsorbed, bboxVetoedByWall, bboxVetoedByDoor,
+        bboxNoZMatch, bboxAmbiguous);
 
     // Diagnostic-only pass: dump per-node topology metrics so we can
     // pick a principled gate later. NO MERGE LOGIC USES THESE COUNTS.
@@ -1380,10 +1753,20 @@ void BuildForArea(void* area) {
         // matches doors that aren't on any real graph edge, which is
         // why the Upper-City plaza was lighting up with "Tür Nord, Tür
         // Ost, Tür Süd, Tür West" all at once.
+        //
+        // Edge-class filtering: each member→nb graph edge runs through
+        // ClassifyEdge (the unified wall + door primitive). Blocked
+        // edges drop entirely — the graph offered an exit, but the
+        // walkmesh says it crosses a wall, so the cluster simply
+        // doesn't see that neighbour. Door verdicts are cached in
+        // externalDoorIdx[] so ClassifyCluster doesn't run a second
+        // door query per neighbour.
         constexpr int kMaxExternal = 16;
         int externalNbs[kMaxExternal];
         int externalSrcs[kMaxExternal];   // cluster member that owns this edge
+        int externalDoorIdx[kMaxExternal];
         int externalCount = 0;
+        int blockedExternal = 0;
         for (int m = 0; m < n; ++m) {
             if (UFFind(m) != root) continue;
             int lo = 0, hi = 0;
@@ -1392,13 +1775,38 @@ void BuildForArea(void* area) {
                 int nb = static_cast<int>(g.conns[e]);
                 if (nb < 0 || nb >= n) continue;
                 if (UFFind(nb) == root) continue;  // internal edge
+                EdgeResult er = ClassifyEdge(area,
+                                             g.nodes[m].pos, g.nodes[nb].pos,
+                                             "ext-edge");
+                if (er.kind == kEdgeBlocked) {
+                    ++blockedExternal;
+                    acclog::Write(
+                        "WallTopo",
+                        "  external BLOCKED: cluster=%d member[%d] (%.1f,%.1f) "
+                        "-> nb[%d] (%.1f,%.1f) — segment crosses wall, "
+                        "dropping from neighbour list",
+                        root, m, g.nodes[m].pos.x, g.nodes[m].pos.y,
+                        nb, g.nodes[nb].pos.x, g.nodes[nb].pos.y);
+                    continue;
+                }
                 bool seen = false;
                 for (int k = 0; k < externalCount; ++k) {
-                    if (externalNbs[k] == nb) { seen = true; break; }
+                    if (externalNbs[k] == nb) {
+                        // Upgrade -1 doorIdx if a later edge to the same
+                        // neighbour found a door the first didn't.
+                        if (externalDoorIdx[k] < 0 &&
+                            er.kind == kEdgeDoor) {
+                            externalDoorIdx[k] = er.doorIdx;
+                        }
+                        seen = true;
+                        break;
+                    }
                 }
                 if (!seen && externalCount < kMaxExternal) {
-                    externalNbs [externalCount] = nb;
-                    externalSrcs[externalCount] = m;
+                    externalNbs    [externalCount] = nb;
+                    externalSrcs   [externalCount] = m;
+                    externalDoorIdx[externalCount] =
+                        (er.kind == kEdgeDoor) ? er.doorIdx : -1;
                     ++externalCount;
                 }
             }
@@ -1407,7 +1815,7 @@ void BuildForArea(void* area) {
         char label[96] = {0};
         int kind = kKindOpenArea, sig = 0;
         ClassifyCluster(g, centroid, size, externalNbs, externalSrcs,
-                        externalCount,
+                        externalDoorIdx, externalCount,
                         label, sizeof(label), kind, sig);
 
         switch (kind) {
@@ -1439,14 +1847,29 @@ void BuildForArea(void* area) {
                   multiNodeClusters,
                   deadEnds, corridors, junctions, openAreas);
 
+    // Edge-classification summary. Counts are multi-fire (each graph
+    // edge is classified by every pass that examines it — Pass 1 / 1b
+    // / 1c merge vetoes, then Pass 2 external-edge collection), so
+    // reading them as raw per-edge truth would overcount. They're a
+    // ratio/anomaly signal: blocked > 0 confirms the wall primitive
+    // is catching at least some wall-crossing edges; caveat-1 hits > 0
+    // signals K1 violates the walkmesh-holes-for-doors convention here
+    // (rare, high-signal); caveat-2 candidates is a per-area noise
+    // floor for "Clear edges between distinct .wok rooms".
+    acclog::Write("WallTopo",
+                  "  edge-classification summary (multi-counted across "
+                  "passes): clear=%d door=%d blocked=%d | "
+                  "caveat-1 (door-in-wall)=%d caveat-2 (cross-room "
+                  "candidates)=%d",
+                  s_class_clear, s_class_door, s_class_blocked,
+                  s_caveat1_hits, s_caveat2_hits);
+
     // Diagnostic: per multi-node cluster, dump member adjacency. For
     // each member node, list its graph neighbours split into
     // internal (same cluster) and external (cross-cluster), and mark
-    // any edge that crosses a door via FindDoorOnEdge. This exposes
-    // whether dividing doors split a merged cluster into a "junction
-    // side" (member with external neighbours other than the door) and
-    // a "room side" (member whose only off-cluster path is through
-    // the door itself).
+    // the edge's ClassifyEdge verdict. Passes nullptr for the area
+    // diag so this re-walk doesn't double-emit caveat-2 lines already
+    // logged during collection.
     for (int root = 0; root < n; ++root) {
         if (UFFind(root) != root) continue;
         int size = 0;
@@ -1463,9 +1886,11 @@ void BuildForArea(void* area) {
                 int nb = static_cast<int>(g.conns[e]);
                 if (nb < 0 || nb >= n) continue;
                 bool internal = (UFFind(nb) == root);
-                int doorIdx = FindDoorOnEdge(g.nodes[m].pos,
-                                             g.nodes[nb].pos);
-                if (doorIdx >= 0) {
+                EdgeResult er = ClassifyEdge(/*areaForDiag=*/nullptr,
+                                             g.nodes[m].pos,
+                                             g.nodes[nb].pos,
+                                             "dump");
+                if (er.kind == kEdgeDoor) {
                     acclog::Write(
                         "WallTopo",
                         "    member[%d] (%.1f,%.1f) -> nb[%d] (%.1f,%.1f) "
@@ -1473,15 +1898,23 @@ void BuildForArea(void* area) {
                         m, g.nodes[m].pos.x, g.nodes[m].pos.y,
                         nb, g.nodes[nb].pos.x, g.nodes[nb].pos.y,
                         internal ? "INTERNAL" : "EXTERNAL",
-                        doorIdx,
-                        g_graph.doors[doorIdx].transitionDest[0]
-                            ? g_graph.doors[doorIdx].transitionDest
+                        er.doorIdx,
+                        g_graph.doors[er.doorIdx].transitionDest[0]
+                            ? g_graph.doors[er.doorIdx].transitionDest
                             : "(none)");
+                } else if (er.kind == kEdgeBlocked) {
+                    acclog::Write(
+                        "WallTopo",
+                        "    member[%d] (%.1f,%.1f) -> nb[%d] (%.1f,%.1f) "
+                        "%s WALL-BLOCKED",
+                        m, g.nodes[m].pos.x, g.nodes[m].pos.y,
+                        nb, g.nodes[nb].pos.x, g.nodes[nb].pos.y,
+                        internal ? "INTERNAL" : "EXTERNAL");
                 } else {
                     acclog::Write(
                         "WallTopo",
                         "    member[%d] (%.1f,%.1f) -> nb[%d] (%.1f,%.1f) "
-                        "%s no-door",
+                        "%s clear",
                         m, g.nodes[m].pos.x, g.nodes[m].pos.y,
                         nb, g.nodes[nb].pos.x, g.nodes[nb].pos.y,
                         internal ? "INTERNAL" : "EXTERNAL");
@@ -1529,21 +1962,117 @@ bool LookupAt(void* area, const Vector& worldPos,
     // places the region classifier reads as "Kreuzung". The cleaner
     // behaviour is to make them transparent to LookupAt entirely — the
     // next-nearest labelled node takes over.
-    int best = -1;
-    float bestSq = 1e30f;
+    // Wall-reachability filter (added 2026-05-20): the original symptom
+    // was Endar Spire's starting room speaking corridor labels that
+    // belonged to nav nodes in the *adjacent* hallway — geometrically
+    // closer to the player than any in-room node, but separated from
+    // the player by the room's outer wall. Naive nearest-snap pulled
+    // the wrong label across that wall.
+    //
+    // Per candidate: test the segment (worldPos → candidate.pos)
+    // against the seam-filtered perimeter wall cache. If a wall sits
+    // on the segment, the candidate is not reachable from the player
+    // and gets skipped. The nearest reachable labelled node wins.
+    //
+    // Track best-blocked separately so we can log "would have picked
+    // X but it's behind a wall" for diagnostic tuning. If every
+    // candidate is wall-blocked (sanity-failure / cache anomaly), we
+    // fall through to the "Offene Fläche" branch — better silent than
+    // a label the player can't reach.
+    const acc::engine::WallEdge* walls = nullptr;
+    int wallCount = 0;
+    bool haveWalls = acc::spatial::change_detector::GetCachedWalls(
+        walls, wallCount);
+
+    int   best         = -1;
+    float bestSq       = 1e30f;
+    int   bestBlocked  = -1;
+    float bestBlockedSq= 1e30f;
+    int   blockedSeen  = 0;
     for (int i = 0; i < g_graph.node_count; ++i) {
         if (g_graph.node_label[i][0] == '\0') continue;
         float dx = g_graph.node_pos[i].x - worldPos.x;
         float dy = g_graph.node_pos[i].y - worldPos.y;
         float dz = g_graph.node_pos[i].z - worldPos.z;
         float d2 = dx * dx + dy * dy + dz * dz;
-        if (d2 < bestSq) {
-            bestSq = d2;
-            best   = i;
+
+        bool reachable = true;
+        if (haveWalls) {
+            Vector hitTmp{};
+            reachable = !acc::engine::SegmentCrossesWalkmesh(
+                walls, wallCount, worldPos, g_graph.node_pos[i], hitTmp);
+        }
+
+        if (reachable) {
+            if (d2 < bestSq) {
+                bestSq = d2;
+                best   = i;
+            }
+        } else {
+            ++blockedSeen;
+            if (d2 < bestBlockedSq) {
+                bestBlockedSq = d2;
+                bestBlocked   = i;
+            }
         }
     }
 
-    if (best < 0) return false;
+    // Diagnostic: log the snap decision whenever the wall filter
+    // actually rejected a candidate that would have been closer than
+    // our pick. Silent when the nearest candidate is already
+    // reachable (no filtering happened). Called from
+    // SpeakRoomChange / LogWallTopoComparison — both fire on room
+    // transitions, not per-tick, so logging here is bounded.
+    if (bestBlocked >= 0 &&
+        (best < 0 || bestBlockedSq < bestSq)) {
+        float bDist = std::sqrt(bestBlockedSq);
+        float pDist = best >= 0 ? std::sqrt(bestSq) : -1.0f;
+        acclog::Write(
+            "WallTopo",
+            "LookupAt WALL-FILTERED at (%.1f,%.1f,%.1f): nearest "
+            "candidate node[%d] (%.1f,%.1f) \"%s\" at %.1fm is behind "
+            "a wall; picked node[%d] (%.1f,%.1f) \"%s\" at %.1fm "
+            "instead (blocked-seen=%d)",
+            worldPos.x, worldPos.y, worldPos.z,
+            bestBlocked,
+            g_graph.node_pos[bestBlocked].x,
+            g_graph.node_pos[bestBlocked].y,
+            g_graph.node_label[bestBlocked],
+            bDist,
+            best,
+            best >= 0 ? g_graph.node_pos[best].x : 0.0f,
+            best >= 0 ? g_graph.node_pos[best].y : 0.0f,
+            best >= 0 ? g_graph.node_label[best] : "(none)",
+            pDist,
+            blockedSeen);
+    }
+    // Sanity: every candidate filtered out is a strong signal the
+    // wall cache or the player position is wrong. Surfaces overfire.
+    if (best < 0 && blockedSeen > 0) {
+        acclog::Write(
+            "WallTopo",
+            "LookupAt ALL-BLOCKED at (%.1f,%.1f,%.1f): every labelled "
+            "node (%d candidates) was wall-filtered. Falling back to "
+            "Offene Fläche. Possible overfire — check wall cache vs "
+            "player position.",
+            worldPos.x, worldPos.y, worldPos.z, blockedSeen);
+    }
+
+    if (best < 0) {
+        // Either no labelled nodes at all, or every candidate got
+        // wall-filtered. In the second case we already logged
+        // ALL-BLOCKED above; fall through to "Offene Fläche".
+        if (blockedSeen > 0) {
+            const char* fallback =
+                acc::strings::Get(acc::strings::Id::MapCursorOpenArea);
+            if (fallback && fallback[0]) {
+                std::snprintf(outBuf, bufSize, "%s", fallback);
+                outSig = kKindOpenArea & 0xff;
+                return true;
+            }
+        }
+        return false;
+    }
 
     float bestDist = std::sqrt(bestSq);
     if (bestDist > kMaxSnapM) {
