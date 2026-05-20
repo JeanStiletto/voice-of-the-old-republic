@@ -3,6 +3,16 @@
 ## Purpose
 Accessibility mod/contribution for **Star Wars: Knights of the Old Republic** (KOTOR 1, BioWare 2003, Steam release) enabling blind and visually impaired players to play using screen readers (NVDA/JAWS/Narrator).
 
+## Developer accessibility
+The developer of this mod is blind. Any workflow you propose has to be doable with a screen reader and keyboard alone. Things to avoid unless there is no alternative:
+- Mouse-only steps ("click here", "drag this", "hover over X")
+- "Check the screen", "look at the colour", "see if the icon shows" — anything that needs visual confirmation
+- GUI tools that aren't screen-reader-friendly (most Ghidra panels, raw imhex hex dumps, image diff viewers, etc.)
+- Asking the user to read what's on a loading/black screen, or to time something visually
+- Sighted-only verification ("does the cutscene look right?", "is the character in the right spot?")
+
+Prefer instead: CLI commands the user can run, log lines we can grep, deterministic test states, screen-reader-announceable outputs, and "speak what you hear" as the user's verification channel. When a sighted check would normally be the fast path, treat it as a last resort and ask the user explicitly before proposing it.
+
 ## Accessibility Goals
 - Well-structured text output (no tables, no graphics)
 - Linear, readable format for screen readers

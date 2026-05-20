@@ -15,10 +15,6 @@ namespace {
 // after 4G events — fine, the diagnostic only cares about adjacency.
 volatile LONG s_seq = 0;
 
-// Per-frame counter incremented in OnProcessInput so log lines can be
-// grouped by frame without the reader counting interleaved entries by hand.
-volatile LONG s_frame = 0;
-
 }  // namespace
 
 unsigned int NextSeq() {
@@ -28,20 +24,22 @@ unsigned int NextSeq() {
 }  // namespace acc::diag::input
 
 // -----------------------------------------------------------------------------
-// CClientExoAppInternal::ProcessInput @ 0x006227e0 — frame entry marker.
+// CClientExoAppInternal::ProcessInput @ 0x006227e0 — frame-boundary seq tick.
 //
 // Hooked at 0x006227fb (after SEH frame + locals are set up, BEFORE the
 // register-save PUSHes write to the relocated cut bytes' positions). At
 // hook entry: ECX = this. The 5-byte cut covers PUSH EBX, PUSH EBP, PUSH
 // ESI, MOV ESI,ECX — all register-only, position-independent.
 //
-// We don't actually need `this` to log — the marker just delineates frames.
-// But pulling the parameter through is cheap and lets future diagnostics
-// read sw_gui_status / input_class without relocating the hook.
+// Originally emitted "Diag.ProcInput: frame=N seq=M" each frame as part of
+// the input-routing investigation (Esc/pause Bug 1 + 2a, both fixed). The
+// visible per-frame line was deleted because at 60 fps it was 99.8% of
+// log volume. The seq bump stays so frame boundaries remain encoded as
+// gaps in the Diag.ClientHIE / Menus.Input streams. If a future
+// investigation needs explicit frame markers, restore the acclog::Write
+// call here — one line of code.
 extern "C" void __cdecl OnProcessInput(void* /*this_ptr*/) {
-    LONG frame = InterlockedIncrement(&acc::diag::input::s_frame);
-    unsigned int seq = acc::diag::input::NextSeq();
-    acclog::Write("Diag.ProcInput", "frame=%ld seq=%u", frame, seq);
+    acc::diag::input::NextSeq();
 }
 
 // -----------------------------------------------------------------------------

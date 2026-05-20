@@ -1257,10 +1257,12 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     static int n = 0;
     ++n;
     // Shared seq counter — lets readers correlate Menus.Input lines with
-    // Diag.ClientHIE / Diag.ProcInput entries to verify the val=1 vs
-    // val=128 routing hypothesis from
-    // docs/in-game-menu-input-investigation.md. Bumped once per call so a
-    // synthesised pair (upstream → manager) reads as two adjacent seqs.
+    // Diag.ClientHIE entries to verify the val=1 vs val=128 routing
+    // hypothesis from docs/in-game-menu-input-investigation.md. Bumped
+    // once per call so a synthesised pair (upstream → manager) reads as
+    // two adjacent seqs. The ProcessInput hook (see diag_input_pipeline.h)
+    // also bumps seq once per frame silently, so gaps in seq reflect
+    // elapsed frames between events.
     unsigned int seq = acc::diag::input::NextSeq();
 
     // Press-release pairing. When OUR handler consumes a press (Enter on
