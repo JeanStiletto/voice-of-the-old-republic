@@ -108,6 +108,19 @@
     "Program_UpToDate_Title": "Mod is up to date",
     "Program_UpToDate_Format": "KOTOR Accessibility v{0} is already installed and up to date.\n\nWould you like to perform a full reinstall?",
 
+    "InstalledOptions_Body_Format": "KOTOR Accessibility v{0} is installed and up to date.\n\nSpatial audio (dsoal): {1}\n\nChoose an action:\n- Reinstall: re-runs the full installer to refresh all files.\n- Toggle spatial audio: switch between modified (HRTF + EAX) and vanilla audio. Restart the game after toggling.\n- Close: do nothing and exit.",
+    "InstalledOptions_ReinstallButton": "Reinstall",
+
+    "SpatialAudio_StateEnabled": "ENABLED (HRTF + EAX active)",
+    "SpatialAudio_StateDisabled": "DISABLED (vanilla audio)",
+    "SpatialAudio_EnableButton": "Enable spatial audio",
+    "SpatialAudio_DisableButton": "Disable spatial audio",
+    "SpatialAudio_Result_Title": "Spatial audio",
+    "SpatialAudio_EnabledMessage": "Spatial audio is now ENABLED.\n\nThe dsoal DirectSound wrapper and OpenAL Soft renderer have been placed in the game folder, and EAX has been turned on in swkotor.ini. Per-source HRTF spatialization and EAX environmental reverb are now active.\n\nPlease restart KOTOR for the change to take effect.\n\nNote: 2D streams (music, dialogue) may sound altered. If unacceptable, re-run this installer and choose 'Disable spatial audio'.\n\nLicenses: dsoal and OpenAL Soft are LGPL 2.1. Source: https://github.com/kcat/dsoal and https://github.com/kcat/openal-soft",
+    "SpatialAudio_DisabledMessage": "Spatial audio is now DISABLED.\n\nThe dsoal files have been removed from the game folder and EAX has been turned off in swkotor.ini. The game will use Windows' native DirectSound on next launch.\n\nPlease restart KOTOR for the change to take effect.",
+    "SpatialAudio_Error_Title": "Spatial audio error",
+    "SpatialAudio_Error_Format": "Could not toggle spatial audio:\n\n{0}\n\nCheck the installer log on your Desktop for details.",
+
     "Update_Title": "Update available",
     "Update_Heading": "An update is available.",
     "Update_VersionInfo_Format": "Installed version: {0}\nLatest version: {1}",

@@ -12,7 +12,8 @@ namespace KotorAccessibilityInstaller
     {
         Close,
         UpdateOnly,
-        FullInstall
+        FullInstall,
+        ToggleSpatialAudio
     }
 
     static class Program
@@ -154,7 +155,8 @@ namespace KotorAccessibilityInstaller
             if (modExists && updateAvailable)
             {
                 Logger.Info("Showing update dialog");
-                var updateForm = new UpdateAvailableForm(installedVersion, latestVersion);
+                bool spatialOn = SpatialAudioManager.IsEnabled(detectedGamePath);
+                var updateForm = new UpdateAvailableForm(installedVersion, latestVersion, spatialOn);
                 Application.Run(updateForm);
 
                 switch (updateForm.UserChoice)
@@ -167,6 +169,11 @@ namespace KotorAccessibilityInstaller
                     case UpdateChoice.FullInstall:
                         Logger.Info("User chose full install");
                         RunFullInstallFlow(detectedGamePath, pathArg, latestVersion, localKpatchPath);
+                        break;
+
+                    case UpdateChoice.ToggleSpatialAudio:
+                        Logger.Info("User chose to toggle spatial audio");
+                        ToggleSpatialAudioAndReport(detectedGamePath);
                         break;
 
                     case UpdateChoice.Close:
@@ -182,16 +189,27 @@ namespace KotorAccessibilityInstaller
                 while (displayVersion.EndsWith(".0") && displayVersion.IndexOf('.') != displayVersion.LastIndexOf('.'))
                     displayVersion = displayVersion.Substring(0, displayVersion.Length - 2);
 
-                var result = MessageBox.Show(
-                    InstallerLocale.Format("Program_UpToDate_Format", displayVersion),
-                    InstallerLocale.Get("Program_UpToDate_Title"),
-                    MessageBoxButtons.YesNo,
-                    MessageBoxIcon.Information);
+                bool spatialOn = SpatialAudioManager.IsEnabled(detectedGamePath);
+                var form = new InstalledOptionsForm(displayVersion, spatialOn);
+                Application.Run(form);
 
-                if (result != DialogResult.Yes) return;
+                switch (form.UserChoice)
+                {
+                    case UpdateChoice.FullInstall:
+                        Logger.Info("User chose full reinstall");
+                        RunFullInstallFlow(detectedGamePath, pathArg, latestVersion, localKpatchPath);
+                        break;
 
-                Logger.Info("User chose full reinstall");
-                RunFullInstallFlow(detectedGamePath, pathArg, latestVersion, localKpatchPath);
+                    case UpdateChoice.ToggleSpatialAudio:
+                        Logger.Info("User chose to toggle spatial audio");
+                        ToggleSpatialAudioAndReport(detectedGamePath);
+                        break;
+
+                    case UpdateChoice.Close:
+                    default:
+                        Logger.Info("User closed installed-options dialog");
+                        break;
+                }
             }
             else
             {
@@ -233,6 +251,38 @@ namespace KotorAccessibilityInstaller
 
             string resolvedPath = pathArgOverride ?? DetectGamePath() ?? gamePath;
             Application.Run(new MainForm(resolvedPath, language: welcomeForm.SelectedLanguage, modSelection: selectionForm.Selection, localKpatchPath: localKpatchPath));
+        }
+
+        /// <summary>
+        /// Flip dsoal on or off based on its current state, then show a
+        /// MessageBox so the screen reader announces the new state and reminds
+        /// the user to restart the game.
+        /// </summary>
+        private static void ToggleSpatialAudioAndReport(string gamePath)
+        {
+            bool wasEnabled = SpatialAudioManager.IsEnabled(gamePath);
+            var result = wasEnabled
+                ? SpatialAudioManager.Disable(gamePath)
+                : SpatialAudioManager.Enable(gamePath);
+
+            if (!result.Success)
+            {
+                MessageBox.Show(
+                    InstallerLocale.Format("SpatialAudio_Error_Format", result.Error ?? "(unknown)"),
+                    InstallerLocale.Get("SpatialAudio_Error_Title"),
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+                return;
+            }
+
+            string messageKey = result.NowEnabled
+                ? "SpatialAudio_EnabledMessage"
+                : "SpatialAudio_DisabledMessage";
+            MessageBox.Show(
+                InstallerLocale.Get(messageKey),
+                InstallerLocale.Get("SpatialAudio_Result_Title"),
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
         }
 
         public static void PerformUninstall(string gamePath)

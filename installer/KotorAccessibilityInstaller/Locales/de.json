@@ -108,6 +108,19 @@
     "Program_UpToDate_Title": "Mod ist aktuell",
     "Program_UpToDate_Format": "KOTOR Accessibility v{0} ist bereits installiert und aktuell.\n\nMöchtest du eine vollständige Neuinstallation durchführen?",
 
+    "InstalledOptions_Body_Format": "KOTOR Accessibility v{0} ist installiert und aktuell.\n\nRäumlicher Klang (dsoal): {1}\n\nWähle eine Aktion:\n- Neu installieren: führt den vollständigen Installer erneut aus und erneuert alle Dateien.\n- Räumlichen Klang umschalten: zwischen modifiziertem Klang (HRTF + EAX) und vanilla wechseln. Spiel danach neu starten.\n- Schließen: nichts tun und beenden.",
+    "InstalledOptions_ReinstallButton": "Neu installieren",
+
+    "SpatialAudio_StateEnabled": "AKTIV (HRTF + EAX)",
+    "SpatialAudio_StateDisabled": "AUS (Originalton)",
+    "SpatialAudio_EnableButton": "Räumlichen Klang aktivieren",
+    "SpatialAudio_DisableButton": "Räumlichen Klang deaktivieren",
+    "SpatialAudio_Result_Title": "Räumlicher Klang",
+    "SpatialAudio_EnabledMessage": "Räumlicher Klang ist jetzt AKTIV.\n\nDer dsoal DirectSound-Wrapper und der OpenAL Soft Renderer wurden ins Spielverzeichnis kopiert, und EAX wurde in swkotor.ini eingeschaltet. Per-Quelle HRTF-Räumlichkeit und EAX-Hall stehen nun zur Verfügung.\n\nBitte KOTOR neu starten, damit die Änderung wirkt.\n\nHinweis: 2D-Streams (Musik, Sprachausgabe) können verändert klingen. Falls inakzeptabel, diesen Installer erneut starten und 'Räumlichen Klang deaktivieren' wählen.\n\nLizenzen: dsoal und OpenAL Soft stehen unter LGPL 2.1. Quellcode: https://github.com/kcat/dsoal und https://github.com/kcat/openal-soft",
+    "SpatialAudio_DisabledMessage": "Räumlicher Klang ist jetzt AUS.\n\nDie dsoal-Dateien wurden aus dem Spielverzeichnis entfernt und EAX wurde in swkotor.ini ausgeschaltet. Beim nächsten Start nutzt das Spiel wieder Windows-eigenes DirectSound.\n\nBitte KOTOR neu starten, damit die Änderung wirkt.",
+    "SpatialAudio_Error_Title": "Fehler beim räumlichen Klang",
+    "SpatialAudio_Error_Format": "Räumlicher Klang konnte nicht umgeschaltet werden:\n\n{0}\n\nDetails findest du im Installer-Log auf deinem Desktop.",
+
     "Update_Title": "Aktualisierung verfügbar",
     "Update_Heading": "Eine Aktualisierung ist verfügbar.",
     "Update_VersionInfo_Format": "Installierte Version: {0}\nNeueste Version: {1}",

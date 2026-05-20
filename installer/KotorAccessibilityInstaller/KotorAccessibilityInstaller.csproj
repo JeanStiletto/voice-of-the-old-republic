@@ -33,6 +33,13 @@
     <!-- Lane's Widescreen patch (runtime-detour DLL @ IsValidResolution).
          Tiny + pinned + SHA-gated; bundled rather than downloaded. -->
     <EmbeddedResource Include="Resources\Widescreen.kpatch" />
+    <!-- dsoal + OpenAL Soft binaries for the spatial-audio toggle.
+         LGPL 2.1; license files bundled alongside. Source: kcat/dsoal. -->
+    <EmbeddedResource Include="Resources\dsoal-dsound.dll" />
+    <EmbeddedResource Include="Resources\dsoal-aldrv.dll" />
+    <EmbeddedResource Include="Resources\dsoal-alsoft.ini" />
+    <EmbeddedResource Include="Resources\dsoal-DSOAL-License.txt" />
+    <EmbeddedResource Include="Resources\dsoal-OpenALSoft-License.txt" />
     <!-- HoloPatcher is NOT bundled. It's downloaded from upstream
          NickHugi/PyKotor @ pinned tag at install time (see HoloPatcherProvider). -->
   </ItemGroup>

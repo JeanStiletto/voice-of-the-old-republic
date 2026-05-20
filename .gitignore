@@ -44,6 +44,9 @@ Thumbs.db
 /third_party/KotorMessageInjector/
 /third_party/KotOR_IO/
 /third_party/DLZ-Tool/
+# dsoal — read-only reference clone; we ship the prebuilt binaries
+# bundled in the installer Resources/ folder, not the source.
+/third_party/dsoal/
 
 # Prism — vendored source clone at third_party/prism/ for rebuildability,
 # vendored prebuilt artifacts at third_party/prism-dist/ for kdev apply.
