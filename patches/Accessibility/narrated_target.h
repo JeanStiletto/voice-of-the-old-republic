@@ -8,7 +8,10 @@
 // tie-break that lived in interact_hotkey::ResolveInteractTarget.
 //
 // Stamp sites (the three narration channels that announce a target by name):
-//   - passive_narrate::Tick    (engine LastTarget change → name speech)
+//   - passive_narrate::OnEngineShowObject  (engine ShowObject hook →
+//                                           name speech on real focus
+//                                           change; replaces the older
+//                                           LastTarget poll)
 //   - cycle_input::AnnounceCurrent (`,`/`.`/`Shift+,`/`Shift+.`/`-`)
 //   - view_mode hover-pause speech
 //

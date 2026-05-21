@@ -17,6 +17,11 @@
 #include "log.h"
 #include "narrated_target.h" // TryGet — pull the unified "current focus"
                              // slot to drive deterministic targeting
+#include "passive_narrate.h" // ReannounceCurrentShowObjectTarget — Q/E
+                             // re-announce path for the single-enemy
+                             // combat case where the engine's cycle
+                             // is a no-op but the user still expects
+                             // an audible confirmation
 
 namespace acc::diag::input {
 
@@ -172,6 +177,26 @@ extern "C" void __cdecl OnClientHandleInputEvent(void* this_ptr,
         // and its outcome are both already in the log without us adding
         // a third line per press.
         (void)acc::engine_actionbar::PrepareBareDispatch(targetClient);
+    }
+
+    // Q/E hostile-cycle re-announce. The engine's HandleInputEvent
+    // case 0xcc (E=next, 204) / 0xcd (Q=prev, 205) dispatches to
+    // SelectNearestObject + ShowObject; the sighted player sees the
+    // red hostile-hilite shift to the new target (or stay put if only
+    // one valid target exists in 30u). Our delta-detection paths
+    // (Tick poll on last_target, eventually ShowObject delta) catch
+    // the multi-target case fine, but the single-enemy case is
+    // engine-side a no-op — no transition, no announcement, blind
+    // player has no audible confirmation that they're still on the
+    // same target. Force-announce on every Q/E press from the cached
+    // ShowObject value (immune to AI churn that writes last_target
+    // every combat round).
+    //
+    // Press-edge only (val != 0) so the release doesn't re-fire.
+    // ReannounceCurrentShowObjectTarget self-gates on player-loaded
+    // and silently no-ops when no engine target exists.
+    if (param_2 != 0 && (param_1 == 204 || param_1 == 205)) {
+        acc::passive_narrate::ReannounceCurrentShowObjectTarget();
     }
 
     // Bug-2a fix: arrow-key navigation in modal popups. When the engine

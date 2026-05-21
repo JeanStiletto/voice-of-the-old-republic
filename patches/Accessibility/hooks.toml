@@ -872,3 +872,43 @@ type = "pointer"
 source = "esp+4"
 type = "pointer"
 
+
+# CClientExoAppInternal::ShowObject @ 0x005f9c60 — the engine's single
+# point of user-driven main-interface target change. Called from:
+#   - DoPassiveSelection (mouse-hover auto-target / enemy sighting)
+#   - SelectNearestObject (Q/E hostile cycle, mouse-look toggle on Q)
+# AI churn (CreateNewAttackActions writes last_target every combat
+# round) does NOT reach ShowObject — this hook gives us a clean
+# "user is now looking at X" signal that polling last_target can't.
+#
+# Hooked at 0x005f9c8e — the post-branch merge where EAX already
+# holds the new target's id (param_1->id or 0x7f000000 sentinel)
+# and EBX still points at the CSWCObject* param_1 (or NULL).
+#
+# Cut at MOV ECX, [ESI+0x40]; PUSH 0 — register/memory-relative
+# move and immediate push. Neither touches EFLAGS. Downstream
+# PUSH EAX uses the wrapper-preserved EAX value.
+#
+# Diagnostic-only for now: handler just logs. If ShowObject fires
+# during combat (it should, per FindCallers analysis), we'll know
+# polling was the only architectural problem and can wire
+# announcement into this hook directly.
+[[hooks]]
+address = 0x005f9c8e
+type = "detour"
+function = "OnShowObject"
+
+original_bytes = [0x8b, 0x4e, 0x40, 0x6a, 0x00]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+# CSWCObject* param_1 — the new target (or NULL on focus-clear)
+[[hooks.parameters]]
+source = "ebx"
+type = "pointer"
+
+# Computed handle: param_1->id when non-null, else 0x7f000000 sentinel
+[[hooks.parameters]]
+source = "eax"
+type = "int"

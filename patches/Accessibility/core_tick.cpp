@@ -148,13 +148,11 @@ void Dispatch() {
     // project_player_control_toggle.md for the why.
     acc::engine::TickPlayerInputRestore();
 
-    // Phase 2 lay-off 9a — passive-selection narration loop. Reads engine
-    // LastTarget per tick; on change to a nav-relevant target, speaks the
-    // localised name + plays the per-category 3D cue at the object's
-    // position. Independent of the Pillar 4 cycle channel — both can fire
-    // on the same object; recency-suppress to be added if double-narration
-    // proves disruptive. Self-gates on player-loaded.
-    acc::passive_narrate::Tick();
+    // Passive-selection narration is now event-driven off
+    // CClientExoAppInternal::ShowObject (hooks.toml @ 0x005f9c8e) rather
+    // than polled per-tick — see acc::passive_narrate::OnEngineShowObject.
+    // Hook fires once per real focus change (Q/E cycle + mouse-hover
+    // auto-target); per-tick path has nothing to do here.
 
     // Tab leader announce — Win32-polled Tab rising edge speaks the
     // controlled creature's name (after the engine has cycled to it).
