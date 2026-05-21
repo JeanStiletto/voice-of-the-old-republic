@@ -50,7 +50,7 @@ void* GetCurrentArea() {
 int GetObjectKind(void* gameObject) {
     if (!gameObject) return -1;
     __try {
-        return static_cast<int>(*reinterpret_cast<uint32_t*>(
+        return static_cast<int>(*reinterpret_cast<uint8_t*>(
             reinterpret_cast<unsigned char*>(gameObject) + kObjectKindOffset));
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return -1;

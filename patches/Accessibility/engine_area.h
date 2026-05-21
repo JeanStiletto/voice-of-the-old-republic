@@ -93,6 +93,14 @@ void* GetCurrentArea();
 
 // Returns the GAME_OBJECT_TYPES tag at obj +0x8, or -1 if obj is null /
 // the read faults. Compare against GameObjectKind values.
+//
+// The field is a 1-byte enum (XML: SIZE="0x1", max value 0x10 = SOUND).
+// Reading 4 bytes works "by luck" for objects whose three trailing
+// bytes happen to be zero; for the rest the high bytes carry adjacent
+// field data and the wide read returns garbage that fails every
+// kind comparison. PassiveNarrate.Probe run 2026-05-21 confirmed all
+// four observed handles had valid kind bytes (DOOR/CREATURE/PLACEABLE)
+// but wide reads like 0x26002e05 / 0xc183bf09 / 0x0002000a.
 int GetObjectKind(void* gameObject);
 
 // Returns the engine-side handle (CGameObject.id @+0x4) for an object.
@@ -536,7 +544,7 @@ constexpr size_t kCExoStringStride           = 0x8;    // char* + uint32 length
 constexpr size_t kRoomStride = 0x4c;
 
 // CSWSObject base-class field offsets.
-constexpr size_t kObjectKindOffset = 0x8;   // uint32, GAME_OBJECT_TYPES enum
+constexpr size_t kObjectKindOffset = 0x8;   // uint8, GAME_OBJECT_TYPES enum
 constexpr size_t kObjectTagOffset  = 0x18;  // CExoString — modder-assigned stable id
 // kServerObjectPositionOffset (0x90) is already in engine_player.h.
 
