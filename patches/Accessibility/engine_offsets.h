@@ -129,6 +129,17 @@ constexpr uintptr_t kVtableSlider = 0x0073E9D0;
 // containers wrapping the actual message text).
 constexpr uintptr_t kVtableListBox = 0x0073E840;
 
+// CSWGuiButton vtable. The standard button class — used by SaveLoad's
+// BTN_DELETE / BTN_BACK / BTN_SAVELOAD, the equipment screen's slot
+// buttons, the chargen class icons, the InGameMenu strip icons, the
+// workbench upgrade-slot buttons (BTN_UPGRADE3X/4X), and most other
+// CSWGuiButton instances in the engine. Identity-by-vtable matters for
+// structural panel detectors that need to distinguish a Button child
+// from a Label/LabelHilight child sharing the same .gui-time ID (the
+// SaveLoad-vs-Workbench-upgrade collision at ID 11 is the canonical
+// case — see IsSaveLoadStructural).
+constexpr uintptr_t kVtableCSWGuiButton = 0x0073E658;
+
 // ---------------------------------------------------------------------------
 // CSWGuiEditbox layout (verified against k1_win_gog_swkotor.exe.xml SYMBOL
 // CSWGuiEditbox_vtable @ 0x0073EAC8 + STRUCTURE size 0x160 + swkotor.exe.h

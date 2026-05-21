@@ -93,6 +93,32 @@ enum class PanelKind {
                          //   0x006ee350..0x006ee500), so disabled steps
                          //   silently drop the click — the disabled-state
                          //   suffix in the extract path tells the user.
+
+    // Workbench panels (upgrade.gui / upgradeitems.gui / upgradesel.gui).
+    // All three are heap-allocated by the engine when the user picks
+    // "Werkbank benutzen" from the placeable conversation; none has a
+    // CGuiInGame slot, so they're identified structurally by control-ID
+    // signature.
+    //
+    // WorkbenchSelect: category picker (upgradesel.gui). 11 controls with
+    //   tagged buttons BTN_RANGED / BTN_LIGHTSABER / BTN_MELEE / BTN_ARMOR
+    //   at IDs 0/2/4/6 (overlap with ProtoItem icon labels at 1/3/5/7).
+    //   Currently identified only for log tagging — generic chain nav
+    //   handles it correctly already.
+    //
+    // WorkbenchItems: per-category item picker (upgradeitems.gui). 5 controls,
+    //   LB_ITEMS at ID 0 + LB_DESCRIPTION at ID 2. Empty-state speech goes
+    //   here when the user has no upgradable weapons of the chosen category.
+    //
+    // WorkbenchUpgrade: slot detail (upgrade.gui). 29 controls including the
+    //   7 BTN_UPGRADE3X/4X slot buttons at IDs 12..18. Collided with SaveLoad
+    //   in patch-20260521-175339.log because the 4-ID signature (0/11/12/14)
+    //   matched coincidentally — fixed by tightening SaveLoad to require
+    //   ID 11 to be a Button (saveload.gui's BTN_DELETE) vs Workbench's
+    //   ID 11 = LBL_UPGRADE44 (Label).
+    WorkbenchSelect,
+    WorkbenchItems,
+    WorkbenchUpgrade,
 };
 
 // Return the registered name for `k`, or "Unknown" / "?" if not found.

@@ -548,9 +548,26 @@ bool acc::menus::detail::IsSaveLoadPanel(void* panel) {
     void** lbVtable = *reinterpret_cast<void***>(lb);
     if (reinterpret_cast<uintptr_t>(lbVtable) != kVtableListBox) return false;
 
-    return FindControlById(panel, kSaveLoadBtnSaveLoadId) != nullptr &&
-           FindControlById(panel, kSaveLoadBtnBackId)     != nullptr &&
-           FindControlById(panel, kSaveLoadBtnDeleteId)   != nullptr;
+    // Tighten: require IDs 11/12/14 to all be Buttons. Mirrors the
+    // engine-layer IsSaveLoadStructural — the workbench upgrade panel
+    // (upgrade.gui) coincidentally has the same {0, 11, 12, 14} ID
+    // quartet but its ID 11 is a LabelHilight (LBL_UPGRADE44), not a
+    // Button. Without the vtable check the SaveLoad listbox-spec handler
+    // hijacks all input on the workbench upgrade panel (Enter dispatches
+    // ID 14 = BTN_UPGRADE33, Esc dispatches ID 12 = BTN_UPGRADE31),
+    // breaking navigation entirely.
+    auto isBtn = [](void* c) -> bool {
+        if (!c) return false;
+        __try {
+            void** vt = *reinterpret_cast<void***>(c);
+            return reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiButton;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            return false;
+        }
+    };
+    return isBtn(FindControlById(panel, kSaveLoadBtnSaveLoadId)) &&
+           isBtn(FindControlById(panel, kSaveLoadBtnBackId))     &&
+           isBtn(FindControlById(panel, kSaveLoadBtnDeleteId));
 }
 
 // Read the user-visible text of a CExoString-style field on a control. Returns

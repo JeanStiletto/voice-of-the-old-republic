@@ -284,6 +284,24 @@ const char* Get(Id id) {
 
         case Id::FmtCameraOrientBeacon:     return "Wegpunkt, %s";
 
+        // Workbench slot labels. The seven BTN_UPGRADE3X/4X buttons have
+        // no inline text — their visual content is the installed mod's
+        // icon + name set programmatically. Speak "Aufwertungssteckplatz N"
+        // (upgrade slot N) for weapon slots and "Kristall-Steckplatz N"
+        // for lightsaber crystal slots so the user can tell which slot
+        // is focused. Concrete category words ("Vibrationszelle",
+        // "Skopus", …) would require reading LBL_SLOTNAME dynamically
+        // for the active slot only — deferred to a future enrichment.
+        case Id::WorkbenchSlotWeapon1:       return "Aufwertungssteckplatz 1";
+        case Id::WorkbenchSlotWeapon2:       return "Aufwertungssteckplatz 2";
+        case Id::WorkbenchSlotWeapon3:       return "Aufwertungssteckplatz 3";
+        case Id::WorkbenchSlotSaberCrystal1: return "Kristall-Steckplatz 1";
+        case Id::WorkbenchSlotSaberCrystal2: return "Kristall-Steckplatz 2";
+        case Id::WorkbenchSlotSaberCrystal3: return "Kristall-Steckplatz 3";
+        case Id::WorkbenchSlotSaberCrystal4: return "Kristall-Steckplatz 4";
+        case Id::WorkbenchItemsEmpty:        return "Keine aufwertbaren Gegenst\xE4nde in dieser Kategorie";  // Gegenstände
+        case Id::WorkbenchUpgradesEmpty:     return "Keine kompatiblen Aufwertungen im Inventar";
+
         case Id::Count_:               return "";
     }
     return "";

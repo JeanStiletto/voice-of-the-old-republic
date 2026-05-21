@@ -273,6 +273,16 @@ const char* Get(Id id) {
 
         case Id::FmtCameraOrientBeacon:     return "Beacon, %s";
 
+        case Id::WorkbenchSlotWeapon1:       return "Upgrade slot 1";
+        case Id::WorkbenchSlotWeapon2:       return "Upgrade slot 2";
+        case Id::WorkbenchSlotWeapon3:       return "Upgrade slot 3";
+        case Id::WorkbenchSlotSaberCrystal1: return "Crystal slot 1";
+        case Id::WorkbenchSlotSaberCrystal2: return "Crystal slot 2";
+        case Id::WorkbenchSlotSaberCrystal3: return "Crystal slot 3";
+        case Id::WorkbenchSlotSaberCrystal4: return "Crystal slot 4";
+        case Id::WorkbenchItemsEmpty:        return "No upgradable items in this category";
+        case Id::WorkbenchUpgradesEmpty:     return "No compatible upgrades in inventory";
+
         case Id::Count_:               return "";
     }
     return "";

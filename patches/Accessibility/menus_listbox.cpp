@@ -26,6 +26,7 @@
 #include "engine_reads.h"
 #include "hotkeys.h"
 #include "log.h"
+#include "menus.h"           // SpeakIfChanged (empty-state dedup)
 #include "menus_extract.h"
 #include "menus_internal.h"
 #include "menus_pending.h"
@@ -163,6 +164,17 @@ struct ListBoxPanelSpec {
     // nullptr = no override (most specs — the generic title walk works).
     const char* (*titleOverride)(void* panel);
 
+    // Optional spoken phrase when the user navigates an empty listbox.
+    // The dispatcher currently just logs `lb=... empty; nav ignored` and
+    // stays silent; for panels where empty is a meaningful state worth
+    // announcing (e.g. workbench items-picker when the player has no
+    // upgradable weapons in the chosen category) this speaks the phrase
+    // once per Up/Down press. Dedup happens on the speech channel so
+    // mashing arrows doesn't spam the user.
+    //
+    // Count_ = no announcement (default).
+    acc::strings::Id emptyStateId;
+
     // After dispatch, if the event was NOT consumed, should the caller
     // still return (skipping all subsequent handlers)?
     //
@@ -242,6 +254,7 @@ constexpr ListBoxPanelSpec kContainerSpec = {
     /*onEnter*/                 ContainerOnEnter,
     /*onEsc*/                   ContainerOnEsc,
     /*titleOverride*/           nullptr,
+    /*emptyStateId*/            acc::strings::Id::Count_,  // empty containers don't open at all
     /*alwaysReturnFromHandler*/ true,
 };
 
@@ -318,6 +331,7 @@ constexpr ListBoxPanelSpec kSaveLoadSpec = {
     /*onEnter*/                 SaveLoadOnEnter,
     /*onEsc*/                   SaveLoadOnEsc,
     /*titleOverride*/           nullptr,
+    /*emptyStateId*/            acc::strings::Id::Count_,
     /*alwaysReturnFromHandler*/ false,  // fall through so chain-nav can reach Delete
 };
 
@@ -435,6 +449,7 @@ constexpr ListBoxPanelSpec kEquipPickerSpec = {
     /*onEnter*/                 EquipPickerOnEnter,
     /*onEsc*/                   EquipPickerOnEsc,
     /*titleOverride*/           nullptr,
+    /*emptyStateId*/            acc::strings::Id::Count_,
     /*alwaysReturnFromHandler*/ false,  // fall through so slot-zone nav still works
 };
 
@@ -676,6 +691,7 @@ constexpr ListBoxPanelSpec kSkillInfoBoxSpec = {
     /*onEnter*/                 SkillInfoBoxOnEnter,
     /*onEsc*/                   nullptr,            // no Cancel button on this overlay
     /*titleOverride*/           SkillInfoBoxTitleOverride,
+    /*emptyStateId*/            acc::strings::Id::Count_,
     /*alwaysReturnFromHandler*/ true,               // modal popup — don't fall through
 };
 
@@ -732,6 +748,7 @@ constexpr ListBoxPanelSpec kInGameMessagesSpec = {
     /*onEnter*/                 nullptr,
     /*onEsc*/                   nullptr,
     /*titleOverride*/           InGameMessagesTitleOverride,
+    /*emptyStateId*/            acc::strings::Id::Count_,
     /*alwaysReturnFromHandler*/ false,
 };
 
@@ -807,6 +824,7 @@ constexpr ListBoxPanelSpec kDialogCinematicSpec = {
     /*onEnter*/                 nullptr,
     /*onEsc*/                   nullptr,
     /*titleOverride*/           nullptr,
+    /*emptyStateId*/            acc::strings::Id::Count_,
     /*alwaysReturnFromHandler*/ false,
 };
 constexpr ListBoxPanelSpec kDialogCinematicCopySpec = {
@@ -822,6 +840,7 @@ constexpr ListBoxPanelSpec kDialogCinematicCopySpec = {
     /*onEnter*/                 nullptr,
     /*onEsc*/                   nullptr,
     /*titleOverride*/           nullptr,
+    /*emptyStateId*/            acc::strings::Id::Count_,
     /*alwaysReturnFromHandler*/ false,
 };
 constexpr ListBoxPanelSpec kDialogComputerSpec = {
@@ -837,6 +856,7 @@ constexpr ListBoxPanelSpec kDialogComputerSpec = {
     /*onEnter*/                 nullptr,
     /*onEsc*/                   nullptr,
     /*titleOverride*/           nullptr,
+    /*emptyStateId*/            acc::strings::Id::Count_,
     /*alwaysReturnFromHandler*/ false,
 };
 constexpr ListBoxPanelSpec kDialogComputerCameraSpec = {
@@ -852,7 +872,153 @@ constexpr ListBoxPanelSpec kDialogComputerCameraSpec = {
     /*onEnter*/                 nullptr,
     /*onEsc*/                   nullptr,
     /*titleOverride*/           nullptr,
+    /*emptyStateId*/            acc::strings::Id::Count_,
     /*alwaysReturnFromHandler*/ false,
+};
+
+// ============================================================================
+// WorkbenchItems — per-category item picker (upgradeitems.gui).
+// LB_ITEMS at ID 0 holds the player's upgradable weapons in the chosen
+// category. Enter → BTN_UPGRADEITEM (ID 4, "Aufwerten") commits the
+// selection and opens the slot-detail panel. Esc → BTN_BACK (ID 5,
+// "Schliess.") closes back to upgradesel.gui.
+// ============================================================================
+
+namespace {
+constexpr int kWorkbenchItemsLbId        = 0;
+constexpr int kWorkbenchItemsBtnUpgrade  = 4;
+constexpr int kWorkbenchItemsBtnBack     = 5;
+}  // namespace
+
+bool WorkbenchItemsMatches(void* p) {
+    return IdentifyPanel(p) == PanelKind::WorkbenchItems;
+}
+
+void* WorkbenchItemsFindLb(void* p) {
+    return FindControlById(p, kWorkbenchItemsLbId);
+}
+
+// Speak the focused weapon row + position. No per-tick monitor watches
+// this listbox so we speak on every step (including clamp).
+void WorkbenchItemsAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
+    if (!r.row || r.rowCount <= 0) return;
+    char rowText[256];
+    if (!acc::menus::extract::FromControl(r.row, rowText, sizeof(rowText))) {
+        return;
+    }
+    char msg[320];
+    snprintf(msg, sizeof(msg),
+             acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
+             rowText, r.newSel + 1, r.rowCount);
+    tolk::Speak(msg, /*interrupt=*/false);
+}
+
+bool WorkbenchItemsOnEnter(void* panel) {
+    QueueButtonByIdActivate(panel, kWorkbenchItemsBtnUpgrade,
+                            "WorkbenchItems: Enter -> BTN_UPGRADEITEM");
+    return true;
+}
+
+bool WorkbenchItemsOnEsc(void* panel) {
+    QueueButtonByIdActivate(panel, kWorkbenchItemsBtnBack,
+                            "WorkbenchItems: Esc -> BTN_BACK");
+    return true;
+}
+
+constexpr ListBoxPanelSpec kWorkbenchItemsSpec = {
+    /*logTag*/                  "WorkbenchItems",
+    /*matches*/                 WorkbenchItemsMatches,
+    /*armed*/                   nullptr,
+    /*resetStale*/              nullptr,
+    /*findListBox*/             WorkbenchItemsFindLb,
+    /*minSel*/                  0,
+    /*announce*/                WorkbenchItemsAnnounce,
+    /*enrichRow*/               nullptr,
+    /*logExtra*/                nullptr,
+    /*onEnter*/                 WorkbenchItemsOnEnter,
+    /*onEsc*/                   WorkbenchItemsOnEsc,
+    /*titleOverride*/           nullptr,
+    /*emptyStateId*/            acc::strings::Id::WorkbenchItemsEmpty,
+    /*alwaysReturnFromHandler*/ false,  // fall through so chain nav reaches buttons
+};
+
+// ============================================================================
+// WorkbenchUpgrade — slot detail (upgrade.gui). 29 controls; the LB_ITEMS
+// listbox at ID 0 holds compatible upgrade mods from the player's
+// inventory for the currently selected slot. Enter on a row stages the
+// installable item; the user then navigates to BTN_ASSEMBLE (ID 24,
+// "Zusammenbauen") to commit. Esc → BTN_BACK (ID 28, "Abbrechen").
+//
+// We route Esc explicitly here because the generic FindCancelButton
+// fallback would land on BTN_UPGRADE31 (id 12) — the first button by
+// .gui ID — which the workbench treats as a slot select. Without the
+// explicit ID 28 routing, Esc on the upgrade panel selects a slot
+// instead of closing the panel.
+// ============================================================================
+
+namespace {
+constexpr int kWorkbenchUpgradeLbId       = 0;
+constexpr int kWorkbenchUpgradeBtnAssemble = 24;
+constexpr int kWorkbenchUpgradeBtnBack    = 28;
+}  // namespace
+
+bool WorkbenchUpgradeMatches(void* p) {
+    return IdentifyPanel(p) == PanelKind::WorkbenchUpgrade;
+}
+
+void* WorkbenchUpgradeFindLb(void* p) {
+    return FindControlById(p, kWorkbenchUpgradeLbId);
+}
+
+// LB_ITEMS rows are CSWGuiInventoryItemEntry-style — their text comes
+// from the item resref's localised name. Same announce shape as the
+// items picker.
+void WorkbenchUpgradeAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
+    if (!r.row || r.rowCount <= 0) return;
+    char rowText[256];
+    if (!acc::menus::extract::FromControl(r.row, rowText, sizeof(rowText))) {
+        return;
+    }
+    char msg[320];
+    snprintf(msg, sizeof(msg),
+             acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
+             rowText, r.newSel + 1, r.rowCount);
+    tolk::Speak(msg, /*interrupt=*/false);
+}
+
+bool WorkbenchUpgradeOnEnter(void* panel) {
+    // Enter on the LB_ITEMS listbox is currently "stage this item" — the
+    // engine doesn't commit anything until BTN_ASSEMBLE fires, so we just
+    // let the engine handle the row-stage via FireActivate on the row.
+    // Falling through to chain nav lets the user navigate via Up/Down on
+    // LB_ITEMS and Enter to stage; chain-driven Enter on BTN_ASSEMBLE then
+    // commits. Returning false here means the outer chain handler picks
+    // up the keypress.
+    (void)panel;
+    return false;
+}
+
+bool WorkbenchUpgradeOnEsc(void* panel) {
+    QueueButtonByIdActivate(panel, kWorkbenchUpgradeBtnBack,
+                            "WorkbenchUpgrade: Esc -> BTN_BACK");
+    return true;
+}
+
+constexpr ListBoxPanelSpec kWorkbenchUpgradeSpec = {
+    /*logTag*/                  "WorkbenchUpgrade",
+    /*matches*/                 WorkbenchUpgradeMatches,
+    /*armed*/                   nullptr,
+    /*resetStale*/              nullptr,
+    /*findListBox*/             WorkbenchUpgradeFindLb,
+    /*minSel*/                  0,
+    /*announce*/                WorkbenchUpgradeAnnounce,
+    /*enrichRow*/               nullptr,
+    /*logExtra*/                nullptr,
+    /*onEnter*/                 WorkbenchUpgradeOnEnter,
+    /*onEsc*/                   WorkbenchUpgradeOnEsc,
+    /*titleOverride*/           nullptr,
+    /*emptyStateId*/            acc::strings::Id::WorkbenchUpgradesEmpty,
+    /*alwaysReturnFromHandler*/ false,  // fall through so chain nav reaches the slot/assemble buttons
 };
 
 // Spec table. Probe order matters: SaveLoad's structural matcher
@@ -871,6 +1037,9 @@ constexpr const ListBoxPanelSpec* kSpecs[] = {
     &kDialogCinematicCopySpec,
     &kDialogComputerSpec,
     &kDialogComputerCameraSpec,
+    // Workbench panels (Phase: workbench accessibility).
+    &kWorkbenchItemsSpec,
+    &kWorkbenchUpgradeSpec,
 };
 constexpr int kNumSpecs = static_cast<int>(sizeof(kSpecs) / sizeof(kSpecs[0]));
 
@@ -898,6 +1067,15 @@ bool DispatchKeyDownEdge(const ListBoxPanelSpec& spec, void* panel,
         } else if (lb) {
             acclog::Write(spec.logTag, "%s lb=%p empty; nav ignored",
                           param_1 == kInputNavDown ? "Down" : "Up", lb);
+            // Announce the empty state if the spec provided one. The
+            // generic dedup channel collapses repeated arrow presses so
+            // the user doesn't hear the same phrase on every keystroke.
+            if (spec.emptyStateId != acc::strings::Id::Count_) {
+                const char* phrase = acc::strings::Get(spec.emptyStateId);
+                if (phrase && phrase[0] != '\0') {
+                    acc::menus::SpeakIfChanged(/*channel=*/1, phrase);
+                }
+            }
         }
         return true;  // never let arrow keys leak to the engine here
     }

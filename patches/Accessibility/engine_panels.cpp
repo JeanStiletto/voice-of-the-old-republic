@@ -39,6 +39,21 @@ void* FindControlByGuiId(void* panel, int id) {
     return nullptr;
 }
 
+// Verify a child control's vtable matches `expected`. Used by the
+// structural detectors to disambiguate panels that share .gui-time IDs
+// but differ in control type at those IDs (canonical case: SaveLoad's
+// BTN_DELETE at ID 11 = Button vs. Workbench's LBL_UPGRADE44 at ID 11
+// = LabelHilight). Returns false on null / SEH fault.
+bool ControlHasVtable(void* control, uintptr_t expected) {
+    if (!control) return false;
+    __try {
+        void** vt = *reinterpret_cast<void***>(control);
+        return reinterpret_cast<uintptr_t>(vt) == expected;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 bool IsSaveLoadStructural(void* panel) {
     if (!panel) return false;
     // SEH wrap mirrors IsLevelUpStructural below. IdentifyPanel runs the
@@ -58,9 +73,99 @@ bool IsSaveLoadStructural(void* panel) {
         if (!lb) return false;
         void** lbVtable = *reinterpret_cast<void***>(lb);
         if (reinterpret_cast<uintptr_t>(lbVtable) != kVtableListBox) return false;
-        return FindControlByGuiId(panel, kIdSaveLoadButton) != nullptr &&
-               FindControlByGuiId(panel, kIdBackButton)     != nullptr &&
-               FindControlByGuiId(panel, kIdDeleteButton)   != nullptr;
+        // Tighten: require IDs 11/12/14 to be actual CSWGuiButtons. The
+        // workbench upgrade panel (upgrade.gui) coincidentally has the
+        // same {0, 11, 12, 14} ID quartet, but its ID 11 is LBL_UPGRADE44
+        // (a LabelHilight), not a Button. Without this check the workbench
+        // upgrade panel false-matches as SaveLoad and the SaveLoad input
+        // handler hijacks all keys (Enter → ID 14 / Esc → ID 12),
+        // breaking the panel — see patch-20260521-175339.log analysis.
+        void* del  = FindControlByGuiId(panel, kIdDeleteButton);
+        void* back = FindControlByGuiId(panel, kIdBackButton);
+        void* sl   = FindControlByGuiId(panel, kIdSaveLoadButton);
+        return ControlHasVtable(del,  kVtableCSWGuiButton) &&
+               ControlHasVtable(back, kVtableCSWGuiButton) &&
+               ControlHasVtable(sl,   kVtableCSWGuiButton);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// Workbench upgrade panel (upgrade.gui). 29 controls; uniquely identifiable
+// by the 7 BTN_UPGRADE3X/4X slot buttons at .gui IDs 12..18 — all standard
+// CSWGuiButtons — plus the BTN_ASSEMBLE button at ID 24. ID 11 is the
+// LBL_UPGRADE44 LabelHilight (NOT a button), which is what disambiguates
+// this panel from SaveLoad.
+bool IsWorkbenchUpgradeStructural(void* panel) {
+    if (!panel) return false;
+    __try {
+        // Quick coarse check: the panel needs a listbox at ID 0 (LB_ITEMS).
+        // Workbench items go here; if missing this isn't the upgrade panel.
+        void* lb = FindControlByGuiId(panel, /*LB_ITEMS=*/0);
+        if (!lb) return false;
+        void** lbVtable = *reinterpret_cast<void***>(lb);
+        if (reinterpret_cast<uintptr_t>(lbVtable) != kVtableListBox) return false;
+        // Probe the BTN_ASSEMBLE (ID 24) and one of the slot buttons
+        // (ID 15 = BTN_UPGRADE41) for the standard CSWGuiButton vtable.
+        // Two ID hits + vtable checks is enough to disambiguate from
+        // every other 29-control heap-allocated panel we've seen.
+        void* assemble = FindControlByGuiId(panel, /*BTN_ASSEMBLE=*/24);
+        void* slot     = FindControlByGuiId(panel, /*BTN_UPGRADE41=*/15);
+        return ControlHasVtable(assemble, kVtableCSWGuiButton) &&
+               ControlHasVtable(slot,     kVtableCSWGuiButton);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// Workbench items panel (upgradeitems.gui). 5 controls: LB_ITEMS (id 0),
+// LB_DESCRIPTION (id 2), LBL_TITLE (id 3), BTN_UPGRADEITEM (id 4),
+// BTN_BACK (id 5). Identified by the LB_ITEMS at id 0 + the BTN_BACK
+// at id 5 (which uniquely sits at id 5 — saveload.gui has no id 5, and
+// other listbox panels we know about don't put their back button at id 5).
+bool IsWorkbenchItemsStructural(void* panel) {
+    if (!panel) return false;
+    __try {
+        void* lb = FindControlByGuiId(panel, /*LB_ITEMS=*/0);
+        if (!lb) return false;
+        void** lbVtable = *reinterpret_cast<void***>(lb);
+        if (reinterpret_cast<uintptr_t>(lbVtable) != kVtableListBox) return false;
+        void* upgrade = FindControlByGuiId(panel, /*BTN_UPGRADEITEM=*/4);
+        void* back    = FindControlByGuiId(panel, /*BTN_BACK=*/5);
+        if (!ControlHasVtable(upgrade, kVtableCSWGuiButton)) return false;
+        if (!ControlHasVtable(back,    kVtableCSWGuiButton)) return false;
+        // Disambiguate from any other shape that might have a listbox at
+        // ID 0 + buttons at IDs 4/5: require the panel to NOT also be the
+        // upgrade panel (29 controls). upgradeitems.gui has exactly 5
+        // controls; the upgrade panel's structural detector matches first
+        // when both succeed, but checking control count here keeps each
+        // detector self-consistent.
+        auto* list = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+        if (!list || !list->data) return false;
+        return list->size >= 4 && list->size <= 8;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// Workbench category-select panel (upgradesel.gui). 11 controls: four
+// pairs of category Button + ProtoItem icon at IDs 0/1, 2/3, 4/5, 6/7;
+// LBL_TITLE at id 8; BTN_UPGRADEITEMS ("Aufwerten") at id 9; BTN_BACK at
+// id 10. Identified by the pair Button-at-0 + Button-at-9 + Button-at-10
+// — id 0 is a Button on this panel (BTN_RANGED), distinguishing it from
+// every other workbench panel where id 0 is a ListBox.
+bool IsWorkbenchSelectStructural(void* panel) {
+    if (!panel) return false;
+    __try {
+        // id 0 on upgradesel.gui is BTN_RANGED (Button), not a ListBox.
+        // This single check is enough to skip the items / upgrade panels.
+        void* btnFirst = FindControlByGuiId(panel, /*BTN_RANGED=*/0);
+        if (!ControlHasVtable(btnFirst, kVtableCSWGuiButton)) return false;
+        void* btnUpg  = FindControlByGuiId(panel, /*BTN_UPGRADEITEMS=*/9);
+        void* btnBack = FindControlByGuiId(panel, /*BTN_BACK=*/10);
+        return ControlHasVtable(btnUpg,  kVtableCSWGuiButton) &&
+               ControlHasVtable(btnBack, kVtableCSWGuiButton);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
@@ -159,6 +264,9 @@ static const PanelKindOffset kPanelKindOffsets[] = {
     // detector below.
     { kNoSlotOffset, PanelKind::SaveLoad,          "SaveLoad" },
     { kNoSlotOffset, PanelKind::InGameLevelUp,     "InGameLevelUp" },
+    { kNoSlotOffset, PanelKind::WorkbenchSelect,   "WorkbenchSelect" },
+    { kNoSlotOffset, PanelKind::WorkbenchItems,    "WorkbenchItems" },
+    { kNoSlotOffset, PanelKind::WorkbenchUpgrade,  "WorkbenchUpgrade" },
 };
 static constexpr int kPanelKindOffsetCount =
     sizeof(kPanelKindOffsets) / sizeof(kPanelKindOffsets[0]);
@@ -232,6 +340,23 @@ PanelKind IdentifyPanel(void* panel) {
     // we don't know in advance whether `panel` is currently one of them.
     // Cost is bounded (a few control-id walks per probe) and only paid
     // when the slot table didn't classify the panel.
+    //
+    // Probe order: tighter (more-distinctive) signatures first. SaveLoad
+    // and WorkbenchUpgrade used to collide on the {0, 11, 12, 14} ID
+    // quartet — the tightened SaveLoad detector now requires ID 11 to be
+    // a Button (saveload.gui's BTN_DELETE), so the workbench upgrade
+    // panel's ID 11 = LBL_UPGRADE44 (LabelHilight) no longer false-matches.
+    // Probing workbench-shapes before SaveLoad provides belt-and-braces
+    // protection against future regressions.
+    if (IsWorkbenchUpgradeStructural(panel)) {
+        return recordAndReturn(PanelKind::WorkbenchUpgrade, "WorkbenchUpgrade");
+    }
+    if (IsWorkbenchItemsStructural(panel)) {
+        return recordAndReturn(PanelKind::WorkbenchItems, "WorkbenchItems");
+    }
+    if (IsWorkbenchSelectStructural(panel)) {
+        return recordAndReturn(PanelKind::WorkbenchSelect, "WorkbenchSelect");
+    }
     if (IsSaveLoadStructural(panel)) {
         return recordAndReturn(PanelKind::SaveLoad, "SaveLoad");
     }

@@ -805,6 +805,38 @@ enum class Id : int {
     //      cross fires naturally on the rotation.
     FmtCameraOrientBeacon,
 
+    // ---- Workbench (upgrade.gui / upgradeitems.gui / upgradesel.gui).
+    //      Three heap-allocated panels opened by the "Werkbank benutzen"
+    //      placeable-conversation reply: category-select → item-pick →
+    //      slot detail. The 7 BTN_UPGRADE3X/4X slot buttons on the slot
+    //      detail panel have no inline text (their on-screen contents
+    //      are the installed mod's icon + name, set programmatically),
+    //      so we synthesise speakable labels by .gui ID.
+    //
+    //      Slot label format:
+    //        FmtWorkbenchSlotWeapon   — IDs 12..14 → 1..3. Used for melee /
+    //                                   ranged / armor weapons.
+    //                                   One `%d` (slot number).
+    //        FmtWorkbenchSlotSaberCrystal — IDs 15..18 → 1..4. Used for
+    //                                       lightsaber crystal slots.
+    //                                       One `%d` (slot number).
+    //
+    //      Empty-state lines fire when the user lands on an LB_ITEMS that
+    //      has no rows:
+    //        WorkbenchItemsEmpty    — upgradeitems.gui: no upgradable
+    //                                 weapon in the chosen category.
+    //        WorkbenchUpgradesEmpty — upgrade.gui: no compatible upgrade
+    //                                 mod in the player's inventory.
+    WorkbenchSlotWeapon1,
+    WorkbenchSlotWeapon2,
+    WorkbenchSlotWeapon3,
+    WorkbenchSlotSaberCrystal1,
+    WorkbenchSlotSaberCrystal2,
+    WorkbenchSlotSaberCrystal3,
+    WorkbenchSlotSaberCrystal4,
+    WorkbenchItemsEmpty,
+    WorkbenchUpgradesEmpty,
+
     Count_,
 };
 

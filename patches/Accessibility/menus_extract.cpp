@@ -899,6 +899,59 @@ const char* FromControl(void* control,
         }
     }
 
+    // 9b3. Per-kind label fallback for the workbench upgrade panel
+    //     (upgrade.gui). The 7 BTN_UPGRADE3X/4X slot buttons at .gui IDs
+    //     12..18 have empty inline text — their visual content is the
+    //     installed mod's icon + name set programmatically by the engine
+    //     when an item is committed via BTN_ASSEMBLE. Synthesise a
+    //     speakable "Aufwertungssteckplatz N" / "Kristall-Steckplatz N"
+    //     label so the user can tell which slot is focused.
+    //
+    //     IDs 12..14 → weapon upgrade slots (slot index 1..3, matching the
+    //                  BTN_UPGRADE31/32/33 tag suffix).
+    //     IDs 15..18 → lightsaber crystal slots (slot index 1..4, matching
+    //                  the BTN_UPGRADE41/42/43/44 tag suffix).
+    //
+    //     A future enrichment could read LBL_SLOTNAME (ID 20) for the
+    //     *currently active* slot's category word ("Vibrationszelle",
+    //     "Skopus", …) — but that label only reflects the focused slot,
+    //     so it doesn't help with announcing the other six slot buttons.
+    //     For now the synthesised label keeps the user oriented without
+    //     promising more semantic info than we can reliably deliver.
+    if (!source && ownerForPerkind &&
+        IdentifyPanel(ownerForPerkind) == PanelKind::WorkbenchUpgrade) {
+        int cid = -1;
+        __try {
+            cid = *reinterpret_cast<int*>(
+                reinterpret_cast<unsigned char*>(control) + 0x50);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            cid = -1;
+        }
+        acc::strings::Id sid = acc::strings::Id::Count_;
+        const char* tag = nullptr;
+        switch (cid) {
+            case 12: sid = acc::strings::Id::WorkbenchSlotWeapon1;       tag = "BTN_UPGRADE31"; break;
+            case 13: sid = acc::strings::Id::WorkbenchSlotWeapon2;       tag = "BTN_UPGRADE32"; break;
+            case 14: sid = acc::strings::Id::WorkbenchSlotWeapon3;       tag = "BTN_UPGRADE33"; break;
+            case 15: sid = acc::strings::Id::WorkbenchSlotSaberCrystal1; tag = "BTN_UPGRADE41"; break;
+            case 16: sid = acc::strings::Id::WorkbenchSlotSaberCrystal2; tag = "BTN_UPGRADE42"; break;
+            case 17: sid = acc::strings::Id::WorkbenchSlotSaberCrystal3; tag = "BTN_UPGRADE43"; break;
+            case 18: sid = acc::strings::Id::WorkbenchSlotSaberCrystal4; tag = "BTN_UPGRADE44"; break;
+            default: break;
+        }
+        if (sid != acc::strings::Id::Count_) {
+            const char* lit = acc::strings::Get(sid);
+            size_t llen = strlen(lit);
+            if (llen > 0 && llen + 1 <= bufSize) {
+                memcpy(outBuf, lit, llen + 1);
+                source = "perkind-workbench-slot";
+                acclog::Write("Menus.PerKind",
+                              "WorkbenchUpgrade control=%p id=%d tag=%s -> \"%s\"",
+                              control, cid, tag, outBuf);
+            }
+        }
+    }
+
     // 9c. Per-kind label override for the chargen class-selection panel
     //     (CSWGuiClassSelection, vtable=0x00758020). Panel hosts 6
     //     image-only class-icon buttons (vtable=0x0073E658, empty text)
