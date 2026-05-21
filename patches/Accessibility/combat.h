@@ -52,10 +52,18 @@ bool IsCombatActive();
 // player is loaded.
 void TickCombatMode();
 
-// Phase 1B — per-tick combat-log poll. Walks the manager's panels[] for
-// CSWGuiInGameMessages; if its messages_listbox has new rows since last
-// tick, speak each appended row. Idle when the panel isn't loaded
-// (early init / no game session) and when no rows were added.
+// Phase 1B — per-tick combat-log poll. Resolves the persistent
+// CSWGuiInGameMessages instance via `CGuiInGame.in_game_messages @+0x1c`
+// (allocated for the lifetime of the game session, regardless of whether
+// the Messages review screen is currently mounted). If its
+// messages_listbox @+0x64 has new rows since last tick, speak each
+// appended row and log it.
+//
+// Previously this routine walked CSWGuiManager.panels[] for the panel,
+// which only found it while the review screen was open — i.e. it never
+// fired during live combat. The slot-based resolution catches every
+// AddMessages append, putting us on parity with the sighted player's
+// rolling HUD feedback strip.
 //
 // One-shot dedup: rebuilds the "last row count" baseline whenever the
 // listbox pointer changes (new panel instance), so a swap or close+

@@ -102,27 +102,27 @@ void TickCombatMode() {
 
 namespace {
 
-// Walk the manager's panels[] for an InGameMessages instance. nullptr
-// when the panel isn't currently mounted (most of gameplay — the panel
-// only exists while the user has the Messages screen open). Polling
-// resumes on the next open.
+// CGuiInGame.in_game_messages slot @+0x1c — the engine's persistent
+// CSWGuiInGameMessages instance. Allocated once when CGuiInGame is
+// constructed (start of game session) and lives the whole time, so
+// AddMessages writes to it during live combat even though the review
+// screen isn't mounted. The earlier panels[]-walk only found this panel
+// when the user had the Messages screen open, missing every live
+// combat-log row in the process.
+constexpr size_t kCGuiInGameInGameMessagesOffset = 0x1c;
+
+// Resolve the persistent combat-log panel via the CGuiInGame singleton.
+// nullptr until CGuiInGame is constructed (DLL attach / title screen).
 void* FindInGameMessagesPanel() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return nullptr;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (!panelData || panelCount <= 0) return nullptr;
-    int n = panelCount > 16 ? 16 : panelCount;
-    for (int i = 0; i < n; ++i) {
-        void* p = panelData[i];
-        if (!p) continue;
-        if (acc::engine::IdentifyPanel(p) ==
-            acc::engine::PanelKind::InGameMessages) {
-            return p;
-        }
+    void* gui = acc::engine::ResolveGuiInGame();
+    if (!gui) return nullptr;
+    __try {
+        return *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(gui) +
+            kCGuiInGameInGameMessagesOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
     }
-    return nullptr;
 }
 
 // Read a CSWGuiListBox's row count without dereferencing each row pointer.
@@ -188,23 +188,33 @@ void TickCombatLog() {
         return;
     }
 
-    // Delta path: speak each newly-appended row. Cap the per-tick speech
-    // budget at 8 entries so a one-shot dump (e.g. an opening burst
-    // when a fight starts) doesn't flood the speech queue.
+    // Delta path: log each newly-appended row. Speech is intentionally
+    // OFF here — patch-20260521-093926.log proved that this listbox is
+    // filled lazily when the review screen opens (all rows arrived in
+    // one burst at panel-open time), not during live combat. Speaking
+    // the burst would re-narrate the entire fight at review time. The
+    // OnAddMessages hook is the live-narration source; this poll stays
+    // as a sanity check on what messages_listbox ends up containing.
     int firstNew = s_lastRows;
-    int spoken   = 0;
-    constexpr int kMaxPerTick = 8;
-    for (int i = firstNew; i < rows && spoken < kMaxPerTick; ++i) {
+    int delta    = rows - firstNew;
+    acclog::Write("Combat.Log", "delta lb=%p +%d (rows %d -> %d)",
+                  lb, delta, firstNew, rows);
+    for (int i = firstNew; i < rows; ++i) {
         void* row = ReadListBoxRow(lb, i);
-        if (!row) continue;
-        char text[512];
-        if (!acc::menus::extract::FromControl(row, text, sizeof(text))) {
+        if (!row) {
+            acclog::Write("Combat.Log", "row %d null", i);
             continue;
         }
-        if (text[0] == '\0') continue;
-        tolk::Speak(text, /*interrupt=*/false);
-        ++spoken;
-        acclog::Write("Combat.Log", "row %d -> [%.200s]", i, text);
+        char text[512];
+        if (!acc::menus::extract::FromControl(row, text, sizeof(text))) {
+            acclog::Write("Combat.Log", "row %d extract failed", i);
+            continue;
+        }
+        if (text[0] == '\0') {
+            acclog::Write("Combat.Log", "row %d empty", i);
+            continue;
+        }
+        acclog::Write("Combat.Log", "row %d -> [%.300s]", i, text);
     }
     s_lastRows = rows;
 }
@@ -323,9 +333,14 @@ void SpeakAttackOutcome(int result, short damage, int deflected,
                       acc::strings::Get(S::FmtAttackHit),
                       attacker, target, (int)damage);
     }
-    tolk::Speak(msg, /*interrupt=*/false);
+    // Speech intentionally OFF — the OnAppendToMsgBuffer hook now
+    // delivers the engine's own much richer combat-log text live, with
+    // attack name, full to-hit math, defense math, and damage
+    // breakdown. The synthesized "X hits Y for N" line is strictly less
+    // informative and would duplicate every attack. Keep the log entry
+    // so the cross-check remains available in patch logs.
     acclog::Write("Combat.Attack", "result=%d dmg=%d defl=%d crit=%d "
-                  "atk=[%s] tgt=[%s] tgtHp=%d -> [%s]",
+                  "atk=[%s] tgt=[%s] tgtHp=%d -> [%s] (silent)",
                   result, (int)damage, deflected, criticalThreat,
                   attacker, target, targetHpCur, msg);
 }
@@ -475,3 +490,71 @@ void TickSavingThrows() {
 }
 
 }  // namespace acc::combat
+
+// ============================================================================
+// CGuiInGame::AppendToMsgBuffer @0x0062b5c0 — live combat-log row append.
+//
+// SARIF xref analysis showed CSWGuiInGameMessages::AddMessages has only
+// one caller (ShowDialogEntry, dialog path). patch-20260521-095251.log
+// confirmed: hooking AddMessages produced zero fires during a live fight
+// even though 64 rows landed in messages_listbox at review-screen open.
+// AppendToMsgBuffer is the actual live-combat surface — it writes each
+// engine-emitted feedback string into a 64-slot, 16-byte-stride ring
+// buffer at this[+0xF8], write-index at this[+0x100]. The Messages
+// review panel rebuilds messages_listbox from this ring on mount.
+//
+// Function signature: `void __thiscall AppendToMsgBuffer(CExoString* msg)`.
+// We hook at function entry @0x0062b5c0 with a 7-byte cut covering
+// PUSH EDI + MOV EDI,ECX + MOV ECX,[ESP+8]. All register/memory-relative
+// — position-independent. At hook entry:
+//
+//   ECX     = this (CGuiInGame*)
+//   [ESP+4] = param_1 (CExoString*) — the row text to append
+//
+// `source = "esp+4"` emits LEA per project_kpatchmanager_lea_bug.md, so
+// the handler receives the *address* of the stack slot and dereferences
+// once to get the CExoString*.
+extern "C" void __cdecl OnAppendToMsgBuffer(void* /*guiInGame*/,
+                                            void* esp_param1_addr) {
+    CExoString* exoStr = nullptr;
+    __try {
+        if (esp_param1_addr) {
+            exoStr = *reinterpret_cast<CExoString**>(esp_param1_addr);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+
+    if (!exoStr) {
+        acclog::Write("Combat.MsgBuf", "fire: param=null");
+        return;
+    }
+
+    const char* cstr   = nullptr;
+    uint32_t    length = 0;
+    __try {
+        cstr   = exoStr->c_string;
+        length = exoStr->length;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+
+    if (!cstr || length == 0) {
+        acclog::Write("Combat.MsgBuf", "fire: empty (cstr=%p len=%u)",
+                      cstr, length);
+        return;
+    }
+
+    // Cap to a sane upper bound — engine combat-log rows are typically
+    // under 200 chars. 480 leaves headroom for the longest "Schadens-
+    // statistik" lines and stays within typical TTS sentence buffers.
+    char text[512];
+    size_t n = length < sizeof(text) - 1 ? length : sizeof(text) - 1;
+    __try {
+        memcpy(text, cstr, n);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Combat.MsgBuf", "fire: copy fault cstr=%p len=%u",
+                      cstr, length);
+        return;
+    }
+    text[n] = '\0';
+
+    tolk::Speak(text, /*interrupt=*/false);
+    acclog::Write("Combat.MsgBuf", "fire: [%.300s]", text);
+}

@@ -96,6 +96,23 @@ extern "C" void __cdecl OnRulesInit(void* /*rulesThis*/) {
                       0x006b0bb0, 0xf1);
     DumpFunctionBytes("CGuiInGame::ShowLevelUpGUI",
                       0x0062dc00, 0x113);
+
+    // Combat-log live narration: SARIF xref analysis (2026-05-21) showed
+    // CSWGuiInGameMessages::AddMessages @0x626920 has only ONE caller —
+    // ShowDialogEntry, which is on the dialog path, not the combat-log
+    // path. patch-20260521-095251.log confirmed: our hook on AddMessages
+    // fired zero times during a live fight even though 64 rows appeared
+    // in messages_listbox at review-screen open.
+    //
+    // The real live combat-log surface is CGuiInGame::AppendToMsgBuffer
+    // @0x0062b5c0 (185 bytes). Dump it + AppendToDialogBuffer +
+    // ShowFlashingStatus + AddFloatyText so we have prologues for all the
+    // CGuiInGame-side feedback writers in one pass.
+    DumpFunctionBytes("CGuiInGame::AppendToMsgBuffer",     0x0062b5c0, 80);
+    DumpFunctionBytes("CGuiInGame::AppendToDialogBuffer",  0x0062b680, 80);
+    DumpFunctionBytes("CGuiInGame::AddFloatyText",         0x0062b080, 32);
+    DumpFunctionBytes("CGuiInGame::ShowFlashingStatus",    0x0062b0b0, 32);
+    DumpFunctionBytes("CGuiInGame::SetCombatMessage",      0x0062b110, 32);
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD reason, LPVOID) {

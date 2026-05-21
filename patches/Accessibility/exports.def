@@ -16,3 +16,4 @@ EXPORTS
     OnClientHandleInputEvent
     OnSetSWGuiStatus
     OnHideSWInGameGui
+    OnAppendToMsgBuffer

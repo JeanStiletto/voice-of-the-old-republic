@@ -50,13 +50,46 @@ stability-debounce pattern from `turn_announce.cpp`. Speaks
 `Kampf beginnt` / `Kampf beendet` cleanly across rapid combat-mode
 oscillation. TU: `combat.cpp::TickCombatMode`.
 
-**Phase 1B — live combat-log narration.** Working. Implemented via per-tick
-poll of `CSWGuiInGameMessages.messages_listbox @+0x64` row-count diff. New
-rows are read via `menus_extract::FromControl` and pushed to TTS. Per-tick
-budget cap of 8 entries to avoid speech-queue flood. TU:
-`combat.cpp::TickCombatLog`. The plan's primary suggestion (hook
-`AddMessages @0x626920`) would deliver one frame earlier; polling is the
-safer skeleton path.
+**Phase 1B — live combat-log narration.** Working via hook on
+`CGuiInGame::AppendToMsgBuffer @0x0062b5c0` (TU: `combat.cpp::OnAppendToMsgBuffer`,
+registered in `hooks.toml`). Every engine-emitted combat-feedback string
+flows through this single funnel — attack lines with attack name + roll
++ defense math + damage, three-line stat breakdowns (Angriffsstatistik /
+Abwehrstatistik / Schadensstatistik), specials (Schleichangriff, Starke
+Explosion), XP awards, loot pickups, enemy ability calls, world text
+(locked doors, etc.). Handler reads the `CExoString*` argument and pushes
+the c_string straight to TTS. Honours vanilla feedback-verbosity options
+for free (the engine populates the buffer per its own options).
+
+**Investigation diff — what the original plan got wrong on this phase.**
+The original plan targeted `CSWGuiInGameMessages::AddMessages @0x626920`
+and started with a poll on `messages_listbox @+0x64`. Both were on the
+wrong layer:
+
+- `messages_listbox` is filled **lazily** when the review screen mounts.
+  Verified live in `patch-20260521-093926.log` and `patch-20260521-095251.log`:
+  during a complete in-game fight the listbox stays at 0 rows; on review-
+  screen open all 64 rows arrive in a single tick burst. The listbox is
+  a display-time rebuild from a separate backing store, not the live
+  source of truth.
+- `AddMessages` has only ONE caller (per SARIF xref): `ShowDialogEntry`
+  on the dialog path. Hooking it produced zero fires across a full
+  combat in `patch-20260521-095251.log`. AddMessages populates the
+  listbox at review-mount time, not during live combat.
+- The real live-combat-log surface is `CGuiInGame::AppendToMsgBuffer`,
+  named (correctly) in the plan's "Visible-to-sighted mirror channel"
+  recommendation but not implemented until 2026-05-21. The function
+  writes each appended string into a 64-slot, 16-byte-stride ring
+  buffer at `this[+0xF8]` with write index at `this[+0x100]`. The
+  Messages review panel rebuilds `messages_listbox` from this ring on
+  mount — explaining the 0→64 burst we observed.
+
+The poll on `messages_listbox` remains in `TickCombatLog` as a log-only
+sanity check on review-screen contents (speech is OFF; live narration
+flows from the hook). The find-path was also corrected: it now resolves
+the panel via `CGuiInGame.in_game_messages @+0x1c` instead of walking
+`CSWGuiManager.panels[]` (the latter only finds the panel when the
+review screen is mounted).
 
 **Phase 1C — Messages-panel review-on-demand.** Working. Single
 `ListBoxPanelSpec` entry in `menus_listbox.cpp` for `InGameMessages`
@@ -113,14 +146,21 @@ Esc closes. **Action-type byte enum mapping is currently disabled** —
 the inferred values were wrong (type=1 mapped to SpellCast was actually
 a basic attack); all entries render as generic "Aktion" until probed.
 
-**Phase 4A — per-attack callout.** Working. Per-tick poll of player
-creature's `combat_round.attacks_list[7]`, edge-detected on
-(target, result, baseDamage) tuple change. `result IN [1,4]` and
-combat-mode-active gates filter false fires. Plan was wrong about the
-edge condition (`Pending(0) → Resolved` only) — the engine reuses slots
-without going through Pending. Tuple-change with damage-settle gate
-(skip when baseDamage == -1, the engine's "not yet computed" sentinel)
-is the working pattern.
+**Phase 4A — per-attack callout.** Implemented as a per-tick poll of the
+player creature's `combat_round.attacks_list[7]`, edge-detected on
+(target, result, baseDamage) tuple change. **Speech intentionally OFF as
+of 2026-05-21** — the Phase 1B AppendToMsgBuffer hook now delivers the
+engine's own much richer combat-log text (attack name, full to-hit math,
+defense math, damage breakdown) for every attack. The synthesized
+`SpeakAttackOutcome` line ("X trifft Y für N Schaden") is strictly less
+informative and was duplicating every attack. The log entry
+(`Combat.Attack ... (silent)`) is preserved as a cross-check; the slot
+walk + edge detection is still useful as a per-attack signal for future
+features (combat sound cues, attack-bucket statistics, etc.). Plan was
+wrong about the edge condition (`Pending(0) → Resolved` only) — the
+engine reuses slots without going back through Pending. Tuple-change
+with damage-settle gate (skip when baseDamage == -1, the engine's "not
+yet computed" sentinel) is the working pattern.
 
 **Phase 4B — saving-throw callout.** Skeleton no-op. Real signal needs
 a hook on `SavingThrowRoll @0x5b92b0` or `BroadcastSavingThrowData
@@ -171,6 +211,18 @@ high-confidence and addresses paste straight into our hooks/code.
   `[5] id=-1 label` (vtable=0x0073E5B8 = `CSWGuiLabel_vtable`,
   contents vary). The skeleton picks the listbox by vtable match
   rather than by id, then concatenates rows.
+- **`CGuiInGame::AppendToMsgBuffer @0x0062b5c0`** —
+  `void __thiscall(CExoString* msg)`. **THE live combat-log row append.**
+  Every feedback string the engine emits (attack, stats, specials, XP,
+  loot, world text) flows through this function. Body writes into a
+  64-slot, 16-byte-stride ring buffer at `this[+0xF8]` with write index
+  at `this[+0x100]`. Hook is wired in `hooks.toml` (entry-point detour,
+  7-byte cut: PUSH EDI + MOV EDI,ECX + MOV ECX,[ESP+8]).
+- **`CGuiInGame.in_game_messages @+0x1c`** — stable pointer to the
+  CSWGuiInGameMessages review panel, allocated for the lifetime of the
+  game session. Resolving via this slot beats the older
+  `CSWGuiManager.panels[]` walk, which only finds the panel while the
+  review screen is mounted.
 - **`CSWGuiInGameMessages.messages_listbox @+0x64`** — combat log feed.
   Row count diff per tick; new rows go to TTS via `menus_extract::FromControl`.
 - **`CSWGuiDialog.replies_listbox @+0x19c4`** + **`message_label @+0x1ca4`** —

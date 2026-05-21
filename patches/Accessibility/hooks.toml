@@ -767,6 +767,74 @@ type = "pointer"
 source = "esp+8"
 type = "pointer"
 
+# CGuiInGame::AppendToMsgBuffer @ 0x0062b5c0 — live combat-log row append.
+# Decoded from Init.REPeek bytes (patch-20260521-100041.log). Function
+# signature: `void __thiscall AppendToMsgBuffer(CExoString* msg)`. Body
+# manages a 64-slot, 16-byte-stride ring buffer at this[+0xF8] with
+# write-index at this[+0x100]. The Messages review panel later rebuilds
+# messages_listbox from this ring — confirmed by the 0→64 burst at
+# review-open time in patch-20260521-095251.log.
+#
+# Hook lands at function entry @0x0062b5c0 with a 7-byte cut covering:
+#   57            PUSH EDI            ; save EDI (callee-saved)
+#   8b f9         MOV  EDI, ECX       ; this -> EDI
+#   8b 4c 24 08   MOV  ECX, [ESP+8]   ; param_1 -> ECX (post-PUSH offset)
+# All register/memory-relative — position-independent. The rel32 PUSH/
+# CALL/JZ chain that follows is NOT in the cut.
+#
+# At hook entry (BEFORE the cut runs):
+#   ECX     = this (CGuiInGame*)
+#   [ESP+0] = return addr
+#   [ESP+4] = param_1 (CExoString*) — the row text to append
+#
+# `source = "esp+4"` emits LEA per project_kpatchmanager_lea_bug.md;
+# handler dereferences once to recover the CExoString*.
+[[hooks]]
+address = 0x0062b5c0
+type = "detour"
+function = "OnAppendToMsgBuffer"
+
+original_bytes = [0x57, 0x8b, 0xf9, 0x8b, 0x4c, 0x24, 0x08]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+4"
+type = "pointer"
+
+# CSWGuiInGameMessages::AddMessages @ 0x00626920 — DISABLED 2026-05-21.
+# SARIF xref analysis showed AddMessages has only ONE caller —
+# CGuiInGame::ShowDialogEntry @0x62b730 — on the dialog path, not combat.
+# patch-20260521-095251.log confirmed: 0 hook fires during a live fight
+# despite 64 rows landing in messages_listbox at review-screen open time
+# (those rows come from a different population path during panel mount).
+#
+# The real live-combat-log surface is CGuiInGame::AppendToMsgBuffer
+# @0x0062b5c0 — bytes dumped via Init.REPeek; hook will be wired in the
+# next iteration once we've picked a safe cut.
+#
+# [[hooks]]
+# address = 0x0062693e
+# type = "detour"
+# function = "OnAddMessages"
+# original_bytes = [0x8b, 0xf9, 0x89, 0x6c, 0x24, 0x1c]
+# skip_original_bytes = false
+# exclude_from_restore = []
+# [[hooks.parameters]]
+# source = "ecx"
+# type = "pointer"
+# [[hooks.parameters]]
+# source = "esp+80"
+# type = "pointer"
+# [[hooks.parameters]]
+# source = "esp+84"
+# type = "pointer"
+
 # CGuiInGame::HideSWInGameGui @ 0x0062cba0 — diagnostic. SetSWGuiStatus
 # hook revealed pause auto-close goes through HideSWInGameGui (caller
 # EIP 0x0062cbe2 = HideSWInGameGui+0x42). Hooking entry here captures
