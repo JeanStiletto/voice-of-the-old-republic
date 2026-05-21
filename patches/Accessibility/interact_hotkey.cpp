@@ -457,10 +457,19 @@ void PollHotkey() {
     // the next disarm via "rows-empty"). Bare 4..7 fall straight through
     // to the engine-native fast-fire path.
     if (inWorld) {
+        // Slot mapping mirrors the engine's bare-key dispatch (decompile
+        // of CClientExoAppInternal::HandleInputEvent, 2026-05-21):
+        //   key 4 / Shift+4 → slot 0  Friendly Force
+        //   key 5 / Shift+5 → slot 1  Medical
+        //   key 6 / Shift+6 → slot 3  ← engine swaps 6↔7
+        //   key 7 / Shift+7 → slot 2  ←
+        // Without this swap, the submenu cycled column 2 while bare 6
+        // fired column 3 (and vice versa), so the user's submenu choice
+        // didn't apply to what the engine actually dispatched.
         if (risingOpen1) acc::actionbar_menu::Open(0);
         if (risingOpen2) acc::actionbar_menu::Open(1);
-        if (risingOpen3) acc::actionbar_menu::Open(2);
-        if (risingOpen4) acc::actionbar_menu::Open(3);
+        if (risingOpen3) acc::actionbar_menu::Open(3);
+        if (risingOpen4) acc::actionbar_menu::Open(2);
 
         // Shift+L — open the engine's level-up panel directly
         // (CGuiInGame::ShowLevelUpGUI). First-version escape hatch for
@@ -515,10 +524,12 @@ void PollHotkey() {
         if (risingK1) AnnounceBareTargetKey(0);
         if (risingK2) AnnounceBareTargetKey(1);
         if (risingK3) AnnounceBareTargetKey(2);
+        // Slot 6↔7 swap matches the engine's bare-key dispatch — see the
+        // Open mapping block above for the decompile reference.
         if (risingK4) AnnounceBarePersonalKey(0);
         if (risingK5) AnnounceBarePersonalKey(1);
-        if (risingK6) AnnounceBarePersonalKey(2);
-        if (risingK7) AnnounceBarePersonalKey(3);
+        if (risingK6) AnnounceBarePersonalKey(3);
+        if (risingK7) AnnounceBarePersonalKey(2);
     }
 
     // Combat system, Phase 2C — Shift+H Examine. Self-gated on

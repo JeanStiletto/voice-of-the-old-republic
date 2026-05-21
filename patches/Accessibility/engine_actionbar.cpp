@@ -47,6 +47,19 @@ constexpr uintptr_t kAddrOnActionUpArrowPressed   = 0x0068af70;
 constexpr uintptr_t kAddrOnActionDownArrowPressed = 0x0068afe0;
 constexpr uintptr_t kAddrDoPersonalAction         = 0x0068ad60;
 
+// CGuiInGame::SetMainInterfaceTarget @ 0x0062b000 — same wrapper as
+// the radial/picker drive uses. Thin forwarder to
+// CSWGuiMainInterface::SetTarget (stores field1_0x64 + resets the
+// refresh-hint float field21_0x5cb0).
+constexpr uintptr_t kAddrSetMainInterfaceTarget    = 0x0062b000;
+
+// CGuiInGame::RePopulateMainInterface @ 0x0062b050 — thin forwarder to
+// CSWGuiMainInterface::PopulateMenus @ 0x00689d80. Refreshes both the
+// six personal-action lists (field5_0x74[0..5] via GetPersonalActions)
+// and target_action_menu.action_lists[0..2] (via GetTargetActions for
+// each row) against the currently-stamped main-interface target.
+constexpr uintptr_t kAddrRePopulateMainInterface   = 0x0062b050;
+
 // Function pointer types. Both arrow handlers take a single arg per
 // the SARIF signature; OnActionUp expects CSWGuiControl* (the source
 // button), OnActionDown is annotated `(int param_1)` but lives in the
@@ -54,6 +67,9 @@ constexpr uintptr_t kAddrDoPersonalAction         = 0x0068ad60;
 typedef void (__thiscall* PFN_OnActionArrowPressed)(void* this_, void* btn);
 typedef void (__thiscall* PFN_DoPersonalAction)(void* this_,
                                                 int slot, int param_2);
+typedef void (__thiscall* PFN_SetMainInterfaceTarget)(void* this_,
+                                                      uint32_t target);
+typedef void (__thiscall* PFN_RePopulateMainInterface)(void* this_);
 
 // Local chain helpers (same shape as engine_radial / engine_picker).
 void* GetClientExoApp() {
@@ -275,6 +291,41 @@ void LogState(void* mi, const char* tag) {
             "[%s] col[%d] variants=%d data[0].label=[%s] data[0].action_id=0x%x",
             t, s, nVar, first, firstId);
     }
+}
+
+bool PrepareBareDispatch(uint32_t targetClientHandle) {
+    void* exoApp   = GetClientExoApp();
+    void* internal = GetClientExoAppInternal(exoApp);
+    void* guiIn    = GetGuiInGame(internal);
+    if (!guiIn) {
+        acclog::Write("ActionBar.Prep",
+            "chain unresolved (exoApp=%p internal=%p guiIn=%p) target=0x%08x",
+            exoApp, internal, guiIn, targetClientHandle);
+        return false;
+    }
+    __try {
+        auto setTgt = reinterpret_cast<PFN_SetMainInterfaceTarget>(
+            kAddrSetMainInterfaceTarget);
+        setTgt(guiIn, targetClientHandle);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("ActionBar.Prep",
+            "SetMainInterfaceTarget SEH-FAULT target=0x%08x",
+            targetClientHandle);
+        return false;
+    }
+    __try {
+        auto repop = reinterpret_cast<PFN_RePopulateMainInterface>(
+            kAddrRePopulateMainInterface);
+        repop(guiIn);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("ActionBar.Prep",
+            "RePopulateMainInterface SEH-FAULT target=0x%08x",
+            targetClientHandle);
+        return false;
+    }
+    acclog::Write("ActionBar.Prep",
+        "target=0x%08x — SetTarget + RePopulate done", targetClientHandle);
+    return true;
 }
 
 }  // namespace acc::engine_actionbar

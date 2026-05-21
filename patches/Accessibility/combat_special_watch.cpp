@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <cstdint>
+#include <cstdio>  // snprintf — tag formatting for per-creature queue dump
 
 #include "audio_bus.h"        // PlayCue (2D one-shot)
 #include "combat.h"           // IsCombatActive
@@ -123,11 +124,18 @@ bool IsRoutineAutoAttack(void* action) {
 // "special" actions (everything that ISN'T a routine auto-attack
 // against a hostile creature). Filters the engine's 0xFF placeholder
 // head node the same way combat_queue.cpp does.
-int CountSpecialsForCreature(void* creature) {
+//
+// Diagnostic: when the walk encounters ANY non-placeholder item (even a
+// routine auto-attack), emit a per-item log line. This is intentionally
+// noisy — gives us per-tick visibility into the queue while we're
+// chasing the "bare 1-7 dispatch produces no special" bug. Remove or
+// gate behind a verbosity flag once the dispatch is understood.
+int CountSpecialsForCreature(void* creature, const char* tag) {
     if (!creature) return 0;
     void* round = ReadCombatRound(creature);
     if (!round) return 0;
     int specials = 0;
+    int rawItems = 0;
     __try {
         void* listPtr = *reinterpret_cast<void**>(
             reinterpret_cast<unsigned char*>(round) +
@@ -144,11 +152,23 @@ int CountSpecialsForCreature(void* creature) {
                 reinterpret_cast<unsigned char*>(node) +
                 kLinkedListNodeDataOff);
             if (data) {
-                unsigned char t =
-                    *(reinterpret_cast<unsigned char*>(data) +
-                      kCombatRoundActionTypeOffset);
-                if (t != 0xFF && !IsRoutineAutoAttack(data)) {
-                    ++specials;
+                auto* base = reinterpret_cast<unsigned char*>(data);
+                unsigned char t = *(base +
+                    kCombatRoundActionTypeOffset);
+                if (t != 0xFF) {
+                    uint32_t target = *reinterpret_cast<uint32_t*>(
+                        base + kCombatRoundActionTargetOffset);
+                    uint32_t feat = *reinterpret_cast<uint32_t*>(
+                        base + kActionAttackFeatOffset);
+                    bool routine = IsRoutineAutoAttack(data);
+                    acclog::Write("Combat.QueueRaw",
+                        "[%s] item[%d] type=0x%02x target=0x%08x "
+                        "feat=0x%08x routine=%d",
+                        tag ? tag : "?", rawItems,
+                        (unsigned)t, target, feat,
+                        routine ? 1 : 0);
+                    if (!routine) ++specials;
+                    ++rawItems;
                 }
             }
             node = *reinterpret_cast<void**>(
@@ -172,14 +192,18 @@ int CountPartySpecials() {
         for (int i = 0; i < n; ++i) {
             void* c = acc::engine::ResolveServerObjectHandle(handles[i]);
             if (!c) c = acc::engine::ResolveClientObjectHandle(handles[i]);
-            if (c) total += CountSpecialsForCreature(c);
+            if (c) {
+                char tag[16];
+                std::snprintf(tag, sizeof(tag), "p%d", i);
+                total += CountSpecialsForCreature(c, tag);
+            }
         }
         return total;
     }
     // Fallback: party table unreadable, count the controlled creature
     // alone. Same shape as combat_queue.cpp's BuildRows fallback.
     void* leader = acc::engine::GetPlayerServerCreature();
-    if (leader) total += CountSpecialsForCreature(leader);
+    if (leader) total += CountSpecialsForCreature(leader, "leader");
     return total;
 }
 

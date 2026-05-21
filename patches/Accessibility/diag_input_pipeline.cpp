@@ -3,9 +3,20 @@
 #include <windows.h>
 #include <cstdint>
 
+#include "engine_actionbar.h"  // PrepareBareDispatch — keeps action_lists
+                               // fresh against narrated_target so the
+                               // engine's bare 1..7 switch hits a valid
+                               // creature_id instead of stale data
+#include "engine_area.h"       // ResolveServerObjectHandle (sanity-check the
+                               // narrated handle still resolves to a live
+                               // game object before stamping it)
 #include "engine_input.h"
 #include "engine_manager.h"  // kAddrGuiManagerPtr, modal_stack offsets
+#include "engine_offsets.h"
+#include "engine_player.h"   // GetPlayerServerCreature
 #include "log.h"
+#include "narrated_target.h" // TryGet — pull the unified "current focus"
+                             // slot to drive deterministic targeting
 
 namespace acc::diag::input {
 
@@ -95,6 +106,72 @@ extern "C" void __cdecl OnClientHandleInputEvent(void* this_ptr,
                       "seq=%u this=%p caller=0x%08x key=%s(%d) val=%d",
                       seq, this_ptr, caller_eip,
                       acc::engine::InputIndexName(param_1), param_1, param_2);
+    }
+
+    // Bare 1..7 dispatch prep. Decompile session 2026-05-21 confirmed:
+    //   * The engine's keymap routes bare 1..3 → logical action codes
+    //     0xe2/0xe4/0xe6 (DoTargetAction row 0/1/2).
+    //   * Bare 4..7 → 0xe8/0xea/0xec/0xee. Slot mapping is NOT linear:
+    //         key 4 → DoPersonalAction(slot=0)  Friendly Force
+    //         key 5 → DoPersonalAction(slot=1)  Medical
+    //         key 6 → DoPersonalAction(slot=3)  ← Mine (engine swaps)
+    //         key 7 → DoPersonalAction(slot=2)  ← Misc (engine swaps)
+    //   * Both DoTargetAction and DoPersonalAction read `creature_id` from
+    //     the action-list item (CSWGuiInterfaceAction+0x1c) and bail
+    //     silently when GetGameObject(creature_id) returns NULL.
+    //   * action_list items are only repopulated by
+    //     CSWGuiMainInterface::PopulateMenus, which the engine triggers on
+    //     combat-mode flip, sub-screen close, or mouse passive-cursor
+    //     hover — NOT on Q/E target change. Between rounds the items
+    //     carry whatever creature_id was last baked (often the wrong
+    //     target — the grenades-at-friends footgun).
+    //
+    // Closing the gap synchronously here means the engine's switch-case
+    // (which runs after our void handler returns + the wrapper's cut
+    // bytes execute) lands on action_lists rebuilt against our
+    // deterministically-chosen target.
+    //
+    // Target choice:
+    //   - If acc::narrated_target::TryGet returns a game-object slot AND
+    //     the handle still resolves to a live server creature: stamp it.
+    //     The narrated slot's TryGet does its own staleness check, but
+    //     we re-resolve here too because PopulateMenus internally hits
+    //     GetGameObject and we want the same answer to feed both calls.
+    //   - Otherwise stamp kInvalidObjectId (0x7F000000). PopulateMenus
+    //     then builds empty target_actions and, for personal-action
+    //     items the engine flags hostile-targeted, leaves creature_id
+    //     unresolved — engine bails silently instead of mistargeting.
+    //     Self-buff personal items (Medikit (Selbst), stims) still get
+    //     creature_id=player from GetPersonalActions regardless, so
+    //     pressing 5 still fires the medikit even without a narrated
+    //     enemy.
+    //
+    // Engine convention is client-side handles (high bit 0x80000000);
+    // narrated_target stores server-side. OR the bit before stamping.
+    if (param_2 != 0 &&
+        (param_1 == 0xe2 || param_1 == 0xe4 || param_1 == 0xe6 ||
+         param_1 == 0xe8 || param_1 == 0xea || param_1 == 0xec ||
+         param_1 == 0xee))
+    {
+        uint32_t targetClient = 0x7F000000u;
+        acc::narrated_target::Slot slot{};
+        if (acc::narrated_target::TryGet(slot) && !slot.isMapPin &&
+            slot.handle != 0u && slot.handle != 0x7F000000u)
+        {
+            void* obj = acc::engine::ResolveServerObjectHandle(slot.handle);
+            if (obj) {
+                targetClient = (slot.handle & 0x80000000u)
+                    ? slot.handle
+                    : (slot.handle | 0x80000000u);
+            }
+        }
+        // Fire the refresh. PrepareBareDispatch logs its own status line
+        // (`ActionBar.Prep: target=0x... — SetTarget + RePopulate done`)
+        // — between that and the upstream `Diag.ClientHIE: ... key=?(N)
+        // val=128` line printed earlier in this same call, the trigger
+        // and its outcome are both already in the log without us adding
+        // a third line per press.
+        (void)acc::engine_actionbar::PrepareBareDispatch(targetClient);
     }
 
     // Bug-2a fix: arrow-key navigation in modal popups. When the engine

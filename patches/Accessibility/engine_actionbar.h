@@ -111,6 +111,53 @@ bool CyclePrevVariant(void* mainInterface, int slot);
 // Returns false on null/out-of-range/SEH.
 bool FireSelectedVariant(void* mainInterface, int slot);
 
+// Prepare engine state so the engine-native bare 1..3 / 4..7 dispatch
+// fires against `targetClientHandle` instead of whatever target was last
+// stamped on main_interface.
+//
+// Decompile finding (2026-05-21, see chat session):
+//   Q/E (CClientExoAppInternal::SelectNearestObject) only stores the
+//   picked id into main_interface.field1_0x64; it does NOT call
+//   PopulateMenus. Per-frame MainLoop only repopulates when the panel
+//   was removed from the manager (sub-screen close path); SetCombatMode
+//   repopulates on combat-mode transitions. Neither fires between rounds
+//   on a Q/E switch. So action_lists' baked creature_ids stay stale, and
+//   the engine's DoTargetAction / DoPersonalAction call inside
+//   CClientExoAppInternal::HandleInputEvent silently bails at the
+//   GetGameObject(creature_id) check.
+//
+//   The mouse passive-cursor path masks this for sighted users (continuous
+//   hit-test repopulates target_action_menu under the cursor); keyboard-
+//   only play hits the staleness directly.
+//
+// This helper closes the gap by calling the engine's own primitives
+// synchronously before the engine's switch case runs:
+//   1. CGuiInGame::SetMainInterfaceTarget(guiIn, targetClient)
+//        → CSWGuiMainInterface::SetTarget(mi, target)
+//          stores field1_0x64 + resets field21_0x5cb0 (refresh hint).
+//   2. CGuiInGame::RePopulateMainInterface(guiIn) @0x0062b050
+//        → CSWGuiMainInterface::PopulateMenus(mi) @0x00689d80
+//          rebuilds field5_0x74[0..5] via GetPersonalActions(player) and
+//          target_action_menu.action_lists[0..2] via GetTargetActions(
+//          player, swc_target, row). Each rebuilt action item carries a
+//          fresh creature_id, so the engine's downstream dispatch goes
+//          against the target we just stamped.
+//
+// `targetClientHandle` is the CLIENT-side handle (with the high bit
+// 0x80000000 set if applicable). Pass 0x7f000000 (kInvalidObjectId) when
+// no narrated target is available — PopulateMenus then builds empty
+// target_actions and (for personal-action items the engine classifies as
+// hostile-targeted) leaves their creature_ids unresolved so the
+// dispatch silently no-ops instead of grenade-at-friend mistargeting.
+// Self-buff personal items (Medikit (Selbst), stims) still receive
+// creature_id=player from GetPersonalActions regardless of the main-
+// interface target, so they fire correctly even without a narrated
+// enemy.
+//
+// Returns true when both engine calls completed without faulting; false
+// on chain-unresolved or SEH inside either call.
+bool PrepareBareDispatch(uint32_t targetClientHandle);
+
 // Diagnostic: dump per-column state (variant count + first-variant
 // label + first-variant action_id) to the patch log. Replaces the
 // older widget-text dump which was reading uninitialised field45
