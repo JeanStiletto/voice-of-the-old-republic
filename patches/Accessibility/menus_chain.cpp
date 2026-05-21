@@ -176,6 +176,24 @@ void ValidateTabbedPanel() {
     ResetTabbedState();
 }
 
+void ValidateChainPanel() {
+    if (!g_chainPanel) return;
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!mgr) return;
+    auto* base = reinterpret_cast<unsigned char*>(mgr);
+    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+    if (panelData && panelCount > 0) {
+        int n = panelCount > 16 ? 16 : panelCount;
+        for (int i = 0; i < n; ++i) {
+            if (panelData[i] == g_chainPanel) return;
+        }
+    }
+    acclog::Write("ValidateChainPanel", "%p not in panels[]; invalidating chain",
+                  g_chainPanel);
+    InvalidateChain();
+}
+
 // ============================================================================
 // Chain builders + cycle-arrow + button finders.
 // ============================================================================

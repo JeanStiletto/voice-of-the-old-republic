@@ -28,6 +28,30 @@ static bool IsTransparentForegroundKind(PanelKind k) {
     }
 }
 
+bool IsPanelInManager(void* panel) {
+    if (!panel) return false;
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!mgr) return false;
+    auto* base = reinterpret_cast<unsigned char*>(mgr);
+    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+    if (panelData && panelCount > 0) {
+        int n = panelCount > 32 ? 32 : panelCount;
+        for (int i = 0; i < n; ++i) {
+            if (panelData[i] == panel) return true;
+        }
+    }
+    int   modalSize = *reinterpret_cast<int*>(base + kMgrModalStackSizeOffset);
+    void** modalData = *reinterpret_cast<void***>(base + kMgrModalStackDataOffset);
+    if (modalData && modalSize > 0) {
+        int n = modalSize > 32 ? 32 : modalSize;
+        for (int i = 0; i < n; ++i) {
+            if (modalData[i] == panel) return true;
+        }
+    }
+    return false;
+}
+
 void* FindOwningPanel(void* control) {
     if (!control) return nullptr;
     void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);

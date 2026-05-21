@@ -34,6 +34,16 @@ namespace acc::engine {
 // fallback path.
 void* FindOwningPanel(void* control);
 
+// Pointer-equality scan of manager.panels[] for `panel`. No deref of
+// `panel` itself — safe to call with stale or wild pointers. Used by
+// FromControl to filter the owner-resolution chain so a freed
+// g_currentPanel (e.g. after Annehmen destroys CSWGuiLevelUpPanel
+// synchronously during FireActivate's vtable[15] dispatch) doesn't reach
+// downstream "is panel kind X?" probes that deref `*panel` for vtable
+// identity (crash analysed 2026-05-21, dump swkotor.exe.22248.dmp:
+// ownerForPerkind = 0x7DFFFFFF reached IsClassSelectionIcon).
+bool IsPanelInManager(void* panel);
+
 // Resolve the topmost (foreground) panel currently owned by the manager.
 // Order:
 //   1. If modal_stack is non-empty, return its top entry — the modal

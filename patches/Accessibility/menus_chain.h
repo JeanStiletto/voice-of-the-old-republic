@@ -117,6 +117,18 @@ void ResetTabbedState();
 // against the manager's panels[]; clears the state if not found.
 void ValidateTabbedPanel();
 
+// Post-FireActivate guard against a dangling g_chainPanel. Some commit-style
+// buttons (InGameLevelUp "Annehmen", quit-confirm "OK") synchronously
+// destroy their parent panel inside vtable[15] dispatch. Cached g_chain
+// entries then point at freed controls; the next tick's
+// MonitorFocusedControl calls extract::FromControl on one of them, walks a
+// freed vtable, and trips /GS via an indirect call into garbage (crash
+// analysed 2026-05-21, dump swkotor.exe(1).31052.dmp). InvalidateChain
+// short-circuits the monitor until the next OnSetActiveControl rebinds.
+// Same panels[]-walk shape as ValidateTabbedPanel.
+void ValidateChainPanel();
+
+
 // Detect Options-style layout: CSWGuiListBox at controls[0] with
 // controls.size > 0, followed by a contiguous cluster of buttons. Fills
 // outStart/outCount with the cluster bounds on success.

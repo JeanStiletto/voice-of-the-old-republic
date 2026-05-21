@@ -40,17 +40,30 @@ void* FindControlByGuiId(void* panel, int id) {
 }
 
 bool IsSaveLoadStructural(void* panel) {
+    if (!panel) return false;
+    // SEH wrap mirrors IsLevelUpStructural below. IdentifyPanel runs the
+    // structural detectors on any slot-table miss; during Annehmen on
+    // InGameLevelUp the engine destroys the panel synchronously inside the
+    // FireActivate vtable[15] dispatch and re-enters our hooks (or a
+    // tick-level helper like GetForegroundPanel) with a stale or
+    // mid-mutation pointer. The deref of panel.controls (offset 0x20)
+    // inside FindControlByGuiId then AVs (crash analysed 2026-05-21,
+    // dump swkotor.exe.14400.dmp, edi=0xa508ac00).
     constexpr int kIdGamesListbox  =  0;
     constexpr int kIdDeleteButton  = 11;
     constexpr int kIdBackButton    = 12;
     constexpr int kIdSaveLoadButton = 14;
-    void* lb = FindControlByGuiId(panel, kIdGamesListbox);
-    if (!lb) return false;
-    void** lbVtable = *reinterpret_cast<void***>(lb);
-    if (reinterpret_cast<uintptr_t>(lbVtable) != kVtableListBox) return false;
-    return FindControlByGuiId(panel, kIdSaveLoadButton) != nullptr &&
-           FindControlByGuiId(panel, kIdBackButton)     != nullptr &&
-           FindControlByGuiId(panel, kIdDeleteButton)   != nullptr;
+    __try {
+        void* lb = FindControlByGuiId(panel, kIdGamesListbox);
+        if (!lb) return false;
+        void** lbVtable = *reinterpret_cast<void***>(lb);
+        if (reinterpret_cast<uintptr_t>(lbVtable) != kVtableListBox) return false;
+        return FindControlByGuiId(panel, kIdSaveLoadButton) != nullptr &&
+               FindControlByGuiId(panel, kIdBackButton)     != nullptr &&
+               FindControlByGuiId(panel, kIdDeleteButton)   != nullptr;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
 }
 
 // CSWGuiLevelUpPanel identity by vtable. The panel is heap-allocated by

@@ -324,6 +324,14 @@ const char* FromControl(void* control,
         void* owner = ownerPanel;
         if (!owner) owner = FindOwningPanel(control);
         if (!owner) owner = g_currentPanel;
+        // Filter stale/wild owner pointers — the resolution chain can
+        // surface a freed g_currentPanel right after a commit-style button
+        // (Annehmen on InGameLevelUp) synchronously destroys its panel
+        // inside our FireActivate dispatch. IsPanelInManager is
+        // deref-free, so it's safe even when `owner` is wild. Downstream
+        // probes (IdentifyPanel, IsStatRowAnchor) deref the panel vtable
+        // and would AV otherwise.
+        if (owner && !acc::engine::IsPanelInManager(owner)) owner = nullptr;
         if (owner && IdentifyPanel(owner) ==
                 PanelKind::InGameCharacter &&
             acc::menus::charsheet::IsStatRowAnchor(owner, control)) {
@@ -706,6 +714,12 @@ const char* FromControl(void* control,
     void* ownerForPerkind = ownerPanel;
     if (!ownerForPerkind) ownerForPerkind = FindOwningPanel(control);
     if (!ownerForPerkind) ownerForPerkind = g_currentPanel;
+    // Same stale-owner filter as section 0 above — drops freed
+    // g_currentPanel before any of the per-kind detectors (IdentifyPanel,
+    // IsClassSelectionIcon, IsPanelKindInGameMenu) dereferences it.
+    if (ownerForPerkind && !acc::engine::IsPanelInManager(ownerForPerkind)) {
+        ownerForPerkind = nullptr;
+    }
     if (!source && ownerForPerkind && IsPanelKindInGameMenu(ownerForPerkind)) {
         // Localized names sourced from dialog.tlk strrefs where they exist;
         // literal fallback for the one strref we couldn't find. Strref values
