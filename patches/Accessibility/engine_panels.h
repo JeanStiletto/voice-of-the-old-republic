@@ -171,6 +171,20 @@ bool HasActiveSubScreen();
 // map-note list).
 bool HasActiveMapPanel(void** outPanel = nullptr);
 
+// True iff `panel` is a heap-allocated sub-screen sitting on top of the
+// in-game InGameOptions strip (Spieleinstellungen / Grafik / Sound /
+// Auto-Pause / Feedback / Tastenbelegung / Mauseinstellungen). Detection:
+// the InGameOptions parent panel is present in manager's panels[], and
+// `panel` is non-null and is not that parent. These sub-screens have no
+// CGuiInGame slot and IdentifyPanel returns Unknown for them, so
+// classifying them positively needs the panels[]-stack context.
+//
+// Used by the Esc gate in menus.cpp to route Esc through
+// QueueActivate(Schliess.) — the engine's vanilla Esc-close path for
+// these sub-screens triggers a stack-cookie smash (0xc0000409) that
+// matches the LevelUp Annehmen signature.
+bool IsInGameOptionsSubScreen(void* panel);
+
 // Pop the current in-game sub-screen via CGuiInGame::PrevSWInGameGui
 // (0x0062cdf0 — the engine-internal counterpart to SwitchToSWInGameGui).
 // This is the engine's own "back to strip" primitive: it removes the

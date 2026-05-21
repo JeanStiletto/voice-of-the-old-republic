@@ -2108,11 +2108,34 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         }
     }
 
+    // InGameOptions sub-screen override: the parent strip's controls[0] is
+    // a button (Spiel laden), not a listbox, so DetectTabsCluster never
+    // latches and `g_tabbedPanel` stays null — the tabbed-parent arm above
+    // misses every in-game Options sub-screen. The foreground may also be
+    // a HUD layer rather than the sub-screen itself, depending on overlay
+    // ordering, so activePanel isn't a reliable target either.
+    //
+    // `g_chainPanel` is the right discriminator: SetActiveControl re-binds
+    // the chain to the heap-allocated sub-screen on entry, so it points at
+    // Spieleinstellungen / Grafik / Sound / Auto-Pause / Feedback /
+    // Tastenbelegung / Mauseinstellungen for the lifetime of that screen,
+    // and FindCloseButton on it resolves Schliess. reliably. The
+    // IsInGameOptionsSubScreen helper already excludes the parent strip.
+    void* escTargetPanel = activePanel;
+    bool  escIsOptionsSub = false;
+    if (g_chainPanel != nullptr &&
+        acc::engine::IsInGameOptionsSubScreen(g_chainPanel))
+    {
+        escTargetPanel = g_chainPanel;
+        escIsOptionsSub = true;
+    }
+
     if (param_2 != 0 &&
         (param_1 == kInputEsc1 || param_1 == kInputEsc2) &&
-        activePanel != nullptr &&
-        ((g_tabbedPanel != nullptr && activePanel != g_tabbedPanel) ||
-         IsModalPopupPanel(IdentifyPanel(activePanel))))
+        escTargetPanel != nullptr &&
+        ((g_tabbedPanel != nullptr && escTargetPanel != g_tabbedPanel) ||
+         IsModalPopupPanel(IdentifyPanel(escTargetPanel)) ||
+         escIsOptionsSub))
     {
         if (acc::menus::pending::IsPending()) {
             acclog::Write("Esc", "op already pending; ignoring");
@@ -2127,20 +2150,42 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             // (StatusSummary's lone Schliess, AreaTransition's Weiter)
             // have no cancel button, so the FindCloseButton fallback
             // handles them.
-            void* cancelBtn = FindCancelButton(activePanel);
-            void* tgt       = cancelBtn ? cancelBtn : FindCloseButton(activePanel);
+            void* cancelBtn = FindCancelButton(escTargetPanel);
+            void* tgt       = cancelBtn ? cancelBtn : FindCloseButton(escTargetPanel);
             if (tgt) {
                 acc::menus::pending::QueueActivate(tgt);
-                acclog::Write("Menus.Esc", "%s panel=%p kind=%s target=%p",
+                // InGameOptions sub-screens: the close fires a deferred
+                // destroy — the engine keeps the panel in panels[] across
+                // the FireActivate dispatch (ValidateChainPanel finds it,
+                // chain stays), then frees the panel + children at end
+                // of tick. Between those two ticks, MonitorFocusedControl
+                // walks g_chain[g_chainIndex].control, dereferences a
+                // freed button, and FromControl's SEH-caught AV interacts
+                // with /GS to fastfail. Confirmed by crash dump TID 16116:
+                // ESI matched the chain entry the user had last navigated
+                // to before pressing Esc.
+                //
+                // ValidateChainPanel can't help (panel still in panels[]
+                // when it runs), and chain[10] nulling only covers
+                // Schliess. itself — the other 11 entries are equally
+                // dead. Invalidate the whole chain here; the Schliess.
+                // pointer is already captured by QueueActivate and the
+                // next SetActiveControl rebuilds against whatever the
+                // engine refocuses on.
+                if (escIsOptionsSub) {
+                    acc::menus::chain::InvalidateChain();
+                }
+                acclog::Write("Menus.Esc", "%s panel=%p kind=%s target=%p%s",
                               cancelBtn ? "cancel" : "close",
-                              activePanel,
-                              PanelKindName(IdentifyPanel(activePanel)),
-                              tgt);
+                              escTargetPanel,
+                              PanelKindName(IdentifyPanel(escTargetPanel)),
+                              tgt,
+                              escIsOptionsSub ? " (InGameOptions sub-screen)" : "");
                 consumed = true;
             } else {
                 acclog::Write("Menus.Esc", "sub-dialog panel=%p kind=%s but no "
                               "cancel/close button found; passing through",
-                              activePanel, PanelKindName(IdentifyPanel(activePanel)));
+                              escTargetPanel, PanelKindName(IdentifyPanel(escTargetPanel)));
             }
         }
     }
