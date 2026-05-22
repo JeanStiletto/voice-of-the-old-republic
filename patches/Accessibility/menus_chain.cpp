@@ -21,6 +21,7 @@
 #include "menus_chargen_attr.h"
 #include "menus_chargen_skills.h"
 #include "menus_charsheet.h"
+#include "menus_credits.h"
 #include "menus_extract.h"
 #include "menus_internal.h"
 #include "menus_store.h"
@@ -484,6 +485,39 @@ void RebindChain(void* panel) {
             return true;
         };
         acc::menus::charsheet::ForEachStatRowAnchor(panel, onAnchor, panel);
+    }
+
+    // Virtual credits row for Inventory + Store. Same shape as the stat-row
+    // block above: credits_value_label isn't IsChainNavigable, so without
+    // this the user can't reach the gold display the engine renders for
+    // sighted players. menus_credits::ForEachCreditsRowAnchor is a no-op
+    // for unsupported panel kinds, so we call it unconditionally.
+    {
+        auto onCreditsAnchor = [](void* labelControl, int sortCy,
+                                  void* userData) -> bool {
+            void* p = userData;
+            if (g_chainCount >= kMaxChainEntries) return false;
+            int cx, cy;
+            // cx from the on-screen label so a cursor warp on chain step
+            // lands the mouse on the visible credits readout; cy is the
+            // synthetic sortCy so the entry sorts above real buttons.
+            if (!GetControlCenter(labelControl, cx, cy)) {
+                cx = 0;
+            }
+            // Skip when the engine hasn't yet populated the value (gui_
+            // string empty mid-frame). Row reappears on the next rebind.
+            char probe[8];
+            if (!acc::menus::credits::ExtractCreditsRow(
+                    p, labelControl, probe, sizeof(probe))) {
+                return true;
+            }
+            g_chain[g_chainCount++] = {
+                labelControl, cx, sortCy, /*textOnly=*/true
+            };
+            return true;
+        };
+        acc::menus::credits::ForEachCreditsRowAnchor(panel, onCreditsAnchor,
+                                                    panel);
     }
 
     // Insertion sort by cy ascending. Stable; n^2 is fine for n<=64.

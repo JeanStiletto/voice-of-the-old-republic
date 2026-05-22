@@ -21,6 +21,7 @@
 #include "engine_reads.h"
 #include "log.h"
 #include "menus_charsheet.h"
+#include "menus_credits.h"
 #include "menus_internal.h"
 #include "strings.h"
 
@@ -340,6 +341,22 @@ const char* FromControl(void* control,
                         owner, control, outBuf, bufSize) &&
                     outBuf[0] != '\0') {
                     source = "perkind-charsheet-row";
+                }
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                source = nullptr;
+            }
+        }
+        // Credits row (Inventory + Store). IsCreditsRowAnchor self-gates on
+        // the owning panel's kind, so the per-kind branch isn't repeated
+        // here — same shape as the stat-row block. Only fires when the
+        // control is the panel's credits_value_label inline member.
+        if (!source && owner &&
+            acc::menus::credits::IsCreditsRowAnchor(owner, control)) {
+            __try {
+                if (acc::menus::credits::ExtractCreditsRow(
+                        owner, control, outBuf, bufSize) &&
+                    outBuf[0] != '\0') {
+                    source = "perkind-credits-row";
                 }
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 source = nullptr;

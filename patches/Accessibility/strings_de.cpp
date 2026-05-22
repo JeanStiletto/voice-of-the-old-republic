@@ -282,6 +282,8 @@ const char* Get(Id id) {
         case Id::FmtStoreBoughtFor:         return "Gekauft f\xFC""r %d Credits";   // für
         case Id::FmtStoreNotEnoughCredits:  return "Nicht genug Credits, brauchst %d, hast %d";
 
+        case Id::FmtCredits:                return "Credits: %s";
+
         case Id::FmtCameraOrientBeacon:     return "Wegpunkt, %s";
 
         // Workbench slot labels. The seven BTN_UPGRADE3X/4X buttons have

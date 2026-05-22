@@ -796,6 +796,15 @@ enum class Id : int {
     FmtStoreBoughtFor,
     FmtStoreNotEnoughCredits,
 
+    // ---- Virtual credits row (Inventory + Store).
+    //      Surfaced via menus_credits as a text-only chain entry on
+    //      CSWGuiInGameInventory.credits_value_label (@+0x424) and
+    //      CSWGuiStore.credits_value_label (@+0x1200). Sighted players see
+    //      the label rendered top-right; this entry lets the screen-reader
+    //      user navigate to it and hear "Credits: 1247". One `%s` (the
+    //      label's gui_string, engine-rendered).
+    FmtCredits,
+
     // ---- Camera orient hotkey (N). When a beacon is armed we face the
     //      camera at the beacon's next waypoint and prefix-speak this so
     //      the user can distinguish a beacon-orient from a plain cardinal
