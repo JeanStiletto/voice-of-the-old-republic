@@ -1030,6 +1030,24 @@ static void AnnounceNewFocusedControl(int n, void* panel, void* newControl) {
 
     if (suppressForContainer || suppressForStore) return;
 
+    // Cross-panel overwrite guard. The slot-collapse model assumes the
+    // intra-tick burst stays on one panel — engine fires NULL → first →
+    // settled on the just-opened panel, last write wins, drain speaks the
+    // settled control. But MessageBox-open same-tick also fires a follow-up
+    // SetActive on the underlying panel's listbox (engine refresh of the
+    // now-visible row). Without this guard that fourth fire overwrites the
+    // MessageBox's Abbrechen with the listbox's row text, which dedups
+    // against what was already spoken and the popup announces nothing.
+    //
+    // Fix: when the new SetActive lands on a different panel than the
+    // current pending, flush the previous pending first. Same-panel bursts
+    // still collapse (the common case stays cheap). Drain re-uses the full
+    // path including chain-coherence drop.
+    if (acc::menus::s_pendingAnnouncePanel != nullptr &&
+        acc::menus::s_pendingAnnouncePanel != panel) {
+        acc::menus::DrainPendingAnnounce();
+    }
+
     acc::menus::s_pendingAnnouncePanel   = panel;
     acc::menus::s_pendingAnnounceControl = newControl;
 }
