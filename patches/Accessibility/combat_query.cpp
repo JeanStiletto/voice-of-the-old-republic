@@ -549,14 +549,11 @@ void HotkeyShiftH() {
         return;
     }
 
-    // Skeleton: skip CGuiInGame::ShowExamineBox entirely. The engine's
-    // panel is server-driven (populated via
-    // SendServerToPlayerExamineGui_CreatureData / ItemData / DoorData
-    // / PlaceableData / MineData per object kind) and ShowExamineBox
-    // is a 2-arg `void(ulong handle, int param_2)` whose param_2
-    // semantics aren't documented (calling with 1 arg corrupted the
-    // stack — verified 2026-05-10 panel-walk dump showed only stale
-    // close-button text). Read stats directly instead.
+    // KOTOR 1 has no rich engine-side creature-examine panel —
+    // ShowExamineBox is a generic TLK-message-box opener (verified
+    // 2026-05-22 from decomp of CSWGuiMessageBox::SetMessage). So
+    // Shift+H stays as a structured speech readout that mirrors what a
+    // sighted player would see on the radial-menu "Examine" overlay.
     char name[96] = "";
     bool gotName = acc::engine::GetObjectDisplayNameByHandle(
         handle, name, sizeof(name));
@@ -576,7 +573,7 @@ void HotkeyShiftH() {
     }
 
     int kind = obj ? acc::engine::GetObjectKind(obj) : -1;
-    char msg[512];
+    char msg[640];
     int effCount = -1;
     int featCount = -1;
     if (obj && kind == static_cast<int>(acc::engine::GameObjectKind::Creature)) {
@@ -601,9 +598,6 @@ void HotkeyShiftH() {
                 featCount);
         }
     } else {
-        // Non-creature target — speak the localized name as a starting
-        // point. Door / placeable / item-specific enrichment is the
-        // job of GetObjectName which is what we're calling already.
         std::snprintf(msg, sizeof(msg), "%s.", name);
     }
     tolk::Speak(msg, /*interrupt=*/true);
@@ -644,90 +638,31 @@ void TickExaminePanel() {
     if (examinePanel == s_lastPanel) return;
     s_lastPanel = examinePanel;
 
-    // The Examine panel layout (validated 2026-05-10 against
-    // patch-20260510-000722.log:Menus.PanelWalk dump):
+    // Panel just opened. Speech is owned by two other paths now:
+    //   1. HotkeyShiftH speaks the brief opener at press time (name +
+    //      faction + hp + distance + weapon).
+    //   2. menus_listbox::kExamineSpec speaks each row on Up/Down nav.
+    // TickExaminePanel just logs the open/close edges so we can see the
+    // panel lifecycle in patch.log without speaking anything redundant.
     //
-    //   children=6
-    //     [0] NULL
-    //     [1] id=1   listbox (vtable=0073E840) — message_box content
-    //     [2] NULL
-    //     [3] id=3   button "Schliess." (Close)
-    //     [4] id=4   button "Abbrechen" (Cancel)
-    //     [5] id=-1  label-like control (vtable 0073E5B8)
-    //
-    // The actual examine content lives in the id=1 listbox (each line
-    // of the rendered text is a row). Walk every row and concatenate;
-    // this gives us the full stat block instead of a button label.
-    //
-    // Original skeleton walked panel.controls and grabbed the first
-    // non-empty short string, which always landed on id=3 / id=4 / id=5
-    // (the buttons) — observed text=[Schliess.] / [Abbrechen] /
-    // [Laserschwert werfen].
-    auto* pBase = reinterpret_cast<unsigned char*>(examinePanel);
-    auto* controls = reinterpret_cast<CExoArrayList*>(
-        pBase + kPanelControlsOffset);
-
-    // Find the listbox child (vtable match — same identity test
-    // engine_reads.cpp uses for IsListBox).
-    void* listBox = nullptr;
+    // Row count is logged once for diagnostics — useful to confirm the
+    // engine populated the listbox (rowCount > 0) vs left it empty
+    // (which would mean vtable[27] didn't fire as expected).
+    int rowCount = -1;
     __try {
-        if (controls && controls->data) {
-            int sz = controls->size > 16 ? 16 : controls->size;
-            for (int i = 0; i < sz; ++i) {
-                void* child = controls->data[i];
-                if (!child) continue;
-                void** vt = *reinterpret_cast<void***>(child);
-                if (reinterpret_cast<uintptr_t>(vt) == kVtableListBox) {
-                    listBox = child;
-                    break;
-                }
-            }
-        }
+        void* lb = reinterpret_cast<unsigned char*>(examinePanel) +
+                   kExaminePanelListBoxOffset;
+        auto* lbList = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(lb) +
+            kListBoxControlsOffset);
+        rowCount = (lbList && lbList->data) ? lbList->size : -1;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        listBox = nullptr;
+        rowCount = -1;
     }
-
-    char text[2048] = "";
-    bool gotText = false;
-    __try {
-        if (listBox) {
-            auto* lbList = reinterpret_cast<CExoArrayList*>(
-                reinterpret_cast<unsigned char*>(listBox) +
-                kListBoxControlsOffset);
-            if (lbList && lbList->data && lbList->size > 0) {
-                size_t off = 0;
-                int rowCap = lbList->size > 32 ? 32 : lbList->size;
-                for (int r = 0; r < rowCap; ++r) {
-                    void* row = lbList->data[r];
-                    if (!row) continue;
-                    char rowText[256];
-                    if (!acc::menus::extract::FromControl(
-                            row, rowText, sizeof(rowText))) {
-                        continue;
-                    }
-                    if (rowText[0] == '\0') continue;
-                    int n = std::snprintf(text + off, sizeof(text) - off,
-                                          "%s%s",
-                                          off == 0 ? "" : ". ",
-                                          rowText);
-                    if (n > 0) off += static_cast<size_t>(n);
-                    if (off >= sizeof(text)) break;
-                }
-                gotText = (off > 0);
-            }
-        }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        gotText = false;
-    }
-
-    if (gotText) {
-        tolk::Speak(text, /*interrupt=*/false);
-        acclog::Write("Combat.Examine", "panel opened text=[%.300s]", text);
-    } else {
-        acclog::Write("Combat.Examine",
-                      "panel opened, no listbox content yet (panel=%p lb=%p)",
-                      examinePanel, listBox);
-    }
+    acclog::Write("Combat.Examine",
+                  "panel opened panel=%p rows=%d (speech: brief at press, "
+                  "rows via menus_listbox kExamineSpec)",
+                  examinePanel, rowCount);
 }
 
 // ----------------------------------------------------------------------------

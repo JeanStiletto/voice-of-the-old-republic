@@ -215,6 +215,22 @@ const char* Get(Id id) {
         case Id::ExamineNoTarget:            return "Kein Ziel zum Untersuchen.";
         case Id::ExamineFailed:              return "Untersuchen fehlgeschlagen.";
 
+        case Id::FmtExamineOpened:           return "Untersuchen: %s. %d Eintr\xE4ge.";
+        case Id::FmtExamineRowOf:            return "%s. %d von %d.";
+        case Id::ExamineViewClosed:          return "Untersuchen geschlossen.";
+        case Id::FmtExamineRowName:          return "Name: %s";
+        case Id::FmtExamineRowFaction:       return "Gesinnung: %s";
+        case Id::FmtExamineRowHp:            return "Lebenspunkte: %d";
+        case Id::FmtExamineRowDistance:      return "Entfernung: %d Meter";
+        case Id::FmtExamineRowWeapon:        return "Hauptwaffe: %s";
+        case Id::ExamineRowWeaponNone:       return "Hauptwaffe: keine";
+        case Id::FmtExamineRowEffect:        return "Effekt: %s";
+        case Id::FmtExamineRowFeat:          return "Talent: %s";
+        case Id::FmtExamineRowEffectUnknown: return "Effekt #%d";
+        case Id::FmtExamineRowFeatUnknown:   return "Talent #%d";
+        case Id::ExamineRowNoEffects:        return "Keine aktiven Effekte";
+        case Id::ExamineRowNoFeats:          return "Keine Talente";
+
         case Id::FmtQueueOpen:               return "Aktionsschlange, %d Aktionen.";
         case Id::QueueEmpty:                 return "Aktionsschlange ist leer.";
         case Id::FmtQueueRow:                return "%s: %s %s, %d von %d.";

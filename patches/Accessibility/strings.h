@@ -619,6 +619,44 @@ enum class Id : int {
     ExamineNoTarget,
     ExamineFailed,
 
+    // ---- Examine view — navigable list opened by Shift+H. The view is
+    //      a synthetic in-DLL listbox (no engine panel — KOTOR 1 doesn't
+    //      have a real creature-examine panel). Up/Down step rows, Esc
+    //      closes. See examine_view.cpp.
+    //   FmtExamineOpened     — opener cue. Args: target name (`%s`),
+    //                          total rows (`%d`).
+    //   FmtExamineRowOf      — per-row announce. Args: row text (`%s`),
+    //                          1-based index (`%d`), total (`%d`).
+    //   ExamineViewClosed    — Esc cue.
+    //   FmtExamineRowName    — row label "Name: %s".
+    //   FmtExamineRowFaction — row label "Fraktion: %s".
+    //   FmtExamineRowHp      — row label "Lebenspunkte: %d".
+    //   FmtExamineRowDistance— row label "Entfernung: %d Meter".
+    //   FmtExamineRowWeapon  — row label "Hauptwaffe: %s".
+    //   ExamineRowWeaponNone — "Hauptwaffe: keine" (unarmed).
+    //   FmtExamineRowEffect  — row label "Effekt: %s".
+    //   FmtExamineRowFeat    — row label "Talent: %s".
+    //   FmtExamineRowEffectUnknown — "Effekt #%d" fallback for unmapped types.
+    //   FmtExamineRowFeatUnknown   — "Talent #%d" fallback when feat name
+    //                                resolution fails.
+    //   ExamineRowNoEffects  — "Keine aktiven Effekte".
+    //   ExamineRowNoFeats    — "Keine Talente".
+    FmtExamineOpened,
+    FmtExamineRowOf,
+    ExamineViewClosed,
+    FmtExamineRowName,
+    FmtExamineRowFaction,
+    FmtExamineRowHp,
+    FmtExamineRowDistance,
+    FmtExamineRowWeapon,
+    ExamineRowWeaponNone,
+    FmtExamineRowEffect,
+    FmtExamineRowFeat,
+    FmtExamineRowEffectUnknown,
+    FmtExamineRowFeatUnknown,
+    ExamineRowNoEffects,
+    ExamineRowNoFeats,
+
     // ---- Combat system, Phase 3A — action queue submenu.
     //      `FmtQueueOpen` — opener pre-roll. Args: total queue length
     //                       across all party members (`%d`).

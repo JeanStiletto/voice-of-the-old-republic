@@ -204,6 +204,22 @@ const char* Get(Id id) {
         case Id::ExamineNoTarget:            return "No target to examine.";
         case Id::ExamineFailed:              return "Examine failed.";
 
+        case Id::FmtExamineOpened:           return "Examine: %s. %d entries.";
+        case Id::FmtExamineRowOf:            return "%s. %d of %d.";
+        case Id::ExamineViewClosed:          return "Examine closed.";
+        case Id::FmtExamineRowName:          return "Name: %s";
+        case Id::FmtExamineRowFaction:       return "Disposition: %s";
+        case Id::FmtExamineRowHp:            return "Hit points: %d";
+        case Id::FmtExamineRowDistance:      return "Distance: %d meters";
+        case Id::FmtExamineRowWeapon:        return "Main hand: %s";
+        case Id::ExamineRowWeaponNone:       return "Main hand: none";
+        case Id::FmtExamineRowEffect:        return "Effect: %s";
+        case Id::FmtExamineRowFeat:          return "Feat: %s";
+        case Id::FmtExamineRowEffectUnknown: return "Effect #%d";
+        case Id::FmtExamineRowFeatUnknown:   return "Feat #%d";
+        case Id::ExamineRowNoEffects:        return "No active effects";
+        case Id::ExamineRowNoFeats:          return "No feats";
+
         case Id::FmtQueueOpen:               return "Action queue, %d actions.";
         case Id::QueueEmpty:                 return "Action queue is empty.";
         case Id::FmtQueueRow:                return "%s: %s %s, %d of %d.";

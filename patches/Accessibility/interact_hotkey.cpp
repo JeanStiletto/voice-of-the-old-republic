@@ -11,6 +11,7 @@
 #include "combat_queue.h"   // Phase 3A — action-queue submenu (Shift+K)
 #include "engine_actionbar.h"
 #include "engine_area.h"
+#include "examine_view.h"   // Phase 2C v2 — navigable Shift+H examine list
 #include "engine_input.h"   // kInputEnter1 / kInputNavUp/Down/Left/Right
 #include "engine_levelup.h"
 #include "engine_manager.h"
@@ -532,9 +533,9 @@ void PollHotkey() {
         if (risingK7) AnnounceBarePersonalKey(2);
     }
 
-    // Combat system, Phase 2C — Shift+H Examine. Self-gated on
-    // foreground + in-world inside the helper.
-    acc::combat::query::PollWin32Hotkey();
+    // Combat system, Phase 2C — Shift+H opens the navigable examine view
+    // (synthetic in-DLL listbox). Toggle: pressing again while open closes.
+    acc::examine_view::PollWin32Hotkey();
 
     // Combat system, Phase 3A — Shift+K opens the action-queue submenu.
     // The Open path also self-gates internally; route the submenu's
@@ -545,6 +546,24 @@ void PollHotkey() {
     // stat block (one-shot speak; no menu state).
     if (inWorld && risingS) {
         acc::combat::query::SpeakSelectedPcStatBlock();
+    }
+
+    // Examine view input routing — runs FIRST so an open examine view
+    // wins arrow / Enter / Esc keys over any other in-world consumer.
+    if (inWorld && acc::examine_view::IsActive()) {
+        if (risingEnter) {
+            acc::examine_view::HandleInputEvent(kInputEnter1, /*value=*/1);
+        }
+        if (risingUp) {
+            acc::examine_view::HandleInputEvent(kInputNavUp, 1);
+        }
+        if (risingDown) {
+            acc::examine_view::HandleInputEvent(kInputNavDown, 1);
+        }
+        if (risingEsc) {
+            acc::examine_view::HandleInputEvent(kInputEsc1, 1);
+        }
+        return;
     }
 
     // Combat-queue submenu input routing — runs BEFORE actionbar so the

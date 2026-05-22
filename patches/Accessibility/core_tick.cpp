@@ -20,6 +20,7 @@
 #include "dialog_speech.h"
 #include "engine_player.h"
 #include "engine_subscreen.h"
+#include "examine_view.h"
 #include "guidance_autowalk.h"
 #include "guidance_beacon.h"
 #include "hotkeys.h"
@@ -256,6 +257,9 @@ void Dispatch() {
 
     // Combat system, Phase 3A — action-queue submenu auto-disarm probe.
     acc::combat::queue::Tick();
+
+    // Combat system, Phase 2C v2 — examine view auto-disarm probe.
+    acc::examine_view::Tick();
 
     // Combat system, Phase 3B — specials-empty heartbeat. Peripheral
     // "you can act now" cue when the party-wide queue holds only

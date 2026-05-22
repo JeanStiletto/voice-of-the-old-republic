@@ -885,6 +885,36 @@ constexpr size_t kStatsFactionIdOffset                = 0x78;
 // covers the typical hostile/friendly/neutral classification.
 constexpr uintptr_t kAddrCSWSCreatureGetFaction       = 0x00513fc0;
 
+// Rules global pointer used for feat lookup — see kAddrRulesGlobal
+// definition higher up in this file (line ~526). Dereferences to a
+// CSWSRules*; CSWRules is at offset 0 (the `internal` member), so the
+// same pointer is usable for both as the `this` for CSWRules::GetFeat.
+
+// CSWRules::GetFeat — __thiscall(ushort feat_index) -> CSWFeat*.
+// Returns nullptr if index out-of-range or feat not loaded (bit_flags
+// & 0x10 unset). BYTES_PURGED=4.
+constexpr uintptr_t kAddrCSWRulesGetFeat              = 0x00550c00;
+
+// CSWFeat::GetNameText — __thiscall(CExoString* out) -> CExoString*.
+// Fetches localized feat name via CTlkTable::Fetch using the feat's
+// `field2_0x8` strref. Constructs the out CExoString in place; caller
+// must read .c_string before destruct (we deliberately leak the heap
+// string, same pattern as CSWSItem::GetPropertyDescription).
+constexpr uintptr_t kAddrCSWFeatGetNameText           = 0x005cd760;
+
+// CGameEffect layout — what's stored in CSWSObject.effects.
+// `effects` is CExoArrayList<CGameEffect*> at +0x124 (already known).
+// Each element points to a CGameEffect:
+//   +0x0 ulonglong id
+//   +0x8 ushort    type            (EFFECT_TYPES enum: HASTE=1, SLOW=3,
+//                                   POISON=35, BLINDNESS=73, FORCESHIELD=107,
+//                                   ... full table in swkotor.exe.h:3181)
+//   +0xa ushort    subtype
+//   +0xc float     duration
+//   ...
+// CSWSObject.effects → walk to get CGameEffect*, then read +0x8 for type.
+constexpr size_t    kGameEffectTypeOffset             = 0x8;
+
 // CSWSCreature.inventory @+0xa2c → CSWInventory*. Server-side equipment
 // container. Combined with CSWInventory::GetItemInSlot below this gives
 // us "what is the creature wielding right now".
@@ -920,8 +950,30 @@ constexpr size_t    kStatsFeatsListOffset             = 0x0;
 // without the prior server request leaves the panel showing stale text
 // from the last examine. The Phase 2C hotkey now reads stats directly
 // instead of trying to drive the panel.
+// CGuiInGame::ShowExamineBox @0x62d3e0 — DO NOT CALL FOR CREATURE EXAMINE.
+// Despite the name, this is a **generic TLK-message-box** opener, NOT a
+// creature-examine API. Decompile of vtable[27] (CSWGuiMessageBox::SetMessage)
+// shows param_1 is treated as a TLK strref:
+//   CTlkTable::GetSimpleString(TlkTable, &outStr, param_1);
+//   SetMessage(outStr);
+// The only retail caller is CSWGuiStore::OnControlStoreAButton which passes
+// 0xa3de (a TLK strref = 41950) for the "you can't afford this" popup.
+// Passing a game-object handle would look up a junk TLK row and produce
+// an empty message box. KOTOR 1 has no rich creature-examine panel — the
+// sighted-player "Examine" action renders its content from the local
+// in-world UI overlay, not a separate panel. Keep the address constant
+// in case we want to drive a TLK-strref popup later (e.g. for help text).
 constexpr uintptr_t kAddrCGuiInGameShowExamineBox     = 0x0062d3e0;
 constexpr uintptr_t kAddrCGuiInGameHideExamineBox     = 0x0062d440;
+
+// CSWGuiExamine.message_box.listbox_message lives at panel +0x67c. Kept
+// for the kExamineSpec ListBoxPanelSpec entry — if the engine itself ever
+// pops the generic message box (e.g. via store "can't afford" or other
+// confirmation popups), the spec handles row navigation. We just don't
+// open it ourselves for creature examine — that would land on an empty
+// TLK-lookup result.
+constexpr size_t    kExaminePanelListBoxOffset        = 0x67c;
+constexpr size_t    kExaminePanelHandleOffset         = 0x984;
 
 // CClientExoApp::GetObjectName — universal display-name accessor.
 // __thiscall(ulong handle, CExoString* outName) -> int. BYTES_PURGED=8

@@ -1022,6 +1022,56 @@ constexpr ListBoxPanelSpec kWorkbenchUpgradeSpec = {
     /*alwaysReturnFromHandler*/ false,  // fall through so chain nav reaches the slot/assemble buttons
 };
 
+// ============================================================================
+// Examine — CSWGuiExamine panel opened by Shift+H. Listbox is the embedded
+// CSWGuiMessageBox.listbox_message at +0x67c. The engine populates the
+// rows from a local object cache when ShowExamineBox(handle, 0) is called
+// (vtable[27] on the listbox does the populate-from-object — verified
+// 2026-05-22 from the ShowExamineBox decomp). Up/Down speak each row;
+// Enter / Esc let the engine's HandleInputEvent handle close natively
+// (Schliess. and Abbrechen buttons both call HideExamineBox).
+// ============================================================================
+
+bool ExamineMatches(void* p) {
+    return IdentifyPanel(p) == PanelKind::Examine;
+}
+
+void* ExamineFindLb(void* p) {
+    if (!p) return nullptr;
+    return reinterpret_cast<unsigned char*>(p) +
+           kExaminePanelListBoxOffset;
+}
+
+void ExamineAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
+    if (!r.row || r.rowCount <= 0) return;
+    char rowText[512];
+    if (!acc::menus::extract::FromControl(r.row, rowText, sizeof(rowText))) {
+        return;
+    }
+    char msg[640];
+    snprintf(msg, sizeof(msg),
+             acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
+             rowText, r.newSel + 1, r.rowCount);
+    tolk::Speak(msg, /*interrupt=*/false);
+}
+
+constexpr ListBoxPanelSpec kExamineSpec = {
+    /*logTag*/                  "Examine",
+    /*matches*/                 ExamineMatches,
+    /*armed*/                   nullptr,
+    /*resetStale*/              nullptr,
+    /*findListBox*/             ExamineFindLb,
+    /*minSel*/                  0,
+    /*announce*/                ExamineAnnounce,
+    /*enrichRow*/               nullptr,
+    /*logExtra*/                nullptr,
+    /*onEnter*/                 nullptr,  // engine HandleInputEvent closes via OK button
+    /*onEsc*/                   nullptr,  // engine HandleInputEvent closes via Cancel button
+    /*titleOverride*/           nullptr,
+    /*emptyStateId*/            acc::strings::Id::Count_,
+    /*alwaysReturnFromHandler*/ false,
+};
+
 // Spec table. Probe order matters: SaveLoad's structural matcher
 // (FindControlById signature check) is a superset that could in principle
 // match other panels with the same control IDs — Container and EquipPicker
@@ -1041,6 +1091,8 @@ constexpr const ListBoxPanelSpec* kSpecs[] = {
     // Workbench panels (Phase: workbench accessibility).
     &kWorkbenchItemsSpec,
     &kWorkbenchUpgradeSpec,
+    // Combat-system plan, Phase 2C — Shift+H Examine engine panel.
+    &kExamineSpec,
 };
 constexpr int kNumSpecs = static_cast<int>(sizeof(kSpecs) / sizeof(kSpecs[0]));
 
