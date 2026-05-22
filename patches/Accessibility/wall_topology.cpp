@@ -106,6 +106,38 @@ constexpr int   kDensityMinNeighbours = 3;
 // long spokes; looser risks eating short corridor entries.
 constexpr float kHubAbsorptionRadiusM = 7.0f;
 
+// Corridor-chain merge (Pass 1e): collapse straight degree-2 chain runs
+// into one cluster. K1 corridors are authored as 5-15 degree-2 patrol
+// nodes ~3-5m apart along a single axis; without merging each becomes
+// its own cluster and a 15m hallway re-announces "Korridor Ost-West"
+// 3+ times as the player walks it. The 2026-05-21 evening logs showed
+// "Korridor Ost-West" spoken 13x, "Korridor Nord, West" 12x, etc.
+// (docs/room-shape-improvements.md item 1).
+//
+// A node is "straight" iff its two outgoing edge vectors point in
+// roughly opposite directions (cos(angle) <= kCorridorStraightCosMax).
+// Two adjacent straight singleton degree-2 nodes union. Bend nodes
+// (corners of L-shaped halls, ~90 deg kinks) fail the straightness
+// test and break the chain — an L stays as two clusters meeting at
+// the bend, which matches the perceptual model (the player feels the
+// corridor turning, so it reads as two directions).
+//
+// Tolerance picked at +/- 20 deg of straight (cos -0.94): tight
+// enough to keep real bends as separate clusters, loose enough to
+// absorb the small placement jitter present in degree-2 patrol-node
+// authoring. Tune from log evidence — if curved corridors over-merge,
+// raise toward -0.97 (+/- 15 deg). If straight corridors don't merge
+// fully, drop toward -0.87 (+/- 30 deg).
+//
+// Gates beyond per-node straightness:
+//   - both endpoints must be singletons in the post-1d snapshot
+//     (don't drag chains into junction or hub clusters);
+//   - door-on-edge veto (preserves authored room boundaries);
+//   - wall-on-edge veto (cheap insurance — shouldn't fire on real
+//     corridor neighbours, but covers degree-2 nodes the engine
+//     places across a wall in adjacency tables).
+constexpr float kCorridorStraightCosMax = -0.94f;
+
 // Kind values now live in the public header (wall_topology.h) so
 // transitions.cpp can branch on Platz for the delayed-announce path.
 // Aliases here keep the local code compact.
@@ -1745,6 +1777,117 @@ void BuildForArea(void* area) {
         bboxAbsorbed, bboxVetoedByWall, bboxVetoedByDoor,
         bboxNoZMatch, bboxAmbiguous);
 
+    // Pass 1e: corridor-chain merge (see tunable docs at top of file).
+    //
+    // For every directly-connected pair (i, j) where both nodes are
+    // singleton (post-1d) degree-2 nodes whose two outgoing edges are
+    // roughly opposite (per-node straightness), union them. The chain
+    // effect happens via union-find: a 5-node straight chain
+    // x1-x2-x3-x4-x5 collapses to one cluster after this single pass.
+    //
+    // Junction-eating prevention: junction nodes are degree-3+, so
+    // chainStraight[junction] is false. The chain endpoint adjacent to
+    // a junction merges with its next chain partner but never with the
+    // junction itself. (Pass 1c may have already absorbed that endpoint
+    // into the junction's hub cluster; the singleton snapshot then
+    // blocks the chain from re-pulling it out.)
+    bool  chainStraight[kMaxNodes];
+    float chainCos     [kMaxNodes];
+    for (int i = 0; i < n; ++i) { chainStraight[i] = false; chainCos[i] = 0.0f; }
+    for (int i = 0; i < n; ++i) {
+        int lo = 0, hi = 0;
+        acc::engine::navgraph::NeighbourRange(g, i, lo, hi);
+        if (hi - lo != 2) continue;
+        int nA = static_cast<int>(g.conns[lo]);
+        int nB = static_cast<int>(g.conns[lo + 1]);
+        if (nA < 0 || nA >= n || nB < 0 || nB >= n || nA == nB) continue;
+        float ax = g.nodes[nA].pos.x - g.nodes[i].pos.x;
+        float ay = g.nodes[nA].pos.y - g.nodes[i].pos.y;
+        float bx = g.nodes[nB].pos.x - g.nodes[i].pos.x;
+        float by = g.nodes[nB].pos.y - g.nodes[i].pos.y;
+        float la = std::sqrt(ax * ax + ay * ay);
+        float lb = std::sqrt(bx * bx + by * by);
+        if (la < 1e-3f || lb < 1e-3f) continue;
+        float cosAngle = (ax * bx + ay * by) / (la * lb);
+        chainCos[i] = cosAngle;
+        if (cosAngle <= kCorridorStraightCosMax) chainStraight[i] = true;
+    }
+
+    int chainSnapRoot[kMaxNodes];
+    int chainSnapSize[kMaxNodes];
+    for (int i = 0; i < n; ++i) {
+        chainSnapRoot[i] = UFFind(i);
+        chainSnapSize[i] = 0;
+    }
+    for (int i = 0; i < n; ++i) {
+        int r = chainSnapRoot[i];
+        if (r >= 0 && r < n) ++chainSnapSize[r];
+    }
+
+    int chainMerges          = 0;
+    int chainVetoedByDoor    = 0;
+    int chainVetoedByWall    = 0;
+    int chainVetoedByCluster = 0;
+    int chainSkippedBend     = 0;
+    for (int i = 0; i < n; ++i) {
+        if (!chainStraight[i]) continue;
+        if (chainSnapSize[chainSnapRoot[i]] != 1) continue;
+        int lo = 0, hi = 0;
+        acc::engine::navgraph::NeighbourRange(g, i, lo, hi);
+        for (int e = lo; e < hi; ++e) {
+            int j = static_cast<int>(g.conns[e]);
+            if (j < 0 || j >= n || j == i) continue;
+            if (j <= i) continue;  // unordered pair
+            if (!chainStraight[j]) {
+                ++chainSkippedBend;
+                continue;
+            }
+            if (chainSnapSize[chainSnapRoot[j]] != 1) {
+                ++chainVetoedByCluster;
+                continue;
+            }
+            if (UFFind(i) == UFFind(j)) continue;
+            EdgeResult er = ClassifyEdge(area,
+                                         g.nodes[i].pos, g.nodes[j].pos,
+                                         "merge-pass1e");
+            if (er.kind == kEdgeDoor) {
+                ++chainVetoedByDoor;
+                acclog::Write(
+                    "WallTopo",
+                    "  chain-merge VETOED (door): node[%d] (%.1f,%.1f) "
+                    "<-/-> node[%d] (%.1f,%.1f) door[%d]",
+                    i, g.nodes[i].pos.x, g.nodes[i].pos.y,
+                    j, g.nodes[j].pos.x, g.nodes[j].pos.y, er.doorIdx);
+                continue;
+            }
+            if (er.kind == kEdgeBlocked) {
+                ++chainVetoedByWall;
+                acclog::Write(
+                    "WallTopo",
+                    "  chain-merge VETOED (wall): node[%d] (%.1f,%.1f) "
+                    "<-/-> node[%d] (%.1f,%.1f)",
+                    i, g.nodes[i].pos.x, g.nodes[i].pos.y,
+                    j, g.nodes[j].pos.x, g.nodes[j].pos.y);
+                continue;
+            }
+            UFUnite(i, j);
+            ++chainMerges;
+            acclog::Write(
+                "WallTopo",
+                "  chain-merge: node[%d] (%.1f,%.1f, cos=%.3f) + "
+                "node[%d] (%.1f,%.1f, cos=%.3f)",
+                i, g.nodes[i].pos.x, g.nodes[i].pos.y, chainCos[i],
+                j, g.nodes[j].pos.x, g.nodes[j].pos.y, chainCos[j]);
+        }
+    }
+    acclog::Write(
+        "WallTopo",
+        "  corridor-chain-merge: cosMax=%.3f -> merged=%d "
+        "skipped-bend=%d vetoedByDoor=%d vetoedByWall=%d "
+        "vetoedByCluster=%d",
+        kCorridorStraightCosMax, chainMerges, chainSkippedBend,
+        chainVetoedByDoor, chainVetoedByWall, chainVetoedByCluster);
+
     // Diagnostic-only pass: dump per-node topology metrics so we can
     // pick a principled gate later. NO MERGE LOGIC USES THESE COUNTS.
     // For each node we log:
@@ -1972,10 +2115,11 @@ void BuildForArea(void* area) {
     acclog::Write("WallTopo",
                   "BuildForArea: area=%p nodes=%d clusters=%d "
                   "merged-pairs=%d merge-vetoed-by-door=%d "
+                  "chain-merges=%d "
                   "multi-node-clusters=%d "
                   "(dead=%d corridor=%d junction=%d open=%d)",
                   area, n, clusters, mergeEdges, mergeVetoedByDoor,
-                  multiNodeClusters,
+                  chainMerges, multiNodeClusters,
                   deadEnds, corridors, junctions, openAreas);
 
     // Edge-classification summary. Counts are multi-fire (each graph
