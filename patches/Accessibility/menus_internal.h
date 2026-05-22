@@ -85,13 +85,22 @@ struct ListBoxNavResult {
     void* row;        // row pointer at newSel (nullptr iff rowCount == 0)
 };
 
-// Drive a CSWGuiListBox cursor in response to Nav-Up / Nav-Down. Pure
-// listbox-side effect: writes selection_index + scrolls top_visible_index
-// to keep the new selection visible. Does NOT call SetSelectedControl, so
-// the engine's onSelectionChanged callback won't run. minSel = first valid
-// selection (0 normally, 1 for equip-picker LB_ITEMS to skip the protoitem
-// template at row 0). Returns false iff listbox is null or rowCount == 0.
-bool DriveListBoxSelection(void* listbox, bool navDown, short minSel,
+// Direction of cursor motion driven by DriveListBoxSelection.
+//   * StepUp / StepDown: ±1 with boundary clamp (Nav-Up / Nav-Down).
+//   * JumpFirst / JumpLast: absolute jump to minSel / rowCount-1
+//     (Home / End). Caller still gets a `ListBoxNavResult` populated the
+//     same way as a step; oldSel == newSel still indicates "already at
+//     the boundary" so the inline announce-on-clamp branch fires.
+enum class ListBoxNavOp { StepUp, StepDown, JumpFirst, JumpLast };
+
+// Drive a CSWGuiListBox cursor in response to Nav-Up / Nav-Down / Home / End.
+// Pure listbox-side effect: writes selection_index + scrolls
+// top_visible_index to keep the new selection visible. Does NOT call
+// SetSelectedControl, so the engine's onSelectionChanged callback won't
+// run. minSel = first valid selection (0 normally, 1 for equip-picker
+// LB_ITEMS to skip the protoitem template at row 0). Returns false iff
+// listbox is null or rowCount == 0.
+bool DriveListBoxSelection(void* listbox, ListBoxNavOp op, short minSel,
                            ListBoxNavResult& out);
 
 // Queue activation of the chain-navigable button child of `panel` whose

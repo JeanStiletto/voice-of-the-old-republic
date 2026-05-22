@@ -293,6 +293,16 @@ namespace acc::menus {
 namespace {
 void* s_pendingAnnouncePanel   = nullptr;
 void* s_pendingAnnounceControl = nullptr;
+
+// Set while PollHomeEndKeys is synthesising a call to OnHandleInputEvent.
+// The engine drops KEYBOARD_HOME(32) / KEYBOARD_END(33) before our manager
+// hook (no [Keymapping] action targets them), so we Win32-poll them and
+// re-enter the input pipeline ourselves. The synthesised call has no
+// matching engine-sent release, so the press-release pair tracker inside
+// OnHandleInputEvent skips its update when this flag is set — otherwise
+// a synthesised non-consumed press would clobber the tracker for a
+// previous real consumed press (Enter activations, etc.).
+bool s_synthesizedNav = false;
 }
 }
 
@@ -599,7 +609,7 @@ const char* acc::menus::detail::ReadSaveLoadEntryString(void* entry, size_t fiel
 //
 // Returns false iff `listbox` is null or has rowCount==0; caller logs +
 // ignores. On true, `out` is fully populated.
-bool acc::menus::detail::DriveListBoxSelection(void* listbox, bool navDown,
+bool acc::menus::detail::DriveListBoxSelection(void* listbox, ListBoxNavOp op,
                                                short minSel,
                                                ListBoxNavResult& out)
 {
@@ -624,12 +634,20 @@ bool acc::menus::detail::DriveListBoxSelection(void* listbox, bool navDown,
 
     short oldSel = *selPtr;
     short newSel;
-    if (oldSel < minSel) {
+    if (op == ListBoxNavOp::JumpFirst) {
         newSel = minSel;
-    } else if (navDown) {
+    } else if (op == ListBoxNavOp::JumpLast) {
+        newSel = (short)(rowCount - 1);
+        if (newSel < minSel) newSel = minSel;
+    } else if (oldSel < minSel) {
+        // Pre-StepUp/StepDown anchoring: any stale -1 / out-of-range
+        // selection lands on minSel regardless of direction (matches
+        // user expectation better than a wrap or silent no-op).
+        newSel = minSel;
+    } else if (op == ListBoxNavOp::StepDown) {
         newSel = (short)(oldSel + 1);
         if (newSel >= rowCount) newSel = (short)(rowCount - 1);
-    } else {
+    } else {  // StepUp
         newSel = (short)(oldSel - 1);
         if (newSel < minSel) newSel = minSel;
     }
@@ -1347,7 +1365,11 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     // the tracker alone — it's cleared by the early-out at the top of
     // the next call.
     auto trackPress = [&](int rv) -> int {
-        if (param_2 != 0) {
+        // Suppress tracker updates when called from PollHomeEndKeys'
+        // synthesised path: that call has no matching engine-sent release,
+        // and a non-consumed synthesised press would zero the tracker for
+        // an unrelated still-pending real press waiting on its release.
+        if (param_2 != 0 && !acc::menus::s_synthesizedNav) {
             s_lastConsumedPress = (rv == 1) ? param_1 : 0;
         }
         return rv;
@@ -1825,13 +1847,21 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         }
     }
 
-    // Arrow keys: flat chain navigation. Chain is built from panel.controls
-    // + listbox children (one level) sorted by extent.top, so arrow-down
-    // walks visually top-to-bottom through every navigable button — including
-    // tab buttons on the parent Options panel and settings that live as
-    // button children of a CSWGuiListBox in sub-dialogs.
+    // Arrow keys + Home / End: flat chain navigation. Chain is built from
+    // panel.controls + listbox children (one level) sorted by extent.top,
+    // so arrow-down walks visually top-to-bottom through every navigable
+    // button — including tab buttons on the parent Options panel and
+    // settings that live as button children of a CSWGuiListBox in
+    // sub-dialogs. Home jumps to the first chain entry (index 0); End
+    // jumps to the last (index g_chainCount-1). Both flow through the
+    // same announce / chargen-sync / cursor-warp pipeline as the ±1 step
+    // — only the new-index computation differs.
+    bool navKeyIsHome = (param_1 == kInputHome);
+    bool navKeyIsEnd  = (param_1 == kInputEnd);
+    bool navKeyIsUp   = (param_1 == kInputNavUp);
+    bool navKeyIsDown = (param_1 == kInputNavDown);
     if (param_2 != 0 &&
-        (param_1 == kInputNavUp || param_1 == kInputNavDown) &&
+        (navKeyIsUp || navKeyIsDown || navKeyIsHome || navKeyIsEnd) &&
         activePanel != nullptr)
     {
         if (activePanel != g_chainPanel) {
@@ -1871,10 +1901,17 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             }
         }
         if (g_chainCount > 0) {
-            int delta = (param_1 == kInputNavDown) ? +1 : -1;
-            int newIndex = g_chainIndex + delta;
-            if (newIndex < 0)              newIndex = 0;
-            if (newIndex >= g_chainCount)  newIndex = g_chainCount - 1;
+            int newIndex;
+            if (navKeyIsHome) {
+                newIndex = 0;
+            } else if (navKeyIsEnd) {
+                newIndex = g_chainCount - 1;
+            } else {
+                int delta = navKeyIsDown ? +1 : -1;
+                newIndex = g_chainIndex + delta;
+                if (newIndex < 0)              newIndex = 0;
+                if (newIndex >= g_chainCount)  newIndex = g_chainCount - 1;
+            }
             g_chainIndex = newIndex;
 
             ChainEntry& e = g_chain[g_chainIndex];
@@ -1975,12 +2012,16 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                 // when the cursor-warp's SetActive echo arrives with the
                 // same text.
             }
+            const char* dirTag =
+                navKeyIsHome ? "HOME" :
+                navKeyIsEnd  ? "END"  :
+                navKeyIsDown ? "DOWN" : "UP";
             acclog::Write("Menus.Chain", "step panel=%p index=%d/%d target=%p center=(%d,%d) cursor=(%d,%d)%s %s",
                           g_chainPanel, g_chainIndex, g_chainCount,
                           e.control, e.cx, e.cy, cursorX, cursorY,
                           e.textOnly ? " text-only" : "",
-                          param_1 == kInputNavDown ? "DOWN" : "UP");
-            // Always consume nav-up/nav-down on a panel with a non-empty chain.
+                          dirTag);
+            // Always consume nav keys on a panel with a non-empty chain.
             consumed = true;
         }
     }
@@ -2303,6 +2344,34 @@ void TickMonitors() {
     acc::menus::monitors::TickGeneralMonitors();
     acc::menus::listbox::TickListboxMonitors();
     acc::menus::editbox::TickEditboxMonitors();
+}
+
+void PollHomeEndKeys() {
+    bool home = acc::hotkeys::Pressed(acc::hotkeys::Action::NavHome);
+    bool end_ = acc::hotkeys::Pressed(acc::hotkeys::Action::NavEnd);
+    if (!home && !end_) return;
+
+    // Both pressed in the same tick: prefer Home (the user is unlikely to
+    // hit both intentionally; defer End to the next press).
+    int code = home ? kInputHome : kInputEnd;
+
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!mgr) {
+        acclog::Write("Menus.PollHomeEnd",
+                      "%s pressed but mgr=NULL; ignored",
+                      home ? "Home" : "End");
+        return;
+    }
+
+    // Synthesise the manager dispatch through our own hook. The hook
+    // re-enters listbox dispatch / editbox dispatch / chain nav exactly
+    // as a real engine-routed keypress would. s_synthesizedNav suppresses
+    // the press-release tracker write so an unconsumed Home/End can't
+    // clobber a still-pending real consumed press (e.g. an Enter that
+    // hasn't received its release yet).
+    s_synthesizedNav = true;
+    ::OnHandleInputEvent(mgr, code, /*param_2=*/1);
+    s_synthesizedNav = false;
 }
 
 // Drain the menu-side pending-op queue. Called from core_tick::Dispatch

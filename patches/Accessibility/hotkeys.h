@@ -64,6 +64,8 @@ enum class Action : int {
     NavDown,               // Down
     NavLeft,               // Left
     NavRight,              // Right
+    NavHome,               // Home  (jump chain/listbox to first item)
+    NavEnd,                // End   (jump chain/listbox to last item)
     SubmenuEsc,            // Esc   (close active mod submenu)
     QueueClearAll,         // Shift+Enter inside combat-queue submenu
 

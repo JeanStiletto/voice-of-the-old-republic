@@ -24,6 +24,16 @@ void ValidatePanels();
 //   * Win32 G-key poll for container give-mode
 void TickMonitors();
 
+// Win32 poll for Home / End rising edges. The engine's keymap drops
+// KEYBOARD_HOME / KEYBOARD_END before our manager hook because no
+// kotor.ini [Keymapping] action targets them — same pattern as the cycle
+// keys. On a rising edge, this synthesises a call to OnHandleInputEvent
+// with kInputHome / kInputEnd as param_1, which re-enters the listbox
+// dispatcher + editbox dispatcher + chain navigation pipeline exactly
+// as a real keypress would. Called from core_tick::Dispatch alongside
+// the other Win32 pollers.
+void PollHomeEndKeys();
+
 // Drain the menu-side pending-op queue (cursor warp, click-sim, fire-
 // activate, slider input, equip slot/commit). Runs LAST per tick so no
 // monitor sees a partially-applied state.

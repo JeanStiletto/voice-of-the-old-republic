@@ -62,6 +62,8 @@ const char* const kActionNames[static_cast<int>(Action::COUNT)] = {
     "NavDown",
     "NavLeft",
     "NavRight",
+    "NavHome",
+    "NavEnd",
     "SubmenuEsc",
     "QueueClearAll",
     "ContainerGiveMode",
@@ -176,6 +178,14 @@ void InitDefaults() {
     bind(Action::NavDown,              VK_DOWN,   0, 0, 0);
     bind(Action::NavLeft,              VK_LEFT,   0, 0, 0);
     bind(Action::NavRight,             VK_RIGHT,  0, 0, 0);
+    // Home / End: the engine drops these scancodes before our manager hook
+    // (no [Keymapping] Action maps to KEYBOARD_HOME(32) / KEYBOARD_END(33)
+    // in stock kotor.ini, verified empirically — patch-20260522-102841.log
+    // shows zero events for these codes). Win32 polling is the only path
+    // that reaches us, same as the cycle keys. menus.cpp's PollHomeEndKeys
+    // synthesises a manager HandleInputEvent on rising edge.
+    bind(Action::NavHome,              VK_HOME,   0, 0, 0);
+    bind(Action::NavEnd,               VK_END,    0, 0, 0);
     bind(Action::SubmenuEsc,           VK_ESCAPE, 0, 0, 0);
     bind(Action::QueueClearAll,        VK_RETURN, 0, kModShift, 0);
 
@@ -400,6 +410,8 @@ const char* VkLabel(int vk) {
     case VK_DOWN:       return "Down";
     case VK_LEFT:       return "Left";
     case VK_RIGHT:      return "Right";
+    case VK_HOME:       return "Home";
+    case VK_END:        return "End";
     case VK_SPACE:      return "Space";
     case VK_OEM_COMMA:  return ",";
     case VK_OEM_PERIOD: return ".";

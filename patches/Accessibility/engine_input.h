@@ -43,6 +43,14 @@ constexpr int kInputEsc2     = 0xdf;
 constexpr int kInputActivate = 0x27;   // KEYBOARD_F1, the engine's activate code
 constexpr int kInputTab      = 0xCE;   // LOGICAL_TAB, pre-translation logical code
 
+// Home / End — raw InputIndices values (the engine has no logical-action
+// translation for them). Stock kotor.ini has no [Keymapping] entry mapping
+// any Action to scancode 32 / 33, so when the user presses Home/End in a
+// menu, CSWGuiManager::HandleInputEvent receives the bare InputIndices
+// value. The mod handles them as "jump chain / listbox to first / last".
+constexpr int kInputHome     = 32;     // KEYBOARD_HOME
+constexpr int kInputEnd      = 33;     // KEYBOARD_END
+
 // Raw InputIndices values for unmapped keys — used by the Pillar 4 cycle
 // (Phase 2 lay-off 3). Unmapped keys pass through ManagerTranslateCode
 // unchanged, so they arrive at the manager hook as their InputIndices index

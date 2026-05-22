@@ -446,18 +446,25 @@ bool TryHandleInput(int /*n*/, void* /*thisPtr*/, void* activePanel,
         return true;
     }
 
-    // Up / Down — re-speak the full current value. Single-line editbox so
-    // there's no vertical caret motion to consume otherwise. Preserves the
-    // user's ability to verify what they typed without losing focus.
-    if (param_1 == kInputNavUp || param_1 == kInputNavDown) {
+    // Up / Down / Home / End — re-speak the full current value. Single-line
+    // editbox so there's no vertical caret motion to consume otherwise, and
+    // CSWGuiEditbox has no caret state for Home/End to address (per
+    // project_kotor_editbox_no_caret memory). Consuming them here also
+    // prevents Home/End from leaking into chain navigation and warping
+    // focus off the editbox mid-typing — preserves the user's ability to
+    // verify what they typed without losing focus.
+    if (param_1 == kInputNavUp   || param_1 == kInputNavDown ||
+        param_1 == kInputHome    || param_1 == kInputEnd) {
+        const char* keyTag =
+            (param_1 == kInputNavUp)   ? "Up"   :
+            (param_1 == kInputNavDown) ? "Down" :
+            (param_1 == kInputHome)    ? "Home" : "End";
         // Refresh state first — caret may have moved between last poll and
         // this keypress; we want the announce to reflect the latest value.
         SnapshotInto(s_state);
         SpeakFullText(s_state.text, s_state.textLen);
         acclog::Write("Editbox", "%s %s -> re-speak text len=%u",
-                      s_state.spec->logTag,
-                      param_1 == kInputNavUp ? "Up" : "Down",
-                      s_state.textLen);
+                      s_state.spec->logTag, keyTag, s_state.textLen);
         outRv = 1;
         return true;
     }

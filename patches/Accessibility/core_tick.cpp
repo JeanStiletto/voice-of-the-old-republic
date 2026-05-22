@@ -57,6 +57,15 @@ void Dispatch() {
     // container give-mode Win32 G-key poll.
     acc::menus::TickMonitors();
 
+    // Home / End jump to first / last item in menu chain or listbox.
+    // The engine's keymap drops KEYBOARD_HOME(32) / KEYBOARD_END(33)
+    // before our manager hook (no [Keymapping] action targets them in
+    // stock kotor.ini), same as the cycle keys. PollHomeEndKeys reads
+    // Win32-side rising edges and synthesises a manager dispatch so the
+    // existing listbox + chain handlers fire as if a real keypress
+    // arrived.
+    acc::menus::PollHomeEndKeys();
+
     // Pillar 4 cycle keys via Win32 polling. Stock kotor.ini doesn't bind
     // `,/./-`, so OnHandleInputEvent never sees them in-world (the engine's
     // keymap drops unbound scancodes before our manager-side hook).

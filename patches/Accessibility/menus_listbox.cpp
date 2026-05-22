@@ -40,6 +40,7 @@ using acc::menus::detail::FindListBoxChild;
 using acc::menus::detail::IsSaveLoadPanel;
 using acc::menus::detail::ReadSaveLoadEntryString;
 using acc::menus::detail::DriveListBoxSelection;
+using acc::menus::detail::ListBoxNavOp;
 using acc::menus::detail::ListBoxNavResult;
 using acc::menus::detail::QueueButtonByIdActivate;
 
@@ -1051,22 +1052,32 @@ constexpr int kNumSpecs = static_cast<int>(sizeof(kSpecs) / sizeof(kSpecs[0]));
 bool DispatchKeyDownEdge(const ListBoxPanelSpec& spec, void* panel,
                          int param_1)
 {
-    // Up / Down: drive the listbox cursor + announce + optional enrichment.
-    if (param_1 == kInputNavUp || param_1 == kInputNavDown) {
+    // Up / Down / Home / End: drive the listbox cursor + announce +
+    // optional enrichment. Home / End are absolute jumps to the first
+    // (minSel) / last (rowCount-1) row; Up / Down are ±1 steps. The
+    // announce + enrichment + log paths are shape-identical across all
+    // four — only the ListBoxNavOp selection and the direction tag differ.
+    ListBoxNavOp op;
+    const char* dirTag = nullptr;
+    if      (param_1 == kInputNavUp)   { op = ListBoxNavOp::StepUp;    dirTag = "Up";   }
+    else if (param_1 == kInputNavDown) { op = ListBoxNavOp::StepDown;  dirTag = "Down"; }
+    else if (param_1 == kInputHome)    { op = ListBoxNavOp::JumpFirst; dirTag = "Home"; }
+    else if (param_1 == kInputEnd)     { op = ListBoxNavOp::JumpLast;  dirTag = "End";  }
+
+    if (dirTag) {
         void* lb = spec.findListBox(panel);
         ListBoxNavResult r;
-        if (lb && DriveListBoxSelection(lb, /*navDown=*/param_1 == kInputNavDown,
+        if (lb && DriveListBoxSelection(lb, op,
                                         static_cast<short>(spec.minSel), r)) {
             spec.announce(lb, r);
             if (spec.enrichRow) spec.enrichRow(panel, r);
             char extra[128] = {0};
             if (spec.logExtra) spec.logExtra(extra, sizeof(extra), r);
             acclog::Write(spec.logTag, "%s lb=%p sel=%d->%d (rows=%d)%s",
-                          param_1 == kInputNavDown ? "Down" : "Up",
-                          lb, r.oldSel, r.newSel, r.rowCount, extra);
+                          dirTag, lb, r.oldSel, r.newSel, r.rowCount, extra);
         } else if (lb) {
             acclog::Write(spec.logTag, "%s lb=%p empty; nav ignored",
-                          param_1 == kInputNavDown ? "Down" : "Up", lb);
+                          dirTag, lb);
             // Announce the empty state if the spec provided one. The
             // generic dedup channel collapses repeated arrow presses so
             // the user doesn't hear the same phrase on every keystroke.
@@ -1077,7 +1088,7 @@ bool DispatchKeyDownEdge(const ListBoxPanelSpec& spec, void* panel,
                 }
             }
         }
-        return true;  // never let arrow keys leak to the engine here
+        return true;  // never let nav keys leak to the engine here
     }
 
     // Enter: dispatch via the spec's onEnter callback.
