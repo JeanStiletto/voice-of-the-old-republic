@@ -264,6 +264,69 @@ void* ResolveItemFromClientHandle(uint32_t clientHandle) {
 typedef CExoString* (__thiscall* PFN_GetPropertyDescription)(void* this_,
                                                               CExoString* out);
 
+namespace {
+
+// Read CSWSItem.stack_size (2 bytes) and bit_flags (4 bytes). Mirrors the
+// store-side ReadItemStock helper but doesn't return the infinite-stock
+// flag separately — callers that need that distinction use the store
+// path. Returns 0 on fault or infinite-stock items.
+int ReadItemStackSize(void* item) {
+    if (!item) return 0;
+    uint32_t bitFlags = 0;
+    uint16_t stack = 0;
+    __try {
+        bitFlags = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(item) + kSwsItemBitFlagsOffset);
+        stack = *reinterpret_cast<uint16_t*>(
+            reinterpret_cast<unsigned char*>(item) + kSwsItemStackSizeOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+    if (bitFlags & kSwsItemInfiniteStockBit) return 0;
+    return (int)stack;
+}
+
+bool IsItemEntryRow(void* control) {
+    if (!control) return false;
+    void** vt = nullptr;
+    __try {
+        vt = *reinterpret_cast<void***>(control);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    auto v = reinterpret_cast<uintptr_t>(vt);
+    return v == kVtableCSWGuiInGameItemEntry ||
+           v == kVtableCSWGuiStoreItemEntry;
+}
+
+}  // namespace
+
+int ReadItemRowStackCount(void* rowControl) {
+    if (!IsItemEntryRow(rowControl)) return 0;
+    uint32_t handle = 0;
+    __try {
+        handle = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(rowControl) +
+            kStoreItemEntryObjIdOffset);  // same offset on both row vtables
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+    void* item = ResolveItemFromClientHandle(handle);
+    if (!item) return 0;
+    return ReadItemStackSize(item);
+}
+
+bool IsInventoryItemRow(void* control) {
+    if (!control) return false;
+    void** vt = nullptr;
+    __try {
+        vt = *reinterpret_cast<void***>(control);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiInGameItemEntry;
+}
+
 bool ReadItemPropertyDescription(void* item, char* outBuf, size_t bufSize) {
     if (!item || !outBuf || bufSize < 2) return false;
     CExoString tmp = {nullptr, 0};

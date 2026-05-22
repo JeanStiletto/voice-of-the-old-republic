@@ -230,6 +230,14 @@ enum class Id : int {
     FmtContainerItems,
     FmtContainerItemAt,
 
+    //      `FmtItemStackSuffix` — appended to inventory + container row
+    //          announcements when CSWSItem.stack_size > 1 (medpacs, stims,
+    //          grenades — anything the engine renders with a count overlay
+    //          on its icon). One `%d` (stack count). Caller stays silent
+    //          on stack_size == 1 so the user doesn't hear "1" after every
+    //          weapon name.
+    FmtItemStackSuffix,
+
     // ---- Equipment screen (CSWGuiInGameEquip).
     //      Slot button names — used as the speech for each of the 9
     //      paper-doll BTN_INV_* buttons. The .gui file gives them no

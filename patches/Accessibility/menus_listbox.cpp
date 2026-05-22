@@ -212,6 +212,17 @@ void ContainerAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
                  acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
                  rowText, r.newSel + 1, r.rowCount);
         tolk::Speak(msg, /*interrupt=*/false);
+        // Append stack count when the row holds a stackable item with
+        // more than one copy. Stays silent on stack_size <= 1 so weapons
+        // / armour don't drag "1 Stück" through every announce.
+        int stack = acc::engine::ReadItemRowStackCount(r.row);
+        if (stack > 1) {
+            char suffix[64];
+            snprintf(suffix, sizeof(suffix),
+                     acc::strings::Get(acc::strings::Id::FmtItemStackSuffix),
+                     stack);
+            tolk::Speak(suffix, /*interrupt=*/false);
+        }
     }
 }
 
@@ -1337,8 +1348,16 @@ void MonitorContainerSelection() {
              acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
              rowText, selIdx + 1, rowCount);
     tolk::Speak(msg, /*interrupt=*/false);
-    acclog::Write("Menus.Container", "row lb=%p sel=%d (was %d) text=\"%s\"",
-                  lb, selIdx, prev, rowText);
+    int stack = acc::engine::ReadItemRowStackCount(row);
+    if (stack > 1) {
+        char suffix[64];
+        snprintf(suffix, sizeof(suffix),
+                 acc::strings::Get(acc::strings::Id::FmtItemStackSuffix),
+                 stack);
+        tolk::Speak(suffix, /*interrupt=*/false);
+    }
+    acclog::Write("Menus.Container", "row lb=%p sel=%d (was %d) text=\"%s\" stack=%d",
+                  lb, selIdx, prev, rowText, stack);
 }
 
 void MonitorEquipPickerSelection() {

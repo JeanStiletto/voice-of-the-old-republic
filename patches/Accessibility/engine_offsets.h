@@ -1062,6 +1062,13 @@ constexpr size_t kDialogComputerMessageListBoxOffset  = 0x2cfc;
 constexpr uintptr_t kVtableCSWGuiStore                     = 0x00756e38;
 constexpr uintptr_t kVtableCSWGuiStoreItemEntry            = 0x00756850;
 
+// CSWGuiInGameItemEntry — rows of CSWGuiInGameInventory.item_listbox AND
+// Container's loot listbox. Same shape as CSWGuiStoreItemEntry: button at
+// offset 0, item_game_object_id at +0x1c4. Resolves through
+// ResolveItemFromClientHandle and reads stack_size via the same offsets
+// above.
+constexpr uintptr_t kVtableCSWGuiInGameItemEntry           = 0x007568f8;
+
 constexpr size_t    kStoreShopItemsListBoxOffset           = 0x1480;
 constexpr size_t    kStoreInvItemsListBoxOffset            = 0x1760;
 constexpr size_t    kStoreDescriptionListBoxOffset         = 0x1a40;
@@ -1093,11 +1100,25 @@ constexpr uint32_t  kStoreListBoxVisibleBit                = 0x2;
 // GetItemByGameObjectID.
 constexpr size_t    kStoreItemEntryObjIdOffset             = 0x1c4;
 
-// CSWSItem.stack_size @ +0xfc, CSWSItem.bit_flags @ +0x108. bit 2 (0x04)
-// in bit_flags = infinite stock (decomp branch in
-// CSWGuiStore::OnControlEntered: `if ((item->bit_flags & 4) == 0)`).
-constexpr size_t    kSwsItemStackSizeOffset                = 0xfc;
-constexpr size_t    kSwsItemBitFlagsOffset                 = 0x108;
+// CSWSItem.bit_flags @ +0x288 (ulong), CSWSItem.stack_size @ +0x28c (ushort).
+// Verified two ways: (1) Ghidra struct DB names them at these offsets;
+// (2) raw disassembly of CSWGuiStore::OnControlEntered @ 0x006c0aa0:
+//   f6 87 88 02 00 00 04   TEST BYTE PTR [EDI+0x288], 0x04   ; bit_flags
+//   8b 87 8c 02 00 00      MOV  EAX,       [EDI+0x28c]       ; stack_size
+// The engine reads stack_size as a 4-byte access via `*(int *)&` cast, but
+// the underlying field is 2 bytes — the upper 2 bytes are padding that
+// reads back as 0 in practice. We read 2 bytes (uint16_t) to match the
+// declared type.
+//
+// bit 2 (0x04) in bit_flags = infinite stock (decomp branch in
+// CSWGuiStore::OnControlEntered: `if ((item->bit_flags & 4) == 0)`). The
+// flag is only ever set on shop-side merchant items; player-owned items
+// always have it clear, so stack_size is meaningful for inventory rows.
+//
+// Note: the prior values (0xfc / 0x108) read random data inside CSWSObject
+// and made every stock count appear as 1. Fixed 2026-05-22.
+constexpr size_t    kSwsItemStackSizeOffset                = 0x28c;
+constexpr size_t    kSwsItemBitFlagsOffset                 = 0x288;
 constexpr uint32_t  kSwsItemInfiniteStockBit               = 0x4;
 
 // CSWGuiStore::GetItemBuyValue / GetItemSellValue — __thiscall returning

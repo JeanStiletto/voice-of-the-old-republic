@@ -145,4 +145,25 @@ void* ResolveItemFromClientHandle(uint32_t clientHandle);
 // call which we deliberately leak (see same pattern in LookupTlk).
 bool ReadItemPropertyDescription(void* item, char* outBuf, size_t bufSize);
 
+// Resolve a CSWGuiInGameItemEntry / CSWGuiStoreItemEntry row control to its
+// owned-stack count. Returns:
+//   > 1   — stackable item with that many copies (caller speaks suffix)
+//     1   — single instance (caller stays silent — saying "1" is noise)
+//     0   — not an item-entry row, item didn't resolve, or store-side
+//           infinite-stock flag is set. Caller stays silent.
+//
+// The engine renders the count overlaid on the item icon when
+// stack_size >= 2 (CSWGuiStoreItemEntry::SetItem decomp confirms the same
+// SetItem code path is used for both row vtables). For screen-reader users
+// this overlay is invisible; this helper exposes the value so the caller
+// can speak it.
+int ReadItemRowStackCount(void* rowControl);
+
+// True iff `control` is a CSWGuiInGameItemEntry (rows of
+// CSWGuiInGameInventory.item_listbox and CSWGuiContainer's loot listbox).
+// Used at chain-announce time to gate the stack-count suffix: store rows
+// are deliberately excluded because they already get their own
+// price + stock suffix from menus_store::AnnounceChainStepSuffix.
+bool IsInventoryItemRow(void* control);
+
 }  // namespace acc::engine

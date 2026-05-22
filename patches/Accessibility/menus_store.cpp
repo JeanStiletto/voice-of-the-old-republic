@@ -121,16 +121,18 @@ uint32_t CallGetItemValue(uintptr_t fnAddr, void* storePanel, void* item) {
 // Read CSWSItem.stack_size + check the infinite-stock bit. `outFinite`
 // is true when stack_size is meaningful, false when the item flags say
 // stock is unlimited (CSWGuiStore::OnControlEntered branches on
-// `item->bit_flags & 4`).
+// `item->bit_flags & 4`). stack_size is a ushort — we read 2 bytes to
+// match the declared type, even though the engine's compiled code casts
+// to int* and reads 4 (the upper 2 bytes are always 0 padding).
 int ReadItemStock(void* item, bool& outFinite) {
     outFinite = true;
     if (!item) return 0;
     uint32_t bitFlags = 0;
-    int stack = 0;
+    uint16_t stack = 0;
     __try {
         bitFlags = *reinterpret_cast<uint32_t*>(
             reinterpret_cast<unsigned char*>(item) + kSwsItemBitFlagsOffset);
-        stack = *reinterpret_cast<int*>(
+        stack = *reinterpret_cast<uint16_t*>(
             reinterpret_cast<unsigned char*>(item) + kSwsItemStackSizeOffset);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return 0;
@@ -139,7 +141,7 @@ int ReadItemStock(void* item, bool& outFinite) {
         outFinite = false;
         return 0;
     }
-    return stack;
+    return (int)stack;
 }
 
 // Per-store-panel mode tracking. Cleared when the foreground stops being

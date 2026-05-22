@@ -78,6 +78,7 @@ const char* Get(Id id) {
         case Id::ContainerOneItem:     return "1 item";
         case Id::FmtContainerItems:    return "%d items";
         case Id::FmtContainerItemAt:   return "%s, %d of %d";
+        case Id::FmtItemStackSuffix:   return "%d in stack";
 
         case Id::EquipSlotHead:        return "Head";
         case Id::EquipSlotImplant:     return "Implant";

@@ -1973,6 +1973,22 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             // every other panel and on the three action buttons.
             acc::menus::store::AnnounceChainStepSuffix(
                 g_chainPanel, e.control);
+            // Inventory rows (CSWGuiInGameInventory / Container loot
+            // listbox): append "N Stück" when stack_size > 1. Store rows
+            // are deliberately excluded — the store suffix above already
+            // speaks "Lager N" / "du besitzt N". Silent on stack_size == 1
+            // so weapons / armour stay quiet.
+            if (acc::engine::IsInventoryItemRow(e.control)) {
+                int stack = acc::engine::ReadItemRowStackCount(e.control);
+                if (stack > 1) {
+                    char suffix[64];
+                    snprintf(suffix, sizeof(suffix),
+                             acc::strings::Get(
+                                 acc::strings::Id::FmtItemStackSuffix),
+                             stack);
+                    tolk::Speak(suffix, /*interrupt=*/false);
+                }
+            }
             int cursorX = e.cx;
             int cursorY = e.cy;
             if (!e.textOnly) {
