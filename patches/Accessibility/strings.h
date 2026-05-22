@@ -657,6 +657,37 @@ enum class Id : int {
     ExamineRowNoEffects,
     ExamineRowNoFeats,
 
+    // ---- Examine view, easy-wins extension. Direct field reads + small
+    //      engine accessors. All optional rows — present only when the
+    //      data is available / meaningful (so a healthy creature doesn't
+    //      get a "no status effects" + "not invisible" + "not blind" row).
+    //   FmtExamineRowHpFull   — replaces FmtExamineRowHp when HP-max is
+    //                           resolved. Args: hp_cur, hp_max.
+    //   FmtExamineRowLevel    — args: total class level.
+    //   FmtExamineRowCondition — args: localized damage-level word.
+    //   DamageLevel0..5       — words for the 6 GetDamageLevel buckets.
+    //   FmtExamineRowOffHand   — off-hand item.
+    //   FmtExamineRowHead      — head slot.
+    //   FmtExamineRowTorso     — torso (visible armor) slot.
+    //   FmtExamineRowHands     — hands slot.
+    //   ExamineRowStatusInvisible — present only when GetInvisible != 0.
+    //   ExamineRowStatusBlind     — present only when GetBlind != 0.
+    FmtExamineRowHpFull,
+    FmtExamineRowLevel,
+    FmtExamineRowCondition,
+    DamageLevel0Healthy,
+    DamageLevel1Light,
+    DamageLevel2Wounded,
+    DamageLevel3Badly,
+    DamageLevel4Dying,
+    DamageLevel5Dead,
+    FmtExamineRowOffHand,
+    FmtExamineRowHead,
+    FmtExamineRowTorso,
+    FmtExamineRowHands,
+    ExamineRowStatusInvisible,
+    ExamineRowStatusBlind,
+
     // ---- Combat system, Phase 3A — action queue submenu.
     //      `FmtQueueOpen` — opener pre-roll. Args: total queue length
     //                       across all party members (`%d`).

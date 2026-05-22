@@ -220,6 +220,22 @@ const char* Get(Id id) {
         case Id::ExamineRowNoEffects:        return "No active effects";
         case Id::ExamineRowNoFeats:          return "No feats";
 
+        case Id::FmtExamineRowHpFull:        return "Hit points: %d of %d";
+        case Id::FmtExamineRowLevel:         return "Level: %d";
+        case Id::FmtExamineRowCondition:     return "Condition: %s";
+        case Id::DamageLevel0Healthy:        return "uninjured";
+        case Id::DamageLevel1Light:          return "lightly wounded";
+        case Id::DamageLevel2Wounded:        return "wounded";
+        case Id::DamageLevel3Badly:          return "badly wounded";
+        case Id::DamageLevel4Dying:          return "dying";
+        case Id::DamageLevel5Dead:           return "dead";
+        case Id::FmtExamineRowOffHand:       return "Off hand: %s";
+        case Id::FmtExamineRowHead:          return "Head: %s";
+        case Id::FmtExamineRowTorso:         return "Armor: %s";
+        case Id::FmtExamineRowHands:         return "Hands: %s";
+        case Id::ExamineRowStatusInvisible:  return "Invisible";
+        case Id::ExamineRowStatusBlind:      return "Blind";
+
         case Id::FmtQueueOpen:               return "Action queue, %d actions.";
         case Id::QueueEmpty:                 return "Action queue is empty.";
         case Id::FmtQueueRow:                return "%s: %s %s, %d of %d.";

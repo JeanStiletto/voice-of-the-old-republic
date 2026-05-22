@@ -112,28 +112,86 @@ because the suspected engine accessors used in `SpeakSelectedPcStatBlock`
 validated and a wrong-address call could __fastfail uncatchably. Manual
 Shift+S still calls them — user accepts the risk per session.
 
-**Phase 2B — opponent cycle-announcement enrichment.** Working. Hooked
-into `passive_narrate.cpp` which calls `combat_query::BuildTargetCombatBrief`
-when the cycle target is a Creature. Skeleton output:
-`<name>, neutral, <hp_cur> Lebenspunkte`. The faction word is
-hardcoded "neutral" pending CSWSFaction decode (open). HP-current via
-direct field read at `CSWSObject.hit_points @+0xe0`; AC and HP-max
-stripped from the format until those engine accessors are validated.
+**Phase 2B — opponent cycle-announcement enrichment.** Working with
+real data as of 2026-05-22. `combat_query::BuildTargetCombatBrief`
+composes the Q/E target line via a `BriefBuf` suffix chain:
+`<name>, <faction-word>, <hp> Lebenspunkte, <N> Meter, <weapon>.`
+Faction is now decoded from `CSWSCreatureStats.faction_id @+0x78` (ushort)
+mapped through the `standardFactions` enum (PLAYER=0 → friendly,
+HOSTILE_1=1 / HOSTILE_2=3 / INSANE=6 → hostile, NEUTRAL=5 → neutral,
+etc.). Distance is 2D horizontal metres. Main-hand weapon resolves via
+`CSWInventory.right_weapon @+0x14` (ulong handle) +
+`GetObjectDisplayNameByHandle`. HP-max and AC are still off the
+auto-firing brief — they live on the manual Shift+H view (see Phase 2C
+below) where the validated-accessor safety rule doesn't apply.
 
-**Phase 2C — Shift+H Examine.** Working in a redesigned shape. Original
-plan called for driving `CGuiInGame::ShowExamineBox @0x62d3e0` and
-reading the populated panel. **The plan was wrong on two counts:**
-(1) `ShowExamineBox` is `void(ulong, int)` with `BYTES_PURGED=8`, not
-the single-arg signature the plan implied — calling with 1 arg created
-stack imbalance and likely contributed to the 2026-05-09 crash;
-(2) the panel is **server-driven** via 5 sister functions
-`SendServerToPlayerExamineGui_{Creature,Item,Door,Placeable,Mine}Data`
-(0x56ebe0..0x56f370) — `ShowExamineBox` only opens the slot, server
-must push the data. Working implementation in `combat_query.cpp::HotkeyShiftH`
-skips ShowExamineBox entirely and reads stats directly via the same
-helpers Phase 2A uses, then speaks `<name>, neutral, <hp_cur> hp`.
-Verified live 2026-05-10 against `Sith-Soldat` (kind=5) and
-`Überreste` (kind=9 placeable corpse).
+**Phase 2C — Shift+H Examine.** Working as a navigable in-DLL list view
+since 2026-05-22 (`examine_view.{h,cpp}`). The earlier ShowExamineBox
+plan was abandoned after we decompiled the function's body — see
+"What ShowExamineBox actually is" below. The view is a synthetic
+listbox modeled on `combat_queue` with Up/Down navigation, Esc/Enter
+to close, and Shift+H to toggle. Rows compose at Open and rebuild on
+every step (so HP / distance / damage-level stay live):
+
+  - Name (localized via `GetObjectDisplayNameByHandle`)
+  - Faction word (static mapping; see Phase 2B)
+  - Condition — `CSWSObject::GetDamageLevel @0x4cb020` returns a 0..5
+    bucket (healthy / light / wounded / badly / dying / dead) computed
+    from `hp_cur/hp_max`. Localized via the new
+    `Id::DamageLevel{0..5}*` strings.
+  - HP — `Lebenspunkte: cur von max`. HP-max from
+    `CSWSCreature::GetMaxHitPoints(1) @0x4ed310` (manual-fire path
+    accepts the suspected-accessor risk on the same basis as Shift+S).
+  - Level — `CSWSCreatureStats::GetLevel(0) @0x5a5fd0`. Total class
+    level (no negative-level subtract).
+  - Distance — 2D horizontal metres (same path as the Q/E brief).
+  - Status flags — only when set: Invisible (`GetInvisible @0x501950`),
+    Blind (`GetBlind @0x4ee210`).
+  - Equipment — Hauptwaffe / Nebenhand / Kopf / Rüstung / Hände. Each
+    slot is a ulong handle inside `CSWInventory` (see "Inventory slot
+    offsets" below); resolved via `GetObjectDisplayNameByHandle`. Empty
+    slots are skipped.
+  - Effects — one row per active effect on `CSWSObject.effects @+0x124`.
+    `CGameEffect.type @+0x8` (ushort) maps through a DE/EN local table
+    in `examine_view.cpp` covering ~70 common `EFFECT_TYPES` enum
+    entries (Vergiftet / Bet\xC3\xA4ubt / Machtschild / ...). Unmapped
+    types fall back to `Effekt #N`.
+  - Feats — one row per granted feat. Walks
+    `CSWSCreatureStats.feats CExoArrayList<ushort> @+0x0`, then for each
+    id calls `CSWRules::GetFeat(id) @0x550c00` → `CSWFeat::GetNameText
+    @0x5cd760` which goes through `CTlkTable::Fetch` internally so the
+    name is localized for the user's TLK. Unresolvable ids fall back
+    to `Talent #N`.
+
+Verified live across creature targets in Taris dueling ring + Endar
+Spire combat (2026-05-22). Faction reads correct hostile/friendly/
+neutral across PLAYER (0), HOSTILE_1 (1), NEUTRAL (5) creatures.
+Damage-level transitions ride live with the HP read.
+
+**What ShowExamineBox actually is.** Decompile (2026-05-22):
+```
+void ShowExamineBox(this, ulong param_1, int param_2) {
+  if (this->initialized) {
+    examine->message_box.panel.vtable->vtable[27](param_1);  // SetMessage
+    examine->field1_0x984 = param_1;
+    CSWGuiManager::AddPanel(manager, examine, 1, 1);
+    SetInputClass(2, 1);
+  }
+}
+```
+vtable[27] is `CSWGuiMessageBox::SetMessage @0x6249d0`:
+```
+void SetMessage(this, ulong param_1) {
+  CTlkTable::GetSimpleString(TlkTable, &out, param_1);  // arg = TLK strref
+  vtable[28](this);  // SetMessage(CExoString)
+}
+```
+So `param_1` is treated as a **TLK strref**, not a game-object handle.
+The store's only retail caller passes 0xa3de (TLK strref 41950, "you
+can't afford") in `CSWGuiStore::OnControlStoreAButton @0x6c1130`. KOTOR 1
+has no rich engine-side creature-examine panel — the sighted-player
+"Examine" action renders its content from the in-world UI overlay, not
+a discrete panel we can drive. Hence the synthetic list view.
 
 **Phase 3A — action queue submenu (Shift+K).** Working. Pattern lifted
 from `actionbar_menu.cpp`. Walks `combat_round.actions` linked list,
@@ -284,19 +342,36 @@ Learned the hard way during the 2026-05-09 crash investigation
 
 ### Skeleton gaps still open
 
-Tracked here so the next iteration knows exactly where to dig:
+Tracked here so the next iteration knows exactly where to dig.
 
-- **Action-type byte enum** — needs DumpBytes probe in a controlled
-  scenario (queue an attack, dump action's +0x10; queue Force, dump;
-  etc.). Until then `combat_queue::VerbForActionType` returns
-  generic "Aktion" for everything.
-- **CSWSFaction decode for hostile/friendly/neutral classification** —
-  Phase 2B currently hardcodes "neutral". Open in plan §Pillar 2.
-- **Max HP / AC / saves engine accessors** — addresses are in Lane's
-  table (validated against `k1_win_gog_swkotor.exe.xml`) but their
-  call signatures haven't been live-tested. Currently called only
-  from the manual `Shift+S` path (`SpeakSelectedPcStatBlock`); the
-  auto-firing paths use direct-field-read for HP-current only.
+**Resolved as of 2026-05-22 — kept for history:**
+
+- ~~CSWSFaction decode for hostile/friendly/neutral classification~~ —
+  resolved: direct `faction_id @+0x78` read + static `standardFactions`
+  enum mapping in `combat_query::ClassifyFactionId`. Custom mod factions
+  outside the canonical 0..17 set log under `Combat.Brief factionId=N`
+  for follow-up tuning. Story-driven reputation flips (Tatooine Sand
+  People etc.) not yet handled — would need `CSWSObject::GetReputation
+  @0x57cb80` invoked against the player creature.
+- ~~Max HP engine accessor~~ — used live in the Shift+H examine view
+  via `CSWSCreature::GetMaxHitPoints(1) @0x4ed310`. Stable across
+  testing 2026-05-22. AC accessor `GetArmorClass @0x4ed1d0` still
+  unused; would be a one-line add when we want it.
+- ~~Examine sister-function trigger~~ — moot. The engine `CSWGuiExamine`
+  panel turned out to be a generic TLK-message-box (see "What
+  ShowExamineBox actually is" above). No creature-examine panel
+  exists in K1; we ship a synthetic listbox (`examine_view`) instead.
+- ~~Action-type byte enum~~ — resolved via the `GetActionIcon`
+  decompile dump on 2026-05-14: 1=Attack, 6=Equip, 7=Unequip,
+  9=CastForce, 10=UseItem, 11=UseFeat. `combat_queue::VerbForActionType`
+  maps these to localized verbs; other / unmapped bytes still render
+  as `QueueVerbUnknown`.
+
+**Still open:**
+
+- **AC accessor in the examine view** — `CSWSCreature::GetArmorClass
+  @0x4ed1d0` not yet wired. Easy add if we want a "Rüstungsklasse: NN"
+  row alongside HP / Level.
 - **Saving-throw event** — Phase 4B will need a hook on
   `SavingThrowRoll @0x5b92b0` or `BroadcastSavingThrowData @0x4ec760`.
   Polling save fields per-tick is too noisy to be useful.
@@ -304,38 +379,63 @@ Tracked here so the next iteration knows exactly where to dig:
   only removes tail; mid-queue Enter currently speaks
   "Aktion kann nicht entfernt werden". Investigate splice / repeat-
   remove + re-queue / SARIF for a positional remove.
-- **Examine sister-function trigger** — to drive a real engine
-  Examine without ShowExamineBox guesswork, we'd need to invoke the
-  SendServerToPlayer*Data path directly OR find the higher-level
-  client→server "request examine" message that triggers it. Out of
-  scope for skeleton; current direct-stat-read approach works fine.
 - **Messages-panel dialog_listbox toggle** — the spec only routes to
   messages_listbox. The toggle button @+0x76c needs a state read so
   we can switch the spec's `findListBox` callback to `dialog_listbox`
   when the user toggles the view.
-- **Validated names in Phase 4A callouts pre-iteration-4** —
-  `tgt=[end_cut2_sith2]`-style tags appeared because the original
-  helper called `engine_area::GetObjectName` which falls through to
-  `CSWSObject.tag` for generic enemies. The fix (use
-  `GetObjectDisplayNameByHandle` with high-bit conversion) landed
-  iteration 4 and is build-validated but not yet in-game tested.
+- **Examine view — sighted-parity items not yet wired (open):**
+  - **Species / appearance description** — sighted players see what
+    species a creature is ("Sith soldier in red armor", "Wookiee",
+    "T3 droid"). We just have the name. Engine surfaces:
+    `CSWSCreatureStats.race @+0xdc` (RACE enum), `subrace @+0xe0`
+    (CExoString), plus the `appearance.2da` displayname column via the
+    template chain. No 2da reader wired yet; species would need a TLK +
+    2da lookup path or a hardcoded RACE-enum mapping similar to the
+    effect-name table.
+  - **Current action verb** — "X is using Force Lightning" / "Y is
+    attacking Z" is visible to sighted players via animations and the
+    HUD action-description label. We'd need to walk the creature's own
+    `combat_round.actions @+0x9b0` (we already do this for the player's
+    queue via Phase 3A) and surface the head entry's action_type +
+    target. Trivial extension once we want it.
+  - **Active radial-target action** — what the user can do TO the
+    target (Examine, Talk, Attack, etc.). Engine has the answer in
+    `CSWGuiMainInterface.target_action_menu @+0xbc` (the radial-on-
+    target structure). For accessibility we already drive the radial
+    independently — would need to integrate.
+  - **AC value** — see "AC accessor" above.
+  - **Active-effect rich detail** — we have effect type name. Per-
+    effect duration / magnitude (`CGameEffect.duration @+0xc`,
+    `integer_list @+0x34`) not surfaced. Useful for "Vergiftet, noch
+    12 Sekunden" but adds noise; defer until we hear it's wanted.
+  - **Dynamic reputation-flip override on the faction word** — see
+    note under the faction "resolved" item above.
+- **Live story / NPC dialog-context info** — sighted players see
+  whether a creature is currently in dialog vs idle vs combat. We can
+  read `combat_round != null` for "in combat" but the "in dialog"
+  signal needs work.
 
 ### Files added by the implementation
 
-Skeleton lives in 4 new TUs plus targeted edits to existing files:
+Skeleton lives in 5 TUs plus targeted edits to existing files:
 
 - `patches/Accessibility/combat.{h,cpp}` — Phases 1A, 1B, 4A, 4B.
-- `patches/Accessibility/combat_query.{h,cpp}` — Phases 2A, 2B, 2C.
+- `patches/Accessibility/combat_query.{h,cpp}` — Phases 2A, 2B (Q/E
+  brief: name + faction + hp + distance + main-hand), 2C (legacy
+  Shift+H one-shot, now superseded by examine_view).
 - `patches/Accessibility/combat_queue.{h,cpp}` — Phase 3A submenu.
+- `patches/Accessibility/examine_view.{h,cpp}` — Phase 2C v2 navigable
+  examine list (synthetic in-DLL listbox, real feat + effect names).
 - `patches/Accessibility/dialog_speech.{h,cpp}` — Phase 1D polls.
-- `patches/Accessibility/menus_listbox.cpp` — 5 new listbox specs
+- `patches/Accessibility/menus_listbox.cpp` — 6 new listbox specs
   (InGameMessages, DialogCinematic, DialogCinematicCopy,
-  DialogComputer, DialogComputerCamera).
+  DialogComputer, DialogComputerCamera, Examine — last one only
+  handles the engine's generic TLK-message-box if it ever fires).
 - `patches/Accessibility/passive_narrate.cpp` — Phase 2B integration.
 - `patches/Accessibility/core_tick.cpp` — wires the new Tick calls.
 - `patches/Accessibility/interact_hotkey.cpp` — Win32 hotkey poll
-  for Shift+H (Examine), Shift+S (PC stats), Shift+K (queue submenu)
-  + queue-submenu input routing.
+  for Shift+H (examine_view), Shift+S (PC stats), Shift+K (queue
+  submenu) + queue-submenu + examine-view input routing.
 - `patches/Accessibility/engine_area.{h,cpp}` —
   `GetObjectDisplayNameByHandle` helper.
 - `patches/Accessibility/engine_offsets.h` — combat-system addresses,

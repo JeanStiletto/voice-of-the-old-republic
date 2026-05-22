@@ -848,6 +848,32 @@ constexpr uintptr_t kAddrCSWSCreatureGetMaxForcePoints = 0x004fd490;
 constexpr uintptr_t kAddrCSWSCreatureGetDead          = 0x004ef820;
 constexpr uintptr_t kAddrCSWSObjectGetCurrentHitPoints = 0x004caec0;
 
+// CSWSObject::GetDamageLevel @0x004cb020 — `ulong __thiscall(this)`.
+// Returns a 0..5 byte (verified via decompile 2026-05-22) representing
+// the creature's visible wound state by hp_cur / hp_max ratio:
+//   0 = healthy   (>= 95%)
+//   1 = light     (>= 75%)
+//   2 = wounded   (>= 50%)
+//   3 = badly     (>= 25%)
+//   4 = dying     (> 0%, < 25%)
+//   5 = dead      (<= 0%)
+// No accessor-validation concern — this is a pure ratio computation
+// over fields we already trust.
+constexpr uintptr_t kAddrCSWSObjectGetDamageLevel     = 0x004cb020;
+
+// CSWSCreatureStats::GetLevel @0x005a5fd0 — `int __thiscall(this, int subNegLevels)`.
+// Sums level over each entry in CSWSCreatureStats.classes[2]. param_1=0
+// → raw total (don't subtract negative levels from drain effects);
+// param_1=1 → effective level. Use 0 for the displayed level.
+constexpr uintptr_t kAddrCSWSCreatureStatsGetLevel    = 0x005a5fd0;
+
+// CSWSCreature::GetInvisible @0x00501950 / GetBlind @0x004ee210 — bool
+// __thiscall(this). Direct flag accessors; safe to call from manual
+// paths. We only emit a row when the flag is set (no need to announce
+// "not invisible").
+constexpr uintptr_t kAddrCSWSCreatureGetInvisible     = 0x00501950;
+constexpr uintptr_t kAddrCSWSCreatureGetBlind         = 0x004ee210;
+
 // CSWSCreatureStats getters — saves + attribute scores. CSWSCreatureStats
 // lives at CSWSCreature +0xa74 (kCreatureStatsPtrOffset).
 constexpr uintptr_t kAddrStatsGetSTR                  = 0x005a6190;

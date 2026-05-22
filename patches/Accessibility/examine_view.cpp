@@ -310,6 +310,83 @@ int ReadHpCurrent(void* obj) {
     }
 }
 
+// Manual-fire engine accessors. Each is a deterministic, no-side-effect
+// calculation that the user accepts the risk of on the same basis as
+// Shift+S (per docs/combat-system.md §"Auto-firing path safety rules").
+typedef int (__thiscall* PFN_GetIntThis)(void* this_);
+typedef int (__thiscall* PFN_GetIntThisInt)(void* this_, int arg);
+
+int CallIntThis(void* this_, uintptr_t addr) {
+    if (!this_) return -1;
+    __try {
+        auto fn = reinterpret_cast<PFN_GetIntThis>(addr);
+        return fn(this_);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
+int CallIntThisInt(void* this_, int arg, uintptr_t addr) {
+    if (!this_) return -1;
+    __try {
+        auto fn = reinterpret_cast<PFN_GetIntThisInt>(addr);
+        return fn(this_, arg);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
+int ReadHpMax(void* serverCreature) {
+    // GetMaxHitPoints(param_1=1) — includes Toughness / class HP totals.
+    int v = CallIntThisInt(serverCreature, 1,
+                           kAddrCSWSCreatureGetMaxHitPoints);
+    if (v < 0 || v > 0x4000) return -1;
+    return v;
+}
+
+int ReadLevel(void* serverCreature) {
+    void* stats = ReadCreatureStats(serverCreature);
+    // GetLevel(0) — raw total class levels (no negative-level subtract).
+    int v = CallIntThisInt(stats, 0,
+                           kAddrCSWSCreatureStatsGetLevel);
+    if (v < 0 || v > 60) return -1;
+    return v;
+}
+
+int ReadDamageLevel(void* obj) {
+    int v = CallIntThis(obj, kAddrCSWSObjectGetDamageLevel);
+    if (v < 0 || v > 5) return -1;
+    return v;
+}
+
+bool ReadDeadFlag(void* serverCreature) {
+    int v = CallIntThis(serverCreature, kAddrCSWSCreatureGetDead);
+    return v != 0 && v != -1;
+}
+
+bool ReadInvisibleFlag(void* serverCreature) {
+    int v = CallIntThis(serverCreature, kAddrCSWSCreatureGetInvisible);
+    return v != 0 && v != -1;
+}
+
+bool ReadBlindFlag(void* serverCreature) {
+    int v = CallIntThis(serverCreature, kAddrCSWSCreatureGetBlind);
+    return v != 0 && v != -1;
+}
+
+acc::strings::Id DamageLevelStringId(int level) {
+    using S = acc::strings::Id;
+    switch (level) {
+        case 0:  return S::DamageLevel0Healthy;
+        case 1:  return S::DamageLevel1Light;
+        case 2:  return S::DamageLevel2Wounded;
+        case 3:  return S::DamageLevel3Badly;
+        case 4:  return S::DamageLevel4Dying;
+        case 5:  return S::DamageLevel5Dead;
+        default: return S::DamageLevel0Healthy;
+    }
+}
+
 int ReadFactionId(void* serverCreature) {
     void* stats = ReadCreatureStats(serverCreature);
     if (!stats) return -1;
@@ -360,12 +437,12 @@ int Read2DDistanceMeters(void* obj) {
     return static_cast<int>(d + 0.5f);
 }
 
-// Read main-hand weapon name via the inventory.right_weapon handle path
-// (CSWInventory.right_weapon @+0x14 → ulong handle → GetObjectDisplayNameByHandle).
-// Same path combat_query::ReadEquippedItemName uses — duplicated to avoid
-// header cycles between examine_view and combat_query.
-bool ReadMainHandWeaponName(void* serverCreature,
-                            char* outBuf, size_t outBufSize) {
+// Read an equipped item's display name by walking the inventory ulong
+// handle at the given slot offset (kInventory*HandleOffset). Same path
+// combat_query::ReadEquippedItemName uses — duplicated to avoid a
+// header cycle between examine_view and combat_query.
+bool ReadEquippedItemNameAtSlot(void* serverCreature, size_t slotOffset,
+                                char* outBuf, size_t outBufSize) {
     if (!serverCreature || !outBuf || outBufSize < 2) return false;
     outBuf[0] = '\0';
     void* inventory = nullptr;
@@ -381,8 +458,7 @@ bool ReadMainHandWeaponName(void* serverCreature,
     uint32_t handle = 0;
     __try {
         handle = *reinterpret_cast<uint32_t*>(
-            reinterpret_cast<unsigned char*>(inventory) +
-            kInventoryRightWeaponHandleOffset);
+            reinterpret_cast<unsigned char*>(inventory) + slotOffset);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
@@ -537,6 +613,18 @@ int BuildRows() {
     bool isCreature = (kind ==
         static_cast<int>(acc::engine::GameObjectKind::Creature));
 
+    // Small helper to append a single optional equipment-slot row.
+    auto appendEquipRow = [&](size_t slotOffset, S fmtId) {
+        if (idx >= kMaxRows) return;
+        char item[96] = "";
+        if (ReadEquippedItemNameAtSlot(obj, slotOffset, item, sizeof(item)) &&
+            item[0] != '\0') {
+            std::snprintf(g_state.rows[idx], sizeof(g_state.rows[0]),
+                          acc::strings::Get(fmtId), item);
+            ++idx;
+        }
+    };
+
     if (isCreature) {
         // Row: Faction.
         int factionId = ReadFactionId(obj);
@@ -546,12 +634,42 @@ int BuildRows() {
                       acc::strings::Get(factionWord));
         ++idx;
 
-        // Row: HP.
-        int hp = ReadHpCurrent(obj);
-        if (hp >= 0 && idx < kMaxRows) {
-            std::snprintf(g_state.rows[idx], sizeof(g_state.rows[0]),
-                          acc::strings::Get(S::FmtExamineRowHp), hp);
-            ++idx;
+        // Row: Condition (damage level — visible wound state).
+        if (idx < kMaxRows) {
+            int dl = ReadDamageLevel(obj);
+            if (dl >= 0) {
+                std::snprintf(g_state.rows[idx], sizeof(g_state.rows[0]),
+                              acc::strings::Get(S::FmtExamineRowCondition),
+                              acc::strings::Get(DamageLevelStringId(dl)));
+                ++idx;
+            }
+        }
+
+        // Row: HP — full "cur of max" when GetMaxHitPoints resolves,
+        // otherwise the older single-value form.
+        if (idx < kMaxRows) {
+            int hpCur = ReadHpCurrent(obj);
+            int hpMax = ReadHpMax(obj);
+            if (hpCur >= 0 && hpMax > 0) {
+                std::snprintf(g_state.rows[idx], sizeof(g_state.rows[0]),
+                              acc::strings::Get(S::FmtExamineRowHpFull),
+                              hpCur, hpMax);
+                ++idx;
+            } else if (hpCur >= 0) {
+                std::snprintf(g_state.rows[idx], sizeof(g_state.rows[0]),
+                              acc::strings::Get(S::FmtExamineRowHp), hpCur);
+                ++idx;
+            }
+        }
+
+        // Row: Level.
+        if (idx < kMaxRows) {
+            int lvl = ReadLevel(obj);
+            if (lvl > 0) {
+                std::snprintf(g_state.rows[idx], sizeof(g_state.rows[0]),
+                              acc::strings::Get(S::FmtExamineRowLevel), lvl);
+                ++idx;
+            }
         }
     }
 
@@ -564,11 +682,31 @@ int BuildRows() {
     }
 
     if (isCreature) {
-        // Row: Main-hand weapon.
+        // Status flags — only emit a row when the flag is set, so a
+        // healthy normal creature doesn't get a row of "not invisible".
+        if (idx < kMaxRows && ReadInvisibleFlag(obj)) {
+            std::strncpy(g_state.rows[idx],
+                         acc::strings::Get(S::ExamineRowStatusInvisible),
+                         sizeof(g_state.rows[0]) - 1);
+            g_state.rows[idx][sizeof(g_state.rows[0]) - 1] = '\0';
+            ++idx;
+        }
+        if (idx < kMaxRows && ReadBlindFlag(obj)) {
+            std::strncpy(g_state.rows[idx],
+                         acc::strings::Get(S::ExamineRowStatusBlind),
+                         sizeof(g_state.rows[0]) - 1);
+            g_state.rows[idx][sizeof(g_state.rows[0]) - 1] = '\0';
+            ++idx;
+        }
+
+        // Rows: Equipment — main hand, off hand, head, torso, hands.
+        // Only emit rows for occupied slots (sighted players just see
+        // what's worn, not a list of empty slots).
         if (idx < kMaxRows) {
             char wpn[96] = "";
-            if (ReadMainHandWeaponName(obj, wpn, sizeof(wpn)) &&
-                wpn[0] != '\0') {
+            if (ReadEquippedItemNameAtSlot(obj,
+                    kInventoryRightWeaponHandleOffset,
+                    wpn, sizeof(wpn)) && wpn[0] != '\0') {
                 std::snprintf(g_state.rows[idx], sizeof(g_state.rows[0]),
                               acc::strings::Get(S::FmtExamineRowWeapon),
                               wpn);
@@ -580,6 +718,10 @@ int BuildRows() {
             }
             ++idx;
         }
+        appendEquipRow(kInventoryLeftWeaponHandleOffset, S::FmtExamineRowOffHand);
+        appendEquipRow(kInventoryHeadHandleOffset,       S::FmtExamineRowHead);
+        appendEquipRow(kInventoryTorsoHandleOffset,      S::FmtExamineRowTorso);
+        appendEquipRow(kInventoryHandsHandleOffset,      S::FmtExamineRowHands);
 
         // Rows: Effects (one per active effect). Append "No effects" if
         // none — gives the user a confirmed-empty signal vs absence.
