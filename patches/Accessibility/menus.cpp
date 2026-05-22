@@ -112,6 +112,7 @@ using acc::menus::chain::g_classIconClickOffsetX;
 using acc::menus::chain::RebindChain;
 using acc::menus::chain::ResetTabbedState;
 using acc::menus::chain::ValidateTabbedPanel;
+using acc::menus::chain::ValidateChainPanel;
 using acc::menus::chain::DetectTabsCluster;
 using acc::menus::chain::IsTabButton;
 using acc::menus::chain::FindAdjacentArrow;
@@ -2325,6 +2326,18 @@ void ValidatePanels() {
     // last latched onto, drop the stale pointer before any input handler
     // can deref it.
     ValidateTabbedPanel();
+    // Same hazard for g_chainPanel / g_chain[].control: when Esc on the
+    // Main-Menu Optionen strip (or any other panel our Esc gate doesn't
+    // catch) falls through to the engine's native handler, the engine
+    // destroys the panel and its children. The chain still references the
+    // freed buttons; next tick MonitorFocusedControl dereferences one and
+    // FromControl's SEH-caught AV interacts with /GS to fastfail. Confirmed
+    // by crash dump 8752 (TID 22220, ESI=0x137af76c = the Auto-Pause button
+    // last navigated to before Esc closed the parent strip). Same root
+    // cause as the InGameOptions sub-screen fix; that case routes through
+    // a queued FireActivate which already calls InvalidateChain, but the
+    // engine-handled Esc path has no such hook — guard generically here.
+    ValidateChainPanel();
 }
 
 void TickMonitors() {
