@@ -271,13 +271,6 @@ const char* EffectNameDe(int type) {
     }
 }
 
-const char* EffectName(int type) {
-    if (acc::strings::GetLanguage() == acc::strings::Lang::De) {
-        return EffectNameDe(type);
-    }
-    return EffectNameEn(type);
-}
-
 // ---------------------------------------------------------------------------
 // Target resolution + field reads.
 // ---------------------------------------------------------------------------
@@ -760,6 +753,13 @@ void SpeakRow(int idx) {
 }
 
 }  // namespace
+
+const char* EffectName(int type) {
+    if (acc::strings::GetLanguage() == acc::strings::Lang::De) {
+        return EffectNameDe(type);
+    }
+    return EffectNameEn(type);
+}
 
 bool IsActive() { return g_state.active; }
 

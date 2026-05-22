@@ -12,6 +12,7 @@
 #include "engine_panels.h"    // PanelKind / IdentifyPanel
 #include "engine_player.h"    // GetPlayerServerCreature, GetActiveLeaderName, GetPlayerPosition
 #include "engine_reads.h"
+#include "examine_view.h"     // EffectName — shared EFFECT_TYPES → display
 #include "hotkeys.h"
 #include "log.h"
 #include "menus_extract.h"    // FromControl — for Examine message-box read
@@ -62,80 +63,6 @@ int CallIntAccessor(void* this_, uintptr_t addr) {
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return 0;
     }
-}
-
-// Read CSWSCreatureStats.faction_id @+0x78 (ushort). Returns -1 on fault
-// or on the engine sentinel INVALID_FACTION (0xFFFF). Direct field read —
-// no engine call, safe for auto-firing paths (Phase 2B cycle announce,
-// Phase 2C Shift+H).
-int ReadFactionId(void* serverCreature) {
-    void* stats = ReadCreatureStats(serverCreature);
-    if (!stats) return -1;
-    __try {
-        unsigned short raw = *reinterpret_cast<unsigned short*>(
-            reinterpret_cast<unsigned char*>(stats) +
-            kStatsFactionIdOffset);
-        if (raw == 0xFFFF) return -1;  // INVALID_FACTION sentinel
-        return static_cast<int>(raw);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return -1;
-    }
-}
-
-// Map a faction_id (standardFactions enum) to a spoken faction-word
-// string id. Mapping reasoning:
-//
-//   * Common KOTOR factions.2da layout: PLAYER=0, HOSTILE_1=1,
-//     FRIENDLY_1=2, HOSTILE_2=3, FRIENDLY_2=4, NEUTRAL=5, INSANE=6,
-//     plus area-specific factions 7+ that are mostly hostile critters /
-//     antagonists (Tusken Raiders, Xor's gang, predators, rancors, traps).
-//
-//   * PLAYER (0) maps to friendly — that's how the engine treats party
-//     followers, who share the player faction.
-//
-//   * INSANE (6) attacks everyone including its own faction members;
-//     for a target announce "hostile" is the correct user-facing word
-//     (the player is going to be attacked by them).
-//
-//   * SURRENDER_1/2 (9/10) and prey/gizka (12/16/17) get the
-//     "neutral" word — they're non-hostile by design.
-//
-//   * Anything outside the enum (custom mod faction, or PLAYER variant
-//     we haven't observed) falls back to neutral with a log line so we
-//     can iterate the table from real captures.
-//
-// Open: this is a static classification. The engine's runtime reputation
-// table can flip a faction from hostile to friendly mid-game (story
-// reputation shifts on Tatooine, Manaan, etc.). A later iteration can
-// invoke CSWSObject::GetReputation against the player to get the live
-// value and override this table on edge cases. See
-// docs/combat-system.md §Pillar 1 / faction.
-acc::strings::Id ClassifyFactionId(int factionId, bool* outIsHostile) {
-    using S = acc::strings::Id;
-    bool hostile = false;
-    S word = S::FactionNeutral;
-    switch (factionId) {
-        case 0:   word = S::FactionFriendly; break;             // PLAYER
-        case 1:   word = S::FactionHostile;  hostile = true; break;   // HOSTILE_1
-        case 2:   word = S::FactionFriendly; break;             // FRIENDLY_1
-        case 3:   word = S::FactionHostile;  hostile = true; break;   // HOSTILE_2
-        case 4:   word = S::FactionFriendly; break;             // FRIENDLY_2
-        case 5:   word = S::FactionNeutral;  break;             // NEUTRAL
-        case 6:   word = S::FactionHostile;  hostile = true; break;   // INSANE
-        case 7:   word = S::FactionHostile;  hostile = true; break;   // PTAT_TUSKAN
-        case 8:   word = S::FactionHostile;  hostile = true; break;   // GLB_XOR
-        case 9:                                                  // SURRENDER_1
-        case 10:  word = S::FactionNeutral;  break;             // SURRENDER_2
-        case 11:  word = S::FactionHostile;  hostile = true; break;   // PREDATOR
-        case 12:  word = S::FactionNeutral;  break;             // PREY
-        case 13:  word = S::FactionHostile;  hostile = true; break;   // TRAP
-        case 15:  word = S::FactionHostile;  hostile = true; break;   // RANCOR
-        case 16:                                                 // GIZKA_1
-        case 17:  word = S::FactionNeutral;  break;             // GIZKA_2
-        default:  word = S::FactionNeutral;  break;             // unmapped
-    }
-    if (outIsHostile) *outIsHostile = hostile;
-    return word;
 }
 
 // Read CSWSCreatureStats.feats CExoArrayList<ushort> size at +0x4. Direct
@@ -269,6 +196,90 @@ int ReadEffectCount(void* serverObject) {
         return s;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return 0;
+    }
+}
+
+// Walk CSWSObject.effects and produce a comma-joined string of unique
+// localized effect-type names — sighted-player parity for the buff/debuff
+// icon row on the target portrait. Mapped types only (unmapped engine
+// types skipped, since they'd surface as "Effect #N" noise during auto-
+// firing Q/E cycle announcements; user can Shift+H for full enumeration).
+// Caps at 5 distinct names to keep speech terse.
+//
+// Returns true when at least one named effect was written; outBuf is
+// empty-string on false.
+bool BuildEffectsSummary(void* serverObject, char* outBuf, size_t outBufSize) {
+    if (!outBuf || outBufSize < 2) return false;
+    outBuf[0] = '\0';
+    if (!serverObject) return false;
+
+    constexpr int kMaxDistinct = 5;
+    int seenTypes[kMaxDistinct] = {0};
+    int seenCount = 0;
+
+    __try {
+        auto* lst = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(serverObject) +
+            kObjectEffectsOffset);
+        if (!lst || !lst->data || lst->size <= 0) return false;
+        int n = lst->size > 64 ? 64 : lst->size;
+        size_t off = 0;
+        for (int i = 0; i < n && seenCount < kMaxDistinct; ++i) {
+            void* eff = lst->data[i];
+            if (!eff) continue;
+            int type = static_cast<int>(*reinterpret_cast<unsigned short*>(
+                reinterpret_cast<unsigned char*>(eff) +
+                kGameEffectTypeOffset));
+            const char* name = acc::examine_view::EffectName(type);
+            if (!name) continue;  // unmapped — skip in brief, Shift+H lists it
+
+            bool dup = false;
+            for (int j = 0; j < seenCount; ++j) {
+                if (seenTypes[j] == type) { dup = true; break; }
+            }
+            if (dup) continue;
+            seenTypes[seenCount++] = type;
+
+            int written = std::snprintf(
+                outBuf + off, outBufSize - off,
+                (off == 0) ? "%s" : ", %s", name);
+            if (written < 0) break;
+            off += static_cast<size_t>(written);
+            if (off >= outBufSize) { off = outBufSize - 1; break; }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        // Partial result is fine; whatever we already wrote is valid.
+    }
+    return outBuf[0] != '\0';
+}
+
+// CSWSObject::GetDamageLevel @0x4cb020 — `ulong __thiscall(this)`.
+// Returns the 0..5 wound-state bucket (decompile-verified thresholds:
+// >=95 healthy, >=75 light, >=50 wounded, >=25 badly, >0 dying, <=0 dead).
+// Validated 2026-05-22 live; safe for auto-firing brief path.
+int ReadDamageLevelDirect(void* serverObject) {
+    if (!serverObject) return -1;
+    __try {
+        auto fn = reinterpret_cast<PFN_GetIntThiscall>(
+            kAddrCSWSObjectGetDamageLevel);
+        int v = fn(serverObject);
+        if (v < 0 || v > 5) return -1;
+        return v;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
+acc::strings::Id DamageLevelStringIdFor(int level) {
+    using S = acc::strings::Id;
+    switch (level) {
+        case 0:  return S::DamageLevel0Healthy;
+        case 1:  return S::DamageLevel1Light;
+        case 2:  return S::DamageLevel2Wounded;
+        case 3:  return S::DamageLevel3Badly;
+        case 4:  return S::DamageLevel4Dying;
+        case 5:  return S::DamageLevel5Dead;
+        default: return S::DamageLevel0Healthy;
     }
 }
 
@@ -434,32 +445,27 @@ bool BuildTargetCombatBrief(void* targetServerObject,
         return false;
     }
 
-    // Skeleton: only direct field reads (no suspected engine accessor
-    // calls in the auto-firing cycle path — see combat.cpp's
-    // ReadCreatureHpDirect rationale). HP-current via the documented
-    // CSWSObject.hit_points @+0xe0 offset; max / AC / faction left for
-    // the follow-up after accessor addresses are validated.
-    int hpCur = 0;
-    __try {
-        hpCur = static_cast<int>(*reinterpret_cast<short*>(
-            reinterpret_cast<unsigned char*>(targetServerObject) +
-            kObjectHitPointsOffset));
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        hpCur = 0;
+    using S = acc::strings::Id;
+    BriefBuf b{outBuf, outBufSize, 0};
+
+    // 1. Name — always present.
+    BriefAppend(b, acc::strings::Get(S::FmtTargetCombatBrief),
+                targetName ? targetName : "?");
+
+    // 2. Condition (damage-level bucket) — mirrors what the sighted
+    //    player reads from the HP-bar colour. GetDamageLevel @0x4cb020
+    //    returns 0..5 across exact hp/maxhp ratio thresholds
+    //    (95/75/50/25/0%); skip when healthy (0) so common in-combat
+    //    transitions stay silent.
+    int dl = ReadDamageLevelDirect(targetServerObject);
+    if (dl > 0) {
+        BriefAppend(b, acc::strings::Get(S::FmtBriefCondition),
+                    acc::strings::Get(DamageLevelStringIdFor(dl)));
     }
 
-    using S = acc::strings::Id;
-    int factionId = ReadFactionId(targetServerObject);
-    S factionWordId = ClassifyFactionId(factionId, /*outIsHostile=*/nullptr);
-    const char* factionWord = acc::strings::Get(factionWordId);
-
-    BriefBuf b{outBuf, outBufSize, 0};
-    BriefAppend(b, acc::strings::Get(S::FmtTargetCombatBrief),
-                targetName ? targetName : "?", factionWord, hpCur);
-
-    // Distance — sighted players can judge approximate range from the
-    // target reticle; expose the same affordance as a metres readout.
-    // 2D horizontal distance (matches the cycle audio cue's range model).
+    // 3. Distance — sighted players can judge approximate range from the
+    //    target reticle; expose the same affordance as a metres readout.
+    //    2D horizontal distance (matches the cycle audio cue's range model).
     float distM = ComputePlayerDistanceMeters(targetServerObject);
     int distMeters = -1;
     if (distM >= 0.0f) {
@@ -468,24 +474,47 @@ bool BuildTargetCombatBrief(void* targetServerObject,
                     distMeters);
     }
 
-    // Main-hand weapon — what the sighted player sees the enemy holding.
-    // Skip silently when the slot is empty (unarmed creatures, animals,
-    // etc.) rather than announcing "unarmed" — verbose for the common
-    // case where the user already knows what an animal looks like.
-    char wpnName[96] = "";
-    bool gotWpn = ReadEquippedItemName(targetServerObject,
-                                       kInventoryRightWeaponHandleOffset,
-                                       "main-hand",
-                                       wpnName, sizeof(wpnName));
-    if (gotWpn && wpnName[0] != '\0') {
-        BriefAppend(b, acc::strings::Get(S::FmtBriefWielding), wpnName);
+    // 4. Status effects — sighted parity for the buff/debuff icon row on
+    //    the target portrait. Dedup'd, mapped types only, capped at 5.
+    char effects[192] = "";
+    bool gotEffects = BuildEffectsSummary(targetServerObject,
+                                          effects, sizeof(effects));
+    if (gotEffects) {
+        BriefAppend(b, acc::strings::Get(S::FmtBriefEffects), effects);
+    }
+
+    // 5. Main-hand weapon — what the sighted player sees the enemy
+    //    holding. Skip silently when the slot is empty (unarmed
+    //    creatures, animals, etc.) rather than announcing "unarmed" —
+    //    verbose for the common case where the user already knows what
+    //    an animal looks like.
+    char mainWpn[96] = "";
+    bool gotMain = ReadEquippedItemName(targetServerObject,
+                                        kInventoryRightWeaponHandleOffset,
+                                        "main-hand",
+                                        mainWpn, sizeof(mainWpn));
+    if (gotMain && mainWpn[0] != '\0') {
+        BriefAppend(b, acc::strings::Get(S::FmtBriefWielding), mainWpn);
+    }
+
+    // 6. Off-hand weapon — dual-wield / shield / off-hand pistol parity.
+    //    Sighted player sees both icons on the enemy's portrait.
+    char offWpn[96] = "";
+    bool gotOff = ReadEquippedItemName(targetServerObject,
+                                       kInventoryLeftWeaponHandleOffset,
+                                       "off-hand",
+                                       offWpn, sizeof(offWpn));
+    if (gotOff && offWpn[0] != '\0') {
+        BriefAppend(b, acc::strings::Get(S::FmtBriefOffHand), offWpn);
     }
 
     acclog::Write("Combat.Brief",
-                  "name=[%s] factionId=%d word=[%s] hp=%d distM=%.2f "
-                  "wpn=[%s]",
-                  targetName ? targetName : "?", factionId, factionWord,
-                  hpCur, distM, gotWpn ? wpnName : "");
+                  "name=[%s] dl=%d distM=%.2f effects=[%s] main=[%s] "
+                  "off=[%s]",
+                  targetName ? targetName : "?", dl, distM,
+                  gotEffects ? effects : "",
+                  gotMain ? mainWpn : "",
+                  gotOff ? offWpn : "");
     return true;
 }
 

@@ -199,16 +199,20 @@ const char* Get(Id id) {
         case Id::FmtPcStatEffectsHeader:     return "Aktive Effekte: %d.";
         case Id::PcStatNoCharacter:          return "Kein Status verf\xFCgbar.";
 
-        // Skeleton: max-HP / AC reads are not yet safe (suspected engine
-        // accessors). Args reduced to (name, faction_word, hp_cur).
-        case Id::FmtTargetCombatBrief:       return "%s, %s, %d Lebenspunkte.";
+        // Brief wird in BuildTargetCombatBrief zusammengesetzt: Name,
+        // dann optionale Zust\xE4nde / Entfernung / Effekte / Waffen
+        // jeweils mit f\xFChrendem Leerzeichen und Punkt am Ende.
+        case Id::FmtTargetCombatBrief:       return "%s.";
         case Id::FactionHostile:             return "feindlich";
         case Id::FactionFriendly:            return "freundlich";
         case Id::FactionNeutral:             return "neutral";
         case Id::TargetIsDead:               return "tot";
 
+        case Id::FmtBriefCondition:          return " %s.";
         case Id::FmtBriefDistanceMeters:     return " %d Meter.";
+        case Id::FmtBriefEffects:            return " %s.";
         case Id::FmtBriefWielding:           return " %s.";
+        case Id::FmtBriefOffHand:            return " Nebenhand %s.";
         case Id::FmtBriefEffectsCount:       return " %d aktive Effekte.";
         case Id::FmtBriefFeatsCount:         return " %d Talente.";
 

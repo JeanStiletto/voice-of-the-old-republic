@@ -26,6 +26,12 @@
 
 namespace acc::examine_view {
 
+// Localized EFFECT_TYPES enum → display name. Returns nullptr for
+// unmapped types so callers can decide between "Effekt #N" fallback and
+// silently skipping. Lives here so combat_query's Q/E brief can reuse
+// the same table that drives the Shift+H examine row.
+const char* EffectName(int type);
+
 // Open the view over the user's current cycle / LastTarget focus.
 // Returns true on success; false on no-target / target unresolvable.
 // On false the caller should speak ExamineNoTarget / ExamineFailed.

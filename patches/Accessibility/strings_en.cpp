@@ -188,16 +188,20 @@ const char* Get(Id id) {
         case Id::FmtPcStatEffectsHeader:     return "Active effects: %d.";
         case Id::PcStatNoCharacter:          return "No character status available.";
 
-        // Skeleton: max-HP / AC reads are not yet safe (suspected engine
-        // accessors). Args reduced to (name, faction_word, hp_cur).
-        case Id::FmtTargetCombatBrief:       return "%s, %s, %d hit points.";
+        // Brief is composed in BuildTargetCombatBrief: name, then optional
+        // condition / distance / effects / weapons clauses each with a
+        // leading space and trailing period.
+        case Id::FmtTargetCombatBrief:       return "%s.";
         case Id::FactionHostile:             return "hostile";
         case Id::FactionFriendly:            return "friendly";
         case Id::FactionNeutral:             return "neutral";
         case Id::TargetIsDead:               return "dead";
 
+        case Id::FmtBriefCondition:          return " %s.";
         case Id::FmtBriefDistanceMeters:     return " %d meters.";
+        case Id::FmtBriefEffects:            return " %s.";
         case Id::FmtBriefWielding:           return " %s.";
+        case Id::FmtBriefOffHand:            return " off-hand %s.";
         case Id::FmtBriefEffectsCount:       return " %d active effects.";
         case Id::FmtBriefFeatsCount:         return " %d feats.";
 

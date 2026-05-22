@@ -596,12 +596,16 @@ enum class Id : int {
     PcStatNoCharacter,
 
     // ---- Combat system, Phase 2B — opponent cycle-announcement
-    //      enrichment. Appended to the existing passive_narrate target
-    //      announce when the target is a creature (hostile or neutral).
-    //      Args `FmtTargetCombatBrief`: target_name (`%s`), HP_cur (`%d`),
-    //      HP_max (`%d`), AC (`%d`), faction word (`%s`).
+    //      enrichment. Composed by combat_query::BuildTargetCombatBrief
+    //      and spoken via passive_narrate when ShowObject fires
+    //      (Q/E hostile cycle + mouse-hover passive selection).
+    //      Composition order mirrors what the sighted player reads from
+    //      the target reticle: name, condition, distance, status
+    //      effects, main-hand weapon, off-hand weapon.
+    //      Args `FmtTargetCombatBrief`: target_name (`%s`).
     //      `FactionHostile` / `FactionFriendly` / `FactionNeutral` —
-    //      faction-relation words.
+    //      faction-relation words (still used by the Shift+H examine
+    //      row, not by the Q/E brief).
     //      `TargetIsDead` — appended when the creature is dead.
     FmtTargetCombatBrief,
     FactionHostile,
@@ -612,12 +616,23 @@ enum class Id : int {
     // Brief enrichment clauses — appended (with leading space) to the
     // FmtTargetCombatBrief base line. Designed for composition so we
     // can add/skip individual fields without permuting the base format.
+    //   FmtBriefCondition      — args: damage-level word (`%s`). Skipped
+    //                            when the target is at full HP so common
+    //                            healthy-target transitions stay terse.
     //   FmtBriefDistanceMeters — args: meters (`%d`). Q/E + Shift+H.
-    //   FmtBriefWielding       — args: item display name (`%s`).
+    //   FmtBriefEffects        — args: joined unique effect names (`%s`).
+    //                            Q/E only; Shift+H lists each effect
+    //                            individually via the examine listbox.
+    //   FmtBriefWielding       — args: main-hand item display name (`%s`).
+    //   FmtBriefOffHand        — args: off-hand item display name (`%s`).
+    //                            Dual-wield / shield / off-hand pistol.
     //   FmtBriefEffectsCount   — args: count (`%d`). Shift+H only.
     //   FmtBriefFeatsCount     — args: count (`%d`). Shift+H only.
+    FmtBriefCondition,
     FmtBriefDistanceMeters,
+    FmtBriefEffects,
     FmtBriefWielding,
+    FmtBriefOffHand,
     FmtBriefEffectsCount,
     FmtBriefFeatsCount,
 

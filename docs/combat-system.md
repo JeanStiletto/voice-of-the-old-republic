@@ -112,18 +112,24 @@ because the suspected engine accessors used in `SpeakSelectedPcStatBlock`
 validated and a wrong-address call could __fastfail uncatchably. Manual
 Shift+S still calls them — user accepts the risk per session.
 
-**Phase 2B — opponent cycle-announcement enrichment.** Working with
-real data as of 2026-05-22. `combat_query::BuildTargetCombatBrief`
-composes the Q/E target line via a `BriefBuf` suffix chain:
-`<name>, <faction-word>, <hp> Lebenspunkte, <N> Meter, <weapon>.`
-Faction is now decoded from `CSWSCreatureStats.faction_id @+0x78` (ushort)
-mapped through the `standardFactions` enum (PLAYER=0 → friendly,
-HOSTILE_1=1 / HOSTILE_2=3 / INSANE=6 → hostile, NEUTRAL=5 → neutral,
-etc.). Distance is 2D horizontal metres. Main-hand weapon resolves via
-`CSWInventory.right_weapon @+0x14` (ulong handle) +
-`GetObjectDisplayNameByHandle`. HP-max and AC are still off the
-auto-firing brief — they live on the manual Shift+H view (see Phase 2C
-below) where the validated-accessor safety rule doesn't apply.
+**Phase 2B — opponent cycle-announcement enrichment.** Reworked
+2026-05-22 to mirror sighted-player target-reticle parity:
+`<name>. <condition>. <N> Meter. <effects>. <main-hand>. Nebenhand <off-hand>.`
+Each clause after the name is optional and only appears when the
+underlying field carries meaningful data. Condition is the localized
+word for `CSWSObject::GetDamageLevel @0x4cb020` (0..5 bucket — decompile
+2026-05-22 confirmed thresholds: ≥95 healthy, ≥75 light, ≥50 wounded,
+≥25 badly, >0 dying, ≤0 dead); skipped at level 0 so common healthy
+transitions stay terse. Distance is 2D horizontal metres. Status
+effects walk `CSWSObject.effects @+0x124` and surface the localized
+names from `examine_view::EffectName` (dedup by EFFECT_TYPES id,
+unmapped types silently skipped to keep the auto-fire path short,
+capped at 5). Main-hand resolves via `CSWInventory.right_weapon @+0x14`
+(ulong handle) + `GetObjectDisplayNameByHandle`; off-hand via
+`CSWInventory.left_weapon @+0x18` for dual-wield / shield / off-hand
+pistol parity. Faction word, raw HP number, and HP-max / AC continue to
+live on the manual Shift+H view (Phase 2C below) since the user listed
+faction as redundant with the engine's own target-ring colour.
 
 **Phase 2C — Shift+H Examine.** Working as a navigable in-DLL list view
 since 2026-05-22 (`examine_view.{h,cpp}`). The earlier ShowExamineBox
