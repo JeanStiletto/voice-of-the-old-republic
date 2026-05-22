@@ -4,9 +4,9 @@
 #include <cmath>
 #include <cstdint>
 
-#include "engine_area.h"   // GetObjectName — used by GetActiveLeaderName
-                           // to read first_name+tag from the server creature
-#include "engine_reads.h"  // ReadCExoString
+#include "engine_area.h"   // GetObjectHandle / GetObjectDisplayNameByHandle /
+                           // kCreatureStatsPtrOffset etc. — used by GetActiveLeaderName
+#include "engine_reads.h"  // ReadCExoString, ExtractTextOrStrRef
 #include "log.h"           // acclog::Write — diagnostics on the
                            // SetPlayerInputEnabled toggle / auto-restore tick
 
@@ -158,29 +158,115 @@ bool GetActiveLeaderName(char* outBuf, size_t bufSize) {
     if (!outBuf || bufSize < 2) return false;
     outBuf[0] = '\0';
 
-    // Try the CClientExoApp accessor FIRST. That's the PC's authoritative
-    // name slot (per memory project_pc_name_lives_in_client_exoapp) and it
-    // covers the only solo-leader scenario the engine has — every save and
-    // every fresh chargen ends up with a PC whose name lives there.
+    // Resolve the *currently controlled* leader's name. Tab cycles which
+    // party member the engine considers leader; GetClientLeader walks
+    // CClientExoApp::GetPlayerCreature which the engine re-wires on each
+    // Tab to the new leader (confirmed live via the DiagSelect Tab probe).
     //
-    // We intentionally do NOT fall through to GetObjectName on the player
-    // server creature. GetObjectName routes through
-    // GetObjectDisplayNameByHandle → CClientExoApp::GetObjectName, which
-    // writes through a stack CExoString. During the chargen→world transient
-    // (player creature spawned with empty first_name + tag, client handle
-    // not yet fully registered), that engine accessor takes a path that
-    // overruns the caller's stack frame and trips the /GS canary →
-    // __fastfail (uncatchable by SEH). Reliably reproduced on every
-    // chargen→world today; bisected to this code path on 2026-05-19.
+    // Read first_name directly from CSWSCreatureStats via a pure memory
+    // path (ExtractTextOrStrRef — inline CExoString, falling back to TLK
+    // strref). We intentionally do NOT route through the engine's
+    // CClientExoApp::GetObjectName accessor: that accessor writes through
+    // a stack CExoString, and on the PC handle during the chargen→world
+    // transient it overruns the caller's stack frame and trips the /GS
+    // canary → uncatchable __fastfail (bisected 2026-05-19). The
+    // direct-read path here doesn't invoke the engine accessor at all and
+    // is safe in every state.
     //
-    // TODO: when adding companion-leader support, fetch the actual active
-    // leader (not GetPlayerServerObject, which is always the PC), and for
-    // a companion call GetObjectName on THEIR server creature — companions
-    // have populated first_name/tag and the unsafe engine accessor never
-    // gets reached.
-    if (GetPlayerCharacterName(outBuf, bufSize) && outBuf[0] != '\0') {
+    // The PC's stats.first_name is empty in vanilla saves (chargen writes
+    // the chosen name to CClientExoAppInternal::player_character_name
+    // instead — see project_pc_name_lives_in_client_exoapp). So when the
+    // direct-read path yields an empty string, the leader is the PC and
+    // we fall back to GetPlayerCharacterName.
+    void* clientLeader = GetClientLeader();
+    void* serverCreature = nullptr;
+    void* stats = nullptr;
+    uint32_t leaderHandle = 0;
+    if (clientLeader) {
+        __try {
+            serverCreature = *reinterpret_cast<void**>(
+                reinterpret_cast<unsigned char*>(clientLeader) +
+                kClientObjectServerObjectOffset);
+            if (serverCreature) {
+                stats = *reinterpret_cast<void**>(
+                    reinterpret_cast<unsigned char*>(serverCreature) +
+                    kCreatureStatsPtrOffset);
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            serverCreature = nullptr;
+            stats = nullptr;
+        }
+        leaderHandle = GetObjectHandle(clientLeader);
+    }
+
+    // Path 1: engine's universal display-name accessor on the leader's
+    // handle. This is the same accessor sighted UI uses; it gives
+    // localized names for companions (Trask, Carth, ...) and the PC's
+    // chargen name where appropriate. The crash window we hit on
+    // 2026-05-19 was the chargen→world *transient* (PC handle not yet
+    // fully registered) — the Tab caller already gates that with
+    // GetPlayerPosition.
+    if (leaderHandle != 0u &&
+        GetObjectDisplayNameByHandle(leaderHandle, outBuf, bufSize) &&
+        outBuf[0] != '\0') {
+        acclog::Write("PartyLeader",
+                      "leader=handle — client=%p server=%p stats=%p "
+                      "handle=0x%08x name=[%s]",
+                      clientLeader, serverCreature, stats,
+                      leaderHandle, outBuf);
         return true;
     }
+
+    // Path 2: direct stats first_name read. Bypasses the engine accessor
+    // entirely (pure memory read). Companions usually populate this; the
+    // PC's stats slot is empty in vanilla saves.
+    outBuf[0] = '\0';
+    bool statsReadOk = false;
+    if (stats) {
+        statsReadOk = ExtractTextOrStrRef(
+            stats,
+            kCreatureStatsFirstNameOffset,
+            kCreatureStatsFirstNameOffset + 4,
+            outBuf, bufSize);
+        if (statsReadOk && outBuf[0] != '\0') {
+            acclog::Write("PartyLeader",
+                          "leader=stats — client=%p server=%p stats=%p "
+                          "name=[%s]",
+                          clientLeader, serverCreature, stats, outBuf);
+            return true;
+        }
+    }
+
+    // Path 3: PC chargen-name slot in CClientExoAppInternal — last resort
+    // when the leader is the PC and the engine accessor + stats are both
+    // empty (the canonical case for a freshly created PC).
+    outBuf[0] = '\0';
+    bool pcOk = GetPlayerCharacterName(outBuf, bufSize);
+
+    // Diagnostic: also dump the raw 8 bytes at stats+0x14 (CExoString
+    // c_string + length) so we can see if first_name is a strref-only
+    // slot we should be resolving through TLK.
+    const char* firstName_cstr = nullptr;
+    uint32_t    firstName_len  = 0xFFFFFFFFu;
+    uint32_t    firstName_strref = 0xFFFFFFFFu;
+    if (stats) {
+        __try {
+            auto* p = reinterpret_cast<unsigned char*>(stats) +
+                      kCreatureStatsFirstNameOffset;
+            firstName_cstr   = *reinterpret_cast<const char**>(p);
+            firstName_len    = *reinterpret_cast<uint32_t*>(p + 4);
+            firstName_strref = *reinterpret_cast<uint32_t*>(p + 8);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
+    acclog::Write("PartyLeader",
+                  "all paths empty — client=%p server=%p stats=%p "
+                  "handle=0x%08x first_name(cstr=%p len=%u strref=0x%x) "
+                  "stats_read_ok=%d pcOk=%d name=[%s]",
+                  clientLeader, serverCreature, stats,
+                  leaderHandle, firstName_cstr, firstName_len,
+                  firstName_strref, statsReadOk ? 1 : 0, pcOk ? 1 : 0,
+                  outBuf);
+    if (pcOk && outBuf[0] != '\0') return true;
     return false;
 }
 

@@ -130,18 +130,26 @@ bool GetPlayerCharacterName(char* outBuf, size_t bufSize);
 // DiagSelect Tab probe). Returns nullptr at any null link or fault.
 void* GetClientLeader();
 
-// Resolve the active leader's display name. Calls GetPlayerServerCreature
-// (server-side) → reads first_name + tag via the same path Tab announce
-// uses; falls back to GetPlayerCharacterName when the creature stats
-// name is empty (the PC chargen creature has empty first_name+tag —
-// only its CClientExoApp::PlayerCharacterName slot is populated).
+// Resolve the *currently controlled* leader's display name (Tab cycles
+// which party member is leader — companions or PC). Three resolution
+// paths, tried in order:
+//   1. GetObjectDisplayNameByHandle on the leader's handle — engine's
+//      universal localized-name accessor, the same one sighted UI uses.
+//      Gives "Trask Ulgo", "Carth Onasi", etc. for companions.
+//   2. Direct stats.first_name read via ExtractTextOrStrRef (pure
+//      memory path, no engine accessor). Covers companion saves where
+//      Path 1 returns empty.
+//   3. CClientExoAppInternal::player_character_name slot via
+//      CClientExoApp::GetPlayerCharacterName — the PC's chargen-set
+//      name. The PC's stats.first_name is empty in vanilla saves
+//      (see project_pc_name_lives_in_client_exoapp) so this is the
+//      canonical path when leader == PC.
 //
-// Companion NPCs (Trask, Carth, ...) resolve via the first_name path
-// and never reach the fallback. Used for diagnostic logging where we
-// need to know which character the engine considers leader at the
-// moment of an action — `GetPlayerCharacterName` alone always returns
-// the PC's chargen name regardless of who's leading, which made
-// pre-2026-05-05 leader logs in Picker / Radial diagnostics misleading.
+// Callers MUST gate on GetPlayerPosition before invoking — the engine
+// accessor on Path 1 routes through CClientExoApp::GetObjectName which
+// writes through a stack CExoString and trips /GS → uncatchable
+// __fastfail on the PC handle during the chargen→world transient
+// (bisected 2026-05-19). GetPlayerPosition closes that window.
 //
 // Returns true on non-empty name written to outBuf. Buffer is always
 // NUL-terminated on entry (outBuf[0] = '\0' even on early-return).
