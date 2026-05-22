@@ -2425,11 +2425,14 @@ bool LookupAt(void* area, const Vector& worldPos,
     if (!HasGraphForArea(area)) return false;
     if (g_graph.node_count <= 0) return false;
 
-    // 3D nearest-node — same-floor in single-floor areas, but the Z
-    // term matters in stacked-floor maps (Sith base, Endar Spire decks,
-    // Manaan). 2D nearest would snap to the wrong floor whenever the
-    // nav graphs of two floors line up vertically. ~100 nodes, linear
-    // scan is trivial.
+    // 2D nearest-node. The engine stores all path-graph nodes at z=0
+    // (the nav data is logically 2D — verified across every area in
+    // logged play, including multi-elevation maps). Including dz in
+    // the distance broke elevated areas: Taris Sewers spawns the
+    // player at z≈28m on the upper platform, which alone exceeds the
+    // 15m snap radius and pins every position to the "Offene Fläche"
+    // fallback. Multi-floor disambiguation needs to come from room-id,
+    // not z against an always-zero graph.
     //
     // Two parallel best-candidate slots:
     //   - `best`         : reachable, unfiltered (primary)
@@ -2466,8 +2469,7 @@ bool LookupAt(void* area, const Vector& worldPos,
         if (g_graph.node_label[i][0] == '\0') continue;
         float dx = g_graph.node_pos[i].x - worldPos.x;
         float dy = g_graph.node_pos[i].y - worldPos.y;
-        float dz = g_graph.node_pos[i].z - worldPos.z;
-        float d2 = dx * dx + dy * dy + dz * dz;
+        float d2 = dx * dx + dy * dy;
 
         bool reachable = true;
         if (haveWalls) {
