@@ -7,6 +7,7 @@
 #include "engine_manager.h"  // kAddrGuiManagerPtr, kMgrModalStackSizeOffset
 #include "engine_panels.h"   // HasActiveSubScreen, CallPrevSWInGameGui
 #include "log.h"
+#include "menus.h"           // ClearPendingAnnounce — partner of InvalidateChain
 #include "menus_chain.h"     // InvalidateChain — teardown-window stale-pointer guard
 
 namespace acc::engine {
@@ -293,8 +294,18 @@ extern "C" void __cdecl OnSetSWGuiStatus(void* thisPtr,
     // (typically the parent panel re-taking focus, or the next screen's
     // first control), so the brief empty-chain window is invisible at
     // the announce layer.
+    //
+    // Also drop the pending-announce slot. OnSetActiveControl writes it
+    // on every focus event, so a SetActive fired just before the area
+    // transition (e.g. PartySelection re-taking focus when the "Bist du
+    // mit der Zusammenstellung..." MessageBox closes on OK) leaves a
+    // dangling control pointer that the next tick's DrainPendingAnnounce
+    // would deref through its now-freed vtable. Crash dumps 20996 / 2288
+    // (2026-05-22, ESI = the cached Hinzuf. button) caught this exact
+    // path during the Versteck → tar_m02aa load.
     if (new_status == 4) {
         acc::menus::chain::InvalidateChain();
+        acc::menus::ClearPendingAnnounce();
     }
 }
 
