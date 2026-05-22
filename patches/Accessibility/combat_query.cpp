@@ -1,14 +1,16 @@
 #include "combat_query.h"
 
+#include <cmath>
+#include <cstdarg>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 
-#include "engine_area.h"      // GetObjectName, GetObjectKind, ResolveServerObjectHandle
+#include "engine_area.h"      // GetObjectName, GetObjectKind, ResolveServerObjectHandle, GetObjectPosition
 #include "engine_manager.h"   // kAddrGuiManagerPtr
 #include "engine_offsets.h"
 #include "engine_panels.h"    // PanelKind / IdentifyPanel
-#include "engine_player.h"    // GetPlayerServerCreature, GetActiveLeaderName
+#include "engine_player.h"    // GetPlayerServerCreature, GetActiveLeaderName, GetPlayerPosition
 #include "engine_reads.h"
 #include "hotkeys.h"
 #include "log.h"
@@ -60,6 +62,175 @@ int CallIntAccessor(void* this_, uintptr_t addr) {
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return 0;
     }
+}
+
+// Read CSWSCreatureStats.faction_id @+0x78 (ushort). Returns -1 on fault
+// or on the engine sentinel INVALID_FACTION (0xFFFF). Direct field read —
+// no engine call, safe for auto-firing paths (Phase 2B cycle announce,
+// Phase 2C Shift+H).
+int ReadFactionId(void* serverCreature) {
+    void* stats = ReadCreatureStats(serverCreature);
+    if (!stats) return -1;
+    __try {
+        unsigned short raw = *reinterpret_cast<unsigned short*>(
+            reinterpret_cast<unsigned char*>(stats) +
+            kStatsFactionIdOffset);
+        if (raw == 0xFFFF) return -1;  // INVALID_FACTION sentinel
+        return static_cast<int>(raw);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
+// Map a faction_id (standardFactions enum) to a spoken faction-word
+// string id. Mapping reasoning:
+//
+//   * Common KOTOR factions.2da layout: PLAYER=0, HOSTILE_1=1,
+//     FRIENDLY_1=2, HOSTILE_2=3, FRIENDLY_2=4, NEUTRAL=5, INSANE=6,
+//     plus area-specific factions 7+ that are mostly hostile critters /
+//     antagonists (Tusken Raiders, Xor's gang, predators, rancors, traps).
+//
+//   * PLAYER (0) maps to friendly — that's how the engine treats party
+//     followers, who share the player faction.
+//
+//   * INSANE (6) attacks everyone including its own faction members;
+//     for a target announce "hostile" is the correct user-facing word
+//     (the player is going to be attacked by them).
+//
+//   * SURRENDER_1/2 (9/10) and prey/gizka (12/16/17) get the
+//     "neutral" word — they're non-hostile by design.
+//
+//   * Anything outside the enum (custom mod faction, or PLAYER variant
+//     we haven't observed) falls back to neutral with a log line so we
+//     can iterate the table from real captures.
+//
+// Open: this is a static classification. The engine's runtime reputation
+// table can flip a faction from hostile to friendly mid-game (story
+// reputation shifts on Tatooine, Manaan, etc.). A later iteration can
+// invoke CSWSObject::GetReputation against the player to get the live
+// value and override this table on edge cases. See
+// docs/combat-system.md §Pillar 1 / faction.
+acc::strings::Id ClassifyFactionId(int factionId, bool* outIsHostile) {
+    using S = acc::strings::Id;
+    bool hostile = false;
+    S word = S::FactionNeutral;
+    switch (factionId) {
+        case 0:   word = S::FactionFriendly; break;             // PLAYER
+        case 1:   word = S::FactionHostile;  hostile = true; break;   // HOSTILE_1
+        case 2:   word = S::FactionFriendly; break;             // FRIENDLY_1
+        case 3:   word = S::FactionHostile;  hostile = true; break;   // HOSTILE_2
+        case 4:   word = S::FactionFriendly; break;             // FRIENDLY_2
+        case 5:   word = S::FactionNeutral;  break;             // NEUTRAL
+        case 6:   word = S::FactionHostile;  hostile = true; break;   // INSANE
+        case 7:   word = S::FactionHostile;  hostile = true; break;   // PTAT_TUSKAN
+        case 8:   word = S::FactionHostile;  hostile = true; break;   // GLB_XOR
+        case 9:                                                  // SURRENDER_1
+        case 10:  word = S::FactionNeutral;  break;             // SURRENDER_2
+        case 11:  word = S::FactionHostile;  hostile = true; break;   // PREDATOR
+        case 12:  word = S::FactionNeutral;  break;             // PREY
+        case 13:  word = S::FactionHostile;  hostile = true; break;   // TRAP
+        case 15:  word = S::FactionHostile;  hostile = true; break;   // RANCOR
+        case 16:                                                 // GIZKA_1
+        case 17:  word = S::FactionNeutral;  break;             // GIZKA_2
+        default:  word = S::FactionNeutral;  break;             // unmapped
+    }
+    if (outIsHostile) *outIsHostile = hostile;
+    return word;
+}
+
+// Read CSWSCreatureStats.feats CExoArrayList<ushort> size at +0x4. Direct
+// field read — no engine call, safe for any path. Returns -1 on fault.
+int ReadFeatCount(void* stats) {
+    if (!stats) return -1;
+    __try {
+        auto* lst = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(stats) +
+            kStatsFeatsListOffset);
+        int s = lst->size;
+        if (s < 0 || s > 0x400) return -1;  // sanity clamp
+        return s;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
+// Walk CSWSCreature.inventory @+0xa2c → CSWInventory.<slot>_handle →
+// CClientExoApp::GetObjectName(handle). SEH-guarded at every hop.
+// `slotHandleOffset` is one of kInventory*HandleOffset (e.g.
+// kInventoryRightWeaponHandleOffset for main-hand). Returns true and
+// writes a null-terminated display name on success; false on any
+// null link, empty slot, sentinel handle, or name-resolution miss.
+// Logs the slot handle so an unresolved item leaves a breadcrumb.
+bool ReadEquippedItemName(void* serverCreature, size_t slotHandleOffset,
+                          const char* slotLabel,
+                          char* outBuf, size_t outBufSize) {
+    if (!serverCreature || !outBuf || outBufSize < 2) return false;
+    outBuf[0] = '\0';
+
+    void* inventory = nullptr;
+    __try {
+        inventory = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(serverCreature) +
+            kCreatureInventoryOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (!inventory) return false;
+
+    uint32_t handle = 0;
+    __try {
+        handle = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(inventory) + slotHandleOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (handle == 0u || handle == 0xFFFFFFFFu || handle == 0x7F000000u) {
+        return false;  // empty slot
+    }
+
+    bool ok = acc::engine::GetObjectDisplayNameByHandle(
+        handle, outBuf, outBufSize);
+    if (!ok || outBuf[0] == '\0') {
+        acclog::Write("Combat.Equip",
+                      "slot=%s handle=0x%08x name-resolve missed",
+                      slotLabel ? slotLabel : "?", handle);
+        return false;
+    }
+    return true;
+}
+
+// 2D distance (horizontal plane) from player to target in metres. Matches
+// the cycle_state convention — z deliberately ignored so multi-storey
+// targets don't get misleading larger numbers. Returns -1.0f if either
+// position read fails.
+float ComputePlayerDistanceMeters(void* targetObject) {
+    if (!targetObject) return -1.0f;
+    Vector tgt{};
+    if (!acc::engine::GetObjectPosition(targetObject, tgt)) return -1.0f;
+    Vector pc{};
+    if (!acc::engine::GetPlayerPosition(pc)) return -1.0f;
+    float dx = tgt.x - pc.x;
+    float dy = tgt.y - pc.y;
+    return std::sqrt(dx * dx + dy * dy);
+}
+
+// Appendable composer — writes `fmt`-formatted args into `buf` at the
+// current offset and advances. No-op if `buf` already saturated; never
+// overflows. Used to chain optional suffix clauses onto the brief.
+struct BriefBuf {
+    char*  buf;
+    size_t cap;
+    size_t off;
+};
+
+void BriefAppend(BriefBuf& b, const char* fmt, ...) {
+    if (!b.buf || b.off >= b.cap) return;
+    va_list args;
+    va_start(args, fmt);
+    int n = std::vsnprintf(b.buf + b.off, b.cap - b.off, fmt, args);
+    va_end(args);
+    if (n > 0) b.off += static_cast<size_t>(n);
+    if (b.off > b.cap) b.off = b.cap;
 }
 
 // Read 6 attribute totals as bytes from creature_stats +0x34..+0x39. The
@@ -278,14 +449,43 @@ bool BuildTargetCombatBrief(void* targetServerObject,
     }
 
     using S = acc::strings::Id;
-    // Faction-relation classification is an "open" item — placeholder
-    // "neutral" until CSWSFaction is decoded.
-    const char* factionWord = acc::strings::Get(S::FactionNeutral);
+    int factionId = ReadFactionId(targetServerObject);
+    S factionWordId = ClassifyFactionId(factionId, /*outIsHostile=*/nullptr);
+    const char* factionWord = acc::strings::Get(factionWordId);
 
-    std::snprintf(outBuf, outBufSize,
-                  acc::strings::Get(S::FmtTargetCombatBrief),
-                  targetName ? targetName : "?",
-                  factionWord, hpCur);
+    BriefBuf b{outBuf, outBufSize, 0};
+    BriefAppend(b, acc::strings::Get(S::FmtTargetCombatBrief),
+                targetName ? targetName : "?", factionWord, hpCur);
+
+    // Distance — sighted players can judge approximate range from the
+    // target reticle; expose the same affordance as a metres readout.
+    // 2D horizontal distance (matches the cycle audio cue's range model).
+    float distM = ComputePlayerDistanceMeters(targetServerObject);
+    int distMeters = -1;
+    if (distM >= 0.0f) {
+        distMeters = static_cast<int>(distM + 0.5f);   // round to nearest
+        BriefAppend(b, acc::strings::Get(S::FmtBriefDistanceMeters),
+                    distMeters);
+    }
+
+    // Main-hand weapon — what the sighted player sees the enemy holding.
+    // Skip silently when the slot is empty (unarmed creatures, animals,
+    // etc.) rather than announcing "unarmed" — verbose for the common
+    // case where the user already knows what an animal looks like.
+    char wpnName[96] = "";
+    bool gotWpn = ReadEquippedItemName(targetServerObject,
+                                       kInventoryRightWeaponHandleOffset,
+                                       "main-hand",
+                                       wpnName, sizeof(wpnName));
+    if (gotWpn && wpnName[0] != '\0') {
+        BriefAppend(b, acc::strings::Get(S::FmtBriefWielding), wpnName);
+    }
+
+    acclog::Write("Combat.Brief",
+                  "name=[%s] factionId=%d word=[%s] hp=%d distM=%.2f "
+                  "wpn=[%s]",
+                  targetName ? targetName : "?", factionId, factionWord,
+                  hpCur, distM, gotWpn ? wpnName : "");
     return true;
 }
 
@@ -377,26 +577,29 @@ void HotkeyShiftH() {
 
     int kind = obj ? acc::engine::GetObjectKind(obj) : -1;
     char msg[512];
+    int effCount = -1;
+    int featCount = -1;
     if (obj && kind == static_cast<int>(acc::engine::GameObjectKind::Creature)) {
-        // Direct field reads only — the suspected engine accessors
-        // (GetMaxHitPoints / GetArmorClass / save accessors) aren't
-        // safe to call from a hotkey path that the user might press
-        // before they're validated. HP-current via the documented
-        // CSWSObject.hit_points @+0xe0 offset.
-        int hpCur = 0;
-        __try {
-            hpCur = static_cast<int>(*reinterpret_cast<short*>(
-                reinterpret_cast<unsigned char*>(obj) +
-                kObjectHitPointsOffset));
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
-            hpCur = 0;
+        // Build the same brief Q/E speaks (name + faction + hp + distance
+        // + main-hand weapon), then append inspect-only fields the
+        // sighted player wouldn't see from a target reticle but expects
+        // from an Examine action.
+        BuildTargetCombatBrief(obj, name, msg, sizeof(msg));
+
+        BriefBuf b{msg, sizeof(msg), std::strlen(msg)};
+        effCount = ReadEffectCount(obj);
+        if (effCount > 0) {
+            BriefAppend(b,
+                acc::strings::Get(acc::strings::Id::FmtBriefEffectsCount),
+                effCount);
         }
-        std::snprintf(msg, sizeof(msg),
-                      acc::strings::Get(
-                          acc::strings::Id::FmtTargetCombatBrief),
-                      name,
-                      acc::strings::Get(acc::strings::Id::FactionNeutral),
-                      hpCur);
+        void* stats = ReadCreatureStats(obj);
+        featCount = ReadFeatCount(stats);
+        if (featCount > 0) {
+            BriefAppend(b,
+                acc::strings::Get(acc::strings::Id::FmtBriefFeatsCount),
+                featCount);
+        }
     } else {
         // Non-creature target — speak the localized name as a starting
         // point. Door / placeable / item-specific enrichment is the
@@ -405,8 +608,9 @@ void HotkeyShiftH() {
     }
     tolk::Speak(msg, /*interrupt=*/true);
     acclog::Write("Combat.Examine",
-                  "Shift+H direct read handle=0x%08x name=[%s] kind=%d -> [%s]",
-                  handle, name, kind, msg);
+                  "Shift+H handle=0x%08x name=[%s] kind=%d effects=%d "
+                  "feats=%d -> [%s]",
+                  handle, name, kind, effCount, featCount, msg);
 }
 
 void TickExaminePanel() {

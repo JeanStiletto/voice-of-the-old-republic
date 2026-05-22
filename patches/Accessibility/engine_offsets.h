@@ -869,10 +869,47 @@ constexpr uintptr_t kAddrStatsGetSimpleAlignmentGoodEvil = 0x005a5110;
 // fields per `accessibility-investigation.md`).
 constexpr size_t kStatsAttrTotalsOffset               = 0x34;  // 6 bytes: STR/DEX/CON/INT/WIS/CHA
 
-// CSWSCreature::GetFaction → CSWSFaction*. We don't decode the faction
-// struct here; faction-relation classification is deferred to a later
-// probe (Phase 2B "open"). The address is kept for the future hookup.
+// CSWSCreatureStats.faction_id @+0x78 (ushort) — the creature's standard
+// faction. Per swkotor.exe.h `standardFactions` enum: HOSTILE_1=1,
+// FRIENDLY_1=2, HOSTILE_2=3, FRIENDLY_2=4, NEUTRAL=5, INSANE=6,
+// PTAT_TUSKAN=7, GLB_XOR=8, SURRENDER_1=9, SURRENDER_2=10, PREDATOR=11,
+// PREY=12, TRAP=13, ENDAR_SPIRE=14, RANCOR=15, GIZKA_1=16, GIZKA_2=17,
+// INVALID_FACTION=0xFFFF. The player + party share PLAYER (commonly
+// faction id 0, not in the enum). Direct field read — no engine call,
+// safe for auto-firing paths.
+constexpr size_t kStatsFactionIdOffset                = 0x78;
+
+// CSWSCreature::GetFaction → CSWSFaction*. Reserved for the future if we
+// need to query the dynamic reputation table (custom mod factions
+// outside the standard enum). The direct faction_id field-read above
+// covers the typical hostile/friendly/neutral classification.
 constexpr uintptr_t kAddrCSWSCreatureGetFaction       = 0x00513fc0;
+
+// CSWSCreature.inventory @+0xa2c → CSWInventory*. Server-side equipment
+// container. Combined with CSWInventory::GetItemInSlot below this gives
+// us "what is the creature wielding right now".
+constexpr size_t    kCreatureInventoryOffset          = 0xa2c;
+
+// CSWInventory equipped-slot field layout (validated via Lane's symbol
+// table 12715: STRUCTURE CSWInventory SIZE=0x4c). Each slot is a ulong
+// game-object handle (NOT a pointer) — resolved via the universal
+// CClientExoApp::GetObjectName accessor. Initial attempt routed through
+// CSWInventory::GetItemInSlot which returns a small CSWItem* wrapper
+// (size 0x10) — the wrong shape for the localized_name @+0x280 chain;
+// reading the handle directly bypasses that confusion.
+constexpr size_t    kInventoryRightWeaponHandleOffset = 0x14;  // main hand
+constexpr size_t    kInventoryLeftWeaponHandleOffset  = 0x18;  // off hand
+constexpr size_t    kInventoryHeadHandleOffset        = 0x4;
+constexpr size_t    kInventoryTorsoHandleOffset       = 0x8;
+constexpr size_t    kInventoryHandsHandleOffset       = 0x10;
+constexpr size_t    kInventoryImplantHandleOffset     = 0x28;
+constexpr size_t    kInventoryBeltHandleOffset        = 0x2c;
+
+// CSWSCreatureStats.feats @+0x0 — CExoArrayList<ushort>. Count lives
+// at +0x4 (size field of the list). Static feat list (granted at level-
+// up + class); doesn't drift mid-combat. Used by Shift+H to communicate
+// "this creature has N feats" without enumerating them.
+constexpr size_t    kStatsFeatsListOffset             = 0x0;
 
 // CGuiInGame::ShowExamineBox — DO NOT CALL DIRECTLY (skeleton).
 // Verified 2026-05-10 from Lane's symbol table: this is a 2-parameter

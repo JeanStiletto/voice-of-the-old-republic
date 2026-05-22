@@ -195,6 +195,11 @@ const char* Get(Id id) {
         case Id::FactionNeutral:             return "neutral";
         case Id::TargetIsDead:               return "dead";
 
+        case Id::FmtBriefDistanceMeters:     return " %d meters.";
+        case Id::FmtBriefWielding:           return " %s.";
+        case Id::FmtBriefEffectsCount:       return " %d active effects.";
+        case Id::FmtBriefFeatsCount:         return " %d feats.";
+
         case Id::ExamineOpened:              return "Examine.";
         case Id::ExamineNoTarget:            return "No target to examine.";
         case Id::ExamineFailed:              return "Examine failed.";

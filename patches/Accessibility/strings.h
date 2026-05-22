@@ -601,6 +601,18 @@ enum class Id : int {
     FactionNeutral,
     TargetIsDead,
 
+    // Brief enrichment clauses — appended (with leading space) to the
+    // FmtTargetCombatBrief base line. Designed for composition so we
+    // can add/skip individual fields without permuting the base format.
+    //   FmtBriefDistanceMeters — args: meters (`%d`). Q/E + Shift+H.
+    //   FmtBriefWielding       — args: item display name (`%s`).
+    //   FmtBriefEffectsCount   — args: count (`%d`). Shift+H only.
+    //   FmtBriefFeatsCount     — args: count (`%d`). Shift+H only.
+    FmtBriefDistanceMeters,
+    FmtBriefWielding,
+    FmtBriefEffectsCount,
+    FmtBriefFeatsCount,
+
     // ---- Combat system, Phase 2C — examine hotkey (Shift+H). Spoken on
     //      open / close / no-target failure.
     ExamineOpened,

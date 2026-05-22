@@ -206,6 +206,11 @@ const char* Get(Id id) {
         case Id::FactionNeutral:             return "neutral";
         case Id::TargetIsDead:               return "tot";
 
+        case Id::FmtBriefDistanceMeters:     return " %d Meter.";
+        case Id::FmtBriefWielding:           return " %s.";
+        case Id::FmtBriefEffectsCount:       return " %d aktive Effekte.";
+        case Id::FmtBriefFeatsCount:         return " %d Talente.";
+
         case Id::ExamineOpened:              return "Untersuchen.";
         case Id::ExamineNoTarget:            return "Kein Ziel zum Untersuchen.";
         case Id::ExamineFailed:              return "Untersuchen fehlgeschlagen.";
