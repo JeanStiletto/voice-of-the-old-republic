@@ -129,4 +129,20 @@ bool ReadToggleState(void* toggle);
 // Caller is responsible for null-checks.
 void DumpControlVtable(void* control, char* out, size_t outSize);
 
+// Resolve a client-side game-object handle (the kind stored in row+0x1c4 on
+// CSWGuiStoreItemEntry, CSWGuiInGameItemEntry inside Container/Equip-picker)
+// to a CSWSItem*. Walks AppManager → CServerExoApp, then runs
+// ClientToServerObjectId → GetItemByGameObjectID with SEH guarding at each
+// hop. Returns nullptr on any null link, invalid handle (0 / 0xffffffff),
+// or raised exception. Safe to call from monitor ticks during teardown.
+void* ResolveItemFromClientHandle(uint32_t clientHandle);
+
+// Read a CSWSItem's full property description (the multi-line text the
+// Inventory/Store/Equip panels render into their description listbox on
+// hover): damage, range, on-hit, defence, base description, etc. Writes up
+// to `bufSize-1` bytes to `outBuf` and null-terminates; returns true on a
+// non-empty result. The engine allocates a fresh heap c_string for each
+// call which we deliberately leak (see same pattern in LookupTlk).
+bool ReadItemPropertyDescription(void* item, char* outBuf, size_t bufSize);
+
 }  // namespace acc::engine

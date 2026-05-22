@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "engine_player.h"  // kAddrAppManagerPtr
 #include "log.h"
 
 namespace acc::engine {
@@ -212,6 +213,76 @@ void DumpControlVtable(void* control, char* out, size_t outSize) {
     snprintf(out, outSize,
              "vtable=%p [0]=%p [4]=%p [20]=%p [22]=%p",
              vtable, vtable[0], vtable[4], vtable[20], vtable[22]);
+}
+
+typedef uint32_t (__thiscall* PFN_ClientToServerObjectId)(void* this_,
+                                                           uint32_t handle);
+typedef void*    (__thiscall* PFN_GetItemByGameObjectID)(void* this_,
+                                                         uint32_t handle);
+
+void* ResolveItemFromClientHandle(uint32_t clientHandle) {
+    if (clientHandle == 0 || clientHandle == 0xffffffff) return nullptr;
+    void* appMgr = nullptr;
+    __try {
+        appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+    if (!appMgr) return nullptr;
+
+    void* serverApp = nullptr;
+    __try {
+        serverApp = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(appMgr) +
+            kAppManagerServerExoAppOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+    if (!serverApp) return nullptr;
+
+    uint32_t serverHandle = 0;
+    __try {
+        auto fn = reinterpret_cast<PFN_ClientToServerObjectId>(
+            kAddrServerExoAppClientToServerObjectId);
+        serverHandle = fn(serverApp, clientHandle);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+    if (serverHandle == 0 || serverHandle == 0xffffffff) return nullptr;
+
+    void* item = nullptr;
+    __try {
+        auto fn = reinterpret_cast<PFN_GetItemByGameObjectID>(
+            kAddrServerExoAppGetItemByGameObjectID);
+        item = fn(serverApp, serverHandle);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+    return item;
+}
+
+typedef CExoString* (__thiscall* PFN_GetPropertyDescription)(void* this_,
+                                                              CExoString* out);
+
+bool ReadItemPropertyDescription(void* item, char* outBuf, size_t bufSize) {
+    if (!item || !outBuf || bufSize < 2) return false;
+    CExoString tmp = {nullptr, 0};
+    bool ok = false;
+    __try {
+        auto fn = reinterpret_cast<PFN_GetPropertyDescription>(
+            kAddrCSWSItemGetPropertyDescription);
+        fn(item, &tmp);
+        if (tmp.c_string && tmp.length > 0 && tmp.length < bufSize) {
+            memcpy(outBuf, tmp.c_string, tmp.length);
+            outBuf[tmp.length] = '\0';
+            ok = true;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Engine.Reads",
+                      "GetPropertyDescription SEH for item=%p", item);
+        ok = false;
+    }
+    return ok;
 }
 
 }  // namespace acc::engine

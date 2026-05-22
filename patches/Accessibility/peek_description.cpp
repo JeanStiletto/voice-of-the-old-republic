@@ -141,11 +141,15 @@ struct PanelPeekInfo {
 };
 
 constexpr PanelPeekInfo kPanels[] = {
-    { acc::engine::PanelKind::InGameEquip,      0x33b8, nullptr           },  // CSWGuiInGameEquip.description_listbox
     { acc::engine::PanelKind::InGameInventory,  0x0844, RefreshInventory  },  // CSWGuiInGameInventory.description_listbox
     { acc::engine::PanelKind::InGameJournal,    0x01a4, RefreshJournal    },  // CSWGuiInGameJournal.item_description_label (a CSWGuiListBox)
     { acc::engine::PanelKind::InGameAbilities,  0x33bc, nullptr           },  // CSWGuiInGameAbilities.description_listbox
     { acc::engine::PanelKind::Store,            0x1a40, RefreshStore      },  // CSWGuiStore.description_listbox
+    // CSWGuiInGameEquip is handled via the item-tooltip path below: its
+    // arrow-key nav goes through DriveListBoxSelection which bypasses the
+    // engine's onSelectionChanged callback, so description_listbox at
+    // +0x33b8 stays stale. Instead we derive the focused row from
+    // items_listbox.selection_index and read the item description directly.
 };
 
 const PanelPeekInfo* LookupPanel(acc::engine::PanelKind k) {
@@ -153,6 +157,124 @@ const PanelPeekInfo* LookupPanel(acc::engine::PanelKind k) {
         if (p.kind == k) return &p;
     }
     return nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// Item-tooltip path — for listbox-driven panels whose rows are
+// CSWGuiInGameItemEntry instances (item_game_object_id at +0x1c4).
+//
+// The chain-nav peek path above requires an inline `description_listbox`
+// member that the engine pre-formats on hover/select. Two of our supported
+// surfaces don't fit that shape:
+//
+//   * Container (loot panel, "Plündern") — no description_listbox member at
+//     all (container.gui has only LBL_MESSAGE + LB_ITEMS + 3 buttons).
+//   * Equip picker (CSWGuiInGameEquip in picker mode) — has
+//     description_listbox at +0x33b8, but it's populated by OnItemSelected
+//     which we deliberately bypass with DriveListBoxSelection (calling it
+//     would commit the equip on every Shift+Down).
+//
+// Both panels store CLIENT-side game-object handles in their item rows
+// (Container.SetContainer @ 0x6b8130 calls ServerToClientObjectId before
+// SetItem; Equip.OnItemSelected @ 0x6b7920 reverses that with
+// ClientToServerObjectId before the item lookup). We resolve back to a
+// CSWSItem* and call CSWSItem::GetPropertyDescription directly — the
+// same source the engine's description listbox formatting consumes.
+//
+// minSel = 1 skips the protoitem template row (Equip picker only — rows
+// in LB_ITEMS render from row 0 as the prototype). Container uses 0.
+struct ItemTooltipPanelInfo {
+    acc::engine::PanelKind kind;
+    std::size_t            itemsListBoxOffset;
+    int                    minSel;
+};
+
+constexpr ItemTooltipPanelInfo kItemTooltipPanels[] = {
+    { acc::engine::PanelKind::Container,   0x07f0, 0 },  // CSWGuiContainer.items_listbox
+    { acc::engine::PanelKind::InGameEquip, 0x30d8, 1 },  // CSWGuiInGameEquip.items_listbox
+};
+
+const ItemTooltipPanelInfo* LookupItemTooltipPanel(acc::engine::PanelKind k) {
+    for (const auto& p : kItemTooltipPanels) {
+        if (p.kind == k) return &p;
+    }
+    return nullptr;
+}
+
+constexpr std::size_t kItemEntryGameObjectIdOffset = 0x1c4;
+
+// Returns true iff a description was found and spoken. False on empty
+// listbox / no selection / unresolved handle / empty description text;
+// callers should still consume the key in those cases to keep behaviour
+// predictable (Shift+arrow shouldn't silently fire the unshifted nav).
+bool HandleItemTooltip(acc::engine::PanelKind kind,
+                       const ItemTooltipPanelInfo& info,
+                       void* activePanel) {
+    void* lb = reinterpret_cast<unsigned char*>(activePanel) +
+               info.itemsListBoxOffset;
+    auto* lbList = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
+    int rowCount = 0;
+    short selIdx = -1;
+    __try {
+        rowCount = (lbList && lbList->data) ? lbList->size : 0;
+        selIdx = *reinterpret_cast<short*>(
+            reinterpret_cast<unsigned char*>(lb) +
+            kListBoxSelectionIndexOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Peek.Item",
+                      "panel=%s lb=%p SEH reading listbox state",
+                      acc::engine::PanelKindName(kind), lb);
+        return false;
+    }
+
+    if (rowCount <= 0 || selIdx < info.minSel || selIdx >= rowCount) {
+        acclog::Write("Peek.Item",
+                      "panel=%s lb=%p no focused item (sel=%d rows=%d "
+                      "minSel=%d); silent",
+                      acc::engine::PanelKindName(kind), lb,
+                      (int)selIdx, rowCount, info.minSel);
+        return false;
+    }
+
+    void* row = nullptr;
+    uint32_t clientHandle = 0;
+    __try {
+        row = lbList->data[selIdx];
+        if (row) {
+            clientHandle = *reinterpret_cast<uint32_t*>(
+                reinterpret_cast<unsigned char*>(row) +
+                kItemEntryGameObjectIdOffset);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Peek.Item",
+                      "panel=%s row=%p SEH reading item handle",
+                      acc::engine::PanelKindName(kind), row);
+        return false;
+    }
+
+    void* item = acc::engine::ResolveItemFromClientHandle(clientHandle);
+    if (!item) {
+        acclog::Write("Peek.Item",
+                      "panel=%s row=%p handle=0x%x; item not resolvable",
+                      acc::engine::PanelKindName(kind), row, clientHandle);
+        return false;
+    }
+
+    char text[4096];
+    if (!acc::engine::ReadItemPropertyDescription(item, text, sizeof(text))) {
+        acclog::Write("Peek.Item",
+                      "panel=%s item=%p empty description",
+                      acc::engine::PanelKindName(kind), item);
+        return false;
+    }
+
+    tolk::Speak(text, /*interrupt=*/true);
+    acclog::Write("Peek.Item",
+                  "panel=%s row sel=%d/%d item=%p handle=0x%x text=\"%s\"",
+                  acc::engine::PanelKindName(kind), (int)selIdx, rowCount,
+                  item, clientHandle, text);
+    return true;
 }
 
 // Read the visible text of one description-listbox row. Description
@@ -217,6 +339,17 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
     if (!activePanel) return false;
 
     auto kind = acc::engine::IdentifyPanel(activePanel);
+
+    // Try the item-tooltip path first (Container, Equip picker). These
+    // panels don't fit the inline-description-listbox shape — see the
+    // ItemTooltipPanelInfo block above. Always consume the key when the
+    // panel matches so plain Up/Down nav doesn't fire on top of a
+    // Shift+arrow that found no focused item.
+    if (const ItemTooltipPanelInfo* itemInfo = LookupItemTooltipPanel(kind)) {
+        HandleItemTooltip(kind, *itemInfo, activePanel);
+        return true;
+    }
+
     const PanelPeekInfo* info = LookupPanel(kind);
     if (!info) return false;  // unknown / unsupported panel; pass through
 

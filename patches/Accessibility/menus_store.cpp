@@ -11,6 +11,7 @@
 #include "engine_manager.h"   // GetForegroundPanel, kAddrGuiManagerPtr
 #include "engine_offsets.h"
 #include "engine_player.h"    // kAddrAppManagerPtr
+#include "engine_reads.h"     // ResolveItemFromClientHandle
 #include "hotkeys.h"          // Pressed() for G (StoreModeToggle)
 #include "log.h"
 #include "menus_chain.h"      // RebindChain on mode flip
@@ -97,50 +98,10 @@ int ReadListBoxSize(void* panel, size_t listOffset) {
     }
 }
 
-// Resolve a row's client-side obj_id to a CSWSItem* via the engine's
-// ClientToServerObjectId + GetItemByGameObjectID. SEH-protected at each
-// thiscall hop; nullptr on any miss/fault.
-typedef uint32_t (__thiscall* PFN_ClientToServer)(void* this_, uint32_t handle);
-typedef void*    (__thiscall* PFN_GetItemByHandle)(void* this_, uint32_t handle);
-
-void* ResolveItemFromHandle(uint32_t clientHandle) {
-    if (clientHandle == 0 || clientHandle == 0xffffffff) return nullptr;
-    void* appMgr = nullptr;
-    __try {
-        appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-    if (!appMgr) return nullptr;
-    void* serverApp = nullptr;
-    __try {
-        serverApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appMgr) +
-            kAppManagerServerExoAppOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-    if (!serverApp) return nullptr;
-
-    uint32_t serverHandle = 0;
-    __try {
-        auto fn = reinterpret_cast<PFN_ClientToServer>(
-            kAddrServerExoAppClientToServerObjectId);
-        serverHandle = fn(serverApp, clientHandle);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-    if (serverHandle == 0 || serverHandle == 0xffffffff) return nullptr;
-
-    void* item = nullptr;
-    __try {
-        auto fn = reinterpret_cast<PFN_GetItemByHandle>(
-            kAddrServerExoAppGetItemByGameObjectID);
-        item = fn(serverApp, serverHandle);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-    return item;
+// Thin alias to the shared resolver in engine_reads.h. Kept under the
+// existing name so callsites in this file stay short.
+inline void* ResolveItemFromHandle(uint32_t clientHandle) {
+    return acc::engine::ResolveItemFromClientHandle(clientHandle);
 }
 
 // Thiscall to GetItemBuyValue / GetItemSellValue on the live store panel.

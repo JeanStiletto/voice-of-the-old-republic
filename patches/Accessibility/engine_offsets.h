@@ -1011,6 +1011,17 @@ constexpr uintptr_t kAddrCSWGuiStoreOnControlStoreAButton  = 0x006c1130;
 constexpr uintptr_t kAddrServerExoAppClientToServerObjectId = 0x004aea30;
 constexpr uintptr_t kAddrServerExoAppGetItemByGameObjectID  = 0x004ae760;
 
+// CSWSItem::GetPropertyDescription — __thiscall(CExoString* out) -> CExoString*.
+// Returns the full formatted property description block (the text that
+// Inventory/Store/Equip render into their description listbox on hover):
+// damage, feats, defence, on-hit, base description, etc. The caller passes
+// uninitialised stack memory for `out`; the function constructs a CExoString
+// in place by allocating a heap c_string. We then read out the c_string and
+// deliberately leak the allocation rather than calling ~CExoString (heap
+// ownership across the DLL/EXE boundary risks CRT mismatch; see the same
+// pattern in LookupTlk above).
+constexpr uintptr_t kAddrCSWSItemGetPropertyDescription     = 0x0055f340;
+
 // AppManager indirection to CServerExoApp. AppManager+0x8 → CServerExoApp*.
 // (Same constant as engine_player.h's kAppManagerServerOffsetPlayer.)
 constexpr size_t    kAppManagerServerExoAppOffset          = 0x8;
