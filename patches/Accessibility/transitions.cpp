@@ -96,6 +96,11 @@ char   g_room_landmark[kMaxRoomsCache][128];
 Vector g_room_landmark_pos[kMaxRoomsCache];
 bool   g_room_landmark_has_pos[kMaxRoomsCache];
 int    g_room_landmark_count = 0;
+// Set by wall_topology::AttachLandmarksToDoors when this slot's landmark
+// gets embedded in a cluster label. TickProximityLandmarks skips matched
+// slots so the player doesn't hear "Kreuzung, Ost, Tür Süd, Zur Oberstadt"
+// followed by a redundant standalone "Zur Oberstadt" a second later.
+bool   g_room_landmark_door_matched[kMaxRoomsCache];
 
 // Heuristic: vanilla KOTOR content stores room names as the .lyt-room
 // identifier (`m01aa_10`, `stunt_03_main`, `unk_m13ab`) — pronounceable
@@ -141,6 +146,7 @@ void RebuildLandmarkCache(void* area) {
         g_room_landmark[i][0]     = '\0';
         g_room_landmark_pos[i]    = {0, 0, 0};
         g_room_landmark_has_pos[i] = false;
+        g_room_landmark_door_matched[i] = false;
     }
     g_room_landmark_count = 0;
 
@@ -591,12 +597,18 @@ void TickProximityLandmarks(const Vector& playerPos) {
         }
     }
 
-    // Find the nearest landmark inside enter range.
+    // Find the nearest landmark inside enter range. Skip slots whose
+    // landmark wall_topology already embedded in a cluster label — the
+    // player heard the name as part of the room-shape announce on
+    // cluster entry, and a redundant standalone fire would talk over
+    // the next legitimate cue (see project memory on the
+    // cluster-vs-landmark double-announce regression).
     int   nearest = -1;
     float bestD2  = kLandmarkEnterRangeM * kLandmarkEnterRangeM;
     for (int i = 0; i < kMaxRoomsCache; ++i) {
         if (!g_room_landmark_has_pos[i])    continue;
         if (g_room_landmark[i][0] == '\0')  continue;
+        if (g_room_landmark_door_matched[i]) continue;
         float dx = playerPos.x - g_room_landmark_pos[i].x;
         float dy = playerPos.y - g_room_landmark_pos[i].y;
         float d2 = dx * dx + dy * dy;
@@ -687,6 +699,29 @@ bool GetLandmarkPositionForRoom(int roomIdx, Vector& outPos) {
     if (!g_room_landmark_has_pos[roomIdx])        return false;
     outPos = g_room_landmark_pos[roomIdx];
     return true;
+}
+
+bool IterateLandmarks(int& cursor,
+                      char* nameOut, size_t nameBufSize,
+                      Vector& posOut, int& outRoomIdx) {
+    if (!nameOut || nameBufSize == 0) return false;
+    if (cursor < 0) cursor = 0;
+    while (cursor < kMaxRoomsCache) {
+        int i = cursor++;
+        if (!g_room_landmark_has_pos[i])    continue;
+        if (g_room_landmark[i][0] == '\0')  continue;
+        std::strncpy(nameOut, g_room_landmark[i], nameBufSize - 1);
+        nameOut[nameBufSize - 1] = '\0';
+        posOut     = g_room_landmark_pos[i];
+        outRoomIdx = i;
+        return true;
+    }
+    return false;
+}
+
+void MarkLandmarkClaimedByDoor(int roomIdx) {
+    if (roomIdx < 0 || roomIdx >= kMaxRoomsCache) return;
+    g_room_landmark_door_matched[roomIdx] = true;
 }
 
 void Tick() {

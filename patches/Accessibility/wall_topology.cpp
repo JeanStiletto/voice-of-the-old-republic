@@ -30,6 +30,7 @@
 #include "region_classifier.h"  // ProbeShapeAt — walkmesh gate on graph-only dead-ends
 #include "spatial_change_detector.h"  // GetCachedWalls — seam-filtered perimeter cache
 #include "strings.h"
+#include "transitions.h"        // IterateLandmarks + MarkLandmarkClaimedByDoor — landmark→door matching pass
 
 namespace acc::wall_topology {
 
@@ -160,6 +161,21 @@ constexpr int kKindPlatz    = KindPlatz;
 struct DoorRecord {
     Vector pos;
     char   transitionDest[64];
+    // CSWSDoor.loc_name @+0x39c — the door's own authored localized
+    // name (e.g. "Lift", "Sicherheitstür", "Tür zu Bastilas Quartier").
+    // Substituted as the noun in the FmtMapCursorDoor* formats; when
+    // empty, the localized generic ("Tür"/"Door") falls back so output
+    // matches the pre-loc-name behaviour for unnamed doors. Same field
+    // Pillar 4 cycle narration speaks when Q/E lands on a door.
+    char   locName[64];
+    // Attached landmark map-note (e.g. "Zur Oberstadt"), populated by
+    // AttachLandmarksToDoors during BuildForArea when a CSWCWaypoint
+    // with has_map_note sits within kLandmarkDoorMatchMaxM of this
+    // door's position. Preferred over transitionDest in cluster labels
+    // (see RenderDoorDirection) — the landmark name is the content
+    // author's canonical phrasing and reads cleaner than the raw
+    // area-transition string. Empty when no landmark matched.
+    char   landmarkName[64];
 };
 
 constexpr int kMaxDoors = 128;
@@ -391,6 +407,8 @@ void SnapshotDoors(void* area) {
         DoorRecord& rec = g_graph.doors[g_graph.door_count];
         rec.pos                 = pos;
         rec.transitionDest[0]   = '\0';
+        rec.locName[0]          = '\0';
+        rec.landmarkName[0]     = '\0';
         // Transition destination CExoLocString lives at +0x3c8 (text)
         // with the strref at +0x3cc; ExtractTextOrStrRef walks both.
         // Empty result is fine — most doors aren't transitions.
@@ -399,6 +417,15 @@ void SnapshotDoors(void* area) {
             kDoorTransitionDestOffset,
             kDoorTransitionDestOffset + 4,
             rec.transitionDest, sizeof(rec.transitionDest));
+        // CSWSDoor.loc_name @+0x39c — same CExoLocString layout. Used
+        // as the door noun in cluster labels (Pillar 4 cycle narration
+        // already reads this field). Empty for unnamed doors → caller
+        // falls back to the localized generic word.
+        acc::engine::ExtractTextOrStrRef(
+            obj,
+            kDoorLocNameOffset,
+            kDoorLocNameOffset + 4,
+            rec.locName, sizeof(rec.locName));
         ++g_graph.door_count;
     }
 }
@@ -419,8 +446,10 @@ void LogDoorSnapshotDetails(void* area) {
     for (int i = 0; i < g_graph.door_count; ++i) {
         const DoorRecord& d = g_graph.doors[i];
         acclog::Write("WallTopo",
-                      "  door[%d] pos=(%.1f,%.1f,%.1f) transition=\"%s\"",
+                      "  door[%d] pos=(%.1f,%.1f,%.1f) locName=\"%s\" "
+                      "transition=\"%s\"",
                       i, d.pos.x, d.pos.y, d.pos.z,
+                      d.locName[0] ? d.locName : "(none)",
                       d.transitionDest[0] ? d.transitionDest : "(none)");
 
         // Diagnostic: what's the geometry around this door? We answer:
@@ -483,6 +512,127 @@ void LogDoorSnapshotDetails(void* area) {
             frontRoom, backRoom, behindPos.x, behindPos.y,
             dN, dE, dS, dW);
     }
+}
+
+// Match each landmark waypoint (registered in transitions.cpp's per-area
+// landmark cache during RebuildLandmarkCache) to the nearest door within
+// kLandmarkDoorMatchMaxM. When a match lands, the door's landmarkName is
+// populated and the landmark is flagged via MarkLandmarkClaimedByDoor so
+// the proximity-fire path won't re-announce the same name a second later.
+//
+// Greedy first-come — if two landmarks contest the same door (rare in
+// vanilla content, only seen at hub doors with multiple co-located
+// waypoints), the first-iterated one wins and the second logs a
+// conflict line. Tuning the rule beyond first-come needs evidence first.
+//
+// Threshold rationale: 3.0m. Empirical evidence from
+// patch-20260522-141304.log:
+//   "Zur Oberstadt" landmark @ (112.61, 83.34) ↔ door[4] @ (112.5, 81.8)
+//   → 1.5m — well inside the gate.
+// 3m gives 2x slack for authoring noise without admitting cross-cluster
+// matches (corridor doors usually sit ≥6m from the next nearest door).
+//
+// Diagnostics: per-landmark match / unmatched line + summary line for
+// rate analysis. Unmatched lines include the nearest-door distance so
+// post-mortem can tell whether the threshold needs widening for a
+// particular area or whether the landmark genuinely isn't door-shaped.
+void AttachLandmarksToDoors(void* /*area*/) {
+    constexpr float kLandmarkDoorMatchMaxM = 3.0f;
+    constexpr float kMaxSq = kLandmarkDoorMatchMaxM * kLandmarkDoorMatchMaxM;
+
+    if (g_graph.door_count <= 0) {
+        acclog::Write("WallTopo",
+                      "AttachLandmarks: no doors snapshotted — skipping");
+        return;
+    }
+
+    int matched = 0, unmatched = 0, conflicts = 0;
+
+    int cursor = 0;
+    char name[128] = {0};
+    Vector lmPos = {0.0f, 0.0f, 0.0f};
+    int roomIdx = -1;
+    while (acc::transitions::IterateLandmarks(
+               cursor, name, sizeof(name), lmPos, roomIdx)) {
+        // Linear scan over doors — door_count is tiny (≤128, in practice
+        // <30 for vanilla areas), so the O(landmarks * doors) sweep is
+        // a few hundred multiplies total per area build.
+        int   bestDoor = -1;
+        float bestSq   = 1e30f;
+        for (int d = 0; d < g_graph.door_count; ++d) {
+            float dx = g_graph.doors[d].pos.x - lmPos.x;
+            float dy = g_graph.doors[d].pos.y - lmPos.y;
+            float dsq = dx * dx + dy * dy;
+            if (dsq < bestSq) {
+                bestSq   = dsq;
+                bestDoor = d;
+            }
+        }
+
+        if (bestDoor < 0) continue;
+        float bestDist = std::sqrt(bestSq);
+
+        if (bestSq > kMaxSq) {
+            // Nearest door beyond threshold — keep landmark out-of-band
+            // for the proximity-fire path. Log the candidate distance so
+            // post-mortem can tune the threshold per-area if needed.
+            ++unmatched;
+            acclog::Write(
+                "WallTopo",
+                "AttachLandmarks: UNMATCHED landmark room=%d '%s' "
+                "lmPos=(%.2f,%.2f) — nearest door[%d] pos=(%.2f,%.2f) "
+                "dist=%.2fm > %.1fm threshold (transition=\"%s\")",
+                roomIdx, name,
+                lmPos.x, lmPos.y,
+                bestDoor,
+                g_graph.doors[bestDoor].pos.x, g_graph.doors[bestDoor].pos.y,
+                bestDist, kLandmarkDoorMatchMaxM,
+                g_graph.doors[bestDoor].transitionDest[0]
+                    ? g_graph.doors[bestDoor].transitionDest
+                    : "(none)");
+            continue;
+        }
+
+        // Within threshold. Greedy claim: first-iterated landmark wins.
+        if (g_graph.doors[bestDoor].landmarkName[0] != '\0') {
+            ++conflicts;
+            acclog::Write(
+                "WallTopo",
+                "AttachLandmarks: CONFLICT landmark room=%d '%s' "
+                "would match door[%d] (dist=%.2fm) but door already "
+                "claimed by '%s' — skipping",
+                roomIdx, name, bestDoor, bestDist,
+                g_graph.doors[bestDoor].landmarkName);
+            continue;
+        }
+
+        std::strncpy(g_graph.doors[bestDoor].landmarkName, name,
+                     sizeof(g_graph.doors[bestDoor].landmarkName) - 1);
+        g_graph.doors[bestDoor]
+            .landmarkName[sizeof(g_graph.doors[bestDoor].landmarkName) - 1] = '\0';
+        acc::transitions::MarkLandmarkClaimedByDoor(roomIdx);
+        ++matched;
+        acclog::Write(
+            "WallTopo",
+            "AttachLandmarks: matched landmark room=%d '%s' → door[%d] "
+            "lmPos=(%.2f,%.2f) doorPos=(%.2f,%.2f) dist=%.2fm "
+            "(was transitionDest=\"%s\")",
+            roomIdx, name, bestDoor,
+            lmPos.x, lmPos.y,
+            g_graph.doors[bestDoor].pos.x, g_graph.doors[bestDoor].pos.y,
+            bestDist,
+            g_graph.doors[bestDoor].transitionDest[0]
+                ? g_graph.doors[bestDoor].transitionDest
+                : "(none)");
+    }
+
+    acclog::Write(
+        "WallTopo",
+        "AttachLandmarks: summary — matched=%d unmatched=%d conflicts=%d "
+        "(landmarks scanned=%d, doors=%d, threshold=%.1fm)",
+        matched, unmatched, conflicts,
+        matched + unmatched + conflicts, g_graph.door_count,
+        kLandmarkDoorMatchMaxM);
 }
 
 // Door-on-edge test. Per design choice (c): door is "on" the segment
@@ -689,10 +839,23 @@ EdgeResult ClassifyEdge(void* areaForDiag,
     return r;
 }
 
-// Render the door-flavoured replacement of a direction word. Picks the
-// transition format when the matched door carries a destination name,
-// otherwise the bare "Tür %s" form. Single source of truth for the
-// dead-end / corridor / junction-octant rewrites.
+// Render the door-flavoured replacement of a direction word. Single
+// source of truth for the dead-end / corridor / junction-octant
+// rewrites. Each format takes (noun, direction[, extra]):
+//   - noun = door's authored CSWSDoor.loc_name when non-empty (e.g.
+//     "Lift", "Sicherheitstür"); falls back to the localized generic
+//     "Tür"/"Door". Doors named with the generic word collapse to the
+//     same output as the fallback, which is fine — no deny-list needed.
+// Selection priority for the WHICH format:
+//   1. landmarkName non-empty  → "%s %s, %s" (FmtMapCursorDoorLandmark)
+//      Used when AttachLandmarksToDoors matched a CSWCWaypoint to this
+//      door. Reads cleaner than the area-transition string and lets the
+//      proximity-landmark path (transitions::TickProximityLandmarks)
+//      suppress a separate redundant announce.
+//   2. transitionDest non-empty → "%s %s nach %s" (FmtMapCursorDoorTransition)
+//      Engine-derived cross-area destination text (e.g. "Taris -
+//      Südliche Oberstadt"). Used when no landmark is attached.
+//   3. bare door form → "%s %s" (FmtMapCursorDoor)
 void RenderDoorDirection(int doorIdx,
                          const char* dirWord,
                          char* outBuf, size_t bufSize) {
@@ -701,22 +864,51 @@ void RenderDoorDirection(int doorIdx,
         if (outBuf && bufSize > 0) outBuf[0] = '\0';
         return;
     }
-    const char* dest =
-        (doorIdx >= 0 && doorIdx < g_graph.door_count)
-            ? g_graph.doors[doorIdx].transitionDest
-            : "";
+    const char* landmark = "";
+    const char* dest     = "";
+    const char* locName  = "";
+    if (doorIdx >= 0 && doorIdx < g_graph.door_count) {
+        landmark = g_graph.doors[doorIdx].landmarkName;
+        dest     = g_graph.doors[doorIdx].transitionDest;
+        locName  = g_graph.doors[doorIdx].locName;
+    }
+    const char* noun =
+        (locName && locName[0]) ? locName
+                                : acc::strings::Get(Id::MapCursorDoorNoun);
+    if (!noun || !noun[0]) noun = "Tür";  // last-ditch fallback if strings table missing
+
+    // Designer-authored doors often duplicate the landmark string into
+    // CSWSDoor.loc_name (e.g. Taris Versteck NW exit: loc_name and the
+    // companion waypoint's map-note both read "Zum Apartmentkomplex").
+    // Without this dedup the FmtMapCursorDoorLandmark expansion
+    // "%s %s, %s" prints the same word twice — "Zum Apartmentkomplex
+    // Nord-West, Süd, Zum Apartmentkomplex". When noun == landmark
+    // (case-insensitive), drop the landmark suffix and fall through to
+    // the transitionDest or bare-door path.
+    bool landmarkEqualsNoun = false;
+    if (landmark && landmark[0] && noun && noun[0]) {
+        landmarkEqualsNoun = (_stricmp(landmark, noun) == 0);
+    }
+
+    if (landmark && landmark[0] && !landmarkEqualsNoun) {
+        const char* fmt = acc::strings::Get(Id::FmtMapCursorDoorLandmark);
+        if (fmt && fmt[0]) {
+            std::snprintf(outBuf, bufSize, fmt, noun, dirWord, landmark);
+            return;
+        }
+    }
     if (dest && dest[0]) {
         const char* fmt = acc::strings::Get(Id::FmtMapCursorDoorTransition);
         if (fmt && fmt[0]) {
-            std::snprintf(outBuf, bufSize, fmt, dirWord, dest);
+            std::snprintf(outBuf, bufSize, fmt, noun, dirWord, dest);
             return;
         }
     }
     const char* fmt = acc::strings::Get(Id::FmtMapCursorDoor);
     if (fmt && fmt[0]) {
-        std::snprintf(outBuf, bufSize, fmt, dirWord);
+        std::snprintf(outBuf, bufSize, fmt, noun, dirWord);
     } else {
-        std::snprintf(outBuf, bufSize, "%s", dirWord);
+        std::snprintf(outBuf, bufSize, "%s %s", noun, dirWord);
     }
 }
 
@@ -1366,6 +1558,12 @@ void BuildForArea(void* area) {
     // exits via the per-edge query).
     SnapshotDoors(area);
     LogDoorSnapshotDetails(area);
+    // Attach landmark map-notes to doors before any cluster labels get
+    // rendered — RenderDoorDirection consults DoorRecord.landmarkName and
+    // labels are baked once during the classification passes below. Also
+    // flags matched landmarks in the transitions cache so the
+    // proximity-fire path won't double-announce.
+    AttachLandmarksToDoors(area);
     g_doors_stability.last_count  = g_graph.door_count;
     g_doors_stability.streak      = 0;
     g_doors_stability.retry_ticks = 0;

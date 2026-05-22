@@ -721,7 +721,7 @@ enum class Id : int {
     MapCursorOpenArea,
     MapCursorJunction,        // bare "Junction" / "Kreuzung" — fallback only
     MapCursorOffPath,
-    FmtMapCursorCorridor,     // "Corridor along %s axis, about %.0f m wide"
+    FmtMapCursorCorridor,     // "%s, %.0f Meter" / "%s, %.0f meters" — direction-axis + length, "Korridor"/"Corridor" noun dropped 2026-05-22 (terser ambient cue)
     FmtMapCursorDeadEnd,      // "Dead end opening %s"
     FmtMapCursorJunctionDirs, // "Junction, openings %s" — comma-separated direction list
     // Path-3 nav-graph topology vocabulary. Corridor labels are
@@ -731,14 +731,28 @@ enum class Id : int {
     // vocabulary for zero information. Transitions speak as a doorway
     // ("Türschwelle") and optionally compose with the friendly room
     // name in transitions.cpp.
-    FmtMapCursorCorridorDir,  // "Korridor %s" / "Corridor %s"
+    FmtMapCursorCorridorDir,  // "%s" — direction word alone, "Korridor"/"Corridor" noun dropped 2026-05-22
     // Door announce — replaces the corridor/dead-end/junction-octant
     // direction word when a CSWSDoor in the area sits on the relevant
     // nav-graph edge. Single `%s` = direction word ("Nord", "Nord-Süd",
     // "Süd-West", …). Transition form adds the cross-area destination
     // ("Brücke", "Manaan-Dock") as the second `%s`.
-    FmtMapCursorDoor,            // "Tür %s" / "Door %s"
-    FmtMapCursorDoorTransition,  // "Tür %s nach %s" / "Door %s to %s"
+    // Door noun fallback — used as the first %s in the door format
+    // strings when CSWSDoor.loc_name @+0x39c is empty / unreadable.
+    // Authored door names ("Lift", "Sicherheitstür") substitute for
+    // this generic word; vanilla doors with no authored name fall back
+    // to it so the output stays identical to the pre-loc-name behaviour.
+    MapCursorDoorNoun,           // "Tür" / "Door"
+    FmtMapCursorDoor,            // "%s %s"           — noun + direction
+    FmtMapCursorDoorTransition,  // "%s %s nach %s"   — noun + direction + dest
+    // Landmark variant — used when a CSWCWaypoint with a non-empty map
+    // note sits on the door (e.g. "Zur Oberstadt"). Preferred over
+    // FmtMapCursorDoorTransition because the landmark name is the
+    // content-author's canonical phrasing and reads cleaner than the raw
+    // area-transition string (which already starts with "Zur …" / "Zu …"
+    // and would yield awkward "… nach Zur Oberstadt"). Comma separator
+    // avoids the prep-clash.
+    FmtMapCursorDoorLandmark,    // "%s %s, %s"       — noun + direction + landmark
     MapCursorTransitionDoor,  // "Türschwelle" / "Doorway"
     // Junction-edge annotation: when a junction's direction leads
     // directly to a degree-1 dead-end neighbour, the direction word

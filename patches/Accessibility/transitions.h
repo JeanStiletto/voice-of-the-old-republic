@@ -102,6 +102,24 @@ const char* GetLandmarkForRoom(int roomIdx);
 // so "same room" alone over-fires the landmark.
 bool GetLandmarkPositionForRoom(int roomIdx, Vector& outPos);
 
+// Walk the landmark cache. Pass `cursor` = 0 on the first call; the
+// callee advances it past the next populated slot and writes that
+// slot's name + position + room index. Returns false when no more
+// landmarks remain. Used by wall_topology::BuildForArea to match each
+// landmark against the door snapshot and embed the landmark name in
+// cluster labels.
+bool IterateLandmarks(int& cursor,
+                      char* nameOut, size_t nameBufSize,
+                      Vector& posOut, int& outRoomIdx);
+
+// Flag the landmark in room `roomIdx` as "claimed" — wall_topology has
+// just embedded its name into a cluster label, so the per-tick
+// proximity-fire path in TickProximityLandmarks must NOT also announce
+// the bare landmark name (would duplicate the same word twice within
+// a second of each other). Idempotent. Cleared on each area-change
+// rebuild.
+void MarkLandmarkClaimedByDoor(int roomIdx);
+
 // Heuristic: vanilla KOTOR content stores `CSWSArea.room_names[]` as
 // the .lyt-room identifier (`m01aa_10`, `stunt_03_main`, `unk_m13ab`)
 // — pronounceable but meaningless. Returns true for those resref-style

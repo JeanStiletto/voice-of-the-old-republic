@@ -246,12 +246,14 @@ const char* Get(Id id) {
         case Id::MapCursorOpenArea:          return "Open area";
         case Id::MapCursorJunction:          return "Junction";
         case Id::MapCursorOffPath:           return "Wall";
-        case Id::FmtMapCursorCorridor:       return "Corridor %s, %.0f meters";
+        case Id::FmtMapCursorCorridor:       return "%s, %.0f meters";
         case Id::FmtMapCursorDeadEnd:        return "Dead end, %s";
         case Id::FmtMapCursorJunctionDirs:   return "Junction, %s";
-        case Id::FmtMapCursorCorridorDir:    return "Corridor %s";
-        case Id::FmtMapCursorDoor:           return "Door %s";
-        case Id::FmtMapCursorDoorTransition: return "Door %s to %s";
+        case Id::FmtMapCursorCorridorDir:    return "%s";
+        case Id::MapCursorDoorNoun:          return "Door";
+        case Id::FmtMapCursorDoor:           return "%s %s";
+        case Id::FmtMapCursorDoorTransition: return "%s %s to %s";
+        case Id::FmtMapCursorDoorLandmark:   return "%s %s, %s";
         case Id::MapCursorTransitionDoor:    return "Doorway";
         case Id::FmtMapCursorJunctionDeadEndExit: return "dead end %s";
         case Id::FmtMapCursorPlazaDirs:      return "Place, %s";
