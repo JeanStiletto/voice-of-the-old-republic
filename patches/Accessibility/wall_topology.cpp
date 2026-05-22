@@ -146,6 +146,18 @@ struct AreaGraph {
     // keeps the id constant, so cluster-change is a clean signal for
     // "the player just entered a different region".
     int         node_cluster_id[kMaxNodes];
+    // Per-node "filtered" flag. Set to true on degree-1 clusters whose
+    // walkmesh-shape gate rejected the alcove claim. The label is still
+    // rendered (Sackgasse + direction) so the LookupAt rescue path can
+    // emit it when no unfiltered candidate sits within range — recovers
+    // the rare Bucket-3 case (alcove dropped by the geometry gate, no
+    // labelled cluster nearby → would otherwise speak "Offene Fläche").
+    // The primary scan in LookupAt skips filtered nodes, so wall-curve
+    // graph artefacts in inhabited regions stay silent (the merge passes
+    // 1b/1c/1d also absorb most such artefacts before the gate runs;
+    // surviving filtered singletons are graph-isolated and almost
+    // always genuine alcoves).
+    bool        node_filtered  [kMaxNodes];
     int         door_count   = 0;
     DoorRecord  doors       [kMaxDoors];
 };
@@ -878,11 +890,13 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
                      const int* externalDoorIdx,
                      int externalCount,
                      char* outLabel, size_t outLabelSize,
-                     int& outKind, int& outSig) {
+                     int& outKind, int& outSig,
+                     bool& outFiltered) {
     using acc::strings::Id;
     if (outLabelSize > 0) outLabel[0] = '\0';
     outKind = kKindOpenArea;
     outSig  = kKindOpenArea;
+    outFiltered = false;
     if (outLabelSize == 0) return;
     int n = static_cast<int>(g.nodes.size());
 
@@ -895,27 +909,33 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
         int nb = externalNbs[0];
         if (nb < 0 || nb >= n) return;
 
-        // Walkmesh-shape gate: a degree-1 graph node only emits a
-        // "Sackgasse" label when the walkmesh at the node's position
-        // shows the alcove signature (forward > 2m + 3 short rays) when
-        // the 4-ray probe is rotated to align with the parent direction.
-        // Wall-curve artefacts in big open areas / corridors get filtered
-        // here — they're degree-1 in the graph (one patrol-anchor
+        // Walkmesh-shape gate: a degree-1 graph node is treated as a
+        // primary candidate only when the walkmesh at the node's
+        // position shows the alcove signature (forward > 2m + 3 short
+        // rays) under a 4-ray probe rotated to align with the parent
+        // direction. Wall-curve artefacts in open areas / corridors fail
+        // the gate — they're degree-1 in the graph (one patrol-anchor
         // connection) but the local geometry doesn't form a recess the
         // player can walk into.
-        if (!WalkmeshAgreesDeadEnd(centroid, g.nodes[nb].pos)) {
-            outKind = kKindOpenArea;
-            outSig  = kKindOpenArea & 0xff;
-            // Leave outLabel empty — LookupAt skips empty-label nodes,
-            // so the next-nearest labelled neighbour wins.
+        //
+        // Pre-2026-05-22 we dropped the label entirely on gate failure,
+        // which created Bucket-3 "Offene Fläche where it should be
+        // Sackgasse" fires when no other labelled cluster was nearby
+        // (player standing in a real alcove the gate misjudged). We now
+        // render the label anyway and let LookupAt's rescue path use it
+        // only when no unfiltered candidate sits within snap range —
+        // primary scan still skips it, so wall-curve false positives
+        // stay silent in the normal case.
+        bool gateAgrees = WalkmeshAgreesDeadEnd(centroid, g.nodes[nb].pos);
+        if (!gateAgrees) {
+            outFiltered = true;
             acclog::Write(
                 "WallTopo",
                 "ClassifyCluster: degree-1 at (%.1f,%.1f,%.1f) FAILED "
-                "walkmesh-shape gate (parent=%d at %.1f,%.1f) — dropping "
-                "Sackgasse label",
+                "walkmesh-shape gate (parent=%d at %.1f,%.1f) — labelling "
+                "as filtered Sackgasse (LookupAt rescue only)",
                 centroid.x, centroid.y, centroid.z,
                 nb, g.nodes[nb].pos.x, g.nodes[nb].pos.y);
-            return;
         }
         float dx = g.nodes[nb].pos.x - centroid.x;
         float dy = g.nodes[nb].pos.y - centroid.y;
@@ -930,11 +950,13 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
         int doorIdx = externalDoorIdx ? externalDoorIdx[0] : -1;
         if (doorIdx >= 0 && word && word[0]) {
             RenderDoorDirection(doorIdx, word, outLabel, outLabelSize);
-            acclog::Write(
-                "WallTopo",
-                "ClassifyCluster: degree-1 at (%.1f,%.1f,%.1f) HIT door "
-                "idx=%d on edge → \"%s\"",
-                centroid.x, centroid.y, centroid.z, doorIdx, outLabel);
+            if (gateAgrees) {
+                acclog::Write(
+                    "WallTopo",
+                    "ClassifyCluster: degree-1 at (%.1f,%.1f,%.1f) HIT door "
+                    "idx=%d on edge → \"%s\"",
+                    centroid.x, centroid.y, centroid.z, doorIdx, outLabel);
+            }
         } else {
             const char* fmt  = acc::strings::Get(Id::FmtMapCursorDeadEnd);
             if (fmt && fmt[0] && word && word[0]) {
@@ -1912,9 +1934,10 @@ void BuildForArea(void* area) {
 
         char label[96] = {0};
         int kind = kKindOpenArea, sig = 0;
+        bool filtered = false;
         ClassifyCluster(g, centroid, size, externalNbs, externalSrcs,
                         externalDoorIdx, externalCount,
-                        label, sizeof(label), kind, sig);
+                        label, sizeof(label), kind, sig, filtered);
 
         switch (kind) {
             case kKindDeadEnd:  ++deadEnds;  break;
@@ -1930,8 +1953,9 @@ void BuildForArea(void* area) {
             std::strncpy(g_graph.node_label[m], label,
                          sizeof(g_graph.node_label[m]) - 1);
             g_graph.node_label[m][sizeof(g_graph.node_label[m]) - 1] = '\0';
-            g_graph.node_kind[m] = kind;
-            g_graph.node_sig[m]  = sig;
+            g_graph.node_kind[m]     = kind;
+            g_graph.node_sig[m]      = sig;
+            g_graph.node_filtered[m] = filtered;
         }
     }
 
@@ -2065,40 +2089,37 @@ bool LookupAt(void* area, const Vector& worldPos,
     // nav graphs of two floors line up vertically. ~100 nodes, linear
     // scan is trivial.
     //
-    // Skip nodes with empty labels — those are the walkmesh-shape gate's
-    // filtered dead-ends. They have valid positions but no announce
-    // text; treating them as "present for nearest-snap" would let them
-    // steal lookups from real neighbours and emit "Offene Fläche" in
-    // places the region classifier reads as "Kreuzung". The cleaner
-    // behaviour is to make them transparent to LookupAt entirely — the
-    // next-nearest labelled node takes over.
-    // Wall-reachability filter (added 2026-05-20): the original symptom
-    // was Endar Spire's starting room speaking corridor labels that
-    // belonged to nav nodes in the *adjacent* hallway — geometrically
-    // closer to the player than any in-room node, but separated from
-    // the player by the room's outer wall. Naive nearest-snap pulled
-    // the wrong label across that wall.
+    // Two parallel best-candidate slots:
+    //   - `best`         : reachable, unfiltered (primary)
+    //   - `bestFiltered` : reachable, walkmesh-gate-rejected (rescue)
+    // Primary wins whenever a candidate sits within snap range. Rescue
+    // is consulted only when no primary in range — recovers the
+    // Bucket-3 "alcove dropped by the geometry gate, no other labelled
+    // cluster nearby → would have emitted Offene Fläche" case without
+    // re-introducing wall-curve artefacts on inhabited terrain (those
+    // get absorbed by the bbox / density / hub merge passes upstream,
+    // or lose on distance to a real labelled cluster).
     //
-    // Per candidate: test the segment (worldPos → candidate.pos)
-    // against the seam-filtered perimeter wall cache. If a wall sits
-    // on the segment, the candidate is not reachable from the player
-    // and gets skipped. The nearest reachable labelled node wins.
+    // Wall-reachability filter (added 2026-05-20, originally for the
+    // Endar Spire starting room speaking corridor labels from the
+    // *adjacent* hallway): test segment (worldPos → candidate.pos)
+    // against the seam-filtered perimeter wall cache. Applied
+    // identically to both primary and rescue scans.
     //
-    // Track best-blocked separately so we can log "would have picked
-    // X but it's behind a wall" for diagnostic tuning. If every
-    // candidate is wall-blocked (sanity-failure / cache anomaly), we
-    // fall through to the "Offene Fläche" branch — better silent than
-    // a label the player can't reach.
+    // Track best-blocked separately so we can still log "would have
+    // picked X but it's behind a wall" for diagnostic tuning.
     const acc::engine::WallEdge* walls = nullptr;
     int wallCount = 0;
     bool haveWalls = acc::spatial::change_detector::GetCachedWalls(
         walls, wallCount);
 
-    int   best         = -1;
-    float bestSq       = 1e30f;
-    int   bestBlocked  = -1;
-    float bestBlockedSq= 1e30f;
-    int   blockedSeen  = 0;
+    int   best           = -1;
+    float bestSq         = 1e30f;
+    int   bestFiltered   = -1;
+    float bestFilteredSq = 1e30f;
+    int   bestBlocked    = -1;
+    float bestBlockedSq  = 1e30f;
+    int   blockedSeen    = 0;
     for (int i = 0; i < g_graph.node_count; ++i) {
         if (g_graph.node_label[i][0] == '\0') continue;
         float dx = g_graph.node_pos[i].x - worldPos.x;
@@ -2111,6 +2132,17 @@ bool LookupAt(void* area, const Vector& worldPos,
             Vector hitTmp{};
             reachable = !acc::engine::SegmentCrossesWalkmesh(
                 walls, wallCount, worldPos, g_graph.node_pos[i], hitTmp);
+        }
+
+        if (g_graph.node_filtered[i]) {
+            // Rescue-only candidate. Wall-filtered diagnostics ignore
+            // these (they're not "would have been picked" by the
+            // primary scan in any case).
+            if (reachable && d2 < bestFilteredSq) {
+                bestFilteredSq = d2;
+                bestFiltered   = i;
+            }
+            continue;
         }
 
         if (reachable) {
@@ -2169,55 +2201,66 @@ bool LookupAt(void* area, const Vector& worldPos,
             worldPos.x, worldPos.y, worldPos.z, blockedSeen);
     }
 
-    if (best < 0) {
-        // Either no labelled nodes at all, or every candidate got
-        // wall-filtered. In the second case we already logged
-        // ALL-BLOCKED above; fall through to "Offene Fläche".
-        if (blockedSeen > 0) {
-            const char* fallback =
-                acc::strings::Get(acc::strings::Id::MapCursorOpenArea);
-            if (fallback && fallback[0]) {
-                std::snprintf(outBuf, bufSize, "%s", fallback);
-                outSig = kKindOpenArea & 0xff;
-                outClusterId = kClusterIdOpenArea;
-                return true;
+    // Primary wins when in range.
+    if (best >= 0) {
+        float bestDist = std::sqrt(bestSq);
+        if (bestDist <= kMaxSnapM &&
+            g_graph.node_label[best][0] != '\0') {
+            std::snprintf(outBuf, bufSize, "%s", g_graph.node_label[best]);
+            outSig       = g_graph.node_sig[best];
+            outClusterId = g_graph.node_cluster_id[best];
+            return true;
+        }
+    }
+
+    // Rescue: no primary in range, but a filtered candidate is. Recovers
+    // alcoves the walkmesh-shape gate misjudged when no labelled cluster
+    // sits within snap radius. Merge passes upstream eliminate the
+    // wall-curve case (artefacts inside inhabited regions get absorbed
+    // by bbox/density/hub merging), so surviving filtered singletons
+    // are graph-isolated and almost always genuine alcoves.
+    if (bestFiltered >= 0) {
+        float fDist = std::sqrt(bestFilteredSq);
+        if (fDist <= kMaxSnapM &&
+            g_graph.node_label[bestFiltered][0] != '\0') {
+            if (allowDiagLog) {
+                float pDist = best >= 0 ? std::sqrt(bestSq) : -1.0f;
+                acclog::Write(
+                    "WallTopo",
+                    "LookupAt RESCUE at (%.1f,%.1f,%.1f): no unfiltered "
+                    "candidate in range (best primary %.1fm); using "
+                    "filtered node[%d] (%.1f,%.1f) \"%s\" at %.1fm",
+                    worldPos.x, worldPos.y, worldPos.z,
+                    pDist,
+                    bestFiltered,
+                    g_graph.node_pos[bestFiltered].x,
+                    g_graph.node_pos[bestFiltered].y,
+                    g_graph.node_label[bestFiltered],
+                    fDist);
             }
-        }
-        return false;
-    }
-
-    float bestDist = std::sqrt(bestSq);
-    if (bestDist > kMaxSnapM) {
-        // Outside the indexed region — fall through to "open area".
-        const char* fallback =
-            acc::strings::Get(acc::strings::Id::MapCursorOpenArea);
-        if (fallback && fallback[0]) {
-            std::snprintf(outBuf, bufSize, "%s", fallback);
-            outSig = kKindOpenArea & 0xff;
-            outClusterId = kClusterIdOpenArea;
+            std::snprintf(outBuf, bufSize, "%s",
+                          g_graph.node_label[bestFiltered]);
+            outSig       = g_graph.node_sig[bestFiltered];
+            outClusterId = g_graph.node_cluster_id[bestFiltered];
             return true;
         }
-        return false;
     }
 
-    if (g_graph.node_label[best][0] == '\0') {
-        // Node has no rendered label (isolated / classification skipped)
-        // — emit "Offene Fläche" rather than leaving the user silent.
-        const char* fallback =
-            acc::strings::Get(acc::strings::Id::MapCursorOpenArea);
-        if (fallback && fallback[0]) {
-            std::snprintf(outBuf, bufSize, "%s", fallback);
-            outSig = kKindOpenArea & 0xff;
-            outClusterId = kClusterIdOpenArea;
-            return true;
-        }
+    // No primary, no rescue: emit Offene Fläche when the graph has at
+    // least one candidate (so the player gets one stable "you're in
+    // open space" cue). Return false only when the graph is empty.
+    if (best < 0 && bestFiltered < 0 && blockedSeen == 0) {
         return false;
     }
-
-    std::snprintf(outBuf, bufSize, "%s", g_graph.node_label[best]);
-    outSig       = g_graph.node_sig[best];
-    outClusterId = g_graph.node_cluster_id[best];
-    return true;
+    const char* fallback =
+        acc::strings::Get(acc::strings::Id::MapCursorOpenArea);
+    if (fallback && fallback[0]) {
+        std::snprintf(outBuf, bufSize, "%s", fallback);
+        outSig = kKindOpenArea & 0xff;
+        outClusterId = kClusterIdOpenArea;
+        return true;
+    }
+    return false;
 }
 
 }  // namespace acc::wall_topology
