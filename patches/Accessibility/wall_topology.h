@@ -85,6 +85,22 @@ enum Kind {
     KindPlatz       = 5,
 };
 
+// Cluster-id sentinels returned by LookupAt via outClusterId.
+// Real cluster ids are non-negative UFFind roots (0..node_count-1).
+//
+// `kClusterIdNone` — no graph for this area, position outside the snap
+// radius, or every candidate was wall-filtered. Callers using cluster-id
+// as a trigger key should treat this as "no fact yet, do nothing".
+//
+// `kClusterIdOpenArea` — LookupAt synthesised an "Offene Fläche" label
+// via the open-area fallback (no labelled candidates, or all blocked).
+// Stable identity: a player walking from a labelled cluster into open
+// space should fire exactly one announcement, then stay quiet until
+// they enter another cluster. Distinct from real cluster ids so the
+// trigger key compares correctly.
+constexpr int kClusterIdNone     = -1;
+constexpr int kClusterIdOpenArea = -2;
+
 // Build the wall-topology decomposition for `area`. Idempotent on the
 // same area pointer. Requires `acc::spatial::change_detector::
 // GetCachedWalls()` to be populated; silently no-ops with an empty
@@ -109,13 +125,36 @@ bool HasGraphForArea(void* area);
 void Reset();
 
 // Look up the region descriptor at `worldPos`. On success writes the
-// localised label into `outBuf` and a small integer signature into
+// localised label into `outBuf`, a small integer signature into
 // `outSig` (same byte layout convention as region_classifier::
 // LookupShapeAt — kind in low byte, kind-specific fields in upper
-// bytes). Returns false when the graph isn't built, the position
-// sits outside the bounding box, or no region matches.
+// bytes), and the perceptual cluster id into `outClusterId`.
+//
+// `outClusterId` is the UFFind root of the snapped node, stable for
+// the lifetime of the build. Two adjacent labelled regions get
+// distinct ids; walking inside one cluster keeps the id constant.
+// Callers use this as the trigger key for "did the player change
+// perceptual region" — much better signal than .lyt-room change.
+//
+// Sentinels: `kClusterIdNone` on no-graph / out-of-snap / all-blocked
+// (no announcement); `kClusterIdOpenArea` when the open-area fallback
+// label fires (one announcement per open-area entry). See enum docs.
+//
+// `allowDiagLog` (default true) controls the WALL-FILTERED /
+// ALL-BLOCKED diagnostic emissions inside LookupAt. Speech-time call
+// sites leave it default — those fire bounded by cluster transitions
+// and we want full visibility. The per-tick trigger probe in
+// transitions::Tick passes `false` so the same position evaluated
+// every frame at 60 fps doesn't flood the log with identical lines.
+// The bounded call sites still emit the same diagnostics whenever a
+// real transition resolves, so no information is lost.
+//
+// Returns false when the graph isn't built, the position sits outside
+// the bounding box, or no region matches (and no open-area fallback).
 bool LookupAt(void* area, const Vector& worldPos,
-              char* outBuf, size_t bufSize, int& outSig);
+              char* outBuf, size_t bufSize, int& outSig,
+              int& outClusterId,
+              bool allowDiagLog = true);
 
 // Diagnostic: dump the current graph to the patch log. Useful for
 // tuning thresholds while iterating on the algorithm.

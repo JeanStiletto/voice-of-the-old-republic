@@ -140,6 +140,12 @@ struct AreaGraph {
     char        node_label  [kMaxNodes][96];
     int         node_sig    [kMaxNodes];
     int         node_kind   [kMaxNodes];  // see kKind* constants
+    // Frozen UFFind root per node, snapshotted at the end of BuildForArea
+    // after all merge passes complete. Used as the perceptual-region
+    // trigger key by transitions::Tick — walking inside one cluster
+    // keeps the id constant, so cluster-change is a clean signal for
+    // "the player just entered a different region".
+    int         node_cluster_id[kMaxNodes];
     int         door_count   = 0;
     DoorRecord  doors       [kMaxDoors];
 };
@@ -1290,10 +1296,11 @@ void BuildForArea(void* area) {
     if (n > kMaxNodes) n = kMaxNodes;
     g_graph.node_count = n;
     for (int i = 0; i < n; ++i) {
-        g_graph.node_pos[i]      = g.nodes[i].pos;
-        g_graph.node_label[i][0] = '\0';
-        g_graph.node_sig[i]      = 0;
-        g_graph.node_kind[i]     = kKindOpenArea;
+        g_graph.node_pos[i]        = g.nodes[i].pos;
+        g_graph.node_label[i][0]   = '\0';
+        g_graph.node_sig[i]        = 0;
+        g_graph.node_kind[i]       = kKindOpenArea;
+        g_graph.node_cluster_id[i] = kClusterIdNone;
     }
 
     // Snapshot doors before classifying clusters — ClassifyCluster's
@@ -1928,6 +1935,15 @@ void BuildForArea(void* area) {
         }
     }
 
+    // Freeze the UFFind roots into node_cluster_id[] now that all merge
+    // passes have completed. After this point UFFind itself is no
+    // longer consulted at runtime — LookupAt reads node_cluster_id
+    // directly, so subsequent path-halving on UFFind can't shift the
+    // observed id under a caller comparing against a stored value.
+    for (int i = 0; i < n; ++i) {
+        g_graph.node_cluster_id[i] = UFFind(i);
+    }
+
     g_graph.built = true;
     acclog::Write("WallTopo",
                   "BuildForArea: area=%p nodes=%d clusters=%d "
@@ -2034,9 +2050,12 @@ void DumpGraphToLog() {
 }
 
 bool LookupAt(void* area, const Vector& worldPos,
-              char* outBuf, size_t bufSize, int& outSig) {
+              char* outBuf, size_t bufSize, int& outSig,
+              int& outClusterId,
+              bool allowDiagLog) {
     if (outBuf && bufSize > 0) outBuf[0] = '\0';
     outSig = 0;
+    outClusterId = kClusterIdNone;
     if (!HasGraphForArea(area)) return false;
     if (g_graph.node_count <= 0) return false;
 
@@ -2114,7 +2133,8 @@ bool LookupAt(void* area, const Vector& worldPos,
     // reachable (no filtering happened). Called from
     // SpeakRoomChange / LogWallTopoComparison — both fire on room
     // transitions, not per-tick, so logging here is bounded.
-    if (bestBlocked >= 0 &&
+    if (allowDiagLog &&
+        bestBlocked >= 0 &&
         (best < 0 || bestBlockedSq < bestSq)) {
         float bDist = std::sqrt(bestBlockedSq);
         float pDist = best >= 0 ? std::sqrt(bestSq) : -1.0f;
@@ -2139,7 +2159,7 @@ bool LookupAt(void* area, const Vector& worldPos,
     }
     // Sanity: every candidate filtered out is a strong signal the
     // wall cache or the player position is wrong. Surfaces overfire.
-    if (best < 0 && blockedSeen > 0) {
+    if (allowDiagLog && best < 0 && blockedSeen > 0) {
         acclog::Write(
             "WallTopo",
             "LookupAt ALL-BLOCKED at (%.1f,%.1f,%.1f): every labelled "
@@ -2159,6 +2179,7 @@ bool LookupAt(void* area, const Vector& worldPos,
             if (fallback && fallback[0]) {
                 std::snprintf(outBuf, bufSize, "%s", fallback);
                 outSig = kKindOpenArea & 0xff;
+                outClusterId = kClusterIdOpenArea;
                 return true;
             }
         }
@@ -2173,6 +2194,7 @@ bool LookupAt(void* area, const Vector& worldPos,
         if (fallback && fallback[0]) {
             std::snprintf(outBuf, bufSize, "%s", fallback);
             outSig = kKindOpenArea & 0xff;
+            outClusterId = kClusterIdOpenArea;
             return true;
         }
         return false;
@@ -2186,13 +2208,15 @@ bool LookupAt(void* area, const Vector& worldPos,
         if (fallback && fallback[0]) {
             std::snprintf(outBuf, bufSize, "%s", fallback);
             outSig = kKindOpenArea & 0xff;
+            outClusterId = kClusterIdOpenArea;
             return true;
         }
         return false;
     }
 
     std::snprintf(outBuf, bufSize, "%s", g_graph.node_label[best]);
-    outSig = g_graph.node_sig[best];
+    outSig       = g_graph.node_sig[best];
+    outClusterId = g_graph.node_cluster_id[best];
     return true;
 }
 
