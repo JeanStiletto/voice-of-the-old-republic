@@ -38,6 +38,7 @@
 #include "menus_chain.h"     // Step 5 — chain navigation lifted out
 #include "menus_monitors.h"  // Post-Step-5 — general per-tick monitors
 #include "menus_store.h"     // Store / trading panel — price+stock suffix + mode announce
+#include "menus_journal.h"   // Journal (Aufträge) — Enter on quest row → description
 #include "engine_input.h"
 #include "engine_manager.h"
 #include "engine_offsets.h"
@@ -1701,6 +1702,15 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             acc::menus::store::IsStorePanel(g_chainPanel) &&
             acc::menus::store::IsStoreItemRow(e.control);
 
+        // Journal quest-row Enter — read the description text. The row's
+        // own activate handler is a no-op in the engine; the description
+        // text the engine paints next to the list on mouse hover is the
+        // only signal a sighted user gets, so we surface it on Enter
+        // instead. Refresh + speak via menus_journal::SpeakDescription.
+        bool isJournalRow =
+            IdentifyPanel(g_chainPanel) == PanelKind::InGameJournal &&
+            acc::menus::journal::IsJournalEntry(e.control);
+
         if (acc::menus::pending::IsPending()) {
             acclog::Write("Enter", "op already pending; ignoring (target=%p)", e.control);
             consumed = true;
@@ -1708,6 +1718,9 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             acc::menus::pending::QueueStoreItemActivate(g_chainPanel, e.control);
             acclog::Write("Menus.Enter", "store-item-activate panel=%p index=%d target=%p",
                           g_chainPanel, g_chainIndex, e.control);
+            consumed = true;
+        } else if (isJournalRow) {
+            acc::menus::journal::SpeakDescription(g_chainPanel, e.control);
             consumed = true;
         } else if (e.textOnly) {
             // Modal body text — non-activatable. Re-speak so a user who

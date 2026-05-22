@@ -1014,3 +1014,24 @@ constexpr uintptr_t kAddrServerExoAppGetItemByGameObjectID  = 0x004ae760;
 // AppManager indirection to CServerExoApp. AppManager+0x8 → CServerExoApp*.
 // (Same constant as engine_player.h's kAppManagerServerOffsetPlayer.)
 constexpr size_t    kAppManagerServerExoAppOffset          = 0x8;
+
+// ---------------------------------------------------------------------------
+// CSWGuiInGameJournal — quest journal panel (the "Aufträge" sub-screen).
+//
+// Layout (from SARIF):
+//   0x000 panel base
+//   0x064 title_label                  ("Aufträge — Laufende Aufträge - …")
+//   0x1a4 item_description_label       (CSWGuiListBox, holds 1 row with
+//                                        "<Planet>:\n<entry text>")
+//   0x484 description label inline     (the single row inside item_description)
+//   0x5c4 items_listbox                (one CSWGuiJournalItemEntry per quest)
+//   0x8a4 quest_items_button           ("Auftrags-Gegenst.")
+//   0xa68 swap_text_button             ("Aus Auftrag" / "Vom Auftragsgeber")
+//   0xc2c sort_button                  ("nach Auftragseingang")
+//   0xdf0 exit_button
+//
+// CSWGuiJournalItemEntry rows are CSWGuiButton-derived (size 0x1cc) with
+// their own vtable. The journal's OnControlEntered fires on mouse hover
+// over a row and rewrites item_description_label with the full text.
+// ---------------------------------------------------------------------------
+constexpr uintptr_t kVtableCSWGuiJournalItemEntry          = 0x007518c0;
