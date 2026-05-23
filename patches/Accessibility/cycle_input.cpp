@@ -72,7 +72,9 @@ struct CategoryBindings {
                                // object's world position before speech
 };
 
-CategoryBindings BindingsFor(acc::filter::CycleCategory c) {
+CategoryBindings BindingsFor(
+        acc::filter::CycleCategory c,
+        acc::filter::CycleContext ctx = acc::filter::CycleContext::World) {
     using S = acc::strings::Id;
     using N = acc::audio::NavCue;
     using C = acc::filter::CycleCategory;
@@ -86,6 +88,14 @@ CategoryBindings BindingsFor(acc::filter::CycleCategory c) {
         case C::Item:
             return {S::CategoryItem,       S::EmptyItems,       N::Item};
         case C::Landmark:
+            // Map context renames to "Map hint" / "Hinweis" — matches the
+            // engine's own GetNext/PrevMapNote terminology so the spoken
+            // category word lines up with what sighted players see in the
+            // InGameMap up/down buttons. World context keeps the broader
+            // "Landmark" wording for the unrestricted has_map_note set.
+            if (ctx == acc::filter::CycleContext::Map) {
+                return {S::CategoryMapHint, S::EmptyMapHints, N::Landmark};
+            }
             return {S::CategoryLandmark,   S::EmptyLandmarks,   N::Landmark};
         case C::Transition:
             return {S::CategoryTransition, S::EmptyTransitions, N::TransitionExit};
@@ -126,7 +136,7 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
                      const char* categoryPrefix,
                      acc::filter::CycleContext ctx) {
     auto& s = acc::cycle::GetState(ctx);
-    auto bindings = BindingsFor(s.category);
+    auto bindings = BindingsFor(s.category, ctx);
     const bool mapCtx = (ctx == acc::filter::CycleContext::Map);
 
     if (!s.focusedObj || s.focusedIndex < 0 ||
@@ -267,7 +277,7 @@ void OnCycleCategory(bool prev, acc::filter::CycleContext ctx) {
         return;
     }
     auto& s = acc::cycle::GetState(ctx);
-    auto bindings = BindingsFor(s.category);
+    auto bindings = BindingsFor(s.category, ctx);
     AnnounceCurrent(listing, acc::strings::Get(bindings.name), ctx);
 }
 

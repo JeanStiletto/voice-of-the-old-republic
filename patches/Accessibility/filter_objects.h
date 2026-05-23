@@ -61,15 +61,21 @@ enum class CycleContext : int {
 };
 
 // Which CycleCategory values render as discrete icons on the in-game
-// area map. Sighted players see: door icons, transition arrows, named
-// map-note pins. NPCs / items / non-quest containers don't render on
-// the K1 map, so the map cycle silently skips them (the cycle-category
-// loop already skips empty categories, so this just biases empty hard
-// for non-map-cycleable kinds when the context is Map).
-//
-// Lay-off 1b will extend this with MapPin (quest markers) + Party
-// (companion arrows) once the RE pass for CSWCArea.map_pins[] and
-// GetPartyMemberMapLocation lands.
+// area map (sighted parity). Verified via CSWGuiMapHider::Draw
+// @0x006943d0 (decompiled 2026-05-23): the renderer iterates only
+// waypoints with map_note_enabled + IsWorldPointExplored — doors,
+// triggers/transitions, items, NPCs, containers, and CSWCMapPin
+// entries are never drawn to the area panel. So:
+//   - Landmark  → true  (narrowed further in cycle_state to require
+//                        map_note_enabled, matching the engine's
+//                        GetNextMapNote curated subset that we surface
+//                        as "Map hint")
+//   - MapPin    → true  (accessibility-extra; the engine stores pins
+//                        but doesn't render them — kept as the active-
+//                        quest-objective channel until we verify
+//                        whether SetMapPinEnabled in real modules
+//                        targets these or waypoints)
+//   - all other → false (no map render path → silent skip in map ctx)
 bool IsMapCycleable(CycleCategory c);
 
 }  // namespace acc::filter

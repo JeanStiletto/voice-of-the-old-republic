@@ -76,12 +76,27 @@ CycleCategory PrevCategory(CycleCategory c) {
 }
 
 bool IsMapCycleable(CycleCategory c) {
+    // Sighted-parity gate, derived from CSWGuiMapHider::Draw @0x006943d0
+    // (decompiled 2026-05-23): the in-game area-map renderer iterates only
+    // waypoints with map_note_enabled + IsWorldPointExplored and draws
+    // party arrows. Doors, triggers/transitions, items, NPCs, containers,
+    // and CSWCMapPin entries are never rendered to the panel. We expose
+    // only the categories sighted players actually see as icons; Landmark
+    // is further narrowed in cycle_state::BuildCategoryListing to require
+    // map_note_enabled too (so it matches the engine's GetNextMapNote /
+    // GetPrevMapNote curated subset — what we surface as "Map hint").
+    //
+    // MapPin stays cycleable for now: even though the engine doesn't
+    // render CSWCMapPin to the area panel either, quest-script pins
+    // remain useful as an out-of-band "active quest objective" channel
+    // for blind players. Worth re-evaluating once we confirm whether
+    // SetMapPinEnabled in real K1 modules acts on these or on waypoints.
     switch (c) {
-        case CycleCategory::Door:
         case CycleCategory::Landmark:
-        case CycleCategory::Transition:
         case CycleCategory::MapPin:
             return true;
+        case CycleCategory::Door:
+        case CycleCategory::Transition:
         case CycleCategory::Npc:
         case CycleCategory::Container:
         case CycleCategory::Item:

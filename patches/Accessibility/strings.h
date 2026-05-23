@@ -34,6 +34,11 @@ enum class Id : int {
     CategoryLandmark,
     CategoryTransition,
     CategoryMapPin,
+    // Map-context override for CategoryLandmark — matches the engine's own
+    // "Hinweis" / "map note" terminology on the InGameMap up/down buttons.
+    // BindingsFor swaps in this string + EmptyMapHints when the cycle ctx is
+    // Map, so blind users hear the same word sighted players see in the UI.
+    CategoryMapHint,
 
     // ---- Empty-category messages — full pre-formatted phrases. The
     //      plural form differs per category (German: T\xFCren, Personen,
@@ -47,6 +52,7 @@ enum class Id : int {
     EmptyLandmarks,
     EmptyTransitions,
     EmptyMapPins,
+    EmptyMapHints,
     EmptyAll,
 
     // Map-pin specific phrases — Shift+- (autowalk) is not supported for

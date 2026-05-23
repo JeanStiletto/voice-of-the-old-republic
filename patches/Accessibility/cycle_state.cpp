@@ -141,6 +141,7 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
     }
 
     bool overflowed = false;
+    int  mapNoteDisabledFiltered = 0;
     acc::engine::AreaObjectIterator it(area);
     int scanned = 0;
     int kindCounts[16] = {0};
@@ -154,11 +155,24 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
         if (!acc::engine::GetObjectPosition(obj, pos)) continue;
 
         // Map-context fog-of-war gate. Spoiler-correct by construction:
-        // a landmark/door/transition in an unexplored cell stays out of
-        // the cycle until the player walks within map-reveal range.
+        // a landmark in an unexplored cell stays out of the cycle until
+        // the player walks within map-reveal range.
         if (mapCtx && areaMap &&
             !acc::engine::IsWorldPointExplored(areaMap, pos)) {
             ++fogFiltered;
+            continue;
+        }
+
+        // Map-context "map hint" curation. CSWGuiMapHider::Draw only
+        // renders waypoints whose map_note_enabled flag (+0x22c) is set
+        // — quest scripts toggle this dynamically so the icon turns up
+        // when relevant. Match the engine's curated subset on the map
+        // cycle so blind players hear the same set sighted players see
+        // (and same set the up/down "Hinweis" buttons cycle).
+        if (mapCtx &&
+            category == acc::filter::CycleCategory::Landmark &&
+            !acc::engine::IsMapNoteEnabled(obj)) {
+            ++mapNoteDisabledFiltered;
             continue;
         }
 
@@ -180,11 +194,13 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
     if (out.count == 0) {
         acclog::Write("Cycle", "BuildListing area=%p ctx=%s category=%s "
                       "snapshotSize=%d scanned=%d fogFiltered=%d "
+                      "mapNoteDisabled=%d "
                       "kinds[Creature=5]=%d [Item=6]=%d [Trigger=7]=%d "
                       "[Placeable=9]=%d [Door=10]=%d [Waypoint=12]=%d",
                       area, mapCtx ? "Map" : "World",
                       acc::filter::CategoryName(category),
                       it.SnapshotSize(), scanned, fogFiltered,
+                      mapNoteDisabledFiltered,
                       kindCounts[5], kindCounts[6], kindCounts[7],
                       kindCounts[9], kindCounts[10], kindCounts[12]);
     }

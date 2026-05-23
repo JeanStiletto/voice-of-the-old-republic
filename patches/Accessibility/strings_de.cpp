@@ -25,6 +25,7 @@ const char* Get(Id id) {
         case Id::CategoryLandmark:    return "Ort";
         case Id::CategoryTransition:  return "\xDC" "bergang";       // Übergang
         case Id::CategoryMapPin:      return "Quest-Markierung";
+        case Id::CategoryMapHint:     return "Hinweis";
 
         case Id::EmptyDoors:          return "Keine T\xFCren in Reichweite";        // Türen
         case Id::EmptyNpcs:           return "Keine Personen in Reichweite";
@@ -33,6 +34,7 @@ const char* Get(Id id) {
         case Id::EmptyLandmarks:      return "Keine Orte in Reichweite";
         case Id::EmptyTransitions:    return "Keine \xDC" "berg\xE4nge in Reichweite"; // Übergänge
         case Id::EmptyMapPins:        return "Keine Quest-Markierungen auf dieser Karte";
+        case Id::EmptyMapHints:       return "Keine Hinweise auf dieser Karte";
         case Id::EmptyAll:            return "Keine Objekte in Reichweite";
 
         case Id::MapPinNoText:        return "Quest-Markierung";

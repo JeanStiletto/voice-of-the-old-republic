@@ -15,6 +15,7 @@ const char* Get(Id id) {
         case Id::CategoryLandmark:    return "Landmark";
         case Id::CategoryTransition:  return "Transition";
         case Id::CategoryMapPin:      return "Quest marker";
+        case Id::CategoryMapHint:     return "Map hint";
 
         case Id::EmptyDoors:          return "No doors in range";
         case Id::EmptyNpcs:           return "No NPCs in range";
@@ -23,6 +24,7 @@ const char* Get(Id id) {
         case Id::EmptyLandmarks:      return "No landmarks in range";
         case Id::EmptyTransitions:    return "No transitions in range";
         case Id::EmptyMapPins:        return "No quest markers on this map";
+        case Id::EmptyMapHints:       return "No map hints on this map";
         case Id::EmptyAll:            return "No objects in range";
 
         case Id::MapPinNoText:        return "Quest marker";
