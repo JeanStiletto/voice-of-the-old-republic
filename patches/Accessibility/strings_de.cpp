@@ -348,6 +348,8 @@ const char* Get(Id id) {
         case Id::WorkbenchItemsEmpty:        return "Keine aufwertbaren Gegenst\xE4nde in dieser Kategorie";  // Gegenstände
         case Id::WorkbenchUpgradesEmpty:     return "Keine kompatiblen Aufwertungen im Inventar";
 
+        case Id::SoundOptionsMovieVolume:    return "Video-Lautst\xE4rke";  // Lautstärke
+
         case Id::Count_:               return "";
     }
     return "";

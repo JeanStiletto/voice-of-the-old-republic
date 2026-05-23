@@ -329,6 +329,8 @@ const char* Get(Id id) {
         case Id::WorkbenchItemsEmpty:        return "No upgradable items in this category";
         case Id::WorkbenchUpgradesEmpty:     return "No compatible upgrades in inventory";
 
+        case Id::SoundOptionsMovieVolume:    return "Movie volume";
+
         case Id::Count_:               return "";
     }
     return "";

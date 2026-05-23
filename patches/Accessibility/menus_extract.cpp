@@ -270,6 +270,46 @@ const char* FindSiblingLabel(void* panel, void* control,
     return nullptr;
 }
 
+// Identify the movie-volume slider on optionssound.gui. The stock German
+// .gui mislabels it as "Musik-Lautstärke" (same string as the music
+// slider above it), so FindSiblingLabel returns a duplicate; we swap in
+// a synthesised "Video-Lautstärke" / "Movie volume" instead. We don't
+// ship a .gui override, so the fix lives in the screen-reader path only.
+//
+// Fingerprint: the panel must carry sliders at .gui control IDs
+// {1, 4, 7, 8} (music / voice / SFX / movie). IDs come from the .gui
+// file in data/gui.bif and are stable across locales — unlike the label
+// strrefs that the engine renders. `control` must itself be the id=8
+// slider.
+bool IsSoundOptionsMovieSlider(void* panel, void* control) {
+    if (!panel || !control) return false;
+    if (!IsSlider(control)) return false;
+
+    int controlId = *reinterpret_cast<int*>(
+        reinterpret_cast<unsigned char*>(control) + 0x50);
+    if (controlId != 8) return false;
+
+    auto* list = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+    if (!list || !list->data || list->size <= 0) return false;
+
+    bool has1 = false, has4 = false, has7 = false, has8 = false;
+    int n = list->size > 64 ? 64 : list->size;
+    for (int i = 0; i < n; ++i) {
+        void* c = list->data[i];
+        if (!c || !IsSlider(c)) continue;
+        int cid = *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(c) + 0x50);
+        switch (cid) {
+            case 1: has1 = true; break;
+            case 4: has4 = true; break;
+            case 7: has7 = true; break;
+            case 8: has8 = true; break;
+        }
+    }
+    return has1 && has4 && has7 && has8;
+}
+
 }  // namespace
 
 void ResetCycleCategoryCache() {
@@ -448,13 +488,29 @@ const char* FromControl(void* control,
     //    is the rendered "X von Y"); the category name lives on a sibling
     //    CSWGuiLabel rendered to the left of the slider. Look it up via
     //    FindSiblingLabel and prepend.
+    //
+    //    Engine-text fix-up for the Sound options panel's movie-volume
+    //    slider (id=8): the stock German .gui labels both the music slider
+    //    and the movie slider as "Musik-Lautstärke", so FindSiblingLabel
+    //    resolves a duplicate. When the slider sits on a panel whose ID
+    //    fingerprint matches optionssound.gui ({1,4,7,8} — locale-stable),
+    //    we substitute the localized "Video volume" string for the label.
     if (!source && IsSlider(control)) {
         uint32_t cur = ReadU32(control, kSliderCurValueOffset);
         uint32_t max = ReadU32(control, kSliderMaxValueOffset);
         char label[128];
+        const char* labelText = nullptr;
         if (g_currentPanel &&
-            FindSiblingLabel(g_currentPanel, control, label, sizeof(label))) {
-            snprintf(outBuf, bufSize, "%s %u von %u", label, cur, max);
+            IsSoundOptionsMovieSlider(g_currentPanel, control)) {
+            labelText = acc::strings::Get(
+                acc::strings::Id::SoundOptionsMovieVolume);
+        } else if (g_currentPanel &&
+                   FindSiblingLabel(g_currentPanel, control,
+                                    label, sizeof(label))) {
+            labelText = label;
+        }
+        if (labelText) {
+            snprintf(outBuf, bufSize, "%s %u von %u", labelText, cur, max);
         } else {
             snprintf(outBuf, bufSize, "%u von %u", cur, max);
         }

@@ -964,6 +964,17 @@ enum class Id : int {
     WorkbenchItemsEmpty,
     WorkbenchUpgradesEmpty,
 
+    // ---- Sound options panel (optionssound.gui) label fix-up.
+    //      The stock German .gui labels the 4th slider (movie/video volume)
+    //      as "Musik-Lautst\xE4rke" — a duplicate of the 1st slider — and
+    //      the engine renders that duplicate verbatim. We don't ship a
+    //      .gui override (per project policy), so we substitute the
+    //      category label in the screen-reader announcement only.
+    //      Detection: slider control id == 8 on a panel whose slider IDs
+    //      match the Sound options fingerprint {1, 4, 7, 8} (those IDs
+    //      come from the .gui file and are stable across locales).
+    SoundOptionsMovieVolume,
+
     Count_,
 };
 
