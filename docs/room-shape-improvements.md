@@ -682,3 +682,337 @@ related save-load "wall of cues" — this would also reduce that pressure.
 - Watch for regressions: areas where one room genuinely sits open to
   another and the player CAN perceive cross-room walls should still
   cue them (portal-adjacent neighbours rule should cover this).
+
+---
+
+## Addendum — Slums (tar_m04aa) + Kanalisation (tar_m05aa) play, 2026-05-22
+
+Status: speculative — pulled from `patch-20260522-203132.log` (~12 MB,
+20:31–00:02) and the follow-on short sessions `patch-20260522-22{3157,
+3818,4503,4906}.log` plus `patch-20260523-092124.log`. None of the
+already-listed priority work has landed yet, so this is "what those
+priorities look like in larger / more open content."
+
+### What was newly visited
+
+Two new K1 area-build signatures dominate the evening:
+
+- `tar_m04aa` — Taris - Slums (Lower City courtyard + ring of alleys,
+  Bek + Vulkar gates, Igears Bazar, Rukils Zelt, Gendars Zelt)
+- `tar_m05aa` — Taris - Kanalisation (sewers — Gamorrean Rakghoul tunnels)
+
+Slums played ~47 min continuously (20:58–21:45); Kanalisation
+~17 min in this log (21:45–22:02) with shorter re-entries across the
+later sessions (~5 area-builds of identical signature). The earlier
+visited Taris content (Apartments / Oberstadt / Cantina / Bek base /
+Vulkar Garage / Lower City courtyard tar_m03aa) is the baseline.
+
+### Build signatures
+
+Slums:
+- nodes=165 → clusters=134 (19 % reduction, 31 merged)
+- merged-pairs=12, chain-merges=3, multi-node-clusters=10
+- per-classification: dead=33 corridor=53 junction=48 open=0
+
+Kanalisation (5 builds; values stable across reloads):
+- nodes=124 → clusters=99 (20 % reduction, 25 merged)
+- merged-pairs=6, chain-merges=4, multi-node-clusters=4
+- per-classification: dead=33 corridor=43 junction=14 **open=9**
+
+Same fragmentation pattern that drove items 1+8 in the main analysis,
+plus a new signal: Kanalisation has 9 cluster nodes that get
+`kKindOpenArea` at *build time* — the `ClassifyCluster` `externalCount
+== 0` path fires because those nav nodes have zero graph neighbours.
+
+### Class A — under-merged corridors: no longer the dominant failure here
+
+Slums announces 0 (zero) `Korridor*` labels across the 47 min.
+Kanalisation announces 2 (`Ost-West` × 1 corridor between chambers).
+The "Korridor X-Y" repeat-fire pattern that motivated the deferred
+chain-merge is essentially absent in these two areas — the geometry
+isn't strip-shaped, it's hub-and-radiate.
+
+What did fire:
+- Slums: 49 distinct labels in 75 announces; ratios `Kreuzung`/`Platz`/
+  `Sackgasse`/`Offene Fläche` = 42 / 22 / 7 / 4
+- Kanalisation: 6 distinct labels in 8 announces; ratios `Kreuzung`/
+  `Sackgasse`/`Offene Fläche` = 4 / 1 / 3
+
+So the new failure surface is:
+1. Repeated re-fires of the same `Kreuzung` label as the player walks
+   inside the central plaza (cluster-flip-without-real-region-change).
+2. Bare `Offene Fläche` fires inside the Kanalisation chambers where
+   the player IS in a real perceptual room — just not one the nav
+   graph captures.
+
+### Class B — Slums plaza: same-label re-fire from cluster flips
+
+The dominant offender across the 47-min Slums session:
+
+- `Kreuzung, Nord, Süd-Ost, Süd-West, Nord-West` × 14 (the central plaza)
+- `Kreuzung, Nord, Süd-Ost, West` × 8 (~5 m NE of the same plaza)
+- `Kreuzung, Ost, Süd, West` × 7
+- `Kreuzung, Ost, Süd, Nord-West` × 5
+- `Platz, Nord-Ost, Ost, West` × 7 (Hidden Bek gate Platz, multi-node hub)
+- `Kreuzung, Haupttor Nord-Ost, Tor des Dorfs, Süd-West, Nord-West` × 6
+
+WallTopo.Compare positions tell the story directly. Clusters 118 and
+110 sit ~5 m apart and the player flips between them on every short
+walk loop:
+
+```
+21:16:57 pos=(251.77,210.89) cluster=118 "Kreuzung, Nord, SO, SW, NW"
+21:16:59 pos=(250.73,218.18) cluster=110 "Kreuzung, Nord, SO, West"
+21:19:10 pos=(251.32,215.17) cluster=118 "Kreuzung, Nord, SO, SW, NW"
+21:19:16 pos=(252.33,219.96) cluster=110 "Kreuzung, Nord, SO, West"
+21:21:40 pos=(251.32,215.17) cluster=118 …
+21:21:41 pos=(247.14,218.22) cluster=110 …
+21:22:46 pos=(251.32,215.17) cluster=118 …
+21:22:48 pos=(247.14,218.22) cluster=110 …
+21:28:01 pos=(253.12,219.31) cluster=118 …
+21:28:25 pos=(253.01,222.21) cluster=110 …
+```
+
+8 flips between two adjacent cluster centroids in 12 minutes — the
+player is wandering one perceptual plaza and we describe it as two
+plazas they walk in and out of. Exactly the "per-cluster hysteresis"
+item from the main analysis (priority 2), now reproduced in higher
+density in a content type the player actually spends real time in.
+
+The 134 clusters / 165 nodes in this area shape makes the problem
+worse than in Oberstadt-class areas: many clusters are degree-3
+singletons sitting 4–6 m apart inside what reads as one place.
+
+Net: the cluster-id trigger move described earlier in this doc helps,
+but only if hysteresis lands with it. Otherwise `cluster_id` becomes a
+noisy trigger source on plaza-class content.
+
+### Class C — Kanalisation: open=9 nodes + bare "Offene Fläche"
+
+Build-time `open=9` is unique to Kanalisation across all areas we've
+mapped so far (every other area had open=0 at build). The classified
+positions are scattered across the map:
+
+```
+node[0]   (160.1, 202.8)   — entrance corner
+node[17]  (197.6, 184.3)   — tunnel widening
+node[41]  (234.1, 223.4)   — chamber 1 fringe
+node[68]  (247.2, 227.7)   — chamber 1 fringe
+node[82]  (254.9,  85.9)   — chamber 2 fringe
+node[89]  (262.6, 171.7)   — corridor exit pad
+node[96]  (270.7, 128.3)   — chamber 3 fringe
+node[100] (273.9, 131.5)   — chamber 3 fringe
+node[108] (278.4, 137.9)   — chamber 3 fringe
+```
+
+These are AI-patrol bookmark nodes the engine placed without graph
+connections. ClassifyCluster's `externalCount == 0` branch labels them
+`Offene Fläche` (the only sensible fallback when there's no neighbour
+to bear a direction off). Once classified that way, they sit in
+LookupAt as primary candidates.
+
+Runtime "Offene Fläche" fires in this session:
+- 21:45:46 (294.28, 184.28) — z=0 entry tile, src=shape, cluster=-2
+- 21:48:03 — second sewer chamber
+- 22:02:17 — third sewer chamber
+
+All three are in the big sewer chambers (5–15 m × 5–15 m volumes) that
+sit between the corridor segments. To a sighted player these are
+visually distinct rooms with combat in them; we read them as
+unstructured "open space."
+
+The hub absorption fires fine for the long thin areas (nodes 44–66
+fold into hub cluster=52 covering ~7 m × 19 m; nodes 69–83 fold into
+hub cluster=74), so K1's narrow Kanalisation corridors are handled.
+What we miss is the larger chambers where the engine placed AI
+bookmarks not patrol-edges.
+
+### Class D — wall-filtered hits still happen, but mostly degrade gracefully
+
+50 wall-filtered events across Slums (10 cases, 5 retries each in some
+spots). Pattern: nearest candidate at 4–10 m wall-rejected, picked a
+labelled cluster 6–20 m away instead. Examples:
+
+```
+node[86] "Kreuzung, N, SO, SW, NW" at 4.3m WALL-FILTERED  → picked node[79] "Platz, NO, Ost, West" at 6.7m
+node[115] "Nord-West, Ost" at 6.5m WALL-FILTERED          → picked node[114] "Kreuzung, Haupttor NO, ToD, SW, NW" at 19.0m
+node[61] "Sackgasse, Nord-Ost" at 6.2m WALL-FILTERED      → picked node[65] "Ost-West" at 7.3m
+node[61] "Sackgasse, Nord-Ost" at 4.5m WALL-FILTERED      → picked node[70] "Platz, NO, Ost, S, West" at 8.9m
+```
+
+The first three pick a meaningful nearby cluster. The fourth picks the
+plaza 19 m away with a 5-element direction list — a sighted player
+behind that wall sees a corner, not a plaza on the other side of the
+building. Wall-cache audit (existing section above) is still the right
+fix here; nothing in the new data argues for a different approach.
+
+### Summary of new evidence vs the existing priority list
+
+The priorities in the main analysis stay valid; the new content
+re-prioritises within them:
+
+- **Per-cluster hysteresis at LookupAt** (was priority 2) is now
+  jointly *most-load-bearing* with the cluster-id trigger move. Slums
+  plaza demonstrates that cluster-flip noise outweighs room-flip noise
+  on this content type.
+- **Corridor-chain merge** (was priority 1) is still desirable but
+  contributes nothing to Slums and very little (4 chain-merges) to
+  Kanalisation. Its main beneficiary remains Oberstadt-class areas.
+- **Loosen rotated walkmesh gate** (was priority 4) — Slums and
+  Kanalisation produced no `DEMOTED to Kreuzung` events (versus 42 in
+  the older Taris sample). Gate is fine for hub-and-radiate layouts.
+- **Loosen Sackgasse gate / "wahrscheinlich Sackgasse" tier** (was
+  priority 5) — only 8 Sackgasse fires across both areas combined.
+  Less urgent on this content; defer for ruined-Taris and beyond.
+- **`kMaxSnapM` raise 15 m → 20 m** (was priority 6) — would not have
+  fired on any of the bucket-2-shaped failures in this dataset.
+
+The genuinely new piece is **Class C — large open chambers**, addressed
+separately below.
+
+---
+
+## Large open chambers — describing them as more than "Offene Fläche"
+
+### The gap
+
+Path 3 (nav-graph topology) classifies each cluster from the
+neighbours it has. A degree-0 node, a sliver of nodes the engine
+placed for AI patrol/spawn but didn't connect into the graph, has no
+neighbours and resolves to `Offene Fläche` by design. That's the
+correct answer at the data level — the algorithm has nothing to say
+about a chamber it has no graph for.
+
+But "Offene Fläche" is not what the player wants. A blind player
+walking into a 10 m × 10 m sewer chamber needs to know: it's a room,
+it has roughly this shape, and these are the ways out. The nav graph
+gives us nothing here because the chamber's interior was authored
+walkable but unwaypointed.
+
+### Why Path 3 alone is the wrong base for these
+
+Recapping `project_walltopo_raycast_flavor_a.md`:
+
+- **Path 1 — per-face raycast probe.** Cast 8 rays from a sample point
+  against the cached wall edges; read distance pattern. *Has the
+  signal we need for chambers* — open space looks like 8 long rays.
+- **Path 2 — GVD / medial axis.** Compute the skeleton of the
+  walkable region. Large chambers show as low-density skeleton
+  regions with one branch point. *Also has the signal*, but requires
+  the medial-axis math which we have not built.
+- **Path 3 — BioWare nav-graph topology.** Use `path_points` +
+  `path_connections`. *No signal for chamber interiors* — the data
+  source itself is the limit.
+
+The right architectural shape is *not* to replace Path 3, which works
+well for corridors, dead-ends, and most junctions. The right shape is
+to add a *secondary* probe specifically for the Path 3 fallback case
+(`kKindOpenArea` clusters, the runtime fallback at the end of
+`LookupAt`, and possibly the bare `Kreuzung` demote case).
+
+This is Path 1, narrowed: instead of per-face probing the whole
+walkmesh, probe only at positions where Path 3 has nothing useful to
+say. ~9 build-time open clusters in Kanalisation, plus the runtime
+no-snap positions. Two-orders-of-magnitude fewer probes than
+walkmesh-wide, same signal.
+
+### What an open-chamber announcement should contain
+
+Two parts. Shape, then exits.
+
+**Shape (one of a small enum, derived from the 8-ray pattern):**
+- `kammer rechteckig` — 2 cardinal axes long, 2 cardinal axes short
+  (long > 2× short). Speak: "Rechteckiger Raum, ~10 × 5 Meter, lange
+  Achse Ost-West."
+- `kammer quadratisch` — 4 cardinal axes within 30 % of each other,
+  diagonals ~same range. Speak: "Quadratischer Raum, ~10 Meter Kante."
+- `kammer rund` — all 8 rays within ~20 % of each other (circle / oct).
+  Speak: "Runder Raum, ~10 Meter Durchmesser."
+- `kammer offen` — 8 rays >12 m, no consistent boundary at the probe
+  range. Speak: "Offener Bereich."
+- `kammer unregelmäßig` — fallback when none of the above patterns
+  match. Speak: "Unregelmäßige Kammer, ~Δ Meter."
+
+Numbers reported as approximate ("~10"), not precise — wall positions
+have authoring jitter and the player doesn't need precision.
+
+**Exits (one bullet per nearest labelled cluster the chamber can reach,
+ordered by clock-face bearing from probe centre):**
+- Speak: "Ausgänge: Nord nach Kreuzung, Süd-Ost nach Tunnel, West Tür
+  nach …" — one direction word per exit, plus the destination's
+  label (truncated to the noun: Kreuzung, Tunnel, Tür, Sackgasse).
+
+A full announcement: "Rechteckiger Raum, ~12 × 6 Meter, lange Achse
+Ost-West. Ausgänge: Nord Tür, Süd nach Korridor, West nach Kreuzung."
+
+### Why this stays tractable
+
+The shape enum is 5 buckets. The probe is the same 8-ray-against-wall-
+cache code `region_classifier` already runs in silent-comparator mode
+(see `region_classifier` reference, kept on as observer). All the
+infrastructure exists; we're just connecting it to one of the
+`LookupAt` outcomes.
+
+Exit enumeration uses the existing nav graph: from a chamber probe
+position, walk outward to nearest labelled clusters and grab their
+bearing + first label word. Bounded — ~5-element list at most for
+star-shaped chambers; truncate to N exits if a chamber has more
+(unlikely in K1 content).
+
+### What stays finicky
+
+- **Where to probe.** For build-time `open=N` clusters with one node,
+  the node position is fine. For the runtime no-snap fallback, the
+  player position is the probe — but it might be next to a wall, in
+  which case 1 ray is short. Use the centroid of the 4-ray walkable-
+  forward area as an offset, the way the Sackgasse alcove probe
+  already does.
+- **Chamber-vs-corridor at boundaries.** A 6 m × 30 m chamber reads as
+  rectangular under the heuristic but is actually a wide corridor.
+  Defer the threshold tuning: pick "kammer rechteckig" reports the
+  shape honestly, and the long-axis cue tells the player it's a
+  corridor-shaped chamber. Player loss = nuisance, not safety.
+- **Re-fire control.** Chambers shouldn't re-announce shape every
+  cluster-flip. Pin "you're in a chamber" to the open-cluster id (the
+  9 open-class nodes already have unique cluster_ids), use existing
+  cluster-change trigger, and emit the chamber announcement *once per
+  entry*.
+- **Exits to far-away things.** Don't enumerate every labelled cluster
+  within 15 m — limit to clusters the chamber actually connects to via
+  the nav graph (one step out) or via a direct walkmesh ray.
+
+### Three flavours to choose from when this is implemented
+
+1. **Bolt-on probe** — keep Path 3 as today, add the 8-ray probe only
+   to `kKindOpenArea` cluster labels and the runtime fallback. Most
+   conservative; minimal code change; covers the Kanalisation chambers
+   directly and the Slums plaza-edge fallbacks indirectly.
+
+2. **Promote probe to a tier alongside Path 3** — for every cluster of
+   size ≥ N (e.g. ≥ 3 nodes, or area-bbox > 8 m diagonal), enrich the
+   label with the probe-derived shape. Covers cases like Hidden Bek
+   inner where a `Platz` reads "Platz, NO, Ost, West" but is actually
+   a square chamber the player could be told the size of.
+
+3. **Hybrid Path 1 + Path 3** — same as Path 3 today for corridors /
+   dead-ends / small junctions, but classify clusters whose centroids
+   land in genuinely open walkmesh (8 long rays) as `kammer*` from the
+   start, not as junctions. This is the largest change; aligned with
+   the "GVD/medial axis" intuition but built on the existing 8-ray
+   probe we already have.
+
+Recommend (1) for the first iteration: smallest blast radius, fills
+the actual gap the new content exposed, leaves Path 3 untouched for
+the content it handles well.
+
+### Open questions deferred to the future-iteration session
+
+- Whether the "exit description" form is what the player wants, or
+  whether mode-switching ("Du bist in einer Kammer" / press a key to
+  get exits) reduces overhead. Either way the probe is the same.
+- Whether shape-only announcements ("Quadratische Kammer") work
+  better than shape+exits for the player's flow — exits read long.
+- Whether to use this same probe to fix the Slums plaza
+  inside-vs-edge problem (priority 2 hysteresis) — a probe inside the
+  plaza says "10 m square" and stays anchored, instead of cluster
+  centroids 5 m apart flipping the label.
