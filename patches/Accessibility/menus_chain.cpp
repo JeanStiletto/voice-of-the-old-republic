@@ -22,6 +22,7 @@
 #include "menus_chargen_skills.h"
 #include "menus_charsheet.h"
 #include "menus_credits.h"
+#include "menus_equipstats.h"
 #include "menus_extract.h"
 #include "menus_internal.h"
 #include "menus_store.h"
@@ -518,6 +519,39 @@ void RebindChain(void* panel) {
         };
         acc::menus::credits::ForEachCreditsRowAnchor(panel, onCreditsAnchor,
                                                     panel);
+    }
+
+    // Virtual stat rows for the Equip panel (Vitality, Defense, Attack,
+    // Damage). Same shape as the credits anchor — value labels live
+    // inline in CSWGuiInGameEquip but aren't IsChainNavigable, so the
+    // chain walker would skip them. ForEachEquipStatRowAnchor self-gates
+    // on InGameEquip (no-op elsewhere) and emits sortCy values above
+    // every real button so stats land at the END of the chain after the
+    // slots + Back / Change* buttons.
+    {
+        auto onEquipStatAnchor = [](void* labelControl, int sortCy,
+                                    void* userData) -> bool {
+            void* p = userData;
+            if (g_chainCount >= kMaxChainEntries) return false;
+            int cx, cy;
+            if (!GetControlCenter(labelControl, cx, cy)) {
+                cx = 0;
+            }
+            // Skip rows whose value the engine hasn't populated yet
+            // (gui_string empty mid-frame). Re-emerges on next rebind
+            // once the engine writes the value.
+            char probe[8];
+            if (!acc::menus::equipstats::ExtractEquipStatRow(
+                    p, labelControl, probe, sizeof(probe))) {
+                return true;
+            }
+            g_chain[g_chainCount++] = {
+                labelControl, cx, sortCy, /*textOnly=*/true
+            };
+            return true;
+        };
+        acc::menus::equipstats::ForEachEquipStatRowAnchor(
+            panel, onEquipStatAnchor, panel);
     }
 
     // Insertion sort by cy ascending. Stable; n^2 is fine for n<=64.

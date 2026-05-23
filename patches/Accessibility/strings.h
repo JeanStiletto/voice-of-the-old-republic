@@ -264,6 +264,37 @@ enum class Id : int {
     EquipSlotBelt,
     EquipSlotHands,
 
+    //      Slot announce composition. The per-kind slot extractor reads
+    //      the equipped item handle from the panel's cached slot fields
+    //      (CSWGuiInGameEquip @+0x427c..+0x429c) and resolves it via the
+    //      engine's universal name accessor. Sighted players see the
+    //      item icon inside each slot; we surface the same info by
+    //      appending the item name to the slot label.
+    //   FmtEquipSlotItem  — 2 `%s` (slot label, item name). Ex:
+    //                       "K\xF6rper, Kampfanzug".
+    //   FmtEquipSlotEmpty — 1 `%s` (slot label). Ex: "K\xF6rper, leer".
+    FmtEquipSlotItem,
+    FmtEquipSlotEmpty,
+
+    //      Virtual stat-row chain entries appended at the END of the
+    //      Equip panel chain (after the 9 slot buttons + Back/Change*).
+    //      Mirror of menus_credits and menus_charsheet — each row is a
+    //      text-only chain entry anchored on the inline stat label
+    //      inside CSWGuiInGameEquip. Sighted players see these rendered
+    //      at the bottom of the screen; the chain entries let the
+    //      keyboard user navigate there and hear the composed phrase.
+    //   FmtEquipVitality       — 1 `%s` (engine-rendered "120/120").
+    //   FmtEquipDefense        — 1 `%s` (engine-rendered AC value).
+    //   FmtEquipAttack         — single-weapon attack. 1 `%s` (to-hit).
+    //   FmtEquipAttackDual     — dual-wield attack. 2 `%s` (left, right).
+    //   FmtEquipDamage         — 1 `%s` (engine-rendered "1d8+2").
+    FmtEquipVitality,
+    FmtEquipDefense,
+    FmtEquipAttack,
+    FmtEquipAttackDual,
+    FmtEquipDamage,
+    FmtEquipDamageDual,
+
     // ---- Pillar 2 transitions (room + area). Both take a single `%s`
     //      with the resolved name. Area names come from CSWSArea.name
     //      (CExoLocString — localized when the area has a name strref) or

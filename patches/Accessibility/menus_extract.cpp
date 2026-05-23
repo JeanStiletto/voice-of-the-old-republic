@@ -15,6 +15,7 @@
 
 #include "menus_extract.h"
 
+#include "engine_area.h"        // GetObjectDisplayNameByHandle
 #include "engine_manager.h"
 #include "engine_offsets.h"
 #include "engine_panels.h"
@@ -22,6 +23,7 @@
 #include "log.h"
 #include "menus_charsheet.h"
 #include "menus_credits.h"
+#include "menus_equipstats.h"
 #include "menus_internal.h"
 #include "strings.h"
 
@@ -397,6 +399,22 @@ const char* FromControl(void* control,
                         owner, control, outBuf, bufSize) &&
                     outBuf[0] != '\0') {
                     source = "perkind-credits-row";
+                }
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                source = nullptr;
+            }
+        }
+        // Equip stat rows (Vitality, Defense, Attack, Damage). Same
+        // shape as credits — IsEquipStatRowAnchor self-gates on
+        // InGameEquip; ExtractEquipStatRow handles single-vs-dual-wield
+        // attack formatting internally.
+        if (!source && owner &&
+            acc::menus::equipstats::IsEquipStatRowAnchor(owner, control)) {
+            __try {
+                if (acc::menus::equipstats::ExtractEquipStatRow(
+                        owner, control, outBuf, bufSize) &&
+                    outBuf[0] != '\0') {
+                    source = "perkind-equipstat-row";
                 }
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 source = nullptr;
@@ -882,48 +900,84 @@ const char* FromControl(void* control,
             int           lblId;
             uint32_t      strref;     // 0xFFFFFFFF = no TLK, use literal
             acc::strings::Id literalId;
+            size_t        itemIdOffset;  // CSWGuiInGameEquip-relative
         };
         static const EquipSlotName k_equipSlots[] = {
-            { kEquipBtnHeadId,     kEquipBtnHeadId    + 1, 31375u,      acc::strings::Id::EquipSlotHead    },
-            { kEquipBtnImplantId,  kEquipBtnImplantId + 1, 0xFFFFFFFFu, acc::strings::Id::EquipSlotImplant },
-            { kEquipBtnBodyId,     kEquipBtnBodyId    + 1, 31380u,      acc::strings::Id::EquipSlotBody    },
-            { kEquipBtnArmLId,     kEquipBtnArmLId    + 1, 31376u,      acc::strings::Id::EquipSlotArmL    },
-            { kEquipBtnArmRId,     kEquipBtnArmRId    + 1, 31377u,      acc::strings::Id::EquipSlotArmR    },
-            { kEquipBtnWeapLId,    kEquipBtnWeapLId   + 1, 31378u,      acc::strings::Id::EquipSlotWeapL   },
-            { kEquipBtnWeapRId,    kEquipBtnWeapRId   + 1, 31379u,      acc::strings::Id::EquipSlotWeapR   },
-            { kEquipBtnBeltId,     kEquipBtnBeltId    + 1, 31382u,      acc::strings::Id::EquipSlotBelt    },
-            { kEquipBtnHandsId,    kEquipBtnHandsId   + 1, 31383u,      acc::strings::Id::EquipSlotHands   },
+            { kEquipBtnHeadId,     kEquipBtnHeadId    + 1, 31375u,      acc::strings::Id::EquipSlotHead,    kEquipPanelHeadIdOffset         },
+            { kEquipBtnImplantId,  kEquipBtnImplantId + 1, 0xFFFFFFFFu, acc::strings::Id::EquipSlotImplant, kEquipPanelImplantIdOffset      },
+            { kEquipBtnBodyId,     kEquipBtnBodyId    + 1, 31380u,      acc::strings::Id::EquipSlotBody,    kEquipPanelArmorIdOffset        },
+            { kEquipBtnArmLId,     kEquipBtnArmLId    + 1, 31376u,      acc::strings::Id::EquipSlotArmL,    kEquipPanelLeftArmbandIdOffset  },
+            { kEquipBtnArmRId,     kEquipBtnArmRId    + 1, 31377u,      acc::strings::Id::EquipSlotArmR,    kEquipPanelRightArmbandIdOffset },
+            { kEquipBtnWeapLId,    kEquipBtnWeapLId   + 1, 31378u,      acc::strings::Id::EquipSlotWeapL,   kEquipPanelLeftWeaponIdOffset   },
+            { kEquipBtnWeapRId,    kEquipBtnWeapRId   + 1, 31379u,      acc::strings::Id::EquipSlotWeapR,   kEquipPanelRightWeaponIdOffset  },
+            { kEquipBtnBeltId,     kEquipBtnBeltId    + 1, 31382u,      acc::strings::Id::EquipSlotBelt,    kEquipPanelBeltIdOffset         },
+            { kEquipBtnHandsId,    kEquipBtnHandsId   + 1, 31383u,      acc::strings::Id::EquipSlotHands,   kEquipPanelGlovesIdOffset       },
         };
         int cid = *reinterpret_cast<int*>(
             reinterpret_cast<unsigned char*>(control) + 0x50);
         for (const auto& s : k_equipSlots) {
             if (s.btnId != cid && s.lblId != cid) continue;
-            bool gotTlk = false;
+            // Resolve the slot's localised label first into a small local
+            // buffer; the equipped item name is then appended via the
+            // FmtEquipSlot* templates so caller hears e.g. "Body, Combat
+            // Suit" or "Body, empty".
+            char slotLabel[128];
+            slotLabel[0] = '\0';
             if (s.strref != 0xFFFFFFFFu) {
-                char tlkText[256];
+                char tlkText[128];
                 if (LookupTlk(s.strref, tlkText, sizeof(tlkText))) {
                     size_t tlen = strnlen(tlkText, sizeof(tlkText));
-                    if (tlen > 0 && tlen + 1 <= bufSize) {
-                        memcpy(outBuf, tlkText, tlen + 1);
-                        source = "perkind-equip-tlk";
-                        gotTlk = true;
-                        acclog::Write("Menus.PerKind", "InGameEquip TLK control=%p "
-                                      "id=%d strref=%u -> \"%s\"",
-                                      control, cid, s.strref, outBuf);
+                    if (tlen > 0 && tlen + 1 <= sizeof(slotLabel)) {
+                        memcpy(slotLabel, tlkText, tlen + 1);
                     }
                 }
             }
-            if (!gotTlk) {
+            if (slotLabel[0] == '\0') {
                 const char* lit = acc::strings::Get(s.literalId);
                 size_t llen = strlen(lit);
-                if (llen > 0 && llen + 1 <= bufSize) {
-                    memcpy(outBuf, lit, llen + 1);
-                    source = "perkind-equip-literal";
-                    acclog::Write("Menus.PerKind", "InGameEquip literal control=%p "
-                                  "id=%d strref=%u -> \"%s\"",
-                                  control, cid, s.strref, outBuf);
+                if (llen > 0 && llen + 1 <= sizeof(slotLabel)) {
+                    memcpy(slotLabel, lit, llen + 1);
                 }
             }
+            if (slotLabel[0] == '\0') break;
+
+            // Read the panel-cached slot handle and resolve to display
+            // name. Panel offsets are populated by Equip's populate code
+            // from the displayed character's CSWInventory (the same
+            // character cycling updates via BTN_CHANGE1/2), so reading
+            // here always matches what's on screen.
+            uint32_t handle = 0;
+            __try {
+                handle = *reinterpret_cast<uint32_t*>(
+                    reinterpret_cast<unsigned char*>(ownerForPerkind) +
+                    s.itemIdOffset);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                handle = 0;
+            }
+
+            char itemName[128];
+            itemName[0] = '\0';
+            if (handle != 0 && handle != 0xffffffff) {
+                if (!acc::engine::GetObjectDisplayNameByHandle(
+                        handle, itemName, sizeof(itemName))) {
+                    itemName[0] = '\0';
+                }
+            }
+
+            using acc::strings::Get;
+            using acc::strings::Id;
+            if (itemName[0] != '\0') {
+                snprintf(outBuf, bufSize, Get(Id::FmtEquipSlotItem),
+                         slotLabel, itemName);
+            } else {
+                snprintf(outBuf, bufSize, Get(Id::FmtEquipSlotEmpty),
+                         slotLabel);
+            }
+            source = "perkind-equip-slot";
+            acclog::Write("Menus.PerKind",
+                          "InGameEquip control=%p id=%d slot=\"%s\" "
+                          "handle=0x%x item=\"%s\" -> \"%s\"",
+                          control, cid, slotLabel, handle, itemName, outBuf);
             break;
         }
     }

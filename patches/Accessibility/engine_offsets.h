@@ -958,8 +958,52 @@ constexpr size_t    kInventoryLeftWeaponHandleOffset  = 0x18;  // off hand
 constexpr size_t    kInventoryHeadHandleOffset        = 0x4;
 constexpr size_t    kInventoryTorsoHandleOffset       = 0x8;
 constexpr size_t    kInventoryHandsHandleOffset       = 0x10;
+constexpr size_t    kInventoryLeftArmHandleOffset     = 0x20;
+constexpr size_t    kInventoryRightArmHandleOffset    = 0x24;
 constexpr size_t    kInventoryImplantHandleOffset     = 0x28;
 constexpr size_t    kInventoryBeltHandleOffset        = 0x2c;
+
+// CSWGuiInGameEquip — cached per-slot item handles and stat-value labels.
+// The panel mirrors the displayed character's CSWInventory into local
+// fields, and OnSwitchLeft/Right repopulates them on party-cycle, so these
+// always match what's on screen regardless of which companion is shown.
+// IDs are the same handle space as CClientExoApp::GetObjectName (the
+// universal accessor routes both client and server handles), so
+// GetObjectDisplayNameByHandle resolves them without translation.
+// Offsets verified against Lane's CSWGuiInGameEquip struct (SIZE=0x42bc).
+constexpr size_t    kEquipPanelPlayerCreatureOffset    = 0x0064;
+constexpr size_t    kEquipPanelHeadIdOffset            = 0x4284;
+constexpr size_t    kEquipPanelImplantIdOffset         = 0x4298;
+constexpr size_t    kEquipPanelArmorIdOffset           = 0x4290;  // body
+constexpr size_t    kEquipPanelLeftArmbandIdOffset     = 0x4288;
+constexpr size_t    kEquipPanelRightArmbandIdOffset    = 0x428c;
+constexpr size_t    kEquipPanelLeftWeaponIdOffset      = 0x427c;
+constexpr size_t    kEquipPanelRightWeaponIdOffset     = 0x4280;
+constexpr size_t    kEquipPanelGlovesIdOffset          = 0x4294;  // hands
+constexpr size_t    kEquipPanelBeltIdOffset            = 0x429c;
+
+// Stat-value labels inline in the panel struct. Each is a CSWGuiLabel
+// (SIZE=0x140). UpdateInventory @0x006b9970 writes the rendered value
+// into gui_string at populate-time; the .gui-time placeholder text is
+// overwritten.
+//
+// Lane's struct-DB names for the attack block are MISLEADING — verified
+// 2026-05-23 via Ghidra decomp of UpdateInventory:
+//   * `*_attack_label`  members hold the DAMAGE range value ("1-9").
+//   * `*_tohit_label`   members hold the TO HIT bonus value ("+5").
+//   * `tohit_label`     (0x2a98) and `damage_label` (0x2bd8) are
+//                       CAPTION-only labels with static TLK strrefs
+//                       (31385/31386). The engine never overwrites
+//                       them — they remain "Trefferchance" /
+//                       "Schaden".
+// Single-weapon mode: only the RIGHT-hand pair carries values; LEFT pair
+// is blanked to "". Dual-wield: both pairs carry per-hand values.
+constexpr size_t    kEquipPanelDefenseLabelOffset            = 0x2098;
+constexpr size_t    kEquipPanelHpLabelOffset                 = 0x21d8;
+constexpr size_t    kEquipPanelLeftWeaponDamageLabelOffset   = 0x1b98;  // Lane: left_weapon_attack_label
+constexpr size_t    kEquipPanelLeftWeaponTohitLabelOffset    = 0x1cd8;
+constexpr size_t    kEquipPanelRightWeaponDamageLabelOffset  = 0x1e18;  // Lane: right_weapon_attack_label
+constexpr size_t    kEquipPanelRightWeaponTohitLabelOffset   = 0x1f58;
 
 // CSWSCreatureStats.feats @+0x0 — CExoArrayList<ushort>. Count lives
 // at +0x4 (size field of the list). Static feat list (granted at level-

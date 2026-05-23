@@ -6,6 +6,7 @@
 #include "engine_reads.h"
 #include "hotkeys.h"
 #include "log.h"
+#include "menus_internal.h"   // kEquipBtn* slot ids
 #include "tolk.h"
 
 #include <cstddef>
@@ -194,6 +195,102 @@ constexpr ItemTooltipPanelInfo kItemTooltipPanels[] = {
     { acc::engine::PanelKind::InGameEquip, 0x30d8, 1 },  // CSWGuiInGameEquip.items_listbox
 };
 
+// Equip-panel slot peek table. When the focused chain target is one of
+// the 9 slot buttons, Shift+arrow reads the description of the item
+// currently equipped in that slot (handle cached in the panel struct at
+// offset itemIdOffset). Source-of-truth for the displayed character —
+// the panel updates these on every BTN_CHANGE1/2 party-cycle, so the
+// description matches whichever companion is on screen.
+struct EquipSlotPeekInfo {
+    int    cid;            // .gui control id (panel-stable across locales)
+    size_t itemIdOffset;   // CSWGuiInGameEquip-relative ulong handle
+};
+
+constexpr EquipSlotPeekInfo kEquipSlotPeek[] = {
+    { kEquipBtnHeadId,    kEquipPanelHeadIdOffset         },
+    { kEquipBtnImplantId, kEquipPanelImplantIdOffset      },
+    { kEquipBtnBodyId,    kEquipPanelArmorIdOffset        },
+    { kEquipBtnArmLId,    kEquipPanelLeftArmbandIdOffset  },
+    { kEquipBtnArmRId,    kEquipPanelRightArmbandIdOffset },
+    { kEquipBtnWeapLId,   kEquipPanelLeftWeaponIdOffset   },
+    { kEquipBtnWeapRId,   kEquipPanelRightWeaponIdOffset  },
+    { kEquipBtnBeltId,    kEquipPanelBeltIdOffset         },
+    { kEquipBtnHandsId,   kEquipPanelGlovesIdOffset       },
+};
+
+const EquipSlotPeekInfo* FindEquipSlotByControl(void* control) {
+    if (!control) return nullptr;
+    int cid = 0;
+    __try {
+        // Control id is the .gui-time numeric ID at +0x50 — same field
+        // the slot extractor in menus_extract reads to dispatch to the
+        // per-slot label table.
+        cid = *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(control) + 0x50);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+    for (const auto& s : kEquipSlotPeek) {
+        if (s.cid == cid) return &s;
+    }
+    return nullptr;
+}
+
+// Read the slot's cached server-side handle, resolve to CSWSItem*, and
+// speak the same multi-line description the engine's hover-into-listbox
+// path would produce. Returns true if a non-empty description was spoken,
+// false if the slot is empty or the resolve fails (caller still consumes
+// the key per the predictable-behaviour rule in HandleShiftArrow).
+bool HandleEquipSlotTooltip(void* panel, const EquipSlotPeekInfo& info) {
+    if (!panel) return false;
+    uint32_t handle = 0;
+    __try {
+        handle = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(panel) + info.itemIdOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Peek.EquipSlot",
+                      "panel=%p offset=0x%x SEH reading slot id",
+                      panel, (unsigned)info.itemIdOffset);
+        return false;
+    }
+    // 0x7f000000 = kInvalidObjectId, the engine's "slot empty" sentinel
+    // (confirmed in UpdateInventory decomp: every blank-slot branch
+    // writes 0x7f000000 to the slot id field). Treat alongside 0 and
+    // 0xffffffff as "no item".
+    if (handle == 0 || handle == 0xffffffff || handle == 0x7f000000) {
+        acclog::Write("Peek.EquipSlot",
+                      "panel=%p cid=%d slot empty (handle=0x%x); silent",
+                      panel, info.cid, handle);
+        return false;
+    }
+
+    // Panel-cached slot ids are CLIENT-side (high bit 0x80000000 set,
+    // observed live: e.g. 0x8000017a for a Zaalbar bowcaster). The
+    // picker rows go through the same client→server translation path,
+    // so ResolveItemFromClientHandle is the right resolver here too.
+    void* item = acc::engine::ResolveItemFromClientHandle(handle);
+    if (!item) {
+        acclog::Write("Peek.EquipSlot",
+                      "panel=%p cid=%d handle=0x%x; item not resolvable",
+                      panel, info.cid, handle);
+        return false;
+    }
+
+    char text[4096];
+    if (!acc::engine::ReadItemPropertyDescription(item, text, sizeof(text))) {
+        acclog::Write("Peek.EquipSlot",
+                      "panel=%p cid=%d item=%p empty description",
+                      panel, info.cid, item);
+        return false;
+    }
+
+    tolk::Speak(text, /*interrupt=*/true);
+    acclog::Write("Peek.EquipSlot",
+                  "panel=%p cid=%d handle=0x%x item=%p text=\"%s\"",
+                  panel, info.cid, handle, item, text);
+    return true;
+}
+
 const ItemTooltipPanelInfo* LookupItemTooltipPanel(acc::engine::PanelKind k) {
     for (const auto& p : kItemTooltipPanels) {
         if (p.kind == k) return &p;
@@ -339,6 +436,21 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
     if (!activePanel) return false;
 
     auto kind = acc::engine::IdentifyPanel(activePanel);
+
+    // Equip slot tooltip: when the focused chain target is one of the 9
+    // slot buttons (BTN_INV_*) on the main equip screen, read the
+    // description of the item equipped in that slot. Runs BEFORE the
+    // picker-listbox path because the same panel kind (InGameEquip)
+    // hosts both surfaces — the picker's items_listbox is empty until
+    // the user drills into a slot, so the picker handler would otherwise
+    // win and silently no-op on slot focus.
+    if (kind == acc::engine::PanelKind::InGameEquip && focusedControl) {
+        if (const EquipSlotPeekInfo* slotInfo =
+                FindEquipSlotByControl(focusedControl)) {
+            HandleEquipSlotTooltip(activePanel, *slotInfo);
+            return true;
+        }
+    }
 
     // Try the item-tooltip path first (Container, Equip picker). These
     // panels don't fit the inline-description-listbox shape — see the

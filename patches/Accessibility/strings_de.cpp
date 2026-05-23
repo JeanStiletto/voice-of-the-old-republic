@@ -103,6 +103,15 @@ const char* Get(Id id) {
         case Id::EquipSlotBelt:        return "G\xFCrtel";                       // Gürtel
         case Id::EquipSlotHands:       return "H\xE4nde";                        // Hände
 
+        case Id::FmtEquipSlotItem:     return "%s, %s";
+        case Id::FmtEquipSlotEmpty:    return "%s, leer";
+        case Id::FmtEquipVitality:     return "Vitalit\xE4t %s";                  // Vitalität
+        case Id::FmtEquipDefense:      return "Verteidigung %s";
+        case Id::FmtEquipAttack:       return "Angriff %s";
+        case Id::FmtEquipAttackDual:   return "Angriff links %s, rechts %s";
+        case Id::FmtEquipDamage:       return "Schaden %s";
+        case Id::FmtEquipDamageDual:   return "Schaden links %s, rechts %s";
+
         case Id::FmtTransitionArea:    return "Bereich: %s";
         case Id::FmtTransitionRoom:    return "Raum: %s";
         case Id::FmtTransitionRoomIndex: return "Raum %d";

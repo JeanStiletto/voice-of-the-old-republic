@@ -137,6 +137,13 @@ void DumpControlVtable(void* control, char* out, size_t outSize);
 // or raised exception. Safe to call from monitor ticks during teardown.
 void* ResolveItemFromClientHandle(uint32_t clientHandle);
 
+// Same shape as ResolveItemFromClientHandle but skips the ClientToServer
+// translation — for handles already known to be server-side, e.g. the
+// per-slot ulongs stored in CSWInventory which the equip panel mirrors
+// into its own cache. Returns nullptr on null link, invalid handle, or
+// raised exception.
+void* ResolveItemFromServerHandle(uint32_t serverHandle);
+
 // Read a CSWSItem's full property description (the multi-line text the
 // Inventory/Store/Equip panels render into their description listbox on
 // hover): damage, range, on-hit, defence, base description, etc. Writes up
