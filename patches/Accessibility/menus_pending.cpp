@@ -254,6 +254,13 @@ void Drain(void* gm) {
     // the monitor speaks the diff.
     case Kind::Activate: {
         if (op.a) {
+            // Snapshot the panel kind before dispatch — used post-fn to
+            // decide whether op.a may have freed itself. Done up front
+            // because the LevelUp Annehmen path is exactly when we
+            // *can't* re-identify the panel safely after fn() returns.
+            acc::engine::PanelKind panelKindAtDispatch =
+                acc::engine::IdentifyPanel(acc::menus::chain::g_chainPanel);
+
             uint32_t* isActive = reinterpret_cast<uint32_t*>(
                 reinterpret_cast<unsigned char*>(op.a) + kControlIsActiveOffset);
             uint32_t prevIsActive = *isActive;
@@ -276,42 +283,42 @@ void Drain(void* gm) {
             // inside the onClick we just dispatched. Annehmen on
             // InGameLevelUp is the known case (commits the level-up AND
             // pops the panel — the button's own memory is freed before
-            // fn returns), but the pattern generalises to any commit /
-            // close button that tears its host panel down. Within the
-            // same tick the engine defers both the panels[] pop and the
-            // controls[] removal, and the freed memory still reads as
-            // the same engine vtable bytes, so panel-presence,
-            // controls[]-membership, and vtable-range checks all see a
-            // healthy-looking state. The next tick's
-            // MonitorFocusedControl would then dereference a freed
+            // fn returns). Within the same tick the engine defers both
+            // the panels[] pop and the controls[] removal, and the freed
+            // memory still reads as the same engine vtable bytes, so
+            // panel-presence, controls[]-membership, and vtable-range
+            // checks all see a healthy-looking state. The next tick's
+            // MonitorFocusedControl would then dereference the freed
             // pointer in g_chain and FromControl's internal SEH-caught
             // AV would interact with /GS to fastfail the process.
             //
-            // op.a is the only pointer we're certain might be freed:
-            // we just dispatched it. Null the matching chain entry so
-            // MonitorFocusedControl's `if (!focused) return`
-            // short-circuits. The chain rebuilds on the next
-            // OnSetActiveControl when the engine refocuses post-commit.
+            // The guard must be scoped tightly: nulling the chain entry
+            // unconditionally is wrong for toggles, sliders, cycles, and
+            // tabs — those mutate state in place, the engine does NOT
+            // refocus afterward, and the chain entry needs to survive so
+            // the next-tick monitor speaks the new value ("ein"/"aus",
+            // updated slider %, new cycle text). Nulling them silently
+            // drops the post-toggle announce.
             //
-            // Surgical: matches only the activated address, so toggles,
-            // sliders, cycles, tab switches, and store actions keep
-            // their chain entries — they mutate state but never destroy
-            // themselves. If we ever route a self-destroying button
-            // through Kind::ClickAt instead of Kind::Activate, this
-            // guard won't apply there; revisit at that point.
-            int clearedIdx = -1;
-            for (int i = 0; i < acc::menus::chain::g_chainCount; ++i) {
-                if (acc::menus::chain::g_chain[i].control == op.a) {
-                    acc::menus::chain::g_chain[i].control = nullptr;
-                    clearedIdx = i;
-                    break;
+            // Scope: only the InGameLevelUp panel kind, which is the only
+            // panel known to free a control synchronously inside Activate.
+            // If a future panel kind exhibits the same teardown shape,
+            // add it to this gate; don't widen unconditionally.
+            if (panelKindAtDispatch == acc::engine::PanelKind::InGameLevelUp) {
+                int clearedIdx = -1;
+                for (int i = 0; i < acc::menus::chain::g_chainCount; ++i) {
+                    if (acc::menus::chain::g_chain[i].control == op.a) {
+                        acc::menus::chain::g_chain[i].control = nullptr;
+                        clearedIdx = i;
+                        break;
+                    }
                 }
-            }
-            if (clearedIdx >= 0) {
-                acclog::Write("Update",
-                              "FireActivate post: chain[%d].control=%p "
-                              "nulled (self-destroy-risk)",
-                              clearedIdx, op.a);
+                if (clearedIdx >= 0) {
+                    acclog::Write("Update",
+                                  "FireActivate post: chain[%d].control=%p "
+                                  "nulled (self-destroy-risk, panel=InGameLevelUp)",
+                                  clearedIdx, op.a);
+                }
             }
             // Companion full-panel-pop guard: if the engine cleared the
             // panel from mgr.panels[] inside the dispatch (rarer — the
