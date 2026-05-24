@@ -9,7 +9,7 @@
 #include "hotkeys.h"
 #include "log.h"
 #include "strings.h"
-#include "tolk.h"
+#include "prism.h"
 
 namespace acc::probe_mouselook {
 
@@ -136,7 +136,7 @@ void PollWin32() {
         before ? 1 : 0, after ? 1 : 0, readback ? 1 : 0,
         readbackOk ? 1 : 0);
 
-    tolk::Speak(
+    prism::Speak(
         acc::strings::Get(after
             ? acc::strings::Id::MouseLookOn
             : acc::strings::Id::MouseLookOff),

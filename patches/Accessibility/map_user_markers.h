@@ -9,7 +9,7 @@
 // Once placed, the marker:
 //   - Appears in the existing MapPin cycle category (lay-off 1b)
 //     immediately — no separate listing path, no new cycle category.
-//   - Speaks confirmation via Tolk so the user knows the keypress
+//   - Speaks confirmation via Prism so the user knows the keypress
 //     landed.
 //   - Persists for the current area-load only. K1's engine-side
 //     persistence uses per-player CSWSScriptVarTable variables

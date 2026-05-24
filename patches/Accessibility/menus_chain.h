@@ -22,7 +22,7 @@
 // What stays in menus.cpp:
 //
 //   * AnnounceControl / AnnouncePanelTitle — speech utilities not tied to
-//     chain state (they read panel/control, write tolk + monitor state).
+//     chain state (they read panel/control, write prism + monitor state).
 //   * IsModalPopupPanel — used by Esc handler in OnHandleInputEvent.
 //   * g_focusMonitor*, g_currentPanel, g_lastTitledPanel — monitor / focus
 //     state read by chain code via extern decl in menus_internal.h, but

@@ -1,7 +1,7 @@
 // Route description — turn-by-turn TTS readout of a computed path.
 //
 // Layer: guidance/ (depends on engine_compass for sector lookup,
-// strings/tolk for speech, log for diagnostics). Phase 5 lay-off 5
+// strings/prism for speech, log for diagnostics). Phase 5 lay-off 5
 // folded into the Ctrl+- hotkey wiring so the user gets a sanity-check
 // readout of the calculated route at the same time as the beacon starts.
 //
@@ -41,7 +41,7 @@ namespace acc::guidance::description {
 // back to category label). `isTransition` flips the suffix between
 // the "1 transition" / "no transition" strings.
 //
-// `interrupt` is forwarded to Tolk — Ctrl+- speech preempts any
+// `interrupt` is forwarded to Prism — Ctrl+- speech preempts any
 // in-flight cycle/passive narration so the user hears the route
 // description in full.
 //

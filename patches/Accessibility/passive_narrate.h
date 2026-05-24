@@ -1,6 +1,6 @@
 // Passive-selection narration loop.
 //
-// Layer: narration/ (consumes engine + filter + audio + strings + tolk).
+// Layer: narration/ (consumes engine + filter + audio + strings + prism).
 //
 // What this does: hooks CClientExoAppInternal::ShowObject @ 0x005f9c60
 // (via hooks.toml at 0x005f9c8e). ShowObject is the engine's single

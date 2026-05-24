@@ -205,7 +205,7 @@ void Init(HINSTANCE hinstDLL) {
     OutputDebugStringA(dbg);
 
     // Consolidated header line so the log is self-describing in isolation.
-    // Tolk + version SHA are reported separately later (Tolk init is
+    // Prism + version SHA are reported separately later (Prism init is
     // deferred out of DllMain; SHA comes from the env var sourced from
     // kdev's build artefacts) — this header captures what's known *now*.
     SYSTEMTIME utc, local;

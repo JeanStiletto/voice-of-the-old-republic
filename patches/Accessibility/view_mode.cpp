@@ -30,7 +30,7 @@
 #include "region_classifier.h"    // shared region cache for cursor announce
 #include "spatial_change_detector.h"  // GetCachedWalls
 #include "strings.h"
-#include "tolk.h"
+#include "prism.h"
 #include "transitions.h"          // IsWorldSpeechGated, GetLandmarkForRoom,
                                   // IsResrefStyleRoomName
 
@@ -223,7 +223,7 @@ void EnterViewMode() {
     g_state.region_last_spoken_text[0]  = '\0';
 
     g_state.active = true;
-    tolk::Speak(acc::strings::Get(acc::strings::Id::ViewModeOn),
+    prism::Speak(acc::strings::Get(acc::strings::Id::ViewModeOn),
                 /*interrupt=*/true);
     acclog::Write("ViewMode", "ENTER cursor=(%.2f,%.2f,%.2f) yaw=%.1f",
         pos.x, pos.y, pos.z, yaw);
@@ -235,7 +235,7 @@ void ExitViewMode() {
     // Don't write the listener on the way out — the engine reclaims the
     // field next frame from the camera, and any further write here
     // would race that update.
-    tolk::Speak(acc::strings::Get(acc::strings::Id::ViewModeOff),
+    prism::Speak(acc::strings::Get(acc::strings::Id::ViewModeOff),
                 /*interrupt=*/true);
     acclog::Write("ViewMode", "EXIT restored=%d", restored ? 1 : 0);
 }
@@ -513,7 +513,7 @@ void AnnounceCursorRegion(void* area, const Vector& cursor) {
                      sizeof(g_state.region_pending_text)) == 0 &&
         g_state.region_pending_started_ms != 0) {
         if (now - g_state.region_pending_started_ms >= kHoverPauseMs) {
-            tolk::SpeakUrgent(label);
+            prism::SpeakUrgent(label);
             std::strncpy(g_state.region_last_spoken_text, label,
                          sizeof(g_state.region_last_spoken_text) - 1);
             g_state.region_last_spoken_text[
@@ -614,7 +614,7 @@ void NarrateNearestObject(void* area, const Vector& cursor) {
                       acc::strings::Get(CategoryNameId(bestCat)));
     }
 
-    tolk::Speak(name, /*interrupt=*/true);
+    prism::Speak(name, /*interrupt=*/true);
     g_state.hover_last_spoken = bestHandle;
 
     // Stamp the unified activation slot so Enter / Shift+Enter / Shift+- /
@@ -750,7 +750,7 @@ void ProcessPendingDispatch() {
         if (!acc::narrated_target::TryGet(slot)) {
             const char* msg = acc::strings::Get(
                 acc::strings::Id::GuidanceNoFocus);
-            tolk::Speak(msg, /*interrupt=*/true);
+            prism::Speak(msg, /*interrupt=*/true);
             acclog::Write("ViewMode", "%s deferred -> [%s] (hover stale at dispatch) "
                 "elapsed=%lums",
                 keyTag, msg, static_cast<unsigned long>(elapsed));
@@ -767,7 +767,7 @@ void ProcessPendingDispatch() {
     // Empty cursor — raw walk-to-position. Speak the localised pre-roll
     // before WalkTo (cf. `feedback_never_silence_fallback_announcement`).
     const char* preroll = acc::strings::Get(acc::strings::Id::GuidingToPoint);
-    tolk::Speak(preroll, /*interrupt=*/true);
+    prism::Speak(preroll, /*interrupt=*/true);
 
     // Diagnostic 2026-05-07: try ForceWalkTo (queue-bypass) instead of
     // WalkTo. patch-20260507-083116.log proved the per-creature action

@@ -3,10 +3,10 @@
 // "no clue if I'm doing anything" — they need feedback that A/D / Q/E
 // are turning the character vs. just rotating the camera).
 //
-// Layer: narration/ (consumes engine_player + strings + tolk; no engine
+// Layer: narration/ (consumes engine_player + strings + prism; no engine
 // re-entry). Reads server-side player yaw per tick, buckets into 8
 // cardinal sectors (N / NE / E / SE / S / SW / W / NW), speaks the
-// localised direction name via Tolk on sector change. 5° hysteresis
+// localised direction name via Prism on sector change. 5° hysteresis
 // per the long-term plan to avoid border thrashing.
 //
 // Yaw frame conversion: engine `GetPlayerYawDegrees` returns

@@ -3,8 +3,8 @@
 //
 // Layering:
 //   log.{h,cpp}             file/debug logging primitives
-//   tolk.{h,cpp}            screen-reader bridge (LoadLibrary'd lazily)
-//   core_dllmain.cpp        DllMain + OnRulesInit + EnsureTolkInitialized
+//   prism.{h,cpp}            screen-reader bridge (LoadLibrary'd lazily)
+//   core_dllmain.cpp        DllMain + OnRulesInit + EnsurePrismInitialized
 //   engine_input.{h,cpp}    InputIndices name table + manager translate
 //   engine_offsets.h        engine struct/vtable offset constants + engine structs
 //   engine_reads.{h,cpp}    SEH-guarded readers (CallDowncast, ReadGuiString, ...)
@@ -24,7 +24,7 @@
 #include <cstring>
 
 #include "log.h"
-#include "tolk.h"
+#include "prism.h"
 #include "menus.h"           // public surface — Step 1 mod-wide tick split
 #include "menus_charsheet.h" // Step 2A — character-sheet opener lifted out
 #include "menus_chargen_attr.h" // Chargen "Attribute" panel label + selected_ability sync
@@ -127,8 +127,8 @@ using acc::menus::chain::ReadPanelActiveControl;
 using acc::menus::monitors::AnnounceControl;
 
 // Forward decl from core_dllmain.cpp. The first hook to fire calls this so
-// Tolk is loaded the moment any focus / input event reaches us.
-void EnsureTolkInitialized();
+// Prism is loaded the moment any focus / input event reaches us.
+void EnsurePrismInitialized();
 
 // Forward declarations + the shared kEquipBtn* / kEquipLb* constants moved
 // to menus_internal.h in Step 2B. g_currentPanel is declared there as
@@ -185,7 +185,7 @@ void SpeakIfChanged(int channel, const char* text) {
     if (strncmp(s_lastSpoken[channel], text,
                 sizeof(s_lastSpoken[channel])) == 0) return;
     strncpy_s(s_lastSpoken[channel], text, _TRUNCATE);
-    tolk::Speak(text, /*interrupt=*/false);
+    prism::Speak(text, /*interrupt=*/false);
 }
 
 }  // namespace acc::menus
@@ -414,7 +414,7 @@ static void AnnouncePanelTitle(void* panel) {
         acclog::Write("Menus.PanelWalk",
                       "title parent=%p (spec override) text=\"%s\"",
                       panel, override);
-        tolk::Speak(override, /*interrupt=*/false);
+        prism::Speak(override, /*interrupt=*/false);
         return;
     }
 
@@ -426,7 +426,7 @@ static void AnnouncePanelTitle(void* panel) {
         acclog::Write("Menus.PanelWalk",
                       "title parent=%p (editbox spec override) text=\"%s\"",
                       panel, override);
-        tolk::Speak(override, /*interrupt=*/false);
+        prism::Speak(override, /*interrupt=*/false);
         return;
     }
 
@@ -466,7 +466,7 @@ static void AnnouncePanelTitle(void* panel) {
             }
             acclog::Write("Menus.PanelWalk", "title parent=%p label=%p text=\"%s\"",
                           panel, child, text);
-            tolk::Speak(text, /*interrupt=*/false);
+            prism::Speak(text, /*interrupt=*/false);
             return;
         }
     }
@@ -1073,7 +1073,7 @@ static void AnnounceNewFocusedControl(int n, void* panel, void* newControl) {
 }
 
 extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
-    EnsureTolkInitialized();
+    EnsurePrismInitialized();
     static int n = 0;
     ++n;
 
@@ -1137,7 +1137,7 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
 // (race / class / portrait pickers in chargen, save-game list, etc.).
 extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
                                                   int param2) {
-    EnsureTolkInitialized();
+    EnsurePrismInitialized();
 
     static int n = 0;
     ++n;
@@ -1275,7 +1275,7 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
         if (ctrlsSize > 1) {
             char placeholder[64];
             snprintf(placeholder, sizeof(placeholder), "row %d", id);
-            tolk::Speak(placeholder, /*interrupt=*/false);
+            prism::Speak(placeholder, /*interrupt=*/false);
         }
     }
 }
@@ -1285,7 +1285,7 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
 // real announcement signal; HandleFocusChange fires twice per navigation
 // (old loses focus + new gains focus) so speaking from here would echo.
 extern "C" void __cdecl OnHandleFocusChange(void* thisPtr, int param_1) {
-    EnsureTolkInitialized();
+    EnsurePrismInitialized();
     static int n = 0;
     ++n;
     const char* tip; uint32_t tipLen; int id;
@@ -1308,7 +1308,7 @@ extern "C" void __cdecl OnHandleFocusChange(void* thisPtr, int param_1) {
 // At hook entry: ECX = this, EBX = param_1 (InputIndices key/button code),
 // EAX = param_2 (state).
 extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_2) {
-    EnsureTolkInitialized();
+    EnsurePrismInitialized();
     static int n = 0;
     ++n;
     // Shared seq counter — lets readers correlate Menus.Input lines with
@@ -1935,7 +1935,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             // (their descriptions are short enough to drain naturally).
             if (acc::menus::chargen_skills::IsChargenSkillsPanel(
                     g_chainPanel)) {
-                tolk::Silence();
+                prism::Silence();
             }
             AnnounceControl(e.control);
             // Mirror chain focus into the chargen Attributes panel's
@@ -1986,7 +1986,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                              acc::strings::Get(
                                  acc::strings::Id::FmtItemStackSuffix),
                              stack);
-                    tolk::Speak(suffix, /*interrupt=*/false);
+                    prism::Speak(suffix, /*interrupt=*/false);
                 }
             }
             int cursorX = e.cx;
@@ -2477,7 +2477,7 @@ void DrainPendingAnnounce() {
         reinterpret_cast<unsigned char*>(control) + 0x50);
     char placeholder[64];
     snprintf(placeholder, sizeof(placeholder), "control %d", id);
-    tolk::Speak(placeholder, /*interrupt=*/false);
+    prism::Speak(placeholder, /*interrupt=*/false);
 }
 
 void ClearPendingAnnounce() {
@@ -2513,7 +2513,7 @@ static void DumpListBoxState(void* listBox, char* out, size_t outSize) {
 
 // CSWGuiListBox::HandleLMouseDown — entry hook @0x0041c4a0. Click press.
 extern "C" void __cdecl OnListBoxLMouseDown(void* listBox) {
-    EnsureTolkInitialized();
+    EnsurePrismInitialized();
     static int n = 0;
     ++n;
     char state[160];
@@ -2526,7 +2526,7 @@ extern "C" void __cdecl OnListBoxLMouseDown(void* listBox) {
 // the next OnListBoxSetSelectedControl / OnListBoxSetActiveControl events to
 // see the full chain.
 extern "C" void __cdecl OnListBoxLMouseUp(void* listBox) {
-    EnsureTolkInitialized();
+    EnsurePrismInitialized();
     static int n = 0;
     ++n;
     char state[160];
@@ -2541,7 +2541,7 @@ extern "C" void __cdecl OnListBoxLMouseUp(void* listBox) {
 // timestamp with the manager-level HandleInputEvent log line that fired
 // just before.
 extern "C" void __cdecl OnListBoxHandleInput(void* listBox) {
-    EnsureTolkInitialized();
+    EnsurePrismInitialized();
     static int n = 0;
     ++n;
     char state[160];
@@ -2554,7 +2554,7 @@ extern "C" void __cdecl OnListBoxHandleInput(void* listBox) {
 // programmatic). Reads the OLD selection_index pre-update; the next
 // OnListBoxSetActiveControl event will reveal the new value.
 extern "C" void __cdecl OnListBoxSetSelectedControl(void* listBox) {
-    EnsureTolkInitialized();
+    EnsurePrismInitialized();
     static int n = 0;
     ++n;
     char state[160];
@@ -2579,7 +2579,7 @@ extern "C" void __cdecl OnListBoxSetSelectedControl(void* listBox) {
 // order matches the hooks.toml declaration.
 extern "C" void __cdecl OnSetMoveToModuleString(void* /*serverApp*/,
                                                 void* arg_addr) {
-    EnsureTolkInitialized();
+    EnsurePrismInitialized();
 
     void* exoStringPtr = nullptr;
     __try {
@@ -2593,4 +2593,4 @@ extern "C" void __cdecl OnSetMoveToModuleString(void* /*serverApp*/,
     acc::transitions::AnnouncePreLoadDestination(exoStringPtr);
 }
 
-// DllMain + OnRulesInit + EnsureTolkInitialized live in core_dllmain.cpp.
+// DllMain + OnRulesInit + EnsurePrismInitialized live in core_dllmain.cpp.

@@ -13,7 +13,7 @@
 // HandleMouseMove → UpdateMouseOverControl, the same re-entrancy class
 // that destabilised earlier listbox-entry hooks. Deferring to the next
 // CSWGuiManager::Update tick (~16ms at 60fps; inaudible) keeps deep
-// engine re-entry off the input-hook stack. Tolk speech still fires
+// engine re-entry off the input-hook stack. Prism speech still fires
 // synchronously from the input hook so the audible response feels
 // instantaneous.
 //

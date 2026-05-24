@@ -27,7 +27,7 @@
 #include "menus_extract.h"
 #include "menus_pending.h"
 #include "strings.h"
-#include "tolk.h"
+#include "prism.h"
 
 using namespace acc::engine;
 
@@ -219,19 +219,19 @@ void SnapshotInto(ArmedState& s) {
 
 void SpeakFullText(const char* text, uint32_t len) {
     if (len == 0) {
-        tolk::Speak(acc::strings::Get(acc::strings::Id::EditboxEmpty),
+        prism::Speak(acc::strings::Get(acc::strings::Id::EditboxEmpty),
                     /*interrupt=*/false);
     } else {
-        tolk::Speak(text, /*interrupt=*/false);
+        prism::Speak(text, /*interrupt=*/false);
     }
 }
 
 // Speak a single character. Render as a one-char null-terminated string —
-// Tolk's NVDA path handles this natively (NVDA reads single chars per its
+// The Prism NVDA backend handles this natively (NVDA reads single chars per its
 // "characters" verbosity setting).
 void SpeakSingleChar(char c) {
     char buf[2] = {c, '\0'};
-    tolk::Speak(buf, /*interrupt=*/false);
+    prism::Speak(buf, /*interrupt=*/false);
 }
 
 // ============================================================================
@@ -536,7 +536,7 @@ void TickEditboxMonitors() {
             } else {
                 snprintf(msg, sizeof(msg), "%s. %s", role, empty);
             }
-            tolk::Speak(msg, /*interrupt=*/false);
+            prism::Speak(msg, /*interrupt=*/false);
             acc::menus::ClearPendingAnnounce();
 
             acclog::Write("Editbox", "%s arm: panel=%p editbox=%p "

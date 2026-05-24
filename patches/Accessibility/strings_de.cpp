@@ -1,7 +1,7 @@
 // German string table.
 //
 // Encoding: Windows-1252 hex escapes for non-ASCII (\xE4=ä, \xF6=ö,
-// \xFC=ü, \xDF=ß, \xC4=Ä, \xD6=Ö, \xDC=Ü). Tolk's ANSI overload converts
+// \xFC=ü, \xDF=ß, \xC4=Ä, \xD6=Ö, \xDC=Ü). Prism's ANSI overload converts
 // from CP_ACP via MultiByteToWideChar; on a German Windows install
 // CP_ACP = Windows-1252, so the literal bytes here pass through
 // unchanged. UTF-8 source would also work but only with /utf-8 set, and
@@ -133,6 +133,9 @@ const char* Get(Id id) {
 
         case Id::FmtMapStateOriented:    return "%s. Blick auf der Karte nach %d Grad, %s.";
         case Id::FmtMapStateUnknownRoom: return "Blick auf der Karte nach %d Grad, %s.";
+
+        case Id::FmtWorldStateOriented:       return "%s. %s.";
+        case Id::FmtWorldStateUnknownCluster: return "%s.";
 
         case Id::MouseLookOn:          return "Maussteuerung an";
         case Id::MouseLookOff:         return "Maussteuerung aus";

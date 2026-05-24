@@ -3,8 +3,7 @@
 // Layer: core/ (high-trust, stable). DllMain runs under the loader lock so
 // nothing here may load DLLs, init COM, or open files. The actual speech
 // bridge (Prism) is loaded lazily on the first hook fire — see
-// EnsureTolkInitialized below. (Function name is a historical hold-over
-// from the pre-migration Tolk-based path; the underlying init is Prism.)
+// EnsurePrismInitialized below.
 //
 // This file is the smallest of the patch — it defines the DLL boundary and
 // the OnRulesInit infrastructure-test detour. Everything else (engine
@@ -16,7 +15,7 @@
 #include <cstring>
 
 #include "log.h"
-#include "tolk.h"
+#include "prism.h"
 
 namespace {
 
@@ -36,15 +35,15 @@ char g_versionSha[128] = "(unset)";
 // Exposed (not in the anonymous namespace) so any TU's hook handler can call
 // it from its first-fire path. Defined here because the version literal lives
 // here.
-void EnsureTolkInitialized() {
+void EnsurePrismInitialized() {
     static bool done = false;
     if (done) return;
     done = true;
-    if (tolk::Init()) {
+    if (prism::Init()) {
         char greeting[128];
         snprintf(greeting, sizeof(greeting),
                  "KOTOR accessibility mod loaded, version %s", kModVersion);
-        tolk::Speak(greeting, /*interrupt=*/true);
+        prism::Speak(greeting, /*interrupt=*/true);
     }
 }
 
@@ -77,14 +76,14 @@ static void DumpFunctionBytes(const char* tag, uintptr_t va, size_t len) {
 }
 
 // CSWRules::CSWRules first-construction infrastructure-test detour. Logs
-// the first fire as a "patch is alive" signal and ensures Tolk is loaded
+// the first fire as a "patch is alive" signal and ensures Prism is loaded
 // before any focus event hits us. Hook is registered in hooks.toml at
 // 0x00552c9a.
 extern "C" void __cdecl OnRulesInit(void* /*rulesThis*/) {
     static bool fired = false;
     if (fired) return;
     fired = true;
-    EnsureTolkInitialized();
+    EnsurePrismInitialized();
     acclog::Write("Init", "first CSWRules construction; detour active");
 
     // RE: dump CSWGuiInGameCharacter::ShowLevelUpGUI (btn_levelup click

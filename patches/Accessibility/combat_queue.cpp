@@ -13,7 +13,7 @@
 #include "hotkeys.h"
 #include "log.h"
 #include "strings.h"
-#include "tolk.h"
+#include "prism.h"
 
 namespace acc::combat::queue {
 
@@ -330,7 +330,7 @@ void SpeakRow(int idx) {
     std::snprintf(msg, sizeof(msg),
                   acc::strings::Get(acc::strings::Id::FmtQueueRow),
                   row.charName, verb, tgtName, idx + 1, g_state.count);
-    tolk::Speak(msg, /*interrupt=*/true);
+    prism::Speak(msg, /*interrupt=*/true);
     acclog::Write("Combat.Queue",
                   "row %d/%d char=[%s] type=%u target=0x%08x verb=[%s] "
                   "tgt=[%s]",
@@ -404,7 +404,7 @@ void ForceDisarm(const char* reason) {
 bool Open() {
     int count = BuildRows();
     if (count <= 0) {
-        tolk::Speak(acc::strings::Get(acc::strings::Id::QueueEmpty),
+        prism::Speak(acc::strings::Get(acc::strings::Id::QueueEmpty),
                     /*interrupt=*/true);
         acclog::Write("Combat.Queue", "Open — party queue empty; not arming");
         return false;
@@ -417,7 +417,7 @@ bool Open() {
     std::snprintf(msg, sizeof(msg),
                   acc::strings::Get(acc::strings::Id::FmtQueueOpen),
                   count);
-    tolk::Speak(msg, /*interrupt=*/true);
+    prism::Speak(msg, /*interrupt=*/true);
     acclog::Write("Combat.Queue", "ARMED rows=%d -> [%s]", count, msg);
 
     SpeakRow(0);
@@ -433,7 +433,7 @@ bool HandleInputEvent(int code, int value) {
     // remove against a stale row.
     int count = BuildRows();
     if (count <= 0) {
-        tolk::Speak(acc::strings::Get(acc::strings::Id::QueueEmpty),
+        prism::Speak(acc::strings::Get(acc::strings::Id::QueueEmpty),
                     /*interrupt=*/true);
         ForceDisarm("queue-emptied");
         return true;
@@ -455,7 +455,7 @@ bool HandleInputEvent(int code, int value) {
             bool shift = acc::hotkeys::ShiftHeld();
             if (shift) {
                 bool ok = ClearAllRows();
-                tolk::Speak(acc::strings::Get(
+                prism::Speak(acc::strings::Get(
                                 ok ? acc::strings::Id::QueueCleared
                                    : acc::strings::Id::QueueRemoveFailed),
                             /*interrupt=*/true);
@@ -477,7 +477,7 @@ bool HandleInputEvent(int code, int value) {
 
             bool ok = RemoveRow(g_state.focusIdx);
             if (!ok) {
-                tolk::Speak(acc::strings::Get(
+                prism::Speak(acc::strings::Get(
                                 acc::strings::Id::QueueRemoveFailed),
                             /*interrupt=*/true);
                 return true;
@@ -487,7 +487,7 @@ bool HandleInputEvent(int code, int value) {
                           acc::strings::Get(
                               acc::strings::Id::FmtQueueRemoved),
                           verb);
-            tolk::Speak(msg, /*interrupt=*/true);
+            prism::Speak(msg, /*interrupt=*/true);
             acclog::Write("Combat.Queue",
                           "Removed flat=%d type=%u verb=[%s]",
                           g_state.focusIdx + 1, (unsigned)type, verb);
@@ -505,7 +505,7 @@ bool HandleInputEvent(int code, int value) {
         }
         case kInputEsc1:
         case kInputEsc2: {
-            tolk::Speak(acc::strings::Get(acc::strings::Id::QueueClosed),
+            prism::Speak(acc::strings::Get(acc::strings::Id::QueueClosed),
                         /*interrupt=*/true);
             acclog::Write("Combat.Queue", "Esc -> close");
             ForceDisarm("esc");
@@ -520,7 +520,7 @@ void Tick() {
     if (!g_state.active) return;
     int count = BuildRows();
     if (count <= 0) {
-        tolk::Speak(acc::strings::Get(acc::strings::Id::QueueEmpty),
+        prism::Speak(acc::strings::Get(acc::strings::Id::QueueEmpty),
                     /*interrupt=*/false);
         ForceDisarm("tick-queue-empty");
         return;

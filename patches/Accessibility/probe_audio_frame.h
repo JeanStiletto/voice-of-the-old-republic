@@ -3,7 +3,7 @@
 // F10 advances through the 8 compass sectors (N → NE → E → SE → S → SW
 // → W → NW → repeat), emitting a 3D-positional cue at 5m from the
 // player in each direction and speaking the spoken-direction name via
-// Tolk. The user listens for whether the audio pan matches the spoken
+// Prism. The user listens for whether the audio pan matches the spoken
 // direction.
 //
 // Purpose: characterise the relationship between our compass frame

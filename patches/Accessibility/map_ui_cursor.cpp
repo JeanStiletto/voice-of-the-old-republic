@@ -26,7 +26,7 @@
 #include "log.h"
 #include "region_classifier.h"        // shared shape cache + LookupShapeAt
 #include "strings.h"
-#include "tolk.h"
+#include "prism.h"
 #include "transitions.h"
 
 namespace acc::map_ui_cursor {
@@ -673,7 +673,7 @@ void Tick() {
                 if (acc::engine::GetAreaDisplayName(area, nameBuf,
                                                    sizeof(nameBuf)) &&
                     nameBuf[0] != '\0') {
-                    tolk::SpeakUrgent(nameBuf);
+                    prism::SpeakUrgent(nameBuf);
                     acclog::Write("MapCursor", "area name=\"%s\"", nameBuf);
                 }
             }
@@ -911,7 +911,7 @@ void Tick() {
                     // Routed via the SAPI urgent channel — survives the
                     // typed-character cancellation that the NORMAL screen-
                     // reader path suffers from while WASD is held.
-                    tolk::SpeakUrgent(speakStr);
+                    prism::SpeakUrgent(speakStr);
                     acclog::Write("MapCursor",
                                   "speak %s=\"%s\" tag=\"%s\" "
                                   "shape=\"%s\" haveText=%d "
@@ -1174,7 +1174,7 @@ void Tick() {
                     // Same Prism+SAPI urgent path the waypoint announce
                     // uses — survives NVDA's typed-character cancel
                     // while the user holds WASD.
-                    tolk::SpeakUrgent(speakStr);
+                    prism::SpeakUrgent(speakStr);
                     acclog::Write("MapCursor",
                                   "speak ambient kind=%s key=%d "
                                   "text=\"%s\" shape=\"%s\" "

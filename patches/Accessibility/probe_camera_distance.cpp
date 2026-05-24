@@ -10,7 +10,7 @@
 #include "engine_player.h"   // AppManager chain constants
 #include "hotkeys.h"
 #include "log.h"
-#include "tolk.h"
+#include "prism.h"
 
 namespace acc::probe_camera_distance {
 
@@ -233,7 +233,7 @@ void AdvanceClampMode() {
     char msg[64];
     std::snprintf(msg, sizeof(msg), "Camera distance probe: %s",
                   ModeName(g_clampMode));
-    tolk::Speak(msg, /*interrupt=*/true);
+    prism::Speak(msg, /*interrupt=*/true);
 
     // Reset rate accounting on every mode change so the per-second
     // summary aligns with the new mode's lifetime.

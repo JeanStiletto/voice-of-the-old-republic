@@ -12,7 +12,7 @@
 #include "log.h"
 #include "menus_extract.h"    // FromControl
 #include "strings.h"
-#include "tolk.h"
+#include "prism.h"
 
 namespace acc::dialog_speech {
 
@@ -170,7 +170,7 @@ void Tick() {
         bool gotNpc = ReadLabelText(m.panel, kDialogMessageLabelOffset,
                                     npc, sizeof(npc));
         if (gotNpc && std::strcmp(npc, s_lastNpcLine) != 0) {
-            tolk::Speak(npc, /*interrupt=*/true);
+            prism::Speak(npc, /*interrupt=*/true);
             acclog::Write("Dialog.Speech",
                           "NPC line panel=%p kind=%s -> [%.300s]",
                           m.panel, acc::engine::PanelKindName(m.kind), npc);
@@ -189,7 +189,7 @@ void Tick() {
                               acc::strings::Get(
                                   acc::strings::Id::FmtDialogReplies),
                               replies);
-                tolk::Speak(msg, /*interrupt=*/false);
+                prism::Speak(msg, /*interrupt=*/false);
                 acclog::Write("Dialog.Speech",
                               "replies %d -> %d panel=%p [%s]",
                               prev, replies, m.panel, msg);
@@ -221,7 +221,7 @@ void Tick() {
                             if (acc::menus::extract::FromControl(
                                     row, text, sizeof(text)) &&
                                 text[0] != '\0') {
-                                tolk::Speak(text, /*interrupt=*/false);
+                                prism::Speak(text, /*interrupt=*/false);
                                 acclog::Write("Dialog.Speech",
                                               "computer row %d [%.200s]",
                                               i, text);
@@ -256,7 +256,7 @@ void Tick() {
         char text[512] = "";
         ReadFirstVisibleText(bark, text, sizeof(text));
         if (text[0] != '\0' && std::strcmp(text, s_lastBarkText) != 0) {
-            tolk::Speak(text, /*interrupt=*/false);
+            prism::Speak(text, /*interrupt=*/false);
             acclog::Write("Dialog.Speech",
                           "bark panel=%p -> [%.300s]", bark, text);
             std::strncpy(s_lastBarkText, text, sizeof(s_lastBarkText) - 1);

@@ -3,7 +3,7 @@
 #include "engine_offsets.h"
 #include "engine_reads.h"
 #include "log.h"
-#include "tolk.h"
+#include "prism.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -117,7 +117,7 @@ void SpeakDescription(void* panel, void* focusedRow) {
         return;
     }
 
-    tolk::Speak(text, /*interrupt=*/true);
+    prism::Speak(text, /*interrupt=*/true);
 
     // Single-line log: collapse embedded newlines so the German
     // "<Planet>:\n<body>" form fits on one line for grep.

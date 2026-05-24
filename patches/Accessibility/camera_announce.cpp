@@ -10,7 +10,7 @@
 #include "engine_player.h"
 #include "log.h"
 #include "strings.h"
-#include "tolk.h"
+#include "prism.h"
 
 namespace acc::camera_announce {
 
@@ -158,7 +158,11 @@ void Tick() {
         if (finalSector != s_lastSpokenSector) {
             auto id = acc::engine::SectorString(finalSector);
             const char* phrase = acc::strings::Get(id);
-            tolk::Speak(phrase, /*interrupt=*/false);
+            // Urgent SAPI — A/D rotation lives under the same NVDA typed-
+            // char-cancel pressure as turn_announce: the user is holding
+            // a key, so a normal Speak gets eaten mid-spin. Voice 0 stays
+            // on the default urgent voice.
+            prism::SpeakUrgent(phrase, /*voiceId=*/0);
             acclog::Write("CameraAnnounce", "release-edge sector %d -> %d (%s); "
                 "camCompass=%.1f",
                 s_lastSpokenSector, finalSector, phrase, camCompass);
@@ -202,7 +206,9 @@ void Tick() {
 
     auto id = acc::engine::SectorString(s_pendingSector);
     const char* phrase = acc::strings::Get(id);
-    tolk::Speak(phrase, /*interrupt=*/false);
+    // Urgent SAPI — same reasoning as the release-edge branch above:
+    // sustained A/D rotation needs to bypass NVDA's typed-char-cancel.
+    prism::SpeakUrgent(phrase, /*voiceId=*/0);
     acclog::Write("CameraAnnounce", "sector %d -> %d (%s); camCompass=%.1f "
         "(a=%d d=%d %s)",
         s_lastSpokenSector, s_pendingSector, phrase, camCompass,

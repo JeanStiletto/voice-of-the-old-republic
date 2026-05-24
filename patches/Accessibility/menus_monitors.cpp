@@ -24,7 +24,7 @@
 #include "menus_extract.h"
 #include "menus_internal.h"
 #include "strings.h"
-#include "tolk.h"
+#include "prism.h"
 
 using namespace acc::engine;
 
@@ -52,7 +52,7 @@ void AnnounceControl(void* control) {
     char text[256];
     const char* source = acc::menus::extract::FromControl(control, text, sizeof(text));
     if (source) {
-        tolk::Speak(text, /*interrupt=*/false);
+        prism::Speak(text, /*interrupt=*/false);
         // Prime channel-0 dedup so the engine's post-nav SetActive echo
         // (which lands in the pending-announce slot and gets drained next
         // tick) sees the same text as last-spoken and stays silent.
@@ -68,7 +68,7 @@ void AnnounceControl(void* control) {
         reinterpret_cast<unsigned char*>(control) + 0x50);
     char placeholder[64];
     snprintf(placeholder, sizeof(placeholder), "control %d", id);
-    tolk::Speak(placeholder, /*interrupt=*/false);
+    prism::Speak(placeholder, /*interrupt=*/false);
 }
 
 namespace {
@@ -121,7 +121,7 @@ void MonitorFocusedControl() {
                 acc::menus::chargen_skills::AnnounceValueChange(
                     chainPanel, focused);
             if (!handled) {
-                tolk::Speak(text, /*interrupt=*/false);
+                prism::Speak(text, /*interrupt=*/false);
             }
             strncpy_s(s_focusMonitorText, text, _TRUNCATE);
             acclog::Write("Monitor", "focused=%p text changed -> \"%s\"%s",
@@ -131,7 +131,7 @@ void MonitorFocusedControl() {
     } else {
         s_focusMonitorControl = focused;
         strncpy_s(s_focusMonitorText, text, _TRUNCATE);
-        tolk::Speak(text, /*interrupt=*/false);
+        prism::Speak(text, /*interrupt=*/false);
         acclog::Write("Monitor", "focus changed -> %p text=\"%s\"",
                       focused, text);
     }
@@ -206,13 +206,13 @@ void AnnounceNewSubScreens(void** panels, int count) {
             LookupTlk(spec->strref, text, sizeof(text))) {
             acclog::Write("Menus.SubScreen", "panel=%p kind=%s strref=%u text=\"%s\"",
                           p, PanelKindName(k), spec->strref, text);
-            tolk::Speak(text, /*interrupt=*/false);
+            prism::Speak(text, /*interrupt=*/false);
             spoke = true;
         }
         if (!spoke) {
             acclog::Write("Menus.SubScreen", "panel=%p kind=%s text=\"%s\" (literal)",
                           p, PanelKindName(k), spec->literal);
-            tolk::Speak(spec->literal, /*interrupt=*/false);
+            prism::Speak(spec->literal, /*interrupt=*/false);
         }
 
         if (k == PanelKind::InGameCharacter) {
@@ -356,7 +356,7 @@ void SpeakNewSegments(const char* prev, const char* curr) {
             size_t cp = segLen < sizeof(seg) - 1 ? segLen : sizeof(seg) - 1;
             memcpy(seg, p, cp);
             seg[cp] = '\0';
-            tolk::Speak(seg, /*interrupt=*/false);
+            prism::Speak(seg, /*interrupt=*/false);
             acclog::Write("ContentChange", "  spoke \"%s\"", seg);
         }
         if (!end) break;
@@ -533,7 +533,7 @@ void MonitorDialogReplies() {
         acclog::Write("Menus.DialogReply", "selected: panel=%p kind=%s listbox=%p "
                       "sel=%d (was %d) src=%s text=\"%s\"",
                       fg, PanelKindName(k), lb, selIdx, prev, src, text);
-        tolk::Speak(text, /*interrupt=*/false);
+        prism::Speak(text, /*interrupt=*/false);
     } else {
         char vtbl[160];
         DumpControlVtable(row, vtbl, sizeof(vtbl));

@@ -14,7 +14,7 @@
 #include "hotkeys.h"
 #include "log.h"
 #include "strings.h"
-#include "tolk.h"
+#include "prism.h"
 
 namespace acc::examine_view {
 
@@ -749,7 +749,7 @@ void SpeakRow(int idx) {
     std::snprintf(out, sizeof(out),
                   acc::strings::Get(acc::strings::Id::FmtExamineRowOf),
                   g_state.rows[idx], idx + 1, g_state.rowCount);
-    tolk::Speak(out, /*interrupt=*/true);
+    prism::Speak(out, /*interrupt=*/true);
 }
 
 }  // namespace
@@ -777,7 +777,7 @@ void ForceDisarm(const char* reason) {
 bool Open() {
     uint32_t handle = ReadLastTargetHandle();
     if (IsSentinel(handle)) {
-        tolk::Speak(acc::strings::Get(acc::strings::Id::ExamineNoTarget),
+        prism::Speak(acc::strings::Get(acc::strings::Id::ExamineNoTarget),
                     /*interrupt=*/true);
         acclog::Write("Examine.View", "Open -- no target (handle=0x%08x)",
                       handle);
@@ -787,7 +787,7 @@ bool Open() {
     g_state.targetHandle = handle;
     int n = BuildRows();
     if (n <= 0) {
-        tolk::Speak(acc::strings::Get(acc::strings::Id::ExamineFailed),
+        prism::Speak(acc::strings::Get(acc::strings::Id::ExamineFailed),
                     /*interrupt=*/true);
         acclog::Write("Examine.View",
                       "Open -- BuildRows returned 0 (handle=0x%08x)",
@@ -812,7 +812,7 @@ bool Open() {
     std::snprintf(opener, sizeof(opener),
                   acc::strings::Get(acc::strings::Id::FmtExamineOpened),
                   shortName, n);
-    tolk::Speak(opener, /*interrupt=*/true);
+    prism::Speak(opener, /*interrupt=*/true);
 
     acclog::Write("Examine.View",
                   "ARMED handle=0x%08x rows=%d opener=[%s]",
@@ -854,14 +854,14 @@ bool HandleInputEvent(int code, int value) {
         case kInputEnter1:
         case kInputEnter2:
             // Enter = close (read-only view; nothing to commit).
-            tolk::Speak(acc::strings::Get(acc::strings::Id::ExamineViewClosed),
+            prism::Speak(acc::strings::Get(acc::strings::Id::ExamineViewClosed),
                         /*interrupt=*/true);
             acclog::Write("Examine.View", "Enter -> close");
             ForceDisarm("enter");
             return true;
         case kInputEsc1:
         case kInputEsc2:
-            tolk::Speak(acc::strings::Get(acc::strings::Id::ExamineViewClosed),
+            prism::Speak(acc::strings::Get(acc::strings::Id::ExamineViewClosed),
                         /*interrupt=*/true);
             acclog::Write("Examine.View", "Esc -> close");
             ForceDisarm("esc");
@@ -890,7 +890,7 @@ void PollWin32Hotkey() {
 
     // Toggle: pressing Shift+H while the view is open closes it.
     if (g_state.active) {
-        tolk::Speak(acc::strings::Get(acc::strings::Id::ExamineViewClosed),
+        prism::Speak(acc::strings::Get(acc::strings::Id::ExamineViewClosed),
                     /*interrupt=*/true);
         acclog::Write("Examine.View", "Shift+H -> close (toggle)");
         ForceDisarm("toggle");

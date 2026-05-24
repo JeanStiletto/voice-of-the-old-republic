@@ -79,7 +79,7 @@ const char* FmtPtr(const void* ptr);
 void FlushAll();
 
 // Absolute path of the directory that hosts our patch DLL
-// (<install>\patches). Empty before Init runs. Used by tolk.cpp to point
+// (<install>\patches). Empty before Init runs. Used by prism.cpp to point
 // SetDllDirectory at the bundled prism.dll and its delay-loaded bridges.
 const char* PatchDir();
 

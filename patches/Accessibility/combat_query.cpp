@@ -17,7 +17,7 @@
 #include "log.h"
 #include "menus_extract.h"    // FromControl — for Examine message-box read
 #include "strings.h"
-#include "tolk.h"
+#include "prism.h"
 
 namespace acc::combat::query {
 
@@ -412,7 +412,7 @@ bool SpeakSelectedPcStatBlock() {
     if (!creature) {
         const char* phrase = acc::strings::Get(
             acc::strings::Id::PcStatNoCharacter);
-        tolk::Speak(phrase, /*interrupt=*/true);
+        prism::Speak(phrase, /*interrupt=*/true);
         acclog::Write("Combat.PcStat", "no creature -> [%s]", phrase);
         return false;
     }
@@ -420,7 +420,7 @@ bool SpeakSelectedPcStatBlock() {
     if (!ReadStatSnap(creature, snap)) {
         const char* phrase = acc::strings::Get(
             acc::strings::Id::PcStatNoCharacter);
-        tolk::Speak(phrase, /*interrupt=*/true);
+        prism::Speak(phrase, /*interrupt=*/true);
         acclog::Write("Combat.PcStat", "ReadStatSnap failed -> [%s]", phrase);
         return false;
     }
@@ -464,7 +464,7 @@ bool SpeakSelectedPcStatBlock() {
                snap.effectsCount);
     }
 
-    tolk::Speak(msg, /*interrupt=*/true);
+    prism::Speak(msg, /*interrupt=*/true);
     acclog::Write("Combat.PcStat",
                   "spoke leader=[%s] hp=%d/%d fp=%d ac=%d "
                   "attrs=%d/%d/%d/%d/%d/%d saves=%d/%d/%d align=%d eff=%d",
@@ -516,7 +516,7 @@ void TickLeaderChangeAutoAnnounce() {
     }
     acclog::Write("Combat.PcStat", "leader changed -> [%s]; speaking name only",
                   now);
-    tolk::Speak(now, /*interrupt=*/true);
+    prism::Speak(now, /*interrupt=*/true);
 }
 
 // ============================================================================
@@ -665,7 +665,7 @@ void HotkeyShiftH() {
     if (handle == 0u || handle == 0xFFFFFFFFu || handle == 0x7F000000u) {
         const char* msg = acc::strings::Get(
             acc::strings::Id::ExamineNoTarget);
-        tolk::Speak(msg, /*interrupt=*/true);
+        prism::Speak(msg, /*interrupt=*/true);
         acclog::Write("Combat.Examine", "Shift+H -> no target [%s]", msg);
         return;
     }
@@ -686,7 +686,7 @@ void HotkeyShiftH() {
     if (name[0] == '\0') {
         const char* msg = acc::strings::Get(
             acc::strings::Id::ExamineFailed);
-        tolk::Speak(msg, /*interrupt=*/true);
+        prism::Speak(msg, /*interrupt=*/true);
         acclog::Write("Combat.Examine",
                       "Shift+H -> handle 0x%08x failed name resolution [%s]",
                       handle, msg);
@@ -721,7 +721,7 @@ void HotkeyShiftH() {
     } else {
         std::snprintf(msg, sizeof(msg), "%s.", name);
     }
-    tolk::Speak(msg, /*interrupt=*/true);
+    prism::Speak(msg, /*interrupt=*/true);
     acclog::Write("Combat.Examine",
                   "Shift+H handle=0x%08x name=[%s] kind=%d effects=%d "
                   "feats=%d -> [%s]",
@@ -809,7 +809,7 @@ void SpeakSelfStatus() {
     if (!creature) {
         const char* phrase = acc::strings::Get(
             acc::strings::Id::PcStatNoCharacter);
-        tolk::Speak(phrase, /*interrupt=*/true);
+        prism::Speak(phrase, /*interrupt=*/true);
         acclog::Write("Combat.SelfStatus", "no creature -> [%s]", phrase);
         return;
     }
@@ -860,7 +860,7 @@ void SpeakSelfStatus() {
         BriefAppend(b, acc::strings::Get(S::FmtBriefOffHand), offWpn);
     }
 
-    tolk::Speak(msg, /*interrupt=*/true);
+    prism::Speak(msg, /*interrupt=*/true);
     acclog::Write("Combat.SelfStatus",
                   "hp=%d/%d effects=[%s] main=[%s] off=[%s] -> [%s]",
                   hpCur, hpMax,

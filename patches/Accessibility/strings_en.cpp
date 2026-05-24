@@ -123,6 +123,9 @@ const char* Get(Id id) {
         case Id::FmtMapStateOriented:    return "%s. Facing %d degrees on the map, %s.";
         case Id::FmtMapStateUnknownRoom: return "Facing %d degrees on the map, %s.";
 
+        case Id::FmtWorldStateOriented:       return "%s. %s.";
+        case Id::FmtWorldStateUnknownCluster: return "%s.";
+
         case Id::MouseLookOn:          return "Mouse Look on";
         case Id::MouseLookOff:         return "Mouse Look off";
 

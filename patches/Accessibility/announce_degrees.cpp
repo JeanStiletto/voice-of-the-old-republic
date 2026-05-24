@@ -10,8 +10,9 @@
 #include "hotkeys.h"
 #include "log.h"
 #include "strings.h"
-#include "tolk.h"
+#include "prism.h"
 #include "transitions.h"
+#include "wall_topology.h"
 
 namespace acc::announce_degrees {
 
@@ -29,6 +30,38 @@ const char* SectorWord(int compassDegrees) {
     return acc::strings::Get(acc::engine::SectorString(sector));
 }
 
+// Try to fill `outBuf` with the perceptual-region label at the player's
+// current world position (wall_topology cluster). Returns true on a real
+// labelled cluster; false when the graph isn't built, the position is
+// out-of-snap, or only the open-area fallback fires (which is too vague
+// to add value to an orientation announce). Matches the cluster-id
+// trigger source the in-world transition path uses, so what the user
+// hears here lines up with the last in-world cluster announcement.
+bool ResolveClusterLabelForPlayer(char* outBuf, size_t bufSize) {
+    if (!outBuf || bufSize < 2) return false;
+    outBuf[0] = '\0';
+
+    Vector pos;
+    if (!acc::engine::GetPlayerPosition(pos)) return false;
+    void* area = acc::engine::GetCurrentArea();
+    if (!area) return false;
+
+    char buf[160] = {0};
+    int sig = 0;
+    int cid = acc::wall_topology::kClusterIdNone;
+    if (!acc::wall_topology::LookupAt(area, pos, buf, sizeof(buf),
+                                      sig, cid)) {
+        return false;
+    }
+    if (cid == acc::wall_topology::kClusterIdNone ||
+        cid == acc::wall_topology::kClusterIdOpenArea ||
+        buf[0] == '\0') {
+        return false;
+    }
+    std::snprintf(outBuf, bufSize, "%s", buf);
+    return true;
+}
+
 void OnAnnounceWorldDegrees() {
     float engineYaw = 0.0f;
     if (!acc::engine::GetPlayerYawDegrees(engineYaw)) {
@@ -37,15 +70,32 @@ void OnAnnounceWorldDegrees() {
         acclog::Write("AnnounceDegrees", "yaw unavailable, skipping");
         return;
     }
-    int degrees = CompassDegreesFromEngineYaw(engineYaw);
+    int degrees    = CompassDegreesFromEngineYaw(engineYaw);
+    const char* sector = SectorWord(degrees);
 
-    char msg[32];
-    std::snprintf(msg, sizeof(msg),
-                  acc::strings::Get(acc::strings::Id::FmtCompassDegrees),
-                  degrees);
-    tolk::Speak(msg, /*interrupt=*/true);
-    acclog::Write("AnnounceDegrees", "world -> [%s] (engineYaw=%.1f)",
-        msg, engineYaw);
+    char clusterBuf[160];
+    bool haveCluster = ResolveClusterLabelForPlayer(clusterBuf,
+                                                    sizeof(clusterBuf));
+
+    char msg[256];
+    if (haveCluster) {
+        std::snprintf(msg, sizeof(msg),
+            acc::strings::Get(acc::strings::Id::FmtWorldStateOriented),
+            sector, clusterBuf);
+    } else {
+        std::snprintf(msg, sizeof(msg),
+            acc::strings::Get(acc::strings::Id::FmtWorldStateUnknownCluster),
+            sector);
+    }
+    // Normal priority by design: this is a one-shot review key. The user
+    // pressed AltGr; their screen reader's own typed-char-cancel can't
+    // eat it (no held-WASD context) so the urgent SAPI bypass isn't
+    // needed and would change which voice the user hears. Degrees are
+    // logged for diagnostics but deliberately dropped from speech.
+    prism::Speak(msg, /*interrupt=*/true);
+    acclog::Write("AnnounceDegrees",
+        "world -> [%s] (engineYaw=%.1f, deg=%d, sector=\"%s\", cluster=\"%s\")",
+        msg, engineYaw, degrees, sector, haveCluster ? clusterBuf : "");
 }
 
 // Resolve a display name for the layout-room the player currently
@@ -140,7 +190,7 @@ void OnAnnounceMapDegrees() {
             acc::strings::Get(acc::strings::Id::FmtMapStateUnknownRoom),
             degrees, sector);
     }
-    tolk::Speak(msg, /*interrupt=*/true);
+    prism::Speak(msg, /*interrupt=*/true);
     acclog::Write("AnnounceDegrees",
         "map -> [%s] (mapYawCCW=%.1f, deg=%d, room=\"%s\")",
         msg, mapYawCCW, degrees, haveRoom ? roomBuf : "");

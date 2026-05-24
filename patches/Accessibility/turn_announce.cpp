@@ -7,7 +7,7 @@
 #include "engine_player.h"
 #include "log.h"
 #include "strings.h"
-#include "tolk.h"
+#include "prism.h"
 
 namespace acc::turn_announce {
 
@@ -85,9 +85,15 @@ void Tick() {
     auto id = acc::engine::SectorString(s_pendingSector);
     const char* phrase = acc::strings::Get(id);
 
-    // interrupt=false — direction shouldn't talk over an in-flight
-    // passive_narrate / cycle announcement. NVDA queues by default.
-    tolk::Speak(phrase, /*interrupt=*/false);
+    // Urgent SAPI channel — a sector flip mid-spin survives NVDA's
+    // typed-char-cancel, which used to swallow this announce while the
+    // user was holding A/D. Voice 0 keeps the cue on the default urgent
+    // voice; we tried alternate voices to distinguish it from other
+    // urgent cues, but on this user's NVDA-via-SAPI bridge any non-0
+    // voice either folded back to NVDA or sounded indistinguishable.
+    // Single shared voice is the current preference; revisit if the
+    // urgent-cue surface grows enough to warrant differentiation.
+    prism::SpeakUrgent(phrase, /*voiceId=*/0);
 
     acclog::Write("TurnAnnounce", "sector %d -> %d (%s); engineYaw=%.1f compass=%.1f "
         "(debounced %ums)",

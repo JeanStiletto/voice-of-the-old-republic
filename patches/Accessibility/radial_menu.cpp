@@ -8,7 +8,7 @@
 #include "engine_radial.h"
 #include "log.h"
 #include "strings.h"
-#include "tolk.h"
+#include "prism.h"
 
 namespace acc::radial_menu {
 
@@ -86,7 +86,7 @@ void SpeakRowAction(void* tam, int row, const char* prefix) {
         std::snprintf(msg, sizeof(msg), "%s %d/%d: %s",
                       "Aktion", rowOrdinal, total, label[0] ? label : "?");
     }
-    tolk::Speak(msg, /*interrupt=*/true);
+    prism::Speak(msg, /*interrupt=*/true);
     acclog::Write("Radial", "speak row=%d ordinal=%d/%d label=[%s]",
                   row, rowOrdinal, total, label);
 }
@@ -101,7 +101,7 @@ void SpeakCurrentLabel(void* tam, int row) {
         acclog::Write("Radial", "speak label row=%d -> empty", row);
         return;
     }
-    tolk::Speak(label, /*interrupt=*/true);
+    prism::Speak(label, /*interrupt=*/true);
     acclog::Write("Radial", "speak label row=%d [%s]", row, label);
 }
 
@@ -240,7 +240,7 @@ bool HandleInputEvent(int code, int value) {
             // our gate either way so a subsequent Enter on a new target
             // arms a fresh radial cleanly.
             g_state.active = false;
-            tolk::Speak(label[0] ? label : "?", /*interrupt=*/true);
+            prism::Speak(label[0] ? label : "?", /*interrupt=*/true);
             return true;
         }
         case kInputEsc1:

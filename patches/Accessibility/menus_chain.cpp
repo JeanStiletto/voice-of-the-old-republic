@@ -28,7 +28,7 @@
 #include "menus_extract.h"
 #include "menus_internal.h"
 #include "menus_store.h"
-#include "tolk.h"
+#include "prism.h"
 
 using namespace acc::engine;  // IdentifyPanel, PanelKind, kInput*, etc.
 

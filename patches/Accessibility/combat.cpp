@@ -14,7 +14,7 @@
 #include "log.h"
 #include "menus_extract.h"    // FromControl — listbox row text reader
 #include "strings.h"
-#include "tolk.h"
+#include "prism.h"
 
 namespace acc::combat {
 
@@ -89,7 +89,7 @@ void TickCombatMode() {
     auto id = inCombatNow ? acc::strings::Id::CombatBegins
                           : acc::strings::Id::CombatEnds;
     const char* phrase = acc::strings::Get(id);
-    tolk::Speak(phrase, /*interrupt=*/false);
+    prism::Speak(phrase, /*interrupt=*/false);
     acclog::Write("Combat.Mode", "%s -> [%s] (debounced %ums)",
                   s_lastSpoken ? "leaving" : "entering",
                   phrase, static_cast<unsigned>(now - s_changedAt));

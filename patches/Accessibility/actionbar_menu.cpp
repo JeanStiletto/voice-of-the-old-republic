@@ -14,7 +14,7 @@
                               // selection state and locks Enter advance).
 #include "log.h"
 #include "strings.h"
-#include "tolk.h"
+#include "prism.h"
 
 namespace acc::actionbar_menu {
 
@@ -55,7 +55,7 @@ void SpeakCurrentVariant(void* mi, int slot) {
                       slot, idx);
         return;
     }
-    tolk::Speak(label, /*interrupt=*/true);
+    prism::Speak(label, /*interrupt=*/true);
     acclog::Write("ActionBar", "speak col=%d idx=%d [%s]",
                   slot, idx, label);
 }
@@ -110,7 +110,7 @@ bool Open(int slot) {
                       acc::strings::Get(
                           acc::strings::Id::FmtActionBarColumnEmpty),
                       slot + 1);
-        tolk::Speak(fmt, /*interrupt=*/true);
+        prism::Speak(fmt, /*interrupt=*/true);
         acclog::Write("ActionBar", "Open slot=%d variants=0 — empty, not arming",
             slot);
         return false;
@@ -128,7 +128,7 @@ bool Open(int slot) {
     std::snprintf(msg, sizeof(msg),
                   acc::strings::Get(acc::strings::Id::FmtActionBarOpened),
                   slot + 1, label[0] ? label : "?", nVar);
-    tolk::Speak(msg, /*interrupt=*/true);
+    prism::Speak(msg, /*interrupt=*/true);
     acclog::Write("ActionBar", "ARMED slot=%d variants=%d idx=%d label=[%s]",
         slot, nVar, idx, label);
     return true;
@@ -207,7 +207,7 @@ bool HandleInputEvent(int code, int value) {
                           acc::strings::Get(
                               acc::strings::Id::FmtActionBarFired),
                           label[0] ? label : "?");
-            tolk::Speak(msg, /*interrupt=*/true);
+            prism::Speak(msg, /*interrupt=*/true);
             acclog::Write("ActionBar", "ENTER slot=%d idx=%d label=[%s] ok=%d -> [%s]",
                 slot, idx, label, ok ? 1 : 0, msg);
 
@@ -218,7 +218,7 @@ bool HandleInputEvent(int code, int value) {
         case kInputEsc2: {
             const char* msg = acc::strings::Get(
                 acc::strings::Id::ActionBarCancelled);
-            tolk::Speak(msg, /*interrupt=*/true);
+            prism::Speak(msg, /*interrupt=*/true);
             acclog::Write("ActionBar", "ESC slot=%d -> [%s]",
                           slot, msg);
             ForceDisarm("esc");

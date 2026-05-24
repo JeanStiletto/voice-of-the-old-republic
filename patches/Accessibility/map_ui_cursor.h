@@ -2,7 +2,7 @@
 //
 // Layer: feature/. Composes engine_panels (foreground detection),
 // engine_player (player position seed + area access), engine_area
-// (waypoint iteration), audio_cue_player (collision cue), tolk + strings
+// (waypoint iteration), audio_cue_player (collision cue), prism + strings
 // (hover-pause speech).
 //
 // User model:

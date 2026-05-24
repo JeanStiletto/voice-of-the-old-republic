@@ -7,7 +7,7 @@
 #include "hotkeys.h"
 #include "log.h"
 #include "menus_internal.h"   // kEquipBtn* slot ids
-#include "tolk.h"
+#include "prism.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -284,7 +284,7 @@ bool HandleEquipSlotTooltip(void* panel, const EquipSlotPeekInfo& info) {
         return false;
     }
 
-    tolk::Speak(text, /*interrupt=*/true);
+    prism::Speak(text, /*interrupt=*/true);
     acclog::Write("Peek.EquipSlot",
                   "panel=%p cid=%d handle=0x%x item=%p text=\"%s\"",
                   panel, info.cid, handle, item, text);
@@ -366,7 +366,7 @@ bool HandleItemTooltip(acc::engine::PanelKind kind,
         return false;
     }
 
-    tolk::Speak(text, /*interrupt=*/true);
+    prism::Speak(text, /*interrupt=*/true);
     acclog::Write("Peek.Item",
                   "panel=%s row sel=%d/%d item=%p handle=0x%x text=\"%s\"",
                   acc::engine::PanelKindName(kind), (int)selIdx, rowCount,
@@ -527,7 +527,7 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
         // user-driven read; queueing would let a fast double-press
         // play both blocks back to back, which obscures which one is
         // current.
-        tolk::Speak(text, /*interrupt=*/true);
+        prism::Speak(text, /*interrupt=*/true);
         acclog::Write("Peek", "panel=%s block %d/%d (was %d) src=%s text=\"%s\"",
                       acc::engine::PanelKindName(kind),
                       g_blockIdx, rowCount, prev, src, text);

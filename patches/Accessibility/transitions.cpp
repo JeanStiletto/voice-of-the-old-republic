@@ -15,7 +15,7 @@
 #include "narrated_target.h" // clear on area transition
 #include "region_classifier.h"  // BuildCacheForArea + LookupRoomShape
 #include "strings.h"
-#include "tolk.h"
+#include "prism.h"
 #include "wall_topology.h"      // EXPERIMENTAL — parallel observer on this
                                 // branch; runs alongside the region cache
                                 // and logs its decomposition for tuning
@@ -134,7 +134,7 @@ void SpeakArea(void* area) {
     std::snprintf(speech, sizeof(speech),
                   acc::strings::Get(acc::strings::Id::FmtTransitionArea),
                   nameBuf);
-    tolk::Speak(speech, /*interrupt=*/false);
+    prism::Speak(speech, /*interrupt=*/false);
     acclog::Write("Transition", "area -> '%s' (areaPtr=%p)", nameBuf, area);
 }
 
@@ -491,7 +491,7 @@ void SpeakRoomChange(void* area, int clusterId, const Vector& worldPos) {
     // a different shape, the deferred Platz no longer applies).
     g_pending_platz_valid = false;
 
-    tolk::SpeakUrgent(speechBuf);
+    prism::SpeakUrgent(speechBuf);
     std::strncpy(g_last_spoken_room_text, speechBuf,
                  sizeof(g_last_spoken_room_text) - 1);
     g_last_spoken_room_text[sizeof(g_last_spoken_room_text) - 1] = '\0';
@@ -528,7 +528,7 @@ void TickPendingPlatz(void* area, const Vector& playerPos) {
         std::strncmp(fireBuf, g_pending_platz_text,
                      sizeof(g_pending_platz_text)) == 0) {
         // Same Platz still under the player. Fire the announce now.
-        tolk::SpeakUrgent(fireBuf);
+        prism::SpeakUrgent(fireBuf);
         g_last_spoken_pos       = playerPos;
         g_last_spoken_pos_valid = true;
         acclog::Write("Transition",
@@ -541,7 +541,7 @@ void TickPendingPlatz(void* area, const Vector& playerPos) {
                             sizeof(g_last_spoken_room_text)) != 0) {
         // Player has moved on to a different shape during the delay.
         // Fire the NEW label so we don't leave them unannounced.
-        tolk::SpeakUrgent(fireBuf);
+        prism::SpeakUrgent(fireBuf);
         std::strncpy(g_last_spoken_room_text, fireBuf,
                      sizeof(g_last_spoken_room_text) - 1);
         g_last_spoken_room_text[sizeof(g_last_spoken_room_text) - 1] = '\0';
@@ -650,7 +650,7 @@ void TickProximityLandmarks(const Vector& playerPos) {
                       "gated, state advanced silently",
                       g_room_landmark[nearest], nearest, std::sqrt(bestD2));
     } else {
-        tolk::SpeakUrgent(g_room_landmark[nearest]);
+        prism::SpeakUrgent(g_room_landmark[nearest]);
         acclog::Write("Transition",
                       "landmark proximity -> '%s' (idx=%d dist=%.2fm)",
                       g_room_landmark[nearest], nearest, std::sqrt(bestD2));
@@ -981,7 +981,7 @@ void AnnouncePreLoadDestination(void* exoStringPtr) {
     std::snprintf(speech, sizeof(speech),
                   acc::strings::Get(acc::strings::Id::FmtTransitionLoading),
                   dest);
-    tolk::Speak(speech, /*interrupt=*/false);
+    prism::Speak(speech, /*interrupt=*/false);
     acclog::Write("Transition", "pre-load -> '%s'", dest);
 }
 

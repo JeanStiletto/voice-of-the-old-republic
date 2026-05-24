@@ -6,7 +6,7 @@
                               //   GetActiveLeaderName
 #include "hotkeys.h"
 #include "log.h"
-#include "tolk.h"
+#include "prism.h"
 
 namespace acc::party_leader_announce {
 
@@ -44,7 +44,7 @@ void Speak() {
         return;
     }
     acclog::Write("PartyLeader", "Tab — speaking leader=[%s]", creatureName);
-    tolk::Speak(creatureName, /*interrupt=*/true);
+    prism::Speak(creatureName, /*interrupt=*/true);
 }
 
 }  // namespace

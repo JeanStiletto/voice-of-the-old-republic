@@ -15,7 +15,7 @@
 #include "menus_internal.h"   // FindControlById, QueueButtonByIdActivate
 #include "menus_pending.h"
 #include "strings.h"
-#include "tolk.h"
+#include "prism.h"
 
 using namespace acc::engine;  // kInput*, ReadGuiString, ExtractTextOrStrRefIndirect
 
@@ -317,7 +317,7 @@ void AnnounceFocused(void* panel) {
             snprintf(btnText, sizeof(btnText), "%s",
                      br.logTag ? br.logTag : "?");
         }
-        tolk::Speak(btnText, /*interrupt=*/false);
+        prism::Speak(btnText, /*interrupt=*/false);
         acclog::Write("ChargenFeats",
                       "focus button id=%d text=\"%s\"",
                       br.buttonId, btnText);
@@ -342,11 +342,11 @@ void AnnounceFocused(void* panel) {
              acc::strings::Get(
                  acc::strings::Id::FmtChargenFeatChartCell),
              name, sw);
-    tolk::Speak(head, /*interrupt=*/false);
+    prism::Speak(head, /*interrupt=*/false);
 
     char desc[1024];
     if (ReadDescription(panel, desc, sizeof(desc)) && desc[0] != '\0') {
-        tolk::Speak(desc, /*interrupt=*/false);
+        prism::Speak(desc, /*interrupt=*/false);
     }
 
     acclog::Write("ChargenFeats",

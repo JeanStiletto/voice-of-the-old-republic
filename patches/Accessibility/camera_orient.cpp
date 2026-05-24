@@ -13,7 +13,7 @@
 #include "hotkeys.h"
 #include "log.h"
 #include "strings.h"
-#include "tolk.h"
+#include "prism.h"
 
 namespace acc::camera_orient {
 
@@ -247,7 +247,7 @@ void ReleaseAndDisarm(const char* reason, float curYawRad) {
                       acc::strings::Get(
                           acc::strings::Id::FmtCameraOrientBeacon),
                       dir);
-        tolk::Speak(msg, /*interrupt=*/true);
+        prism::Speak(msg, /*interrupt=*/true);
         // Seed camera_announce so the post-release hysteresis doesn't
         // immediately re-announce the same direction word we just
         // spoke as part of the beacon cue. Cardinal mode (else branch)
@@ -442,7 +442,7 @@ void Tick() {
                           acc::strings::Get(
                               acc::strings::Id::FmtCameraOrientBeacon),
                           dir);
-            tolk::Speak(msg, /*interrupt=*/true);
+            prism::Speak(msg, /*interrupt=*/true);
         }
         acclog::Write("CameraOrient",
                       "no-op: already at target (delta=%.2f° within "

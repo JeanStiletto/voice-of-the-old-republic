@@ -1,6 +1,6 @@
 // Pillar 2 — area + room transition announcements.
 //
-// Layer: narration/ (consumes engine_player + engine_area + strings + tolk;
+// Layer: narration/ (consumes engine_player + engine_area + strings + prism;
 // no engine re-entry beyond engine_area's wrapped CSWSArea::GetRoom call).
 // Phase 2 lay-off 7 (the user-facing slice of `announce/transitions` from
 // docs/navsystem-longterm-plan.md §"Pillar 2 — Medium-scale navigation").
@@ -38,7 +38,7 @@
 // secondary range at 0x6027a0.
 //
 // Speech uses interrupt=false — transitions shouldn't talk over an
-// in-flight cycle / interact / passive_narrate announcement. Tolk
+// in-flight cycle / interact / passive_narrate announcement. Prism
 // queues by default.
 //
 // Self-gating mirrors turn_announce / camera_announce: silent in menus,
@@ -62,7 +62,7 @@ void Tick();
 // engine has just been told *which module the player is moving to*,
 // before the loading-screen movie begins. We read the module resref
 // out of the supplied CExoString and queue a "Lade: …" / "Loading: …"
-// announce via Tolk so the user knows what's coming.
+// announce via Prism so the user knows what's coming.
 //
 // `exoStringPtr` is the raw `CExoString*` arg the engine was called
 // with — i.e. the destination module's resref (e.g. `"endar_spire"`,

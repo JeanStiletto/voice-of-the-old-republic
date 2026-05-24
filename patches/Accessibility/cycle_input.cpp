@@ -30,7 +30,7 @@
 #include "narrated_target.h"
 #include "peek_description.h"
 #include "strings.h"
-#include "tolk.h"
+#include "prism.h"
 
 namespace acc::cycle_input {
 
@@ -146,12 +146,12 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
         // EmptyDoors etc. are full sentences, not item names. No 3D cue
         // either, since there's no object to localise spatially.
         //
-        // Speech path: normal Tolk (NVDA primary) in both contexts.
+        // Speech path: normal Prism (NVDA primary) in both contexts.
         // SpeakUrgent stays reserved for sustained-key-hold scenarios
         // (map cursor WASD pan); single-press cycle keys don't suffer
         // the typed-character cancel feedback loop in practice.
         const char* msg = acc::strings::Get(bindings.empty);
-        tolk::Speak(msg, /*interrupt=*/true);
+        prism::Speak(msg, /*interrupt=*/true);
         acclog::Write("Cycle", "-> [%s] (ctx=%s)", msg,
                       mapCtx ? "Map" : "World");
         return;
@@ -211,7 +211,7 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
     } else {
         std::snprintf(fullMsg, sizeof(fullMsg), "%s", itemMsg);
     }
-    tolk::Speak(fullMsg, /*interrupt=*/true);
+    prism::Speak(fullMsg, /*interrupt=*/true);
 
     // Stamp the unified activation slot — the user just heard the
     // object's name (with distance + clock), so Enter / Shift+- / Ctrl+- /
@@ -271,7 +271,7 @@ void OnCycleCategory(bool prev, acc::filter::CycleContext ctx) {
         : acc::cycle::CycleNextCategory(listing, ctx);
     if (!found) {
         const char* msg = acc::strings::Get(acc::strings::Id::EmptyAll);
-        tolk::Speak(msg, /*interrupt=*/true);
+        prism::Speak(msg, /*interrupt=*/true);
         acclog::Write("Cycle", "-> [%s] (all empty, ctx=%s)", msg,
                       ctx == acc::filter::CycleContext::Map ? "Map" : "World");
         return;
@@ -366,7 +366,7 @@ void OnAnnounceFocus() {
     if (!ResolveNarratedActivation(a)) {
         const char* msg = acc::strings::Get(
             acc::strings::Id::GuidanceNoFocus);
-        tolk::Speak(msg, /*interrupt=*/true);
+        prism::Speak(msg, /*interrupt=*/true);
         acclog::Write("Cycle", "- (repeat) -> [%s] (no narrated target)",
                       msg);
         return;
@@ -390,7 +390,7 @@ void OnAnnounceFocus() {
 
     char msg[192];
     FormatItemPayload(a.name, haveYaw, clock, metres, msg, sizeof(msg));
-    tolk::Speak(msg, /*interrupt=*/true);
+    prism::Speak(msg, /*interrupt=*/true);
 
     // Re-stamp the slot so the activation tick refreshes. Map pins keep
     // the same frozen pos (pins don't move); game objects re-derive
@@ -455,7 +455,7 @@ void OnPathfindFocus() {
             acc::engine::SetPlayerInputEnabled(true);
             const char* msg = acc::strings::Get(
                 acc::strings::Id::MovementCancelled);
-            tolk::Speak(msg, /*interrupt=*/true);
+            prism::Speak(msg, /*interrupt=*/true);
             acclog::Write("Cycle", "Shift+- -> [%s] (cancel path)", msg);
             return;
         }
@@ -468,7 +468,7 @@ void OnPathfindFocus() {
     if (!ResolveNarratedActivation(a)) {
         const char* msg = acc::strings::Get(
             acc::strings::Id::GuidanceNoFocus);
-        tolk::Speak(msg, /*interrupt=*/true);
+        prism::Speak(msg, /*interrupt=*/true);
         acclog::Write("Cycle", "Shift+- -> [%s] (no narrated target)", msg);
         return;
     }
@@ -484,7 +484,7 @@ void OnPathfindFocus() {
                               a.pos);
         const char* hint = acc::strings::Get(
             acc::strings::Id::MapPinShiftDashHint);
-        tolk::Speak(hint, /*interrupt=*/true);
+        prism::Speak(hint, /*interrupt=*/true);
         acclog::Write("Cycle", "Shift+- -> [%s] (map-pin not autowalkable) "
                       "pin=%p pos=(%.2f,%.2f,%.2f)",
                       hint, a.obj, a.pos.x, a.pos.y, a.pos.z);
@@ -507,7 +507,7 @@ void OnPathfindFocus() {
 
     bool ok = acc::guidance::UseObject(a.handle, a.pos);
     if (ok) {
-        tolk::Speak(msg, /*interrupt=*/true);
+        prism::Speak(msg, /*interrupt=*/true);
         acclog::Write("Cycle", "Shift+- -> [%s] obj=%p handle=0x%08x "
                       "dest=(%.2f,%.2f,%.2f) input_disabled=%d",
                       msg, a.obj, a.handle,
@@ -519,7 +519,7 @@ void OnPathfindFocus() {
         std::snprintf(failMsg, sizeof(failMsg),
                       acc::strings::Get(acc::strings::Id::FmtInteractFailed),
                       a.name);
-        tolk::Speak(failMsg, /*interrupt=*/true);
+        prism::Speak(failMsg, /*interrupt=*/true);
         acclog::Write("Cycle", "Shift+- -> [%s] UseObject FAILED obj=%p "
                       "handle=0x%08x",
                       failMsg, a.obj, a.handle);
@@ -544,7 +544,7 @@ void OnBeaconFocus() {
         acc::guidance::beacon::CancelBeacon();
         const char* msg = acc::strings::Get(
             acc::strings::Id::BeaconCancelled);
-        tolk::Speak(msg, /*interrupt=*/true);
+        prism::Speak(msg, /*interrupt=*/true);
         acclog::Write("Cycle", "Ctrl+- -> [%s] (cancel beacon)", msg);
         return;
     }
@@ -553,7 +553,7 @@ void OnBeaconFocus() {
     if (!ResolveNarratedActivation(a)) {
         const char* msg = acc::strings::Get(
             acc::strings::Id::GuidanceNoFocus);
-        tolk::Speak(msg, /*interrupt=*/true);
+        prism::Speak(msg, /*interrupt=*/true);
         acclog::Write("Cycle", "Ctrl+- -> [%s] (no narrated target)", msg);
         return;
     }
@@ -564,7 +564,7 @@ void OnBeaconFocus() {
         // defend so the failure path speaks rather than going silent.
         const char* msg = acc::strings::Get(
             acc::strings::Id::GuidanceNoFocus);
-        tolk::Speak(msg, /*interrupt=*/true);
+        prism::Speak(msg, /*interrupt=*/true);
         acclog::Write("Cycle", "Ctrl+- -> [%s] (player pos unavailable)", msg);
         return;
     }
@@ -585,14 +585,14 @@ void OnBeaconFocus() {
         std::snprintf(msg, sizeof(msg),
                       acc::strings::Get(acc::strings::Id::FmtBeaconNoPath),
                       a.name);
-        tolk::Speak(msg, /*interrupt=*/true);
+        prism::Speak(msg, /*interrupt=*/true);
         acclog::Write("Cycle", "Ctrl+- -> [%s] obj=%p (ComputePath failed)",
                       msg, a.obj);
         return;
     }
 
     // Speak the opener ("Beacon zu {name}") first, then the turn-by-turn
-    // route description. Two separate Tolk calls so screen readers can
+    // route description. Two separate Prism calls so screen readers can
     // queue them in order without interrupt-mid-sentence behaviour. The
     // opener uses interrupt=true (preempt any in-flight speech); the
     // description uses interrupt=false so it queues behind the opener.
@@ -600,7 +600,7 @@ void OnBeaconFocus() {
     std::snprintf(opener, sizeof(opener),
                   acc::strings::Get(acc::strings::Id::FmtBeaconStarted),
                   a.name);
-    tolk::Speak(opener, /*interrupt=*/true);
+    prism::Speak(opener, /*interrupt=*/true);
 
     bool isTransition = (a.category == acc::filter::CycleCategory::Transition);
     acc::guidance::description::Speak(playerPos, waypoints, a.name,
@@ -616,7 +616,7 @@ void OnBeaconFocus() {
 
 // Alt+- — diagnostic alternate path that bypasses the action queue via
 // CSWSCreature::ForceMoveToPoint instead of AddMoveToPointAction. Same
-// payload semantics (cue + Tolk announce); only the engine entry point
+// payload semantics (cue + Prism announce); only the engine entry point
 // differs. Used to discriminate "queue contention" from "input-mode /
 // flag-bit" failure modes when WalkTo is silently dropped.
 //
@@ -629,7 +629,7 @@ void OnPathfindFocusForce() {
     if (!ResolveNarratedActivation(a)) {
         const char* msg = acc::strings::Get(
             acc::strings::Id::GuidanceNoFocus);
-        tolk::Speak(msg, /*interrupt=*/true);
+        prism::Speak(msg, /*interrupt=*/true);
         acclog::Write("Cycle", "Alt+- -> [%s] (no narrated target)", msg);
         return;
     }
@@ -642,7 +642,7 @@ void OnPathfindFocusForce() {
     if (a.isMapPin) {
         const char* msg = acc::strings::Get(
             acc::strings::Id::MapPinAltDashUnsupported);
-        tolk::Speak(msg, /*interrupt=*/true);
+        prism::Speak(msg, /*interrupt=*/true);
         acclog::Write("Cycle", "Alt+- -> [%s] (map-pin unsupported) pin=%p",
                       msg, a.obj);
         return;
@@ -658,7 +658,7 @@ void OnPathfindFocusForce() {
 
     bool ok = acc::guidance::ForceWalkTo(a.pos);
     if (ok) {
-        tolk::Speak(msg, /*interrupt=*/true);
+        prism::Speak(msg, /*interrupt=*/true);
         acclog::Write("Cycle", "Alt+- -> [%s] obj=%p "
                       "dest=(%.2f,%.2f,%.2f) (force path)",
                       msg, a.obj,
@@ -668,7 +668,7 @@ void OnPathfindFocusForce() {
         std::snprintf(failMsg, sizeof(failMsg),
                       acc::strings::Get(acc::strings::Id::FmtGuidingFailed),
                       a.name);
-        tolk::Speak(failMsg, /*interrupt=*/true);
+        prism::Speak(failMsg, /*interrupt=*/true);
         acclog::Write("Cycle", "Alt+- -> [%s] ForceWalkTo FAILED obj=%p "
                       "dest=(%.2f,%.2f,%.2f)",
                       failMsg, a.obj, a.pos.x, a.pos.y, a.pos.z);

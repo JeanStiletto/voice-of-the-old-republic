@@ -1426,7 +1426,7 @@ const char* FromControl(void* control,
     //     wire the readable names for the two arrow buttons the user
     //     actually focuses (btn_charleft / btn_charright).
     //
-    //     IDs come from the panel walk's `Tolk.spoke: control 64..67`
+    //     IDs come from the panel walk's `Speech.spoke: control 64..67`
     //     fallback line in patch-20260514-150455.log + the four-step
     //     mapping above (struct-order in swkotor.exe.h:9838-9841 against
     //     ascending CSWGuiButton instance addresses in the panel walk).

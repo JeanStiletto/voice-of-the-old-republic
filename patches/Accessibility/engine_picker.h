@@ -2,7 +2,7 @@
 // dispatcher for an arbitrary target.
 //
 // Layer: engine/ (engine-only — sets up engine-side state, calls engine
-// entry points, returns observation; no menu state, no Tolk speech).
+// entry points, returns observation; no menu state, no Prism speech).
 //
 // Premise (see docs/engine-action-picker.md):
 //   When the cursor hovers an in-world object, the engine's

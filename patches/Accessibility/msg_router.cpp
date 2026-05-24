@@ -6,7 +6,7 @@
 
 #include "engine_offsets.h"   // CExoString
 #include "log.h"
-#include "tolk.h"
+#include "prism.h"
 
 namespace acc::msg {
 
@@ -53,7 +53,7 @@ void Router::Speak(const char* text) {
     // Single seam for backend selection. Future: priority routing
     // (interrupt for crits, Prism backchannel for urgent lines, etc.)
     // lives here.
-    tolk::Speak(text, /*interrupt=*/false);
+    prism::Speak(text, /*interrupt=*/false);
 }
 
 void Router::LogRaw(const char* text) {

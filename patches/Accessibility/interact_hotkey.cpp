@@ -27,7 +27,7 @@
 #include "narrated_target.h"
 #include "radial_menu.h"
 #include "strings.h"
-#include "tolk.h"
+#include "prism.h"
 #include "view_mode.h"      // IsActive() — Enter is owned by view_mode
                             // while active (lay-off 5)
 
@@ -122,7 +122,7 @@ void OnInteract(bool forceRadial) {
         if (acc::narrated_target::TryGet(slot) && slot.isMapPin) {
             const char* msg = acc::strings::Get(
                 acc::strings::Id::MapPinInteractHint);
-            tolk::Speak(msg, /*interrupt=*/true);
+            prism::Speak(msg, /*interrupt=*/true);
             acclog::Write("Interact",
                           "%s -> [%s] (map-pin focus, no interact)",
                           forceRadial ? "Shift+Enter" : "Enter", msg);
@@ -136,7 +136,7 @@ void OnInteract(bool forceRadial) {
     if (!target || handle == 0) {
         const char* msg = acc::strings::Get(
             acc::strings::Id::GuidanceNoFocus);
-        tolk::Speak(msg, /*interrupt=*/true);
+        prism::Speak(msg, /*interrupt=*/true);
         acclog::Write("Interact", "%s -> [%s] no target",
                       forceRadial ? "Shift+Enter" : "Enter", msg);
         return;
@@ -152,7 +152,7 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
         // isn't ambiguous (cf. `feedback_never_silence_fallback_announcement`).
         const char* msg = acc::strings::Get(
             acc::strings::Id::GuidanceNoFocus);
-        tolk::Speak(msg, /*interrupt=*/true);
+        prism::Speak(msg, /*interrupt=*/true);
         acclog::Write("Interact", "DispatchInteract called with no target "
             "(forceRadial=%d) -> [%s]",
             forceRadial ? 1 : 0, msg);
@@ -218,7 +218,7 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
                 msg, sizeof(msg),
                 acc::strings::Get(acc::strings::Id::FmtInteractRadial),
                 name);
-            tolk::Speak(msg, /*interrupt=*/true);
+            prism::Speak(msg, /*interrupt=*/true);
         } else {
             // ArmAfterPopulate spoke; build a placeholder for the log line
             // so the existing "engine_label=[…]" diagnostic still has a
@@ -230,12 +230,12 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
             msg, sizeof(msg),
             acc::strings::Get(acc::strings::Id::FmtInteractEngine),
             snap.label, name);
-        tolk::Speak(msg, /*interrupt=*/true);
+        prism::Speak(msg, /*interrupt=*/true);
     } else {
         std::snprintf(
             msg, sizeof(msg),
             acc::strings::Get(PreRollFor(cat)), name);
-        tolk::Speak(msg, /*interrupt=*/true);
+        prism::Speak(msg, /*interrupt=*/true);
     }
 
     acclog::Write("Interact", "%s -> [%s] target=%p handle=0x%08x cat=%s "
@@ -280,7 +280,7 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
                       acc::strings::Get(
                           acc::strings::Id::FmtInteractFailed),
                       name);
-        tolk::Speak(failMsg, /*interrupt=*/true);
+        prism::Speak(failMsg, /*interrupt=*/true);
         acclog::Write("Interact", "dispatch FAILED -> [%s]", failMsg);
     }
 }
@@ -316,7 +316,7 @@ void AnnounceBarePersonalKey(int slot) {
                       acc::strings::Get(
                           acc::strings::Id::FmtActionBarColumnEmpty),
                       slot + 1);
-        tolk::Speak(msg, /*interrupt=*/true);
+        prism::Speak(msg, /*interrupt=*/true);
         acclog::Write("ActionBar", "bare key slot=%d variants=0 -> [%s]",
             slot, msg);
         return;
@@ -338,7 +338,7 @@ void AnnounceBarePersonalKey(int slot) {
                       acc::strings::Get(
                           acc::strings::Id::FmtActionBarColumnEmpty),
                       slot + 1);
-        tolk::Speak(msg, /*interrupt=*/true);
+        prism::Speak(msg, /*interrupt=*/true);
         acclog::Write("ActionBar", "bare key slot=%d variants=%d idx=%d "
             "label=empty -> [%s]",
             slot, nVar, idx, msg);
@@ -349,7 +349,7 @@ void AnnounceBarePersonalKey(int slot) {
     std::snprintf(msg, sizeof(msg),
                   acc::strings::Get(acc::strings::Id::FmtActionBarFired),
                   label);
-    tolk::Speak(msg, /*interrupt=*/true);
+    prism::Speak(msg, /*interrupt=*/true);
     acclog::Write("ActionBar", "bare key slot=%d variants=%d idx=%d label=[%s] -> [%s]",
         slot, nVar, idx, label, msg);
 }
@@ -387,7 +387,7 @@ void AnnounceBareTargetKey(int row) {
                       acc::strings::Get(
                           acc::strings::Id::FmtActionBarColumnEmpty),
                       row + 1);
-        tolk::Speak(msg, /*interrupt=*/true);
+        prism::Speak(msg, /*interrupt=*/true);
         acclog::Write("ActionBar", "bare target row=%d count=%d label=[%s] -> [%s]",
             row, count, label, msg);
         return;
@@ -397,7 +397,7 @@ void AnnounceBareTargetKey(int row) {
     std::snprintf(msg, sizeof(msg),
                   acc::strings::Get(acc::strings::Id::FmtActionBarFired),
                   label);
-    tolk::Speak(msg, /*interrupt=*/true);
+    prism::Speak(msg, /*interrupt=*/true);
     acclog::Write("ActionBar", "bare target row=%d label=[%s] -> [%s]",
         row, label, msg);
 }
@@ -486,12 +486,12 @@ void PollHotkey() {
         if (risingL) {
             const char* opener = acc::strings::Get(
                 acc::strings::Id::LevelUpOpen);
-            tolk::Speak(opener, /*interrupt=*/true);
+            prism::Speak(opener, /*interrupt=*/true);
             bool ok = acc::engine_levelup::TriggerLevelUp();
             acclog::Write("Interact", "Shift+L -> [%s] level-up dispatch ok=%d",
                 opener, ok ? 1 : 0);
             if (!ok) {
-                tolk::Speak(
+                prism::Speak(
                     acc::strings::Get(acc::strings::Id::LevelUpFailed),
                     /*interrupt=*/true);
             }
@@ -516,7 +516,7 @@ void PollHotkey() {
     //
     // Skip the announce when our own submenu is active for that column
     // — actionbar_menu's Enter path already speaks "X eingesetzt" via its
-    // explicit Tolk call, and the user pressing bare 5 with the submenu
+    // explicit Prism call, and the user pressing bare 5 with the submenu
     // open for column 1 would otherwise double-announce. The submenu's
     // Enter consumes via the routing block below, so this only affects
     // the bare-press during submenu-active state, which is an unlikely

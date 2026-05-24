@@ -1,7 +1,7 @@
 // User-facing string table.
 //
 // Layer: i18n/ — sits between the speech path (cycle_input, future
-// announce paths) and Tolk. Centralises every string the user hears so
+// announce paths) and Prism. Centralises every string the user hears so
 // language swaps + wording changes happen in one place.
 //
 // Logs stay English regardless of the active language: developer-readable
@@ -10,7 +10,7 @@
 //
 // Encoding: source files use 7-bit ASCII for English and Windows-1252
 // hex escapes (e.g. "T\xFCr") for German, so the literal bytes already
-// match Tolk's ANSI overload (which calls MultiByteToWideChar(CP_ACP)
+// match Prism's ANSI overload (which calls MultiByteToWideChar(CP_ACP)
 // — CP_ACP = Windows-1252 on a German Windows install). UTF-8 source
 // would also work but only if the build script sets /utf-8 explicitly,
 // which create-patch.bat does not.
@@ -373,6 +373,33 @@ enum class Id : int {
     //                                (`%d`), sector word (`%s`).
     FmtMapStateOriented,
     FmtMapStateUnknownRoom,
+
+    // ---- World-frame AltGr companion to FmtMapState*. Fires when the
+    //      InGameMap panel is NOT foreground (player is just standing in
+    //      the world). Reads the camera heading as a sector word + exact
+    //      degrees and adds the current perceptual cluster label
+    //      (wall_topology::LookupAt) so the user can re-orient without
+    //      walking. Cluster vs .lyt-room: the map variant uses .lyt rooms
+    //      because that matches what the map UI labels; in the world we
+    //      want the perceptual region (corridor / junction / Platz) the
+    //      player is *in*, which is the wall-topology cluster.
+    //
+    //      `FmtWorldStateOriented`        — direction word then cluster.
+    //                                       Args in this order: sector
+    //                                       word (`%s` — DirNorth.. via
+    //                                       strings.Get) then cluster
+    //                                       label (`%s`). Degrees are
+    //                                       deliberately dropped — the
+    //                                       user prefers a clean two-
+    //                                       segment cue, exact heading
+    //                                       belongs on a dedicated probe.
+    //      `FmtWorldStateUnknownCluster`  — same line minus the cluster
+    //                                       segment, used when LookupAt
+    //                                       returns no graph / off-snap /
+    //                                       all-blocked. Single arg:
+    //                                       sector word (`%s`).
+    FmtWorldStateOriented,
+    FmtWorldStateUnknownCluster,
 
     // ---- Phase 4 lay-off 2 — view-mode Mouse Look probe (Shift+AltGr).
     //      Diagnostic-only; spoken on toggle so the user knows the

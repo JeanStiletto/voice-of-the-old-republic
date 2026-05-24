@@ -13,7 +13,7 @@
 #include "log.h"
 #include "narrated_target.h"
 #include "strings.h"
-#include "tolk.h"
+#include "prism.h"
 
 namespace acc::passive_narrate {
 
@@ -130,9 +130,9 @@ bool NarrateHandle(uint32_t handle, const char* reason) {
     if (acc::combat::query::BuildTargetCombatBrief(
             obj, name, enriched, sizeof(enriched)) &&
         enriched[0] != '\0') {
-        tolk::Speak(enriched, /*interrupt=*/true);
+        prism::Speak(enriched, /*interrupt=*/true);
     } else {
-        tolk::Speak(name, /*interrupt=*/true);
+        prism::Speak(name, /*interrupt=*/true);
     }
 
     uint32_t serverHandle = acc::engine::GetObjectHandle(obj);

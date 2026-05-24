@@ -31,7 +31,7 @@
 #include "menus_internal.h"
 #include "menus_pending.h"
 #include "strings.h"
-#include "tolk.h"
+#include "prism.h"
 
 using namespace acc::engine;  // IdentifyPanel, PanelKind, kInput*, etc.
 
@@ -211,7 +211,7 @@ void ContainerAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
         snprintf(msg, sizeof(msg),
                  acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
                  rowText, r.newSel + 1, r.rowCount);
-        tolk::Speak(msg, /*interrupt=*/false);
+        prism::Speak(msg, /*interrupt=*/false);
         // Append stack count when the row holds a stackable item with
         // more than one copy. Stays silent on stack_size <= 1 so weapons
         // / armour don't drag "1 Stück" through every announce.
@@ -221,7 +221,7 @@ void ContainerAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
             snprintf(suffix, sizeof(suffix),
                      acc::strings::Get(acc::strings::Id::FmtItemStackSuffix),
                      stack);
-            tolk::Speak(suffix, /*interrupt=*/false);
+            prism::Speak(suffix, /*interrupt=*/false);
         }
     }
 }
@@ -306,7 +306,7 @@ void SaveLoadAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
                  acc::strings::Get(acc::strings::Id::FmtSaveLoadRowNoLoc),
                  rowText, r.newSel + 1, r.rowCount);
     }
-    tolk::Speak(msg, /*interrupt=*/false);
+    prism::Speak(msg, /*interrupt=*/false);
 }
 
 void SaveLoadLogExtra(char* out, size_t outN, const ListBoxNavResult& r) {
@@ -387,7 +387,7 @@ void EquipPickerAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
         snprintf(msg, sizeof(msg),
                  acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
                  rowText, r.newSel, r.rowCount - 1);
-        tolk::Speak(msg, /*interrupt=*/false);
+        prism::Speak(msg, /*interrupt=*/false);
     }
 }
 
@@ -595,7 +595,7 @@ void SkillInfoBoxAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
     snprintf(head, sizeof(head),
              acc::strings::Get(acc::strings::Id::FmtChargenFeatGrantedRow),
              rowText, r.newSel + 1, r.rowCount);
-    tolk::Speak(head, /*interrupt=*/false);
+    prism::Speak(head, /*interrupt=*/false);
 }
 
 // Per-row enrichment: refresh the underlying CSWGuiFeatsCharGen's
@@ -653,7 +653,7 @@ void SkillInfoBoxEnrichRow(void* /*panel*/, const ListBoxNavResult& r) {
     char desc[1024];
     if (descRow && ReadLabelText(descRow, desc, sizeof(desc)) &&
         desc[0] != '\0') {
-        tolk::Speak(desc, /*interrupt=*/false);
+        prism::Speak(desc, /*interrupt=*/false);
         // Newline-flatten for the diagnostic log line.
         char dump[1024];
         size_t dn = strnlen(desc, sizeof(desc) - 1);
@@ -740,7 +740,7 @@ void InGameMessagesAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
     snprintf(msg, sizeof(msg),
              acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
              rowText, r.newSel + 1, r.rowCount);
-    tolk::Speak(msg, /*interrupt=*/false);
+    prism::Speak(msg, /*interrupt=*/false);
 }
 
 const char* InGameMessagesTitleOverride(void* /*panel*/) {
@@ -820,7 +820,7 @@ void DialogReplyAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
                      acc::strings::Id::DialogReplyUnavailable),
                  r.newSel + 1, r.rowCount);
     }
-    tolk::Speak(msg, /*interrupt=*/false);
+    prism::Speak(msg, /*interrupt=*/false);
 }
 
 constexpr ListBoxPanelSpec kDialogCinematicSpec = {
@@ -922,7 +922,7 @@ void WorkbenchItemsAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
     snprintf(msg, sizeof(msg),
              acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
              rowText, r.newSel + 1, r.rowCount);
-    tolk::Speak(msg, /*interrupt=*/false);
+    prism::Speak(msg, /*interrupt=*/false);
 }
 
 bool WorkbenchItemsOnEnter(void* panel) {
@@ -995,7 +995,7 @@ void WorkbenchUpgradeAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
     snprintf(msg, sizeof(msg),
              acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
              rowText, r.newSel + 1, r.rowCount);
-    tolk::Speak(msg, /*interrupt=*/false);
+    prism::Speak(msg, /*interrupt=*/false);
 }
 
 bool WorkbenchUpgradeOnEnter(void* panel) {
@@ -1063,7 +1063,7 @@ void ExamineAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
     snprintf(msg, sizeof(msg),
              acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
              rowText, r.newSel + 1, r.rowCount);
-    tolk::Speak(msg, /*interrupt=*/false);
+    prism::Speak(msg, /*interrupt=*/false);
 }
 
 constexpr ListBoxPanelSpec kExamineSpec = {
@@ -1299,12 +1299,12 @@ void MonitorContainerSelection() {
         s_containerSelState.listBox       = lb;
         s_containerSelState.lastSelection = selIdx;
         if (rowCount <= 0) {
-            tolk::Speak(acc::strings::Get(acc::strings::Id::ContainerEmpty),
+            prism::Speak(acc::strings::Get(acc::strings::Id::ContainerEmpty),
                         /*interrupt=*/false);
             acclog::Write("Menus.Container", "monitor armed: panel=%p lb=%p empty initialSel=%d",
                           containerPanel, lb, selIdx);
         } else if (rowCount == 1) {
-            tolk::Speak(acc::strings::Get(acc::strings::Id::ContainerOneItem),
+            prism::Speak(acc::strings::Get(acc::strings::Id::ContainerOneItem),
                         /*interrupt=*/false);
             acclog::Write("Menus.Container", "monitor armed: panel=%p lb=%p count=1 initialSel=%d",
                           containerPanel, lb, selIdx);
@@ -1313,7 +1313,7 @@ void MonitorContainerSelection() {
             snprintf(msg, sizeof(msg),
                      acc::strings::Get(acc::strings::Id::FmtContainerItems),
                      rowCount);
-            tolk::Speak(msg, /*interrupt=*/false);
+            prism::Speak(msg, /*interrupt=*/false);
             acclog::Write("Menus.Container", "monitor armed: panel=%p lb=%p count=%d initialSel=%d",
                           containerPanel, lb, rowCount, selIdx);
         }
@@ -1347,14 +1347,14 @@ void MonitorContainerSelection() {
     snprintf(msg, sizeof(msg),
              acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
              rowText, selIdx + 1, rowCount);
-    tolk::Speak(msg, /*interrupt=*/false);
+    prism::Speak(msg, /*interrupt=*/false);
     int stack = acc::engine::ReadItemRowStackCount(row);
     if (stack > 1) {
         char suffix[64];
         snprintf(suffix, sizeof(suffix),
                  acc::strings::Get(acc::strings::Id::FmtItemStackSuffix),
                  stack);
-        tolk::Speak(suffix, /*interrupt=*/false);
+        prism::Speak(suffix, /*interrupt=*/false);
     }
     acclog::Write("Menus.Container", "row lb=%p sel=%d (was %d) text=\"%s\" stack=%d",
                   lb, selIdx, prev, rowText, stack);
@@ -1445,7 +1445,7 @@ void MonitorEquipPickerSelection() {
     snprintf(msg, sizeof(msg),
              acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
              rowText, userPos, userTotal);
-    tolk::Speak(msg, /*interrupt=*/false);
+    prism::Speak(msg, /*interrupt=*/false);
     acclog::Write("Menus.EquipPicker", "row lb=%p sel=%d (was %d) text=\"%s\"",
                   lb, selIdx, prev, rowText);
 }

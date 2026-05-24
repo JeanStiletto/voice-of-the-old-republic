@@ -17,7 +17,7 @@
 #include "engine_reads.h"
 #include "log.h"
 #include "strings.h"
-#include "tolk.h"
+#include "prism.h"
 
 namespace acc::menus::charsheet {
 
@@ -349,7 +349,7 @@ void MaybeAnnounce(void* panel) {
         return;
     }
 
-    tolk::Speak(msg, /*interrupt=*/false);
+    prism::Speak(msg, /*interrupt=*/false);
     acclog::Write("Menus.CharSheet", "panel=%p text=\"%.500s\"", panel, msg);
 }
 

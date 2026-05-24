@@ -1,23 +1,20 @@
-// Speech bridge — Prism-only.
+// Speech bridge — Prism only.
 //
-// Historical note: this module was originally a Tolk shim and kept the
-// `tolk::` namespace name through the migration. After 2026-05-15 it
-// no longer loads or links Tolk.dll. The two dispatch paths are:
+// Two dispatch paths:
 //
 //   Speak / Silence       → "normal" backend (NVDA / JAWS / ZDSR / OneCore /
 //                            ... whichever screen reader Prism picks at
 //                            startup; acquire_best). Same priority NVDA
-//                            already used to be on under the Tolk path,
-//                            so behaviour is preserved for typed-character
-//                            cancel etc.
+//                            normally uses, so typed-character cancel etc.
+//                            behaves the way the user expects from their
+//                            screen reader.
 //   SpeakUrgent           → SAPI backend (always). Bypasses NVDA's typed-
-//                            character cancel — exactly the bypass we
-//                            already had via Prism for map-cursor cues.
+//                            character cancel — the bypass we rely on for
+//                            map-cursor / compass / walking cues.
 //
 // All Prism functions are resolved at runtime via LoadLibrary +
-// GetProcAddress so a missing prism.dll degrades silently (no speech),
-// same fault-tolerance posture the Tolk path had.
-#include "tolk.h"
+// GetProcAddress so a missing prism.dll degrades silently (no speech).
+#include "prism.h"
 
 #include <windows.h>
 #include <cstdio>
@@ -26,7 +23,7 @@
 
 #include "log.h"
 
-namespace tolk {
+namespace prism {
 
 namespace {
 
@@ -60,6 +57,8 @@ typedef PrismError     (__cdecl* PFN_prism_backend_initialize)(PrismBackend*);
 typedef PrismError     (__cdecl* PFN_prism_backend_speak)(PrismBackend*, const char*, bool);
 typedef PrismError     (__cdecl* PFN_prism_backend_stop)(PrismBackend*);
 typedef PrismError     (__cdecl* PFN_prism_backend_set_rate)(PrismBackend*, float);
+typedef PrismError     (__cdecl* PFN_prism_backend_set_voice)(PrismBackend*, size_t);
+typedef PrismError     (__cdecl* PFN_prism_backend_count_voices)(PrismBackend*, size_t*);
 typedef const char*    (__cdecl* PFN_prism_backend_name)(PrismBackend*);
 
 HMODULE       g_prismLib       = nullptr;
@@ -69,6 +68,15 @@ PrismBackend* g_prismSapi      = nullptr;   // urgent channel; SAPI bypass
 bool          g_initTried      = false;
 bool          g_normalReady    = false;
 bool          g_sapiReady      = false;
+
+// Tracks the SAPI voice id last applied via prism_backend_set_voice. SIZE_MAX
+// = "unknown / not yet set"; first call will always issue set_voice so the
+// backend's state matches our cache. Voice swap costs nothing in steady state
+// — we only call set_voice when the requested id differs.
+size_t g_sapiVoiceCurrent = static_cast<size_t>(-1);
+// Cached voice count so out-of-range requests fall back silently instead of
+// asking SAPI for a voice it doesn't have. 0 = not enumerated / no voices.
+size_t g_sapiVoiceCount   = 0;
 
 // L"NVDA" / L"SAPI" / ... — filled at Init time so ActiveScreenReader can
 // hand back a stable wide-string pointer without doing the conversion on
@@ -85,6 +93,8 @@ PFN_prism_backend_initialize    pPrism_backend_initialize     = nullptr;
 PFN_prism_backend_speak         pPrism_backend_speak          = nullptr;
 PFN_prism_backend_stop          pPrism_backend_stop           = nullptr;
 PFN_prism_backend_set_rate      pPrism_backend_set_rate       = nullptr;
+PFN_prism_backend_set_voice     pPrism_backend_set_voice      = nullptr;
+PFN_prism_backend_count_voices  pPrism_backend_count_voices   = nullptr;
 PFN_prism_backend_name          pPrism_backend_name           = nullptr;
 
 template <typename T>
@@ -182,6 +192,22 @@ bool TryAcquireSapi() {
                           kPrismSapiUrgentRate);
         }
     }
+
+    // Cache voice count so SpeakUrgent(text, voiceId) can range-check before
+    // calling set_voice — cheaper than the round trip on every utterance.
+    if (pPrism_backend_count_voices) {
+        size_t count = 0;
+        PrismError vrc = pPrism_backend_count_voices(g_prismSapi, &count);
+        if (vrc == kPrismOk) {
+            g_sapiVoiceCount = count;
+            acclog::Write("Speech", "SAPI voice count = %zu", count);
+        } else {
+            acclog::Write("Speech",
+                          "prism_backend_count_voices(SAPI) rc=%d "
+                          "(voice-id requests will fall back to default)",
+                          vrc);
+        }
+    }
     return true;
 }
 
@@ -198,6 +224,26 @@ bool TryAcquireNormal() {
                       "speech backend available; running silent");
         return false;
     }
+    return true;
+}
+
+// Make the SAPI backend speak with voice `voiceId`. Cached so consecutive
+// calls with the same id are free. Out-of-range / unsupported silently no-op
+// and leave the current voice in place. Returns false only on a hard set_voice
+// error so the caller can log; the speak still proceeds with whatever voice
+// SAPI currently has.
+bool EnsureSapiVoice(size_t voiceId) {
+    if (!g_sapiReady || !pPrism_backend_set_voice) return false;
+    if (g_sapiVoiceCount != 0 && voiceId >= g_sapiVoiceCount) return false;
+    if (voiceId == g_sapiVoiceCurrent) return true;
+    PrismError rc = pPrism_backend_set_voice(g_prismSapi, voiceId);
+    if (rc != kPrismOk) {
+        acclog::Trace("Speech",
+                      "prism_backend_set_voice(SAPI, %zu) rc=%d "
+                      "(staying on voice %zu)", voiceId, rc, g_sapiVoiceCurrent);
+        return false;
+    }
+    g_sapiVoiceCurrent = voiceId;
     return true;
 }
 
@@ -250,9 +296,15 @@ bool Init() {
         Resolve(g_prismLib, pPrism_backend_stop,          "prism_backend_stop")          &&
         Resolve(g_prismLib, pPrism_backend_name,          "prism_backend_name");
     if (!ok) return false;
-    // set_rate is optional — older Prism builds may lack the export, and
-    // backends without SUPPORTS_SET_RATE return an error at call time.
-    (void)Resolve(g_prismLib, pPrism_backend_set_rate, "prism_backend_set_rate",
+    // set_rate / set_voice / count_voices are optional — older Prism builds
+    // may lack the exports, and backends without the matching SUPPORTS_*
+    // capability return an error at call time. SpeakUrgent stays functional
+    // either way; voice selection just no-ops.
+    (void)Resolve(g_prismLib, pPrism_backend_set_rate,     "prism_backend_set_rate",
+                  /*required=*/false);
+    (void)Resolve(g_prismLib, pPrism_backend_set_voice,    "prism_backend_set_voice",
+                  /*required=*/false);
+    (void)Resolve(g_prismLib, pPrism_backend_count_voices, "prism_backend_count_voices",
                   /*required=*/false);
 
     PrismConfig cfg = pPrism_config_init();
@@ -350,7 +402,10 @@ void Speak(const char* text, bool interrupt) {
     if (heap_buf) free(heap_buf);
 }
 
-void SpeakUrgent(const char* text) {
+// SpeakUrgent core. `applyVoice == true` means EnsureSapiVoice(voiceId) runs
+// before the speak; the no-arg public overload skips it so the default 0-voice
+// path doesn't pay for set_voice on every utterance.
+static void SpeakUrgentImpl(const char* text, size_t voiceId, bool applyVoice) {
     if (!g_normalReady || !text || !*text) return;
 
     // Re-encode CP_ACP → UTF-8 before dispatch. See ReencodeAcpToUtf8 doc
@@ -372,6 +427,10 @@ void SpeakUrgent(const char* text) {
     PrismBackend* target = g_sapiReady ? g_prismSapi : g_prismNormal;
     const char*   tag    = g_sapiReady ? "[SAPI]"    : "[normal-fallback]";
 
+    if (applyVoice && g_sapiReady) {
+        EnsureSapiVoice(voiceId);
+    }
+
     PrismError rc = pPrism_backend_speak(target, speakText, /*interrupt=*/true);
     if (rc == kPrismOk) {
         // Log the original CP_ACP text so the patch log stays readable
@@ -381,13 +440,20 @@ void SpeakUrgent(const char* text) {
         // Do NOT fall back to the normal backend on a SAPI rc!=0. SAPI
         // dispatches asynchronously; by the time rc!=0 returns SAPI may
         // already be mid-utterance, and routing the same string to the
-        // normal backend would produce the double-speak observed in
-        // patch-20260512-152803.log. Drop the utterance; the next
-        // SpeakUrgent call retries naturally.
+        // normal backend would produce double-speak. Drop the utterance;
+        // the next SpeakUrgent call retries naturally.
         acclog::Trace("Speech",
                       "SpeakUrgent: prism_backend_speak rc=%d; "
                       "dropping utterance (no double-speak fallback)", rc);
     }
+}
+
+void SpeakUrgent(const char* text) {
+    SpeakUrgentImpl(text, /*voiceId=*/0, /*applyVoice=*/false);
+}
+
+void SpeakUrgent(const char* text, size_t voiceId) {
+    SpeakUrgentImpl(text, voiceId, /*applyVoice=*/true);
 }
 
 void Silence() {
@@ -405,10 +471,10 @@ const wchar_t* ActiveScreenReader() {
 void Shutdown() {
     // Deliberately do not free backends / shut down the context here —
     // Prism's bridge DLLs talk to RPC + COM objects, and tearing those down
-    // inside DLL_PROCESS_DETACH risks the loader lock + COM uninit ordering
-    // issues we used to hit with Tolk. Process exit will reclaim everything.
+    // inside DLL_PROCESS_DETACH risks loader-lock + COM-uninit ordering
+    // issues. Process exit will reclaim everything.
     g_normalReady = false;
     g_sapiReady   = false;
 }
 
-}  // namespace tolk
+}  // namespace prism

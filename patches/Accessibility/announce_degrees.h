@@ -1,7 +1,7 @@
 // On-demand exact-heading hotkey — Pillar 2 sub-feature D ("announce/degrees").
 //
 // Layer: announce/ (depends on engine_player for yaw, strings for the
-// localised format, tolk for speech). One-shot speech; no per-tick state
+// localised format, prism for speech). One-shot speech; no per-tick state
 // other than rising-edge detection on the trigger key.
 //
 // Trigger: AltGr (right Alt — the key directly right of space on a German
