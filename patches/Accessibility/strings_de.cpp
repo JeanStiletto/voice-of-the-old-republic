@@ -366,6 +366,27 @@ const char* Get(Id id) {
 
         case Id::SoundOptionsMovieVolume:    return "Video-Lautst\xE4rke";  // Lautstärke
 
+        case Id::SwoopRaceStarted:
+            return "Swoop-Rennen gestartet.";
+        case Id::SwoopRaceControls:
+            // Source: in-game Tutorial-Box auf der Swoopstrecke 2026-05-24,
+            // "Mit einem Linksklick kannst du beschleunigen und schalten.
+            // Mit den Bewegungs-Tasten (D und A) weichst du Hindernissen
+            // aus." Tastatur-Alternative laut KOTOR-Handbuch S. 6:
+            // Leertaste / Eingabe ersetzen Linksklick beim Beschleunigen
+            // und Schalten. Es gibt f\xFCnf G\xE4nge (gewinkelt aus den
+            // f\xFCnf mgs_shift_01..05.wav-Samples).
+            return "Steuerung: Leertaste oder Eingabe beschleunigt und "
+                   "schaltet in den n\xE4""chsten Gang, insgesamt f\xFCnf "
+                   "G\xE4nge. A weicht nach links aus, D nach rechts. "
+                   "Pause-Taste pausiert das Rennen.";
+        case Id::SwoopRaceEnded:
+            return "Swoop-Rennen beendet.";
+        case Id::SwoopRaceObstacleNear:
+            return "Hindernis in %d Metern";
+        case Id::FmtSwoopRaceGear:
+            return "Gang %d";
+
         case Id::Count_:               return "";
     }
     return "";

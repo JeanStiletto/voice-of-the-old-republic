@@ -1053,6 +1053,36 @@ enum class Id : int {
     //      come from the .gui file and are stable across locales).
     SoundOptionsMovieVolume,
 
+    // ---- Swoop racing minigame (tar_m03mg, manm26mg, tat_m17mg). First-cut
+    //      scaffolding: announce entry + read-only keybind cheat sheet,
+    //      announce exit. Continuous obstacle / accelerator cues are layered
+    //      on top once the CSWMiniGame obstacle-array offset locks (probe
+    //      bytes are dumped by swoop_race.cpp::DiagnosticDump on first entry).
+    //
+    //      SwoopRaceStarted   — entry opener, no args. Spoken once when
+    //                           CSWCArea.mini_game transitions null→non-null.
+    //      SwoopRaceControls  — keybinds, no args. Concatenated after
+    //                           SwoopRaceStarted on entry. Lifted from
+    //                           docs/controls-and-input.md "Mini-game
+    //                           commands" section.
+    //      SwoopRaceEnded     — exit cue, no args. Spoken on the inverse
+    //                           transition.
+    //      SwoopRaceObstacleNear — TODO: per-obstacle cue spoken at periodic
+    //                              throttle when an obstacle enters
+    //                              proximity. One %d (metres ahead).
+    //                              Reserved for the follow-up lay-off.
+    SwoopRaceStarted,
+    SwoopRaceControls,
+    SwoopRaceEnded,
+    SwoopRaceObstacleNear,
+    // Gear-shift cue spoken urgently on each shift event so the player
+    // hears "Gang 2 / 3 / 4 / 5" through NVDA's typed-character cancel.
+    // One %d (1..5). Reset to 1 on race entry and on suspected reset
+    // events (collision speed drop). The exact gear field inside
+    // CSWMiniPlayer is unconfirmed at this lay-off — see swoop_race.cpp
+    // DiagnosticDump for the candidate-pointer-bytes capture.
+    FmtSwoopRaceGear,
+
     Count_,
 };
 

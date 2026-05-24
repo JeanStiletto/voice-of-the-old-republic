@@ -38,6 +38,7 @@
 #include "probe_pathfind.h"
 #include "radial_menu.h"
 #include "spatial_change_detector.h"
+#include "swoop_race.h"
 #include "transitions.h"
 #include "turn_announce.h"
 #include "view_mode.h"
@@ -204,6 +205,12 @@ void Dispatch() {
     acc::camera_orient::Tick();
 
     acc::spatial::change_detector::Tick();
+
+    // Swoop racing minigame — speaks entry + keybinds when CSWCArea.mini_game
+    // transitions null→non-null, exit cue on the inverse. First-fire dumps
+    // CSWMiniGame bytes so the obstacle-array offset can be locked
+    // offline before layering continuous proximity cues on top.
+    acc::swoop_race::Tick();
 
     // Phase 2 lay-off 7 — Pillar 2 area + room transition announcements.
     // Per-tick area-pointer + room-index delta detection; speaks "Bereich:

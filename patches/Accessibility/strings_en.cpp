@@ -347,6 +347,22 @@ const char* Get(Id id) {
 
         case Id::SoundOptionsMovieVolume:    return "Movie volume";
 
+        case Id::SwoopRaceStarted:
+            return "Swoop race started.";
+        case Id::SwoopRaceControls:
+            // Per in-game tutorial popup: Spacebar / Enter / Mouse 1
+            // accelerate AND shift to the next gear. A / D strafe lanes.
+            // Five gears total (mgs_shift_01..05 sample set).
+            return "Controls: Space or Enter accelerates and shifts to "
+                   "the next gear, five gears total. A strafes left, "
+                   "D strafes right. Pause key pauses the race.";
+        case Id::SwoopRaceEnded:
+            return "Swoop race ended.";
+        case Id::SwoopRaceObstacleNear:
+            return "Obstacle %d meters ahead";
+        case Id::FmtSwoopRaceGear:
+            return "Gear %d";
+
         case Id::Count_:               return "";
     }
     return "";
