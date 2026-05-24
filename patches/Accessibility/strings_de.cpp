@@ -374,12 +374,13 @@ const char* Get(Id id) {
             // Mit den Bewegungs-Tasten (D und A) weichst du Hindernissen
             // aus." Tastatur-Alternative laut KOTOR-Handbuch S. 6:
             // Leertaste / Eingabe ersetzen Linksklick beim Beschleunigen
-            // und Schalten. Es gibt f\xFCnf G\xE4nge (gewinkelt aus den
-            // f\xFCnf mgs_shift_01..05.wav-Samples).
+            // und Schalten. Anzahl der G\xE4nge pro Strecke unterschiedlich
+            // (von NWScript pro Modul gesetzt; Engine hat selbst keinen
+            // Gang-Begriff — siehe swoop_race.cpp kGearShiftMaxDeltaMs).
             return "Steuerung: Leertaste oder Eingabe beschleunigt und "
-                   "schaltet in den n\xE4""chsten Gang, insgesamt f\xFCnf "
-                   "G\xE4nge. A weicht nach links aus, D nach rechts. "
-                   "Pause-Taste pausiert das Rennen.";
+                   "schaltet in den n\xE4""chsten Gang. A weicht nach "
+                   "links aus, D nach rechts. Pause-Taste pausiert das "
+                   "Rennen.";
         case Id::SwoopRaceEnded:
             return "Swoop-Rennen beendet.";
         case Id::SwoopRaceObstacleNear:

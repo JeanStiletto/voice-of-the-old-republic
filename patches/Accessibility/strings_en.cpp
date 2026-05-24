@@ -352,10 +352,11 @@ const char* Get(Id id) {
         case Id::SwoopRaceControls:
             // Per in-game tutorial popup: Spacebar / Enter / Mouse 1
             // accelerate AND shift to the next gear. A / D strafe lanes.
-            // Five gears total (mgs_shift_01..05 sample set).
+            // Gear count per track is set by NWScript (engine has no gear
+            // concept — see swoop_race.cpp kGearShiftMaxDeltaMs comment).
             return "Controls: Space or Enter accelerates and shifts to "
-                   "the next gear, five gears total. A strafes left, "
-                   "D strafes right. Pause key pauses the race.";
+                   "the next gear. A strafes left, D strafes right. "
+                   "Pause key pauses the race.";
         case Id::SwoopRaceEnded:
             return "Swoop race ended.";
         case Id::SwoopRaceObstacleNear:
