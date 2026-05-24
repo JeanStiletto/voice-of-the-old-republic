@@ -206,6 +206,34 @@ void TickPlayerInputRestore();
 // can pass the result through ResolveClientObjectHandle directly.
 int GetPartyMembers(uint32_t* outHandles, int maxCount);
 
+// Returns the active server-side CSWPartyTable*, or nullptr at any null
+// link / SEH fault. Same chain walk GetPartyMembers uses, exposed so
+// callers needing more than the active-roster handles (NPC-slot
+// availability, selectability) can invoke the engine's CSWPartyTable
+// thiscalls directly.
+void* GetServerPartyTable();
+
+// Wraps CSWPartyTable::GetIsNPCAvailable @0x005636B0. Returns true if
+// companion at roster slot `npcSlot` (0..8) has been recruited and is
+// part of the player's active roster (i.e. the panel-side OnPanelAdded
+// loop would resolve a creature for this slot). Returns false on bogus
+// slot index, null table, or SEH fault.
+bool PartyTableIsNPCAvailable(int npcSlot);
+
+// Wraps CSWPartyTable::GetNPCSelectability @0x005637C0. Returns true if
+// the engine currently *allows* the player to pick this companion right
+// now — i.e. the slot is not story-locked. A recruited but
+// non-selectable companion (e.g. busy with a forced plot subroutine)
+// returns false here but true from PartyTableIsNPCAvailable.
+bool PartyTableIsNPCSelectable(int npcSlot);
+
+// Resolves the display name for companion `npcSlot` by walking the
+// engine's GetNPCObject → CServerExoApp::GetCreatureByGameObjectID →
+// universal-name accessor chain. Returns true on non-empty name; false
+// when the slot is unavailable, the creature can't be resolved, or any
+// part of the chain faults under SEH. outBuf is always NUL-terminated.
+bool GetPartyNpcNameForSlot(int npcSlot, char* outBuf, size_t bufSize);
+
 }  // namespace acc::engine
 
 // AppManager wrapper. *kAddrAppManagerPtr holds an AppManager*; the live
@@ -251,13 +279,49 @@ constexpr uintptr_t kAddrCSWPlayerControlSetEnabled = 0x006792E0;
 // CClientExoAppInternal::player_character_name @+0x294.
 constexpr uintptr_t kAddrCClientExoAppGetPlayerCharacterName = 0x005EDAB0;
 
-// CServerExoApp.party_table @+0x1b770 → CSWPartyTable. Same AppManager
-// indirection map_ui_cursor.cpp uses (AppManager + 0x8 → server app).
-// Type DB layout: pt_num_members ulong @+0x0, pt_member_ids int[11]
-// @+0x4 (first two are MC + co-leader). Rest of the struct is roster
-// availability flags and game-progression state — irrelevant here.
+// CServerExoApp → CServerExoAppInternal → CSWPartyTable. The public
+// CServerExoApp facade is 8 bytes (vtable@0, internal@4), mirroring the
+// CClientExoApp / CClientExoAppInternal split — verified live via the
+// `CServerExoApp::GetPartyTable @0x004aee70` decompile (`MOV EAX,
+// [ECX+4]; ADD EAX, 0x1b770; RET`), which only matches the layout when
+// the table is embedded inside the internal at +0x1b770.
+//
+// Earlier party-table walks in this file (commit 2026-05-15) skipped
+// the +0x4 indirection on the server side because the `pt_num_members`
+// happened to read as 0 (consistent with "no active party" early in
+// the game). The full PartySelection panel walk exposed the mistake:
+// reading from CServerExoApp+0x1b770 returned random heap (all 1s) for
+// the avail/selectable arrays, while reading from
+// CServerExoAppInternal+0x1b770 matches the per-portrait flag word the
+// engine itself sets in OnPanelAdded.
 constexpr size_t    kAppManagerServerOffsetPlayer  = 0x8;  // mirror of engine_area
-constexpr size_t    kServerExoAppPartyTableOffset  = 0x1b770;
+constexpr size_t    kServerExoAppInternalOffset    = 0x4;
+constexpr size_t    kServerInternalPartyTableOffset = 0x1b770;
+// Legacy alias used by GetPartyMembers / party_cache — kept for source
+// compatibility while we audit which callers care about the old
+// (incorrect) path vs. the corrected chain.
+constexpr size_t    kServerExoAppPartyTableOffset  = kServerInternalPartyTableOffset;
 constexpr size_t    kPartyTableNumMembersOffset    = 0x0;
 constexpr size_t    kPartyTableMemberIdsOffset     = 0x4;
 constexpr int       kPartyTableMaxMembers          = 11;
+
+// CSWPartyTable thiscalls used by the PartySelection portrait extractor.
+// `GetIsNPCAvailable(int slot)` / `GetNPCSelectability(int slot)` are the
+// same accessors CSWGuiPartySelection::OnPanelAdded calls when building
+// each portrait button (decompile at 0x006beeb0). `GetNPCObject(int slot,
+// int instanceIndex, int someFlag)` returns the server-side game object
+// id of the companion's live creature (or 0 if not spawned).
+//
+// `kAddrCServerExoAppGetCreatureByGameObjectID` resolves that id to a
+// CSWSCreature*, mirroring the OnPanelAdded chain. We don't currently
+// dereference the result — display-name resolution goes through the
+// universal handle accessor in engine_area — but the address is kept
+// here for symmetry with the rest of the chain.
+constexpr uintptr_t kAddrCSWPartyTableGetIsNPCAvailable     = 0x005636B0;
+constexpr uintptr_t kAddrCSWPartyTableGetNPCSelectability   = 0x005637C0;
+constexpr uintptr_t kAddrCSWPartyTableGetNPCObject          = 0x00564700;
+
+// Maximum companion roster slot. The PartySelection panel renders 9
+// portraits in a 3x3 grid (CSWGuiPartySelection.party_data[9] per
+// the Ghidra struct), one per roster slot.
+constexpr int kPartyRosterSlotCount = 9;

@@ -19,6 +19,8 @@
 #include "engine_manager.h"
 #include "engine_offsets.h"
 #include "engine_panels.h"
+#include "engine_player.h"      // PartyTableIsNPCAvailable / *Selectable /
+                                // GetPartyNpcNameForSlot
 #include "engine_reads.h"
 #include "log.h"
 #include "menus_charsheet.h"
@@ -626,6 +628,72 @@ const char* FromControl(void* control,
         }
     }
 
+    // 7b. PartySelection portrait resolver (vtable=0x00756BB8). The
+    //     CSWGuiPartySelection panel exposes 9 portrait slots, one per
+    //     companion roster index. Each portrait is a
+    //     CSWGuiPartySelectionButton sub-classed from CSWGuiButton: the
+    //     standard text offsets carry nothing (set programmatically by
+    //     OnPanelAdded @0x006beeb0 with the creature's portrait image,
+    //     not a caption), so the speculative reader in section 8 below
+    //     returns empty and the user hears "control N".
+    //
+    //     Per-portrait layout (CSWGuiPartySelectionData, size 1108):
+    //       +0x448 (int)  flag word. bit 0 = currently SELECTABLE
+    //                     (recruited AND not story-locked) — exactly
+    //                     the gate OnEnter uses for the Add/OK button.
+    //                     bit 1 = "unavailable" rendering hint OR
+    //                     "currently in active party" depending on the
+    //                     init-time branch in OnPanelAdded.
+    //       +0x44c (int)  CSWParty index when the slot is in the
+    //                     active party at panel-open; 0xffffffff
+    //                     otherwise.
+    //       +0x450 (int)  NPC roster slot index (0..8) — the param
+    //                     OnEnter passes to CSWPartyTable::GetNPCObject.
+    //
+    //     Spoiler rule: only reveal the companion's name when bit 0 of
+    //     +0x448 is set (i.e. the engine itself considers the slot
+    //     active and pickable). Locked / unavailable slots return
+    //     nullptr so the chain filter in RebindChain drops them.
+    if (!source) {
+        void** vt = *reinterpret_cast<void***>(control);
+        if (reinterpret_cast<uintptr_t>(vt) == 0x00756BB8) {
+            constexpr size_t kPartyPortraitFlagsOffset = 0x448;
+            constexpr size_t kPartyPortraitPartyIdOffset = 0x44c;
+            constexpr size_t kPartyPortraitNpcSlotOffset = 0x450;
+            int npcSlot = -1, flags = 0, partyId = -1;
+            __try {
+                auto* base = reinterpret_cast<unsigned char*>(control);
+                flags   = *reinterpret_cast<int*>(base + kPartyPortraitFlagsOffset);
+                partyId = *reinterpret_cast<int*>(base + kPartyPortraitPartyIdOffset);
+                npcSlot = *reinterpret_cast<int*>(base + kPartyPortraitNpcSlotOffset);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                npcSlot = -1;
+            }
+            bool selectable = (flags & 1) != 0;
+            bool inActiveParty = partyId >= 0 && partyId != -1;
+            if (selectable && npcSlot >= 0 && npcSlot < kPartyRosterSlotCount) {
+                char name[128];
+                if (GetPartyNpcNameForSlot(npcSlot, name, sizeof(name)) &&
+                    name[0]) {
+                    size_t nlen = strnlen(name, sizeof(name));
+                    if (nlen + 1 <= bufSize) {
+                        memcpy(outBuf, name, nlen + 1);
+                        source = "party-portrait";
+                    }
+                }
+            }
+            acclog::Trace("Menus.PartyPortrait",
+                          "slot=%d flags=0x%x partyId=%d selectable=%d "
+                          "inActiveParty=%d text=\"%s\"",
+                          npcSlot, (unsigned)flags, partyId,
+                          selectable ? 1 : 0, inActiveParty ? 1 : 0,
+                          source ? outBuf : "");
+            // Skip the speculative reader for this vtable — it never
+            // resolves anything useful for portraits.
+            if (!source) return nullptr;
+        }
+    }
+
     // 8. Speculative text read for known label/button vtable overrides.
     //    Some classes override AsLabel/AsButton in their vtable so that
     //    CallDowncast returns null even though the class IS label-like or
@@ -658,16 +726,10 @@ const char* FromControl(void* control,
             // Image-only buttons (in-game-menu icons children [8..15],
             // chargen class icons, portrait-picker arrows).
             { 0x0073E658, false, true,  "button-spec" },
-            // PartySelection (Gruppenauswahl) portrait-slot buttons —
-            // children [9..17] of CSWGuiPartySelection in
-            // patch-20260504-160847.log. vtable[22]=0x00641DB0 (AsButton
-            // returns this) but the standard CallDowncast path at the
-            // CSWGuiButton text offsets returns empty, so they show
-            // src=none on the screen-reader pass. Registering here puts
-            // the speculative button-text reads on the allowlist; if the
-            // text sits at non-standard offsets we'll see misses logged
-            // and can chase the right field next.
-            { 0x00756BB8, false, true,  "party-portrait-spec" },
+            // PartySelection portraits (vtable 0x00756BB8) are handled
+            // in section 7b above — they store an NPC roster index, not
+            // inline text, so the speculative offset reader never
+            // resolves anything useful for them.
         };
         void** vt = *reinterpret_cast<void***>(control);
         uintptr_t vta = reinterpret_cast<uintptr_t>(vt);

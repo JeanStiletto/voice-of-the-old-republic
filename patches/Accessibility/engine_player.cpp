@@ -395,6 +395,90 @@ int GetPartyMembers(uint32_t* outHandles, int maxCount) {
     }
 }
 
+void* GetServerPartyTable() {
+    __try {
+        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
+        if (!appManager) return nullptr;
+        void* serverApp = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(appManager) +
+            kAppManagerServerOffsetPlayer);
+        if (!serverApp) return nullptr;
+        // CServerExoApp facade → CServerExoAppInternal at +0x4 (mirrors
+        // the CClientExoApp / *Internal split). The party_table is
+        // embedded inside the internal at +0x1b770.
+        void* serverInternal = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(serverApp) +
+            kServerExoAppInternalOffset);
+        if (!serverInternal) return nullptr;
+        return reinterpret_cast<unsigned char*>(serverInternal) +
+               kServerInternalPartyTableOffset;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+namespace {
+
+typedef int  (__thiscall* PFN_PartyTableGetIsNPCAvailable)(void*, int);
+typedef char (__thiscall* PFN_PartyTableGetNPCSelectability)(void*, int);
+typedef int  (__thiscall* PFN_PartyTableGetNPCObject)(void*, int, int, int);
+
+}  // namespace
+
+bool PartyTableIsNPCAvailable(int npcSlot) {
+    if (npcSlot < 0 || npcSlot >= kPartyRosterSlotCount) return false;
+    void* table = GetServerPartyTable();
+    if (!table) return false;
+    __try {
+        auto fn = reinterpret_cast<PFN_PartyTableGetIsNPCAvailable>(
+            kAddrCSWPartyTableGetIsNPCAvailable);
+        return fn(table, npcSlot) != 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool PartyTableIsNPCSelectable(int npcSlot) {
+    if (npcSlot < 0 || npcSlot >= kPartyRosterSlotCount) return false;
+    void* table = GetServerPartyTable();
+    if (!table) return false;
+    __try {
+        auto fn = reinterpret_cast<PFN_PartyTableGetNPCSelectability>(
+            kAddrCSWPartyTableGetNPCSelectability);
+        return fn(table, npcSlot) != 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool GetPartyNpcNameForSlot(int npcSlot, char* outBuf, size_t bufSize) {
+    if (!outBuf || bufSize == 0) return false;
+    outBuf[0] = '\0';
+    if (npcSlot < 0 || npcSlot >= kPartyRosterSlotCount) return false;
+    void* table = GetServerPartyTable();
+    if (!table) return false;
+    uint32_t handle = 0;
+    __try {
+        auto fn = reinterpret_cast<PFN_PartyTableGetNPCObject>(
+            kAddrCSWPartyTableGetNPCObject);
+        // OnPanelAdded calls GetNPCObject(slot, 0, 1) first; if that's
+        // 0 (creature not in the active module) it tries (slot, 1, 1).
+        // Mirror that fallback so a name resolves even when the engine
+        // had to fall through to the second-instance pool.
+        int id0 = fn(table, npcSlot, 0, 1);
+        if (id0 != 0) {
+            handle = static_cast<uint32_t>(id0);
+        } else {
+            int id1 = fn(table, npcSlot, 1, 1);
+            if (id1 != 0) handle = static_cast<uint32_t>(id1);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (handle == 0) return false;
+    return GetObjectDisplayNameByHandle(handle, outBuf, bufSize);
+}
+
 void TickPlayerInputRestore() {
     if (!g_disableActive) return;
     if (GetTickCount() < g_disableExpiresAt) return;

@@ -16,6 +16,8 @@
 #include "engine_manager.h"
 #include "engine_offsets.h"
 #include "engine_panels.h"
+#include "engine_player.h"   // PartyTableIsNPCAvailable / *Selectable /
+                              // kPartyRosterSlotCount
 #include "engine_reads.h"
 #include "log.h"
 #include "menus_chargen_attr.h"
@@ -375,6 +377,36 @@ void RebindChain(void* panel) {
         if (pk == PanelKind::InGameCharacter &&
             (cid == 1 || cid == 64 || cid == 67)) {
             return true;
+        }
+        // PartySelection portraits with no currently-selectable
+        // companion. The panel renders all 9 roster slots in a fixed
+        // 3x3 grid; sighted players see empty / greyed slots, but a
+        // blind navigator has nothing actionable on them (the engine
+        // refuses Add/OK anyway) and the spoiler rule from
+        // menus_extract section 7b means we deliberately don't speak
+        // a name. Treating them as decorative drops them from the
+        // chain entirely so arrow keys only step through usable picks.
+        //
+        // Source of truth is bit 0 of the per-portrait flag word at
+        // +0x448: OnPanelAdded sets it only when GetIsNPCAvailable AND
+        // GetNPCSelectability both pass for the slot — i.e. the
+        // engine's own "Add" enable gate. We deliberately don't go
+        // through the party-table thiscalls here so we stay portable
+        // across saves where the table chain might not be settled.
+        if (pk == PanelKind::PartySelection) {
+            void** vt = *reinterpret_cast<void***>(c);
+            if (reinterpret_cast<uintptr_t>(vt) == 0x00756BB8) {
+                constexpr size_t kPartyPortraitFlagsOffset = 0x448;
+                int flags = 0;
+                __try {
+                    flags = *reinterpret_cast<int*>(
+                        reinterpret_cast<unsigned char*>(c) +
+                        kPartyPortraitFlagsOffset);
+                } __except (EXCEPTION_EXECUTE_HANDLER) {
+                    flags = 0;
+                }
+                if ((flags & 1) == 0) return true;
+            }
         }
         return false;
     };
