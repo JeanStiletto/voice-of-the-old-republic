@@ -75,4 +75,16 @@ void TickExaminePanel();
 // in-world hotkeys.
 void PollWin32Hotkey();
 
+// Bare-H self status. Speaks the currently-controlled leader's raw HP,
+// active status effects (deduped, named only), and main/off-hand equipped
+// weapons. Distance and name are intentionally omitted — distance is
+// always zero (you ARE the leader), and the name is redundant when the
+// user just wants a quick "where am I health-wise" readout. Gated on
+// in-world + no-UI-blocking-panel (same gate Tab leader-announce uses).
+void SpeakSelfStatus();
+
+// Bare-H poll wrapper. Called from interact_hotkey.cpp alongside
+// PollWin32Hotkey (Shift+H). Self-gates on player-loaded and UI-block.
+void PollWin32SelfStatusHotkey();
+
 }  // namespace acc::combat::query

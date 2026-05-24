@@ -673,6 +673,14 @@ enum class Id : int {
     FmtBriefEffectsCount,
     FmtBriefFeatsCount,
 
+    // ---- Bare-H self status. HP-only opener ("%d hit points"); the rest
+    //      of the line reuses FmtBriefEffects / FmtBriefWielding / FmtBriefOffHand
+    //      so the wording stays consistent with the Q/E target brief.
+    //      Max HP intentionally omitted — the GetMaxHitPoints accessor is
+    //      unreliable for the player creature (returns 0); once that's
+    //      reverse-engineered properly we can fold "%d of %d" back in.
+    FmtSelfStatusHp,
+
     // ---- Combat system, Phase 2C — examine hotkey (Shift+H). Spoken on
     //      open / close / no-target failure.
     ExamineOpened,

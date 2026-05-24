@@ -226,6 +226,7 @@ const char* Get(Id id) {
         case Id::FmtBriefOffHand:            return " Nebenhand %s.";
         case Id::FmtBriefEffectsCount:       return " %d aktive Effekte.";
         case Id::FmtBriefFeatsCount:         return " %d Talente.";
+        case Id::FmtSelfStatusHp:            return "%d Lebenspunkte.";
 
         case Id::ExamineOpened:              return "Untersuchen.";
         case Id::ExamineNoTarget:            return "Kein Ziel zum Untersuchen.";

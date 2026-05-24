@@ -548,6 +548,12 @@ void PollHotkey() {
         acc::combat::query::SpeakSelectedPcStatBlock();
     }
 
+    // Bare H — quick HP / effects / equipped-weapon readout for the
+    // currently-controlled leader. Self-gates on player-loaded and
+    // UI-block (matching Tab leader-announce). Lives next to Shift+S
+    // because both read the same creature-stats chain.
+    acc::combat::query::PollWin32SelfStatusHotkey();
+
     // Examine view input routing — runs FIRST so an open examine view
     // wins arrow / Enter / Esc keys over any other in-world consumer.
     if (inWorld && acc::examine_view::IsActive()) {

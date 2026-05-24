@@ -708,4 +708,88 @@ void PollWin32Hotkey() {
     HotkeyShiftH();
 }
 
+// ============================================================================
+// Bare-H self status — leader HP / effects / equipped weapon.
+// ============================================================================
+
+void SpeakSelfStatus() {
+    void* creature = acc::engine::GetPlayerServerCreature();
+    if (!creature) {
+        const char* phrase = acc::strings::Get(
+            acc::strings::Id::PcStatNoCharacter);
+        tolk::Speak(phrase, /*interrupt=*/true);
+        acclog::Write("Combat.SelfStatus", "no creature -> [%s]", phrase);
+        return;
+    }
+
+    int hpCur = CallIntAccessor(creature, kAddrCSWSObjectGetCurrentHitPoints);
+
+    using S = acc::strings::Id;
+    BriefBuf b{nullptr, 0, 0};
+    char msg[384];
+    b.buf = msg;
+    b.cap = sizeof(msg);
+
+    BriefAppend(b, acc::strings::Get(S::FmtSelfStatusHp), hpCur);
+
+    char effects[192] = "";
+    bool gotEffects = BuildEffectsSummary(creature, effects, sizeof(effects));
+    if (gotEffects) {
+        BriefAppend(b, acc::strings::Get(S::FmtBriefEffects), effects);
+    }
+
+    char mainWpn[96] = "";
+    bool gotMain = ReadEquippedItemName(creature,
+                                        kInventoryRightWeaponHandleOffset,
+                                        "main-hand",
+                                        mainWpn, sizeof(mainWpn));
+    if (gotMain && mainWpn[0] != '\0') {
+        BriefAppend(b, acc::strings::Get(S::FmtBriefWielding), mainWpn);
+    }
+
+    char offWpn[96] = "";
+    bool gotOff = ReadEquippedItemName(creature,
+                                       kInventoryLeftWeaponHandleOffset,
+                                       "off-hand",
+                                       offWpn, sizeof(offWpn));
+    if (gotOff && offWpn[0] != '\0') {
+        BriefAppend(b, acc::strings::Get(S::FmtBriefOffHand), offWpn);
+    }
+
+    tolk::Speak(msg, /*interrupt=*/true);
+    acclog::Write("Combat.SelfStatus",
+                  "hp=%d effects=[%s] main=[%s] off=[%s] -> [%s]",
+                  hpCur,
+                  gotEffects ? effects : "",
+                  gotMain ? mainWpn : "",
+                  gotOff  ? offWpn  : "",
+                  msg);
+}
+
+void PollWin32SelfStatusHotkey() {
+    if (!acc::hotkeys::Pressed(acc::hotkeys::Action::SelfStatusAnnounce)) return;
+
+    // Player-loaded gate. Reading HP / effects / inventory off a half-
+    // initialised player slot during chargen→world transient is one of
+    // the documented crash paths (project_chargen_world_transient_unsafe_probes).
+    Vector unused;
+    if (!acc::engine::GetPlayerPosition(unused)) return;
+
+    // UI-block gate — H may have meaning inside a future menu binding;
+    // for now, drop it when any blocking panel is foreground so the
+    // readout never overlaps inventory / map / dialog speech. Same gate
+    // Tab leader-announce uses.
+    acc::engine::UiBlockState ui;
+    if (acc::engine::IsForegroundUiBlocking(&ui)) {
+        acclog::Write("Combat.SelfStatus",
+                      "H suppressed — ui blocked (fg=%p kind=%s)",
+                      ui.fgPanel,
+                      ui.fgPanel ? acc::engine::PanelKindName(ui.fgKind)
+                                 : "?");
+        return;
+    }
+
+    SpeakSelfStatus();
+}
+
 }  // namespace acc::combat::query
