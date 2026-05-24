@@ -41,6 +41,7 @@ struct StatSnap {
 
 typedef int (__thiscall* PFN_GetIntThiscall)(void* this_);
 typedef int (__thiscall* PFN_GetIntStatsThiscall)(void* this_);
+typedef int (__thiscall* PFN_GetIntThisInt)(void* this_, int arg);
 
 // Read the CSWSCreatureStats* via the +0xa74 offset.
 void* ReadCreatureStats(void* serverCreature) {
@@ -62,6 +63,93 @@ int CallIntAccessor(void* this_, uintptr_t addr) {
         return fn(this_);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return 0;
+    }
+}
+
+// Call a __thiscall(this, int) accessor. Required for engine getters
+// that take a 1-int param even when our existing call sites never
+// vary the argument: GetCurrentHitPoints / GetMaxHitPoints both have
+// this signature (Lane SARIF), and using PFN_GetIntThiscall reads
+// random caller-frame bytes as `param_1` — sometimes hitting the
+// trivial path (`MOV AX, [ECX+0xdc]; RET 4`) and sometimes the
+// sum-of-two-fields path (`MOV EAX, [ECX+0xe4]; ADD EAX, [ECX+0xdc];
+// RET 4`). The wrong-path returns leaked into the bare-H readout as
+// nonsense numbers that don't track damage.
+int CallIntAccessorArg(void* this_, uintptr_t addr, int arg) {
+    if (!this_) return 0;
+    __try {
+        auto fn = reinterpret_cast<PFN_GetIntThisInt>(addr);
+        return fn(this_, arg);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
+// HP read helpers — direct CSWCCreatureStats reads, the same struct
+// the engine's character-sheet panel renders from. Path:
+//
+//   CSWCCreature  (client leader)
+//     +0x2f8  -> CSWCLevelUpStats* (embeds CSWCCreatureStats at +0)
+//                +0x48   short  hit_points          (BASE HP — ignore)
+//                +0x4c   short  pregame_current_hp  (LIVE current HP)
+//                +0x4e   short  max_hit_points      (LIVE max HP)
+//
+// Verified live 2026-05-24 via the per-field HpProbe: cstats.4c
+// tracks damage/heals across PC + companions; cstats.4e is the same
+// number the character sheet displays as "X / Y" max (48 for the PC,
+// 75 for Bastila, 66 for Carth — all matching).
+//
+// The corresponding short on the SERVER object at CSWSObject+0xdc
+// happens to also equal pregame_current_hp / cstats.4c (engine
+// mirrors the value across server/client every tick), so we keep
+// the server-side path as a fallback when the client chain doesn't
+// resolve.
+//
+// The previous engine-accessor path (CSWSCreature::GetMaxHitPoints @
+// 0x004ed310 with param_1=1) gates internally on stats[+0x6c] (is_pc)
+// and returns garbage for any non-PC creature, which is why Tab to
+// Carth used to read "60" (random obj.e0 base) instead of "50/66".
+constexpr size_t kClientCreatureLvlUpStatsOffset = 0x2f8;
+constexpr size_t kClientStatsCurrentHpOffset     = 0x4c;  // pregame_current_hp
+constexpr size_t kClientStatsMaxHpOffset         = 0x4e;  // max_hit_points
+
+int ReadCurrentHpFromClient(void* clientLeader) {
+    if (!clientLeader) return -1;
+    void* lvlUpStats = nullptr;
+    __try {
+        lvlUpStats = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(clientLeader) +
+            kClientCreatureLvlUpStatsOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+    if (!lvlUpStats) return -1;
+    __try {
+        return static_cast<int>(*reinterpret_cast<short*>(
+            reinterpret_cast<unsigned char*>(lvlUpStats) +
+            kClientStatsCurrentHpOffset));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
+int ReadMaxHpFromClient(void* clientLeader) {
+    if (!clientLeader) return -1;
+    void* lvlUpStats = nullptr;
+    __try {
+        lvlUpStats = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(clientLeader) +
+            kClientCreatureLvlUpStatsOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+    if (!lvlUpStats) return -1;
+    __try {
+        return static_cast<int>(*reinterpret_cast<short*>(
+            reinterpret_cast<unsigned char*>(lvlUpStats) +
+            kClientStatsMaxHpOffset));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
     }
 }
 
@@ -289,10 +377,14 @@ bool ReadStatSnap(void* serverCreature, StatSnap& out) {
     void* stats = ReadCreatureStats(serverCreature);
     if (!stats) return false;
 
-    out.hpCur    = CallIntAccessor(serverCreature,
-                                   kAddrCSWSObjectGetCurrentHitPoints);
-    out.hpMax    = CallIntAccessor(serverCreature,
-                                   kAddrCSWSCreatureGetMaxHitPoints);
+    // HP via CLIENT-side CSWCCreatureStats — see ReadCurrentHpFromClient
+    // / ReadMaxHpFromClient for why we don't go through the server-side
+    // engine getter (gates on stats.is_pc, returns garbage for non-PC).
+    void* clientLeader = acc::engine::GetClientLeader();
+    int curRead   = ReadCurrentHpFromClient(clientLeader);
+    int maxRead   = ReadMaxHpFromClient(clientLeader);
+    out.hpCur     = curRead < 0 ? 0 : curRead;
+    out.hpMax     = maxRead < 0 ? 0 : maxRead;
     out.fpMax    = CallIntAccessor(serverCreature,
                                    kAddrCSWSCreatureGetMaxForcePoints);
     out.ac       = CallIntAccessor(serverCreature,
@@ -722,7 +814,11 @@ void SpeakSelfStatus() {
         return;
     }
 
-    int hpCur = CallIntAccessor(creature, kAddrCSWSObjectGetCurrentHitPoints);
+    void* clientLeader = acc::engine::GetClientLeader();
+    int hpCurRaw = ReadCurrentHpFromClient(clientLeader);
+    int hpMaxRaw = ReadMaxHpFromClient(clientLeader);
+    int hpCur = hpCurRaw < 0 ? 0 : hpCurRaw;
+    int hpMax = hpMaxRaw < 0 ? 0 : hpMaxRaw;
 
     using S = acc::strings::Id;
     BriefBuf b{nullptr, 0, 0};
@@ -730,7 +826,15 @@ void SpeakSelfStatus() {
     b.buf = msg;
     b.cap = sizeof(msg);
 
-    BriefAppend(b, acc::strings::Get(S::FmtSelfStatusHp), hpCur);
+    // Prefer "%d of %d" when the engine resolved a sane max. Some
+    // creature shapes (driving / minigame slots) leave the max at 0;
+    // fall back to the cur-only phrase rather than speak "X of 0".
+    if (hpMax > 0 && hpCur <= hpMax + 32) {
+        BriefAppend(b, acc::strings::Get(S::FmtSelfStatusHpOf),
+                    hpCur, hpMax);
+    } else {
+        BriefAppend(b, acc::strings::Get(S::FmtSelfStatusHp), hpCur);
+    }
 
     char effects[192] = "";
     bool gotEffects = BuildEffectsSummary(creature, effects, sizeof(effects));
@@ -758,8 +862,8 @@ void SpeakSelfStatus() {
 
     tolk::Speak(msg, /*interrupt=*/true);
     acclog::Write("Combat.SelfStatus",
-                  "hp=%d effects=[%s] main=[%s] off=[%s] -> [%s]",
-                  hpCur,
+                  "hp=%d/%d effects=[%s] main=[%s] off=[%s] -> [%s]",
+                  hpCur, hpMax,
                   gotEffects ? effects : "",
                   gotMain ? mainWpn : "",
                   gotOff  ? offWpn  : "",

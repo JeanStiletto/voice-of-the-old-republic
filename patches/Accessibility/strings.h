@@ -673,13 +673,19 @@ enum class Id : int {
     FmtBriefEffectsCount,
     FmtBriefFeatsCount,
 
-    // ---- Bare-H self status. HP-only opener ("%d hit points"); the rest
-    //      of the line reuses FmtBriefEffects / FmtBriefWielding / FmtBriefOffHand
-    //      so the wording stays consistent with the Q/E target brief.
-    //      Max HP intentionally omitted — the GetMaxHitPoints accessor is
-    //      unreliable for the player creature (returns 0); once that's
-    //      reverse-engineered properly we can fold "%d of %d" back in.
+    // ---- Bare-H self status. HP opener — the rest of the line reuses
+    //      FmtBriefEffects / FmtBriefWielding / FmtBriefOffHand so the
+    //      wording stays consistent with the Q/E target brief.
+    //
+    //   FmtSelfStatusHp   — current-only fallback. 1 `%d` (cur).
+    //                       Used when the max accessor returns 0 (e.g.
+    //                       driving slots, minigame creatures).
+    //   FmtSelfStatusHpOf — full "%d of %d" form. Used in normal play.
+    //                       Both engine getters need a 1-int param_1 —
+    //                       see CallIntAccessorArg in combat_query.cpp
+    //                       for the calling-convention rationale.
     FmtSelfStatusHp,
+    FmtSelfStatusHpOf,
 
     // ---- Combat system, Phase 2C — examine hotkey (Shift+H). Spoken on
     //      open / close / no-target failure.
