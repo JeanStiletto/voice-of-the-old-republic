@@ -86,26 +86,44 @@ bool ReadVariantLabel(void* mainInterface, int slot, int index,
 // Returns 0 on read fault / out-of-range index.
 uint32_t ReadVariantActionId(void* mainInterface, int slot, int index);
 
-// Drive the engine's labelled per-column cycle handlers. Each takes
-// the up_button / down_button widget address as a CSWGuiControl* (the
-// handler resolves which slot from the pointer). Even though those
-// embedded widgets read empty when probed, the handler treats them
-// as identity tokens — pointer math against the field45 array base
-// recovers the slot index regardless of whether the widget itself is
-// fully initialised.
+// Stamp the engine's per-column "currently-selected variant action_id"
+// field at struct offset 0x1bac + slot*4 (six int32s, one per column).
+// Reads the descriptor's action_id at `index` and writes it into that
+// slot. DoPersonalAction reads this field and searches the column's
+// action list for the matching action_id — so stamping the desired
+// variant's action_id deterministically routes the next fire to that
+// variant.
 //
-//   OnActionUpArrowPressed   @ 0x0068af70  (this, CSWGuiControl*)
-//   OnActionDownArrowPressed @ 0x0068afe0  (this, int [param_1])
+// Decompile finding (2026-05-24, DoPersonalAction @ 0x0068ad60):
+//   `param_2` is completely unused inside DoPersonalAction. The
+//   variant to fire is selected by searching field5_0x74[slot] for
+//   an entry whose `+0x08` action_id matches *(mi + 0x1bac + slot*4).
+//   On no match (including the sentinel -1), the function falls
+//   back to data[0] — which is why our earlier
+//   `DoPersonalAction(slot, 0)` always fired variant 0 regardless of
+//   which variant the user thought they had selected.
 //
-// Returns false on null/out-of-range/SEH.
-bool CycleNextVariant(void* mainInterface, int slot);
-bool CyclePrevVariant(void* mainInterface, int slot);
+//   The engine's own SelectPrevPersonalAction (0x006888e0) writes
+//   the new selected action_id to exactly this field. So stamping
+//   it ourselves is the same primitive the engine uses internally.
+//   We bypass the labelled OnActionUp/DownArrowPressed handlers
+//   because (a) they gate on `param_1->is_active != 0` and the
+//   field45_0x771c widgets are uninitialised (see existing memory
+//   on the action-bar field45 layout), and (b) OnActionDownArrow is
+//   mislabelled — its body calls CSWGuiTargetActionMenu::SelectNextAction
+//   on `this`, treating the main_interface as a target_action_menu
+//   (a no-op or worse for personal columns).
+//
+// Returns true when the stamp wrote a valid action_id; false on
+// null/out-of-range slot, no-such-variant, action_id==0, or SEH.
+bool SelectVariant(void* mainInterface, int slot, int index);
 
-// Drive `CSWGuiMainInterface::DoPersonalAction(this, slot, param_2)` at
+// Drive `CSWGuiMainInterface::DoPersonalAction(this, slot, 0)` at
 // 0x0068ad60. Same entry point engine-native bare 4..7 hotkeys hit.
-// param_2's role is currently undecoded — we pass 0 as the initial
-// guess; if dispatch silently no-ops the next iteration tries the
-// variant's action_id (descriptor +0x08) instead.
+// The function reads `*(this + 0x1bac + slot*4)` to choose which
+// variant to fire, so callers MUST invoke `SelectVariant(mi, slot,
+// index)` first to stamp the desired variant's action_id. Without
+// that, the engine falls back to variant 0.
 //
 // `slot` is the column index (0..5; only 0..3 are bound to keys 4..7).
 // Returns false on null/out-of-range/SEH.

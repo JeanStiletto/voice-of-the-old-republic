@@ -3,10 +3,17 @@
 #include <windows.h>
 #include <cstdint>
 
+#include "actionbar_menu.h"    // CurrentSelection — read the user's last
+                               // chosen variant per slot so bare 4..7
+                               // fires the same variant the submenu last
+                               // announced
 #include "engine_actionbar.h"  // PrepareBareDispatch — keeps action_lists
                                // fresh against narrated_target so the
                                // engine's bare 1..7 switch hits a valid
-                               // creature_id instead of stale data
+                               // creature_id instead of stale data;
+                               // SelectVariant — stamp the engine's
+                               // selected_action_id so DoPersonalAction
+                               // fires the user's choice, not variant 0
 #include "engine_area.h"       // ResolveServerObjectHandle (sanity-check the
                                // narrated handle still resolves to a live
                                // game object before stamping it)
@@ -177,6 +184,33 @@ extern "C" void __cdecl OnClientHandleInputEvent(void* this_ptr,
         // and its outcome are both already in the log without us adding
         // a third line per press.
         (void)acc::engine_actionbar::PrepareBareDispatch(targetClient);
+
+        // Stamp the engine's per-column selected_action_id with the
+        // user's last-chosen variant for the personal-action keys
+        // (0xe8/0xea/0xec/0xee = bare 4/5/6/7). DoPersonalAction
+        // reads `*(mi + 0x1bac + slot*4)` and falls back to variant
+        // 0 if the field doesn't match any list entry — and
+        // PopulateMenus (called by PrepareBareDispatch above) freshly
+        // assigns action_ids, invalidating any previously-stamped
+        // value. So we re-stamp AFTER RePopulate, using the current
+        // descriptor's action_id at the index our submenu shadow
+        // tracks. Target-action keys (0xe2/0xe4/0xe6 = bare 1/2/3)
+        // use a different selection path inside the radial; nothing
+        // to stamp here for those.
+        int barSlot = -1;
+        switch (param_1) {
+            case 0xe8: barSlot = 0; break;
+            case 0xea: barSlot = 1; break;
+            case 0xec: barSlot = 3; break;
+            case 0xee: barSlot = 2; break;
+        }
+        if (barSlot >= 0) {
+            void* mi = acc::engine_actionbar::ResolveMainInterface();
+            if (mi) {
+                int idx = acc::actionbar_menu::CurrentSelection(barSlot);
+                (void)acc::engine_actionbar::SelectVariant(mi, barSlot, idx);
+            }
+        }
     }
 
     // Q/E hostile-cycle re-announce. The engine's HandleInputEvent

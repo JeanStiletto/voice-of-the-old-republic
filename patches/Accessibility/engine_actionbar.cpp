@@ -17,15 +17,13 @@ constexpr size_t kGuiInGameMainInterfaceOffset = 0x90;
 // CClientExoAppInternal.gui_in_game offset — same as engine_picker.
 constexpr size_t kInternalGuiInGameOffset = 0x040;
 
-// CSWGuiMainInterface.field45_0x771c[6] — kept only as the array base
-// for OnAction*ArrowPressed slot identification (the engine handlers
-// resolve column index from pointer math against this base). The
-// embedded button structure within the column is ignored after the
-// 2026-05-05 in-game test established the widgets are uninitialised.
-constexpr size_t kColumnArrayOffset    = 0x771C;
-constexpr size_t kColumnStride         = 0x71C;
-constexpr size_t kColumnUpButtonOffset = 0x388;  // pointer-identity for handler
-constexpr size_t kColumnDnButtonOffset = 0x54C;  // pointer-identity for handler
+// CSWGuiMainInterface field7_0x1bac..field12_0x1bc0 — six int32s, one
+// per column, holding the "currently-selected variant action_id" for
+// that column. DoPersonalAction reads `*(this + 0x1bac + slot*4)` and
+// searches the column's list for the matching action_id (falls back
+// to data[0] on no-match). SelectPrevPersonalAction writes here when
+// the user cycles via mouse-wheel / arrow button.
+constexpr size_t kSelectedActionIdArrayOffset = 0x1bac;
 
 // CSWGuiMainInterface.field5_0x74[6] — six CExoArrayList<CSWGuiInterfaceAction>.
 // Verified populated 2026-05-05: slot 1 reported size=2 matching the two
@@ -43,8 +41,6 @@ constexpr size_t kIfActionStride         = 0x38;
 // Engine entry points (verified from k1_win_gog_swkotor.exe.xml +
 // docs/action-menu-investigation.md). GoG bytes match Steam per memory
 // project_ghidra_gog_steam_bytes_match.
-constexpr uintptr_t kAddrOnActionUpArrowPressed   = 0x0068af70;
-constexpr uintptr_t kAddrOnActionDownArrowPressed = 0x0068afe0;
 constexpr uintptr_t kAddrDoPersonalAction         = 0x0068ad60;
 
 // CGuiInGame::SetMainInterfaceTarget @ 0x0062b000 — same wrapper as
@@ -60,11 +56,6 @@ constexpr uintptr_t kAddrSetMainInterfaceTarget    = 0x0062b000;
 // each row) against the currently-stamped main-interface target.
 constexpr uintptr_t kAddrRePopulateMainInterface   = 0x0062b050;
 
-// Function pointer types. Both arrow handlers take a single arg per
-// the SARIF signature; OnActionUp expects CSWGuiControl* (the source
-// button), OnActionDown is annotated `(int param_1)` but lives in the
-// same family — almost certainly the same convention.
-typedef void (__thiscall* PFN_OnActionArrowPressed)(void* this_, void* btn);
 typedef void (__thiscall* PFN_DoPersonalAction)(void* this_,
                                                 int slot, int param_2);
 typedef void (__thiscall* PFN_SetMainInterfaceTarget)(void* this_,
@@ -136,19 +127,6 @@ void* ReadPtr(void* base, size_t offset) {
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return nullptr;
     }
-}
-
-// Address of column[slot] in the field45_0x771c array. Used as the
-// pointer-identity argument for OnAction*ArrowPressed handlers — they
-// recover the slot index via pointer math against the array base, so
-// the synthetic offset works even when the embedded widgets within
-// the column aren't fully initialised.
-void* ColumnAddr(void* mi, int slot) {
-    if (!mi || slot < 0 || slot >= acc::engine_actionbar::kColumnCount) {
-        return nullptr;
-    }
-    return reinterpret_cast<unsigned char*>(mi) +
-           kColumnArrayOffset + slot * kColumnStride;
 }
 
 // Address of the descriptor list entry at `index` within slot's
@@ -230,32 +208,18 @@ uint32_t ReadVariantActionId(void* mi, int slot, int index) {
     return static_cast<uint32_t>(v);
 }
 
-bool CycleNextVariant(void* mi, int slot) {
-    void* col = ColumnAddr(mi, slot);
-    if (!col) return false;
-    void* btn = reinterpret_cast<unsigned char*>(col) + kColumnUpButtonOffset;
+bool SelectVariant(void* mi, int slot, int index) {
+    if (!mi || slot < 0 || slot >= kColumnCount) return false;
+    uint32_t actionId = ReadVariantActionId(mi, slot, index);
+    if (actionId == 0) return false;
     __try {
-        auto fn = reinterpret_cast<PFN_OnActionArrowPressed>(
-            kAddrOnActionUpArrowPressed);
-        fn(mi, btn);
+        *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(mi) +
+            kSelectedActionIdArrayOffset + slot * 4) = actionId;
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        acclog::Write("ActionBar", "CycleNextVariant SEH-FAULT slot=%d", slot);
-        return false;
-    }
-}
-
-bool CyclePrevVariant(void* mi, int slot) {
-    void* col = ColumnAddr(mi, slot);
-    if (!col) return false;
-    void* btn = reinterpret_cast<unsigned char*>(col) + kColumnDnButtonOffset;
-    __try {
-        auto fn = reinterpret_cast<PFN_OnActionArrowPressed>(
-            kAddrOnActionDownArrowPressed);
-        fn(mi, btn);
-        return true;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        acclog::Write("ActionBar", "CyclePrevVariant SEH-FAULT slot=%d", slot);
+        acclog::Write("ActionBar", "SelectVariant SEH-FAULT slot=%d idx=%d",
+                      slot, index);
         return false;
     }
 }
@@ -265,9 +229,9 @@ bool FireSelectedVariant(void* mi, int slot) {
     __try {
         auto fn = reinterpret_cast<PFN_DoPersonalAction>(
             kAddrDoPersonalAction);
-        // param_2 = 0 — initial guess; the engine-native bare-press path
-        // also eventually reaches DoPersonalAction and that path works,
-        // so 0 is plausibly "use the column's currently-selected variant".
+        // param_2 is unused inside DoPersonalAction (decompile 2026-05-24);
+        // variant selection comes from *(mi + 0x1bac + slot*4), which the
+        // caller is responsible for stamping via SelectVariant.
         fn(mi, slot, 0);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {

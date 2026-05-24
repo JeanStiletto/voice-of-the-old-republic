@@ -165,23 +165,22 @@ bool HandleInputEvent(int code, int value) {
                 SpeakCurrentVariant(mi, slot);
                 return true;
             }
-            // Pair the engine cycle call with our local index update so
-            // bare 4..7 fires the same variant we just announced. Up
-            // navigates "next", Down navigates "prev" — mirrors the
-            // sighted action bar's mouse-wheel-up convention (wheel up
-            // = next variant). The engine's OnActionUpArrowPressed name
-            // matches that direction.
-            bool ok;
+            // Update our shadow then stamp the engine's per-column
+            // selected_action_id field so a subsequent ENTER (or bare
+            // 4..7 press while the gate is closed) fires the variant
+            // the user just heard. Up = next variant, Down = prev —
+            // mirrors the sighted action bar's mouse-wheel-up
+            // convention (wheel up = next variant).
             int prevIdx = g_selectedIndex[slot];
             if (code == kInputNavUp) {
-                ok = acc::engine_actionbar::CycleNextVariant(mi, slot);
                 g_selectedIndex[slot] =
                     (g_selectedIndex[slot] + 1) % nVar;
             } else {
-                ok = acc::engine_actionbar::CyclePrevVariant(mi, slot);
                 g_selectedIndex[slot] =
                     (g_selectedIndex[slot] - 1 + nVar) % nVar;
             }
+            bool ok = acc::engine_actionbar::SelectVariant(
+                mi, slot, g_selectedIndex[slot]);
             acclog::Write("ActionBar", "%s slot=%d variants=%d idx %d -> %d ok=%d",
                 code == kInputNavUp ? "NavUp" : "NavDown",
                 slot, nVar, prevIdx, g_selectedIndex[slot], ok ? 1 : 0);
@@ -195,6 +194,12 @@ bool HandleInputEvent(int code, int value) {
             acc::engine_actionbar::ReadVariantLabel(
                 mi, slot, idx, label, sizeof(label));
 
+            // Re-stamp on the fire path so a no-cycle ENTER (user
+            // opened the menu and pressed Enter immediately on the
+            // pre-armed variant) still lands on the right action_id
+            // even if the engine field was stale from a prior session
+            // or RePopulate.
+            acc::engine_actionbar::SelectVariant(mi, slot, idx);
             bool ok = acc::engine_actionbar::FireSelectedVariant(mi, slot);
 
             char msg[192];
