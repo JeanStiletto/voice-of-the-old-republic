@@ -136,3 +136,51 @@ constexpr uintptr_t kAddrCExoSoundSetListenerPosition = 0x005D5DF0;
 // Used from the Phase 4 pitch-stability hook.
 constexpr uintptr_t kAddrCExoSoundSourceInternalCalculatePitchVarianceFrequency
     = 0x005DB3D0;
+
+// ============================================================================
+// CExoSoundSource — engine-managed source with full lifecycle.
+//
+// Use when a feature needs sustained spatial audio: continuous loops,
+// position-updated sources, anything that needs Stop(). For one-shots,
+// the existing PlayCue / PlayCue3D wrappers above remain simpler.
+//
+// Discovered 2026-05-25 by decompiling the canonical engine pattern at
+// CSWTrackFollower::LoadSounds @0x0066f7e0 — the swoop bike uses this
+// to play its own engine-running loop (mgs_engine_NNl samples). See
+// memory/project_cexosoundsource_loop_api.md for full notes.
+//
+// Lifecycle (all __thiscall, ECX = source):
+//   1. Allocate ~16 bytes (vtable* + internal*); CRT malloc is fine —
+//      the inner 0xa0-byte CExoSoundSourceInternal is allocated by
+//      the ctor via the engine's own operator new.
+//   2. Call ctor at kAddrCExoSoundSourceCtor (sets vtable, internal).
+//      Skips internal alloc and leaves internal=null if the global
+//      `DisableSound` flag is set; every method null-checks and
+//      no-ops, so this is safe.
+//   3. Configure: SetResRef → Set3D(1) → SetPosition → SetPriority
+//      Group → SetLooping(1) → Play().
+//   4. Per-tick if moving: SetPosition.
+//   5. Stop() then dtor; free.
+//
+// No wrapper exists yet — these are bare constants for the next caller
+// to build on. First likely consumer: swoop_race.cpp wall-scrape +
+// obstacle-proximity refactor (replaces re-fired one-shots with one
+// continuous loop per active cue).
+//
+// CResRef-takers (Play, SetResRef) use the same 16-byte CResRef struct
+// as Play3DOneShotSound above.
+constexpr uintptr_t kAddrCExoSoundSourceCtor             = 0x005D5870;
+constexpr uintptr_t kAddrCExoSoundSourceCtorWithResRef   = 0x005D60E0;
+constexpr uintptr_t kAddrCExoSoundSourceDtor             = 0x005D60A0;
+constexpr uintptr_t kAddrCExoSoundSourceSetPriorityGroup = 0x005D5900;
+constexpr uintptr_t kAddrCExoSoundSourceSet3D            = 0x005D5910;
+constexpr uintptr_t kAddrCExoSoundSourcePlay             = 0x005D5930;
+constexpr uintptr_t kAddrCExoSoundSourceSetVolume        = 0x005D5950;
+constexpr uintptr_t kAddrCExoSoundSourceSetPitchVariance = 0x005D5980;
+constexpr uintptr_t kAddrCExoSoundSourceSetLooping       = 0x005D59D0;
+constexpr uintptr_t kAddrCExoSoundSourceSetPosition      = 0x005D59E0;
+constexpr uintptr_t kAddrCExoSoundSourceStop             = 0x005D5A20;
+constexpr uintptr_t kAddrCExoSoundSourceSetFixedVariance = 0x005D5A30;
+constexpr uintptr_t kAddrCExoSoundSourceGetLooping       = 0x005D6190;
+constexpr uintptr_t kAddrCExoSoundSourceSetDistance      = 0x005D61A0;
+constexpr uintptr_t kAddrCExoSoundSourceSetResRef        = 0x005D61C0;
