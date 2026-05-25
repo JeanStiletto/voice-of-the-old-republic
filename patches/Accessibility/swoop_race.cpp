@@ -366,18 +366,15 @@ constexpr const char* kCollisionCueResref        = "mgs_sith_hit1";
 // the moment the player commits to steering away.
 constexpr float       kCollisionReleaseAwayDx      = 0.10f; // units/tick
 
-// Scrape sample. cs_metalstrn_01 is a continuous metal-strain tone —
-// designed to sustain rather than fire as a transient — and reads as
-// "metal grinding on metal" which fits the wall-pin scenario. Played
-// through a true engine loop (LoopSource), not re-fired one-shots, so
-// the user hears a steady tone for as long as the bike is pinned and
-// silence the instant they steer off.
-constexpr const char* kScrapeLoopResref            = "cs_metalstrn_01";
-
-// SUPERSEDED — re-fire cadence kept commented for A/B revert if the
-// loop path turns out to mis-behave (voice-budget eviction, position-
-// update lag, etc.):
-// constexpr ULONGLONG   kCollisionScrapeMs           = 2000;
+// Sustained-scrape cue (continuous metal-strain loop + 2 s re-fire
+// heartbeat that preceded it) is DROPPED — even at the loop's clean
+// timbre the constant tone was too much noise during a race where
+// the bike spends long stretches at the wall. Only the impact thump
+// at the moment of contact remains; pinned-state tracking is kept so
+// the impact doesn't re-trigger every tick while the bike sits at
+// the edge. Earlier attempts kept for context:
+// constexpr const char* kScrapeLoopResref      = "cs_metalstrn_01";  // loop
+// constexpr ULONGLONG   kCollisionScrapeMs     = 2000;               // re-fire
 
 // ============================================================================
 // Module state. Single-threaded under the engine OnUpdate tick.
@@ -453,12 +450,6 @@ struct State {
     // width (m03mg edge is ±20 but other swoop tracks may differ).
     int                wall_pinned_side   = 0;
     float              wall_pinned_at_x   = 0.0f;
-
-    // Active scrape loop. Started on impact, position-updated each
-    // pinned tick to track listener motion, Stopped on release and
-    // (defensively) on race exit. Auto-cleans at DLL unload via the
-    // RAII destructor.
-    acc::audio::LoopSource scrape_loop;
 };
 
 State g_state;
@@ -766,28 +757,19 @@ void TickWallCollision(void* miniGame) {
         // → away is -dx; pinned at left (-1) → away is +dx.
         const float away_dx = -static_cast<float>(g_state.wall_pinned_side) * dx;
         if (away_dx > kCollisionReleaseAwayDx) {
-            // Player committed to steering off the wall. Stop the
-            // scrape loop and clear the pin so the initial-hit
-            // detector can re-arm for the next impact.
+            // Player committed to steering off the wall. Clear the
+            // pin so the initial-hit detector can re-arm for the
+            // next impact.
             acclog::Write("SwoopRace",
                           "wall released side=%s laneX=%.2f away_dx=%.3f",
                           g_state.wall_pinned_side > 0 ? "right" : "left",
                           offset.x, away_dx);
-            g_state.scrape_loop.Stop();
             g_state.wall_pinned_side = 0;
             // Fall through so the same tick can update EMAs etc.
         } else {
-            // Still pinned. Track listener motion so the loop source
-            // stays alongside the (forward-moving) bike — without
-            // this update the source would stay at the world position
-            // where the impact originally fired, and the engine pan
-            // would drift as the bike travels Y-forward.
-            Vector listener_pos, cue_pos;
-            if (ResolveWallCuePos(g_state.wall_pinned_side, listener_pos, cue_pos)) {
-                g_state.scrape_loop.UpdatePosition(cue_pos);
-            }
-            // Skip EMA-based initial-hit detection while pinned; dx is
-            // 0 here anyway and the EMAs would only decay further.
+            // Still pinned. Suppress re-impact (only the first contact
+            // should thump) and skip EMA updates — dx is ~0 here so
+            // they'd only decay further.
             return;
         }
     }
@@ -813,22 +795,10 @@ void TickWallCollision(void* miniGame) {
     const int side = (g_state.lateral_ema_signed > 0.0f) ? +1 : -1;
     FireWallImpact(side, offset.x);
 
-    // Enter pinned state — scrape branch above takes over next tick
+    // Enter pinned state — pin branch above suppresses re-impact
     // until the player steers away from the wall edge.
     g_state.wall_pinned_side = side;
     g_state.wall_pinned_at_x = offset.x;
-
-    // Start the continuous scrape loop at the same side-panned
-    // position the impact fired from. Position is updated each pinned
-    // tick so the source tracks the bike's forward motion.
-    Vector listener_pos, cue_pos;
-    if (ResolveWallCuePos(side, listener_pos, cue_pos)) {
-        if (!g_state.scrape_loop.Start(kScrapeLoopResref, cue_pos)) {
-            acclog::Write("SwoopRace",
-                          "wall impact: scrape loop start failed "
-                          "(resref=%s)", kScrapeLoopResref);
-        }
-    }
 
     // Reset the EMAs so we don't immediately re-fire the impact on the
     // next tick (would happen if dx stays at 0 — though the pin branch
@@ -1212,11 +1182,8 @@ void HandleEnter(void* mg) {
     g_state.last_collision_ms   = 0;
     g_state.wall_pinned_side    = 0;
     g_state.wall_pinned_at_x    = 0.0f;
-    g_state.scrape_loop.Stop();  // defensive — pin should already be
-                                 //   clear if EXIT ran, but a crash-exit
-                                 //   path could leave the loop active
-    // Same defensive cleanup for obstacle loops — any active loop
-    // from a previous race must not survive into this one.
+    // Defensive cleanup for obstacle loops — any active loop from a
+    // previous race must not survive into this one.
     for (int i = 0; i < kMgoArraySlotCount; ++i) {
         g_state.obstacle_loops[i].Stop();
     }
@@ -1243,10 +1210,7 @@ void HandleExit() {
     acclog::Write("SwoopRace",
                   "EXIT after %llu ms (debounced %d ticks)",
                   dur, kExitDebounceTicks);
-    // Stop the scrape loop before clearing pin state — otherwise the
-    // metal-strain tone would survive into the post-race UI.
-    g_state.scrape_loop.Stop();
-    // Stop every obstacle loop too; some may still be active if the
+    // Stop every obstacle loop — some may still be active if the
     // race ended while obstacles were in range.
     for (int i = 0; i < kMgoArraySlotCount; ++i) {
         g_state.obstacle_loops[i].Stop();
