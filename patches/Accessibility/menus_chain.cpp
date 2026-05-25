@@ -378,6 +378,16 @@ void RebindChain(void* panel) {
             (cid == 1 || cid == 64 || cid == 67)) {
             return true;
         }
+        // InGameEquip BTN_EQUIP (id=37, "OK"): the OK button is the
+        // engine's picker-commit button. The accessibility picker
+        // dispatcher (menus_listbox.cpp EquipPickerOnEnter) commits
+        // the selected item directly via QueueEquipCommit, so OK has
+        // no role in chain nav. When the picker isn't armed the
+        // engine renders it as "OK, nicht verfügbar" — landing on
+        // that announces a dead-end. Drop it.
+        if (pk == PanelKind::InGameEquip && cid == kEquipBtnEquipId) {
+            return true;
+        }
         // PartySelection portraits with no currently-selectable
         // companion. The panel renders all 9 roster slots in a fixed
         // 3x3 grid; sighted players see empty / greyed slots, but a
@@ -447,6 +457,21 @@ void RebindChain(void* panel) {
         storeAcceptBtn = p + kStoreAcceptButtonOffset;
     }
 
+    // InGameEquip picker listbox (LB_ITEMS, id=5): the equip panel keeps
+    // the picker's item listbox in panel.controls[] even when the picker
+    // isn't visually shown — the engine pre-populates it with the body-
+    // slot candidates at panel open. Letting the chain recurse into its
+    // children leaks rows like "Brejiks Armband" / "Energieschild" /
+    // "Sith-Energieschild" into the equip screen between the slot
+    // buttons. The picker has its own dedicated listbox spec
+    // (EquipPickerSpec in menus_listbox.cpp) that drives row selection
+    // when armed; chain nav never needs to step into it.
+    void* equipPickerLb = nullptr;
+    if (IdentifyPanel(panel) == PanelKind::InGameEquip) {
+        equipPickerLb = acc::menus::detail::FindControlById(
+            panel, kEquipLbItemsId);
+    }
+
     for (int i = 0; i < n; ++i) {
         void* c = list->data[i];
         if (!c) continue;
@@ -477,6 +502,9 @@ void RebindChain(void* panel) {
             // three action buttons live in panel.controls (not in a
             // listbox) so they stay in the chain.
             if (acc::menus::store::IsHiddenStoreListBox(panel, c)) {
+                continue;
+            }
+            if (c == equipPickerLb) {
                 continue;
             }
             auto* lbList = reinterpret_cast<CExoArrayList*>(
