@@ -1078,6 +1078,25 @@ constexpr size_t    kEquipPanelLeftWeaponTohitLabelOffset    = 0x1cd8;
 constexpr size_t    kEquipPanelRightWeaponDamageLabelOffset  = 0x1e18;  // Lane: right_weapon_attack_label
 constexpr size_t    kEquipPanelRightWeaponTohitLabelOffset   = 0x1f58;
 
+// Bottom-row party-cycle buttons inline in CSWGuiInGameEquip — mirrors the
+// 4-button strip on InGameCharacter. The two change_party slots are
+// decorative crossfade portraits of the OTHER party members (non-
+// interactive, bit_flags=0x8); the character_left/right buttons are the
+// prev/next-party arrows (interactive, bit_flags=0xa) that drive
+// OnSwitchLeft/Right on click. Runtime IDs are unstable (engine renumbers
+// when runtime-added char_left/right collide with gui-declared
+// BTN_CHANGE2's id=40), so identification uses struct offsets.
+//
+// Derived 2026-05-25 from patch-20260525-204630.log addresses (panel
+// 0FD03C68): back@0x385C, change_party_1@0x3A20, change_party_2@0x3BE4,
+// character_left@0x3DA8, character_right@0x3F6C. Stride = 0x1c4 =
+// sizeof(CSWGuiButton). Struct order matches swkotor.exe.h:9087-9091.
+constexpr size_t    kEquipPanelBackButtonOffset           = 0x385C;
+constexpr size_t    kEquipPanelChangeParty1ButtonOffset   = 0x3A20;
+constexpr size_t    kEquipPanelChangeParty2ButtonOffset   = 0x3BE4;
+constexpr size_t    kEquipPanelCharacterLeftButtonOffset  = 0x3DA8;
+constexpr size_t    kEquipPanelCharacterRightButtonOffset = 0x3F6C;
+
 // CSWSCreatureStats.feats @+0x0 — CExoArrayList<ushort>. Count lives
 // at +0x4 (size field of the list). Static feat list (granted at level-
 // up + class); doesn't drift mid-combat. Used by Shift+H to communicate

@@ -1510,6 +1510,42 @@ const char* FromControl(void* control,
         // here.
     }
 
+    // 9f. Per-kind label fallback for the equipment screen
+    //     (CSWGuiInGameEquip). The bottom-row strip mirrors
+    //     InGameCharacter — character_left_button / character_right_button
+    //     are the prev/next party-member arrows. The two flanking
+    //     change_party_1/2 portraits are filtered out of the chain entirely
+    //     via IsDecorativeForChain, so only the two arrows reach this path.
+    //     Runtime gui IDs are unstable (engine renumbers when the runtime-
+    //     added arrows collide with gui-declared BTN_CHANGE2's id=40), so
+    //     identify by struct offset against the panel base. Reuses the
+    //     CharSwitchPrev/Next strings since the user-facing semantics are
+    //     identical to the character sheet's btn_charleft/btn_charright.
+    if (!source && ownerForPerkind &&
+        IdentifyPanel(ownerForPerkind) == PanelKind::InGameEquip) {
+        auto* p = reinterpret_cast<unsigned char*>(ownerForPerkind);
+        acc::strings::Id sid = acc::strings::Id::Count_;
+        const char* tag = nullptr;
+        if (control == p + kEquipPanelCharacterLeftButtonOffset) {
+            sid = acc::strings::Id::CharSwitchPrev;
+            tag = "character_left";
+        } else if (control == p + kEquipPanelCharacterRightButtonOffset) {
+            sid = acc::strings::Id::CharSwitchNext;
+            tag = "character_right";
+        }
+        if (sid != acc::strings::Id::Count_) {
+            const char* lit = acc::strings::Get(sid);
+            size_t llen = strlen(lit);
+            if (llen > 0 && llen + 1 <= bufSize) {
+                memcpy(outBuf, lit, llen + 1);
+                source = "perkind-equip";
+                acclog::Write("Menus.PerKind",
+                              "InGameEquip control=%p kind=%s -> \"%s\"",
+                              control, tag, outBuf);
+            }
+        }
+    }
+
     // 9. Sibling-label fallback for chain-navigable controls with no text.
     //    Image-only icon buttons (vtable=0x0073E658 in CSWGuiInGameMenu —
     //    Equipment / Inventory / Character / Map / Abilities / Journal /

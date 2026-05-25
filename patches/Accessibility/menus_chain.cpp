@@ -385,8 +385,32 @@ void RebindChain(void* panel) {
         // no role in chain nav. When the picker isn't armed the
         // engine renders it as "OK, nicht verfügbar" — landing on
         // that announces a dead-end. Drop it.
-        if (pk == PanelKind::InGameEquip && cid == kEquipBtnEquipId) {
+        //
+        // InGameEquip BTN_BACK (id=36, "Schliess."): Esc closes the
+        // panel via the engine's universal modal-close path, so the
+        // close button is functionally redundant for keyboard nav.
+        // Same reasoning as Store's Schliess./Verkaufsliste/Kaufen
+        // filter above — dedicated hotkey replaces chain landing.
+        if (pk == PanelKind::InGameEquip &&
+            (cid == kEquipBtnEquipId || cid == kEquipBtnBackId)) {
             return true;
+        }
+        // InGameEquip change_party_1/2 buttons: decorative crossfade
+        // slots that display the OTHER two party members' portraits.
+        // Mirrors the InGameCharacter btn_change1/btn_change2 pair
+        // above — the engine animates them during a party-cycle but
+        // they aren't user-clickable (bit_flags=0x8, no 0x2 interactive
+        // bit). The actual cycle is driven via character_left/right
+        // (see per-kind label path in menus_extract.cpp section 9f).
+        // Runtime IDs collide with gui-declared values when the engine
+        // renumbers the runtime-added character_left/right pair, so
+        // identify by struct offset instead.
+        if (pk == PanelKind::InGameEquip) {
+            auto* p = reinterpret_cast<unsigned char*>(panel);
+            if (c == p + kEquipPanelChangeParty1ButtonOffset ||
+                c == p + kEquipPanelChangeParty2ButtonOffset) {
+                return true;
+            }
         }
         // PartySelection portraits with no currently-selectable
         // companion. The panel renders all 9 roster slots in a fixed
