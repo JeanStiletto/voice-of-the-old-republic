@@ -722,6 +722,66 @@ constexpr uintptr_t kAddrInGameEquipOnItemSelected = 0x006b7920;
 constexpr uintptr_t kAddrInGameEquipOnOKPressed    = 0x006b9160;
 
 // ---------------------------------------------------------------------------
+// CSWGuiUpgrade (workbench upgrade.gui) slot-pick + commit chain.
+// Same structural shape as the equip-screen pair above, RE'd from Lane's
+// gzf at 2026-05-25:
+//
+//   OnEnterSlot(panel, slot_btn) @0x006c3c30 — "hover" path. Updates the
+//     LBL_SLOTNAME / upgrade_count_label / property_label labels for the
+//     hovered slot. Gates on `slot_btn->is_active != 0` (read at +0x4c —
+//     same offset as the equip slot gate; caller must raise the bit).
+//     Does NOT populate LB_ITEMS on its own.
+//
+//   OnSlotSelected(panel, slot_btn) @0x006c6500 — "click" path. Builds the
+//     compatible-mods list from CSWPartyTable items + the upcrystals_2da
+//     or upgrades_2da table (per slot kind), AddControls-replaces the
+//     LB_ITEMS contents, calls ShowItems(panel, 1) to flip the item-pick
+//     zone visible, and SetActiveControl(items_listbox). Stores the slot
+//     button pointer in panel.field74_0x2fb0 (used later by OnAssemble
+//     to know which slot to install into). Same is_active gate as
+//     OnEnterSlot. THIS is the function that populates LB_ITEMS — the
+//     mouse-driven path reaches it via HandleLMouseUp, but the engine's
+//     CGuiButton::HandleInputEvent(0x27) path does NOT, which is why
+//     vtable[15] activate on a slot button keeps LB_ITEMS empty (verified
+//     in patch-20260525-142247.log).
+//
+//   OnUpgradeSelected(panel, item_entry) @0x006c5510 — row-stage. Called
+//     when the user picks a mod in LB_ITEMS. Stages the selection but
+//     doesn't install — the install happens in OnAssemble. Gates on
+//     `item_entry->is_active != 0` (same +0x4c offset, on the row).
+//
+//   OnAssemble(panel, btn_assemble) @0x006c6190 — commit. Plays the
+//     assemble sound, calls FinishUpgrading on the parent
+//     UpgradeItemSelect panel, then PopModalPanel — so the upgrade.gui
+//     panel closes synchronously when this returns. Gates on
+//     `btn_assemble->is_active != 0`.
+// ---------------------------------------------------------------------------
+typedef void (__thiscall* PFN_CSWGuiUpgradeOnEnterSlot)     (void* panel, void* slot_btn);
+typedef void (__thiscall* PFN_CSWGuiUpgradeOnSlotSelected)  (void* panel, void* slot_btn);
+typedef void (__thiscall* PFN_CSWGuiUpgradeOnUpgradeSelected)(void* panel, void* item_entry);
+typedef void (__thiscall* PFN_CSWGuiUpgradeOnAssemble)      (void* panel, void* btn_assemble);
+constexpr uintptr_t kAddrCSWGuiUpgradeOnEnterSlot      = 0x006c3c30;
+constexpr uintptr_t kAddrCSWGuiUpgradeOnSlotSelected   = 0x006c6500;
+constexpr uintptr_t kAddrCSWGuiUpgradeOnUpgradeSelected = 0x006c5510;
+constexpr uintptr_t kAddrCSWGuiUpgradeOnAssemble       = 0x006c6190;
+
+// CSWGuiUpgrade slot-type table — 16 entries × 12 bytes, indexed by
+// `(slot_btn.custom_value - 4) + panel.field25_0x2f4c * 4`. Each entry:
+//   +0 (int)     UpgradeType — matches upgrades_2da's UpgradeType column
+//   +4 (char*)   resref tag prefix (e.g. "i_vcell")
+//   +8 (uint32)  strref into dialog.tlk for the slot's display name
+//                ("Energiezelle", "Vibrationszelle", "Sch\xE4rfe", …)
+// Sentinel entries carry UpgradeType = -1 / strref = 0 for slot positions
+// the category doesn't use. RE'd from OnEnterSlot @0x006c3c30 (the
+// `DAT_00756fb8` reference, +8 from the table base) and verified against
+// a 240-byte dump at 0x00756fb0.
+constexpr uintptr_t kAddrUpgradeSlotTypeTable = 0x00756fb0;
+constexpr size_t    kUpgradeSlotTypeStride    = 12;
+constexpr size_t    kUpgradeSlotTypeStrRefOff = 8;
+constexpr size_t    kUpgradePanelCategoryOff  = 0x2f4c;  // panel.field25
+constexpr size_t    kUpgradeSlotCustomValueOff = 0x58;   // slot_btn.custom_value
+
+// ---------------------------------------------------------------------------
 // Combat system — engine surfaces (per docs/combat-system.md, all
 // "suspected" / "known (DB)" until live-validated).
 //

@@ -58,6 +58,25 @@ bool QueueEquipSelect(void* panel, void* slot);
 // (closes the description popup).
 bool QueueEquipCommit(void* panel, void* row, void* btn);
 
+// Queue a workbench slot-button activation. On drain raises slot.is_active = 1
+// then calls CSWGuiUpgrade::OnEnterSlot(panel, slot) +
+// CSWGuiUpgrade::OnSlotSelected(panel, slot). Bypasses click-sim because
+// the upgrade.gui labels cover the slot buttons in z-order — same trap
+// as the equip-screen has — so MoveMouseToPosition's hit-test resolves to
+// a label, never the button. OnSlotSelected is the function that
+// populates LB_ITEMS with the inventory mods compatible with the slot.
+bool QueueWorkbenchSlotSelect(void* panel, void* slot);
+
+// Queue a workbench upgrade-panel commit. On drain raises row.is_active
+// and btn.is_active, then calls CSWGuiUpgrade::OnUpgradeSelected(panel,
+// row) (stage the picked mod) + CSWGuiUpgrade::OnAssemble(panel,
+// btn_assemble) (install + PopModalPanel — the upgrade panel closes
+// synchronously). Mirrors EquipCommit's two-step shape using direct
+// engine dispatch instead of vtable[15] activate (vtable[15] on the row
+// + button doesn't route to the populate/install functions — same shape
+// as the slot-button select issue above).
+bool QueueWorkbenchUpgradeCommit(void* panel, void* row, void* btnAssemble);
+
 // Queue a slider value adjustment via vtable[15].HandleInputEvent(code, 1)
 // where code is 500 (increment) or 501 (decrement). The slider's handler
 // runs the full pipeline: SetCurValue + bounds clamp + gui_object callback

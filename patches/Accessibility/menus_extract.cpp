@@ -1088,25 +1088,25 @@ const char* FromControl(void* control,
         }
     }
 
-    // 9b3. Per-kind label fallback for the workbench upgrade panel
-    //     (upgrade.gui). The 7 BTN_UPGRADE3X/4X slot buttons at .gui IDs
-    //     12..18 have empty inline text — their visual content is the
-    //     installed mod's icon + name set programmatically by the engine
-    //     when an item is committed via BTN_ASSEMBLE. Synthesise a
-    //     speakable "Aufwertungssteckplatz N" / "Kristall-Steckplatz N"
-    //     label so the user can tell which slot is focused.
+    // 9b3. Per-kind label for workbench upgrade-panel slot buttons
+    //     (upgrade.gui IDs 12..18). The buttons have empty inline text;
+    //     their visual content is the installed mod's icon + name set
+    //     programmatically. The engine carries the SLOT TYPE NAME
+    //     (Energiezelle / Vibrationszelle / Sch\xE4rfe / …) in a 16-entry
+    //     strref table at 0x00756fb0, indexed by
+    //     `(slot_btn.custom_value - 4) + panel.field25_0x2f4c * 4`.
+    //     Read it dynamically so the user hears the actual slot type
+    //     they're focused on — matching the LBL_SLOTNAME the engine
+    //     would render for sighted users when they hover.
     //
-    //     IDs 12..14 → weapon upgrade slots (slot index 1..3, matching the
-    //                  BTN_UPGRADE31/32/33 tag suffix).
-    //     IDs 15..18 → lightsaber crystal slots (slot index 1..4, matching
-    //                  the BTN_UPGRADE41/42/43/44 tag suffix).
-    //
-    //     A future enrichment could read LBL_SLOTNAME (ID 20) for the
-    //     *currently active* slot's category word ("Vibrationszelle",
-    //     "Skopus", …) — but that label only reflects the focused slot,
-    //     so it doesn't help with announcing the other six slot buttons.
-    //     For now the synthesised label keeps the user oriented without
-    //     promising more semantic info than we can reliably deliver.
+    //     The category enum (field25_0x2f4c) selects the table column:
+    //         1 = lightsaber (saber UX with crystal picker)
+    //         2 = 4-slot non-saber (Kristall-Steckplatz widgets)
+    //         3 = 3-slot non-saber weapon (Aufwertungs widgets)
+    //         4 = 2-slot non-saber (Kristall widgets, slots 1..2)
+    //     Sentinel entries (UpgradeType = -1) mark positions the
+    //     category doesn't use; fall back to the position-only name for
+    //     those so the user still gets *some* orientation.
     if (!source && ownerForPerkind &&
         IdentifyPanel(ownerForPerkind) == PanelKind::WorkbenchUpgrade) {
         int cid = -1;
@@ -1116,27 +1116,77 @@ const char* FromControl(void* control,
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             cid = -1;
         }
-        acc::strings::Id sid = acc::strings::Id::Count_;
-        const char* tag = nullptr;
-        switch (cid) {
-            case 12: sid = acc::strings::Id::WorkbenchSlotWeapon1;       tag = "BTN_UPGRADE31"; break;
-            case 13: sid = acc::strings::Id::WorkbenchSlotWeapon2;       tag = "BTN_UPGRADE32"; break;
-            case 14: sid = acc::strings::Id::WorkbenchSlotWeapon3;       tag = "BTN_UPGRADE33"; break;
-            case 15: sid = acc::strings::Id::WorkbenchSlotSaberCrystal1; tag = "BTN_UPGRADE41"; break;
-            case 16: sid = acc::strings::Id::WorkbenchSlotSaberCrystal2; tag = "BTN_UPGRADE42"; break;
-            case 17: sid = acc::strings::Id::WorkbenchSlotSaberCrystal3; tag = "BTN_UPGRADE43"; break;
-            case 18: sid = acc::strings::Id::WorkbenchSlotSaberCrystal4; tag = "BTN_UPGRADE44"; break;
-            default: break;
-        }
-        if (sid != acc::strings::Id::Count_) {
-            const char* lit = acc::strings::Get(sid);
-            size_t llen = strlen(lit);
-            if (llen > 0 && llen + 1 <= bufSize) {
-                memcpy(outBuf, lit, llen + 1);
-                source = "perkind-workbench-slot";
+        if (cid >= 12 && cid <= 18) {
+            // Resolve the engine's slot type name via the strref table.
+            uint8_t category = 0;
+            int customValue = -1;
+            __try {
+                category = *(reinterpret_cast<unsigned char*>(ownerForPerkind)
+                             + kUpgradePanelCategoryOff);
+                customValue = *reinterpret_cast<int*>(
+                    reinterpret_cast<unsigned char*>(control)
+                    + kUpgradeSlotCustomValueOff);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                category = 0;
+                customValue = -1;
+            }
+            const int tableIdx = (customValue - 4) + (int)category * 4;
+            int upgradeType = -1;
+            uint32_t strref = 0;
+            if (tableIdx >= 0 && tableIdx < 16) {
+                __try {
+                    auto* entry = reinterpret_cast<unsigned char*>(
+                        kAddrUpgradeSlotTypeTable + tableIdx * kUpgradeSlotTypeStride);
+                    upgradeType = *reinterpret_cast<int*>(entry);
+                    strref = *reinterpret_cast<uint32_t*>(
+                        entry + kUpgradeSlotTypeStrRefOff);
+                } __except (EXCEPTION_EXECUTE_HANDLER) {
+                    upgradeType = -1;
+                    strref = 0;
+                }
+            }
+            bool resolved = false;
+            if (upgradeType != -1 && strref != 0) {
+                if (acc::engine::LookupTlk(strref, outBuf, bufSize)) {
+                    source = "perkind-workbench-slot";
+                    resolved = outBuf[0] != '\0';
+                }
+            }
+            if (resolved) {
                 acclog::Write("Menus.PerKind",
-                              "WorkbenchUpgrade control=%p id=%d tag=%s -> \"%s\"",
-                              control, cid, tag, outBuf);
+                              "WorkbenchUpgrade control=%p id=%d cat=%d cval=%d "
+                              "table_idx=%d strref=%u -> \"%s\"",
+                              control, cid, (int)category, customValue,
+                              tableIdx, strref, outBuf);
+            } else {
+                // Fallback: position-only name. Used when the table
+                // entry is a sentinel (slot doesn't apply to this
+                // category) or strref lookup fails.
+                acc::strings::Id sid = acc::strings::Id::Count_;
+                const char* tag = nullptr;
+                switch (cid) {
+                    case 12: sid = acc::strings::Id::WorkbenchSlotWeapon1;       tag = "BTN_UPGRADE31"; break;
+                    case 13: sid = acc::strings::Id::WorkbenchSlotWeapon2;       tag = "BTN_UPGRADE32"; break;
+                    case 14: sid = acc::strings::Id::WorkbenchSlotWeapon3;       tag = "BTN_UPGRADE33"; break;
+                    case 15: sid = acc::strings::Id::WorkbenchSlotSaberCrystal1; tag = "BTN_UPGRADE41"; break;
+                    case 16: sid = acc::strings::Id::WorkbenchSlotSaberCrystal2; tag = "BTN_UPGRADE42"; break;
+                    case 17: sid = acc::strings::Id::WorkbenchSlotSaberCrystal3; tag = "BTN_UPGRADE43"; break;
+                    case 18: sid = acc::strings::Id::WorkbenchSlotSaberCrystal4; tag = "BTN_UPGRADE44"; break;
+                    default: break;
+                }
+                if (sid != acc::strings::Id::Count_) {
+                    const char* lit = acc::strings::Get(sid);
+                    size_t llen = strlen(lit);
+                    if (llen > 0 && llen + 1 <= bufSize) {
+                        memcpy(outBuf, lit, llen + 1);
+                        source = "perkind-workbench-slot";
+                        acclog::Write("Menus.PerKind",
+                                      "WorkbenchUpgrade control=%p id=%d cat=%d cval=%d "
+                                      "table_idx=%d strref=%u (sentinel/empty) -> fallback \"%s\"",
+                                      control, cid, (int)category, customValue,
+                                      tableIdx, strref, outBuf);
+                    }
+                }
             }
         }
     }

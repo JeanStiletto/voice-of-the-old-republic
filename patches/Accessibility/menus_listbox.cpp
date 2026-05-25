@@ -70,6 +70,15 @@ namespace acc::menus::listbox {
 namespace {
 bool  s_equipPickerActive = false;
 void* s_equipPickerPanel  = nullptr;
+
+// Workbench upgrade picker — arms when the user activates a slot button
+// (BTN_UPGRADE3X/4X at .gui IDs 12..18) on upgrade.gui. While armed, the
+// LB_ITEMS spec takes over arrow keys to drive the compatible-mods listbox
+// for the active slot; Enter commits via QueueWorkbenchUpgradeCommit. While
+// not armed, the spec falls through so chain nav reaches the slot buttons
+// and BTN_ASSEMBLE / BTN_BACK. Mirrors the EquipPicker arming pattern.
+bool  s_workbenchUpgradePickerActive = false;
+void* s_workbenchUpgradePickerPanel  = nullptr;
 }  // namespace
 
 bool  IsEquipPickerArmed() { return s_equipPickerActive; }
@@ -83,6 +92,18 @@ void ArmEquipPicker(void* panel) {
 void DisarmEquipPicker() {
     s_equipPickerActive = false;
     s_equipPickerPanel  = nullptr;
+}
+
+bool  IsWorkbenchUpgradePickerArmed() { return s_workbenchUpgradePickerActive; }
+
+void ArmWorkbenchUpgradePicker(void* panel) {
+    s_workbenchUpgradePickerActive = true;
+    s_workbenchUpgradePickerPanel  = panel;
+}
+
+void DisarmWorkbenchUpgradePicker() {
+    s_workbenchUpgradePickerActive = false;
+    s_workbenchUpgradePickerPanel  = nullptr;
 }
 
 // ============================================================================
@@ -957,25 +978,46 @@ constexpr ListBoxPanelSpec kWorkbenchItemsSpec = {
 // ============================================================================
 // WorkbenchUpgrade — slot detail (upgrade.gui). 29 controls; the LB_ITEMS
 // listbox at ID 0 holds compatible upgrade mods from the player's
-// inventory for the currently selected slot. Enter on a row stages the
-// installable item; the user then navigates to BTN_ASSEMBLE (ID 24,
-// "Zusammenbauen") to commit. Esc → BTN_BACK (ID 28, "Abbrechen").
+// inventory for the currently selected slot. Enter on a row commits
+// (stage + BTN_ASSEMBLE) via QueueWorkbenchUpgradeCommit; Esc disarms the
+// picker so chain nav resumes on the slot buttons.
 //
-// We route Esc explicitly here because the generic FindCancelButton
-// fallback would land on BTN_UPGRADE31 (id 12) — the first button by
-// .gui ID — which the workbench treats as a slot select. Without the
-// explicit ID 28 routing, Esc on the upgrade panel selects a slot
-// instead of closing the panel.
+// Spec is armed only after the user activates one of the seven slot
+// buttons (BTN_UPGRADE3X/4X at .gui IDs 12..18) — the click-sim wired in
+// menus.cpp's chain Enter handler runs the engine's slot-select via
+// MoveMouseToPosition + LMouseDown/Up, which populates LB_ITEMS with the
+// inventory mods compatible with that slot. While not armed, the spec
+// falls through (armed() returns false) so arrow keys flow into chain
+// nav and the user can move between slot buttons / BTN_ASSEMBLE / BTN_BACK.
+//
+// Esc-to-close (BTN_BACK at ID 28) when the picker is not armed is
+// handled by an explicit workbench branch in menus.cpp's Esc handler —
+// FindCancelButton resolves to "Abbrechen" reliably for this panel.
 // ============================================================================
 
 namespace {
-constexpr int kWorkbenchUpgradeLbId       = 0;
+constexpr int kWorkbenchUpgradeLbId        = 0;
 constexpr int kWorkbenchUpgradeBtnAssemble = 24;
-constexpr int kWorkbenchUpgradeBtnBack    = 28;
+constexpr int kWorkbenchUpgradeBtnBack     = 28;
 }  // namespace
 
 bool WorkbenchUpgradeMatches(void* p) {
     return IdentifyPanel(p) == PanelKind::WorkbenchUpgrade;
+}
+
+bool WorkbenchUpgradeArmed() { return s_workbenchUpgradePickerActive; }
+
+// Stale-reset: if armed against an older panel pointer (re-open of the
+// workbench panel allocates a new instance), disarm. Picker state is
+// per-panel-pointer.
+void WorkbenchUpgradeResetStale(void* activePanel) {
+    if (s_workbenchUpgradePickerActive &&
+        s_workbenchUpgradePickerPanel != activePanel) {
+        acclog::Write("WorkbenchUpgrade", "disarm — panel changed (%p -> %p)",
+                      s_workbenchUpgradePickerPanel, activePanel);
+        s_workbenchUpgradePickerActive = false;
+        s_workbenchUpgradePickerPanel  = nullptr;
+    }
 }
 
 void* WorkbenchUpgradeFindLb(void* p) {
@@ -998,29 +1040,62 @@ void WorkbenchUpgradeAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
     prism::Speak(msg, /*interrupt=*/false);
 }
 
+// Enter (armed): commit the currently-selected LB_ITEMS row via a single
+// pending op that fires vtable[15] on the row (stage), then on
+// BTN_ASSEMBLE (install). Mirrors EquipPickerOnEnter's row-then-commit
+// shape; disarms the picker after queueing.
 bool WorkbenchUpgradeOnEnter(void* panel) {
-    // Enter on the LB_ITEMS listbox is currently "stage this item" — the
-    // engine doesn't commit anything until BTN_ASSEMBLE fires, so we just
-    // let the engine handle the row-stage via FireActivate on the row.
-    // Falling through to chain nav lets the user navigate via Up/Down on
-    // LB_ITEMS and Enter to stage; chain-driven Enter on BTN_ASSEMBLE then
-    // commits. Returning false here means the outer chain handler picks
-    // up the keypress.
-    (void)panel;
-    return false;
+    if (acc::menus::pending::IsPending()) {
+        acclog::Write("WorkbenchUpgrade", "Enter — op already pending; ignoring");
+        DisarmWorkbenchUpgradePicker();
+        return true;
+    }
+    void* lb  = FindControlById(panel, kWorkbenchUpgradeLbId);
+    void* btn = FindControlById(panel, kWorkbenchUpgradeBtnAssemble);
+    void* row = nullptr;
+    short selIdx = -1;
+    int   rowCount = 0;
+    if (lb) {
+        auto* lbBase = reinterpret_cast<unsigned char*>(lb);
+        auto* lbList = reinterpret_cast<CExoArrayList*>(
+            lbBase + kListBoxControlsOffset);
+        rowCount = (lbList && lbList->data) ? lbList->size : 0;
+        selIdx = *reinterpret_cast<short*>(
+            lbBase + kListBoxSelectionIndexOffset);
+        if (lbList && lbList->data &&
+            selIdx >= 0 && selIdx < rowCount) {
+            row = lbList->data[selIdx];
+        }
+    }
+    if (row && btn) {
+        acc::menus::pending::QueueWorkbenchUpgradeCommit(panel, row, btn);
+        acclog::Write("WorkbenchUpgrade", "Enter -> commit (row sel=%d %p "
+                      "btn_assemble=%p panel=%p)",
+                      selIdx, row, btn, panel);
+    } else {
+        acclog::Write("WorkbenchUpgrade", "Enter -- can't commit "
+                      "(lb=%p row=%p btn=%p sel=%d rows=%d) panel=%p",
+                      lb, row, btn, selIdx, rowCount, panel);
+    }
+    DisarmWorkbenchUpgradePicker();
+    return true;
 }
 
+// Esc (armed): disarm only. Chain focus is unchanged so the next arrow
+// press resumes slot-button navigation. Esc when NOT armed (i.e. user
+// is on a slot button or BTN_ASSEMBLE/BTN_BACK) is handled by the
+// workbench-specific block in menus.cpp's Esc handler.
 bool WorkbenchUpgradeOnEsc(void* panel) {
-    QueueButtonByIdActivate(panel, kWorkbenchUpgradeBtnBack,
-                            "WorkbenchUpgrade: Esc -> BTN_BACK");
+    acclog::Write("WorkbenchUpgrade", "Esc -> disarm (panel=%p)", panel);
+    DisarmWorkbenchUpgradePicker();
     return true;
 }
 
 constexpr ListBoxPanelSpec kWorkbenchUpgradeSpec = {
     /*logTag*/                  "WorkbenchUpgrade",
     /*matches*/                 WorkbenchUpgradeMatches,
-    /*armed*/                   nullptr,
-    /*resetStale*/              nullptr,
+    /*armed*/                   WorkbenchUpgradeArmed,
+    /*resetStale*/              WorkbenchUpgradeResetStale,
     /*findListBox*/             WorkbenchUpgradeFindLb,
     /*minSel*/                  0,
     /*announce*/                WorkbenchUpgradeAnnounce,
@@ -1450,6 +1525,38 @@ void MonitorEquipPickerSelection() {
                   lb, selIdx, prev, rowText);
 }
 
+// Disarms the workbench upgrade picker if the upgrade.gui panel is gone
+// from CSWGuiManager.panels[]. Mirror of the EquipPicker disarm-on-panel-
+// gone branch — resetStale only fires when the spec matches (i.e. the
+// panel is still foreground), so a panel-pop between ticks would leave
+// s_workbenchUpgradePickerActive stuck on the next reopen otherwise.
+void MonitorWorkbenchUpgradePicker() {
+    if (!s_workbenchUpgradePickerActive) return;
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!mgr) return;
+    auto* base = reinterpret_cast<unsigned char*>(mgr);
+    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+
+    bool found = false;
+    if (panelData && panelCount > 0) {
+        int n = panelCount > 16 ? 16 : panelCount;
+        for (int i = 0; i < n; ++i) {
+            void* p = panelData[i];
+            if (!p) continue;
+            if (IdentifyPanel(p) == PanelKind::WorkbenchUpgrade) {
+                found = true;
+                break;
+            }
+        }
+    }
+    if (!found) {
+        acclog::Write("WorkbenchUpgrade", "disarm — panel gone from panels[]");
+        s_workbenchUpgradePickerActive = false;
+        s_workbenchUpgradePickerPanel  = nullptr;
+    }
+}
+
 void PollContainerGiveModeKey() {
     if (!acc::hotkeys::Pressed(acc::hotkeys::Action::ContainerGiveMode)) return;
 
@@ -1478,6 +1585,7 @@ void PollContainerGiveModeKey() {
 void TickListboxMonitors() {
     MonitorContainerSelection();
     MonitorEquipPickerSelection();
+    MonitorWorkbenchUpgradePicker();
     PollContainerGiveModeKey();
 }
 

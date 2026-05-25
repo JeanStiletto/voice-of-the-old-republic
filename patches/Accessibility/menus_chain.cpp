@@ -408,6 +408,26 @@ void RebindChain(void* panel) {
                 if ((flags & 1) == 0) return true;
             }
         }
+        // WorkbenchUpgrade slot buttons (cid 12..18) that the engine has
+        // marked non-interactive (bit_flags & 0x2 == 0). For a 3-slot
+        // ranged weapon (saber=3) these are the 4 Kristall positions;
+        // for a 4-slot saber/double-shaft (saber=2) they are the 3
+        // Aufwertungs positions. Sighted players see them greyed; a
+        // keyboard navigator has nothing to do with them — OnSlotSelected
+        // gates on is_active so even pressing Enter does nothing useful.
+        // Dropping them from the chain lets arrow-down go straight from
+        // the last applicable slot to BTN_ASSEMBLE.
+        if (pk == PanelKind::WorkbenchUpgrade &&
+            cid >= 12 && cid <= 18) {
+            uint32_t bf = 0;
+            __try {
+                bf = *reinterpret_cast<uint32_t*>(
+                    reinterpret_cast<unsigned char*>(c) + 0x44);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                bf = 0;
+            }
+            if ((bf & 0x2) == 0) return true;
+        }
         return false;
     };
 

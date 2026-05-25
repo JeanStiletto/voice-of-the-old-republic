@@ -13,6 +13,7 @@
 
 #include <windows.h>
 #include <cstdint>
+#include <cstdio>
 
 #include "menus_pending.h"
 
@@ -21,8 +22,12 @@
 #include "engine_offsets.h"
 #include "engine_panels.h"   // CallPrevSWInGameGui
 #include "log.h"
+#include "engine_reads.h"    // LookupTlk for workbench slot-type strref
 #include "menus_chain.h"     // ValidateChainPanel — post-Activate stale-pointer guard
+#include "menus_listbox.h"   // DisarmWorkbenchUpgradePicker (post-slot-select cleanup)
 #include "menus_store.h"     // DispatchTradeAction for StoreItemActivate
+#include "prism.h"           // Speak — workbench slot-click outcome announce
+#include "strings.h"         // WorkbenchSlotInstalled / Removed / NoMatch
 
 namespace acc::menus::pending {
 
@@ -35,6 +40,8 @@ enum class Kind {
     Activate,          // a = target
     EquipSelect,       // a = panel, b = slot
     EquipCommit,       // a = panel, b = row, c = btn
+    WorkbenchSlotSelect,    // a = panel, b = slot
+    WorkbenchUpgradeCommit, // a = panel, b = row, c = btnAssemble
     SliderInput,       // a = target, code = direction (500 inc / 501 dec)
     PrevSWInGameGui,   // no payload — pops current in-game sub-screen
     SwitchSubScreen,   // code = engine GUI_id (0..7)
@@ -104,6 +111,23 @@ bool QueueEquipCommit(void* panel, void* row, void* btn) {
     g_op.a = panel;
     g_op.b = row;
     g_op.c = btn;
+    return true;
+}
+
+bool QueueWorkbenchSlotSelect(void* panel, void* slot) {
+    if (g_op.kind != Kind::None) return false;
+    g_op.kind = Kind::WorkbenchSlotSelect;
+    g_op.a = panel;
+    g_op.b = slot;
+    return true;
+}
+
+bool QueueWorkbenchUpgradeCommit(void* panel, void* row, void* btnAssemble) {
+    if (g_op.kind != Kind::None) return false;
+    g_op.kind = Kind::WorkbenchUpgradeCommit;
+    g_op.a = panel;
+    g_op.b = row;
+    g_op.c = btnAssemble;
     return true;
 }
 
@@ -406,6 +430,185 @@ void Drain(void* gm) {
             onItem(panel, row);
             onOK(panel, btn);
             acclog::Write("Update", "EquipCommit done panel=%p row=%p btn=%p",
+                          panel, row, btn);
+        }
+        break;
+    }
+
+    // Workbench slot activation. Mirrors EquipSelect's shape but against
+    // the RE'd CSWGuiUpgrade slot-pick chain at 0x006c3c30 (OnEnterSlot)
+    // and 0x006c6500 (OnSlotSelected). Direct call bypasses click-sim
+    // because the upgrade.gui labels at IDs 5..11 cover the slot buttons
+    // at IDs 12..18 in z-order — MoveMouseToPosition's hit-test resolves
+    // mouseOver to a label, so the engine's mouse pipeline never reaches
+    // the slot button. OnSlotSelected is the function that populates
+    // LB_ITEMS with the inventory mods compatible with the slot.
+    case Kind::WorkbenchSlotSelect: {
+        void* panel   = op.a;
+        void* slotBtn = op.b;
+        if (panel && slotBtn) {
+            uint32_t* isActive = reinterpret_cast<uint32_t*>(
+                reinterpret_cast<unsigned char*>(slotBtn) + kControlIsActiveOffset);
+            uint32_t prevIsActive = *isActive;
+            // Conditional raise — see Kind::Activate above. Workbench slot
+            // buttons carry non-zero engine bookkeeping (slot index + state)
+            // we don't want to clobber.
+            if (prevIsActive == 0) *isActive = 1;
+            auto onEnter  = reinterpret_cast<PFN_CSWGuiUpgradeOnEnterSlot>(
+                kAddrCSWGuiUpgradeOnEnterSlot);
+            auto onSelect = reinterpret_cast<PFN_CSWGuiUpgradeOnSlotSelected>(
+                kAddrCSWGuiUpgradeOnSlotSelected);
+            acclog::Write("Update", "WorkbenchSlotSelect panel=%p slot=%p is_active=%u%s",
+                          panel, slotBtn, prevIsActive,
+                          prevIsActive == 0 ? "->1" : " (preserved)");
+
+            // Slot index lives at slot_btn+0x58 (set by OnPanelAdded). Engine
+            // reads it via `edi = [ebx+0x58]` at OnSlotSelected+0x46. The
+            // installed-upgrade pointer for each slot lives at
+            // panel.field35_0x2f74[slot_idx*4] (4-byte CSWSItem*); the
+            // non-saber install path mutates this from 0 → item on install
+            // and item → 0 on remove (verified in OnSlotSelected non-saber
+            // branch and the InsertUpgrade path).
+            int slotIdx = *reinterpret_cast<int*>(
+                reinterpret_cast<unsigned char*>(slotBtn) + 0x58);
+            void** field35Slot = reinterpret_cast<void**>(
+                reinterpret_cast<unsigned char*>(panel) + 0x2f74 + slotIdx * 4);
+            void* prevItem = *field35Slot;
+
+            onEnter(panel, slotBtn);
+            onSelect(panel, slotBtn);
+
+            void* newItem = *field35Slot;
+
+            // Post-call: decide whether the picker should stay armed.
+            // OnSlotSelected branches on panel.field25_0x2f4c:
+            //   * value 1 (true lightsaber): builds compatible-mods list
+            //     from upcrystals_2da / upgrades_2da and AddControls-
+            //     replaces LB_ITEMS — picker UX engages.
+            //   * value 2/3/4 (4-slot / 3-slot / 2-slot non-saber categories):
+            //     directly installs the upgrade staged by OnPanelAdded
+            //     (panel.field_0x2f84[slot_idx] tag lookup against party
+            //     inventory), or removes the existing upgrade if the slot
+            //     was already filled. LB_ITEMS is NOT populated.
+            //
+            // If LB_ITEMS row count is still 0 after dispatch, we're in
+            // the non-saber install/remove path — disarm the picker and
+            // announce the outcome by comparing field35_0x2f74[slot_idx]
+            // before vs after.
+            uint8_t saberFlag = *(reinterpret_cast<unsigned char*>(panel) + 0x2f4c);
+            int lbRows = 0;
+            auto* controls = reinterpret_cast<CExoArrayList*>(
+                reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+            if (controls && controls->data) {
+                for (int i = 0; i < controls->size; ++i) {
+                    void* c = controls->data[i];
+                    if (!c) continue;
+                    int cid = *reinterpret_cast<int*>(
+                        reinterpret_cast<unsigned char*>(c) + 0x50);
+                    if (cid == 0) {
+                        auto* lbList = reinterpret_cast<CExoArrayList*>(
+                            reinterpret_cast<unsigned char*>(c) + kListBoxControlsOffset);
+                        lbRows = (lbList && lbList->data) ? lbList->size : 0;
+                        break;
+                    }
+                }
+            }
+
+            acclog::Write("Update", "WorkbenchSlotSelect done panel=%p slot=%p "
+                          "saber=%d slot_idx=%d field35: %p -> %p lb_rows=%d",
+                          panel, slotBtn, (int)saberFlag, slotIdx,
+                          prevItem, newItem, lbRows);
+
+            if (lbRows == 0) {
+                acc::menus::listbox::DisarmWorkbenchUpgradePicker();
+                acc::strings::Id outcome = acc::strings::Id::Count_;
+                const char* outcomeTag = "no-change";
+                if (prevItem == nullptr && newItem != nullptr) {
+                    outcome = acc::strings::Id::WorkbenchSlotInstalled;
+                    outcomeTag = "installed";
+                } else if (prevItem != nullptr && newItem == nullptr) {
+                    outcome = acc::strings::Id::WorkbenchSlotRemoved;
+                    outcomeTag = "removed";
+                } else if (prevItem == nullptr && newItem == nullptr) {
+                    outcome = acc::strings::Id::WorkbenchSlotNoMatch;
+                    outcomeTag = "no-match";
+                }
+                // Look up the slot's actual type name from the engine's
+                // strref table (e.g. "Vibrationszelle", "Energiezelle",
+                // "Sch\xE4rfe") so the user hears WHICH slot they just
+                // acted on, not just the generic position number.
+                char slotName[128] = {0};
+                int tableIdx = (slotIdx - 4) + (int)saberFlag * 4;
+                if (tableIdx >= 0 && tableIdx < 16) {
+                    auto* entry = reinterpret_cast<unsigned char*>(
+                        kAddrUpgradeSlotTypeTable + tableIdx * kUpgradeSlotTypeStride);
+                    int upgradeType = *reinterpret_cast<int*>(entry);
+                    uint32_t strref = *reinterpret_cast<uint32_t*>(
+                        entry + kUpgradeSlotTypeStrRefOff);
+                    if (upgradeType != -1 && strref != 0) {
+                        acc::engine::LookupTlk(strref, slotName, sizeof(slotName));
+                    }
+                    acclog::Write("WorkbenchSlotSelect",
+                                  "non-saber path (saber=%d slot_idx=%d table_idx=%d "
+                                  "upgrade_type=%d strref=%u name=\"%s\") -> %s; picker disarmed",
+                                  (int)saberFlag, slotIdx, tableIdx,
+                                  upgradeType, strref, slotName, outcomeTag);
+                } else {
+                    acclog::Write("WorkbenchSlotSelect",
+                                  "non-saber path (saber=%d slot_idx=%d table_idx=%d "
+                                  "out-of-range) -> %s; picker disarmed",
+                                  (int)saberFlag, slotIdx, tableIdx, outcomeTag);
+                }
+                if (outcome != acc::strings::Id::Count_) {
+                    const char* result = acc::strings::Get(outcome);
+                    char msg[256];
+                    if (slotName[0] != '\0') {
+                        snprintf(msg, sizeof(msg), "%s, %s", slotName, result);
+                    } else {
+                        snprintf(msg, sizeof(msg), "%s", result);
+                    }
+                    prism::Speak(msg, /*interrupt=*/false);
+                }
+            }
+        }
+        break;
+    }
+
+    // Workbench upgrade commit. Two-step via direct engine dispatch on
+    // the RE'd OnUpgradeSelected (row-stage) + OnAssemble (install).
+    // OnAssemble calls FinishUpgrading on the parent UpgradeItemSelect
+    // and PopModalPanel — the upgrade panel closes synchronously when
+    // this returns. Mirrors EquipCommit's row-then-OK shape.
+    case Kind::WorkbenchUpgradeCommit: {
+        void* panel = op.a;
+        void* row   = op.b;
+        void* btn   = op.c;
+        if (panel && row && btn) {
+            uint32_t* rowIsActive = reinterpret_cast<uint32_t*>(
+                reinterpret_cast<unsigned char*>(row) + kControlIsActiveOffset);
+            uint32_t* btnIsActive = reinterpret_cast<uint32_t*>(
+                reinterpret_cast<unsigned char*>(btn) + kControlIsActiveOffset);
+            uint32_t prevRowActive = *rowIsActive;
+            uint32_t prevBtnActive = *btnIsActive;
+            if (prevRowActive == 0) *rowIsActive = 1;
+            if (prevBtnActive == 0) *btnIsActive = 1;
+            auto onRow = reinterpret_cast<PFN_CSWGuiUpgradeOnUpgradeSelected>(
+                kAddrCSWGuiUpgradeOnUpgradeSelected);
+            auto onAsm = reinterpret_cast<PFN_CSWGuiUpgradeOnAssemble>(
+                kAddrCSWGuiUpgradeOnAssemble);
+            acclog::Write("Update", "WorkbenchUpgradeCommit panel=%p row=%p btn=%p "
+                          "row.is_active=%u%s btn.is_active=%u%s",
+                          panel, row, btn,
+                          prevRowActive,
+                          prevRowActive == 0 ? "->1" : " (preserved)",
+                          prevBtnActive,
+                          prevBtnActive == 0 ? "->1" : " (preserved)");
+            onRow(panel, row);
+            onAsm(panel, btn);
+            acclog::Write("Update", "WorkbenchUpgradeCommit done panel=%p row=%p btn=%p",
+                          panel, row, btn);
+        } else {
+            acclog::Write("Update", "WorkbenchUpgradeCommit panel=%p row=%p btn=%p (skipped)",
                           panel, row, btn);
         }
         break;

@@ -1713,6 +1713,23 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                 equipSlotCid == kEquipBtnHandsId;
         }
 
+        // Workbench upgrade slot buttons (BTN_UPGRADE3X/4X at .gui IDs
+        // 12..18 on upgrade.gui). Same shape as equip-screen slot buttons:
+        // direct vtable[15] activate doesn't populate LB_ITEMS with the
+        // mods compatible with this slot — only the mouse-driven
+        // hover+click pipeline does. We don't have an RE'd equivalent of
+        // OnEnterSlot/OnSelectSlot for the workbench yet, so the safe
+        // path is a full click-sim at the chain entry's extent center
+        // (mirrors the tab-button activation pattern).
+        bool isWorkbenchUpgradeSlot = false;
+        int  workbenchUpgradeSlotCid = 0;
+        if (IdentifyPanel(g_chainPanel) == PanelKind::WorkbenchUpgrade) {
+            workbenchUpgradeSlotCid = *reinterpret_cast<int*>(
+                reinterpret_cast<unsigned char*>(e.control) + 0x50);
+            isWorkbenchUpgradeSlot =
+                workbenchUpgradeSlotCid >= 12 && workbenchUpgradeSlotCid <= 18;
+        }
+
         // Store item row Enter — route to the engine's trade-action
         // handler (OnControlInvAButton / OnControlStoreAButton based on
         // mode) instead of the generic FireActivate. The default
@@ -1776,6 +1793,21 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             acclog::Write("EquipPicker", "armed via direct OnEnterSlot+OnSelectSlot "
                           "(Enter on slot id=%d btn=%p panel=%p)",
                           equipSlotCid, e.control, g_chainPanel);
+            consumed = true;
+        } else if (isWorkbenchUpgradeSlot) {
+            // Click-sim landed on a label (z-order trap); vtable[15] is
+            // the keyboard-shortcut path that doesn't populate LB_ITEMS.
+            // Both verified in patch-20260525-141557.log and -142247.log.
+            // RE'd the workbench slot-pick chain in Lane's gzf — calling
+            // CSWGuiUpgrade::OnEnterSlot + OnSlotSelected directly is
+            // the engine path that builds the compatible-mods list
+            // from CSWPartyTable items + upgrades_2da / upcrystals_2da
+            // and AddControls-replaces LB_ITEMS contents.
+            acc::menus::pending::QueueWorkbenchSlotSelect(g_chainPanel, e.control);
+            acc::menus::listbox::ArmWorkbenchUpgradePicker(g_chainPanel);
+            acclog::Write("WorkbenchUpgrade", "armed via direct OnEnterSlot+OnSlotSelected "
+                          "(Enter on slot id=%d btn=%p panel=%p)",
+                          workbenchUpgradeSlotCid, e.control, g_chainPanel);
             consumed = true;
         } else {
             acc::menus::pending::QueueActivate(e.control);
@@ -2194,6 +2226,39 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     {
         if (acc::menus::store::CloseFromEsc()) {
             consumed = true;
+        }
+    }
+
+    // Workbench upgrade panel Esc: route to BTN_BACK (id 28, "Abbrechen")
+    // directly. Same shape as the store branch above — the upgrade.gui
+    // panel is the foreground modal (not a popup on top), so the generic
+    // Esc gate below (IsModalPopupPanel / g_tabbedPanel / escIsOptionsSub)
+    // doesn't fire. We also can't rely on FindCancelButton landing on
+    // BTN_BACK reliably here (see kWorkbenchUpgradeSpec comments).
+    // While the picker is armed the spec's onEsc disarms; this branch
+    // only catches Esc when the picker is NOT armed (user on a slot
+    // button, BTN_ASSEMBLE, or BTN_BACK).
+    if (!consumed && param_2 != 0 &&
+        (param_1 == kInputEsc1 || param_1 == kInputEsc2) &&
+        activePanel != nullptr &&
+        IdentifyPanel(activePanel) == PanelKind::WorkbenchUpgrade &&
+        !acc::menus::listbox::IsWorkbenchUpgradePickerArmed())
+    {
+        if (acc::menus::pending::IsPending()) {
+            acclog::Write("Esc", "WorkbenchUpgrade — op already pending; ignoring");
+            consumed = true;
+        } else {
+            constexpr int kWorkbenchUpgradeBtnBack = 28;
+            void* back = FindControlById(activePanel, kWorkbenchUpgradeBtnBack);
+            if (back) {
+                acc::menus::pending::QueueActivate(back);
+                acclog::Write("Esc", "WorkbenchUpgrade -> BTN_BACK panel=%p target=%p",
+                              activePanel, back);
+                consumed = true;
+            } else {
+                acclog::Write("Esc", "WorkbenchUpgrade -- BTN_BACK not found on panel=%p",
+                              activePanel);
+            }
         }
     }
 

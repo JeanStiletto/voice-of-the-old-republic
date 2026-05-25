@@ -1042,6 +1042,16 @@ enum class Id : int {
     WorkbenchItemsEmpty,
     WorkbenchUpgradesEmpty,
 
+    // ---- Workbench slot-click outcome announces (non-saber install path).
+    //      OnSlotSelected directly installs or removes the upgrade
+    //      bound to the slot (set per upgrades_2da row at panel init).
+    //      The engine gives no audible feedback for either outcome —
+    //      we speak the result by comparing panel.field35_0x2f74[slot]
+    //      before vs after the dispatch.
+    WorkbenchSlotInstalled,    // 0 → item: install succeeded
+    WorkbenchSlotRemoved,      // item → 0: existing upgrade removed
+    WorkbenchSlotNoMatch,      // 0 → 0: no inventory item with the slot's expected tag
+
     // ---- Sound options panel (optionssound.gui) label fix-up.
     //      The stock German .gui labels the 4th slider (movie/video volume)
     //      as "Musik-Lautst\xE4rke" — a duplicate of the 1st slider — and

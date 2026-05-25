@@ -344,6 +344,9 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotSaberCrystal4: return "Crystal slot 4";
         case Id::WorkbenchItemsEmpty:        return "No upgradable items in this category";
         case Id::WorkbenchUpgradesEmpty:     return "No compatible upgrades in inventory";
+        case Id::WorkbenchSlotInstalled:     return "Upgrade installed";
+        case Id::WorkbenchSlotRemoved:       return "Upgrade removed";
+        case Id::WorkbenchSlotNoMatch:       return "No matching upgrade in inventory";
 
         case Id::SoundOptionsMovieVolume:    return "Movie volume";
 

@@ -363,6 +363,9 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotSaberCrystal4: return "Kristall-Steckplatz 4";
         case Id::WorkbenchItemsEmpty:        return "Keine aufwertbaren Gegenst\xE4nde in dieser Kategorie";  // Gegenstände
         case Id::WorkbenchUpgradesEmpty:     return "Keine kompatiblen Aufwertungen im Inventar";
+        case Id::WorkbenchSlotInstalled:     return "Aufwertung eingesetzt";
+        case Id::WorkbenchSlotRemoved:       return "Aufwertung entfernt";
+        case Id::WorkbenchSlotNoMatch:       return "Keine passende Aufwertung im Inventar";
 
         case Id::SoundOptionsMovieVolume:    return "Video-Lautst\xE4rke";  // Lautstärke
 

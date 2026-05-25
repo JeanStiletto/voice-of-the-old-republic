@@ -84,6 +84,15 @@ void* EquipPickerPanel();
 void  ArmEquipPicker(void* panel);
 void  DisarmEquipPicker();
 
+// Workbench upgrade picker — arms when the chain Enter handler activates
+// a BTN_UPGRADE3X/4X slot button (via click-sim, populating LB_ITEMS with
+// the slot's compatible inventory mods). Disarms on Enter-commit, Esc, or
+// when the panel disappears from CSWGuiManager.panels[] (caught by
+// MonitorWorkbenchUpgradePicker in TickListboxMonitors).
+bool  IsWorkbenchUpgradePickerArmed();
+void  ArmWorkbenchUpgradePicker(void* panel);
+void  DisarmWorkbenchUpgradePicker();
+
 // Per-tick fan-out for the 3 listbox-paired monitors:
 // MonitorContainerSelection (per-row navigation announces),
 // MonitorEquipPickerSelection (mirror for the equip-picker LB_ITEMS), and
