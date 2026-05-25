@@ -227,7 +227,7 @@ constexpr ULONGLONG kDiagLogIntervalMs    = 1000;
 //                         change-detector uses for its closest-edge
 //                         heartbeat (audible without being staccato).
 //
-//   kObstacleCueResref  — engine sample played for each obstacle. The
+//   kObstacleWarnLoopResref  — engine sample played for each obstacle. The
 //                         minigame's own warning sound carries the
 //                         right "watch out" timbre and is short
 //                         enough (<200 ms) to fit a 250-ms loop with
@@ -247,7 +247,18 @@ constexpr ULONGLONG kDiagLogIntervalMs    = 1000;
 //                         pan completes its sweep.
 constexpr float       kObstacleCueRangeM     = 200.0f;
 constexpr float       kObstacleForwardMargin = 10.0f;
-constexpr const char* kObstacleCueResref     = "mgs_warnbust";
+
+// Warn-obstacle resref. Played as a continuous loop per in-range
+// obstacle (LoopSource), not re-fired one-shots. mgs_hover_07l —
+// the `l` suffix is the engine convention for designed-to-loop
+// samples (same family as mgs_engine_NNl, the bike-engine loop),
+// so the loop point should be seamless. mgs_* prefix routes to the
+// SFX mixer bus rather than the (much quieter) voice bus that
+// the earlier v_dur_shldred pick was silently attenuated by.
+constexpr const char* kObstacleWarnLoopResref = "mgs_hover_07l";
+// SUPERSEDED — earlier samples tried:
+// "v_dur_shldred"  — Duros voice; routed to voice bus, way too quiet
+// "mgs_warnbust"   — one-shot warning used before the loop refactor
 
 // ----- Source-position rescaling (engine audibility) -----
 //
@@ -275,17 +286,15 @@ constexpr float       kObstacleMinSourceDistanceM  = 1.0f;
 // SUPERSEDED — fixed-radius sphere kept commented for A/B revert:
 // constexpr float       kObstacleSourceRadiusM = 8.0f;
 
-// ----- Fixed re-fire cadence -----
-//
-// With the 1:9 compression above, loudness + pan rotation already
-// encode distance. A steady tick rate gives a recognisable "object
-// approaching + passing" rhythm rather than a variable staccato.
-// 250 ms = 4 Hz, same heartbeat the Pillar-1 wall change-detector
-// uses.
-constexpr ULONGLONG   kObstacleCueIntervalMs = 250;
-// SUPERSEDED — distance-modulated cadence kept commented for A/B revert:
-// constexpr ULONGLONG   kObstacleCueIntervalFarMs  = 700;
-// constexpr ULONGLONG   kObstacleCueIntervalNearMs = 90;
+// SUPERSEDED — re-fire cadence kept commented for A/B revert if the
+// loop-per-obstacle path turns out to misbehave (voice budget
+// eviction, lifecycle leaks, etc.). Loop mode keeps the cue
+// continuously alive while the obstacle is in range; only the
+// position is updated each tick (engine handles the playback
+// continuously between updates).
+// constexpr ULONGLONG   kObstacleCueIntervalMs       = 250;
+// constexpr ULONGLONG   kObstacleCueIntervalFarMs    = 700;
+// constexpr ULONGLONG   kObstacleCueIntervalNearMs   = 90;
 
 // ----- Side-wall collision detection -----
 //
@@ -408,14 +417,13 @@ struct State {
     int           gear                    = 0;
     float         last_max_speed          = 0.0f;
 
-    // Per-slot last-cue timestamp, indexed directly by the global MGO
-    // array slot (0..254). Re-armed every kObstacleCueRepeatMs while
-    // the obstacle stays in range, so the user hears a steady pulse
-    // train per nearby hazard with the engine's 3D listener panning
-    // each pulse from the obstacle's actual world position. Cleared
-    // on ENTER. Sized to the MGO array, not the obstacle-count, so we
-    // can key on the slot without a parallel index map.
-    ULONGLONG     obstacle_last_cue_ms[kMgoArraySlotCount] = {};
+    // Per-slot looping cue. Started when an obstacle enters audible
+    // range, position-updated each tick (so the engine's 3D pan
+    // tracks the obstacle as the bike closes in), Stopped when the
+    // obstacle leaves range or the race ends. Sized to the global
+    // MGO array slot count so we can key by slot without a parallel
+    // index map. Auto-cleans at DLL unload via RAII.
+    acc::audio::LoopSource obstacle_loops[kMgoArraySlotCount];
 
     // Diagnostic guard for the first-obstacle byte dump (separate from
     // the mini_game one). Lets us identify obstacle subtypes (debris vs
@@ -834,7 +842,7 @@ void TickWallCollision(void* miniGame) {
 //
 // Iterates CSWMiniGame.obstacles_ptr[] each tick, computes 3D distance
 // from the player creature to each obstacle's CAurObject world
-// position, and re-fires kObstacleCueResref through audio_bus::PlayCue3D
+// position, and re-fires kObstacleWarnLoopResref through audio_bus::PlayCue3D
 // at the obstacle's position every kObstacleCueRepeatMs while the
 // obstacle is within kObstacleCueRangeM. The engine's 3D listener
 // (camera, which orbits the bike during the race) pans and attenuates
@@ -930,14 +938,14 @@ bool ContainsCi(const char* haystack, const char* needle) {
 // the booster-pattern table. Falls back to the warning cue for
 // anything that doesn't match (rocks, debris, unknown obstacles).
 const char* CueResrefForObstacle(const char* name) {
-    if (!name || !*name) return kObstacleCueResref;
+    if (!name || !*name) return kObstacleWarnLoopResref;
     for (size_t i = 0; i < sizeof(kBoosterNamePatterns) /
                               sizeof(kBoosterNamePatterns[0]); ++i) {
         if (ContainsCi(name, kBoosterNamePatterns[i])) {
             return kBoosterCueResref;
         }
     }
-    return kObstacleCueResref;
+    return kObstacleWarnLoopResref;
 }
 
 void* CallAsCast(void* obj, size_t vtableSlotOffset) {
@@ -974,12 +982,17 @@ void TickObstacleCues(void* /*miniGame*/) {
         return;
     }
 
-    const ULONGLONG now = GetTickCount64();
     int slots_seen = 0;
     int obstacles_found = 0;
     int obstacles_ahead = 0;
     int obstacles_in_range = 0;
-    int cued_this_tick = 0;
+    int loops_started_this_tick = 0;
+    int loops_stopped_this_tick = 0;
+    // Per-tick "still in range" flag. Slots flipped true here are
+    // either Started (loop wasn't active) or just UpdatePosition'd
+    // (loop already running). At end of tick, any slot whose loop is
+    // active but flag is false has gone out of range and gets Stop'd.
+    bool active_this_tick[kMgoArraySlotCount] = {};
 
     for (int i = 0; i < kMgoArraySlotCount; ++i) {
         // mgoArray->objects[i]
@@ -1066,30 +1079,12 @@ void TickObstacleCues(void* /*miniGame*/) {
         if (distSq > rangeSq) continue;
         ++obstacles_in_range;
 
-        // Fixed per-slot throttle. Spatial pan + volume (post-1:9
-        // compression below) carry the distance cue; the tick rate
-        // stays steady so the user hears a recognisable "approach +
-        // pass" rhythm.
-        const float dist = (distSq > 0.0f) ? std::sqrt(distSq) : 0.0f;
-        const ULONGLONG interval = kObstacleCueIntervalMs;
-        // SUPERSEDED — distance-modulated interval kept commented for A/B:
-        // float t = dist / kObstacleCueRangeM;       // 0 = on top, 1 = max range
-        // if (t < 0.0f) t = 0.0f;
-        // if (t > 1.0f) t = 1.0f;
-        // const ULONGLONG interval = static_cast<ULONGLONG>(
-        //     kObstacleCueIntervalNearMs +
-        //     t * (static_cast<float>(kObstacleCueIntervalFarMs -
-        //                             kObstacleCueIntervalNearMs)));
-
-        ULONGLONG& last_ms = g_state.obstacle_last_cue_ms[i];
-        if (now - last_ms < interval) continue;
-        last_ms = now;
-
         // Route per-obstacle: matched names get the booster cue,
-        // everything else gets the warning cue. Resref string is
-        // chosen per-fire so a single moving cluster of rocks +
-        // boosters near the bike fans out into the two distinct
-        // sounds the player needs to hear apart.
+        // everything else gets the warning cue. Resref is chosen at
+        // Start time only (loops can't change their sample mid-play);
+        // for an obstacle whose name changes between ticks (shouldn't
+        // happen but defensively) the existing loop just keeps its
+        // original sample until it goes out of range.
         const char* resref = CueResrefForObstacle(name);
 
         // Project source proportionally so distance encodes via volume
@@ -1097,6 +1092,7 @@ void TickObstacleCues(void* /*miniGame*/) {
         // with 1 m floor — close-pass lands at 1 m (correct direction,
         // no sub-meter pan flip), farthest in-range obstacle (~180 m
         // real) lands at 20 m (engine audibility edge).
+        const float dist = (distSq > 0.0f) ? std::sqrt(distSq) : 0.0f;
         Vector cue_pos = pos;
         if (dist > 0.0f) {
             float compressed = dist * kObstacleDistanceCompression;
@@ -1109,22 +1105,38 @@ void TickObstacleCues(void* /*miniGame*/) {
             cue_pos.z = listener_pos.z + dz * k;
         }
 
-        // Per-fire log: actual dist, the interval we picked, and the
-        // projected cue position so we can verify the audible-sphere
-        // math after the fact.
-        acclog::Trace("SwoopRace",
-                      "fire slot=%d name=[%s] obstaclePos=(%.1f,%.1f,%.1f) "
-                      "listener=(%.1f,%.1f,%.1f) dist=%.1f cuePos=(%.1f,%.1f,%.1f) "
-                      "interval=%llu res=%s",
-                      i, name ? name : "(null)",
-                      pos.x, pos.y, pos.z,
-                      listener_pos.x, listener_pos.y, listener_pos.z,
-                      dist,
-                      cue_pos.x, cue_pos.y, cue_pos.z,
-                      interval, resref);
+        active_this_tick[i] = true;
+        if (g_state.obstacle_loops[i].IsActive()) {
+            // Existing loop — just move it.
+            g_state.obstacle_loops[i].UpdatePosition(cue_pos);
+        } else {
+            // First in-range tick for this obstacle — Start the loop.
+            if (g_state.obstacle_loops[i].Start(resref, cue_pos)) {
+                ++loops_started_this_tick;
+                acclog::Trace("SwoopRace",
+                              "loop start slot=%d name=[%s] "
+                              "obstaclePos=(%.1f,%.1f,%.1f) "
+                              "cuePos=(%.1f,%.1f,%.1f) dist=%.1f res=%s",
+                              i, name ? name : "(null)",
+                              pos.x, pos.y, pos.z,
+                              cue_pos.x, cue_pos.y, cue_pos.z,
+                              dist, resref);
+            }
+        }
+    }
 
-        acc::audio::PlayCue3D(resref, cue_pos);
-        ++cued_this_tick;
+    // Stop any loops whose slot wasn't in-range this tick. Covers two
+    // cases: obstacle passed > kObstacleForwardMargin behind us; or
+    // (rarer) obstacle obj/aur/pos read failed this tick after having
+    // succeeded last tick. Either way, Stop is idempotent so it's
+    // safe to call.
+    for (int i = 0; i < kMgoArraySlotCount; ++i) {
+        if (!active_this_tick[i] && g_state.obstacle_loops[i].IsActive()) {
+            g_state.obstacle_loops[i].Stop();
+            ++loops_stopped_this_tick;
+            acclog::Trace("SwoopRace",
+                          "loop stop slot=%d (out of range / unresolved)", i);
+        }
     }
 
     // Mark diagnostic done AFTER the full sweep, so we get all 22
@@ -1134,16 +1146,18 @@ void TickObstacleCues(void* /*miniGame*/) {
         g_state.obstacle_diag_emitted = true;
     }
 
-    // Single rolling-state line — strictly more informative than the
-    // previous two-branch logging (the false "0 in range" was a
-    // hardcoded format-string typo; now the actual counts are tracked
-    // and reported every tick).
+    // Single rolling-state line. inRange = obstacles that triggered
+    // a loop Start or UpdatePosition this tick; started/stopped count
+    // edge transitions. At steady-state in a long stretch of nearby
+    // obstacles, started and stopped should both be small or zero
+    // each tick — non-zero values mark transitions.
     acclog::Trace("SwoopRace",
                   "scan: slots=%d obstacles=%d ahead=%d inRange=%d (%.0fm) "
-                  "cued=%d listenerY=%.1f",
+                  "started=%d stopped=%d listenerY=%.1f",
                   slots_seen, obstacles_found, obstacles_ahead,
                   obstacles_in_range, kObstacleCueRangeM,
-                  cued_this_tick, listener_pos.y);
+                  loops_started_this_tick, loops_stopped_this_tick,
+                  listener_pos.y);
 }
 
 // ============================================================================
@@ -1201,8 +1215,10 @@ void HandleEnter(void* mg) {
     g_state.scrape_loop.Stop();  // defensive — pin should already be
                                  //   clear if EXIT ran, but a crash-exit
                                  //   path could leave the loop active
+    // Same defensive cleanup for obstacle loops — any active loop
+    // from a previous race must not survive into this one.
     for (int i = 0; i < kMgoArraySlotCount; ++i) {
-        g_state.obstacle_last_cue_ms[i] = 0;
+        g_state.obstacle_loops[i].Stop();
     }
 
     acclog::Write("SwoopRace",
@@ -1230,6 +1246,11 @@ void HandleExit() {
     // Stop the scrape loop before clearing pin state — otherwise the
     // metal-strain tone would survive into the post-race UI.
     g_state.scrape_loop.Stop();
+    // Stop every obstacle loop too; some may still be active if the
+    // race ended while obstacles were in range.
+    for (int i = 0; i < kMgoArraySlotCount; ++i) {
+        g_state.obstacle_loops[i].Stop();
+    }
     g_state.wall_pinned_side    = 0;
     g_state.active              = false;
     g_state.latched_mini_game   = nullptr;
