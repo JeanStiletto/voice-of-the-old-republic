@@ -108,8 +108,14 @@
     "Program_UpToDate_Title": "Mod is up to date",
     "Program_UpToDate_Format": "KOTOR Accessibility v{0} is already installed and up to date.\n\nWould you like to perform a full reinstall?",
 
-    "InstalledOptions_Body_Format": "KOTOR Accessibility v{0} is installed and up to date.\n\nSpatial audio (dsoal): {1}\n\nChoose an action:\n- Reinstall: re-runs the full installer to refresh all files.\n- Toggle spatial audio: switch between modified (HRTF + EAX) and vanilla audio. Restart the game after toggling.\n- Close: do nothing and exit.",
+    "InstalledOptions_Body_Format": "KOTOR Accessibility v{0} is installed and up to date.\n\nSpatial audio (dsoal): {1}\n\nChoose an action:\n- Reinstall: re-runs the full installer to refresh all files.\n- Toggle spatial audio: switch between modified (HRTF + EAX) and vanilla audio. Restart the game after toggling.\n- Collect logs for beta test: build a zip in your Downloads folder containing the newest patch log and crash dump, ready to send to the developer.\n- Close: do nothing and exit.",
     "InstalledOptions_ReinstallButton": "Reinstall",
+
+    "CollectLogs_Button": "Collect logs for beta test",
+    "CollectLogs_Success_Title": "Logs collected",
+    "CollectLogs_Success_Format": "A log bundle has been saved to:\n\n{0}\n\nContents:\n- Patch logs included: {1}\n- Crash dumps included: {2}\n- Installer log + system info\n\nPlease attach this zip file to your bug report and send it to the developer. Explorer is opening with the zip selected.",
+    "CollectLogs_Error_Title": "Could not collect logs",
+    "CollectLogs_Error_Format": "The log bundle could not be created:\n\n{0}\n\nThe installer log on your Desktop may have more detail.",
 
     "SpatialAudio_StateEnabled": "ENABLED (HRTF + EAX active)",
     "SpatialAudio_StateDisabled": "DISABLED (vanilla audio)",

@@ -13,7 +13,8 @@ namespace KotorAccessibilityInstaller
         Close,
         UpdateOnly,
         FullInstall,
-        ToggleSpatialAudio
+        ToggleSpatialAudio,
+        CollectLogs
     }
 
     static class Program
@@ -205,6 +206,11 @@ namespace KotorAccessibilityInstaller
                         ToggleSpatialAudioAndReport(detectedGamePath);
                         break;
 
+                    case UpdateChoice.CollectLogs:
+                        Logger.Info("User chose to collect logs for beta-test bundle");
+                        CollectLogsAndReport(detectedGamePath);
+                        break;
+
                     case UpdateChoice.Close:
                     default:
                         Logger.Info("User closed installed-options dialog");
@@ -250,7 +256,51 @@ namespace KotorAccessibilityInstaller
             }
 
             string resolvedPath = pathArgOverride ?? DetectGamePath() ?? gamePath;
+
+            // Make Windows Error Reporting capture full minidumps under
+            // %LOCALAPPDATA%\CrashDumps next time swkotor.exe faults. Without
+            // this, beta testers' "collect logs" zips contain no crash dump.
+            // Idempotent + best-effort; failure does not block install.
+            WerLocalDumps.Enable();
+
             Application.Run(new MainForm(resolvedPath, language: welcomeForm.SelectedLanguage, modSelection: selectionForm.Selection, localKpatchPath: localKpatchPath));
+        }
+
+        /// <summary>
+        /// Build a beta-test zip in the user's Downloads folder containing
+        /// the newest patch log, the newest swkotor crash dump, the installer
+        /// log, and a system-info summary. Opens Explorer with the zip
+        /// selected so the user can attach it to a bug report directly.
+        /// </summary>
+        private static void CollectLogsAndReport(string gamePath)
+        {
+            // Make sure WER will actually capture dumps from now on, even if
+            // nothing was set up earlier in the install. Idempotent.
+            WerLocalDumps.Enable();
+
+            var result = LogCollector.Collect(gamePath);
+            if (!result.Success)
+            {
+                MessageBox.Show(
+                    InstallerLocale.Format("CollectLogs_Error_Format", result.Error ?? "(unknown)"),
+                    InstallerLocale.Get("CollectLogs_Error_Title"),
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+                return;
+            }
+
+            string message = InstallerLocale.Format(
+                "CollectLogs_Success_Format",
+                result.ZipPath,
+                result.LogCount,
+                result.DumpCount);
+            MessageBox.Show(
+                message,
+                InstallerLocale.Get("CollectLogs_Success_Title"),
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+
+            LogCollector.RevealInExplorer(result.ZipPath);
         }
 
         /// <summary>
