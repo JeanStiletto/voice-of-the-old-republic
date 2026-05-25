@@ -601,6 +601,17 @@ bool DispatchRowAction(void* tam, int row) {
     }
 }
 
+void* GetRowActionButton(void* tam, int row) {
+    if (!tam || row < 0 || row >= kRowCount) return nullptr;
+    // target_actions[row].action_button. action_button is at offset 0
+    // within CSWGuiMainInterfaceAction so its address equals the
+    // array-entry address.
+    return reinterpret_cast<unsigned char*>(tam) +
+           kTamTargetActionsOffset +
+           static_cast<size_t>(row) * kTargetActionStride +
+           kRowActionButtonOffset;
+}
+
 namespace {
 
 // Call vtable->AsSWCxxx(gameObject) at the given vtable byte-offset.

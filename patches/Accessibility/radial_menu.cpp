@@ -6,6 +6,8 @@
 #include "engine_input.h"     // kInputNavUp/Down/Left/Right, kInputEnter1/2,
                               // kInputEsc1/2
 #include "engine_radial.h"
+#include "engine_reads.h"    // ReadControlTooltip for Shift+arrow tooltip
+#include "hotkeys.h"         // ShiftHeld
 #include "log.h"
 #include "strings.h"
 #include "prism.h"
@@ -181,6 +183,34 @@ bool HandleInputEvent(int code, int value) {
             code);
         ForceDisarm("tam-unresolved");
         return false;
+    }
+
+    // Shift+arrow on any nav key: speak the current row's engine tooltip
+    // and do NOT cycle. Mirrors the actionbar submenu's Shift+arrow path
+    // and the peek_description.cpp shift-arrow contract. Reads the
+    // CSWGuiButton sitting at target_actions[curRow].action_button — the
+    // same button the engine renders a tooltip onto during mouse hover.
+    if ((code == kInputNavUp   || code == kInputNavDown ||
+         code == kInputNavLeft || code == kInputNavRight) &&
+        acc::hotkeys::ShiftHeld())
+    {
+        void* btn = acc::engine_radial::GetRowActionButton(
+            tam, g_state.curRow);
+        char tip[1024];
+        if (btn && acc::engine::ReadControlTooltip(
+                btn, tip, sizeof(tip))) {
+            prism::Speak(tip, /*interrupt=*/true);
+            acclog::Write("Radial",
+                "Shift+nav row=%d tooltip=\"%s\"", g_state.curRow, tip);
+        } else {
+            const char* msg = acc::strings::Get(
+                acc::strings::Id::NoTooltipAvailable);
+            prism::Speak(msg, /*interrupt=*/true);
+            acclog::Write("Radial",
+                "Shift+nav row=%d btn=%p no tooltip; spoke fallback",
+                g_state.curRow, btn);
+        }
+        return true;
     }
 
     switch (code) {

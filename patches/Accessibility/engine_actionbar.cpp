@@ -208,6 +208,17 @@ uint32_t ReadVariantActionId(void* mi, int slot, int index) {
     return static_cast<uint32_t>(v);
 }
 
+void* GetColumnActionButton(void* mi, int slot) {
+    if (!mi || slot < 0 || slot >= kColumnCount) return nullptr;
+    // CSWGuiMainInterface.field45_0x771c[6], stride 0x71C. action_button
+    // is the first member of CSWGuiMainInterfaceAction so its address
+    // equals the array-entry address.
+    constexpr size_t kFieldArrayBase = 0x771c;
+    constexpr size_t kColumnStride   = 0x71C;
+    return reinterpret_cast<unsigned char*>(mi) +
+           kFieldArrayBase + static_cast<size_t>(slot) * kColumnStride;
+}
+
 bool SelectVariant(void* mi, int slot, int index) {
     if (!mi || slot < 0 || slot >= kColumnCount) return false;
     uint32_t actionId = ReadVariantActionId(mi, slot, index);

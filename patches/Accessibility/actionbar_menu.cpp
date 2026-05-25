@@ -12,6 +12,8 @@
                               // engine's DirectInput pipeline; opening the
                               // submenu inside a dialog corrupts the dialog's
                               // selection state and locks Enter advance).
+#include "engine_reads.h"    // ReadControlTooltip for Shift+arrow tooltip
+#include "hotkeys.h"         // ShiftHeld
 #include "log.h"
 #include "strings.h"
 #include "prism.h"
@@ -158,6 +160,31 @@ bool HandleInputEvent(int code, int value) {
     switch (code) {
         case kInputNavUp:
         case kInputNavDown: {
+            // Shift+Up/Down: speak the column's engine tooltip (whatever
+            // CSWGuiControl::DisplayToolTip would render on mouse hover),
+            // do NOT cycle the variant. Same contract as the keyboard
+            // peek path in peek_description.cpp — Shift+arrow is the
+            // "read the description" gesture across the mod.
+            if (acc::hotkeys::ShiftHeld()) {
+                void* btn = acc::engine_actionbar::GetColumnActionButton(
+                    mi, slot);
+                char tip[1024];
+                if (btn && acc::engine::ReadControlTooltip(
+                        btn, tip, sizeof(tip))) {
+                    prism::Speak(tip, /*interrupt=*/true);
+                    acclog::Write("ActionBar",
+                        "Shift+%s slot=%d tooltip=\"%s\"",
+                        code == kInputNavDown ? "Down" : "Up", slot, tip);
+                } else {
+                    const char* msg = acc::strings::Get(
+                        acc::strings::Id::NoTooltipAvailable);
+                    prism::Speak(msg, /*interrupt=*/true);
+                    acclog::Write("ActionBar",
+                        "Shift+%s slot=%d btn=%p no tooltip; spoke fallback",
+                        code == kInputNavDown ? "Down" : "Up", slot, btn);
+                }
+                return true;
+            }
             if (nVar <= 1) {
                 acclog::Write("ActionBar", "%s slot=%d variants=%d — nothing to cycle",
                     code == kInputNavDown ? "NavDown" : "NavUp",

@@ -97,6 +97,65 @@ bool ExtractTextOrStrRef(void* control,
     return LookupTlk(strref, outBuf, bufSize);
 }
 
+bool ReadControlTooltip(void* control, char* outBuf, size_t bufSize) {
+    if (!control || !outBuf || bufSize < 2) return false;
+    outBuf[0] = '\0';
+
+    // Bound the parent-walk so a malformed/cyclic parent chain can't spin
+    // us forever. The deepest in-game panel hierarchy we've observed is
+    // ~6 levels (panel → row → embedded button → text); 8 is generous.
+    void*    cur   = control;
+    void*    last  = nullptr;
+    int      hops  = 0;
+    while (cur && cur != last && hops < 8) {
+        last = cur;
+        ++hops;
+
+        uint32_t strref     = 0;
+        const char* literal = nullptr;
+        uint32_t literalLen = 0;
+        void*    parent     = nullptr;
+
+        __try {
+            auto* base = reinterpret_cast<unsigned char*>(cur);
+            strref  = *reinterpret_cast<uint32_t*>(base + kControlTooltipStrRefOffset);
+            literal = *reinterpret_cast<const char**>(base + kControlTooltipStringOffset);
+            literalLen = *reinterpret_cast<uint32_t*>(
+                base + kControlTooltipStringOffset + 4);
+            parent  = *reinterpret_cast<void**>(base + kControlParentOffset);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            return false;
+        }
+
+        // 1. Strref takes priority (engine decompile: when field4_0x24
+        //    is non-zero AND a strref lookup succeeds, that wins over
+        //    the literal).
+        if (strref != 0 && strref != 0xFFFFFFFF) {
+            if (LookupTlk(strref, outBuf, bufSize) && outBuf[0]) {
+                return true;
+            }
+        }
+
+        // 2. Literal tooltip_string.
+        if (literal && literalLen > 0 && literalLen < bufSize) {
+            __try {
+                memcpy(outBuf, literal, literalLen);
+                outBuf[literalLen] = '\0';
+                return true;
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                outBuf[0] = '\0';
+                // Fall through to parent walk — corrupt literal pointer.
+            }
+        }
+
+        // 3. Bubble up to parent and retry (engine recurses via
+        //    parent_control->vtable->DisplayToolTip).
+        cur = parent;
+    }
+
+    return false;
+}
+
 bool ReadGuiString(void* control, size_t guiStringPtrOffset,
                    char* outBuf, size_t bufSize) {
     if (!control || bufSize < 2) return false;

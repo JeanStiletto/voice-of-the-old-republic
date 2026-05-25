@@ -604,6 +604,19 @@ constexpr size_t kListBoxTopVisibleIndexOffset  = 0x2c8;
 //   +0xC  height  int
 constexpr size_t kControlExtentOffset = 0x4;
 
+// CSWGuiControl tooltip fields (verified against the
+// CSWGuiControl::DisplayToolTip @ 0x418a90 decompile + struct definition in
+// swkotor.exe.h:5238). Resolution order the engine uses:
+//   * If field4_0x24 (tooltip_strref) is non-zero → CTlkTable::GetSimpleString
+//   * Else if tooltip_string at +0x28 is non-empty → use literal CExoString
+//   * Else if parent_control at +0x14 is non-null → recurse into parent
+//   * Else no tooltip
+// (An optional " : KeyName" suffix gated on field6_0x30 / keybind action id —
+// we skip this in keyboard nav; the user already knows which key they pressed.)
+constexpr size_t kControlParentOffset       = 0x14;  // CSWGuiControl* parent
+constexpr size_t kControlTooltipStrRefOffset = 0x24; // uint32 strref (0 = none)
+constexpr size_t kControlTooltipStringOffset = 0x28; // CExoString literal
+
 // ---------------------------------------------------------------------------
 // CSWGuiSaveLoadEntry layout (from swkotor.exe.h:16673). Each row in the
 // CSWGuiSaveLoad.games_listbox is a CSWGuiSaveLoadEntry that embeds a

@@ -161,6 +161,15 @@ bool SelectNextActionInRow(void* tam, int row);
 bool SelectPrevActionInRow(void* tam, int row);
 bool DispatchRowAction   (void* tam, int row);
 
+// Return a pointer to target_actions[row].action_button — the visible
+// CSWGuiButton that renders the currently-selected action's icon/label
+// for `row`. Same shape as engine_actionbar::GetColumnActionButton:
+// action_button is the first field of CSWGuiMainInterfaceAction at
+// stride 0x71C starting at TAM +0x54, so its address coincides with
+// the array-entry's start. Returns nullptr on null TAM / out-of-range
+// row.
+void* GetRowActionButton(void* tam, int row);
+
 // Diagnostic: resolve `targetClient` via CClientExoApp::GetGameObject,
 // downcast through the GameObjectMethods vtable, log target class +
 // per-class fields that the engine's GetTargetActions checks. For doors

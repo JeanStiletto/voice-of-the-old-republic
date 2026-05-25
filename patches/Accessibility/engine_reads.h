@@ -52,6 +52,18 @@ uint32_t ReadU32(void* base, size_t offset);
 // for invalid strref values, missing TLK pointer, or any raised exception.
 bool LookupTlk(uint32_t strref, char* outBuf, size_t bufSize);
 
+// Read the engine-provided tooltip for `control`. Mirrors the resolution
+// chain in CSWGuiControl::DisplayToolTip @ 0x418a90:
+//   1. If tooltip_strref (field4_0x24) is non-zero → TLK lookup.
+//   2. Else if tooltip_string literal (+0x28) is non-empty → use it.
+//   3. Else bubble up to parent_control (+0x14) and retry.
+//
+// Returns true on a non-empty result. Always NUL-terminates `outBuf`.
+// SEH-guarded; faults at any indirection return false silently so the
+// caller can keep the keyboard contract (consume the press, speak
+// nothing if no tip is available).
+bool ReadControlTooltip(void* control, char* outBuf, size_t bufSize);
+
 // Read a null-terminated c_string from CAurGUIStringInternal. Bypasses all
 // the CExoString / strref / text_object indirection — goes straight to the
 // engine's actually-rendered string.

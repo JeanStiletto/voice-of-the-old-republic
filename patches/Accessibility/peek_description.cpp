@@ -6,8 +6,10 @@
 #include "engine_reads.h"
 #include "hotkeys.h"
 #include "log.h"
-#include "menus_internal.h"   // kEquipBtn* slot ids
+#include "menus_internal.h"   // kEquipBtn* slot ids, FindControlById
 #include "prism.h"
+
+using acc::menus::detail::FindControlById;
 
 #include <cstddef>
 #include <cstdint>
@@ -184,15 +186,45 @@ const PanelPeekInfo* LookupPanel(acc::engine::PanelKind k) {
 //
 // minSel = 1 skips the protoitem template row (Equip picker only — rows
 // in LB_ITEMS render from row 0 as the prototype). Container uses 0.
+//
+// findLb is a finder function: Container/InGameEquip listboxes live at
+// stable inline offsets within the panel struct (we know the type), while
+// the workbench panels (WorkbenchItems / WorkbenchUpgrade) are heap-
+// allocated with no stable layout — the listbox is reached via the .gui-
+// time control ID instead.
 struct ItemTooltipPanelInfo {
     acc::engine::PanelKind kind;
-    std::size_t            itemsListBoxOffset;
+    void*                (*findLb)(void* panel);
     int                    minSel;
 };
 
+void* ContainerFindLb(void* panel) {
+    // CSWGuiContainer.items_listbox at +0x07f0.
+    return reinterpret_cast<unsigned char*>(panel) + 0x07f0;
+}
+
+void* InGameEquipFindLb(void* panel) {
+    // CSWGuiInGameEquip.items_listbox at +0x30d8.
+    return reinterpret_cast<unsigned char*>(panel) + 0x30d8;
+}
+
+void* WorkbenchItemsFindLb(void* panel) {
+    // upgradeitems.gui LB_ITEMS at .gui ID 0. Same finder
+    // menus_listbox.cpp's WorkbenchItems spec uses.
+    return FindControlById(panel, 0);
+}
+
+void* WorkbenchUpgradeFindLb(void* panel) {
+    // upgrade.gui LB_ITEMS at .gui ID 0 (compatible-mods list once a slot
+    // button has been activated).
+    return FindControlById(panel, 0);
+}
+
 constexpr ItemTooltipPanelInfo kItemTooltipPanels[] = {
-    { acc::engine::PanelKind::Container,   0x07f0, 0 },  // CSWGuiContainer.items_listbox
-    { acc::engine::PanelKind::InGameEquip, 0x30d8, 1 },  // CSWGuiInGameEquip.items_listbox
+    { acc::engine::PanelKind::Container,        ContainerFindLb,        0 },
+    { acc::engine::PanelKind::InGameEquip,      InGameEquipFindLb,      1 },
+    { acc::engine::PanelKind::WorkbenchItems,   WorkbenchItemsFindLb,   0 },
+    { acc::engine::PanelKind::WorkbenchUpgrade, WorkbenchUpgradeFindLb, 0 },
 };
 
 // Equip-panel slot peek table. When the focused chain target is one of
@@ -307,8 +339,13 @@ constexpr std::size_t kItemEntryGameObjectIdOffset = 0x1c4;
 bool HandleItemTooltip(acc::engine::PanelKind kind,
                        const ItemTooltipPanelInfo& info,
                        void* activePanel) {
-    void* lb = reinterpret_cast<unsigned char*>(activePanel) +
-               info.itemsListBoxOffset;
+    void* lb = info.findLb ? info.findLb(activePanel) : nullptr;
+    if (!lb) {
+        acclog::Write("Peek.Item",
+                      "panel=%s no listbox; silent",
+                      acc::engine::PanelKindName(kind));
+        return false;
+    }
     auto* lbList = reinterpret_cast<CExoArrayList*>(
         reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
     int rowCount = 0;
@@ -463,7 +500,34 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
     }
 
     const PanelPeekInfo* info = LookupPanel(kind);
-    if (!info) return false;  // unknown / unsupported panel; pass through
+    if (!info) {
+        // Generic fallback: read the focused control's own engine
+        // tooltip (CSWGuiControl::tooltip_strref or .tooltip_string).
+        // Catches arbitrary panels we haven't taught the peek table —
+        // LevelUp step buttons, PartySelection portraits, charsheet
+        // attribute rows, options-screen widgets etc. — for free
+        // wherever the .gui file populated a tooltip.
+        //
+        // Always consume the press when this branch runs (same rule
+        // as the item-tooltip path): predictable behaviour beats
+        // Shift+arrow falling through to plain nav.
+        if (focusedControl) {
+            char tip[1024];
+            if (acc::engine::ReadControlTooltip(focusedControl, tip,
+                                                sizeof(tip))) {
+                prism::Speak(tip, /*interrupt=*/true);
+                acclog::Write("Peek.Control",
+                              "panel=%s control=%p tooltip=\"%s\"",
+                              acc::engine::PanelKindName(kind),
+                              focusedControl, tip);
+                return true;
+            }
+            acclog::Write("Peek.Control",
+                          "panel=%s control=%p no tooltip; pass through",
+                          acc::engine::PanelKindName(kind), focusedControl);
+        }
+        return false;  // unknown / no tooltip — pass through to plain nav
+    }
 
     // Re-stage the description for the focused row before reading.
     // SEH-guarded — OnControlEntered & friends dereference the

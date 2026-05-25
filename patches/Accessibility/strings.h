@@ -222,6 +222,15 @@ enum class Id : int {
     FmtActionBarFired,
     ActionBarCancelled,
 
+    // ---- Generic tooltip fallback.
+    //      `NoTooltipAvailable` — spoken when the user presses Shift+arrow
+    //                             on a control / variant whose engine
+    //                             tooltip is empty. Lets the user know
+    //                             the gesture was registered without
+    //                             leaving them guessing why nothing was
+    //                             said.
+    NoTooltipAvailable,
+
     // ---- Container loot panel announces.
     //      `ContainerEmpty`        — count == 0.
     //      `ContainerOneItem`      — count == 1 (German singular has different

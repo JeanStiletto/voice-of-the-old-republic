@@ -87,6 +87,8 @@ const char* Get(Id id) {
         case Id::FmtActionBarFired:       return "%s eingesetzt";
         case Id::ActionBarCancelled:      return "Abgebrochen";
 
+        case Id::NoTooltipAvailable:   return "Keine Beschreibung verf\xFC" "gbar";  // verfügbar
+
         case Id::ContainerEmpty:       return "Leer";
         case Id::ContainerOneItem:     return "1 Gegenstand";
         case Id::FmtContainerItems:    return "%d Gegenst\xE4nde";              // Gegenstände

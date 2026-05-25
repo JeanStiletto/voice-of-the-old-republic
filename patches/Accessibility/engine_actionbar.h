@@ -86,6 +86,15 @@ bool ReadVariantLabel(void* mainInterface, int slot, int index,
 // Returns 0 on read fault / out-of-range index.
 uint32_t ReadVariantActionId(void* mainInterface, int slot, int index);
 
+// Return a pointer to field45_0x771c[slot].action_button — the visible
+// CSWGuiButton that renders the column icon (and is what the engine
+// hovers over to display a tooltip). The button embeds a CSWGuiControl
+// at offset 0, so the returned pointer is safe to pass directly to
+// acc::engine::ReadControlTooltip / ReadGuiString / etc.
+//
+// Returns nullptr on null mainInterface or out-of-range slot.
+void* GetColumnActionButton(void* mainInterface, int slot);
+
 // Stamp the engine's per-column "currently-selected variant action_id"
 // field at struct offset 0x1bac + slot*4 (six int32s, one per column).
 // Reads the descriptor's action_id at `index` and writes it into that
