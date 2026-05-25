@@ -1751,6 +1751,40 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             IdentifyPanel(g_chainPanel) == PanelKind::InGameJournal &&
             acc::menus::journal::IsJournalEntry(e.control);
 
+        // Party-member switch buttons (change_party_1/2 portraits) on
+        // InGameEquip and InGameCharacter. Direct dispatch into
+        // OnChangeCharacter bypasses click-sim, which resolves mouseOver
+        // to overlapping stat-row labels and never reaches the bottom-
+        // row buttons (verified in patch-20260525-210226.log line 1740).
+        // OnChangeCharacter dereferences the button to decide direction
+        // (`btn == &this->change_party_2_button`) and gates on
+        // `btn->is_active != 0` (raised in the CharacterSwitch op's
+        // drain).
+        //
+        // The flanking character_left/right arrows are paginators over
+        // the 9-slot NPC roster — useless in KOTOR 1's 3-person party
+        // and suppressed from the chain in IsDecorativeForChain.
+        //
+        // Identification: equip uses struct offsets (runtime renumbers
+        // gui IDs around the runtime-added char_left/right pair);
+        // charsheet uses cids 64/67 (stable, declared in character.gui).
+        uintptr_t charSwitchHandler = 0;
+        PanelKind pkForSwitch = IdentifyPanel(g_chainPanel);
+        if (pkForSwitch == PanelKind::InGameEquip) {
+            auto* p = reinterpret_cast<unsigned char*>(g_chainPanel);
+            if (e.control == p + kEquipPanelChangeParty1ButtonOffset ||
+                e.control == p + kEquipPanelChangeParty2ButtonOffset) {
+                charSwitchHandler = kAddrInGameEquipOnChangeCharacter;
+            }
+        } else if (pkForSwitch == PanelKind::InGameCharacter) {
+            int cid = *reinterpret_cast<int*>(
+                reinterpret_cast<unsigned char*>(e.control) + 0x50);
+            if (cid == 64 || cid == 67) {
+                charSwitchHandler = kAddrInGameCharacterOnChangeCharacter;
+            }
+        }
+        bool isCharSwitch = (charSwitchHandler != 0);
+
         if (acc::menus::pending::IsPending()) {
             acclog::Write("Enter", "op already pending; ignoring (target=%p)", e.control);
             consumed = true;
@@ -1808,6 +1842,15 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             acclog::Write("WorkbenchUpgrade", "armed via direct OnEnterSlot+OnSlotSelected "
                           "(Enter on slot id=%d btn=%p panel=%p)",
                           workbenchUpgradeSlotCid, e.control, g_chainPanel);
+            consumed = true;
+        } else if (isCharSwitch) {
+            acc::menus::pending::QueueCharacterSwitch(g_chainPanel,
+                                                     e.control,
+                                                     charSwitchHandler);
+            acclog::Write("Menus.Enter",
+                          "character-switch panel=%p index=%d target=%p handler=0x%x",
+                          g_chainPanel, g_chainIndex, e.control,
+                          (unsigned)charSwitchHandler);
             consumed = true;
         } else {
             acc::menus::pending::QueueActivate(e.control);

@@ -487,14 +487,14 @@ enum class Id : int {
     PortraitRaceLight,
     FmtPortraitDescription,
 
-    // ---- Character sheet (CSWGuiInGameCharacter) — party-member carousel
-    //      buttons. The bottom-row icon arrows (btn_charleft / btn_charright
-    //      in swkotor.exe.h:9840-9841) cycle the displayed character among
-    //      the party via OnSwitchLeft/Right (engine handlers @0x006af450 /
-    //      @0x006af6d0). Image-only with no inline text — surfaced through
-    //      the per-kind name fallback in menus_extract.
-    CharSwitchPrev,
-    CharSwitchNext,
+    // ---- Party-member portrait buttons (change_party_1 / change_party_2)
+    //      on the InGameEquip and InGameCharacter panels. These are the
+    //      switch targets — Enter on them calls OnChangeCharacter to
+    //      swap the displayed character. Labels are positional (1 = left,
+    //      2 = right) since the NPC behind each slot changes after every
+    //      switch — a fixed name label would be wrong half the time.
+    ChangeToCharacter1,
+    ChangeToCharacter2,
 
     // ---- Disabled-button suffix. Appended (with leading ", ") to the
     //      announced text when a chain-navigable button's is_active field

@@ -101,6 +101,16 @@ bool QueuePrevSWInGameGui();
 // Used by the Tab / Shift+Tab inter-panel cycle handler in menus.cpp.
 bool QueueSwitchSubScreen(int guiId);
 
+// Queue a party-cycle dispatch on the InGameEquip or InGameCharacter
+// panel. On drain calls `handlerAddr(panel, btn)` directly — bypassing
+// the click-sim that fails because the bottom-row stat-row labels
+// overlap the character_left/right buttons in z-order, so MoveMouseTo
+// Position + LMouseDown/Up resolves to a label and never fires the
+// arrow's onClick. The four valid handler addresses live in
+// engine_offsets.h: kAddrInGameEquipOnSwitchLeft / Right and
+// kAddrInGameCharacterOnSwitchLeft / Right.
+bool QueueCharacterSwitch(void* panel, void* btn, uintptr_t handlerAddr);
+
 // Queue a Store item row trade action. On drain dispatches to the
 // engine's per-mode click handler with the row as param_1:
 //   * Buy mode  → CSWGuiStore::OnControlStoreAButton(store, row)

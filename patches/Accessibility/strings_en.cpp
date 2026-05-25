@@ -152,8 +152,8 @@ const char* Get(Id id) {
         case Id::PortraitRaceLight:    return "light-skinned";
         case Id::FmtPortraitDescription: return "%s %s %d";
 
-        case Id::CharSwitchPrev:       return "Previous character";
-        case Id::CharSwitchNext:       return "Next character";
+        case Id::ChangeToCharacter1:   return "Switch to character 1";
+        case Id::ChangeToCharacter2:   return "Switch to character 2";
         case Id::DisabledSuffix:       return ", unavailable";
 
         case Id::FmtCharSheetClass:    return "%s. ";

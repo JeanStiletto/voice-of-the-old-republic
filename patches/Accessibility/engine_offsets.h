@@ -734,6 +734,28 @@ typedef void (__thiscall* PFN_InGameEquipOnOKPressed)(void* panel, void* btn_equ
 constexpr uintptr_t kAddrInGameEquipOnItemSelected = 0x006b7920;
 constexpr uintptr_t kAddrInGameEquipOnOKPressed    = 0x006b9160;
 
+// OnChangeCharacter — the "switch displayed character" handler bound
+// to the change_party_1/2 portrait buttons on InGameEquip and
+// InGameCharacter. Direct dispatch bypasses click-sim's hit-test trap
+// (the bottom-row stat labels overlap these buttons in z-order, so
+// MoveMouseToPosition's mouseOver resolves to a label and LMouseDown/Up
+// never reaches the button — verified in patch-20260525-210226.log
+// line 1740).
+//
+// Signature: `void __thiscall(this_panel, CSWGuiControl* btn)`.
+// Gates on `btn->is_active != 0` (decomp — returns early if 0). Caller
+// must raise the button's is_active to 1 before dispatch, same shape as
+// the equip-slot picker pattern.
+// Branches on `btn == &this->change_party_2_button` to decide direction.
+//
+// Sibling handlers OnSwitch{Left,Right} (which paginate visible portraits
+// over the 9-slot NPC roster) are deliberately not wired: KOTOR 1's
+// 3-person party cap means the 2 change_party slots already cover both
+// companions, so pagination has nothing to advance to.
+typedef void (__thiscall* PFN_GuiOnSwitch)(void* panel, void* btn);
+constexpr uintptr_t kAddrInGameEquipOnChangeCharacter     = 0x006ba820;
+constexpr uintptr_t kAddrInGameCharacterOnChangeCharacter = 0x006af350;
+
 // ---------------------------------------------------------------------------
 // CSWGuiUpgrade (workbench upgrade.gui) slot-pick + commit chain.
 // Same structural shape as the equip-screen pair above, RE'd from Lane's

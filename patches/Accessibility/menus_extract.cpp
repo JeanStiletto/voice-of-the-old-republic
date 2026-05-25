@@ -1486,12 +1486,15 @@ const char* FromControl(void* control,
             reinterpret_cast<unsigned char*>(control) + 0x50);
         acc::strings::Id sid = acc::strings::Id::Count_;
         const char* tag = nullptr;
-        if (cid == 66) {
-            sid = acc::strings::Id::CharSwitchPrev;
-            tag = "btn_charleft";
-        } else if (cid == 65) {
-            sid = acc::strings::Id::CharSwitchNext;
-            tag = "btn_charright";
+        // cid 65/66 (btn_charleft / btn_charright) suppressed from the
+        // chain via IsDecorativeForChain; only the change_party
+        // portraits remain reachable.
+        if (cid == 64) {
+            sid = acc::strings::Id::ChangeToCharacter1;
+            tag = "btn_change1";
+        } else if (cid == 67) {
+            sid = acc::strings::Id::ChangeToCharacter2;
+            tag = "btn_change2";
         }
         if (sid != acc::strings::Id::Count_) {
             const char* lit = acc::strings::Get(sid);
@@ -1512,26 +1515,25 @@ const char* FromControl(void* control,
 
     // 9f. Per-kind label fallback for the equipment screen
     //     (CSWGuiInGameEquip). The bottom-row strip mirrors
-    //     InGameCharacter — character_left_button / character_right_button
-    //     are the prev/next party-member arrows. The two flanking
-    //     change_party_1/2 portraits are filtered out of the chain entirely
-    //     via IsDecorativeForChain, so only the two arrows reach this path.
+    //     InGameCharacter — change_party_1/2 are the party-member switch
+    //     targets (their onClick fires OnChangeCharacter). The flanking
+    //     character_left/right arrows paginate the 9-slot NPC roster
+    //     and are useless in KOTOR 1's 3-person party (suppressed from
+    //     the chain via IsDecorativeForChain).
     //     Runtime gui IDs are unstable (engine renumbers when the runtime-
     //     added arrows collide with gui-declared BTN_CHANGE2's id=40), so
-    //     identify by struct offset against the panel base. Reuses the
-    //     CharSwitchPrev/Next strings since the user-facing semantics are
-    //     identical to the character sheet's btn_charleft/btn_charright.
+    //     identify by struct offset against the panel base.
     if (!source && ownerForPerkind &&
         IdentifyPanel(ownerForPerkind) == PanelKind::InGameEquip) {
         auto* p = reinterpret_cast<unsigned char*>(ownerForPerkind);
         acc::strings::Id sid = acc::strings::Id::Count_;
         const char* tag = nullptr;
-        if (control == p + kEquipPanelCharacterLeftButtonOffset) {
-            sid = acc::strings::Id::CharSwitchPrev;
-            tag = "character_left";
-        } else if (control == p + kEquipPanelCharacterRightButtonOffset) {
-            sid = acc::strings::Id::CharSwitchNext;
-            tag = "character_right";
+        if (control == p + kEquipPanelChangeParty1ButtonOffset) {
+            sid = acc::strings::Id::ChangeToCharacter1;
+            tag = "change_party_1";
+        } else if (control == p + kEquipPanelChangeParty2ButtonOffset) {
+            sid = acc::strings::Id::ChangeToCharacter2;
+            tag = "change_party_2";
         }
         if (sid != acc::strings::Id::Count_) {
             const char* lit = acc::strings::Get(sid);

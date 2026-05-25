@@ -374,8 +374,21 @@ void RebindChain(void* panel) {
         PanelKind pk = IdentifyPanel(panel);
         int cid = *reinterpret_cast<int*>(
             reinterpret_cast<unsigned char*>(c) + 0x50);
+        // cid 1 (btn_3dchar) is image-only model rotator; skip.
+        // cid 64/67 (btn_change1/2) were previously skipped as "decorative
+        // crossfade slots" — that was wrong. They ARE the actual party-
+        // member switch targets: clicking one calls OnChangeCharacter
+        // which switches the displayed character. The change "crossfade"
+        // is a side-effect of the switch (the portraits update to show
+        // the OTHER 2 NPCs after the swap), not the purpose of the
+        // buttons. Re-exposed in the chain; per-kind labels in
+        // menus_extract.cpp section 9e wire the speech.
+        // cid 65/66 (btn_charright/btn_charleft) — pagination arrows
+        // over the 9-slot NPC roster. Useless in KOTOR 1: max active
+        // party is 3 (PC + 2 NPCs), and the 2 portrait slots already
+        // cover both companions, so the arrows have nothing to advance to.
         if (pk == PanelKind::InGameCharacter &&
-            (cid == 1 || cid == 64 || cid == 67)) {
+            (cid == 1 || cid == 65 || cid == 66)) {
             return true;
         }
         // InGameEquip BTN_EQUIP (id=37, "OK"): the OK button is the
@@ -395,20 +408,15 @@ void RebindChain(void* panel) {
             (cid == kEquipBtnEquipId || cid == kEquipBtnBackId)) {
             return true;
         }
-        // InGameEquip change_party_1/2 buttons: decorative crossfade
-        // slots that display the OTHER two party members' portraits.
-        // Mirrors the InGameCharacter btn_change1/btn_change2 pair
-        // above — the engine animates them during a party-cycle but
-        // they aren't user-clickable (bit_flags=0x8, no 0x2 interactive
-        // bit). The actual cycle is driven via character_left/right
-        // (see per-kind label path in menus_extract.cpp section 9f).
-        // Runtime IDs collide with gui-declared values when the engine
-        // renumbers the runtime-added character_left/right pair, so
-        // identify by struct offset instead.
+        // InGameEquip character_left/right arrows: pagination over the
+        // 9-slot NPC roster, same as InGameCharacter cid 65/66 above.
+        // Max party in KOTOR 1 is 3, so the 2 change_party portraits
+        // already cover both companions and the arrows have nothing to
+        // advance to — skip.
         if (pk == PanelKind::InGameEquip) {
             auto* p = reinterpret_cast<unsigned char*>(panel);
-            if (c == p + kEquipPanelChangeParty1ButtonOffset ||
-                c == p + kEquipPanelChangeParty2ButtonOffset) {
+            if (c == p + kEquipPanelCharacterLeftButtonOffset ||
+                c == p + kEquipPanelCharacterRightButtonOffset) {
                 return true;
             }
         }
