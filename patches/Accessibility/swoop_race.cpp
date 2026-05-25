@@ -113,34 +113,97 @@ constexpr size_t kAurObjectPositionOffset       = 0x78;
 // Each returns the same `this` pointer downcast to the requested
 // concrete subclass, or null if it isn't that type. So enumerating
 // "all obstacles" = walk 255 slots, call vtable[0x20] thiscall on each
-// non-null slot, keep the non-null returns.
+// non-null slot, keep the non-null returns. We make two such passes
+// per tick — one for obstacles (rocks/debris), one for enemies
+// (accelerator pads). See "Object pool split" below.
 constexpr size_t kClientInternalMgoArrayOffset  = 0x0;
 constexpr size_t kMgoArrayObjectsOffset         = 0x4;
 constexpr int   kMgoArraySlotCount              = 255;
 constexpr size_t kVtableSlotAsObstacle          = 0x20;
+constexpr size_t kVtableSlotAsEnemy             = 0x1c;
 
-// ----- Obstacle subtype routing -----
+// ----- Object pool split: rocks vs accelerator pads -----
 //
-// All "obstacles" in the global MGO array share the CSWMGObstacle vtable
-// (0x0075287C, verified live 2026-05-24). The engine doesn't subclass
-// rocks vs accelerator pads at the C++ type level; the only per-instance
-// distinguisher is the model name carried by the obstacle's CAurObject.
-// CSWMGObstacle::GetName @0x66dc80 reads that name by calling
-// CAurObject's vtable[0xc] (typed `char *(*)(void)`).
+// Verified by extracting the per-track .are files (all three swoop
+// modules — m03mg, m17mg, m26mg — agree):
 //
-// Naming convention in K1 modules: accelerator pads typically have model
-// names starting with "swp_acc" / "accpad" / similar. The list below is
-// substring-matched (case-insensitive prefix) against the name; matches
-// route to the accelerator cue, everything else to the warning cue.
+//   <list label="Obstacles">  — exactly 22 entries (mgo01..mgo22).
+//     Rocks / debris. CSWMGObstacle, vtable 0x0075287C. Names are
+//     sequential (m03mg_MGO01..MGO22) and carry no semantic discriminator.
+//
+//   <list label="Enemies">    — 30 entries riding their own tracks
+//     (mgt02..mgt31). All use model `mgf_accelpad01`, all carry
+//     `<byte label="Trigger">1</byte>` (collision-only, no bullets).
+//     These are the accelerator pads. CSWMiniEnemy (extends
+//     CSWTrackFollower). On collision, the area-level
+//     OnHitFollower=accelpad script (tar_m03mg_s.rim/accelpad.ncs)
+//     fires SWMG_SetPlayerSpeed * 1.05 + acceleration * 1.10.
+//
+// So "are accelerator pads obstacles?" — no. They live in the enemies
+// list. Earlier swoop_race code tried to route booster cues by
+// substring-matching obstacle names; that never matched because no
+// obstacle ever carries an "accel" or "boost" name (the model on
+// every obstacle is the generic CSWMGObstacle, no per-instance type
+// field). The booster-pattern routing has been removed and the
+// accelpad cue moved to a separate AsEnemy sweep below.
+//
+// CSWMGObstacle::GetName @0x66dc80 reads its visual name by calling
+// CAurObject's vtable[0xc]. Retained for the first-fire diagnostic
+// dump so the obstacle inventory is still logged on entry.
 constexpr size_t kAurVtableSlotGetName          = 0xc;
-constexpr const char* kBoosterCueResref         = "mgs_accelpad";
-// Substrings checked against the obstacle name (lower-cased, prefix
-// match). Add new patterns here as we discover the names other tracks
-// use for booster pads.
-constexpr const char* kBoosterNamePatterns[]    = {
-    "acc",     // catches "accpad", "accelpad", "swp_acc_*"
-    "boost",
-};
+
+// ----- Accelerator-pad (CSWMiniEnemy) loop cue -----
+//
+// Custom resref backed by a trimmed WAV (Override\acc_boost.wav).
+// Source: first 0.3 s of mgs_basethrust03 — the engine "base thrust"
+// surge with the descending tail removed. The vanilla sample's
+// closing half-second slopes down in pitch (reads as the bike
+// powering DOWN, opposite of the cue's intent: "boost incoming");
+// looping a tail-trimmed version preserves only the rising/sustained
+// portion. 0.3 s also fits cleanly inside the per-pad listening
+// window (the nearest-only hand-off keeps a cue on each pad ~1-2 s
+// before the next pad takes over — see kAccelpadConcurrentLoops).
+//
+// File ships in Override\ rather than as a renamed engine resource
+// so it doesn't collide with any vanilla use of mgs_basethrust03.
+// Engine ResLoader checks Override → BIF, so a bare "acc_boost"
+// resref resolves to our trimmed sample.
+//
+// SUPERSEDED candidates (kept for A/B):
+//   mgs_basethrust03 — same timbre but the descending tail read as
+//                      pitch-drop / wrong direction; trim fixed it
+//   mgs_pwrup        — fired clean but timbre wasn't ideal
+//   mgs_thrustloop01 — 5+ s sustained drone; only quiet attack got
+//                      airtime in the 1-2 s window, read as unhearable
+constexpr const char* kAccelpadLoopResref       = "acc_boost";
+
+// Same 200 m horizon as obstacles. 100 m was tested and gave only
+// ~0.5 s reaction time at gear 3 (max 190 u/s) — not enough to
+// commit to a lane change. The masking concern from the first pass
+// (30 concurrent thrust loops drowning obstacles) is already solved
+// by the nearest-only policy below; range no longer needs to be a
+// secondary mitigation. At 200 m reaction time scales:
+//   gear 1 (max 70 u/s):  ~2.86 s
+//   gear 2 (max 120 u/s): ~1.67 s
+//   gear 3 (max 190 u/s): ~1.05 s
+constexpr float       kAccelpadCueRangeM        = 200.0f;
+
+// Only the nearest in-range accelpad fires a loop at any moment.
+// Reasoning: the booster soundstage was the noisy half of the first
+// pass — 3-4 thrust loops simultaneously masked obstacle cues and
+// blurred any individual pad's spatial pan. Single-source keeps the
+// booster channel clean and unambiguous. Obstacles keep their
+// multi-source pass (they're avoidance cues; missing one is a hit).
+constexpr int         kAccelpadConcurrentLoops  = 1;
+
+// Position retrieval for a CSWMiniEnemy (and any CSWTrackFollower):
+// the engine's CSWTrackFollower::GetPosition @0x0066d5d0 walks
+//   followers->models.data[0] → vtable[+0x64] → returns Vector* world pos
+// We replicate that path here. Offset 0x68 is the CExoArrayList<undefined4>
+// `models` field in CSWTrackFollower (after the CSWMiniGameObject base
+// 0x60 + mini_game ptr 0x4 + field2_0x64 0x4).
+constexpr size_t kTrackFollowerModelsDataOffset = 0x68;
+constexpr size_t kModelVtableSlotGetPosition    = 0x64;
 
 // ----- Acceleration progress cue -----
 //
@@ -420,13 +483,20 @@ struct State {
     // obstacle leaves range or the race ends. Sized to the global
     // MGO array slot count so we can key by slot without a parallel
     // index map. Auto-cleans at DLL unload via RAII.
+    //
+    // Parallel array for accelerator pads (CSWMiniEnemy). Same
+    // lifecycle, different cue sample (mgs_thrustloop01). Keyed by
+    // the same slot index — an MGO slot is either an obstacle or an
+    // enemy (the AsXxx vtable downcasts return null for mismatches),
+    // never both, so the two arrays don't overlap on any one slot.
     acc::audio::LoopSource obstacle_loops[kMgoArraySlotCount];
+    acc::audio::LoopSource accelpad_loops[kMgoArraySlotCount];
 
-    // Diagnostic guard for the first-obstacle byte dump (separate from
-    // the mini_game one). Lets us identify obstacle subtypes (debris vs
-    // accelerator pad, distinguished by vtable) without spamming the
-    // log on subsequent races.
+    // Diagnostic guard for the first-obstacle byte dump. Lets us log
+    // the per-track inventory once per race rather than every tick.
     bool          obstacle_diag_emitted   = false;
+    // Sibling guard for the accelpad inventory dump.
+    bool          accelpad_diag_emitted   = false;
 
     // Last-fire timestamp for the acceleration progress tick. See
     // kAccelTickResref / kAccelTickInterval{Min,Max}Ms for the cadence
@@ -883,39 +953,42 @@ const char* ReadAurObjectName(void* aurObject) {
     }
 }
 
-// Lowercase a single ASCII char without locale.
-char AsciiLower(char c) {
-    return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : c;
-}
+// Read the world position of a CSWTrackFollower (i.e. a CSWMiniEnemy)
+// by mirroring CSWTrackFollower::GetPosition @0x0066d5d0:
+//   followers->models.data[0] → vtable[+0x64](this, Vector* outBuf)
+//     returns Vector*  (typically writes through outBuf, sometimes
+//                       returns a pointer to a member Vector)
+// Returns false on any null link, empty models array, or SEH fault.
+typedef Vector* (__thiscall* PFN_GetPositionThunk)(void* this_, Vector* outBuf);
 
-// Case-insensitive substring search. Returns true if `needle` appears
-// anywhere in `haystack`. Both must be NUL-terminated. Used for
-// matching obstacle names against the booster-pattern table.
-bool ContainsCi(const char* haystack, const char* needle) {
-    if (!haystack || !needle || !*needle) return false;
-    for (const char* h = haystack; *h; ++h) {
-        const char* hp = h;
-        const char* np = needle;
-        while (*hp && *np && AsciiLower(*hp) == AsciiLower(*np)) {
-            ++hp; ++np;
-        }
-        if (!*np) return true;
+bool ReadTrackFollowerPosition(void* follower, Vector& out) {
+    if (!follower) return false;
+    __try {
+        // models is a CExoArrayList<undefined4>. data is the first
+        // member (offset 0); the array holds 4-byte pointers to model
+        // wrapper objects (each with its own vtable).
+        void* modelsData = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(follower) +
+            kTrackFollowerModelsDataOffset);
+        if (!modelsData) return false;
+        // First model handle. (size lives at +0x6c; we don't need to
+        // read it explicitly — a null data[0] is the empty case.)
+        void* model = *reinterpret_cast<void**>(modelsData);
+        if (!model) return false;
+        void* vtable = *reinterpret_cast<void**>(model);
+        if (!vtable) return false;
+        void* fn = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(vtable) +
+            kModelVtableSlotGetPosition);
+        if (!fn) return false;
+        Vector buf = {0.0f, 0.0f, 0.0f};
+        Vector* returned =
+            reinterpret_cast<PFN_GetPositionThunk>(fn)(model, &buf);
+        out = returned ? *returned : buf;
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
     }
-    return false;
-}
-
-// Pick the cue resref for an obstacle by matching its name against
-// the booster-pattern table. Falls back to the warning cue for
-// anything that doesn't match (rocks, debris, unknown obstacles).
-const char* CueResrefForObstacle(const char* name) {
-    if (!name || !*name) return kObstacleWarnLoopResref;
-    for (size_t i = 0; i < sizeof(kBoosterNamePatterns) /
-                              sizeof(kBoosterNamePatterns[0]); ++i) {
-        if (ContainsCi(name, kBoosterNamePatterns[i])) {
-            return kBoosterCueResref;
-        }
-    }
-    return kObstacleWarnLoopResref;
 }
 
 void* CallAsCast(void* obj, size_t vtableSlotOffset) {
@@ -985,49 +1058,21 @@ void TickObstacleCues(void* /*miniGame*/) {
         Vector pos;
         if (!SafeReadVector(aur, kAurObjectPositionOffset, pos)) continue;
 
-        // Read the obstacle's name (engine's own GetName accessor path,
-        // via the CAurObject vtable). Used both for first-fire
-        // diagnostics and for runtime cue routing (booster vs rock).
+        // Read the obstacle's name via CAurObject's GetName vtable
+        // accessor. Used for the first-fire inventory log; cue routing
+        // is no longer name-based (rocks and accelpads are in different
+        // engine pools — see the "Object pool split" comment at top).
         const char* name = ReadAurObjectName(aur);
 
         // First-fire diagnostic: log EVERY obstacle's slot + name so we
-        // can see the full per-track inventory in one pass. For the
-        // first three obstacles ALSO dump the full struct bytes
-        // (0xb4 = CSWMGObstacle SIZE per SARIF DATATYPE) so we can
-        // compare them byte-by-byte and find the per-instance subtype
-        // field (rock vs accelerator pad — the names are sequential
-        // m03mg_MGO01..MGO22 and provide no semantic discrimination).
+        // can see the full per-track inventory in one pass.
         if (!g_state.obstacle_diag_emitted) {
             void* vt = SafeReadPtr(obstacle, 0);
             acclog::Write("SwoopRace",
                           "obstacle slot=%d ptr=%p vtable=%p name=[%s] "
-                          "pos=(%.2f,%.2f,%.2f) route=%s",
+                          "pos=(%.2f,%.2f,%.2f)",
                           i, obstacle, vt, name ? name : "(null)",
-                          pos.x, pos.y, pos.z,
-                          CueResrefForObstacle(name));
-            // Dump full struct + leading CAurObject bytes for the
-            // first three obstacles so we can spot the subtype field
-            // by diff. Three samples is enough to distinguish "all
-            // obstacles look identical except for position" from "one
-            // field varies per type".
-            if (i < 3) {
-                __try {
-                    acclog::WriteHex("SwoopRace",
-                                     "  obstacle full struct (0xb4)",
-                                     obstacle, 0xb4);
-                } __except (EXCEPTION_EXECUTE_HANDLER) {
-                    acclog::Write("SwoopRace",
-                                  "  obstacle full dump faulted");
-                }
-                __try {
-                    acclog::WriteHex("SwoopRace",
-                                     "  obstacle.aurObject leading bytes (0x80)",
-                                     aur, 0x80);
-                } __except (EXCEPTION_EXECUTE_HANDLER) {
-                    acclog::Write("SwoopRace",
-                                  "  obstacle.aurObject dump faulted");
-                }
-            }
+                          pos.x, pos.y, pos.z);
         }
 
         // Forward-only filter: only cue obstacles ahead of the
@@ -1049,13 +1094,10 @@ void TickObstacleCues(void* /*miniGame*/) {
         if (distSq > rangeSq) continue;
         ++obstacles_in_range;
 
-        // Route per-obstacle: matched names get the booster cue,
-        // everything else gets the warning cue. Resref is chosen at
-        // Start time only (loops can't change their sample mid-play);
-        // for an obstacle whose name changes between ticks (shouldn't
-        // happen but defensively) the existing loop just keeps its
-        // original sample until it goes out of range.
-        const char* resref = CueResrefForObstacle(name);
+        // Single cue sample for all obstacles. Accelpads are no longer
+        // routed through this sweep (they live in the enemies pool —
+        // see TickAccelpadCues).
+        const char* resref = kObstacleWarnLoopResref;
 
         // Project source proportionally so distance encodes via volume
         // + pan rotation rather than a flat sphere. 1:9 compression
@@ -1131,6 +1173,175 @@ void TickObstacleCues(void* /*miniGame*/) {
 }
 
 // ============================================================================
+// Continuous accelerator-pad proximity cues.
+//
+// Sibling sweep of TickObstacleCues over the same 255-slot MGO array,
+// but downcasting via AsEnemy (vtable[0x1c]) instead of AsObstacle.
+// Accelpads are spawned as CSWMiniEnemy with Trigger=1, each riding
+// its own track (mgt02..mgt31) — see the "Object pool split" comment
+// at top of file.
+//
+// Same range / forward-margin / 1:9 distance compression as the
+// obstacle path so booster and obstacle cues are spatially
+// comparable in flight. Different loop sample (mgs_thrustloop01) so
+// they're tonally distinguishable.
+//
+// Position retrieval differs: enemies don't carry a flat CAurObject
+// pointer at +0x60; instead, the world position lives behind the
+// first model in their models CExoArrayList, retrieved via
+// vtable[+0x64] on that model wrapper. See ReadTrackFollowerPosition.
+// ============================================================================
+
+void TickAccelpadCues(void* /*miniGame*/) {
+    void* mgoArray = ResolveMgoArray();
+    if (!mgoArray) {
+        acclog::Trace("SwoopRace", "accelpad cues: mgo array unresolved");
+        return;
+    }
+
+    Vector listener_pos;
+    if (!acc::engine::GetCameraPosition(listener_pos) &&
+        !acc::engine::GetPlayerPosition(listener_pos)) {
+        acclog::Trace("SwoopRace",
+                      "accelpad cues: no listener anchor available");
+        return;
+    }
+
+    // Single-pass scan. We need (a) the nearest in-range accelpad so
+    // we know which slot to loop, and (b) its cue position. Keep the
+    // raw pad position too — we recompute the compressed cue position
+    // once at the end, both to save work in the hot loop and to keep
+    // the resolution path obvious.
+    int slots_seen = 0;
+    int accelpads_found = 0;
+    int accelpads_ahead = 0;
+    int accelpads_in_range = 0;
+
+    int   nearest_slot      = -1;
+    float nearest_dist_sq   = 0.0f;
+    Vector nearest_pos      = {0.0f, 0.0f, 0.0f};
+
+    const float rangeSq = kAccelpadCueRangeM * kAccelpadCueRangeM;
+
+    for (int i = 0; i < kMgoArraySlotCount; ++i) {
+        void* obj = SafeReadPtr(mgoArray,
+                                kMgoArrayObjectsOffset +
+                                static_cast<size_t>(i) * sizeof(void*));
+        if (!obj) continue;
+        ++slots_seen;
+
+        // AsEnemy returns the same pointer if `obj` is a CSWMiniEnemy.
+        // All accelpads classify as enemies; in vanilla swoop tracks
+        // there are no non-accelpad enemies, but a model-name filter
+        // could be added below if a track ever ships hostile enemies.
+        void* enemy = CallAsCast(obj, kVtableSlotAsEnemy);
+        if (!enemy) continue;
+        ++accelpads_found;
+
+        Vector pos;
+        if (!ReadTrackFollowerPosition(enemy, pos)) continue;
+
+        // First-fire diagnostic: log every accelpad's slot + position
+        // so we have a per-track inventory similar to the obstacle log.
+        if (!g_state.accelpad_diag_emitted) {
+            void* vt = SafeReadPtr(enemy, 0);
+            acclog::Write("SwoopRace",
+                          "accelpad slot=%d ptr=%p vtable=%p "
+                          "pos=(%.2f,%.2f,%.2f)",
+                          i, enemy, vt, pos.x, pos.y, pos.z);
+        }
+
+        // Same forward-only filter as obstacles. Once we've passed an
+        // accelpad it can no longer give a boost, so behind-listener
+        // pads would just be soundstage noise.
+        if (pos.y < listener_pos.y - kObstacleForwardMargin) continue;
+        ++accelpads_ahead;
+
+        const float dx = pos.x - listener_pos.x;
+        const float dy = pos.y - listener_pos.y;
+        const float dz = pos.z - listener_pos.z;
+        const float distSq = dx*dx + dy*dy + dz*dz;
+        if (distSq > rangeSq) continue;
+        ++accelpads_in_range;
+
+        // Track nearest only — see kAccelpadConcurrentLoops rationale.
+        if (nearest_slot < 0 || distSq < nearest_dist_sq) {
+            nearest_slot    = i;
+            nearest_dist_sq = distSq;
+            nearest_pos     = pos;
+        }
+    }
+
+    // ---- Apply: at most one loop active, on the nearest slot. -----------
+    int loops_started_this_tick = 0;
+    int loops_stopped_this_tick = 0;
+
+    // Stop any active loop that isn't the current nearest. Covers the
+    // hand-off case where the previous-tick nearest just got passed
+    // and the new nearest is a different slot.
+    for (int i = 0; i < kMgoArraySlotCount; ++i) {
+        if (i == nearest_slot) continue;
+        if (g_state.accelpad_loops[i].IsActive()) {
+            g_state.accelpad_loops[i].Stop();
+            ++loops_stopped_this_tick;
+            acclog::Trace("SwoopRace",
+                          "accelpad loop stop slot=%d "
+                          "(no longer nearest)", i);
+        }
+    }
+
+    if (nearest_slot >= 0) {
+        // Compress the nearest pad's position onto the engine's 5-20 m
+        // audibility band, same 1:9 ratio + 1 m floor used for obstacles.
+        const float dist = std::sqrt(nearest_dist_sq);
+        Vector cue_pos = nearest_pos;
+        if (dist > 0.0f) {
+            float compressed = dist * kObstacleDistanceCompression;
+            if (compressed < kObstacleMinSourceDistanceM) {
+                compressed = kObstacleMinSourceDistanceM;
+            }
+            const float k = compressed / dist;
+            const float dx = nearest_pos.x - listener_pos.x;
+            const float dy = nearest_pos.y - listener_pos.y;
+            const float dz = nearest_pos.z - listener_pos.z;
+            cue_pos.x = listener_pos.x + dx * k;
+            cue_pos.y = listener_pos.y + dy * k;
+            cue_pos.z = listener_pos.z + dz * k;
+        }
+
+        if (g_state.accelpad_loops[nearest_slot].IsActive()) {
+            g_state.accelpad_loops[nearest_slot].UpdatePosition(cue_pos);
+        } else {
+            if (g_state.accelpad_loops[nearest_slot].Start(
+                    kAccelpadLoopResref, cue_pos)) {
+                ++loops_started_this_tick;
+                acclog::Trace("SwoopRace",
+                              "accelpad loop start slot=%d "
+                              "padPos=(%.1f,%.1f,%.1f) "
+                              "cuePos=(%.1f,%.1f,%.1f) dist=%.1f res=%s",
+                              nearest_slot,
+                              nearest_pos.x, nearest_pos.y, nearest_pos.z,
+                              cue_pos.x, cue_pos.y, cue_pos.z,
+                              dist, kAccelpadLoopResref);
+            }
+        }
+    }
+
+    if (!g_state.accelpad_diag_emitted && accelpads_found > 0) {
+        g_state.accelpad_diag_emitted = true;
+    }
+
+    acclog::Trace("SwoopRace",
+                  "accelpad scan: slots=%d accelpads=%d ahead=%d inRange=%d "
+                  "(%.0fm) nearest=%d started=%d stopped=%d listenerY=%.1f",
+                  slots_seen, accelpads_found, accelpads_ahead,
+                  accelpads_in_range, kAccelpadCueRangeM,
+                  nearest_slot,
+                  loops_started_this_tick, loops_stopped_this_tick,
+                  listener_pos.y);
+}
+
+// ============================================================================
 // Speech.
 //
 // Combine opener + keybind cheat sheet into ONE urgent utterance so the
@@ -1174,6 +1385,7 @@ void HandleEnter(void* mg) {
     g_state.gear                = 0;
     g_state.last_max_speed      = 0.0f;
     g_state.obstacle_diag_emitted = false;
+    g_state.accelpad_diag_emitted = false;
     g_state.last_accel_tick_ms  = 0;
     g_state.last_player_x_valid = false;
     g_state.last_player_x       = 0.0f;
@@ -1182,10 +1394,11 @@ void HandleEnter(void* mg) {
     g_state.last_collision_ms   = 0;
     g_state.wall_pinned_side    = 0;
     g_state.wall_pinned_at_x    = 0.0f;
-    // Defensive cleanup for obstacle loops — any active loop from a
-    // previous race must not survive into this one.
+    // Defensive cleanup for obstacle + accelpad loops — any active
+    // loop from a previous race must not survive into this one.
     for (int i = 0; i < kMgoArraySlotCount; ++i) {
         g_state.obstacle_loops[i].Stop();
+        g_state.accelpad_loops[i].Stop();
     }
 
     acclog::Write("SwoopRace",
@@ -1210,10 +1423,11 @@ void HandleExit() {
     acclog::Write("SwoopRace",
                   "EXIT after %llu ms (debounced %d ticks)",
                   dur, kExitDebounceTicks);
-    // Stop every obstacle loop — some may still be active if the
-    // race ended while obstacles were in range.
+    // Stop every obstacle + accelpad loop — some may still be active
+    // if the race ended while objects were in range.
     for (int i = 0; i < kMgoArraySlotCount; ++i) {
         g_state.obstacle_loops[i].Stop();
+        g_state.accelpad_loops[i].Stop();
     }
     g_state.wall_pinned_side    = 0;
     g_state.active              = false;
@@ -1287,6 +1501,7 @@ void Tick() {
     TickAccelerationCue(g_state.latched_mini_game);
     TickWallCollision(g_state.latched_mini_game);
     TickObstacleCues(g_state.latched_mini_game);
+    TickAccelpadCues(g_state.latched_mini_game);
     EmitDiagSnapshot(g_state.latched_mini_game);
 }
 

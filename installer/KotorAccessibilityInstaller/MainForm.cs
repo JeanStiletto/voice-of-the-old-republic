@@ -295,6 +295,19 @@ namespace KotorAccessibilityInstaller
                 UpdateProgress(85);
                 await Task.Run(() => installationManager.InstallPrismRuntime());
 
+                // Step 4.4: drop Override-folder WAV assets (currently the
+                // swoop accelpad cue). Best-effort: not having Override
+                // assets only degrades the affected audio cue, the rest of
+                // the mod still functions.
+                try
+                {
+                    await Task.Run(() => installationManager.InstallOverrideAssets());
+                }
+                catch (Exception ovEx)
+                {
+                    Logger.Warning($"Could not install Override assets: {ovEx.Message}");
+                }
+
                 // Step 4.5: apply community-recommended stability tweaks to swkotor.ini
                 // (V-Sync, Frame Buffer, Disable Vertex Buffer Objects, FullScreen).
                 // Best-effort: a failure here doesn't roll back the install — the mod

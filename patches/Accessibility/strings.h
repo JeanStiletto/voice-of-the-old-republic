@@ -1053,24 +1053,26 @@ enum class Id : int {
     //      come from the .gui file and are stable across locales).
     SoundOptionsMovieVolume,
 
-    // ---- Swoop racing minigame (tar_m03mg, manm26mg, tat_m17mg). First-cut
-    //      scaffolding: announce entry + read-only keybind cheat sheet,
-    //      announce exit. Continuous obstacle / accelerator cues are layered
-    //      on top once the CSWMiniGame obstacle-array offset locks (probe
-    //      bytes are dumped by swoop_race.cpp::DiagnosticDump on first entry).
+    // ---- Swoop racing minigame (tar_m03mg, manm26mg, tat_m17mg).
+    //      Continuous spatial cues handle proximity (obstacle loop
+    //      + nearest-accelpad loop, see swoop_race.cpp); the spoken
+    //      strings here are intentionally terse — full keymap lives
+    //      in the manual, the spoken intro must not bleed into the
+    //      start countdown.
     //
     //      SwoopRaceStarted   — entry opener, no args. Spoken once when
     //                           CSWCArea.mini_game transitions null→non-null.
-    //      SwoopRaceControls  — keybinds, no args. Concatenated after
-    //                           SwoopRaceStarted on entry. Lifted from
-    //                           docs/controls-and-input.md "Mini-game
-    //                           commands" section.
+    //                           Concatenated with SwoopRaceControls into
+    //                           one urgent utterance to survive the
+    //                           interrupt-on-speak pattern.
+    //      SwoopRaceControls  — short cheat sheet, no args.
     //      SwoopRaceEnded     — exit cue, no args. Spoken on the inverse
     //                           transition.
-    //      SwoopRaceObstacleNear — TODO: per-obstacle cue spoken at periodic
-    //                              throttle when an obstacle enters
-    //                              proximity. One %d (metres ahead).
-    //                              Reserved for the follow-up lay-off.
+    //      SwoopRaceObstacleNear — legacy slot from the first pass;
+    //                              continuous loop cues replaced the
+    //                              per-distance speech, no current
+    //                              caller. Kept for future per-strike
+    //                              callouts if we wire those up.
     SwoopRaceStarted,
     SwoopRaceControls,
     SwoopRaceEnded,

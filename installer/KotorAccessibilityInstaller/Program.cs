@@ -322,6 +322,22 @@ namespace KotorAccessibilityInstaller
                     catch (Exception ex) { Logger.Warning($"Could not delete patches/: {ex.Message}"); }
                 }
 
+                // Remove the Override assets we shipped (currently the
+                // swoop accelpad WAV). Surgical per-file delete — never
+                // touch the Override folder itself or any file we didn't
+                // ship (users routinely drop their own mods in there).
+                string overrideDir = Path.Combine(gamePath, "Override");
+                foreach (var assetName in InstallationManager.OverrideAssetNames)
+                {
+                    string assetPath = Path.Combine(overrideDir, assetName);
+                    if (File.Exists(assetPath))
+                    {
+                        Logger.Info($"Removing Override asset {assetName}...");
+                        try { File.Delete(assetPath); }
+                        catch (Exception ex) { Logger.Warning($"Could not delete {assetName}: {ex.Message}"); }
+                    }
+                }
+
                 RegistryManager.Unregister();
                 ScheduleUninstallerSelfDelete(gamePath);
 

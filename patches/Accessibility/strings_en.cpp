@@ -348,15 +348,14 @@ const char* Get(Id id) {
         case Id::SoundOptionsMovieVolume:    return "Movie volume";
 
         case Id::SwoopRaceStarted:
-            return "Swoop race started.";
+            // Terse opener — concatenated with SwoopRaceControls below
+            // into one utterance by swoop_race.cpp::AnnounceEntry.
+            return "Swoop race.";
         case Id::SwoopRaceControls:
-            // Per in-game tutorial popup: Spacebar / Enter / Mouse 1
-            // accelerate AND shift to the next gear. A / D strafe lanes.
-            // Gear count per track is set by NWScript (engine has no gear
-            // concept — see swoop_race.cpp kGearShiftMaxDeltaMs comment).
-            return "Controls: Space or Enter accelerates and shifts to "
-                   "the next gear. A strafes left, D strafes right. "
-                   "Pause key pauses the race.";
+            // Short cheat sheet. Full keymap (Enter/Mouse 1 also work,
+            // Pause pauses the race, etc.) is in the manual — verbose
+            // spoken intro got in the way of the start countdown.
+            return "Press space to speed up. A and D to steer.";
         case Id::SwoopRaceEnded:
             return "Swoop race ended.";
         case Id::SwoopRaceObstacleNear:

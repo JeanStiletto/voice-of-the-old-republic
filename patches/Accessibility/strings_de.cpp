@@ -367,20 +367,15 @@ const char* Get(Id id) {
         case Id::SoundOptionsMovieVolume:    return "Video-Lautst\xE4rke";  // Lautstärke
 
         case Id::SwoopRaceStarted:
-            return "Swoop-Rennen gestartet.";
+            // Terse opener — concatenated with SwoopRaceControls below
+            // into one utterance by swoop_race.cpp::AnnounceEntry.
+            return "Swoop-Rennen.";
         case Id::SwoopRaceControls:
-            // Source: in-game Tutorial-Box auf der Swoopstrecke 2026-05-24,
-            // "Mit einem Linksklick kannst du beschleunigen und schalten.
-            // Mit den Bewegungs-Tasten (D und A) weichst du Hindernissen
-            // aus." Tastatur-Alternative laut KOTOR-Handbuch S. 6:
-            // Leertaste / Eingabe ersetzen Linksklick beim Beschleunigen
-            // und Schalten. Anzahl der G\xE4nge pro Strecke unterschiedlich
-            // (von NWScript pro Modul gesetzt; Engine hat selbst keinen
-            // Gang-Begriff — siehe swoop_race.cpp kGearShiftMaxDeltaMs).
-            return "Steuerung: Leertaste oder Eingabe beschleunigt und "
-                   "schaltet in den n\xE4""chsten Gang. A weicht nach "
-                   "links aus, D nach rechts. Pause-Taste pausiert das "
-                   "Rennen.";
+            // Short cheat sheet. Full keymap (Enter/Mouse 1 also work,
+            // Pause pauses the race, etc.) is documented in the manual
+            // — verbose spoken intro got in the way of the start
+            // countdown so the shorter form is preferred.
+            return "Leertaste beschleunigt. A und D zum Lenken.";
         case Id::SwoopRaceEnded:
             return "Swoop-Rennen beendet.";
         case Id::SwoopRaceObstacleNear:

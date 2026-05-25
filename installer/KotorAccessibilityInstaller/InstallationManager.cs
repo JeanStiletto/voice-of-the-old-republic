@@ -25,6 +25,13 @@ namespace KotorAccessibilityInstaller
         private static readonly string[] AddressDbFiles = { "kotor1_0_3.db" };
         private const string PrismDllName = "prism.dll";
 
+        // WAV samples shipped into <game>/Override/ for the engine's
+        // ResLoader to pick up by bare resref. Mirrored as the
+        // OverrideAssetNames list on PerformUninstall so removal stays
+        // in sync.
+        private static readonly string[] OverrideAssets = { "acc_boost.wav" };
+        public static IReadOnlyList<string> OverrideAssetNames => OverrideAssets;
+
         public InstallationManager(string gameDir)
         {
             _gameDir = gameDir ?? throw new ArgumentNullException(nameof(gameDir));
@@ -164,6 +171,28 @@ namespace KotorAccessibilityInstaller
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Drops custom WAV samples (and any other Aurora-engine assets we
+        /// ship) into &lt;game&gt;/Override/. The engine's ResLoader checks
+        /// Override → BIF, so a bare resref like "acc_boost" resolves to
+        /// our file. Used by the swoop-race accelerator-pad loop, where
+        /// the vanilla mgs_basethrust03 sample's pitch-drop tail reads as
+        /// the wrong direction; we ship a tail-trimmed variant under a
+        /// new resref to avoid colliding with any vanilla use.
+        /// </summary>
+        public void InstallOverrideAssets()
+        {
+            string overrideDir = Path.Combine(_gameDir, "Override");
+            Directory.CreateDirectory(overrideDir);
+
+            foreach (var name in OverrideAssets)
+            {
+                string dest = Path.Combine(overrideDir, name);
+                ExtractEmbeddedResource(name, dest);
+            }
+            Logger.Info($"Installed Override assets into: {overrideDir}");
         }
 
         /// <summary>
