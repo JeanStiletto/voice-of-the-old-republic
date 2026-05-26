@@ -164,6 +164,21 @@ void OnEngineShowObject(uint32_t handle) {
     uint32_t prev = s_last_announced;
     s_last_announced = handle;
 
+    // Cursor-position diagnostic for the "character spins on its own"
+    // intermittent bug. ShowObject is driven by DoPassiveSelection
+    // (mouse-hover auto-target, every frame) — if Windows-side jitter
+    // (Steam overlay, notifications, touchpad twitch, screen-reader
+    // cursor sync) drags the screen cursor across NPC silhouettes, the
+    // engine snaps the player to face whichever target the cursor
+    // last grazed. Cursor coords are GetCursorPos screen-space; pair
+    // with the immediately-following PassiveNarrate `passive:` /
+    // `focus lost` line to see which target the cursor picked.
+    POINT cursor = {0, 0};
+    GetCursorPos(&cursor);
+    acclog::Write("PassiveNarrate",
+        "show-object delta: prev=0x%08x new=0x%08x cursor=(%d,%d)",
+        prev, handle, cursor.x, cursor.y);
+
     // Self-gate on player-loaded — silent in menus / chargen / area-load.
     Vector unused;
     if (!acc::engine::GetPlayerPosition(unused)) return;
