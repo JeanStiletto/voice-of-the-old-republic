@@ -23,8 +23,13 @@
 #include "engine_panels.h"   // CallPrevSWInGameGui
 #include "log.h"
 #include "engine_reads.h"    // LookupTlk for workbench slot-type strref
+#include "menus.h"           // ClearPendingAnnounce — partner of InvalidateChain
 #include "menus_chain.h"     // ValidateChainPanel — post-Activate stale-pointer guard
+#include "menus_chargen_attr.h"     // IsChargenAttributesPanel — chargen sub-screen close
+#include "menus_chargen_feats.h"    // IsChargenFeatsPanel — chargen sub-screen close
+#include "menus_chargen_skills.h"   // IsChargenSkillsPanel — chargen sub-screen close
 #include "menus_listbox.h"   // DisarmWorkbenchUpgradePicker (post-slot-select cleanup)
+#include "menus_powers_levelup.h"   // IsPowersLevelUpPanel — chargen sub-screen close
 #include "menus_store.h"     // DispatchTradeAction for StoreItemActivate
 #include "prism.h"           // Speak — workbench slot-click outcome announce
 #include "strings.h"         // WorkbenchSlotInstalled / Removed / NoMatch
@@ -277,6 +282,39 @@ void Drain(void* gm) {
             acc::engine::PanelKind panelKindAtDispatch =
                 acc::engine::IdentifyPanel(acc::menus::chain::g_chainPanel);
 
+            // Capture chargen sub-screen close intent before the
+            // dispatch — the sub-screen panel may be freed inside fn()
+            // when Annehmen/Abbrechen close it, so reading its vtable
+            // afterwards is unsafe. Sub-screens of InGameLevelUp share
+            // a .gui-id convention: BTN_ACCEPT=11 ("OK" / "Annehmen"),
+            // BTN_BACK=12 ("Abbrechen"). Closing one of these via id
+            // 11/12 is the same shape as the InGameOptions sub-screen
+            // Esc close that already InvalidateChain's in menus.cpp —
+            // without it, the parent InGameLevelUp panel's updated
+            // chain entries ("Attribute, nicht verfügbar" etc.) can
+            // stay silent on restore because channel-0 dedup and the
+            // monitor's last-text cache still hold pre-close text.
+            bool chargenSubClosing = false;
+            if (panelKindAtDispatch != acc::engine::PanelKind::InGameLevelUp) {
+                void* chainPanel = acc::menus::chain::g_chainPanel;
+                bool isChargenSub =
+                    acc::menus::chargen_attr::IsChargenAttributesPanel(
+                        chainPanel) ||
+                    acc::menus::chargen_skills::IsChargenSkillsPanel(
+                        chainPanel) ||
+                    acc::menus::chargen_feats::IsChargenFeatsPanel(
+                        chainPanel) ||
+                    acc::menus::powers_levelup::IsPowersLevelUpPanel(
+                        chainPanel);
+                if (isChargenSub) {
+                    int btnId = *reinterpret_cast<int*>(
+                        reinterpret_cast<unsigned char*>(op.a) + 0x50);
+                    if (btnId == 11 || btnId == 12) {
+                        chargenSubClosing = true;
+                    }
+                }
+            }
+
             uint32_t* isActive = reinterpret_cast<uint32_t*>(
                 reinterpret_cast<unsigned char*>(op.a) + kControlIsActiveOffset);
             uint32_t prevIsActive = *isActive;
@@ -335,6 +373,21 @@ void Drain(void* gm) {
                                   "nulled (self-destroy-risk, panel=InGameLevelUp)",
                                   clearedIdx, op.a);
                 }
+            }
+            // Chargen sub-screen close — drop the whole chain so the
+            // parent InGameLevelUp's chain restore is treated as a fresh
+            // binding. Same mechanism the InGameOptions sub-screen Esc
+            // path uses (menus.cpp escIsOptionsSub branch). ClearPendingAnnounce
+            // partners with InvalidateChain to also flush any in-flight
+            // SetActive echo that would carry pre-close text past the
+            // chain rebuild.
+            if (chargenSubClosing) {
+                acc::menus::chain::InvalidateChain();
+                acc::menus::ClearPendingAnnounce();
+                acclog::Write("Update",
+                              "FireActivate post: chain invalidated "
+                              "(chargen sub-screen close, target=%p)",
+                              op.a);
             }
             // Companion full-panel-pop guard: if the engine cleared the
             // panel from mgr.panels[] inside the dispatch (rarer — the
