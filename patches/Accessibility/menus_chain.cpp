@@ -421,25 +421,38 @@ void RebindChain(void* panel) {
         // a name. Treating them as decorative drops them from the
         // chain entirely so arrow keys only step through usable picks.
         //
-        // Source of truth is bit 0 of the per-portrait flag word at
-        // +0x448: OnPanelAdded sets it only when GetIsNPCAvailable AND
-        // GetNPCSelectability both pass for the slot — i.e. the
-        // engine's own "Add" enable gate. We deliberately don't go
-        // through the party-table thiscalls here so we stay portable
-        // across saves where the table chain might not be settled.
+        // The per-portrait flag word at +0x448 is NOT a reliable gate
+        // — patch-20260526-120026.log slots 6/7/8 had values
+        // 0xfffffff9 / 0x5f484c41 / 0x39000001 (clearly uninitialised
+        // heap memory whose low bit randomly happens to be 1).
+        // OnPanelAdded apparently only writes that field for some
+        // slots, so trusting bit 0 leaks 3 unnamed "control N" entries
+        // into the chain. The NPC roster index at +0x450 IS reliable
+        // (clean 0..8 in the log), so route the decision through the
+        // engine: keep the portrait if the slot is in the active
+        // party (partyId >= 0) OR the engine's own GetIsNPCAvailable
+        // returns true for that roster index.
         if (pk == PanelKind::PartySelection) {
             void** vt = *reinterpret_cast<void***>(c);
             if (reinterpret_cast<uintptr_t>(vt) == 0x00756BB8) {
-                constexpr size_t kPartyPortraitFlagsOffset = 0x448;
-                int flags = 0;
+                constexpr size_t kPartyPortraitPartyIdOffset = 0x44c;
+                constexpr size_t kPartyPortraitNpcSlotOffset = 0x450;
+                int partyId = -1, npcSlot = -1;
                 __try {
-                    flags = *reinterpret_cast<int*>(
-                        reinterpret_cast<unsigned char*>(c) +
-                        kPartyPortraitFlagsOffset);
+                    auto* base = reinterpret_cast<unsigned char*>(c);
+                    partyId = *reinterpret_cast<int*>(
+                        base + kPartyPortraitPartyIdOffset);
+                    npcSlot = *reinterpret_cast<int*>(
+                        base + kPartyPortraitNpcSlotOffset);
                 } __except (EXCEPTION_EXECUTE_HANDLER) {
-                    flags = 0;
+                    partyId = -1;
+                    npcSlot = -1;
                 }
-                if ((flags & 1) == 0) return true;
+                bool inActiveParty = partyId >= 0;
+                bool available = (npcSlot >= 0 &&
+                                  npcSlot < kPartyRosterSlotCount &&
+                                  PartyTableIsNPCAvailable(npcSlot));
+                if (!inActiveParty && !available) return true;
             }
         }
         // WorkbenchUpgrade slot buttons (cid 12..18) that the engine has

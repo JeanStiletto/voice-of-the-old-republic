@@ -637,23 +637,31 @@ const char* FromControl(void* control,
     //     not a caption), so the speculative reader in section 8 below
     //     returns empty and the user hears "control N".
     //
-    //     Per-portrait layout (CSWGuiPartySelectionData, size 1108):
-    //       +0x448 (int)  flag word. bit 0 = currently SELECTABLE
-    //                     (recruited AND not story-locked) — exactly
-    //                     the gate OnEnter uses for the Add/OK button.
-    //                     bit 1 = "unavailable" rendering hint OR
-    //                     "currently in active party" depending on the
-    //                     init-time branch in OnPanelAdded.
+    //     Per-portrait layout (observed via PanelWalk / PartyPortrait
+    //     traces; structure size and exact field semantics inferred):
+    //       +0x448 (int)  flag word. For slots that OnPanelAdded fully
+    //                     initialises (the active-party slots) bit 0
+    //                     mirrors the engine's "is selectable" gate
+    //                     and bit 1 marks "in active party". BUT
+    //                     OnPanelAdded does NOT touch this field for
+    //                     every roster slot — in patch-20260526-120026
+    //                     slots 6/7/8 carry uninitialised heap garbage
+    //                     (0xfffffff9, 0x5f484c41, 0x39000001) whose
+    //                     low bit happens to be 1, so this field
+    //                     cannot be used as a selectability gate.
+    //                     Trace-logged for diagnostics only.
     //       +0x44c (int)  CSWParty index when the slot is in the
     //                     active party at panel-open; 0xffffffff
-    //                     otherwise.
+    //                     (-1) otherwise. Reliable.
     //       +0x450 (int)  NPC roster slot index (0..8) — the param
     //                     OnEnter passes to CSWPartyTable::GetNPCObject.
+    //                     Reliable.
     //
-    //     Spoiler rule: only reveal the companion's name when bit 0 of
-    //     +0x448 is set (i.e. the engine itself considers the slot
-    //     active and pickable). Locked / unavailable slots return
-    //     nullptr so the chain filter in RebindChain drops them.
+    //     Spoiler rule: only reveal the companion's name when the slot
+    //     is in the active party OR the engine's own
+    //     GetIsNPCAvailable returns true for that roster index. The
+    //     chain filter in RebindChain mirrors this so locked /
+    //     unavailable slots are dropped from arrow nav entirely.
     if (!source) {
         void** vt = *reinterpret_cast<void***>(control);
         if (reinterpret_cast<uintptr_t>(vt) == 0x00756BB8) {
@@ -669,24 +677,47 @@ const char* FromControl(void* control,
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 npcSlot = -1;
             }
-            bool selectable = (flags & 1) != 0;
-            bool inActiveParty = partyId >= 0 && partyId != -1;
-            if (selectable && npcSlot >= 0 && npcSlot < kPartyRosterSlotCount) {
+            bool inActiveParty = partyId >= 0;
+            bool available = (npcSlot >= 0 &&
+                              npcSlot < kPartyRosterSlotCount &&
+                              PartyTableIsNPCAvailable(npcSlot));
+            if ((inActiveParty || available) &&
+                npcSlot >= 0 && npcSlot < kPartyRosterSlotCount) {
                 char name[128];
                 if (GetPartyNpcNameForSlot(npcSlot, name, sizeof(name)) &&
                     name[0]) {
-                    size_t nlen = strnlen(name, sizeof(name));
-                    if (nlen + 1 <= bufSize) {
-                        memcpy(outBuf, name, nlen + 1);
+                    // Compose "{name}, im Team" / "{name}, verfügbar" so the
+                    // user hears whether the slot is currently in the
+                    // active party or just on the bench. Locked slots are
+                    // dropped from the chain by RebindChain so we never
+                    // reach this branch for them.
+                    acc::strings::Id statusFmt =
+                        inActiveParty
+                            ? acc::strings::Id::FmtPartyPortraitInTeam
+                            : acc::strings::Id::FmtPartyPortraitAvailable;
+                    int n = _snprintf(outBuf,
+                                      bufSize,
+                                      acc::strings::Get(statusFmt),
+                                      name);
+                    if (n > 0 && static_cast<size_t>(n) < bufSize) {
+                        outBuf[n] = '\0';
                         source = "party-portrait";
+                    } else {
+                        // Format overflowed — fall back to bare name so
+                        // the user still hears the companion.
+                        size_t nlen = strnlen(name, sizeof(name));
+                        if (nlen + 1 <= bufSize) {
+                            memcpy(outBuf, name, nlen + 1);
+                            source = "party-portrait";
+                        }
                     }
                 }
             }
             acclog::Trace("Menus.PartyPortrait",
-                          "slot=%d flags=0x%x partyId=%d selectable=%d "
+                          "slot=%d flags=0x%x partyId=%d available=%d "
                           "inActiveParty=%d text=\"%s\"",
                           npcSlot, (unsigned)flags, partyId,
-                          selectable ? 1 : 0, inActiveParty ? 1 : 0,
+                          available ? 1 : 0, inActiveParty ? 1 : 0,
                           source ? outBuf : "");
             // Skip the speculative reader for this vtable — it never
             // resolves anything useful for portraits.

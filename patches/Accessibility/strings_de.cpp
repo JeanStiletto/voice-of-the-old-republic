@@ -166,6 +166,9 @@ const char* Get(Id id) {
         case Id::PortraitRaceLight:    return "hellh\xE4utig";            // hellhäutig
         case Id::FmtPortraitDescription: return "%s %s %d";
 
+        case Id::FmtPartyPortraitInTeam:    return "%s, im Team";
+        case Id::FmtPartyPortraitAvailable: return "%s, verf\xFC""gbar";    // verfügbar
+
         case Id::DisabledSuffix:       return ", nicht verf\xFC""gbar";   // nicht verfügbar
 
         case Id::FmtCharSheetClass:    return "%s. ";

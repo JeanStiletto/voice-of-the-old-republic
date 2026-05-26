@@ -502,6 +502,20 @@ enum class Id : int {
     PortraitRaceLight,
     FmtPortraitDescription,
 
+    // ---- Party selection portrait status suffix. Appended (with leading
+    //      ", ") to the companion name when speaking a portrait in the
+    //      Gruppenauswahl panel. Two states the user can hit on this
+    //      panel:
+    //        FmtPartyPortraitInTeam    — slot is currently in the active
+    //                                    party (partyId >= 0 in the
+    //                                    portrait struct). One `%s` (name).
+    //        FmtPartyPortraitAvailable — slot is recruited and on the
+    //                                    bench (PartyTableIsNPCAvailable
+    //                                    returns true, partyId < 0). One
+    //                                    `%s` (name).
+    FmtPartyPortraitInTeam,
+    FmtPartyPortraitAvailable,
+
     // ---- Disabled-button suffix. Appended (with leading ", ") to the
     //      announced text when a chain-navigable button's is_active field
     //      (CSWGuiControl +0x4C) reads zero — the engine's universal

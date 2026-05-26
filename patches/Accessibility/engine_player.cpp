@@ -451,32 +451,66 @@ bool PartyTableIsNPCSelectable(int npcSlot) {
     }
 }
 
+// Roster name fallback. KOTOR 1's NPC slot index is fixed and these are
+// proper nouns ("Bastila", "Carth Onasi", …) that don't change between
+// English and German installs, so a hardcoded table is the simplest
+// reliable path when GetNPCObject can't resolve a live creature (i.e.
+// the companion is recruited but not in the current module — the open-
+// world PartySelection case). Order matches the engine's roster index:
+//   0 Bastila, 1 Canderous, 2 Carth, 3 HK-47, 4 Jolee, 5 Juhani,
+//   6 Mission, 7 T3-M4, 8 Zaalbar.
+static const char* const kCompanionNamesBySlot[kPartyRosterSlotCount] = {
+    "Bastila Shan",
+    "Canderous Ordo",
+    "Carth Onasi",
+    "HK-47",
+    "Jolee Bindo",
+    "Juhani",
+    "Mission Vao",
+    "T3-M4",
+    "Zaalbar",
+};
+
 bool GetPartyNpcNameForSlot(int npcSlot, char* outBuf, size_t bufSize) {
     if (!outBuf || bufSize == 0) return false;
     outBuf[0] = '\0';
     if (npcSlot < 0 || npcSlot >= kPartyRosterSlotCount) return false;
     void* table = GetServerPartyTable();
-    if (!table) return false;
-    uint32_t handle = 0;
-    __try {
-        auto fn = reinterpret_cast<PFN_PartyTableGetNPCObject>(
-            kAddrCSWPartyTableGetNPCObject);
-        // OnPanelAdded calls GetNPCObject(slot, 0, 1) first; if that's
-        // 0 (creature not in the active module) it tries (slot, 1, 1).
-        // Mirror that fallback so a name resolves even when the engine
-        // had to fall through to the second-instance pool.
-        int id0 = fn(table, npcSlot, 0, 1);
-        if (id0 != 0) {
-            handle = static_cast<uint32_t>(id0);
-        } else {
-            int id1 = fn(table, npcSlot, 1, 1);
-            if (id1 != 0) handle = static_cast<uint32_t>(id1);
+    if (table) {
+        uint32_t handle = 0;
+        __try {
+            auto fn = reinterpret_cast<PFN_PartyTableGetNPCObject>(
+                kAddrCSWPartyTableGetNPCObject);
+            // OnPanelAdded calls GetNPCObject(slot, 0, 1) first; if that's
+            // 0 (creature not in the active module) it tries (slot, 1, 1).
+            // Mirror that fallback so a name resolves even when the engine
+            // had to fall through to the second-instance pool.
+            int id0 = fn(table, npcSlot, 0, 1);
+            if (id0 != 0) {
+                handle = static_cast<uint32_t>(id0);
+            } else {
+                int id1 = fn(table, npcSlot, 1, 1);
+                if (id1 != 0) handle = static_cast<uint32_t>(id1);
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            handle = 0;
         }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
+        if (handle != 0 &&
+            GetObjectDisplayNameByHandle(handle, outBuf, bufSize) &&
+            outBuf[0] != '\0') {
+            return true;
+        }
+        outBuf[0] = '\0';
     }
-    if (handle == 0) return false;
-    return GetObjectDisplayNameByHandle(handle, outBuf, bufSize);
+    // Engine path didn't resolve — most often because the companion is on
+    // the roster but not in the current module (open-world PartySelection
+    // screen, away from base). Fall back to the fixed-roster table.
+    const char* fixed = kCompanionNamesBySlot[npcSlot];
+    if (!fixed || !fixed[0]) return false;
+    size_t nlen = strlen(fixed);
+    if (nlen + 1 > bufSize) return false;
+    memcpy(outBuf, fixed, nlen + 1);
+    return true;
 }
 
 void TickPlayerInputRestore() {
