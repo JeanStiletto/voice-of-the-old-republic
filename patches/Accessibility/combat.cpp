@@ -13,6 +13,7 @@
 #include "engine_reads.h"
 #include "log.h"
 #include "menus_extract.h"    // FromControl — listbox row text reader
+#include "same_name_suffix.h" // AppendSuffix for same-LocName disambiguator
 #include "strings.h"
 #include "prism.h"
 
@@ -457,6 +458,7 @@ void TickAttackResolutions() {
                     continue;
                 }
             }
+            acc::narration::AppendSuffix(tgt, tgtName, sizeof(tgtName));
             int tgtHpCur = 0, tgtHpMax = 0;
             ReadCreatureHpDirect(tgt, tgtHpCur, tgtHpMax);
             SpeakAttackOutcome(result, baseDamage, deflected, criticalThreat,

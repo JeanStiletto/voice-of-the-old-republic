@@ -9,9 +9,11 @@
 #include "combat_query.h"   // BuildTargetCombatBrief enrichment
 #include "engine_area.h"
 #include "engine_player.h"
+#include "engine_reads.h"   // ReadCExoString — diag tag dump
 #include "filter_objects.h"
 #include "log.h"
 #include "narrated_target.h"
+#include "same_name_suffix.h"
 #include "strings.h"
 #include "prism.h"
 
@@ -52,6 +54,61 @@ acc::audio::NavCue CueForCategory(acc::filter::CycleCategory c) {
         case C::Count_:     break;
     }
     return N::Item;  // unreachable safety net
+}
+
+// One-shot diag for the same-name-disambiguator + placeable-state work:
+// log the modder-assigned tag (answers "are five 'Wandverkleidung'
+// actually distinct?") and, for placeable kinds, hexdump a window
+// around the known flag region (+0x310..+0x34f) so the user can flip
+// a switch in-game and we can diff pre-vs-post bytes to find the
+// activated-state byte. Remove once we've located the byte.
+void DumpObjectDiag(void* obj, uint32_t handle,
+                    acc::filter::CycleCategory cat) {
+    if (!obj) return;
+
+    char tag[96] = "";
+    __try {
+        acc::engine::ReadCExoString(obj, /*kObjectTagOffset=*/0x18,
+                                    tag, sizeof(tag));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        tag[0] = '\0';
+    }
+    acclog::Write("PassiveNarrate.Diag",
+        "handle=0x%08x cat=%s tag=[%s]",
+        handle, acc::filter::CategoryName(cat), tag);
+
+    int kind = acc::engine::GetObjectKind(obj);
+    if (kind != static_cast<int>(acc::engine::GameObjectKind::Placeable)) {
+        return;
+    }
+
+    uint8_t bytes[64] = {0};
+    bool gotBytes = false;
+    __try {
+        const auto* base = reinterpret_cast<const unsigned char*>(obj);
+        for (size_t i = 0; i < sizeof(bytes); ++i) {
+            bytes[i] = base[0x310 + i];
+        }
+        gotBytes = true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        gotBytes = false;
+    }
+    if (!gotBytes) {
+        acclog::Write("PassiveNarrate.Diag",
+            "handle=0x%08x placeable state-byte read faulted", handle);
+        return;
+    }
+
+    char line[256];
+    size_t pos = 0;
+    for (size_t i = 0; i < sizeof(bytes) && pos + 4 < sizeof(line); ++i) {
+        int n = std::snprintf(line + pos, sizeof(line) - pos,
+                              "%02x ", bytes[i]);
+        if (n < 0) break;
+        pos += static_cast<size_t>(n);
+    }
+    acclog::Write("PassiveNarrate.Diag",
+        "handle=0x%08x bytes@+0x310..+0x34f: %s", handle, line);
 }
 
 acc::strings::Id CategoryNameId(acc::filter::CycleCategory c) {
@@ -115,7 +172,7 @@ bool NarrateHandle(uint32_t handle, const char* reason) {
     bool havePos = acc::engine::GetObjectPosition(obj, pos);
 
     char name[128] = "";
-    if (!acc::engine::GetObjectName(obj, name, sizeof(name)) ||
+    if (!acc::narration::GetSpokenName(obj, name, sizeof(name)) ||
         name[0] == '\0') {
         std::snprintf(name, sizeof(name), "%s",
                       acc::strings::Get(CategoryNameId(cat)));
@@ -142,6 +199,7 @@ bool NarrateHandle(uint32_t handle, const char* reason) {
         "%s: 0x%08x cat=%s name=[%s] pos=(%.2f,%.2f,%.2f) havePos=%d serverHandle=0x%08x",
         reason, handle, acc::filter::CategoryName(cat), name,
         pos.x, pos.y, pos.z, havePos ? 1 : 0, serverHandle);
+    DumpObjectDiag(obj, handle, cat);
     return true;
 }
 

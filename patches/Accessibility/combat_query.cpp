@@ -16,6 +16,7 @@
 #include "hotkeys.h"
 #include "log.h"
 #include "menus_extract.h"    // FromControl — for Examine message-box read
+#include "same_name_suffix.h" // AppendSuffix for same-LocName disambiguator
 #include "strings.h"
 #include "prism.h"
 
@@ -682,6 +683,9 @@ void HotkeyShiftH() {
     if (!obj) obj = acc::engine::ResolveServerObjectHandle(handle);
     if (!gotName || name[0] == '\0') {
         if (obj) acc::engine::GetObjectName(obj, name, sizeof(name));
+    }
+    if (obj && name[0] != '\0') {
+        acc::narration::AppendSuffix(obj, name, sizeof(name));
     }
     if (name[0] == '\0') {
         const char* msg = acc::strings::Get(

@@ -12,6 +12,7 @@
                               // GetPlayerCharacterName
 #include "hotkeys.h"
 #include "log.h"
+#include "same_name_suffix.h" // AppendSuffix for same-LocName disambiguator
 #include "strings.h"
 #include "prism.h"
 
@@ -322,6 +323,12 @@ void SpeakRow(int idx) {
             void* tgtObj = acc::engine::ResolveServerObjectHandle(target);
             if (tgtObj) {
                 acc::engine::GetObjectName(tgtObj, tgtName, sizeof(tgtName));
+            }
+        }
+        if (tgtName[0] != '\0') {
+            void* tgtObj = acc::engine::ResolveServerObjectHandle(target);
+            if (tgtObj) {
+                acc::narration::AppendSuffix(tgtObj, tgtName, sizeof(tgtName));
             }
         }
     }

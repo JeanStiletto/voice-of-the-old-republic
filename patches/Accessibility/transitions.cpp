@@ -14,6 +14,7 @@
 #include "log.h"
 #include "narrated_target.h" // clear on area transition
 #include "region_classifier.h"  // BuildCacheForArea + LookupRoomShape
+#include "same_name_suffix.h"   // Reset() on area transition
 #include "strings.h"
 #include "prism.h"
 #include "wall_topology.h"      // EXPERIMENTAL — parallel observer on this
@@ -743,6 +744,7 @@ void Tick() {
         g_pending_platz_valid        = false;
         acc::region::Reset();
         acc::wall_topology::Reset();
+        acc::narration::Reset();
         return;
     }
 
