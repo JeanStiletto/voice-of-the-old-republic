@@ -34,6 +34,18 @@
 //   displacement, not the current one. ~33ms latency at 30 Hz —
 //   imperceptible.
 //
+// Stuck-direction probe:
+//   Same module also tracks a 2-second progress window: when the
+//   leader's PlayFootstep is firing (animating walk) AND the player's
+//   net displacement over the last 2 seconds is under 0.5 m, runs an
+//   8-cardinal probe (walls via the spatial change_detector cache +
+//   nearby creature/placeable bodies) and speaks the clear directions
+//   on the urgent channel. Once per stuck episode — re-arms only when
+//   the player makes meaningful (>0.5 m) forward progress. Silence-
+//   when-stuck remains the primary signal; the probe is the rescue
+//   announce for "I tried multiple directions and nothing worked"
+//   pocket geometries that normally trap follower-huddled blind play.
+//
 // Phase 3 lay-off 5.
 
 #pragma once
@@ -47,5 +59,10 @@ void Tick();
 // Returns true when the most-recent Tick() observed a sub-epsilon
 // displacement from the prior position. Read by OnPlayFootstep.
 bool WasStuckLastTick();
+
+// Records that the engine just ticked PlayFootstep on the party leader.
+// Stamps the timestamp the stuck-direction probe gates on. Called from
+// OnPlayFootstep (same TU) without exposing the internal state.
+void NoteLeaderFootstep();
 
 }  // namespace acc::audio::footstep_suppress

@@ -354,6 +354,21 @@ enum class Id : int {
     DirWest,
     DirNorthwest,
 
+    // ---- Stuck-direction probe (Pillar 1 sub-feature). Fired by
+    //      audio_footstep_suppress when the player's leader-walk animation
+    //      has been running for >=2s with negligible displacement — they
+    //      pressed W but a wall + follower-huddle combo boxes them. The
+    //      probe tests 8 cardinals against the cached walkmesh + nearby
+    //      bodies and speaks the clear directions so the user can pick
+    //      one to step toward without sighted spatial awareness.
+    //
+    //      `StuckFreeDirsPrefix` — leader word. Followed by ": " + a
+    //         comma-joined list of DirNorth..DirNorthwest words.
+    //      `StuckAllBlocked`     — fixed-phrase fallback used when the
+    //         probe finds zero clear directions (truly boxed). No args.
+    StuckFreeDirsPrefix,
+    StuckAllBlocked,
+
     // ---- On-demand exact-heading announce (Pillar 2 sub-feature D —
     //      `announce_degrees`). Single `%d` argument: compass-frame
     //      degrees in [0, 359]. German speaks "47 Grad", English speaks

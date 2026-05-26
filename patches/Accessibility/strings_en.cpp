@@ -120,6 +120,9 @@ const char* Get(Id id) {
         case Id::DirWest:              return "West";
         case Id::DirNorthwest:         return "Northwest";
 
+        case Id::StuckFreeDirsPrefix:  return "Clear";
+        case Id::StuckAllBlocked:      return "All blocked";
+
         case Id::FmtCompassDegrees:    return "%d degrees";
 
         case Id::FmtMapStateOriented:    return "%s. Facing %d degrees on the map, %s.";
