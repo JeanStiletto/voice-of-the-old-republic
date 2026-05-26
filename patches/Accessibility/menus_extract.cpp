@@ -27,6 +27,7 @@
 #include "menus_credits.h"
 #include "menus_equipstats.h"
 #include "menus_internal.h"
+#include "menus_modsettings.h"
 #include "strings.h"
 
 using namespace acc::engine;
@@ -347,6 +348,22 @@ const char* FromControl(void* control,
     if (!control || bufSize < 2) return nullptr;
 
     const char* source = nullptr;
+
+    // -1. Virtual-entry short-circuit. The mod-settings root chain entry
+    //     uses a static sentinel pointer as `control`; it is NOT an
+    //     engine-allocated CSWGuiControl and dereferencing it (vtable
+    //     reads, struct-offset loads) would AV. Match by pointer equality
+    //     against the registered sentinel and emit the localised label.
+    //     Runs ahead of every other section so no downstream reader
+    //     touches the sentinel.
+    if (acc::menus::modsettings::IsRootAnchor(control)) {
+        if (acc::menus::modsettings::ExtractRootLabel(outBuf, bufSize) &&
+            outBuf[0] != '\0') {
+            return "virtual-modsettings-root";
+        }
+        outBuf[0] = '\0';
+        return nullptr;
+    }
 
     // 0. Per-kind row formatter for virtual chain entries. Runs BEFORE
     //    the standard text-extraction ladder because the formatted

@@ -1124,6 +1124,24 @@ enum class Id : int {
     // DiagnosticDump for the candidate-pointer-bytes capture.
     FmtSwoopRaceGear,
 
+    // ---- Mod-settings virtual submenu (menus_modsettings).
+    //      Root label: text spoken when the user lands on the virtual
+    //      "Mod settings" chain entry inside the Optionen panels.
+    //      The three option-name strings are the toggle leaves; each is
+    //      paired with FmtModSettingOption to compose "Name: state".
+    //      Open / Close lines are status announcements (submenu enter /
+    //      exit). FmtModSettingOption takes two %s — option name then
+    //      state (ModSettingStateOn / Off).
+    ModSettingsRootLabel,
+    ModSettingsOpened,
+    ModSettingsClosed,
+    ModSettingExtendedCycling,
+    ModSettingRoomShapes,
+    ModSettingWallSounds,
+    ModSettingStateOn,
+    ModSettingStateOff,
+    FmtModSettingOption,
+
     Count_,
 };
 

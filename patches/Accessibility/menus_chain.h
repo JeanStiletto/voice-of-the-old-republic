@@ -49,7 +49,16 @@ struct ChainEntry {
     // re-announces instead of firing vtable[15] (the listbox has no
     // activate handler).
     bool  textOnly;
+    // Virtual-entry kind. 0 = real engine control (default). Non-zero
+    // values identify entries whose `control` field is a sentinel
+    // pointer owned by a mod-side module — currently only mod-settings
+    // root (kVirtualMod_SettingsRoot). Real-control behaviour is the
+    // common case so the field is zero-init in every existing call site.
+    int   virtualKind;
 };
+
+// Virtual-entry kind tags. 0 is reserved for "real engine control".
+constexpr int kVirtualMod_SettingsRoot = 1;
 
 constexpr int kMaxChainEntries = 64;
 

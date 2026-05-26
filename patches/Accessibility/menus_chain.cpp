@@ -27,6 +27,7 @@
 #include "menus_equipstats.h"
 #include "menus_extract.h"
 #include "menus_internal.h"
+#include "menus_modsettings.h"
 #include "menus_store.h"
 #include "prism.h"
 
@@ -669,6 +670,28 @@ void RebindChain(void* panel) {
         };
         acc::menus::equipstats::ForEachEquipStatRowAnchor(
             panel, onEquipStatAnchor, panel);
+    }
+
+    // Virtual "Mod settings" entry for InGameOptions + MainMenuOptions.
+    // Same shape as the credits / stat-row anchors, but the control
+    // pointer is a static sentinel (acc::menus::modsettings::GetRoot
+    // Anchor) rather than an engine label — we never need to read /
+    // dispatch through it as if it were a real CSWGuiControl. Position
+    // is synthetic: sortCy=9000 lands the entry at the end of the
+    // chain, after every real button on the Optionen strip.
+    {
+        auto onModSettingsAnchor = [](void* sentinel, int sortCx, int sortCy,
+                                      void* /*userData*/) -> bool {
+            if (g_chainCount >= kMaxChainEntries) return false;
+            g_chain[g_chainCount++] = {
+                sentinel, sortCx, sortCy,
+                /*textOnly=*/false,
+                /*virtualKind=*/kVirtualMod_SettingsRoot
+            };
+            return true;
+        };
+        acc::menus::modsettings::ForEachRootAnchor(
+            panel, onModSettingsAnchor, panel);
     }
 
     // Insertion sort by cy ascending. Stable; n^2 is fine for n<=64.

@@ -392,6 +392,19 @@ const char* Get(Id id) {
         case Id::FmtSwoopRaceGear:
             return "Gang %d";
 
+        // "Mod Einstellungen" / "Erweitertes Wechseln" / "Raumformen" /
+        // "Wandger\xe4usche" — \xe4 = ä, \xfc = ü. Encoding matches the
+        // Windows-1252 convention used throughout strings_de.cpp.
+        case Id::ModSettingsRootLabel:        return "Mod-Einstellungen";
+        case Id::ModSettingsOpened:           return "Mod-Einstellungen ge\xf6""ffnet";
+        case Id::ModSettingsClosed:           return "Mod-Einstellungen geschlossen";
+        case Id::ModSettingExtendedCycling:   return "Erweitertes Wechseln";
+        case Id::ModSettingRoomShapes:        return "Raumform-Beschreibungen";
+        case Id::ModSettingWallSounds:        return "Wandger\xe4usche";
+        case Id::ModSettingStateOn:           return "an";
+        case Id::ModSettingStateOff:          return "aus";
+        case Id::FmtModSettingOption:         return "%s: %s";
+
         case Id::Count_:               return "";
     }
     return "";

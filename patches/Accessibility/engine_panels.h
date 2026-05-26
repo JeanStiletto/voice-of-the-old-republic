@@ -127,6 +127,16 @@ enum class PanelKind {
     // powers_listbox at 6, description_listbox at 7, power_label at 8,
     // BTN_RECOMMENDED/BTN_SELECT/BTN_ACCEPT/BTN_BACK at 9/10/11/12.
     PowersLevelUp,
+
+    // CSWGuiOptions title-screen options panel (vtable 0x00758838). Not
+    // part of CGuiInGame — the title screen is pre-game, so CGuiInGame
+    // isn't resolvable yet at the time IdentifyPanel sees this panel.
+    // 9 controls: ID 0 = body listbox, IDs 1..5 = sub-screen buttons
+    // ("Gameplay" / "Auto-Pause" / "Grafik" / "Sound" / "Feedback"),
+    // ID 6 = title label ("Optionen"), ID 8 = "Schliess." back button.
+    // Identified by vtable equality since the title-screen Options class
+    // is a single, fixed engine type — no need for an ID-quartet probe.
+    MainMenuOptions,
 };
 
 // Return the registered name for `k`, or "Unknown" / "?" if not found.

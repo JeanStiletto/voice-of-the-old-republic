@@ -187,6 +187,23 @@ bool IsLevelUpStructural(void* panel) {
     }
 }
 
+// CSWGuiOptions title-screen options panel identity by vtable. The class
+// is single-instance and lives in the engine's title-screen UI suite, so
+// vtable equality is the cleanest identifier. Captured 2026-05-26 via the
+// LogUnknownPanelDiagnostics probe (PanelProbe block in
+// patch-20260526-180650.log).
+constexpr uintptr_t kVtableCSWGuiOptions = 0x00758838;
+
+bool IsMainMenuOptionsStructural(void* panel) {
+    if (!panel) return false;
+    __try {
+        void** vt = *reinterpret_cast<void***>(panel);
+        return reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiOptions;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 // CSWGuiPowersLevelUp picker (pwrlvlup.gui). The same class backs both the
 // chargen Force-selection screen and the InGameLevelUp "Kr�fte" sub-screen;
 // the SARIF documents the struct (swkotor.exe.h:16603) but doesn't name the
@@ -294,6 +311,7 @@ static const PanelKindOffset kPanelKindOffsets[] = {
     { kNoSlotOffset, PanelKind::WorkbenchItems,    "WorkbenchItems" },
     { kNoSlotOffset, PanelKind::WorkbenchUpgrade,  "WorkbenchUpgrade" },
     { kNoSlotOffset, PanelKind::PowersLevelUp,     "PowersLevelUp" },
+    { kNoSlotOffset, PanelKind::MainMenuOptions,   "MainMenuOptions" },
 };
 static constexpr int kPanelKindOffsetCount =
     sizeof(kPanelKindOffsets) / sizeof(kPanelKindOffsets[0]);
@@ -328,6 +346,132 @@ struct PanelKindCacheEntry {
 static constexpr int kPanelKindCacheSize = 32;
 static PanelKindCacheEntry g_panelKindCache[kPanelKindCacheSize];
 static int g_panelKindCacheCount = 0;
+
+// Unknown-panel probe. First-sight diagnostic dump for panels that miss
+// the slot table AND every structural detector — the canonical case is
+// the title-screen Options panel (CGuiInGame isn't resolvable pre-game,
+// so the slot scan is skipped entirely, and no detector currently knows
+// its shape). Dedup is by panel *vtable* (not panel pointer) so the dump
+// fires exactly once per unique panel class across the whole session —
+// re-opening Options reuses the same class so we don't re-log.
+//
+// What we capture: panel vtable, panel.controls.size, and per-control
+// {vtable, .gui-id at +0x50, button-or-label rendered text}. That's
+// enough to write a structural detector matching SaveLoad / Workbench
+// shapes once the user sends us the log line.
+namespace {
+
+constexpr int kUnknownVtableCacheSize = 16;
+uintptr_t g_unknownVtableCache[kUnknownVtableCacheSize] = {};
+int       g_unknownVtableCacheCount = 0;
+
+bool IsVtableAlreadyDumped(uintptr_t vt) {
+    for (int i = 0; i < g_unknownVtableCacheCount; ++i) {
+        if (g_unknownVtableCache[i] == vt) return true;
+    }
+    return false;
+}
+
+void RememberDumpedVtable(uintptr_t vt) {
+    if (g_unknownVtableCacheCount >= kUnknownVtableCacheSize) {
+        memmove(g_unknownVtableCache, g_unknownVtableCache + 1,
+                sizeof(g_unknownVtableCache[0]) *
+                    (kUnknownVtableCacheSize - 1));
+        g_unknownVtableCacheCount = kUnknownVtableCacheSize - 1;
+    }
+    g_unknownVtableCache[g_unknownVtableCacheCount++] = vt;
+}
+
+// Read a CAurGUIStringInternal-backed c_string at (control + guiStringPtrOffset).
+// Inline minimal version — engine_reads.h's ReadGuiString is the production path
+// but pulling it in here would create a circular dep with the menus layer.
+// SEH-guarded; returns false on any null/garbage indirection.
+bool ProbeReadGuiString(void* control, size_t guiStringPtrOffset,
+                        char* outBuf, size_t bufSize) {
+    if (!control || !outBuf || bufSize == 0) return false;
+    outBuf[0] = '\0';
+    __try {
+        void* gs = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(control) + guiStringPtrOffset);
+        if (!gs) return false;
+        void** vt = *reinterpret_cast<void***>(gs);
+        if (reinterpret_cast<uintptr_t>(vt) != kVtableCAurGUIStringInternal) {
+            return false;
+        }
+        const char* s = *reinterpret_cast<const char**>(
+            reinterpret_cast<unsigned char*>(gs) + kAurGuiStringCStrOffset);
+        if (!s || !*s) return false;
+        size_t i = 0;
+        for (; i + 1 < bufSize && s[i]; ++i) outBuf[i] = s[i];
+        outBuf[i] = '\0';
+        return i > 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+void LogUnknownPanelDiagnostics(void* panel) {
+    if (!panel) return;
+    uintptr_t panelVt = 0;
+    __try {
+        panelVt = reinterpret_cast<uintptr_t>(*reinterpret_cast<void**>(panel));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return;
+    }
+    if (panelVt == 0) return;
+    if (IsVtableAlreadyDumped(panelVt)) return;
+    RememberDumpedVtable(panelVt);
+
+    CExoArrayList* list = nullptr;
+    int size = 0;
+    __try {
+        list = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+        size = list ? list->size : 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        size = 0;
+    }
+    acclog::Write("PanelProbe",
+                  "first sight UNKNOWN panel=%p vtable=0x%08x controls=%d",
+                  panel, static_cast<unsigned>(panelVt), size);
+    if (!list || !list->data || size <= 0) return;
+
+    int n = size > 32 ? 32 : size;
+    for (int i = 0; i < n; ++i) {
+        void* c = nullptr;
+        __try {
+            c = list->data[i];
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            c = nullptr;
+        }
+        if (!c) {
+            acclog::Write("PanelProbe", "  [%d] (null)", i);
+            continue;
+        }
+        uintptr_t cvt = 0;
+        int       cid = -1;
+        __try {
+            cvt = reinterpret_cast<uintptr_t>(*reinterpret_cast<void**>(c));
+            cid = *reinterpret_cast<int*>(
+                reinterpret_cast<unsigned char*>(c) + 0x50);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            cvt = 0;
+            cid = -1;
+        }
+        char text[96];
+        text[0] = '\0';
+        if (!ProbeReadGuiString(c, kButtonGuiStringPtrOffset,
+                                text, sizeof(text))) {
+            ProbeReadGuiString(c, kLabelGuiStringPtrOffset,
+                               text, sizeof(text));
+        }
+        acclog::Write("PanelProbe",
+                      "  [%d] %p vtable=0x%08x id=%d text=\"%s\"",
+                      i, c, static_cast<unsigned>(cvt), cid, text);
+    }
+}
+
+}  // namespace
 
 PanelKind IdentifyPanel(void* panel) {
     if (!panel) return PanelKind::Unknown;
@@ -393,7 +537,15 @@ PanelKind IdentifyPanel(void* panel) {
     if (IsPowersLevelUpStructural(panel)) {
         return recordAndReturn(PanelKind::PowersLevelUp, "PowersLevelUp");
     }
+    if (IsMainMenuOptionsStructural(panel)) {
+        return recordAndReturn(PanelKind::MainMenuOptions, "MainMenuOptions");
+    }
 
+    // Last resort: dump diagnostics so we can write a structural detector
+    // for this shape later. Deduped by panel vtable so we get exactly one
+    // log block per unique panel class — title-screen Options, future
+    // mod-added screens, etc.
+    LogUnknownPanelDiagnostics(panel);
     return PanelKind::Unknown;
 }
 

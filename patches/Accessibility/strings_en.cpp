@@ -372,6 +372,16 @@ const char* Get(Id id) {
         case Id::FmtSwoopRaceGear:
             return "Gear %d";
 
+        case Id::ModSettingsRootLabel:        return "Mod settings";
+        case Id::ModSettingsOpened:           return "Mod settings opened";
+        case Id::ModSettingsClosed:           return "Mod settings closed";
+        case Id::ModSettingExtendedCycling:   return "Extended cycling";
+        case Id::ModSettingRoomShapes:        return "Room shape descriptions";
+        case Id::ModSettingWallSounds:        return "Wall sounds";
+        case Id::ModSettingStateOn:           return "on";
+        case Id::ModSettingStateOff:          return "off";
+        case Id::FmtModSettingOption:         return "%s: %s";
+
         case Id::Count_:               return "";
     }
     return "";

@@ -37,6 +37,7 @@
 #include "menus_listbox.h"   // Step 4 — listbox-driven panel dispatcher
 #include "menus_editbox.h"   // Editbox (chargen Name) dispatcher + monitor
 #include "menus_chain.h"     // Step 5 — chain navigation lifted out
+#include "menus_modsettings.h" // Virtual mod-settings submenu (Optionen panels)
 #include "menus_monitors.h"  // Post-Step-5 — general per-tick monitors
 #include "menus_store.h"     // Store / trading panel — price+stock suffix + mode announce
 #include "menus_journal.h"   // Journal (Aufträge) — Enter on quest row → description
@@ -100,6 +101,7 @@ using acc::menus::detail::QueueButtonByIdActivate;
 // using-declarations.
 using acc::menus::chain::ChainEntry;
 using acc::menus::chain::kMaxChainEntries;
+using acc::menus::chain::kVirtualMod_SettingsRoot;
 using acc::menus::chain::g_chain;
 using acc::menus::chain::g_chainPanel;
 using acc::menus::chain::g_chainIndex;
@@ -1446,6 +1448,25 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         return 0;
     }
 
+    // Mod-settings virtual submenu pre-empt. While the submenu is open
+    // its HandleInput owns navigation (Up/Down/Enter/Esc) and consumes
+    // every other GUI key so they don't bleed through to the parent
+    // panel. Runs ahead of the chain / radial / etc. dispatchers
+    // because the submenu has no real engine panel — the parent
+    // Optionen panel is still foreground and would otherwise eat the
+    // keys we want for the virtual menu.
+    if (param_2 != 0 && acc::menus::modsettings::IsOpen()) {
+        if (acc::menus::modsettings::HandleInput(param_1)) {
+            acclog::Write("Menus.Input",
+                          "#%d seq=%u this=%p key=%s(%d) val=%d "
+                          "MOD-SETTINGS-CONSUMED",
+                          n, seq, thisPtr,
+                          acc::engine::InputIndexName(param_1), param_1,
+                          param_2);
+            return trackPress(1);
+        }
+    }
+
     // Enter delivered to the manager belongs to the GUI, not to the world
     // Interact path. Claim the InteractTarget / InteractForceRadial rising
     // edges so acc::interact::PollHotkey() (which runs from the next
@@ -1705,6 +1726,22 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         g_chainIndex < g_chainCount)
     {
         ChainEntry& e = g_chain[g_chainIndex];
+
+        // Virtual chain entries route through their owning module
+        // BEFORE any subclass-specific reads below — the entry's
+        // `control` field is a sentinel pointer and any vtable /
+        // offset dereference would AV. Currently only the mod-settings
+        // root entry; new virtual kinds add a case here. We return
+        // through trackPress(1) so the s_lastConsumedPress bookkeeping
+        // stays consistent with the every-press-tracked contract — the
+        // same pattern the radial-menu early-exits at 1562/1588 use.
+        if (e.virtualKind == kVirtualMod_SettingsRoot) {
+            acc::menus::modsettings::OpenSubMenu(g_chainPanel);
+            acclog::Write("Menus.Enter",
+                          "open mod-settings submenu (parent=%p)",
+                          g_chainPanel);
+            return trackPress(1);
+        }
 
         bool isTabButton = false;
         if (g_tabbedPanel && g_tabsCount >= 2) {
