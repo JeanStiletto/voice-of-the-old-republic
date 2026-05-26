@@ -187,6 +187,32 @@ bool IsLevelUpStructural(void* panel) {
     }
 }
 
+// CSWGuiPowersLevelUp picker (pwrlvlup.gui). The same class backs both the
+// chargen Force-selection screen and the InGameLevelUp "Kr�fte" sub-screen;
+// the SARIF documents the struct (swkotor.exe.h:16603) but doesn't name the
+// vtable, so we identify structurally. Signature taken from the panel walk
+// in patch-20260526-071446.log frame 12715: two ListBox children at .gui
+// IDs 6 (powers_listbox) and 7 (description_listbox), with the four
+// Button children at IDs 9..12 (recommended/select/accept/back). No other
+// heap-allocated panel we've seen puts a listbox at ID 6 or 7, which keeps
+// this distinct from SaveLoad (listbox at 0) and the Workbench shapes
+// (listbox at 0).
+bool IsPowersLevelUpStructural(void* panel) {
+    if (!panel) return false;
+    __try {
+        void* lbPowers = FindControlByGuiId(panel, /*powers_listbox=*/6);
+        if (!ControlHasVtable(lbPowers, kVtableListBox)) return false;
+        void* lbDesc   = FindControlByGuiId(panel, /*description_listbox=*/7);
+        if (!ControlHasVtable(lbDesc, kVtableListBox)) return false;
+        void* btnAccept = FindControlByGuiId(panel, /*BTN_ACCEPT=*/11);
+        void* btnBack   = FindControlByGuiId(panel, /*BTN_BACK=*/12);
+        return ControlHasVtable(btnAccept, kVtableCSWGuiButton) &&
+               ControlHasVtable(btnBack,   kVtableCSWGuiButton);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 }  // namespace
 
 // CGuiInGame resolution chain. Address values verified against Lane's
@@ -267,6 +293,7 @@ static const PanelKindOffset kPanelKindOffsets[] = {
     { kNoSlotOffset, PanelKind::WorkbenchSelect,   "WorkbenchSelect" },
     { kNoSlotOffset, PanelKind::WorkbenchItems,    "WorkbenchItems" },
     { kNoSlotOffset, PanelKind::WorkbenchUpgrade,  "WorkbenchUpgrade" },
+    { kNoSlotOffset, PanelKind::PowersLevelUp,     "PowersLevelUp" },
 };
 static constexpr int kPanelKindOffsetCount =
     sizeof(kPanelKindOffsets) / sizeof(kPanelKindOffsets[0]);
@@ -362,6 +389,9 @@ PanelKind IdentifyPanel(void* panel) {
     }
     if (IsLevelUpStructural(panel)) {
         return recordAndReturn(PanelKind::InGameLevelUp, "InGameLevelUp");
+    }
+    if (IsPowersLevelUpStructural(panel)) {
+        return recordAndReturn(PanelKind::PowersLevelUp, "PowersLevelUp");
     }
 
     return PanelKind::Unknown;

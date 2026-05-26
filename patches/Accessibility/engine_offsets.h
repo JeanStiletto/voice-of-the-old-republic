@@ -559,6 +559,40 @@ constexpr uintptr_t kAddrCSWGuiFeatsCharGenOnEnterFeat   = 0x006f2fb0;
 // Callee-pops 4 bytes.
 constexpr uintptr_t kAddrCSWGuiFeatsCharGenOnFeatPicked  = 0x006f3c20;
 
+// CSWGuiPowersLevelUp engine surfaces — Force-power picker (pwrlvlup.gui)
+// used by both the chargen Power-selection screen and the InGameLevelUp
+// "Kr�fte" sub-screen. The "powers_listbox" in the SARIF struct is misleading:
+// each of its rows is a CSWGuiSkillFlow with up to 3 CSWGuiFlowSkillStruct
+// cells (base / improved / master power variants) — the same shape
+// CSWGuiFeatsCharGen uses for its feat tree. The chart at +0x19fc is a
+// CSWGuiSkillFlowChart tracking (row, col) selection state; the engine's
+// SkillHitCheckMouse uses cached mouse coords to derive the column on mouse
+// input, which is why a flat listbox.selection_index drive can't pick the
+// right cell. We iterate listbox.controls (the engine's source-of-truth in
+// CSWGuiPowersLevelUp::OnPowerSelectionChanged @0x006f1940) and call the
+// engine surfaces below to commit the selection.
+//
+// Signature per Lane's SARIF (FUNCTIONS entry @0x006f1460):
+//   void __thiscall OnEnterPower(ulong powerId)
+// Mirror of CSWGuiFeatsCharGen::OnEnterFeat — refreshes power_label,
+// description_listbox, BTN_SELECT label/colour for the given power.
+constexpr uintptr_t kAddrCSWGuiPowersLevelUpOnEnterPower    = 0x006f1460;
+
+// Signature per Lane's SARIF (FUNCTIONS entry @0x006f2030):
+//   void __thiscall OnPowerPicked(ulong powerId)
+// Mirror of CSWGuiFeatsCharGen::OnFeatPicked — the canonical "user clicked
+// BTN_SELECT" entry. Dispatches DeterminePower → AddChosenPower /
+// RemoveChosenPower / can't-change message box. Calling directly with the
+// focused cell's powerId lets us bypass the click-sim on Hinzuf. Macht.
+constexpr uintptr_t kAddrCSWGuiPowersLevelUpOnPowerPicked   = 0x006f2030;
+
+// Offset of the embedded CSWGuiSkillFlowChart inside CSWGuiPowersLevelUp.
+// Matches struct field33_0x19fc (swkotor.exe.h:16637). We call
+// CSWGuiSkillFlowChart::SetSelectedSkill on this offset to keep the chart's
+// render-side highlight in sync with our keyboard focus (same pattern as
+// chargen_feats — see kFeatsCharGenChartOffset).
+constexpr size_t    kPowersLevelUpChartOffset              = 0x19fc;
+
 // CSWGuiSkillFlowChart::SetSelectedSkill — sets the chart's render-side
 // selection state by feat ID. Walks rows × cols looking for the matching
 // feat, updates the chart's (selected_col, selected_row) pair and the

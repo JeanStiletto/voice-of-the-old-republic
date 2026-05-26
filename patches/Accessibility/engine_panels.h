@@ -119,6 +119,14 @@ enum class PanelKind {
     WorkbenchSelect,
     WorkbenchItems,
     WorkbenchUpgrade,
+
+    // CSWGuiPowersLevelUp: heap-allocated Force-power picker sub-screen
+    // drilled from the InGameLevelUp panel's "Kr�fte" step (also reused
+    // by chargen — same class hosts both flows per Lane's SARIF;
+    // swkotor.exe.h:16603). pwrlvlup.gui control IDs: labels at 0/1/3/4/5,
+    // powers_listbox at 6, description_listbox at 7, power_label at 8,
+    // BTN_RECOMMENDED/BTN_SELECT/BTN_ACCEPT/BTN_BACK at 9/10/11/12.
+    PowersLevelUp,
 };
 
 // Return the registered name for `k`, or "Unknown" / "?" if not found.

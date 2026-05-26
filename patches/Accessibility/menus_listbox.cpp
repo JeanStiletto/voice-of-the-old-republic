@@ -1108,6 +1108,16 @@ constexpr ListBoxPanelSpec kWorkbenchUpgradeSpec = {
     /*alwaysReturnFromHandler*/ false,  // fall through so chain nav reaches the slot/assemble buttons
 };
 
+// PowersLevelUp (pwrlvlup.gui) is NOT a flat listbox despite the
+// "powers_listbox" name in the SARIF struct. Its rows are CSWGuiSkillFlow
+// tree-rows with up to 3 cells per row (base / improved / master variants),
+// identical in shape to the chargen Talente chart. A ListBoxPanelSpec can't
+// represent that 2D structure — Up/Down would only change row, not column,
+// and the row text via FromControl returns empty because the row IS a
+// CSWGuiSkillFlow with no rendered label. Handled in menus_powers_levelup.cpp
+// with the chargen_feats-style 2D dispatcher; title override moved to the
+// AnnouncePanelTitle path in menus.cpp.
+
 // ============================================================================
 // Examine — CSWGuiExamine panel opened by Shift+H. Listbox is the embedded
 // CSWGuiMessageBox.listbox_message at +0x67c. The engine populates the

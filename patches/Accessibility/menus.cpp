@@ -30,6 +30,7 @@
 #include "menus_chargen_attr.h" // Chargen "Attribute" panel label + selected_ability sync
 #include "menus_chargen_skills.h" // Chargen "Fähigkeiten" panel — same shape as Attribute
 #include "menus_chargen_feats.h"  // Chargen "Talente" panel — 2D feat-tree chart
+#include "menus_powers_levelup.h" // Level-up "Kr�fte" — feat-tree-shaped power picker
 #include "menus_extract.h"   // Step 2B — text extraction lifted out
 #include "menus_internal.h"  // Step 2B — shared seam with menus_extract
 #include "menus_pending.h"   // Step 3 — deferred-op queue lifted out
@@ -425,6 +426,18 @@ static void AnnouncePanelTitle(void* panel) {
             acc::menus::editbox::GetTitleOverride(panel)) {
         acclog::Write("Menus.PanelWalk",
                       "title parent=%p (editbox spec override) text=\"%s\"",
+                      panel, override);
+        prism::Speak(override, /*interrupt=*/false);
+        return;
+    }
+
+    // CSWGuiPowersLevelUp shares the pwrlvlup.gui placeholder
+    // ("CHARAKTERAUSWAHL" at id 0) — same problem chargen Name had.
+    // Substitute the sub_title_label ("Kr�fte" at id 1).
+    if (const char* override =
+            acc::menus::powers_levelup::GetTitleOverride(panel)) {
+        acclog::Write("Menus.PanelWalk",
+                      "title parent=%p (powers_levelup override) text=\"%s\"",
                       panel, override);
         prism::Speak(override, /*interrupt=*/false);
         return;
@@ -1613,6 +1626,19 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     {
         int rv = 0;
         if (acc::menus::chargen_feats::HandleInput(
+                n, thisPtr, activePanel, param_1, param_2, rv)) {
+            return rv;
+        }
+    }
+
+    // Level-up "Kr�fte" sub-panel (CSWGuiPowersLevelUp). The .gui calls it
+    // a listbox at id 6 but its rows are CSWGuiSkillFlow tree-rows with up
+    // to 3 cells per row (base / improved / master variant), so it needs
+    // the chargen_feats-style 2D nav rather than a flat listbox spec. See
+    // menus_powers_levelup.h for the design — also handles chargen Powers.
+    {
+        int rv = 0;
+        if (acc::menus::powers_levelup::HandleInput(
                 n, thisPtr, activePanel, param_1, param_2, rv)) {
             return rv;
         }
