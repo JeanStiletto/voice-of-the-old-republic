@@ -68,7 +68,15 @@ int      s_chartRowCount = 0;
 // 0..2 for chart rows, always 0 for button rows.
 int   s_curRow      = 0;
 int   s_curCol      = 0;
-void* s_boundPanel  = nullptr;
+
+// Binding signature — used by EnsureBound to detect when the engine has
+// re-bound this panel to a different character (e.g. the next slot in
+// the auto-level-up queue reuses the same panel pointer with a fresh
+// chart rows array). The rows array pointer + size change in that case
+// even when the panel pointer stays the same.
+void* s_boundPanel     = nullptr;
+void* s_boundRowsPtr   = nullptr;
+int   s_boundRowsCount = 0;
 
 inline int  TotalRowCount()         { return s_chartRowCount + kButtonRowCount; }
 inline bool IsButtonRow(int r)      { return r >= s_chartRowCount; }
@@ -99,33 +107,39 @@ int NearestFilledCol(int r, int want) {
     return FirstFilledCol(r);
 }
 
-// Walk the chart, capture per-row feat IDs (kept as 0xffff for empty
-// cells). The chart structure is stable for a panel session — BuildButtons
-// rewrites cell statuses but not the (row, col) layout — so we only need
-// to rebuild when the panel pointer changes.
-void RebuildLayout(void* panel) {
-    s_chartRowCount = 0;
-    s_curRow        = 0;
-    s_curCol        = 0;
-    s_boundPanel    = panel;
-
-    auto* base  = reinterpret_cast<unsigned char*>(panel);
-    auto* chart = base + kFeatsCharGenChartOffset;
-    void** rows  = nullptr;
-    int    nRows = 0;
+// Read the engine's current chart binding (rows array data pointer +
+// size) for `panel`. Returns false on read failure with outputs cleared.
+bool ReadChartBinding(void* panel, void*& outRows, int& outCount) {
+    outRows  = nullptr;
+    outCount = 0;
+    if (!panel) return false;
+    auto* chart = reinterpret_cast<unsigned char*>(panel) +
+                  kFeatsCharGenChartOffset;
     __try {
-        rows  = *reinterpret_cast<void***>(
+        outRows  = *reinterpret_cast<void**>(
             chart + kSkillFlowChartRowsDataOffset);
-        nRows = *reinterpret_cast<int*>(
+        outCount = *reinterpret_cast<int*>(
             chart + kSkillFlowChartRowsSizeOffset);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return;
+        outRows  = nullptr;
+        outCount = 0;
+        return false;
     }
+    return true;
+}
+
+// Walk the engine's chart rows array into s_chartRows[]. Idempotent and
+// cheap — does NOT touch the cursor. EnsureBound calls this on every
+// hit; cursor placement is decided there based on whether the binding
+// is new.
+void WalkChartRows(void* rows, int nRows) {
+    s_chartRowCount = 0;
     if (!rows || nRows < 0 || nRows > kMaxChartRows) nRows = 0;
 
+    auto** rowsArr = reinterpret_cast<void**>(rows);
     for (int r = 0; r < nRows; ++r) {
         void* rowPtr = nullptr;
-        __try { rowPtr = rows[r]; }
+        __try { rowPtr = rowsArr[r]; }
         __except (EXCEPTION_EXECUTE_HANDLER) { continue; }
         if (!rowPtr) continue;
 
@@ -155,27 +169,51 @@ void RebuildLayout(void* panel) {
         s_chartRowCount++;
         if (s_chartRowCount >= kMaxChartRows) break;
     }
-
-    // Initial cursor: first filled cell of first chart row, falling
-    // back to button area if the chart is empty.
-    if (s_chartRowCount > 0) {
-        s_curRow = 0;
-        s_curCol = FirstFilledCol(0);
-        if (s_curCol < 0) s_curCol = 0;
-    } else {
-        s_curRow = 0;  // first button
-        s_curCol = 0;
-    }
-
-    acclog::Write("ChargenFeats",
-                  "rebuild panel=%p chartRows=%d totalRows=%d "
-                  "cursor=(r=%d, c=%d)",
-                  panel, s_chartRowCount, TotalRowCount(),
-                  s_curRow, s_curCol);
 }
 
+// Re-walk the engine's chart on every hit so we never index stale row
+// pointers (e.g. when the auto-level-up flow reuses the same panel
+// pointer for the next character and the engine swaps in a different
+// rows array). Cursor reset only fires on a real binding change —
+// otherwise the user's nav position is preserved (clamped on shrink).
 void EnsureBound(void* panel) {
-    if (s_boundPanel != panel) RebuildLayout(panel);
+    void* rows  = nullptr;
+    int   nRows = 0;
+    ReadChartBinding(panel, rows, nRows);
+
+    bool newBinding = (panel != s_boundPanel) ||
+                      (rows  != s_boundRowsPtr) ||
+                      (nRows != s_boundRowsCount);
+
+    WalkChartRows(rows, nRows);
+
+    s_boundPanel     = panel;
+    s_boundRowsPtr   = rows;
+    s_boundRowsCount = nRows;
+
+    if (newBinding) {
+        // Initial cursor: first filled cell of first chart row, falling
+        // back to the button area if the chart is empty.
+        if (s_chartRowCount > 0) {
+            s_curRow = 0;
+            s_curCol = FirstFilledCol(0);
+            if (s_curCol < 0) s_curCol = 0;
+        } else {
+            s_curRow = 0;  // first button
+            s_curCol = 0;
+        }
+        acclog::Write("ChargenFeats",
+                      "rebuild panel=%p chartRows=%d totalRows=%d "
+                      "cursor=(r=%d, c=%d) [new binding]",
+                      panel, s_chartRowCount, TotalRowCount(),
+                      s_curRow, s_curCol);
+    } else {
+        // Same binding: keep the cursor, but clamp if the row count
+        // shrunk underneath us.
+        int total = TotalRowCount();
+        if (s_curRow >= total) s_curRow = total > 0 ? total - 1 : 0;
+        if (s_curRow < 0)      s_curRow = 0;
+    }
 }
 
 // Lowest byte of the cell's 0x120 dword — the chart-render status enum

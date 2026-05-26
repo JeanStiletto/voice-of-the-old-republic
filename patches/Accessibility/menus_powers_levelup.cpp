@@ -66,7 +66,13 @@ int      s_chartRowCount = 0;
 
 int   s_curRow      = 0;
 int   s_curCol      = 0;
-void* s_boundPanel  = nullptr;
+
+// Binding signature — EnsureBound uses this to spot when the engine
+// has re-bound the panel to a different character (auto-level-up reuses
+// the same panel pointer; the powers_listbox.controls array swaps).
+void* s_boundPanel     = nullptr;
+void* s_boundRowsPtr   = nullptr;
+int   s_boundRowsCount = 0;
 
 inline int  TotalRowCount()         { return s_chartRowCount + kButtonRowCount; }
 inline bool IsButtonRow(int r)      { return r >= s_chartRowCount; }
@@ -92,40 +98,41 @@ int NearestFilledCol(int r, int want) {
     return FirstFilledCol(r);
 }
 
-// Iterate powers_listbox.controls — the engine's own row source per
-// CSWGuiPowersLevelUp::OnPowerSelectionChanged (decompile @0x006f1940):
-//   listbox.GetSelectedControl() returns a CSWGuiSkillFlow*.
+// Read the engine's current chart binding (powers_listbox.controls
+// data pointer + size). Returns false on failure with outputs cleared.
+// Row source per CSWGuiPowersLevelUp::OnPowerSelectionChanged (decomp
+// @0x006f1940): listbox.GetSelectedControl() returns a CSWGuiSkillFlow*.
 // The chart at +0x19fc holds (selected_row, selected_col) state only;
 // its rows_data is not populated in the level-up flow.
-void RebuildLayout(void* panel) {
-    s_chartRowCount = 0;
-    s_curRow        = 0;
-    s_curCol        = 0;
-    s_boundPanel    = panel;
-
+bool ReadChartBinding(void* panel, void*& outRows, int& outCount) {
+    outRows  = nullptr;
+    outCount = 0;
+    if (!panel) return false;
     void* lb = FindControlById(panel, kIdPowersListbox);
-    if (!lb) {
-        acclog::Write("PowersLevelUp",
-                      "rebuild panel=%p — powers_listbox (id %d) not found",
-                      panel, kIdPowersListbox);
-        return;
-    }
-
+    if (!lb) return false;
     auto* list = reinterpret_cast<CExoArrayList*>(
         reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
-    void** rows  = nullptr;
-    int    nRows = 0;
     __try {
-        rows  = list ? list->data : nullptr;
-        nRows = list ? list->size : 0;
+        outRows  = list ? list->data : nullptr;
+        outCount = list ? list->size : 0;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return;
+        outRows  = nullptr;
+        outCount = 0;
+        return false;
     }
+    return true;
+}
+
+// Walk the engine's chart rows array into s_chartRows[]. Does NOT touch
+// the cursor — placement is decided by EnsureBound.
+void WalkChartRows(void* rows, int nRows) {
+    s_chartRowCount = 0;
     if (!rows || nRows < 0 || nRows > kMaxChartRows) nRows = 0;
 
+    auto** rowsArr = reinterpret_cast<void**>(rows);
     for (int r = 0; r < nRows; ++r) {
         void* rowPtr = nullptr;
-        __try { rowPtr = rows[r]; }
+        __try { rowPtr = rowsArr[r]; }
         __except (EXCEPTION_EXECUTE_HANDLER) { continue; }
         if (!rowPtr) continue;
 
@@ -155,25 +162,47 @@ void RebuildLayout(void* panel) {
         s_chartRowCount++;
         if (s_chartRowCount >= kMaxChartRows) break;
     }
-
-    if (s_chartRowCount > 0) {
-        s_curRow = 0;
-        s_curCol = FirstFilledCol(0);
-        if (s_curCol < 0) s_curCol = 0;
-    } else {
-        s_curRow = 0;
-        s_curCol = 0;
-    }
-
-    acclog::Write("PowersLevelUp",
-                  "rebuild panel=%p chartRows=%d totalRows=%d "
-                  "cursor=(r=%d, c=%d)",
-                  panel, s_chartRowCount, TotalRowCount(),
-                  s_curRow, s_curCol);
 }
 
+// Re-walk the engine's chart on every hit so we never index stale row
+// pointers when the same panel pointer is reused for the next character
+// in the auto-level-up queue. Cursor reset only fires on a real binding
+// change — otherwise the user's nav position is preserved (clamped on
+// shrink).
 void EnsureBound(void* panel) {
-    if (s_boundPanel != panel) RebuildLayout(panel);
+    void* rows  = nullptr;
+    int   nRows = 0;
+    ReadChartBinding(panel, rows, nRows);
+
+    bool newBinding = (panel != s_boundPanel) ||
+                      (rows  != s_boundRowsPtr) ||
+                      (nRows != s_boundRowsCount);
+
+    WalkChartRows(rows, nRows);
+
+    s_boundPanel     = panel;
+    s_boundRowsPtr   = rows;
+    s_boundRowsCount = nRows;
+
+    if (newBinding) {
+        if (s_chartRowCount > 0) {
+            s_curRow = 0;
+            s_curCol = FirstFilledCol(0);
+            if (s_curCol < 0) s_curCol = 0;
+        } else {
+            s_curRow = 0;
+            s_curCol = 0;
+        }
+        acclog::Write("PowersLevelUp",
+                      "rebuild panel=%p chartRows=%d totalRows=%d "
+                      "cursor=(r=%d, c=%d) [new binding]",
+                      panel, s_chartRowCount, TotalRowCount(),
+                      s_curRow, s_curCol);
+    } else {
+        int total = TotalRowCount();
+        if (s_curRow >= total) s_curRow = total > 0 ? total - 1 : 0;
+        if (s_curRow < 0)      s_curRow = 0;
+    }
 }
 
 unsigned char ReadCellStatus(int r, int c) {
