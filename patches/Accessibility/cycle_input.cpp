@@ -99,12 +99,6 @@ CategoryBindings BindingsFor(
             return {S::CategoryLandmark,   S::EmptyLandmarks,   N::Landmark};
         case C::Transition:
             return {S::CategoryTransition, S::EmptyTransitions, N::TransitionExit};
-        case C::MapPin:
-            // Reuse Landmark cue — map pins ARE the engine's "important
-            // location" affordance, same semantic family as map notes.
-            // Separate cue can ship later if user testing shows the
-            // overlap is confusing.
-            return {S::CategoryMapPin,     S::EmptyMapPins,     N::Landmark};
         case C::Count_:
             break;
     }
@@ -168,25 +162,44 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
     acc::audio::PlayCue3D(acc::audio::GetNavCueResref(bindings.cue), objPos);
 
     char name[128] = "";
-    bool isMapPin = (s.category == acc::filter::CycleCategory::MapPin);
-    if (isMapPin) {
-        // Map pin: read CSWCMapPin.note_text (+0x100). Fall back to the
-        // generic "Quest marker" placeholder when the pin carries no
-        // inline text or TLK strref — most quest-script pins have one
-        // or the other, but defensive empty-name fallback applies.
-        if (!acc::engine::GetMapPinNoteText(s.focusedObj, name, sizeof(name))
-            || name[0] == '\0') {
+    // Three name-resolution paths share the "Map hint" announce:
+    //  1) User-placed map pin (listing.isPin=true): CSWCMapPin.note_text
+    //     (+0x100), populated by map_user_markers::BuildAutoName.
+    //  2) Map-context waypoint: GetWaypointMapNote (+0x230) — the engine's
+    //     localised map-note text, same string sighted players see.
+    //  3) Anything else: GetObjectName (waypoint LocName / door / NPC /
+    //     ...). World-context Landmark goes here too.
+    // The waypoint LocName at +0x238 is almost always empty in stock K1
+    // modules; falling back through GetObjectName would land on the raw
+    // tag ("wp_loc1") — the "just numbers" announce we're trying to avoid.
+    bool isPin = listing.isPin[s.focusedIndex];
+    bool mapHint = mapCtx &&
+                   s.category == acc::filter::CycleCategory::Landmark;
+    bool nameOk = false;
+    if (isPin) {
+        nameOk = acc::engine::GetMapPinNoteText(s.focusedObj,
+                                                name, sizeof(name)) &&
+                 name[0] != '\0';
+        if (!nameOk) {
             std::snprintf(name, sizeof(name), "%s",
                           acc::strings::Get(acc::strings::Id::MapPinNoText));
+            nameOk = true;
         }
-    } else {
-        if (!acc::engine::GetObjectName(s.focusedObj, name, sizeof(name)) ||
-            name[0] == '\0') {
-            // Fall back to the localized category name — at least the user
-            // knows the kind even if no localized name resolves.
-            std::snprintf(name, sizeof(name), "%s",
-                          acc::strings::Get(bindings.name));
-        }
+    } else if (mapHint) {
+        nameOk = acc::engine::GetWaypointMapNote(s.focusedObj,
+                                                 name, sizeof(name)) &&
+                 name[0] != '\0';
+    }
+    if (!nameOk) {
+        nameOk = acc::engine::GetObjectName(s.focusedObj,
+                                            name, sizeof(name)) &&
+                 name[0] != '\0';
+    }
+    if (!nameOk) {
+        // Fall back to the localized category name — at least the user
+        // knows the kind even if no localized name resolves.
+        std::snprintf(name, sizeof(name), "%s",
+                      acc::strings::Get(bindings.name));
     }
 
     Vector playerPos;
@@ -215,16 +228,11 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
 
     // Stamp the unified activation slot — the user just heard the
     // object's name (with distance + clock), so Enter / Shift+- / Ctrl+- /
-    // `-` should target it. Two stamp shapes:
-    //   - Normal game object: Server-side handle is what the AI
-    //     primitives need; cycle stores CSWSObject* directly so
-    //     GetObjectHandle re-derives.
-    //   - Map pin: no server-side handle exists. Stamp with the pin
-    //     pointer + frozen position so activation handlers can route
-    //     Ctrl+- beacon to the pin's location and reject Shift+-/Enter
-    //     with a localized hint.
+    // `-` should target it. Pin stamp shape carries the frozen position
+    // since pins don't resolve through ResolveServerObjectHandle; game-
+    // object stamp re-derives the server handle for the AI primitives.
     uint32_t serverHandle = 0;
-    if (isMapPin) {
+    if (isPin) {
         acc::narrated_target::StampMapPin(s.focusedObj, objPos);
     } else {
         serverHandle = acc::engine::GetObjectHandle(s.focusedObj);
@@ -235,18 +243,20 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
     // cursor stays coherent with the cycle (otherwise the cursor would
     // sit at its last WASD position, contradicting the spoken focus).
     // The cursor suppresses its own re-announce when handed a waypoint
-    // we just spoke, so no duplicate output.
+    // we just spoke, so no duplicate output. Pins aren't waypoints —
+    // pass nullptr so the cursor's waypoint-suppress doesn't latch on
+    // an unrelated pointer.
     if (mapCtx) {
         acc::map_ui_cursor::PanToWorld(
             objPos,
-            s.category == acc::filter::CycleCategory::Landmark
+            (!isPin && s.category == acc::filter::CycleCategory::Landmark)
                 ? s.focusedObj
                 : nullptr);
     }
 
-    acclog::Write("Cycle", "-> [%s] obj=%p handle=0x%08x ctx=%s mapPin=%d",
+    acclog::Write("Cycle", "-> [%s] obj=%p handle=0x%08x ctx=%s isPin=%d",
                   fullMsg, s.focusedObj, serverHandle,
-                  mapCtx ? "Map" : "World", (int)isMapPin);
+                  mapCtx ? "Map" : "World", (int)isPin);
 }
 
 // ---- Per-action handlers (shared by both ingestion paths) ----
@@ -320,12 +330,14 @@ bool ResolveNarratedActivation(NarratedActivation& out) {
     if (!acc::narrated_target::TryGet(slot)) return false;
 
     if (slot.isMapPin) {
-        // Map pin path: position is frozen at stamp time (pins don't
-        // move), name is the note_text from CSWCMapPin +0x100.
+        // Map-pin path: pos is frozen at stamp time (pins don't move).
+        // Name resolves from CSWCMapPin.note_text; fall back to the
+        // generic placeholder when missing (user-placed pins always
+        // have one assigned, but defended for safety).
         out.obj      = slot.obj;
         out.handle   = 0;
         out.pos      = slot.pos;
-        out.category = acc::filter::CycleCategory::MapPin;
+        out.category = acc::filter::CycleCategory::Landmark;  // for cue
         out.isMapPin = true;
         if (!acc::engine::GetMapPinNoteText(slot.obj, out.name,
                                             sizeof(out.name)) ||
@@ -393,8 +405,8 @@ void OnAnnounceFocus() {
     prism::Speak(msg, /*interrupt=*/true);
 
     // Re-stamp the slot so the activation tick refreshes. Map pins keep
-    // the same frozen pos (pins don't move); game objects re-derive
-    // pos on the next TryGet via GetObjectPosition.
+    // the same frozen pos (pins don't move); game objects re-derive pos
+    // on the next TryGet via GetObjectPosition.
     if (a.isMapPin) {
         acc::narrated_target::StampMapPin(a.obj, a.pos);
     } else {
@@ -634,11 +646,10 @@ void OnPathfindFocusForce() {
         return;
     }
 
-    // Alt+- is the queue-bypass ForceMoveToPoint diagnostic; it's
-    // known-broken for the leader anyway (per memory
-    // project_addmovetopoint_leader_broken), and for map pins there's
-    // no UseObject fallback either. Speak the unsupported phrase and
-    // direct the user to Ctrl+- which DOES work for pin coordinates.
+    // Alt+- is the queue-bypass ForceMoveToPoint diagnostic; for map
+    // pins there's no UseObject fallback either. Speak the unsupported
+    // phrase and direct the user to Ctrl+- which DOES work for pin
+    // coordinates.
     if (a.isMapPin) {
         const char* msg = acc::strings::Get(
             acc::strings::Id::MapPinAltDashUnsupported);

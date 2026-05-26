@@ -158,7 +158,7 @@ struct CursorState {
     // Waypoint hover-pause (explicit map-note overlay — Tier 1
     // landmark-as-game-object).
     // `pending_note_is_pin` / `last_spoken_is_pin` discriminate
-    // CSWSWaypoint hits (pin=false) from CSWCMapPin hits (pin=true).
+    // CSWSWaypoint hits (pin=false) from user CSWCMapPin hits (pin=true).
     // The state machine keys off the pointer identity for dedup; the
     // kind flag only steers the text-read at speak time so the right
     // engine_area accessor (GetWaypointMapNote vs GetMapPinNoteText)
@@ -438,22 +438,16 @@ void* FindNearestExploredMapNote(void* mapPanel, void* areaMap,
     return bestObj;
 }
 
-// Hit-test against `CSWCArea.map_pins[]`. Map pins (both engine-placed
-// quest markers and our user markers) are not in the waypoint list so
-// FindNearestExploredMapNote misses them entirely — the cursor would
-// pan straight over a pin without speaking. Scanning the pin array
-// here closes the gap.
-//
-// Fog filter mirrors cycle_state.cpp: skip engine pins in unrevealed
-// cells (spoiler protection), surface user pins (flags >= 0x80000000)
-// regardless of fog since the user explicitly placed them. `outBestDist2`
-// returns the squared pixel distance of the best hit, or 1e30 on miss,
-// so the cursor's main hover loop can pick the closer of the waypoint
-// and pin scans.
-void* FindNearestMapPin(void* clientArea, void* areaMap,
-                        float cursorPx, float cursorPy,
-                        int* outScannedCount = nullptr,
-                        float* outBestDist2 = nullptr) {
+// Hit-test against user-placed map pins in `CSWCArea.map_pins[]`. Engine
+// quest pins (flags high-bit clear) are deliberately skipped — sighted-
+// parity for the curated "Map hint" surface, same filter cycle_state
+// applies. Returns nullptr if no user pin is within hover radius. The
+// closer-of-two scan in the hover loop picks waypoint or pin based on
+// pixel distance.
+void* FindNearestUserMapPin(void* clientArea, void* areaMap,
+                            float cursorPx, float cursorPy,
+                            int* outScannedCount = nullptr,
+                            float* outBestDist2 = nullptr) {
     if (outBestDist2) *outBestDist2 = 1e30f;
     if (!clientArea || !areaMap) {
         if (outScannedCount) *outScannedCount = 0;
@@ -468,13 +462,12 @@ void* FindNearestMapPin(void* clientArea, void* areaMap,
         if (!pin) continue;
         ++scanned;
         if (!acc::engine::IsMapPinEnabled(pin)) continue;
+        uint32_t flags = acc::engine::GetMapPinFlags(pin);
+        if ((flags & 0x80000000u) == 0u) continue;  // skip engine pins
         Vector pos;
         if (!acc::engine::GetMapPinPosition(pin, pos)) continue;
-        uint32_t flags = acc::engine::GetMapPinFlags(pin);
-        bool isUserPin = (flags & 0x80000000u) != 0;
-        if (!isUserPin && !acc::engine::IsWorldPointExplored(areaMap, pos)) {
-            continue;
-        }
+        // User pins skip fog: the player dropped them, so revealing their
+        // own location to themselves isn't a spoiler.
         float ppx, ppy;
         if (!WorldToPixel(areaMap, pos, ppx, ppy)) continue;
         float dx = ppx - cursorPx;
@@ -769,18 +762,18 @@ void Tick() {
         }
     }
 
-    // Hover-pause narration — three-variable pattern. Two parallel
-    // scans:
-    //   1) FindNearestExploredMapNote — CSWSWaypoint map-notes (Tier 1
-    //      landmark overlay).
-    //   2) FindNearestMapPin — CSWCArea.map_pins[] entries (engine quest
-    //      markers + our user-placed saved markers).
+    // Hover-pause narration — two parallel scans:
+    //   1) FindNearestExploredMapNote — CSWSWaypoint map-notes (engine-
+    //      authored landmarks).
+    //   2) FindNearestUserMapPin — user-placed CSWCMapPin entries
+    //      (Shift+N drops). Engine quest pins are filtered out at this
+    //      tier so the cursor stays on the curated "Map hint" surface.
     // Whichever is closer in pixel space wins. `hitIsPin` propagates to
     // the speak path so the right text accessor gets called.
-    int   scannedCount   = 0;
-    int   scannedPins    = 0;
-    float bestDistWay2   = 1e30f;
-    float bestDistPin2   = 1e30f;
+    int   scannedCount = 0;
+    int   scannedPins  = 0;
+    float bestDistWay2 = 1e30f;
+    float bestDistPin2 = 1e30f;
     void* hitWaypoint = FindNearestExploredMapNote(mapPanel, areaMap,
                                                    g_state.px, g_state.py,
                                                    &scannedCount,
@@ -790,12 +783,12 @@ void Tick() {
         void* serverArea = acc::engine::GetCurrentArea();
         if (serverArea) clientAreaForPins = acc::engine::GetClientArea(serverArea);
     }
-    void* hitPin = FindNearestMapPin(clientAreaForPins, areaMap,
-                                     g_state.px, g_state.py,
-                                     &scannedPins, &bestDistPin2);
+    void* hitPin = FindNearestUserMapPin(clientAreaForPins, areaMap,
+                                         g_state.px, g_state.py,
+                                         &scannedPins, &bestDistPin2);
 
-    void* hit       = nullptr;
-    bool  hitIsPin  = false;
+    void* hit      = nullptr;
+    bool  hitIsPin = false;
     if (hitWaypoint && hitPin) {
         if (bestDistPin2 < bestDistWay2) { hit = hitPin; hitIsPin = true; }
         else                              { hit = hitWaypoint; }
@@ -868,10 +861,6 @@ void Tick() {
                                    hit, text, sizeof(text)) &&
                                text[0] != '\0';
                     if (!haveText) {
-                        // Same honest-fallback intent as waypoints —
-                        // user pins should always carry text, but
-                        // engine pins served with strref-only sometimes
-                        // resolve to empty.
                         const char* generic = acc::strings::Get(
                             acc::strings::Id::MapPinNoText);
                         if (generic && generic[0]) {
@@ -879,7 +868,7 @@ void Tick() {
                         }
                     }
                 } else {
-                    // Waypoint path — unchanged.
+                    // Waypoint path.
                     haveText = ReadWaypointMapNoteText(hit, text,
                                                        sizeof(text)) &&
                                text[0] != '\0';

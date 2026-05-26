@@ -14,7 +14,6 @@ const char* Get(Id id) {
         case Id::CategoryItem:        return "Item";
         case Id::CategoryLandmark:    return "Landmark";
         case Id::CategoryTransition:  return "Transition";
-        case Id::CategoryMapPin:      return "Quest marker";
         case Id::CategoryMapHint:     return "Map hint";
 
         case Id::EmptyDoors:          return "No doors in range";
@@ -23,14 +22,13 @@ const char* Get(Id id) {
         case Id::EmptyItems:          return "No items in range";
         case Id::EmptyLandmarks:      return "No landmarks in range";
         case Id::EmptyTransitions:    return "No transitions in range";
-        case Id::EmptyMapPins:        return "No quest markers on this map";
         case Id::EmptyMapHints:       return "No map hints on this map";
         case Id::EmptyAll:            return "No objects in range";
 
-        case Id::MapPinNoText:        return "Quest marker";
-        case Id::MapPinShiftDashHint: return "Quest marker can't be auto-walked. Press Ctrl+Dash to beacon.";
-        case Id::MapPinAltDashUnsupported: return "Quest marker: Alt+Dash not supported";
-        case Id::MapPinInteractHint:  return "Quest marker. Press Ctrl+Dash to beacon.";
+        case Id::MapPinNoText:        return "Marker";
+        case Id::MapPinShiftDashHint: return "Marker can't be auto-walked. Press Ctrl+Dash to beacon.";
+        case Id::MapPinAltDashUnsupported: return "Marker: Alt+Dash not supported";
+        case Id::MapPinInteractHint:  return "Marker. Press Ctrl+Dash to beacon.";
 
         case Id::FmtSavedMarkerAutoNumber:   return "Marker %d";
         case Id::FmtSavedMarkerAutoWithRoom: return "%s - Marker %d";

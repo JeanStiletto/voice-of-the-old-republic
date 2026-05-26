@@ -248,17 +248,12 @@ void InitDefaults() {
     bind(Action::CameraOrient,         'N', 0, 0,
                                        kModShift | kModCtrl | kModAlt | kModAltGr);
 
-    // ----- Map saved markers (Phase 6 lay-off 3) -----
+    // ----- Map saved markers -----
     // Shift+N drops a marker at the map cursor's current world position.
-    // N has zero engine-vanilla binding (verified against the controls-and-
-    // input.md "Default keyboard controls" survey), so picking N avoids
-    // the engine intercepting the keypress to toggle a sub-screen — which
-    // ruled out the more semantically obvious Shift+M (M = engine map
-    // toggle; the engine eats M regardless of Shift state and would close
-    // the very panel we'd want the marker dropped on). Forbid Ctrl/Alt/
-    // AltGr so this stays distinct from any future modifier variants.
-    // Provisional per the 2026-05-18 directive — chord moves when the
-    // parked Phase 5 lay-off 5 hotkey-registry rework lands.
+    // N has zero engine-vanilla binding (verified against the controls-
+    // and-input.md "Default keyboard controls" survey), so picking N
+    // avoids the engine intercepting the keypress. Forbid Ctrl/Alt/AltGr
+    // so this stays distinct from any future modifier variants.
     bind(Action::SaveMarkerAtCursor,   'N', 0, kModShift,
                                        kModCtrl | kModAlt | kModAltGr);
 

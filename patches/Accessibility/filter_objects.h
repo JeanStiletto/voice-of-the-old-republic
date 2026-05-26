@@ -29,13 +29,7 @@ enum class CycleCategory : int {
     Item         = 3,
     Landmark     = 4,
     Transition   = 5,
-    // MapPin is map-context only — server-side game_objects[] doesn't
-    // hold map pins (they live in CSWCArea.map_pins[]), so the iterator
-    // never sees them and World-context BuildCategoryListing returns
-    // empty for this category. cycle_state special-cases it in Map
-    // context to walk the client-area pin array directly.
-    MapPin       = 6,
-    Count_       = 7,
+    Count_       = 6,
 };
 
 // Human-readable category name for logs / future TTS prefixing.
@@ -64,17 +58,12 @@ enum class CycleContext : int {
 // area map (sighted parity). Verified via CSWGuiMapHider::Draw
 // @0x006943d0 (decompiled 2026-05-23): the renderer iterates only
 // waypoints with map_note_enabled + IsWorldPointExplored — doors,
-// triggers/transitions, items, NPCs, containers, and CSWCMapPin
-// entries are never drawn to the area panel. So:
+// triggers/transitions, items, NPCs, containers are never drawn to
+// the area panel. So:
 //   - Landmark  → true  (narrowed further in cycle_state to require
 //                        map_note_enabled, matching the engine's
 //                        GetNextMapNote curated subset that we surface
 //                        as "Map hint")
-//   - MapPin    → true  (accessibility-extra; the engine stores pins
-//                        but doesn't render them — kept as the active-
-//                        quest-objective channel until we verify
-//                        whether SetMapPinEnabled in real modules
-//                        targets these or waypoints)
 //   - all other → false (no map render path → silent skip in map ctx)
 bool IsMapCycleable(CycleCategory c);
 

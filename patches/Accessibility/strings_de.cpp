@@ -24,7 +24,6 @@ const char* Get(Id id) {
         case Id::CategoryItem:        return "Gegenstand";
         case Id::CategoryLandmark:    return "Ort";
         case Id::CategoryTransition:  return "\xDC" "bergang";       // Übergang
-        case Id::CategoryMapPin:      return "Quest-Markierung";
         case Id::CategoryMapHint:     return "Hinweis";
 
         case Id::EmptyDoors:          return "Keine T\xFCren in Reichweite";        // Türen
@@ -33,14 +32,13 @@ const char* Get(Id id) {
         case Id::EmptyItems:          return "Keine Gegenst\xE4nde in Reichweite";  // Gegenstände
         case Id::EmptyLandmarks:      return "Keine Orte in Reichweite";
         case Id::EmptyTransitions:    return "Keine \xDC" "berg\xE4nge in Reichweite"; // Übergänge
-        case Id::EmptyMapPins:        return "Keine Quest-Markierungen auf dieser Karte";
         case Id::EmptyMapHints:       return "Keine Hinweise auf dieser Karte";
         case Id::EmptyAll:            return "Keine Objekte in Reichweite";
 
-        case Id::MapPinNoText:        return "Quest-Markierung";
-        case Id::MapPinShiftDashHint: return "Quest-Markierung lässt sich nicht direkt ansteuern. Strg+Bindestrich für Beacon.";
-        case Id::MapPinAltDashUnsupported: return "Quest-Markierung: Alt+Bindestrich nicht unterst\xFCtzt"; // unterstützt
-        case Id::MapPinInteractHint:  return "Quest-Markierung. Strg+Bindestrich f\xFCr Beacon."; // für
+        case Id::MapPinNoText:        return "Marke";
+        case Id::MapPinShiftDashHint: return "Marke l\xE4sst sich nicht direkt ansteuern. Strg+Bindestrich f\xFCr Beacon."; // lässt, für
+        case Id::MapPinAltDashUnsupported: return "Marke: Alt+Bindestrich nicht unterst\xFCtzt"; // unterstützt
+        case Id::MapPinInteractHint:  return "Marke. Strg+Bindestrich f\xFCr Beacon."; // für
 
         case Id::FmtSavedMarkerAutoNumber:   return "Marke %d";
         case Id::FmtSavedMarkerAutoWithRoom: return "%s - Marke %d";

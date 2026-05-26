@@ -83,9 +83,9 @@ void Dispatch() {
     // manager hook sees it.
     acc::announce_degrees::PollWin32();
 
-    // Phase 6 lay-off 3 — Shift+Q in map context drops a saved marker
-    // at the cursor's current world position. Self-gates on
-    // HasActiveMapPanel + cursor active; in-world Shift+Q stays silent.
+    // Shift+N on the map drops a saved marker at the cursor's current
+    // world position. Self-gates on HasActiveMapPanel + cursor active;
+    // in-world Shift+N stays silent.
     acc::map_user_markers::PollWin32();
 
     // Phase 4 lay-off 2 view-mode probe — Shift+AltGr toggles the engine

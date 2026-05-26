@@ -97,16 +97,15 @@ enum class Action : int {
     // beacon is armed, advance the camera CW to the next cardinal
     // direction (N → E → S → W → N). Bare N has zero engine binding
     // (verified against controls-and-input.md "Default keyboard controls"
-    // survey); Shift+N is already taken by SaveMarkerAtCursor on the map,
-    // so the binding forbids Shift to keep the two routes separate.
+    // survey); Shift+N is taken by SaveMarkerAtCursor on the map, so the
+    // binding forbids Shift to keep the two routes separate.
     CameraOrient,          // N (Shift / Ctrl / Alt / AltGr forbidden)
 
-    // ----- Map saved markers (Phase 6 lay-off 3) -----
-    // Temporary chord per the 2026-05-18 user directive while the parked
-    // Phase 5 lay-off 5 hotkey-registry rework is still outstanding. Drop
-    // a marker at the map cursor's current world position. Only meaningful
-    // when the InGameMap panel is foreground; the handler self-gates.
-    SaveMarkerAtCursor,    // Shift+N (no Ctrl, no Alt, no AltGr — N has zero engine binding)
+    // ----- Map saved markers -----
+    // Shift+N on the map drops a marker at the cursor's current world
+    // position. Marker folds into the Map hint cycle alongside engine
+    // waypoints.
+    SaveMarkerAtCursor,    // Shift+N (no Ctrl, no Alt, no AltGr)
 
     // ----- View mode -----
     ViewModeToggle,        // B   (Shift forbidden)

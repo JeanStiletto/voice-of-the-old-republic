@@ -19,16 +19,19 @@ void SortByDistanceAscending(CategoryListing& l) {
         void*  saveObj = l.objs[i];
         Vector savePos = l.positions[i];
         float  saveDst = l.distances[i];
+        bool   saveIsPin = l.isPin[i];
         int j = i - 1;
         while (j >= 0 && l.distances[j] > saveDst) {
             l.objs[j + 1]      = l.objs[j];
             l.positions[j + 1] = l.positions[j];
             l.distances[j + 1] = l.distances[j];
+            l.isPin[j + 1]     = l.isPin[j];
             --j;
         }
         l.objs[j + 1]      = saveObj;
         l.positions[j + 1] = savePos;
         l.distances[j + 1] = saveDst;
+        l.isPin[j + 1]     = saveIsPin;
     }
 }
 
@@ -83,63 +86,6 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
     void* areaMap = mapCtx ? acc::engine::GetAreaMap() : nullptr;
     int   fogFiltered = 0;
 
-    // MapPin lives on the client-area's dynamic pin array, NOT in
-    // CSWSArea.game_objects[]. Out-of-band iteration in map context;
-    // World context skips this category entirely (returns empty so the
-    // category-loop's silent-skip kicks in).
-    if (category == acc::filter::CycleCategory::MapPin) {
-        if (!mapCtx) {
-            // In-world Shift+,/. should not surface map pins (they're
-            // a map-UI affordance only). Return success with empty.
-            return true;
-        }
-        void* clientArea = acc::engine::GetClientArea(area);
-        int   pinCount    = acc::engine::GetMapPinCount(clientArea);
-        int   pinFog      = 0;
-        int   pinDisabled = 0;
-        int   pinUser     = 0;  // count of user-placed markers (refnum >= 0x80000000)
-        bool  pinOverflow = false;
-        for (int i = 0; i < pinCount; ++i) {
-            void* pin = acc::engine::GetMapPinAt(clientArea, i);
-            if (!pin) continue;
-            if (!acc::engine::IsMapPinEnabled(pin)) {
-                ++pinDisabled;
-                continue;
-            }
-            Vector pos;
-            if (!acc::engine::GetMapPinPosition(pin, pos)) continue;
-            // Skip fog gate for user-placed markers: the player
-            // explicitly dropped them, so there's no spoiler concern,
-            // and gating them out makes the dropped pin un-refindable
-            // when the cursor landed in an unrevealed cell at drop time
-            // (observed live 2026-05-18 — see logs/patch-...-193939.log
-            // line 2525 vs line 3684 in the diagnosis trail).
-            uint32_t flags = acc::engine::GetMapPinFlags(pin);
-            bool isUserPin = (flags & 0x80000000u) != 0;
-            if (isUserPin) ++pinUser;
-            if (!isUserPin &&
-                areaMap && !acc::engine::IsWorldPointExplored(areaMap, pos)) {
-                ++pinFog;
-                continue;
-            }
-            if (out.count >= CategoryListing::kMaxObjects) {
-                pinOverflow = true;
-                continue;
-            }
-            out.objs[out.count]      = pin;
-            out.positions[out.count] = pos;
-            out.distances[out.count] = HorizontalDistance(pos, playerPos);
-            ++out.count;
-        }
-        SortByDistanceAscending(out);
-        acclog::Write("Cycle",
-                      "BuildListing(map) MapPin clientArea=%p pinCount=%d "
-                      "disabled=%d fog=%d user=%d kept=%d overflow=%d",
-                      clientArea, pinCount, pinDisabled, pinFog,
-                      pinUser, out.count, (int)pinOverflow);
-        return true;
-    }
-
     bool overflowed = false;
     int  mapNoteDisabledFiltered = 0;
     acc::engine::AreaObjectIterator it(area);
@@ -183,7 +129,53 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
         out.objs[out.count]      = obj;
         out.positions[out.count] = pos;
         out.distances[out.count] = HorizontalDistance(pos, playerPos);
+        out.isPin[out.count]     = false;
         ++out.count;
+    }
+
+    // Map context + Landmark: fold user-placed map pins into the same
+    // listing. Engine quest pins (high-bit clear) are deliberately skipped
+    // — the user dropped that channel as noisy / spoiler-laden. User pins
+    // (flags & 0x80000000) are explicit player bookmarks, no fog gate
+    // applies (the player put them there, so revealing the location to
+    // themselves is fine).
+    int pinUser = 0;
+    int pinSkippedEngine = 0;
+    int pinSkippedDisabled = 0;
+    if (mapCtx && category == acc::filter::CycleCategory::Landmark) {
+        void* clientArea = acc::engine::GetClientArea(area);
+        int   pinCount   = acc::engine::GetMapPinCount(clientArea);
+        for (int i = 0; i < pinCount; ++i) {
+            void* pin = acc::engine::GetMapPinAt(clientArea, i);
+            if (!pin) continue;
+            if (!acc::engine::IsMapPinEnabled(pin)) {
+                ++pinSkippedDisabled;
+                continue;
+            }
+            uint32_t flags = acc::engine::GetMapPinFlags(pin);
+            if ((flags & 0x80000000u) == 0u) {
+                ++pinSkippedEngine;
+                continue;
+            }
+            Vector pos;
+            if (!acc::engine::GetMapPinPosition(pin, pos)) continue;
+            if (out.count >= CategoryListing::kMaxObjects) {
+                overflowed = true;
+                continue;
+            }
+            out.objs[out.count]      = pin;
+            out.positions[out.count] = pos;
+            out.distances[out.count] = HorizontalDistance(pos, playerPos);
+            out.isPin[out.count]     = true;
+            ++out.count;
+            ++pinUser;
+        }
+        if (pinUser > 0 || pinSkippedEngine > 0) {
+            acclog::Write("Cycle",
+                          "BuildListing(map) pin-merge user=%d engine-skip=%d "
+                          "disabled-skip=%d",
+                          pinUser, pinSkippedEngine, pinSkippedDisabled);
+        }
     }
 
     SortByDistanceAscending(out);

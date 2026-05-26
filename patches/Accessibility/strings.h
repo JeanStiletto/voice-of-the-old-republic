@@ -33,7 +33,6 @@ enum class Id : int {
     CategoryItem,
     CategoryLandmark,
     CategoryTransition,
-    CategoryMapPin,
     // Map-context override for CategoryLandmark — matches the engine's own
     // "Hinweis" / "map note" terminology on the InGameMap up/down buttons.
     // BindingsFor swaps in this string + EmptyMapHints when the cycle ctx is
@@ -51,24 +50,22 @@ enum class Id : int {
     EmptyItems,
     EmptyLandmarks,
     EmptyTransitions,
-    EmptyMapPins,
     EmptyMapHints,
     EmptyAll,
 
-    // Map-pin specific phrases — Shift+- (autowalk) is not supported for
-    // map pins because there's no game-object to USE; the user is
-    // redirected to Ctrl+- which beacons to the pin's world position.
-    // Generic "Quest marker" fallback when the pin's note text is
-    // empty (server-side pins always carry text; quest-script pins
-    // sometimes start with strref=0 + empty inline).
+    // Map-pin activation phrases — user-placed pins fold into the Map hint
+    // cycle alongside waypoints, but have no game-object semantics. Shift+-
+    // (autowalk) and Enter (interact) speak hints; Ctrl+- beacons to the
+    // pin position; Alt+- is unsupported. MapPinNoText is the fallback name
+    // when GetMapPinNoteText returns empty (shouldn't happen for user pins —
+    // BuildAutoName always assigns one — but defended for safety).
     MapPinNoText,
     MapPinShiftDashHint,
     MapPinAltDashUnsupported,
     MapPinInteractHint,
 
-    // Phase 6 lay-off 3 — saved user markers. Shift+Q on the map drops
-    // a pin at the cursor's world position; the pin enters the existing
-    // MapPin cycle category (lay-off 1b) immediately.
+    // Saved user markers. Shift+N on the map drops a pin at the cursor's
+    // world position; the pin folds into the Map hint cycle.
     //
     //   FmtSavedMarkerAutoNumber   — fallback name when no room context
     //                                resolves at the cursor. 1 `%d`
@@ -81,10 +78,8 @@ enum class Id : int {
     //   FmtSavedMarkerPlaced       — confirmation spoken on success.
     //                                1 `%s` (the resolved name).
     //   SavedMarkerFailed          — spoken when CreateMapPin returns
-    //                                false (engine alloc fault or area
-    //                                resolution failure). Per
-    //                                feedback_never_silence_fallback_
-    //                                announcement: speak, don't drop.
+    //                                false. Per feedback_never_silence_-
+    //                                fallback_announcement: speak, don't drop.
     FmtSavedMarkerAutoNumber,
     FmtSavedMarkerAutoWithRoom,
     FmtSavedMarkerPlaced,

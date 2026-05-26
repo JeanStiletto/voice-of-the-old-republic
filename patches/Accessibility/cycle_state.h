@@ -31,12 +31,19 @@ namespace acc::cycle {
 // crowded-area scan (Manaan docks NPC count is ~30, Taris cantina has ~20
 // placeables); 64 leaves headroom. Listings exceeding the cap are
 // truncated and a one-time warning is logged.
+//
+// `isPin[i]` discriminates entry shape: false → CSWSObject* (waypoint /
+// other game object), true → CSWCMapPin* (user-placed map pin folded into
+// the Map hint cycle alongside waypoints). Consumers branch on this when
+// resolving name (GetWaypointMapNote vs GetMapPinNoteText) and stamping
+// the narrated_target slot (Stamp vs StampMapPin).
 struct CategoryListing {
     static constexpr int kMaxObjects = 64;
 
-    void*  objs[kMaxObjects];        // CSWSObject*
+    void*  objs[kMaxObjects];        // CSWSObject* OR CSWCMapPin*
     Vector positions[kMaxObjects];   // world position at scan time
     float  distances[kMaxObjects];   // distance from player at scan time
+    bool   isPin[kMaxObjects];       // true → CSWCMapPin*, false → game object
 
     int count = 0;
 };
