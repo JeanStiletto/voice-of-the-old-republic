@@ -6,6 +6,8 @@
 #include "engine_actionbar.h"
 #include "engine_input.h"     // kInputNavUp/Down, kInputEnter1/2,
                               // kInputEsc1/2
+#include "target_action_menu.h"  // mutual disarm — Shift+4..7 and Shift+1..3
+                                  // can't both be active at once
 #include "engine_panels.h"   // HasActiveDialogPanel — gate Open while a
                               // cinematic dialog is foreground (the dialog's
                               // listbox is sensitive to arrow input from the
@@ -118,6 +120,12 @@ bool Open(int slot) {
         return false;
     }
 
+    // Mutex with target_action_menu (Shift+1..3): only one explore submenu
+    // at a time. Mirror of the same check in target_action_menu::Open.
+    if (acc::target_action_menu::IsActive()) {
+        acc::target_action_menu::ForceDisarm("actionbar-open");
+    }
+
     g_state.active  = true;
     g_state.curSlot = slot;
     int idx = ClampIndex(mi, slot);
@@ -197,14 +205,19 @@ bool HandleInputEvent(int code, int value) {
             // 4..7 press while the gate is closed) fires the variant
             // the user just heard. Up = next variant, Down = prev —
             // mirrors the sighted action bar's mouse-wheel-up
-            // convention (wheel up = next variant).
+            // convention (wheel up = next variant). Clamps at the
+            // ends (no wrap) so the user gets an unambiguous "I'm at
+            // the top/bottom" cue from the unchanged speech (the same
+            // label repeats) instead of teleporting to the other end.
             int prevIdx = g_selectedIndex[slot];
             if (code == kInputNavUp) {
-                g_selectedIndex[slot] =
-                    (g_selectedIndex[slot] + 1) % nVar;
+                if (g_selectedIndex[slot] + 1 < nVar) {
+                    g_selectedIndex[slot] += 1;
+                }
             } else {
-                g_selectedIndex[slot] =
-                    (g_selectedIndex[slot] - 1 + nVar) % nVar;
+                if (g_selectedIndex[slot] > 0) {
+                    g_selectedIndex[slot] -= 1;
+                }
             }
             bool ok = acc::engine_actionbar::SelectVariant(
                 mi, slot, g_selectedIndex[slot]);

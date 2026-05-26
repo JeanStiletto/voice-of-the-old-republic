@@ -54,6 +54,9 @@ enum class Action : int {
     ActionBarOpen2,        // Shift+5
     ActionBarOpen3,        // Shift+6
     ActionBarOpen4,        // Shift+7
+    TargetActionOpen1,     // Shift+1 — opens target-row submenu (row 0)
+    TargetActionOpen2,     // Shift+2
+    TargetActionOpen3,     // Shift+3
     LevelUpOpen,           // Shift+L
     ExamineOpen,           // Shift+H
     CombatQueueOpen,       // Shift+K

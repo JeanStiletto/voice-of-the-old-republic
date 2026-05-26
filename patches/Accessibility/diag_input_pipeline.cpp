@@ -18,6 +18,9 @@
                                // narrated handle still resolves to a live
                                // game object before stamping it)
 #include "engine_input.h"
+#include "engine_radial.h"     // SelectActionInRow — stamp field1[target_type*3
+                               // +row] so DoTargetAction fires the user's
+                               // last-cycled variant for bare 1..3
 #include "engine_manager.h"  // kAddrGuiManagerPtr, modal_stack offsets
 #include "engine_offsets.h"
 #include "engine_player.h"   // GetPlayerServerCreature
@@ -28,6 +31,10 @@
                              // re-announce path for the single-enemy
                              // combat case where the engine's cycle
                              // is a no-op but the user still expects
+#include "target_action_menu.h"  // CurrentSelection — read the user's last
+                                  // chosen variant per row so bare 1..3
+                                  // fires the same variant the submenu
+                                  // last announced
                              // an audible confirmation
 
 namespace acc::diag::input {
@@ -194,9 +201,7 @@ extern "C" void __cdecl OnClientHandleInputEvent(void* this_ptr,
         // assigns action_ids, invalidating any previously-stamped
         // value. So we re-stamp AFTER RePopulate, using the current
         // descriptor's action_id at the index our submenu shadow
-        // tracks. Target-action keys (0xe2/0xe4/0xe6 = bare 1/2/3)
-        // use a different selection path inside the radial; nothing
-        // to stamp here for those.
+        // tracks.
         int barSlot = -1;
         switch (param_1) {
             case 0xe8: barSlot = 0; break;
@@ -209,6 +214,28 @@ extern "C" void __cdecl OnClientHandleInputEvent(void* this_ptr,
             if (mi) {
                 int idx = acc::actionbar_menu::CurrentSelection(barSlot);
                 (void)acc::engine_actionbar::SelectVariant(mi, barSlot, idx);
+            }
+        }
+
+        // Same restamp for the target-action keys (0xe2/0xe4/0xe6 = bare
+        // 1/2/3). DoTargetAction reads field1[target_type*3+row] and
+        // searches action_lists[row] for the matching action_id, falling
+        // back to data[0] on no-match. PopulateMenus reassigns action_ids
+        // just like for personal columns, so we re-stamp at the shadow
+        // index target_action_menu tracks. Without this, a Shift+1+cycle
+        // session would only affect Enter inside the submenu, not the
+        // subsequent bare 1 fires — breaking parity with Shift+4..7.
+        int targetRow = -1;
+        switch (param_1) {
+            case 0xe2: targetRow = 0; break;
+            case 0xe4: targetRow = 1; break;
+            case 0xe6: targetRow = 2; break;
+        }
+        if (targetRow >= 0) {
+            void* tam = acc::engine_radial::ResolveTargetActionMenu();
+            if (tam) {
+                int idx = acc::target_action_menu::CurrentSelection(targetRow);
+                (void)acc::engine_radial::SelectActionInRow(tam, targetRow, idx);
             }
         }
     }

@@ -601,6 +601,36 @@ bool DispatchRowAction(void* tam, int row) {
     }
 }
 
+bool SelectActionInRow(void* tam, int row, int index) {
+    if (!tam || row < 0 || row >= kRowCount || index < 0) return false;
+    __try {
+        auto* base   = reinterpret_cast<unsigned char*>(tam);
+        size_t listOff = kTamActionListsOffset + row * kActionListStride;
+        void* dataPtr = *reinterpret_cast<void**>(base + listOff);
+        int32_t size  = *reinterpret_cast<int32_t*>(
+            base + listOff + kActionListSizeOffset);
+        if (!dataPtr || index >= size) return false;
+
+        auto* entries = reinterpret_cast<unsigned char*>(dataPtr);
+        int32_t actionId = *reinterpret_cast<int32_t*>(
+            entries + index * kIfActionStride + kIfActionIdOffset);
+        if (actionId == 0) return false;
+
+        uint8_t targetType = *(base + kTamTargetTypeOffset);
+        if (targetType >= 4) return false;
+
+        *reinterpret_cast<int32_t*>(
+            base + kTamField1Offset +
+            (static_cast<size_t>(targetType) * 3 + row) * sizeof(int32_t)) =
+                actionId;
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Radial", "SelectActionInRow SEH-FAULT row=%d idx=%d",
+                      row, index);
+        return false;
+    }
+}
+
 void* GetRowActionButton(void* tam, int row) {
     if (!tam || row < 0 || row >= kRowCount) return nullptr;
     // target_actions[row].action_button. action_button is at offset 0

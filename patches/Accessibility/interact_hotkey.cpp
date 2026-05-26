@@ -28,6 +28,8 @@
 #include "radial_menu.h"
 #include "strings.h"
 #include "prism.h"
+#include "target_action_menu.h"  // Shift+1..3 — sibling of actionbar_menu
+                                  // for target-action rows
 #include "view_mode.h"      // IsActive() — Enter is owned by view_mode
                             // while active (lay-off 5)
 
@@ -436,6 +438,9 @@ void PollHotkey() {
     bool risingOpen2 = hk::Pressed(hk::Action::ActionBarOpen2);
     bool risingOpen3 = hk::Pressed(hk::Action::ActionBarOpen3);
     bool risingOpen4 = hk::Pressed(hk::Action::ActionBarOpen4);
+    bool risingOpenT1 = hk::Pressed(hk::Action::TargetActionOpen1);
+    bool risingOpenT2 = hk::Pressed(hk::Action::TargetActionOpen2);
+    bool risingOpenT3 = hk::Pressed(hk::Action::TargetActionOpen3);
     bool risingL     = hk::Pressed(hk::Action::LevelUpOpen);
     bool risingS     = hk::Pressed(hk::Action::StatBlockSpeak);
     bool risingEsc   = hk::Pressed(hk::Action::SubmenuEsc);
@@ -471,6 +476,16 @@ void PollHotkey() {
         if (risingOpen2) acc::actionbar_menu::Open(1);
         if (risingOpen3) acc::actionbar_menu::Open(3);
         if (risingOpen4) acc::actionbar_menu::Open(2);
+
+        // Shift+1..3 — open the target-row submenu. Sibling of the
+        // Shift+4..7 personal-column submenu above; same UX, applied
+        // to the engine's CSWGuiTargetActionMenu rows that bare 1..3
+        // fire against. Direct row mapping (1→row 0, 2→row 1, 3→row 2);
+        // unlike the personal-column 6↔7 swap, the engine routes target
+        // keys linearly via DoTargetAction.
+        if (risingOpenT1) acc::target_action_menu::Open(0);
+        if (risingOpenT2) acc::target_action_menu::Open(1);
+        if (risingOpenT3) acc::target_action_menu::Open(2);
 
         // Shift+L — open the engine's level-up panel directly
         // (CGuiInGame::ShowLevelUpGUI). First-version escape hatch for
@@ -521,7 +536,8 @@ void PollHotkey() {
     // Enter consumes via the routing block below, so this only affects
     // the bare-press during submenu-active state, which is an unlikely
     // input pattern but worth handling.
-    if (inWorld && !acc::actionbar_menu::IsActive()) {
+    if (inWorld && !acc::actionbar_menu::IsActive() &&
+        !acc::target_action_menu::IsActive()) {
         if (risingK1) AnnounceBareTargetKey(0);
         if (risingK2) AnnounceBareTargetKey(1);
         if (risingK3) AnnounceBareTargetKey(2);
@@ -588,6 +604,27 @@ void PollHotkey() {
         }
         if (risingEsc) {
             acc::combat::queue::HandleInputEvent(kInputEsc1, 1);
+        }
+        return;
+    }
+
+    // Target-action menu (Shift+1..3) — sibling of actionbar_menu below.
+    // Runs before the action-bar block; both are mutually exclusive in
+    // practice (Open on one disarms the other implicitly by not arming
+    // simultaneously), but ordering matters for tie-break safety in
+    // case both somehow ended up active. Same routing shape.
+    if (inWorld && acc::target_action_menu::IsActive()) {
+        if (risingEnter) {
+            acc::target_action_menu::HandleInputEvent(kInputEnter1, /*value=*/1);
+        }
+        if (risingUp) {
+            acc::target_action_menu::HandleInputEvent(kInputNavUp, 1);
+        }
+        if (risingDown) {
+            acc::target_action_menu::HandleInputEvent(kInputNavDown, 1);
+        }
+        if (risingEsc) {
+            acc::target_action_menu::HandleInputEvent(kInputEsc1, 1);
         }
         return;
     }

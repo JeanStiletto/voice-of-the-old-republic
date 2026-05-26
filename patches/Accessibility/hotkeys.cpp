@@ -54,6 +54,9 @@ const char* const kActionNames[static_cast<int>(Action::COUNT)] = {
     "ActionBarOpen2",
     "ActionBarOpen3",
     "ActionBarOpen4",
+    "TargetActionOpen1",
+    "TargetActionOpen2",
+    "TargetActionOpen3",
     "LevelUpOpen",
     "ExamineOpen",
     "CombatQueueOpen",
@@ -167,6 +170,9 @@ void InitDefaults() {
     bind(Action::ActionBarOpen2,       '5',       0, kModShift, 0);
     bind(Action::ActionBarOpen3,       '6',       0, kModShift, 0);
     bind(Action::ActionBarOpen4,       '7',       0, kModShift, 0);
+    bind(Action::TargetActionOpen1,    '1',       0, kModShift, 0);
+    bind(Action::TargetActionOpen2,    '2',       0, kModShift, 0);
+    bind(Action::TargetActionOpen3,    '3',       0, kModShift, 0);
     bind(Action::LevelUpOpen,          'L',       0, kModShift, 0);
     bind(Action::ExamineOpen,          'H',       0, kModShift, 0);
     bind(Action::CombatQueueOpen,      'K',       0, kModShift, 0);

@@ -161,6 +161,21 @@ bool SelectNextActionInRow(void* tam, int row);
 bool SelectPrevActionInRow(void* tam, int row);
 bool DispatchRowAction   (void* tam, int row);
 
+// Stamp the engine's per-(target_type, row) "currently-selected action_id"
+// field1[target_type*3 + row] with the action_id of action_lists[row].data[index].
+// DoTargetAction reads field1 and searches action_lists for the matching
+// action_id; on match it fires that entry, on no-match it falls back to
+// data[0]. Mirrors engine_actionbar::SelectVariant in shape — together
+// they let our submenus track a shadow index that survives across the
+// engine's PopulateMenus rebuilds (PopulateMenus reassigns action_ids,
+// invalidating any previously-stamped value, so callers re-stamp after
+// each refresh using the shadow index → current descriptor's action_id).
+//
+// Returns true when the stamp wrote a valid action_id; false on
+// null/out-of-range row, empty action_lists[row], index past size,
+// action_id==0, or any SEH fault.
+bool SelectActionInRow(void* tam, int row, int index);
+
 // Return a pointer to target_actions[row].action_button — the visible
 // CSWGuiButton that renders the currently-selected action's icon/label
 // for `row`. Same shape as engine_actionbar::GetColumnActionButton:
