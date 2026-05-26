@@ -7,6 +7,7 @@
 
 #include "engine_area.h"
 #include "log.h"
+#include "state_overrides.h"
 
 namespace acc::narration {
 
@@ -122,6 +123,7 @@ bool GetSpokenName(void* gameObject, char* outBuf, size_t bufSize) {
         return false;
     }
     AppendSuffix(gameObject, outBuf, bufSize);
+    acc::state::AppendStateLabel(gameObject, outBuf, bufSize);
     return true;
 }
 
