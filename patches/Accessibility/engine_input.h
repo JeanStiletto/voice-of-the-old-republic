@@ -41,7 +41,6 @@ constexpr int kInputEnter2   = 0xbb;
 constexpr int kInputEsc1     = 0xb4;
 constexpr int kInputEsc2     = 0xdf;
 constexpr int kInputActivate = 0x27;   // KEYBOARD_F1, the engine's activate code
-constexpr int kInputTab      = 0xCE;   // LOGICAL_TAB, pre-translation logical code
 
 // Home / End — raw InputIndices values (the engine has no logical-action
 // translation for them). Stock kotor.ini has no [Keymapping] entry mapping

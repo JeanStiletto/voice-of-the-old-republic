@@ -93,24 +93,6 @@ bool QueueSliderInput(void* target, int code);
 // hover/focus paths.
 bool QueuePrevSWInGameGui();
 
-// Queue a CGuiInGame::SwitchToSWInGameGui dispatch with the given engine
-// GUI_id (0..7 — see acc::engine::CallSwitchToSWInGameGui for the mapping).
-// On drain calls acc::engine::CallSwitchToSWInGameGui(guiId), which goes
-// through our redrill-cleanup detour at 0x62cf2d, so the previous
-// sub-screen is popped from panels[] before the new one is pushed.
-// Used by the Tab / Shift+Tab inter-panel cycle handler in menus.cpp.
-bool QueueSwitchSubScreen(int guiId);
-
-// Queue a party-cycle dispatch on the InGameEquip or InGameCharacter
-// panel. On drain calls `handlerAddr(panel, btn)` directly — bypassing
-// the click-sim that fails because the bottom-row stat-row labels
-// overlap the character_left/right buttons in z-order, so MoveMouseTo
-// Position + LMouseDown/Up resolves to a label and never fires the
-// arrow's onClick. The four valid handler addresses live in
-// engine_offsets.h: kAddrInGameEquipOnSwitchLeft / Right and
-// kAddrInGameCharacterOnSwitchLeft / Right.
-bool QueueCharacterSwitch(void* panel, void* btn, uintptr_t handlerAddr);
-
 // Queue a Store item row trade action. On drain dispatches to the
 // engine's per-mode click handler with the row as param_1:
 //   * Buy mode  → CSWGuiStore::OnControlStoreAButton(store, row)

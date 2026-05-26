@@ -71,10 +71,10 @@ enum class Action : int {
     QueueClearAll,         // Shift+Enter inside combat-queue submenu
 
     // ----- Container give-mode -----
-    ContainerGiveMode,     // G inside an open Container panel
+    ContainerGiveMode,     // Q or E inside an open Container panel
 
     // ----- Store mode toggle -----
-    StoreModeToggle,       // G inside an open Store panel (flips Buy/Sell)
+    StoreModeToggle,       // Q or E inside an open Store panel (flips Buy/Sell)
 
     // ----- In-world cycle (Pillar 4) -----
     CycleItemPrev,         // ,

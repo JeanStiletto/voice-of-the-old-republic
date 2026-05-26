@@ -23,7 +23,8 @@ namespace {
 //
 // sortCy values: real Equip-panel buttons live at y < ~500 (screen
 // coords). Chain entries here use 10000+ so they sort AFTER everything
-// else — slot buttons, Back, Change1/2, character_left/right.
+// else — slot buttons and Back. (Change1/2 and character_left/right
+// are decorative — see menus_chain.cpp's IsDecorativeForChain filter.)
 //
 // Order: Vitality → Defense → Attack → Damage (matches the bottom-bar
 // reading order sighted players scan from left to right).

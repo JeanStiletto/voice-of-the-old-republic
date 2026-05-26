@@ -591,18 +591,4 @@ bool IsInGameSubScreenKind(PanelKind k) {
     return FindSpec(k) != nullptr;
 }
 
-int NextStripSubScreenGuiId(PanelKind current, int direction) {
-    if (direction == 0) return -1;
-    int idx = -1;
-    for (int i = 0; i < k_inGameSubScreenCount; ++i) {
-        if (k_inGameSubScreens[i].kind == current) { idx = i; break; }
-    }
-    if (idx < 0) return -1;
-    int step = direction > 0 ? +1 : -1;
-    int next = idx + step;
-    if (next < 0) next = k_inGameSubScreenCount - 1;
-    if (next >= k_inGameSubScreenCount) next = 0;
-    return k_inGameSubScreens[next].guiId;
-}
-
 }  // namespace acc::menus::monitors

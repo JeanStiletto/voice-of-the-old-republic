@@ -44,9 +44,7 @@ enum class Kind {
     WorkbenchUpgradeCommit, // a = panel, b = row, c = btnAssemble
     SliderInput,       // a = target, code = direction (500 inc / 501 dec)
     PrevSWInGameGui,   // no payload — pops current in-game sub-screen
-    SwitchSubScreen,   // code = engine GUI_id (0..7)
     StoreItemActivate, // a = panel (CSWGuiStore), b = row (StoreItemEntry)
-    CharacterSwitch,   // a = panel, b = btn, handlerAddr = engine On*Switch* fn
 };
 
 struct PendingOp {
@@ -57,7 +55,6 @@ struct PendingOp {
     void* b = nullptr;
     void* c = nullptr;
     int   code = 0;
-    uintptr_t handlerAddr = 0;
 };
 
 PendingOp g_op;
@@ -147,27 +144,11 @@ bool QueuePrevSWInGameGui() {
     return true;
 }
 
-bool QueueSwitchSubScreen(int guiId) {
-    if (g_op.kind != Kind::None) return false;
-    g_op.kind = Kind::SwitchSubScreen;
-    g_op.code = guiId;
-    return true;
-}
-
 bool QueueStoreItemActivate(void* panel, void* row) {
     if (g_op.kind != Kind::None) return false;
     g_op.kind = Kind::StoreItemActivate;
     g_op.a = panel;
     g_op.b = row;
-    return true;
-}
-
-bool QueueCharacterSwitch(void* panel, void* btn, uintptr_t handlerAddr) {
-    if (g_op.kind != Kind::None) return false;
-    g_op.kind = Kind::CharacterSwitch;
-    g_op.a = panel;
-    g_op.b = btn;
-    g_op.handlerAddr = handlerAddr;
     return true;
 }
 
@@ -655,14 +636,6 @@ void Drain(void* gm) {
         break;
     }
 
-    // Switch to a different in-game sub-screen (Tab / Shift+Tab cycle).
-    // CallSwitchToSWInGameGui goes through our 0x62cf2d detour, which pops
-    // any active sub-screen first, so panels[] ends with just the new one.
-    case Kind::SwitchSubScreen: {
-        acc::engine::CallSwitchToSWInGameGui(op.code);
-        break;
-    }
-
     // Store item Enter — dispatch the engine's per-mode click handler
     // with the row as param_1. The engine reads the row's obj_id at
     // +0x1c4 and either opens the confirmation MessageBox or sells/buys
@@ -672,42 +645,6 @@ void Drain(void* gm) {
     // monitor detects the listbox size change and rebinds the chain.
     case Kind::StoreItemActivate: {
         acc::menus::store::DispatchTradeAction(op.a, op.b);
-        break;
-    }
-
-    // Direct dispatch of the engine's per-panel OnSwitch{Left,Right} or
-    // OnChangeCharacter handler. Bypasses the click-sim hit-test trap on
-    // character_left/right and change_party_1/2 buttons: the bottom-row
-    // stat labels overlap them in z-order, so MoveMouseToPosition's
-    // mouseOver resolves to a label and the LMouseDown/Up never reaches
-    // the button.
-    //
-    // is_active raise: OnChangeCharacter's prologue gates on
-    // `btn->is_active != 0` and returns early otherwise. OnSwitch{Left,
-    // Right} don't gate on is_active. Conditional raise pattern (0→1)
-    // is safe for both — preserves non-zero engine state.
-    //
-    // param_1 (the button): OnChangeCharacter dereferences it to decide
-    // direction (`btn == &this->change_party_2_button`). OnSwitch
-    // {Left,Right} ignore it entirely (signature contract only).
-    case Kind::CharacterSwitch: {
-        if (op.a && op.handlerAddr) {
-            uint32_t prevIsActive = 0;
-            if (op.b) {
-                uint32_t* isActive = reinterpret_cast<uint32_t*>(
-                    reinterpret_cast<unsigned char*>(op.b) +
-                    kControlIsActiveOffset);
-                prevIsActive = *isActive;
-                if (prevIsActive == 0) *isActive = 1;
-            }
-            auto fn = reinterpret_cast<PFN_GuiOnSwitch>(op.handlerAddr);
-            acclog::Write("Update",
-                          "CharacterSwitch panel=%p btn=%p fn=%p is_active=%u%s",
-                          op.a, op.b, fn, prevIsActive,
-                          (op.b && prevIsActive == 0) ? "->1" : " (preserved)");
-            fn(op.a, op.b);
-            acclog::Write("Update", "CharacterSwitch done panel=%p", op.a);
-        }
         break;
     }
     }

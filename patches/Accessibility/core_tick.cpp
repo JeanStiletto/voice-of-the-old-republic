@@ -167,9 +167,9 @@ void Dispatch() {
 
     // Tab leader announce — Win32-polled Tab rising edge speaks the
     // controlled creature's name (after the engine has cycled to it).
-    // Gates: foreground-window, player-loaded, IsForegroundUiBlocking
-    // (skip while drilled in a panel — manager-side Tab handles panel
-    // cycling there). Repetition intentional (solo-mode confirmation).
+    // Gates: foreground-window, player-loaded. Repetition intentional
+    // (solo-mode confirmation). Fires in panels too — engine re-binds the
+    // active strip panel to the new leader, so the announce is wanted.
     acc::party_leader_announce::Tick();
 
     // Phase 2 ad-hoc — octagonal direction-on-turn announcement (Pillar 2

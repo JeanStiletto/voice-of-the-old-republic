@@ -415,29 +415,6 @@ bool CallPrevSWInGameGui() {
     return true;
 }
 
-// CGuiInGame::SwitchToSWInGameGui — engine's universal sub-screen opener.
-// Same call shape the in-game hotkeys (M, I, J, …) use upstream after the
-// client-app handler translates the keypress to a GUI_id. Our own
-// OnSwitchToSWInGameGui detour at 0x62cf2d closes the prior sub-screen
-// before this function pushes the new one.
-static constexpr uintptr_t kAddrSwitchToSWInGameGui = 0x0062cf10;
-typedef void (__thiscall* PFN_SwitchToSWInGameGui)(void* gui, int gui_id);
-
-bool CallSwitchToSWInGameGui(int guiId) {
-    void* gui = ResolveGuiInGame();
-    if (!gui) {
-        acclog::Write("SwitchToSWInGameGui",
-                      "skipped: CGuiInGame not resolvable yet");
-        return false;
-    }
-    auto fn = reinterpret_cast<PFN_SwitchToSWInGameGui>(
-        kAddrSwitchToSWInGameGui);
-    fn(gui, guiId);
-    acclog::Write("SwitchToSWInGameGui", "dispatched gui=%p GUI_id=%d",
-                  gui, guiId);
-    return true;
-}
-
 // CGuiInGame::HideSWInGameGui @ 0x0062cba0. Engine's universal sub-screen
 // close primitive — invoked by CSWGuiInGameOptions::HandleInputEvent
 // (0x006aaec0) with param_1=0 when Esc dismisses the in-game save/load

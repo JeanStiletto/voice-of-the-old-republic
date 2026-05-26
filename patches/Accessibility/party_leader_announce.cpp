@@ -1,7 +1,6 @@
 #include "party_leader_announce.h"
 
 #include "engine_offsets.h"   // Vector (global struct)
-#include "engine_panels.h"    // IsForegroundUiBlocking
 #include "engine_player.h"    // GetPlayerPosition, GetClientLeader,
                               //   GetActiveLeaderName
 #include "hotkeys.h"
@@ -57,19 +56,6 @@ void Tick() {
         // Player-loaded gate — title screen / module-load have no party.
         Vector unused;
         if (!acc::engine::GetPlayerPosition(unused)) return;
-
-        // UI-block gate — when a panel is capturing input, the manager-side
-        // Tab handler is doing panel cycling. Speaking the leader name on
-        // top of "Inventar" / "Karte" / etc. is noise.
-        acc::engine::UiBlockState ui;
-        if (acc::engine::IsForegroundUiBlocking(&ui)) {
-            acclog::Write("PartyLeader",
-                          "Tab suppressed — ui blocked (fg=%p kind=%s)",
-                          ui.fgPanel,
-                          ui.fgPanel ? acc::engine::PanelKindName(ui.fgKind)
-                                     : "?");
-            return;
-        }
 
         // Arm: capture pre-press leader, start watching for the engine to
         // swap it. Each new Tab press extends the window — a rapid double-

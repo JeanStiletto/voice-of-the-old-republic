@@ -1751,40 +1751,6 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
             IdentifyPanel(g_chainPanel) == PanelKind::InGameJournal &&
             acc::menus::journal::IsJournalEntry(e.control);
 
-        // Party-member switch buttons (change_party_1/2 portraits) on
-        // InGameEquip and InGameCharacter. Direct dispatch into
-        // OnChangeCharacter bypasses click-sim, which resolves mouseOver
-        // to overlapping stat-row labels and never reaches the bottom-
-        // row buttons (verified in patch-20260525-210226.log line 1740).
-        // OnChangeCharacter dereferences the button to decide direction
-        // (`btn == &this->change_party_2_button`) and gates on
-        // `btn->is_active != 0` (raised in the CharacterSwitch op's
-        // drain).
-        //
-        // The flanking character_left/right arrows are paginators over
-        // the 9-slot NPC roster — useless in KOTOR 1's 3-person party
-        // and suppressed from the chain in IsDecorativeForChain.
-        //
-        // Identification: equip uses struct offsets (runtime renumbers
-        // gui IDs around the runtime-added char_left/right pair);
-        // charsheet uses cids 64/67 (stable, declared in character.gui).
-        uintptr_t charSwitchHandler = 0;
-        PanelKind pkForSwitch = IdentifyPanel(g_chainPanel);
-        if (pkForSwitch == PanelKind::InGameEquip) {
-            auto* p = reinterpret_cast<unsigned char*>(g_chainPanel);
-            if (e.control == p + kEquipPanelChangeParty1ButtonOffset ||
-                e.control == p + kEquipPanelChangeParty2ButtonOffset) {
-                charSwitchHandler = kAddrInGameEquipOnChangeCharacter;
-            }
-        } else if (pkForSwitch == PanelKind::InGameCharacter) {
-            int cid = *reinterpret_cast<int*>(
-                reinterpret_cast<unsigned char*>(e.control) + 0x50);
-            if (cid == 64 || cid == 67) {
-                charSwitchHandler = kAddrInGameCharacterOnChangeCharacter;
-            }
-        }
-        bool isCharSwitch = (charSwitchHandler != 0);
-
         if (acc::menus::pending::IsPending()) {
             acclog::Write("Enter", "op already pending; ignoring (target=%p)", e.control);
             consumed = true;
@@ -1843,82 +1809,14 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                           "(Enter on slot id=%d btn=%p panel=%p)",
                           workbenchUpgradeSlotCid, e.control, g_chainPanel);
             consumed = true;
-        } else if (isCharSwitch) {
-            acc::menus::pending::QueueCharacterSwitch(g_chainPanel,
-                                                     e.control,
-                                                     charSwitchHandler);
-            acclog::Write("Menus.Enter",
-                          "character-switch panel=%p index=%d target=%p handler=0x%x",
-                          g_chainPanel, g_chainIndex, e.control,
-                          (unsigned)charSwitchHandler);
-            consumed = true;
         } else {
             acc::menus::pending::QueueActivate(e.control);
             // Drill flag is armed centrally inside the
             // OnSwitchToSWInGameGui detour — every path that opens a
-            // sub-screen (strip-icon Enter, vanilla M/I/J hotkeys, our
-            // own Tab cycle) flows through that one function, so no
-            // per-caller arm is needed here.
+            // sub-screen (strip-icon Enter, vanilla M/I/J hotkeys) flows
+            // through that one function, so no per-caller arm is needed here.
             acclog::Write("Menus.Enter", "activate panel=%p index=%d target=%p",
                           activePanel, g_chainIndex, e.control);
-            consumed = true;
-        }
-    }
-
-    // Tab / Shift+Tab inter-panel cycle (drilled-in only). Reproduces the
-    // vanilla "click a different strip icon" behaviour for keyboard users:
-    // current sub-screen closes, the next one in strip order opens. The
-    // engine's own SwitchToSWInGameGui primitive does both — our
-    // OnSwitchToSWInGameGui detour pops the prior sub-screen before the new
-    // push, so panels[] ends with just the new sub-screen.
-    //
-    // Strip order (left → right) is the spec table in menus_monitors.cpp:
-    //   Ausrüstung → Inventar → Charakterblatt → Karte → Fähigkeiten →
-    //   Aufträge → Optionen → Nachrichten → wraps to Ausrüstung
-    //
-    // Tab is the engine's logical TAB code (0xce) — it reaches the manager
-    // directly regardless of sw_gui_status, the upstream client-app handler
-    // doesn't claim it. Shift modifier is read via GetAsyncKeyState (same
-    // pattern as peek_description / cycle_input). Queued through the
-    // pending-op surface so the panels[] mutation runs on the next OnUpdate
-    // tick rather than mid-input-dispatch.
-    //
-    // Distinct from the long-removed Tab-cycle inside Options sub-dialogs
-    // (Gameplay/Grafik/…): that one closed+reopened a child panel in one
-    // 16ms window and crashed the NVIDIA driver via gamma-ramp re-runs;
-    // see docs/tab-crash-investigation.md. The engine's sub-screen cycle
-    // here is the path the vanilla mouse path already takes, so the same
-    // re-entrancy risk doesn't apply.
-    if (param_2 != 0 &&
-        param_1 == kInputTab &&
-        g_drilledIntoSubScreen &&
-        activePanel != nullptr &&
-        acc::menus::monitors::IsInGameSubScreenKind(
-            IdentifyPanel(activePanel)))
-    {
-        // Gate on activePanel itself being the bare sub-screen kind. When
-        // the user is in a nested sub-dialog (e.g. InGameOptions → Grafik),
-        // activePanel resolves to the sub-dialog instead — Tab there should
-        // fall through (vanilla behaviour, no-op) rather than tear the
-        // sub-dialog off and warp to another sub-screen.
-        PanelKind subKind = IdentifyPanel(activePanel);
-        bool shift = acc::hotkeys::ShiftHeld();
-        int dir = shift ? -1 : +1;
-        int nextGuiId =
-            acc::menus::monitors::NextStripSubScreenGuiId(subKind, dir);
-        if (nextGuiId >= 0) {
-            if (acc::menus::pending::IsPending()) {
-                acclog::Write("StripCycle",
-                              "%s: op already pending; ignoring",
-                              shift ? "shift+tab" : "tab");
-            } else {
-                acc::menus::pending::QueueSwitchSubScreen(nextGuiId);
-                acclog::Write("StripCycle",
-                              "%s panel=%p kind=%s -> GUI_id=%d",
-                              shift ? "shift+tab" : "tab",
-                              activePanel, PanelKindName(subKind),
-                              nextGuiId);
-            }
             consumed = true;
         }
     }

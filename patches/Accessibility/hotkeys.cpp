@@ -197,12 +197,16 @@ void InitDefaults() {
     bind(Action::QueueClearAll,        VK_RETURN, 0, kModShift, 0);
 
     // ----- Container give-mode -----
-    bind(Action::ContainerGiveMode,    'G', 0, 0, 0);
+    // Q or E — either key toggles. Mirrors the engine's in-panel Q/E
+    // semantics (panel/character cycle) into "cycle the view". Container
+    // and Store aren't part of the engine's strip cycle, so Q/E in those
+    // panels is engine-noop and free for us to repurpose.
+    bind(Action::ContainerGiveMode,    'Q', 'E', 0, 0);
 
-    // ----- Store mode toggle. Same key as ContainerGiveMode — the two
+    // ----- Store mode toggle. Same keys as ContainerGiveMode — the two
     // handlers gate on the foreground panel kind, so only one fires per
     // press.
-    bind(Action::StoreModeToggle,      'G', 0, 0, 0);
+    bind(Action::StoreModeToggle,      'Q', 'E', 0, 0);
 
     // ----- In-world cycle -----
     // Cycle navigate keys use VK_OEM_COMMA / VK_OEM_PERIOD — same VK on

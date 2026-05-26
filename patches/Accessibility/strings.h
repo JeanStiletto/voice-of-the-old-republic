@@ -487,15 +487,6 @@ enum class Id : int {
     PortraitRaceLight,
     FmtPortraitDescription,
 
-    // ---- Party-member portrait buttons (change_party_1 / change_party_2)
-    //      on the InGameEquip and InGameCharacter panels. These are the
-    //      switch targets — Enter on them calls OnChangeCharacter to
-    //      swap the displayed character. Labels are positional (1 = left,
-    //      2 = right) since the NPC behind each slot changes after every
-    //      switch — a fixed name label would be wrong half the time.
-    ChangeToCharacter1,
-    ChangeToCharacter2,
-
     // ---- Disabled-button suffix. Appended (with leading ", ") to the
     //      announced text when a chain-navigable button's is_active field
     //      (CSWGuiControl +0x4C) reads zero — the engine's universal

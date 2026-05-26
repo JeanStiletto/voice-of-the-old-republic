@@ -179,8 +179,7 @@ When this document and `hotkeys.cpp` disagree, `hotkeys.cpp` wins. Update both t
 ### Orientation & party
 
 - AltGr (right Alt alone, no Shift) — Speak current facing as compass degrees.
-- Tab — Speak the party-leader name (after the engine has processed Tab's leader-cycle).
-- Shift+Tab — Cycle to previous in-game sub-screen (when drilled into Karte / Inventar / Charakter / etc.). Tab alone cycles forward; engine handles party-cycle outside the sub-screen drill.
+- Tab — Speak the party-leader name (after the engine has processed Tab's leader-cycle). Fires in-world and inside panels — the engine cycles control to the next living party member in both contexts; strip panels re-bind to the new leader, so the announce is wanted everywhere. (In-game panel switching is handled natively by the engine via Q/E.)
 - N — Camera orient. If an audio beacon is armed (Ctrl+`-`), point the camera at the beacon's next waypoint and speak "Beacon, <direction>". Otherwise advance the camera clockwise to the next cardinal direction (N → E → S → W → N) — silent; camera_announce's sector cross fires the new direction word naturally. Bare N has no engine binding (the engine ignores it in-world); Shift+N is reserved for SaveMarkerAtCursor on the map, so the binding forbids Shift. Engine surface: `CSWCModule::AcclTurnCamera @0x00640090` (relative-delta yaw setter in radians).
 
 ### View mode (look-around without moving)
@@ -205,7 +204,11 @@ When the actionbar submenu, combat-queue submenu, or radial action menu is armed
 
 ### Container panel
 
-- G — Activate the panel's "Give Items" button. Single key (no modifier) is acceptable here because the binding is gated on a Container panel being foreground — pressing G outside that context is a no-op.
+- Q or E — Activate the panel's "Give Items" button. Either key toggles (binary state). Single key (no modifier) is acceptable here because the binding is gated on a Container panel being foreground — pressing Q/E outside that context falls through to the engine (target/panel cycle).
+
+### Store panel
+
+- Q or E — Toggle Buy / Sell view. Either key flips the mode. Gated on a Store panel being foreground; outside that context the keys fall through to the engine.
 
 ### Editbox modal (chargen name entry, future text-input panels)
 

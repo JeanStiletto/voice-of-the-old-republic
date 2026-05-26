@@ -56,11 +56,4 @@ void* FindActiveSubScreenPanel();
 // on the spec table's struct definition.
 bool IsInGameSubScreenKind(acc::engine::PanelKind k);
 
-// Strip-order Tab cycle. Given the currently drilled sub-screen kind and a
-// direction (+1 = Tab, -1 = Shift+Tab), return the engine GUI_id of the next
-// sub-screen in the icon strip's left-to-right order, with wrap-around.
-// Returns -1 when `current` is not a sub-screen kind (defensive: callers
-// already gate on the drill flag + FindActiveSubScreenPanel).
-int NextStripSubScreenGuiId(acc::engine::PanelKind current, int direction);
-
 }  // namespace acc::menus::monitors

@@ -734,28 +734,6 @@ typedef void (__thiscall* PFN_InGameEquipOnOKPressed)(void* panel, void* btn_equ
 constexpr uintptr_t kAddrInGameEquipOnItemSelected = 0x006b7920;
 constexpr uintptr_t kAddrInGameEquipOnOKPressed    = 0x006b9160;
 
-// OnChangeCharacter — the "switch displayed character" handler bound
-// to the change_party_1/2 portrait buttons on InGameEquip and
-// InGameCharacter. Direct dispatch bypasses click-sim's hit-test trap
-// (the bottom-row stat labels overlap these buttons in z-order, so
-// MoveMouseToPosition's mouseOver resolves to a label and LMouseDown/Up
-// never reaches the button — verified in patch-20260525-210226.log
-// line 1740).
-//
-// Signature: `void __thiscall(this_panel, CSWGuiControl* btn)`.
-// Gates on `btn->is_active != 0` (decomp — returns early if 0). Caller
-// must raise the button's is_active to 1 before dispatch, same shape as
-// the equip-slot picker pattern.
-// Branches on `btn == &this->change_party_2_button` to decide direction.
-//
-// Sibling handlers OnSwitch{Left,Right} (which paginate visible portraits
-// over the 9-slot NPC roster) are deliberately not wired: KOTOR 1's
-// 3-person party cap means the 2 change_party slots already cover both
-// companions, so pagination has nothing to advance to.
-typedef void (__thiscall* PFN_GuiOnSwitch)(void* panel, void* btn);
-constexpr uintptr_t kAddrInGameEquipOnChangeCharacter     = 0x006ba820;
-constexpr uintptr_t kAddrInGameCharacterOnChangeCharacter = 0x006af350;
-
 // ---------------------------------------------------------------------------
 // CSWGuiUpgrade (workbench upgrade.gui) slot-pick + commit chain.
 // Same structural shape as the equip-screen pair above, RE'd from Lane's
@@ -1101,13 +1079,13 @@ constexpr size_t    kEquipPanelRightWeaponDamageLabelOffset  = 0x1e18;  // Lane:
 constexpr size_t    kEquipPanelRightWeaponTohitLabelOffset   = 0x1f58;
 
 // Bottom-row party-cycle buttons inline in CSWGuiInGameEquip — mirrors the
-// 4-button strip on InGameCharacter. The two change_party slots are
-// decorative crossfade portraits of the OTHER party members (non-
-// interactive, bit_flags=0x8); the character_left/right buttons are the
-// prev/next-party arrows (interactive, bit_flags=0xa) that drive
-// OnSwitchLeft/Right on click. Runtime IDs are unstable (engine renumbers
-// when runtime-added char_left/right collide with gui-declared
-// BTN_CHANGE2's id=40), so identification uses struct offsets.
+// 4-button strip on InGameCharacter. All four (change_party_1/2 portraits
+// + character_left/right arrows) are dropped from chain navigation by
+// menus_chain.cpp's IsDecorativeForChain filter: Tab cycles the active
+// leader engine-side and party_leader_announce speaks the new name, so
+// these in-panel buttons are redundant. Runtime IDs are unstable (engine
+// renumbers when runtime-added char_left/right collide with gui-declared
+// BTN_CHANGE2's id=40), so the filter identifies by struct offset.
 //
 // Derived 2026-05-25 from patch-20260525-204630.log addresses (panel
 // 0FD03C68): back@0x385C, change_party_1@0x3A20, change_party_2@0x3BE4,
