@@ -139,6 +139,46 @@ constexpr float kHubAbsorptionRadiusM = 7.0f;
 //     places across a wall in adjacency tables).
 constexpr float kCorridorStraightCosMax = -0.94f;
 
+// Corner absorption (Pass 1f): a small corridor-shaped cluster whose
+// two external graph edges both land in the SAME other cluster is, by
+// definition, a detour through one perceptual region (a wall-curve
+// hugger, a pillar-wrap, a room-edge stub). Sighted players read those
+// as part of the larger space; the navigation graph just authors them
+// as 1-2 extra patrol nodes. Without this pass each such corridor gets
+// its own Korridor announce as the player walks past it, breaking the
+// "you're in one room" perception. See findings in
+// docs/room-shape-improvements.md (the inverse of the chain-merge
+// motivation — chain-merge fixes long under-merged hallways; corner-
+// absorb fixes small over-described detours).
+//
+// Trigger: cluster's `externalCount == 2` AND both external neighbours
+// share the same UFFind root (in the post-1e snapshot). The cluster
+// identity test is the primary signal — passes 1..1e decided those
+// two outer nodes are one perceptual region, so a third path that
+// leaves and re-enters that region is a detour by our own definition.
+//
+// Gates beyond the same-cluster trigger:
+//   - cluster has no degree-≥3 members (corridor-shaped candidates
+//     only; a hub demoted to 2 exits via door vetoes still earns its
+//     own announce);
+//   - door on either external edge — veto. Doors are perceptual
+//     boundaries regardless of cluster identity (same rule every
+//     other merge pass uses);
+//   - |Δz| between the two outer-cluster neighbours ≤ kMergeMaxZM
+//     (multi-floor protection, matches Pass 1c/1d);
+//   - XY distance between the two outer-cluster neighbours ≤
+//     kHubAbsorptionRadiusM (long corridors that loop back deserve
+//     their own announce; matches the hub-absorption radius);
+//   - direct line nbA→nbB inside the outer cluster is not walkmesh-
+//     blocked. If you can't walk straight between them, the corridor
+//     isn't a detour — it's the only path through that cluster.
+//
+// Cascade safety: same frozen-UF-snapshot pattern as Pass 1c/1d. One
+// absorption per candidate; no iteration. Stops a chain like
+// "corner-corridor C1 → absorbed into B → C2 now sees C1 as part of
+// B → C2 absorbs too" from runaway-merging unrelated chains.
+constexpr float kCornerAbsorptionRadiusM = 7.0f;
+
 // Kind values now live in the public header (wall_topology.h) so
 // transitions.cpp can branch on Platz for the delayed-announce path.
 // Aliases here keep the local code compact.
@@ -2086,6 +2126,185 @@ void BuildForArea(void* area) {
         kCorridorStraightCosMax, chainMerges, chainSkippedBend,
         chainVetoedByDoor, chainVetoedByWall, chainVetoedByCluster);
 
+    // Pass 1f: corner absorption (see tunable docs at top of file).
+    //
+    // Walk each cluster from the post-1e UF state. If the cluster is
+    // corridor-shaped (all members degree ≤ 2) and has exactly two
+    // external graph edges whose neighbour nodes share the same OTHER
+    // cluster root, absorb this cluster into that other cluster — it's
+    // a detour through one perceptual region, not a real corridor.
+    int cornerSnapRoot[kMaxNodes];
+    int cornerSnapSize[kMaxNodes];
+    for (int i = 0; i < n; ++i) {
+        cornerSnapRoot[i] = UFFind(i);
+        cornerSnapSize[i] = 0;
+    }
+    for (int i = 0; i < n; ++i) {
+        int r = cornerSnapRoot[i];
+        if (r >= 0 && r < n) ++cornerSnapSize[r];
+    }
+
+    int cornerAbsorbed         = 0;
+    int cornerSkippedHighDeg   = 0;
+    int cornerSkippedExitCount = 0;
+    int cornerSkippedDifferent = 0;
+    int cornerVetoedByDoor     = 0;
+    int cornerVetoedByDistance = 0;
+    int cornerVetoedByZ        = 0;
+    int cornerVetoedByBlocked  = 0;
+
+    for (int root = 0; root < n; ++root) {
+        if (cornerSnapRoot[root] != root) continue;
+
+        // Collect external neighbours for this cluster, dedup by nb id.
+        // Also detect any member with degree ≥ 3 in the raw graph —
+        // those mark the cluster as a real junction (possibly already
+        // demoted by ClassifyCluster) and we don't want to fold them
+        // into the neighbouring space.
+        constexpr int kMaxExt = 4;
+        int  extNb     [kMaxExt];
+        int  extDoorIdx[kMaxExt];
+        int  extCount   = 0;
+        bool overflow   = false;
+        bool anyHighDeg = false;
+
+        for (int m = 0; m < n; ++m) {
+            if (cornerSnapRoot[m] != root) continue;
+            int lo = 0, hi = 0;
+            acc::engine::navgraph::NeighbourRange(g, m, lo, hi);
+            if (hi - lo >= 3) anyHighDeg = true;
+            for (int e = lo; e < hi; ++e) {
+                int nb = static_cast<int>(g.conns[e]);
+                if (nb < 0 || nb >= n) continue;
+                if (cornerSnapRoot[nb] == root) continue;  // internal
+                EdgeResult er = ClassifyEdge(area,
+                                             g.nodes[m].pos,
+                                             g.nodes[nb].pos,
+                                             "corner-pass1f-collect");
+                if (er.kind == kEdgeBlocked) continue;  // graph edge crosses wall
+                bool seen = false;
+                for (int k = 0; k < extCount; ++k) {
+                    if (extNb[k] == nb) {
+                        if (extDoorIdx[k] < 0 && er.kind == kEdgeDoor) {
+                            extDoorIdx[k] = er.doorIdx;
+                        }
+                        seen = true;
+                        break;
+                    }
+                }
+                if (!seen) {
+                    if (extCount >= kMaxExt) { overflow = true; continue; }
+                    extNb[extCount]      = nb;
+                    extDoorIdx[extCount] =
+                        (er.kind == kEdgeDoor) ? er.doorIdx : -1;
+                    ++extCount;
+                }
+            }
+        }
+
+        if (overflow) continue;
+        if (anyHighDeg) { ++cornerSkippedHighDeg; continue; }
+        if (extCount != 2) { ++cornerSkippedExitCount; continue; }
+
+        int nbA = extNb[0];
+        int nbB = extNb[1];
+        int rA  = cornerSnapRoot[nbA];
+        int rB  = cornerSnapRoot[nbB];
+        if (rA != rB) { ++cornerSkippedDifferent; continue; }
+        if (rA == root) continue;  // shouldn't happen — defensive.
+
+        // Door on either external edge — preserve the boundary.
+        if (extDoorIdx[0] >= 0 || extDoorIdx[1] >= 0) {
+            ++cornerVetoedByDoor;
+            acclog::Write(
+                "WallTopo",
+                "  corner-absorb VETOED (door): cluster=%d (size=%d) "
+                "ext nb[%d](%.1f,%.1f)+nb[%d](%.1f,%.1f) both -> cluster=%d, "
+                "but a door sits on one external edge",
+                root, cornerSnapSize[root],
+                nbA, g.nodes[nbA].pos.x, g.nodes[nbA].pos.y,
+                nbB, g.nodes[nbB].pos.x, g.nodes[nbB].pos.y, rA);
+            continue;
+        }
+
+        // Distance gate between the two outer-cluster neighbours.
+        // Long hops mean the corridor wraps around something big enough
+        // to deserve its own announce; short hops are real detours.
+        float dx = g.nodes[nbA].pos.x - g.nodes[nbB].pos.x;
+        float dy = g.nodes[nbA].pos.y - g.nodes[nbB].pos.y;
+        float dz = g.nodes[nbA].pos.z - g.nodes[nbB].pos.z;
+        float distXY = std::sqrt(dx * dx + dy * dy);
+        if (distXY > kCornerAbsorptionRadiusM) {
+            ++cornerVetoedByDistance;
+            acclog::Write(
+                "WallTopo",
+                "  corner-absorb VETOED (distance): cluster=%d (size=%d) "
+                "nb[%d](%.1f,%.1f) <-> nb[%d](%.1f,%.1f) gap=%.1fm > %.1fm",
+                root, cornerSnapSize[root],
+                nbA, g.nodes[nbA].pos.x, g.nodes[nbA].pos.y,
+                nbB, g.nodes[nbB].pos.x, g.nodes[nbB].pos.y,
+                distXY, kCornerAbsorptionRadiusM);
+            continue;
+        }
+
+        if (std::fabs(dz) > kMergeMaxZM) {
+            ++cornerVetoedByZ;
+            acclog::Write(
+                "WallTopo",
+                "  corner-absorb VETOED (z): cluster=%d (size=%d) "
+                "nb[%d](%.1f,%.1f,%.1f) <-> nb[%d](%.1f,%.1f,%.1f) |dz|=%.1f "
+                "> %.1fm — multi-floor protection",
+                root, cornerSnapSize[root],
+                nbA, g.nodes[nbA].pos.x, g.nodes[nbA].pos.y, g.nodes[nbA].pos.z,
+                nbB, g.nodes[nbB].pos.x, g.nodes[nbB].pos.y, g.nodes[nbB].pos.z,
+                std::fabs(dz), kMergeMaxZM);
+            continue;
+        }
+
+        // Direct line nbA → nbB inside the outer cluster. If the engine
+        // says you can't walk straight between them, the corridor is the
+        // only connection through that cluster — keep it labelled.
+        EdgeResult lineEr = ClassifyEdge(area,
+                                         g.nodes[nbA].pos, g.nodes[nbB].pos,
+                                         "corner-pass1f-line");
+        if (lineEr.kind == kEdgeBlocked) {
+            ++cornerVetoedByBlocked;
+            acclog::Write(
+                "WallTopo",
+                "  corner-absorb VETOED (line blocked): cluster=%d (size=%d) "
+                "nb[%d](%.1f,%.1f) <-/-> nb[%d](%.1f,%.1f) — corridor is the "
+                "only path between members of outer cluster=%d",
+                root, cornerSnapSize[root],
+                nbA, g.nodes[nbA].pos.x, g.nodes[nbA].pos.y,
+                nbB, g.nodes[nbB].pos.x, g.nodes[nbB].pos.y, rA);
+            continue;
+        }
+
+        // All gates passed. Absorb the corridor cluster into the outer
+        // cluster. UFUnite picks the smaller index as the new root —
+        // that's a benign identity flip; Pass 2 classifies by the final
+        // UFFind, not by the snapshot ids.
+        UFUnite(root, nbA);
+        ++cornerAbsorbed;
+        acclog::Write(
+            "WallTopo",
+            "  corner-absorb: cluster=%d (size=%d) -> cluster=%d via "
+            "nb[%d](%.1f,%.1f)+nb[%d](%.1f,%.1f) gap=%.1fm",
+            root, cornerSnapSize[root], rA,
+            nbA, g.nodes[nbA].pos.x, g.nodes[nbA].pos.y,
+            nbB, g.nodes[nbB].pos.x, g.nodes[nbB].pos.y, distXY);
+    }
+    acclog::Write(
+        "WallTopo",
+        "  corner-absorption: radius=%.1fm -> absorbed=%d "
+        "skipped-high-deg=%d skipped-exit-count=%d skipped-different=%d "
+        "vetoedByDoor=%d vetoedByDistance=%d vetoedByZ=%d "
+        "vetoedByBlocked=%d",
+        kCornerAbsorptionRadiusM, cornerAbsorbed,
+        cornerSkippedHighDeg, cornerSkippedExitCount, cornerSkippedDifferent,
+        cornerVetoedByDoor, cornerVetoedByDistance, cornerVetoedByZ,
+        cornerVetoedByBlocked);
+
     // Diagnostic-only pass: dump per-node topology metrics so we can
     // pick a principled gate later. NO MERGE LOGIC USES THESE COUNTS.
     // For each node we log:
@@ -2313,11 +2532,11 @@ void BuildForArea(void* area) {
     acclog::Write("WallTopo",
                   "BuildForArea: area=%p nodes=%d clusters=%d "
                   "merged-pairs=%d merge-vetoed-by-door=%d "
-                  "chain-merges=%d "
+                  "chain-merges=%d corner-absorbs=%d "
                   "multi-node-clusters=%d "
                   "(dead=%d corridor=%d junction=%d open=%d)",
                   area, n, clusters, mergeEdges, mergeVetoedByDoor,
-                  chainMerges, multiNodeClusters,
+                  chainMerges, cornerAbsorbed, multiNodeClusters,
                   deadEnds, corridors, junctions, openAreas);
 
     // Edge-classification summary. Counts are multi-fire (each graph
