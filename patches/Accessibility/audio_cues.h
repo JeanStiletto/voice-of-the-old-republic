@@ -1,59 +1,25 @@
-// Navigation-cue vocabulary — resref mapping for the 12 audio slots locked
-// in docs/navsystem-longterm-plan.md §"Audio vocabulary inventory".
+// Navigation-cue vocabulary — resref mapping for the audio slots.
 //
-// Layer: audio/ (data-only header, no engine indirection of its own; pairs
-// with audio_bus.h which provides the playback primitives). All consumers
-// resolve enum → resref via GetNavCueResref, then call acc::audio::PlayCue
-// or PlayCue3D from audio_bus.h.
+// Data-only header. Consumers map enum → resref via GetNavCueResref then
+// call audio::PlayCue / PlayCue3D.
 //
-// Source of picks: Phase 1 lay-off 5 atmospheric-pass curation
-// (docs/navsystem-progress.md, "Lay-off 5"). Each entry was auditioned
-// from the 1928-file pool extracted from data/sounds.bif by xoreos-tools
-// (docs/tools.md). Some picks are flagged provisional in the curation log
-// pending live re-audition under Phase 3 hook-test conditions.
+// Swapping a resref: change the string literal on the case below. CResRef
+// has a 16-char hard limit (silent truncation past that → resolution miss
+// → silent cue). Resolution is case-insensitive through
+// Override → streamwaves → streamsounds → streammusic → BIF/RIM, so an
+// Override/ WAV with the same resref transparently shadows the stock asset.
 //
-// Swap procedure: change the string literal on the relevant case line below.
-// The resref is bound by CResRef's 16-char hard limit (audio_bus.cpp's
-// FillResRef silently truncates beyond that); current longest pick is
-// "as_nt_wtrdrip_09" at exactly 16 chars (any longer = silent truncation
-// = resolution miss = silent cue, see project_pitchhook_silent_resref
-// memory). The engine's resource-resolution chain is case-insensitive
-// and walks Override → streamwaves → streamsounds → streammusic →
-// BIF/RIM, so a custom Override/ WAV with the same resref will shadow
-// the engine asset transparently.
-//
-// Verifying a resref before using it: every cue resref MUST resolve to
-// a real file in the chitin.key index, otherwise Play3DOneShotSound
-// silently no-ops (creates no source, makes no sound). The previous
-// Wall pick "gui_select" was missing from chitin.key for the entire
-// install — confirmed via the per-fire PitchHook diagnostic on
-// 2026-05-07 (958 play cue=Wall logs, 0 source creations). The full
-// extraction at build/sounds-extracted-full/ is the source of truth for
-// "does this resref resolve?".
-//
-// Phase 1 lay-off 5 closeout. No runtime consumer in this lay-off — the
-// header is included by audio_bus.cpp for compile-verification only. The
-// first consumer lands in Phase 2 (Pillar 4 cycle) and Phase 3 (Pillar 1
-// change-driven cues).
+// Verify a resref resolves before using it: Play3DOneShotSound silently
+// no-ops on a miss. build/sounds-extracted-full/ is the truth table.
 
 #pragma once
 
 namespace acc::audio {
 
-// Navigation-cue vocabulary. Order is plan-stable: per-kind first, then
-// special-purpose. When adding a slot, also extend the switch in
-// GetNavCueResref below or the build will warn on missing case.
 enum class NavCue {
-    // Per-kind cues — one per object/feature class the player can
-    // encounter while moving. Six map to Pillar 4's locked categories
-    // (Door split by open_state + material 2026-05-27); Wall and
-    // HazardLedge are Pillar 1 walkmesh-geometry features without an
-    // object-type equivalent. All four door sub-cues share the
-    // Pillar1Settings.cueDoor toggle — they enable/disable together.
-    // Open doors don't differentiate material because there are no
-    // generic dr_metal_open / dr_wood_open / dr_stone_open samples in
-    // K1; closed-state material is the meaningful distinction (the
-    // engine ships dr_{metal,wood,stone}_lock samples for exactly this).
+    // Per-kind cues — six map to Pillar 4 categories. Doors split by
+    // open_state + material at fire time (the engine has dr_*_lock samples
+    // for closed material but no analogous open-state material variants).
     DoorOpen,
     DoorClosedMetal,
     DoorClosedWood,
@@ -65,21 +31,15 @@ enum class NavCue {
     TransitionExit,
     Wall,
     HazardLedge,
-    // Special-purpose cues — guidance + view-mode collision.
+    // Guidance + view-mode signals.
     Collision,
     BeaconActive,
     BeaconWaypointReached,
     BeaconDestinationReached,
 };
 
-// Map a NavCue to its engine resref. constexpr so the compiler folds the
-// switch to a constant table; no runtime branching on hot paths.
 constexpr const char* GetNavCueResref(NavCue cue) {
     switch (cue) {
-        // Door split by open_state + material at fire time. Open doors
-        // keep gui_close (the original Door cue). Closed doors get the
-        // material-specific lock sample so the player can hear the
-        // material before deciding whether to walk up + interact.
         case NavCue::DoorOpen:                 return "gui_close";
         case NavCue::DoorClosedMetal:          return "dr_metal_lock";
         case NavCue::DoorClosedWood:           return "dr_wood_lock";
@@ -87,16 +47,9 @@ constexpr const char* GetNavCueResref(NavCue cue) {
         case NavCue::NpcCreature:              return "fs_metal_droid2";
         case NavCue::ContainerPlaceable:       return "gui_invadd";
         case NavCue::Item:                     return "gui_invselect";
-        // Landmark is silent — landmarks are announced via TTS only (cycle
-        // path + map-cursor ambient). User-feedback 2026-05-27: the
-        // dedicated cue was redundant against the spoken name + clock +
-        // distance payload. Empty resref short-circuits PlayCue3D
-        // (audio_bus.cpp +0x80) without an engine call.
+        // Silent — landmarks announce via TTS only. Empty resref
+        // short-circuits PlayCue3D without an engine call.
         case NavCue::Landmark:                 return "";
-        // gui_quest reassigned from the old Landmark slot (2026-05-27). The
-        // previous mgs_s1 pick was a Manaan minigame stinger; gui_quest is
-        // the sharper GUI-path cue that survives engine attenuation better
-        // when transitions are heard at range.
         case NavCue::TransitionExit:           return "gui_quest";
         case NavCue::Wall:                     return "as_nt_wtrdrip_09";
         case NavCue::HazardLedge:              return "cb_sw_bldlrg1";
@@ -105,7 +58,7 @@ constexpr const char* GetNavCueResref(NavCue cue) {
         case NavCue::BeaconWaypointReached:    return "gui_prompt";
         case NavCue::BeaconDestinationReached: return "gui_complete";
     }
-    return "";  // unreachable; satisfies non-void return path
+    return "";
 }
 
 }  // namespace acc::audio

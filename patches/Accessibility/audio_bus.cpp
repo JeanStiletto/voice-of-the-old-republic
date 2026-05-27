@@ -1,31 +1,21 @@
 #include "audio_bus.h"
-#include "audio_cues.h"  // compile-verification of the cue table; no consumer yet
+#include "audio_cues.h"
 
 #include <windows.h>
 #include <cstdint>
 #include <cstring>
 
-#include "audio_pitch.h"  // BeginScopedZero / EndScopedZero — flips the
-                          // per-thread flag the pitch-variance detour
-                          // reads so only the source THIS call creates
-                          // gets jitter neutralised
-#include "engine_player.h"  // GetPlayerPosition / GetCameraPosition for
-                            // the character-relative listener offset
-                            // applied to PlayCue3D source positions
+#include "audio_pitch.h"   // BeginScopedZero / EndScopedZero (per-call jitter)
+#include "engine_player.h"
 #include "log.h"
-#include "view_mode.h"  // IsActive + TryGetCursorPosition for the listener
-                        // override hook
+#include "view_mode.h"
 
 namespace acc::audio {
 
 namespace {
 
-// CResRef — 16-byte engine resource-reference tag. SARIF DATATYPE shows
-// it as { char string[16]; } with a ulong[4] alias; we use the char form.
-// Tags are case-insensitive at lookup; the engine's resource manager
-// hashes case-folded so a mixed-case input still resolves, but we lowercase
-// here defensively (matches every existing engine callsite that builds a
-// resref from a string literal).
+// Engine resource-reference tag. Case-insensitive at lookup; we lowercase
+// defensively to match every engine callsite.
 struct CResRef {
     char string[16];
 };
@@ -42,50 +32,31 @@ void FillResRef(CResRef& out, const char* tag) {
     }
 }
 
-// CExoSound::PlayOneShotSound signature — CONFIRMED 2026-05-14 by
-// decompiling CExoSoundInternal::PlayOneShotSound @0x005d7550. The
-// engine internals are:
-//   SetPriorityGroup(source, param_2)                  ← priority bucket
-//   if (param_4 != 0) SetVolume(source, param_4, ...)  ← volume byte
-//   if (param_5 != 0) SetFixedVariance(source, param_5) ← pitch
-//   if (param_6 != 0) SetPitchVariance(source, param_6) ← pitch
-//   if (param_3 == 0) Play(...) else SetOneShotDelay(param_3)
-//
-// Our previous typedef labelled param_4 as "looping" and param_5/6 as
-// "volume"/"pan" — both were WRONG. Live consequence: callers passing
-// `volume=4.0f` were actually setting fixed_variance (pitch jitter),
-// which is then suppressed by the pitch-stability detour, so the
-// "amplification" was always a no-op. Volume stayed at
-// priority_group[0].volume × default-byte (127) regardless of what
-// callers thought they were setting.
+// CExoSound::PlayOneShotSound — __thiscall. Verified by decompile of the
+// inner CExoSoundInternal::PlayOneShotSound. Earlier typedef mislabelled
+// param_4 as "looping" and param_5/6 as "volume"/"pan"; the real layout is:
+//   priority_group, delay_ms, volume_byte, fixed_variance, pitch_variance.
 typedef void (__thiscall* PFN_PlayOneShotSound)(
     void*    this_,
     const CResRef* res,
     uint8_t  priority_group,
     uint32_t delay_ms,
-    uint8_t  volume_byte,     // 0 = use priority-group default (127);
-                              // 1-127 = explicit per-source volume
-    float    fixed_variance,  // 0 = use priority-group default
-    float    pitch_variance); // 0 = use priority-group default
+    uint8_t  volume_byte,     // 0 = group default (127)
+    float    fixed_variance,
+    float    pitch_variance);
 
-// CExoSound::Play3DOneShotSound — same mislabel bug as the 2D variant.
-// Confirmed signature via Ghidra decompile @0x005d5e10 (2026-05-14):
-//   param_4=byte priority_group, param_5=ulong delay_ms,
-//   param_6=byte volume_byte (0=use default), param_7=fixed_variance,
-//   param_8=pitch_variance.
-// Previous "looping/volume/max_distance" labels caused the same kind
-// of silent no-op as the 2D path — `volume=4.0f` was landing in
-// fixed_variance which the pitch-stability detour neutralises.
+// CExoSound::Play3DOneShotSound — __thiscall. Same fields as the 2D
+// variant plus position (pass-by-value, 12 bytes) and z_offset.
 typedef void (__thiscall* PFN_Play3DOneShotSound)(
     void*    this_,
     const CResRef* res,
-    Vector   position,        // pass-by-value; 12 bytes on the stack
+    Vector   position,
     float    z_offset,
     uint8_t  priority_group,
     uint32_t delay_ms,
-    uint8_t  volume_byte,     // 0 = use priority-group default (127)
-    float    fixed_variance,  // 0 = use priority-group default
-    float    pitch_variance); // 0 = use priority-group default
+    uint8_t  volume_byte,
+    float    fixed_variance,
+    float    pitch_variance);
 
 void* GetCExoSound() {
     __try {
@@ -134,31 +105,15 @@ bool PlayCue3D(const char* resref, const Vector& worldPosition,
     FillResRef(res, resref);
     Vector pos = worldPosition;  // copy out before SEH frame (no aliasing)
 
-    // Character-relative listener emulation. The engine's listener follows
-    // the gameplay camera (3m behind the character, orbits during rotation,
-    // springs in/out on wall collision). For navigation cues we want
-    // listener-to-source = character-to-source so distance and direction
-    // are stable and tied to where the player actually *is*, not where
-    // the camera happens to be looking from.
+    // Character-relative listener: shift source by (camera - character).
+    // By construction listener-to-shifted equals character-to-source, so
+    // we get character-relative pan/distance with the engine's untouched
+    // camera listener — no effect on other engine audio.
     //
-    // Trick: shift the source position by (camera - character). By
-    // construction, listener-to-shifted = source-to-character (both
-    // magnitude and direction). The engine's 3D pipeline runs untouched
-    // against the engine's own camera listener; only the coordinates we
-    // hand it are pre-biased. All other engine audio (footsteps, ambient,
-    // dialogue, combat) keeps using its native world positions — the
-    // engine listener is unchanged.
+    // Skipped in view mode (the listener detour already substitutes the
+    // cursor; double-compensation would mis-place cues).
     //
-    // Skipped while view mode is active: the OnSetListenerPosition detour
-    // already substitutes the virtual cursor for the camera listener,
-    // and cues fired in view mode are intended to sound cursor-relative
-    // (the cursor IS the user's frame of reference there). Applying the
-    // offset on top would double-compensate. View mode keeps the raw
-    // world position.
-    //
-    // Fail-safe: if either position read fails (pre-spawn, area-load,
-    // engine teardown) we fall through to the raw world position — the
-    // pre-2026-05-11 behaviour. No silent breakage on chain failure.
+    // Fail-safe on chain failure: pass raw position through.
     if (!acc::view_mode::IsActive()) {
         Vector charPos, camPos;
         if (acc::engine::GetPlayerPosition(charPos) &&
@@ -169,22 +124,12 @@ bool PlayCue3D(const char* resref, const Vector& worldPosition,
         }
     }
 
-    // The legacy `volume` float is now vestigial. Before the typedef
-    // fix it was being passed into the engine's fixed_variance slot
-    // (pitch jitter), which the pitch-stability detour neutralises
-    // to 0 — so the float was always a no-op. Now that the typedef
-    // is correct, callers' constants (kAccCueGain=4.0, kProbeGain=
-    // 8.0, kEdgeCueGain=8.0) would otherwise be taken literally as
-    // a volume_byte and crush all nav cues to 3-6% loudness — a
-    // silent regression on the existing audible behaviour.
-    //
-    // To preserve the pre-fix audible result exactly, we ignore the
-    // float and pass volume_byte=0 — the engine special-cases 0 as
-    // "use priority_group default volume" (127 for group 0), which
-    // is what every nav cue has been getting all along. Keeping the
-    // float in the signature avoids touching 13 call sites; the
-    // long-term cleanup is API option 2 (uint8_t volumeByte) once
-    // this is confirmed working.
+    // Vestigial. The float was being passed into fixed_variance under the
+    // mislabelled typedef (always neutralised by the pitch detour). With
+    // the typedef fixed, taking it literally as volume_byte would crush
+    // every cue to 3-6% loudness — pass 0 (group default = 127), which
+    // matches the historical audible result. API cleanup to uint8_t is
+    // out of scope; not worth touching 13 callsites yet.
     (void)volume;
 
     pitch::BeginScopedZero();
@@ -194,11 +139,9 @@ bool PlayCue3D(const char* resref, const Vector& worldPosition,
         fn(exoSound, &res,
            pos,
            /*z_offset=*/0.0f,
-           /*priority_group=*/0,    // restored to pre-change tier;
-                                    // group 0 vol=106, what every
-                                    // nav cue used historically
+           /*priority_group=*/0,    // group 0, vol=106 — every nav cue
            /*delay_ms=*/0,
-           /*volume_byte=*/0,       // 0 = engine default = 127
+           /*volume_byte=*/0,       // 0 = group default
            /*fixed_variance=*/0.0f,
            /*pitch_variance=*/0.0f);
         pitch::EndScopedZero();
@@ -211,54 +154,30 @@ bool PlayCue3D(const char* resref, const Vector& worldPosition,
 
 }  // namespace acc::audio
 
-// CExoSound::SetListenerPosition detour @0x005d5df0. Phase 4 lay-off 4
-// rework — the per-frame camera-driven listener write goes through this
-// function (single xref from CClientExoAppInternal::UpdateSoundEngine
-// at 0x005f5626). Lay-off 4's per-tick OnUpdate listener write was
-// stomped because the engine writes here every frame AFTER our OnUpdate
-// callsite; the only winning move is to detour the engine's write
-// itself.
+// CExoSound::SetListenerPosition detour. Engine writes this every frame
+// from the camera (via UpdateSoundEngine); we substitute the virtual
+// cursor when view mode is active. Detour is the only race-free site:
+// per-tick listener writes from OnUpdate get stomped.
 //
-// Bytes verified via DumpBytes 2026-05-06:
-//   0x5d5df0: 8b 09             MOV  ECX, [ECX]      ; this->internal
-//   0x5d5df2: 85 c9             TEST ECX, ECX
-//   0x5d5df4: 74 05             JZ   +5  -> 0x5d5dfb (RET 4)
-//   0x5d5df6: e9 05 08 00 00    JMP  CExoSoundInternal::SetListenerPosition (0x5d6600)
-//   0x5d5dfb: c2 04 00          RET  4
+// Hook config (in hooks.toml): skip_original_bytes=true; handler
+// replicates this->internal null-check + dispatch to the inner function;
+// consumed_exit_address = 0x5d5dfb so we exit through the natural RET 4
+// without relocating the rel8 JZ + rel32 JMP in the cut.
 //
-// Hook design: skip_original_bytes=true at 0x5d5df0 — handler replicates
-// the entire function body (null-check on this->internal, then dispatch
-// to CExoSoundInternal::SetListenerPosition @0x5d6600), substituting
-// the virtual cursor's position for the engine's camera-derived Vector
-// when view mode is active. consumed_exit_address = 0x5d5dfb so we
-// always exit through the function's natural RET 4. Avoids relocating
-// the rel8 JZ + rel32 JMP in the cut.
-//
-// Calling convention: __thiscall, ECX = this (CExoSound*), one stack
-// arg = Vector* param_1. The framework's `source = "esp+4"` for a
-// pointer gives us the *address of the slot* per
-// project_kpatchmanager_lea_bug.md — we deref once to get Vector*.
-//
-// Always returns 1 to take the consumed exit (we did the work
-// ourselves; never let the original cut bytes "execute").
+// __thiscall, ECX = this (CExoSound*), one stack arg = Vector* param.
+// Framework's "esp+4" source gives the address of the slot
+// (LEA-vs-MOV bug); deref once for Vector*.
 namespace acc::audio {
 namespace {
 
 typedef void (__thiscall* PFN_InternalSetListenerPosition)(
     void* internal_, Vector* pos);
 
-// CExoSoundInternal::SetListenerPosition — the inner function the
-// CExoSound wrapper jumps to once it has resolved this->internal. We
-// dispatch to it manually after substituting the position vector.
 constexpr uintptr_t kAddrCExoSoundInternalSetListenerPosition = 0x005D6600;
 
-// Diagnostic toggle introduced 2026-05-07. Tested innocent in
-// patch-20260507-082230.log: with the override gated off (always
-// passthrough), view-mode empty-cursor WalkTo still silently no-ops AND
-// Trigger-1 3D cues remain inaudible. Both failures are independent of
-// this substitution. Restored to true so the listener stays cursor-
-// anchored during view mode (the original purpose). The flag stays as
-// a quick toggle if a future regression re-implicates the override.
+// Diagnostic toggle. False = always passthrough (verified independent of
+// view-mode WalkTo and Trigger-1 cue silence). Kept as a quick override
+// switch.
 constexpr bool kSubstituteCursorForListener = true;
 
 }  // namespace
@@ -266,9 +185,6 @@ constexpr bool kSubstituteCursorForListener = true;
 
 extern "C" int __cdecl OnSetListenerPosition(void* exoSound,
                                              Vector** posSlot) {
-    // posSlot is the address of the stack slot holding the Vector*
-    // param (per the framework's LEA-vs-MOV behaviour for esp+X
-    // sources). One deref to recover the engine's argument.
     Vector* enginePos = nullptr;
     if (posSlot) {
         __try {
@@ -278,14 +194,6 @@ extern "C" int __cdecl OnSetListenerPosition(void* exoSound,
         }
     }
 
-    // Pick the position to forward. View-mode active → cursor; else
-    // passthrough engine value.
-    //
-    // Diagnostic gate (2026-05-07): kSubstituteCursorForListener=false
-    // forces passthrough even while view mode is active. Used to isolate
-    // the listener-override hook as suspect for empty-cursor WalkTo
-    // silently no-oping after view-mode-exit, and Trigger-1 3D cues
-    // being inaudible during view mode.
     Vector chosen = { 0.0f, 0.0f, 0.0f };
     bool   override_active = false;
     if (acc::audio::kSubstituteCursorForListener &&
@@ -296,15 +204,12 @@ extern "C" int __cdecl OnSetListenerPosition(void* exoSound,
         __try {
             chosen = *enginePos;
         } __except (EXCEPTION_EXECUTE_HANDLER) {
-            return 1;  // bad pointer; consume to avoid further dispatch
+            return 1;
         }
     } else {
-        return 1;  // null arg; consume (matches engine's behaviour with
-                   // null this->internal: RET 4 with no work)
+        return 1;  // matches engine's RET-with-no-work on null arg
     }
 
-    // Replicate the engine's `this->internal` null-check before
-    // dispatching to the inner function.
     if (!exoSound) return 1;
     void* internal = nullptr;
     __try {
@@ -319,16 +224,11 @@ extern "C" int __cdecl OnSetListenerPosition(void* exoSound,
             acc::audio::kAddrCExoSoundInternalSetListenerPosition);
         fn(internal, &chosen);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        // Engine internal faulted — consume anyway; nothing else for us
-        // to do at this layer.
+        // Engine internal faulted — consume anyway.
     }
 
-    // Diagnostic kept long-term but quiet: edge-trigger on override
-    // state change (so view-mode enter/exit lands one line each), plus
-    // a 30-second heartbeat so a long session still shows "yes the
-    // hook is alive and the engine is still calling it." That's
-    // sufficient signal to debug a silent-failure scenario without the
-    // per-frame spam the bring-up build needed.
+    // Edge on override-state change + 30s heartbeat to keep the per-frame
+    // log volume sane.
     static int   s_last_logged_state    = -1;
     static DWORD s_last_heartbeat_ms    = 0;
     DWORD now_ms = GetTickCount();
@@ -348,5 +248,5 @@ extern "C" int __cdecl OnSetListenerPosition(void* exoSound,
         s_last_heartbeat_ms = now_ms;
     }
 
-    return 1;  // consumed_exit_address — wrapper jumps to RET 4
+    return 1;  // consumed_exit_address — jump to RET 4
 }
