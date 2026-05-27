@@ -28,6 +28,7 @@
 #include "map_ui_cursor.h"
 #include "map_user_markers.h"
 #include "menus.h"
+#include "menus_modsettings.h"
 #include "party_leader_announce.h"
 #include "passive_narrate.h"
 #include "probe_audio_frame.h"
@@ -310,6 +311,11 @@ void Dispatch() {
     // full iteration history and Esc-menu vs Alt+F4 close-path
     // comparison.
     acc::engine::TickInputClassReassert();
+
+    // Audio-glossary delayed-playback poll. Cheap (single timer
+    // compare) when no playback is armed; fires PlayCue when the 1 s
+    // deadline elapses after Enter on a glossary row.
+    acc::menus::modsettings::Tick();
 
     // Pending-op drain runs LAST: every queued action was queued by an
     // input handler this tick or the previous one, and is dispatched only

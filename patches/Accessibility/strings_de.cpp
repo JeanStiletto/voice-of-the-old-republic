@@ -403,6 +403,15 @@ const char* Get(Id id) {
         case Id::ModSettingStateOff:          return "aus";
         case Id::FmtModSettingOption:         return "%s: %s";
 
+        case Id::ModSettingAudioGlossary:           return "Audio-Glossar";
+        case Id::ModSettingsAudioGlossaryOpened:    return "Audio-Glossar ge\xf6""ffnet";
+        case Id::GlossaryEntryWall:                 return "Wand";
+        case Id::GlossaryEntryHazard:               return "Gefahr";
+        case Id::GlossaryEntryCollision:            return "Kollision";
+        case Id::GlossaryEntryBeaconActive:         return "Wegweiser aktiv";
+        case Id::GlossaryEntryBeaconWaypoint:       return "Wegpunkt erreicht";
+        case Id::GlossaryEntryBeaconDestination:    return "Ziel erreicht";
+
         case Id::Count_:               return "";
     }
     return "";

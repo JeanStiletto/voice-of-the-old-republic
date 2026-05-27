@@ -380,6 +380,15 @@ const char* Get(Id id) {
         case Id::ModSettingStateOff:          return "off";
         case Id::FmtModSettingOption:         return "%s: %s";
 
+        case Id::ModSettingAudioGlossary:           return "Audio glossary";
+        case Id::ModSettingsAudioGlossaryOpened:    return "Audio glossary opened";
+        case Id::GlossaryEntryWall:                 return "Wall";
+        case Id::GlossaryEntryHazard:               return "Hazard";
+        case Id::GlossaryEntryCollision:            return "Collision";
+        case Id::GlossaryEntryBeaconActive:         return "Beacon active";
+        case Id::GlossaryEntryBeaconWaypoint:       return "Beacon waypoint reached";
+        case Id::GlossaryEntryBeaconDestination:    return "Beacon destination reached";
+
         case Id::Count_:               return "";
     }
     return "";

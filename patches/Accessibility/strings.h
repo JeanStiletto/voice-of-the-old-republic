@@ -1137,6 +1137,24 @@ enum class Id : int {
     ModSettingStateOff,
     FmtModSettingOption,
 
+    // ---- Mod-settings → Audio glossary submenu (menus_modsettings).
+    //      Nested submenu opened by Enter on the "Audio-Glossar" row.
+    //      Each row pairs a NavCue with a localised label; Enter on a
+    //      row stamps a 1 s delay then plays the cue once at 2D unity.
+    //      Door / Npc / Container / Item / Landmark / Transition reuse
+    //      the cycle Category* strings — same vocabulary the user
+    //      already associates with cycle announcements. Wall / Hazard /
+    //      Collision / Beacon* are glossary-specific because the
+    //      announce paths name them differently or not at all.
+    ModSettingAudioGlossary,
+    ModSettingsAudioGlossaryOpened,
+    GlossaryEntryWall,
+    GlossaryEntryHazard,
+    GlossaryEntryCollision,
+    GlossaryEntryBeaconActive,
+    GlossaryEntryBeaconWaypoint,
+    GlossaryEntryBeaconDestination,
+
     Count_,
 };
 

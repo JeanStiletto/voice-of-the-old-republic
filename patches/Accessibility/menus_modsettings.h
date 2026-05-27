@@ -36,10 +36,16 @@ namespace acc::menus::modsettings {
 
 // Per-option identifiers. Add a new option = add an enum row, a label
 // strings::Id, and a row in the option table inside the .cpp.
+//
+// ExtendedCycling / RoomShapes / WallSounds are boolean toggles (Enter
+// flips, current state spoken as "Name: an/aus"). AudioGlossary is a
+// submenu pivot (Enter opens a nested glossary view) and has no toggle
+// state; GetToggle() returns false for it.
 enum class Option {
     ExtendedCycling = 0,
     RoomShapes,
     WallSounds,
+    AudioGlossary,
     Count
 };
 
@@ -102,7 +108,15 @@ bool HandleInput(int keyCode);
 // Read the current state of a toggle option. Stable accessor for
 // downstream feature wiring (extended_cycling, etc.) — they call this
 // instead of reaching into the module's internals. Out-of-range
-// `option` returns false.
+// `option` returns false. AudioGlossary is a submenu pivot, not a
+// toggle; GetToggle returns false for it.
 bool GetToggle(Option option);
+
+// Per-tick poll. Drives the Audio glossary's delayed-playback timer:
+// Enter on a glossary row stamps "fire at now + 1 s" without speaking;
+// this Tick() fires PlayCue when the deadline elapses. Always cheap
+// (single comparison) when no playback is pending. Safe to call from
+// the core OnUpdate chain regardless of whether either submenu is open.
+void Tick();
 
 }  // namespace acc::menus::modsettings
