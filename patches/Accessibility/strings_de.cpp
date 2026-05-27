@@ -34,6 +34,7 @@ const char* Get(Id id) {
         case Id::EmptyTransitions:    return "Keine \xDC" "berg\xE4nge in Reichweite"; // Übergänge
         case Id::EmptyMapHints:       return "Keine Hinweise auf dieser Karte";
         case Id::EmptyAll:            return "Keine Objekte in Reichweite";
+        case Id::CycleNoTarget:       return "Kein Ziel";
 
         case Id::MapPinNoText:        return "Marke";
         case Id::MapPinShiftDashHint: return "Marke l\xE4sst sich nicht direkt ansteuern. Strg+Bindestrich f\xFCr Beacon."; // lässt, für

@@ -204,6 +204,14 @@ void OnEngineShowObject(uint32_t handle) {
     // a deferred reannounce on top would double-fire (same metallic
     // sample stacking on the new cue, which the user perceived as
     // "wrong sound for the object I cycled to").
+    //
+    // Capture pending state BEFORE clearing — used by the sentinel branch
+    // to give Q/E-initiated "no target" feedback. If the engine's
+    // SelectNearestObject returned no next target (it has an angular
+    // end-of-cycle quirk where the wrap requires a second press), the
+    // user pressed Q/E and would otherwise hear silence; we promote it
+    // to a short spoken phrase so every press has audible feedback.
+    bool was_qe_request = s_qe_reannounce_pending;
     s_qe_reannounce_pending = false;
 
     // Cursor-position diagnostic for the "character spins on its own"
@@ -226,7 +234,17 @@ void OnEngineShowObject(uint32_t handle) {
     if (!acc::engine::GetPlayerPosition(unused)) return;
 
     if (handle == 0u || handle == 0xFFFFFFFFu || handle == 0x7F000000u) {
-        if (prev != 0xDEADBEEFu) {
+        if (was_qe_request) {
+            // Q/E press → engine returned sentinel (no-target-found). Speak
+            // feedback so the user hears their press registered. They can
+            // press Q/E again to wrap the cycle.
+            const char* msg = acc::strings::Get(
+                acc::strings::Id::CycleNoTarget);
+            prism::Speak(msg, /*interrupt=*/true);
+            acclog::Write("PassiveNarrate",
+                "Q/E -> sentinel (0x%08x -> 0x%08x), spoke [%s]",
+                prev, handle, msg);
+        } else if (prev != 0xDEADBEEFu) {
             acclog::Write("PassiveNarrate",
                 "focus lost (0x%08x -> sentinel 0x%08x), silent",
                 prev, handle);

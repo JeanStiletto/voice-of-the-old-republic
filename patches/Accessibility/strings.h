@@ -52,6 +52,7 @@ enum class Id : int {
     EmptyTransitions,
     EmptyMapHints,
     EmptyAll,
+    CycleNoTarget,
 
     // Map-pin activation phrases — user-placed pins fold into the Map hint
     // cycle alongside waypoints, but have no game-object semantics. Shift+-

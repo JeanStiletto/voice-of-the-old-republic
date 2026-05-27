@@ -24,6 +24,7 @@ const char* Get(Id id) {
         case Id::EmptyTransitions:    return "No transitions in range";
         case Id::EmptyMapHints:       return "No map hints on this map";
         case Id::EmptyAll:            return "No objects in range";
+        case Id::CycleNoTarget:       return "No target";
 
         case Id::MapPinNoText:        return "Marker";
         case Id::MapPinShiftDashHint: return "Marker can't be auto-walked. Press Ctrl+Dash to beacon.";
