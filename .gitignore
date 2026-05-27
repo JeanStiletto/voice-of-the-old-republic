@@ -30,7 +30,11 @@ Thumbs.db
 # Decompiled / reverse-engineered game artifacts: Lane Dibello's Ghidra
 # database (gzf/xml/sarif/h) and architecture PDF. Not redistributable —
 # mirror locally from his Google Drive (links: https://deadlystream.com/topic/11948-kotor-1-gog-reverse-engineering/).
-/docs/llm-docs/
+# Narrative markdown docs at the root of llm-docs are tracked; only the
+# binary RE artifacts under re/ stay local.
+/docs/llm-docs/*
+!/docs/llm-docs/*.md
+!/docs/llm-docs/CLAUDE.md
 
 # Upstream third-party clones — recreatable from public repos:
 #   KotorMessageInjector: https://github.com/LaneDibello/KotorMessageInjector
