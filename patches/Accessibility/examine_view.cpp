@@ -8,12 +8,15 @@
 
 #include "engine_area.h"
 #include "engine_input.h"
+#include "engine_manager.h"   // kAddrGuiManagerPtr — engine-panel watcher
 #include "engine_offsets.h"
+#include "engine_panels.h"    // PanelKind / IdentifyPanel — engine-panel watcher
 #include "engine_player.h"
 #include "hotkeys.h"
 #include "log.h"
 #include "strings.h"
 #include "prism.h"
+#include "transitions.h"      // IsModuleLoadPending — engine-panel watcher gate
 
 namespace acc::examine_view {
 
@@ -833,7 +836,74 @@ bool HandleInputEvent(int code, int value) {
     }
 }
 
+// Engine-panel open/close logger. The engine's CSWGuiExamine is a generic
+// TLK message-box panel — not the synthetic in-DLL list view above. Speech
+// for the engine panel is owned by menus_listbox::kExamineSpec (rows on
+// Up/Down) and HotkeyShiftH-equivalents at press time; this watcher just
+// emits open/close edges + a row-count diagnostic so the panel lifecycle
+// is visible in patch.log.
+//
+// Runs unconditionally — independent of the synthetic-view active gate
+// below; the engine panel may open from the radial menu without us
+// arming the in-DLL view.
+void TickEnginePanelLifecycle() {
+    // Module-load latch — examine reads engine accessors on the focused
+    // server-object; the cutscene-load transient can leave that handle
+    // stale.
+    if (acc::transitions::IsModuleLoadPending()) return;
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!mgr) return;
+    auto* base = reinterpret_cast<unsigned char*>(mgr);
+    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+    if (!panelData || panelCount <= 0) return;
+
+    void* examinePanel = nullptr;
+    int n = panelCount > 16 ? 16 : panelCount;
+    for (int i = 0; i < n; ++i) {
+        void* p = panelData[i];
+        if (!p) continue;
+        if (acc::engine::IdentifyPanel(p) ==
+            acc::engine::PanelKind::Examine) {
+            examinePanel = p;
+            break;
+        }
+    }
+
+    static void* s_lastPanel = nullptr;
+    if (!examinePanel) {
+        if (s_lastPanel) {
+            acclog::Write("Examine.Panel", "closed");
+            s_lastPanel = nullptr;
+        }
+        return;
+    }
+    if (examinePanel == s_lastPanel) return;
+    s_lastPanel = examinePanel;
+
+    // Row count is logged once for diagnostics — useful to confirm the
+    // engine populated the listbox (rowCount > 0) vs left it empty
+    // (which would mean vtable[27] didn't fire as expected).
+    int rowCount = -1;
+    __try {
+        void* lb = reinterpret_cast<unsigned char*>(examinePanel) +
+                   kExaminePanelListBoxOffset;
+        auto* lbList = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(lb) +
+            kListBoxControlsOffset);
+        rowCount = (lbList && lbList->data) ? lbList->size : -1;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        rowCount = -1;
+    }
+    acclog::Write("Examine.Panel",
+                  "opened panel=%p rows=%d (speech via menus_listbox "
+                  "kExamineSpec)",
+                  examinePanel, rowCount);
+}
+
 void Tick() {
+    TickEnginePanelLifecycle();
+
     if (!g_state.active) return;
     // Self-disarm if the player loses connection to the world (area
     // transition / load). Cheap probe.

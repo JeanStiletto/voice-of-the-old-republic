@@ -5,8 +5,6 @@
 // Surfaces:
 //   - Selected-PC stat block + leader-change auto-announce.
 //   - Cycle/passive-narrate enrichment for Creature-kind targets.
-//   - Shift+H Examine panel — fires CGuiInGame::ShowExamineBox and
-//     a tick monitor speaks the rendered message_box.
 //   - Bare H self-status (HP + effects + equipped weapons).
 
 #pragma once
@@ -28,15 +26,6 @@ void TickLeaderChangeAutoAnnounce();
 bool BuildTargetCombatBrief(void* targetServerObject,
                             const char* targetName,
                             char* outBuf, size_t outBufSize);
-
-// Resolves cycle/LastTarget focus, fires ShowExamineBox, speaks opener.
-// Actual examine text is spoken by TickExaminePanel after the engine
-// asynchronously populates the panel.
-void HotkeyShiftH();
-
-void TickExaminePanel();
-
-void PollWin32Hotkey();
 
 // Bare H — HP + active effects (deduped, named) + equipped weapons.
 // No name or distance (always self, always zero).
