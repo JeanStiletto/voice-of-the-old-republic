@@ -59,18 +59,6 @@ bool TryHandleInput(int n, void* thisPtr, void* activePanel,
 // scattering `if (kind == X) speak("…")` checks into the title path.
 const char* GetTitleOverride(void* panel);
 
-// Diagnostic one-shot dump of CSWGuiFeatsCharGen layout: the four feat
-// lists (existing/granted/available/chosen) and the chart's row × col
-// cells (feat ID + status per cell). Dedups per-panel-pointer so a
-// re-focus of the same panel doesn't re-dump. Silently no-ops on any
-// panel whose vtable isn't CSWGuiFeatsCharGen — caller can pass any
-// foreground panel without a kind check.
-//
-// Called from AnnouncePanelTitle. Used to plan main-panel accessibility
-// (chart structure, scroll behaviour, which feats appear vs are
-// invisible) without committing to a nav design yet.
-void DumpFeatsCharGenStructureIfNeeded(void* panel);
-
 // EquipPicker zone state. The picker arms when chain Enter activates an
 // equip slot button (BTN_INV_*); it stays armed until Enter commits a row,
 // Esc disarms, or the panel disappears from CSWGuiManager.panels[].

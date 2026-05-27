@@ -56,6 +56,7 @@
 #include "guidance_autowalk.h"  // Phase 2 lay-off 5 (progress watchdog)
 #include "camera_announce.h"    // Phase 2 ad-hoc — camera-direction on A/D
 #include "diag_input_pipeline.h"  // Cross-stream seq counter for input diag
+#include "diag_chargen_feats.h"   // One-shot CSWGuiFeatsCharGen structure dump
 #include "interact_hotkey.h"    // Phase 2 lay-off 9b
 #include "passive_narrate.h"    // Phase 2 lay-off 9a
 #include "peek_description.h"   // Shift+arrow description peek
@@ -403,7 +404,7 @@ static void AnnouncePanelTitle(void* panel) {
     // rows × cols, the four feat lists). No-ops on non-feat panels +
     // dedups per panel pointer. Used to plan main-panel accessibility
     // before the picker spec gets extended.
-    acc::menus::listbox::DumpFeatsCharGenStructureIfNeeded(panel);
+    acc::diag::chargen_feats::DumpStructureIfNeeded(panel);
 
     // Listbox-spec title override: any spec in menus_listbox.cpp can
     // declare its own title speech (used when the panel's .gui-baked
