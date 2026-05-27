@@ -338,8 +338,6 @@ const char* Get(Id id) {
 
         case Id::FmtCredits:                return "Credits: %s";
 
-        case Id::FmtCameraOrientBeacon:     return "Beacon, %s";
-
         case Id::WorkbenchSlotWeapon1:       return "Upgrade slot 1";
         case Id::WorkbenchSlotWeapon2:       return "Upgrade slot 2";
         case Id::WorkbenchSlotWeapon3:       return "Upgrade slot 3";

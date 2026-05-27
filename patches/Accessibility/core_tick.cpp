@@ -41,7 +41,6 @@
 #include "spatial_change_detector.h"
 #include "swoop_race.h"
 #include "transitions.h"
-#include "turn_announce.h"
 #include "view_mode.h"
 
 namespace acc::tick {
@@ -181,11 +180,9 @@ void Dispatch() {
     // active strip panel to the new leader, so the announce is wanted.
     acc::party_leader_announce::Tick();
 
-    // Phase 2 ad-hoc — octagonal direction-on-turn announcement (Pillar 2
-    // sub-feature C, pulled forward to give the user feedback that A/D /
-    // Q/E are turning the character vs. only the camera). Speaks "north" /
-    // "north-east" etc. on sector change with 5° hysteresis.
-    acc::turn_announce::Tick();
+    // NB: character-yaw passive narration (turn_announce) was removed
+    // 2026-05-27 — engine-driven character rotation (S back-step, combat
+    // auto-face, dialog/scripted snap) is intentionally silent for now.
 
     // ----- ORDER LOAD-BEARING -----
     // camera_announce → spatial::change_detector → transitions → view_mode.

@@ -226,19 +226,6 @@ void Tick() {
     s_lastSpokenAt     = now;
 }
 
-void SeedLastSpokenSector(int sector) {
-    // Sync both the spoken and pending state so the next Tick's
-    // hysteresis sees pending == lastSpoken and skips speech. Refresh
-    // lastSpokenAt + lastChangeAt to now so the held-override interval
-    // resets cleanly — a stray same-tick A/D held state can't push us
-    // over the kMinIntervalHeldMs threshold and re-announce.
-    s_lastSpokenSector = sector;
-    s_pendingSector    = sector;
-    DWORD now = GetTickCount();
-    s_lastSpokenAt = now;
-    s_lastChangeAt = now;
-}
-
 bool TryGetCameraEngineYawDegrees(float& out) {
     if (s_lastCamCompass < 0.0f) return false;  // no valid observation yet
     // Compass → engine: engine = (90 - compass + 360) mod 360. The

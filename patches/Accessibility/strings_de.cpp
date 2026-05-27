@@ -349,8 +349,6 @@ const char* Get(Id id) {
 
         case Id::FmtCredits:                return "Credits: %s";
 
-        case Id::FmtCameraOrientBeacon:     return "Wegpunkt, %s";
-
         // Workbench slot labels. The seven BTN_UPGRADE3X/4X buttons have
         // no inline text — their visual content is the installed mod's
         // icon + name set programmatically. Speak "Aufwertungssteckplatz N"

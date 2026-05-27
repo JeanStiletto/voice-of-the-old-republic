@@ -4,20 +4,22 @@
 // `engine_compass` (sector math) and `guidance_beacon` (active waypoint
 // target) to point the gameplay camera at a meaningful direction on demand.
 //
-// Behaviour, per the 2026-05-18 user directive:
+// Behaviour:
 //
 //   - If a beacon is armed (`guidance::beacon::IsActive()` true), rotate
 //     the camera to look at the beacon's current heartbeat target — the
-//     next waypoint the user is being guided to. Speak a "Beacon, <dir>"
-//     confirmation so the user knows the orient came from beacon-mode
-//     rather than the cardinal-cycle fallback (the bare sector word from
-//     camera_announce can't tell those apart).
+//     next waypoint the user is being guided to.
 //
 //   - Otherwise, advance the camera clockwise to the *next* cardinal
 //     direction (N → E → S → W → N). "Next" is computed in compass-CW
 //     order so repeated presses cycle predictably from any starting yaw.
-//     No extra speech — camera_announce's sector cross fires the new
-//     direction word naturally.
+//
+// Neither mode speaks anything itself. camera_announce stays muted while
+// `IsActive()` is true (its sector-cross hysteresis would spam the user
+// with intermediate direction words as the camera passes through), then
+// announces the final direction once the rotation releases. The guidance
+// loop (compass / beacon heartbeat) covers the waypoint context — a
+// beacon-mode confirmation would just duplicate it.
 //
 // Drive mechanism — synthesised A/D keypresses via SendInput.
 //

@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdio>
 
+#include "camera_announce.h"
 #include "engine_area.h"
 #include "engine_compass.h"
 #include "engine_panels.h"
@@ -18,11 +19,33 @@ namespace acc::announce_degrees {
 
 namespace {
 
+constexpr float kDegToRad = 0.017453292519943295f;
+
 int CompassDegreesFromEngineYaw(float engineYaw) {
     float compass = acc::engine::EngineYawToCompass(engineYaw);
     int degrees = static_cast<int>(std::floor(compass + 0.5f)) % 360;
     if (degrees < 0) degrees += 360;
     return degrees;
+}
+
+// Resolve the camera's current facing in the engine yaw frame
+// (degrees, 0° = +X = East, CCW positive). Prefers camera_announce's
+// cached dead-reckoned value (single-valued, smooth across rotations);
+// falls back to deriving it from camera→player position vector when
+// camera_announce hasn't anchored yet (first-tick race / camera lost).
+bool ReadCameraEngineYawDegrees(float& out) {
+    if (acc::camera_announce::TryGetCameraEngineYawDegrees(out)) return true;
+    Vector cam, player;
+    if (!acc::engine::GetCameraPosition(cam)) return false;
+    if (!acc::engine::GetPlayerPosition(player)) return false;
+    float dx = player.x - cam.x;
+    float dy = player.y - cam.y;
+    if (std::fabs(dx) < 1e-3f && std::fabs(dy) < 1e-3f) return false;
+    constexpr float kRadToDeg = 57.29577951308232f;
+    float yaw = std::atan2(dy, dx) * kRadToDeg;
+    if (yaw < 0.0f) yaw += 360.0f;
+    out = yaw;
+    return true;
 }
 
 const char* SectorWord(int compassDegrees) {
@@ -64,10 +87,12 @@ bool ResolveClusterLabelForPlayer(char* outBuf, size_t bufSize) {
 
 void OnAnnounceWorldDegrees() {
     float engineYaw = 0.0f;
-    if (!acc::engine::GetPlayerYawDegrees(engineYaw)) {
-        // Yaw degenerate (mid-spawn / area-load). Stay silent — the
-        // user pressed during a transient, no sensible answer.
-        acclog::Write("AnnounceDegrees", "yaw unavailable, skipping");
+    if (!ReadCameraEngineYawDegrees(engineYaw)) {
+        // Camera yaw unavailable (mid-spawn / area-load / camera_announce
+        // not yet anchored AND camera/player chain degenerate). Stay
+        // silent — the user pressed during a transient, no sensible
+        // answer.
+        acclog::Write("AnnounceDegrees", "camera yaw unavailable, skipping");
         return;
     }
     int degrees    = CompassDegreesFromEngineYaw(engineYaw);
@@ -94,7 +119,7 @@ void OnAnnounceWorldDegrees() {
     // logged for diagnostics but deliberately dropped from speech.
     prism::Speak(msg, /*interrupt=*/true);
     acclog::Write("AnnounceDegrees",
-        "world -> [%s] (engineYaw=%.1f, deg=%d, sector=\"%s\", cluster=\"%s\")",
+        "world -> [%s] (camYaw=%.1f, deg=%d, sector=\"%s\", cluster=\"%s\")",
         msg, engineYaw, degrees, sector, haveCluster ? clusterBuf : "");
 }
 
@@ -150,17 +175,24 @@ bool ResolveRoomNameForPlayer(char* outBuf, size_t bufSize) {
 }
 
 void OnAnnounceMapDegrees() {
-    // Need both the player facing and the area-map singleton to convert
+    // Need both the camera facing and the area-map singleton to convert
     // the heading into map-frame space. Either failing falls back to
     // the world-frame announcement so the key never feels eaten.
-    Vector facing;
-    if (!acc::engine::GetPlayerFacing(facing) ||
-        (facing.x == 0.0f && facing.y == 0.0f)) {
+    float camYawDeg = 0.0f;
+    if (!ReadCameraEngineYawDegrees(camYawDeg)) {
         acclog::Write("AnnounceDegrees",
-            "map: facing unavailable; falling back to world");
+            "map: camera facing unavailable; falling back to world");
         OnAnnounceWorldDegrees();
         return;
     }
+    // Camera yaw → unit facing vector in the same engine frame
+    // (CCW from +X). GetMapRotateCCWFromWorldOrientation expects the
+    // world-space heading vector — it doesn't care about magnitude.
+    float yawRad = camYawDeg * kDegToRad;
+    Vector facing;
+    facing.x = std::cos(yawRad);
+    facing.y = std::sin(yawRad);
+    facing.z = 0.0f;
     void* areaMap = acc::engine::GetAreaMap();
     if (!areaMap) {
         acclog::Write("AnnounceDegrees",
@@ -200,8 +232,8 @@ void OnAnnounceMapDegrees() {
     }
     prism::Speak(msg, /*interrupt=*/true);
     acclog::Write("AnnounceDegrees",
-        "map -> [%s] (mapYawCCW=%.1f, deg=%d, room=\"%s\")",
-        msg, mapYawCCW, degrees, haveRoom ? roomBuf : "");
+        "map -> [%s] (camYaw=%.1f, mapYawCCW=%.1f, deg=%d, room=\"%s\")",
+        msg, camYawDeg, mapYawCCW, degrees, haveRoom ? roomBuf : "");
 }
 
 }  // namespace

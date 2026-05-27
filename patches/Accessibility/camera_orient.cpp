@@ -12,8 +12,6 @@
 #include "guidance_beacon.h"
 #include "hotkeys.h"
 #include "log.h"
-#include "strings.h"
-#include "prism.h"
 
 namespace acc::camera_orient {
 
@@ -69,7 +67,6 @@ struct Rotation {
     char   debugKey           = 0;       // 'A' / 'D' for log readability
     float  targetEngineYawRad = 0.0f;
     float  initialAbsDeltaRad = 0.0f;    // for overshoot detection
-    bool   beaconAnnounce     = false;
     DWORD  startedMs          = 0;
     // Rate-based predictive-release state. Each tick stores the
     // observed yaw + timestamp so the next tick can derive a per-ms
@@ -239,22 +236,10 @@ void ReleaseAndDisarm(const char* reason, float curYawRad) {
         curYawRad * kRadToDeg);
     int curSector = acc::engine::CompassToSector(curCompassDeg);
 
-    if (g_rot.beaconAnnounce) {
-        const char* dir = acc::strings::Get(
-            acc::engine::SectorString(curSector));
-        char msg[64];
-        std::snprintf(msg, sizeof(msg),
-                      acc::strings::Get(
-                          acc::strings::Id::FmtCameraOrientBeacon),
-                      dir);
-        prism::Speak(msg, /*interrupt=*/true);
-        // Seed camera_announce so the post-release hysteresis doesn't
-        // immediately re-announce the same direction word we just
-        // spoke as part of the beacon cue. Cardinal mode (else branch)
-        // intentionally lets camera_announce announce — that IS the
-        // cardinal-cycle speech.
-        acc::camera_announce::SeedLastSpokenSector(curSector);
-    }
+    // No mode-specific speech — camera_announce's natural sector-cross
+    // hysteresis fires the final direction word once IsActive() drops
+    // and the post-release tick re-evaluates. Beacon and cardinal both
+    // land via the same announce path.
 
     acclog::Write("CameraOrient",
                   "release: reason=%s key=%c cur=%.1f° (compass=%.1f° "
@@ -428,22 +413,10 @@ void Tick() {
 
     float delta = NormaliseRad(targetEngineYawRad - curYawRad);
     if (std::fabs(delta) <= kFallbackArrivalRad) {
-        // Already pointing where we'd send it — still speak the
-        // confirmation in beacon mode so the user knows the orient
-        // ran. Skip the input synthesis.
-        if (beaconMode) {
-            int sector = acc::engine::CompassToSector(
-                acc::engine::EngineYawToCompass(
-                    targetEngineYawRad * kRadToDeg));
-            const char* dir = acc::strings::Get(
-                acc::engine::SectorString(sector));
-            char msg[64];
-            std::snprintf(msg, sizeof(msg),
-                          acc::strings::Get(
-                              acc::strings::Id::FmtCameraOrientBeacon),
-                          dir);
-            prism::Speak(msg, /*interrupt=*/true);
-        }
+        // Already pointing where we'd send it — skip input synthesis.
+        // No speech: the camera hasn't moved so camera_announce has
+        // nothing new to announce, and we no longer emit a beacon-
+        // specific confirmation.
         acclog::Write("CameraOrient",
                       "no-op: already at target (delta=%.2f° within "
                       "tolerance)",
@@ -465,7 +438,6 @@ void Tick() {
     g_rot.debugKey            = debugKey;
     g_rot.targetEngineYawRad  = targetEngineYawRad;
     g_rot.initialAbsDeltaRad  = std::fabs(delta);
-    g_rot.beaconAnnounce      = beaconMode;
     g_rot.startedMs           = nowMs;
     // Seed the rate-sample window with the arm-time yaw so the first
     // in-flight tick can already derive a rate (rather than burning

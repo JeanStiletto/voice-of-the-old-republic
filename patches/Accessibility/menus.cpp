@@ -64,7 +64,6 @@
 #include "audio_footstep_suppress.h"  // Phase 3 lay-off 5 — stuck-detection
 #include "strings.h"            // Container loot panel announces
 #include "transitions.h"        // Phase 2 lay-off 7 — Pillar 2 area+room announce
-#include "turn_announce.h"      // Phase 2 ad-hoc — Pillar 2 sub-feature C
 
 // Engine readers + offset constants moved to engine_reads.{h,cpp} +
 // engine_offsets.h in Phase 0 lay-off 2. Pull the readers' names into the

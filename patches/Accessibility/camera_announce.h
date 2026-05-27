@@ -40,18 +40,6 @@ namespace acc::camera_announce {
 // in menus / chargen / pre-spawn / degenerate facing).
 void Tick();
 
-// Force the next sector-cross hysteresis check to treat `sector` as
-// the last-announced one. Used by `camera_orient::ReleaseAndDisarm` in
-// beacon mode: camera_orient speaks "Wegpunkt, <dir>" itself, then
-// seeds the sector here so the post-release hysteresis sees pending
-// == lastSpoken and stays silent. Without this the user hears the
-// beacon cue immediately followed by camera_announce announcing the
-// same direction word ~kQuietMs later.
-//
-// No effect in cardinal mode — there we *want* camera_announce's
-// sector cross to fire (it IS the cardinal-cycle announcement).
-void SeedLastSpokenSector(int sector);
-
 // Read the dead-reckoned camera yaw in engine frame (0° = +X = East,
 // CCW positive — same convention as `engine_player::GetPlayerYawDegrees`).
 // Returns false until the first usable in-game tick has anchored the
