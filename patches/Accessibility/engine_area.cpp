@@ -1,6 +1,7 @@
 #include "engine_area.h"
 
 #include <windows.h>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 

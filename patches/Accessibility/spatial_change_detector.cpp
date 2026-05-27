@@ -1541,4 +1541,56 @@ int GetEdgeSurfaceId(int edgeIdx) {
     return g_edge_surface_id[edgeIdx];
 }
 
+bool SegmentCrossesSurface(const Vector& a, const Vector& b,
+                           Vector& outHitPoint) {
+    // Movement direction in 2D. If both deltas are ~0 the segment isn't
+    // actually moving and there's nothing to test (and the parametric
+    // formula below would divide by zero).
+    float abx = b.x - a.x;
+    float aby = b.y - a.y;
+    if (abx * abx + aby * aby < 1e-10f) return false;
+
+    bool   anyHit  = false;
+    float  bestT   = 1e30f;
+    Vector bestHit = a;
+
+    // Iterate over clustered surfaces (the same representation the audio
+    // wall-cue system reads). Each surface is a straight line segment
+    // from `a` to `b` covering one or more collinear+connected raw
+    // edges; portal seams that happen to be collinear with a real wall
+    // are absorbed into that wall's surface during clustering, so this
+    // test ignores phantom edges by construction. edge_count == 0
+    // flags a degenerate descriptor and is skipped.
+    for (int i = 0; i < g_surface_count; ++i) {
+        const WallSurfaceDesc& s = g_surface_descriptors[i];
+        if (s.edge_count <= 0) continue;
+        float cdx = s.b.x - s.a.x;
+        float cdy = s.b.y - s.a.y;
+
+        // 2D segment-segment intersection in XY.
+        //   a + t*(b - a) == s.a + u*(s.b - s.a)
+        float denom = abx * cdy - aby * cdx;
+        if (denom > -1e-8f && denom < 1e-8f) continue;
+
+        float dx = s.a.x - a.x;
+        float dy = s.a.y - a.y;
+        float t  = (dx * cdy - dy * cdx) / denom;
+        float u  = (dx * aby - dy * abx) / denom;
+
+        if (t < 0.0f || t > 1.0f) continue;
+        if (u < 0.0f || u > 1.0f) continue;
+
+        if (t < bestT) {
+            bestT     = t;
+            bestHit.x = a.x + t * abx;
+            bestHit.y = a.y + t * aby;
+            bestHit.z = a.z + t * (b.z - a.z);
+            anyHit    = true;
+        }
+    }
+
+    if (anyHit) outHitPoint = bestHit;
+    return anyHit;
+}
+
 }  // namespace acc::spatial::change_detector

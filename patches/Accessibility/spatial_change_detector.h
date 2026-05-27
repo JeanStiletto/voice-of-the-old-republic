@@ -116,4 +116,16 @@ bool GetWallSurfaceDesc(int idx, WallSurfaceDesc& outDesc);
 // on invalid input or before clustering has run.
 int GetEdgeSurfaceId(int edgeIdx);
 
+// Surface-level 2D segment intersection test. Returns true if the
+// segment a→b crosses any clustered wall surface; on hit, `outHitPoint`
+// receives the intersection in world space.
+//
+// Mirrors the same surface representation the audio wall-cue system
+// reads — phantom portal seams that fold into a real wall's surface
+// during clustering are invisible here, so cursors using this test
+// block exactly where the audio would announce a wall, not on cache
+// fragments that the audio already absorbed.
+bool SegmentCrossesSurface(const Vector& a, const Vector& b,
+                           Vector& outHitPoint);
+
 }  // namespace acc::spatial::change_detector

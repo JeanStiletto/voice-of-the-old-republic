@@ -16,8 +16,7 @@
                                   // GetForegroundPanel
 #include "engine_panels.h"        // HasActiveDialogPanel, HasActiveSubScreen,
                                   // IdentifyPanel, PanelKind
-                                  // GetObjectName, GetObjectPosition,
-                                  // SegmentCrossesWalkmesh
+                                  // GetObjectName, GetObjectPosition
 #include "engine_options.h"
 #include "engine_offsets.h"       // Vector
 #include "engine_player.h"
@@ -27,7 +26,8 @@
 #include "interact_hotkey.h"      // DispatchInteract — Enter on hover target
 #include "log.h"
 #include "narrated_target.h"      // Stamp on hover speech (unified focus slot)
-#include "spatial_change_detector.h"  // GetCachedWalls
+#include "spatial_change_detector.h"  // SegmentCrossesSurface (mirror of the
+                                      // audio wall-cue surface clustering)
 #include "strings.h"
 #include "prism.h"
 #include "transitions.h"          // IsWorldSpeechGated, GetLandmarkForRoom,
@@ -362,15 +362,13 @@ void StepCursor(float dt) {
         start.y + dy * dist,
         start.z };
 
-    const acc::engine::WallEdge* walls = nullptr;
-    int wallCount = 0;
+    // Surface-level collision — mirrors the audio wall-cue system's
+    // representation so the cursor only stops where the audio would
+    // announce a wall, not on portal-seam fragments that the audio
+    // already absorbed into a nearby real surface.
     Vector hit = end;
-    bool collided = false;
-    if (acc::spatial::change_detector::GetCachedWalls(walls, wallCount) &&
-        walls && wallCount > 0) {
-        collided = acc::engine::SegmentCrossesWalkmesh(
-            walls, wallCount, start, end, hit);
-    }
+    bool collided = acc::spatial::change_detector::SegmentCrossesSurface(
+        start, end, hit);
 
     if (collided) {
         // Step the cursor 5 cm short of the hit point along start→end so
