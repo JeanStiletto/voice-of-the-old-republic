@@ -6,6 +6,7 @@
 #include "audio_cues.h"
 #include "core_settings.h"
 #include "log.h"
+#include "menus_modsettings.h"
 
 namespace acc::audio {
 
@@ -38,7 +39,15 @@ const char* CueLabel(NavCue cue) {
 bool IsCueEnabled(NavCue cue) {
     const auto& p1 = acc::core::Get().pillar1;
     switch (cue) {
-        case NavCue::Wall:               return p1.cueWall;
+        case NavCue::Wall:
+            // AND of plan-locked Pillar 1 toggle and the user-facing
+            // Mod Settings → Wall sounds switch. Either OFF silences
+            // every wall fire site (T1 sector beats + T2 foremost
+            // cone), since spatial_change_detector funnels them all
+            // through PlayCueAtPosition.
+            return p1.cueWall &&
+                   acc::menus::modsettings::GetToggle(
+                       acc::menus::modsettings::Option::WallSounds);
         case NavCue::HazardLedge:        return p1.cueHazard;
         case NavCue::Door:               return p1.cueDoor;
         case NavCue::NpcCreature:        return p1.cueNpc;

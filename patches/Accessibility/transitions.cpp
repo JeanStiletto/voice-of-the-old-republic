@@ -12,6 +12,7 @@
 #include "engine_offsets.h"  // Vector
 #include "engine_reads.h"    // ReadCExoString
 #include "log.h"
+#include "menus_modsettings.h"  // RoomShapes toggle gates the shape tier
 #include "narrated_target.h" // clear on area transition
 #include "same_name_suffix.h"   // Reset() on area transition
 #include "strings.h"
@@ -312,6 +313,17 @@ bool ResolveRoomSpeech(void* area, const Vector& worldPos,
                                          scratchSig, *outClusterIdOpt);
         }
         return true;
+    }
+
+    // Mod Settings → Room shape descriptions: when OFF, skip the
+    // wall_topology shape tier entirely. Friendly room names (tier 1)
+    // still announce because they're authored content, not synthesised
+    // corridor / junction / Platz vocabulary. Cluster-id stays at None
+    // so SpeakRoomChange's caller logs "unresolved" and the Platz
+    // delay-enqueue path never arms.
+    if (!acc::menus::modsettings::GetToggle(
+            acc::menus::modsettings::Option::RoomShapes)) {
+        return false;
     }
 
     char path3Buf[128] = {0};

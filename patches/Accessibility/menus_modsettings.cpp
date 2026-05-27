@@ -27,17 +27,34 @@ namespace {
 // `control` field without ever pointing at an engine-allocated control.
 char s_rootSentinel = 0;
 
-// Toggle state. In-memory only — persistence is a follow-up; the
-// initial cut just demonstrates that toggles round-trip through the
-// announce path.
-bool s_toggles[static_cast<int>(Option::Count)] = { false, false, false };
+// Toggle state. In-memory only — persistence is a follow-up.
+//
+// Defaults per user 2026-05-27:
+//   - ExtendedCycling = OFF. `,` and `.` are inert in-world; only the
+//     map cycle path responds. User opts in if they want world cycle.
+//   - RoomShapes      = ON. Preserves the current corridor / junction /
+//     Platz announce flow on cluster transitions.
+//   - WallSounds      = ON. Preserves the Pillar 1 wall-cue beats.
+// Index order MUST match the Option enum.
+bool s_toggles[static_cast<int>(Option::Count)] = {
+    /* ExtendedCycling */ false,
+    /* RoomShapes      */ true,
+    /* WallSounds      */ true,
+};
 
 // Submenu state. `s_open` flips on OpenSubMenu / Close; `s_focused`
 // is the currently-selected option index while open. `s_parentPanel`
 // is the panel the user came from so Close can rebind the chain.
+// `s_fgAtOpen` is the engine-foreground panel captured at OpenSubMenu
+// time — used as the divergence baseline so we don't false-fire on
+// stack configurations that are stable from the user's perspective.
+// (In-game Optionen leaves the InGameMenu strip at panels[top]; the
+// strip never equals our parent but the user is still "in" the panel
+// they selected.)
 bool   s_open         = false;
 int    s_focused      = 0;
 void*  s_parentPanel  = nullptr;
+void*  s_fgAtOpen     = nullptr;
 
 struct OptionSpec {
     Option              option;
@@ -80,13 +97,18 @@ void SpeakFocusedOption() {
                   s_focused, line);
 }
 
-// True iff something other than our parent Optionen panel is now
-// foreground — typically a MessageBoxModal raised by Alt+F4 / quit-
-// confirm, but also any other panel the engine pushed in front of
-// our parent while the submenu was open, OR the parent panel itself
-// being gone (engine teardown after Spiel beenden, save reload, etc.).
-// We auto-close on this transition so the new modal can receive input
-// cleanly.
+// True iff the engine pushed a new panel on top of whatever was
+// foreground when the submenu opened — typically a MessageBoxModal
+// raised by Alt+F4 / quit-confirm, but also any other engine modal
+// the user hits while the submenu is logically focused. Also true if
+// the saved parent panel itself disappeared (engine teardown after
+// Spiel beenden, save reload, etc.).
+//
+// Baseline is the snapshot taken at OpenSubMenu time, NOT s_parentPanel:
+// the In-Game Optionen flow keeps the InGameMenu strip pinned at
+// panels[top] so `GetForegroundPanel != parent` is the steady state
+// inside that panel. We only care about the foreground CHANGING after
+// the user entered the submenu (modal push, parent dismissed, etc.).
 bool ForegroundDivergedFromParent() {
     if (!s_parentPanel) return false;
     if (!acc::engine::IsPanelInManager(s_parentPanel)) return true;
@@ -94,7 +116,8 @@ bool ForegroundDivergedFromParent() {
     if (!mgr) return false;
     void* fg = acc::engine::GetForegroundPanel(mgr);
     if (!fg) return false;
-    return fg != s_parentPanel;
+    if (s_fgAtOpen == nullptr) return false;  // no baseline yet
+    return fg != s_fgAtOpen;
 }
 
 }  // namespace
@@ -154,8 +177,16 @@ void OpenSubMenu(void* parentPanel) {
     s_open        = true;
     s_focused     = 0;
     s_parentPanel = parentPanel;
+    // Snapshot the engine-foreground panel right now. Subsequent
+    // HandleInput calls compare against this baseline so we only
+    // auto-close on a real foreground push (modal popup, parent
+    // teardown) and not on the stable strip-on-top arrangement the
+    // In-Game Optionen panel runs under.
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    s_fgAtOpen = mgr ? acc::engine::GetForegroundPanel(mgr) : nullptr;
     acclog::Write("ModSettings",
-                  "submenu opened (parent=%p)", parentPanel);
+                  "submenu opened (parent=%p fgAtOpen=%p)",
+                  parentPanel, s_fgAtOpen);
     // Two-part open speech: "Mod settings opened" then the first
     // option. Speak(interrupt=true) on the title cuts the chain-step
     // tail without going through SAPI urgent (reserved for cross-
@@ -181,6 +212,7 @@ void Close() {
     s_focused = 0;
     void* parent = s_parentPanel;
     s_parentPanel = nullptr;
+    s_fgAtOpen    = nullptr;
     prism::Speak(
         acc::strings::Get(acc::strings::Id::ModSettingsClosed),
         /*interrupt=*/true);
@@ -208,6 +240,7 @@ void AutoCloseSilent() {
     s_open        = false;
     s_focused     = 0;
     s_parentPanel = nullptr;
+    s_fgAtOpen    = nullptr;
 }
 
 bool HandleInput(int keyCode) {

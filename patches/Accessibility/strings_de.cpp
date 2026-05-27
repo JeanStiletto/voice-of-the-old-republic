@@ -396,7 +396,7 @@ const char* Get(Id id) {
         case Id::ModSettingsRootLabel:        return "Mod-Einstellungen";
         case Id::ModSettingsOpened:           return "Mod-Einstellungen ge\xf6""ffnet";
         case Id::ModSettingsClosed:           return "Mod-Einstellungen geschlossen";
-        case Id::ModSettingExtendedCycling:   return "Erweitertes Wechseln";
+        case Id::ModSettingExtendedCycling:   return "Kartenweite Objektauswahl";
         case Id::ModSettingRoomShapes:        return "Raumform-Beschreibungen";
         case Id::ModSettingWallSounds:        return "Wandger\xe4usche";
         case Id::ModSettingStateOn:           return "an";

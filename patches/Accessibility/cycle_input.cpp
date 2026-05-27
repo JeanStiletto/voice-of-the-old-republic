@@ -27,6 +27,7 @@
 #include "hotkeys.h"
 #include "log.h"
 #include "map_ui_cursor.h"
+#include "menus_modsettings.h"
 #include "narrated_target.h"
 #include "peek_description.h"
 #include "strings.h"
@@ -726,14 +727,20 @@ bool TryHandleEvent(int param_1, int param_2) {
             ? acc::filter::CycleContext::Map
             : acc::filter::CycleContext::World;
 
-    if (param_1 == kInputKbComma) {
-        if (g_engineShiftHeld) OnCycleCategory(/*prev=*/true,  ctx);
-        else                   OnCycleItem    (/*prev=*/true,  ctx);
-        return true;
-    }
-    if (param_1 == kInputKbPeriod) {
-        if (g_engineShiftHeld) OnCycleCategory(/*prev=*/false, ctx);
-        else                   OnCycleItem    (/*prev=*/false, ctx);
+    if (param_1 == kInputKbComma || param_1 == kInputKbPeriod) {
+        // Mod Settings → Extended cycling: when OFF (default), `,` and
+        // `.` are inert in-world; they only respond when the InGameMap
+        // sub-screen is foreground (Map context). The `-` family
+        // (announce / autowalk / beacon) is unaffected — those map to
+        // kInputKbAnnounce below.
+        if (ctx == acc::filter::CycleContext::World &&
+            !acc::menus::modsettings::GetToggle(
+                acc::menus::modsettings::Option::ExtendedCycling)) {
+            return false;
+        }
+        const bool prev = (param_1 == kInputKbComma);
+        if (g_engineShiftHeld) OnCycleCategory(prev, ctx);
+        else                   OnCycleItem    (prev, ctx);
         return true;
     }
     if (param_1 == kInputKbAnnounce) {
@@ -777,10 +784,20 @@ void PollWin32() {
             ? acc::filter::CycleContext::Map
             : acc::filter::CycleContext::World;
 
-    if (risingCommaItem)      OnCycleItem    (/*prev=*/true,  ctx);
-    if (risingCommaCategory)  OnCycleCategory(/*prev=*/true,  ctx);
-    if (risingPeriodItem)     OnCycleItem    (/*prev=*/false, ctx);
-    if (risingPeriodCategory) OnCycleCategory(/*prev=*/false, ctx);
+    // Mod Settings → Extended cycling: when OFF (default), `,` / `.`
+    // (item + category, both shift variants) are suppressed in World
+    // context. Map context is always live so the user can cycle map
+    // hints regardless. The `-` family below stays unaffected.
+    const bool cycleAllowed =
+        ctx == acc::filter::CycleContext::Map ||
+        acc::menus::modsettings::GetToggle(
+            acc::menus::modsettings::Option::ExtendedCycling);
+    if (cycleAllowed) {
+        if (risingCommaItem)      OnCycleItem    (/*prev=*/true,  ctx);
+        if (risingCommaCategory)  OnCycleCategory(/*prev=*/true,  ctx);
+        if (risingPeriodItem)     OnCycleItem    (/*prev=*/false, ctx);
+        if (risingPeriodCategory) OnCycleCategory(/*prev=*/false, ctx);
+    }
 
     // Precedence: Ctrl > Alt > Shift > bare. The Action bindings encode
     // this via mutually-exclusive modifier masks, so at most one of these

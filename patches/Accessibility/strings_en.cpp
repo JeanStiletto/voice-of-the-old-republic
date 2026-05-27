@@ -373,7 +373,7 @@ const char* Get(Id id) {
         case Id::ModSettingsRootLabel:        return "Mod settings";
         case Id::ModSettingsOpened:           return "Mod settings opened";
         case Id::ModSettingsClosed:           return "Mod settings closed";
-        case Id::ModSettingExtendedCycling:   return "Extended cycling";
+        case Id::ModSettingExtendedCycling:   return "Map-wide object selection";
         case Id::ModSettingRoomShapes:        return "Room shape descriptions";
         case Id::ModSettingWallSounds:        return "Wall sounds";
         case Id::ModSettingStateOn:           return "on";
