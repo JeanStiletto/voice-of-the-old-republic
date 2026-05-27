@@ -8,17 +8,36 @@ Prompts from `C:/Users/fabia/Dev/llm-mod-refactoring-prompts` (JeanStiletto's PR
 
 ## Prompts completed
 - `sanity-checks-setup.md` — branch + scratchpad
-- `information-gathering-and-checking.md`
-  - Audited CLAUDE.md (subagent), applied 5 patches (stale "empty" claims, third_party listing, `cd` self-contradiction, kdev launch description, machine-specific path)
-  - Audited docs-and-API gaps (subagent), confirmed strong existing coverage from headers + memory + archiev/
-  - Synthesized `docs/llm-docs/game-flow.md` (lifecycle reference, 544 lines)
-  - Added `docs/llm-docs/CLAUDE.md` index, linked from root CLAUDE.md
-  - Deferred (low payoff for refactoring): file-format reference, full CSWGuiDialog struct dump
-  - Stale comment noticed in `combat.h::TickCombatLog` (claims poll path is live; actual live path is `AppendToMsgBuffer` hook) — defer to low-level-cleanup phase
+- `information-gathering-and-checking.md` — CLAUDE.md patched, docs/llm-docs/{game-flow.md, CLAUDE.md} added, gitignore exception
+- `code-directory-construction.md` — 178 .md index files under `llm-scratchpad/code-index/`, one per source file
+
+## Findings carried forward from indexing
+Flagged for later phases:
+
+### Large-file-handling targets (>2000 lines)
+- `wall_topology.cpp` — 2890 lines; anonymous helpers numerous, public API tidy
+- `menus.cpp` — 2663 lines
+
+### Embedded mega-functions (no helper decomposition)
+- `menus_extract.cpp::FromControl` — ~1290 lines (L344-L1637); the entire announce ladder
+- `menus_pending.cpp::Drain` — ~540 lines (L163-L703); 10-op dispatch in one switch
+
+### Duplication candidates
+- `menus_chargen_feats.cpp` and `menus_powers_levelup.cpp` — structurally near-identical; intentional per memory `project_powers_levelup_is_skillflow_tree.md` — re-examine in ai-bloat-audit and low-level-cleanup
+
+### Stale-comment / cleanup candidates
+- `combat.h::TickCombatLog` doc comment claims listbox-poll path is live; actual live path is `AppendToMsgBuffer` hook
+- `diag_play3doneshotsound.{h,cpp}` — hook commented out in hooks.toml, investigation concluded per memory — deletion candidate
+- `probe_audio_frame`, `probe_camera_state`, `probe_camera_distance` — review whether their investigations are concluded; lightweight, low priority
+- `probe_pathfind`, `probe_mouselook`, `probe_priority_groups` — still wired and useful; keep
+- `diag_input_pipeline` — outgrew "diagnostic" framing; carries production logic; rename candidate
+
+### Index anomalies
+- `engine_area.cpp` — token-limit chunked read; .md notes incomplete coverage of late-file functions
+- `wall_topology.cpp` — anonymous helpers not enumerated in the index; public API matches the header
 
 ## Prompts pending
-- code-directory-construction.md (next)
-- large-file-handling.md
+- large-file-handling.md (next — triggered by >2000-line files)
 - ai-bloat-audit.md
 - high-level-cleanup.md
 - input-handling.md
@@ -28,6 +47,8 @@ Prompts from `C:/Users/fabia/Dev/llm-mod-refactoring-prompts` (JeanStiletto's PR
 
 ## Scratchpad files
 - `current_status.md` (this file)
+- `code-index/` — 178 .md index files
+- `code-index/_files.txt` — source file inventory
 
 ## Game / project context
 KOTOR 1 (BioWare Odyssey Engine) accessibility mod. Native-binary patch via KPatchManager; sources under `patches/Accessibility/`. See `CLAUDE.md` + `docs/llm-docs/CLAUDE.md` for full project map.
