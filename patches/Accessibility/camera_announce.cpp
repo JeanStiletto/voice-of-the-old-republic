@@ -5,13 +5,11 @@
 
 #pragma comment(lib, "user32.lib")
 
-#include "camera_orient.h"   // IsActive — suppress sector-cross speech during auto-rotate
+#include "camera_orient.h"
 #include "engine_compass.h"
 #include "engine_player.h"
-#include "hotkeys.h"  // IsForegroundGame — diagnostic only, mirroring turn_announce.
-                      // Speech still fires regardless of focus so the user can
-                      // hear the bug; we just log the fg state alongside each
-                      // announce to correlate spin bursts with Alt+Tab state.
+#include "hotkeys.h"  // IsForegroundGame: diagnostic only; speech still fires
+                      // regardless of focus.
 #include "log.h"
 #include "strings.h"
 #include "prism.h"
@@ -20,63 +18,36 @@ namespace acc::camera_announce {
 
 namespace {
 
-// Sector geometry — shared with turn_announce. Compass frame
-// (0° = North, CW positive), 8 × 45° wedges. The conversion math lives
-// in engine_compass.{h,cpp}; only the hysteresis state stays here.
+// Compass frame: 0° = North, CW positive, 8 × 45° wedges.
 constexpr float kSectorSize  = 45.0f;
 constexpr float kHalfSector  = 22.5f;
 constexpr float kHysteresis  = 5.0f;
 
-// Final-state debounce (matches turn_announce). Speak only when the
-// sector has been stable this long. Collapses transient sector flips
-// during fast rotation to a single announcement.
+// Speak only when the sector has been stable this long — collapses
+// transient flips during fast rotation.
 constexpr DWORD kQuietMs = 250;
 
-// Held-key override: while exactly one of A/D is held, announce at most
-// once per this interval even if the sector keeps changing. At the
-// default 200°/s DPS, the camera crosses a sector every ~225ms.
-//
-// 300ms ≈ one announce per 1.3 sectors at default DPS. Still avoids
-// spamming on quick passes, while keeping the user oriented during
-// sustained rotation.
+// While exactly one of A/D is held, announce at most this often even if
+// the sector keeps changing. At default 200°/s DPS that's ~1 announce
+// per 1.3 sectors.
 constexpr DWORD kMinIntervalHeldMs = 300;
 
-// Minimum horizontal camera→player distance below which we don't trust
-// the derived look direction. At < 10cm the (player - camera) vector
-// has unstable direction (vertical component dominates, XY noise from
-// camera physics smoothing); refuse to announce until camera floats
-// back to its normal orbit distance.
+// Below this XY distance the (player - camera) direction is unstable
+// (vertical component dominates, physics smoothing). Refuse to announce.
 constexpr float kMinXYDistance = 0.1f;
 
 float AngularDelta(float a, float b) {
     return std::fmod(a - b + 540.0f, 360.0f) - 180.0f;
 }
 
-// Last announced state. Lives across ticks. -1 sentinels mean
-// "not yet anchored" (no in-game tick has fired); reset when the
-// player un-loads so the next session re-anchors cleanly.
+// -1 sentinel = not yet anchored; reset on un-load so next session re-anchors.
 int   s_lastSpokenSector  = -1;
 int   s_pendingSector     = -1;
 DWORD s_lastChangeAt      = 0;
 DWORD s_lastSpokenAt      = 0;
-// Last observed compass yaw — cached so TryGetCameraEngineYawDegrees
-// returns the most recent reading without re-walking the engine chain.
-// -1.0f sentinel = not yet observed.
-float s_lastCamCompass    = -1.0f;
-// Tracks "exactly one of A/D held" from the previous tick — falling
-// edge fires a release-edge announce so the user always learns the
-// final camera direction when they stop rotating.
-bool  s_prevRelevantHeld  = false;
+float s_lastCamCompass    = -1.0f;  // cached for TryGetCameraEngineYawDegrees
+bool  s_prevRelevantHeld  = false;  // falling edge fires release-edge announce
 
-// Read camera + player positions, derive look direction, return
-// compass yaw. The KOTOR orbital camera always looks at the
-// character, so the camera's facing direction = normalize(player - camera).
-//
-// Returns false on:
-//   - either GetCameraPosition or GetPlayerPosition failing
-//     (menus / chargen / area transitions / SEH fault)
-//   - camera and player too close horizontally to derive a stable
-//     direction (camera physics smoothing / clipped against wall)
 bool ReadCameraCompass(float& outCompass) {
     Vector cameraPos;
     Vector playerPos;
@@ -100,10 +71,7 @@ bool ReadCameraCompass(float& outCompass) {
 void Tick() {
     float camCompass = 0.0f;
     if (!ReadCameraCompass(camCompass)) {
-        // Not in-world or camera too close to player to derive a stable
-        // direction. Reset announce state so the next valid tick re-
-        // anchors cleanly rather than carrying stale sector across
-        // saves / area transitions.
+        // Not in-world or unstable. Reset so next valid tick re-anchors.
         s_lastSpokenSector = -1;
         s_pendingSector    = -1;
         s_lastCamCompass   = -1.0f;
@@ -113,26 +81,15 @@ void Tick() {
     s_lastCamCompass = camCompass;
     DWORD now = GetTickCount();
 
-    // Auto-rotation suppression — while camera_orient is driving the
-    // camera to a specific target yaw (Hotkey N), skip per-sector
-    // speech entirely. s_lastSpokenSector is preserved through the
-    // mute window; once the rotation releases, the normal hysteresis
-    // path resumes and announces the final sector iff it differs from
-    // the pre-rotation one. s_lastCamCompass is still updated above so
-    // camera_orient's own closed-loop yaw read (which goes through
-    // TryGetCameraEngineYawDegrees) keeps working.
-    //
-    // s_prevRelevantHeld is intentionally NOT updated while muted —
-    // when the synthesised A/D keypress releases on rotation end, we
-    // don't want the release-edge announce to fire mid-settle. The
-    // hysteresis + kQuietMs gives the engine ~250ms to drain remaining
-    // input-pipeline latency before we commit to a final-sector speak.
+    // Mute while camera_orient drives the camera. Hysteresis + kQuietMs
+    // then announces the post-rotation final sector iff it differs.
+    // s_prevRelevantHeld stays unchanged so the synthesised A/D release
+    // doesn't fire a release-edge announce mid-settle.
     if (acc::camera_orient::IsActive()) {
         return;
     }
 
-    // First valid tick — anchor and suppress speech (the user hasn't
-    // rotated yet; no transition to announce).
+    // First valid tick — anchor silently (no transition yet).
     if (s_lastSpokenSector < 0) {
         s_lastSpokenSector = acc::engine::CompassToSector(camCompass);
         s_pendingSector    = s_lastSpokenSector;
@@ -153,20 +110,16 @@ void Tick() {
     s_prevRelevantHeld    = relevantHeldNow;
     bool releaseEdge      = relevantHeldPrev && !relevantHeldNow;
 
-    // Release-edge announce: the user stopped rotating; tell them the
-    // final sector they ended up at, even if intermediate sectors got
-    // suppressed by the held-interval debounce. Skipped if the final
-    // sector matches what we last spoke (no change to narrate).
+    // Release-edge announce: tell the user the final sector, even if
+    // intermediate ones got suppressed by the held-interval debounce.
     bool isForeground = acc::hotkeys::IsForegroundGame();
     if (releaseEdge) {
         int finalSector = acc::engine::CompassToSector(camCompass);
         if (finalSector != s_lastSpokenSector) {
             auto id = acc::engine::SectorString(finalSector);
             const char* phrase = acc::strings::Get(id);
-            // Urgent SAPI — A/D rotation lives under the same NVDA typed-
-            // char-cancel pressure as turn_announce: the user is holding
-            // a key, so a normal Speak gets eaten mid-spin. Voice 0 stays
-            // on the default urgent voice.
+            // Urgent SAPI: A/D held; normal Speak gets eaten by NVDA's
+            // typed-char cancel.
             prism::SpeakUrgent(phrase, /*voiceId=*/0);
             acclog::Write("CameraAnnounce", "release-edge sector %d -> %d (%s); "
                 "camCompass=%.1f fg=%d",
@@ -180,10 +133,8 @@ void Tick() {
         }
     }
 
-    // Hysteresis around last spoken sector. The active sector stays
-    // sticky as long as the camera is within (kHalfSector + kHysteresis)°
-    // of the spoken sector's centre — prevents flicker when parked near
-    // a boundary.
+    // Sticky hysteresis: the active sector stays put while the camera is
+    // within (kHalfSector + kHysteresis)° of its centre.
     float lastCentre   = s_lastSpokenSector * kSectorSize;
     float distFromLast = std::fabs(AngularDelta(camCompass, lastCentre));
     int   currentSector = (distFromLast <= kHalfSector + kHysteresis)
@@ -197,13 +148,9 @@ void Tick() {
 
     if (s_pendingSector == s_lastSpokenSector) return;
 
-    // Two paths to speech:
-    //   (a) sector stable for kQuietMs — final-state announcement after
-    //       a burst (e.g. brief A/D tap that crossed a boundary then
-    //       settled).
-    //   (b) exactly one of A/D held AND kMinIntervalHeldMs since last
-    //       announcement — keeps the user oriented during sustained
-    //       rotation instead of going silent until they release.
+    // Two paths to speech: (a) stable for kQuietMs (final state after a
+    // burst) or (b) sustained-rotation held-interval to keep the user
+    // oriented mid-spin.
     bool stable       = (now - s_lastChangeAt >= kQuietMs);
     bool heldOverride = relevantHeldNow &&
                         (now - s_lastSpokenAt >= kMinIntervalHeldMs);
@@ -212,8 +159,6 @@ void Tick() {
 
     auto id = acc::engine::SectorString(s_pendingSector);
     const char* phrase = acc::strings::Get(id);
-    // Urgent SAPI — same reasoning as the release-edge branch above:
-    // sustained A/D rotation needs to bypass NVDA's typed-char-cancel.
     prism::SpeakUrgent(phrase, /*voiceId=*/0);
     acclog::Write("CameraAnnounce", "sector %d -> %d (%s); camCompass=%.1f "
         "(a=%d d=%d %s fg=%d)",
@@ -227,11 +172,8 @@ void Tick() {
 }
 
 bool TryGetCameraEngineYawDegrees(float& out) {
-    if (s_lastCamCompass < 0.0f) return false;  // no valid observation yet
-    // Compass → engine: engine = (90 - compass + 360) mod 360. The
-    // formula is its own inverse (same as engine_compass::EngineYawToCompass)
-    // because both frames are degree-rotations on the unit circle —
-    // a 180° + sign-flip composition is involutive.
+    if (s_lastCamCompass < 0.0f) return false;
+    // Compass → engine: involution; same formula as EngineYawToCompass.
     float engine = std::fmod(90.0f - s_lastCamCompass + 360.0f, 360.0f);
     if (engine < 0.0f) engine += 360.0f;
     out = engine;

@@ -28,11 +28,9 @@ int CompassDegreesFromEngineYaw(float engineYaw) {
     return degrees;
 }
 
-// Resolve the camera's current facing in the engine yaw frame
-// (degrees, 0° = +X = East, CCW positive). Prefers camera_announce's
-// cached dead-reckoned value (single-valued, smooth across rotations);
-// falls back to deriving it from camera→player position vector when
-// camera_announce hasn't anchored yet (first-tick race / camera lost).
+// Camera facing in engine yaw (0° = +X, CCW+). Prefers camera_announce's
+// cached value; falls back to deriving from camera→player vector when
+// announce hasn't anchored.
 bool ReadCameraEngineYawDegrees(float& out) {
     if (acc::camera_announce::TryGetCameraEngineYawDegrees(out)) return true;
     Vector cam, player;
@@ -53,13 +51,10 @@ const char* SectorWord(int compassDegrees) {
     return acc::strings::Get(acc::engine::SectorString(sector));
 }
 
-// Try to fill `outBuf` with the perceptual-region label at the player's
-// current world position (wall_topology cluster). Returns true on a real
-// labelled cluster; false when the graph isn't built, the position is
-// out-of-snap, or only the open-area fallback fires (which is too vague
-// to add value to an orientation announce). Matches the cluster-id
-// trigger source the in-world transition path uses, so what the user
-// hears here lines up with the last in-world cluster announcement.
+// Perceptual-region label at the player's position. False when no
+// labelled cluster (graph not built, out-of-snap, or open-area-only — too
+// vague to add value). Cluster source matches transitions.cpp so this
+// readout agrees with the last in-world cluster announcement.
 bool ResolveClusterLabelForPlayer(char* outBuf, size_t bufSize) {
     if (!outBuf || bufSize < 2) return false;
     outBuf[0] = '\0';
@@ -88,10 +83,7 @@ bool ResolveClusterLabelForPlayer(char* outBuf, size_t bufSize) {
 void OnAnnounceWorldDegrees() {
     float engineYaw = 0.0f;
     if (!ReadCameraEngineYawDegrees(engineYaw)) {
-        // Camera yaw unavailable (mid-spawn / area-load / camera_announce
-        // not yet anchored AND camera/player chain degenerate). Stay
-        // silent — the user pressed during a transient, no sensible
-        // answer.
+        // Mid-transient (spawn / area-load / chain degenerate).
         acclog::Write("AnnounceDegrees", "camera yaw unavailable, skipping");
         return;
     }
@@ -112,23 +104,16 @@ void OnAnnounceWorldDegrees() {
             acc::strings::Get(acc::strings::Id::FmtWorldStateUnknownCluster),
             sector);
     }
-    // Normal priority by design: this is a one-shot review key. The user
-    // pressed AltGr; their screen reader's own typed-char-cancel can't
-    // eat it (no held-WASD context) so the urgent SAPI bypass isn't
-    // needed and would change which voice the user hears. Degrees are
-    // logged for diagnostics but deliberately dropped from speech.
+    // Normal priority — one-shot review key, no held-key cancel pressure
+    // to bypass. Urgent SAPI would change voice for no benefit.
     prism::Speak(msg, /*interrupt=*/true);
     acclog::Write("AnnounceDegrees",
         "world -> [%s] (camYaw=%.1f, deg=%d, sector=\"%s\", cluster=\"%s\")",
         msg, engineYaw, degrees, sector, haveCluster ? clusterBuf : "");
 }
 
-// Resolve a display name for the layout-room the player currently
-// stands in, using the same three-tier chain transitions::Tick uses
-// for in-world room announcement (Bioware landmark → friendly room
-// name → "Raum N" synthetic). Writes a null-terminated string to
-// outBuf and returns true; returns false when no resolvable room
-// (player off-walkmesh / area null).
+// Three-tier room name lookup matching transitions::Tick:
+// landmark → friendly room name → synthetic "Room N".
 bool ResolveRoomNameForPlayer(char* outBuf, size_t bufSize) {
     if (!outBuf || bufSize < 2) return false;
     outBuf[0] = '\0';
@@ -138,9 +123,6 @@ bool ResolveRoomNameForPlayer(char* outBuf, size_t bufSize) {
     void* area = acc::engine::GetCurrentArea();
     if (!area) return false;
 
-    // Tier 1 — Bioware landmark waypoint via proximity lookup
-    // (localized, sparse). 15m radius matches the walking-adapter +
-    // cursor windows.
     constexpr float kLandmarkRangeM = 15.0f;
     char   landmarkBuf[128] = {0};
     Vector landmarkPos;
@@ -156,8 +138,7 @@ bool ResolveRoomNameForPlayer(char* outBuf, size_t bufSize) {
     acc::engine::GetRoomAtIndexed(area, pos, roomIdx);
     if (roomIdx < 0) return false;
 
-    // Tier 2 — mod-supplied friendly room_names entry. Skip vanilla
-    // resref-style noise ("m02_03e").
+    // Skip resref-style noise like "m02_03e".
     char roomBuf[128] = {0};
     if (acc::engine::GetRoomDisplayName(area, roomIdx,
                                         roomBuf, sizeof(roomBuf)) &&
@@ -166,8 +147,6 @@ bool ResolveRoomNameForPlayer(char* outBuf, size_t bufSize) {
         std::snprintf(outBuf, bufSize, "%s", roomBuf);
         return true;
     }
-    // Tier 3 — synthetic "Raum N" so the user always hears a place
-    // marker even when authoring data is bare.
     std::snprintf(outBuf, bufSize,
                   acc::strings::Get(acc::strings::Id::FmtTransitionRoomIndex),
                   roomIdx);
@@ -175,9 +154,7 @@ bool ResolveRoomNameForPlayer(char* outBuf, size_t bufSize) {
 }
 
 void OnAnnounceMapDegrees() {
-    // Need both the camera facing and the area-map singleton to convert
-    // the heading into map-frame space. Either failing falls back to
-    // the world-frame announcement so the key never feels eaten.
+    // Either failure falls back to world-frame so the key never feels eaten.
     float camYawDeg = 0.0f;
     if (!ReadCameraEngineYawDegrees(camYawDeg)) {
         acclog::Write("AnnounceDegrees",
@@ -185,9 +162,6 @@ void OnAnnounceMapDegrees() {
         OnAnnounceWorldDegrees();
         return;
     }
-    // Camera yaw → unit facing vector in the same engine frame
-    // (CCW from +X). GetMapRotateCCWFromWorldOrientation expects the
-    // world-space heading vector — it doesn't care about magnitude.
     float yawRad = camYawDeg * kDegToRad;
     Vector facing;
     facing.x = std::cos(yawRad);
@@ -210,10 +184,8 @@ void OnAnnounceMapDegrees() {
         return;
     }
 
-    // Engine returns CCW-from-+X in map space — same convention as
-    // engine yaw. EngineYawToCompass converts to CW-from-North so the
-    // sector word + degrees match what a sighted player reads off the
-    // map's compass arrow.
+    // Engine returns CCW-from-+X in map space, same convention as engine
+    // yaw — EngineYawToCompass gives CW-from-North matching the map arrow.
     int degrees = CompassDegreesFromEngineYaw(mapYawCCW);
     const char* sector = SectorWord(degrees);
 
@@ -239,19 +211,11 @@ void OnAnnounceMapDegrees() {
 }  // namespace
 
 void PollWin32() {
-    // Binding lives in `hotkeys.cpp` as Action::AnnounceDegrees — AltGr
-    // (VK_RMENU) alone, Shift forbidden so it stays distinct from the
-    // Shift+AltGr Mouse Look probe. `Pressed()` covers rising-edge,
-    // modifier match, and the KOTOR-foreground gate.
     if (!acc::hotkeys::Pressed(acc::hotkeys::Action::AnnounceDegrees)) return;
 
-    // In-world gate — speak only when a player creature is loaded. In
-    // menus / chargen / mid-load there's no meaningful "facing" to read.
     Vector playerPos;
     if (!acc::engine::GetPlayerPosition(playerPos)) return;
 
-    // Phase 6 lay-off 2: route to the map-frame payload when the
-    // InGameMap panel is foreground. World-frame branch unchanged.
     if (acc::engine::HasActiveMapPanel()) {
         OnAnnounceMapDegrees();
     } else {

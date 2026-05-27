@@ -17,98 +17,51 @@ namespace acc::camera_orient {
 
 namespace {
 
-// ----- Chain walk constants ----------------------------------------------
-// Same chain probe_camera_distance walks for its GetCamera() helper. The
-// camera is stored on the CSWCModule at +0x40; CSWCModule itself is at
-// CClientExoAppInternal +0x18.
-constexpr size_t    kClientInternalModuleOffset = 0x18;
-constexpr size_t    kCSWCModuleCameraOffset     = 0x40;
+// Camera chain: CClientExoAppInternal +0x18 = CSWCModule; +0x40 = camera.
+constexpr size_t kClientInternalModuleOffset = 0x18;
+constexpr size_t kCSWCModuleCameraOffset     = 0x40;
 
-// Rendered camera orientation quaternion at `modCamera + 0x88` (qx, qy,
-// qz, qw). This is the source-of-truth orientation the renderer applies
-// each frame — probe_camera_state extracts yaw from it as
-// `2 * atan2(qz, qw)`. We use the same expression for our closed-loop
-// arrival check.
-//
-// Why not Camera::GetYaw (@0x45C170, the engine getter):
-//   - It reads `behavior+0x3C` through a vtable[7] null-gate.
-//   - For the orbital camera (CSWCameraOnAStick) vtable[7] points to
-//     `return_zero @0x63e7f0`, so the gate ALWAYS fails and GetYaw
-//     returns 0.0 in normal play. Verified live in the 21:46 log
-//     where every "cur" sample read 0.0° regardless of the camera's
-//     actual rotation.
-//   - The quaternion path, by contrast, is what the renderer uses and
-//     reflects the camera's true rotation in real time.
+// Renderer's source-of-truth orientation quaternion. NOT used by the
+// arrival check — quaternion is multi-valued (q and -q encode the same
+// rotation, yielding readings 360° apart); arrival check uses the
+// position-derived yaw from camera_announce instead.
 constexpr size_t kModCameraQuaternionOffset = 0x88;
 
-// DirectInput scan codes (Set 1, US layout). KOTOR's keyboard input
-// reaches the engine through DirectInput's `CExoInputInternal::
-// PollInput(0x11c, 0)` path — and DirectInput reads SCAN CODES, not
-// virtual keys. SendInput with only `wVk` set posts a Win32 message
-// (which GetAsyncKeyState sees, including camera_announce's dead-
-// reckoning) but **never reaches DirectInput** — which is exactly the
-// failure mode the 21:46 log showed: camera_announce announced sector
-// crossings while the engine camera stayed at 0°. The fix is to set
-// `KEYEVENTF_SCANCODE` and `ki.wScan = DIK_*` so the input lands in
-// the DirectInput / raw-input pipeline the engine reads.
-constexpr WORD kDikA = 0x1E;   // DIK_A
-constexpr WORD kDikD = 0x20;   // DIK_D
+// DirectInput scan codes. Engine reads keyboard via DirectInput, which
+// sees scancodes only — plain VK SendInput is invisible to it.
+constexpr WORD kDikA = 0x1E;
+constexpr WORD kDikD = 0x20;
 
-// ----- Rotation state machine --------------------------------------------
-// Single live rotation at a time. While `active`, the dispatch holds the
-// chosen direction key synthesised via SendInput and re-evaluates
-// remaining distance each tick until within tolerance. Tolerance and
-// timeout are chosen to swallow the engine's per-frame DPS step
-// (~3.3°/frame at 60fps + 200°/s default) so we never miss the target
-// arc by more than one frame.
+// Single rotation at a time. Rate-based predictive release: each tick
+// samples yaw + timestamp so the next tick projects time-to-target and
+// releases the key ahead of arrival to absorb input-pipeline latency.
+// Without prediction the engine keeps rotating ~30-50ms after our keyup.
 struct Rotation {
     bool   active             = false;
-    WORD   holdScan           = 0;       // DIK scan code (kDikA / kDikD)
+    WORD   holdScan           = 0;
     char   debugKey           = 0;       // 'A' / 'D' for log readability
     float  targetEngineYawRad = 0.0f;
-    float  initialAbsDeltaRad = 0.0f;    // for overshoot detection
+    float  initialAbsDeltaRad = 0.0f;    // overshoot detection
     DWORD  startedMs          = 0;
-    // Rate-based predictive-release state. Each tick stores the
-    // observed yaw + timestamp so the next tick can derive a per-ms
-    // angular speed and decide whether to release the key NOW so the
-    // engine's in-flight rotation lands ON the target rather than
-    // past it. Without prediction, the user perceives "swings over"
-    // — we'd release at "remaining < tolerance" but the engine kept
-    // rotating for another 30-50ms of input-pipeline latency.
     float  prevYawRad         = 0.0f;
     DWORD  prevTickMs         = 0;
     bool   haveRateSample     = false;
 };
 Rotation g_rot;
 
-// Release-lookahead budget — how far in the future (in ms) we project
-// the camera's position when deciding to release. Set to swallow the
-// SendInput keyup → DirectInput sees-release → engine stops applying
-// AcclTurnCamera round-trip plus our own ~1 frame of remaining
-// processing. 40ms at 200°/s = 8° of look-ahead, which lines up with
-// the overshoot the user reported in patch-20260518-215110.log.
-//
-// camera_announce → camera_orient ordering already gives us SAME-tick
-// freshness on the yaw read, so this budget is pure "engine still
-// applying input after our keyup" latency.
+// 40ms ≈ 8° look-ahead at default 200°/s DPS — covers SendInput keyup →
+// DirectInput release → engine pipeline drain.
 constexpr DWORD kReleaseLookaheadMs = 40;
 
-// Fallback static arrival window — used when we don't have a usable
-// rate sample yet (first tick after arm) or when the rate is too
-// small to project (rotation stalled / not started). 0.05 rad ≈ 2.9°.
+// Fallback when no rate sample yet or rate too small to project. 2.9°.
 constexpr float kFallbackArrivalRad = 0.05f;
 
-// Minimum |rate| in rad/ms before we trust the rate-based projection.
-// Below this we fall back to the static arrival window — projecting
-// "time to target" with a near-zero rate explodes to garbage values.
-// 1e-5 rad/ms = ~0.57°/s, well below any real keyboard rotation rate
-// (engine default 200°/s = 3.5e-3 rad/ms).
+// Below this the time-to-target projection explodes. 1e-5 rad/ms ≈
+// 0.57°/s, well below any real key-driven rate.
 constexpr float kMinRateRadPerMs = 1e-5f;
 
-// Safety cap — even at 0°/s DPS the engine should resolve a half-turn
-// in well under 2 seconds at default 200°/s. 3 seconds catches the
-// "engine ignored our input" failure (loading screen, modal popup,
-// scripted camera takeover) without leaving the key wedged down.
+// Safety cap for "engine ignored our input" (load screen, modal, scripted
+// takeover) — must not strand the key pressed.
 constexpr DWORD kTimeoutMs = 3000;
 
 constexpr float kPi      = 3.14159265358979323846f;
@@ -145,24 +98,10 @@ void* GetCamera() {
     return SafeDeref(module, kCSWCModuleCameraOffset);
 }
 
-// Read engine yaw. Prefers camera_announce's position-derived value
-// (atan2(player - camera) — single-valued and smooth across full
-// rotations) because the rendered quaternion at modCamera+0x88 is
-// MULTI-VALUED: q and -q represent the same physical rotation, and
-// 2*atan2(qz, qw) returns readings 360° apart depending on which
-// hemisphere the engine's quaternion happens to be in. Verified in
-// patch-20260518-215110.log: arm cur=-277° / release cur=+83° from
-// quaternion read are antipodal representations of the SAME angle
-// (`-277 + 360 = +83`), causing our arrival check to never fire and
-// the rotation to ride out the 3s safety timeout.
-//
-// camera_announce::TryGetCameraEngineYawDegrees derives yaw from the
-// camera→player position vector (Pillar 2 dead-reckon path runs
-// AFTER us in core_tick, so we see last frame's value — one tick of
-// lag, comfortably within our ~3° arrival tolerance).
-//
-// Falls back to the quaternion path if camera_announce hasn't yet
-// anchored (first-tick state before its first valid position read).
+// Prefer camera_announce's position-derived yaw — atan2(player - camera)
+// is single-valued, the quaternion path returns antipodal readings 360°
+// apart and breaks the arrival check. Falls back to the quaternion if
+// announce hasn't anchored yet.
 bool ReadCurrentEngineYawRad(void* camera, float& out) {
     float degsFromAnnounce = 0.0f;
     if (acc::camera_announce::TryGetCameraEngineYawDegrees(
@@ -183,13 +122,6 @@ bool ReadCurrentEngineYawRad(void* camera, float& out) {
     }
 }
 
-// ----- SendInput keyboard primitive --------------------------------------
-// Scancode-based — KEYEVENTF_SCANCODE routes through Raw Input which
-// DirectInput consumes. Plain-VK SendInput posts only to the Win32
-// message queue (GetAsyncKeyState sees it) but is invisible to
-// DirectInput, which is why our first attempt rotated camera_announce's
-// dead-reckoning but not the engine's actual camera.
-
 void SendKey(WORD scan, bool down) {
     INPUT inp = {};
     inp.type = INPUT_KEYBOARD;
@@ -197,8 +129,6 @@ void SendKey(WORD scan, bool down) {
     inp.ki.dwFlags = KEYEVENTF_SCANCODE | (down ? 0 : KEYEVENTF_KEYUP);
     SendInput(1, &inp, sizeof(INPUT));
 }
-
-// ----- Angle math --------------------------------------------------------
 
 float NormaliseRad(float r) {
     while (r >  kPi)  r -= kTwoPi;
@@ -212,9 +142,7 @@ float CompassDegToEngineRad(float compassDeg) {
     return engineDeg * kDegToRad;
 }
 
-// Pick the next cardinal in compass-CW order. Floor compass/90 to find
-// the cardinal at-or-just-past us (CW), then +1 mod 4. Repeated presses
-// cycle N → E → S → W → N from any starting yaw.
+// Next cardinal in CW order (N → E → S → W → N).
 float NextCardinalCompassDeg(float currentCompassDeg) {
     if (currentCompassDeg < 0.0f) {
         currentCompassDeg = std::fmod(currentCompassDeg, 360.0f) + 360.0f;
@@ -227,8 +155,6 @@ float NextCardinalCompassDeg(float currentCompassDeg) {
     return static_cast<float>(nextIdx) * 90.0f;
 }
 
-// ----- Lifecycle helpers -------------------------------------------------
-
 void ReleaseAndDisarm(const char* reason, float curYawRad) {
     if (!g_rot.active) return;
     SendKey(g_rot.holdScan, /*down=*/false);
@@ -236,10 +162,8 @@ void ReleaseAndDisarm(const char* reason, float curYawRad) {
         curYawRad * kRadToDeg);
     int curSector = acc::engine::CompassToSector(curCompassDeg);
 
-    // No mode-specific speech — camera_announce's natural sector-cross
-    // hysteresis fires the final direction word once IsActive() drops
-    // and the post-release tick re-evaluates. Beacon and cardinal both
-    // land via the same announce path.
+    // Final direction is announced by camera_announce's hysteresis once
+    // IsActive() drops on the next tick.
 
     acclog::Write("CameraOrient",
                   "release: reason=%s key=%c cur=%.1f° (compass=%.1f° "
@@ -256,21 +180,10 @@ void ReleaseAndDisarm(const char* reason, float curYawRad) {
 
 }  // namespace
 
-// Reports true whenever camera_announce should stay muted. Covers two
-// windows the in-flight `g_rot.active` flag alone misses:
-//
-//   1. The rising-edge tick itself. camera_announce::Tick runs BEFORE
-//      camera_orient::Tick in core_tick (so closed-loop arrival reads
-//      this-frame's fresh yaw). On the very tick the user presses N,
-//      camera_announce would otherwise run while `g_rot.active` is
-//      still false from the previous tick — and announce the pre-
-//      rotation sector word a beat before our mute kicks in. Held()
-//      catches the press synchronously regardless of dispatch order.
-//
-//   2. The brief gap between camera_orient::ReleaseAndDisarm and the
-//      physical key release (typically 0-1 ticks). Not strictly needed
-//      since g_rot.active drops at release, but Held() coverage costs
-//      nothing.
+// Covers two windows g_rot.active alone misses: (1) the rising-edge tick
+// itself, since camera_announce::Tick runs before us in core_tick and
+// would otherwise speak the pre-rotation sector; (2) the gap between
+// ReleaseAndDisarm and the physical key release.
 bool IsActive() {
     if (g_rot.active) return true;
     return acc::hotkeys::Held(acc::hotkeys::Action::CameraOrient);
@@ -279,12 +192,11 @@ bool IsActive() {
 void Tick() {
     void* camera = GetCamera();
 
-    // ----- Continue an in-flight rotation -------------------------------
+    // In-flight rotation: tick the state machine.
     if (g_rot.active) {
         if (!camera) {
-            // Camera vanished mid-flight (area transition / shutdown).
-            // Release the key so we don't strand it pressed across the
-            // load screen.
+            // Camera vanished (area transition / shutdown) — release the
+            // key so it isn't stranded across the load screen.
             SendKey(g_rot.holdScan, /*down=*/false);
             acclog::Write("CameraOrient",
                           "release: reason=camera_lost key=%c",
@@ -299,9 +211,7 @@ void Tick() {
                     g_rot.targetEngineYawRad - curYawRad);
                 DWORD nowMs = GetTickCount();
 
-                // Rate-based predictive release. NormaliseRad on the
-                // delta-yaw between samples handles the wrap at ±π so
-                // a rotation crossing 180° doesn't flip sign on us.
+                // NormaliseRad on delta-yaw handles ±π wrap.
                 bool   useRate     = false;
                 float  rateRadPerMs = 0.0f;
                 float  ttaMs       = 0.0f;
@@ -311,13 +221,10 @@ void Tick() {
                         float dyaw = NormaliseRad(
                             curYawRad - g_rot.prevYawRad);
                         rateRadPerMs = dyaw / static_cast<float>(dtMs);
+                        // Same-sign on rate + remaining = rotating toward
+                        // target; opposite = wrong-side wrap, fall back
+                        // to static window.
                         if (std::fabs(rateRadPerMs) >= kMinRateRadPerMs &&
-                            // Same sign on rate + remaining = rotating
-                            // TOWARD target. Opposite signs = rotating
-                            // away (engine ignored us or wrong-direction
-                            // user input); fall back to static window so
-                            // we don't release prematurely on the wrong
-                            // side of the wrap.
                             ((remaining > 0.0f) == (rateRadPerMs > 0.0f))) {
                             ttaMs = remaining / rateRadPerMs;
                             useRate = true;
@@ -329,19 +236,15 @@ void Tick() {
                     ? (ttaMs <= static_cast<float>(kReleaseLookaheadMs))
                     : (std::fabs(remaining) <= kFallbackArrivalRad);
 
-                // Overshoot detection — |remaining| growing past the
-                // initial delta by more than a 45° margin means we've
-                // sailed past target in the wrong direction (engine
-                // ignored input + user's own A/D drove the other way).
+                // |remaining| grown past initial + 45° = sailed past in
+                // the wrong direction (engine ignored input + user drove
+                // the opposite way).
                 bool overshot = std::fabs(remaining) >
                                 g_rot.initialAbsDeltaRad + kPi * 0.25f;
 
                 DWORD elapsed = nowMs - g_rot.startedMs;
                 bool timedOut = elapsed >= kTimeoutMs;
 
-                // Roll the rate-sample window forward AFTER the decision
-                // so the next tick's projection sees a fresh ~16ms
-                // baseline.
                 g_rot.prevYawRad     = curYawRad;
                 g_rot.prevTickMs     = nowMs;
                 g_rot.haveRateSample = true;
@@ -363,8 +266,7 @@ void Tick() {
                 }
             }
         }
-        // Eat any same-tick second N press while a rotation is in flight
-        // so the user can't queue another rotation mid-arc.
+        // Eat re-press mid-rotation.
         if (acc::hotkeys::Pressed(acc::hotkeys::Action::CameraOrient)) {
             acclog::Write("CameraOrient",
                           "ignore re-press: rotation in flight");
@@ -372,7 +274,7 @@ void Tick() {
         return;
     }
 
-    // ----- Rising edge — arm a new rotation -----------------------------
+    // Rising edge — arm a new rotation.
     if (!acc::hotkeys::Pressed(acc::hotkeys::Action::CameraOrient)) return;
 
     if (!camera) {
@@ -413,10 +315,6 @@ void Tick() {
 
     float delta = NormaliseRad(targetEngineYawRad - curYawRad);
     if (std::fabs(delta) <= kFallbackArrivalRad) {
-        // Already pointing where we'd send it — skip input synthesis.
-        // No speech: the camera hasn't moved so camera_announce has
-        // nothing new to announce, and we no longer emit a beacon-
-        // specific confirmation.
         acclog::Write("CameraOrient",
                       "no-op: already at target (delta=%.2f° within "
                       "tolerance)",
@@ -424,10 +322,7 @@ void Tick() {
         return;
     }
 
-    // Direction: in engine frame (0=East, CCW+), positive delta means
-    // CCW = A. Negative delta means CW = D. Verified against
-    // camera_announce's documented sign convention (A rotates compass
-    // CCW = engine yaw increases).
+    // Engine frame (0=East, CCW+): positive delta = CCW = A, negative = D.
     bool isA = (delta > 0.0f);
     WORD scan = isA ? kDikA : kDikD;
     char debugKey = isA ? 'A' : 'D';
@@ -439,11 +334,8 @@ void Tick() {
     g_rot.targetEngineYawRad  = targetEngineYawRad;
     g_rot.initialAbsDeltaRad  = std::fabs(delta);
     g_rot.startedMs           = nowMs;
-    // Seed the rate-sample window with the arm-time yaw so the first
-    // in-flight tick can already derive a rate (rather than burning
-    // one tick waiting for a baseline). The first sample's dt will be
-    // ~16ms, which is the actual frame period — same accuracy as
-    // every subsequent sample.
+    // Seed the rate window with arm-time yaw so the first in-flight tick
+    // already has a baseline.
     g_rot.prevYawRad          = curYawRad;
     g_rot.prevTickMs          = nowMs;
     g_rot.haveRateSample      = true;
