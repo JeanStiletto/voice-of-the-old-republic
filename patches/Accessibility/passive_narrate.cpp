@@ -18,37 +18,16 @@
 
 namespace acc::passive_narrate {
 
-// Cache of the engine's user-facing target, populated by OnEngineShowObject
-// (driven by the ShowObject detour declared in hooks.toml at 0x005f9c8e).
-// ShowObject is called from DoPassiveSelection (mouse-hover auto-target,
-// every frame) and SelectNearestObject (Q/E hostile cycle); both
-// represent the actual on-screen focus the sighted player sees in the
-// red-hilite ring. AI churn (CreateNewAttackActions writing last_target
-// every combat round) does NOT touch this — so during combat the cache
-// stays stable on the user-selected target while last_target jitters.
-//
-// Game is single-threaded so volatile is enough; no atomic needed.
-// Exposed at namespace scope (not anonymous) so the extern-"C"
-// OnShowObject handler at file end can update it.
+// Engine's user-facing target cache. Exposed at namespace scope so the
+// extern-"C" OnShowObject handler can update it. Single-threaded, no atomic.
 volatile uint32_t s_show_object_handle = 0x7F000000u;
 
 namespace {
 
-// Pending Q/E reannounce — set by RequestQEReannounce on each Q/E press;
-// cleared by OnEngineShowObject if the engine processes the keystroke
-// into a focus change (the focus-change path already speaks + plays the
-// cue, so reannounce would double-fire). Drained by Tick if still set
-// (engine didn't change focus → single-hostile combat case → reannounce).
 bool s_qe_reannounce_pending = false;
 
-// Map a Pillar 4 cycle category to its 3D audio cue. Mirrors the mapping
-// in cycle_input.cpp's BindingsFor — duplicated locally to keep this
-// lay-off scoped (the cycle table is a `static` inside cycle_input.cpp's
-// anonymous namespace; promoting it requires a refactor that's out of
-// scope). If the two get out of sync in the future, factor into a
-// shared filter_objects helper.
-// Closed-door material-specific cue. Mirrors RefineDoorCue in
-// cycle_input.cpp.
+// Mirrors cycle_input.cpp's mapping. If these get out of sync, lift into
+// a shared filter_objects helper.
 acc::audio::NavCue ClosedDoorCueForMaterial(void* obj) {
     using N = acc::audio::NavCue;
     switch (acc::engine::GetDoorMaterial(obj)) {
@@ -59,8 +38,7 @@ acc::audio::NavCue ClosedDoorCueForMaterial(void* obj) {
     return N::DoorClosedMetal;
 }
 
-// Door cue depends on open_state + material — pass obj so we can read
-// both. Other categories ignore obj.
+// Door cue depends on open_state + material. Other categories ignore obj.
 acc::audio::NavCue CueForCategory(acc::filter::CycleCategory c, void* obj) {
     using C = acc::filter::CycleCategory;
     using N = acc::audio::NavCue;
@@ -93,10 +71,7 @@ acc::strings::Id CategoryNameId(acc::filter::CycleCategory c) {
     return S::CategoryItem;
 }
 
-// Classify an object against the six locked Pillar 4 categories; returns
-// Count_ if no category claims it (combat target / dialog target / other
-// engine-internal ShowObject consumer that the user shouldn't hear about
-// as ambient nav narration).
+// Returns Count_ for non-nav consumers (combat / dialog target).
 acc::filter::CycleCategory ClassifyForNarration(void* obj) {
     using C = acc::filter::CycleCategory;
     for (int i = 0; i < static_cast<int>(C::Count_); ++i) {
@@ -106,21 +81,10 @@ acc::filter::CycleCategory ClassifyForNarration(void* obj) {
     return C::Count_;
 }
 
-// Shared resolve → classify → speak → stamp pipeline. Used by both the
-// focus-change path (delta inside OnEngineShowObject) and the deferred
-// Q/E re-announce path (Tick after engine processed the keystroke
-// without changing focus). `reason` tags the log channel so post-mortem
-// grep can tell which path spoke.
-//
-// Both paths fire the 3D cue: focus-change for primary signalling, Q/E
-// reannounce as audible "yes, still the same target" confirmation in
-// single-hostile combat. The two paths are mutually exclusive by
-// construction — the deferred-Tick mechanism cancels a pending Q/E
-// reannounce as soon as the engine fires ShowObject for a real focus
-// change, so the user can't hear both for the same Q/E press.
-//
-// Returns true when speech was emitted, false on any short-circuit
-// (sentinel handle, resolve fault, kind not in nav categories).
+// Resolve → classify → speak → stamp. Used by both the focus-change path
+// (OnEngineShowObject delta) and the deferred Q/E re-announce path. The
+// two are mutually exclusive by construction — Tick cancels pending if
+// OnEngineShowObject sees a real focus change first.
 bool NarrateHandle(uint32_t handle, const char* reason) {
     if (handle == 0u || handle == 0xFFFFFFFFu || handle == 0x7F000000u) {
         return false;
@@ -184,64 +148,44 @@ bool NarrateHandle(uint32_t handle, const char* reason) {
 }  // namespace
 
 void OnEngineShowObject(uint32_t handle) {
-    // Cache update is unconditional — Q/E re-announce reads this and
-    // must reflect the very latest engine focus, even if delta detection
-    // below short-circuits (no transition, sentinel, etc.).
+    // Unconditional cache update — Q/E re-announce reads the latest even
+    // when the delta path below short-circuits.
     s_show_object_handle = handle;
 
-    // Delta detection. ShowObject fires per frame as DoPassiveSelection's
-    // tail refresh; we'd spam if we announced unconditionally. Sentinel
-    // DEADBEEF marks "no announcement yet this DLL load" — first real
-    // non-sentinel handle is suppressed so we don't speak on save resume.
+    // ShowObject refreshes per frame; delta-detect to avoid spamming.
+    // DEADBEEF = "no announcement yet this DLL load" — suppress the first
+    // real handle so we don't speak on save resume.
     static uint32_t s_last_announced = 0xDEADBEEFu;
     if (handle == s_last_announced) return;
 
     uint32_t prev = s_last_announced;
     s_last_announced = handle;
 
-    // Engine changed focus this tick → cancel any pending Q/E reannounce.
-    // The focus-change path below will speak + play the new target's cue;
-    // a deferred reannounce on top would double-fire (same metallic
-    // sample stacking on the new cue, which the user perceived as
-    // "wrong sound for the object I cycled to").
-    //
-    // Capture pending state BEFORE clearing — used by the sentinel branch
-    // to give Q/E-initiated "no target" feedback. When the engine's
-    // SelectNearestObject @ 0x005fb050 exhausts its candidate list
-    // mid-iteration (every candidate fails GetGameObject, AsSWCObject,
-    // or — most commonly — CSWCCreature::CanSee LOS to player), it writes
-    // last_target = 0x7f000000 and calls ShowObject(NULL); we observe
-    // that as the sentinel. The user pressed Q/E and would otherwise
-    // hear silence; we promote it to a short spoken phrase so every
-    // press has audible feedback. Decompile-verified 2026-05-27 — see
-    // project_select_nearest_object_sentinel memory.
+    // Engine changed focus → cancel pending Q/E reannounce; this path
+    // speaks + cues for the new target, a deferred reannounce would
+    // stack on top. Captured pending flag drives the sentinel-branch
+    // "no target" feedback so every Q/E press is audible.
     bool was_qe_request = s_qe_reannounce_pending;
     s_qe_reannounce_pending = false;
 
-    // Cursor-position diagnostic for the "character spins on its own"
-    // intermittent bug. ShowObject is driven by DoPassiveSelection
-    // (mouse-hover auto-target, every frame) — if Windows-side jitter
-    // (Steam overlay, notifications, touchpad twitch, screen-reader
-    // cursor sync) drags the screen cursor across NPC silhouettes, the
-    // engine snaps the player to face whichever target the cursor
-    // last grazed. Cursor coords are GetCursorPos screen-space; pair
-    // with the immediately-following PassiveNarrate `passive:` /
-    // `focus lost` line to see which target the cursor picked.
+    // Cursor coords logged for the "character spins on its own" intermittent
+    // bug: Steam overlay / touchpad twitch / screen-reader cursor sync can
+    // drag the cursor across NPCs and the engine snaps the player to face
+    // them via DoPassiveSelection.
     POINT cursor = {0, 0};
     GetCursorPos(&cursor);
     acclog::Write("PassiveNarrate",
         "show-object delta: prev=0x%08x new=0x%08x cursor=(%d,%d)",
         prev, handle, cursor.x, cursor.y);
 
-    // Self-gate on player-loaded — silent in menus / chargen / area-load.
     Vector unused;
     if (!acc::engine::GetPlayerPosition(unused)) return;
 
     if (handle == 0u || handle == 0xFFFFFFFFu || handle == 0x7F000000u) {
         if (was_qe_request) {
-            // Q/E press → engine returned sentinel (no-target-found). Speak
-            // feedback so the user hears their press registered. They can
-            // press Q/E again to wrap the cycle.
+            // Q/E exhausted its candidate list (every nearby target failed
+            // GetGameObject / AsSWCObject / CanSee LOS). Promote silence
+            // to spoken feedback so the press isn't perceived as eaten.
             const char* msg = acc::strings::Get(
                 acc::strings::Id::CycleNoTarget);
             prism::Speak(msg, /*interrupt=*/true);
@@ -256,10 +200,9 @@ void OnEngineShowObject(uint32_t handle) {
         return;
     }
 
-    // First-tick suppression — first non-sentinel handle after DLL load.
-    // The user already knows what they were pointed at on save; speaking
-    // on resume is noise. Skipped narrations don't stamp narrated_target
-    // either — activation keys shouldn't act on something we never said.
+    // First non-sentinel after DLL load — suppress (don't speak on save
+    // resume). Skipping also skips the narrated_target stamp so activation
+    // keys can't act on something we never said.
     if (prev == 0xDEADBEEFu) {
         acclog::Write("PassiveNarrate",
             "first-tick handle=0x%08x, suppressed", handle);
@@ -270,11 +213,6 @@ void OnEngineShowObject(uint32_t handle) {
 }
 
 void RequestQEReannounce() {
-    // Set the pending flag. The Tick handler drains it next frame IF the
-    // engine didn't fire ShowObject in between (which would clear the
-    // flag via OnEngineShowObject's delta path). No state to capture
-    // here — Tick reads s_show_object_handle at drain time, which by
-    // then reflects whatever the engine settled on for this Q/E press.
     s_qe_reannounce_pending = true;
 }
 
@@ -282,26 +220,18 @@ void Tick() {
     if (!s_qe_reannounce_pending) return;
     s_qe_reannounce_pending = false;
 
-    // Self-gate on player-loaded — match OnEngineShowObject so the
-    // re-announce doesn't fire in menus / chargen / area transitions.
     Vector unused;
     if (!acc::engine::GetPlayerPosition(unused)) return;
 
     uint32_t handle = s_show_object_handle;
-    if (handle == 0u || handle == 0xFFFFFFFFu || handle == 0x7F000000u) {
-        // No engine-facing target — nothing to re-announce. Silent.
-        return;
-    }
+    if (handle == 0u || handle == 0xFFFFFFFFu || handle == 0x7F000000u) return;
 
     NarrateHandle(handle, "reannounce");
 }
 
 }  // namespace acc::passive_narrate
 
-// CClientExoAppInternal::ShowObject hook (hooks.toml entry @ 0x005f9c8e).
-// Thin extern-"C" trampoline into the namespace-scoped handler — keeps
-// the framework's exported-symbol contract while letting the real
-// logic live alongside its state.
+// Thin trampoline for the ShowObject detour (hooks.toml @ 0x005f9c8e).
 extern "C" __declspec(dllexport)
 void __cdecl OnShowObject(void* /*clientObject*/, int handle) {
     acc::passive_narrate::OnEngineShowObject(static_cast<uint32_t>(handle));

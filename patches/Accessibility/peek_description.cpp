@@ -20,52 +20,16 @@ namespace acc::peek {
 
 namespace {
 
-// "Before first" sentinel for the block cursor. After OnShiftReleased
-// the cursor returns here so the next Shift+Down (or Shift+Up) speaks
-// block 0 — there is no "block before the first" the user could land
-// on by pressing Up first thing after a release.
 constexpr int kCursorReset = -1;
 
-// Block cursor state. Persists across panel changes; the next press
-// starts at 0 anyway because OnShiftReleased reset it. If the panel
-// changes WITHOUT a shift release (rare — would need a panel transition
-// triggered by something other than the user's hand on the keyboard)
-// the cursor clamps via the row-count check on read.
 int g_blockIdx = kCursorReset;
 
-// Refresh function signatures. The engine's normal mouse-driven flow
-// dispatches OnControlEntered (or equivalent) on hover, which in turn
-// calls SetDescription to populate the description listbox. Our
-// keyboard nav (chain step / DriveListBoxSelection) bypasses that
-// chain — selection_index is mutated directly, mouse-over hit-tests
-// can land on dead space, etc. — so the description listbox stays
-// pinned to whatever the engine populated last.
-//
-// To make peek read the *focused* row's description rather than a
-// stale one, we manually re-fire the refresh path at peek time. Each
-// panel exposes its own refresh entry point; the registry below
-// stores a small adapter that takes the panel pointer and calls into
-// the right engine function.
 typedef void (__thiscall* PFN_PanelOnControl)(void* panel, void* control);
 
-// Several panel `OnControlEntered` overrides decompile to a body
-// gated by `if (param_1->...->is_active != 0)`. The mouse-driven
-// HandleLMouseDown sets is_active=1 on click, but our keyboard chain
-// step bypasses HandleLMouseDown — the equipped inventory row is the
-// canonical case where is_active stays 0 forever (never clicked in
-// normal play), so the description-stage code always skipped it.
-//
-// Fix shape: save → force is_active=1 → call → restore. The flag is
-// read by other engine paths (border rendering, focus chain, click
-// activation gates), so we narrowly scope the override to the call
-// window. Decompiles confirm OnControlEntered itself does not write
-// to the entry's is_active. See memory:
-// project_oncontrolentered_is_active_gate.
-//
-// `focused` is the chain target. For inventory/store/journal rows
-// the row IS a CSWGuiButton-derived control (item entries embed
-// CSWGuiButton at offset 0), so the chain pointer + is_active offset
-// resolves correctly either way.
+// Several OnControlEntered overrides early-out on `entry->is_active != 0`.
+// HandleLMouseDown sets that on click; our keyboard chain step doesn't,
+// so equipped inventory rows stay at 0 forever. Save → force 1 → call →
+// restore around the engine call only.
 static void CallOnControlEnteredWithActive(std::uintptr_t addr,
                                            void* panel, void* focused)
 {
@@ -80,8 +44,7 @@ static void CallOnControlEnteredWithActive(std::uintptr_t addr,
     *isActivePtr = saved;
 }
 
-// CSWGuiInGameInventory::OnControlEntered @ 0x006b3d10. is_active gate
-// applies (decompiled).
+// CSWGuiInGameInventory::OnControlEntered — is_active gate applies.
 constexpr std::uintptr_t kAddrInventoryOnControlEntered = 0x006b3d10;
 
 static void RefreshInventory(void* panel, void* focused) {
@@ -90,10 +53,7 @@ static void RefreshInventory(void* panel, void* focused) {
                                    panel, focused);
 }
 
-// CSWGuiStore::OnControlEntered @ 0x006c0aa0. Same is_active gate as
-// Inventory (decompile: `if (param_1->is_active != 0) { ... }`).
-// Takes a CSWGuiControl* — the focused store row in either
-// shopitems_listbox or invitems_listbox.
+// CSWGuiStore::OnControlEntered — same is_active gate as Inventory.
 constexpr std::uintptr_t kAddrStoreOnControlEntered = 0x006c0aa0;
 
 static void RefreshStore(void* panel, void* focused) {
@@ -102,9 +62,7 @@ static void RefreshStore(void* panel, void* focused) {
                                    panel, focused);
 }
 
-// CSWGuiInGameJournal::OnControlEntered @ 0x00645100. Differs from
-// Inventory/Store: the outer gate is `if (param_1 != NULL)` only —
-// no is_active check (decompiled). Direct call is sufficient.
+// CSWGuiInGameJournal::OnControlEntered — no is_active gate, direct call.
 constexpr std::uintptr_t kAddrJournalOnControlEntered = 0x00645100;
 
 static void RefreshJournal(void* panel, void* focused) {
@@ -114,33 +72,20 @@ static void RefreshJournal(void* panel, void* focused) {
     fn(panel, focused);
 }
 
-// Map a panel kind to where its description listbox lives within the
-// typed panel struct, plus an optional refresh function called before
-// peek reads. Offsets verified against the SARIF DATATYPE entries
-// (docs/llm-docs/re/k1_win_gog_swkotor.exe.xml). Adding a new panel =
-// one new row here; refresh is optional (nullptr leaves the engine's
-// already-populated state in place).
+// Panel kind → description-listbox offset + optional refresh adapter.
+// Adding a panel = one row. refresh=nullptr reads whatever the engine
+// already populated.
 //
-// CSWGuiInGameJournal's member is named `item_description_label` in
-// the SARIF but its DATATYPE is CSWGuiListBox — same shape as the
-// other panels' description listboxes, just a misnamed slot. We treat
-// it as a listbox (which the engine also does at every callsite).
+// Journal's slot is named `item_description_label` in SARIF but its
+// DATATYPE is CSWGuiListBox — misnamed, treat as listbox.
 //
-// Options sub-panels (CSWGuiInGameGameplay, CSWGuiOptionsFeedback, …)
-// also have description_listbox members but their PanelKind values
-// aren't enumerated yet — IdentifyPanel currently maps them all to
-// PanelKind::InGameOptions. Settings-tooltip support waits on either
-// (a) splitting InGameOptions into per-tab kinds, or (b) reading the
-// active sub-panel via the tabbed-panel detector and dispatching here
-// from there.
+// Options sub-panels also have description_listbox members but
+// IdentifyPanel currently lumps them all under InGameOptions —
+// settings-tooltip support waits on per-tab kind discrimination.
 struct PanelPeekInfo {
     acc::engine::PanelKind kind;
     std::size_t            descListBoxOffset;
-    // Refresh adapter — re-stages the description for the focused
-    // row before peek reads. Takes (panel, focused_chain_target);
-    // each panel uses one or the other (or both). nullptr = no
-    // refresh; peek reads whatever the engine already populated.
-    void                 (*refresh)(void* panel, void* focused);
+    void                 (*refresh)(void* panel, void* focused);  // optional
 };
 
 constexpr PanelPeekInfo kPanels[] = {
@@ -162,36 +107,18 @@ const PanelPeekInfo* LookupPanel(acc::engine::PanelKind k) {
     return nullptr;
 }
 
-// ---------------------------------------------------------------------------
-// Item-tooltip path — for listbox-driven panels whose rows are
-// CSWGuiInGameItemEntry instances (item_game_object_id at +0x1c4).
+// Item-tooltip path for listbox-driven panels with no inline
+// description_listbox (Container, Equip picker) or where calling
+// OnItemSelected would commit the action (Equip — picker resolves on
+// the user's actual click). Resolves CSWGuiInGameItemEntry rows
+// (item_game_object_id at +0x1c4) via the same client→server handle
+// path the engine uses, then reads CSWSItem::GetPropertyDescription.
 //
-// The chain-nav peek path above requires an inline `description_listbox`
-// member that the engine pre-formats on hover/select. Two of our supported
-// surfaces don't fit that shape:
+// minSel=1 skips the Equip-picker's protoitem template row;
+// Container uses 0.
 //
-//   * Container (loot panel, "Plündern") — no description_listbox member at
-//     all (container.gui has only LBL_MESSAGE + LB_ITEMS + 3 buttons).
-//   * Equip picker (CSWGuiInGameEquip in picker mode) — has
-//     description_listbox at +0x33b8, but it's populated by OnItemSelected
-//     which we deliberately bypass with DriveListBoxSelection (calling it
-//     would commit the equip on every Shift+Down).
-//
-// Both panels store CLIENT-side game-object handles in their item rows
-// (Container.SetContainer @ 0x6b8130 calls ServerToClientObjectId before
-// SetItem; Equip.OnItemSelected @ 0x6b7920 reverses that with
-// ClientToServerObjectId before the item lookup). We resolve back to a
-// CSWSItem* and call CSWSItem::GetPropertyDescription directly — the
-// same source the engine's description listbox formatting consumes.
-//
-// minSel = 1 skips the protoitem template row (Equip picker only — rows
-// in LB_ITEMS render from row 0 as the prototype). Container uses 0.
-//
-// findLb is a finder function: Container/InGameEquip listboxes live at
-// stable inline offsets within the panel struct (we know the type), while
-// the workbench panels (WorkbenchItems / WorkbenchUpgrade) are heap-
-// allocated with no stable layout — the listbox is reached via the .gui-
-// time control ID instead.
+// findLb: stable inline offset for type-known panels, FindControlById
+// for the heap-allocated workbench listboxes.
 struct ItemTooltipPanelInfo {
     acc::engine::PanelKind kind;
     void*                (*findLb)(void* panel);
@@ -209,14 +136,10 @@ void* InGameEquipFindLb(void* panel) {
 }
 
 void* WorkbenchItemsFindLb(void* panel) {
-    // upgradeitems.gui LB_ITEMS at .gui ID 0. Same finder
-    // menus_listbox.cpp's WorkbenchItems spec uses.
     return FindControlById(panel, 0);
 }
 
 void* WorkbenchUpgradeFindLb(void* panel) {
-    // upgrade.gui LB_ITEMS at .gui ID 0 (compatible-mods list once a slot
-    // button has been activated).
     return FindControlById(panel, 0);
 }
 
@@ -227,15 +150,12 @@ constexpr ItemTooltipPanelInfo kItemTooltipPanels[] = {
     { acc::engine::PanelKind::WorkbenchUpgrade, WorkbenchUpgradeFindLb, 0 },
 };
 
-// Equip-panel slot peek table. When the focused chain target is one of
-// the 9 slot buttons, Shift+arrow reads the description of the item
-// currently equipped in that slot (handle cached in the panel struct at
-// offset itemIdOffset). Source-of-truth for the displayed character —
-// the panel updates these on every BTN_CHANGE1/2 party-cycle, so the
-// description matches whichever companion is on screen.
+// Per-slot peek for the 9 equip buttons. itemIdOffset is the panel-
+// cached client handle that the engine rewrites on every party-cycle, so
+// the description always matches the displayed character.
 struct EquipSlotPeekInfo {
-    int    cid;            // .gui control id (panel-stable across locales)
-    size_t itemIdOffset;   // CSWGuiInGameEquip-relative ulong handle
+    int    cid;            // .gui control id, locale-stable
+    size_t itemIdOffset;
 };
 
 constexpr EquipSlotPeekInfo kEquipSlotPeek[] = {
@@ -254,9 +174,7 @@ const EquipSlotPeekInfo* FindEquipSlotByControl(void* control) {
     if (!control) return nullptr;
     int cid = 0;
     __try {
-        // Control id is the .gui-time numeric ID at +0x50 — same field
-        // the slot extractor in menus_extract reads to dispatch to the
-        // per-slot label table.
+        // .gui-time numeric control ID at +0x50.
         cid = *reinterpret_cast<int*>(
             reinterpret_cast<unsigned char*>(control) + 0x50);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -268,11 +186,8 @@ const EquipSlotPeekInfo* FindEquipSlotByControl(void* control) {
     return nullptr;
 }
 
-// Read the slot's cached server-side handle, resolve to CSWSItem*, and
-// speak the same multi-line description the engine's hover-into-listbox
-// path would produce. Returns true if a non-empty description was spoken,
-// false if the slot is empty or the resolve fails (caller still consumes
-// the key per the predictable-behaviour rule in HandleShiftArrow).
+// True on a non-empty description spoken; false on empty slot / unresolved
+// item. Caller still consumes the key (predictable-behaviour rule).
 bool HandleEquipSlotTooltip(void* panel, const EquipSlotPeekInfo& info) {
     if (!panel) return false;
     uint32_t handle = 0;
@@ -285,10 +200,7 @@ bool HandleEquipSlotTooltip(void* panel, const EquipSlotPeekInfo& info) {
                       panel, (unsigned)info.itemIdOffset);
         return false;
     }
-    // 0x7f000000 = kInvalidObjectId, the engine's "slot empty" sentinel
-    // (confirmed in UpdateInventory decomp: every blank-slot branch
-    // writes 0x7f000000 to the slot id field). Treat alongside 0 and
-    // 0xffffffff as "no item".
+    // 0x7f000000 = kInvalidObjectId (engine's "slot empty" sentinel).
     if (handle == 0 || handle == 0xffffffff || handle == 0x7f000000) {
         acclog::Write("Peek.EquipSlot",
                       "panel=%p cid=%d slot empty (handle=0x%x); silent",
@@ -296,10 +208,7 @@ bool HandleEquipSlotTooltip(void* panel, const EquipSlotPeekInfo& info) {
         return false;
     }
 
-    // Panel-cached slot ids are CLIENT-side (high bit 0x80000000 set,
-    // observed live: e.g. 0x8000017a for a Zaalbar bowcaster). The
-    // picker rows go through the same client→server translation path,
-    // so ResolveItemFromClientHandle is the right resolver here too.
+    // Panel-cached slot ids are client-side (high bit 0x80000000 set).
     void* item = acc::engine::ResolveItemFromClientHandle(handle);
     if (!item) {
         acclog::Write("Peek.EquipSlot",
@@ -332,10 +241,7 @@ const ItemTooltipPanelInfo* LookupItemTooltipPanel(acc::engine::PanelKind k) {
 
 constexpr std::size_t kItemEntryGameObjectIdOffset = 0x1c4;
 
-// Returns true iff a description was found and spoken. False on empty
-// listbox / no selection / unresolved handle / empty description text;
-// callers should still consume the key in those cases to keep behaviour
-// predictable (Shift+arrow shouldn't silently fire the unshifted nav).
+// Caller consumes the key regardless of return (predictable behaviour).
 bool HandleItemTooltip(acc::engine::PanelKind kind,
                        const ItemTooltipPanelInfo& info,
                        void* activePanel) {
@@ -411,18 +317,8 @@ bool HandleItemTooltip(acc::engine::PanelKind kind,
     return true;
 }
 
-// Read the visible text of one description-listbox row. Description
-// rows are usually CSWGuiLabels whose c_string lives in the
-// CAurGUIStringInternal at gui_string (offset 0xE4 for label,
-// 0x168 for button). Multi-paragraph descriptions are sometimes
-// rendered as CSWGuiButtons (with no clickable behaviour — they're
-// just text containers); the engine uses both classes for rows.
-//
-// Try every known path so we don't silently miss text on a row with
-// an unexpected subclass. Order: gui_string at label offset →
-// gui_string at button offset → inline CExoString/strref/text_object
-// at label offsets → same at button offsets. Returns the source tag
-// for logging on success, nullptr on miss.
+// Rows can be CSWGuiLabel OR CSWGuiButton (engine uses both for text-only
+// containers). Try every known text path. Returns source tag for logging.
 const char* ReadRowText(void* row, char* outBuf, std::size_t bufSize) {
     if (!row || !outBuf || bufSize < 2) return nullptr;
 
@@ -448,9 +344,8 @@ const char* ReadRowText(void* row, char* outBuf, std::size_t bufSize) {
 }
 
 bool ShiftHeld() {
-    // Central registry's OS-level shift query — same rationale as before
-    // (engine-side g_engineShiftHeld latches stale on swallowed up-edges;
-    // GetAsyncKeyState is authoritative).
+    // OS-level query; the engine-side flag can latch stale on swallowed
+    // up-edges.
     return acc::hotkeys::ShiftHeld();
 }
 
@@ -474,13 +369,8 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
 
     auto kind = acc::engine::IdentifyPanel(activePanel);
 
-    // Equip slot tooltip: when the focused chain target is one of the 9
-    // slot buttons (BTN_INV_*) on the main equip screen, read the
-    // description of the item equipped in that slot. Runs BEFORE the
-    // picker-listbox path because the same panel kind (InGameEquip)
-    // hosts both surfaces — the picker's items_listbox is empty until
-    // the user drills into a slot, so the picker handler would otherwise
-    // win and silently no-op on slot focus.
+    // Slot path runs before picker-listbox because InGameEquip hosts
+    // both surfaces; the picker is empty until a slot is drilled into.
     if (kind == acc::engine::PanelKind::InGameEquip && focusedControl) {
         if (const EquipSlotPeekInfo* slotInfo =
                 FindEquipSlotByControl(focusedControl)) {
@@ -489,11 +379,7 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
         }
     }
 
-    // Try the item-tooltip path first (Container, Equip picker). These
-    // panels don't fit the inline-description-listbox shape — see the
-    // ItemTooltipPanelInfo block above. Always consume the key when the
-    // panel matches so plain Up/Down nav doesn't fire on top of a
-    // Shift+arrow that found no focused item.
+    // Item-tooltip path (Container, Equip picker, Workbench listboxes).
     if (const ItemTooltipPanelInfo* itemInfo = LookupItemTooltipPanel(kind)) {
         HandleItemTooltip(kind, *itemInfo, activePanel);
         return true;
@@ -501,16 +387,8 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
 
     const PanelPeekInfo* info = LookupPanel(kind);
     if (!info) {
-        // Generic fallback: read the focused control's own engine
-        // tooltip (CSWGuiControl::tooltip_strref or .tooltip_string).
-        // Catches arbitrary panels we haven't taught the peek table —
-        // LevelUp step buttons, PartySelection portraits, charsheet
-        // attribute rows, options-screen widgets etc. — for free
-        // wherever the .gui file populated a tooltip.
-        //
-        // Always consume the press when this branch runs (same rule
-        // as the item-tooltip path): predictable behaviour beats
-        // Shift+arrow falling through to plain nav.
+        // Generic fallback: focused control's own .gui tooltip strref.
+        // Covers LevelUp / PartySelection / options widgets / etc.
         if (focusedControl) {
             char tip[1024];
             if (acc::engine::ReadControlTooltip(focusedControl, tip,
@@ -529,11 +407,8 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
         return false;  // unknown / no tooltip — pass through to plain nav
     }
 
-    // Re-stage the description for the focused row before reading.
-    // SEH-guarded — OnControlEntered & friends dereference the
-    // current item entry / row, which can be stale during a panel
-    // teardown frame; absorbing the fault and reading whatever the
-    // listbox already had is preferable to crashing.
+    // Re-stage description for the focused row. SEH-guarded against
+    // stale entries during panel teardown.
     if (info->refresh) {
         __try {
             info->refresh(activePanel, focusedControl);
@@ -544,10 +419,7 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
         }
     }
 
-    // Description listbox is inline at a known offset within the
-    // panel struct, not an entry in panel.controls. Take the address
-    // and treat it as the listbox base (no FindControlById lookup
-    // needed — the offset IS the location).
+    // Inline at known offset; address is the listbox base, no lookup.
     void* lb = reinterpret_cast<unsigned char*>(activePanel) +
                info->descListBoxOffset;
 
@@ -556,22 +428,16 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
     int rowCount = (lbList && lbList->data) ? lbList->size : 0;
 
     if (rowCount <= 0) {
-        // Nothing to peek. Consume the key anyway so plain Up/Down
-        // doesn't fire on top of a Shift+arrow the user thought went
-        // somewhere — predictable behaviour beats "Shift+arrow does
-        // nothing here, but the un-shifted nav fires anyway".
+        // Consume the key anyway (predictable-behaviour rule).
         acclog::Write("Peek", "panel=%s lb=%p rowCount=0; silent",
                       acc::engine::PanelKindName(kind), lb);
         return true;
     }
 
-    // Advance the block cursor.
     bool down = (param_1 == kInputNavDown);
     int prev = g_blockIdx;
     if (g_blockIdx == kCursorReset) {
-        // First press after a release: speak block 0 regardless of
-        // direction — Shift+Up here means "start reading the first
-        // block", not "navigate before the first".
+        // First press after a release speaks block 0 in either direction.
         g_blockIdx = 0;
     } else if (down) {
         if (g_blockIdx < rowCount - 1) ++g_blockIdx;
@@ -579,18 +445,15 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
         if (g_blockIdx > 0) --g_blockIdx;
     }
 
-    // Clamp against current row count (panel may have re-populated
-    // with a smaller description while we were peeking).
+    // Clamp — panel may have re-populated with fewer rows.
     if (g_blockIdx >= rowCount) g_blockIdx = rowCount - 1;
 
     void* row = lbList->data[g_blockIdx];
     char text[1024];
     const char* src = row ? ReadRowText(row, text, sizeof(text)) : nullptr;
     if (src) {
-        // Interrupt the speech queue: each Shift+arrow is a discrete
-        // user-driven read; queueing would let a fast double-press
-        // play both blocks back to back, which obscures which one is
-        // current.
+        // interrupt=true: each press is a discrete read; fast double-
+        // press should land on the latest block, not queue both.
         prism::Speak(text, /*interrupt=*/true);
         acclog::Write("Peek", "panel=%s block %d/%d (was %d) src=%s text=\"%s\"",
                       acc::engine::PanelKindName(kind),

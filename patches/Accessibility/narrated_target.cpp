@@ -23,7 +23,7 @@ void Stamp(void* obj, uint32_t serverHandle) {
                     g_slot.isMapPin);
     g_slot.obj       = obj;
     g_slot.handle    = serverHandle;
-    g_slot.pos       = {0, 0, 0};   // game-object slot re-reads pos on use
+    g_slot.pos       = {0, 0, 0};   // game objects re-read pos at use time
     g_slot.tickStamp = GetTickCount();
     g_slot.isMapPin  = false;
     if (changed) {
@@ -58,10 +58,7 @@ void Clear() {
 
 namespace {
 
-// Walk the current player's client area's map_pins[] and return true
-// iff `pin` is still present. Used to validate the map-pin slot on
-// activation — pins removed by quest scripts shouldn't keep stale
-// focus.
+// Quest scripts can call SetMapPinEnabled(off) — defensive membership walk.
 bool IsMapPinStillPresent(void* pin) {
     if (!pin) return false;
     void* area = acc::engine::GetCurrentArea();
@@ -81,9 +78,6 @@ bool TryGet(Slot& out) {
     if (!g_slot.obj) return false;
 
     if (g_slot.isMapPin) {
-        // Validate the pin is still in the client area's pin array.
-        // Pins can be removed by SetMapPinEnabled(off) + later area
-        // unload + reload — defensive walk.
         if (!IsMapPinStillPresent(g_slot.obj)) {
             acclog::Write("NarratedTarget",
                           "stale map-pin slot (pin=%p) — clearing",
@@ -97,12 +91,8 @@ bool TryGet(Slot& out) {
 
     if (g_slot.handle == 0u) return false;
 
-    // Validate the slot is still live: resolve the server handle and
-    // confirm it points back at the stamped object. Catches the two
-    // failure modes that survive a missing Clear() call — the engine
-    // destroyed the object (handle now resolves to nullptr / a different
-    // pointer) or the area transitioned without our area-change branch
-    // firing in time.
+    // Resolve handle → pointer; mismatch catches destroyed-object and
+    // area-changed-without-Clear cases.
     void* resolved = acc::engine::ResolveServerObjectHandle(g_slot.handle);
     if (!resolved || resolved != g_slot.obj) {
         acclog::Write("NarratedTarget", "stale slot (obj=%p handle=0x%08x "

@@ -6,11 +6,10 @@
 #include <cstdio>
 #include <cstring>
 
-#include "engine_area.h"      // GetObjectKind, GetObjectName, ResolveClient/ServerObjectHandle,
-                              // GetObjectDisplayNameByHandle, GetObjectPosition
-#include "engine_input.h"     // kInputNavUp/Down/Enter1/Esc1
+#include "engine_area.h"
+#include "engine_input.h"
 #include "engine_offsets.h"
-#include "engine_player.h"    // GetPlayerPosition
+#include "engine_player.h"
 #include "hotkeys.h"
 #include "log.h"
 #include "strings.h"
@@ -20,19 +19,10 @@ namespace acc::examine_view {
 
 namespace {
 
-// ---------------------------------------------------------------------------
-// Row layout.
-//
-// A flat array of pre-composed strings, one per displayable row. The
-// composition is done once at Open() and again on each Up/Down step
-// (cheap — direct field reads + at most ~10 feat-name engine calls).
-//
-// Refreshing on step keeps HP and distance live without per-tick churn
-// (the view isn't active most of the time). If the user wants strictly
-// monotone snapshot semantics we can flip refresh to Open-only later.
-// ---------------------------------------------------------------------------
+// Flat array of pre-composed strings. Recomposed on each Up/Down step
+// (cheap) to keep HP and distance live without per-tick churn.
 
-constexpr int kMaxRows = 64;   // generous: ~10 fixed + 5 effects + 30 feats fits
+constexpr int kMaxRows = 64;   // ~10 fixed + 5 effects + 30 feats
 
 struct State {
     bool      active        = false;
@@ -45,14 +35,10 @@ struct State {
 
 State g_state;
 
-// ---------------------------------------------------------------------------
-// Engine surfaces — feat name resolver.
-// ---------------------------------------------------------------------------
-
 typedef void* (__thiscall* PFN_GetFeat)(void* rules, unsigned short featIdx);
 typedef void* (__thiscall* PFN_GetFeatNameText)(void* feat, void* outExoString);
 
-// CExoString layout (matches CExoLocString at the byte level for our needs):
+// CExoString layout (matches CExoLocString byte-wise for our use):
 //   +0x0 char*  c_string
 //   +0x4 uint32 length
 struct ExoStringRaw {
@@ -62,20 +48,14 @@ struct ExoStringRaw {
 
 void* GetCSWRules() {
     __try {
-        // The Rules global at 0x007a3a28 holds CSWSRules*. CSWRules is at
-        // offset 0 of CSWSRules (the `internal` member), so the same
-        // pointer works for both — CSWRules::GetFeat accepts the CSWSRules
-        // address verbatim.
+        // CSWRules is at offset 0 of CSWSRules — same pointer for both.
         return *reinterpret_cast<void**>(kAddrRulesGlobal);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return nullptr;
     }
 }
 
-// Resolve a feat ID to its localized name. Returns true on a non-empty
-// result. SEH-guarded — the rules accessor walks the feats table, which
-// must not fault on a bad feat_index (GetFeat itself has a bounds check
-// but the surrounding chain could).
+// True on non-empty result. SEH-guarded — feats-table walk.
 bool ResolveFeatName(unsigned short featIdx, char* outBuf, size_t outBufSize) {
     if (!outBuf || outBufSize < 2) return false;
     outBuf[0] = '\0';
@@ -100,9 +80,8 @@ bool ResolveFeatName(unsigned short featIdx, char* outBuf, size_t outBufSize) {
         return false;
     }
     if (!exo.c_string || exo.c_string[0] == '\0') {
-        // We deliberately leak the heap allocation — same pattern as
-        // CSWSItem::GetPropertyDescription (heap-ownership across the
-        // DLL/EXE boundary risks a CRT mismatch on ~CExoString).
+        // Leak the heap alloc — destruction across the DLL/EXE boundary
+        // risks a CRT mismatch on ~CExoString.
         return false;
     }
     std::strncpy(outBuf, exo.c_string, outBufSize - 1);
@@ -110,18 +89,9 @@ bool ResolveFeatName(unsigned short featIdx, char* outBuf, size_t outBufSize) {
     return true;
 }
 
-// ---------------------------------------------------------------------------
-// Effect-name table.
-//
-// CSWSObject.effects elements are CGameEffect*; type @+0x8 is a ushort
-// in the EFFECT_TYPES enum (swkotor.exe.h:3181, 110 entries). We map the
-// gameplay-visible subset to localized strings; unmapped types fall back
-// to "Effect #N" so the user can still see SOMETHING for unusual mods.
-//
-// Localized inline (per acc::strings::GetLanguage) rather than burning a
-// strings.h ID per effect — 30+ enum entries would balloon the strings
-// module without giving us localization gains we couldn't get here.
-// ---------------------------------------------------------------------------
+// EFFECT_TYPES enum (110 entries) → display name. Unmapped types fall
+// back to "Effect #N" in the caller. Localized inline rather than burning
+// a strings.h ID per enum entry.
 
 const char* EffectNameEn(int type) {
     switch (type) {
@@ -271,11 +241,7 @@ const char* EffectNameDe(int type) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Target resolution + field reads.
-// ---------------------------------------------------------------------------
-
-uint32_t ReadLastTargetHandle();  // forward decl — defined below
+uint32_t ReadLastTargetHandle();  // forward decl
 
 bool IsSentinel(uint32_t handle) {
     return handle == 0u || handle == 0xFFFFFFFFu || handle == 0x7F000000u;
@@ -303,9 +269,7 @@ int ReadHpCurrent(void* obj) {
     }
 }
 
-// Manual-fire engine accessors. Each is a deterministic, no-side-effect
-// calculation that the user accepts the risk of on the same basis as
-// Shift+S (per docs/combat-system.md §"Auto-firing path safety rules").
+// Manual-fire engine accessors. Each is deterministic, no-side-effect.
 typedef int (__thiscall* PFN_GetIntThis)(void* this_);
 typedef int (__thiscall* PFN_GetIntThisInt)(void* this_, int arg);
 
