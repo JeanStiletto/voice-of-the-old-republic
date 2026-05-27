@@ -64,10 +64,10 @@ Example - instead of tables, format like this:
 ### Project workspace
 - **Project root:** `C:\Users\fabia\Dev\kotor`
 - **`tools/kdev/`** — internal dev CLI (.NET 10), drives the full build → install → launch loop for our patch
-- **`patches/Accessibility/`** — our patch source (currently empty; awaiting first hooks)
-- **`installer/KotorAccessibilityInstaller/`** — end-user installer (.NET 8 WinForms, self-contained single-file EXE). References KPatchCore directly; modelled on the arena installer at `C:\Users\fabia\Dev\arena\installer\AccessibleArenaInstaller\IMPLEMENTATION.md` — read that first if touching this code.
+- **`patches/Accessibility/`** — our patch source (hooks, menus, narration, audio, guidance, and engine-interface modules)
+- **`installer/KotorAccessibilityInstaller/`** — end-user installer (.NET 8 WinForms, self-contained single-file EXE). References KPatchCore directly; modelled on the arena installer (`AccessibleArenaInstaller/IMPLEMENTATION.md` in the sibling arena project) — read that first if touching this code.
 - **`installer/release.ps1`** — local release pipeline (kdev build → publish installer → tag → gh release)
-- **`third_party/`** — read-only clones of `Kotor-Patch-Manager` and `KotorMessageInjector`
+- **`third_party/`** — vendored dependencies: `Kotor-Patch-Manager`, `KotorMessageInjector`, `KotOR_IO`, `prism`/`prism-dist`, `dsoal`, `tolk`, and others. See the directory for the current set.
 - **`docs/`** — see Documentation below
 - **`build/`, `logs/`** — generated; gitignored
 - **`kdev.toml`** — project-level config consumed by `kdev`
@@ -80,11 +80,11 @@ Always read these before diving into work — they capture decisions and current
 - **`docs/installer.md`** — end-user installer design, bundled-mods plan, beta-prep notes.
 - **`docs/upstream-prs.md`** — tracking of fixes/features we plan to send back to upstream (mostly KPatchManager).
 - **`docs/known-issues.md`** — five-bucket status tracker (Bugs / Planned / Monitor / Polish / Beta Preparations).
-- **`docs/llm-docs/`** — folder for external reference material (RE databases, vendor docs, etc.) we want mirrored locally.
+- **`docs/llm-docs/`** — LLM-targeted reference material. See `docs/llm-docs/CLAUDE.md` for the index. Start with `game-flow.md` for lifecycle context, `accessibility-map.md` for pillar-by-pillar hook candidates, and `sarif-cookbook.md` for querying Lane's RE database.
 - **`archiev/`** — historical investigation, design, and progress docs (session-by-session retrospectives). Search here if a code comment references a `docs/*-investigation.md` or `docs/navsystem-*.md` that no longer exists in `docs/`.
 
 ### Game folders that matter for modding
-- **`Override\`** — drop-in folder; any file here overrides the matching resource in the BIFs. Primary entry point for content mods. Currently empty.
+- **`Override\`** — drop-in folder; any file here overrides the matching resource in the BIFs. Primary entry point for content mods.
 - **`modules\`** — per-area `.rim` / `_s.rim` (script) bundles, one pair per game module (e.g. `M12ab.rim`).
 - **`rims\`** — global rims (`global.rim`, `chargen.rim`, etc.).
 - **`data\`** — `chitin.key`-indexed `.bif` archives (`2da.bif`, `dialog.bif`, `scripts.bif`, `templates.bif`, ...). Read-only base assets.
@@ -117,11 +117,11 @@ Always read these before diving into work — they capture decisions and current
 - **DeadlyStream** — primary mod hosting site / community knowledge base.
 
 ### Build/run
-- **Inner dev loop:** use `kdev` from the project root. Common: `kdev status`, `kdev dev` (clean → build → apply → launch --monitor), `kdev kill`, `kdev logs --follow`.
-- **`kdev` build:** `cd tools/kdev && dotnet build` (output at `tools/kdev/bin/Debug/net10.0/win-x64/kdev.exe`).
+- **Inner dev loop:** use `kdev` from the project root. Common: `kdev status`, `kdev dev` (clean → build → apply → launch), `kdev kill`, `kdev logs --follow`.
+- **`kdev` build:** `dotnet build tools/kdev/kdev.csproj` from the project root (output at `tools/kdev/bin/Debug/net10.0/win-x64/kdev.exe`).
 - **Mod build pipeline:** `kdev build` stages `patches/Accessibility/` next to the upstream `Common/`+`lib/` layout `create-patch.bat` expects, runs the bat under MSVC, drops the `.kpatch` in `build/`.
 - **Mod install:** `kdev apply` calls `KPatchCore.PatchApplicator.InstallPatches` against the configured Steam install.
-- **Mod launch:** `kdev launch [--monitor]` calls `KPatchCore.GameLauncher.LaunchGame` (auto-detects vanilla vs patched).
+- **Mod launch:** `kdev launch [--monitor]` spawns the prebuilt 32-bit `KPatchLauncher.exe` (calling KPatchCore directly from the x64 kdev process would silently fail injection). `--monitor` is currently broken on Steam (delayed-injection breaks `Process.ExitCode`); prefer `kdev launch` and read patch logs directly.
 
 ### Logs
 - **Project logs:** `logs/` at project root (gitignored). `kdev` writes `kdev-<utc>.log`, `build-<utc>.log`, `dev-<utc>.log`. Tail with `kdev logs [--follow]`.
