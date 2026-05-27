@@ -1,20 +1,12 @@
-// Engine struct/vtable offset table.
-//
-// Layer: engine/ (pure engine constants — no menu-side state, no behavior).
-// All values are derived from Lane's Ghidra DB / SARIF (see file header
-// comments inline) and apply to the K1 Steam build (GoG bytes match — see
-// memory: project_ghidra_gog_steam_bytes_match).
-//
-// Constants are intentionally at file scope rather than under
-// `namespace acc::engine` so menu-side callsites stay readable. Same
-// rationale as `engine_input.h`'s `kInput*` codes.
+// Engine struct/vtable offset table. Pure constants — no behaviour.
+// Values from Lane's Ghidra DB; GoG bytes match Steam. File-scope (not
+// namespaced) for callsite brevity, same as engine_input.h's kInput*.
 
 #pragma once
 
 #include <cstddef>
 #include <cstdint>
 
-// ---------------------------------------------------------------------------
 // GuiControlMethods vtable indices for RTTI-style downcasts.
 //
 // Each accessor returns the same `this` cast to the concrete subclass, or
@@ -23,13 +15,11 @@
 // from inside our hook is safe.
 //
 // Verified against the SARIF GuiControlMethods struct (offset 80/84/88/92).
-// ---------------------------------------------------------------------------
 constexpr int kVtableAsLabel        = 20;
 constexpr int kVtableAsLabelHilight = 21;
 constexpr int kVtableAsButton       = 22;
 constexpr int kVtableAsButtonToggle = 23;
 
-// ---------------------------------------------------------------------------
 // CSWGuiButton / CSWGuiLabel field offsets (verified against the SARIF
 // datatypes):
 //   CSWGuiButton:        navigable(0x6c)+border(0x74)+border(0x74)+text(0x70) = 0x1c4
@@ -40,13 +30,11 @@ constexpr int kVtableAsButtonToggle = 23;
 //                        → text at 0xd0, text_params at +0x18 → CExoString at 0xe8
 //                        → str_ref at +0x08 within text_params → 0xf0
 //   CSWGuiLabelHilight:  embeds CSWGuiLabel at offset 0; offsets unchanged.
-// ---------------------------------------------------------------------------
 constexpr size_t kButtonTextOffset    = 0x16c;
 constexpr size_t kButtonStrRefOffset  = 0x174;
 constexpr size_t kLabelTextOffset     = 0xe8;
 constexpr size_t kLabelStrRefOffset   = 0xf0;
 
-// ---------------------------------------------------------------------------
 // Element-state field offsets (verified via Ghidra decomp of Draw /
 // SetSelected / HandleInputEvent for each class):
 //
@@ -58,12 +46,10 @@ constexpr size_t kLabelStrRefOffset   = 0xf0;
 //   CSWGuiSlider.cur_value (Lane-named) at +0x74 — uint32, current slider value.
 //                                                  HandleInputEvent calls
 //                                                  SetCurValue on inc/dec keys.
-// ---------------------------------------------------------------------------
 constexpr size_t kButtonToggleStateOffset = 0x1c8;
 constexpr size_t kSliderMaxValueOffset    = 0x70;
 constexpr size_t kSliderCurValueOffset    = 0x74;
 
-// ---------------------------------------------------------------------------
 // CSWGuiText layout (from swkotor.exe.h + decompiled CSWGuiText::Initialize
 // at 0x00417310 confirmed via headless Ghidra against Lane's gzf):
 //   +0x00  vtable
@@ -97,7 +83,6 @@ constexpr size_t kSliderCurValueOffset    = 0x74;
 // 8 icon labels at vtable=0x0073E8E8 are the canonical case — verified via
 // 584 speculative-read miss events in patch-20260502-190936.log on the
 // previous build), gui_string still holds the rendered c_string.
-// ---------------------------------------------------------------------------
 constexpr size_t kLabelGuiStringPtrOffset  = 0xE4;
 constexpr size_t kLabelTextObjectOffset    = 0x138;
 constexpr size_t kButtonGuiStringPtrOffset = 0x168;
@@ -140,7 +125,6 @@ constexpr uintptr_t kVtableListBox = 0x0073E840;
 // case — see IsSaveLoadStructural).
 constexpr uintptr_t kVtableCSWGuiButton = 0x0073E658;
 
-// ---------------------------------------------------------------------------
 // CSWGuiEditbox layout (verified against k1_win_gog_swkotor.exe.xml SYMBOL
 // CSWGuiEditbox_vtable @ 0x0073EAC8 + STRUCTURE size 0x160 + swkotor.exe.h
 // CSWGuiEditbox/CSWGuiEditText). The editbox is single-instance in vanilla
@@ -165,14 +149,12 @@ constexpr uintptr_t kVtableCSWGuiButton = 0x0073E658;
 // caret, +0x152 = selection length. The polling monitor logs both values
 // on every diff so we can verify on first run; once confirmed, we strip
 // the diagnostic.
-// ---------------------------------------------------------------------------
 constexpr uintptr_t kVtableEditbox             = 0x0073EAC8;
 constexpr size_t    kEditboxShortA             = 0x150;
 constexpr size_t    kEditboxShortB             = 0x152;
 constexpr size_t    kEditboxStringCStrOffset   = 0x158;
 constexpr size_t    kEditboxStringLengthOffset = 0x15c;
 
-// ---------------------------------------------------------------------------
 // CSWGuiNameChargen (chargen "Name eingeben" panel — step 5 of Eigener
 // Charakter, also reused in the Standard-Charakter quick flow). Verified
 // against k1_win_gog_swkotor.exe.xml SYMBOL CSWGuiNameChargen_vtable @
@@ -192,7 +174,6 @@ constexpr size_t    kEditboxStringLengthOffset = 0x15c;
 // `name_editbox` is at a fixed offset within the panel struct (not just in
 // panel.controls[]), so the spec's findEditbox callback can index directly
 // rather than walking children for the unique vtable.
-// ---------------------------------------------------------------------------
 constexpr uintptr_t kVtableCSWGuiNameChargen   = 0x00759F38;
 constexpr size_t    kNameChargenEditboxOffset  = 0x230;
 constexpr size_t    kNameChargenEndButtonOffset = 0x6c;
@@ -207,7 +188,6 @@ constexpr size_t    kNameChargenEndButtonOffset = 0x6c;
 // directly via this offset to substitute the correct title speech.
 constexpr size_t    kNameChargenSubtitleLabelOffset = 0x4d0;
 
-// ---------------------------------------------------------------------------
 // CSWGuiClassSelection (chargen "Klassenauswahl" panel — also backs the
 // second-level "Standard- vs. Eigener Charakter" prompt). Verified against
 // k1_win_gog_swkotor.exe.xml SYMBOL @ 0x00758020 + STRUCTURE size 0x1560.
@@ -231,14 +211,12 @@ constexpr size_t    kNameChargenSubtitleLabelOffset = 0x4d0;
 // (engine updates it on hover/focus via CSWGuiClassSelection::OnEnterButton
 // @ 0x006dba70). Read its gui_string instead of the icon button's empty
 // inline text or the misleading sibling-label fallback.
-// ---------------------------------------------------------------------------
 constexpr uintptr_t kVtableCSWGuiClassSelection      = 0x00758020;
 constexpr size_t    kClassSelectionsArrayOffset      = 0x6c;
 constexpr size_t    kClassSelCharSize                = 0x25c;
 constexpr int       kClassSelectionsCount            = 6;
 constexpr size_t    kClassSelectionClassLabelOffset  = 0x1254;
 
-// ---------------------------------------------------------------------------
 // CSWGuiPortraitCharGen (chargen "Porträtauswahl" panel). Verified against
 // k1_win_gog_swkotor.exe.xml SYMBOL @ 0x00759ea8 + STRUCTURE size 0x1240.
 //
@@ -266,7 +244,6 @@ constexpr size_t    kClassSelectionClassLabelOffset  = 0x1254;
 // (0x006f8ad0) writes the new resref there on every cycle. Reading 16
 // bytes at panel.creature + 0xa8 yields a string like "po_pmhc3" which
 // we parse into a localised description (gender + race + variant).
-// ---------------------------------------------------------------------------
 constexpr uintptr_t kVtableCSWGuiPortraitCharGen     = 0x00759ea8;
 constexpr size_t    kPortraitCharGenCreatureOffset   = 0x64;
 constexpr size_t    kPortraitLabelOffset             = 0x2ec;
@@ -300,7 +277,6 @@ constexpr uintptr_t kAddrCSWCCreatureGetPortraitId   = 0x00617070;
 // terminated when length == 16, so we always reserve a 17-byte buffer.
 constexpr uintptr_t kAddrCSWCCreatureGetPortrait     = 0x00617030;
 
-// ---------------------------------------------------------------------------
 // CSWGuiAbilitiesCharGen (chargen "Attribute" panel — step 2 of Eigener
 // Charakter). Verified against k1_win_gog_swkotor.exe.xml SYMBOL @
 // 0x00759c68 + STRUCTURE size 0x3df4.
@@ -329,7 +305,6 @@ constexpr uintptr_t kAddrCSWCCreatureGetPortrait     = 0x00617030;
 // tab cluster). With selected_ability stuck at 0, every Left/Right press
 // modifies STR. We mirror chain focus into the field on every chain
 // rebind / step so +/- targets the focused row.
-// ---------------------------------------------------------------------------
 constexpr uintptr_t kVtableCSWGuiAbilitiesCharGen          = 0x00759c68;
 constexpr size_t    kAbilitiesCharGenLabelsArrayOffset     = 0x110c;
 constexpr size_t    kAbilitiesCharGenButtonsArrayOffset    = 0x188c;
@@ -352,7 +327,6 @@ constexpr size_t    kCSWGuiButtonSize                      = 0x1c4;
 // Callee-pops 4 bytes (BYTES_PURGED=4).
 constexpr uintptr_t kAddrCSWGuiAbilitiesCharGenGetCost = 0x006f6bb0;
 
-// ---------------------------------------------------------------------------
 // CSWGuiSkillsCharGen (chargen "Fähigkeiten" panel — step 3 of Eigener
 // Charakter). Same shape as CSWGuiAbilitiesCharGen — three info-pair
 // labels, value buttons, +/- buttons, an int "currently focused" index
@@ -373,7 +347,6 @@ constexpr uintptr_t kAddrCSWGuiAbilitiesCharGenGetCost = 0x006f6bb0;
 // Skill order matches struct order matches visual top-to-bottom (no
 // swap as on the Attribute panel): Computer, Demolitions, Stealth,
 // Awareness, Persuade, Repair, Security, Treat Injury.
-// ---------------------------------------------------------------------------
 constexpr uintptr_t kVtableCSWGuiSkillsCharGen           = 0x00759990;
 constexpr size_t    kSkillsCharGenLabelsArrayOffset      = 0xfcc;
 constexpr size_t    kSkillsCharGenButtonsArrayOffset     = 0x19cc;
@@ -430,7 +403,6 @@ constexpr size_t    kAbilitiesCharGenRemainingValueOffset = 0x70c;
 constexpr size_t    kAbilitiesCharGenCostValueOffset      = 0xc0c;
 constexpr size_t    kAbilitiesCharGenModifierValueOffset  = 0xe8c;
 
-// ---------------------------------------------------------------------------
 // CSWGuiFeatsCharGen (chargen "Talente" panel — step 5 of Eigener Charakter,
 // also reused at level-up). Verified against k1_win_gog_swkotor.exe.xml
 // SYMBOL CSWGuiFeatsCharGen_vtable @ 0x007598b0 + STRUCTURE size 0x1a1c.
@@ -455,7 +427,6 @@ constexpr size_t    kAbilitiesCharGenModifierValueOffset  = 0xe8c;
 // rendered on top, with its own listbox of granted feats. The main panel
 // stays underneath; its description_listbox.controls[0] mirrors the picker
 // selection so reading from there gives the focused-feat description.
-// ---------------------------------------------------------------------------
 constexpr uintptr_t kVtableCSWGuiFeatsCharGen           = 0x007598b0;
 constexpr size_t    kFeatsCharGenNameLabelOffset        = 0xbac;
 constexpr size_t    kFeatsCharGenSelectButtonOffset     = 0x1238;
@@ -607,7 +578,6 @@ constexpr size_t    kPowersLevelUpChartOffset              = 0x19fc;
 // Callee-pops 4 bytes.
 constexpr uintptr_t kAddrCSWGuiSkillFlowChartSetSelectedSkill = 0x006cdc00;
 
-// ---------------------------------------------------------------------------
 // Container offsets verified against Lane's SARIF (DATATYPE entries for
 // CSWGuiPanel and CSWGuiListBox). CExoArrayList layout:
 //   +0x00  T**      data         (heap array of element pointers)
@@ -622,7 +592,6 @@ constexpr uintptr_t kAddrCSWGuiSkillFlowChartSetSelectedSkill = 0x006cdc00;
 //   +0x2c4  short    items_per_page
 //   +0x2c6  short    selection_index   ← which row is "current"
 //   +0x2c8  short    top_visible_index ← scroll offset
-// ---------------------------------------------------------------------------
 constexpr size_t kPanelActiveControlOffset      = 0x1c;
 constexpr size_t kPanelControlsOffset           = 0x20;
 constexpr size_t kListBoxControlsOffset         = 0x29c;
@@ -651,7 +620,6 @@ constexpr size_t kControlParentOffset       = 0x14;  // CSWGuiControl* parent
 constexpr size_t kControlTooltipStrRefOffset = 0x24; // uint32 strref (0 = none)
 constexpr size_t kControlTooltipStringOffset = 0x28; // CExoString literal
 
-// ---------------------------------------------------------------------------
 // CSWGuiSaveLoadEntry layout (from swkotor.exe.h:16673). Each row in the
 // CSWGuiSaveLoad.games_listbox is a CSWGuiSaveLoadEntry that embeds a
 // CSWGuiButton at offset 0 and carries the slot's metadata as inline
@@ -672,36 +640,30 @@ constexpr size_t kControlTooltipStringOffset = 0x28; // CExoString literal
 //   +0x1e0  CExoString  save_file_name
 //   +0x1e8  CExoString  areaname         (e.g. "Kommandomodul")
 //   +0x1f0  CExoString  lastmodule       (e.g. "Endar Spire")
-// ---------------------------------------------------------------------------
 constexpr size_t kSaveLoadEntrySaveNumberOffset    = 0x1c8;
 constexpr size_t kSaveLoadEntrySaveGameNameOffset  = 0x1d8;
 constexpr size_t kSaveLoadEntryAreaNameOffset      = 0x1e8;
 constexpr size_t kSaveLoadEntryLastModuleOffset    = 0x1f0;
 
-// ---------------------------------------------------------------------------
 // CExoArrayList<T*> — engine container for arrays of pointers.
-// ---------------------------------------------------------------------------
 struct CExoArrayList {
     void** data;
     int    size;
     int    capacity;
 };
 
-// ---------------------------------------------------------------------------
 // Vector — Aurora-engine 3D vector. Used for world position, object
 // orientation (heading vector with z=0), audio listener pose, etc.
 //
 // Coordinate frame (investigation Q1 — right-handed, Z-up):
 //   +X = east, +Y = north, +Z = up. 1.0 unit ≈ 1 metre.
 //   Bearing convention for object orientation: 0° = +X = east; CCW positive.
-// ---------------------------------------------------------------------------
 struct Vector {
     float x;
     float y;
     float z;
 };
 
-// ---------------------------------------------------------------------------
 // CTlkTable::GetSimpleString — resolves a TLK str_ref to a localized string.
 // Many KOTOR UI controls (e.g. Options screen "Annehmen"/"Abbrechen", certain
 // chargen labels) leave their CExoString empty and store only a str_ref; the
@@ -715,7 +677,6 @@ struct Vector {
 //            the first GetSimpleString caller at 0x0418b29:
 //              MOV ECX, [0x007a3a08]   ; this = *g_pTlkTable
 //              CALL GetSimpleString
-// ---------------------------------------------------------------------------
 struct CExoString {
     char*    c_string;
     uint32_t length;
@@ -726,7 +687,6 @@ typedef CExoString* (__thiscall* PFN_GetSimpleString)(void* this_,
 constexpr uintptr_t kAddrGetSimpleString = 0x0041e8f0;
 constexpr uintptr_t kAddrTlkTablePtr     = 0x007a3a08;
 
-// ---------------------------------------------------------------------------
 // CSWGuiInGameEquip slot handlers — invoked directly to bypass click-sim
 // hit-test problems on the equip panel. See docs/equip-flow-investigation.md
 // (post-2026-05-04 update).
@@ -742,7 +702,6 @@ constexpr uintptr_t kAddrTlkTablePtr     = 0x007a3a08;
 //
 // is_active lives at +0x4c on every CSWGuiControl (verified by Ghidra
 // decompile of OnSelectSlot's prologue test).
-// ---------------------------------------------------------------------------
 typedef void (__thiscall* PFN_InGameEquipOnEnterSlot)(void* panel, void* slot_btn);
 typedef void (__thiscall* PFN_InGameEquipOnSelectSlot)(void* panel, void* slot_btn);
 constexpr uintptr_t kAddrInGameEquipOnEnterSlot  = 0x006b9470;
@@ -768,7 +727,6 @@ typedef void (__thiscall* PFN_InGameEquipOnOKPressed)(void* panel, void* btn_equ
 constexpr uintptr_t kAddrInGameEquipOnItemSelected = 0x006b7920;
 constexpr uintptr_t kAddrInGameEquipOnOKPressed    = 0x006b9160;
 
-// ---------------------------------------------------------------------------
 // CSWGuiUpgrade (workbench upgrade.gui) slot-pick + commit chain.
 // Same structural shape as the equip-screen pair above, RE'd from Lane's
 // gzf at 2026-05-25:
@@ -802,7 +760,6 @@ constexpr uintptr_t kAddrInGameEquipOnOKPressed    = 0x006b9160;
 //     UpgradeItemSelect panel, then PopModalPanel — so the upgrade.gui
 //     panel closes synchronously when this returns. Gates on
 //     `btn_assemble->is_active != 0`.
-// ---------------------------------------------------------------------------
 typedef void (__thiscall* PFN_CSWGuiUpgradeOnEnterSlot)     (void* panel, void* slot_btn);
 typedef void (__thiscall* PFN_CSWGuiUpgradeOnSlotSelected)  (void* panel, void* slot_btn);
 typedef void (__thiscall* PFN_CSWGuiUpgradeOnUpgradeSelected)(void* panel, void* item_entry);
@@ -828,7 +785,6 @@ constexpr size_t    kUpgradeSlotTypeStrRefOff = 8;
 constexpr size_t    kUpgradePanelCategoryOff  = 0x2f4c;  // panel.field25
 constexpr size_t    kUpgradeSlotCustomValueOff = 0x58;   // slot_btn.custom_value
 
-// ---------------------------------------------------------------------------
 // Combat system — engine surfaces (per docs/combat-system.md, all
 // "suspected" / "known (DB)" until live-validated).
 //
@@ -876,7 +832,6 @@ constexpr size_t    kUpgradeSlotCustomValueOff = 0x58;   // slot_btn.custom_valu
 // values aren't pinned without a probe session. The mapping table in
 // combat_queue.cpp uses a best-effort guess matching the order the engine's
 // AddX adders are declared in (CSWSCombatRound::Add* @0x4d3660+).
-// ---------------------------------------------------------------------------
 
 constexpr size_t kCreatureCombatRoundOffset           = 0x9c8;
 constexpr size_t kObjectHitPointsOffset               = 0xe0;
@@ -1207,7 +1162,6 @@ constexpr size_t kDialogMessageLabelOffset            = 0x1ca4;
 //   obscure_label    @+0x34dc
 constexpr size_t kDialogComputerMessageListBoxOffset  = 0x2cfc;
 
-// ---------------------------------------------------------------------------
 // CSWGuiStore — merchant/trading panel (PanelKind::Store, slot 0x84 in
 // CGuiInGame). Two listboxes plus a description listbox; the mode-toggle
 // flips which one is visible.
@@ -1228,7 +1182,6 @@ constexpr size_t kDialogComputerMessageListBoxOffset  = 0x2cfc;
 // ClientToServerObjectId before CServerExoApp::GetItemByGameObjectID.
 // CSWSItem.stack_size + bit_flags expose the stock count / infinite-stock
 // flag (bit 2 = infinite, per CSWGuiStore::OnControlEntered).
-// ---------------------------------------------------------------------------
 constexpr uintptr_t kVtableCSWGuiStore                     = 0x00756e38;
 constexpr uintptr_t kVtableCSWGuiStoreItemEntry            = 0x00756850;
 
@@ -1332,7 +1285,6 @@ constexpr uintptr_t kAddrCSWSItemGetPropertyDescription     = 0x0055f340;
 // (Same constant as engine_player.h's kAppManagerServerOffsetPlayer.)
 constexpr size_t    kAppManagerServerExoAppOffset          = 0x8;
 
-// ---------------------------------------------------------------------------
 // CSWGuiInGameJournal — quest journal panel (the "Aufträge" sub-screen).
 //
 // Layout (from SARIF):
@@ -1350,5 +1302,4 @@ constexpr size_t    kAppManagerServerExoAppOffset          = 0x8;
 // CSWGuiJournalItemEntry rows are CSWGuiButton-derived (size 0x1cc) with
 // their own vtable. The journal's OnControlEntered fires on mouse hover
 // over a row and rewrites item_description_label with the full text.
-// ---------------------------------------------------------------------------
 constexpr uintptr_t kVtableCSWGuiJournalItemEntry          = 0x007518c0;

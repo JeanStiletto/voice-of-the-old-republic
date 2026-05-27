@@ -1,104 +1,55 @@
-// CGuiInGame::SwitchToSWInGameGui detour — close-on-redrill cleanup.
+// CGuiInGame::SwitchToSWInGameGui detour + MessageBoxModal close cleanup.
 //
-// Layer: engine/ (engine-side hook handler; depends on engine_panels for
-// PrevSWInGameGui dispatch and the panels[] state read).
+// SwitchToSWInGameGui is the engine's universal "open sub-screen" entry.
+// Without our cleanup, an already-open sub-screen stays alive in
+// panels[] when the user switches to a different one (InGameOptions's
+// OnQuit reorders panels[] without popping). Stale entries accumulate
+// → "menu opens in background" / "Esc fires quit-confirm".
 //
-// Why this hook exists: SwitchToSWInGameGui is the engine's universal
-// "open sub-screen" primitive — the strip's icon onClicks call it, and
-// so do the in-game keymap hotkeys (M for Map, I for Inventory, ...) and
-// any future engine path that opens a sub-screen. Without our cleanup, an
-// already-open sub-screen stays alive in panels[] when the user switches
-// to a different one: visible specifically with InGameOptions, whose
-// OnQuit handler reorders panels[] without actually popping. Stale
-// sub-screen entries then accumulate, dominate fg routing through our
-// Fade-skip, and surface as "the menu opens in the background" / "Esc
-// fires the quit confirm instead of closing".
-//
-// Single-site fix: detour SwitchToSWInGameGui itself. If a sub-screen is
-// already active (HasActiveSubScreen), call PrevSWInGameGui first, then
-// let the original SwitchToSWInGameGui push the requested new sub-screen
-// on a clean panels[]. One hook covers strip-Enter + hotkeys + every
-// other invocation path.
+// Single-site fix: if a sub-screen is already active when the hook
+// fires, call PrevSWInGameGui first, then let the original push onto
+// clean panels[]. Covers strip-Enter, M/I/J hotkeys, every other
+// invocation.
 
 #pragma once
 
 namespace acc::engine {
 
-// True once the OnSwitchToSWInGameGui detour has fired at least once.
-// Diagnostic only — used by no production code, just lets logs distinguish
-// "redrill cleanup never armed" from "armed but didn't fire on this event".
+// True once the SwitchToSWInGameGui detour has fired at least once.
+// Diagnostic only.
 extern bool g_switchHookEverFired;
 
-// Per-frame monitor: when modal_stack pops to empty (any MessageBoxModal
-// close — Alt+F4 quit-confirm, save-overwrite, dialog-skip, …),
-// dispatch the two engine primitives that together fully unpause the
-// world:
+// Edge-triggered on modal_stack non-zero → 0. MessageBoxModal close
+// paths (Alt+F4 quit-confirm, save-overwrite, dialog-skip) skip the
+// engine's full pause/audio cleanup, so we dispatch:
+//   1. CServerExoApp::SetPauseState(server, 2, 0) — clears menu-pause bit.
+//   2. CExoSoundInternal::SetSoundMode(ExoSound, 0) — un-mutes mixer
+//      (step 1's server message doesn't reach this).
 //
-//   1. CServerExoApp::SetPauseState(server, 2, 0) — idempotently clears
-//      pause source bit 2 (the "menu pause" source). Server resumes
-//      world timers; server→client SetPauseState message re-enables
-//      animations and client-side timer ticks asynchronously.
-//   2. CExoSoundInternal::SetSoundMode(ExoSound, 0) — un-mutes the
-//      audio mixer. Step 1's server message does NOT touch SetSoundMode
-//      (that path goes through SetPausedByCombat, which has gates we
-//      can't reliably satisfy), so we set it directly.
+// Pause-screen + sub-screens live in panels[] not modal_stack — their
+// open/close keeps modal_stack at 0 throughout, so this trigger
+// doesn't fire on them; HideSWInGameGui handles their cleanup natively.
 //
-// Pause-screen and sub-screens (Inventory, Map, InGameOptions, …) live
-// in panels[] not modal_stack — their open/close cycle keeps
-// modal_stack at 0 throughout, so this trigger doesn't fire on them.
-// The engine's HideSWInGameGui handles their pause/audio cleanup
-// natively. Only MessageBoxModal popups push to modal_stack.
-//
-// Edge-triggered on modal_stack non-zero → 0 transition. Steady-
-// state does nothing.
-//
-// Called once per frame from core_tick::Dispatch.
-//
-// (Function name is historical — its earliest iteration tried to
-// re-assert input_class. The behaviour is now strictly pause-state
-// cleanup. Keep an eye on it if a future refactor renames things.)
+// Function name is historical (earlier iteration touched input_class).
 void TickInputClassReassert();
 
 }  // namespace acc::engine
 
-// Detour handler for CGuiInGame::SwitchToSWInGameGui at 0x0062cf2d (5-byte
-// cut after the engine has loaded the GUI_id parameter into EBX). Runs
-// BEFORE the original function continues — pops any active sub-screen so
-// the upcoming push lands on a clean panels[].
-//
-// Calling convention: __cdecl, args from the hook framework's parameter
-// table. `thisPtr` ← ECX (CGuiInGame*); `guiId` ← EBX (int, the requested
-// sub-screen GUI_id).
+// Detour @0x0062cf2d (5-byte cut after EBX = GUI_id is loaded).
+// __cdecl from the framework's param table; thisPtr ← ECX, guiId ← EBX.
 extern "C" void __cdecl OnSwitchToSWInGameGui(void* thisPtr, int guiId);
 
-// Diagnostic detour for CGuiInGame::HideSWInGameGui @ 0x0062cba0. Pause
-// flicker investigation: SetSWGuiStatus diagnostic identified that pause
-// auto-close goes through HideSWInGameGui (caller EIP 0x0062cbe2 lands
-// inside it). Hooking entry here lets us see WHO calls HideSWInGameGui
-// — the caller_eip in our handler is the engine address that invoked
-// the close. Read-only, passes through.
-//
-// Cut: 9 bytes covering PUSH ESI (1) + MOV ESI,ECX (2) + MOV EAX,[ESI+0x108]
-// (6). All register/memory-relative; relocate cleanly. ECX still holds
-// `this` after our handler returns.
-//
-// Calling convention: __thiscall, ECX = this (CGuiInGame*),
-// [esp+4] = param_1 (int — close-mode flag, exact semantics TBD).
+// Diagnostic detour at HideSWInGameGui @0x0062cba0. Logs WHO closes
+// sub-screens (caller_eip is the engine address that invoked close).
+// 9-byte cut: PUSH ESI (1) + MOV ESI,ECX (2) + MOV EAX,[ESI+0x108] (6).
+// All register/memory-relative; relocate cleanly.
 extern "C" void __cdecl OnHideSWInGameGui(void* thisPtr, void* p1_addr);
 
-// Diagnostic detour for CGuiInGame::SetSWGuiStatus @ 0x0062aa00. The
-// engine flips sw_gui_status via this single setter — 1 (in-world), 2
-// (main menu), 3 (sub-screen showing). Pause-flicker investigation:
-// the status sometimes goes 3→1 within 1 second of pause opening
-// without any visible cause in our log. Hooking at function entry logs
-// every transition with the calling instruction's return EIP so we can
-// identify the engine path that's auto-closing pause.
-//
-// Pure read-only diagnostic — does not consume, does not modify any
-// arguments. Cut at function entry, 5 bytes `8b 44 24 04 56`
-// (MOV EAX,[ESP+4]; PUSH ESI). Stack-relative MOV + register-only PUSH;
-// safe to relocate. Params: this (ECX), new_status (esp+4 LEA), param_2
-// (esp+8 LEA).
+// Diagnostic detour at SetSWGuiStatus @0x0062aa00. Status: 1 in-world,
+// 2 main menu, 3 sub-screen. Status sometimes flips 3→1 within 1s of
+// pause open with no visible cause; hook logs every transition + return
+// EIP to find the auto-close path. 5-byte cut at entry:
+// `8b 44 24 04 56` (MOV EAX,[ESP+4]; PUSH ESI) — relocates safely.
 extern "C" void __cdecl OnSetSWGuiStatus(void* thisPtr,
                                           void* p1_addr,
                                           void* p2_addr);

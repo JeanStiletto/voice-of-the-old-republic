@@ -1,86 +1,50 @@
-// Engine bindings for CSWGuiTargetActionMenu — KOTOR's radial action menu.
+// Engine bindings for CSWGuiTargetActionMenu (KOTOR's radial).
 //
-// Layer: engine/ (pure read+primitives; no menu state, no speech). Mirrors
-// the engine_picker pattern: resolve through the AppManager → ClientExoApp →
-// Internal → CGuiInGame → CSWGuiMainInterface chain to reach the embedded
-// CSWGuiTargetActionMenu, expose its row+action surface, and call the
-// engine's own select/dispatch primitives.
+// Pure read + primitives. The radial isn't a top-level CSWGuiPanel — it
+// lives embedded in CSWGuiMainInterface at +0xBC. picker::Drive falls
+// here when the default-action descriptor is empty.
 //
-// Why this exists:
-//   When `acc::picker::Drive` finds an empty default-action descriptor it
-//   falls back to `CSWGuiMainInterface::PopulateMenus @0x00689d80`, which
-//   populates `target_action_menu.action_lists[3]` (per-row action arrays)
-//   and `.target_actions[3]` (currently-visible row buttons). The radial is
-//   NOT a top-level CSWGuiPanel (no entry in CGuiInGame's named-slot table —
-//   see engine_panels.h), so our PanelKind classifier and chain navigation
-//   never see it. Without this module, "Aktionsmenü" is announced but the
-//   user has no way to select an action.
+// PopulateMenus chain — one call populates both surfaces:
+//   CSWGuiMainInterface::PopulateMenus @0x00689d80 (wrapper):
+//     player    = GetSWParty()->GetPlayerCharacter()
+//     gameObj   = CClientExoApp::GetGameObject(field1_0x64)
+//     swcTarget = gameObj->vtable->AsSWCObject(gameObj)
+//                 ^^ REQUIRED downcast. Raw CGameObject* trips /GS
+//                 canary on subsequent SelectNext/Prev/DoTargetAction.
+//     1. fills field5_0x74[0..5] via GetPersonalActions(player, i)
+//     2. inner PopulateMenus @0x00689410 fills the radial's
+//        action_lists[0..2] via GetTargetActions(player, swc, row)
 //
-// Verified surfaces (k1_win_gog_swkotor.exe.xml + headless decomp 2026-05-05):
-//   CSWGuiTargetActionMenu::SelectNextAction @0x006865b0  (row index)
-//   CSWGuiTargetActionMenu::SelectPrevAction @0x00686680  (row index)
-//   CSWGuiTargetActionMenu::DoTargetAction   @0x00689610  (row index)
-//   IsTargetActionMenuControl                @0x00684ed0  (predicate; unused)
+// CSWGuiTargetActionMenu layout (at MainInterface + 0xBC):
+//   +0x0000  CExoArrayList<CSWGuiInterfaceAction> action_lists[3]  (3×0x0C)
+//   +0x0024  int field1[12]   ← 4 target_types × 3 rows. Each int
+//                               is the selected action_id; -1 = row
+//                               default. SelectNext/Prev mutate, inner
+//                               PopulateMenus + DoTargetAction read.
+//   +0x0054  CSWGuiMainInterfaceAction target_actions[3]   (3×0x71C)
+//   +0x15A8  CSWGuiMainInterface* main_interface
+//   +0x15CC  CSWGuiLabel name_label
+//   +0x1AE4  ulong  failure_reason_strref
+//   +0x1AEA  byte   target_type — indexes field1[]
 //
-// How the radial gets populated (decomp of 0x00689d80 + 0x00689410):
-//   `CSWGuiMainInterface::PopulateMenus(this) @0x00689d80` (no args, this =
-//   main_interface) is the public entry point — it's what
-//   HandleMouseClickInWorld calls on first-click and what we now call from
-//   the empty-descriptor branch of `acc::picker::Drive`.
-//   Internally it:
-//     1. player_creature = GetSWParty()->GetPlayerCharacter()
-//     2. game_object     = CClientExoApp::GetGameObject(field1_0x64)
-//     3. swc_target      = game_object->vtable->AsSWCObject(game_object)
-//        ^^^ this downcast is required — passing a raw CGameObject* to the
-//        inner @0x00689410 corrupts target_type and trips /GS canary on
-//        subsequent SelectNext/Prev/DoTargetAction calls.
-//     4. Refills 6 personal-action lists on main_interface (field5_0x74[0..5])
-//        via `CSWCCreature::GetPersonalActions(player, i, &list)` for i=0..5.
-//     5. Calls inner `CSWGuiTargetActionMenu::PopulateMenus(player, mode,
-//        swc_target, &result) @0x00689410` which populates THIS object's
-//        action_lists[0..2] via `CSWCCreature::GetTargetActions(player,
-//        swc_target, row, &list)` for row=0..2.
-//   So one wrapper call produces both the surrounding UI's personal actions
-//   AND the radial's per-row target actions. We don't need (and shouldn't
-//   make) a direct inner call.
+// CSWGuiMainInterfaceAction (0x71C):
+//   +0x000 action_button (visible label at +0x16C)
+//   +0x1C4 action_label
+//   +0x388 up_button
+//   +0x54C down_button
+//   +0x718 is_action (1 = row populated)
 //
-// Struct layout (swkotor.exe.h:10405 + line 11611 MEMBER table, with
-// field1[12] semantics confirmed by inner-PopulateMenus + SelectNextAction
-// + SelectPrevAction + DoTargetAction decomps):
-//   CSWGuiTargetActionMenu lives at CSWGuiMainInterface + 0xBC.
-//     +0x00  CExoArrayList<CSWGuiInterfaceAction> action_lists[3]   (3*0x0C)
-//     +0x24  int field1[12]   ← 4 target_types × 3 rows = 12 ints. Each
-//                              int is the *currently-selected action_id*
-//                              for (target_type, row); -1 means "none, use
-//                              row default". SelectNext/Prev mutate this
-//                              slot; inner-PopulateMenus + DoTargetAction
-//                              read it to find the active action within
-//                              action_lists[row].
-//     +0x54  CSWGuiMainInterfaceAction target_actions[3]            (3*0x71C)
-//     +0x15A8 CSWGuiMainInterface* main_interface
-//     +0x15CC CSWGuiLabel name_label
-//     +0x1AE4 ulong  failure_reason_strref
-//     +0x1AEA byte   target_type        ← set by inner-PopulateMenus from
-//                                         GetTargetInterfaceTargetType.
-//                                         Indexes field1[].
+// CSWGuiInterfaceAction (0x38):
+//   +0x00 CExoString label
+//   +0x08 ulong action_id
+//   +0x0c void* action_function
+//   +0x1c ulong creature_id (action target)
+//   +0x20 CResRef icon
 //
-//   CSWGuiMainInterfaceAction (size 0x71C):
-//     +0x000 CSWGuiButton action_button   ← visible action label (at +0x16C)
-//     +0x1C4 CSWGuiButton action_label
-//     +0x388 CSWGuiButton up_button
-//     +0x54C CSWGuiButton down_button
-//     +0x718 int          is_action       ← 1 when row is populated
-//
-//   CSWGuiInterfaceAction (size 0x38, struct in engine_picker.cpp):
-//     +0x00 CExoString label
-//     +0x08 ulong action_id
-//     +0x0c void* action_function
-//     +0x1c ulong creature_id (the action target)
-//     +0x20 CResRef icon
-//
-// All engine entry points take CSWGuiTargetActionMenu* in ECX (__thiscall).
-// SelectNextAction/SelectPrevAction/DoTargetAction take an int row index
-// (0..2) as their single stack argument.
+// Engine entry points (all __thiscall, ECX = TAM*, single int row arg):
+//   SelectNextAction @0x006865b0
+//   SelectPrevAction @0x00686680
+//   DoTargetAction   @0x00689610
 
 #pragma once
 
@@ -89,116 +53,53 @@
 
 namespace acc::engine_radial {
 
-// Maximum rows in CSWGuiTargetActionMenu.target_actions[]. Hard-coded into
-// the engine struct (size 3); exposed as a constant so callers can size
-// loops without re-stating the magic number.
 constexpr int kRowCount = 3;
 
-// Resolve the live CSWGuiTargetActionMenu* via the standard chain
-// (AppManager → ClientExoApp → Internal → GuiInGame → MainInterface +
-// 0xBC). Returns nullptr when any link is null (e.g. between modules,
-// during DLL-attach, or after MainInterface is torn down).
-//
-// Pointer is borrowed — not stable across module transitions. Callers
-// must re-resolve every tick rather than caching.
+// Borrowed pointer; re-resolve each tick.
 void* ResolveTargetActionMenu();
 
-// Number of CSWGuiInterfaceActions populated for `row` (0..2). Read from
-// action_lists[row].size. Returns 0 for out-of-range rows or null TAM.
-//
-// This is the gate-of-truth for "is this row navigable" — PopulateMenus
-// fills it on populate, the engine's dispatch path (DoTargetAction)
-// presumably tears it down on completion. Tick monitor uses
-// max-across-rows == 0 as the "menu is gone" signal.
+// action_lists[row].size. Tick monitor uses max-across-rows == 0 as
+// "menu gone" signal.
 int RowActionCount(void* tam, int row);
 
-// Read the visible action label for `row` from
-// target_actions[row].action_button via the gui_string path. Falls back
-// to the inline CExoString and TLK strref the same way menus.cpp's
-// ExtractAnnounceableText does for any other CSWGuiButton.
-//
-// Returns true when at least one byte was written to outBuf (which
-// always ends NUL-terminated). False when the row is unpopulated, the
-// button text is empty, or any read faulted under SEH.
+// Reads target_actions[row].action_button via the gui_string path with
+// inline CExoString + TLK strref fallback. outBuf is NUL-terminated.
 bool ReadRowActionLabel(void* tam, int row, char* outBuf, size_t bufSize);
 
-// Read the radial's target name from name_label (CSWGuiLabel at TAM +
-// 0x15CC). Returns true on non-empty result. Used as a sanity-check
-// (the engine sets it via SetNameLabel @0x00685af0 during PopulateMenus
-// so a successfully-opened radial always has a name).
+// name_label at TAM+0x15CC — sanity check (always populated post-
+// PopulateMenus via SetNameLabel @0x00685af0).
 bool ReadTargetName(void* tam, char* outBuf, size_t bufSize);
 
-// Diagnostic: dump current TAM state to the patch log (hex window of
-// the first 0x40 bytes, plus the parsed action_lists[0..2] and per-row
-// is_action / action_button text length). Used right after a
-// PopulateMenus call to disambiguate "engine populated nothing" from
-// "we're reading the wrong fields".
+// Hex dump + parsed action_lists + per-row is_action / button text.
 void LogState(void* tam, const char* tag);
 
-// Wider variant of LogState. Dumps everything LogState does, plus:
-//   - field1[12] (the 12 ints between action_lists[3] and target_actions[3])
-//   - For each row (target_actions[r]): the four embedded CSWGuiButtons
-//     (action_button @+0x000, action_label @+0x1C4, up_button @+0x388,
-//     down_button @+0x54C) — each read via gui_string AND inline
-//     CExoString. field4_0x710 / field5_0x714 raw uint32 values.
-//   - For each row's action_lists[r] with cap > 0 and data != null,
-//     peek the FIRST CSWGuiInterfaceAction at data[0] (label, action_id,
-//     target_id, icon) — even when size==0, because the engine might
-//     buffer the action without committing the size update.
-//
-// Intended for one-shot deep-investigation logging right after a
-// PopulateMenus call where the standard LogState reported all-empty.
-// More expensive than LogState but fine for diagnostic use.
+// LogState + field1[12] + per-row embedded buttons (action/label/up/down)
+// + action_lists[r].data[0] peek even when size==0 (engine may buffer
+// without committing size). One-shot deep diagnostic.
 void LogStateWide(void* tam, const char* tag);
 
-// Engine primitives. All take TAM* as ECX, row index as the single arg.
-// Each is SEH-wrapped and returns false on null TAM, out-of-range row,
-// or a fault inside the engine call. Successful return only means we
-// reached the engine — observable side effects (action_button text
-// changing, action dispatched) are visible to the caller via subsequent
-// reads.
+// Each: SEH-wrapped, false on null TAM / out-of-range / fault.
+// True only means the engine call dispatched; observable effects show
+// up via subsequent reads.
 bool SelectNextActionInRow(void* tam, int row);
 bool SelectPrevActionInRow(void* tam, int row);
 bool DispatchRowAction   (void* tam, int row);
 
-// Stamp the engine's per-(target_type, row) "currently-selected action_id"
-// field1[target_type*3 + row] with the action_id of action_lists[row].data[index].
-// DoTargetAction reads field1 and searches action_lists for the matching
-// action_id; on match it fires that entry, on no-match it falls back to
-// data[0]. Mirrors engine_actionbar::SelectVariant in shape — together
-// they let our submenus track a shadow index that survives across the
-// engine's PopulateMenus rebuilds (PopulateMenus reassigns action_ids,
-// invalidating any previously-stamped value, so callers re-stamp after
-// each refresh using the shadow index → current descriptor's action_id).
-//
-// Returns true when the stamp wrote a valid action_id; false on
-// null/out-of-range row, empty action_lists[row], index past size,
-// action_id==0, or any SEH fault.
+// Stamps field1[target_type*3 + row] = action_lists[row].data[index]
+// .action_id. DoTargetAction matches against field1 and falls back to
+// data[0] on miss. Mirrors engine_actionbar::SelectVariant — together
+// they let submenus keep a shadow index across PopulateMenus rebuilds
+// (rebuilds reassign action_ids, so re-stamp after each refresh).
 bool SelectActionInRow(void* tam, int row, int index);
 
-// Return a pointer to target_actions[row].action_button — the visible
-// CSWGuiButton that renders the currently-selected action's icon/label
-// for `row`. Same shape as engine_actionbar::GetColumnActionButton:
-// action_button is the first field of CSWGuiMainInterfaceAction at
-// stride 0x71C starting at TAM +0x54, so its address coincides with
-// the array-entry's start. Returns nullptr on null TAM / out-of-range
-// row.
+// target_actions[row].action_button. Coincides with the array entry's
+// start (action_button is field 0).
 void* GetRowActionButton(void* tam, int row);
 
-// Diagnostic: resolve `targetClient` via CClientExoApp::GetGameObject,
-// downcast through the GameObjectMethods vtable, log target class +
-// per-class fields that the engine's GetTargetActions checks. For doors
-// these include cannot_bash (+0x104), can_use_actions (+0x108), is_hostile
-// (+0x114), state (+0x11c), field17 (+0x138). For creatures we just log
-// "creature" (full diag deferred until a creature target hits the empty-
-// descriptor branch). Used to disambiguate "the engine has no actions
-// because the target is in a final state" (e.g. open door, can_use_actions
-// = 0) from "the engine should have actions but our preconditions are
-// wrong" — the latter would be a bug worth investigating.
-//
-// `tag` is included in each log line for correlation with surrounding
-// state dumps. SEH-wrapped throughout; logs an explanatory line on any
-// fault rather than crashing.
+// Resolves targetClient via GetGameObject, downcasts, logs per-class
+// fields GetTargetActions checks (doors: cannot_bash/can_use_actions/
+// is_hostile/state). Disambiguates "engine has no actions for this
+// final state" from "we set preconditions wrong".
 void LogTargetDiag(uint32_t targetClient, const char* tag);
 
 }  // namespace acc::engine_radial
