@@ -53,7 +53,13 @@ bool IsCueEnabled(NavCue cue) {
         case NavCue::NpcCreature:        return p1.cueNpc;
         case NavCue::ContainerPlaceable: return p1.cuePlaceable;
         case NavCue::Item:               return p1.cueItem;
-        case NavCue::Landmark:           return p1.cueLandmark;
+        // Landmark cue is permanently disabled — landmarks announce via
+        // TTS only (user-feedback 2026-05-27). Returning false here drops
+        // the spatial-detector fire cleanly with reason=disabled instead
+        // of letting it fall through to PlayCue3D with an empty resref
+        // (which would log drop-engine-fail). cueLandmark in
+        // Pillar1Settings stays around as inert state for now.
+        case NavCue::Landmark:           return false;
         case NavCue::TransitionExit:     return p1.cueTransition;
         // Non-Pillar-1 cues — guidance / view-mode signals. Always pass;
         // their owning subsystems (Pillar 3 beacon, Pillar 2 view mode)

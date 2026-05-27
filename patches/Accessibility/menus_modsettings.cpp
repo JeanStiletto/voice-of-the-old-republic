@@ -119,7 +119,8 @@ constexpr GlossaryEntry k_glossary[] = {
     { acc::audio::NavCue::NpcCreature,              acc::strings::Id::CategoryNpc                   },
     { acc::audio::NavCue::ContainerPlaceable,       acc::strings::Id::CategoryContainer             },
     { acc::audio::NavCue::Item,                     acc::strings::Id::CategoryItem                  },
-    { acc::audio::NavCue::Landmark,                 acc::strings::Id::CategoryLandmark              },
+    // Landmark omitted — cue is silent (TTS-only, 2026-05-27); a glossary
+    // row would play nothing on Enter and confuse the user.
     { acc::audio::NavCue::TransitionExit,           acc::strings::Id::CategoryTransition            },
     { acc::audio::NavCue::Wall,                     acc::strings::Id::GlossaryEntryWall             },
     { acc::audio::NavCue::HazardLedge,              acc::strings::Id::GlossaryEntryHazard           },

@@ -71,8 +71,17 @@ constexpr const char* GetNavCueResref(NavCue cue) {
         case NavCue::NpcCreature:              return "fs_metal_droid2";
         case NavCue::ContainerPlaceable:       return "gui_invadd";
         case NavCue::Item:                     return "gui_invselect";
-        case NavCue::Landmark:                 return "gui_quest";
-        case NavCue::TransitionExit:           return "mgs_s1";
+        // Landmark is silent — landmarks are announced via TTS only (cycle
+        // path + map-cursor ambient). User-feedback 2026-05-27: the
+        // dedicated cue was redundant against the spoken name + clock +
+        // distance payload. Empty resref short-circuits PlayCue3D
+        // (audio_bus.cpp +0x80) without an engine call.
+        case NavCue::Landmark:                 return "";
+        // gui_quest reassigned from the old Landmark slot (2026-05-27). The
+        // previous mgs_s1 pick was a Manaan minigame stinger; gui_quest is
+        // the sharper GUI-path cue that survives engine attenuation better
+        // when transitions are heard at range.
+        case NavCue::TransitionExit:           return "gui_quest";
         case NavCue::Wall:                     return "as_nt_wtrdrip_09";
         case NavCue::HazardLedge:              return "cb_sw_bldlrg1";
         case NavCue::Collision:                return "gui_invdrop";
