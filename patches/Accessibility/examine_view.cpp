@@ -532,9 +532,7 @@ uint32_t ReadLastTargetHandle() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Row building.
-// ---------------------------------------------------------------------------
 
 // (Re)build the row list for the cached target. Returns row count
 // (0 if target unresolvable, view should disarm).

@@ -1,4 +1,4 @@
-// KOTOR Accessibility — central hotkey registry implementation.
+// central hotkey registry implementation.
 // See hotkeys.h for the design rationale + API contract.
 
 #include "hotkeys.h"

@@ -1,4 +1,4 @@
-// KOTOR Accessibility — menu-side hook handlers (chain navigation, focus
+// menu-side hook handlers (chain navigation, focus
 // events, input dispatch, per-tick monitors).
 //
 // Layering:
@@ -2390,7 +2390,6 @@ void* acc::menus::detail::FindListBoxChild(void* panel) {
 // EquipPicker, give-mode key poll) co-locate with their listbox spec
 // entries in menus_listbox.cpp.
 
-// Step 1 of the menus.cpp refactor (mod-wide tick dispatcher split):
 //
 //   * The OnUpdate detour entry and the per-tick fan-out across all
 //     mod subsystems now live in core_tick.cpp / core_tick.h. The

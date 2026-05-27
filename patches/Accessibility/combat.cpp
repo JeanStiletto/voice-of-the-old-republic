@@ -981,7 +981,6 @@ void FlushPending() {
     g_pending = {};
 }
 
-// ---------------------------------------------------------------------------
 // Router rules. Each returns true to claim the line (suppress raw speech).
 
 bool RuleSummary(const char* text) {

@@ -26,7 +26,6 @@
 
 namespace {
 
-// ---------------------------------------------------------------------------
 // CClientExoAppInternal field offsets we need beyond what engine_player
 // already declares. Sourced from the C header at
 // docs/llm-docs/re/swkotor.exe.h (struct CClientExoAppInternal,
@@ -46,7 +45,6 @@ namespace {
 //                                                        ClickInWorld)
 //   +0x4cc  int                   descriptor_count     (gate: must be
 //                                                        > 0 to dispatch)
-// ---------------------------------------------------------------------------
 constexpr size_t kInternalGuiInGameOffset           = 0x040;
 constexpr size_t kInternalLastTargetOffset          = 0x2b4;
 constexpr size_t kInternalLastClickedOnTargetOffset = 0x2b8;
@@ -54,17 +52,13 @@ constexpr size_t kInternalHoverTargetOffset         = 0x4a4;
 constexpr size_t kInternalDescriptorArrayOffset     = 0x4c8;
 constexpr size_t kInternalDescriptorCountOffset     = 0x4cc;
 
-// ---------------------------------------------------------------------------
 // CGuiInGame.main_interface offset (CSWGuiMainInterface*). Counted from the
 // CGuiInGame struct in swkotor.exe.h (line 10256: main_interface comes
 // after a long pointer table starting at field0_0x0).
-// ---------------------------------------------------------------------------
 constexpr size_t kGuiInGameMainInterfaceOffset = 0x90;
 
-// ---------------------------------------------------------------------------
 // CSWGuiInterfaceAction layout (decompile of GetDefaultActions writes,
 // + struct in swkotor.exe.h line 5437). Stride 0x38 between entries.
-// ---------------------------------------------------------------------------
 constexpr size_t kInterfaceActionLabelOffset    = 0x00;  // CExoString
 constexpr size_t kInterfaceActionIdOffset       = 0x08;  // ulong
 constexpr size_t kInterfaceActionFnOffset       = 0x0c;  // void*
@@ -73,11 +67,9 @@ constexpr size_t kInterfaceActionIconOffset     = 0x20;  // CResRef (16B)
 constexpr size_t kInterfaceActionStride         = 0x38;
 constexpr size_t kResRefMaxLen                  = 16;
 
-// ---------------------------------------------------------------------------
 // Engine entry points. Addresses confirmed from XML symbol table
 // (k1_win_gog_swkotor.exe.xml) on 2026-05-05; GoG bytes match Steam
 // per memory project_ghidra_gog_steam_bytes_match.
-// ---------------------------------------------------------------------------
 constexpr uintptr_t kAddrCClientExoAppInternalGetDefaultActions      = 0x00620620;
 constexpr uintptr_t kAddrCClientExoAppInternalHandleMouseClickInWorld = 0x00620350;
 constexpr uintptr_t kAddrCGuiInGameSetMainInterfaceTarget            = 0x0062b000;

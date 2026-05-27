@@ -35,9 +35,7 @@ namespace acc::wall_topology {
 
 namespace {
 
-// ---------------------------------------------------------------------
 // Walkmesh-probe primitives.
-// ---------------------------------------------------------------------
 //
 // Single-ray casts against the cached perimeter walls. Used for two
 // gates inside this module:
@@ -110,9 +108,7 @@ bool IsAlcoveAlongAxis(const Vector& pos, float forwardX, float forwardY) {
     return shortCount == 3 && dF > 2.0f;
 }
 
-// ---------------------------------------------------------------------
 // Tunable parameters.
-// ---------------------------------------------------------------------
 
 // Re-use the navgraph cap so per-node arrays line up with the snapshot.
 constexpr int kMaxNodes = acc::engine::navgraph::kMaxNodes;
@@ -262,9 +258,7 @@ constexpr int kKindJunction = KindJunction;
 constexpr int kKindOpenArea = KindOpenArea;
 constexpr int kKindPlatz    = KindPlatz;
 
-// ---------------------------------------------------------------------
 // Cached state for the current area.
-// ---------------------------------------------------------------------
 
 // Per-area door snapshot. Captured on BuildForArea (alongside the
 // nav-graph snapshot) so the per-edge "is there a door between these
@@ -359,9 +353,7 @@ struct DoorStabilityState {
 };
 DoorStabilityState g_doors_stability;
 
-// ---------------------------------------------------------------------
 // Direction helpers.
-// ---------------------------------------------------------------------
 
 // 8-way octant classifier. Engine frame: +X = East, +Y = North. Returns
 // the Id corresponding to the octant the (dx,dy) vector points into.
@@ -470,9 +462,7 @@ constexpr int kOctantEmitOrder[8] = {
     2, 1, 0, 7, 6, 5, 4, 3
 };
 
-// ---------------------------------------------------------------------
 // Cluster classification (degree-driven, with junction-merge support).
-// ---------------------------------------------------------------------
 
 // Per-node degree from the snapshot. Tiny helper — every classifier
 // path needs this and it keeps the call sites self-documenting.
@@ -482,9 +472,7 @@ int Degree(const acc::engine::navgraph::NavGraphSnapshot& g, int node) {
     return hi - lo;
 }
 
-// ---------------------------------------------------------------------
 // Door snapshot + edge-near-door geometry.
-// ---------------------------------------------------------------------
 
 // Collect every CSWSDoor in the area into g_graph.doors. Reads world
 // position (+0x90) + transition destination (CExoLocString @+0x3c8 if
@@ -799,9 +787,7 @@ int FindDoorOnEdge(const Vector& a, const Vector& b) {
     return -1;
 }
 
-// ---------------------------------------------------------------------
 // Unified edge classifier — Clear / Door / Blocked.
-// ---------------------------------------------------------------------
 
 // Edge verdict for a nav-graph segment AB. Drives both merge-veto gates
 // (Pass 1 / 1b / 1c) and external-neighbour filtering in Pass 2:

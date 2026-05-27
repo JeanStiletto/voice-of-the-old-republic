@@ -22,9 +22,7 @@ namespace acc::combat::queue {
 
 namespace {
 
-// ---------------------------------------------------------------------------
 // Engine surface — combat round + linked-list walker.
-// ---------------------------------------------------------------------------
 
 typedef int  (__thiscall* PFN_RemoveLastAction)(void* combatRound);
 
@@ -185,9 +183,7 @@ bool ReadActionFields(void* action, unsigned char& outType,
     }
 }
 
-// ---------------------------------------------------------------------------
 // Flat row model.
-// ---------------------------------------------------------------------------
 
 // One row per queued action, across every party member's combat round.
 // Built at Open() and rebuilt after every mutation (remove / clear).

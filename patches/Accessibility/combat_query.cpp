@@ -805,9 +805,7 @@ void TickExaminePanel() {
                   examinePanel, rowCount);
 }
 
-// ----------------------------------------------------------------------------
 // Win32 polling for Shift+H. Same pattern as interact_hotkey's PollHotkey.
-// ----------------------------------------------------------------------------
 
 void PollWin32Hotkey() {
     if (!acc::hotkeys::Pressed(acc::hotkeys::Action::ExamineOpen)) return;

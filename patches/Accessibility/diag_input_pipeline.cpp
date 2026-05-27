@@ -53,7 +53,6 @@ unsigned int NextSeq() {
 
 }  // namespace acc::diag::input
 
-// -----------------------------------------------------------------------------
 // CClientExoAppInternal::ProcessInput @ 0x006227e0 — frame-boundary seq tick.
 //
 // Hooked at 0x006227fb (after SEH frame + locals are set up, BEFORE the
@@ -72,7 +71,6 @@ extern "C" void __cdecl OnProcessInput(void* /*this_ptr*/) {
     acc::diag::input::NextSeq();
 }
 
-// -----------------------------------------------------------------------------
 // CClientExoAppInternal::HandleInputEvent @ 0x00621210 — upstream client-app
 // route. Captures every event ProcessInput dispatches via the upstream branch
 // (in-world hotkeys, screenshot, pause, party-cycle, target actions, Esc

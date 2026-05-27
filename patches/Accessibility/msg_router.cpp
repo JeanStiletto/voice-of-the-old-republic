@@ -128,7 +128,6 @@ extern "C" void __cdecl OnAppendToMsgBuffer(void* /*guiInGame*/,
     acc::msg::Router::Instance().Dispatch(text);
 }
 
-// ----------------------------------------------------------------------------
 // Lazy registration. Each subsystem exposes a `Register*MsgRules()` function;
 // we call them once on the first hook fire. This avoids DllMain-order
 // concerns while still keeping the registration explicit.

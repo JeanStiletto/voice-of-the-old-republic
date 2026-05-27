@@ -18,7 +18,6 @@ namespace acc::combat::loc {
 
 namespace {
 
-// -----------------------------------------------------------------------
 // German — engine-verified against patch-20260521-100345.log.
 const MsgStrings kDe = {
     // ---- Engine-side parse anchors
@@ -64,7 +63,6 @@ const MsgStrings kDe = {
     "Bonus",
 };
 
-// -----------------------------------------------------------------------
 // English — TODO(combat-loc-en): every engine-side anchor needs
 // verification against a real EN swkotor.exe / dialog.tlk. Until then
 // we alias the DE table: on an EN install the DE anchors won't match
