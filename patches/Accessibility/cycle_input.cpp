@@ -73,6 +73,17 @@ struct CategoryBindings {
                                // object's world position before speech
 };
 
+// Refine a placeholder door cue against the actual server-door open_state.
+// BindingsFor returns DoorOpen as a category-level placeholder; the real
+// fire site needs to check open_state to play gui_close (open) vs
+// dr_metal_lock (closed). Pass-through for any other NavCue so call sites
+// can wrap PlayCue3D unconditionally.
+acc::audio::NavCue RefineDoorCue(acc::audio::NavCue cue, void* obj) {
+    if (cue != acc::audio::NavCue::DoorOpen) return cue;
+    return acc::engine::IsDoorOpen(obj) ? acc::audio::NavCue::DoorOpen
+                                        : acc::audio::NavCue::DoorClosed;
+}
+
 CategoryBindings BindingsFor(
         acc::filter::CycleCategory c,
         acc::filter::CycleContext ctx = acc::filter::CycleContext::World) {
@@ -81,7 +92,11 @@ CategoryBindings BindingsFor(
     using C = acc::filter::CycleCategory;
     switch (c) {
         case C::Door:
-            return {S::CategoryDoor,       S::EmptyDoors,       N::Door};
+            // DoorOpen is the placeholder; callers must refine via
+            // RefineDoorCue() against the focused object's open_state
+            // before fire. Empty-state path doesn't use .cue, so the
+            // placeholder is harmless there.
+            return {S::CategoryDoor,       S::EmptyDoors,       N::DoorOpen};
         case C::Npc:
             return {S::CategoryNpc,        S::EmptyNpcs,        N::NpcCreature};
         case C::Container:
@@ -160,7 +175,8 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
     // hears spatial direction first, then the localized name + clock +
     // distance reinforcement.
     const Vector& objPos = listing.positions[s.focusedIndex];
-    acc::audio::PlayCue3D(acc::audio::GetNavCueResref(bindings.cue), objPos);
+    acc::audio::NavCue cue = RefineDoorCue(bindings.cue, s.focusedObj);
+    acc::audio::PlayCue3D(acc::audio::GetNavCueResref(cue), objPos);
 
     char name[128] = "";
     // Three name-resolution paths share the "Map hint" announce:
@@ -386,7 +402,10 @@ void OnAnnounceFocus() {
     }
 
     auto bindings = BindingsFor(a.category);
-    acc::audio::PlayCue3D(acc::audio::GetNavCueResref(bindings.cue), a.pos);
+    {
+        acc::audio::NavCue cue = RefineDoorCue(bindings.cue, a.obj);
+        acc::audio::PlayCue3D(acc::audio::GetNavCueResref(cue), a.pos);
+    }
 
     Vector playerPos;
     float yaw = 0.0f;
@@ -492,9 +511,11 @@ void OnPathfindFocus() {
     // landmark cue at the pin position first so the user still gets
     // spatial confirmation of WHERE the pin is.
     if (a.isMapPin) {
+        // Pins are never doors, so RefineDoorCue is a no-op here; left
+        // for symmetry with the other fire sites.
         auto pinBindings = BindingsFor(a.category);
-        acc::audio::PlayCue3D(acc::audio::GetNavCueResref(pinBindings.cue),
-                              a.pos);
+        acc::audio::NavCue cue = RefineDoorCue(pinBindings.cue, a.obj);
+        acc::audio::PlayCue3D(acc::audio::GetNavCueResref(cue), a.pos);
         const char* hint = acc::strings::Get(
             acc::strings::Id::MapPinShiftDashHint);
         prism::Speak(hint, /*interrupt=*/true);
@@ -507,7 +528,10 @@ void OnPathfindFocus() {
     // Per-category 3D cue at the destination — same spatial-confirmation
     // pattern the announce path uses.
     auto bindings = BindingsFor(a.category);
-    acc::audio::PlayCue3D(acc::audio::GetNavCueResref(bindings.cue), a.pos);
+    {
+        acc::audio::NavCue cue = RefineDoorCue(bindings.cue, a.obj);
+        acc::audio::PlayCue3D(acc::audio::GetNavCueResref(cue), a.pos);
+    }
 
     char msg[192];
     std::snprintf(msg, sizeof(msg),
@@ -588,7 +612,10 @@ void OnBeaconFocus() {
     // pattern as Shift+-. Plays before any speech so the user hears the
     // category cue → opener → description in audible order.
     auto bindings = BindingsFor(a.category);
-    acc::audio::PlayCue3D(acc::audio::GetNavCueResref(bindings.cue), a.pos);
+    {
+        acc::audio::NavCue cue = RefineDoorCue(bindings.cue, a.obj);
+        acc::audio::PlayCue3D(acc::audio::GetNavCueResref(cue), a.pos);
+    }
 
     std::vector<Vector> waypoints;
     bool pathOk = acc::guidance::ComputePath(area, playerPos, a.pos, waypoints);
@@ -661,7 +688,10 @@ void OnPathfindFocusForce() {
     }
 
     auto bindings = BindingsFor(a.category);
-    acc::audio::PlayCue3D(acc::audio::GetNavCueResref(bindings.cue), a.pos);
+    {
+        acc::audio::NavCue cue = RefineDoorCue(bindings.cue, a.obj);
+        acc::audio::PlayCue3D(acc::audio::GetNavCueResref(cue), a.pos);
+    }
 
     char msg[192];
     std::snprintf(msg, sizeof(msg),

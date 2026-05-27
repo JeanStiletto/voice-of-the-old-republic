@@ -1148,6 +1148,8 @@ enum class Id : int {
     //      announce paths name them differently or not at all.
     ModSettingAudioGlossary,
     ModSettingsAudioGlossaryOpened,
+    GlossaryEntryDoorOpen,
+    GlossaryEntryDoorClosed,
     GlossaryEntryWall,
     GlossaryEntryHazard,
     GlossaryEntryCollision,

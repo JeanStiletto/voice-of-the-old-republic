@@ -40,15 +40,18 @@
 
 namespace acc::audio {
 
-// 12-slot navigation-cue vocabulary. Order is plan-stable: per-kind first
-// (8), then special-purpose (4). When adding a slot, also extend the
-// switch in GetNavCueResref below or the build will warn on missing case.
+// Navigation-cue vocabulary. Order is plan-stable: per-kind first, then
+// special-purpose. When adding a slot, also extend the switch in
+// GetNavCueResref below or the build will warn on missing case.
 enum class NavCue {
-    // Per-kind cues (8) — one per object/feature class the player can
-    // encounter while moving. Six map directly to Pillar 4's locked
-    // categories; Wall and HazardLedge are Pillar 1 walkmesh-geometry
-    // features without an object-type equivalent.
-    Door,
+    // Per-kind cues — one per object/feature class the player can
+    // encounter while moving. Six map to Pillar 4's locked categories
+    // (Door split into open/closed sub-cues 2026-05-27); Wall and
+    // HazardLedge are Pillar 1 walkmesh-geometry features without an
+    // object-type equivalent. Doors share the Pillar1Settings.cueDoor
+    // toggle — both sub-cues enable/disable together.
+    DoorOpen,
+    DoorClosed,
     NpcCreature,
     ContainerPlaceable,
     Item,
@@ -56,7 +59,7 @@ enum class NavCue {
     TransitionExit,
     Wall,
     HazardLedge,
-    // Special-purpose cues (4) — guidance + view-mode collision.
+    // Special-purpose cues — guidance + view-mode collision.
     Collision,
     BeaconActive,
     BeaconWaypointReached,
@@ -67,7 +70,12 @@ enum class NavCue {
 // switch to a constant table; no runtime branching on hot paths.
 constexpr const char* GetNavCueResref(NavCue cue) {
     switch (cue) {
-        case NavCue::Door:                     return "gui_close";
+        // Door split by open_state at fire time: open doors keep gui_close
+        // (the original Door cue); closed doors get the heavier dr_metal_lock
+        // sample so the player can hear which exits are passable from
+        // current position without interaction (2026-05-27).
+        case NavCue::DoorOpen:                 return "gui_close";
+        case NavCue::DoorClosed:               return "dr_metal_lock";
         case NavCue::NpcCreature:              return "fs_metal_droid2";
         case NavCue::ContainerPlaceable:       return "gui_invadd";
         case NavCue::Item:                     return "gui_invselect";

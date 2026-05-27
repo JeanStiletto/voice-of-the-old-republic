@@ -264,6 +264,13 @@ bool IsUsablePlaceable(void* placeable);
 bool IsLandmarkWaypoint(void* waypoint);
 bool IsTransitionTrigger(void* trigger);
 
+// Reads CSWSDoor.open_state (+0x2cc, byte). Returns true when the door
+// is anything other than fully closed (state >= 1 covers both opening
+// animation and fully open — see BuildDoorSuffix comment for the value-
+// space note). False on null / fault / state==0. Used to pick between
+// the open-door and closed-door nav cues at fire time.
+bool IsDoorOpen(void* serverDoor);
+
 // Reads CSWSWaypoint.map_note_enabled (+0x22c). True if this waypoint's
 // map note is currently visible on the in-game map (engine's fog-of-war
 // model — disabled until the player discovers it via map-pin trigger).

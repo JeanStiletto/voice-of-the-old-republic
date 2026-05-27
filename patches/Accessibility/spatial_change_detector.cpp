@@ -600,11 +600,15 @@ void BuildSurfaceDescriptors() {
 
 // --- Object classification ---------------------------------------------
 
-acc::audio::NavCue CategoryToNavCue(acc::filter::CycleCategory c) {
+// Map a category to its NavCue. The Door category needs the object too —
+// open vs closed doors fire different cues. Other categories ignore obj.
+acc::audio::NavCue CategoryToNavCue(acc::filter::CycleCategory c, void* obj) {
     using F = acc::filter::CycleCategory;
     using N = acc::audio::NavCue;
     switch (c) {
-        case F::Door:        return N::Door;
+        case F::Door:        return acc::engine::IsDoorOpen(obj)
+                                    ? N::DoorOpen
+                                    : N::DoorClosed;
         case F::Npc:         return N::NpcCreature;
         case F::Container:   return N::ContainerPlaceable;
         case F::Item:        return N::Item;
@@ -618,7 +622,7 @@ bool ClassifyObject(void* obj, acc::audio::NavCue& outCue) {
     using F = acc::filter::CycleCategory;
     for (int c = 0; c < static_cast<int>(F::Count_); ++c) {
         if (acc::filter::ObjectMatches(obj, static_cast<F>(c))) {
-            outCue = CategoryToNavCue(static_cast<F>(c));
+            outCue = CategoryToNavCue(static_cast<F>(c), obj);
             return true;
         }
     }

@@ -595,6 +595,16 @@ bool IsTransitionTrigger(void* trigger) {
     }
 }
 
+bool IsDoorOpen(void* serverDoor) {
+    if (!serverDoor) return false;
+    __try {
+        return *(reinterpret_cast<unsigned char*>(serverDoor) +
+                 kDoorOpenStateOffset) != 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 bool IsMapNoteEnabled(void* waypoint) {
     if (!waypoint) return false;
     __try {

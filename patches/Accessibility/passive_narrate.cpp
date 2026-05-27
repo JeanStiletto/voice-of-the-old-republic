@@ -40,11 +40,15 @@ namespace {
 // anonymous namespace; promoting it requires a refactor that's out of
 // scope). If the two get out of sync in the future, factor into a
 // shared filter_objects helper.
-acc::audio::NavCue CueForCategory(acc::filter::CycleCategory c) {
+// Door cue depends on open_state — pass obj so we can read it. Other
+// categories ignore obj.
+acc::audio::NavCue CueForCategory(acc::filter::CycleCategory c, void* obj) {
     using C = acc::filter::CycleCategory;
     using N = acc::audio::NavCue;
     switch (c) {
-        case C::Door:       return N::Door;
+        case C::Door:       return acc::engine::IsDoorOpen(obj)
+                                    ? N::DoorOpen
+                                    : N::DoorClosed;
         case C::Npc:        return N::NpcCreature;
         case C::Container:  return N::ContainerPlaceable;
         case C::Item:       return N::Item;
@@ -124,7 +128,7 @@ bool NarrateHandle(uint32_t handle, const char* reason) {
 
     if (havePos) {
         acc::audio::PlayCue3D(
-            acc::audio::GetNavCueResref(CueForCategory(cat)), pos);
+            acc::audio::GetNavCueResref(CueForCategory(cat, obj)), pos);
     }
 
     char enriched[320];

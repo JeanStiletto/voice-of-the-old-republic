@@ -405,6 +405,8 @@ const char* Get(Id id) {
 
         case Id::ModSettingAudioGlossary:           return "Audio-Glossar";
         case Id::ModSettingsAudioGlossaryOpened:    return "Audio-Glossar ge\xf6""ffnet";
+        case Id::GlossaryEntryDoorOpen:             return "T\xfc""r offen";
+        case Id::GlossaryEntryDoorClosed:           return "T\xfc""r geschlossen";
         case Id::GlossaryEntryWall:                 return "Wand";
         case Id::GlossaryEntryHazard:               return "Gefahr";
         case Id::GlossaryEntryCollision:            return "Kollision";

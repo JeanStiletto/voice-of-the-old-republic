@@ -78,7 +78,7 @@ int    s_glossaryFocused = 0;
 // short enough that it doesn't feel laggy.
 bool                s_pendingValid  = false;
 DWORD               s_pendingFireAt = 0;
-acc::audio::NavCue  s_pendingCue    = acc::audio::NavCue::Door;
+acc::audio::NavCue  s_pendingCue    = acc::audio::NavCue::DoorOpen;
 constexpr DWORD     kGlossaryDelayMs = 750;
 
 enum class RowKind {
@@ -115,7 +115,8 @@ struct GlossaryEntry {
 };
 
 constexpr GlossaryEntry k_glossary[] = {
-    { acc::audio::NavCue::Door,                     acc::strings::Id::CategoryDoor                  },
+    { acc::audio::NavCue::DoorOpen,                 acc::strings::Id::GlossaryEntryDoorOpen         },
+    { acc::audio::NavCue::DoorClosed,               acc::strings::Id::GlossaryEntryDoorClosed       },
     { acc::audio::NavCue::NpcCreature,              acc::strings::Id::CategoryNpc                   },
     { acc::audio::NavCue::ContainerPlaceable,       acc::strings::Id::CategoryContainer             },
     { acc::audio::NavCue::Item,                     acc::strings::Id::CategoryItem                  },
