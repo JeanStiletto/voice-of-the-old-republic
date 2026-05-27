@@ -113,16 +113,24 @@ bool ResolveRoomNameForPlayer(char* outBuf, size_t bufSize) {
     void* area = acc::engine::GetCurrentArea();
     if (!area) return false;
 
+    // Tier 1 — Bioware landmark waypoint via proximity lookup
+    // (localized, sparse). 15m radius matches the walking-adapter +
+    // cursor windows.
+    constexpr float kLandmarkRangeM = 15.0f;
+    char   landmarkBuf[128] = {0};
+    Vector landmarkPos;
+    if (acc::transitions::FindLandmarkNear(
+            pos, kLandmarkRangeM,
+            landmarkBuf, sizeof(landmarkBuf), landmarkPos) &&
+        landmarkBuf[0] != '\0') {
+        std::snprintf(outBuf, bufSize, "%s", landmarkBuf);
+        return true;
+    }
+
     int roomIdx = -1;
     acc::engine::GetRoomAtIndexed(area, pos, roomIdx);
     if (roomIdx < 0) return false;
 
-    // Tier 1 — Bioware landmark waypoint (localized, sparse).
-    const char* landmark = acc::transitions::GetLandmarkForRoom(roomIdx);
-    if (landmark && landmark[0] != '\0') {
-        std::snprintf(outBuf, bufSize, "%s", landmark);
-        return true;
-    }
     // Tier 2 — mod-supplied friendly room_names entry. Skip vanilla
     // resref-style noise ("m02_03e").
     char roomBuf[128] = {0};

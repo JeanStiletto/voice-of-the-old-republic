@@ -75,50 +75,46 @@ void Tick();
 // dedup the user would hear "Lade: endar_spire" twice.
 void AnnouncePreLoadDestination(void* exoStringPtr);
 
-// Returns the cached Bioware-authored landmark label (e.g. "Bridge",
-// "Crew Quarters", localized to the active language) covering the given
-// layout-room, or nullptr if no landmark waypoint is registered for
-// that room. The cache is populated on each area-change by scanning the
-// area's CSWSWaypoint objects with `has_map_note != 0` AND
-// `map_note_enabled != 0` (engine fog-of-war filter), resolving each to
-// a layout-room via GetRoomAtIndexed.
+// Find the closest landmark waypoint to `pos` within `rangeM` metres.
+// On success returns true and writes the landmark text (null-terminated,
+// truncated to `nameBufSize - 1`) plus its world position. The cache is
+// populated on each area-change by scanning CSWSWaypoint objects with
+// `has_map_note != 0` AND `map_note_enabled != 0` (engine fog-of-war
+// filter) and storing them in a flat array — not keyed by .lyt-room, on
+// purpose. K1's .lyt-rooms over-segment into sliver shapes (94-98 %
+// per-step flip rate in dense Taris areas), so a cursor / player /
+// marker position inside one sliver routinely fails to find a landmark
+// stored under the adjacent sliver. Proximity scan over the flat list
+// avoids that pathology.
 //
-// First-come wins on collision (multiple landmarks per room rare).
-// Returned pointer is stable until the next area-change rebuild.
-// Out-of-range or unmapped room indices return nullptr.
+// Returned pointer-equivalent text is copied into the caller's buffer,
+// so callers don't need to hold the cache lifetime.
 //
-// Public so the map-cursor (and any future Pillar 2/3 consumer) can
-// reuse the same cache the in-world room-transition path builds.
-const char* GetLandmarkForRoom(int roomIdx);
-
-// Look up the world-space position of the landmark waypoint that
-// supplied `roomIdx`'s label. Returns true and writes `outPos` when a
-// position is recorded for the room (cache stores it alongside the
-// label since the 2026-05-13 proximity gate). Returns false for rooms
-// without a landmark or when the position read faulted at cache build.
-// Walking and view-mode consumers use this to suppress the landmark
-// tier when the player / cursor is far from the actual waypoint —
-// .lyt-room partitions can stretch 50m across thin transition strips,
-// so "same room" alone over-fires the landmark.
-bool GetLandmarkPositionForRoom(int roomIdx, Vector& outPos);
+// Public so cursors (map, view-mode, marker auto-name) and the in-world
+// AltGr degrees announce reuse the same cache the walking-adapter
+// builds.
+bool FindLandmarkNear(const Vector& pos, float rangeM,
+                      char* nameOut, size_t nameBufSize,
+                      Vector& posOut,
+                      int* outLandmarkIdx = nullptr);
 
 // Walk the landmark cache. Pass `cursor` = 0 on the first call; the
 // callee advances it past the next populated slot and writes that
-// slot's name + position + room index. Returns false when no more
-// landmarks remain. Used by wall_topology::BuildForArea to match each
-// landmark against the door snapshot and embed the landmark name in
-// cluster labels.
+// slot's name, position, and a landmark-index handle. Returns false
+// when no more landmarks remain. The landmark-index handle is the
+// opaque key the caller passes back to `MarkLandmarkClaimedByDoor` when
+// a door label takes ownership of the landmark's name.
 bool IterateLandmarks(int& cursor,
                       char* nameOut, size_t nameBufSize,
-                      Vector& posOut, int& outRoomIdx);
+                      Vector& posOut, int& outLandmarkIdx);
 
-// Flag the landmark in room `roomIdx` as "claimed" — wall_topology has
-// just embedded its name into a cluster label, so the per-tick
-// proximity-fire path in TickProximityLandmarks must NOT also announce
-// the bare landmark name (would duplicate the same word twice within
-// a second of each other). Idempotent. Cleared on each area-change
-// rebuild.
-void MarkLandmarkClaimedByDoor(int roomIdx);
+// Flag landmark `landmarkIdx` as "claimed" — wall_topology has just
+// embedded its name into a cluster label, so the per-tick proximity-
+// fire path in TickProximityLandmarks must NOT also announce the bare
+// landmark name (would duplicate the same word twice within a second
+// of each other). Idempotent. Out-of-range indices are silently
+// ignored. Cleared on each area-change rebuild.
+void MarkLandmarkClaimedByDoor(int landmarkIdx);
 
 // Heuristic: vanilla KOTOR content stores `CSWSArea.room_names[]` as
 // the .lyt-room identifier (`m01aa_10`, `stunt_03_main`, `unk_m13ab`)

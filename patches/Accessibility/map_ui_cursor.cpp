@@ -179,11 +179,12 @@ struct CursorState {
     // the moment a different kind/key is observed.
     //
     // pending_ambient_room_idx is the identity key, repurposed across
-    // kinds: .lyt-room index for Landmark/RoomName, wall_topology
-    // cluster id for TerrainShape (stable per perceptual region — no
-    // sig drift inside a curved corridor), -1 otherwise. The kind tag
-    // disambiguates numerically-overlapping values, so renaming the
-    // field isn't needed.
+    // kinds: flat-cache landmark index for Landmark, .lyt-room index
+    // for RoomName, wall_topology cluster id for TerrainShape (stable
+    // per perceptual region — no sig drift inside a curved corridor),
+    // -1 otherwise. The kind tag disambiguates numerically-overlapping
+    // values across these three namespaces, so renaming the field
+    // isn't needed.
     AmbientKind pending_ambient_kind         = AmbientKind::None;
     int         pending_ambient_room_idx     = -1;
     DWORD       pending_ambient_started_ms   = 0;
@@ -958,27 +959,33 @@ void Tick() {
         // Tier 1 landmark (Bioware-authored map-note label, localized,
         // sparse), then Tier 2 mod-supplied friendly room name. Vanilla
         // resref-style room ids fall through to None and stay silent.
-        AmbientKind currentKind    = AmbientKind::None;
-        int         currentRoomIdx = -1;
+        AmbientKind currentKind        = AmbientKind::None;
+        int         currentRoomIdx     = -1;
+        int         currentLandmarkIdx = -1;
+        char        currentLandmarkBuf[128] = {0};
 
         bool explored = acc::engine::IsWorldPointExplored(areaMap, g_state.world);
         if (!explored) {
             currentKind = AmbientKind::Unexplored;
         } else {
-            void* area = acc::engine::GetCurrentArea();
-            int roomIdx = -1;
-            if (area) {
-                acc::engine::GetRoomAtIndexed(area, g_state.world, roomIdx);
-            }
-            if (roomIdx >= 0) {
-                currentRoomIdx = roomIdx;
-                const char* landmark =
-                    acc::transitions::GetLandmarkForRoom(roomIdx);
-                if (landmark) {
-                    currentKind = AmbientKind::Landmark;
-                } else if (area) {
+            constexpr float kLandmarkRangeM = 15.0f;
+            Vector landmarkPos;
+            if (acc::transitions::FindLandmarkNear(
+                    g_state.world, kLandmarkRangeM,
+                    currentLandmarkBuf, sizeof(currentLandmarkBuf),
+                    landmarkPos, &currentLandmarkIdx) &&
+                currentLandmarkBuf[0] != '\0') {
+                currentKind = AmbientKind::Landmark;
+            } else {
+                void* area = acc::engine::GetCurrentArea();
+                int roomIdx = -1;
+                if (area) {
+                    acc::engine::GetRoomAtIndexed(area, g_state.world, roomIdx);
+                }
+                if (roomIdx >= 0) {
+                    currentRoomIdx = roomIdx;
                     char roomBuf[128] = {0};
-                    if (acc::engine::GetRoomDisplayName(
+                    if (area && acc::engine::GetRoomDisplayName(
                             area, roomIdx, roomBuf, sizeof(roomBuf)) &&
                         roomBuf[0] != '\0' &&
                         !acc::transitions::IsResrefStyleRoomName(roomBuf)) {
@@ -1000,20 +1007,24 @@ void Tick() {
             currentKind = AmbientKind::TerrainShape;
         }
 
-        // For Unexplored, room_idx is meaningless (fog spans the cell
-        // grid, not the layout-room partition) — collapse to -1 so the
-        // "same as last spoken" comparison treats all fog cells as one
-        // category. For Landmark / RoomName, room_idx is part of the
-        // identity (different rooms re-announce). For TerrainShape we
-        // key off the wall_topology cluster id, which is stable across
-        // the cluster's footprint — a curved corridor reads as one
-        // cluster even though the per-position sig drifts. Cluster-id
-        // sentinels (None=-1, OpenArea=-2) slot into the same field;
-        // the kind tag disambiguates against room indices that happen
-        // to share the integer value.
+        // For Unexplored, the cell grid spans (fog doesn't follow any
+        // partition) — collapse to -1 so the "same as last spoken"
+        // comparison treats all fog cells as one category. For
+        // Landmark, the flat-cache landmark index is the identity
+        // (different waypoints re-announce, hovering the same waypoint
+        // stays silent). For RoomName, the .lyt-room index keys the
+        // identity (room display name comes from the engine's room
+        // table). For TerrainShape we key off the wall_topology
+        // cluster id, which is stable across the cluster's footprint —
+        // a curved corridor reads as one cluster even though the
+        // per-position sig drifts. The kind tag disambiguates the
+        // shared integer field against value collisions between
+        // landmark indices, room indices, and cluster id sentinels
+        // (None=-1, OpenArea=-2).
         int classifyKey;
-        if (currentKind == AmbientKind::Landmark ||
-            currentKind == AmbientKind::RoomName) {
+        if (currentKind == AmbientKind::Landmark) {
+            classifyKey = currentLandmarkIdx;
+        } else if (currentKind == AmbientKind::RoomName) {
             classifyKey = currentRoomIdx;
         } else if (currentKind == AmbientKind::TerrainShape) {
             classifyKey = shapeClusterId;
@@ -1036,13 +1047,13 @@ void Tick() {
                                      sizeof(currentAmbientText), "%s", t);
                 break;
             }
-            case AmbientKind::Landmark: {
-                const char* lm = acc::transitions::GetLandmarkForRoom(
-                    currentRoomIdx);
-                if (lm) std::snprintf(currentAmbientText,
-                                      sizeof(currentAmbientText), "%s", lm);
+            case AmbientKind::Landmark:
+                if (currentLandmarkBuf[0] != '\0') {
+                    std::snprintf(currentAmbientText,
+                                  sizeof(currentAmbientText), "%s",
+                                  currentLandmarkBuf);
+                }
                 break;
-            }
             case AmbientKind::RoomName: {
                 void* a = acc::engine::GetCurrentArea();
                 if (a) acc::engine::GetRoomDisplayName(
@@ -1123,8 +1134,9 @@ void Tick() {
                             acc::strings::Id::MapCursorUnexplored);
                         break;
                     case AmbientKind::Landmark:
-                        text = acc::transitions::GetLandmarkForRoom(
-                            currentRoomIdx);
+                        if (currentLandmarkBuf[0] != '\0') {
+                            text = currentLandmarkBuf;
+                        }
                         break;
                     case AmbientKind::RoomName: {
                         void* area = acc::engine::GetCurrentArea();

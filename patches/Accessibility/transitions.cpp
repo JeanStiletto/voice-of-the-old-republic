@@ -66,46 +66,38 @@ constexpr int kClusterStabilityTicks = 5;
 int   g_pending_cluster_id    = acc::wall_topology::kClusterIdNone;
 int   g_pending_cluster_count = 0;
 
-// Per-room landmark cache. Built once on each area change by scanning
-// every CSWSWaypoint with has_map_note != 0 AND map_note_enabled != 0,
-// resolving its room via GetRoomAtIndexed, and recording its map_note
-// CExoLocString text. Lookup by room index gives the Bioware-authored
-// "atmospheric" label (e.g. "Brücke", "Frachtraum", "Mannschaftsquartier").
-// Falls back to the resref / synthesised "Raum N" path when no
-// landmark covers a given room.
+// Flat landmark cache. Built once on each area change by scanning
+// every CSWSWaypoint with has_map_note != 0 AND map_note_enabled != 0
+// and recording its world position + map_note CExoLocString text. The
+// cache is intentionally NOT keyed by .lyt-room — that's what this
+// module used to do (`g_room_landmark[roomIdx]`) and the keying broke
+// on K1's sliver-shaped rooms: a player / cursor / marker inside one
+// sliver routinely failed to surface a landmark stored under the
+// adjacent sliver. Lookups are proximity-based instead, via
+// `FindLandmarkNear`.
 //
 // Fog-of-war respect: filtering on map_note_enabled prevents spoiling
 // locations the player hasn't yet discovered on the in-game map. When
-// the player walks into an unrevealed room, our cache won't have an
-// entry and we fall back to "Raum N" — same information channel the
-// sighted player has via the unmarked map slot.
+// the player walks into an unrevealed area, the relevant landmarks
+// aren't in the cache; we fall back to room-name / shape tiers —
+// same information channel the sighted player has.
 //
-// First-come wins on collision: if multiple landmark waypoints share
-// a room (rare), the first one encountered during iteration is kept.
-// Refinement (closest-to-room-centre, longest name, etc.) is parked
-// until in-game testing shows ambiguous picks.
+// `doorMatched` is set by wall_topology::AttachLandmarksToDoors when
+// this landmark's name has been embedded in a cluster label.
+// TickProximityLandmarks skips matched entries so the player doesn't
+// hear "Kreuzung, Ost, Tür Süd, Zur Oberstadt" followed by a redundant
+// standalone "Zur Oberstadt" a second later.
 //
-// Position storage (2026-05-13): the waypoint's world position is
-// stored alongside the text so callers can gate the landmark tier on
-// proximity to the actual waypoint, not just "any point in the same
-// .lyt-room". K1 ships .lyt-rooms shaped as long thin transition
-// strips (the "Zur Oberstadt" doorway sliver covers rooms 50+ metres
-// apart inside Taris South Apartments); without proximity gating the
-// landmark fires every time the player crosses the sliver, regardless
-// of how far they are from the actual waypoint.
-//
-// Sized at kMaxRoomsCache=128 — vanilla KOTOR areas have <50 rooms
-// each. Cache is invalidated (zeroed) on every area change.
-constexpr int kMaxRoomsCache = 128;
-char   g_room_landmark[kMaxRoomsCache][128];
-Vector g_room_landmark_pos[kMaxRoomsCache];
-bool   g_room_landmark_has_pos[kMaxRoomsCache];
-int    g_room_landmark_count = 0;
-// Set by wall_topology::AttachLandmarksToDoors when this slot's landmark
-// gets embedded in a cluster label. TickProximityLandmarks skips matched
-// slots so the player doesn't hear "Kreuzung, Ost, Tür Süd, Zur Oberstadt"
-// followed by a redundant standalone "Zur Oberstadt" a second later.
-bool   g_room_landmark_door_matched[kMaxRoomsCache];
+// Sized at kMaxLandmarks=128 — vanilla KOTOR areas have <50 landmark
+// waypoints each. Cache is invalidated (zeroed) on every area change.
+constexpr int kMaxLandmarks = 128;
+struct Landmark {
+    char   name[128];
+    Vector pos;
+    bool   doorMatched;
+};
+Landmark g_landmarks[kMaxLandmarks];
+int      g_landmark_count = 0;
 
 // Heuristic: vanilla KOTOR content stores room names as the .lyt-room
 // identifier (`m01aa_10`, `stunt_03_main`, `unk_m13ab`) — pronounceable
@@ -144,20 +136,19 @@ void SpeakArea(void* area) {
 }
 
 void RebuildLandmarkCache(void* area) {
-    // Reset cache. Use the index loop instead of memset so we keep
-    // the Vector member alignment guarantees of any future struct
-    // refactor; cheap (128 × 1-byte zero each).
-    for (int i = 0; i < kMaxRoomsCache; ++i) {
-        g_room_landmark[i][0]     = '\0';
-        g_room_landmark_pos[i]    = {0, 0, 0};
-        g_room_landmark_has_pos[i] = false;
-        g_room_landmark_door_matched[i] = false;
+    // Reset cache. Use the index loop instead of memset so the Vector
+    // member alignment guarantees survive any future struct refactor;
+    // cheap (128 small entries).
+    for (int i = 0; i < kMaxLandmarks; ++i) {
+        g_landmarks[i].name[0]     = '\0';
+        g_landmarks[i].pos         = {0, 0, 0};
+        g_landmarks[i].doorMatched = false;
     }
-    g_room_landmark_count = 0;
+    g_landmark_count = 0;
 
     if (!area) return;
 
-    int scanned = 0, landmarks = 0, placed = 0;
+    int scanned = 0, landmarks = 0, placed = 0, dropped = 0;
     acc::engine::AreaObjectIterator iter(area);
     void* obj = nullptr;
     while ((obj = iter.Next()) != nullptr) {
@@ -178,40 +169,38 @@ void RebuildLandmarkCache(void* area) {
         Vector pos;
         if (!acc::engine::GetObjectPosition(obj, pos)) continue;
 
-        int roomIdx = -1;
-        void* room = acc::engine::GetRoomAtIndexed(area, pos, roomIdx);
-        if (!room || roomIdx < 0 || roomIdx >= kMaxRoomsCache) continue;
-
         char note[128] = {0};
         if (!acc::engine::GetWaypointMapNote(obj, note, sizeof(note))) {
             continue;
         }
 
-        // First-come wins. Multiple landmarks per room is rare; refine
-        // only if in-game testing shows ambiguous picks (e.g. prefer
-        // closest-to-room-centre, prefer longest name).
-        if (g_room_landmark[roomIdx][0] == '\0') {
-            std::strncpy(g_room_landmark[roomIdx], note,
-                         sizeof(g_room_landmark[roomIdx]) - 1);
-            g_room_landmark[roomIdx]
-                [sizeof(g_room_landmark[roomIdx]) - 1] = '\0';
-            g_room_landmark_pos[roomIdx]     = pos;
-            g_room_landmark_has_pos[roomIdx] = true;
-            ++g_room_landmark_count;
-            ++placed;
-            acclog::Write("Transition",
-                          "landmark room=%d '%s' pos=(%.2f,%.2f,%.2f)",
-                          roomIdx, note, pos.x, pos.y, pos.z);
+        if (g_landmark_count >= kMaxLandmarks) {
+            ++dropped;
+            continue;
         }
+
+        Landmark& lm = g_landmarks[g_landmark_count];
+        std::strncpy(lm.name, note, sizeof(lm.name) - 1);
+        lm.name[sizeof(lm.name) - 1] = '\0';
+        lm.pos         = pos;
+        lm.doorMatched = false;
+        acclog::Write("Transition",
+                      "landmark[%d] '%s' pos=(%.2f,%.2f,%.2f)",
+                      g_landmark_count, note, pos.x, pos.y, pos.z);
+        ++g_landmark_count;
+        ++placed;
     }
 
+    if (dropped > 0) {
+        acclog::Write("Transition",
+                      "landmark cache overflow — %d landmarks dropped "
+                      "(raise kMaxLandmarks above %d)",
+                      dropped, kMaxLandmarks);
+    }
     acclog::Write("Transition", "landmark cache rebuilt — scanned=%d landmarks=%d "
         "placed=%d (areaPtr=%p)",
         scanned, landmarks, placed, area);
 }
-
-// Definition of GetLandmarkForRoom moved out of the anonymous
-// namespace (below) so the map-cursor can read the same cache.
 
 // Last spoken room label, used as the text-equality dedup key. The .lyt-
 // room partition over-segments KOTOR areas (Endar Spire bridge is split
@@ -269,31 +258,6 @@ constexpr int   kLandmarkStabilityTicks  = 5;
 int   g_lm_prox_pending_idx     = -1;
 int   g_lm_prox_pending_count   = 0;
 int   g_lm_prox_last_spoken_idx = -1;
-
-// Maximum distance (world units; KOTOR = metres) between the player /
-// cursor and a landmark waypoint for the landmark tier to fire. .lyt-
-// rooms in K1 stretch across long thin transition strips, so "same
-// .lyt-room as the waypoint" alone over-fires (room 8 in Taris South
-// Apartments covers a 50m sliver per patch-20260512-223500). 15m
-// matches the typical room-diagonal in vanilla content while excluding
-// the long sliver case. Tune from in-game testing.
-constexpr float kLandmarkProximityMetres = 15.0f;
-
-bool PlayerInLandmarkRange(int roomIdx, const Vector& worldPos) {
-    Vector lp;
-    if (!GetLandmarkPositionForRoom(roomIdx, lp)) {
-        // No recorded waypoint position — treat as "always in range"
-        // so we don't suppress speech for rooms whose position read
-        // faulted at cache build. The position write happens
-        // immediately after GetObjectPosition succeeds, so this is
-        // only the SEH fault path.
-        return true;
-    }
-    float dx = worldPos.x - lp.x;
-    float dy = worldPos.y - lp.y;
-    float d2 = dx * dx + dy * dy;
-    return d2 <= (kLandmarkProximityMetres * kLandmarkProximityMetres);
-}
 
 // Resolve the speech at `worldPos` using a two-tier order:
 //   1. Friendly room name at the resolved .lyt-room (filters resref-
@@ -566,9 +530,9 @@ void TickProximityLandmarks(const Vector& playerPos) {
     // clear it so we can re-announce on a future approach.
     if (g_lm_prox_last_spoken_idx >= 0) {
         int i = g_lm_prox_last_spoken_idx;
-        if (i >= 0 && i < kMaxRoomsCache && g_room_landmark_has_pos[i]) {
-            float dx = playerPos.x - g_room_landmark_pos[i].x;
-            float dy = playerPos.y - g_room_landmark_pos[i].y;
+        if (i >= 0 && i < g_landmark_count) {
+            float dx = playerPos.x - g_landmarks[i].pos.x;
+            float dy = playerPos.y - g_landmarks[i].pos.y;
             float d2 = dx * dx + dy * dy;
             if (d2 > kLandmarkExitRangeM * kLandmarkExitRangeM) {
                 acclog::Write("Transition",
@@ -583,7 +547,7 @@ void TickProximityLandmarks(const Vector& playerPos) {
         }
     }
 
-    // Find the nearest landmark inside enter range. Skip slots whose
+    // Find the nearest landmark inside enter range. Skip entries whose
     // landmark wall_topology already embedded in a cluster label — the
     // player heard the name as part of the room-shape announce on
     // cluster entry, and a redundant standalone fire would talk over
@@ -591,12 +555,11 @@ void TickProximityLandmarks(const Vector& playerPos) {
     // cluster-vs-landmark double-announce regression).
     int   nearest = -1;
     float bestD2  = kLandmarkEnterRangeM * kLandmarkEnterRangeM;
-    for (int i = 0; i < kMaxRoomsCache; ++i) {
-        if (!g_room_landmark_has_pos[i])    continue;
-        if (g_room_landmark[i][0] == '\0')  continue;
-        if (g_room_landmark_door_matched[i]) continue;
-        float dx = playerPos.x - g_room_landmark_pos[i].x;
-        float dy = playerPos.y - g_room_landmark_pos[i].y;
+    for (int i = 0; i < g_landmark_count; ++i) {
+        if (g_landmarks[i].name[0] == '\0') continue;
+        if (g_landmarks[i].doorMatched)     continue;
+        float dx = playerPos.x - g_landmarks[i].pos.x;
+        float dy = playerPos.y - g_landmarks[i].pos.y;
         float d2 = dx * dx + dy * dy;
         if (d2 < bestD2) {
             bestD2  = d2;
@@ -634,12 +597,12 @@ void TickProximityLandmarks(const Vector& playerPos) {
         acclog::Write("Transition",
                       "landmark proximity -> '%s' (idx=%d dist=%.2fm) "
                       "gated, state advanced silently",
-                      g_room_landmark[nearest], nearest, std::sqrt(bestD2));
+                      g_landmarks[nearest].name, nearest, std::sqrt(bestD2));
     } else {
-        prism::SpeakUrgent(g_room_landmark[nearest]);
+        prism::SpeakUrgent(g_landmarks[nearest].name);
         acclog::Write("Transition",
                       "landmark proximity -> '%s' (idx=%d dist=%.2fm)",
-                      g_room_landmark[nearest], nearest, std::sqrt(bestD2));
+                      g_landmarks[nearest].name, nearest, std::sqrt(bestD2));
     }
     g_lm_prox_last_spoken_idx = nearest;
     g_lm_prox_pending_idx     = -1;
@@ -674,40 +637,56 @@ bool IsResrefStyleRoomName(const char* name) {
     return false;
 }
 
-const char* GetLandmarkForRoom(int roomIdx) {
-    if (roomIdx < 0 || roomIdx >= kMaxRoomsCache) return nullptr;
-    if (g_room_landmark[roomIdx][0] == '\0') return nullptr;
-    return g_room_landmark[roomIdx];
-}
+bool FindLandmarkNear(const Vector& pos, float rangeM,
+                      char* nameOut, size_t nameBufSize,
+                      Vector& posOut,
+                      int* outLandmarkIdx) {
+    if (outLandmarkIdx) *outLandmarkIdx = -1;
+    if (!nameOut || nameBufSize == 0) return false;
+    nameOut[0] = '\0';
+    if (rangeM <= 0.0f) return false;
+    const float maxD2 = rangeM * rangeM;
 
-bool GetLandmarkPositionForRoom(int roomIdx, Vector& outPos) {
-    if (roomIdx < 0 || roomIdx >= kMaxRoomsCache) return false;
-    if (!g_room_landmark_has_pos[roomIdx])        return false;
-    outPos = g_room_landmark_pos[roomIdx];
+    int   best   = -1;
+    float bestD2 = maxD2;
+    for (int i = 0; i < g_landmark_count; ++i) {
+        if (g_landmarks[i].name[0] == '\0') continue;
+        float dx = pos.x - g_landmarks[i].pos.x;
+        float dy = pos.y - g_landmarks[i].pos.y;
+        float d2 = dx * dx + dy * dy;
+        if (d2 <= bestD2) {
+            bestD2 = d2;
+            best   = i;
+        }
+    }
+    if (best < 0) return false;
+    std::strncpy(nameOut, g_landmarks[best].name, nameBufSize - 1);
+    nameOut[nameBufSize - 1] = '\0';
+    posOut = g_landmarks[best].pos;
+    if (outLandmarkIdx) *outLandmarkIdx = best;
     return true;
 }
 
 bool IterateLandmarks(int& cursor,
                       char* nameOut, size_t nameBufSize,
-                      Vector& posOut, int& outRoomIdx) {
+                      Vector& posOut, int& outLandmarkIdx) {
     if (!nameOut || nameBufSize == 0) return false;
     if (cursor < 0) cursor = 0;
-    while (cursor < kMaxRoomsCache) {
+    while (cursor < g_landmark_count) {
         int i = cursor++;
-        if (!g_room_landmark_has_pos[i])    continue;
-        if (g_room_landmark[i][0] == '\0')  continue;
-        std::strncpy(nameOut, g_room_landmark[i], nameBufSize - 1);
+        if (g_landmarks[i].name[0] == '\0') continue;
+        std::strncpy(nameOut, g_landmarks[i].name, nameBufSize - 1);
         nameOut[nameBufSize - 1] = '\0';
-        posOut     = g_room_landmark_pos[i];
-        outRoomIdx = i;
+        posOut         = g_landmarks[i].pos;
+        outLandmarkIdx = i;
         return true;
     }
     return false;
 }
 
-void MarkLandmarkClaimedByDoor(int roomIdx) {
-    if (roomIdx < 0 || roomIdx >= kMaxRoomsCache) return;
-    g_room_landmark_door_matched[roomIdx] = true;
+void MarkLandmarkClaimedByDoor(int landmarkIdx) {
+    if (landmarkIdx < 0 || landmarkIdx >= g_landmark_count) return;
+    g_landmarks[landmarkIdx].doorMatched = true;
 }
 
 void Tick() {

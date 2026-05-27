@@ -30,7 +30,7 @@
                                       // audio wall-cue surface clustering)
 #include "strings.h"
 #include "prism.h"
-#include "transitions.h"          // IsWorldSpeechGated, GetLandmarkForRoom,
+#include "transitions.h"          // IsWorldSpeechGated, FindLandmarkNear,
                                   // IsResrefStyleRoomName
 #include "wall_topology.h"        // nav-graph region lookup (same source the
                                   // walking adapter speaks from)
@@ -437,33 +437,27 @@ bool ResolveCursorRegionLabel(void* area, const Vector& cursor,
     outBuf[0] = '\0';
     outSource = "none";
 
+    // Landmark tier — proximity lookup over the flat landmark cache.
+    // The 15m radius matches the walking adapter's enter/exit windows,
+    // wide enough to cover typical room diagonals while excluding the
+    // long sliver case that the old room-keyed lookup over-fired on.
+    constexpr float kLandmarkRangeM = 15.0f;
+    {
+        char   landmarkBuf[128] = {0};
+        Vector landmarkPos;
+        if (acc::transitions::FindLandmarkNear(
+                cursor, kLandmarkRangeM,
+                landmarkBuf, sizeof(landmarkBuf), landmarkPos) &&
+            landmarkBuf[0] != '\0') {
+            std::snprintf(outBuf, bufSize, "%s", landmarkBuf);
+            outSource = "landmark";
+            return true;
+        }
+    }
+
     int roomIdx = -1;
     acc::engine::GetRoomAtIndexed(area, cursor, roomIdx);
-
     if (roomIdx >= 0) {
-        const char* landmark = acc::transitions::GetLandmarkForRoom(roomIdx);
-        if (landmark && landmark[0] != '\0') {
-            // Same proximity gate the walking adapter applies. If the
-            // landmark waypoint is recorded with a world position, only
-            // fire when the cursor sits within 15m of it — otherwise
-            // the .lyt-room sliver shape would over-fire the landmark
-            // across the whole partition.
-            Vector lp;
-            bool inRange = true;
-            if (acc::transitions::GetLandmarkPositionForRoom(roomIdx, lp)) {
-                float dx = cursor.x - lp.x;
-                float dy = cursor.y - lp.y;
-                constexpr float kLandmarkRangeM = 15.0f;
-                inRange = (dx * dx + dy * dy) <=
-                          (kLandmarkRangeM * kLandmarkRangeM);
-            }
-            if (inRange) {
-                std::snprintf(outBuf, bufSize, "%s", landmark);
-                outSource = "landmark";
-                return true;
-            }
-        }
-
         char nameBuf[128] = {0};
         if (acc::engine::GetRoomDisplayName(area, roomIdx,
                                             nameBuf, sizeof(nameBuf)) &&

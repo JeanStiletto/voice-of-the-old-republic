@@ -48,22 +48,34 @@ void BuildAutoName(void* area, const Vector& pos, int seq,
     const char* tplWithRoom = acc::strings::Get(
         acc::strings::Id::FmtSavedMarkerAutoWithRoom);
 
-    int roomIdx = -1;
-    if (area) acc::engine::GetRoomAtIndexed(area, pos, roomIdx);
-    if (roomIdx >= 0) {
-        const char* landmark =
-            acc::transitions::GetLandmarkForRoom(roomIdx);
-        if (landmark && landmark[0] != '\0') {
-            std::snprintf(outBuf, bufSize, tplWithRoom, landmark, seq);
-            return;
-        }
-        char roomBuf[128] = {0};
-        if (area && acc::engine::GetRoomDisplayName(
-                area, roomIdx, roomBuf, sizeof(roomBuf)) &&
-            roomBuf[0] != '\0' &&
-            !acc::transitions::IsResrefStyleRoomName(roomBuf)) {
-            std::snprintf(outBuf, bufSize, tplWithRoom, roomBuf, seq);
-            return;
+    // Tier 1 — proximity-based landmark lookup (15m, matching the
+    // cursor / walking-adapter window). Landmark binding by .lyt-room
+    // breaks down on K1's sliver-shaped rooms.
+    constexpr float kLandmarkRangeM = 15.0f;
+    char   landmarkBuf[128] = {0};
+    Vector landmarkPos;
+    if (acc::transitions::FindLandmarkNear(
+            pos, kLandmarkRangeM,
+            landmarkBuf, sizeof(landmarkBuf), landmarkPos) &&
+        landmarkBuf[0] != '\0') {
+        std::snprintf(outBuf, bufSize, tplWithRoom, landmarkBuf, seq);
+        return;
+    }
+
+    // Tier 2 — engine-supplied authored room name (skip vanilla
+    // resref-style noise).
+    if (area) {
+        int roomIdx = -1;
+        acc::engine::GetRoomAtIndexed(area, pos, roomIdx);
+        if (roomIdx >= 0) {
+            char roomBuf[128] = {0};
+            if (acc::engine::GetRoomDisplayName(
+                    area, roomIdx, roomBuf, sizeof(roomBuf)) &&
+                roomBuf[0] != '\0' &&
+                !acc::transitions::IsResrefStyleRoomName(roomBuf)) {
+                std::snprintf(outBuf, bufSize, tplWithRoom, roomBuf, seq);
+                return;
+            }
         }
     }
     std::snprintf(outBuf, bufSize, tpl, seq);

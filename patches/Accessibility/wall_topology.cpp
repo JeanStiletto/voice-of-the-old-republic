@@ -665,9 +665,9 @@ void AttachLandmarksToDoors(void* /*area*/) {
     int cursor = 0;
     char name[128] = {0};
     Vector lmPos = {0.0f, 0.0f, 0.0f};
-    int roomIdx = -1;
+    int landmarkIdx = -1;
     while (acc::transitions::IterateLandmarks(
-               cursor, name, sizeof(name), lmPos, roomIdx)) {
+               cursor, name, sizeof(name), lmPos, landmarkIdx)) {
         // Linear scan over doors — door_count is tiny (≤128, in practice
         // <30 for vanilla areas), so the O(landmarks * doors) sweep is
         // a few hundred multiplies total per area build.
@@ -693,10 +693,10 @@ void AttachLandmarksToDoors(void* /*area*/) {
             ++unmatched;
             acclog::Write(
                 "WallTopo",
-                "AttachLandmarks: UNMATCHED landmark room=%d '%s' "
+                "AttachLandmarks: UNMATCHED landmark[%d] '%s' "
                 "lmPos=(%.2f,%.2f) — nearest door[%d] pos=(%.2f,%.2f) "
                 "dist=%.2fm > %.1fm threshold (transition=\"%s\")",
-                roomIdx, name,
+                landmarkIdx, name,
                 lmPos.x, lmPos.y,
                 bestDoor,
                 g_graph.doors[bestDoor].pos.x, g_graph.doors[bestDoor].pos.y,
@@ -712,10 +712,10 @@ void AttachLandmarksToDoors(void* /*area*/) {
             ++conflicts;
             acclog::Write(
                 "WallTopo",
-                "AttachLandmarks: CONFLICT landmark room=%d '%s' "
+                "AttachLandmarks: CONFLICT landmark[%d] '%s' "
                 "would match door[%d] (dist=%.2fm) but door already "
                 "claimed by '%s' — skipping",
-                roomIdx, name, bestDoor, bestDist,
+                landmarkIdx, name, bestDoor, bestDist,
                 g_graph.doors[bestDoor].landmarkName);
             continue;
         }
@@ -724,14 +724,14 @@ void AttachLandmarksToDoors(void* /*area*/) {
                      sizeof(g_graph.doors[bestDoor].landmarkName) - 1);
         g_graph.doors[bestDoor]
             .landmarkName[sizeof(g_graph.doors[bestDoor].landmarkName) - 1] = '\0';
-        acc::transitions::MarkLandmarkClaimedByDoor(roomIdx);
+        acc::transitions::MarkLandmarkClaimedByDoor(landmarkIdx);
         ++matched;
         acclog::Write(
             "WallTopo",
-            "AttachLandmarks: matched landmark room=%d '%s' → door[%d] "
+            "AttachLandmarks: matched landmark[%d] '%s' → door[%d] "
             "lmPos=(%.2f,%.2f) doorPos=(%.2f,%.2f) dist=%.2fm "
             "(was transitionDest=\"%s\")",
-            roomIdx, name, bestDoor,
+            landmarkIdx, name, bestDoor,
             lmPos.x, lmPos.y,
             g_graph.doors[bestDoor].pos.x, g_graph.doors[bestDoor].pos.y,
             bestDist,

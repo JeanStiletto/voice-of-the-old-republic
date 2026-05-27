@@ -11,14 +11,13 @@
 // listing format and sort behaviour can be eyeballed in logs before lay-off
 // 3 wires keys.
 //
-// Cycle scope (per docs/navsystem-longterm-plan.md §"Cycle scope"): the
-// plan locks "current room + line-of-sight extension" for normal gameplay.
-// This lay-off uses the simpler **whole-area** scope as a placeholder; the
-// room+LOS narrowing lands when engine_area gets the room-cluster slice
-// (currently scheduled for the same lay-off as Pillar 2 transitions, since
-// both consume GetRoomAt deltas). Acceptable interim — over-includes
-// objects from adjacent rooms but produces non-empty listings everywhere
-// for dev-loop testing.
+// Cycle scope: whole-area listings, sorted by distance. The earlier
+// "current .lyt-room + LOS" narrowing plan was abandoned when .lyt-
+// rooms turned out to over-segment K1 into spatially-meaningless
+// slivers (see project memory on .wok rooms — mesh-identity OK, NOT
+// perceptual). Whole-area listings are the right default: short
+// enough to feel instant on Pillar 4's per-key cycle, and the cluster
+// labels in announce already give the user a regional cue.
 
 #pragma once
 
