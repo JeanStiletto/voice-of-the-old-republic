@@ -160,6 +160,8 @@ same_name_suffix.cpp
 same_name_suffix.h
 spatial_change_detector.cpp
 spatial_change_detector.h
+spatial_wall_surfaces.cpp
+spatial_wall_surfaces.h
 state_overrides.cpp
 state_overrides.h
 strings.cpp

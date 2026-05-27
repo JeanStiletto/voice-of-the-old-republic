@@ -19,11 +19,17 @@
 // only fires when the foremost hasn't been recently stamped. Result:
 // approach reads as T1-only; T2 only adds audio during stationary
 // rotation or rotation across already-stamped features.
+//
+// The wall-cache + surface clustering subsystem (built on area change,
+// read here per tick) lives in spatial_wall_surfaces.{h,cpp}. The
+// public wall accessors below are thin wrappers preserved for the
+// existing consumer set; new code can call wall_surfaces:: directly.
 
 #pragma once
 
 #include "engine_offsets.h"
 #include "engine_area.h"
+#include "spatial_wall_surfaces.h"  // WallSurfaceDesc + wall_surfaces::*
 
 namespace acc::spatial::change_detector {
 
@@ -31,24 +37,13 @@ namespace acc::spatial::change_detector {
 // resets per-feature state on area change. Silent on null player/area.
 void Tick();
 
+// Re-exported for legacy callers; new code can use
+// acc::spatial::wall_surfaces directly.
+using acc::spatial::wall_surfaces::WallSurfaceDesc;
+
 // Borrowed pointer into static storage, valid for the area lifetime.
 // Don't retain across transitions. False until first Tick has populated.
 bool GetCachedWalls(const acc::engine::WallEdge*& outBuf, int& outCount);
-
-// One wall surface = chain of collinear endpoint-sharing edges
-// clustered at area-load via union-find (~5cm endpoint match, ~15°
-// direction match, across rooms).
-//
-// a/b = the two extreme endpoints (only ones used by exactly one edge).
-// Consumed by wall_topology to skip a redundant merge pass.
-struct WallSurfaceDesc {
-    Vector a;
-    Vector b;
-    float  dir_x;
-    float  dir_y;
-    float  length;
-    int    edge_count;
-};
 
 // 0 until first Tick has populated.
 int GetWallSurfaceCount();

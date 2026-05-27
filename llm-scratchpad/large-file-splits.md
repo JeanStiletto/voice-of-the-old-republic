@@ -1,22 +1,14 @@
 # Large-file-handling — split plan
 
-Triage produced by subagent on 2026-05-27 against the >500-line files in `patches/Accessibility/`. Of 31 candidates, 26 were classified single-concern (kept), 5 mix concerns (split). Out of 5, **1 done**, **4 remaining**.
+Triage produced by subagent on 2026-05-27 against the >500-line files in `patches/Accessibility/`. Of 31 candidates, 26 were classified single-concern (kept), 5 mix concerns (split). Out of 5, **2 done**, **3 remaining**.
 
 ## Done
 - **swoop_race.cpp → swoop_spatial_audio.{h,cpp}** (commit `7c2827a`). Spatial-audio sweep (obstacle + accelpad loops, MGO array walk, AsObstacle/AsEnemy vtable downcasts) moved into its own TU behind `TickSpatialAudio` + `ResetSpatialAudio`. Tested live by user. Audio glossary additions for the four samples in commit `549beb4`.
+- **spatial_change_detector.cpp → spatial_wall_surfaces.{h,cpp}**. Wall cache + union-find clustering + per-surface descriptors moved into the new `acc::spatial::wall_surfaces` namespace (~476 line cpp + 92 line header). `spatial_change_detector.h` keeps its legacy public API as thin wrappers that forward to `wall_surfaces::*`; `WallSurfaceDesc` re-exported via `using`. No external caller updates required (wall_topology, view_mode, guidance_pathfind, audio_footstep_suppress, map_ui_cursor still call the change_detector:: namespace). change_detector.cpp dropped 1614 → 1180 lines. Build clean at 91 TUs (was 90). Awaiting user smoke test before commit.
 
 ## Remaining (high value)
 
-### 1. spatial_change_detector.cpp (1614 lines)
-Mixes three algorithms:
-- Public T1 per-sector distance tracking + T2 foremost-in-front cone scan (keep)
-- Wall cache build (`g_walls`, `g_wall_count`) + surface clustering via union-find (`ClusterEdgesIntoSurfaces`, `BuildSurfaceDescriptors`, ~400 lines) — **split out**
-
-Target: `spatial_wall_surfaces.cpp` with the union-find math and wall-cache build.
-
-Risk: `g_walls` and `g_edge_surface_id` are read from both halves. The file already exposes public accessors (`GetCachedWalls`, `GetEdgeSurfaceId`, `GetWallSurfaceCount`, `GetWallSurfaceDesc`) — keep the arrays in `spatial_wall_surfaces.cpp` and have the original TU call through the accessors. No shared writeable global needs duplication.
-
-### 2. menus_listbox.cpp (1779 lines)
+### 1. menus_listbox.cpp (1779 lines)
 Mostly single-concern (listbox spec dispatch), but a diagnostic block at the tail (L1616-L1779, ~130 lines) doesn't belong:
 - `DumpUshortListSEH`, `DumpChartCells`, `DumpFeatsCharGenStructureIfNeeded`
 
@@ -28,7 +20,7 @@ Caller of the dump is `TickListboxMonitors` (~L1594), so it's effectively diagno
 
 ## Remaining (marginal)
 
-### 3. menus.cpp (2663 lines)
+### 2. menus.cpp (2663 lines)
 Most growth since the prior 5327→1906 refactor (memory `project_menus_refactor_plan.md`) is organic feature growth on the core hook (`OnHandleInputEvent` expanding for new panel types). Only two small displacements live in the wrong file:
 - 4 diagnostic listbox hooks (L2564-L2647, ~80 lines): `OnListBoxLMouseDown`, `OnListBoxLMouseUp`, `OnListBoxHandleInput`, `OnListBoxSetSelectedControl` → move to `menus_listbox.cpp`
 - `OnSetMoveToModuleString` (L2647-L2661, ~15 lines): thin entry hook that just calls `transitions::AnnouncePreLoadDestination`. Move to `transitions.cpp`.
@@ -37,7 +29,8 @@ Both are mechanical (no shared state). `hooks.toml` references the symbol names,
 
 Defer note: split only if menus.cpp continues to grow. Currently low payoff.
 
-### 4. combat_query.cpp (916 lines)
+### 3. combat_query.cpp (916 lines)
+
 Splits into two phase concerns:
 - Phase 2A: self status (`SpeakSelectedPcStatBlock`, `TickLeaderChangeAutoAnnounce`, `BuildTargetCombatBrief`)
 - Phase 2C: Shift+H target examine (`HotkeyShiftH`, `PollWin32Hotkey`)
@@ -46,7 +39,7 @@ Shared infrastructure: `ReadCreatureStats`, `CallIntAccessor`, the `StatSnap` ty
 
 Phase 2C is structurally adjacent to `examine_view.cpp` (both operate on LastTarget). One option: merge Phase 2C with `examine_view.cpp` rather than a fresh TU.
 
-Defer note: requires architectural decision (shared header vs merge with examine_view). Lower priority than #1 and #2.
+Defer note: requires architectural decision (shared header vs merge with examine_view). Lower priority than the menus_listbox + menus.cpp splits.
 
 ## Files explicitly kept (single concern)
 For the record so the audit doesn't get re-run:
