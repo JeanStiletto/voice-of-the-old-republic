@@ -1,28 +1,6 @@
-// Navigation-system settings — locked defaults per
-// docs/navsystem-longterm-plan.md §"Locked defaults".
-//
-// Layer: core/ (data-only header + tiny .cpp). No engine touch, no I/O,
-// no engine-state reads — pure constants returned from a single accessor.
-//
-// Phase 1 lay-off 7: minimal stub. The values below are the plan-locked
-// defaults. Phase 7 (user options UI, deferred) will replace the static
-// constants with a config-file-backed mutable struct + load/save plumbing.
-// Until then, every consumer in Phase 2-6 reads through `Get()` so the
-// Phase 7 swap is a single-file change rather than a code-wide refactor.
-//
-// Several plan defaults flagged "(starting; tune live)" — those values are
-// our best initial guess; expect them to change once Phase 3 hook tests
-// produce live readings. Numeric tunables grouped per pillar so the future
-// UI can expose them as sliders.
-//
-// What's NOT in here:
-//   - Hardcoded design choices that the plan locked as behaviour rather
-//     than user knobs (bearing frame = world-frame, cycle sort = distance
-//     ascending, direction frame = clock-position, etc). Those live in
-//     the consumer code as constants.
-//   - Movement key swap (A/D ↔ Q/E) — ships via KotOR's engine keybind
-//     config per plan §Movement model, not as a runtime setting.
-//   - Per-save profiles. Plan §"Persistence: global" is explicit.
+// Nav-system settings — minimal stub. Consumers go through Get() so the
+// future user-options UI is a single-file swap. Behaviour-as-locked-design
+// (bearing frame, cycle sort order, etc.) stays in consumer code.
 
 #pragma once
 
@@ -30,7 +8,6 @@ namespace acc::core {
 
 // Pillar 1 — small-scale change-driven cues.
 struct Pillar1Settings {
-    // 8 per-kind cue toggles (plan §Locked defaults — Pillar 1).
     bool cueWall              = true;
     bool cueHazard            = true;
     bool cueDoor              = true;
@@ -39,52 +16,42 @@ struct Pillar1Settings {
     bool cueItem              = true;
     bool cueLandmark          = true;
     bool cueTransition        = true;
-    // Trigger toggles.
-    bool trigger1DistanceDelta = true;  // 360° distance-delta
-    bool trigger2FrontCone     = true;  // ±45° foremost-in-front cone (= T1 Front sector)
-    // Stuck-detection footstep gating (plan §Pillar 1 stuck-detection).
+    bool trigger1DistanceDelta = true;       // 360° distance-delta
+    bool trigger2FrontCone     = true;       // ±45° foremost-in-front cone
     bool footstepSuppression   = true;
-    // Numeric tunables (plan-locked starting values; tune live).
     float awarenessRangeMeters         = 5.0f;
     float distanceDeltaThresholdMeters = 1.5f;
     int   voiceBudgetMax               = 3;
-    // Per-tick wall-cue cap. Trigger 1 collects every wall that crossed
-    // threshold this tick, then fires only the K nearest. Caps audible
-    // density in dense corridors where 20+ walkmesh-perimeter edges can
-    // simultaneously cross threshold as the player moves. Walls beyond
-    // K still get their `last_cued_distance` updated so they don't pile
-    // back into the candidate pool next tick.
+    // K-nearest cap on per-tick wall cues; walls beyond K still update
+    // last_cued_distance so they don't pile into next tick's candidates.
     int   trigger1MaxWallCuesPerTick   = 3;
 };
 
-// Pillar 2 — medium-scale room/area announcements + view mode.
+// Pillar 2 — room/area announcements + view mode.
 struct Pillar2Settings {
     bool roomTransitionAnnouncement = true;
-    bool areaTransitionAnnouncement = true;   // two-stage (loading + arrived)
+    bool areaTransitionAnnouncement = true;
     bool octagonalCompassOnTurn     = true;
-    bool viewModeFindabilityLoops   = true;   // active only when view mode is on
+    bool viewModeFindabilityLoops   = true;
     float octagonalSectorHysteresisDegrees = 5.0f;
     int   viewModeTtsHoverPauseMs          = 300;
 };
 
-// Pillar 3 — large-scale guidance, map cursor, named markers.
+// Pillar 3 — guidance, map cursor, named markers.
 struct Pillar3Settings {
     bool audioBeacon              = true;
     bool autowalk                 = true;
-    bool mapCursorExploreMode     = true;   // active when map UI is open
+    bool mapCursorExploreMode     = true;
     bool playerPositionOnMap      = true;
     bool savedNamedMarkersEnabled = true;
-    bool multiAreaRouteChoicePrompt = false; // plan: future feature
+    bool multiAreaRouteChoicePrompt = false;
     float reachedToleranceMeters  = 1.0f;
-    // Distance-to-destination milestones in metres, descending. Beacon /
-    // TTS fires once per crossing. Length-prefixed via the array size.
     static constexpr int kDistanceMilestoneCount = 5;
     float distanceMilestonesMeters[kDistanceMilestoneCount] = { 200.0f, 100.0f, 50.0f, 20.0f, 5.0f };
 };
 
 // Pillar 4 — discrete object cycle.
 struct Pillar4Settings {
-    // 6 category toggles (plan §Pillar 4 categories — locked).
     bool categoryDoor             = true;
     bool categoryNpc              = true;
     bool categoryContainer        = true;
@@ -95,14 +62,11 @@ struct Pillar4Settings {
     bool spoilerGating            = true;   // engine fog-of-war + curation
 };
 
-// Cross-pillar.
 struct CrossPillarSettings {
     bool combatVerbosityReduction = true;
-    bool cutsceneNavCuesMostlyOff = true;   // only Pillar 2 transitions may fire
+    bool cutsceneNavCuesMostlyOff = true;
 };
 
-// Top-level settings aggregate. Single instance; consumers hold a const
-// reference returned by Get().
 struct NavSettings {
     Pillar1Settings     pillar1;
     Pillar2Settings     pillar2;
@@ -111,9 +75,6 @@ struct NavSettings {
     CrossPillarSettings cross;
 };
 
-// Returns the (currently immutable) settings instance. Phase 7's user
-// options UI will replace the static-default backing without changing this
-// signature.
 const NavSettings& Get();
 
 }  // namespace acc::core
