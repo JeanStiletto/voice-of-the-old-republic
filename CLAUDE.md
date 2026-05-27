@@ -75,9 +75,13 @@ Example - instead of tables, format like this:
 ### Documentation
 Always read these before diving into work — they capture decisions and current state:
 - **`docs/tools.md`** — installs and paths (game, JDK, Ghidra, VS Build Tools, patch manager, kdev). Update when new tools are installed.
-- **`docs/accessibility-investigation.md`** — architecture decisions, Steam-vs-GoG resolution, ordered next steps for the *accessibility mod* itself, open questions.
 - **`docs/kdev-design.md`** — kdev's design decisions, project layout, subcommand contracts, exit codes, completion status.
+- **`docs/controls-and-input.md`** — canonical KOTOR 1 keyboard/mouse control survey + accessibility-gap backlog.
+- **`docs/installer.md`** — end-user installer design, bundled-mods plan, beta-prep notes.
+- **`docs/upstream-prs.md`** — tracking of fixes/features we plan to send back to upstream (mostly KPatchManager).
+- **`docs/known-issues.md`** — five-bucket status tracker (Bugs / Planned / Monitor / Polish / Beta Preparations).
 - **`docs/llm-docs/`** — folder for external reference material (RE databases, vendor docs, etc.) we want mirrored locally.
+- **`archiev/`** — historical investigation, design, and progress docs (session-by-session retrospectives). Search here if a code comment references a `docs/*-investigation.md` or `docs/navsystem-*.md` that no longer exists in `docs/`.
 
 ### Game folders that matter for modding
 - **`Override\`** — drop-in folder; any file here overrides the matching resource in the BIFs. Primary entry point for content mods. Currently empty.

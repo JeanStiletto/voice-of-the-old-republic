@@ -1,58 +1,58 @@
-# KOTOR Blind Accessibility
+# KOTOR 1 Accessibility Mod
 
-A screen-reader accessibility mod for **Star Wars: Knights of the Old Republic 1** (BioWare, 2003) targeting the Steam release. Aims to enable fully blind players to navigate menus, hear focused UI elements, dialog, combat events, and game state via NVDA / JAWS / Narrator.
+A screen-reader accessibility mod for **Star Wars: Knights of the Old Republic 1** (BioWare, 2003) targeting the Steam release. Lets fully blind players play KOTOR 1 with NVDA, JAWS, Narrator, or any other Tolk-supported screen reader.
 
-**Status:** Early development. Focus-change announcements work for the main menu and panel-based screens (options, character creation buttons). Many control types and in-game systems (dialog, combat, inventory, listboxes, sliders) are not yet covered.
+The mod is written by a blind developer. Every workflow — installing, playing, contributing — is designed to be doable with a screen reader and keyboard alone.
 
 ## What works today
 
-- Process-injected C++ patch DLL hooks the engine and reads control state from memory directly (no polling).
-- [Prism](https://github.com/ethindp/prism) (MPL-2.0, dynamically loaded) bridges to NVDA / JAWS / Window-Eyes / ZDSR / System Access / OneCore / SAPI for normal speech; urgent map-cursor / region-cursor cues route through Prism's SAPI backend specifically so NVDA's typed-character cancel does not silence them.
-- Startup announcement: `"KOTOR accessibility mod loaded, version X"`.
-- Per-focus-change announcement: extracts the focused control's text via vtable downcast (`CSWGuiPanel::SetActiveControl` hook → `vtable->AsButton()` / `AsLabel()` → read CExoString at the subclass-specific offset). German Steam build verified — produces real localized labels ("Neues Spiel", "Optionen", "Gameplay", etc.).
+Implemented and playable end-to-end:
 
-## Architecture
+- **Menus.** Main menu, options, character creation, save / load, in-game menus (inventory, character sheet, journal, map, store, container, equip, level-up, workbench, party selection). Listboxes, sliders, edit boxes, toggles, cycle buttons, radial menu — all keyboard-navigable, all announced.
+- **In-world navigation.** Per-area room and area announcements. A wall-distance audio cue layer ("Pillar 1") gives spatial awareness in 3D space. Target cycling with Q / E (engine-native) and a separate map-context cycle on `,` / `.`. Autowalk to any cycled object via `-`; beacon mode via `Ctrl+-`.
+- **Combat.** Combat log narration, attack resolutions, queue submenu, PC + opponent stats, Examine, bare 1–7 action keys, action bar.
+- **Dialog.** Conversation lines spoken, choice menus navigable.
+- **Map.** Engine-rendered doors / landmarks / transitions / quest pins cycle through the same vocabulary as in-world; user-placed markers via Shift+N; fog-of-war respected.
+- **Audio cues.** Wall proximity, room transitions, door material cues, footstep suppression when stuck, character-frame audio compensation.
 
-```
-patches/Accessibility/
-├── Accessibility.cpp     DllMain + per-hook OnXxx handlers
-├── log.{h,cpp}           file/debug logging primitives
-├── tolk.{h,cpp}          speech bridge (Prism, LoadLibrary, lazy init —
-│                         namespace name is a historical hold-over from
-│                         the pre-migration Tolk path)
-├── hooks.toml            Kotor-Patch-Manager hook declarations
-├── exports.def           DLL exports table
-└── manifest.toml         patch metadata + supported game SHAs
+Status of each subsystem is tracked in `docs/known-issues.md`.
 
-third_party/prism-dist/   vendored Prism x86 binaries (prism.dll +
-                          headers) + MPL-2.0 license
-```
+## Installing
 
-Hooks land mid-function and capture `this` / args from registers (the upstream framework's stack-source path has a known LEA-vs-MOV bug). Prism is initialized lazily on first hook fire (not in DllMain — Prism loads COM and screen-reader driver DLLs, both unsafe under the loader lock).
+The end-user installer lives in `installer/KotorAccessibilityInstaller/` (Windows, self-contained single-file EXE).
 
-## Build dependencies (not in this repo)
+For now: download the latest release from the releases page, run it, point it at your KOTOR install. The installer bundles the K1 Community Patch (K1CP) by default; opt out if you already have it.
 
-- `kdev` — internal CLI that drives clean → build → apply → launch. Wraps Visual Studio Build Tools 2022 (x86), Lane Dibello's Kotor-Patch-Manager release, and the game install.
-- Lane Dibello's [Kotor-Patch-Manager](https://github.com/LaneDibello/Kotor-Patch-Manager) — the in-process hook framework + launcher.
-- [Prism](https://github.com/ethindp/prism) prebuilt x86 binary (vendored under `third_party/prism-dist/`).
-- Lane Dibello's reverse-engineered Ghidra database (linked from the [DeadlyStream RE thread](https://deadlystream.com/topic/11948-kotor-1-gog-reverse-engineering/)). Required for finding hook addresses + struct offsets.
+Source-build installation is documented in `CONTRIBUTING.md`.
 
-## Status of major hook surfaces
+## Reporting bugs
 
-| Surface | Status |
-|---|---|
-| Main menu navigation | ✅ button labels announced |
-| Options menu navigation | ✅ button labels announced |
-| Character creation (some controls) | ⚠️ partial — buttons work; listbox/slider/edit-box don't |
-| In-game GUI (inventory, char sheet, journal) | ❌ not yet exercised |
-| Dialog text / VO subtitles | ❌ no hook |
-| Combat events / floating text | ❌ no hook |
-| Game state changes (HP, level, area) | ❌ no hook |
+The installer ships a "Collect logs" button on its post-install screen that zips the most recent patch log + any Windows Error Reporting dump into your Downloads folder. Attach that zip to an issue and describe what you were doing.
+
+If you can reproduce a crash, mention which area you were in (the room/area announce will have said it just before).
+
+## Documentation
+
+- **`README.md`** — this file. What the mod is, install, where to file bugs.
+- **`ARCHITECTURE.md`** — how the codebase fits together. Read before opening a PR.
+- **`CONTRIBUTING.md`** — dev setup, the inner build loop, conventions, screen-reader testing.
+- **`docs/`** — reference material (tool inventory, kdev design, controls survey, known issues, upstream PR backlog, installer notes). Historical investigation docs live in `archiev/`.
+- **`CLAUDE.md`** — AI-pair-programming context. Humans can read it too; it captures conventions and the project's mental model.
+
+## Architecture in one paragraph
+
+A dev CLI (`kdev`) builds a C++ patch DLL that's injected into `swkotor.exe` at launch via Lane Dibello's [Kotor-Patch-Manager](https://github.com/LaneDibello/Kotor-Patch-Manager). The DLL hooks the engine's GUI, input, and combat paths, reads game state directly from process memory, and routes announcements through [Prism](https://github.com/ethindp/prism) (a Tolk-compatible screen-reader bridge). Per-area 3D audio cues use the engine's own sound API. See `ARCHITECTURE.md` for the full picture.
 
 ## License
 
-This project's source is to be determined.
+Source: to be determined.
 
-Prism (vendored under `third_party/prism-dist/`) is MPL-2.0 — see `third_party/prism-dist/LICENSE` (or the upstream tree under `third_party/prism/`).
+Vendored dependencies under `third_party/` carry their own licenses (Prism MPL-2.0; Tolk LGPL; Kotor-Patch-Manager TBD). The game itself, Lane Dibello's reverse-engineered Ghidra database, and BioWare's struct layouts are third-party material not included in this repo.
 
-The game itself, BioWare's reverse-engineered structures, and Lane Dibello's Ghidra database are all third-party material with their own licensing constraints — not included in this repo.
+## Credits
+
+- **Lane Dibello** — Kotor-Patch-Manager, the GoG-derived Ghidra database, and most of the reverse-engineering legwork the mod stands on. See `docs/tools.md` § "Upstream sources" for the full attribution.
+- **Prism** (Ethin P.) — Tolk-compatible speech bridge with SAPI fallback.
+- **K1 Community Patch** team (KOTORCommunityPatches) — bundled bug-fix layer.
+- **xoreos / xoreos-tools** — open-source engine reimplementation; used as a cross-reference for file formats.
+- **DeadlyStream community** — modding knowledge base.
