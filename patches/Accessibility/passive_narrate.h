@@ -51,12 +51,25 @@ namespace acc::passive_narrate {
 // the engine-provided handle (param_1->id or 0x7f000000 sentinel).
 void OnEngineShowObject(uint32_t handle);
 
-// Q/E re-announce hook — called from diag_input_pipeline when the user
-// presses Q (205) or E (204). Re-announces the current ShowObject
-// target. Use case: combat with a single hostile in range — engine's
-// Q/E becomes a no-op visually, sighted players see the red hilite
-// stay put, blind player hears nothing without this path. Reads the
-// cache populated by OnEngineShowObject; silent when no current target.
-void ReannounceCurrentShowObjectTarget();
+// Q/E re-announce request — called from diag_input_pipeline on each Q
+// (205) / E (204) press-edge. Sets a pending flag; the actual
+// reannounce decision is deferred to the next Tick AFTER the engine has
+// had a chance to process the keystroke.
+//
+// Why deferred: our input-event detour fires at the engine's
+// HandleInputEvent prologue (BEFORE the engine's switch-case processes
+// Q/E + may call ShowObject internally). Calling reannounce here would
+// always speak the OLD target — even when the engine is about to change
+// focus to a new one, producing a "wrong sound on cycling" double-fire
+// per project_qe_reannounce_double_fire memory. By deferring to the
+// next Tick, we let OnEngineShowObject cancel the pending request if
+// the engine changed focus; if it didn't (single-hostile combat case),
+// we reannounce. (project_qe_reannounce_deferred.)
+void RequestQEReannounce();
+
+// Per-tick driver. Drains a pending Q/E reannounce request if the engine
+// didn't fire ShowObject in the meantime. Must be called from the
+// core_tick chain.
+void Tick();
 
 }  // namespace acc::passive_narrate

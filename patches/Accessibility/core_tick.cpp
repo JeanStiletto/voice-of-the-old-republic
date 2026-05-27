@@ -166,11 +166,13 @@ void Dispatch() {
     // project_player_control_toggle.md for the why.
     acc::engine::TickPlayerInputRestore();
 
-    // Passive-selection narration is now event-driven off
-    // CClientExoAppInternal::ShowObject (hooks.toml @ 0x005f9c8e) rather
-    // than polled per-tick — see acc::passive_narrate::OnEngineShowObject.
-    // Hook fires once per real focus change (Q/E cycle + mouse-hover
-    // auto-target); per-tick path has nothing to do here.
+    // Passive-selection narration is mostly event-driven off
+    // CClientExoAppInternal::ShowObject (hooks.toml @ 0x005f9c8e); the
+    // Tick here only drains the deferred Q/E reannounce flag. Order:
+    // must run AFTER any hook that might have set the flag this frame
+    // (i.e. after input pipeline dispatch), which is satisfied by the
+    // default Tick position in the chain.
+    acc::passive_narrate::Tick();
 
     // Tab leader announce — Win32-polled Tab rising edge speaks the
     // controlled creature's name (after the engine has cycled to it).

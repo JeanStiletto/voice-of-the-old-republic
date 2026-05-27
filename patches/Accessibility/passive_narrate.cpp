@@ -34,6 +34,13 @@ volatile uint32_t s_show_object_handle = 0x7F000000u;
 
 namespace {
 
+// Pending Q/E reannounce — set by RequestQEReannounce on each Q/E press;
+// cleared by OnEngineShowObject if the engine processes the keystroke
+// into a focus change (the focus-change path already speaks + plays the
+// cue, so reannounce would double-fire). Drained by Tick if still set
+// (engine didn't change focus → single-hostile combat case → reannounce).
+bool s_qe_reannounce_pending = false;
+
 // Map a Pillar 4 cycle category to its 3D audio cue. Mirrors the mapping
 // in cycle_input.cpp's BindingsFor — duplicated locally to keep this
 // lay-off scoped (the cycle table is a `static` inside cycle_input.cpp's
@@ -100,9 +107,17 @@ acc::filter::CycleCategory ClassifyForNarration(void* obj) {
 }
 
 // Shared resolve → classify → speak → stamp pipeline. Used by both the
-// transition path (delta inside OnEngineShowObject) and the Q/E
-// re-announce path. `reason` tags the log channel so post-mortem grep
-// can tell which path spoke.
+// focus-change path (delta inside OnEngineShowObject) and the deferred
+// Q/E re-announce path (Tick after engine processed the keystroke
+// without changing focus). `reason` tags the log channel so post-mortem
+// grep can tell which path spoke.
+//
+// Both paths fire the 3D cue: focus-change for primary signalling, Q/E
+// reannounce as audible "yes, still the same target" confirmation in
+// single-hostile combat. The two paths are mutually exclusive by
+// construction — the deferred-Tick mechanism cancels a pending Q/E
+// reannounce as soon as the engine fires ShowObject for a real focus
+// change, so the user can't hear both for the same Q/E press.
 //
 // Returns true when speech was emitted, false on any short-circuit
 // (sentinel handle, resolve fault, kind not in nav categories).
@@ -139,8 +154,12 @@ bool NarrateHandle(uint32_t handle, const char* reason) {
     }
 
     if (havePos) {
-        acc::audio::PlayCue3D(
-            acc::audio::GetNavCueResref(CueForCategory(cat, obj)), pos);
+        acc::audio::NavCue cue = CueForCategory(cat, obj);
+        const char* resref = acc::audio::GetNavCueResref(cue);
+        acc::audio::PlayCue3D(resref, pos);
+        acclog::Write("PassiveNarrate",
+            "fire cue resref=%s for cat=%d obj=%p pos=(%.2f,%.2f,%.2f)",
+            resref, static_cast<int>(cat), obj, pos.x, pos.y, pos.z);
     }
 
     char enriched[320];
@@ -179,6 +198,13 @@ void OnEngineShowObject(uint32_t handle) {
 
     uint32_t prev = s_last_announced;
     s_last_announced = handle;
+
+    // Engine changed focus this tick → cancel any pending Q/E reannounce.
+    // The focus-change path below will speak + play the new target's cue;
+    // a deferred reannounce on top would double-fire (same metallic
+    // sample stacking on the new cue, which the user perceived as
+    // "wrong sound for the object I cycled to").
+    s_qe_reannounce_pending = false;
 
     // Cursor-position diagnostic for the "character spins on its own"
     // intermittent bug. ShowObject is driven by DoPassiveSelection
@@ -221,7 +247,19 @@ void OnEngineShowObject(uint32_t handle) {
     NarrateHandle(handle, "passive");
 }
 
-void ReannounceCurrentShowObjectTarget() {
+void RequestQEReannounce() {
+    // Set the pending flag. The Tick handler drains it next frame IF the
+    // engine didn't fire ShowObject in between (which would clear the
+    // flag via OnEngineShowObject's delta path). No state to capture
+    // here — Tick reads s_show_object_handle at drain time, which by
+    // then reflects whatever the engine settled on for this Q/E press.
+    s_qe_reannounce_pending = true;
+}
+
+void Tick() {
+    if (!s_qe_reannounce_pending) return;
+    s_qe_reannounce_pending = false;
+
     // Self-gate on player-loaded — match OnEngineShowObject so the
     // re-announce doesn't fire in menus / chargen / area transitions.
     Vector unused;

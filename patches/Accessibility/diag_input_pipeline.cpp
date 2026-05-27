@@ -244,20 +244,26 @@ extern "C" void __cdecl OnClientHandleInputEvent(void* this_ptr,
     // case 0xcc (E=next, 204) / 0xcd (Q=prev, 205) dispatches to
     // SelectNearestObject + ShowObject; the sighted player sees the
     // red hostile-hilite shift to the new target (or stay put if only
-    // one valid target exists in 30u). Our delta-detection paths
-    // (Tick poll on last_target, eventually ShowObject delta) catch
-    // the multi-target case fine, but the single-enemy case is
+    // one valid target exists in 30u). The single-enemy case is
     // engine-side a no-op — no transition, no announcement, blind
     // player has no audible confirmation that they're still on the
-    // same target. Force-announce on every Q/E press from the cached
-    // ShowObject value (immune to AI churn that writes last_target
-    // every combat round).
+    // same target.
     //
-    // Press-edge only (val != 0) so the release doesn't re-fire.
-    // ReannounceCurrentShowObjectTarget self-gates on player-loaded
-    // and silently no-ops when no engine target exists.
+    // Our detour fires at HandleInputEvent's PROLOGUE — before the
+    // engine's switch-case actually processes Q/E. Calling reannounce
+    // here would speak the OLD target even when the engine is about
+    // to change focus (a forthcoming ShowObject delta will then speak
+    // the NEW target), producing the "wrong sound on cycling"
+    // double-fire reported 2026-05-27.
+    //
+    // Fix: defer via RequestQEReannounce. The Tick handler drains it
+    // next frame, AFTER the engine had its chance to process. If the
+    // engine changed focus (ShowObject fired), OnEngineShowObject's
+    // delta path clears the pending flag and only the new-target cue
+    // plays. If it stayed (single-enemy case), the Tick drain fires
+    // the reannounce. Press-edge only (val != 0).
     if (param_2 != 0 && (param_1 == 204 || param_1 == 205)) {
-        acc::passive_narrate::ReannounceCurrentShowObjectTarget();
+        acc::passive_narrate::RequestQEReannounce();
     }
 
     // Bug-2a fix: arrow-key navigation in modal popups. When the engine
