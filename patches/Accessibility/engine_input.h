@@ -1,37 +1,21 @@
-// Engine input-code translation.
-//
-// Layer: engine/ (pure read-side helpers; no menu-side state, no engine
-// re-entry). The InputIndices enum and the manager-side logical-action
-// translation are stable engine concepts — they don't belong in any one
-// pillar's code.
+// Engine input-code translation. Pure read-side; no engine state access.
 
 #pragma once
 
 namespace acc::engine {
 
-// Look up the human-readable name of a CSWGuiManager-level InputIndices
-// value (or one of the engine's logical action codes that pass through
-// ManagerTranslateCode unchanged). Returns "?" for unknown codes,
-// "INPUTDEVICE_NONE" for -1.
+// Human-readable name. "?" for unknown, "INPUTDEVICE_NONE" for -1.
 const char* InputIndexName(int code);
 
-// Translate the four KOTOR-internal logical-action codes that
-// CSWGuiManager::HandleInputEvent rewrites before dispatching to the active
-// panel's per-class override. Codes outside the recognised set pass through
-// unchanged.
+// Translates the four KOTOR logical-action codes
+// CSWGuiManager::HandleInputEvent rewrites before per-panel dispatch.
+// Unknown codes pass through.
 int ManagerTranslateCode(int code);
 
 }  // namespace acc::engine
 
-// Logical input codes received pre-translation by CSWGuiManager::HandleInputEvent.
-// Kept at file scope (not namespaced) for callsite brevity in the menu
-// hooks where the bulk of comparisons happen. Values are stable engine
-// constants from Lane's SARIF database.
-//
-// Up/Down (0xb6/0xb7), Left/Right (0xb8/0xb9), Enter (0xb5/0xbb), Esc
-// (0xb4/0xdf), and the post-translation activate code (0x27 = KEYBOARD_F1)
-// are all referenced from the menu input handler. See ManagerTranslateCode
-// for what each code maps to post-translation.
+// Pre-translation codes received by CSWGuiManager::HandleInputEvent.
+// File-scope for callsite brevity in the menu hooks.
 constexpr int kInputNavUp    = 0xb6;
 constexpr int kInputNavDown  = 0xb7;
 constexpr int kInputNavLeft  = 0xb8;
@@ -40,30 +24,20 @@ constexpr int kInputEnter1   = 0xb5;
 constexpr int kInputEnter2   = 0xbb;
 constexpr int kInputEsc1     = 0xb4;
 constexpr int kInputEsc2     = 0xdf;
-constexpr int kInputActivate = 0x27;   // KEYBOARD_F1, the engine's activate code
+constexpr int kInputActivate = 0x27;   // KEYBOARD_F1, engine's activate code
 
-// Home / End — raw InputIndices values (the engine has no logical-action
-// translation for them). Stock kotor.ini has no [Keymapping] entry mapping
-// any Action to scancode 32 / 33, so when the user presses Home/End in a
-// menu, CSWGuiManager::HandleInputEvent receives the bare InputIndices
-// value. The mod handles them as "jump chain / listbox to first / last".
-constexpr int kInputHome     = 32;     // KEYBOARD_HOME
-constexpr int kInputEnd      = 33;     // KEYBOARD_END
+// Raw InputIndices — engine has no logical-action translation for these.
+// Stock kotor.ini has no [Keymapping] for scancodes 32/33, so they arrive
+// bare at the manager hook.
+constexpr int kInputHome     = 32;
+constexpr int kInputEnd      = 33;
 
-// Raw InputIndices values for unmapped keys — used by the Pillar 4 cycle
-// (Phase 2 lay-off 3). Unmapped keys pass through ManagerTranslateCode
-// unchanged, so they arrive at the manager hook as their InputIndices index
-// (positions in engine_input.cpp's k_names[] table).
-//
-// `kInputKbAnnounce` is the physical key right of `.` (KEYBOARD_SLASH = 105).
-// On a German QWERTZ keyboard that key is labelled `-`, on US QWERTY it's
-// labelled `/` — same physical position either way. DirectInput uses
-// position-based scancodes, so KEYBOARD_MINUS(94) would hit the `ß` key
-// position on QWERTZ rather than the `-` key the user expects. Pillar 4
-// announce intentionally lives at the slash position to keep `,` `.` `-`
-// in a contiguous row on QWERTZ (and `,` `.` `/` on QWERTY).
+// Raw InputIndices for unmapped Pillar 4 cycle keys.
+// kInputKbAnnounce = physical key right of `.` (KEYBOARD_SLASH = 105) —
+// labelled `-` on QWERTZ, `/` on QWERTY, same physical position. Keeps
+// `,` `.` `-` contiguous on QWERTZ (`,` `.` `/` on QWERTY).
 constexpr int kInputKbLeftShift  = 24;
 constexpr int kInputKbRightShift = 25;
 constexpr int kInputKbComma      = 103;
 constexpr int kInputKbPeriod     = 104;
-constexpr int kInputKbAnnounce   = 105;  // KEYBOARD_SLASH — see comment above
+constexpr int kInputKbAnnounce   = 105;

@@ -1,73 +1,37 @@
-// CClientOptions read/write helpers — currently scoped to the "Mouse Look"
-// toggle (the user-facing swkotor.ini "Mouse Look=N" setting).
+// CClientOptions helpers — currently the "Mouse Look" toggle.
 //
-// Layer: engine/ (pure read/write helpers, SEH-guarded; no engine re-entry,
-// no menu-side state). Mirrors engine_player.cpp's chain-walk pattern.
+// Chain: *kAddrAppManagerPtr → +0x4 CClientExoApp* → +0x4 Internal* →
+// +0x4 CClientOptions* → +0x8 int bitfield, bit 1 (mask 0x2) = mouse_look.
 //
-// Address chain:
+// Bitfield layout at +0x8 (5 bits in one int — preserve siblings on write):
+//   bit 0 auto_level
+//   bit 1 mouse_look
+//   bit 2 autosave
+//   bit 3 minigame_yaxis
+//   bit 4 combat_movement
 //
-//   *kAddrAppManagerPtr → AppManager wrapper
-//     → wrapper +0x4 → CClientExoApp* (real app instance)
-//       → +0x4 → CClientExoAppInternal*
-//         → +0x4 → CClientOptions* (kClientAppOptionsOffset)
-//           → +0x8 (int bitfield) bit 1 (mask 0x2) = mouse_look
-//
-// Source: Lane's GoG SARIF (`docs/llm-docs/re/swkotor.exe.h:21796` for
-// CClientOptions, `:21220` for CClientExoAppInternal). The bitfield layout
-// is:
-//
-//   field0_0x0     : undefined4 — at +0x0
-//   difficulty     : undefined4 — at +0x4
-//   auto_level     : 1 bit — bit 0 of int @+0x8
-//   mouse_look     : 1 bit — bit 1 of int @+0x8 (mask 0x2)
-//   autosave       : 1 bit — bit 2
-//   minigame_yaxis : 1 bit — bit 3
-//   combat_movement: 1 bit — bit 4
-//
-// CClientOptions size in the SARIF is 0xa0; the long-term plan's hint that
-// `mouseCameraRotateToggle` lives near +0xb0 was pointing at a *different*
-// struct (CSWCameraOnAStick.mouseCameraRotateToggle @+0xb0 — runtime camera
-// state, not the user setting). The user-facing swkotor.ini "Mouse Look=N"
-// matches CClientOptions.mouse_look exclusively. If toggling the
-// CClientOptions field doesn't change runtime behaviour, the next probe
-// pivots to CSWCameraOnAStick.
+// User-facing swkotor.ini "Mouse Look=N" matches CClientOptions.mouse_look
+// exclusively. CSWCameraOnAStick.mouseCameraRotateToggle @+0xb0 is a
+// different struct (runtime camera state) — distinct from the user setting.
 
 #pragma once
 
 namespace acc::engine {
 
-// Read the current "Mouse Look" toggle (CClientOptions.mouse_look, the
-// swkotor.ini-backed user setting). Returns false on chain failure (no
-// app, no options, SEH-caught fault); writes to *out only on success.
+// False on chain failure or SEH; out untouched.
 bool GetMouseLook(bool& out);
 
-// Resolve the live CClientOptions* via the AppManager → CClientExoApp →
-// CClientExoAppInternal → client_options chain, SEH-guarded. Returns
-// nullptr on any null link or fault. Exposed for diagnostic probes
-// (Phase 4 view-mode camera-state probe) — caller treats the pointer
-// opaquely and reads field offsets (kClientOptionsBitFieldOffset etc.)
-// at its own site, ideally inside an SEH wrapper. Production read/write
-// of the documented bits should go through Get/Set/ToggleMouseLook.
+// Resolved CClientOptions* for diagnostic probes. Production code uses
+// Get/Set/ToggleMouseLook.
 void* GetClientOptions();
 
-// Write the "Mouse Look" toggle. Sets/clears bit 1 of CClientOptions's
-// int bitfield @+0x8. Returns false on chain failure.
 bool SetMouseLook(bool enabled);
 
-// Read-modify-write convenience. Returns false on read OR write failure;
-// on success writes the *new* value to *outNew.
+// Read-modify-write. False on either failure; on success outNew = new value.
 bool ToggleMouseLook(bool& outNew);
 
 }  // namespace acc::engine
 
-// CClientExoAppInternal.client_options @+0x4 → CClientOptions*. Per Lane's
-// type DB.
-constexpr unsigned int kClientAppOptionsOffset = 0x4;
-
-// CClientOptions: int bitfield @+0x8 holds mouse_look at bit 1. Read as
-// 32-bit int, mask with kClientOptionsMouseLookMask. The five bits in the
-// bitfield (auto_level / mouse_look / autosave / minigame_yaxis /
-// combat_movement) all live in the same int — preserve the other bits on
-// write.
+constexpr unsigned int kClientAppOptionsOffset      = 0x4;
 constexpr unsigned int kClientOptionsBitFieldOffset = 0x8;
 constexpr unsigned int kClientOptionsMouseLookMask  = 0x2;

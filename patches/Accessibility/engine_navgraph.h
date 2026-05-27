@@ -1,80 +1,47 @@
 // CSWSArea nav-graph reader — shared snapshot helpers.
 //
-// Layer: engine/ (pure read-side, SEH-guarded; no engine re-entry). Extracted
-// 2026-05-13 from guidance_pathfind.cpp; that file and the retired
-// region_classifier had inlined the same field reads, and the wall_topology
-// consumer was about to be a third copy.
+// Pure read, SEH-guarded. Used by guidance_pathfind and wall_topology
+// (the offset constants live in guidance_pathfind.h — one canonical
+// location).
 //
-// Engine data source (locked in memory `project_kotor_nav_graph_layout`,
-// verified live via probe_pathfind):
-//
-//   CSWSArea
-//     +0x238  ulong       path_points_count
-//     +0x23c  PathPoint*  path_points          // 16-byte stride
-//     +0x240  ulong       path_connections_count
-//     +0x244  ulong*      path_connections     // flat CSR adjacency
-//
-//   PathPoint (16 bytes):
-//     +0x00  Vector  position      (12 bytes, world coords)
-//     +0x0c  uint32  csr_offset    (offset into path_connections array)
-//
-// CSR adjacency: node N's neighbours live at
+// PathPoint (16 bytes): Vector position + uint32 csr_offset.
+// CSR adjacency: neighbours of node N at
 //   path_connections[meta_N .. meta_{N+1}-1]
-// where meta_K = path_points[K].csr_offset; for the last node the implicit
-// upper bound is path_connections_count. Edges are symmetric undirected.
-//
-// All offset constants live in guidance_pathfind.h (the original home);
-// this header re-uses them via include. Adding them in two places would
-// drift; one canonical location wins.
+// where meta_K = path_points[K].csr_offset; last node's upper bound is
+// path_connections_count. Edges are symmetric undirected.
 
 #pragma once
 
 #include <cstdint>
 #include <vector>
 
-#include "engine_offsets.h"  // Vector
+#include "engine_offsets.h"
 
 namespace acc::engine::navgraph {
 
-// One nav-graph node. Position is in world space; csrOffset is the index
-// into the flat connections array where this node's neighbour run begins.
 struct PathPointSnapshot {
     Vector   pos;
     uint32_t csrOffset;
 };
 
-// Snapshot of an area's nav graph. `nodes` is sized by nodes.size(); the
-// neighbour run for node N is `conns[nodes[N].csrOffset .. nodes[N+1].
-// csrOffset)`, with the last node's upper bound being `conns.size()`.
+// Neighbour run for node N: conns[nodes[N].csrOffset .. nodes[N+1].csrOffset);
+// last node's upper bound is conns.size().
 struct NavGraphSnapshot {
     std::vector<PathPointSnapshot> nodes;
     std::vector<uint32_t>          conns;
 };
 
-// Hard cap on the number of nodes loaded. Observed worst case ~104 nodes;
-// 512 is comfortable headroom. Late-listed nodes are dropped (truncated
-// snapshot still usable for A* over the prefix; wall_topology's
-// degree-driven classifier degrades to "open area" for any node not in
-// the snapshot).
+// Observed worst case ~104 nodes; 512 cap. Late nodes truncate (A* over
+// the prefix still works; wall_topology degrades to "open area").
 constexpr int kMaxNodes = 512;
-
-// Edge headroom (8 neighbours/node average; observed ratio ~2).
 constexpr int kMaxEdges = kMaxNodes * 8;
 
-// Capture the area's nav graph. Returns true on a non-empty graph with
-// at least one node loaded. Returns false in every failure case (null
-// area, faulted field reads, empty graph, implausible heap pointers
-// caught as mid-tear-down). Output is cleared on every failure path so
-// callers can ignore the bool and check nodes.empty() if they prefer.
-//
-// SEH semantics: every read is __try-wrapped. Partial-node faults
-// truncate the snapshot rather than fail — a few missing late-listed
-// nodes don't sink a path solve or classification pass.
+// True on non-empty snapshot. Partial-node faults truncate rather than
+// fail. Output cleared on every failure path.
 bool SnapshotNavGraph(void* area, NavGraphSnapshot& out);
 
-// Resolve node N's CSR-adjacency neighbour range into [outLo, outHi).
-// Bounds-checked against malformed CSR offsets — returns an empty range
-// if the data is inconsistent rather than indexing out-of-bounds.
+// Bounds-checked against malformed CSR offsets — returns empty range
+// rather than indexing out of bounds.
 void NeighbourRange(const NavGraphSnapshot& g, int node,
                     int& outLo, int& outHi);
 

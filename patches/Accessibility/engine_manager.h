@@ -1,18 +1,11 @@
-// CSWGuiManager surface — singleton lookup, panels[] / modal_stack walking,
+// CSWGuiManager surface — singleton lookup, panels[]/modal_stack walks,
 // cursor + click-sim primitives.
 //
-// Layer: engine/ (pure read-side helpers + raw PFN typedefs; no menu-side
-// state, no engine re-entry beyond what the menu code explicitly invokes).
+// Pure read + raw PFN typedefs. Constants and PFN at file scope (matches
+// engine_input.h / engine_offsets.h) so callsites read clean
+// (`*kAddrGuiManagerPtr`, reinterpret_cast<PFN_*>(...)).
 //
-// Constants and PFN typedefs are at file scope rather than under
-// `acc::engine` to match the convention used by `engine_input.h` /
-// `engine_offsets.h` — callsites in the menu code stay readable
-// (`*kAddrGuiManagerPtr`, `reinterpret_cast<PFN_MoveMouseToPosition>(...)`).
-// Functions live in `acc::engine`.
-//
-// Address values verified against Lane's Ghidra DB / SARIF; see comments
-// inline. K1 Steam build (GoG bytes match — see memory:
-// project_ghidra_gog_steam_bytes_match).
+// GoG bytes match Steam — addresses lift directly from Lane's DB.
 
 #pragma once
 
@@ -21,102 +14,68 @@
 
 namespace acc::engine {
 
-// Find which panel in the manager's panels[] currently owns `control` —
-// i.e. which one has it in its controls[]. Used as the fallback when a
-// caller doesn't pass an explicit owner: `g_currentPanel` only updates on
-// SetActiveControl, so chain rebinds and other indirect paths can land
-// here while it still points at a previous focus owner.
-//
-// Returns nullptr if the manager isn't resolvable yet (early
-// DLL_PROCESS_ATTACH) or `control` isn't in any current panel.
-//
-// Cheap by design: ≤16 panels × ≤32 children, only fires from the
-// fallback path.
+// Fallback when caller doesn't pass owner explicitly — g_currentPanel
+// only updates on SetActiveControl; chain rebinds can land here while it
+// points at a previous owner. ≤16 panels × ≤32 children, only fires
+// from the fallback path.
 void* FindOwningPanel(void* control);
 
-// Pointer-equality scan of manager.panels[] for `panel`. No deref of
-// `panel` itself — safe to call with stale or wild pointers. Used by
-// FromControl to filter the owner-resolution chain so a freed
-// g_currentPanel (e.g. after Annehmen destroys CSWGuiLevelUpPanel
-// synchronously during FireActivate's vtable[15] dispatch) doesn't reach
-// downstream "is panel kind X?" probes that deref `*panel` for vtable
-// identity (crash analysed 2026-05-21, dump swkotor.exe.22248.dmp:
-// ownerForPerkind = 0x7DFFFFFF reached IsClassSelectionIcon).
+// Pointer-equality scan over panels[]. No deref of `panel` — safe with
+// stale/wild pointers. Used by FromControl so a freed g_currentPanel
+// (e.g. Annehmen destroys CSWGuiLevelUpPanel synchronously during
+// FireActivate's vtable[15] dispatch) doesn't reach panel-kind probes
+// that deref *panel.
 bool IsPanelInManager(void* panel);
 
-// Resolve the topmost (foreground) panel currently owned by the manager.
-// Order:
-//   1. If modal_stack is non-empty, return its top entry — the modal
-//      currently capturing input.
-//   2. Otherwise return the last entry in panels[] — last-pushed panel
-//      is drawn on top in the engine's iteration order.
-//   3. Returns nullptr if both are empty.
+// Topmost owner: modal_stack top if non-empty, else last panels[] entry
+// (last-pushed draws on top), else nullptr.
 void* GetForegroundPanel(void* mgr);
 
-// Diagnostic: dump every panel currently on the manager's panels array
-// and modal_stack, plus the GetForegroundPanel result. Doubles as live
-// verification that the SARIF-derived modal_stack offset truly points at
-// a CSWGuiPanel** array.
+// Dumps panels + modal_stack + GetForegroundPanel. Doubles as live
+// verification of the SARIF-derived modal_stack offset.
 void LogManagerStack(void* mgr, const char* tag);
 
 }  // namespace acc::engine
 
-// CSWGuiManager singleton. *kAddrGuiManagerPtr holds the live manager
-// pointer; nullptr before the engine creates it (early DLL attach).
+// *kAddrGuiManagerPtr; nullptr before engine creates it (early attach).
 constexpr uintptr_t kAddrGuiManagerPtr = 0x007A39F4;
 
-// CSWGuiManager layout (verified via Lane's SARIF, CSWGuiManager DT.Struct):
-//   .panels      @ +0x88 — CExoArrayList<CSWGuiPanel*>
-//                          data ptr (0x88), size (0x8c), cap (0x90)
-//   .modal_stack @ +0x94 — GuiManagerModalStack (same shape as CExoArrayList)
-//                          data ptr (0x94), size (0x98), cap (0x9c)
-//
-// The first 4 bytes of GuiManagerModalStack are unnamed in Ghidra but the
-// structure has the same shape as CExoArrayList; PushModalPanel
-// (0x0040bd90) and PopModalPanel (0x0040be00) are both RE'd, and
-// GetPosInModalStack (0x0040ab70) implies the engine itself does index
-// lookups against this stack — so it's a CSWGuiPanel** array. Treating the
-// unnamed bytes as the data pointer is validated by LogManagerStack.
+// CSWGuiManager layout (Lane's SARIF):
+//   panels       @+0x88 — CExoArrayList<CSWGuiPanel*> (data 0x88, size 0x8c, cap 0x90)
+//   modal_stack  @+0x94 — same shape (data 0x94, size 0x98, cap 0x9c)
+// PushModalPanel/PopModalPanel/GetPosInModalStack confirm modal_stack
+// is CSWGuiPanel** indexable like CExoArrayList. LogManagerStack
+// validates the offsets at runtime.
 constexpr size_t kMgrPanelsDataOffset      = 0x88;
 constexpr size_t kMgrPanelsSizeOffset      = 0x8c;
 constexpr size_t kMgrModalStackDataOffset  = 0x94;
 constexpr size_t kMgrModalStackSizeOffset  = 0x98;
 
-// Cursor primitive: MoveMouseToPosition does cursor move + hover refresh
-// (UpdateMouseOverControl) in one call. Updates only hover state —
-// panel.activeControl lags behind unless explicitly committed (see
-// PanelSetActiveControl in the menu-side code, or the click-sim path
-// below which runs the engine's full press+release pipeline).
+// Cursor move + hover refresh in one call. Updates hover only;
+// panel.activeControl lags unless explicitly committed (PanelSetActive-
+// Control, or the click-sim path which runs full press+release).
 constexpr uintptr_t kAddrMoveMouseToPosition = 0x0040c790;
 typedef void (__thiscall* PFN_MoveMouseToPosition)(void* gm, int x, int y);
 
-// Click-sim primitives (Phase 3 — see docs/menu-nav-design.md).
+// Click-sim primitives.
 //
-// Decompilation summary (from Lane's gzf):
+// HandleLMouseDown(press) @0x40c570:
+//   XOR (press & 1) into bit 0 at +0x1c. If no control held: broadcast
+//   0x1f9 to input-class-3 panels, run UpdateMouseOverControl, dispatch
+//   via mouseOverControl → vtable[6] = HandleLMouseDown. Button-class
+//   CaptureMouse sets mouseHeldControl at +0x10. Returns 1 dispatched,
+//   0 if a click is already in progress.
 //
-//   HandleLMouseDown(this, int press) @ 0x40c570
-//     - XORs `press & 1` into bit 0 of state field at +0x1c.
-//     - If no control is currently held: broadcasts event 0x1f9 to panels
-//       (input class 3 only), runs UpdateMouseOverControl + tooltip-disable,
-//       then dispatches via the engine's mouseOverControl (manager+0x8) →
-//       vtable[6] = control's HandleLMouseDown. Button-class
-//       HandleLMouseDown calls CaptureMouse, setting mouseHeldControl
-//       (manager+0x10).
-//     - Returns 1 if dispatched, 0 if a click is already in progress.
+// HandleLMouseUp @0x40a170:
+//   If a control is held (+0x10 non-null AND mouse_held == 1): dispatch
+//   mouseHeldControl → vtable[7] = HandleLMouseUp (the activate-fire).
+//   Clears bit 0 of +0x1c. Returns 1 dispatched, 0 otherwise.
 //
-//   HandleLMouseUp(this) @ 0x40a170
-//     - If a control is held (manager+0x10 non-null AND manager.mouse_held
-//       == 1): dispatches mouseHeldControl → vtable[7] = control's
-//       HandleLMouseUp. That's the function that fires the actual activate
-//       event.
-//     - Clears bit 0 of manager+0x1c. Returns 1 if dispatched, 0 otherwise.
-//
-// Calling them in sequence after MoveMouseToPosition has settled the
-// cursor runs the engine's natural click pipeline end-to-end. This is
-// the replacement for the SetActiveControl-based path that crashed at
-// mgr+5 (see docs/tab-crash-investigation.md): we no longer skip the
-// prelude HandleLMouseDown writes, so whatever invariant the engine
-// maintains across press+release stays intact.
+// Calling them in sequence after MoveMouseToPosition settles the cursor
+// runs the engine's natural click pipeline end-to-end. Replaces the
+// SetActiveControl path that crashed at mgr+5: we no longer skip the
+// HandleLMouseDown prelude writes, so the engine's press+release
+// invariant stays intact.
 constexpr uintptr_t kAddrManagerLMouseDown = 0x0040c570;
 constexpr uintptr_t kAddrManagerLMouseUp   = 0x0040a170;
 typedef int (__thiscall* PFN_ManagerLMouseDown)(void* gm, int press);
