@@ -354,6 +354,150 @@ corruption risk.
 
 ---
 
+### PR-6. K1CP ships `.lyt` / `.vis` with LF-only line endings, crashes engine parser
+
+**Repo:** `KOTORCommunityPatches/K1_Community_Patch`
+**Status:** Designed, not yet drafted. Workaround shipped in our installer
+(`installer/KotorAccessibilityInstaller/ModInstallers/K1cpInstaller.cs`,
+`NormalizeOverrideLineEndings` runs after HoloPatcher returns).
+**Discovered:** Session 2026-05-27 while debugging a deterministic crash
+loading the Leviathan-bridge cutscene (`stunt_03a` / `stunt_levbridge`).
+
+**What.** Several `.lyt` and `.vis` files under `tslpatchdata/` are
+committed with Unix line endings (LF-only) and at least one
+(`stunt_levbridge.lyt`) has no trailing newline at all. The KOTOR 1
+layout parser (`CLYT::LoadLayout` @ `0x005de900` in `swkotor.exe` 1.0.3
+Steam/GoG) advances its read cursor by `strlen(line) + 2` after every
+`sscanf` call, hardcoding the two-byte CRLF assumption. With LF-only
+input the cursor over-advances by one byte per line. After N lines the
+drift is N bytes; the cursor eventually walks off the end of the heap-
+allocated layout buffer (allocated as `operator_new(file_size + 4)` near
+the top of the function). `sscanf` then calls strlen internally on the
+dangling pointer, which scans forward until it hits an unmapped page
+and crashes with `STATUS_ACCESS_VIOLATION`.
+
+K1CP's `.gitattributes` does not normalise these extensions, so they get
+committed and shipped with whatever line endings the contributing
+editor's setup emitted at commit time.
+
+**Affected files (at K1CP commit `4778ae5e`, the version we pin):**
+
+- `tslpatchdata/stunt_levbridge.lyt` (1032 bytes, 23 LF, **0 CR**, no trailing newline)
+- `tslpatchdata/stunt_levbridge.vis` (204 bytes, 16 LF, 0 CR)
+- `tslpatchdata/stunt_endbridge.lyt`, `stunt_endbridge.vis`
+- `tslpatchdata/stunt_starforge.lyt`, `stunt_starforge.vis`
+- `tslpatchdata/stunt_unkramp.lyt`, `stunt_unkramp.vis`
+- `tslpatchdata/m40ad.lyt`, `m40ad.vis` (Leviathan main area)
+- `tslpatchdata/m02ac.vis`, `m02ae.vis`, `m03ae.vis` (Taris)
+- `tslpatchdata/m10aa.vis` (Tatooine)
+- `tslpatchdata/m13aa.vis` (Manaan)
+- `tslpatchdata/m17aa.vis` (Unknown World)
+
+In total, 4 `.lyt` and 10 `.vis` files in the live install. There are
+likely more we didn't survey — the contributing editor's line-ending
+choice is non-deterministic across the patch's history. A repo-wide
+`file *.lyt *.vis` audit would catch the rest.
+
+**Why this is latent for most installs.** Whether the drift crashes
+depends on heap layout. The over-run reads past the end of the layout
+buffer; if the trailing bytes happen to live in a still-committed heap
+page, strlen returns a wrong-but-finite length and the parser silently
+miscomputes downstream room/door positions (cutscene-visual glitch,
+silently ignored). If the trailing bytes live in a decommitted page, the
+process crashes. Our installer adds Prism + SAPI + dsoal + a 3 MB DLL,
+which is enough additional heap pressure to push the decommit boundary
+into the over-run region. We see the crash; vanilla K1CP users typically
+do not.
+
+**Repro.** With K1CP `4778ae5e` installed via HoloPatcher and any
+additional process loading enough memory to perturb the allocator, start
+a new game, play through Taris to the rooftop Hidden-Bek encounter, and
+confirm the party-selection screen. The Leviathan-capture cutscene load
+(`stunt_03a` → `stunt_levbridge`) crashes inside
+`CLYT::LoadLayout+0x117` (the `_sscanf` call site), with EIP at
+`_strlen+0x30` (`0x00701330`) and the faulting address landing on a
+4096-aligned (page-boundary) heap address. The address differs per run;
+same engine frame each time. Two dumps from the session:
+`swkotor.exe(1).23224.dmp` (faulting addr `0x18316000`) and
+`swkotor.exe.31792.dmp` (faulting addr `0x14127000`).
+
+Pure-vanilla repro: remove our DLL. The crash typically does not
+reproduce — the allocator stays in a state where the over-run lands on a
+recycled page. Pre-allocating ~16 MB of small chunks in any other
+injected DLL before the cutscene load is enough to flip many systems
+into the crash regime, but the threshold is environment-dependent.
+
+**Fix (proposed).** Two complementary changes to the K1CP repo:
+
+1. Add to `.gitattributes` (alongside the existing
+   `/tslpatchdata export-ignore`):
+   ```
+   *.lyt text eol=crlf
+   *.vis text eol=crlf
+   ```
+   This makes `git checkout` materialise the files with CRLF on every
+   platform regardless of the local `core.autocrlf` setting, keeping
+   contributors honest going forward.
+
+2. Run `unix2dos *.lyt *.vis` (or equivalent) once over the existing
+   `tslpatchdata/` directory and commit the converted files. Pure
+   format-only change, no content change, easy to review by diff.
+
+Also worth adding a CI check that fails the build if any `.lyt` / `.vis`
+under `tslpatchdata/` lacks CRLF — keeps a future contributor's editor
+from silently regressing it.
+
+**Our workaround** lives in
+`installer/KotorAccessibilityInstaller/ModInstallers/K1cpInstaller.cs`:
+after HoloPatcher returns success, `NormalizeOverrideLineEndings` walks
+the game's Override directory and converts any LF-only `.lyt` / `.vis`
+file to CRLF in-place, appending a trailing CRLF when the source file
+lacks any line terminator at all. Idempotent — files already containing
+CR are skipped, and empty files / no-LF files are skipped too.
+
+**Why this should ship as an upstream fix, not stay as a downstream
+workaround.** Any K1CP user without our memory pressure currently has
+*silent* parsing miscomputes — every layout / visibility table parsed
+slightly wrong, with the cumulative drift growing with the file's line
+count. They don't crash, but they're playing with broken room positions
+and broken visibility tables. The visible effect is subtle (rooms
+slightly mis-positioned in the layout grid; visibility errors that may
+manifest as rooms not lighting properly or geometry popping in/out).
+Fixing line endings is essentially free and benefits every K1CP user.
+Crash protection is only the most visible symptom of the bug.
+
+**Files to change (upstream):**
+
+- `.gitattributes` — add 2 lines for `.lyt` / `.vis` CRLF enforcement
+- `tslpatchdata/*.{lyt,vis}` — re-commit all of them with CRLF (one
+  cleanup commit; pure line-ending change)
+- Optional: a CI check (`.github/workflows/check-eol.yml`) preventing
+  regression
+
+**Risks.** None. Line endings are invisible to the engine's parser other
+than the +2 advance; converting LF → CRLF makes existing files parse
+correctly without changing any content the engine cares about. Our
+workaround verified in-game 2026-05-27 — the `stunt_03a` cutscene that
+crashed deterministically before the fix loads cleanly after, with the
+K1CP content (the added `M40ad_777` room, improved Saul Karath model,
+etc.) intact.
+
+**Open questions.**
+
+- Whether to also normalise other text formats K1CP commits to
+  `tslpatchdata/` (e.g. `.nss` script sources, `.txt` docs, `.ini`
+  config). Likely fine but out of scope for this fix; the engine doesn't
+  parse those at runtime in the same way. K1CP's TSL-Patcher toolchain
+  may or may not assume CRLF for its own consumption — confirm before
+  broadening.
+- Whether KOTOR 2 / TSLRCM has the same engine quirk. The TSL engine
+  shares most of the layout parser with K1 (Aurora → Odyssey port), so
+  likely yes; TSLRCM may have the same latent issue. Out of scope for
+  this PR; worth mentioning to the K1CP maintainers as a hint to check
+  the sibling project.
+
+---
+
 ## Conventions
 
 - One PR per coherent change. Keep them small and reviewable.

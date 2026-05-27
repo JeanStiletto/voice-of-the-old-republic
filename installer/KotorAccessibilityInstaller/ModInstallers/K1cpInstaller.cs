@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -83,6 +84,23 @@ namespace KotorAccessibilityInstaller.ModInstallers
                 if (!holoResult.Success)
                 {
                     return ModInstallResult.Fail(Id, holoResult.Error);
+                }
+
+                // Normalize LF-only `.lyt` / `.vis` files to CRLF. K1CP commits
+                // several layout / visibility files with Unix line endings; the
+                // KOTOR engine's CLYT/CRoom-info parser advances by
+                // `strlen(line) + 2` per line, hardcoding CRLF. With LF-only
+                // input the parser over-runs the read buffer by one byte per
+                // line and eventually scans into unmapped memory inside
+                // sscanf -> strlen. Heap-layout luck masks the bug for some
+                // installs; others (e.g. with our DLL + Prism + SAPI in the
+                // process) hit a decommitted page and crash. See
+                // docs/upstream-prs.md PR-6 for the upstream report.
+                int normalized = NormalizeOverrideLineEndings(ctx.GameDir);
+                if (normalized > 0)
+                {
+                    Logger.Info($"K1CP normalize: converted {normalized} LF-only .lyt/.vis " +
+                                "file(s) in Override to CRLF (engine parser requires CRLF).");
                 }
 
                 ctx.Progress?.Invoke(100);
@@ -223,6 +241,103 @@ namespace KotorAccessibilityInstaller.ModInstallers
 
             File.Copy(overlaySource, overlayTarget, overwrite: true);
             Logger.Info($"K1CP: locale overlay applied — {translationDir}/append.tlk -> tslpatchdata/append.tlk");
+        }
+
+        // Text-format resource extensions the engine parses with the
+        // CRLF-assuming line walker. `.lyt` is the room layout (read by
+        // CLYT::LoadLayout, the function whose strlen-over-decommitted-page
+        // bisected to LF-only K1CP files at session 2026-05-27). `.vis` is
+        // the room-to-room visibility table read by the same parser family.
+        // We intentionally don't normalize `.txi` (texture-info) or `.lod`
+        // (model LOD) — those are read by different parsers that handle
+        // line endings without the +2 hardcode; touching them would be
+        // out-of-scope.
+        private static readonly string[] LineEndingNormalizeExtensions =
+            new[] { ".lyt", ".vis" };
+
+        /// <summary>
+        /// Convert LF-only `.lyt` / `.vis` files in the game's Override dir
+        /// to CRLF in-place. Idempotent: CRLF files are skipped (any byte
+        /// equal to 0x0D in the file is taken as "already has CRs"); files
+        /// without any LF (binary mistakenly named `.lyt`, or empty) are
+        /// skipped too. Trailing CRLF is appended if the source didn't end
+        /// with a newline, since the engine's parser counts on it.
+        ///
+        /// Returns the number of files actually rewritten. Logs each
+        /// rewrite at Info level for post-install audit.
+        /// </summary>
+        private static int NormalizeOverrideLineEndings(string gameDir)
+        {
+            string overrideDir = Path.Combine(gameDir, "Override");
+            if (!Directory.Exists(overrideDir)) return 0;
+
+            int count = 0;
+            foreach (string ext in LineEndingNormalizeExtensions)
+            {
+                IEnumerable<string> matches;
+                try
+                {
+                    matches = Directory.EnumerateFiles(
+                        overrideDir, "*" + ext, SearchOption.TopDirectoryOnly);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warning($"K1CP normalize: enumerate {ext} failed: {ex.Message}");
+                    continue;
+                }
+
+                foreach (string path in matches)
+                {
+                    try
+                    {
+                        if (NormalizeFileIfLfOnly(path)) count++;
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Warning($"K1CP normalize: {Path.GetFileName(path)} failed: {ex.Message}");
+                    }
+                }
+            }
+            return count;
+        }
+
+        private static bool NormalizeFileIfLfOnly(string path)
+        {
+            byte[] data = File.ReadAllBytes(path);
+            if (data.Length == 0) return false;
+
+            bool hasCR = false, hasLF = false;
+            foreach (byte b in data)
+            {
+                if (b == 0x0D) { hasCR = true; break; }
+                if (b == 0x0A) hasLF = true;
+            }
+            if (hasCR || !hasLF) return false; // already CRLF, or no line breaks at all
+
+            // Stream LF -> CRLF. Reserve a generous up-front capacity so the
+            // MemoryStream never reallocates: at most one extra CR per LF, +2
+            // for a possible trailing CRLF if the file didn't end in LF.
+            using var ms = new MemoryStream(data.Length + 256);
+            foreach (byte b in data)
+            {
+                if (b == 0x0A) ms.WriteByte(0x0D);
+                ms.WriteByte(b);
+            }
+            if (data[data.Length - 1] != 0x0A)
+            {
+                // Engine parser uses sscanf `%[^\r\n]` then advances by line
+                // length + 2; without a trailing terminator the final line
+                // (e.g. "donelayout" in K1CP's stunt_levbridge.lyt) leaves
+                // the parser cursor in undefined territory. Appending CRLF
+                // is the same fix awk's default ORS gives us at the shell.
+                ms.WriteByte(0x0D);
+                ms.WriteByte(0x0A);
+            }
+
+            File.WriteAllBytes(path, ms.ToArray());
+            Logger.Info($"K1CP normalize: {Path.GetFileName(path)} " +
+                        $"({data.Length} -> {ms.Length} bytes, LF-only -> CRLF)");
+            return true;
         }
 
         // Forward HoloPatcher stdout lines as status updates at most this often.
