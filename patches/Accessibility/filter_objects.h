@@ -1,27 +1,16 @@
-// Pillar 4 object filter — six categories locked in
-// docs/navsystem-longterm-plan.md §"Categories (locked 2026-05-03 — six)".
+// Pillar 4 object filter — six locked categories.
 //
-// Layer: filter/ (pure predicate over engine_area's GameObjectKind; no engine
-// re-entry of its own). Sits between engine_area (data) and cycle_state
-// (focus tracking).
-//
-// Phase 2 lay-off 4: kind + sub-state filtering. Container requires
-// usable=true OR has_inventory=true (CSWSPlaceable +0x328 / +0x334);
-// Landmark requires has_map_note=true (CSWSWaypoint +0x228); Transition
-// requires transition_destination set (CSWSTrigger +0x30c). Sub-state
-// readers live in engine_area.{h,cpp} alongside the kind-aware name
-// resolver. Per-tick monitor logs from lay-off 3 will show what gets
-// included; if false-negatives surface (e.g. a usable scenery placeable
-// that should cycle in), revisit the predicate.
+// Pure predicate over engine_area's GameObjectKind + sub-state. Sub-state
+// filters: Container needs usable=true OR has_inventory=true; Landmark
+// needs has_map_note=true; Transition needs transition_destination set.
 
 #pragma once
 
-#include "engine_area.h"  // GameObjectKind
+#include "engine_area.h"
 
 namespace acc::filter {
 
-// Six locked Pillar 4 categories in the cycle order returned by
-// NextCategory / PrevCategory. Order matches the plan's listing.
+// Cycle order returned by NextCategory / PrevCategory.
 enum class CycleCategory : int {
     Door         = 0,
     Npc          = 1,
@@ -32,39 +21,25 @@ enum class CycleCategory : int {
     Count_       = 6,
 };
 
-// Human-readable category name for logs / future TTS prefixing.
 const char* CategoryName(CycleCategory c);
 
-// Returns true if the game object belongs in this category. SEH-guarded
-// internally via engine_area::GetObjectKind. Sub-state filters TODO
-// (lay-off 4) — see header comment.
+// SEH-guarded via engine_area::GetObjectKind.
 bool ObjectMatches(void* gameObject, CycleCategory category);
 
-// Cycle helpers — pure stateless rotation over the six categories.
 CycleCategory NextCategory(CycleCategory c);
 CycleCategory PrevCategory(CycleCategory c);
 
-// Which surface the cycle is currently driving. World = the in-world
-// cycle that scans CSWSArea object-list; Map = the map-UI cycle that
-// projects the same data onto the in-game area map, fog-of-war-gated.
-// Carried through cycle_state / cycle_input so a single set of helpers
-// handles both surfaces without duplicating the iteration loop.
+// World = in-world cycle over CSWSArea object list; Map = same data
+// projected onto the area map, fog-of-war-gated.
 enum class CycleContext : int {
     World = 0,
     Map   = 1,
 };
 
-// Which CycleCategory values render as discrete icons on the in-game
-// area map (sighted parity). Verified via CSWGuiMapHider::Draw
-// @0x006943d0 (decompiled 2026-05-23): the renderer iterates only
-// waypoints with map_note_enabled + IsWorldPointExplored — doors,
-// triggers/transitions, items, NPCs, containers are never drawn to
-// the area panel. So:
-//   - Landmark  → true  (narrowed further in cycle_state to require
-//                        map_note_enabled, matching the engine's
-//                        GetNextMapNote curated subset that we surface
-//                        as "Map hint")
-//   - all other → false (no map render path → silent skip in map ctx)
+// Which categories the engine renders as map icons. CSWGuiMapHider::Draw
+// iterates only waypoints with map_note_enabled + IsWorldPointExplored —
+// doors/triggers/items/NPCs/containers never reach the map panel.
+// Currently: Landmark only.
 bool IsMapCycleable(CycleCategory c);
 
 }  // namespace acc::filter

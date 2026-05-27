@@ -1,18 +1,10 @@
-// KOTOR Accessibility — centralised hotkey registry.
+// Centralised hotkey registry. Single source of truth for every mod-added
+// binding. Per-tick pollers query Pressed(Action) for rising edge +
+// modifier match + KOTOR foreground. Bindings are runtime-mutable via
+// Set() for a future rebind UI.
 //
-// Single source of truth for every keyboard binding the mod introduces. The
-// `Action` enum below lists every logical user gesture. Per-tick pollers ask
-// `acc::hotkeys::Pressed(Action)` to learn whether the user just pressed the
-// binding (rising edge + correct modifier state + KOTOR foreground). Default
-// bindings live in `hotkeys.cpp` and are runtime-mutable via `Set()` so a
-// future in-mod rebind UI can write into them without recompilation.
-//
-// Why not piggyback on the engine's `[Keymapping]` system: the engine action
-// table is closed (no way to add new IDs without patching the Key Mapping
-// UI), the format is bare DIK→Action (no modifier combos), and AltGr-specific
-// behaviour we rely on isn't expressible. Modifier-aware bindings cover ~80%
-// of what we need — see `docs/controls-and-input.md` "Mod hotkeys" for the
-// architectural rationale.
+// We don't piggyback on the engine's [Keymapping] because it's bare
+// DIK→Action with no modifier combos and no AltGr semantics.
 
 #pragma once
 
@@ -20,13 +12,9 @@
 
 namespace acc::hotkeys {
 
-// ---------------------------------------------------------------------------
-// Modifier mask. Required + forbidden masks let a single VK host multiple
-// actions distinguished by modifier (e.g. `B` toggles view mode, Shift+B
-// fires the camera-state probe). AltGr is the right-Alt key alone (VK_RMENU);
-// on German QWERTZ Windows synthesises a phantom Ctrl when AltGr is pressed,
-// so the Ctrl-modifier path forbids RMENU to avoid double-firing.
-// ---------------------------------------------------------------------------
+// Required + forbidden masks let one VK host multiple actions (e.g. B vs.
+// Shift+B). AltGr = VK_RMENU; Windows synthesises a phantom Ctrl alongside
+// it on QWERTZ, so the Ctrl-modifier path forbids RMENU to avoid double-fire.
 enum ModifierBit : uint32_t {
     kModShift = 1u << 0,   // either Shift key (VK_SHIFT / L / R)
     kModCtrl  = 1u << 1,   // either Ctrl key (VK_CONTROL / L / R)
@@ -34,11 +22,8 @@ enum ModifierBit : uint32_t {
     kModAltGr = 1u << 3,   // right Alt specifically (VK_RMENU)
 };
 
-// ---------------------------------------------------------------------------
-// One Action per logical user gesture. The dispatch site decides what to do
-// with it (which submenu consumes Up/Down, etc.); the registry only answers
-// "did the bound key fire this tick".
-// ---------------------------------------------------------------------------
+// One per logical gesture. The registry only answers "did the bound key
+// fire this tick"; dispatch sites decide what to do with it.
 enum class Action : int {
     // ----- World interaction -----
     InteractTarget,        // Enter
@@ -92,20 +77,8 @@ enum class Action : int {
     // ----- Orientation & party -----
     AnnounceDegrees,       // AltGr alone (Shift forbidden)
     PartyLeaderAnnounce,   // Tab
-    // N alone — when a beacon is armed, point the camera at the beacon's
-    // next waypoint (so walking forward advances along the route). When no
-    // beacon is armed, advance the camera CW to the next cardinal
-    // direction (N → E → S → W → N). Bare N has zero engine binding
-    // (verified against controls-and-input.md "Default keyboard controls"
-    // survey); Shift+N is taken by SaveMarkerAtCursor on the map, so the
-    // binding forbids Shift to keep the two routes separate.
-    CameraOrient,          // N (Shift / Ctrl / Alt / AltGr forbidden)
-
-    // ----- Map saved markers -----
-    // Shift+N on the map drops a marker at the cursor's current world
-    // position. Marker folds into the Map hint cycle alongside engine
-    // waypoints.
-    SaveMarkerAtCursor,    // Shift+N (no Ctrl, no Alt, no AltGr)
+    CameraOrient,          // N — beacon waypoint or next cardinal CW
+    SaveMarkerAtCursor,    // Shift+N — drops marker on the map
 
     // ----- View mode -----
     ViewModeToggle,        // B   (Shift forbidden)
@@ -130,17 +103,8 @@ enum class Action : int {
     COUNT
 };
 
-// ---------------------------------------------------------------------------
-// Binding. `vk` is the primary VK code (Win32 virtual key); `altVk` is an
-// optional secondary VK so a single Action can match either of two keys for
-// layout-portability (e.g. the "announce focus" key is VK_OEM_2 on US QWERTY
-// and VK_OEM_MINUS on German QWERTZ — same physical key, different VK).
-//
-// `modsRequired` = all of these mod bits must be held.
-// `modsForbidden` = none of these mod bits may be held.
-//
-// vk == 0 means "unbound" (the action is never reported as pressed).
-// ---------------------------------------------------------------------------
+// vk + optional altVk for layout portability (same physical key reports
+// different VKs on US QWERTY vs German QWERTZ). vk == 0 means unbound.
 struct Binding {
     int      vk;
     int      altVk;
@@ -148,82 +112,45 @@ struct Binding {
     uint32_t modsForbidden;
 };
 
-// ---------------------------------------------------------------------------
-// Tick lifecycle. Call at the start and end of every per-frame dispatch so
-// edge-detection sees a coherent snapshot. `core_tick::Dispatch()` does this.
-// ---------------------------------------------------------------------------
+// Call at start/end of every per-frame dispatch. core_tick::Dispatch does this.
 void BeginTick();
 void EndTick();
 
-// ---------------------------------------------------------------------------
-// Edge-detected query. Returns true iff:
-//   1. The binding's VK (or altVk) is down THIS tick and was up LAST tick.
-//   2. All `modsRequired` bits are currently held.
-//   3. No `modsForbidden` bits are currently held.
-//   4. KOTOR has foreground focus.
-// Idempotent within a tick — safe to query the same Action from multiple
-// sites; both get the same answer until the next BeginTick.
-// ---------------------------------------------------------------------------
+// True iff binding VK (or altVk) is down this tick + was up last tick +
+// modifiers match + KOTOR is foreground. Idempotent within a tick.
 bool Pressed(Action a);
 
-// Pure held-state query (no edge, no foreground gate). Used by the editbox
-// arm-time snapshot to suppress edges on keys the user is already holding.
+// Pure held-state query — no edge, no foreground gate. Used at editbox
+// arm-time to suppress edges on keys already held.
 bool Held(Action a);
 
-// Consume the current rising edge for `a`. After this call, `Pressed(a)`
-// returns false for the rest of this tick (and stays false on subsequent
-// ticks until the key is released and re-pressed). Use when one site has
-// just claimed a press and other potential consumers in the same tick
-// should not see it — e.g. the editbox arm path consumes the Enter that
-// fired the parent button so it can't also fire the editbox's "submit
-// edit" handler on the very first poll after arming.
+// Claim the current tick's rising edge so other consumers don't see it.
+// Used when one site (e.g. editbox arm) has just fired a parent action's
+// Enter and the same press shouldn't also fire the now-armed handler.
 void Consume(Action a);
 
-// Mark the *next* rising edge for `a` as already claimed. Used from sites
-// that fire BEFORE BeginTick on the tick where the rising edge will land —
-// most importantly, the manager's CSWGuiManager::HandleInputEvent hook,
-// which the engine drives between EndTick of one OnUpdate and BeginTick of
-// the next. Calling Consume() from there has no effect (both `now` and
-// `last` still hold the previous tick's state). ClaimRisingEdge sets a
-// guard bit that survives BeginTick and forces Pressed() to return false
-// on the next tick's queries; EndTick clears the bit so subsequent
-// presses fire normally.
+// Pre-claim the NEXT rising edge. Use from sites firing BEFORE BeginTick
+// on the tick where the edge will land — the manager-level
+// HandleInputEvent hook runs between OnUpdate ticks where Consume can't
+// see the press yet.
 void ClaimRisingEdge(Action a);
 
-// ---------------------------------------------------------------------------
-// Modifier convenience queries. Some sites need raw modifier state without
-// binding to a specific Action (e.g. `cycle_input::HandleInputEventEngine`
-// reads the engine-side shift latch alongside Win32 shift to disambiguate).
-// These are direct GetAsyncKeyState reads — no edge, no foreground gate.
-// ---------------------------------------------------------------------------
+// Direct OS-level modifier reads — no edge, no foreground gate.
 bool ShiftHeld();
 bool CtrlHeld();
 bool AltHeld();
 bool AltGrHeld();
 
-// Returns true iff KOTOR is the foreground process. Exposed so legacy /
-// pre-registry sites can share the same gate.
 bool IsForegroundGame();
 
-// ---------------------------------------------------------------------------
-// Rebinding API. Defaults are baked at static-init; `Set` overrides them at
-// runtime. A future rebind UI calls `Set` per row when the user picks a new
-// key. `IsUserRebindable` returns false for the diagnostic probes — they
-// shouldn't appear in the rebind UI.
-// ---------------------------------------------------------------------------
+// IsUserRebindable returns false for diagnostic probes (excluded from
+// the future rebind UI).
 Binding  Get(Action a);
 void     Set(Action a, Binding b);
 bool     IsUserRebindable(Action a);
 
-// ---------------------------------------------------------------------------
-// Names + human-readable descriptions for logs + rebind UI.
-//   Name(a)        -> "InteractTarget" / "AnnounceDegrees" / ...
-//   Describe(a)    -> "Enter" / "Shift+B" / "AltGr" / "Ctrl+-" — the user-
-//                     facing label that would appear in a rebind row.
-// Both return pointers to static / static-bound storage; safe to log without
-// copy. Describe() formats into a small rotating buffer so multiple calls
-// in one log line stay valid (matches `acclog::FmtPtr` convention).
-// ---------------------------------------------------------------------------
+// Describe(a) goes into a rotating static buffer so multiple calls in one
+// log line stay valid (acclog::FmtPtr convention).
 const char* Name(Action a);
 const char* Describe(Action a);
 
