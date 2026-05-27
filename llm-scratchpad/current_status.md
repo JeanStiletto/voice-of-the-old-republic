@@ -10,9 +10,10 @@ Prompts from `C:/Users/fabia/Dev/llm-mod-refactoring-prompts` (JeanStiletto's PR
 - `sanity-checks-setup.md` — branch + scratchpad
 - `information-gathering-and-checking.md` — CLAUDE.md patched, docs/llm-docs/{game-flow.md, CLAUDE.md} added, gitignore exception
 - `code-directory-construction.md` — 178 .md index files under `llm-scratchpad/code-index/`, one per source file
+- `large-file-handling.md` — all 5 splits done across commits `7c2827a`, `549beb4`, `509ec03`, `e2f4cbc`, `cecb549`, `3099e24`. See `large-file-splits.md` for the full record + plan-vs-reality corrections.
 
 ## Prompts in progress
-- `large-file-handling.md` — 4 of 5 splits done. **See `llm-scratchpad/large-file-splits.md` for the full plan and the 1 remaining split.** Done: swoop_race → swoop_spatial_audio (`7c2827a`), audio-glossary wiring (`549beb4`), spatial_change_detector → spatial_wall_surfaces (`509ec03`), menus_listbox tail → diag_chargen_feats (`e2f4cbc`), menus.cpp tail (dead listbox hooks tombstoned + OnSetMoveToModuleString → transitions.cpp) (`cecb549`). Next: combat_query.cpp 2A/2C split.
+(none — large-file-handling.md complete)
 
 ## Findings carried forward from indexing
 Flagged for later phases:
@@ -40,8 +41,7 @@ Flagged for later phases:
 - `wall_topology.cpp` — anonymous helpers not enumerated in the index; public API matches the header
 
 ## Prompts pending
-- large-file-handling.md (next — triggered by >2000-line files)
-- ai-bloat-audit.md
+- ai-bloat-audit.md (next)
 - high-level-cleanup.md
 - input-handling.md
 - string-builder.md

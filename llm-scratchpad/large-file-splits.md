@@ -1,6 +1,6 @@
 # Large-file-handling — split plan
 
-Triage produced by subagent on 2026-05-27 against the >500-line files in `patches/Accessibility/`. Of 31 candidates, 26 were classified single-concern (kept), 5 mix concerns (split). Out of 5, **4 done**, **1 remaining**.
+Triage produced by subagent on 2026-05-27 against the >500-line files in `patches/Accessibility/`. Of 31 candidates, 26 were classified single-concern (kept), 5 mix concerns (split). **All 5 done.**
 
 ## Done
 - **swoop_race.cpp → swoop_spatial_audio.{h,cpp}** (commit `7c2827a`). Spatial-audio sweep (obstacle + accelpad loops, MGO array walk, AsObstacle/AsEnemy vtable downcasts) moved into its own TU behind `TickSpatialAudio` + `ResetSpatialAudio`. Tested live by user. Audio glossary additions for the four samples in commit `549beb4`.
@@ -10,19 +10,7 @@ Triage produced by subagent on 2026-05-27 against the >500-line files in `patche
   - 4 shelved CSWGuiListBox entry-point diagnostic hooks + `DumpListBoxState` helper **deleted** (not relocated). All four had been commented out in hooks.toml with a recorded postmortem — entry-point hooks on CSWGuiListBox cause title-screen focus oscillation regardless of whether the hook fires. The four ~17-line commented-out hook blocks in hooks.toml collapsed into one consolidated tombstone covering all four addresses + the failure mode. Any re-enable needs a mid-function redesign with a register source per `feedback_hook_design_register_sources.md`, not a restoration of these handlers.
   - `OnSetMoveToModuleString` moved to `transitions.cpp` next to `AnnouncePreLoadDestination`. Live exported hook, unchanged behaviour; transitions.cpp picked up a one-line forward decl for `EnsurePrismInitialized`. menus.cpp 2664 → 2565 lines (−99 total).
 
-## Remaining
-
-### combat_query.cpp (916 lines)
-
-Splits into two phase concerns:
-- Phase 2A: self status (`SpeakSelectedPcStatBlock`, `TickLeaderChangeAutoAnnounce`, `BuildTargetCombatBrief`)
-- Phase 2C: Shift+H target examine (`HotkeyShiftH`, `PollWin32Hotkey`)
-
-Shared infrastructure: `ReadCreatureStats`, `CallIntAccessor`, the `StatSnap` type. A small `combat_query_internal.h` would be needed.
-
-Phase 2C is structurally adjacent to `examine_view.cpp` (both operate on LastTarget). One option: merge Phase 2C with `examine_view.cpp` rather than a fresh TU.
-
-Defer note: requires architectural decision (shared header vs merge with examine_view).
+- **combat_query.cpp tail cleanup** (commit `3099e24`). The original plan proposed splitting Phase 2C (Shift+H Examine) into examine_view.cpp behind a shared `combat_query_internal.h`. Analysis showed the Phase 2C functions were stale: `HotkeyShiftH` + `PollWin32Hotkey` + three anon helpers (`GetClientExoApp`/`GetClientExoAppInternal`/`ReadLastTargetHandle`, ~120 lines) were dead — Shift+H input had already been re-routed through `acc::examine_view::PollWin32Hotkey` (synthetic in-DLL list view). Only `TickExaminePanel` (engine CSWGuiExamine panel-lifecycle logger) was live. Cleanup: deleted the dead path; folded `TickExaminePanel` into `acc::examine_view::Tick()` as `TickEnginePanelLifecycle`; removed the `combat::query::TickExaminePanel()` call from core_tick.cpp. combat_query.cpp 916 → 718 lines, examine_view.cpp 865 → 935. Remaining concerns in combat_query (Shift+S full stat block, Q/E target enrichment, bare-H self-status) share enough infrastructure that further splitting would need a shared internal header for low payoff — stopped here.
 
 ## Files explicitly kept (single concern)
 For the record so the audit doesn't get re-run:
