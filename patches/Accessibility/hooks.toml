@@ -561,77 +561,29 @@ type = "pointer"
 source = "ebx"
 type = "int"
 
-# CSWGuiListBox::HandleLMouseDown @0x0041c4a0 — DISABLED. Even when this hook
-# never fires (no mouse click occurred), its mere installation causes the
-# title-screen panel to oscillate focus on every arrow press: arrow press
-# moves focus to next button, then HandleFocusChange(p1=1) fires on the OLD
-# button, then SetActiveControl reverts focus back. Same symptom appears
-# when LMouseUp or ListBox::HandleInputEvent are installed at function entry,
-# whether singly or together. The pre-existing CSWGuiListBox::SetActiveControl
-# hook at 0x0041c16b (mid-function +0xb) does NOT cause oscillation. Pattern:
-# entry-point hooks on CSWGuiListBox are toxic; mid-function hooks are fine.
-# When re-enabling, redesign to hook mid-function with a register source
-# (see feedback_hook_design_register_sources.md).
+# CSWGuiListBox entry-point hooks — TOMBSTONED. A diagnostic pass tried to
+# instrument four CSWGuiListBox entry points to trace listbox input dispatch:
+#   * HandleLMouseDown      @0x0041c4a0
+#   * HandleLMouseUp        @0x0041a700
+#   * HandleInputEvent      @0x0041ce20
+#   * SetSelectedControl    @0x0041c040
 #
-# [[hooks]]
-# address = 0x0041c4a0
-# type = "detour"
-# function = "OnListBoxLMouseDown"
-# original_bytes = [0x83, 0xec, 0x0c, 0x56, 0x57]
-# skip_original_bytes = false
-# exclude_from_restore = []
-# [[hooks.parameters]]
-# source = "ecx"
-# type = "pointer"
-
-# CSWGuiListBox::HandleLMouseUp @0x0041a700 — DISABLED. With LMouseDown + Up
-# both active, title-screen focus still oscillates on every arrow press even
-# though neither hook fires on a key event. Disabling Up while testing Down
-# in isolation.
+# All four were toxic at the entry point. Even when a hook never fired (no
+# matching event during the session), the mere installation caused the title-
+# screen panel to oscillate focus on every arrow press: arrow press moves
+# focus to the next button, then HandleFocusChange(p1=1) fires on the OLD
+# button, then SetActiveControl reverts focus back. SetSelectedControl
+# additionally has a 10-byte cut requirement spanning a 16-bit-register MOV AX
+# that broke input dispatch entirely. The pre-existing mid-function hook on
+# SetActiveControl @0x0041c16b (+0xb past the entry) does NOT cause
+# oscillation.
 #
-# [[hooks]]
-# address = 0x0041a700
-# type = "detour"
-# function = "OnListBoxLMouseUp"
-# original_bytes = [0x51, 0x56, 0x57, 0x8d, 0x44, 0x24, 0x08]
-# skip_original_bytes = false
-# exclude_from_restore = []
-# [[hooks.parameters]]
-# source = "ecx"
-# type = "pointer"
-
-# CSWGuiListBox::HandleInputEvent @0x0041ce20 — DISABLED. With it active, the
-# title screen oscillates focus on every arrow press: panel cycle moves focus
-# to the next button, then the listbox child[0] (news listbox) reverts focus
-# back. Mouse hooks (LMouseDown/Up) don't have this effect — kept enabled.
-#
-# [[hooks]]
-# address = 0x0041ce20
-# type = "detour"
-# function = "OnListBoxHandleInput"
-# original_bytes = [0x8b, 0x44, 0x24, 0x08, 0x85, 0xc0, 0x53]
-# skip_original_bytes = false
-# exclude_from_restore = []
-# [[hooks.parameters]]
-# source = "ecx"
-# type = "pointer"
-
-# CSWGuiListBox::SetSelectedControl @0x0041c040 — DISABLED. With all four new
-# listbox hooks active, input dispatch broke (no manager-level
-# HandleInputEvent fired during the title screen). Suspecting this one due
-# to the 10-byte cut + 16-bit-register MOV AX inside it. Will re-enable with
-# a redesigned cut once the other three confirm clean.
-#
-# [[hooks]]
-# address = 0x0041c040
-# type = "detour"
-# function = "OnListBoxSetSelectedControl"
-# original_bytes = [0x56, 0x8b, 0xf1, 0x66, 0x8b, 0x86, 0xc6, 0x02, 0x00, 0x00]
-# skip_original_bytes = false
-# exclude_from_restore = []
-# [[hooks.parameters]]
-# source = "ecx"
-# type = "pointer"
+# Lesson: entry-point hooks on CSWGuiListBox are unsafe. Any re-enable must
+# redesign as a mid-function hook with a register source per
+# feedback_hook_design_register_sources.md. The handlers + DumpListBoxState
+# helper were removed from menus.cpp in this audit; resurrecting them means
+# writing fresh handlers around the redesigned cut, not restoring the old
+# entry-point shape.
 
 # CClientExoAppInternal::ProcessInput @ 0x006227e0 — frame entry marker.
 # Per-frame call site that pulls events from CExoInput and dispatches them

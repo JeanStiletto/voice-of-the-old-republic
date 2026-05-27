@@ -20,6 +20,11 @@
 #include "wall_topology.h"      // single source of truth for perceptual-
                                 // region labels (nav-graph decomposition)
 
+// Forward decl from core_dllmain.cpp. The OnSetMoveToModuleString detour
+// below calls this so Prism is loaded if a transition fires before any
+// menu / focus event has run the same call.
+void EnsurePrismInitialized();
+
 namespace acc::transitions {
 
 namespace {
@@ -975,3 +980,33 @@ void AnnouncePreLoadDestination(void* exoStringPtr) {
 }
 
 }  // namespace acc::transitions
+
+// CServerExoApp::SetMoveToModuleString — entry hook @0x004aecd0. Fires once
+// per area transition with the destination module's resref CExoString*. Pre-
+// load announce path; reads the resref via the dedup-and-speak helper above.
+//
+// **LEA-vs-MOV bug workaround** (memory: project_kpatchmanager_lea_bug.md).
+// The wrapper emits LEA (not MOV) for `source = "esp+4"` parameters, so
+// `arg_addr` is the *address* of the original [esp+4] stack slot, not the
+// CExoString* value at that slot. Dereference once to get the actual
+// CExoString*. SEH-guarded — if the wrapper hands us a bogus address (e.g.
+// stack frame mid-teardown), absorb the fault rather than crashing.
+//
+// `serverApp` (ECX = CServerExoApp* facade) is unused; the handler only
+// needs the destination string. Kept in the signature so the parameter
+// order matches the hooks.toml declaration.
+extern "C" void __cdecl OnSetMoveToModuleString(void* /*serverApp*/,
+                                                void* arg_addr) {
+    EnsurePrismInitialized();
+
+    void* exoStringPtr = nullptr;
+    __try {
+        exoStringPtr = *reinterpret_cast<void**>(arg_addr);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Transition", "pre-load arg deref faulted (arg_addr=%p)",
+            arg_addr);
+        return;
+    }
+
+    acc::transitions::AnnouncePreLoadDestination(exoStringPtr);
+}
