@@ -46,12 +46,18 @@ namespace acc::audio {
 enum class NavCue {
     // Per-kind cues — one per object/feature class the player can
     // encounter while moving. Six map to Pillar 4's locked categories
-    // (Door split into open/closed sub-cues 2026-05-27); Wall and
+    // (Door split by open_state + material 2026-05-27); Wall and
     // HazardLedge are Pillar 1 walkmesh-geometry features without an
-    // object-type equivalent. Doors share the Pillar1Settings.cueDoor
-    // toggle — both sub-cues enable/disable together.
+    // object-type equivalent. All four door sub-cues share the
+    // Pillar1Settings.cueDoor toggle — they enable/disable together.
+    // Open doors don't differentiate material because there are no
+    // generic dr_metal_open / dr_wood_open / dr_stone_open samples in
+    // K1; closed-state material is the meaningful distinction (the
+    // engine ships dr_{metal,wood,stone}_lock samples for exactly this).
     DoorOpen,
-    DoorClosed,
+    DoorClosedMetal,
+    DoorClosedWood,
+    DoorClosedStone,
     NpcCreature,
     ContainerPlaceable,
     Item,
@@ -70,12 +76,14 @@ enum class NavCue {
 // switch to a constant table; no runtime branching on hot paths.
 constexpr const char* GetNavCueResref(NavCue cue) {
     switch (cue) {
-        // Door split by open_state at fire time: open doors keep gui_close
-        // (the original Door cue); closed doors get the heavier dr_metal_lock
-        // sample so the player can hear which exits are passable from
-        // current position without interaction (2026-05-27).
+        // Door split by open_state + material at fire time. Open doors
+        // keep gui_close (the original Door cue). Closed doors get the
+        // material-specific lock sample so the player can hear the
+        // material before deciding whether to walk up + interact.
         case NavCue::DoorOpen:                 return "gui_close";
-        case NavCue::DoorClosed:               return "dr_metal_lock";
+        case NavCue::DoorClosedMetal:          return "dr_metal_lock";
+        case NavCue::DoorClosedWood:           return "dr_wood_lock";
+        case NavCue::DoorClosedStone:          return "dr_stone_lock";
         case NavCue::NpcCreature:              return "fs_metal_droid2";
         case NavCue::ContainerPlaceable:       return "gui_invadd";
         case NavCue::Item:                     return "gui_invselect";

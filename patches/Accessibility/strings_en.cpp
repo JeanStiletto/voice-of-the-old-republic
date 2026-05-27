@@ -383,7 +383,9 @@ const char* Get(Id id) {
         case Id::ModSettingAudioGlossary:           return "Audio glossary";
         case Id::ModSettingsAudioGlossaryOpened:    return "Audio glossary opened";
         case Id::GlossaryEntryDoorOpen:             return "Door open";
-        case Id::GlossaryEntryDoorClosed:           return "Door closed";
+        case Id::GlossaryEntryDoorClosedMetal:      return "Metal door closed";
+        case Id::GlossaryEntryDoorClosedWood:       return "Wood door closed";
+        case Id::GlossaryEntryDoorClosedStone:      return "Stone door closed";
         case Id::GlossaryEntryWall:                 return "Wall";
         case Id::GlossaryEntryHazard:               return "Hazard";
         case Id::GlossaryEntryCollision:            return "Collision";

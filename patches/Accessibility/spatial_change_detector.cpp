@@ -600,15 +600,29 @@ void BuildSurfaceDescriptors() {
 
 // --- Object classification ---------------------------------------------
 
+// Closed-door material-specific cue. Mirrors RefineDoorCue in
+// cycle_input.cpp — kept local because the cycle helper lives in an
+// anonymous namespace.
+acc::audio::NavCue ClosedDoorCueForMaterial(void* obj) {
+    using N = acc::audio::NavCue;
+    switch (acc::engine::GetDoorMaterial(obj)) {
+        case acc::engine::DoorMaterial::Wood:  return N::DoorClosedWood;
+        case acc::engine::DoorMaterial::Stone: return N::DoorClosedStone;
+        case acc::engine::DoorMaterial::Metal: break;
+    }
+    return N::DoorClosedMetal;
+}
+
 // Map a category to its NavCue. The Door category needs the object too —
-// open vs closed doors fire different cues. Other categories ignore obj.
+// open vs closed (+ closed-door material) drive different cues. Other
+// categories ignore obj.
 acc::audio::NavCue CategoryToNavCue(acc::filter::CycleCategory c, void* obj) {
     using F = acc::filter::CycleCategory;
     using N = acc::audio::NavCue;
     switch (c) {
         case F::Door:        return acc::engine::IsDoorOpen(obj)
                                     ? N::DoorOpen
-                                    : N::DoorClosed;
+                                    : ClosedDoorCueForMaterial(obj);
         case F::Npc:         return N::NpcCreature;
         case F::Container:   return N::ContainerPlaceable;
         case F::Item:        return N::Item;

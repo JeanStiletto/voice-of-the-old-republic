@@ -40,15 +40,27 @@ namespace {
 // anonymous namespace; promoting it requires a refactor that's out of
 // scope). If the two get out of sync in the future, factor into a
 // shared filter_objects helper.
-// Door cue depends on open_state — pass obj so we can read it. Other
-// categories ignore obj.
+// Closed-door material-specific cue. Mirrors RefineDoorCue in
+// cycle_input.cpp.
+acc::audio::NavCue ClosedDoorCueForMaterial(void* obj) {
+    using N = acc::audio::NavCue;
+    switch (acc::engine::GetDoorMaterial(obj)) {
+        case acc::engine::DoorMaterial::Wood:  return N::DoorClosedWood;
+        case acc::engine::DoorMaterial::Stone: return N::DoorClosedStone;
+        case acc::engine::DoorMaterial::Metal: break;
+    }
+    return N::DoorClosedMetal;
+}
+
+// Door cue depends on open_state + material — pass obj so we can read
+// both. Other categories ignore obj.
 acc::audio::NavCue CueForCategory(acc::filter::CycleCategory c, void* obj) {
     using C = acc::filter::CycleCategory;
     using N = acc::audio::NavCue;
     switch (c) {
         case C::Door:       return acc::engine::IsDoorOpen(obj)
                                     ? N::DoorOpen
-                                    : N::DoorClosed;
+                                    : ClosedDoorCueForMaterial(obj);
         case C::Npc:        return N::NpcCreature;
         case C::Container:  return N::ContainerPlaceable;
         case C::Item:       return N::Item;

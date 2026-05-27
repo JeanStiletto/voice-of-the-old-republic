@@ -116,7 +116,9 @@ struct GlossaryEntry {
 
 constexpr GlossaryEntry k_glossary[] = {
     { acc::audio::NavCue::DoorOpen,                 acc::strings::Id::GlossaryEntryDoorOpen         },
-    { acc::audio::NavCue::DoorClosed,               acc::strings::Id::GlossaryEntryDoorClosed       },
+    { acc::audio::NavCue::DoorClosedMetal,          acc::strings::Id::GlossaryEntryDoorClosedMetal  },
+    { acc::audio::NavCue::DoorClosedWood,           acc::strings::Id::GlossaryEntryDoorClosedWood   },
+    { acc::audio::NavCue::DoorClosedStone,          acc::strings::Id::GlossaryEntryDoorClosedStone  },
     { acc::audio::NavCue::NpcCreature,              acc::strings::Id::CategoryNpc                   },
     { acc::audio::NavCue::ContainerPlaceable,       acc::strings::Id::CategoryContainer             },
     { acc::audio::NavCue::Item,                     acc::strings::Id::CategoryItem                  },

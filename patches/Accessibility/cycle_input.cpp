@@ -73,15 +73,22 @@ struct CategoryBindings {
                                // object's world position before speech
 };
 
-// Refine a placeholder door cue against the actual server-door open_state.
-// BindingsFor returns DoorOpen as a category-level placeholder; the real
-// fire site needs to check open_state to play gui_close (open) vs
-// dr_metal_lock (closed). Pass-through for any other NavCue so call sites
-// can wrap PlayCue3D unconditionally.
+// Refine a placeholder door cue against the actual server-door open_state
+// and material. BindingsFor returns DoorOpen as a category-level
+// placeholder; the real fire site needs to check open_state (open vs
+// closed) and, when closed, the door's material (metal / wood / stone)
+// to pick between gui_close and the three dr_{metal,wood,stone}_lock
+// samples. Pass-through for any other NavCue so call sites can wrap
+// PlayCue3D unconditionally.
 acc::audio::NavCue RefineDoorCue(acc::audio::NavCue cue, void* obj) {
     if (cue != acc::audio::NavCue::DoorOpen) return cue;
-    return acc::engine::IsDoorOpen(obj) ? acc::audio::NavCue::DoorOpen
-                                        : acc::audio::NavCue::DoorClosed;
+    if (acc::engine::IsDoorOpen(obj)) return acc::audio::NavCue::DoorOpen;
+    switch (acc::engine::GetDoorMaterial(obj)) {
+        case acc::engine::DoorMaterial::Wood:  return acc::audio::NavCue::DoorClosedWood;
+        case acc::engine::DoorMaterial::Stone: return acc::audio::NavCue::DoorClosedStone;
+        case acc::engine::DoorMaterial::Metal: break;
+    }
+    return acc::audio::NavCue::DoorClosedMetal;
 }
 
 CategoryBindings BindingsFor(

@@ -271,6 +271,18 @@ bool IsTransitionTrigger(void* trigger);
 // the open-door and closed-door nav cues at fire time.
 bool IsDoorOpen(void* serverDoor);
 
+// Door material — derived from CSWSDoor.generic_type (+0x2a1, byte) via
+// a static 65-entry table built by joining genericdoors.2da against
+// placeableobjsnds.2da on soundapptype → armortype. Rows 0-12 of
+// genericdoors.2da don't set soundapptype; those are classified by label
+// keyword (Wood_*, Stone_*, everything else → metal). Metal is the
+// fallback for unknown indices (modded doors past row 64).
+enum class DoorMaterial { Metal, Wood, Stone };
+
+// Reads the door's generic_type byte and returns its material class.
+// Returns DoorMaterial::Metal on null / fault / generic_type out of range.
+DoorMaterial GetDoorMaterial(void* serverDoor);
+
 // Reads CSWSWaypoint.map_note_enabled (+0x22c). True if this waypoint's
 // map note is currently visible on the in-game map (engine's fog-of-war
 // model — disabled until the player discovers it via map-pin trigger).
@@ -563,6 +575,7 @@ constexpr size_t kDoorLocNameOffset            = 0x39c;
 // enrich the bare loc_name with state ("verriegelt"/"offen"), the
 // transition destination (e.g. "Brücke"), and any description the modder
 // set on the .utd template.
+constexpr size_t kDoorGenericTypeOffset        = 0x2a1;  // byte — index into genericdoors.2da
 constexpr size_t kDoorLockedOffset             = 0x2c4;  // undefined4 (treated as bool)
 constexpr size_t kDoorOpenStateOffset          = 0x2cc;  // byte
 constexpr size_t kDoorDescriptionOffset        = 0x3a4;  // CExoLocString

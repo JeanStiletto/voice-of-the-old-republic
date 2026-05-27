@@ -18,7 +18,9 @@ namespace {
 const char* CueLabel(NavCue cue) {
     switch (cue) {
         case NavCue::DoorOpen:                 return "DoorOpen";
-        case NavCue::DoorClosed:               return "DoorClosed";
+        case NavCue::DoorClosedMetal:          return "DoorClosedMetal";
+        case NavCue::DoorClosedWood:           return "DoorClosedWood";
+        case NavCue::DoorClosedStone:          return "DoorClosedStone";
         case NavCue::NpcCreature:              return "Npc";
         case NavCue::ContainerPlaceable:       return "Container";
         case NavCue::Item:                     return "Item";
@@ -50,11 +52,13 @@ bool IsCueEnabled(NavCue cue) {
                    acc::menus::modsettings::GetToggle(
                        acc::menus::modsettings::Option::WallSounds);
         case NavCue::HazardLedge:        return p1.cueHazard;
-        // Both door sub-cues share the cueDoor toggle — the user thinks
-        // about "door announcements" as one category even though the cue
-        // splits by open_state at fire time.
+        // All four door sub-cues share the cueDoor toggle — the user
+        // thinks about "door announcements" as one category even though
+        // the cue splits by open_state + material at fire time.
         case NavCue::DoorOpen:
-        case NavCue::DoorClosed:         return p1.cueDoor;
+        case NavCue::DoorClosedMetal:
+        case NavCue::DoorClosedWood:
+        case NavCue::DoorClosedStone:    return p1.cueDoor;
         case NavCue::NpcCreature:        return p1.cueNpc;
         case NavCue::ContainerPlaceable: return p1.cuePlaceable;
         case NavCue::Item:               return p1.cueItem;
