@@ -8,90 +8,52 @@
 #pragma comment(lib, "user32.lib")
 
 #include "audio_bus.h"
-#include "audio_cues.h"           // NavCue::Wall
-#include "camera_announce.h"      // dead-reckoned camera yaw for view-mode
-                                  // override of cue-system orientation
-#include "engine_area.h"          // AreaObjectIterator, GetCurrentArea,
-#include "engine_manager.h"       // kAddrGuiManagerPtr, kMgrModalStack*Offset,
-                                  // GetForegroundPanel
-#include "engine_panels.h"        // HasActiveDialogPanel, HasActiveSubScreen,
-                                  // IdentifyPanel, PanelKind
-                                  // GetObjectName, GetObjectPosition
+#include "audio_cues.h"
+#include "camera_announce.h"
+#include "engine_area.h"
+#include "engine_manager.h"
+#include "engine_panels.h"
 #include "engine_options.h"
-#include "engine_offsets.h"       // Vector
+#include "engine_offsets.h"
 #include "engine_player.h"
-#include "filter_objects.h"       // ObjectMatches
-#include "guidance_autowalk.h"    // WalkTo — empty-cursor Enter target
+#include "filter_objects.h"
+#include "guidance_autowalk.h"
 #include "hotkeys.h"
-#include "interact_hotkey.h"      // DispatchInteract — Enter on hover target
+#include "interact_hotkey.h"
 #include "log.h"
-#include "narrated_target.h"      // Stamp on hover speech (unified focus slot)
-#include "spatial_change_detector.h"  // SegmentCrossesSurface (mirror of the
-                                      // audio wall-cue surface clustering)
+#include "narrated_target.h"
+#include "spatial_change_detector.h"
 #include "strings.h"
 #include "prism.h"
-#include "transitions.h"          // IsWorldSpeechGated, FindLandmarkNear,
-                                  // IsResrefStyleRoomName
-#include "wall_topology.h"        // nav-graph region lookup (same source the
-                                  // walking adapter speaks from)
+#include "transitions.h"
+#include "wall_topology.h"
 
 namespace acc::view_mode {
 
 namespace {
 
-// Cursor motion speed — matches KOTOR's walk pace (≈2.0 m/s). Single
-// knob; can move to core_settings later if a separate map-cursor speed
-// becomes a thing.
-constexpr float kCursorSpeedMps = 2.0f;
-
-// dt cap to prevent teleport-on-stall. Frame stalls (loading screens,
-// alt-tab) shouldn't translate into a 30-metre cursor jump on the next
-// tick that lands inside a wall.
-constexpr float kMaxDtSec = 0.1f;
-
-// Hover-pause object narration debounce. 300 ms matches the long-term
-// plan §"Mechanics — view mode": the cursor must rest on an object
-// before its name is spoken, so sweeping past objects doesn't fire a
-// machine-gun stream of names. Mirrors `turn_announce`'s three-variable
-// last_fired / pending / pending_changed_at pattern.
-constexpr DWORD kHoverPauseMs = 300;
-
-// Object-narration radius. Plan calls for ~1.0 m so the cursor must
-// physically be on top of the object before it speaks; with the
-// listener centred at the cursor this is also roughly where the user
-// hears the object as "in front of them".
-constexpr float kHoverRadiusMeters = 1.0f;
-
-// Wall-collision cue debounce. Driving the cursor straight into a wall
-// would otherwise fire a NavCue::Wall every tick — at ~50ms-per-tick
-// that's 20 cues/sec into the same ear. 250 ms collapses sustained
-// contact to ~4 cues/sec; first contact still fires immediately.
-constexpr DWORD kCollisionCueQuietMs = 250;
+constexpr float kCursorSpeedMps = 2.0f;       // matches KOTOR walk pace
+constexpr float kMaxDtSec = 0.1f;             // guard against teleport-on-stall
+constexpr DWORD kHoverPauseMs = 300;          // settle time before speaking
+constexpr float kHoverRadiusMeters = 1.0f;    // cursor must be on the object
+constexpr DWORD kCollisionCueQuietMs = 250;   // collapse sustained wall contact
 
 struct ViewModeState {
     bool   active            = false;
     Vector cursor_pos        = { 0.0f, 0.0f, 0.0f };
-    float  cursor_yaw_deg    = 0.0f;   // engine frame, 0° = +X = East,
-                                       // CCW positive
-    DWORD  last_tick_ms      = 0;       // GetTickCount() last Tick() call
-    DWORD  last_collision_ms = 0;       // 0 = no collision yet this session
-    // Hover-pause object debounce.
-    uint32_t hover_last_spoken     = 0;  // 0 = none spoken this session
-    uint32_t hover_pending         = 0;  // 0 = cone clear / no candidate
-    void*    hover_pending_obj     = nullptr;  // CSWSObject* matching
-                                               // hover_pending; captured
-                                               // alongside the handle so
-                                               // lay-off-5 Enter dispatch
-                                               // can hand it to
-                                               // DispatchInteract without
-                                               // re-resolving.
+    float  cursor_yaw_deg    = 0.0f;   // engine frame: 0° = +X, CCW positive
+    DWORD  last_tick_ms      = 0;
+    DWORD  last_collision_ms = 0;
+
+    // Hover-pause object debounce. Both handle and CSWSObject* are written
+    // together so Enter dispatch reads them as a pair without re-resolving.
+    uint32_t hover_last_spoken     = 0;
+    uint32_t hover_pending         = 0;
+    void*    hover_pending_obj     = nullptr;
     DWORD    hover_pending_started = 0;
 
-    // Region-cursor announce (2026-05-13). Same three-variable hover-
-    // pause pattern as the object hover-pause: pending text + start
-    // timestamp, last spoken text for dedup. Compared by text equality
-    // — adjacent .lyt-rooms with identical labels collapse to one
-    // announce, just like the map cursor's ambient flow.
+    // Region-cursor announce. Text-equality dedup so adjacent rooms with
+    // identical labels collapse to one announce.
     char  region_pending_text[128]   = {0};
     DWORD region_pending_started_ms  = 0;
     char  region_last_spoken_text[128] = {0};
@@ -99,108 +61,54 @@ struct ViewModeState {
 
 ViewModeState g_state;
 
-// Lay-off-5 single-tick Enter ownership flag. Set by `PollEnter` whenever
-// it handles a rising VK_RETURN; read-and-cleared by
-// `acc::view_mode::ConsumedEnterThisTick()` from
-// `interact_hotkey::PollHotkey` so the same press can't be processed
-// twice in one tick. See header doc on the public getter for the why.
+// Single-tick Enter ownership. Set by PollEnter, read-and-cleared by
+// interact_hotkey::PollHotkey so the same press can't dispatch twice.
 bool g_enter_consumed_this_tick = false;
 
-// Lay-off-5 deferred-dispatch state. View-mode-exit autowalk via
-// AddMoveToPointAction silently no-ops when SetPlayerInputEnabled has
-// been held at 0 for many ticks (verified patch-20260507-064544.log:
-// `WalkTo dispatch ret=0x00000001` but `moved=0.00m` at t+3s for every
-// dispatch). The cycle_input Shift+- path works because input has been
-// settled at 1 for many ticks before WalkTo flips it to 0 — the engine
-// needs that 1→0 transition immediately before AI dispatch.
+// Deferred-dispatch state. WalkTo silently no-ops when input has been at 0
+// for many ticks — engine needs a fresh 1→0 transition right before AI
+// dispatch. Synchronous round-trip in the same tick doesn't work either:
+// engine never processes the intermediate enabled=1. So PollEnter exits
+// view mode + re-enables input, arms this struct, and Tick fires the
+// dispatch on the next tick after the engine has settled.
 //
-// Synchronous round-trip (SetEnabled(true) then SetEnabled(false) in
-// the same tick) didn't work either: the engine never actually
-// processed the `enabled=1` state. So we exit view mode + re-enable
-// input synchronously, arm this pending-dispatch struct, and process
-// it on the *next* OnUpdate tick after the engine has had a frame
-// to settle into `enabled=1` and we then transition cleanly to 0
-// inside the dispatch path.
-// Hover obj/handle are NOT snapshotted here anymore — view_mode's hover
-// speech stamps the unified `acc::narrated_target` slot every time it
-// narrates, so ProcessPendingDispatch reads from there at dispatch time.
-// Only the empty-cursor WalkTo path keeps a snapshot: that destination is
-// a raw world position (no associated object) and view-mode-local, so it
-// has no home in the narrated-target model.
+// Hover obj/handle are NOT snapshotted: hover speech stamps the unified
+// narrated_target slot, ProcessPendingDispatch reads from there at
+// dispatch time. Only the empty-cursor WalkTo path keeps a position
+// snapshot (no associated object).
 struct PendingDispatch {
     bool     active        = false;
-    bool     hasHover      = false;     // cursor had a hover target at PollEnter
+    bool     hasHover      = false;
     Vector   cursor_pos    = {0.0f, 0.0f, 0.0f};
     bool     forceRadial   = false;
-    DWORD    armed_at_ms   = 0;   // GetTickCount() when armed
+    DWORD    armed_at_ms   = 0;
 };
 PendingDispatch g_pending;
 
-// Min elapsed time before processing a pending dispatch. ~1 frame at
-// 60fps; ensures at least one engine tick processes the input
-// re-enable before we dispatch the AI action. Concrete tick rate
-// varies; this is a lower bound rather than a fixed delay.
-constexpr DWORD kPendingDispatchMinElapsedMs = 16;
+constexpr DWORD kPendingDispatchMinElapsedMs = 16;  // ~1 frame at 60fps
 
-// Listener override path (post-rework, 2026-05-06):
+// Listener override note: the per-frame listener write lives in a detour on
+// CExoSound::SetListenerPosition (hooks.toml). Doing it from this file's
+// Tick would race the engine's own write in UpdateSoundEngine, which runs
+// after OnUpdate. The detour substitutes cursor_pos for the engine's
+// camera-derived Vector while view mode is active.
 //
-// Lay-off 4 first attempt wrote `CExoSound::SetListenerPosition` from
-// our OnUpdate `view_mode::Tick` every tick. The probe (sentinel
-// `(999,999,999)` written, read back next tick) consistently logged
-// `survived=0`: the engine's own per-frame camera-driven listener write
-// in `CClientExoAppInternal::UpdateSoundEngine` runs *after* our
-// OnUpdate callsite and overwrites the field before any 3D-audio render
-// can see our value.
-//
-// The fix is structural: we detour `CExoSound::SetListenerPosition`
-// itself (single xref from UpdateSoundEngine; see hooks.toml entry).
-// `OnSetListenerPosition` substitutes the cursor position for the
-// engine's Vector when view mode is active and dispatches the inner
-// `CExoSoundInternal::SetListenerPosition` directly. The engine's
-// per-frame call now acts as our heartbeat — every camera-driven write
-// becomes a cursor-driven write while view mode is active. No
-// additional per-tick listener call needed from this file.
-//
-// Why no Mouse Look forcing / cursor recentring:
-//
-// User-verified 2026-05-06: in stock KOTOR (regardless of Caps Lock /
-// Mouse Look state), A/D rotates the camera only — the character does
-// not turn. The character only "snaps" to camera direction at the
-// instant W or S is pressed to commit forward motion. So the engine
-// already has a native "look around without rotating character"
-// primitive — A/D is it. View mode just needs to suppress the
-// W/S-driven snap-and-walk so the camera-pan persists.
-//
-// `SetPlayerInputEnabled(false)` (CSWPlayerControl::SetEnabled @0x6792e0
-// per memory `project_player_control_toggle.md`) gates the per-tick
-// movement clobber that drives W/S character motion. With it off,
-// W/S key presses don't translate the character; A/D still pans the
-// camera (camera-pan lives outside the movement-clobber path).
-//
-// The Phase 4 lay-off 2 probe verified Mouse Look ON makes mouse motion
-// drive the camera, but that's a separate primitive — we're using key
-// input directly through the engine's existing A/D camera-rotate path,
-// not synthesising mouse deltas. So no Mouse Look state to manage,
-// no SendInput, no cursor recentring.
+// No Mouse Look forcing / cursor recentring needed: stock A/D rotates the
+// camera only, the character only snaps on W/S commit. So freezing W/S via
+// SetPlayerInputEnabled(false) is enough — A/D keeps panning natively.
 
 void EnterViewMode() {
-    // Sustained-disable (armAutoRestore=false): view mode lasts until
-    // the user toggles back. Default armAutoRestore=true would auto-
-    // restore after 3s — verified 2026-05-06 in patch-20260506-113051.log
-    // line 41+44 (W/S regained walkability mid-session).
+    // armAutoRestore=false: view mode lasts until the user toggles back.
+    // Default true auto-restores after 3s mid-session.
     if (!acc::engine::SetPlayerInputEnabled(false, /*armAutoRestore=*/false)) {
         acclog::Write("ViewMode", "enter REFUSED — SetPlayerInputEnabled(false) "
             "failed (chain unresolved or SEH); skipping toggle");
         return;
     }
 
-    // Initialise the cursor at the player's current position + facing.
-    // GetPlayerPosition was already non-null at PollWin32 gate, so a
-    // failure here is a chain teardown between the gate and now —
-    // bail without entering rather than starting the cursor at (0,0,0).
     Vector pos;
     if (!acc::engine::GetPlayerPosition(pos)) {
-        acc::engine::SetPlayerInputEnabled(true);  // undo the disable
+        acc::engine::SetPlayerInputEnabled(true);
         acclog::Write("ViewMode", "enter REFUSED — player position unavailable "
             "post-disable; rolled back");
         return;
@@ -208,8 +116,8 @@ void EnterViewMode() {
     g_state.cursor_pos = pos;
     float yaw = 0.0f;
     if (!acc::engine::GetPlayerYawDegrees(yaw)) {
-        // Degenerate facing during spawn — start facing +X. First A/D
-        // pan or W/S step rebases on the camera yaw read on next tick.
+        // Degenerate facing during spawn — first cursor step rebases on
+        // camera yaw next tick.
         yaw = 0.0f;
     }
     g_state.cursor_yaw_deg     = yaw;
@@ -233,35 +141,19 @@ void EnterViewMode() {
 void ExitViewMode() {
     bool restored = acc::engine::SetPlayerInputEnabled(true);
     g_state.active = false;
-    // Don't write the listener on the way out — the engine reclaims the
-    // field next frame from the camera, and any further write here
-    // would race that update.
+    // Engine reclaims the listener from the camera next frame; no write here.
     prism::Speak(acc::strings::Get(acc::strings::Id::ViewModeOff),
                 /*interrupt=*/true);
     acclog::Write("ViewMode", "EXIT restored=%d", restored ? 1 : 0);
 }
-
-// (ExitViewModeQuiet was inlined into PollEnter as part of the lay-off-5
-// deferred-dispatch rework — exit lifecycle is now coupled to the
-// dispatch arming rather than being a standalone helper.)
 
 void ToggleViewMode() {
     if (g_state.active) ExitViewMode();
     else                EnterViewMode();
 }
 
-// Camera-behavior probe (Shift+B). Snapshot the documented chain pointers
-// + every byte we currently know about that could plausibly hold Free
-// Look / Look About state.
-//
-// 2026-05-06 outcome: probe + manual Caps Lock test showed no
-// CClientOptions bits change in response to Caps Lock. User-blind audio
-// test (AltGr heading + A/D press) further confirmed Caps Lock has no
-// audible effect — A/D pans camera-only in *both* Caps Lock states.
-// Free Look in K1 is therefore either cut, visual-only, or accessed
-// through a chain we haven't located yet (Camera::SetBehavior @0x45c230).
-// The probe stays in the build for now as a diagnostic — it's cheap and
-// might catch other state changes in unrelated future RE work.
+// Shift+B diagnostic: snapshot CClientOptions to the log. Cheap and
+// unintrusive; keeps catching state changes during unrelated RE work.
 void DumpCameraStateProbe() {
     void* clientOptions = acc::engine::GetClientOptions();
     if (!clientOptions) {
@@ -321,15 +213,12 @@ void StepCursor(float dt) {
     bool s = down('S');
     bool c = down('C');  // strafe right
     bool y = down('Y');  // strafe left
-    // Net forward / strafe axes. Opposing keys cancel; we only return
-    // early when neither axis has a net direction.
     float forwardSign = (w ? 1.0f : 0.0f) - (s ? 1.0f : 0.0f);
     float strafeSign  = (c ? 1.0f : 0.0f) - (y ? 1.0f : 0.0f);
     if (forwardSign == 0.0f && strafeSign == 0.0f) return;
 
-    // Update yaw from the engine's camera-direction reader before
-    // stepping. If camera_announce hasn't anchored yet, fall back to
-    // the player's frozen heading (one tick of staleness is fine).
+    // Pre-step yaw refresh from the engine's camera reader; fall back to
+    // the frozen heading until camera_announce has anchored.
     float yawDeg = g_state.cursor_yaw_deg;
     float cameraYaw = 0.0f;
     if (acc::camera_announce::TryGetCameraEngineYawDegrees(cameraYaw)) {
@@ -340,15 +229,13 @@ void StepCursor(float dt) {
     float yawRad   = yawDeg * 0.017453292519943295f;
     float forwardX = std::cos(yawRad);
     float forwardY = std::sin(yawRad);
-    // Right perpendicular to forward in the engine's CCW-positive yaw
-    // frame (0° = +X, 90° = +Y): rotating forward 90° clockwise gives
-    // (sin yaw, -cos yaw). C presses move along +right, Y along -right.
+    // Right perpendicular in CCW-positive yaw: rotate forward 90° clockwise.
     float rightX = std::sin(yawRad);
     float rightY = -std::cos(yawRad);
 
     float dx = forwardX * forwardSign + rightX * strafeSign;
     float dy = forwardY * forwardSign + rightY * strafeSign;
-    // Normalise so a W+C diagonal doesn't move 1.41× faster than W alone.
+    // Normalise so diagonals don't move 1.41× faster than cardinals.
     float mag = std::sqrt(dx * dx + dy * dy);
     if (mag > 1e-6f) {
         dx /= mag;
@@ -362,18 +249,15 @@ void StepCursor(float dt) {
         start.y + dy * dist,
         start.z };
 
-    // Surface-level collision — mirrors the audio wall-cue system's
-    // representation so the cursor only stops where the audio would
-    // announce a wall, not on portal-seam fragments that the audio
-    // already absorbed into a nearby real surface.
+    // Surface-level collision: cursor stops only where the audio would
+    // announce a wall, not on portal-seam fragments the audio absorbs.
     Vector hit = end;
     bool collided = acc::spatial::change_detector::SegmentCrossesSurface(
         start, end, hit);
 
     if (collided) {
-        // Step the cursor 5 cm short of the hit point along start→end so
-        // we don't sit exactly on the wall (which next tick's segment
-        // test would detect again as a fresh crossing on any tiny step).
+        // Back off 5 cm from the hit so next tick's tiny step doesn't read
+        // as a fresh crossing.
         float dx = end.x - start.x;
         float dy = end.y - start.y;
         float len = std::sqrt(dx * dx + dy * dy);
@@ -387,10 +271,9 @@ void StepCursor(float dt) {
             float u = clamped / len;
             g_state.cursor_pos.x = start.x + dx * u;
             g_state.cursor_pos.y = start.y + dy * u;
-            // z unchanged — room-flat assumption, matches the test.
+            // z unchanged — room-flat assumption matches the test.
         } else {
-            g_state.cursor_pos = start;  // shouldn't happen given the
-                                         // dist != 0 guard above
+            g_state.cursor_pos = start;  // unreachable given dist > 0 guard
         }
 
         DWORD now = GetTickCount();
@@ -426,10 +309,8 @@ acc::strings::Id CategoryNameId(acc::filter::CycleCategory c) {
     return S::CategoryItem;
 }
 
-// Resolve a region label for `cursor` in `area` using the same tier order
-// the in-world walking adapter uses:
-//   landmark → friendly room name → shape cache.
-// Returns false when no tier resolves (caller stays silent).
+// Tier order matches the walking adapter: landmark → friendly room name
+// → shape cache. False = no tier resolved; caller stays silent.
 bool ResolveCursorRegionLabel(void* area, const Vector& cursor,
                               char* outBuf, size_t bufSize,
                               const char*& outSource) {
@@ -437,10 +318,7 @@ bool ResolveCursorRegionLabel(void* area, const Vector& cursor,
     outBuf[0] = '\0';
     outSource = "none";
 
-    // Landmark tier — proximity lookup over the flat landmark cache.
-    // The 15m radius matches the walking adapter's enter/exit windows,
-    // wide enough to cover typical room diagonals while excluding the
-    // long sliver case that the old room-keyed lookup over-fired on.
+    // 15m matches the walking adapter's enter/exit windows.
     constexpr float kLandmarkRangeM = 15.0f;
     {
         char   landmarkBuf[128] = {0};
@@ -483,11 +361,8 @@ bool ResolveCursorRegionLabel(void* area, const Vector& cursor,
     return false;
 }
 
-// Per-tick region cursor announce. Mirrors the map-cursor ambient flow:
-// classify the region under the cursor, text-equality dedup against the
-// last spoken label, hover-pause (300 ms) before speaking so micro-
-// crossings on a room seam don't fire. Gates on the shared world-speech
-// predicate so combat / blocking-UI never bypasses the user's attention.
+// Per-tick region announce. Text-equality dedup + 300ms hover-pause so
+// micro-crossings on a room seam don't fire. World-speech-gated.
 void AnnounceCursorRegion(void* area, const Vector& cursor) {
     if (!area) {
         g_state.region_pending_text[0]    = '\0';
@@ -495,9 +370,8 @@ void AnnounceCursorRegion(void* area, const Vector& cursor) {
         return;
     }
     if (acc::transitions::IsWorldSpeechGated()) {
-        // Hold pending state — when the gate releases we don't want a
-        // fresh classification to spam if the cursor has been sitting
-        // on the same region the whole time.
+        // Hold pending state — when the gate releases, a fresh same-region
+        // classification must not spam.
         return;
     }
 
@@ -514,8 +388,7 @@ void AnnounceCursorRegion(void* area, const Vector& cursor) {
 
     if (std::strncmp(label, g_state.region_last_spoken_text,
                      sizeof(g_state.region_last_spoken_text)) == 0) {
-        // Already announced — keep silent until the cursor walks into a
-        // differently-labelled region.
+        // Already announced — silent until a differently-labelled region.
         g_state.region_pending_text[0]    = '\0';
         g_state.region_pending_started_ms = 0;
         return;
@@ -541,8 +414,7 @@ void AnnounceCursorRegion(void* area, const Vector& cursor) {
         return;
     }
 
-    // New pending region (different from both last-spoken and previously-
-    // pending). Arm the timer.
+    // New pending region — arm the timer.
     std::strncpy(g_state.region_pending_text, label,
                  sizeof(g_state.region_pending_text) - 1);
     g_state.region_pending_text[
@@ -552,9 +424,8 @@ void AnnounceCursorRegion(void* area, const Vector& cursor) {
 
 void NarrateNearestObject(void* area, const Vector& cursor) {
     if (!area) {
-        // Reset hover state when area drops; otherwise a stale handle
-        // would compare-equal across area transitions, and a stale obj
-        // pointer would dangle into a freed CSWSObject.
+        // Reset on area drop — stale handle would compare-equal across
+        // transitions; stale obj would dangle into freed memory.
         g_state.hover_pending         = 0;
         g_state.hover_pending_obj     = nullptr;
         g_state.hover_pending_started = 0;
@@ -601,23 +472,16 @@ void NarrateNearestObject(void* area, const Vector& cursor) {
 
     DWORD now = GetTickCount();
 
-    // Track most-recent-observed nearest + when it last changed. Mirrors
-    // turn_announce's pending pattern: any rapid sweep keeps changing
-    // pending so the stable-window timer keeps resetting and we stay
-    // silent until the cursor actually settles.
-    //
-    // Capture both the handle (for change detection + DispatchInteract's
-    // engine-side seeding) and the CSWSObject* (for DispatchInteract's
-    // name resolution + classification). Both are written together so
-    // they never go out of sync — Enter dispatch reads them as a pair.
+    // Reset the pending timer whenever the nearest changes — rapid sweeps
+    // keep resetting so we stay silent until the cursor actually settles.
     if (bestHandle != g_state.hover_pending) {
         g_state.hover_pending         = bestHandle;
         g_state.hover_pending_obj     = bestObj;
         g_state.hover_pending_started = now;
     }
 
-    if (bestHandle == 0) return;                         // nothing in range
-    if (bestHandle == g_state.hover_last_spoken) return;  // already spoken
+    if (bestHandle == 0) return;
+    if (bestHandle == g_state.hover_last_spoken) return;
     if (now - g_state.hover_pending_started < kHoverPauseMs) return;
 
     char name[128] = "";
@@ -630,9 +494,8 @@ void NarrateNearestObject(void* area, const Vector& cursor) {
     prism::Speak(name, /*interrupt=*/true);
     g_state.hover_last_spoken = bestHandle;
 
-    // Stamp the unified activation slot so Enter / Shift+Enter / Shift+- /
-    // Ctrl+- / `-` all act on whatever the user just heard. bestHandle is
-    // already the server-side handle (`GetObjectHandle(obj)` derived).
+    // Unified activation slot — Enter / Shift+Enter / Shift+- / Ctrl+- /
+    // `-` all act on whatever the user just heard.
     acc::narrated_target::Stamp(bestObj, bestHandle);
 
     Vector pos = { 0.0f, 0.0f, 0.0f };
@@ -645,72 +508,33 @@ void NarrateNearestObject(void* area, const Vector& cursor) {
         pos.x, pos.y, pos.z);
 }
 
-// Lay-off 5 — Enter / Shift+Enter dispatch while view mode is active.
-// Edge-detected on VK_RETURN; when it fires:
-//
-//   - hover target present (cursor's hover-pause tracker has a non-zero
-//     handle + obj) → exit view mode quietly, then call
-//     `acc::interact::DispatchInteract(obj, handle, forceRadial)`. Same
-//     engine-action-picker pipeline Enter / Shift+Enter run outside
-//     view mode, so behaviour ("does pressing Enter on a door open
-//     it?") is identical between the two modes. forceRadial=true
-//     (Shift+Enter) opens the radial action menu so the user can pick
-//     from all available actions instead of the engine's default —
-//     matches outside-view-mode Shift+Enter semantics.
-//
-//   - no hover target → exit view mode quietly, speak "Walking to point"
-//     / "Gehe zum Punkt", dispatch `acc::guidance::WalkTo(cursor_pos)`.
-//     Same path Shift+- uses for the cycle's focused-object case but
-//     without a target name. Shift+Enter behaves identically here
-//     (no radial to open with no target).
-//
-// Lifecycle: exit happens BEFORE dispatch so the autowalk runs against
-// an unfrozen character (decision (a) from the lay-off 5 plan). Use
-// the no-announce ExitViewModeQuiet so the dispatch announce isn't
-// preempted by a "View mode off" interrupt.
-//
-// Foreground gate is inherited from the caller (Tick) — Enter polled
-// here only fires on the same tick Tick() decided to run.
-//
-// Coordination with `interact_hotkey::PollHotkey`: PollHotkey gates its
-// own Enter branch on `!view_mode::IsActive()` so the same VK_RETURN
-// rising edge can't double-dispatch via both paths.
+// Enter / Shift+Enter dispatch while view mode is active.
+//   hover target present → DispatchInteract(obj, handle, forceRadial)
+//   no hover target      → speak pre-roll + WalkTo(cursor_pos)
+// View mode exits synchronously before dispatch (autowalk needs an
+// unfrozen character). Actual dispatch is deferred via g_pending — see
+// PendingDispatch comment for the engine-state reason.
 void PollEnter() {
-    // Either Enter or Shift+Enter — both fire while view mode owns Enter.
-    // Action::InteractTarget covers bare Enter (Shift forbidden);
-    // Action::InteractForceRadial covers Shift+Enter (Shift required).
     bool risingPlain  = acc::hotkeys::Pressed(
                             acc::hotkeys::Action::InteractTarget);
     bool risingForce  = acc::hotkeys::Pressed(
                             acc::hotkeys::Action::InteractForceRadial);
     if (!risingPlain && !risingForce) return;
 
-    // Claim this tick's Enter press before doing any work that exits
-    // view mode — interact_hotkey::PollHotkey runs later in the same
-    // OnUpdate and reads-and-clears this flag to skip its own Enter
-    // branch, preventing the double-dispatch verified in
-    // patch-20260506-142103.log.
+    // Claim this tick's Enter before exiting view mode; interact_hotkey
+    // runs later in the same OnUpdate and reads-and-clears this flag.
     g_enter_consumed_this_tick = true;
 
     bool forceRadial = risingForce;
     const char* keyTag = forceRadial ? "Shift+Enter" : "Enter";
 
-    // Snapshot only what's view-mode-local: cursor world position (for
-    // the empty-cursor WalkTo path), and the "did the cursor have a
-    // hover target?" flag. The hover obj/handle themselves are NOT
-    // snapshotted — the hover-pause speech in TickHoverNearestObject
-    // stamps the unified narrated_target slot every time it speaks, and
-    // ProcessPendingDispatch reads from there. This removes the
-    // duplicate hover state that previously lived in g_pending.
+    // Snapshot only view-mode-local state. Hover obj/handle live in the
+    // unified narrated_target slot — ProcessPendingDispatch reads them
+    // from there at dispatch time.
     Vector cursor_pos = g_state.cursor_pos;
     bool   hasHover   = g_state.hover_pending_obj != nullptr &&
                         g_state.hover_pending != 0;
 
-    // Exit view mode + re-enable player input synchronously. The actual
-    // AI-action dispatch (WalkTo / DispatchInteract) is deferred to the
-    // next tick via g_pending so the engine has a real frame to process
-    // `enabled=1` before the dispatch path's SetEnabled(false) creates
-    // the 1→0 transition the engine needs to fire AI walks.
     g_state.active = false;
     bool restored = acc::engine::SetPlayerInputEnabled(true);
     acclog::Write("ViewMode", "EXIT (deferred dispatch) input_restored=%d hasHover=%d",
@@ -729,20 +553,16 @@ void PollEnter() {
         forceRadial ? 1 : 0);
 }
 
-// Process any pending dispatch armed by a prior PollEnter. Runs at the
-// top of Tick BEFORE the IsActive() gate so it fires even when view
-// mode is no longer active (which is precisely when it's needed —
-// PollEnter exits view mode synchronously and arms this for the next
-// tick). One-frame minimum delay enforced via kPendingDispatchMinElapsedMs.
+// Runs at the top of Tick BEFORE the IsActive() gate — by design, this
+// fires after PollEnter exited view mode synchronously.
 void ProcessPendingDispatch() {
     if (!g_pending.active) return;
 
     DWORD elapsed = GetTickCount() - g_pending.armed_at_ms;
     if (elapsed < kPendingDispatchMinElapsedMs) return;
 
-    // Snapshot then clear before dispatch — the dispatch path may itself
-    // re-enter our hooks (e.g. picker::Drive can fire other monitors)
-    // and we don't want re-entry to see g_pending as still active.
+    // Snapshot and clear before dispatch — the dispatch path may re-enter
+    // our hooks; re-entry must not see g_pending as active.
     bool     hasHover    = g_pending.hasHover;
     Vector   cursor_pos  = g_pending.cursor_pos;
     bool     forceRadial = g_pending.forceRadial;
@@ -751,14 +571,10 @@ void ProcessPendingDispatch() {
     const char* keyTag = forceRadial ? "Shift+Enter" : "Enter";
 
     if (hasHover) {
-        // Read the hover target live from the unified narrated_target slot
-        // — TickHoverNearestObject stamped it on the speech that fired
-        // before PollEnter armed us. Reading at dispatch time (instead of
-        // from a g_pending snapshot) means a later passive_narrate stamp
-        // between PollEnter and now wins — consistent with the unified
-        // "last narrated wins" principle. If the slot is stale (object
-        // destroyed across the one-tick gap, very rare) we speak
-        // GuidanceNoFocus rather than dispatching against a zombie pointer.
+        // Read the hover target live: a passive_narrate stamp between
+        // PollEnter and now wins — "last narrated wins". Stale slot (rare,
+        // object destroyed within the one-tick gap) speaks GuidanceNoFocus
+        // instead of dispatching against a zombie pointer.
         acc::narrated_target::Slot slot;
         if (!acc::narrated_target::TryGet(slot)) {
             const char* msg = acc::strings::Get(
@@ -777,22 +593,12 @@ void ProcessPendingDispatch() {
         return;
     }
 
-    // Empty cursor — raw walk-to-position. Speak the localised pre-roll
-    // before WalkTo (cf. `feedback_never_silence_fallback_announcement`).
+    // Empty cursor — pre-roll then ForceWalkTo (queue-bypass). Plain
+    // WalkTo's queue path stays asleep after view mode's sustained
+    // SetEnabled(false); ForceMoveToPoint dispatches directly.
     const char* preroll = acc::strings::Get(acc::strings::Id::GuidingToPoint);
     prism::Speak(preroll, /*interrupt=*/true);
 
-    // Diagnostic 2026-05-07: try ForceWalkTo (queue-bypass) instead of
-    // WalkTo. patch-20260507-083116.log proved the per-creature action
-    // queue is innocent — clearing it before WalkTo still produced
-    // moved=0.00m (stuck) on 4.07m and 5.99m dispatches. ForceWalkTo
-    // uses CSWSCreature::ForceMoveToPoint, a different engine entry
-    // point that doesn't enqueue. If the player walks via Force here
-    // but not via WalkTo, the queue-processing path is asleep after
-    // view-mode's sustained SetEnabled(false). If Force also fails,
-    // the player creature itself is in a state that blocks movement
-    // dispatch from any engine surface, and we need to look at what
-    // view mode does to the creature's control state beyond input.
     bool ok = acc::guidance::ForceWalkTo(cursor_pos);
     acclog::Write("ViewMode", "%s deferred -> ForceWalkTo cursor=(%.2f,%.2f,%.2f) ok=%d "
         "elapsed=%lums (no hover target)",
@@ -832,8 +638,6 @@ bool GetEffectiveOrientationYawDegrees(float& out) {
 }
 
 void PollWin32() {
-    // Action::ViewModeToggle = bare B (Shift forbidden).
-    // Action::CameraStateProbe = Shift+B.
     bool risingAlone = acc::hotkeys::Pressed(
                            acc::hotkeys::Action::ViewModeToggle);
     bool risingShift = acc::hotkeys::Pressed(
@@ -841,19 +645,11 @@ void PollWin32() {
     if (!risingAlone && !risingShift) return;
     bool shift = risingShift;
 
-    // UI-claim gate. Mirror of (and stricter than) interact_hotkey's Enter
-    // gate. Toggling view mode flips engine-level CSWPlayerControl input
-    // state via SetPlayerInputEnabled — doing that while any UI panel
-    // claims input corrupts the engine's gate (post-modal-close lockup
-    // observed in patch-20260507-203839.log line 20905+: ViewMode toggled
-    // inside InGameOptions, then quit-confirm Cancel left movement dead).
-    //
-    // Strict version: panels[] scan for sub-screens AND for dialog panels
-    // (stale-Fade-as-fg defeats fg-only checks), modal_stack non-empty,
-    // and a foreground-kind blacklist for the remaining UI panels that
-    // claim Enter directly. Differs from the Enter gate in that the Enter
-    // gate accepts double-fire as recoverable; for view mode the failure
-    // is engine-state corruption, so we lean toward block.
+    // UI-claim gate (stricter than interact_hotkey's Enter gate). Toggling
+    // view mode flips engine input state; doing it while any UI claims
+    // input corrupts the engine gate (post-modal-close movement lockup).
+    // Scan panels[] for dialog + sub-screens (stale-Fade defeats fg-only
+    // checks), modal_stack, and a foreground-kind blacklist.
     void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
     const char* blockReason = nullptr;
     if (acc::engine::HasActiveDialogPanel()) {
@@ -914,19 +710,14 @@ void PollWin32() {
 }
 
 void Tick() {
-    // Process any deferred dispatch from a prior PollEnter BEFORE the
-    // active-gate. The dispatch fires after view mode has exited, so
-    // gating this on g_state.active would never let it run.
+    // Before the active-gate — dispatch fires after view mode has exited.
     ProcessPendingDispatch();
 
     if (!g_state.active) return;
 
-    // Foreground gate — same rationale as the cycle / view-mode pollers:
-    // don't consume W/S held state when the user is alt-tabbed into a
-    // browser typing about the bug they just hit. Even when foreground-
-    // gated out, the OnSetListenerPosition hook keeps writing
-    // g_state.cursor_pos every frame, so the soundscape stays anchored
-    // to wherever the cursor was when focus was lost.
+    // Foreground gate: don't consume W/S when the user is alt-tabbed out.
+    // The listener detour keeps anchoring to cursor_pos either way, so the
+    // soundscape stays put.
     HWND fg = GetForegroundWindow();
     if (fg) {
         DWORD pid = 0;
@@ -945,31 +736,11 @@ void Tick() {
 
     void* area = acc::engine::GetCurrentArea();
     NarrateNearestObject(area, g_state.cursor_pos);
-
-    // Region cursor announce — speak the .lyt-room landmark / friendly
-    // name / shape label when the cursor settles on a region different
-    // from the last one spoken. Same shared region cache the in-world
-    // walking adapter and map cursor read; same gating (combat /
-    // blocking UI silences it). Order: after NarrateNearestObject so
-    // an object directly under the cursor still wins the audio bus —
-    // both can announce in the same tick if both have moved into new
-    // hover-pause completions.
+    // After Narrate so an object directly under the cursor still wins the
+    // audio bus; both can fire in the same tick on independent completions.
     AnnounceCursorRegion(area, g_state.cursor_pos);
-
-    // Lay-off 5 — Enter / Shift+Enter routing. Polled inside Tick (which
-    // is already foreground- and active-gated) so we don't repeat the
-    // gates. Runs AFTER NarrateNearestObject so the hover state read
-    // here reflects the cursor position computed this same tick — no
-    // one-tick lag between "cursor moved over door" and "Enter dispatches
-    // to that door". PollEnter may exit view mode and dispatch — fields
-    // we touched above (cursor_pos, hover_*) get reset on next entry.
+    // After Narrate so Enter reads the hover state computed this tick.
     PollEnter();
-
-    // No per-tick SetListener call here — the OnSetListenerPosition
-    // detour at 0x5d5df0 substitutes the cursor position into the
-    // engine's own per-frame listener write, which runs after this
-    // OnUpdate path. That's the whole point of the rework: stop
-    // racing the engine, intercept its own write site instead.
 }
 
 }  // namespace acc::view_mode
