@@ -1,28 +1,17 @@
-// KOTOR Accessibility — Tab leader-change announce.
+// Tab leader-change announce.
 //
-// Pillar 2 sub-feature. When the user presses Tab the engine cycles
-// control to the next living party member; we read the resulting leader
-// creature and speak its name. Repetition is intentional: in solo-mode
-// (one party member, or a story beat that strips companions), Tab on the
-// same creature still speaks the name — confirming "still solo" rather
-// than swallowing the keypress silently.
+// Speaks the new controlled creature's name on Tab rising-edge.
+// Repetition is intentional — in solo mode Tab on the same creature
+// still speaks, confirming "still solo" rather than swallowing the press.
 //
-// No UI-block gate: Tab cycles the leader in-world AND in panels (the
-// engine's strip panels re-bind to the new leader, so the user wants the
-// name announce in both contexts).
-//
-// Win32-polled (GetAsyncKeyState VK_TAB) — Tab is logical(0xce), reaches
-// the manager hook directly, but the announce belongs at the per-tick
-// dispatcher level (state observation, per the hook-vs-poll principle).
+// Fires in panels too — engine strip panels re-bind to the new leader,
+// so the announce is wanted in both world and UI contexts.
 
 #pragma once
 
 namespace acc::party_leader_announce {
 
-// Per-frame tick from core_tick::Dispatch. Reads Tab rising-edge, applies
-// the UI-block gate, then speaks the controlled creature's name. No-op
-// when Tab is not pressed, KOTOR window isn't foreground, or the player
-// is not yet loaded.
+// Foreground + player-loaded gates inside.
 void Tick();
 
 }  // namespace acc::party_leader_announce
