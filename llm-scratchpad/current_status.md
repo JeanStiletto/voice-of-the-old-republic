@@ -11,6 +11,9 @@ Prompts from `C:/Users/fabia/Dev/llm-mod-refactoring-prompts` (JeanStiletto's PR
 - `information-gathering-and-checking.md` — CLAUDE.md patched, docs/llm-docs/{game-flow.md, CLAUDE.md} added, gitignore exception
 - `code-directory-construction.md` — 178 .md index files under `llm-scratchpad/code-index/`, one per source file
 
+## Prompts in progress
+- `large-file-handling.md` — 1 of 5 splits done. **See `llm-scratchpad/large-file-splits.md` for the full plan and the 4 remaining splits.** Done: swoop_race → swoop_spatial_audio (commit `7c2827a`) plus audio-glossary wiring (commit `549beb4`). Next: spatial_change_detector → spatial_wall_surfaces.
+
 ## Findings carried forward from indexing
 Flagged for later phases:
 
