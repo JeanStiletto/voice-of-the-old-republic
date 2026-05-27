@@ -12,6 +12,8 @@
 #include "engine_offsets.h"
 #include "engine_player.h"    // GetPartyMembers, GetCameraPosition
 #include "log.h"
+#include "transitions.h"      // IsModuleLoadPending — gate during cutscene-load
+                              // transient (engine LYT loader use-after-free)
 
 namespace acc::combat::special_watch {
 
@@ -256,6 +258,10 @@ void FireCue(const char* reason, int specials, DWORD now) {
 }  // namespace
 
 void Tick() {
+    // Module-load latch — IsCombatActive + per-creature queue walks read
+    // engine accessors that aren't safe through a cutscene transition.
+    if (acc::transitions::IsModuleLoadPending()) return;
+
     State& s = GetState();
     bool inCombatNow = acc::combat::IsCombatActive();
     DWORD now = GetTickCount();

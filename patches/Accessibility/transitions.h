@@ -144,4 +144,25 @@ bool IsResrefStyleRoomName(const char* name);
 // to listen?" semantics — only one predicate to maintain.
 bool IsWorldSpeechGated();
 
+// True from the moment `CServerExoApp::SetMoveToModuleString` fires
+// (engine has been told a module transition is starting) until
+// `transitions::Tick` next observes a fresh area pointer (new module
+// finished loading and surfacing through `GetCurrentArea`). Per-tick
+// probes that call into engine accessors on player / leader / area-
+// object state should short-circuit while this is true — the engine is
+// tearing down the previous module's `CResRef` arenas while preparing
+// the new one, and probing the old state into that handoff can perturb
+// the engine's loader and trigger a use-after-free deep inside
+// `CLYT::LoadLayout` (newest crash: `swkotor.exe(1).23224.dmp`,
+// `_strlen+0x30` ← `CLYT::LoadLayout+0x117` on a decommitted resref
+// page during the stunt_03a / stunt_levbridge load). The existing
+// `GetPlayerPosition` gate doesn't cover this window — the old module
+// is still alive, so the gate keeps returning true straight through
+// the transient.
+//
+// Latches on the entry-hook `OnSetMoveToModuleString` and clears on
+// area-pointer change (or on player-loss reset). First-module case
+// stays false until SetMoveToModuleString actually fires.
+bool IsModuleLoadPending();
+
 }  // namespace acc::transitions

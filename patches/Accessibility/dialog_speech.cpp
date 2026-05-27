@@ -13,6 +13,8 @@
 #include "menus_extract.h"    // FromControl
 #include "strings.h"
 #include "prism.h"
+#include "transitions.h"      // IsModuleLoadPending — gate during cutscene-load
+                              // transient (engine LYT loader use-after-free)
 
 namespace acc::dialog_speech {
 
@@ -143,6 +145,11 @@ bool ReadFirstVisibleText(void* panel, char* outBuf, size_t bufSize) {
 }  // namespace
 
 void Tick() {
+    // Module-load latch — FindActiveDialogPanel walks the manager's
+    // panels[] which the engine is tearing down mid-handoff during a
+    // cutscene transition. See transitions.h IsModuleLoadPending.
+    if (acc::transitions::IsModuleLoadPending()) return;
+
     // ---- NPC line + replies count for the main dialog panel. ----
     DialogPanelMatch m = FindActiveDialogPanel();
     static void*       s_lastPanel    = nullptr;

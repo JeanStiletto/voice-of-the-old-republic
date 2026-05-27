@@ -15,6 +15,8 @@
 #include "same_name_suffix.h" // AppendSuffix for same-LocName disambiguator
 #include "strings.h"
 #include "prism.h"
+#include "transitions.h"      // IsModuleLoadPending — gate during cutscene-load
+                              // transient (engine LYT loader use-after-free)
 
 namespace acc::combat::queue {
 
@@ -525,6 +527,9 @@ bool HandleInputEvent(int code, int value) {
 
 void Tick() {
     if (!g_state.active) return;
+    // Module-load latch — BuildRows iterates party server creatures via
+    // engine accessors; can't trust those handles mid-handoff.
+    if (acc::transitions::IsModuleLoadPending()) return;
     int count = BuildRows();
     if (count <= 0) {
         prism::Speak(acc::strings::Get(acc::strings::Id::QueueEmpty),

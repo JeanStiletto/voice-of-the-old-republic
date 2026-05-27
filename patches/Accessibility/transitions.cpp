@@ -44,6 +44,12 @@ namespace {
 void* g_prev_area        = nullptr;
 int   g_prev_cluster_id  = acc::wall_topology::kClusterIdNone;
 
+// Latch covering the cutscene-load transient (see IsModuleLoadPending
+// in the header for the why). Set in AnnouncePreLoadDestination from
+// the OnSetMoveToModuleString entry hook; cleared in Tick() the next
+// time we observe a fresh area pointer, or on player-loss reset.
+bool  g_module_load_pending = false;
+
 // Last friendly room name observed at the player position. Tracked so
 // we ALSO fire on friendly-name change inside a single cluster — covers
 // the TSL case where two adjacent .lyt-rooms share a cluster but have
@@ -745,6 +751,12 @@ void Tick() {
         acc::region::Reset();
         acc::wall_topology::Reset();
         acc::narration::Reset();
+        // Leave g_module_load_pending alone. Player-loss is the standard
+        // mid-load symptom (PC slot wiped while the engine swaps modules);
+        // clearing the latch here would re-open the per-tick probes
+        // immediately and undo the whole point of the latch. The flag
+        // clears on the area-pointer change below, which marks the new
+        // module as actually surfaced.
         return;
     }
 
@@ -758,6 +770,11 @@ void Tick() {
     }
 
     if (area != g_prev_area) {
+        // Lift the module-load latch. The engine has surfaced a new area
+        // pointer, so the CResRef-arena swap that the latch was protecting
+        // against is complete. Per-tick consumers can resume probing
+        // engine accessors on player / leader / area-object state.
+        g_module_load_pending = false;
         SpeakArea(area);
         // Drop the unified narrated-target slot — any object from the old
         // area is now invalid. Stale pointers would survive otherwise
@@ -949,7 +966,18 @@ bool IsWorldSpeechGated() {
     return IsWorldSpeechGatedImpl();
 }
 
+bool IsModuleLoadPending() {
+    return g_module_load_pending;
+}
+
 void AnnouncePreLoadDestination(void* exoStringPtr) {
+    // Latch the module-load transient unconditionally on every fire.
+    // Even if the dedup window below suppresses the announce, the engine
+    // is still beginning a transition — gating consumers off the announce
+    // path would let the second-of-a-pair fire go un-latched and the
+    // probes would resume mid-handoff.
+    g_module_load_pending = true;
+
     if (!exoStringPtr) return;
 
     // CExoString = { char* c_string; uint32 length } at offset 0.

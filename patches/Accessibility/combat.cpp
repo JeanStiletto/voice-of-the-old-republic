@@ -16,6 +16,8 @@
 #include "same_name_suffix.h" // AppendSuffix for same-LocName disambiguator
 #include "strings.h"
 #include "prism.h"
+#include "transitions.h"      // IsModuleLoadPending — gate during cutscene-load
+                              // transient (engine LYT loader use-after-free)
 
 namespace acc::combat {
 
@@ -60,6 +62,13 @@ bool IsCombatActive() {
 }
 
 void TickCombatMode() {
+    // Module-load latch — see transitions.h IsModuleLoadPending. Combat
+    // mode is read via a CClientExoApp engine accessor; probing it
+    // through a stunt-module cutscene load tripped the engine's LYT
+    // loader on the previous module's freed resref arena (dump
+    // swkotor.exe(1).23224.dmp, 2026-05-26).
+    if (acc::transitions::IsModuleLoadPending()) return;
+
     int mode = 0;
     if (!ReadCombatMode(mode)) return;
 
@@ -156,6 +165,11 @@ void* ReadListBoxRow(void* lb, int i) {
 }  // namespace
 
 void TickCombatLog() {
+    // Module-load latch (cutscene-load transient). FindInGameMessagesPanel
+    // walks CSWGuiManager.panels[] which the engine is in the middle of
+    // tearing down during a module transition.
+    if (acc::transitions::IsModuleLoadPending()) return;
+
     void* panel = FindInGameMessagesPanel();
     if (!panel) {
         // Panel not mounted — keep a fresh baseline so the next open
@@ -349,6 +363,11 @@ void SpeakAttackOutcome(int result, short damage, int deflected,
 }  // namespace
 
 void TickAttackResolutions() {
+    // Module-load latch (cutscene transient) — ReadCombatMode + the
+    // attacks_list walk both reach into engine state that's mid-handoff
+    // between modules. See transitions.h IsModuleLoadPending.
+    if (acc::transitions::IsModuleLoadPending()) return;
+
     // Gate 1: only walk attacks_list when the engine itself reports
     // combat-active. attacks_list[7] is an inline fixed array that holds
     // leftover heap bytes between rounds — outside combat, every "field"

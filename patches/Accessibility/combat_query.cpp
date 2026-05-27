@@ -19,6 +19,8 @@
 #include "same_name_suffix.h" // AppendSuffix for same-LocName disambiguator
 #include "strings.h"
 #include "prism.h"
+#include "transitions.h"      // IsModuleLoadPending — gate during cutscene-load
+                              // transient (engine LYT loader use-after-free)
 
 namespace acc::combat::query {
 
@@ -500,6 +502,15 @@ void TickLeaderChangeAutoAnnounce() {
     Vector unused;
     if (!acc::engine::GetPlayerPosition(unused)) return;
 
+    // Module-load latch — covers the cutscene-load transient that
+    // GetPlayerPosition can't catch (old module still alive, gate keeps
+    // returning true straight through the handoff). PartySelection-OK →
+    // stunt_03a crashed deep in CLYT::LoadLayout on a decommitted
+    // resref page in dump swkotor.exe(1).23224.dmp; the spammy
+    // `PartyLeader: leader=handle —` log from this probe was the only
+    // per-tick activity firing into the engine's teardown window.
+    if (acc::transitions::IsModuleLoadPending()) return;
+
     static char s_lastLeader[64] = "";
     char now[64] = "";
     if (!acc::engine::GetActiveLeaderName(now, sizeof(now))) return;
@@ -733,6 +744,10 @@ void HotkeyShiftH() {
 }
 
 void TickExaminePanel() {
+    // Same module-load latch as TickLeaderChangeAutoAnnounce — Shift+H
+    // examine reads engine accessors on the focused server-object; the
+    // cutscene-load transient can leave that object's handle stale.
+    if (acc::transitions::IsModuleLoadPending()) return;
     void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
     if (!mgr) return;
     auto* base = reinterpret_cast<unsigned char*>(mgr);
