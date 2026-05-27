@@ -135,6 +135,21 @@ bool CancelMovement();
 // read + one horizontal-distance compare per OnUpdate tick.
 bool IsAutowalkInFlight();
 
+// Movement-key panic-cancel poll. When an autowalk this mod dispatched is
+// in flight, a rising edge on any of W / S / A / D / C / Y (the user's
+// movement-key set on a German QWERTZ layout) calls `CancelMovement` and
+// re-enables player input. Engine-initiated autorun (NPC OnPerception
+// dialog hand-offs, area onEnter scripts, cutscene movement) is
+// untouched — `IsAutowalkInFlight` only returns true for our own
+// dispatches, so script-driven moves are not cancellable by movement
+// keys. Foreground-gated to avoid spurious cancels from keys typed in
+// other apps while Alt+Tabbed out.
+//
+// Call from acc::tick::Dispatch once per tick. Idle when no autowalk is
+// in flight (one bool check + one foreground check). Active cost: six
+// `GetAsyncKeyState` reads + a rising-edge comparison.
+void PollMovementKeysCancel();
+
 }  // namespace acc::guidance
 
 // CSWSCreature::AddMoveToPointAction — __thiscall, 17 stack args.

@@ -84,6 +84,30 @@ Vector   g_progress_checkpoint_pos = {0.0f, 0.0f, 0.0f};
 uint64_t g_progress_checkpoint_ms  = 0;
 bool     g_stuck_announced         = false;
 
+// ---------- Circling-detection state ------------------------------------
+//
+// Existing TickStuckAnnounce gates on "displaced < 0.5m over 2s" — fires
+// when the player is wedged motionless. In the 2026-05-27 cantina
+// reproduction the player is moving ~3m per rotation pivot, easily
+// exceeding the 0.5m threshold, so the checkpoint resets on every
+// window expiration and the stuck-announce never fires — even though
+// the user is unmistakably going in circles inside a 6×9m area.
+//
+// Circling detector measures path length (sum of per-tick |delta|)
+// vs net displacement (|end - start|). High ratio = lots of motion,
+// little net progress = oscillating in obstacles.
+constexpr uint64_t kCirclingWindowMs       = 4000;   // 4s window
+constexpr float    kCirclingMinPathMeters  = 4.0f;   // need real motion first
+                                                     // (4m at 1m/s ⇒ walking)
+constexpr float    kCirclingMaxNetMeters   = 2.5f;   // and went nowhere
+constexpr float    kCirclingPathRatio      = 2.5f;   // path/net >= ratio
+
+Vector   g_circling_anchor_pos = {0.0f, 0.0f, 0.0f};
+uint64_t g_circling_anchor_ms  = 0;
+Vector   g_circling_prev_pos   = {0.0f, 0.0f, 0.0f};
+float    g_circling_path_len   = 0.0f;
+bool     g_circling_announced  = false;
+
 // World-space unit vectors for the 8 cardinals (+X = East, +Y = North,
 // per all observed KOTOR positions: see CuePlayer "Wall pos=" relative
 // to player). Order: N, NE, E, SE, S, SW, W, NW.
@@ -223,6 +247,75 @@ void RunStuckProbe(const Vector& pos) {
     prism::SpeakUrgent(buf);
 }
 
+// Circling detection — fires when the player is walking (footstep alive)
+// but oscillating instead of progressing. Measures the ratio of cumulative
+// path length to net displacement over a 4s window. Reuses RunStuckProbe
+// because the actionable output is the same (which directions are open),
+// just preceded by a "you are circling" log line so post-mortem grep can
+// tell the two trigger paths apart.
+void TickCirclingAnnounce(const Vector& pos, uint64_t now_ms, bool walking) {
+    if (!walking) {
+        g_circling_anchor_ms = 0;
+        g_circling_path_len  = 0.0f;
+        g_circling_announced = false;
+        return;
+    }
+
+    if (g_circling_anchor_ms == 0) {
+        g_circling_anchor_pos = pos;
+        g_circling_anchor_ms  = now_ms;
+        g_circling_prev_pos   = pos;
+        g_circling_path_len   = 0.0f;
+        return;
+    }
+
+    // Accumulate path length each tick — sum of |Δ| since window start.
+    const float dx_step = pos.x - g_circling_prev_pos.x;
+    const float dy_step = pos.y - g_circling_prev_pos.y;
+    g_circling_path_len += sqrtf(dx_step * dx_step + dy_step * dy_step);
+    g_circling_prev_pos = pos;
+
+    if ((now_ms - g_circling_anchor_ms) < kCirclingWindowMs) {
+        return;
+    }
+
+    // Window elapsed — evaluate.
+    const float dx_net = pos.x - g_circling_anchor_pos.x;
+    const float dy_net = pos.y - g_circling_anchor_pos.y;
+    const float netDist = sqrtf(dx_net * dx_net + dy_net * dy_net);
+    const float ratio   = (netDist > 0.01f)
+        ? (g_circling_path_len / netDist) : g_circling_path_len;
+
+    const bool circling = (g_circling_path_len >= kCirclingMinPathMeters) &&
+                          (netDist <= kCirclingMaxNetMeters) &&
+                          (g_circling_path_len >=
+                           netDist * kCirclingPathRatio);
+
+    if (circling) {
+        if (!g_circling_announced) {
+            acclog::Write("StuckProbe",
+                "circling detected — path=%.2fm net=%.2fm ratio=%.2f "
+                "window_ms=%llu",
+                g_circling_path_len, netDist, ratio,
+                static_cast<unsigned long long>(
+                    now_ms - g_circling_anchor_ms));
+            RunStuckProbe(pos);
+            g_circling_announced = true;
+        }
+        // Keep the anchor where it is — don't re-arm until the player
+        // actually escapes the oscillation. Re-evaluating next tick is
+        // cheap; the announce won't repeat because of the latch.
+    } else {
+        // Real progress (high net displacement, low ratio) — reset
+        // window with fresh anchor + re-arm announce for the next
+        // possible circling episode.
+        g_circling_anchor_pos = pos;
+        g_circling_anchor_ms  = now_ms;
+        g_circling_path_len   = 0.0f;
+        g_circling_announced  = false;
+    }
+}
+
 // Called every Tick() after the per-frame stuck flag is updated. Gates on
 // the leader's walk animation being live (PlayFootstep firing for the
 // leader); standing still does not arm the probe.
@@ -287,6 +380,9 @@ void Tick() {
         g_progress_checkpoint_ms = 0;
         g_stuck_announced = false;
         g_last_leader_footstep_ms = 0;
+        g_circling_anchor_ms = 0;
+        g_circling_path_len  = 0.0f;
+        g_circling_announced = false;
         return;
     }
 
@@ -336,6 +432,14 @@ void Tick() {
     g_last_tick_ms = now_ms;
 
     TickStuckAnnounce(pos, now_ms);
+
+    // Circling detector — independent gate. Reuses the walking
+    // freshness computation TickStuckAnnounce does internally; compute
+    // it once here so both detectors see the same signal.
+    const bool walking =
+        (g_last_leader_footstep_ms != 0) &&
+        ((now_ms - g_last_leader_footstep_ms) < kFootstepFreshnessMs);
+    TickCirclingAnnounce(pos, now_ms, walking);
 }
 
 }  // namespace acc::audio::footstep_suppress

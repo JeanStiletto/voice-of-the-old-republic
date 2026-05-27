@@ -147,6 +147,12 @@ void Dispatch() {
     // action). Permanent instrumentation; reused by every guidance caller.
     acc::guidance::TickProgressWatchdog();
 
+    // Movement-key panic-cancel poll. When an autowalk our mod dispatched
+    // is in flight, a fresh W/S/A/D/C/Y press cancels it. Engine-initiated
+    // autorun (NPC OnPerception dialog hand-offs, area scripts) is gated
+    // out so script-driven sequences can complete uninterrupted.
+    acc::guidance::PollMovementKeysCancel();
+
     // Phase 5 Pillar 3 Mode B — audio beacon driver. Reads player
     // position once per tick, emits BeaconActive heartbeat / Reached /
     // DestinationReached cues as the user walks the path Ctrl+- armed.

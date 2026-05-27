@@ -8,6 +8,10 @@
 #include "camera_orient.h"   // IsActive — suppress sector-cross speech during auto-rotate
 #include "engine_compass.h"
 #include "engine_player.h"
+#include "hotkeys.h"  // IsForegroundGame — diagnostic only, mirroring turn_announce.
+                      // Speech still fires regardless of focus so the user can
+                      // hear the bug; we just log the fg state alongside each
+                      // announce to correlate spin bursts with Alt+Tab state.
 #include "log.h"
 #include "strings.h"
 #include "prism.h"
@@ -153,6 +157,7 @@ void Tick() {
     // final sector they ended up at, even if intermediate sectors got
     // suppressed by the held-interval debounce. Skipped if the final
     // sector matches what we last spoke (no change to narrate).
+    bool isForeground = acc::hotkeys::IsForegroundGame();
     if (releaseEdge) {
         int finalSector = acc::engine::CompassToSector(camCompass);
         if (finalSector != s_lastSpokenSector) {
@@ -164,8 +169,9 @@ void Tick() {
             // on the default urgent voice.
             prism::SpeakUrgent(phrase, /*voiceId=*/0);
             acclog::Write("CameraAnnounce", "release-edge sector %d -> %d (%s); "
-                "camCompass=%.1f",
-                s_lastSpokenSector, finalSector, phrase, camCompass);
+                "camCompass=%.1f fg=%d",
+                s_lastSpokenSector, finalSector, phrase, camCompass,
+                isForeground ? 1 : 0);
             s_lastSpokenSector = finalSector;
             s_pendingSector    = finalSector;
             s_lastChangeAt     = now;
@@ -210,10 +216,11 @@ void Tick() {
     // sustained A/D rotation needs to bypass NVDA's typed-char-cancel.
     prism::SpeakUrgent(phrase, /*voiceId=*/0);
     acclog::Write("CameraAnnounce", "sector %d -> %d (%s); camCompass=%.1f "
-        "(a=%d d=%d %s)",
+        "(a=%d d=%d %s fg=%d)",
         s_lastSpokenSector, s_pendingSector, phrase, camCompass,
         aHeld ? 1 : 0, dHeld ? 1 : 0,
-        stable ? "quiet" : "held");
+        stable ? "quiet" : "held",
+        isForeground ? 1 : 0);
 
     s_lastSpokenSector = s_pendingSector;
     s_lastSpokenAt     = now;

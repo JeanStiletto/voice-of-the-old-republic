@@ -5,7 +5,12 @@
 #include <cstdint>
 
 #include "engine_player.h"
+#include "hotkeys.h"  // IsForegroundGame — gate movement-key cancel polling
+                      // so keys pressed in another app while Alt+Tabbed out
+                      // don't kill an in-flight autowalk silently.
 #include "log.h"
+#include "prism.h"
+#include "strings.h"
 
 namespace acc::guidance {
 
@@ -406,6 +411,63 @@ bool CancelMovement() {
 
 bool IsAutowalkInFlight() {
     return g_inFlight.active;
+}
+
+void PollMovementKeysCancel() {
+    // Only cancel our own autowalks. Engine-initiated autorun (Canderous
+    // recruitment dialog hand-off, area onEnter scripts, cutscene moves)
+    // keeps `g_inFlight.active` false because we never set it for those —
+    // so this gate preserves script-driven sequences from accidental
+    // cancellation by stray W presses.
+    if (!g_inFlight.active) return;
+
+    // Foreground gate — GetAsyncKeyState reads OS-global state, so a W
+    // press in another app while the user is Alt+Tabbed out would
+    // otherwise cancel the in-flight autowalk silently. Match the
+    // hotkeys-module convention here.
+    if (!acc::hotkeys::IsForegroundGame()) return;
+
+    // User's movement-key set on QWERTZ (German) layout. VK_W / VK_S /
+    // VK_A / VK_D / VK_C / VK_Y map to the physical positions the user
+    // listed. If their layout produces different VK codes for some of
+    // these letters we'll see no cancel firing on the offending key and
+    // can extend the list.
+    constexpr int kMovementKeys[] = {'W', 'S', 'A', 'D', 'C', 'Y'};
+    bool anyDown = false;
+    for (int vk : kMovementKeys) {
+        if (GetAsyncKeyState(vk) & 0x8000) {
+            anyDown = true;
+            break;
+        }
+    }
+
+    // Rising-edge gate. If the user happens to be holding W when an
+    // autowalk dispatches (e.g. Shift+- then immediate W), we don't
+    // want to cancel on tick 1 just because the key was already down —
+    // wait for a fresh press. After cancel, g_inFlight.active flips to
+    // false and the early-return at top of this function takes over;
+    // s_prevDown stays accurate for the next dispatch.
+    static bool s_prevDown = false;
+    bool risingEdge = anyDown && !s_prevDown;
+    s_prevDown = anyDown;
+    if (!risingEdge) return;
+
+    bool ok = CancelMovement();
+    if (ok) {
+        // Re-enable manual control immediately — the user wants the
+        // keyboard back NOW, not after the 3s auto-restore. Same
+        // sequence as the Shift+- toggle-cancel path in cycle_input.cpp.
+        acc::engine::SetPlayerInputEnabled(true);
+        const char* msg = acc::strings::Get(
+            acc::strings::Id::MovementCancelled);
+        prism::Speak(msg, /*interrupt=*/true);
+        acclog::Write("Autowalk", "movement-key cancel — %s rising edge",
+                      "W/S/A/D/C/Y");
+    } else {
+        // CancelMovement SEH-faulted (logged inside that function). Drop
+        // s_prevDown back to false so the next press still tries.
+        s_prevDown = false;
+    }
 }
 
 void TickProgressWatchdog() {
