@@ -131,6 +131,10 @@ constexpr GlossaryEntry k_glossary[] = {
     { acc::audio::NavCue::BeaconActive,             acc::strings::Id::GlossaryEntryBeaconActive    },
     { acc::audio::NavCue::BeaconWaypointReached,    acc::strings::Id::GlossaryEntryBeaconWaypoint  },
     { acc::audio::NavCue::BeaconDestinationReached, acc::strings::Id::GlossaryEntryBeaconDestination },
+    { acc::audio::NavCue::SwoopAccelTick,           acc::strings::Id::GlossaryEntrySwoopAccelTick     },
+    { acc::audio::NavCue::SwoopAccelpadBoost,       acc::strings::Id::GlossaryEntrySwoopAccelpadBoost },
+    { acc::audio::NavCue::SwoopObstacleWarn,        acc::strings::Id::GlossaryEntrySwoopObstacleWarn  },
+    { acc::audio::NavCue::SwoopWallImpact,          acc::strings::Id::GlossaryEntrySwoopWallImpact    },
 };
 constexpr int k_glossaryCount = static_cast<int>(
     sizeof(k_glossary) / sizeof(k_glossary[0]));

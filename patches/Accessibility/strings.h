@@ -1150,6 +1150,10 @@ enum class Id : int {
     GlossaryEntryBeaconActive,
     GlossaryEntryBeaconWaypoint,
     GlossaryEntryBeaconDestination,
+    GlossaryEntrySwoopAccelTick,
+    GlossaryEntrySwoopAccelpadBoost,
+    GlossaryEntrySwoopObstacleWarn,
+    GlossaryEntrySwoopWallImpact,
 
     Count_,
 };

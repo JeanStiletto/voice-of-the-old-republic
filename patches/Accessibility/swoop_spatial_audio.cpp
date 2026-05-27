@@ -13,6 +13,9 @@
 #include <cstdint>
 #include <cstddef>
 
+#include "audio_cues.h"       // NavCue + GetNavCueResref (centralised
+                              //     resref vocabulary — Audio glossary
+                              //     and live race fire the same samples)
 #include "audio_loop.h"       // LoopSource — sustained warning per
                               //     obstacle / nearest-pad cue
 #include "engine_offsets.h"   // Vector
@@ -113,7 +116,8 @@ constexpr size_t kAurVtableSlotGetName          = 0xc;
 //   mgs_pwrup        — fired clean but timbre wasn't ideal
 //   mgs_thrustloop01 — 5+ s sustained drone; only quiet attack got
 //                      airtime in the 1-2 s window, read as unhearable
-constexpr const char* kAccelpadLoopResref       = "acc_boost";
+constexpr const char* kAccelpadLoopResref =
+    acc::audio::GetNavCueResref(acc::audio::NavCue::SwoopAccelpadBoost);
 
 // Same 200 m horizon as obstacles. 100 m was tested and gave only
 // ~0.5 s reaction time at gear 3 (max 190 u/s) — not enough to
@@ -172,7 +176,8 @@ constexpr size_t kModelVtableSlotGetPosition    = 0x64;
 //                            completes its sweep.
 constexpr float       kObstacleCueRangeM     = 200.0f;
 constexpr float       kObstacleForwardMargin = 10.0f;
-constexpr const char* kObstacleWarnLoopResref = "mgs_hover_07l";
+constexpr const char* kObstacleWarnLoopResref =
+    acc::audio::GetNavCueResref(acc::audio::NavCue::SwoopObstacleWarn);
 // SUPERSEDED — earlier samples tried:
 // "v_dur_shldred"  — Duros voice; routed to voice bus, way too quiet
 // "mgs_warnbust"   — one-shot warning used before the loop refactor

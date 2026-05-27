@@ -34,6 +34,9 @@
 #include "strings.h"          // Get(SwoopRaceStarted/Controls/Ended) +
                               //     FmtSwoopRaceGear
 #include "swoop_spatial_audio.h"  // TickSpatialAudio + ResetSpatialAudio
+#include "audio_cues.h"       // NavCue + GetNavCueResref (centralised
+                              //     resref vocabulary — Audio glossary
+                              //     and live race fire the same samples)
 
 namespace acc::swoop_race {
 
@@ -107,7 +110,8 @@ constexpr size_t kMiniPlayerMaxSpeedOffset      = 0x1dc;
 // the re-fire model still fits — the cadence IS the cue, so a loop
 // wouldn't help. Loop wrappers are reserved for wall scrape /
 // obstacle proximity / similar sustained cues.
-constexpr const char* kAccelTickResref          = "mgs_shift_01";
+constexpr const char* kAccelTickResref =
+    acc::audio::GetNavCueResref(acc::audio::NavCue::SwoopAccelTick);
 
 // Tick interval bounds: slow at 0% throttle, fast at 100% throttle.
 // Same 80 ms floor the Pillar 1 wall change-detector uses for closest-
@@ -199,7 +203,8 @@ constexpr float       kCollisionMinWallLaneX     = 15.0f;
 // mgs_sith_hit1 is the heavier "ship took a hit" sample from the
 // space combat minigame; contextually fits "your bike just thumped a
 // wall" and is loud enough to cut through the 4 Hz obstacle ticks.
-constexpr const char* kCollisionCueResref        = "mgs_sith_hit1";
+constexpr const char* kCollisionCueResref =
+    acc::audio::GetNavCueResref(acc::audio::NavCue::SwoopWallImpact);
 
 // ----- Sustained wall-scrape -----
 //

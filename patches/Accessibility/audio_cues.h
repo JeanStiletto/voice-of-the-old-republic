@@ -36,6 +36,13 @@ enum class NavCue {
     BeaconActive,
     BeaconWaypointReached,
     BeaconDestinationReached,
+    // Swoop race minigame — playback paths in swoop_race.cpp and
+    // swoop_spatial_audio.cpp use GetNavCueResref for these so the
+    // glossary preview and the live race fire the same sample.
+    SwoopAccelTick,         // mgs_shift_01 (gear-bar fill tick)
+    SwoopAccelpadBoost,     // acc_boost (nearest accelerator-pad loop)
+    SwoopObstacleWarn,      // mgs_hover_07l (in-range obstacle loop)
+    SwoopWallImpact,        // mgs_sith_hit1 (side-wall thump one-shot)
 };
 
 constexpr const char* GetNavCueResref(NavCue cue) {
@@ -57,6 +64,10 @@ constexpr const char* GetNavCueResref(NavCue cue) {
         case NavCue::BeaconActive:             return "gui_check";
         case NavCue::BeaconWaypointReached:    return "gui_prompt";
         case NavCue::BeaconDestinationReached: return "gui_complete";
+        case NavCue::SwoopAccelTick:           return "mgs_shift_01";
+        case NavCue::SwoopAccelpadBoost:       return "acc_boost";
+        case NavCue::SwoopObstacleWarn:        return "mgs_hover_07l";
+        case NavCue::SwoopWallImpact:          return "mgs_sith_hit1";
     }
     return "";
 }

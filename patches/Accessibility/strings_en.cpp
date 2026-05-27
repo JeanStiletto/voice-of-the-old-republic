@@ -391,6 +391,10 @@ const char* Get(Id id) {
         case Id::GlossaryEntryBeaconActive:         return "Beacon active";
         case Id::GlossaryEntryBeaconWaypoint:       return "Beacon waypoint reached";
         case Id::GlossaryEntryBeaconDestination:    return "Beacon destination reached";
+        case Id::GlossaryEntrySwoopAccelTick:       return "Swoop gear bar tick";
+        case Id::GlossaryEntrySwoopAccelpadBoost:   return "Swoop accelerator pad";
+        case Id::GlossaryEntrySwoopObstacleWarn:    return "Swoop obstacle warning";
+        case Id::GlossaryEntrySwoopWallImpact:      return "Swoop wall impact";
 
         case Id::Count_:               return "";
     }
