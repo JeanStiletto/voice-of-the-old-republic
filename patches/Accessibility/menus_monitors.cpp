@@ -1,4 +1,4 @@
-// KOTOR Accessibility — general per-tick monitors.
+// general per-tick monitors.
 //
 // Post-Step-5 cleanup. See menus_monitors.h for the rationale and
 // public surface. Function bodies are unchanged from the inline

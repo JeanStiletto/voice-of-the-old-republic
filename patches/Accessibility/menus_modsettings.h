@@ -1,4 +1,4 @@
-// KOTOR Accessibility — virtual mod-settings submenu.
+// virtual mod-settings submenu.
 //
 // Layer: menus/ (UI state + speech). Reachable via a virtual "Mod
 // Einstellungen" chain entry that we inject into both the in-game

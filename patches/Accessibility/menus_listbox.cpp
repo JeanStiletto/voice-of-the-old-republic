@@ -1,6 +1,5 @@
-// KOTOR Accessibility — listbox-driven panel input dispatcher.
+// listbox-driven panel input dispatcher.
 //
-// Step 4 of the menus.cpp refactor (with post-Step-5 monitor co-location).
 // See menus_listbox.h for the motivation. This file holds:
 //
 //   * The ListBoxPanelSpec struct (private) — one entry per panel kind.

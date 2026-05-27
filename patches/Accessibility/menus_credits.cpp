@@ -1,4 +1,4 @@
-// KOTOR Accessibility — virtual credits row (Inventory + Store).
+// virtual credits row (Inventory + Store).
 //
 // See menus_credits.h for the design summary. This file owns the per-kind
 // anchor table and the read+format path.

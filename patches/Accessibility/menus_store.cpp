@@ -1,4 +1,4 @@
-// KOTOR Accessibility — store / trading panel (CSWGuiStore).
+// store / trading panel (CSWGuiStore).
 // See menus_store.h for the design rationale.
 
 #include <windows.h>

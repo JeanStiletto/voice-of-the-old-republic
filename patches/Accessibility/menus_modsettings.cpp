@@ -1,4 +1,4 @@
-// KOTOR Accessibility — virtual mod-settings submenu.
+// virtual mod-settings submenu.
 //
 // See menus_modsettings.h for the design summary. This TU owns the
 // sentinel pointer, the toggle bits, and the input router.

@@ -1,4 +1,4 @@
-// KOTOR Accessibility — Force-power picker (CSWGuiPowersLevelUp).
+// Force-power picker (CSWGuiPowersLevelUp).
 //
 // Used by both the chargen Power-selection screen and the InGameLevelUp
 // "Kr�fte" sub-screen — the same engine class hosts both flows

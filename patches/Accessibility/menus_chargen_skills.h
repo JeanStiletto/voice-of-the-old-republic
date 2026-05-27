@@ -1,4 +1,4 @@
-// KOTOR Accessibility — chargen "Fähigkeiten" panel (step 3 of Eigener
+// chargen "Fähigkeiten" panel (step 3 of Eigener
 // Charakter) tweaks.
 //
 // Mirror of menus_chargen_attr.{h,cpp} for CSWGuiSkillsCharGen — the

@@ -1,4 +1,4 @@
-// KOTOR Accessibility — character sheet sub-screen opener announce.
+// character sheet sub-screen opener announce.
 //
 // See menus_charsheet.h for design overview. Lifted from menus.cpp in
 // Step 2A of the refactor; the only behaviour change vs the original

@@ -1,38 +1,17 @@
-// KOTOR Accessibility — chain-navigation state and helpers.
+// Chain-navigation state + helpers.
 //
-// Step 5 of the menus.cpp refactor. The chain is the menu accessibility
-// mod's central abstraction: a flat, visually-sorted list of focusable
-// controls on the current panel that arrow keys walk top-to-bottom. Two
-// previous refactor steps (listbox panels, deferred ops) deferred this
-// lift because chain code couples broadly with menus.cpp's input,
-// monitor, and announce paths.
+// The chain is the menu mod's central abstraction: a flat, visually-
+// sorted list of focusable controls on the current panel that arrow
+// keys walk top-to-bottom.
 //
-// What lives here:
+// What lives here: the chain array + cursor, tab-cluster detection,
+// click-offset compensations (tab-y / equip-slot-y / class-icon-x),
+// the geometry helpers that build + walk it.
 //
-//   * Chain entry struct + the chain array + cursor state.
-//   * Tab-cluster detection state for Options-style panels (tabbed
-//     listbox at controls[0], buttons after) plus the click-offset
-//     compensations RebindChain computes for cursor-warp hit-test
-//     correction (tab-y, equip-slot-y, class-icon-x).
-//   * The geometry helpers that build and walk the chain: DetectTabsCluster,
-//     ResetTabbedState, ValidateTabbedPanel, IsTabButton, AppendChainEntry/
-//     TextOnly, RebindChain, FindAdjacentArrow, FindCloseButton/Cancel,
-//     FindChainEntry, ReadPanelActiveControl.
-//
-// What stays in menus.cpp:
-//
-//   * AnnounceControl / AnnouncePanelTitle — speech utilities not tied to
-//     chain state (they read panel/control, write prism + monitor state).
-//   * IsModalPopupPanel — used by Esc handler in OnHandleInputEvent.
-//   * g_focusMonitor*, g_currentPanel, g_lastTitledPanel — monitor / focus
-//     state read by chain code via extern decl in menus_internal.h, but
-//     written from OnSetActiveControl which stays.
-//
-// Cross-TU seam: state has `extern` decls here; menus.cpp adds `using`
-// declarations to keep call-site code unqualified. Same pattern as Steps
-// 2B (extract) and 4 (listbox) — the chain TU's namespace is
-// `acc::menus::chain::` rather than `detail::` to signal cohesion (these
-// names belong together, not just "shared between two TUs").
+// What stays in menus.cpp: speech utilities (AnnounceControl,
+// AnnouncePanelTitle), IsModalPopupPanel, focus/monitor state. Those
+// either don't depend on chain state or are written from
+// OnSetActiveControl which stays.
 
 #pragma once
 

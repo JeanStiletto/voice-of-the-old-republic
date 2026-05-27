@@ -1,4 +1,4 @@
-// KOTOR Accessibility — chargen attributes panel (step 2 of Eigener
+// chargen attributes panel (step 2 of Eigener
 // Charakter) tweaks.
 //
 // Two fixes for CSWGuiAbilitiesCharGen, both rooted in the same engine

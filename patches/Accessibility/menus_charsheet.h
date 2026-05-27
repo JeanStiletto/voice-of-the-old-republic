@@ -1,6 +1,5 @@
-// KOTOR Accessibility — character sheet sub-screen opener announce.
+// character sheet sub-screen opener announce.
 //
-// Step 2A of the menus.cpp refactor (pure-function extraction).
 // CSWGuiInGameCharacter has 17+ inline labels (class / level / HP / FP
 // / XP / 6 attributes + their pre-formatted modifiers / alignment
 // slider). This module reads them and composes a single localised

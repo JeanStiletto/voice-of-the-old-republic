@@ -1,6 +1,5 @@
-// KOTOR Accessibility — control text extraction (the announce ladder).
+// control text extraction (the announce ladder).
 //
-// Step 2B of the menus.cpp refactor. ExtractAnnounceableText (renamed
 // FromControl) and its three extract-only helpers (FindSiblingLabel,
 // IsCycleFlankerArrow, LookupCycleCategory) lift out of menus.cpp.
 // Body is unchanged from the original; helpers shared with chain

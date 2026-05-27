@@ -1,4 +1,4 @@
-// KOTOR Accessibility — chargen attributes panel tweaks.
+// chargen attributes panel tweaks.
 // See menus_chargen_attr.h for the design rationale.
 
 #include <windows.h>

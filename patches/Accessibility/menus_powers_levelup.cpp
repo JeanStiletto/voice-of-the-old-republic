@@ -1,4 +1,4 @@
-// KOTOR Accessibility — Force-power picker input handler.
+// Force-power picker input handler.
 // See menus_powers_levelup.h for the design rationale.
 
 #include <windows.h>

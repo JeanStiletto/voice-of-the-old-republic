@@ -1,4 +1,4 @@
-// KOTOR Accessibility — general per-tick monitors.
+// general per-tick monitors.
 //
 // Post-Step-5 cleanup. Three monitors that watch broad menu state and
 // announce changes per tick lift out of menus.cpp:

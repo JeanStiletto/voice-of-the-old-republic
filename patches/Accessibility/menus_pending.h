@@ -1,6 +1,5 @@
-// KOTOR Accessibility — deferred menu-side operation queue.
+// deferred menu-side operation queue.
 //
-// Step 3 of the menus.cpp refactor. The six (g_pendingClick,
 // g_pendingActivate, g_pendingCursorMove, g_pendingSliderInput,
 // g_pendingEquipSelect, g_pendingEquipCommit) flag/target pairs collapse
 // to a single tagged op stored here. Input handlers in menus.cpp call

@@ -1,4 +1,4 @@
-// KOTOR Accessibility — editbox (text-input field) input dispatcher + monitor.
+// editbox (text-input field) input dispatcher + monitor.
 //
 // One vanilla user: the chargen Name screen's `name_editbox` (the only
 // CSWGuiEditbox in the game). The TU is shaped as a spec-table mirror of

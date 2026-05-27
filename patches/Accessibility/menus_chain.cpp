@@ -1,6 +1,5 @@
-// KOTOR Accessibility — chain-navigation state and helpers.
+// chain-navigation state and helpers.
 //
-// Step 5 of the menus.cpp refactor. See menus_chain.h for what lives
 // here and what stays in menus.cpp. Function bodies are unchanged from
 // the original menus.cpp inline definitions; only the namespacing /
 // linkage changes.

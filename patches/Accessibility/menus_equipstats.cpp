@@ -1,4 +1,4 @@
-// KOTOR Accessibility — virtual stat-row anchors for the Equip panel.
+// virtual stat-row anchors for the Equip panel.
 // See menus_equipstats.h for design summary.
 
 #include <windows.h>

@@ -1,4 +1,4 @@
-// KOTOR Accessibility — store / trading panel (CSWGuiStore).
+// store / trading panel (CSWGuiStore).
 //
 // Two-mode trading screen. Same panel kind for both modes; the engine
 // flips one bit on the shop / inv listbox's CSWGuiControl.bit_flags and

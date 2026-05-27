@@ -1,6 +1,5 @@
-// KOTOR Accessibility — deferred menu-side operation queue.
+// deferred menu-side operation queue.
 //
-// Step 3 of the menus.cpp refactor. See menus_pending.h for the rationale
 // (why ops are deferred, single-slot queue, ClickAt as combined move+click).
 //
 // Body of `Drain` mirrors the original `TickPendingOps` block in menus.cpp:

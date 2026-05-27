@@ -1,6 +1,5 @@
-// KOTOR Accessibility — listbox-driven panel input dispatcher.
+// listbox-driven panel input dispatcher.
 //
-// Step 4 of the menus.cpp refactor. Three structurally similar panels
 // (Container loot, SaveLoad, EquipPicker item-pick) share a "select-then-
 // confirm" interaction shape: arrow keys drive a listbox cursor we
 // announce inline, Enter dispatches a panel-specific commit, Esc backs

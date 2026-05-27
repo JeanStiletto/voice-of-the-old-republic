@@ -1,4 +1,4 @@
-// KOTOR Accessibility — editbox dispatcher + per-tick monitor.
+// editbox dispatcher + per-tick monitor.
 //
 // See menus_editbox.h for the model (soft edit-mode flag, spec-table over
 // panel kinds, focus-enter speech via FromControl, diff polling here).
@@ -73,9 +73,7 @@ struct EditboxPanelSpec {
     const char* (*titleOverride)(void* panel);
 };
 
-// ----------------------------------------------------------------------------
 // Chargen Name panel — `CSWGuiNameChargen`. The only vanilla user.
-// ----------------------------------------------------------------------------
 
 bool ChargenNameMatches(void* panel) {
     if (!panel) return false;

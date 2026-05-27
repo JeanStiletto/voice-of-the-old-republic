@@ -1,4 +1,4 @@
-// KOTOR Accessibility — internal seam between menus.cpp and menus_extract.cpp.
+// internal seam between menus.cpp and menus_extract.cpp.
 //
 // This is NOT public API; it's a private contract between the two TUs that
 // were one TU before Step 2B of the refactor. Module names declared here

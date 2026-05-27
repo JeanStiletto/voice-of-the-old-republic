@@ -1,4 +1,4 @@
-// KOTOR Accessibility — virtual credits row for Inventory + Store.
+// virtual credits row for Inventory + Store.
 //
 // Sighted players see "Credits: 1247" in the top-right of CSWGuiInGameInventory
 // and CSWGuiStore (both .gui files have an LBL_CREDITS heading + LBL_CREDITS_

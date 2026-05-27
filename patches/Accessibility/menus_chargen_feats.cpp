@@ -1,4 +1,4 @@
-// KOTOR Accessibility — chargen "Talente" main panel input handler.
+// chargen "Talente" main panel input handler.
 // See menus_chargen_feats.h for the design rationale.
 
 #include <windows.h>

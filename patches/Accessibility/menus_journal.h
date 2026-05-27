@@ -1,4 +1,4 @@
-// KOTOR Accessibility — journal panel (CSWGuiInGameJournal) helpers.
+// journal panel (CSWGuiInGameJournal) helpers.
 //
 // The journal lists active/done quest titles in items_listbox at +0x5c4.
 // For sighted players, hovering a row triggers the engine's

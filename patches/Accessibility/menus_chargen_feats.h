@@ -1,4 +1,4 @@
-// KOTOR Accessibility — chargen "Talente" main panel (CSWGuiFeatsCharGen).
+// chargen "Talente" main panel (CSWGuiFeatsCharGen).
 //
 // The screen is a 2D feat-tree chart: a CSWGuiSkillFlowChart of N rows ×
 // up to 3 columns, embedded as the single child of feats_listbox. Each

@@ -1,6 +1,5 @@
-// KOTOR Accessibility — control text extraction (the announce ladder).
+// control text extraction (the announce ladder).
 //
-// Step 2B of the menus.cpp refactor. ExtractAnnounceableText lifts out
 // of menus.cpp into its own TU as `acc::menus::extract::FromControl`.
 // Function body is unchanged; the rename matches the namespace context
 // (`acc::menus::extract::FromControl(ctrl, buf, n, owner)` reads as a

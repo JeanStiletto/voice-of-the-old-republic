@@ -1,4 +1,4 @@
-// KOTOR Accessibility — virtual stat-row anchors for the Equip panel.
+// virtual stat-row anchors for the Equip panel.
 //
 // Sighted players see four computed stat values rendered at the bottom of
 // the equipment screen (CSWGuiInGameEquip): Vitality (HP), Defense (AC),
