@@ -206,11 +206,15 @@ void OnEngineShowObject(uint32_t handle) {
     // "wrong sound for the object I cycled to").
     //
     // Capture pending state BEFORE clearing — used by the sentinel branch
-    // to give Q/E-initiated "no target" feedback. If the engine's
-    // SelectNearestObject returned no next target (it has an angular
-    // end-of-cycle quirk where the wrap requires a second press), the
-    // user pressed Q/E and would otherwise hear silence; we promote it
-    // to a short spoken phrase so every press has audible feedback.
+    // to give Q/E-initiated "no target" feedback. When the engine's
+    // SelectNearestObject @ 0x005fb050 exhausts its candidate list
+    // mid-iteration (every candidate fails GetGameObject, AsSWCObject,
+    // or — most commonly — CSWCCreature::CanSee LOS to player), it writes
+    // last_target = 0x7f000000 and calls ShowObject(NULL); we observe
+    // that as the sentinel. The user pressed Q/E and would otherwise
+    // hear silence; we promote it to a short spoken phrase so every
+    // press has audible feedback. Decompile-verified 2026-05-27 — see
+    // project_select_nearest_object_sentinel memory.
     bool was_qe_request = s_qe_reannounce_pending;
     s_qe_reannounce_pending = false;
 
