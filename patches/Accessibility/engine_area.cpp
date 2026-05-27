@@ -982,6 +982,100 @@ int ScanRoomWallEdges(void* surfaceMesh, int roomId,
 
 }  // namespace
 
+// Global triangle-edge index used by the portal-coincidence filter in
+// BuildAreaWallCache. Every triangle edge from every room is recorded
+// here regardless of adjacency value; the filter then asks, for each
+// emitted adjacency=-1 wall edge, "does any *other* room have a
+// coincident edge in its triangle list?" — if yes, the walkmesh
+// extends across into that other room, so the edge is a portal and
+// gets dropped.
+//
+// Sized at 16384 for headroom over K1's largest observed area
+// (~6000 triangle edges in dense Taris). 16384 × 28 B = ~460 KB static
+// — comfortable for our patch's memory budget. Module-static + the
+// single-threaded patch model means no reentrancy concerns; each
+// BuildAreaWallCache invocation overwrites the contents.
+constexpr int kMaxGlobalTriEdges = 16384;
+static Vector s_globalEdgeA[kMaxGlobalTriEdges];
+static Vector s_globalEdgeB[kMaxGlobalTriEdges];
+static int    s_globalEdgeRoom[kMaxGlobalTriEdges];
+
+// Mirror of ScanRoomWallEdges but emits every triangle edge regardless
+// of adjacency value. The 5cm² XY-length filter is retained — vertical
+// / near-vertical edges aren't useful as 2D portal matches and bloat
+// the index. Returns the count of edges this room contributed to the
+// running total (written to the global arrays only while there's space).
+int ScanRoomAllTriangleEdges(void* surfaceMesh, int roomId,
+                             int alreadyWritten) {
+    if (!surfaceMesh) return 0;
+    auto* mesh = reinterpret_cast<unsigned char*>(surfaceMesh);
+
+    Vector*   vertices    = nullptr;
+    uint32_t  faceCount   = 0;
+    void*     faceIndices = nullptr;
+    __try {
+        vertices    = *reinterpret_cast<Vector**>(
+            mesh + kCollisionMeshVerticesOffset);
+        faceCount   = *reinterpret_cast<uint32_t*>(
+            mesh + kCollisionMeshFaceCountOffset);
+        faceIndices = *reinterpret_cast<void**>(
+            mesh + kCollisionMeshFacesOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+    if (!vertices || !faceIndices || faceCount == 0) return 0;
+
+    auto fnLocalToWorld = reinterpret_cast<PFN_CollisionMeshLocalToWorld>(
+        kAddrCollisionMeshLocalToWorld);
+    auto* faces = reinterpret_cast<unsigned char*>(faceIndices);
+
+    int emitted = 0;
+    for (uint32_t f = 0; f < faceCount; ++f) {
+        uint32_t v[3] = {0, 0, 0};
+        bool readOk = true;
+        __try {
+            auto* face = reinterpret_cast<uint32_t*>(
+                faces + static_cast<size_t>(f) * kWalkmeshFaceStride);
+            v[0] = face[0]; v[1] = face[1]; v[2] = face[2];
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            readOk = false;
+        }
+        if (!readOk) continue;
+
+        for (int e = 0; e < 3; ++e) {
+            uint32_t va = v[e];
+            uint32_t vb = v[(e + 1) % 3];
+            Vector localA = {0, 0, 0}, localB = {0, 0, 0};
+            __try {
+                localA = vertices[va];
+                localB = vertices[vb];
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                continue;
+            }
+            Vector worldA = localA, worldB = localB;
+            __try {
+                fnLocalToWorld(surfaceMesh, &worldA, &localA);
+                fnLocalToWorld(surfaceMesh, &worldB, &localB);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                worldA = localA;
+                worldB = localB;
+            }
+            float xy_dx = worldB.x - worldA.x;
+            float xy_dy = worldB.y - worldA.y;
+            if (xy_dx * xy_dx + xy_dy * xy_dy < 2.5e-3f) continue;
+
+            int slot = alreadyWritten + emitted;
+            if (slot < kMaxGlobalTriEdges) {
+                s_globalEdgeA[slot]    = worldA;
+                s_globalEdgeB[slot]    = worldB;
+                s_globalEdgeRoom[slot] = roomId;
+            }
+            ++emitted;
+        }
+    }
+    return emitted;
+}
+
 int BuildAreaWallCache(void* area, WallEdge* outBuf, int maxEdges) {
     if (!area) return 0;
 
@@ -1011,77 +1105,99 @@ int BuildAreaWallCache(void* area, WallEdge* outBuf, int maxEdges) {
     // callers can detect "would have overflowed the buffer" telemetry.
     if (!outBuf || maxEdges <= 0) return total;
 
-    // Seam filtering. KOTOR's walkmesh joins rooms via portals / AABB
-    // structures, NOT via per-triangle adjacency. When room A and room B
-    // share a walkable boundary, both rooms' meshes mark their side of
-    // the shared edge with adjacency=-1, so the per-room scan above
-    // emits the same world edge twice — once from each room — and both
-    // copies look like perimeter walls. The engine treats those edges
-    // as walkable through the portal mechanism; we have to too, or
-    // Pillar 1 narrates phantom walls, Pillar 2 collision blocks the
-    // virtual cursor on them, and Pillar 3 path-smoothing refuses to
-    // skip nav nodes through them (the case that motivated this fix —
-    // confirmed via Pathfind smoothing log 2026-05-12, Endar Spire
-    // edge #342 emitted from room 9 blocking diagonals that the engine
-    // itself routes nav-graph connections through).
+    // Portal filtering — the "edges of walkable areas" rule.
     //
-    // Detection: pair every emitted edge with every other one in a
-    // different room. If endpoints match within a small epsilon (either
-    // direction), mark both as seams. Then compact the buffer in-place,
-    // dropping seam-marked entries.
+    // KOTOR's walkmesh joins rooms via portals, not per-triangle
+    // adjacency. When room A and room B share a walkable boundary,
+    // room A's triangle on its side marks the boundary edge with
+    // adjacency=-1 (no neighbour within A). In *some* cases room B
+    // does the same → the old symmetric "both sides adj=-1" seam pair
+    // caught it. But K1 also has plenty of asymmetric portals where
+    // only one side has adj=-1; the other side has a finite-adjacency
+    // value pointing at room B's own neighbour. The old filter missed
+    // these — they survived as phantom walls.
     //
-    // Cost: O(N²) for N ≤ maxEdges. Observed N ≈ 500 → 125k cheap
-    // comparisons; runs once per area-load. Negligible.
+    // The right rule: a wall exists only where *no* triangle (in any
+    // room) sits on the other side of an adj=-1 edge. To check that,
+    // we look for a coincident edge in any *other* room's triangle
+    // list, regardless of that edge's own adjacency value. Hit → the
+    // walkmesh extends across into another room → portal → drop. No
+    // hit → boundary of the walkable union → real wall → keep.
+    //
+    // This is a strict superset of the old symmetric pair filter
+    // (matches between adj=-1 edges still match, plus new asymmetric
+    // matches). Replaces the old filter outright.
+    //
+    // Cost: O(N · G) where N = adj=-1 walls in outBuf (~500-1000) and
+    // G = total triangle edges across all rooms (~3000-6000). 5M cheap
+    // float compares per area-load; once per area-enter.
     int written = (total < maxEdges) ? total : maxEdges;
 
-    // Endpoint match tolerance. LocalToWorld involves matrix math, so a
-    // pair of "identical" edges from two different rooms may not be
-    // bit-equal — allow ~1cm of slack per coordinate. Squared so we can
-    // compare against squared distance and avoid a sqrt.
+    // Build the global triangle-edge index — every triangle edge from
+    // every room, regardless of adjacency value.
+    int globalCount = 0;
+    for (uint32_t i = 0; i < roomCount; ++i) {
+        void* room = roomBase + static_cast<size_t>(i) * kRoomStride;
+        void* sm   = GetRoomSurfaceMesh(room);
+        if (!sm) continue;
+        int contributed = ScanRoomAllTriangleEdges(sm, static_cast<int>(i),
+                                                   globalCount);
+        globalCount += contributed;
+    }
+    bool globalOverflowed = false;
+    if (globalCount > kMaxGlobalTriEdges) {
+        acclog::Write("AreaWalls",
+            "global edge index OVERFLOW: discovered=%d kMaxGlobalTriEdges=%d "
+            "— portal filter may miss matches against the tail (raise the cap)",
+            globalCount, kMaxGlobalTriEdges);
+        globalCount = kMaxGlobalTriEdges;
+        globalOverflowed = true;
+    }
+
+    // Endpoint match tolerance. LocalToWorld involves matrix math, so
+    // a pair of "identical" edges from two different rooms may not be
+    // bit-equal — allow ~1cm of slack per coordinate. Squared so we
+    // can compare against squared distance and avoid a sqrt.
     constexpr float kSeamEpsSq = 1e-4f;  // ~1cm² in world units
     auto coincident = [&](const Vector& p, const Vector& q) {
         float dx = p.x - q.x, dy = p.y - q.y, dz = p.z - q.z;
         return (dx * dx + dy * dy + dz * dz) < kSeamEpsSq;
     };
 
-    // Seam-flag scratch. Sized for the largest plausible per-area edge
-    // count we've observed (K1 areas top out around 500). Static so we
-    // don't burden the stack at the BuildAreaWallCache scope; single-
-    // threaded patch ⇒ no reentrancy concern.
-    constexpr int kMaxSeamFlags = 8192;
-    static bool s_isSeam[kMaxSeamFlags];
-    int flagN = (written < kMaxSeamFlags) ? written : kMaxSeamFlags;
-    for (int i = 0; i < flagN; ++i) s_isSeam[i] = false;
+    // Per-wall portal flag. Static so we don't burden the stack at the
+    // BuildAreaWallCache scope; single-threaded patch ⇒ no reentrancy.
+    constexpr int kMaxPortalFlags = 8192;
+    static bool s_isPortal[kMaxPortalFlags];
+    int flagN = (written < kMaxPortalFlags) ? written : kMaxPortalFlags;
+    for (int i = 0; i < flagN; ++i) s_isPortal[i] = false;
 
-    int seamPairs = 0;
+    int portalMatches = 0;
     for (int i = 0; i < flagN; ++i) {
-        for (int j = i + 1; j < flagN; ++j) {
-            if (outBuf[i].room_id == outBuf[j].room_id) continue;
+        const WallEdge& e = outBuf[i];
+        for (int g = 0; g < globalCount; ++g) {
+            if (s_globalEdgeRoom[g] == e.room_id) continue;
             bool match =
-                (coincident(outBuf[i].a, outBuf[j].a) &&
-                 coincident(outBuf[i].b, outBuf[j].b)) ||
-                (coincident(outBuf[i].a, outBuf[j].b) &&
-                 coincident(outBuf[i].b, outBuf[j].a));
+                (coincident(e.a, s_globalEdgeA[g]) &&
+                 coincident(e.b, s_globalEdgeB[g])) ||
+                (coincident(e.a, s_globalEdgeB[g]) &&
+                 coincident(e.b, s_globalEdgeA[g]));
             if (match) {
-                s_isSeam[i] = true;
-                s_isSeam[j] = true;
-                ++seamPairs;
-                // Continue scanning — at 3+ room corners (rare but
-                // possible), one edge may match multiple counterparts;
-                // we want every copy of the shared boundary marked.
+                s_isPortal[i] = true;
+                ++portalMatches;
+                break;  // one match suffices to classify as portal
             }
         }
     }
 
     int kept = 0;
     for (int i = 0; i < flagN; ++i) {
-        if (s_isSeam[i]) continue;
+        if (s_isPortal[i]) continue;
         if (kept != i) outBuf[kept] = outBuf[i];
         ++kept;
     }
-    // Tail beyond kMaxSeamFlags (only possible if maxEdges > kMaxSeamFlags
-    // AND the area has that many edges) — unfilterable, append unchanged.
-    // Pathological; we log if it ever happens.
+    // Tail beyond kMaxPortalFlags (only possible if maxEdges >
+    // kMaxPortalFlags AND the area has that many edges) — unfilterable,
+    // append unchanged. Pathological; we log if it ever happens.
     if (written > flagN) {
         int tail = written - flagN;
         for (int i = 0; i < tail; ++i) {
@@ -1089,14 +1205,16 @@ int BuildAreaWallCache(void* area, WallEdge* outBuf, int maxEdges) {
         }
         kept += tail;
         acclog::Write("AreaWalls",
-            "seam filter exceeded flag buffer (written=%d flagN=%d) — "
+            "portal filter exceeded flag buffer (written=%d flagN=%d) — "
             "%d trailing edges unfiltered",
             written, flagN, tail);
     }
 
     acclog::Write("AreaWalls",
-        "seam filter: emitted=%d -> kept=%d (dropped %d via %d seam pairs)",
-        written, kept, written - kept, seamPairs);
+        "portal filter: emitted=%d -> kept=%d (dropped %d as portals via "
+        "coincidence against %d global edges%s)",
+        written, kept, written - kept, globalCount,
+        globalOverflowed ? " [OVERFLOWED]" : "");
 
     // Same-room duplicate dedup. K1's walkmesh has two recurring
     // patterns where the per-room scan above emits a wall edge twice
