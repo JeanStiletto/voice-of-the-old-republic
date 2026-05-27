@@ -27,7 +27,6 @@
 #include "engine_navgraph.h"
 #include "engine_reads.h"       // ExtractTextOrStrRef — transition-destination loc-string read
 #include "log.h"
-#include "region_classifier.h"  // ProbeShapeAt — walkmesh gate on graph-only dead-ends
 #include "spatial_change_detector.h"  // GetCachedWalls — seam-filtered perimeter cache
 #include "strings.h"
 #include "transitions.h"        // IterateLandmarks + MarkLandmarkClaimedByDoor — landmark→door matching pass
@@ -35,6 +34,81 @@
 namespace acc::wall_topology {
 
 namespace {
+
+// ---------------------------------------------------------------------
+// Walkmesh-probe primitives.
+// ---------------------------------------------------------------------
+//
+// Single-ray casts against the cached perimeter walls. Used for two
+// gates inside this module:
+//   - door diagnostics (BuildForArea logs 4-cardinal probe distances at
+//     each door so we can see how the walkmesh looks at the threshold);
+//   - dead-end alcove agreement (WalkmeshAgreesDeadEnd spins the 4-ray
+//     probe along the graph-edge axis and checks the alcove signature
+//     before believing a graph-degree-1 dead-end claim).
+//
+// Lived in region_classifier until 2026-05-27; absorbed here when the
+// region module was retired in favour of pure nav-graph classification.
+
+constexpr float kProbeLenWu = 25.0f;
+
+float ProbeWall(const acc::engine::WallEdge* walls, int wallCount,
+                const Vector& origin, float dx, float dy) {
+    Vector b;
+    b.x = origin.x + dx * kProbeLenWu;
+    b.y = origin.y + dy * kProbeLenWu;
+    b.z = origin.z;
+    Vector hit;
+    if (acc::engine::SegmentCrossesWalkmesh(walls, wallCount,
+                                            origin, b, hit)) {
+        float ddx = hit.x - origin.x;
+        float ddy = hit.y - origin.y;
+        return std::sqrt(ddx * ddx + ddy * ddy);
+    }
+    return kProbeLenWu;
+}
+
+// Distance to first wall along (dx,dy). Returns kProbeLenWu when the
+// ray clears the probe range, -1.0 when the wall cache is empty.
+float ProbeDistance(const Vector& pos, float dx, float dy) {
+    const acc::engine::WallEdge* walls = nullptr;
+    int wallCount = 0;
+    if (!acc::spatial::change_detector::GetCachedWalls(walls, wallCount) ||
+        !walls || wallCount <= 0) {
+        return -1.0f;
+    }
+    float mag = std::sqrt(dx * dx + dy * dy);
+    if (mag < 1e-6f) return -1.0f;
+    return ProbeWall(walls, wallCount, pos, dx / mag, dy / mag);
+}
+
+// 4-ray alcove test rotated to align with (forwardX,forwardY): true
+// when the forward probe clears 2m AND the three perpendiculars/back
+// all hit a wall within 2m. Fail-open if the wall cache isn't ready.
+bool IsAlcoveAlongAxis(const Vector& pos, float forwardX, float forwardY) {
+    const acc::engine::WallEdge* walls = nullptr;
+    int wallCount = 0;
+    if (!acc::spatial::change_detector::GetCachedWalls(walls, wallCount) ||
+        !walls || wallCount <= 0) {
+        return true;  // no data — fail open
+    }
+    float magSq = forwardX * forwardX + forwardY * forwardY;
+    if (magSq < 1e-6f) return true;
+    float inv = 1.0f / std::sqrt(magSq);
+    float fx  = forwardX * inv;
+    float fy  = forwardY * inv;
+    float px  = fy;
+    float py  = -fx;
+    float dF = ProbeWall(walls, wallCount, pos,  fx,  fy);
+    float dB = ProbeWall(walls, wallCount, pos, -fx, -fy);
+    float dR = ProbeWall(walls, wallCount, pos,  px,  py);
+    float dL = ProbeWall(walls, wallCount, pos, -px, -py);
+    int shortCount = 0;
+    if (dB <= 2.0f) ++shortCount;
+    if (dR <= 2.0f) ++shortCount;
+    if (dL <= 2.0f) ++shortCount;
+    return shortCount == 3 && dF > 2.0f;
+}
 
 // ---------------------------------------------------------------------
 // Tunable parameters.
@@ -474,7 +548,7 @@ void SnapshotDoors(void* area) {
 // probe block (nearest nav-graph node, approach direction, .lyt-room
 // in front/behind, 4 cardinal walkmesh probes). Requires the nav
 // graph to already be built (uses g_graph.node_pos) and the wall
-// cache populated (region::ProbeDistance needs it).
+// cache populated (ProbeDistance needs it).
 void LogDoorSnapshotDetails(void* area) {
     int withTransition = 0;
     for (int i = 0; i < g_graph.door_count; ++i) {
@@ -535,10 +609,10 @@ void LogDoorSnapshotDetails(void* area) {
         acc::engine::GetRoomAtIndexed(area, d.pos,     frontRoom);
         acc::engine::GetRoomAtIndexed(area, behindPos, backRoom);
 
-        float dN = acc::region::ProbeDistance(d.pos,  0.0f,  1.0f);
-        float dE = acc::region::ProbeDistance(d.pos,  1.0f,  0.0f);
-        float dS = acc::region::ProbeDistance(d.pos,  0.0f, -1.0f);
-        float dW = acc::region::ProbeDistance(d.pos, -1.0f,  0.0f);
+        float dN = ProbeDistance(d.pos,  0.0f,  1.0f);
+        float dE = ProbeDistance(d.pos,  1.0f,  0.0f);
+        float dS = ProbeDistance(d.pos,  0.0f, -1.0f);
+        float dW = ProbeDistance(d.pos, -1.0f,  0.0f);
 
         acclog::Write(
             "WallTopo",
@@ -1059,7 +1133,7 @@ void RenderCorridorAxis(int bitA, int bitB, int doorIdx,
 bool WalkmeshAgreesDeadEnd(const Vector& deadEndPos, const Vector& parentPos) {
     float fx = parentPos.x - deadEndPos.x;
     float fy = parentPos.y - deadEndPos.y;
-    return acc::region::IsAlcoveAlongAxis(deadEndPos, fx, fy);
+    return IsAlcoveAlongAxis(deadEndPos, fx, fy);
 }
 
 // Union-find over node ids. Used to merge directly-connected junctions
@@ -2637,7 +2711,8 @@ void DumpGraphToLog() {
 bool LookupAt(void* area, const Vector& worldPos,
               char* outBuf, size_t bufSize, int& outSig,
               int& outClusterId,
-              bool allowDiagLog) {
+              bool allowDiagLog,
+              bool requireWallReachable) {
     if (outBuf && bufSize > 0) outBuf[0] = '\0';
     outSig = 0;
     outClusterId = kClusterIdNone;
@@ -2691,7 +2766,7 @@ bool LookupAt(void* area, const Vector& worldPos,
         float d2 = dx * dx + dy * dy;
 
         bool reachable = true;
-        if (haveWalls) {
+        if (haveWalls && requireWallReachable) {
             Vector hitTmp{};
             reachable = !acc::engine::SegmentCrossesWalkmesh(
                 walls, wallCount, worldPos, g_graph.node_pos[i], hitTmp);

@@ -1,9 +1,9 @@
 // CSWSArea nav-graph reader — shared snapshot helpers.
 //
 // Layer: engine/ (pure read-side, SEH-guarded; no engine re-entry). Extracted
-// 2026-05-13 from guidance_pathfind.cpp; both that file and the
-// region_classifier Phase A block had inlined the same field reads. Adding a
-// third consumer (wall_topology Path 3) would have been a third copy.
+// 2026-05-13 from guidance_pathfind.cpp; that file and the retired
+// region_classifier had inlined the same field reads, and the wall_topology
+// consumer was about to be a third copy.
 //
 // Engine data source (locked in memory `project_kotor_nav_graph_layout`,
 // verified live via probe_pathfind):

@@ -185,10 +185,10 @@ void Dispatch() {
     //   * change_detector reads camera yaw via
     //     camera_announce::TryGetCameraEngineYawDegrees for direction-
     //     aware filtering, and rebuilds the per-area wall cache.
-    //   * transitions builds the region_classifier + wall_topology
-    //     caches that depend on the wall cache. Must run AFTER
-    //     change_detector or it reads stale walls from the previous
-    //     area on the first tick of an area change — confirmed by
+    //   * transitions builds the wall_topology decomposition that
+    //     depends on the wall cache. Must run AFTER change_detector
+    //     or it reads stale walls from the previous area on the
+    //     first tick of an area change — confirmed by
     //     patch-20260513-054417 (Oberstadt got built with Apartments
     //     walls, edge counts matched exactly).
     //   * view_mode reads BOTH the camera yaw and the wall cache (cursor

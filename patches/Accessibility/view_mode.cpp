@@ -27,12 +27,13 @@
 #include "interact_hotkey.h"      // DispatchInteract — Enter on hover target
 #include "log.h"
 #include "narrated_target.h"      // Stamp on hover speech (unified focus slot)
-#include "region_classifier.h"    // shared region cache for cursor announce
 #include "spatial_change_detector.h"  // GetCachedWalls
 #include "strings.h"
 #include "prism.h"
 #include "transitions.h"          // IsWorldSpeechGated, GetLandmarkForRoom,
                                   // IsResrefStyleRoomName
+#include "wall_topology.h"        // nav-graph region lookup (same source the
+                                  // walking adapter speaks from)
 
 namespace acc::view_mode {
 
@@ -318,7 +319,13 @@ void StepCursor(float dt) {
 
     bool w = down('W');
     bool s = down('S');
-    if (w == s) return;  // both / neither held → no translation
+    bool c = down('C');  // strafe right
+    bool y = down('Y');  // strafe left
+    // Net forward / strafe axes. Opposing keys cancel; we only return
+    // early when neither axis has a net direction.
+    float forwardSign = (w ? 1.0f : 0.0f) - (s ? 1.0f : 0.0f);
+    float strafeSign  = (c ? 1.0f : 0.0f) - (y ? 1.0f : 0.0f);
+    if (forwardSign == 0.0f && strafeSign == 0.0f) return;
 
     // Update yaw from the engine's camera-direction reader before
     // stepping. If camera_announce hasn't anchored yet, fall back to
@@ -333,13 +340,26 @@ void StepCursor(float dt) {
     float yawRad   = yawDeg * 0.017453292519943295f;
     float forwardX = std::cos(yawRad);
     float forwardY = std::sin(yawRad);
-    float sign     = w ? +1.0f : -1.0f;
-    float dist     = kCursorSpeedMps * dt * sign;
+    // Right perpendicular to forward in the engine's CCW-positive yaw
+    // frame (0° = +X, 90° = +Y): rotating forward 90° clockwise gives
+    // (sin yaw, -cos yaw). C presses move along +right, Y along -right.
+    float rightX = std::sin(yawRad);
+    float rightY = -std::cos(yawRad);
+
+    float dx = forwardX * forwardSign + rightX * strafeSign;
+    float dy = forwardY * forwardSign + rightY * strafeSign;
+    // Normalise so a W+C diagonal doesn't move 1.41× faster than W alone.
+    float mag = std::sqrt(dx * dx + dy * dy);
+    if (mag > 1e-6f) {
+        dx /= mag;
+        dy /= mag;
+    }
+    float dist = kCursorSpeedMps * dt;
 
     Vector start = g_state.cursor_pos;
     Vector end   = {
-        start.x + forwardX * dist,
-        start.y + forwardY * dist,
+        start.x + dx * dist,
+        start.y + dy * dist,
         start.z };
 
     const acc::engine::WallEdge* walls = nullptr;
@@ -458,10 +478,11 @@ bool ResolveCursorRegionLabel(void* area, const Vector& cursor,
     }
 
     char shapeBuf[128] = {0};
-    int  shapeSig = 0;
-    if (acc::region::LookupShapeAt(area, cursor,
-                                   shapeBuf, sizeof(shapeBuf),
-                                   shapeSig, /*outRoomIdx=*/nullptr) &&
+    int  shapeSig   = 0;
+    int  clusterId  = acc::wall_topology::kClusterIdNone;
+    if (acc::wall_topology::LookupAt(area, cursor,
+                                     shapeBuf, sizeof(shapeBuf),
+                                     shapeSig, clusterId) &&
         shapeBuf[0] != '\0') {
         std::snprintf(outBuf, bufSize, "%s", shapeBuf);
         outSource = "shape";

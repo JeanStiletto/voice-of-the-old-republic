@@ -13,13 +13,11 @@
 #include "engine_reads.h"    // ReadCExoString
 #include "log.h"
 #include "narrated_target.h" // clear on area transition
-#include "region_classifier.h"  // BuildCacheForArea + LookupRoomShape
 #include "same_name_suffix.h"   // Reset() on area transition
 #include "strings.h"
 #include "prism.h"
-#include "wall_topology.h"      // EXPERIMENTAL — parallel observer on this
-                                // branch; runs alongside the region cache
-                                // and logs its decomposition for tuning
+#include "wall_topology.h"      // single source of truth for perceptual-
+                                // region labels (nav-graph decomposition)
 
 namespace acc::transitions {
 
@@ -300,15 +298,13 @@ bool PlayerInLandmarkRange(int roomIdx, const Vector& worldPos) {
 // Resolve the speech at `worldPos` using a two-tier order:
 //   1. Friendly room name at the resolved .lyt-room (filters resref-
 //      style ids) → "room_name"
-//   2. wall_topology::LookupAt (Path 3 nav-graph topology) → "shape"
-// region_classifier is a silent observer — logged via
-// LogWallTopoComparison for tuning, not consumed for speech.
+//   2. wall_topology::LookupAt (nav-graph topology) → "shape"
 //
 // Tier 1 stays on .lyt-room ids: the friendly-name table is keyed by
 // room index, and the room-name look-up itself is stable for the rare
 // authored names. Tier 2 is cluster-aware via wall_topology. Returns
 // false (and leaves outBuf empty) when no tier resolves. Vanilla
-// resref-style rooms with no Path 3 classification stay silent rather
+// resref-style rooms with no shape classification stay silent rather
 // than announce a meaningless engine-internal id.
 //
 // Transition / doorway composition was removed 2026-05-13 after
@@ -369,17 +365,14 @@ bool ResolveRoomSpeech(void* area, const Vector& worldPos,
     return false;
 }
 
-// Diagnostic — log what the silent observer (region_classifier) would
-// have said at this position alongside whatever the resolved speech was
-// (Path 3 nav-graph topology, friendly room name, or transition compose).
-// region_classifier is now silent: its label never feeds speech, but its
-// build path stays intact so we can flip back fast if Path 3 misbehaves.
+// Diagnostic — log wall_topology's resolution at this position alongside
+// whatever the resolved speech was (room name, shape, or transition
+// compose). Mirrors the announcement quad we see in MapCursor / ViewMode
+// so a single grep across categories shows every nav-graph decision.
 void LogWallTopoComparison(void* area, int roomIndex,
                            const Vector& worldPos,
                            const char* spoken,
                            const char* source) {
-    // Path 3 details: include nearest-node + kind + sig + cluster so we
-    // can read every announce as a quad in the log.
     char path3[128] = {0};
     int  path3Sig    = 0;
     int  path3Cid    = acc::wall_topology::kClusterIdNone;
@@ -387,27 +380,13 @@ void LogWallTopoComparison(void* area, int roomIndex,
         area, worldPos, path3, sizeof(path3), path3Sig, path3Cid);
     const int path3Kind = havePath3 ? (path3Sig & 0xff) : -1;
 
-    // Silent observer: tier-3 region_classifier. Prefer direct-room
-    // lookup; fall back to position-based with nearest-room snap.
-    char regionBuf[128] = {0};
-    int  regionSig = 0;
-    bool haveRegion =
-        acc::region::LookupRoomShape(area, roomIndex,
-                                     regionBuf, sizeof(regionBuf),
-                                     regionSig) ||
-        acc::region::LookupShapeAt(area, worldPos,
-                                   regionBuf, sizeof(regionBuf),
-                                   regionSig);
-
     acclog::Write("WallTopo.Compare",
                   "pos=(%.2f,%.2f) room=%d spoken=\"%s\" src=%s | "
-                  "path3=\"%s\" kind=%d sig=%d cluster=%d | "
-                  "region=\"%s\" sig=%d",
+                  "path3=\"%s\" kind=%d sig=%d cluster=%d",
                   worldPos.x, worldPos.y, roomIndex,
                   spoken ? spoken : "", source ? source : "",
                   havePath3 ? path3 : "<no graph>",
-                  path3Kind, path3Sig, path3Cid,
-                  haveRegion ? regionBuf : "<n/a>", regionSig);
+                  path3Kind, path3Sig, path3Cid);
 }
 
 // Speak a perceptual-region change. The caller (Tick) decides whether
@@ -748,7 +727,6 @@ void Tick() {
         g_lm_prox_pending_count      = 0;
         g_lm_prox_last_spoken_idx    = -1;
         g_pending_platz_valid        = false;
-        acc::region::Reset();
         acc::wall_topology::Reset();
         acc::narration::Reset();
         // Leave g_module_load_pending alone. Player-loss is the standard
@@ -788,22 +766,17 @@ void Tick() {
         // after an area change should already use the curated label
         // when one exists.
         RebuildLandmarkCache(area);
-        // Build the region-classifier shape cache for the new area at
-        // the same moment. Single source of truth shared with the map-
-        // cursor and view-mode adapters; built once on area-enter so
-        // walking, view-mode panning, and map-cursor exploration all
-        // see the same labels.
+        // Build the nav-graph region decomposition for the new area.
+        // Single source of truth shared with the map-cursor and
+        // view-mode adapters; built once on area-enter so walking,
+        // view-mode panning, and map-cursor exploration all see the
+        // same labels.
         //
-        // The wall-edge cache the classifier depends on may not be
+        // The wall-edge cache the decomposition depends on may not be
         // ready on this exact tick (spatial_change_detector::Tick runs
-        // later in the dispatch order). BuildCacheForArea silently
-        // leaves the cache empty when that's the case; we retry below
-        // on every tick until it builds successfully.
-        acc::region::BuildCacheForArea(area);
-        // EXPERIMENTAL parallel observer — build the wall-topology
-        // decomposition for the new area and dump its graph to the
-        // log. Not wired to any speech path yet; this branch is
-        // iterating the algorithm in isolation.
+        // later in the dispatch order). BuildForArea silently leaves
+        // the graph empty when that's the case; we retry below on
+        // every tick until it builds successfully.
         acc::wall_topology::BuildForArea(area);
         g_prev_area             = area;
         g_prev_cluster_id       = acc::wall_topology::kClusterIdNone;
@@ -816,17 +789,12 @@ void Tick() {
         g_lm_prox_pending_count      = 0;
         g_lm_prox_last_spoken_idx    = -1;
         g_pending_platz_valid        = false;
-    } else if (!acc::region::HasCacheForArea(area) ||
-               !acc::wall_topology::HasGraphForArea(area)) {
-        // Same area as last tick but at least one cache still isn't
-        // built — wall cache wasn't ready when the area-change branch
-        // fired. Retry cheaply each tick until both builds succeed.
-        // Both builders self-gate on the wall cache so they're no-ops
-        // until that's populated, and idempotent on a same-area call
-        // once they have built. Patch-20260513-052738 had the
-        // Apartments WallTopo build skipped because retry only
-        // covered the Region cache.
-        acc::region::BuildCacheForArea(area);
+    } else if (!acc::wall_topology::HasGraphForArea(area)) {
+        // Same area as last tick but the graph still isn't built —
+        // wall cache wasn't ready when the area-change branch fired.
+        // Retry cheaply each tick until it builds. BuildForArea
+        // self-gates on the wall cache (no-op until populated) and
+        // is idempotent on a same-area call once built.
         acc::wall_topology::BuildForArea(area);
     }
 

@@ -1,63 +1,29 @@
-// Wall-topology decomposition — alternative to the room-cache classifier.
+// Wall-topology decomposition — the patch's single source of truth
+// for "what's the spoken label for the region around this world
+// position?". Three consumers:
 //
-// EXPERIMENTAL — lives on the `alternative-direction-calculation-system`
-// branch. Goal: build a graph of perceptual regions (corridors,
-// junctions, dead-ends, open areas) directly from the perimeter-wall
-// cache, without relying on .lyt-room partitions or per-point ray
-// probing.
+//   1. transitions    — in-world walking adapter (player position).
+//   2. view_mode      — locked virtual cursor in world space.
+//   3. map_ui_cursor  — inverse-projected map cursor world position.
 //
-// Motivation (from 2026-05-13 design discussion):
+// All three share one decomposition, built once on area-enter, so the
+// player, the view-mode cursor, and the map cursor can never disagree
+// about whether they're on a corridor, in a junction, or at a dead-end.
 //
-//   The room-cache classifier inherits two failure modes from K1's
-//   .lyt-room partitioning:
+// Algorithm (Path 3, 2026-05-13): consume the engine's per-area nav
+// graph and classify each node by its CSR-adjacency degree, with
+// downstream merge passes that collapse densely-authored hub clusters
+// and straight corridor chains into single perceptual regions.
+// Implementation details, merge-pass rationale, and tunable thresholds
+// live in wall_topology.cpp.
 //
-//     1. Centroid-in-wall: a room's geometric centroid can land inside
-//        a wall (L-shaped rooms, concave layouts), producing a "Wand"
-//        probe failure even though the room is walkable. We currently
-//        suppress these, which means those rooms speak nothing.
-//
-//     2. Sliver landmarks: a .lyt-room can be a long thin transition
-//        strip that intercepts the player on multiple unrelated paths
-//        (Taris South Apartments room 8 covers a 50m sliver tied to
-//        the "Zur Oberstadt" landmark). We've gated landmark speech on
-//        proximity to the waypoint, but the underlying problem is
-//        that .lyt-rooms are not perceptually meaningful regions.
-//
-//   A topological decomposition operates at the right level of
-//   abstraction: corridors are *things*, junctions are *things*,
-//   not collections of sample points that happen to classify
-//   identically. Regions correspond directly to what the player
-//   perceives.
-//
-// High-level algorithm:
-//
-//   1. SEGMENT GROUPING — collapse the raw wall-edge soup into longer
-//      "wall segments". Adjacent edges that are near-collinear and
-//      share endpoints merge into one polyline segment. Reduces a
-//      few-hundred-edge cache to a few-dozen segments per area.
-//
-//   2. JUNCTION CLUSTERING — find clusters of segment endpoints
-//      within a small radius of each other. Each cluster becomes a
-//      "junction point" in the floor-plan graph.
-//
-//   3. CORRIDOR DETECTION — pairs of parallel segments separated by
-//      corridor-width (2-6m) with overlapping projections are
-//      candidate corridors. The space between them becomes a
-//      "corridor cell" with width, length, and orientation.
-//
-//   4. CLASSIFICATION — assign labels:
-//        - Corridor cell        → "Korridor {Axis}, {Length} Meter"
-//        - Junction point (deg≥3) → "Kreuzung, {open directions}"
-//        - Dead-end (deg=1)     → "Sackgasse, {direction}"
-//        - Leftover open space  → "Offene Fläche"
-//
-//   5. SPATIAL INDEX — build a position-to-region index so runtime
-//      lookup is O(1) or O(log N). Could be a uniform grid over the
-//      area's bounding box, or a polygon-walk for each region.
-//
-// Module API mirrors region_classifier: one BuildForArea call on
-// area-enter, then per-position LookupAt at runtime. Idempotent on
-// the same area pointer.
+// History: an earlier per-.lyt-room walkmesh-probe classifier
+// (`region_classifier`) preceded this module. It was retired
+// 2026-05-27 — .lyt-rooms over-segment KOTOR areas into corridor-sized
+// cells, and centroid-in-wall failure modes left many rooms silent.
+// The nav graph is what BioWare ships and what the engine itself
+// trusts for path solving — same ground truth the level designers
+// used.
 
 #pragma once
 
@@ -104,8 +70,7 @@ constexpr int kClusterIdOpenArea = -2;
 // Build the wall-topology decomposition for `area`. Idempotent on the
 // same area pointer. Requires `acc::spatial::change_detector::
 // GetCachedWalls()` to be populated; silently no-ops with an empty
-// graph when the wall cache isn't ready (caller retries next tick,
-// same as region_classifier).
+// graph when the wall cache isn't ready (caller retries next tick).
 void BuildForArea(void* area);
 
 // Per-tick door re-snapshot until the door set stabilises. The initial
@@ -126,9 +91,8 @@ void Reset();
 
 // Look up the region descriptor at `worldPos`. On success writes the
 // localised label into `outBuf`, a small integer signature into
-// `outSig` (same byte layout convention as region_classifier::
-// LookupShapeAt — kind in low byte, kind-specific fields in upper
-// bytes), and the perceptual cluster id into `outClusterId`.
+// `outSig` (kind in low byte, kind-specific fields in upper bytes),
+// and the perceptual cluster id into `outClusterId`.
 //
 // `outClusterId` is the UFFind root of the snapped node, stable for
 // the lifetime of the build. Two adjacent labelled regions get
@@ -149,12 +113,26 @@ void Reset();
 // The bounded call sites still emit the same diagnostics whenever a
 // real transition resolves, so no information is lost.
 //
+// `requireWallReachable` (default true) gates each candidate cluster
+// on a clear segment from `worldPos` to the candidate's nearest node.
+// Defends in-world adapters (walking, view mode) against speaking the
+// label of an adjacent corridor through a wall — the player has to
+// physically reach the cluster, so LOS is the right gate. The map UI
+// cursor passes `false`: it isn't an embodied probe (cursor positions
+// can land just off the road's walkmesh, with a building wall between
+// the cursor and the road cluster, so the filter wrongly rejects every
+// nearby labelled node and the position falls through to "Offene
+// Fläche"). The map UI cursor wants distance-only snap — keep the snap
+// radius small so the cluster assignment still tracks position, just
+// don't insist on LOS the cursor doesn't have.
+//
 // Returns false when the graph isn't built, the position sits outside
 // the bounding box, or no region matches (and no open-area fallback).
 bool LookupAt(void* area, const Vector& worldPos,
               char* outBuf, size_t bufSize, int& outSig,
               int& outClusterId,
-              bool allowDiagLog = true);
+              bool allowDiagLog = true,
+              bool requireWallReachable = true);
 
 // Diagnostic: dump the current graph to the patch log. Useful for
 // tuning thresholds while iterating on the algorithm.

@@ -24,10 +24,12 @@
 #include "engine_player.h"
 #include "engine_reads.h"             // ReadCExoString — waypoint tag log
 #include "log.h"
-#include "region_classifier.h"        // shared shape cache + LookupShapeAt
 #include "strings.h"
 #include "prism.h"
 #include "transitions.h"
+#include "wall_topology.h"            // nav-graph region lookup — same source
+                                      // the in-world walking adapter speaks
+                                      // from, so cursor + walking agree
 
 namespace acc::map_ui_cursor {
 
@@ -174,7 +176,14 @@ struct CursorState {
     // Landmark and RoomName doesn't double-debounce. last_spoken_*
     // latches the most recent ambient announcement; the cursor stays
     // silent while it sits inside the same ambient zone, and re-arms
-    // the moment a different kind/room/shape signature is observed.
+    // the moment a different kind/key is observed.
+    //
+    // pending_ambient_room_idx is the identity key, repurposed across
+    // kinds: .lyt-room index for Landmark/RoomName, wall_topology
+    // cluster id for TerrainShape (stable per perceptual region — no
+    // sig drift inside a curved corridor), -1 otherwise. The kind tag
+    // disambiguates numerically-overlapping values, so renaming the
+    // field isn't needed.
     AmbientKind pending_ambient_kind         = AmbientKind::None;
     int         pending_ambient_room_idx     = -1;
     DWORD       pending_ambient_started_ms   = 0;
@@ -188,25 +197,22 @@ struct CursorState {
     // those into one logical region — same text, no re-announce.
     char        last_spoken_ambient_text[128] = {0};
 
-    // TerrainShape de-dupe + speak buffer: the classified description is
-    // built at probe time (when we arm the hover-pause), cached on the
-    // pending side, and consumed when the timer elapses. Without the
-    // pending buffer the speak path would have to re-probe at speak
-    // time — fine functionally but more work, and the local geometry
-    // can't realistically change in 300 ms anyway. Signature carries
-    // kind+quantised dimensions so the existing (kind, room_idx) dedup
-    // comparator works unchanged with room_idx repurposed as signature.
+    // TerrainShape speak buffer: the cluster's description is built at
+    // probe time (when we arm the hover-pause), cached on the pending
+    // side, and consumed when the timer elapses. wall_topology builds
+    // the label per cluster at BuildForArea time, so the text is stable
+    // across the cluster's footprint — capturing it once at arm is
+    // sufficient. Identity / dedup lives in pending_ambient_room_idx
+    // (cluster id for TerrainShape, see comment above).
     char        pending_shape_text[128]      = {0};
-    int         pending_shape_signature      = 0;
 };
 
 CursorState g_state;
 
-// Shape cache and classifier moved to acc::region (region_classifier.h)
-// in 2026-05-13's refactor — same code, single source of truth, built
-// once on area-enter by transitions::Tick so the cursor inherits a
-// ready cache the moment the map opens. Lookups happen via
-// acc::region::LookupShapeAt / LookupRoomShape below.
+// Region shape is served by wall_topology (nav-graph decomposition,
+// built once on area-enter by transitions::Tick). The in-world walking
+// adapter speaks from the same source — cursor and walking can never
+// disagree about whether a position is a corridor / junction / dead-end.
 
 // Foreground-window gate. Same pattern as cycle_input::PollWin32 — only
 // consume keys while KOTOR has focus so alt-tabbing doesn't steal
@@ -516,7 +522,6 @@ void ResetSessionState() {
     g_state.last_spoken_ambient_room_idx  = -1;
     g_state.last_spoken_ambient_text[0]   = '\0';
     g_state.pending_shape_text[0]         = '\0';
-    g_state.pending_shape_signature       = 0;
 }
 
 const char* AmbientKindStr(AmbientKind k) {
@@ -593,7 +598,6 @@ void PanToWorld(const Vector& world, void* suppressWaypoint) {
     g_state.pending_ambient_room_idx   = -1;
     g_state.pending_ambient_started_ms = 0;
     g_state.pending_shape_text[0]      = '\0';
-    g_state.pending_shape_signature    = 0;
 
     // Waypoint landing — latch as already-spoken so the cursor stays
     // silent on this pin until the user pans away and back. Non-
@@ -649,7 +653,6 @@ void Tick() {
         g_state.last_spoken_ambient_room_idx  = -1;
         g_state.last_spoken_ambient_text[0]   = '\0';
         g_state.pending_shape_text[0]         = '\0';
-        g_state.pending_shape_signature       = 0;
         acclog::Write("MapCursor",
                       "activated — seed pixel=(%.1f,%.1f) world=(%.2f,%.2f,%.2f)",
                       g_state.px, g_state.py,
@@ -673,15 +676,15 @@ void Tick() {
             g_state.announced_area_name = true;
         }
 
-        // Ensure the shared shape cache is built for this area. Normally
+        // Ensure the nav-graph topology is built for this area. Normally
         // transitions::Tick has already built it on area-enter; this
         // call is the safety net for cases where the map opens before
         // transitions has had a chance to run (e.g. map-button rebound
         // to a moment immediately after area-load) or where the wall
-        // cache wasn't ready when transitions tried. BuildCacheForArea
-        // is idempotent on the same area pointer.
+        // cache wasn't ready when transitions tried. BuildForArea is
+        // idempotent on the same area pointer.
         if (area) {
-            acc::region::BuildCacheForArea(area);
+            acc::wall_topology::BuildForArea(area);
         }
     }
 
@@ -808,24 +811,30 @@ void Tick() {
                       hit, hitIsPin ? "pin" : "waypoint");
     }
 
-    // Resolve the terrain shape via the shared region cache (built once
-    // on area-enter by transitions::Tick). Same stability story as the
-    // pre-extraction code: one classification per .lyt-room, snap to the
-    // nearest cached room on portal-seam / null-mesh misses, so the user
-    // gets a deterministic label per region rather than per pixel.
+    // Resolve the terrain shape via the nav-graph topology (built once
+    // on area-enter by transitions::Tick — the in-world walking adapter
+    // reads from the same source, so cursor and walking agree on what
+    // counts as a corridor / junction / dead-end). Cluster ids are
+    // stable inside a perceptual region — no per-pixel drift inside a
+    // curved corridor — and become the natural dedup key for the
+    // ambient flow below.
+    //
     // Fog-of-war gate applied first — never expose a shape label for a
     // cell the player hasn't revealed.
     bool cursorExplored = acc::engine::IsWorldPointExplored(areaMap, g_state.world);
     char shapeTextLocal[128] = {0};
-    int  shapeSigLocal = 0;
+    int  shapeSigLocal  = 0;
+    int  shapeClusterId = acc::wall_topology::kClusterIdNone;
     bool haveShape = false;
     if (cursorExplored) {
         void* areaForRoom = acc::engine::GetCurrentArea();
         if (areaForRoom) {
-            haveShape = acc::region::LookupShapeAt(
+            haveShape = acc::wall_topology::LookupAt(
                 areaForRoom, g_state.world,
                 shapeTextLocal, sizeof(shapeTextLocal),
-                shapeSigLocal, /*outRoomIdx=*/nullptr);
+                shapeSigLocal, shapeClusterId,
+                /*allowDiagLog=*/false,
+                /*requireWallReachable=*/false);
         }
     }
 
@@ -841,7 +850,6 @@ void Tick() {
         g_state.pending_ambient_room_idx   = -1;
         g_state.pending_ambient_started_ms = 0;
         g_state.pending_shape_text[0]      = '\0';
-        g_state.pending_shape_signature    = 0;
 
         if (hit == g_state.last_spoken_waypoint) {
             // Already spoken — keep silence.
@@ -996,17 +1004,21 @@ void Tick() {
         // grid, not the layout-room partition) — collapse to -1 so the
         // "same as last spoken" comparison treats all fog cells as one
         // category. For Landmark / RoomName, room_idx is part of the
-        // identity (different rooms re-announce). For TerrainShape, the
-        // signature encodes kind + quantised metric — same comparator,
-        // different meaning — so we slot it into the same field.
-        int classifyRoomIdx;
+        // identity (different rooms re-announce). For TerrainShape we
+        // key off the wall_topology cluster id, which is stable across
+        // the cluster's footprint — a curved corridor reads as one
+        // cluster even though the per-position sig drifts. Cluster-id
+        // sentinels (None=-1, OpenArea=-2) slot into the same field;
+        // the kind tag disambiguates against room indices that happen
+        // to share the integer value.
+        int classifyKey;
         if (currentKind == AmbientKind::Landmark ||
             currentKind == AmbientKind::RoomName) {
-            classifyRoomIdx = currentRoomIdx;
+            classifyKey = currentRoomIdx;
         } else if (currentKind == AmbientKind::TerrainShape) {
-            classifyRoomIdx = shapeSigLocal;
+            classifyKey = shapeClusterId;
         } else {
-            classifyRoomIdx = -1;
+            classifyKey = -1;
         }
 
         // Resolve the text we'd speak for this ambient, eagerly. Used
@@ -1047,31 +1059,26 @@ void Tick() {
                 break;
         }
 
-        // Dedup overlay: text-equality OR (kind, sig) equality.
-        // The text path collapses adjacent rooms whose cache labels
-        // happen to be identical (multiple "Kreuzung, Nord, Ost"
-        // rooms in Taris South Apartments). The sig path stays as a
-        // belt-and-braces match for the existing flow.
+        // Dedup overlay: text-equality OR (kind, key) equality.
+        // The text path collapses adjacent regions whose labels happen
+        // to be identical ("Kreuzung, Nord, Ost" in two adjacent
+        // clusters) into one announce. The key path is the primary
+        // identity match — cluster id for TerrainShape (stable inside
+        // a perceptual region), room index for Landmark/RoomName.
         bool sameAsLastSpoken =
             currentKind == g_state.last_spoken_ambient_kind &&
-            (classifyRoomIdx == g_state.last_spoken_ambient_room_idx ||
+            (classifyKey == g_state.last_spoken_ambient_room_idx ||
              (currentAmbientText[0] != '\0' &&
               strcmp(currentAmbientText,
                      g_state.last_spoken_ambient_text) == 0));
-        // sameAsPending uses *kind-only* match for TerrainShape. Strict
-        // (kind+signature) match prevented re-announce after a Nebel/
-        // waypoint: as the cursor sweeps a curved corridor the quantised
-        // width drifts metre-by-metre (8→7→8→6…), each drift looks like
-        // a new signature, the 300 ms timer keeps resetting, and no
-        // announce ever fires. With kind-only the timer survives
-        // sig drift; the current probe's text is refreshed onto pending
-        // each tick so the speak path uses up-to-date geometry. Other
-        // kinds (Landmark, RoomName) keep strict sig-match — moving
-        // between two named rooms should re-announce.
+        // Strict (kind, key) match for the pending side too — the old
+        // TerrainShape special-case (kind-only) existed to survive
+        // per-pixel sig drift inside curved corridors. With cluster id
+        // that drift goes away (one cluster = one key for the whole
+        // footprint), so the special-case isn't needed.
         bool sameAsPending =
             currentKind == g_state.pending_ambient_kind &&
-            (currentKind == AmbientKind::TerrainShape ||
-             classifyRoomIdx == g_state.pending_ambient_room_idx);
+            classifyKey == g_state.pending_ambient_room_idx;
 
         if (currentKind == AmbientKind::None) {
             // Nothing to say — clear pending. Also clear last_spoken so
@@ -1089,7 +1096,6 @@ void Tick() {
             g_state.last_spoken_ambient_room_idx = -1;
             g_state.last_spoken_ambient_text[0]  = '\0';
             g_state.pending_shape_text[0]        = '\0';
-            g_state.pending_shape_signature      = 0;
         } else if (sameAsLastSpoken) {
             // Already announced this exact ambient zone; stay silent
             // until something else interrupts (waypoint, different
@@ -1098,18 +1104,11 @@ void Tick() {
             g_state.pending_ambient_room_idx   = -1;
             g_state.pending_ambient_started_ms = 0;
         } else if (sameAsPending) {
-            // Keep pending text in sync with the current probe so the
-            // speak path describes the cursor's *current* corridor /
-            // junction / dead-end, not whatever shape happened to be
-            // under the cursor 300 ms ago when the timer started. The
-            // arm timer is NOT reset — it keeps counting toward speak.
-            if (currentKind == AmbientKind::TerrainShape &&
-                shapeTextLocal[0] != '\0') {
-                std::snprintf(g_state.pending_shape_text,
-                              sizeof(g_state.pending_shape_text),
-                              "%s", shapeTextLocal);
-                g_state.pending_shape_signature = shapeSigLocal;
-            }
+            // Same cluster / room as the armed timer — keep counting
+            // toward the hover-pause deadline without resetting. The
+            // text stashed at arm time is the cluster's stable label,
+            // so no refresh is needed (wall_topology builds the label
+            // once per cluster at BuildForArea, not per probe).
             if (g_state.pending_ambient_started_ms != 0 &&
                 now - g_state.pending_ambient_started_ms >= kHoverPauseMs) {
                 // Hover-pause elapsed — resolve the text to speak.
@@ -1169,12 +1168,12 @@ void Tick() {
                                   "text=\"%s\" shape=\"%s\" "
                                   "cursor=(%.1f,%.1f)",
                                   AmbientKindStr(currentKind),
-                                  classifyRoomIdx, text,
+                                  classifyKey, text,
                                   haveShape ? shapeTextLocal : "",
                                   g_state.px, g_state.py);
                 }
                 g_state.last_spoken_ambient_kind     = currentKind;
-                g_state.last_spoken_ambient_room_idx = classifyRoomIdx;
+                g_state.last_spoken_ambient_room_idx = classifyKey;
                 std::snprintf(g_state.last_spoken_ambient_text,
                               sizeof(g_state.last_spoken_ambient_text),
                               "%s", currentAmbientText);
@@ -1182,24 +1181,21 @@ void Tick() {
                 g_state.pending_ambient_room_idx     = -1;
                 g_state.pending_ambient_started_ms   = 0;
                 g_state.pending_shape_text[0]        = '\0';
-                g_state.pending_shape_signature      = 0;
             }
         } else {
-            // New ambient category (or new room within
-            // Landmark/RoomName, or new shape signature) — arm the
-            // hover-pause. For TerrainShape we also stash the rendered
-            // description so the speak path doesn't have to re-probe.
+            // New ambient category (or new room within Landmark/RoomName,
+            // or new TerrainShape cluster) — arm the hover-pause. For
+            // TerrainShape stash the cluster's rendered description so
+            // the speak path doesn't have to re-probe.
             g_state.pending_ambient_kind       = currentKind;
-            g_state.pending_ambient_room_idx   = classifyRoomIdx;
+            g_state.pending_ambient_room_idx   = classifyKey;
             g_state.pending_ambient_started_ms = now;
             if (currentKind == AmbientKind::TerrainShape) {
                 std::snprintf(g_state.pending_shape_text,
                               sizeof(g_state.pending_shape_text),
                               "%s", shapeTextLocal);
-                g_state.pending_shape_signature = shapeSigLocal;
             } else {
-                g_state.pending_shape_text[0]   = '\0';
-                g_state.pending_shape_signature = 0;
+                g_state.pending_shape_text[0] = '\0';
             }
         }
     }
