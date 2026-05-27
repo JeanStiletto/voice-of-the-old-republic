@@ -1,55 +1,30 @@
-// Per-area object iteration + room lookup.
+// Per-area object iteration + room lookup. SEH-guarded; no engine
+// re-entry beyond CSWSArea::GetRoom.
 //
-// Layer: engine/ (pure read-side helpers, SEH-guarded; no engine re-entry
-// beyond the one wrapped CSWSArea::GetRoom call needed for room-resolution).
+// CSWSArea:
+//   +0x190 game_objects      ulong*  — HANDLE array (not CSWSObject**).
+//   +0x194 game_object_count int
+//   +0x230 rooms             CSWSRoom[] inline, stride 0x4c
+//   +0x25c room_names        CExoString*
 //
-// Phase 2 lay-off 1: object-list + room-lookup slice. Foundation for the
-// Phase 2 consumers (Pillar 4 cycle, Pillar 2 room-transition announcements,
-// guidance/autowalk target picking). No consumer wired up in this lay-off;
-// per-type name resolution + room-name reading are intentionally deferred to
-// their respective consumer lay-offs (Pillar 4 cycle / Pillar 2 transitions)
-// where runtime verification can lock the layout.
+// CSWSArea::GetRoom @0x4bb600(this, Vector*, int* outRoomIndex /*nullable*/)
+//   → CSWSRoom*
 //
-// Engineering basis (investigation Q5 + lay-off 4 corrections, all
-// CONFIRMED via DumpBytes 2026-05-04):
+// CSWSObject base:
+//   +0x008 object_kind  uint8 GAME_OBJECT_TYPES
+//   +0x090 position     Vector
 //
-//   CSWSArea
-//     +0x190 game_objects      // ulong* — array of object HANDLES (NOT
-//                              //          CSWSObject** as initially read).
-//                              //          Confirmed via swkotor.exe.h:
-//                              //          `ulong *game_objects;`.
-//     +0x194 game_object_count // int
-//     +0x230 rooms             // inline CSWSRoom[] (stride 0x4c per GetRoom decomp)
-//     +0x25c room_names        // CExoString* (layout untested at lay-off 1)
+// Handle resolution chain:
+//   *kAddrAppManagerPtr → AppManager → +0x4 CClientExoApp* /
+//     +0x8 CServerExoApp*. The server path is used for object
+//     resolution (CSWSObject::GetArea @0x4cb120 confirms +0x8 via
+//     `mov ecx,[eax+0x8]`).
+//   CServerExoApp::GetObjectArray @0x004aed70 → CGameObjectArray*.
+//   CGameObjectArray::GetGameObject(id, &outPtr) @0x004d8230 → bool.
 //
-//   CSWSArea::GetRoom @0x4bb600 — point-in-room query
-//     Signature: CSWSRoom* (CSWSArea*, Vector*, int* /*outRoomIndex, may be NULL*/)
-//
-//   CSWSObject (every game-object subclass inherits this base)
-//     +0x008 object_kind  // uint32 — GAME_OBJECT_TYPES enum (per Q5)
-//     +0x090 position     // Vector (server-side authoritative; matches engine_player)
-//
-// Handle resolution chain (confirmed by decompiling CSWSObject::GetArea
-// @0x4cb120; bytes captured 2026-05-04):
-//
-//   *kAddrAppManagerPtr     → AppManager*
-//     AppManager + 0x4      → CClientExoApp* (already used in engine_player)
-//     AppManager + 0x8      → CServerExoApp* (new, used here for object
-//                             resolution; verified via `mov ecx,[eax+0x8]`
-//                             at GetArea+0x10).
-//   CServerExoApp::GetObjectArray() @0x004aed70 → CGameObjectArray*
-//   CGameObjectArray::GetGameObject(id, &outPtr) @0x004d8230 → bool
-//     Out-pointer is a CGameObject* (which downcasts to CSWSObject* for
-//     server-side arrays).
-//
-// Lay-off 4 correction: the initial implementation treated game_objects[]
-// as CSWSObject** and dereferenced each entry as a pointer; in practice
-// the array holds 32-bit handles and the dereference produced garbage,
-// so every `GetObjectKind` read returned a kind outside the 5/6/7/9/10/12
-// set we filter on. Verified by patch-20260503-224102.log: snapshotSize=219,
-// scanned=219, every kind bucket=0. Switched to handle-based iteration —
-// each Next() call resolves one handle through the engine's GetGameObject
-// table.
+// game_objects[] is an array of handles, not pointers. Initial code
+// treated entries as CSWSObject** and got kind-byte garbage; iteration
+// now resolves each handle through GetGameObject.
 
 #pragma once
 
@@ -60,14 +35,7 @@
 
 namespace acc::engine {
 
-// GAME_OBJECT_TYPES enum values, per investigation Q5. Stored at
-// CSWSObject +0x8. Listed values are the ones the Pillar 4 cycle filters on
-// (per docs/navsystem-longterm-plan.md §"Categories"); other values exist in
-// the engine but are not surfaced here because they're not player-facing
-// (PROJECTILE, AREAOFEFFECT, AREA) or are folded into other categories
-// (STORE → Container/Placeable per the plan).
-//
-// Numeric values match the engine — do not reorder.
+// GAME_OBJECT_TYPES at CSWSObject +0x8. Do not reorder — engine values.
 enum class GameObjectKind : int {
     Area         = 4,
     Creature     = 5,
@@ -83,382 +51,195 @@ enum class GameObjectKind : int {
     Sound        = 16,
 };
 
-// Resolves the player's current area via engine_player::GetPlayerArea().
-// Convenience wrapper so Phase 2 consumers don't all have to reach into
-// engine_player + their own SEH frame.
-//
-// Returns nullptr in the same cases GetPlayerArea() does (main menu, area
-// transitions, early DLL attach).
+// Convenience wrapper around engine_player::GetPlayerArea.
 void* GetCurrentArea();
 
-// Returns the GAME_OBJECT_TYPES tag at obj +0x8, or -1 if obj is null /
-// the read faults. Compare against GameObjectKind values.
-//
-// The field is a 1-byte enum (XML: SIZE="0x1", max value 0x10 = SOUND).
+// -1 on null / fault. Reads ONE byte — the field is uint8 (max 0x10).
 // Reading 4 bytes works "by luck" for objects whose three trailing
 // bytes happen to be zero; for the rest the high bytes carry adjacent
-// field data and the wide read returns garbage that fails every
-// kind comparison. PassiveNarrate.Probe run 2026-05-21 confirmed all
-// four observed handles had valid kind bytes (DOOR/CREATURE/PLACEABLE)
-// but wide reads like 0x26002e05 / 0xc183bf09 / 0x0002000a.
+// field data and the wide read fails every kind comparison.
 int GetObjectKind(void* gameObject);
 
-// Returns the engine-side handle (CGameObject.id @+0x4) for an object.
-// This is the inverse of ResolveServerObjectHandle / ResolveClientObjectHandle:
-// given a pointer obtained via either resolution path (or via the area
-// iterator), recover the ulong handle the engine itself uses to refer to
-// the object on its action queue, in LastTarget, etc. 0 on null / fault.
+// CGameObject.id @+0x4. Inverse of ResolveServerObjectHandle. 0 on
+// null/fault.
 uint32_t GetObjectHandle(void* gameObject);
 
-// Resolve a 32-bit object handle to a CSWSObject*. The engine has two
-// independent handle namespaces — server-side (the array CSWSArea's
-// game_objects[] holds, and the action queue's object-id slots use) and
-// client-side (CClientExoApp::LastTarget, the in-world hover/passive-
-// selection target). Use the variant that matches the handle source.
+// Two independent handle namespaces. Both return nullptr for invalid
+// sentinels (0, 0xFFFFFFFF, kInvalidObjectId 0x7F000000); both SEH-guard.
 //
-// Both return nullptr for invalid sentinels (`0`, `0xFFFFFFFF`,
-// `kInvalidObjectId 0x7F000000`) and for any handle the engine reports
-// as missing. Both SEH-guard every dereference. Caller treats the
-// returned pointer opaquely (same downcast rules as the
-// AreaObjectIterator yield).
-//
-// Server-side path: AppManager → CServerExoApp → GetObjectArray →
-// CGameObjectArray::GetGameObject. Same chain AreaObjectIterator uses
-// internally; exposed here for the "I have one server handle" case.
-// Server-side handles in observed traffic look like 0x000000XX (low
-// bits index into the server array).
+// Server-side: AppManager → CServerExoApp → GetObjectArray →
+// GetGameObject. Same chain AreaObjectIterator uses. Handles look like
+// 0x000000XX.
 void* ResolveServerObjectHandle(uint32_t handle);
 
-// Client-side path: AppManager → CClientExoApp → GetGameObject(handle)
-// returns a CSWCObject* (client-side counterpart). We chain through
-// `CSWCObject.server_object @+0xf8` to recover the server-side
-// CSWSObject* our other helpers (GetObjectKind, GetObjectName,
-// GetObjectPosition) expect. Client-side handles in observed traffic
-// look like 0x800000XX (high bit set; engine packs a side flag).
-//
-// Verified live 2026-05-04 (`patch-20260504-065345.log`): the
-// LastTarget handles 0x80000004 / 0x800000c6 / 0x80000047 fail
-// resolution through the server-side CGameObjectArray — they need this
-// path.
+// Client-side: AppManager → CClientExoApp → GetGameObject → CSWCObject*,
+// then +0xf8 server_object → CSWSObject*. LastTarget handles (high bit
+// set, 0x800000XX) need this path; the server-side CGameObjectArray
+// won't find them.
 void* ResolveClientObjectHandle(uint32_t handle);
 
-// Server-side world position read (CSWSObject layout, +0x90). Returns false
-// if obj is null or the read faults.
+// CSWSObject +0x90. False on null / fault.
 bool GetObjectPosition(void* gameObject, Vector& out);
 
-// Wraps CSWSArea::GetRoom @0x4bb600. Returns the CSWSRoom* containing pos,
-// or nullptr if the position is outside any room or any pointer in the
-// chain faults. Caller treats the room pointer opaquely — internal layout
-// (stride 0x4c) is not surfaced until a Phase 2 consumer needs it.
+// CSWSArea::GetRoom @0x4bb600. nullptr outside any room.
 void* GetRoomAt(void* area, const Vector& pos);
 
-// Same as GetRoomAt but also captures the room index the engine resolved
-// (CSWSArea::GetRoom's third arg is `int* outRoomIndex`, NULL-passable).
-// Index is -1 on miss / fault; usable as the lookup key for room_names[].
-// Returns the CSWSRoom* (or nullptr) just like GetRoomAt.
+// Captures the room index the engine resolved (GetRoom's third arg).
+// outIndex = -1 on miss/fault; key into room_names[].
 void* GetRoomAtIndexed(void* area, const Vector& pos, int& outIndex);
 
-// Compute a "representative" point inside the room (used as input to
-// per-room walkmesh probes — terrain shape classification, etc.). The
-// returned point is the centroid of the middle face of the room's
-// walkmesh in world space (LocalToWorld already applied), which sits
-// firmly inside the walkable surface and far from boundary edges in
-// the common case. Returns false on null area, out-of-range roomIdx,
-// missing surface_mesh, or any read fault (SEH-guarded internally).
+// Centroid of the middle face in world space. Input for per-room
+// walkmesh probes (terrain shape classification etc.).
 //
-// Optional `outFailReason` captures why derivation failed (when the
-// return value is false). 0 means success; non-zero codes:
-//   1  bad args (area null or roomIdx < 0)
-//   2  roomIdx >= roomCount
-//   3  rooms array pointer null
-//   4  surface_mesh null on the room — most likely cause of K1 "void"
-//      rooms (skybox helpers / placeholders) which have no walkmesh
-//   5  vertices/faceIndices null or faceCount == 0
-//   6  SEH fault during any read
-// Pass nullptr if the caller doesn't care.
+// outFailReason codes: 0=ok, 1=bad args, 2=roomIdx≥roomCount,
+// 3=rooms ptr null, 4=surface_mesh null ("void" rooms — skybox/
+// placeholders without walkmesh), 5=vertices/faces empty, 6=SEH.
 bool GetRoomRepresentativeWorld(void* area, int roomIdx, Vector& outWorld,
                                 int* outFailReason = nullptr);
 
-// Player-facing display name for an area. Reads CSWSArea.name
-// (CExoLocString at +0x150) — tries the inline string first, falls back
-// to a TLK lookup of the strref at +0x154; if both empty, falls back to
-// CSWSArea.tag (CExoString at +0x158, modder-assigned identifier).
-//
-// Returns false on null area, every fallback empty, or any read fault
-// (SEH-guarded internally). outBuf must be at least bufSize bytes; on
-// success a null-terminated string is written.
+// CSWSArea.name CExoLocString @+0x150 (inline → TLK strref @+0x154);
+// falls back to CSWSArea.tag CExoString @+0x158 (modder-assigned).
 bool GetAreaDisplayName(void* area, char* outBuf, size_t bufSize);
 
-// Read the i-th room name from CSWSArea.room_names[index]. The engine
-// stores room_names as a `CExoString*` array (stride 8 — char* +
-// uint32 length per CExoString) indexed by the same room index that
-// GetRoomAtIndexed yields and that GetRoom's third arg captures.
-//
-// Note: room names are NOT localized — they are .lyt-room identifiers
-// like "m02_03e" or "stunt_01_main". The transitions consumer wraps
-// the result with a localized "Room:" prefix to keep meaning clear.
-//
-// Returns false on null area, out-of-range index (negative or >=
-// room_count at +0x268), null array pointer, or any read fault. outBuf
-// must be at least bufSize bytes; on success a null-terminated string
-// is written.
+// CSWSArea.room_names[index] — CExoString* array, stride 8. NOT
+// localized — these are .lyt-room ids like "m02_03e" / "stunt_01_main".
+// The transitions consumer wraps with a "Room:" prefix.
 bool GetRoomDisplayName(void* area, int roomIndex,
                         char* outBuf, size_t bufSize);
 
-// Resolve the player-facing localized name for any game object whose kind
-// is one of the six Pillar 4 categories (Door, Creature, Placeable, Item,
-// Waypoint, Trigger). The chain is per-kind:
+// Per-kind localized name lookup:
+//   Door      CSWSDoor.loc_name           @+0x39c
+//   Creature  CSWSCreature.creature_stats @+0xa74 → first_name @+0x14
+//   Placeable CSWSPlaceable.loc_name      @+0x228
+//   Item      CSWSItem.localized_name     @+0x280
+//   Waypoint  CSWSWaypoint.localized_name @+0x238
+//   Trigger   CSWSTrigger.localized_name  @+0x228
 //
-//   Door        — CSWSDoor.loc_name           @+0x39c (CExoLocString)
-//   Creature    — CSWSCreature.creature_stats @+0xa74 → first_name @+0x14
-//   Placeable   — CSWSPlaceable.loc_name      @+0x228
-//   Item        — CSWSItem.localized_name     @+0x280
-//   Waypoint    — CSWSWaypoint.localized_name @+0x238
-//   Trigger     — CSWSTrigger.localized_name  @+0x228
-//
-// CExoLocString layout matches CExoString at the byte level (8 bytes, ptr+
-// uint32) — engine_reads::ExtractTextOrStrRef handles both: tries the inline
-// string first, falls back to a TLK lookup of the strref at +4. If both are
-// empty, falls back to CSWSObject.tag @+0x18 (CExoString — modder-assigned
-// stable id), per the investigation Q7 "name-resolution pipeline" guidance.
-//
-// outBuf must point to a buffer of at least bufSize bytes; on success a
-// null-terminated string is written. Returns false if the kind isn't one we
-// resolve, every layer of the chain produces empty text, or any read faults
-// (SEH-guarded internally).
+// CExoLocString byte-matches CExoString; ExtractTextOrStrRef tries
+// inline then TLK strref at +4. Final fallback CSWSObject.tag @+0x18
+// (modder-assigned id).
 bool GetObjectName(void* gameObject, char* outBuf, size_t bufSize);
 
-// Localized display name lookup by object handle. Wraps the engine's
-// universal accessor `CClientExoApp::GetObjectName(ulong, CExoString*)`
-// — which returns the same name the in-game UI shows for any object
-// kind (creatures, items, doors, ...). Better than calling
-// GetObjectName(gameObject, ...) when working from a handle because
-// the engine's own resolution chain handles the cases where
-// `first_name` is empty (template FirstName + appearance.2da
-// displayname + racialtypes.2da fallbacks).
-//
-// `handle` accepts both client-side (high bit set) and server-side
-// (low bit) handles — the engine routes either correctly.
-//
-// Returns true on non-empty result; false on engine accessor failure
-// or empty name. outBuf is always NUL-terminated on entry (outBuf[0]
-// = '\0' even on failure path).
+// Wraps CClientExoApp::GetObjectName(ulong, CExoString*) — the engine's
+// universal accessor. Better than GetObjectName(obj,...) from a handle
+// because it handles empty first_name with the template + appearance.2da
+// + racialtypes.2da fallbacks. Routes client/server handles correctly.
+// outBuf NUL-terminated on entry.
 bool GetObjectDisplayNameByHandle(uint32_t handle,
                                   char* outBuf, size_t bufSize);
 
-// Pillar 4 sub-state predicates. The category-kind filter alone over-includes
-// — these refine to the player-relevant subset locked in the plan §"Categories":
-//
-//   IsUsablePlaceable    — CSWSPlaceable.usable        @+0x328 (bool)
-//                       OR CSWSPlaceable.has_inventory @+0x334 (bool).
-//                          Filters out scenery placeables that the player
-//                          can't interact with.
-//   IsLandmarkWaypoint   — CSWSWaypoint.has_map_note   @+0x228 (bool).
-//                          Engine's own "important location" curation.
-//   IsTransitionTrigger  — CSWSTrigger.transition_destination @+0x30c
-//                          (Vector — non-zero indicates set).
-//
-// All return false on null / fault. Callers should already have confirmed
-// the object's kind matches before invoking the corresponding predicate.
+// Pillar 4 sub-state predicates (refine the kind filter):
+//   IsUsablePlaceable    CSWSPlaceable.usable @+0x328 OR
+//                        has_inventory @+0x334. Drops scenery placeables.
+//   IsLandmarkWaypoint   CSWSWaypoint.has_map_note @+0x228.
+//   IsTransitionTrigger  CSWSTrigger.transition_destination @+0x30c
+//                        (Vector — non-zero indicates set).
 bool IsUsablePlaceable(void* placeable);
 bool IsLandmarkWaypoint(void* waypoint);
 bool IsTransitionTrigger(void* trigger);
 
-// Reads CSWSDoor.open_state (+0x2cc, byte). Returns true when the door
-// is anything other than fully closed (state >= 1 covers both opening
-// animation and fully open — see BuildDoorSuffix comment for the value-
-// space note). False on null / fault / state==0. Used to pick between
-// the open-door and closed-door nav cues at fire time.
+// CSWSDoor.open_state +0x2cc. state >= 1 covers both opening anim and
+// fully open. False on null/fault/state==0.
 bool IsDoorOpen(void* serverDoor);
 
-// Door material — derived from CSWSDoor.generic_type (+0x2a1, byte) via
-// a static 65-entry table built by joining genericdoors.2da against
-// placeableobjsnds.2da on soundapptype → armortype. Rows 0-12 of
-// genericdoors.2da don't set soundapptype; those are classified by label
-// keyword (Wood_*, Stone_*, everything else → metal). Metal is the
-// fallback for unknown indices (modded doors past row 64).
+// Derived from CSWSDoor.generic_type +0x2a1 via a static 65-entry table
+// (genericdoors.2da ⋈ placeableobjsnds.2da on soundapptype). Rows 0-12
+// don't set soundapptype; classified by label keyword. Metal is the
+// fallback for unknown indices.
 enum class DoorMaterial { Metal, Wood, Stone };
 
-// Reads the door's generic_type byte and returns its material class.
-// Returns DoorMaterial::Metal on null / fault / generic_type out of range.
+// Metal on null / fault / out-of-range.
 DoorMaterial GetDoorMaterial(void* serverDoor);
 
-// Reads CSWSWaypoint.map_note_enabled (+0x22c). True if this waypoint's
-// map note is currently visible on the in-game map (engine's fog-of-war
-// model — disabled until the player discovers it via map-pin trigger).
-// Use to gate any feature that surfaces map-note text so we don't spoil
-// locations the player hasn't yet seen on the map.
-//
-// Returns false on null / fault. Caller should already have confirmed
-// the object is a Waypoint kind via GetObjectKind.
+// CSWSWaypoint.map_note_enabled +0x22c. Engine's fog-of-war gate for
+// map-note text — disabled until the player discovers via map-pin trigger.
 bool IsMapNoteEnabled(void* waypoint);
 
-// Resolve the per-area CSWSAreaMap* that owns the fog-of-war bitfield +
-// pixel transform. Reached via AppManager → CServerExoApp →
-// GetModule() → CSWSModule.area_map (+0x218). Returns nullptr on any
-// null link (DLL attach, between modules, no current game) or SEH
-// fault. Shared by map_ui_cursor (cursor projection + fog read) and
-// cycle_state (map-context fog-of-war filter).
+// AppManager → CServerExoApp → GetModule → CSWSModule.area_map @+0x218.
+// Shared by map_ui_cursor (cursor projection + fog) and cycle_state
+// (map-context fog filter).
 void* GetAreaMap();
 
-// Wraps CSWSAreaMap::IsWorldPointExplored @0x00579210 — the engine's
-// fog-of-war read. Returns true iff `pos` lies in a map cell the player
-// has revealed (and the map cell exists). False on null areaMap, off-
-// map positions, or SEH fault. Used to filter map-context cycle output
-// so we never narrate landmarks the player hasn't seen yet.
+// CSWSAreaMap::IsWorldPointExplored @0x00579210. Used to filter map
+// cycle output so we don't narrate undiscovered landmarks.
 bool IsWorldPointExplored(void* areaMap, const Vector& pos);
 
-// Wraps CSWSAreaMap::GetMapRotateCCWFromWorldOrientation @0x00578ed0
-// — the engine's world-orientation → map-frame angle conversion.
-// Takes a heading Vector in world space (e.g. CSWSObject.orientation;
-// z is engine-zeroed for object facings), runs Yaw(facing), and adds
-// 0/90/180/270 depending on the area map's own orientation tag.
-// Returns the rotation (degrees, CCW) one would apply to the compass-
-// arrow sprite — i.e. the player's facing expressed in map-local
-// space, in the same CCW-from-+X convention as engine yaw.
-//
-// Callers convert to compass-frame (CW from North) via
-// engine_compass::EngineYawToCompass.
-//
-// Returns true with `outDegCCW` on success; false on null areaMap or
-// SEH fault. The engine returns a float10 (x87 long double via ST(0));
-// the wrapper down-casts to float, which is sufficient for an integer-
-// degree announcement.
+// CSWSAreaMap::GetMapRotateCCWFromWorldOrientation @0x00578ed0.
+// Engine runs Yaw(orientation) + 0/90/180/270 (per area map's own
+// orientation tag). Returns the rotation to apply to the compass-arrow
+// sprite (player facing in map-local space, CCW-from-+X like engine
+// yaw). Callers convert to compass-frame via EngineYawToCompass.
+// Engine returns x87 float10 via ST(0); wrapper casts to float.
 bool GetMapRotateCCWFromWorldOrientation(void* areaMap,
                                          const Vector& orientation,
                                          float& outDegCCW);
 
-// Resolve the client-side CSWCArea that mirrors a CSWSArea via the
-// back-pointer at CSWSArea +0x2d0. CSWCArea owns the dynamic map-pin
-// array (quest objective markers, NWScript-placed pins). Returns
-// nullptr on null serverArea / SEH fault. The mirror is set at
-// area-load and stays valid until the next area transition.
+// Back-pointer at CSWSArea +0x2d0. CSWCArea owns the map-pin array
+// (quest objective markers, NWScript-placed pins). Mirror set at
+// area-load.
 void* GetClientArea(void* serverArea);
 
-// Number of map-pin slots populated in `clientArea->map_pins[]`.
-// Returns 0 on null / fault.
 int GetMapPinCount(void* clientArea);
 
-// Read CSWCMapPin* at index `i` from `clientArea->map_pins[]`. Returns
-// nullptr on null / out-of-range / fault. Map pins live as pointer-
-// array entries (CSWCMapPin**) despite Lane's PlaceHolder struct
-// typing the field as a singular pointer; AddMapPin + ClearAllMapPins
-// + GetMapPin decomps all confirm pointer-array semantics (4-byte
-// stride, each slot holds a heap-allocated 0x110-byte pin).
+// Pointer-array semantics (CSWCMapPin**, 4-byte stride, each slot a
+// heap-allocated 0x110-byte pin). Lane's PlaceHolder typing as a
+// singular pointer is misleading.
 void* GetMapPinAt(void* clientArea, int i);
 
-// CSWCMapPin embeds CSWCObject at +0x00, so position lives at +0x24
-// (the standard CGameObject world-position offset). Returns false on
-// null / fault. Z is the live Z written by the server (pins inherit
-// the placing entity's elevation in 3D areas).
+// CSWCMapPin embeds CSWCObject at +0; position at +0x24 (standard
+// CGameObject offset). Z is the live server-written value.
 bool GetMapPinPosition(void* mapPin, Vector& out);
 
-// Read CSWCMapPin.flags (+0x108, uint32). Engine pins use a monotonic
-// counter starting at 1 (`NW_TOTAL_MAP_PINS`-derived) so engine flags
-// always sit in [1, ~few hundred]. Our user-placed markers reserve the
-// high-half range (`map_user_markers::kUserMarkerReferenceBase` =
-// 0x80000000) so cycle/cursor consumers can distinguish them with a
-// single bit-test:
+// CSWCMapPin.flags +0x108. Engine pins use a monotonic counter from 1.
+// User markers reserve the high-half range so consumers can distinguish:
 //   isUserMarker = (flags & 0x80000000) != 0
-// Returns 0 on null / fault.
 uint32_t GetMapPinFlags(void* mapPin);
 
-// Read CSWCMapPin.enabled (+0xfc, int). Pins toggle off via the
-// SetMapPinEnabled NWScript command without being removed from the
-// array, so disabled pins persist as dormant slots; filter callers
-// must check this before surfacing pin text.
+// CSWCMapPin.enabled +0xfc. SetMapPinEnabled toggles without removing
+// the array slot — filter callers check before surfacing text.
 bool IsMapPinEnabled(void* mapPin);
 
-// Read CSWCMapPin.note_text (CExoString @+0x100). Confirmed via decomp
-// of CSWCMessage::HandleServerToPlayerMapPinReferenceNumber @0x652d60:
-// the network handler stores the wire packet's note CExoString into
-// pin +0x100 after constructing the pin via operator_new(0x110). Falls
-// back to "" on null inline text — caller decides between empty and
-// a generic placeholder.
-//
-// Returns false on null / faulted read / empty resolved text.
+// CSWCMapPin.note_text CExoString @+0x100. Set by the wire packet
+// handler after operator_new(0x110).
 bool GetMapPinNoteText(void* mapPin, char* outBuf, size_t bufSize);
 
-// Create a new CSWCMapPin and append it to `clientArea->map_pins[]`.
-// Replicates the engine's own creation pattern exactly (decoded from
-// `HandleServerToPlayerMapPinReferenceNumber @0x652d60`):
-//   1. `operator_new(0x110)` (engine's allocator, matched to its free).
-//   2. `CSWCMapPin::CSWCMapPin()` ctor — initialises vtable + zero-fields.
-//   3. Direct field writes — position @+0x24, enabled @+0xfc, note_text
-//      via `CExoString::operator=(this, char*)` @+0x100, flags
-//      (reference number) @+0x108, subtype @+0x10c.
-//   4. `CSWCArea::AddMapPin(this_, pin)` @0x606d90 — pointer append.
+// Replicates the engine pattern from
+// HandleServerToPlayerMapPinReferenceNumber @0x652d60:
+//   operator_new(0x110) → CSWCMapPin ctor → field writes (pos +0x24,
+//   enabled +0xfc, note_text via CExoString::operator= +0x100, flags
+//   +0x108, subtype +0x10c) → CSWCArea::AddMapPin @0x606d90.
 //
-// `referenceNumber` is the unique id the engine uses to key
-// SetMapPinEnabled / GetMapPin calls; pick a value that doesn't collide
-// with anything the engine has previously placed (the engine itself
-// uses a per-player monotonic counter via `NW_TOTAL_MAP_PINS`). For
-// the accessibility "saved marker" path we pick a high-half range
-// (e.g. 0x80000000-up) so we don't trip the engine's own counter.
+// referenceNumber keys SetMapPinEnabled / GetMapPin. The engine uses a
+// per-player counter from 1; we reserve high-half range to avoid collisions.
 //
-// `name` is a UTF-8 / Windows-1252 string copied into a heap CExoString
-// via the engine's own `operator=` — same allocator that `~CSWCMapPin`
-// will eventually free, so alloc/free are matched.
+// `name` is copied into a heap CExoString via the engine's operator= —
+// matched to ~CSWCMapPin's free.
 //
-// Returns true on success and writes the freshly-allocated pin pointer
-// (still owned by the area's map_pins[] array) to `outPin` when non-
-// null. False if `clientArea` is null, the engine alloc fails, or any
-// engine call faults under SEH.
-//
-// Lifetime: the pin is owned by the area from the moment AddMapPin
-// returns; it survives until area unload / ClearAllMapPins, both of
-// which call `operator_delete` matched to the alloc here.
-//
-// Persistence: this path does NOT write the per-player ScriptVarTable
-// strings (`NW_MAP_PIN_*_{N}`) that the engine's own user-pin flow
-// uses to round-trip across save/load. Pins created via this wrapper
-// vanish on area transition. The persistence path is a separate
-// follow-up; for the initial saved-marker hotkey, in-area-only is
-// acceptable.
+// In-area only. Persistence (NW_MAP_PIN_*_{N} ScriptVarTable strings)
+// is a separate follow-up; for the saved-marker hotkey, in-area is
+// acceptable. Pins vanish on area transition.
 bool CreateMapPin(void*       clientArea,
                   const Vector& pos,
                   const char* name,
                   uint32_t    referenceNumber,
                   void**      outPin = nullptr);
 
-// Reads CSWSWaypoint.map_note (+0x230, CExoLocString). The Bioware-
-// authored display label (e.g. "Bridge", "Cargo Hold", "Brücke",
-// "Frachtraum") that the in-game map shows. CExoLocString shape matches
-// CExoString at +0x230 + the strref at +0x234, so engine_reads's
-// `ExtractTextOrStrRef` resolves both the inline c_string path and the
-// TLK-strref fallback path.
-//
-// Returns false on null / empty resolution / fault. outBuf must be at
-// least bufSize bytes; on success a null-terminated string is written.
+// CSWSWaypoint.map_note CExoLocString @+0x230 (strref @+0x234).
+// BioWare-authored display labels ("Bridge", "Cargo Hold", ...).
 bool GetWaypointMapNote(void* waypoint, char* outBuf, size_t bufSize);
 
-// Iterator over CSWSArea.game_objects[]. Constructed once per scan; Next()
-// returns successive CSWSObject* values until exhausted (returns nullptr).
-//
-// Snapshot semantics: the data pointer + size are captured at construction
-// time. If the engine resizes game_objects mid-scan the iterator will read
-// stale handles — in practice the array is rebuilt on area-load, never
-// mid-frame, so a single-OnUpdate-tick scan is safe.
-//
-// Handles are resolved per-Next() through the cached CGameObjectArray*
-// captured at construction. The resolution call is one engine __thiscall
-// + one out-pointer read per object, all SEH-guarded.
-//
-// All field reads are SEH-guarded; if the area pointer or the server-side
-// object array faults at construction the iterator yields nothing (Next()
-// returns nullptr immediately).
+// Snapshots data pointer + size at construction. The engine rebuilds
+// game_objects on area-load, never mid-frame, so single-tick scans are
+// safe. Per-Next() resolution via cached CGameObjectArray*. All reads
+// SEH-guarded; construction fault yields immediate exhaustion.
 class AreaObjectIterator {
 public:
     explicit AreaObjectIterator(void* area);
 
-    // Returns the next CSWSObject*, or nullptr when exhausted / on resolution
-    // failure. Skips array slots whose handle is 0 (sentinel) or whose
-    // GetGameObject lookup returns false (engine treats some handles as
-    // invalid sentinels — happens during area unload bookkeeping).
+    // Skips 0-handle slots + handles GetGameObject rejects (engine
+    // treats some as sentinel during area-unload bookkeeping).
     void* Next();
 
-    // Snapshot of the array length captured at construction. Used by the
-    // cycle diagnostic log so callers can see "scanned N objects, matched M".
     int   SnapshotSize() const { return size_; }
 
 private:
@@ -487,161 +268,96 @@ constexpr uintptr_t kAddrCGameObjectArrayGetGameObject = 0x004D8230;
 // ResolveClientObjectHandle's docs.
 constexpr uintptr_t kAddrCClientExoAppGetGameObject = 0x005ED580;
 
-// Per-area map-and-fog-of-war singleton chain.
-//   CServerExoApp::GetModule @0x004ae6b0 → CSWSModule*
-//   CSWSModule.area_map (+0x218)         → CSWSAreaMap*
-//   CSWSAreaMap::IsWorldPointExplored @0x00579210 — fog-of-war read.
-// See navsystems-investigation.md §Q4 for the full layout.
+// Map + fog-of-war chain.
 constexpr uintptr_t kAddrCServerExoAppGetModule          = 0x004AE6B0;
 constexpr size_t    kModuleAreaMapOffset                 = 0x218;
 constexpr uintptr_t kAddrCSWSAreaMapIsWorldPointExplored = 0x00579210;
-// CSWSAreaMap::GetMapRotateCCWFromWorldOrientation — __thiscall(this,
-// Vector orientation by value). Returns float10 via ST(0); we cast
-// down to a normal float. BYTES_PURGED=12 = callee pops the 3-float
-// Vector args off the stack.
+// __thiscall(this, Vector by value). Returns float10 via ST(0).
+// BYTES_PURGED=12 (callee pops 3-float Vector).
 constexpr uintptr_t kAddrCSWSAreaMapGetMapRotateCCW       = 0x00578ED0;
 
-// CSWCMapPin allocation + initialisation chain (decoded from
-// `HandleServerToPlayerMapPinReferenceNumber @0x00652d60`). All matched —
-// `operator_new` at 0x43e1b0 pairs with the `_free` calls
-// `CExoString::operator=` and `~CSWCMapPin` invoke, so a pin allocated
-// through this chain is safe for the engine to eventually free.
+// CSWCMapPin allocation chain. operator_new at 0x43e1b0 is matched to
+// the _free that CExoString::operator= and ~CSWCMapPin invoke.
 constexpr uintptr_t kAddrOperatorNew                = 0x0043E1B0;  // __cdecl(ulong)
-constexpr uintptr_t kAddrCSWCMapPinCtor             = 0x00692540;  // __thiscall()
+constexpr uintptr_t kAddrCSWCMapPinCtor             = 0x00692540;
 constexpr uintptr_t kAddrCExoStringAssignFromCString= 0x005E5140;  // __thiscall(CExoString*, char*)
-constexpr uintptr_t kAddrCSWCAreaAddMapPin          = 0x00606D90;  // __thiscall(CSWCArea*, CSWCMapPin*)
+constexpr uintptr_t kAddrCSWCAreaAddMapPin          = 0x00606D90;  // __thiscall(CSWCArea*, pin)
 
-// Server→client back-pointer used to reach CSWCArea (which owns
-// map_pins[]) from a CSWSArea we already have via GetCurrentArea.
-// Field comment from Lane's typed struct: `struct CSWCArea
-// *client_area;` — value confirmed via the CSWSArea declaration
-// ending at +0x2d0 (preceded by field101_0x2cc CPathfindInformation*).
+// Server→client back-pointer (CSWSArea ends at +0x2d0 preceded by
+// CPathfindInformation* at +0x2cc).
 constexpr size_t kAreaClientAreaBackOffset = 0x2d0;
 
-// CSWCArea map-pin array (pointer-array semantics, see GetMapPinAt).
-// CSWCArea +0x1c4 holds the base pointer (typed as CSWCMapPin* in
-// Lane's struct but indexed as CSWCMapPin** in AddMapPin /
-// ClearAllMapPins / GetMapPin decomps — 4-byte stride confirmed via
-// GetMapPin's `pCVar2 = &pCVar2->object.game_object.id;` post-step).
+// CSWCArea.map_pins (pointer array; 4-byte stride confirmed via
+// AddMapPin / ClearAllMapPins / GetMapPin decomps).
 constexpr size_t kClientAreaMapPinsOffset       = 0x1c4;
 constexpr size_t kClientAreaMapPinsCountOffset  = 0x1c8;
 constexpr size_t kClientAreaMapPinsCapOffset    = 0x1cc;
 
-// CSWCMapPin layout (all confirmed via decomp of HandleServerToPlayer
-// MapPinReferenceNumber @0x652d60 + HandleServerToPlayerMapPinEnabled
-// @0x652d00 — see lay-off 1b investigation log).
-constexpr size_t kMapPinPositionOffset = 0x24;   // Vector — CGameObject base
-constexpr size_t kMapPinEnabledOffset  = 0xfc;   // int — toggled by SetMapPinEnabled
-constexpr size_t kMapPinNoteTextOffset = 0x100;  // CExoString — wire-packet note
-// CExoString stride is 8 (char* + uint32). Literal here so this block
-// stays self-contained — kCExoStringStride is declared further down the
-// file (after CSWSArea offsets), so a symbolic reference would be a
-// forward-ref. Identity verified: every other CExoString offset pair in
-// this header (door loc_name, waypoint map_note, etc.) uses +0x04 for
-// the strref slot.
+constexpr size_t kMapPinPositionOffset = 0x24;   // Vector (CGameObject base)
+constexpr size_t kMapPinEnabledOffset  = 0xfc;   // int
+constexpr size_t kMapPinNoteTextOffset = 0x100;  // CExoString
+// Literal (kCExoStringStride is forward-declared below) — every
+// CExoString in this header pairs strref at +0x4.
 constexpr size_t kMapPinNoteStrrefOffset = kMapPinNoteTextOffset + 0x4;
-// kMapPinFlagsOffset = 0x108 / kMapPinSubtypeOffset = 0x10c (unused by
-// us — GetMapPin uses them as a (flags, subtype) lookup pair).
 
-// CSWSArea field offsets. game_objects + rooms verified live (lay-off 1+4);
-// name + tag + room_count from Lane's SARIF DATATYPE entry for CSWSArea
-// (k1_win_gog_swkotor.exe.xml line 13428, SIZE=0x2d4) — same DB the rooms +
-// game_objects offsets came from. Per memory:
-// project_ghidra_gog_steam_bytes_match the Steam+GoG layouts agree.
+// CSWSArea offsets. Lane's SARIF (CSWSArea SIZE=0x2d4).
 constexpr size_t kAreaGameObjectsOffset      = 0x190;
 constexpr size_t kAreaGameObjectCountOffset  = 0x194;
-constexpr size_t kAreaRoomsOffset            = 0x230;  // CSWSRoom* (pointer to inline-stride buffer; deref before indexing)
-constexpr size_t kAreaNameLocOffset          = 0x150;  // CExoLocString name
-constexpr size_t kAreaTagOffset              = 0x158;  // CExoString tag (fallback)
-constexpr size_t kAreaRoomNamesOffset        = 0x25c;  // CExoString* room_names
-constexpr size_t kAreaRoomCountOffset        = 0x268;  // ulong room_count
-constexpr size_t kCExoStringStride           = 0x8;    // char* + uint32 length
+constexpr size_t kAreaRoomsOffset            = 0x230;  // CSWSRoom* (deref first)
+constexpr size_t kAreaNameLocOffset          = 0x150;  // CExoLocString
+constexpr size_t kAreaTagOffset              = 0x158;  // CExoString fallback
+constexpr size_t kAreaRoomNamesOffset        = 0x25c;  // CExoString*
+constexpr size_t kAreaRoomCountOffset        = 0x268;  // ulong
+constexpr size_t kCExoStringStride           = 0x8;
 
-// CSWSRoom inline-array stride. Per investigation §"point-in-room query":
-// "room stride is 0x4c bytes per GetRoom decomp". Used when deriving a
-// room index from a CSWSRoom* via pointer arithmetic.
 constexpr size_t kRoomStride = 0x4c;
 
-// CSWSObject base-class field offsets.
-constexpr size_t kObjectKindOffset = 0x8;   // uint8, GAME_OBJECT_TYPES enum
-constexpr size_t kObjectTagOffset  = 0x18;  // CExoString — modder-assigned stable id
-// kServerObjectPositionOffset (0x90) is already in engine_player.h.
+// CSWSObject base. kServerObjectPositionOffset (0x90) lives in engine_player.h.
+constexpr size_t kObjectKindOffset = 0x8;   // uint8 GAME_OBJECT_TYPES
+constexpr size_t kObjectTagOffset  = 0x18;  // CExoString fallback id
 
-// Per-subclass localized-name offsets (CExoLocString unless noted). Values
-// from investigation Q5 + Q7 — all CONFIRMED in the SARIF DATATYPEs table.
+// Per-subclass localized-name offsets (CExoLocString unless noted).
 constexpr size_t kDoorLocNameOffset            = 0x39c;
-// Server-side door state + extra-text fields (CSWSDoor). Verified against
-// Lane's SARIF DATATYPE entry for CSWSDoor. Used by `GetObjectName` to
-// enrich the bare loc_name with state ("verriegelt"/"offen"), the
-// transition destination (e.g. "Brücke"), and any description the modder
-// set on the .utd template.
-constexpr size_t kDoorGenericTypeOffset        = 0x2a1;  // byte — index into genericdoors.2da
-constexpr size_t kDoorLockedOffset             = 0x2c4;  // undefined4 (treated as bool)
+constexpr size_t kDoorGenericTypeOffset        = 0x2a1;  // byte → genericdoors.2da row
+constexpr size_t kDoorLockedOffset             = 0x2c4;  // undefined4 (bool)
 constexpr size_t kDoorOpenStateOffset          = 0x2cc;  // byte
-constexpr size_t kDoorDescriptionOffset        = 0x3a4;  // CExoLocString
-constexpr size_t kDoorTransitionDestOffset     = 0x3c8;  // CExoLocString
-constexpr size_t kCreatureStatsPtrOffset       = 0xa74;  // CSWSCreatureStats* in CSWSCreature
-constexpr size_t kCreatureStatsFirstNameOffset = 0x14;   // CExoLocString in CSWSCreatureStats
+constexpr size_t kDoorDescriptionOffset        = 0x3a4;
+constexpr size_t kDoorTransitionDestOffset     = 0x3c8;
+constexpr size_t kCreatureStatsPtrOffset       = 0xa74;  // CSWSCreatureStats*
+constexpr size_t kCreatureStatsFirstNameOffset = 0x14;
 constexpr size_t kPlaceableLocNameOffset       = 0x228;
 constexpr size_t kItemLocNameOffset            = 0x280;
 constexpr size_t kWaypointLocNameOffset        = 0x238;
 constexpr size_t kTriggerLocNameOffset         = 0x228;
 
-// Per-subclass sub-state offsets (Pillar 4 filter refinement).
-constexpr size_t kPlaceableUsableOffset        = 0x328;  // bool (1 byte)
-constexpr size_t kPlaceableHasInventoryOffset  = 0x334;  // bool (1 byte)
-constexpr size_t kWaypointHasMapNoteOffset     = 0x228;  // bool (1 byte)
-constexpr size_t kTriggerTransitionDestOffset  = 0x30c;  // Vector (12 bytes)
+// Pillar 4 sub-state.
+constexpr size_t kPlaceableUsableOffset        = 0x328;
+constexpr size_t kPlaceableHasInventoryOffset  = 0x334;
+constexpr size_t kWaypointHasMapNoteOffset     = 0x228;
+constexpr size_t kTriggerTransitionDestOffset  = 0x30c;  // Vector
 
-// CSWSWaypoint map-note offsets — Bioware-authored "atmospheric" labels
-// (verified against k1_win_gog_swkotor.exe.xml line 15692, CSWSWaypoint
-// SIZE=0x240).
-constexpr size_t kWaypointMapNoteEnabledOffset = 0x22c;  // int
-constexpr size_t kWaypointMapNoteLocOffset     = 0x230;  // CExoLocString (8 bytes)
+// BioWare-authored map-note labels (CSWSWaypoint SIZE=0x240).
+constexpr size_t kWaypointMapNoteEnabledOffset = 0x22c;
+constexpr size_t kWaypointMapNoteLocOffset     = 0x230;
 
-// ---------------------------------------------------------------------------
-// Walkmesh wall-edge extraction (Phase 3 lay-off 1, Pillar 1 foundation).
+// Walkmesh wall-edge extraction. Pillar 1 foundation.
 //
-// CSWSArea
-//   +0x230 rooms        // CSWSRoom* — heap array, stride kRoomStride (0x4c)
-//   +0x268 room_count   // ulong (already declared above as
-//                       //        kAreaRoomCountOffset)
-//
-// CSWSRoom layout (swkotor.exe.h:10397):
-//   +0x00 CSWRoom (vtable + Vector position + Quaternion + CResRef + ...
-//                  — total 0x3c bytes)
-//   +0x3c CSWRoomSurfaceMesh*  surface_mesh
-//
-// CSWRoomSurfaceMesh layout (swkotor.exe.h:15742):
-//   +0x00 CSWCollisionMesh mesh   (embedded; 0x88 bytes)
-//   +0x88 SurfaceMeshAdjacency*   adjacencies   // face_count entries
+// CSWSArea.rooms @+0x230 → CSWSRoom*, stride 0x4c, count @+0x268.
+// CSWSRoom +0x3c → CSWRoomSurfaceMesh*.
+// CSWRoomSurfaceMesh:
+//   +0x00 CSWCollisionMesh mesh (embedded 0x88 bytes)
+//   +0x88 SurfaceMeshAdjacency* adjacencies (face_count entries)
 //   +0x8c CExoArrayList<SurfaceMeshEdge> edges
-//   ...
+// CSWCollisionMesh:
+//   +0x04 world_coords (int, 1 = vertices already world-space)
+//   +0x50 vertex_count, +0x54 vertices (Vector*)
+//   +0x58 face_count,   +0x60 face_indices (3 ulongs/face)
+//   +0x64 materials (ulong* → surfacemat.2da)
+// SurfaceMeshAdjacency.indices[3]: -1 = perimeter (WALL); else edge_id,
+// face_id = edge_id / 3.
 //
-// CSWCollisionMesh layout (swkotor.exe.h:8337) — relevant offsets only:
-//   +0x00 vtable
-//   +0x04 world_coords           // int — 1 = vertices already in world space
-//   +0x50 vertex_count           // ulong
-//   +0x54 vertices               // Vector* (vertex_count × 12 bytes,
-//                                //          mesh-local space unless
-//                                //          world_coords=1)
-//   +0x58 face_count             // ulong
-//   +0x60 face_indices           // WalkmeshFace* (face_count × 12 bytes;
-//                                //                three vertex indices each)
-//   +0x64 materials              // ulong* (face_count entries; index into
-//                                //         surfacemat.2da; per-face material)
-//
-// SurfaceMeshAdjacency (swkotor.exe.h:15583):
-//   int indices[3];   // one per triangle edge
-//                     //   -1                 = perimeter (WALL EDGE)
-//                     //   otherwise edge_id  = neighbour face's edge index;
-//                     //                        face_id = edge_id / 3
-//
-// CSWCollisionMesh::LocalToWorld @0x596aa0 — __thiscall, BYTES_PURGED=8:
-//   void LocalToWorld(this=cm, Vector* output, Vector* local_point)
-//   Internally short-circuits when this->world_coords != 0 (output := input);
-//   we always call it and let it decide.
-// ---------------------------------------------------------------------------
+// CSWCollisionMesh::LocalToWorld @0x596aa0 __thiscall(this, out, local).
+// BYTES_PURGED=8. Short-circuits when world_coords != 0; we always call.
 
 constexpr size_t kRoomSurfaceMeshOffset            = 0x3c;
 constexpr size_t kCollisionMeshVerticesOffset      = 0x54;
@@ -681,56 +397,26 @@ struct WallEdge {
 // so room-boundary triangles in both rooms carry adjacency=-1 and would
 // otherwise appear as walls — even though the engine considers them
 // walkable. This pass eliminates those phantom walls. Endpoint match
-// uses ~1cm tolerance to absorb LocalToWorld floating-point variance.
+// uses ~1cm tolerance for LocalToWorld float variance.
 //
-// Output:
-//   - if outBuf is non-null and maxEdges > 0: writes up to min(emitted,
-//     maxEdges) post-seam-filtered edges and returns the post-filter
-//     count. (Effectively the count of REAL walls in the area, bounded
-//     by buffer size.)
-//   - if outBuf is null OR maxEdges <= 0: returns the pre-seam-filter
-//     discovered count — useful for buffer-sizing telemetry. Note this
-//     differs from the buffer-mode return value; callers comparing the
-//     two should expect filtered ≤ discovered.
+// outBuf non-null + maxEdges > 0: writes up to min(emitted, maxEdges)
+//   post-filter edges; returns post-filter count (REAL walls).
+// outBuf null OR maxEdges <= 0: returns pre-filter DISCOVERED count
+//   for buffer-sizing telemetry. filtered ≤ discovered.
 //
-// Every read is SEH-guarded internally; faults at any layer (null
-// surface_mesh on a partially-loaded room, garbage face/vertex indices, etc.)
-// abort that single room's contribution and the scan continues with the next
-// room. The function never raises.
-//
-// Cost: O(total_faces * 3) reads + one LocalToWorld engine call per emitted
-// edge. The walkmesh is immutable per area-load (doors are separate
-// collision meshes, not modifications to the room mesh), so this should be
-// called once per area-change and the result cached by the caller.
+// SEH-guarded per room; faults skip that room. Walkmesh is immutable
+// per area-load (doors are separate collision meshes), so cache once.
 int BuildAreaWallCache(void* area, WallEdge* outBuf, int maxEdges);
 
-// 2D segment-vs-walkmesh-perimeter test in the XY plane (Z is ignored —
-// rooms in K1 are layout-flat enough that planar collision matches the
-// engine's own walkability behaviour for the room-scale virtual cursor).
+// 2D segment-vs-perimeter test (Z ignored — K1 rooms are layout-flat
+// enough for planar collision to match engine walkability at cursor
+// scale). Returns closest hit along a→b (smallest t in [0,1]).
 //
-// Walks `walls[0..wallCount)` testing each perimeter edge against the
-// movement segment a→b. Returns the *closest* hit along a→b (smallest t
-// in [0,1] where movement reaches the wall) — for a slow-moving cursor
-// every tick, the closest hit is the only physically meaningful one.
+// False on: null walls, wallCount<=0, a==b. Degenerate edges (a==b)
+// skipped.
 //
-// Output:
-//   - returns true if any edge intersects the segment a→b; outHitPoint
-//     is written with the world-space intersection point for the
-//     closest-along-a→b hit (suitable for both clamping the cursor and
-//     placing a 3D collision cue).
-//   - returns false if the segment is fully clear; outHitPoint is
-//     untouched.
-//
-// Degenerate inputs:
-//   - walls == nullptr or wallCount <= 0  → false (no walls cached yet).
-//   - a == b                                → false (cursor is stationary;
-//                                              avoid divide-by-zero).
-//   - degenerate edge (wall.a == wall.b)  → that edge is skipped.
-//
-// Phase 4 lay-off 4 — view-mode virtual cursor. Pulls the wall buffer
-// from `acc::spatial::change_detector::GetCachedWalls` (the cache lives
-// there since the change-detector built it in Phase 3 lay-off 3); we
-// only consume the data here, no rebuild path of our own.
+// Pulls from spatial::change_detector::GetCachedWalls; this is the
+// consumer surface, not the build path.
 bool SegmentCrossesWalkmesh(const WallEdge* walls,
                             int wallCount,
                             const Vector& a,
