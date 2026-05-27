@@ -1,96 +1,35 @@
-// Combat system event narration — Phases 1A, 1B, 4A/4B.
+// Combat event narration. Poll-based — no engine re-entry beyond
+// documented accessors.
 //
-// Layer: poll-based event narration (engine reads only; no engine
-// re-entry beyond the documented accessor calls).
+// Channels:
+//   - Combat mode entry/exit — debounced via the turn_announce stability
+//     pattern; speaks "Kampf beginnt" / "Kampf beendet".
+//   - Combat log — polls CSWGuiInGameMessages.messages_listbox for new
+//     rows. Resolves via CGuiInGame.in_game_messages so it fires during
+//     live combat, not just on the review screen.
+//   - Attack resolution — diffs combat_round.attacks_list[7] for the
+//     player creature; announces on attack_result transition.
+//   - Saving throws — skeleton; needs a hook on SavingThrowRoll for
+//     proper DC + roll. Currently a coarse field-diff heuristic.
 //
-// Three independent per-tick channels share this TU because they all
-// observe combat state and announce edges:
-//
-//   * Phase 1A — combat-mode entry/exit. Polls `GetCombatMode @0x5ede70`
-//     each tick; debounces with the stability pattern from
-//     `turn_announce.cpp` so brief on/off cycles collapse to a single
-//     edge. Speaks "Kampf beginnt" / "Kampf beendet".
-//
-//   * Phase 1B — live combat-log narration. Polls
-//     `CSWGuiInGameMessages.messages_listbox @+0x64` for new rows; each
-//     newly-appended row is pushed to TTS. Honours vanilla feedback
-//     verbosity for free (the engine populates the listbox per its own
-//     options). One frame later than `BroadcastFloatyData` would be —
-//     accepted trade-off documented in `docs/combat-system.md` Phase 1.
-//
-//   * Phase 4A/4B — structured per-attack and saving-throw callouts.
-//     Polls the player creature's `combat_round.attacks_list[7]` per
-//     tick; on `attack_result` transition from pending (0) to a resolved
-//     value, builds a localised announcement. Saving-throw watch is a
-//     separate per-tick loop over the active party + nearest hostiles,
-//     reading `creature_stats` save fields with edge-detection.
-//
-// All three channels are polling-based to keep this initial skeleton
-// hookless. The combat-system.md plan calls out hook points
-// (`AddMessages @0x626920`, `ResolveAttack @0x5bba80`,
-// `BroadcastSavingThrowData @0x4ec760`) as future upgrades — they would
-// give us 1-frame-earlier delivery. Polling is a safe default; the hooks
-// can be added later without restructuring the consumers.
-//
-// Each Tick() is cheap (single chain-walk + small fixed read budget) and
-// silently no-ops when the player isn't loaded or combat hasn't started.
+// Each Tick is cheap and idle when nothing is happening.
 
 #pragma once
 
 namespace acc::combat {
 
-// Live combat-mode read for cross-feature gating (transitions / region
-// announce / view-mode walking adapter). Wraps the same
-// `CClientExoApp::GetCombatMode @0x5ede70` accessor TickCombatMode uses;
-// shares no state with the debounced spoken transition. Returns false
-// when the chain faults (pre-spawn / between-area load); treat false as
-// "not in combat" for gating purposes.
+// Cross-feature gating read — false on chain fault (treat as not-in-combat).
 bool IsCombatActive();
 
-// Phase 1A — per-tick combat-mode poll. Reads the engine's combat-mode
-// flag; debounces and speaks on stable transitions only. Idle when no
-// player is loaded.
 void TickCombatMode();
-
-// Phase 1B — per-tick combat-log poll. Resolves the persistent
-// CSWGuiInGameMessages instance via `CGuiInGame.in_game_messages @+0x1c`
-// (allocated for the lifetime of the game session, regardless of whether
-// the Messages review screen is currently mounted). If its
-// messages_listbox @+0x64 has new rows since last tick, speak each
-// appended row and log it.
-//
-// Previously this routine walked CSWGuiManager.panels[] for the panel,
-// which only found it while the review screen was open — i.e. it never
-// fired during live combat. The slot-based resolution catches every
-// AddMessages append, putting us on parity with the sighted player's
-// rolling HUD feedback strip.
-//
-// One-shot dedup: rebuilds the "last row count" baseline whenever the
-// listbox pointer changes (new panel instance), so a swap or close+
-// reopen doesn't replay every historic row.
 void TickCombatLog();
 
-// Phase 4A — per-tick attack-resolution poll. Snapshots the player
-// creature's combat_round.attacks_list[7]; on attack_result transition
-// from kAttackResultPending to a resolved value, builds a localised
-// callout describing hit/miss/crit/deflected and speaks it. Idle when
-// no combat round is active (`combat_round` null) or the snapshot hasn't
-// changed.
-//
-// **Skeleton scope**: only the player creature's own attacks are watched
-// here. Watching opposing creatures would require iterating
-// `engine_area::AreaObjectIterator` per tick and snapshotting each one's
-// attacks_list — viable but defers until 4A is validated against the
-// player's own attack stream. Marked **TODO** inline.
+// Skeleton scope: player creature only. Watching opponents would iterate
+// AreaObjectIterator + per-creature snapshots.
 void TickAttackResolutions();
 
-// Phase 4B — per-tick saving-throw poll. **Skeleton only**: the engine's
-// own save-throw event isn't directly observable without a hook
-// (`SavingThrowRoll @0x5b92b0` or `BroadcastSavingThrowData @0x4ec760`).
-// We diff the party creature stats' save fields per tick and announce
-// when one ticks down by an effect-roll outcome — coarse heuristic that
-// gets us "Bastila resisted" / "Bastila succumbed" without the exact
-// roll/DC. Real DC + roll values lock in once the hook lands.
+// Skeleton — coarse stats-diff heuristic. Real DC + roll await a hook
+// (SavingThrowRoll @0x5b92b0 or BroadcastSavingThrowData @0x4ec760).
 void TickSavingThrows();
 
 }  // namespace acc::combat

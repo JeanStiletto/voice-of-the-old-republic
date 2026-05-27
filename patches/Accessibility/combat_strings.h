@@ -1,26 +1,16 @@
 // Combat-message localization table.
 //
-// Holds every locale-dependent token used by the combat msg-bus rules:
-//   * Engine-side parse anchors (substrings the engine emits that we
-//     scan for — "Angriffsstatistik:", " ist erfolgreich ...", etc.).
-//   * Our shortened output labels (the words we emit in the compact /
-//     short-form announcements — "trifft", "Vert.", "Energie", etc.).
+// Holds locale-dependent tokens the combat msg-bus rules use: engine-
+// side parse anchors (substrings the engine emits that we scan for) and
+// our shortened output labels (what we speak). Kept separate from
+// strings.h so the speech-only Id enum stays focused on what the user
+// hears, not what the engine says.
 //
-// Why a separate table from strings.h:
-//   acc::strings is the spoken/user-facing table. Its Id enum is about
-//   what the user *hears*. The combat parser also needs locale-dependent
-//   *anchors* (what the engine *says*), which would bloat the spoken-
-//   string enum if mixed in. Keeping them apart preserves the rule that
-//   strings.h IDs are speech-only.
+// Language follows acc::strings::Lang.
 //
-// Language switch follows acc::strings::Lang (SetLanguage / GetLanguage)
-// so the user's existing language toggle controls both tables.
-//
-// EN coverage: the EN engine-side strings have NOT been verified
-// against a real EN install yet. The kEn table currently aliases the
-// kDe table — that means on an EN install no anchor will match and
-// every msg-bus line falls through to raw speech (no filter, no
-// compaction). Fill in real EN anchors when an EN tester is available.
+// EN engine-side anchors haven't been verified against a real EN install
+// yet — kEn currently aliases kDe, so EN msg-bus lines fall through to
+// raw speech. Fill in when an EN tester is available.
 
 #pragma once
 
