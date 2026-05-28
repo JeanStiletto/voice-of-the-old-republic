@@ -123,6 +123,7 @@ using acc::menus::chain::FindCloseButton;
 using acc::menus::chain::FindCancelButton;
 using acc::menus::chain::FindChainEntry;
 using acc::menus::chain::ReadPanelActiveControl;
+using acc::menus::chain::WalkChildren;
 
 // Post-Step-5 cleanup: general-monitor TU and listbox-monitor extension.
 // AnnounceControl (writes monitor state) lives in menus_monitors; chain
@@ -823,46 +824,8 @@ using acc::engine::IsModalPopupPanel;
 // Iteration is capped at 256 entries to limit damage from a corrupt size field
 // (defensive: the SARIF datatypes are authoritative but a struct-layout
 // regression on a future engine version would otherwise spin forever).
-static void WalkChildren(const char* label, void* parent, size_t offset) {
-    if (!parent) return;
-    auto* list = reinterpret_cast<CExoArrayList*>(
-        reinterpret_cast<unsigned char*>(parent) + offset);
-    if (!list->data || list->size <= 0) {
-        acclog::Write(label, "walk parent=%p children=0", parent);
-        return;
-    }
-    int count = list->size;
-    if (count > 256) {
-        acclog::Write(label, "walk parent=%p size_oob=%d (capped)", parent, count);
-        count = 256;
-    }
-    acclog::Write(label, "walk parent=%p children=%d", parent, list->size);
-    for (int i = 0; i < count; ++i) {
-        void* child = list->data[i];
-        if (!child) {
-            acclog::Write(label, "  [%d]=NULL", i);
-            continue;
-        }
-        int id = *reinterpret_cast<int*>(
-            reinterpret_cast<unsigned char*>(child) + kControlIdOffset);
-        char text[256];
-        // Pass `parent` so the perkind fallback resolves correctly when
-        // walking InGameMenu's children — the icon labels/buttons have empty
-        // CExoString/strref/text_object/gui_string and only resolve via the
-        // panel-keyed perkind table.
-        const char* source = acc::menus::extract::FromControl(child, text, sizeof(text),
-                                                     parent);
-        if (source) {
-            acclog::Write(label, "  [%d] %p id=%d src=%s text=\"%s\"",
-                          i, child, id, source, text);
-        } else {
-            char vtbl[160];
-            DumpControlVtable(child, vtbl, sizeof(vtbl));
-            acclog::Write(label, "  [%d] %p id=%d src=none %s",
-                          i, child, id, vtbl);
-        }
-    }
-}
+// WalkChildren moved to menus_chain.cpp (called from chain dispatch
+// HandleNavStep's empty-chain probe + the 3 menus.cpp sites here).
 
 // CSWGuiPanel::SetActiveControl — hooked mid-function at 0x0040a638.
 // At hook entry: EDI = this (the panel), ESI = param_1 (the new active
@@ -1868,200 +1831,9 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         }
     }
 
-    // Arrow keys + Home / End: flat chain navigation. Chain is built from
-    // panel.controls + listbox children (one level) sorted by extent.top,
-    // so arrow-down walks visually top-to-bottom through every navigable
-    // button — including tab buttons on the parent Options panel and
-    // settings that live as button children of a CSWGuiListBox in
-    // sub-dialogs. Home jumps to the first chain entry (index 0); End
-    // jumps to the last (index g_chainCount-1). Both flow through the
-    // same announce / chargen-sync / cursor-warp pipeline as the ±1 step
-    // — only the new-index computation differs.
-    bool navKeyIsHome = (param_1 == kInputHome);
-    bool navKeyIsEnd  = (param_1 == kInputEnd);
-    bool navKeyIsUp   = (param_1 == kInputNavUp);
-    bool navKeyIsDown = (param_1 == kInputNavDown);
-    if (param_2 != 0 &&
-        (navKeyIsUp || navKeyIsDown || navKeyIsHome || navKeyIsEnd) &&
-        activePanel != nullptr)
-    {
-        if (activePanel != g_chainPanel) {
-            RebindChain(activePanel);
-        }
-        if (g_chainCount == 0) {
-            // Foreground panel has no navigable controls. Log so we can see
-            // which panels are routing-only (e.g. the recurring 074FE618
-            // overlay and the dialog routing target 0FDEE418 observed in
-            // the in-game session) and decide whether to add a fallback
-            // strategy (walk down the modal stack to the next chain-eligible
-            // panel, or surface the panel's content via the title/listbox
-            // path). For now: log only, leave the input unconsumed so the
-            // engine sees it.
-            PanelKind emptyKind = IdentifyPanel(activePanel);
-            acclog::Write("Menus.Chain", "empty panel=%p kind=%s has no navigable "
-                          "controls; input not consumed",
-                          activePanel, PanelKindName(emptyKind));
-
-            // Walk the panel ONCE so we can see what's actually in it.
-            // OnSetActiveControl's panel-walk gate (s_lastPanel) doesn't
-            // fire on these panels because the engine never sets focus on
-            // them. Without a walk we never learn their structure — log-only
-            // diagnostics give us nothing actionable.
-            static void* s_walkedEmptyPanels[16];
-            static int   s_walkedEmptyCount = 0;
-            bool walked = false;
-            for (int i = 0; i < s_walkedEmptyCount; ++i) {
-                if (s_walkedEmptyPanels[i] == activePanel) { walked = true; break; }
-            }
-            if (!walked && s_walkedEmptyCount < 16) {
-                s_walkedEmptyPanels[s_walkedEmptyCount++] = activePanel;
-                acclog::Write("Menus.EmptyChain", "walk panel=%p kind=%s",
-                              activePanel, PanelKindName(emptyKind));
-                WalkChildren("Menus.EmptyChain", activePanel,
-                             kPanelControlsOffset);
-            }
-        }
-        if (g_chainCount > 0) {
-            int newIndex;
-            if (navKeyIsHome) {
-                newIndex = 0;
-            } else if (navKeyIsEnd) {
-                newIndex = g_chainCount - 1;
-            } else {
-                int delta = navKeyIsDown ? +1 : -1;
-                newIndex = g_chainIndex + delta;
-                if (newIndex < 0)              newIndex = 0;
-                if (newIndex >= g_chainCount)  newIndex = g_chainCount - 1;
-            }
-            g_chainIndex = newIndex;
-
-            ChainEntry& e = g_chain[g_chainIndex];
-            // For chargen class icons AnnounceControl bails silently when
-            // the cache for this icon hasn't been populated yet (first-time
-            // visit). On revisits the cache hits and speech fires
-            // immediately, sidestepping the OnEnterButton race that would
-            // otherwise speak the previous icon's class. See
-            // ExtractAnnounceableText step 9c and the OnSetActiveControl
-            // prefill path.
-            // Chargen Fähigkeiten descriptions are long (~10s of
-            // speech each) but the user navigates Up/Down faster than
-            // they can read. With interrupt=false (our default), each
-            // step queues "label, suffix, description" behind the
-            // previous step's still-playing description — the user
-            // hears descriptions one row behind their focus. Silence
-            // any in-flight speech before announcing the new row, so
-            // each chain step starts fresh and the just-arrived focus
-            // wins the speech channel. No-op on every other panel
-            // (their descriptions are short enough to drain naturally).
-            if (acc::menus::chargen_skills::IsChargenSkillsPanel(
-                    g_chainPanel)) {
-                prism::Silence();
-            }
-            AnnounceControl(e.control);
-            // Mirror chain focus into the chargen Attributes panel's
-            // selected_ability so the next Left/Right press routes
-            // OnPlusButton / OnMinusButton to the focused ability rather
-            // than the default top row (STR). No-op on every other panel.
-            acc::menus::chargen_attr::SyncSelectedAbilityFromChainFocus();
-            // Same for the chargen Skills panel — different field
-            // (selected_skill_index) on a different panel, same
-            // mechanism.
-            acc::menus::chargen_skills::SyncSelectedSkillFromChainFocus();
-            // Chargen Attribute panel: speak the per-row info suffix
-            // ("Modifikator -1, Preis 1") synchronously, right after
-            // the regular "Stärke, 8" announce. Computes the modifier
-            // and cost from the focused button's value rather than
-            // reading the engine's labels — see menus_chargen_attr.h
-            // for the timing/rendering reasons. No-op on every other
-            // panel.
-            acc::menus::chargen_attr::AnnounceChainStepSuffix(
-                g_chainPanel, e.control);
-            // Skills panel suffix is just "Preis N" — no modifier
-            // concept; cost is computed from IsClassSkill.
-            acc::menus::chargen_skills::AnnounceChainStepSuffix(
-                g_chainPanel, e.control);
-            // And the description: read directly from
-            // skill_descriptions[i] in the panel struct because the
-            // engine's hover-driven listbox population is off-by-one
-            // here. See menus_chargen_skills.h.
-            acc::menus::chargen_skills::AnnounceChainStepDescription(
-                g_chainPanel, e.control);
-            // Store panel: append " — Preis N Credits, Lager M" after
-            // the item-name announce. Mode (Buy/Sell) is read from the
-            // listbox visibility bit, item handle from the row, price
-            // via GetItemBuyValue/GetItemSellValue thiscall. No-op on
-            // every other panel and on the three action buttons.
-            acc::menus::store::AnnounceChainStepSuffix(
-                g_chainPanel, e.control);
-            // Inventory rows (CSWGuiInGameInventory / Container loot
-            // listbox): append "N Stück" when stack_size > 1. Store rows
-            // are deliberately excluded — the store suffix above already
-            // speaks "Lager N" / "du besitzt N". Silent on stack_size == 1
-            // so weapons / armour stay quiet.
-            if (acc::engine::IsInventoryItemRow(e.control)) {
-                int stack = acc::engine::ReadItemRowStackCount(e.control);
-                if (stack > 1) {
-                    char suffix[64];
-                    snprintf(suffix, sizeof(suffix),
-                             acc::strings::Get(
-                                 acc::strings::Id::FmtItemStackSuffix),
-                             stack);
-                    prism::Speak(suffix, /*interrupt=*/false);
-                }
-            }
-            int cursorX = e.cx;
-            int cursorY = e.cy;
-            if (!e.textOnly) {
-                // Cursor warp + suppress-budget exist to make hover-to-focus
-                // work for activatable controls. Text-only entries (modal
-                // body listboxes) have no hover semantics worth chasing —
-                // skipping keeps the cursor stable on whatever button the
-                // user just left, and avoids spurious engine-side
-                // SetActiveControl echoes from the listbox under the cursor.
-                if (IsTabButton(e.control) && g_tabClickOffsetY > 0) {
-                    cursorY += g_tabClickOffsetY;
-                }
-                if (IsClassSelectionIcon(g_chainPanel, e.control) &&
-                    g_classIconClickOffsetX > 0) {
-                    cursorX += g_classIconClickOffsetX;
-                }
-                // Chargen Attribute panel: same hit-test-shifts-up-one-row
-                // problem as Options tabs. Without this the cursor lands
-                // on the row above and the engine's OnEnterPointsButton
-                // populates description_listbox for the wrong ability.
-                {
-                    int abilityPitch =
-                        acc::menus::chargen_attr::RowPitchForCursorWarp(
-                            g_chainPanel, e.control);
-                    if (abilityPitch > 0) cursorY += abilityPitch;
-                }
-                // Same hit-test compensation on the Skills panel.
-                {
-                    int skillPitch =
-                        acc::menus::chargen_skills::RowPitchForCursorWarp(
-                            g_chainPanel, e.control);
-                    if (skillPitch > 0) cursorY += skillPitch;
-                }
-                acc::menus::pending::QueueMoveCursor(cursorX, cursorY, e.control);
-                // No explicit suppress needed for the engine-side focus
-                // echo: AnnounceControl above primed channel-0 dedup via
-                // MarkSpoken, so DrainPendingAnnounce will short-circuit
-                // when the cursor-warp's SetActive echo arrives with the
-                // same text.
-            }
-            const char* dirTag =
-                navKeyIsHome ? "HOME" :
-                navKeyIsEnd  ? "END"  :
-                navKeyIsDown ? "DOWN" : "UP";
-            acclog::Write("Menus.Chain", "step panel=%p index=%d/%d target=%p center=(%d,%d) cursor=(%d,%d)%s %s",
-                          g_chainPanel, g_chainIndex, g_chainCount,
-                          e.control, e.cx, e.cy, cursorX, cursorY,
-                          e.textOnly ? " text-only" : "",
-                          dirTag);
-            // Always consume nav keys on a panel with a non-empty chain.
-            consumed = true;
-        }
-    }
+    // Arrow keys + Home/End: flat chain navigation (announce + chargen sync +
+    // cursor warp + per-row suffixes). Logic in menus_chain::HandleNavStep.
+    acc::menus::chain::HandleNavStep(activePanel, param_1, param_2, consumed);
 
     // Left/Right dispatch (slider in/decrement or cycle-arrow flanker
     // activation, with portrait-panel override). Logic in

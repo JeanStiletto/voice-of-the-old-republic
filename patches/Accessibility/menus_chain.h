@@ -146,6 +146,13 @@ int FindChainEntry(void* control);
 // it; menus.cpp's OnSetActiveControl uses its own focus-tracking instead.
 void* ReadPanelActiveControl(void* panel);
 
+// Diagnostic dump of a parent's CExoArrayList<Control*> children. Logs each
+// child's id + best-effort label via extract::FromControl, with a vtable
+// dump on fallback. Used both as a panel-walk on first focus (menus.cpp) and
+// as the empty-chain probe inside HandleNavStep — same primitive, different
+// callers.
+void WalkChildren(const char* label, void* parent, size_t offset);
+
 // Esc dispatch — routes press-edge Esc on chain-bound panels through the
 // store override, the workbench-upgrade override, or the generic sub-dialog /
 // modal-popup close path. Self-gates on key code + press edge + panel
@@ -157,5 +164,12 @@ void HandleEsc(void* activePanel, int code, int val, bool& consumed);
 // on key code + press edge + chain alignment; sets `consumed = true` when
 // applied.
 void HandleLeftRight(void* activePanel, int code, int val, bool& consumed);
+
+// Up/Down/Home/End chain step — advances g_chainIndex, runs the per-row
+// announce + chargen sync + cursor warp pipeline, logs the step. Empty-panel
+// branch logs once + walks the children (one-shot per panel) so we can see
+// what was actually focusable. Self-gates on key code + press edge + panel
+// availability; rebinds the chain if the focused panel has changed.
+void HandleNavStep(void* activePanel, int code, int val, bool& consumed);
 
 }  // namespace acc::menus::chain
