@@ -14,35 +14,23 @@
 #include "log.h"
 #include "menus_chain.h"
 #include "menus_extract.h"
+#include "menus_chargen_layout.h"
 #include "strings.h"
 #include "prism.h"
 
 namespace acc::menus::chargen_attr {
 
 bool IsChargenAttributesPanel(void* panel) {
-    if (!panel) return false;
-    void** vt = nullptr;
-    __try {
-        vt = *reinterpret_cast<void***>(panel);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-    return reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiAbilitiesCharGen;
+    return chargen_layout::IsPanelOfVtable(
+        panel, kVtableCSWGuiAbilitiesCharGen);
 }
 
 int AbilityIndexFromButton(void* panel, void* control) {
-    if (!IsChargenAttributesPanel(panel) || !control) return -1;
-    auto* base = reinterpret_cast<unsigned char*>(panel);
-    auto* btn  = reinterpret_cast<unsigned char*>(control);
-    ptrdiff_t off = btn - base;
-    if (off < (ptrdiff_t)kAbilitiesCharGenButtonsArrayOffset) {
-        return -1;
-    }
-    ptrdiff_t rel = off - (ptrdiff_t)kAbilitiesCharGenButtonsArrayOffset;
-    if (rel % (ptrdiff_t)kCSWGuiButtonSize != 0) return -1;
-    int i = (int)(rel / (ptrdiff_t)kCSWGuiButtonSize);
-    if (i < 0 || i >= kAbilitiesCharGenAbilityCount) return -1;
-    return i;
+    if (!IsChargenAttributesPanel(panel)) return -1;
+    return chargen_layout::IndexFromButton(
+        panel, control,
+        kAbilitiesCharGenButtonsArrayOffset,
+        kAbilitiesCharGenAbilityCount);
 }
 
 void SyncSelectedAbilityFromChainFocus() {
@@ -78,28 +66,8 @@ void SyncSelectedAbilityFromChainFocus() {
 
 int RowPitchForCursorWarp(void* panel, void* control) {
     if (AbilityIndexFromButton(panel, control) < 0) return 0;
-    auto* base = reinterpret_cast<unsigned char*>(panel);
-    int top0 = 0, top1 = 0;
-    __try {
-        // CSWGuiControl extent: { left, top, width, height } as four ints
-        // starting at +kControlExtentOffset. We want top, which is the
-        // second int (offset +0x4 within the extent struct).
-        auto* ext0 = reinterpret_cast<int*>(
-            base + kAbilitiesCharGenButtonsArrayOffset + kControlExtentOffset);
-        auto* ext1 = reinterpret_cast<int*>(
-            base + kAbilitiesCharGenButtonsArrayOffset + kCSWGuiButtonSize +
-            kControlExtentOffset);
-        top0 = ext0[1];
-        top1 = ext1[1];
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return 0;
-    }
-    int pitch = top1 - top0;
-    // Sanity-bound: real pitch is ~45 px; reject anything outside a
-    // plausible UI row spacing range to avoid garbage offsets if a
-    // future build moves the layout.
-    if (pitch <= 0 || pitch > 100) return 0;
-    return pitch;
+    return chargen_layout::RowPitchFromButtonExtents(
+        panel, kAbilitiesCharGenButtonsArrayOffset);
 }
 
 void CaptureLabelsIfApplicable(void* panel) {
