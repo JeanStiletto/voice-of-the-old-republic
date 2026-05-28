@@ -111,6 +111,8 @@ bool ReadCurrentEngineYawRad(void* camera, float& out) {
     }
     if (!camera) return false;
     __try {
+        // Standard float-quaternion layout: +0 qx, +4 qy, +8 qz, +12 qw.
+        // Yaw-from-quaternion uses qz, qw only (camera tilt/roll stay 0).
         unsigned char* q = reinterpret_cast<unsigned char*>(camera) +
                            kModCameraQuaternionOffset;
         float qz = *reinterpret_cast<float*>(q + 0x8);
