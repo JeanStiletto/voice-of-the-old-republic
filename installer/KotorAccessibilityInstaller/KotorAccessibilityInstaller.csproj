@@ -29,6 +29,10 @@
     <EmbeddedResource Include="Resources\KotorPatcher.dll" />
     <EmbeddedResource Include="Resources\sqlite3.dll" />
     <EmbeddedResource Include="Resources\prism.dll" />
+    <!-- dinput8.dll proxy that sits next to swkotor.exe and auto-loads
+         KotorPatcher.dll when the user launches the game from Steam or a
+         shortcut — no separate launcher EXE. Source: loader/. -->
+    <EmbeddedResource Include="Resources\dinput8.dll" />
     <EmbeddedResource Include="Resources\kotor1_0_3.db" />
     <!-- Lane's Widescreen patch (runtime-detour DLL @ IsValidResolution).
          Tiny + pinned + SHA-gated; bundled rather than downloaded. -->

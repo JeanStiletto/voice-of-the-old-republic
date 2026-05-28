@@ -90,7 +90,23 @@ if (-not (Test-Path $kpatchPath)) {
     Write-Host "ERROR: Accessibility.kpatch not produced at $kpatchPath" -ForegroundColor Red; exit 1
 }
 
-# ── 5. Refresh installer bundled resources from current third_party state ───
+# ── 5a. Build the dinput8.dll proxy loader ──────────────────────────────────
+# Tiny 32-bit DLL that sits next to swkotor.exe and auto-loads KotorPatcher
+# when the game starts — replaces the need for a separate launcher EXE.
+# Source: loader/dllmain.cpp; build script: loader/build.bat.
+
+Write-Host "`nBuilding loader (dinput8.dll proxy)..." -ForegroundColor Cyan
+$loaderBat = Join-Path $root 'loader\build.bat'
+cmd /c "`"$loaderBat`""
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: loader build failed" -ForegroundColor Red; exit 1
+}
+$loaderDll = Join-Path $root 'loader\dinput8.dll'
+if (-not (Test-Path $loaderDll)) {
+    Write-Host "ERROR: dinput8.dll not produced at $loaderDll" -ForegroundColor Red; exit 1
+}
+
+# ── 5b. Refresh installer bundled resources from current third_party state ──
 
 Write-Host "`nRefreshing installer bundled resources..." -ForegroundColor Cyan
 $installerResources = Join-Path $root 'installer\KotorAccessibilityInstaller\Resources'
@@ -98,6 +114,7 @@ Copy-Item (Join-Path $root 'third_party\Kotor-Patch-Manager\bin\Release\KotorPat
 Copy-Item (Join-Path $root 'third_party\Kotor-Patch-Manager\bin\Release\sqlite3.dll')      $installerResources -Force
 Copy-Item (Join-Path $root 'third_party\prism-dist\x86\prism.dll')                          $installerResources -Force
 Copy-Item (Join-Path $root 'third_party\Kotor-Patch-Manager\AddressDatabases\kotor1_0_3.db') $installerResources -Force
+Copy-Item $loaderDll                                                                         $installerResources -Force
 Write-Host "  Resources refreshed" -ForegroundColor Green
 
 # ── 6. Publish installer as self-contained single-file EXE ──────────────────

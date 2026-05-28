@@ -24,6 +24,7 @@ namespace KotorAccessibilityInstaller
         private static readonly string[] PatcherRuntimeFiles = { "KotorPatcher.dll", "sqlite3.dll" };
         private static readonly string[] AddressDbFiles = { "kotor1_0_3.db" };
         private const string PrismDllName = "prism.dll";
+        private const string LoaderDllName = "dinput8.dll";
 
         // WAV samples shipped into <game>/Override/ for the engine's
         // ResLoader to pick up by bare resref. Mirrored as the
@@ -134,6 +135,24 @@ namespace KotorAccessibilityInstaller
             {
                 try { Directory.SetCurrentDirectory(previousCwd); } catch { /* best-effort */ }
             }
+        }
+
+        /// <summary>
+        /// Drops the dinput8.dll proxy loader into the game root. swkotor.exe
+        /// statically imports DINPUT8.dll, and the application directory wins
+        /// the loader search over System32, so on next launch Windows maps our
+        /// proxy. Its DllMain forwards the six dinput8 exports to the real
+        /// system DLL and spawns a worker thread that LoadLibrary's
+        /// KotorPatcher.dll once the engine has created its window — same
+        /// timing signal kdev's KPatchLauncher uses for delayed Steam
+        /// injection. Result: the user just hits Play in Steam (or double-
+        /// clicks swkotor.exe) and the mod loads itself.
+        /// </summary>
+        public void InstallLoader()
+        {
+            string dest = Path.Combine(_gameDir, LoaderDllName);
+            ExtractEmbeddedResource(LoaderDllName, dest);
+            Logger.Info($"Installed dinput8.dll proxy loader to: {dest}");
         }
 
         /// <summary>

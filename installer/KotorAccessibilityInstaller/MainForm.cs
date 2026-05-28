@@ -320,7 +320,15 @@ namespace KotorAccessibilityInstaller
                     return;
                 }
 
-                // Step 4: drop Prism speech runtime alongside accessibility.dll
+                // Step 4: drop the dinput8.dll proxy next to swkotor.exe so
+                // the game auto-loads KotorPatcher on launch. Without this
+                // the install still works, but the user would need an
+                // external launcher (KPatchLauncher / kdev launch) to
+                // inject the patcher each session.
+                UpdateProgress(83);
+                await Task.Run(() => installationManager.InstallLoader());
+
+                // Step 4.1: drop Prism speech runtime alongside accessibility.dll
                 UpdateStatus(InstallerLocale.Get("Main_StatusCopyingPrism"));
                 UpdateProgress(85);
                 await Task.Run(() => installationManager.InstallPrismRuntime());

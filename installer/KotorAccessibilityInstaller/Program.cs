@@ -373,7 +373,8 @@ namespace KotorAccessibilityInstaller
                     "KotorPatcher.dll",
                     "sqlite3.dll",
                     "addresses.db",
-                    "patch_config.toml"
+                    "patch_config.toml",
+                    "dinput8.dll"
                 };
                 foreach (var name in runtimeFiles)
                 {
