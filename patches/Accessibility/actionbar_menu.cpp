@@ -249,33 +249,30 @@ bool HandleInputEvent(int code, int value) {
             bool ok = acc::engine_actionbar::FireSelectedVariant(mi, slot);
             acc::combat_diag::LogPostFire(diag_label);
 
+            // PRE-only slot calc. Reading the POST count races the
+            // engine's queue mutation, so use the deterministic PRE
+            // depth + 1 for the slot the press just landed in.
+            // Cap hit when PRE was already at 4 — AddAction's
+            // `if (3 < count) { free; return; }` arm silently rejected.
             int preDepth = acc::combat::queue::GetPrePressDepth();
-            int queuePos = acc::combat::queue::CountPlayerEntries();
-            // Cap hit when pre and post both sit at the 4-entry hard
-            // limit — the engine's `if (3 < count) { free; return; }`
-            // arm in AddAction silently rejected our entry.
-            const bool capHit = (preDepth >= 4 && queuePos >= 4);
+            const bool capHit  = (preDepth >= 4);
+            const int  slotNum = preDepth + 1;
             char msg[192];
             if (capHit) {
                 std::snprintf(msg, sizeof(msg),
                               acc::strings::Get(
                                   acc::strings::Id::FmtFireQueueFull),
                               label[0] ? label : "?");
-            } else if (queuePos > 0) {
-                std::snprintf(msg, sizeof(msg),
-                              acc::strings::Get(
-                                  acc::strings::Id::FmtFireAtPosition),
-                              label[0] ? label : "?", queuePos);
             } else {
                 std::snprintf(msg, sizeof(msg),
                               acc::strings::Get(
-                                  acc::strings::Id::FmtActionBarFired),
-                              label[0] ? label : "?");
+                                  acc::strings::Id::FmtFireAtPosition),
+                              label[0] ? label : "?", slotNum);
             }
             prism::Speak(msg, /*interrupt=*/true);
             acclog::Write("ActionBar", "ENTER slot=%d idx=%d label=[%s] ok=%d "
-                "pre=%d post=%d capHit=%d -> [%s]",
-                slot, idx, label, ok ? 1 : 0, preDepth, queuePos,
+                "pre=%d slot=%d capHit=%d -> [%s]",
+                slot, idx, label, ok ? 1 : 0, preDepth, slotNum,
                 capHit ? 1 : 0, msg);
 
             ForceDisarm("enter");

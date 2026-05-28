@@ -347,34 +347,33 @@ void AnnounceBarePersonalKey(int slot) {
         return;
     }
 
-    // Engine dispatches DoPersonalAction synchronously while our prologue
-    // hook returns, so by the time we announce, the just-added action
-    // already sits at the tail of the player's combat round. Read the
-    // depth and report "X, Platz N". When the pre-press snapshot (taken
-    // by input_pipeline before the engine's switch-case dispatched)
-    // and the post-press count both sit at the 4-entry cap, the engine
-    // silently freed the action — announce "Warteschlange voll" instead.
+    // Compute the slot from the PRE-press depth (snapshot taken in
+    // input_pipeline before the engine's switch-case dispatch). Reading
+    // the POST count from interact_hotkey's tick poll races the engine
+    // — sometimes the engine has already grown the queue, sometimes not
+    // — which produced the off-by-one "Starke Explosion eingesetzt /
+    // Platz 1 / 1 / 2 / 3 / voll" pattern we kept seeing. PRE is
+    // deterministic: the queue depth before our press. The press, if it
+    // succeeds, lands at preDepth + 1. If preDepth was already 4 the
+    // engine's `if (3 < count) { free; return; }` arm rejects, so we
+    // announce cap-hit.
     int preDepth = acc::combat::queue::GetPrePressDepth();
-    int queuePos = acc::combat::queue::CountPlayerEntries();
-    const bool capHit = (preDepth >= 4 && queuePos >= 4);
+    const bool capHit  = (preDepth >= 4);
+    const int  slotNum = preDepth + 1;
     char msg[192];
     if (capHit) {
         std::snprintf(msg, sizeof(msg),
                       acc::strings::Get(acc::strings::Id::FmtFireQueueFull),
                       label);
-    } else if (queuePos > 0) {
-        std::snprintf(msg, sizeof(msg),
-                      acc::strings::Get(acc::strings::Id::FmtFireAtPosition),
-                      label, queuePos);
     } else {
         std::snprintf(msg, sizeof(msg),
-                      acc::strings::Get(acc::strings::Id::FmtActionBarFired),
-                      label);
+                      acc::strings::Get(acc::strings::Id::FmtFireAtPosition),
+                      label, slotNum);
     }
     prism::Speak(msg, /*interrupt=*/true);
     acclog::Write("ActionBar", "bare key slot=%d variants=%d idx=%d label=[%s] "
-        "pre=%d post=%d capHit=%d -> [%s]",
-        slot, nVar, idx, label, preDepth, queuePos, capHit ? 1 : 0, msg);
+        "pre=%d slot=%d capHit=%d -> [%s]",
+        slot, nVar, idx, label, preDepth, slotNum, capHit ? 1 : 0, msg);
 }
 
 // Speak "{label} eingesetzt" for a bare-press of target-action key 1..3.
@@ -416,27 +415,25 @@ void AnnounceBareTargetKey(int row) {
         return;
     }
 
+    // PRE-only slot calc — see AnnounceBarePersonalKey above for the
+    // race-condition rationale.
     int preDepth = acc::combat::queue::GetPrePressDepth();
-    int queuePos = acc::combat::queue::CountPlayerEntries();
-    const bool capHit = (preDepth >= 4 && queuePos >= 4);
+    const bool capHit  = (preDepth >= 4);
+    const int  slotNum = preDepth + 1;
     char msg[192];
     if (capHit) {
         std::snprintf(msg, sizeof(msg),
                       acc::strings::Get(acc::strings::Id::FmtFireQueueFull),
                       label);
-    } else if (queuePos > 0) {
-        std::snprintf(msg, sizeof(msg),
-                      acc::strings::Get(acc::strings::Id::FmtFireAtPosition),
-                      label, queuePos);
     } else {
         std::snprintf(msg, sizeof(msg),
-                      acc::strings::Get(acc::strings::Id::FmtActionBarFired),
-                      label);
+                      acc::strings::Get(acc::strings::Id::FmtFireAtPosition),
+                      label, slotNum);
     }
     prism::Speak(msg, /*interrupt=*/true);
     acclog::Write("ActionBar", "bare target row=%d label=[%s] "
-        "pre=%d post=%d capHit=%d -> [%s]",
-        row, label, preDepth, queuePos, capHit ? 1 : 0, msg);
+        "pre=%d slot=%d capHit=%d -> [%s]",
+        row, label, preDepth, slotNum, capHit ? 1 : 0, msg);
 }
 
 }  // namespace

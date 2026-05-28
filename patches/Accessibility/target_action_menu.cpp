@@ -257,30 +257,26 @@ bool HandleInputEvent(int code, int value) {
             bool ok = acc::engine_radial::DispatchRowAction(tam, row);
             acc::combat_diag::LogPostFire(diag_label);
 
+            // PRE-only slot calc — same rationale as actionbar_menu.
             int preDepth = acc::combat::queue::GetPrePressDepth();
-            int queuePos = acc::combat::queue::CountPlayerEntries();
-            const bool capHit = (preDepth >= 4 && queuePos >= 4);
+            const bool capHit  = (preDepth >= 4);
+            const int  slotNum = preDepth + 1;
             char msg[192];
             if (capHit) {
                 std::snprintf(msg, sizeof(msg),
                               acc::strings::Get(
                                   acc::strings::Id::FmtFireQueueFull),
                               label[0] ? label : "?");
-            } else if (queuePos > 0) {
-                std::snprintf(msg, sizeof(msg),
-                              acc::strings::Get(
-                                  acc::strings::Id::FmtFireAtPosition),
-                              label[0] ? label : "?", queuePos);
             } else {
                 std::snprintf(msg, sizeof(msg),
                               acc::strings::Get(
-                                  acc::strings::Id::FmtActionBarFired),
-                              label[0] ? label : "?");
+                                  acc::strings::Id::FmtFireAtPosition),
+                              label[0] ? label : "?", slotNum);
             }
             prism::Speak(msg, /*interrupt=*/true);
             acclog::Write("TargetMenu", "ENTER row=%d label=[%s] ok=%d "
-                "pre=%d post=%d capHit=%d -> [%s]",
-                row, label, ok ? 1 : 0, preDepth, queuePos,
+                "pre=%d slot=%d capHit=%d -> [%s]",
+                row, label, ok ? 1 : 0, preDepth, slotNum,
                 capHit ? 1 : 0, msg);
 
             ForceDisarm("enter");
