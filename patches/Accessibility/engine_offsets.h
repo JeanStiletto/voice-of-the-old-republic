@@ -854,30 +854,6 @@ constexpr size_t kCombatRoundActionsOffset            = 0x9b0;
 constexpr size_t kCombatRoundEngagedOffset            = 0x9b8;
 constexpr size_t kCombatRoundCurrentActionOffset      = 0x9d0;
 
-// CSWSCombatAttackData stride. The header declares attacks_list as 7 fixed
-// entries; the field offsets above land inside one entry. Stride is the
-// distance between consecutive entries, derived from the +0xac
-// `sub_attacks` field (last named field) plus a CExoArrayList header
-// (~0x10 bytes). Conservative round-up to the next 16-byte slot.
-constexpr size_t kCombatAttackDataStride              = 0xc0;
-constexpr int    kCombatAttackDataCount               = 7;
-constexpr size_t kAttackDataReactObjectOffset         = 0xc;
-constexpr size_t kAttackDataMissedByOffset            = 0x18;
-constexpr size_t kAttackDataBaseDamageOffset          = 0x38;
-constexpr size_t kAttackDataAttackResultOffset        = 0x5c;
-constexpr size_t kAttackDataCriticalThreatOffset      = 0x50;
-constexpr size_t kAttackDataAttackDeflectedOffset     = 0x54;
-constexpr size_t kAttackDataAttackTypeOffset          = 0x64;
-
-// Inferred attack_result enum. Values guessed from the named conditions
-// (critical_threat, attack_deflected) — confirm via a one-shot probe per
-// the combat-system.md "open" list.
-constexpr int kAttackResultPending   = 0;
-constexpr int kAttackResultHit       = 1;
-constexpr int kAttackResultMiss      = 2;
-constexpr int kAttackResultCrit      = 3;
-constexpr int kAttackResultDeflected = 4;
-
 // CExoLinkedList layout — kept minimal for the queue walker. Nodes are
 // `{ next, prev, data }` (12 bytes). The `actions` member holds the head
 // node pointer; iterating via `next` until null yields each
