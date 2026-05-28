@@ -391,6 +391,18 @@ bool ResolveNarratedActivation(NarratedActivation& out) {
     return true;
 }
 
+// Wraps ResolveNarratedActivation with the shared empty-slot fallback used
+// by `-` / Shift+- / Ctrl+- / Alt+-. On miss, speaks GuidanceNoFocus and
+// logs `<tag> -> [<msg>] (no narrated target)`. Returns true iff a target
+// was resolved; callers early-return on false.
+bool TryResolveOrAnnounceNoFocus(NarratedActivation& a, const char* logTag) {
+    if (ResolveNarratedActivation(a)) return true;
+    const char* msg = acc::strings::Get(acc::strings::Id::GuidanceNoFocus);
+    prism::Speak(msg, /*interrupt=*/true);
+    acclog::Write("Cycle", "%s -> [%s] (no narrated target)", logTag, msg);
+    return false;
+}
+
 // `-` repeats the last narrated target with fresh distance + clock. Reads
 // the unified narrated_target slot rather than cycle_state directly — so
 // `-` after a passive-narrate announcement re-announces the passive
@@ -399,14 +411,7 @@ bool ResolveNarratedActivation(NarratedActivation& out) {
 // their "this is what I'm thinking about" claim).
 void OnAnnounceFocus() {
     NarratedActivation a;
-    if (!ResolveNarratedActivation(a)) {
-        const char* msg = acc::strings::Get(
-            acc::strings::Id::GuidanceNoFocus);
-        prism::Speak(msg, /*interrupt=*/true);
-        acclog::Write("Cycle", "- (repeat) -> [%s] (no narrated target)",
-                      msg);
-        return;
-    }
+    if (!TryResolveOrAnnounceNoFocus(a, "- (repeat)")) return;
 
     auto bindings = BindingsFor(a.category);
     {
@@ -504,13 +509,7 @@ void OnPathfindFocus() {
     }
 
     NarratedActivation a;
-    if (!ResolveNarratedActivation(a)) {
-        const char* msg = acc::strings::Get(
-            acc::strings::Id::GuidanceNoFocus);
-        prism::Speak(msg, /*interrupt=*/true);
-        acclog::Write("Cycle", "Shift+- -> [%s] (no narrated target)", msg);
-        return;
-    }
+    if (!TryResolveOrAnnounceNoFocus(a, "Shift+-")) return;
 
     // Map pins have no UseObject path — they aren't game objects, so
     // the engine has nothing to walk-to-and-trigger. Redirect the user
@@ -594,13 +593,7 @@ void OnBeaconFocus() {
     }
 
     NarratedActivation a;
-    if (!ResolveNarratedActivation(a)) {
-        const char* msg = acc::strings::Get(
-            acc::strings::Id::GuidanceNoFocus);
-        prism::Speak(msg, /*interrupt=*/true);
-        acclog::Write("Cycle", "Ctrl+- -> [%s] (no narrated target)", msg);
-        return;
-    }
+    if (!TryResolveOrAnnounceNoFocus(a, "Ctrl+-")) return;
 
     Vector playerPos;
     if (!acc::engine::GetPlayerPosition(playerPos)) {
@@ -673,13 +666,7 @@ void OnBeaconFocus() {
 // "(queue path)" tags so post-mortem grep finds each path cleanly.
 void OnPathfindFocusForce() {
     NarratedActivation a;
-    if (!ResolveNarratedActivation(a)) {
-        const char* msg = acc::strings::Get(
-            acc::strings::Id::GuidanceNoFocus);
-        prism::Speak(msg, /*interrupt=*/true);
-        acclog::Write("Cycle", "Alt+- -> [%s] (no narrated target)", msg);
-        return;
-    }
+    if (!TryResolveOrAnnounceNoFocus(a, "Alt+-")) return;
 
     // Alt+- is the queue-bypass ForceMoveToPoint diagnostic; for map
     // pins there's no UseObject fallback either. Speak the unsupported
