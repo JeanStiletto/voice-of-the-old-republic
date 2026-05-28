@@ -26,7 +26,9 @@
 #include "menus_equipstats.h"
 #include "menus_extract.h"
 #include "menus_internal.h"
+#include "menus_listbox.h"   // IsWorkbenchUpgradePickerArmed
 #include "menus_modsettings.h"
+#include "menus_pending.h"   // QueueActivate, IsPending
 #include "menus_store.h"
 #include "prism.h"
 
@@ -841,6 +843,140 @@ void RebindChain(void* panel) {
                       i, g_chain[i].control, g_chain[i].cx, g_chain[i].cy,
                       g_chain[i].textOnly ? " text-only" : "",
                       src ? src : "?", src ? text : "", isActive, bitFlags);
+    }
+}
+
+void HandleEsc(void* activePanel, int code, int val, bool& consumed) {
+    if (val == 0) return;
+    if (code != kInputEsc1 && code != kInputEsc2) return;
+
+    // Store-specific Esc: route to cancel_button (Schliess.) directly.
+    // The store isn't in IsModalPopupPanel (it's the foreground modal,
+    // not a popup on top), and the chain doesn't include the cancel
+    // button anymore (we filter it out so it doesn't clutter Up/Down
+    // nav), so without this Esc would no-op on the store.
+    if (acc::menus::store::IsStorePanel(activePanel)) {
+        if (acc::menus::store::CloseFromEsc()) consumed = true;
+    }
+
+    // Workbench upgrade panel Esc: route to BTN_BACK (id 28, "Abbrechen")
+    // directly. Same shape as the store branch above — the upgrade.gui
+    // panel is the foreground modal (not a popup on top), so the generic
+    // Esc gate below (IsModalPopupPanel / g_tabbedPanel / escIsOptionsSub)
+    // doesn't fire. We also can't rely on FindCancelButton landing on
+    // BTN_BACK reliably here (see kWorkbenchUpgradeSpec comments).
+    // While the picker is armed the spec's onEsc disarms; this branch
+    // only catches Esc when the picker is NOT armed (user on a slot
+    // button, BTN_ASSEMBLE, or BTN_BACK).
+    if (!consumed && activePanel != nullptr &&
+        acc::engine::IdentifyPanel(activePanel) ==
+            acc::engine::PanelKind::WorkbenchUpgrade &&
+        !acc::menus::listbox::IsWorkbenchUpgradePickerArmed())
+    {
+        if (acc::menus::pending::IsPending()) {
+            acclog::Write("Esc", "WorkbenchUpgrade — op already pending; ignoring");
+            consumed = true;
+        } else {
+            constexpr int kWorkbenchUpgradeBtnBack = 28;
+            void* back = acc::menus::detail::FindControlById(
+                activePanel, kWorkbenchUpgradeBtnBack);
+            if (back) {
+                acc::menus::pending::QueueActivate(back);
+                acclog::Write("Esc",
+                              "WorkbenchUpgrade -> BTN_BACK panel=%p target=%p",
+                              activePanel, back);
+                consumed = true;
+            } else {
+                acclog::Write("Esc",
+                              "WorkbenchUpgrade -- BTN_BACK not found on panel=%p",
+                              activePanel);
+            }
+        }
+    }
+
+    // InGameOptions sub-screen override: the parent strip's controls[0] is
+    // a button (Spiel laden), not a listbox, so DetectTabsCluster never
+    // latches and `g_tabbedPanel` stays null — the tabbed-parent arm above
+    // misses every in-game Options sub-screen. The foreground may also be
+    // a HUD layer rather than the sub-screen itself, depending on overlay
+    // ordering, so activePanel isn't a reliable target either.
+    //
+    // `g_chainPanel` is the right discriminator: SetActiveControl re-binds
+    // the chain to the heap-allocated sub-screen on entry, so it points at
+    // Spieleinstellungen / Grafik / Sound / Auto-Pause / Feedback /
+    // Tastenbelegung / Mauseinstellungen for the lifetime of that screen,
+    // and FindCloseButton on it resolves Schliess. reliably. The
+    // IsInGameOptionsSubScreen helper already excludes the parent strip.
+    void* escTargetPanel = activePanel;
+    bool  escIsOptionsSub = false;
+    if (g_chainPanel != nullptr &&
+        acc::engine::IsInGameOptionsSubScreen(g_chainPanel))
+    {
+        escTargetPanel = g_chainPanel;
+        escIsOptionsSub = true;
+    }
+
+    if (escTargetPanel != nullptr &&
+        ((g_tabbedPanel != nullptr && escTargetPanel != g_tabbedPanel) ||
+         acc::engine::IsModalPopupPanel(
+             acc::engine::IdentifyPanel(escTargetPanel)) ||
+         escIsOptionsSub))
+    {
+        if (acc::menus::pending::IsPending()) {
+            acclog::Write("Esc", "op already pending; ignoring");
+            consumed = true;
+        } else {
+            // Probe order matters: confirm-style popups (OK + Abbrechen,
+            // Yes + No, …) carry BOTH a cancel-intent button AND the
+            // affirmative that FindCloseButton matches as "OK". Esc is a
+            // back-out gesture, never a confirm — try Abbrechen/Cancel
+            // first so the quit-confirm and save-overwrite-style dialogs
+            // route Esc to the safe choice. Single-button info popups
+            // (StatusSummary's lone Schliess, AreaTransition's Weiter)
+            // have no cancel button, so the FindCloseButton fallback
+            // handles them.
+            void* cancelBtn = FindCancelButton(escTargetPanel);
+            void* tgt = cancelBtn ? cancelBtn : FindCloseButton(escTargetPanel);
+            if (tgt) {
+                acc::menus::pending::QueueActivate(tgt);
+                // InGameOptions sub-screens: the close fires a deferred
+                // destroy — the engine keeps the panel in panels[] across
+                // the FireActivate dispatch (ValidateChainPanel finds it,
+                // chain stays), then frees the panel + children at end
+                // of tick. Between those two ticks, MonitorFocusedControl
+                // walks g_chain[g_chainIndex].control, dereferences a
+                // freed button, and FromControl's SEH-caught AV interacts
+                // with /GS to fastfail. Confirmed by crash dump TID 16116:
+                // ESI matched the chain entry the user had last navigated
+                // to before pressing Esc.
+                //
+                // ValidateChainPanel can't help (panel still in panels[]
+                // when it runs), and chain[10] nulling only covers
+                // Schliess. itself — the other 11 entries are equally
+                // dead. Invalidate the whole chain here; the Schliess.
+                // pointer is already captured by QueueActivate and the
+                // next SetActiveControl rebuilds against whatever the
+                // engine refocuses on.
+                if (escIsOptionsSub) InvalidateChain();
+                acclog::Write("Menus.Esc",
+                              "%s panel=%p kind=%s target=%p%s",
+                              cancelBtn ? "cancel" : "close",
+                              escTargetPanel,
+                              acc::engine::PanelKindName(
+                                  acc::engine::IdentifyPanel(escTargetPanel)),
+                              tgt,
+                              escIsOptionsSub
+                                  ? " (InGameOptions sub-screen)" : "");
+                consumed = true;
+            } else {
+                acclog::Write("Menus.Esc",
+                              "sub-dialog panel=%p kind=%s but no cancel/close "
+                              "button found; passing through",
+                              escTargetPanel,
+                              acc::engine::PanelKindName(
+                                  acc::engine::IdentifyPanel(escTargetPanel)));
+            }
+        }
     }
 }
 

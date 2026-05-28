@@ -146,4 +146,10 @@ int FindChainEntry(void* control);
 // it; menus.cpp's OnSetActiveControl uses its own focus-tracking instead.
 void* ReadPanelActiveControl(void* panel);
 
+// Esc dispatch — routes press-edge Esc on chain-bound panels through the
+// store override, the workbench-upgrade override, or the generic sub-dialog /
+// modal-popup close path. Self-gates on key code + press edge + panel
+// availability; sets `consumed = true` when an op was queued.
+void HandleEsc(void* activePanel, int code, int val, bool& consumed);
+
 }  // namespace acc::menus::chain
