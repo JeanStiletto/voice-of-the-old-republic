@@ -11,9 +11,10 @@ Prompts from `C:/Users/fabia/Dev/llm-mod-refactoring-prompts` (JeanStiletto's PR
 - `information-gathering-and-checking.md` — CLAUDE.md patched, docs/llm-docs/{game-flow.md, CLAUDE.md} added, gitignore exception
 - `code-directory-construction.md` — 178 .md index files under `llm-scratchpad/code-index/`, one per source file
 - `large-file-handling.md` — all 5 splits done across commits `7c2827a`, `549beb4`, `509ec03`, `e2f4cbc`, `cecb549`, `3099e24`. See `large-file-splits.md` for the full record + plan-vs-reality corrections.
+- `ai-bloat-audit.md` — round 1 done across commits `c7aa323`, `804b0b7`, `87329e4`, `394db2d`, `8752624`, `414691b`, `f3a0b2a`, `2234a17`, `6f2b6e0`, `2134943`. ~640 lines net removed across dead-code deletions + one diagnostic-cascade purge + two helper hoists. probe_camera_state deletion deferred (user is still using the probe). GetPartyMembers wrong-base read filed under `docs/known-issues.md` Bugs rather than fixed in the audit pass. See `bloat-audit-round-1.md` for the per-item breakdown.
 
 ## Prompts in progress
-(none — large-file-handling.md complete)
+(none — both completed prompts above are closed out)
 
 ## Findings carried forward from indexing
 Flagged for later phases:
@@ -31,7 +32,7 @@ Flagged for later phases:
 
 ### Stale-comment / cleanup candidates
 - `combat.h::TickCombatLog` doc comment claims listbox-poll path is live; actual live path is `AppendToMsgBuffer` hook
-- `probe_audio_frame`, `probe_camera_state`, `probe_camera_distance` — review whether their investigations are concluded; lightweight, low priority
+- `probe_audio_frame`, `probe_camera_distance` — review whether their investigations are concluded; lightweight, low priority (probe_camera_state confirmed still in use during the ai-bloat-audit pass)
 - `probe_pathfind`, `probe_mouselook`, `probe_priority_groups` — still wired and useful; keep
 - `diag_input_pipeline` — outgrew "diagnostic" framing; carries production logic; rename candidate
 
@@ -40,12 +41,13 @@ Flagged for later phases:
 - `wall_topology.cpp` — anonymous helpers not enumerated in the index; public API matches the header
 
 ## Prompts pending
-- ai-bloat-audit.md (next)
-- high-level-cleanup.md
+- high-level-cleanup.md (next)
 - input-handling.md
 - string-builder.md
 - low-level-cleanup.md
 - finalization.md
+
+The ai-bloat-audit prompt is structured as a re-runnable pass — a follow-up round is fair after low-level-cleanup lands.
 
 ## Scratchpad files
 - `current_status.md` (this file)
