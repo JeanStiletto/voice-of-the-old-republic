@@ -45,14 +45,6 @@ using acc::spatial::wall_surfaces::WallSurfaceDesc;
 // Don't retain across transitions. False until first Tick has populated.
 bool GetCachedWalls(const acc::engine::WallEdge*& outBuf, int& outCount);
 
-// 0 until first Tick has populated.
-int GetWallSurfaceCount();
-
-// False on out-of-range, before clustering runs, or for surfaces that
-// couldn't reduce to a single straight segment (closed-loop / branching
-// edge cases flagged with edge_count == 0).
-bool GetWallSurfaceDesc(int idx, WallSurfaceDesc& outDesc);
-
 // edgeIdx into GetCachedWalls. -1 on invalid input or pre-clustering.
 int GetEdgeSurfaceId(int edgeIdx);
 

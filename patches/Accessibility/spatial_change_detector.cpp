@@ -1157,14 +1157,6 @@ bool GetCachedWalls(const acc::engine::WallEdge*& outBuf, int& outCount) {
     return outBuf != nullptr;
 }
 
-int GetWallSurfaceCount() {
-    return ws::GetSurfaceCount();
-}
-
-bool GetWallSurfaceDesc(int idx, WallSurfaceDesc& outDesc) {
-    return ws::GetSurfaceDesc(idx, outDesc);
-}
-
 int GetEdgeSurfaceId(int edgeIdx) {
     int count = ws::GetWallCount();
     if (edgeIdx < 0 || edgeIdx >= count) return -1;
