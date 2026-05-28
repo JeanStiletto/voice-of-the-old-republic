@@ -7,6 +7,7 @@
 
 #include "engine_manager.h"  // kAddrGuiManagerPtr, kMgrPanels*Offset, GetForegroundPanel
 #include "engine_offsets.h"  // CExoArrayList, kPanelControlsOffset, kVtableListBox
+#include "engine_reads.h"    // ReadGuiString
 #include "log.h"
 
 namespace acc::engine {
@@ -382,34 +383,6 @@ void RememberDumpedVtable(uintptr_t vt) {
     g_unknownVtableCache[g_unknownVtableCacheCount++] = vt;
 }
 
-// Read a CAurGUIStringInternal-backed c_string at (control + guiStringPtrOffset).
-// Inline minimal version — engine_reads.h's ReadGuiString is the production path
-// but pulling it in here would create a circular dep with the menus layer.
-// SEH-guarded; returns false on any null/garbage indirection.
-bool ProbeReadGuiString(void* control, size_t guiStringPtrOffset,
-                        char* outBuf, size_t bufSize) {
-    if (!control || !outBuf || bufSize == 0) return false;
-    outBuf[0] = '\0';
-    __try {
-        void* gs = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(control) + guiStringPtrOffset);
-        if (!gs) return false;
-        void** vt = *reinterpret_cast<void***>(gs);
-        if (reinterpret_cast<uintptr_t>(vt) != kVtableCAurGUIStringInternal) {
-            return false;
-        }
-        const char* s = *reinterpret_cast<const char**>(
-            reinterpret_cast<unsigned char*>(gs) + kAurGuiStringCStrOffset);
-        if (!s || !*s) return false;
-        size_t i = 0;
-        for (; i + 1 < bufSize && s[i]; ++i) outBuf[i] = s[i];
-        outBuf[i] = '\0';
-        return i > 0;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-}
-
 void LogUnknownPanelDiagnostics(void* panel) {
     if (!panel) return;
     uintptr_t panelVt = 0;
@@ -460,10 +433,10 @@ void LogUnknownPanelDiagnostics(void* panel) {
         }
         char text[96];
         text[0] = '\0';
-        if (!ProbeReadGuiString(c, kButtonGuiStringPtrOffset,
-                                text, sizeof(text))) {
-            ProbeReadGuiString(c, kLabelGuiStringPtrOffset,
-                               text, sizeof(text));
+        if (!ReadGuiString(c, kButtonGuiStringPtrOffset,
+                           text, sizeof(text))) {
+            ReadGuiString(c, kLabelGuiStringPtrOffset,
+                          text, sizeof(text));
         }
         acclog::Write("PanelProbe",
                       "  [%d] %p vtable=0x%08x id=%d text=\"%s\"",
