@@ -126,7 +126,7 @@ Always read these before diving into work — they capture decisions and current
 ### Logs
 - **Project logs:** `logs/` at project root (gitignored). `kdev` writes `kdev-<utc>.log`, `build-<utc>.log`, `dev-<utc>.log`. Tail with `kdev logs [--follow]`.
 - **Game logs:** `<install>/logs/` — written by the game itself (largely silent).
-- **Patch DLL logs:** convention is `logs/patch.log` from inside our injected DLL (to be established when we write the first hook).
+- **Patch DLL logs:** `<install>/logs/patch-YYYYMMDD-HHMMSS.log` — one timestamped file per session, written by our injected DLL via `acclog::Write` (see `patches/Accessibility/log.cpp`). Tail with `kdev logs [--follow]` or grep `<install>/logs/patch-*.log` directly.
 
 ### Key entry points
 - **`patches/Accessibility/`** — our patch source. Will contain `manifest.toml`, `hooks.toml`, `exports.def`, `*.cpp`.
