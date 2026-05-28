@@ -297,6 +297,8 @@ constexpr size_t kMapPinNoteTextOffset = 0x100;  // CExoString
 // Literal (kCExoStringStride is forward-declared below) — every
 // CExoString in this header pairs strref at +0x4.
 constexpr size_t kMapPinNoteStrrefOffset = kMapPinNoteTextOffset + 0x4;
+constexpr size_t kMapPinFlagsOffset    = 0x108;  // uint32 reference-number / quest bitfield
+constexpr size_t kMapPinSubtypeOffset  = 0x10c;  // int (1 = user-placed note pin)
 
 // CSWSArea offsets. Lane's SARIF (CSWSArea SIZE=0x2d4).
 constexpr size_t kAreaGameObjectsOffset      = 0x190;

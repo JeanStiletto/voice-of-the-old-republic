@@ -828,7 +828,7 @@ uint32_t GetMapPinFlags(void* mapPin) {
     if (!mapPin) return 0;
     __try {
         return *reinterpret_cast<uint32_t*>(
-            reinterpret_cast<unsigned char*>(mapPin) + 0x108);
+            reinterpret_cast<unsigned char*>(mapPin) + kMapPinFlagsOffset);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return 0;
     }
@@ -896,8 +896,8 @@ bool CreateMapPin(void* clientArea, const Vector& pos, const char* name,
         auto* p = reinterpret_cast<unsigned char*>(pin);
         *reinterpret_cast<Vector*>(p + kMapPinPositionOffset) = pos;
         *reinterpret_cast<int*>  (p + kMapPinEnabledOffset)   = 1;
-        *reinterpret_cast<uint32_t*>(p + 0x108)               = referenceNumber;
-        *reinterpret_cast<int*>  (p + 0x10c)                  = 1;  // subtype
+        *reinterpret_cast<uint32_t*>(p + kMapPinFlagsOffset)  = referenceNumber;
+        *reinterpret_cast<int*>  (p + kMapPinSubtypeOffset)   = 1;
 
         // note_text CExoString — operator=(char*) handles the heap
         // allocation + strcpy. Pass our string in; the engine owns the
