@@ -642,18 +642,9 @@ void Tick() {
     if (!g_state.active) {
         SeedCursorAtPlayer(areaMap);
         PixelToWorld(areaMap, g_state.px, g_state.py, g_state.world.z, g_state.world);
-        g_state.active                        = true;
-        g_state.last_tick_ms                  = now;
-        g_state.last_spoken_waypoint          = nullptr;
-        g_state.pending_note_waypoint         = nullptr;
-        g_state.pending_note_started_ms       = 0;
-        g_state.pending_ambient_kind          = AmbientKind::None;
-        g_state.pending_ambient_room_idx      = -1;
-        g_state.pending_ambient_started_ms    = 0;
-        g_state.last_spoken_ambient_kind      = AmbientKind::None;
-        g_state.last_spoken_ambient_room_idx  = -1;
-        g_state.last_spoken_ambient_text[0]   = '\0';
-        g_state.pending_shape_text[0]         = '\0';
+        ResetSessionState();
+        g_state.active       = true;
+        g_state.last_tick_ms = now;
         acclog::Write("MapCursor",
                       "activated — seed pixel=(%.1f,%.1f) world=(%.2f,%.2f,%.2f)",
                       g_state.px, g_state.py,
