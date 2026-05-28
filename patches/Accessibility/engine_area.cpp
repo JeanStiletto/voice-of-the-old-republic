@@ -431,9 +431,7 @@ bool GetObjectDisplayNameByHandle(uint32_t handle,
                                   char* outBuf, size_t bufSize) {
     if (!outBuf || bufSize < 2) return false;
     outBuf[0] = '\0';
-    if (handle == 0u || handle == 0xFFFFFFFFu || handle == 0x7F000000u) {
-        return false;
-    }
+    if (IsSentinelHandle(handle)) return false;
 
     void* clientApp = nullptr;
     __try {
