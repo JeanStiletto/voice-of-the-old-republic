@@ -927,6 +927,12 @@ typedef void (__thiscall* PFN_CollisionMeshLocalToWorld)(void* this_,
                                                          Vector* output,
                                                          Vector* localPoint);
 
+// Min XY-length² (~5cm) to skip near-vertical edges that lack a meaningful
+// 2D footprint. K1 walkmeshes contain near-vertical step-side edges with
+// sub-cm horizontal drift; those break downstream clustering and aren't
+// navigable walls in 2D. Matches Pillar 1's kEndpointTolMeters.
+constexpr float kMinEdgeXYLengthSq = 2.5e-3f;
+
 // Read a CSWSRoom's surface_mesh pointer. Returns nullptr if the room slot
 // itself is null/garbage or surface_mesh hasn't been populated. SEH-guarded.
 void* GetRoomSurfaceMesh(void* room) {
@@ -936,6 +942,43 @@ void* GetRoomSurfaceMesh(void* room) {
             reinterpret_cast<unsigned char*>(room) + kRoomSurfaceMeshOffset);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return nullptr;
+    }
+}
+
+// Read the three uint32 vertex indices for face `f` from a contiguous
+// face-index array. SEH-guarded — returns false on bad pointer. Output
+// is left untouched on fault.
+bool ReadFaceVertexIndices(unsigned char* faces, uint32_t f, uint32_t outV[3]) {
+    __try {
+        auto* face = reinterpret_cast<uint32_t*>(
+            faces + static_cast<size_t>(f) * kWalkmeshFaceStride);
+        outV[0] = face[0];
+        outV[1] = face[1];
+        outV[2] = face[2];
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// Transform a pair of local vertices through the room's
+// CCollisionMesh::LocalToWorld. SEH-guarded; on fault falls back to the
+// local copies (correct when world_coords=1, the common runtime case
+// for room walkmeshes).
+void TransformEdgeEndpoints(void* surfaceMesh,
+                            PFN_CollisionMeshLocalToWorld fn,
+                            const Vector& localA, const Vector& localB,
+                            Vector& outWorldA, Vector& outWorldB) {
+    Vector la = localA;
+    Vector lb = localB;
+    outWorldA = la;
+    outWorldB = lb;
+    __try {
+        fn(surfaceMesh, &outWorldA, &la);
+        fn(surfaceMesh, &outWorldB, &lb);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        outWorldA = la;
+        outWorldB = lb;
     }
 }
 
@@ -984,21 +1027,16 @@ int ScanRoomWallEdges(void* surfaceMesh, int roomId,
     auto* faces = reinterpret_cast<unsigned char*>(faceIndices);
 
     for (uint32_t f = 0; f < faceCount; ++f) {
-        // Per-face vertex indices (3 × ulong).
         uint32_t v[3] = {0, 0, 0};
-        int      adj[3] = {0, 0, 0};
-        bool     readOk = true;
+        if (!ReadFaceVertexIndices(faces, f, v)) continue;
+        int adj[3] = {0, 0, 0};
         __try {
-            auto* face = reinterpret_cast<uint32_t*>(
-                faces + static_cast<size_t>(f) * kWalkmeshFaceStride);
-            v[0] = face[0]; v[1] = face[1]; v[2] = face[2];
             adj[0] = adjacencies[f * 3 + 0];
             adj[1] = adjacencies[f * 3 + 1];
             adj[2] = adjacencies[f * 3 + 2];
         } __except (EXCEPTION_EXECUTE_HANDLER) {
-            readOk = false;
+            continue;
         }
-        if (!readOk) continue;
 
         // surfacemat.2da row for this face — captured once per face (all
         // three potential edges share the same material).
@@ -1011,7 +1049,6 @@ int ScanRoomWallEdges(void* surfaceMesh, int roomId,
 
         for (int e = 0; e < 3; ++e) {
             if (adj[e] != -1) continue;  // interior edge — has a neighbour
-            // Edge endpoints — face-vertex order, wrap on the third side.
             uint32_t va = v[e];
             uint32_t vb = v[(e + 1) % 3];
 
@@ -1023,38 +1060,13 @@ int ScanRoomWallEdges(void* surfaceMesh, int roomId,
                 continue;
             }
 
-            Vector worldA = localA, worldB = localB;
-            __try {
-                fnLocalToWorld(surfaceMesh, &worldA, &localA);
-                fnLocalToWorld(surfaceMesh, &worldB, &localB);
-            } __except (EXCEPTION_EXECUTE_HANDLER) {
-                // Best-effort: fall back to the local copies (correct only
-                // when world_coords=1, which is the common runtime case for
-                // room walkmeshes anyway).
-                worldA = localA;
-                worldB = localB;
-            }
+            Vector worldA, worldB;
+            TransformEdgeEndpoints(surfaceMesh, fnLocalToWorld,
+                                   localA, localB, worldA, worldB);
 
-            // Skip vertical / near-vertical edges — those with negligible
-            // XY extent. K1's walkmesh contains 3D edges that run
-            // essentially straight up/down at one XY position (the side
-            // of a step or small cliff), some with sub-cm horizontal
-            // drift at the step foot (e.g. patch-20260513-082240
-            // Apartments edge[73]: Z=2.275→0 with 1.23cm of XY drift at
-            // (126.90, 130.06)). They're not navigable walls in 2D and
-            // they break downstream XY-only clustering: Pillar 1's
-            // `EdgesAreSameSurface` treats zero-XY-length edges as
-            // "always collinear" and glues together unrelated walls
-            // that happen to share the vertical's XY foot.
-            //
-            // 5cm² threshold matches Pillar 1's `kEndpointTolMeters` —
-            // anything below the endpoint-coincidence tolerance is
-            // geometrically not a meaningful 2D wall. K1's authored
-            // geometry doesn't have intentional sub-5cm wall segments
-            // (way below any architectural feature scale).
             float xy_dx = worldB.x - worldA.x;
             float xy_dy = worldB.y - worldA.y;
-            if (xy_dx * xy_dx + xy_dy * xy_dy < 2.5e-3f) {
+            if (xy_dx * xy_dx + xy_dy * xy_dy < kMinEdgeXYLengthSq) {
                 continue;
             }
 
@@ -1123,15 +1135,7 @@ int ScanRoomAllTriangleEdges(void* surfaceMesh, int roomId,
     int emitted = 0;
     for (uint32_t f = 0; f < faceCount; ++f) {
         uint32_t v[3] = {0, 0, 0};
-        bool readOk = true;
-        __try {
-            auto* face = reinterpret_cast<uint32_t*>(
-                faces + static_cast<size_t>(f) * kWalkmeshFaceStride);
-            v[0] = face[0]; v[1] = face[1]; v[2] = face[2];
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
-            readOk = false;
-        }
-        if (!readOk) continue;
+        if (!ReadFaceVertexIndices(faces, f, v)) continue;
 
         for (int e = 0; e < 3; ++e) {
             uint32_t va = v[e];
@@ -1143,17 +1147,12 @@ int ScanRoomAllTriangleEdges(void* surfaceMesh, int roomId,
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 continue;
             }
-            Vector worldA = localA, worldB = localB;
-            __try {
-                fnLocalToWorld(surfaceMesh, &worldA, &localA);
-                fnLocalToWorld(surfaceMesh, &worldB, &localB);
-            } __except (EXCEPTION_EXECUTE_HANDLER) {
-                worldA = localA;
-                worldB = localB;
-            }
+            Vector worldA, worldB;
+            TransformEdgeEndpoints(surfaceMesh, fnLocalToWorld,
+                                   localA, localB, worldA, worldB);
             float xy_dx = worldB.x - worldA.x;
             float xy_dy = worldB.y - worldA.y;
-            if (xy_dx * xy_dx + xy_dy * xy_dy < 2.5e-3f) continue;
+            if (xy_dx * xy_dx + xy_dy * xy_dy < kMinEdgeXYLengthSq) continue;
 
             int slot = alreadyWritten + emitted;
             if (slot < kMaxGlobalTriEdges) {
