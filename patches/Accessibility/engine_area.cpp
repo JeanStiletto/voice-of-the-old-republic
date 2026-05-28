@@ -165,17 +165,6 @@ bool GetObjectPosition(void* gameObject, Vector& out) {
     }
 }
 
-void* GetRoomAt(void* area, const Vector& pos) {
-    if (!area) return nullptr;
-    Vector local = pos;  // GetRoom takes Vector* — pass a writable address
-    __try {
-        auto fn = reinterpret_cast<PFN_CSWSAreaGetRoom>(kAddrCSWSAreaGetRoom);
-        return fn(area, &local, nullptr);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
 void* GetRoomAtIndexed(void* area, const Vector& pos, int& outIndex) {
     outIndex = -1;
     if (!area) return nullptr;

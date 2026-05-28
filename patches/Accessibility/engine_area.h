@@ -81,11 +81,9 @@ void* ResolveClientObjectHandle(uint32_t handle);
 // CSWSObject +0x90. False on null / fault.
 bool GetObjectPosition(void* gameObject, Vector& out);
 
-// CSWSArea::GetRoom @0x4bb600. nullptr outside any room.
-void* GetRoomAt(void* area, const Vector& pos);
-
-// Captures the room index the engine resolved (GetRoom's third arg).
-// outIndex = -1 on miss/fault; key into room_names[].
+// CSWSArea::GetRoom @0x4bb600. Captures the room index the engine
+// resolved (GetRoom's third arg). outIndex = -1 on miss/fault; key into
+// room_names[]. nullptr outside any room.
 void* GetRoomAtIndexed(void* area, const Vector& pos, int& outIndex);
 
 // Centroid of the middle face in world space. Input for per-room
