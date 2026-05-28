@@ -1,0 +1,23 @@
+title: KOTOR 1 Accessibility Mod
+theme: jekyll-theme-cayman
+
+include:
+  - docs
+
+exclude:
+  - patches
+  - tools
+  - installer
+  - third_party
+  - archiev
+  - build
+  - logs
+  - tmp_nvda
+  - CLAUDE.md
+  - kdev.toml
+  - "*.csproj"
+  - "*.props"
+  - "*.ps1"
+  - "*.bat"
+  - bin
+  - obj

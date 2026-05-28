@@ -10,13 +10,13 @@ namespace KotorAccessibilityInstaller
         /// GitHub repository URL for the KOTOR Accessibility mod.
         /// Format: "https://github.com/username/repo"
         /// </summary>
-        public const string ModRepositoryUrl = "https://github.com/JeanStiletto/kotor-accessibility";
+        public const string ModRepositoryUrl = "https://github.com/JeanStiletto/kotor-blind-accessibility";
 
         /// <summary>
         /// GitHub Pages site URL. Used for opening the README without the
         /// surrounding GitHub repo chrome. Must end with a trailing slash.
         /// </summary>
-        public const string ModSiteUrl = "https://jeanstiletto.github.io/kotor-accessibility/";
+        public const string ModSiteUrl = "https://jeanstiletto.github.io/kotor-blind-accessibility/";
 
         /// <summary>
         /// Filename of the .kpatch artifact uploaded to GitHub releases.
