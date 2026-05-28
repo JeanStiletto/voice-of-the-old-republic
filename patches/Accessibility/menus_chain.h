@@ -172,4 +172,14 @@ void HandleLeftRight(void* activePanel, int code, int val, bool& consumed);
 // availability; rebinds the chain if the focused panel has changed.
 void HandleNavStep(void* activePanel, int code, int val, bool& consumed);
 
+// Enter on the focused chain entry — classifies the target (virtual / tab
+// button / equip slot / workbench-upgrade slot / store item / journal row /
+// text-only / default) and queues the right pending op (mod-settings open,
+// click-sim, direct OnEnterSlot+OnSelectSlot for equip + workbench picker
+// arming, store-item-activate, journal description speak, re-announce, or
+// generic FireActivate). Self-gates on key code + press edge + panel; will
+// rebind the chain first if focus crossed panels (so engine-pushed modals
+// activate on Enter without arrow-key priming).
+void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed);
+
 }  // namespace acc::menus::chain

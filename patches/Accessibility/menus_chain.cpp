@@ -26,10 +26,11 @@
 #include "menus_equipstats.h"
 #include "menus_extract.h"
 #include "menus_internal.h"
-#include "menus_listbox.h"   // IsWorkbenchUpgradePickerArmed
+#include "menus_journal.h"   // IsJournalEntry, SpeakDescription
+#include "menus_listbox.h"   // IsWorkbenchUpgradePickerArmed, ArmEquipPicker, ArmWorkbenchUpgradePicker
 #include "menus_modsettings.h"
 #include "menus_monitors.h"  // AnnounceControl
-#include "menus_pending.h"   // QueueActivate, IsPending, QueueMoveCursor
+#include "menus_pending.h"   // QueueActivate, IsPending, QueueMoveCursor, Queue{ClickAt,EquipSelect,WorkbenchSlotSelect,StoreItemActivate}
 #include "menus_store.h"
 #include "prism.h"
 #include "strings.h"
@@ -845,6 +846,185 @@ void RebindChain(void* panel) {
                       i, g_chain[i].control, g_chain[i].cx, g_chain[i].cy,
                       g_chain[i].textOnly ? " text-only" : "",
                       src ? src : "?", src ? text : "", isActive, bitFlags);
+    }
+}
+
+void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed) {
+    if (val == 0) return;
+    if (code != kInputEnter1 && code != kInputEnter2) return;
+    if (activePanel == nullptr) return;
+
+    // Lazy rebind: previously Enter required a prior arrow press, which
+    // stranded engine-pushed modals (StatusSummary after a skill check, the
+    // quit-confirm MessageBox, AreaTransition prompts) where the chain was
+    // bound to the previous panel. Mirroring HandleNavStep's rebind here lets
+    // popups the engine pre-focuses (quit-confirm pre-focused on Abbrechen)
+    // activate the focused button on Enter alone. RebindChain anchors
+    // g_chainIndex on panel.activeControl when present.
+    if (g_chainPanel != activePanel) {
+        RebindChain(activePanel);
+    }
+    if (g_chainPanel != activePanel) return;          // rebind landed elsewhere
+    if (g_chainCount <= 0) return;
+    if (g_chainIndex < 0 || g_chainIndex >= g_chainCount) return;
+
+    ChainEntry& e = g_chain[g_chainIndex];
+
+    // Virtual chain entries route through their owning module BEFORE any
+    // subclass-specific reads below — the entry's `control` field is a
+    // sentinel pointer and any vtable / offset dereference would AV.
+    // Currently only the mod-settings root entry; new virtual kinds add a
+    // case here.
+    if (e.virtualKind == kVirtualMod_SettingsRoot) {
+        acc::menus::modsettings::OpenSubMenu(g_chainPanel);
+        acclog::Write("Menus.Enter", "open mod-settings submenu (parent=%p)",
+                      g_chainPanel);
+        consumed = true;
+        return;
+    }
+
+    bool isTabButton = false;
+    if (g_tabbedPanel && g_tabsCount >= 2) {
+        auto* tlist = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(g_tabbedPanel) + kPanelControlsOffset);
+        if (tlist && tlist->data) {
+            for (int i = g_tabsStart;
+                 i < g_tabsStart + g_tabsCount && i < tlist->size; ++i) {
+                if (tlist->data[i] == e.control) { isTabButton = true; break; }
+            }
+        }
+    }
+
+    // Detect equip-screen slot buttons up front. They need the full click
+    // pipeline (cursor warp + LMouseDown/Up) to fire the engine's OnSelectSlot
+    // — which is what populates LB_ITEMS with items matching the slot. Direct
+    // vtable[15] activate on a slot button routes to a different handler
+    // (likely OnEnterSlot, the keyboard shortcut path) that pops a "no items"
+    // modal instead of populating the picker. Same gate-mismatch shape as
+    // Options tab buttons: the mouse path is the only one that triggers the
+    // populate.
+    bool isEquipSlot = false;
+    int  equipSlotCid = 0;
+    if (acc::engine::IdentifyPanel(g_chainPanel) ==
+            acc::engine::PanelKind::InGameEquip) {
+        equipSlotCid = *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(e.control) + kControlIdOffset);
+        isEquipSlot =
+            equipSlotCid == kEquipBtnHeadId    || equipSlotCid == kEquipBtnImplantId ||
+            equipSlotCid == kEquipBtnBodyId    || equipSlotCid == kEquipBtnArmLId    ||
+            equipSlotCid == kEquipBtnArmRId    || equipSlotCid == kEquipBtnWeapLId   ||
+            equipSlotCid == kEquipBtnWeapRId   || equipSlotCid == kEquipBtnBeltId    ||
+            equipSlotCid == kEquipBtnHandsId;
+    }
+
+    // Workbench upgrade slot buttons (BTN_UPGRADE3X/4X at .gui IDs 12..18 on
+    // upgrade.gui). Same shape as equip-screen slot buttons: direct vtable[15]
+    // activate doesn't populate LB_ITEMS with the mods compatible with this
+    // slot — only the mouse-driven hover+click pipeline does. We don't have
+    // an RE'd equivalent of OnEnterSlot/OnSelectSlot for the workbench yet,
+    // so the safe path is a full click-sim at the chain entry's extent center
+    // (mirrors the tab-button activation pattern).
+    bool isWorkbenchUpgradeSlot = false;
+    int  workbenchUpgradeSlotCid = 0;
+    if (acc::engine::IdentifyPanel(g_chainPanel) ==
+            acc::engine::PanelKind::WorkbenchUpgrade) {
+        workbenchUpgradeSlotCid = *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(e.control) + kControlIdOffset);
+        isWorkbenchUpgradeSlot =
+            workbenchUpgradeSlotCid >= 12 && workbenchUpgradeSlotCid <= 18;
+    }
+
+    // Store item row Enter — route to the engine's trade-action handler
+    // (OnControlInvAButton / OnControlStoreAButton based on mode) instead of
+    // the generic FireActivate. The default vtable[15] event 0x27 path just
+    // refreshes the description listbox via OnControlEntered — never actually
+    // sells or buys. Action buttons (Verkaufsliste / Schliess. / Kaufen) fall
+    // through to the default activate path below; they're plain CSWGuiButton
+    // instances, not CSWGuiStoreItemEntry rows.
+    bool isStoreItemRow =
+        acc::menus::store::IsStorePanel(g_chainPanel) &&
+        acc::menus::store::IsStoreItemRow(e.control);
+
+    // Journal quest-row Enter — read the description text. The row's own
+    // activate handler is a no-op in the engine; the description text the
+    // engine paints next to the list on mouse hover is the only signal a
+    // sighted user gets, so we surface it on Enter instead.
+    bool isJournalRow =
+        acc::engine::IdentifyPanel(g_chainPanel) ==
+            acc::engine::PanelKind::InGameJournal &&
+        acc::menus::journal::IsJournalEntry(e.control);
+
+    if (acc::menus::pending::IsPending()) {
+        acclog::Write("Enter", "op already pending; ignoring (target=%p)",
+                      e.control);
+        consumed = true;
+    } else if (isStoreItemRow) {
+        acc::menus::pending::QueueStoreItemActivate(g_chainPanel, e.control);
+        acclog::Write("Menus.Enter",
+                      "store-item-activate panel=%p index=%d target=%p",
+                      g_chainPanel, g_chainIndex, e.control);
+        consumed = true;
+    } else if (isJournalRow) {
+        acc::menus::journal::SpeakDescription(g_chainPanel, e.control);
+        consumed = true;
+    } else if (e.textOnly) {
+        // Modal body text — non-activatable. Re-speak so a user who missed
+        // the open-time announce can hear it again. Don't fire vtable[15]
+        // (the listbox has no activate handler).
+        acc::menus::monitors::AnnounceControl(e.control);
+        acclog::Write("Menus.Enter",
+                      "re-announce panel=%p index=%d target=%p (text-only)",
+                      activePanel, g_chainIndex, e.control);
+        consumed = true;
+    } else if (isTabButton) {
+        int cursorY = e.cy;
+        if (g_tabClickOffsetY > 0) cursorY += g_tabClickOffsetY;
+        acc::menus::pending::QueueClickAt(e.cx, cursorY, e.control);
+        acclog::Write("Menus.Enter",
+                      "click-sim panel=%p index=%d target=%p cursorY=%d (tab)",
+                      activePanel, g_chainIndex, e.control, cursorY);
+        consumed = true;
+    } else if (isEquipSlot) {
+        // Bypass click-sim entirely. Calling OnEnterSlot then OnSelectSlot
+        // directly invokes the same engine path that mouse-driven hover+click
+        // does, but without depending on hit-test landing on the slot button
+        // (the labels cover the buttons in z-order — see
+        // docs/equip-flow-investigation.md). Deferred to OnUpdate to stay
+        // clear of mid-input-dispatch recursion.
+        acc::menus::pending::QueueEquipSelect(g_chainPanel, e.control);
+        // Arm the picker zone now: OnSelectSlot raises field33_0x4270 |= 1
+        // and the user proceeds to LB_ITEMS browsing. Self-clears on panel
+        // close, picker Esc, or BTN_EQUIP dispatch.
+        acc::menus::listbox::ArmEquipPicker(g_chainPanel);
+        acclog::Write("EquipPicker",
+                      "armed via direct OnEnterSlot+OnSelectSlot "
+                      "(Enter on slot id=%d btn=%p panel=%p)",
+                      equipSlotCid, e.control, g_chainPanel);
+        consumed = true;
+    } else if (isWorkbenchUpgradeSlot) {
+        // Click-sim landed on a label (z-order trap); vtable[15] is the
+        // keyboard-shortcut path that doesn't populate LB_ITEMS. Both verified
+        // in patch-20260525-141557.log and -142247.log. RE'd the workbench
+        // slot-pick chain in Lane's gzf — calling CSWGuiUpgrade::OnEnterSlot
+        // + OnSlotSelected directly is the engine path that builds the
+        // compatible-mods list from CSWPartyTable items + upgrades_2da /
+        // upcrystals_2da and AddControls-replaces LB_ITEMS contents.
+        acc::menus::pending::QueueWorkbenchSlotSelect(g_chainPanel, e.control);
+        acc::menus::listbox::ArmWorkbenchUpgradePicker(g_chainPanel);
+        acclog::Write("WorkbenchUpgrade",
+                      "armed via direct OnEnterSlot+OnSlotSelected "
+                      "(Enter on slot id=%d btn=%p panel=%p)",
+                      workbenchUpgradeSlotCid, e.control, g_chainPanel);
+        consumed = true;
+    } else {
+        acc::menus::pending::QueueActivate(e.control);
+        // Drill flag is armed centrally inside the OnSwitchToSWInGameGui
+        // detour — every path that opens a sub-screen (strip-icon Enter,
+        // vanilla M/I/J hotkeys) flows through that one function, so no
+        // per-caller arm is needed here.
+        acclog::Write("Menus.Enter", "activate panel=%p index=%d target=%p",
+                      activePanel, g_chainIndex, e.control);
+        consumed = true;
     }
 }
 
