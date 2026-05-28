@@ -48,9 +48,9 @@ bool GetMouseLook(bool& out) {
     }
 }
 
-bool SetMouseLook(bool enabled) {
-    void* options = GetClientOptions();
-    if (!options) return false;
+namespace {
+
+bool WriteMouseLook(void* options, bool enabled) {
     __try {
         auto* slot = reinterpret_cast<unsigned int*>(
             reinterpret_cast<unsigned char*>(options) +
@@ -65,11 +65,28 @@ bool SetMouseLook(bool enabled) {
     }
 }
 
+}  // namespace
+
+bool SetMouseLook(bool enabled) {
+    void* options = GetClientOptions();
+    if (!options) return false;
+    return WriteMouseLook(options, enabled);
+}
+
 bool ToggleMouseLook(bool& outNew) {
+    void* options = GetClientOptions();
+    if (!options) return false;
     bool current = false;
-    if (!GetMouseLook(current)) return false;
+    __try {
+        unsigned int bits = *reinterpret_cast<unsigned int*>(
+            reinterpret_cast<unsigned char*>(options) +
+            kClientOptionsBitFieldOffset);
+        current = (bits & kClientOptionsMouseLookMask) != 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
     bool target = !current;
-    if (!SetMouseLook(target)) return false;
+    if (!WriteMouseLook(options, target)) return false;
     outNew = target;
     return true;
 }
