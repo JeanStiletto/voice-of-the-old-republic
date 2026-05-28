@@ -1173,6 +1173,9 @@ enum class Id : int {
 enum class Lang : int {
     En,
     De,
+    Fr,
+    It,
+    Es,
 };
 
 // Set the active language. Default is German (per user direction at
@@ -1186,9 +1189,15 @@ Lang GetLanguage();
 // snprintf without null-checking.
 const char* Get(Id id);
 
-// Per-language tables. Defined in strings_en.cpp / strings_de.cpp; the
-// dispatcher in strings.cpp picks one based on the active language.
+// Per-language tables. Defined in strings_en.cpp / strings_de.cpp /
+// strings_fr.cpp; the dispatcher in strings.cpp picks one based on the
+// active language. lang_fr currently aliases lang_en for the Id::*
+// speech path (full FR translation pass is deferred); combat speech is
+// fully French via combat_strings.cpp::kFr.
 namespace lang_en { const char* Get(Id id); }
 namespace lang_de { const char* Get(Id id); }
+namespace lang_fr { const char* Get(Id id); }
+namespace lang_it { const char* Get(Id id); }
+namespace lang_es { const char* Get(Id id); }
 
 }  // namespace acc::strings

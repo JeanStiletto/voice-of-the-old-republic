@@ -16,6 +16,9 @@ const char* Get(Id id) {
     switch (g_lang) {
         case Lang::En: return lang_en::Get(id);
         case Lang::De: return lang_de::Get(id);
+        case Lang::Fr: return lang_fr::Get(id);
+        case Lang::It: return lang_it::Get(id);
+        case Lang::Es: return lang_es::Get(id);
     }
     return "";
 }

@@ -2,6 +2,13 @@
 /build/
 **/logs/
 
+# Local cache of reference game data we want to keep between sessions
+# (e.g. per-locale dialog.tlk copies under data/dialog-tlk/). BioWare
+# content — never commit; recreate by re-extracting from a Steam install
+# at the right language. See tools/kdev/Commands/CombatStringsExtractCommand.cs
+# for the --lang shorthand that resolves to this cache.
+/data/
+
 # .NET build output (kdev, dbgcapture)
 **/bin/
 **/obj/
