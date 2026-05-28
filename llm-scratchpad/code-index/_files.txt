@@ -38,8 +38,6 @@ cycle_state.cpp
 cycle_state.h
 diag_input_pipeline.cpp
 diag_input_pipeline.h
-diag_play3doneshotsound.cpp
-diag_play3doneshotsound.h
 dialog_speech.cpp
 dialog_speech.h
 engine_actionbar.cpp

@@ -31,7 +31,6 @@ Flagged for later phases:
 
 ### Stale-comment / cleanup candidates
 - `combat.h::TickCombatLog` doc comment claims listbox-poll path is live; actual live path is `AppendToMsgBuffer` hook
-- `diag_play3doneshotsound.{h,cpp}` — hook commented out in hooks.toml, investigation concluded per memory — deletion candidate
 - `probe_audio_frame`, `probe_camera_state`, `probe_camera_distance` — review whether their investigations are concluded; lightweight, low priority
 - `probe_pathfind`, `probe_mouselook`, `probe_priority_groups` — still wired and useful; keep
 - `diag_input_pipeline` — outgrew "diagnostic" framing; carries production logic; rename candidate

@@ -7,7 +7,6 @@ EXPORTS
     OnListBoxSetActiveControl
     OnUpdate
     OnSetMoveToModuleString
-    OnPlay3DOneShotSound
     OnPlayFootstep
     OnSetListenerPosition
     OnCalculatePitchVarianceFrequency

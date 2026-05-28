@@ -16,9 +16,9 @@
 // initialised panels.
 //
 // Lifted out of menus_listbox.cpp to keep that TU focused on the listbox
-// spec dispatcher and follow the diag_* convention (see diag_input_pipeline,
-// diag_play3doneshotsound). Removal: when the picker spec gets extended,
-// delete this TU + its header + the call site in menus.cpp::AnnouncePanelTitle.
+// spec dispatcher and follow the diag_* convention (see diag_input_pipeline).
+// Removal: when the picker spec gets extended, delete this TU + its header
+// + the call site in menus.cpp::AnnouncePanelTitle.
 
 #pragma once
 
