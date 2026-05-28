@@ -52,22 +52,16 @@ struct DedupEntry {
 DedupEntry g_keys[kMaxKeys];
 int        g_keyCount = 0;
 
-DedupEntry* FindEntry(const char* tag) {
+DedupEntry* GetOrCreateEntry(const char* tag) {
     for (int i = 0; i < g_keyCount; ++i) {
         if (strcmp(g_keys[i].tag, tag) == 0) return &g_keys[i];
     }
-    return nullptr;
-}
-
-DedupEntry* GetOrCreateEntry(const char* tag) {
-    DedupEntry* e = FindEntry(tag);
-    if (e) return e;
     if (g_keyCount >= kMaxKeys) {
         // Out of slots — return null; caller falls through to plain Write so
         // information isn't lost.
         return nullptr;
     }
-    e = &g_keys[g_keyCount++];
+    DedupEntry* e = &g_keys[g_keyCount++];
     strncpy_s(e->tag, tag, _TRUNCATE);
     e->lastContent[0] = '\0';
     e->suppressed     = 0;
