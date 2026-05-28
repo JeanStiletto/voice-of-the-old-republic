@@ -320,37 +320,6 @@ void* ResolveItemFromClientHandle(uint32_t clientHandle) {
     return item;
 }
 
-void* ResolveItemFromServerHandle(uint32_t serverHandle) {
-    if (serverHandle == 0 || serverHandle == 0xffffffff) return nullptr;
-    void* appMgr = nullptr;
-    __try {
-        appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-    if (!appMgr) return nullptr;
-
-    void* serverApp = nullptr;
-    __try {
-        serverApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appMgr) +
-            kAppManagerServerExoAppOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-    if (!serverApp) return nullptr;
-
-    void* item = nullptr;
-    __try {
-        auto fn = reinterpret_cast<PFN_GetItemByGameObjectID>(
-            kAddrServerExoAppGetItemByGameObjectID);
-        item = fn(serverApp, serverHandle);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-    return item;
-}
-
 typedef CExoString* (__thiscall* PFN_GetPropertyDescription)(void* this_,
                                                               CExoString* out);
 

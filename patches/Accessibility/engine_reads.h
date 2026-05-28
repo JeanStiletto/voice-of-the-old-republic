@@ -98,10 +98,6 @@ void DumpControlVtable(void* control, char* out, size_t outSize);
 // with SEH per hop. Null on any failure.
 void* ResolveItemFromClientHandle(uint32_t clientHandle);
 
-// Skips ClientToServer translation — for already-server-side handles
-// (CSWInventory per-slot ulongs mirrored into the equip panel cache).
-void* ResolveItemFromServerHandle(uint32_t serverHandle);
-
 // Multi-line property description (damage / range / on-hit / defence /
 // base description). Engine allocates a heap c_string per call which
 // we deliberately leak (CRT-mismatch — same pattern as LookupTlk).
