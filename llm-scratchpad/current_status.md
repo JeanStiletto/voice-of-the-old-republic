@@ -13,6 +13,7 @@ Prompts from `C:/Users/fabia/Dev/llm-mod-refactoring-prompts` (JeanStiletto's PR
 - `large-file-handling.md` — all 5 splits done across commits `7c2827a`, `549beb4`, `509ec03`, `e2f4cbc`, `cecb549`, `3099e24`. See `large-file-splits.md` for the full record + plan-vs-reality corrections.
 - `ai-bloat-audit.md` — round 1 done across commits `c7aa323`, `804b0b7`, `87329e4`, `394db2d`, `8752624`, `414691b`, `f3a0b2a`, `2234a17`, `6f2b6e0`, `2134943`. ~640 lines net removed across dead-code deletions + one diagnostic-cascade purge + two helper hoists. probe_camera_state deletion deferred (user is still using the probe). GetPartyMembers wrong-base read filed under `docs/known-issues.md` Bugs rather than fixed in the audit pass. See `bloat-audit-round-1.md` for the per-item breakdown.
 - `high-level-cleanup.md` — review by 4 parallel subagents (duplication / fragility / docs / stdlib). 9 items shipped across commits `57e4a14` (kControlIdOffset hoist), `c0b69c3` (kInvalidObjectId centralise), `e1b10d3` (combat.h doc fix), `dad829b` (diag_chargen_feats doc trim), `ee56f24` (audio_footstep_suppress WHY pointer), `f991e8a` (camera_orient quaternion comment), `7e249c1` (menu_speak helper), `8fa26c6` (input_pipeline rename), `fe7a033` (menus_skillflow_nav extract). Item 10 (SubMenuState template) skipped on user call after step-by-step discussion. Items 11-15 (stdlib adoption, SEH diagnostics, DebouncedValue template, GetPartyMembers consolidation, probe_mouselook rename) skipped per review (high-risk / blocked / premature). Side-fix commit `565c5b8` corrects a pre-existing Sprengstoff-Right bug uncovered during item 3 test: chargen-sub-close heuristic in menus_pending.cpp was over-matching same-id row arrows.
+- `low-level-cleanup.md` — round 1 done across 15 commits `6d185d2`, `8131285`, `4c2c7de`, `648e298`, `fc28e7b`, `8209cb0`, `1e59f9e`, `b22fa5e`, `39a65b3`, `d0a3422`, `65cac7e`, `8b77317`, `26b1251`, `afab34b`, `0582365`. Triage via 16 parallel subagents (one per module group) producing ~30 raw items; pruned to 15-item shortlist, all approved bulk-execute. Net −241 lines across 13 files (167 added / 408 removed). Mix of dead-code deletions (engine_offsets orphan combat constants, examine_view TickEnginePanelLifecycle, core_dllmain DumpFunctionBytes, log FindEntry, menus_chargen_attr empty namespace, guidance_autowalk pre-dispatch snapshot), helper extractions (engine_area ReadFaceVertexIndices + TransformEdgeEndpoints + kMinEdgeXYLengthSq, engine_options WriteMouseLook, cycle_input TryResolveOrAnnounceNoFocus, map_ui_cursor ResolveAmbientText), and reuse passes (IsSentinelHandle, ResetSessionState, engine_reads::ReadGuiString, MapPin offset constants). In-game test (map cursor, autowalk, beacon, examine, walk) confirmed green. See `low-level-cleanup-round-1.md` for the per-item breakdown + dropped-from-shortlist rationale.
 
 ## Prompts in progress
 (none)
@@ -32,22 +33,20 @@ Flagged for later phases:
 - `menus_chargen_feats.cpp` and `menus_powers_levelup.cpp` — structurally near-identical; intentional per memory `project_powers_levelup_is_skillflow_tree.md` — re-examine in ai-bloat-audit and low-level-cleanup
 
 ### Stale-comment / cleanup candidates
-- `combat.h::TickCombatLog` doc comment claims listbox-poll path is live; actual live path is `AppendToMsgBuffer` hook
 - `probe_audio_frame`, `probe_camera_distance` — review whether their investigations are concluded; lightweight, low priority (probe_camera_state confirmed still in use during the ai-bloat-audit pass)
 - `probe_pathfind`, `probe_mouselook`, `probe_priority_groups` — still wired and useful; keep
-- `diag_input_pipeline` — outgrew "diagnostic" framing; carries production logic; rename candidate
+- `engine_options.cpp::SetMouseLook` — zero callers after low-level-cleanup round 1 (ToggleMouseLook stopped routing through it); candidate for deletion next round if no external user surfaces
 
 ### Index anomalies
 - `engine_area.cpp` — token-limit chunked read; .md notes incomplete coverage of late-file functions
 - `wall_topology.cpp` — anonymous helpers not enumerated in the index; public API matches the header
 
 ## Prompts pending
-- low-level-cleanup.md (next — user's explicit choice for next session)
-- input-handling.md (deferred — user opted to skip ahead to low-level-cleanup)
+- input-handling.md (deferred — user opted to skip ahead to low-level-cleanup; revisit)
 - string-builder.md (deferred — same)
 - finalization.md
 
-The ai-bloat-audit prompt is structured as a re-runnable pass — a follow-up round is fair after low-level-cleanup lands.
+Both ai-bloat-audit and low-level-cleanup are structured as re-runnable passes — follow-up rounds of either are fair after the next prompts land.
 
 ## Scratchpad files
 - `current_status.md` (this file)
