@@ -83,15 +83,6 @@ bool QueueWorkbenchUpgradeCommit(void* panel, void* row, void* btnAssemble);
 // change at +0x74 on the next tick and re-announces.
 bool QueueSliderInput(void* target, int code);
 
-// Queue a CGuiInGame::PrevSWInGameGui dispatch. On drain calls
-// acc::engine::CallPrevSWInGameGui() which pops the active in-game
-// sub-screen via the engine's own primitive (cleaner than FireActivate on
-// each sub-screen's Schliess button — see drill-back Esc handler in
-// menus.cpp). Deferred to drain for the same reason as the other ops:
-// modifying panels[] mid-input-dispatch can re-enter through the engine's
-// hover/focus paths.
-bool QueuePrevSWInGameGui();
-
 // Queue a Store item row trade action. On drain dispatches to the
 // engine's per-mode click handler with the row as param_1:
 //   * Buy mode  → CSWGuiStore::OnControlStoreAButton(store, row)

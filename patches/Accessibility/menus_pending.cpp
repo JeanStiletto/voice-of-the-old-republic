@@ -19,7 +19,7 @@
 #include "engine_input.h"
 #include "engine_manager.h"
 #include "engine_offsets.h"
-#include "engine_panels.h"   // CallPrevSWInGameGui
+#include "engine_panels.h"   // IdentifyPanel / PanelKind — chargen sub-screen close
 #include "log.h"
 #include "engine_reads.h"    // LookupTlk for workbench slot-type strref
 #include "menus.h"           // ClearPendingAnnounce — partner of InvalidateChain
@@ -47,7 +47,6 @@ enum class Kind {
     WorkbenchSlotSelect,    // a = panel, b = slot
     WorkbenchUpgradeCommit, // a = panel, b = row, c = btnAssemble
     SliderInput,       // a = target, code = direction (500 inc / 501 dec)
-    PrevSWInGameGui,   // no payload — pops current in-game sub-screen
     StoreItemActivate, // a = panel (CSWGuiStore), b = row (StoreItemEntry)
 };
 
@@ -139,12 +138,6 @@ bool QueueSliderInput(void* target, int code) {
     g_op.kind = Kind::SliderInput;
     g_op.a = target;
     g_op.code = code;
-    return true;
-}
-
-bool QueuePrevSWInGameGui() {
-    if (g_op.kind != Kind::None) return false;
-    g_op.kind = Kind::PrevSWInGameGui;
     return true;
 }
 
@@ -689,14 +682,6 @@ void Drain(void* gm) {
         break;
     }
 
-    // Pop the active in-game sub-screen via the engine's own primitive.
-    // CallPrevSWInGameGui resolves CGuiInGame and dispatches; logs its own
-    // diagnostic line. Used by the drill-back Esc handler and (when the
-    // close-on-redrill path lands) the strip-icon Enter handler.
-    case Kind::PrevSWInGameGui: {
-        acc::engine::CallPrevSWInGameGui();
-        break;
-    }
 
     // Store item Enter — dispatch the engine's per-mode click handler
     // with the row as param_1. The engine reads the row's obj_id at
