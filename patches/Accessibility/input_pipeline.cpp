@@ -1,4 +1,4 @@
-#include "diag_input_pipeline.h"
+#include "input_pipeline.h"
 
 #include <windows.h>
 #include <cstdint>
@@ -37,7 +37,7 @@
                                   // last announced
                              // an audible confirmation
 
-namespace acc::diag::input {
+namespace acc::input {
 
 namespace {
 
@@ -51,7 +51,7 @@ unsigned int NextSeq() {
     return static_cast<unsigned int>(InterlockedIncrement(&s_seq));
 }
 
-}  // namespace acc::diag::input
+}  // namespace acc::input
 
 // CClientExoAppInternal::ProcessInput @ 0x006227e0 — frame-boundary seq tick.
 //
@@ -68,7 +68,7 @@ unsigned int NextSeq() {
 // investigation needs explicit frame markers, restore the acclog::Write
 // call here — one line of code.
 extern "C" void __cdecl OnProcessInput(void* /*this_ptr*/) {
-    acc::diag::input::NextSeq();
+    acc::input::NextSeq();
 }
 
 // CClientExoAppInternal::HandleInputEvent @ 0x00621210 — upstream client-app
@@ -110,7 +110,7 @@ extern "C" void __cdecl OnClientHandleInputEvent(void* this_ptr,
         return;
     }
 
-    unsigned int seq = acc::diag::input::NextSeq();
+    unsigned int seq = acc::input::NextSeq();
     int translated = acc::engine::ManagerTranslateCode(param_1);
     if (translated != param_1) {
         acclog::Write("Diag.ClientHIE",

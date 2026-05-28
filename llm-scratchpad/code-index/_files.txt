@@ -36,8 +36,6 @@ cycle_input.cpp
 cycle_input.h
 cycle_state.cpp
 cycle_state.h
-diag_input_pipeline.cpp
-diag_input_pipeline.h
 dialog_speech.cpp
 dialog_speech.h
 engine_actionbar.cpp
@@ -83,6 +81,8 @@ guidance_pathfind.cpp
 guidance_pathfind.h
 hotkeys.cpp
 hotkeys.h
+input_pipeline.cpp
+input_pipeline.h
 interact_hotkey.cpp
 interact_hotkey.h
 log.cpp

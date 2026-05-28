@@ -1,8 +1,8 @@
-# diag_input_pipeline.cpp (322 lines)
+# input_pipeline.cpp
 
-Implementation of the engine-input pipeline diagnostic. In addition to
-providing `NextSeq()`, this TU contains two C-linkage hook handlers
-registered via hooks.toml:
+Implementation of the engine-input pipeline. In addition to providing
+`NextSeq()`, this TU contains two C-linkage hook handlers registered via
+hooks.toml:
 
 - `OnProcessInput` — frame-boundary seq tick (currently silent on the log;
   the per-frame "Diag.ProcInput" line was removed for volume, but the seq
@@ -16,9 +16,9 @@ registered via hooks.toml:
 
 ## Declarations (in source order)
 
-- L40 — `namespace acc::diag::input`
-- L50 — `unsigned int NextSeq()`
-- L70 — `extern "C" void __cdecl OnProcessInput(void* /*this_ptr*/)`
+- `namespace acc::input`
+- `unsigned int NextSeq()`
+- `extern "C" void __cdecl OnProcessInput(void* /*this_ptr*/)`
   note: hook at CClientExoAppInternal::ProcessInput; only bumps the seq counter; log line removed for volume
-- L90 — `extern "C" void __cdecl OnClientHandleInputEvent(void* this_ptr, void* p1_addr, void* p2_addr)`
+- `extern "C" void __cdecl OnClientHandleInputEvent(void* this_ptr, void* p1_addr, void* p2_addr)`
   note: hook at CClientExoAppInternal::HandleInputEvent; does logging + bare 1-7 prep + Q/E re-announce deferral + Bug-2a modal arrow-key forwarding

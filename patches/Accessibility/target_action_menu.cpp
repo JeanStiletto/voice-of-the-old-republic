@@ -51,7 +51,7 @@ int ClampIndex(void* tam, int row) {
 // Resolve the engine client-side handle for the currently narrated target.
 // Returns kInvalidObjectId when nothing is narrated / the slot is a map
 // pin / the handle no longer resolves to a live server object. Mirrors
-// the same logic diag_input_pipeline uses before firing PrepareBareDispatch
+// the same logic input_pipeline uses before firing PrepareBareDispatch
 // on bare 1..3.
 uint32_t ResolveNarratedClientHandle() {
     acc::narrated_target::Slot slot{};
@@ -100,7 +100,7 @@ bool Open(int row) {
     }
 
     // Refresh the engine's action_lists[row] against the narrated target.
-    // Bare 1..3 gets this for free via diag_input_pipeline's hook on the
+    // Bare 1..3 gets this for free via input_pipeline's hook on the
     // engine's input-event path; Shift+1..3 isn't bound by the engine
     // so we have to fire the refresh ourselves before reading row state.
     uint32_t targetClient = ResolveNarratedClientHandle();

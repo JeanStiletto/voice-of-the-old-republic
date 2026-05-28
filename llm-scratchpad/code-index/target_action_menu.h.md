@@ -11,4 +11,4 @@ Target-action submenu header (Shift+1..Shift+3) — keyboard exploration of CSWG
 - L25 — `bool HandleInputEvent(int code, int value);`
 - L27 — `void ForceDisarm(const char* reason);`
 - L31 — `int CurrentSelection(int row);`
-  note: used by diag_input_pipeline to re-stamp the persistent per-row index after PopulateMenus invalidates field1[]
+  note: used by input_pipeline to re-stamp the persistent per-row index after PopulateMenus invalidates field1[]

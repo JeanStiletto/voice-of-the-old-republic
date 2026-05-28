@@ -11,7 +11,7 @@
 //
 // Open path goes through engine_actionbar::PrepareBareDispatch
 // (SetMainInterfaceTarget + RePopulateMainInterface). Mirrors the bare
-// 1..3 path in diag_input_pipeline.
+// 1..3 path in input_pipeline.
 
 #pragma once
 
@@ -26,7 +26,7 @@ bool HandleInputEvent(int code, int value);
 
 void ForceDisarm(const char* reason);
 
-// Used by diag_input_pipeline: PopulateMenus reassigns action_ids and
+// Used by input_pipeline: PopulateMenus reassigns action_ids and
 // invalidates field1[]; we re-stamp at the persistent per-row index so
 // the user's cycle choice survives bare 1..3 presses.
 int CurrentSelection(int row);
