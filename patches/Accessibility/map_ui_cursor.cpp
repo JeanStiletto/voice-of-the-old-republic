@@ -536,6 +536,47 @@ const char* AmbientKindStr(AmbientKind k) {
     return "?";
 }
 
+// Render the speak-text for an ambient kind into outBuf. Source for the
+// TerrainShape branch differs by call site — the dedup-fingerprint pass
+// uses the current frame's freshly-computed shape, while the
+// hover-pause speak pass uses the stashed pending_shape_text so the
+// rendered label stays stable across the arm→speak window.
+// Returns true iff outBuf got a non-empty string.
+bool ResolveAmbientText(AmbientKind kind, int roomIdx,
+                        const char* landmarkBuf,
+                        const char* shapeText,
+                        char* outBuf, size_t bufSize) {
+    if (!outBuf || bufSize == 0) return false;
+    outBuf[0] = '\0';
+    switch (kind) {
+        case AmbientKind::Unexplored: {
+            const char* t = acc::strings::Get(
+                acc::strings::Id::MapCursorUnexplored);
+            if (t) std::snprintf(outBuf, bufSize, "%s", t);
+            break;
+        }
+        case AmbientKind::Landmark:
+            if (landmarkBuf && landmarkBuf[0] != '\0') {
+                std::snprintf(outBuf, bufSize, "%s", landmarkBuf);
+            }
+            break;
+        case AmbientKind::RoomName: {
+            void* a = acc::engine::GetCurrentArea();
+            if (a) acc::engine::GetRoomDisplayName(a, roomIdx,
+                                                   outBuf, bufSize);
+            break;
+        }
+        case AmbientKind::TerrainShape:
+            if (shapeText && shapeText[0] != '\0') {
+                std::snprintf(outBuf, bufSize, "%s", shapeText);
+            }
+            break;
+        case AmbientKind::None:
+            break;
+    }
+    return outBuf[0] != '\0';
+}
+
 
 // Read CSWSWaypoint.Tag for diagnostic logging. CExoString at
 // kObjectTagOffset (engine_area.h). Returns false if the read faults
@@ -1027,39 +1068,13 @@ void Tick() {
         // both for the text-based dedup overlay (so adjacent rooms
         // with identical labels collapse to one announce) and as the
         // backing text for the speak path (so we don't have to re-
-        // resolve it later). For TerrainShape: shapeTextLocal already
-        // built. For Landmark / RoomName / Unexplored: look up here.
+        // resolve it later). TerrainShape uses this frame's freshly-built
+        // shapeTextLocal — what the dedup compares against, not what we
+        // eventually speak (that uses the stashed pending_shape_text).
         char currentAmbientText[128] = {0};
-        switch (currentKind) {
-            case AmbientKind::Unexplored: {
-                const char* t = acc::strings::Get(
-                    acc::strings::Id::MapCursorUnexplored);
-                if (t) std::snprintf(currentAmbientText,
-                                     sizeof(currentAmbientText), "%s", t);
-                break;
-            }
-            case AmbientKind::Landmark:
-                if (currentLandmarkBuf[0] != '\0') {
-                    std::snprintf(currentAmbientText,
-                                  sizeof(currentAmbientText), "%s",
-                                  currentLandmarkBuf);
-                }
-                break;
-            case AmbientKind::RoomName: {
-                void* a = acc::engine::GetCurrentArea();
-                if (a) acc::engine::GetRoomDisplayName(
-                    a, currentRoomIdx,
-                    currentAmbientText, sizeof(currentAmbientText));
-                break;
-            }
-            case AmbientKind::TerrainShape:
-                std::snprintf(currentAmbientText,
-                              sizeof(currentAmbientText), "%s",
-                              shapeTextLocal);
-                break;
-            case AmbientKind::None:
-                break;
-        }
+        ResolveAmbientText(currentKind, currentRoomIdx, currentLandmarkBuf,
+                           shapeTextLocal,
+                           currentAmbientText, sizeof(currentAmbientText));
 
         // Dedup overlay: text-equality OR (kind, key) equality.
         // The text path collapses adjacent regions whose labels happen
@@ -1113,40 +1128,16 @@ void Tick() {
             // once per cluster at BuildForArea, not per probe).
             if (g_state.pending_ambient_started_ms != 0 &&
                 now - g_state.pending_ambient_started_ms >= kHoverPauseMs) {
-                // Hover-pause elapsed — resolve the text to speak.
-                // RoomName re-reads GetRoomDisplayName at speak time so
-                // the buffer's lifetime is tick-local. TerrainShape
-                // reads the description we built when arming.
-                const char* text = nullptr;
-                char roomBuf[128] = {0};
-                switch (currentKind) {
-                    case AmbientKind::Unexplored:
-                        text = acc::strings::Get(
-                            acc::strings::Id::MapCursorUnexplored);
-                        break;
-                    case AmbientKind::Landmark:
-                        if (currentLandmarkBuf[0] != '\0') {
-                            text = currentLandmarkBuf;
-                        }
-                        break;
-                    case AmbientKind::RoomName: {
-                        void* area = acc::engine::GetCurrentArea();
-                        if (area && acc::engine::GetRoomDisplayName(
-                                area, currentRoomIdx,
-                                roomBuf, sizeof(roomBuf)) &&
-                            roomBuf[0] != '\0') {
-                            text = roomBuf;
-                        }
-                        break;
-                    }
-                    case AmbientKind::TerrainShape:
-                        if (g_state.pending_shape_text[0] != '\0') {
-                            text = g_state.pending_shape_text;
-                        }
-                        break;
-                    case AmbientKind::None:
-                        break;
-                }
+                // Hover-pause elapsed — resolve the text to speak. RoomName
+                // re-reads GetRoomDisplayName at speak time so the buffer's
+                // lifetime is tick-local. TerrainShape uses the stashed
+                // pending_shape_text so the rendered label matches what
+                // armed the timer, not whatever the probe sees now.
+                char speakBuf[128];
+                const char* text = ResolveAmbientText(
+                    currentKind, currentRoomIdx, currentLandmarkBuf,
+                    g_state.pending_shape_text,
+                    speakBuf, sizeof(speakBuf)) ? speakBuf : nullptr;
                 if (text && text[0] != '\0') {
                     // Append the shape tail when the primary tier is
                     // Landmark or RoomName (the user explicitly wanted
