@@ -42,9 +42,9 @@ Flagged for later phases:
 - `wall_topology.cpp` — anonymous helpers not enumerated in the index; public API matches the header
 
 ## Prompts pending
-- input-handling.md (next)
-- string-builder.md
-- low-level-cleanup.md
+- low-level-cleanup.md (next — user's explicit choice for next session)
+- input-handling.md (deferred — user opted to skip ahead to low-level-cleanup)
+- string-builder.md (deferred — same)
 - finalization.md
 
 The ai-bloat-audit prompt is structured as a re-runnable pass — a follow-up round is fair after low-level-cleanup lands.
