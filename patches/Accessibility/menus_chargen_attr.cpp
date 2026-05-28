@@ -110,10 +110,6 @@ void CaptureLabelsIfApplicable(void* panel) {
 
 namespace {
 
-}  // namespace
-
-namespace {
-
 // Parse the engine-rendered ability value text ("8", "10", "18") into
 // an int. Returns -1 on parse failure or out-of-range. Tolerant of
 // transient states the engine may briefly render (single dash, empty)
