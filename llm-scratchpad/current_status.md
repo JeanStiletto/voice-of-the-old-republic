@@ -12,9 +12,10 @@ Prompts from `C:/Users/fabia/Dev/llm-mod-refactoring-prompts` (JeanStiletto's PR
 - `code-directory-construction.md` — 178 .md index files under `llm-scratchpad/code-index/`, one per source file
 - `large-file-handling.md` — all 5 splits done across commits `7c2827a`, `549beb4`, `509ec03`, `e2f4cbc`, `cecb549`, `3099e24`. See `large-file-splits.md` for the full record + plan-vs-reality corrections.
 - `ai-bloat-audit.md` — round 1 done across commits `c7aa323`, `804b0b7`, `87329e4`, `394db2d`, `8752624`, `414691b`, `f3a0b2a`, `2234a17`, `6f2b6e0`, `2134943`. ~640 lines net removed across dead-code deletions + one diagnostic-cascade purge + two helper hoists. probe_camera_state deletion deferred (user is still using the probe). GetPartyMembers wrong-base read filed under `docs/known-issues.md` Bugs rather than fixed in the audit pass. See `bloat-audit-round-1.md` for the per-item breakdown.
+- `high-level-cleanup.md` — review by 4 parallel subagents (duplication / fragility / docs / stdlib). 9 items shipped across commits `57e4a14` (kControlIdOffset hoist), `c0b69c3` (kInvalidObjectId centralise), `e1b10d3` (combat.h doc fix), `dad829b` (diag_chargen_feats doc trim), `ee56f24` (audio_footstep_suppress WHY pointer), `f991e8a` (camera_orient quaternion comment), `7e249c1` (menu_speak helper), `8fa26c6` (input_pipeline rename), `fe7a033` (menus_skillflow_nav extract). Item 10 (SubMenuState template) skipped on user call after step-by-step discussion. Items 11-15 (stdlib adoption, SEH diagnostics, DebouncedValue template, GetPartyMembers consolidation, probe_mouselook rename) skipped per review (high-risk / blocked / premature). Side-fix commit `565c5b8` corrects a pre-existing Sprengstoff-Right bug uncovered during item 3 test: chargen-sub-close heuristic in menus_pending.cpp was over-matching same-id row arrows.
 
 ## Prompts in progress
-(none — both completed prompts above are closed out)
+(none)
 
 ## Findings carried forward from indexing
 Flagged for later phases:
@@ -41,8 +42,7 @@ Flagged for later phases:
 - `wall_topology.cpp` — anonymous helpers not enumerated in the index; public API matches the header
 
 ## Prompts pending
-- high-level-cleanup.md (next)
-- input-handling.md
+- input-handling.md (next)
 - string-builder.md
 - low-level-cleanup.md
 - finalization.md
