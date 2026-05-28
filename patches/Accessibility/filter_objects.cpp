@@ -77,18 +77,7 @@ bool IsMapCycleable(CycleCategory c) {
     // in cycle_state::BuildCategoryListing to require map_note_enabled
     // too (so it matches the engine's GetNextMapNote / GetPrevMapNote
     // curated subset — what we surface as "Map hint").
-    switch (c) {
-        case CycleCategory::Landmark:
-            return true;
-        case CycleCategory::Door:
-        case CycleCategory::Transition:
-        case CycleCategory::Npc:
-        case CycleCategory::Container:
-        case CycleCategory::Item:
-        case CycleCategory::Count_:
-            return false;
-    }
-    return false;
+    return c == CycleCategory::Landmark;
 }
 
 }  // namespace acc::filter
