@@ -421,6 +421,16 @@ const char* Get(Id id) {
         case Id::GlossaryEntrySwoopObstacleWarn:    return "Swoop-Hinderniswarnung";
         case Id::GlossaryEntrySwoopWallImpact:      return "Swoop-Wandaufprall";
 
+        // "drücken" — the hex escape \xFC followed by literal 'c' would be
+        // parsed as \xFCc (out of range). Split the literal across two
+        // string tokens to keep the escape sequence terminated.
+        case Id::FmtUpdateAvailable:    return "Update verf\xFCgbar, Version %s. Im Hauptmen\xFC F5 dr\xFC" "cken, um zu installieren.";
+        case Id::UpdateDownloading:     return "Update wird heruntergeladen.";
+        case Id::UpdateDownloaded:      return "Update heruntergeladen. Spiel wird beendet, um zu installieren.";
+        case Id::UpdateFailed:          return "Download des Updates fehlgeschlagen.";
+        case Id::FmtUpdateNotAvailable: return "Kein Update verf\xFCgbar. Aktuelle Version %s.";
+        case Id::UpdateNotInMenu:       return "Updates k\xF6nnen nur aus dem Hauptmen\xFC installiert werden.";
+
         case Id::Count_:               return "";
     }
     return "";

@@ -1167,6 +1167,33 @@ enum class Id : int {
     GlossaryEntrySwoopObstacleWarn,
     GlossaryEntrySwoopWallImpact,
 
+    // ---- In-game auto-updater (UpdateChecker).
+    //      Background version check fires on first hook (CSWRules construction);
+    //      announcement lands once on the next tick after the check completes.
+    //      F5 from the main menu (gated on GetPlayerPosition == false) triggers
+    //      installer download + game exit; the calling batch elevates the
+    //      installer via the .exe's app.manifest and relaunches the game.
+    //
+    //      FmtUpdateAvailable    — one `%s` (remote version string from
+    //                              GitHub release tag, e.g. "0.3.1").
+    //      UpdateDownloading     — F5 acknowledgement spoken once when the
+    //                              download task starts.
+    //      UpdateDownloaded      — download-complete cue. The mod calls
+    //                              ExitProcess shortly after, so the user
+    //                              hears this just before the game closes.
+    //      UpdateFailed          — download error.
+    //      FmtUpdateNotAvailable — F5 when no update is pending. One `%s`
+    //                              (current installed version).
+    //      UpdateNotInMenu       — F5 refused because the player is in
+    //                              active gameplay (GetPlayerPosition
+    //                              succeeded).
+    FmtUpdateAvailable,
+    UpdateDownloading,
+    UpdateDownloaded,
+    UpdateFailed,
+    FmtUpdateNotAvailable,
+    UpdateNotInMenu,
+
     Count_,
 };
 

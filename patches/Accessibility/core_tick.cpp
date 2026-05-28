@@ -37,6 +37,7 @@
 #include "spatial_change_detector.h"
 #include "swoop_race.h"
 #include "transitions.h"
+#include "update_checker.h"
 #include "view_mode.h"
 
 namespace acc::tick {
@@ -144,6 +145,10 @@ void Dispatch() {
 
     // Audio-glossary delayed-playback timer.
     acc::menus::modsettings::Tick();
+
+    // In-game auto-updater: F5 poll + background-check announce + handoff
+    // batch spawn on download completion. Cheap when idle (one atomic load).
+    acc::update_checker::Tick();
 
     // Drain queued actions LAST — monitors above must see consistent state.
     acc::menus::TickPendingOps();

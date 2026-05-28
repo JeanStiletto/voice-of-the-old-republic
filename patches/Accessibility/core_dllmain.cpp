@@ -11,13 +11,12 @@
 #include <cstring>
 
 #include "log.h"
+#include "mod_version.h"
 #include "prism.h"
 #include "strings.h"
+#include "update_checker.h"
 
 namespace {
-
-// Keep in sync with manifest.toml [patch].version.
-constexpr const char* kModVersion = "0.1.0";
 
 char g_versionSha[128] = "(unset)";
 
@@ -102,7 +101,7 @@ void EnsurePrismInitialized() {
     if (prism::Init()) {
         char greeting[128];
         snprintf(greeting, sizeof(greeting),
-                 "KOTOR accessibility mod loaded, version %s", kModVersion);
+                 "KOTOR accessibility mod loaded, version %s", acc::kModVersion);
         prism::Speak(greeting, /*interrupt=*/true);
     }
 }
@@ -117,6 +116,7 @@ extern "C" void __cdecl OnRulesInit(void* /*rulesThis*/) {
     fired = true;
     acc::strings::SetLanguage(DetectLanguageFromTlk());
     EnsurePrismInitialized();
+    acc::update_checker::StartBackgroundCheck();
     acclog::Write("Init", "first CSWRules construction; detour active");
 }
 

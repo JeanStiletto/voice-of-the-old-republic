@@ -63,6 +63,7 @@ namespace KotorAccessibilityInstaller
 
             bool uninstallMode = false;
             bool quietMode = false;
+            bool autoUpdateMode = false;
             string pathArg = null;
             string localKpatchPath = null;
 
@@ -71,6 +72,7 @@ namespace KotorAccessibilityInstaller
                 string arg = args[i].ToLowerInvariant();
                 if (arg == "/uninstall" || arg == "-uninstall" || arg == "--uninstall") uninstallMode = true;
                 else if (arg == "/quiet" || arg == "-quiet" || arg == "--quiet" || arg == "/q" || arg == "-q") quietMode = true;
+                else if (arg == "/auto-update" || arg == "-auto-update" || arg == "--auto-update") autoUpdateMode = true;
                 else if (arg == "--local-kpatch" && i + 1 < args.Length) localKpatchPath = args[++i];
                 else if (!arg.StartsWith("/") && !arg.StartsWith("-")) pathArg = args[i];
             }
@@ -124,6 +126,26 @@ namespace KotorAccessibilityInstaller
             string detectedGamePath = pathArg ?? DetectGamePath() ?? DefaultGamePath;
             string installedModPath = Path.Combine(detectedGamePath, "patches", "accessibility.dll");
             bool modExists = File.Exists(installedModPath);
+
+            // --auto-update: in-game F5 updater handoff. Skips every Welcome /
+            // ModSelection / UpdateAvailable / InstalledOptions dialog and runs
+            // MainForm directly in headless update-only mode. Exit code is 0 on
+            // success, 1 on failure (the caller batch reads it). This path
+            // assumes the mod is already installed; the install-only path is
+            // out of scope here because the in-game updater only fires when an
+            // existing patch DLL has loaded.
+            if (autoUpdateMode)
+            {
+                Logger.Info("Auto-update mode active — running headless update");
+                if (!modExists)
+                {
+                    Logger.Error($"--auto-update invoked but no installed mod found at {installedModPath}");
+                    Environment.ExitCode = 1;
+                    return;
+                }
+                Application.Run(new MainForm(detectedGamePath, updateOnly: true, localKpatchPath: localKpatchPath, headless: true));
+                return;
+            }
             bool updateAvailable = false;
             string installedVersion = null;
             string latestVersion = null;

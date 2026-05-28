@@ -90,6 +90,9 @@ enum class Action : int {
     EditboxSubmit,         // Enter while edit-mode armed
     EditboxCancel,         // Esc  while edit-mode armed
 
+    // ----- In-game auto-updater -----
+    CheckForUpdate,            // F5 — main menu only, gated on GetPlayerPosition
+
     // ----- Diagnostic probes (NOT user-rebindable) -----
     ProbePathfind,             // F9     (Ctrl forbidden)
     ProbeAudioCycle,           // F10    (Ctrl forbidden)
