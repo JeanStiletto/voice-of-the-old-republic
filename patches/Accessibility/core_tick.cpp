@@ -123,7 +123,6 @@ void Dispatch() {
     acc::combat::TickCombatMode();
     acc::combat::TickCombatLog();
     acc::combat::TickAttackResolutions();
-    acc::combat::TickSavingThrows();
     acc::combat::query::TickLeaderChangeAutoAnnounce();
     acc::combat::queue::Tick();
     acc::examine_view::Tick();

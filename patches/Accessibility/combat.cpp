@@ -487,29 +487,6 @@ void TickAttackResolutions() {
     }
 }
 
-// ============================================================================
-// Phase 4B — saving-throw poll skeleton.
-//
-// We don't have a clean event for "save just rolled" without a hook, so
-// this skeleton tracks creature_stats save fields per tick and announces
-// when one drops or rises by a noticeable margin (likely a buff/debuff
-// resolution from a save).
-//
-// Real implementation needs hooks at SavingThrowRoll @0x5b92b0 or
-// BroadcastSavingThrowData @0x4ec760 for roll/DC values. Marked TODO.
-// ============================================================================
-
-void TickSavingThrows() {
-    // Skeleton no-op: the real signal needs a hook. Polling for save
-    // changes per-tick is too noisy to be useful (every effect cleanup
-    // / equip / level-up touches the totals).
-    //
-    // Once a hook on SavingThrowRoll lands, this Tick is unused — the
-    // hook handler speaks directly via FmtSavingThrowSucceeded /
-    // FmtSavingThrowFailed.
-    return;
-}
-
 }  // namespace acc::combat
 
 // ============================================================================

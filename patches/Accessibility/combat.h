@@ -28,8 +28,4 @@ void TickCombatLog();
 // AreaObjectIterator + per-creature snapshots.
 void TickAttackResolutions();
 
-// Skeleton — coarse stats-diff heuristic. Real DC + roll await a hook
-// (SavingThrowRoll @0x5b92b0 or BroadcastSavingThrowData @0x4ec760).
-void TickSavingThrows();
-
 }  // namespace acc::combat
