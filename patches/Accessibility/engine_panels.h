@@ -106,6 +106,15 @@ PanelKind IdentifyPanel(void* panel);
 
 bool IsPanelKindInGameMenu(void* panel);
 
+// Engine-pushed standalone modal popups whose dismissal requires our Esc-routes-
+// to-close handler (the engine's own Esc handling on these is to open the
+// quit-confirm sibling, leaving the user stacked deeper instead of backing out).
+// Distinct from IsModalTextPanel (which identifies popups whose body text the
+// engine wraps in a single-row listbox so the chain can promote it to a
+// text-only entry); each is asked a different question, though MessageBoxModal /
+// TutorialBox / AreaTransition appear in both.
+bool IsModalPopupPanel(PanelKind k);
+
 // During reply turns the engine swaps fg to a Fade overlay while the
 // real dialog panel stays in panels[]. Scan, don't trust foreground.
 bool HasActiveDialogPanel();

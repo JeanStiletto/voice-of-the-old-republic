@@ -804,25 +804,9 @@ void acc::menus::detail::ClassLabelCacheStore(void* panel, void* icon, const cha
 // the engine's quit-confirm MessageBox, AreaTransition prompts, …) which
 // the engine never auto-dismisses on Esc.
 //
-// Distinct from IsModalTextPanel: that one identifies popups whose body
-// text the engine wraps in a single-row listbox (so RebindChain can promote
-// it to a text-only chain entry); this one identifies popups that need a
-// keyboard dismiss path. Overlap exists (MessageBoxModal/TutorialBox/
-// AreaTransition are in both) but each is asked a different question.
-static bool IsModalPopupPanel(PanelKind k) {
-    switch (k) {
-    case PanelKind::MessageBoxModal:
-    case PanelKind::TutorialBox:
-    case PanelKind::AreaTransition:
-    case PanelKind::StatusSummary:
-    case PanelKind::ControllerLossBox:
-    case PanelKind::SkillInfoBox:
-    case PanelKind::SoloModeQuery:
-        return true;
-    default:
-        return false;
-    }
-}
+// Implementation in engine_panels.cpp; pulled into unqualified scope here
+// because the Esc handler calls it inline below.
+using acc::engine::IsModalPopupPanel;
 
 // AppendChainTextOnly + RebindChain moved to menus_chain.cpp in Step 5.
 // RebindChain is the heart of chain navigation: walks panel.controls,

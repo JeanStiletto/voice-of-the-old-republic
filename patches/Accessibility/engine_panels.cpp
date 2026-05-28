@@ -526,6 +526,21 @@ bool IsPanelKindInGameMenu(void* panel) {
     return IdentifyPanel(panel) == PanelKind::InGameMenu;
 }
 
+bool IsModalPopupPanel(PanelKind k) {
+    switch (k) {
+    case PanelKind::MessageBoxModal:
+    case PanelKind::TutorialBox:
+    case PanelKind::AreaTransition:
+    case PanelKind::StatusSummary:
+    case PanelKind::ControllerLossBox:
+    case PanelKind::SkillInfoBox:
+    case PanelKind::SoloModeQuery:
+        return true;
+    default:
+        return false;
+    }
+}
+
 bool HasActiveDialogPanel() {
     void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
     if (!mgr) return false;
