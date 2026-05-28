@@ -19,9 +19,6 @@
                                 // the wrapper's TAM output and the input
                                 // target's class+state so empty-rows logs
                                 // are self-explanatory.
-#include "guidance_autowalk.h"  // kInvalidObjectId (the engine sentinel
-                                // used in the engine's own descriptor
-                                // slots and our hover gate)
 #include "log.h"
 
 namespace {

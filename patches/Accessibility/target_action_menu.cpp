@@ -23,8 +23,6 @@ namespace acc::target_action_menu {
 
 namespace {
 
-constexpr uint32_t kInvalidObjectId = 0x7F000000u;
-
 // Per-row shadow index, persisted across submenu sessions and across the
 // engine's PopulateMenus rebuilds. Engine's field1[target_type*3+row]
 // stores an action_id which gets invalidated whenever PopulateMenus

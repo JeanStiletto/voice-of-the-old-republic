@@ -625,6 +625,10 @@ constexpr size_t kControlTooltipStringOffset = 0x28; // CExoString literal
 // canonical way to address a known child of a known panel kind.
 constexpr size_t kControlIdOffset = 0x50;  // int id
 
+// Engine sentinel for "no object" in AI-queue object-id slots. Distinct
+// from CGameObjectArray's removed-handle sentinel (0xFFFFFFFF).
+constexpr uint32_t kInvalidObjectId = 0x7F000000u;
+
 // CSWGuiSaveLoadEntry layout (from swkotor.exe.h:16673). Each row in the
 // CSWGuiSaveLoad.games_listbox is a CSWGuiSaveLoadEntry that embeds a
 // CSWGuiButton at offset 0 and carries the slot's metadata as inline

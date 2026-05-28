@@ -72,7 +72,3 @@ constexpr uintptr_t kAddrCSWSObjectAddUseObjectAction = 0x0057C810;
 // CSWSObject::ClearAllActions — __thiscall(int) → void. param=0 here;
 // semantics not fully decoded.
 constexpr uintptr_t kAddrCSWSObjectClearAllActions = 0x004CCD80;
-
-// Engine sentinel for "no object" in AI-queue object-id slots. Distinct
-// from CGameObjectArray's removed-handle sentinel (0xFFFFFFFF).
-constexpr unsigned long kInvalidObjectId = 0x7F000000;
