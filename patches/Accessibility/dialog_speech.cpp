@@ -75,31 +75,6 @@ void* FindBarkBubblePanel() {
     return nullptr;
 }
 
-// Read a CSWGuiLabel's rendered text via the engine's gui_string path
-// (with the inline CExoString / strref fallback). Returns "" on miss.
-bool ReadLabelText(void* panel, size_t labelOffset,
-                   char* outBuf, size_t bufSize) {
-    if (!panel || !outBuf || bufSize < 2) return false;
-    outBuf[0] = '\0';
-    auto* label = reinterpret_cast<unsigned char*>(panel) + labelOffset;
-    __try {
-        if (acc::engine::ReadGuiString(label, kLabelGuiStringPtrOffset,
-                                       outBuf, bufSize) &&
-            outBuf[0] != '\0') {
-            return true;
-        }
-        if (acc::engine::ExtractTextOrStrRefIndirect(
-                label, kLabelTextOffset, kLabelStrRefOffset,
-                kLabelTextObjectOffset, outBuf, bufSize) &&
-            outBuf[0] != '\0') {
-            return true;
-        }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        outBuf[0] = '\0';
-    }
-    return false;
-}
-
 // Read row count of a CSWGuiListBox at panel + offset.
 int ReadListBoxRowCount(void* panel, size_t lbOffset) {
     if (!panel) return 0;
@@ -174,7 +149,7 @@ void Tick() {
         }
 
         char npc[512] = "";
-        bool gotNpc = ReadLabelText(m.panel, kDialogMessageLabelOffset,
+        bool gotNpc = acc::engine::ReadLabelTextAt(m.panel, kDialogMessageLabelOffset,
                                     npc, sizeof(npc));
         if (gotNpc && std::strcmp(npc, s_lastNpcLine) != 0) {
             prism::Speak(npc, /*interrupt=*/true);

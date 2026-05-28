@@ -234,44 +234,6 @@ const char* StatusWord(unsigned char status) {
     }
 }
 
-bool ReadLabelText(void* lab, char* out, size_t outN) {
-    if (!lab || !out || outN == 0) return false;
-    out[0] = '\0';
-    __try {
-        if (ReadGuiString(lab, kLabelGuiStringPtrOffset,
-                          out, outN) && out[0] != '\0') {
-            return true;
-        }
-        if (ExtractTextOrStrRefIndirect(
-                lab, kLabelTextOffset, kLabelStrRefOffset,
-                kLabelTextObjectOffset, out, outN) && out[0] != '\0') {
-            return true;
-        }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        out[0] = '\0';
-    }
-    return false;
-}
-
-bool ReadButtonText(void* btn, char* out, size_t outN) {
-    if (!btn || !out || outN == 0) return false;
-    out[0] = '\0';
-    __try {
-        if (ReadGuiString(btn, kButtonGuiStringPtrOffset,
-                          out, outN) && out[0] != '\0') {
-            return true;
-        }
-        if (ExtractTextOrStrRefIndirect(
-                btn, kButtonTextOffset, kButtonStrRefOffset,
-                kButtonTextObjectOffset, out, outN) && out[0] != '\0') {
-            return true;
-        }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        out[0] = '\0';
-    }
-    return false;
-}
-
 bool ReadPowerName(void* panel, char* out, size_t outN) {
     void* lab = FindControlById(panel, kIdPowerLabel);
     return ReadLabelText(lab, out, outN);

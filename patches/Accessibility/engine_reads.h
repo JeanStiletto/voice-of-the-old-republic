@@ -77,6 +77,30 @@ bool ExtractTextOrStrRefIndirect(void* control,
                                  size_t textObjectOffset,
                                  char* outBuf, size_t bufSize);
 
+// Read a CSWGuiLabel's rendered text — engine's resolved gui_string path
+// with the strref / CExoString / text_object fallback chain (i.e. the
+// label-specific shape of ExtractTextOrStrRefIndirect). SEH-guarded;
+// outBuf = "" on miss. Pass a label-control pointer (NOT a panel — for
+// the (panel, offset) convenience form use ReadLabelTextAt below).
+bool ReadLabelText(void* label, char* outBuf, size_t bufSize);
+
+// Convenience: panel + label-field offset, for the common case where a
+// label is embedded in the panel struct at a known field.
+inline bool ReadLabelTextAt(void* panel, size_t offset,
+                            char* outBuf, size_t bufSize) {
+    if (!panel) {
+        if (outBuf && bufSize > 0) outBuf[0] = '\0';
+        return false;
+    }
+    return ReadLabelText(
+        reinterpret_cast<unsigned char*>(panel) + offset, outBuf, bufSize);
+}
+
+// Read a CSWGuiButton's rendered text — same two-step shape against the
+// button's own field offsets (kButton{GuiStringPtr,Text,StrRef,TextObject}
+// Offset). SEH-guarded; outBuf = "" on miss.
+bool ReadButtonText(void* button, char* outBuf, size_t bufSize);
+
 // Used by ExtractAnnounceableText (which field reads) and
 // IsChainNavigable (where chain nav can land).
 bool IsToggle(void* control);

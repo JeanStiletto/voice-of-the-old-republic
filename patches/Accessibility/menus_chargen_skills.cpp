@@ -133,60 +133,6 @@ int RowPitchForCursorWarp(void* panel, void* control) {
 
 namespace {
 
-// Read a CSWGuiButton's rendered text without the cycle-category
-// prefix. Used by AnnounceValueChange — we need the bare "1" the
-// engine puts in skill_buttons[i].text, not the "Computer, 1"
-// composed string FromControl returns.
-bool ReadButtonTextDirect(void* button, char* outBuf, size_t bufSize) {
-    if (!button || !outBuf || bufSize == 0) return false;
-    outBuf[0] = '\0';
-    __try {
-        if (acc::engine::ReadGuiString(button, kButtonGuiStringPtrOffset,
-                                       outBuf, bufSize) &&
-            outBuf[0] != '\0') {
-            return true;
-        }
-        if (acc::engine::ExtractTextOrStrRefIndirect(
-                button,
-                kButtonTextOffset,
-                kButtonStrRefOffset,
-                kButtonTextObjectOffset,
-                outBuf, bufSize) &&
-            outBuf[0] != '\0') {
-            return true;
-        }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        outBuf[0] = '\0';
-    }
-    return false;
-}
-
-bool ReadLabelTextAt(void* panel, size_t offset,
-                     char* outBuf, size_t bufSize) {
-    if (!panel || !outBuf || bufSize == 0) return false;
-    outBuf[0] = '\0';
-    auto* label = reinterpret_cast<unsigned char*>(panel) + offset;
-    __try {
-        if (acc::engine::ReadGuiString(label, kLabelGuiStringPtrOffset,
-                                       outBuf, bufSize) &&
-            outBuf[0] != '\0') {
-            return true;
-        }
-        if (acc::engine::ExtractTextOrStrRefIndirect(
-                label,
-                kLabelTextOffset,
-                kLabelStrRefOffset,
-                kLabelTextObjectOffset,
-                outBuf, bufSize) &&
-            outBuf[0] != '\0') {
-            return true;
-        }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        outBuf[0] = '\0';
-    }
-    return false;
-}
-
 // Engine predicate: is the skill at `skillIdx` a class skill for the
 // chargen creature's class? Returns 1 (class) or 2 (cross-class) as
 // the cost; -1 on SEH fault. The engine's signature widens param_1
@@ -329,9 +275,9 @@ bool AnnounceValueChange(void* panel, void* control) {
 
     char value[32];
     char remaining[32];
-    bool gotValue = ReadButtonTextDirect(control,
+    bool gotValue = acc::engine::ReadButtonText(control,
                          value, sizeof(value));
-    bool gotRem   = ReadLabelTextAt(panel,
+    bool gotRem   = acc::engine::ReadLabelTextAt(panel,
                          kSkillsCharGenRemainingValueOffset,
                          remaining, sizeof(remaining));
     if (!gotValue) return false;

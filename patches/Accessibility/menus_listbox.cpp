@@ -547,28 +547,6 @@ void* FindFeatsCharGenPanel() {
     return nullptr;
 }
 
-// Best-effort read of a CSWGuiLabel's rendered text via the engine's
-// resolved gui_string path with a strref/exostring fallback. Same shape
-// the chargen Skills helpers use.
-bool ReadLabelText(void* label, char* out, size_t outN) {
-    if (!label || !out || outN == 0) return false;
-    out[0] = '\0';
-    __try {
-        if (acc::engine::ReadGuiString(label, kLabelGuiStringPtrOffset,
-                                       out, outN) && out[0] != '\0') {
-            return true;
-        }
-        if (acc::engine::ExtractTextOrStrRefIndirect(
-                label, kLabelTextOffset, kLabelStrRefOffset,
-                kLabelTextObjectOffset, out, outN) && out[0] != '\0') {
-            return true;
-        }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        out[0] = '\0';
-    }
-    return false;
-}
-
 // Reverse-lookup: given the strref the engine wrote onto a SkillEntry row
 // (kLabelStrRefOffset within the SkillEntry â€” its label_hilight.label.text
 // .text_params.str_ref), find the matching feat in Rules->feats[] and

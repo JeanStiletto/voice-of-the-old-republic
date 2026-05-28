@@ -216,6 +216,46 @@ bool ExtractTextOrStrRefIndirect(void* control,
     return got;
 }
 
+bool ReadLabelText(void* label, char* outBuf, size_t bufSize) {
+    if (!label || !outBuf || bufSize == 0) return false;
+    outBuf[0] = '\0';
+    __try {
+        if (ReadGuiString(label, kLabelGuiStringPtrOffset,
+                          outBuf, bufSize) && outBuf[0] != '\0') {
+            return true;
+        }
+        if (ExtractTextOrStrRefIndirect(
+                label, kLabelTextOffset, kLabelStrRefOffset,
+                kLabelTextObjectOffset, outBuf, bufSize) &&
+            outBuf[0] != '\0') {
+            return true;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        outBuf[0] = '\0';
+    }
+    return false;
+}
+
+bool ReadButtonText(void* button, char* outBuf, size_t bufSize) {
+    if (!button || !outBuf || bufSize == 0) return false;
+    outBuf[0] = '\0';
+    __try {
+        if (ReadGuiString(button, kButtonGuiStringPtrOffset,
+                          outBuf, bufSize) && outBuf[0] != '\0') {
+            return true;
+        }
+        if (ExtractTextOrStrRefIndirect(
+                button, kButtonTextOffset, kButtonStrRefOffset,
+                kButtonTextObjectOffset, outBuf, bufSize) &&
+            outBuf[0] != '\0') {
+            return true;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        outBuf[0] = '\0';
+    }
+    return false;
+}
+
 bool IsToggle(void* control) {
     return CallDowncast(control, kVtableAsButtonToggle) != nullptr;
 }
