@@ -15,6 +15,7 @@
 #include "engine_reads.h"       // ReadControlTooltip
 #include "hotkeys.h"            // ShiftHeld
 #include "log.h"
+#include "menu_speak.h"
 #include "narrated_target.h"
 #include "strings.h"
 #include "prism.h"
@@ -71,12 +72,7 @@ uint32_t ResolveNarratedClientHandle() {
 void SpeakCurrentLabel(void* tam, int row) {
     char label[128] = "";
     acc::engine_radial::ReadRowActionLabel(tam, row, label, sizeof(label));
-    if (label[0] == '\0') {
-        acclog::Write("TargetMenu", "speak row=%d -> empty", row);
-        return;
-    }
-    prism::Speak(label, /*interrupt=*/true);
-    acclog::Write("TargetMenu", "speak row=%d [%s]", row, label);
+    acc::menu_speak::SpeakChoice("TargetMenu", label, "row=%d", row);
 }
 
 }  // namespace

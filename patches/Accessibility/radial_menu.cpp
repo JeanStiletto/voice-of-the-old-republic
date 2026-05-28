@@ -9,6 +9,7 @@
 #include "engine_reads.h"    // ReadControlTooltip for Shift+arrow tooltip
 #include "hotkeys.h"         // ShiftHeld
 #include "log.h"
+#include "menu_speak.h"
 #include "strings.h"
 #include "prism.h"
 
@@ -99,12 +100,7 @@ void SpeakRowAction(void* tam, int row, const char* prefix) {
 void SpeakCurrentLabel(void* tam, int row) {
     char label[128] = "";
     acc::engine_radial::ReadRowActionLabel(tam, row, label, sizeof(label));
-    if (label[0] == '\0') {
-        acclog::Write("Radial", "speak label row=%d -> empty", row);
-        return;
-    }
-    prism::Speak(label, /*interrupt=*/true);
-    acclog::Write("Radial", "speak label row=%d [%s]", row, label);
+    acc::menu_speak::SpeakChoice("Radial", label, "label row=%d", row);
 }
 
 }  // namespace

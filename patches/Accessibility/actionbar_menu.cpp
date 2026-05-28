@@ -17,6 +17,7 @@
 #include "engine_reads.h"    // ReadControlTooltip for Shift+arrow tooltip
 #include "hotkeys.h"         // ShiftHeld
 #include "log.h"
+#include "menu_speak.h"
 #include "strings.h"
 #include "prism.h"
 
@@ -54,14 +55,8 @@ void SpeakCurrentVariant(void* mi, int slot) {
     char label[128] = "";
     acc::engine_actionbar::ReadVariantLabel(mi, slot, idx,
                                             label, sizeof(label));
-    if (label[0] == '\0') {
-        acclog::Write("ActionBar", "speak col=%d idx=%d -> empty",
-                      slot, idx);
-        return;
-    }
-    prism::Speak(label, /*interrupt=*/true);
-    acclog::Write("ActionBar", "speak col=%d idx=%d [%s]",
-                  slot, idx, label);
+    acc::menu_speak::SpeakChoice("ActionBar", label,
+                                 "col=%d idx=%d", slot, idx);
 }
 
 }  // namespace
