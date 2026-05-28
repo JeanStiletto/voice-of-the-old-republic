@@ -15,6 +15,7 @@
 #include "log.h"
 #include "menus_internal.h"   // FindControlById, QueueButtonByIdActivate
 #include "menus_pending.h"
+#include "menus_skillflow_nav.h"
 #include "strings.h"
 #include "prism.h"
 
@@ -74,28 +75,23 @@ void* s_boundPanel     = nullptr;
 void* s_boundRowsPtr   = nullptr;
 int   s_boundRowsCount = 0;
 
-inline int  TotalRowCount()         { return s_chartRowCount + kButtonRowCount; }
-inline bool IsButtonRow(int r)      { return r >= s_chartRowCount; }
-inline bool ColFilled(int r, int c) {
+inline int  TotalRowCount()    { return s_chartRowCount + kButtonRowCount; }
+inline bool IsButtonRow(int r) { return r >= s_chartRowCount; }
+
+// Cell predicate for the shared skillflow_nav helpers — powers grid empty
+// sentinel is powerId == 0xffff.
+bool ColFilled(int r, int c) {
     if (r < 0 || r >= s_chartRowCount) return false;
     if (c < 0 || c >= kSkillFlowColumnsPerRow) return false;
     return s_chartRows[r].powerId[c] != 0xffff;
 }
 
 int FirstFilledCol(int r) {
-    for (int c = 0; c < kSkillFlowColumnsPerRow; ++c) {
-        if (ColFilled(r, c)) return c;
-    }
-    return -1;
+    return acc::menus::skillflow_nav::FirstFilledCol(r, ColFilled);
 }
 
 int NearestFilledCol(int r, int want) {
-    if (ColFilled(r, want)) return want;
-    for (int d = 1; d < kSkillFlowColumnsPerRow; ++d) {
-        if (ColFilled(r, want - d)) return want - d;
-        if (ColFilled(r, want + d)) return want + d;
-    }
-    return FirstFilledCol(r);
+    return acc::menus::skillflow_nav::NearestFilledCol(r, want, ColFilled);
 }
 
 // Read the engine's current chart binding (powers_listbox.controls
