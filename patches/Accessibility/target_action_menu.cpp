@@ -3,8 +3,7 @@
 #include <cstdio>
 #include <cstring>
 
-#include "actionbar_menu.h"     // mutual disarm — Shift+1..3 and Shift+4..7
-                                 // can't both be active at once
+#include "menus_submenu.h"      // EnforceCombatHotkeyMutex (Shift+1..3 vs Shift+4..7)
 #include "engine_actionbar.h"   // PrepareBareDispatch — refresh action_lists
                                  // against the narrated target before reading
 #include "engine_input.h"       // kInputNavUp/Down, kInputEnter1/2, kInputEsc1/2
@@ -127,13 +126,7 @@ bool Open(int row) {
         return false;
     }
 
-    // Mutex with actionbar_menu (Shift+4..7): only one explore submenu at
-    // a time. If the user opened Shift+4 and then Shift+1, the actionbar
-    // gate would otherwise stay armed while target_action_menu takes over
-    // input routing — leaving actionbar in a dead state.
-    if (acc::actionbar_menu::IsActive()) {
-        acc::actionbar_menu::ForceDisarm("target-menu-open");
-    }
+    acc::menus::submenu::EnforceCombatHotkeyMutex("target-menu-open");
 
     g_state.active = true;
     g_state.curRow = row;

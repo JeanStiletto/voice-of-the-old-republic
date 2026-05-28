@@ -6,8 +6,7 @@
 #include "engine_actionbar.h"
 #include "engine_input.h"     // kInputNavUp/Down, kInputEnter1/2,
                               // kInputEsc1/2
-#include "target_action_menu.h"  // mutual disarm — Shift+4..7 and Shift+1..3
-                                  // can't both be active at once
+#include "menus_submenu.h"   // EnforceCombatHotkeyMutex (Shift+4..7 vs Shift+1..3)
 #include "engine_panels.h"   // HasActiveDialogPanel — gate Open while a
                               // cinematic dialog is foreground (the dialog's
                               // listbox is sensitive to arrow input from the
@@ -115,11 +114,7 @@ bool Open(int slot) {
         return false;
     }
 
-    // Mutex with target_action_menu (Shift+1..3): only one explore submenu
-    // at a time. Mirror of the same check in target_action_menu::Open.
-    if (acc::target_action_menu::IsActive()) {
-        acc::target_action_menu::ForceDisarm("actionbar-open");
-    }
+    acc::menus::submenu::EnforceCombatHotkeyMutex("actionbar-open");
 
     g_state.active  = true;
     g_state.curSlot = slot;
