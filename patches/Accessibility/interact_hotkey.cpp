@@ -347,13 +347,34 @@ void AnnounceBarePersonalKey(int slot) {
         return;
     }
 
+    // Engine dispatches DoPersonalAction synchronously while our prologue
+    // hook returns, so by the time we announce, the just-added action
+    // already sits at the tail of the player's combat round. Read the
+    // depth and report "X, Platz N". When the pre-press snapshot (taken
+    // by input_pipeline before the engine's switch-case dispatched)
+    // and the post-press count both sit at the 4-entry cap, the engine
+    // silently freed the action — announce "Warteschlange voll" instead.
+    int preDepth = acc::combat::queue::GetPrePressDepth();
+    int queuePos = acc::combat::queue::CountPlayerEntries();
+    const bool capHit = (preDepth >= 4 && queuePos >= 4);
     char msg[192];
-    std::snprintf(msg, sizeof(msg),
-                  acc::strings::Get(acc::strings::Id::FmtActionBarFired),
-                  label);
+    if (capHit) {
+        std::snprintf(msg, sizeof(msg),
+                      acc::strings::Get(acc::strings::Id::FmtFireQueueFull),
+                      label);
+    } else if (queuePos > 0) {
+        std::snprintf(msg, sizeof(msg),
+                      acc::strings::Get(acc::strings::Id::FmtFireAtPosition),
+                      label, queuePos);
+    } else {
+        std::snprintf(msg, sizeof(msg),
+                      acc::strings::Get(acc::strings::Id::FmtActionBarFired),
+                      label);
+    }
     prism::Speak(msg, /*interrupt=*/true);
-    acclog::Write("ActionBar", "bare key slot=%d variants=%d idx=%d label=[%s] -> [%s]",
-        slot, nVar, idx, label, msg);
+    acclog::Write("ActionBar", "bare key slot=%d variants=%d idx=%d label=[%s] "
+        "pre=%d post=%d capHit=%d -> [%s]",
+        slot, nVar, idx, label, preDepth, queuePos, capHit ? 1 : 0, msg);
 }
 
 // Speak "{label} eingesetzt" for a bare-press of target-action key 1..3.
@@ -395,13 +416,27 @@ void AnnounceBareTargetKey(int row) {
         return;
     }
 
+    int preDepth = acc::combat::queue::GetPrePressDepth();
+    int queuePos = acc::combat::queue::CountPlayerEntries();
+    const bool capHit = (preDepth >= 4 && queuePos >= 4);
     char msg[192];
-    std::snprintf(msg, sizeof(msg),
-                  acc::strings::Get(acc::strings::Id::FmtActionBarFired),
-                  label);
+    if (capHit) {
+        std::snprintf(msg, sizeof(msg),
+                      acc::strings::Get(acc::strings::Id::FmtFireQueueFull),
+                      label);
+    } else if (queuePos > 0) {
+        std::snprintf(msg, sizeof(msg),
+                      acc::strings::Get(acc::strings::Id::FmtFireAtPosition),
+                      label, queuePos);
+    } else {
+        std::snprintf(msg, sizeof(msg),
+                      acc::strings::Get(acc::strings::Id::FmtActionBarFired),
+                      label);
+    }
     prism::Speak(msg, /*interrupt=*/true);
-    acclog::Write("ActionBar", "bare target row=%d label=[%s] -> [%s]",
-        row, label, msg);
+    acclog::Write("ActionBar", "bare target row=%d label=[%s] "
+        "pre=%d post=%d capHit=%d -> [%s]",
+        row, label, preDepth, queuePos, capHit ? 1 : 0, msg);
 }
 
 }  // namespace

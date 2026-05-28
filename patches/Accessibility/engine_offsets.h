@@ -854,13 +854,37 @@ constexpr size_t kCombatRoundActionsOffset            = 0x9b0;
 constexpr size_t kCombatRoundEngagedOffset            = 0x9b8;
 constexpr size_t kCombatRoundCurrentActionOffset      = 0x9d0;
 
-// CExoLinkedList layout — kept minimal for the queue walker. Nodes are
-// `{ next, prev, data }` (12 bytes). The `actions` member holds the head
-// node pointer; iterating via `next` until null yields each
-// CSWSCombatRoundAction.
-constexpr size_t kLinkedListHeadOffset   = 0x0;
-constexpr size_t kLinkedListNodeNextOff  = 0x0;
-constexpr size_t kLinkedListNodeDataOff  = 0x8;
+// CExoLinkedList layout — verified against SARIF DATATYPE export
+// 2026-05-28. THREE distinct structs need correct offsets:
+//
+//   CExoLinkedList<T>          { internal: CExoLinkedListInternal*  @+0 }
+//   CExoLinkedListInternal     { head: Node*  @+0,
+//                                tail: Node*  @+4,
+//                                count: int   @+8 }
+//   CExoLinkedListNode         { prev: Node*  @+0,
+//                                next: Node*  @+4,
+//                                data: void*  @+8 }
+//
+// The original walker in combat_queue (and combat_diag) treated the
+// internal pointer as a node and walked via +0 — which on a real
+// node is `prev`. On the head node `prev` is NULL, so the walk
+// terminated after one iteration regardless of how many entries the
+// list actually held. That's why queue-depth reads always returned 1
+// even when the engine had 4 entries queued (AddAction hard-caps at
+// 4 via `if (3 < count) { free; return; }`).
+//
+// Correct walk: combat_round.actions → +0 = internal* → +0 = head
+// node* → walk via Node.next at +4 until null.
+constexpr size_t kListInternalOffset       = 0x0;  // CExoLinkedList<T>     +0 -> internal*
+constexpr size_t kListInternalHeadOffset   = 0x0;  // CExoLinkedListInternal+0 -> head node*
+constexpr size_t kListInternalCountOffset  = 0x8;  // CExoLinkedListInternal+8 -> count (engine authoritative)
+constexpr size_t kLinkedListNodeNextOff    = 0x4;  // CExoLinkedListNode    +4 -> next
+constexpr size_t kLinkedListNodeDataOff    = 0x8;  // CExoLinkedListNode    +8 -> data
+
+// Legacy name kept so existing call sites compile. Same value/meaning
+// as kListInternalOffset (the offset from CExoLinkedList to its
+// internal pointer).
+constexpr size_t kLinkedListHeadOffset     = kListInternalOffset;
 
 constexpr size_t kCombatRoundActionTypeOffset       = 0x10;
 constexpr size_t kCombatRoundActionTargetOffset     = 0x14;
@@ -974,6 +998,33 @@ constexpr uintptr_t kAddrCSWRulesGetFeat              = 0x00550c00;
 // must read .c_string before destruct (we deliberately leak the heap
 // string, same pattern as CSWSItem::GetPropertyDescription).
 constexpr uintptr_t kAddrCSWFeatGetNameText           = 0x005cd760;
+
+// CSWRules.spells — the spells array. CSWSpellArray* at offset 0x8c
+// (140 bytes) per SARIF layout dump. The array exposes GetSpell(id) ->
+// CSWSpell*. Used by combat::queue to decode action_type=9 (Cast Force
+// Power) queue entries to their specific spell name.
+constexpr size_t    kRulesSpellsOffset                = 0x8c;
+
+// CSWSpellArray::GetSpell — __thiscall(int spell_id) -> CSWSpell* (cast
+// as int in the Ghidra signature). Returns nullptr / 0 if spell_id is
+// out of range. BYTES_PURGED=4.
+constexpr uintptr_t kAddrCSWSpellArrayGetSpell        = 0x0059b6d0;
+
+// CSWSpell::GetSpellNameText — __thiscall(CExoString* out) -> CExoString*.
+// Same shape as CSWFeat::GetNameText: constructs the localized name into
+// the out string in place; caller must read .c_string before any
+// destructor runs (we leak — CRT mismatch otherwise). BYTES_PURGED=4.
+constexpr uintptr_t kAddrCSWSpellGetSpellNameText     = 0x0059b940;
+
+// CSWSCombatRoundAction additional offsets (decoded from GetActionIcon
+// @0x686fb0 — case 0xb/0xc switch). The action_type byte at +0x10
+// selects which of these is meaningful:
+//   action_type=9  → spell_id at +0x24    (CSWSpellArray::GetSpell)
+//   action_type=10 → item_handle at +0x64 (CServerExoApp::GetItemByGameObjectID)
+//   action_type=11 → feat_id at +0x5c     (CSWRules::GetFeat)
+constexpr size_t    kCombatRoundActionSpellIdOffset   = 0x24;
+constexpr size_t    kCombatRoundActionItemHandleOff   = 0x64;
+constexpr size_t    kCombatRoundActionFeatIdOffset    = 0x5c;
 
 // CGameEffect layout — what's stored in CSWSObject.effects.
 // `effects` is CExoArrayList<CGameEffect*> at +0x124 (already known).

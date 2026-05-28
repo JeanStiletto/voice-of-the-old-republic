@@ -58,40 +58,6 @@ void* GetCSWRules() {
     }
 }
 
-// True on non-empty result. SEH-guarded — feats-table walk.
-bool ResolveFeatName(unsigned short featIdx, char* outBuf, size_t outBufSize) {
-    if (!outBuf || outBufSize < 2) return false;
-    outBuf[0] = '\0';
-    void* rules = GetCSWRules();
-    if (!rules) return false;
-
-    void* feat = nullptr;
-    __try {
-        auto fn = reinterpret_cast<PFN_GetFeat>(kAddrCSWRulesGetFeat);
-        feat = fn(rules, featIdx);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-    if (!feat) return false;
-
-    ExoStringRaw exo{nullptr, 0};
-    __try {
-        auto fn = reinterpret_cast<PFN_GetFeatNameText>(
-            kAddrCSWFeatGetNameText);
-        fn(feat, &exo);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-    if (!exo.c_string || exo.c_string[0] == '\0') {
-        // Leak the heap alloc — destruction across the DLL/EXE boundary
-        // risks a CRT mismatch on ~CExoString.
-        return false;
-    }
-    std::strncpy(outBuf, exo.c_string, outBufSize - 1);
-    outBuf[outBufSize - 1] = '\0';
-    return true;
-}
-
 // EFFECT_TYPES enum (110 entries) → display name. Unmapped types fall
 // back to "Effect #N" in the caller. Localized inline rather than burning
 // a strings.h ID per enum entry.
@@ -718,6 +684,95 @@ void SpeakRow(int idx) {
 }
 
 }  // namespace
+
+// Public — same shape as ResolveFeatName below, but for the spells
+// array. Reads Rules->spells (CSWSpellArray* at +kRulesSpellsOffset),
+// resolves a CSWSpell* via GetSpell(spell_id), then formats the
+// localized name via CSWSpell::GetSpellNameText. SEH-guarded at every
+// dereference. Used by combat::queue's row speech for action_type=9
+// (Cast Force Power) entries.
+bool ResolveSpellName(int spellId, char* outBuf, size_t outBufSize) {
+    if (!outBuf || outBufSize < 2) return false;
+    outBuf[0] = '\0';
+    void* rules = GetCSWRules();
+    if (!rules) return false;
+
+    void* spellArray = nullptr;
+    __try {
+        spellArray = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(rules) +
+            kRulesSpellsOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (!spellArray) return false;
+
+    using PFN_GetSpell = void* (__thiscall*)(void* spells, int spellId);
+    void* spell = nullptr;
+    __try {
+        auto fn = reinterpret_cast<PFN_GetSpell>(kAddrCSWSpellArrayGetSpell);
+        spell = fn(spellArray, spellId);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (!spell) return false;
+
+    using PFN_GetSpellNameText = void* (__thiscall*)(void* spell, void* outExo);
+    ExoStringRaw exo{nullptr, 0};
+    __try {
+        auto fn = reinterpret_cast<PFN_GetSpellNameText>(
+            kAddrCSWSpellGetSpellNameText);
+        fn(spell, &exo);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (!exo.c_string || exo.c_string[0] == '\0') {
+        // Same heap-leak rationale as ResolveFeatName.
+        return false;
+    }
+    std::strncpy(outBuf, exo.c_string, outBufSize - 1);
+    outBuf[outBufSize - 1] = '\0';
+    return true;
+}
+
+// Public — declared in examine_view.h. Lives outside the anonymous
+// namespace so combat::queue (and any other future caller) can link to
+// it. Internal helpers (GetCSWRules, PFN_GetFeat, ExoStringRaw,
+// kAddrCSWRulesGetFeat) reach through the anon-namespace using-directive
+// that the enclosing acc::examine_view namespace implicitly maintains.
+// SEH-guarded — feats-table walk.
+bool ResolveFeatName(unsigned short featIdx, char* outBuf, size_t outBufSize) {
+    if (!outBuf || outBufSize < 2) return false;
+    outBuf[0] = '\0';
+    void* rules = GetCSWRules();
+    if (!rules) return false;
+
+    void* feat = nullptr;
+    __try {
+        auto fn = reinterpret_cast<PFN_GetFeat>(kAddrCSWRulesGetFeat);
+        feat = fn(rules, featIdx);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (!feat) return false;
+
+    ExoStringRaw exo{nullptr, 0};
+    __try {
+        auto fn = reinterpret_cast<PFN_GetFeatNameText>(
+            kAddrCSWFeatGetNameText);
+        fn(feat, &exo);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (!exo.c_string || exo.c_string[0] == '\0') {
+        // Leak the heap alloc — destruction across the DLL/EXE boundary
+        // risks a CRT mismatch on ~CExoString.
+        return false;
+    }
+    std::strncpy(outBuf, exo.c_string, outBufSize - 1);
+    outBuf[outBufSize - 1] = '\0';
+    return true;
+}
 
 const char* EffectName(int type) {
     if (acc::strings::GetLanguage() == acc::strings::Lang::De) {

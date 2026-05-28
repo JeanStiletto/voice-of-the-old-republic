@@ -844,3 +844,175 @@ type = "pointer"
 [[hooks.parameters]]
 source = "eax"
 type = "int"
+
+
+# ============================================================================
+# Combat-queue diagnostic probe.
+#
+# Hooks the deterministic mutators on CSWSCombatRound so we can answer
+# "did the queue chain or overwrite?" without racing the engine. Each fire
+# logs a Combat.Diag line tagged ADD or CLEAR with role=PLAYER/other.
+# Filter the patch log with `grep "Combat.Diag.*PLAYER"` to see only the
+# user's combat round.
+#
+# These hooks are read-only — handlers do not mutate engine state, just
+# log. Safe to leave in across builds; remove once the chain-vs-overwrite
+# question is settled.
+# ============================================================================
+
+# CSWSCombatRound::AddAction @0x004d3660 — generic queue adder. Every
+# specialized adder (AddAttackAction / AddSWSpellAction / ...) calls this.
+# Confirmed call sites (FindCallers): five sites in 0x4d3xxx — all
+# specialized adders forwarding here.
+#
+# Function entry per DumpBytes 2026-05-28:
+#   0x004d3660: 53                 PUSH EBX
+#   0x004d3661: 56                 PUSH ESI
+#   0x004d3662: 8b f1               MOV  ESI, ECX            ; this
+#   0x004d3664: 8b 86 b0 09 00 00  MOV  EAX, [ESI+0x9B0]    ; this->actions
+#   0x004d366a: 85 c0               TEST EAX, EAX
+#   0x004d366c: 57                 PUSH EDI
+#
+# Cut: 10 bytes (PUSH EBX + PUSH ESI + MOV ESI,ECX + MOV EAX,[ESI+0x9B0]).
+# Register-only + memory-relative; clean to relocate. After cut runs:
+# ESI=this, EAX=this->actions. Resume at 0x4d366a (TEST EAX,EAX) uses the
+# EAX value the cut just loaded.
+#
+# At hook entry (BEFORE cut runs):
+#   ECX     = this (CSWSCombatRound*)
+#   [ESP+0] = return addr
+#   [ESP+4] = action (CSWSCombatRoundAction*)
+#   [ESP+8] = param_2 (int)
+#
+# `source = "esp+N"` emits LEA per project_kpatchmanager_lea_bug.md;
+# handler dereferences once to recover the slot value.
+[[hooks]]
+address = 0x004d3660
+type = "detour"
+function = "OnCombatRoundAddAction"
+
+original_bytes = [0x53, 0x56, 0x8b, 0xf1, 0x8b, 0x86, 0xb0, 0x09, 0x00, 0x00]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+4"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+8"
+type = "pointer"
+
+
+# CSWSCombatRound::RemoveAllActions @0x004d3770 — queue clear. Called from
+# overwrite paths (CSWGuiMainInterface DoPersonalAction/DoTargetAction
+# clear-branch via CSWCObject::ClearAllQueuedCombatActions, AddAttackActions
+# conditional clear, SetCombatState exit clear, ClearAllActions wrapper,
+# inventory message handler, equip/unequip UI). If we see this fire between
+# bare-1 presses, the engine is overwriting; if not, it's chaining.
+#
+# Function entry per DumpBytes 2026-05-28:
+#   0x004d3770: 56                 PUSH ESI
+#   0x004d3771: 8b f1               MOV  ESI, ECX            ; this
+#   0x004d3773: 8b 86 b0 09 00 00  MOV  EAX, [ESI+0x9B0]    ; this->actions
+#   0x004d3779: 85 c0               TEST EAX, EAX
+#   0x004d377b: 74 28               JZ short (+0x28)         ; bail if null
+#
+# Cut: 9 bytes (PUSH ESI + MOV ESI,ECX + MOV EAX,[ESI+0x9B0]). Register-
+# only + memory-relative; relocate cleanly. Resume at 0x4d3779 (TEST EAX,
+# EAX) uses the EAX value the cut just loaded.
+#
+# At hook entry:
+#   ECX = this (CSWSCombatRound*)  — only argument
+[[hooks]]
+address = 0x004d3770
+type = "detour"
+function = "OnCombatRoundRemoveAllActions"
+
+original_bytes = [0x56, 0x8b, 0xf1, 0x8b, 0x86, 0xb0, 0x09, 0x00, 0x00]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+
+# CSWSCombatRound::SetCurrentAction @0x004d2b40 — moves an action into
+# the "currently dispatching" slot at this+0x9D0. Fires once per action
+# the engine picks to execute. If the queue chains 5 entries but only
+# 1 SETCUR fires per round, that's the per-round consumer rate.
+#
+# Function body per DumpBytes 2026-05-28 — small leaf:
+#   0x004d2b40: 8a 44 24 04         MOV  AL, [ESP+4]      ; byte param
+#   0x004d2b44: 88 81 d0 09 00 00   MOV  [ECX+0x9D0], AL  ; this->current_action = byte
+#   0x004d2b4a: c2 04 00            RET 4
+#
+# Cut: 10 bytes covers MOV AL,[ESP+4] + MOV [ECX+0x9D0],AL. Resume at
+# 0x4d2b4a (RET 4) — clean return from the trampoline.
+#
+# At hook entry:
+#   ECX     = this (CSWSCombatRound*)
+#   [ESP+0] = return addr
+#   [ESP+4] = byte param (low byte of the slot; high 3 bytes are stack pad)
+#
+# `source = "esp+4"` emits LEA per project_kpatchmanager_lea_bug.md;
+# handler dereferences once to recover the byte.
+[[hooks]]
+address = 0x004d2b40
+type = "detour"
+function = "OnCombatRoundSetCurrentAction"
+
+original_bytes = [0x8a, 0x44, 0x24, 0x04, 0x88, 0x81, 0xd0, 0x09, 0x00, 0x00]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+4"
+type = "pointer"
+
+
+# CSWSCombatRound::RemoveLastAction @0x004d37b0 — pops the tail of the
+# CSWSCombatRound.actions linked list. If we see this fire between
+# user presses, the engine is silently culling queued entries one at
+# a time (different from RemoveAllActions which nukes the whole list).
+#
+# Function entry per DumpBytes 2026-05-28:
+#   0x004d37b0: 8b 89 b0 09 00 00   MOV  ECX, [ECX+0x9B0]  ; ECX = this->actions
+#   0x004d37b6: 33 c0                XOR  EAX, EAX
+#   0x004d37b8: 85 c9                TEST ECX, ECX
+#   0x004d37ba: 74 20                JZ short +0x20
+#
+# Cut: 6 bytes — just the MOV. The wrapper preserves ECX across the
+# handler call (thiscall ABI), then runs the cut which clobbers ECX
+# with this->actions. Resume at 0x4d37b6 (XOR EAX,EAX) sets EAX=0;
+# then TEST ECX,ECX inspects the loaded list ptr; JZ branches if null.
+# All EFLAGS-modifying instructions are in engine code post-cut, so
+# the wrapper's own EFLAGS use can't corrupt the JZ.
+#
+# At hook entry:
+#   ECX = this (CSWSCombatRound*)  — only argument
+[[hooks]]
+address = 0x004d37b0
+type = "detour"
+function = "OnCombatRoundRemoveLastAction"
+
+original_bytes = [0x8b, 0x89, 0xb0, 0x09, 0x00, 0x00]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"

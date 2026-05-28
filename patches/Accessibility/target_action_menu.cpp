@@ -3,6 +3,11 @@
 #include <cstdio>
 #include <cstring>
 
+#include "combat_diag.h"        // Probe — snapshot chain/overwrite state
+                                 // around DispatchRowAction for Shift+1..3
+#include "combat_queue.h"       // CountPlayerEntries — queue depth after
+                                 // fire so the announce can report
+                                 // "X, Platz N"
 #include "menus_submenu.h"      // EnforceCombatHotkeyMutex (Shift+1..3 vs Shift+4..7)
 #include "engine_actionbar.h"   // PrepareBareDispatch — refresh action_lists
                                  // against the narrated target before reading
@@ -243,16 +248,40 @@ bool HandleInputEvent(int code, int value) {
             char label[128] = "";
             acc::engine_radial::ReadRowActionLabel(
                 tam, row, label, sizeof(label));
-            bool ok = acc::engine_radial::DispatchRowAction(tam, row);
 
+            char diag_label[24];
+            std::snprintf(diag_label, sizeof(diag_label),
+                          "shift+%d-enter", row + 1);  // row 0→1 .. row 2→3
+            acc::combat::queue::ReportPrePressDepth();
+            acc::combat_diag::LogPreFire(diag_label);
+            bool ok = acc::engine_radial::DispatchRowAction(tam, row);
+            acc::combat_diag::LogPostFire(diag_label);
+
+            int preDepth = acc::combat::queue::GetPrePressDepth();
+            int queuePos = acc::combat::queue::CountPlayerEntries();
+            const bool capHit = (preDepth >= 4 && queuePos >= 4);
             char msg[192];
-            std::snprintf(msg, sizeof(msg),
-                          acc::strings::Get(
-                              acc::strings::Id::FmtActionBarFired),
-                          label[0] ? label : "?");
+            if (capHit) {
+                std::snprintf(msg, sizeof(msg),
+                              acc::strings::Get(
+                                  acc::strings::Id::FmtFireQueueFull),
+                              label[0] ? label : "?");
+            } else if (queuePos > 0) {
+                std::snprintf(msg, sizeof(msg),
+                              acc::strings::Get(
+                                  acc::strings::Id::FmtFireAtPosition),
+                              label[0] ? label : "?", queuePos);
+            } else {
+                std::snprintf(msg, sizeof(msg),
+                              acc::strings::Get(
+                                  acc::strings::Id::FmtActionBarFired),
+                              label[0] ? label : "?");
+            }
             prism::Speak(msg, /*interrupt=*/true);
-            acclog::Write("TargetMenu", "ENTER row=%d label=[%s] ok=%d -> [%s]",
-                row, label, ok ? 1 : 0, msg);
+            acclog::Write("TargetMenu", "ENTER row=%d label=[%s] ok=%d "
+                "pre=%d post=%d capHit=%d -> [%s]",
+                row, label, ok ? 1 : 0, preDepth, queuePos,
+                capHit ? 1 : 0, msg);
 
             ForceDisarm("enter");
             return true;

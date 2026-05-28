@@ -73,6 +73,8 @@ const char* Get(Id id) {
         case Id::FmtActionBarColumnEmpty: return "Column %d is empty";
         case Id::ActionBarColumnEmpty:    return "Column is empty";
         case Id::FmtActionBarFired:       return "%s used";
+        case Id::FmtFireAtPosition:       return "%s, position %d";
+        case Id::FmtFireQueueFull:        return "%s, queue full";
         case Id::ActionBarCancelled:      return "Cancelled";
 
         case Id::NoTooltipAvailable:   return "No description available";

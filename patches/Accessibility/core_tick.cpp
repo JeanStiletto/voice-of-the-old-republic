@@ -8,6 +8,7 @@
 #include "camera_announce.h"
 #include "camera_orient.h"
 #include "combat.h"
+#include "combat_diag.h"
 #include "combat_query.h"
 #include "combat_queue.h"
 #include "combat_special_watch.h"
@@ -124,6 +125,7 @@ void Dispatch() {
     acc::combat::TickCombatLog();
     acc::combat::query::TickLeaderChangeAutoAnnounce();
     acc::combat::queue::Tick();
+    acc::combat_diag::Tick();
     acc::examine_view::Tick();
     acc::combat::special_watch::Tick();
 

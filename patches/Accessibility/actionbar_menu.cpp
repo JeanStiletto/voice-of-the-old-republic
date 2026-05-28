@@ -3,6 +3,13 @@
 #include <cstdio>
 #include <cstring>
 
+#include "combat_diag.h"     // Probe — snapshot chain/overwrite state around
+                             // FireSelectedVariant so we can grep
+                             // "Combat.Diag PRE shift+N-enter" / "POST"
+                             // and compare cm/qs deltas
+#include "combat_queue.h"    // CountPlayerEntries — read queue depth
+                             // after fire so the announce can report
+                             // "X, Platz N"
 #include "engine_actionbar.h"
 #include "engine_input.h"     // kInputNavUp/Down, kInputEnter1/2,
                               // kInputEsc1/2
@@ -230,16 +237,46 @@ bool HandleInputEvent(int code, int value) {
             // even if the engine field was stale from a prior session
             // or RePopulate.
             acc::engine_actionbar::SelectVariant(mi, slot, idx);
-            bool ok = acc::engine_actionbar::FireSelectedVariant(mi, slot);
 
+            char diag_label[24];
+            std::snprintf(diag_label, sizeof(diag_label),
+                          "shift+%d-enter", slot + 4);  // slot 0→4 .. slot 3→7
+            // Snapshot queue depth pre-press so the post-press announce
+            // can detect engine cap-hits (count was already 4 → new
+            // action freed silently inside CSWSCombatRound::AddAction).
+            acc::combat::queue::ReportPrePressDepth();
+            acc::combat_diag::LogPreFire(diag_label);
+            bool ok = acc::engine_actionbar::FireSelectedVariant(mi, slot);
+            acc::combat_diag::LogPostFire(diag_label);
+
+            int preDepth = acc::combat::queue::GetPrePressDepth();
+            int queuePos = acc::combat::queue::CountPlayerEntries();
+            // Cap hit when pre and post both sit at the 4-entry hard
+            // limit — the engine's `if (3 < count) { free; return; }`
+            // arm in AddAction silently rejected our entry.
+            const bool capHit = (preDepth >= 4 && queuePos >= 4);
             char msg[192];
-            std::snprintf(msg, sizeof(msg),
-                          acc::strings::Get(
-                              acc::strings::Id::FmtActionBarFired),
-                          label[0] ? label : "?");
+            if (capHit) {
+                std::snprintf(msg, sizeof(msg),
+                              acc::strings::Get(
+                                  acc::strings::Id::FmtFireQueueFull),
+                              label[0] ? label : "?");
+            } else if (queuePos > 0) {
+                std::snprintf(msg, sizeof(msg),
+                              acc::strings::Get(
+                                  acc::strings::Id::FmtFireAtPosition),
+                              label[0] ? label : "?", queuePos);
+            } else {
+                std::snprintf(msg, sizeof(msg),
+                              acc::strings::Get(
+                                  acc::strings::Id::FmtActionBarFired),
+                              label[0] ? label : "?");
+            }
             prism::Speak(msg, /*interrupt=*/true);
-            acclog::Write("ActionBar", "ENTER slot=%d idx=%d label=[%s] ok=%d -> [%s]",
-                slot, idx, label, ok ? 1 : 0, msg);
+            acclog::Write("ActionBar", "ENTER slot=%d idx=%d label=[%s] ok=%d "
+                "pre=%d post=%d capHit=%d -> [%s]",
+                slot, idx, label, ok ? 1 : 0, preDepth, queuePos,
+                capHit ? 1 : 0, msg);
 
             ForceDisarm("enter");
             return true;

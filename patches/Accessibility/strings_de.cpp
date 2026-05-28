@@ -84,6 +84,8 @@ const char* Get(Id id) {
         case Id::FmtActionBarColumnEmpty: return "Spalte %d ist leer";
         case Id::ActionBarColumnEmpty:    return "Spalte ist leer";
         case Id::FmtActionBarFired:       return "%s eingesetzt";
+        case Id::FmtFireAtPosition:       return "%s, Platz %d";
+        case Id::FmtFireQueueFull:        return "%s, Warteschlange voll";
         case Id::ActionBarCancelled:      return "Abgebrochen";
 
         case Id::NoTooltipAvailable:   return "Keine Beschreibung verf\xFC" "gbar";  // verfügbar

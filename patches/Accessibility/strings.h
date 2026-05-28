@@ -216,6 +216,18 @@ enum class Id : int {
     FmtActionBarColumnEmpty,
     ActionBarColumnEmpty,
     FmtActionBarFired,
+    // Same fire-confirmation slot, but with the queue position the user
+    // just landed on. Args: variant label (`%s`), 1-indexed queue
+    // position (`%d`). Used in place of FmtActionBarFired whenever the
+    // post-fire combat-round queue size is readable.
+    FmtFireAtPosition,
+    // Cap-hit confirmation. Arg: variant label (`%s`). Spoken in place
+    // of FmtFireAtPosition when the engine's combat-round queue was
+    // already at the hard 4-entry cap before the press; the engine
+    // silently free's the new action node in that case and the press
+    // has no effect. Inferred from the count field staying at 4
+    // (pre-press depth == post-press depth == 4).
+    FmtFireQueueFull,
     ActionBarCancelled,
 
     // ---- Generic tooltip fallback.

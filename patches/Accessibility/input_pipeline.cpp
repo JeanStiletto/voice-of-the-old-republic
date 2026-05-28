@@ -7,6 +7,11 @@
                                // chosen variant per slot so bare 4..7
                                // fires the same variant the submenu last
                                // announced
+#include "combat_diag.h"       // LogPreFire — combat-queue probe snapshot
+                               // before the engine's bare 1..7 dispatch
+#include "combat_queue.h"      // ReportPrePressDepth — snapshot queue
+                               // depth before dispatch so interact_hotkey's
+                               // announce can detect engine cap-hits
 #include "engine_actionbar.h"  // PrepareBareDispatch — keeps action_lists
                                // fresh against narrated_target so the
                                // engine's bare 1..7 switch hits a valid
@@ -170,6 +175,29 @@ extern "C" void __cdecl OnClientHandleInputEvent(void* this_ptr,
          param_1 == 0xe8 || param_1 == 0xea || param_1 == 0xec ||
          param_1 == 0xee))
     {
+        // Diag probe — snapshot state before the engine's switch-case
+        // dispatches DoTargetAction / DoPersonalAction. POST state lands
+        // in the next Tick's DELTA line (we don't get a clean post hook
+        // for bare keys — the engine fires after our prologue returns).
+        const char* diag_label = "bare-?";
+        switch (param_1) {
+            case 0xe2: diag_label = "bare-1"; break;
+            case 0xe4: diag_label = "bare-2"; break;
+            case 0xe6: diag_label = "bare-3"; break;
+            case 0xe8: diag_label = "bare-4"; break;
+            case 0xea: diag_label = "bare-5"; break;
+            case 0xec: diag_label = "bare-7"; break;  // engine slot swap (6↔7)
+            case 0xee: diag_label = "bare-6"; break;
+        }
+        // Snapshot queue depth right before the engine dispatches so
+        // interact_hotkey's announce can detect engine cap-hits without
+        // a separate post-engine hook. The bare-press dispatch goes
+        // through DoTargetAction / DoPersonalAction which lands in
+        // CSWSCombatRound::AddAction; that function silently free's the
+        // node when internal->count > 3.
+        acc::combat::queue::ReportPrePressDepth();
+        acc::combat_diag::LogPreFire(diag_label);
+
         uint32_t targetClient = 0x7F000000u;
         acc::narrated_target::Slot slot{};
         if (acc::narrated_target::TryGet(slot) && !slot.isMapPin &&

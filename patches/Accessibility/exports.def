@@ -17,3 +17,7 @@ EXPORTS
     OnHideSWInGameGui
     OnAppendToMsgBuffer
     OnShowObject
+    OnCombatRoundAddAction
+    OnCombatRoundRemoveAllActions
+    OnCombatRoundSetCurrentAction
+    OnCombatRoundRemoveLastAction

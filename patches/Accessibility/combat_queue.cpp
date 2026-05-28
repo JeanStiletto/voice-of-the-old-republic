@@ -10,6 +10,10 @@
 #include "engine_offsets.h"
 #include "engine_player.h"    // GetPlayerServerCreature, GetPartyMembers,
                               // GetPlayerCharacterName
+#include "examine_view.h"     // ResolveFeatName — decode type=11 entries to
+                              // their specific feat name (e.g. "Starke
+                              // Explosion") instead of the generic
+                              // "Talent einsetzen" verb
 #include "hotkeys.h"
 #include "log.h"
 #include "same_name_suffix.h" // AppendSuffix for same-LocName disambiguator
@@ -77,9 +81,15 @@ int CountQueueEntries(void* combatRound) {
             reinterpret_cast<unsigned char*>(combatRound) +
             kCombatRoundActionsOffset);
         if (!listPtr) return 0;
-        void* node = *reinterpret_cast<void**>(
+        // listPtr is CExoLinkedList<T>*. Three derefs to reach the head
+        // node: list -> internal -> head. Then walk via Node.next at +4.
+        void* internalPtr = *reinterpret_cast<void**>(
             reinterpret_cast<unsigned char*>(listPtr) +
-            kLinkedListHeadOffset);
+            kListInternalOffset);
+        if (!internalPtr) return 0;
+        void* node = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(internalPtr) +
+            kListInternalHeadOffset);
         int walked = 0;
         while (node && walked < kMaxQueueWalk) {
             ++walked;
@@ -106,9 +116,13 @@ void* GetQueueAction(void* combatRound, int index) {
             reinterpret_cast<unsigned char*>(combatRound) +
             kCombatRoundActionsOffset);
         if (!listPtr) return nullptr;
-        void* node = *reinterpret_cast<void**>(
+        void* internalPtr = *reinterpret_cast<void**>(
             reinterpret_cast<unsigned char*>(listPtr) +
-            kLinkedListHeadOffset);
+            kListInternalOffset);
+        if (!internalPtr) return nullptr;
+        void* node = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(internalPtr) +
+            kListInternalHeadOffset);
         int matched = 0, walked = 0;
         while (node && walked < kMaxQueueWalk) {
             ++walked;
@@ -180,6 +194,49 @@ bool ReadActionFields(void* action, unsigned char& outType,
         outType = 0xff;
         outTarget = 0;
         return false;
+    }
+}
+
+// Read the feat_id stored on a type=11 (Use Feat) action node.
+// CSWSCombatRoundAction.field25_0x5c is a ushort that CSWGuiMainInterface::
+// GetActionIcon @0x686fb0 feeds straight into CSWRules::GetFeat for the
+// strip-icon lookup. 0xFFFF sentinel on read fault / non-feat slot.
+unsigned short ReadActionFeatId(void* action) {
+    if (!action) return 0xffff;
+    __try {
+        return *reinterpret_cast<unsigned short*>(
+            reinterpret_cast<unsigned char*>(action) +
+            kCombatRoundActionFeatIdOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0xffff;
+    }
+}
+
+// Read the spell_id stored on a type=9 (Cast Force Power) action node.
+// CSWSCombatRoundAction.field13_0x24 is an int that GetActionIcon feeds
+// into CSWSpellArray::GetSpell. -1 sentinel on read fault / non-spell slot.
+int ReadActionSpellId(void* action) {
+    if (!action) return -1;
+    __try {
+        return *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(action) +
+            kCombatRoundActionSpellIdOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
+// Read the item handle stored on a type=10 (Use Item) action node.
+// CSWSCombatRoundAction.field27_0x64 is a ulong handle (server-side).
+// 0x7F000000 sentinel on read fault / non-item slot.
+uint32_t ReadActionItemHandle(void* action) {
+    if (!action) return 0x7F000000u;
+    __try {
+        return *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(action) +
+            kCombatRoundActionItemHandleOff);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0x7F000000u;
     }
 }
 
@@ -311,7 +368,42 @@ void SpeakRow(int idx) {
     uint32_t target = 0;
     ReadActionFields(action, type, target);
 
+    // Default: localized verb keyed off action_type ("Talent einsetzen" /
+    // "Angriff" / ...). For type=9/10/11 swap in the SPECIFIC ability
+    // name resolved from the engine — turns the generic verb into the
+    // user-recognisable ability label.
+    //   type=9  (Force power) — spell_id  @+0x24 → CSWSpell::GetSpellNameText
+    //   type=10 (Item use)    — handle    @+0x64 → engine display-name accessor
+    //   type=11 (Use feat)    — feat_id   @+0x5c → CSWFeat::GetNameText
+    // type=1 (Attack), 6/7 (Equip/Unequip) keep the generic verb — there
+    // isn't a single specific-ability name per entry there.
+    char abilityName[96] = "";
     const char* verb = acc::strings::Get(VerbForActionType(type));
+    if (type == 11) {
+        unsigned short featId = ReadActionFeatId(action);
+        if (featId != 0xffff &&
+            acc::examine_view::ResolveFeatName(
+                featId, abilityName, sizeof(abilityName)) &&
+            abilityName[0] != '\0') {
+            verb = abilityName;
+        }
+    } else if (type == 9) {
+        int spellId = ReadActionSpellId(action);
+        if (spellId >= 0 &&
+            acc::examine_view::ResolveSpellName(
+                spellId, abilityName, sizeof(abilityName)) &&
+            abilityName[0] != '\0') {
+            verb = abilityName;
+        }
+    } else if (type == 10) {
+        uint32_t itemHandle = ReadActionItemHandle(action);
+        if (itemHandle != 0u && itemHandle != 0x7F000000u &&
+            acc::engine::GetObjectDisplayNameByHandle(
+                itemHandle, abilityName, sizeof(abilityName)) &&
+            abilityName[0] != '\0') {
+            verb = abilityName;
+        }
+    }
 
     char tgtName[64] = "";
     if (target != 0u && target != 0x7F000000u) {
@@ -394,6 +486,56 @@ bool ClearAllRows() {
 }
 
 }  // namespace
+
+int CountPlayerEntries() {
+    // Read the engine's authoritative count field at
+    // CSWSCombatRound.actions->internal->count. This matches the value
+    // CSWSCombatRound::AddAction's cap check inspects (`if (3 < count)`)
+    // so "Platz N" lines up 1:1 with what the engine considers slot N
+    // and "Warteschlange voll" fires the same press the engine would
+    // free the node.
+    //
+    // We deliberately bypass the 0xFF-placeholder filter that
+    // CountQueueEntries (used by the Shift+K row walk) applies. The
+    // placeholder slot is part of the engine's queue from the cap-
+    // mechanic's point of view; filtering it produces off-by-one
+    // announcements where the first press in a fresh combat reads as
+    // "eingesetzt" (filtered count still 0 while the engine already
+    // sees count 1).
+    void* server = acc::engine::GetPlayerServerCreature();
+    if (!server) return 0;
+    void* round = ReadCombatRound(server);
+    if (!round) return 0;
+    __try {
+        void* listPtr = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(round) +
+            kCombatRoundActionsOffset);
+        if (!listPtr) return 0;
+        void* internalPtr = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(listPtr) +
+            kListInternalOffset);
+        if (!internalPtr) return 0;
+        int n = *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(internalPtr) +
+            kListInternalCountOffset);
+        if (n < 0 || n > 64) return 0;
+        return n;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
+namespace {
+int g_prePressDepth = -1;
+}  // namespace
+
+void ReportPrePressDepth() {
+    g_prePressDepth = CountPlayerEntries();
+}
+
+int GetPrePressDepth() {
+    return g_prePressDepth;
+}
 
 bool IsActive() { return g_state.active; }
 
