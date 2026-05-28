@@ -22,13 +22,10 @@
 namespace acc::wall_topology {
 
 // sig & 0xff = kind. Transitions consumes Platz for delayed-announce.
-// KindTransition is reserved/unused — cross-room degree-2 detection was
-// retired because K1's .lyt-room boundaries don't track doorways.
 enum Kind {
     KindDeadEnd     = 0,
     KindCorridor    = 1,
     KindJunction    = 2,
-    KindTransition  = 3,
     KindOpenArea    = 4,
     KindPlatz       = 5,
 };
