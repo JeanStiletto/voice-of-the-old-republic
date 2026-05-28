@@ -15,7 +15,7 @@ bool ReadControlNameFields(void* control, const char*& outTip,
     auto* base = reinterpret_cast<unsigned char*>(control);
     outTip    = *reinterpret_cast<const char**>(base + 0x28);
     outTipLen = *reinterpret_cast<uint32_t*>   (base + 0x2c);
-    outId     = *reinterpret_cast<int*>        (base + 0x50);
+    outId     = *reinterpret_cast<int*>        (base + kControlIdOffset);
     return outTip && outTipLen > 0;
 }
 

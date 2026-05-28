@@ -620,6 +620,11 @@ constexpr size_t kControlParentOffset       = 0x14;  // CSWGuiControl* parent
 constexpr size_t kControlTooltipStrRefOffset = 0x24; // uint32 strref (0 = none)
 constexpr size_t kControlTooltipStringOffset = 0x28; // CExoString literal
 
+// CSWGuiControl.id is the .gui-time numeric ID assigned by the layout file.
+// Stable across localizations and panel.controls reordering, so this is the
+// canonical way to address a known child of a known panel kind.
+constexpr size_t kControlIdOffset = 0x50;  // int id
+
 // CSWGuiSaveLoadEntry layout (from swkotor.exe.h:16673). Each row in the
 // CSWGuiSaveLoad.games_listbox is a CSWGuiSaveLoadEntry that embeds a
 // CSWGuiButton at offset 0 and carries the slot's metadata as inline

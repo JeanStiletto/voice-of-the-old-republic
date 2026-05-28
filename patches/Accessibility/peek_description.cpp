@@ -174,9 +174,8 @@ const EquipSlotPeekInfo* FindEquipSlotByControl(void* control) {
     if (!control) return nullptr;
     int cid = 0;
     __try {
-        // .gui-time numeric control ID at +0x50.
         cid = *reinterpret_cast<int*>(
-            reinterpret_cast<unsigned char*>(control) + 0x50);
+            reinterpret_cast<unsigned char*>(control) + kControlIdOffset);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return nullptr;
     }

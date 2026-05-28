@@ -376,7 +376,7 @@ void RebindChain(void* panel) {
     auto isDecorative = [&](void* c) -> bool {
         PanelKind pk = IdentifyPanel(panel);
         int cid = *reinterpret_cast<int*>(
-            reinterpret_cast<unsigned char*>(c) + 0x50);
+            reinterpret_cast<unsigned char*>(c) + kControlIdOffset);
         if (pk == PanelKind::InGameCharacter &&
             (cid == 1 || cid == 64 || cid == 65 || cid == 66 || cid == 67)) {
             return true;
@@ -766,7 +766,7 @@ void RebindChain(void* panel) {
         int firstSlotY   = 0;
         for (int i = 0; i < g_chainCount; ++i) {
             int cid = *reinterpret_cast<int*>(
-                reinterpret_cast<unsigned char*>(g_chain[i].control) + 0x50);
+                reinterpret_cast<unsigned char*>(g_chain[i].control) + kControlIdOffset);
             bool isSlot =
                 cid == kEquipBtnHeadId    || cid == kEquipBtnImplantId ||
                 cid == kEquipBtnBodyId    || cid == kEquipBtnArmLId    ||

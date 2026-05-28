@@ -529,7 +529,7 @@ void* acc::menus::detail::FindControlById(void* panel, int id) {
         void* c = list->data[i];
         if (!c) continue;
         int cid = *reinterpret_cast<int*>(
-            reinterpret_cast<unsigned char*>(c) + 0x50);
+            reinterpret_cast<unsigned char*>(c) + kControlIdOffset);
         if (cid == id) return c;
     }
     return nullptr;
@@ -860,7 +860,7 @@ static void WalkChildren(const char* label, void* parent, size_t offset) {
             continue;
         }
         int id = *reinterpret_cast<int*>(
-            reinterpret_cast<unsigned char*>(child) + 0x50);
+            reinterpret_cast<unsigned char*>(child) + kControlIdOffset);
         char text[256];
         // Pass `parent` so the perkind fallback resolves correctly when
         // walking InGameMenu's children — the icon labels/buttons have empty
@@ -1031,7 +1031,7 @@ static void SpeakPanelTitleOnFirstSight(void* panel) {
 // would still be wrong, so we just don't queue.
 static void AnnounceNewFocusedControl(int n, void* panel, void* newControl) {
     int id = *reinterpret_cast<int*>(
-        reinterpret_cast<unsigned char*>(newControl) + 0x50);
+        reinterpret_cast<unsigned char*>(newControl) + kControlIdOffset);
 
     char text[256];
     const char* source = acc::menus::extract::FromControl(
@@ -1107,7 +1107,7 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
     if (IdentifyPanel(panel) == PanelKind::InGameMenu) {
         if (newControl) {
             int sid = *reinterpret_cast<int*>(
-                reinterpret_cast<unsigned char*>(newControl) + 0x50);
+                reinterpret_cast<unsigned char*>(newControl) + kControlIdOffset);
             acclog::Write("Menus.SetActive",
                           "#%d panel=%p new=%p id=%d (InGameMenu strip — "
                           "speech suppressed)",
@@ -1197,7 +1197,7 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
         return;
     }
 
-    int id = *reinterpret_cast<int*>(reinterpret_cast<unsigned char*>(newRow) + 0x50);
+    int id = *reinterpret_cast<int*>(reinterpret_cast<unsigned char*>(newRow) + kControlIdOffset);
 
     char text[256];
     const char* source = acc::menus::extract::FromControl(newRow, text, sizeof(text));
@@ -1767,7 +1767,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         int equipSlotCid = 0;
         if (IdentifyPanel(g_chainPanel) == PanelKind::InGameEquip) {
             equipSlotCid = *reinterpret_cast<int*>(
-                reinterpret_cast<unsigned char*>(e.control) + 0x50);
+                reinterpret_cast<unsigned char*>(e.control) + kControlIdOffset);
             isEquipSlot =
                 equipSlotCid == kEquipBtnHeadId    || equipSlotCid == kEquipBtnImplantId ||
                 equipSlotCid == kEquipBtnBodyId    || equipSlotCid == kEquipBtnArmLId    ||
@@ -1788,7 +1788,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         int  workbenchUpgradeSlotCid = 0;
         if (IdentifyPanel(g_chainPanel) == PanelKind::WorkbenchUpgrade) {
             workbenchUpgradeSlotCid = *reinterpret_cast<int*>(
-                reinterpret_cast<unsigned char*>(e.control) + 0x50);
+                reinterpret_cast<unsigned char*>(e.control) + kControlIdOffset);
             isWorkbenchUpgradeSlot =
                 workbenchUpgradeSlotCid >= 12 && workbenchUpgradeSlotCid <= 18;
         }
@@ -2542,7 +2542,7 @@ void DrainPendingAnnounce() {
     // feedback_never_silence_fallback_announcement) — better to hear
     // repeated "control 11" than to silently drop a focus event.
     int id = *reinterpret_cast<int*>(
-        reinterpret_cast<unsigned char*>(control) + 0x50);
+        reinterpret_cast<unsigned char*>(control) + kControlIdOffset);
     char placeholder[64];
     snprintf(placeholder, sizeof(placeholder), "control %d", id);
     prism::Speak(placeholder, /*interrupt=*/false);

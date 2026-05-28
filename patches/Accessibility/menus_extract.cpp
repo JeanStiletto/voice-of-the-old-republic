@@ -290,7 +290,7 @@ bool IsSoundOptionsMovieSlider(void* panel, void* control) {
     if (!IsSlider(control)) return false;
 
     int controlId = *reinterpret_cast<int*>(
-        reinterpret_cast<unsigned char*>(control) + 0x50);
+        reinterpret_cast<unsigned char*>(control) + kControlIdOffset);
     if (controlId != 8) return false;
 
     auto* list = reinterpret_cast<CExoArrayList*>(
@@ -303,7 +303,7 @@ bool IsSoundOptionsMovieSlider(void* panel, void* control) {
         void* c = list->data[i];
         if (!c || !IsSlider(c)) continue;
         int cid = *reinterpret_cast<int*>(
-            reinterpret_cast<unsigned char*>(c) + 0x50);
+            reinterpret_cast<unsigned char*>(c) + kControlIdOffset);
         switch (cid) {
             case 1: has1 = true; break;
             case 4: has4 = true; break;
@@ -1023,7 +1023,7 @@ const char* FromControl(void* control,
             { kEquipBtnHandsId,    kEquipBtnHandsId   + 1, 31383u,      acc::strings::Id::EquipSlotHands,   kEquipPanelGlovesIdOffset       },
         };
         int cid = *reinterpret_cast<int*>(
-            reinterpret_cast<unsigned char*>(control) + 0x50);
+            reinterpret_cast<unsigned char*>(control) + kControlIdOffset);
         for (const auto& s : k_equipSlots) {
             if (s.btnId != cid && s.lblId != cid) continue;
             // Resolve the slot's localised label first into a small local
@@ -1159,7 +1159,7 @@ const char* FromControl(void* control,
         int cid = -1;
         __try {
             cid = *reinterpret_cast<int*>(
-                reinterpret_cast<unsigned char*>(control) + 0x50);
+                reinterpret_cast<unsigned char*>(control) + kControlIdOffset);
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             cid = -1;
         }

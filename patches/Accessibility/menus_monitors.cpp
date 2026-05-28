@@ -65,7 +65,7 @@ void AnnounceControl(void* control) {
         return;
     }
     int id = *reinterpret_cast<int*>(
-        reinterpret_cast<unsigned char*>(control) + 0x50);
+        reinterpret_cast<unsigned char*>(control) + kControlIdOffset);
     char placeholder[64];
     snprintf(placeholder, sizeof(placeholder), "control %d", id);
     prism::Speak(placeholder, /*interrupt=*/false);

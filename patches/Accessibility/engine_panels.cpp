@@ -33,7 +33,7 @@ void* FindControlByGuiId(void* panel, int id) {
         void* c = list->data[i];
         if (!c) continue;
         int cid = *reinterpret_cast<int*>(
-            reinterpret_cast<unsigned char*>(c) + 0x50);
+            reinterpret_cast<unsigned char*>(c) + kControlIdOffset);
         if (cid == id) return c;
     }
     return nullptr;
@@ -453,7 +453,7 @@ void LogUnknownPanelDiagnostics(void* panel) {
         __try {
             cvt = reinterpret_cast<uintptr_t>(*reinterpret_cast<void**>(c));
             cid = *reinterpret_cast<int*>(
-                reinterpret_cast<unsigned char*>(c) + 0x50);
+                reinterpret_cast<unsigned char*>(c) + kControlIdOffset);
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             cvt = 0;
             cid = -1;

@@ -307,7 +307,7 @@ void Drain(void* gm) {
                         chainPanel);
                 if (isChargenSub) {
                     int btnId = *reinterpret_cast<int*>(
-                        reinterpret_cast<unsigned char*>(op.a) + 0x50);
+                        reinterpret_cast<unsigned char*>(op.a) + kControlIdOffset);
                     if (btnId == 11 || btnId == 12) {
                         chargenSubClosing = true;
                     }
@@ -548,7 +548,7 @@ void Drain(void* gm) {
                     void* c = controls->data[i];
                     if (!c) continue;
                     int cid = *reinterpret_cast<int*>(
-                        reinterpret_cast<unsigned char*>(c) + 0x50);
+                        reinterpret_cast<unsigned char*>(c) + kControlIdOffset);
                     if (cid == 0) {
                         auto* lbList = reinterpret_cast<CExoArrayList*>(
                             reinterpret_cast<unsigned char*>(c) + kListBoxControlsOffset);
