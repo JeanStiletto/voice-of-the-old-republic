@@ -7,10 +7,6 @@
 //   - Combat log — polls CSWGuiInGameMessages.messages_listbox for new
 //     rows. Resolves via CGuiInGame.in_game_messages so it fires during
 //     live combat, not just on the review screen.
-//   - Attack resolution — diffs combat_round.attacks_list[7] for the
-//     player creature; announces on attack_result transition.
-//   - Saving throws — skeleton; needs a hook on SavingThrowRoll for
-//     proper DC + roll. Currently a coarse field-diff heuristic.
 //
 // Each Tick is cheap and idle when nothing is happening.
 
@@ -23,9 +19,5 @@ bool IsCombatActive();
 
 void TickCombatMode();
 void TickCombatLog();
-
-// Skeleton scope: player creature only. Watching opponents would iterate
-// AreaObjectIterator + per-creature snapshots.
-void TickAttackResolutions();
 
 }  // namespace acc::combat

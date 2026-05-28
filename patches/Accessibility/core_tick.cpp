@@ -122,7 +122,6 @@ void Dispatch() {
     // examine view, specials heartbeat.
     acc::combat::TickCombatMode();
     acc::combat::TickCombatLog();
-    acc::combat::TickAttackResolutions();
     acc::combat::query::TickLeaderChangeAutoAnnounce();
     acc::combat::queue::Tick();
     acc::examine_view::Tick();
