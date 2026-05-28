@@ -309,7 +309,17 @@ void Drain(void* gm) {
                     int btnId = *reinterpret_cast<int*>(
                         reinterpret_cast<unsigned char*>(op.a) + kControlIdOffset);
                     if (btnId == 11 || btnId == 12) {
-                        chargenSubClosing = true;
+                        // Disambiguate Annehmen/Abbrechen from same-id
+                        // sibling controls (e.g. chargen-skills row arrows
+                        // sometimes get id 11/12 too — Sprengstoff's right
+                        // arrow has id 11). Annehmen/Abbrechen are labeled
+                        // buttons; arrows have empty rendered text.
+                        char text[32];
+                        bool hasText = acc::engine::ReadButtonText(
+                            op.a, text, sizeof(text)) && text[0] != '\0';
+                        if (hasText) {
+                            chargenSubClosing = true;
+                        }
                     }
                 }
             }
