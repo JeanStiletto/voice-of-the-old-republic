@@ -2063,96 +2063,10 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         }
     }
 
-    // Left/Right dispatch. Two cases:
-    //
-    //   1. Focused control is a slider — queue a slider HandleInputEvent
-    //      with logical inc/dec code (500 / 501). Engine's slider runs the
-    //      full pipeline: SetCurValue + bounds clamp + gui_object callback
-    //      (audio volume change for Music/Voice/SFX/Movie) + PlayGuiSound.
-    //      Letting the keypress pass through to the engine doesn't work
-    //      because panel.activeControl isn't set to the slider (chain
-    //      navigation only updates mouseOverControl); the engine's natural
-    //      dispatch would route Left/Right to whichever previous control was
-    //      activeControl, not the slider the user navigated to.
-    //
-    //   2. Focused control is anything else — find an empty-text navigable
-    //      neighbour at the same y-row in panel.controls and fire-activate
-    //      it (cycle-arrow flanker). Engine rewrites the value-display
-    //      button's CExoString in place. Per-frame monitor catches both
-    //      cases on the next tick and re-announces.
-    //
-    // Both cases consume the keypress so we don't surface unspecified
-    // native behaviour from Left/Right on widgets where it has no
-    // user-meaningful effect.
-    if (param_2 != 0 &&
-        (param_1 == kInputNavLeft || param_1 == kInputNavRight) &&
-        activePanel != nullptr &&
-        g_chainPanel == activePanel &&
-        g_chainCount > 0 &&
-        g_chainIndex >= 0 &&
-        g_chainIndex < g_chainCount)
-    {
-        void* focused = g_chain[g_chainIndex].control;
-        bool toRight = (param_1 == kInputNavRight);
-
-        if (IsSlider(focused)) {
-            if (acc::menus::pending::IsPending()) {
-                acclog::Write("Menus.Slider", "%s: op already pending; ignoring",
-                              toRight ? "right" : "left");
-            } else {
-                int code = toRight ? 500 : 501;
-                acc::menus::pending::QueueSliderInput(focused, code);
-                acclog::Write("Menus.Slider", "%s panel=%p focus=%p code=%d",
-                              toRight ? "right" : "left",
-                              activePanel, focused, code);
-            }
-        } else {
-            // Panel-aware cycle override: in CSWGuiPortraitCharGen the
-            // chain holds left_arrow as the lone anchor (right_arrow is
-            // filtered out in RebindChain). FindAdjacentArrow can pick up
-            // the right_arrow as a same-row neighbour when going right,
-            // but going left there's nothing to the left of x=272 — so we
-            // resolve the targets directly from the panel offsets:
-            //   Left  → activate left_arrow (cycles -1)
-            //   Right → activate right_arrow (cycles +1)
-            // Engine's UpdatePortraitButton writes the new resref to
-            // creature.portrait, the per-frame focus monitor re-reads, and
-            // the diff fires the new "Porträt: …" announcement.
-            void* portraitTarget = nullptr;
-            {
-                void** pVt = *reinterpret_cast<void***>(activePanel);
-                if (reinterpret_cast<uintptr_t>(pVt) ==
-                        kVtableCSWGuiPortraitCharGen) {
-                    auto* base = reinterpret_cast<unsigned char*>(activePanel);
-                    void* leftArrow  = base + kPortraitLeftArrowOffset;
-                    if (focused == leftArrow) {
-                        portraitTarget = toRight
-                            ? (void*)(base + kPortraitRightArrowOffset)
-                            : leftArrow;
-                    }
-                }
-            }
-            void* neighbor = portraitTarget
-                ? portraitTarget
-                : FindAdjacentArrow(activePanel, focused, toRight);
-            if (neighbor) {
-                if (acc::menus::pending::IsPending()) {
-                    acclog::Write("Menus.Cycle", "%s: op already pending; ignoring",
-                                  toRight ? "right" : "left");
-                } else {
-                    acc::menus::pending::QueueActivate(neighbor);
-                    acclog::Write("Menus.Cycle", "%s panel=%p focus=%p neighbor=%p%s",
-                                  toRight ? "right" : "left",
-                                  activePanel, focused, neighbor,
-                                  portraitTarget ? " (portrait-anchor)" : "");
-                }
-            } else {
-                acclog::Write("Menus.Cycle", "%s: no adjacent arrow for focus=%p",
-                              toRight ? "right" : "left", focused);
-            }
-        }
-        consumed = true;
-    }
+    // Left/Right dispatch (slider in/decrement or cycle-arrow flanker
+    // activation, with portrait-panel override). Logic in
+    // menus_chain::HandleLeftRight.
+    acc::menus::chain::HandleLeftRight(activePanel, param_1, param_2, consumed);
 
     // Drill-Esc handler removed 2026-05-10 after the wrapper LEA-ESP fix
     // (extension to PR-4 in framework wrapper_x86_win32.cpp). Pre-fix the

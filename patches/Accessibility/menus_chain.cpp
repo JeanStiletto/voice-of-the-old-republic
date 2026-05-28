@@ -846,6 +846,74 @@ void RebindChain(void* panel) {
     }
 }
 
+void HandleLeftRight(void* activePanel, int code, int val, bool& consumed) {
+    if (val == 0) return;
+    if (code != kInputNavLeft && code != kInputNavRight) return;
+    if (activePanel == nullptr || g_chainPanel != activePanel) return;
+    if (g_chainCount <= 0 || g_chainIndex < 0 || g_chainIndex >= g_chainCount) return;
+
+    void* focused = g_chain[g_chainIndex].control;
+    bool toRight = (code == kInputNavRight);
+
+    if (acc::engine::IsSlider(focused)) {
+        if (acc::menus::pending::IsPending()) {
+            acclog::Write("Menus.Slider", "%s: op already pending; ignoring",
+                          toRight ? "right" : "left");
+        } else {
+            int sliderCode = toRight ? 500 : 501;
+            acc::menus::pending::QueueSliderInput(focused, sliderCode);
+            acclog::Write("Menus.Slider", "%s panel=%p focus=%p code=%d",
+                          toRight ? "right" : "left",
+                          activePanel, focused, sliderCode);
+        }
+    } else {
+        // Panel-aware cycle override: in CSWGuiPortraitCharGen the chain
+        // holds left_arrow as the lone anchor (right_arrow is filtered out
+        // in RebindChain). FindAdjacentArrow can pick up the right_arrow
+        // as a same-row neighbour when going right, but going left there's
+        // nothing to the left of x=272 — so we resolve the targets directly
+        // from the panel offsets:
+        //   Left  → activate left_arrow (cycles -1)
+        //   Right → activate right_arrow (cycles +1)
+        // Engine's UpdatePortraitButton writes the new resref to
+        // creature.portrait, the per-frame focus monitor re-reads, and
+        // the diff fires the new "Porträt: …" announcement.
+        void* portraitTarget = nullptr;
+        {
+            void** pVt = *reinterpret_cast<void***>(activePanel);
+            if (reinterpret_cast<uintptr_t>(pVt) ==
+                    kVtableCSWGuiPortraitCharGen) {
+                auto* base = reinterpret_cast<unsigned char*>(activePanel);
+                void* leftArrow = base + kPortraitLeftArrowOffset;
+                if (focused == leftArrow) {
+                    portraitTarget = toRight
+                        ? (void*)(base + kPortraitRightArrowOffset)
+                        : leftArrow;
+                }
+            }
+        }
+        void* neighbor = portraitTarget
+            ? portraitTarget
+            : FindAdjacentArrow(activePanel, focused, toRight);
+        if (neighbor) {
+            if (acc::menus::pending::IsPending()) {
+                acclog::Write("Menus.Cycle", "%s: op already pending; ignoring",
+                              toRight ? "right" : "left");
+            } else {
+                acc::menus::pending::QueueActivate(neighbor);
+                acclog::Write("Menus.Cycle", "%s panel=%p focus=%p neighbor=%p%s",
+                              toRight ? "right" : "left",
+                              activePanel, focused, neighbor,
+                              portraitTarget ? " (portrait-anchor)" : "");
+            }
+        } else {
+            acclog::Write("Menus.Cycle", "%s: no adjacent arrow for focus=%p",
+                          toRight ? "right" : "left", focused);
+        }
+    }
+    consumed = true;
+}
+
 void HandleEsc(void* activePanel, int code, int val, bool& consumed) {
     if (val == 0) return;
     if (code != kInputEsc1 && code != kInputEsc2) return;

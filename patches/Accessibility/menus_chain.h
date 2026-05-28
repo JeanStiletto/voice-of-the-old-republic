@@ -152,4 +152,10 @@ void* ReadPanelActiveControl(void* panel);
 // availability; sets `consumed = true` when an op was queued.
 void HandleEsc(void* activePanel, int code, int val, bool& consumed);
 
+// Left/Right dispatch — slider in/decrement on focused sliders, cycle-arrow
+// flanker activation otherwise (with a portrait-panel override). Self-gates
+// on key code + press edge + chain alignment; sets `consumed = true` when
+// applied.
+void HandleLeftRight(void* activePanel, int code, int val, bool& consumed);
+
 }  // namespace acc::menus::chain
