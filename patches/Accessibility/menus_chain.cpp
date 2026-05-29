@@ -73,6 +73,30 @@ bool IsModalTextPanel(PanelKind k) {
         return false;
     }
 }
+
+// Panels[]-membership check, shared by Validate{Tabbed,Chain}Panel and the
+// DetectTabsCluster precondition. The save-popup teardown frees the SaveLoad
+// panel synchronously when the user commits a save; the next
+// OnListBoxSetActiveControl fires on the underlying in-game-menu's tooltip
+// listbox while g_currentPanel still points at the freed SaveLoad
+// allocation. By then the heap allocator has typically reused that block for
+// combat-log strings, so panel+0x20/+0x24 (CExoArrayList data+size) come
+// back as ASCII text — the data[0] deref then takes an AV
+// (crash analysed 2026-05-29, dump swkotor.exe(1).31228.dmp).
+bool IsPanelLive(void* panel) {
+    if (!panel) return false;
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!mgr) return false;
+    auto* base = reinterpret_cast<unsigned char*>(mgr);
+    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+    if (!panelData || panelCount <= 0) return false;
+    int n = panelCount > 16 ? 16 : panelCount;
+    for (int i = 0; i < n; ++i) {
+        if (panelData[i] == panel) return true;
+    }
+    return false;
+}
 }  // namespace
 
 // ============================================================================
@@ -101,6 +125,13 @@ bool DetectTabsCluster(void* panel, int& outStart, int& outCount) {
     outStart = -1;
     outCount = 0;
     if (!panel) return false;
+
+    // Guard against a stale g_currentPanel that the engine already freed.
+    // See IsPanelLive comment above for the save-popup teardown crash.
+    if (!IsPanelLive(panel)) {
+        acclog::Write("DetectTabsCluster", "%p not in panels[]; skipping", panel);
+        return false;
+    }
 
     // Store is structurally tab-cluster-shaped (listbox @ controls[0],
     // three navigable buttons clumped further down) but the three buttons
@@ -169,17 +200,7 @@ void InvalidateChain() {
 
 void ValidateTabbedPanel() {
     if (!g_tabbedPanel) return;
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (panelData && panelCount > 0) {
-        int n = panelCount > 16 ? 16 : panelCount;
-        for (int i = 0; i < n; ++i) {
-            if (panelData[i] == g_tabbedPanel) return;
-        }
-    }
+    if (IsPanelLive(g_tabbedPanel)) return;
     acclog::Write("ValidateTabbedPanel", "%p not in panels[]; clearing tabbed-mode state",
                   g_tabbedPanel);
     ResetTabbedState();
@@ -187,17 +208,7 @@ void ValidateTabbedPanel() {
 
 void ValidateChainPanel() {
     if (!g_chainPanel) return;
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (panelData && panelCount > 0) {
-        int n = panelCount > 16 ? 16 : panelCount;
-        for (int i = 0; i < n; ++i) {
-            if (panelData[i] == g_chainPanel) return;
-        }
-    }
+    if (IsPanelLive(g_chainPanel)) return;
     acclog::Write("ValidateChainPanel", "%p not in panels[]; invalidating chain",
                   g_chainPanel);
     InvalidateChain();
