@@ -1,17 +1,420 @@
-// Italian string table — currently aliases English for the Id::* speech
-// path. Combat speech is fully Italian via combat_strings.cpp::kIt
-// (engine anchors extracted from dialog_it.tlk). Full IT translation of
-// the Id::* table is deferred — when an Italian translator/tester is
-// available, replace this alias with a real switch.
+// Italian string table.
 //
-// See strings.h for the encoding convention and string-id semantics.
+// Encoding: Windows-1252 hex escapes for non-ASCII (\xE0=à, \xE8=è,
+// \xE9=é, \xEC=ì, \xF2=ò, \xF9=ù). Prism's ANSI overload converts from
+// CP_ACP via MultiByteToWideChar; on an Italian Windows install CP_ACP
+// = Windows-1252, so the literal bytes pass through unchanged.
+//
+// Combat speech is fed by combat_strings.cpp::kIt (engine anchors
+// extracted from dialog_it.tlk); this table covers the Id::* speech
+// path.
 
 #include "strings.h"
 
 namespace acc::strings::lang_it {
 
 const char* Get(Id id) {
-    return lang_en::Get(id);
+    switch (id) {
+        case Id::CategoryDoor:        return "Porta";
+        case Id::CategoryNpc:         return "PNG";
+        case Id::CategoryContainer:   return "Contenitore";
+        case Id::CategoryItem:        return "Oggetto";
+        case Id::CategoryLandmark:    return "Luogo";
+        case Id::CategoryTransition:  return "Transizione";
+        case Id::CategoryMapHint:     return "Indicazione";
+
+        case Id::EmptyDoors:          return "Nessuna porta nelle vicinanze";
+        case Id::EmptyNpcs:           return "Nessun PNG nelle vicinanze";
+        case Id::EmptyContainers:     return "Nessun contenitore nelle vicinanze";
+        case Id::EmptyItems:          return "Nessun oggetto nelle vicinanze";
+        case Id::EmptyLandmarks:      return "Nessun luogo nelle vicinanze";
+        case Id::EmptyTransitions:    return "Nessuna transizione nelle vicinanze";
+        case Id::EmptyMapHints:       return "Nessuna indicazione su questa mappa";
+        case Id::EmptyAll:            return "Nessun oggetto nelle vicinanze";
+        case Id::CycleNoTarget:       return "Nessun bersaglio";
+
+        case Id::MapPinNoText:        return "Marcatore";
+        case Id::MapPinShiftDashHint: return "Il marcatore non pu\xF2 essere raggiunto direttamente. Ctrl+Trattino per il segnale.";
+        case Id::MapPinAltDashUnsupported: return "Marcatore: Alt+Trattino non supportato";
+        case Id::MapPinInteractHint:  return "Marcatore. Ctrl+Trattino per il segnale.";
+
+        case Id::FmtSavedMarkerAutoNumber:   return "Marcatore %d";
+        case Id::FmtSavedMarkerAutoWithRoom: return "%s - Marcatore %d";
+        case Id::FmtSavedMarkerPlaced:       return "Marcatore salvato: %s";
+        case Id::SavedMarkerFailed:          return "Impossibile salvare il marcatore";
+
+        case Id::FmtAnnounceWithClock: return "%s, alle ore %d, %d metri";
+        case Id::FmtAnnounceNoClock:   return "%s, %d metri";
+        case Id::FmtCategoryItem:      return "%s. %s";
+
+        case Id::FmtGuidingTo:         return "Guida verso %s";
+        case Id::FmtGuidingFailed:     return "Guida verso %s fallita";
+        case Id::GuidanceNoFocus:      return "Nessun bersaglio selezionato";
+        case Id::GuidingToPoint:       return "Cammina verso il punto";
+
+        case Id::MovementCancelled:    return "Movimento annullato";
+
+        // Beacon (Ctrl+-).
+        case Id::FmtBeaconStarted:     return "Segnale verso %s";
+        case Id::BeaconCancelled:      return "Segnale annullato";
+        case Id::FmtBeaconNoPath:      return "Nessun percorso verso %s";
+        case Id::BeaconAlreadyAtDest:  return "Gi\xE0 a destinazione";
+        // Route description.
+        // Example: "Percorso verso Porta (25 metri): 5 metri Nord,
+        //           4 metri Nord-Est, 6 metri Est. Nessuna transizione."
+        case Id::FmtRouteHeader:       return "Percorso verso %s (%d metri): %s. %s.";
+        case Id::FmtRouteSegment:      return "%d metri %s";
+        case Id::RouteJoinSeparator:   return ", ";
+        case Id::RouteOneTransition:   return "Una transizione";
+        case Id::RouteNoTransition:    return "Nessuna transizione";
+        case Id::FmtBeaconNextSegment: return "Continua per %d metri %s";
+
+        case Id::FmtInteractTalk:      return "Parla con %s";
+        case Id::FmtInteractOpen:      return "Usa %s";
+        case Id::FmtInteractTake:      return "Raccogli %s";
+        case Id::FmtInteractFailed:    return "Interazione con %s fallita";
+        case Id::FmtInteractEngine:    return "%s %s";
+        case Id::FmtInteractRadial:    return "Menu azioni, %s";
+
+        case Id::FmtActionBarOpened:      return "Barra azioni colonna %d: %s, %d opzioni";
+        case Id::FmtActionBarColumnEmpty: return "La colonna %d \xE8 vuota";
+        case Id::ActionBarColumnEmpty:    return "Colonna vuota";
+        case Id::FmtActionBarFired:       return "%s usato";
+        case Id::FmtFireAtPosition:       return "%s, posizione %d";
+        case Id::FmtFireQueueFull:        return "%s, coda piena";
+        case Id::ActionBarCancelled:      return "Annullato";
+
+        case Id::NoTooltipAvailable:   return "Nessuna descrizione disponibile";
+
+        case Id::ContainerEmpty:       return "Vuoto";
+        case Id::ContainerOneItem:     return "1 oggetto";
+        case Id::FmtContainerItems:    return "%d oggetti";
+        case Id::FmtContainerItemAt:   return "%s, %d di %d";
+        case Id::FmtItemStackSuffix:   return "%d nella pila";
+
+        case Id::EquipSlotHead:        return "Testa";
+        case Id::EquipSlotImplant:     return "Impianto";
+        case Id::EquipSlotBody:        return "Corpo";
+        case Id::EquipSlotArmL:        return "Braccio sinistro";
+        case Id::EquipSlotArmR:        return "Braccio destro";
+        case Id::EquipSlotWeapL:       return "Arma sinistra";
+        case Id::EquipSlotWeapR:       return "Arma destra";
+        case Id::EquipSlotBelt:        return "Cintura";
+        case Id::EquipSlotHands:       return "Mani";
+
+        case Id::FmtEquipSlotItem:     return "%s, %s";
+        case Id::FmtEquipSlotEmpty:    return "%s, vuoto";
+        case Id::FmtEquipVitality:     return "Vitalit\xE0 %s";
+        case Id::FmtEquipDefense:      return "Difesa %s";
+        case Id::FmtEquipAttack:       return "Attacco %s";
+        case Id::FmtEquipAttackDual:   return "Attacco sinistro %s, destro %s";
+        case Id::FmtEquipDamage:       return "Danni %s";
+        case Id::FmtEquipDamageDual:   return "Danni sinistro %s, destro %s";
+
+        case Id::FmtTransitionArea:    return "Area: %s";
+        case Id::FmtTransitionRoom:    return "Stanza: %s";
+        case Id::FmtTransitionRoomIndex: return "Stanza %d";
+        case Id::FmtTransitionLoading: return "Caricamento: %s";
+
+        case Id::DoorOpen:             return "aperta";
+        case Id::DoorLocked:           return "chiusa a chiave";
+
+        case Id::DirNorth:             return "Nord";
+        case Id::DirNortheast:         return "Nord-Est";
+        case Id::DirEast:              return "Est";
+        case Id::DirSoutheast:         return "Sud-Est";
+        case Id::DirSouth:             return "Sud";
+        case Id::DirSouthwest:         return "Sud-Ovest";
+        case Id::DirWest:              return "Ovest";
+        case Id::DirNorthwest:         return "Nord-Ovest";
+
+        case Id::StuckFreeDirsPrefix:  return "Libero";
+        case Id::StuckAllBlocked:      return "Tutto bloccato";
+
+        case Id::FmtCompassDegrees:    return "%d gradi";
+
+        case Id::FmtMapStateOriented:    return "%s. Orientato a %d gradi sulla mappa, %s.";
+        case Id::FmtMapStateUnknownRoom: return "Orientato a %d gradi sulla mappa, %s.";
+
+        case Id::FmtWorldStateOriented:       return "%s. %s.";
+        case Id::FmtWorldStateUnknownCluster: return "%s.";
+
+        case Id::MouseLookOn:          return "Vista mouse attiva";
+        case Id::MouseLookOff:         return "Vista mouse disattiva";
+
+        case Id::ViewModeOn:           return "Modalit\xE0 osservazione attiva";
+        case Id::ViewModeOff:          return "Modalit\xE0 osservazione disattiva";
+
+        case Id::FmtSaveLoadRow:       return "%s, %s, %s, %d di %d";
+        case Id::FmtSaveLoadRowNoLoc:  return "%s, %d di %d";
+
+        case Id::LevelUpOpen:          return "Aumento di livello";
+        case Id::LevelUpFailed:        return "Aumento di livello fallito";
+
+        case Id::PortraitLabel:        return "Ritratto";
+        case Id::PortraitArrowPrev:    return "Ritratto precedente";
+        case Id::PortraitArrowNext:    return "Ritratto successivo";
+        case Id::FmtPortraitArrow:     return "%s: %s";
+        case Id::FmtPortraitArrowId:   return "%s %d";
+        case Id::PortraitGenderFemale: return "femminile";
+        case Id::PortraitGenderMale:   return "maschile";
+        case Id::PortraitRaceAsian:    return "asiatico";
+        case Id::PortraitRaceDark:     return "di pelle scura";
+        case Id::PortraitRaceLight:    return "di pelle chiara";
+        case Id::FmtPortraitDescription: return "%s %s %d";
+
+        case Id::FmtPartyPortraitInTeam:    return "%s, nel gruppo";
+        case Id::FmtPartyPortraitAvailable: return "%s, disponibile";
+
+        case Id::DisabledSuffix:       return ", non disponibile";
+
+        case Id::FmtCharSheetClass:    return "%s. ";
+        case Id::FmtCharSheetLevel:    return "Livello %s. ";
+        case Id::FmtCharSheetXp:       return "Esperienza %s di %s. ";
+        case Id::FmtCharSheetHp:       return "Punti vita %s. ";
+        case Id::FmtCharSheetFp:       return "Punti Forza %s. ";
+        case Id::FmtCharSheetStr:      return "Forza %s%s%s. ";
+        case Id::FmtCharSheetDex:      return "Destrezza %s%s%s. ";
+        case Id::FmtCharSheetCon:      return "Costituzione %s%s%s. ";
+        case Id::FmtCharSheetInt:      return "Intelligenza %s%s%s. ";
+        case Id::FmtCharSheetWis:      return "Saggezza %s%s%s. ";
+        case Id::FmtCharSheetCha:      return "Carisma %s%s%s. ";
+        case Id::FmtCharSheetAlignment: return "Allineamento %u di %u.";
+
+        case Id::FmtChargenAttrInfoSuffix:               return "Modificatore %s, Costo %s";
+        case Id::FmtChargenAttrValueChangeBare:          return "%s, punti rimanenti %s";
+        case Id::FmtChargenAttrValueChangeWithMod:       return "%s, Modificatore %s, punti rimanenti %s";
+        case Id::FmtChargenAttrValueChangeWithCost:      return "%s, punti rimanenti %s, Costo %s";
+        case Id::FmtChargenAttrValueChangeWithModAndCost: return "%s, Modificatore %s, punti rimanenti %s, Costo %s";
+
+        case Id::FmtChargenSkillInfoSuffix:  return "Costo %s";
+        case Id::FmtChargenSkillValueChange: return "%s, punti rimanenti %s";
+
+        case Id::ChargenFeatGrantedTitle:    return "Ricevi questi talenti";
+        case Id::FmtChargenFeatGrantedRow:   return "%s, %d di %d";
+
+        case Id::FmtChargenFeatChartCell:    return "%s, %s";
+        case Id::ChargenFeatStatusAvailable: return "disponibile";
+        case Id::ChargenFeatStatusExisting:  return "gi\xE0 appreso";
+        case Id::ChargenFeatStatusGranted:   return "concesso automaticamente";
+        case Id::ChargenFeatStatusLocked:    return "prerequisito mancante";
+        case Id::ChargenFeatStatusChosen:    return "scelto";
+
+        case Id::EditboxRole:                return "campo di testo";
+        case Id::EditboxEmpty:               return "vuoto";
+        case Id::EditboxEnd:                 return "fine";
+
+        case Id::CombatBegins:               return "Inizio del combattimento";
+        case Id::CombatEnds:                 return "Fine del combattimento";
+
+        case Id::PcStatHeader:               return "Stato.";
+        case Id::FmtPcStatHpFp:              return "Punti vita %d di %d, punti Forza %d di %d.";
+        case Id::FmtPcStatAc:                return "Difesa %d.";
+        case Id::FmtPcStatAttrs:             return "Forza %d, Destrezza %d, Costituzione %d, Intelligenza %d, Saggezza %d, Carisma %d.";
+        case Id::FmtPcStatSaves:             return "Salvezze: Tempra %d, Riflessi %d, Volont\xE0 %d.";
+        case Id::FmtPcStatAlignment:         return "Allineamento %d.";
+        case Id::FmtPcStatEffectsHeader:     return "Effetti attivi: %d.";
+        case Id::PcStatNoCharacter:          return "Nessuno stato del personaggio disponibile.";
+
+        // Brief is composed in BuildTargetCombatBrief: name, then optional
+        // condition / distance / effects / weapons clauses each with a
+        // leading space and trailing period.
+        case Id::FmtTargetCombatBrief:       return "%s.";
+        case Id::FactionHostile:             return "ostile";
+        case Id::FactionFriendly:            return "amichevole";
+        case Id::FactionNeutral:             return "neutrale";
+        case Id::TargetIsDead:               return "morto";
+
+        case Id::FmtBriefCondition:          return " %s.";
+        case Id::FmtBriefDistanceMeters:     return " %d metri.";
+        case Id::FmtBriefEffects:            return " %s.";
+        case Id::FmtBriefWielding:           return " %s.";
+        case Id::FmtBriefOffHand:            return " mano secondaria %s.";
+        case Id::FmtBriefEffectsCount:       return " %d effetti attivi.";
+        case Id::FmtBriefFeatsCount:         return " %d talenti.";
+        case Id::FmtSelfStatusHp:            return "%d punti vita.";
+        case Id::FmtSelfStatusHpOf:          return "%d di %d punti vita.";
+
+        case Id::ExamineOpened:              return "Esamina.";
+        case Id::ExamineNoTarget:            return "Nessun bersaglio da esaminare.";
+        case Id::ExamineFailed:              return "Esame fallito.";
+
+        case Id::FmtExamineOpened:           return "Esamina: %s. %d voci.";
+        case Id::FmtExamineRowOf:            return "%s. %d di %d.";
+        case Id::ExamineViewClosed:          return "Esame chiuso.";
+        case Id::FmtExamineRowName:          return "Nome: %s";
+        case Id::FmtExamineRowFaction:       return "Disposizione: %s";
+        case Id::FmtExamineRowHp:            return "Punti vita: %d";
+        case Id::FmtExamineRowDistance:      return "Distanza: %d metri";
+        case Id::FmtExamineRowWeapon:        return "Mano principale: %s";
+        case Id::ExamineRowWeaponNone:       return "Mano principale: nessuna";
+        case Id::FmtExamineRowEffect:        return "Effetto: %s";
+        case Id::FmtExamineRowFeat:          return "Talento: %s";
+        case Id::FmtExamineRowEffectUnknown: return "Effetto n. %d";
+        case Id::FmtExamineRowFeatUnknown:   return "Talento n. %d";
+        case Id::ExamineRowNoEffects:        return "Nessun effetto attivo";
+        case Id::ExamineRowNoFeats:          return "Nessun talento";
+
+        case Id::FmtExamineRowHpFull:        return "Punti vita: %d di %d";
+        case Id::FmtExamineRowLevel:         return "Livello: %d";
+        case Id::FmtExamineRowCondition:     return "Condizione: %s";
+        case Id::DamageLevel0Healthy:        return "illeso";
+        case Id::DamageLevel1Light:          return "leggermente ferito";
+        case Id::DamageLevel2Wounded:        return "ferito";
+        case Id::DamageLevel3Badly:          return "gravemente ferito";
+        case Id::DamageLevel4Dying:          return "morente";
+        case Id::DamageLevel5Dead:           return "morto";
+        case Id::FmtExamineRowOffHand:       return "Mano secondaria: %s";
+        case Id::FmtExamineRowHead:          return "Testa: %s";
+        case Id::FmtExamineRowTorso:         return "Armatura: %s";
+        case Id::FmtExamineRowHands:         return "Mani: %s";
+        case Id::ExamineRowStatusInvisible:  return "Invisibile";
+        case Id::ExamineRowStatusBlind:      return "Cieco";
+
+        case Id::FmtQueueOpen:               return "Coda azioni, %d azioni.";
+        case Id::QueueEmpty:                 return "La coda azioni \xE8 vuota.";
+        case Id::FmtQueueRow:                return "%s: %s %s, %d di %d.";
+        case Id::FmtQueueRemoved:            return "Rimosso: %s.";
+        case Id::QueueCleared:               return "Coda svuotata.";
+        case Id::QueueClosed:                return "Coda chiusa.";
+        case Id::QueueRemoveFailed:          return "Impossibile rimuovere questa azione.";
+        case Id::QueueVerbAttack:            return "Attacco";
+        case Id::QueueVerbCastForce:         return "Lancia potere della Forza";
+        case Id::QueueVerbItemCast:          return "Usa oggetto";
+        case Id::QueueVerbEquip:             return "Equipaggia";
+        case Id::QueueVerbUnequip:           return "Rimuovi";
+        case Id::QueueVerbMove:              return "Muovi";
+        case Id::QueueVerbHeal:              return "Cura";
+        case Id::QueueVerbUseTalent:         return "Usa talento";
+        case Id::QueueVerbCutscene:          return "Cinematica";
+        case Id::QueueVerbUnknown:           return "Azione";
+
+        // Skeleton: max-HP is not yet read safely (suspected engine
+        // accessor), so the hit / crit messages omit the "X of Y hp"
+        // tail. Args reduced to (attacker, target, damage).
+        case Id::FmtAttackHit:               return "%s colpisce %s per %d danni.";
+        case Id::FmtAttackMiss:              return "%s manca %s.";
+        case Id::FmtAttackCrit:              return "Critico! %s colpisce %s per %d danni.";
+        case Id::FmtAttackDeflected:         return "L'attacco di %s contro %s viene parato.";
+
+        case Id::FmtSavingThrowSucceeded:    return "%s supera la salvezza: %s %d contro %d.";
+        case Id::FmtSavingThrowFailed:       return "%s fallisce la salvezza: %s %d contro %d.";
+        case Id::SaveTypeFort:               return "Tempra";
+        case Id::SaveTypeReflex:             return "Riflessi";
+        case Id::SaveTypeWill:               return "Volont\xE0";
+
+        case Id::FmtDialogReplies:           return "%d risposte disponibili.";
+        case Id::DialogReplyUnavailable:     return "non disponibile";
+        case Id::FmtDialogReplyUnavailableRow: return "%s, %s, %d di %d";
+
+        case Id::MessagesTitleCombatLog:     return "Registro di combattimento.";
+        case Id::MessagesTitleDialogLog:     return "Registro dei dialoghi.";
+
+        case Id::MapPrevNote:                return "Nota precedente";
+        case Id::MapNextNote:                return "Nota successiva";
+
+        case Id::MapCursorUnexplored:        return "Inesplorato";
+        case Id::MapCursorWaypointPOI:       return "Punto d'interesse";
+        case Id::MapCursorOpenArea:          return "Area aperta";
+        case Id::MapCursorJunction:          return "Incrocio";
+        case Id::MapCursorOffPath:           return "Muro";
+        case Id::FmtMapCursorCorridor:       return "%s, %.0f metri";
+        case Id::FmtMapCursorDeadEnd:        return "Vicolo cieco, %s";
+        case Id::FmtMapCursorJunctionDirs:   return "Incrocio, %s";
+        case Id::FmtMapCursorCorridorDir:    return "%s";
+        case Id::MapCursorDoorNoun:          return "Porta";
+        case Id::FmtMapCursorDoor:           return "%s %s";
+        case Id::FmtMapCursorDoorTransition: return "%s %s verso %s";
+        case Id::FmtMapCursorDoorLandmark:   return "%s %s, %s";
+        case Id::MapCursorTransitionDoor:    return "Soglia";
+        case Id::FmtMapCursorJunctionDeadEndExit: return "vicolo cieco %s";
+        case Id::FmtMapCursorPlazaDirs:      return "Piazza, %s";
+        case Id::AxisNorthSouth:             return "nord-sud";
+        case Id::AxisEastWest:               return "est-ovest";
+
+        case Id::FmtStorePriceBuyFinite:    return "Prezzo %d crediti, scorta %d";
+        case Id::FmtStorePriceBuyUnlimited: return "Prezzo %d crediti, scorta illimitata";
+        case Id::FmtStorePriceSell:         return "Prezzo %d crediti, ne possiedi %d";
+        case Id::StoreModeBuy:              return "Modalit\xE0 acquisto";
+        case Id::StoreModeSell:             return "Modalit\xE0 vendita";
+        case Id::StoreSold:                 return "Venduto";
+        case Id::StoreBought:               return "Acquistato";
+        case Id::StoreCannotSell:           return "Non pu\xF2 essere venduto";
+        case Id::StoreCannotBuy:            return "Non pu\xF2 essere acquistato";
+        case Id::FmtStoreSoldFor:           return "Venduto per %d crediti";
+        case Id::FmtStoreBoughtFor:         return "Acquistato per %d crediti";
+        case Id::FmtStoreNotEnoughCredits:  return "Crediti insufficienti, ne servono %d, ne hai %d";
+
+        case Id::FmtCredits:                return "Crediti: %s";
+
+        case Id::WorkbenchSlotWeapon1:       return "Slot di miglioramento 1";
+        case Id::WorkbenchSlotWeapon2:       return "Slot di miglioramento 2";
+        case Id::WorkbenchSlotWeapon3:       return "Slot di miglioramento 3";
+        case Id::WorkbenchSlotSaberCrystal1: return "Slot cristallo 1";
+        case Id::WorkbenchSlotSaberCrystal2: return "Slot cristallo 2";
+        case Id::WorkbenchSlotSaberCrystal3: return "Slot cristallo 3";
+        case Id::WorkbenchSlotSaberCrystal4: return "Slot cristallo 4";
+        case Id::WorkbenchItemsEmpty:        return "Nessun oggetto migliorabile in questa categoria";
+        case Id::WorkbenchUpgradesEmpty:     return "Nessun miglioramento compatibile nell'inventario";
+        case Id::WorkbenchSlotInstalled:     return "Miglioramento installato";
+        case Id::WorkbenchSlotRemoved:       return "Miglioramento rimosso";
+        case Id::WorkbenchSlotNoMatch:       return "Nessun miglioramento corrispondente nell'inventario";
+
+        case Id::SoundOptionsMovieVolume:    return "Volume video";
+
+        case Id::SwoopRaceStarted:
+            // Terse opener — concatenated with SwoopRaceControls below
+            // into one utterance by swoop_race.cpp::AnnounceEntry.
+            return "Corsa Swoop.";
+        case Id::SwoopRaceControls:
+            // Short cheat sheet. Full keymap (Enter/Mouse 1 also work,
+            // Pause pauses the race, etc.) is in the manual — verbose
+            // spoken intro got in the way of the start countdown.
+            return "Spazio per accelerare. A e D per sterzare.";
+        case Id::SwoopRaceEnded:
+            return "Corsa Swoop terminata.";
+        case Id::SwoopRaceObstacleNear:
+            return "Ostacolo a %d metri";
+        case Id::FmtSwoopRaceGear:
+            return "Marcia %d";
+
+        case Id::ModSettingsRootLabel:        return "Impostazioni mod";
+        case Id::ModSettingsOpened:           return "Impostazioni mod aperte";
+        case Id::ModSettingsClosed:           return "Impostazioni mod chiuse";
+        case Id::ModSettingExtendedCycling:   return "Selezione oggetti su tutta la mappa";
+        case Id::ModSettingRoomShapes:        return "Descrizioni della forma delle stanze";
+        case Id::ModSettingWallSounds:        return "Suoni dei muri";
+        case Id::ModSettingStateOn:           return "attivo";
+        case Id::ModSettingStateOff:          return "disattivo";
+        case Id::FmtModSettingOption:         return "%s: %s";
+
+        case Id::ModSettingAudioGlossary:           return "Glossario audio";
+        case Id::ModSettingsAudioGlossaryOpened:    return "Glossario audio aperto";
+        case Id::GlossaryEntryDoorOpen:             return "Porta aperta";
+        case Id::GlossaryEntryDoorClosedMetal:      return "Porta di metallo chiusa";
+        case Id::GlossaryEntryDoorClosedWood:       return "Porta di legno chiusa";
+        case Id::GlossaryEntryDoorClosedStone:      return "Porta di pietra chiusa";
+        case Id::GlossaryEntryWall:                 return "Muro";
+        case Id::GlossaryEntryHazard:               return "Pericolo";
+        case Id::GlossaryEntryCollision:            return "Collisione";
+        case Id::GlossaryEntryBeaconActive:         return "Segnale attivo";
+        case Id::GlossaryEntryBeaconWaypoint:       return "Punto intermedio raggiunto";
+        case Id::GlossaryEntryBeaconDestination:    return "Destinazione raggiunta";
+        case Id::GlossaryEntrySwoopAccelTick:       return "Tic della barra marce Swoop";
+        case Id::GlossaryEntrySwoopAccelpadBoost:   return "Piastra acceleratrice Swoop";
+        case Id::GlossaryEntrySwoopObstacleWarn:    return "Allerta ostacolo Swoop";
+        case Id::GlossaryEntrySwoopWallImpact:      return "Impatto contro muro Swoop";
+
+        case Id::FmtUpdateAvailable:    return "Aggiornamento disponibile, versione %s. Premi F5 dal menu principale per installare.";
+        case Id::UpdateDownloading:     return "Download dell'aggiornamento in corso.";
+        case Id::UpdateDownloaded:      return "Aggiornamento scaricato. Chiusura del gioco per installare.";
+        case Id::UpdateFailed:          return "Download dell'aggiornamento fallito.";
+        case Id::FmtUpdateNotAvailable: return "Nessun aggiornamento disponibile. Sei alla versione %s.";
+        case Id::UpdateNotInMenu:       return "Gli aggiornamenti possono essere installati solo dal menu principale.";
+
+        case Id::Count_:               return "";
+    }
+    return "";
 }
 
 }  // namespace acc::strings::lang_it
