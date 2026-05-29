@@ -2,6 +2,10 @@
 /build/
 **/logs/
 
+# Local cache of crash dumps + log bundles uploaded by beta testers.
+# Often hundreds of MB (full-heap WER dumps); never redistributable.
+/userlogs/
+
 # dinput8.dll proxy loader — source in loader/ is tracked, binaries
 # rebuilt via loader/build.bat.
 /loader/*.dll
