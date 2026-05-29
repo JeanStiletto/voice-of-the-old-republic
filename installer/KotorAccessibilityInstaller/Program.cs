@@ -32,7 +32,7 @@ namespace KotorAccessibilityInstaller
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            Logger.Info("KOTOR Accessibility Installer starting...");
+            Logger.Info("Voice of the Old Republic Installer starting...");
             Logger.Info($"Running as: {Environment.UserName}");
             Logger.Info($"Is Admin: {IsRunningAsAdmin()}");
             Logger.Info($"Arguments: {string.Join(" ", args)}");

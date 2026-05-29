@@ -1,6 +1,6 @@
 # `kdev` — Dev CLI Design (v1)
 
-Internal command-line tool for developing the KOTOR Accessibility patch. Wraps Lane Dibello's `KPatchCore` API and `create-patch.bat` build script behind a single ergonomic CLI so the inner dev loop is one command from "edited code" to "game running with my changes".
+Internal command-line tool for developing the Voice of the Old Republic accessibility patch. Wraps Lane Dibello's `KPatchCore` API and `create-patch.bat` build script behind a single ergonomic CLI so the inner dev loop is one command from "edited code" to "game running with my changes".
 
 ## Purpose
 

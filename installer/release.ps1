@@ -1,4 +1,4 @@
-# KOTOR Accessibility - Local Release Script
+# Voice of the Old Republic - Local Release Script
 # Usage: powershell -NoProfile -File installer\release.ps1 [-Version 0.1.0]
 #
 # Builds the .kpatch via kdev, then the self-contained installer EXE,
@@ -148,7 +148,7 @@ dotnet publish $installerCsproj -c Release -r win-x64 --self-contained true `
     -p:Version=$Version
 if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: Installer publish failed" -ForegroundColor Red; exit 1 }
 
-$installerExe = Join-Path $root 'installer\KotorAccessibilityInstaller\bin\Release\net8.0-windows\win-x64\publish\KotorAccessibilityInstaller.exe'
+$installerExe = Join-Path $root 'installer\KotorAccessibilityInstaller\bin\Release\net8.0-windows\win-x64\publish\VoiceOfTheOldRepublicInstaller.exe'
 if (-not (Test-Path $installerExe)) {
     Write-Host "ERROR: Installer EXE not found at $installerExe" -ForegroundColor Red; exit 1
 }
@@ -199,13 +199,13 @@ $notesText += @"
 
 ---
 
-Run ``KotorAccessibilityInstaller.exe`` to install. The installer detects your
+Run ``VoiceOfTheOldRepublicInstaller.exe`` to install. The installer detects your
 Steam copy of KOTOR, applies ``Accessibility.kpatch`` via KPatchManager, and
 drops the Prism speech runtime alongside.
 
 **Verification (SHA256):**
 
-- ``KotorAccessibilityInstaller.exe``: ``$installerHash``
+- ``VoiceOfTheOldRepublicInstaller.exe``: ``$installerHash``
 - ``Accessibility.kpatch``: ``$kpatchHash``
 
 Verify with ``Get-FileHash <filename> -Algorithm SHA256`` (PowerShell) or

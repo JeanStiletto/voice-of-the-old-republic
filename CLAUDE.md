@@ -1,4 +1,4 @@
-# KOTOR Accessibility Mod
+# Voice of the Old Republic — KOTOR 1 Accessibility Mod
 
 ## Purpose
 Accessibility mod/contribution for **Star Wars: Knights of the Old Republic** (KOTOR 1, BioWare 2003, Steam release) enabling blind and visually impaired players to play using screen readers (NVDA/JAWS/Narrator).

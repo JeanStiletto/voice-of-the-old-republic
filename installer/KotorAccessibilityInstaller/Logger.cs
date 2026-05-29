@@ -53,7 +53,7 @@ namespace KotorAccessibilityInstaller
             {
                 var fullLog = new StringBuilder();
                 fullLog.AppendLine("===========================================");
-                fullLog.AppendLine("KOTOR Accessibility - Installation Log");
+                fullLog.AppendLine("Voice of the Old Republic - Installation Log");
                 fullLog.AppendLine($"Date: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
                 fullLog.AppendLine("===========================================");
                 fullLog.AppendLine();

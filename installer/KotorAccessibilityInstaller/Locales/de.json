@@ -6,8 +6,8 @@
     "Program_UninstallError_Title": "Deinstallationsfehler",
     "Program_UninstallError_Text": "Der KOTOR-Installationspfad konnte nicht ermittelt werden.\n\nBitte führe das Installationsprogramm normal aus, um neu zu installieren.",
 
-    "Welcome_Title": "KOTOR Barrierefreiheits-Mod",
-    "Welcome_Description": "Dies installiert die KOTOR Accessibility-Mod für deine Steam-Version von Star Wars: Knights of the Old Republic.\n\nDie Mod ermöglicht blinden und sehbehinderten Spielerinnen und Spielern, KOTOR mit dem NVDA-Screenreader zu spielen.",
+    "Welcome_Title": "Voice of the Old Republic",
+    "Welcome_Description": "Dies installiert Voice of the Old Republic, eine Barrierefreiheits-Mod für deine Steam-Version von Star Wars: Knights of the Old Republic.\n\nDie Mod ermöglicht blinden und sehbehinderten Spielerinnen und Spielern, KOTOR mit jedem modernen Screenreader zu spielen.",
     "Welcome_VersionInfo_Format": "Zu installierende Version: v{0}",
     "Welcome_VersionInfo_Unknown": "Zu installierende Version: neueste",
     "Welcome_LanguageLabel": "Sprache des Installationsprogramms:",
@@ -43,10 +43,10 @@
     "ModSelection_NextButton": "Weiter zur Installation",
     "ModSelection_BackButton": "Zurück",
 
-    "Main_TitleInstaller": "KOTOR Accessibility Installationsprogramm",
-    "Main_TitleUpdater": "KOTOR Accessibility Aktualisierung",
-    "Main_StatusInstall": "Dies installiert die KOTOR-Accessibility-Mod in deine Steam-Version von Knights of the Old Republic.\nDie Mod ermöglicht es blinden Spielern, mit NVDA oder einem anderen Screenreader zu spielen.",
-    "Main_StatusUpdate": "Dies aktualisiert die KOTOR-Accessibility-Mod auf die neueste Version.",
+    "Main_TitleInstaller": "Voice of the Old Republic - Installationsprogramm",
+    "Main_TitleUpdater": "Voice of the Old Republic - Aktualisierung",
+    "Main_StatusInstall": "Dies installiert Voice of the Old Republic in deine Steam-Version von Knights of the Old Republic.\nDie Mod ermöglicht es blinden Spielern, das Spiel mit jedem modernen Screenreader zu spielen.",
+    "Main_StatusUpdate": "Dies aktualisiert Voice of the Old Republic auf die neueste Version.",
     "Main_PathLabel": "KOTOR-Installationspfad:",
     "Main_BrowseButton": "Durchsuchen...",
     "Main_BrowseDialogDescription": "KOTOR-Installationsordner auswählen (enthält swkotor.exe)",
@@ -58,9 +58,9 @@
     "Main_CancelButton": "Abbrechen",
 
     "Main_ConfirmInstall_Title": "Installation bestätigen",
-    "Main_ConfirmInstall_Format": "KOTOR Accessibility installieren in:\n{0}\n\nFortfahren?",
+    "Main_ConfirmInstall_Format": "Voice of the Old Republic installieren in:\n{0}\n\nFortfahren?",
     "Main_ConfirmUpdate_Title": "Aktualisierung bestätigen",
-    "Main_ConfirmUpdate_Format": "KOTOR-Accessibility-Mod aktualisieren in:\n{0}\n\nFortfahren?",
+    "Main_ConfirmUpdate_Format": "Voice of the Old Republic aktualisieren in:\n{0}\n\nFortfahren?",
 
     "Main_StatusPreparing": "Aktualisierung wird vorbereitet...",
     "Main_StatusStaging": "Patcher-Laufzeit wird entpackt...",
@@ -91,14 +91,14 @@
     "Main_ModDownloadFailed_Format": "Die Mod konnte nicht heruntergeladen werden: {0}\n\nDie Installation kann ohne die .kpatch-Datei nicht fortgesetzt werden.\n\nDu kannst sie manuell herunterladen von:\n{1}/releases\nund das Installationsprogramm erneut ausführen.",
 
     "Main_ApplyFailed_Title": "Patch-Anwendung fehlgeschlagen",
-    "Main_ApplyFailed_Format": "Der Patch konnte nicht installiert werden:\n\n{0}\n\nFalls die Meldung oben einen Hash-Vergleichsfehler oder 'does not support detected game version' nennt, ist deine swkotor.exe eine Variante, die wir noch nicht kennen. In v0.1 unterstützt: Steam 1.0.3 und GoG 1.0.3 (einschließlich byte-identischer CD-Repacks). Der Aspyr-Port (Mobile/macOS) sowie vorab modifizierte EXE-Dateien (UniWS, HR Menus) werden in v0.1 nicht unterstützt.\n\nBitte eröffne ein Issue unter https://github.com/JeanStiletto/kotor-blind-accessibility/issues mit dem angezeigten Hash; wir nehmen deine Variante auf, sobald die Bytes übereinstimmen.\n\nFalls der Fehler erst beim eigentlichen Patchen aufgetreten ist und nicht bei der Versionsprüfung, muss eventuell swkotor.exe wiederhergestellt werden. Verwende dazu 'Spieldateien überprüfen' in Steam (Rechtsklick auf KOTOR → Eigenschaften → Installierte Dateien) oder installiere bei GoG neu.",
+    "Main_ApplyFailed_Format": "Der Patch konnte nicht installiert werden:\n\n{0}\n\nFalls die Meldung oben einen Hash-Vergleichsfehler oder 'does not support detected game version' nennt, ist deine swkotor.exe eine Variante, die wir noch nicht kennen. In v0.1 unterstützt: Steam 1.0.3 und GoG 1.0.3 (einschließlich byte-identischer CD-Repacks). Der Aspyr-Port (Mobile/macOS) sowie vorab modifizierte EXE-Dateien (UniWS, HR Menus) werden in v0.1 nicht unterstützt.\n\nBitte eröffne ein Issue unter https://github.com/JeanStiletto/voice-of-the-old-republic/issues mit dem angezeigten Hash; wir nehmen deine Variante auf, sobald die Bytes übereinstimmen.\n\nFalls der Fehler erst beim eigentlichen Patchen aufgetreten ist und nicht bei der Versionsprüfung, muss eventuell swkotor.exe wiederhergestellt werden. Verwende dazu 'Spieldateien überprüfen' in Steam (Rechtsklick auf KOTOR → Eigenschaften → Installierte Dateien) oder installiere bei GoG neu.",
 
     "Main_CompleteInstall_Title": "Installation abgeschlossen",
     "Main_CompleteUpdate_Title": "Aktualisierung abgeschlossen",
-    "Main_CompleteInstall_Text": "KOTOR-Accessibility-Installation abgeschlossen.\n\n",
-    "Main_CompleteUpdate_Text": "KOTOR-Accessibility-Aktualisierung abgeschlossen.\n\n",
-    "Main_CompleteModInstalled": "Die Accessibility-Mod ist installiert und einsatzbereit. Starte KOTOR und drücke im Hauptmenü Numpad-1, um die Sprachausgabe zu prüfen.",
-    "Main_CompleteModUpdated": "Die Accessibility-Mod wurde erfolgreich aktualisiert.",
+    "Main_CompleteInstall_Text": "Installation von Voice of the Old Republic abgeschlossen.\n\n",
+    "Main_CompleteUpdate_Text": "Aktualisierung von Voice of the Old Republic abgeschlossen.\n\n",
+    "Main_CompleteModInstalled": "Voice of the Old Republic ist installiert und einsatzbereit. Starte KOTOR und drücke im Hauptmenü Numpad-1, um die Sprachausgabe zu prüfen.",
+    "Main_CompleteModUpdated": "Voice of the Old Republic wurde erfolgreich aktualisiert.",
 
     "Main_ErrorInstall_Title": "Installationsfehler",
     "Main_ErrorUpdate_Title": "Aktualisierungsfehler",
@@ -106,9 +106,9 @@
     "Main_ErrorUpdate_Format": "Aktualisierung fehlgeschlagen: {0}",
 
     "Program_UpToDate_Title": "Mod ist aktuell",
-    "Program_UpToDate_Format": "KOTOR Accessibility v{0} ist bereits installiert und aktuell.\n\nMöchtest du eine vollständige Neuinstallation durchführen?",
+    "Program_UpToDate_Format": "Voice of the Old Republic v{0} ist bereits installiert und aktuell.\n\nMöchtest du eine vollständige Neuinstallation durchführen?",
 
-    "InstalledOptions_Body_Format": "KOTOR Accessibility v{0} ist installiert und aktuell.\n\nRäumlicher Klang (dsoal): {1}\n\nWähle eine Aktion:\n- Neu installieren: führt den vollständigen Installer erneut aus und erneuert alle Dateien.\n- Räumlichen Klang umschalten: zwischen modifiziertem Klang (HRTF + EAX) und vanilla wechseln. Spiel danach neu starten.\n- Logs für Beta-Test sammeln: erstellt im Downloads-Ordner ein Zip mit dem neuesten Patch-Log und Crash-Dump, fertig zum Senden an den Entwickler.\n- Schließen: nichts tun und beenden.",
+    "InstalledOptions_Body_Format": "Voice of the Old Republic v{0} ist installiert und aktuell.\n\nRäumlicher Klang (dsoal): {1}\n\nWähle eine Aktion:\n- Neu installieren: führt den vollständigen Installer erneut aus und erneuert alle Dateien.\n- Räumlichen Klang umschalten: zwischen modifiziertem Klang (HRTF + EAX) und vanilla wechseln. Spiel danach neu starten.\n- Logs für Beta-Test sammeln: erstellt im Downloads-Ordner ein Zip mit dem neuesten Patch-Log und Crash-Dump, fertig zum Senden an den Entwickler.\n- Schließen: nichts tun und beenden.",
     "InstalledOptions_ReinstallButton": "Neu installieren",
 
     "CollectLogs_Button": "Logs für Beta-Test sammeln",
@@ -134,18 +134,18 @@
     "Update_FullInstallButton": "Vollinstallation",
     "Update_CloseButton": "Schließen",
 
-    "Uninstall_Title": "KOTOR Accessibility - Deinstallation",
-    "Uninstall_Heading": "KOTOR Accessibility deinstallieren",
+    "Uninstall_Title": "Voice of the Old Republic - Deinstallation",
+    "Uninstall_Heading": "Voice of the Old Republic deinstallieren",
     "Uninstall_Description": "Dies entfernt nur die Dateien der Accessibility-Mod selbst. K1CP und andere optionale Mods, die du zusammen mit der Mod installiert hast, bleiben erhalten. Um zu einem komplett unmodifizierten KOTOR zurückzukehren, überprüfe nach der Deinstallation die Spieldateien über Steam oder installiere bei GoG neu.",
     "Uninstall_PathLabel_Format": "KOTOR-Speicherort: {0}",
     "Uninstall_UninstallButton": "Deinstallieren",
     "Uninstall_CancelButton": "Abbrechen",
     "Uninstall_Confirm_Title": "Deinstallation bestätigen",
-    "Uninstall_Confirm_Text": "Möchtest du KOTOR Accessibility wirklich deinstallieren?\n\nFolgendes wird ausgeführt:\n- KotorPatcher.dll, sqlite3.dll, addresses.db, patch_config.toml, dinput8.dll entfernen\n- Den patches\\-Ordner entfernen (accessibility.dll + prism.dll)\n- Den Eintrag in Programme und Features entfernen\n\nWas NICHT angetastet wird:\n- K1CP und andere optionale Mods bleiben installiert\n- Deine Spielstände werden nicht verändert\n- swkotor.exe bleibt gepatcht. Für einen vollständig unmodifizierten Zustand: 'Spieldateien überprüfen' in Steam ausführen oder bei GoG neu installieren. Dabei wird auch K1CP entfernt, wenn du einen kompletten Reset möchtest.",
+    "Uninstall_Confirm_Text": "Möchtest du Voice of the Old Republic wirklich deinstallieren?\n\nFolgendes wird ausgeführt:\n- KotorPatcher.dll, sqlite3.dll, addresses.db, patch_config.toml, dinput8.dll entfernen\n- Den patches\\-Ordner entfernen (accessibility.dll + prism.dll)\n- Den Eintrag in Programme und Features entfernen\n\nWas NICHT angetastet wird:\n- K1CP und andere optionale Mods bleiben installiert\n- Deine Spielstände werden nicht verändert\n- swkotor.exe bleibt gepatcht. Für einen vollständig unmodifizierten Zustand: 'Spieldateien überprüfen' in Steam ausführen oder bei GoG neu installieren. Dabei wird auch K1CP entfernt, wenn du einen kompletten Reset möchtest.",
     "Uninstall_StatusRemoving": "Mod-Dateien werden entfernt...",
     "Uninstall_StatusComplete": "Deinstallation abgeschlossen.",
     "Uninstall_Complete_Title": "Deinstallation abgeschlossen",
-    "Uninstall_Complete_Text": "KOTOR Accessibility wurde entfernt.",
+    "Uninstall_Complete_Text": "Voice of the Old Republic wurde entfernt.",
     "Uninstall_Error_Title": "Deinstallationsfehler",
     "Uninstall_Error_Format": "Deinstallation fehlgeschlagen: {0}",
 

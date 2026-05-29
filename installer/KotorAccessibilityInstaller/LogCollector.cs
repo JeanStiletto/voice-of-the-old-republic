@@ -160,7 +160,7 @@ namespace KotorAccessibilityInstaller
         private static void WriteSystemInfo(string path, string gamePath)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("KOTOR Accessibility — beta-test log bundle");
+            sb.AppendLine("Voice of the Old Republic — beta-test log bundle");
             sb.AppendLine($"Captured: {DateTime.Now:yyyy-MM-dd HH:mm:ss zzz}");
             sb.AppendLine();
             sb.AppendLine($"Installed mod version: {RegistryManager.GetRegisteredVersion() ?? "(unknown)"}");

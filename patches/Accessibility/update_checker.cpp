@@ -62,8 +62,8 @@ namespace {
 // Mirrors installer/KotorAccessibilityInstaller/Config.cs ModRepositoryUrl.
 // Owner + repo split because WinHTTP needs the host separately from the path.
 constexpr const wchar_t* kGitHubHost     = L"api.github.com";
-constexpr const wchar_t* kReleasesPath   = L"/repos/JeanStiletto/kotor-blind-accessibility/releases/latest";
-constexpr const wchar_t* kUserAgent      = L"KotorAccessibilityMod/UpdateChecker";
+constexpr const wchar_t* kReleasesPath   = L"/repos/JeanStiletto/voice-of-the-old-republic/releases/latest";
+constexpr const wchar_t* kUserAgent      = L"VoiceOfTheOldRepublic/UpdateChecker";
 
 // Asset filename to download (matches release.ps1 + installer's
 // Path.GetFileName check). The installer is what we hand off to; it'll

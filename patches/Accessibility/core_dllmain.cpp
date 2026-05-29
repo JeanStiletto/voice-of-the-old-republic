@@ -101,7 +101,7 @@ void EnsurePrismInitialized() {
     if (prism::Init()) {
         char greeting[128];
         snprintf(greeting, sizeof(greeting),
-                 "KOTOR accessibility mod loaded, version %s", acc::kModVersion);
+                 "Voice of the Old Republic loaded, version %s", acc::kModVersion);
         prism::Speak(greeting, /*interrupt=*/true);
     }
 }

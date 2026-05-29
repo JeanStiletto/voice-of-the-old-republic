@@ -7,16 +7,16 @@ namespace KotorAccessibilityInstaller
     public static class Config
     {
         /// <summary>
-        /// GitHub repository URL for the KOTOR Accessibility mod.
+        /// GitHub repository URL for the Voice of the Old Republic mod.
         /// Format: "https://github.com/username/repo"
         /// </summary>
-        public const string ModRepositoryUrl = "https://github.com/JeanStiletto/kotor-blind-accessibility";
+        public const string ModRepositoryUrl = "https://github.com/JeanStiletto/voice-of-the-old-republic";
 
         /// <summary>
         /// GitHub Pages site URL. Used for opening the README without the
         /// surrounding GitHub repo chrome. Must end with a trailing slash.
         /// </summary>
-        public const string ModSiteUrl = "https://jeanstiletto.github.io/kotor-blind-accessibility/";
+        public const string ModSiteUrl = "https://jeanstiletto.github.io/voice-of-the-old-republic/";
 
         /// <summary>
         /// Filename of the .kpatch artifact uploaded to GitHub releases.
@@ -45,19 +45,19 @@ namespace KotorAccessibilityInstaller
         /// <summary>
         /// Publisher name for registry entries.
         /// </summary>
-        public const string Publisher = "KOTOR Accessibility Project";
+        public const string Publisher = "Voice of the Old Republic Project";
 
         /// <summary>
         /// Display name for Add/Remove Programs.
         /// </summary>
-        public const string DisplayName = "KOTOR Accessibility Mod";
+        public const string DisplayName = "Voice of the Old Republic";
 
         /// <summary>
         /// Filename of the persistent uninstaller copied into the game folder
         /// at install time so Add/Remove Programs keeps working after the
         /// original download is deleted.
         /// </summary>
-        public const string UninstallerExeName = "KotorAccessibility_Uninstaller.exe";
+        public const string UninstallerExeName = "VoiceOfTheOldRepublic_Uninstaller.exe";
 
         // ---------------------------------------------------------------------
         // K1CP (KOTOR 1 Community Patch) — source pin

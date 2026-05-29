@@ -1,6 +1,6 @@
 # Architecture
 
-The mental model of the KOTOR Accessibility mod. Read this before making non-trivial changes.
+The mental model of the Voice of the Old Republic mod. Read this before making non-trivial changes.
 
 ## Layered overview
 

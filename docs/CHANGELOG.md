@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the KOTOR Accessibility mod.
+All notable changes to the Voice of the Old Republic mod.
 
 Versioned releases below. The release script (`installer/release.ps1`) reads the
 topmost `## vX.Y.Z` heading to determine the version it ships, and uses the

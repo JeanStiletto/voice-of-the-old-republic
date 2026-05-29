@@ -1,13 +1,13 @@
 ---
 layout: default
-title: KOTOR 1 Accessibility Mod
+title: Voice of the Old Republic
 permalink: /
 ---
-<h1>KOTOR 1 Accessibility Mod</h1>
+<h1>Voice of the Old Republic</h1>
 
 <h2>What is this mod</h2>
 
-A screen-reader and keyboard-navigation mod for **Star Wars: Knights of the Old Republic 1** (BioWare, 2003, Steam release) that lets fully blind players play KOTOR 1 with any modern screen reader. Speech is routed through the Prism speech bridge, which supports every major screen reader on every major platform.
+**Voice of the Old Republic** is a screen-reader and keyboard-navigation mod for **Star Wars: Knights of the Old Republic 1** (BioWare, 2003, Steam release) that lets fully blind players play KOTOR 1 with any modern screen reader. Speech is routed through the Prism speech bridge, which supports every major screen reader on every major platform.
 
 The mod is written by a blind developer. Every workflow — installing, playing, contributing — is designed to be doable with a screen reader and keyboard alone.
 
@@ -28,7 +28,7 @@ If the installer reports a version mismatch, file an issue with the displayed ha
 
 <h2>Installation</h2>
 
-1. Download `KotorAccessibilityInstaller.exe` from the latest release on GitHub
+1. Download `VoiceOfTheOldRepublicInstaller.exe` from the latest release on GitHub
 2. Close KOTOR if it is running
 3. Right-click the installer and choose **Run as administrator**. On the first run Windows SmartScreen will warn about an "Unknown publisher" — click **More info → Run anyway**. The installer is not code-signed yet, so this warning is expected
 4. (Recommended) Back up your save folder at `%USERPROFILE%\Documents\Swkotor\saves\` before installing if you have an existing playthrough
@@ -152,7 +152,7 @@ KOTOR's in-game map. The mod makes every map pin (doors, transitions, quest mark
 
 <h2>Reporting bugs</h2>
 
-The installer's post-install screen has a **Collect logs** button that zips the most recent patch log and any Windows Error Reporting dump into your Downloads folder. Attach that zip to a [GitHub issue](https://github.com/JeanStiletto/kotor-blind-accessibility/issues) and describe what you were doing. If you can reproduce a crash, mention which area you were in — the room or area announce will have said it just before.
+The installer's post-install screen has a **Collect logs** button that zips the most recent patch log and any Windows Error Reporting dump into your Downloads folder. Attach that zip to a [GitHub issue](https://github.com/JeanStiletto/voice-of-the-old-republic/issues) and describe what you were doing. If you can reproduce a crash, mention which area you were in — the room or area announce will have said it just before.
 
 <h2>Known issues</h2>
 
