@@ -51,7 +51,15 @@ float HorizontalDistance(const Vector& a, const Vector& b) {
 
 CycleState& GetState(acc::filter::CycleContext ctx) {
     static CycleState sWorld;
-    static CycleState sMap;
+    // Map context: only Landmark (Map hint) is engine-cycleable, so the
+    // default starts there rather than at the struct-default Door. Without
+    // this the first `,`/`.` after opening the map speaks "no doors in
+    // range" — Doors are filtered out by IsMapCycleable before lookup.
+    static CycleState sMap = []{
+        CycleState s;
+        s.category = acc::filter::CycleCategory::Landmark;
+        return s;
+    }();
     return ctx == acc::filter::CycleContext::Map ? sMap : sWorld;
 }
 
@@ -80,57 +88,42 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
         return true;
     }
 
-    // Resolve the per-area map struct once per build for the fog gate.
-    // Read-only over engine state; if the lookup faults we degrade to
-    // "no fog gate" rather than hiding everything.
-    void* areaMap = mapCtx ? acc::engine::GetAreaMap() : nullptr;
-    int   fogFiltered = 0;
-
     bool overflowed = false;
-    int  mapNoteDisabledFiltered = 0;
-    acc::engine::AreaObjectIterator it(area);
-    int scanned = 0;
-    int kindCounts[16] = {0};
-    while (void* obj = it.Next()) {
-        ++scanned;
-        int k = acc::engine::GetObjectKind(obj);
-        if (k >= 0 && k < 16) kindCounts[k]++;
-        if (!acc::filter::ObjectMatches(obj, category)) continue;
+    int  scanned = 0;
+    int  kindCounts[16] = {0};
 
-        Vector pos;
-        if (!acc::engine::GetObjectPosition(obj, pos)) continue;
+    // Map+Landmark: skip the waypoint iteration entirely. Quest scripts
+    // create a CSWCMapPin for every visible "Hinweis" the player is meant
+    // to see, and area designers typically place a CSWSWaypoint with the
+    // same map note text at the same world position. Iterating both
+    // sources produced duplicate announces ("Apartamento de Dia, 3
+    // o'clock, 37 metres" twice). The engine's own up/down "Hinweis"
+    // cycle reads map_pins[] — matching that as the single source gives
+    // sighted parity without dedup logic.
+    bool useMapPinsOnly =
+        mapCtx && category == acc::filter::CycleCategory::Landmark;
 
-        // Map-context fog-of-war gate. Spoiler-correct by construction:
-        // a landmark in an unexplored cell stays out of the cycle until
-        // the player walks within map-reveal range.
-        if (mapCtx && areaMap &&
-            !acc::engine::IsWorldPointExplored(areaMap, pos)) {
-            ++fogFiltered;
-            continue;
+    if (!useMapPinsOnly) {
+        acc::engine::AreaObjectIterator it(area);
+        while (void* obj = it.Next()) {
+            ++scanned;
+            int k = acc::engine::GetObjectKind(obj);
+            if (k >= 0 && k < 16) kindCounts[k]++;
+            if (!acc::filter::ObjectMatches(obj, category)) continue;
+
+            Vector pos;
+            if (!acc::engine::GetObjectPosition(obj, pos)) continue;
+
+            if (out.count >= CategoryListing::kMaxObjects) {
+                overflowed = true;
+                continue;
+            }
+            out.objs[out.count]      = obj;
+            out.positions[out.count] = pos;
+            out.distances[out.count] = HorizontalDistance(pos, playerPos);
+            out.isPin[out.count]     = false;
+            ++out.count;
         }
-
-        // Map-context "map hint" curation. CSWGuiMapHider::Draw only
-        // renders waypoints whose map_note_enabled flag (+0x22c) is set
-        // — quest scripts toggle this dynamically so the icon turns up
-        // when relevant. Match the engine's curated subset on the map
-        // cycle so blind players hear the same set sighted players see
-        // (and same set the up/down "Hinweis" buttons cycle).
-        if (mapCtx &&
-            category == acc::filter::CycleCategory::Landmark &&
-            !acc::engine::IsMapNoteEnabled(obj)) {
-            ++mapNoteDisabledFiltered;
-            continue;
-        }
-
-        if (out.count >= CategoryListing::kMaxObjects) {
-            overflowed = true;
-            continue;
-        }
-        out.objs[out.count]      = obj;
-        out.positions[out.count] = pos;
-        out.distances[out.count] = HorizontalDistance(pos, playerPos);
-        out.isPin[out.count]     = false;
-        ++out.count;
     }
 
     // Map context + Landmark: fold user-placed map pins into the same
@@ -185,14 +178,12 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
     // (wrong area, wrong iterator offsets, sub-state filter too tight, etc.).
     if (out.count == 0) {
         acclog::Write("Cycle", "BuildListing area=%p ctx=%s category=%s "
-                      "snapshotSize=%d scanned=%d fogFiltered=%d "
-                      "mapNoteDisabled=%d "
+                      "scanned=%d "
                       "kinds[Creature=5]=%d [Item=6]=%d [Trigger=7]=%d "
                       "[Placeable=9]=%d [Door=10]=%d [Waypoint=12]=%d",
                       area, mapCtx ? "Map" : "World",
                       acc::filter::CategoryName(category),
-                      it.SnapshotSize(), scanned, fogFiltered,
-                      mapNoteDisabledFiltered,
+                      scanned,
                       kindCounts[5], kindCounts[6], kindCounts[7],
                       kindCounts[9], kindCounts[10], kindCounts[12]);
     }

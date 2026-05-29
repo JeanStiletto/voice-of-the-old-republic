@@ -765,6 +765,22 @@ bool TryHandleEvent(int param_1, int param_2) {
         const bool prev = (param_1 == kInputKbComma);
         if (g_engineShiftHeld) OnCycleCategory(prev, ctx);
         else                   OnCycleItem    (prev, ctx);
+        // Suppress PollWin32 from re-dispatching the same press. In Map
+        // context the engine routes `,`/`.` through the manager hook
+        // AND PollWin32 still sees the OS-level press → without claim
+        // the user hears each press dispatched twice. ClaimRisingEdge
+        // (not Consume) is required because the manager input fires
+        // between EndTick and BeginTick — see the InteractTarget claim
+        // in menus.cpp::OnHandleInputEvent for the same pattern.
+        if (g_engineShiftHeld) {
+            acc::hotkeys::ClaimRisingEdge(
+                prev ? acc::hotkeys::Action::CycleCategoryPrev
+                     : acc::hotkeys::Action::CycleCategoryNext);
+        } else {
+            acc::hotkeys::ClaimRisingEdge(
+                prev ? acc::hotkeys::Action::CycleItemPrev
+                     : acc::hotkeys::Action::CycleItemNext);
+        }
         return true;
     }
     if (param_1 == kInputKbAnnounce) {
