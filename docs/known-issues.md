@@ -38,6 +38,38 @@ Memory: `project_cserverexoapp_facade_split.md`.
 
 Fix: redirect `GetPartyMembers` to `serverInternal + 0x1b770` (same chain `GetServerPartyTable` at `engine_player.cpp:398` already uses), then verify the three consumers still behave correctly. Test in any scene with companions (Taris apartment after recruiting Carth + Mission + Zaalbar is the canonical multi-party scene).
 
+### swconfig.exe silently reverts three of four `swkotor.ini` stability tweaks
+
+`swconfig.exe` (KOTOR's launcher config tool) is reachable from Steam's "Configure" cog and is also auto-run by Steam on a language change or "Verify integrity of game files". Each run resets the Graphics Options section of `swkotor.ini` to vanilla defaults, including the three tweaks our installer relies on:
+
+- `V-Sync=1` → `0` (vanilla default)
+- `Frame Buffer=0` → `1`
+- `FullScreen=0` → `1`
+
+The fourth tweak, `Disable Vertex Buffer Objects=1`, survives because the key isn't part of swconfig's known schema, so it leaves it alone.
+
+`FullScreen=1` is the operationally critical one: exclusive fullscreen wedges our entire cursor-warp pipeline. `MoveMouseToPosition` returns `mouseOverControl=NULL` for every chain step (no engine-side `SetActiveControl` fires from the warp), which silently breaks:
+
+- Options panel tab activation (click-sim's `HandleLMouseDown` returns 0)
+- Chargen class screen voice (icons 1..5 silent — `class_label` cache only fills via the `SetActiveControl` side effect)
+- Equip-screen slot picker
+- Workbench upgrade slot picker
+- Any other panel using cursor-warp + click-sim
+
+Diagnostic signature in `patch-*.log`: `Update: MoveMouseToPosition(x, y) target=... mouseOver before=<ptr> after=00000000` on every chain step. Confirm with `grep -nE "^V-Sync|^Frame Buffer|^FullScreen|^Disable Vertex" swkotor.ini` — if the first three deviate from `1/0/0` and the fourth is `1`, swconfig has hit.
+
+Today's workaround: re-run `VoiceOfTheOldRepublicInstaller.exe` **as administrator** (it touches `Program Files (x86)`); the installer's `SwkotorIniTweaker.ApplyAccessibilityDefaults` is idempotent and puts all four tweaks back.
+
+Memory: nothing yet — this is the first time we've traced it end-to-end.
+
+Possible permanent fixes:
+
+1. Re-apply `SwkotorIniTweaker` from inside the patcher on `OnRulesInit`, so every game launch corrects swconfig damage automatically (no admin needed since the patcher is already in-process).
+2. Detect `FullScreen=1` at startup and either (a) speak a "fullscreen detected — please re-run installer" cue and refuse to apply the cursor-warp click-sim path, or (b) hot-rewrite the ini on next launch + restart instructions.
+3. Investigate whether the cursor-warp regression is unique to `FullScreen=1` or also reproduces in `Disable Vertex Buffer Objects=0` / `Frame Buffer=1`; if so, broaden the check.
+
+Option 1 is probably the right one — it keeps the install workflow drop-in and silently re-armors against the next swconfig run.
+
 ## Planned
 
 ### Pazaak minigame accessibility
