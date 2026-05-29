@@ -31,9 +31,19 @@ void OnEngineShowObject(uint32_t handle);
 // announcing here would always speak the OLD target. If the engine
 // then fires ShowObject this tick, OnEngineShowObject cancels the
 // request; otherwise Tick drains it (single-hostile combat case).
-void RequestQEReannounce();
+//
+// directionCode is the engine's Q/E logical code (204 = E forward,
+// 205 = Q reverse) — stored so the sentinel-skip retry path can
+// synthesize the same direction back through HandleInputEvent.
+void RequestQEReannounce(int directionCode);
 
-// Per-tick drain of pending Q/E re-announce.
+// Returns true while Tick is mid-flight on a synthesized Q/E re-issue.
+// input_pipeline reads this to suppress re-arming the press flag when
+// the engine routes our synthetic HandleInputEvent call back through
+// the detour. Single-threaded engine, no atomic needed.
+bool IsInSynthesizedQE();
+
+// Per-tick drain of pending Q/E re-announce + sentinel-skip retry.
 void Tick();
 
 }  // namespace acc::passive_narrate

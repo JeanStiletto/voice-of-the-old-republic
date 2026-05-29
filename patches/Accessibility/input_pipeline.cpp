@@ -289,7 +289,14 @@ extern "C" void __cdecl OnClientHandleInputEvent(void* this_ptr,
     // plays. If it stayed (single-enemy case), the Tick drain fires
     // the reannounce. Press-edge only (val != 0).
     if (param_2 != 0 && (param_1 == 204 || param_1 == 205)) {
-        acc::passive_narrate::RequestQEReannounce();
+        // passive_narrate's sentinel-skip retry path calls HandleInputEvent
+        // itself to re-issue Q/E after the engine emptied its candidate
+        // halo. That synthetic event routes back through this detour;
+        // RequestQEReannounce no-ops on `inside_retry`, so the call is
+        // safe, but skipping it here keeps the diagnostic log uncluttered.
+        if (!acc::passive_narrate::IsInSynthesizedQE()) {
+            acc::passive_narrate::RequestQEReannounce(param_1);
+        }
     }
 
     // Bug-2a fix: arrow-key navigation in modal popups. When the engine
