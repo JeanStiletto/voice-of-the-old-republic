@@ -9,6 +9,14 @@ rename `## Unreleased` to the new version and add the relevant bullets — group
 them under short topic headings (`Examine view:`, `Map:`, `Combat log:`,
 `Installer:`, `Bug fixes:`) the way `arena/docs/CHANGELOG.md` does.
 
+## v0.2
+
+_In development. Add v0.2 changes as bullets under topic headings
+(`Examine view:`, `Map:`, `Combat log:`, `Installer:`, `Bug fixes:`)
+before running `installer/release.ps1` to cut the release._
+
+---
+
 ## v0.1
 
 First public beta. Playable from new-game / chargen through the entire main quest
