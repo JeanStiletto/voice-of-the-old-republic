@@ -120,6 +120,32 @@ extern "C" void __cdecl OnRulesInit(void* /*rulesThis*/) {
     acclog::Write("Init", "first CSWRules construction; detour active");
 }
 
+// CExoRawInputInternal::InitializeDirectInputMouse guard (hooks.toml @ 0x005e3fa0).
+// Engine bug: on internal DInput failure, the function shuts down the input
+// subsystem (nulling direct_input_interface at +0x1c) but still returns
+// success. The very next GetMouseState poll re-enters here and dereferences
+// the NULL pointer → crash. Reported by first blind tester (no mouse hw).
+//
+// Returning 1 makes the wrapper consume to the function's return-0 epilogue.
+// Returning 0 lets the engine run normally. Fires every frame after the
+// first failure — first-fire-only logging avoids flooding the log.
+extern "C" int __cdecl OnInitializeDirectInputMouse(void* self) {
+    if (!self) return 0;
+    void* di_iface = *reinterpret_cast<void**>(
+        reinterpret_cast<char*>(self) + 0x1c);
+    if (!di_iface) {
+        static bool logged_once = false;
+        if (!logged_once) {
+            logged_once = true;
+            acclog::Write("EngineInput",
+                "DirectInput mouse re-init blocked — direct_input_interface=NULL "
+                "(no mouse hardware, or prior Acquire failure)");
+        }
+        return 1;
+    }
+    return 0;
+}
+
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         acclog::Init(hinstDLL);
