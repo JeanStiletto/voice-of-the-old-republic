@@ -66,11 +66,12 @@ Example - instead of tables, format like this:
 - **`tools/kdev/`** — internal dev CLI (.NET 10), drives the full build → install → launch loop for our patch
 - **`patches/Accessibility/`** — our patch source (hooks, menus, narration, audio, guidance, and engine-interface modules)
 - **`installer/KotorAccessibilityInstaller/`** — end-user installer (.NET 8 WinForms, self-contained single-file EXE). References KPatchCore directly; modelled on the arena installer (`AccessibleArenaInstaller/IMPLEMENTATION.md` in the sibling arena project) — read that first if touching this code.
-- **`installer/release.ps1`** — local release pipeline (kdev build → publish installer → tag → gh release)
+- **`installer/release.ps1`** — local release pipeline (kdev build → publish installer → extract changelog notes → tag → gh release)
 - **`third_party/`** — vendored dependencies: `Kotor-Patch-Manager`, `KotorMessageInjector`, `KotOR_IO`, `prism`/`prism-dist`, `dsoal`, `tolk`, and others. See the directory for the current set.
 - **`docs/`** — see Documentation below
 - **`build/`, `logs/`** — generated; gitignored
 - **`kdev.toml`** — project-level config consumed by `kdev`
+- **`LICENSE`** — GNU GPL v3 (same as the sibling arena project). All contributions ship under this licence.
 
 ### Documentation
 Always read these before diving into work — they capture decisions and current state:
@@ -80,6 +81,7 @@ Always read these before diving into work — they capture decisions and current
 - **`docs/installer.md`** — end-user installer design, bundled-mods plan, beta-prep notes.
 - **`docs/upstream-prs.md`** — tracking of fixes/features we plan to send back to upstream (mostly KPatchManager).
 - **`docs/known-issues.md`** — five-bucket status tracker (Bugs / Planned / Monitor / Polish / Beta Preparations).
+- **`docs/CHANGELOG.md`** — versioned release notes. `installer/release.ps1` reads the top-most `## vX.Y.Z` heading to pick the version and uses the bullets under it as the GitHub release body. Add an entry (or rename `## Unreleased`) before tagging.
 - **`docs/llm-docs/`** — LLM-targeted reference material. See `docs/llm-docs/CLAUDE.md` for the index. Start with `game-flow.md` for lifecycle context, `accessibility-map.md` for pillar-by-pillar hook candidates, and `sarif-cookbook.md` for querying Lane's RE database.
 - **`archiev/`** — historical investigation, design, and progress docs (session-by-session retrospectives). Search here if a code comment references a `docs/*-investigation.md` or `docs/navsystem-*.md` that no longer exists in `docs/`.
 

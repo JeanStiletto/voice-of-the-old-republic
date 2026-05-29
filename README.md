@@ -7,24 +7,35 @@ permalink: /
 
 <h2>What is this mod</h2>
 
-A screen-reader and keyboard-navigation mod for **Star Wars: Knights of the Old Republic 1** (BioWare, 2003, Steam release) that lets fully blind players play KOTOR 1 with NVDA, JAWS, Narrator, or any other Tolk-supported screen reader.
+A screen-reader and keyboard-navigation mod for **Star Wars: Knights of the Old Republic 1** (BioWare, 2003, Steam release) that lets fully blind players play KOTOR 1 with any modern screen reader. Speech is routed through the Prism speech bridge, which supports every major screen reader on every major platform.
 
 The mod is written by a blind developer. Every workflow — installing, playing, contributing — is designed to be doable with a screen reader and keyboard alone.
 
 <h2>Requirements</h2>
 
 - Windows 10 or later
-- Star Wars: Knights of the Old Republic (Steam)
-- A screen reader (NVDA, JAWS, or Narrator; NVDA is the most tested)
+- Star Wars: Knights of the Old Republic, v1.0.3 (Steam or GoG; both are byte-identical for our purposes)
+- A screen reader. Speech is routed through Prism, which supports the full set of screen readers in active use; if your screen reader works with anything else on your system, it will work with this mod
+- About 200 MB of free disk space for the patcher runtime, the K1 Community Patch, and the bundled speech runtime
+
+<h3>Game versions not supported in this release</h3>
+
+- Aspyr mobile / macOS ports (different binary)
+- Pre-patched executables (UniWS-modified, KOTOR High-Resolution Menus-modified)
+- Builds whose `swkotor.exe` SHA-256 doesn't match the recognised Steam or GoG 1.0.3 hashes
+
+If the installer reports a version mismatch, file an issue with the displayed hash. The address database covers both Steam and GoG out of the box, and adding a new byte-equivalent re-pack is usually a one-line manifest change.
 
 <h2>Installation</h2>
 
 1. Download `KotorAccessibilityInstaller.exe` from the latest release on GitHub
 2. Close KOTOR if it is running
-3. Run the installer. It will detect your KOTOR install, install the patch framework, deploy the mod, and (by default) bundle the K1 Community Patch
-4. Launch the game from the installer's final screen or from Steam
+3. Right-click the installer and choose **Run as administrator**. On the first run Windows SmartScreen will warn about an "Unknown publisher" — click **More info → Run anyway**. The installer is not code-signed yet, so this warning is expected
+4. (Recommended) Back up your save folder at `%USERPROFILE%\Documents\Swkotor\saves\` before installing if you have an existing playthrough
+5. Step through the installer screens. It will detect your KOTOR install, install the patch framework, deploy the mod, and (by default) bundle the K1 Community Patch plus the widescreen / high-resolution-menus fixes
+6. Launch the game from the installer's final screen or from Steam
 
-To uninstall, run the installer again and choose the uninstall option, or use Add/Remove Programs.
+To uninstall, run the installer again and choose the uninstall option, or use Add/Remove Programs. The uninstaller removes only this mod's files — K1CP and any other optional mods you chose at install time are left in place. To return to a fully vanilla KOTOR, use Steam's "Verify integrity of game files" or reinstall from GoG after uninstalling.
 
 <h2>Keyboard shortcuts</h2>
 
@@ -160,12 +171,12 @@ The mod's code is written with heavy assistance from Anthropic's Claude (Opus se
 
 <h2>License</h2>
 
-Source license to be determined. Vendored dependencies under `third_party/` keep their own licenses (Prism MPL-2.0; Tolk LGPL; Kotor-Patch-Manager TBD). The game itself and BioWare's data are not redistributed.
+The mod source is licensed under the GNU General Public License v3 (see [LICENSE](LICENSE)). Vendored dependencies under `third_party/` keep their own licenses (Prism is MPL-2.0; Tolk is LGPL; Kotor-Patch-Manager is bundled per its upstream terms; dsoal and OpenAL Soft, when the optional spatial-audio path is enabled, are LGPL-2.1). The game itself and BioWare's data files are not redistributed by this project.
 
 <h2>Credits</h2>
 
 - **Lane Dibello** — [Kotor-Patch-Manager](https://github.com/LaneDibello/Kotor-Patch-Manager), the reverse-engineered Ghidra database, and the patch framework this mod runs on top of
-- **Prism** (Ethin P.) — Tolk-compatible speech bridge with SAPI fallback
+- **Prism** (Ethin P.) — cross-platform speech bridge covering every major screen reader, with SAPI fallback
 - **K1 Community Patch** team (KOTORCommunityPatches) — bundled bug-fix layer
 - **xoreos / xoreos-tools** — open-source engine reimplementation; cross-reference for file formats
 - **DeadlyStream community** — modding knowledge base

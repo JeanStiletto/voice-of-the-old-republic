@@ -91,7 +91,7 @@
     "Main_ModDownloadFailed_Format": "Could not download the mod: {0}\n\nThe installation cannot continue without the .kpatch file.\n\nYou can download it manually from:\n{1}/releases\nand re-run this installer.",
 
     "Main_ApplyFailed_Title": "Patch application failed",
-    "Main_ApplyFailed_Format": "KPatchCore could not install the patch:\n\n{0}\n\nTo restore swkotor.exe, verify game files via Steam (right-click KOTOR → Properties → Installed Files → Verify) or reinstall from GoG.",
+    "Main_ApplyFailed_Format": "The patch could not be installed:\n\n{0}\n\nIf the message above mentions a hash mismatch or 'does not support detected game version', your swkotor.exe is a variant we have not seen before. Supported variants in v0.1 are Steam 1.0.3 and GoG 1.0.3 (including byte-equivalent CD re-packs). The Aspyr mobile / macOS port and pre-modified executables (UniWS, HR Menus) are not supported in v0.1.\n\nPlease file an issue at https://github.com/JeanStiletto/kotor-blind-accessibility/issues with the displayed hash and we will add your variant if its bytes match.\n\nIf the failure happened during the patch step itself rather than the version check, your swkotor.exe may need to be restored. Use Steam's 'Verify integrity of game files' (right-click KOTOR → Properties → Installed Files) or reinstall from GoG.",
 
     "Main_CompleteInstall_Title": "Installation complete",
     "Main_CompleteUpdate_Title": "Update complete",
@@ -136,12 +136,12 @@
 
     "Uninstall_Title": "KOTOR Accessibility - Uninstall",
     "Uninstall_Heading": "Uninstall KOTOR Accessibility",
-    "Uninstall_Description": "This removes the accessibility mod files. To restore the original swkotor.exe, verify game files via Steam or reinstall from GoG.",
+    "Uninstall_Description": "This removes the accessibility mod's own files only. K1CP and any other optional mods you installed alongside the mod stay in place. To return to fully vanilla KOTOR, verify game files via Steam or reinstall from GoG after this uninstall finishes.",
     "Uninstall_PathLabel_Format": "KOTOR location: {0}",
     "Uninstall_UninstallButton": "Uninstall",
     "Uninstall_CancelButton": "Cancel",
     "Uninstall_Confirm_Title": "Confirm uninstall",
-    "Uninstall_Confirm_Text": "Are you sure you want to uninstall KOTOR Accessibility?\n\nThis will:\n- Remove KotorPatcher.dll, sqlite3.dll, addresses.db, patch_config.toml, dinput8.dll\n- Remove the patches\\ folder (accessibility.dll + prism.dll)\n- Remove the Add/Remove Programs entry\n\nTo restore the original swkotor.exe, verify game files via Steam or reinstall from GoG.",
+    "Uninstall_Confirm_Text": "Are you sure you want to uninstall KOTOR Accessibility?\n\nThis will:\n- Remove KotorPatcher.dll, sqlite3.dll, addresses.db, patch_config.toml, dinput8.dll\n- Remove the patches\\ folder (accessibility.dll + prism.dll)\n- Remove the Add/Remove Programs entry\n\nWhat is NOT touched:\n- K1CP and any other optional mods you chose at install time stay in place\n- Your save games are not modified\n- swkotor.exe stays patched. To get back to vanilla, run Steam's 'Verify integrity of game files' or reinstall from GoG. That will also remove K1CP if you want a clean slate.",
     "Uninstall_StatusRemoving": "Removing mod files...",
     "Uninstall_StatusComplete": "Uninstall complete.",
     "Uninstall_Complete_Title": "Uninstall complete",
