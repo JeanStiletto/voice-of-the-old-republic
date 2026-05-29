@@ -2,7 +2,11 @@
 # Usage: powershell -NoProfile -File installer\release.ps1 [-Version 0.1.0]
 #
 # Builds the .kpatch via kdev, then the self-contained installer EXE,
-# creates a git tag, and uploads both as a GitHub release.
+# extracts release notes from docs/CHANGELOG.md, creates a git tag, and
+# uploads both artifacts as a GitHub release.
+#
+# Version is read from the top-most "## vX.Y.Z" heading in docs/CHANGELOG.md.
+# Pass -Version to override (e.g. to ship a hotfix from an older branch).
 
 param(
     [string]$Version
@@ -14,13 +18,24 @@ $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..')
 Set-Location $root
 
-# ── 1. Resolve version ──────────────────────────────────────────────────────
+# ── 1. Resolve version from CHANGELOG.md ────────────────────────────────────
+
+$changelogFile = Join-Path $root 'docs\CHANGELOG.md'
+if (-not (Test-Path $changelogFile)) {
+    Write-Host "ERROR: $changelogFile not found" -ForegroundColor Red; exit 1
+}
 
 if (-not $Version) {
-    # Fallback: use date-based version if no -Version supplied. This is intended
-    # for early development; bump to a proper SemVer when releases stabilise.
-    $Version = (Get-Date -Format 'yyyy.MM.dd')
-    Write-Host "No -Version passed; defaulting to date-based version $Version" -ForegroundColor Yellow
+    $topHeading = Select-String -Path $changelogFile -Pattern '^## v(\d+\.\d+(?:\.\d+)?(?:[-.][\w.-]+)?)\s*$' |
+        Select-Object -First 1
+    if (-not $topHeading) {
+        Write-Host "ERROR: No '## vX.Y.Z' heading found in docs\CHANGELOG.md." -ForegroundColor Red
+        Write-Host "       Rename the '## Unreleased' section to a version (e.g. '## v0.1.0')" -ForegroundColor Red
+        Write-Host "       before running this script, or pass -Version explicitly." -ForegroundColor Red
+        exit 1
+    }
+    $Version = $topHeading.Matches[0].Groups[1].Value
+    Write-Host "Detected version from CHANGELOG: $Version" -ForegroundColor Cyan
 }
 
 $tag = "v$Version"
@@ -49,6 +64,11 @@ if ($gitDirty) {
 $existingTag = git tag -l $tag
 if ($existingTag) {
     Write-Host "ERROR: Tag $tag already exists" -ForegroundColor Red; exit 1
+}
+
+$changelogContent = Get-Content $changelogFile -Raw
+if ($changelogContent -notmatch "(?m)^## $([regex]::Escape($tag))\s*$") {
+    Write-Host "ERROR: No '## $tag' section found in docs\CHANGELOG.md" -ForegroundColor Red; exit 1
 }
 
 Write-Host "Pre-flight checks passed" -ForegroundColor Green
@@ -139,17 +159,49 @@ Write-Host "  installer: $installerExe"
 
 # ── 7. Release notes ────────────────────────────────────────────────────────
 
+# Extract the section under "## $tag" from docs/CHANGELOG.md (stops at the next
+# "## vX" heading or a "---" horizontal rule).
+$lines = Get-Content $changelogFile
+$notes = @()
+$capturing = $false
+
+foreach ($line in $lines) {
+    if ($line -match "^## $([regex]::Escape($tag))\s*$") {
+        $capturing = $true
+        continue
+    }
+    if ($capturing -and ($line -match '^## v' -or $line -match '^---')) {
+        break
+    }
+    if ($capturing) {
+        $notes += $line
+    }
+}
+
+# Trim leading / trailing blank lines.
+while ($notes.Count -gt 0 -and $notes[0].Trim() -eq '') { $notes = $notes[1..($notes.Count-1)] }
+while ($notes.Count -gt 0 -and $notes[-1].Trim() -eq '') { $notes = $notes[0..($notes.Count-2)] }
+
+if ($notes.Count -eq 0) {
+    Write-Host "WARNING: No release notes extracted (section empty)" -ForegroundColor Yellow
+    $notesText = "Release $tag"
+} else {
+    $notesText = $notes -join "`n"
+}
+
+Write-Host "Release notes extracted ($($notes.Count) lines)" -ForegroundColor Green
+
 $installerHash = (Get-FileHash -Path $installerExe -Algorithm SHA256).Hash.ToLower()
 $kpatchHash    = (Get-FileHash -Path $kpatchPath   -Algorithm SHA256).Hash.ToLower()
 
-$notesText = @"
-KOTOR Accessibility $tag
+$notesText += @"
 
-Run ``KotorAccessibilityInstaller.exe`` to install. The installer detects your
-Steam copy of KOTOR, downloads this release's ``Accessibility.kpatch``, applies
-it via KPatchManager, and drops the Prism speech runtime alongside.
 
 ---
+
+Run ``KotorAccessibilityInstaller.exe`` to install. The installer detects your
+Steam copy of KOTOR, applies ``Accessibility.kpatch`` via KPatchManager, and
+drops the Prism speech runtime alongside.
 
 **Verification (SHA256):**
 
