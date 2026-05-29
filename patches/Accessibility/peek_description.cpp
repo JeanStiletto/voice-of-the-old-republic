@@ -389,7 +389,7 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
         // Generic fallback: focused control's own .gui tooltip strref.
         // Covers LevelUp / PartySelection / options widgets / etc.
         if (focusedControl) {
-            char tip[1024];
+            char tip[8192];
             if (acc::engine::ReadControlTooltip(focusedControl, tip,
                                                 sizeof(tip))) {
                 prism::Speak(tip, /*interrupt=*/true);
@@ -448,7 +448,7 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
     if (g_blockIdx >= rowCount) g_blockIdx = rowCount - 1;
 
     void* row = lbList->data[g_blockIdx];
-    char text[1024];
+    char text[8192];
     const char* src = row ? ReadRowText(row, text, sizeof(text)) : nullptr;
     if (src) {
         // interrupt=true: each press is a discrete read; fast double-

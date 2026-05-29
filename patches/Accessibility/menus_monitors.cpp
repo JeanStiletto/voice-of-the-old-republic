@@ -246,7 +246,7 @@ void AnnounceNewSubScreens(void** panels, int count) {
 
 struct ContentSnapshot {
     void* panel;
-    char  text[512];
+    char  text[8192];
 };
 constexpr int kMaxContentSnapshots = 8;
 ContentSnapshot s_contentSnapshots[kMaxContentSnapshots];
@@ -294,7 +294,7 @@ void BuildContentFingerprint(void* panel, char* out, size_t outSize) {
         if ((kind == PanelKind::Container ||
              kind == PanelKind::InGameEquip) && IsListBox(c)) continue;
 
-        char text[256];
+        char text[4096];
         const char* src = acc::menus::extract::FromControl(c, text, sizeof(text), panel);
         if (!src) continue;
         size_t tlen = strnlen(text, sizeof(text));
@@ -352,7 +352,7 @@ void SpeakNewSegments(const char* prev, const char* curr) {
         size_t segLen = end ? (size_t)(end - p) : strlen(p);
         if (segLen > 0 &&
             !FingerprintContainsSegment(prev, prevLen, p, segLen)) {
-            char seg[256];
+            char seg[8192];
             size_t cp = segLen < sizeof(seg) - 1 ? segLen : sizeof(seg) - 1;
             memcpy(seg, p, cp);
             seg[cp] = '\0';
@@ -398,7 +398,7 @@ void MonitorPanelContents() {
         PanelKind k = IdentifyPanel(p);
         if (!IsContentMonitored(k)) continue;
 
-        char fingerprint[512];
+        char fingerprint[8192];
         BuildContentFingerprint(p, fingerprint, sizeof(fingerprint));
 
         char* last = GetContentSnapshot(p);

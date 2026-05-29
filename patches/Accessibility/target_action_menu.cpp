@@ -186,7 +186,7 @@ bool HandleInputEvent(int code, int value) {
             // Mirrors actionbar_menu's Shift+arrow contract.
             if (acc::hotkeys::ShiftHeld()) {
                 void* btn = acc::engine_radial::GetRowActionButton(tam, row);
-                char tip[1024];
+                char tip[8192];
                 if (btn && acc::engine::ReadControlTooltip(
                         btn, tip, sizeof(tip))) {
                     prism::Speak(tip, /*interrupt=*/true);

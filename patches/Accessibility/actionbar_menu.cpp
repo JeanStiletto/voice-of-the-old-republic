@@ -173,7 +173,7 @@ bool HandleInputEvent(int code, int value) {
             if (acc::hotkeys::ShiftHeld()) {
                 void* btn = acc::engine_actionbar::GetColumnActionButton(
                     mi, slot);
-                char tip[1024];
+                char tip[8192];
                 if (btn && acc::engine::ReadControlTooltip(
                         btn, tip, sizeof(tip))) {
                     prism::Speak(tip, /*interrupt=*/true);

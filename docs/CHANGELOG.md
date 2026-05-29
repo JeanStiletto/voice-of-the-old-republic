@@ -15,6 +15,10 @@ _In development. Add v0.2 changes as bullets under topic headings
 (`Examine view:`, `Map:`, `Combat log:`, `Installer:`, `Bug fixes:`)
 before running `installer/release.ps1` to cut the release._
 
+**Bug fixes:**
+
+- Tooltip and message-box / tutorial text no longer truncated at ~256/1024 characters; long descriptions and atmospheric text now read in full.
+
 ---
 
 ## v0.1
