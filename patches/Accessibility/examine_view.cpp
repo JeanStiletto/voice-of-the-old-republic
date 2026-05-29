@@ -210,6 +210,228 @@ const char* EffectNameDe(int type) {
     }
 }
 
+const char* EffectNameEs(int type) {
+    switch (type) {
+        case 1:   return "Prisa";
+        case 2:   return "Resistencia al da\xF1o";
+        case 3:   return "Lentitud";
+        case 5:   return "Enfermedad";
+        case 7:   return "Regeneraci\xF3n";
+        case 8:   return "Estado";
+        case 10:  return "Bonificaci\xF3n al ataque";
+        case 11:  return "Penalizaci\xF3n al ataque";
+        case 12:  return "Reducci\xF3n del da\xF1o";
+        case 13:  return "Bonificaci\xF3n al da\xF1o";
+        case 14:  return "Penalizaci\xF3n al da\xF1o";
+        case 15:  return "Puntos de vida temporales";
+        case 16:  return "Inmunidad al da\xF1o";
+        case 17:  return "Vulnerabilidad al da\xF1o";
+        case 18:  return "Enredado";
+        case 19:  return "Muerte";
+        case 20:  return "Derribado";
+        case 21:  return "Sordo";
+        case 22:  return "Inmunidad";
+        case 25:  return "Fallo arcano";
+        case 26:  return "Bonificaci\xF3n a salvaciones";
+        case 27:  return "Penalizaci\xF3n a salvaciones";
+        case 28:  return "Bonificaci\xF3n de velocidad";
+        case 29:  return "Penalizaci\xF3n de velocidad";
+        case 33:  return "Bonificaci\xF3n a resistencia a la Fuerza";
+        case 34:  return "Penalizaci\xF3n a resistencia a la Fuerza";
+        case 35:  return "Envenenado";
+        case 36:  return "Bonificaci\xF3n a caracter\xEDstica";
+        case 37:  return "Penalizaci\xF3n a caracter\xEDstica";
+        case 38:  return "Da\xF1o";
+        case 39:  return "Curaci\xF3n";
+        case 43:  return "Droide aturdido";
+        case 44:  return "N\xFAmero de ataques modificado";
+        case 45:  return "Maldito";
+        case 46:  return "Silenciado";
+        case 47:  return "Invisible";
+        case 48:  return "Bonificaci\xF3n de CA";
+        case 49:  return "Penalizaci\xF3n de CA";
+        case 50:  return "Inmunidad m\xE1gica";
+        case 53:  return "Provocado";
+        case 55:  return "Bonificaci\xF3n a habilidad";
+        case 56:  return "Penalizaci\xF3n a habilidad";
+        case 60:  return "Empuje de Fuerza";
+        case 61:  return "Escudo de da\xF1o";
+        case 62:  return "Disfrazado";
+        case 63:  return "Santuario";
+        case 64:  return "Detenci\xF3n del tiempo";
+        case 73:  return "Cegado";
+        case 75:  return "Probabilidad de fallo";
+        case 76:  return "Ocultamiento";
+        case 82:  return "Nivel negativo";
+        case 84:  return "Herida";
+        case 87:  return "Desarmado";
+        case 90:  return "Drenaje de Fuerza";
+        case 91:  return "Puntos de Fuerza temporales";
+        case 92:  return "Bonificaci\xF3n de desv\xEDo de bl\xE1ster";
+        case 93:  return "Penalizaci\xF3n de desv\xEDo de bl\xE1ster";
+        case 94:  return "Horrorizado";
+        case 95:  return "Da\xF1o a Puntos de Fuerza";
+        case 96:  return "Curaci\xF3n de Puntos de Fuerza";
+        case 97:  return "Ahogado";
+        case 99:  return "Est\xE1tica ps\xEDquica";
+        case 100: return "Lanzar sable de luz";
+        case 101: return "Golpe asegurado";
+        case 104: return "Desv\xEDo asegurado";
+        case 107: return "Escudo de Fuerza";
+        case 108: return "Poderes puros del bien";
+        case 109: return "Poderes puros del mal";
+        default:  return nullptr;
+    }
+}
+
+const char* EffectNameFr(int type) {
+    switch (type) {
+        case 1:   return "H\xE2te";
+        case 2:   return "R\xE9sistance aux d\xE9g\xE2ts";
+        case 3:   return "Ralentissement";
+        case 5:   return "Maladie";
+        case 7:   return "R\xE9g\xE9n\xE9ration";
+        case 8:   return "\xC9tat";
+        case 10:  return "Bonus d'attaque";
+        case 11:  return "Malus d'attaque";
+        case 12:  return "R\xE9""duction des d\xE9g\xE2ts";
+        case 13:  return "Bonus de d\xE9g\xE2ts";
+        case 14:  return "Malus de d\xE9g\xE2ts";
+        case 15:  return "Points de vie temporaires";
+        case 16:  return "Immunit\xE9 aux d\xE9g\xE2ts";
+        case 17:  return "Vuln\xE9rabilit\xE9 aux d\xE9g\xE2ts";
+        case 18:  return "Entrav\xE9";
+        case 19:  return "Mort";
+        case 20:  return "Renvers\xE9";
+        case 21:  return "Sourd";
+        case 22:  return "Immunit\xE9";
+        case 25:  return "\xC9""chec arcanique";
+        case 26:  return "Bonus de sauvegarde";
+        case 27:  return "Malus de sauvegarde";
+        case 28:  return "Bonus de vitesse";
+        case 29:  return "Malus de vitesse";
+        case 33:  return "Bonus de r\xE9sistance \xE0 la Force";
+        case 34:  return "Malus de r\xE9sistance \xE0 la Force";
+        case 35:  return "Empoisonn\xE9";
+        case 36:  return "Bonus de caract\xE9ristique";
+        case 37:  return "Malus de caract\xE9ristique";
+        case 38:  return "D\xE9g\xE2ts";
+        case 39:  return "Soin";
+        case 43:  return "Droide \xE9tourdi";
+        case 44:  return "Nombre d'attaques modifi\xE9";
+        case 45:  return "Maudit";
+        case 46:  return "Silenci\xE9";
+        case 47:  return "Invisible";
+        case 48:  return "Bonus de CA";
+        case 49:  return "Malus de CA";
+        case 50:  return "Immunit\xE9 aux sorts";
+        case 53:  return "Provoqu\xE9";
+        case 55:  return "Bonus de comp\xE9tence";
+        case 56:  return "Malus de comp\xE9tence";
+        case 60:  return "Pouss\xE9""e de Force";
+        case 61:  return "Bouclier de d\xE9g\xE2ts";
+        case 62:  return "D\xE9guis\xE9";
+        case 63:  return "Sanctuaire";
+        case 64:  return "Arr\xEAt du temps";
+        case 73:  return "Aveugl\xE9";
+        case 75:  return "Chance de rat\xE9";
+        case 76:  return "Camouflage";
+        case 82:  return "Niveau n\xE9gatif";
+        case 84:  return "Blessant";
+        case 87:  return "D\xE9sarm\xE9";
+        case 90:  return "Drain de Force";
+        case 91:  return "Points de Force temporaires";
+        case 92:  return "Bonus de d\xE9""flexion de blaster";
+        case 93:  return "Malus de d\xE9""flexion de blaster";
+        case 94:  return "Horrifi\xE9";
+        case 95:  return "D\xE9g\xE2ts aux Points de Force";
+        case 96:  return "Soin des Points de Force";
+        case 97:  return "\xC9touff\xE9";
+        case 99:  return "Statique psychique";
+        case 100: return "Lancer de sabre laser";
+        case 101: return "Toucher assur\xE9";
+        case 104: return "D\xE9""flexion assur\xE9""e";
+        case 107: return "Bouclier de Force";
+        case 108: return "Pouvoirs purement bons";
+        case 109: return "Pouvoirs purement mauvais";
+        default:  return nullptr;
+    }
+}
+
+const char* EffectNameIt(int type) {
+    switch (type) {
+        case 1:   return "Fretta";
+        case 2:   return "Resistenza ai danni";
+        case 3:   return "Lentezza";
+        case 5:   return "Malattia";
+        case 7:   return "Rigenerazione";
+        case 8:   return "Stato";
+        case 10:  return "Bonus di attacco";
+        case 11:  return "Malus di attacco";
+        case 12:  return "Riduzione dei danni";
+        case 13:  return "Bonus ai danni";
+        case 14:  return "Malus ai danni";
+        case 15:  return "Punti ferita temporanei";
+        case 16:  return "Immunit\xE0 ai danni";
+        case 17:  return "Vulnerabilit\xE0 ai danni";
+        case 18:  return "Impigliato";
+        case 19:  return "Morte";
+        case 20:  return "Atterrato";
+        case 21:  return "Sordo";
+        case 22:  return "Immunit\xE0";
+        case 25:  return "Fallimento arcano";
+        case 26:  return "Bonus al tiro salvezza";
+        case 27:  return "Malus al tiro salvezza";
+        case 28:  return "Bonus alla velocit\xE0";
+        case 29:  return "Malus alla velocit\xE0";
+        case 33:  return "Bonus di resistenza alla Forza";
+        case 34:  return "Malus di resistenza alla Forza";
+        case 35:  return "Avvelenato";
+        case 36:  return "Bonus alle caratteristiche";
+        case 37:  return "Malus alle caratteristiche";
+        case 38:  return "Danni";
+        case 39:  return "Cura";
+        case 43:  return "Droide stordito";
+        case 44:  return "Numero di attacchi modificato";
+        case 45:  return "Maledetto";
+        case 46:  return "Silenziato";
+        case 47:  return "Invisibile";
+        case 48:  return "Bonus alla CA";
+        case 49:  return "Malus alla CA";
+        case 50:  return "Immunit\xE0 agli incantesimi";
+        case 53:  return "Provocato";
+        case 55:  return "Bonus all'abilit\xE0";
+        case 56:  return "Malus all'abilit\xE0";
+        case 60:  return "Spinta della Forza";
+        case 61:  return "Scudo dei danni";
+        case 62:  return "Travestito";
+        case 63:  return "Santuario";
+        case 64:  return "Arresto del tempo";
+        case 73:  return "Accecato";
+        case 75:  return "Probabilit\xE0 di mancare";
+        case 76:  return "Occultamento";
+        case 82:  return "Livello negativo";
+        case 84:  return "Ferente";
+        case 87:  return "Disarmato";
+        case 90:  return "Risucchio della Forza";
+        case 91:  return "Punti Forza temporanei";
+        case 92:  return "Bonus di deflessione del blaster";
+        case 93:  return "Malus di deflessione del blaster";
+        case 94:  return "Orripilato";
+        case 95:  return "Danni ai Punti Forza";
+        case 96:  return "Cura dei Punti Forza";
+        case 97:  return "Strozzato";
+        case 99:  return "Statica psichica";
+        case 100: return "Lancio della spada laser";
+        case 101: return "Colpo sicuro";
+        case 104: return "Deflessione sicura";
+        case 107: return "Scudo della Forza";
+        case 108: return "Poteri puramente buoni";
+        case 109: return "Poteri puramente malvagi";
+        default:  return nullptr;
+    }
+}
+
 uint32_t ReadLastTargetHandle();  // forward decl
 
 bool IsSentinel(uint32_t handle) {
@@ -775,8 +997,12 @@ bool ResolveFeatName(unsigned short featIdx, char* outBuf, size_t outBufSize) {
 }
 
 const char* EffectName(int type) {
-    if (acc::strings::GetLanguage() == acc::strings::Lang::De) {
-        return EffectNameDe(type);
+    switch (acc::strings::GetLanguage()) {
+        case acc::strings::Lang::De: return EffectNameDe(type);
+        case acc::strings::Lang::Fr: return EffectNameFr(type);
+        case acc::strings::Lang::It: return EffectNameIt(type);
+        case acc::strings::Lang::Es: return EffectNameEs(type);
+        case acc::strings::Lang::En: break;
     }
     return EffectNameEn(type);
 }
