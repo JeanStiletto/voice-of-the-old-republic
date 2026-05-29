@@ -5,6 +5,8 @@ permalink: /
 ---
 <h1>Voice of the Old Republic</h1>
 
+<p><strong>English</strong> · <a href="/voice-of-the-old-republic/docs/README.de.html">Deutsch</a> · <a href="/voice-of-the-old-republic/docs/README.fr.html">Français</a> · <a href="/voice-of-the-old-republic/docs/README.it.html">Italiano</a> · <a href="/voice-of-the-old-republic/docs/README.es.html">Español</a></p>
+
 <h2>What is this mod</h2>
 
 **Voice of the Old Republic** is a screen-reader and keyboard-navigation mod for **Star Wars: Knights of the Old Republic 1** (BioWare, 2003, Steam release) that lets fully blind players play KOTOR 1 with any modern screen reader. Speech is routed through the Prism speech bridge, which supports every major screen reader on every major platform.
@@ -184,4 +186,9 @@ The mod source is licensed under the GNU General Public License v3 (see [LICENSE
 
 <h2>Other languages</h2>
 
-Translations of this page will appear here once available. To help translate, see [CONTRIBUTING.md](CONTRIBUTING.md).
+- [Deutsch](/voice-of-the-old-republic/docs/README.de.html)
+- [Français](/voice-of-the-old-republic/docs/README.fr.html)
+- [Italiano](/voice-of-the-old-republic/docs/README.it.html)
+- [Español](/voice-of-the-old-republic/docs/README.es.html)
+
+Translations are kept in `docs/README.{de,fr,it,es}.md`. To improve or add a translation, see [CONTRIBUTING.md](CONTRIBUTING.md).
