@@ -121,7 +121,7 @@ Always read these before diving into work — they capture decisions and current
 - **`kdev` build:** `dotnet build tools/kdev/kdev.csproj` from the project root (output at `tools/kdev/bin/Debug/net10.0/win-x64/kdev.exe`).
 - **Mod build pipeline:** `kdev build` stages `patches/Accessibility/` next to the upstream `Common/`+`lib/` layout `create-patch.bat` expects, runs the bat under MSVC, drops the `.kpatch` in `build/`.
 - **Mod install:** `kdev apply` calls `KPatchCore.PatchApplicator.InstallPatches` against the configured Steam install.
-- **Mod launch:** `kdev launch [--monitor]` spawns the prebuilt 32-bit `KPatchLauncher.exe` (calling KPatchCore directly from the x64 kdev process would silently fail injection). `--monitor` is currently broken on Steam (delayed-injection breaks `Process.ExitCode`); prefer `kdev launch` and read patch logs directly.
+- **Mod launch:** `kdev launch [--monitor]` calls `Process.Start("swkotor.exe")` directly; the `dinput8.dll` proxy (`kdev apply` drops it into the install root) auto-loads KotorPatcher. `--monitor` blocks on the game process and reports its real exit code.
 
 ### Logs
 - **Project logs:** `logs/` at project root (gitignored). `kdev` writes `kdev-<utc>.log`, `build-<utc>.log`, `dev-<utc>.log`. Tail with `kdev logs [--follow]`.

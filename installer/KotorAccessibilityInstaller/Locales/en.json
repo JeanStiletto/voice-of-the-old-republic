@@ -141,7 +141,7 @@
     "Uninstall_UninstallButton": "Uninstall",
     "Uninstall_CancelButton": "Cancel",
     "Uninstall_Confirm_Title": "Confirm uninstall",
-    "Uninstall_Confirm_Text": "Are you sure you want to uninstall KOTOR Accessibility?\n\nThis will:\n- Remove KotorPatcher.dll, sqlite3.dll, addresses.db, patch_config.toml\n- Remove the patches\\ folder (accessibility.dll + prism.dll)\n- Remove the Add/Remove Programs entry\n\nTo restore the original swkotor.exe, verify game files via Steam or reinstall from GoG.",
+    "Uninstall_Confirm_Text": "Are you sure you want to uninstall KOTOR Accessibility?\n\nThis will:\n- Remove KotorPatcher.dll, sqlite3.dll, addresses.db, patch_config.toml, dinput8.dll\n- Remove the patches\\ folder (accessibility.dll + prism.dll)\n- Remove the Add/Remove Programs entry\n\nTo restore the original swkotor.exe, verify game files via Steam or reinstall from GoG.",
     "Uninstall_StatusRemoving": "Removing mod files...",
     "Uninstall_StatusComplete": "Uninstall complete.",
     "Uninstall_Complete_Title": "Uninstall complete",

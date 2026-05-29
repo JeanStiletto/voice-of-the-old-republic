@@ -141,7 +141,7 @@
     "Uninstall_UninstallButton": "Deinstallieren",
     "Uninstall_CancelButton": "Abbrechen",
     "Uninstall_Confirm_Title": "Deinstallation bestätigen",
-    "Uninstall_Confirm_Text": "Möchtest du KOTOR Accessibility wirklich deinstallieren?\n\nFolgendes wird ausgeführt:\n- KotorPatcher.dll, sqlite3.dll, addresses.db, patch_config.toml entfernen\n- Den patches\\-Ordner entfernen (accessibility.dll + prism.dll)\n- Den Eintrag in Programme und Features entfernen\n\nZum Wiederherstellen der ursprünglichen swkotor.exe: Spieldateien über Steam überprüfen oder bei GoG neu installieren.",
+    "Uninstall_Confirm_Text": "Möchtest du KOTOR Accessibility wirklich deinstallieren?\n\nFolgendes wird ausgeführt:\n- KotorPatcher.dll, sqlite3.dll, addresses.db, patch_config.toml, dinput8.dll entfernen\n- Den patches\\-Ordner entfernen (accessibility.dll + prism.dll)\n- Den Eintrag in Programme und Features entfernen\n\nZum Wiederherstellen der ursprünglichen swkotor.exe: Spieldateien über Steam überprüfen oder bei GoG neu installieren.",
     "Uninstall_StatusRemoving": "Mod-Dateien werden entfernt...",
     "Uninstall_StatusComplete": "Deinstallation abgeschlossen.",
     "Uninstall_Complete_Title": "Deinstallation abgeschlossen",
