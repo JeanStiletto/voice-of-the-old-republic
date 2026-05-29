@@ -406,7 +406,13 @@ extern "C" int __cdecl OnPlayFootstep(void* creature) {
     void* leader = acc::engine::GetClientLeader();
     const bool is_leader = (leader && creature == leader);
     const bool stuck = acc::audio::footstep_suppress::WasStuckLastTick();
-    const int verdict = (is_leader && stuck) ? 1 : 0;
+    // Suppress non-leader footsteps too while the leader is stuck — otherwise
+    // a companion or scripted NPC walking nearby fills the silence the player
+    // relies on to detect "I'm blocked". KOTOR's footstep audio attenuates
+    // with distance, so any non-leader footstep we'd hear is by definition
+    // close enough to mask the leader's own silence; safe to mute the whole
+    // class until the leader's velocity recovers.
+    const int verdict = stuck ? 1 : 0;
 
     if (is_leader) {
         // Stamps walk-anim freshness for the stuck-direction probe gate.
