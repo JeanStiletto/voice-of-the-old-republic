@@ -379,6 +379,10 @@ const char* Get(Id id) {
         case Id::ModSettingRoomShapes:        return "Descrizioni della forma delle stanze";
         case Id::ModSettingWallSounds:        return "Suoni dei muri";
         case Id::ModSettingHumanSubtitles:    return "Leggi i sottotitoli dei parlanti umani";
+        case Id::ModSettingSkipIntros:        return "Salta i video introduttivi";
+        case Id::ModSettingSkipIntrosOnNextLaunch: return "I video introduttivi verranno saltati al prossimo avvio.";
+        case Id::ModSettingPlayIntrosOnNextLaunch: return "I video introduttivi verranno riprodotti al prossimo avvio.";
+        case Id::ModSettingSkipIntrosToggleFailed: return "Impossibile alternare i video introduttivi. I file potrebbero essere stati rimossi.";
         case Id::ModSettingStateOn:           return "attivo";
         case Id::ModSettingStateOff:          return "disattivo";
         case Id::FmtModSettingOption:         return "%s: %s";

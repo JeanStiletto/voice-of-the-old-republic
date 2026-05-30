@@ -395,6 +395,10 @@ const char* Get(Id id) {
         case Id::ModSettingRoomShapes:        return "Raumform-Beschreibungen";
         case Id::ModSettingWallSounds:        return "Wandger\xe4usche";
         case Id::ModSettingHumanSubtitles:    return "Untertitel menschlicher Sprecher vorlesen";
+        case Id::ModSettingSkipIntros:        return "Startvideos \xFC" "berspringen";
+        case Id::ModSettingSkipIntrosOnNextLaunch: return "Startvideos werden beim n\xE4""chsten Start \xFC" "bersprungen.";
+        case Id::ModSettingPlayIntrosOnNextLaunch: return "Startvideos werden beim n\xE4""chsten Start abgespielt.";
+        case Id::ModSettingSkipIntrosToggleFailed: return "Startvideos konnten nicht umgeschaltet werden. Dateien k\xF6nnten entfernt worden sein.";
         case Id::ModSettingStateOn:           return "an";
         case Id::ModSettingStateOff:          return "aus";
         case Id::FmtModSettingOption:         return "%s: %s";

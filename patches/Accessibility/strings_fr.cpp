@@ -380,6 +380,10 @@ const char* Get(Id id) {
         case Id::ModSettingRoomShapes:        return "Descriptions de la forme des salles";
         case Id::ModSettingWallSounds:        return "Sons de mur";
         case Id::ModSettingHumanSubtitles:    return "Lire les sous-titres des locuteurs humains";
+        case Id::ModSettingSkipIntros:        return "Ignorer les vid\xE9os d'introduction";
+        case Id::ModSettingSkipIntrosOnNextLaunch: return "Les vid\xE9os d'introduction seront ignor\xE9""es au prochain lancement.";
+        case Id::ModSettingPlayIntrosOnNextLaunch: return "Les vid\xE9os d'introduction seront jou\xE9""es au prochain lancement.";
+        case Id::ModSettingSkipIntrosToggleFailed: return "Impossible de basculer les vid\xE9os d'introduction. Les fichiers ont peut-\xEAtre \xE9t\xE9 supprim\xE9""s.";
         case Id::ModSettingStateOn:           return "activ\xE9";
         case Id::ModSettingStateOff:          return "d\xE9sactiv\xE9";
         case Id::FmtModSettingOption:         return "%s : %s";

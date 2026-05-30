@@ -419,6 +419,17 @@ namespace KotorAccessibilityInstaller
                     }
                 }
 
+                // Restore the intro movies we renamed during install. Returns
+                // biologo / leclogo / legal .bik files to their vanilla names
+                // so a vanilla launch plays the BioWare / LucasArts / legal
+                // splash like a fresh install.
+                Logger.Info("Restoring intro movies...");
+                var introResult = IntroMovieDisabler.RestoreIntros(gamePath);
+                if (!introResult.Success)
+                {
+                    Logger.Warning($"Intro restore failed: {introResult.Error}");
+                }
+
                 RegistryManager.Unregister();
                 ScheduleUninstallerSelfDelete(gamePath);
 

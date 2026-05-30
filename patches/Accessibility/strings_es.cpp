@@ -381,6 +381,10 @@ const char* Get(Id id) {
         case Id::ModSettingRoomShapes:        return "Descripciones de la forma de las habitaciones";
         case Id::ModSettingWallSounds:        return "Sonidos de pared";
         case Id::ModSettingHumanSubtitles:    return "Leer subt\xEDtulos de hablantes humanos";
+        case Id::ModSettingSkipIntros:        return "Omitir v\xED" "deos de introducci\xF3n";
+        case Id::ModSettingSkipIntrosOnNextLaunch: return "Los v\xED" "deos de introducci\xF3n se omitir\xE1n en el pr\xF3ximo inicio.";
+        case Id::ModSettingPlayIntrosOnNextLaunch: return "Los v\xED" "deos de introducci\xF3n se reproducir\xE1n en el pr\xF3ximo inicio.";
+        case Id::ModSettingSkipIntrosToggleFailed: return "No se pudo cambiar los v\xED" "deos de introducci\xF3n. Los archivos pueden haber sido eliminados.";
         case Id::ModSettingStateOn:           return "activado";
         case Id::ModSettingStateOff:          return "desactivado";
         case Id::FmtModSettingOption:         return "%s: %s";

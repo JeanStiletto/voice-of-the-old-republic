@@ -46,6 +46,7 @@ enum class Option {
     RoomShapes,
     WallSounds,
     HumanSubtitles,
+    SkipIntros,        // filesystem-backed — state is biologo.bik vs biologo.bik.disabled
     AudioGlossary,
     Count
 };

@@ -68,6 +68,7 @@
     "Main_StatusApplying": "Applying patch to swkotor.exe...",
     "Main_StatusCopyingPrism": "Installing speech bridge (Prism)...",
     "Main_StatusTweakingIni": "Applying stability tweaks to swkotor.ini...",
+    "Main_StatusDisablingIntros": "Disabling launch intro movies...",
     "Main_StatusInstallingMods": "Installing optional mods...",
     "Main_StatusDownloadingHoloPatcher": "Downloading HoloPatcher (mod installer driver)...",
     "Main_StatusRegistering": "Registering installation...",

@@ -68,6 +68,7 @@
     "Main_StatusApplying": "Patch wird auf swkotor.exe angewendet...",
     "Main_StatusCopyingPrism": "Sprachausgabe-Bridge (Prism) wird installiert...",
     "Main_StatusTweakingIni": "Stabilitäts-Tweaks für swkotor.ini werden angewendet...",
+    "Main_StatusDisablingIntros": "Startvideos werden deaktiviert...",
     "Main_StatusInstallingMods": "Optionale Mods werden installiert...",
     "Main_StatusDownloadingHoloPatcher": "HoloPatcher (Mod-Installer-Treiber) wird heruntergeladen...",
     "Main_StatusRegistering": "Installation wird registriert...",

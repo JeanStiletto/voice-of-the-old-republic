@@ -359,7 +359,23 @@ namespace KotorAccessibilityInstaller
                     Logger.Warning($"Stability tweaks failed: {iniResult.Error}");
                 }
 
-                // Step 4.6: install user-selected optional mods (K1CP today, more later).
+                // Step 4.6: disable the three launch-time intro movies
+                // (biologo / leclogo / legal). Cuts ~10–20 s off cold start
+                // AND eliminates the engine bug where alt-tab during an
+                // intro causes the entire intro queue to restart, costing
+                // blind users 30–60 s of unresponsive-menu time. Mod
+                // settings has a runtime toggle if the user wants intros
+                // back later. In-game cutscenes are unaffected — see
+                // IntroMovieDisabler doc comment for the engine path split.
+                UpdateStatus(InstallerLocale.Get("Main_StatusDisablingIntros"));
+                UpdateProgress(88);
+                var introResult = await Task.Run(() => IntroMovieDisabler.DisableIntros(_gamePath));
+                if (!introResult.Success)
+                {
+                    Logger.Warning($"Intro disable failed: {introResult.Error}");
+                }
+
+                // Step 4.7: install user-selected optional mods (K1CP today, more later).
                 // _modSelection is null on the update-only path — the coordinator
                 // handles that by returning an empty result list and short-circuiting.
                 var modResults = new List<ModInstallResult>();

@@ -15,6 +15,7 @@
 #include "engine_input.h"
 #include "engine_manager.h"  // IsPanelInManager for close-time rebind guard
 #include "engine_panels.h"
+#include "intro_skip.h"      // SkipIntros toggle — filesystem-backed state
 #include "log.h"
 #include "menus_chain.h"
 #include "prism.h"
@@ -48,6 +49,10 @@ bool s_toggles[static_cast<int>(Option::Count)] = {
                                   // read because the suppression filter
                                   // gates on appearance_type, not on this
                                   // toggle alone.
+    /* SkipIntros      */ false,  // unused — state lives in filesystem
+                                  // (biologo.bik vs biologo.bik.disabled);
+                                  // StateText + Enter both special-case
+                                  // this index and call into intro_skip.
     /* AudioGlossary   */ false,  // unused — RowKind::Submenu
 };
 
@@ -102,6 +107,7 @@ constexpr OptionSpec k_options[] = {
     { Option::RoomShapes,      acc::strings::Id::ModSettingRoomShapes,      RowKind::Toggle  },
     { Option::WallSounds,      acc::strings::Id::ModSettingWallSounds,      RowKind::Toggle  },
     { Option::HumanSubtitles,  acc::strings::Id::ModSettingHumanSubtitles,  RowKind::Toggle  },
+    { Option::SkipIntros,      acc::strings::Id::ModSettingSkipIntros,      RowKind::Toggle  },
     { Option::AudioGlossary,   acc::strings::Id::ModSettingAudioGlossary,   RowKind::Submenu },
 };
 constexpr int k_optionCount = static_cast<int>(
@@ -146,6 +152,19 @@ constexpr int k_glossaryCount = static_cast<int>(
     sizeof(k_glossary) / sizeof(k_glossary[0]));
 
 const char* StateText(int optionIdx) {
+    // SkipIntros: state is the filesystem (biologo.bik vs .disabled),
+    // not s_toggles. Read the canonical state every call so the UI
+    // reflects external changes (installer apply between sessions,
+    // manual user rename, etc.).
+    if (optionIdx >= 0 && optionIdx < static_cast<int>(Option::Count) &&
+        k_options[optionIdx].option == Option::SkipIntros) {
+        auto st = acc::intro_skip::CurrentState();
+        // Unknown maps to Off so the toggle UI still works — the Enter
+        // handler will report failure if the rename can't go through.
+        bool on = (st == acc::intro_skip::State::Disabled);
+        return acc::strings::Get(on ? acc::strings::Id::ModSettingStateOn
+                                    : acc::strings::Id::ModSettingStateOff);
+    }
     bool on = s_toggles[optionIdx];
     return acc::strings::Get(on ? acc::strings::Id::ModSettingStateOn
                                 : acc::strings::Id::ModSettingStateOff);
@@ -412,6 +431,27 @@ bool HandleInputRoot(int keyCode) {
             if (row.option == Option::AudioGlossary) {
                 OpenGlossarySubMenu();
             }
+            return true;
+        }
+        // SkipIntros: filesystem rename instead of s_toggles flip.
+        // Speak "Name: state" first (matches other toggles' rhythm)
+        // and then a side-effect cue clarifying "takes effect on next
+        // launch". Failure path speaks the toggle-failed string.
+        if (row.option == Option::SkipIntros) {
+            auto before = acc::intro_skip::CurrentState();
+            bool wantDisable =
+                (before != acc::intro_skip::State::Disabled);
+            bool ok = acc::intro_skip::SetDisabled(wantDisable);
+            acclog::Write("ModSettings",
+                "toggle SkipIntros: target=%s ok=%d",
+                wantDisable ? "disabled" : "enabled", ok ? 1 : 0);
+            SpeakFocusedOption();
+            const char* followup = !ok
+                ? acc::strings::Get(acc::strings::Id::ModSettingSkipIntrosToggleFailed)
+                : (wantDisable
+                    ? acc::strings::Get(acc::strings::Id::ModSettingSkipIntrosOnNextLaunch)
+                    : acc::strings::Get(acc::strings::Id::ModSettingPlayIntrosOnNextLaunch));
+            prism::Speak(followup, /*interrupt=*/false);
             return true;
         }
         s_toggles[s_focused] = !s_toggles[s_focused];

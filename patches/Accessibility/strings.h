@@ -1120,9 +1120,16 @@ enum class Id : int {
     ModSettingRoomShapes,
     ModSettingWallSounds,
     ModSettingHumanSubtitles,
+    ModSettingSkipIntros,                 // toggle label — "Skip intro movies"
     ModSettingStateOn,
     ModSettingStateOff,
     FmtModSettingOption,
+
+    // Side-effect cues for the SkipIntros toggle — spoken after the
+    // .bik rename to tell the user the change applies on next launch.
+    ModSettingSkipIntrosOnNextLaunch,     // intros are now disabled
+    ModSettingPlayIntrosOnNextLaunch,     // intros are now re-enabled
+    ModSettingSkipIntrosToggleFailed,     // rename failed (rare — files missing)
 
     // ---- Mod-settings → Audio glossary submenu (menus_modsettings).
     //      Nested submenu opened by Enter on the "Audio-Glossar" row.
