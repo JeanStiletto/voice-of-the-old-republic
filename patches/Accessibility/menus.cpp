@@ -964,7 +964,18 @@ static void WalkAndCaptureOnFirstSight(void* panel) {
 static void SpeakPanelTitleOnFirstSight(void* panel) {
     if (!panel || panel == g_lastTitledPanel) return;
     g_lastTitledPanel = panel;
-    if (acc::menus::monitors::IsInGameSubScreenKind(IdentifyPanel(panel))) {
+    PanelKind kind = IdentifyPanel(panel);
+    if (acc::menus::monitors::IsInGameSubScreenKind(kind)) {
+        return;
+    }
+    // Dialog panels: dialog_speech.cpp is the authoritative announcer
+    // (with race/language suppression). The generic label-walk would
+    // speak the dialog text as the "title" the first time SetActive
+    // fires on the panel — bypassing suppression.
+    if (kind == PanelKind::DialogCinematicCopy ||
+        kind == PanelKind::DialogLetterbox1 ||
+        kind == PanelKind::DialogLetterbox2 ||
+        kind == PanelKind::DialogLetterbox3) {
         return;
     }
     AnnouncePanelTitle(panel);
