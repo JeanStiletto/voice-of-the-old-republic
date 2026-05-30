@@ -97,6 +97,38 @@ bool ExtractTextOrStrRef(void* control,
     return LookupTlk(strref, outBuf, bufSize);
 }
 
+namespace {
+
+// True iff buf looks like real localised text rather than uninitialised
+// memory. The action-bar / target-action / radial column buttons leave
+// their CSWGuiControl.tooltip_string slot at +0x28 uninitialised
+// (engine renders these buttons via a separate dynamic-text path, so the
+// .gui-time CExoString never gets written). What we observed in practice
+// is a non-null literal pointer + a small length (3 bytes) yielding
+// CP1252 control-range bytes 0x80..0x9F — code points the engine never
+// emits in any localised UI string. Rejecting those lets the caller fall
+// back to the proper "Keine Beschreibung verfügbar" cue.
+bool LooksLikeReadableText(const char* buf, size_t len) {
+    if (!buf || len == 0) return false;
+    size_t printable = 0;
+    for (size_t i = 0; i < len; ++i) {
+        unsigned char c = static_cast<unsigned char>(buf[i]);
+        // ASCII printable + extended Latin range (covers German umlauts
+        // 0xE4/0xF6/0xFC/0xDF, accented French/Spanish/Italian, etc.).
+        // Excludes 0x00..0x1F (controls), 0x7F (DEL), and 0x80..0x9F
+        // (CP1252 control block — never used in localised UI strings).
+        if ((c >= 0x20 && c < 0x7F) || c >= 0xA0) {
+            ++printable;
+        }
+    }
+    // Require at least one printable byte AND a majority of printable
+    // bytes. Short all-garbage strings (the 3-byte case we hit) get
+    // rejected; legitimate short tooltips like "OK" keep working.
+    return printable > 0 && printable * 2 >= len;
+}
+
+}  // namespace
+
 bool ReadControlTooltip(void* control, char* outBuf, size_t bufSize) {
     if (!control || !outBuf || bufSize < 2) return false;
     outBuf[0] = '\0';
@@ -136,12 +168,20 @@ bool ReadControlTooltip(void* control, char* outBuf, size_t bufSize) {
             }
         }
 
-        // 2. Literal tooltip_string.
+        // 2. Literal tooltip_string. Validate it looks like real text —
+        //    action-bar / target-action / radial column buttons leave
+        //    this slot uninitialised and the engine never wipes it on
+        //    .gui load, so a stale non-null pointer + small length can
+        //    return CP1252 control-range garbage. Drop garbage and keep
+        //    bubbling so the caller's "no tooltip" fallback fires.
         if (literal && literalLen > 0 && literalLen < bufSize) {
             __try {
                 memcpy(outBuf, literal, literalLen);
                 outBuf[literalLen] = '\0';
-                return true;
+                if (LooksLikeReadableText(outBuf, literalLen)) {
+                    return true;
+                }
+                outBuf[0] = '\0';
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 outBuf[0] = '\0';
                 // Fall through to parent walk — corrupt literal pointer.
@@ -362,6 +402,60 @@ void* ResolveItemFromClientHandle(uint32_t clientHandle) {
 
 typedef CExoString* (__thiscall* PFN_GetPropertyDescription)(void* this_,
                                                               CExoString* out);
+
+// CSWGuiInterfaceAction descriptors for action-bar slots 1..3 (medical /
+// grenades / mines) encode their item reference at +0x08 as
+//   action_id = (server_item->server_object.game_object.id) | 0x40000000
+// per the CSWCCreature::CreateUsableItemEntry @0x006193a0 decompile. The
+// 0x40000000 high byte tags the id as a server-side item handle; the low
+// bytes are the server-side game_object id directly (no client→server
+// conversion needed). Force-power slot (0) and feat-like actions use a
+// different action_id encoding without this tag — caller falls back when
+// this returns false.
+constexpr uint32_t kActionIdItemTag      = 0x40000000;
+constexpr uint32_t kActionIdItemTagMask  = 0xFF000000;
+
+void* ResolveItemFromServerHandle(uint32_t serverHandle) {
+    if (serverHandle == 0 || serverHandle == 0xffffffff) return nullptr;
+    void* appMgr = nullptr;
+    __try {
+        appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+    if (!appMgr) return nullptr;
+
+    void* serverApp = nullptr;
+    __try {
+        serverApp = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(appMgr) +
+            kAppManagerServerExoAppOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+    if (!serverApp) return nullptr;
+
+    void* item = nullptr;
+    __try {
+        auto fn = reinterpret_cast<PFN_GetItemByGameObjectID>(
+            kAddrServerExoAppGetItemByGameObjectID);
+        item = fn(serverApp, serverHandle);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+    return item;
+}
+
+bool ResolveItemDescriptionFromActionId(uint32_t actionId,
+                                        char* outBuf, size_t bufSize) {
+    if (!outBuf || bufSize < 2) return false;
+    outBuf[0] = '\0';
+    if ((actionId & kActionIdItemTagMask) != kActionIdItemTag) return false;
+    uint32_t serverHandle = actionId & ~kActionIdItemTag;
+    void* item = ResolveItemFromServerHandle(serverHandle);
+    if (!item) return false;
+    return ReadItemPropertyDescription(item, outBuf, bufSize);
+}
 
 namespace {
 

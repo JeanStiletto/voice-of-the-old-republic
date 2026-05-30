@@ -127,6 +127,16 @@ void* ResolveItemFromClientHandle(uint32_t clientHandle);
 // we deliberately leak (CRT-mismatch — same pattern as LookupTlk).
 bool ReadItemPropertyDescription(void* item, char* outBuf, size_t bufSize);
 
+// CSWGuiInterfaceAction.action_id → full item property description (same
+// text inventory/equip-picker speak on Shift+arrow). action-bar slots 1..3
+// (medical / grenades / mines) encode the descriptor's item reference as
+// (server_item.game_object.id | 0x40000000), per the
+// CSWCCreature::CreateUsableItemEntry @0x006193a0 decompile. False when
+// the id lacks the item tag (force powers / feats use other encodings) —
+// caller falls back to "no description available".
+bool ResolveItemDescriptionFromActionId(uint32_t actionId,
+                                        char* outBuf, size_t bufSize);
+
 // Returns:
 //   > 1   stackable; caller speaks the count suffix.
 //     1   single — caller stays silent (saying "1" is noise).
