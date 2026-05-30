@@ -93,6 +93,15 @@ enum class PanelKind {
     // yet. Controls: 0 body listbox, 1..5 tab buttons, 6 title label,
     // 8 Schliess. button. Identified by vtable equality.
     MainMenuOptions,
+
+    // Title-screen CSWGuiMainMenu (vtable 0x00752f70). Pre-game, no
+    // CGuiInGame slot. Identified by vtable equality. The generic
+    // title-walk lands on the optional "New downloadable content is
+    // available…" notice label (Steam-side, unactionable on this
+    // build); AnnouncePanelTitle substitutes Id::PanelTitleMainMenu
+    // for this kind so the user hears "Main menu" / "Hauptmenü"
+    // instead of the DLC notice.
+    MainMenu,
 };
 
 const char* PanelKindName(PanelKind k);

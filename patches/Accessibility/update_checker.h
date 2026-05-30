@@ -3,8 +3,13 @@
 // Flow:
 //   1. StartBackgroundCheck() kicks a WinHTTP-backed worker thread that
 //      GETs the latest release JSON from GitHub. Called once from
-//      OnRulesInit (first safe point past loader lock — same site that
-//      lazy-inits Prism).
+//      menus.cpp AnnouncePanelTitle's MainMenu branch — i.e. only after
+//      the engine has finished its delicate startup window (intro-movie
+//      playback, OpenGL/DirectInput bringup) and the main menu is
+//      sighted. Used to fire from OnRulesInit; that competed with Bink
+//      playback for COM apartment / message-loop state and is a leading
+//      suspect for "menu loaded but unresponsive, alt-tab fixes it"
+//      reports.
 //   2. Tick() runs per frame from core_tick::Dispatch. Announces the
 //      "update available" cue once when the background check completes,
 //      and handles download-task completion (announce + spawn batch).

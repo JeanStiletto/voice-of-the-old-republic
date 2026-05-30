@@ -421,4 +421,19 @@ const char* PatchDir() {
     return g_patchDir;
 }
 
+namespace {
+ULONGLONG g_bringupBaselineMs = 0;
+}
+
+void BringupMark(const char* name) {
+    ULONGLONG now = GetTickCount64();
+    if (g_bringupBaselineMs == 0) {
+        g_bringupBaselineMs = now;
+        Write("Bringup", "%s t+0ms (baseline)", name);
+        return;
+    }
+    Write("Bringup", "%s t+%llums", name,
+          static_cast<unsigned long long>(now - g_bringupBaselineMs));
+}
+
 }  // namespace acclog

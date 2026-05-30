@@ -407,6 +407,9 @@ const char* Get(Id id) {
         case Id::FmtUpdateNotAvailable: return "Nessun aggiornamento disponibile. Sei alla versione %s.";
         case Id::UpdateNotInMenu:       return "Gli aggiornamenti possono essere installati solo dal menu principale.";
 
+        case Id::PanelTitleMainMenu:    return "Menu principale";
+        case Id::LoadingPleaseWait:     return "Il gioco sta ancora caricando, attendere prego.";
+
         case Id::Count_:               return "";
     }
     return "";

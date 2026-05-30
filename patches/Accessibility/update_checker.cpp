@@ -496,7 +496,14 @@ bool IsRemoteNewer(const char* remote, const char* local) {
 
 // ----- Worker threads -------------------------------------------------------
 
+void CheckVersionWorkerImpl();
+
 void CheckVersionWorker() {
+    CheckVersionWorkerImpl();
+    acclog::BringupMark("update_check_done");
+}
+
+void CheckVersionWorkerImpl() {
     // Dev override — pretend the contents of update_test_version.txt is
     // what GitHub reports as the latest release. Lets local-test runs
     // exercise the full F5 flow without touching the API or cutting a
@@ -736,6 +743,7 @@ void LaunchHandoffAndExit() {
 void StartBackgroundCheck() {
     bool expected = false;
     if (!g_check_started.compare_exchange_strong(expected, true)) return;
+    acclog::BringupMark("update_check_start");
     acclog::Write("Update", "starting background version check");
     std::thread(CheckVersionWorker).detach();
 }

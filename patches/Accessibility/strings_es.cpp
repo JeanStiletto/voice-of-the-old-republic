@@ -409,6 +409,9 @@ const char* Get(Id id) {
         case Id::FmtUpdateNotAvailable: return "No hay actualizaci\xF3n disponible. Est\xE1s en la versi\xF3n %s.";
         case Id::UpdateNotInMenu:       return "Las actualizaciones solo se pueden instalar desde el men\xFA principal.";
 
+        case Id::PanelTitleMainMenu:    return "Men\xFA principal";
+        case Id::LoadingPleaseWait:     return "El juego sigue cargando, por favor espera.";
+
         case Id::Count_:               return "";
     }
     return "";

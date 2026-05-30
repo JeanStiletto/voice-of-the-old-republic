@@ -46,6 +46,15 @@ const char* FmtPtr(const void* ptr);
 
 void FlushAll();
 
+// Record a milestone in the bringup timeline. First call (typically
+// "dll_attach") captures the baseline; subsequent calls emit a single
+// "Bringup: <name> t+<ms>ms" line measured from that baseline. Lets us
+// read any user log and see at a glance where the time goes between
+// DLL load and an interactive menu — including the gap during which
+// intro-movie playback or window-focus glitches can stall the engine
+// input pump.
+void BringupMark(const char* name);
+
 // Absolute path of <install>\patches. Empty before Init. Used by prism.cpp
 // for SetDllDirectory.
 const char* PatchDir();

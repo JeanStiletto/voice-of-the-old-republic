@@ -205,6 +205,24 @@ bool IsMainMenuOptionsStructural(void* panel) {
     }
 }
 
+// CSWGuiMainMenu title-screen panel. Single-instance, vtable equality is
+// the cleanest identifier. Captured 2026-05-30 in the user-reported
+// stuck-menu log (patch-20260530-191714.log frame at 19:17:40):
+// `PanelProbe: first sight UNKNOWN panel=077F49D8 vtable=0x00752f70`.
+// Classifying this lets AnnouncePanelTitle skip the generic label-walk
+// (which lands on the DLC notice) and speak Id::PanelTitleMainMenu.
+constexpr uintptr_t kVtableCSWGuiMainMenu = 0x00752f70;
+
+bool IsMainMenuStructural(void* panel) {
+    if (!panel) return false;
+    __try {
+        void** vt = *reinterpret_cast<void***>(panel);
+        return reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiMainMenu;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 // CSWGuiPowersLevelUp picker (pwrlvlup.gui). The same class backs both the
 // chargen Force-selection screen and the InGameLevelUp "Kr�fte" sub-screen;
 // the SARIF documents the struct (swkotor.exe.h:16603) but doesn't name the
@@ -313,6 +331,7 @@ static const PanelKindOffset kPanelKindOffsets[] = {
     { kNoSlotOffset, PanelKind::WorkbenchUpgrade,  "WorkbenchUpgrade" },
     { kNoSlotOffset, PanelKind::PowersLevelUp,     "PowersLevelUp" },
     { kNoSlotOffset, PanelKind::MainMenuOptions,   "MainMenuOptions" },
+    { kNoSlotOffset, PanelKind::MainMenu,          "MainMenu" },
 };
 static constexpr int kPanelKindOffsetCount =
     sizeof(kPanelKindOffsets) / sizeof(kPanelKindOffsets[0]);
@@ -512,6 +531,9 @@ PanelKind IdentifyPanel(void* panel) {
     }
     if (IsMainMenuOptionsStructural(panel)) {
         return recordAndReturn(PanelKind::MainMenuOptions, "MainMenuOptions");
+    }
+    if (IsMainMenuStructural(panel)) {
+        return recordAndReturn(PanelKind::MainMenu, "MainMenu");
     }
 
     // Last resort: dump diagnostics so we can write a structural detector

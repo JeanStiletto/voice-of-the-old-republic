@@ -10,6 +10,8 @@
 #include <cstdio>
 #include <cstring>
 
+#include "bringup_announce.h"
+#include "diag_focus.h"
 #include "log.h"
 #include "mod_version.h"
 #include "prism.h"
@@ -211,16 +213,44 @@ extern "C" void __cdecl OnRulesInit(void* /*rulesThis*/) {
     static bool fired = false;
     if (fired) return;
     fired = true;
+    acclog::BringupMark("rules_init");
     InstallMouseGuard();
     acc::strings::SetLanguage(DetectLanguageFromTlk());
     EnsurePrismInitialized();
-    acc::update_checker::StartBackgroundCheck();
+    // Apartment probe — see diag_focus.h. prism.dll's SAPI backend
+    // calls CoInitializeEx internally; if it picks MTA on the engine's
+    // main thread (where the engine's own message loop + DirectInput
+    // dispatch live) that conflicts with anything else on the thread
+    // that wants STA, and shows up as "fine until first focus loss".
+    acc::diag::focus::LogComApartment("post_prism_init");
+    // Spin up the focus-probe polling thread now (rather than at
+    // MainMenu first-sight) so we catch focus events during intro-movie
+    // playback + the SWMovieWindow → Render Window handoff that
+    // happens before the main menu shows. Idempotent — re-call from
+    // MainMenu first-sight is a no-op.
+    acc::diag::focus::StartFocusProbe();
+    // Bringup-phase nag — speaks "Game is still loading" once if the
+    // user presses an arrow / Enter / Space during the post-intro
+    // pre-pump-live window. Silent during movies + after pump live.
+    acc::bringup_announce::Start();
+    // NOTE: update_checker::StartBackgroundCheck() used to fire here, but
+    // OnRulesInit runs DURING engine bringup — before intro-movie playback
+    // completes and before the OpenGL/DirectInput pipeline is settled.
+    // Starting WinHTTP I/O here (DNS, WPAD, TLS, thread-pool init,
+    // implicit COM apartments) competes with Bink playback for window-
+    // foreground / message-loop state and is a leading suspect for
+    // intermittent "menu loaded but unresponsive, alt-tab fixes it" /
+    // "intro movie plays twice" reports. The kick-off has been moved to
+    // the first-sight handler for the MainMenu panel (see menus.cpp
+    // AnnouncePanelTitle), at which point the engine is demonstrably
+    // past its delicate startup window.
     acclog::Write("Init", "first CSWRules construction; detour active");
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         acclog::Init(hinstDLL);
+        acclog::BringupMark("dll_attach");
         DWORD n = GetEnvironmentVariableA(
             "KOTOR_VERSION_SHA", g_versionSha, sizeof(g_versionSha));
         if (n == 0 || n >= sizeof(g_versionSha)) {

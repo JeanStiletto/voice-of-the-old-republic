@@ -426,6 +426,9 @@ const char* Get(Id id) {
         case Id::FmtUpdateNotAvailable: return "Kein Update verf\xFCgbar. Aktuelle Version %s.";
         case Id::UpdateNotInMenu:       return "Updates k\xF6nnen nur aus dem Hauptmen\xFC installiert werden.";
 
+        case Id::PanelTitleMainMenu:    return "Hauptmen\xFC";
+        case Id::LoadingPleaseWait:     return "Spiel l\xE4""dt noch, bitte warten.";
+
         case Id::Count_:               return "";
     }
     return "";

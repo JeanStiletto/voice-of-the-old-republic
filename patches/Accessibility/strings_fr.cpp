@@ -408,6 +408,9 @@ const char* Get(Id id) {
         case Id::FmtUpdateNotAvailable: return "Aucune mise \xE0 jour disponible. Vous \xEAtes en version %s.";
         case Id::UpdateNotInMenu:       return "Les mises \xE0 jour ne peuvent \xEAtre install\xE9""es que depuis le menu principal.";
 
+        case Id::PanelTitleMainMenu:    return "Menu principal";
+        case Id::LoadingPleaseWait:     return "Le jeu charge encore, veuillez patienter.";
+
         case Id::Count_:               return "";
     }
     return "";

@@ -1177,6 +1177,24 @@ enum class Id : int {
     FmtUpdateNotAvailable,
     UpdateNotInMenu,
 
+    // ---- Panel-title overrides for AnnouncePanelTitle.
+    //      Used when the generic first-label-walk picks the wrong label —
+    //      e.g. on the title-screen main menu the only label-like child is
+    //      the optional "New downloadable content is available…" notice
+    //      (Steam-side, unactionable on the GOG/Steam KOTOR 1 build), which
+    //      gets spoken instead of a useful panel title. PanelKind::MainMenu
+    //      substitutes this string before the generic walk runs.
+    PanelTitleMainMenu,
+
+    // ---- Bringup-phase nag (bringup_announce.cpp).
+    //      Spoken once if the user presses an arrow / Enter / Space
+    //      during the Loading phase — the engine's "between intros
+    //      and main menu input pump live" window, where focus is
+    //      cycling through freshly recreated Render Window instances
+    //      and key presses go nowhere. Stays silent during movie
+    //      playback (audio would clash) and after the pump is live.
+    LoadingPleaseWait,
+
     Count_,
 };
 

@@ -64,6 +64,9 @@
 #include "spatial_change_detector.h"  // Phase 3 lay-off 3 — Pillar 1 Trigger 1
 #include "audio_footstep_suppress.h"  // Phase 3 lay-off 5 — stuck-detection
 #include "strings.h"            // Container loot panel announces
+#include "update_checker.h"     // Deferred background version check + bringup mark
+#include "diag_focus.h"         // WindowProc subclass for WM_ACTIVATE logging
+#include "bringup_announce.h"   // Loading-phase nag when user presses arrows too early
 #include "transitions.h"        // Phase 2 lay-off 7 — Pillar 2 area+room announce
 
 // Engine readers + offset constants moved to engine_reads.{h,cpp} +
@@ -442,6 +445,35 @@ static void AnnouncePanelTitle(void* panel) {
                       "title parent=%p (powers_levelup override) text=\"%s\"",
                       panel, override);
         prism::Speak(override, /*interrupt=*/false);
+        return;
+    }
+
+    // Title-screen main menu: the only label-like child is the optional
+    // "New downloadable content is available…" Steam notice, which the
+    // generic walk would pick. User-reported in
+    // patch-20260530-191714.log — the DLC notice spoke instead of any
+    // useful panel title, leaving the user disoriented on entry.
+    //
+    // This is also the bringup gate for the deferred background update
+    // check: the engine is demonstrably past intro movies + DirectInput
+    // init by the time MainMenu first-sights, so it's safe to start
+    // WinHTTP I/O without racing Bink playback for COM/message-loop
+    // state. The mark + StartBackgroundCheck calls are idempotent on
+    // re-entry (we land here once per launch in practice; both functions
+    // self-guard against repeats).
+    if (IdentifyPanel(panel) == PanelKind::MainMenu) {
+        acclog::BringupMark("main_menu_first_sight");
+        acc::update_checker::StartBackgroundCheck();
+        // Belt-and-braces — the polling thread spawned at OnRulesInit
+        // should already have subclassed every game window by now, but
+        // re-calling is a no-op and keeps the safety net in place in
+        // case the thread didn't start (CreateThread failure logged).
+        acc::diag::focus::StartFocusProbe();
+        const char* title = acc::strings::Get(acc::strings::Id::PanelTitleMainMenu);
+        acclog::Write("Menus.PanelWalk",
+                      "title parent=%p (main menu override) text=\"%s\"",
+                      panel, title);
+        prism::Speak(title, /*interrupt=*/false);
         return;
     }
 
@@ -1048,6 +1080,23 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
     EnsurePrismInitialized();
     static int n = 0;
     ++n;
+
+    // Bringup diagnostic: gap between main-menu first-sight and the
+    // moment the engine's input pump becomes user-responsive. The engine
+    // fires one SetActive immediately after panel construction for its
+    // auto-focused button ("New Game"); the second one is the user's
+    // first arrow key, which only fires once the engine input pump is
+    // truly live. A large gap here = "menu appeared ready but wasn't
+    // responsive" (the symptom the user and the reporter both hit).
+    if (IdentifyPanel(panel) == PanelKind::MainMenu) {
+        static int mainMenuSetActiveCount = 0;
+        if (++mainMenuSetActiveCount == 2) {
+            acclog::BringupMark("main_menu_input_pump_live");
+            // Hand off to the bringup-phase nag so it stops watching for
+            // arrow-key presses during loading — engine is now live.
+            acc::bringup_announce::NotifyInputPumpLive();
+        }
+    }
 
     PrefillClassIconCacheOnTransition(panel, newControl);
     UpdateFocusedPanelState(panel);
