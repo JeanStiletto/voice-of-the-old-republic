@@ -143,6 +143,14 @@ namespace KotorAccessibilityInstaller
                     Environment.ExitCode = 1;
                     return;
                 }
+                // Re-apply install-time settings the running installer ships
+                // with. Without this any installer-side config change between
+                // versions (WER dump flags, registry tweaks, future helpers)
+                // would only land on a manual reinstall, since the auto-update
+                // skips the welcome / mod-selection path that normally calls
+                // these. Idempotent + best-effort — failure does not block the
+                // update.
+                WerLocalDumps.Enable();
                 Application.Run(new MainForm(detectedGamePath, updateOnly: true, localKpatchPath: localKpatchPath, headless: true));
                 return;
             }
