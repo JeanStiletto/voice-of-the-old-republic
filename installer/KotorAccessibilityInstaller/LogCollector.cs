@@ -244,7 +244,24 @@ namespace KotorAccessibilityInstaller
                 if (key == null) return false;
                 key.SetValue("DumpFolder", @"%LOCALAPPDATA%\CrashDumps", RegistryValueKind.ExpandString);
                 key.SetValue("DumpCount", 10, RegistryValueKind.DWord);
-                key.SetValue("DumpType", 2, RegistryValueKind.DWord); // 2 = full dump, more useful for triage
+                // Custom dump (DumpType=0) controlled by CustomDumpFlags. Full
+                // dumps (DumpType=2) routinely came out at 500+ MB because
+                // swkotor.exe maps hundreds of MB of texture/audio/BIF pages —
+                // mostly asset buffers we never read during triage. The flag
+                // set below keeps everything kdev analyze-dump actually uses:
+                //   0x0001 MiniDumpWithDataSegs                 — globals
+                //   0x0040 MiniDumpWithIndirectlyReferencedMemory — heap pages
+                //          pointed at from stack/registers (so "what's at the
+                //          freed slot" forensics still work; e.g. the 1f7cd0f
+                //          SaveLoad UAF was diagnosed from combat-log strings
+                //          sitting at panel+0x20)
+                //   0x0100 MiniDumpWithProcessThreadData        — process + per-thread state
+                //   0x2000 MiniDumpWithCodeSegs                 — unpacked .text;
+                //          on-disk swkotor.exe is packed, so --peek of runtime-
+                //          decrypted instructions needs the in-memory image
+                // Typical size: ~15-50 MB vs ~500 MB+ for the full variant.
+                key.SetValue("DumpType", 0, RegistryValueKind.DWord);
+                key.SetValue("CustomDumpFlags", 0x2141, RegistryValueKind.DWord);
                 Logger.Info("[WerLocalDumps] Enabled crash-dump capture for swkotor.exe");
                 return true;
             }
