@@ -23,67 +23,7 @@ namespace acc::combat::query {
 
 namespace {
 
-// ============================================================================
-// Stat-snapshot reader — pulls everything needed for Phase 2A from one
-// CSWSCreature*. Same data path Phase 2B reads.
-// ============================================================================
-
-struct StatSnap {
-    int  hpCur, hpMax;
-    int  fpMax;          // current FP — no clean engine accessor; stays 0
-    int  ac;
-    int  attrs[6];       // STR DEX CON INT WIS CHA
-    int  fortSave, refSave, willSave;
-    int  alignment;      // 0..100 (0 = dark, 100 = light)
-    int  effectsCount;
-    bool dead;
-};
-
 typedef int (__thiscall* PFN_GetIntThiscall)(void* this_);
-typedef int (__thiscall* PFN_GetIntStatsThiscall)(void* this_);
-typedef int (__thiscall* PFN_GetIntThisInt)(void* this_, int arg);
-
-// Read the CSWSCreatureStats* via the +0xa74 offset.
-void* ReadCreatureStats(void* serverCreature) {
-    if (!serverCreature) return nullptr;
-    __try {
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(serverCreature) +
-            kCreatureStatsPtrOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
-// Call a __thiscall accessor that returns int, defensively.
-int CallIntAccessor(void* this_, uintptr_t addr) {
-    if (!this_) return 0;
-    __try {
-        auto fn = reinterpret_cast<PFN_GetIntThiscall>(addr);
-        return fn(this_);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return 0;
-    }
-}
-
-// Call a __thiscall(this, int) accessor. Required for engine getters
-// that take a 1-int param even when our existing call sites never
-// vary the argument: GetCurrentHitPoints / GetMaxHitPoints both have
-// this signature (Lane SARIF), and using PFN_GetIntThiscall reads
-// random caller-frame bytes as `param_1` — sometimes hitting the
-// trivial path (`MOV AX, [ECX+0xdc]; RET 4`) and sometimes the
-// sum-of-two-fields path (`MOV EAX, [ECX+0xe4]; ADD EAX, [ECX+0xdc];
-// RET 4`). The wrong-path returns leaked into the bare-H readout as
-// nonsense numbers that don't track damage.
-int CallIntAccessorArg(void* this_, uintptr_t addr, int arg) {
-    if (!this_) return 0;
-    __try {
-        auto fn = reinterpret_cast<PFN_GetIntThisInt>(addr);
-        return fn(this_, arg);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return 0;
-    }
-}
 
 // HP read helpers — direct CSWCCreatureStats reads, the same struct
 // the engine's character-sheet panel renders from. Path:
@@ -148,22 +88,6 @@ int ReadMaxHpFromClient(void* clientLeader) {
         return static_cast<int>(*reinterpret_cast<short*>(
             reinterpret_cast<unsigned char*>(lvlUpStats) +
             kClientStatsMaxHpOffset));
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return -1;
-    }
-}
-
-// Read CSWSCreatureStats.feats CExoArrayList<ushort> size at +0x4. Direct
-// field read — no engine call, safe for any path. Returns -1 on fault.
-int ReadFeatCount(void* stats) {
-    if (!stats) return -1;
-    __try {
-        auto* lst = reinterpret_cast<CExoArrayList*>(
-            reinterpret_cast<unsigned char*>(stats) +
-            kStatsFeatsListOffset);
-        int s = lst->size;
-        if (s < 0 || s > 0x400) return -1;  // sanity clamp
-        return s;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return -1;
     }
@@ -246,25 +170,6 @@ void BriefAppend(BriefBuf& b, const char* fmt, ...) {
     va_end(args);
     if (n > 0) b.off += static_cast<size_t>(n);
     if (b.off > b.cap) b.off = b.cap;
-}
-
-// Read 6 attribute totals as bytes from creature_stats +0x34..+0x39. The
-// plan's "Client-side" fields table documents this offset on
-// CSWCCreatureStats but the byte layout matches CSWSCreatureStats per
-// the swkotor.exe.h struct definitions. Both stats classes carry the same
-// post-modifier totals.
-void ReadAttrTotals(void* stats, int outAttrs[6]) {
-    for (int i = 0; i < 6; ++i) outAttrs[i] = 0;
-    if (!stats) return;
-    __try {
-        auto* base = reinterpret_cast<unsigned char*>(stats);
-        for (int i = 0; i < 6; ++i) {
-            outAttrs[i] = static_cast<int>(
-                *(base + kStatsAttrTotalsOffset + i));
-        }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        for (int i = 0; i < 6; ++i) outAttrs[i] = 0;
-    }
 }
 
 // Read the runtime-effects array length on CSWSObject.effects @+0x124
@@ -371,123 +276,9 @@ acc::strings::Id DamageLevelStringIdFor(int level) {
     }
 }
 
-bool ReadStatSnap(void* serverCreature, StatSnap& out) {
-    std::memset(&out, 0, sizeof(out));
-    if (!serverCreature) return false;
-    void* stats = ReadCreatureStats(serverCreature);
-    if (!stats) return false;
-
-    // HP via CLIENT-side CSWCCreatureStats — see ReadCurrentHpFromClient
-    // / ReadMaxHpFromClient for why we don't go through the server-side
-    // engine getter (gates on stats.is_pc, returns garbage for non-PC).
-    void* clientLeader = acc::engine::GetClientLeader();
-    int curRead   = ReadCurrentHpFromClient(clientLeader);
-    int maxRead   = ReadMaxHpFromClient(clientLeader);
-    out.hpCur     = curRead < 0 ? 0 : curRead;
-    out.hpMax     = maxRead < 0 ? 0 : maxRead;
-    out.fpMax    = CallIntAccessor(serverCreature,
-                                   kAddrCSWSCreatureGetMaxForcePoints);
-    out.ac       = CallIntAccessor(serverCreature,
-                                   kAddrCSWSCreatureGetArmorClass);
-    out.fortSave = CallIntAccessor(stats, kAddrStatsGetFortSave);
-    out.refSave  = CallIntAccessor(stats, kAddrStatsGetReflexSave);
-    out.willSave = CallIntAccessor(stats, kAddrStatsGetWillSave);
-    out.alignment = CallIntAccessor(stats,
-                                    kAddrStatsGetSimpleAlignmentGoodEvil);
-    ReadAttrTotals(stats, out.attrs);
-    out.effectsCount = ReadEffectCount(serverCreature);
-    int dead = CallIntAccessor(serverCreature, kAddrCSWSCreatureGetDead);
-    out.dead = (dead != 0);
-    return true;
-}
-
 }  // namespace
 
-// ============================================================================
-// Phase 2A — selected-PC full stat block.
-// ============================================================================
-
-bool SpeakSelectedPcStatBlock() {
-    void* creature = acc::engine::GetPlayerServerCreature();
-    if (!creature) {
-        const char* phrase = acc::strings::Get(
-            acc::strings::Id::PcStatNoCharacter);
-        prism::Speak(phrase, /*interrupt=*/true);
-        acclog::Write("Combat.PcStat", "no creature -> [%s]", phrase);
-        return false;
-    }
-    StatSnap snap;
-    if (!ReadStatSnap(creature, snap)) {
-        const char* phrase = acc::strings::Get(
-            acc::strings::Id::PcStatNoCharacter);
-        prism::Speak(phrase, /*interrupt=*/true);
-        acclog::Write("Combat.PcStat", "ReadStatSnap failed -> [%s]", phrase);
-        return false;
-    }
-
-    char leader[64] = "";
-    acc::engine::GetActiveLeaderName(leader, sizeof(leader));
-
-    using S = acc::strings::Id;
-    char msg[1024];
-    size_t off = 0;
-    auto append = [&](const char* fmt, auto... args) {
-        if (off >= sizeof(msg)) return;
-        int n = std::snprintf(msg + off, sizeof(msg) - off, fmt, args...);
-        if (n > 0) off += static_cast<size_t>(n);
-        if (off > sizeof(msg)) off = sizeof(msg);
-    };
-
-    if (leader[0]) {
-        append("%s. ", leader);
-    } else {
-        append("%s ", acc::strings::Get(S::PcStatHeader));
-    }
-    if (snap.hpMax > 0 || snap.fpMax > 0) {
-        append(acc::strings::Get(S::FmtPcStatHpFp),
-               snap.hpCur, snap.hpMax, /*fpCur*/ snap.fpMax, snap.fpMax);
-        append(" ");
-    }
-    append(acc::strings::Get(S::FmtPcStatAc), snap.ac);
-    append(" ");
-    append(acc::strings::Get(S::FmtPcStatAttrs),
-           snap.attrs[0], snap.attrs[1], snap.attrs[2],
-           snap.attrs[3], snap.attrs[4], snap.attrs[5]);
-    append(" ");
-    append(acc::strings::Get(S::FmtPcStatSaves),
-           snap.fortSave, snap.refSave, snap.willSave);
-    append(" ");
-    append(acc::strings::Get(S::FmtPcStatAlignment), snap.alignment);
-    if (snap.effectsCount > 0) {
-        append(" ");
-        append(acc::strings::Get(S::FmtPcStatEffectsHeader),
-               snap.effectsCount);
-    }
-
-    prism::Speak(msg, /*interrupt=*/true);
-    acclog::Write("Combat.PcStat",
-                  "spoke leader=[%s] hp=%d/%d fp=%d ac=%d "
-                  "attrs=%d/%d/%d/%d/%d/%d saves=%d/%d/%d align=%d eff=%d",
-                  leader, snap.hpCur, snap.hpMax, snap.fpMax, snap.ac,
-                  snap.attrs[0], snap.attrs[1], snap.attrs[2],
-                  snap.attrs[3], snap.attrs[4], snap.attrs[5],
-                  snap.fortSave, snap.refSave, snap.willSave,
-                  snap.alignment, snap.effectsCount);
-    return true;
-}
-
 void TickLeaderChangeAutoAnnounce() {
-    // Skeleton: only log + speak the leader name on change. The full
-    // SpeakSelectedPcStatBlock is gated to user-initiated Shift+S only,
-    // because the stat-read path calls suspected engine accessors
-    // (GetMaxHitPoints / GetArmorClass / save accessors) that haven't
-    // been live-validated. A wrong address corrupts the stack canary
-    // and __fastfails uncatchably (cause of 2026-05-09 crash).
-    //
-    // Once the accessor addresses are validated against a live binary,
-    // restore the auto-fire path by replacing the leader-name speak
-    // below with `SpeakSelectedPcStatBlock();`.
-
     // Player-loaded gate — don't probe CClientExoApp::GetPlayerCharacterName
     // until the world has actually loaded. During the chargen→world
     // transient, the player slot is half-initialised and hammering the

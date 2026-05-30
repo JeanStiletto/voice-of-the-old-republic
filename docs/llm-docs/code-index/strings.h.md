@@ -45,7 +45,7 @@ User-facing string table. Centralises every spoken string. Logs stay English; on
   FmtChargenFeatChartCell, ChargenFeatStatusAvailable, ChargenFeatStatusExisting, ChargenFeatStatusGranted, ChargenFeatStatusLocked, ChargenFeatStatusChosen,
   EditboxRole, EditboxEmpty, EditboxEnd,
   CombatBegins, CombatEnds,
-  PcStatHeader, FmtPcStatHpFp, FmtPcStatAc, FmtPcStatAttrs, FmtPcStatSaves, FmtPcStatAlignment, FmtPcStatEffectsHeader, PcStatNoCharacter,
+  PcStatNoCharacter,
   FmtTargetCombatBrief, FactionHostile, FactionFriendly, FactionNeutral, TargetIsDead,
   FmtBriefCondition, FmtBriefDistanceMeters, FmtBriefEffects, FmtBriefWielding, FmtBriefOffHand, FmtBriefEffectsCount, FmtBriefFeatsCount,
   FmtSelfStatusHp, FmtSelfStatusHpOf,

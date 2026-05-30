@@ -207,13 +207,6 @@ const char* Get(Id id) {
         case Id::CombatBegins:               return "Inizio del combattimento";
         case Id::CombatEnds:                 return "Fine del combattimento";
 
-        case Id::PcStatHeader:               return "Stato.";
-        case Id::FmtPcStatHpFp:              return "Punti vita %d di %d, punti Forza %d di %d.";
-        case Id::FmtPcStatAc:                return "Difesa %d.";
-        case Id::FmtPcStatAttrs:             return "Forza %d, Destrezza %d, Costituzione %d, Intelligenza %d, Saggezza %d, Carisma %d.";
-        case Id::FmtPcStatSaves:             return "Salvezze: Tempra %d, Riflessi %d, Volont\xE0 %d.";
-        case Id::FmtPcStatAlignment:         return "Allineamento %d.";
-        case Id::FmtPcStatEffectsHeader:     return "Effetti attivi: %d.";
         case Id::PcStatNoCharacter:          return "Nessuno stato del personaggio disponibile.";
 
         // Brief is composed in BuildTargetCombatBrief: name, then optional

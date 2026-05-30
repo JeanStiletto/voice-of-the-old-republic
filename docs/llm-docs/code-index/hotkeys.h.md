@@ -8,7 +8,7 @@ Centralised hotkey registry. Single source of truth for every mod-added binding.
 - L18 — `enum ModifierBit : uint32_t`
   note: kModShift=1, kModCtrl=2, kModAlt=4, kModAltGr=8
 - L27 — `enum class Action : int`
-  note: InteractTarget, InteractForceRadial, TargetKey1..3, PersonalKey1..4, ActionBarOpen1..4, TargetActionOpen1..3, LevelUpOpen, ExamineOpen, CombatQueueOpen, StatBlockSpeak, SelfStatusAnnounce, NavUp/Down/Left/Right/Home/End, SubmenuEsc, QueueClearAll, ContainerGiveMode, StoreModeToggle, CycleItemPrev/Next, CycleCategoryPrev/Next, AnnounceFocus, PathfindFocus, PathfindFocusForce, BeaconFocus, AnnounceDegrees, PartyLeaderAnnounce, CameraOrient, SaveMarkerAtCursor, ViewModeToggle, CameraStateProbe, EditboxReReadUp/Down/Submit/Cancel, ProbePathfind, ProbeAudioCycle, ProbeAudioFire, ProbeCameraDump, ProbeMouseLookToggle, ProbeCameraDistDump, ProbeCameraDistClampToggle, COUNT
+  note: InteractTarget, InteractForceRadial, TargetKey1..3, PersonalKey1..4, ActionBarOpen1..4, TargetActionOpen1..3, LevelUpOpen, ExamineOpen, CombatQueueOpen, SelfStatusAnnounce, NavUp/Down/Left/Right/Home/End, SubmenuEsc, QueueClearAll, ContainerGiveMode, StoreModeToggle, CycleItemPrev/Next, CycleCategoryPrev/Next, AnnounceFocus, PathfindFocus, PathfindFocusForce, BeaconFocus, AnnounceDegrees, PartyLeaderAnnounce, CameraOrient, SaveMarkerAtCursor, ViewModeToggle, CameraStateProbe, EditboxReReadUp/Down/Submit/Cancel, ProbePathfind, ProbeAudioCycle, ProbeAudioFire, ProbeCameraDump, ProbeMouseLookToggle, ProbeCameraDistDump, ProbeCameraDistClampToggle, COUNT
 - L108 — `struct Binding`
   note: vk, altVk (layout portability), modsRequired, modsForbidden
 - L116 — `void BeginTick()`

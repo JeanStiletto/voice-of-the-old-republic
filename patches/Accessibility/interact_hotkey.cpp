@@ -474,7 +474,6 @@ void PollHotkey() {
     bool risingOpenT2 = hk::Pressed(hk::Action::TargetActionOpen2);
     bool risingOpenT3 = hk::Pressed(hk::Action::TargetActionOpen3);
     bool risingL     = hk::Pressed(hk::Action::LevelUpOpen);
-    bool risingS     = hk::Pressed(hk::Action::StatBlockSpeak);
     bool risingEsc   = hk::Pressed(hk::Action::SubmenuEsc);
 
     // Pressed() already self-gates on foreground; if every action is
@@ -590,16 +589,9 @@ void PollHotkey() {
     // input dispatch below so Up/Down/Enter/Esc reach it while armed.
     acc::combat::queue::PollWin32Hotkey();
 
-    // Combat system, Phase 2A — Shift+S reads the selected-PC full
-    // stat block (one-shot speak; no menu state).
-    if (inWorld && risingS) {
-        acc::combat::query::SpeakSelectedPcStatBlock();
-    }
-
     // Bare H — quick HP / effects / equipped-weapon readout for the
     // currently-controlled leader. Self-gates on player-loaded and
-    // UI-block (matching Tab leader-announce). Lives next to Shift+S
-    // because both read the same creature-stats chain.
+    // UI-block (matching Tab leader-announce).
     acc::combat::query::PollWin32SelfStatusHotkey();
 
     // Examine view input routing — runs FIRST so an open examine view

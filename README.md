@@ -66,7 +66,6 @@ The mod keeps the game's default key map intact. Anything not listed below behav
 - Enter — Trigger the default action on the currently narrated target (same as Mouse 1 click in the world)
 - Shift+Enter — Open the radial action menu on the current target
 - Shift+H — Read the Examine panel for the current target
-- Shift+S — Read the selected character's full stat block
 - Shift+L — Open the level-up panel
 - Shift+K — Open the combat-queue submenu (review or clear queued actions)
 

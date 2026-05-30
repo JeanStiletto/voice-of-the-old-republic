@@ -676,24 +676,8 @@ enum class Id : int {
     CombatBegins,
     CombatEnds,
 
-    // ---- Combat system, Phase 2A — selected-PC full stat block hotkey.
-    //      Composed line; each fragment is one Fmt* below. Same pattern
-    //      MaybeAnnounce in menus_charsheet.cpp uses.
-    //      `FmtPcStatHpFp` — 4 `%d` (hpCur, hpMax, fpCur, fpMax).
-    //      `FmtPcStatAc` — 1 `%d` (ac).
-    //      `FmtPcStatAttrs` — 6 `%d` (str, dex, con, int, wis, cha).
-    //      `FmtPcStatSaves` — 3 `%d` (fort, refl, will).
-    //      `FmtPcStatAlignment` — 1 `%d` (alignment 0..100).
-    //      `FmtPcStatEffectsHeader` — 1 `%d` (active effect count).
-    //      `PcStatHeader` — fixed; spoken first ("Status").
-    //      `PcStatNoCharacter` — fallback when no player creature resolved.
-    PcStatHeader,
-    FmtPcStatHpFp,
-    FmtPcStatAc,
-    FmtPcStatAttrs,
-    FmtPcStatSaves,
-    FmtPcStatAlignment,
-    FmtPcStatEffectsHeader,
+    // ---- Bare-H / leader-status fallback when no player creature is
+    //      resolved (chargen→world transient, minigame slots).
     PcStatNoCharacter,
 
     // ---- Combat system, Phase 2B — opponent cycle-announcement
@@ -745,9 +729,6 @@ enum class Id : int {
     //                       Used when the max accessor returns 0 (e.g.
     //                       driving slots, minigame creatures).
     //   FmtSelfStatusHpOf — full "%d of %d" form. Used in normal play.
-    //                       Both engine getters need a 1-int param_1 —
-    //                       see CallIntAccessorArg in combat_query.cpp
-    //                       for the calling-convention rationale.
     FmtSelfStatusHp,
     FmtSelfStatusHpOf,
 

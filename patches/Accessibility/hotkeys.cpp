@@ -60,7 +60,6 @@ const char* const kActionNames[static_cast<int>(Action::COUNT)] = {
     "LevelUpOpen",
     "ExamineOpen",
     "CombatQueueOpen",
-    "StatBlockSpeak",
     "SelfStatusAnnounce",
     "NavUp",
     "NavDown",
@@ -177,7 +176,6 @@ void InitDefaults() {
     bind(Action::LevelUpOpen,          'L',       0, kModShift, 0);
     bind(Action::ExamineOpen,          'H',       0, kModShift, 0);
     bind(Action::CombatQueueOpen,      'K',       0, kModShift, 0);
-    bind(Action::StatBlockSpeak,       'S',       0, kModShift, 0);
     // Bare H — quick HP / effects / equipped-weapon readout for the
     // currently-controlled leader. Shift+H is ExamineOpen (the foreign-
     // target inspect path), so forbid every modifier here to keep the

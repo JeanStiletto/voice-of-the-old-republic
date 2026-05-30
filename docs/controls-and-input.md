@@ -163,7 +163,6 @@ When this document and `hotkeys.cpp` disagree, `hotkeys.cpp` wins. Update both t
 - Shift+L — Open the engine's level-up panel directly (bypass chargen-tab chain — escape hatch for the tutorial level).
 - Shift+H — Open the Examine panel for the currently-selected target.
 - Shift+K — Open the combat-queue submenu (review / clear queued actions).
-- Shift+S — Speak the selected PC's full stat block.
 
 ### In-world cycle (Pillar 4)
 

@@ -211,13 +211,6 @@ const char* Get(Id id) {
         case Id::CombatBegins:               return "Kampf beginnt";
         case Id::CombatEnds:                 return "Kampf beendet";
 
-        case Id::PcStatHeader:               return "Status.";
-        case Id::FmtPcStatHpFp:              return "Lebenspunkte %d von %d, Machtpunkte %d von %d.";
-        case Id::FmtPcStatAc:                return "Verteidigung %d.";
-        case Id::FmtPcStatAttrs:             return "St\xE4rke %d, Geschicklichkeit %d, Verfassung %d, Intelligenz %d, Weisheit %d, Charisma %d.";
-        case Id::FmtPcStatSaves:             return "Rettungswurf: Z\xE4higkeit %d, Reflex %d, Willen %d.";
-        case Id::FmtPcStatAlignment:         return "Gesinnung %d.";
-        case Id::FmtPcStatEffectsHeader:     return "Aktive Effekte: %d.";
         case Id::PcStatNoCharacter:          return "Kein Status verf\xFCgbar.";
 
         // Brief wird in BuildTargetCombatBrief zusammengesetzt: Name,

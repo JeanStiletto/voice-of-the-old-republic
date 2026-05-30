@@ -208,13 +208,6 @@ const char* Get(Id id) {
         case Id::CombatBegins:               return "D\xE9""but du combat";
         case Id::CombatEnds:                 return "Fin du combat";
 
-        case Id::PcStatHeader:               return "Statut.";
-        case Id::FmtPcStatHpFp:              return "Points de vie %d sur %d, points de Force %d sur %d.";
-        case Id::FmtPcStatAc:                return "D\xE9""fense %d.";
-        case Id::FmtPcStatAttrs:             return "Force %d, Dext\xE9rit\xE9 %d, Constitution %d, Intelligence %d, Sagesse %d, Charisme %d.";
-        case Id::FmtPcStatSaves:             return "Sauvegardes : Vigueur %d, R\xE9""flexes %d, Volont\xE9 %d.";
-        case Id::FmtPcStatAlignment:         return "Alignement %d.";
-        case Id::FmtPcStatEffectsHeader:     return "Effets actifs : %d.";
         case Id::PcStatNoCharacter:          return "Aucun statut disponible.";
 
         // Brief is composed in BuildTargetCombatBrief: name, then optional

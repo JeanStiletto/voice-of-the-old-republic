@@ -66,7 +66,6 @@ Die Mod lässt das Standard-Tastaturlayout des Spiels unverändert. Alles, was u
 - Enter — Standardaktion auf dem aktuell angesagten Ziel auslösen (entspricht einem Maus-1-Klick in der Welt)
 - Shift+Enter — Radial-Aktionsmenü auf dem aktuellen Ziel öffnen
 - Shift+H — Untersuchen-Bildschirm für das aktuelle Ziel vorlesen
-- Shift+S — Vollständigen Statistikblock des ausgewählten Charakters vorlesen
 - Shift+L — Stufenaufstieg-Bildschirm öffnen
 - Shift+K — Kampfwarteschlangen-Submenü öffnen (Warteschlange prüfen oder leeren)
 

@@ -45,7 +45,6 @@ enum class Action : int {
     LevelUpOpen,           // Shift+L
     ExamineOpen,           // Shift+H
     CombatQueueOpen,       // Shift+K
-    StatBlockSpeak,        // Shift+S
     SelfStatusAnnounce,    // H — leader HP / effects / equipped weapon
 
     // ----- Submenu navigation -----

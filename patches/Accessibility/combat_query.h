@@ -3,7 +3,7 @@
 // player loaded.
 //
 // Surfaces:
-//   - Selected-PC stat block + leader-change auto-announce.
+//   - Leader-change auto-announce.
 //   - Cycle/passive-narrate enrichment for Creature-kind targets.
 //   - Bare H self-status (HP + effects + equipped weapons).
 
@@ -14,10 +14,7 @@
 
 namespace acc::combat::query {
 
-// False if no player loaded.
-bool SpeakSelectedPcStatBlock();
-
-// Polls active leader name; fires SpeakSelectedPcStatBlock on change.
+// Polls active leader name; speaks it on change.
 void TickLeaderChangeAutoAnnounce();
 
 // Append HP/AC/faction suffix to outBuf. True iff target is a Creature
