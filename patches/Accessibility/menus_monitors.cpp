@@ -49,6 +49,31 @@ char  s_focusMonitorText[256] = {0};
 
 void AnnounceControl(void* control) {
     if (!control) return;
+
+    // Multi-row listbox guard. The engine fires SetActiveControl on the
+    // listbox container as part of panel construction (auto-focus on
+    // open) before the user has navigated anywhere. The container itself
+    // is not a focusable terminal — rows are exposed via the
+    // ListBoxPanelSpec / chain handlers as the user arrows into them.
+    // Speaking the container's "control N" fallback on panel open is
+    // pure noise; the panel-name announce already covers the open event.
+    //
+    // Single-row listboxes (CSWGuiMessageBox-style modals carrying the
+    // dialog text in a single row) DO need to speak — FromControl
+    // returns the row text and we fall through to the success path.
+    //
+    // The "never silence the fallback" rule in MEMORY.md applies to
+    // user-driven navigation events where missing the announce makes
+    // focus feel frozen; engine-driven panel-open auto-focus on a
+    // container is a different class of event.
+    if (IsListBox(control)) {
+        auto* lb = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(control) + kListBoxControlsOffset);
+        if (lb && lb->data && lb->size > 1) {
+            return;
+        }
+    }
+
     char text[256];
     const char* source = acc::menus::extract::FromControl(control, text, sizeof(text));
     if (source) {
@@ -215,9 +240,11 @@ void AnnounceNewSubScreens(void** panels, int count) {
             prism::Speak(spec->literal, /*interrupt=*/false);
         }
 
-        if (k == PanelKind::InGameCharacter) {
-            acc::menus::charsheet::MaybeAnnounce(p);
-        }
+        // (Charakterblatt no longer reads the full stat block on open —
+        // legacy workaround from when the panel wasn't keyboard-navigable.
+        // Stats are now reachable via in-panel arrow navigation; the panel
+        // name spoken above is the sole open-announce, matching every
+        // other strip sub-screen.)
     }
     memcpy(s_visibleSubScreens, nowVisible, sizeof(nowVisible));
     s_visibleSubScreenCount = nowCount;
@@ -262,16 +289,25 @@ bool IsContentMonitored(PanelKind k) {
     // also speak the dialog text caused a duplicate-speech race
     // (verified 2026-05-30 — user heard Carth's lines via this path
     // even after dialog_speech suppressed them).
+    //
+    // InGameMessages (combat log) and Container (loot panels) are owned
+    // by the ListBoxPanelSpec paths in menus_listbox.cpp — each focused
+    // row is announced once on Up/Down nav (verified live 2026-05-30
+    // for Container). The fingerprint path was re-speaking the same
+    // rows as generic controls; removing it eliminates the duplicate
+    // without losing coverage.
+    // InGameInventory and InGameEquip removed 2026-05-30 — the engine
+    // populates the stat sidebar one tick AFTER the panel first appears
+    // (placeholder header labels "VIT" / "DEF" / "Ausw." flip into real
+    // values "6/6" / "15" / "Angriff 0" etc.), which the fingerprint
+    // diff path treated as new content and spoke as a batch on every
+    // open. Per-row navigation inside the panels covers the rest.
     case PanelKind::MessageBoxModal:
     case PanelKind::AreaTransition:
-    case PanelKind::InGameInventory:
     case PanelKind::InGameMap:
     case PanelKind::InGameJournal:
     case PanelKind::InGameCharacter:
     case PanelKind::InGameAbilities:
-    case PanelKind::InGameMessages:
-    case PanelKind::InGameEquip:
-    case PanelKind::Container:
         return true;
     default:
         return false;

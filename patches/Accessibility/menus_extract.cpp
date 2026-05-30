@@ -582,25 +582,31 @@ const char* FromControl(void* control,
         source = "editbox";
     }
 
-    // 7. CSWGuiListBox content. The listbox is a container; its "text" is
-    //    the concatenation of its row controls' texts. Many in-game modals
-    //    (CSWGuiMessageBox-style — including the recurring 07434E40 OK/Cancel
+    // 7. CSWGuiListBox content. STRICTLY single-row only. Many in-game
+    //    modals (CSWGuiMessageBox-style — the recurring 07434E40 OK/Cancel
     //    in our log, and the quit-confirmation "Möchtest du wirklich
-    //    aufhören?") put their message text in a single listbox row rather
-    //    than directly in a panel label, so without this path the modal
-    //    appears as src=none. Recursion is bounded to one level — listbox
-    //    rows are not themselves listboxes in observed layouts, so we only
-    //    try button/label extraction per row, never re-enter the listbox
-    //    branch.
+    //    aufhören?") put their message text in a single listbox row
+    //    rather than directly in a panel label, so without this path the
+    //    modal appears as src=none.
     //
-    //    Capped at 8 rows to keep the announcement digestible (long save-
-    //    game lists aren't candidates for this code path; they have rows
-    //    that already announce individually via OnListBoxSetActiveControl).
+    //    For multi-row listboxes (skills, inventory, save list, journal
+    //    entries, etc.) we return nullptr — the engine's SetActiveControl
+    //    auto-focus on a multi-row listbox used to read every row
+    //    concatenated into one blob ("Computerkenntnisse  Sprengstoff…"
+    //    on every Fähigkeiten open). Row-by-row navigation via the
+    //    ListBoxPanelSpec / chain handlers is the only correct way to
+    //    expose those contents; SetActiveControl on the container
+    //    deliberately speaks nothing now.
+    //
+    //    Recursion is bounded to one level — listbox rows are not
+    //    themselves listboxes in observed layouts, so we only try
+    //    button/label extraction on the single row, never re-enter the
+    //    listbox branch.
     if (!source && IsListBox(control)) {
         auto* lb = reinterpret_cast<CExoArrayList*>(
             reinterpret_cast<unsigned char*>(control) + kListBoxControlsOffset);
-        if (lb && lb->data && lb->size > 0) {
-            int n = lb->size > 8 ? 8 : lb->size;
+        if (lb && lb->data && lb->size == 1) {
+            int n = 1;
             outBuf[0] = '\0';
             size_t off = 0;
             for (int i = 0; i < n; ++i) {

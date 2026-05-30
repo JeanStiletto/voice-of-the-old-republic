@@ -1820,6 +1820,19 @@ void DrainPendingAnnounce() {
     s_pendingAnnounceControl = nullptr;
     if (!control) return;
 
+    // Multi-row listbox guard — mirrors AnnounceControl in menus_monitors.cpp.
+    // OnSetActiveControl on a multi-row listbox container is engine-driven
+    // panel-open auto-focus, not user navigation. Speaking "control N"
+    // here was the source of the "control 3" noise on Fähigkeiten /
+    // Inventar open after the FromControl listbox-blob path was removed.
+    // Row navigation inside the listbox is owned by ListBoxPanelSpec /
+    // chain handlers.
+    if (IsListBox(control)) {
+        auto* lb = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(control) + kListBoxControlsOffset);
+        if (lb && lb->data && lb->size > 1) return;
+    }
+
     if (g_chainPanel == panel && g_chainCount > 0 &&
         g_chainIndex >= 0 && g_chainIndex < g_chainCount &&
         g_chain[g_chainIndex].control != control)
