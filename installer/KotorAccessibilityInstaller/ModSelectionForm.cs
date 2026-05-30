@@ -6,9 +6,13 @@ namespace KotorAccessibilityInstaller
 {
     /// <summary>
     /// Screen between the base-components info screen and the main install form.
-    /// Surfaces the three opt-in mod groupings (K1CP, restored cut content,
-    /// companion + swoop upgrades) as standalone checkboxes with descriptive labels.
-    /// All groupings default to enabled — uncheck to skip.
+    /// Originally designed to surface three opt-in mod groupings (K1CP, restored
+    /// cut content, companion + swoop upgrades) as standalone checkboxes. For
+    /// v0.2 only K1CP has a wired installer (see
+    /// <see cref="ModInstallers.ModInstallerCoordinator.BuildPipeline"/>); the
+    /// other two toggles are commented out below until JdrInstaller,
+    /// PartyConversationsInstaller, ThematicCompanionsInstaller, and
+    /// SwoopBikeUpgradesInstaller land.
     ///
     /// Each checkbox's <see cref="Control.AccessibleName"/> is composed from the
     /// title + description so a screen reader announces both on focus.
@@ -21,11 +25,11 @@ namespace KotorAccessibilityInstaller
         private CheckBox _k1cpCheckBox;
         private Label _k1cpDescription;
 
-        private CheckBox _cutContentCheckBox;
-        private Label _cutContentDescription;
+        // private CheckBox _cutContentCheckBox;
+        // private Label _cutContentDescription;
 
-        private CheckBox _companionsCheckBox;
-        private Label _companionsDescription;
+        // private CheckBox _companionsCheckBox;
+        // private Label _companionsDescription;
 
         private Label _footnoteLabel;
 
@@ -60,7 +64,7 @@ namespace KotorAccessibilityInstaller
         private void InitializeComponents()
         {
             Text = Config.DisplayName;
-            Size = new Size(640, 600);
+            Size = new Size(640, 420);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -96,56 +100,61 @@ namespace KotorAccessibilityInstaller
                 TextAlign = ContentAlignment.TopLeft
             };
 
-            // --- Restored cut content ---
-            _cutContentCheckBox = new CheckBox
-            {
-                Location = new Point(20, 210),
-                Size = new Size(600, 25),
-                Font = new Font(Font.FontFamily, 9, FontStyle.Bold),
-                Checked = true
-            };
-            _cutContentDescription = new Label
-            {
-                Location = new Point(40, 235),
-                Size = new Size(580, 55),
-                TextAlign = ContentAlignment.TopLeft
-            };
+            // --- Restored cut content (toggle hidden until installer is wired) ---
+            // _cutContentCheckBox = new CheckBox
+            // {
+            //     Location = new Point(20, 210),
+            //     Size = new Size(600, 25),
+            //     Font = new Font(Font.FontFamily, 9, FontStyle.Bold),
+            //     Checked = true
+            // };
+            // _cutContentDescription = new Label
+            // {
+            //     Location = new Point(40, 235),
+            //     Size = new Size(580, 55),
+            //     TextAlign = ContentAlignment.TopLeft
+            // };
 
-            // --- Companion balance + Swoop upgrades ---
-            _companionsCheckBox = new CheckBox
-            {
-                Location = new Point(20, 300),
-                Size = new Size(600, 25),
-                Font = new Font(Font.FontFamily, 9, FontStyle.Bold),
-                Checked = true
-            };
-            _companionsDescription = new Label
-            {
-                Location = new Point(40, 325),
-                Size = new Size(580, 55),
-                TextAlign = ContentAlignment.TopLeft
-            };
+            // --- Companion balance + Swoop upgrades (toggle hidden until installer is wired) ---
+            // _companionsCheckBox = new CheckBox
+            // {
+            //     Location = new Point(20, 300),
+            //     Size = new Size(600, 25),
+            //     Font = new Font(Font.FontFamily, 9, FontStyle.Bold),
+            //     Checked = true
+            // };
+            // _companionsDescription = new Label
+            // {
+            //     Location = new Point(40, 325),
+            //     Size = new Size(580, 55),
+            //     TextAlign = ContentAlignment.TopLeft
+            // };
 
             // --- IT/ES footnote on K1CP ---
             _footnoteLabel = new Label
             {
-                Location = new Point(20, 400),
+                Location = new Point(20, 210),
                 Size = new Size(600, 75),
                 TextAlign = ContentAlignment.TopLeft,
                 Font = new Font(FontFamily.GenericSansSerif, 8, FontStyle.Italic)
             };
 
-            _backButton = new Button { Location = new Point(20, 510), Size = new Size(140, 35) };
+            _backButton = new Button { Location = new Point(20, 325), Size = new Size(140, 35) };
             _backButton.Click += (s, e) => Close();
 
-            _nextButton = new Button { Location = new Point(480, 510), Size = new Size(140, 35) };
+            _nextButton = new Button { Location = new Point(480, 325), Size = new Size(140, 35) };
             _nextButton.Click += (s, e) =>
             {
+                // RestoredCutContent + CompanionAndSwoopUpgrades forced false
+                // because no installer is wired for them yet — keeping them at
+                // ModSelection's default-true would silently auto-enable those
+                // groupings the moment we add the installers, bypassing user
+                // consent. Re-enable when the toggles return.
                 Selection = new ModSelection
                 {
                     K1cp = _k1cpCheckBox.Checked,
-                    RestoredCutContent = _cutContentCheckBox.Checked,
-                    CompanionAndSwoopUpgrades = _companionsCheckBox.Checked
+                    RestoredCutContent = false,
+                    CompanionAndSwoopUpgrades = false
                 };
                 Logger.Info($"Mod selection: {Selection}");
                 ProceedWithInstall = true;
@@ -156,8 +165,8 @@ namespace KotorAccessibilityInstaller
             {
                 _titleLabel, _descriptionLabel,
                 _k1cpCheckBox, _k1cpDescription,
-                _cutContentCheckBox, _cutContentDescription,
-                _companionsCheckBox, _companionsDescription,
+                // _cutContentCheckBox, _cutContentDescription,
+                // _companionsCheckBox, _companionsDescription,
                 _footnoteLabel,
                 _backButton, _nextButton
             });
@@ -174,11 +183,11 @@ namespace KotorAccessibilityInstaller
             _k1cpCheckBox.Text = InstallerLocale.Get("ModSelection_K1cpCheckbox");
             _k1cpDescription.Text = InstallerLocale.Get("ModSelection_K1cpDescription");
 
-            _cutContentCheckBox.Text = InstallerLocale.Get("ModSelection_CutContentCheckbox");
-            _cutContentDescription.Text = InstallerLocale.Get("ModSelection_CutContentDescription");
+            // _cutContentCheckBox.Text = InstallerLocale.Get("ModSelection_CutContentCheckbox");
+            // _cutContentDescription.Text = InstallerLocale.Get("ModSelection_CutContentDescription");
 
-            _companionsCheckBox.Text = InstallerLocale.Get("ModSelection_CompanionsCheckbox");
-            _companionsDescription.Text = InstallerLocale.Get("ModSelection_CompanionsDescription");
+            // _companionsCheckBox.Text = InstallerLocale.Get("ModSelection_CompanionsCheckbox");
+            // _companionsDescription.Text = InstallerLocale.Get("ModSelection_CompanionsDescription");
 
             _footnoteLabel.Text = InstallerLocale.Get("ModSelection_FootnoteBody");
 
@@ -190,8 +199,8 @@ namespace KotorAccessibilityInstaller
             // only reads the checkbox Text and the user has to navigate
             // separately to the descriptive Label.
             _k1cpCheckBox.AccessibleName = $"{_k1cpCheckBox.Text}. {_k1cpDescription.Text}";
-            _cutContentCheckBox.AccessibleName = $"{_cutContentCheckBox.Text}. {_cutContentDescription.Text}";
-            _companionsCheckBox.AccessibleName = $"{_companionsCheckBox.Text}. {_companionsDescription.Text}";
+            // _cutContentCheckBox.AccessibleName = $"{_cutContentCheckBox.Text}. {_cutContentDescription.Text}";
+            // _companionsCheckBox.AccessibleName = $"{_companionsCheckBox.Text}. {_companionsDescription.Text}";
 
             string body = $"{_titleLabel.Text}. {_descriptionLabel.Text}";
             AccessibleDescription = body;
