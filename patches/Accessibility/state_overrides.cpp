@@ -14,15 +14,14 @@ namespace acc::state {
 namespace {
 
 struct LabelEntry {
-    int         value;
-    const char* labelDe;
-    const char* labelEn;
+    int               value;
+    acc::strings::Id  id;
 };
 
 struct StateOverride {
     const char*       tag;
     size_t            offset;
-    // Sentinel-terminated by labelDe == nullptr.
+    // Sentinel-terminated by id == acc::strings::Id::Count_.
     const LabelEntry* labels;
 };
 
@@ -33,14 +32,14 @@ struct StateOverride {
 // wall3 itself and 1→0→1 on wall4 in lock-step, validating the
 // Duros's in-dialog hint that "moving one switch moves its neighbour".
 //
-// Label mapping is the conservative initial guess: 0 = Aus (red, the
-// target state Duros names), 1 = An. If the in-game speech turns out
+// Label mapping is the conservative initial guess: 0 = off (red, the
+// target state Duros names), 1 = on. If the in-game speech turns out
 // inverted on the panels whose initial position we can verify, the
 // map is the only thing that needs swapping.
 constexpr LabelEntry kWallSwitchLabels[] = {
-    {0, "Aus", "off"},
-    {1, "An",  "on"},
-    {0, nullptr, nullptr},
+    {0, acc::strings::Id::ModSettingStateOff},
+    {1, acc::strings::Id::ModSettingStateOn},
+    {0, acc::strings::Id::Count_},
 };
 
 constexpr StateOverride kOverrides[] = {
@@ -60,10 +59,9 @@ const StateOverride* FindOverride(const char* tag) {
 }
 
 const char* PickLabel(const LabelEntry* labels, int value) {
-    const bool german =
-        acc::strings::GetLanguage() == acc::strings::Lang::De;
-    for (const LabelEntry* p = labels; p->labelDe; ++p) {
-        if (p->value == value) return german ? p->labelDe : p->labelEn;
+    for (const LabelEntry* p = labels;
+         p->id != acc::strings::Id::Count_; ++p) {
+        if (p->value == value) return acc::strings::Get(p->id);
     }
     return nullptr;
 }
