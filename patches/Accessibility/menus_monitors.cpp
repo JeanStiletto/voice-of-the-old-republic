@@ -255,11 +255,13 @@ int s_contentSnapshotCount = 0;
 bool IsContentMonitored(PanelKind k) {
     switch (k) {
     case PanelKind::TutorialBox:
-    case PanelKind::DialogCinematic:
-    case PanelKind::DialogCinematicCopy:
-    case PanelKind::DialogComputer:
-    case PanelKind::DialogComputerCamera:
-    case PanelKind::BarkBubble:
+    // Dialog* panels and BarkBubble are owned by dialog_speech.cpp.
+    // It reads message_label, replies count, computer-terminal lines,
+    // and bark text — and gates the NPC + bark line speech through the
+    // HumanSubtitles toggle. Letting this generic content fingerprint
+    // also speak the dialog text caused a duplicate-speech race
+    // (verified 2026-05-30 — user heard Carth's lines via this path
+    // even after dialog_speech suppressed them).
     case PanelKind::MessageBoxModal:
     case PanelKind::AreaTransition:
     case PanelKind::InGameInventory:

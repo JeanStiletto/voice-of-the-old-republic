@@ -45,6 +45,7 @@ enum class Option {
     ExtendedCycling = 0,
     RoomShapes,
     WallSounds,
+    HumanSubtitles,
     AudioGlossary,
     Count
 };

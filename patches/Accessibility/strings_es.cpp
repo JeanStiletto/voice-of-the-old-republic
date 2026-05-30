@@ -380,6 +380,7 @@ const char* Get(Id id) {
         case Id::ModSettingExtendedCycling:   return "Selecci\xF3n de objetos en todo el mapa";
         case Id::ModSettingRoomShapes:        return "Descripciones de la forma de las habitaciones";
         case Id::ModSettingWallSounds:        return "Sonidos de pared";
+        case Id::ModSettingHumanSubtitles:    return "Leer subt\xEDtulos de hablantes humanos";
         case Id::ModSettingStateOn:           return "activado";
         case Id::ModSettingStateOff:          return "desactivado";
         case Id::FmtModSettingOption:         return "%s: %s";

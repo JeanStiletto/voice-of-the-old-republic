@@ -1119,6 +1119,7 @@ enum class Id : int {
     ModSettingExtendedCycling,
     ModSettingRoomShapes,
     ModSettingWallSounds,
+    ModSettingHumanSubtitles,
     ModSettingStateOn,
     ModSettingStateOff,
     FmtModSettingOption,

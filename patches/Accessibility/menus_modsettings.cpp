@@ -43,6 +43,11 @@ bool s_toggles[static_cast<int>(Option::Count)] = {
     /* ExtendedCycling */ false,
     /* RoomShapes      */ true,
     /* WallSounds      */ true,
+    /* HumanSubtitles  */ false,  // default off — humans have VO, TTS over
+                                  // the same line clashes; aliens still
+                                  // read because the suppression filter
+                                  // gates on appearance_type, not on this
+                                  // toggle alone.
     /* AudioGlossary   */ false,  // unused — RowKind::Submenu
 };
 
@@ -96,6 +101,7 @@ constexpr OptionSpec k_options[] = {
     { Option::ExtendedCycling, acc::strings::Id::ModSettingExtendedCycling, RowKind::Toggle  },
     { Option::RoomShapes,      acc::strings::Id::ModSettingRoomShapes,      RowKind::Toggle  },
     { Option::WallSounds,      acc::strings::Id::ModSettingWallSounds,      RowKind::Toggle  },
+    { Option::HumanSubtitles,  acc::strings::Id::ModSettingHumanSubtitles,  RowKind::Toggle  },
     { Option::AudioGlossary,   acc::strings::Id::ModSettingAudioGlossary,   RowKind::Submenu },
 };
 constexpr int k_optionCount = static_cast<int>(

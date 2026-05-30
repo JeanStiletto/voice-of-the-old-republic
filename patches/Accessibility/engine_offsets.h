@@ -1192,6 +1192,43 @@ constexpr size_t kInGameMessagesExitButtonOffset      = 0x930;
 constexpr size_t kDialogRepliesListBoxOffset          = 0x19c4;
 constexpr size_t kDialogMessageLabelOffset            = 0x1ca4;
 
+// Conversation partner — on every server-side game object (CSWSObject)
+// the engine maintains a `dialog_owner: CSWSObject*` at +0x54 pointing
+// at the other party in the current conversation. For the player creature
+// this points at the NPC they're talking to. Used by dialog_speech to
+// classify the speaker (human / non-human) for the "Read human subtitles"
+// toggle.
+//
+// Caveat: this is the conversation partner, not the per-line speaker. In
+// multi-party cutscenes the speaker can be a third creature; the partner
+// pointer is still useful as a "human-ish dialog?" heuristic but not
+// authoritative. For 1-on-1 dialog and barks it's exactly the speaker.
+constexpr size_t kServerObjectDialogOwnerOffset       = 0x54;
+
+// CSWSCreature inline appearance cache at +0xa4c per Lane's struct, but
+// VERIFIED LIVE 2026-05-30 to read 0 even for fully-initialised speakers
+// (Carth, Larrim) — the engine doesn't populate this cache reliably. Use
+// CSWSCreatureStats.appearance_type at stats+0x186 instead (real value).
+// Kept here as a constant for future re-investigation, NOT used by
+// dialog_speech.
+constexpr size_t kCreatureAppearanceTypeOffset        = 0xa4c;
+
+// CSWSCreature.creature_stats — pointer to CSWSCreatureStats.
+constexpr size_t kCreatureStatsPointerOffset          = 0xa74;
+
+// CSWSCreatureStats.race (ushort; enum RACE values: DROID=5, HUMAN=6).
+// Diagnostic-only — the enum collapses every humanoid species (Twi'lek,
+// Cathar, Echani, Mandalorian) to HUMAN, so we discriminate by
+// appearance_type, not by race. Race is logged so future overrides can be
+// designed on observed (race, appearance_type) pairs from the diagnostic.
+constexpr size_t kCreatureStatsRaceOffset             = 0xdc;
+
+// CSWSCreatureStats.appearance_type (ushort, indexes appearance.2da).
+// Verified from Lane's exported header @0x186 (line 15707 in swkotor.exe.h).
+// THIS is the authoritative species discriminator — the CSWSCreature inline
+// cache at +0xa4c is unreliable.
+constexpr size_t kCreatureStatsAppearanceTypeOffset   = 0x186;
+
 // CSWGuiDialogComputer adds a terminal-output listbox above the embedded
 // replies listbox.
 //   message_listbox  @+0x2cfc   (terminal output text)
