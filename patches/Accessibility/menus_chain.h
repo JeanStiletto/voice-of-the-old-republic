@@ -57,13 +57,26 @@ extern void* g_tabbedPanel;
 extern int   g_tabsStart;       // first tab-button index in panel.controls
 extern int   g_tabsCount;       // number of contiguous tab buttons
 
-// Cursor-warp hit-test compensations. RebindChain measures these from the
-// chain's cluster spacing; OnHandleInputEvent's chain-step / Enter sites
-// add them when computing the click-sim coords. 0 outside the relevant
-// panel kinds.
-extern int g_tabClickOffsetY;          // tab-cluster row pitch (Options-style)
+// Cursor-warp hit-test compensations. RebindChain measures the static ones
+// (equip slot pitch, class-icon pitch) from the chain's cluster spacing;
+// OnHandleInputEvent's chain-step / Enter sites add them when computing the
+// click-sim coords. 0 outside the relevant panel kinds.
+//
+// Tab-cluster Y pitch is computed on demand via ComputeTabClickOffsetY:
+// rebind runs before MaybeDetectTabs latches g_tabbedPanel, so an eager
+// rebind-time computation was always 0 on the first pass and stale on every
+// subsequent pass (patch-20260530-110829.log: every Options-panel tab click
+// landed one row above the focused entry because of this race).
 extern int g_equipSlotClickOffsetY;    // InGameEquip slot row pitch
 extern int g_classIconClickOffsetX;    // chargen class-icon column pitch
+
+// Tab-cluster Y pitch for cursor-warp hit-test compensation. Computed by
+// walking g_chain for the two adjacent tab-cluster buttons; returns the cy
+// delta. 0 unless `panel == g_tabbedPanel && g_tabsCount >= 2`. Called from
+// the chain-step warp (HandleNavStep) and the Enter click-sim (tab branch)
+// so the offset is always derived from current chain + tabbed state at the
+// moment the warp fires.
+int ComputeTabClickOffsetY(void* panel);
 
 // (Re)bind the chain to the currently focused panel. Walks panel.controls,
 // recurses one level into sub-dialog listboxes, sorts by extent.top, then

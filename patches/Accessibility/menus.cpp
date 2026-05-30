@@ -109,7 +109,6 @@ using acc::menus::chain::g_chainCount;
 using acc::menus::chain::g_tabbedPanel;
 using acc::menus::chain::g_tabsStart;
 using acc::menus::chain::g_tabsCount;
-using acc::menus::chain::g_tabClickOffsetY;
 using acc::menus::chain::g_equipSlotClickOffsetY;
 using acc::menus::chain::g_classIconClickOffsetX;
 using acc::menus::chain::RebindChain;

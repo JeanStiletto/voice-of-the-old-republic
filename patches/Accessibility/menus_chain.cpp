@@ -56,9 +56,23 @@ void* g_tabbedPanel = nullptr;
 int   g_tabsStart   = -1;
 int   g_tabsCount   = 0;
 
-int g_tabClickOffsetY        = 0;
 int g_equipSlotClickOffsetY  = 0;
 int g_classIconClickOffsetX  = 0;
+
+int ComputeTabClickOffsetY(void* panel) {
+    if (!panel || g_tabbedPanel != panel || g_tabsCount < 2) return 0;
+    int firstTabIdx = -1;
+    for (int i = 0; i < g_chainCount; ++i) {
+        if (!IsTabButton(g_chain[i].control)) continue;
+        if (firstTabIdx < 0) {
+            firstTabIdx = i;
+        } else {
+            int spacing = g_chain[i].cy - g_chain[firstTabIdx].cy;
+            return spacing > 0 ? spacing : 0;
+        }
+    }
+    return 0;
+}
 
 // IsModalTextPanel was a file-static helper inside menus.cpp; only
 // RebindChain calls it, so it lives here now (anonymous namespace).
@@ -195,7 +209,14 @@ void InvalidateChain() {
     g_chainPanel = nullptr;
     g_chainIndex = 0;
     g_chainCount = 0;
-    ResetTabbedState();
+    // Tabbed-panel state is intentionally NOT reset here. The chain panel and
+    // the tabbed panel are orthogonal: closing a sub-panel (Grafik) only
+    // needs to invalidate the chain, but used to also wipe g_tabbedPanel for
+    // the still-live parent (Options), forcing MaybeDetectTabs to re-latch
+    // on every reopen — leaving the click-sim/warp offset stale in the
+    // window between rebind and re-detect (patch-20260530-110829.log,
+    // line 374-511). ValidateTabbedPanel handles tabbed-panel liveness
+    // independently each tick.
 }
 
 void ValidateTabbedPanel() {
@@ -759,21 +780,9 @@ void RebindChain(void* panel) {
         g_chainCount = writeIdx;
     }
 
-    // Compute g_tabClickOffsetY from adjacent tab entries' visual spacing.
-    g_tabClickOffsetY = 0;
-    if (g_tabbedPanel == panel && g_tabsCount >= 2) {
-        int firstTabIdx = -1;
-        for (int i = 0; i < g_chainCount; ++i) {
-            if (!IsTabButton(g_chain[i].control)) continue;
-            if (firstTabIdx < 0) {
-                firstTabIdx = i;
-            } else {
-                int spacing = g_chain[i].cy - g_chain[firstTabIdx].cy;
-                if (spacing > 0) g_tabClickOffsetY = spacing;
-                break;
-            }
-        }
-    }
+    // Tab-cluster Y offset is computed on demand at warp/click-sim time via
+    // ComputeTabClickOffsetY — see the header comment for the race that made
+    // an eager rebind-time computation unreliable.
 
     // Compute g_equipSlotClickOffsetY for InGameEquip panels.
     g_equipSlotClickOffsetY = 0;
@@ -838,10 +847,9 @@ void RebindChain(void* panel) {
     acc::menus::chargen_skills::SyncSelectedSkillFromChainFocus();
 
     acclog::Write("Menus.Chain", "rebind panel=%p count=%d index=%d active=%p "
-                  "tabOffsetY=%d equipSlotOffsetY=%d classIconOffsetX=%d",
+                  "equipSlotOffsetY=%d classIconOffsetX=%d",
                   panel, g_chainCount, g_chainIndex, active,
-                  g_tabClickOffsetY, g_equipSlotClickOffsetY,
-                  g_classIconClickOffsetX);
+                  g_equipSlotClickOffsetY, g_classIconClickOffsetX);
     for (int i = 0; i < g_chainCount; ++i) {
         char text[256];
         const char* src = acc::menus::extract::FromControl(g_chain[i].control,
@@ -988,8 +996,7 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
                       activePanel, g_chainIndex, e.control);
         consumed = true;
     } else if (isTabButton) {
-        int cursorY = e.cy;
-        if (g_tabClickOffsetY > 0) cursorY += g_tabClickOffsetY;
+        int cursorY = e.cy + ComputeTabClickOffsetY(g_chainPanel);
         acc::menus::pending::QueueClickAt(e.cx, cursorY, e.control);
         acclog::Write("Menus.Enter",
                       "click-sim panel=%p index=%d target=%p cursorY=%d (tab)",
@@ -1188,8 +1195,8 @@ void HandleNavStep(void* activePanel, int code, int val, bool& consumed) {
         // no hover semantics worth chasing — skipping keeps the cursor stable
         // on whatever button the user just left, and avoids spurious
         // engine-side SetActiveControl echoes from the listbox under the cursor.
-        if (IsTabButton(e.control) && g_tabClickOffsetY > 0) {
-            cursorY += g_tabClickOffsetY;
+        if (IsTabButton(e.control)) {
+            cursorY += ComputeTabClickOffsetY(g_chainPanel);
         }
         if (acc::menus::detail::IsClassSelectionIcon(g_chainPanel, e.control) &&
             g_classIconClickOffsetX > 0) {
