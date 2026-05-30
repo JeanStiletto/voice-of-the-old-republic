@@ -5,22 +5,29 @@ namespace KotorAccessibilityInstaller
 {
     /// <summary>
     /// Detects the Windows display language and maps it to a supported installer language code.
-    /// Only English and German are shipped today; more can be added by dropping a Locales/&lt;code&gt;.json.
+    /// Add a new language by dropping a Locales/&lt;code&gt;.json file (auto-embedded via the
+    /// csproj wildcard) and adding the code here in all three tables.
     /// </summary>
     public static class LanguageDetector
     {
-        public static readonly string[] SupportedLanguages = new[] { "en", "de" };
+        public static readonly string[] SupportedLanguages = new[] { "en", "de", "fr", "it", "es" };
 
         public static readonly Dictionary<string, string> DisplayNames = new Dictionary<string, string>
         {
             { "en", "English" },
-            { "de", "Deutsch (German)" }
+            { "de", "Deutsch (German)" },
+            { "fr", "Français (French)" },
+            { "it", "Italiano (Italian)" },
+            { "es", "Español (Spanish)" }
         };
 
         private static readonly Dictionary<string, string> LanguageMap = new Dictionary<string, string>
         {
             { "en", "en" },
-            { "de", "de" }
+            { "de", "de" },
+            { "fr", "fr" },
+            { "it", "it" },
+            { "es", "es" }
         };
 
         public static string DetectLanguage()

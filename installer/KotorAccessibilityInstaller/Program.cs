@@ -194,7 +194,7 @@ namespace KotorAccessibilityInstaller
                 {
                     case UpdateChoice.UpdateOnly:
                         Logger.Info("User chose to update mod only");
-                        Application.Run(new MainForm(detectedGamePath, updateOnly: true, localKpatchPath: localKpatchPath));
+                        Application.Run(new MainForm(detectedGamePath, updateOnly: true, language: LanguageDetector.DetectLanguage(), localKpatchPath: localKpatchPath));
                         break;
 
                     case UpdateChoice.FullInstall:
