@@ -7,6 +7,7 @@
 #include "hotkeys.h"
 #include "log.h"
 #include "menus_internal.h"   // kEquipBtn* slot ids, FindControlById
+#include "menus_listbox.h"    // IsEquipPickerArmed
 #include "prism.h"
 
 using acc::menus::detail::FindControlById;
@@ -370,7 +371,15 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
 
     // Slot path runs before picker-listbox because InGameEquip hosts
     // both surfaces; the picker is empty until a slot is drilled into.
-    if (kind == acc::engine::PanelKind::InGameEquip && focusedControl) {
+    //
+    // Skip the slot path while the picker is armed — chain focus stays
+    // on the originating slot button while picker rows are driven by
+    // DriveListBoxSelection, so without this gate FindEquipSlotByControl
+    // would match the slot, find the handle at 0x7f000000 (engine moves
+    // the item out for the swap), and silently early-out instead of
+    // letting the item-tooltip path read the row the user is sitting on.
+    if (kind == acc::engine::PanelKind::InGameEquip && focusedControl &&
+        !acc::menus::listbox::IsEquipPickerArmed()) {
         if (const EquipSlotPeekInfo* slotInfo =
                 FindEquipSlotByControl(focusedControl)) {
             HandleEquipSlotTooltip(activePanel, *slotInfo);

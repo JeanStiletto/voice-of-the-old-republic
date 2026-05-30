@@ -9,6 +9,12 @@ rename `## Unreleased` to the new version and add the relevant bullets — group
 them under short topic headings (`Examine view:`, `Map:`, `Combat log:`,
 `Installer:`, `Bug fixes:`) the way `arena/docs/CHANGELOG.md` does.
 
+## v0.1.2
+
+**Bug fixes:**
+
+- Shift+Up / Shift+Down inside the equipment-screen item picker now reads the focused item's description. Previously the peek path matched on the originating slot button's control id and treated the slot as empty (the engine moves the equipped item out of the slot while the picker is open, leaving the cached slot handle at the "no item" sentinel), so the read silently no-op'd before it ever consulted the picker listbox. The slot path now gates on "picker not armed" — when the picker is open Shift+arrow falls through to the item-tooltip path, resolves the selected row via items_listbox.selection_index, and speaks the same full property description the inventory and store screens already use. Shift+arrow on a slot button that hasn't been drilled into still reads the equipped item's description as before.
+
 ## v0.1.1
 
 **Installer:**
