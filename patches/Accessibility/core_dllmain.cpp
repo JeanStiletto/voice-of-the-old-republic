@@ -106,6 +106,103 @@ void EnsurePrismInitialized() {
     }
 }
 
+// CExoRawInputInternal::InitializeDirectInputMouse guard (vanilla engine
+// crash for users with no mouse). The function dereferences
+// `this->direct_input_interface` (+0x1c) at +0xa. On internal Acquire
+// failure the engine calls ShutDownDirectInput (nulling +0x1c) but still
+// returns 1; the next GetMouseState re-enters and AVs on the NULL.
+//
+// Earlier attempt at a KPatchManager detour at the function entry broke
+// the engine's input pipeline initialisation in a way that focus-loss
+// then -regain reset — users had to alt-tab after every launch to wake
+// the menu. Likely interaction between the wrapper PUSHAD/PUSHFD/CALL
+// overhead and DirectInput's foreground-cooperative-level handshake.
+//
+// Workaround: install a small inline trampoline *after* the engine's
+// first successful mouse init has run, from inside OnRulesInit. By the
+// time CSWRules constructs, GetMouseState has already done its initial
+// device bring-up. For a with-mouse user our trampoline is silent —
+// the function is never called again. For a no-mouse user it intercepts
+// the SECOND (AV-prone) call and routes to the engine's own return-0
+// epilogue at 0x005e401f.
+//
+// The trampoline runs the engine's prelude (the 5+2 bytes we displace),
+// reads direct_input_interface, and on NULL jumps to the fail epilogue;
+// on non-NULL it jumps past the prelude to 0x005e3faa to continue.
+//
+// Crash report: userlogs/swkotor.exe.58504.dmp.
+namespace {
+
+constexpr uintptr_t kInitMouseAddr        = 0x005e3fa0;  // function entry
+constexpr uintptr_t kInitMouseContinue    = 0x005e3faa;  // MOV ECX,[EAX]
+constexpr uintptr_t kInitMouseFailEpilogue = 0x005e401f; // POP EDI; XOR EAX,EAX; ...
+
+void InstallMouseGuard() {
+    static bool installed = false;
+    if (installed) return;
+    installed = true;
+
+    constexpr size_t kTrampolineSize = 32;
+    void* tramp = VirtualAlloc(
+        nullptr, kTrampolineSize,
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_EXECUTE_READWRITE);
+    if (!tramp) {
+        acclog::Write("EngineInput",
+            "DirectInput mouse guard install failed: VirtualAlloc returned NULL");
+        return;
+    }
+
+    auto* p = static_cast<uint8_t*>(tramp);
+    // Engine's prelude (the bytes we displace with the JMP at +0).
+    *p++ = 0x83; *p++ = 0xec; *p++ = 0x14;  // SUB ESP, 0x14
+    *p++ = 0x56;                             // PUSH ESI
+    *p++ = 0x57;                             // PUSH EDI
+    *p++ = 0x8b; *p++ = 0xf9;                // MOV EDI, ECX (this)
+    // NULL check on this->direct_input_interface.
+    *p++ = 0x8b; *p++ = 0x47; *p++ = 0x1c;  // MOV EAX, [EDI+0x1c]
+    *p++ = 0x85; *p++ = 0xc0;                // TEST EAX, EAX
+    *p++ = 0x74; *p++ = 0x05;                // JZ +5 (skip continue-jmp, take fail-jmp)
+    // Continue path: jump to 0x005e3faa (MOV ECX, [EAX]).
+    {
+        uintptr_t from = reinterpret_cast<uintptr_t>(p) + 5;
+        int32_t rel = static_cast<int32_t>(kInitMouseContinue - from);
+        *p++ = 0xe9;
+        memcpy(p, &rel, 4); p += 4;
+    }
+    // Fail path: jump to 0x005e401f (engine's return-0 epilogue).
+    {
+        uintptr_t from = reinterpret_cast<uintptr_t>(p) + 5;
+        int32_t rel = static_cast<int32_t>(kInitMouseFailEpilogue - from);
+        *p++ = 0xe9;
+        memcpy(p, &rel, 4); p += 4;
+    }
+
+    // Patch the function entry with JMP rel32 to the trampoline.
+    void* entry = reinterpret_cast<void*>(kInitMouseAddr);
+    DWORD oldProtect = 0;
+    if (!VirtualProtect(entry, 5, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+        acclog::Write("EngineInput",
+            "DirectInput mouse guard install failed: VirtualProtect entry");
+        return;
+    }
+    auto* dst = static_cast<uint8_t*>(entry);
+    int32_t rel = static_cast<int32_t>(
+        reinterpret_cast<uintptr_t>(tramp) - (kInitMouseAddr + 5));
+    dst[0] = 0xe9;
+    memcpy(&dst[1], &rel, 4);
+    DWORD ignored = 0;
+    VirtualProtect(entry, 5, oldProtect, &ignored);
+
+    FlushInstructionCache(GetCurrentProcess(), entry, 5);
+    FlushInstructionCache(GetCurrentProcess(), tramp, kTrampolineSize);
+
+    acclog::Write("EngineInput",
+        "DirectInput mouse guard installed (trampoline at %p)", tramp);
+}
+
+}  // namespace
+
 // CSWRules::CSWRules construction detour (hooks.toml @ 0x00552c9a).
 // First fire is the "patch alive" signal, Prism-init trigger, and the
 // point at which we detect the user's installed language. File I/O is
@@ -114,36 +211,11 @@ extern "C" void __cdecl OnRulesInit(void* /*rulesThis*/) {
     static bool fired = false;
     if (fired) return;
     fired = true;
+    InstallMouseGuard();
     acc::strings::SetLanguage(DetectLanguageFromTlk());
     EnsurePrismInitialized();
     acc::update_checker::StartBackgroundCheck();
     acclog::Write("Init", "first CSWRules construction; detour active");
-}
-
-// CExoRawInputInternal::InitializeDirectInputMouse guard (hooks.toml @ 0x005e3fa0).
-// Engine bug: on internal DInput failure, the function shuts down the input
-// subsystem (nulling direct_input_interface at +0x1c) but still returns
-// success. The very next GetMouseState poll re-enters here and dereferences
-// the NULL pointer → crash. Reported by first blind tester (no mouse hw).
-//
-// Returning 1 makes the wrapper consume to the function's return-0 epilogue.
-// Returning 0 lets the engine run normally. Fires every frame after the
-// first failure — first-fire-only logging avoids flooding the log.
-extern "C" int __cdecl OnInitializeDirectInputMouse(void* self) {
-    if (!self) return 0;
-    void* di_iface = *reinterpret_cast<void**>(
-        reinterpret_cast<char*>(self) + 0x1c);
-    if (!di_iface) {
-        static bool logged_once = false;
-        if (!logged_once) {
-            logged_once = true;
-            acclog::Write("EngineInput",
-                "DirectInput mouse re-init blocked — direct_input_interface=NULL "
-                "(no mouse hardware, or prior Acquire failure)");
-        }
-        return 1;
-    }
-    return 0;
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD reason, LPVOID) {

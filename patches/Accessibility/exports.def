@@ -1,6 +1,5 @@
 LIBRARY Accessibility
 EXPORTS
-    OnInitializeDirectInputMouse
     OnRulesInit
     OnHandleFocusChange
     OnHandleInputEvent

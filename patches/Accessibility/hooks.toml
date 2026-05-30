@@ -1,48 +1,9 @@
-# CExoRawInputInternal::InitializeDirectInputMouse — vanilla engine crash guard.
-#
-# Bug: function lazily creates the DirectInput mouse device on every GetMouseState
-# poll that finds di_mouse_device_interface == NULL. On any internal failure
-# (no mouse hardware, Acquire fail), the engine calls ShutDownDirectInput
-# (which releases AND nulls direct_input_interface at offset +0x1c) but the
-# function still returns 1 (success). The very next tick's GetMouseState
-# re-enters InitializeDirectInputMouse and dereferences the now-NULL
-# direct_input_interface at +0xa (`MOV ECX, [EAX]`) → access-violation.
-#
-# Reported by first blind tester (no mouse connected, Windows 11 24H2):
-# crash ~8s after main menu loaded. See userlogs/swkotor.exe.58504.dmp.
-#
-# Guard: hook at function entry. If direct_input_interface is NULL, consume
-# to 0x005e401f — the function's return-0 epilogue past the (now-redundant)
-# ShutDownDirectInput call. POP EDI; XOR EAX,EAX; POP ESI; ADD ESP,0x14; RET.
-# Engine's GetMouseState already tolerates di_mouse_device_interface staying
-# NULL forever (early-out on null check), so the mouse stays disabled but the
-# engine keeps running. Keyboard input is unaffected.
-#
-# Bytes from Lane's Ghidra database via DumpBytes.java:
-#   83 ec 14   SUB ESP, 0x14    ; allocate locals
-#   56         PUSH ESI         ; save caller ESI
-#   57         PUSH EDI         ; save caller EDI
-#   8b f9      MOV EDI, ECX     ; this -> EDI
-#
-# Cut at 7 bytes. None write EAX (the consume-signal register, bug 2 in
-# memory project_kpatchmanager_consume_test_bugs). EFLAGS set by SUB are
-# preserved through the wrapper's PUSHFD/POPFD wrap of TEST EAX,EAX.
-# Stack state at consume target matches stack state at natural resume
-# (engine resumes at 0x005e3fa7 with same prelude state).
-[[hooks]]
-address = 0x005e3fa0
-type = "detour"
-function = "OnInitializeDirectInputMouse"
-
-original_bytes = [0x83, 0xec, 0x14, 0x56, 0x57, 0x8b, 0xf9]
-
-skip_original_bytes = false
-exclude_from_restore = ["eax"]
-consumed_exit_address = 0x005e401f
-
-[[hooks.parameters]]
-source = "ecx"
-type = "pointer"
+# Note: the CExoRawInputInternal::InitializeDirectInputMouse no-mouse crash
+# guard is installed inline from core_dllmain.cpp's InstallMouseGuard(),
+# called from OnRulesInit. A KPatchManager detour at the function entry
+# broke the engine's input-pipeline bring-up (alt-tab needed after every
+# launch); the inline trampoline runs only after the first mouse init has
+# completed, so it doesn't touch the delicate startup path.
 
 # Minimal infrastructure-test detour: CSWRules::CSWRules constructor.
 # Address and original-bytes signature borrowed from upstream LevelUpLimit,
