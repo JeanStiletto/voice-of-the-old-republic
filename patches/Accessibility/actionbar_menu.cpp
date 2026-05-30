@@ -165,21 +165,21 @@ bool HandleInputEvent(int code, int value) {
     switch (code) {
         case kInputNavUp:
         case kInputNavDown: {
-            // Shift+Up/Down: speak the variant's full item-property
-            // description (the same text the equip-picker / inventory
-            // speak on Shift+arrow), do NOT cycle the variant. Same
+            // Shift+Up/Down: speak the variant's full description (item
+            // property text / force-power description / feat description
+            // — same text the equip-picker / inventory / chargen feat
+            // grid speak on Shift+arrow), do NOT cycle the variant. Same
             // contract as peek_description.cpp's shift-arrow gesture.
             //
-            // The descriptor's action_id at +0x08 carries the
-            // server-side item handle ORed with 0x40000000 for slots
-            // 1..3 (medical / grenades / mines) — see
-            // engine_reads::ResolveItemDescriptionFromActionId. Force-
-            // power slot (0) and any future non-item descriptor types
-            // fall back to the localised "no description available" cue.
-            // (The engine's own CSWGuiControl::DisplayToolTip path on
+            // The descriptor's action_id at +0x08 carries the lookup key
+            // tagged in its high nibble — see
+            // engine_reads::ResolveActionDescriptionFromActionId for the
+            // full encoding table. Unsupported categories (plain attack
+            // verbs etc.) fall back to the localised "no description"
+            // cue. The engine's own CSWGuiControl::DisplayToolTip path on
             // the column button reads CExoString +0x28 which the engine
-            // never populates for these dynamically-built slots, so the
-            // earlier tooltip-read attempt produced CP1252 garbage.)
+            // never populates for these dynamically-built slots, so an
+            // earlier tooltip-read attempt produced CP1252 garbage.
             if (acc::hotkeys::ShiftHeld()) {
                 int curIdx = g_selectedIndex[slot];
                 if (curIdx < 0) curIdx = 0;
@@ -188,12 +188,12 @@ bool HandleInputEvent(int code, int value) {
                         mi, slot, curIdx);
                 char text[8192];
                 if (actionId &&
-                    acc::engine::ResolveItemDescriptionFromActionId(
+                    acc::engine::ResolveActionDescriptionFromActionId(
                         actionId, text, sizeof(text)))
                 {
                     prism::Speak(text, /*interrupt=*/true);
                     acclog::Write("ActionBar",
-                        "Shift+%s slot=%d idx=%d action_id=0x%x item-desc=\"%s\"",
+                        "Shift+%s slot=%d idx=%d action_id=0x%x desc=\"%s\"",
                         code == kInputNavDown ? "Down" : "Up",
                         slot, curIdx, actionId, text);
                 } else {
@@ -201,7 +201,7 @@ bool HandleInputEvent(int code, int value) {
                         acc::strings::Id::NoTooltipAvailable);
                     prism::Speak(msg, /*interrupt=*/true);
                     acclog::Write("ActionBar",
-                        "Shift+%s slot=%d idx=%d action_id=0x%x no item-desc; "
+                        "Shift+%s slot=%d idx=%d action_id=0x%x no desc; "
                         "spoke fallback",
                         code == kInputNavDown ? "Down" : "Up",
                         slot, curIdx, actionId);

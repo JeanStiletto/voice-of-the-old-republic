@@ -182,24 +182,34 @@ bool HandleInputEvent(int code, int value) {
     switch (code) {
         case kInputNavUp:
         case kInputNavDown: {
-            // Shift+arrow: speak the row's engine tooltip without cycling.
-            // Mirrors actionbar_menu's Shift+arrow contract.
+            // Shift+arrow: speak the currently-selected descriptor's
+            // full description (item / force power / feat) without
+            // cycling. Mirrors actionbar_menu's Shift+arrow contract —
+            // dispatch by action_id high-nibble tag via
+            // ResolveActionDescriptionFromActionId; plain verbs
+            // (attack actions, door open/unlock, computer hack, etc.)
+            // fall back to the localised "Keine Beschreibung verfügbar".
             if (acc::hotkeys::ShiftHeld()) {
-                void* btn = acc::engine_radial::GetRowActionButton(tam, row);
-                char tip[8192];
-                if (btn && acc::engine::ReadControlTooltip(
-                        btn, tip, sizeof(tip))) {
-                    prism::Speak(tip, /*interrupt=*/true);
+                uint32_t actionId =
+                    acc::engine_radial::ReadSelectedRowActionId(tam, row);
+                char text[8192];
+                if (actionId &&
+                    acc::engine::ResolveActionDescriptionFromActionId(
+                        actionId, text, sizeof(text)))
+                {
+                    prism::Speak(text, /*interrupt=*/true);
                     acclog::Write("TargetMenu",
-                        "Shift+%s row=%d tooltip=\"%s\"",
-                        code == kInputNavDown ? "Down" : "Up", row, tip);
+                        "Shift+%s row=%d action_id=0x%x desc=\"%s\"",
+                        code == kInputNavDown ? "Down" : "Up",
+                        row, actionId, text);
                 } else {
                     const char* msg = acc::strings::Get(
                         acc::strings::Id::NoTooltipAvailable);
                     prism::Speak(msg, /*interrupt=*/true);
                     acclog::Write("TargetMenu",
-                        "Shift+%s row=%d btn=%p no tooltip; spoke fallback",
-                        code == kInputNavDown ? "Down" : "Up", row, btn);
+                        "Shift+%s row=%d action_id=0x%x no desc; "
+                        "spoke fallback",
+                        code == kInputNavDown ? "Down" : "Up", row, actionId);
                 }
                 return true;
             }

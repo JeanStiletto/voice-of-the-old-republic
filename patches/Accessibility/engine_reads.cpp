@@ -403,17 +403,26 @@ void* ResolveItemFromClientHandle(uint32_t clientHandle) {
 typedef CExoString* (__thiscall* PFN_GetPropertyDescription)(void* this_,
                                                               CExoString* out);
 
-// CSWGuiInterfaceAction descriptors for action-bar slots 1..3 (medical /
-// grenades / mines) encode their item reference at +0x08 as
-//   action_id = (server_item->server_object.game_object.id) | 0x40000000
-// per the CSWCCreature::CreateUsableItemEntry @0x006193a0 decompile. The
-// 0x40000000 high byte tags the id as a server-side item handle; the low
-// bytes are the server-side game_object id directly (no client→server
-// conversion needed). Force-power slot (0) and feat-like actions use a
-// different action_id encoding without this tag — caller falls back when
-// this returns false.
-constexpr uint32_t kActionIdItemTag      = 0x40000000;
-constexpr uint32_t kActionIdItemTagMask  = 0xFF000000;
+// CSWGuiInterfaceAction descriptors encode an action-type tag in the
+// high nibble of the action_id at +0x08; the low 28 bits carry the
+// category-specific lookup key. Tags decoded via decompile of the
+// CSWCCreature entry-creators:
+//
+//   0x10000000  feat        — CSWCCreature::EnableFeatForMenu      @0x00618a30
+//                             ("action_id = feat_id | 0x10000000")
+//   0x20000000  force power — CSWCCreatureStats_ClassInfo::GetMenuInfo
+//                             @0x0064a870 ("action_id = spell_id | 0x20000000")
+//   0x40000000  item        — CSWCCreature::CreateUsableItemEntry  @0x006193a0
+//                             ("action_id = server_item.game_object.id | 0x40000000")
+//
+// Other categories (attack verbs, door open/unlock, computer hack, etc.)
+// don't carry a separately addressable description — they're plain verbs
+// the engine never surfaces extra text for, so we let the caller fall
+// back to the localised "no description" cue.
+constexpr uint32_t kActionIdTagMask     = 0xF0000000;
+constexpr uint32_t kActionIdTagFeat     = 0x10000000;
+constexpr uint32_t kActionIdTagSpell    = 0x20000000;
+constexpr uint32_t kActionIdTagItem     = 0x40000000;
 
 void* ResolveItemFromServerHandle(uint32_t serverHandle) {
     if (serverHandle == 0 || serverHandle == 0xffffffff) return nullptr;
@@ -446,15 +455,106 @@ void* ResolveItemFromServerHandle(uint32_t serverHandle) {
     return item;
 }
 
-bool ResolveItemDescriptionFromActionId(uint32_t actionId,
-                                        char* outBuf, size_t bufSize) {
+void* GetRulesGlobal() {
+    void* rules = nullptr;
+    __try {
+        rules = *reinterpret_cast<void**>(kAddrRulesGlobal);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+    return rules;
+}
+
+typedef void* (__thiscall* PFN_RulesGetFeat)(void* rules, uint16_t featIdx);
+typedef void* (__thiscall* PFN_FeatGetDescriptionText)(void* feat, CExoString* out);
+
+bool ResolveFeatDescription(uint32_t featIdx, char* outBuf, size_t bufSize) {
+    void* rules = GetRulesGlobal();
+    if (!rules) return false;
+
+    void* feat = nullptr;
+    __try {
+        auto fn = reinterpret_cast<PFN_RulesGetFeat>(kAddrCSWRulesGetFeat);
+        feat = fn(rules, static_cast<uint16_t>(featIdx));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (!feat) return false;
+
+    CExoString tmp = {nullptr, 0};
+    __try {
+        auto fn = reinterpret_cast<PFN_FeatGetDescriptionText>(
+            kAddrCSWFeatGetDescriptionText);
+        fn(feat, &tmp);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (!tmp.c_string || tmp.length == 0 || tmp.length >= bufSize) return false;
+    memcpy(outBuf, tmp.c_string, tmp.length);
+    outBuf[tmp.length] = '\0';
+    // c_string is a heap CRT-mismatched alloc by the engine; same leak
+    // rule as ReadItemPropertyDescription.
+    return true;
+}
+
+typedef void* (__thiscall* PFN_SpellArrayGetSpell)(void* spells, int spellId);
+
+bool ResolveSpellDescription(uint32_t spellId, char* outBuf, size_t bufSize) {
+    void* rules = GetRulesGlobal();
+    if (!rules) return false;
+
+    void* spellArray = nullptr;
+    __try {
+        spellArray = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(rules) + kRulesSpellsOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (!spellArray) return false;
+
+    void* spell = nullptr;
+    __try {
+        auto fn = reinterpret_cast<PFN_SpellArrayGetSpell>(
+            kAddrCSWSpellArrayGetSpell);
+        spell = fn(spellArray, static_cast<int>(spellId));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (!spell) return false;
+
+    uint32_t descStrRef = 0;
+    __try {
+        descStrRef = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(spell) +
+            kSpellDescriptionStrRefOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (descStrRef == 0 || descStrRef == 0xffffffff) return false;
+    return LookupTlk(descStrRef, outBuf, bufSize);
+}
+
+bool ResolveActionDescriptionFromActionId(uint32_t actionId,
+                                          char* outBuf, size_t bufSize) {
     if (!outBuf || bufSize < 2) return false;
     outBuf[0] = '\0';
-    if ((actionId & kActionIdItemTagMask) != kActionIdItemTag) return false;
-    uint32_t serverHandle = actionId & ~kActionIdItemTag;
-    void* item = ResolveItemFromServerHandle(serverHandle);
-    if (!item) return false;
-    return ReadItemPropertyDescription(item, outBuf, bufSize);
+    if (actionId == 0 || actionId == 0xffffffff) return false;
+
+    uint32_t tag   = actionId & kActionIdTagMask;
+    uint32_t lowId = actionId & ~kActionIdTagMask;
+    switch (tag) {
+        case kActionIdTagItem: {
+            void* item = ResolveItemFromServerHandle(lowId);
+            if (!item) return false;
+            return ReadItemPropertyDescription(item, outBuf, bufSize);
+        }
+        case kActionIdTagSpell:
+            return ResolveSpellDescription(lowId, outBuf, bufSize);
+        case kActionIdTagFeat:
+            return ResolveFeatDescription(lowId, outBuf, bufSize);
+        default:
+            return false;
+    }
 }
 
 namespace {

@@ -96,6 +96,16 @@ bool SelectActionInRow(void* tam, int row, int index);
 // start (action_button is field 0).
 void* GetRowActionButton(void* tam, int row);
 
+// action_id of the descriptor currently shown for target_actions[row].
+// Resolves via the engine's own selection-tracking field
+// (field1[target_type*3 + row]) and falls back to data[0] when nothing
+// matches, mirroring SelectNextAction's lookup loop. Returns 0 on empty
+// row / null TAM / fault. Same descriptor the radial / target-action
+// submenu Shift+arrow peek reads to derive an item handle for the
+// engine's variant-item slots (action-bar slots 1..3 encoding —
+// engine_reads::ResolveItemDescriptionFromActionId).
+uint32_t ReadSelectedRowActionId(void* tam, int row);
+
 // Resolves targetClient via GetGameObject, downcasts, logs per-class
 // fields GetTargetActions checks (doors: cannot_bash/can_use_actions/
 // is_hostile/state). Disambiguates "engine has no actions for this

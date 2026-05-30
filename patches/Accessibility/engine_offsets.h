@@ -999,6 +999,11 @@ constexpr uintptr_t kAddrCSWRulesGetFeat              = 0x00550c00;
 // string, same pattern as CSWSItem::GetPropertyDescription).
 constexpr uintptr_t kAddrCSWFeatGetNameText           = 0x005cd760;
 
+// CSWFeat::GetDescriptionText — __thiscall(CExoString* out) -> CExoString*.
+// Sibling of GetNameText. Resolves the feat's `description` strref at
+// +0x0c through CTlkTable; same heap-leak rule applies.
+constexpr uintptr_t kAddrCSWFeatGetDescriptionText    = 0x005cd800;
+
 // CSWRules.spells — the spells array. CSWSpellArray* at offset 0x8c
 // (140 bytes) per SARIF layout dump. The array exposes GetSpell(id) ->
 // CSWSpell*. Used by combat::queue to decode action_type=9 (Cast Force
@@ -1015,6 +1020,11 @@ constexpr uintptr_t kAddrCSWSpellArrayGetSpell        = 0x0059b6d0;
 // the out string in place; caller must read .c_string before any
 // destructor runs (we leak — CRT mismatch otherwise). BYTES_PURGED=4.
 constexpr uintptr_t kAddrCSWSpellGetSpellNameText     = 0x0059b940;
+
+// CSWSpell.spell_description — int (TLK strref) at +0x0c per SARIF
+// DATATYPE dump. CSWSpell has no GetSpellDescriptionText accessor, so
+// callers read the strref and route through LookupTlk themselves.
+constexpr size_t    kSpellDescriptionStrRefOffset     = 0x0c;
 
 // CSWSCombatRoundAction additional offsets (decoded from GetActionIcon
 // @0x686fb0 — case 0xb/0xc switch). The action_type byte at +0x10

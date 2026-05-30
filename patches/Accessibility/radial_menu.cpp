@@ -181,30 +181,35 @@ bool HandleInputEvent(int code, int value) {
         return false;
     }
 
-    // Shift+arrow on any nav key: speak the current row's engine tooltip
-    // and do NOT cycle. Mirrors the actionbar submenu's Shift+arrow path
-    // and the peek_description.cpp shift-arrow contract. Reads the
-    // CSWGuiButton sitting at target_actions[curRow].action_button — the
-    // same button the engine renders a tooltip onto during mouse hover.
+    // Shift+arrow on any nav key: speak the currently-selected
+    // descriptor's full description (item / force power / feat) and do
+    // NOT cycle. Mirrors actionbar_menu's Shift+arrow contract. Dispatch
+    // by action_id high-nibble tag — see
+    // ResolveActionDescriptionFromActionId. Plain attack verbs / door
+    // open / unlock etc. fall back to the localised "Keine Beschreibung
+    // verfügbar" cue.
     if ((code == kInputNavUp   || code == kInputNavDown ||
          code == kInputNavLeft || code == kInputNavRight) &&
         acc::hotkeys::ShiftHeld())
     {
-        void* btn = acc::engine_radial::GetRowActionButton(
+        uint32_t actionId = acc::engine_radial::ReadSelectedRowActionId(
             tam, g_state.curRow);
-        char tip[8192];
-        if (btn && acc::engine::ReadControlTooltip(
-                btn, tip, sizeof(tip))) {
-            prism::Speak(tip, /*interrupt=*/true);
+        char text[8192];
+        if (actionId &&
+            acc::engine::ResolveActionDescriptionFromActionId(
+                actionId, text, sizeof(text)))
+        {
+            prism::Speak(text, /*interrupt=*/true);
             acclog::Write("Radial",
-                "Shift+nav row=%d tooltip=\"%s\"", g_state.curRow, tip);
+                "Shift+nav row=%d action_id=0x%x desc=\"%s\"",
+                g_state.curRow, actionId, text);
         } else {
             const char* msg = acc::strings::Get(
                 acc::strings::Id::NoTooltipAvailable);
             prism::Speak(msg, /*interrupt=*/true);
             acclog::Write("Radial",
-                "Shift+nav row=%d btn=%p no tooltip; spoke fallback",
-                g_state.curRow, btn);
+                "Shift+nav row=%d action_id=0x%x no desc; spoke fallback",
+                g_state.curRow, actionId);
         }
         return true;
     }

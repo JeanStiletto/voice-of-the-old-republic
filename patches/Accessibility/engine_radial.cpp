@@ -337,6 +337,19 @@ void* FindSelectedActionDescriptor(void* tam, int row) {
 
 }  // namespace
 
+uint32_t ReadSelectedRowActionId(void* tam, int row) {
+    void* descriptor = FindSelectedActionDescriptor(tam, row);
+    if (!descriptor) return 0;
+    int32_t id = 0;
+    __try {
+        id = *reinterpret_cast<int32_t*>(
+            reinterpret_cast<unsigned char*>(descriptor) + kIfActionIdOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+    return static_cast<uint32_t>(id);
+}
+
 bool ReadRowActionLabel(void* tam, int row, char* outBuf, size_t bufSize) {
     if (!outBuf || bufSize == 0) return false;
     outBuf[0] = '\0';
