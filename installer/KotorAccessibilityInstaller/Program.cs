@@ -523,6 +523,37 @@ namespace KotorAccessibilityInstaller
             return File.Exists(Path.Combine(path, GameExeName));
         }
 
+        /// <summary>
+        /// True iff <paramref name="gamePath"/> is the install path Steam has
+        /// registered for KOTOR (App ID 32370). Used by the post-install auto-
+        /// launch to decide between <c>steam://run/32370</c> (preserves Steam
+        /// overlay + cloud saves + non-elevated token) and a direct exe launch.
+        ///
+        /// Returns false for GoG copies, CD re-packs, manually-relocated Steam
+        /// installs Steam doesn't know about, and any user-specified custom
+        /// path — in those cases <c>steam://run/32370</c> would either silently
+        /// no-op or launch a different copy than the one we just patched.
+        /// </summary>
+        public static bool IsSteamPath(string gamePath)
+        {
+            string steamRegistered = TryReadSteamAppInstallPath();
+            if (string.IsNullOrEmpty(steamRegistered) || string.IsNullOrEmpty(gamePath))
+                return false;
+            return string.Equals(NormalizePath(steamRegistered), NormalizePath(gamePath),
+                                 StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizePath(string p)
+        {
+            if (string.IsNullOrEmpty(p)) return p;
+            try
+            {
+                return Path.GetFullPath(p)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            catch { return p; }
+        }
+
         internal static bool IsNewerVersion(string latestVersion, string installedVersion)
         {
             try

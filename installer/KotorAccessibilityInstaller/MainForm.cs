@@ -559,19 +559,28 @@ namespace KotorAccessibilityInstaller
                 string exePath = Path.Combine(_gamePath, Program.GameExeName);
                 if (!File.Exists(exePath)) return;
 
-                Logger.Info($"Launching KOTOR: {exePath}");
-                // Launch via Steam URL so Steam's overlay + cloud saves stay wired up,
-                // and (importantly) the game inherits the user's non-elevated token
-                // rather than the installer's admin token.
-                var psi = new ProcessStartInfo("steam://run/32370") { UseShellExecute = true };
-                try
+                // steam://run/32370 launches whatever copy Steam has registered
+                // for KOTOR, which is NOT necessarily _gamePath — GoG installs,
+                // CD re-packs, manually-relocated Steam folders, and any
+                // user-specified custom path are unknown to Steam. Only take
+                // the steam:// route when _gamePath matches Steam's registered
+                // install (then we get the overlay, cloud saves, and a non-
+                // elevated launch). Otherwise launch the patched exe directly.
+                bool useSteamUrl = Program.IsSteamPath(_gamePath);
+                Logger.Info($"Launching KOTOR: {exePath} (steam-route={useSteamUrl})");
+
+                if (useSteamUrl)
                 {
-                    Process.Start(psi);
-                    return;
-                }
-                catch (Exception steamEx)
-                {
-                    Logger.Warning($"Could not launch via steam:// URL ({steamEx.Message}); falling back to swkotor.exe");
+                    var psi = new ProcessStartInfo("steam://run/32370") { UseShellExecute = true };
+                    try
+                    {
+                        Process.Start(psi);
+                        return;
+                    }
+                    catch (Exception steamEx)
+                    {
+                        Logger.Warning($"Could not launch via steam:// URL ({steamEx.Message}); falling back to swkotor.exe");
+                    }
                 }
 
                 Process.Start(new ProcessStartInfo(exePath) { UseShellExecute = true, WorkingDirectory = _gamePath });
