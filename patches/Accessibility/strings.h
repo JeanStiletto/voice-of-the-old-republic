@@ -1187,13 +1187,24 @@ enum class Id : int {
     PanelTitleMainMenu,
 
     // ---- Bringup-phase nag (bringup_announce.cpp).
-    //      Spoken once if the user presses an arrow / Enter / Space
-    //      during the Loading phase — the engine's "between intros
-    //      and main menu input pump live" window, where focus is
-    //      cycling through freshly recreated Render Window instances
-    //      and key presses go nowhere. Stays silent during movie
+    //      Two-stage cue spoken during the Loading phase — the engine's
+    //      "between intros and main menu input pump live" window, where
+    //      focus is on the final Render Window but the engine has stalled
+    //      activating the MainMenu panel. Stays silent during movie
     //      playback (audio would clash) and after the pump is live.
+    //
+    //      Stage 1 (LoadingPleaseWait) — fires on first nav-key press
+    //        during Loading. Most sessions DO recover on their own
+    //        within a few seconds, so the polite default is "please
+    //        wait".
+    //      Stage 2 (LoadingStuckWorkaround) — fires if the user is
+    //        still pressing nav keys ≥15 s after stage 1 AND we're
+    //        still in Loading. At that point recovery is unlikely
+    //        without poking the engine via the Alt+F4 → cancel-dialog
+    //        workaround, which forces the engine through its panel-
+    //        activation drain code path.
     LoadingPleaseWait,
+    LoadingStuckWorkaround,
 
     Count_,
 };

@@ -409,6 +409,7 @@ const char* Get(Id id) {
 
         case Id::PanelTitleMainMenu:    return "Menu principale";
         case Id::LoadingPleaseWait:     return "Il gioco sta ancora caricando, attendere prego.";
+        case Id::LoadingStuckWorkaround: return "Il menu non risponde ancora. Premi Alt F4 e annulla la finestra di uscita per risvegliarlo.";
 
         case Id::Count_:               return "";
     }

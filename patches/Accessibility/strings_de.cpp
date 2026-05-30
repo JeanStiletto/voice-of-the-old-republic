@@ -428,6 +428,7 @@ const char* Get(Id id) {
 
         case Id::PanelTitleMainMenu:    return "Hauptmen\xFC";
         case Id::LoadingPleaseWait:     return "Spiel l\xE4""dt noch, bitte warten.";
+        case Id::LoadingStuckWorkaround: return "Men\xFC reagiert immer noch nicht. Alt F4 dr\xFC""cken und den Beenden-Dialog abbrechen, um es zu wecken.";
 
         case Id::Count_:               return "";
     }

@@ -411,6 +411,7 @@ const char* Get(Id id) {
 
         case Id::PanelTitleMainMenu:    return "Men\xFA principal";
         case Id::LoadingPleaseWait:     return "El juego sigue cargando, por favor espera.";
+        case Id::LoadingStuckWorkaround: return "El men\xFA sigue sin responder. Pulsa Alt F4 y cancela el di\xE1logo de salida para despertarlo.";
 
         case Id::Count_:               return "";
     }

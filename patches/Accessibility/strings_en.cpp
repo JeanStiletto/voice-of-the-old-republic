@@ -402,6 +402,7 @@ const char* Get(Id id) {
 
         case Id::PanelTitleMainMenu:    return "Main menu";
         case Id::LoadingPleaseWait:     return "Game is still loading, please wait.";
+        case Id::LoadingStuckWorkaround: return "Menu still unresponsive. Press Alt F4 and cancel the quit dialog to wake it.";
 
         case Id::Count_:               return "";
     }
