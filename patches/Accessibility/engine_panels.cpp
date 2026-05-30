@@ -643,6 +643,28 @@ bool HasActiveMapPanel(void** outPanel) {
     return false;
 }
 
+bool HasActiveLevelUpPanel() {
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!mgr) return false;
+    auto* base = reinterpret_cast<unsigned char*>(mgr);
+    int   panelCount = 0;
+    void** panelData = nullptr;
+    __try {
+        panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+        panelData  = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (!panelData || panelCount <= 0) return false;
+    int n = panelCount > 16 ? 16 : panelCount;
+    for (int i = 0; i < n; ++i) {
+        void* p = panelData[i];
+        if (!p) continue;
+        if (IdentifyPanel(p) == PanelKind::InGameLevelUp) return true;
+    }
+    return false;
+}
+
 bool IsInGameOptionsSubScreen(void* panel) {
     if (!panel) return false;
     void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);

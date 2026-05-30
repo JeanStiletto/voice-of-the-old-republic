@@ -151,6 +151,7 @@ const char* Get(Id id) {
 
         case Id::LevelUpOpen:          return "Mont\xE9""e de niveau";
         case Id::LevelUpFailed:        return "Mont\xE9""e de niveau \xE9""chou\xE9""e";
+        case Id::LevelUpAlreadyOpen:   return "Mont\xE9""e de niveau d\xE9j\xE0 ouverte";
 
         case Id::PortraitLabel:        return "Portrait";
         case Id::PortraitArrowPrev:    return "Portrait pr\xE9""c\xE9""dent";

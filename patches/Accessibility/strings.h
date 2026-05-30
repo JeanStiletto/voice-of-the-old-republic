@@ -473,6 +473,7 @@ enum class Id : int {
     //      key did anything.
     LevelUpOpen,
     LevelUpFailed,
+    LevelUpAlreadyOpen,
 
     // ---- Chargen portrait selection (CSWGuiPortraitCharGen).
     //      The left/right arrow buttons have no own text (image-only);

@@ -530,16 +530,31 @@ void PollHotkey() {
         // itself enumerates as a normal CSWGuiPanel so the existing
         // chain walker handles its child controls once it opens.
         if (risingL) {
-            const char* opener = acc::strings::Get(
-                acc::strings::Id::LevelUpOpen);
-            prism::Speak(opener, /*interrupt=*/true);
-            bool ok = acc::engine_levelup::TriggerLevelUp();
-            acclog::Write("Interact", "Shift+L -> [%s] level-up dispatch ok=%d",
-                opener, ok ? 1 : 0);
-            if (!ok) {
+            // Dedupe: ShowLevelUpGUI allocates a fresh CSWGuiLevelUpPanel
+            // on every dispatch with no engine-side "already open" check,
+            // so key-repeat / fast double-tap stacks duplicate modals on
+            // CSWGuiManager.modal_stack that the user can't unwind (Esc
+            // only pops one at a time; each underlying instance still
+            // owns the foreground). See patch-20260530-112606.log — twelve
+            // Shift+L presses in four seconds pushed panels.size 3 → 25.
+            if (acc::engine::HasActiveLevelUpPanel()) {
                 prism::Speak(
-                    acc::strings::Get(acc::strings::Id::LevelUpFailed),
+                    acc::strings::Get(acc::strings::Id::LevelUpAlreadyOpen),
                     /*interrupt=*/true);
+                acclog::Write("Interact",
+                    "Shift+L -> already-open guard, skipping dispatch");
+            } else {
+                const char* opener = acc::strings::Get(
+                    acc::strings::Id::LevelUpOpen);
+                prism::Speak(opener, /*interrupt=*/true);
+                bool ok = acc::engine_levelup::TriggerLevelUp();
+                acclog::Write("Interact", "Shift+L -> [%s] level-up dispatch ok=%d",
+                    opener, ok ? 1 : 0);
+                if (!ok) {
+                    prism::Speak(
+                        acc::strings::Get(acc::strings::Id::LevelUpFailed),
+                        /*interrupt=*/true);
+                }
             }
         }
     }

@@ -127,6 +127,12 @@ bool HasActiveSubScreen();
 // outPanel optional — populated for callers that reach into the panel.
 bool HasActiveMapPanel(void** outPanel = nullptr);
 
+// True iff a CSWGuiLevelUpPanel (InGameLevelUp) sits anywhere in
+// panels[]. Used to debounce Shift+L: ShowLevelUpGUI doesn't dedupe and
+// every dispatch allocates a fresh panel, so key-repeat stacks duplicate
+// modals the user can't unwind (see patch-20260530-112606.log).
+bool HasActiveLevelUpPanel();
+
 // Heap-allocated Options sub-screen (Spieleinstellungen / Grafik /
 // Sound / Auto-Pause / Feedback / Tastenbelegung / Mauseinstellungen).
 // No CGuiInGame slot → IdentifyPanel returns Unknown; positive

@@ -150,6 +150,7 @@ const char* Get(Id id) {
 
         case Id::LevelUpOpen:          return "Aumento di livello";
         case Id::LevelUpFailed:        return "Aumento di livello fallito";
+        case Id::LevelUpAlreadyOpen:   return "Aumento di livello gi\xE0 aperto";
 
         case Id::PortraitLabel:        return "Ritratto";
         case Id::PortraitArrowPrev:    return "Ritratto precedente";
