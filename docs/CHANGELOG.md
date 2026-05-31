@@ -3,17 +3,42 @@
 All notable changes to the Voice of the Old Republic mod.
 
 Versioned releases below. The release script (`installer/release.ps1`) reads the
-topmost `## vX.Y.Z` heading to determine the version it ships, and uses the
-bullets under that heading as the GitHub release body. When preparing a release,
-rename `## Unreleased` to the new version and add the relevant bullets — group
-them under short topic headings (`Examine view:`, `Map:`, `Combat log:`,
-`Installer:`, `Bug fixes:`) the way `arena/docs/CHANGELOG.md` does.
+topmost `<h2>vX.Y.Z</h2>` heading to determine the version it ships (legacy
+`## vX.Y.Z` is still recognised for older sections), and uses the bullets under
+that heading as the GitHub release body. When preparing a release, rename the
+`Unreleased` section to the new version and add the relevant bullets, grouped
+under short topic subheadings (`<h3>Installer:</h3>`, `<h3>Bug fixes:</h3>`,
+etc.). Subsection headings use HTML tags so GitHub renders them as proper
+headings in the release body (markdown `**Installer:**` only renders as bold).
+Each bullet should lead with the user-facing change ("X works now", "new
+hotkey Y", "X no longer does Z"); keep technical detail short.
 
-## v0.1.2
+<h2>v0.1.2</h2>
 
-**Bug fixes:**
+<h3>Installer:</h3>
 
-- Shift+Up / Shift+Down inside the equipment-screen item picker now reads the focused item's description. Previously the peek path matched on the originating slot button's control id and treated the slot as empty (the engine moves the equipped item out of the slot while the picker is open, leaving the cached slot handle at the "no item" sentinel), so the read silently no-op'd before it ever consulted the picker listbox. The slot path now gates on "picker not armed" — when the picker is open Shift+arrow falls through to the item-tooltip path, resolves the selected row via items_listbox.selection_index, and speaks the same full property description the inventory and store screens already use. Shift+arrow on a slot button that hasn't been drilled into still reads the equipped item's description as before.
+- Intro logo movies (BioWare / LucasArts / legal) are now skipped on launch by default. Eliminates 10-20 s of intro playback on cold start and avoids the engine bug where Alt+Tab during the intros restarts the queue. Toggleable at runtime under Mod-Einstellungen → "Intro-Movies überspringen"; change applies on next launch.
+- Installer UI now available in French, Italian, and Spanish. Translations are AI-drafted (German remains the human-authored quality bar); flagged in `known-issues.md` for native-speaker refinement.
+- Bundled `dinput8.dll` proxy refreshed to the latest loader build.
+
+<h3>Startup:</h3>
+
+- "Bitte warten" hint is now spoken if you press arrow / Enter / Space while the post-intro main menu is still loading. After 15 s of continued pressing, a second cue tells you about the Alt+F4 → cancel-dialog workaround for the known engine stall in the main-menu input pump.
+- Main-menu title now reads as "Hauptmenü" instead of leaking whichever DLC-notice label the engine had focused first.
+
+<h3>Action menus:</h3>
+
+- Shift+Up / Shift+Down on the target-action menu (Shift+1..3) and the action radial now read feat and force-power descriptions in addition to items. Plain verb actions (Attack, Open Door, ...) fall through to "Keine Beschreibung verfügbar".
+- Shift+Up / Shift+Down on the personal action bar (Aktionsmenü, Shift+4..7) now read the full item property description instead of three bytes of CP1252 garbage. The engine never populates the tooltip slot we were reading; resolver now goes through the descriptor's tagged `action_id`.
+
+<h3>Dialog:</h3>
+
+- First NPC line in a conversation is no longer occasionally double-spoken. The generic first-sight title walk was speaking the dialog panel's first label child — which IS the NPC line — and slipped past the existing suppression. Dialog and bark panels are now skipped by the title walk.
+
+<h3>Bug fixes:</h3>
+
+- F5 in-game auto-update no longer fails with "Download fehlgeschlagen" on every press. The patch DLL was looking for the pre-rename installer EXE in the GitHub release JSON, so the asset lookup always missed and the download bailed before it started. Existing 0.1.1 users will need to manually re-run the installer once to pick up this fix; their broken DLL can't fetch a working replacement via F5. `release.ps1` now preflight-asserts consumer-side filenames and version strings against what it's about to publish, so this drift class fails at release time instead of in users' hands.
+- Shift+Up / Shift+Down inside the equipment-screen item picker now reads the focused item's description. The peek path was matching the originating slot button's control id and treating the slot as empty (the engine moves the equipped item out of the slot while the picker is open, so the cached handle reads as "no item"), so the read silently no-op'd before consulting the picker listbox. Slot path now gates on "picker not armed".
 
 ## v0.1.1
 

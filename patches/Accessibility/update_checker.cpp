@@ -68,7 +68,7 @@ constexpr const wchar_t* kUserAgent      = L"VoiceOfTheOldRepublic/UpdateChecker
 // Asset filename to download (matches release.ps1 + installer's
 // Path.GetFileName check). The installer is what we hand off to; it'll
 // fetch the .kpatch itself via its existing GitHubClient.
-constexpr const char*    kInstallerAsset = "KotorAccessibilityInstaller.exe";
+constexpr const char*    kInstallerAsset = "VoiceOfTheOldRepublicInstaller.exe";
 
 // Steam app ID for KOTOR 1 (verified from steamdb.info entry "Star Wars:
 // Knights of the Old Republic"). Used in the relaunch step of the .bat.
@@ -98,9 +98,9 @@ constexpr DWORD kExitGraceMs = 2000;
 //   <patch_dir>\update_test_installer.txt
 //     First line is an absolute path to a pre-built installer EXE. F5's
 //     download step skips HTTP and CopyFile-s that file to
-//     %TEMP%\KotorAccessibilityInstaller.exe — same destination the real
-//     download would land. The handoff bat is unaware of the override
-//     (it just runs whatever sits at the dest path).
+//     %TEMP%\<kInstallerAsset> — same destination the real download
+//     would land. The handoff bat is unaware of the override (it just
+//     runs whatever sits at the dest path).
 //
 // File-based instead of env vars: Windows env-var inheritance through
 // Steam is unreliable (Steam doesn't re-read on setx, processes started

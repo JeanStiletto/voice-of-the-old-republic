@@ -5,8 +5,9 @@
 # extracts release notes from docs/CHANGELOG.md, creates a git tag, and
 # uploads both artifacts as a GitHub release.
 #
-# Version is read from the top-most "## vX.Y.Z" heading in docs/CHANGELOG.md.
-# Pass -Version to override (e.g. to ship a hotfix from an older branch).
+# Version is read from the top-most "## vX.Y.Z" or "<h2>vX.Y.Z</h2>" heading
+# in docs/CHANGELOG.md. Pass -Version to override (e.g. to ship a hotfix from
+# an older branch).
 
 param(
     [string]$Version
@@ -26,11 +27,11 @@ if (-not (Test-Path $changelogFile)) {
 }
 
 if (-not $Version) {
-    $topHeading = Select-String -Path $changelogFile -Pattern '^## v(\d+\.\d+(?:\.\d+)?(?:[-.][\w.-]+)?)\s*$' |
+    $topHeading = Select-String -Path $changelogFile -Pattern '^(?:## |<h2>)v(\d+\.\d+(?:\.\d+)?(?:[-.][\w.-]+)?)(?:</h2>)?\s*$' |
         Select-Object -First 1
     if (-not $topHeading) {
-        Write-Host "ERROR: No '## vX.Y.Z' heading found in docs\CHANGELOG.md." -ForegroundColor Red
-        Write-Host "       Rename the '## Unreleased' section to a version (e.g. '## v0.1.0')" -ForegroundColor Red
+        Write-Host "ERROR: No '## vX.Y.Z' or '<h2>vX.Y.Z</h2>' heading found in docs\CHANGELOG.md." -ForegroundColor Red
+        Write-Host "       Rename the 'Unreleased' section to a version (e.g. '<h2>v0.1.0</h2>')" -ForegroundColor Red
         Write-Host "       before running this script, or pass -Version explicitly." -ForegroundColor Red
         exit 1
     }
@@ -67,11 +68,69 @@ if ($existingTag) {
 }
 
 $changelogContent = Get-Content $changelogFile -Raw
-if ($changelogContent -notmatch "(?m)^## $([regex]::Escape($tag))\s*$") {
-    Write-Host "ERROR: No '## $tag' section found in docs\CHANGELOG.md" -ForegroundColor Red; exit 1
+if ($changelogContent -notmatch "(?m)^(?:## |<h2>)$([regex]::Escape($tag))(?:</h2>)?\s*$") {
+    Write-Host "ERROR: No '## $tag' or '<h2>$tag</h2>' section found in docs\CHANGELOG.md" -ForegroundColor Red; exit 1
 }
 
 Write-Host "Pre-flight checks passed" -ForegroundColor Green
+
+# ── 2b. Cross-file version + asset-name consistency ─────────────────────────
+# Catches the producer/consumer drift that shipped a broken F5 auto-update in
+# v0.1.0 / v0.1.1: kInstallerAsset in update_checker.cpp was hardcoded to the
+# old EXE name, didn't match what release.ps1 published, every user's F5
+# download failed silently. Each check asserts one place against another, so
+# anyone bumping one side and forgetting the other gets a release-time error
+# instead of a silent ship.
+
+function Assert-FileMatchesPattern {
+    param(
+        [string]$Path,
+        [string]$Pattern,
+        [string]$Expected,
+        [string]$Description
+    )
+    $match = Select-String -Path $Path -Pattern $Pattern | Select-Object -First 1
+    $actual = if ($match) { $match.Matches[0].Groups[1].Value } else { '<not found>' }
+    if ($actual -ne $Expected) {
+        Write-Host "ERROR: $Description" -ForegroundColor Red
+        Write-Host "       $Path" -ForegroundColor Red
+        Write-Host "       expected: $Expected" -ForegroundColor Red
+        Write-Host "       actual:   $actual" -ForegroundColor Red
+        exit 1
+    }
+}
+
+# Versions baked into the patch DLL must match the release tag — otherwise the
+# in-game "loaded, version X" + F5 "you are on version X" cues lie, and F5's
+# remote-vs-local compare uses the wrong baseline.
+Assert-FileMatchesPattern `
+    -Path (Join-Path $root 'patches\Accessibility\manifest.toml') `
+    -Pattern '^version\s*=\s*"([^"]+)"' `
+    -Expected $Version `
+    -Description "manifest.toml version does not match release tag v$Version"
+
+Assert-FileMatchesPattern `
+    -Path (Join-Path $root 'patches\Accessibility\mod_version.h') `
+    -Pattern 'kModVersion\s*=\s*"([^"]+)"' `
+    -Expected $Version `
+    -Description "mod_version.h kModVersion does not match release tag v$Version"
+
+# Asset filenames consumed at runtime must match what this script uploads in
+# section 9. update_checker.cpp's hardcoded installer name was the v0.1.0 bug;
+# Config.cs's hardcoded kpatch name is the same shape risk.
+Assert-FileMatchesPattern `
+    -Path (Join-Path $root 'patches\Accessibility\update_checker.cpp') `
+    -Pattern 'kInstallerAsset\s*=\s*"([^"]+)"' `
+    -Expected 'VoiceOfTheOldRepublicInstaller.exe' `
+    -Description "update_checker.cpp kInstallerAsset != published installer EXE name (F5 auto-update would break)"
+
+Assert-FileMatchesPattern `
+    -Path (Join-Path $root 'installer\KotorAccessibilityInstaller\Config.cs') `
+    -Pattern 'KPatchAssetName\s*=\s*"([^"]+)"' `
+    -Expected 'Accessibility.kpatch' `
+    -Description "Config.cs KPatchAssetName != built kpatch filename (installer download would break)"
+
+Write-Host "Version + asset-name consistency checks passed" -ForegroundColor Green
 
 # ── 3. Build our vendored KotorPatcher.dll ──────────────────────────────────
 # This is our locally-modified fork of Lane's upstream (see docs/known-issues.md
@@ -159,18 +218,18 @@ Write-Host "  installer: $installerExe"
 
 # ── 7. Release notes ────────────────────────────────────────────────────────
 
-# Extract the section under "## $tag" from docs/CHANGELOG.md (stops at the next
-# "## vX" heading or a "---" horizontal rule).
+# Extract the section under the version heading from docs/CHANGELOG.md (stops at
+# the next version heading -- "## vX" or "<h2>vX..." -- or a "---" horizontal rule).
 $lines = Get-Content $changelogFile
 $notes = @()
 $capturing = $false
 
 foreach ($line in $lines) {
-    if ($line -match "^## $([regex]::Escape($tag))\s*$") {
+    if ($line -match "^(?:## |<h2>)$([regex]::Escape($tag))(?:</h2>)?\s*$") {
         $capturing = $true
         continue
     }
-    if ($capturing -and ($line -match '^## v' -or $line -match '^---')) {
+    if ($capturing -and ($line -match '^## v' -or $line -match '^<h2>v' -or $line -match '^---')) {
         break
     }
     if ($capturing) {
