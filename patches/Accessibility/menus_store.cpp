@@ -170,6 +170,12 @@ int      g_tradeWatchTicksRemaining = 0;
 // Price of the item at dispatch time. Reused for the success speech so
 // the user hears "Verkauft für 16 Credits" instead of plain "Verkauft".
 uint32_t g_tradeWatchPrice          = 0;
+// Player gold (CSWGuiStore.field31_0x2270) at dispatch time. The primary
+// trade-completion signal: BuyItem subtracts the price from this field and
+// SellItem adds it, both synchronously before our next tick. Unlike the
+// listbox size this always moves on a successful trade — see the same-mode
+// block in TickMonitorMode for why size is unreliable.
+uint32_t g_tradeWatchGoldAtArm      = 0;
 
 constexpr int kTradeWatchTicks = 4;  // ~64ms at 60fps — engine commits sync
 
@@ -342,68 +348,94 @@ void TickMonitorMode() {
         return;
     }
 
-    // Same panel + same mode. Detect a trade completing by watching the
-    // active listbox's controls.size — Populate*ListBox rebuilds the
-    // list (preserving row pointers) on every sell / buy, and the size
-    // changes by ±1 because:
-    //   * Sell: inv loses the sold item, shop gains it.
-    //   * Buy:  inv gains the bought item, shop loses it.
-    // We watch the active listbox (the one the user can see and chain-
-    // navigate). On any delta, rebind the chain (preserving the cursor
-    // position) and resolve the trade watcher.
+    // Same panel + same mode. A completed trade is detected primarily by
+    // the player's cached gold moving: BuyItem subtracts the price from
+    // CSWGuiStore.field31_0x2270 and SellItem adds it, both synchronously
+    // (verified in the decompile) before our next tick fires. The active
+    // listbox's controls.size is NOT a reliable trade signal — Populate*
+    // ListBox only drops a row when that item's stock/stack crosses zero:
+    //   * Buy:  shop row stays unless its stock hit 0, so buying from a
+    //           multi- or infinite-stock row leaves the size unchanged.
+    //   * Sell: SellItem does SplitItem(item,1) when stack_size >= 2, so
+    //           selling one of a stack keeps the inv row and the size.
+    // Gold always moves by exactly the price on success, so we key the
+    // success/fail decision off that and keep the size delta only as a
+    // fallback for the rare price-0 trade (and as the chain-rebind trigger).
     int activeOffset = (current == Mode::Buy)
         ? (int)kStoreShopItemsListBoxOffset
         : (int)kStoreInvItemsListBoxOffset;
     int currentSize = ReadListBoxSize(fg, (size_t)activeOffset);
-    if (currentSize < 0) return;
+    uint32_t currentGold = ReadStorePlayerGold(fg);
 
-    if (currentSize != g_lastSeenActiveListBoxSize) {
+    bool sizeChanged = (currentSize >= 0 &&
+                        currentSize != g_lastSeenActiveListBoxSize);
+
+    // Refresh the chain whenever the active list changes shape. The engine
+    // repopulates rows in place, so on a size delta the row bindings the
+    // chain holds are stale; rebind preserving the cursor so chain index N
+    // now holds whatever shifted up to fill the sold/bought row's slot.
+    if (sizeChanged) {
         acclog::Write("Menus.Store",
                       "active list size %d -> %d (mode=%s); chain rebind preserving idx",
                       g_lastSeenActiveListBoxSize, currentSize,
                       current == Mode::Buy ? "buy" : "sell");
         g_lastSeenActiveListBoxSize = currentSize;
-        // Keep the cursor on the same logical slot — the engine
-        // repopulates rows in-place, so chain index N now holds whatever
-        // shifted up to fill the sold/bought row's position.
         acc::menus::chain::RebindChainPreserveIndex(fg);
+    }
 
-        if (g_tradeWatchArmed && g_tradeWatchMode == current) {
-            char msg[96];
-            snprintf(msg, sizeof(msg),
-                     acc::strings::Get(current == Mode::Buy
-                         ? acc::strings::Id::FmtStoreBoughtFor
-                         : acc::strings::Id::FmtStoreSoldFor),
-                     (int)g_tradeWatchPrice);
-            prism::Speak(msg, /*interrupt=*/false);
-            acclog::Write("Menus.Store",
-                          "trade success mode=%s (size delta %d, price=%u)",
-                          current == Mode::Buy ? "buy" : "sell",
-                          currentSize - g_tradeWatchSizeAtArm,
-                          g_tradeWatchPrice);
-        }
+    if (!(g_tradeWatchArmed && g_tradeWatchMode == current)) return;
+
+    // Did gold move the way this trade should move it? Buy lowers it, sell
+    // raises it. (Buy mode already pre-checked gold >= price, so a buy that
+    // reaches the watcher can only fail by the engine no-op'ing — gold
+    // stays put.)
+    bool goldMoved = (current == Mode::Buy)
+        ? (currentGold < g_tradeWatchGoldAtArm)
+        : (currentGold > g_tradeWatchGoldAtArm);
+    bool committed = goldMoved || sizeChanged;
+
+    if (committed) {
+        // A multi/infinite-stock buy or a stack sell leaves the size
+        // unchanged, so Populate*ListBox refreshed the row's stock/quantity
+        // text in place without us rebinding above — do it now so the chain
+        // re-reads the updated number.
+        if (!sizeChanged) acc::menus::chain::RebindChainPreserveIndex(fg);
+
+        char msg[96];
+        snprintf(msg, sizeof(msg),
+                 acc::strings::Get(current == Mode::Buy
+                     ? acc::strings::Id::FmtStoreBoughtFor
+                     : acc::strings::Id::FmtStoreSoldFor),
+                 (int)g_tradeWatchPrice);
+        prism::Speak(msg, /*interrupt=*/false);
+        acclog::Write("Menus.Store",
+                      "trade success mode=%s via %s (gold %u -> %u, "
+                      "size delta=%d, price=%u)",
+                      current == Mode::Buy ? "buy" : "sell",
+                      goldMoved ? "gold" : "size",
+                      g_tradeWatchGoldAtArm, currentGold,
+                      sizeChanged ? (currentSize - g_tradeWatchSizeAtArm) : 0,
+                      g_tradeWatchPrice);
         g_tradeWatchArmed = false;
         return;
     }
 
-    // No size delta. If a trade is being watched, count ticks; after the
-    // window expires speak the "cannot" phrase. The engine commits
-    // SellItem / BuyItem synchronously from OnControl*AButton — if no
-    // delta has shown up after a few ticks, the engine refused (plot
-    // item, no funds, equipped, infinite-stock store row, etc.).
-    if (g_tradeWatchArmed && g_tradeWatchMode == current) {
-        if (g_tradeWatchTicksRemaining > 0) {
-            g_tradeWatchTicksRemaining--;
-        } else {
-            const char* word = acc::strings::Get(current == Mode::Buy
-                ? acc::strings::Id::StoreCannotBuy
-                : acc::strings::Id::StoreCannotSell);
-            prism::Speak(word, /*interrupt=*/false);
-            acclog::Write("Menus.Store",
-                          "trade refused mode=%s (no size delta after watch)",
-                          current == Mode::Buy ? "buy" : "sell");
-            g_tradeWatchArmed = false;
-        }
+    // Neither gold nor list moved yet. BuyItem / SellItem commit
+    // synchronously from OnControl*AButton, so a few quiet ticks means the
+    // engine refused (no item repository, etc.) rather than a deferred
+    // commit. Speak the "cannot" line once after the window expires.
+    if (g_tradeWatchTicksRemaining > 0) {
+        g_tradeWatchTicksRemaining--;
+    } else {
+        const char* word = acc::strings::Get(current == Mode::Buy
+            ? acc::strings::Id::StoreCannotBuy
+            : acc::strings::Id::StoreCannotSell);
+        prism::Speak(word, /*interrupt=*/false);
+        acclog::Write("Menus.Store",
+                      "trade refused mode=%s (no gold/size change after "
+                      "watch; gold=%u)",
+                      current == Mode::Buy ? "buy" : "sell", currentGold);
+        g_tradeWatchArmed = false;
     }
 }
 
@@ -486,16 +518,44 @@ void DispatchTradeAction(void* panel, void* row) {
     g_tradeWatchSizeAtArm      = ReadListBoxSize(panel, (size_t)activeOffset);
     g_tradeWatchTicksRemaining = kTradeWatchTicks;
     g_tradeWatchPrice          = price;
+    g_tradeWatchGoldAtArm      = ReadStorePlayerGold(panel);
+
+    // Raise the row's is_active bit if it's clear. Both OnControl{Store,Inv}
+    // AButton gate their *entire* body on `param_1->is_active != 0` and
+    // silently no-op (no popup, no gold change) otherwise — that early-out
+    // is what produced the false "Kann nicht gekauft werden" on Computersonde
+    // / Parts. A real mouse click sets the row selected (is_active=1) before
+    // the engine dispatches; we call the handler directly from the keyboard,
+    // so rows the chain hasn't freshly hovered still read 0. is_active is the
+    // engine's transient "this is the hot control" state, NOT a per-item
+    // "buyable" flag (purchasability is list-membership + the gold check
+    // inside the handler), so raising it just mimics the mouse — it can't make
+    // a genuinely-unsellable item trade. Mirror the conditional raise the
+    // Kind::Activate drain does (no restore: a real selection leaves it set,
+    // and the trade repopulates the list anyway). prevRowActive is logged so
+    // the log confirms whether this was the cause.
+    uint32_t* rowIsActive = reinterpret_cast<uint32_t*>(
+        reinterpret_cast<unsigned char*>(row) + kControlIsActiveOffset);
+    uint32_t prevRowActive = 0;
+    __try {
+        prevRowActive = *rowIsActive;
+        if (prevRowActive == 0) *rowIsActive = 1;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        // Leave it; the handler's own SEH below covers a bad row pointer.
+    }
 
     __try {
         auto fn = reinterpret_cast<PFN_StoreOnControlButton>(fnAddr);
         acclog::Write("Menus.Store",
                       "DispatchTradeAction panel=%p row=%p mode=%s -> %s "
-                      "(watch size=%d, ticks=%d, price=%u)",
+                      "(is_active=%u%s, item_resolved=%d, watch size=%d, "
+                      "ticks=%d, price=%u)",
                       panel, row,
                       mode == Mode::Buy ? "buy" : "sell",
                       mode == Mode::Buy
                           ? "OnControlStoreAButton" : "OnControlInvAButton",
+                      prevRowActive, prevRowActive == 0 ? "->1" : " (preserved)",
+                      item != nullptr ? 1 : 0,
                       g_tradeWatchSizeAtArm,
                       g_tradeWatchTicksRemaining,
                       price);
