@@ -79,6 +79,8 @@ const char* Get(Id id) {
         case Id::FmtInteractFailed:    return "Interaktion mit %s fehlgeschlagen";
         case Id::FmtInteractEngine:    return "%s %s";
         case Id::FmtInteractRadial:    return "Aktionsmen\xFC, %s";          // Aktionsmenü
+        case Id::FmtInteractNoActionsRedirect: return "Keine Aktionen verf\xFC" "gbar f\xFCr %s. Enter zum Aktivieren."; // verfügbar / für
+        case Id::FmtInteractNoActions: return "Keine Aktionen verf\xFC" "gbar f\xFCr %s.";  // verfügbar / für
 
         case Id::FmtActionBarOpened:      return "Aktionsmen\xFC Spalte %d: %s, %d Optionen"; // Aktionsmenü
         case Id::FmtActionBarColumnEmpty: return "Spalte %d ist leer";

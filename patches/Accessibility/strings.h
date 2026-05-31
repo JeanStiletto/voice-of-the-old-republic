@@ -193,6 +193,22 @@ enum class Id : int {
     //      (Security, Bash, Examine, …). One arg: `%s` target name.
     FmtInteractRadial,
 
+    // ---- Empty-radial announcements. Spoken when the radial opened
+    //      but all three target_action rows came back empty
+    //      (`ArmAfterPopulate` returned false). Two variants by the
+    //      key that triggered it:
+    //      `FmtInteractNoActionsRedirect` — Shift+Enter forced the
+    //          radial even though a default action exists (e.g. a
+    //          door-you-can-only-open). Tells the user the radial
+    //          adds nothing and to use plain Enter for the default.
+    //      `FmtInteractNoActions` — plain Enter on a fully-inert
+    //          object (no default action AND no radial rows). Just
+    //          reports the empty state; suggesting Enter would be
+    //          confusing since that's what the user just pressed.
+    //      One arg each: `%s` target name.
+    FmtInteractNoActionsRedirect,
+    FmtInteractNoActions,
+
     // ---- Player action bar (Aktionsmenü) submenu, armed by Shift+4..7.
     //      `FmtActionBarOpened`      — opener pre-roll. Args: column
     //                                  number 1..6 (`%d`), current variant

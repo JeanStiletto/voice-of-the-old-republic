@@ -216,9 +216,22 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
     if (snap.radial_opened) {
         radialArmed = acc::radial_menu::ArmAfterPopulate(name);
         if (!radialArmed) {
+            // Radial opened but `target_action` rows are all empty
+            // (e.g. door-you-can-only-open: Open lives on the engine's
+            // default-action descriptor, never enters any radial row).
+            // Tell the user there's nothing in the menu rather than
+            // speaking the generic "Aktionsmenü, X" pre-roll that
+            // implies a menu they can navigate. Shift+Enter gets a
+            // redirect to plain Enter (which dispatches the default
+            // action when one exists); plain Enter just reports the
+            // empty state — suggesting Enter again would be misleading
+            // since that's the press that just landed here.
+            acc::strings::Id phrase = forceRadial
+                ? acc::strings::Id::FmtInteractNoActionsRedirect
+                : acc::strings::Id::FmtInteractNoActions;
             std::snprintf(
                 msg, sizeof(msg),
-                acc::strings::Get(acc::strings::Id::FmtInteractRadial),
+                acc::strings::Get(phrase),
                 name);
             prism::Speak(msg, /*interrupt=*/true);
         } else {

@@ -68,6 +68,8 @@ const char* Get(Id id) {
         case Id::FmtInteractFailed:    return "Interact with %s failed";
         case Id::FmtInteractEngine:    return "%s %s";
         case Id::FmtInteractRadial:    return "Action menu, %s";
+        case Id::FmtInteractNoActionsRedirect: return "No actions available for %s. Press Enter to activate.";
+        case Id::FmtInteractNoActions: return "No actions available for %s.";
 
         case Id::FmtActionBarOpened:      return "Action bar column %d: %s, %d options";
         case Id::FmtActionBarColumnEmpty: return "Column %d is empty";

@@ -30,6 +30,7 @@ hotkey Y", "X no longer does Z"); keep technical detail short.
 
 - Shift+Up / Shift+Down on the target-action menu (Shift+1..3) and the action radial now read feat and force-power descriptions in addition to items. Plain verb actions (Attack, Open Door, ...) fall through to "Keine Beschreibung verfügbar".
 - Shift+Up / Shift+Down on the personal action bar (Aktionsmenü, Shift+4..7) now read the full item property description instead of three bytes of CP1252 garbage. The engine never populates the tooltip slot we were reading; resolver now goes through the descriptor's tagged `action_id`.
+- Shift+Enter on objects whose radial has no extra options (already-open doors, NPCs you can only talk to, ...) now speaks "Keine Aktionen verfügbar für X. Enter zum Aktivieren." instead of the bare "Aktionsmenü, X" that left the user wondering what to do next.
 
 <h3>Dialog:</h3>
 
