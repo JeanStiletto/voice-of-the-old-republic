@@ -226,13 +226,23 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
             // action when one exists); plain Enter just reports the
             // empty state — suggesting Enter again would be misleading
             // since that's the press that just landed here.
-            acc::strings::Id phrase = forceRadial
-                ? acc::strings::Id::FmtInteractNoActionsRedirect
-                : acc::strings::Id::FmtInteractNoActions;
-            std::snprintf(
-                msg, sizeof(msg),
-                acc::strings::Get(phrase),
-                name);
+            // WORKAROUND 2026-05-31: caching the chosen Id into a
+            // local `phrase` variable, then calling Get(phrase), produced
+            // session-persistent garbage values (observed 81, 145, etc.)
+            // under /O2 on some loads — same compiled DLL, different
+            // sessions disagreed on the runtime int value of the local,
+            // and once a load picked a value it stuck for the whole
+            // session. Resolving the format string via Get(literal enum
+            // constant) on both arms of the ternary sidesteps it.
+            // Phrase-local symptom captured in
+            // patch-20260531-150602.log; direct-Get fix verified in
+            // patch-20260531-151058.log. Don't fold this back into a
+            // single phrase variable without re-verifying across cold
+            // sessions.
+            const char* fmt = forceRadial
+                ? acc::strings::Get(acc::strings::Id::FmtInteractNoActionsRedirect)
+                : acc::strings::Get(acc::strings::Id::FmtInteractNoActions);
+            std::snprintf(msg, sizeof(msg), fmt, name);
             prism::Speak(msg, /*interrupt=*/true);
         } else {
             // ArmAfterPopulate spoke; build a placeholder for the log line
