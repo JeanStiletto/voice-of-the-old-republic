@@ -22,7 +22,15 @@ public:
     LoopSource& operator=(const LoopSource&) = delete;
 
     // True iff every engine call succeeded; false leaves the handle inactive.
-    bool Start(const char* resref, const Vector& worldPosition);
+    //
+    // looping/spatial default to the sustained-3D behaviour every existing
+    // caller relies on. Pass looping=false for a one-shot, spatial=false for
+    // a centred 2D play (no listener bias, no 3D position) — used by the
+    // audio glossary to audition cues while the in-game menu has the world
+    // paused (the one-shot mixer path is muted then; a directly-driven
+    // source is not).
+    bool Start(const char* resref, const Vector& worldPosition,
+               bool looping = true, bool spatial = true);
 
     void UpdatePosition(const Vector& worldPosition);  // safe no-op if inactive
     void Stop();                                       // idempotent

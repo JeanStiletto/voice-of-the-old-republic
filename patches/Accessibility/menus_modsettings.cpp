@@ -10,8 +10,8 @@
 
 #include "menus_modsettings.h"
 
-#include "audio_bus.h"        // PlayCue for the glossary 2D playback
 #include "audio_cues.h"       // NavCue + GetNavCueResref
+#include "audio_loop.h"       // LoopSource — glossary audition via CExoSoundSource
 #include "engine_input.h"
 #include "engine_manager.h"  // IsPanelInManager for close-time rebind guard
 #include "engine_panels.h"
@@ -90,6 +90,15 @@ bool                s_pendingValid  = false;
 DWORD               s_pendingFireAt = 0;
 acc::audio::NavCue  s_pendingCue    = acc::audio::NavCue::DoorOpen;
 constexpr DWORD     kGlossaryDelayMs = 750;
+
+// Audition playback handle. The glossary fires its sample through a
+// self-managed CExoSoundSource (non-looping, 2D) rather than
+// CExoSound::PlayOneShotSound. The one-shot mixer path is muted while the
+// in-game menu pauses the world (engine SetSoundMode); a directly-driven
+// source uses the same channel the GUI's own click sounds use, which stays
+// audible under that pause. Reused across fires — each Start() stops the
+// prior sample first; Close() stops any in-flight tail.
+acc::audio::LoopSource s_glossaryPreview;
 
 enum class RowKind {
     Toggle,    // Enter flips s_toggles[idx]; speech reads "Name: state"
@@ -400,6 +409,7 @@ void CloseGlossarySubMenu() {
     s_glossaryOpen    = false;
     s_glossaryFocused = 0;
     CancelPendingGlossaryCue();
+    s_glossaryPreview.Stop();  // silence any in-flight audition on close
     // Re-announce the root focus (the AudioGlossary row) so the user
     // knows they're back at the outer level. The root focus is
     // unchanged from before — it was the AudioGlossary row that was
@@ -560,12 +570,17 @@ void Tick() {
     acc::audio::NavCue cue = s_pendingCue;
     s_pendingValid = false;
     const char* resref = acc::audio::GetNavCueResref(cue);
-    // PlayCue is the 2D path — no listener-relative pan, no per-fire
-    // gating through audio_cue_player::IsCueEnabled. That's
-    // intentional: the user is auditioning the SOUND, not the active
-    // cue. They may want to hear what "Wall" sounds like even while
-    // they've disabled the wall-sound toggle.
-    bool ok = acc::audio::PlayCue(resref);
+    // Audition through a self-managed CExoSoundSource (non-looping, 2D)
+    // rather than CExoSound::PlayOneShotSound. The one-shot pipeline is
+    // muted while the in-game menu pauses the world; a directly-driven
+    // source stays audible under that pause (same channel as GUI clicks).
+    // 2D + non-spatial so the sample plays centred, matching how the
+    // main-menu glossary sounds — the user is auditioning the SOUND, not a
+    // positioned cue, and may want to hear e.g. "Wall" even with the
+    // wall-sound toggle off (no per-fire IsCueEnabled gating here).
+    const Vector kCentre = { 0.0f, 0.0f, 0.0f };
+    bool ok = s_glossaryPreview.Start(resref, kCentre,
+                                      /*looping=*/false, /*spatial=*/false);
     acclog::Write("ModSettings",
                   "glossary fire cue=%d resref=\"%s\" played=%d",
                   static_cast<int>(cue), resref, ok ? 1 : 0);

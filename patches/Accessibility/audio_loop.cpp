@@ -82,7 +82,8 @@ LoopSource::~LoopSource() {
     Stop();
 }
 
-bool LoopSource::Start(const char* resref, const Vector& worldPosition) {
+bool LoopSource::Start(const char* resref, const Vector& worldPosition,
+                       bool looping, bool spatial) {
     Stop();  // Drop any prior loop on this handle.
     if (!resref || !*resref) return false;
 
@@ -92,7 +93,9 @@ bool LoopSource::Start(const char* resref, const Vector& worldPosition) {
     // fields might still matter.
     std::memset(mem, 0, kSourceStructSize);
 
-    Vector biased = BiasForListener(worldPosition);
+    // 2D (spatial=false) skips the listener bias and 3D position entirely
+    // and plays centred — position is irrelevant for the glossary audition.
+    Vector biased = spatial ? BiasForListener(worldPosition) : worldPosition;
 
     __try {
         // Construct (vtable + engine-side internal alloc).
@@ -104,9 +107,11 @@ bool LoopSource::Start(const char* resref, const Vector& worldPosition) {
         CResRef res;
         FillResRef(res, resref);
         reinterpret_cast<PFN_SetResRef>(kAddrCExoSoundSourceSetResRef)(mem, &res, 0);
-        reinterpret_cast<PFN_Set3D>(kAddrCExoSoundSourceSet3D)(mem, 1);
-        reinterpret_cast<PFN_SetPosition>(kAddrCExoSoundSourceSetPosition)(mem, &biased, 0.0f);
-        reinterpret_cast<PFN_SetLooping>(kAddrCExoSoundSourceSetLooping)(mem, 1);
+        reinterpret_cast<PFN_Set3D>(kAddrCExoSoundSourceSet3D)(mem, spatial ? 1 : 0);
+        if (spatial) {
+            reinterpret_cast<PFN_SetPosition>(kAddrCExoSoundSourceSetPosition)(mem, &biased, 0.0f);
+        }
+        reinterpret_cast<PFN_SetLooping>(kAddrCExoSoundSourceSetLooping)(mem, looping ? 1 : 0);
 
         reinterpret_cast<PFN_Play>(kAddrCExoSoundSourcePlay)(mem);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -117,8 +122,9 @@ bool LoopSource::Start(const char* resref, const Vector& worldPosition) {
 
     source_ = mem;
     acclog::Write("LoopSource",
-                  "started resref=%s pos=(%.1f,%.1f,%.1f) src=%p",
-                  resref, biased.x, biased.y, biased.z, mem);
+                  "started resref=%s pos=(%.1f,%.1f,%.1f) loop=%d 3d=%d src=%p",
+                  resref, biased.x, biased.y, biased.z,
+                  looping ? 1 : 0, spatial ? 1 : 0, mem);
     return true;
 }
 
