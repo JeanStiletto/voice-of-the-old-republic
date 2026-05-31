@@ -44,6 +44,10 @@ hotkey Y", "X no longer does Z"); keep technical detail short.
 
 - New hotkeys Ctrl+`,` and Ctrl+`.` jump straight to the first (closest) and last (farthest) item in the current cycling category, instead of stepping one item at a time to reach an end.
 
+<h3>Audio:</h3>
+
+- The Audio-Glossar (Mod-Einstellungen → Audio-Glossar) now plays its cue previews from the in-game menu too, not just the title-screen options. Arrowing through the list auditions the focused cue; previously every preview was silent once a save was loaded because the in-game menu's pause muted it. The preview now rides the same priority channel as the engine's own GUI sounds, which stays audible through that pause.
+
 <h3>Bug fixes:</h3>
 
 - F5 in-game auto-update no longer fails with "Download fehlgeschlagen" on every press. The patch DLL was looking for the pre-rename installer EXE in the GitHub release JSON, so the asset lookup always missed and the download bailed before it started. Existing 0.1.1 users will need to manually re-run the installer once to pick up this fix; their broken DLL can't fetch a working replacement via F5. `release.ps1` now preflight-asserts consumer-side filenames and version strings against what it's about to publish, so this drift class fails at release time instead of in users' hands.

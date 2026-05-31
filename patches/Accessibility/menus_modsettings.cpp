@@ -571,16 +571,23 @@ void Tick() {
     s_pendingValid = false;
     const char* resref = acc::audio::GetNavCueResref(cue);
     // Audition through a self-managed CExoSoundSource (non-looping, 2D)
-    // rather than CExoSound::PlayOneShotSound. The one-shot pipeline is
-    // muted while the in-game menu pauses the world; a directly-driven
-    // source stays audible under that pause (same channel as GUI clicks).
-    // 2D + non-spatial so the sample plays centred, matching how the
-    // main-menu glossary sounds — the user is auditioning the SOUND, not a
-    // positioned cue, and may want to hear e.g. "Wall" even with the
-    // wall-sound toggle off (no per-fire IsCueEnabled gating here).
+    // rather than CExoSound::PlayOneShotSound. 2D + non-spatial so the
+    // sample plays centred, matching how the main-menu glossary sounds —
+    // the user is auditioning the SOUND, not a positioned cue, and may want
+    // to hear e.g. "Wall" even with the wall-sound toggle off (no per-fire
+    // IsCueEnabled gating here).
+    //
+    // Priority group 0xb is the lever that makes it audible in-game: the
+    // in-game menu calls SetSoundMode(4) on open, whose PauseAllSounds pass
+    // mutes every source EXCEPT priority groups 1/2/0xb. 0xb is the group
+    // the engine's own GUI click sounds use (CSWGuiManager::LoadGuiSounds),
+    // so the audition rides the same exemption and stays audible under the
+    // pause. (The default group 0x17 is muted — that was the silent bug.)
     const Vector kCentre = { 0.0f, 0.0f, 0.0f };
+    constexpr int kGuiPriorityGroup = 0xb;
     bool ok = s_glossaryPreview.Start(resref, kCentre,
-                                      /*looping=*/false, /*spatial=*/false);
+                                      /*looping=*/false, /*spatial=*/false,
+                                      /*priorityGroup=*/kGuiPriorityGroup);
     acclog::Write("ModSettings",
                   "glossary fire cue=%d resref=\"%s\" played=%d",
                   static_cast<int>(cue), resref, ok ? 1 : 0);

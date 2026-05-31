@@ -92,6 +92,10 @@ Improve the activation flow for combat abilities — force powers, feats, items 
 
 The "select your class" screen during character creation still needs accessible narration of the three class choices, their summaries, and confirm/back wiring.
 
+### Class selection should step left/right, not up/down
+
+On the class-selection chargen screen the three classes are a horizontal row, so navigation should be Left/Right between classes rather than Up/Down. Align the arrow binding with the spatial layout when wiring the narration above.
+
 ### Star map and Ebon Hawk travel menu
 
 The galaxy map / travel-to-planet UI needs keyboard navigation across discovered worlds and announcements for the selected planet, its lore blurb, and the confirm/cancel actions.
@@ -107,6 +111,10 @@ Expose talents, feats, and force powers for the other party members. Today only 
 ### Open-space room narration (shape, form, important exits)
 
 Walltopo handles corridors and junctions well, but open / non-corridor rooms still narrate poorly. Need a clearer summary for plaza/hall-shaped spaces: rough shape, key exits, important landmarks. May need a different topology pass than the chain-merge corridor model (`project_walltopo_chain_merge_idea.md`).
+
+### Integrate a Polish translation
+
+Add Polish as a supported language. Decide the integration path — installer locale JSON (alongside de/en/fr/it/es) and/or in-game speech strings routed through the shared strings system — and wire it in. Source of the Polish strings (community contribution vs AI draft like fr/it/es) to be determined.
 
 ## Monitor
 
