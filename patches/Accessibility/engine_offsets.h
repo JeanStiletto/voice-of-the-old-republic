@@ -1132,6 +1132,24 @@ constexpr size_t    kEquipPanelChangeParty2ButtonOffset   = 0x3BE4;
 constexpr size_t    kEquipPanelCharacterLeftButtonOffset  = 0x3DA8;
 constexpr size_t    kEquipPanelCharacterRightButtonOffset = 0x3F6C;
 
+// CSWGuiLevelUpPanel "Zurück" (button_back) and "Abbrechen"
+// (button_cancel) — the two trailing CSWGuiButton members before
+// field9_0x1ccc in the struct. Both are dead ends for keyboard nav and
+// are filtered from the chain (see menus_chain.cpp isDecorative): Zurück
+// only steps the engine's visual category highlight (we navigate
+// categories with our own arrows), and Abbrechen → OnCancelPressed is
+// gated on a can-cancel flag that the engine only ever assigns 0
+// (CSWGuiLevelUpCharGen::OnPanelAdded calls SetCanCancel(panel, 0), the
+// sole caller in the binary) — so an in-game level-up cannot be
+// cancelled; Annehmen is the only exit. Identify by offset, not control
+// id: ids are reassigned per session (Zurück seen as id 19 then id 1).
+// Derived 2026-05-31 from patch-20260531-182325.log: panel 15E793C8,
+// Zurück@0x1944 (15E7AD0C). Stride 0x1c4 = sizeof(CSWGuiButton); struct
+// order per swkotor.exe.h CSWGuiLevelUpPanel (…button_back, button_cancel,
+// field9_0x1ccc@0x1ccc).
+constexpr size_t    kLevelUpButtonBackOffset              = 0x1944;
+constexpr size_t    kLevelUpButtonCancelOffset            = 0x1B08;
+
 // CSWSCreatureStats.feats @+0x0 — CExoArrayList<ushort>. Count lives
 // at +0x4 (size field of the list). Static feat list (granted at level-
 // up + class); doesn't drift mid-combat. Used by Shift+H to communicate

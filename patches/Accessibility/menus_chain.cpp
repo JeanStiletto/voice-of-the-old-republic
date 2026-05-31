@@ -449,6 +449,22 @@ void RebindChain(void* panel) {
                 return true;
             }
         }
+        // InGameLevelUp "Zurück" (button_back) and "Abbrechen"
+        // (button_cancel). Both are dead ends for keyboard nav: Zurück
+        // only steps the engine's visual category highlight — we already
+        // navigate the level-up categories with our own arrow keys — and
+        // Abbrechen routes to OnCancelPressed, which the engine gates on a
+        // can-cancel flag it only ever sets to 0 (see kLevelUpButton*Offset
+        // in engine_offsets.h). An in-game level-up cannot be cancelled in
+        // vanilla; Annehmen is the sole exit. Drop both so arrow nav steps
+        // only through the actionable category buttons + Annehmen.
+        if (pk == PanelKind::InGameLevelUp) {
+            auto* p = reinterpret_cast<unsigned char*>(panel);
+            if (c == p + kLevelUpButtonBackOffset ||
+                c == p + kLevelUpButtonCancelOffset) {
+                return true;
+            }
+        }
         // PartySelection portraits with no currently-selectable
         // companion. The panel renders all 9 roster slots in a fixed
         // 3x3 grid; sighted players see empty / greyed slots, but a
