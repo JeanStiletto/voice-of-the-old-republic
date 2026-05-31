@@ -75,6 +75,8 @@ const char* const kActionNames[static_cast<int>(Action::COUNT)] = {
     "CycleCategoryPrev",
     "CycleItemNext",
     "CycleCategoryNext",
+    "CycleItemFirst",
+    "CycleItemLast",
     "AnnounceFocus",
     "PathfindFocus",
     "PathfindFocusForce",
@@ -222,10 +224,15 @@ void InitDefaults() {
     // (Alt) forbids Ctrl; BeaconFocus (Ctrl) forbids AltGr (otherwise
     // QWERTZ AltGr+- double-fires as beacon because Windows synthesises a
     // phantom Ctrl alongside RMENU).
-    bind(Action::CycleItemPrev,        VK_OEM_COMMA,  0, 0,         kModShift);
+    bind(Action::CycleItemPrev,        VK_OEM_COMMA,  0, 0,         kModShift | kModCtrl);
     bind(Action::CycleCategoryPrev,    VK_OEM_COMMA,  0, kModShift, 0);
-    bind(Action::CycleItemNext,        VK_OEM_PERIOD, 0, 0,         kModShift);
+    bind(Action::CycleItemNext,        VK_OEM_PERIOD, 0, 0,         kModShift | kModCtrl);
     bind(Action::CycleCategoryNext,    VK_OEM_PERIOD, 0, kModShift, 0);
+    // Ctrl+, / Ctrl+. jump to the first / last item of the current category.
+    // Forbid Shift/Alt/AltGr so they stay distinct from the item/category
+    // steps above and so QWERTZ AltGr+,/. (phantom Ctrl) doesn't fire them.
+    bind(Action::CycleItemFirst,       VK_OEM_COMMA,  0, kModCtrl,  kModShift | kModAlt | kModAltGr);
+    bind(Action::CycleItemLast,        VK_OEM_PERIOD, 0, kModCtrl,  kModShift | kModAlt | kModAltGr);
     bind(Action::AnnounceFocus,        VK_OEM_2, VK_OEM_MINUS, 0,
                                        kModShift | kModCtrl | kModAlt);
     bind(Action::PathfindFocus,        VK_OEM_2, VK_OEM_MINUS, kModShift,

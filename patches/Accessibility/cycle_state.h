@@ -63,6 +63,15 @@ void* CyclePrevItem(const CategoryListing& listing,
                     acc::filter::CycleContext ctx =
                         acc::filter::CycleContext::World);
 
+// Jump straight to the first (closest) / last (farthest) item of the
+// listing. Returns the new focusedObj (nullptr on empty).
+void* CycleFirstItem(const CategoryListing& listing,
+                     acc::filter::CycleContext ctx =
+                         acc::filter::CycleContext::World);
+void* CycleLastItem(const CategoryListing& listing,
+                    acc::filter::CycleContext ctx =
+                        acc::filter::CycleContext::World);
+
 // Empty-category silent skip: scans up to 6 sibling categories until a
 // non-empty one is found. On success focusedIndex=0 and focusedObj is the
 // closest item; on failure both reset. outListing receives the result.

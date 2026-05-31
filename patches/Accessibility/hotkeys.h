@@ -68,6 +68,8 @@ enum class Action : int {
     CycleCategoryPrev,     // Shift+,
     CycleItemNext,         // .
     CycleCategoryNext,     // Shift+.
+    CycleItemFirst,        // Ctrl+,  (jump to first/closest item in category)
+    CycleItemLast,         // Ctrl+.  (jump to last/farthest item in category)
     AnnounceFocus,         // - (QWERTZ) / / (QWERTY)
     PathfindFocus,         // Shift+-
     PathfindFocusForce,    // Alt+-

@@ -170,6 +170,8 @@ When this document and `hotkeys.cpp` disagree, `hotkeys.cpp` wins. Update both t
 - Shift+`,` — Cycle to previous category.
 - `.` (period) — Cycle to next item within the current category.
 - Shift+`.` — Cycle to next category.
+- Ctrl+`,` — Jump to the first (closest) item within the current category.
+- Ctrl+`.` — Jump to the last (farthest) item within the current category.
 - `-` (QWERTZ) / `/` (QWERTY) — Announce the currently-focused cycle target. Same physical key right of `.` on both layouts; we listen for both VKs so the binding stays consistent.
 - Shift+`-` / Shift+`/` — Autowalk to focus via UseObject (engine click-pipeline).
 - Alt+`-` / Alt+`/` — ForceWalkTo (queue-bypass) — diagnostic / future companion-NPC nudge entry point.
@@ -230,6 +232,7 @@ These are intentionally outside the rebindable set and stay on direct Win32 poll
 ### Layout notes (QWERTZ vs QWERTY)
 
 - `,` and `.` are at the same VK on both layouts (`VK_OEM_COMMA` / `VK_OEM_PERIOD`).
+- Ctrl+`,` / Ctrl+`.` (jump to first/last item) reuse those same VKs with the Ctrl modifier. They forbid Shift/Alt/AltGr, so on QWERTZ the phantom Ctrl that Windows synthesises alongside AltGr can't trigger them — same guard the Ctrl+`-` beacon binding uses.
 - The "announce focus" key is the physical key right of `.`: `VK_OEM_2` on US QWERTY (`/`), `VK_OEM_MINUS` on German QWERTZ (`-`). The mod binds both so the same physical position works on either layout.
 - AltGr is `VK_RMENU` only. Windows synthesises a phantom `VK_LCONTROL` alongside `VK_RMENU` when AltGr is pressed on QWERTZ; the Ctrl-modifier binding (Ctrl+`-` → beacon) explicitly excludes the case where `VK_RMENU` is also held, so AltGr+`-` doesn't double-fire as beacon.
 

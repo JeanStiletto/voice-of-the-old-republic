@@ -294,6 +294,17 @@ void OnCycleItem(bool prev, acc::filter::CycleContext ctx) {
     AnnounceCurrent(listing, /*categoryPrefix=*/nullptr, ctx);
 }
 
+// Jump to the first (closest) or last (farthest) item of the current
+// category and announce it. Same listing-refresh + announce flow as
+// OnCycleItem; only the index target differs (Ctrl+, / Ctrl+.).
+void OnCycleEdge(bool last, acc::filter::CycleContext ctx) {
+    acc::cycle::CategoryListing listing;
+    acc::cycle::RefreshCurrentListing(listing, ctx);
+    if (last) acc::cycle::CycleLastItem(listing, ctx);
+    else      acc::cycle::CycleFirstItem(listing, ctx);
+    AnnounceCurrent(listing, /*categoryPrefix=*/nullptr, ctx);
+}
+
 // Step to the next/prev non-empty category and announce
 // "{Category}. {closest item name}, {clock}, {metres}". When all six
 // categories are empty, speaks the EmptyAll string without a prefix
@@ -763,7 +774,14 @@ bool TryHandleEvent(int param_1, int param_2) {
             return false;
         }
         const bool prev = (param_1 == kInputKbComma);
-        if (g_engineShiftHeld) OnCycleCategory(prev, ctx);
+        // Ctrl+, / Ctrl+. jump to the first / last item of the current
+        // category. Ctrl wins over Shift (matches the dash-family
+        // Ctrl>Alt>Shift precedence). The engine latches Shift for us
+        // (g_engineShiftHeld) but not Ctrl, so read OS-level Ctrl state
+        // directly — same source PollWin32's binding match uses.
+        const bool ctrl = acc::hotkeys::CtrlHeld();
+        if (ctrl)              OnCycleEdge    (/*last=*/!prev, ctx);
+        else if (g_engineShiftHeld) OnCycleCategory(prev, ctx);
         else                   OnCycleItem    (prev, ctx);
         // Suppress PollWin32 from re-dispatching the same press. In Map
         // context the engine routes `,`/`.` through the manager hook
@@ -772,7 +790,11 @@ bool TryHandleEvent(int param_1, int param_2) {
         // (not Consume) is required because the manager input fires
         // between EndTick and BeginTick — see the InteractTarget claim
         // in menus.cpp::OnHandleInputEvent for the same pattern.
-        if (g_engineShiftHeld) {
+        if (ctrl) {
+            acc::hotkeys::ClaimRisingEdge(
+                prev ? acc::hotkeys::Action::CycleItemFirst
+                     : acc::hotkeys::Action::CycleItemLast);
+        } else if (g_engineShiftHeld) {
             acc::hotkeys::ClaimRisingEdge(
                 prev ? acc::hotkeys::Action::CycleCategoryPrev
                      : acc::hotkeys::Action::CycleCategoryNext);
@@ -802,6 +824,8 @@ void PollWin32() {
     bool risingCommaCategory = hk::Pressed(hk::Action::CycleCategoryPrev);
     bool risingPeriodItem    = hk::Pressed(hk::Action::CycleItemNext);
     bool risingPeriodCategory= hk::Pressed(hk::Action::CycleCategoryNext);
+    bool risingCommaFirst    = hk::Pressed(hk::Action::CycleItemFirst);
+    bool risingPeriodLast    = hk::Pressed(hk::Action::CycleItemLast);
     bool risingAnnounce      = hk::Pressed(hk::Action::AnnounceFocus);
     bool risingPathfind      = hk::Pressed(hk::Action::PathfindFocus);
     bool risingPathfindForce = hk::Pressed(hk::Action::PathfindFocusForce);
@@ -809,6 +833,7 @@ void PollWin32() {
 
     if (!risingCommaItem && !risingCommaCategory &&
         !risingPeriodItem && !risingPeriodCategory &&
+        !risingCommaFirst && !risingPeriodLast &&
         !risingAnnounce && !risingPathfind &&
         !risingPathfindForce && !risingBeacon) return;
 
@@ -837,6 +862,8 @@ void PollWin32() {
         if (risingCommaCategory)  OnCycleCategory(/*prev=*/true,  ctx);
         if (risingPeriodItem)     OnCycleItem    (/*prev=*/false, ctx);
         if (risingPeriodCategory) OnCycleCategory(/*prev=*/false, ctx);
+        if (risingCommaFirst)     OnCycleEdge    (/*last=*/false, ctx);
+        if (risingPeriodLast)     OnCycleEdge    (/*last=*/true,  ctx);
     }
 
     // Precedence: Ctrl > Alt > Shift > bare. The Action bindings encode

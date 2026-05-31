@@ -230,6 +230,33 @@ void* CyclePrevItem(const CategoryListing& listing,
     return s.focusedObj;
 }
 
+void* CycleFirstItem(const CategoryListing& listing,
+                     acc::filter::CycleContext ctx) {
+    auto& s = GetState(ctx);
+    if (listing.count == 0) {
+        s.focusedIndex = -1;
+        s.focusedObj   = nullptr;
+        return nullptr;
+    }
+    s.focusedIndex = 0;
+    s.focusedObj   = listing.objs[0];
+    return s.focusedObj;
+}
+
+void* CycleLastItem(const CategoryListing& listing,
+                    acc::filter::CycleContext ctx) {
+    auto& s = GetState(ctx);
+    if (listing.count == 0) {
+        s.focusedIndex = -1;
+        s.focusedObj   = nullptr;
+        return nullptr;
+    }
+    int last = listing.count - 1;
+    s.focusedIndex = last;
+    s.focusedObj   = listing.objs[last];
+    return s.focusedObj;
+}
+
 namespace {
 
 bool CycleCategoryDirectional(CategoryListing& outListing,
