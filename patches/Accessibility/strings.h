@@ -1229,6 +1229,14 @@ enum class Id : int {
     LoadingPleaseWait,
     LoadingStuckWorkaround,
 
+    // Pause-state transition cues. Spoken when the engine's server-side
+    // pause bitmask flips 0 ↔ nonzero AND the player is in pure in-world
+    // view (no menu, no popup). Suppressed for menu opens / modal closes
+    // because those have their own panel-walk speech that already conveys
+    // the state change. Combat autopause + manual Space pass through.
+    GamePaused,
+    GameResumed,
+
     Count_,
 };
 

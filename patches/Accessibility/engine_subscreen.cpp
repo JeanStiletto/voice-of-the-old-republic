@@ -9,6 +9,8 @@
 #include "log.h"
 #include "menus.h"           // ClearPendingAnnounce — partner of InvalidateChain
 #include "menus_chain.h"     // InvalidateChain — teardown-window stale-pointer guard
+#include "prism.h"           // Speak — pause/resume cue
+#include "strings.h"         // Id::GamePaused / Id::GameResumed
 
 namespace acc::engine {
 
@@ -57,6 +59,27 @@ using PFN_SetSoundMode = void(__thiscall *)(void* self, int mode);
 // singleton. Dereference to get the `this` for SetSoundMode.
 constexpr uintptr_t kAddrExoSoundPtr = 0x007a39ec;
 
+// SetPauseState's first arg is the bit MASK itself (engine does
+// `byte | mask` / `byte & ~mask`), NOT a bit index. Bit 0x02 is the
+// menu/manual pause source per project_messagebox_close_unpause —
+// both CSWCMessage::SendPlayerToServerInput_TogglePauseRequest (Space)
+// and every sub-screen / popup open route through this bit.
+constexpr unsigned char kPauseBitManualOrMenu = 0x02;
+
+// Live shadow of the server's pause byte. Updated by OnSetPauseState
+// on every engine fire. Distinct from "is the byte at +0x178 the live
+// state" — Ghidra's `pause_state_` field label was misleading; polling
+// that offset returned 0 even when sub-screens paused the game. The
+// hook approach sidesteps the question entirely: we accumulate (mask,
+// on_off) pairs and that IS the live state by definition.
+unsigned char g_pauseShadow = 0;
+
+// Set to true around our own SetPauseState calls so the OnSetPauseState
+// hook can recognise its own footsteps and skip the user-facing speech.
+// The mask flip still updates g_pauseShadow because the engine state
+// did genuinely change — only the announcement is suppressed.
+bool g_inOwnPauseCall = false;
+
 }  // namespace
 
 namespace {
@@ -90,7 +113,11 @@ void DispatchUnpauseCleanup(const char* trigger) {
             if (server) {
                 auto fn = reinterpret_cast<PFN_SetPauseState>(
                     kAddrSetPauseState);
-                fn(server, 2, 0);
+                // OnSetPauseState fires synchronously inside this call —
+                // flag it so the hook stays silent for our own footsteps.
+                g_inOwnPauseCall = true;
+                fn(server, kPauseBitManualOrMenu, 0);
+                g_inOwnPauseCall = false;
             } else {
                 acclog::Write("PauseToggle",
                               "SetPauseState skipped: server NULL");
@@ -334,5 +361,85 @@ extern "C" void __cdecl OnHideSWInGameGui(void* thisPtr, void* p1_addr) {
     acclog::Write("SubScreen.Hide",
                   "this=%p param_1=%d caller=0x%08x",
                   thisPtr, param_1, caller_eip);
+}
+
+// CServerExoAppInternal::SetPauseState @ 0x004b8110 — fires on every
+// pause-state mutation. param_1 is the bit MASK (not an index); param_2
+// is the new value (0 = clear bits in mask, 1 = set them). Bit 0x02 is
+// the manual+menu pause source. Announce only on bit 0x02 transitions
+// that come from outside our own DispatchUnpauseCleanup AND when no UI
+// is up (menu opens/closes have their own panel-walk speech).
+//
+// Engine-side state lives wherever the engine's `pause_state_` field
+// actually maps to (Ghidra labelled +0x178 but that offset returned 0
+// in live testing — the real offset is elsewhere). We don't need to
+// know: g_pauseShadow tracks our own (mask, on_off) accumulator and
+// IS the live state by definition once the hook is in place.
+extern "C" void __cdecl OnSetPauseState(void* thisPtr,
+                                         void* p1_addr,
+                                         void* p2_addr) {
+    if (!p1_addr || !p2_addr) return;
+
+    int mask = 0;
+    int onOff = 0;
+    uint32_t caller_eip = 0;
+    __try {
+        mask  = *reinterpret_cast<int*>(p1_addr);
+        onOff = *reinterpret_cast<int*>(p2_addr);
+        caller_eip = *(reinterpret_cast<uint32_t*>(p1_addr) - 1);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Pause", "deref faulted (this=%p)", thisPtr);
+        return;
+    }
+
+    const unsigned char prev = acc::engine::g_pauseShadow;
+    const unsigned char maskByte = static_cast<unsigned char>(mask);
+    const unsigned char next = onOff
+        ? static_cast<unsigned char>(prev | maskByte)
+        : static_cast<unsigned char>(prev & ~maskByte);
+    acc::engine::g_pauseShadow = next;
+
+    acclog::Write(
+        "Pause", "fire mask=0x%02x on_off=%d shadow %02x->%02x caller=0x%08x%s",
+        static_cast<unsigned>(maskByte), onOff,
+        static_cast<unsigned>(prev), static_cast<unsigned>(next),
+        caller_eip,
+        acc::engine::g_inOwnPauseCall ? " (SELF)" : "");
+
+    if (acc::engine::g_inOwnPauseCall) return;
+    if ((maskByte & acc::engine::kPauseBitManualOrMenu) == 0) return;
+
+    const unsigned char prevBit = prev & acc::engine::kPauseBitManualOrMenu;
+    const unsigned char nowBit  = next & acc::engine::kPauseBitManualOrMenu;
+    if (prevBit == nowBit) return;  // idempotent, engine short-circuits anyway
+
+    // UI-state suppression — menu opens, menu closes, and popup show/dismiss
+    // all flip bit 0x02. The panel-walk speech is the user's cue in those
+    // cases; speaking "Paused"/"Resumed" on top would be noise.
+    int modalSize = 0;
+    bool hasSubScreen = false;
+    __try {
+        void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+        if (mgr) {
+            modalSize = *reinterpret_cast<int*>(
+                static_cast<unsigned char*>(mgr) + kMgrModalStackSizeOffset);
+        }
+        hasSubScreen = acc::engine::HasActiveSubScreen();
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return;
+    }
+    if (modalSize > 0 || hasSubScreen) {
+        acclog::Write(
+            "Pause", "speech SUPPRESSED (modal=%d subscreen=%d)",
+            modalSize, hasSubScreen ? 1 : 0);
+        return;
+    }
+
+    const bool nowPaused = (nowBit != 0);
+    prism::Speak(
+        acc::strings::Get(
+            nowPaused ? acc::strings::Id::GamePaused
+                      : acc::strings::Id::GameResumed),
+        /*interrupt=*/false);
 }
 

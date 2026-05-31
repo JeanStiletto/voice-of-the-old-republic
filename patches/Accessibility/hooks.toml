@@ -1023,3 +1023,48 @@ exclude_from_restore = []
 [[hooks.parameters]]
 source = "ecx"
 type = "pointer"
+
+# CServerExoAppInternal::SetPauseState @ 0x004b8110 — every pause-state
+# mutation (manual Space, menu pause, combat autopause, dialog autopause)
+# routes through here. __thiscall(this, int mask, ulong on_off). param_1
+# is the bit MASK itself (engine does `byte | mask` / `byte & ~mask`), not
+# a bit index. Bit 0x02 = menu+manual pause source per
+# project_messagebox_close_unpause; other bits TBD (will emerge in the log).
+#
+# Polling +0x178 was a dead end — Ghidra's `pause_state_` label doesn't
+# correspond to the live state field at that offset. The hook lifts the
+# call directly so we get (mask, on_off, caller_eip) verbatim.
+#
+# Entry bytes (DumpBytes 2026-05-31):
+#   00 51              PUSH ECX
+#   01 53              PUSH EBX
+#   02 8B 5C 24 0C     MOV  EBX, [ESP+0Ch]     ; param_1 (after 2 PUSH)
+#   06 55              PUSH EBP
+#   ...
+# Cut 6 bytes: PUSH ECX + PUSH EBX + MOV EBX,[ESP+0Ch]. Position-independent.
+# At hook entry (before cut runs):
+#   ECX    = this (CServerExoAppInternal*)
+#   [ESP+0] = return addr (caller_eip via *(p1_addr-1))
+#   [ESP+4] = param_1 (int mask)
+#   [ESP+8] = param_2 (ulong on_off)
+[[hooks]]
+address = 0x004b8110
+type = "detour"
+function = "OnSetPauseState"
+
+original_bytes = [0x51, 0x53, 0x8b, 0x5c, 0x24, 0x0c]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+4"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+8"
+type = "pointer"

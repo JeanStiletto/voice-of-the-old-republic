@@ -436,6 +436,9 @@ const char* Get(Id id) {
         case Id::LoadingPleaseWait:     return "Spiel l\xE4""dt noch, bitte warten.";
         case Id::LoadingStuckWorkaround: return "Men\xFC reagiert immer noch nicht. Alt F4 dr\xFC""cken und den Beenden-Dialog abbrechen, um es zu wecken.";
 
+        case Id::GamePaused:            return "Pause.";
+        case Id::GameResumed:           return "Pause aufgehoben.";
+
         case Id::Count_:               return "";
     }
     return "";

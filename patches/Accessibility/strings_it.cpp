@@ -417,6 +417,9 @@ const char* Get(Id id) {
         case Id::LoadingPleaseWait:     return "Il gioco sta ancora caricando, attendere prego.";
         case Id::LoadingStuckWorkaround: return "Il menu non risponde ancora. Premi Alt F4 e annulla la finestra di uscita per risvegliarlo.";
 
+        case Id::GamePaused:            return "In pausa.";
+        case Id::GameResumed:           return "Pausa rimossa.";
+
         case Id::Count_:               return "";
     }
     return "";
