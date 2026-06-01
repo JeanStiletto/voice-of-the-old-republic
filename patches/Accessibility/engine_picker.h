@@ -69,6 +69,19 @@ struct ActionSnapshot {
 bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot,
            bool forceRadial = false);
 
+// Re-assert the radial's target and rebuild the engine target-action
+// menu for it, WITHOUT dispatching. Mirrors Drive's force-radial setup
+// (SetMainInterfaceTarget + GetDefaultActions + PopulateMenus) but lean —
+// no diagnostic dumps — so the radial input handler can call it on every
+// keypress. The engine re-derives the target-action menu from the mouse
+// cursor on every mouse-move, so for a keyboard-only / windowed user a
+// drifting cursor silently re-points it off our target between Shift+Enter
+// and Enter (see memory project_radial_cursor_coupling). Re-anchoring at
+// the top of each radial keypress overrides that. targetServerHandle is
+// the server-side id; the client high bit (0x80000000) is OR'd internally.
+// Returns true iff the populate chain ran without faulting.
+bool ReanchorRadial(uint32_t targetServerHandle);
+
 // Read +0x4c8 without driving anything — observe the engine's own picker
 // (cursor-hover or passive-selection-driven) for diagnostics or refined
 // narration of what Enter would pick now.

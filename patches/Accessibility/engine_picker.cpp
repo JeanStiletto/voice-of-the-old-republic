@@ -436,6 +436,46 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot,
     return dispatched;
 }
 
+bool ReanchorRadial(uint32_t targetServerHandle) {
+    if (targetServerHandle == 0u || targetServerHandle == 0xFFFFFFFFu ||
+        targetServerHandle == kInvalidObjectId) {
+        return false;
+    }
+    uint32_t targetClient =
+        (targetServerHandle & 0x80000000u) ? targetServerHandle
+                                           : (targetServerHandle | 0x80000000u);
+
+    void* exoApp   = GetClientExoApp();
+    void* internal = GetClientExoAppInternal(exoApp);
+    void* guiIn    = GetGuiInGame(internal);
+    void* mainIf   = GetMainInterface(guiIn);
+    if (!internal || !guiIn || !mainIf) return false;
+
+    // Same three engine calls as Drive's force-radial branch, minus the
+    // diagnostics — this runs on every radial keypress, so it must stay
+    // quiet. SetMainInterfaceTarget points field1_0x64 at our target;
+    // GetDefaultActions + PopulateMenus rebuild the target-action menu for
+    // it, overwriting whatever the cursor's last mouse-move left there.
+    __try {
+        auto setTgt = reinterpret_cast<PFN_SetMainInterfaceTarget>(
+            kAddrCGuiInGameSetMainInterfaceTarget);
+        setTgt(guiIn, targetClient);
+
+        auto getActions = reinterpret_cast<PFN_GetDefaultActions>(
+            kAddrCClientExoAppInternalGetDefaultActions);
+        getActions(internal);
+
+        auto populate = reinterpret_cast<PFN_PopulateMenus>(
+            kAddrCSWGuiMainInterfacePopulateMenus);
+        populate(mainIf);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Picker", "ReanchorRadial SEH-FAULT target=0x%08x",
+            targetClient);
+        return false;
+    }
+    return true;
+}
+
 bool ReadCurrent(ActionSnapshot* outSnapshot) {
     ActionSnapshot localSnap = {};
     void* exoApp   = GetClientExoApp();

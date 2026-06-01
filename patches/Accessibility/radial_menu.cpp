@@ -5,6 +5,8 @@
 
 #include "engine_input.h"     // kInputNavUp/Down/Left/Right, kInputEnter1/2,
                               // kInputEsc1/2
+#include "engine_picker.h"    // ReanchorRadial — re-assert our target each
+                              // keypress so cursor drift can't empty the menu
 #include "engine_radial.h"
 #include "engine_reads.h"    // ReadControlTooltip for Shift+arrow tooltip
 #include "hotkeys.h"         // ShiftHeld
@@ -21,6 +23,14 @@ namespace {
 struct State {
     bool        active     = false;
     int         curRow     = 0;
+    // Within-row variant index, tracked PER ROW in our own state rather
+    // than relying on the engine's field1 — because we rebuild the engine
+    // menu on every keypress (re-anchor), which resets its selection to
+    // the default. Re-applied after each rebuild via
+    // ApplyWithinRowSelection. Mirrors the engine's per-row field1 layout
+    // so switching rows preserves each row's chosen variant.
+    int         actionInRow[acc::engine_radial::kRowCount] = {0};
+    uint32_t    targetHandle = 0;  // server handle, cached for re-anchor
     char        target[64] = "";  // for re-announce on row switch
 };
 
@@ -103,9 +113,27 @@ void SpeakCurrentLabel(void* tam, int row) {
     acc::menu_speak::SpeakChoice("Radial", label, "label row=%d", row);
 }
 
+// After a fresh re-anchor the engine menu sits at its default (first)
+// variant for every row. Replay our tracked within-row index by stepping
+// the engine's own SelectNext primitive `index` times — this advances BOTH
+// the dispatch-time selection (field1) AND the rendered button label, so a
+// subsequent ReadRowActionLabel / DispatchRowAction sees the right variant
+// (using SelectActionInRow's field1-only stamp would leave the rendered
+// label lagging — see project_radial_populate_decomp). Clamps to the row's
+// live count so a shrunk row can't over-step. No-op for index 0.
+void ApplyWithinRowSelection(void* tam, int row, int index) {
+    int cnt = acc::engine_radial::RowActionCount(tam, row);
+    if (cnt <= 1) return;
+    int n = index % cnt;
+    if (n < 0) n += cnt;
+    for (int i = 0; i < n; ++i) {
+        acc::engine_radial::SelectNextActionInRow(tam, row);
+    }
+}
+
 }  // namespace
 
-bool ArmAfterPopulate(const char* targetName) {
+bool ArmAfterPopulate(const char* targetName, uint32_t targetServerHandle) {
     void* tam = acc::engine_radial::ResolveTargetActionMenu();
     if (!tam) {
         acclog::Write("Radial", "ArmAfterPopulate — TAM unresolved; not arming");
@@ -128,6 +156,10 @@ bool ArmAfterPopulate(const char* targetName) {
 
     g_state.active = true;
     g_state.curRow = firstRow;
+    g_state.targetHandle = targetServerHandle;
+    for (int r = 0; r < acc::engine_radial::kRowCount; ++r) {
+        g_state.actionInRow[r] = 0;
+    }
     if (targetName && targetName[0]) {
         std::snprintf(g_state.target, sizeof(g_state.target), "%s", targetName);
     } else {
@@ -172,13 +204,67 @@ bool HandleInputEvent(int code, int value) {
         return false;
     }
 
+    // Esc just drops our gate — no point rebuilding the engine menu we're
+    // about to abandon. Handle it before the re-anchor below.
+    if (code == kInputEsc1 || code == kInputEsc2) {
+        acclog::Write("Radial", "ESC — disarming (no engine cleanup)");
+        ForceDisarm("esc");
+        return true;
+    }
+
+    // Re-assert OUR target before touching the menu. The engine re-derives
+    // the target-action menu from the mouse cursor on every mouse-move, so
+    // between presses a drifting / off-target cursor (the keyboard-only /
+    // windowed case) silently empties it or points it elsewhere
+    // (project_radial_cursor_coupling). Rebuilding it for our cached target
+    // makes what we read and dispatch always ours, regardless of the cursor.
+    if (!acc::picker::ReanchorRadial(g_state.targetHandle)) {
+        acclog::Write("Radial", "HandleInputEvent — reanchor failed "
+            "(target=0x%08x) key=%d; disarming", g_state.targetHandle, code);
+        ForceDisarm("reanchor-failed");
+        return true;
+    }
     void* tam = acc::engine_radial::ResolveTargetActionMenu();
     if (!tam) {
         acclog::Write("Radial", "HandleInputEvent — TAM unresolved on key=%d; "
             "force-disarming",
             code);
         ForceDisarm("tam-unresolved");
-        return false;
+        return true;
+    }
+
+    // The rebuild reflects the target's CURRENT actions. If it now has none
+    // (door opened by a script, leader Tab-swapped away the Security skill,
+    // last spike used elsewhere, target died, …) the action genuinely went
+    // away — say so and disarm rather than dispatching the wrong thing.
+    {
+        int c0 = acc::engine_radial::RowActionCount(tam, 0);
+        int c1 = acc::engine_radial::RowActionCount(tam, 1);
+        int c2 = acc::engine_radial::RowActionCount(tam, 2);
+        int total = c0 + c1 + c2;
+        acclog::Write("Radial", "reanchor key=%d target=0x%08x counts={r0=%d,r1=%d,r2=%d}",
+                      code, g_state.targetHandle, c0, c1, c2);
+        if (total == 0) {
+            char msg[192];
+            std::snprintf(msg, sizeof(msg),
+                acc::strings::Get(acc::strings::Id::FmtInteractNoActions),
+                g_state.target);
+            prism::Speak(msg, /*interrupt=*/true);
+            acclog::Write("Radial", "reanchor — target lost all actions; "
+                "disarming -> [%s]", msg);
+            ForceDisarm("target-no-actions");
+            return true;
+        }
+        // Current row drained but others survive — step to the first
+        // populated one so nav/dispatch has somewhere to stand.
+        if (acc::engine_radial::RowActionCount(tam, g_state.curRow) <= 0) {
+            int r = FirstPopulatedRow(tam);
+            if (r >= 0) {
+                acclog::Write("Radial", "row %d drained on reanchor -> %d",
+                              g_state.curRow, r);
+                g_state.curRow = r;
+            }
+        }
     }
 
     // Shift+arrow on any nav key: speak the currently-selected
@@ -192,6 +278,10 @@ bool HandleInputEvent(int code, int value) {
          code == kInputNavLeft || code == kInputNavRight) &&
         acc::hotkeys::ShiftHeld())
     {
+        // Restore our tracked variant on the freshly-rebuilt menu so the
+        // action_id we read is the one the user actually has selected.
+        ApplyWithinRowSelection(tam, g_state.curRow,
+                                g_state.actionInRow[g_state.curRow]);
         uint32_t actionId = acc::engine_radial::ReadSelectedRowActionId(
             tam, g_state.curRow);
         char text[8192];
@@ -228,15 +318,18 @@ bool HandleInputEvent(int code, int value) {
             g_state.curRow = next;
             acclog::Write("Radial", "row %s %d -> %d",
                           dir > 0 ? "down" : "up", prev, next);
+            // Restore the new row's tracked variant on the rebuilt menu
+            // before reading its label.
+            ApplyWithinRowSelection(tam, next, g_state.actionInRow[next]);
             SpeakRowAction(tam, next, /*prefix=*/nullptr);
             return true;
         }
         case kInputNavLeft:
         case kInputNavRight: {
-            // Cycle the action *within* the current row using the engine's
-            // own primitive. The engine's SelectNext/Prev mutates
-            // target_actions[row].action_button.text in-place; reading it
-            // back gives us the new label.
+            // Cycle the action *within* the current row. We track the index
+            // in our own state (the per-keypress re-anchor reset the
+            // engine's selection to default) and re-apply it on the rebuilt
+            // menu, so reading the label back gives the new variant.
             int count = acc::engine_radial::RowActionCount(tam, g_state.curRow);
             if (count <= 1) {
                 acclog::Write("Radial", "%s row=%d count=%d — nothing to cycle",
@@ -244,40 +337,36 @@ bool HandleInputEvent(int code, int value) {
                     g_state.curRow, count);
                 return true;
             }
-            bool ok;
-            if (code == kInputNavRight) {
-                ok = acc::engine_radial::SelectNextActionInRow(
-                    tam, g_state.curRow);
-            } else {
-                ok = acc::engine_radial::SelectPrevActionInRow(
-                    tam, g_state.curRow);
-            }
-            acclog::Write("Radial", "%s row=%d count=%d ok=%d",
+            int dir = (code == kInputNavRight) ? +1 : -1;
+            int idx = (g_state.actionInRow[g_state.curRow] + dir + count) % count;
+            g_state.actionInRow[g_state.curRow] = idx;
+            ApplyWithinRowSelection(tam, g_state.curRow, idx);
+            acclog::Write("Radial", "%s row=%d count=%d idx=%d",
                           code == kInputNavRight ? "NavRight" : "NavLeft",
-                          g_state.curRow, count, ok ? 1 : 0);
+                          g_state.curRow, count, idx);
             SpeakCurrentLabel(tam, g_state.curRow);
             return true;
         }
         case kInputEnter1:
         case kInputEnter2: {
+            // Restore our tracked variant on the rebuilt menu, then dispatch
+            // — DispatchRowAction reads the engine's selection (field1),
+            // which ApplyWithinRowSelection just stepped to our index.
+            ApplyWithinRowSelection(tam, g_state.curRow,
+                                    g_state.actionInRow[g_state.curRow]);
             char label[128] = "";
             acc::engine_radial::ReadRowActionLabel(
                 tam, g_state.curRow, label, sizeof(label));
             bool ok = acc::engine_radial::DispatchRowAction(
                 tam, g_state.curRow);
-            acclog::Write("Radial", "ENTER dispatch row=%d label=[%s] ok=%d",
-                          g_state.curRow, label, ok ? 1 : 0);
+            acclog::Write("Radial", "ENTER dispatch row=%d idx=%d label=[%s] ok=%d",
+                          g_state.curRow, g_state.actionInRow[g_state.curRow],
+                          label, ok ? 1 : 0);
             // The dispatch may or may not visually clear the radial. Drop
             // our gate either way so a subsequent Enter on a new target
             // arms a fresh radial cleanly.
             g_state.active = false;
             prism::Speak(label[0] ? label : "?", /*interrupt=*/true);
-            return true;
-        }
-        case kInputEsc1:
-        case kInputEsc2: {
-            acclog::Write("Radial", "ESC — disarming (no engine cleanup)");
-            ForceDisarm("esc");
             return true;
         }
         default:
@@ -320,31 +409,19 @@ void Tick() {
         --g_diag.framesRemaining;
     }
 
-    if (!g_state.active) return;
-    void* tam = acc::engine_radial::ResolveTargetActionMenu();
-    if (!tam) {
-        ForceDisarm("tam-gone");
-        return;
-    }
-    int total = 0;
-    for (int r = 0; r < acc::engine_radial::kRowCount; ++r) {
-        total += acc::engine_radial::RowActionCount(tam, r);
-    }
-    if (total == 0) {
-        ForceDisarm("rows-empty");
-        return;
-    }
-    // Current row drained to 0 while another row still has actions —
-    // step to the first populated one so the next nav key has somewhere
-    // to start from.
-    if (acc::engine_radial::RowActionCount(tam, g_state.curRow) <= 0) {
-        int r = FirstPopulatedRow(tam);
-        if (r >= 0) {
-            acclog::Write("Radial", "tick — current row drained, slot %d -> %d",
-                          g_state.curRow, r);
-            g_state.curRow = r;
-        }
-    }
+    // NOTE: Tick no longer polls the live engine target-action menu to
+    // decide whether to disarm. That poll was the cursor-coupling bug
+    // (project_radial_cursor_coupling): the engine re-points the menu from
+    // the mouse cursor every mouse-move, so a drifting / off-target cursor
+    // emptied the menu between presses and tripped a "rows-empty" disarm
+    // before the user could press Enter. The radial now stays armed until
+    // an explicit action — Esc, Enter-dispatch, a fresh Shift+Enter, or the
+    // re-anchor in HandleInputEvent finding the target has genuinely lost
+    // all actions. Each keypress rebuilds the menu for our own target, so
+    // there is nothing here that needs the live menu to stay populated
+    // between frames. The input gate already suppresses radial keys while
+    // not in-world, so a lingering armed flag is inert until the user is
+    // back in the world and presses a key (which re-anchors and self-heals).
 }
 
 void ForceDisarm(const char* reason) {
@@ -352,6 +429,10 @@ void ForceDisarm(const char* reason) {
     acclog::Write("Radial", "disarm — reason=%s", reason ? reason : "?");
     g_state.active = false;
     g_state.curRow = 0;
+    g_state.targetHandle = 0;
+    for (int r = 0; r < acc::engine_radial::kRowCount; ++r) {
+        g_state.actionInRow[r] = 0;
+    }
     g_state.target[0] = '\0';
 }
 

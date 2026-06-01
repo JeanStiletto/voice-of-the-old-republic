@@ -214,7 +214,15 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
     char msg[192];
     bool radialArmed = false;
     if (snap.radial_opened) {
-        radialArmed = acc::radial_menu::ArmAfterPopulate(name);
+        // Re-anchor with the descriptor's canonical client target_id, NOT
+        // `handle`. In some saves `handle` arrives as a pointer-shaped value
+        // in the wrong namespace; SetMainInterfaceTarget tolerates it at arm
+        // only because passive narration already set the correct target, but
+        // a later re-anchor with it corrupts the engine target (observed:
+        // DELTA 0x80000046 -> 0x86dfc420 -> empty menu). snap.target_id is
+        // the client id the engine actually populated the menu against.
+        uint32_t anchorTarget = snap.target_id ? snap.target_id : handle;
+        radialArmed = acc::radial_menu::ArmAfterPopulate(name, anchorTarget);
         if (!radialArmed) {
             // Radial opened but `target_action` rows are all empty
             // (e.g. door-you-can-only-open: Open lives on the engine's
