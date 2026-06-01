@@ -102,6 +102,12 @@ enum class PanelKind {
     // for this kind so the user hears "Main menu" / "Hauptmenü"
     // instead of the DLC notice.
     MainMenu,
+
+    // Pre-game Pazaak side-deck builder (CSWGuiPazaakStart, vtable
+    // 0x007532e8). Heap-allocated modal with no CGuiInGame slot; identified
+    // by vtable. Card widgets are labelled + the chain filtered by
+    // menus_pazaakdeck.
+    PazaakStart,
 };
 
 const char* PanelKindName(PanelKind k);

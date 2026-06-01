@@ -30,6 +30,7 @@
 #include "menus_listbox.h"   // IsWorkbenchUpgradePickerArmed, ArmEquipPicker, ArmWorkbenchUpgradePicker
 #include "menus_modsettings.h"
 #include "menus_monitors.h"  // AnnounceControl
+#include "menus_pazaakdeck.h"
 #include "menus_pending.h"   // QueueActivate, IsPending, QueueMoveCursor, Queue{ClickAt,EquipSelect,WorkbenchSlotSelect,StoreItemActivate}
 #include "menus_store.h"
 #include "prism.h"
@@ -414,6 +415,9 @@ void RebindChain(void* panel) {
         PanelKind pk = IdentifyPanel(panel);
         int cid = *reinterpret_cast<int*>(
             reinterpret_cast<unsigned char*>(c) + kControlIdOffset);
+        // Pazaak deck builder: drop the overlay value/count/title labels and
+        // the unaddable (zero-owned) available cards.
+        if (acc::menus::pazaakdeck::IsChainDecorative(panel, c)) return true;
         if (pk == PanelKind::InGameCharacter &&
             (cid == 1 || cid == 64 || cid == 65 || cid == 66 || cid == 67)) {
             return true;

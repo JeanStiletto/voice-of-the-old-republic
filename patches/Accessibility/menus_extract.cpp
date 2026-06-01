@@ -25,6 +25,7 @@
 #include "menus_charsheet.h"
 #include "menus_credits.h"
 #include "menus_equipstats.h"
+#include "menus_pazaakdeck.h"
 #include "menus_internal.h"
 #include "menus_modsettings.h"
 #include "strings.h"
@@ -433,6 +434,22 @@ const char* FromControl(void* control,
                         owner, control, outBuf, bufSize) &&
                     outBuf[0] != '\0') {
                     source = "perkind-equipstat-row";
+                }
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                source = nullptr;
+            }
+        }
+        // Pazaak side-deck builder card widgets (CSWGuiPazaakStart). The
+        // widgets carry no text of their own; synthesize the card name +
+        // owned count (available grid) or the chosen-slot contents (the
+        // already-selected state).
+        if (!source && owner &&
+            IdentifyPanel(owner) == PanelKind::PazaakStart) {
+            __try {
+                if (acc::menus::pazaakdeck::ExtractCardLabel(
+                        owner, control, outBuf, bufSize) &&
+                    outBuf[0] != '\0') {
+                    source = "perkind-pazaakdeck";
                 }
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 source = nullptr;

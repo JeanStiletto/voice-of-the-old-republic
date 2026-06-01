@@ -103,6 +103,19 @@ enum class Action : int {
     ProbeCameraDistDump,       // Ctrl+F12 — Option-B camera-distance snapshot
     ProbeCameraDistClampToggle,// Ctrl+F11 — cycle distance clamp modes
 
+    // ----- Pazaak minigame (polled only while the board is foreground) -----
+    PazaakStand,           // S
+    PazaakEndTurn,         // E
+    PazaakReviewHand,      // C
+    PazaakReviewTable,     // T
+    PazaakNextCard,        // Tab        (cycle playable hand cards)
+    PazaakPrevCard,        // Shift+Tab
+    PazaakPlay,            // Enter      (play card / confirm sign)
+    PazaakOptLeft,         // Left       (card-options sub-zone)
+    PazaakOptRight,        // Right      (card-options sub-zone)
+    PazaakCancel,          // Esc        (card-options sub-zone)
+    PazaakOppHand,         // Shift+C    (announce opponent's remaining hand count)
+
     // ----- Sentinel -----
     COUNT
 };

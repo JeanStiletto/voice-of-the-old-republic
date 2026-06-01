@@ -13,6 +13,12 @@ headings in the release body (markdown `**Installer:**` only renders as bold).
 Each bullet should lead with the user-facing change ("X works now", "new
 hotkey Y", "X no longer does Z"); keep technical detail short.
 
+<h2>Unreleased</h2>
+
+<h3>Minigames:</h3>
+
+- Pazaak is now playable with the keyboard and screen reader. The board reads out each card you draw, the opponent's draws / plays / stands, your running total (with an over-twenty warning), and every set and match result. Tab and Shift+Tab cycle your playable hand cards, Enter plays the focused card, S stands, E ends your turn, C reads your hand, and T reads both boards with their totals. Plus/minus flip cards open a sign chooser — Left/Right to pick plus or minus, Enter to play with that sign, Esc to cancel. The pre-game deck-building and wager screen is not covered yet.
+
 <h2>v0.1.2</h2>
 
 <h3>Installer:</h3>

@@ -343,6 +343,51 @@ const char* Get(Id id) {
         case Id::StoreCannotBuy:            return "Kann nicht gekauft werden";
         case Id::FmtStoreSoldFor:           return "Verkauft f\xFC""r %d Credits";  // für
         case Id::FmtStoreBoughtFor:         return "Gekauft f\xFC""r %d Credits";   // für
+
+        // ----- Pazaak -----
+        case Id::PazaakStart:            return "Pazaak. Dr\xFC""cke C f\xFC""r deine Hand, T f\xFC""r den Tisch.";
+        case Id::PazaakEmpty:            return "leer";
+        case Id::PazaakFaceDown:         return "verdeckt";
+        case Id::PazaakBoardEmpty:       return "leer";
+        case Id::PazaakFmtPlus:          return "plus %d";
+        case Id::PazaakFmtMinus:         return "minus %d";
+        case Id::PazaakFmtPlain:         return "%d";
+        case Id::PazaakFmtFlipBoth:      return "plus oder minus %d";
+        case Id::PazaakFmtFlipCurrently: return "%s, aktuell %s";
+        case Id::PazaakFmtYouDrew:       return "Du ziehst %s. Deine Summe %d.";
+        case Id::PazaakOverTwenty:       return "\xDC""ber zwanzig.";
+        case Id::PazaakFmtYouPlayed:     return "%s gespielt. Deine Summe %d.";
+        case Id::PazaakYourTurn:         return "Du bist am Zug.";
+        case Id::PazaakTurnEnded:        return "Zug beendet.";
+        case Id::PazaakFmtOppDrew:       return "Gegner zieht. Summe %d.";
+        case Id::PazaakFmtOppPlayed:     return "Gegner spielt %s. Summe %d.";
+        case Id::PazaakFmtOppStands:     return "Gegner bleibt bei %d.";
+        case Id::PazaakFmtYouStand:      return "Du bleibst bei %d.";
+        case Id::PazaakFmtWinSet:        return "Du gewinnst den Satz. %d zu %d.";
+        case Id::PazaakFmtLoseSet:       return "Du verlierst den Satz. %d zu %d.";
+        case Id::PazaakWinMatch:         return "Du gewinnst das Spiel!";
+        case Id::PazaakLoseMatch:        return "Du verlierst das Spiel.";
+        case Id::PazaakTieReplay:        return "Unentschieden. Satz wird wiederholt.";
+        case Id::PazaakFmtHand:          return "Hand: %s";
+        case Id::PazaakHandEmpty:        return "Hand leer.";
+        case Id::PazaakFmtYourBoard:     return "Dein Tisch: %s, Summe %d.";
+        case Id::PazaakFmtOppBoard:      return "Gegnertisch: %s, Summe %d.";
+        case Id::PazaakNoPlayable:       return "Keine Karten zum Spielen.";
+        case Id::PazaakNotYourTurn:      return "Du bist nicht am Zug.";
+        case Id::PazaakSelectCardFirst:  return "W\xE4""hle zuerst eine Karte.";
+        case Id::PazaakChooseSign:       return "Vorzeichen w\xE4""hlen. Links oder rechts zum \xC4""ndern, Enter zum Spielen.";
+        case Id::PazaakCancelled:        return "Abgebrochen.";
+        case Id::PazaakDeckAvailable:    return "%s, %d verf\xFC""gbar";
+        case Id::PazaakDeckNoneLeft:     return "%s, keine mehr";
+        case Id::PazaakDeckSlotFilled:   return "Deck-Platz %d: %s";
+        case Id::PazaakDeckSlotEmpty:    return "Deck-Platz %d: leer";
+        case Id::PazaakDeckPlay:         return "Spielen, %d von 10 im Deck";
+        case Id::PazaakDeckAdded:        return "Hinzugef\xFC""gt %s. %d von 10.";
+        case Id::PazaakDeckRemoved:      return "Entfernt %s.";
+        case Id::PazaakDeckFull:         return "Deck voll.";
+        case Id::PazaakFmtOppHand:       return "Gegner hat %d Handkarten.";
+        case Id::PazaakStandLabel:       return "Halten";
+        case Id::PazaakEndTurnLabel:     return "Runde beenden";
         case Id::FmtStoreNotEnoughCredits:  return "Nicht genug Credits, brauchst %d, hast %d";
 
         case Id::FmtCredits:                return "Credits: %s";

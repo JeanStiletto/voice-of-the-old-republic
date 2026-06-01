@@ -26,9 +26,13 @@ We commit a hand-curated `exports.def` alongside our C++ source, same as Lane do
 
 Optional safety net: `kdev status` lints for drift between `extern "C" __cdecl` definitions in source and the names listed in `exports.def`. Warning-only, ~20 lines of code.
 
-### 5. Build caching — none, always rebuild
+### 5. Build caching — incremental object cache (added 2026-06-01)
 
-Every `kdev build` runs the bat fresh. No fingerprinting of input files, no `.last-build` artifact. Builds are 5–15 seconds; the cost of a stale-cache false negative ("my fix isn't in the build but the tool says it is") is far higher than the wait. Add caching later only if iteration speed becomes a measured pain point.
+`kdev build` compiles each translation unit to a cached `.obj` under `build/objcache/{patch,common,gameapi}/` and records that TU's project/upstream header dependencies in an `<obj>.deps` sidecar (parsed from `cl /showIncludes`; system/SDK headers are filtered out). A TU recompiles only when its source, one of its tracked headers, or the toolchain/flag signature (`build.sig`) changed; everything else is reused. Changed TUs compile in parallel (bounded by CPU count), then all current objects link into `windows_x86.dll` and package as the `.kpatch`. Compile/link flags mirror `create-patch.bat` exactly so the artifact is equivalent. The DLL is linked and the kpatch zipped by kdev directly — no staging copy and no bat invocation on this path.
+
+This reverses the original "never cache" stance below: the full build had grown to ~110 TUs (minutes per rebuild), which dominated the inner loop. Editing a single `.cpp` now rebuilds in seconds. Escape hatches: `--clean` wipes the cache (and the signature check auto-wipes on a compiler/flag change), and `--bat` runs the original full `create-patch.bat` staging path if the incremental build is ever suspected of staleness.
+
+> Original rationale (superseded): "Every `kdev build` runs the bat fresh. No fingerprinting of input files… Builds are 5–15 seconds." That held when the patch was a handful of files; it no longer does.
 
 ### 6. Watch mode — deferred to v2
 
@@ -101,7 +105,7 @@ Each is a verb: short, descriptive, predictable.
 
 - **`kdev status`** — health check. Validates config paths, runs `GameDetector.DetectVersion()` against the configured game exe, lists patches currently installed in the game dir, reports last build artifact age, reports whether KOTOR is currently running, optionally lints `exports.def` against C++ source. Exits 0 if everything is green; non-zero with a numbered fix list otherwise. **First command to implement** — also serves as the test that the scaffold works.
 
-- **`kdev build`** — stages `patches/Accessibility/` into a temp build dir, sets `SKIP_PAUSE=1`, invokes `create-patch.bat`, captures stdout/stderr to `logs/build-<utc>.log`, copies the resulting `.kpatch` into `build/`. On failure dumps the last 50 lines of `build.log`.
+- **`kdev build`** — incrementally compiles `patches/Accessibility/` (+ upstream `Common/` and `Common/GameAPI/`) into a cached object set under `build/objcache/`, links `windows_x86.dll`, and packages the `.kpatch` into `build/`. Recompiles only changed TUs (header deps tracked via `/showIncludes`). `--clean` forces a full recompile; `--bat` uses the legacy `create-patch.bat` staging path (stdout/stderr to `logs/build-<utc>.log`). See §5.
 
 - **`kdev clean`** — kills any running KOTOR process, calls `KPatchCore.Applicators.PatchRemover.RemoveAllPatches(gameExe)`. Idempotent — if nothing to clean, says so and exits 0.
 

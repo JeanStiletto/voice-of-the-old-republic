@@ -121,7 +121,8 @@ Always read these before diving into work — they capture decisions and current
 ### Build/run
 - **Inner dev loop:** use `kdev` from the project root. Common: `kdev status`, `kdev dev` (clean → build → apply → launch), `kdev kill`, `kdev logs --follow`.
 - **`kdev` build:** `dotnet build tools/kdev/kdev.csproj` from the project root (output at `tools/kdev/bin/Debug/net10.0/win-x64/kdev.exe`).
-- **Mod build pipeline:** `kdev build` stages `patches/Accessibility/` next to the upstream `Common/`+`lib/` layout `create-patch.bat` expects, runs the bat under MSVC, drops the `.kpatch` in `build/`.
+- **Mod build pipeline:** `kdev build` compiles `patches/Accessibility/` **incrementally** — per-TU object cache in `build/objcache/` with header dependencies tracked via `/showIncludes`, so only changed translation units (and TUs that include a changed header) recompile — then links and packages the `.kpatch` in `build/`. Compile/link flags mirror the upstream `create-patch.bat`. `kdev build --clean` wipes the cache and recompiles everything; `kdev build --bat` falls back to the legacy full `create-patch.bat` path. First build (cold cache) recompiles all ~110 TUs; subsequent single-file edits build in seconds.
+- **Long jobs in the background:** a cold `kdev build`, `kdev dev`, and `kdev launch --monitor` can run for minutes. Prefer launching them with `run_in_background` so they don't block the turn; read the task output file on completion.
 - **Mod install:** `kdev apply` calls `KPatchCore.PatchApplicator.InstallPatches` against the configured Steam install.
 - **Mod launch:** `kdev launch [--monitor]` calls `Process.Start("swkotor.exe")` directly; the `dinput8.dll` proxy (`kdev apply` drops it into the install root) auto-loads KotorPatcher. `--monitor` blocks on the game process and reports its real exit code.
 

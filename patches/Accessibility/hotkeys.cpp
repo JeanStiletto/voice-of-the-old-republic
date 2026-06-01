@@ -99,6 +99,17 @@ const char* const kActionNames[static_cast<int>(Action::COUNT)] = {
     "ProbeMouseLookToggle",
     "ProbeCameraDistDump",
     "ProbeCameraDistClampToggle",
+    "PazaakStand",
+    "PazaakEndTurn",
+    "PazaakReviewHand",
+    "PazaakReviewTable",
+    "PazaakNextCard",
+    "PazaakPrevCard",
+    "PazaakPlay",
+    "PazaakOptLeft",
+    "PazaakOptRight",
+    "PazaakCancel",
+    "PazaakOppHand",
 };
 
 bool IsDownVk(int vk) {
@@ -301,6 +312,26 @@ void InitDefaults() {
     // engine surfaces and intent.
     bind(Action::ProbeCameraDistDump,        VK_F12, 0, kModCtrl, 0);
     bind(Action::ProbeCameraDistClampToggle, VK_F11, 0, kModCtrl, 0);
+
+    // ----- Pazaak minigame -----
+    // Letter keys forbid every modifier so they stay distinct from Shift/
+    // Ctrl combos elsewhere; the pollers in pazaak.cpp gate on the board
+    // being foreground. Tab / Enter / arrows / Esc reuse the standard VKs —
+    // the pazaak tick Consume()s the in-world / menu actions that share them
+    // so only one handler fires per press.
+    bind(Action::PazaakStand,       'S',       0, 0,         kModShift | kModCtrl | kModAlt | kModAltGr);
+    bind(Action::PazaakEndTurn,     'E',       0, 0,         kModShift | kModCtrl | kModAlt | kModAltGr);
+    bind(Action::PazaakReviewHand,  'C',       0, 0,         kModShift | kModCtrl | kModAlt | kModAltGr);
+    bind(Action::PazaakReviewTable, 'T',       0, 0,         kModShift | kModCtrl | kModAlt | kModAltGr);
+    bind(Action::PazaakNextCard,    VK_TAB,    0, 0,         kModShift);
+    bind(Action::PazaakPrevCard,    VK_TAB,    0, kModShift, 0);
+    bind(Action::PazaakPlay,        VK_RETURN, 0, 0,         kModShift);
+    bind(Action::PazaakOptLeft,     VK_LEFT,   0, 0,         0);
+    bind(Action::PazaakOptRight,    VK_RIGHT,  0, 0,         0);
+    bind(Action::PazaakCancel,      VK_ESCAPE, 0, 0,         0);
+    // Shift+C — opponent's remaining hand count (public info: sighted players
+    // see the face-down cards). Bare C is PazaakReviewHand, so require Shift.
+    bind(Action::PazaakOppHand,     'C',       0, kModShift, kModCtrl | kModAlt | kModAltGr);
 }
 
 }  // namespace

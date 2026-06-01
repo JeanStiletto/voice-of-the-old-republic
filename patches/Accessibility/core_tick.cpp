@@ -25,8 +25,10 @@
 #include "map_user_markers.h"
 #include "menus.h"
 #include "menus_modsettings.h"
+#include "menus_pazaakdeck.h"
 #include "party_leader_announce.h"
 #include "passive_narrate.h"
+#include "pazaak.h"
 #include "probe_audio_frame.h"
 #include "probe_priority_groups.h"
 #include "probe_camera_distance.h"
@@ -49,6 +51,11 @@ void Dispatch() {
 
     // Defensive — drop stale panel pointers before any handler touches them.
     acc::menus::ValidatePanels();
+
+    // Pazaak minigame board — runs ahead of TickMonitors and the in-world /
+    // menu pollers so it can Consume() the shared keys (Tab / Enter / arrows /
+    // Esc) on its own tick before those pollers sample them.
+    acc::pazaak::Tick();
 
     // Menu monitors (focus/contents/listbox change detection, give-mode poll).
     acc::menus::TickMonitors();
@@ -149,6 +156,10 @@ void Dispatch() {
     // In-game auto-updater: F5 poll + background-check announce + handoff
     // batch spawn on download completion. Cheap when idle (one atomic load).
     acc::update_checker::Tick();
+
+    // Drain the Pazaak deck-builder's staged add/remove/play before the generic
+    // pending-op drain (a Play queues an Activate that drains in TickPendingOps).
+    acc::menus::pazaakdeck::Tick();
 
     // Drain queued actions LAST — monitors above must see consistent state.
     acc::menus::TickPendingOps();

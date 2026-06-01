@@ -40,6 +40,8 @@
 #include "menus_modsettings.h" // Virtual mod-settings submenu (Optionen panels)
 #include "menus_monitors.h"  // Post-Step-5 — general per-tick monitors
 #include "menus_store.h"     // Store / trading panel — price+stock suffix + mode announce
+#include "menus_pazaakdeck.h" // Pazaak side-deck builder — 3-row navigator
+#include "pazaak.h"           // Pazaak board game — IsBoardForeground
 #include "menus_journal.h"   // Journal (Aufträge) — Enter on quest row → description
 #include "engine_input.h"
 #include "engine_manager.h"
@@ -1678,6 +1680,28 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     // false and the key falls through to the normal menu logic below.
     if (acc::cycle_input::TryHandleEvent(param_1, param_2)) {
         consumed = true;
+    }
+
+    // Pazaak board game — dedicated arrow-zone navigator (your hand / your
+    // board / opponent board / actions), same model as the deck builder. Owns
+    // arrows + Enter for the board so the generic chain can't double-fire on
+    // its Weiter/Halten buttons; letter shortcuts (s/e/c/t/Shift+C) are
+    // Win32-polled in pazaak::Tick.
+    {
+        int rv = 0;
+        if (acc::pazaak::TryHandleInput(activePanel, param_1, param_2, rv)) {
+            return trackPress(rv);
+        }
+    }
+
+    // Pazaak side-deck builder — dedicated 3-row arrow navigator (collection /
+    // deck slots / controls). Owns Up/Down/Left/Right/Enter for this panel, so
+    // it runs before the generic 1-D chain handlers below and consumes the key.
+    {
+        int rv = 0;
+        if (acc::menus::pazaakdeck::TryHandleInput(activePanel, param_1, param_2, rv)) {
+            return trackPress(rv);
+        }
     }
 
     // Enter on the focused chain entry — picks the right activation primitive

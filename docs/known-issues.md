@@ -25,9 +25,9 @@ Items in the map-hint filter are announced twice on a single cycle step. Likely 
 
 ## Planned
 
-### Pazaak minigame accessibility
+### Pazaak pre-game deck-build + wager menu
 
-The card game is fully mouse-driven and unreadable. Needs keyboard navigation across the hand and side deck, and announcements for running totals, opponent state, stand/end-turn, and round outcomes.
+The board game itself is implemented (see Monitor). The pre-game `CSWGuiPazaakStart` screen — build your 10-card side deck from the owned-card collection and set the wager via `CSWGuiWagerPopup` — is still mouse-only. Needs keyboard selection across the owned-card grid and the chosen-deck slots, plus the wager less/more/accept controls. RE surface mapped in `docs/pazaak-investigation.md` §11.
 
 ### Turret-shooting minigame accessibility
 
@@ -79,6 +79,10 @@ Some of our actions are bound to Alt+ and Ctrl+ key combinations, which not ever
 
 After replacing the wrapper-based DirectInput-mouse guard with an inline trampoline installed from `OnRulesInit`, the alt-tab-required-every-launch regression cleared. In a 3-launch sample one still showed the symptom — keys ignored until a single alt-tab cycle, then normal. No EngineInput log line, no crash, and the trampoline-installed log line was present, so the residual isn't our guard tripping; it looks like the same vanilla KOTOR background-launch / bink-window focus race that existed before the regression but is now visible against a clean baseline. Watch beta feedback. If it stays at ~1-in-3 or rarer, leave it; if testers report it consistently, instrument the engine's input-pump pause path around bink/focus transitions and consider forcing a DirectInput re-Acquire from our patch on main-menu first sight.
 
+### Pazaak board game (keyboard play + narration)
+
+Implemented in `patches/Accessibility/pazaak.cpp` — no engine detour hook: the live `CSWGuiPazaakGame` board is identified structurally (foreground modal matching the model layout; vtable learned + logged on first sight), state is polled per tick for delta announcements, and play is driven through the engine's own `HandlePlayHandCard`/`HandleStand`/`HandleContinue`. Builds clean; **pending in-game test.** Keys (board foreground only): Tab/Shift+Tab cycle the playable hand, Enter play, S stand, E end turn, C read hand, T read table; +/- cards open a sign sub-zone (Left/Right pick, Enter play, Esc cancel). Watch for: correct draw/play/stand/result lines and totals, the acquire log line (`Pazaak: acquired board panel=... vtable=0x...`), and that the engine's end-of-match result message box is dismissable from the keyboard. The default starting side deck has no +/- cards, so the sign sub-zone only appears once the player owns flip cards.
+
 ## Polish
 
 ### Clean up announcements when changing in-game panels
@@ -88,3 +92,9 @@ Switching between in-game panels (Equip, Inventory, Map, Journal, Options, Chara
 ### Installer fr/it/es translations are AI drafts
 
 `installer/KotorAccessibilityInstaller/Locales/{fr,it,es}.json` were drafted by Claude from the English source rather than by native speakers. Strings render correctly and key parity with `en.json` is verified (136/136 keys), but specific phrasings — error messages, formal-vs-informal address ("vous" / "lei" / "usted"), and idiomatic phrasings around modding terminology — may read awkwardly to a native ear. Native-speaker contributors are welcome to refine; PRs against the three JSON files are scoped contributions. German (`de.json`) is human-authored by the maintainer and is the quality bar.
+
+### Investigate extracting shared panel-feature helpers
+
+Several screen modules repeat the same scaffolding — structural panel identification (foreground modal + vtable/field checks), SEH-guarded field readers, a snapshot/diff "announce on change" loop, and hotkey-`Consume`-then-poll gating. `pazaak.cpp` is the newest example; the menu/combat modules have older variants. Worth a pass to see how much can move into shared helpers without over-generalising (past refactors already pulled out the listbox/select-then-confirm and `menus_*` seams). Ready-to-paste prompt for a future session:
+
+> Audit the panel/screen feature modules in `patches/Accessibility/` (e.g. `pazaak.cpp`, `menus_store.cpp`, `menus_*`, `combat*`, `examine_view.cpp`, `view_mode.cpp`) for repeated boilerplate: (a) structural panel identification, (b) SEH-guarded `ReadInt`/`ReadPtr`/field readers, (c) snapshot-and-diff "announce deltas" loops, (d) `hotkeys::Consume` + `Pressed` gating tied to a foreground panel. Propose a small set of shared helpers (header + cpp) that capture the common shapes WITHOUT forcing unrelated modules into one mould — respect the existing `menus_*` seams and the prior refactor boundaries. For each proposed helper: which call sites adopt it, what stays bespoke, and the risk. Don't refactor yet — produce the plan and one worked example (convert `pazaak.cpp`), then stop for review.

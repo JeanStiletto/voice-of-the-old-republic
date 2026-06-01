@@ -223,6 +223,22 @@ bool IsMainMenuStructural(void* panel) {
     }
 }
 
+// CSWGuiPazaakStart side-deck builder. Heap-allocated modal (no CGuiInGame
+// slot), single class, so vtable equality is the identifier. Verified against
+// the live panel dump (patch-20260601-071641.log: 79-control panel,
+// vtable=0x007532e8).
+constexpr uintptr_t kVtableCSWGuiPazaakStart = 0x007532e8;
+
+bool IsPazaakStartStructural(void* panel) {
+    if (!panel) return false;
+    __try {
+        void** vt = *reinterpret_cast<void***>(panel);
+        return reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiPazaakStart;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 // CSWGuiPowersLevelUp picker (pwrlvlup.gui). The same class backs both the
 // chargen Force-selection screen and the InGameLevelUp "Kr�fte" sub-screen;
 // the SARIF documents the struct (swkotor.exe.h:16603) but doesn't name the
@@ -332,6 +348,7 @@ static const PanelKindOffset kPanelKindOffsets[] = {
     { kNoSlotOffset, PanelKind::PowersLevelUp,     "PowersLevelUp" },
     { kNoSlotOffset, PanelKind::MainMenuOptions,   "MainMenuOptions" },
     { kNoSlotOffset, PanelKind::MainMenu,          "MainMenu" },
+    { kNoSlotOffset, PanelKind::PazaakStart,       "PazaakStart" },
 };
 static constexpr int kPanelKindOffsetCount =
     sizeof(kPanelKindOffsets) / sizeof(kPanelKindOffsets[0]);
@@ -534,6 +551,9 @@ PanelKind IdentifyPanel(void* panel) {
     }
     if (IsMainMenuStructural(panel)) {
         return recordAndReturn(PanelKind::MainMenu, "MainMenu");
+    }
+    if (IsPazaakStartStructural(panel)) {
+        return recordAndReturn(PanelKind::PazaakStart, "PazaakStart");
     }
 
     // Last resort: dump diagnostics so we can write a structural detector
