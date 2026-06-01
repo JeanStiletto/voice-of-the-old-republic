@@ -15,6 +15,10 @@ hotkey Y", "X no longer does Z"); keep technical detail short.
 
 <h2>v0.2.1</h2>
 
+<h3>Stability:</h3>
+
+- The occasional few-second freeze during menu navigation — where the game and sound would lock up for a moment and then recover — should now be fixed. The mod was doing far too much background logging work on every frame; that has been cut back massively, which removes the stall.
+
 <h3>Audio:</h3>
 
 - New "Lautstärke der Hinweistöne" (hint-sound volume) slider under Mod-Einstellungen. Left / Right adjust the volume of every mod cue — wall, door, NPC, container, item and transition cues, the navigation beacon, collisions, combat and cycle cues — in 10% steps, from 100% down to off. Each step plays a short preview at the new level so you can hear the change. Starts at 100%.
