@@ -16,6 +16,7 @@
 #include "log.h"
 #include "mod_version.h"
 #include "prism.h"
+#include "save_crash_guard.h"
 #include "strings.h"
 #include "update_checker.h"
 
@@ -216,6 +217,7 @@ extern "C" void __cdecl OnRulesInit(void* /*rulesThis*/) {
     fired = true;
     acclog::BringupMark("rules_init");
     InstallMouseGuard();
+    acc::save_guard::InstallSaveScreenshotGuard();
     acc::strings::SetLanguage(DetectLanguageFromTlk());
     EnsurePrismInitialized();
     // Baseline snapshot of swkotor.ini + install-root DLLs so every support

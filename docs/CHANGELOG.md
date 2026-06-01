@@ -35,6 +35,7 @@ hotkey Y", "X no longer does Z"); keep technical detail short.
 
 <h3>Bug fixes:</h3>
 
+- Saving no longer crashes the game for some players. On certain graphics setups (notably with "Frame Buffer Effects" turned off in the game's options) the engine failed to capture the little save-slot preview image and crashed while trying to shrink a zero-sized picture. The mod now detects that case and hands the engine a blank preview instead, so the save completes normally. The save itself was never the problem — only the thumbnail — so your saves are unaffected apart from a blank slot image on those setups.
 - Opening locked doors — and other Shift+Enter action-menu choices — is now reliable. The action you picked, such as "Security" on a locked door, would often fail to fire (you'd hear "this object is locked" or nothing happened) and only worked if you happened to confirm it within a split second; it was especially flaky in combat or when playing in a window. Internally the action menu is now re-anchored to your chosen target on every keypress instead of trusting the engine's shared menu, which the game constantly re-points at whatever the mouse or the combat targeting is on. You can now take your time on the menu and it will still do what you selected.
 
 <h2>v0.2.0</h2>
