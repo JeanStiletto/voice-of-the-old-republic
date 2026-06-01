@@ -319,7 +319,10 @@ void AnnounceDeltas(void* panel, const Snap& cur) {
     if (cur.eBoard > g_prev.eBoard) {
         CardView lc = BoardLast(e, cur.eBoard);
         if (lc.index >= 18) {
-            snprintf(msg, sizeof(msg), Get(Id::PazaakFmtOppDrew), cur.eTotal);
+            // Main-deck draws are face-up/public, so name the card like the
+            // player's draw line (not just the running total).
+            FormatCard(lc.index, lc.flip, false, card, sizeof(card));
+            snprintf(msg, sizeof(msg), Get(Id::PazaakFmtOppDrew), card, cur.eTotal);
             Say(msg);
         } else if (lc.index >= 0) {
             FormatCard(lc.index, lc.flip, false, card, sizeof(card));
@@ -404,6 +407,25 @@ int ZoneLen(void* model, int zone) {
     if (zone == 1) return BoardCount(PlayerOf(model)); // your played cards
     if (zone == 2) return BoardCount(EnemyOf(model));  // opponent played cards
     return 2;                                          // actions: Stand, End turn
+}
+
+// Hand slots can be empty (index < 0) when a card has been played or the hand
+// holds fewer than four cards. Left/Right and zone entry skip those slots so
+// the user only ever lands on a playable card.
+bool HandSlotFilled(void* player, int slot) {
+    if (slot < 0 || slot >= kHandSlots) return false;
+    return ReadCard(player, kPlayerHandOffset, slot).index >= 0;
+}
+int FirstHandCol(void* player) {
+    for (int i = 0; i < kHandSlots; ++i)
+        if (HandSlotFilled(player, i)) return i;
+    return 0;  // hand empty — stay at slot 0 (entry summary says "hand empty")
+}
+// Next filled slot in `dir` (+1 right / -1 left); returns `from` if none (no wrap).
+int NextHandCol(void* player, int from, int dir) {
+    for (int c = from + dir; c >= 0 && c < kHandSlots; c += dir)
+        if (HandSlotFilled(player, c)) return c;
+    return from;
 }
 
 // Announce one board side as a whole ("Your board: ..., total N").
@@ -544,9 +566,10 @@ void HandleEnter(void* panel, void* model, int state) {
 void* g_wagerPanel = nullptr;
 int   g_wagerLast  = -1;
 
-// Announce the wager amount on entry and whenever it changes. The popup's two
-// adjust buttons are labelled by menus_extract; this gives the value feedback
-// the static labels can't (focus doesn't move when the amount steps).
+// Announce the wager amount when it changes. Orientation on entry is the job
+// of the navigable wager row (menus_extract); this only gives the value
+// feedback the static labels can't, since focus doesn't move when the amount
+// steps via the less/more buttons.
 void ObserveWager(void* fg) {
     using namespace acc::strings;
     if (!fg || acc::engine::IdentifyPanel(fg) != acc::engine::PanelKind::PazaakWager) {
@@ -558,7 +581,7 @@ void ObserveWager(void* fg) {
     ReadIntAt(fg, kWagerCurOffset, &cur);
     ReadIntAt(fg, kWagerMaxOffset, &max);
     bool firstSight = (fg != g_wagerPanel);
-    if (firstSight || cur != g_wagerLast) {
+    if (!firstSight && cur != g_wagerLast) {
         char msg[96];
         snprintf(msg, sizeof(msg), Get(Id::PazaakFmtWager), cur, max);
         Say(msg, true);
@@ -670,23 +693,29 @@ bool TryHandleInput(void* /*activePanel*/, int param_1, int param_2, int& rv) {
     int state = GetState(panel);
 
     if (isNav) {
-        if (param_1 == kInputNavUp) {
-            if (g_zone > 0) {
-                --g_zone;
-                if (g_col >= ZoneLen(model, g_zone)) g_col = 0;
+        if (param_1 == kInputNavUp || param_1 == kInputNavDown) {
+            const int dir = (param_1 == kInputNavUp) ? -1 : 1;
+            if ((dir < 0 && g_zone > 0) || (dir > 0 && g_zone < 3)) {
+                g_zone += dir;
+                // Land on the first filled hand slot when entering the hand;
+                // other zones have no gaps, so just clamp.
+                if (g_zone == 0)
+                    g_col = FirstHandCol(PlayerOf(model));
+                else if (g_col >= ZoneLen(model, g_zone))
+                    g_col = 0;
                 AnnounceZoneEntry(model, g_zone);
             }
-        } else if (param_1 == kInputNavDown) {
-            if (g_zone < 3) {
-                ++g_zone;
-                if (g_col >= ZoneLen(model, g_zone)) g_col = 0;
-                AnnounceZoneEntry(model, g_zone);
+        } else if (param_1 == kInputNavLeft || param_1 == kInputNavRight) {
+            const int dir = (param_1 == kInputNavLeft) ? -1 : 1;
+            int next;
+            if (g_zone == 0) {
+                next = NextHandCol(PlayerOf(model), g_col, dir);  // skip empty slots
+            } else {
+                next = g_col + dir;
+                const int len = ZoneLen(model, g_zone);
+                if (next < 0 || next >= len) next = g_col;
             }
-        } else if (param_1 == kInputNavLeft) {
-            if (g_col > 0) { --g_col; AnnounceZoneElement(model, g_zone, g_col); }
-        } else {  // NavRight
-            int len = ZoneLen(model, g_zone);
-            if (g_col < len - 1) { ++g_col; AnnounceZoneElement(model, g_zone, g_col); }
+            if (next != g_col) { g_col = next; AnnounceZoneElement(model, g_zone, g_col); }
         }
         return true;
     }

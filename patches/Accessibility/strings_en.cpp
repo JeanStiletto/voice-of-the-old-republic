@@ -348,7 +348,7 @@ const char* Get(Id id) {
         case Id::PazaakFmtYouPlayed:     return "Played %s. Your total %d.";
         case Id::PazaakYourTurn:         return "Your turn.";
         case Id::PazaakTurnEnded:        return "Turn ended.";
-        case Id::PazaakFmtOppDrew:       return "Opponent drew. Total %d.";
+        case Id::PazaakFmtOppDrew:       return "Opponent drew %s. Total %d.";
         case Id::PazaakFmtOppPlayed:     return "Opponent played %s. Total %d.";
         case Id::PazaakFmtOppStands:     return "Opponent stands at %d.";
         case Id::PazaakFmtYouStand:      return "You stand at %d.";
@@ -380,6 +380,7 @@ const char* Get(Id id) {
         case Id::PazaakWagerLess:        return "Decrease wager";
         case Id::PazaakWagerMore:        return "Increase wager";
         case Id::PazaakFmtWager:         return "Wager %d of %d maximum.";
+        case Id::PazaakFmtWagerRow:      return "Wager %d. %s";
         case Id::FmtStoreNotEnoughCredits:  return "Not enough credits, need %d, have %d";
 
         case Id::FmtCredits:                return "Credits: %s";

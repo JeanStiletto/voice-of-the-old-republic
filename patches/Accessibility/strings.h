@@ -1075,6 +1075,7 @@ enum class Id : int {
     PazaakWagerLess,
     PazaakWagerMore,
     PazaakFmtWager,
+    PazaakFmtWagerRow,
     FmtStoreNotEnoughCredits,
 
     // ---- Virtual credits row (Inventory + Store).

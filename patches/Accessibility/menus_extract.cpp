@@ -315,6 +315,70 @@ bool IsSoundOptionsMovieSlider(void* panel, void* control) {
     return has1 && has4 && has7 && has8;
 }
 
+// ---- Pazaak wager popup virtual row --------------------------------------
+// CSWGuiWagerPopup.field13_0xc94 is the live wager (UpdateWagerText writes it
+// to wager_value_label each step). The maximum_label (gui id 3) renders
+// "Maximaler Einsatz: M\nCredits: K". We surface a single top-of-chain row
+// combining the live wager with that max+credits line — the analogue of the
+// inventory credits row.
+constexpr size_t kWagerCurrentValueOffset = 0xc94;
+constexpr int    kWagerMaxLabelGuiId      = 3;
+
+void* FindWagerMaxLabel(void* panel) {
+    if (!panel) return nullptr;
+    __try {
+        auto* list = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+        if (!list || !list->data) return nullptr;
+        int n = list->size > 64 ? 64 : list->size;
+        for (int i = 0; i < n; ++i) {
+            void* c = list->data[i];
+            if (!c) continue;
+            int id = *reinterpret_cast<int*>(
+                reinterpret_cast<unsigned char*>(c) + kControlIdOffset);
+            if (id == kWagerMaxLabelGuiId) return c;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    return nullptr;
+}
+
+// Format "Einsatz N. Maximaler Einsatz: M, Credits: K" from the live wager
+// (panel field) + the maximum_label's rendered text (`maxLabel`).
+bool ExtractWagerRow(void* panel, void* maxLabel, char* outBuf, size_t bufSize) {
+    if (!panel || !maxLabel || bufSize == 0) return false;
+    int wager = -1;
+    __try {
+        wager = *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(panel) + kWagerCurrentValueOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+    if (wager < 0) return false;
+
+    char raw[96];
+    raw[0] = '\0';
+    __try {
+        if (!acc::engine::ReadGuiString(maxLabel, kLabelGuiStringPtrOffset,
+                                        raw, sizeof(raw))) {
+            ExtractTextOrStrRefIndirect(maxLabel, kLabelTextOffset,
+                                        kLabelStrRefOffset, kLabelTextObjectOffset,
+                                        raw, sizeof(raw));
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+    if (raw[0] == '\0') return false;
+
+    // Flatten the embedded newline so the screen reader reads one line.
+    char flat[128];
+    size_t fi = 0;
+    for (const char* p = raw; *p && fi + 2 < sizeof(flat); ++p) {
+        if (*p == '\n' || *p == '\r') { flat[fi++] = ','; flat[fi++] = ' '; }
+        else                          { flat[fi++] = *p; }
+    }
+    flat[fi] = '\0';
+
+    snprintf(outBuf, bufSize,
+             acc::strings::Get(acc::strings::Id::PazaakFmtWagerRow), wager, flat);
+    return outBuf[0] != '\0';
+}
+
 }  // namespace
 
 void ResetCycleCategoryCache() {
@@ -464,14 +528,16 @@ const char* FromControl(void* control,
             __try {
                 int cid = *reinterpret_cast<int*>(
                     reinterpret_cast<unsigned char*>(control) + kControlIdOffset);
-                acc::strings::Id which = acc::strings::Id::PazaakWagerLess;
-                bool match = true;
-                if (cid == 4)      which = acc::strings::Id::PazaakWagerLess;
-                else if (cid == 5) which = acc::strings::Id::PazaakWagerMore;
-                else               match = false;
-                if (match) {
-                    snprintf(outBuf, bufSize, "%s", acc::strings::Get(which));
+                if (cid == 4 || cid == 5) {
+                    snprintf(outBuf, bufSize, "%s",
+                             acc::strings::Get(cid == 4
+                                 ? acc::strings::Id::PazaakWagerLess
+                                 : acc::strings::Id::PazaakWagerMore));
                     if (outBuf[0] != '\0') source = "perkind-pazaakwager";
+                } else if (cid == kWagerMaxLabelGuiId &&
+                           ExtractWagerRow(owner, control, outBuf, bufSize)) {
+                    // Virtual top-of-chain row: live wager + max + credits.
+                    source = "perkind-pazaakwager-row";
                 }
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 source = nullptr;
@@ -1679,6 +1745,19 @@ const char* FromControl(void* control,
     }
 
     return source;
+}
+
+void ForEachWagerRowAnchor(void* panel,
+                           bool (*callback)(void* labelControl, int sortCy,
+                                            void* userData),
+                           void* userData) {
+    if (!panel || !callback) return;
+    if (IdentifyPanel(panel) != acc::engine::PanelKind::PazaakWager) return;
+    void* maxLabel = FindWagerMaxLabel(panel);
+    if (!maxLabel) return;
+    // sortCy=1 lands the wager row at the very top of the chain, above the
+    // less/more/Setzen/Beenden buttons (cy 226+) — same placement as credits.
+    callback(maxLabel, /*sortCy=*/1, userData);
 }
 
 }  // namespace acc::menus::extract

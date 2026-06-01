@@ -357,7 +357,7 @@ const char* Get(Id id) {
         case Id::PazaakFmtYouPlayed:     return "Jugado %s. Tu total %d.";
         case Id::PazaakYourTurn:         return "Tu turno.";
         case Id::PazaakTurnEnded:        return "Turno terminado.";
-        case Id::PazaakFmtOppDrew:       return "El rival roba. Total %d.";
+        case Id::PazaakFmtOppDrew:       return "El rival roba %s. Total %d.";
         case Id::PazaakFmtOppPlayed:     return "El rival juega %s. Total %d.";
         case Id::PazaakFmtOppStands:     return "El rival se planta en %d.";
         case Id::PazaakFmtYouStand:      return "Te plantas en %d.";
@@ -389,6 +389,7 @@ const char* Get(Id id) {
         case Id::PazaakWagerLess:        return "Reducir apuesta";
         case Id::PazaakWagerMore:        return "Aumentar apuesta";
         case Id::PazaakFmtWager:         return "Apuesta %d de %d m\xE1ximo.";
+        case Id::PazaakFmtWagerRow:      return "Apuesta %d. %s";
         case Id::FmtStoreNotEnoughCredits:  return "Cr\xE9""ditos insuficientes, faltan %d, tienes %d";
 
         case Id::FmtCredits:                return "Cr\xE9""ditos: %s";

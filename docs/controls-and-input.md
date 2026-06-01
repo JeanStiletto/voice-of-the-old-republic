@@ -116,7 +116,7 @@ Status legend: `[ ]` not started, `[~]` partially solved, `[x]` solved.
 
 ### Mid priority — minigames
 
-- `[ ]` **Pazaak** — side-deck card selection (mouse highlight + click), drag-from-hand-to-play, flip arrows. All mouse-driven. Optional content but a major time sink for many players.
+- `[x]` **Pazaak** — done (v0.2.0). Board game + wager popup + side-deck builder are keyboard/screen-reader playable; see "Pazaak minigame" under Mod hotkeys below.
 - `[ ]` **Turret minigame aiming** — **mouse-only reticle** (no axis maps to keyboard). Keyboard only covers fire (Space/Enter) and pause. Recurring; hard to replace without synthesizing motion.
 
 ### Lower priority — spatial / world interaction
@@ -218,6 +218,25 @@ When the editbox monitor has armed edit mode:
 - Up / Down — Re-read the current text from the start.
 - Enter — Submit (activate the panel's Done/OK button).
 - Esc — Cancel (drop edit mode; engine cancel-button handles panel close).
+
+### Pazaak minigame (active only when the Pazaak board is foreground)
+
+Arrow-zone navigator (same model as the side-deck builder), driven through the
+manager input hook so the generic chain can't also act on the board's buttons.
+Letter shortcuts are Win32-polled (the engine drops those scancodes before the
+manager hook):
+
+- Up / Down — Switch zone: your hand → your table → opponent's table → actions (Stand / End turn).
+- Left / Right — Move within the current zone. In the hand, empty / already-played slots are skipped.
+- Enter — Play the focused hand card, or activate the focused action.
+- S — Stand. E — End turn. (Bare letters, gated on the board being foreground.)
+- C — Read your hand. T — Read both tables with totals. Shift+C — opponent's remaining hand-card count.
+- Plus/minus flip card — Enter opens a sign sub-zone; Left / Right pick plus or minus, Enter plays with that sign, Esc cancels.
+
+Pre-game screens (generic chain + per-kind labelling, not a dedicated navigator):
+
+- Wager popup (`CSWGuiWagerPopup`) — a virtual top-of-chain row reads the live wager + table maximum + credits (analogue of the inventory credits row); the text-less BTN_LESS / BTN_MORE speed buttons are labelled "decrease / increase wager", and the live amount is announced on each step.
+- Side-deck builder (`CSWGuiPazaakStart`) — card grid + chosen-slot widgets labelled via `menus_pazaakdeck`.
 
 ### Diagnostic probes (developer keys — NOT user-rebindable)
 

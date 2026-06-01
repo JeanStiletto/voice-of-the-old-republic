@@ -123,6 +123,22 @@ Inside the chargen name field (and other text-input boxes):
 - Enter — Submit
 - Esc — Cancel
 
+<h3>Mod keys — Pazaak minigame</h3>
+
+While the Pazaak board is open:
+
+- Up / Down — Move between zones: your hand, your table, the opponent's table, the actions (Stand / End turn)
+- Left / Right — Move within the current zone (empty hand slots are skipped)
+- Enter — Play the focused hand card, or activate the focused action
+- S — Stand
+- E — End turn
+- C — Read your hand
+- T — Read both tables with their totals
+- Shift+C — How many cards the opponent is still holding
+- Plus/minus flip card — Enter opens a sign chooser; Left / Right pick plus or minus, Enter plays with that sign, Esc cancels
+
+On the pre-game wager screen, the top entry reads your current bet, the table maximum, and your credits; move to "Einsatz verringern" / "Einsatz erhöhen" (decrease / increase) and press Enter to change the bet, then "Setzen" to place it. The side-deck builder reads every card and deck slot.
+
 <h2>Navigation systems at a glance</h2>
 
 KOTOR is a 3D RPG, so most of the play time is spent moving a character through rooms and around objects. The mod gives you several ways to navigate, layered on top of each other.

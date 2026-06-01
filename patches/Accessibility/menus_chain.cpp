@@ -695,6 +695,32 @@ void RebindChain(void* panel) {
                                                     panel);
     }
 
+    // Virtual wager row for the Pazaak wager popup. Same shape as credits:
+    // the maximum_label isn't IsChainNavigable, so without this the user
+    // can't reach the wager / max / credits readout. The anchor is a no-op
+    // for non-PazaakWager panels.
+    {
+        auto onWagerAnchor = [](void* labelControl, int sortCy,
+                                void* userData) -> bool {
+            void* p = userData;
+            if (g_chainCount >= kMaxChainEntries) return false;
+            int cx, cy;
+            if (!GetControlCenter(labelControl, cx, cy)) cx = 0;
+            // Skip until the panel fields are readable (wager < 0 / label
+            // empty mid-frame). Row reappears on the next rebind.
+            char probe[8];
+            if (!acc::menus::extract::FromControl(labelControl, probe,
+                                                  sizeof(probe), p)) {
+                return true;
+            }
+            g_chain[g_chainCount++] = {
+                labelControl, cx, sortCy, /*textOnly=*/true
+            };
+            return true;
+        };
+        acc::menus::extract::ForEachWagerRowAnchor(panel, onWagerAnchor, panel);
+    }
+
     // Virtual stat rows for the Equip panel (Vitality, Defense, Attack,
     // Damage). Same shape as the credits anchor — value labels live
     // inline in CSWGuiInGameEquip but aren't IsChainNavigable, so the

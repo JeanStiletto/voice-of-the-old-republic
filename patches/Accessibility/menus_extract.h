@@ -54,4 +54,13 @@ const char* FromControl(void* control,
 void ResetCycleCategoryCache();
 void CaptureCycleCategory(void* control, const char* category);
 
+// Pazaak wager popup: register a single virtual top-of-chain "row" (live
+// wager + maximum + credits) anchored on the maximum_label. No-op for any
+// non-PazaakWager panel. Mirrors menus_credits::ForEachCreditsRowAnchor;
+// the row's text is produced by FromControl's PazaakWager branch.
+void ForEachWagerRowAnchor(void* panel,
+                           bool (*callback)(void* labelControl, int sortCy,
+                                            void* userData),
+                           void* userData);
+
 }  // namespace acc::menus::extract
