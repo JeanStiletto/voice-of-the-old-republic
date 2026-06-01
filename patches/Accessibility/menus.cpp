@@ -935,9 +935,10 @@ static void WalkAndCaptureOnFirstSight(void* panel) {
     LogManagerStack(*reinterpret_cast<void**>(kAddrGuiManagerPtr),
                     "panel-walk");
     PanelKind kind = IdentifyPanel(panel);
-    acclog::Write("Menus.PanelWalk", "panel=%p kind=%s",
-                  panel, PanelKindName(kind));
-    WalkChildren("Menus.PanelWalk", panel, kPanelControlsOffset);
+    // Header (panel=/kind=) is folded into the walk block by WalkChildren so
+    // the whole snapshot collapses as one unit on identical re-walks.
+    WalkChildren("Menus.PanelWalk", panel, kPanelControlsOffset,
+                 PanelKindName(kind));
 
     // Capture cycle-button categories before any activation rewrites the
     // value-display button's CExoString. The cache lives in

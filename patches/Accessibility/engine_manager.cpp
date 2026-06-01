@@ -123,20 +123,22 @@ void LogManagerStack(void* mgr, const char* tag) {
     int   modalSize  = *reinterpret_cast<int*>(base + kMgrModalStackSizeOffset);
     void** modalData = *reinterpret_cast<void***>(base + kMgrModalStackDataOffset);
     void* fg = GetForegroundPanel(mgr);
-    acclog::Write("ManagerStack",
-                  "(%s) mgr=%p panels.size=%d modal.size=%d fg=%p",
-                  ctx, mgr, panelSize, modalSize, fg);
+    // One block per dump: an unchanged stack (same ctx, same panel/modal
+    // pointers) folds to a "(repeated Nx)" summary. Here the pointers ARE the
+    // state we care about, so identity is the full display text (no Key()) —
+    // any pointer change is a real stack change and re-prints in full.
+    acclog::BlockLog block("ManagerStack");
+    block.Line("(%s) mgr=%p panels.size=%d modal.size=%d fg=%p",
+               ctx, mgr, panelSize, modalSize, fg);
     int pn = panelSize;
     if (pn < 0 || pn > 32) pn = (pn < 0) ? 0 : 32;
     for (int i = 0; i < pn && panelData; ++i) {
-        acclog::Write("ManagerStack", "(%s)   panels[%d]=%p", ctx,
-                      i, panelData[i]);
+        block.Line("(%s)   panels[%d]=%p", ctx, i, panelData[i]);
     }
     int mn = modalSize;
     if (mn < 0 || mn > 32) mn = (mn < 0) ? 0 : 32;
     for (int i = 0; i < mn && modalData; ++i) {
-        acclog::Write("ManagerStack", "(%s)   modal[%d]=%p", ctx,
-                      i, modalData[i]);
+        block.Line("(%s)   modal[%d]=%p", ctx, i, modalData[i]);
     }
 }
 

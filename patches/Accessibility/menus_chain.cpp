@@ -1092,24 +1092,41 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
     }
 }
 
-void WalkChildren(const char* label, void* parent, size_t offset) {
+void WalkChildren(const char* label, void* parent, size_t offset,
+                  const char* kindName) {
     if (!parent) return;
+    // One BlockLog per walk. Line() is the full display (with pointers); Key()
+    // is the same content with the volatile heap pointers stripped, so a walk
+    // of a panel the engine recreated at a fresh address still hashes equal and
+    // folds to a "(repeated Nx)" summary. The block emits-or-folds when `block`
+    // leaves scope on any return path. Stable vtable code-addresses stay in the
+    // key (they identify the control class).
+    acclog::BlockLog block(label);
+    if (kindName && *kindName) {
+        block.Line("panel=%p kind=%s", parent, kindName);
+        block.Key("kind=%s", kindName);
+    }
+
     auto* list = reinterpret_cast<CExoArrayList*>(
         reinterpret_cast<unsigned char*>(parent) + offset);
     if (!list->data || list->size <= 0) {
-        acclog::Write(label, "walk parent=%p children=0", parent);
+        block.Line("walk parent=%p children=0", parent);
+        block.Key("children=0");
         return;
     }
     int count = list->size;
     if (count > 256) {
-        acclog::Write(label, "walk parent=%p size_oob=%d (capped)", parent, count);
+        block.Line("walk parent=%p size_oob=%d (capped)", parent, count);
+        block.Key("size_oob=%d", count);
         count = 256;
     }
-    acclog::Write(label, "walk parent=%p children=%d", parent, list->size);
+    block.Line("walk parent=%p children=%d", parent, list->size);
+    block.Key("children=%d", list->size);
     for (int i = 0; i < count; ++i) {
         void* child = list->data[i];
         if (!child) {
-            acclog::Write(label, "  [%d]=NULL", i);
+            block.Line("  [%d]=NULL", i);
+            block.Key("  [%d]=NULL", i);
             continue;
         }
         int id = *reinterpret_cast<int*>(
@@ -1122,13 +1139,15 @@ void WalkChildren(const char* label, void* parent, size_t offset) {
         const char* source = acc::menus::extract::FromControl(
             child, text, sizeof(text), parent);
         if (source) {
-            acclog::Write(label, "  [%d] %p id=%d src=%s text=\"%s\"",
-                          i, child, id, source, text);
+            block.Line("  [%d] %p id=%d src=%s text=\"%s\"",
+                       i, child, id, source, text);
+            block.Key("  [%d] id=%d src=%s text=\"%s\"", i, id, source, text);
         } else {
             char vtbl[160];
             acc::engine::DumpControlVtable(child, vtbl, sizeof(vtbl));
-            acclog::Write(label, "  [%d] %p id=%d src=none %s",
-                          i, child, id, vtbl);
+            block.Line("  [%d] %p id=%d src=none %s",
+                       i, child, id, vtbl);
+            block.Key("  [%d] id=%d src=none %s", i, id, vtbl);
         }
     }
 }

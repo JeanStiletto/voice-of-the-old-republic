@@ -1,6 +1,7 @@
 #include "log.h"
 
 #include <cstdarg>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 
@@ -105,7 +106,20 @@ void RawWriteLocked(const char* tag, const char* content) {
     }
     (void)n;
 
-    OutputDebugStringA(line);
+    // Live debug stream — ONLY when an actual debugger is attached.
+    //
+    // OutputDebugStringA takes a system-wide named mutex (DBWinMutex) and,
+    // when a listener exists, blocks on an ack event. Any background process
+    // that drains the debug buffer (AV/EDR agents, DebugView, telemetry) can
+    // therefore stall EVERY call here — and since this fires on every log
+    // line on the game's main tick, a contended drain serialises the whole
+    // tick and the game freezes for seconds (audio underruns because KOTOR
+    // refills its streaming buffers on that same tick). IsDebuggerPresent is
+    // a single PEB byte-read (no syscall, no lock), so gating costs nothing
+    // and loses no information: the full log still goes to the file below,
+    // which is what `kdev logs` and beta-tester reports read. The live
+    // OutputDebugString view re-enables automatically under a real debugger.
+    if (IsDebuggerPresent()) OutputDebugStringA(line);
 
     // Lazy-open — see comment-of-record in pre-2026-05-08 history.
     if (!g_logOpenAttempted) {
@@ -141,6 +155,77 @@ void FlushEdgeHoldLocked(DedupEntry* e) {
     e->stateHeld = 0;
 }
 
+// --- Block dedup state (BlockLog) ------------------------------------------
+//
+// One entry per BlockLog tag. We store only a hash of the last block (not its
+// full text) plus the first line as a human-readable descriptor for the
+// "(repeated Nx)" summary — a 64-bit FNV-1a collision (and thus a missed
+// re-print) is ~1-in-2^64, acceptable for diagnostics.
+
+constexpr int kMaxBlockKeys = 16;
+
+struct BlockEntry {
+    char     tag[64];
+    uint64_t lastHash;
+    bool     hasLast;
+    int      repeated;        // identical blocks folded since lastHash emitted
+    char     descriptor[96];  // first line of the folded block, for the summary
+    DWORD    lastSeenMs;
+};
+
+BlockEntry g_blocks[kMaxBlockKeys];
+int        g_blockCount = 0;
+
+uint64_t Fnv1a64(const char* p, size_t n) {
+    uint64_t h = 1469598103934665603ull;
+    for (size_t i = 0; i < n; ++i) {
+        h ^= static_cast<unsigned char>(p[i]);
+        h *= 1099511628211ull;
+    }
+    return h;
+}
+
+BlockEntry* GetOrCreateBlock(const char* tag) {
+    for (int i = 0; i < g_blockCount; ++i) {
+        if (strcmp(g_blocks[i].tag, tag) == 0) return &g_blocks[i];
+    }
+    if (g_blockCount >= kMaxBlockKeys) return nullptr;
+    BlockEntry* e = &g_blocks[g_blockCount++];
+    strncpy_s(e->tag, tag, _TRUNCATE);
+    e->lastHash      = 0;
+    e->hasLast       = false;
+    e->repeated      = 0;
+    e->descriptor[0] = '\0';
+    e->lastSeenMs    = 0;
+    return e;
+}
+
+// Emit the "(repeated Nx)" summary for a folded run. Must be called under lock.
+void FlushBlockLocked(BlockEntry* e) {
+    if (!e || e->repeated <= 0) return;
+    char buf[160];
+    snprintf(buf, sizeof(buf), "(repeated %dx — unchanged: %s)",
+             e->repeated, e->descriptor);
+    RawWriteLocked(e->tag, buf);
+    e->repeated = 0;
+}
+
+// Emit a '\n'-separated block buffer as one tagged line per segment. Under lock.
+void EmitBlockLinesLocked(const char* tag, const char* buf) {
+    const char* start = buf;
+    while (*start) {
+        const char* nl = strchr(start, '\n');
+        if (!nl) { RawWriteLocked(tag, start); break; }
+        char line[kMessageBuf];
+        size_t n = static_cast<size_t>(nl - start);
+        if (n >= sizeof(line)) n = sizeof(line) - 1;
+        memcpy(line, start, n);
+        line[n] = '\0';
+        RawWriteLocked(tag, line);
+        start = nl + 1;
+    }
+}
+
 // Sweep all entries; flush any whose dedup window has gone stale. Called
 // at the top of every helper so a paused subsystem's count surfaces
 // without explicit FlushAll calls.
@@ -153,6 +238,12 @@ void SweepStaleLocked() {
         // Stale — flush whichever counter is non-zero.
         if (e->suppressed > 0) FlushTraceLocked(e);
         if (e->stateHeld  > 0) FlushEdgeHoldLocked(e);
+    }
+    for (int i = 0; i < g_blockCount; ++i) {
+        BlockEntry* e = &g_blocks[i];
+        if (e->lastSeenMs == 0 || e->repeated <= 0) continue;
+        if (now - e->lastSeenMs < kStaleMs) continue;
+        FlushBlockLocked(e);
     }
 }
 
@@ -230,6 +321,9 @@ void Shutdown() {
     for (int i = 0; i < g_keyCount; ++i) {
         if (g_keys[i].suppressed > 0) FlushTraceLocked(&g_keys[i]);
         if (g_keys[i].stateHeld  > 0) FlushEdgeHoldLocked(&g_keys[i]);
+    }
+    for (int i = 0; i < g_blockCount; ++i) {
+        if (g_blocks[i].repeated > 0) FlushBlockLocked(&g_blocks[i]);
     }
     if (g_logFile) {
         fflush(g_logFile);
@@ -413,8 +507,112 @@ void FlushAll() {
         if (g_keys[i].suppressed > 0) FlushTraceLocked(&g_keys[i]);
         if (g_keys[i].stateHeld  > 0) FlushEdgeHoldLocked(&g_keys[i]);
     }
+    for (int i = 0; i < g_blockCount; ++i) {
+        if (g_blocks[i].repeated > 0) FlushBlockLocked(&g_blocks[i]);
+    }
     if (g_logFile) fflush(g_logFile);
     LeaveCriticalSection(&g_lock);
+}
+
+// --- BlockLog --------------------------------------------------------------
+
+BlockLog::BlockLog(const char* tag)
+    : tag_(tag ? tag : ""), len_(0), ended_(false), passthrough_(false),
+      hasKey_(false), keyHash_(1469598103934665603ull) {
+    buf_[0] = '\0';
+}
+
+BlockLog::~BlockLog() { End(); }
+
+void BlockLog::Key(const char* fmt, ...) {
+    if (ended_ || !fmt) return;
+    char msg[kMessageBuf];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(msg, sizeof(msg), fmt, args);
+    va_end(args);
+    // Stream the bytes into the running FNV-1a hash (plus a '\n' separator so
+    // adjacent keys can't run together) — no buffer, identity only.
+    for (const char* p = msg; *p; ++p) {
+        keyHash_ ^= static_cast<unsigned char>(*p);
+        keyHash_ *= 1099511628211ull;
+    }
+    keyHash_ ^= static_cast<unsigned char>('\n');
+    keyHash_ *= 1099511628211ull;
+    hasKey_ = true;
+}
+
+void BlockLog::Line(const char* fmt, ...) {
+    if (ended_ || !fmt) return;
+
+    char msg[kMessageBuf];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(msg, sizeof(msg), fmt, args);
+    va_end(args);
+
+    if (passthrough_) {
+        Write(tag_, "%s", msg);
+        return;
+    }
+
+    size_t mlen = strlen(msg);
+    if (len_ + mlen + 2 >= kCap) {
+        // Block exceeds the buffer — emit what we have plus this line
+        // verbatim and switch to passthrough so the rest still logs in full
+        // (just un-folded). Rare: only fires for >16KB blocks.
+        Locker l;
+        EmitBlockLinesLocked(tag_, buf_);
+        RawWriteLocked(tag_, msg);
+        passthrough_ = true;
+        return;
+    }
+    memcpy(buf_ + len_, msg, mlen);
+    len_ += mlen;
+    buf_[len_++] = '\n';
+    buf_[len_]   = '\0';
+}
+
+void BlockLog::End() {
+    if (ended_) return;
+    ended_ = true;
+    if (passthrough_ || len_ == 0) return;   // already emitted / nothing buffered
+
+    // Identity = the Key() stream if any was supplied (folds volatile noise
+    // like churning heap pointers), else the full display text.
+    uint64_t h = hasKey_ ? keyHash_ : Fnv1a64(buf_, len_);
+
+    Locker l;
+    SweepStaleLocked();
+
+    BlockEntry* e = GetOrCreateBlock(tag_);
+    if (!e) {                                 // table full — emit, don't fold
+        EmitBlockLinesLocked(tag_, buf_);
+        return;
+    }
+
+    DWORD now = GetTickCount();
+    if (e->hasLast && e->lastHash == h) {
+        e->repeated++;
+        e->lastSeenMs = now;
+        return;                               // fold: identical to previous block
+    }
+
+    // Different (or first) block — flush any pending fold count, then emit.
+    if (e->repeated > 0) FlushBlockLocked(e);
+    EmitBlockLinesLocked(tag_, buf_);
+
+    // Remember the first line as the summary descriptor for the next fold.
+    const char* nl = strchr(buf_, '\n');
+    size_t dn = nl ? static_cast<size_t>(nl - buf_) : strlen(buf_);
+    if (dn >= sizeof(e->descriptor)) dn = sizeof(e->descriptor) - 1;
+    memcpy(e->descriptor, buf_, dn);
+    e->descriptor[dn] = '\0';
+
+    e->lastHash   = h;
+    e->hasLast    = true;
+    e->repeated   = 0;
+    e->lastSeenMs = now;
 }
 
 const char* PatchDir() {

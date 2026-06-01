@@ -209,7 +209,15 @@ bool GetActiveLeaderName(char* outBuf, size_t bufSize) {
     if (leaderHandle != 0u &&
         GetObjectDisplayNameByHandle(leaderHandle, outBuf, bufSize) &&
         outBuf[0] != '\0') {
-        acclog::Write("PartyLeader",
+        // Trace, not Write: this accessor is called dozens of times per
+        // tick and the resolved line is identical every call (one distinct
+        // value across a whole session). Trace dedups consecutive identical
+        // content and emits a "(repeated Nx more)" summary on change, so the
+        // log keeps the first line + every leader change + the repeat count
+        // with none of the per-tick spam. (Was Write — 58% of one tester
+        // session's 42k-line log; the volume served no diagnostic purpose
+        // and each line cost an OutputDebugStringA + fflush on the game tick.)
+        acclog::Trace("PartyLeader",
                       "leader=handle — client=%p server=%p stats=%p "
                       "handle=0x%08x name=[%s]",
                       clientLeader, serverCreature, stats,
@@ -229,7 +237,7 @@ bool GetActiveLeaderName(char* outBuf, size_t bufSize) {
             kCreatureStatsFirstNameOffset + 4,
             outBuf, bufSize);
         if (statsReadOk && outBuf[0] != '\0') {
-            acclog::Write("PartyLeader",
+            acclog::Trace("PartyLeader",
                           "leader=stats — client=%p server=%p stats=%p "
                           "name=[%s]",
                           clientLeader, serverCreature, stats, outBuf);
@@ -258,7 +266,7 @@ bool GetActiveLeaderName(char* outBuf, size_t bufSize) {
             firstName_strref = *reinterpret_cast<uint32_t*>(p + 8);
         } __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
-    acclog::Write("PartyLeader",
+    acclog::Trace("PartyLeader",
                   "all paths empty — client=%p server=%p stats=%p "
                   "handle=0x%08x first_name(cstr=%p len=%u strref=0x%x) "
                   "stats_read_ok=%d pcOk=%d name=[%s]",

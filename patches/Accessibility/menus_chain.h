@@ -163,8 +163,13 @@ void* ReadPanelActiveControl(void* panel);
 // child's id + best-effort label via extract::FromControl, with a vtable
 // dump on fallback. Used both as a panel-walk on first focus (menus.cpp) and
 // as the empty-chain probe inside HandleNavStep — same primitive, different
-// callers.
-void WalkChildren(const char* label, void* parent, size_t offset);
+// callers. Emits the whole walk as one BlockLog block, keyed on semantic
+// content (ids + text + vtable) with heap pointers excluded — so identical
+// re-walks of a panel the engine recreated at a fresh address still fold to a
+// "(repeated Nx)" summary. `kindName`, if given, adds a "panel=... kind=..."
+// header line to the block (and folds the kind into the key).
+void WalkChildren(const char* label, void* parent, size_t offset,
+                  const char* kindName = nullptr);
 
 // Esc dispatch — routes press-edge Esc on chain-bound panels through the
 // store override, the workbench-upgrade override, or the generic sub-dialog /
