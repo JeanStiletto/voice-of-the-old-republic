@@ -69,13 +69,15 @@ constexpr int kHoverHitRadiusPx = 36;
 // emit a cue every tick.
 constexpr DWORD kEdgeCueQuietMs = 250;
 
-// Volume scalar for the map-edge collision cue. kAccCueGain (4.0) was
-// inaudible in the paused map-UI sub-screen (verified in
-// patch-20260512-143327.log: 28 successive PlayCue3D_ok=1 fires with
-// zero perceived output). guidance_beacon ran into the same paused-
-// context attenuation and uses 8.0×; same level applied here for the
-// same reason — UI feedback has to win against pause-mode audio dampening.
-constexpr float kEdgeCueGain = 8.0f;
+// Priority group for the map-edge collision cue. The map sub-screen runs
+// under the engine's menu pause (SetSoundMode), which mutes every source
+// EXCEPT priority groups 1/2/0xb — so the earlier "inaudible" symptom
+// (patch-20260512-143327.log: 28 PlayCue3D_ok=1 fires, zero output) was a
+// pause-exemption problem misread as a volume one, not a volume deficit.
+// 0xb is the GUI-sound group the engine exempts (and the audio glossary
+// uses for the same reason). See project memory
+// setsoundmode-priority-group-pause-exemption.
+constexpr uint8_t kEdgeCuePauseExemptGroup = 0x0b;
 
 // CSWSAreaMap field layout (subset). Full layout in
 // docs/navsystems-investigation.md §Q4. The module → area_map indirection
@@ -786,14 +788,14 @@ void Tick() {
             const char* cueResref =
                 acc::audio::GetNavCueResref(acc::audio::NavCue::Collision);
             bool ok = acc::audio::PlayCue3D(cueResref, cuePos,
-                                            kEdgeCueGain);
+                                            kEdgeCuePauseExemptGroup);
             acclog::Write("MapCursor",
                           "edge cue clampX=%d clampY=%d resref=%s "
-                          "cuePos=(%.2f,%.2f,%.2f) gain=%.1f "
+                          "cuePos=(%.2f,%.2f,%.2f) group=%u "
                           "PlayCue3D_ok=%d",
                           (int)clampedX, (int)clampedY, cueResref,
                           cuePos.x, cuePos.y, cuePos.z,
-                          kEdgeCueGain, (int)ok);
+                          (unsigned)kEdgeCuePauseExemptGroup, (int)ok);
             g_state.last_edge_cue_ms = now;
         }
     }

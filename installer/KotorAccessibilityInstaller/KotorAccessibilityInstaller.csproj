@@ -49,6 +49,11 @@
          acc_boost.wav: trimmed mgs_basethrust03 used by the swoop-race
          accelerator-pad proximity loop (swoop_race.cpp). -->
     <EmbeddedResource Include="Resources\acc_boost.wav" />
+    <!-- Vanilla prioritygroups.2da. The installer appends the mod's
+         dedicated full-volume audio priority group to whatever copy is in
+         Override (or this bundled vanilla if absent) — see
+         InstallationManager.InstallPriorityGroup / PriorityGroup2da. -->
+    <EmbeddedResource Include="Resources\prioritygroups.2da" />
     <!-- HoloPatcher is NOT bundled. It's downloaded from upstream
          NickHugi/PyKotor @ pinned tag at install time (see HoloPatcherProvider). -->
   </ItemGroup>

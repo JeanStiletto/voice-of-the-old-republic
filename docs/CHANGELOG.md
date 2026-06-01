@@ -15,6 +15,12 @@ hotkey Y", "X no longer does Z"); keep technical detail short.
 
 <h2>v0.2.1</h2>
 
+<h3>Audio:</h3>
+
+- New "Lautstärke der Hinweistöne" (hint-sound volume) slider under Mod-Einstellungen. Left / Right adjust the volume of every mod cue — wall, door, NPC, container, item and transition cues, the navigation beacon, collisions, combat and cycle cues — in 10% steps, from 100% down to off. Each step plays a short preview at the new level so you can hear the change. Starts at 100%.
+- The mod's cues now play at full volume by default. They were previously running at about 83% of unity (they were assigned a quieter engine audio channel), so they could sit too low against ambient and footstep audio; they now ride a dedicated full-volume channel.
+- The map-screen edge cue (played when the map cursor hits the edge of the explorable area) is now actually audible. It was being silenced by the map screen's audio pause; it now plays on the same channel the game keeps alive for menu clicks.
+
 <h3>Startup:</h3>
 
 - The post-intro main menu no longer keeps warning keyboard-only players that the game is "still loading" — and telling them to use the Alt+F4 → cancel-dialog workaround — after the menu is already responsive. The "input pump is live" handoff was keyed on a focus event that only the mouse produces, so on a keyboard-only machine the loading nag could re-fire on every keypress even once navigation worked. It now clears the moment your first menu keypress is handled, which always happens under keyboard navigation.

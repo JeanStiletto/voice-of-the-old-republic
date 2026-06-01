@@ -437,6 +437,8 @@ const char* Get(Id id) {
         case Id::ModSettingStateOn:           return "attivo";
         case Id::ModSettingStateOff:          return "disattivo";
         case Id::FmtModSettingOption:         return "%s: %s";
+        case Id::ModSettingCueVolume:         return "Volume dei segnali sonori";
+        case Id::FmtModSettingSlider:         return "%s: %d percento";
 
         case Id::ModSettingAudioGlossary:           return "Glossario audio";
         case Id::ModSettingsAudioGlossaryOpened:    return "Glossario audio aperto";

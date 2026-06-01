@@ -66,13 +66,125 @@ void* GetCExoSound() {
     }
 }
 
+// --- Global cue volume ----------------------------------------------
+// In-memory percent [0,100]; 100 = each cue at its base volume.
+int g_cueVolumePercent = 100;
+
+// baseVolume × slider, rounded, clamped to [0,127]. Returns 0 to mean
+// "muted — skip the engine call" (volume_byte==0 means engine-full, not
+// silence, so the callers must not forward a 0).
+uint8_t EffectiveVolumeByte(uint8_t baseVolume) {
+    int v = (static_cast<int>(baseVolume) * g_cueVolumePercent + 50) / 100;
+    if (v > 127) v = 127;
+    if (v < 0)   v = 0;
+    return static_cast<uint8_t>(v);
+}
+
+// --- Priority-group resolution (live CPriorityGroup table) ----------
+// Layout mirrors probe_priority_groups.cpp (XML type DB 2026-05-14):
+//   CExoSound facade   +0x00 -> CExoSoundInternal*
+//   CExoSoundInternal  +0x4c -> CPriorityGroup* (heap array)
+//   CPriorityGroup stride 0x18: +0x06 priority(byte) +0x07 volume(byte)
+//                               +0x14 fade_time(ushort)
+constexpr size_t   kSoundInternalOffset      = 0x00;
+constexpr size_t   kPriorityGroupsPtrOff     = 0x4c;
+constexpr size_t   kPriorityGroupStride      = 0x18;
+constexpr size_t   kPriorityGroupPriorityOff = 0x06;
+constexpr size_t   kPriorityGroupVolumeOff   = 0x07;
+constexpr size_t   kPriorityGroupFadeTimeOff = 0x14;
+
+// Our installer stamps this value into the FadeTime column of the custom
+// full-volume row it appends to prioritygroups.2da. Vanilla fade times
+// are 0 or 1000, so 31337 is an unmistakable fingerprint — and because we
+// match on a struct field the engine actually loads (not the row index),
+// we find our group wherever it lands, immune to row-index drift from
+// other mods that also extend the table.
+constexpr uint16_t kCueGroupSentinelFadeTime = 31337;
+
+// Fallback when the sentinel row isn't present (prioritygroups.2da edit
+// not yet applied): vanilla group 26 — volume 127, identical 20m/10m
+// falloff to the legacy group 0, not pause-exempt. Index 26 is within the
+// 27-row vanilla table.
+constexpr uint8_t  kFallbackFullGroup        = 26;
+
+constexpr int      kMaxGroupScan             = 40;
+
 }  // namespace
 
+void SetGlobalCueVolumePercent(int percent) {
+    if (percent < 0)   percent = 0;
+    if (percent > 100) percent = 100;
+    g_cueVolumePercent = percent;
+    acclog::Write("AudioBus", "cue volume set to %d%%", percent);
+}
+
+int GetGlobalCueVolumePercent() {
+    return g_cueVolumePercent;
+}
+
+uint8_t GetCuePriorityGroup() {
+    // -1 = not yet resolved. Cached after a successful scan (the table is
+    // built once at sound init and never moves). A null subsystem returns
+    // the fallback WITHOUT caching, so a cue that fires before sound init
+    // doesn't pin us to the fallback forever.
+    static int s_resolved = -1;
+    if (s_resolved >= 0) return static_cast<uint8_t>(s_resolved);
+
+    void* exoSound = GetCExoSound();
+    if (!exoSound) return kFallbackFullGroup;
+
+    __try {
+        void* internal = *reinterpret_cast<void**>(
+            reinterpret_cast<char*>(exoSound) + kSoundInternalOffset);
+        if (!internal) return kFallbackFullGroup;
+        void* table = *reinterpret_cast<void**>(
+            reinterpret_cast<char*>(internal) + kPriorityGroupsPtrOff);
+        if (!table) return kFallbackFullGroup;
+
+        int garbageRun = 0;
+        for (int i = 0; i < kMaxGroupScan; ++i) {
+            auto* e = reinterpret_cast<unsigned char*>(table) +
+                      static_cast<size_t>(i) * kPriorityGroupStride;
+            uint8_t vol  = *(e + kPriorityGroupVolumeOff);
+            uint8_t prio = *(e + kPriorityGroupPriorityOff);
+            // Same off-the-end heuristic the probe uses: bail after a run
+            // of clearly-invalid rows (both bytes > 127).
+            if (vol > 127 && prio > 127) {
+                if (++garbageRun >= 4) break;
+                continue;
+            }
+            garbageRun = 0;
+            uint16_t fade = *reinterpret_cast<uint16_t*>(
+                e + kPriorityGroupFadeTimeOff);
+            if (fade == kCueGroupSentinelFadeTime) {
+                s_resolved = i;
+                acclog::Write("AudioBus",
+                    "cue group resolved to dedicated sentinel group %d (vol=%u)",
+                    i, (unsigned)vol);
+                return static_cast<uint8_t>(i);
+            }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return kFallbackFullGroup;
+    }
+
+    // Sentinel absent — cache the fallback so we don't rescan per cue.
+    s_resolved = kFallbackFullGroup;
+    acclog::Write("AudioBus",
+        "cue group sentinel not found; using fallback full group %u",
+        (unsigned)kFallbackFullGroup);
+    return kFallbackFullGroup;
+}
+
 bool PlayCue(const char* resref, uint8_t priorityGroup,
-             uint8_t volumeByte) {
+             uint8_t baseVolume) {
     if (!resref || !*resref) return false;
     void* exoSound = GetCExoSound();
     if (!exoSound) return false;
+
+    uint8_t vol = EffectiveVolumeByte(baseVolume);
+    if (vol == 0) return false;  // muted — skip (0 would be engine-full)
+    uint8_t group = priorityGroup ? priorityGroup : GetCuePriorityGroup();
 
     CResRef res;
     FillResRef(res, resref);
@@ -82,9 +194,9 @@ bool PlayCue(const char* resref, uint8_t priorityGroup,
         auto fn = reinterpret_cast<PFN_PlayOneShotSound>(
             kAddrCExoSoundPlayOneShotSound);
         fn(exoSound, &res,
-           priorityGroup,
+           group,
            /*delay_ms=*/0,
-           volumeByte,
+           vol,
            /*fixed_variance=*/0.0f,
            /*pitch_variance=*/0.0f);
         pitch::EndScopedZero();
@@ -96,10 +208,14 @@ bool PlayCue(const char* resref, uint8_t priorityGroup,
 }
 
 bool PlayCue3D(const char* resref, const Vector& worldPosition,
-               float volume) {
+               uint8_t priorityGroup, uint8_t baseVolume) {
     if (!resref || !*resref) return false;
     void* exoSound = GetCExoSound();
     if (!exoSound) return false;
+
+    uint8_t vol = EffectiveVolumeByte(baseVolume);
+    if (vol == 0) return false;  // muted — skip (0 would be engine-full)
+    uint8_t group = priorityGroup ? priorityGroup : GetCuePriorityGroup();
 
     CResRef res;
     FillResRef(res, resref);
@@ -124,14 +240,6 @@ bool PlayCue3D(const char* resref, const Vector& worldPosition,
         }
     }
 
-    // Vestigial. The float was being passed into fixed_variance under the
-    // mislabelled typedef (always neutralised by the pitch detour). With
-    // the typedef fixed, taking it literally as volume_byte would crush
-    // every cue to 3-6% loudness — pass 0 (group default = 127), which
-    // matches the historical audible result. API cleanup to uint8_t is
-    // out of scope; not worth touching 13 callsites yet.
-    (void)volume;
-
     pitch::BeginScopedZero();
     __try {
         auto fn = reinterpret_cast<PFN_Play3DOneShotSound>(
@@ -139,9 +247,9 @@ bool PlayCue3D(const char* resref, const Vector& worldPosition,
         fn(exoSound, &res,
            pos,
            /*z_offset=*/0.0f,
-           /*priority_group=*/0,    // group 0, vol=106 — every nav cue
+           group,
            /*delay_ms=*/0,
-           /*volume_byte=*/0,       // 0 = group default
+           vol,
            /*fixed_variance=*/0.0f,
            /*pitch_variance=*/0.0f);
         pitch::EndScopedZero();

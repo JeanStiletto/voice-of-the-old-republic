@@ -47,6 +47,7 @@ enum class Option {
     WallSounds,
     HumanSubtitles,
     SkipIntros,        // filesystem-backed — state is biologo.bik vs biologo.bik.disabled
+    CueVolume,         // slider — global hint-sound volume (audio_bus owns the value)
     AudioGlossary,
     Count
 };

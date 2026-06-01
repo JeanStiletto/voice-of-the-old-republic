@@ -31,8 +31,15 @@ public:
     // group (0x17). Pass an explicit group to override — the audio glossary
     // passes 0xb (the GUI-click group) so its audition survives the in-game
     // menu's SetSoundMode(4) pause, which mutes group 0x17 but exempts 0xb.
+    //
+    // volumeByte < 0 (default) leaves the engine ctor's full per-source
+    // volume (0x7f). Pass 0..127 to set the per-source level — used by the
+    // cue-volume slider preview so the audition plays at the level a real
+    // cue would. (Engine clamps >127 to 127; the byte is one factor in
+    // group_volume × source_volume × master_SFX_slider.)
     bool Start(const char* resref, const Vector& worldPosition,
-               bool looping = true, bool spatial = true, int priorityGroup = -1);
+               bool looping = true, bool spatial = true, int priorityGroup = -1,
+               int volumeByte = -1);
 
     void UpdatePosition(const Vector& worldPosition);  // safe no-op if inactive
     void Stop();                                       // idempotent

@@ -215,6 +215,44 @@ namespace KotorAccessibilityInstaller
         }
 
         /// <summary>
+        /// Appends the mod's dedicated full-volume audio priority group to
+        /// &lt;game&gt;/Override/prioritygroups.2da. Conflict-safe: reads the
+        /// current Override file if present (preserving any other mod's rows),
+        /// otherwise starts from the bundled vanilla copy, then appends our
+        /// sentinel-tagged row. Idempotent — re-running an install does not
+        /// add a second copy (PriorityGroup2da.AppendAccGroup detects the
+        /// sentinel and no-ops).
+        ///
+        /// The DLL resolves our group at runtime by the sentinel FadeTime, so
+        /// the row index doesn't matter. We deliberately do NOT remove this
+        /// file on uninstall: it may carry a third-party mod's rows, and the
+        /// lone extra row is inert once our DLL is gone.
+        /// </summary>
+        public void InstallPriorityGroup()
+        {
+            string overrideDir = Path.Combine(_gameDir, "Override");
+            Directory.CreateDirectory(overrideDir);
+            string target = Path.Combine(overrideDir, "prioritygroups.2da");
+
+            bool fromExisting = File.Exists(target);
+            byte[] source = fromExisting
+                ? File.ReadAllBytes(target)
+                : ReadEmbeddedResourceBytes("prioritygroups.2da");
+
+            byte[] result = PriorityGroup2da.AppendAccGroup(source);
+            if (ReferenceEquals(result, source))
+            {
+                Logger.Info("Priority group already present in prioritygroups.2da; skipping.");
+                return;
+            }
+
+            File.WriteAllBytes(target, result);
+            Logger.Info($"Installed accessibility priority group -> {target} " +
+                        $"({source.Length} -> {result.Length} bytes, source: " +
+                        $"{(fromExisting ? "existing Override file" : "bundled vanilla")}).");
+        }
+
+        /// <summary>
         /// Copies the running installer EXE into the game folder so Add/Remove
         /// Programs has a stable uninstaller path even if the user deletes the
         /// original download. Returns the destination path for registry use.
@@ -257,6 +295,21 @@ namespace KotorAccessibilityInstaller
             {
                 Logger.Warning($"Could not clean up staging dir: {ex.Message}");
             }
+        }
+
+        private static byte[] ReadEmbeddedResourceBytes(string shortName)
+        {
+            var assembly = Assembly.GetExecutingAssembly();
+            string fullName = FindResourceName(assembly, shortName);
+            if (fullName == null)
+                throw new FileNotFoundException($"Embedded resource not found: {shortName}");
+
+            using var stream = assembly.GetManifestResourceStream(fullName);
+            if (stream == null)
+                throw new InvalidOperationException($"Could not open resource stream: {fullName}");
+            using var ms = new MemoryStream();
+            stream.CopyTo(ms);
+            return ms.ToArray();
         }
 
         private static void ExtractEmbeddedResource(string shortName, string targetPath)

@@ -1192,6 +1192,12 @@ enum class Id : int {
     ModSettingStateOff,
     FmtModSettingOption,
 
+    // Cue-volume slider row (menus_modsettings). Left/Right adjust the
+    // global hint-sound volume in 10% steps; FmtModSettingSlider composes
+    // "Name: N Prozent" (one %s name + one %d percent).
+    ModSettingCueVolume,
+    FmtModSettingSlider,
+
     // Side-effect cues for the SkipIntros toggle — spoken after the
     // .bik rename to tell the user the change applies on next launch.
     ModSettingSkipIntrosOnNextLaunch,     // intros are now disabled

@@ -10,6 +10,7 @@
 
 #include "menus_modsettings.h"
 
+#include "audio_bus.h"        // global cue-volume slider get/set
 #include "audio_cues.h"       // NavCue + GetNavCueResref
 #include "audio_loop.h"       // LoopSource — glossary audition via CExoSoundSource
 #include "engine_input.h"
@@ -53,6 +54,8 @@ bool s_toggles[static_cast<int>(Option::Count)] = {
                                   // (biologo.bik vs biologo.bik.disabled);
                                   // StateText + Enter both special-case
                                   // this index and call into intro_skip.
+    /* CueVolume       */ false,  // unused — RowKind::Slider; value lives in
+                                  // audio_bus (Get/SetGlobalCueVolumePercent).
     /* AudioGlossary   */ false,  // unused — RowKind::Submenu
 };
 
@@ -103,7 +106,18 @@ acc::audio::LoopSource s_glossaryPreview;
 enum class RowKind {
     Toggle,    // Enter flips s_toggles[idx]; speech reads "Name: state"
     Submenu,   // Enter opens a nested view; speech reads "Name" only
+    Slider,    // Left/Right adjust a percent; speech reads "Name: N Prozent"
 };
+
+// Cue-volume slider step (percent per Left/Right press) and the cue used
+// for the audible preview. The preview rides priority group 0xb so it
+// survives the in-game Optionen pause (SetSoundMode mutes everything else),
+// and plays at the slider-scaled per-source volume so the user hears the
+// level they just dialled in. BeaconActive (gui_check) is a short, clean
+// affirmative blip representative of the hint-sound vocabulary.
+constexpr int kCueVolumeStep            = 10;
+constexpr int kCueVolumePreviewGroup    = 0x0b;
+constexpr acc::audio::NavCue kCueVolumePreviewCue = acc::audio::NavCue::BeaconActive;
 
 struct OptionSpec {
     Option              option;
@@ -117,6 +131,7 @@ constexpr OptionSpec k_options[] = {
     { Option::WallSounds,      acc::strings::Id::ModSettingWallSounds,      RowKind::Toggle  },
     { Option::HumanSubtitles,  acc::strings::Id::ModSettingHumanSubtitles,  RowKind::Toggle  },
     { Option::SkipIntros,      acc::strings::Id::ModSettingSkipIntros,      RowKind::Toggle  },
+    { Option::CueVolume,       acc::strings::Id::ModSettingCueVolume,       RowKind::Slider  },
     { Option::AudioGlossary,   acc::strings::Id::ModSettingAudioGlossary,   RowKind::Submenu },
 };
 constexpr int k_optionCount = static_cast<int>(
@@ -197,6 +212,10 @@ void SpeakFocusedOption() {
         snprintf(line, sizeof(line),
                  acc::strings::Get(acc::strings::Id::FmtModSettingOption),
                  name, st);
+    } else if (row.kind == RowKind::Slider) {
+        snprintf(line, sizeof(line),
+                 acc::strings::Get(acc::strings::Id::FmtModSettingSlider),
+                 name, acc::audio::GetGlobalCueVolumePercent());
     } else {
         snprintf(line, sizeof(line), "%s", name);
     }
@@ -417,7 +436,47 @@ void CloseGlossarySubMenu() {
     SpeakFocusedOption();
 }
 
+// Adjust the global cue volume by delta percent (clamped 0..100),
+// re-announce "Name: N Prozent", and play an audible preview at the new
+// level. The preview rides group 0xb so it survives the in-game Optionen
+// pause, and uses the slider-scaled per-source volume so the user hears
+// the resulting loudness. Reuses the glossary preview handle — only one
+// audition plays at a time.
+void AdjustCueVolume(int delta) {
+    int cur  = acc::audio::GetGlobalCueVolumePercent();
+    int next = cur + delta;
+    if (next < 0)   next = 0;
+    if (next > 100) next = 100;
+    acc::audio::SetGlobalCueVolumePercent(next);
+    acclog::Write("ModSettings", "cue volume adjust delta=%+d -> %d%%",
+                  delta, next);
+    SpeakFocusedOption();
+    if (next > 0) {
+        int previewByte = 127 * next / 100;
+        const Vector kCentre = { 0.0f, 0.0f, 0.0f };
+        s_glossaryPreview.Start(
+            acc::audio::GetNavCueResref(kCueVolumePreviewCue), kCentre,
+            /*looping=*/false, /*spatial=*/false,
+            /*priorityGroup=*/kCueVolumePreviewGroup,
+            /*volumeByte=*/previewByte);
+    } else {
+        s_glossaryPreview.Stop();  // muted — silence any in-flight tail
+    }
+}
+
 bool HandleInputRoot(int keyCode) {
+    // Left / Right: adjust the focused Slider row; ignored on non-slider
+    // rows (they fall through to the parent-input block in HandleInput,
+    // which consumes them so they don't leak to the engine).
+    if (keyCode == kInputNavLeft || keyCode == kInputNavRight) {
+        if (s_focused >= 0 && s_focused < k_optionCount &&
+            k_options[s_focused].kind == RowKind::Slider) {
+            AdjustCueVolume(keyCode == kInputNavRight ? kCueVolumeStep
+                                                      : -kCueVolumeStep);
+            return true;
+        }
+        return false;
+    }
     // Up / Down: step focus with end-clamp (no wrap — sighted "list
     // box" semantics match Optionen panels above and below).
     if (keyCode == kInputNavUp) {
@@ -441,6 +500,12 @@ bool HandleInputRoot(int keyCode) {
             if (row.option == Option::AudioGlossary) {
                 OpenGlossarySubMenu();
             }
+            return true;
+        }
+        // Slider: Enter replays the preview at the current level (Left/
+        // Right do the actual adjusting). delta=0 keeps the value put.
+        if (row.kind == RowKind::Slider) {
+            AdjustCueVolume(0);
             return true;
         }
         // SkipIntros: filesystem rename instead of s_toggles flip.

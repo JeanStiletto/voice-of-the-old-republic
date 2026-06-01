@@ -45,6 +45,7 @@ typedef void  (__thiscall* PFN_Set3D)(void* this_, int enabled);
 typedef void  (__thiscall* PFN_SetPosition)(void* this_, const Vector* pos, float z_offset);
 typedef void  (__thiscall* PFN_SetLooping)(void* this_, int looping);
 typedef void  (__thiscall* PFN_SetPriorityGroup)(void* this_, unsigned char group);
+typedef void  (__thiscall* PFN_SetVolume)(void* this_, unsigned char volume);
 typedef int   (__thiscall* PFN_Play)(void* this_);
 typedef void  (__thiscall* PFN_Stop)(void* this_);
 
@@ -84,7 +85,8 @@ LoopSource::~LoopSource() {
 }
 
 bool LoopSource::Start(const char* resref, const Vector& worldPosition,
-                       bool looping, bool spatial, int priorityGroup) {
+                       bool looping, bool spatial, int priorityGroup,
+                       int volumeByte) {
     Stop();  // Drop any prior loop on this handle.
     if (!resref || !*resref) return false;
 
@@ -123,6 +125,13 @@ bool LoopSource::Start(const char* resref, const Vector& worldPosition,
                 mem, static_cast<unsigned char>(priorityGroup));
         }
         reinterpret_cast<PFN_SetLooping>(kAddrCExoSoundSourceSetLooping)(mem, looping ? 1 : 0);
+        // Per-source volume (cue-volume slider preview). < 0 leaves the
+        // ctor's full 0x7f. Engine clamps >127 internally.
+        if (volumeByte >= 0) {
+            unsigned char v = volumeByte > 127 ? 127
+                                               : static_cast<unsigned char>(volumeByte);
+            reinterpret_cast<PFN_SetVolume>(kAddrCExoSoundSourceSetVolume)(mem, v);
+        }
 
         reinterpret_cast<PFN_Play>(kAddrCExoSoundSourcePlay)(mem);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -133,9 +142,9 @@ bool LoopSource::Start(const char* resref, const Vector& worldPosition,
 
     source_ = mem;
     acclog::Write("LoopSource",
-                  "started resref=%s pos=(%.1f,%.1f,%.1f) loop=%d 3d=%d pg=%d src=%p",
+                  "started resref=%s pos=(%.1f,%.1f,%.1f) loop=%d 3d=%d pg=%d vol=%d src=%p",
                   resref, biased.x, biased.y, biased.z,
-                  looping ? 1 : 0, spatial ? 1 : 0, priorityGroup, mem);
+                  looping ? 1 : 0, spatial ? 1 : 0, priorityGroup, volumeByte, mem);
     return true;
 }
 

@@ -31,26 +31,23 @@ float DistXY(const Vector& a, const Vector& b) {
     return std::sqrt(dx * dx + dy * dy);
 }
 
-// Heartbeat gain — boosted 2× over the default kAccCueGain so the
-// directional cue carries against ambient + Pillar 1 voice-budget
-// pressure at 15–25m distances (where the engine's falloff curve
-// significantly attenuates). 8.0× scalar = +18 dB vs unity; we don't
-// pass through audio_cue_player here because its 80m range gate is
-// always satisfied for our use and we want explicit volume control.
-constexpr float kBeaconHeartbeatGain = 8.0f;
-
-// Fire the directional heartbeat. 3D-positional so the user can
-// localise the next waypoint by pan + falloff. Bypasses
-// audio_cue_player to pass explicit volume.
+// Fire the directional heartbeat. 3D-positional so the user can localise
+// the next waypoint by pan + falloff. Plays at full base volume (scaled
+// by the global cue slider in audio_bus). Bypasses audio_cue_player
+// because its 80m range gate would otherwise apply; the beacon wants to
+// carry at any distance. Reaching the user at long range is a property of
+// the cue group's falloff window (a wider-falloff group is the lever, not
+// a per-source boost — the source byte is clamped to unity); a dedicated
+// wide beacon group is tracked as Phase B follow-up.
 void EmitHeartbeat(const Vector& worldPos, const Vector& listenerPos) {
     bool ok = acc::audio::PlayCue3D(
         acc::audio::GetNavCueResref(acc::audio::NavCue::BeaconActive),
-        worldPos, kBeaconHeartbeatGain);
+        worldPos);
     acclog::Write("Beacon", "heartbeat at=(%.2f,%.2f,%.2f) "
-                  "listener=(%.2f,%.2f,%.2f) gain=%.1f ok=%d",
+                  "listener=(%.2f,%.2f,%.2f) ok=%d",
                   worldPos.x, worldPos.y, worldPos.z,
                   listenerPos.x, listenerPos.y, listenerPos.z,
-                  kBeaconHeartbeatGain, ok ? 1 : 0);
+                  ok ? 1 : 0);
 }
 
 // Fire an arrival confirmation. 2D-centred (not 3D-positional) — the

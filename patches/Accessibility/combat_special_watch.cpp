@@ -238,7 +238,7 @@ void FireCue(const char* reason, int specials, DWORD now) {
             // path applies a pow(x, 0.6) compressor that boosts
             // perceived loudness over the linear 2D path; distance=0
             // keeps it "centred" so the cue doesn't drift directionally.
-            acc::audio::PlayCue3D(kCueResref, camera, /*volume=*/127.0f);
+            acc::audio::PlayCue3D(kCueResref, camera);
         } else {
             // No camera (early init / between-area) — fall through to
             // 2D so we still fire rather than going silent.

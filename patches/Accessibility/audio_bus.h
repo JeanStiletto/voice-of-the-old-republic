@@ -17,25 +17,50 @@
 
 namespace acc::audio {
 
+// Per-cue base volume, 0..127 in the engine's per-source scale (127 =
+// engine-full / unity). The cue funnel multiplies this by the global cue
+// slider (below) to get the byte handed to CExoSound's volume_byte slot.
+//
+// NOTE on the gain chain (decompile-verified, see project memory):
+//   final ≈ priority_group.volume × source_volume × master_SFX_slider
+// `source_volume` is the byte we control here; CExoSoundSource::SetVolume
+// HARD-CLAMPS it to 127, so a single cue can never exceed unity by this
+// lever. "Louder than full" is a property of the priority GROUP's volume
+// (see GetCuePriorityGroup), not of this byte.
+constexpr uint8_t kCueVolumeFull = 127;
+
+// --- Global cue volume (the user-facing "hint sounds" slider) --------
+// Percent in [0,100]; 100 = each cue at its base volume, 0 = muted.
+// Lives here (not in the menu TU) so the audio funnel stays the single
+// source of truth and the menu is just a UI over it. In-memory only,
+// consistent with the other Mod-Settings toggles (persistence is the
+// same project-wide follow-up).
+void SetGlobalCueVolumePercent(int percent);  // clamps to [0,100]
+int  GetGlobalCueVolumePercent();
+
+// Priority group our one-shot cues ride. Resolved once at runtime by
+// scanning the live CPriorityGroup table for our installer-stamped
+// sentinel row (a dedicated full-volume group); falls back to a known
+// vanilla full-volume group if the sentinel isn't present (e.g. the
+// prioritygroups.2da edit hasn't been applied yet). Cached after the
+// first successful resolve. See audio_bus.cpp for the mechanism.
+uint8_t GetCuePriorityGroup();
+
 // 2D one-shot cue (centred, no spatial position).
 //   resref:        ≤16-char .wav tag, resolved through Override\ →
 //                  streamwaves\ → streamsounds\ → streammusic\ → BIF/RIM.
-//   priorityGroup: index into CPriorityGroup table. Each group has its
-//                  own volume scalar / pitch variance / 3D falloff, so
-//                  the group implicitly amplifies the cue. Observed
-//                  values: 0x0F weapon swing, 0x13 footstep, 0x17 blaster,
-//                  0x18 death. Default 0 = nav-cue behaviour.
-//   volumeByte:    0..127 per-source on top of group bus; 0 = group
-//                  default (127). Final ≈ group × volumeByte/127² ×
-//                  SFX-slider, so the levers compound.
+//   priorityGroup: index into the CPriorityGroup table. 0 (default) =
+//                  GetCuePriorityGroup() (our full-volume cue group).
+//                  Pass a specific group to override (e.g. combat watch
+//                  pins its own full group). The group sets falloff,
+//                  voice budget, pause-exemption AND its own volume.
+//   baseVolume:    0..127 per-cue base; multiplied by the global slider.
+//                  Default kCueVolumeFull. A muted result (slider 0)
+//                  skips the engine call (volume_byte==0 would mean
+//                  "group default full", not silence).
 bool PlayCue(const char* resref,
              uint8_t priorityGroup = 0,
-             uint8_t volumeByte    = 0);
-
-// Engine's volume slot is a linear amplitude scalar (2.0 = +6dB). The
-// curated cue vocabulary was mixed for UI/combat use; 4.0× lands it
-// audible-but-clean against ambient/footstep audio.
-constexpr float kAccCueGain = 4.0f;
+             uint8_t baseVolume    = kCueVolumeFull);
 
 // 3D positional one-shot. Engine listener is the camera (~3m behind the
 // character, orbits during rotation), which gives every raw cue a
@@ -47,9 +72,15 @@ constexpr float kAccCueGain = 4.0f;
 // During view mode the offset is skipped — the listener detour already
 // substitutes the virtual cursor, and cues there should be cursor-relative.
 //
-// volume forwards to Play3DOneShotSound's volume slot; default kAccCueGain.
+// baseVolume is the per-cue base (0..127); the global slider scales it.
+// priorityGroup: 0 (default) = GetCuePriorityGroup(). Pass a specific
+// group for cues that fire while the world is paused under a sub-screen's
+// SetSoundMode (e.g. the map-edge cue): only groups 1/2/0xb stay audible
+// under that pause, so such cues must ride 0xb — see project memory
+// setsoundmode-priority-group-pause-exemption.
 bool PlayCue3D(const char* resref, const Vector& worldPosition,
-               float volume = kAccCueGain);
+               uint8_t priorityGroup = 0,
+               uint8_t baseVolume    = kCueVolumeFull);
 
 }  // namespace acc::audio
 

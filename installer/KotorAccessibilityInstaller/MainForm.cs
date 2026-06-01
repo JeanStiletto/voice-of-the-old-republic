@@ -346,6 +346,20 @@ namespace KotorAccessibilityInstaller
                     Logger.Warning($"Could not install Override assets: {ovEx.Message}");
                 }
 
+                // Step 4.45: append the mod's dedicated full-volume audio
+                // priority group to prioritygroups.2da. Best-effort: if this
+                // fails the DLL falls back to a vanilla full-volume group, so
+                // cues still play at full — only the dedicated voice-budget /
+                // falloff tuning is lost.
+                try
+                {
+                    await Task.Run(() => installationManager.InstallPriorityGroup());
+                }
+                catch (Exception pgEx)
+                {
+                    Logger.Warning($"Could not install priority group: {pgEx.Message}");
+                }
+
                 // Step 4.5: apply community-recommended stability tweaks to swkotor.ini
                 // (V-Sync, Frame Buffer, Disable Vertex Buffer Objects, FullScreen).
                 // Best-effort: a failure here doesn't roll back the install — the mod

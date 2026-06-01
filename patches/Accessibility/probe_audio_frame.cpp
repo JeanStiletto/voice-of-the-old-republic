@@ -19,7 +19,6 @@ namespace acc::probe_audio_frame {
 namespace {
 
 constexpr float kProbeDistance  = 5.0f;
-constexpr float kProbeGain      = 8.0f;
 constexpr float kPi             = 3.14159265358979f;
 
 // Cue resref for the probe — chosen distinct from any current navigation
@@ -72,7 +71,7 @@ void FireProbe(int sector, const char* tag) {
     std::snprintf(msg, sizeof(msg), "Probe %s", dirName);
     prism::Speak(msg, /*interrupt=*/true);
 
-    bool ok = acc::audio::PlayCue3D(kProbeResref, sourcePos, kProbeGain);
+    bool ok = acc::audio::PlayCue3D(kProbeResref, sourcePos);
 
     acclog::Write("ProbeAudio",
         "%s sector=%d (%s) source=(%.2f,%.2f,%.2f) "
