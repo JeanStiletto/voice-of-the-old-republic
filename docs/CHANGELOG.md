@@ -13,6 +13,12 @@ headings in the release body (markdown `**Installer:**` only renders as bold).
 Each bullet should lead with the user-facing change ("X works now", "new
 hotkey Y", "X no longer does Z"); keep technical detail short.
 
+<h2>v0.2.1</h2>
+
+<h3>Startup:</h3>
+
+- The post-intro main menu no longer keeps warning keyboard-only players that the game is "still loading" — and telling them to use the Alt+F4 → cancel-dialog workaround — after the menu is already responsive. The "input pump is live" handoff was keyed on a focus event that only the mouse produces, so on a keyboard-only machine the loading nag could re-fire on every keypress even once navigation worked. It now clears the moment your first menu keypress is handled, which always happens under keyboard navigation.
+
 <h2>v0.2.0</h2>
 
 <h3>Minigames:</h3>

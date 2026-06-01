@@ -1083,19 +1083,20 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
     static int n = 0;
     ++n;
 
-    // Bringup diagnostic: gap between main-menu first-sight and the
-    // moment the engine's input pump becomes user-responsive. The engine
+    // Bringup handoff (secondary signal — mouse path only). The engine
     // fires one SetActive immediately after panel construction for its
-    // auto-focused button ("New Game"); the second one is the user's
-    // first arrow key, which only fires once the engine input pump is
-    // truly live. A large gap here = "menu appeared ready but wasn't
-    // responsive" (the symptom the user and the reporter both hit).
+    // auto-focused button ("New Game"); a genuine 2nd SetActive on the
+    // MainMenu comes from the engine's own mouse-over/keyboard focus path.
+    // This clears the bring-up nag for mouse users, but NOT for keyboard-
+    // only players: our chain navigates via synthetic mouse-over, which
+    // fires no SetActiveControl. The primary, keyboard-reachable handoff is
+    // the first consumed key in the manager hook (see OnHandleInputEvent).
+    // Kept as a belt-and-suspenders signal; also still useful as the
+    // "menu appeared ready but wasn't responsive" bring-up diagnostic.
     if (IdentifyPanel(panel) == PanelKind::MainMenu) {
         static int mainMenuSetActiveCount = 0;
         if (++mainMenuSetActiveCount == 2) {
             acclog::BringupMark("main_menu_input_pump_live");
-            // Hand off to the bringup-phase nag so it stops watching for
-            // arrow-key presses during loading — engine is now live.
             acc::bringup_announce::NotifyInputPumpLive();
         }
     }
@@ -1389,6 +1390,23 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     // the tracker alone — it's cleared by the early-out at the top of
     // the next call.
     auto trackPress = [&](int rv) -> int {
+        // Bringup handoff (primary, keyboard-reachable signal). Every
+        // consume path funnels through here, so the first time our manager
+        // hook consumes anything the engine's input pump is provably live
+        // and routing to the GUI manager — during the starved bring-up
+        // window this hook does not fire at all. Hand off so the bringup
+        // nag transitions to Responsive and never re-arms the "still
+        // loading / press Alt F4" warning. NotifyInputPumpLive is idempotent
+        // (no-op once Responsive), so calling it per-consume is free.
+        //
+        // This replaces the old 2nd-SetActiveControl signal (see
+        // OnSetActiveControl), which a keyboard-only player never produces:
+        // our chain navigates via synthetic mouse-over (MoveMouseToPosition),
+        // which fires no SetActiveControl, so the phase stayed stuck in
+        // Loading and the nag mis-fired on every keypress forever.
+        if (rv == 1) {
+            acc::bringup_announce::NotifyInputPumpLive();
+        }
         // Suppress tracker updates when called from PollHomeEndKeys'
         // synthesised path: that call has no matching engine-sent release,
         // and a non-consumed synthesised press would zero the tracker for
