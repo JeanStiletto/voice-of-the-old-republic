@@ -71,16 +71,24 @@ bool IsHumanAppearance(int appearanceType) {
 
 // ---- Speaker resolution chain --------------------------------------------
 //
-// player = GetPlayerServerCreature()  (CSWSCreature*)
-//   ↓ +0x54
-// partner = CSWSObject*  — the NPC the player is conversing with
-//   ↓ +0x8 kind byte
-// kind == Creature(5)?  yes → read +0xa4c appearance, +0xa74 stats
-//                              ↓ +0xdc race enum (diagnostic only)
+// PRIMARY (per-line, covers overheard NPC-to-NPC):
+//   gui = ResolveGuiInGame()  (CGuiInGame*)
+//     ↓ +0x170  current_dialog_speaker (CLIENT object id)
+//   ClientToServerObjectId → ResolveServerObjectHandle → CSWSObject*
 //
-// Returns nullptr if any link is null, the partner isn't a creature, or
-// SEH faults — caller treats nullptr as "unknown speaker, default to
-// speaking the line".
+// FALLBACK (1-on-1 dialog + barks where the GUI field isn't populated):
+//   player = GetPlayerServerCreature()  (CSWSCreature*)
+//     ↓ +0x54  dialog_owner (SERVER object id)
+//   ResolveServerObjectHandle → CSWSObject*
+//
+// Either way we land on a CSWSObject*, validate kind == Creature(5), then
+// read +0xa74 stats → +0x186 appearance / +0xdc race. The GUI field is
+// authoritative for the *current line's* speaker; the player-partner field
+// only ever names the player's own conversation partner, so it's wrong in
+// multi-party / overheard scenes — hence GUI-first.
+//
+// Returns false if no link resolves, the object isn't a creature, or SEH
+// faults — caller treats false as "unknown speaker, default to speaking".
 struct SpeakerInfo {
     void* speaker;          // CSWSCreature* (validated via kind=Creature)
     int   appearance;       // appearance.2da row index, -1 if unread
@@ -88,34 +96,18 @@ struct SpeakerInfo {
     char  tag[32];          // CSWSObject.tag (or "" if unread)
 };
 
-bool ResolveDialogSpeaker(SpeakerInfo& out) {
-    out.speaker    = nullptr;
-    out.appearance = -1;
-    out.raceEnum   = 0;
-    out.tag[0]     = '\0';
-
-    void* player = acc::engine::GetPlayerServerCreature();
-    if (!player) return false;
-
+// Given a candidate server object, validate it's a creature and fill the
+// tag / race / appearance fields. Returns false (leaving out.speaker null)
+// if the object is null, isn't a creature, or a read faults.
+bool FillSpeakerFromServerObject(void* partner, SpeakerInfo& out) {
+    if (!partner) return false;
     __try {
-        auto* playerBytes = reinterpret_cast<unsigned char*>(player);
-        // +0x54 is a HANDLE (ulong), not a CSWSObject* — Lane's struct
-        // label is misleading. Verified live 2026-05-30: values were
-        // 0x0D / 0xC2 (server-side handle IDs, not pointers).
-        uint32_t partnerHandle = *reinterpret_cast<uint32_t*>(
-            playerBytes + kServerObjectDialogOwnerOffset);
-        if (partnerHandle == 0 || partnerHandle == 0x7F000000u) return false;
-
-        void* partner = acc::engine::ResolveServerObjectHandle(partnerHandle);
-        if (!partner) return false;
-
         int kind = acc::engine::GetObjectKind(partner);
         if (kind != static_cast<int>(acc::engine::GameObjectKind::Creature)) {
             return false;
         }
 
         out.speaker = partner;
-
         auto* partnerBytes = reinterpret_cast<unsigned char*>(partner);
 
         // Tag — CExoString at CSWSObject +0x18. ReadCExoString handles the
@@ -136,9 +128,65 @@ bool ResolveDialogSpeaker(SpeakerInfo& out) {
                 sb + kCreatureStatsAppearanceTypeOffset);
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {
+        out.speaker = nullptr;
         return false;
     }
     return out.speaker != nullptr;
+}
+
+// Read CGuiInGame+0x170 — the current dialog entry's speaker as a CLIENT
+// object id. 0x7f000000 / 0 mean "no participant". See engine_offsets.h.
+uint32_t ReadGuiDialogSpeakerClientId() {
+    void* gui = acc::engine::ResolveGuiInGame();
+    if (!gui) return 0x7F000000u;
+    __try {
+        return *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(gui) +
+            kCGuiInGameDialogSpeakerOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0x7F000000u;
+    }
+}
+
+bool ResolveDialogSpeaker(SpeakerInfo& out) {
+    out.speaker    = nullptr;
+    out.appearance = -1;
+    out.raceEnum   = 0;
+    out.tag[0]     = '\0';
+
+    // PRIMARY: the GUI's per-line speaker (client id → server object). This
+    // is the only path that names the speaker in overheard NPC-to-NPC
+    // scenes, where the player isn't a conversation participant.
+    uint32_t clientId = ReadGuiDialogSpeakerClientId();
+    if (clientId != 0 && clientId != 0x7F000000u) {
+        uint32_t serverId = acc::engine::ClientToServerObjectId(clientId);
+        if (serverId != 0 && serverId != 0x7F000000u) {
+            void* partner = acc::engine::ResolveServerObjectHandle(serverId);
+            if (FillSpeakerFromServerObject(partner, out)) return true;
+        }
+    }
+
+    // FALLBACK: the player's own conversation partner (server id at +0x54).
+    // Correct for 1-on-1 dialog and player-involved barks; used only when
+    // the GUI field is unavailable (e.g. bark bubbles, pre-entry ticks).
+    void* player = acc::engine::GetPlayerServerCreature();
+    if (!player) return false;
+
+    uint32_t partnerHandle = 0;
+    __try {
+        // +0x54 is a HANDLE (ulong), not a CSWSObject* — Lane's struct
+        // label is misleading. Verified live 2026-05-30: values were
+        // 0x0D / 0xC2 (server-side handle IDs, not pointers).
+        partnerHandle = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(player) +
+            kServerObjectDialogOwnerOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (partnerHandle == 0 || partnerHandle == 0x7F000000u) return false;
+
+    void* partner = acc::engine::ResolveServerObjectHandle(partnerHandle);
+    return FillSpeakerFromServerObject(partner, out);
 }
 
 // ---- Suppression decision ------------------------------------------------

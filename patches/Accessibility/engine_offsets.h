@@ -1263,6 +1263,18 @@ constexpr size_t kCreatureStatsAppearanceTypeOffset   = 0x186;
 //   obscure_label    @+0x34dc
 constexpr size_t kDialogComputerMessageListBoxOffset  = 0x2cfc;
 
+// CGuiInGame.current_dialog_speaker (field93_0x170) — the CLIENT-side object
+// id of the creature speaking the current dialog entry. Written by
+// CGuiInGame::HandleDialogEntry @0x00631d80 on EVERY shown entry, sourced
+// from the server's per-node GetSpeaker() resolution
+// (CSWSDialog::SendDialogEntry @0x005a4010 → SendDialogEntryNode @0x005a13d0,
+// 3rd object arg → ServerToClientObjectId → this field). Set regardless of
+// whether the player participates, so it identifies the speaker in overheard
+// NPC-to-NPC scenes where the player's dialog_owner (+0x54) is null. Sentinel
+// 0x7f000000 means "no participant". Sibling slots: +0x174 listener,
+// +0x178 previous speaker, +0x184 third participant.
+constexpr size_t kCGuiInGameDialogSpeakerOffset       = 0x170;
+
 // CSWGuiStore — merchant/trading panel (PanelKind::Store, slot 0x84 in
 // CGuiInGame). Two listboxes plus a description listbox; the mode-toggle
 // flips which one is visible.

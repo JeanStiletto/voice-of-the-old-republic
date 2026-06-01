@@ -116,6 +116,12 @@ bool ReadToggleState(void* toggle);
 // so this correlates unknown controls back to specific classes via SARIF.
 void DumpControlVtable(void* control, char* out, size_t outSize);
 
+// Convert a client-side object id to its server-side id via
+// CServerExoApp::ClientToServerObjectId. Returns 0 on null/invalid input or
+// any resolution failure. Pairs with engine_area::ResolveServerObjectHandle
+// to cross from a client id to the server CSWSObject*.
+uint32_t ClientToServerObjectId(uint32_t clientHandle);
+
 // Client-side handles (the kind in row+0x1c4 on CSWGuiStoreItemEntry,
 // CSWGuiInGameItemEntry in Container/Equip-picker) → CSWSItem*. Walks
 // AppManager → CServerExoApp + ClientToServer + GetItemByGameObjectID

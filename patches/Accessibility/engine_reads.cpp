@@ -359,8 +359,42 @@ typedef uint32_t (__thiscall* PFN_ClientToServerObjectId)(void* this_,
 typedef void*    (__thiscall* PFN_GetItemByGameObjectID)(void* this_,
                                                          uint32_t handle);
 
+uint32_t ClientToServerObjectId(uint32_t clientHandle) {
+    if (clientHandle == 0 || clientHandle == 0xffffffff) return 0;
+    void* appMgr = nullptr;
+    __try {
+        appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+    if (!appMgr) return 0;
+
+    void* serverApp = nullptr;
+    __try {
+        serverApp = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(appMgr) +
+            kAppManagerServerExoAppOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+    if (!serverApp) return 0;
+
+    uint32_t serverHandle = 0;
+    __try {
+        auto fn = reinterpret_cast<PFN_ClientToServerObjectId>(
+            kAddrServerExoAppClientToServerObjectId);
+        serverHandle = fn(serverApp, clientHandle);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+    if (serverHandle == 0 || serverHandle == 0xffffffff) return 0;
+    return serverHandle;
+}
+
 void* ResolveItemFromClientHandle(uint32_t clientHandle) {
-    if (clientHandle == 0 || clientHandle == 0xffffffff) return nullptr;
+    uint32_t serverHandle = ClientToServerObjectId(clientHandle);
+    if (serverHandle == 0) return nullptr;
+
     void* appMgr = nullptr;
     __try {
         appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
@@ -378,16 +412,6 @@ void* ResolveItemFromClientHandle(uint32_t clientHandle) {
         return nullptr;
     }
     if (!serverApp) return nullptr;
-
-    uint32_t serverHandle = 0;
-    __try {
-        auto fn = reinterpret_cast<PFN_ClientToServerObjectId>(
-            kAddrServerExoAppClientToServerObjectId);
-        serverHandle = fn(serverApp, clientHandle);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-    if (serverHandle == 0 || serverHandle == 0xffffffff) return nullptr;
 
     void* item = nullptr;
     __try {
