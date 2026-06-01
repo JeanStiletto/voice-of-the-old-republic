@@ -75,14 +75,19 @@ constexpr size_t kTutorialActiveOffset = 0x7d20 + 0x994; // 0x86b4
 constexpr size_t kWagerCurOffset = 0xc94;
 constexpr size_t kWagerMaxOffset = 0xc98;
 
+// CPazaakPlayer is 0x70 bytes (hand[4]=0x20 + board[9]=0x48 + stand + score).
+// CSWPazaak.player is at +0x08, so enemy follows at +0x78 (NOT +0x98), and the
+// per-player stand/score sit at +0x68/+0x6c — see swkotor.exe.h structs
+// CPazaakPlayer / CSWPazaak. (Earlier 0x98/0x88/0x8c read dead space + deck
+// cards, so every opponent read came back zero/garbage.)
 constexpr size_t kModelPlayerOffset = 0x08;  // CSWPazaak.player (CPazaakPlayer)
-constexpr size_t kModelEnemyOffset  = 0x98;  // CSWPazaak.enemy
+constexpr size_t kModelEnemyOffset  = 0x78;  // CSWPazaak.enemy
 constexpr size_t kModelRemainOffset = 0x228; // remaining_card_count
 
 constexpr size_t kPlayerHandOffset  = 0x00;  // CPazaakCard hand_cards[4]
 constexpr size_t kPlayerBoardOffset = 0x20;  // CPazaakCard board_cards[9]
-constexpr size_t kPlayerStandOffset = 0x88;  // int stand
-constexpr size_t kPlayerScoreOffset = 0x8c;  // int score (sets won)
+constexpr size_t kPlayerStandOffset = 0x68;  // int stand
+constexpr size_t kPlayerScoreOffset = 0x6c;  // int score (sets won)
 
 constexpr size_t kCardIndexOffset = 0x00;
 constexpr size_t kCardFlipOffset  = 0x04;

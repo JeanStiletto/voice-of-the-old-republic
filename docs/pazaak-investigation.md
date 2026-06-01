@@ -113,15 +113,20 @@ Two GUI panels and a headless game model:
 - `+0x00 hand_cards[4]` — the 4 side-deck cards drawn into hand (CPazaakCard each).
 - `+0x20 board_cards[9]` — cards laid on the table this set (fills left to right; first
   `index==-1` is the end).
-- `+0x88 stand` (int) — non-zero once this player has stood.
-- `+0x8c score` (int) — sets won this match (0..3).
+- `+0x68 stand` (int) — non-zero once this player has stood.
+- `+0x6c score` (int) — sets won this match (0..3).
+
+`CPazaakPlayer` is **0x70 bytes** (hand 0x20 + board 0x48 + stand + score). The
+struct header (`swkotor.exe.h`) is authoritative; earlier drafts of this doc had
+stand/score/enemy at 0x88/0x8c/0x98, which is wrong and made every opponent read
+land in dead space.
 
 ### `CSWPazaak` (the model)
 - `+0x0 field0_0x0` — used as a flag passed to EndPazaakGame.
 - `+0x4 opponent_id` — server object id of the opponent creature.
 - `+0x8 player` (CPazaakPlayer) — the human player.
-- `+0x98 enemy` (CPazaakPlayer) — the AI opponent.
-- `+0x128 cards[40]` (CPazaakCard) — the shuffled main deck.
+- `+0x78 enemy` (CPazaakPlayer) — the AI opponent.
+- `+0xe8 cards[40]` (CPazaakCard) — the shuffled main deck.
 - `+0x228 remaining_card_count` — draw cursor; DrawCard reads `cards[count]` then
   decrements; <0 triggers reshuffle.
 - `+0x22c field6_0x22c` — the AI turn sub-state (see PlayAITurn).
