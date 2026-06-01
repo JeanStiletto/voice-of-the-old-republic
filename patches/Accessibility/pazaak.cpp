@@ -40,8 +40,13 @@ namespace acc::pazaak {
 namespace {
 
 // ---- Engine surfaces (docs/pazaak-investigation.md §13) -------------------
+// HandleContinue / HandleStand are __thiscall(this, CSWGuiControl* param_1) —
+// param_1 is the originating button (null when invoked programmatically). Their
+// first guard is `param_1 == 0 || param_1->is_active != 0`, so we MUST pass an
+// explicit control; omitting it leaves param_1 as stack garbage that the guard
+// dereferences, faulting (and silently no-op'ing the action).
 typedef int  (__thiscall* PFN_GetTotal)(void* player);
-typedef void (__thiscall* PFN_Handle0)(void* panel);
+typedef void (__thiscall* PFN_HandleCtrl)(void* panel, void* control);
 typedef void (__thiscall* PFN_HandleInt)(void* panel, int index);
 
 constexpr uintptr_t kAddrGetTotal           = 0x006e4360; // CPazaakPlayer::GetTotal
@@ -52,6 +57,23 @@ constexpr uintptr_t kAddrHandlePlayHandCard = 0x0067ede0; // Play hand card (int
 // ---- Struct offsets ------------------------------------------------------
 constexpr size_t kPanelModelOffset = 0x86d0; // CSWGuiPazaakGame->pazaak (CSWPazaak*)
 constexpr size_t kPanelStateOffset = 0x86d4; // game_state
+
+// CSWGuiTutorial (CSWGuiPazaakGame.field20 @ +0x7d20) "tutorial active" flag at
+// +0x994. DoGameSequence is only pumped while the board is the topmost panel
+// (Draw's IsOnTop gate, see docs/pazaak-investigation.md §7); the tutorial game's
+// ShowHelp stacks an inaccessible help message-box ON TOP of the board (at the
+// first draw, the opponent's turn, etc.), which drops the board off-top and
+// freezes the turn engine until a sighted player dismisses it. ShowHelp and the
+// End-Turn/Stand nags all no-op when this flag is 0, so we clear it on acquire
+// to disable the visual tutorial outright — our narration replaces it.
+constexpr size_t kTutorialActiveOffset = 0x7d20 + 0x994; // 0x86b4
+
+// CSWGuiWagerPopup (the "Wie viel setzt du?" bet popup, a different panel from
+// the board): current wager at +0xc94, maximum at +0xc98. The chain labels the
+// less/more buttons but only re-reads on focus change, so we poll the amount
+// and announce it when it changes (pure observation).
+constexpr size_t kWagerCurOffset = 0xc94;
+constexpr size_t kWagerMaxOffset = 0xc98;
 
 constexpr size_t kModelPlayerOffset = 0x08;  // CSWPazaak.player (CPazaakPlayer)
 constexpr size_t kModelEnemyOffset  = 0x98;  // CSWPazaak.enemy
@@ -347,11 +369,11 @@ void DoPlay(void* panel, int slot) {
     __except (EXCEPTION_EXECUTE_HANDLER) {}
 }
 void DoStand(void* panel) {
-    __try { reinterpret_cast<PFN_Handle0>(kAddrHandleStand)(panel); }
+    __try { reinterpret_cast<PFN_HandleCtrl>(kAddrHandleStand)(panel, nullptr); }
     __except (EXCEPTION_EXECUTE_HANDLER) {}
 }
 void DoEndTurn(void* panel) {
-    __try { reinterpret_cast<PFN_Handle0>(kAddrHandleContinue)(panel); }
+    __try { reinterpret_cast<PFN_HandleCtrl>(kAddrHandleContinue)(panel, nullptr); }
     __except (EXCEPTION_EXECUTE_HANDLER) {}
 }
 
@@ -513,6 +535,33 @@ void HandleEnter(void* panel, void* model, int state) {
     // zones 1 / 2 (boards) are read-only — Enter does nothing.
 }
 
+// ---- Wager popup observer (separate panel from the board) ----------------
+void* g_wagerPanel = nullptr;
+int   g_wagerLast  = -1;
+
+// Announce the wager amount on entry and whenever it changes. The popup's two
+// adjust buttons are labelled by menus_extract; this gives the value feedback
+// the static labels can't (focus doesn't move when the amount steps).
+void ObserveWager(void* fg) {
+    using namespace acc::strings;
+    if (!fg || acc::engine::IdentifyPanel(fg) != acc::engine::PanelKind::PazaakWager) {
+        g_wagerPanel = nullptr;
+        g_wagerLast  = -1;
+        return;
+    }
+    int cur = -1, max = -1;
+    ReadIntAt(fg, kWagerCurOffset, &cur);
+    ReadIntAt(fg, kWagerMaxOffset, &max);
+    bool firstSight = (fg != g_wagerPanel);
+    if (firstSight || cur != g_wagerLast) {
+        char msg[96];
+        snprintf(msg, sizeof(msg), Get(Id::PazaakFmtWager), cur, max);
+        Say(msg, true);
+    }
+    g_wagerPanel = fg;
+    g_wagerLast  = cur;
+}
+
 void ResetState() {
     g_panel = nullptr;
     g_prev = Snap{};
@@ -651,6 +700,9 @@ void Tick() {
 
     void* fg = acc::engine::GetForegroundPanel(mgr);
 
+    // The wager popup precedes (and is a different panel from) the board.
+    ObserveWager(fg);
+
     // Drop the tracked panel once it leaves the manager (game ended / panel
     // destroyed). IsPanelInManager is deref-free, so it's safe on a stale
     // pointer.
@@ -668,6 +720,9 @@ void Tick() {
         g_panel = fg;
         __try { g_learnedVtable = *reinterpret_cast<uintptr_t*>(fg); }
         __except (EXCEPTION_EXECUTE_HANDLER) { g_learnedVtable = 0; }
+        // Disable the visual tutorial so its help popups can't stack on top of
+        // the board and freeze the turn engine (see kTutorialActiveOffset).
+        WriteIntAt(fg, kTutorialActiveOffset, 0);
         g_prev = Snap{};
         g_started = false;
         g_resultAnnounced = false;

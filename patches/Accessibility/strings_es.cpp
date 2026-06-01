@@ -386,6 +386,9 @@ const char* Get(Id id) {
         case Id::PazaakFmtOppHand:       return "El rival tiene %d cartas en la mano.";
         case Id::PazaakStandLabel:       return "Plantarse";
         case Id::PazaakEndTurnLabel:     return "Terminar ronda";
+        case Id::PazaakWagerLess:        return "Reducir apuesta";
+        case Id::PazaakWagerMore:        return "Aumentar apuesta";
+        case Id::PazaakFmtWager:         return "Apuesta %d de %d m\xE1ximo.";
         case Id::FmtStoreNotEnoughCredits:  return "Cr\xE9""ditos insuficientes, faltan %d, tienes %d";
 
         case Id::FmtCredits:                return "Cr\xE9""ditos: %s";

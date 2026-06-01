@@ -388,6 +388,9 @@ const char* Get(Id id) {
         case Id::PazaakFmtOppHand:       return "Gegner hat %d Handkarten.";
         case Id::PazaakStandLabel:       return "Halten";
         case Id::PazaakEndTurnLabel:     return "Runde beenden";
+        case Id::PazaakWagerLess:        return "Einsatz verringern";
+        case Id::PazaakWagerMore:        return "Einsatz erh\xF6hen";
+        case Id::PazaakFmtWager:         return "Einsatz %d von maximal %d.";
         case Id::FmtStoreNotEnoughCredits:  return "Nicht genug Credits, brauchst %d, hast %d";
 
         case Id::FmtCredits:                return "Credits: %s";

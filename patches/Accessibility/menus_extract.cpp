@@ -455,6 +455,28 @@ const char* FromControl(void* control,
                 source = nullptr;
             }
         }
+        // Pazaak wager popup (CSWGuiWagerPopup). BTN_LESS / BTN_MORE are
+        // text-less CSWGuiSpeedButtons (gui ids 4 / 5); name them so the chain
+        // doesn't fall back to "control 4 / 5". The live amount is announced
+        // separately by pazaak.cpp (the chain re-reads only on focus change).
+        if (!source && owner &&
+            IdentifyPanel(owner) == PanelKind::PazaakWager) {
+            __try {
+                int cid = *reinterpret_cast<int*>(
+                    reinterpret_cast<unsigned char*>(control) + kControlIdOffset);
+                acc::strings::Id which = acc::strings::Id::PazaakWagerLess;
+                bool match = true;
+                if (cid == 4)      which = acc::strings::Id::PazaakWagerLess;
+                else if (cid == 5) which = acc::strings::Id::PazaakWagerMore;
+                else               match = false;
+                if (match) {
+                    snprintf(outBuf, bufSize, "%s", acc::strings::Get(which));
+                    if (outBuf[0] != '\0') source = "perkind-pazaakwager";
+                }
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                source = nullptr;
+            }
+        }
     }
 
     // 1. Tooltip on the base class — works for any control that has one.

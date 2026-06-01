@@ -108,6 +108,12 @@ enum class PanelKind {
     // by vtable. Card widgets are labelled + the chain filtered by
     // menus_pazaakdeck.
     PazaakStart,
+
+    // Pazaak wager popup (CSWGuiWagerPopup, vtable 0x007534c8). Heap-allocated
+    // modal pushed over the side-deck builder; identified by vtable. Its two
+    // BTN_LESS / BTN_MORE CSWGuiSpeedButtons carry no text — labelled by
+    // menus_extract; the live wager amount is announced by pazaak.cpp.
+    PazaakWager,
 };
 
 const char* PanelKindName(PanelKind k);

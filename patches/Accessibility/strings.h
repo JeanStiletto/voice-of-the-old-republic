@@ -1071,6 +1071,10 @@ enum class Id : int {
     PazaakFmtOppHand,
     PazaakStandLabel,
     PazaakEndTurnLabel,
+    // Wager popup (CSWGuiWagerPopup)
+    PazaakWagerLess,
+    PazaakWagerMore,
+    PazaakFmtWager,
     FmtStoreNotEnoughCredits,
 
     // ---- Virtual credits row (Inventory + Store).
