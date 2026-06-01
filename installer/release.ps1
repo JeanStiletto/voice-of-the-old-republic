@@ -19,6 +19,34 @@ $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..')
 Set-Location $root
 
+# ── Native-command runner ───────────────────────────────────────────────────
+# Native CLIs (msbuild, git, gh, dotnet, cmd) write ordinary progress to
+# stderr — e.g. `git push` prints "To <url>" there on success. Under
+# $ErrorActionPreference = 'Stop', if this script's streams are captured or
+# redirected (CI, an agent shell, `... 2>&1 | ...`), Windows PowerShell 5.1
+# promotes each native stderr line to a terminating error and aborts the
+# script mid-run even though the command succeeded. (That's how a past run
+# died right after pushing the tag, before creating the GitHub release.)
+#
+# Run native commands with the preference relaxed so stderr can't abort us,
+# then gate on the only reliable signal — the process exit code. $OnError
+# runs cleanup (e.g. delete a just-created tag) before we bail.
+function Invoke-Native {
+    param(
+        [Parameter(Mandatory)][string]$What,
+        [Parameter(Mandatory)][scriptblock]$Command,
+        [scriptblock]$OnError
+    )
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $Command } finally { $ErrorActionPreference = $prev }
+    if ($LASTEXITCODE -ne 0) {
+        if ($OnError) { & $OnError }
+        Write-Host "ERROR: $What failed (exit $LASTEXITCODE)" -ForegroundColor Red
+        exit 1
+    }
+}
+
 # ── 1. Resolve version from CHANGELOG.md ────────────────────────────────────
 
 $changelogFile = Join-Path $root 'docs\CHANGELOG.md'
@@ -140,9 +168,8 @@ Write-Host "Version + asset-name consistency checks passed" -ForegroundColor Gre
 
 Write-Host "`nBuilding vendored KotorPatcher.dll (Release, x86)..." -ForegroundColor Cyan
 $kpmSln = Join-Path $root 'third_party\Kotor-Patch-Manager\KotorPatchManager.sln'
-msbuild $kpmSln /p:Configuration=Release /p:Platform=x86 /t:KotorPatcher /m /verbosity:minimal
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERROR: KotorPatcher build failed" -ForegroundColor Red; exit 1
+Invoke-Native "KotorPatcher build" {
+    msbuild $kpmSln /p:Configuration=Release /p:Platform=x86 /t:KotorPatcher /m /verbosity:minimal
 }
 
 $kotorPatcherDll = Join-Path $root 'third_party\Kotor-Patch-Manager\bin\Release\KotorPatcher.dll'
@@ -157,12 +184,12 @@ Write-Host "`nBuilding .kpatch via kdev..." -ForegroundColor Cyan
 $kdevExe = Join-Path $root 'tools\kdev\bin\Debug\net10.0\win-x64\kdev.exe'
 if (-not (Test-Path $kdevExe)) {
     Write-Host "kdev.exe not found; building kdev first..." -ForegroundColor Yellow
-    dotnet build (Join-Path $root 'tools\kdev\kdev.csproj') -c Debug
-    if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: kdev build failed" -ForegroundColor Red; exit 1 }
+    Invoke-Native "kdev build" {
+        dotnet build (Join-Path $root 'tools\kdev\kdev.csproj') -c Debug
+    }
 }
 
-& $kdevExe build
-if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: kdev build failed" -ForegroundColor Red; exit 1 }
+Invoke-Native "kdev build" { & $kdevExe build }
 
 $kpatchPath = Join-Path $root 'build\Accessibility.kpatch'
 if (-not (Test-Path $kpatchPath)) {
@@ -176,10 +203,7 @@ if (-not (Test-Path $kpatchPath)) {
 
 Write-Host "`nBuilding loader (dinput8.dll proxy)..." -ForegroundColor Cyan
 $loaderBat = Join-Path $root 'loader\build.bat'
-cmd /c "`"$loaderBat`""
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERROR: loader build failed" -ForegroundColor Red; exit 1
-}
+Invoke-Native "loader build" { cmd /c "`"$loaderBat`"" }
 $loaderDll = Join-Path $root 'loader\dinput8.dll'
 if (-not (Test-Path $loaderDll)) {
     Write-Host "ERROR: dinput8.dll not produced at $loaderDll" -ForegroundColor Red; exit 1
@@ -200,12 +224,13 @@ Write-Host "  Resources refreshed" -ForegroundColor Green
 
 Write-Host "`nPublishing installer (Release, single-file, self-contained)..." -ForegroundColor Cyan
 $installerCsproj = Join-Path $root 'installer\KotorAccessibilityInstaller\KotorAccessibilityInstaller.csproj'
-dotnet publish $installerCsproj -c Release -r win-x64 --self-contained true `
-    -p:PublishSingleFile=true `
-    -p:IncludeNativeLibrariesForSelfExtract=true `
-    -p:EnableCompressionInSingleFile=true `
-    -p:Version=$Version
-if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: Installer publish failed" -ForegroundColor Red; exit 1 }
+Invoke-Native "Installer publish" {
+    dotnet publish $installerCsproj -c Release -r win-x64 --self-contained true `
+        -p:PublishSingleFile=true `
+        -p:IncludeNativeLibrariesForSelfExtract=true `
+        -p:EnableCompressionInSingleFile=true `
+        -p:Version=$Version
+}
 
 $installerExe = Join-Path $root 'installer\KotorAccessibilityInstaller\bin\Release\net8.0-windows\win-x64\publish\VoiceOfTheOldRepublicInstaller.exe'
 if (-not (Test-Path $installerExe)) {
@@ -277,27 +302,24 @@ $notesText | Out-File -FilePath $notesFile -Encoding utf8
 # ── 8. Tag + push ───────────────────────────────────────────────────────────
 
 Write-Host "`nCreating tag $tag..." -ForegroundColor Cyan
-git tag -a $tag -m "Release $tag"
-if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: Failed to create tag" -ForegroundColor Red; exit 1 }
+Invoke-Native "Create tag" { git tag -a $tag -m "Release $tag" }
 
 Write-Host "Pushing tag $tag..." -ForegroundColor Cyan
-git push origin $tag
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERROR: Failed to push tag. Deleting local tag." -ForegroundColor Red
-    git tag -d $tag
-    exit 1
+Invoke-Native "Push tag" { git push origin $tag } -OnError {
+    Write-Host "Push failed; deleting local tag $tag." -ForegroundColor Red
+    git tag -d $tag | Out-Null
 }
 
 # ── 9. Create GitHub release ─────────────────────────────────────────────────
 
 Write-Host "`nCreating GitHub release..." -ForegroundColor Cyan
-gh release create $tag `
-    --title $tag `
-    --notes-file $notesFile `
-    $kpatchPath `
-    $installerExe
-
-if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: Failed to create GitHub release" -ForegroundColor Red; exit 1 }
+Invoke-Native "Create GitHub release" {
+    gh release create $tag `
+        --title $tag `
+        --notes-file $notesFile `
+        $kpatchPath `
+        $installerExe
+}
 
 Remove-Item $notesFile -ErrorAction SilentlyContinue
 
