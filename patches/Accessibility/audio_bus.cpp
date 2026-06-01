@@ -8,6 +8,7 @@
 #include "audio_pitch.h"   // BeginScopedZero / EndScopedZero (per-call jitter)
 #include "engine_player.h"
 #include "log.h"
+#include "mod_settings_store.h"  // persist the cue-volume slider across launches
 #include "view_mode.h"
 
 namespace acc::audio {
@@ -67,13 +68,28 @@ void* GetCExoSound() {
 }
 
 // --- Global cue volume ----------------------------------------------
-// In-memory percent [0,100]; 100 = each cue at its base volume.
-int g_cueVolumePercent = 100;
+// Percent [0,100]; 100 = each cue at its base volume. Backed by the
+// persistent store (acc_settings.ini) so it survives relaunch — lazily
+// pulled on first use so a cue or the menu sees the saved value even if
+// the other never ran this session.
+constexpr const char* kCueVolumeKey = "CueVolumePercent";
+int  g_cueVolumePercent = 100;
+bool g_cueVolumeLoaded  = false;
+
+void EnsureCueVolumeLoaded() {
+    if (g_cueVolumeLoaded) return;
+    g_cueVolumeLoaded = true;
+    int v = acc::settings::GetInt(kCueVolumeKey, 100);
+    if (v < 0)   v = 0;
+    if (v > 100) v = 100;
+    g_cueVolumePercent = v;
+}
 
 // baseVolume × slider, rounded, clamped to [0,127]. Returns 0 to mean
 // "muted — skip the engine call" (volume_byte==0 means engine-full, not
 // silence, so the callers must not forward a 0).
 uint8_t EffectiveVolumeByte(uint8_t baseVolume) {
+    EnsureCueVolumeLoaded();
     int v = (static_cast<int>(baseVolume) * g_cueVolumePercent + 50) / 100;
     if (v > 127) v = 127;
     if (v < 0)   v = 0;
@@ -114,11 +130,14 @@ constexpr int      kMaxGroupScan             = 40;
 void SetGlobalCueVolumePercent(int percent) {
     if (percent < 0)   percent = 0;
     if (percent > 100) percent = 100;
+    g_cueVolumeLoaded  = true;  // we are the authoritative value now
     g_cueVolumePercent = percent;
+    acc::settings::SetInt(kCueVolumeKey, percent);  // persist across launches
     acclog::Write("AudioBus", "cue volume set to %d%%", percent);
 }
 
 int GetGlobalCueVolumePercent() {
+    EnsureCueVolumeLoaded();
     return g_cueVolumePercent;
 }
 

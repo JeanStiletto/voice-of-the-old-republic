@@ -19,6 +19,7 @@
 #include "intro_skip.h"      // SkipIntros toggle — filesystem-backed state
 #include "log.h"
 #include "menus_chain.h"
+#include "mod_settings_store.h"  // persist toggles across launches
 #include "prism.h"
 #include "strings.h"
 
@@ -138,6 +139,34 @@ constexpr int k_optionCount = static_cast<int>(
     sizeof(k_options) / sizeof(k_options[0]));
 static_assert(k_optionCount == static_cast<int>(Option::Count),
               "k_options must cover every Option enumerator");
+
+// Stable acc_settings.ini keys for the toggles that persist across launches.
+// SkipIntros is filesystem-backed (the .bik rename IS its state), and
+// CueVolume / AudioGlossary aren't toggles — those return nullptr (not
+// persisted through this path; CueVolume persists via audio_bus).
+const char* PersistKey(Option opt) {
+    switch (opt) {
+        case Option::ExtendedCycling: return "ExtendedCycling";
+        case Option::RoomShapes:      return "RoomShapes";
+        case Option::WallSounds:      return "WallSounds";
+        case Option::HumanSubtitles:  return "HumanSubtitles";
+        default:                      return nullptr;  // not persisted here
+    }
+}
+
+// Pull persisted toggle values into s_toggles once, on first access. The
+// scaffold defaults in s_toggles[] act as the fallback for absent keys, so
+// behaviour on a fresh install (no file) is unchanged.
+void EnsureTogglesLoaded() {
+    static bool done = false;
+    if (done) return;
+    done = true;
+    for (int i = 0; i < k_optionCount; ++i) {
+        const char* key = PersistKey(k_options[i].option);
+        if (!key) continue;
+        s_toggles[i] = acc::settings::GetBool(key, s_toggles[i]);
+    }
+}
 
 // Glossary entries — one row per NavCue. Order follows the NavCue
 // enum so a sighted reader can cross-reference against audio_cues.h.
@@ -324,6 +353,7 @@ bool IsOpen() {
 }
 
 void OpenSubMenu(void* parentPanel) {
+    EnsureTogglesLoaded();
     s_open        = true;
     s_focused     = 0;
     s_parentPanel = parentPanel;
@@ -530,6 +560,9 @@ bool HandleInputRoot(int keyCode) {
             return true;
         }
         s_toggles[s_focused] = !s_toggles[s_focused];
+        if (const char* key = PersistKey(k_options[s_focused].option)) {
+            acc::settings::SetBool(key, s_toggles[s_focused]);
+        }
         acclog::Write("ModSettings", "toggle idx=%d new=%d",
                       s_focused, s_toggles[s_focused] ? 1 : 0);
         SpeakFocusedOption();
@@ -659,6 +692,7 @@ void Tick() {
 }
 
 bool GetToggle(Option option) {
+    EnsureTogglesLoaded();
     int idx = static_cast<int>(option);
     if (idx < 0 || idx >= k_optionCount) return false;
     // AudioGlossary is a submenu pivot, not a toggle. Return false
