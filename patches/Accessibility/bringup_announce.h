@@ -27,4 +27,19 @@ void Start();
 // the phase to Responsive and stops the announce nag from firing again.
 void NotifyInputPumpLive();
 
+// True iff a SWMovieWindow owned by this process is currently the
+// foreground window. Phase-INDEPENDENT (unlike the internal phase
+// machine, which latches to Responsive once gameplay starts and then
+// ignores movie windows) — so this also detects mid-game cutscene
+// movies (e.g. 03.bik at the Leviathan capture), not just the startup
+// intro logos. Cheap synchronous GetForegroundWindow + class compare,
+// safe to call from any thread.
+//
+// Speech / input-synthesis paths use it to stay silent and hands-off
+// while an engine movie is on screen: KOTOR's movie player aborts its
+// play queue if windows/focus churn during playback (cf. the
+// Alt+Tab-during-intros queue-restart bug), which surfaces as the game
+// closing instead of starting the next queued movie.
+bool IsMovieWindowForeground();
+
 }  // namespace acc::bringup_announce

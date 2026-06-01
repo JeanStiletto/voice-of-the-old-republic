@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "bringup_announce.h" // IsMovieWindowForeground — gate speech during movies
 #include "combat.h"          // IsCombatActive — gate room-change speech
 #include "engine_area.h"
 #include "engine_panels.h"   // IsForegroundUiBlocking — gate vs. menus / dialogs
@@ -707,6 +708,22 @@ void MarkLandmarkClaimedByDoor(int landmarkIdx) {
 }
 
 void Tick() {
+    // Stay completely silent + hands-off while an engine movie owns the
+    // foreground (intro logos, stunt cutscene movies like 03.bik at the
+    // Leviathan capture). KOTOR's movie player aborts its play queue if
+    // windows/focus churn during playback — a SAPI speech-worker window
+    // spun up by an announce here can trigger that abort, which surfaces
+    // as the game closing instead of starting the next queued movie
+    // (patch-20260601-210737.log: 03.bik played, the process exited
+    // before movie #2). We touch NO state and don't advance g_prev_area,
+    // so the area-change branch below re-fires cleanly on the first tick
+    // after the movie ends — the "Bereich: …" announce is deferred, not
+    // dropped. The main loop is usually frozen during playback anyway;
+    // this guards the boundary ticks where it isn't.
+    if (acc::bringup_announce::IsMovieWindowForeground()) {
+        return;
+    }
+
     Vector pos = {};
     if (!acc::engine::GetPlayerPosition(pos)) {
         // Reset state on player loss so the next in-game tick re-anchors
@@ -970,6 +987,17 @@ void AnnouncePreLoadDestination(void* exoStringPtr) {
     std::strncpy(s_lastDest, dest, sizeof(s_lastDest) - 1);
     s_lastDest[sizeof(s_lastDest) - 1] = '\0';
     s_lastTick = now;
+
+    // If a movie is already on screen when this fires, suppress the
+    // "Lade: …" speech for the same reason Tick() goes silent during
+    // playback — don't spin up a SAPI worker window that can abort the
+    // engine's movie queue. The latch above is already set, so per-tick
+    // probes stay gated regardless.
+    if (acc::bringup_announce::IsMovieWindowForeground()) {
+        acclog::Write("Transition",
+            "pre-load -> '%s' (speech suppressed — movie foreground)", dest);
+        return;
+    }
 
     char speech[160] = {0};
     std::snprintf(speech, sizeof(speech),

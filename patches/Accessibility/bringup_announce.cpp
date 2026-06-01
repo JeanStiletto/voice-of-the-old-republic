@@ -188,4 +188,8 @@ void NotifyInputPumpLive() {
     TransitionTo(Phase::Responsive, "input pump confirmed live");
 }
 
+bool IsMovieWindowForeground() {
+    return IsOurWindowOfClass(GetForegroundWindow(), "SWMovieWindow");
+}
+
 }  // namespace acc::bringup_announce

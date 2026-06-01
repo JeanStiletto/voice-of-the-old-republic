@@ -129,6 +129,22 @@ bool IsGameWindowClass(const char* cls) {
     if (!cls || !*cls) return false;
     if (strcmp(cls, "MSCTFIME UI") == 0) return false;
     if (strcmp(cls, "IME") == 0) return false;
+    // SAPI spins up a transient "CSpThreadTask Window" per speech
+    // utterance on our own speech-engine threads. These are NOT game
+    // windows: subclassing them cross-thread races SAPI's teardown, and
+    // because they're created/destroyed per utterance they flooded this
+    // append-only table — 57 of 64 slots in a single ~35-min session
+    // (patch-20260601-210737.log), starving real game windows and
+    // burying the log under "table full" spam.
+    if (strcmp(cls, "CSpThreadTask Window") == 0) return false;
+    // Never touch the Bink movie player's window. KOTOR's movie player
+    // is fragile about window/focus churn during playback (cf. the
+    // Alt+Tab-during-intros queue-restart bug); replacing its wndproc
+    // cross-thread risks aborting the movie queue, which surfaces as the
+    // game closing instead of starting the next queued movie. The phase
+    // machine in bringup_announce already derives "movie playing" from
+    // GetForegroundWindow without needing to subclass the window.
+    if (strcmp(cls, "SWMovieWindow") == 0) return false;
     return true;
 }
 

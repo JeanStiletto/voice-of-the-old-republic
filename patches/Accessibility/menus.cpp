@@ -1084,6 +1084,23 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
     static int n = 0;
     ++n;
 
+    // Stay silent while an engine movie owns the foreground. During a
+    // cutscene-load (e.g. 03.bik at the Leviathan capture) the engine
+    // constructs and activates a storm of GUI panels — in-game HUD,
+    // store, options strip, equip screens — firing SetActiveControl on
+    // each. Announcing them talks over the movie AND would mark those
+    // panels first-seen, so they'd stay silent on the player's first
+    // real visit. Skip the whole handler: the engine re-fires
+    // SetActiveControl on genuine interaction once the movie ends, so
+    // first-sight + focus speech resume cleanly then. Symmetric with
+    // transitions::Tick's movie gate (patch-20260601-220641.log line
+    // ~2110: panel-label burst one second into the cutscene movie).
+    if (acc::bringup_announce::IsMovieWindowForeground()) {
+        acclog::Write("Menus.SetActive",
+                      "#%d panel=%p — suppressed (movie foreground)", n, panel);
+        return;
+    }
+
     // Bringup handoff (secondary signal — mouse path only). The engine
     // fires one SetActive immediately after panel construction for its
     // auto-focused button ("New Game"); a genuine 2nd SetActive on the
