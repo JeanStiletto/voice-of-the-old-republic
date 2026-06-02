@@ -1220,6 +1220,7 @@ enum class Id : int {
     ModSettingRoomShapes,
     ModSettingWallSounds,
     ModSettingHumanSubtitles,
+    ModSettingTurretAutoAim,              // toggle label — turret easy-mode auto-aim
     ModSettingSkipIntros,                 // toggle label — "Skip intro movies"
     ModSettingStateOn,
     ModSettingStateOff,

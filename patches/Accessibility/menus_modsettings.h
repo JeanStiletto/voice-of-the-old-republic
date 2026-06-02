@@ -46,6 +46,7 @@ enum class Option {
     RoomShapes,
     WallSounds,
     HumanSubtitles,
+    TurretAutoAim,     // easy-mode cheat — turret auto-tracks the locked fighter (off by default)
     SkipIntros,        // filesystem-backed — state is biologo.bik vs biologo.bik.disabled
     CueVolume,         // slider — global hint-sound volume (audio_bus owns the value)
     AudioGlossary,

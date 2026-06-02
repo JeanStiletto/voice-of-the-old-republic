@@ -32,6 +32,7 @@
 #include "audio_bus.h"        // PlayCue3D — one-shot lock-confirmation ping
 #include "audio_loop.h"       // LoopSource — per-fighter 3D engine loop
 #include "hotkeys.h"          // Q/E target-cycle bindings
+#include "menus_modsettings.h" // TurretAutoAim easy-mode toggle
 #include "engine_area.h"      // GetCurrentArea + GetClientArea chain
 #include "engine_offsets.h"   // Vector
 #include "engine_player.h"    // AppManager chain (kAddrAppManagerPtr ...) +
@@ -180,6 +181,17 @@ constexpr float kFallbackOnTargetDeg = 6.0f;
 constexpr float kFrontConeDeg = 90.0f;
 constexpr const char* kLockCueResref = "acc_turret_lock";
 
+// ----- Behind cue (rear-arc directional tick) -----
+// When the locked fighter is in the rear hemisphere the continuous peg is
+// silenced (a rear target can't masquerade as a front one). Instead of pure
+// silence — which stranded the player for ~40s during the lone-fighter endgame
+// (they couldn't tell WHICH way to swing) — we tick the crosshair sound,
+// hard-panned to the SHORTER-swing side: beep on the left = swing left, right =
+// swing right. Natural pitch (no elevation glide back here; it resumes once the
+// target is in the forward 180°). A discrete tick (not a continuous tone) reads
+// distinctly as "turn around" vs the front peg's sustained cue.
+constexpr ULONGLONG kBehindTickMs = 500;  // ~half-second cadence
+
 // ----- Elevation channel (peg playback PITCH = vertical aim error) -----
 // Stereo pan carries azimuth (left/right) but nothing about elevation, so the
 // peg's loudness alone left the up/down axis blind — the dominant miss at
@@ -294,6 +306,12 @@ struct State {
     bool slot_alive_last[kMgoArraySlotCount] = {false};
     int  slot_hp_last[kMgoArraySlotCount]    = {0};
     bool slot_damaged[kMgoArraySlotCount]    = {false};
+
+    // Rear-arc directional tick (behind cue): timestamp of the last beep and
+    // the last chosen swing side. The side is latched so a target sitting
+    // exactly behind (lateral ~0) doesn't flip-flop left/right tick to tick.
+    ULONGLONG last_behind_tick_ms   = 0;
+    bool      last_behind_swing_left = false;
 
     // On-target edge tracker for the selected fighter: true while the combined
     // aim was inside the hitbox last tick. A false->true transition fires the
@@ -492,6 +510,25 @@ bool ReadAimDir(Vector& dir) {
     dir.y = std::cos(az) * ce;
     dir.z = std::sin(el);
     return true;
+}
+
+// Write the turret aim (easy-mode auto-track). The exact inverse of
+// ReadAimDir: store azimuth in aim.z and elevation in aim.x (degrees), leaving
+// aim.y (unused). The engine's free-aim fire path orients bolts by the gun, so
+// writing the aim steers both the barrel and the shots. We overwrite after the
+// engine's per-tick WASD update; with WASD idle in auto mode our value holds.
+bool WriteAim(float azDeg, float elDeg) {
+    void* player = SafeReadPtr(g_state.latched_mini_game, kMiniGamePlayerOffset);
+    if (!player) return false;
+    __try {
+        Vector* aim = reinterpret_cast<Vector*>(
+            reinterpret_cast<unsigned char*>(player) + kMiniPlayerAimOffset);
+        aim->x = elDeg;   // elevation
+        aim->z = azDeg;   // azimuth
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
 }
 
 // Angle (degrees) between the aim ray and the (already normalised)
@@ -894,6 +931,35 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
                           "peg off (behind, angle=%.0f) slot=%d",
                           angle, g_state.selected_slot);
         }
+        // Rear-arc directional tick: beep the crosshair sound hard-panned to
+        // the shorter-swing side every kBehindTickMs. The 2D cross product of
+        // (aim x target) gives the side: >0 = target is left of aim -> swing
+        // left. Latch the side through a near-zero (dead-behind) lateral so it
+        // doesn't flip-flop. Placed 90 deg to that side of the aim, close, so
+        // it pans hard to the correct ear.
+        const ULONGLONG nowB = GetTickCount64();
+        if (nowB - g_state.last_behind_tick_ms >= kBehindTickMs) {
+            g_state.last_behind_tick_ms = nowB;
+            const float cross = aimDir.x * tdir.y - aimDir.y * tdir.x;
+            bool swingLeft = g_state.last_behind_swing_left;
+            if (cross > 0.05f)       swingLeft = true;
+            else if (cross < -0.05f) swingLeft = false;
+            g_state.last_behind_swing_left = swingLeft;
+
+            float sx = swingLeft ? -aimDir.y : aimDir.y;
+            float sy = swingLeft ?  aimDir.x : -aimDir.x;
+            const float sm = std::sqrt(sx * sx + sy * sy);
+            if (sm > 1e-4f) { sx /= sm; sy /= sm; }
+            const Vector beepPos = {
+                listener.x + sx * kPegMinDist,
+                listener.y + sy * kPegMinDist,
+                listener.z,
+            };
+            acc::audio::PlayCue3D(kLockCueResref, beepPos);
+            acclog::Write("Turret", "behind tick %s slot=%d angle=%.0f",
+                          swingLeft ? "LEFT" : "RIGHT",
+                          g_state.selected_slot, angle);
+        }
     } else if (g_state.peg_cue.IsActive()) {
         g_state.peg_cue.UpdatePosition(cuePos);
     } else if (g_state.peg_cue.Start(kLockCueResref, cuePos)) {
@@ -909,6 +975,29 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
     const float tgtEl = std::asin(clamp1(tdir.z))     * kRad2Deg;
     const float errAz = wrap180(aimAz - tgtAz);
     const float errEl = aimEl - tgtEl;
+
+    // ---- Easy-mode auto-track (opt-in, OFF by default). --------------------
+    // Write the lead-corrected aim straight into the gun so the turret points
+    // at the locked fighter and the engine's free-aim fire path sends bolts at
+    // it (FireGunCallback fires along the gun orientation). tgtAz/tgtEl are the
+    // exact inverse of ReadAimDir's az/el->direction, so writing them makes the
+    // gun reproduce `tdir` (the intercept direction). Ungated by the behind-
+    // cone — the gun swings all the way around to a rear target by itself. The
+    // player just selects with Q/E and fires; the cues become "locked on"
+    // confirmation. For hearing-impaired players or anyone opting out of
+    // aim-by-ear. See acc::menus::modsettings::Option::TurretAutoAim.
+    if (aimTgtDist > 0.0f &&
+        acc::menus::modsettings::GetToggle(
+            acc::menus::modsettings::Option::TurretAutoAim)) {
+        WriteAim(tgtAz, tgtEl);
+        static ULONGLONG s_lastAutoAimLog = 0;
+        const ULONGLONG nowLog = GetTickCount64();
+        if (nowLog - s_lastAutoAimLog >= 1000) {
+            acclog::Write("Turret", "auto-aim: slot=%d az=%.1f el=%.1f leadDist=%.0f dist=%.0f",
+                          g_state.selected_slot, tgtAz, tgtEl, leadDist, sd);
+            s_lastAutoAimLog = nowLog;
+        }
+    }
 
     // ---- Elevation channel: drive the peg's PITCH from the vertical error. --
     // elevErr > 0 -> target ABOVE the aim (glide pitch up, player presses W);

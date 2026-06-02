@@ -51,6 +51,11 @@ bool s_toggles[static_cast<int>(Option::Count)] = {
                                   // read because the suppression filter
                                   // gates on appearance_type, not on this
                                   // toggle alone.
+    /* TurretAutoAim   */ false,  // OFF by default — opt-in easy-mode cheat:
+                                  // the turret auto-tracks the locked fighter
+                                  // so the player just selects + fires. For
+                                  // hearing-impaired players or anyone who
+                                  // doesn't want to aim by ear.
     /* SkipIntros      */ false,  // unused — state lives in filesystem
                                   // (biologo.bik vs biologo.bik.disabled);
                                   // StateText + Enter both special-case
@@ -131,6 +136,7 @@ constexpr OptionSpec k_options[] = {
     { Option::RoomShapes,      acc::strings::Id::ModSettingRoomShapes,      RowKind::Toggle  },
     { Option::WallSounds,      acc::strings::Id::ModSettingWallSounds,      RowKind::Toggle  },
     { Option::HumanSubtitles,  acc::strings::Id::ModSettingHumanSubtitles,  RowKind::Toggle  },
+    { Option::TurretAutoAim,   acc::strings::Id::ModSettingTurretAutoAim,   RowKind::Toggle  },
     { Option::SkipIntros,      acc::strings::Id::ModSettingSkipIntros,      RowKind::Toggle  },
     { Option::CueVolume,       acc::strings::Id::ModSettingCueVolume,       RowKind::Slider  },
     { Option::AudioGlossary,   acc::strings::Id::ModSettingAudioGlossary,   RowKind::Submenu },
@@ -150,6 +156,7 @@ const char* PersistKey(Option opt) {
         case Option::RoomShapes:      return "RoomShapes";
         case Option::WallSounds:      return "WallSounds";
         case Option::HumanSubtitles:  return "HumanSubtitles";
+        case Option::TurretAutoAim:   return "TurretAutoAim";
         default:                      return nullptr;  // not persisted here
     }
 }
