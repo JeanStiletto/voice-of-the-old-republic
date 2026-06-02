@@ -44,10 +44,23 @@ public:
     void UpdatePosition(const Vector& worldPosition);  // safe no-op if inactive
     void Stop();                                       // idempotent
 
+    // Live playback-pitch control for a playing 3D source. `multiplier` is
+    // relative to the sample's natural rate: 1.0 = unchanged, 2.0 = +1 octave,
+    // 0.5 = -1 octave (clamped internally). Safe no-op until the engine has
+    // created the 3D voice (a tick or two after Start) and on 2D sources.
+    //
+    // Replicates the engine's own live-pitch path (CExoSoundSourceInternal::
+    // SetPitchVariance pushes a new rate to the Miles voice via
+    // AIL_set_3D_sample_playback_rate) but with an ABSOLUTE rate instead of the
+    // engine's random variance — used by the turret elevation cue, where pitch
+    // encodes the vertical aim error.
+    void SetPitchMultiplier(float multiplier);
+
     bool IsActive() const { return source_ != nullptr; }
 
 private:
-    void* source_ = nullptr;  // CExoSoundSource* (opaque)
+    void* source_  = nullptr;  // CExoSoundSource* (opaque)
+    int   base_hz_ = 0;        // sample's natural playback rate, cached at Start
 };
 
 }  // namespace acc::audio

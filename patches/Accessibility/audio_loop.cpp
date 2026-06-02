@@ -35,6 +35,24 @@ void FillResRef(CResRef& out, const char* tag) {
 // dtor frees it); we own only the outer struct.
 constexpr size_t kSourceStructSize = 16;
 
+// ---- Live pitch (SetPitchMultiplier) -------------------------------------
+// All decompile-verified against CExoSoundSourceInternal::SetPitchVariance
+// @0x005dba40, which on a playing source recomputes a frequency and calls
+// AIL_set_3D_sample_playback_rate(voiceHandle, freq) on the live Miles voice
+// (no re-stream). We make the same call with an absolute rate, bypassing the
+// engine's rand()-based variance. Field offsets confirmed in swkotor.exe.h
+// (CExoSoundSourceInternal) and the SetPitchVariance byte dump.
+constexpr size_t   kSoundSourceInternalOffset   = 0x04;  // CExoSoundSource.internal
+constexpr size_t   kInternalBaseFrequencyOffset = 0x48;  // sample natural Hz
+constexpr size_t   kInternalPitchVarFreqOffset  = 0x54;  // applied rate field
+constexpr size_t   kInternalVoice3DOffset       = 0x3c;  // C3DVoice* (null until playing)
+constexpr size_t   kVoiceHandleOffset           = 0x04;  // Miles handle inside the voice
+// SetPitchVariance reaches the Miles setter via `call dword ptr [0x0073d4e8]`;
+// the slot holds the resolved AIL_set_3D_sample_playback_rate import. Calling
+// through the engine's own IAT slot avoids resolving mss32.dll ourselves.
+constexpr uintptr_t kIatAilSet3DPlaybackRate    = 0x0073D4E8;
+typedef void (__stdcall* PFN_AIL_set_3D_sample_playback_rate)(void* handle, int rate);
+
 typedef void* (__thiscall* PFN_SourceCtor)(void* this_);
 // MSVC scalar-deleting dtor: bit 0 = "engine _free(this) after destruct".
 // We always pass 0 — engine's CRT may not match our DLL's; we free outer
@@ -134,6 +152,20 @@ bool LoopSource::Start(const char* resref, const Vector& worldPosition,
         }
 
         reinterpret_cast<PFN_Play>(kAddrCExoSoundSourcePlay)(mem);
+
+        // Cache the sample's natural playback rate for SetPitchMultiplier.
+        // base_frequency is filled by SetResRef; read it here (3D only —
+        // pitch control acts on the 3D voice). 0 disables pitch control.
+        base_hz_ = 0;
+        if (spatial) {
+            void* internal = *reinterpret_cast<void**>(
+                reinterpret_cast<unsigned char*>(mem) + kSoundSourceInternalOffset);
+            if (internal) {
+                base_hz_ = *reinterpret_cast<int*>(
+                    reinterpret_cast<unsigned char*>(internal) +
+                    kInternalBaseFrequencyOffset);
+            }
+        }
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         acclog::Write("LoopSource", "start faulted for resref=%s", resref);
         TeardownEngineSource(mem, "start-error");
@@ -142,9 +174,11 @@ bool LoopSource::Start(const char* resref, const Vector& worldPosition,
 
     source_ = mem;
     acclog::Write("LoopSource",
-                  "started resref=%s pos=(%.1f,%.1f,%.1f) loop=%d 3d=%d pg=%d vol=%d src=%p",
+                  "started resref=%s pos=(%.1f,%.1f,%.1f) loop=%d 3d=%d pg=%d vol=%d "
+                  "base_hz=%d src=%p",
                   resref, biased.x, biased.y, biased.z,
-                  looping ? 1 : 0, spatial ? 1 : 0, priorityGroup, volumeByte, mem);
+                  looping ? 1 : 0, spatial ? 1 : 0, priorityGroup, volumeByte,
+                  base_hz_, mem);
     return true;
 }
 
@@ -159,6 +193,36 @@ void LoopSource::UpdatePosition(const Vector& worldPosition) {
         acclog::Write("LoopSource",
                       "update faulted, dropping source %p", source_);
         source_ = nullptr;
+    }
+}
+
+void LoopSource::SetPitchMultiplier(float multiplier) {
+    if (!source_ || base_hz_ <= 0) return;
+    // Clamp to +/- 2 octaves; the engine clamps internally too (minPitch/
+    // maxPitch globals), but keep our request sane.
+    if (multiplier < 0.25f)      multiplier = 0.25f;
+    else if (multiplier > 4.0f)  multiplier = 4.0f;
+    const int rate = static_cast<int>(base_hz_ * multiplier + 0.5f);
+
+    __try {
+        void* internal = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(source_) + kSoundSourceInternalOffset);
+        if (!internal) return;
+        // Mirror the rate into the field the engine would re-push from, so a
+        // periodic re-assert keeps OUR pitch rather than reverting to base.
+        *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(internal) + kInternalPitchVarFreqOffset) = rate;
+        void* voice = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(internal) + kInternalVoice3DOffset);
+        if (!voice) return;  // 3D voice not created yet — pitch applies next tick
+        void* handle = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(voice) + kVoiceHandleOffset);
+        if (!handle) return;
+        auto fn = *reinterpret_cast<PFN_AIL_set_3D_sample_playback_rate*>(
+            kIatAilSet3DPlaybackRate);
+        if (fn) fn(handle, rate);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        // Voice torn down between reads — ignore; re-evaluated next tick.
     }
 }
 

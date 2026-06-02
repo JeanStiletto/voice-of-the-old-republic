@@ -180,6 +180,32 @@ constexpr float kFallbackOnTargetDeg = 6.0f;
 constexpr float kFrontConeDeg = 90.0f;
 constexpr const char* kLockCueResref = "acc_turret_lock";
 
+// ----- Elevation channel (peg playback PITCH = vertical aim error) -----
+// Stereo pan carries azimuth (left/right) but nothing about elevation, so the
+// peg's loudness alone left the up/down axis blind — the dominant miss at
+// range (QC: vertically on-target only ~15% of frames; targets span -7°..+73°
+// elevation against a fixed aim). We add the orthogonal channel as PITCH: the
+// peg plays at its natural rate while the aim is within the hitbox's elevation
+// tolerance ("sounds normal" = on the vertical line, a shot connects), and
+// glides off-pitch outside it — HIGHER when the target is above the aim (press
+// W) and LOWER when below (press S). The dead band is the hitbox subtend (the
+// same range-scaled tolerance the azimuth/loudness logic already uses), so the
+// "normal pitch" landmark means "elevation is inside the hitbox" at any range:
+// wide and forgiving up close, tight far out.
+constexpr float kElevDegPerOctave = 25.0f;  // vertical error beyond band per octave
+constexpr float kElevMaxOctaves   = 1.0f;   // clamp the glide to +/- 1 octave
+
+// ----- "Fire now" lock cue (one-shot, on entering the hitbox) -----
+// The single most useful signal for a blind gunner: a distinct one-shot the
+// instant the COMBINED aim (azimuth via pan + elevation via pitch) crosses
+// INTO the hitbox cone (onTarget false->true) — "both axes aligned, shoot".
+// It collapses the two-axis judgement into one reaction, and self-gates by the
+// hitbox geometry: it fires readily up close (wide cone) and almost never far
+// (3° cone), which correctly signals that far fighters aren't worth firing at.
+// One-shot, not continuous — the player is rarely on a fast target long enough
+// to ride a sustained tone. Played toward the fighter so it pans correctly.
+constexpr const char* kFireCueResref = "c_drdastro_hit2";
+
 // ----- Range-window cue (joining / leaving killable range) -----
 // Far fighters (subtend ~2.6° past 250 m) are unhittable by ear; close ones
 // (~20° subtend under 100 m) hit ~25% (live QC). So the playable loop is
@@ -268,6 +294,12 @@ struct State {
     bool slot_alive_last[kMgoArraySlotCount] = {false};
     int  slot_hp_last[kMgoArraySlotCount]    = {0};
     bool slot_damaged[kMgoArraySlotCount]    = {false};
+
+    // On-target edge tracker for the selected fighter: true while the combined
+    // aim was inside the hitbox last tick. A false->true transition fires the
+    // one-shot "fire now" cue. Reset on (re)lock and when the target leaves the
+    // forward view, so re-acquiring re-arms the cue.
+    bool selected_on_target = false;
 
     // HP of the selected fighter last tick (-1 = unknown / just (re)selected).
     // A drop between ticks is a real engine-scored hit; logged with the aim
@@ -519,6 +551,7 @@ void AnnounceSelectedTarget(int idx, const int occSlot[], const float occDist[],
     g_state.last_selected_hp = -1;  // fresh lock — next tick re-baselines HP
     g_state.have_last_pos    = false;  // and re-baselines velocity
     g_state.have_vel         = false;
+    g_state.selected_on_target = false;  // re-arm the "fire now" cue
     const int number = NumberForSlot(occSlot[idx]);
 
     const int meters = static_cast<int>(occDist[idx] + 0.5f);
@@ -629,6 +662,7 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
                                   "peg off (out of view) — holding lock slot=%d",
                                   g_state.selected_slot);
                 }
+                g_state.selected_on_target = false;  // re-arm fire-now on return
                 return;
             }
 
@@ -811,6 +845,24 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
         (subtendDeg > 0.0f) ? subtendDeg : kFallbackOnTargetDeg;
     const bool  onTarget = (angle <= onTargetAngle);
 
+    // "Fire now": one-shot the instant the combined aim crosses INTO the hitbox
+    // (false->true). Played at a compressed, always-audible point toward the
+    // fighter so it pans correctly. selected_on_target latches so it fires once
+    // per entry, not every tick you hold the cone.
+    if (onTarget && !g_state.selected_on_target) {
+        Vector firePos = sp;
+        if (sd > 0.0f) {
+            const float fk = kPegMinDist / sd;
+            firePos.x = listener.x + (sp.x - listener.x) * fk;
+            firePos.y = listener.y + (sp.y - listener.y) * fk;
+            firePos.z = listener.z + (sp.z - listener.z) * fk;
+        }
+        acc::audio::PlayCue3D(kFireCueResref, firePos);
+        acclog::Write("Turret", "fire-now slot=%d angle=%.1f subtend=%.1f dist=%.0fm",
+                      g_state.selected_slot, angle, subtendDeg, sd);
+    }
+    g_state.selected_on_target = onTarget;
+
     // Loudness: rise gently from the hitbox edge (kPegEdgeDist) to a peak at
     // dead-centre (kPegMinDist); beyond the edge, fade to faint over
     // kPegRampDeg. Continuous at the boundary.
@@ -858,6 +910,24 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
     const float errAz = wrap180(aimAz - tgtAz);
     const float errEl = aimEl - tgtEl;
 
+    // ---- Elevation channel: drive the peg's PITCH from the vertical error. --
+    // elevErr > 0 -> target ABOVE the aim (glide pitch up, player presses W);
+    // < 0 -> below (pitch down, S). Inside the hitbox's elevation tolerance
+    // (dead band = subtend) the peg holds its natural pitch — "sounds normal"
+    // == on the vertical line. No-op when the peg is silenced (behind-gate) or
+    // the 3D voice isn't up yet. The loudness/pan channels are unchanged, so
+    // this adds the up/down axis without touching the existing azimuth feel.
+    const float elevErr  = -errEl;  // = tgtEl - aimEl
+    const float elevBand = (subtendDeg > 0.0f) ? subtendDeg : kFallbackOnTargetDeg;
+    float elevBeyond = 0.0f;
+    if (elevErr > elevBand)       elevBeyond = elevErr - elevBand;
+    else if (elevErr < -elevBand) elevBeyond = elevErr + elevBand;
+    float elevOct = elevBeyond / kElevDegPerOctave;
+    if (elevOct > kElevMaxOctaves)       elevOct = kElevMaxOctaves;
+    else if (elevOct < -kElevMaxOctaves) elevOct = -kElevMaxOctaves;
+    const float pitchMult = std::pow(2.0f, elevOct);
+    g_state.peg_cue.SetPitchMultiplier(pitchMult);
+
     // Real engine-scored hit (hp drop). Engine plays its own mgs_sith_hit, so
     // this is diagnostic only. errAngle here is to the intercept; lead-correct
     // shots should now show small errAngle at the hit frame (validates lead).
@@ -896,11 +966,12 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
                   "selected slot=%d errAngle=%.1f errNow=%.1f errAz=%.1f errEl=%.1f "
                   "aim(az=%.1f el=%.1f) tgt(az=%.1f el=%.1f) leadT=%.2f leadDist=%.0f "
                   "lateralMiss=%.0fm dist=%.0f aimDist=%.0f srcDist=%.1f hp=%d/%d "
-                  "radius=%.1f subtendDeg=%.1f onTarget=%d",
+                  "radius=%.1f subtendDeg=%.1f onTarget=%d elevErr=%.1f elevBand=%.1f "
+                  "pitchMult=%.2f",
                   g_state.selected_slot, angle, angleNow, errAz, errEl,
                   aimAz, aimEl, tgtAz, tgtEl, leadT, leadDist,
                   lateral, sd, aimTgtDist, srcDist, hp, maxHp, radius, subtendDeg,
-                  onTarget ? 1 : 0);
+                  onTarget ? 1 : 0, elevErr, elevBand, pitchMult);
 }
 
 void TickFighterCues() {
@@ -1125,6 +1196,7 @@ void HandleEnter(void* mg) {
     g_state.last_enemy_count  = -1;
     g_state.last_selected_hp  = -1;
     g_state.selected_in_range = -1;
+    g_state.selected_on_target = false;
     g_state.leave_tap_due_ms  = 0;
     g_state.have_last_pos     = false;
     g_state.have_vel          = false;
