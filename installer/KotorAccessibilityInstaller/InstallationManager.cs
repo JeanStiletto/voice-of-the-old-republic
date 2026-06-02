@@ -30,7 +30,7 @@ namespace KotorAccessibilityInstaller
         // ResLoader to pick up by bare resref. Mirrored as the
         // OverrideAssetNames list on PerformUninstall so removal stays
         // in sync.
-        private static readonly string[] OverrideAssets = { "acc_boost.wav" };
+        private static readonly string[] OverrideAssets = { "acc_boost.wav", "acc_turret_loop.wav", "acc_turret_lock.wav" };
         public static IReadOnlyList<string> OverrideAssetNames => OverrideAssets;
 
         public InstallationManager(string gameDir)

@@ -116,6 +116,10 @@ enum class Action : int {
     PazaakCancel,          // Esc        (card-options sub-zone)
     PazaakOppHand,         // Shift+C    (announce opponent's remaining hand count)
 
+    // ----- Turret minigame (polled only while the gunner minigame is active) -----
+    TurretCyclePrev,       // Q          (select previous fighter as locked target)
+    TurretCycleNext,       // E          (select next fighter)
+
     // ----- Sentinel -----
     COUNT
 };

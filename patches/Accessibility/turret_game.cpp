@@ -12,14 +12,20 @@
 //     of their own (live diagnostic: every fighter's looping-sound source
 //     at CSWTrackFollower+0x144 was null the whole game — only the gun
 //     fire is audible), so there is nothing to "turn up"; we attach our
-//     own loop using the game's own engine sample (mgs_engine_0Nl).
+//     own loop using a custom sample (acc_turret_loop), a flattened
+//     ping-pong turbine loop shipped in Override\. It was picked for its
+//     broadband, high-frequency content: such sounds localise far better
+//     — including in elevation (the W/S axis) — than a low engine drone,
+//     whose energy sits below the band the ear uses to place a source.
+//     (Built/tuned with `kdev sound-score`; see docs/kdev-design.md.)
 //
-// Cue policy: ALL in-range fighters loop simultaneously (not nearest-
-// only), because a nearest-only scheme drops a fighter the moment a
-// closer one appears — exactly the fly-by-while-another-approaches case
-// the player needs to track. Timbre is varied per slot (5 engine
-// variants) so overlapping fighters are distinguishable. Reuses the
-// LoopSource + MGO-array walk pattern from swoop_spatial_audio.cpp.
+// Cue policy: the nearest kFighterMaxConcurrent in-range fighters loop
+// (not nearest-only of one), because a single-nearest scheme drops a
+// fighter the moment a closer one appears — exactly the fly-by-while-
+// another-approaches case the player needs to track. All fighters share
+// the one loop sample; overlapping fighters are separated by 3D position
+// (pan + distance), not timbre. Reuses the LoopSource + MGO-array walk
+// pattern from swoop_spatial_audio.cpp.
 
 #include "turret_game.h"
 
@@ -28,7 +34,9 @@
 #include <cstdint>
 #include <cstdio>
 
+#include "audio_bus.h"        // PlayCue3D — one-shot lock-confirmation ping
 #include "audio_loop.h"       // LoopSource — per-fighter 3D engine loop
+#include "hotkeys.h"          // Q/E target-cycle bindings
 #include "engine_area.h"      // GetCurrentArea + GetClientArea chain
 #include "engine_offsets.h"   // Vector
 #include "engine_player.h"    // AppManager chain (kAddrAppManagerPtr ...) +
@@ -58,6 +66,7 @@ constexpr size_t kMiniGameTypeOffset       = 0x84;   // 0=swoop, 3=turret
 // x = elevation (vertical, W/S axis), y unused. WASD drives both natively
 // (live-confirmed), so aiming/firing need no synthesis — only the spoken
 // control hint and the approach cue below.
+constexpr size_t kMiniPlayerAimOffset      = 0x1c4;  // Vector{x=elev,_,z=azi}
 
 // The turret minigame type discriminator. Anything else on this struct
 // (notably type==0 swoop) is not ours.
@@ -98,9 +107,12 @@ constexpr float kFighterDistanceCompression = 1.0f / 30.0f;
 // 5 m floor: swoop found 3 m inaudible and <5 m attenuates oddly, so the
 // closest fighters sit at the loud-but-clean end of the band.
 constexpr float kFighterMinSourceDistanceM  = 5.0f;
-// Number of distinct engine-loop variants (mgs_engine_01l..05l) cycled
-// across fighter slots so overlapping fighters have distinguishable timbre.
-constexpr int   kEngineVariantCount         = 5;
+// Custom approach-cue loop sample, shipped in Override\acc_turret_loop.wav
+// (a flattened ping-pong turbine loop — built with `kdev sound-score`).
+// Resolved by bare resref via the engine ResLoader (Override -> BIF), the
+// same way swoop's acc_boost is. One sample for every fighter; per-fighter
+// separation comes from 3D position, not timbre.
+constexpr const char* kFighterLoopResref    = "acc_turret_loop";
 // Max fighters humming at once. All-in-range was tried and clumped into
 // one wall of drone: every fighter is in range from the start, the heavy
 // compression squashes their distances together (real 126-341 m -> src
@@ -109,6 +121,25 @@ constexpr int   kEngineVariantCount         = 5;
 // (it plays nearest-only). 2 keeps the soundstage separable while still
 // covering the fly-by-while-another-approaches overlap.
 constexpr int   kFighterMaxConcurrent       = 2;
+
+// ----- Targeting "peg" tone (drives the Q/E-selected fighter) -----
+// The aim (aziZ azimuth, elevX elevation, both degrees) forms a gun-ray
+// direction vector; the angle between it and the direction to a fighter is
+// the true 3D aim error (verified: at the zero-error frame the ray passed
+// ~1.5 m from the fighter, and on-target frames averaged a 5 m lateral miss).
+//
+// The cue plays continuously while a fighter is SELECTED (via Q/E), mapping
+// the aim error to that fighter onto loudness (via source distance): faint
+// when the aim is far off it, loudest when on target. So the player locks a
+// target with Q/E, then swings until the tone peaks and fires. No auto-jump
+// between fighters — selection is explicit, which killed the old "jumps to
+// another fighter" churn.
+constexpr float kPegMaxAngle  = 40.0f;  // aim error at which the tone is faintest
+constexpr float kPegMinDist   = 5.0f;   // on target  -> nearest -> loudest
+constexpr float kPegMaxDist   = 20.0f;  // >=kPegMaxAngle off -> farthest -> faintest
+// On-target threshold, used only to flag "fire now" in the diagnostic log.
+constexpr float kLockAngleDeg        = 6.0f;
+constexpr const char* kLockCueResref = "acc_turret_lock";
 
 // ============================================================================
 // Module state. Single-threaded under the engine OnUpdate tick.
@@ -125,6 +156,14 @@ struct State {
     // the loop follows the same object across ticks (the pool is stable;
     // live diagnostic showed fixed enemy pointers per slot).
     acc::audio::LoopSource fighter_loops[kMgoArraySlotCount];
+
+    // Single continuous targeting "peg" tone: tracks the Q/E-SELECTED
+    // fighter; its loudness rises as the aim ray closes on that fighter.
+    acc::audio::LoopSource peg_cue;
+
+    // MGO slot of the fighter the player has locked via Q/E (-1 = none).
+    // Explicit selection — the cue no longer auto-jumps between fighters.
+    int selected_slot = -1;
 };
 
 State g_state;
@@ -243,6 +282,183 @@ void StopAllLoops() {
     for (int i = 0; i < kMgoArraySlotCount; ++i) {
         g_state.fighter_loops[i].Stop();
     }
+    g_state.peg_cue.Stop();
+}
+
+// Read the turret aim as a unit direction vector. The aim is stored as
+// {x=elevation, _, z=azimuth} in DEGREES; the gun ray is
+//   (sin az·cos el, cos az·cos el, sin el).
+// Verified identity against the 08:59 capture: at the zero-error frame
+// (aziZ=0, elevX=9) this ray passed within ~1.5 m of the fighter.
+bool ReadAimDir(Vector& dir) {
+    void* player = SafeReadPtr(g_state.latched_mini_game, kMiniGamePlayerOffset);
+    if (!player) return false;
+    Vector aim = {0.0f, 0.0f, 0.0f};
+    __try {
+        aim = *reinterpret_cast<Vector*>(
+            reinterpret_cast<unsigned char*>(player) + kMiniPlayerAimOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    constexpr float kDeg2Rad = 0.01745329f;
+    const float az = aim.z * kDeg2Rad;
+    const float el = aim.x * kDeg2Rad;
+    const float ce = std::cos(el);
+    dir.x = std::sin(az) * ce;
+    dir.y = std::cos(az) * ce;
+    dir.z = std::sin(el);
+    return true;
+}
+
+// Angle (degrees) between the aim ray and the (already normalised)
+// direction to a target. 0 = dead on.
+float AngleBetweenDeg(const Vector& a, const Vector& b) {
+    float dot = a.x * b.x + a.y * b.y + a.z * b.z;
+    if (dot > 1.0f) dot = 1.0f; else if (dot < -1.0f) dot = -1.0f;
+    return std::acos(dot) * 57.2958f;
+}
+
+// Find a slot's index in the (nearest-first) census, or -1.
+int CensusIndexOf(const int occSlot[], int occCount, int slot) {
+    for (int a = 0; a < occCount; ++a) if (occSlot[a] == slot) return a;
+    return -1;
+}
+
+// Lock onto census entry `idx`: set the selection, speak "Fighter N, D
+// metres", and fire a LOUD one-shot positional cue toward the fighter so the
+// player hears which way to swing — independent of where the aim currently
+// points (the continuous peg is faint until the aim closes in). Shared by the
+// Q/E cycle and the auto-advance on lock loss.
+void AnnounceSelectedTarget(int idx, const int occSlot[], const float occDist[],
+                            const Vector occPos[], int occCount,
+                            const Vector& listener) {
+    if (idx < 0 || idx >= occCount) return;
+    g_state.selected_slot = occSlot[idx];
+
+    const int meters = static_cast<int>(occDist[idx] + 0.5f);
+    char buf[96];
+    std::snprintf(buf, sizeof(buf),
+                  acc::strings::Get(acc::strings::Id::FmtTurretTarget),
+                  idx + 1, meters);
+    prism::SpeakUrgent(buf);
+
+    // One-shot confirmation at a compressed (always-audible) position in the
+    // fighter's direction, full volume — "locked, it's this way".
+    const float sd = occDist[idx];
+    Vector pingPos = occPos[idx];
+    if (sd > 0.0f) {
+        const float kk = kPegMinDist / sd;
+        pingPos.x = listener.x + (occPos[idx].x - listener.x) * kk;
+        pingPos.y = listener.y + (occPos[idx].y - listener.y) * kk;
+        pingPos.z = listener.z + (occPos[idx].z - listener.z) * kk;
+    }
+    acc::audio::PlayCue3D(kLockCueResref, pingPos);
+
+    acclog::Write("Turret", "select -> slot=%d pos=%d/%d dist=%dm",
+                  g_state.selected_slot, idx + 1, occCount, meters);
+}
+
+// Q/E target cycle. Q steps to the previous (nearer) target, E to the next
+// (farther), wrapping at the ends. Polled inside the hotkeys BeginTick/
+// EndTick window (core_tick calls turret Tick there), so Pressed() sees a
+// clean rising edge.
+void HandleTargetCycle(const int occSlot[], const float occDist[],
+                       const Vector occPos[], int occCount,
+                       const Vector& listener) {
+    const bool next = acc::hotkeys::Pressed(acc::hotkeys::Action::TurretCycleNext);
+    const bool prev = acc::hotkeys::Pressed(acc::hotkeys::Action::TurretCyclePrev);
+    if (!next && !prev) return;
+
+    if (occCount <= 0) {
+        prism::SpeakUrgent(acc::strings::Get(acc::strings::Id::TurretNoTargets));
+        g_state.selected_slot = -1;
+        acclog::Write("Turret", "cycle: no targets");
+        return;
+    }
+
+    int idx = CensusIndexOf(occSlot, occCount, g_state.selected_slot);
+    if (idx < 0) {
+        // No live selection — first press lands on nearest (E) / farthest (Q).
+        idx = next ? 0 : occCount - 1;
+    } else {
+        idx += next ? 1 : -1;
+        if (idx < 0)          idx = occCount - 1;  // wrap
+        if (idx >= occCount)  idx = 0;
+    }
+    AnnounceSelectedTarget(idx, occSlot, occDist, occPos, occCount, listener);
+}
+
+// Drive the continuous peg tone on the selected fighter. Loudness (via source
+// distance) encodes the aim error to THAT fighter — faint off-aim, peaks on
+// target. When the selected fighter leaves the census (destroyed / out of
+// range), AUTO-ADVANCE to the nearest remaining fighter and lock it; if none
+// remain, announce "target lost" and fall silent.
+void DriveSelectedPeg(const int occSlot[], const float occDist[],
+                      const Vector occPos[], int occCount,
+                      const Vector& aimDir, bool haveAim,
+                      const Vector& listener) {
+    int idx = CensusIndexOf(occSlot, occCount, g_state.selected_slot);
+
+    if (idx < 0) {
+        // The locked fighter is gone this tick.
+        if (g_state.selected_slot >= 0) {
+            if (g_state.peg_cue.IsActive()) {
+                g_state.peg_cue.Stop();
+                acclog::Write("Turret", "peg off (target gone)");
+            }
+            if (occCount > 0) {
+                // Auto-advance: lock the nearest remaining fighter so the
+                // player keeps a target without re-pressing Q/E.
+                AnnounceSelectedTarget(0, occSlot, occDist, occPos, occCount,
+                                       listener);
+                idx = 0;
+            } else {
+                prism::SpeakUrgent(
+                    acc::strings::Get(acc::strings::Id::TurretTargetLost));
+                g_state.selected_slot = -1;
+                acclog::Write("Turret", "target lost — no fighters remain");
+                return;
+            }
+        } else {
+            // Nothing selected yet (entry / all clear) — wait for Q/E.
+            return;
+        }
+    }
+
+    if (!haveAim) return;  // hold the cue; can't compute aim this tick
+
+    const Vector& sp = occPos[idx];
+    const float   sd = occDist[idx];
+    float angle = 0.0f;
+    if (sd > 0.0f) {
+        const Vector tdir = {(sp.x - listener.x) / sd,
+                             (sp.y - listener.y) / sd,
+                             (sp.z - listener.z) / sd};
+        angle = AngleBetweenDeg(aimDir, tdir);
+    }
+
+    float t = angle / kPegMaxAngle;        // 0 on target .. 1 far off
+    if (t > 1.0f) t = 1.0f;
+    const float srcDist = kPegMinDist + t * (kPegMaxDist - kPegMinDist);
+    const float kk = (sd > 0.0f) ? srcDist / sd : 1.0f;
+    const Vector cuePos = {
+        listener.x + (sp.x - listener.x) * kk,
+        listener.y + (sp.y - listener.y) * kk,
+        listener.z + (sp.z - listener.z) * kk,
+    };
+
+    if (g_state.peg_cue.IsActive()) {
+        g_state.peg_cue.UpdatePosition(cuePos);
+    } else if (g_state.peg_cue.Start(kLockCueResref, cuePos)) {
+        acclog::Write("Turret", "peg on selected slot=%d", g_state.selected_slot);
+    }
+
+    const float lateral = std::sin(angle * 0.01745329f) * sd;
+    acclog::Write("TurretAim",
+                  "selected slot=%d errAngle=%.1f lateralMiss=%.0fm dist=%.0f "
+                  "onTarget=%d",
+                  g_state.selected_slot, angle, lateral, sd,
+                  (angle <= kLockAngleDeg) ? 1 : 0);
 }
 
 void TickFighterCues() {
@@ -257,14 +473,21 @@ void TickFighterCues() {
 
     const float rangeSq = kFighterCueRangeM * kFighterCueRangeM;
 
-    // ---- Pass 1: pick the nearest kFighterMaxConcurrent in-range fighters.
-    // Small insertion-sorted table (cap is tiny, so O(N*cap) is fine).
+    // ---- Pass 1: census every in-range fighter (for the Q/E cycle) AND
+    // pick the nearest kFighterMaxConcurrent for the ambient turbine loops.
     int    chosenSlot[kFighterMaxConcurrent];
     float  chosenDistSq[kFighterMaxConcurrent];
     Vector chosenPos[kFighterMaxConcurrent];
     for (int k = 0; k < kFighterMaxConcurrent; ++k) chosenSlot[k] = -1;
 
-    int inRange = 0;
+    Vector aimDir;
+    const bool haveAim = ReadAimDir(aimDir);
+
+    int    occSlot[kMgoArraySlotCount];
+    float  occDist[kMgoArraySlotCount];
+    Vector occPos[kMgoArraySlotCount];
+    int    occCount = 0;
+
     for (int i = 0; i < kMgoArraySlotCount; ++i) {
         void* slot = SafeReadPtr(mgoArray,
                                  kMgoArrayObjectsOffset +
@@ -279,9 +502,14 @@ void TickFighterCues() {
         const float dz = pos.z - listener.z;
         const float distSq = dx * dx + dy * dy + dz * dz;
         if (distSq > rangeSq) continue;
-        ++inRange;
 
-        // Insert (i, distSq, pos) into the nearest-K table.
+        // Census entry for Q/E cycling.
+        occSlot[occCount] = i;
+        occDist[occCount] = std::sqrt(distSq);
+        occPos[occCount]  = pos;
+        ++occCount;
+
+        // Insert (i, distSq, pos) into the nearest-K ambient table.
         for (int k = 0; k < kFighterMaxConcurrent; ++k) {
             if (chosenSlot[k] < 0 || distSq < chosenDistSq[k]) {
                 for (int m = kFighterMaxConcurrent - 1; m > k; --m) {
@@ -296,6 +524,30 @@ void TickFighterCues() {
             }
         }
     }
+
+    // Sort the census nearest-first so Q/E cycle near->far and "Fighter N"
+    // numbers ascend with distance (insertion sort; occCount is small).
+    for (int a = 1; a < occCount; ++a) {
+        const int    s = occSlot[a];
+        const float  d = occDist[a];
+        const Vector p = occPos[a];
+        int b = a - 1;
+        while (b >= 0 && occDist[b] > d) {
+            occSlot[b + 1] = occSlot[b];
+            occDist[b + 1] = occDist[b];
+            occPos[b + 1]  = occPos[b];
+            --b;
+        }
+        occSlot[b + 1] = s;
+        occDist[b + 1] = d;
+        occPos[b + 1]  = p;
+    }
+
+    // Q/E selects the locked target; the peg tone tracks it (and auto-
+    // advances to the nearest fighter when the locked one is destroyed).
+    HandleTargetCycle(occSlot, occDist, occPos, occCount, listener);
+    DriveSelectedPeg(occSlot, occDist, occPos, occCount, aimDir, haveAim,
+                     listener);
 
     // ---- Pass 2: stop any active loop not in the chosen set. -------------
     for (int i = 0; i < kMgoArraySlotCount; ++i) {
@@ -332,21 +584,18 @@ void TickFighterCues() {
         if (g_state.fighter_loops[i].IsActive()) {
             g_state.fighter_loops[i].UpdatePosition(cuePos);
         } else {
-            char res[16];
-            std::snprintf(res, sizeof(res), "mgs_engine_0%dl",
-                          1 + (i % kEngineVariantCount));
-            if (g_state.fighter_loops[i].Start(res, cuePos)) {
+            if (g_state.fighter_loops[i].Start(kFighterLoopResref, cuePos)) {
                 acclog::Write("Turret",
                               "fighter loop start slot=%d rank=%d res=%s "
                               "realDist=%.0f srcDist=%.1f pos=(%.1f,%.1f,%.1f)",
-                              i, k, res, realDist, srcDist,
+                              i, k, kFighterLoopResref, realDist, srcDist,
                               chosenPos[k].x, chosenPos[k].y, chosenPos[k].z);
             }
         }
     }
 
     acclog::Trace("Turret", "fighter cues: %d in range, cap %d (range %.0fm)",
-                  inRange, kFighterMaxConcurrent, kFighterCueRangeM);
+                  occCount, kFighterMaxConcurrent, kFighterCueRangeM);
 }
 
 // ============================================================================
@@ -383,6 +632,7 @@ void HandleEnter(void* mg) {
     g_state.latched_vtable    = SafeReadPtr(mg, kMiniGameVtableOffset);
     g_state.entered_at_ms     = GetTickCount64();
     g_state.ticks_since_lost  = 0;
+    g_state.selected_slot     = -1;
     // Defensive: no loop from a prior turret session must survive.
     StopAllLoops();
 
@@ -404,6 +654,7 @@ void HandleExit() {
     g_state.latched_mini_game = nullptr;
     g_state.latched_vtable    = nullptr;
     g_state.ticks_since_lost  = 0;
+    g_state.selected_slot     = -1;
     AnnounceExit();
 }
 

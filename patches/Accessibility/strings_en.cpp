@@ -426,9 +426,15 @@ const char* Get(Id id) {
             // via the reticle diagnostic. The opener's whole job is to
             // tell the player those keys exist; kept terse so it doesn't
             // bleed into the start of combat.
-            return "Aim with W, A, S and D. Space to fire.";
+            return "Aim with W, A, S and D. Space to fire. Q and E pick targets.";
         case Id::TurretGameEnded:
             return "Turret ended.";
+        case Id::FmtTurretTarget:
+            return "Fighter %d, %d meters";
+        case Id::TurretNoTargets:
+            return "No targets.";
+        case Id::TurretTargetLost:
+            return "Target lost.";
 
         case Id::ModSettingsRootLabel:        return "Mod settings";
         case Id::ModSettingsOpened:           return "Mod settings opened";

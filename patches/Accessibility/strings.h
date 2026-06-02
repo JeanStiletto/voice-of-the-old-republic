@@ -1183,9 +1183,18 @@ enum class Id : int {
     //                           utterance (same pattern as the swoop opener).
     //      TurretGameControls — short native-control reminder, no args.
     //      TurretGameEnded    — exit cue, no args.
+    //      FmtTurretTarget    — Q/E target select: args fighter index (%d,
+    //                           1-based cycle position) + distance metres (%d).
+    //      TurretNoTargets    — Q/E pressed with no fighters in range.
+    //      TurretTargetLost   — the locked fighter left range / was destroyed;
+    //                           spoken once so the silence is explained and the
+    //                           player knows to relock with Q/E.
     TurretGameStarted,
     TurretGameControls,
     TurretGameEnded,
+    FmtTurretTarget,
+    TurretNoTargets,
+    TurretTargetLost,
 
     // ---- Mod-settings virtual submenu (menus_modsettings).
     //      Root label: text spoken when the user lands on the virtual

@@ -441,9 +441,15 @@ const char* Get(Id id) {
             // into one utterance by turret_game.cpp::AnnounceEntry.
             return "Gesch\xFCtzturm.";  // Geschützturm
         case Id::TurretGameControls:
-            return "Mit WASD zielen. Leertaste zum Feuern.";
+            return "Mit WASD zielen. Leertaste zum Feuern. Q und E w\xE4hlen Ziele.";
         case Id::TurretGameEnded:
             return "Gesch\xFCtzturm beendet.";
+        case Id::FmtTurretTarget:
+            return "J\xE4ger %d, %d Meter";  // Jäger
+        case Id::TurretNoTargets:
+            return "Keine Ziele.";
+        case Id::TurretTargetLost:
+            return "Ziel verloren.";
 
         // "Mod Einstellungen" / "Erweitertes Wechseln" / "Raumformen" /
         // "Wandger\xe4usche" — \xe4 = ä, \xfc = ü. Encoding matches the

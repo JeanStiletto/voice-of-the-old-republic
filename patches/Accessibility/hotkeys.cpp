@@ -110,6 +110,8 @@ const char* const kActionNames[static_cast<int>(Action::COUNT)] = {
     "PazaakOptRight",
     "PazaakCancel",
     "PazaakOppHand",
+    "TurretCyclePrev",
+    "TurretCycleNext",
 };
 
 bool IsDownVk(int vk) {
@@ -332,6 +334,12 @@ void InitDefaults() {
     // Shift+C — opponent's remaining hand count (public info: sighted players
     // see the face-down cards). Bare C is PazaakReviewHand, so require Shift.
     bind(Action::PazaakOppHand,     'C',       0, kModShift, kModCtrl | kModAlt | kModAltGr);
+
+    // ----- Turret minigame -----
+    // Q/E cycle the locked fighter; polled only while the gunner minigame is
+    // active (turret_game.cpp). Forbid every modifier like the Pazaak letters.
+    bind(Action::TurretCyclePrev,   'Q',       0, 0,         kModShift | kModCtrl | kModAlt | kModAltGr);
+    bind(Action::TurretCycleNext,   'E',       0, 0,         kModShift | kModCtrl | kModAlt | kModAltGr);
 }
 
 }  // namespace

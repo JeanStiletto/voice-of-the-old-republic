@@ -429,9 +429,15 @@ const char* Get(Id id) {
             // into one utterance by turret_game.cpp::AnnounceEntry.
             return "Tourelle.";
         case Id::TurretGameControls:
-            return "Visez avec WASD. Espace pour tirer.";
+            return "Visez avec WASD. Espace pour tirer. Q et E choisissent les cibles.";
         case Id::TurretGameEnded:
             return "Tourelle termin\xE9""e.";
+        case Id::FmtTurretTarget:
+            return "Chasseur %d, %d m\xE8tres";
+        case Id::TurretNoTargets:
+            return "Aucune cible.";
+        case Id::TurretTargetLost:
+            return "Cible perdue.";
 
         case Id::ModSettingsRootLabel:        return "Param\xE8tres du mod";
         case Id::ModSettingsOpened:           return "Param\xE8tres du mod ouverts";

@@ -47,8 +47,15 @@
     <!-- Custom WAV samples that drop into the game's Override\ folder so
          the engine's ResLoader resolves them via standard resref lookup.
          acc_boost.wav: trimmed mgs_basethrust03 used by the swoop-race
-         accelerator-pad proximity loop (swoop_race.cpp). -->
+         accelerator-pad proximity loop (swoop_race.cpp).
+         acc_turret_loop.wav: flattened ping-pong loop derived from
+         mgs_turbdwn01, used by the turret minigame's per-fighter approach
+         cue (turret_game.cpp).
+         acc_turret_lock.wav: looped beep (from as_el_medbeep_03) — the
+         turret targeting lock-on cue; plays when aim is on a fighter. -->
     <EmbeddedResource Include="Resources\acc_boost.wav" />
+    <EmbeddedResource Include="Resources\acc_turret_loop.wav" />
+    <EmbeddedResource Include="Resources\acc_turret_lock.wav" />
     <!-- Vanilla prioritygroups.2da. The installer appends the mod's
          dedicated full-volume audio priority group to whatever copy is in
          Override (or this bundled vanilla if absent) — see
