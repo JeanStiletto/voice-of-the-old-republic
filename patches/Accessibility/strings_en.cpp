@@ -416,6 +416,20 @@ const char* Get(Id id) {
         case Id::FmtSwoopRaceGear:
             return "Gear %d";
 
+        case Id::TurretGameStarted:
+            // Terse opener — concatenated with TurretGameControls below
+            // into one utterance by turret_game.cpp::AnnounceEntry.
+            return "Turret.";
+        case Id::TurretGameControls:
+            // Aiming AND firing are both native keyboard actions (W/S
+            // raise-lower, A/D swing, Space/Enter fire) — live-confirmed
+            // via the reticle diagnostic. The opener's whole job is to
+            // tell the player those keys exist; kept terse so it doesn't
+            // bleed into the start of combat.
+            return "Aim with W, A, S and D. Space to fire.";
+        case Id::TurretGameEnded:
+            return "Turret ended.";
+
         case Id::ModSettingsRootLabel:        return "Mod settings";
         case Id::ModSettingsOpened:           return "Mod settings opened";
         case Id::ModSettingsClosed:           return "Mod settings closed";

@@ -1172,6 +1172,21 @@ enum class Id : int {
     // DiagnosticDump for the candidate-pointer-bytes capture.
     FmtSwoopRaceGear,
 
+    // ---- Turret (space-combat gunner) minigame (CSWMiniGame.type==3).
+    //      Shares the CSWMiniGame struct with swoop racing (same vtable)
+    //      but is a distinct game: the player swings a 2D reticle
+    //      (CSWMiniPlayer.offset +0x1c4 — X horizontal, Y vertical) and
+    //      fires at incoming fighters. See turret_game.cpp.
+    //
+    //      TurretGameStarted  — entry opener, no args. Concatenated with
+    //                           TurretGameControls into one urgent
+    //                           utterance (same pattern as the swoop opener).
+    //      TurretGameControls — short native-control reminder, no args.
+    //      TurretGameEnded    — exit cue, no args.
+    TurretGameStarted,
+    TurretGameControls,
+    TurretGameEnded,
+
     // ---- Mod-settings virtual submenu (menus_modsettings).
     //      Root label: text spoken when the user lands on the virtual
     //      "Mod settings" chain entry inside the Optionen panels.

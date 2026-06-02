@@ -757,8 +757,18 @@ void Tick() {
     void* mgArea = ReadMiniGameViaArea();
 
     if (!g_state.active) {
-        // Idle state. Wait for a non-null read to fire ENTER.
-        if (mgArea) HandleEnter(mgArea);
+        // Idle state. Fire ENTER only for an actual swoop race
+        // (CSWMiniGame.type==0). The turret / space-combat gunner
+        // minigame shares this exact struct (same vtable) but reports
+        // type==3 and is handled by turret_game.cpp — entering here
+        // would mis-announce it as a swoop race (and run the gear /
+        // accel / wall heuristics, which are meaningless for a turret).
+        // type is populated by the time the area chain exposes mini_game
+        // (live-confirmed: swoop logs type=0, turret logs type=3 at the
+        // first ENTER read).
+        if (mgArea && SafeReadU32(mgArea, kMiniGameTypeOffset) == 0) {
+            HandleEnter(mgArea);
+        }
         return;
     }
 

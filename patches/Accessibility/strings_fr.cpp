@@ -424,6 +424,15 @@ const char* Get(Id id) {
         case Id::FmtSwoopRaceGear:
             return "Vitesse %d";
 
+        case Id::TurretGameStarted:
+            // Terse opener — concatenated with TurretGameControls below
+            // into one utterance by turret_game.cpp::AnnounceEntry.
+            return "Tourelle.";
+        case Id::TurretGameControls:
+            return "Visez avec WASD. Espace pour tirer.";
+        case Id::TurretGameEnded:
+            return "Tourelle termin\xE9""e.";
+
         case Id::ModSettingsRootLabel:        return "Param\xE8tres du mod";
         case Id::ModSettingsOpened:           return "Param\xE8tres du mod ouverts";
         case Id::ModSettingsClosed:           return "Param\xE8tres du mod ferm\xE9s";

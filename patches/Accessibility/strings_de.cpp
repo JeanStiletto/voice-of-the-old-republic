@@ -436,6 +436,15 @@ const char* Get(Id id) {
         case Id::FmtSwoopRaceGear:
             return "Gang %d";
 
+        case Id::TurretGameStarted:
+            // Terse opener — concatenated with TurretGameControls below
+            // into one utterance by turret_game.cpp::AnnounceEntry.
+            return "Gesch\xFCtzturm.";  // Geschützturm
+        case Id::TurretGameControls:
+            return "Mit WASD zielen. Leertaste zum Feuern.";
+        case Id::TurretGameEnded:
+            return "Gesch\xFCtzturm beendet.";
+
         // "Mod Einstellungen" / "Erweitertes Wechseln" / "Raumformen" /
         // "Wandger\xe4usche" — \xe4 = ä, \xfc = ü. Encoding matches the
         // Windows-1252 convention used throughout strings_de.cpp.

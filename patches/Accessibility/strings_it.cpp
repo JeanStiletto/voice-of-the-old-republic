@@ -423,6 +423,15 @@ const char* Get(Id id) {
         case Id::FmtSwoopRaceGear:
             return "Marcia %d";
 
+        case Id::TurretGameStarted:
+            // Terse opener — concatenated with TurretGameControls below
+            // into one utterance by turret_game.cpp::AnnounceEntry.
+            return "Torretta.";
+        case Id::TurretGameControls:
+            return "Mira con WASD. Spazio per sparare.";
+        case Id::TurretGameEnded:
+            return "Torretta terminata.";
+
         case Id::ModSettingsRootLabel:        return "Impostazioni mod";
         case Id::ModSettingsOpened:           return "Impostazioni mod aperte";
         case Id::ModSettingsClosed:           return "Impostazioni mod chiuse";

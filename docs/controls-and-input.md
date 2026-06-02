@@ -117,7 +117,7 @@ Status legend: `[ ]` not started, `[~]` partially solved, `[x]` solved.
 ### Mid priority — minigames
 
 - `[x]` **Pazaak** — done (v0.2.0). Board game + wager popup + side-deck builder are keyboard/screen-reader playable; see "Pazaak minigame" under Mod hotkeys below.
-- `[ ]` **Turret minigame aiming** — **mouse-only reticle** (no axis maps to keyboard). Keyboard only covers fire (Space/Enter) and pause. Recurring; hard to replace without synthesizing motion.
+- `[x]` **Turret minigame** — keyboard aiming + firing work **natively** (this entry previously claimed "mouse-only reticle" — that was wrong, live-disproven 2026-06-01). The turret aim is rotational: **A/D swing horizontally (azimuth), W/S raise/lower (elevation), Space/Enter fire.** Reticle lives in `CSWMiniPlayer.offset` (+0x1c4): z=azimuth, x=elevation, y unused. The only accessibility gap was that the player couldn't *know* the keys work, so our `turret_game.cpp` announces "Aim with W A S D. Space to fire." on entry. It also fixes the prior bug where the turret game (CSWMiniGame.type==3) was mis-announced as a swoop race (type==0). No on-target audio cue yet (deliberately, to avoid spam); revisit if a tester wants it.
 
 ### Lower priority — spatial / world interaction
 
@@ -142,7 +142,7 @@ Roughly aligned with story-progression criticality:
 6. **Quest Journal** (read-only but high frequency)
 7. **Map screen** (orientation aid; nice-to-have)
 8. **Pazaak** (optional content)
-9. **Turret minigame aiming** (rare, needs Lane's prototype as reference)
+9. ~~**Turret minigame aiming**~~ — done: aiming + firing are native keyboard (A/D azimuth, W/S elevation, Space fire); mod just announces the keys + distinguishes type==3 from swoop. No synthesized motion needed.
 10. **Spatial mouse for far placeables** (rare; revisit with KeyMouseAccessibilityTest in hand)
 
 Items 1–6 are 2D listbox/button widgets — likely solvable in the same way we did the main menu (hook focus changes on the panel + appropriate vtable downcasts + synthesize keyboard nav where the widget doesn't already accept arrow keys). Items 9–10 are spatial mouse work and will reuse / extend Lane's prototype.

@@ -13,7 +13,8 @@
 // look like the platform but aren't the actual race.
 //
 // CSWMiniGame: +0x24 player, +0x28 area, +0x30 enemy_count,
-//   +0x48 obstacle_count, +0x84 type (0=swoop, 1=turret suspected),
+//   +0x48 obstacle_count, +0x84 type (0=swoop, 3=turret — live-
+//   confirmed; the turret/gunner game is handled by turret_game.cpp),
 //   +0xbc lateral_acceleration.
 // CSWMiniPlayer (extends CSWTrackFollower → CSWMiniGameObject):
 //   +0x1c4 Vector offset (lateral/vertical in tunnel frame),

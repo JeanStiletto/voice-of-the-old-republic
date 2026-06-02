@@ -39,6 +39,7 @@
 #include "radial_menu.h"
 #include "spatial_change_detector.h"
 #include "swoop_race.h"
+#include "turret_game.h"
 #include "transitions.h"
 #include "update_checker.h"
 #include "view_mode.h"
@@ -210,8 +211,12 @@ void Dispatch() {
     PHASE("camera_orient", acc::camera_orient::Tick());
     PHASE("spatial.change_detector", acc::spatial::change_detector::Tick());
 
-    // Swoop race entry/exit cues.
+    // Swoop race entry/exit cues. Gated to CSWMiniGame.type==0.
     PHASE("swoop_race", acc::swoop_race::Tick());
+
+    // Turret / space-combat gunner minigame — shares CSWMiniGame with the
+    // swoop race but reports type==3. Entry/exit announce + reticle diag.
+    PHASE("turret_game", acc::turret_game::Tick());
 
     // Area + room transition announces.
     PHASE("transitions", acc::transitions::Tick());
