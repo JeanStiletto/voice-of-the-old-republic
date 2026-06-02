@@ -167,6 +167,30 @@ constexpr float kPegMaxDist   = 20.0f;  // hitbox+ramp off -> farthest -> fainte
 constexpr float kFallbackOnTargetDeg = 6.0f;
 constexpr const char* kLockCueResref = "acc_turret_lock";
 
+// ----- Predictive lead (intercept aiming) -----
+// The cue aims at where the fighter WILL BE when a bolt arrives, not where it
+// is now — the audio analog of a sighted player pulling ahead of the target.
+// Our bolt speed is authoritative from the M12ab area GIT (MiniGame -> Player
+// -> Gun_Banks -> Bullet -> Speed = 300; Lifespan = 3 s -> ~900-unit range).
+// With this (slow-ish) bolt the measured critBoltSpeed (149 close / 753 mid /
+// 1366 far) means lead is unnecessary close but ESSENTIAL at mid/far, where
+// the ~13.5deg lead exceeds the hitbox window — so leading converts mid-range
+// from a systematic miss into a hittable shot. We solve the intercept in the
+// LISTENER frame (relative position + relative velocity) so the result is
+// directly "where to point the turret" and ship motion folds in automatically.
+constexpr float kBoltSpeed      = 300.0f;  // units/s (M12ab Bullet.Speed)
+constexpr float kMaxLeadSeconds = 3.0f;    // = Bullet.Lifespan; clamp intercept
+constexpr float kVelEmaAlpha    = 0.25f;   // velocity smoothing (per-tick Δpos)
+// Range-gate the lead: it is UNNECESSARY when the fighter would stay inside its
+// own hitbox during the bolt's flight (the centre-aim margin already covers
+// that drift), and applying it there only pulls the loud spot off the ship and
+// adds velocity-jitter — which measurably hurt the close-range aim that wins
+// the game. So ramp the lead in by how far the fighter drifts during flight
+// relative to its radius: none below kLeadGateLowFrac·radius, full by
+// kLeadGateHighFrac·radius. This auto-adapts to each fighter's actual speed.
+constexpr float kLeadGateLowFrac  = 0.75f;  // start leading at 0.75·radius drift
+constexpr float kLeadGateHighFrac = 1.5f;   // full lead by 1.5·radius drift
+
 // ============================================================================
 // Module state. Single-threaded under the engine OnUpdate tick.
 // ============================================================================
@@ -211,11 +235,16 @@ struct State {
     // selection change so a new lock doesn't read as a phantom hit.
     int last_selected_hp = -1;
 
-    // Previous-tick world position + timestamp of the selected fighter, for
-    // the lead diagnostic (velocity = Δpos/Δt). Invalid until have_last_pos.
+    // Previous-tick LISTENER-RELATIVE position + timestamp of the selected
+    // fighter, for the velocity estimate (v = Δrelpos/Δt). Working relative to
+    // the listener folds ship motion into the velocity automatically, so the
+    // intercept is directly "where to point the turret". Invalid until
+    // have_last_pos. vel_ema is the smoothed relative velocity used for lead.
     Vector    last_selected_pos = {0.0f, 0.0f, 0.0f};
     ULONGLONG last_selected_pos_ms = 0;
     bool      have_last_pos = false;
+    Vector    vel_ema = {0.0f, 0.0f, 0.0f};
+    bool      have_vel = false;
 
     // ---- Per-session aim-quality counters (QC summary on exit). A clean,
     // bolt-travel-immune measure of how well the cue lets the player aim:
@@ -423,6 +452,7 @@ void AnnounceSelectedTarget(int idx, const int occSlot[], const float occDist[],
     g_state.selected_slot = occSlot[idx];
     g_state.last_selected_hp = -1;  // fresh lock — next tick re-baselines HP
     g_state.have_last_pos    = false;  // and re-baselines velocity
+    g_state.have_vel         = false;
     const int number = NumberForSlot(occSlot[idx]);
 
     const int meters = static_cast<int>(occDist[idx] + 0.5f);
@@ -564,55 +594,141 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
     if (!haveAim) return;  // hold the cue; can't compute aim this tick
 
     constexpr float kRad2Deg = 57.2957795f;
+    auto wrap180 = [](float d) {
+        while (d > 180.0f)  d -= 360.0f;
+        while (d < -180.0f) d += 360.0f;
+        return d;
+    };
+    auto clamp1 = [](float v) { return v > 1.0f ? 1.0f : (v < -1.0f ? -1.0f : v); };
 
     const Vector& sp = occPos[idx];
     const float   sd = occDist[idx];
-    float angle = 0.0f;
-    Vector tdir = {0.0f, 0.0f, 0.0f};
-    if (sd > 0.0f) {
-        tdir.x = (sp.x - listener.x) / sd;
-        tdir.y = (sp.y - listener.y) / sd;
-        tdir.z = (sp.z - listener.z) / sd;
-        angle = AngleBetweenDeg(aimDir, tdir);
-    }
 
-    // Combat fields off the selected CSWTrackFollower. The hitbox half-angle
-    // (atan(radius/dist)) is what makes "on target" distance-correct.
+    // Fighter position relative to the listener (gun). We solve the whole lead
+    // in this frame so the answer is "where to point the turret".
+    const Vector P = {sp.x - listener.x, sp.y - listener.y, sp.z - listener.z};
+
+    // ---- Smoothed relative velocity (Δ relative-pos / Δt, EMA). ------------
+    const ULONGLONG now = GetTickCount64();
+    if (g_state.have_last_pos && now > g_state.last_selected_pos_ms) {
+        const float dt = (now - g_state.last_selected_pos_ms) / 1000.0f;
+        const Vector vinst = {(P.x - g_state.last_selected_pos.x) / dt,
+                              (P.y - g_state.last_selected_pos.y) / dt,
+                              (P.z - g_state.last_selected_pos.z) / dt};
+        if (g_state.have_vel) {
+            const float a = kVelEmaAlpha;
+            g_state.vel_ema.x = a * vinst.x + (1.0f - a) * g_state.vel_ema.x;
+            g_state.vel_ema.y = a * vinst.y + (1.0f - a) * g_state.vel_ema.y;
+            g_state.vel_ema.z = a * vinst.z + (1.0f - a) * g_state.vel_ema.z;
+        } else {
+            g_state.vel_ema = vinst;
+            g_state.have_vel = true;
+        }
+    }
+    g_state.last_selected_pos    = P;
+    g_state.last_selected_pos_ms = now;
+    g_state.have_last_pos        = true;
+    const Vector v = g_state.vel_ema;
+    const float  vmag = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+
+    // ---- Combat fields off the selected CSWTrackFollower. ------------------
     int   hp = -1, maxHp = -1;
-    float radius = 0.0f, invuln = 0.0f, subtendDeg = 0.0f;
+    float radius = 0.0f, invuln = 0.0f, engineSpeed = 0.0f;
     if (selectedEnemy && trackingExisting) {
         hp     = static_cast<int>(SafeReadU32(selectedEnemy, kFollowerHpOffset));
         maxHp  = static_cast<int>(SafeReadU32(selectedEnemy, kFollowerMaxHpOffset));
         radius = SafeReadF32(selectedEnemy, kFollowerSphereRadiusOffset);
         invuln = SafeReadF32(selectedEnemy, kFollowerInvulnOffset);
-        if (sd > 0.0f && radius > 0.0f) {
-            subtendDeg = std::atan(radius / sd) * kRad2Deg;
+        engineSpeed = SafeReadF32(selectedEnemy, kFollowerSpeedOffset);
+    }
+
+    // ---- Lead: aim at the intercept point. Solve |P + v·t| = kBoltSpeed·t for
+    // the smallest positive t (a·t² + b·t + c = 0), then I = P + v·t. Falls
+    // back to the current position when velocity isn't established yet or no
+    // valid intercept exists. Clamped to the bolt lifespan. ------------------
+    Vector aimRel = P;           // listener-relative point the cue aims at
+    float  leadT = 0.0f, leadDist = 0.0f, leadFrac = 0.0f;
+    if (g_state.have_vel) {
+        const float a  = (v.x * v.x + v.y * v.y + v.z * v.z) - kBoltSpeed * kBoltSpeed;
+        const float bq = 2.0f * (P.x * v.x + P.y * v.y + P.z * v.z);
+        const float cq = (P.x * P.x + P.y * P.y + P.z * P.z);
+        float t = -1.0f;
+        if (std::fabs(a) < 1e-3f) {
+            if (std::fabs(bq) > 1e-6f) t = -cq / bq;
+        } else {
+            const float disc = bq * bq - 4.0f * a * cq;
+            if (disc >= 0.0f) {
+                const float sq = std::sqrt(disc);
+                const float t1 = (-bq + sq) / (2.0f * a);
+                const float t2 = (-bq - sq) / (2.0f * a);
+                if (t1 > 0.0f)                       t = t1;
+                if (t2 > 0.0f && (t < 0.0f || t2 < t)) t = t2;
+            }
+        }
+        if (t > 0.0f && t <= kMaxLeadSeconds) {
+            leadT = t;
+            const float fullLead = vmag * t;  // drift during flight
+            // Range-gate: ramp lead in by drift relative to the hitbox radius,
+            // so close shots (drift < ~0.75·radius) keep the pure ship aim.
+            const float lo = kLeadGateLowFrac  * radius;
+            const float hi = kLeadGateHighFrac * radius;
+            if (radius > 0.0f && hi > lo) {
+                leadFrac = (fullLead - lo) / (hi - lo);
+                if (leadFrac < 0.0f)      leadFrac = 0.0f;
+                else if (leadFrac > 1.0f) leadFrac = 1.0f;
+            } else {
+                leadFrac = 1.0f;  // no radius this tick — lead fully
+            }
+            aimRel.x = P.x + v.x * t * leadFrac;
+            aimRel.y = P.y + v.y * t * leadFrac;
+            aimRel.z = P.z + v.z * t * leadFrac;
+            leadDist = fullLead * leadFrac;  // applied lead
         }
     }
-    // The angle inside which a shot connects. subtendDeg when we have the
-    // radius; the fixed fallback otherwise.
+
+    // Aim error to the intercept point (this drives the cue); also the error to
+    // the CURRENT fighter (no-lead) for diagnostic comparison.
+    const float aimTgtDist =
+        std::sqrt(aimRel.x * aimRel.x + aimRel.y * aimRel.y + aimRel.z * aimRel.z);
+    Vector tdir = {0.0f, 0.0f, 0.0f};
+    float  angle = 0.0f;
+    if (aimTgtDist > 0.0f) {
+        tdir.x = aimRel.x / aimTgtDist;
+        tdir.y = aimRel.y / aimTgtDist;
+        tdir.z = aimRel.z / aimTgtDist;
+        angle = AngleBetweenDeg(aimDir, tdir);
+    }
+    float angleNow = 0.0f;
+    if (sd > 0.0f) {
+        const Vector nd = {P.x / sd, P.y / sd, P.z / sd};
+        angleNow = AngleBetweenDeg(aimDir, nd);
+    }
+
+    // Hitbox half-angle at the INTERCEPT distance — "on target" = a bolt fired
+    // now lands in the sphere when it arrives.
+    const float subtendDeg =
+        (radius > 0.0f && aimTgtDist > 0.0f) ? std::atan(radius / aimTgtDist) * kRad2Deg : 0.0f;
     const float onTargetAngle =
         (subtendDeg > 0.0f) ? subtendDeg : kFallbackOnTargetDeg;
     const bool  onTarget = (angle <= onTargetAngle);
 
-    // Loudness: inside the hitbox, rise gently from the edge (kPegEdgeDist) to
-    // a peak at dead-centre (kPegMinDist) so the player can refine to the
-    // bolt-travel-safe centre; beyond the edge, fade to faint over kPegRampDeg.
-    // Continuous at the boundary (both branches give kPegEdgeDist there).
+    // Loudness: rise gently from the hitbox edge (kPegEdgeDist) to a peak at
+    // dead-centre (kPegMinDist); beyond the edge, fade to faint over
+    // kPegRampDeg. Continuous at the boundary.
     float srcDist;
     if (onTarget) {
-        const float u = (onTargetAngle > 0.0f) ? angle / onTargetAngle : 0.0f;  // 0 centre..1 edge
+        const float u = (onTargetAngle > 0.0f) ? angle / onTargetAngle : 0.0f;
         srcDist = kPegMinDist + u * (kPegEdgeDist - kPegMinDist);
     } else {
         float t = (angle - onTargetAngle) / kPegRampDeg;
         if (t > 1.0f) t = 1.0f;
         srcDist = kPegEdgeDist + t * (kPegMaxDist - kPegEdgeDist);
     }
-    const float kk = (sd > 0.0f) ? srcDist / sd : 1.0f;
+    const float kk = (aimTgtDist > 0.0f) ? srcDist / aimTgtDist : 1.0f;
     const Vector cuePos = {
-        listener.x + (sp.x - listener.x) * kk,
-        listener.y + (sp.y - listener.y) * kk,
-        listener.z + (sp.z - listener.z) * kk,
+        listener.x + aimRel.x * kk,
+        listener.y + aimRel.y * kk,
+        listener.z + aimRel.z * kk,
     };
 
     if (g_state.peg_cue.IsActive()) {
@@ -621,18 +737,9 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
         acclog::Write("Turret", "peg on selected slot=%d", g_state.selected_slot);
     }
 
-    const float lateral = std::sin(angle * 0.01745329f) * sd;
+    const float lateral = std::sin(angle * 0.01745329f) * aimTgtDist;
 
-    // ---- Diagnostic: split the blended error into per-axis azimuth and
-    // elevation error, and log the raw aim/target angles that feed it.
-    // aimAz/aimEl recovered from aimDir (same convention as ReadAimDir:
-    // dir = (sin az·cos el, cos az·cos el, sin el)); tgt from tdir.
-    auto wrap180 = [](float d) {
-        while (d > 180.0f)  d -= 360.0f;
-        while (d < -180.0f) d += 360.0f;
-        return d;
-    };
-    auto clamp1 = [](float v) { return v > 1.0f ? 1.0f : (v < -1.0f ? -1.0f : v); };
+    // Per-axis error to the INTERCEPT direction (the cue's target).
     const float aimAz = std::atan2(aimDir.x, aimDir.y) * kRad2Deg;
     const float aimEl = std::asin(clamp1(aimDir.z))   * kRad2Deg;
     const float tgtAz = std::atan2(tdir.x,   tdir.y)  * kRad2Deg;
@@ -640,50 +747,31 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
     const float errAz = wrap180(aimAz - tgtAz);
     const float errEl = aimEl - tgtEl;
 
-    // An hp drop between ticks is a real engine-scored hit — log the aim that
-    // landed it (the engine plays its own mgs_sith_hit, so this is diagnostic
-    // only). Confounded by bolt travel time: the hit reflects a past fire frame.
+    // Real engine-scored hit (hp drop). Engine plays its own mgs_sith_hit, so
+    // this is diagnostic only. errAngle here is to the intercept; lead-correct
+    // shots should now show small errAngle at the hit frame (validates lead).
     if (selectedEnemy && trackingExisting) {
         if (g_state.last_selected_hp >= 0 && hp < g_state.last_selected_hp) {
             acclog::Write("TurretHit",
-                          "slot=%d number=%d hp=%d->%d errAngle=%.1f "
-                          "errAz=%.1f errEl=%.1f lateralMiss=%.1fm dist=%.0f "
-                          "radius=%.1f subtendDeg=%.1f invuln=%.2f",
+                          "slot=%d number=%d hp=%d->%d errAngle=%.1f errNow=%.1f "
+                          "errAz=%.1f errEl=%.1f leadT=%.2f leadDist=%.0f "
+                          "dist=%.0f radius=%.1f subtendDeg=%.1f",
                           g_state.selected_slot, NumberForSlot(g_state.selected_slot),
-                          g_state.last_selected_hp, hp, angle, errAz, errEl,
-                          lateral, sd, radius, subtendDeg, invuln);
+                          g_state.last_selected_hp, hp, angle, angleNow, errAz, errEl,
+                          leadT, leadDist, sd, radius, subtendDeg);
         }
         g_state.last_selected_hp = hp;
     }
 
-    // ---- Lead diagnostic. Measure the fighter's velocity from per-tick Δpos,
-    // and report critBoltSpeed = |v|·dist/radius — the bolt speed BELOW which
-    // the fighter outruns the 20 m hitbox margin during flight (lead matters).
-    // If critBoltSpeed stays small vs a real laser bolt, lead isn't worth it.
-    // No bolt-speed RE needed; engine `speed` field logged to cross-check unit.
-    {
-        const ULONGLONG now = GetTickCount64();
-        const float engineSpeed = (selectedEnemy && trackingExisting)
-            ? SafeReadF32(selectedEnemy, kFollowerSpeedOffset) : 0.0f;
-        if (g_state.have_last_pos && now > g_state.last_selected_pos_ms) {
-            const float dt = (now - g_state.last_selected_pos_ms) / 1000.0f;
-            const float vx = (sp.x - g_state.last_selected_pos.x) / dt;
-            const float vy = (sp.y - g_state.last_selected_pos.y) / dt;
-            const float vz = (sp.z - g_state.last_selected_pos.z) / dt;
-            const float vmag = std::sqrt(vx * vx + vy * vy + vz * vz);
-            const float crit = (radius > 0.0f) ? vmag * sd / radius : 0.0f;
-            acclog::Write("TurretVel",
-                          "slot=%d velMS=%.1f engineSpeed=%.1f dist=%.0f "
-                          "radius=%.1f critBoltSpeed=%.0f",
-                          g_state.selected_slot, vmag, engineSpeed, sd, radius,
-                          crit);
-        }
-        g_state.last_selected_pos    = sp;
-        g_state.last_selected_pos_ms = now;
-        g_state.have_last_pos        = true;
-    }
+    // Lead/velocity diagnostic: relative speed, the intercept lead, and
+    // critBoltSpeed (= |v|·dist/radius — the bolt speed below which lead matters).
+    acclog::Write("TurretVel",
+                  "slot=%d relVelMS=%.1f engineSpeed=%.1f dist=%.0f leadT=%.2f "
+                  "leadDist=%.0f leadFrac=%.2f aimDist=%.0f critBoltSpeed=%.0f",
+                  g_state.selected_slot, vmag, engineSpeed, sd, leadT, leadDist,
+                  leadFrac, aimTgtDist, (radius > 0.0f) ? vmag * sd / radius : 0.0f);
 
-    // ---- QC accumulation: aim-quality, immune to bolt-travel/firing RNG.
+    // QC accumulation (aim quality at the intercept — the operative on-target).
     {
         const int band = (sd < 100.0f) ? 0 : (sd < 250.0f ? 1 : 2);
         ++g_state.qc_frames;
@@ -694,13 +782,13 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
     }
 
     acclog::Write("TurretAim",
-                  "selected slot=%d errAngle=%.1f errAz=%.1f errEl=%.1f "
-                  "aim(az=%.1f el=%.1f) tgt(az=%.1f el=%.1f) "
-                  "lateralMiss=%.0fm dist=%.0f hp=%d/%d radius=%.1f "
+                  "selected slot=%d errAngle=%.1f errNow=%.1f errAz=%.1f errEl=%.1f "
+                  "aim(az=%.1f el=%.1f) tgt(az=%.1f el=%.1f) leadT=%.2f leadDist=%.0f "
+                  "lateralMiss=%.0fm dist=%.0f aimDist=%.0f hp=%d/%d radius=%.1f "
                   "subtendDeg=%.1f onTarget=%d",
-                  g_state.selected_slot, angle, errAz, errEl,
-                  aimAz, aimEl, tgtAz, tgtEl,
-                  lateral, sd, hp, maxHp, radius, subtendDeg,
+                  g_state.selected_slot, angle, angleNow, errAz, errEl,
+                  aimAz, aimEl, tgtAz, tgtEl, leadT, leadDist,
+                  lateral, sd, aimTgtDist, hp, maxHp, radius, subtendDeg,
                   onTarget ? 1 : 0);
 }
 
@@ -716,13 +804,9 @@ void TickFighterCues() {
 
     const float rangeSq = kFighterCueRangeM * kFighterCueRangeM;
 
-    // ---- Pass 1: census every in-range fighter (for the Q/E cycle) AND
-    // pick the nearest kFighterMaxConcurrent for the ambient turbine loops.
-    int    chosenSlot[kFighterMaxConcurrent];
-    float  chosenDistSq[kFighterMaxConcurrent];
-    Vector chosenPos[kFighterMaxConcurrent];
-    for (int k = 0; k < kFighterMaxConcurrent; ++k) chosenSlot[k] = -1;
-
+    // ---- Pass 1: census every in-range fighter (for the Q/E cycle). The
+    // engine-loop set is chosen AFTER the census (selected fighter's real ship
+    // + nearest other), so it isn't built here.
     Vector aimDir;
     const bool haveAim = ReadAimDir(aimDir);
 
@@ -766,21 +850,6 @@ void TickFighterCues() {
         occDist[occCount] = std::sqrt(distSq);
         occPos[occCount]  = pos;
         ++occCount;
-
-        // Insert (i, distSq, pos) into the nearest-K ambient table.
-        for (int k = 0; k < kFighterMaxConcurrent; ++k) {
-            if (chosenSlot[k] < 0 || distSq < chosenDistSq[k]) {
-                for (int m = kFighterMaxConcurrent - 1; m > k; --m) {
-                    chosenSlot[m]   = chosenSlot[m - 1];
-                    chosenDistSq[m] = chosenDistSq[m - 1];
-                    chosenPos[m]    = chosenPos[m - 1];
-                }
-                chosenSlot[k]   = i;
-                chosenDistSq[k] = distSq;
-                chosenPos[k]    = pos;
-                break;
-            }
-        }
     }
 
     // Sort the census nearest-first so Q/E cycles near->far and the auto-pick
@@ -808,6 +877,33 @@ void TickFighterCues() {
     DriveSelectedPeg(occSlot, occDist, occPos, occCount, aimDir, haveAim,
                      listener, selectedAliveInPool, selectedEnemy);
 
+    // ---- Choose the engine-loop set: the SELECTED fighter's real ship first
+    // (so the player can localise and track their actual target while the peg
+    // marks the lead point — the gap between them IS the lead), then fill the
+    // remaining slot with the nearest non-selected fighter for "someone else is
+    // close" awareness. Census is nearest-first, so the first non-selected
+    // entry is the nearest other.
+    int    chosenSlot[kFighterMaxConcurrent];
+    float  chosenDist[kFighterMaxConcurrent];
+    Vector chosenPos[kFighterMaxConcurrent];
+    int    nChosen = 0;
+    for (int k = 0; k < kFighterMaxConcurrent; ++k) chosenSlot[k] = -1;
+
+    const int selCensus = CensusIndexOf(occSlot, occCount, g_state.selected_slot);
+    if (selCensus >= 0) {
+        chosenSlot[nChosen] = occSlot[selCensus];
+        chosenDist[nChosen] = occDist[selCensus];
+        chosenPos[nChosen]  = occPos[selCensus];
+        ++nChosen;
+    }
+    for (int a = 0; a < occCount && nChosen < kFighterMaxConcurrent; ++a) {
+        if (occSlot[a] == g_state.selected_slot) continue;  // already chosen
+        chosenSlot[nChosen] = occSlot[a];
+        chosenDist[nChosen] = occDist[a];
+        chosenPos[nChosen]  = occPos[a];
+        ++nChosen;
+    }
+
     // ---- Pass 2: stop any active loop not in the chosen set. -------------
     for (int i = 0; i < kMgoArraySlotCount; ++i) {
         if (!g_state.fighter_loops[i].IsActive()) continue;
@@ -826,7 +922,7 @@ void TickFighterCues() {
         const int i = chosenSlot[k];
         if (i < 0) continue;
 
-        const float realDist = std::sqrt(chosenDistSq[k]);
+        const float realDist = chosenDist[k];
         Vector cuePos = chosenPos[k];
         float  srcDist = realDist;
         if (realDist > 0.0f) {
@@ -895,6 +991,7 @@ void HandleEnter(void* mg) {
     g_state.last_enemy_count  = -1;
     g_state.last_selected_hp  = -1;
     g_state.have_last_pos     = false;
+    g_state.have_vel          = false;
     // Fresh stable-number assignment for this round.
     for (int i = 0; i < kMgoArraySlotCount; ++i) g_state.slot_number[i] = 0;
     g_state.next_number       = 1;
