@@ -91,6 +91,19 @@ constexpr size_t kVtableSlotAsEnemy            = 0x1c;
 // vtable[+0x64], mirroring CSWTrackFollower::GetPosition).
 constexpr size_t kTrackFollowerModelsDataOffset = 0x68;
 constexpr size_t kModelVtableSlotGetPosition    = 0x64;
+// Combat fields on CSWTrackFollower (== CSWMiniEnemy, which is just a single
+// follower at offset 0; offsets confirmed against the explicit field9_0x88
+// and field17_0x144 markers in swkotor.exe.h). Diagnostics only:
+//   sphere_radius — hitbox radius, so the TRUE subtended half-angle the gun
+//                   must fall inside is atan(radius/dist), not a fixed 6°.
+//   hp/max_hp     — per-fighter health; an hp drop is a real engine-scored
+//                   hit this tick, the ground truth for the actual hit cone.
+//   invulnerability — i-frame timer; nonzero means hits won't register.
+constexpr size_t kFollowerSphereRadiusOffset = 0x84;  // float
+constexpr size_t kFollowerHpOffset           = 0x8c;  // int
+constexpr size_t kFollowerMaxHpOffset        = 0x90;  // int
+constexpr size_t kFollowerSpeedOffset        = 0x98;  // float (engine speed)
+constexpr size_t kFollowerInvulnOffset       = 0x9c;  // float
 
 // Cue range. Live distance survey (enemy-sound diagnostic, 802 samples):
 // fighters span ~0 m to ~560 m, mean ~233 m, with real density past
@@ -131,14 +144,27 @@ constexpr int   kFighterMaxConcurrent       = 2;
 // The cue plays continuously while a fighter is SELECTED (via Q/E), mapping
 // the aim error to that fighter onto loudness (via source distance): faint
 // when the aim is far off it, loudest when on target. So the player locks a
-// target with Q/E, then swings until the tone peaks and fires. No auto-jump
-// between fighters — selection is explicit, which killed the old "jumps to
-// another fighter" churn.
-constexpr float kPegMaxAngle  = 40.0f;  // aim error at which the tone is faintest
-constexpr float kPegMinDist   = 5.0f;   // on target  -> nearest -> loudest
-constexpr float kPegMaxDist   = 20.0f;  // >=kPegMaxAngle off -> farthest -> faintest
-// On-target threshold, used only to flag "fire now" in the diagnostic log.
-constexpr float kLockAngleDeg        = 6.0f;
+// target with Q/E, then swings until the tone peaks and fires.
+//
+// "On target" is DISTANCE-SCALED, not a fixed angle. The engine scores hits
+// against the fighter's 20 m sphere_radius, which subtends atan(radius/dist):
+// ~20° at 60 m but only ~3° at 400 m (live-measured: on-target rate 11% close
+// vs 0% far). The whole hitbox cone reads clearly LOUD (a shot can connect),
+// but loudness still rises gently to a PEAK at dead-centre — because with bolt
+// travel a moving fighter can drift out of the sphere mid-flight if you fire
+// from the edge, whereas a centre shot leaves a full-radius margin. So:
+//   centre (0°) ............ kPegMinDist  (loudest)
+//   hitbox edge (subtend) .. kPegEdgeDist (still loud — "you can hit here")
+//   subtend + kPegRampDeg .. kPegMaxDist  (faint — way off)
+// A fixed peak-at-0° was too strict up close; a flat plateau lost the centre
+// gradient that the bolt-travel margin needs.
+constexpr float kPegRampDeg   = 30.0f;  // fade width beyond the hitbox edge
+constexpr float kPegMinDist   = 5.0f;   // dead-centre -> nearest -> loudest
+constexpr float kPegEdgeDist  = 9.0f;   // hitbox edge -> still clearly loud
+constexpr float kPegMaxDist   = 20.0f;  // hitbox+ramp off -> farthest -> faintest
+// Fallback on-target half-angle when the hitbox radius can't be read (no enemy
+// ptr this tick). Also the value the diagnostic "onTarget" flag falls back to.
+constexpr float kFallbackOnTargetDeg = 6.0f;
 constexpr const char* kLockCueResref = "acc_turret_lock";
 
 // ============================================================================
@@ -164,6 +190,43 @@ struct State {
     // MGO slot of the fighter the player has locked via Q/E (-1 = none).
     // Explicit selection — the cue no longer auto-jumps between fighters.
     int selected_slot = -1;
+
+    // CSWMiniGame.enemy_count (+0x30) seen last tick. Logged on change so a
+    // kill (count drops) is distinguishable in the log from a fighter merely
+    // flying out of cue range (count unchanged, slot returns later). -1 =
+    // not yet sampled.
+    int last_enemy_count = -1;
+
+    // Stable display number per MGO slot (0 = unassigned). Assigned the first
+    // time a slot is seen alive in the pool and never reused, so "Fighter N"
+    // names the SAME physical fighter for the whole round — unlike the census
+    // index, which is a per-tick distance rank. Survives the fighter leaving
+    // cue range and (for the kill announce) outlives its destruction.
+    int slot_number[kMgoArraySlotCount] = {0};
+    int next_number = 1;
+
+    // HP of the selected fighter last tick (-1 = unknown / just (re)selected).
+    // A drop between ticks is a real engine-scored hit; logged with the aim
+    // error at that frame to measure the actual hit cone. Reset on every
+    // selection change so a new lock doesn't read as a phantom hit.
+    int last_selected_hp = -1;
+
+    // Previous-tick world position + timestamp of the selected fighter, for
+    // the lead diagnostic (velocity = Δpos/Δt). Invalid until have_last_pos.
+    Vector    last_selected_pos = {0.0f, 0.0f, 0.0f};
+    ULONGLONG last_selected_pos_ms = 0;
+    bool      have_last_pos = false;
+
+    // ---- Per-session aim-quality counters (QC summary on exit). A clean,
+    // bolt-travel-immune measure of how well the cue lets the player aim:
+    // fraction of tracked frames with the aim ray inside the hitbox, by range
+    // band. Reset on enter.
+    int   qc_frames = 0;                  // TurretAim frames with a live aim
+    int   qc_on_total = 0;                // within-hitbox frames (any range)
+    int   qc_n[3]  = {0, 0, 0};           // frames per band: close/mid/far
+    int   qc_on[3] = {0, 0, 0};           // within-hitbox per band
+    float qc_min_err = 1e9f;              // best (smallest) errAngle seen
+    float qc_sum_err = 0.0f;              // for mean errAngle
 };
 
 State g_state;
@@ -189,6 +252,16 @@ uint32_t SafeReadU32(void* base, size_t off) {
             reinterpret_cast<unsigned char*>(base) + off);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return 0;
+    }
+}
+
+float SafeReadF32(void* base, size_t off) {
+    if (!base) return 0.0f;
+    __try {
+        return *reinterpret_cast<float*>(
+            reinterpret_cast<unsigned char*>(base) + off);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0.0f;
     }
 }
 
@@ -324,26 +397,46 @@ int CensusIndexOf(const int occSlot[], int occCount, int slot) {
     return -1;
 }
 
+// Stable "Fighter N" number for an MGO slot, assigned on first request and
+// fixed for the round (see State::slot_number).
+int NumberForSlot(int slot) {
+    if (slot < 0 || slot >= kMgoArraySlotCount) return 0;
+    if (g_state.slot_number[slot] == 0) {
+        g_state.slot_number[slot] = g_state.next_number++;
+    }
+    return g_state.slot_number[slot];
+}
+
 // Lock onto census entry `idx`: set the selection, speak "Fighter N, D
 // metres", and fire a LOUD one-shot positional cue toward the fighter so the
 // player hears which way to swing — independent of where the aim currently
 // points (the continuous peg is faint until the aim closes in). Shared by the
 // Q/E cycle and the auto-advance on lock loss.
+// `speak` gates the spoken "Fighter N, D metres" line. It is false for the
+// silent re-pick after a kill — there the destroyed-fighter announce is the
+// only speech, and this just relocks + fires the directional locator ping so
+// the player can swing onto the next target without a second utterance.
 void AnnounceSelectedTarget(int idx, const int occSlot[], const float occDist[],
                             const Vector occPos[], int occCount,
-                            const Vector& listener) {
+                            const Vector& listener, bool speak = true) {
     if (idx < 0 || idx >= occCount) return;
     g_state.selected_slot = occSlot[idx];
+    g_state.last_selected_hp = -1;  // fresh lock — next tick re-baselines HP
+    g_state.have_last_pos    = false;  // and re-baselines velocity
+    const int number = NumberForSlot(occSlot[idx]);
 
     const int meters = static_cast<int>(occDist[idx] + 0.5f);
-    char buf[96];
-    std::snprintf(buf, sizeof(buf),
-                  acc::strings::Get(acc::strings::Id::FmtTurretTarget),
-                  idx + 1, meters);
-    prism::SpeakUrgent(buf);
+    if (speak) {
+        char buf[96];
+        std::snprintf(buf, sizeof(buf),
+                      acc::strings::Get(acc::strings::Id::FmtTurretTarget),
+                      number, meters);
+        prism::SpeakUrgent(buf);
+    }
 
     // One-shot confirmation at a compressed (always-audible) position in the
-    // fighter's direction, full volume — "locked, it's this way".
+    // fighter's direction, full volume — "locked, it's this way". Plays even
+    // on a silent re-pick (it's a locator cue, not speech).
     const float sd = occDist[idx];
     Vector pingPos = occPos[idx];
     if (sd > 0.0f) {
@@ -354,8 +447,8 @@ void AnnounceSelectedTarget(int idx, const int occSlot[], const float occDist[],
     }
     acc::audio::PlayCue3D(kLockCueResref, pingPos);
 
-    acclog::Write("Turret", "select -> slot=%d pos=%d/%d dist=%dm",
-                  g_state.selected_slot, idx + 1, occCount, meters);
+    acclog::Write("Turret", "select -> slot=%d number=%d pos=%d/%d dist=%dm speak=%d",
+                  g_state.selected_slot, number, idx + 1, occCount, meters, speak ? 1 : 0);
 }
 
 // Q/E target cycle. Q steps to the previous (nearer) target, E to the next
@@ -396,50 +489,125 @@ void HandleTargetCycle(const int occSlot[], const float occDist[],
 void DriveSelectedPeg(const int occSlot[], const float occDist[],
                       const Vector occPos[], int occCount,
                       const Vector& aimDir, bool haveAim,
-                      const Vector& listener) {
+                      const Vector& listener, bool selectedAliveInPool,
+                      void* selectedEnemy) {
     int idx = CensusIndexOf(occSlot, occCount, g_state.selected_slot);
+    // True only when the locked fighter was already in the census on entry
+    // (not a fresh re-pick this tick) — gates the HP/hit read so selectedEnemy
+    // matches the fighter we log.
+    const bool trackingExisting = (idx >= 0);
 
     if (idx < 0) {
-        // The locked fighter is gone this tick.
+        // The locked fighter is not in the census this tick.
         if (g_state.selected_slot >= 0) {
+            // Distinguish a KILL (the fighter left the MGO pool entirely —
+            // AsEnemy no longer resolves it) from a fighter that merely flew
+            // beyond cue range (still alive, will return). selectedAliveInPool
+            // is set by TickFighterCues' Pass-1 walk regardless of range.
+            const bool killed = !selectedAliveInPool;
+
             if (g_state.peg_cue.IsActive()) {
                 g_state.peg_cue.Stop();
-                acclog::Write("Turret", "peg off (target gone)");
+                acclog::Write("Turret", "peg off (%s)",
+                              killed ? "destroyed" : "out of range");
             }
+
+            if (killed) {
+                // Announce the DESTROYED fighter by its stable number — this
+                // is the only speech; the new lock below is silent.
+                const int num = NumberForSlot(g_state.selected_slot);
+                char buf[64];
+                std::snprintf(buf, sizeof(buf),
+                              acc::strings::Get(acc::strings::Id::FmtTurretDestroyed),
+                              num);
+                prism::SpeakUrgent(buf);
+                acclog::Write("Turret", "kill: slot=%d number=%d",
+                              g_state.selected_slot, num);
+            }
+
             if (occCount > 0) {
-                // Auto-advance: lock the nearest remaining fighter so the
-                // player keeps a target without re-pressing Q/E.
+                // Auto-advance to the nearest remaining fighter so the player
+                // keeps a target without re-pressing Q/E. Silent after a kill
+                // (the destroyed-announce stands alone); spoken on a range-exit
+                // so the player knows the lock moved.
+                AnnounceSelectedTarget(0, occSlot, occDist, occPos, occCount,
+                                       listener, /*speak=*/!killed);
+                idx = 0;
+            } else {
+                // Nothing left to lock. On a kill the destroyed-announce
+                // already explains the silence; only a range-exit needs the
+                // "target lost" cue.
+                if (!killed) {
+                    prism::SpeakUrgent(
+                        acc::strings::Get(acc::strings::Id::TurretTargetLost));
+                }
+                g_state.selected_slot = -1;
+                acclog::Write("Turret", "no fighters remain (%s)",
+                              killed ? "after kill" : "target lost");
+                return;
+            }
+        } else {
+            // Nothing selected yet (game start / all clear). Auto-pick the
+            // nearest fighter the instant one is in range, so the player
+            // begins the round already locked without pressing Q/E — same
+            // nearest-first rule as the lose-target auto-advance above.
+            if (occCount > 0) {
                 AnnounceSelectedTarget(0, occSlot, occDist, occPos, occCount,
                                        listener);
                 idx = 0;
             } else {
-                prism::SpeakUrgent(
-                    acc::strings::Get(acc::strings::Id::TurretTargetLost));
-                g_state.selected_slot = -1;
-                acclog::Write("Turret", "target lost — no fighters remain");
-                return;
+                return;  // no fighters in range yet — wait
             }
-        } else {
-            // Nothing selected yet (entry / all clear) — wait for Q/E.
-            return;
         }
     }
 
     if (!haveAim) return;  // hold the cue; can't compute aim this tick
 
+    constexpr float kRad2Deg = 57.2957795f;
+
     const Vector& sp = occPos[idx];
     const float   sd = occDist[idx];
     float angle = 0.0f;
+    Vector tdir = {0.0f, 0.0f, 0.0f};
     if (sd > 0.0f) {
-        const Vector tdir = {(sp.x - listener.x) / sd,
-                             (sp.y - listener.y) / sd,
-                             (sp.z - listener.z) / sd};
+        tdir.x = (sp.x - listener.x) / sd;
+        tdir.y = (sp.y - listener.y) / sd;
+        tdir.z = (sp.z - listener.z) / sd;
         angle = AngleBetweenDeg(aimDir, tdir);
     }
 
-    float t = angle / kPegMaxAngle;        // 0 on target .. 1 far off
-    if (t > 1.0f) t = 1.0f;
-    const float srcDist = kPegMinDist + t * (kPegMaxDist - kPegMinDist);
+    // Combat fields off the selected CSWTrackFollower. The hitbox half-angle
+    // (atan(radius/dist)) is what makes "on target" distance-correct.
+    int   hp = -1, maxHp = -1;
+    float radius = 0.0f, invuln = 0.0f, subtendDeg = 0.0f;
+    if (selectedEnemy && trackingExisting) {
+        hp     = static_cast<int>(SafeReadU32(selectedEnemy, kFollowerHpOffset));
+        maxHp  = static_cast<int>(SafeReadU32(selectedEnemy, kFollowerMaxHpOffset));
+        radius = SafeReadF32(selectedEnemy, kFollowerSphereRadiusOffset);
+        invuln = SafeReadF32(selectedEnemy, kFollowerInvulnOffset);
+        if (sd > 0.0f && radius > 0.0f) {
+            subtendDeg = std::atan(radius / sd) * kRad2Deg;
+        }
+    }
+    // The angle inside which a shot connects. subtendDeg when we have the
+    // radius; the fixed fallback otherwise.
+    const float onTargetAngle =
+        (subtendDeg > 0.0f) ? subtendDeg : kFallbackOnTargetDeg;
+    const bool  onTarget = (angle <= onTargetAngle);
+
+    // Loudness: inside the hitbox, rise gently from the edge (kPegEdgeDist) to
+    // a peak at dead-centre (kPegMinDist) so the player can refine to the
+    // bolt-travel-safe centre; beyond the edge, fade to faint over kPegRampDeg.
+    // Continuous at the boundary (both branches give kPegEdgeDist there).
+    float srcDist;
+    if (onTarget) {
+        const float u = (onTargetAngle > 0.0f) ? angle / onTargetAngle : 0.0f;  // 0 centre..1 edge
+        srcDist = kPegMinDist + u * (kPegEdgeDist - kPegMinDist);
+    } else {
+        float t = (angle - onTargetAngle) / kPegRampDeg;
+        if (t > 1.0f) t = 1.0f;
+        srcDist = kPegEdgeDist + t * (kPegMaxDist - kPegEdgeDist);
+    }
     const float kk = (sd > 0.0f) ? srcDist / sd : 1.0f;
     const Vector cuePos = {
         listener.x + (sp.x - listener.x) * kk,
@@ -454,11 +622,86 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
     }
 
     const float lateral = std::sin(angle * 0.01745329f) * sd;
+
+    // ---- Diagnostic: split the blended error into per-axis azimuth and
+    // elevation error, and log the raw aim/target angles that feed it.
+    // aimAz/aimEl recovered from aimDir (same convention as ReadAimDir:
+    // dir = (sin az·cos el, cos az·cos el, sin el)); tgt from tdir.
+    auto wrap180 = [](float d) {
+        while (d > 180.0f)  d -= 360.0f;
+        while (d < -180.0f) d += 360.0f;
+        return d;
+    };
+    auto clamp1 = [](float v) { return v > 1.0f ? 1.0f : (v < -1.0f ? -1.0f : v); };
+    const float aimAz = std::atan2(aimDir.x, aimDir.y) * kRad2Deg;
+    const float aimEl = std::asin(clamp1(aimDir.z))   * kRad2Deg;
+    const float tgtAz = std::atan2(tdir.x,   tdir.y)  * kRad2Deg;
+    const float tgtEl = std::asin(clamp1(tdir.z))     * kRad2Deg;
+    const float errAz = wrap180(aimAz - tgtAz);
+    const float errEl = aimEl - tgtEl;
+
+    // An hp drop between ticks is a real engine-scored hit — log the aim that
+    // landed it (the engine plays its own mgs_sith_hit, so this is diagnostic
+    // only). Confounded by bolt travel time: the hit reflects a past fire frame.
+    if (selectedEnemy && trackingExisting) {
+        if (g_state.last_selected_hp >= 0 && hp < g_state.last_selected_hp) {
+            acclog::Write("TurretHit",
+                          "slot=%d number=%d hp=%d->%d errAngle=%.1f "
+                          "errAz=%.1f errEl=%.1f lateralMiss=%.1fm dist=%.0f "
+                          "radius=%.1f subtendDeg=%.1f invuln=%.2f",
+                          g_state.selected_slot, NumberForSlot(g_state.selected_slot),
+                          g_state.last_selected_hp, hp, angle, errAz, errEl,
+                          lateral, sd, radius, subtendDeg, invuln);
+        }
+        g_state.last_selected_hp = hp;
+    }
+
+    // ---- Lead diagnostic. Measure the fighter's velocity from per-tick Δpos,
+    // and report critBoltSpeed = |v|·dist/radius — the bolt speed BELOW which
+    // the fighter outruns the 20 m hitbox margin during flight (lead matters).
+    // If critBoltSpeed stays small vs a real laser bolt, lead isn't worth it.
+    // No bolt-speed RE needed; engine `speed` field logged to cross-check unit.
+    {
+        const ULONGLONG now = GetTickCount64();
+        const float engineSpeed = (selectedEnemy && trackingExisting)
+            ? SafeReadF32(selectedEnemy, kFollowerSpeedOffset) : 0.0f;
+        if (g_state.have_last_pos && now > g_state.last_selected_pos_ms) {
+            const float dt = (now - g_state.last_selected_pos_ms) / 1000.0f;
+            const float vx = (sp.x - g_state.last_selected_pos.x) / dt;
+            const float vy = (sp.y - g_state.last_selected_pos.y) / dt;
+            const float vz = (sp.z - g_state.last_selected_pos.z) / dt;
+            const float vmag = std::sqrt(vx * vx + vy * vy + vz * vz);
+            const float crit = (radius > 0.0f) ? vmag * sd / radius : 0.0f;
+            acclog::Write("TurretVel",
+                          "slot=%d velMS=%.1f engineSpeed=%.1f dist=%.0f "
+                          "radius=%.1f critBoltSpeed=%.0f",
+                          g_state.selected_slot, vmag, engineSpeed, sd, radius,
+                          crit);
+        }
+        g_state.last_selected_pos    = sp;
+        g_state.last_selected_pos_ms = now;
+        g_state.have_last_pos        = true;
+    }
+
+    // ---- QC accumulation: aim-quality, immune to bolt-travel/firing RNG.
+    {
+        const int band = (sd < 100.0f) ? 0 : (sd < 250.0f ? 1 : 2);
+        ++g_state.qc_frames;
+        ++g_state.qc_n[band];
+        if (onTarget) { ++g_state.qc_on_total; ++g_state.qc_on[band]; }
+        if (angle < g_state.qc_min_err) g_state.qc_min_err = angle;
+        g_state.qc_sum_err += angle;
+    }
+
     acclog::Write("TurretAim",
-                  "selected slot=%d errAngle=%.1f lateralMiss=%.0fm dist=%.0f "
-                  "onTarget=%d",
-                  g_state.selected_slot, angle, lateral, sd,
-                  (angle <= kLockAngleDeg) ? 1 : 0);
+                  "selected slot=%d errAngle=%.1f errAz=%.1f errEl=%.1f "
+                  "aim(az=%.1f el=%.1f) tgt(az=%.1f el=%.1f) "
+                  "lateralMiss=%.0fm dist=%.0f hp=%d/%d radius=%.1f "
+                  "subtendDeg=%.1f onTarget=%d",
+                  g_state.selected_slot, angle, errAz, errEl,
+                  aimAz, aimEl, tgtAz, tgtEl,
+                  lateral, sd, hp, maxHp, radius, subtendDeg,
+                  onTarget ? 1 : 0);
 }
 
 void TickFighterCues() {
@@ -488,12 +731,27 @@ void TickFighterCues() {
     Vector occPos[kMgoArraySlotCount];
     int    occCount = 0;
 
+    // Whether the currently-locked fighter still exists in the MGO pool at
+    // all (alive but possibly out of cue range). Lets DriveSelectedPeg tell a
+    // kill (pool entry gone) from a mere range-exit (entry still there).
+    bool  selectedAliveInPool = false;
+    // The locked fighter's CSWTrackFollower* (for the HP/hitbox diagnostic).
+    void* selectedEnemy        = nullptr;
+
     for (int i = 0; i < kMgoArraySlotCount; ++i) {
         void* slot = SafeReadPtr(mgoArray,
                                  kMgoArrayObjectsOffset +
                                  static_cast<size_t>(i) * sizeof(void*));
         void* enemy = slot ? CallAsCast(slot, kVtableSlotAsEnemy) : nullptr;
         if (!enemy) continue;
+
+        // Alive in the pool — assign its stable number (idempotent) and note
+        // if it's the locked fighter, BEFORE the range cull below.
+        NumberForSlot(i);
+        if (i == g_state.selected_slot) {
+            selectedAliveInPool = true;
+            selectedEnemy       = enemy;
+        }
 
         Vector pos;
         if (!ReadFollowerPosition(enemy, pos)) continue;
@@ -525,8 +783,9 @@ void TickFighterCues() {
         }
     }
 
-    // Sort the census nearest-first so Q/E cycle near->far and "Fighter N"
-    // numbers ascend with distance (insertion sort; occCount is small).
+    // Sort the census nearest-first so Q/E cycles near->far and the auto-pick
+    // lands on the nearest (insertion sort; occCount is small). The spoken
+    // "Fighter N" is the slot's stable number, independent of this order.
     for (int a = 1; a < occCount; ++a) {
         const int    s = occSlot[a];
         const float  d = occDist[a];
@@ -547,7 +806,7 @@ void TickFighterCues() {
     // advances to the nearest fighter when the locked one is destroyed).
     HandleTargetCycle(occSlot, occDist, occPos, occCount, listener);
     DriveSelectedPeg(occSlot, occDist, occPos, occCount, aimDir, haveAim,
-                     listener);
+                     listener, selectedAliveInPool, selectedEnemy);
 
     // ---- Pass 2: stop any active loop not in the chosen set. -------------
     for (int i = 0; i < kMgoArraySlotCount; ++i) {
@@ -633,6 +892,18 @@ void HandleEnter(void* mg) {
     g_state.entered_at_ms     = GetTickCount64();
     g_state.ticks_since_lost  = 0;
     g_state.selected_slot     = -1;
+    g_state.last_enemy_count  = -1;
+    g_state.last_selected_hp  = -1;
+    g_state.have_last_pos     = false;
+    // Fresh stable-number assignment for this round.
+    for (int i = 0; i < kMgoArraySlotCount; ++i) g_state.slot_number[i] = 0;
+    g_state.next_number       = 1;
+    // Fresh aim-quality counters for the session summary.
+    g_state.qc_frames = 0;
+    g_state.qc_on_total = 0;
+    for (int b = 0; b < 3; ++b) { g_state.qc_n[b] = 0; g_state.qc_on[b] = 0; }
+    g_state.qc_min_err = 1e9f;
+    g_state.qc_sum_err = 0.0f;
     // Defensive: no loop from a prior turret session must survive.
     StopAllLoops();
 
@@ -649,12 +920,32 @@ void HandleExit() {
     ULONGLONG dur = GetTickCount64() - g_state.entered_at_ms;
     acclog::Write("Turret", "EXIT after %llu ms (debounced %d ticks)",
                   dur, kExitDebounceTicks);
+
+    // Session aim-quality summary — the bolt-travel-immune QC metric. "% inside
+    // hitbox" by range band measures how well the cue let the player aim,
+    // independent of kills (which are noisy: firing cadence, bolt travel, RNG).
+    if (g_state.qc_frames > 0) {
+        const float pct = 100.0f * g_state.qc_on_total / g_state.qc_frames;
+        const float meanErr = g_state.qc_sum_err / g_state.qc_frames;
+        auto bandPct = [](int on, int n) { return n > 0 ? 100.0f * on / n : 0.0f; };
+        acclog::Write("TurretQC",
+                      "session: frames=%d within-hitbox=%d (%.1f%%) "
+                      "close=%d/%d (%.0f%%) mid=%d/%d (%.0f%%) far=%d/%d (%.0f%%) "
+                      "minErr=%.1f meanErr=%.1f",
+                      g_state.qc_frames, g_state.qc_on_total, pct,
+                      g_state.qc_on[0], g_state.qc_n[0], bandPct(g_state.qc_on[0], g_state.qc_n[0]),
+                      g_state.qc_on[1], g_state.qc_n[1], bandPct(g_state.qc_on[1], g_state.qc_n[1]),
+                      g_state.qc_on[2], g_state.qc_n[2], bandPct(g_state.qc_on[2], g_state.qc_n[2]),
+                      g_state.qc_min_err, meanErr);
+    }
+
     StopAllLoops();
     g_state.active            = false;
     g_state.latched_mini_game = nullptr;
     g_state.latched_vtable    = nullptr;
     g_state.ticks_since_lost  = 0;
     g_state.selected_slot     = -1;
+    g_state.last_enemy_count  = -1;
     AnnounceExit();
 }
 
@@ -701,6 +992,17 @@ void Tick() {
     if (g_state.ticks_since_lost >= kExitDebounceTicks) {
         HandleExit();
         return;
+    }
+
+    // Surface kills: when CSWMiniGame.enemy_count drops, a fighter was
+    // destroyed (vs. merely leaving cue range, which leaves the count alone).
+    const int enemyCount =
+        static_cast<int>(SafeReadU32(g_state.latched_mini_game,
+                                     kMiniGameEnemyCountOffset));
+    if (enemyCount != g_state.last_enemy_count) {
+        acclog::Write("Turret", "enemy_count %d -> %d",
+                      g_state.last_enemy_count, enemyCount);
+        g_state.last_enemy_count = enemyCount;
     }
 
     // Aiming (WASD) and firing (Space/Enter) are native keyboard actions.

@@ -433,6 +433,8 @@ const char* Get(Id id) {
             return "Torretta terminata.";
         case Id::FmtTurretTarget:
             return "Caccia %d, %d metri";
+        case Id::FmtTurretDestroyed:
+            return "Caccia %d distrutto.";
         case Id::TurretNoTargets:
             return "Nessun bersaglio.";
         case Id::TurretTargetLost:

@@ -446,6 +446,8 @@ const char* Get(Id id) {
             return "Gesch\xFCtzturm beendet.";
         case Id::FmtTurretTarget:
             return "J\xE4ger %d, %d Meter";  // Jäger
+        case Id::FmtTurretDestroyed:
+            return "J\xE4ger %d zerst\xF6rt.";  // Jäger %d zerstört.
         case Id::TurretNoTargets:
             return "Keine Ziele.";
         case Id::TurretTargetLost:

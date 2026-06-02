@@ -434,6 +434,8 @@ const char* Get(Id id) {
             return "Tourelle termin\xE9""e.";
         case Id::FmtTurretTarget:
             return "Chasseur %d, %d m\xE8tres";
+        case Id::FmtTurretDestroyed:
+            return "Chasseur %d d\xE9truit.";  // détruit
         case Id::TurretNoTargets:
             return "Aucune cible.";
         case Id::TurretTargetLost:

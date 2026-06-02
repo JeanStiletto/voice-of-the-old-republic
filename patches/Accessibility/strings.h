@@ -1183,16 +1183,25 @@ enum class Id : int {
     //                           utterance (same pattern as the swoop opener).
     //      TurretGameControls — short native-control reminder, no args.
     //      TurretGameEnded    — exit cue, no args.
-    //      FmtTurretTarget    — Q/E target select: args fighter index (%d,
-    //                           1-based cycle position) + distance metres (%d).
+    //      FmtTurretTarget    — Q/E target select: args fighter number (%d,
+    //                           the fighter's STABLE id, assigned at spawn —
+    //                           not a per-tick distance rank) + distance
+    //                           metres (%d).
+    //      FmtTurretDestroyed — the locked fighter was destroyed (left the MGO
+    //                           pool, not merely range): arg its stable number
+    //                           (%d). Spoken in place of announcing the new
+    //                           auto-picked target, so the kill is the only
+    //                           speech and the player keeps shooting.
     //      TurretNoTargets    — Q/E pressed with no fighters in range.
-    //      TurretTargetLost   — the locked fighter left range / was destroyed;
-    //                           spoken once so the silence is explained and the
-    //                           player knows to relock with Q/E.
+    //      TurretTargetLost   — the locked fighter left range (still alive) and
+    //                           no other fighter is in range; spoken once so the
+    //                           silence is explained and the player knows to
+    //                           relock with Q/E.
     TurretGameStarted,
     TurretGameControls,
     TurretGameEnded,
     FmtTurretTarget,
+    FmtTurretDestroyed,
     TurretNoTargets,
     TurretTargetLost,
 
