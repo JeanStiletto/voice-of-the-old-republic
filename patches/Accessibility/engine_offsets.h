@@ -35,6 +35,21 @@ constexpr size_t kButtonStrRefOffset  = 0x174;
 constexpr size_t kLabelTextOffset     = 0xe8;
 constexpr size_t kLabelStrRefOffset   = 0xf0;
 
+// The engine's reusable "close/back" caption. Every standalone dismiss
+// button across the sub-screen .gui files — BTN_EXIT (abilities, character,
+// inventory, journal, map, messages, optionsingame), BTN_BACK (equip,
+// questitem, upgrade*, all options sub-tabs, titlemovie), BTN_CANCEL
+// (container) and BTN_Cancel (store) — points its CAPTION at this single
+// strref (verified by dumping CONTROLS across all 21 panels with gffdump).
+// It renders as "Schliess." in German, "Close" in English, etc., so a
+// match on the engine's *resolved* text for this strref is fully
+// locale-agnostic. Confirm/Yes-No popups deliberately use 1580 (OK/Yes) and
+// 1581 (Cancel/No), NOT 1582, so matching 1582 never strips the only
+// actionable button from a choice dialog. Used by RebindChain's
+// isDecorative filter to drop the redundant close button (Esc already
+// dismisses every such panel via HandleEsc → FindCancelButton/Close).
+constexpr uint32_t kCloseButtonStrRef = 1582;
+
 // Element-state field offsets (verified via Ghidra decomp of Draw /
 // SetSelected / HandleInputEvent for each class):
 //

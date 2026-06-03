@@ -392,6 +392,15 @@ void RebindChain(void* panel) {
         }
     }
 
+    // Resolve the engine's localized close caption (strref 1582 →
+    // "Schliess."/"Close"/…) once per rebind, for the universal
+    // close-button filter in isDecorative below. Empty on TLK miss, which
+    // disables the filter (fail-open — never hides a real action button).
+    char closeCaption[64];
+    bool haveCloseCaption =
+        LookupTlk(kCloseButtonStrRef, closeCaption, sizeof(closeCaption)) &&
+        closeCaption[0] != '\0';
+
     // Per-kind decorative filter. Identifies non-interactive icon buttons
     // that the engine drops in panel.controls[] but the user has no reason
     // to focus — IsChainNavigable can't tell them from real buttons (same
@@ -532,6 +541,34 @@ void RebindChain(void* panel) {
                 bf = 0;
             }
             if ((bf & 0x2) == 0) return true;
+        }
+        // Universal close-button filter (language-agnostic). Every
+        // standalone "close/back" button the engine ships across
+        // sub-screens — whatever the .gui names it (BTN_EXIT / BTN_BACK /
+        // BTN_CANCEL / BTN_Cancel) — renders caption strref 1582. Esc
+        // already dismisses each of these panels (HandleEsc →
+        // FindCancelButton/FindCloseButton scan panel.controls directly, so
+        // they still find it after we drop it from the chain), making the
+        // button redundant for keyboard nav. Match the engine's *resolved*
+        // 1582 text rather than the +0x174 strref field — the engine
+        // renders these captions via gui_string and frequently leaves the
+        // strref slot empty, so a text compare is the reliable signal.
+        // Gated to plain buttons (AsButton): close buttons are never
+        // toggles/sliders, and this keeps ReadButtonText off slider structs.
+        // This subsumes the per-panel Store/Equip/Options Schliess. filters
+        // above; those stay for their non-1582 siblings (Equip OK, Store
+        // Verkaufsliste/Kaufen) and as the Esc-routing anchors.
+        if (haveCloseCaption &&
+            CallDowncast(c, kVtableAsButton) != nullptr) {
+            char btnText[64];
+            if (ReadButtonText(c, btnText, sizeof(btnText)) &&
+                strcmp(btnText, closeCaption) == 0) {
+                acclog::Write("Menus.Chain",
+                              "filter close button panel=%p ctrl=%p "
+                              "text=\"%s\" (TLK %u)",
+                              panel, c, btnText, kCloseButtonStrRef);
+                return true;
+            }
         }
         return false;
     };
