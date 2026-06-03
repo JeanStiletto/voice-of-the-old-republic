@@ -339,8 +339,12 @@ bool IsContentMonitored(PanelKind k) {
     case PanelKind::InGameMap:
     case PanelKind::InGameJournal:
     case PanelKind::InGameCharacter:
-    case PanelKind::InGameAbilities:
         return true;
+    // InGameAbilities removed 2026-06-03: the dedicated handler in
+    // menus_abilities.cpp owns every announcement on this screen now, so the
+    // content fingerprint only double-spoke (the skill stats after a nav) and
+    // re-spoke the new tab's first entry over the tab-name announce on a tab
+    // switch. The screen-open title still comes from the sub-screen path.
     default:
         return false;
     }

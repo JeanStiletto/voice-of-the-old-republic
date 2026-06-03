@@ -290,7 +290,10 @@ bool HandleInput(int /*n*/, void* /*thisPtr*/, void* activePanel,
     else isNav = false;
 
     bool isEnter = (param_1 == kInputEnter1 || param_1 == kInputEnter2);
-    bool isEsc   = (param_1 == kInputEsc1);
+    // Esc arrives as kInputEsc2 (0xdf) for a real keypress — matching only
+    // kInputEsc1 (0xb4) let it fall through to the engine's own close handler,
+    // so the list-level Esc never returned to the tab level.
+    bool isEsc   = (param_1 == kInputEsc1 || param_1 == kInputEsc2);
 
     if (!s_drilled) {
         // ---- Tab level: Up/Down pick a tab (clamped), Enter drills in. ----
