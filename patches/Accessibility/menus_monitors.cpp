@@ -336,6 +336,15 @@ bool IsContentMonitored(PanelKind k) {
     // open. Per-row navigation inside the panels covers the rest.
     case PanelKind::MessageBoxModal:
     case PanelKind::AreaTransition:
+    // StatusSummary is the engine's generic info popup (quest-progress and
+    // journal-entry notices, skill-check results, "you received X"). Its body
+    // is a cluster of per-notification labels plus a lone OK button, but it
+    // was never content-monitored, so only the chain's OK button got read on
+    // nav and the body text was silent (observed live 2026-06-03, StatusSummary
+    // popup after entering Taris Südliche Oberstadt). It has no
+    // InGameSubScreenSpec, so first-sight speaks the body once. BuildContent
+    // Fingerprint filters to the visible row(s) below — see that note.
+    case PanelKind::StatusSummary:
     case PanelKind::InGameMap:
     case PanelKind::InGameJournal:
     case PanelKind::InGameCharacter:
@@ -367,6 +376,15 @@ void BuildContentFingerprint(void* panel, char* out, size_t outSize) {
         if (CallDowncast(c, kVtableAsButtonToggle) != nullptr) continue;
         if ((kind == PanelKind::Container ||
              kind == PanelKind::InGameEquip) && IsListBox(c)) continue;
+        // StatusSummary lays out one label per notification type and shows
+        // only the applicable row(s); hidden templates keep their "<CUSTOM0>"
+        // placeholder text. Read only rows carrying the visible bit so speech
+        // reflects what's on screen, not all eight templates.
+        if (kind == PanelKind::StatusSummary) {
+            uint32_t bitFlags = *reinterpret_cast<uint32_t*>(
+                reinterpret_cast<unsigned char*>(c) + kControlBitFlagsOffset);
+            if ((bitFlags & kControlVisibleBit) == 0) continue;
+        }
 
         char text[4096];
         const char* src = acc::menus::extract::FromControl(c, text, sizeof(text), panel);

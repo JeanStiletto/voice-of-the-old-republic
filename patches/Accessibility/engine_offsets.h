@@ -1425,6 +1425,12 @@ constexpr size_t    kStorePlayerGoldOffset                 = 0x2270;
 // every other CSWGuiControl uses.
 constexpr size_t    kControlBitFlagsOffset                 = 0x44;
 constexpr uint32_t  kStoreListBoxVisibleBit                = 0x2;
+// The same bit_flags 0x02 is the general CSWGuiControl "shown" bit. The
+// StatusSummary popup lays out one label per notification type and sets
+// this bit only on the row(s) it actually displays — hidden template rows
+// (still reading "<CUSTOM0>" placeholders) leave it clear, with stale float
+// data in the adjacent flag fields (verified via PopupGeom dump 2026-06-03).
+constexpr uint32_t  kControlVisibleBit                     = 0x2;
 
 // CSWGuiStoreItemEntry.obj_id @ +0x1c4 — the client-side game-object
 // handle for the row's CSWSItem. Resolve via ClientToServerObjectId then

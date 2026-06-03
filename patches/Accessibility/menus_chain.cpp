@@ -85,6 +85,9 @@ bool IsModalTextPanel(PanelKind k) {
     case PanelKind::TutorialBox:
     case PanelKind::AreaTransition:
         return true;
+    // StatusSummary deliberately omitted: its body is a label cluster, not a
+    // single-row listbox, so this listbox path never applies. RebindChain
+    // exposes its visible rows via the dedicated per-kind block below.
     default:
         return false;
     }
@@ -698,6 +701,30 @@ void RebindChain(void* panel) {
             return true;
         };
         acc::menus::charsheet::ForEachStatRowAnchor(panel, onAnchor, panel);
+    }
+
+    // Per-kind virtual chain entries for StatusSummary — the engine's quest-
+    // progress / journal-entry info popup. Its body is a cluster of label
+    // controls, one per notification type (journal entry, credits, XP, DS/LS
+    // points, items gained/lost, stealth XP), NOT a listbox, so the listbox
+    // text-only path above never exposed it and the user only reached OK.
+    // The engine shows exactly the row(s) that apply and leaves the rest as
+    // hidden templates whose text still reads "<CUSTOM0>"; only the shown
+    // rows carry the CSWGuiControl visible bit (kControlVisibleBit at +0x44).
+    // Expose just those as text-only entries so the user can arrow back and
+    // re-read, and so the substituted value ("Erfahrungspunkte erhalten: 45")
+    // is what's read rather than the placeholder. The y-sort below drops them
+    // above OK (cy ~25 vs ~51) into natural reading order.
+    if (IdentifyPanel(panel) == PanelKind::StatusSummary) {
+        for (int i = 0; i < n; ++i) {
+            void* c = list->data[i];
+            if (!c) continue;
+            if (CallDowncast(c, kVtableAsLabel) == nullptr) continue;
+            uint32_t bitFlags = *reinterpret_cast<uint32_t*>(
+                reinterpret_cast<unsigned char*>(c) + kControlBitFlagsOffset);
+            if ((bitFlags & kControlVisibleBit) == 0) continue;
+            AppendChainTextOnly(c, panel);  // self-skips empty text / no extent
+        }
     }
 
     // Virtual credits row for Inventory + Store. Same shape as the stat-row
