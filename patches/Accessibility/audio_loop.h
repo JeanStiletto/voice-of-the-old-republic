@@ -37,9 +37,19 @@ public:
     // cue-volume slider preview so the audition plays at the level a real
     // cue would. (Engine clamps >127 to 127; the byte is one factor in
     // group_volume × source_volume × master_SFX_slider.)
+    //
+    // maxVolDist / minVolDist: the 3D attenuation band (CExoSoundSource::
+    // SetDistance — internal->max_volume_distance / min_volume_distance). Full
+    // volume at/within maxVolDist, ramping to the floor by minVolDist. Both < 0
+    // (default) leaves the engine ctor's defaults (10 m / 20 m). Pass an explicit
+    // band when the caller places the source on a COMPRESSED distance scale and
+    // needs the falloff to span THAT range — e.g. the turret peg rides 1-20 m,
+    // whose useful gradient (1-9 m) sits flat inside the default 10 m full-volume
+    // radius, so it must pull maxVolDist down to ~1 m for loudness to track aim.
     bool Start(const char* resref, const Vector& worldPosition,
                bool looping = true, bool spatial = true, int priorityGroup = -1,
-               int volumeByte = -1);
+               int volumeByte = -1, float maxVolDist = -1.0f,
+               float minVolDist = -1.0f);
 
     void UpdatePosition(const Vector& worldPosition);  // safe no-op if inactive
     void Stop();                                       // idempotent

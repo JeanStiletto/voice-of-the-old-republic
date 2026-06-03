@@ -61,6 +61,7 @@ typedef void  (__thiscall* PFN_SourceDtor)(void* this_, unsigned char free_flag)
 typedef void  (__thiscall* PFN_SetResRef)(void* this_, const CResRef* res, int param2);
 typedef void  (__thiscall* PFN_Set3D)(void* this_, int enabled);
 typedef void  (__thiscall* PFN_SetPosition)(void* this_, const Vector* pos, float z_offset);
+typedef void  (__thiscall* PFN_SetDistance)(void* this_, float maxVolDist, float minVolDist);
 typedef void  (__thiscall* PFN_SetLooping)(void* this_, int looping);
 typedef void  (__thiscall* PFN_SetPriorityGroup)(void* this_, unsigned char group);
 typedef void  (__thiscall* PFN_SetVolume)(void* this_, unsigned char volume);
@@ -104,7 +105,7 @@ LoopSource::~LoopSource() {
 
 bool LoopSource::Start(const char* resref, const Vector& worldPosition,
                        bool looping, bool spatial, int priorityGroup,
-                       int volumeByte) {
+                       int volumeByte, float maxVolDist, float minVolDist) {
     Stop();  // Drop any prior loop on this handle.
     if (!resref || !*resref) return false;
 
@@ -131,6 +132,14 @@ bool LoopSource::Start(const char* resref, const Vector& worldPosition,
         reinterpret_cast<PFN_Set3D>(kAddrCExoSoundSourceSet3D)(mem, spatial ? 1 : 0);
         if (spatial) {
             reinterpret_cast<PFN_SetPosition>(kAddrCExoSoundSourceSetPosition)(mem, &biased, 0.0f);
+            // Override the 3D falloff band when the caller asked for one. The
+            // engine ctor defaults to max_volume_distance=10 / min=20, which is
+            // tuned for in-world placement; callers on a compressed distance
+            // scale need the gradient pulled in (see header).
+            if (maxVolDist >= 0.0f && minVolDist >= 0.0f) {
+                reinterpret_cast<PFN_SetDistance>(kAddrCExoSoundSourceSetDistance)(
+                    mem, maxVolDist, minVolDist);
+            }
         }
         // The ctor leaves the source in priority group 0x17, which the
         // engine's menu-pause (SetSoundMode(4) -> PauseAllSounds) silences.
@@ -175,10 +184,10 @@ bool LoopSource::Start(const char* resref, const Vector& worldPosition,
     source_ = mem;
     acclog::Write("LoopSource",
                   "started resref=%s pos=(%.1f,%.1f,%.1f) loop=%d 3d=%d pg=%d vol=%d "
-                  "base_hz=%d src=%p",
+                  "dist=[%.1f,%.1f] base_hz=%d src=%p",
                   resref, biased.x, biased.y, biased.z,
                   looping ? 1 : 0, spatial ? 1 : 0, priorityGroup, volumeByte,
-                  base_hz_, mem);
+                  maxVolDist, minVolDist, base_hz_, mem);
     return true;
 }
 

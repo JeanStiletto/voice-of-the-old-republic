@@ -156,41 +156,55 @@ constexpr const char* kFighterLoopResref    = "acc_turret_loop";
 // keep the ramp NARROW: the volume swing concentrates in the last stretch of
 // the swing, where fine aiming happens. 25° is a touch steeper than the 30°
 // the two-cue ("beatable") build used, because the peg now carries fine-centring
-// alone (no hum to assist). Floor back at 20 m: a quiet, pannable beacon with
-// maximum swell headroom.
-//   NOTE: this assumes the engine's distance->gain curve has usable slope in
-//   the 5-20 m band. If the next test still feels flat ("loud the moment I'm
-//   roughly on"), the curve is near-flat close-in and loudness-via-distance is
-//   the wrong lever — the fix is then a second, reference-free channel (tick
-//   rate accelerating to a lock tone), NOT more ramp tuning.
+// alone (no hum to assist).
+//   FULL-RANGE FIX (2026-06-03): the earlier "loudness feels flat / loud the
+//   moment I'm roughly on" was NOT the engine curve being dead — swoop's
+//   obstacle cue proves pan+volume works (swoop_spatial_audio.cpp:185-205, the
+//   curve has usable slope from ~1 m "right on top" through ~20 m "just
+//   audible"). The peg was mapping aim error into only the TOP HALF of that
+//   range (5->20 m = the gentle end), so dead-centre never reached the loud end
+//   and the whole swing sat compressed and faint. Fix: open the ramp to the
+//   full band — dead-centre at 1 m (right on top, loudest), the quiet beacon
+//   floor at 20 m. Same gradient shape, just the full dynamic range.
 constexpr float kPegRampDeg   = 25.0f;  // fade width beyond the hitbox edge (narrow = steep near-centre swing)
-constexpr float kPegMinDist   = 5.0f;   // dead-centre -> nearest -> loudest
-constexpr float kPegEdgeDist  = 9.0f;   // hitbox edge -> still clearly loud
-constexpr float kPegMaxDist   = 20.0f;  // way off -> quiet, pannable beacon floor
+constexpr float kPegMinDist   = 1.0f;   // dead-centre -> right on top -> loudest
+constexpr float kPegEdgeDist  = 9.0f;   // hitbox edge -> clearly audible (mid)
+constexpr float kPegMaxDist   = 20.0f;  // way off -> just-audible beacon floor
 // Fallback on-target half-angle when the hitbox radius can't be read (no enemy
 // ptr this tick). Also the value the diagnostic "onTarget" flag falls back to.
 constexpr float kFallbackOnTargetDeg = 6.0f;
 // Behind-gate. The continuous cue is SILENCED only when the selected target
-// is BEHIND the aim — more than 90° off, i.e. in the rear hemisphere. The full
-// forward 180° stays audible, so forward awareness is intact; we only drop the
-// targets a crosshair could never point at without first turning around. The
-// player swings (or Q/E-cycles) to bring a rear target back into the forward
-// half. 90° is the true front/back boundary, so this also removes the stereo
-// front/back mirror (a rear-left target can't masquerade as a front-left one
-// when the rear half is silent) without narrowing awareness.
-constexpr float kFrontConeDeg = 90.0f;
+// is BEHIND the aim — past the rear boundary, i.e. in the rear hemisphere. The
+// full forward 180° stays audible, so forward awareness is intact; we only drop
+// the targets a crosshair could never point at without first turning around.
+// The player swings (or Q/E-cycles) to bring a rear target back into the
+// forward half. ~90° is the true front/back boundary, so this also removes the
+// stereo front/back mirror (a rear-left target can't masquerade as a front-left
+// one when the rear half is silent) without narrowing awareness.
+//
+// HYSTERESIS: a fighter orbiting right at the boundary used to flap the peg on
+// and off every few ticks (a 60 s session logged 17 off / 18 on transitions),
+// which — with the behind tick firing the SAME sample — read as mush rather
+// than a clean tone. So the gate has a dead band: cross INTO behind only past
+// kBehindEnterDeg, and back to front only once below kBehindExitDeg. State is
+// latched in State::selected_behind (reset on (re)lock / out-of-view).
+constexpr float kBehindEnterDeg = 95.0f;  // front -> behind above this
+constexpr float kBehindExitDeg  = 85.0f;  // behind -> front below this
 constexpr const char* kLockCueResref = "acc_turret_lock";
 
-// ----- Behind cue (rear-arc directional tick) -----
-// When the locked fighter is in the rear hemisphere the continuous peg is
-// silenced (a rear target can't masquerade as a front one). Instead of pure
-// silence — which stranded the player for ~40s during the lone-fighter endgame
-// (they couldn't tell WHICH way to swing) — we tick the crosshair sound,
-// hard-panned to the SHORTER-swing side: beep on the left = swing left, right =
-// swing right. Natural pitch (no elevation glide back here; it resumes once the
-// target is in the forward 180°). A discrete tick (not a continuous tone) reads
-// distinctly as "turn around" vs the front peg's sustained cue.
-constexpr ULONGLONG kBehindTickMs = 500;  // ~half-second cadence
+// ----- Behind steering (rear-arc pinned pan) -----
+// When the locked fighter is in the rear hemisphere we DON'T silence the cue,
+// and we DON'T play a separate tick (it used the same sample as the peg, so the
+// two were indistinguishable — and fired at max volume twice a second, the main
+// source of the "wall of noise"). Instead the ONE peg tone keeps playing but its
+// pan is PINNED hard to the shorter-swing side and held there until the target
+// re-enters the forward cone (hysteretic): pan left = swing left, pan right =
+// swing right. The side is latched through a near-zero (dead-behind) lateral so
+// it doesn't flip-flop. Pinned at a fixed, clearly-audible distance because the
+// loudness ramp would otherwise floor a rear target at the faint 20 m beacon
+// level — too quiet to steer by. The elevation pitch glide still applies (set
+// unconditionally below), so up/down feedback survives while behind.
+constexpr float kBehindPanDist = 9.0f;  // pinned source distance while behind
 
 // ----- Elevation channel (peg playback PITCH = vertical aim error) -----
 // Stereo pan carries azimuth (left/right) but nothing about elevation, so the
@@ -307,10 +321,9 @@ struct State {
     int  slot_hp_last[kMgoArraySlotCount]    = {0};
     bool slot_damaged[kMgoArraySlotCount]    = {false};
 
-    // Rear-arc directional tick (behind cue): timestamp of the last beep and
-    // the last chosen swing side. The side is latched so a target sitting
-    // exactly behind (lateral ~0) doesn't flip-flop left/right tick to tick.
-    ULONGLONG last_behind_tick_ms   = 0;
+    // Rear-arc pinned pan (behind steering): the last chosen swing side. Latched
+    // so a target sitting exactly behind (lateral ~0) doesn't flip-flop the pan
+    // left/right tick to tick.
     bool      last_behind_swing_left = false;
 
     // On-target edge tracker for the selected fighter: true while the combined
@@ -318,6 +331,13 @@ struct State {
     // one-shot "fire now" cue. Reset on (re)lock and when the target leaves the
     // forward view, so re-acquiring re-arms the cue.
     bool selected_on_target = false;
+
+    // Behind-gate hysteresis latch: true while the selected fighter is in the
+    // rear hemisphere (peg silenced, behind-tick steering). Crosses to true
+    // above kBehindEnterDeg and back to false below kBehindExitDeg, so a target
+    // orbiting near the 90° boundary doesn't flap the peg on/off. Reset to
+    // false (front) on (re)lock and out-of-view so re-acquiring re-evaluates.
+    bool selected_behind = false;
 
     // HP of the selected fighter last tick (-1 = unknown / just (re)selected).
     // A drop between ticks is a real engine-scored hit; logged with the aim
@@ -589,6 +609,7 @@ void AnnounceSelectedTarget(int idx, const int occSlot[], const float occDist[],
     g_state.have_last_pos    = false;  // and re-baselines velocity
     g_state.have_vel         = false;
     g_state.selected_on_target = false;  // re-arm the "fire now" cue
+    g_state.selected_behind    = false;  // re-evaluate the behind-gate cleanly
     const int number = NumberForSlot(occSlot[idx]);
 
     const int meters = static_cast<int>(occDist[idx] + 0.5f);
@@ -700,6 +721,7 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
                                   g_state.selected_slot);
                 }
                 g_state.selected_on_target = false;  // re-arm fire-now on return
+                g_state.selected_behind    = false;  // re-evaluate gate on return
                 return;
             }
 
@@ -919,51 +941,59 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
         listener.z + aimRel.z * kk,
     };
 
-    // Behind-gate: silence the cue only when the target is in the rear
-    // hemisphere (>90° off aim). The whole forward 180° stays audible; the
-    // player swings or Q/E-cycles to bring a rear target into the front half.
-    // No "behind you" cue yet, on purpose — testing whether dropping just the
-    // rear half is enough on its own.
-    if (angle > kFrontConeDeg) {
-        if (g_state.peg_cue.IsActive()) {
-            g_state.peg_cue.Stop();
-            acclog::Write("Turret",
-                          "peg off (behind, angle=%.0f) slot=%d",
-                          angle, g_state.selected_slot);
-        }
-        // Rear-arc directional tick: beep the crosshair sound hard-panned to
-        // the shorter-swing side every kBehindTickMs. The 2D cross product of
-        // (aim x target) gives the side: >0 = target is left of aim -> swing
-        // left. Latch the side through a near-zero (dead-behind) lateral so it
-        // doesn't flip-flop. Placed 90 deg to that side of the aim, close, so
-        // it pans hard to the correct ear.
-        const ULONGLONG nowB = GetTickCount64();
-        if (nowB - g_state.last_behind_tick_ms >= kBehindTickMs) {
-            g_state.last_behind_tick_ms = nowB;
-            const float cross = aimDir.x * tdir.y - aimDir.y * tdir.x;
-            bool swingLeft = g_state.last_behind_swing_left;
-            if (cross > 0.05f)       swingLeft = true;
-            else if (cross < -0.05f) swingLeft = false;
-            g_state.last_behind_swing_left = swingLeft;
+    // Behind-gate (hysteretic): silence the cue only when the target is in the
+    // rear hemisphere. Cross INTO behind above kBehindEnterDeg and back to front
+    // below kBehindExitDeg, so a target orbiting the ~90° boundary doesn't flap
+    // the peg on/off (which, sharing the behind tick's sample, read as mush).
+    // The whole forward half stays audible; the player swings or Q/E-cycles to
+    // bring a rear target into the front.
+    if (g_state.selected_behind ? (angle >= kBehindExitDeg)
+                                : (angle > kBehindEnterDeg)) {
+        const bool wasBehind = g_state.selected_behind;
+        g_state.selected_behind = true;
+        // Pin the ONE peg tone hard to the shorter-swing side and hold it there.
+        // The 2D cross product of (aim x target) gives the side: >0 = target is
+        // left of aim -> swing left. Latch the side through a near-zero
+        // (dead-behind) lateral so it doesn't flip-flop. Placed 90 deg to that
+        // side of the aim at a fixed, clearly-audible distance.
+        const float cross = aimDir.x * tdir.y - aimDir.y * tdir.x;
+        bool swingLeft = g_state.last_behind_swing_left;
+        if (cross > 0.05f)       swingLeft = true;
+        else if (cross < -0.05f) swingLeft = false;
+        g_state.last_behind_swing_left = swingLeft;
 
-            float sx = swingLeft ? -aimDir.y : aimDir.y;
-            float sy = swingLeft ?  aimDir.x : -aimDir.x;
-            const float sm = std::sqrt(sx * sx + sy * sy);
-            if (sm > 1e-4f) { sx /= sm; sy /= sm; }
-            const Vector beepPos = {
-                listener.x + sx * kPegMinDist,
-                listener.y + sy * kPegMinDist,
-                listener.z,
-            };
-            acc::audio::PlayCue3D(kLockCueResref, beepPos);
-            acclog::Write("Turret", "behind tick %s slot=%d angle=%.0f",
+        float sx = swingLeft ? -aimDir.y : aimDir.y;
+        float sy = swingLeft ?  aimDir.x : -aimDir.x;
+        const float sm = std::sqrt(sx * sx + sy * sy);
+        if (sm > 1e-4f) { sx /= sm; sy /= sm; }
+        const Vector pinnedPos = {
+            listener.x + sx * kBehindPanDist,
+            listener.y + sy * kBehindPanDist,
+            listener.z,
+        };
+        if (g_state.peg_cue.IsActive()) {
+            g_state.peg_cue.UpdatePosition(pinnedPos);
+        } else if (g_state.peg_cue.Start(kLockCueResref, pinnedPos,
+                       /*looping=*/true, /*spatial=*/true, /*priorityGroup=*/-1,
+                       /*volumeByte=*/-1, /*maxVolDist=*/kPegMinDist,
+                       /*minVolDist=*/kPegMaxDist)) {
+            acclog::Write("Turret", "peg on (behind) slot=%d", g_state.selected_slot);
+        }
+        if (!wasBehind) {
+            acclog::Write("Turret", "peg behind: pin %s slot=%d angle=%.0f",
                           swingLeft ? "LEFT" : "RIGHT",
                           g_state.selected_slot, angle);
         }
-    } else if (g_state.peg_cue.IsActive()) {
-        g_state.peg_cue.UpdatePosition(cuePos);
-    } else if (g_state.peg_cue.Start(kLockCueResref, cuePos)) {
-        acclog::Write("Turret", "peg on selected slot=%d", g_state.selected_slot);
+    } else {
+        g_state.selected_behind = false;  // back in the forward half
+        if (g_state.peg_cue.IsActive()) {
+            g_state.peg_cue.UpdatePosition(cuePos);
+        } else if (g_state.peg_cue.Start(kLockCueResref, cuePos,
+                       /*looping=*/true, /*spatial=*/true, /*priorityGroup=*/-1,
+                       /*volumeByte=*/-1, /*maxVolDist=*/kPegMinDist,
+                       /*minVolDist=*/kPegMaxDist)) {
+            acclog::Write("Turret", "peg on selected slot=%d", g_state.selected_slot);
+        }
     }
 
     const float lateral = std::sin(angle * 0.01745329f) * aimTgtDist;
@@ -1286,6 +1316,7 @@ void HandleEnter(void* mg) {
     g_state.last_selected_hp  = -1;
     g_state.selected_in_range = -1;
     g_state.selected_on_target = false;
+    g_state.selected_behind   = false;
     g_state.leave_tap_due_ms  = 0;
     g_state.have_last_pos     = false;
     g_state.have_vel          = false;
