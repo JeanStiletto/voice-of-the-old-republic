@@ -111,11 +111,35 @@ acc::filter::CycleCategory ClassifyForNarration(void* obj) {
     return C::Count_;
 }
 
+// True when obj is one of the active party followers. GetPartyMembers
+// returns resolved object handles (NPC slot indices → live creatures), so
+// compare against the object's server handle (GetObjectHandle re-derives it
+// from the resolved client object). The PC isn't in the follower table, but
+// the PC is never a passive-narrate focus (filtered upstream), so followers-
+// only is the right set here.
+bool IsActivePartyMember(void* obj) {
+    if (!obj) return false;
+    uint32_t serverHandle = acc::engine::GetObjectHandle(obj);
+    if (serverHandle == 0u || serverHandle == 0xFFFFFFFFu) return false;
+    uint32_t members[kPartyTableMaxMembers] = {};
+    int n = acc::engine::GetPartyMembers(members, kPartyTableMaxMembers);
+    for (int i = 0; i < n; ++i) {
+        if (members[i] == serverHandle) return true;
+    }
+    return false;
+}
+
 // Resolve → classify → speak → stamp. Used by both the focus-change path
 // (OnEngineShowObject delta) and the deferred Q/E re-announce path. The
 // two are mutually exclusive by construction — Tick cancels pending if
 // OnEngineShowObject sees a real focus change first.
-bool NarrateHandle(uint32_t handle, const char* reason) {
+//
+// explicitRequest distinguishes a user-driven Q/E cycle from the engine's
+// automatic focus-follow. Party members never get the person cue: on the
+// auto path they're suppressed entirely (companions trailing the player
+// would otherwise spam the cue + name), and on an explicit Q/E request the
+// name + status still speak but without the cue.
+bool NarrateHandle(uint32_t handle, const char* reason, bool explicitRequest) {
     if (handle == 0u || handle == 0xFFFFFFFFu || handle == 0x7F000000u) {
         return false;
     }
@@ -137,6 +161,18 @@ bool NarrateHandle(uint32_t handle, const char* reason) {
         return false;
     }
 
+    // Party members get no person cue, ever. On the automatic focus-follow
+    // path they're suppressed entirely (cue + name) so companions trailing
+    // the player don't spam narration; on an explicit Q/E request the name +
+    // status still speak, just without the cue.
+    bool isParty = IsActivePartyMember(obj);
+    if (!explicitRequest && isParty) {
+        acclog::Write("PassiveNarrate",
+            "%s: handle 0x%08x is party member, auto-focus suppressed",
+            reason, handle);
+        return false;
+    }
+
     Vector pos{};
     bool havePos = acc::engine::GetObjectPosition(obj, pos);
 
@@ -147,7 +183,7 @@ bool NarrateHandle(uint32_t handle, const char* reason) {
                       acc::strings::Get(CategoryNameId(cat)));
     }
 
-    if (havePos) {
+    if (havePos && !isParty) {
         acc::audio::NavCue cue = CueForCategory(cat, obj);
         const char* resref = acc::audio::GetNavCueResref(cue);
         acc::audio::PlayCue3D(resref, pos);
@@ -271,7 +307,11 @@ void OnEngineShowObject(uint32_t handle) {
         return;
     }
 
-    NarrateHandle(handle, "passive");
+    // was_qe_request marks a user-driven Q/E cycle that resolved through the
+    // ShowObject delta. Pass it as explicitRequest so companions are still
+    // narrated when the user cycles to them; the automatic focus-follow path
+    // (was_qe_request == false) suppresses them.
+    NarrateHandle(handle, "passive", was_qe_request);
 }
 
 void RequestQEReannounce(int directionCode) {
@@ -380,7 +420,7 @@ void Tick() {
     uint32_t handle = s_show_object_handle;
     if (handle == 0u || handle == 0xFFFFFFFFu || handle == 0x7F000000u) return;
 
-    NarrateHandle(handle, "reannounce");
+    NarrateHandle(handle, "reannounce", /*explicitRequest=*/true);
 }
 
 }  // namespace acc::passive_narrate

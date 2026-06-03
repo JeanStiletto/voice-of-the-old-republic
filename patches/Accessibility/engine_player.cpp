@@ -376,14 +376,14 @@ bool SetPlayerInputEnabled(bool enabled, bool armAutoRestore) {
 int GetPartyMembers(uint32_t* outHandles, int maxCount) {
     if (!outHandles || maxCount <= 0) return 0;
     __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return 0;
-        void* serverApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerServerOffsetPlayer);
-        if (!serverApp) return 0;
-        auto* partyTable = reinterpret_cast<unsigned char*>(serverApp) +
-                           kServerExoAppPartyTableOffset;
+        // GetServerPartyTable walks AppManager+0x8 → facade → +0x4 internal
+        // → +0x1b770. The old inline chain here skipped the +0x4 internal
+        // indirection and read pt_num_members from facade heap, which lands
+        // on a zero byte — so this always returned 0 ("no active party")
+        // and every party check silently no-opped.
+        auto* partyTable = reinterpret_cast<unsigned char*>(
+            GetServerPartyTable());
+        if (!partyTable) return 0;
         uint32_t numMembers = *reinterpret_cast<uint32_t*>(
             partyTable + kPartyTableNumMembersOffset);
         if (numMembers == 0 ||
@@ -392,12 +392,25 @@ int GetPartyMembers(uint32_t* outHandles, int maxCount) {
         }
         int take = static_cast<int>(numMembers);
         if (take > maxCount) take = maxCount;
+        // pt_member_ids holds NPC *roster slot indices* (0..8), NOT object
+        // handles — e.g. 2=Carth, 6=Mission. Resolve each slot to the live
+        // creature's object handle via CSWPartyTable::GetNPCObject so the
+        // result is comparable to GetObjectHandle()/handle-keyed accessors.
+        // Mirror OnPanelAdded's (slot,0,1) → (slot,1,1) second-instance
+        // fallback. Slots that don't resolve to a live creature are skipped.
+        typedef int (__thiscall* PFN_GetNPCObject)(void*, int, int, int);
+        auto getObj = reinterpret_cast<PFN_GetNPCObject>(
+            kAddrCSWPartyTableGetNPCObject);
         auto* ids = reinterpret_cast<int32_t*>(
             partyTable + kPartyTableMemberIdsOffset);
+        int written = 0;
         for (int i = 0; i < take; ++i) {
-            outHandles[i] = static_cast<uint32_t>(ids[i]);
+            int slot = ids[i];
+            int id = getObj(partyTable, slot, 0, 1);
+            if (id == 0) id = getObj(partyTable, slot, 1, 1);
+            if (id != 0) outHandles[written++] = static_cast<uint32_t>(id);
         }
-        return take;
+        return written;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return 0;
     }

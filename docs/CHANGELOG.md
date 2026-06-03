@@ -13,6 +13,16 @@ headings in the release body (markdown `**Installer:**` only renders as bold).
 Each bullet should lead with the user-facing change ("X works now", "new
 hotkey Y", "X no longer does Z"); keep technical detail short.
 
+<h2>Unreleased</h2>
+
+<h3>Navigation:</h3>
+
+- Your own party members no longer set off the "person nearby" cue and name announcement as they wander around you. While exploring, the passive narration kept locking onto your companions — Carth, Mission, whoever is travelling with you — as they walked past or ahead of you, replaying the person cue and reading their name over and over. They're now skipped while you move around. You can still target a companion on purpose with Q / E, which reads their name and status as before (just without the person cue), so checking on a companion or talking to one still works.
+
+<h3>Combat:</h3>
+
+- Combat now tells you when one of your own party members is hit. You hear a short report — who was struck, how much damage, and who hit them (with a "critical" note when it applies). These hits were being dropped silently until now: internally the mod could never tell which creatures were actually in your party, so it never recognised a companion as the one taking the blow. That detection is fixed, so hits landing on your companions are read out.
+
 <h2>v0.3.0</h2>
 
 <h3>UI:</h3>

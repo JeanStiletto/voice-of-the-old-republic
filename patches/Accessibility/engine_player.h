@@ -100,13 +100,16 @@ bool SetPlayerInputEnabled(bool enabled, bool armAutoRestore = true);
 // Auto-restore tick. Cheap when idle (one timestamp compare).
 void TickPlayerInputRestore();
 
-// Walks CServerExoApp.party_table @+0x1b770:
-//   +0x0 pt_num_members (1..3 in normal play)
-//   +0x4 pt_member_ids[11] (server-side handles, index 0 = PC)
+// Walks CServerExoApp.party_table @+0x1b770 (via GetServerPartyTable):
+//   +0x0 pt_num_members  (active followers, 0..2 in normal play — the PC
+//                          is the implicit leader and is NOT counted here)
+//   +0x4 pt_member_ids[] (NPC *roster slot indices* 0..8, e.g. 2=Carth,
+//                          6=Mission — NOT object handles)
 //
-// Returns clamped count written; 0 on early-init / SEH / implausible
-// num_members (>11). Handles route through engine_area::
-// ResolveServerObjectHandle to reach the server creature.
+// Each slot index is resolved to the live creature's object handle via
+// CSWPartyTable::GetNPCObject, so outHandles are real handles comparable to
+// GetObjectHandle(). Slots that don't resolve to a live creature are
+// skipped. Returns count written; 0 on early-init / SEH / empty roster.
 int GetPartyMembers(uint32_t* outHandles, int maxCount);
 
 // Active CSWPartyTable*. Exposed so callers that need NPC-slot
