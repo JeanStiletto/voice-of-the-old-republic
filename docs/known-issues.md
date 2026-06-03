@@ -73,6 +73,10 @@ Walltopo handles corridors and junctions well, but open / non-corridor rooms sti
 
 Add Polish as a supported language. Decide the integration path — installer locale JSON (alongside de/en/fr/it/es) and/or in-game speech strings routed through the shared strings system — and wire it in. Source of the Polish strings (community contribution vs AI draft like fr/it/es) to be determined.
 
+### F1 / Ctrl+F1 keyboard-help commands
+
+Add an on-demand keyboard-help system. F1 reads the hints for the current screen — the keys that do something useful in the context the player is in right now (the action bar, a listbox menu, dialogue, a minigame, in-world navigation, etc.). Ctrl+F1 reads the general keyboard help — the mod's global hotkeys that work everywhere. This gives keyboard-only players a way to discover and re-check the controls without leaving the game or memorising a manual. Needs a per-context hint registry so each screen can supply its own F1 text, plus a single global list for Ctrl+F1.
+
 ### Alternative hotkeys for Alt/Ctrl-bound actions
 
 Some of our actions are bound to Alt+ and Ctrl+ key combinations, which not every user can reach — some keyboards/layouts make those modifiers awkward or unavailable. Offer alternative (and ideally rebindable) bindings so these actions are reachable without the Alt/Ctrl chord.
@@ -88,6 +92,10 @@ After replacing the wrapper-based DirectInput-mouse guard with an inline trampol
 Implemented in `patches/Accessibility/pazaak.cpp` — no engine detour hook: the live `CSWGuiPazaakGame` board is identified structurally (foreground modal matching the model layout; vtable learned + logged on first sight), state is polled per tick for delta announcements, and play is driven through the engine's own `HandlePlayHandCard`/`HandleStand`/`HandleContinue`. Builds clean; **pending in-game test.** Keys (board foreground only): Tab/Shift+Tab cycle the playable hand, Enter play, S stand, E end turn, C read hand, T read table; +/- cards open a sign sub-zone (Left/Right pick, Enter play, Esc cancel). Watch for: correct draw/play/stand/result lines and totals, the acquire log line (`Pazaak: acquired board panel=... vtable=0x...`), and that the engine's end-of-match result message box is dismissable from the keyboard. The default starting side deck has no +/- cards, so the sign sub-zone only appears once the player owns flip cards.
 
 ## Polish
+
+### Mod-settings sliders only save after pressing Enter
+
+The sliders under Mod-Einstellungen (e.g. hint-sound volume) only persist their new value to `acc_settings.ini` once the user presses Enter on the row. Adjusting a slider with Left / Right changes it for the session and previews the new level, but the change isn't written until an explicit Enter — so a player who tweaks a slider and leaves the menu without pressing Enter loses the change on next launch. Slider adjustments should persist on each Left / Right step (the same way the value already updates live), without needing a confirming keypress.
 
 ### Clean up announcements when changing in-game panels
 

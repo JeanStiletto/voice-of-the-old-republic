@@ -13,7 +13,7 @@ headings in the release body (markdown `**Installer:**` only renders as bold).
 Each bullet should lead with the user-facing change ("X works now", "new
 hotkey Y", "X no longer does Z"); keep technical detail short.
 
-<h2>Unreleased</h2>
+<h2>v0.3.0</h2>
 
 <h3>Dialogue:</h3>
 
@@ -31,14 +31,13 @@ hotkey Y", "X no longer does Z"); keep technical detail short.
 
 - Combat now tells you when one of your own party members is hit. You hear a short report — who was struck, how much damage, and who hit them (with a "critical" note when it applies). These hits were being dropped silently until now: internally the mod could never tell which creatures were actually in your party, so it never recognised a companion as the one taking the blow. That detection is fixed, so hits landing on your companions are read out.
 
+<h3>Minigames:</h3>
+
+- The Ebon Hawk turret-defense sequences now play a sound cue to help you aim at incoming fighters. The cue tracks your locked target — pulsing when your aim is off and pointing the way to swing, going solid when you're on target so you know when to fire. This is an early, rough pass: landing a hit is still largely down to luck and the cue needs sharpening in a future update. An auto-aim easy-mode option is wired into Mod-Einstellungen but is currently broken; it'll be fixed alongside the aiming improvements.
+
 <h3>UI:</h3>
 
 - The small "OK" notification popups — a new journal entry, credits or experience gained, light- or dark-side points, items received or lost — now read their message. The screen reader reads the notification aloud as the popup appears (for example "Neuer Tagebucheintrag" when a quest updates), and you can arrow up to the text to hear it again before pressing OK, the same way the confirmation message boxes work. Until now only the OK button was readable and the message itself was silent. When a popup carries several notifications at once each line is read, and only the lines that actually apply are read.
-
-<h2>v0.3.0</h2>
-
-<h3>UI:</h3>
-
 - The "Schliess." (Close) button no longer shows up when you arrow through a sub-screen. Every menu's close button does exactly what Escape already does, so landing on it was just an extra dead stop on the way down the list. It's now skipped in Character, Abilities, Inventory, Equipment, the Journal and its Quest Items screen, the shop, every Options screen, and the rest — in all languages. Escape still closes each screen as before, and confirmation popups keep their Cancel / No button (only the standalone Close button is removed).
 - The journal's quest list stays readable after you sort it or swap between active and completed quests. Previously a sort could leave entries reading as "control 1", "control 2", … and Enter would stop reading the quest text; both work again now, every time you re-sort or swap.
 - The Quest Items screen — opened from inside the journal — is now accessible. Its title is read when you open it, and Enter (or Shift+Up / Shift+Down) on a quest item reads that item's description, the same way item tooltips read elsewhere.
