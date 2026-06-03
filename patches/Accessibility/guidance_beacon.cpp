@@ -31,21 +31,87 @@ float DistXY(const Vector& a, const Vector& b) {
     return std::sqrt(dx * dx + dy * dy);
 }
 
+// ----- Heartbeat distance soft-knee (engine audibility) ---------------
+//
+// The engine's 3D attenuation curve is tuned for the ~10-20 m band that
+// Pillar 1 nav cues + footsteps live in; a heartbeat fired at a waypoint
+// 30-180 m out falls below the audible threshold (the same limit the
+// swoop spatial cues hit — see swoop_spatial_audio.cpp). We pull the
+// SOURCE in along the listener->waypoint ray so it lands inside the
+// audible band. Radial scaling preserves the azimuth/elevation exactly,
+// so the pan still points at the true waypoint — only the distance is
+// bent, never the bearing.
+//
+// Unlike the swoop path's flat 1:9 compression (tuned for a fast bike
+// over 180 m), the beacon uses a SOFT KNEE: within the audible band the
+// source plays at its TRUE distance (no compression at all), so the final
+// approach keeps a full, honest "getting warmer" loudness ramp right down
+// to the reach event. Only the portion beyond the knee is compressed —
+// asymptotically — into the narrow band between the knee and the audible
+// ceiling. Far waypoints land "just audible" (direction + a faint "still
+// a way to go"); the exact remaining metres are already spoken via
+// SpeakNextSegment, so the shallow far-field gradient costs no info.
+//
+//   true <= 18 m  -> apparent = true        (untouched, full resolution)
+//   true   50 m   -> apparent ~ 19.1 m
+//   true  180 m   -> apparent ~ 20.0 m
+//
+// Listener is the player position: PlayCue3D applies a character-relative
+// listener bias (shifts the source by camera-minus-character), so the
+// engine's effective listener-to-source distance equals our
+// player-to-source distance. Compressing toward the player therefore
+// lands the cue in the audible band as actually heard.
+constexpr float kHeartbeatKneeMeters     = 18.0f;  // audible-band knee
+constexpr float kHeartbeatCeilingMeters  = 20.0f;  // engine audible edge
+constexpr float kHeartbeatFarScaleMeters = 40.0f;  // asymptote rate past knee
+
+Vector CompressHeartbeatPosition(const Vector& target, const Vector& listener) {
+    float dx = target.x - listener.x;
+    float dy = target.y - listener.y;
+    float dz = target.z - listener.z;
+    float dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+
+    // Within the audible band (or degenerate distance) — play as-is so
+    // the near field stays geometrically honest.
+    if (dist <= kHeartbeatKneeMeters || dist <= 0.0f) {
+        return target;
+    }
+
+    // Beyond the knee: compress only the excess into [knee, ceiling],
+    // asymptotically approaching the ceiling so even very distant
+    // waypoints stay just inside the audible edge without ever exceeding
+    // it (and without a hard clamp flattening a whole far-field range).
+    float excess   = dist - kHeartbeatKneeMeters;
+    float band     = kHeartbeatCeilingMeters - kHeartbeatKneeMeters;
+    float apparent = kHeartbeatKneeMeters +
+                     band * (1.0f - std::exp(-excess / kHeartbeatFarScaleMeters));
+
+    // Scale the source in along the listener->target ray. k = apparent/dist
+    // is a pure radial scale, so direction (pan) is unchanged.
+    float k = apparent / dist;
+    Vector out;
+    out.x = listener.x + dx * k;
+    out.y = listener.y + dy * k;
+    out.z = listener.z + dz * k;
+    return out;
+}
+
 // Fire the directional heartbeat. 3D-positional so the user can localise
 // the next waypoint by pan + falloff. Plays at full base volume (scaled
 // by the global cue slider in audio_bus). Bypasses audio_cue_player
 // because its 80m range gate would otherwise apply; the beacon wants to
-// carry at any distance. Reaching the user at long range is a property of
-// the cue group's falloff window (a wider-falloff group is the lever, not
-// a per-source boost — the source byte is clamped to unity); a dedicated
-// wide beacon group is tracked as Phase B follow-up.
+// carry at any distance. The source is soft-knee compressed onto the
+// engine's audible band (see CompressHeartbeatPosition) so it stays
+// hearable past ~20 m without losing bearing or near-field resolution.
 void EmitHeartbeat(const Vector& worldPos, const Vector& listenerPos) {
+    Vector cuePos = CompressHeartbeatPosition(worldPos, listenerPos);
     bool ok = acc::audio::PlayCue3D(
         acc::audio::GetNavCueResref(acc::audio::NavCue::BeaconActive),
-        worldPos);
-    acclog::Write("Beacon", "heartbeat at=(%.2f,%.2f,%.2f) "
-                  "listener=(%.2f,%.2f,%.2f) ok=%d",
+        cuePos);
+    acclog::Write("Beacon", "heartbeat target=(%.2f,%.2f,%.2f) "
+                  "cue=(%.2f,%.2f,%.2f) listener=(%.2f,%.2f,%.2f) ok=%d",
                   worldPos.x, worldPos.y, worldPos.z,
+                  cuePos.x, cuePos.y, cuePos.z,
                   listenerPos.x, listenerPos.y, listenerPos.z,
                   ok ? 1 : 0);
 }

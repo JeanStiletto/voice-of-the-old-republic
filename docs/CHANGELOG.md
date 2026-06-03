@@ -25,6 +25,7 @@ hotkey Y", "X no longer does Z"); keep technical detail short.
 <h3>Navigation:</h3>
 
 - Your own party members no longer set off the "person nearby" cue and name announcement as they wander around you. While exploring, the passive narration kept locking onto your companions — Carth, Mission, whoever is travelling with you — as they walked past or ahead of you, replaying the person cue and reading their name over and over. They're now skipped while you move around. You can still target a companion on purpose with Q / E, which reads their name and status as before (just without the person cue), so checking on a companion or talking to one still works.
+- The navigation beacon can now be heard when the next waypoint is far away. The beacon's directional pulse is tuned for the short range the game's other cues use, so once a waypoint was more than about twenty metres off its pulse dropped below hearing and you lost the direction to follow. Distant waypoints now stay audible, with the pulse still pointing the right way and growing louder as you close in.
 
 <h3>Combat:</h3>
 
