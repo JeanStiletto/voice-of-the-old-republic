@@ -15,6 +15,10 @@ hotkey Y", "X no longer does Z"); keep technical detail short.
 
 <h2>Unreleased</h2>
 
+<h3>Dialogue:</h3>
+
+- More human characters now stay quiet under their own voice. With the human-speaker subtitle filter on (the default), the mod skips reading a subtitle out loud when the character is already speaking it in a voice you can understand, so the screen reader no longer talks over the recorded line. Two gaps in that filter are now closed. First, several voiced human characters — Vrook Lamar on Dantooine among them — were wrongly tagged as alien internally, so their subtitles were still being read over their voice; they're now recognised as human and stay silent. Second, conversations you only overhear — where two characters talk to each other and you aren't part of the exchange, like the Taris cantina scene — were always read aloud, because the mod could only identify the speaker when you were the one being spoken to; it now identifies the speaker on every line, so overheard human dialogue is suppressed the same way. As before, this only affects voiced human speech: alien and droid speech, and anything unvoiced, is always read, and you can turn the whole filter off under Mod-Einstellungen to have every subtitle read regardless.
+
 <h3>Navigation:</h3>
 
 - Your own party members no longer set off the "person nearby" cue and name announcement as they wander around you. While exploring, the passive narration kept locking onto your companions — Carth, Mission, whoever is travelling with you — as they walked past or ahead of you, replaying the person cue and reading their name over and over. They're now skipped while you move around. You can still target a companion on purpose with Q / E, which reads their name and status as before (just without the person cue), so checking on a companion or talking to one still works.
