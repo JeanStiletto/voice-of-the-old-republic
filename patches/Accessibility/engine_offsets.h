@@ -1165,6 +1165,86 @@ constexpr size_t    kEquipPanelCharacterRightButtonOffset = 0x3F6C;
 constexpr size_t    kLevelUpButtonBackOffset              = 0x1944;
 constexpr size_t    kLevelUpButtonCancelOffset            = 0x1B08;
 
+// ----------------------------------------------------------------------------
+// CSWGuiInGameAbilities — the in-game "Fähigkeiten" screen (CGuiInGame slot
+// 0x18, abilities.gui). A view-only character screen shaped like the settings
+// menu: three tab buttons (Powers / Skills / Talents) switch which list the
+// single LB_ABILITY listbox shows, and selecting a row repaints a detail area
+// (name + rank/bonus/total labels + the LB_DESC description box). NOT the
+// chargen/level-up button-grid shape — it rides the shared ListBoxPanelSpec +
+// description-peek machinery (see menus_abilities.cpp).
+//
+// Member offsets verified from Lane's RE database (docs/llm-docs/re/
+// k1_win_gog_swkotor.exe.sarif, struct CSWGuiInGameAbilities). Decimal
+// offsets from the SARIF in parentheses.
+constexpr size_t    kAbilitiesSkillRankLabelOffset   = 0x2190;  // (8592)  "Fähigkeitenrang"
+constexpr size_t    kAbilitiesRankValueLabelOffset   = 0x22D0;  // (8912)  e.g. "8"
+constexpr size_t    kAbilitiesBonusLabelOffset       = 0x2410;  // (9232)  "Bonus"
+constexpr size_t    kAbilitiesBonusValueLabelOffset  = 0x2550;  // (9552)  e.g. "+3"
+constexpr size_t    kAbilitiesTotalLabelOffset       = 0x2690;  // (9872)  "Gesamtrang"
+constexpr size_t    kAbilitiesTotalValueLabelOffset  = 0x27D0;  // (10192) e.g. "11"
+constexpr size_t    kAbilitiesNameLabelOffset        = 0x2910;  // (10512) selected entry name
+constexpr size_t    kAbilitiesFeatsButtonOffset      = 0x2B90;  // (11152) BTN_FEATS  (Talente)
+constexpr size_t    kAbilitiesPowersButtonOffset     = 0x2D54;  // (11604) BTN_POWERS (Kräfte)
+constexpr size_t    kAbilitiesSkillsButtonOffset     = 0x2F18;  // (12056) BTN_SKILLS (Fähigkeiten)
+constexpr size_t    kAbilitiesListBoxOffset          = 0x30DC;  // (12508) LB_ABILITY (main list)
+constexpr size_t    kAbilitiesDescListBoxOffset      = 0x33BC;  // (13244) LB_DESC (description)
+
+// CSWGuiInGameAbilities methods (__thiscall). OnAbilitySelectionChanged is the
+// repaint entry point: after we drive the LB_ABILITY cursor (DriveListBoxSelection
+// bypasses the engine's onSelectionChanged), calling it repaints the detail
+// labels + description for the new row. The On*ButtonPressed trio switches tab.
+// OnEnterPower null-derefs when the Powers tab has no powers (the tutorial-save
+// "Kräfte, nicht verfügbar" case) — guard the Powers tab before driving it.
+// Per-entry repaint handlers — the coordinate-free path. OnEnterSkill reads
+// row->id as the skill index; OnEnterFeat takes a feat id; both rewrite the
+// detail labels + description. These (NOT OnAbilitySelectionChanged, which is
+// mouse-hit-test driven) are what keyboard nav must call. All are
+// __thiscall(this, <one 4-byte arg>) — purgeSize 4; the typedef must carry the
+// arg or the callee's `ret 4` corrupts the caller frame.
+constexpr uintptr_t kAddrAbilitiesOnEnterSkill        = 0x006ad180;  // (this, CSWGuiControl* row)
+constexpr uintptr_t kAddrAbilitiesOnEnterFeat         = 0x006ad410;  // (this, ushort featId)
+constexpr uintptr_t kAddrAbilitiesOnEnterPower        = 0x006acce0;  // (this, int) — crashes when powers empty
+// OnAbilitySelectionChanged is the engine's mouse-driven selection handler
+// (hit-tests cursor vs the CSWGuiSkillFlow chart). Kept for reference; do NOT
+// call it for keyboard nav.
+constexpr uintptr_t kAddrAbilitiesOnAbilitySelChanged = 0x006ad4b0;  // (this, int) mouse-driven
+constexpr uintptr_t kAddrAbilitiesUpdateView          = 0x006ad560;  // void(void)
+constexpr uintptr_t kAddrAbilitiesOnSkillsButton      = 0x006adad0;  // void(void) — field139=0 + UpdateView
+constexpr uintptr_t kAddrAbilitiesOnFeatsButton       = 0x006ada70;  // void(void) — field139=2 + UpdateView
+constexpr uintptr_t kAddrAbilitiesOnPowersButton      = 0x006adaa0;  // void(void) — field139=1 + UpdateView
+// DisplayPowers() — predicate: returns 1 iff the character is a Jedi AND the
+// powers chart has rows. Used to decide whether the Powers tab exists (the
+// engine's own tab cycle uses it to skip an empty Powers tab). Pure check.
+constexpr uintptr_t kAddrAbilitiesDisplayPowers       = 0x006abe70;  // int(void)
+
+// CSWGuiInGameAbilities::HandleInputEvent(this, int code, int val). The panel's
+// own input handler; code 0x29 runs the engine's smart tab cycle
+// (Skills -> Powers-if-any -> Feats -> Skills, auto-skipping an empty Powers
+// tab). These are panel-internal codes, distinct from the manager kInput* codes.
+constexpr uintptr_t kAddrAbilitiesHandleInputEvent    = 0x006ae5f0;
+constexpr int       kAbilitiesPanelCodeCycleTab       = 0x29;
+// Chart-nav codes consumed by HandleInputEvent on the Feats/Powers tabs and
+// routed to CSWGuiSkillFlowChart::HandleInput (@0x006cdd80): 0x31/0x32 step the
+// feat-chain rows (up/down, skipping empty cells) and trigger OnEnterFeat/
+// OnEnterPower to repaint the detail + description. 0x2f/0x30 step columns
+// (tiers within a chain) — not wired yet (Left/Right are tab-switch).
+constexpr int       kAbilitiesPanelCodeChartUp        = 0x31;
+constexpr int       kAbilitiesPanelCodeChartDown      = 0x32;
+
+// The two CSWGuiSkillFlowChart members on the panel (field30/field31), and the
+// chart's own cursor fields. We read row vs row-count to clamp the engine's
+// chart nav, which otherwise WRAPS top<->bottom (unlike the skills listbox,
+// which clamps). field_0xd = current row, field1_0x4 = row count.
+constexpr size_t    kAbilitiesPowersChartOffset       = 0x3f78;  // field30 (Powers)
+constexpr size_t    kAbilitiesFeatsChartOffset        = 0x3f88;  // field31 (Feats)
+constexpr size_t    kSkillFlowChartRowOffset          = 0x0d;    // field_0xd
+constexpr size_t    kSkillFlowChartRowCountOffset     = 0x04;    // field1_0x4
+
+// CGuiInGame.field139_0xbc0 — the active abilities tab: 0 = Skills,
+// 1 = Powers, 2 = Feats. Read to route per-tab input + announce the tab.
+constexpr size_t    kGuiInGameAbilitiesTabOffset      = 0xbc0;
+
 // CSWSCreatureStats.feats @+0x0 — CExoArrayList<ushort>. Count lives
 // at +0x4 (size field of the list). Static feat list (granted at level-
 // up + class); doesn't drift mid-combat. Used by Shift+H to communicate

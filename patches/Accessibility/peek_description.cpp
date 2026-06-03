@@ -6,6 +6,7 @@
 #include "engine_reads.h"
 #include "hotkeys.h"
 #include "log.h"
+#include "menus_abilities.h"  // RefreshDetail (abilities description repaint)
 #include "menus_internal.h"   // kEquipBtn* slot ids, FindControlById
 #include "menus_listbox.h"    // IsEquipPickerArmed
 #include "prism.h"
@@ -73,6 +74,15 @@ static void RefreshJournal(void* panel, void* focused) {
     fn(panel, focused);
 }
 
+// Repaint LB_DESC for the focused entry before Shift+Up/Down pages it. Routes
+// through the abilities module's OnEnterSkill path (NOT OnAbilitySelectionChanged,
+// which is mouse-coordinate-driven and corrupts the stack via a ret-4 mismatch).
+// `focused` is unused — the selection lives on the ability_listbox.
+static void RefreshAbilities(void* panel, void* /*focused*/) {
+    if (!panel) return;
+    acc::menus::abilities::RefreshDetail(panel);
+}
+
 // Panel kind → description-listbox offset + optional refresh adapter.
 // Adding a panel = one row. refresh=nullptr reads whatever the engine
 // already populated.
@@ -92,7 +102,7 @@ struct PanelPeekInfo {
 constexpr PanelPeekInfo kPanels[] = {
     { acc::engine::PanelKind::InGameInventory,  0x0844, RefreshInventory  },  // CSWGuiInGameInventory.description_listbox
     { acc::engine::PanelKind::InGameJournal,    0x01a4, RefreshJournal    },  // CSWGuiInGameJournal.item_description_label (a CSWGuiListBox)
-    { acc::engine::PanelKind::InGameAbilities,  0x33bc, nullptr           },  // CSWGuiInGameAbilities.description_listbox
+    { acc::engine::PanelKind::InGameAbilities,  kAbilitiesDescListBoxOffset, RefreshAbilities },  // LB_DESC (0x33bc); refresh repaints it for the focused entry
     { acc::engine::PanelKind::Store,            0x1a40, RefreshStore      },  // CSWGuiStore.description_listbox
     // CSWGuiInGameEquip is handled via the item-tooltip path below: its
     // arrow-key nav goes through DriveListBoxSelection which bypasses the

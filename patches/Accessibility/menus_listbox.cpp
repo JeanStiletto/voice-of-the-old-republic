@@ -1145,6 +1145,13 @@ constexpr ListBoxPanelSpec kExamineSpec = {
     /*alwaysReturnFromHandler*/ false,
 };
 
+// The in-game Faehigkeiten screen (InGameAbilities) is NOT a ListBoxPanelSpec.
+// Its ability_listbox rows are CSWGuiSkillFlow controls and the tabs need
+// per-tab routing (Skills is keyboard-driven by us via OnEnterSkill; Feats and
+// Powers are engine-native charts). It has a dedicated handler in
+// menus_abilities.cpp (acc::menus::abilities::HandleInput), invoked from
+// menus.cpp before this dispatcher.
+
 // Spec table. Probe order matters: SaveLoad's structural matcher
 // (FindControlById signature check) is a superset that could in principle
 // match other panels with the same control IDs â€” Container and EquipPicker

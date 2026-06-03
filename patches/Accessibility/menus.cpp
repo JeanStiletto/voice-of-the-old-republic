@@ -34,6 +34,7 @@
 #include "menus_extract.h"   // Step 2B — text extraction lifted out
 #include "menus_internal.h"  // Step 2B — shared seam with menus_extract
 #include "menus_pending.h"   // Step 3 — deferred-op queue lifted out
+#include "menus_abilities.h"  // dedicated Fähigkeiten-screen input handler
 #include "menus_listbox.h"   // Step 4 — listbox-driven panel dispatcher
 #include "menus_editbox.h"   // Editbox (chargen Name) dispatcher + monitor
 #include "menus_chain.h"     // Step 5 — chain navigation lifted out
@@ -1651,6 +1652,19 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         if (acc::peek::HandleShiftArrow(param_1, param_2, activePanel,
                                         peekFocus)) {
             return trackPress(1);
+        }
+    }
+
+    // In-game Fähigkeiten screen — dedicated two-level handler (tab level:
+    // Up/Down pick a tab, Enter drills in; list level: Up/Down browse, Esc
+    // back). Runs before the listbox dispatcher and chain nav so it owns every
+    // nav key on this screen; the engine's own paths for it are mouse-only or
+    // crash-prone.
+    {
+        int rv = 0;
+        if (acc::menus::abilities::HandleInput(n, thisPtr, activePanel,
+                                               param_1, param_2, rv)) {
+            return trackPress(rv);
         }
     }
 
