@@ -613,8 +613,16 @@ void PollHotkey() {
     // Enter consumes via the routing block below, so this only affects
     // the bare-press during submenu-active state, which is an unlikely
     // input pattern but worth handling.
+    //
+    // Dialog gate: when a dialog reply listbox is foreground the number
+    // keys belong to the reply selection, not the action bar. The engine's
+    // combat dispatch is suppressed in that context (see input_pipeline.cpp
+    // OnClientHandleInputEvent's matching HasActiveDialogPanel guard), so
+    // announcing "X eingesetzt" here would be a phantom cue for an action
+    // that never fired. Skip the announce while a dialog owns the keys.
     if (inWorld && !acc::actionbar_menu::IsActive() &&
-        !acc::target_action_menu::IsActive()) {
+        !acc::target_action_menu::IsActive() &&
+        !acc::engine::HasActiveDialogPanel()) {
         if (risingK1) AnnounceBareTargetKey(0);
         if (risingK2) AnnounceBareTargetKey(1);
         if (risingK3) AnnounceBareTargetKey(2);

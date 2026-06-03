@@ -2,7 +2,6 @@
 
 #include <windows.h>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 
 #include "engine_area.h"      // GameObjectKind, GetObjectKind
@@ -14,7 +13,6 @@
 #include "log.h"
 #include "menus_extract.h"    // FromControl
 #include "menus_modsettings.h" // GetToggle(Option::HumanSubtitles)
-#include "strings.h"
 #include "prism.h"
 #include "transitions.h"      // IsModuleLoadPending — gate during cutscene-load
                               // transient (engine LYT loader use-after-free)
@@ -314,14 +312,12 @@ void Tick() {
     DialogPanelMatch m = FindActiveDialogPanel();
     static void*       s_lastPanel    = nullptr;
     static char        s_lastNpcLine[512] = {0};
-    static int         s_lastReplyCount   = 0;
 
     if (!m.panel) {
         if (s_lastPanel) {
             acclog::Write("Dialog.Speech", "panel closed");
             s_lastPanel = nullptr;
             s_lastNpcLine[0] = '\0';
-            s_lastReplyCount = 0;
         }
     } else {
         // First sight — set baseline silently. Don't replay history on
@@ -330,7 +326,6 @@ void Tick() {
         if (s_lastPanel != m.panel) {
             s_lastPanel = m.panel;
             s_lastNpcLine[0] = '\0';
-            s_lastReplyCount = 0;
         }
 
         char npc[512] = "";
@@ -358,24 +353,6 @@ void Tick() {
                           human ? 1 : 0, suppress ? 1 : 0, npc);
             std::strncpy(s_lastNpcLine, npc, sizeof(s_lastNpcLine) - 1);
             s_lastNpcLine[sizeof(s_lastNpcLine) - 1] = '\0';
-        }
-
-        int replies = ReadListBoxRowCount(m.panel,
-                                          kDialogRepliesListBoxOffset);
-        if (replies != s_lastReplyCount) {
-            int prev = s_lastReplyCount;
-            s_lastReplyCount = replies;
-            if (replies > 0) {
-                char msg[64];
-                std::snprintf(msg, sizeof(msg),
-                              acc::strings::Get(
-                                  acc::strings::Id::FmtDialogReplies),
-                              replies);
-                prism::Speak(msg, /*interrupt=*/false);
-                acclog::Write("Dialog.Speech",
-                              "replies %d -> %d panel=%p [%s]",
-                              prev, replies, m.panel, msg);
-            }
         }
 
         // For Computer dialog variant, also speak the message_listbox

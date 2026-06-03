@@ -891,12 +891,9 @@ enum class Id : int {
     SaveTypeReflex,
     SaveTypeWill,
 
-    // ---- Dialog screen, Phase 1D — live conversation replies count cue.
-    //      `FmtDialogReplies` — spoken on entry to a node with replies.
-    //      Arg: count (`%d`).
+    // ---- Dialog screen — reply availability cue.
     //      `DialogReplyUnavailable` — suffix appended via enrichRow when a
     //      reply is gated (active=0).
-    FmtDialogReplies,
     DialogReplyUnavailable,
     // Per-row reply announce when the entry is greyed (active=0). Args:
     // row_text (`%s`), unavailable_word (`%s`), index (`%d`), total

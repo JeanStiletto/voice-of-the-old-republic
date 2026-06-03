@@ -304,7 +304,6 @@ const char* Get(Id id) {
         case Id::SaveTypeReflex:             return "Reflex";
         case Id::SaveTypeWill:               return "Willen";
 
-        case Id::FmtDialogReplies:           return "%d Antworten verf\xFCgbar.";
         case Id::DialogReplyUnavailable:     return "nicht verf\xFCgbar";
         case Id::FmtDialogReplyUnavailableRow: return "%s, %s, %d von %d";
 

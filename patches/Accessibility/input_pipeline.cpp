@@ -28,6 +28,9 @@
                                // last-cycled variant for bare 1..3
 #include "engine_manager.h"  // kAddrGuiManagerPtr, modal_stack offsets
 #include "engine_offsets.h"
+#include "engine_panels.h"   // HasActiveDialogPanel — suppress the bare 1..7
+                             // combat dispatch while a dialog reply listbox
+                             // owns the number keys
 #include "engine_player.h"   // GetPlayerServerCreature
 #include "log.h"
 #include "narrated_target.h" // TryGet — pull the unified "current focus"
@@ -170,10 +173,22 @@ extern "C" void __cdecl OnClientHandleInputEvent(void* this_ptr,
     //
     // Engine convention is client-side handles (high bit 0x80000000);
     // narrated_target stores server-side. OR the bit before stamping.
+    //
+    // Dialog gate: while a dialog reply listbox is foreground, the engine
+    // routes the same number keys (1..7) to BOTH the dialog reply selection
+    // AND the combat handler that lands here as 0xe2..0xee. In vanilla the
+    // combat side bails silently because action_lists are stale — but our
+    // PrepareBareDispatch refresh below would make DoTargetAction /
+    // DoPersonalAction actually fire a default combat action mid-dialog
+    // (reported 2026-06-03: picking a reply with a number also attacked /
+    // used an item). Skip the whole prep path when a dialog owns the keys
+    // so we restore the vanilla "number selects the reply, nothing else"
+    // behaviour.
     if (param_2 != 0 &&
         (param_1 == 0xe2 || param_1 == 0xe4 || param_1 == 0xe6 ||
          param_1 == 0xe8 || param_1 == 0xea || param_1 == 0xec ||
-         param_1 == 0xee))
+         param_1 == 0xee) &&
+        !acc::engine::HasActiveDialogPanel())
     {
         // Diag probe — snapshot state before the engine's switch-case
         // dispatches DoTargetAction / DoPersonalAction. POST state lands
