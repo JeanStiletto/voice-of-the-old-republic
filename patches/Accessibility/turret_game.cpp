@@ -6,14 +6,18 @@
 // What it does:
 //   - Entry/exit announce (the native control hint — WASD aims, Space
 //     fires; both are native keyboard actions, live-confirmed).
-//   - ONE unified 3D cue per round, on the SELECTED fighter (Q/E to lock /
-//     cycle). It does two jobs at once via a single source:
-//       * BEACON — it never goes silent; off-aim it sits at an audible floor
-//         distance and pans toward the (lead-corrected) target, so the player
-//         can swing the turret onto it from anywhere ("swing until you hear
-//         it").
-//       * ON-TARGET SWELL — its loudness rises as the aim ray closes on the
-//         hitbox, peaking at dead-centre. Loudest = a shot connects.
+//   - ONE 3D crosshair cue per round, on the SELECTED fighter (Q/E to lock /
+//     cycle), using a RISING TICK RATE for centring:
+//       * OFF-TARGET — the cue PULSES, panned toward the (lead-corrected)
+//         target so the player can swing onto it from anywhere. The pulse
+//         interval shrinks as the aim closes on the hit cone (slow pings far
+//         off, near-buzz at the edge); behind, the pulses pin to the shorter-
+//         swing side.
+//       * ON-TARGET — the cue goes SOLID (continuous tone) the instant the aim
+//         is inside the range-scaled hitbox. Solid == a shot connects, at any
+//         range. (Loudness still swells toward dead-centre within the cone as a
+//         secondary cue; it is NOT the primary signal — the engine's distance→
+//         gain curve has too steep a knee to track the cone by loudness alone.)
 //     Aim point is the INTERCEPT (range-gated lead; see kBoltSpeed) so distance
 //     shots lead the target. Earlier we ran a SECOND ambient engine-loop on the
 //     nearest fighters ("hum"); play-testing showed it was mostly ignored, so
@@ -192,19 +196,39 @@ constexpr float kBehindEnterDeg = 95.0f;  // front -> behind above this
 constexpr float kBehindExitDeg  = 85.0f;  // behind -> front below this
 constexpr const char* kLockCueResref = "acc_turret_lock";
 
+// ----- Rising-tick-rate crosshair -----
+// The precision signal is the PULSE RATE, not loudness. Loudness-via-distance
+// has a steep knee in the engine curve that can't track the range-scaled hit
+// cone (it read "loud the moment I'm roughly on" well outside the cone at
+// range). So off-target the cue PULSES, and the interval shrinks as the aim
+// closes on the cone — slow pings far off, near-buzz at the edge — then goes
+// SOLID (continuous tone) the instant the aim is inside the hitbox (onTarget).
+// Solid == "a shot connects here", at ANY range, because onTarget is already
+// scaled to the subtend. Off-target ticks carry direction via pan.
+constexpr ULONGLONG kTickFastMs  = 90;    // just outside the cone — near-buzz
+constexpr ULONGLONG kTickSlowMs  = 700;   // far off / behind — slow ping
+constexpr float     kTickRampDeg = 90.0f; // angular span over which rate ramps:
+// the FULL forward hemisphere. The aim is routinely 60-160° off a far target;
+// a narrow ramp pinned the rate at slowest for the whole swing ("barely rises").
+// Spanning ~90° means every degree of swinging toward the target speeds the
+// pulse — the warmer/colder tracking signal — collapsing to solid in the cone.
+constexpr float     kTickDist    = 8.0f;  // fixed pan distance for forward ticks
+// The pulse uses a SHORT (~60 ms) percussive sample, NOT the ~1 s sustained
+// acc_turret_lock the solid tone loops: one-shots of the long sample overlapped
+// into a constant drone that masked the rate entirely (only pan changed). The
+// tick is the same timbre family (sliced from the lock tone) so accelerating
+// pulses audibly merge into the solid lock tone on-target.
+constexpr const char* kTickCueResref = "acc_turret_tick";
+
 // ----- Behind steering (rear-arc pinned pan) -----
-// When the locked fighter is in the rear hemisphere we DON'T silence the cue,
-// and we DON'T play a separate tick (it used the same sample as the peg, so the
-// two were indistinguishable — and fired at max volume twice a second, the main
-// source of the "wall of noise"). Instead the ONE peg tone keeps playing but its
-// pan is PINNED hard to the shorter-swing side and held there until the target
-// re-enters the forward cone (hysteretic): pan left = swing left, pan right =
-// swing right. The side is latched through a near-zero (dead-behind) lateral so
-// it doesn't flip-flop. Pinned at a fixed, clearly-audible distance because the
-// loudness ramp would otherwise floor a rear target at the faint 20 m beacon
-// level — too quiet to steer by. The elevation pitch glide still applies (set
-// unconditionally below), so up/down feedback survives while behind.
-constexpr float kBehindPanDist = 9.0f;  // pinned source distance while behind
+// In the rear hemisphere the target can't masquerade as a front one, so the
+// ticks (behind is always off-target) PIN hard to the shorter-swing side: pan
+// left = swing left, pan right = swing right. The side is latched through a
+// near-zero (dead-behind) lateral so it doesn't flip-flop. Hysteretic gate
+// (kBehindEnterDeg/kBehindExitDeg) so a target orbiting the ~90° boundary
+// doesn't flap. The elevation pitch glide applies to the solid tone (set
+// unconditionally below) once the target is back in the forward cone.
+constexpr float kBehindPanDist = 9.0f;  // pinned tick distance while behind
 
 // ----- Elevation channel (peg playback PITCH = vertical aim error) -----
 // Stereo pan carries azimuth (left/right) but nothing about elevation, so the
@@ -325,6 +349,11 @@ struct State {
     // so a target sitting exactly behind (lateral ~0) doesn't flip-flop the pan
     // left/right tick to tick.
     bool      last_behind_swing_left = false;
+
+    // Rising-tick-rate crosshair: timestamp of the last off-target pulse. The
+    // pulse interval is recomputed each tick from the aim error; a pulse fires
+    // when this many ms have elapsed. Solid tone (on-target) bypasses it.
+    ULONGLONG last_tick_ms = 0;
 
     // On-target edge tracker for the selected fighter: true while the combined
     // aim was inside the hitbox last tick. A false->true transition fires the
@@ -623,7 +652,9 @@ void AnnounceSelectedTarget(int idx, const int occSlot[], const float occDist[],
 
     // One-shot confirmation at a compressed (always-audible) position in the
     // fighter's direction, full volume — "locked, it's this way". Plays even
-    // on a silent re-pick (it's a locator cue, not speech).
+    // on a silent re-pick (it's a locator cue, not speech). Uses the SHORT tick
+    // sample, not the ~1 s lock beep: rapid Q/E cycling fires this on every
+    // switch, and overlapping one-shots of the long sample drone into "scrilling".
     const float sd = occDist[idx];
     Vector pingPos = occPos[idx];
     if (sd > 0.0f) {
@@ -632,7 +663,7 @@ void AnnounceSelectedTarget(int idx, const int occSlot[], const float occDist[],
         pingPos.y = listener.y + (occPos[idx].y - listener.y) * kk;
         pingPos.z = listener.z + (occPos[idx].z - listener.z) * kk;
     }
-    acc::audio::PlayCue3D(kLockCueResref, pingPos);
+    acc::audio::PlayCue3D(kTickCueResref, pingPos);
 
     // Baseline the range-edge tracker to this lock's actual state. If it's
     // already inside killable range, fire the in-range (ENTER) cue now — so a
@@ -941,58 +972,73 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
         listener.z + aimRel.z * kk,
     };
 
-    // Behind-gate (hysteretic): silence the cue only when the target is in the
-    // rear hemisphere. Cross INTO behind above kBehindEnterDeg and back to front
-    // below kBehindExitDeg, so a target orbiting the ~90° boundary doesn't flap
-    // the peg on/off (which, sharing the behind tick's sample, read as mush).
-    // The whole forward half stays audible; the player swings or Q/E-cycles to
-    // bring a rear target into the front.
-    if (g_state.selected_behind ? (angle >= kBehindExitDeg)
-                                : (angle > kBehindEnterDeg)) {
-        const bool wasBehind = g_state.selected_behind;
-        g_state.selected_behind = true;
-        // Pin the ONE peg tone hard to the shorter-swing side and hold it there.
-        // The 2D cross product of (aim x target) gives the side: >0 = target is
-        // left of aim -> swing left. Latch the side through a near-zero
-        // (dead-behind) lateral so it doesn't flip-flop. Placed 90 deg to that
-        // side of the aim at a fixed, clearly-audible distance.
+    // Behind-gate (hysteretic): a target orbiting the ~90° boundary mustn't flap.
+    // Cross INTO behind above kBehindEnterDeg, back to front below kBehindExitDeg.
+    // Behind is always off-target (onTargetAngle is small), so it always ticks —
+    // pinned to the shorter-swing side.
+    const bool behind = g_state.selected_behind ? (angle >= kBehindExitDeg)
+                                                : (angle > kBehindEnterDeg);
+    const bool behindEntered = behind && !g_state.selected_behind;
+    g_state.selected_behind = behind;
+
+    // Where the off-target pulse plays. Forward: toward the aim/intercept at a
+    // fixed audible distance, so pan points the way and volume stays steady
+    // (rate, not loudness, carries closeness). Behind: pinned to the shorter-
+    // swing side (2D cross product of aim x target gives the side; latched
+    // through a near-zero dead-behind lateral so it doesn't flip-flop).
+    Vector tickPos;
+    bool   swingLeft = g_state.last_behind_swing_left;
+    if (behind) {
         const float cross = aimDir.x * tdir.y - aimDir.y * tdir.x;
-        bool swingLeft = g_state.last_behind_swing_left;
         if (cross > 0.05f)       swingLeft = true;
         else if (cross < -0.05f) swingLeft = false;
         g_state.last_behind_swing_left = swingLeft;
-
         float sx = swingLeft ? -aimDir.y : aimDir.y;
         float sy = swingLeft ?  aimDir.x : -aimDir.x;
         const float sm = std::sqrt(sx * sx + sy * sy);
         if (sm > 1e-4f) { sx /= sm; sy /= sm; }
-        const Vector pinnedPos = {
-            listener.x + sx * kBehindPanDist,
-            listener.y + sy * kBehindPanDist,
-            listener.z,
-        };
-        if (g_state.peg_cue.IsActive()) {
-            g_state.peg_cue.UpdatePosition(pinnedPos);
-        } else if (g_state.peg_cue.Start(kLockCueResref, pinnedPos,
-                       /*looping=*/true, /*spatial=*/true, /*priorityGroup=*/-1,
-                       /*volumeByte=*/-1, /*maxVolDist=*/kPegMinDist,
-                       /*minVolDist=*/kPegMaxDist)) {
-            acclog::Write("Turret", "peg on (behind) slot=%d", g_state.selected_slot);
-        }
-        if (!wasBehind) {
-            acclog::Write("Turret", "peg behind: pin %s slot=%d angle=%.0f",
-                          swingLeft ? "LEFT" : "RIGHT",
-                          g_state.selected_slot, angle);
-        }
+        tickPos = { listener.x + sx * kBehindPanDist,
+                    listener.y + sy * kBehindPanDist,
+                    listener.z };
     } else {
-        g_state.selected_behind = false;  // back in the forward half
+        tickPos = { listener.x + tdir.x * kTickDist,
+                    listener.y + tdir.y * kTickDist,
+                    listener.z + tdir.z * kTickDist };
+    }
+
+    if (onTarget && !behind) {
+        // SOLID: continuous tone at the loudness-ramped position, which still
+        // swells toward dead-centre within the cone (the bolt-margin reward).
+        // The elevation pitch glide applies below. This is the unambiguous
+        // "a shot connects — fire" signal, at any range.
         if (g_state.peg_cue.IsActive()) {
             g_state.peg_cue.UpdatePosition(cuePos);
         } else if (g_state.peg_cue.Start(kLockCueResref, cuePos,
                        /*looping=*/true, /*spatial=*/true, /*priorityGroup=*/-1,
                        /*volumeByte=*/-1, /*maxVolDist=*/kPegMinDist,
                        /*minVolDist=*/kPegMaxDist)) {
-            acclog::Write("Turret", "peg on selected slot=%d", g_state.selected_slot);
+            acclog::Write("Turret", "peg SOLID (on target) slot=%d angle=%.1f subtend=%.1f",
+                          g_state.selected_slot, angle, subtendDeg);
+        }
+    } else {
+        // TICKING: stop the solid loop; pulse a one-shot whose interval shrinks
+        // as the aim approaches the cone (fast just outside, slow far off/behind).
+        if (g_state.peg_cue.IsActive()) {
+            g_state.peg_cue.Stop();
+            acclog::Write("Turret", "peg -> tick mode slot=%d angle=%.1f%s",
+                          g_state.selected_slot, angle, behind ? " (behind)" : "");
+        } else if (behindEntered) {
+            acclog::Write("Turret", "tick behind: pin %s slot=%d angle=%.0f",
+                          swingLeft ? "LEFT" : "RIGHT", g_state.selected_slot, angle);
+        }
+        float frac = (angle - onTargetAngle) / kTickRampDeg;
+        if (frac < 0.0f) frac = 0.0f; else if (frac > 1.0f) frac = 1.0f;
+        const ULONGLONG interval = kTickFastMs +
+            static_cast<ULONGLONG>(frac * (kTickSlowMs - kTickFastMs));
+        const ULONGLONG nowT = GetTickCount64();
+        if (nowT - g_state.last_tick_ms >= interval) {
+            g_state.last_tick_ms = nowT;
+            acc::audio::PlayCue3D(kTickCueResref, tickPos);
         }
     }
 
@@ -1317,6 +1363,7 @@ void HandleEnter(void* mg) {
     g_state.selected_in_range = -1;
     g_state.selected_on_target = false;
     g_state.selected_behind   = false;
+    g_state.last_tick_ms      = 0;
     g_state.leave_tap_due_ms  = 0;
     g_state.have_last_pos     = false;
     g_state.have_vel          = false;

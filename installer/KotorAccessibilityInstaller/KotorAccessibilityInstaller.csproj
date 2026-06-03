@@ -52,10 +52,15 @@
          mgs_turbdwn01, used by the turret minigame's per-fighter approach
          cue (turret_game.cpp).
          acc_turret_lock.wav: looped beep (from as_el_medbeep_03) — the
-         turret targeting lock-on cue; plays when aim is on a fighter. -->
+         turret targeting lock-on cue; plays SOLID when aim is on a fighter.
+         acc_turret_tick.wav: a short (~60 ms) percussive slice of the lock
+         beep — the off-target pulse whose rate rises as the aim closes; a
+         one-shot of the ~1 s lock beep would overlap into a constant drone
+         and mask the rate. -->
     <EmbeddedResource Include="Resources\acc_boost.wav" />
     <EmbeddedResource Include="Resources\acc_turret_loop.wav" />
     <EmbeddedResource Include="Resources\acc_turret_lock.wav" />
+    <EmbeddedResource Include="Resources\acc_turret_tick.wav" />
     <!-- Vanilla prioritygroups.2da. The installer appends the mod's
          dedicated full-volume audio priority group to whatever copy is in
          Override (or this bundled vanilla if absent) — see
