@@ -21,6 +21,8 @@ hotkey Y", "X no longer does Z"); keep technical detail short.
 - The journal's quest list stays readable after you sort it or swap between active and completed quests. Previously a sort could leave entries reading as "control 1", "control 2", … and Enter would stop reading the quest text; both work again now, every time you re-sort or swap.
 - The Quest Items screen — opened from inside the journal — is now accessible. Its title is read when you open it, and Enter (or Shift+Up / Shift+Down) on a quest item reads that item's description, the same way item tooltips read elsewhere.
 - The journal button that opens the Quest Items screen had an unclear stock label ("Aus Auftrag" in German); it now reads a clearer term in your language.
+- The in-game Fähigkeiten screen (your skills, feats and Force powers) is now accessible. Its title is read when you open it; Up / Down move between the Skills, Feats and Powers tabs and Left / Right move along the entries within a tab, with each entry's name and rank read as you go. Enter (or Shift+Up / Shift+Down) reads the focused entry's full description, the same way item and quest tooltips read elsewhere. Escape steps back one level — from an entry out to the tab row, and from there out of the screen.
+- You can now take an item off directly from the equipment picker. Open a slot, arrow to the item marked as currently worn (read with "(Ausgew.)"), and press Enter — it's removed and you hear "Ausrüstung abgelegt". Pressing Enter on any other item still equips it as before, so the same key both swaps and removes. No extra "empty" entry was added to the list.
 
 <h2>v0.2.1</h2>
 

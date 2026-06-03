@@ -39,6 +39,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 
 namespace acc::menus::detail {
 
@@ -134,3 +135,14 @@ constexpr int kEquipBtnHandsId   = 23;  // BTN_INV_HANDS    (TLK 31383)
 constexpr int kEquipLbItemsId    =  5;  // LB_ITEMS
 constexpr int kEquipBtnBackId    = 36;  // BTN_BACK         (TLK 1582 = Schliess.)
 constexpr int kEquipBtnEquipId   = 37;  // BTN_EQUIP        (TLK 1580 = OK)
+
+// CSWGuiInGameItemEntry (LB_ITEMS row) — field6_0x394 bit-field after the
+// embedded CSWGuiButton + item id + borders + text. OnEnterSlot tags the
+// currently-equipped row via SetItem(id, /*param_2=*/1, 0); SetItem packs
+// (param_2 & 1) into bit 1 (0x2) of field6_0x394 — the same flag that makes
+// the engine append the " (Ausgew.)" suffix. So bit 0x2 set ⇔ "this row is
+// the item currently equipped in the selected slot". Used by EquipPickerOnEnter
+// to route Enter on the equipped row to an unequip (commit the row-0
+// 0x7f000000 "empty" entry) instead of a no-op re-equip.
+constexpr size_t kEquipItemEntryFlagsOffset  = 0x394;
+constexpr uint32_t kEquipItemEntryEquippedBit = 0x2;

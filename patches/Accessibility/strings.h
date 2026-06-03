@@ -309,6 +309,11 @@ enum class Id : int {
     FmtEquipSlotItem,
     FmtEquipSlotEmpty,
 
+    //      Spoken confirmation when Enter on the currently-equipped row
+    //      (the "(Ausgew.)" item) in the LB_ITEMS picker unequips it.
+    //      No args. Ex: "Ausr\xFCstung abgelegt".
+    EquipUnequipped,
+
     //      Virtual stat-row chain entries appended at the END of the
     //      Equip panel chain (after the 9 slot buttons + Back/Change*).
     //      Mirror of menus_credits and menus_charsheet — each row is a

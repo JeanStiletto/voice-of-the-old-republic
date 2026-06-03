@@ -106,6 +106,7 @@ const char* Get(Id id) {
 
         case Id::FmtEquipSlotItem:     return "%s, %s";
         case Id::FmtEquipSlotEmpty:    return "%s, vuoto";
+        case Id::EquipUnequipped:      return "Equipaggiamento rimosso";
         case Id::FmtEquipVitality:     return "Vitalit\xE0 %s";
         case Id::FmtEquipDefense:      return "Difesa %s";
         case Id::FmtEquipAttack:       return "Attacco %s";
