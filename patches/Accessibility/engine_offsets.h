@@ -1407,11 +1407,30 @@ constexpr size_t    kAppManagerServerExoAppOffset          = 0x8;
 //                                        "<Planet>:\n<entry text>")
 //   0x484 description label inline     (the single row inside item_description)
 //   0x5c4 items_listbox                (one CSWGuiJournalItemEntry per quest)
-//   0x8a4 quest_items_button           ("Auftrags-Gegenst.")
-//   0xa68 swap_text_button             ("Aus Auftrag" / "Vom Auftragsgeber")
-//   0xc2c sort_button                  ("nach Auftragseingang")
-//   0xdf0 exit_button
+//   0x8a4 quest_items_button           (cmd 0x29 → opens CSWGuiQuestItem modal)
+//   0xa68 swap_text_button             (cmd 0x2a → toggle active/done quests)
+//   0xc2c sort_button                  (cmd 0x2b → cycle sort order)
+//   0xdf0 exit_button                  (cmd 0x28 → close)
 //
+// Button→panel command wiring (decompiled CSWGuiInGameJournal::CSWGuiInGameJournal
+// @0x00644a40 + ::HandleInputEvent @0x006456e0): each button AddEvent's a 0x27
+// (activate) callback that calls panel->HandleInputEvent(cmd). Our generic
+// FireActivate(0x27) reaches them. Sort (0x2b) only sets the sort order and
+// repopulates the quest list LAZILY in Draw() next frame, so an immediate chain
+// rebuild captures half-built rows (base CSWGuiObject vtable, unreadable text);
+// force PopulateItemListBox first. Swap (0x2a) repopulates synchronously inside
+// the handler — just invalidate the chain so it re-binds to the new list.
+constexpr size_t    kJournalQuestItemsButtonOffset         = 0x8a4;
+constexpr size_t    kJournalSwapTextButtonOffset           = 0xa68;
+constexpr size_t    kJournalSortButtonOffset               = 0xc2c;
+constexpr size_t    kJournalExitButtonOffset               = 0xdf0;
+
+// CSWGuiInGameJournal::PopulateItemListBox @0x00645330 — clears items_listbox
+// and rebuilds one CSWGuiJournalItemEntry per quest in the current
+// active/done + sort mode, then clears the journal's HasChanged flag (so the
+// next Draw won't repopulate again).
+constexpr uintptr_t kAddrJournalPopulateItemListBox        = 0x00645330;
+
 // CSWGuiJournalItemEntry rows are CSWGuiButton-derived (size 0x1cc) with
 // their own vtable. The journal's OnControlEntered fires on mouse hover
 // over a row and rewrites item_description_label with the full text.

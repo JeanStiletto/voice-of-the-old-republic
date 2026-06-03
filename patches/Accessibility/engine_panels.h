@@ -114,6 +114,13 @@ enum class PanelKind {
     // BTN_LESS / BTN_MORE CSWGuiSpeedButtons carry no text — labelled by
     // menus_extract; the live wager amount is announced by pazaak.cpp.
     PazaakWager,
+
+    // Quest-items sub-screen (CSWGuiQuestItem, vtable 0x00757c20). Heap-
+    // allocated modal owned by the journal panel (field9_0xfb4), pushed when
+    // the journal's "Auftrags-Gegenstände" button (cmd 0x29) is activated.
+    // Lists the player's plot/quest items as CSWGuiInGameItemEntry rows with a
+    // hover-description box; identified by vtable.
+    InGameQuestItems,
 };
 
 const char* PanelKindName(PanelKind k);

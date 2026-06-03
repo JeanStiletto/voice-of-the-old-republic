@@ -32,4 +32,25 @@ bool IsJournalEntry(void* control);
 // IdentifyPanel(panel) == PanelKind::InGameJournal — no defensive re-check.
 void SpeakDescription(void* panel, void* focusedRow);
 
+// True iff `control` is the journal's Sort button (panel+0xc2c). Sort dispatches
+// cmd 0x2b, which only sets the sort order — the engine rebuilds the quest list
+// lazily in Draw() on the next frame. An immediate chain rebuild would capture
+// half-constructed rows, so the caller must ForceRepopulate() before re-binding.
+bool IsSortButton(void* panel, void* control);
+
+// True iff `control` is the journal's Swap button (panel+0xa68). Swap dispatches
+// cmd 0x2a, which repopulates the list synchronously inside its own handler — the
+// caller only needs to invalidate the chain so it re-binds to the new list.
+bool IsSwapButton(void* panel, void* control);
+
+// Diagnostic: log the raw CSWCJournal active/done entry counts (read directly
+// from engine data, independent of the current view) plus the live items_listbox
+// row count, so we can confirm the display surfaces every entry the engine has.
+void LogEntryCounts(void* panel);
+
+// Force a synchronous rebuild of the quest list by calling the engine's
+// CSWGuiInGameJournal::PopulateItemListBox. SEH-guarded. Used after a Sort
+// activate so the subsequent chain rebuild sees fully-constructed rows.
+void ForceRepopulate(void* panel);
+
 }  // namespace acc::menus::journal

@@ -1078,6 +1078,12 @@ enum class Id : int {
     PazaakFmtWagerRow,
     FmtStoreNotEnoughCredits,
 
+    // ---- Journal quest-items button (CSWGuiInGameJournal.quest_items_button
+    //      @+0x8a4). The engine renders an unclear label ("Aus Auftrag" in
+    //      German); spoken with this clearer term on focus. The sub-screen it
+    //      opens still announces its own LBL_TITLE on entry.
+    JournalQuestItemsButton,
+
     // ---- Virtual credits row (Inventory + Store).
     //      Surfaced via menus_credits as a text-only chain entry on
     //      CSWGuiInGameInventory.credits_value_label (@+0x424) and

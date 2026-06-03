@@ -26,4 +26,11 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
 // Resets the block cursor; next Shift+arrow speaks block 0.
 void OnShiftReleased();
 
+// Resolve a CSWGuiInGameItemEntry row to its item and speak the property
+// description with interrupt=true. Returns true iff something was spoken.
+// Used for Enter on quest-item rows (the QuestItem sub-screen), which have
+// no meaningful activate action — reading the description is the useful
+// behaviour, mirroring Enter on a journal quest row.
+bool SpeakItemRowDescription(void* row);
+
 }  // namespace acc::peek

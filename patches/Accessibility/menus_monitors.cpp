@@ -23,6 +23,7 @@
 #include "menus_chain.h"
 #include "menus_extract.h"
 #include "menus_internal.h"
+#include "menus_journal.h"   // LogEntryCounts — entry-count completeness diagnostic
 #include "strings.h"
 #include "prism.h"
 
@@ -191,6 +192,10 @@ const InGameSubScreenSpec k_inGameSubScreens[] = {
     { PanelKind::InGameJournal,   5, 48218u,      "Auftr\xe4ge" },
     { PanelKind::InGameOptions,   7, 48222u,      "Optionen" },
     { PanelKind::InGameMessages,  4, 48223u,      "Nachrichten" },
+    // Quest-items modal pushed by the journal's "Auftrags-Gegenstände" button.
+    // Not a strip sub-screen (no icon → guiId -1); its title is read live from
+    // LBL_TITLE in the announce path, so strref/literal are unused sentinels.
+    { PanelKind::InGameQuestItems, -1, 0xFFFFFFFFu, nullptr },
 };
 constexpr int k_inGameSubScreenCount =
     sizeof(k_inGameSubScreens) / sizeof(k_inGameSubScreens[0]);
@@ -225,6 +230,28 @@ void AnnounceNewSubScreens(void** panels, int count) {
         nowVisible[nowCount++] = p;
         if (IsSubScreenTracked(p)) continue;
         newSubScreenDetected = true;
+
+        // QuestItem modal has no static strip strref/literal; read its
+        // LBL_TITLE (+0x768) live so the announce is correct and localized.
+        // Tracked via the normal s_visibleSubScreens machinery, so closing
+        // and reopening re-announces.
+        if (k == PanelKind::InGameQuestItems) {
+            char title[128];
+            void* titleLabel = reinterpret_cast<unsigned char*>(p) + 0x768;
+            if (ReadGuiString(titleLabel, kLabelGuiStringPtrOffset,
+                              title, sizeof(title)) && title[0] != '\0') {
+                acclog::Write("Menus.SubScreen",
+                              "panel=%p kind=%s title=\"%s\" (dynamic)",
+                              p, PanelKindName(k), title);
+                prism::Speak(title, /*interrupt=*/false);
+            } else {
+                acclog::Write("Menus.SubScreen",
+                              "panel=%p kind=%s LBL_TITLE empty; silent",
+                              p, PanelKindName(k));
+            }
+            continue;
+        }
+
         char text[128];
         bool spoke = false;
         if (spec->strref != 0xFFFFFFFFu &&
@@ -245,6 +272,11 @@ void AnnounceNewSubScreens(void** panels, int count) {
         // Stats are now reachable via in-panel arrow navigation; the panel
         // name spoken above is the sole open-announce, matching every
         // other strip sub-screen.)
+
+        // Diagnostic: confirm the journal surfaces every entry the engine has.
+        if (k == PanelKind::InGameJournal) {
+            acc::menus::journal::LogEntryCounts(p);
+        }
     }
     memcpy(s_visibleSubScreens, nowVisible, sizeof(nowVisible));
     s_visibleSubScreenCount = nowCount;

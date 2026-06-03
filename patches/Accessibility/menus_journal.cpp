@@ -26,6 +26,17 @@ constexpr std::uintptr_t kAddrJournalOnControlEntered = 0x00645100;
 constexpr std::size_t    kJournalDescriptionListBoxOffset = 0x1a4;
 
 typedef void (__thiscall* PFN_PanelOnControl)(void* panel, void* control);
+typedef void (__thiscall* PFN_PanelThiscall)(void* panel);
+
+// Embedded button objects live AT panel+offset (the ctor constructs them in
+// place via &this->sort_button etc.), so the chain captures &button == that
+// address. Identifying by struct offset is locale-independent and was verified
+// live (sort = panel+0xc2c, swap = panel+0xa68 in patch-20260603-090028.log).
+bool IsButtonAtOffset(void* panel, void* control, std::size_t offset) {
+    if (!panel || !control) return false;
+    return reinterpret_cast<unsigned char*>(panel) + offset ==
+           reinterpret_cast<unsigned char*>(control);
+}
 
 bool ReadRowText(void* row, char* outBuf, std::size_t bufSize) {
     if (!row || !outBuf || bufSize < 2) return false;
@@ -132,6 +143,82 @@ void SpeakDescription(void* panel, void* focusedRow) {
     acclog::Write("Menus.Journal",
                   "Enter on quest row=%p (first 400 chars: \"%.400s\")",
                   focusedRow, logbuf);
+}
+
+bool IsSortButton(void* panel, void* control) {
+    return IsButtonAtOffset(panel, control, kJournalSortButtonOffset);
+}
+
+bool IsSwapButton(void* panel, void* control) {
+    return IsButtonAtOffset(panel, control, kJournalSwapTextButtonOffset);
+}
+
+void LogEntryCounts(void* panel) {
+    // Cross-check: read the raw CSWCJournal counts (active + done) directly,
+    // independent of the current display mode, and the live items_listbox row
+    // count. If active/done counts match the rows the user navigates, we are
+    // displaying every entry the engine has. Diagnostic only.
+    //
+    //   AppManager (0x007A39FC) → client (+0x4)
+    //   CClientExoApp::GetQuestJournal @0x005ed320 → CSWCJournal*
+    //     +0x04 num_done_entries
+    //     +0x24 journal_entries.journal_entries.size  (active count)
+    //   CClientExoApp::GetInGameGui   @0x005ed690 → CGuiInGame*
+    //     +0xbc4 bit0 = done-view mode
+    typedef void* (__thiscall* PFN_ClientGetter)(void* client);
+    __try {
+        void* appMgr = *reinterpret_cast<void**>(0x007A39FC);
+        if (!appMgr) return;
+        void* client = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(appMgr) + 0x4);
+        if (!client) return;
+
+        auto getJournal = reinterpret_cast<PFN_ClientGetter>(0x005ed320);
+        auto getGui     = reinterpret_cast<PFN_ClientGetter>(0x005ed690);
+        void* journal = getJournal(client);
+        void* gui     = getGui(client);
+        if (!journal) return;
+
+        int doneCount   = *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(journal) + 0x4);
+        int activeCount = *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(journal) + 0x24);
+        int mode = 0;
+        if (gui) {
+            mode = *reinterpret_cast<unsigned int*>(
+                reinterpret_cast<unsigned char*>(gui) + 0xbc4) & 1;
+        }
+
+        int listRows = -1;
+        if (panel) {
+            void* lb = reinterpret_cast<unsigned char*>(panel) + 0x5c4;
+            auto* lbList = reinterpret_cast<CExoArrayList*>(
+                reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
+            if (lbList) listRows = lbList->size;
+        }
+
+        acclog::Write("Menus.Journal",
+                      "EntryCounts: active=%d done=%d (engine data) | "
+                      "current view=%s listbox rows=%d",
+                      activeCount, doneCount,
+                      mode ? "DONE" : "ACTIVE", listRows);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Menus.Journal", "EntryCounts SEH (panel=%p)", panel);
+    }
+}
+
+void ForceRepopulate(void* panel) {
+    if (!panel) return;
+    __try {
+        auto fn = reinterpret_cast<PFN_PanelThiscall>(
+            kAddrJournalPopulateItemListBox);
+        fn(panel);
+        acclog::Write("Menus.Journal",
+                      "ForceRepopulate: PopulateItemListBox(panel=%p)", panel);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Menus.Journal",
+                      "ForceRepopulate SEH (panel=%p)", panel);
+    }
 }
 
 }  // namespace acc::menus::journal

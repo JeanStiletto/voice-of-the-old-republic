@@ -393,6 +393,7 @@ const char* Get(Id id) {
         case Id::PazaakFmtWager:         return "Einsatz %d von maximal %d.";
         case Id::PazaakFmtWagerRow:      return "Einsatz %d. %s";
         case Id::FmtStoreNotEnoughCredits:  return "Nicht genug Credits, brauchst %d, hast %d";
+        case Id::JournalQuestItemsButton:   return "Auftrags-Gegenst\xE4nde";
 
         case Id::FmtCredits:                return "Credits: %s";
 

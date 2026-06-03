@@ -543,6 +543,19 @@ const char* FromControl(void* control,
                 source = nullptr;
             }
         }
+        // Journal quest-items button. The engine renders an unclear German
+        // label ("Aus Auftrag"); speak a clearer localized term on focus.
+        // Identified by struct offset (quest_items_button @ +0x8a4). The
+        // sub-screen it opens still announces its own LBL_TITLE on entry.
+        if (!source && owner &&
+            IdentifyPanel(owner) == PanelKind::InGameJournal &&
+            control == reinterpret_cast<unsigned char*>(owner) +
+                           kJournalQuestItemsButtonOffset) {
+            snprintf(outBuf, bufSize, "%s",
+                     acc::strings::Get(
+                         acc::strings::Id::JournalQuestItemsButton));
+            if (outBuf[0] != '\0') source = "perkind-journal-questitems-btn";
+        }
     }
 
     // 1. Tooltip on the base class — works for any control that has one.

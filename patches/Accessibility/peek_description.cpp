@@ -144,11 +144,17 @@ void* WorkbenchUpgradeFindLb(void* panel) {
     return FindControlById(panel, 0);
 }
 
+void* QuestItemFindLb(void* panel) {
+    // CSWGuiQuestItem.LB_ITEMS at +0x488 (the plot/quest-item list).
+    return reinterpret_cast<unsigned char*>(panel) + 0x488;
+}
+
 constexpr ItemTooltipPanelInfo kItemTooltipPanels[] = {
     { acc::engine::PanelKind::Container,        ContainerFindLb,        0 },
     { acc::engine::PanelKind::InGameEquip,      InGameEquipFindLb,      1 },
     { acc::engine::PanelKind::WorkbenchItems,   WorkbenchItemsFindLb,   0 },
     { acc::engine::PanelKind::WorkbenchUpgrade, WorkbenchUpgradeFindLb, 0 },
+    { acc::engine::PanelKind::InGameQuestItems, QuestItemFindLb,        0 },
 };
 
 // Per-slot peek for the 9 equip buttons. itemIdOffset is the panel-
@@ -357,6 +363,35 @@ void OnShiftReleased() {
                       g_blockIdx);
     }
     g_blockIdx = kCursorReset;
+}
+
+bool SpeakItemRowDescription(void* row) {
+    if (!row) return false;
+    uint32_t clientHandle = 0;
+    __try {
+        clientHandle = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(row) +
+            kItemEntryGameObjectIdOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Peek.Item", "row=%p SEH reading item handle", row);
+        return false;
+    }
+    void* item = acc::engine::ResolveItemFromClientHandle(clientHandle);
+    if (!item) {
+        acclog::Write("Peek.Item",
+                      "row=%p handle=0x%x; item not resolvable",
+                      row, clientHandle);
+        return false;
+    }
+    char text[4096];
+    if (!acc::engine::ReadItemPropertyDescription(item, text, sizeof(text))) {
+        acclog::Write("Peek.Item", "row=%p item=%p empty description",
+                      row, item);
+        return false;
+    }
+    prism::Speak(text, /*interrupt=*/true);
+    acclog::Write("Peek.Item", "row=%p item=%p text=\"%s\"", row, item, text);
+    return true;
 }
 
 bool HandleShiftArrow(int param_1, int param_2, void* activePanel,

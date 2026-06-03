@@ -33,6 +33,7 @@
 #include "menus_pazaakdeck.h"
 #include "menus_pending.h"   // QueueActivate, IsPending, QueueMoveCursor, Queue{ClickAt,EquipSelect,WorkbenchSlotSelect,StoreItemActivate}
 #include "menus_store.h"
+#include "peek_description.h" // SpeakItemRowDescription — quest-item Enter
 #include "prism.h"
 #include "strings.h"
 
@@ -1019,6 +1020,16 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
             acc::engine::PanelKind::InGameJournal &&
         acc::menus::journal::IsJournalEntry(e.control);
 
+    // Quest-item row Enter — the QuestItem sub-screen ("Auftrags-Gegenstände")
+    // lists plot items as CSWGuiInGameItemEntry rows with no meaningful
+    // activate action (only BTN_BACK does anything). Mirror the journal: read
+    // the item's property description on Enter. BTN_BACK is a plain button
+    // (not an item row) so it falls through to the generic activate → close.
+    bool isQuestItemRow =
+        acc::engine::IdentifyPanel(g_chainPanel) ==
+            acc::engine::PanelKind::InGameQuestItems &&
+        acc::engine::IsInventoryItemRow(e.control);
+
     if (acc::menus::pending::IsPending()) {
         acclog::Write("Enter", "op already pending; ignoring (target=%p)",
                       e.control);
@@ -1031,6 +1042,12 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
         consumed = true;
     } else if (isJournalRow) {
         acc::menus::journal::SpeakDescription(g_chainPanel, e.control);
+        consumed = true;
+    } else if (isQuestItemRow) {
+        acc::peek::SpeakItemRowDescription(e.control);
+        acclog::Write("Menus.Enter",
+                      "quest-item-description panel=%p index=%d target=%p",
+                      g_chainPanel, g_chainIndex, e.control);
         consumed = true;
     } else if (e.textOnly) {
         // Modal body text — non-activatable. Re-speak so a user who missed

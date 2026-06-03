@@ -27,6 +27,7 @@
 #include "menus_chargen_attr.h"     // IsChargenAttributesPanel — chargen sub-screen close
 #include "menus_chargen_feats.h"    // IsChargenFeatsPanel — chargen sub-screen close
 #include "menus_chargen_skills.h"   // IsChargenSkillsPanel — chargen sub-screen close
+#include "menus_journal.h"   // Sort/Swap post-activate list-rebuild repair
 #include "menus_listbox.h"   // DisarmWorkbenchUpgradePicker (post-slot-select cleanup)
 #include "menus_powers_levelup.h"   // IsPowersLevelUpPanel — chargen sub-screen close
 #include "menus_store.h"     // DispatchTradeAction for StoreItemActivate
@@ -391,6 +392,33 @@ void Drain(void* gm) {
                               "(chargen sub-screen close, target=%p)",
                               op.a);
             }
+            // Journal Sort/Swap repair. Both buttons mutate the quest list,
+            // which leaves our cached chain pointing at the old (Sort: about
+            // to be freed and rebuilt) rows. Sort rebuilds lazily in Draw()
+            // next frame, so force a synchronous PopulateItemListBox first or
+            // the chain rebuild would capture half-constructed rows (base
+            // CSWGuiObject vtable, "control N" text — patch-20260603-090028.log).
+            // Swap already repopulated synchronously inside its handler, so
+            // just invalidate the chain to re-bind to the new list. The new
+            // title is announced separately by the ContentChange monitor.
+            if (panelKindAtDispatch == acc::engine::PanelKind::InGameJournal) {
+                if (acc::menus::journal::IsSortButton(
+                        acc::menus::chain::g_chainPanel, op.a)) {
+                    acc::menus::journal::ForceRepopulate(
+                        acc::menus::chain::g_chainPanel);
+                    acc::menus::chain::InvalidateChain();
+                    acclog::Write("Update",
+                                  "FireActivate post: journal Sort — "
+                                  "repopulated + chain invalidated");
+                } else if (acc::menus::journal::IsSwapButton(
+                               acc::menus::chain::g_chainPanel, op.a)) {
+                    acc::menus::chain::InvalidateChain();
+                    acclog::Write("Update",
+                                  "FireActivate post: journal Swap — "
+                                  "chain invalidated");
+                }
+            }
+
             // Companion full-panel-pop guard: if the engine cleared the
             // panel from mgr.panels[] inside the dispatch (rarer — the
             // observed cases defer the pop), drop the whole chain.
