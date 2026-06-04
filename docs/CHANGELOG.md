@@ -17,6 +17,8 @@ hotkey Y", "X no longer does Z"); keep technical detail short.
 
 <h3>Navigation:</h3>
 
+- Your party members no longer make the proximity sound cue as you walk around them. The previous release stopped companions from setting off the focus "person nearby" cue, but a second, continuous cue — the proximity beacon that pulses for nearby creatures — was still firing for them, so in an otherwise empty area you would hear a steady person signal from Carth or Mission trailing behind you. Companions are now left out of that beacon as well. Other creatures, including enemies, still pulse so you can hear them coming, and targeting a companion with Q / E still reads their name and status.
+- Pressing Tab to hear who you are leading now reads your character's real name. While you were controlling your own character it read a leftover placeholder ("test") instead of the name you chose at character creation; your companions read correctly. It now reads your chosen name.
 - Map hints and cycled objects that share a name are now numbered, so you can tell them apart and refer back to a specific one. Some map markers repeat the same label along a path — four "Nordpfad" hints on Dantooine, for example — and cycling with comma / period (or Q / E in the world) read the same name over and over with no way to distinguish them. Same-named entries now get a number: "Nordpfad 1", "Nordpfad 2", and so on. Map hints are numbered by location, so a given marker keeps its number every visit; world objects like creatures keep a single number across the comma / period cycle, Q / E and the combat log.
 
 <h2>v0.3.0</h2>

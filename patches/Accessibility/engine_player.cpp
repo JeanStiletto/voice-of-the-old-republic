@@ -225,6 +225,26 @@ bool GetActiveLeaderName(char* outBuf, size_t bufSize) {
         return true;
     }
 
+    // Path 1b: the controlled leader's *client* handle is the engine's
+    // "player-controlled" sentinel (0xffffffff) whose display name resolves
+    // empty — so Path 1 dies for the PC and we'd fall through to the stale
+    // chargen slot (GetPlayerCharacterName returns a leftover "test" even
+    // when the player chose a different, longer name). The PC's *server*
+    // creature keeps its real object identity, so resolve the name straight
+    // off it with the same by-pointer accessor the Q/E cycle uses — verified
+    // live: cycling onto the PC from a companion's view reads the correct
+    // name, because that path reads the server object too. Companions never
+    // reach here (Path 1 already returned for them).
+    outBuf[0] = '\0';
+    if (serverCreature &&
+        GetObjectName(serverCreature, outBuf, bufSize) &&
+        outBuf[0] != '\0') {
+        acclog::Trace("PartyLeader",
+                      "leader=server-object — client=%p server=%p name=[%s]",
+                      clientLeader, serverCreature, outBuf);
+        return true;
+    }
+
     // Path 2: direct stats first_name read. Bypasses the engine accessor
     // entirely (pure memory read). Companions usually populate this; the
     // PC's stats slot is empty in vanilla saves.
@@ -266,11 +286,12 @@ bool GetActiveLeaderName(char* outBuf, size_t bufSize) {
             firstName_strref = *reinterpret_cast<uint32_t*>(p + 8);
         } __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
+    uint32_t serverHandle = serverCreature ? GetObjectHandle(serverCreature) : 0u;
     acclog::Trace("PartyLeader",
-                  "all paths empty — client=%p server=%p stats=%p "
-                  "handle=0x%08x first_name(cstr=%p len=%u strref=0x%x) "
+                  "all paths empty — client=%p server=%p serverHandle=0x%08x "
+                  "stats=%p handle=0x%08x first_name(cstr=%p len=%u strref=0x%x) "
                   "stats_read_ok=%d pcOk=%d name=[%s]",
-                  clientLeader, serverCreature, stats,
+                  clientLeader, serverCreature, serverHandle, stats,
                   leaderHandle, firstName_cstr, firstName_len,
                   firstName_strref, statsReadOk ? 1 : 0, pcOk ? 1 : 0,
                   outBuf);

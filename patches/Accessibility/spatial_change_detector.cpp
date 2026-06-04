@@ -929,6 +929,22 @@ void Tick() {
     }
 
     // --- Objects --------------------------------------------------------
+    // Party followers trail the leader and would otherwise beacon as a
+    // continuous "Npc" proximity cue every time the player walks — in an
+    // otherwise empty area they're the *only* fires. They aren't
+    // navigation vocabulary, so drop them from the proximity scan. Q/E
+    // narration reaches companions via a separate path, so cycling onto
+    // one still works (it speaks the name without the person cue). The
+    // leader / PC is already excluded upstream by filter::ObjectMatches.
+    //
+    // Fetch the follower set once per tick; the loop compares handles
+    // inline rather than re-walking the party table per object. Handles
+    // are server-side (GetPartyMembers resolves each NPC slot to its live
+    // object handle, matching GetObjectHandle on the iterated objects).
+    uint32_t partyHandles[kPartyTableMaxMembers] = {};
+    int partyCount = acc::engine::GetPartyMembers(partyHandles,
+                                                  kPartyTableMaxMembers);
+
     acc::engine::AreaObjectIterator iter(area);
     void* obj = nullptr;
     while ((obj = iter.Next()) != nullptr) {
@@ -943,6 +959,22 @@ void Tick() {
         float distSq = dx * dx + dy * dy + dz * dz;
 
         uint32_t handle = acc::engine::GetObjectHandle(obj);
+
+        // Skip active party followers — see the once-per-tick fetch above.
+        // If one was being tracked (it just joined the party, or we
+        // started tracking it before resolving membership), drop its
+        // state so it doesn't re-fire on leaving the party later.
+        bool isParty = false;
+        for (int pi = 0; pi < partyCount; ++pi) {
+            if (handle != 0 && partyHandles[pi] == handle) {
+                isParty = true;
+                break;
+            }
+        }
+        if (isParty) {
+            if (handle != 0) RemoveObjectState(handle);
+            continue;
+        }
 
         // Hysteresis on the awareness-range boundary, mirroring the
         // wall sector path. Previously-tracked objects use the wider
