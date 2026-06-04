@@ -1,7 +1,7 @@
 [patch]
 id = "accessibility"
 name = "Voice of the Old Republic"
-version = "0.3.0"
+version = "0.3.1"
 author = "Fabian"
 description = "Screen reader accessibility for KotOR 1. Minimal infrastructure test patch."
 

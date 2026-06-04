@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 // user32.lib for GetAsyncKeyState / GetForegroundWindow /
@@ -30,6 +31,7 @@
 #include "menus_modsettings.h"
 #include "narrated_target.h"
 #include "peek_description.h"
+#include "same_name_suffix.h"
 #include "strings.h"
 #include "prism.h"
 
@@ -143,6 +145,61 @@ int FormatItemPayload(const char* name, bool haveYaw, int clock,
     return n < 0 ? 0 : n;
 }
 
+// Resolve a map pin's spoken note text exactly as AnnounceCurrent does,
+// so the same-name comparison used for numbering keys off the string the
+// user actually hears (note_text, or the "no text" fallback).
+void ResolvePinNoteText(void* pin, char* outBuf, size_t bufSize) {
+    if (!acc::engine::GetMapPinNoteText(pin, outBuf, bufSize) ||
+        outBuf[0] == '\0') {
+        std::snprintf(outBuf, bufSize, "%s",
+                      acc::strings::Get(acc::strings::Id::MapPinNoText));
+    }
+}
+
+// Deterministic world-position ordering. Designer pins sit at fixed
+// coordinates, so sorting by (x, y, z) yields the same rank every visit —
+// the property that makes the appended number "fixed, non-changing".
+bool PositionLess(const Vector& a, const Vector& b) {
+    if (a.x != b.x) return a.x < b.x;
+    if (a.y != b.y) return a.y < b.y;
+    return a.z < b.z;
+}
+
+// Append a position-sorted ordinal to a map-pin name when two or more
+// pins in the listing share the same spoken note text. Designer map
+// "hints" (Nordpfad, Südlicher Pfad, ...) repeat the same label along a
+// path; sighted players tell the dots apart by location. Stateless and
+// recomputed from world position each call, so a given pin keeps its
+// number regardless of cycle order or the player's current distance.
+void AppendPinOrdinal(const acc::cycle::CategoryListing& listing,
+                      int focusedIndex, char* name, size_t nameSize) {
+    char focusName[128];
+    ResolvePinNoteText(listing.objs[focusedIndex], focusName,
+                       sizeof(focusName));
+
+    // Count how many same-named peers sort before the focused pin; that
+    // rank (1-based) is its ordinal.
+    int  rank      = 1;
+    int  peerCount = 0;
+    const Vector& fp = listing.positions[focusedIndex];
+    for (int j = 0; j < listing.count; ++j) {
+        if (!listing.isPin[j]) continue;
+        char other[128];
+        ResolvePinNoteText(listing.objs[j], other, sizeof(other));
+        if (std::strcmp(other, focusName) != 0) continue;
+        ++peerCount;
+        if (j != focusedIndex && PositionLess(listing.positions[j], fp)) {
+            ++rank;
+        }
+    }
+    if (peerCount < 2) return;  // unique label — no number needed
+
+    size_t curLen = std::strlen(name);
+    if (curLen + 5 < nameSize) {
+        std::snprintf(name + curLen, nameSize - curLen, " %d", rank);
+    }
+}
+
 // Speak the locked Pillar 4 payload for whatever the cycle state
 // currently focuses. `categoryPrefix` non-null wraps the item with
 // "{category}. {item}" via the FmtCategoryItem template; null speaks
@@ -224,6 +281,23 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
         // knows the kind even if no localized name resolves.
         std::snprintf(name, sizeof(name), "%s",
                       acc::strings::Get(bindings.name));
+    }
+
+    // Disambiguate same-name entries with a stable ordinal, so repeated
+    // labels ("Nordpfad" ×4, "Kath-Hund" ×3) are individually referable.
+    // Two keying strategies by entry shape:
+    //  - Pins are static designer markers with no server handle — number
+    //    by sorted world position so "Nordpfad 3" is the same spot every
+    //    visit (position is the only stable identity a pin has).
+    //  - World objects can move (creatures); position-sorting them would
+    //    swap numbers as they walk. Use the handle-keyed same-name suffix
+    //    instead — assigned once per object, persists for the area
+    //    lifetime, and shares buckets with combat/passive narration so a
+    //    given creature keeps one number everywhere.
+    if (isPin) {
+        AppendPinOrdinal(listing, s.focusedIndex, name, sizeof(name));
+    } else {
+        acc::narration::AppendSuffix(s.focusedObj, name, sizeof(name));
     }
 
     Vector playerPos;

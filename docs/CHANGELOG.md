@@ -13,6 +13,12 @@ headings in the release body (markdown `**Installer:**` only renders as bold).
 Each bullet should lead with the user-facing change ("X works now", "new
 hotkey Y", "X no longer does Z"); keep technical detail short.
 
+<h2>v0.3.1</h2>
+
+<h3>Navigation:</h3>
+
+- Map hints and cycled objects that share a name are now numbered, so you can tell them apart and refer back to a specific one. Some map markers repeat the same label along a path — four "Nordpfad" hints on Dantooine, for example — and cycling with comma / period (or Q / E in the world) read the same name over and over with no way to distinguish them. Same-named entries now get a number: "Nordpfad 1", "Nordpfad 2", and so on. Map hints are numbered by location, so a given marker keeps its number every visit; world objects like creatures keep a single number across the comma / period cycle, Q / E and the combat log.
+
 <h2>v0.3.0</h2>
 
 <h3>Dialogue:</h3>
