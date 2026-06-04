@@ -156,37 +156,75 @@ void ResolvePinNoteText(void* pin, char* outBuf, size_t bufSize) {
     }
 }
 
-// Deterministic world-position ordering. Designer pins sit at fixed
-// coordinates, so sorting by (x, y, z) yields the same rank every visit —
-// the property that makes the appended number "fixed, non-changing".
+// North-to-south world ordering. KOTOR's +Y axis points north (the
+// compass derives heading as 90 - engineYaw, so a bearing of due north
+// corresponds to increasing Y), which makes the greatest-Y entry the
+// northmost. Ranking greatest-Y-first therefore numbers from north to
+// south; X then Z break exact ties so the order is total and reproducible.
+// Because the rank keys purely off fixed world position — never the player
+// or cycle order — the same marker keeps its number across every visit,
+// save, and player.
 bool PositionLess(const Vector& a, const Vector& b) {
+    if (a.y != b.y) return a.y > b.y;  // greater Y = more north = ranks first
     if (a.x != b.x) return a.x < b.x;
-    if (a.y != b.y) return a.y < b.y;
     return a.z < b.z;
 }
 
-// Append a position-sorted ordinal to a map-pin name when two or more
-// pins in the listing share the same spoken note text. Designer map
-// "hints" (Nordpfad, Südlicher Pfad, ...) repeat the same label along a
-// path; sighted players tell the dots apart by location. Stateless and
-// recomputed from world position each call, so a given pin keeps its
-// number regardless of cycle order or the player's current distance.
-void AppendPinOrdinal(const acc::cycle::CategoryListing& listing,
-                      int focusedIndex, char* name, size_t nameSize) {
-    char focusName[128];
-    ResolvePinNoteText(listing.objs[focusedIndex], focusName,
-                       sizeof(focusName));
+// Resolve listing entry `idx`'s spoken label, mirroring AnnounceCurrent's
+// focused-entry cascade so the same-name comparison used for numbering
+// keys off exactly the string the user hears. Returns an empty key when no
+// localized name resolves (the spoken text falls back to the category name,
+// which carries no per-entry identity to number by).
+void ResolveEntryName(const acc::cycle::CategoryListing& listing, int idx,
+                      bool mapHint, char* out, size_t size) {
+    out[0] = '\0';
+    if (listing.isPin[idx]) {
+        ResolvePinNoteText(listing.objs[idx], out, size);
+        return;
+    }
+    if (mapHint &&
+        acc::engine::GetWaypointMapNote(listing.objs[idx], out, size) &&
+        out[0] != '\0') {
+        return;
+    }
+    if (!acc::engine::GetObjectName(listing.objs[idx], out, size) ||
+        out[0] == '\0') {
+        out[0] = '\0';
+    }
+}
 
-    // Count how many same-named peers sort before the focused pin; that
-    // rank (1-based) is its ordinal.
-    int  rank      = 1;
-    int  peerCount = 0;
-    const Vector& fp = listing.positions[focusedIndex];
+// Append a north-to-south positional ordinal to a static entry's name when
+// two or more entries in the listing share the same spoken label. Designer
+// map "hints" (Nordpfad ×4, Südlicher Pfad ×N) and duplicate placeables
+// (Fußlocker ×3) repeat the same label; the appended number lets the user
+// refer back to a specific one. Stateless and recomputed from world
+// position each call, so — being a pure function of the entry's fixed
+// coordinates — "Nordpfad 3" is the same marker every visit, on every save,
+// for every player, regardless of entry direction or distance.
+//
+// Pins and like-shaped peers are numbered among themselves. Used for pins
+// and static world objects (doors, placeables, containers, transitions,
+// map-note waypoints); creatures move, so position-ranking would swap their
+// numbers as they walk — they keep the handle-keyed serial instead.
+void AppendPositionOrdinal(const acc::cycle::CategoryListing& listing,
+                           int focusedIndex, bool mapHint, char* name,
+                           size_t nameSize) {
+    char focusKey[128];
+    ResolveEntryName(listing, focusedIndex, mapHint, focusKey,
+                     sizeof(focusKey));
+    if (focusKey[0] == '\0') return;  // no per-entry label to key on
+
+    // Count how many like-shaped, same-named peers sort north of the
+    // focused entry; that rank (1-based, northmost = 1) is its ordinal.
+    const bool    focusIsPin = listing.isPin[focusedIndex];
+    const Vector& fp         = listing.positions[focusedIndex];
+    int rank      = 1;
+    int peerCount = 0;
     for (int j = 0; j < listing.count; ++j) {
-        if (!listing.isPin[j]) continue;
+        if (listing.isPin[j] != focusIsPin) continue;  // compare like with like
         char other[128];
-        ResolvePinNoteText(listing.objs[j], other, sizeof(other));
-        if (std::strcmp(other, focusName) != 0) continue;
+        ResolveEntryName(listing, j, mapHint, other, sizeof(other));
+        if (std::strcmp(other, focusKey) != 0) continue;
         ++peerCount;
         if (j != focusedIndex && PositionLess(listing.positions[j], fp)) {
             ++rank;
@@ -285,19 +323,24 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
 
     // Disambiguate same-name entries with a stable ordinal, so repeated
     // labels ("Nordpfad" ×4, "Kath-Hund" ×3) are individually referable.
-    // Two keying strategies by entry shape:
-    //  - Pins are static designer markers with no server handle — number
-    //    by sorted world position so "Nordpfad 3" is the same spot every
-    //    visit (position is the only stable identity a pin has).
-    //  - World objects can move (creatures); position-sorting them would
-    //    swap numbers as they walk. Use the handle-keyed same-name suffix
-    //    instead — assigned once per object, persists for the area
-    //    lifetime, and shares buckets with combat/passive narration so a
-    //    given creature keeps one number everywhere.
-    if (isPin) {
-        AppendPinOrdinal(listing, s.focusedIndex, name, sizeof(name));
-    } else {
+    // Two keying strategies by mobility:
+    //  - Static entries (pins, doors, placeables, containers, transitions,
+    //    map-note waypoints) number by north-to-south world position, so
+    //    "Nordpfad 3" is the same marker every visit, save, and player —
+    //    a global reference frame independent of entry direction or
+    //    distance.
+    //  - Creatures move; position-ranking would swap their numbers as they
+    //    walk. They keep the handle-keyed same-name suffix instead —
+    //    assigned once per object, persists for the area lifetime, and
+    //    shares buckets with combat/passive narration so a given creature
+    //    keeps one number everywhere.
+    bool useHandleSerial =
+        !isPin && s.category == acc::filter::CycleCategory::Npc;
+    if (useHandleSerial) {
         acc::narration::AppendSuffix(s.focusedObj, name, sizeof(name));
+    } else {
+        AppendPositionOrdinal(listing, s.focusedIndex, mapHint, name,
+                              sizeof(name));
     }
 
     Vector playerPos;
