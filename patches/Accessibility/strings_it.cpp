@@ -448,7 +448,7 @@ const char* Get(Id id) {
         case Id::ModSettingRoomShapes:        return "Descrizioni della forma delle stanze";
         case Id::ModSettingWallSounds:        return "Suoni dei muri";
         case Id::ModSettingHumanSubtitles:    return "Leggi i sottotitoli dei parlanti umani";
-        case Id::ModSettingTurretAutoAim:     return "Mira automatica della torretta (modalit\xE0" " facile)";
+        case Id::ModSettingTurretAutoAim:     return "Mira automatica";
         case Id::ModSettingSkipIntros:        return "Salta i video introduttivi";
         case Id::ModSettingSkipIntrosOnNextLaunch: return "I video introduttivi verranno saltati al prossimo avvio.";
         case Id::ModSettingPlayIntrosOnNextLaunch: return "I video introduttivi verranno riprodotti al prossimo avvio.";

@@ -105,6 +105,32 @@ constexpr size_t kFollowerMaxHpOffset        = 0x90;  // int
 constexpr size_t kFollowerSpeedOffset        = 0x98;  // float (engine speed)
 constexpr size_t kFollowerInvulnOffset       = 0x9c;  // float
 
+// NOTE (RE + measured 2026-06-04): sphere_radius is the value OUR cue subtends
+// against, but it is NOT the engine's hit primitive. The bullet-hit path is
+// CSWMiniGame::DoHitCheck -> CSWTrackFollower::DoBulletHitCheck ->
+// CSWMiniGame::HitCheckBullet, which intersects the bullet against the
+// follower's MODEL parts (this->models) — mesh geometry, not this scalar.
+// None of those three reads sphere_radius, so writing it only widens the cue,
+// not the real hitbox. The OnTurretBulletHit diagnostic below CONFIRMED the
+// ~20 m hitbox is real and the cue is honest (30 hits across the whole sphere,
+// frac to 1.06) — so the cue must NOT be tightened. We then TESTED two ways to
+// enlarge the hitbox at runtime — 2x model scale AND sphere_radius=40 — and
+// BOTH left the hit radius at ~20 m (the gate is a cached bounding sphere, not
+// runtime-patchable). So the hitbox can't be grown here; the easier-to-hit
+// lever is aim-assist (magnetism), below. See docs/turret-difficulty-investigation.md.
+
+// ----- TurretHitGeom diagnostic (OnHitBullet hook) -----
+// CSWMiniGameObject::OnHitBullet fires once per engine-CONFIRMED bullet hit.
+// On the hit-event object (ECX at the hook): +0x54/+0x58/+0x5c hold the
+// world-space impact point (the engine feeds them to Play3DOneShotSound), and
+// vtable[0x14] returns the victim CSWTrackFollower (the object whose HP it then
+// adjusts). |impact - followerCentre| is therefore the distance from centre at
+// which the shot actually connected — the real hit radius.
+constexpr size_t kHitEventImpactXOffset      = 0x54;  // float (world)
+constexpr size_t kHitEventImpactYOffset      = 0x58;  // float (world)
+constexpr size_t kHitEventImpactZOffset      = 0x5c;  // float (world)
+constexpr size_t kVtableSlotGetVictimFollower = 0x14; // OnHitBullet's vtable[0x14]
+
 // Census / selection range. Live distance survey (enemy-sound diagnostic,
 // 802 samples): fighters span ~0 m to ~560 m, mean ~233 m, with real density
 // past 500 m. 600 m covers every fighter from the moment it appears, so Q/E
@@ -298,6 +324,21 @@ constexpr float kVelEmaAlpha    = 0.25f;   // velocity smoothing (per-tick Δpos
 constexpr float kLeadGateLowFrac  = 0.75f;  // start leading at 0.75·radius drift
 constexpr float kLeadGateHighFrac = 1.5f;   // full lead by 1.5·radius drift
 
+// ----- Aim-assist (magnetism — the DEFAULT, always-on mode) -----
+// The hitbox can't be enlarged at runtime (see the sphere_radius RE note), so
+// the honest "easier to hit" lever is to nudge the GUN toward the locked
+// fighter once the aim is already close — pulling near-misses into the real
+// ~20 m hitbox. It is a PARTIAL pull (a fraction of the remaining gap per tick),
+// not a snap: the player still does the acquisition swing and keeps agency; the
+// assist only closes the last few degrees. Engages only inside kAssistZoneDeg
+// (so it never fights a deliberate swing to a far/rear target), via the
+// CSWMiniPlayer.aim (+0x1c4) write. This is ON by default — a within-session A/B
+// proved it ~14x's the hit rate vs unaided (~0.8% — effectively unplayable by
+// ear). The opt-in "Autoaiming" toggle (TurretAutoAim) upgrades it to a full
+// lock-on (pull=1, no zone limit) in the assist block below.
+constexpr float kAssistZoneDeg = 15.0f;  // engage only within this aim error
+constexpr float kAssistPull    = 0.50f;  // fraction of the gap closed per tick
+
 // ============================================================================
 // Module state. Single-threaded under the engine OnUpdate tick.
 // ============================================================================
@@ -344,6 +385,15 @@ struct State {
     bool slot_alive_last[kMgoArraySlotCount] = {false};
     int  slot_hp_last[kMgoArraySlotCount]    = {0};
     bool slot_damaged[kMgoArraySlotCount]    = {false};
+
+    // Aim-assist heartbeat-log throttle (the assist writes the aim every tick;
+    // we only log ~1/s so normal play isn't spammed).
+    ULONGLONG assist_last_log_ms = 0;
+
+    // Session accuracy telemetry: player shots (CSWMiniPlayer::Fire calls) and
+    // fighter hits, for a hits/shots line at exit. Reset on turret entry.
+    int shots_fired = 0;
+    int fighter_hits = 0;
 
     // Rear-arc pinned pan (behind steering): the last chosen swing side. Latched
     // so a target sitting exactly behind (lateral ~0) doesn't flip-flop the pan
@@ -444,6 +494,7 @@ float SafeReadF32(void* base, size_t off) {
         return 0.0f;
     }
 }
+
 
 // Read CSWCArea.mini_game via the player-area chain. Source of truth at
 // the moment of detection; latched thereafter (the chain churns during
@@ -1052,26 +1103,48 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
     const float errAz = wrap180(aimAz - tgtAz);
     const float errEl = aimEl - tgtEl;
 
-    // ---- Easy-mode auto-track (opt-in, OFF by default). --------------------
-    // Write the lead-corrected aim straight into the gun so the turret points
-    // at the locked fighter and the engine's free-aim fire path sends bolts at
-    // it (FireGunCallback fires along the gun orientation). tgtAz/tgtEl are the
-    // exact inverse of ReadAimDir's az/el->direction, so writing them makes the
-    // gun reproduce `tdir` (the intercept direction). Ungated by the behind-
-    // cone — the gun swings all the way around to a rear target by itself. The
-    // player just selects with Q/E and fires; the cues become "locked on"
-    // confirmation. For hearing-impaired players or anyone opting out of
-    // aim-by-ear. See acc::menus::modsettings::Option::TurretAutoAim.
-    if (aimTgtDist > 0.0f &&
-        acc::menus::modsettings::GetToggle(
-            acc::menus::modsettings::Option::TurretAutoAim)) {
-        WriteAim(tgtAz, tgtEl);
-        static ULONGLONG s_lastAutoAimLog = 0;
-        const ULONGLONG nowLog = GetTickCount64();
-        if (nowLog - s_lastAutoAimLog >= 1000) {
-            acclog::Write("Turret", "auto-aim: slot=%d az=%.1f el=%.1f leadDist=%.0f dist=%.0f",
-                          g_state.selected_slot, tgtAz, tgtEl, leadDist, sd);
-            s_lastAutoAimLog = nowLog;
+    // ---- Aim-assist: two modes. --------------------------------------------
+    // DEFAULT (always on): magnetism. When the aim is already within
+    // kAssistZoneDeg of the locked fighter's intercept, pull the gun kAssistPull
+    // of the way toward it per tick — closing near-misses into the real hitbox
+    // while leaving acquisition and most of the aiming to the player. A/B-proven
+    // ~14x hit-rate vs unaided (which is ~1% — effectively unplayable by ear).
+    //
+    // "Autoaiming" toggle (opt-in, OFF by default): full lock-on. Pull all the
+    // way to the intercept every tick (pull=1, no zone limit), so the turret
+    // tracks the locked fighter by itself — for players who want no challenge or
+    // have stronger hearing impairments. Same +0x1c4 write path (proven to hold:
+    // the magnetism's accuracy gain is the write landing every tick).
+    if (aimTgtDist > 0.0f) {
+        const bool  fullAuto = acc::menus::modsettings::GetToggle(
+                                   acc::menus::modsettings::Option::TurretAutoAim);
+        const float zone = fullAuto ? 360.0f : kAssistZoneDeg;
+        const float pull = fullAuto ? 1.0f   : kAssistPull;
+        if (angle <= zone) {
+            // Blend the aim toward the intercept direction; renormalise; write.
+            // pull=1 reproduces tdir exactly (full lock-on).
+            Vector na = {
+                aimDir.x + (tdir.x - aimDir.x) * pull,
+                aimDir.y + (tdir.y - aimDir.y) * pull,
+                aimDir.z + (tdir.z - aimDir.z) * pull,
+            };
+            const float nm = std::sqrt(na.x * na.x + na.y * na.y + na.z * na.z);
+            if (nm > 0.0f) {
+                na.x /= nm; na.y /= nm; na.z /= nm;
+                const float naAz = std::atan2(na.x, na.y) * kRad2Deg;
+                const float naEl = std::asin(clamp1(na.z)) * kRad2Deg;
+                WriteAim(naAz, naEl);
+                // Heartbeat log, throttled to ~1/s so normal play isn't spammed.
+                const ULONGLONG nowLog = GetTickCount64();
+                if (nowLog - g_state.assist_last_log_ms >= 1000) {
+                    g_state.assist_last_log_ms = nowLog;
+                    acclog::Write("TurretAssist",
+                                  "%s slot=%d angle=%.1f az %.1f->%.1f el %.1f->%.1f dist=%.0f",
+                                  fullAuto ? "autoaim" : "magnet",
+                                  g_state.selected_slot, angle, aimAz, naAz,
+                                  aimEl, naEl, sd);
+                }
+            }
         }
     }
 
@@ -1381,6 +1454,10 @@ void HandleEnter(void* mg) {
     for (int b = 0; b < 3; ++b) { g_state.qc_n[b] = 0; g_state.qc_on[b] = 0; }
     g_state.qc_min_err = 1e9f;
     g_state.qc_sum_err = 0.0f;
+    // Fresh aim-assist accuracy telemetry for this round.
+    g_state.assist_last_log_ms = 0;
+    g_state.shots_fired  = 0;
+    g_state.fighter_hits = 0;
     // Defensive: no loop from a prior turret session must survive.
     StopAllLoops();
 
@@ -1416,6 +1493,14 @@ void HandleExit() {
                       g_state.qc_min_err, meanErr);
     }
 
+    // Session accuracy telemetry: fighter hits per player shot.
+    {
+        const float pct = g_state.shots_fired > 0
+                              ? 100.0f * g_state.fighter_hits / g_state.shots_fired : 0.0f;
+        acclog::Write("TurretAssist", "session accuracy: hits=%d shots=%d (%.1f%%)",
+                      g_state.fighter_hits, g_state.shots_fired, pct);
+    }
+
     StopAllLoops();
     g_state.active            = false;
     g_state.latched_mini_game = nullptr;
@@ -1427,6 +1512,62 @@ void HandleExit() {
 }
 
 }  // namespace
+
+// ============================================================================
+// TurretHitGeom diagnostic handler — hooked at CSWMiniGameObject::OnHitBullet
+// (@0x0066c190), which fires once per engine-CONFIRMED bullet hit. Measures the
+// REAL collision radius (|impact - fighterCentre|) against the 20 m
+// sphere_radius our cue assumes, to settle whether the cue is honest or
+// over-generous. Diagnostic only: reads + logs, no behaviour change.
+// ECX = the hit-event object (see the constants block above for its layout).
+// ============================================================================
+extern "C" void __cdecl OnTurretBulletHit(void* hitEvent) {
+    if (!hitEvent || !g_state.active) return;
+
+    Vector impact;
+    impact.x = SafeReadF32(hitEvent, kHitEventImpactXOffset);
+    impact.y = SafeReadF32(hitEvent, kHitEventImpactYOffset);
+    impact.z = SafeReadF32(hitEvent, kHitEventImpactZOffset);
+
+    void* follower = CallAsCast(hitEvent, kVtableSlotGetVictimFollower);
+    if (!follower) return;
+
+    Vector centre;
+    if (!ReadFollowerPosition(follower, centre)) return;
+
+    const float dx = impact.x - centre.x;
+    const float dy = impact.y - centre.y;
+    const float dz = impact.z - centre.z;
+    const float impactDist   = std::sqrt(dx * dx + dy * dy + dz * dz);
+    const float sphereRadius = SafeReadF32(follower, kFollowerSphereRadiusOffset);
+
+    // Distinguish our shots landing on a fighter (the hitbox we care about)
+    // from incoming fire on the player's own ship. CSWMiniPlayer.follower is
+    // the first member, so the player follower pointer == the player pointer.
+    void* player = SafeReadPtr(g_state.latched_mini_game, kMiniGamePlayerOffset);
+
+    const bool victimIsPlayer = (follower == player);
+
+    // Accuracy telemetry: count fighter hits (our shots landing).
+    if (!victimIsPlayer) ++g_state.fighter_hits;
+
+    acclog::Write("TurretHitGeom",
+                  "%s impactDist=%.2fm sphereRadius=%.1f frac=%.2f "
+                  "impact=(%.1f,%.1f,%.1f) centre=(%.1f,%.1f,%.1f)",
+                  victimIsPlayer ? "PLAYER" : "fighter",
+                  impactDist, sphereRadius,
+                  (sphereRadius > 0.0f) ? impactDist / sphereRadius : 0.0f,
+                  impact.x, impact.y, impact.z,
+                  centre.x, centre.y, centre.z);
+}
+
+// Player fire counter (hooked at CSWMiniPlayer::Fire @0x0066dc50). One call per
+// player fire event; counts PLAYER shots only (enemy fire shares AddBullet, not
+// this). Drives the session hits/shots accuracy line. ECX = CSWMiniPlayer (unused).
+extern "C" void __cdecl OnPlayerFire(void* /*player*/) {
+    if (!g_state.active) return;
+    ++g_state.shots_fired;
+}
 
 bool IsActive() { return g_state.active; }
 

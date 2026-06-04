@@ -51,11 +51,15 @@ bool s_toggles[static_cast<int>(Option::Count)] = {
                                   // read because the suppression filter
                                   // gates on appearance_type, not on this
                                   // toggle alone.
-    /* TurretAutoAim   */ false,  // OFF by default — opt-in easy-mode cheat:
-                                  // the turret auto-tracks the locked fighter
-                                  // so the player just selects + fires. For
-                                  // hearing-impaired players or anyone who
-                                  // doesn't want to aim by ear.
+    /* TurretAutoAim   */ false,  // "Autoaiming" — OFF by default. When ON, the
+                                  // turret PERMANENTLY locks aim onto the
+                                  // selected fighter (full auto-track), so the
+                                  // player just selects + fires — for players
+                                  // who want no challenge or have stronger
+                                  // hearing impairments. The DEFAULT (toggle
+                                  // off) is the always-on slight aim-magnetism
+                                  // in turret_game.cpp, which keeps the minigame
+                                  // skill-based but playable by ear.
     /* SkipIntros      */ false,  // unused — state lives in filesystem
                                   // (biologo.bik vs biologo.bik.disabled);
                                   // StateText + Enter both special-case

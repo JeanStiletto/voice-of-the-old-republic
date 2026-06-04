@@ -22,3 +22,5 @@ EXPORTS
     OnCombatRoundSetCurrentAction
     OnCombatRoundRemoveLastAction
     OnSetPauseState
+    OnTurretBulletHit
+    OnPlayerFire

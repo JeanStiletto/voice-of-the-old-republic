@@ -1068,3 +1068,68 @@ type = "pointer"
 [[hooks.parameters]]
 source = "esp+8"
 type = "pointer"
+
+# CSWMiniGameObject::OnHitBullet @ 0x0066c190 — TurretHitGeom diagnostic.
+#
+# Fires once per engine-CONFIRMED bullet hit: HitCheckBullet runs the
+# bullet-vs-follower-mesh geometry test and, only on a pass, populates the
+# hit-event object's impact point and calls OnHitBullet. So this is the clean
+# "a shot connected" signal, with both the impact point and the victim in hand.
+#
+# Why this hook exists: the bullet-hit path (DoHitCheck -> DoBulletHitCheck ->
+# HitCheckBullet, all RE'd 2026-06-04) intersects against the follower's MODEL
+# parts, NOT the sphere_radius scalar our cue subtends against. So the open
+# question is whether the real hit radius matches the 20 m cue or is much
+# tighter (cue over-generous). The handler logs |impact - fighterCentre| per
+# hit to settle it. See docs/turret-difficulty-investigation.md.
+#
+# At the hit-event object (ECX): +0x54/+0x58/+0x5c = world impact point,
+# vtable[0x14] = victim CSWTrackFollower (the object whose HP it then adjusts).
+#
+# Entry bytes (DumpBytes 2026-06-04):
+#   0x0066c190: 64 a1 00 00 00 00   MOV  EAX, FS:[0]    ; SEH frame setup
+#   0x0066c196: 6a ff               PUSH -1
+#   ...
+#   0x0066c1b0: 8b f1               MOV  ESI, ECX       ; this stashed here
+# Cut 6 bytes: the whole MOV EAX,FS:[0]. FS-relative, position-independent —
+# relocates cleanly. ECX = this is live from entry (nothing writes ECX before
+# the MOV ESI,ECX at +0x20), so it is captured before the cut runs.
+[[hooks]]
+address = 0x0066c190
+type = "detour"
+function = "OnTurretBulletHit"
+
+original_bytes = [0x64, 0xa1, 0x00, 0x00, 0x00, 0x00]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+# CSWMiniPlayer::Fire @ 0x0066dc50 — player shot counter for the aim-assist A/B.
+# Fires on the player's turret fire (iterates the player's gun banks); counts
+# PLAYER shots only, so the accuracy denominator isn't polluted by enemy fire
+# (AddBullet is shared by both). The handler tallies per A/B block.
+#
+# Entry bytes (DumpBytes 2026-06-04):
+#   0x0066dc50: 53        PUSH EBX
+#   0x0066dc51: 56        PUSH ESI
+#   0x0066dc52: 57        PUSH EDI
+#   0x0066dc53: 8b f9     MOV  EDI, ECX     ; this
+# Cut 5 bytes: PUSH EBX + PUSH ESI + PUSH EDI + MOV EDI,ECX. Register-only,
+# position-independent. ECX = this (CSWMiniPlayer*) at entry — handler ignores it.
+[[hooks]]
+address = 0x0066dc50
+type = "detour"
+function = "OnPlayerFire"
+
+original_bytes = [0x53, 0x56, 0x57, 0x8b, 0xf9]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"

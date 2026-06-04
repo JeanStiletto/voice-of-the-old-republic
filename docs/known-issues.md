@@ -83,6 +83,12 @@ Some of our actions are bound to Alt+ and Ctrl+ key combinations, which not ever
 
 ## Monitor
 
+### Turret minigame still "beatable only with luck" for aim-by-ear
+
+The Taris-escape turret aiming/firing is native (WASD/Space) and we layer the crosshair pan + tick-rate + range-gated lead cues, but a tester still found it luck-dependent. Found and confirmed the engine turn rate (`MovementPerSec = 100` deg/s azimuth, live struct `CSWMiniGame +0x74`; `LateralAccel = 1200` deg/s², `+0xbc`). Tried halving it (50/300) — **applied correctly but made azimuth aiming measurably worse** (the bottleneck is target acquisition, not fine settling), so **reverted**. Two open leads from the developer to chase next: the hard-left/right behind-pan and the dynamic range-gated lead may both be silently degraded. Full data, offsets, the bolt-travel-lag artifact (hit-frame errAz is stale), and re-measure recipes in **`docs/turret-difficulty-investigation.md`**.
+
+**Update (2026-06-04): largely RESOLVED via aim-assist.** RE confirmed the hitbox is a real ~20 m sphere that can't be enlarged at runtime (model-scale and `sphere_radius` writes both no-ops). Measured raw aim-by-ear at ~0.8% hit rate — effectively unplayable, confirming the "luck only" report. Shipped aim-assist (writes `CSWMiniPlayer.aim +0x1c4`): DEFAULT always-on magnetism (pulls the gun onto the locked fighter once within 15°) + opt-in "Autoaiming" toggle (full lock-on). A within-session A/B proved magnetism ~14× the hit rate (ON 11.3% vs OFF 0.8%). Pending tester confirmation that the default feel is right.
+
 ### Main menu occasionally still needs one alt-tab after launch
 
 After replacing the wrapper-based DirectInput-mouse guard with an inline trampoline installed from `OnRulesInit`, the alt-tab-required-every-launch regression cleared. In a 3-launch sample one still showed the symptom — keys ignored until a single alt-tab cycle, then normal. No EngineInput log line, no crash, and the trampoline-installed log line was present, so the residual isn't our guard tripping; it looks like the same vanilla KOTOR background-launch / bink-window focus race that existed before the regression but is now visible against a clean baseline. Watch beta feedback. If it stays at ~1-in-3 or rarer, leave it; if testers report it consistently, instrument the engine's input-pump pause path around bink/focus transitions and consider forcing a DirectInput re-Acquire from our patch on main-menu first sight.

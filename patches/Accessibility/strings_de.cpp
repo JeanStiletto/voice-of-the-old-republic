@@ -464,7 +464,7 @@ const char* Get(Id id) {
         case Id::ModSettingRoomShapes:        return "Raumform-Beschreibungen";
         case Id::ModSettingWallSounds:        return "Wandger\xe4usche";
         case Id::ModSettingHumanSubtitles:    return "Untertitel menschlicher Sprecher vorlesen";
-        case Id::ModSettingTurretAutoAim:     return "Gesch\xFC" "tz automatisch zielen (einfacher Modus)";
+        case Id::ModSettingTurretAutoAim:     return "Automatisches Zielen";
         case Id::ModSettingSkipIntros:        return "Startvideos \xFC" "berspringen";
         case Id::ModSettingSkipIntrosOnNextLaunch: return "Startvideos werden beim n\xE4""chsten Start \xFC" "bersprungen.";
         case Id::ModSettingPlayIntrosOnNextLaunch: return "Startvideos werden beim n\xE4""chsten Start abgespielt.";

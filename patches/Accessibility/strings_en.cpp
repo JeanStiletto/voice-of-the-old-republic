@@ -446,7 +446,7 @@ const char* Get(Id id) {
         case Id::ModSettingRoomShapes:        return "Room shape descriptions";
         case Id::ModSettingWallSounds:        return "Wall sounds";
         case Id::ModSettingHumanSubtitles:    return "Read human-speaker subtitles";
-        case Id::ModSettingTurretAutoAim:     return "Auto-aim turret (easy mode)";
+        case Id::ModSettingTurretAutoAim:     return "Autoaiming";
         case Id::ModSettingSkipIntros:        return "Skip launch intro movies";
         case Id::ModSettingSkipIntrosOnNextLaunch: return "Intros will be skipped on next launch.";
         case Id::ModSettingPlayIntrosOnNextLaunch: return "Intros will play on next launch.";

@@ -450,7 +450,7 @@ const char* Get(Id id) {
         case Id::ModSettingRoomShapes:        return "Descripciones de la forma de las habitaciones";
         case Id::ModSettingWallSounds:        return "Sonidos de pared";
         case Id::ModSettingHumanSubtitles:    return "Leer subt\xEDtulos de hablantes humanos";
-        case Id::ModSettingTurretAutoAim:     return "Apuntar torreta autom\xE1" "ticamente (modo f\xE1" "cil)";
+        case Id::ModSettingTurretAutoAim:     return "Apuntado autom\xE1" "tico";
         case Id::ModSettingSkipIntros:        return "Omitir v\xED" "deos de introducci\xF3n";
         case Id::ModSettingSkipIntrosOnNextLaunch: return "Los v\xED" "deos de introducci\xF3n se omitir\xE1n en el pr\xF3ximo inicio.";
         case Id::ModSettingPlayIntrosOnNextLaunch: return "Los v\xED" "deos de introducci\xF3n se reproducir\xE1n en el pr\xF3ximo inicio.";
