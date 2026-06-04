@@ -324,6 +324,23 @@ constexpr float kVelEmaAlpha    = 0.25f;   // velocity smoothing (per-tick Δpos
 constexpr float kLeadGateLowFrac  = 0.75f;  // start leading at 0.75·radius drift
 constexpr float kLeadGateHighFrac = 1.5f;   // full lead by 1.5·radius drift
 
+// ----- Curve-aware lead (centripetal turn model) -----
+// The fighters hold ~constant speed and only TURN (relVel sat at ~74 u/s at every
+// range in the logs), so their acceleration is essentially centripetal. We
+// estimate it as the PERPENDICULAR component of d(vel_ema)/dt — discarding the
+// along-track part enforces the constant-speed prior and kills most of the noise
+// — smooth it harder than velocity (a second derivative is noisier), and fold a
+// 0.5*a*t^2 term into the intercept via a fixed-point flight-time solve. Heavy
+// smoothing is safe because the curve term is weighted by t^2, which is tiny on
+// the close fast passes (short flight, noisiest estimate) and only grows at
+// mid-range where the turn is steady and easy to track. The correction is
+// leadFrac-gated, flight-time-capped, and clamped to never exceed the linear
+// lead, so it sharpens mid-range aim without destabilising close or far shots.
+constexpr float kAccelEmaAlpha       = 0.12f;  // centripetal-accel smoothing (< vel alpha)
+constexpr int   kAccelSettleSamples  = 5;      // ticks before the turn estimate is trusted
+constexpr float kMaxCentripetalAccel = 300.0f; // u/s^2 sanity clamp on the estimate
+constexpr float kAccelLeadCapSeconds = 1.0f;   // cap on the flight-time used in 0.5*a*t^2
+
 // ----- Aim-assist (magnetism — the DEFAULT, always-on mode) -----
 // The hitbox can't be enlarged at runtime (see the sphere_radius RE note), so
 // the honest "easier to hit" lever is to nudge the GUN toward the locked
@@ -446,6 +463,23 @@ struct State {
     bool      have_last_pos = false;
     Vector    vel_ema = {0.0f, 0.0f, 0.0f};
     bool      have_vel = false;
+
+    // Curve-aware lead: smoothed centripetal acceleration (the perpendicular part
+    // of d(vel_ema)/dt), with a settle counter. Reset on (re)lock with have_vel.
+    Vector    accel_ema     = {0.0f, 0.0f, 0.0f};
+    bool      have_accel    = false;
+    int       accel_samples = 0;
+
+    // LeadCheck self-measuring diagnostic: a deferred ring of intercept
+    // predictions (world frame) tagged with their bolt-arrival time. When a probe
+    // matures we compare it to the fighter's ACTUAL position then, logging the
+    // linear-vs-curve miss distance — so the lead model is tunable/validatable
+    // from the log alone, no sighted check. dueMs == 0 marks an empty slot.
+    struct LeadProbe { ULONGLONG dueMs; int slot; Vector lin; Vector curve; };
+    static constexpr int kLeadProbeCount = 16;
+    LeadProbe lead_probes[kLeadProbeCount] = {};
+    int       lead_probe_next = 0;
+    ULONGLONG lead_probe_push_ms = 0;
 
     // ---- Per-session aim-quality counters (QC summary on exit). A clean,
     // bolt-travel-immune measure of how well the cue lets the player aim:
@@ -639,6 +673,33 @@ float AngleBetweenDeg(const Vector& a, const Vector& b) {
     return std::acos(dot) * 57.2958f;
 }
 
+// ----- LeadCheck self-measuring diagnostic -----
+// Enqueue this tick's linear & curve intercepts (world frame) tagged with the
+// bolt-arrival time; when one matures, compare both to the fighter's ACTUAL
+// position then and log the miss distances. Lets us prove/tune the curve model
+// from the log alone. Slot-tagged so a probe outlives a Q/E switch harmlessly.
+void PushLeadProbe(int slot, const Vector& linW, const Vector& curveW, ULONGLONG dueMs) {
+    State::LeadProbe& p = g_state.lead_probes[g_state.lead_probe_next];
+    p.dueMs = dueMs; p.slot = slot; p.lin = linW; p.curve = curveW;
+    g_state.lead_probe_next = (g_state.lead_probe_next + 1) % State::kLeadProbeCount;
+}
+
+void DrainLeadProbes(int slot, const Vector& fighterWorldNow, ULONGLONG now) {
+    for (int i = 0; i < State::kLeadProbeCount; ++i) {
+        State::LeadProbe& p = g_state.lead_probes[i];
+        if (p.dueMs == 0 || now < p.dueMs) continue;
+        if (p.slot == slot) {
+            const float lx = p.lin.x - fighterWorldNow.x, ly = p.lin.y - fighterWorldNow.y, lz = p.lin.z - fighterWorldNow.z;
+            const float cx = p.curve.x - fighterWorldNow.x, cy = p.curve.y - fighterWorldNow.y, cz = p.curve.z - fighterWorldNow.z;
+            const float el = std::sqrt(lx * lx + ly * ly + lz * lz);
+            const float ec = std::sqrt(cx * cx + cy * cy + cz * cz);
+            acclog::Write("LeadCheck", "slot=%d linErr=%.1f curveErr=%.1f gain=%.1f",
+                          slot, el, ec, el - ec);
+        }
+        p.dueMs = 0;  // consume (or discard a stale-slot probe)
+    }
+}
+
 // Find a slot's index in the (nearest-first) census, or -1.
 int CensusIndexOf(const int occSlot[], int occCount, int slot) {
     for (int a = 0; a < occCount; ++a) if (occSlot[a] == slot) return a;
@@ -688,6 +749,8 @@ void AnnounceSelectedTarget(int idx, const int occSlot[], const float occDist[],
     g_state.last_selected_hp = -1;  // fresh lock — next tick re-baselines HP
     g_state.have_last_pos    = false;  // and re-baselines velocity
     g_state.have_vel         = false;
+    g_state.have_accel       = false;  // and the turn estimate
+    g_state.accel_samples    = 0;
     g_state.selected_on_target = false;  // re-arm the "fire now" cue
     g_state.selected_behind    = false;  // re-evaluate the behind-gate cleanly
     const int number = NumberForSlot(occSlot[idx]);
@@ -890,10 +953,41 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
                               (P.y - g_state.last_selected_pos.y) / dt,
                               (P.z - g_state.last_selected_pos.z) / dt};
         if (g_state.have_vel) {
+            const Vector velPrev = g_state.vel_ema;
             const float a = kVelEmaAlpha;
             g_state.vel_ema.x = a * vinst.x + (1.0f - a) * g_state.vel_ema.x;
             g_state.vel_ema.y = a * vinst.y + (1.0f - a) * g_state.vel_ema.y;
             g_state.vel_ema.z = a * vinst.z + (1.0f - a) * g_state.vel_ema.z;
+
+            // Centripetal acceleration = perpendicular part of d(vel_ema)/dt.
+            // Drop the along-track component (speed is ~constant, so it's noise),
+            // clamp the magnitude, then EMA harder than velocity.
+            if (dt > 1e-4f) {
+                Vector ai = {(g_state.vel_ema.x - velPrev.x) / dt,
+                             (g_state.vel_ema.y - velPrev.y) / dt,
+                             (g_state.vel_ema.z - velPrev.z) / dt};
+                const float vm = std::sqrt(g_state.vel_ema.x * g_state.vel_ema.x +
+                                           g_state.vel_ema.y * g_state.vel_ema.y +
+                                           g_state.vel_ema.z * g_state.vel_ema.z);
+                if (vm > 1e-3f) {
+                    const Vector vh = {g_state.vel_ema.x / vm,
+                                       g_state.vel_ema.y / vm,
+                                       g_state.vel_ema.z / vm};
+                    const float adv = ai.x * vh.x + ai.y * vh.y + ai.z * vh.z;
+                    ai.x -= adv * vh.x; ai.y -= adv * vh.y; ai.z -= adv * vh.z;
+                }
+                const float am = std::sqrt(ai.x * ai.x + ai.y * ai.y + ai.z * ai.z);
+                if (am > kMaxCentripetalAccel) {
+                    const float s = kMaxCentripetalAccel / am;
+                    ai.x *= s; ai.y *= s; ai.z *= s;
+                }
+                const float b = kAccelEmaAlpha;
+                g_state.accel_ema.x = b * ai.x + (1.0f - b) * g_state.accel_ema.x;
+                g_state.accel_ema.y = b * ai.y + (1.0f - b) * g_state.accel_ema.y;
+                g_state.accel_ema.z = b * ai.z + (1.0f - b) * g_state.accel_ema.z;
+                if (++g_state.accel_samples >= kAccelSettleSamples)
+                    g_state.have_accel = true;
+            }
         } else {
             g_state.vel_ema = vinst;
             g_state.have_vel = true;
@@ -921,6 +1015,7 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
     // back to the current position when velocity isn't established yet or no
     // valid intercept exists. Clamped to the bolt lifespan. ------------------
     Vector aimRel = P;           // listener-relative point the cue aims at
+    Vector aimRelLin = P;        // linear-only baseline (LeadCheck diagnostic)
     float  leadT = 0.0f, leadDist = 0.0f, leadFrac = 0.0f;
     if (g_state.have_vel) {
         const float a  = (v.x * v.x + v.y * v.y + v.z * v.z) - kBoltSpeed * kBoltSpeed;
@@ -957,6 +1052,42 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
             aimRel.y = P.y + v.y * t * leadFrac;
             aimRel.z = P.z + v.z * t * leadFrac;
             leadDist = fullLead * leadFrac;  // applied lead
+            aimRelLin = aimRel;              // capture the linear baseline
+
+            // Curve-aware refinement (constant centripetal accel). A few
+            // flight-time fixed-point iterations layer a 0.5·a·t² turn term onto
+            // the linear lead. The accel part is leadFrac-gated, flight-time-
+            // capped, and clamped to never exceed the linear lead — sharpening
+            // mid-range aim without destabilising close or far shots. This is the
+            // SHARED aim point: cue, magnetism, and autoaim all read aimRel.
+            if (g_state.have_accel) {
+                const Vector ac = g_state.accel_ema;
+                float tc = t;
+                Vector pred = aimRel;
+                float corrMag = leadDist;
+                for (int it = 0; it < 3; ++it) {
+                    const float te = (tc < kAccelLeadCapSeconds) ? tc : kAccelLeadCapSeconds;
+                    const float half = 0.5f * te * te * leadFrac;
+                    Vector linPart = {v.x * tc * leadFrac, v.y * tc * leadFrac, v.z * tc * leadFrac};
+                    Vector accPart = {ac.x * half, ac.y * half, ac.z * half};
+                    const float lpm = std::sqrt(linPart.x * linPart.x + linPart.y * linPart.y + linPart.z * linPart.z);
+                    const float apm = std::sqrt(accPart.x * accPart.x + accPart.y * accPart.y + accPart.z * accPart.z);
+                    if (apm > lpm && apm > 1e-4f) {  // curve part can't exceed linear lead
+                        const float s = lpm / apm;
+                        accPart.x *= s; accPart.y *= s; accPart.z *= s;
+                    }
+                    const Vector corr = {linPart.x + accPart.x, linPart.y + accPart.y, linPart.z + accPart.z};
+                    pred = {P.x + corr.x, P.y + corr.y, P.z + corr.z};
+                    corrMag = std::sqrt(corr.x * corr.x + corr.y * corr.y + corr.z * corr.z);
+                    const float pd = std::sqrt(pred.x * pred.x + pred.y * pred.y + pred.z * pred.z);
+                    tc = pd / kBoltSpeed;
+                    if (tc > kMaxLeadSeconds) tc = kMaxLeadSeconds;
+                    else if (tc < 0.0f)       tc = 0.0f;
+                }
+                aimRel   = pred;
+                leadT    = tc;
+                leadDist = corrMag;
+            }
         }
     }
 
@@ -1189,6 +1320,18 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
                   "leadDist=%.0f leadFrac=%.2f aimDist=%.0f critBoltSpeed=%.0f",
                   g_state.selected_slot, vmag, engineSpeed, sd, leadT, leadDist,
                   leadFrac, aimTgtDist, (radius > 0.0f) ? vmag * sd / radius : 0.0f);
+
+    // LeadCheck: drain any matured predictions against the fighter's real
+    // position now, then (throttled) enqueue this tick's linear & curve
+    // intercepts in world space for a later maturity comparison.
+    DrainLeadProbes(g_state.selected_slot, sp, now);
+    if (g_state.have_vel && leadT > 0.0f && now - g_state.lead_probe_push_ms >= 200) {
+        g_state.lead_probe_push_ms = now;
+        const Vector wLin   = {listener.x + aimRelLin.x, listener.y + aimRelLin.y, listener.z + aimRelLin.z};
+        const Vector wCurve = {listener.x + aimRel.x,    listener.y + aimRel.y,    listener.z + aimRel.z};
+        PushLeadProbe(g_state.selected_slot, wLin, wCurve,
+                      now + static_cast<ULONGLONG>(leadT * 1000.0f));
+    }
 
     // QC accumulation (aim quality at the intercept — the operative on-target).
     {
