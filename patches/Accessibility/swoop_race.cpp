@@ -59,7 +59,12 @@ constexpr size_t kMiniGamePlayerOffset          = 0x24;
 constexpr size_t kMiniGameEnemyCountOffset      = 0x30;
 constexpr size_t kMiniGameObstacleDataOffset    = 0x44;  // CSWMiniGameObject** (verified live)
 constexpr size_t kMiniGameObstacleCountOffset   = 0x48;
-constexpr size_t kMiniGameTypeOffset            = 0x84;
+constexpr size_t kMiniGameTypeOffset            = 0x80;  // 1=swoop, 2=turret
+                                                        // (CSWMiniGame::Load sets
+                                                        // type ONLY to 1 or 2; was
+                                                        // mis-read at +0x84=axis_x,
+                                                        // matching 0/3 by coincidence)
+constexpr uint32_t kMiniGameTypeSwoop           = 1;
 
 // CSWTrackFollower (line 15028) — base of CSWMiniPlayer. The byte-by-byte
 // walk lines up with the swkotor.exe.h definition:
@@ -758,15 +763,15 @@ void Tick() {
 
     if (!g_state.active) {
         // Idle state. Fire ENTER only for an actual swoop race
-        // (CSWMiniGame.type==0). The turret / space-combat gunner
+        // (CSWMiniGame.type==1). The turret / space-combat gunner
         // minigame shares this exact struct (same vtable) but reports
-        // type==3 and is handled by turret_game.cpp — entering here
+        // type==2 and is handled by turret_game.cpp — entering here
         // would mis-announce it as a swoop race (and run the gear /
         // accel / wall heuristics, which are meaningless for a turret).
-        // type is populated by the time the area chain exposes mini_game
-        // (live-confirmed: swoop logs type=0, turret logs type=3 at the
-        // first ENTER read).
-        if (mgArea && SafeReadU32(mgArea, kMiniGameTypeOffset) == 0) {
+        // type is populated by the time the area chain exposes mini_game.
+        // (Engine-confirmed: CSWMiniGame::Load only ever sets type to 1 or 2.
+        // We previously read +0x84=axis_x and matched 0/3 by coincidence.)
+        if (mgArea && SafeReadU32(mgArea, kMiniGameTypeOffset) == kMiniGameTypeSwoop) {
             HandleEnter(mgArea);
         }
         return;

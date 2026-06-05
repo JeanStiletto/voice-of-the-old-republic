@@ -2,20 +2,22 @@
 //
 // The turret minigame shares the CSWMiniGame struct (and vtable) with
 // swoop racing — both are polled via CSWCArea.mini_game (+0x264). They
-// are distinguished by CSWMiniGame.type (+0x84): swoop is type 0, the
-// turret/gunner game is type 3 (live-confirmed in the patch log). This
-// module owns the type==3 case; swoop_race.cpp gates itself to type==0
-// so the two never both fire on the same minigame.
+// are distinguished by CSWMiniGame.type (+0x80): swoop is type 1, the
+// turret/gunner game is type 2 (engine-confirmed — CSWMiniGame::Load only
+// ever sets type to 1 or 2). This module owns the type==2 case;
+// swoop_race.cpp gates itself to type==1 so the two never both fire on the
+// same minigame. (We previously read +0x84 = axis_x and matched 0/3 by
+// coincidence.)
 //
 // Behaviour: entry/exit announce (the native control hint — WASD aims,
-// Space fires; both confirmed native) plus a per-fighter 3D engine-loop
-// "approach cue" so the player can hear incoming fighters and aim before
-// they open fire. Aiming is rotational (CSWMiniPlayer.offset +0x1c4: z =
-// azimuth/A-D, x = elevation/W-S) and fully native, so we synthesise no
-// input. The vanilla fighters carry no engine sound of their own in this
-// encounter, so the loop uses the game's own engine sample (mgs_engine_0Nl)
-// attached by us. Only the nearest few fighters loop at once (all-in-range
-// clumped into one drone), timbre-varied per slot. See turret_game.cpp.
+// Space fires) plus a 3D crosshair cue on the Q/E-selected fighter. The aim
+// is CSWMiniPlayer.offset (+0x1c4): offset.x = elevation (W/S), offset.z =
+// azimuth (A/D), in degrees — engine-confirmed (Control integrates it and
+// pushes it into the rotating gun/camera models). The crosshair is the gun's
+// bullethook0 node world direction (the literal bolt fire line); aim-assist
+// (magnetism by default, full lock-on under the Autoaiming toggle) steers by
+// WRITING offset, which the engine re-integrates so the write sticks. See
+// turret_game.cpp.
 //
 // Detection latch mirrors swoop_race.cpp: the area chain stops resolving
 // the minigame mid-game during the entry transition, so the CSWMiniGame

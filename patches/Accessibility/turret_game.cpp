@@ -1,7 +1,13 @@
 // Turret (space-combat gunner) minigame accessibility — see
 // turret_game.h for design.
 //
-// Shares CSWMiniGame with swoop racing; distinguished by type==3.
+// Shares CSWMiniGame with swoop racing; distinguished by type==2 (swoop==1),
+// read at CSWMiniGame +0x80. The aim is CSWMiniPlayer.offset (+0x1c4):
+// offset.x = elevation°, offset.z = azimuth° — engine-confirmed from the
+// decompile of CSWMiniPlayer::Control (it integrates offset and pushes it into
+// the rotating gun/camera models each tick). The crosshair is the gun's
+// bullethook0 node world direction (ReadAimLine); aim-assist WRITES offset
+// (WriteOffset). See docs/llm-docs/turret-minigame-model.md.
 //
 // What it does:
 //   - Entry/exit announce (the native control hint — WASD aims, Space
@@ -46,8 +52,6 @@
                               //              typed-character cancel (the
                               //              player is holding fire keys)
 #include "strings.h"          // Get(TurretGameStarted/Controls/Ended)
-#include "turret_steer.h"     // synthesize WASD to actually turn the barrel
-                              //   (the +0x1c4 aim write is a no-op for bolts)
 
 namespace acc::turret_game {
 
@@ -61,18 +65,22 @@ constexpr size_t kClientAreaMiniGameOffset = 0x264;  // CSWCArea.mini_game
 constexpr size_t kMiniGameVtableOffset     = 0x00;
 constexpr size_t kMiniGamePlayerOffset     = 0x24;   // CSWMiniPlayer*
 constexpr size_t kMiniGameEnemyCountOffset = 0x30;
-constexpr size_t kMiniGameTypeOffset       = 0x84;   // 0=swoop, 3=turret
+constexpr size_t kMiniGameTypeOffset       = 0x80;   // 1=swoop, 2=turret
+                                                     // (CSWMiniGame::Load sets
+                                                     // type ONLY to 1 or 2)
 
-// Turret aim lives in CSWMiniPlayer.offset (+0x1c4) — rotational, NOT a
-// flat screen reticle: z = azimuth (horizontal swing, 0..360°, A/D axis),
-// x = elevation (vertical, W/S axis), y unused. WASD drives both natively
-// (live-confirmed), so aiming/firing need no synthesis — only the spoken
-// control hint and the approach cue below.
+// Turret aim lives in CSWMiniPlayer.offset (+0x1c4) — and the decompile of
+// CSWMiniPlayer::Control proves this IS the aim: each tick the engine does
+// `offset += axis-velocity; KeepInTunnel(offset)`, then writes offset.x/y/z
+// straight into every RotatingModel gun/camera part. So:
+//   offset.x = elevation° (W/S axis), offset.z = azimuth° (A/D axis), y unused.
+// WASD drives it natively. We aim-assist by WRITING this field (the engine
+// re-integrates it next tick, so a per-tick write sticks); see AimAssist below.
 constexpr size_t kMiniPlayerAimOffset      = 0x1c4;  // Vector{x=elev,_,z=azi}
 
-// The turret minigame type discriminator. Anything else on this struct
-// (notably type==0 swoop) is not ours.
-constexpr uint32_t kMiniGameTypeTurret     = 3;
+// The turret minigame type discriminator. swoop is type 1 (swoop_race.cpp);
+// anything else on this struct is not ours.
+constexpr uint32_t kMiniGameTypeTurret     = 2;
 
 // Exit-debounce: same rationale as swoop_race.cpp — the entry/exit
 // transition flips the area chain for a few ticks, so only announce EXIT
@@ -132,19 +140,6 @@ constexpr size_t kHitEventImpactXOffset      = 0x54;  // float (world)
 constexpr size_t kHitEventImpactYOffset      = 0x58;  // float (world)
 constexpr size_t kHitEventImpactZOffset      = 0x5c;  // float (world)
 constexpr size_t kVtableSlotGetVictimFollower = 0x14; // OnHitBullet's vtable[0x14]
-
-// ----- TurretBolt diagnostic (AddBullet hook) -----
-// A bullet is a CAurObject (IS-A Gob); Gob.position is at +0x78 (swkotor.exe.h).
-constexpr size_t kGobPositionOffset       = 0x78;   // Vector (world)
-// Player bolts spawn at the gun (near the listener); enemy bolts spawn at their
-// own ships (far). Filter to player bolts by spawn proximity to the listener.
-constexpr float  kPlayerBoltMaxSpawnDistM = 90.0f;
-// Minimum travel between spawn and the next tick before the direction is trusted.
-constexpr float  kBoltMinTravelM          = 1.0f;
-// Fire-line estimate: only fold in bolts that travelled far enough to give a
-// clean direction (short first-tick reads are noisy), and smooth them.
-constexpr float  kFireLineMinTravelM      = 5.0f;
-constexpr float  kFireLineEmaAlpha        = 0.20f;
 
 // Census / selection range. Live distance survey (enemy-sound diagnostic,
 // 802 samples): fighters span ~0 m to ~560 m, mean ~233 m, with real density
@@ -360,13 +355,24 @@ constexpr float kAccelLeadCapSeconds = 1.0f;   // cap on the flight-time used in
 // The hitbox can't be enlarged at runtime (see the sphere_radius RE note), so
 // the honest "easier to hit" lever is to steer the GUN toward the locked
 // fighter once the aim is already close — pulling near-misses into the real
-// ~20 m hitbox. Steering is done by synthesizing the native WASD input
-// (turret_steer.cpp), NOT by writing the +0x1c4 aim field (proven inert for the
-// bolts, 2026-06-05). Engages only inside kAssistZoneDeg (so it never fights a
-// deliberate swing to a far/rear target) and yields to a sustained manual hold.
-// The opt-in "Autoaiming" toggle (TurretAutoAim) upgrades it to a full lock-on
-// (unconditional, owns the keys) in the assist block below.
-constexpr float kAssistZoneDeg = 15.0f;  // engage only within this aim error
+// ~20 m hitbox. Steering writes the aim field directly: offset.z (azimuth) and
+// offset.x (elevation) at CSWMiniPlayer +0x1c4 (engine-confirmed — Control
+// re-integrates it each tick, so a per-tick write sticks; see ReadAimLine /
+// WriteOffset). This REPLACES the turret_steer WASD synthesis. Magnetism
+// engages only inside kAssistZoneDeg (so it never fights a deliberate swing to
+// a far/rear target) and yields to a sustained manual hold. The opt-in
+// "Autoaiming" toggle (TurretAutoAim) upgrades it to a full lock-on
+// (unconditional) in the assist block below.
+constexpr float kAssistZoneDeg = 15.0f;  // magnetism engages only within this aim error
+// Per-tick fraction of the world aim error we remove by writing offset. Auto
+// snaps hard (full lock-on); magnetism nudges gently so it feels like a pull,
+// not a grab. Both <1 to stay stable against the calibration sign + lead jitter.
+constexpr float kAssistGainAuto   = 0.85f;
+constexpr float kAssistGainMagnet = 0.35f;
+// Manual yield (magnetism only): a WASD hold past kAssistManualHoldMs latches a
+// "deliberate swing" and backs assist off that long after release.
+constexpr ULONGLONG kAssistManualHoldMs  = 300;
+constexpr ULONGLONG kAssistManualGraceMs = 250;
 
 // ----- Makeability gate (FULL-AUTOAIM ONLY) -----
 // "Makeable" = can a bolt actually connect this tick? The lead already cancels
@@ -399,12 +405,13 @@ constexpr ULONGLONG kRetargetCooldownMs = 1500;   // commit after a switch (let 
 // (the whole point is to move on a hit), but still honours a manual Q/E grace.
 constexpr ULONGLONG kInvulnWindowMs = 1200;  // a fighter hit within this is still invulnerable
 
-// NOTE (2026-06-05): writing the aim field (+0x1c4) was proven a no-op for the
-// bolts — FireGunCallback spawns them from the gun MODEL's "bullethook" barrel
-// node, which the engine orients from real WASD input, not from +0x1c4. So the
-// barrel is now turned by SYNTHESIZING that WASD input (turret_steer.cpp). The
-// downstream targeting here (lead, makeability, switch-on-hit) was always
-// correct and unblocks the moment the barrel actually turns.
+// NOTE (engine-confirmed 2026-06-05): the aim field (+0x1c4 offset) IS the aim —
+// CSWMiniPlayer::Control integrates it and pushes it into the rotating gun/camera
+// models each tick. The earlier "+0x1c4 is a no-op for bolts" conclusion was an
+// artifact of measuring through the broken bolt-travel fire line (~85° off). So
+// aim-assist now WRITES offset directly (ReadAimLine / WriteOffset above), and
+// the bolts/camera follow. The downstream targeting here (lead, makeability,
+// switch-on-hit) was always correct and unblocks now that the crosshair is real.
 
 // ============================================================================
 // Module state. Single-threaded under the engine OnUpdate tick.
@@ -539,39 +546,23 @@ struct State {
     int       lead_probe_next = 0;
     ULONGLONG lead_probe_push_ms = 0;
 
-    // ---- TurretBolt diagnostic: does the BARREL actually follow our steering? -
-    // The +0x1c4 aim we read/steer is decoupled from where bolts go. To measure
-    // the truth, the AddBullet hook stashes each PLAYER bolt at spawn (object ptr
-    // + spawn pos + the aim/fighter directions we had that frame); one tick later
-    // we read the bolt's new position and the travel vector tells us where it
-    // ACTUALLY went — vs our aim, vs the locked fighter. Settles barrel-vs-aim
-    // and homing in one run, all from log lines. stage: 0 fresh, 1 done.
-    struct BoltProbe {
-        void*     obj   = nullptr;
-        Vector    spawn = {0, 0, 0};
-        Vector    aimDir = {0, 0, 0};      // the crosshair (fire line) that frame
-        Vector    fighterDir = {0, 0, 0};  // dir to locked fighter intercept
-        ULONGLONG tick  = 0;
-        int       stage = -1;              // -1 empty, 0 awaiting travel, 1 done
-    };
-    static constexpr int kBoltProbeCount = 24;
-    BoltProbe bolt_probes[kBoltProbeCount] = {};
-    int       bolt_probe_next = 0;
-    // Snapshot of this tick's crosshair / locked-fighter dir / listener, so the
-    // AddBullet hook (which fires mid-tick, off our stack) can tag a bolt.
-    Vector last_aim_dir     = {0, 0, 0};
-    Vector last_fighter_dir = {0, 0, 0};
-    Vector last_listener    = {0, 0, 0};
-    bool   have_bolt_snapshot = false;
-
-    // ---- THE CROSSHAIR: live estimate of the real fire line. ----------------
-    // The gun is fixed and the world rotates around it, so where bolts go is a
-    // (near-)fixed world direction, NOT the +0x1c4 "aim" (proven 2026-06-05).
-    // We EMA it from player-bolt travel in DrainBoltProbes and the whole cue
-    // references it. Converges within the first few shots; holds when not firing.
-    Vector fire_line         = {0, 0, 0};
-    bool   have_fire_line    = false;
-    int    fire_line_samples = 0;
+    // ---- Aim-assist sign calibration (offset.az/.el -> world aim az/el). ----
+    // The engine's offset->world rotation sign is fixed but a priori unknown, so
+    // we learn d(worldAimAz)/d(offsetAz) and d(worldAimEl)/d(offsetEl) PASSIVELY
+    // from any offset motion (player swing or our own assist writes) — target-
+    // independent, converges in a couple of ticks. sign* in {-1,+1}, 0=unknown
+    // (assume +1 and keep learning). vote* accumulates agreement for stability.
+    float     calib_last_off_az = 0.0f, calib_last_off_el = 0.0f;
+    float     calib_last_aim_az = 0.0f, calib_last_aim_el = 0.0f;
+    bool      calib_have    = false;
+    int       calib_sign_az = 0, calib_sign_el = 0;
+    int       calib_vote_az = 0, calib_vote_el = 0;
+    // Assist manual-yield (assist mode only): last tick the player physically
+    // held a WASD aim key, and whether a sustained swing is latched.
+    ULONGLONG assist_manual_ms   = 0;
+    ULONGLONG assist_hold_start   = 0;
+    bool      assist_sustained    = false;
+    bool      assist_prev_manual  = false;
 
     // ---- Per-session aim-quality counters (QC summary on exit). A clean,
     // bolt-travel-immune measure of how well the cue lets the player aim:
@@ -711,15 +702,125 @@ bool ReadFollowerPosition(void* follower, Vector& out) {
 void StopAllLoops() {
     g_state.peg_cue.Stop();
     g_state.hum_cue.Stop();
-    // Never strand a synthesized aim key down across entry/exit.
-    acc::turret_steer::ReleaseAll();
 }
 
-// NOTE: the old ReadAimDir (+0x1c4) and ReadPlayerOrientForwards (+0x240) were
-// removed 2026-06-05. +0x1c4 is decoupled from where bolts go (proven manual +
-// auto), and +0x240 is a constant identity (the gun is fixed; the world rotates
-// around it). The cue's crosshair is now the live-measured fire line — the
-// world direction bolts actually travel — maintained in DrainBoltProbes.
+// ============================================================================
+// THE CROSSHAIR + aim-assist — engine-grounded (decompiled 2026-06-05; see
+// docs/llm-docs/turret-minigame-model.md and build/re/turret-aim.decomp.txt).
+//
+// CSWMiniPlayer::Control integrates `offset` (+0x1c4) each tick
+// (`offset += axis-velocity; KeepInTunnel`) and pushes offset.x/y/z straight
+// into the RotatingModel gun/camera parts — so offset.x = elevation°,
+// offset.z = azimuth°, and the gun/camera point exactly where offset says.
+//
+//   * CROSSHAIR (read): the gun model's `bullethook0` node world transform —
+//     the literal bolt origin+direction FireGunCallback uses to spawn bolts.
+//     Walk player -> follower.gun_banks[0] -> guns[0] (CAurObject) ->
+//     gob.vtable+0x98(name, &pos, &orient). Forward = orient · base. This
+//     REPLACES the old measured-bolt-travel fire_line (the ~85° artifact).
+//   * AIM-ASSIST (write): set offset.x/.z toward the target. The engine
+//     re-integrates offset next tick, so a per-tick write sticks. Replaces the
+//     turret_steer WASD synthesis (which moved offset but was judged against
+//     the broken bolt read, so was wrongly thought inert).
+// ============================================================================
+
+// Gun-walk offsets (CSWTrackFollower is the base of CSWMiniPlayer at +0).
+constexpr size_t kFollowerGunBanksOffset   = 0x74;  // CSWMGGunBank** array base
+constexpr size_t kFollowerGunBankCountOff  = 0x78;  // int
+constexpr size_t kGunBankGunsDataOffset    = 0x34;  // CExoArrayList data ptr (CAurObject*[])
+constexpr size_t kGunBankGunCountOffset    = 0x38;  // int
+constexpr size_t kGobVtableGetPartXform    = 0x98;  // gob.vtable slot: GetPartTransform
+
+// gob.vtable+0x98: int __thiscall(this, const char* partName, Vector* outPos,
+// Quaternion* outOrient). Returns nonzero when the part exists.
+struct Quat { float w, x, y, z; };
+typedef int (__thiscall* PFN_GetPartTransform)(void*, const char*, Vector*, Quat*);
+
+// Rotate a vector by a quaternion (w,x,y,z): v' = v + 2w(u×v) + 2(u×(u×v)),
+// u = (x,y,z). Standard, no normalisation assumed beyond unit q.
+Vector QuatRotate(const Quat& q, const Vector& v) {
+    const Vector u = {q.x, q.y, q.z};
+    const Vector uxv = {u.y * v.z - u.z * v.y,
+                        u.z * v.x - u.x * v.z,
+                        u.x * v.y - u.y * v.x};
+    const Vector uxuxv = {u.y * uxv.z - u.z * uxv.y,
+                          u.z * uxv.x - u.x * uxv.z,
+                          u.x * uxv.y - u.y * uxv.x};
+    return {v.x + 2.0f * (q.w * uxv.x + uxuxv.x),
+            v.y + 2.0f * (q.w * uxv.y + uxuxv.y),
+            v.z + 2.0f * (q.w * uxv.z + uxuxv.z)};
+}
+
+// Resolve the player's first gun model (CAurObject*) for the bullethook read.
+void* ResolveGunModel() {
+    void* player = SafeReadPtr(g_state.latched_mini_game, kMiniGamePlayerOffset);
+    if (!player) return nullptr;
+    if (SafeReadU32(player, kFollowerGunBankCountOff) == 0) return nullptr;
+    void* banksBase = SafeReadPtr(player, kFollowerGunBanksOffset);  // CSWMGGunBank*[]
+    if (!banksBase) return nullptr;
+    void* bank0 = SafeReadPtr(banksBase, 0);
+    if (!bank0) return nullptr;
+    if (SafeReadU32(bank0, kGunBankGunCountOffset) == 0) return nullptr;
+    void* gunsData = SafeReadPtr(bank0, kGunBankGunsDataOffset);    // CAurObject*[]
+    if (!gunsData) return nullptr;
+    return SafeReadPtr(gunsData, 0);  // guns[0] = CAurObject*
+}
+
+// THE CROSSHAIR. Read the bullethook0 node's world position + orientation and
+// return the fire-line direction (unit) and origin. False if the part/gun is
+// unavailable this tick (cue holds). baseForward is the node's local "down the
+// barrel" axis — KOTOR object/part forward is +Y, IN-GAME CONFIRMED 2026-06-05:
+// full-autoaim drove this crosshair onto fighters and cleared the wave (6 kills
+// in ~13 s, 93% of frames on-target across all ranges), which only works if +Y
+// is the true fire line. (The other local axes read as lateral/up: +X elevation
+// ~0, +Z elevation ~85.)
+bool ReadAimLine(Vector& outDir, Vector& outOrigin) {
+    void* gun = ResolveGunModel();
+    if (!gun) return false;
+    __try {
+        void* vtable = *reinterpret_cast<void**>(gun);
+        if (!vtable) return false;
+        void* fn = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(vtable) + kGobVtableGetPartXform);
+        if (!fn) return false;
+        Vector pos = {0, 0, 0};
+        Quat   q   = {1, 0, 0, 0};
+        int found = reinterpret_cast<PFN_GetPartTransform>(fn)(
+            gun, "bullethook0", &pos, &q);
+        if (found == 0) return false;
+        const Vector baseForward = {0.0f, 1.0f, 0.0f};
+        Vector dir = QuatRotate(q, baseForward);
+        const float n = std::sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
+        if (n < 1e-4f) return false;
+        outDir = {dir.x / n, dir.y / n, dir.z / n};
+        outOrigin = pos;
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// Read / write the aim field (CSWMiniPlayer.offset +0x1c4): x = elevation°,
+// z = azimuth°. Writing it steers the gun (the engine re-integrates next tick).
+bool ReadOffset(float& azOut, float& elOut) {
+    void* player = SafeReadPtr(g_state.latched_mini_game, kMiniGamePlayerOffset);
+    if (!player) return false;
+    elOut = SafeReadF32(player, kMiniPlayerAimOffset + 0x0);  // offset.x
+    azOut = SafeReadF32(player, kMiniPlayerAimOffset + 0x8);  // offset.z
+    return true;
+}
+
+void WriteOffset(float az, float el) {
+    void* player = SafeReadPtr(g_state.latched_mini_game, kMiniGamePlayerOffset);
+    if (!player) return;
+    __try {
+        auto* off = reinterpret_cast<float*>(
+            reinterpret_cast<unsigned char*>(player) + kMiniPlayerAimOffset);
+        off[0] = el;   // offset.x = elevation
+        off[2] = az;   // offset.z = azimuth
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+}
 
 // Angle (degrees) between the aim ray and the (already normalised)
 // direction to a target. 0 = dead on.
@@ -925,7 +1026,7 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
                 }
                 g_state.selected_on_target = false;  // re-arm fire-now on return
                 g_state.selected_behind    = false;  // re-evaluate gate on return
-                acc::turret_steer::ReleaseAll();      // stop steering an unseen target
+                // (no assist write this tick — we hold the lock but don't steer)
                 return;
             }
 
@@ -946,7 +1047,6 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
             } else {
                 g_state.selected_slot = -1;
                 acclog::Write("Turret", "no fighters remain (after kill)");
-                acc::turret_steer::ReleaseAll();
                 return;
             }
         } else {
@@ -959,15 +1059,13 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
                                        listener);
                 idx = 0;
             } else {
-                acc::turret_steer::ReleaseAll();
                 return;  // no fighters in range yet — wait
             }
         }
     }
 
     if (!haveAim) {
-        acc::turret_steer::ReleaseAll();
-        return;  // hold the cue; can't compute aim this tick
+        return;  // hold the cue; can't read the crosshair this tick
     }
 
     constexpr float kRad2Deg = 57.2957795f;
@@ -1166,14 +1264,6 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
         tdir.y = aimRel.y / aimTgtDist;
         tdir.z = aimRel.z / aimTgtDist;
         angle = AngleBetweenDeg(aimDir, tdir);
-        // Snapshot for the TurretBolt diagnostic: the AddBullet hook tags each
-        // player bolt with the crosshair (fire line) + locked-fighter dir we had
-        // this frame, so a matured bolt confirms the fire line still tracks where
-        // bolts go (boltVsAim ~0) and shows the real miss (boltVsFighter).
-        g_state.last_aim_dir       = aimDir;
-        g_state.last_fighter_dir   = tdir;
-        g_state.last_listener      = listener;
-        g_state.have_bolt_snapshot = true;
     }
     float angleNow = 0.0f;
     if (sd > 0.0f) {
@@ -1326,22 +1416,89 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
     const float errAz = wrap180(aimAz - tgtAz);
     const float errEl = aimEl - tgtEl;
 
-    // ---- Steering: DISABLED (cue-first). ------------------------------------
-    // The gun is fixed and the world rotates around it, so there is no barrel to
-    // turn toward the fighter — you rotate the world by hand and fire when a
-    // fighter crosses the fixed fire line (the crosshair the cue now tracks).
-    // Keep no synthesized key held, and log the crosshair-vs-fighter error ~1/s.
-    acc::turret_steer::ReleaseAll();
-    {
-        const ULONGLONG nowLog = GetTickCount64();
-        if (aimTgtDist > 0.0f && nowLog - g_state.assist_last_log_ms >= 1000) {
-            g_state.assist_last_log_ms = nowLog;
-            acclog::Write("TurretCue",
-                          "slot=%d angle=%.1f errAz=%.1f errEl=%.1f "
-                          "deadband=%.1f dist=%.0f fireLineN=%d",
-                          g_state.selected_slot, angle, errAz, errEl,
-                          onTargetAngle, sd, g_state.fire_line_samples);
+    // ---- Aim-assist: STEER THE GUN by writing offset (+0x1c4). --------------
+    // Reduce the world aim error (errAz/errEl, crosshair -> intercept) by nudging
+    // offset.z/.x toward the target. The offset->world sign is passively
+    // calibrated (below) so we never hard-code the engine's rotation convention;
+    // the calibration also auto-corrects an inverted forward axis in ReadAimLine.
+    //   * Full-autoaim toggle ON: own the gun, snap onto the locked intercept.
+    //   * Assist (default magnetism): only inside kAssistZoneDeg, gentle, and
+    //     yield to a sustained manual WASD swing.
+    float offAz = 0.0f, offEl = 0.0f;
+    const bool haveOffset = ReadOffset(offAz, offEl);
+
+    // Passive sign calibration: learn the sign of d(worldAim)/d(offset) per axis
+    // from frame-to-frame motion (player swing or our own writes). Voted for
+    // stability; target-independent (uses aim motion, not the target).
+    if (haveOffset && haveAim) {
+        if (g_state.calib_have) {
+            const float dOffAz = wrap180(offAz - g_state.calib_last_off_az);
+            const float dAimAz = wrap180(aimAz - g_state.calib_last_aim_az);
+            if (std::fabs(dOffAz) > 1.0f && std::fabs(dAimAz) > 0.3f) {
+                g_state.calib_vote_az += (dOffAz * dAimAz > 0.0f) ? 1 : -1;
+                if (g_state.calib_vote_az >  3) g_state.calib_vote_az =  3;
+                if (g_state.calib_vote_az < -3) g_state.calib_vote_az = -3;
+                g_state.calib_sign_az = (g_state.calib_vote_az >= 0) ? 1 : -1;
+            }
+            const float dOffEl = offEl - g_state.calib_last_off_el;
+            const float dAimEl = aimEl - g_state.calib_last_aim_el;
+            if (std::fabs(dOffEl) > 1.0f && std::fabs(dAimEl) > 0.3f) {
+                g_state.calib_vote_el += (dOffEl * dAimEl > 0.0f) ? 1 : -1;
+                if (g_state.calib_vote_el >  3) g_state.calib_vote_el =  3;
+                if (g_state.calib_vote_el < -3) g_state.calib_vote_el = -3;
+                g_state.calib_sign_el = (g_state.calib_vote_el >= 0) ? 1 : -1;
+            }
         }
+        g_state.calib_last_off_az = offAz; g_state.calib_last_aim_az = aimAz;
+        g_state.calib_last_off_el = offEl; g_state.calib_last_aim_el = aimEl;
+        g_state.calib_have = true;
+    }
+
+    // Manual-yield (magnetism only): is the player physically swinging WASD?
+    const ULONGLONG nowMsA = GetTickCount64();
+    const bool manualNow =
+        (GetAsyncKeyState('W') & 0x8000) || (GetAsyncKeyState('A') & 0x8000) ||
+        (GetAsyncKeyState('S') & 0x8000) || (GetAsyncKeyState('D') & 0x8000);
+    if (manualNow && !g_state.assist_prev_manual) g_state.assist_hold_start = nowMsA;
+    if (manualNow) {
+        g_state.assist_manual_ms = nowMsA;
+        if (nowMsA - g_state.assist_hold_start >= kAssistManualHoldMs)
+            g_state.assist_sustained = true;
+    } else if (g_state.assist_sustained &&
+               nowMsA - g_state.assist_manual_ms >= kAssistManualGraceMs) {
+        g_state.assist_sustained = false;
+    }
+    g_state.assist_prev_manual = manualNow;
+
+    // Decide whether to steer this tick.
+    bool steer = haveOffset && haveAim;
+    if (steer && !fullAuto) {
+        if (g_state.assist_sustained)     steer = false;  // yield to a real swing
+        else if (angle > kAssistZoneDeg)  steer = false;  // magnetise only when close
+    }
+
+    if (steer) {
+        const int   sAz  = g_state.calib_sign_az ? g_state.calib_sign_az : 1;
+        const int   sEl  = g_state.calib_sign_el ? g_state.calib_sign_el : 1;
+        const float gain = fullAuto ? kAssistGainAuto : kAssistGainMagnet;
+        float newAz = offAz - sAz * errAz * gain;
+        float newEl = offEl - sEl * errEl * gain;
+        while (newAz >= 360.0f) newAz -= 360.0f;  // KeepInTunnel wraps too, but
+        while (newAz <   0.0f)  newAz += 360.0f;  // avoid a one-frame out-of-range
+        WriteOffset(newAz, newEl);
+    }
+
+    // Throttled assist/calibration log (~1/s).
+    if (aimTgtDist > 0.0f && nowMsA - g_state.assist_last_log_ms >= 1000) {
+        g_state.assist_last_log_ms = nowMsA;
+        acclog::Write("TurretCue",
+                      "slot=%d angle=%.1f errAz=%.1f errEl=%.1f deadband=%.1f "
+                      "dist=%.0f off(az=%.1f el=%.1f) aim(az=%.1f el=%.1f) "
+                      "calibAz=%d calibEl=%d steer=%d auto=%d",
+                      g_state.selected_slot, angle, errAz, errEl, onTargetAngle,
+                      sd, offAz, offEl, aimAz, aimEl,
+                      g_state.calib_sign_az, g_state.calib_sign_el,
+                      steer ? 1 : 0, fullAuto ? 1 : 0);
     }
 
     // ---- Elevation channel: drive the peg's PITCH from the vertical error. --
@@ -1487,62 +1644,6 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
     }
 }
 
-// TurretBolt diagnostic: a tick after a player bolt spawned, read its new
-// position; the travel vector is where the bolt ACTUALLY went. Log it against
-// the aim ray and locked-fighter direction we snapshotted at spawn. The three
-// angles settle the open question: boltVsAim ~0 => bolts follow our +0x1c4 aim
-// (so the miss is steering/firing); boltVsAim large => the barrel is decoupled
-// from +0x1c4 and boltVsFighter tells us if it homes onto the fighter anyway.
-void DrainBoltProbes() {
-    const ULONGLONG now = GetTickCount64();
-    auto azOf = [](const Vector& d) { return std::atan2(d.x, d.y) * 57.2957795f; };
-    auto elOf = [](const Vector& d) {
-        float z = d.z > 1.0f ? 1.0f : (d.z < -1.0f ? -1.0f : d.z);
-        return std::asin(z) * 57.2957795f;
-    };
-    for (int i = 0; i < State::kBoltProbeCount; ++i) {
-        State::BoltProbe& p = g_state.bolt_probes[i];
-        if (p.stage != 0) continue;
-        if (now - p.tick < 30) continue;            // let it travel ~1-2 ticks
-        if (now - p.tick > 1000) { p.stage = -1; continue; }  // lost/freed — drop
-        const Vector cur = { SafeReadF32(p.obj, kGobPositionOffset),
-                             SafeReadF32(p.obj, kGobPositionOffset + 4),
-                             SafeReadF32(p.obj, kGobPositionOffset + 8) };
-        const Vector travel = { cur.x - p.spawn.x, cur.y - p.spawn.y, cur.z - p.spawn.z };
-        const float tl = std::sqrt(travel.x * travel.x + travel.y * travel.y +
-                                   travel.z * travel.z);
-        if (tl < kBoltMinTravelM) continue;         // not moved enough yet — wait
-        const Vector td = { travel.x / tl, travel.y / tl, travel.z / tl };
-
-        // Fold a clean (long-enough) travel into the fire-line estimate — THE
-        // crosshair the whole cue references.
-        if (tl >= kFireLineMinTravelM) {
-            if (!g_state.have_fire_line) {
-                g_state.fire_line = td;
-                g_state.have_fire_line = true;
-            } else {
-                Vector& fl = g_state.fire_line;
-                const float a = kFireLineEmaAlpha;
-                Vector m = { fl.x + (td.x - fl.x) * a, fl.y + (td.y - fl.y) * a,
-                             fl.z + (td.z - fl.z) * a };
-                const float n = std::sqrt(m.x * m.x + m.y * m.y + m.z * m.z);
-                if (n > 1e-6f) { fl.x = m.x / n; fl.y = m.y / n; fl.z = m.z / n; }
-            }
-            ++g_state.fire_line_samples;
-        }
-
-        acclog::Write("TurretBolt",
-            "travel az=%.1f el=%.1f | crosshair az=%.1f el=%.1f | fighter az=%.1f el=%.1f "
-            "| boltVsCrosshair=%.1f boltVsFighter=%.1f crosshairVsFighter=%.1f "
-            "travelLen=%.1f fireLineN=%d",
-            azOf(td), elOf(td), azOf(p.aimDir), elOf(p.aimDir),
-            azOf(p.fighterDir), elOf(p.fighterDir),
-            AngleBetweenDeg(td, p.aimDir), AngleBetweenDeg(td, p.fighterDir),
-            AngleBetweenDeg(p.aimDir, p.fighterDir), tl, g_state.fire_line_samples);
-        p.stage = 1;
-    }
-}
-
 void TickFighterCues() {
     void* mgoArray = ResolveMgoArray();
     if (!mgoArray) return;
@@ -1553,26 +1654,19 @@ void TickFighterCues() {
         return;
     }
 
-    // Enable bolt tracking EVERY tick (independent of the cue) — the fire line
-    // is built from player bolts, but DriveSelectedPeg only runs its full path
-    // once the fire line exists. Without this, the AddBullet hook never stashes
-    // a bolt (it gates on the snapshot), the fire line never converges, and the
-    // cue stays silent forever — a deadlock. The listener is all AddBullet needs
-    // to filter player bolts; the aim/fighter tags refine when the cue runs.
-    g_state.last_listener      = listener;
-    g_state.have_bolt_snapshot = true;
+    // THE CROSSHAIR: read the gun's bullethook0 node world direction (the
+    // literal fire line). Available from frame 1 — no waiting for bolt travel.
+    // Holds the cue (haveAim=false) only if the gun model isn't resolvable this
+    // tick (transient during entry).
+    Vector       aimDir  = {0, 0, 0};
+    Vector       aimOrigin = listener;
+    const bool   haveAim = ReadAimLine(aimDir, aimOrigin);
 
     const float rangeSq = kFighterCueRangeM * kFighterCueRangeM;
 
     // ---- Pass 1: census every in-range fighter (for the Q/E cycle). The
     // engine-loop set is chosen AFTER the census (selected fighter's real ship
     // + nearest other), so it isn't built here.
-    // The cue's crosshair is the REAL fire line — the world direction bolts
-    // actually travel — measured live from player bolts (the gun is fixed and
-    // the world rotates around it; +0x1c4 is irrelevant, proven 2026-06-05).
-    // Holds the cue (haveAim=false) until it converges from the first few shots.
-    const Vector aimDir  = g_state.fire_line;
-    const bool   haveAim = g_state.have_fire_line;
 
     int    occSlot[kMgoArraySlotCount];
     float  occDist[kMgoArraySlotCount];
@@ -1736,9 +1830,6 @@ void TickFighterCues() {
         }
     }
 
-    // TurretBolt diagnostic: measure where last tick's player bolts went.
-    DrainBoltProbes();
-
     acclog::Trace("Turret", "fighter census: %d in range (range %.0fm)",
                   occCount, kFighterCueRangeM);
 }
@@ -1805,13 +1896,14 @@ void HandleEnter(void* mg) {
     g_state.assist_last_log_ms = 0;
     g_state.shots_fired  = 0;
     g_state.fighter_hits = 0;
-    // Fresh TurretBolt ring + fire-line estimate (re-measured each round).
-    g_state.have_bolt_snapshot = false;
-    g_state.bolt_probe_next    = 0;
-    for (auto& bp : g_state.bolt_probes) bp.stage = -1;
-    g_state.have_fire_line     = false;
-    g_state.fire_line          = {0.0f, 0.0f, 0.0f};
-    g_state.fire_line_samples  = 0;
+    // Fresh aim-assist sign calibration + manual-yield state.
+    g_state.calib_have      = false;
+    g_state.calib_sign_az   = 0; g_state.calib_sign_el = 0;
+    g_state.calib_vote_az   = 0; g_state.calib_vote_el = 0;
+    g_state.assist_sustained   = false;
+    g_state.assist_prev_manual = false;
+    g_state.assist_manual_ms   = 0;
+    g_state.assist_hold_start  = 0;
     // Defensive: no loop from a prior turret session must survive.
     StopAllLoops();
 
@@ -1923,39 +2015,14 @@ extern "C" void __cdecl OnPlayerFire(void* /*player*/) {
     ++g_state.shots_fired;
 }
 
-// TurretBolt diagnostic (hooked at CSWMiniGame::AddBullet @0x00672fa0). Fires
-// for every bolt (player AND enemy); we keep only those spawning near the gun
-// (player bolts) and stash them for the next-tick travel-direction read in
-// DrainBoltProbes. The bullet object is param_1 (esp+4) — a CAurObject whose
-// world position lives at Gob.position (+0x78). Diagnostic only.
-extern "C" void __cdecl OnTurretAddBullet(void* bullet) {
-    if (!bullet || !g_state.active || !g_state.have_bolt_snapshot) return;
-    const Vector spawn = { SafeReadF32(bullet, kGobPositionOffset),
-                           SafeReadF32(bullet, kGobPositionOffset + 4),
-                           SafeReadF32(bullet, kGobPositionOffset + 8) };
-    const float dx = spawn.x - g_state.last_listener.x;
-    const float dy = spawn.y - g_state.last_listener.y;
-    const float dz = spawn.z - g_state.last_listener.z;
-    if (std::sqrt(dx * dx + dy * dy + dz * dz) > kPlayerBoltMaxSpawnDistM)
-        return;  // spawned far from the gun — an enemy bolt, ignore
-    State::BoltProbe& p = g_state.bolt_probes[g_state.bolt_probe_next];
-    p.obj        = bullet;
-    p.spawn      = spawn;
-    p.aimDir     = g_state.last_aim_dir;
-    p.fighterDir = g_state.last_fighter_dir;
-    p.tick       = GetTickCount64();
-    p.stage      = 0;
-    g_state.bolt_probe_next = (g_state.bolt_probe_next + 1) % State::kBoltProbeCount;
-}
-
 bool IsActive() { return g_state.active; }
 
 void Tick() {
     void* mgArea = ReadMiniGameViaArea();
 
     if (!g_state.active) {
-        // Idle. Fire ENTER only for the turret minigame (type==3); swoop
-        // (type==0) is handled by swoop_race.cpp.
+        // Idle. Fire ENTER only for the turret minigame (type==2); swoop
+        // (type==1) is handled by swoop_race.cpp.
         if (IsTurretMiniGame(mgArea)) HandleEnter(mgArea);
         return;
     }
