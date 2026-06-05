@@ -349,8 +349,57 @@ flight-time makeability gate + switch-on-hit spreading (committed on
 `turret-curve-lead`) are correct and unblock the moment the barrel turns.
 Re-arm the probe via `kDiagElevBias = 60.0f` in turret_game.cpp to re-confirm.
 
+## 2026-06-05 — RESOLVED: the gun is FIXED, the world rotates; cue re-anchored to the fire line
+
+A run of the `TurretBolt` instrument (AddBullet hook stashes each player bolt,
+reads its world position a tick later = actual travel direction) settled the
+whole thing, confirmed in BOTH auto and manual play:
+
+- **`+0x1c4` is irrelevant to where bolts go — for the player too, not just our
+  writes.** Manual round: `boltVsAim` averaged 114° (min 66°),
+  `corr(aim az, bolt az) = 0.15`. The 3 manual kills landed while `+0x1c4` was
+  21° / 130° / 47° off the fighter. So neither reading nor steering `+0x1c4`
+  relates to hitting.
+- **The gun is FIXED; the world rotates around it.** `CSWMiniPlayer +0x240`
+  (Quaternion, swkotor.exe.h field28_0x240) reads identity and never changes
+  while aim swings. The "wide turn radius" (per the in-game guide) is the
+  world/reticle sweeping around a stationary gun. Matches the `tunnel_*` rail
+  fields on `CSWMiniPlayer`.
+- **Bolts fire along a near-fixed world line ≈ az −84°, el ~0°** (bolt az pinned
+  −101…−74 while aim swept the full 348°). THAT line is the real crosshair. To
+  hit, you rotate the world until the fighter crosses it — exactly the radar
+  play the guide describes ("keep the turret pointed at the enemy, mash fire").
+
+**The fix (cue-first, mission winnable):** dropped `+0x1c4` (`ReadAimDir` and the
+`+0x240` orient probe are deleted) and re-anchored the entire cue to the
+**live-measured fire line**:
+
+- `OnTurretAddBullet` (hook @ `CSWMiniGame::AddBullet` 0x672fa0) stashes each
+  player bolt (filtered by spawn proximity to the listener). `DrainBoltProbes`
+  reads its position the next tick and EMAs the travel direction into
+  `g_state.fire_line` (`kFireLineMinTravelM = 5`, `alpha = 0.20`). That fire line
+  is the crosshair the cue references.
+- Bolt tracking is enabled every tick from just the listener (top of
+  `TickFighterCues`). **This is load-bearing** — without it the cue (gated on
+  `have_fire_line`) never runs to stash bolts, the fire line never converges, and
+  the cue stays silent except for Q/E switch pings (the bug that first shipped).
+- The predictive lead stays correct: a continuously-fired bolt travels the fixed
+  fire line, so a hit needs the intercept point ON that line → cue "solid" =
+  intercept direction ≈ fire line.
+- **Steering is disabled.** `turret_steer.cpp` (WASD synthesis) is moot for a
+  fixed gun — only `ReleaseAll` is called. Re-doing aim-assist / Autoaiming for
+  this model (drive whatever rotates the WORLD to bring the fighter onto the fire
+  line, or decide it's unneeded) is the open task for a fresh session, along with
+  tuning the cue feel.
+
+New log channels: `TurretBolt` (`boltVsCrosshair` ~0 confirms the fire line
+tracks bolts; `boltVsFighter` is the real miss), `TurretCue` (crosshair angle →
+solid). The `TurretAssist`/`TurretOrient` channels are gone.
+
 ## Related
 
 - `patches/Accessibility/turret_game.cpp` — all turret accessibility logic.
+- `patches/Accessibility/turret_steer.cpp` — WASD-synthesis steering (disabled;
+  moot for the fixed gun, kept for a future world-rotation rework).
 - Memory: `project_turret_turn_rate.md`,
   `project_turret_aim_write_does_not_steer_bolts.md`.

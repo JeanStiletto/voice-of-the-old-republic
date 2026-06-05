@@ -1133,3 +1133,31 @@ exclude_from_restore = []
 [[hooks.parameters]]
 source = "ecx"
 type = "pointer"
+
+# CSWMiniGame::AddBullet @ 0x00672fa0 — TurretBolt diagnostic. Fires once per
+# spawned bolt (player AND enemy). The handler keeps only bolts spawning near
+# the gun (player bolts) and stashes them; one tick later DrainBoltProbes reads
+# the bolt's new position and the travel vector reveals where it ACTUALLY went,
+# vs our +0x1c4 aim and the locked fighter — settling barrel-vs-aim and homing.
+# param_1 (the bullet CAurObject*) is the stack arg at [esp+4] at entry.
+#
+# Entry bytes (DumpBytes 2026-06-05):
+#   0x00672fa0: 6a ff              PUSH -1
+#   0x00672fa2: 68 8b da 72 00     PUSH 0x0072da8b   ; SEH FrameHandler addr
+#   0x00672fa7: 64 a1 00 00 00 00  MOV  EAX, FS:[0]
+# Cut 7 bytes (PUSH -1 + PUSH imm32): clean instruction boundary; the pushed
+# constant is position-independent (an absolute code address that stays valid).
+# At hook entry [ESP+0] = return addr, [ESP+4] = param_1 (the bullet).
+[[hooks]]
+address = 0x00672fa0
+type = "detour"
+function = "OnTurretAddBullet"
+
+original_bytes = [0x6a, 0xff, 0x68, 0x8b, 0xda, 0x72, 0x00]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "esp+4"
+type = "pointer"
