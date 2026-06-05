@@ -665,4 +665,26 @@ bool ReadItemPropertyDescription(void* item, char* outBuf, size_t bufSize) {
     return ok;
 }
 
+void* GetWorkbenchSlotInstalledItem(void* upgradePanel, void* slotControl) {
+    if (!upgradePanel || !slotControl) return nullptr;
+    void* item = nullptr;
+    __try {
+        int customValue = *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(slotControl) +
+            kUpgradeSlotCustomValueOff);
+        // Guard the index — the array holds at most 4 mod pointers (one per
+        // slot). custom_value should always be 0..3 for a real slot button.
+        if (customValue < 0 || customValue > 3) return nullptr;
+        item = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(upgradePanel) +
+            kUpgradeSlotInstalledItemsOff + customValue * 4);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Engine.Reads",
+                      "GetWorkbenchSlotInstalledItem SEH panel=%p slot=%p",
+                      upgradePanel, slotControl);
+        return nullptr;
+    }
+    return item;
+}
+
 }  // namespace acc::engine

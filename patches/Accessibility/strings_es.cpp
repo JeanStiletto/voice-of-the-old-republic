@@ -407,6 +407,9 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotInstalled:     return "Mejora instalada";
         case Id::WorkbenchSlotRemoved:       return "Mejora eliminada";
         case Id::WorkbenchSlotNoMatch:       return "No hay mejora correspondiente en el inventario";
+        case Id::WorkbenchSlotFilled:        return "ocupada";
+        case Id::WorkbenchSlotPeekEmpty:     return "Ranura vac\xED""a, sin mejora instalada";
+        case Id::WorkbenchFmtSlotItem:       return "%s, con %s";
 
         case Id::SoundOptionsMovieVolume:    return "Volumen de v\xED""deo";
 

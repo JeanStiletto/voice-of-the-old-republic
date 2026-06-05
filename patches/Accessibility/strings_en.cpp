@@ -398,6 +398,9 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotInstalled:     return "Upgrade installed";
         case Id::WorkbenchSlotRemoved:       return "Upgrade removed";
         case Id::WorkbenchSlotNoMatch:       return "No matching upgrade in inventory";
+        case Id::WorkbenchSlotFilled:        return "occupied";
+        case Id::WorkbenchSlotPeekEmpty:     return "Empty slot, no upgrade installed";
+        case Id::WorkbenchFmtSlotItem:       return "%s, holds %s";
 
         case Id::SoundOptionsMovieVolume:    return "Movie volume";
 

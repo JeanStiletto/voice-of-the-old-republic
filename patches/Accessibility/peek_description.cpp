@@ -1,5 +1,6 @@
 #include "peek_description.h"
 
+#include "engine_area.h"      // kItemLocNameOffset
 #include "engine_input.h"
 #include "engine_offsets.h"
 #include "engine_panels.h"
@@ -10,6 +11,7 @@
 #include "menus_internal.h"   // kEquipBtn* slot ids, FindControlById
 #include "menus_listbox.h"    // IsEquipPickerArmed
 #include "prism.h"
+#include "strings.h"          // WorkbenchSlotPeekEmpty
 
 using acc::menus::detail::FindControlById;
 
@@ -248,6 +250,51 @@ bool HandleEquipSlotTooltip(void* panel, const EquipSlotPeekInfo& info) {
     return true;
 }
 
+// Shift+arrow on a workbench upgrade slot button (upgrade.gui IDs 12..18):
+// speak the installed mod's full property description ("what the slot does
+// for your item"), or announce the slot is empty. The installed mod lives at
+// CSWGuiUpgrade.field35_0x2f74[slot_btn.custom_value] (engine-constructed from
+// the mod template — see OnPanelAdded). Mirrors HandleEquipSlotTooltip; caller
+// consumes the key regardless of return so behaviour is predictable.
+bool HandleWorkbenchSlotTooltip(void* panel, void* control) {
+    void* installed =
+        acc::engine::GetWorkbenchSlotInstalledItem(panel, control);
+    if (!installed) {
+        prism::Speak(
+            acc::strings::Get(acc::strings::Id::WorkbenchSlotPeekEmpty),
+            /*interrupt=*/true);
+        acclog::Write("Peek.Workbench",
+                      "panel=%p control=%p slot empty", panel, control);
+        return true;
+    }
+
+    char text[4096];
+    if (acc::engine::ReadItemPropertyDescription(installed, text,
+                                                 sizeof(text))) {
+        prism::Speak(text, /*interrupt=*/true);
+        acclog::Write("Peek.Workbench",
+                      "panel=%p control=%p item=%p text=\"%s\"",
+                      panel, control, installed, text);
+        return true;
+    }
+
+    // Occupied but no property text — fall back to the mod's name so the peek
+    // still says what's installed rather than going silent.
+    if (acc::engine::ExtractTextOrStrRef(installed, kItemLocNameOffset,
+                                         kItemLocNameOffset + 4, text,
+                                         sizeof(text)) && text[0]) {
+        prism::Speak(text, /*interrupt=*/true);
+        acclog::Write("Peek.Workbench",
+                      "panel=%p control=%p item=%p name-fallback=\"%s\"",
+                      panel, control, installed, text);
+    } else {
+        acclog::Write("Peek.Workbench",
+                      "panel=%p control=%p item=%p no description/name",
+                      panel, control, installed);
+    }
+    return true;
+}
+
 const ItemTooltipPanelInfo* LookupItemTooltipPanel(acc::engine::PanelKind k) {
     for (const auto& p : kItemTooltipPanels) {
         if (p.kind == k) return &p;
@@ -428,6 +475,28 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
         if (const EquipSlotPeekInfo* slotInfo =
                 FindEquipSlotByControl(focusedControl)) {
             HandleEquipSlotTooltip(activePanel, *slotInfo);
+            return true;
+        }
+    }
+
+    // Workbench upgrade slot button (upgrade.gui IDs 12..18): speak the
+    // installed mod's description, or "empty". Runs before the item-tooltip
+    // path because that path targets LB_ITEMS — the mod picker shown only
+    // after a slot is drilled into. While focus sits on a slot button the
+    // list is empty, so without this branch Shift+arrow would say nothing.
+    // When the user has drilled into a slot, focus moves to LB_ITEMS rows
+    // (id != 12..18) and this branch falls through to the picker path.
+    if (kind == acc::engine::PanelKind::WorkbenchUpgrade && focusedControl) {
+        int cid = -1;
+        __try {
+            cid = *reinterpret_cast<int*>(
+                reinterpret_cast<unsigned char*>(focusedControl) +
+                kControlIdOffset);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            cid = -1;
+        }
+        if (cid >= 12 && cid <= 18) {
+            HandleWorkbenchSlotTooltip(activePanel, focusedControl);
             return true;
         }
     }

@@ -1359,6 +1359,51 @@ const char* FromControl(void* control,
                     }
                 }
             }
+
+            // Append occupancy state so the user hears whether the slot
+            // already holds an upgrade — "Energiezelle, Massive Kritische"
+            // when occupied, "Energiezelle, leer" when empty. Reuses the
+            // shared equip-slot composition templates. field35_0x2f74[cval]
+            // is the installed mod item (engine-constructed from the mod
+            // template at panel-open / install; see OnPanelAdded).
+            if (source) {
+                char slotName[160];
+                size_t snlen = strnlen(outBuf, bufSize);
+                if (snlen + 1 <= sizeof(slotName)) {
+                    memcpy(slotName, outBuf, snlen + 1);
+                    using acc::strings::Get;
+                    using acc::strings::Id;
+                    void* installed = acc::engine::GetWorkbenchSlotInstalledItem(
+                        ownerForPerkind, control);
+                    if (installed) {
+                        char modName[160];
+                        modName[0] = '\0';
+                        bool gotName = acc::engine::ExtractTextOrStrRef(
+                                           installed, kItemLocNameOffset,
+                                           kItemLocNameOffset + 4, modName,
+                                           sizeof(modName)) &&
+                                       modName[0] != '\0';
+                        if (gotName) {
+                            // "<slot type>, belegt mit <mod>" — connecting word
+                            // so an identical slot/mod name doesn't read twice.
+                            snprintf(outBuf, bufSize,
+                                     Get(Id::WorkbenchFmtSlotItem),
+                                     slotName, modName);
+                        } else {
+                            // Name unresolved: "<slot type>, belegt".
+                            snprintf(outBuf, bufSize, Get(Id::FmtEquipSlotItem),
+                                     slotName, Get(Id::WorkbenchSlotFilled));
+                        }
+                    } else {
+                        snprintf(outBuf, bufSize, Get(Id::FmtEquipSlotEmpty),
+                                 slotName);
+                    }
+                    acclog::Write("Menus.PerKind",
+                                  "WorkbenchUpgrade slot state control=%p "
+                                  "installed=%p -> \"%s\"",
+                                  control, installed, outBuf);
+                }
+            }
         }
     }
 

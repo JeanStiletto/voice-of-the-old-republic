@@ -405,6 +405,9 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotInstalled:     return "Miglioramento installato";
         case Id::WorkbenchSlotRemoved:       return "Miglioramento rimosso";
         case Id::WorkbenchSlotNoMatch:       return "Nessun miglioramento corrispondente nell'inventario";
+        case Id::WorkbenchSlotFilled:        return "occupato";
+        case Id::WorkbenchSlotPeekEmpty:     return "Alloggiamento vuoto, nessun miglioramento installato";
+        case Id::WorkbenchFmtSlotItem:       return "%s, con %s";
 
         case Id::SoundOptionsMovieVolume:    return "Volume video";
 

@@ -809,6 +809,15 @@ constexpr size_t    kUpgradeSlotTypeStrRefOff = 8;
 constexpr size_t    kUpgradePanelCategoryOff  = 0x2f4c;  // panel.field25
 constexpr size_t    kUpgradeSlotCustomValueOff = 0x58;   // slot_btn.custom_value
 
+// CSWGuiUpgrade.field35_0x2f74 — array of installed-mod CSWSItem* indexed by
+// the slot button's custom_value. Non-null = slot occupied (the engine
+// constructs a CSWSItem and LoadFromTemplate's the mod into this slot when the
+// base item already carries that upgrade — bitmask at field27+0x294 — see
+// OnPanelAdded @0x006c4d70); null = empty. Both OnEnterSlot @0x006c3c30 (saber
+// branch) and OnSlotSelected @0x006c6500 (install/remove branch) index this
+// array by custom_value, so it is the authoritative per-slot occupancy field.
+constexpr size_t    kUpgradeSlotInstalledItemsOff = 0x2f74;  // panel.field35
+
 // Combat system — engine surfaces (per docs/combat-system.md, all
 // "suspected" / "known (DB)" until live-validated).
 //

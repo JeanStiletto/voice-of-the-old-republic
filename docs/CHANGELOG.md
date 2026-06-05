@@ -13,6 +13,12 @@ headings in the release body (markdown `**Installer:**` only renders as bold).
 Each bullet should lead with the user-facing change ("X works now", "new
 hotkey Y", "X no longer does Z"); keep technical detail short.
 
+<h2>v0.3.2</h2>
+
+<h3>UI:</h3>
+
+- The workbench upgrade screen now tells you what is in each slot and what it does. Arrowing through a weapon or armour's upgrade slots used to read only the slot type ("Energiezelle", "Panzerverstärkung"), with no way to tell whether a slot was empty or already held an upgrade. Each slot now also reads its state: "leer" when empty, or "belegt mit" followed by the installed upgrade's name when occupied. Pressing Shift+Up or Shift+Down on a slot reads the full description of the upgrade installed in it — the same bonuses and effects you would see hovering it — so you can check what each fitted mod is doing, the same way item tooltips read elsewhere; on an empty slot it tells you the slot is empty.
+
 <h2>v0.3.1</h2>
 
 <h3>Navigation:</h3>

@@ -406,6 +406,9 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotInstalled:     return "Am\xE9lioration install\xE9""e";
         case Id::WorkbenchSlotRemoved:       return "Am\xE9lioration retir\xE9""e";
         case Id::WorkbenchSlotNoMatch:       return "Aucune am\xE9lioration correspondante dans l'inventaire";
+        case Id::WorkbenchSlotFilled:        return "occup\xE9";
+        case Id::WorkbenchSlotPeekEmpty:     return "Emplacement vide, aucune am\xE9lioration install\xE9""e";
+        case Id::WorkbenchFmtSlotItem:       return "%s, occup\xE9 par %s";
 
         case Id::SoundOptionsMovieVolume:    return "Volume des vid\xE9os";
 

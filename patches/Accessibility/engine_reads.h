@@ -133,6 +133,15 @@ void* ResolveItemFromClientHandle(uint32_t clientHandle);
 // we deliberately leak (CRT-mismatch — same pattern as LookupTlk).
 bool ReadItemPropertyDescription(void* item, char* outBuf, size_t bufSize);
 
+// Workbench upgrade slot → installed-mod item. Given the CSWGuiUpgrade panel
+// and a slot button control (upgrade.gui IDs 12..18), reads the slot button's
+// custom_value and returns the installed mod CSWSItem* at
+// field35_0x2f74[custom_value], or nullptr when the slot is empty / inputs
+// invalid. The returned pointer is a real CSWSItem* (engine-constructed from
+// the mod template) and is safe to pass to ReadItemPropertyDescription /
+// ExtractTextOrStrRef(+0x280). SEH-guarded. See kUpgradeSlotInstalledItemsOff.
+void* GetWorkbenchSlotInstalledItem(void* upgradePanel, void* slotControl);
+
 // CSWGuiInterfaceAction.action_id → human-readable description.
 // Dispatches on the high-nibble tag stamped by each entry-creator:
 //   0x1xxxxxxx feat        — CSWRules::GetFeat → CSWFeat::GetDescriptionText

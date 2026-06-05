@@ -1137,6 +1137,19 @@ enum class Id : int {
     WorkbenchSlotRemoved,      // item → 0: existing upgrade removed
     WorkbenchSlotNoMatch,      // 0 → 0: no inventory item with the slot's expected tag
 
+    // ---- Workbench slot occupancy + Shift+arrow description peek.
+    //      Slot focus appends state to the slot type name via the shared
+    //      FmtEquipSlotItem / FmtEquipSlotEmpty templates ("Energiezelle,
+    //      Massive Kritische" / "Energiezelle, leer"). WorkbenchSlotFilled
+    //      is the fallback word when the installed mod's name can't be read.
+    //      WorkbenchSlotPeekEmpty is spoken when Shift+arrow peeks an empty
+    //      slot (occupied slots read the installed mod's property text).
+    WorkbenchSlotFilled,       // state fallback when mod name unresolved
+    WorkbenchSlotPeekEmpty,    // Shift+arrow on an empty slot
+    WorkbenchFmtSlotItem,      // 2 %s (slot type, mod name) — connecting word
+                               // between so identical names don't read twice
+                               // ("Panzerverst\xE4rkung, belegt mit Panzerverst\xE4rkung")
+
     // ---- Sound options panel (optionssound.gui) label fix-up.
     //      The stock German .gui labels the 4th slider (movie/video volume)
     //      as "Musik-Lautst\xE4rke" — a duplicate of the 1st slider — and

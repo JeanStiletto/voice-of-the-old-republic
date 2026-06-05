@@ -417,6 +417,9 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotInstalled:     return "Aufwertung eingesetzt";
         case Id::WorkbenchSlotRemoved:       return "Aufwertung entfernt";
         case Id::WorkbenchSlotNoMatch:       return "Keine passende Aufwertung im Inventar";
+        case Id::WorkbenchSlotFilled:        return "belegt";
+        case Id::WorkbenchSlotPeekEmpty:     return "Leerer Steckplatz, keine Aufwertung eingesetzt";
+        case Id::WorkbenchFmtSlotItem:       return "%s, belegt mit %s";
 
         case Id::SoundOptionsMovieVolume:    return "Video-Lautst\xE4rke";  // Lautstärke
 
