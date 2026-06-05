@@ -1253,6 +1253,13 @@ enum class Id : int {
     ModSettingCueVolume,
     FmtModSettingSlider,
 
+    // Spoken-announcement (SAPI urgent channel) volume slider row. Same
+    // FmtModSettingSlider "Name: N percent" format as the cue-volume row;
+    // adjusting it speaks a short SAPI sample (UrgentVolumePreview) at the
+    // new level so the user hears the resulting loudness.
+    ModSettingUrgentVolume,
+    ModSettingUrgentVolumePreview,
+
     // Side-effect cues for the SkipIntros toggle — spoken after the
     // .bik rename to tell the user the change applies on next launch.
     ModSettingSkipIntrosOnNextLaunch,     // intros are now disabled

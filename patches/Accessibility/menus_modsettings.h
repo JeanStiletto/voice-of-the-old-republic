@@ -49,6 +49,7 @@ enum class Option {
     TurretAutoAim,     // easy-mode cheat — turret auto-tracks the locked fighter (off by default)
     SkipIntros,        // filesystem-backed — state is biologo.bik vs biologo.bik.disabled
     CueVolume,         // slider — global hint-sound volume (audio_bus owns the value)
+    UrgentVolume,      // slider — SAPI spoken-announcement volume (prism owns the value)
     AudioGlossary,
     Count
 };

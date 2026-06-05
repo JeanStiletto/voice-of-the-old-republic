@@ -22,6 +22,7 @@
 #include <type_traits>
 
 #include "log.h"
+#include "mod_settings_store.h"  // persist the SAPI urgent-volume slider
 
 namespace prism {
 
@@ -57,6 +58,7 @@ typedef PrismError     (__cdecl* PFN_prism_backend_initialize)(PrismBackend*);
 typedef PrismError     (__cdecl* PFN_prism_backend_speak)(PrismBackend*, const char*, bool);
 typedef PrismError     (__cdecl* PFN_prism_backend_stop)(PrismBackend*);
 typedef PrismError     (__cdecl* PFN_prism_backend_set_rate)(PrismBackend*, float);
+typedef PrismError     (__cdecl* PFN_prism_backend_set_volume)(PrismBackend*, float);
 typedef PrismError     (__cdecl* PFN_prism_backend_set_voice)(PrismBackend*, size_t);
 typedef PrismError     (__cdecl* PFN_prism_backend_count_voices)(PrismBackend*, size_t*);
 typedef const char*    (__cdecl* PFN_prism_backend_name)(PrismBackend*);
@@ -78,6 +80,26 @@ size_t g_sapiVoiceCurrent = static_cast<size_t>(-1);
 // asking SAPI for a voice it doesn't have. 0 = not enumerated / no voices.
 size_t g_sapiVoiceCount   = 0;
 
+// User-facing SAPI urgent-channel volume, percent [0,100]; 100 = SAPI full.
+// Backed by the persistent store (acc_settings.ini) so it survives relaunch,
+// lazily pulled on first access. Prism maps the float arg of set_volume to
+// [0.0..1.0] (same convention as set_rate), so the byte we hand over is
+// percent/100. The slider in Mod-Einstellungen drives this via
+// SetUrgentVolumePercent. (ApplySapiVolume lives below the function-pointer
+// block — it needs pPrism_backend_set_volume.)
+constexpr const char* kSapiVolumeKey   = "UrgentVolumePercent";
+int  g_sapiVolumePercent = 100;
+bool g_sapiVolumeLoaded  = false;
+
+void EnsureSapiVolumeLoaded() {
+    if (g_sapiVolumeLoaded) return;
+    g_sapiVolumeLoaded = true;
+    int v = acc::settings::GetInt(kSapiVolumeKey, 100);
+    if (v < 0)   v = 0;
+    if (v > 100) v = 100;
+    g_sapiVolumePercent = v;
+}
+
 // L"NVDA" / L"SAPI" / ... — filled at Init time so ActiveScreenReader can
 // hand back a stable wide-string pointer without doing the conversion on
 // every call. L"none" if no backend resolved.
@@ -93,9 +115,31 @@ PFN_prism_backend_initialize    pPrism_backend_initialize     = nullptr;
 PFN_prism_backend_speak         pPrism_backend_speak          = nullptr;
 PFN_prism_backend_stop          pPrism_backend_stop           = nullptr;
 PFN_prism_backend_set_rate      pPrism_backend_set_rate       = nullptr;
+PFN_prism_backend_set_volume    pPrism_backend_set_volume     = nullptr;
 PFN_prism_backend_set_voice     pPrism_backend_set_voice      = nullptr;
 PFN_prism_backend_count_voices  pPrism_backend_count_voices   = nullptr;
 PFN_prism_backend_name          pPrism_backend_name           = nullptr;
+
+// Push g_sapiVolumePercent to the live SAPI backend. Safe to call any time;
+// no-ops if the backend isn't acquired yet or the export is missing (older
+// Prism builds / backends without SUPPORTS_SET_VOLUME). Does NOT gate on
+// g_sapiReady so it can run mid-acquire (when g_prismSapi is set but the
+// ready flag hasn't flipped).
+void ApplySapiVolume() {
+    if (!g_prismSapi || !pPrism_backend_set_volume) return;
+    EnsureSapiVolumeLoaded();
+    float vol = static_cast<float>(g_sapiVolumePercent) / 100.0f;
+    PrismError rc = pPrism_backend_set_volume(g_prismSapi, vol);
+    if (rc != kPrismOk) {
+        acclog::Write("Speech",
+                      "prism_backend_set_volume(SAPI, %.2f) rc=%d "
+                      "(SAPI staying at default volume)", vol, rc);
+    } else {
+        acclog::Write("Speech",
+                      "SAPI urgent volume set to %d%% (%.2f, 0.0=mute, "
+                      "1.0=full)", g_sapiVolumePercent, vol);
+    }
+}
 
 template <typename T>
 bool Resolve(HMODULE lib, T& fn, const char* name, bool required = true) {
@@ -192,6 +236,11 @@ bool TryAcquireSapi() {
                           kPrismSapiUrgentRate);
         }
     }
+
+    // Apply the persisted urgent-volume slider to the freshly-acquired
+    // backend. EnsureSapiVolumeLoaded pulls the saved value (default 100%)
+    // so the user's last choice carries across launches.
+    ApplySapiVolume();
 
     // Cache voice count so SpeakUrgent(text, voiceId) can range-check before
     // calling set_voice — cheaper than the round trip on every utterance.
@@ -301,6 +350,8 @@ bool Init() {
     // capability return an error at call time. SpeakUrgent stays functional
     // either way; voice selection just no-ops.
     (void)Resolve(g_prismLib, pPrism_backend_set_rate,     "prism_backend_set_rate",
+                  /*required=*/false);
+    (void)Resolve(g_prismLib, pPrism_backend_set_volume,   "prism_backend_set_volume",
                   /*required=*/false);
     (void)Resolve(g_prismLib, pPrism_backend_set_voice,    "prism_backend_set_voice",
                   /*required=*/false);
@@ -454,6 +505,20 @@ void SpeakUrgent(const char* text) {
 
 void SpeakUrgent(const char* text, size_t voiceId) {
     SpeakUrgentImpl(text, voiceId, /*applyVoice=*/true);
+}
+
+void SetUrgentVolumePercent(int percent) {
+    if (percent < 0)   percent = 0;
+    if (percent > 100) percent = 100;
+    g_sapiVolumeLoaded  = true;  // we are the authoritative value now
+    g_sapiVolumePercent = percent;
+    acc::settings::SetInt(kSapiVolumeKey, percent);  // persist across launches
+    ApplySapiVolume();  // push to the live backend (no-op if not ready)
+}
+
+int GetUrgentVolumePercent() {
+    EnsureSapiVolumeLoaded();
+    return g_sapiVolumePercent;
 }
 
 void Silence() {

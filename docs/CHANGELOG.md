@@ -19,6 +19,10 @@ hotkey Y", "X no longer does Z"); keep technical detail short.
 
 - The workbench upgrade screen now tells you what is in each slot and what it does. Arrowing through a weapon or armour's upgrade slots used to read only the slot type ("Energiezelle", "Panzerverstärkung"), with no way to tell whether a slot was empty or already held an upgrade. Each slot now also reads its state: "leer" when empty, or "belegt mit" followed by the installed upgrade's name when occupied. Pressing Shift+Up or Shift+Down on a slot reads the full description of the upgrade installed in it — the same bonuses and effects you would see hovering it — so you can check what each fitted mod is doing, the same way item tooltips read elsewhere; on an empty slot it tells you the slot is empty.
 
+<h3>Audio:</h3>
+
+- You can now set the volume of the spoken announcements. The mod's urgent spoken cues — compass turns, the map and region cursor while panning, walking cues and similar — are voiced through a separate speech channel that bypasses your screen reader, and until now they always played at full volume with no way to turn them down. A new "Lautstärke der Sprachansagen" slider under Mod-Einstellungen now sets their volume from 0 to 100 percent (default 100); arrow left and right to adjust in steps of ten, and each step speaks a short sample at the new level so you can hear it. The setting is remembered across launches. This is separate from the existing hint-sound volume slider, which controls the non-spoken cue sounds, and from your screen reader's own volume, which still governs ordinary menu and reading speech.
+
 <h2>v0.3.1</h2>
 
 <h3>Navigation:</h3>

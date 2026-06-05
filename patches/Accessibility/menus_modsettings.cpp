@@ -66,6 +66,8 @@ bool s_toggles[static_cast<int>(Option::Count)] = {
                                   // this index and call into intro_skip.
     /* CueVolume       */ false,  // unused — RowKind::Slider; value lives in
                                   // audio_bus (Get/SetGlobalCueVolumePercent).
+    /* UrgentVolume    */ false,  // unused — RowKind::Slider; value lives in
+                                  // prism (Get/SetUrgentVolumePercent).
     /* AudioGlossary   */ false,  // unused — RowKind::Submenu
 };
 
@@ -129,6 +131,26 @@ constexpr int kCueVolumeStep            = 10;
 constexpr int kCueVolumePreviewGroup    = 0x0b;
 constexpr acc::audio::NavCue kCueVolumePreviewCue = acc::audio::NavCue::BeaconActive;
 
+// Slider value plumbing. Each Slider row owns its percent in a different
+// subsystem (cue volume → audio_bus, spoken-announcement volume → prism);
+// these two helpers route by Option so the focus/announce/adjust code paths
+// stay generic. Non-slider options return 0 / no-op.
+int GetSliderPercent(Option opt) {
+    switch (opt) {
+        case Option::CueVolume:    return acc::audio::GetGlobalCueVolumePercent();
+        case Option::UrgentVolume: return prism::GetUrgentVolumePercent();
+        default:                   return 0;
+    }
+}
+
+void SetSliderPercent(Option opt, int percent) {
+    switch (opt) {
+        case Option::CueVolume:    acc::audio::SetGlobalCueVolumePercent(percent); break;
+        case Option::UrgentVolume: prism::SetUrgentVolumePercent(percent);         break;
+        default:                   break;
+    }
+}
+
 struct OptionSpec {
     Option              option;
     acc::strings::Id    label;
@@ -143,6 +165,7 @@ constexpr OptionSpec k_options[] = {
     { Option::TurretAutoAim,   acc::strings::Id::ModSettingTurretAutoAim,   RowKind::Toggle  },
     { Option::SkipIntros,      acc::strings::Id::ModSettingSkipIntros,      RowKind::Toggle  },
     { Option::CueVolume,       acc::strings::Id::ModSettingCueVolume,       RowKind::Slider  },
+    { Option::UrgentVolume,    acc::strings::Id::ModSettingUrgentVolume,    RowKind::Slider  },
     { Option::AudioGlossary,   acc::strings::Id::ModSettingAudioGlossary,   RowKind::Submenu },
 };
 constexpr int k_optionCount = static_cast<int>(
@@ -255,7 +278,7 @@ void SpeakFocusedOption() {
     } else if (row.kind == RowKind::Slider) {
         snprintf(line, sizeof(line),
                  acc::strings::Get(acc::strings::Id::FmtModSettingSlider),
-                 name, acc::audio::GetGlobalCueVolumePercent());
+                 name, GetSliderPercent(row.option));
     } else {
         snprintf(line, sizeof(line), "%s", name);
     }
@@ -477,31 +500,48 @@ void CloseGlossarySubMenu() {
     SpeakFocusedOption();
 }
 
-// Adjust the global cue volume by delta percent (clamped 0..100),
+// Adjust the focused Slider row by delta percent (clamped 0..100),
 // re-announce "Name: N Prozent", and play an audible preview at the new
-// level. The preview rides group 0xb so it survives the in-game Optionen
-// pause, and uses the slider-scaled per-source volume so the user hears
-// the resulting loudness. Reuses the glossary preview handle — only one
-// audition plays at a time.
-void AdjustCueVolume(int delta) {
-    int cur  = acc::audio::GetGlobalCueVolumePercent();
-    int next = cur + delta;
+// level so the user hears the loudness they just dialled in. The preview
+// is per-slider:
+//   CueVolume    — a hint-sound cue on priority group 0xb (survives the
+//                  in-game Optionen pause), scaled to the new per-source
+//                  level. Reuses the glossary preview handle.
+//   UrgentVolume — a short SAPI urgent utterance, which already carries
+//                  the new volume (SetUrgentVolumePercent applied it to the
+//                  SAPI backend), letting the user gauge spoken-announcement
+//                  loudness directly.
+// No-op on a non-slider focus.
+void AdjustSlider(int delta) {
+    if (s_focused < 0 || s_focused >= k_optionCount) return;
+    const Option opt = k_options[s_focused].option;
+    if (k_options[s_focused].kind != RowKind::Slider) return;
+
+    int next = GetSliderPercent(opt) + delta;
     if (next < 0)   next = 0;
     if (next > 100) next = 100;
-    acc::audio::SetGlobalCueVolumePercent(next);
-    acclog::Write("ModSettings", "cue volume adjust delta=%+d -> %d%%",
-                  delta, next);
+    SetSliderPercent(opt, next);
+    acclog::Write("ModSettings", "slider %d adjust delta=%+d -> %d%%",
+                  static_cast<int>(opt), delta, next);
     SpeakFocusedOption();
-    if (next > 0) {
-        int previewByte = 127 * next / 100;
-        const Vector kCentre = { 0.0f, 0.0f, 0.0f };
-        s_glossaryPreview.Start(
-            acc::audio::GetNavCueResref(kCueVolumePreviewCue), kCentre,
-            /*looping=*/false, /*spatial=*/false,
-            /*priorityGroup=*/kCueVolumePreviewGroup,
-            /*volumeByte=*/previewByte);
-    } else {
-        s_glossaryPreview.Stop();  // muted — silence any in-flight tail
+
+    if (opt == Option::CueVolume) {
+        if (next > 0) {
+            int previewByte = 127 * next / 100;
+            const Vector kCentre = { 0.0f, 0.0f, 0.0f };
+            s_glossaryPreview.Start(
+                acc::audio::GetNavCueResref(kCueVolumePreviewCue), kCentre,
+                /*looping=*/false, /*spatial=*/false,
+                /*priorityGroup=*/kCueVolumePreviewGroup,
+                /*volumeByte=*/previewByte);
+        } else {
+            s_glossaryPreview.Stop();  // muted — silence any in-flight tail
+        }
+    } else if (opt == Option::UrgentVolume) {
+        // SAPI sample at the new level. At 0% it's inaudible by design —
+        // that IS the preview (the user hears nothing, confirming mute).
+        prism::SpeakUrgent(
+            acc::strings::Get(acc::strings::Id::ModSettingUrgentVolumePreview));
     }
 }
 
@@ -512,8 +552,8 @@ bool HandleInputRoot(int keyCode) {
     if (keyCode == kInputNavLeft || keyCode == kInputNavRight) {
         if (s_focused >= 0 && s_focused < k_optionCount &&
             k_options[s_focused].kind == RowKind::Slider) {
-            AdjustCueVolume(keyCode == kInputNavRight ? kCueVolumeStep
-                                                      : -kCueVolumeStep);
+            AdjustSlider(keyCode == kInputNavRight ? kCueVolumeStep
+                                                   : -kCueVolumeStep);
             return true;
         }
         return false;
@@ -546,7 +586,7 @@ bool HandleInputRoot(int keyCode) {
         // Slider: Enter replays the preview at the current level (Left/
         // Right do the actual adjusting). delta=0 keeps the value put.
         if (row.kind == RowKind::Slider) {
-            AdjustCueVolume(0);
+            AdjustSlider(0);
             return true;
         }
         // SkipIntros: filesystem rename instead of s_toggles flip.

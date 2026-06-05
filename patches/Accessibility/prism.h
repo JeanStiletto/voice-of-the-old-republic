@@ -35,6 +35,17 @@ void Speak(const char* text, bool interrupt);
 void SpeakUrgent(const char* text);
 void SpeakUrgent(const char* text, size_t voiceId);
 
+// Urgent-channel (SAPI) volume as a user-facing percent [0,100].
+// 100 = SAPI full volume (the default). The setter clamps, persists the
+// value across launches (acc_settings.ini), and applies it immediately to
+// the live SAPI backend; the getter lazily loads the persisted value.
+// Both are safe to call before Init() — the apply no-ops until the SAPI
+// backend is acquired, at which point Init re-applies the persisted level.
+// Only the SAPI urgent channel is affected; the normal screen-reader
+// channel keeps the user's own NVDA/JAWS volume.
+void SetUrgentVolumePercent(int percent);
+int  GetUrgentVolumePercent();
+
 // Cancel in-progress speech on both channels.
 void Silence();
 

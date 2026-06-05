@@ -477,6 +477,8 @@ const char* Get(Id id) {
         case Id::FmtModSettingOption:         return "%s: %s";
         case Id::ModSettingCueVolume:         return "Lautst\xe4rke der Hinweist\xf6ne";
         case Id::FmtModSettingSlider:         return "%s: %d Prozent";
+        case Id::ModSettingUrgentVolume:      return "Lautst\xe4rke der Sprachansagen";
+        case Id::ModSettingUrgentVolumePreview: return "Beispielansage";
 
         case Id::ModSettingAudioGlossary:           return "Audio-Glossar";
         case Id::ModSettingsAudioGlossaryOpened:    return "Audio-Glossar ge\xf6""ffnet";
