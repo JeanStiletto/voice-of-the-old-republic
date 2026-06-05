@@ -356,6 +356,56 @@ constexpr float kAccelLeadCapSeconds = 1.0f;   // cap on the flight-time used in
 constexpr float kAssistZoneDeg = 15.0f;  // engage only within this aim error
 constexpr float kAssistPull    = 0.50f;  // fraction of the gap closed per tick
 
+// ----- Makeability gate (FULL-AUTOAIM ONLY) -----
+// "Makeable" = can a bolt actually connect this tick? The lead already cancels
+// the crossing drift (LeadCheck proved ~80% of shots land inside the hitbox at
+// every range, out to 400 m+), so the limiter is NOT crossing·range — that's the
+// UN-led miss, which over-rejects slow-but-far fighters the lead hits cleanly.
+// The real limiter is the EXTRAPOLATION HORIZON: the further ahead we predict
+// (longer bolt flight), the more the estimate drifts. So gate on flight time.
+// This is purely a TARGETING decision (which fighter is worth shooting / when
+// the cue may say "fire"), confined to full-autoaim — assisted mode leaves that
+// call to the player. When the locked fighter stays unmakeable past the debounce
+// (and we're outside the manual-pick grace AND the post-switch cooldown), autoaim
+// hands the lock to the nearest fighter — nearest = shortest flight = most
+// reliable + fastest kill — instead of chasing a far target. The cooldown is the
+// anti-thrash lever: each switch resets the lead to cold, so we MUST commit long
+// enough for it to re-warm, or the gun thrashes between targets hitting nothing.
+constexpr float    kMakeMaxFlightSec    = 1.6f;   // makeable while bolt flight <= this (covers ~480 m)
+constexpr ULONGLONG kRetargetDebounceMs = 400;    // unmakeable this long before switching
+constexpr ULONGLONG kManualGraceMs      = 2000;   // respect a manual Q/E pick this long
+constexpr ULONGLONG kRetargetCooldownMs = 1500;   // commit after a switch (let the lead re-warm)
+
+// ----- Switch-on-hit damage spreading (FULL-AUTOAIM ONLY) -----
+// Damage is invulnerability-gated: a fighter that just took a hit ignores further
+// bolts for a short window (the losing runs landed only ~half their connecting
+// bolts — the rest hit invuln frames). So concentrating fire on one target wastes
+// half of it while the other fighters shoot you. The instant autoaim lands a hit,
+// hand the lock to the nearest OTHER fighter that isn't itself in its invuln
+// window — spreading damage across the wave the way manual forward-spam does,
+// which is why spam wins and lock-on-one loses. This bypasses the commit cooldown
+// (the whole point is to move on a hit), but still honours a manual Q/E grace.
+constexpr ULONGLONG kInvulnWindowMs = 1200;  // a fighter hit within this is still invulnerable
+
+// ----- DIAGNOSTIC: does writing +0x1c4 actually steer the bolts? (ANSWERED: NO) -----
+// FireGunCallback (decompiled 2026-06-04) spawns the bolt from the gun MODEL's
+// "bullethook" barrel node and may bend it toward an engine target — NOT from
+// the +0x1c4 aim value we write. To settle whether our write reaches the bolt,
+// full-autoaim deliberately aimed kDiagElevBias degrees TOO HIGH (probe round
+// 2026-06-05): if bolts stopped hitting, our write steers them; if hits kept
+// landing while "aiming at the sky", the bolts ignore +0x1c4.
+//
+// RESULT — DECISIVE: with the aim forced ~65-70° up, bolts still hit fighters
+// 30x — UNCHANGED from the ~31 of an honest-aim autoaim round. So writing
+// +0x1c4 does NOT steer the bolts. The whole +0x1c4-write aim-assist (full
+// autoaim AND magnetism) is steering a number the firing path doesn't read; the
+// bolts fire along the real gun barrel (player view / input driven) or an engine
+// target. Everything downstream here (lead, makeability, switch-on-hit) is
+// correct and WOULD work the moment we can actually turn the barrel — finding
+// the real turn channel is the open task. Probe left in (disabled at 0) so a
+// fresh session can re-arm it to re-test after locating that channel.
+constexpr float kDiagElevBias = 0.0f;  // 60.0f to re-arm the probe
+
 // ============================================================================
 // Module state. Single-threaded under the engine OnUpdate tick.
 // ============================================================================
@@ -469,6 +519,14 @@ struct State {
     Vector    accel_ema     = {0.0f, 0.0f, 0.0f};
     bool      have_accel    = false;
     int       accel_samples = 0;
+
+    // Full-autoaim makeability retarget: when the locked fighter went unmakeable
+    // (0 = makeable/unknown), and when the player last cycled by hand (so an
+    // auto-switch honours a deliberate Q/E pick for kManualGraceMs).
+    ULONGLONG unmakeable_since_ms  = 0;
+    ULONGLONG last_manual_cycle_ms = 0;
+    ULONGLONG last_retarget_ms     = 0;  // last auto-switch, for the commit cooldown
+    ULONGLONG last_hit_ms[kMgoArraySlotCount] = {};  // per-slot last damaging hit (invuln tracking)
 
     // LeadCheck self-measuring diagnostic: a deferred ring of intercept
     // predictions (world frame) tagged with their bolt-arrival time. When a probe
@@ -805,6 +863,8 @@ void HandleTargetCycle(const int occSlot[], const float occDist[],
     const bool next = acc::hotkeys::Pressed(acc::hotkeys::Action::TurretCycleNext);
     const bool prev = acc::hotkeys::Pressed(acc::hotkeys::Action::TurretCyclePrev);
     if (!next && !prev) return;
+    // A deliberate pick — autoaim's makeability retarget defers to it for a beat.
+    g_state.last_manual_cycle_ms = GetTickCount64();
 
     if (occCount <= 0) {
         prism::SpeakUrgent(acc::strings::Get(acc::strings::Id::TurretNoTargets));
@@ -1117,11 +1177,31 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
         (subtendDeg > 0.0f) ? subtendDeg : kFallbackOnTargetDeg;
     const bool  onTarget = (angle <= onTargetAngle);
 
+    // ---- Makeability (full-autoaim only) -----------------------------------
+    // The lead cancels the crossing drift, so the limiter is the extrapolation
+    // horizon: makeable while the bolt's flight time is short enough that the
+    // prediction stays reliable. crossingSpeed is kept for the diagnostic only.
+    const bool fullAuto = acc::menus::modsettings::GetToggle(
+                              acc::menus::modsettings::Option::TurretAutoAim);
+    float crossingSpeed = 0.0f;
+    if (sd > 1e-3f) {
+        const Vector rhat = {P.x / sd, P.y / sd, P.z / sd};
+        const float  vrad = v.x * rhat.x + v.y * rhat.y + v.z * rhat.z;
+        const Vector vtan = {v.x - vrad * rhat.x, v.y - vrad * rhat.y, v.z - vrad * rhat.z};
+        crossingSpeed = std::sqrt(vtan.x * vtan.x + vtan.y * vtan.y + vtan.z * vtan.z);
+    }
+    const bool  makeable = g_state.have_vel && leadT > 0.0f && leadT <= kMakeMaxFlightSec;
+    // In full-autoaim the cue must stay honest: the solid "fire" tone fires only
+    // when the shot actually connects, so it can't lie while the gun tracks a
+    // target that's crossing too fast to hit. Assisted mode is untouched — there
+    // the tone reflects the player's own aim, which is already honest.
+    const bool  onTargetCue = onTarget && (!fullAuto || makeable);
+
     // "Fire now": one-shot the instant the combined aim crosses INTO the hitbox
     // (false->true). Played at a compressed, always-audible point toward the
     // fighter so it pans correctly. selected_on_target latches so it fires once
     // per entry, not every tick you hold the cone.
-    if (onTarget && !g_state.selected_on_target) {
+    if (onTargetCue && !g_state.selected_on_target) {
         Vector firePos = sp;
         if (sd > 0.0f) {
             const float fk = kPegMinDist / sd;
@@ -1133,13 +1213,13 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
         acclog::Write("Turret", "fire-now slot=%d angle=%.1f subtend=%.1f dist=%.0fm",
                       g_state.selected_slot, angle, subtendDeg, sd);
     }
-    g_state.selected_on_target = onTarget;
+    g_state.selected_on_target = onTargetCue;
 
     // Loudness: rise gently from the hitbox edge (kPegEdgeDist) to a peak at
     // dead-centre (kPegMinDist); beyond the edge, fade to faint over
     // kPegRampDeg. Continuous at the boundary.
     float srcDist;
-    if (onTarget) {
+    if (onTargetCue) {
         const float u = (onTargetAngle > 0.0f) ? angle / onTargetAngle : 0.0f;
         srcDist = kPegMinDist + u * (kPegEdgeDist - kPegMinDist);
     } else {
@@ -1188,7 +1268,7 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
                     listener.z + tdir.z * kTickDist };
     }
 
-    if (onTarget && !behind) {
+    if (onTargetCue && !behind) {
         // SOLID: continuous tone at the loudness-ramped position, which still
         // swells toward dead-centre within the cone (the bolt-margin reward).
         // The elevation pitch glide applies below. This is the unambiguous
@@ -1247,8 +1327,6 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
     // have stronger hearing impairments. Same +0x1c4 write path (proven to hold:
     // the magnetism's accuracy gain is the write landing every tick).
     if (aimTgtDist > 0.0f) {
-        const bool  fullAuto = acc::menus::modsettings::GetToggle(
-                                   acc::menus::modsettings::Option::TurretAutoAim);
         const float zone = fullAuto ? 360.0f : kAssistZoneDeg;
         const float pull = fullAuto ? 1.0f   : kAssistPull;
         if (angle <= zone) {
@@ -1264,16 +1342,20 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
                 na.x /= nm; na.y /= nm; na.z /= nm;
                 const float naAz = std::atan2(na.x, na.y) * kRad2Deg;
                 const float naEl = std::asin(clamp1(na.z)) * kRad2Deg;
-                WriteAim(naAz, naEl);
+                // DIAGNOSTIC: in full-autoaim, bias elevation up by kDiagElevBias
+                // to test whether this write actually steers the bolts.
+                const float writeEl = (fullAuto && kDiagElevBias != 0.0f)
+                                          ? naEl + kDiagElevBias : naEl;
+                WriteAim(naAz, writeEl);
                 // Heartbeat log, throttled to ~1/s so normal play isn't spammed.
                 const ULONGLONG nowLog = GetTickCount64();
                 if (nowLog - g_state.assist_last_log_ms >= 1000) {
                     g_state.assist_last_log_ms = nowLog;
                     acclog::Write("TurretAssist",
-                                  "%s slot=%d angle=%.1f az %.1f->%.1f el %.1f->%.1f dist=%.0f",
-                                  fullAuto ? "autoaim" : "magnet",
+                                  "%s slot=%d angle=%.1f az %.1f->%.1f el %.1f->%.1f(wrote %.1f) dist=%.0f",
+                                  fullAuto ? "autoaim-DIAG" : "magnet",
                                   g_state.selected_slot, angle, aimAz, naAz,
-                                  aimEl, naEl, sd);
+                                  aimEl, naEl, writeEl, sd);
                 }
             }
         }
@@ -1300,6 +1382,7 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
     // Real engine-scored hit (hp drop). Engine plays its own mgs_sith_hit, so
     // this is diagnostic only. errAngle here is to the intercept; lead-correct
     // shots should now show small errAngle at the hit frame (validates lead).
+    bool justLandedHit = false;
     if (selectedEnemy && trackingExisting) {
         if (g_state.last_selected_hp >= 0 && hp < g_state.last_selected_hp) {
             acclog::Write("TurretHit",
@@ -1309,6 +1392,10 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
                           g_state.selected_slot, NumberForSlot(g_state.selected_slot),
                           g_state.last_selected_hp, hp, angle, angleNow, errAz, errEl,
                           leadT, leadDist, sd, radius, subtendDeg);
+            // We damaged it — it's now invulnerable for a beat. Mark it and spread.
+            if (g_state.selected_slot >= 0 && g_state.selected_slot < kMgoArraySlotCount)
+                g_state.last_hit_ms[g_state.selected_slot] = now;
+            justLandedHit = true;
         }
         g_state.last_selected_hp = hp;
     }
@@ -1317,9 +1404,11 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
     // critBoltSpeed (= |v|·dist/radius — the bolt speed below which lead matters).
     acclog::Write("TurretVel",
                   "slot=%d relVelMS=%.1f engineSpeed=%.1f dist=%.0f leadT=%.2f "
-                  "leadDist=%.0f leadFrac=%.2f aimDist=%.0f critBoltSpeed=%.0f",
+                  "leadDist=%.0f leadFrac=%.2f aimDist=%.0f critBoltSpeed=%.0f "
+                  "crossing=%.1f make=%.0f makeable=%d",
                   g_state.selected_slot, vmag, engineSpeed, sd, leadT, leadDist,
-                  leadFrac, aimTgtDist, (radius > 0.0f) ? vmag * sd / radius : 0.0f);
+                  leadFrac, aimTgtDist, (radius > 0.0f) ? vmag * sd / radius : 0.0f,
+                  crossingSpeed, crossingSpeed * sd, makeable ? 1 : 0);
 
     // LeadCheck: drain any matured predictions against the fighter's real
     // position now, then (throttled) enqueue this tick's linear & curve
@@ -1353,6 +1442,66 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
                   aimAz, aimEl, tgtAz, tgtEl, leadT, leadDist,
                   lateral, sd, aimTgtDist, srcDist, hp, maxHp, radius, subtendDeg,
                   onTarget ? 1 : 0, elevErr, elevBand, pitchMult);
+
+    // ---- Full-autoaim makeability retarget --------------------------------
+    // Hold the lock while the shot is makeable. Once it's been unmakeable past
+    // the debounce (and no recent manual Q/E to honour), hand the lock to the
+    // nearest fighter — range dominates crossingSpeed·range, so nearest is the
+    // most makeable — instead of chasing this one through its unhittable orbit.
+    // Silent (AnnounceSelectedTarget's locator ping only) so it never spams
+    // speech. Assisted mode never auto-retargets (fullAuto gate).
+    if (fullAuto && occCount > 0) {
+        const ULONGLONG nowMs  = GetTickCount64();
+        const bool      graced = (nowMs - g_state.last_manual_cycle_ms) < kManualGraceMs;
+
+        // (1) Switch-on-hit: we just damaged the locked fighter, so it's now in
+        // its invuln window — spread to the nearest OTHER fighter that isn't also
+        // mid-invuln (census is nearest-first; fall back to nearest other if all
+        // are cooling). Nearest = shortest flight, so the freshly-baselined lead
+        // is reliable. Bypasses the commit cooldown by design.
+        bool switched = false;
+        if (justLandedHit && !graced && occCount > 1) {
+            int pick = -1, fallback = -1;
+            for (int a = 0; a < occCount; ++a) {
+                if (occSlot[a] == g_state.selected_slot) continue;
+                if (fallback < 0) fallback = a;
+                const ULONGLONG lh = g_state.last_hit_ms[occSlot[a]];
+                if (nowMs - lh >= kInvulnWindowMs) { pick = a; break; }
+            }
+            if (pick < 0) pick = fallback;
+            if (pick >= 0) {
+                acclog::Write("TurretAssist",
+                              "spread (on hit) slot=%d->%d vulnerable=%d",
+                              g_state.selected_slot, occSlot[pick], (pick != fallback) ? 1 : 0);
+                AnnounceSelectedTarget(pick, occSlot, occDist, occPos, occCount,
+                                       listener, /*speak=*/false);
+                g_state.unmakeable_since_ms = 0;
+                g_state.last_retarget_ms    = nowMs;
+                switched = true;
+            }
+        }
+
+        // (2) Unmakeable fallback: stuck on a target we can't hit at all (too far)
+        // — debounced + cooldown'd switch to nearest. Skipped if we just spread.
+        if (!switched) {
+            if (makeable) {
+                g_state.unmakeable_since_ms = 0;
+            } else {
+                if (g_state.unmakeable_since_ms == 0) g_state.unmakeable_since_ms = nowMs;
+                const bool cooling   = (nowMs - g_state.last_retarget_ms)    < kRetargetCooldownMs;
+                const bool debounced = (nowMs - g_state.unmakeable_since_ms) >= kRetargetDebounceMs;
+                if (!graced && !cooling && debounced && occSlot[0] != g_state.selected_slot) {
+                    acclog::Write("TurretAssist",
+                                  "retarget (unmakeable) slot=%d->%d leadT=%.2f crossing=%.0f range=%.0f",
+                                  g_state.selected_slot, occSlot[0], leadT, crossingSpeed, sd);
+                    AnnounceSelectedTarget(0, occSlot, occDist, occPos, occCount,
+                                           listener, /*speak=*/false);
+                    g_state.unmakeable_since_ms = 0;
+                    g_state.last_retarget_ms    = nowMs;
+                }
+            }
+        }
+    }
 }
 
 void TickFighterCues() {
