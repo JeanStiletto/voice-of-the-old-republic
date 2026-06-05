@@ -7,6 +7,7 @@ Reference material curated for LLM consumption. Progressive-disclosure index —
 - **`game-flow.md`** — lifecycle map (DLL attach → main menu → chargen → world → dialog → combat → menus → save/load → game-over) with the engine signal and hooking module for each phase. Start here when placing or refactoring a hook.
 - **`accessibility-map.md`** — pillar map of hook candidates by accessibility goal (dialog, combat, world, UI). Less linear than game-flow.md; complementary.
 - **`sarif-cookbook.md`** — jq recipes for querying Lane's local SARIF export (`re/k1_win_gog_swkotor.exe.sarif`). Use when `re/swkotor.exe.h` shows undefined fields or when you need cross-references for an address.
+- **`turret-minigame-model.md`** — engine-confirmed model of the swoop/turret minigame subsystem (decompiled). The reference shape for an RE-model doc: input→state→action→effect chain, function addresses, struct offsets, and a "what we got wrong" section. Produced by `kdev re` then curated here. When reconstructing another subsystem, `kdev re "<ClassRegex>" --decompile` and curate the skeleton to a sibling of this file.
 - **`code-index/`** — per-file LLM-readable summary for each source file under `patches/Accessibility/` (one `.md` per `.cpp`/`.h` plus `_files.txt` inventory). Generated during the llm-mod-refactoring-prompts `code-directory-construction` phase; useful as fast context before reading a file in full. May drift if not refreshed on major restructuring.
 
 ## `re/` — reverse-engineering assets

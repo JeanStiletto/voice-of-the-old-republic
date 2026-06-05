@@ -1,8 +1,19 @@
 # Turret minigame — difficulty / aim-by-ear investigation
 
-Status: **open**. The turret (Taris-escape gunner) minigame is still effectively
-"beatable only with luck" for an aim-by-ear player. This doc captures what we
-know so we can resume without re-deriving it.
+> **ENGINE-CONFIRMED MODEL NOW EXISTS (2026-06-05) — read it first:**
+> `docs/llm-docs/turret-minigame-model.md`. The whole subsystem was decompiled
+> from Lane's Ghidra DB. The turn-speed section below (and the `Type@0x80 = 2`
+> note) is correct and confirmed. But any later theory in this doc or the logs
+> about "the gun is fixed / the world rotates" or "+0x1c4 doesn't steer bolts" is
+> **WRONG**: `offset`/+0x1c4 IS the aim (az/el degrees), the gun rotates with it,
+> and bolts are straight ballistics from the gun's `bullethook` node. Those
+> conclusions came from inferring a model out of noisy runtime measurements
+> instead of reading the engine. Build the cue on the `bullethook` transform.
+
+Status: **open** (cue rebuild pending on the engine model). The turret
+(Taris-escape gunner) minigame is still effectively "beatable only with luck" for
+an aim-by-ear player. This doc captures what we know so we can resume without
+re-deriving it.
 
 ## The engine turn-speed values (found + confirmed)
 

@@ -33,3 +33,15 @@ patch_id = 'accessibility'
 # applicator rejects it. We don't need it for now (no large mod loadout); fork
 # the manifest later if/when we do.
 additional_patches = ['widescreen']
+
+# [re] — reverse-engineering assets consumed by `kdev re`. ALL OPTIONAL: the
+# defaults below (shown commented) match docs/tools.md, so on the canonical
+# setup `kdev re` works with no config here. Override any key if your paths differ.
+# [re]
+# sarif               = 'docs/llm-docs/re/k1_win_gog_swkotor.exe.sarif'  # Lane's SARIF export
+# jq                  = 'jq'                                             # bare name = resolved via PATH
+# ghidra_headless     = 'C:\Tools\ghidra_12.0.4_PUBLIC\support\analyzeHeadless.bat'
+# ghidra_project_dir  = 'C:\Tools\ghidra-projects'
+# ghidra_project_name = 'kotor1'
+# ghidra_program      = 'k1_win_gog_swkotor.exe'
+# ghidra_scripts      = 'tools/ghidra-scripts'                           # holds Decompile.java
