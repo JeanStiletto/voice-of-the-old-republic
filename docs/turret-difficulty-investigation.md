@@ -319,7 +319,38 @@ information.
   (remember the bolt-lag caveat above).
 - Turn rate: per-second deltas of `aim(az=..)` from the `TurretAim` lines.
 
+## 2026-06-05 — DECISIVE: writing +0x1c4 does not steer the bolts
+
+A probe round forced full-autoaim to write the aim ~65–70° UP (at the sky).
+Bolts still hit fighters **30×** — unchanged from the ~31 of an honest-aim
+autoaim round. So `CSWMiniPlayer +0x1c4` (the aim value we read for cues and
+write for autoaim/magnetism) is **not** what the firing path reads.
+
+Decompile of the fire path (Ghidra, Lane's DB):
+- `FireGunCallback @0x00673a40` is the sole caller of `CSWMiniGame::AddBullet
+  @0x00672fa0`. It spawns the bolt from the gun MODEL's **"bullethook" node**
+  (gun CAurObject `vtable+0x98` query → world pos+orient of that barrel node),
+  and — when the gun is a homing gun (`ctx->vtable[2]() != 0`) — bends the bolt
+  toward an **engine target** (`gun->vtable[0x108]()`) with random spread.
+- `CSWMiniPlayer::Fire @0x0066dc50` (our `OnPlayerFire` shot-counter hook) is
+  the player-fire entry that iterates the gun banks into this path.
+- `CSWMiniGame::UpdateAxis @0x00670fb0` only handles type 1/2 (not turret=3).
+
+**Implication:** the entire +0x1c4-write aim-assist (full autoaim AND the
+"14×" magnetism) steers a value the bolts ignore. The barrel is driven by the
+player's real view/input (WASD, ~100°/s native). Assisted mode works via the
+**cue** guiding the player's own aim, not the write. The curve-aware lead
+(committed) sharpens that cue and is independently valuable.
+
+**Open task:** find the real turn channel — the gun-orientation field the
+barrel/bolt actually reads, or the engine target the bolt homes on
+(`gun vtable[0x108]`), or synthesize the input that moves the real aim. The
+flight-time makeability gate + switch-on-hit spreading (committed on
+`turret-curve-lead`) are correct and unblock the moment the barrel turns.
+Re-arm the probe via `kDiagElevBias = 60.0f` in turret_game.cpp to re-confirm.
+
 ## Related
 
 - `patches/Accessibility/turret_game.cpp` — all turret accessibility logic.
-- Memory: `project_turret_turn_rate.md`.
+- Memory: `project_turret_turn_rate.md`,
+  `project_turret_aim_write_does_not_steer_bolts.md`.
