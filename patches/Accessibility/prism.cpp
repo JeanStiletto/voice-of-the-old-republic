@@ -39,7 +39,35 @@ typedef int PrismError;  // 0 == PRISM_OK
 
 constexpr PrismError kPrismOk                     = 0;
 constexpr PrismError kPrismErrAlreadyInitialized  = 15;  // see PrismError enum
+constexpr PrismError kPrismErrUnknown             = 17;  // sentinel for SEH faults
 constexpr uint64_t  kPrismBackendIdSapi           = 0x1D6DF72422CEEE66ull;
+
+// MSVC delay-load helper exceptions. A backend whose vendor DLL is present but
+// exports a mismatched symbol set raises PROC_NOT_FOUND; a missing DLL raises
+// MOD_NOT_FOUND. Both are normally fatal — see the SEH guards below.
+constexpr DWORD kVcppDelayLoadModNotFound  = 0xC06D007E;
+constexpr DWORD kVcppDelayLoadProcNotFound = 0xC06D007F;
+
+// Screen-reader / TTS backend ids (from prism.h), in our preferred fallback
+// order: real screen readers first, OneCore/UIA next, SAPI last as the
+// universal safety net. Used only when acquire_best faults — we then probe
+// these one at a time, each call SEH-guarded, so a single broken backend
+// (e.g. a mismatched ZDSRAPI.dll) is skipped instead of crashing the game.
+struct BackendChoice { uint64_t id; const char* name; };
+constexpr BackendChoice kNormalFallbackOrder[] = {
+    {0x89CC19C5C4AC1A56ull, "NVDA"},
+    {0xAC3D60E9BD84B53Eull, "JAWS"},
+    {0x9120D89908785C13ull, "Window-Eyes"},
+    {0x8380F2A37B2C3EB6ull, "System Access"},
+    {0xED4760890B55C2F2ull, "Sense Reader"},
+    {0xAE439D62DC7B1479ull, "ZoomText"},
+    {0x3D93C56C9E7F2A2Eull, "ZDSR"},
+    {0x285aba1c16f3300full, "BoyPC Reader"},
+    {0x344B951962E3B835ull, "PC-Talker"},
+    {0x6797D32F0D994CB4ull, "OneCore"},
+    {0x6238F019DB678F8Eull, "UIA"},
+    {0x1D6DF72422CEEE66ull, "SAPI"},
+};
 
 // SAPI speech rate for the urgent channel. Prism maps [0.0..1.0] to SAPI's
 // -10..+10 with 0.5 = SAPI default (midpoint-linear). 0.8 lands at roughly
@@ -198,6 +226,109 @@ bool WideToUtf8(const wchar_t* in, char* outBuf, size_t outBufSize) {
     return got > 0;
 }
 
+// ---- SEH guards around prism backend probing ---------------------------
+//
+// Some screen-reader backends delay-load a vendor DLL inside their probe /
+// initialize() path (ZDSR → ZDSRAPI.dll, PC-Talker → PCTKUSR.dll, BoyPC →
+// BoyCtrl.dll, ...). When the user has that reader installed but at a DLL
+// version whose export set doesn't match what prism.dll was built against,
+// the MSVC delay-load helper raises a structured exception
+// (0xC06D007F PROC_NOT_FOUND / 0xC06D007E MOD_NOT_FOUND). Unhandled, it
+// crashes the game at startup before any speech — reported by a pl-PL beta
+// tester with ZDSR installed. NVDA/JAWS users never saw it only because their
+// backend wins priority and acquire_best returns before reaching the broken
+// one.
+//
+// We can't recompile the prebuilt prism.dll, so we wrap each probe call in
+// SEH and skip a faulting backend instead of dying. These helpers hold only
+// PODs / raw pointers — MSVC forbids __try in a function that needs C++ object
+// unwinding, and logging (which builds temporaries) must therefore stay in the
+// callers, which read the returned fault code.
+const char* SehCodeName(DWORD code) {
+    switch (code) {
+        case kVcppDelayLoadModNotFound:  return "delay-load module-not-found";
+        case kVcppDelayLoadProcNotFound: return "delay-load proc-not-found";
+        case EXCEPTION_ACCESS_VIOLATION: return "access-violation";
+        default:                         return "structured-exception";
+    }
+}
+
+// Returns acquire_best's backend, or null. *outCode is the SEH code if a fault
+// was caught (0 on a clean null/success).
+PrismBackend* SehAcquireBest(PrismContext* ctx, DWORD* outCode) {
+    *outCode = 0;
+    __try {
+        return pPrism_registry_acquire_best(ctx);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        *outCode = GetExceptionCode();
+        return nullptr;
+    }
+}
+
+// Acquire one specific backend by id, SEH-guarded.
+PrismBackend* SehAcquire(PrismContext* ctx, PrismBackendId id, DWORD* outCode) {
+    *outCode = 0;
+    __try {
+        return pPrism_registry_acquire(ctx, id);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        *outCode = GetExceptionCode();
+        return nullptr;
+    }
+}
+
+// Initialize one backend, SEH-guarded. Returns the PrismError, or
+// kPrismErrUnknown with *outCode set if a fault was caught.
+PrismError SehInitialize(PrismBackend* be, DWORD* outCode) {
+    *outCode = 0;
+    __try {
+        return pPrism_backend_initialize(be);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        *outCode = GetExceptionCode();
+        return kPrismErrUnknown;
+    }
+}
+
+// Fallback path when acquire_best faulted: probe our preferred backend order
+// one at a time, each call SEH-guarded, and return the first that acquires +
+// initialises cleanly. A backend whose probe faults (broken vendor DLL) is
+// logged and skipped. SAPI sits last in the list, so a working screen reader
+// always wins but the user still gets full speech via SAPI if every reader's
+// backend is broken.
+PrismBackend* AcquireNormalFallback() {
+    for (const BackendChoice& choice : kNormalFallbackOrder) {
+        if (!pPrism_registry_exists(g_prismCtx, choice.id)) continue;
+
+        DWORD code = 0;
+        PrismBackend* be = SehAcquire(g_prismCtx, choice.id, &code);
+        if (!be) {
+            if (code) {
+                acclog::Write("Speech",
+                              "backend %s: acquire faulted (%s 0x%08lX); skipping",
+                              choice.name, SehCodeName(code), code);
+            }
+            continue;
+        }
+
+        PrismError rc = SehInitialize(be, &code);
+        if (code) {
+            acclog::Write("Speech",
+                          "backend %s: initialize faulted (%s 0x%08lX); skipping",
+                          choice.name, SehCodeName(code), code);
+            continue;
+        }
+        if (rc != kPrismOk && rc != kPrismErrAlreadyInitialized) {
+            acclog::Write("Speech",
+                          "backend %s: initialize rc=%d; skipping",
+                          choice.name, rc);
+            continue;
+        }
+        acclog::Write("Speech", "backend %s acquired via fallback probe",
+                      choice.name);
+        return be;
+    }
+    return nullptr;
+}
+
 // Acquire the SAPI backend explicitly and bump its rate. Returns true iff the
 // backend is fully initialised and ready to receive prism_backend_speak.
 bool TryAcquireSapi() {
@@ -207,17 +338,32 @@ bool TryAcquireSapi() {
                       "back to the normal backend");
         return false;
     }
-    g_prismSapi = pPrism_registry_acquire(g_prismCtx, kPrismBackendIdSapi);
+    DWORD seh = 0;
+    g_prismSapi = SehAcquire(g_prismCtx, kPrismBackendIdSapi, &seh);
     if (!g_prismSapi) {
-        acclog::Write("Speech", "prism_registry_acquire(SAPI) returned NULL");
+        if (seh) {
+            acclog::Write("Speech",
+                          "prism_registry_acquire(SAPI) faulted (%s 0x%08lX)",
+                          SehCodeName(seh), seh);
+        } else {
+            acclog::Write("Speech", "prism_registry_acquire(SAPI) returned NULL");
+        }
         return false;
     }
-    PrismError rc = pPrism_backend_initialize(g_prismSapi);
+    PrismError rc = SehInitialize(g_prismSapi, &seh);
     // acquire_best initialises eagerly; explicit acquire requires initialize().
     // ALREADY_INITIALIZED is non-fatal — we just got a cached instance.
+    if (seh) {
+        acclog::Write("Speech",
+                      "prism_backend_initialize(SAPI) faulted (%s 0x%08lX)",
+                      SehCodeName(seh), seh);
+        g_prismSapi = nullptr;
+        return false;
+    }
     if (rc != kPrismOk && rc != kPrismErrAlreadyInitialized) {
         acclog::Write("Speech",
                       "prism_backend_initialize(SAPI) failed rc=%d", rc);
+        g_prismSapi = nullptr;
         return false;
     }
 
@@ -261,19 +407,35 @@ bool TryAcquireSapi() {
 }
 
 // Pick the best-available screen-reader / TTS backend for the normal channel.
-// acquire_best already returns the first registered backend whose
-// initialize() succeeds, in priority order (NVDA / JAWS / Window-Eyes / ZDSR /
-// System Access / OneCore / SAPI / ...). Backends obtained via acquire_best
-// are already initialised per Prism's docs.
+// acquire_best returns the first registered backend whose initialize()
+// succeeds, in priority order (NVDA / JAWS / Window-Eyes / ZDSR / System
+// Access / OneCore / SAPI / ...). Backends obtained via acquire_best are
+// already initialised per Prism's docs.
+//
+// The whole walk is SEH-guarded: if a backend's initialize() faults (a broken
+// vendor delay-load — see the SEH note above), acquire_best raises an
+// otherwise-fatal structured exception. We catch it and fall through to
+// AcquireNormalFallback, which probes our preferred order one backend at a
+// time, each call individually guarded, so the broken backend is skipped and
+// the next working one (down to SAPI) is used.
 bool TryAcquireNormal() {
-    g_prismNormal = pPrism_registry_acquire_best(g_prismCtx);
-    if (!g_prismNormal) {
+    DWORD seh = 0;
+    g_prismNormal = SehAcquireBest(g_prismCtx, &seh);
+    if (g_prismNormal) return true;
+
+    if (seh) {
         acclog::Write("Speech",
-                      "prism_registry_acquire_best returned NULL — no "
-                      "speech backend available; running silent");
-        return false;
+                      "prism_registry_acquire_best faulted (%s 0x%08lX) — a "
+                      "screen-reader backend's vendor DLL is incompatible; "
+                      "probing backends individually",
+                      SehCodeName(seh), seh);
+        g_prismNormal = AcquireNormalFallback();
+        if (g_prismNormal) return true;
     }
-    return true;
+
+    acclog::Write("Speech",
+                  "no speech backend available; running silent");
+    return false;
 }
 
 // Make the SAPI backend speak with voice `voiceId`. Cached so consecutive

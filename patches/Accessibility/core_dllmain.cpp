@@ -37,9 +37,11 @@ const char* LangName(acc::strings::Lang l) {
 
 // Read the LanguageID byte from <install>/dialog.tlk to determine the
 // engine locale the player has actually installed, so combat-anchor
-// matching + Id::* speech route to the right table. Defaults to German
-// on any failure — same as the historical hardcoded default, so a
-// detection failure doesn't break the existing DE install.
+// matching + Id::* speech route to the right table. Defaults to English
+// on any failure or unrecognised LanguageID — the most universal fallback
+// for the broader (non-DE) user base. A correctly-installed DE copy still
+// detects LanguageID=2 and routes to German; only a genuine detection
+// failure or an unsupported locale lands on English.
 //
 // TLK header layout (12 bytes): "TLK " "V3.0" int32_le LanguageID.
 // Locale IDs (per kdev `LanguageIdToCode`): 0=En 1=Fr 2=De 3=It 4=Es.
@@ -49,22 +51,22 @@ acc::strings::Lang DetectLanguageFromTlk() {
     char exePath[MAX_PATH];
     DWORD n = GetModuleFileNameA(nullptr, exePath, sizeof(exePath));
     if (n == 0 || n >= sizeof(exePath)) {
-        acclog::Write("Lang", "GetModuleFileName failed; defaulting to German");
-        return L::De;
+        acclog::Write("Lang", "GetModuleFileName failed; defaulting to English");
+        return L::En;
     }
 
     char* slash = strrchr(exePath, '\\');
     if (!slash) {
-        acclog::Write("Lang", "exe path has no backslash (%s); defaulting to German", exePath);
-        return L::De;
+        acclog::Write("Lang", "exe path has no backslash (%s); defaulting to English", exePath);
+        return L::En;
     }
     size_t tailCap = sizeof(exePath) - static_cast<size_t>(slash + 1 - exePath);
     strncpy_s(slash + 1, tailCap, "dialog.tlk", _TRUNCATE);
 
     FILE* fp = nullptr;
     if (fopen_s(&fp, exePath, "rb") != 0 || !fp) {
-        acclog::Write("Lang", "dialog.tlk not readable at %s; defaulting to German", exePath);
-        return L::De;
+        acclog::Write("Lang", "dialog.tlk not readable at %s; defaulting to English", exePath);
+        return L::En;
     }
 
     unsigned char header[12] = {};
@@ -72,8 +74,8 @@ acc::strings::Lang DetectLanguageFromTlk() {
     fclose(fp);
 
     if (got < sizeof(header) || memcmp(header, "TLK ", 4) != 0) {
-        acclog::Write("Lang", "dialog.tlk bad header (%zu bytes); defaulting to German", got);
-        return L::De;
+        acclog::Write("Lang", "dialog.tlk bad header (%zu bytes); defaulting to English", got);
+        return L::En;
     }
 
     int32_t langId = 0;
@@ -87,8 +89,8 @@ acc::strings::Lang DetectLanguageFromTlk() {
         case 3: detected = L::It; break;
         case 4: detected = L::Es; break;
         default:
-            acclog::Write("Lang", "unknown LanguageID=%d; defaulting to German", langId);
-            return L::De;
+            acclog::Write("Lang", "unknown LanguageID=%d; defaulting to English", langId);
+            return L::En;
     }
     acclog::Write("Lang", "detected LanguageID=%d -> %s", langId, LangName(detected));
     return detected;
