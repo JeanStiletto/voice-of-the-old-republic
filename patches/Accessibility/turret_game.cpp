@@ -352,27 +352,31 @@ constexpr float kMaxCentripetalAccel = 300.0f; // u/s^2 sanity clamp on the esti
 constexpr float kAccelLeadCapSeconds = 1.0f;   // cap on the flight-time used in 0.5*a*t^2
 
 // ----- Aim-assist (magnetism — the DEFAULT, always-on mode) -----
-// The hitbox can't be enlarged at runtime (see the sphere_radius RE note), so
-// the honest "easier to hit" lever is to steer the GUN toward the locked
-// fighter once the aim is already close — pulling near-misses into the real
-// ~20 m hitbox. Steering writes the aim field directly: offset.z (azimuth) and
-// offset.x (elevation) at CSWMiniPlayer +0x1c4 (engine-confirmed — Control
-// re-integrates it each tick, so a per-tick write sticks; see ReadAimLine /
-// WriteOffset). This REPLACES the turret_steer WASD synthesis. Magnetism
-// engages only inside kAssistZoneDeg (so it never fights a deliberate swing to
-// a far/rear target) and yields to a sustained manual hold. The opt-in
-// "Autoaiming" toggle (TurretAutoAim) upgrades it to a full lock-on
-// (unconditional) in the assist block below.
-constexpr float kAssistZoneDeg = 15.0f;  // magnetism engages only within this aim error
-// Per-tick fraction of the world aim error we remove by writing offset. Auto
-// snaps hard (full lock-on); magnetism nudges gently so it feels like a pull,
-// not a grab. Both <1 to stay stable against the calibration sign + lead jitter.
-constexpr float kAssistGainAuto   = 0.85f;
-constexpr float kAssistGainMagnet = 0.35f;
-// Manual yield (magnetism only): a WASD hold past kAssistManualHoldMs latches a
-// "deliberate swing" and backs assist off that long after release.
-constexpr ULONGLONG kAssistManualHoldMs  = 300;
-constexpr ULONGLONG kAssistManualGraceMs = 250;
+// Steering writes the aim field directly: offset.z (azimuth) and offset.x
+// (elevation) at CSWMiniPlayer +0x1c4 (engine-confirmed — Control re-integrates
+// it each tick, so a per-tick write sticks; see ReadAimLine / WriteOffset).
+//
+// CONSOLE-STYLE STICKY AIM (reworked 2026-06-05 after a manual round showed pure-
+// by-ear aiming is ~unplayable — 8% on-target — because fast crossing fighters
+// can't be tracked manually and the old 15°-gated, yield-on-WASD magnetism almost
+// never engaged). The pull now:
+//   * engages from WIDE angles (kMagnetEngageDeg), so it starts guiding long
+//     before you're on target;
+//   * applies EVERY tick and BLENDS with your own WASD (no yield-on-keypress) —
+//     your swing moves the aim, the pull refines on top, so it nudges while you
+//     hold a key;
+//   * RAMPS with proximity — gentle far out (a guide you can swing straight
+//     through to retarget a different fighter), strong near the cone (the gun
+//     sticks: the console bullet-magnetism feel);
+//   * is per-tick CAPPED so a far target is pulled, not yanked.
+// Beyond the engage angle (and behind you) there's no pull — you swing / Q-E onto
+// a target yourself, keeping target choice in your hands. The "Autoaiming" toggle
+// (TurretAutoAim) is the separate, unconditional full lock-on. Tune by feel.
+constexpr float kAssistGainAuto   = 0.85f;  // full-autoaim: snap hard each tick
+constexpr float kMagnetEngageDeg  = 60.0f;  // magnetism starts pulling within this aim error
+constexpr float kMagnetGainFar    = 0.04f;  // pull gain at the engage edge (gentle guide)
+constexpr float kMagnetGainNear   = 0.50f;  // pull gain dead-on (sticky)
+constexpr float kMagnetMaxStepDeg = 6.0f;   // per-tick cap (deg) on the magnet pull
 
 // ----- Makeability gate (FULL-AUTOAIM ONLY) -----
 // "Makeable" = can a bolt actually connect this tick? The lead already cancels
@@ -557,12 +561,6 @@ struct State {
     bool      calib_have    = false;
     int       calib_sign_az = 0, calib_sign_el = 0;
     int       calib_vote_az = 0, calib_vote_el = 0;
-    // Assist manual-yield (assist mode only): last tick the player physically
-    // held a WASD aim key, and whether a sustained swing is latched.
-    ULONGLONG assist_manual_ms   = 0;
-    ULONGLONG assist_hold_start   = 0;
-    bool      assist_sustained    = false;
-    bool      assist_prev_manual  = false;
 
     // ---- Per-session aim-quality counters (QC summary on exit). A clean,
     // bolt-travel-immune measure of how well the cue lets the player aim:
@@ -1454,35 +1452,38 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
         g_state.calib_have = true;
     }
 
-    // Manual-yield (magnetism only): is the player physically swinging WASD?
+    // Steer the gun by writing offset toward the locked intercept.
+    //  * Full-autoaim: snap hard, every tick.
+    //  * Magnetism (default): console-style sticky aim — proximity-ramped pull,
+    //    applied every tick and blended with the player's own WASD (no yield),
+    //    engaging out to kMagnetEngageDeg and capped per tick. See the tunables.
     const ULONGLONG nowMsA = GetTickCount64();
-    const bool manualNow =
-        (GetAsyncKeyState('W') & 0x8000) || (GetAsyncKeyState('A') & 0x8000) ||
-        (GetAsyncKeyState('S') & 0x8000) || (GetAsyncKeyState('D') & 0x8000);
-    if (manualNow && !g_state.assist_prev_manual) g_state.assist_hold_start = nowMsA;
-    if (manualNow) {
-        g_state.assist_manual_ms = nowMsA;
-        if (nowMsA - g_state.assist_hold_start >= kAssistManualHoldMs)
-            g_state.assist_sustained = true;
-    } else if (g_state.assist_sustained &&
-               nowMsA - g_state.assist_manual_ms >= kAssistManualGraceMs) {
-        g_state.assist_sustained = false;
-    }
-    g_state.assist_prev_manual = manualNow;
-
-    // Decide whether to steer this tick.
-    bool steer = haveOffset && haveAim;
-    if (steer && !fullAuto) {
-        if (g_state.assist_sustained)     steer = false;  // yield to a real swing
-        else if (angle > kAssistZoneDeg)  steer = false;  // magnetise only when close
-    }
-
+    bool  steer = haveOffset && haveAim;
+    float gain  = 0.0f;
+    if (steer && !fullAuto && angle > kMagnetEngageDeg)
+        steer = false;  // target too far off-aim (or behind) — you swing onto it
     if (steer) {
-        const int   sAz  = g_state.calib_sign_az ? g_state.calib_sign_az : 1;
-        const int   sEl  = g_state.calib_sign_el ? g_state.calib_sign_el : 1;
-        const float gain = fullAuto ? kAssistGainAuto : kAssistGainMagnet;
-        float newAz = offAz - sAz * errAz * gain;
-        float newEl = offEl - sEl * errEl * gain;
+        const int sAz = g_state.calib_sign_az ? g_state.calib_sign_az : 1;
+        const int sEl = g_state.calib_sign_el ? g_state.calib_sign_el : 1;
+        if (fullAuto) {
+            gain = kAssistGainAuto;
+        } else {
+            // Ramp gain with proximity: t=0 at the engage edge, 1 dead-on. t^2
+            // keeps the far end gentle (a guide) and the near end strong (sticky).
+            float t = 1.0f - angle / kMagnetEngageDeg;
+            if (t < 0.0f) t = 0.0f;
+            gain = kMagnetGainFar + t * t * (kMagnetGainNear - kMagnetGainFar);
+        }
+        float stepAz = -sAz * errAz * gain;
+        float stepEl = -sEl * errEl * gain;
+        if (!fullAuto) {  // cap the magnet pull so a far target is pulled, not yanked
+            if (stepAz >  kMagnetMaxStepDeg) stepAz =  kMagnetMaxStepDeg;
+            else if (stepAz < -kMagnetMaxStepDeg) stepAz = -kMagnetMaxStepDeg;
+            if (stepEl >  kMagnetMaxStepDeg) stepEl =  kMagnetMaxStepDeg;
+            else if (stepEl < -kMagnetMaxStepDeg) stepEl = -kMagnetMaxStepDeg;
+        }
+        float newAz = offAz + stepAz;
+        float newEl = offEl + stepEl;
         while (newAz >= 360.0f) newAz -= 360.0f;  // KeepInTunnel wraps too, but
         while (newAz <   0.0f)  newAz += 360.0f;  // avoid a one-frame out-of-range
         WriteOffset(newAz, newEl);
@@ -1494,11 +1495,11 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
         acclog::Write("TurretCue",
                       "slot=%d angle=%.1f errAz=%.1f errEl=%.1f deadband=%.1f "
                       "dist=%.0f off(az=%.1f el=%.1f) aim(az=%.1f el=%.1f) "
-                      "calibAz=%d calibEl=%d steer=%d auto=%d",
+                      "calibAz=%d calibEl=%d steer=%d gain=%.2f auto=%d",
                       g_state.selected_slot, angle, errAz, errEl, onTargetAngle,
                       sd, offAz, offEl, aimAz, aimEl,
                       g_state.calib_sign_az, g_state.calib_sign_el,
-                      steer ? 1 : 0, fullAuto ? 1 : 0);
+                      steer ? 1 : 0, gain, fullAuto ? 1 : 0);
     }
 
     // ---- Elevation channel: drive the peg's PITCH from the vertical error. --
@@ -1896,14 +1897,10 @@ void HandleEnter(void* mg) {
     g_state.assist_last_log_ms = 0;
     g_state.shots_fired  = 0;
     g_state.fighter_hits = 0;
-    // Fresh aim-assist sign calibration + manual-yield state.
+    // Fresh aim-assist sign calibration.
     g_state.calib_have      = false;
     g_state.calib_sign_az   = 0; g_state.calib_sign_el = 0;
     g_state.calib_vote_az   = 0; g_state.calib_vote_el = 0;
-    g_state.assist_sustained   = false;
-    g_state.assist_prev_manual = false;
-    g_state.assist_manual_ms   = 0;
-    g_state.assist_hold_start  = 0;
     // Defensive: no loop from a prior turret session must survive.
     StopAllLoops();
 
