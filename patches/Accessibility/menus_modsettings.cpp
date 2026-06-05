@@ -46,11 +46,13 @@ bool s_toggles[static_cast<int>(Option::Count)] = {
     /* ExtendedCycling */ false,
     /* RoomShapes      */ true,
     /* WallSounds      */ true,
-    /* HumanSubtitles  */ false,  // default off — humans have VO, TTS over
-                                  // the same line clashes; aliens still
-                                  // read because the suppression filter
-                                  // gates on appearance_type, not on this
-                                  // toggle alone.
+    /* HumanSubtitles  */ false,  // default off — humans AND droids have VO,
+                                  // so TTS over the same line clashes (humans,
+                                  // HK-47) or reads meaningless beep-text (T3).
+                                  // Genuine aliens still read because the
+                                  // suppression filter gates on appearance /
+                                  // race (see IsSuppressibleSpeaker), not on
+                                  // this toggle alone.
     /* TurretAutoAim   */ false,  // "Autoaiming" — OFF by default. When ON, the
                                   // turret PERMANENTLY locks aim onto the
                                   // selected fighter (full auto-track), so the

@@ -452,7 +452,7 @@ const char* Get(Id id) {
         case Id::ModSettingExtendedCycling:   return "Selecci\xF3n de objetos en todo el mapa";
         case Id::ModSettingRoomShapes:        return "Descripciones de la forma de las habitaciones";
         case Id::ModSettingWallSounds:        return "Sonidos de pared";
-        case Id::ModSettingHumanSubtitles:    return "Leer subt\xEDtulos de hablantes humanos";
+        case Id::ModSettingHumanSubtitles:    return "Leer subt\xEDtulos de hablantes con voz";
         case Id::ModSettingTurretAutoAim:     return "Apuntado autom\xE1" "tico";
         case Id::ModSettingSkipIntros:        return "Omitir v\xED" "deos de introducci\xF3n";
         case Id::ModSettingSkipIntrosOnNextLaunch: return "Los v\xED" "deos de introducci\xF3n se omitir\xE1n en el pr\xF3ximo inicio.";

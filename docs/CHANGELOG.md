@@ -13,6 +13,12 @@ headings in the release body (markdown `**Installer:**` only renders as bold).
 Each bullet should lead with the user-facing change ("X works now", "new
 hotkey Y", "X no longer does Z"); keep technical detail short.
 
+<h2>Unreleased</h2>
+
+<h3>Dialogue:</h3>
+
+- Droid speech is now suppressed under its own voice, the same as human speech. The subtitle filter (on by default) skips reading a line aloud when you can already hear it spoken — until now that covered human speakers but not droids, so the screen reader read droid subtitles on top of their audio. Droids are now treated the same way: HK-47's spoken Basic lines stay quiet so you hear his actual voice instead of TTS over it, and T3-M4 and other binary-only droids no longer have their beep-and-whistle subtitles ("Biep. Whoop. Wiep.") read aloud. Nothing is lost by skipping those — a binary droid's meaning comes through your own reply choices, which are still read, not through the beeps themselves. Because the filter now covers every voiced speaker, its toggle under Mod-Einstellungen is relabelled "Untertitel vertonter Sprecher vorlesen"; turn it on to have all subtitles read regardless. Genuinely alien speech you cannot otherwise follow — Zaalbar's Shyriiwook, background Twi'lek chatter — is still read as before.
+
 <h2>v0.3.2</h2>
 
 <h3>UI:</h3>

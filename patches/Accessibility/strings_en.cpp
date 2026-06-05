@@ -448,7 +448,7 @@ const char* Get(Id id) {
         case Id::ModSettingExtendedCycling:   return "Map-wide object selection";
         case Id::ModSettingRoomShapes:        return "Room shape descriptions";
         case Id::ModSettingWallSounds:        return "Wall sounds";
-        case Id::ModSettingHumanSubtitles:    return "Read human-speaker subtitles";
+        case Id::ModSettingHumanSubtitles:    return "Read voiced-speaker subtitles";
         case Id::ModSettingTurretAutoAim:     return "Autoaiming";
         case Id::ModSettingSkipIntros:        return "Skip launch intro movies";
         case Id::ModSettingSkipIntrosOnNextLaunch: return "Intros will be skipped on next launch.";

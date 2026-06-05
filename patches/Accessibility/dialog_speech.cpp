@@ -75,6 +75,9 @@ bool IsHumanAppearance(int appearanceType) {
     return (kHumanAppearanceMask[idx >> 6] >> (idx & 63)) & 1ULL;
 }
 
+// RACE enum value for droids (see engine_offsets.h kCreatureStatsRaceOffset).
+constexpr int kRaceDroid = 5;
+
 // ---- Speaker resolution chain --------------------------------------------
 //
 // PRIMARY (per-line, covers overheard NPC-to-NPC):
@@ -101,6 +104,21 @@ struct SpeakerInfo {
     int   raceEnum;         // RACE enum (HUMAN=6, DROID=5, 0 otherwise)
     char  tag[32];          // CSWSObject.tag (or "" if unread)
 };
+
+// True iff this speaker's subtitle is redundant given the VO, so we suppress
+// it under the (shared) HumanSubtitles toggle. Two cases:
+//   - human-appearance speakers: intelligible Basic VO the player already
+//     understands (the original criterion — includes Basic-voiced non-humans
+//     like Mission/Juhani, see IsHumanAppearance note above);
+//   - droids (race == DROID): either intelligible Basic VO (HK-47) or pure
+//     beep onomatopoeia whose subtitle carries no meaning (T3-M4, generic
+//     droids — the conveyed meaning lives in the player's reply choices,
+//     which are narrated separately). Verified from dialog.tlk 2026-06-05.
+// Genuinely alien speakers (Twi'lek crowd, Wookiee) are neither, so their
+// subtitle stays the player's only channel and is always spoken.
+bool IsSuppressibleSpeaker(const SpeakerInfo& info) {
+    return IsHumanAppearance(info.appearance) || info.raceEnum == kRaceDroid;
+}
 
 // Given a candidate server object, validate it's a creature and fill the
 // tag / race / appearance fields. Returns false (leaving out.speaker null)
@@ -208,7 +226,7 @@ bool ShouldSuppressNpcLine() {
     }
     SpeakerInfo info;
     if (!ResolveDialogSpeaker(info)) return false;
-    return IsHumanAppearance(info.appearance);
+    return IsSuppressibleSpeaker(info);
 }
 
 // Find the foreground active dialog panel — first match for any of the
@@ -344,9 +362,9 @@ void Tick() {
             // when we end up speaking, so future override decisions can
             // be made on real (speaker tag, race, appearance_type) data.
             SpeakerInfo info;
-            bool resolved = ResolveDialogSpeaker(info);
-            bool human    = resolved && IsHumanAppearance(info.appearance);
-            bool suppress = human && !acc::menus::modsettings::GetToggle(
+            bool resolved     = ResolveDialogSpeaker(info);
+            bool suppressible = resolved && IsSuppressibleSpeaker(info);
+            bool suppress = suppressible && !acc::menus::modsettings::GetToggle(
                 acc::menus::modsettings::Option::HumanSubtitles);
 
             if (!suppress) {
@@ -354,11 +372,11 @@ void Tick() {
             }
             acclog::Write("Dialog.Speech",
                           "NPC line panel=%p kind=%s speaker=[%s] "
-                          "appearance=%d race=%d human=%d suppress=%d -> [%.300s]",
+                          "appearance=%d race=%d suppressible=%d suppress=%d -> [%.300s]",
                           m.panel, acc::engine::PanelKindName(m.kind),
                           resolved ? info.tag : "?",
                           info.appearance, info.raceEnum,
-                          human ? 1 : 0, suppress ? 1 : 0, npc);
+                          suppressible ? 1 : 0, suppress ? 1 : 0, npc);
             std::strncpy(s_lastNpcLine, npc, sizeof(s_lastNpcLine) - 1);
             s_lastNpcLine[sizeof(s_lastNpcLine) - 1] = '\0';
         }
@@ -428,9 +446,9 @@ void Tick() {
             // no dialog partner and ResolveDialogSpeaker returns false →
             // we speak the bark (alien gibberish would be lost otherwise).
             SpeakerInfo info;
-            bool resolved = ResolveDialogSpeaker(info);
-            bool human    = resolved && IsHumanAppearance(info.appearance);
-            bool suppress = human && !acc::menus::modsettings::GetToggle(
+            bool resolved     = ResolveDialogSpeaker(info);
+            bool suppressible = resolved && IsSuppressibleSpeaker(info);
+            bool suppress = suppressible && !acc::menus::modsettings::GetToggle(
                 acc::menus::modsettings::Option::HumanSubtitles);
 
             if (!suppress) {
@@ -438,10 +456,10 @@ void Tick() {
             }
             acclog::Write("Dialog.Speech",
                           "bark panel=%p speaker=[%s] appearance=%d race=%d "
-                          "human=%d suppress=%d -> [%.300s]",
+                          "suppressible=%d suppress=%d -> [%.300s]",
                           bark, resolved ? info.tag : "?",
                           info.appearance, info.raceEnum,
-                          human ? 1 : 0, suppress ? 1 : 0, text);
+                          suppressible ? 1 : 0, suppress ? 1 : 0, text);
             std::strncpy(s_lastBarkText, text, sizeof(s_lastBarkText) - 1);
             s_lastBarkText[sizeof(s_lastBarkText) - 1] = '\0';
         }
