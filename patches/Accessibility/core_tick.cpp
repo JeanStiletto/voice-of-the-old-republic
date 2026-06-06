@@ -188,8 +188,12 @@ void Dispatch() {
     PHASE("guidance.cancel", acc::guidance::PollMovementKeysCancel());
     PHASE("guidance.beacon", acc::guidance::beacon::Tick());
 
-    // Auto-restore player input ~3s after a guidance/interact disable.
+    // Restore player input once the handed-off engine action drains from
+    // the queue (or a ceiling backstop fires).
     PHASE("engine.inputRestore", acc::engine::TickPlayerInputRestore());
+
+    // Diagnostic: log player action-queue depth changes (delta only).
+    PHASE("engine.actionQueueDiag", acc::engine::TickActionQueueDiag());
 
     // Drain deferred Q/E reannounce.
     PHASE("passive_narrate", acc::passive_narrate::Tick());

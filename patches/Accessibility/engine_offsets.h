@@ -870,6 +870,24 @@ constexpr size_t kCreatureCombatRoundOffset           = 0x9c8;
 constexpr size_t kObjectHitPointsOffset               = 0xe0;
 constexpr size_t kObjectEffectsOffset                 = 0x124;
 
+// AI action queue — CSWSObject.action_nodes @+0xfc, a
+// CExoLinkedList<CSWSObjectActionNode>. The list holds the player's
+// pending engine-driven actions: move-to-point, use-object, and the
+// composite walk-to-then-act the world-picker enqueues. When the count
+// reaches 0 the queued action has drained (arrived / used / aborted) —
+// the authoritative "engine action finished" signal that replaces the
+// blind input-restore timer. RE'd from CSWSObject::ClearAllActions
+// @0x004CCD80 (iterates `action_nodes.list`). NOTE: combat DOES populate
+// this queue (move-into-range + attack actions — observed swinging 0..5
+// during a fight, 2026-06-06), separately from CSWSCombatRound @+0x9c8.
+// That's harmless for the input-restore use: ordinary combat never arms
+// our freeze, so the restore tick never reads this queue during combat —
+// the two never overlap.
+// CExoLinkedList = { CExoLinkedListInternal* internal } (+0x0); the
+// internal is { head(+0x0), tail(+0x4), int count(+0x8) }.
+constexpr size_t kObjectActionNodesOffset             = 0xfc;
+constexpr size_t kExoLinkedListInternalCountOffset    = 0x8;
+
 constexpr size_t kCombatRoundAttacksListOffset        = 0x4;
 constexpr size_t kCombatRoundTimerOffset              = 0x944;
 constexpr size_t kCombatRoundLengthOffset             = 0x94c;

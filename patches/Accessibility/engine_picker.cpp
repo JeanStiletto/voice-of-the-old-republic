@@ -405,11 +405,15 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot,
     WriteUInt32(internal, kInternalLastClickedOnTargetOffset, targetClient);
     WriteUInt32(internal, kInternalHoverTargetOffset,         targetClient);
 
-    // Disable the per-tick player-input movement clobber for the
-    // duration of whatever the engine action enqueues (walk-to-then-use,
-    // dialog initiator, attack, …). Auto-restores after 3s; on any
-    // observed SEH fault below we restore immediately. Same contract
-    // guidance::UseObject uses around AddUseObjectAction.
+    // Disable the per-tick player-input movement clobber for the duration of
+    // whatever the engine action enqueues — walk-to-then-use, walk-to-then-
+    // talk, attack, … all share the same composite shape, so talk is NOT
+    // special-cased. TickPlayerInputRestore flips control back when the
+    // action queue drains (or the walk stalls); on any SEH fault below we
+    // restore immediately. A repeat dispatch (e.g. mashing Enter) re-issues
+    // the engine action but does not extend the restore window — see the
+    // no-re-arm guard in SetPlayerInputEnabled (that was the janicebug
+    // livelock, project_distant_npc_dialogue_stuck).
     bool inputDisabled = acc::engine::SetPlayerInputEnabled(false);
 
     // Step 5 — actual dispatch.

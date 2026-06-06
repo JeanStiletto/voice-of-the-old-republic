@@ -87,18 +87,26 @@ bool GetActiveLeaderName(char* outBuf, size_t bufSize);
 // it: CSWPlayerControl.enabled at +0xc, and CSWCCreature::SwitchMode
 // (creature mode 0=AI / 1=player).
 //
-// armAutoRestore=true (autowalk shape): flips back after 3s via
-// TickPlayerInputRestore; each new disable extends the window.
+// armAutoRestore=true (autowalk shape): TickPlayerInputRestore flips
+// control back when the AI action queue drains, never enqueues (grace), or
+// stalls with no movement. No time cap while the PC is progressing, so long
+// walks finish naturally. A repeat disable while a session is active does
+// NOT re-arm (no window extension — the janicebug livelock guard).
 //
 // armAutoRestore=false (view mode shape): timer stays inert; caller
 // owns the matching SetPlayerInputEnabled(true). Missing it freezes
 // the player permanently (modulo a future disable + auto-restore).
 //
-// Explicit SetPlayerInputEnabled(true) always clears the timer.
+// Explicit SetPlayerInputEnabled(true) always clears the session.
 bool SetPlayerInputEnabled(bool enabled, bool armAutoRestore = true);
 
-// Auto-restore tick. Cheap when idle (one timestamp compare).
+// Restore tick — queue-drain / ceiling driven. Cheap when idle (one flag
+// check); reads the action queue only while a disable session is active.
 void TickPlayerInputRestore();
+
+// Diagnostic tick — logs player action-queue depth changes (delta only).
+// Used to validate queue behaviour across combat / autowalk / dialog.
+void TickActionQueueDiag();
 
 // Walks CServerExoApp.party_table @+0x1b770 (via GetServerPartyTable):
 //   +0x0 pt_num_members  (active followers, 0..2 in normal play — the PC
