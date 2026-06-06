@@ -5,7 +5,7 @@
 #include <cstring>
 
 #include "engine_area.h"     // GetObjectDisplayNameByHandle
-#include "engine_player.h"   // GetPartyMembers, kPartyTableMaxMembers
+#include "engine_player.h"   // GetPartyMembers, GetActiveLeaderName, kPartyTableMaxMembers
 #include "log.h"             // acclog::Write
 
 namespace acc::combat {
@@ -41,6 +41,33 @@ void Refresh() {
             ++g_name_count;
         }
     }
+    // GetPartyMembers only returns companion roster slots (Carth, Mission,
+    // ...) — never the PC. So add the controlled leader's name too. We use
+    // GetActiveLeaderName (display-name-by-handle), NOT GetPlayerCharacterName:
+    // the latter returns a stale chargen-slot leftover ("test") that never
+    // matches the name the combat log prints for the PC. Without this, every
+    // incoming hit on the player — and the player's own feats — are
+    // mis-classified as "not party" and suppressed.
+    //
+    // Caveat: this captures whoever is *currently* leader. With the PC as
+    // leader (the default) the PC is covered. If a companion is Tab'd to
+    // lead, the non-leader PC can briefly fall out of the set until the PC
+    // leads again — acceptable for now.
+    char pcName[kNameCap] = {};
+    if (acc::engine::GetActiveLeaderName(pcName, sizeof(pcName)) && pcName[0]) {
+        size_t len = strnlen(pcName, sizeof(pcName));
+        while (len > 0 && (pcName[len - 1] == ' ' || pcName[len - 1] == '.')) --len;
+        pcName[len] = '\0';
+        bool dup = false;
+        for (int i = 0; i < g_name_count; ++i) {
+            if (strcmp(g_names[i], pcName) == 0) { dup = true; break; }
+        }
+        if (!dup && len > 0 && g_name_count < kMaxMembers) {
+            memcpy(g_names[g_name_count], pcName, len + 1);
+            ++g_name_count;
+        }
+    }
+
     g_last_refresh_tick = GetTickCount();
     g_initialised = true;
 

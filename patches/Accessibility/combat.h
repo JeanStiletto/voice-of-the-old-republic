@@ -21,4 +21,12 @@ bool IsCombatActive();
 void TickCombatMode();
 void TickCombatLog();
 
+// Flushes a debounced burst of damage-absorption lines into one spoken
+// total. Cheap and idle when no absorb burst is pending.
+void TickCombatAbsorb();
+
+// Flushes debounced per-target ability/grenade/force-power effects into one
+// merged spoken line each. Cheap and idle when no effect is pending.
+void TickCombatEffects();
+
 }  // namespace acc::combat

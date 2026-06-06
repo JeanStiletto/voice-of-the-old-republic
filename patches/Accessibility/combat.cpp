@@ -281,9 +281,92 @@ struct AttackBlock {
     char abwehr_nums[64];      // pre-formatted: "10+3+2" (labels dropped)
     char schaden_text[128];    // full-breakdown form: "Energie 6+Bonus 5 x2"
     char schaden_short[128];   // short-form: "6 Energie + 5 Bonus"  (value first, " + " separator)
+    char dmg_type[32];         // primary damage type label, e.g. "Energie" / "Physisch"
+    char status[96];           // applied status from summary tail, e.g. "betäubt" ("" if none)
 };
 
 AttackBlock g_pending = {};
+
+// ---- Damage-absorption burst coalescing.
+// One engine line fires per blocked hit; a sustained shield emits dozens.
+// We accumulate a burst (running total + count) and flush a single spoken
+// line once kAbsorbQuietMs passes with no new absorb. namepart/suffix are
+// captured verbatim from the engine line so the spoken total stays locale-
+// agnostic: "<namepart>absorbiert <total><suffix>".
+constexpr DWORD kAbsorbQuietMs   = 600;    // flush after this long with no new absorb
+constexpr DWORD kAbsorbMaxHoldMs = 2500;   // ...or this long since the burst began
+char  g_absorb_namepart[160] = {};   // text before the anchor (incl. trailing space)
+char  g_absorb_suffix[64]    = {};   // text after the number, up to " :" or end
+int   g_absorb_total         = 0;
+int   g_absorb_count         = 0;
+DWORD g_absorb_last_tick     = 0;
+DWORD g_absorb_first_tick    = 0;
+
+// ---- Ability / grenade / force-power effect merging.
+// A power's use, each target's saving throw, the damage, and any applied
+// status arrive as separate engine lines (interleaved with other combat
+// chatter). We remember the last "benutzt <action>" and accumulate per-
+// target outcomes into slots, flushed as one merged line on a debounce.
+constexpr DWORD kAbilityWindowMs = 5000;   // "benutzt" stays attributable this long
+constexpr DWORD kFxQuietMs       = 500;    // flush a target's effect after this gap
+constexpr DWORD kFxMaxHoldMs     = 2500;
+constexpr int   kMaxFx           = 12;
+
+struct LastAbility {
+    char  actor[96];
+    char  action[96];
+    DWORD tick;
+    bool  valid;
+};
+LastAbility g_lastAbility = {};
+
+struct EffectTarget {
+    bool  used;
+    char  target[96];
+    char  action[96];   // attributed power/grenade ("" if unknown)
+    char  caster[96];   // who used it ("" if unknown)
+    bool  has_save;
+    bool  saved;
+    char  save_type[40];  // "Reflex" / "Tapferkeit" / "Willensstärke"
+    bool  has_dmg;
+    int   dmg;
+    char  dmg_type[32];
+    char  status[64];     // applied status, e.g. "betäubt"
+    DWORD first_tick;
+    DWORD last_tick;
+};
+EffectTarget g_fx[kMaxFx] = {};
+
+EffectTarget* FxFind(const char* target) {
+    for (int i = 0; i < kMaxFx; ++i)
+        if (g_fx[i].used && strcmp(g_fx[i].target, target) == 0) return &g_fx[i];
+    return nullptr;
+}
+
+// Find-or-allocate a slot for target. On first allocation, attribute the
+// most recent ability use if it's still fresh. Returns nullptr if the table
+// is full (caller then leaves the line on the raw-speech fallback).
+EffectTarget* FxAlloc(const char* target) {
+    EffectTarget* e = FxFind(target);
+    if (e) return e;
+    for (int i = 0; i < kMaxFx; ++i) {
+        if (g_fx[i].used) continue;
+        e = &g_fx[i];
+        *e = {};
+        e->used = true;
+        size_t n = strnlen(target, sizeof(e->target) - 1);
+        memcpy(e->target, target, n); e->target[n] = '\0';
+        DWORD now = GetTickCount();
+        e->first_tick = now;
+        e->last_tick  = now;
+        if (g_lastAbility.valid && (now - g_lastAbility.tick) <= kAbilityWindowMs) {
+            memcpy(e->action, g_lastAbility.action, strnlen(g_lastAbility.action, sizeof(e->action) - 1) + 1);
+            memcpy(e->caster, g_lastAbility.actor,  strnlen(g_lastAbility.actor,  sizeof(e->caster) - 1) + 1);
+        }
+        return e;
+    }
+    return nullptr;
+}
 
 bool MsgStartsWith(const char* s, const char* p) {
     while (*p) { if (*s++ != *p++) return false; }
@@ -340,6 +423,25 @@ bool ParseSummary(const char* text, AttackBlock& b) {
     if (strstr(text, L.tag_krit_summary)) b.crit_tag  = true;
     if (strstr(text, L.tag_auto_hit))     b.auto_hit  = true;
     if (strstr(text, L.tag_auto_fail))    b.auto_fail = true;
+
+    // Status tail: an applied effect rides the end of the summary as
+    // "<target> ist <status>" (e.g. "Kath-Hund ist betäubt"). The target
+    // name only re-appears here in that clause — "mit Angriff auf <target>."
+    // is followed by '.', not " ist " — so a plain search for "<target> ist "
+    // pins the status without colliding with the opening "<actor> ist
+    // erfolgreich". Captures everything after to end-of-line.
+    if (b.target[0]) {
+        char needle[112];
+        int nn = snprintf(needle, sizeof(needle), "%s ist ", b.target);
+        if (nn > 0 && nn < (int)sizeof(needle)) {
+            const char* st = strstr(text, needle);
+            if (st) {
+                const char* s = st + nn;
+                const char* e = s + strlen(s);
+                CopyRange(b.status, sizeof(b.status), s, e);
+            }
+        }
+    }
 
     b.has_summary = true;
     return true;
@@ -560,6 +662,14 @@ bool ParseSchaden(const char* text, AttackBlock& b) {
             }
         }
 
+        // Primary damage type = first component's type label (the elemental
+        // type: Energie / Physisch / Ionen / ...). Bonus components
+        // (Spezialwaffe, Stärke-Mod., Bonusschaden) are additive, not types,
+        // and always follow — so the first label is the one to speak.
+        if (b.dmg_type[0] == '\0' && !type_replacement && type_end > type_start) {
+            CopyRange(b.dmg_type, sizeof(b.dmg_type), type_start, type_end);
+        }
+
         // Full-breakdown form: "<Type> <value>"
         if (type_replacement) {
             Emit(type_replacement, type_replacement_len);
@@ -656,48 +766,96 @@ void BuildCompact(const AttackBlock& b, char* out, size_t cap) {
     }
 }
 
-// Short-form announcement for vanilla hits landing on a party member.
-// Format: "<target>: <value> <type>[ + <value> <type>...] von <attacker>[, kritisch]".
-void BuildShortForm(const AttackBlock& b, char* out, size_t cap) {
+// ---- Phase-2 short results-only lines.
+//
+// The verbose stat breakdown (Angriffs-/Abwehr-/Schadensstatistik) stays in
+// the engine message log; only the urgent result is spoken. Actor-led for
+// the party's own special moves, victim-led for incoming hits — the
+// "who's hurt" name leads when damage lands on us.
+//
+// Common tail: ", kritisch" on a crit and ", <status>" when an effect was
+// applied. Damage type keeps the engine's casing (German type nouns are
+// capitalised: "Energie", "Physisch", "Ionen").
+namespace {
+void BuildResultTail(const AttackBlock& b, char* tail, size_t cap) {
     const auto& L = acc::combat::loc::Get();
+    char crit[24] = "";
+    if (b.crit_tag) snprintf(crit, sizeof(crit), ", %s", L.word_critical);
+    char status[112] = "";
+    if (b.status[0]) snprintf(status, sizeof(status), ", %s", b.status);
+    snprintf(tail, cap, "%s%s", crit, status);
+}
+}  // namespace
 
-    char tail[64] = "";
-    if (b.crit_tag)       snprintf(tail, sizeof(tail), ", %s", L.word_critical);
-    else if (b.auto_hit)  snprintf(tail, sizeof(tail), ", %s", L.word_auto_hit);
+// The party's own attack. Feats name the move; plain auto-attacks omit it
+// (a feat replaces the auto-attack for that swing, so the two never collide):
+//   feat hit    → "<actor>, <feat>, <dmg> <type>[, kritisch][, status]"
+//   feat miss   → "<actor>, fehlgeschlagen, <feat>"
+//   plain hit   → "<actor>, <dmg> <type>[, kritisch][, status]"
+//   plain miss  → (not emitted — caller suppresses)
+void BuildOutgoingLine(const AttackBlock& b, char* out, size_t cap) {
+    const auto& L = acc::combat::loc::Get();
+    const bool has_feat = (b.feat[0] != 0);
+    if (!b.hit) {
+        // Only feats reach a spoken miss; plain misses are suppressed upstream.
+        snprintf(out, cap, "%s, %s, %s", b.actor, L.word_failed, b.feat);
+        return;
+    }
+    char tail[140]; BuildResultTail(b, tail, sizeof(tail));
+    char feat_part[110] = "";
+    if (has_feat) snprintf(feat_part, sizeof(feat_part), ", %s", b.feat);
+    if (b.dmg_type[0]) {
+        snprintf(out, cap, "%s%s, %d %s%s",
+                 b.actor, feat_part, b.sum_damage, b.dmg_type, tail);
+    } else {
+        snprintf(out, cap, "%s%s, %d%s",
+                 b.actor, feat_part, b.sum_damage, tail);
+    }
+}
 
-    snprintf(out, cap, "%s: %s %s %s%s",
-             b.target,
-             b.has_schaden ? b.schaden_short : "",
-             L.word_von,
-             b.actor,
-             tail);
+// Incoming hit on a party member: "<target>: <dmg> <type> von <actor>[, ...]".
+void BuildIncomingLine(const AttackBlock& b, char* out, size_t cap) {
+    const auto& L = acc::combat::loc::Get();
+    char tail[140]; BuildResultTail(b, tail, sizeof(tail));
+    if (b.dmg_type[0]) {
+        snprintf(out, cap, "%s: %d %s %s %s%s",
+                 b.target, b.sum_damage, b.dmg_type, L.word_von, b.actor, tail);
+    } else {
+        snprintf(out, cap, "%s: %d %s %s%s",
+                 b.target, b.sum_damage, L.word_von, b.actor, tail);
+    }
 }
 
 // Filter + emit decision for a fully-buffered attack block.
 //
-//   feat-use            → full breakdown (BuildCompact)
-//   vanilla hit on party → short form    (BuildShortForm)
-//   anything else       → suppress speech (still log for grepping)
+//   party attack (feat, or plain hit)  → actor-led result line
+//     - feats announce on hit or miss (a deliberate move that whiffs matters)
+//     - plain auto-attacks announce on hit only (the damage is what kills;
+//       a plain miss isn't urgent)
+//   incoming hit (party target)         → victim-led result line
+//   anything else                       → suppress speech (still log)
 //
-// "Party" = active roster of CSWPartyTable (PC + up to 2 followers in
-// normal play). Cross-fire between two NPCs, vanilla swings the PC or
-// party makes, and all misses fall under "anything else".
+// "Party" = active roster of CSWPartyTable (PC + followers). NPC-vs-NPC
+// crossfire and the party's plain *misses* stay silent — full detail
+// remains in the engine message log.
 void FlushPending() {
     if (!g_pending.has_summary) return;
     auto& r = acc::msg::Router::Instance();
 
     const bool is_feat         = (g_pending.feat[0] != 0);
+    const bool actor_is_party  = IsPartyMember(g_pending.actor);
     const bool target_is_party = IsPartyMember(g_pending.target);
+    const bool announce_outgoing = actor_is_party && (is_feat || g_pending.hit);
 
     char buf[640];
-    if (is_feat) {
-        BuildCompact(g_pending, buf, sizeof(buf));
+    if (announce_outgoing) {
+        BuildOutgoingLine(g_pending, buf, sizeof(buf));
         r.Speak(buf);
-        r.LogEmit("emit-feat", buf);
+        r.LogEmit("emit-outgoing", buf);
     } else if (g_pending.hit && target_is_party) {
-        BuildShortForm(g_pending, buf, sizeof(buf));
+        BuildIncomingLine(g_pending, buf, sizeof(buf));
         r.Speak(buf);
-        r.LogEmit("emit-short", buf);
+        r.LogEmit("emit-incoming", buf);
     } else {
         BuildCompact(g_pending, buf, sizeof(buf));
         r.LogEmit("emit-suppressed", buf);
@@ -732,12 +890,278 @@ bool RuleSchaden(const char* text) {
     return true;
 }
 
+// "Auswirkungsstatistik:<target> ist <status>" — the engine's trailing status
+// echo. Two cases:
+//   * A force power applied it: an effect slot for <target> already exists —
+//     attach the status so the merged effect line speaks it.
+//   * A weapon attack applied it: no slot exists; the status was already
+//     folded into the attack line from the summary tail — drop the duplicate.
+// Either way we claim the line (no raw speech).
+bool RuleAuswirkung(const char* text) {
+    const auto& L = acc::combat::loc::Get();
+    if (!MsgStartsWith(text, L.prefix_auswirkung)) return false;
+    const char* p   = text + strlen(L.prefix_auswirkung);
+    const char* ist = strstr(p, " ist ");
+    if (ist) {
+        char target[96];
+        CopyRange(target, sizeof(target), p, ist);
+        EffectTarget* e = FxFind(target);
+        if (e) {
+            const char* s = ist + 5;  // strlen(" ist ")
+            CopyRange(e->status, sizeof(e->status), s, s + strlen(s));
+            e->last_tick = GetTickCount();
+        }
+    }
+    return true;  // claimed, no speech
+}
+
+// "<actor> benutzt <action>[.  Investierte Machtpunkte: ...]" — a power/grenade
+// /item use. Record it for effect attribution, and speak a shortened cue
+// (dropping the Machtpunkte math) only for the party's own casts/throws —
+// incoming enemy powers announce via their effect line instead.
+bool RuleAbilityUse(const char* text) {
+    const auto& L = acc::combat::loc::Get();
+    const char* m = strstr(text, L.ability_use_marker);   // " benutzt "
+    if (!m) return false;
+    char actor[96];
+    CopyRange(actor, sizeof(actor), text, m);
+    const char* as  = m + strlen(L.ability_use_marker);
+    const char* dot = strchr(as, '.');
+    const char* ae  = dot ? dot : as + strlen(as);
+    char action[96];
+    CopyRange(action, sizeof(action), as, ae);
+    if (!actor[0] || !action[0]) return false;
+
+    DWORD now = GetTickCount();
+    memcpy(g_lastAbility.actor,  actor,  strnlen(actor,  sizeof(g_lastAbility.actor)  - 1) + 1);
+    memcpy(g_lastAbility.action, action, strnlen(action, sizeof(g_lastAbility.action) - 1) + 1);
+    g_lastAbility.tick  = now;
+    g_lastAbility.valid = true;
+
+    auto& r = acc::msg::Router::Instance();
+    if (IsPartyMember(actor)) {
+        char line[200];
+        snprintf(line, sizeof(line), "%s%s%s", actor, L.ability_use_marker, action);
+        r.Speak(line);
+        r.LogEmit("emit-use", line);
+    } else {
+        r.LogEmit("emit-use-suppressed", action);
+    }
+    return true;  // claimed (suppress the verbose raw use line)
+}
+
+// "<saver> <SaveType>-Rettungswurf. Erfolg!|Misserfolg! ..." — buffer the
+// outcome into the saver's effect slot; flushed merged on the debounce.
+bool RuleSaveThrow(const char* text) {
+    const auto& L = acc::combat::loc::Get();
+    const char* sm = strstr(text, L.save_marker);   // "-Rettungswurf."
+    if (!sm) return false;
+    const char* ts = sm;
+    while (ts > text && ts[-1] != ' ') --ts;        // start of the SaveType word
+    char save_type[40];
+    CopyRange(save_type, sizeof(save_type), ts, sm);
+    char saver[96];
+    CopyRange(saver, sizeof(saver), text, ts);
+    if (!saver[0]) return false;
+
+    bool saved;
+    if (strstr(sm, L.save_success))   saved = true;
+    else if (strstr(sm, L.save_fail)) saved = false;
+    else return false;
+
+    EffectTarget* e = FxAlloc(saver);
+    if (!e) return false;  // table full — let it speak raw
+    e->has_save = true;
+    e->saved    = saved;
+    memcpy(e->save_type, save_type, strnlen(save_type, sizeof(e->save_type) - 1) + 1);
+    e->last_tick = GetTickCount();
+    return true;
+}
+
+// "<actor> verletzt <target>: N Schaden (Type: N)" — direct/ability damage.
+bool RuleDirectDamage(const char* text) {
+    const auto& L = acc::combat::loc::Get();
+    const char* dm = strstr(text, L.damage_marker);  // " verletzt "
+    if (!dm) return false;
+    char actor[96];
+    CopyRange(actor, sizeof(actor), text, dm);
+    const char* tstart = dm + strlen(L.damage_marker);
+    const char* colon  = strchr(tstart, ':');
+    if (!colon) return false;
+    char target[96];
+    CopyRange(target, sizeof(target), tstart, colon);
+    if (!actor[0] || !target[0]) return false;
+
+    const char* p = colon + 1;
+    while (*p == ' ') ++p;
+    int dmg = atoi(p);
+
+    char dtype[32] = "";
+    const char* paren = strchr(p, '(');
+    if (paren) {
+        const char* tt = paren + 1;
+        const char* tc = strchr(tt, ':');
+        if (tc) CopyRange(dtype, sizeof(dtype), tt, tc);
+    }
+
+    EffectTarget* e = FxAlloc(target);
+    if (!e) return false;
+    e->has_dmg = true;
+    e->dmg     = dmg;
+    if (dtype[0]) memcpy(e->dmg_type, dtype, strnlen(dtype, sizeof(e->dmg_type) - 1) + 1);
+    if (!e->caster[0]) memcpy(e->caster, actor, strnlen(actor, sizeof(e->caster) - 1) + 1);
+    e->last_tick = GetTickCount();
+    return true;
+}
+
+// Build one merged per-target effect line. Empty `out` = nothing to say.
+void BuildEffectLine(const EffectTarget& e, char* out, size_t cap) {
+    const auto& L = acc::combat::loc::Get();
+    out[0] = '\0';
+
+    char dmg_clause[48] = "";
+    if (e.has_dmg && e.dmg > 0) {
+        if (e.dmg_type[0]) snprintf(dmg_clause, sizeof(dmg_clause), "%d %s", e.dmg, e.dmg_type);
+        else               snprintf(dmg_clause, sizeof(dmg_clause), "%d", e.dmg);
+    }
+    char von_action[120] = "";   // " von <action>"
+    if (e.action[0]) snprintf(von_action, sizeof(von_action), " %s %s", L.word_von, e.action);
+    char action_only[110] = "";  // " <action>"
+    if (e.action[0]) snprintf(action_only, sizeof(action_only), " %s", e.action);
+
+    if (e.has_save && e.saved) {
+        // Resisted: "<target> widersteht <action>[, <dmg>], <SaveType>"
+        if (dmg_clause[0])
+            snprintf(out, cap, "%s %s%s, %s, %s",
+                     e.target, L.word_resists, action_only, dmg_clause, e.save_type);
+        else
+            snprintf(out, cap, "%s %s%s, %s",
+                     e.target, L.word_resists, action_only, e.save_type);
+    } else if (e.has_save && !e.saved) {
+        // Failed save: damage and/or status, tagged "<SaveType> misslungen".
+        if (dmg_clause[0] && e.status[0])
+            snprintf(out, cap, "%s: %s%s, %s, %s %s",
+                     e.target, dmg_clause, von_action, e.status, e.save_type, L.word_save_failed);
+        else if (dmg_clause[0])
+            snprintf(out, cap, "%s: %s%s, %s %s",
+                     e.target, dmg_clause, von_action, e.save_type, L.word_save_failed);
+        else if (e.status[0])
+            snprintf(out, cap, "%s %s%s, %s %s",
+                     e.target, e.status, von_action, e.save_type, L.word_save_failed);
+        else
+            snprintf(out, cap, "%s%s, %s %s",
+                     e.target, action_only, e.save_type, L.word_save_failed);
+    } else {
+        // No save (direct damage / status): "<target>: <dmg> von <action>[, <status>]"
+        char status_clause[80] = "";
+        if (e.status[0]) snprintf(status_clause, sizeof(status_clause), ", %s", e.status);
+        if (dmg_clause[0])
+            snprintf(out, cap, "%s: %s%s%s", e.target, dmg_clause, von_action, status_clause);
+        else if (e.status[0])
+            snprintf(out, cap, "%s%s%s", e.target, action_only, status_clause);
+        // else: a bare save-less, damage-less, status-less line — nothing to say.
+    }
+}
+
+// Speak (and clear) one accumulated effect slot. Party-relevant only — an
+// NPC-vs-NPC power exchange is logged but not spoken, matching the weapon path.
+void FlushEffect(EffectTarget& e) {
+    char line[300];
+    BuildEffectLine(e, line, sizeof(line));
+    if (line[0]) {
+        auto& r = acc::msg::Router::Instance();
+        // Suppress ONLY a positively-identified NPC-vs-NPC effect: a known
+        // non-party caster acting on a non-party target. An unknown caster
+        // (powers that emit no "benutzt" line — e.g. a Betäuben queued during
+        // pause) defaults to announce: in the player's own fight an
+        // unattributed effect is almost always something we caused.
+        bool caster_is_party = (e.caster[0] && IsPartyMember(e.caster));
+        bool target_is_party = IsPartyMember(e.target);
+        bool known_npc_vs_npc =
+            (e.caster[0] && !caster_is_party && !target_is_party);
+        if (!known_npc_vs_npc) { r.Speak(line); r.LogEmit("emit-effect", line); }
+        else                   { r.LogEmit("emit-effect-suppressed", line); }
+    }
+    e = {};  // clears used
+}
+
+// Flush the pending absorb burst as one spoken total. Reconstructed from the
+// captured namepart + engine anchor + accumulated total + suffix.
+void FlushAbsorb() {
+    if (g_absorb_count == 0) return;
+    const auto& L = acc::combat::loc::Get();
+    char line[256];
+    snprintf(line, sizeof(line), "%s%s %d%s",
+             g_absorb_namepart, L.absorb_anchor, g_absorb_total, g_absorb_suffix);
+    auto& r = acc::msg::Router::Instance();
+    r.Speak(line);
+    r.LogEmit("emit-absorb", line);
+    g_absorb_namepart[0] = '\0';
+    g_absorb_suffix[0]   = '\0';
+    g_absorb_total = 0;
+    g_absorb_count = 0;
+}
+
+// Accumulate a damage-absorption line into the pending burst (claimed — no
+// raw speech). TickCombatAbsorb flushes it on the debounce.
+bool RuleAbsorb(const char* text) {
+    const auto& L = acc::combat::loc::Get();
+    const char* a = strstr(text, L.absorb_anchor);
+    if (!a) return false;
+    const char* p = a + strlen(L.absorb_anchor);
+    while (*p == ' ') ++p;
+    if (*p < '0' || *p > '9') return false;   // unexpected shape — let it speak raw
+    int pts = atoi(p);
+    const char* numEnd = p;
+    while (*numEnd >= '0' && *numEnd <= '9') ++numEnd;
+
+    char namepart[160];
+    size_t nlen = (size_t)(a - text);
+    if (nlen >= sizeof(namepart)) nlen = sizeof(namepart) - 1;
+    memcpy(namepart, text, nlen);
+    namepart[nlen] = '\0';
+
+    char suffix[64];
+    const char* cut = strstr(numEnd, " :");        // drop "...: M Punkte verbleiben"
+    const char* e   = cut ? cut : numEnd + strlen(numEnd);
+    size_t slen = (size_t)(e - numEnd);
+    if (slen >= sizeof(suffix)) slen = sizeof(suffix) - 1;
+    memcpy(suffix, numEnd, slen);
+    suffix[slen] = '\0';
+
+    // A different absorber than the pending burst → flush the old one first.
+    if (g_absorb_count > 0 && strcmp(namepart, g_absorb_namepart) != 0) {
+        FlushAbsorb();
+    }
+    DWORD now = GetTickCount();
+    if (g_absorb_count == 0) g_absorb_first_tick = now;
+    memcpy(g_absorb_namepart, namepart, nlen + 1);
+    memcpy(g_absorb_suffix,   suffix,   slen + 1);
+    g_absorb_total += pts;
+    ++g_absorb_count;
+    g_absorb_last_tick = now;
+    return true;  // claimed
+}
+
+// Bedrohungsstatistik is the critical-hit *confirmation* roll. Its only
+// actionable outcome — did the hit crit — is already carried by the summary's
+// "Kritischer Treffer!" tag, which the merged attack line speaks as
+// ", kritisch". The roll math (threat range, confirmation attack vs defense)
+// is review-log detail, so claim + suppress it instead of speaking it raw.
 bool RuleBedrohung(const char* text) {
-    if (!g_pending.has_summary) return false;
     const auto& L = acc::combat::loc::Get();
     if (!MsgStartsWith(text, L.prefix_bedrohung)) return false;
-    acc::msg::Router::Instance().Speak(text);
-    return true;  // claimed: speak handled here, don't fall through
+    return true;  // claimed, no speech
+}
+
+// "<actor> neutralisiert <target>: N EPs" — a defeat. Speak it verbatim, but
+// route through the urgent SAPI channel so a kill cuts through queued combat
+// chatter instead of waiting behind it.
+bool RuleKill(const char* text) {
+    const auto& L = acc::combat::loc::Get();
+    if (!strstr(text, L.kill_marker)) return false;
+    prism::SpeakUrgent(text);
+    return true;  // claimed: urgent speech handled here
 }
 
 void OnUnmatched(const char* /*text*/) {
@@ -755,8 +1179,32 @@ void RegisterCombatMsgRules() {
     r.AddRule("CombatAngriff",   RuleAngriff);
     r.AddRule("CombatAbwehr",    RuleAbwehr);
     r.AddRule("CombatSchaden",   RuleSchaden);
+    r.AddRule("CombatAuswirkung", RuleAuswirkung);
+    r.AddRule("CombatAbsorb",    RuleAbsorb);
+    r.AddRule("CombatAbilityUse", RuleAbilityUse);
+    r.AddRule("CombatSaveThrow", RuleSaveThrow);
+    r.AddRule("CombatDirectDamage", RuleDirectDamage);
+    r.AddRule("CombatKill",      RuleKill);
     r.AddRule("CombatBedrohung", RuleBedrohung);
     r.AddOnUnmatched(OnUnmatched);
+}
+
+void TickCombatAbsorb() {
+    if (g_absorb_count == 0) return;
+    DWORD now = GetTickCount();
+    bool quiet  = (now - g_absorb_last_tick)  >= kAbsorbQuietMs;
+    bool maxAge = (now - g_absorb_first_tick) >= kAbsorbMaxHoldMs;
+    if (quiet || maxAge) FlushAbsorb();
+}
+
+void TickCombatEffects() {
+    DWORD now = GetTickCount();
+    for (int i = 0; i < kMaxFx; ++i) {
+        if (!g_fx[i].used) continue;
+        bool quiet  = (now - g_fx[i].last_tick)  >= kFxQuietMs;
+        bool maxAge = (now - g_fx[i].first_tick) >= kFxMaxHoldMs;
+        if (quiet || maxAge) FlushEffect(g_fx[i]);
+    }
 }
 
 }  // namespace acc::combat

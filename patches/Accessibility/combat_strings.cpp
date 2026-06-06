@@ -64,6 +64,21 @@ const MsgStrings kDe = {
     "Reichweite ",
     "Effekt ",
     "Bonus",
+
+    // ---- Short results-only line labels
+    "fehlgeschlagen",              // word_failed
+    "Auswirkungsstatistik:",       // prefix_auswirkung
+    "absorbiert",                  // absorb_anchor
+
+    // ---- Ability / grenade / force-power effect sequence
+    " benutzt ",                   // ability_use_marker
+    "-Rettungswurf.",              // save_marker
+    "Erfolg!",                     // save_success
+    "Misserfolg!",                 // save_fail
+    " verletzt ",                  // damage_marker
+    "widersteht",                  // word_resists
+    "misslungen",                  // word_save_failed
+    "neutralisiert",               // kill_marker
 };
 
 // English — engine anchors extracted from EN dialog.tlk on 2026-05-28
@@ -114,6 +129,22 @@ const MsgStrings kEn = {
     "Close-range ",                // short_reichweite (engine label is verbose "Close Proximity Ranged Bonus")
     "Effect ",                     // short_effekt
     "Bonus",                       // short_bonus
+
+    // ---- Short results-only line labels
+    "failed",                      // word_failed
+    "\x01_no_auswirkung_anchor_",  // prefix_auswirkung — TODO: extract EN anchor
+    "\x01_no_absorb_anchor_",      // absorb_anchor — TODO: extract EN anchor
+
+    // ---- Ability effect sequence — TODO: extract EN anchors (sentinels =
+    // rules never fire; lines fall through to raw speech, no regression)
+    "\x01_no_use_marker_",         // ability_use_marker
+    "\x01_no_save_marker_",        // save_marker
+    "\x01_no_save_success_",       // save_success
+    "\x01_no_save_fail_",          // save_fail
+    "\x01_no_damage_marker_",      // damage_marker
+    "resists",                     // word_resists (unused until anchors set)
+    "failed",                      // word_save_failed
+    "\x01_no_kill_marker_",        // kill_marker — TODO: extract EN anchor
 };
 
 // French — engine anchors extracted from FR dialog.tlk on 2026-05-28
@@ -168,6 +199,21 @@ const MsgStrings kFr = {
     "Port\xE9""e ",                     // short_reichweite
     "Effet ",                           // short_effekt
     "Bonus",                            // short_bonus
+
+    // ---- Short results-only line labels
+    "rat\xE9",                          // word_failed
+    "\x01_no_auswirkung_anchor_",       // prefix_auswirkung — TODO: extract FR anchor
+    "\x01_no_absorb_anchor_",           // absorb_anchor — TODO: extract FR anchor
+
+    // ---- Ability effect sequence — TODO: extract FR anchors
+    "\x01_no_use_marker_",              // ability_use_marker
+    "\x01_no_save_marker_",             // save_marker
+    "\x01_no_save_success_",            // save_success
+    "\x01_no_save_fail_",               // save_fail
+    "\x01_no_damage_marker_",           // damage_marker
+    "r\xE9siste",                       // word_resists
+    "\xE9""chou\xE9",                   // word_save_failed
+    "\x01_no_kill_marker_",             // kill_marker — TODO: extract FR anchor
 };
 
 // Italian — engine anchors extracted from IT dialog.tlk on 2026-05-28
@@ -219,6 +265,21 @@ const MsgStrings kIt = {
     "Vicinanza ",                       // short_reichweite (engine label "Bonus di Vicinanza")
     "Effetto ",                         // short_effekt
     "Bonus",                            // short_bonus
+
+    // ---- Short results-only line labels
+    "fallito",                          // word_failed
+    "\x01_no_auswirkung_anchor_",       // prefix_auswirkung — TODO: extract IT anchor
+    "\x01_no_absorb_anchor_",           // absorb_anchor — TODO: extract IT anchor
+
+    // ---- Ability effect sequence — TODO: extract IT anchors
+    "\x01_no_use_marker_",              // ability_use_marker
+    "\x01_no_save_marker_",             // save_marker
+    "\x01_no_save_success_",            // save_success
+    "\x01_no_save_fail_",               // save_fail
+    "\x01_no_damage_marker_",           // damage_marker
+    "resiste",                          // word_resists
+    "fallito",                          // word_save_failed
+    "\x01_no_kill_marker_",             // kill_marker — TODO: extract IT anchor
 };
 
 // Spanish — engine anchors extracted from ES dialog.tlk on 2026-05-28
@@ -271,6 +332,21 @@ const MsgStrings kEs = {
     "Proximidad ",                           // short_reichweite (engine label is verbose "Proximidad Cercana a distancia")
     "Efecto ",                               // short_effekt
     "Bonus",                                 // short_bonus
+
+    // ---- Short results-only line labels
+    "fallado",                               // word_failed
+    "\x01_no_auswirkung_anchor_",            // prefix_auswirkung — TODO: extract ES anchor
+    "\x01_no_absorb_anchor_",                // absorb_anchor — TODO: extract ES anchor
+
+    // ---- Ability effect sequence — TODO: extract ES anchors
+    "\x01_no_use_marker_",                   // ability_use_marker
+    "\x01_no_save_marker_",                  // save_marker
+    "\x01_no_save_success_",                 // save_success
+    "\x01_no_save_fail_",                    // save_fail
+    "\x01_no_damage_marker_",                // damage_marker
+    "resiste",                               // word_resists
+    "fallado",                               // word_save_failed
+    "\x01_no_kill_marker_",                  // kill_marker — TODO: extract ES anchor
 };
 
 }  // namespace

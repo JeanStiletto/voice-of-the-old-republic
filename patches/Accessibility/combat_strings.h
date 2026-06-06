@@ -62,6 +62,44 @@ struct MsgStrings {
     const char* short_reichweite;    // "Reichweite "
     const char* short_effekt;        // "Effekt "
     const char* short_bonus;         // "Bonus"       (no trailing space — value follows " 5")
+
+    // ---- Short results-only line labels (Phase 2 spoken form).
+    const char* word_failed;         // "fehlgeschlagen" — miss line: "<actor>, fehlgeschlagen, <feat>"
+
+    // Engine's trailing duplicate of an applied status ("Auswirkungsstatistik:
+    // <target> ist <status>"). We already fold status into the merged attack
+    // line from the summary tail, so this line is claimed + suppressed.
+    // Non-DE locales: anchor not yet verified — a non-matching sentinel there
+    // leaves the line on the raw-speech fallback (no regression).
+    const char* prefix_auswirkung;   // "Auswirkungsstatistik:"
+
+    // Damage-absorption lines ("<name> absorbiert N Punkte Schaden", and the
+    // resistance variant "<name> : Schadensresistenz absorbiert N Punkte
+    // Schaden : M Punkte verbleiben"). The engine fires one per blocked hit,
+    // so a sustained shield spams dozens of lines. We coalesce a burst into a
+    // single debounced total. anchor = the verb common to both forms; same
+    // non-matching-sentinel rule for unverified locales.
+    const char* absorb_anchor;       // "absorbiert"
+
+    // ---- Ability / grenade / force-power effect sequence (Phase 3).
+    // These power events arrive as separate lines we merge per target:
+    //   use:    "<actor> benutzt <action>."  [+ " Investierte Machtpunkte: ..."]
+    //   save:   "<saver> <SaveType>-Rettungswurf. Erfolg!|Misserfolg! ..."
+    //   damage: "<actor> verletzt <target>: N Schaden (Type: N)"
+    //   status: "Auswirkungsstatistik:<target> ist <status>"  (prefix_auswirkung)
+    // Same non-matching-sentinel rule for unverified locales (anchors only —
+    // output words are never reached when the anchors don't fire).
+    const char* ability_use_marker;  // " benutzt "
+    const char* save_marker;         // "-Rettungswurf."
+    const char* save_success;        // "Erfolg!"
+    const char* save_fail;           // "Misserfolg!"
+    const char* damage_marker;       // " verletzt "
+    const char* word_resists;        // "widersteht" — save-success verb
+    const char* word_save_failed;    // "misslungen" — save-failure tag
+
+    // Defeat/kill line ("<actor> neutralisiert <target>: N EPs"). Routed
+    // through the urgent SAPI channel so a kill cuts through queued speech.
+    const char* kill_marker;         // "neutralisiert"
 };
 
 const MsgStrings& Get();

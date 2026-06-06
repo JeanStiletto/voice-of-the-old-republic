@@ -241,6 +241,8 @@ void Dispatch() {
     // examine view, specials heartbeat.
     PHASE("combat.mode", acc::combat::TickCombatMode());
     PHASE("combat.log", acc::combat::TickCombatLog());
+    PHASE("combat.absorb", acc::combat::TickCombatAbsorb());
+    PHASE("combat.effects", acc::combat::TickCombatEffects());
     PHASE("combat.leaderChange", acc::combat::query::TickLeaderChangeAutoAnnounce());
     PHASE("combat.queue", acc::combat::queue::Tick());
     PHASE("combat_diag", acc::combat_diag::Tick());
