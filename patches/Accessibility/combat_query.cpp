@@ -196,7 +196,7 @@ int ReadEffectCount(void* serverObject) {
 // localized effect-type names — sighted-player parity for the buff/debuff
 // icon row on the target portrait. Mapped types only (unmapped engine
 // types skipped, since they'd surface as "Effect #N" noise during auto-
-// firing Q/E cycle announcements; user can Shift+H for full enumeration).
+// firing Q/E cycle announcements; user can Ö for full enumeration).
 // Caps at 5 distinct names to keep speech terse.
 //
 // Returns true when at least one named effect was written; outBuf is
@@ -224,7 +224,7 @@ bool BuildEffectsSummary(void* serverObject, char* outBuf, size_t outBufSize) {
                 reinterpret_cast<unsigned char*>(eff) +
                 kGameEffectTypeOffset));
             const char* name = acc::examine_view::EffectName(type);
-            if (!name) continue;  // unmapped — skip in brief, Shift+H lists it
+            if (!name) continue;  // unmapped — skip in brief, Ö examine lists it
 
             bool dup = false;
             for (int j = 0; j < seenCount; ++j) {

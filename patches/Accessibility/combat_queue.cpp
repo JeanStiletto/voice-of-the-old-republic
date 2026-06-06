@@ -245,9 +245,12 @@ uint32_t ReadActionItemHandle(void* action) {
 // One row per queued action, across every party member's combat round.
 // Built at Open() and rebuilt after every mutation (remove / clear).
 //
-// The party walk uses CSWPartyTable.pt_member_ids (engine_player.h).
-// pt_member_ids[0] is the chargen PC (its display-name lookup returns
-// empty so we fall back to GetPlayerCharacterName for that slot only).
+// The controlled creature is added first via GetPlayerServerCreature
+// (the same path the "Platz N" announce uses). The remaining party
+// members come from CSWPartyTable.pt_member_ids via GetPartyMembers —
+// those are NPC *roster* slots (companions); the PC is not a roster NPC
+// and never appears there, which is why the player's own queue must be
+// sourced separately (see BuildRows).
 struct Row {
     void*    creature;     // CSWSCreature* — owner of this action
     void*    combatRound;  // CSWSCombatRound* — for tail-remove dispatch
@@ -270,26 +273,19 @@ struct State {
 
 State g_state;
 
-// Resolve the display name for a party member by handle.
-// pt_member_ids[0] is the chargen PC — GetObjectDisplayNameByHandle
-// returns the engine's universal name which is empty for the PC stats
-// (see engine_player::GetPlayerCharacterName header for the reason).
-// We pass isPC=true for that slot so the fallback hits the chargen
-// name slot.
-void ResolveMemberName(uint32_t handle, bool isPC,
-                       char* outBuf, size_t bufSize) {
+// Resolve the display name for a companion party member by handle.
+// GetObjectDisplayNameByHandle returns the engine's universal localized
+// name (Trask, Carth, ...). The controlled creature (PC) is named
+// separately in BuildRows via GetActiveLeaderName, so this path only
+// sees companions; the chargen-name fallback is kept purely as a guard
+// for the rare empty-display-name read.
+void ResolveMemberName(uint32_t handle, char* outBuf, size_t bufSize) {
     if (!outBuf || bufSize == 0) return;
     outBuf[0] = '\0';
-    if (!isPC) {
-        if (acc::engine::GetObjectDisplayNameByHandle(handle, outBuf,
-                                                     bufSize) &&
-            outBuf[0] != '\0') {
-            return;
-        }
+    if (acc::engine::GetObjectDisplayNameByHandle(handle, outBuf, bufSize) &&
+        outBuf[0] != '\0') {
+        return;
     }
-    // PC slot, or display-name path returned empty — fall back to the
-    // chargen-name accessor. This is the same fallback chain
-    // GetActiveLeaderName uses for the controlled creature.
     acc::engine::GetPlayerCharacterName(outBuf, bufSize);
 }
 
@@ -298,30 +294,39 @@ void ResolveMemberName(uint32_t handle, bool isPC,
 int BuildRows() {
     g_state.count = 0;
 
+    // The controlled creature's queue comes FIRST, via GetPlayerServer
+    // creature — the same accessor CountPlayerEntries (the "Platz N"
+    // announce) uses. This is the only path that reliably reaches the
+    // player's own combat round: the party-table walk below resolves NPC
+    // *roster* slots (companions), and the PC is not a roster NPC, so it
+    // never appears there. Sourcing it from the party walk produced an
+    // empty queue while the player had actions queued (fixed 2026-06-07).
+    void* leader = acc::engine::GetPlayerServerCreature();
+    if (leader) {
+        void* round = ReadCombatRound(leader);
+        if (round) {
+            int local = CountQueueEntries(round);
+            for (int i = 0; i < local && g_state.count < kMaxRows; ++i) {
+                Row& r = g_state.rows[g_state.count++];
+                r.creature = leader;
+                r.combatRound = round;
+                r.perCreatureIdx = i;
+                r.perCreatureCount = local;
+                r.charName[0] = '\0';
+                acc::engine::GetActiveLeaderName(r.charName,
+                                                 sizeof(r.charName));
+            }
+        }
+    }
+
+    // Append every other party member's queue. GetPartyMembers resolves
+    // pt_member_ids (NPC roster slots) to live companion handles. Skip any
+    // companion that resolves to the controlled creature — Tab can hand
+    // control to a companion, in which case it would appear both here and
+    // as `leader` above.
     uint32_t handles[kPartyTableMaxMembers] = {};
     int      n = acc::engine::GetPartyMembers(
         handles, kPartyTableMaxMembers);
-
-    // Fallback: if the party table is unreadable (early init, very
-    // first beat of a new save), at least surface the controlled
-    // creature's queue rather than going silent.
-    if (n <= 0) {
-        void* leader = acc::engine::GetPlayerServerCreature();
-        if (!leader) return 0;
-        void* round = ReadCombatRound(leader);
-        if (!round) return 0;
-        int local = CountQueueEntries(round);
-        for (int i = 0; i < local && g_state.count < kMaxRows; ++i) {
-            Row& r = g_state.rows[g_state.count++];
-            r.creature = leader;
-            r.combatRound = round;
-            r.perCreatureIdx = i;
-            r.perCreatureCount = local;
-            r.charName[0] = '\0';
-            acc::engine::GetActiveLeaderName(r.charName, sizeof(r.charName));
-        }
-        return g_state.count;
-    }
 
     for (int m = 0; m < n; ++m) {
         uint32_t handle = handles[m];
@@ -336,14 +341,14 @@ int BuildRows() {
             // returns the server CSWSObject* directly.
             creature = acc::engine::ResolveClientObjectHandle(handle);
         }
-        if (!creature) continue;
+        if (!creature || creature == leader) continue;
         void* round = ReadCombatRound(creature);
         if (!round) continue;
         int local = CountQueueEntries(round);
         if (local <= 0) continue;
 
         char name[64] = "";
-        ResolveMemberName(handle, /*isPC=*/m == 0, name, sizeof(name));
+        ResolveMemberName(handle, name, sizeof(name));
 
         for (int i = 0; i < local && g_state.count < kMaxRows; ++i) {
             Row& r = g_state.rows[g_state.count++];
@@ -496,7 +501,7 @@ int CountPlayerEntries() {
     // free the node.
     //
     // We deliberately bypass the 0xFF-placeholder filter that
-    // CountQueueEntries (used by the Shift+K row walk) applies. The
+    // CountQueueEntries (used by the Shift+H row walk) applies. The
     // placeholder slot is part of the engine's queue from the cap-
     // mechanic's point of view; filtering it produces off-by-one
     // announcements where the first press in a fresh combat reads as
@@ -678,7 +683,7 @@ void Tick() {
 }
 
 void PollWin32Hotkey() {
-    // Default open hotkey: Shift+K (Action::CombatQueueOpen).
+    // Default open hotkey: Shift+H (Action::CombatQueueOpen).
     if (!acc::hotkeys::Pressed(acc::hotkeys::Action::CombatQueueOpen)) return;
 
     Vector unused;

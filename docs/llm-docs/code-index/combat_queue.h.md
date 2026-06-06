@@ -17,4 +17,4 @@ Self-disarms when queue empties between ticks. Positional (non-tail) remove is u
 - L33 — `void Tick()`
   note: auto-disarms if queue drains between keypresses; also obeys module-load latch
 - L34 — `void PollWin32Hotkey()`
-  note: opens queue on Action::CombatQueueOpen (Shift+K); self-gates on GetPlayerPosition
+  note: opens queue on Action::CombatQueueOpen (Shift+H); self-gates on GetPlayerPosition

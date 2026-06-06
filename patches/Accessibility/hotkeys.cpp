@@ -189,11 +189,20 @@ void InitDefaults() {
     bind(Action::TargetActionOpen2,    '2',       0, kModShift, 0);
     bind(Action::TargetActionOpen3,    '3',       0, kModShift, 0);
     bind(Action::LevelUpOpen,          'L',       0, kModShift, 0);
-    bind(Action::ExamineOpen,          'H',       0, kModShift, 0);
-    bind(Action::CombatQueueOpen,      'K',       0, kModShift, 0);
+    // Bare Ö (VK_OEM_3 on the German layout — the right-pinky home key).
+    // The engine binds every quick-menu *letter* (J/K/L/M, U/I/O/P), so a
+    // Shift+letter open would leak to the engine's screen on the bare key
+    // (e.g. Shift+K still opened Skills). Ö is engine-unbound, so a bare
+    // press is safe; forbid every modifier so it stays distinct.
+    bind(Action::ExamineOpen,          VK_OEM_3,  0, 0,
+                                       kModShift | kModCtrl | kModAlt | kModAltGr);
+    // Shift+H — H is engine-unbound, so Shift+H does NOT leak to any engine
+    // screen (unlike the former Shift+K, which the engine read as plain K =
+    // Skills/Feats/Force Powers). Bare H below is SelfStatusAnnounce.
+    bind(Action::CombatQueueOpen,      'H',       0, kModShift, 0);
     // Bare H — quick HP / effects / equipped-weapon readout for the
-    // currently-controlled leader. Shift+H is ExamineOpen (the foreign-
-    // target inspect path), so forbid every modifier here to keep the
+    // currently-controlled leader. Shift+H is CombatQueueOpen (the
+    // action-queue submenu), so forbid every modifier here to keep the
     // two routes distinct.
     bind(Action::SelfStatusAnnounce,   'H',       0, 0,
                                        kModShift | kModCtrl | kModAlt | kModAltGr);
@@ -482,6 +491,7 @@ const char* VkLabel(int vk) {
     case VK_OEM_PERIOD: return ".";
     case VK_OEM_MINUS:  return "-";
     case VK_OEM_2:      return "/";
+    case VK_OEM_3:      return "\xD6";  // Ö on the German layout
     case VK_RMENU:      return "AltGr";
     case VK_LMENU:      return "LAlt";
     case VK_MENU:       return "Alt";

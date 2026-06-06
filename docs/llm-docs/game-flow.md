@@ -237,7 +237,7 @@ each tick in `combat::TickCombatMode`. Stability-debounce pattern (same as
   `SavingThrowRoll @0x5b92b0` or `BroadcastSavingThrowData @0x4ec760`.
   Status: open.
 
-**Examine view (Shift+H)**
+**Examine view (Ö)**
 - Synthetic in-DLL listbox (`examine_view.h`). Rows rebuild per step for
   live HP / distance. Surfaces: `CSWSObject::GetDamageLevel @0x4cb020`,
   `CSWSCreature::GetMaxHitPoints @0x4ed310`, `effects @+0x124`, inventory
@@ -245,7 +245,7 @@ each tick in `combat::TickCombatMode`. Stability-debounce pattern (same as
 - `OnControlEntered` gate: `is_active @+0x4c` must be forced to 1 around
   the call for equipment-row rows that stay at 0 in mouse-driven play.
 
-**Action queue submenu (Shift+K)**
+**Action queue submenu (Shift+H)**
 - `combat_queue.h`. Walks `combat_round.actions` linked list; filters
   `type=0xFF` placeholder. Action-type byte enum mapping disabled
   (inferred values were wrong); all entries render as "Aktion" until

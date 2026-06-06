@@ -64,4 +64,4 @@ equipment slots, effects, feats) and serves them on Up/Down navigation.
 - L836 — `void Tick()`
   note: only self-disarms; no narration here — all speech driven from HandleInputEvent
 - L847 — `void PollWin32Hotkey()`
-  note: toggle: pressing Shift+H while active closes the view
+  note: toggle: pressing Ö while active closes the view

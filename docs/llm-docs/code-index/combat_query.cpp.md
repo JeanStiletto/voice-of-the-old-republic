@@ -1,7 +1,7 @@
 # combat_query.cpp
 
 Implements leader-change announce, Phase 2B (target combat brief enrichment for Q/E
-cycle), and Phase 2C (Shift+H Examine + bare-H self-status). All paths read-only;
+cycle), and Phase 2C (Ö Examine + bare-H self-status). All paths read-only;
 no engine re-entry beyond documented accessors.
 
 ## Declarations (in source order)
@@ -43,7 +43,7 @@ no engine re-entry beyond documented accessors.
 - L746 — `void TickExaminePanel()`
   note: logs panel open/close edges; no speech emitted (speech owned by HotkeyShiftH + kExamineSpec)
 - L810 — `void PollWin32Hotkey()`
-  note: Win32 poll for Shift+H; self-gates on GetPlayerPosition
+  note: Win32 poll for Ö; self-gates on GetPlayerPosition
 - L824 — `void SpeakSelfStatus()`
   note: bare-H — reads client HP, BuildEffectsSummary, equipped weapons; falls back to cur-only phrase when max=0
 - L890 — `void PollWin32SelfStatusHotkey()`

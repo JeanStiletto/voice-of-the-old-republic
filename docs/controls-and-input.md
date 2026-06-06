@@ -161,8 +161,8 @@ When this document and `hotkeys.cpp` disagree, `hotkeys.cpp` wins. Update both t
 - 4 / 5 / 6 / 7 — Bare announce of the player action bar column (engine fires; we add the speech). Not consumed.
 - Shift+4 / Shift+5 / Shift+6 / Shift+7 — Open the action-bar submenu for column N (cycle column variants).
 - Shift+L — Open the engine's level-up panel directly (bypass chargen-tab chain — escape hatch for the tutorial level).
-- Shift+H — Open the Examine panel for the currently-selected target.
-- Shift+K — Open the combat-queue submenu (review / clear queued actions).
+- Ö — Open the Examine panel for the currently-selected target (toggle).
+- Shift+H — Open the combat-queue submenu (review / clear queued actions).
 
 ### In-world cycle (Pillar 4)
 

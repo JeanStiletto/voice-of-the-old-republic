@@ -65,9 +65,9 @@ La mod mantiene intatta la mappa dei tasti predefinita del gioco. Tutto ciò che
 
 - Invio — Attiva l'azione predefinita sul bersaglio attualmente annunciato (equivalente a un clic Mouse 1 nel mondo)
 - Shift+Invio — Apri il menu azioni radiale sul bersaglio attuale
-- Shift+H — Leggi il pannello Esamina per il bersaglio attuale
+- Ö — Leggi il pannello Esamina per il bersaglio attuale (alterna)
 - Shift+L — Apri il pannello di passaggio di livello
-- Shift+K — Apri il sottomenu coda combattimento (rivedi o svuota le azioni in coda)
+- Shift+H — Apri il sottomenu coda combattimento (rivedi o svuota le azioni in coda)
 
 <h3>Tasti della mod — ciclo nel mondo</h3>
 

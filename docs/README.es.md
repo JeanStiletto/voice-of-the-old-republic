@@ -65,9 +65,9 @@ El mod mantiene intacto el mapa de teclas predeterminado del juego. Cualquier co
 
 - Intro — Activa la acción predeterminada sobre el objetivo actualmente anunciado (equivalente a un clic de Ratón 1 en el mundo)
 - Shift+Intro — Abre el menú de acciones radial sobre el objetivo actual
-- Shift+H — Lee el panel Examinar para el objetivo actual
+- Ö — Lee el panel Examinar para el objetivo actual (alternar)
 - Shift+L — Abre el panel de subida de nivel
-- Shift+K — Abre el submenú de cola de combate (revisar o vaciar las acciones en cola)
+- Shift+H — Abre el submenú de cola de combate (revisar o vaciar las acciones en cola)
 
 <h3>Teclas del mod — ciclo en el mundo</h3>
 

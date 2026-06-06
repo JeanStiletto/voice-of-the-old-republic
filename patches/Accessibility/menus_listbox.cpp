@@ -1122,7 +1122,7 @@ constexpr ListBoxPanelSpec kWorkbenchUpgradeSpec = {
 // AnnouncePanelTitle path in menus.cpp.
 
 // ============================================================================
-// Examine â€” CSWGuiExamine panel opened by Shift+H. Listbox is the embedded
+// Examine â€” CSWGuiExamine panel opened by Ö. Listbox is the embedded
 // CSWGuiMessageBox.listbox_message at +0x67c. The engine populates the
 // rows from a local object cache when ShowExamineBox(handle, 0) is called
 // (vtable[27] on the listbox does the populate-from-object â€” verified
@@ -1197,7 +1197,7 @@ constexpr const ListBoxPanelSpec* kSpecs[] = {
     // Workbench panels (Phase: workbench accessibility).
     &kWorkbenchItemsSpec,
     &kWorkbenchUpgradeSpec,
-    // Combat-system plan, Phase 2C â€” Shift+H Examine engine panel.
+    // Combat-system plan, Phase 2C â€” Ö Examine engine panel.
     &kExamineSpec,
 };
 constexpr int kNumSpecs = static_cast<int>(sizeof(kSpecs) / sizeof(kSpecs[0]));

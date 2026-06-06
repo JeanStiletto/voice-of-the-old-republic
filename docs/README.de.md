@@ -65,9 +65,9 @@ Die Mod lässt das Standard-Tastaturlayout des Spiels unverändert. Alles, was u
 
 - Enter — Standardaktion auf dem aktuell angesagten Ziel auslösen (entspricht einem Maus-1-Klick in der Welt)
 - Shift+Enter — Radial-Aktionsmenü auf dem aktuellen Ziel öffnen
-- Shift+H — Untersuchen-Bildschirm für das aktuelle Ziel vorlesen
+- Ö — Untersuchen-Bildschirm für das aktuelle Ziel vorlesen (Umschalter)
 - Shift+L — Stufenaufstieg-Bildschirm öffnen
-- Shift+K — Kampfwarteschlangen-Submenü öffnen (Warteschlange prüfen oder leeren)
+- Shift+H — Kampfwarteschlangen-Submenü öffnen (Warteschlange prüfen oder leeren)
 
 <h3>Mod-Tasten — Welt-Zyklus</h3>
 

@@ -1274,7 +1274,7 @@ constexpr size_t    kGuiInGameAbilitiesTabOffset      = 0xbc0;
 
 // CSWSCreatureStats.feats @+0x0 — CExoArrayList<ushort>. Count lives
 // at +0x4 (size field of the list). Static feat list (granted at level-
-// up + class); doesn't drift mid-combat. Used by Shift+H to communicate
+// up + class); doesn't drift mid-combat. Used by the Ö examine view to communicate
 // "this creature has N feats" without enumerating them.
 constexpr size_t    kStatsFeatsListOffset             = 0x0;
 

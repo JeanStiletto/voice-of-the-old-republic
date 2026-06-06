@@ -1,4 +1,4 @@
-// Shift+H examine list view.
+// Ö examine list view.
 //
 // Synthetic in-DLL arrow-navigable list of pre-composed rows. KOTOR 1's
 // CSWGuiExamine is a generic TLK message box, not a rich examine panel,

@@ -65,9 +65,9 @@ Le mod conserve la table des touches par défaut du jeu. Tout ce qui n'est pas l
 
 - Entrée — Déclencher l'action par défaut sur la cible actuellement annoncée (équivaut à un clic de Souris 1 dans le monde)
 - Shift+Entrée — Ouvrir le menu d'actions radial sur la cible actuelle
-- Shift+H — Lire le panneau Examiner pour la cible actuelle
+- Ö — Lire le panneau Examiner pour la cible actuelle (bascule)
 - Shift+L — Ouvrir le panneau de gain de niveau
-- Shift+K — Ouvrir le sous-menu de file de combat (vérifier ou vider les actions en file)
+- Shift+H — Ouvrir le sous-menu de file de combat (vérifier ou vider les actions en file)
 
 <h3>Touches du mod — cycle dans le monde</h3>
 

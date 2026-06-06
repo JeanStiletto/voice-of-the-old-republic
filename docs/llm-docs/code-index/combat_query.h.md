@@ -4,7 +4,7 @@ Read-only queries over creature stats and the examine panel. No engine re-entry 
 documented accessors. Each entry self-gates on player loaded.
 
 Surfaces: leader-change auto-announce; cycle/passive-narrate enrichment for
-Creature-kind targets; Shift+H Examine; bare-H self-status.
+Creature-kind targets; Ö Examine; bare-H self-status.
 
 ## Declarations (in source order)
 
@@ -12,13 +12,13 @@ Creature-kind targets; Shift+H Examine; bare-H self-status.
 - `void TickLeaderChangeAutoAnnounce()`
   note: polls active leader name; speaks name only on change
 - `bool BuildTargetCombatBrief(void* targetServerObject, const char* targetName, char* outBuf, size_t outBufSize)`
-  note: appends condition/distance/effects/weapons suffix to outBuf; Creature-kind only; called by Q/E cycle and Shift+H
+  note: appends condition/distance/effects/weapons suffix to outBuf; Creature-kind only; called by Q/E cycle and Ö examine
 - L35 — `void HotkeyShiftH()`
   note: Phase 2C — resolves LastTarget, speaks name+brief opener; examine text per-row via TickExaminePanel
 - L37 — `void TickExaminePanel()`
   note: logs open/close edges only; speech is owned by HotkeyShiftH (opener) + menus_listbox kExamineSpec (rows)
 - L39 — `void PollWin32Hotkey()`
-  note: Win32 poll for Action::ExamineOpen (Shift+H); self-gates on player loaded
+  note: Win32 poll for Action::ExamineOpen (Ö); self-gates on player loaded
 - L42 — `void SpeakSelfStatus()`
   note: bare-H self-status — HP + active effects (deduped) + equipped weapons; always self, no distance
 - L45 — `void PollWin32SelfStatusHotkey()`

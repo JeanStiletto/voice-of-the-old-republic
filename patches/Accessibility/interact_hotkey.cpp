@@ -7,11 +7,11 @@
 #pragma comment(lib, "user32.lib")
 
 #include "actionbar_menu.h"
-#include "combat_query.h"   // Phase 2C — Shift+H Examine + Phase 2A PC stat read
-#include "combat_queue.h"   // Phase 3A — action-queue submenu (Shift+K)
+#include "combat_query.h"   // Phase 2C — Ö Examine + Phase 2A PC stat read
+#include "combat_queue.h"   // Phase 3A — action-queue submenu (Shift+H)
 #include "engine_actionbar.h"
 #include "engine_area.h"
-#include "examine_view.h"   // Phase 2C v2 — navigable Shift+H examine list
+#include "examine_view.h"   // Phase 2C v2 — navigable Ö examine list
 #include "engine_input.h"   // kInputEnter1 / kInputNavUp/Down/Left/Right
 #include "engine_levelup.h"
 #include "engine_manager.h"
@@ -634,11 +634,11 @@ void PollHotkey() {
         if (risingK7) AnnounceBarePersonalKey(2);
     }
 
-    // Combat system, Phase 2C — Shift+H opens the navigable examine view
+    // Combat system, Phase 2C — Ö opens the navigable examine view
     // (synthetic in-DLL listbox). Toggle: pressing again while open closes.
     acc::examine_view::PollWin32Hotkey();
 
-    // Combat system, Phase 3A — Shift+K opens the action-queue submenu.
+    // Combat system, Phase 3A — Shift+H opens the action-queue submenu.
     // The Open path also self-gates internally; route the submenu's
     // input dispatch below so Up/Down/Enter/Esc reach it while armed.
     acc::combat::queue::PollWin32Hotkey();

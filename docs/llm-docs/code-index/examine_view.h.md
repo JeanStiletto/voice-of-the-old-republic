@@ -1,6 +1,6 @@
 # examine_view.h (37 lines)
 
-Shift+H examine list view. Synthetic arrow-navigable list of pre-composed rows
+Ö examine list view. Synthetic arrow-navigable list of pre-composed rows
 for the focused/LastTarget creature. KOTOR's CSWGuiExamine is a plain TLK message
 box, so we build our own from direct field reads. Self-disarms when target is lost.
 

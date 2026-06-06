@@ -711,7 +711,7 @@ enum class Id : int {
     //      effects, main-hand weapon, off-hand weapon.
     //      Args `FmtTargetCombatBrief`: target_name (`%s`).
     //      `FactionHostile` / `FactionFriendly` / `FactionNeutral` —
-    //      faction-relation words (still used by the Shift+H examine
+    //      faction-relation words (still used by the Ö examine
     //      row, not by the Q/E brief).
     //      `TargetIsDead` — appended when the creature is dead.
     FmtTargetCombatBrief,
@@ -726,15 +726,15 @@ enum class Id : int {
     //   FmtBriefCondition      — args: damage-level word (`%s`). Skipped
     //                            when the target is at full HP so common
     //                            healthy-target transitions stay terse.
-    //   FmtBriefDistanceMeters — args: meters (`%d`). Q/E + Shift+H.
+    //   FmtBriefDistanceMeters — args: meters (`%d`). Q/E + Ö examine.
     //   FmtBriefEffects        — args: joined unique effect names (`%s`).
-    //                            Q/E only; Shift+H lists each effect
+    //                            Q/E only; Ö examine lists each effect
     //                            individually via the examine listbox.
     //   FmtBriefWielding       — args: main-hand item display name (`%s`).
     //   FmtBriefOffHand        — args: off-hand item display name (`%s`).
     //                            Dual-wield / shield / off-hand pistol.
-    //   FmtBriefEffectsCount   — args: count (`%d`). Shift+H only.
-    //   FmtBriefFeatsCount     — args: count (`%d`). Shift+H only.
+    //   FmtBriefEffectsCount   — args: count (`%d`). Ö examine only.
+    //   FmtBriefFeatsCount     — args: count (`%d`). Ö examine only.
     FmtBriefCondition,
     FmtBriefDistanceMeters,
     FmtBriefEffects,
@@ -754,13 +754,13 @@ enum class Id : int {
     FmtSelfStatusHp,
     FmtSelfStatusHpOf,
 
-    // ---- Combat system, Phase 2C — examine hotkey (Shift+H). Spoken on
+    // ---- Combat system, Phase 2C — examine hotkey (Ö). Spoken on
     //      open / close / no-target failure.
     ExamineOpened,
     ExamineNoTarget,
     ExamineFailed,
 
-    // ---- Examine view — navigable list opened by Shift+H. The view is
+    // ---- Examine view — navigable list opened by Ö. The view is
     //      a synthetic in-DLL listbox (no engine panel — KOTOR 1 doesn't
     //      have a real creature-examine panel). Up/Down step rows, Esc
     //      closes. See examine_view.cpp.

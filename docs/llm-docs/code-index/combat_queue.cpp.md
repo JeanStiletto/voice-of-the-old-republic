@@ -45,4 +45,4 @@ Up/Down/Enter/Esc navigation. Tail-only remove via RemoveLastAction.
 - L524 — `void Tick()`
   note: auto-disarms when queue drains between ticks; obeys module-load latch
 - L538 — `void PollWin32Hotkey()`
-  note: opens on Action::CombatQueueOpen (Shift+K); self-gates on GetPlayerPosition
+  note: opens on Action::CombatQueueOpen (Shift+H); self-gates on GetPlayerPosition

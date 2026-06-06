@@ -47,6 +47,11 @@ hotkey Y", "X no longer does Z"); keep technical detail short.
 - Repeated damage-absorption messages are gathered into one. When a shield or damage resistance is soaking hits the game prints a line for every blocked hit, so a sustained barrage produced a stream of identical "absorbs 5 points" messages. These are now summed into a single spoken total once the barrage settles, so you still hear that your protection is working and roughly how much it stopped, without the repetition.
 - Defeating an enemy is now announced promptly on the urgent speech channel, so a kill and the experience gained cut through rather than waiting behind other combat speech.
 
+<h3>Bug fixes:</h3>
+
+- The combat action-queue review has moved to a new key, and so has target Examine. The queue review used to open with Shift+K — but the game reads K as its own Skills / Feats / Force Powers screen and ignores the Shift, so every Shift+K also popped that screen open; this was most obvious when the queue was empty and nothing else happened. The queue review now opens with Shift+H, a key the game leaves alone, so it no longer triggers anything else. To free up Shift+H, the target Examine readout that used to live there has moved to the Ö key — pressed on its own, no Shift, the key your right little finger already rests on — and still toggles open and closed the same way.
+- Fixed the action-queue review (now Shift+H) wrongly saying "Aktionsschlange ist leer" while you actually had actions queued. It was reading the wrong characters' queues: it walked your companions but skipped your own main character entirely (the player is not held in the party roster the same way companions are), so any actions you had lined up on the character you control were invisible to it. It now reads your controlled character's queue first and your companions' after, so your queued actions appear and can be reviewed or cleared as intended.
+
 <h2>v0.3.1</h2>
 
 <h3>Navigation:</h3>
