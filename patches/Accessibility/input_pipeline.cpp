@@ -3,7 +3,7 @@
 #include <windows.h>
 #include <cstdint>
 
-#include "actionbar_menu.h"    // CurrentSelection — read the user's last
+#include "unified_action_menu.h"  // CurrentSelection — read the user's last
                                // chosen variant per slot so bare 4..7
                                // fires the same variant the submenu last
                                // announced
@@ -40,10 +40,6 @@
                              // re-announce path for the single-enemy
                              // combat case where the engine's cycle
                              // is a no-op but the user still expects
-#include "target_action_menu.h"  // CurrentSelection — read the user's last
-                                  // chosen variant per row so bare 1..3
-                                  // fires the same variant the submenu
-                                  // last announced
                              // an audible confirmation
 
 namespace acc::input {
@@ -159,8 +155,7 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
     // consumed-exit pattern needs the release through the normal path).
     if (param_2 != 0 &&
         (param_1 == kInputEsc1 || param_1 == kInputEsc2) &&
-        (acc::actionbar_menu::IsActive() ||
-         acc::target_action_menu::IsActive() ||
+        (acc::unified_menu::IsActive() ||
          acc::combat::queue::IsActive() ||
          acc::examine_view::IsActive())) {
         acclog::Write("Diag.ClientHIE",
@@ -289,7 +284,7 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
         if (barSlot >= 0) {
             void* mi = acc::engine_actionbar::ResolveMainInterface();
             if (mi) {
-                int idx = acc::actionbar_menu::CurrentSelection(barSlot);
+                int idx = acc::unified_menu::PersonalSelection(barSlot);
                 (void)acc::engine_actionbar::SelectVariant(mi, barSlot, idx);
             }
         }
@@ -311,7 +306,7 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
         if (targetRow >= 0) {
             void* tam = acc::engine_radial::ResolveTargetActionMenu();
             if (tam) {
-                int idx = acc::target_action_menu::CurrentSelection(targetRow);
+                int idx = acc::unified_menu::TargetSelection(targetRow);
                 (void)acc::engine_radial::SelectActionInRow(tam, targetRow, idx);
             }
         }

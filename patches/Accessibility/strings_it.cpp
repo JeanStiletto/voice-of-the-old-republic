@@ -86,6 +86,17 @@ const char* Get(Id id) {
         case Id::FmtFireQueueFull:        return "%s, coda piena";
         case Id::ActionBarCancelled:      return "Annullato";
 
+        case Id::MenuCatAttacks:       return "Attacchi";
+        case Id::MenuCatForcePowers:   return "Poteri della Forza";
+        case Id::MenuCatItems:         return "Oggetti";
+        case Id::MenuCatSelfPowers:    return "Poteri personali";
+        case Id::MenuCatMedical:       return "Medico";
+        case Id::MenuCatMisc:          return "Varie";
+        case Id::MenuCatExplosives:    return "Esplosivi";
+        case Id::FmtMenuCatMulti:      return "%s: %s, %d opzioni";
+        case Id::FmtMenuCatSingle:     return "%s: %s";
+        case Id::FmtMenuPlainMulti:    return "%s, %d opzioni";
+
         case Id::NoTooltipAvailable:   return "Nessuna descrizione disponibile";
 
         case Id::ContainerEmpty:       return "Vuoto";

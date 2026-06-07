@@ -32,6 +32,13 @@ constexpr int kInputActivate = 0x27;   // KEYBOARD_F1, engine's activate code
 constexpr int kInputHome     = 32;
 constexpr int kInputEnd      = 33;
 
+// Internal routing codes (NOT engine InputIndices) — interact_hotkey
+// synthesises these for the unified action menu when Ctrl is held with
+// Home/End, to jump to the first / last category. Picked well outside the
+// engine's small InputIndex range so they can't collide with a real event.
+constexpr int kInputCatFirst = 0x201;  // Ctrl+Home → first category
+constexpr int kInputCatLast  = 0x202;  // Ctrl+End  → last  category
+
 // Raw InputIndices for unmapped Pillar 4 cycle keys.
 // kInputKbAnnounce = physical key right of `.` (KEYBOARD_SLASH = 105) —
 // labelled `-` on QWERTZ, `/` on QWERTY, same physical position. Keeps

@@ -246,6 +246,32 @@ enum class Id : int {
     FmtFireQueueFull,
     ActionBarCancelled,
 
+    // ---- Unified action menu (Shift+Enter / Shift+1..7) category names +
+    //      announce formats. The menu announces a category by NAME as the
+    //      user moves Left/Right between categories.
+    //      Target block (hostile creature only):
+    MenuCatAttacks,        // row 0 — attacks + combat feats
+    MenuCatForcePowers,    // row 1 — hostile force powers
+    MenuCatItems,          // row 2 — throwables / usable items vs target
+    //      Personal block (always):
+    MenuCatSelfPowers,     // col 0 — self / buff force powers
+    MenuCatMedical,        // col 1 — medpacs, stims
+    MenuCatMisc,           // col 2 — misc usable items
+    MenuCatExplosives,     // col 3 — mines / grenades
+    //      Announce formats:
+    //      `FmtMenuCatMulti`  — named category, >1 entry. Args: category
+    //                           name (`%s`), selected entry label (`%s`),
+    //                           entry count (`%d`).
+    //      `FmtMenuCatSingle` — named category, exactly 1 entry. Args:
+    //                           category name (`%s`), entry label (`%s`).
+    //      `FmtMenuPlainMulti`— UNNAMED category (door/placeable target
+    //                           rows), >1 entry. Args: entry label (`%s`),
+    //                           entry count (`%d`). The 1-entry unnamed
+    //                           case speaks the bare label with no format.
+    FmtMenuCatMulti,
+    FmtMenuCatSingle,
+    FmtMenuPlainMulti,
+
     // ---- Generic tooltip fallback.
     //      `NoTooltipAvailable` — spoken when the user presses Shift+arrow
     //                             on a control / variant whose engine

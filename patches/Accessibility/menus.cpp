@@ -63,7 +63,6 @@
 #include "interact_hotkey.h"    // Phase 2 lay-off 9b
 #include "passive_narrate.h"    // Phase 2 lay-off 9a
 #include "peek_description.h"   // Shift+arrow description peek
-#include "radial_menu.h"        // CSWGuiTargetActionMenu input gate
 #include "spatial_change_detector.h"  // Phase 3 lay-off 3 — Pillar 1 Trigger 1
 #include "audio_footstep_suppress.h"  // Phase 3 lay-off 5 — stuck-detection
 #include "strings.h"            // Container loot panel announces
@@ -1600,37 +1599,11 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     // cursor is over the chain target.
     bool consumed = false;
 
-    // Radial action menu — embedded inside CSWGuiMainInterface, NOT a
-    // separate panel. Run its gate before the panel-kind switch: when the
-    // gate is armed (acc::picker::Drive opened a radial via PopulateMenus
-    // and it has at least one populated row) Up/Down switches rows,
-    // Left/Right cycles within a row via the engine's SelectNext/Prev,
-    // Enter dispatches via DoTargetAction, Esc disarms. See radial_menu.h
-    // for the full contract. Returns early because no other handler down
-    // this function knows about the radial.
-    if (acc::radial_menu::IsActive()) {
-        bool radialConsumed =
-            acc::radial_menu::HandleInputEvent(param_1, param_2);
-        // Always log the event so we can correlate keyboard pressure
-        // against the radial's state transitions in the patch log.
-        int translated = acc::engine::ManagerTranslateCode(param_1);
-        const char* tag = radialConsumed ? " RADIAL-CONSUMED" : " RADIAL-PASS";
-        if (translated != param_1) {
-            acclog::Write("Menus.Input", "#%d seq=%u this=%p key=logical(%d) -> %s(%d) val=%d%s",
-                          n, seq, thisPtr, param_1,
-                          acc::engine::InputIndexName(translated), translated,
-                          param_2, tag);
-        } else {
-            acclog::Write("Menus.Input", "#%d seq=%u this=%p key=%s(%d) val=%d%s",
-                          n, seq, thisPtr, acc::engine::InputIndexName(param_1),
-                          param_1, param_2, tag);
-        }
-        if (radialConsumed) return trackPress(1);
-        // Not consumed (e.g. release edge, or unhandled key like Tab):
-        // fall through to the existing handlers below so unrelated input
-        // still works while the radial is mounted (rare in practice; the
-        // user's hands are on Up/Down/Enter while navigating the radial).
-    }
+    // NOTE: the in-world action menu (unified_action_menu, Shift+Enter /
+    // Shift+1..7) is NOT routed through this manager hook. It pauses the
+    // world via an overlay hold and takes its nav/Enter/Esc keys through
+    // interact_hotkey's Win32 poll; the engine-pause-menu open on Esc is
+    // suppressed in input_pipeline. So nothing to gate here.
 
     // Shift+Up / Shift+Down description peek. Runs before any panel
     // handler that consumes Up/Down (Container, equip picker, generic

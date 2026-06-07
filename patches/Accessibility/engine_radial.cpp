@@ -842,4 +842,22 @@ void LogTargetDiag(uint32_t targetClient, const char* tag) {
     }
 }
 
+bool IsCreatureClientTarget(uint32_t handle) {
+    if (handle == 0u || handle == 0xFFFFFFFFu || handle == 0x7F000000u) {
+        return false;
+    }
+    uint32_t client = handle | 0x80000000u;  // engine convention: client high bit
+    void* exoApp = GetClientExoApp();
+    if (!exoApp) return false;
+    void* gameObject = nullptr;
+    __try {
+        auto fn = reinterpret_cast<PFN_GetGameObject>(kAddrCClientGetGameObject);
+        gameObject = fn(exoApp, client);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (!gameObject) return false;
+    return CallVtableAsClass(gameObject, kVtableAsSWCCreatureOffset) != nullptr;
+}
+
 }  // namespace acc::engine_radial

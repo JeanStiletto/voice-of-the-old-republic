@@ -36,7 +36,6 @@
 #include "probe_camera_state.h"
 #include "probe_mouselook.h"
 #include "probe_pathfind.h"
-#include "radial_menu.h"
 #include "spatial_change_detector.h"
 #include "swoop_race.h"
 #include "turret_game.h"
@@ -232,9 +231,6 @@ void Dispatch() {
 
     // Stuck-detection — feeds g_was_stuck for OnPlayFootstep.
     PHASE("footstep_suppress", acc::audio::footstep_suppress::Tick());
-
-    // Radial menu auto-disarm.
-    PHASE("radial_menu", acc::radial_menu::Tick());
 
     // Combat — mode entry/exit, log narration, attack resolution, saves,
     // leader-change announce, examine panel monitor, queue submenu,

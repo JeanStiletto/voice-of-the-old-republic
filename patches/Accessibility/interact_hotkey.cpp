@@ -6,7 +6,6 @@
 
 #pragma comment(lib, "user32.lib")
 
-#include "actionbar_menu.h"
 #include "combat_query.h"   // Phase 2C — Ö Examine + Phase 2A PC stat read
 #include "combat_queue.h"   // Phase 3A — action-queue submenu (Shift+H)
 #include "engine_actionbar.h"
@@ -25,11 +24,9 @@
 #include "hotkeys.h"
 #include "log.h"
 #include "narrated_target.h"
-#include "radial_menu.h"
 #include "strings.h"
 #include "prism.h"
-#include "target_action_menu.h"  // Shift+1..3 — sibling of actionbar_menu
-                                  // for target-action rows
+#include "unified_action_menu.h"  // one menu for target + personal actions
 #include "view_mode.h"      // IsActive() — Enter is owned by view_mode
                             // while active (lay-off 5)
 
@@ -222,7 +219,7 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
         // DELTA 0x80000046 -> 0x86dfc420 -> empty menu). snap.target_id is
         // the client id the engine actually populated the menu against.
         uint32_t anchorTarget = snap.target_id ? snap.target_id : handle;
-        radialArmed = acc::radial_menu::ArmAfterPopulate(name, anchorTarget);
+        radialArmed = acc::unified_menu::ArmFromRadial(name, anchorTarget);
         if (!radialArmed) {
             // Radial opened but `target_action` rows are all empty
             // (e.g. door-you-can-only-open: Open lives on the engine's
@@ -355,11 +352,11 @@ void AnnounceBarePersonalKey(int slot) {
         return;
     }
 
-    // Read the variant at the index the submenu last left us on. Submenu
+    // Read the variant at the index the menu last left us on. The menu's
     // cycle path keeps this index in lock-step with the engine's per-
-    // column "currently selected" state via paired CycleNext/Prev calls,
+    // column "currently selected" state via paired SelectVariant calls,
     // so this matches what the engine bare-press fires.
-    int idx = acc::actionbar_menu::CurrentSelection(slot);
+    int idx = acc::unified_menu::PersonalSelection(slot);
     if (idx < 0 || idx >= nVar) idx = 0;
 
     char label[128] = "";
@@ -490,6 +487,8 @@ void PollHotkey() {
     bool risingDown  = hk::Pressed(hk::Action::NavDown);
     bool risingLeft  = hk::Pressed(hk::Action::NavLeft);
     bool risingRight = hk::Pressed(hk::Action::NavRight);
+    bool risingHome  = hk::Pressed(hk::Action::NavHome);
+    bool risingEnd   = hk::Pressed(hk::Action::NavEnd);
     bool risingK1    = hk::Pressed(hk::Action::TargetKey1);
     bool risingK2    = hk::Pressed(hk::Action::TargetKey2);
     bool risingK3    = hk::Pressed(hk::Action::TargetKey3);
@@ -534,20 +533,17 @@ void PollHotkey() {
         // Without this swap, the submenu cycled column 2 while bare 6
         // fired column 3 (and vice versa), so the user's submenu choice
         // didn't apply to what the engine actually dispatched.
-        if (risingOpen1) acc::actionbar_menu::Open(0);
-        if (risingOpen2) acc::actionbar_menu::Open(1);
-        if (risingOpen3) acc::actionbar_menu::Open(3);
-        if (risingOpen4) acc::actionbar_menu::Open(2);
+        if (risingOpen1) acc::unified_menu::OpenPersonal(0);
+        if (risingOpen2) acc::unified_menu::OpenPersonal(1);
+        if (risingOpen3) acc::unified_menu::OpenPersonal(3);
+        if (risingOpen4) acc::unified_menu::OpenPersonal(2);
 
-        // Shift+1..3 — open the target-row submenu. Sibling of the
-        // Shift+4..7 personal-column submenu above; same UX, applied
-        // to the engine's CSWGuiTargetActionMenu rows that bare 1..3
-        // fire against. Direct row mapping (1→row 0, 2→row 1, 3→row 2);
-        // unlike the personal-column 6↔7 swap, the engine routes target
-        // keys linearly via DoTargetAction.
-        if (risingOpenT1) acc::target_action_menu::Open(0);
-        if (risingOpenT2) acc::target_action_menu::Open(1);
-        if (risingOpenT3) acc::target_action_menu::Open(2);
+        // Shift+1..3 — open the unified menu on a target-action row. Direct
+        // row mapping (1→row 0, 2→row 1, 3→row 2); unlike the personal-column
+        // 6↔7 swap, the engine routes target keys linearly via DoTargetAction.
+        if (risingOpenT1) acc::unified_menu::OpenTarget(0);
+        if (risingOpenT2) acc::unified_menu::OpenTarget(1);
+        if (risingOpenT3) acc::unified_menu::OpenTarget(2);
 
         // Shift+L — open the engine's level-up panel directly
         // (CGuiInGame::ShowLevelUpGUI). First-version escape hatch for
@@ -620,8 +616,7 @@ void PollHotkey() {
     // OnClientHandleInputEvent's matching HasActiveDialogPanel guard), so
     // announcing "X eingesetzt" here would be a phantom cue for an action
     // that never fired. Skip the announce while a dialog owns the keys.
-    if (inWorld && !acc::actionbar_menu::IsActive() &&
-        !acc::target_action_menu::IsActive() &&
+    if (inWorld && !acc::unified_menu::IsActive() &&
         !acc::engine::HasActiveDialogPanel()) {
         if (risingK1) AnnounceBareTargetKey(0);
         if (risingK2) AnnounceBareTargetKey(1);
@@ -686,79 +681,27 @@ void PollHotkey() {
         return;
     }
 
-    // Target-action menu (Shift+1..3) — sibling of actionbar_menu below.
-    // Runs before the action-bar block; both are mutually exclusive in
-    // practice (Open on one disarms the other implicitly by not arming
-    // simultaneously), but ordering matters for tie-break safety in
-    // case both somehow ended up active. Same routing shape.
-    if (inWorld && acc::target_action_menu::IsActive()) {
-        if (risingEnter) {
-            acc::target_action_menu::HandleInputEvent(kInputEnter1, /*value=*/1);
-        }
-        if (risingUp) {
-            acc::target_action_menu::HandleInputEvent(kInputNavUp, 1);
-        }
-        if (risingDown) {
-            acc::target_action_menu::HandleInputEvent(kInputNavDown, 1);
-        }
-        if (risingEsc) {
-            acc::target_action_menu::HandleInputEvent(kInputEsc1, 1);
-        }
-        return;
-    }
-
-    // Action-bar-active path: route Up/Down/Enter/Esc to the submenu.
-    // Esc is included here even though the radial path delegates it to
-    // the manager — the action bar is in-world and unbound, so the
-    // manager never sees Esc presses while no menu panel is foreground
-    // (Esc would normally pop the game menu). Catching it here lets the
-    // user back out cleanly without the game-menu side effect.
-    if (inWorld && acc::actionbar_menu::IsActive()) {
-        if (risingEnter) {
-            acc::actionbar_menu::HandleInputEvent(kInputEnter1, /*value=*/1);
-        }
-        if (risingUp) {
-            acc::actionbar_menu::HandleInputEvent(kInputNavUp, 1);
-        }
-        if (risingDown) {
-            acc::actionbar_menu::HandleInputEvent(kInputNavDown, 1);
-        }
-        if (risingEsc) {
-            acc::actionbar_menu::HandleInputEvent(kInputEsc1, 1);
-        }
-        return;
-    }
-
-    // Radial-active path: route Enter + arrows directly to the radial.
-    // In-world Enter / arrows bypass CSWGuiManager (engine keymap drops
-    // unbound scancodes per memory project_inworld_input_pipeline), so the
-    // manager hook in menus.cpp never sees them. We translate the Win32
-    // events directly into the radial's logical input vocabulary
-    // (kInputEnter1 / kInputNav*). Esc keeps its existing route through
-    // the manager hook — Esc IS bound by the engine keymap (pause/options)
-    // and reaches the manager normally; routing it here too would
-    // double-fire.
-    if (inWorld && acc::radial_menu::IsActive()) {
-        if (risingEnter) {
-            acclog::Write("Interact", "Enter — radial active, dispatching kInputEnter1");
-            acc::radial_menu::HandleInputEvent(kInputEnter1, /*value=*/1);
-        }
-        if (risingUp) {
-            acclog::Write("Interact", "Up — radial active, dispatching kInputNavUp");
-            acc::radial_menu::HandleInputEvent(kInputNavUp, 1);
-        }
-        if (risingDown) {
-            acclog::Write("Interact", "Down — radial active, dispatching kInputNavDown");
-            acc::radial_menu::HandleInputEvent(kInputNavDown, 1);
-        }
-        if (risingLeft) {
-            acclog::Write("Interact", "Left — radial active, dispatching kInputNavLeft");
-            acc::radial_menu::HandleInputEvent(kInputNavLeft, 1);
-        }
-        if (risingRight) {
-            acclog::Write("Interact", "Right — radial active, dispatching kInputNavRight");
-            acc::radial_menu::HandleInputEvent(kInputNavRight, 1);
-        }
+    // Unified action menu (Shift+Enter / Shift+1..7) — route every nav +
+    // dispatch key here while it's armed. In-world Enter / arrows / Home /
+    // End bypass CSWGuiManager (the engine keymap drops these unbound
+    // scancodes per memory project_inworld_input_pipeline), so we translate
+    // the Win32 edges directly into the menu's logical vocabulary. Esc is
+    // caught here too (the menu pauses the world via an overlay hold; the
+    // engine-pause-menu open is separately suppressed in input_pipeline).
+    // Ctrl+Home / Ctrl+End map to the category-jump codes; plain Home / End
+    // jump within the current category.
+    if (inWorld && acc::unified_menu::IsActive()) {
+        const bool ctrl = acc::hotkeys::CtrlHeld();
+        if (risingEnter) acc::unified_menu::HandleInputEvent(kInputEnter1, 1);
+        if (risingUp)    acc::unified_menu::HandleInputEvent(kInputNavUp, 1);
+        if (risingDown)  acc::unified_menu::HandleInputEvent(kInputNavDown, 1);
+        if (risingLeft)  acc::unified_menu::HandleInputEvent(kInputNavLeft, 1);
+        if (risingRight) acc::unified_menu::HandleInputEvent(kInputNavRight, 1);
+        if (risingHome)  acc::unified_menu::HandleInputEvent(
+                             ctrl ? kInputCatFirst : kInputHome, 1);
+        if (risingEnd)   acc::unified_menu::HandleInputEvent(
+                             ctrl ? kInputCatLast : kInputEnd, 1);
+        if (risingEsc)   acc::unified_menu::HandleInputEvent(kInputEsc1, 1);
         return;
     }
 

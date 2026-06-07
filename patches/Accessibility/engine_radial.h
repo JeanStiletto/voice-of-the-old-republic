@@ -112,4 +112,13 @@ uint32_t ReadSelectedRowActionId(void* tam, int row);
 // final state" from "we set preconditions wrong".
 void LogTargetDiag(uint32_t targetClient, const char* tag);
 
+// True iff `handle` resolves to a CSWCCreature (hostile creature). Used to
+// decide whether the 3 target rows are the named Attacks / Force-Powers /
+// Items categories (creature) or carry differently-structured per-object
+// actions (door / placeable / trigger) that should be announced by their
+// action label instead. Accepts a server- or client-side handle (the
+// client high bit is OR'd internally). False on fault / non-creature /
+// unresolved / sentinel handle.
+bool IsCreatureClientTarget(uint32_t handle);
+
 }  // namespace acc::engine_radial

@@ -90,6 +90,17 @@ const char* Get(Id id) {
         case Id::FmtFireQueueFull:        return "%s, Warteschlange voll";
         case Id::ActionBarCancelled:      return "Abgebrochen";
 
+        case Id::MenuCatAttacks:       return "Angriffe";
+        case Id::MenuCatForcePowers:   return "Machtkr\xE4""fte";       // Machtkräfte
+        case Id::MenuCatItems:         return "Gegenst\xE4nde";          // Gegenstände
+        case Id::MenuCatSelfPowers:    return "Eigene Machtkr\xE4""fte"; // Eigene Machtkräfte
+        case Id::MenuCatMedical:       return "Medizin";
+        case Id::MenuCatMisc:          return "Sonstiges";
+        case Id::MenuCatExplosives:    return "Sprengstoffe";
+        case Id::FmtMenuCatMulti:      return "%s: %s, %d Optionen";
+        case Id::FmtMenuCatSingle:     return "%s: %s";
+        case Id::FmtMenuPlainMulti:    return "%s, %d Optionen";
+
         case Id::NoTooltipAvailable:   return "Keine Beschreibung verf\xFC" "gbar";  // verfügbar
 
         case Id::ContainerEmpty:       return "Leer";

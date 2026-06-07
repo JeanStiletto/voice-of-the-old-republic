@@ -88,6 +88,17 @@ const char* Get(Id id) {
         case Id::FmtFireQueueFull:        return "%s, cola llena";
         case Id::ActionBarCancelled:      return "Cancelado";
 
+        case Id::MenuCatAttacks:       return "Ataques";
+        case Id::MenuCatForcePowers:   return "Poderes de Fuerza";
+        case Id::MenuCatItems:         return "Objetos";
+        case Id::MenuCatSelfPowers:    return "Poderes propios";
+        case Id::MenuCatMedical:       return "M\xE9""dico";            // Médico
+        case Id::MenuCatMisc:          return "Miscel\xE1neos";          // Misceláneos
+        case Id::MenuCatExplosives:    return "Explosivos";
+        case Id::FmtMenuCatMulti:      return "%s: %s, %d opciones";
+        case Id::FmtMenuCatSingle:     return "%s: %s";
+        case Id::FmtMenuPlainMulti:    return "%s, %d opciones";
+
         case Id::NoTooltipAvailable:   return "Sin descripci\xF3n disponible";
 
         case Id::ContainerEmpty:       return "Vac\xEDo";
