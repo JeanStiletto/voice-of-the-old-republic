@@ -12,6 +12,7 @@
 #include "engine_offsets.h"
 #include "engine_panels.h"    // PanelKind / IdentifyPanel — engine-panel watcher
 #include "engine_player.h"
+#include "engine_subscreen.h" // Begin/EndOverlayPause — freeze the world while open
 #include "hotkeys.h"
 #include "log.h"
 #include "strings.h"
@@ -1014,6 +1015,7 @@ void ForceDisarm(const char* reason) {
     acclog::Write("Examine.View", "disarm reason=%s",
                   reason ? reason : "?");
     g_state.active = false;
+    acc::engine::EndOverlayPause();
     g_state.focusIdx = 0;
     g_state.rowCount = 0;
     g_state.targetHandle = 0;
@@ -1045,6 +1047,7 @@ bool Open() {
     g_state.rowCount = n;
     g_state.focusIdx = 0;
     g_state.active = true;
+    acc::engine::BeginOverlayPause();
 
     // Pull the target name out of row 0 for the opener cue. Row 0 format
     // is "Name: <name>" so skip the prefix to get just the name; if the

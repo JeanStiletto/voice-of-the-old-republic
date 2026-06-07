@@ -33,6 +33,16 @@ extern bool g_switchHookEverFired;
 // Function name is historical (earlier iteration touched input_class).
 void TickInputClassReassert();
 
+// In-world overlay pause hold. Our keyboard-driven in-world menus (examine
+// view, action queue, the Shift-number action menus) have no engine panel,
+// so the engine doesn't pause the world for them like it does for native
+// sub-screens. Call BeginOverlayPause() when such an overlay opens and
+// EndOverlayPause() when it closes to get the native "menu freezes the
+// world" behaviour. Routes through SetPausedByCombat (the same pause the
+// pause key uses), unconditional pause-on-open / resume-on-close.
+void BeginOverlayPause();
+void EndOverlayPause();
+
 }  // namespace acc::engine
 
 // Detour @0x0062cf2d (5-byte cut after EBX = GUI_id is loaded).

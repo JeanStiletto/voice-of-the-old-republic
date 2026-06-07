@@ -23,6 +23,7 @@
                                // narrated handle still resolves to a live
                                // game object before stamping it)
 #include "engine_input.h"
+#include "examine_view.h"      // IsActive — in-world overlay Esc consume
 #include "engine_radial.h"     // SelectActionInRow — stamp field1[target_type*3
                                // +row] so DoTargetAction fires the user's
                                // last-cycled variant for bare 1..3
@@ -95,10 +96,10 @@ extern "C" void __cdecl OnProcessInput(void* /*this_ptr*/) {
 // We also reach back to (slot - 1) for the return EIP, useful for
 // distinguishing direct ProcessInput dispatches from synthetic re-issues
 // (the doc-mentioned LAB_00622111 path inside `case 0xdf`).
-extern "C" void __cdecl OnClientHandleInputEvent(void* this_ptr,
-                                                 void* p1_addr,
-                                                 void* p2_addr) {
-    if (!p1_addr || !p2_addr) return;
+extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
+                                                void* p1_addr,
+                                                void* p2_addr) {
+    if (!p1_addr || !p2_addr) return 0;
 
     int param_1 = 0;
     int param_2 = 0;
@@ -115,7 +116,7 @@ extern "C" void __cdecl OnClientHandleInputEvent(void* this_ptr,
         acclog::Write("Diag.ClientHIE",
                       "deref faulted (this=%p p1=%p p2=%p)",
                       this_ptr, p1_addr, p2_addr);
-        return;
+        return 0;
     }
 
     unsigned int seq = acc::input::NextSeq();
@@ -131,6 +132,41 @@ extern "C" void __cdecl OnClientHandleInputEvent(void* this_ptr,
                       "seq=%u this=%p caller=0x%08x key=%s(%d) val=%d",
                       seq, this_ptr, caller_eip,
                       acc::engine::InputIndexName(param_1), param_1, param_2);
+    }
+
+    // In-world overlay Esc consume — the menu-vs-pause-menu fix.
+    //
+    // Our keyboard-driven in-world menus (the Shift-number action menus,
+    // the action queue, examine view) have NO engine GUI panel, so an Esc
+    // press lands HERE in the in-world handler instead of the GUI manager.
+    // CClientExoAppInternal::HandleInputEvent case 0xdf, when in-world
+    // (sw_gui_status==1, input_class==0), calls ShowSWInGameGui(7) — which
+    // opens the in-game / Options menu. The overlay's own close runs on a
+    // separate path (interact_hotkey's Win32 poll), so without this the
+    // user gets BOTH: the overlay closes AND the game menu pops (confirmed
+    // in patch-20260606-224421.log: Esc press seq=4395 → ClientHIE while
+    // the action bar was armed → Options opened).
+    //
+    // Native engine panels don't have this problem: their Esc routes to
+    // the GUI manager, where menus_chain::HandleEsc consumes it (the
+    // drill / sub-panel close path). These in-DLL overlays can't reuse
+    // that path, so we consume the Esc at the in-world layer instead —
+    // swallowing the press so case 0xdf never runs. The overlay still
+    // closes (with speech) via its own Win32-poll handler this frame.
+    //
+    // Press edge only (param_2 != 0): case 0xdf early-returns on release,
+    // so the matching release is already a no-op and we let it pass (the
+    // consumed-exit pattern needs the release through the normal path).
+    if (param_2 != 0 &&
+        (param_1 == kInputEsc1 || param_1 == kInputEsc2) &&
+        (acc::actionbar_menu::IsActive() ||
+         acc::target_action_menu::IsActive() ||
+         acc::combat::queue::IsActive() ||
+         acc::examine_view::IsActive())) {
+        acclog::Write("Diag.ClientHIE",
+                      "seq=%u Esc CONSUMED — in-world overlay active "
+                      "(suppressing engine pause-menu open)", seq);
+        return 1;  // consume → consumed_exit 0x00622120 (POP*5 + RET 8)
     }
 
     // Bare 1..7 dispatch prep. Decompile session 2026-05-21 confirmed:
@@ -368,4 +404,8 @@ extern "C" void __cdecl OnClientHandleInputEvent(void* this_ptr,
             }
         }
     }
+
+    // Not consumed — fall through to the engine's own handler. The wrapper's
+    // cut bytes (5 register pushes) execute, then resume at function entry+5.
+    return 0;
 }

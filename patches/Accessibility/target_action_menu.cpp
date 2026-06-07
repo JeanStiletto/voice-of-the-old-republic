@@ -17,6 +17,7 @@
                                  // cinematic dialogs (same reason as actionbar_menu)
 #include "engine_radial.h"
 #include "engine_reads.h"       // ReadControlTooltip
+#include "engine_subscreen.h"   // Begin/EndOverlayPause — freeze the world while open
 #include "hotkeys.h"            // ShiftHeld
 #include "log.h"
 #include "menu_speak.h"
@@ -134,6 +135,7 @@ bool Open(int row) {
     acc::menus::submenu::EnforceCombatHotkeyMutex("target-menu-open");
 
     g_state.active = true;
+    acc::engine::BeginOverlayPause();
     g_state.curRow = row;
 
     // Stamp field1 with the shadow index's action_id so ReadRowActionLabel
@@ -310,6 +312,7 @@ void ForceDisarm(const char* reason) {
     if (!g_state.active) return;
     acclog::Write("TargetMenu", "disarm — reason=%s", reason ? reason : "?");
     g_state.active = false;
+    acc::engine::EndOverlayPause();
     g_state.curRow = 0;
 }
 

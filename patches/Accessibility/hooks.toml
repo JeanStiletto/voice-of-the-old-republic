@@ -639,6 +639,27 @@ type = "pointer"
 # (per project_kpatchmanager_lea_bug.md) — the handler receives the
 # *address* of each slot and dereferences once. Same pattern as
 # OnSetMoveToModuleString / OnSetListenerPosition.
+#
+# Consuming hook (consumed-exit pattern, same shape as
+# OnCalculatePitchVarianceFrequency): the handler returns 1 to SWALLOW an
+# Esc press while one of our in-world overlays (action bar / Shift-number
+# action menus / action queue / examine view) is active, so the engine's
+# case 0xdf never runs ShowSWInGameGui(7) and the in-game/Options menu
+# doesn't pop on top of the overlay's own close. Returns 0 for everything
+# else → falls through to the engine handler unchanged.
+#
+#   * exclude_from_restore = ["eax"] so the int return survives the POPAD
+#     into the wrapper's TEST EAX,EAX; JZ +5; JMP rel32 consumed_exit.
+#   * The 5-byte cut (PUSH ECX/EBX/EBP/ESI/EDI) is the function's ENTIRE
+#     stack frame — there is no SUB ESP (verified by DumpBytes 2026-06-07:
+#     entry `51 53 55 56 57 8b 7c 24 18 33 ed 83 ff 0f 8b f1`, no locals
+#     allocation). None of the 5 pushes touch EAX, so the return value is
+#     intact when the wrapper tests it.
+#   * consumed_exit_address = 0x00622120 — the shared epilogue
+#     `5f 5e 5d 5b 59 c2 08 00` (POP EDI/ESI/EBP/EBX/ECX; RET 8). On
+#     consume the wrapper has run the 5 pushes (ESP = entry-0x14); the 5
+#     POPs restore ESP to entry and RET 8 cleans the 2 stack args. EAX
+#     still holds 1 → ShowSWInGameGui's caller sees a non-zero "handled".
 [[hooks]]
 address = 0x00621210
 type = "detour"
@@ -647,7 +668,8 @@ function = "OnClientHandleInputEvent"
 original_bytes = [0x51, 0x53, 0x55, 0x56, 0x57]
 
 skip_original_bytes = false
-exclude_from_restore = []
+exclude_from_restore = ["eax"]
+consumed_exit_address = 0x00622120
 
 [[hooks.parameters]]
 source = "ecx"

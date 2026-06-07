@@ -9,6 +9,7 @@
 #include "engine_input.h"
 #include "engine_offsets.h"
 #include "engine_player.h"    // GetPlayerServerCreature, GetPartyMembers,
+#include "engine_subscreen.h" // Begin/EndOverlayPause — freeze the world while open
                               // GetPlayerCharacterName
 #include "examine_view.h"     // ResolveFeatName — decode type=11 entries to
                               // their specific feat name (e.g. "Starke
@@ -549,6 +550,7 @@ void ForceDisarm(const char* reason) {
     acclog::Write("Combat.Queue", "disarm reason=%s",
                   reason ? reason : "?");
     g_state.active = false;
+    acc::engine::EndOverlayPause();
     g_state.focusIdx = 0;
     g_state.count = 0;
 }
@@ -563,6 +565,7 @@ bool Open() {
     }
 
     g_state.active   = true;
+    acc::engine::BeginOverlayPause();
     g_state.focusIdx = 0;
 
     char msg[128];

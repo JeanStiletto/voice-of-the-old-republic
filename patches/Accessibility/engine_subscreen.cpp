@@ -151,7 +151,77 @@ void DispatchUnpauseCleanup(const char* trigger) {
     }
 }
 
+// CClientExoApp::SetPausedByCombat @0x005edc20 — the engine's REAL pause
+// toggle, the one the pause key (event 0xf1 / 0xe0) and combat auto-pause
+// use. Despite the name it is the general game-pause: it sets the client's
+// own pause fields (CClientExoAppInternal field206_0x37c |= 4, field207,
+// sound_paused_by_combat) and SetSoundMode + PauseRumble, which is what the
+// client's world-update loop actually checks. The server pause-bit
+// (CServerExoApp::SetPauseState bit 2) is a DIFFERENT layer — sub-screens /
+// MessageBoxes route through it, but setting it alone does NOT freeze the
+// in-world simulation the player perceives (verified live 2026-06-07: our
+// SetPauseState(2,1) set the bit but the world kept running). So overlays
+// must pause through this function, exactly like the pause key does.
+//
+// __thiscall(CClientExoApp* this, int paused, byte source, int force).
+// The facade forwards to the internal via this->internal; we pass the
+// public CClientExoApp pointer (AppManager + 0x4). paused 1=pause/0=resume,
+// source 4 = the value the pause key passes, force 0.
+constexpr uintptr_t kAddrSetPausedByCombat   = 0x005edc20;
+constexpr size_t    kAppManagerClientOffset  = 0x4;
+using PFN_SetPausedByCombat =
+    void(__thiscall *)(void* clientApp, int paused, int source, int force);
+
+void DispatchOverlayPause(const char* trigger, int paused) {
+    acclog::Write("PauseToggle", "%s: SetPausedByCombat(%d,4,0)", trigger, paused);
+    __try {
+        void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtrLocal);
+        if (!appMgr) {
+            acclog::Write("PauseToggle", "overlay-pause skipped: AppManager NULL");
+            return;
+        }
+        void* client = *reinterpret_cast<void**>(
+            static_cast<unsigned char*>(appMgr) + kAppManagerClientOffset);
+        if (!client) {
+            acclog::Write("PauseToggle", "overlay-pause skipped: client NULL");
+            return;
+        }
+        auto fn = reinterpret_cast<PFN_SetPausedByCombat>(kAddrSetPausedByCombat);
+        // The pause propagates to the server pause-bit synchronously inside
+        // this call, which re-enters OnSetPauseState — flag it as our own so
+        // the hook stays silent (the overlay's open/close speech is the cue,
+        // matching native sub-screens which suppress the same announce).
+        g_inOwnPauseCall = true;
+        fn(client, paused, 4, 0);
+        g_inOwnPauseCall = false;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("PauseToggle", "fault in overlay-pause SetPausedByCombat");
+    }
+}
+
 }  // namespace
+
+// In-world overlay pause hold. Our keyboard-driven in-world menus (examine
+// view, action queue, the Shift-number action menus) have no engine panel,
+// so the engine never pauses the world for them the way it does for native
+// sub-screens. These give them the native "menu freezes the world, closing
+// it resumes" behaviour, via the same SetPausedByCombat path the pause key
+// uses.
+//
+// Unconditional pause-on-open / resume-on-close, by design: a first-level
+// mod menu should freeze the world when it opens and resume when it closes.
+// Switching directly between two of our overlays stays paused in practice —
+// the outgoing overlay's resume and the incoming one's pause both run inside
+// the same input frame, before the next world tick, so no world time passes.
+// SetPausedByCombat is internally idempotent (it no-ops when the requested
+// state already matches), so redundant calls are harmless.
+void BeginOverlayPause() {
+    DispatchOverlayPause("overlay opened", 1);
+}
+
+void EndOverlayPause() {
+    DispatchOverlayPause("overlay closed", 0);
+}
 
 void TickInputClassReassert() {
     // Two edges trigger the same unpause cleanup:

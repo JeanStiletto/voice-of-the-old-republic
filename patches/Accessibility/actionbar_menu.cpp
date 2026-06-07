@@ -14,6 +14,7 @@
 #include "engine_input.h"     // kInputNavUp/Down, kInputEnter1/2,
                               // kInputEsc1/2
 #include "menus_submenu.h"   // EnforceCombatHotkeyMutex (Shift+4..7 vs Shift+1..3)
+#include "engine_subscreen.h" // Begin/EndOverlayPause — freeze the world while open
 #include "engine_panels.h"   // HasActiveDialogPanel — gate Open while a
                               // cinematic dialog is foreground (the dialog's
                               // listbox is sensitive to arrow input from the
@@ -124,6 +125,7 @@ bool Open(int slot) {
     acc::menus::submenu::EnforceCombatHotkeyMutex("actionbar-open");
 
     g_state.active  = true;
+    acc::engine::BeginOverlayPause();
     g_state.curSlot = slot;
     int idx = ClampIndex(mi, slot);
 
@@ -315,6 +317,7 @@ void ForceDisarm(const char* reason) {
     if (!g_state.active) return;
     acclog::Write("ActionBar", "disarm — reason=%s", reason ? reason : "?");
     g_state.active  = false;
+    acc::engine::EndOverlayPause();
     g_state.curSlot = 0;
 }
 
