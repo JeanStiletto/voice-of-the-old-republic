@@ -503,7 +503,11 @@ int ReadLevel(void* serverCreature) {
 }
 
 int ReadDamageLevel(void* obj) {
-    int v = CallIntThis(obj, kAddrCSWSObjectGetDamageLevel);
+    // Mask to the low byte: GetDamageLevel returns ulong but only AL holds the
+    // 0..5 bucket; buckets 0..3 carry flag garbage in the upper bytes that
+    // otherwise trips the range check (see ReadDamageLevelDirect in
+    // combat_query.cpp / decompile @0x4cb020).
+    int v = CallIntThis(obj, kAddrCSWSObjectGetDamageLevel) & 0xFF;
     if (v < 0 || v > 5) return -1;
     return v;
 }

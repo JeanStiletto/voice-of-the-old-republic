@@ -255,7 +255,12 @@ int ReadDamageLevelDirect(void* serverObject) {
     __try {
         auto fn = reinterpret_cast<PFN_GetIntThiscall>(
             kAddrCSWSObjectGetDamageLevel);
-        int v = fn(serverObject);
+        // GetDamageLevel returns ulong, but the 0..5 bucket is only the low
+        // byte (AL). For buckets 0..3 the engine leaves comparison-flag
+        // garbage in the upper 3 bytes (decompile @0x4cb020), so reading the
+        // full 32-bit value blows past the range check and clamps to -1 —
+        // only the clean dying/dead returns (4/5) survived. Mask to AL.
+        int v = fn(serverObject) & 0xFF;
         if (v < 0 || v > 5) return -1;
         return v;
     } __except (EXCEPTION_EXECUTE_HANDLER) {

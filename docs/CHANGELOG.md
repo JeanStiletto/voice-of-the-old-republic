@@ -26,6 +26,7 @@ and add the German in parentheses if it genuinely aids clarity.
 <h3>Bug fixes:</h3>
 
 - The Force Points readout (the H key self-status) now reports your real current Force points. It previously always spoke a fixed number regardless of how much Force you actually had or had spent — it was reading a static base value instead of the live pool. It now reads the same current-Force value the character sheet shows, so it updates as you cast powers and rest. Maximum Force points and current/maximum health were already correct and are unchanged.
+- An enemy's health status is finally announced correctly. When you cycle to or target a creature, the mod speaks the same wound state a sighted player reads from its health bar — lightly wounded, wounded, badly wounded, dying, or dead — and updates as the fight goes on. Previously only "dying" ever came through; every other wound state was silently dropped, so a half-dead enemy sounded unharmed. A full-health enemy still says nothing about its condition (just as a full bar tells a sighted player nothing new).
 
 <h3>Updater:</h3>
 
