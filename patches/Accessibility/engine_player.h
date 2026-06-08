@@ -67,6 +67,22 @@ bool GetPlayerCharacterName(char* outBuf, size_t bufSize);
 // GetPlayerServerObject chain but stops at the client pointer.
 void* GetClientLeader();
 
+// Active leader's action-queue "append" knob — CSWCCreature.field200_0x440
+// bit 0 (the combat-mode bit combat_diag reads as `cm`).
+// CSWGuiMainInterface::DoPersonalAction and CSWGuiTargetActionMenu::
+// DoTargetAction both branch on it: bit 0 → clear the queue then dispatch
+// (replace); bit 1 → skip the clear (append). It is the engine's native
+// Shift-held "queue this action" flag. Our synthetic dispatch never goes
+// through the engine's shift capture, so the bit sits at its natural value
+// (0 out of combat) and every dispatch overwrites the previously queued
+// action — set it to 1 just around the dispatch to stack actions, then
+// restore.
+//
+// Sets bit 0 to `on` (0/1) via read-modify-write (other bits preserved).
+// Returns the PREVIOUS bit-0 value (0/1) to pass back for restore, or -1 on
+// resolution / SEH failure (no write performed).
+int SetLeaderQueueModeBit(int on);
+
 // Three resolution paths, in order:
 //   1. GetObjectDisplayNameByHandle — engine's universal localised-name
 //      accessor (same one sighted UI uses). "Trask Ulgo" etc.

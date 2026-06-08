@@ -28,6 +28,11 @@ and add the German in parentheses if it genuinely aids clarity.
 - The in-game updater now downloads new versions reliably even when GitHub is having problems. The "Update available" notice and the F5-to-install flow already worked, but the actual download went through GitHub's public browser download link, which during a partial GitHub outage returns an error and failed the whole update — this is exactly what stopped the first 0.4 download. It now fetches the installer through GitHub's API instead, which stays up during those outages and is the same path GitHub's own tools use, so an update that is offered will actually download.
 - The spoken feedback while updating is clearer. Pressing F5 to start an update now says "Starting download." as it begins, and if the download fails it now says it failed and that you can press F5 to try again — previously it only said the download had failed, with no hint that another press would retry.
 
+<h3>Action menu:</h3>
+
+- Choosing an action in the action menu now queues it and keeps the menu open, instead of performing it and resuming the game right away. This lets you line up several actions for a character in one pass — throw a grenade, then cast a Force power, then attack — without the menu closing and the world unpausing after each choice. Each Enter adds the action and tells you its place in the queue ("Force Valor, slot 1"); the game stays paused so you can keep going. Press Escape to close the menu and resume, and the queued actions run in the order you chose them. The trade-off is that a single quick action out of combat — a heal, say — now needs an Escape afterward to resume, where it used to resume on its own; queuing several actions no longer means re-pausing between each is the bigger win.
+- Queued actions now actually stack instead of overwriting each other. Each action you chose used to wipe the character's existing action queue before adding itself, so lining up three actions left only the last one to run. Selecting an action now appends to the queue the way the game's own Shift-click queuing does, so a grenade, a Force power and an attack all run in turn.
+
 <h2>v0.4</h2>
 
 <h3>Action menu:</h3>

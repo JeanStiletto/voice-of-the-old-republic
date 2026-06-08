@@ -12,6 +12,7 @@
 #include "engine_offsets.h"      // kInvalidObjectId
 #include "engine_panels.h"      // HasActiveDialogPanel
 #include "engine_picker.h"      // ReanchorRadial (per-press target re-anchor)
+#include "engine_player.h"      // SetLeaderQueueModeBit (append-vs-replace)
 #include "engine_radial.h"      // target block read + primitives
 #include "engine_reads.h"       // ResolveActionDescriptionFromActionId
 #include "engine_subscreen.h"   // Begin/EndOverlayPause
@@ -647,10 +648,23 @@ bool HandleInputEvent(int code, int value) {
             char label[128] = "";
             ReadLabel(tam, mi, cur, sel, label, sizeof(label));
 
+            // Force the engine's APPEND path. Both DoPersonalAction and
+            // DoTargetAction wipe the leader's action queue before dispatching
+            // unless its combat-mode bit (field200_0x440 bit 0) is set — that
+            // bit is the native Shift-held "queue" flag. Our synthetic dispatch
+            // bypasses the engine's shift capture, so without this every Enter
+            // overwrites the previous queued action (observed 2026-06-08:
+            // Macht-Tapferkeit then Kurieren left only Kurieren). Set it for
+            // the dispatch, restore afterward so the creature's real combat
+            // mode is untouched.
+            int prevQueueBit = acc::engine::SetLeaderQueueModeBit(1);
+
             acc::combat::queue::ReportPrePressDepth();
             acc::combat_diag::LogPreFire("menu-enter");
             bool ok = Dispatch(tam, mi, cur);
             acc::combat_diag::LogPostFire("menu-enter");
+
+            if (prevQueueBit >= 0) acc::engine::SetLeaderQueueModeBit(prevQueueBit);
 
             int preDepth = acc::combat::queue::GetPrePressDepth();
             const bool capHit  = (preDepth >= 4);
@@ -672,7 +686,15 @@ bool HandleInputEvent(int code, int value) {
                 cur.slot, sel, label, ok ? 1 : 0, preDepth, slotNum,
                 capHit ? 1 : 0, msg);
 
-            ForceDisarm("enter");
+            // Stay armed + paused after firing so the user can stack several
+            // actions into the engine queue (grenade → force power → attack)
+            // without re-pausing between each. The world only resumes — and
+            // the queue runs — on Esc (ForceDisarm → EndOverlayPause). The
+            // confirmation message ("…, Position N") is the cue that the menu
+            // is still open on the same entry; press Enter again to re-queue,
+            // or arrow to another category. Selection/category are preserved;
+            // the next keypress's BuildCategoryList + LocateCat re-locates on
+            // the same slot.
             return true;
         }
         default:

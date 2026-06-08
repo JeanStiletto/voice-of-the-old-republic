@@ -154,6 +154,25 @@ void* GetClientLeader() {
     }
 }
 
+int SetLeaderQueueModeBit(int on) {
+    // CSWCCreature.field200_0x440 — same offset combat_diag reads as `cm`,
+    // set by CSWCCreature::SetCombatMode @0x00610a10. Bit 0 is the
+    // replace-vs-append discriminator both action dispatchers branch on.
+    constexpr size_t kCSWCCreatureCombatModeOffset = 0x440;
+    void* leader = GetClientLeader();
+    if (!leader) return -1;
+    __try {
+        uint8_t* p = reinterpret_cast<uint8_t*>(leader) +
+                     kCSWCCreatureCombatModeOffset;
+        uint8_t prev = *p;
+        if (on) *p = static_cast<uint8_t>(prev | 0x01u);
+        else    *p = static_cast<uint8_t>(prev & ~0x01u);
+        return prev & 0x01;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
 bool GetActiveLeaderName(char* outBuf, size_t bufSize) {
     if (!outBuf || bufSize < 2) return false;
     outBuf[0] = '\0';
