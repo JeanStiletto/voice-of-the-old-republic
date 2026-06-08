@@ -169,6 +169,28 @@ bool ResolveActionDescriptionFromActionId(uint32_t actionId,
 // confirmed for both inventory + store row vtables).
 int ReadItemRowStackCount(void* rowControl);
 
+// Charge readers — for limited-use consumables that carry a current /
+// max charge count (CSWSItem.charges / max_charges). Charged items can't
+// stack, so a positive result here never coincides with a stack suffix.
+//   ReadItemCharges(item)        : >= 0 current charges when max_charges>0,
+//                                  else -1 (not a charged item / fault).
+//   ReadItemRowCharges(rowCtrl)  : same, resolved from an inventory/store
+//                                  row control; -1 when not an item row.
+int ReadItemCharges(void* item);
+int ReadItemRowCharges(void* rowControl);
+
+// Raw stack_size for a resolved CSWSItem* (0 on fault / infinite stock).
+// The row/handle wrappers above are preferred for menu rows; this is for
+// callers that already hold the item* (store suffix, action-menu items).
+int ReadItemStack(void* item);
+
+// Resolve the CSWSItem* behind an item-tagged CSWGuiInterfaceAction
+// action_id (high nibble 0x4xxxxxxx, low 28 bits = server game-object id).
+// Returns nullptr for non-item tags / unresolved handles. Lets the action
+// menu read stack + charges for its "Gegenstände" entries the same way
+// inventory rows do.
+void* ItemFromActionId(uint32_t actionId);
+
 // CSWGuiInGameItemEntry rows (Inventory + Container loot listbox).
 // Store rows excluded — they get a price+stock suffix from
 // menus_store::AnnounceChainStepSuffix instead.

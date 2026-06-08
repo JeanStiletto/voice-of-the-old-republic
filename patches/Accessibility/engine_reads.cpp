@@ -603,6 +603,27 @@ int ReadItemStackSize(void* item) {
     return (int)stack;
 }
 
+// Read CSWSItem.charges (+0x258) when the item is a charged item
+// (max_charges @ +0x25c > 0). Returns the current charge count via
+// *outCharges and true; returns false (item not charge-based / fault)
+// otherwise. Charged items can't stack, so this is orthogonal to
+// ReadItemStackSize.
+bool ReadItemChargesRaw(void* item, int* outCharges) {
+    if (!item) return false;
+    uint32_t charges = 0, maxCharges = 0;
+    __try {
+        charges = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(item) + kSwsItemChargesOffset);
+        maxCharges = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(item) + kSwsItemMaxChargesOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (maxCharges == 0) return false;
+    if (outCharges) *outCharges = (int)charges;
+    return true;
+}
+
 bool IsItemEntryRow(void* control) {
     if (!control) return false;
     void** vt = nullptr;
@@ -631,6 +652,36 @@ int ReadItemRowStackCount(void* rowControl) {
     void* item = ResolveItemFromClientHandle(handle);
     if (!item) return 0;
     return ReadItemStackSize(item);
+}
+
+int ReadItemCharges(void* item) {
+    int charges = -1;
+    return ReadItemChargesRaw(item, &charges) ? charges : -1;
+}
+
+int ReadItemRowCharges(void* rowControl) {
+    if (!IsItemEntryRow(rowControl)) return -1;
+    uint32_t handle = 0;
+    __try {
+        handle = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(rowControl) +
+            kStoreItemEntryObjIdOffset);  // same offset on both row vtables
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+    void* item = ResolveItemFromClientHandle(handle);
+    if (!item) return -1;
+    return ReadItemCharges(item);
+}
+
+int ReadItemStack(void* item) {
+    return ReadItemStackSize(item);
+}
+
+void* ItemFromActionId(uint32_t actionId) {
+    if (actionId == 0 || actionId == 0xffffffff) return nullptr;
+    if ((actionId & kActionIdTagMask) != kActionIdTagItem) return nullptr;
+    return ResolveItemFromServerHandle(actionId & ~kActionIdTagMask);
 }
 
 bool IsInventoryItemRow(void* control) {

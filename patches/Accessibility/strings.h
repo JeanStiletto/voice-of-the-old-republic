@@ -308,6 +308,13 @@ enum class Id : int {
     //          weapon name.
     FmtItemStackSuffix,
 
+    //      `FmtItemChargeSuffix` — appended to inventory, container, store,
+    //          and action-menu item announcements when the item is a charged
+    //          consumable (CSWSItem.max_charges > 0). One `%d` (current
+    //          charges). Charged items can't stack, so this never collides
+    //          with FmtItemStackSuffix.
+    FmtItemChargeSuffix,
+
     // ---- Equipment screen (CSWGuiInGameEquip).
     //      Slot button names — used as the speech for each of the 9
     //      paper-doll BTN_INV_* buttons. The .gui file gives them no

@@ -261,11 +261,23 @@ void AnnounceChainStepSuffix(void* panel, void* control) {
     }
 
     prism::Speak(msg, /*interrupt=*/false);
+
+    // Charged consumables (max_charges > 0) also report their current charge
+    // count. Orthogonal to stock — a merchant can carry a charged item too.
+    int charges = acc::engine::ReadItemCharges(item);
+    if (charges >= 0) {
+        char chargeMsg[64];
+        snprintf(chargeMsg, sizeof(chargeMsg),
+                 acc::strings::Get(acc::strings::Id::FmtItemChargeSuffix),
+                 charges);
+        prism::Speak(chargeMsg, /*interrupt=*/false);
+    }
+
     acclog::Write("Menus.Store",
-                  "chain-step suffix focus=%p mode=%s price=%u stock=%d finite=%d",
+                  "chain-step suffix focus=%p mode=%s price=%u stock=%d finite=%d charges=%d",
                   control,
                   mode == Mode::Buy ? "buy" : "sell",
-                  price, stock, finite ? 1 : 0);
+                  price, stock, finite ? 1 : 0, charges);
 }
 
 void TickMonitorMode() {

@@ -1332,6 +1332,16 @@ void HandleNavStep(void* activePanel, int code, int val, bool& consumed) {
                      stack);
             prism::Speak(suffix, /*interrupt=*/false);
         }
+        // Charged consumables can't stack, so this is mutually exclusive with
+        // the suffix above. charges == 0 is still meaningful (depleted item).
+        int charges = acc::engine::ReadItemRowCharges(e.control);
+        if (charges >= 0) {
+            char suffix[64];
+            snprintf(suffix, sizeof(suffix),
+                     acc::strings::Get(acc::strings::Id::FmtItemChargeSuffix),
+                     charges);
+            prism::Speak(suffix, /*interrupt=*/false);
+        }
     }
     int cursorX = e.cx;
     int cursorY = e.cy;

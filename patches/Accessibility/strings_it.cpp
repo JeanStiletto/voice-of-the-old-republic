@@ -105,6 +105,7 @@ const char* Get(Id id) {
         case Id::FmtContainerItems:    return "%d oggetti";
         case Id::FmtContainerItemAt:   return "%s, %d di %d";
         case Id::FmtItemStackSuffix:   return "%d nella pila";
+        case Id::FmtItemChargeSuffix:  return "%d cariche";
 
         case Id::EquipSlotHead:        return "Testa";
         case Id::EquipSlotImplant:     return "Impianto";

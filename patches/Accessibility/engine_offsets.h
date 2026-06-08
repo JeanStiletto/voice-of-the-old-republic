@@ -1485,6 +1485,19 @@ constexpr size_t    kSwsItemStackSizeOffset                = 0x28c;
 constexpr size_t    kSwsItemBitFlagsOffset                 = 0x288;
 constexpr uint32_t  kSwsItemInfiniteStockBit               = 0x4;
 
+// CSWSItem.charges @ +0x258 (ulong), CSWSItem.max_charges @ +0x25c (ulong).
+// Both from the Ghidra struct DB (re/swkotor.exe.h CSWSItem body). Layout
+// cross-checked against the verified bit_flags @ +0x288: the three trailing
+// CExoLocString members (description_identified / description /
+// localized_name, 8 bytes each) span +0x270..+0x288, walking back through
+// item_repo / some_obj_id / model+body+texture+pad / add_cost / max_charges
+// lands charges on +0x258. A "charged" item (limited-use consumable that
+// can't stack — e.g. some droid/usable items) has max_charges > 0; regular
+// gear and stackables leave both at 0, so this never collides with the
+// stack_size suffix.
+constexpr size_t    kSwsItemChargesOffset                  = 0x258;
+constexpr size_t    kSwsItemMaxChargesOffset               = 0x25c;
+
 // CSWGuiStore::GetItemBuyValue / GetItemSellValue — __thiscall returning
 // ulong, single CSWSItem* argument. Both pop 4 bytes (callee).
 constexpr uintptr_t kAddrCSWGuiStoreGetItemBuyValue        = 0x006c0790;

@@ -115,6 +115,34 @@ uint32_t ReadActionId(void* tam, void* mi, const Cat& c, int idx) {
         : acc::engine_actionbar::ReadVariantActionId(mi, c.slot, idx);
 }
 
+// Append ", N Stück" / ", N Ladungen" to an item entry's label, matching the
+// inventory / store suffixes. Resolves the CSWSItem behind the entry's
+// item-tagged action_id; no-op for non-item entries (attacks, force powers)
+// and single non-charged items. Charged items can't stack, so the two
+// suffixes never both fire.
+void AppendItemQuantity(void* tam, void* mi, const Cat& c, int idx,
+                        char* label, size_t n) {
+    void* item = acc::engine::ItemFromActionId(ReadActionId(tam, mi, c, idx));
+    if (!item) return;
+    char suffix[64] = "";
+    int charges = acc::engine::ReadItemCharges(item);
+    if (charges >= 0) {
+        std::snprintf(suffix, sizeof(suffix),
+                      acc::strings::Get(acc::strings::Id::FmtItemChargeSuffix),
+                      charges);
+    } else {
+        int stack = acc::engine::ReadItemStack(item);
+        if (stack > 1) {
+            std::snprintf(suffix, sizeof(suffix),
+                          acc::strings::Get(acc::strings::Id::FmtItemStackSuffix),
+                          stack);
+        }
+    }
+    if (!suffix[0]) return;
+    size_t len = strnlen(label, n);
+    if (len < n) std::snprintf(label + len, n - len, ", %s", suffix);
+}
+
 bool Dispatch(void* tam, void* mi, const Cat& c) {
     return c.kind == CatKind::Target
         ? acc::engine_radial::DispatchRowAction(tam, c.slot)
@@ -216,6 +244,7 @@ void FormatCategory(void* tam, void* mi, const Cat& c, int count, int idx,
                     char* out, size_t n) {
     char label[128] = "";
     ReadLabel(tam, mi, c, idx, label, sizeof(label));
+    AppendItemQuantity(tam, mi, c, idx, label, sizeof(label));
     const char* lbl = label[0] ? label : "?";
     const char* name = CategoryName(c);
     using S = acc::strings::Id;
@@ -269,6 +298,7 @@ void SpeakEntry(void* tam, void* mi) {
     int& sel = ShadowFor(c);
     char label[128] = "";
     ReadLabel(tam, mi, c, sel, label, sizeof(label));
+    AppendItemQuantity(tam, mi, c, sel, label, sizeof(label));
     acc::menu_speak::SpeakChoice("UnifiedMenu", label,
                                  "entry cat=%d slot=%d idx=%d",
                                  g.curCat, c.slot, sel);

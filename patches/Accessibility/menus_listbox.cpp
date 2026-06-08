@@ -243,6 +243,14 @@ void ContainerAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
                      stack);
             prism::Speak(suffix, /*interrupt=*/false);
         }
+        int charges = acc::engine::ReadItemRowCharges(r.row);
+        if (charges >= 0) {
+            char suffix[64];
+            snprintf(suffix, sizeof(suffix),
+                     acc::strings::Get(acc::strings::Id::FmtItemChargeSuffix),
+                     charges);
+            prism::Speak(suffix, /*interrupt=*/false);
+        }
     }
 }
 
@@ -1451,8 +1459,16 @@ void MonitorContainerSelection() {
                  stack);
         prism::Speak(suffix, /*interrupt=*/false);
     }
-    acclog::Write("Menus.Container", "row lb=%p sel=%d (was %d) text=\"%s\" stack=%d",
-                  lb, selIdx, prev, rowText, stack);
+    int charges = acc::engine::ReadItemRowCharges(row);
+    if (charges >= 0) {
+        char suffix[64];
+        snprintf(suffix, sizeof(suffix),
+                 acc::strings::Get(acc::strings::Id::FmtItemChargeSuffix),
+                 charges);
+        prism::Speak(suffix, /*interrupt=*/false);
+    }
+    acclog::Write("Menus.Container", "row lb=%p sel=%d (was %d) text=\"%s\" stack=%d charges=%d",
+                  lb, selIdx, prev, rowText, stack, charges);
 }
 
 void MonitorEquipPickerSelection() {
