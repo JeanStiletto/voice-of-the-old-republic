@@ -745,11 +745,24 @@ bool ReadCreatureForcePoints(void* clientCreature, int* outCur, int* outMax) {
 
     // CSWCCreature+0x2f8 -> CSWCLevelUpStats* (embeds CSWCCreatureStats).
     // Same chain as combat_query's HP reads; force pool lives further into
-    // the same struct: max_force_points @+0x11e, force_points @+0x120
-    // (anchored by swkotor.exe.h field89_0x122).
+    // the same struct.
+    //
+    //   +0x11e  short  max_force_points   (cached computed max — LIVE)
+    //   +0x120  short  force_points       (BASE term fed into GetMaxForcePoints,
+    //                                       NOT the live current pool — ignore)
+    //   +0x122  short  field85_0x122  ┐ live current force = sum of these two,
+    //   +0x124  short  field86_0x124  ┘ exactly as the engine's own
+    //                                   CSWGuiInGameCharacter::SetStats
+    //                                   (@0x006afda0) computes the FP label off
+    //                                   this client struct. (Note the server
+    //                                   GetCurrentForcePoints sums +0x124/+0x126
+    //                                   — the server stats struct is shifted 2
+    //                                   bytes from this client one, so reuse of
+    //                                   the server offsets here reads garbage.)
     constexpr size_t kLvlUpStatsOffset = 0x2f8;
     constexpr size_t kMaxForceOffset   = 0x11e;
-    constexpr size_t kCurForceOffset   = 0x120;
+    constexpr size_t kCurForceLoOffset = 0x122;
+    constexpr size_t kCurForceHiOffset = 0x124;
 
     void* lvlUpStats = nullptr;
     __try {
@@ -762,10 +775,13 @@ bool ReadCreatureForcePoints(void* clientCreature, int* outCur, int* outMax) {
     if (!lvlUpStats) return false;
 
     __try {
-        int maxFp = static_cast<int>(*reinterpret_cast<short*>(
-            reinterpret_cast<unsigned char*>(lvlUpStats) + kMaxForceOffset));
-        int curFp = static_cast<int>(*reinterpret_cast<short*>(
-            reinterpret_cast<unsigned char*>(lvlUpStats) + kCurForceOffset));
+        unsigned char* stats = reinterpret_cast<unsigned char*>(lvlUpStats);
+        int maxFp = static_cast<int>(
+            *reinterpret_cast<short*>(stats + kMaxForceOffset));
+        // Match the engine: (short)(field_0x124 + field_0x126).
+        int curFp = static_cast<int>(static_cast<short>(
+            *reinterpret_cast<short*>(stats + kCurForceLoOffset) +
+            *reinterpret_cast<short*>(stats + kCurForceHiOffset)));
         if (outMax) *outMax = maxFp;
         if (outCur) *outCur = curFp;
     } __except (EXCEPTION_EXECUTE_HANDLER) {

@@ -198,8 +198,11 @@ bool IsInventoryItemRow(void* control);
 
 // Read a client creature's live Force pool. Walks CSWCCreature+0x2f8 →
 // CSWCLevelUpStats (embeds CSWCCreatureStats at +0), then reads
-// max_force_points @+0x11e and force_points @+0x120 — the same struct
-// combat_query reads HP from at +0x4c/+0x4e. SEH-guarded; returns false
+// max_force_points @+0x11e and the live current pool as the sum of the two
+// shorts at +0x122/+0x124 (matching CSWGuiInGameCharacter::SetStats, which
+// reads this client struct; the +0x120 "force_points" field is a static base,
+// not the live current).
+// Same struct combat_query reads HP from at +0x4c/+0x4e. SEH-guarded; returns false
 // on null/fault. *outMax == 0 is a VALID result meaning "not a Force
 // user" (non-Jedi classes, droids) — callers gate the FP display on
 // *outMax > 0, NOT on the return value. `clientCreature` is a

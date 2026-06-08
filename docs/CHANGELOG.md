@@ -23,6 +23,10 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.4.1</h2>
 
+<h3>Bug fixes:</h3>
+
+- The Force Points readout (the H key self-status) now reports your real current Force points. It previously always spoke a fixed number regardless of how much Force you actually had or had spent — it was reading a static base value instead of the live pool. It now reads the same current-Force value the character sheet shows, so it updates as you cast powers and rest. Maximum Force points and current/maximum health were already correct and are unchanged.
+
 <h3>Updater:</h3>
 
 - The in-game updater now downloads new versions reliably even when GitHub is having problems. The "Update available" notice and the F5-to-install flow already worked, but the actual download went through GitHub's public browser download link, which during a partial GitHub outage returns an error and failed the whole update — this is exactly what stopped the first 0.4 download. It now fetches the installer through GitHub's API instead, which stays up during those outages and is the same path GitHub's own tools use, so an update that is offered will actually download.
