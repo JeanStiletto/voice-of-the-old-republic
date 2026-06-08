@@ -25,7 +25,12 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>Bug fixes:</h3>
 
+- Leveling up no longer loses the Force power you chose. On the level-up screen, if you picked a power and then opened another category (such as Skills or Feats) before pressing Accept, the level still completed but the power was silently discarded — you spent the level and learned nothing. The screen has a required order, and opening a category out of that order is what threw the pick away. The mod now keeps to that order: only the category the game has unlocked next can be opened, and pressing a still-locked one now tells you which step to finish first. Powers you pick now always stick.
 - The keyboard no longer goes dead after loading a save. If you pressed any keys while a save was still loading, the game could come up completely unresponsive — no movement, no menu navigation, not even Escape to open the menu — and the only way out was to alt-tab out of the game and back in. The cause was the keyboard input being left switched off after the load if a key was pressed while the game was rebuilding its window mid-load. Loading now re-arms keyboard and mouse input the moment the area finishes loading, so input always works whether or not you touched the keys during the load.
+
+<h3>Level-up and character creation:</h3>
+
+- The level-up and character-creation screens now tell you which step to do next and which steps you can't reach yet. The step the game has unlocked is read out plainly, while categories that aren't your turn yet — or that you have no points to spend on — are announced as "unavailable". Before, every category sounded the same, so reaching one that did nothing when you pressed it made the screen feel broken.
 
 <h2>v0.4.1</h2>
 
