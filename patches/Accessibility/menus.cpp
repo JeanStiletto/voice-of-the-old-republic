@@ -465,12 +465,29 @@ static void AnnouncePanelTitle(void* panel) {
     // self-guard against repeats).
     if (IdentifyPanel(panel) == PanelKind::MainMenu) {
         acclog::BringupMark("main_menu_first_sight");
+        // Cold-start DirectInput wake-up. On a fresh launch the engine often
+        // reaches the main menu with its DirectInput devices unacquired
+        // (CExoRawInputInternal::active == 0), so keyboard input is dead until
+        // the user alt-tabs out and back in. Asserting SetActive(1) here — the
+        // first guaranteed-interactive, post-load moment — replicates the
+        // activate half of that alt-tab and acquires the keyboard immediately.
+        // Idempotent: a no-op if the engine already activated. See
+        // acc::engine::EnsureInputAcquired for the full mechanism.
+        acc::engine::EnsureInputAcquired();
         acc::update_checker::StartBackgroundCheck();
         // Belt-and-braces — the polling thread spawned at OnRulesInit
         // should already have subclassed every game window by now, but
         // re-calling is a no-op and keeps the safety net in place in
         // case the thread didn't start (CreateThread failure logged).
         acc::diag::focus::StartFocusProbe();
+        // Arm the cold-start foreground guard. EnsureInputAcquired above
+        // fixes the pure case (engine never activated), but it cannot help
+        // when an overlay like the Xbox Game Bar popup owns the foreground
+        // at menu time — DirectInput can't Acquire while a foreign window is
+        // foreground, and the steal can land several seconds AFTER this
+        // point. The guard watches for that theft for ~15 s and pulls the
+        // game back, letting the engine re-Acquire input without an alt-tab.
+        acc::diag::focus::ArmStartupForegroundGuard();
         const char* title = acc::strings::Get(acc::strings::Id::PanelTitleMainMenu);
         acclog::Write("Menus.PanelWalk",
                       "title parent=%p (main menu override) text=\"%s\"",

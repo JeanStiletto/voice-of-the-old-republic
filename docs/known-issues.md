@@ -35,6 +35,33 @@ The first open of a menu panel in a session has a perceptible delay; subsequent 
 
 Items in the map-hint filter are announced twice on a single cycle step. Likely a duplicate fire — one from our cycle dispatcher and one from an engine-side re-narration path, or the unified Map-hint category folding waypoints + pins announces both rows for a single underlying object. See `project_map_cycle_architecture.md` for the category structure.
 
+### Endless leveling bug
+
+The character can keep levelling up with no cap enforced — the level-up flow can be entered/applied repeatedly past where it should stop. Needs a clean repro (class, current level, and entry path — Shift+L vs the engine's own level-up prompt) and a check of whether our level-up wiring (`engine_levelup.cpp`, `menus_powers_levelup.cpp`) is re-firing the apply, or the engine is being driven twice.
+
+### Tutorial popups not reading correctly?
+
+The in-game tutorial popups (`Tutorial Popups=1`) may not be read aloud correctly — text missing, partial, or not spoken at all. These are a distinct message-box type from normal dialogue; confirm what's spoken vs shown and capture a log on a known tutorial trigger.
+
+### Droids sometimes don't read all dialogue options
+
+In some droid conversations not every reply option is read while cycling the choices. Possibly a listbox enumeration miss or an options-changed re-read race. Note which droid / conversation; check the option enumeration in `dialog_speech.cpp`.
+
+### Hacking/security dialogues — options read twice, plus general jank
+
+Computer-spike / security "dialogues" read their options twice, and the interaction feels janky/slow. Likely the same double-read path as the Shift+Down item below (our description/option reader firing alongside an engine re-narration on the menu's option refresh). Confirm whether it's the engine re-firing or our reader, and whether the jank is a separate per-tick cost.
+
+### Shift+Down reads descriptions twice (Journal, items)
+
+Pressing Shift+Down to read a full description often reads it twice — seen in the Journal and on items. Duplicate fire between our Shift+arrow description reader and an engine re-narration, or a missing Consume so the key both drives our read and falls through. Same shape as the hacking double-read above; likely one root cause.
+
+### Subtitle filter regressions (voiced-speaker suppression)
+
+Two regressions from the voiced-speaker subtitle suppression change (CHANGELOG: "Untertitel vertonter Sprecher vorlesen"), both in `dialog_speech.cpp`'s speaker classification:
+- **Zaalbar now has no subtitles read at all.** His Shyriiwook is untranslated alien speech the player can't otherwise follow and should still be read — the filter is over-suppressing him.
+- **Some barks / ambient one-liner lines still have their subtitles read** over the audio, when the filter should already cover them (under-suppressing).
+We already have the suppression code; it's mis-classifying these two cases. Tune the voiced-speaker vs read-anyway decision so genuinely-alien speech stays read while every voiced line (including barks) is suppressed.
+
 ## Planned
 
 ### Pazaak pre-game deck-build + wager menu
@@ -77,6 +104,18 @@ Expose talents, feats, and force powers for the other party members. Today only 
 
 Walltopo handles corridors and junctions well, but open / non-corridor rooms still narrate poorly. Need a clearer summary for plaza/hall-shaped spaces: rough shape, key exits, important landmarks. May need a different topology pass than the chain-merge corridor model (`project_walltopo_chain_merge_idea.md`).
 
+Specifics to address:
+- **Room-shape descriptions often fail in more open spaces** — shape detection produces nothing in plaza/hall geometry and the narration falls back to a generic "open space" line. Make shape detection succeed there.
+- **Improve the announcement of open spaces** generally — more useful summary than the current fallback.
+- **The shape announcement should replace the generic "open space" line** — once we can describe the shape, that description supersedes the generic fallback rather than sitting alongside it.
+
+### Additional manual map hints
+
+Hand-authored map hints for specific story locations the game doesn't mark but players struggle to find without sight. Backlog so far:
+- Rebel corpses.
+- The backdoor of the Santan (Sandral?) estate.
+Add these to the manual map-hint registry (see `project_map_cycle_architecture.md` / `map_user_markers.cpp` for how user/manual hints fold into the map-hint cycle). Confirm the exact module and in-world position for each before adding.
+
 ### Integrate a Polish translation
 
 Add Polish as a supported language. Decide the integration path — installer locale JSON (alongside de/en/fr/it/es) and/or in-game speech strings routed through the shared strings system — and wire it in. Source of the Polish strings (community contribution vs AI draft like fr/it/es) to be determined.
@@ -99,9 +138,11 @@ Still open (next session, fresh context): **tune the cue feel** (convergence spe
 
 **Update (2026-06-04): largely RESOLVED via aim-assist.** RE confirmed the hitbox is a real ~20 m sphere that can't be enlarged at runtime (model-scale and `sphere_radius` writes both no-ops). Measured raw aim-by-ear at ~0.8% hit rate — effectively unplayable, confirming the "luck only" report. Shipped aim-assist (writes `CSWMiniPlayer.aim +0x1c4`): DEFAULT always-on magnetism (pulls the gun onto the locked fighter once within 15°) + opt-in "Autoaiming" toggle (full lock-on). A within-session A/B proved magnetism ~14× the hit rate (ON 11.3% vs OFF 0.8%). Pending tester confirmation that the default feel is right.
 
-### Main menu occasionally still needs one alt-tab after launch
+### Main menu needs one alt-tab after launch — fix shipped (v0.3.2), watching
 
-After replacing the wrapper-based DirectInput-mouse guard with an inline trampoline installed from `OnRulesInit`, the alt-tab-required-every-launch regression cleared. In a 3-launch sample one still showed the symptom — keys ignored until a single alt-tab cycle, then normal. No EngineInput log line, no crash, and the trampoline-installed log line was present, so the residual isn't our guard tripping; it looks like the same vanilla KOTOR background-launch / bink-window focus race that existed before the regression but is now visible against a clean baseline. Watch beta feedback. If it stays at ~1-in-3 or rarer, leave it; if testers report it consistently, instrument the engine's input-pump pause path around bink/focus transitions and consider forcing a DirectInput re-Acquire from our patch on main-menu first sight.
+**Root cause found and fixed (2026-06-08).** Decompiled the input path: the engine acquires its DirectInput keyboard only on a `CExoInput::SetActive(1)` transition (driven by game-state events like `HideLoadScreen` via `FUN_005f6b10`, not purely by the window's `WM_ACTIVATE`), and `CExoRawInputInternal::GetKeyboardBuffer` returns zero input while `active == 0`. On cold start the final render window could be created without that activation reaching the live input object, leaving the keyboard dead until an alt-tab forced a real `SetActive(0)→SetActive(1)` cycle. Multi-launch logs then showed a second, dominant cause: the **Xbox Game Bar launch popup (and similar overlays) steal the foreground window** for several seconds right as the menu appears — and DirectInput (foreground cooperative level) can't `Acquire()` while a foreign window owns the foreground, so the steal can land up to ~6 s *after* the menu and kill input again.
+
+Two-part fix: (1) `acc::engine::EnsureInputAcquired()` reads the engine's own `ExoInput` global and calls `CExoInput::SetActive(ExoInput, 1)` at MainMenu first-sight (idempotent — exactly what `HideLoadScreen` does), fixing the pure no-overlay case; (2) a **bounded cold-start foreground guard** in `diag_focus.cpp` — for 15 s after the menu, the 100 ms poll thread pulls the game's render window back to the foreground (via `AttachThreadInput` + `SetForegroundWindow`, no synthetic keypress) whenever a non-game window steals it, which makes the engine re-`Acquire` input on its own. Bounded by time (15 s) and reclaim count (6) so it never fights focus afterwards — Game Bar and deliberate alt-tabbing still work. Log lines: `EnsureInputAcquired: ... SetActive(... 1) dispatched` and `StartupForegroundGuard: ... reclaiming render ...`. Confirmed working by the developer across multiple launches; keep watching beta feedback on diverse machines before closing.
 
 ### Pazaak board game (keyboard play + narration)
 

@@ -43,6 +43,29 @@ SubclassedWindow         g_subclassed[kMaxSubclassedWindows] = {};
 std::atomic<int>         g_subclassedCount{0};
 std::atomic<HANDLE>      g_pollThread{nullptr};
 
+// --- Cold-start foreground guard (Game Bar / overlay focus-theft) ---
+//
+// On a cold launch an overlay (notably the Xbox Game Bar popup) can steal
+// the foreground window for a few seconds right as the main menu comes up.
+// DirectInput's keyboard is acquired at foreground cooperative level, so
+// while a foreign window owns the foreground the engine cannot Acquire it —
+// the menu is keyboard-dead until the user alt-tabs the game back. This
+// guard, armed at MainMenu first-sight, watches for that theft during a
+// bounded window and pulls the game back to the foreground, at which point
+// the engine's activation handler re-Acquires input on its own.
+//
+// kGuardWindowMs: how long after arming we keep watching. The observed
+// Game Bar steal lands within ~6 s of the menu; 15 s gives margin without
+// trapping a user who wants to leave (after this we never reclaim again).
+// kMaxReclaims caps the reclaim attempts so a persistent overlay can't
+// drag us into an endless focus war — once hit, we give up and disarm.
+constexpr DWORD kGuardWindowMs = 15000;
+constexpr int   kMaxReclaims   = 6;
+
+std::atomic<DWORD> g_guardDeadlineTick{0};  // GetTickCount() deadline; 0 = disarmed
+std::atomic<int>   g_guardReclaims{0};
+std::atomic<HWND>  g_liveRenderWindow{nullptr};  // newest visible "Render Window"
+
 const SubclassedWindow* FindSubclassed(HWND hwnd) {
     int n = g_subclassedCount.load(std::memory_order_acquire);
     for (int i = 0; i < n; ++i) {
@@ -196,7 +219,7 @@ void LogAllProcessWindows(const char* origin) {
 // Polling-thread scan: called every iteration. Single-writer; only this
 // thread mutates g_subclassed[] / g_subclassedCount. Idempotent against
 // already-subclassed HWNDs.
-struct ScanState { DWORD pid; int newlySubclassed; };
+struct ScanState { DWORD pid; int newlySubclassed; HWND visibleRender; };
 
 BOOL CALLBACK ScanProc(HWND hwnd, LPARAM lp) {
     auto* state = reinterpret_cast<ScanState*>(lp);
@@ -207,6 +230,14 @@ BOOL CALLBACK ScanProc(HWND hwnd, LPARAM lp) {
     char cls[64] = {};
     GetClassNameA(hwnd, cls, sizeof(cls));
     if (!IsGameWindowClass(cls)) return TRUE;
+
+    // Track the current live render window for the foreground guard. KOTOR
+    // recreates the "Render Window" a few times during startup; only the
+    // live one is visible, so filter on IsWindowVisible. Last writer in a
+    // scan wins — in practice exactly one render window is visible.
+    if (strcmp(cls, "Render Window") == 0 && IsWindowVisible(hwnd)) {
+        state->visibleRender = hwnd;
+    }
 
     int n = g_subclassedCount.load(std::memory_order_relaxed);
     for (int i = 0; i < n; ++i) {
@@ -251,6 +282,70 @@ BOOL CALLBACK ScanProc(HWND hwnd, LPARAM lp) {
     return TRUE;
 }
 
+// Pull `target` to the foreground from a thread that doesn't own it. The
+// AttachThreadInput dance is the standard way around the Win32 foreground
+// lock without injecting a synthetic ALT keypress (which a screen-reader
+// user would not want). SEH-guarded — every call here is a Win32 boundary.
+void ForceForeground(HWND target, HWND fg) {
+    __try {
+        DWORD myTid = GetCurrentThreadId();
+        DWORD fgTid = fg ? GetWindowThreadProcessId(fg, nullptr) : 0;
+        BOOL attached = FALSE;
+        if (fgTid && fgTid != myTid) {
+            attached = AttachThreadInput(myTid, fgTid, TRUE);
+        }
+        BringWindowToTop(target);
+        SetForegroundWindow(target);
+        if (attached) {
+            AttachThreadInput(myTid, fgTid, FALSE);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        // Reclaim is best-effort; swallow any Win32-boundary fault.
+    }
+}
+
+// Called once per poll iteration. While the guard is armed and within its
+// window, reclaim the foreground if a non-game window has stolen it.
+void MaybeReclaimForeground() {
+    DWORD deadline = g_guardDeadlineTick.load(std::memory_order_acquire);
+    if (deadline == 0) return;  // disarmed
+
+    DWORD now = GetTickCount();
+    if (static_cast<int>(now - deadline) >= 0) {  // wrap-safe elapsed check
+        g_guardDeadlineTick.store(0, std::memory_order_release);
+        acclog::Write("Focus",
+            "StartupForegroundGuard: window elapsed; disarmed (reclaims=%d)",
+            g_guardReclaims.load(std::memory_order_relaxed));
+        return;
+    }
+
+    HWND render = g_liveRenderWindow.load(std::memory_order_acquire);
+    if (!render || !IsWindow(render)) return;
+
+    HWND fg = GetForegroundWindow();
+    if (fg) {
+        DWORD fgPid = 0;
+        GetWindowThreadProcessId(fg, &fgPid);
+        if (fgPid == GetCurrentProcessId()) return;  // we already own foreground
+    }
+
+    int n = g_guardReclaims.load(std::memory_order_relaxed);
+    if (n >= kMaxReclaims) {
+        g_guardDeadlineTick.store(0, std::memory_order_release);
+        acclog::Write("Focus",
+            "StartupForegroundGuard: reclaim cap (%d) reached; giving up",
+            kMaxReclaims);
+        return;
+    }
+    g_guardReclaims.store(n + 1, std::memory_order_relaxed);
+
+    acclog::Write("Focus",
+        "StartupForegroundGuard: foreign window %p holds foreground; "
+        "reclaiming render %p (attempt %d/%d)",
+        fg, render, n + 1, kMaxReclaims);
+    ForceForeground(render, fg);
+}
+
 DWORD WINAPI PollProc(LPVOID) {
     acclog::Write("Focus",
         "FocusPoll: thread started (pid=%lu, tid=%lu); scanning every 100ms",
@@ -263,8 +358,12 @@ DWORD WINAPI PollProc(LPVOID) {
 
     int iter = 0;
     for (;;) {
-        ScanState st{ GetCurrentProcessId(), 0 };
+        ScanState st{ GetCurrentProcessId(), 0, nullptr };
         EnumWindows(ScanProc, reinterpret_cast<LPARAM>(&st));
+        if (st.visibleRender) {
+            g_liveRenderWindow.store(st.visibleRender, std::memory_order_release);
+        }
+        MaybeReclaimForeground();
         Sleep(100);
         ++iter;
         // Heartbeat once per minute so we know the thread is still
@@ -312,6 +411,16 @@ void StartFocusProbe() {
     ResumeThread(created);
     acclog::Write("Focus",
         "StartFocusProbe: polling thread launched (handle=%p)", created);
+}
+
+void ArmStartupForegroundGuard() {
+    g_guardReclaims.store(0, std::memory_order_relaxed);
+    DWORD deadline = GetTickCount() + kGuardWindowMs;
+    if (deadline == 0) deadline = 1;  // 0 is the disarmed sentinel
+    g_guardDeadlineTick.store(deadline, std::memory_order_release);
+    acclog::Write("Focus",
+        "StartupForegroundGuard: armed for %lu ms (watching for overlay "
+        "focus-theft, e.g. Game Bar)", kGuardWindowMs);
 }
 
 }  // namespace acc::diag::focus

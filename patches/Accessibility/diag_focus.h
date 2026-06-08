@@ -32,4 +32,18 @@ void LogComApartment(const char* tag);
 // the worker; subsequent calls return immediately.
 void StartFocusProbe();
 
+// Arm the cold-start foreground guard. For a bounded window after this
+// call, the focus-probe poll thread watches for a NON-game window grabbing
+// the foreground (the Xbox Game Bar launch popup and similar overlays do
+// this), and pulls the game's render window back to the foreground when it
+// happens. Reclaiming foreground makes the engine's own activation handler
+// (FUN_005f6b10 -> CExoInput::SetActive(1)) re-Acquire the DirectInput
+// keyboard, which is otherwise dead until the user alt-tabs.
+//
+// Deliberately bounded in time and reclaim count: once the window elapses
+// (or the cap is hit) the guard disarms and never fights for focus again,
+// so a user who genuinely opens Game Bar later is left alone. Requires the
+// poll thread (StartFocusProbe) to be running. Call at MainMenu first-sight.
+void ArmStartupForegroundGuard();
+
 }  // namespace acc::diag::focus

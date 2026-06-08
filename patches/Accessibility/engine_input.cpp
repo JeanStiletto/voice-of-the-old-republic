@@ -3,7 +3,26 @@
 #include <windows.h>
 #include <cstdint>
 
+#include "log.h"
+
 namespace acc::engine {
+
+namespace {
+
+// Engine global holding the CExoInput facade pointer (the same symbol
+// HideLoadScreen reads before calling SetActive). Verified in Lane's DB:
+// SYMBOL ExoInput @0x007a39e4.
+constexpr uintptr_t kAddrExoInputGlobal = 0x007a39e4;
+
+// CExoInput::SetActive(this, int active) @0x005df540. Sets the facade +
+// CExoInputInternal active flags and forwards to
+// CExoRawInputInternal::SetActive, which Acquire()s the DirectInput
+// keyboard/mouse/joystick devices on the 0->1 transition.
+constexpr uintptr_t kAddrCExoInputSetActive = 0x005df540;
+
+typedef void(__thiscall* PFN_CExoInputSetActive)(void* this_, int active);
+
+}  // namespace
 
 // Names for the InputIndices enum (size 132, definition lifted from Lane's
 // Ghidra SARIF: /KotOR Types/Enums/InputIndices). Index = enum value;
@@ -98,6 +117,28 @@ int ManagerTranslateCode(int code) {
     case 0xb8:            return 0x3f;
     case 0xb9:            return 0x40;
     default:              return code;
+    }
+}
+
+bool EnsureInputAcquired() {
+    __try {
+        void* exoInput = *reinterpret_cast<void**>(kAddrExoInputGlobal);
+        if (!exoInput) {
+            acclog::Write("EngineInput",
+                "EnsureInputAcquired: ExoInput global is null; skipped");
+            return false;
+        }
+        auto setActive = reinterpret_cast<PFN_CExoInputSetActive>(
+            kAddrCExoInputSetActive);
+        setActive(exoInput, 1);
+        acclog::Write("EngineInput",
+            "EnsureInputAcquired: CExoInput::SetActive(%p, 1) dispatched "
+            "(cold-start DirectInput wake)", exoInput);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("EngineInput",
+            "EnsureInputAcquired: exception during SetActive; skipped");
+        return false;
     }
 }
 
