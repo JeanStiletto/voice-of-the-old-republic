@@ -97,6 +97,7 @@ const char* Get(Id id) {
         case Id::FmtMenuCatMulti:      return "%s : %s, %d options";
         case Id::FmtMenuCatSingle:     return "%s : %s";
         case Id::FmtMenuPlainMulti:    return "%s, %d options";
+        case Id::FmtMenuCategoryEmpty: return "%s : vide";
 
         case Id::NoTooltipAvailable:   return "Aucune description disponible";
 

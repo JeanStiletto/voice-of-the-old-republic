@@ -46,12 +46,23 @@ int g_targetSel[kRowCount]      = {0, 0, 0};
 int g_personalSel[kColumnCount] = {0, 0, 0, 0, 0, 0};
 
 struct State {
-    bool     active       = false;
+    bool     active         = false;
     Cat      cats[kMaxCats];
-    int      catCount     = 0;
-    int      curCat       = 0;
-    uint32_t targetHandle = 0;     // server/client handle; 0 = personal-only
-    bool     creature     = false; // target is a hostile creature → named rows
+    int      catCount       = 0;
+    int      curCat         = 0;
+    uint32_t targetHandle   = 0;    // server/client handle; 0 = personal-only
+    bool     creature       = false;// target is a hostile creature → named rows
+    bool     hasTargetBlock = false;// include the 3 target rows in the menu?
+    int      reqSlot        = 0;    // category the open shortcut asked for
+                                    // (Shift+1..3 row / Shift+4..7 column).
+                                    // Held in State, not a local: reading it
+                                    // back after the engine-call chain returned
+                                    // corrupted values (observed 2026-06-07 —
+                                    // the local logged as a pointer/handle while
+                                    // globals stayed intact, a stack imbalance
+                                    // somewhere in the engine calls). Capturing
+                                    // it before the first engine call sidesteps
+                                    // the corrupted stack slot.
     char     targetName[64] = "";
 };
 State g;
@@ -167,6 +178,36 @@ int FirstPopulatedTargetRow(void* tam) {
     return -1;
 }
 
+// Decide whether the target block's three rows are the hostile-creature
+// Attacks / Force-Powers / Items layout (→ named categories) vs a
+// door/placeable/trigger's per-object actions (→ announce by label).
+//
+// We do NOT rely solely on resolving the target's client handle: an
+// extended-cycled FAR target often isn't in the client object array, so
+// the vtable downcast (IsCreatureClientTarget) returns false even for a
+// real creature (observed 2026-06-07, "mangled menu" bug). The robust
+// signal is the action content itself — only hostile-creature rows carry
+// the tagged action_ids (force power 0x1000…, feat 0x2000…, item 0x4000…);
+// doors/placeables expose only small interface-action ids (0x3ea, 0x3f2…,
+// 0x404). So: tagged action present in any row ⇒ creature layout.
+bool TargetRowsLookHostileCreature(void* tam) {
+    if (!tam) return false;
+    for (int r = 0; r < kRowCount; ++r) {
+        if (acc::engine_radial::RowActionCount(tam, r) <= 0) continue;
+        if (acc::engine_radial::ReadSelectedRowActionId(tam, r) >= 0x10000000u) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Combined creature signal: trust the clean vtable downcast for near
+// targets, fall back to action-content for far / unresolvable ones.
+bool DetectCreature(void* tam, uint32_t handle) {
+    return acc::engine_radial::IsCreatureClientTarget(handle) ||
+           TargetRowsLookHostileCreature(tam);
+}
+
 // ---- speech --------------------------------------------------------------
 
 // Build the full category announce ("Name: label, N Optionen" / "label, N
@@ -278,6 +319,8 @@ void ForceDisarm(const char* reason) {
     g.curCat = 0;
     g.targetHandle = 0;
     g.creature = false;
+    g.hasTargetBlock = false;
+    g.reqSlot = 0;
     g.targetName[0] = '\0';
     // Shadows persist intentionally — keep the user's per-slot variant.
 }
@@ -300,8 +343,9 @@ bool ArmFromRadial(const char* name, uint32_t targetHandle) {
     void* mi = acc::engine_actionbar::ResolveMainInterface();
 
     Arm();
+    g.hasTargetBlock = true;
     g.targetHandle = targetHandle;
-    g.creature = acc::engine_radial::IsCreatureClientTarget(targetHandle);
+    g.creature = DetectCreature(tam, targetHandle);
     std::snprintf(g.targetName, sizeof(g.targetName), "%s",
                   (name && name[0]) ? name : "");
 
@@ -337,32 +381,43 @@ bool OpenTarget(int row) {
         acclog::Write("UnifiedMenu", "OpenTarget row=%d — no narrated target", row);
         return false;
     }
-    // Refresh both blocks against the focused target.
-    (void)acc::picker::ReanchorRadial(handle);
+    // Capture handle + requested row in State before any engine call — the
+    // engine-call chain corrupts stack locals (see State::reqSlot).
+    g.targetHandle = handle;
+    g.reqSlot = row;
+
+    // Read the LIVE target-action menu as-is — do NOT re-populate here. The
+    // bare-key path in input_pipeline already re-targets + re-populates BOTH
+    // blocks against this same target on the Shift+1..3 press (PopulateMenus
+    // rebuilds the target rows too), in the engine's own input-dispatch
+    // context. Re-populating again from this tick context is what made the
+    // engine synthesise a phantom confirm that fired the menu's first entry
+    // (see OpenPersonal note + the 06:55 vs 10:44 logs, 2026-06-07).
     void* tam = acc::engine_radial::ResolveTargetActionMenu();
     void* mi  = acc::engine_actionbar::ResolveMainInterface();
-    if (!tam || acc::engine_radial::RowActionCount(tam, row) <= 0) {
+    if (!tam || acc::engine_radial::RowActionCount(tam, g.reqSlot) <= 0) {
         char msg[128];
         std::snprintf(msg, sizeof(msg),
                       acc::strings::Get(acc::strings::Id::FmtActionBarColumnEmpty),
-                      row + 1);
+                      g.reqSlot + 1);
         prism::Speak(msg, /*interrupt=*/true);
         acclog::Write("UnifiedMenu", "OpenTarget row=%d empty (target=0x%08x)",
-            row, handle);
+            g.reqSlot, g.targetHandle);
+        g.targetHandle = 0;   // not arming — don't leave a stale target
         return false;
     }
 
     Arm();
-    g.targetHandle = handle;
-    g.creature = acc::engine_radial::IsCreatureClientTarget(handle);
+    g.hasTargetBlock = true;
+    g.creature = DetectCreature(tam, g.targetHandle);
     g.targetName[0] = '\0';
 
     BuildCategoryList(tam, mi);
-    int loc = LocateCat(CatKind::Target, row);
+    int loc = LocateCat(CatKind::Target, g.reqSlot);
     g.curCat = (loc >= 0) ? loc : 0;
 
     acclog::Write("UnifiedMenu", "ARMED (target) row=%d target=0x%08x creature=%d "
-        "cats=%d", row, handle, g.creature ? 1 : 0, g.catCount);
+        "cats=%d", g.reqSlot, g.targetHandle, g.creature ? 1 : 0, g.catCount);
     SpeakCategory(tam, mi, /*prefix=*/nullptr);
     return true;
 }
@@ -374,40 +429,59 @@ bool OpenPersonal(int col) {
             col);
         return false;
     }
-    // Refresh personal lists (and, if a target is focused, the target block
-    // too so Left can cross into it). With no target, prep against the
-    // invalid sentinel so self-buff items still resolve.
-    uint32_t handle = ResolveNarratedServerHandle();
-    if (handle != 0) {
-        (void)acc::picker::ReanchorRadial(handle);
-    } else {
-        (void)acc::engine_actionbar::PrepareBareDispatch(kInvalidObjectId);
-    }
-    void* mi  = acc::engine_actionbar::ResolveMainInterface();
-    void* tam = acc::engine_radial::ResolveTargetActionMenu();
-    if (!mi || acc::engine_actionbar::VariantCount(mi, col) <= 0) {
-        char msg[128];
-        std::snprintf(msg, sizeof(msg),
-                      acc::strings::Get(acc::strings::Id::FmtActionBarColumnEmpty),
-                      col + 1);
+    // Capture the requested column in State before any engine call — the
+    // engine-call chain corrupts stack locals (see State::reqSlot).
+    g.reqSlot = col;
+
+    // Shift+4..7 is the PERSONAL entry point; target actions are reached via
+    // Shift+1..3 / Shift+Enter. Read the LIVE main-interface as-is — do NOT
+    // call PrepareBareDispatch here. The engine keeps the personal columns
+    // populated during in-world play, and the bare-key path in input_pipeline
+    // already re-targets + re-populates them against the invalid sentinel on
+    // the same Shift+number press, so self-buff items (medpacs, force powers,
+    // stims) resolve with or without a target. Calling SetMainInterfaceTarget
+    // + RePopulateMainInterface again from this tick context made the engine
+    // synthesise a phantom confirm one tick later that fired the menu's first
+    // entry (the old separate Shift+N menus never re-populated and never had
+    // this — verified against the 06:55 vs 10:44 logs, 2026-06-07).
+    void* mi = acc::engine_actionbar::ResolveMainInterface();
+
+    BuildCategoryList(/*tam=*/nullptr, mi);  // personal block only
+
+    // If the REQUESTED column has no entries (e.g. Shift+4 self-powers on a
+    // non-Jedi, Shift+6 explosives with no grenades), announce that column
+    // by name and don't open — never silently jump to a different column.
+    if (!mi || acc::engine_actionbar::VariantCount(mi, g.reqSlot) <= 0) {
+        Cat reqCat{CatKind::Personal, g.reqSlot};
+        const char* name = CategoryName(reqCat);
+        char msg[160];
+        if (name && name[0]) {
+            std::snprintf(msg, sizeof(msg),
+                acc::strings::Get(acc::strings::Id::FmtMenuCategoryEmpty), name);
+        } else {
+            std::snprintf(msg, sizeof(msg),
+                acc::strings::Get(acc::strings::Id::FmtActionBarColumnEmpty),
+                g.reqSlot + 1);
+        }
         prism::Speak(msg, /*interrupt=*/true);
-        acclog::Write("UnifiedMenu", "OpenPersonal col=%d empty", col);
+        acclog::Write("UnifiedMenu", "OpenPersonal col=%d empty -> [%s]",
+            g.reqSlot, msg);
         return false;
     }
 
     Arm();
-    g.targetHandle = handle;  // 0 when no target → personal-only, no re-anchor
-    g.creature = (handle != 0) &&
-                 acc::engine_radial::IsCreatureClientTarget(handle);
-    g.targetName[0] = '\0';
+    g.hasTargetBlock = false;   // personal-only → no per-press re-anchor
+    g.targetHandle   = 0;
+    g.creature       = false;
+    g.targetName[0]  = '\0';
 
-    BuildCategoryList(tam, mi);
-    int loc = LocateCat(CatKind::Personal, col);
+    // Requested column is populated → land on it (Left/Right reach the rest).
+    int loc = LocateCat(CatKind::Personal, g.reqSlot);
     g.curCat = (loc >= 0) ? loc : 0;
 
-    acclog::Write("UnifiedMenu", "ARMED (personal) col=%d target=0x%08x cats=%d",
-        col, handle, g.catCount);
-    SpeakCategory(tam, mi, /*prefix=*/nullptr);
+    acclog::Write("UnifiedMenu", "ARMED (personal) col=%d cats=%d curCat=%d",
+        g.reqSlot, g.catCount, g.curCat);
+    SpeakCategory(/*tam=*/nullptr, mi, /*prefix=*/nullptr);
     return true;
 }
 
@@ -423,24 +497,37 @@ bool HandleInputEvent(int code, int value) {
         return true;
     }
 
-    // Re-anchor the target block against our cached target each press so a
-    // drifting cursor can't re-point/empty it (project_radial_cursor_coupling).
-    // Personal-only menus (targetHandle==0) need no re-anchor.
-    if (g.targetHandle != 0) {
-        if (!acc::picker::ReanchorRadial(g.targetHandle)) {
-            acclog::Write("UnifiedMenu", "reanchor failed (target=0x%08x) — "
-                "dropping target block, keeping personal", g.targetHandle);
-            g.targetHandle = 0;
-        }
-    }
     void* tam = acc::engine_radial::ResolveTargetActionMenu();
     void* mi  = acc::engine_actionbar::ResolveMainInterface();
 
+    // LAZY re-anchor: re-anchoring on EVERY keypress broke target-menu
+    // navigation (the engine's per-press re-derivation churned the rows so
+    // arrows produced nothing). Instead, only re-anchor to RESTORE the menu
+    // when the engine has actually drained our target rows out from under us
+    // (the cursor-coupling case, project_radial_cursor_coupling). In the
+    // normal paused-overlay case the rows persist, so we skip re-anchor and
+    // navigate the stable snapshot — exactly like the personal-only menu.
+    if (g.hasTargetBlock && g.targetHandle != 0 && tam) {
+        int t = acc::engine_radial::RowActionCount(tam, 0) +
+                acc::engine_radial::RowActionCount(tam, 1) +
+                acc::engine_radial::RowActionCount(tam, 2);
+        if (t == 0) {
+            acclog::Write("UnifiedMenu", "target rows drained — re-anchoring "
+                "0x%08x", g.targetHandle);
+            if (!acc::picker::ReanchorRadial(g.targetHandle)) {
+                g.targetHandle = 0;  // gone for good → keep personal block
+            }
+            tam = acc::engine_radial::ResolveTargetActionMenu();
+        }
+    }
+
     // Rebuild the category list (target rows may have changed on re-anchor)
     // and re-locate the cursor on the same category, clamping if it drained.
+    // Personal-only menus pass tam=nullptr so the target rows never get
+    // folded back in mid-navigation.
     CatKind savedKind = g.cats[g.curCat].kind;
     int     savedSlot = g.cats[g.curCat].slot;
-    BuildCategoryList(tam, mi);
+    BuildCategoryList(g.hasTargetBlock ? tam : nullptr, mi);
     if (g.catCount == 0) {
         char msg[160];
         std::snprintf(msg, sizeof(msg),

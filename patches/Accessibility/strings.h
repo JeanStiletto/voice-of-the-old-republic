@@ -271,6 +271,11 @@ enum class Id : int {
     FmtMenuCatMulti,
     FmtMenuCatSingle,
     FmtMenuPlainMulti,
+    //      `FmtMenuCategoryEmpty` — the requested category has no entries
+    //      (e.g. Shift+4 self-powers on a non-Jedi, Shift+6 explosives with
+    //      no grenades). Arg: category name (`%s`). Spoken instead of
+    //      silently opening a different column.
+    FmtMenuCategoryEmpty,
 
     // ---- Generic tooltip fallback.
     //      `NoTooltipAvailable` — spoken when the user presses Shift+arrow
