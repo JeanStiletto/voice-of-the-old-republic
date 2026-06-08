@@ -446,6 +446,15 @@ void SpeakSelfStatus() {
         BriefAppend(b, acc::strings::Get(S::FmtSelfStatusHp), hpCur);
     }
 
+    // Force pool — only for Force users. max_force_points is 0 for non-Jedi
+    // classes and droids, so a positive max is the "has the Force" signal.
+    int fpCur = 0, fpMax = 0;
+    if (acc::engine::ReadCreatureForcePoints(clientLeader, &fpCur, &fpMax) &&
+        fpMax > 0) {
+        if (fpCur < 0) fpCur = 0;
+        BriefAppend(b, acc::strings::Get(S::FmtSelfStatusFpOf), fpCur, fpMax);
+    }
+
     char effects[192] = "";
     bool gotEffects = BuildEffectsSummary(creature, effects, sizeof(effects));
     if (gotEffects) {
@@ -472,8 +481,8 @@ void SpeakSelfStatus() {
 
     prism::Speak(msg, /*interrupt=*/true);
     acclog::Write("Combat.SelfStatus",
-                  "hp=%d/%d effects=[%s] main=[%s] off=[%s] -> [%s]",
-                  hpCur, hpMax,
+                  "hp=%d/%d fp=%d/%d effects=[%s] main=[%s] off=[%s] -> [%s]",
+                  hpCur, hpMax, fpCur, fpMax,
                   gotEffects ? effects : "",
                   gotMain ? mainWpn : "",
                   gotOff  ? offWpn  : "",

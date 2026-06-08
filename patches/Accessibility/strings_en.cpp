@@ -236,6 +236,7 @@ const char* Get(Id id) {
         case Id::FmtBriefFeatsCount:         return " %d feats.";
         case Id::FmtSelfStatusHp:            return "%d hit points.";
         case Id::FmtSelfStatusHpOf:          return "%d of %d hit points.";
+        case Id::FmtSelfStatusFpOf:          return "%d of %d Force points.";
 
         case Id::ExamineOpened:              return "Examine.";
         case Id::ExamineNoTarget:            return "No target to examine.";

@@ -245,6 +245,7 @@ const char* Get(Id id) {
         case Id::FmtBriefFeatsCount:         return " %d talentos.";
         case Id::FmtSelfStatusHp:            return "%d puntos de vida.";
         case Id::FmtSelfStatusHpOf:          return "%d de %d puntos de vida.";
+        case Id::FmtSelfStatusFpOf:          return "%d de %d puntos de Fuerza.";
 
         case Id::ExamineOpened:              return "Examinar.";
         case Id::ExamineNoTarget:            return "Sin objetivo para examinar.";

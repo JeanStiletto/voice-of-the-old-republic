@@ -517,6 +517,19 @@ void MonitorPanelContents() {
             acclog::Write("ContentChange", "  prev=\"%.300s\"", last);
             acclog::Write("ContentChange", "  curr=\"%.300s\"", fingerprint);
             SpeakNewSegments(last, fingerprint);
+
+            // If the chain is bound to this panel, an engine-driven content
+            // change can alter which virtual rows belong in the chain — the
+            // character sheet's Force-points row appears/disappears with the
+            // displayed character's Jedi-ness on Tab (leader switch). The
+            // panel pointer is unchanged across a Tab, so HandleNavStep's
+            // "activePanel != g_chainPanel" rebind never fires and the row
+            // set goes stale. Rebuild here (preserving the cursor) so the
+            // chain tracks live content, matching how the rest of the sheet
+            // updates dynamically on Tab.
+            if (acc::menus::chain::g_chainPanel == p) {
+                acc::menus::chain::RebindChainPreserveIndex(p);
+            }
         } else {
             acclog::Write("ContentChange", "panel=%p kind=%s fingerprint cleared "
                           "(prev=\"%.100s\")", p, PanelKindName(k), last);

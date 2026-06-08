@@ -80,6 +80,17 @@ constexpr size_t kCharSheetLblDexMod   = 0x3264;
 // offsets per engine_offsets.h.
 constexpr size_t kCharSheetSldAlign    = 0x55c4;
 
+// Whether the engine showed the Force line is our "is a Force user" signal.
+// CSWGuiInGameCharacter::SetStats @0x006afda0 calls CSWClass::IsJedi on the
+// displayed character's class and, for non-Jedi, CLEARS bit 0x02 of
+// lbl_force_stat.control.bit_flags (hides it); for Jedi it sets the text and
+// SETS bit 0x02. So lbl_force_stat's "shown" bit is the engine's own Force-
+// user decision — far more robust than re-deriving it (the panel caches NO
+// creature pointer; the +0x59e4 region holds party_count / selected index,
+// and SetStats re-fetches the creature fresh each call). lbl_force_stat lives
+// at panel + kCharSheetLblFp; bit_flags at +kControlBitFlagsOffset (0x44).
+constexpr uint32_t kControlShownBit = 0x2;
+
 // Read a CSWGuiLabel's rendered text at panel+offset into outBuf. Tries
 // gui_string (the engine's actual render source) first, falling back to
 // the inline CExoString and TLK strref paths via the indirect helper.
@@ -100,6 +111,22 @@ void ReadCharSheetLabel(void* panel, size_t offset,
             kLabelTextObjectOffset, outBuf, bufSize);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         outBuf[0] = '\0';
+    }
+}
+
+// True iff the character currently shown on this sheet is a Force user.
+// Reads the engine's own decision: lbl_force_stat's "shown" bit (0x02 of
+// control.bit_flags at +0x44), which SetStats clears for non-Jedi and sets
+// for Jedi. Fails safe to false (hide FP) on any null/fault.
+bool DisplayedHasForce(void* panel) {
+    if (!panel) return false;
+    __try {
+        uint32_t flags = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(panel) + kCharSheetLblFp +
+            kControlBitFlagsOffset);
+        return (flags & kControlShownBit) != 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
     }
 }
 
@@ -174,6 +201,11 @@ const StatRowSpec* FindSpecForControl(void* panel, void* labelControl) {
     size_t offset = static_cast<size_t>(ctrl - panelBase);
     for (int i = 0; i < k_statRowCount; ++i) {
         if (k_statRowSpecs[i].valueOffset == offset) {
+            // FP row only exists for Force users — for everyone else the
+            // row is dropped from the chain (no nav landing, no extract).
+            if (offset == kCharSheetLblFp && !DisplayedHasForce(panel)) {
+                return nullptr;
+            }
             return &k_statRowSpecs[i];
         }
     }
@@ -192,7 +224,14 @@ void ForEachStatRowAnchor(void* panel,
                           void* userData) {
     if (!panel || !callback) return;
     auto* base = reinterpret_cast<unsigned char*>(panel);
+    bool hasForce = DisplayedHasForce(panel);
     for (int i = 0; i < k_statRowCount; ++i) {
+        // Drop the FP row entirely for non-Force characters (Option A) —
+        // RebindChain never inserts a virtual entry for it, so Up/Down skips
+        // straight from HP to the attributes.
+        if (k_statRowSpecs[i].valueOffset == kCharSheetLblFp && !hasForce) {
+            continue;
+        }
         void* label = base + k_statRowSpecs[i].valueOffset;
         if (!callback(label, k_statRowSpecs[i].sortCy, userData)) return;
     }
@@ -326,7 +365,9 @@ void MaybeAnnounce(void* panel) {
         append(Get(Id::FmtCharSheetXp), xpCur, xpThresh);
     }
     if (hp[0])     append(Get(Id::FmtCharSheetHp), hp);
-    if (fp[0])     append(Get(Id::FmtCharSheetFp), fp);
+    // FP only for Force users — lbl_force_stat renders a stale garbage
+    // number for non-Jedi/droids, so gate on the engine's max_force_points.
+    if (fp[0] && DisplayedHasForce(panel)) append(Get(Id::FmtCharSheetFp), fp);
     if (str[0])    append(Get(Id::FmtCharSheetStr),
                           str, strMod[0] ? ", " : "", strMod);
     if (dex[0])    append(Get(Id::FmtCharSheetDex),

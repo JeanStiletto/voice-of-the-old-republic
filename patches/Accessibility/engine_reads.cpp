@@ -687,4 +687,40 @@ void* GetWorkbenchSlotInstalledItem(void* upgradePanel, void* slotControl) {
     return item;
 }
 
+bool ReadCreatureForcePoints(void* clientCreature, int* outCur, int* outMax) {
+    if (outCur) *outCur = 0;
+    if (outMax) *outMax = 0;
+    if (!clientCreature) return false;
+
+    // CSWCCreature+0x2f8 -> CSWCLevelUpStats* (embeds CSWCCreatureStats).
+    // Same chain as combat_query's HP reads; force pool lives further into
+    // the same struct: max_force_points @+0x11e, force_points @+0x120
+    // (anchored by swkotor.exe.h field89_0x122).
+    constexpr size_t kLvlUpStatsOffset = 0x2f8;
+    constexpr size_t kMaxForceOffset   = 0x11e;
+    constexpr size_t kCurForceOffset   = 0x120;
+
+    void* lvlUpStats = nullptr;
+    __try {
+        lvlUpStats = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(clientCreature) +
+            kLvlUpStatsOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (!lvlUpStats) return false;
+
+    __try {
+        int maxFp = static_cast<int>(*reinterpret_cast<short*>(
+            reinterpret_cast<unsigned char*>(lvlUpStats) + kMaxForceOffset));
+        int curFp = static_cast<int>(*reinterpret_cast<short*>(
+            reinterpret_cast<unsigned char*>(lvlUpStats) + kCurForceOffset));
+        if (outMax) *outMax = maxFp;
+        if (outCur) *outCur = curFp;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return true;
+}
+
 }  // namespace acc::engine

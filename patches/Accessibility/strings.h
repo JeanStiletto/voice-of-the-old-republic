@@ -782,8 +782,12 @@ enum class Id : int {
     //                       Used when the max accessor returns 0 (e.g.
     //                       driving slots, minigame creatures).
     //   FmtSelfStatusHpOf — full "%d of %d" form. Used in normal play.
+    //   FmtSelfStatusFpOf — Force pool "%d of %d" form. Appended only for
+    //                       Force users (max_force_points > 0); non-Jedi
+    //                       and droids omit it entirely.
     FmtSelfStatusHp,
     FmtSelfStatusHpOf,
+    FmtSelfStatusFpOf,
 
     // ---- Combat system, Phase 2C — examine hotkey (Ö). Spoken on
     //      open / close / no-target failure.
