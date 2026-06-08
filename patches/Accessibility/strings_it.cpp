@@ -185,6 +185,8 @@ const char* Get(Id id) {
         case Id::PartySelectionFull:        return "Gruppo al completo";
 
         case Id::DisabledSuffix:       return ", non disponibile";
+        case Id::FmtLevelUpDoStepFirst: return "Completa prima %s.";
+        case Id::LevelUpStepLocked:    return "Non ancora disponibile.";
 
         case Id::FmtCharSheetClass:    return "%s. ";
         case Id::FmtCharSheetLevel:    return "Livello %s. ";

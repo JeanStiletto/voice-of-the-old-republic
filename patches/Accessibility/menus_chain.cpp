@@ -136,6 +136,41 @@ int FindChainEntry(void* control) {
     return -1;
 }
 
+// Speak guidance when the user activates an InGameLevelUp category that the
+// engine has not currently enabled. The wizard enforces sequential leveling:
+// exactly one category button carries bit_flags bit 3 (0x8 =
+// CSWGuiControl::SetEnabled) at a time. Find it and name it so a blind user
+// knows which step to do next; fall back to a generic "not your turn" line if
+// none resolves. bit 3 verified against the current step in
+// patch-20260608-125730/125909 (current 0x..8f, others 0x..06/0x..04).
+void SpeakLevelUpDoStepFirst() {
+    for (int i = 0; i < g_chainCount; ++i) {
+        void* c = g_chain[i].control;
+        if (!c) continue;
+        uint32_t bf = 0;
+        __try {
+            bf = *reinterpret_cast<uint32_t*>(
+                reinterpret_cast<unsigned char*>(c) + kControlBitFlagsOffset);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            continue;
+        }
+        if ((bf & 0x8) == 0) continue;
+        char name[128];
+        const char* src = acc::menus::extract::FromControl(
+            c, name, sizeof(name), g_chainPanel);
+        if (src && name[0]) {
+            char msg[192];
+            snprintf(msg, sizeof(msg),
+                     acc::strings::Get(acc::strings::Id::FmtLevelUpDoStepFirst),
+                     name);
+            prism::Speak(msg, /*interrupt=*/false);
+            return;
+        }
+    }
+    prism::Speak(acc::strings::Get(acc::strings::Id::LevelUpStepLocked),
+                 /*interrupt=*/false);
+}
+
 // ============================================================================
 // Tab-cluster detection.
 // ============================================================================
@@ -1120,9 +1155,41 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
         }
     }
 
+    // InGameLevelUp category / Annehmen the engine has not currently enabled.
+    // The wizard enforces sequential leveling: only the "current" step carries
+    // bit_flags bit 3 (0x8 = CSWGuiControl::SetEnabled); a real mouse click is
+    // inert on the rest. Our deferred FireActivate force-raises is_active and
+    // would otherwise let the user open a later step out of order — and doing
+    // the Kräfte (powers) step before an earlier one makes the engine's
+    // ChangeState/ClearPowers resync wipe the freshly-chosen power on commit
+    // (root cause: memory project_levelup_power_lost_investigation). Block the
+    // activation and point the user at the step the engine wants next. bit 3
+    // is the real gate (bit 1 / is_active were both wrong on different button
+    // sets); Annehmen gains bit 3 only once every step is done, so this also
+    // correctly refuses a premature accept without trapping the user.
+    bool isLevelUpInactiveStep = false;
+    if (acc::engine::IdentifyPanel(g_chainPanel) ==
+            acc::engine::PanelKind::InGameLevelUp) {
+        __try {
+            uint32_t bf = *reinterpret_cast<uint32_t*>(
+                reinterpret_cast<unsigned char*>(e.control) +
+                kControlBitFlagsOffset);
+            isLevelUpInactiveStep = (bf & 0x8) == 0;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            isLevelUpInactiveStep = false;
+        }
+    }
+
     if (acc::menus::pending::IsPending()) {
         acclog::Write("Enter", "op already pending; ignoring (target=%p)",
                       e.control);
+        consumed = true;
+    } else if (isLevelUpInactiveStep) {
+        SpeakLevelUpDoStepFirst();
+        acclog::Write("Menus.Enter",
+                      "level-up step not enabled (bit3 clear) — blocked "
+                      "out-of-order activation panel=%p index=%d target=%p",
+                      g_chainPanel, g_chainIndex, e.control);
         consumed = true;
     } else if (isStoreItemRow) {
         acc::menus::pending::QueueStoreItemActivate(g_chainPanel, e.control);

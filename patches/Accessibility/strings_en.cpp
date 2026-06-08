@@ -178,6 +178,8 @@ const char* Get(Id id) {
         case Id::PartySelectionFull:        return "Party full";
 
         case Id::DisabledSuffix:       return ", unavailable";
+        case Id::FmtLevelUpDoStepFirst: return "Finish %s first.";
+        case Id::LevelUpStepLocked:    return "Not your turn yet.";
 
         case Id::FmtCharSheetClass:    return "%s. ";
         case Id::FmtCharSheetLevel:    return "Level %s. ";

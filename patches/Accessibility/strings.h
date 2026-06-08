@@ -605,6 +605,22 @@ enum class Id : int {
     //      does nothing.
     DisabledSuffix,
 
+    // ---- Level-up step ordering. The InGameLevelUp wizard enforces
+    //      sequential leveling: exactly one category button carries
+    //      bit_flags bit 3 (0x8 = CSWGuiControl::SetEnabled) at a time —
+    //      the step you may do now — and a real mouse click is inert on the
+    //      rest. Our deferred FireActivate force-raises is_active and would
+    //      otherwise let the user open a later step out of order; doing the
+    //      Kräfte (powers) step before an earlier step makes the engine's
+    //      ChangeState/ClearPowers resync wipe the freshly-chosen power on
+    //      commit (see memory project_levelup_power_lost_investigation).
+    //      FmtLevelUpDoStepFirst — spoken when Enter lands on a non-current
+    //      step; `%s` is the name of the step the engine actually wants
+    //      next (the one with bit 3 set). LevelUpStepLocked — fallback when
+    //      no current step can be resolved.
+    FmtLevelUpDoStepFirst,
+    LevelUpStepLocked,
+
     // ---- Character sheet sub-screen opener (CSWGuiInGameCharacter).
     //      One announce on first-sight per panel-open cycle, built by
     //      menus_charsheet::MaybeAnnounce. Each Fmt* below is one sentence
