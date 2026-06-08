@@ -99,6 +99,14 @@ bool QueueSliderInput(void* target, int code);
 // and the next tick.
 bool QueueStoreItemActivate(void* panel, void* row);
 
+// Queue a galaxy-map (CSWGuiInGameGalaxyMap) input dispatch. On drain calls
+// the panel's HandleInputEvent(engineCode, 1) — the engine's own planet
+// cycle / accept / cancel path (engineCode 0x2f prev, 0x30 next, 0x27 accept,
+// 0x28 cancel). When `announcePlanet` is set (Up/Down cycles), the new
+// LBL_PLANETNAME is re-read and spoken after the engine call. Logic lives in
+// acc::menus::galaxymap::DispatchInput.
+bool QueueGalaxyInput(void* panel, int engineCode, bool announcePlanet);
+
 // True if an op is currently queued. All input-handler debounce sites
 // uniformly check this before queueing — single-slot queue means there's
 // no per-kind discrimination to do (the old code's per-site debounce

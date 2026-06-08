@@ -532,6 +532,8 @@ const char* Get(Id id) {
         case Id::GamePaused:            return "Pause.";
         case Id::GameResumed:           return "Pause aufgehoben.";
 
+        case Id::GalaxyMapTitle:        return "Galaxiekarte";
+
         case Id::Count_:               return "";
     }
     return "";

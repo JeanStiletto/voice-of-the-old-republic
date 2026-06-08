@@ -21,6 +21,12 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.4.3</h2>
+
+<h3>New features:</h3>
+
+- The galaxy map (the star-map travel screen you use to fly between planets) is now fully usable with the keyboard. Press Up and Down to move through the planets you can travel to — each one's name is read out as you land on it, and worlds you haven't unlocked yet are skipped over, so you only hear the ones you can actually reach. Shift+Down reads the selected planet's description. Press Enter to travel to the highlighted planet, or Escape to back out. Before, the whole screen was a grid of unlabeled buttons that all read as "control" plus a number, with no way to tell the planets apart, know which were reachable, or hear where you were about to fly.
+
 <h2>v0.4.2</h2>
 
 <h3>Bug fixes:</h3>

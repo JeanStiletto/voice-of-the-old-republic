@@ -56,6 +56,10 @@ Pressing Shift+Down to read a full description often reads it twice — seen in 
 
 Regression from the voiced-speaker subtitle suppression change (CHANGELOG: "Untertitel vertonter Sprecher vorlesen"), in `dialog_speech.cpp`'s speaker classification: **some barks / ambient one-liner lines still have their subtitles read** over the audio, when the filter should already cover them (under-suppressing). We already have the suppression code; it's mis-classifying these. Tune the voiced-speaker vs read-anyway decision so every voiced line (including barks) is suppressed. (The companion over-suppression case — Zaalbar's alien speech going unread — is under Unreproduced.)
 
+### Combat target-options columns stick when targets are far away
+
+In the combat action menu, switching between the target-options columns isn't always fluid — when targets are far away, the column change sometimes won't go through, so the player can't reliably move across the options. Likely the target-resolution / range gate interfering with the column navigation (the engine re-deriving the target menu from distance). Capture which column move fails, the target distance, and a log; cross-check against `project_engine_action_picker.md` and the bare 1–7 dispatch (`project_bare_combat_keys_dispatch.md`).
+
 ## Unreproduced
 
 ### Zaalbar's subtitles not reading
@@ -86,15 +90,15 @@ Improve the activation flow for combat abilities — force powers, feats, items 
 
 ### Class-selection chargen screen
 
-The "select your class" screen during character creation still needs accessible narration of the three class choices, their summaries, and confirm/back wiring.
+The "select your class" screen during character creation still needs accessible narration of the three class choices, their summaries, and confirm/back wiring. In particular, the game already provides a per-class description on this screen (the lore/role blurb a sighted player reads when highlighting a class) — that description text must be read out on class selection, not just the class name.
 
 ### Class selection should step left/right, not up/down
 
 On the class-selection chargen screen the three classes are a horizontal row, so navigation should be Left/Right between classes rather than Up/Down. Align the arrow binding with the spatial layout when wiring the narration above.
 
-### Star map and Ebon Hawk travel menu
+### Beacon-active navigation announcements (remaining-route reading)
 
-The galaxy map / travel-to-planet UI needs keyboard navigation across discovered worlds and announcements for the selected planet, its lore blurb, and the confirm/cancel actions.
+While a beacon (or autowalk) is active, the route announcements should describe the *remaining* way to the active waypoint — leading with the range and direction of the current target — rather than the full original route. The hard part is disambiguating intents: if the player selects another object just to hear where it is, the announcement must not balloon into the long, confusing full-route description for the beacon target. Design questions to resolve: how to keep "where is this thing I just selected" reads short while a beacon is running, and whether the separate Shift+Enter autowalk / Shift+`-` gestures are still needed at all, or whether they can be folded into / replaced by the plain selection + beacon flow. See `project_narrated_target_unified.md` and `project_map_cycle_architecture.md`.
 
 ### HP bars exposed to screen reader
 
@@ -141,6 +145,18 @@ _(empty — nothing currently under live watch.)_
 A pl-PL beta tester (v0.2.1) crashed at startup, repeatedly, before any speech. Dump exception `0xC06D007F` = MSVC delay-load `ERROR_PROC_NOT_FOUND`: prism's `prism_registry_acquire_best()` walks every backend in priority order calling each `initialize()`; the ZDSR backend delay-loads the user's `ZDSRAPI.dll` (`C:\Program Files (x86)\zdsr\zdsr\`, confirmed via `kdev analyze-dump --modules`), which is present but exports a mismatched symbol set, raising an unhandled structured exception. NVDA/JAWS users never saw it because their backend wins priority and `acquire_best` returns before reaching the broken one — so it read as "non-NVDA readers crash." Fix (in `prism.cpp`): SEH-guard every backend probe (`acquire_best`, per-backend `acquire`, `initialize`); on an `acquire_best` fault, fall through `AcquireNormalFallback` which probes our preferred order one backend at a time, each guarded, skipping the broken one and landing on the next working backend (SAPI last as the universal safety net). Also covers the JAWS crash report (no log yet) — any backend whose vendor delay-load is incompatible is now skipped, not fatal. **Not yet verified in-game** — needs the ZDSR tester (and ideally the JAWS reporter) to confirm with a new build; can't repro locally without ZDSR installed. See the `project_prism_backend_delayload_crash` memory.
 
 ## Polish
+
+### Starting an autowalk/beacon while one is active should switch, not cancel
+
+If an autowalk or beacon is already running and the player triggers a new autowalk or beacon on a different target, the current behaviour just cancels the existing one. Instead it should immediately start the new action on the new target — switching the route in one gesture rather than requiring cancel-then-start.
+
+### Bare number hotkeys should announce queuing while a menu is opening
+
+When a menu is opening, pressing a bare number hotkey (the 1–7 combat/action keys) queues an action, but that queuing isn't announced — so the player gets no confirmation that the press registered or what was queued. The queue feedback should be spoken even during the menu-open window. Ties into the bare 1–7 dispatch (`project_bare_combat_keys_dispatch.md`).
+
+### Unified action menu should only pause while in combat
+
+The unified (in-world) action menu currently pauses the game whenever it's open. Consider only pausing while in combat — outside combat there's no need to freeze the world to browse the menu, and the constant pause/unpause cues add noise. Evaluate whether gating the pause hold on combat state is safe for the menu's input model (`unified_action_menu`).
 
 ### Mod-settings sliders only save after pressing Enter
 

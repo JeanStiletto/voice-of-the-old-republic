@@ -320,8 +320,20 @@ Drill mode: `menus::g_drilledIntoSubScreen` retargets arrow nav from the
 strip to the sub-screen. Auto-armed by `TickMonitors` on any newly-
 detected sub-screen.
 
-Status: known (strip + drill nav working, Options Esc fix working);
-suspected (InGameGalaxyMap extraction not implemented).
+Status: known (strip + drill nav working, Options Esc fix working,
+InGameGalaxyMap planet-cycle nav working — see below).
+
+`PanelKind::InGameGalaxyMap` (CSWGuiInGameGalaxyMap, galaxymap.gui) — the
+Ebon Hawk travel picker. Single-axis "cycle a planet, then Travel / Cancel".
+The 16 planet hotspots are image-only buttons with empty captions; the real
+selection state lives server-side on `CSWPartyTable` (`GetPlanetAvailable` =
+revealed, `GetPlanetSelectable` = reachable now). The engine's
+`NextPlanet`/`PrevPlanet` (reached via `HandleInputEvent @0x695980` codes
+0x2f/0x30; accept 0x27, cancel 0x28) skip hidden/unselectable planets for us.
+Planet name = `LBL_PLANETNAME` (+0x1ca4); description = `LBL_DESC` (+0x1de4);
+both filled from `planetary.2da` strrefs by `DisplayPlanet`. Our handler
+(`menus_galaxymap.cpp`): Up/Down cycle + announce name, Enter travels, Esc
+cancels, Shift+Down reads the description, first-sight speaks title + planet.
 
 ---
 
@@ -513,7 +525,6 @@ workbench-related headers).
   @0x6a86a0`, `SetBark @0x6a9920`.
 - `CloseDialog` context-change event.
 - Store buy/sell flow coverage (`menus_store.h`).
-- InGameGalaxyMap extraction.
 - Per-obstacle cues in swoop race (obstacle-array offset unconfirmed).
 - Saving-throw poll (field-diff heuristic only; hook candidate is
   `SavingThrowRoll @0x5b92b0`).

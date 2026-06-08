@@ -27,6 +27,7 @@
 #include "menus_chargen_attr.h"     // IsChargenAttributesPanel — chargen sub-screen close
 #include "menus_chargen_feats.h"    // IsChargenFeatsPanel — chargen sub-screen close
 #include "menus_chargen_skills.h"   // IsChargenSkillsPanel — chargen sub-screen close
+#include "menus_galaxymap.h"        // DispatchInput for GalaxyInput
 #include "menus_journal.h"   // Sort/Swap post-activate list-rebuild repair
 #include "menus_listbox.h"   // DisarmWorkbenchUpgradePicker (post-slot-select cleanup)
 #include "menus_powers_levelup.h"   // IsPowersLevelUpPanel — chargen sub-screen close
@@ -49,6 +50,8 @@ enum class Kind {
     WorkbenchUpgradeCommit, // a = panel, b = row, c = btnAssemble
     SliderInput,       // a = target, code = direction (500 inc / 501 dec)
     StoreItemActivate, // a = panel (CSWGuiStore), b = row (StoreItemEntry)
+    GalaxyInput,       // a = panel (galaxy map), code = engine event,
+                       // x = announce-planet flag (0/1)
 };
 
 struct PendingOp {
@@ -147,6 +150,15 @@ bool QueueStoreItemActivate(void* panel, void* row) {
     g_op.kind = Kind::StoreItemActivate;
     g_op.a = panel;
     g_op.b = row;
+    return true;
+}
+
+bool QueueGalaxyInput(void* panel, int engineCode, bool announcePlanet) {
+    if (g_op.kind != Kind::None) return false;
+    g_op.kind = Kind::GalaxyInput;
+    g_op.a = panel;
+    g_op.code = engineCode;
+    g_op.x = announcePlanet ? 1 : 0;
     return true;
 }
 
@@ -720,6 +732,15 @@ void Drain(void* gm) {
     // monitor detects the listbox size change and rebinds the chain.
     case Kind::StoreItemActivate: {
         acc::menus::store::DispatchTradeAction(op.a, op.b);
+        break;
+    }
+
+    // Galaxy-map planet cycle / accept / cancel. DispatchInput calls the
+    // panel's own HandleInputEvent (the engine's NextPlanet/PrevPlanet skip
+    // hidden / unselectable planets), then re-reads LBL_PLANETNAME when this
+    // was an Up/Down cycle (op.x == 1).
+    case Kind::GalaxyInput: {
+        acc::menus::galaxymap::DispatchInput(op.a, op.code, op.x != 0);
         break;
     }
     }

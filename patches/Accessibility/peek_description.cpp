@@ -8,6 +8,7 @@
 #include "hotkeys.h"
 #include "log.h"
 #include "menus_abilities.h"  // RefreshDetail (abilities description repaint)
+#include "menus_galaxymap.h"  // SpeakDescription — galaxy-map LBL_DESC peek
 #include "menus_internal.h"   // kEquipBtn* slot ids, FindControlById
 #include "menus_listbox.h"    // IsEquipPickerArmed
 #include "prism.h"
@@ -499,6 +500,14 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
             HandleWorkbenchSlotTooltip(activePanel, focusedControl);
             return true;
         }
+    }
+
+    // Galaxy / star-map travel screen: read LBL_DESC for the currently
+    // displayed planet. The planet itself is cycled with plain Up/Down
+    // (galaxymap::TryHandleInput); Shift+Down is the description peek.
+    if (kind == acc::engine::PanelKind::InGameGalaxyMap) {
+        acc::menus::galaxymap::SpeakDescription(activePanel);
+        return true;
     }
 
     // Item-tooltip path (Container, Equip picker, Workbench listboxes).

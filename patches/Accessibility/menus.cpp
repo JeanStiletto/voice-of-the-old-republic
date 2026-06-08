@@ -42,6 +42,7 @@
 #include "menus_monitors.h"  // Post-Step-5 — general per-tick monitors
 #include "menus_store.h"     // Store / trading panel — price+stock suffix + mode announce
 #include "menus_pazaakdeck.h" // Pazaak side-deck builder — 3-row navigator
+#include "menus_galaxymap.h"  // Galaxy / star-map travel screen — planet cycle
 #include "pazaak.h"           // Pazaak board game — IsBoardForeground
 #include "menus_journal.h"   // Journal (Aufträge) — Enter on quest row → description
 #include "engine_input.h"
@@ -1744,6 +1745,20 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         }
     }
 
+    // Galaxy / star-map travel screen — dedicated single-axis handler. Owns
+    // Up/Down (cycle revealed planets via the engine, which skips hidden /
+    // unreachable ones), Enter (travel), Esc (cancel), and the remaining nav
+    // keys (consumed as no-ops). Runs before the generic chain so the unnamed
+    // planet buttons never leak into Up/Down nav as "control N". Shift+Up/Down
+    // is handled earlier by peek_description (LBL_DESC read).
+    {
+        int rv = 0;
+        if (acc::menus::galaxymap::TryHandleInput(activePanel, param_1,
+                                                  param_2, rv)) {
+            return trackPress(rv);
+        }
+    }
+
     // Enter on the focused chain entry — picks the right activation primitive
     // (direct OnEnterSlot for equip/workbench slot, click-sim for tab buttons,
     // store-item-activate / journal-description for those rows, re-announce
@@ -1875,6 +1890,7 @@ void TickMonitors() {
     acc::menus::monitors::TickGeneralMonitors();
     acc::menus::listbox::TickListboxMonitors();
     acc::menus::editbox::TickEditboxMonitors();
+    acc::menus::galaxymap::Tick();
 }
 
 void PollHomeEndKeys() {

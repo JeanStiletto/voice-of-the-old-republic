@@ -1427,6 +1427,15 @@ enum class Id : int {
     GamePaused,
     GameResumed,
 
+    // ---- Galaxy / star map travel screen (CSWGuiInGameGalaxyMap,
+    //      galaxymap.gui). Opened from the Ebon Hawk's navigation console.
+    //      The .gui has no title control, so GalaxyMapTitle is the fixed
+    //      first-sight heading spoken before the current planet name.
+    //      Up/Down cycle the revealed+reachable planets (the engine's own
+    //      NextPlanet/PrevPlanet skip hidden/unselectable ones); Enter
+    //      travels, Esc cancels; Shift+Down reads the planet description.
+    GalaxyMapTitle,
+
     Count_,
 };
 
