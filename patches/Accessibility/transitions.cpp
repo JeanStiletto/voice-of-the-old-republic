@@ -8,6 +8,7 @@
 #include "bringup_announce.h" // IsMovieWindowForeground — gate speech during movies
 #include "combat.h"          // IsCombatActive — gate room-change speech
 #include "engine_area.h"
+#include "engine_input.h"    // ForceReacquireInput — post-load DirectInput re-grab
 #include "engine_panels.h"   // IsForegroundUiBlocking — gate vs. menus / dialogs
 #include "engine_player.h"
 #include "engine_offsets.h"  // Vector
@@ -766,6 +767,17 @@ void Tick() {
         // against is complete. Per-tick consumers can resume probing
         // engine accessors on player / leader / area-object state.
         g_module_load_pending = false;
+        // Re-acquire DirectInput now that the load is fully complete. The
+        // engine recreates its render window during a load; if the player
+        // pressed keys during that churn the input `active` flag can desync
+        // to 1 while the keyboard is actually unacquired, and the engine's
+        // own post-load SetActive(1) no-ops against the stuck flag — leaving
+        // the keyboard dead until an alt-tab. We reach this edge AFTER the
+        // engine's HideLoadScreen has run, so forcing a 0->1 cycle here lands
+        // last and wins. Harmless on a healthy load (a sub-frame device
+        // re-grab, exactly what the engine does on alt-tab). See
+        // engine_input.h ForceReacquireInput for the full mechanism.
+        acc::engine::ForceReacquireInput();
         SpeakArea(area);
         // Drop the unified narrated-target slot — any object from the old
         // area is now invalid. Stale pointers would survive otherwise

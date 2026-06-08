@@ -21,6 +21,12 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.4.2</h2>
+
+<h3>Bug fixes:</h3>
+
+- The keyboard no longer goes dead after loading a save. If you pressed any keys while a save was still loading, the game could come up completely unresponsive — no movement, no menu navigation, not even Escape to open the menu — and the only way out was to alt-tab out of the game and back in. The cause was the keyboard input being left switched off after the load if a key was pressed while the game was rebuilding its window mid-load. Loading now re-arms keyboard and mouse input the moment the area finishes loading, so input always works whether or not you touched the keys during the load.
+
 <h2>v0.4.1</h2>
 
 <h3>Bug fixes:</h3>

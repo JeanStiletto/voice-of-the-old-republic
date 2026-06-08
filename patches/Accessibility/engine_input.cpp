@@ -142,4 +142,30 @@ bool EnsureInputAcquired() {
     }
 }
 
+bool ForceReacquireInput() {
+    __try {
+        void* exoInput = *reinterpret_cast<void**>(kAddrExoInputGlobal);
+        if (!exoInput) {
+            acclog::Write("EngineInput",
+                "ForceReacquireInput: ExoInput global is null; skipped");
+            return false;
+        }
+        auto setActive = reinterpret_cast<PFN_CExoInputSetActive>(
+            kAddrCExoInputSetActive);
+        // Drive a real 0->1 edge. SetActive(1) alone no-ops when the active
+        // flag is already (stale) 1; the leading SetActive(0) forces the
+        // transition so the engine re-Acquires the DirectInput devices.
+        setActive(exoInput, 0);
+        setActive(exoInput, 1);
+        acclog::Write("EngineInput",
+            "ForceReacquireInput: CExoInput::SetActive(%p, 0)->(1) cycle "
+            "dispatched (post-load DirectInput re-acquire)", exoInput);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("EngineInput",
+            "ForceReacquireInput: exception during SetActive cycle; skipped");
+        return false;
+    }
+}
+
 }  // namespace acc::engine

@@ -28,6 +28,22 @@ int ManagerTranslateCode(int code);
 // if the call was dispatched (ExoInput non-null), false otherwise.
 bool EnsureInputAcquired();
 
+// Force a real SetActive(0)->SetActive(1) edge to re-Acquire the DirectInput
+// devices unconditionally — the software equivalent of an alt-tab.
+//
+// Needed for the post-load input-death case: when keys are pressed during a
+// load (while the engine destroys+recreates its render window), the input
+// `active` flag can desync to 1 while the DirectInput keyboard is actually
+// unacquired. Because the engine only re-Acquires on a SetActive state-change
+// EDGE, its own post-load SetActive(1) (and our EnsureInputAcquired) no-op
+// against the stuck flag — leaving the keyboard dead until the user alt-tabs.
+// Cycling 1->0->1 guarantees the 0->1 edge fires, re-Acquiring regardless of
+// the prior flag state. SetActive only touches input-device acquisition (not
+// pause / audio / mouse-capture), so the cycle is side-effect-free beyond a
+// sub-frame device re-grab — exactly what the engine itself does on alt-tab.
+// Returns true if dispatched (ExoInput non-null), false otherwise.
+bool ForceReacquireInput();
+
 }  // namespace acc::engine
 
 // Pre-translation codes received by CSWGuiManager::HandleInputEvent.
