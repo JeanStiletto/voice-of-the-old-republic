@@ -76,7 +76,17 @@ void AnnounceControl(void* control) {
     }
 
     char text[256];
-    const char* source = acc::menus::extract::FromControl(control, text, sizeof(text));
+    // Pass the chain panel so the extraction is identical to
+    // MonitorFocusedControl's (which also passes g_chainPanel). FromControl's
+    // panel-scoped enrichment — notably the InGameLevelUp "nicht verfügbar"
+    // suffix keyed on the per-step enabled flag — only fires when it knows the
+    // owning panel; announcing without it produced a plain label here and a
+    // suffixed one from the monitor a tick later, which the monitor heard as a
+    // text change and spoke twice. Any panel whose per-kind extraction
+    // differed would already have double-announced (monitor vs. here), so this
+    // only newly aligns the level-up case.
+    const char* source = acc::menus::extract::FromControl(
+        control, text, sizeof(text), acc::menus::chain::g_chainPanel);
     if (source) {
         prism::Speak(text, /*interrupt=*/false);
         // Prime channel-0 dedup so the engine's post-nav SetActive echo

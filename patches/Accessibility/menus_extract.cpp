@@ -1765,37 +1765,24 @@ const char* FromControl(void* control,
     }
 
     // Append "nicht verfügbar" / "unavailable" suffix when the focused
-    // button is engine-disabled. The signal is bit 1 (mask 0x2) of
-    // CSWGuiControl.bit_flags (+0x44). Empirically the only bit that
-    // splits "click-dispatch fires" from "click is silently dropped"
-    // across every observed control:
+    // button is engine-disabled. CSWGuiControl.bit_flags (+0x44) layout:
     //
     //   bit 0 (0x1) — selection state (CSWGuiControl::SetActive)
-    //   bit 1 (0x2) — interactive / accepts click (this gate)
+    //   bit 1 (0x2) — interactive / accepts click (general gate)
     //   bit 2 (0x4) — visible           (CSWGuiPanel::SetVisible)
-    //   bit 3 (0x8) — enabled flag      (CSWGuiControl::SetEnabled)
+    //   bit 3 (0x8) — enabled flag      (CSWGuiControl::SetEnabled @0x004176a0)
     //
-    // SetEnabled toggles bit 3 but the actual runtime click gate uses
-    // bit 1: CSWGuiLevelUpPanel's step buttons have bit_flags=0x6 when
-    // enabled and 0x4 when disabled, bit 3 stays cleared on all of them
-    // (SetEnabled is never called). Test corpus:
-    //   working: Talente 0x6, Annehmen 0x6, Levelaufst 0xa, Spiel laden
-    //            0x10e, Schliess 0xa, Charakter-arrows 0xa, Auto-Pause 0xe
-    //   disabled: Attribute 0x4, Kräfte 0x4
-    //
-    // Edge case — Zurück on LevelUp panel has bit_flags=0x2 (bit 1 set,
-    // bit 2 clear). The engine routes its click but CSWGuiLevelUpPanel::
-    // OnCancelPressed @0x006ee5f0 gates internally on `field16_0x1ce8`
-    // and no-ops until allocations are pending. We can't detect that
-    // internal gate from the control's bit_flags, so Zurück labels as
-    // "enabled" by this check even when it's effectively a no-op.
-    //
-    // Earlier attempts used (a) is_active (the idle-vs-active selection
-    // state, not enabled/disabled), (b) bit 3 (set only when SetEnabled
-    // is called, miss on Talente/Annehmen), and (c) GetIsSelectable
-    // (gui_object path produces false on enabled step buttons). All three
-    // were wrong on different button sets; bit 1 matches the actual
-    // engine dispatch outcome.
+    // For most panels bit 1 is the right "does a click dispatch" signal.
+    // The InGameLevelUp wizard is the exception: it enforces sequential
+    // leveling, enabling exactly ONE category at a time via SetEnabled
+    // (bit 3). Its non-current categories keep bit 1 set but bit 3 clear,
+    // so on that panel we key the suffix on bit 3 — otherwise only the
+    // no-points categories (bit 1 clear) would read as unavailable and the
+    // not-yet-your-turn ones (e.g. Kräfte before Fähigkeiten) would sound
+    // actionable. menus_chain blocks their activation on the same bit 3, so
+    // the announcement and the gate agree. Verified in
+    // patch-20260608-125730/125909: current step 0x..8f, others 0x..06/0x..04;
+    // Annehmen gains bit 3 only once every step is done.
     //
     // Skipped for toggles — their ", ein" / ", aus" suffix already
     // disambiguates state. Gated on IsChainNavigable so labels don't get
@@ -1803,7 +1790,12 @@ const char* FromControl(void* control,
     if (source && !IsToggle(control) && IsChainNavigable(control)) {
         uint32_t bitFlags = *reinterpret_cast<uint32_t*>(
             reinterpret_cast<unsigned char*>(control) + 0x44);
-        if ((bitFlags & 0x2) == 0) {
+        uint32_t disabledMask = 0x2;
+        if (ownerPanel && IdentifyPanel(ownerPanel) ==
+                PanelKind::InGameLevelUp) {
+            disabledMask = 0x8;
+        }
+        if ((bitFlags & disabledMask) == 0) {
             const char* suffix = acc::strings::Get(
                 acc::strings::Id::DisabledSuffix);
             size_t len = strnlen(outBuf, bufSize);
