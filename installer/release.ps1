@@ -95,7 +95,10 @@ if ($existingTag) {
     Write-Host "ERROR: Tag $tag already exists" -ForegroundColor Red; exit 1
 }
 
-$changelogContent = Get-Content $changelogFile -Raw
+# -Encoding UTF8 is mandatory: CHANGELOG.md is UTF-8 without a BOM, and Windows
+# PowerShell 5.1's Get-Content defaults to the ANSI codepage on no-BOM files,
+# which mangles every em-dash/ellipsis/curly-quote into mojibake (… -> â€¦).
+$changelogContent = Get-Content $changelogFile -Raw -Encoding UTF8
 if ($changelogContent -notmatch "(?m)^(?:## |<h2>)$([regex]::Escape($tag))(?:</h2>)?\s*$") {
     Write-Host "ERROR: No '## $tag' or '<h2>$tag</h2>' section found in docs\CHANGELOG.md" -ForegroundColor Red; exit 1
 }
@@ -245,7 +248,7 @@ Write-Host "  installer: $installerExe"
 
 # Extract the section under the version heading from docs/CHANGELOG.md (stops at
 # the next version heading -- "## vX" or "<h2>vX..." -- or a "---" horizontal rule).
-$lines = Get-Content $changelogFile
+$lines = Get-Content $changelogFile -Encoding UTF8   # see note at the -Raw read above; ANSI default mangles UTF-8
 $notes = @()
 $capturing = $false
 
@@ -297,7 +300,10 @@ Verify with ``Get-FileHash <filename> -Algorithm SHA256`` (PowerShell) or
 "@
 
 $notesFile = Join-Path $root 'release_notes.txt'
-$notesText | Out-File -FilePath $notesFile -Encoding utf8
+# Write UTF-8 *without* a BOM. PS 5.1's `Out-File -Encoding utf8` emits a BOM,
+# which gh passes straight into the release body where it shows as a stray
+# "" at the very top. WriteAllText with UTF8Encoding($false) avoids it.
+[System.IO.File]::WriteAllText($notesFile, $notesText, (New-Object System.Text.UTF8Encoding $false))
 
 # ── 8. Tag + push ───────────────────────────────────────────────────────────
 
