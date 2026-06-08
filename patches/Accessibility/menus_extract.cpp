@@ -805,19 +805,29 @@ const char* FromControl(void* control,
     if (!source) {
         void** vt = *reinterpret_cast<void***>(control);
         if (reinterpret_cast<uintptr_t>(vt) == 0x00756BB8) {
+            // Live "selected" flag written by
+            // CSWGuiPartySelectionButton::SetSelected @0x006be370 on every
+            // toggle (OnToggled @0x006bf2a0 → SetSelected). 1 = currently in
+            // the party for this screen, 0 = on the bench. This is the
+            // ground-truth that changes as the user adds/removes companions —
+            // the partyId field at +0x44c is only a snapshot taken once in
+            // OnPanelAdded and never updated, so reading it left the spoken
+            // status frozen at the panel-open composition.
+            constexpr size_t kPartyPortraitSelectedOffset = 0x1c4;
             constexpr size_t kPartyPortraitFlagsOffset = 0x448;
             constexpr size_t kPartyPortraitPartyIdOffset = 0x44c;
             constexpr size_t kPartyPortraitNpcSlotOffset = 0x450;
-            int npcSlot = -1, flags = 0, partyId = -1;
+            int npcSlot = -1, flags = 0, partyId = -1, selected = 0;
             __try {
                 auto* base = reinterpret_cast<unsigned char*>(control);
+                selected = *reinterpret_cast<int*>(base + kPartyPortraitSelectedOffset);
                 flags   = *reinterpret_cast<int*>(base + kPartyPortraitFlagsOffset);
                 partyId = *reinterpret_cast<int*>(base + kPartyPortraitPartyIdOffset);
                 npcSlot = *reinterpret_cast<int*>(base + kPartyPortraitNpcSlotOffset);
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 npcSlot = -1;
             }
-            bool inActiveParty = partyId >= 0;
+            bool inActiveParty = selected != 0;
             bool available = (npcSlot >= 0 &&
                               npcSlot < kPartyRosterSlotCount &&
                               PartyTableIsNPCAvailable(npcSlot));
@@ -827,10 +837,12 @@ const char* FromControl(void* control,
                 if (GetPartyNpcNameForSlot(npcSlot, name, sizeof(name)) &&
                     name[0]) {
                     // Compose "{name}, im Team" / "{name}, verfügbar" so the
-                    // user hears whether the slot is currently in the
-                    // active party or just on the bench. Locked slots are
-                    // dropped from the chain by RebindChain so we never
-                    // reach this branch for them.
+                    // user hears whether the slot is currently selected for
+                    // the party or just on the bench. The per-tick focus
+                    // monitor re-runs this extractor and re-announces when
+                    // `selected` flips, so a toggle is heard immediately.
+                    // Locked slots are dropped from the chain by RebindChain
+                    // so we never reach this branch for them.
                     acc::strings::Id statusFmt =
                         inActiveParty
                             ? acc::strings::Id::FmtPartyPortraitInTeam
@@ -854,9 +866,9 @@ const char* FromControl(void* control,
                 }
             }
             acclog::Trace("Menus.PartyPortrait",
-                          "slot=%d flags=0x%x partyId=%d available=%d "
-                          "inActiveParty=%d text=\"%s\"",
-                          npcSlot, (unsigned)flags, partyId,
+                          "slot=%d selected=%d flags=0x%x partyId=%d "
+                          "available=%d inActiveParty=%d text=\"%s\"",
+                          npcSlot, selected, (unsigned)flags, partyId,
                           available ? 1 : 0, inActiveParty ? 1 : 0,
                           source ? outBuf : "");
             // Skip the speculative reader for this vtable — it never

@@ -584,6 +584,15 @@ enum class Id : int {
     FmtPartyPortraitInTeam,
     FmtPartyPortraitAvailable,
 
+    // ---- Spoken when the user presses Enter to add a benched companion
+    //      but the party is already full (two companions chosen). The
+    //      engine's CSWGuiPartySelection::OnToggled @0x006bf2a0 silently
+    //      refuses the add (early-out when selected_count > 1) with no
+    //      state change, so the focus monitor has nothing to re-announce.
+    //      menus_chain speaks this so the user knows the add didn't take
+    //      and must remove a member first. No arguments.
+    PartySelectionFull,
+
     // ---- Disabled-button suffix. Appended (with leading ", ") to the
     //      announced text when a chain-navigable button's is_active field
     //      (CSWGuiControl +0x4C) reads zero — the engine's universal

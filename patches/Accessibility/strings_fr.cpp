@@ -183,6 +183,7 @@ const char* Get(Id id) {
 
         case Id::FmtPartyPortraitInTeam:    return "%s, dans l'\xE9quipe";
         case Id::FmtPartyPortraitAvailable: return "%s, disponible";
+        case Id::PartySelectionFull:        return "\xC9quipe compl\xE8te";
 
         case Id::DisabledSuffix:       return ", indisponible";
 

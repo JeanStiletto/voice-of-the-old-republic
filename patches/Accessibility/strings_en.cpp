@@ -175,6 +175,7 @@ const char* Get(Id id) {
 
         case Id::FmtPartyPortraitInTeam:    return "%s, in party";
         case Id::FmtPartyPortraitAvailable: return "%s, available";
+        case Id::PartySelectionFull:        return "Party full";
 
         case Id::DisabledSuffix:       return ", unavailable";
 
