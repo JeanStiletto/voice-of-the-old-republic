@@ -69,6 +69,12 @@ enum class PanelKind {
                          // Step buttons gate on `is_active != 0` and
                          // silently drop disabled clicks — the extract
                          // path emits a disabled-state suffix.
+    CharGen,             // Character-creation step panels: CSWGuiCustomPanel
+                         // (vtable 0x007595e0) + CSWGuiQuickPanel (0x00759668).
+                         // Same sequential-step model as InGameLevelUp — one
+                         // category enabled at a time via bit_flags bit 3 —
+                         // so the extract path emits the same disabled-state
+                         // suffix on the not-yet-reached categories.
 
     // Workbench (upgrade.gui / upgradeitems.gui / upgradesel.gui).
     //   Select   — category picker, 11 controls. Generic chain nav

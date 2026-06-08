@@ -1791,9 +1791,11 @@ const char* FromControl(void* control,
         uint32_t bitFlags = *reinterpret_cast<uint32_t*>(
             reinterpret_cast<unsigned char*>(control) + 0x44);
         uint32_t disabledMask = 0x2;
-        if (ownerPanel && IdentifyPanel(ownerPanel) ==
-                PanelKind::InGameLevelUp) {
-            disabledMask = 0x8;
+        if (ownerPanel) {
+            PanelKind k = IdentifyPanel(ownerPanel);
+            if (k == PanelKind::InGameLevelUp || k == PanelKind::CharGen) {
+                disabledMask = 0x8;
+            }
         }
         if ((bitFlags & disabledMask) == 0) {
             const char* suffix = acc::strings::Get(

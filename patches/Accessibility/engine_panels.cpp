@@ -188,6 +188,28 @@ bool IsLevelUpStructural(void* panel) {
     }
 }
 
+// Character-creation step panels by vtable. Heap-allocated, no CGuiInGame
+// slot, single class each, so vtable equality is the identifier. Verified
+// via Ghidra ListSymbolsByName (CSWGuiCustomPanel_vtable / CSWGuiQuickPanel_
+// vtable) and against the live panels in patch-20260608-135543.log
+// (custom=0x007595e0 21 controls, quick=0x00759668 12 controls). Both drive
+// their build steps (Porträt / Attribute / Fähigkeiten / Talente / Name /
+// Spielen) sequentially, enabling one at a time via CSWGuiControl::SetEnabled
+// (bit_flags bit 3) — same shape as the in-game level-up wizard.
+constexpr uintptr_t kVtableCSWGuiCustomPanel = 0x007595e0;
+constexpr uintptr_t kVtableCSWGuiQuickPanel  = 0x00759668;
+
+bool IsCharGenStructural(void* panel) {
+    if (!panel) return false;
+    __try {
+        void** vt = *reinterpret_cast<void***>(panel);
+        uintptr_t v = reinterpret_cast<uintptr_t>(vt);
+        return v == kVtableCSWGuiCustomPanel || v == kVtableCSWGuiQuickPanel;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 // CSWGuiOptions title-screen options panel identity by vtable. The class
 // is single-instance and lives in the engine's title-screen UI suite, so
 // vtable equality is the cleanest identifier. Captured 2026-05-26 via the
@@ -577,6 +599,9 @@ PanelKind IdentifyPanel(void* panel) {
     }
     if (IsLevelUpStructural(panel)) {
         return recordAndReturn(PanelKind::InGameLevelUp, "InGameLevelUp");
+    }
+    if (IsCharGenStructural(panel)) {
+        return recordAndReturn(PanelKind::CharGen, "CharGen");
     }
     if (IsPowersLevelUpStructural(panel)) {
         return recordAndReturn(PanelKind::PowersLevelUp, "PowersLevelUp");
