@@ -13,6 +13,13 @@ headings in the release body (markdown `**Installer:**` only renders as bold).
 Each bullet should lead with the user-facing change ("X works now", "new
 hotkey Y", "X no longer does Z"); keep technical detail short.
 
+<h2>v0.4.1</h2>
+
+<h3>Updater:</h3>
+
+- The in-game updater now downloads new versions reliably even when GitHub is having problems. The "Update verfügbar" notice and the F5-to-install flow already worked, but the actual download went through GitHub's public browser download link, which during a partial GitHub outage returns an error and failed the whole update — this is exactly what stopped the first 0.4 download. It now fetches the installer through GitHub's API instead, which stays up during those outages and is the same path GitHub's own tools use, so an update that is offered will actually download.
+- The spoken feedback while updating is clearer. Pressing F5 to start an update now says "Download wird gestartet." as it begins, and if the download fails it now says it failed and that you can press F5 to try again — previously it only said the download had failed, with no hint that another press would retry.
+
 <h2>v0.4</h2>
 
 <h3>Action menu:</h3>

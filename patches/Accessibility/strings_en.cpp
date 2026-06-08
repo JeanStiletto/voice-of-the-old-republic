@@ -495,9 +495,10 @@ const char* Get(Id id) {
         case Id::GlossaryEntrySwoopWallImpact:      return "Swoop wall impact";
 
         case Id::FmtUpdateAvailable:    return "Update available, version %s. Press F5 from the main menu to install.";
+        case Id::UpdateDownloadStarting: return "Starting download.";
         case Id::UpdateDownloading:     return "Downloading update.";
         case Id::UpdateDownloaded:      return "Update downloaded. Closing game to install.";
-        case Id::UpdateFailed:          return "Update download failed.";
+        case Id::UpdateFailed:          return "Update download failed. Press F5 to try again.";
         case Id::FmtUpdateNotAvailable: return "No update available. You are on version %s.";
         case Id::UpdateNotInMenu:       return "Updates can only be installed from the main menu.";
 

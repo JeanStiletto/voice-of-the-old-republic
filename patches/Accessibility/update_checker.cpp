@@ -274,10 +274,13 @@ bool HttpGetToString(HINTERNET connection, const wchar_t* path,
     return !out.empty();
 }
 
-// GET an arbitrary URL to a file on disk. Handles host + path cracking
-// (the asset download URL is on a different host than api.github.com —
-// objects.githubusercontent.com or a release-asset host). Follows
-// redirects via WinHTTP's default policy.
+// GET an asset-download URL to a file on disk. The URL is the
+// api.github.com/.../releases/assets/<id> endpoint; sending
+// Accept: application/octet-stream makes GitHub 302-redirect to the
+// storage backend (release-assets.githubusercontent.com) instead of
+// returning JSON metadata. WinHTTP's default redirect policy follows the
+// https→https redirect automatically, so the host/path cracked here is
+// only the initial api.github.com request.
 bool HttpDownloadUrlToFile(const wchar_t* url, const char* destPath, int timeoutMs) {
     URL_COMPONENTS uc = {};
     uc.dwStructSize = sizeof(uc);
@@ -324,8 +327,10 @@ bool HttpDownloadUrlToFile(const wchar_t* url, const char* destPath, int timeout
     }
     WinHttpSetTimeouts(req, timeoutMs, timeoutMs, timeoutMs, timeoutMs);
 
+    static const wchar_t kOctetAccept[] =
+        L"Accept: application/octet-stream\r\n";
     bool ok = false;
-    if (WinHttpSendRequest(req, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+    if (WinHttpSendRequest(req, kOctetAccept, (DWORD)-1L,
                            WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
         WinHttpReceiveResponse(req, nullptr)) {
 
@@ -431,30 +436,57 @@ bool ExtractTagName(const std::string& json, char* out, size_t outCap) {
     return out[0] != '\0';
 }
 
-// Walk every `"browser_download_url": "..."` occurrence and return the
-// first URL that contains assetName. WinHTTP needs wide-char URLs, but
-// the JSON is bytes from the wire, so we transcode the chosen URL at
-// the boundary (the URL is ASCII — GitHub's release-asset URLs always
-// are — so a straight widen is safe).
-bool ExtractAssetUrl(const std::string& json, const char* assetName,
-                     wchar_t* outUrl, size_t outCap) {
-    const char* p = json.c_str();
+// Find the asset whose `"name"` equals assetName and return its API
+// `"url"` field — the api.github.com/.../releases/assets/<id> endpoint,
+// NOT the browser_download_url. Downloading via the API endpoint with
+// Accept: application/octet-stream is the path GitHub serves to the gh
+// CLI; it redirects to the storage backend (release-assets.github
+// usercontent.com) and stays up when the github.com/.../releases/download
+// browser endpoint returns 504 during partial GitHub outages.
+//
+// Each asset object is `{ "url":<api>, "id":.., "node_id":.., "name":..,
+// .., "browser_download_url":<browser> }`. We locate the matching
+// `"name"`, scan back to that object's opening `{`, then forward to its
+// first `"url"` (which precedes "name", so the uploader sub-object's url
+// that follows can't be picked up by mistake).
+//
+// WinHTTP needs wide-char URLs, but the JSON is bytes from the wire, so
+// we transcode the chosen URL at the boundary (GitHub's asset API URLs
+// are always ASCII, so a straight widen is safe).
+bool ExtractAssetApiUrl(const std::string& json, const char* assetName,
+                        wchar_t* outUrl, size_t outCap) {
+    const char* base = json.c_str();
+    const char* p = base;
     while (true) {
-        p = strstr(p, "\"browser_download_url\"");
-        if (!p) return false;
-        p = SkipColon(p + strlen("\"browser_download_url\""));
-        if (!p) return false;
-        char urlBuf[1024] = {};
-        const char* next = ReadQuotedString(p, urlBuf, sizeof(urlBuf));
-        if (!next) return false;
-        p = next;
-        if (strstr(urlBuf, assetName) != nullptr) {
-            size_t len = strlen(urlBuf);
-            if (len >= outCap) len = outCap - 1;
-            for (size_t i = 0; i < len; ++i) outUrl[i] = (wchar_t)(unsigned char)urlBuf[i];
-            outUrl[len] = L'\0';
-            return true;
+        const char* namePos = strstr(p, "\"name\"");
+        if (!namePos) return false;
+        const char* afterColon = SkipColon(namePos + strlen("\"name\""));
+        const char* next = namePos + strlen("\"name\"");
+        if (afterColon) {
+            char nameBuf[256] = {};
+            const char* end = ReadQuotedString(afterColon, nameBuf, sizeof(nameBuf));
+            if (end) next = end;
+            if (end && strcmp(nameBuf, assetName) == 0) {
+                // Scan back to this object's opening brace, then forward to
+                // the first "url" key (the asset's own API url).
+                const char* brace = namePos;
+                while (brace > base && *brace != '{') --brace;
+                const char* urlKey = strstr(brace, "\"url\"");
+                if (urlKey && urlKey < namePos) {
+                    const char* uc = SkipColon(urlKey + strlen("\"url\""));
+                    char urlBuf[1024] = {};
+                    if (uc && ReadQuotedString(uc, urlBuf, sizeof(urlBuf))) {
+                        size_t len = strlen(urlBuf);
+                        if (len >= outCap) len = outCap - 1;
+                        for (size_t i = 0; i < len; ++i)
+                            outUrl[i] = (wchar_t)(unsigned char)urlBuf[i];
+                        outUrl[len] = L'\0';
+                        return true;
+                    }
+                }
+            }
         }
+        p = next;
     }
 }
 
@@ -626,8 +658,8 @@ void DownloadWorker() {
     }
 
     wchar_t assetUrl[1024] = {};
-    if (!ExtractAssetUrl(json, kInstallerAsset, assetUrl,
-                         sizeof(assetUrl) / sizeof(wchar_t))) {
+    if (!ExtractAssetApiUrl(json, kInstallerAsset, assetUrl,
+                            sizeof(assetUrl) / sizeof(wchar_t))) {
         acclog::Write("Update", "download: asset '%s' not in release JSON",
                       kInstallerAsset);
         g_download_failed.store(true, std::memory_order_relaxed);
@@ -829,7 +861,7 @@ void HandleF5() {
     g_download_failed.store(false, std::memory_order_relaxed);
     g_installer_path[0] = '\0';
 
-    prism::SpeakUrgent(acc::strings::Get(acc::strings::Id::UpdateDownloading));
+    prism::SpeakUrgent(acc::strings::Get(acc::strings::Id::UpdateDownloadStarting));
     std::thread(DownloadWorker).detach();
 }
 

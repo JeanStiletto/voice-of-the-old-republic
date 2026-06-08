@@ -499,9 +499,10 @@ const char* Get(Id id) {
         case Id::GlossaryEntrySwoopWallImpact:      return "Impacto contra pared Swoop";
 
         case Id::FmtUpdateAvailable:    return "Actualizaci\xF3n disponible, versi\xF3n %s. Pulsa F5 desde el men\xFA principal para instalar.";
+        case Id::UpdateDownloadStarting: return "Iniciando descarga.";
         case Id::UpdateDownloading:     return "Descargando actualizaci\xF3n.";
         case Id::UpdateDownloaded:      return "Actualizaci\xF3n descargada. Cerrando juego para instalar.";
-        case Id::UpdateFailed:          return "Error al descargar la actualizaci\xF3n.";
+        case Id::UpdateFailed:          return "Error al descargar la actualizaci\xF3n. Pulsa F5 para intentarlo de nuevo.";
         case Id::FmtUpdateNotAvailable: return "No hay actualizaci\xF3n disponible. Est\xE1s en la versi\xF3n %s.";
         case Id::UpdateNotInMenu:       return "Las actualizaciones solo se pueden instalar desde el men\xFA principal.";
 

@@ -1352,18 +1352,22 @@ enum class Id : int {
     //
     //      FmtUpdateAvailable    — one `%s` (remote version string from
     //                              GitHub release tag, e.g. "0.3.1").
-    //      UpdateDownloading     — F5 acknowledgement spoken once when the
-    //                              download task starts.
+    //      UpdateDownloadStarting — F5 acknowledgement spoken once when the
+    //                              download task is kicked off.
+    //      UpdateDownloading     — spoken when F5 is pressed again while a
+    //                              download is already in flight.
     //      UpdateDownloaded      — download-complete cue. The mod calls
     //                              ExitProcess shortly after, so the user
     //                              hears this just before the game closes.
-    //      UpdateFailed          — download error.
+    //      UpdateFailed          — download error; tells the user they can
+    //                              press F5 to try again.
     //      FmtUpdateNotAvailable — F5 when no update is pending. One `%s`
     //                              (current installed version).
     //      UpdateNotInMenu       — F5 refused because the player is in
     //                              active gameplay (GetPlayerPosition
     //                              succeeded).
     FmtUpdateAvailable,
+    UpdateDownloadStarting,
     UpdateDownloading,
     UpdateDownloaded,
     UpdateFailed,
