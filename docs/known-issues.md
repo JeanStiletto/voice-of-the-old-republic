@@ -3,6 +3,7 @@
 Status tracker for accessibility-mod work, in four buckets:
 
 - **Bugs** — regressions or broken behaviour to fix.
+- **Unreproduced** — reported issues we can't reliably reproduce yet; need a repro before fixing.
 - **Planned** — future feature work that's not currently in flight.
 - **Monitor** — shipped features whose behaviour we're still watching in live play.
 - **Polish** — quality-of-life refinements; the feature works but has rough edges.
@@ -14,10 +15,6 @@ When an entry is closed, move it out of this file (the corresponding fix or comm
 ### Resolution / fullscreen / menu-offset resilience (umbrella)
 
 The mod's promise is "no mouse, no screen," yet several code paths silently assume a particular screen geometry and break when the user changes resolution, runs windowed, or installs a community widescreen / HR-menus patch that moves GUI layouts. Known coupling points so far: the radial cursor-ray dependency and the save-thumbnail `ImageScale` divide-by-zero (both fixed in v0.2.1 — see CHANGELOG; they're the first two examples of this class), in-world cursor parking, and any hardcoded hit-test offset compensations (e.g. the Options-panel tab-pitch shift). We deliberately avoided bundling the complex community resolution/menu patches for simplicity, but their changes — plus whatever resolution/windowed state a user lands in — must not be able to break core mod function. Needs: (a) an audit of every place we use screen-pixel coordinates, the OS cursor, or hardcoded offsets; (b) read geometry live from the engine instead of assuming; (c) installer-set sane graphics defaults; (d) a decision on auto-installing the widescreen + HR-menus patches and making our code robust to exactly the layout changes they introduce. See `installer.md` (Widescreen / HR-menus bundling) and the `project_radial_cursor_coupling` memory.
-
-### Startup crash with non-NVDA screen readers (delay-load backend fault) — fix pending tester verification
-
-A pl-PL beta tester (v0.2.1) crashed at startup, repeatedly, before any speech. Dump exception `0xC06D007F` = MSVC delay-load `ERROR_PROC_NOT_FOUND`: prism's `prism_registry_acquire_best()` walks every backend in priority order calling each `initialize()`; the ZDSR backend delay-loads the user's `ZDSRAPI.dll` (`C:\Program Files (x86)\zdsr\zdsr\`, confirmed via `kdev analyze-dump --modules`), which is present but exports a mismatched symbol set, raising an unhandled structured exception. NVDA/JAWS users never saw it because their backend wins priority and `acquire_best` returns before reaching the broken one — so it read as "non-NVDA readers crash." Fix (in `prism.cpp`): SEH-guard every backend probe (`acquire_best`, per-backend `acquire`, `initialize`); on an `acquire_best` fault, fall through `AcquireNormalFallback` which probes our preferred order one backend at a time, each guarded, skipping the broken one and landing on the next working backend (SAPI last as the universal safety net). Also covers the JAWS crash report (no log yet) — any backend whose vendor delay-load is incompatible is now skipped, not fatal. **Not yet verified in-game** — needs the ZDSR tester (and ideally the JAWS reporter) to confirm with a new build; can't repro locally without ZDSR installed. See the `project_prism_backend_delayload_crash` memory.
 
 ### Polish (and other) UI language defaults to German speech — fixed (now English)
 
@@ -55,12 +52,19 @@ Computer-spike / security "dialogues" read their options twice, and the interact
 
 Pressing Shift+Down to read a full description often reads it twice — seen in the Journal and on items. Duplicate fire between our Shift+arrow description reader and an engine re-narration, or a missing Consume so the key both drives our read and falls through. Same shape as the hacking double-read above; likely one root cause.
 
-### Subtitle filter regressions (voiced-speaker suppression)
+### Subtitle filter regression — barks still read (voiced-speaker suppression)
 
-Two regressions from the voiced-speaker subtitle suppression change (CHANGELOG: "Untertitel vertonter Sprecher vorlesen"), both in `dialog_speech.cpp`'s speaker classification:
-- **Zaalbar now has no subtitles read at all.** His Shyriiwook is untranslated alien speech the player can't otherwise follow and should still be read — the filter is over-suppressing him.
-- **Some barks / ambient one-liner lines still have their subtitles read** over the audio, when the filter should already cover them (under-suppressing).
-We already have the suppression code; it's mis-classifying these two cases. Tune the voiced-speaker vs read-anyway decision so genuinely-alien speech stays read while every voiced line (including barks) is suppressed.
+Regression from the voiced-speaker subtitle suppression change (CHANGELOG: "Untertitel vertonter Sprecher vorlesen"), in `dialog_speech.cpp`'s speaker classification: **some barks / ambient one-liner lines still have their subtitles read** over the audio, when the filter should already cover them (under-suppressing). We already have the suppression code; it's mis-classifying these. Tune the voiced-speaker vs read-anyway decision so every voiced line (including barks) is suppressed. (The companion over-suppression case — Zaalbar's alien speech going unread — is under Unreproduced.)
+
+## Unreproduced
+
+### Zaalbar's subtitles not reading
+
+Reported that Zaalbar has no subtitles read at all — his Shyriiwook is untranslated alien speech the player can't otherwise follow and should still be read, so the voiced-speaker filter (`dialog_speech.cpp`) looks to be over-suppressing him. No reliable repro yet. Capture a log on a Zaalbar conversation line and confirm whether the suppression path is firing on his lines. Pairs with the bark under-suppression bug above (same speaker-classification code).
+
+### Off-by-one description reads while leveling up or character creation
+
+Reported that during level-up and/or character creation the description read aloud belongs to the entry *above* the focused one — e.g. landing on Dexterity reads the Strength description. The focus/selection itself is on the right row; it's the description lookup that's shifted by one, so the player hears the wrong attribute's (or skill's/feat's) text. No reliable repro yet. Needs the exact screen (chargen step vs level-up panel — attribute, skill, or feat list), the row navigated to vs the description heard, and a timestamped log. Likely candidate: the description reader indexing into the row list with an off-by-one (stale-vs-current selection index, or a header/blank row offsetting the mapping).
 
 ## Planned
 
@@ -130,23 +134,11 @@ Some of our actions are bound to Alt+ and Ctrl+ key combinations, which not ever
 
 ## Monitor
 
-### Turret minigame — cue re-anchored to the real fire line (winnable); tuning + auto-aim open
+_(empty — nothing currently under live watch.)_
 
-**Root cause found and fixed (2026-06-05).** The whole cue had been referenced to `CSWMiniPlayer +0x1c4` ("aim"), which is **decoupled from where bolts actually go** — proven in both auto and manual play (`boltVsAim` ~114°, manual kills landed with `+0x1c4` 21–130° off the fighter). The gun is **fixed** and the world rotates around it (`+0x240` orientation is a constant identity); bolts fire along a **near-fixed world line ≈ az −84°**. The fix re-anchors the cue to that line, **measured live** from the player's own bolts (`OnTurretAddBullet` hook → `DrainBoltProbes` EMAs `g_state.fire_line`). The cue now goes solid exactly when a bolt will connect — a tester won the mission with it.
+### Startup crash with non-NVDA screen readers (delay-load backend fault) — fix pending tester verification
 
-Still open (next session, fresh context): **tune the cue feel** (convergence speed, ramp widths, "which way to rotate" directionality — it still "sounds a bit like before"), and **re-do aim-assist / Autoaiming for the fixed-gun model** (drive whatever rotates the WORLD to bring the locked fighter onto the fire line — `turret_steer.cpp`'s WASD barrel-turn is moot for a fixed gun — or decide auto-aim is unneeded since "point in the general direction and mash fire" already wins). Full write-up, offsets, and log channels (`TurretBolt`, `TurretCue`) in **`docs/turret-difficulty-investigation.md`**. The old turn-rate finding (`MovementPerSec = 100` @ `CSWMiniGame +0x74`) stands but was a red herring for difficulty.
-
-**Update (2026-06-04): largely RESOLVED via aim-assist.** RE confirmed the hitbox is a real ~20 m sphere that can't be enlarged at runtime (model-scale and `sphere_radius` writes both no-ops). Measured raw aim-by-ear at ~0.8% hit rate — effectively unplayable, confirming the "luck only" report. Shipped aim-assist (writes `CSWMiniPlayer.aim +0x1c4`): DEFAULT always-on magnetism (pulls the gun onto the locked fighter once within 15°) + opt-in "Autoaiming" toggle (full lock-on). A within-session A/B proved magnetism ~14× the hit rate (ON 11.3% vs OFF 0.8%). Pending tester confirmation that the default feel is right.
-
-### Main menu needs one alt-tab after launch — fix shipped (v0.3.2), watching
-
-**Root cause found and fixed (2026-06-08).** Decompiled the input path: the engine acquires its DirectInput keyboard only on a `CExoInput::SetActive(1)` transition (driven by game-state events like `HideLoadScreen` via `FUN_005f6b10`, not purely by the window's `WM_ACTIVATE`), and `CExoRawInputInternal::GetKeyboardBuffer` returns zero input while `active == 0`. On cold start the final render window could be created without that activation reaching the live input object, leaving the keyboard dead until an alt-tab forced a real `SetActive(0)→SetActive(1)` cycle. Multi-launch logs then showed a second, dominant cause: the **Xbox Game Bar launch popup (and similar overlays) steal the foreground window** for several seconds right as the menu appears — and DirectInput (foreground cooperative level) can't `Acquire()` while a foreign window owns the foreground, so the steal can land up to ~6 s *after* the menu and kill input again.
-
-Two-part fix: (1) `acc::engine::EnsureInputAcquired()` reads the engine's own `ExoInput` global and calls `CExoInput::SetActive(ExoInput, 1)` at MainMenu first-sight (idempotent — exactly what `HideLoadScreen` does), fixing the pure no-overlay case; (2) a **bounded cold-start foreground guard** in `diag_focus.cpp` — for 15 s after the menu, the 100 ms poll thread pulls the game's render window back to the foreground (via `AttachThreadInput` + `SetForegroundWindow`, no synthetic keypress) whenever a non-game window steals it, which makes the engine re-`Acquire` input on its own. Bounded by time (15 s) and reclaim count (6) so it never fights focus afterwards — Game Bar and deliberate alt-tabbing still work. Log lines: `EnsureInputAcquired: ... SetActive(... 1) dispatched` and `StartupForegroundGuard: ... reclaiming render ...`. Confirmed working by the developer across multiple launches; keep watching beta feedback on diverse machines before closing.
-
-### Pazaak board game (keyboard play + narration)
-
-Implemented in `patches/Accessibility/pazaak.cpp` — no engine detour hook: the live `CSWGuiPazaakGame` board is identified structurally (foreground modal matching the model layout; vtable learned + logged on first sight), state is polled per tick for delta announcements, and play is driven through the engine's own `HandlePlayHandCard`/`HandleStand`/`HandleContinue`. Builds clean; **pending in-game test.** Keys (board foreground only): Tab/Shift+Tab cycle the playable hand, Enter play, S stand, E end turn, C read hand, T read table; +/- cards open a sign sub-zone (Left/Right pick, Enter play, Esc cancel). Watch for: correct draw/play/stand/result lines and totals, the acquire log line (`Pazaak: acquired board panel=... vtable=0x...`), and that the engine's end-of-match result message box is dismissable from the keyboard. The default starting side deck has no +/- cards, so the sign sub-zone only appears once the player owns flip cards.
+A pl-PL beta tester (v0.2.1) crashed at startup, repeatedly, before any speech. Dump exception `0xC06D007F` = MSVC delay-load `ERROR_PROC_NOT_FOUND`: prism's `prism_registry_acquire_best()` walks every backend in priority order calling each `initialize()`; the ZDSR backend delay-loads the user's `ZDSRAPI.dll` (`C:\Program Files (x86)\zdsr\zdsr\`, confirmed via `kdev analyze-dump --modules`), which is present but exports a mismatched symbol set, raising an unhandled structured exception. NVDA/JAWS users never saw it because their backend wins priority and `acquire_best` returns before reaching the broken one — so it read as "non-NVDA readers crash." Fix (in `prism.cpp`): SEH-guard every backend probe (`acquire_best`, per-backend `acquire`, `initialize`); on an `acquire_best` fault, fall through `AcquireNormalFallback` which probes our preferred order one backend at a time, each guarded, skipping the broken one and landing on the next working backend (SAPI last as the universal safety net). Also covers the JAWS crash report (no log yet) — any backend whose vendor delay-load is incompatible is now skipped, not fatal. **Not yet verified in-game** — needs the ZDSR tester (and ideally the JAWS reporter) to confirm with a new build; can't repro locally without ZDSR installed. See the `project_prism_backend_delayload_crash` memory.
 
 ## Polish
 
