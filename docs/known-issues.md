@@ -113,7 +113,7 @@ Specifics to address:
 
 Hand-authored map hints for specific story locations the game doesn't mark but players struggle to find without sight. Backlog so far:
 - Rebel corpses.
-- The backdoor of the Santan (Sandral?) estate.
+- The backdoor of the Sandral estate.
 Add these to the manual map-hint registry (see `project_map_cycle_architecture.md` / `map_user_markers.cpp` for how user/manual hints fold into the map-hint cycle). Confirm the exact module and in-world position for each before adding.
 
 ### Integrate a Polish translation
