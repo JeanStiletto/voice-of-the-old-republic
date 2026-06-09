@@ -79,6 +79,9 @@ const MsgStrings kDe = {
     "widersteht",                  // word_resists
     "misslungen",                  // word_save_failed
     "neutralisiert",               // kill_marker
+
+    // ---- Status-echo copula
+    " ist ",                       // status_ist_marker
 };
 
 // English — engine anchors extracted from EN dialog.tlk on 2026-05-28
@@ -131,20 +134,22 @@ const MsgStrings kEn = {
     "Bonus",                       // short_bonus
 
     // ---- Short results-only line labels
-    "failed",                      // word_failed
-    "\x01_no_auswirkung_anchor_",  // prefix_auswirkung — TODO: extract EN anchor
-    "\x01_no_absorb_anchor_",      // absorb_anchor — TODO: extract EN anchor
+    "failed",                            // word_failed
+    "Effect Application Breakdown:",     // prefix_auswirkung (TLK 42157)
+    "absorbs",                           // absorb_anchor (1455 verb; misses 1454 "resists" energy-shield variant)
 
-    // ---- Ability effect sequence — TODO: extract EN anchors (sentinels =
-    // rules never fire; lines fall through to raw speech, no regression)
-    "\x01_no_use_marker_",         // ability_use_marker
-    "\x01_no_save_marker_",        // save_marker
-    "\x01_no_save_success_",       // save_success
-    "\x01_no_save_fail_",          // save_fail
-    "\x01_no_damage_marker_",      // damage_marker
-    "resists",                     // word_resists (unused until anchors set)
-    "failed",                      // word_save_failed
-    "\x01_no_kill_marker_",        // kill_marker — TODO: extract EN anchor
+    // ---- Ability / grenade / force-power effect sequence
+    " uses ",                            // ability_use_marker (32292)
+    " Save. ",                           // save_marker (1374-1376 common suffix + 1406 separator)
+    "success!",                          // save_success (1392 + 1406 punct)
+    "failure!",                          // save_fail (1393 + 1406 punct)
+    " damages ",                         // damage_marker (1403)
+    "resists",                           // word_resists
+    "failed",                            // word_save_failed
+    "killed",                            // kill_marker (1407)
+
+    // ---- Status-echo copula
+    " is ",                              // status_ist_marker
 };
 
 // French — engine anchors extracted from FR dialog.tlk on 2026-05-28
@@ -201,19 +206,22 @@ const MsgStrings kFr = {
     "Bonus",                            // short_bonus
 
     // ---- Short results-only line labels
-    "rat\xE9",                          // word_failed
-    "\x01_no_auswirkung_anchor_",       // prefix_auswirkung — TODO: extract FR anchor
-    "\x01_no_absorb_anchor_",           // absorb_anchor — TODO: extract FR anchor
+    "rat\xE9",                                         // word_failed
+    "D\xE9""composition de l'application d'effet :",   // prefix_auswirkung (42157)
+    "absorbe",                                         // absorb_anchor (1455 verb; misses 1454 "r\xE9siste" variant)
 
-    // ---- Ability effect sequence — TODO: extract FR anchors
-    "\x01_no_use_marker_",              // ability_use_marker
-    "\x01_no_save_marker_",             // save_marker
-    "\x01_no_save_success_",            // save_success
-    "\x01_no_save_fail_",               // save_fail
-    "\x01_no_damage_marker_",           // damage_marker
-    "r\xE9siste",                       // word_resists
-    "\xE9""chou\xE9",                   // word_save_failed
-    "\x01_no_kill_marker_",             // kill_marker — TODO: extract FR anchor
+    // ---- Ability / grenade / force-power effect sequence
+    " utilise ",                                       // ability_use_marker (32292)
+    "  : ",                                            // save_marker (no common save-type suffix; 1406 separator, 2 spaces)
+    "succ\xE8s !",                                     // save_success (1392 + 1406 punct)
+    "\xE9""chec !",                                    // save_fail (1393 + 1406 punct)
+    " touche ",                                        // damage_marker (1403)
+    "r\xE9siste",                                      // word_resists
+    "\xE9""chou\xE9",                                  // word_save_failed
+    "a tu\xE9",                                        // kill_marker (1407)
+
+    // ---- Status-echo copula
+    " est ",                                           // status_ist_marker
 };
 
 // Italian — engine anchors extracted from IT dialog.tlk on 2026-05-28
@@ -267,19 +275,22 @@ const MsgStrings kIt = {
     "Bonus",                            // short_bonus
 
     // ---- Short results-only line labels
-    "fallito",                          // word_failed
-    "\x01_no_auswirkung_anchor_",       // prefix_auswirkung — TODO: extract IT anchor
-    "\x01_no_absorb_anchor_",           // absorb_anchor — TODO: extract IT anchor
+    "fallito",                                      // word_failed
+    "Divisione dell'Applicazione degli Effetti.",   // prefix_auswirkung (42157; note trailing '.')
+    "assorbe",                                      // absorb_anchor (1455 verb)
 
-    // ---- Ability effect sequence — TODO: extract IT anchors
-    "\x01_no_use_marker_",              // ability_use_marker
-    "\x01_no_save_marker_",             // save_marker
-    "\x01_no_save_success_",            // save_success
-    "\x01_no_save_fail_",               // save_fail
-    "\x01_no_damage_marker_",           // damage_marker
-    "resiste",                          // word_resists
-    "fallito",                          // word_save_failed
-    "\x01_no_kill_marker_",             // kill_marker — TODO: extract IT anchor
+    // ---- Ability / grenade / force-power effect sequence
+    " usa ",                                        // ability_use_marker (32292)
+    ". ",                                           // save_marker (no common save-type suffix; 1406 separator)
+    "successo!",                                    // save_success (1392 + 1406 punct)
+    "fallimento!",                                  // save_fail (1393 + 1406 punct)
+    " danni ",                                      // damage_marker (1403)
+    "resiste",                                      // word_resists
+    "fallito",                                      // word_save_failed
+    "ucciso",                                       // kill_marker (1407)
+
+    // ---- Status-echo copula
+    " \xE8 ",                                       // status_ist_marker (" è ")
 };
 
 // Spanish — engine anchors extracted from ES dialog.tlk on 2026-05-28
@@ -335,18 +346,21 @@ const MsgStrings kEs = {
 
     // ---- Short results-only line labels
     "fallado",                               // word_failed
-    "\x01_no_auswirkung_anchor_",            // prefix_auswirkung — TODO: extract ES anchor
-    "\x01_no_absorb_anchor_",                // absorb_anchor — TODO: extract ES anchor
+    "Colapso de Aplicaci\xF3n de efecto:",   // prefix_auswirkung (42157)
+    "absorbe",                               // absorb_anchor (1455 verb; misses 1454 "resiste" variant)
 
-    // ---- Ability effect sequence — TODO: extract ES anchors
-    "\x01_no_use_marker_",                   // ability_use_marker
-    "\x01_no_save_marker_",                  // save_marker
-    "\x01_no_save_success_",                 // save_success
-    "\x01_no_save_fail_",                    // save_fail
-    "\x01_no_damage_marker_",                // damage_marker
+    // ---- Ability / grenade / force-power effect sequence
+    "utiliza ",                              // ability_use_marker (32292; no leading space in ES template)
+    " : ",                                   // save_marker (no common save-type suffix; 1406 separator)
+    "\xE9xito!",                             // save_success (1392 + 1406 punct)
+    "fallo!",                                // save_fail (1393 + 1406 punct)
+    " da\xF1""a a ",                         // damage_marker (1403)
     "resiste",                               // word_resists
     "fallado",                               // word_save_failed
-    "\x01_no_kill_marker_",                  // kill_marker — TODO: extract ES anchor
+    "mat\xF3 a",                             // kill_marker (1407)
+
+    // ---- Status-echo copula
+    " es ",                                  // status_ist_marker
 };
 
 }  // namespace

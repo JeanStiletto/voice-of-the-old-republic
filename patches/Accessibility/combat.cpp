@@ -432,7 +432,7 @@ bool ParseSummary(const char* text, AttackBlock& b) {
     // erfolgreich". Captures everything after to end-of-line.
     if (b.target[0]) {
         char needle[112];
-        int nn = snprintf(needle, sizeof(needle), "%s ist ", b.target);
+        int nn = snprintf(needle, sizeof(needle), "%s%s", b.target, L.status_ist_marker);
         if (nn > 0 && nn < (int)sizeof(needle)) {
             const char* st = strstr(text, needle);
             if (st) {
@@ -901,13 +901,13 @@ bool RuleAuswirkung(const char* text) {
     const auto& L = acc::combat::loc::Get();
     if (!MsgStartsWith(text, L.prefix_auswirkung)) return false;
     const char* p   = text + strlen(L.prefix_auswirkung);
-    const char* ist = strstr(p, " ist ");
+    const char* ist = strstr(p, L.status_ist_marker);
     if (ist) {
         char target[96];
         CopyRange(target, sizeof(target), p, ist);
         EffectTarget* e = FxFind(target);
         if (e) {
-            const char* s = ist + 5;  // strlen(" ist ")
+            const char* s = ist + strlen(L.status_ist_marker);
             CopyRange(e->status, sizeof(e->status), s, s + strlen(s));
             e->last_tick = GetTickCount();
         }

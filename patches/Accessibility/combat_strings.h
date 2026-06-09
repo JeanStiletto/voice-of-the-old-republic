@@ -8,9 +8,13 @@
 //
 // Language follows acc::strings::Lang.
 //
-// EN engine-side anchors haven't been verified against a real EN install
-// yet — kEn currently aliases kDe, so EN msg-bus lines fall through to
-// raw speech. Fill in when an EN tester is available.
+// All five locales (DE/EN/FR/IT/ES) carry a full anchor set. DE is engine-
+// verified against a real combat log; EN/FR/IT/ES anchors were extracted
+// mechanically from each locale's dialog.tlk (see
+// CombatStringsExtractCommand.cs StrrefMap) and the same rules reproduce
+// the DE reference byte-for-byte, but the non-DE sets still want one in-
+// locale combat capture to confirm (grep `MsgBuf: raw:` vs `emit-*`).
+// Any anchor that doesn't match falls through to raw speech — no regression.
 
 #pragma once
 
@@ -100,6 +104,16 @@ struct MsgStrings {
     // Defeat/kill line ("<actor> neutralisiert <target>: N EPs"). Routed
     // through the urgent SAPI channel so a kill cuts through queued speech.
     const char* kill_marker;         // "neutralisiert"
+
+    // Status-echo copula in "<target> ist <status>" (DE) — the "to be" verb
+    // the engine glues between a creature and its applied status. Used to
+    // lift the status word onto the attack/effect line and to split the
+    // Auswirkungsstatistik echo. Hand-specified per locale (no single TLK
+    // template yields it cleanly — FR phrases immunity without a copula).
+    // Best-effort: if a locale's status line uses a different construction,
+    // the status word is simply omitted (line still suppressed/shortened —
+    // no regression).
+    const char* status_ist_marker;   // " ist " (leading + trailing space)
 };
 
 const MsgStrings& Get();
