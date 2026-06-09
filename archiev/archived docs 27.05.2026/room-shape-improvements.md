@@ -3,6 +3,17 @@
 Status: speculative — analysis pulled from gameplay logs of 2026-05-21 evening
 (~4 hours of Taris play across 8 distinct areas). No code changes yet.
 
+> Raw per-area build signatures (Taris + Dantooine + Manaan + Ebon Hawk)
+> live in `docs/room-shape-dataset.md`. SUPERSEDED NOTE (2026-06-09): an
+> earlier draft of this pointer claimed Manaan and the Dantooine
+> Jedi-Enklave were open-area-dominated (open 12–27). That was wrong — the
+> build-time `open` counts were a 2D-ray phantom-wall artefact. The 3D
+> wall guard (commit abc6db7) collapsed every area's open count to 0. The
+> "large open chambers" section at the end of this brief is therefore
+> obsolete: there are no genuine build-time open clusters; large spaces
+> classify as connected junction/corridor clusters. See the dataset's
+> corrected entries and cross-area observation 1.
+
 Source logs (Steam install logs/):
 - patch-20260521-200400.log (~2 MB, 20:04–22:25)
 - patch-20260521-204207.log (~12 MB, 20:42–00:02) — main session
