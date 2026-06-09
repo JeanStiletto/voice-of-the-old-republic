@@ -287,6 +287,14 @@ constexpr int   kRoomMinMidRays   = 3;
 // which run after this and now feed on room cores as well as junctions.
 constexpr float kRoomMergeRadiusM = 8.0f;
 
+// Area geometry cue: the only shape we speak for a "Bereich" is its long
+// axis, and only when the space is clearly elongated. At the cluster
+// centroid the full extent across each of the 4 axes is the sum of its
+// two opposite rays; the space is "elongated" when the longest axis
+// exceeds kAxisElongRatio × the perpendicular one. Square / round / open
+// spaces fall below the ratio and get no axis word (just "Bereich").
+constexpr float kAxisElongRatio = 1.8f;
+
 // Kind values now live in the public header (wall_topology.h) so
 // transitions.cpp can branch on Platz for the delayed-announce path.
 // Aliases here keep the local code compact.
@@ -295,6 +303,7 @@ constexpr int kKindCorridor = KindCorridor;
 constexpr int kKindJunction = KindJunction;
 constexpr int kKindOpenArea = KindOpenArea;
 constexpr int kKindPlatz    = KindPlatz;
+constexpr int kKindRoom     = KindRoom;
 
 // Cached state for the current area.
 
@@ -1328,12 +1337,55 @@ size_t AppendDirEntry(char* dirList, size_t bufSize, size_t dirLen,
     return dirLen;
 }
 
+// Long-axis test for an area cluster. Probes 8 rays at the cluster
+// centroid (calibrated floor z) and reports whether the space is clearly
+// elongated and along which axis word. Returns false (no axis) for
+// roughly square / round / open spaces — those speak as a bare "Bereich".
+// The axis is the only geometry cue we surface; there is no size.
+bool ComputeCentroidAxis(const Vector& centroid, float floorZ,
+                         acc::strings::Id& outAxisId) {
+    using acc::strings::Id;
+    const acc::engine::WallEdge* cw = nullptr;
+    int cwCount = 0;
+    if (!acc::spatial::change_detector::GetCachedWalls(cw, cwCount) ||
+        !cw || cwCount <= 0) {
+        return false;
+    }
+    Vector p = centroid;
+    p.z = floorZ;
+    float r[8];
+    ProbeClearance8(cw, cwCount, p, r);
+    // Full extent across each of the 4 axes = sum of the opposite rays.
+    // Index 0=E-W, 1=NE-SW, 2=N-S, 3=NW-SE (octant pairs k and k+4).
+    float ext[4];
+    for (int a = 0; a < 4; ++a) ext[a] = r[a] + r[a + 4];
+    int longA = 0;
+    for (int a = 1; a < 4; ++a) if (ext[a] > ext[longA]) longA = a;
+    int perpA = (longA + 2) % 4;  // 90° away
+    if (ext[longA] < kAxisElongRatio * ext[perpA]) return false;
+    switch (longA) {
+        case 0: outAxisId = Id::AxisEastWest;   break;
+        case 2: outAxisId = Id::AxisNorthSouth; break;
+        case 1: outAxisId = BitToOctant(1);     break;  // NE-SW → "Nord-Ost"
+        case 3: outAxisId = BitToOctant(3);     break;  // NW-SE → "Nord-West"
+    }
+    return true;
+}
+
 // Classify a cluster (1 or more nodes) by its centroid and the list of
 // external neighbour nodes (nodes outside this cluster that share an
 // edge with some member). `clusterSize` is the count of nodes in the
 // cluster — used only to distinguish singleton junctions ("Kreuzung")
 // from merged ones ("Platz"). Renders the label + kind + sig into the
 // out-params.
+//
+// areaHint: 0 = not an area (use the graph deadend/corridor/junction
+// rendering below); 1 = room (immediate-announce); 2 = big area
+// (delayed-announce). Non-zero short-circuits to the unified neutral
+// "Bereich [axis]. Ausgänge: …" rendering — open spaces, merged rooms
+// and merged big junctions all read the same way, geometry = long axis
+// only when elongated, then the exits. centroidFloorZ feeds the axis
+// probe.
 //
 //   externalCount == 0  → isolated / open area
 //   externalCount == 1  → dead-end (direction = centroid → that exit)
@@ -1354,6 +1406,7 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
                      const int* externalSrcs,
                      const int* externalDoorIdx,
                      int externalCount,
+                     int areaHint, float centroidFloorZ,
                      char* outLabel, size_t outLabelSize,
                      int& outKind, int& outSig,
                      bool& outFiltered) {
@@ -1364,6 +1417,87 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
     outFiltered = false;
     if (outLabelSize == 0) return;
     int n = static_cast<int>(g.nodes.size());
+
+    // Area path: probe-owned merged spaces (open / room / merged big
+    // junction). One neutral "Bereich" label, long-axis cue only when
+    // elongated, then the exit list — door rewrites kept (the navigational
+    // anchors), wall-curve degree-1 artefacts dropped.
+    if (areaHint != 0) {
+        bool octHas[8]  = {false, false, false, false, false, false, false, false};
+        int  octDoor[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+        for (int k = 0; k < externalCount; ++k) {
+            int nb = externalNbs[k];
+            if (nb < 0 || nb >= n) continue;
+            int bit = OctantBit(OctantFromVector(g.nodes[nb].pos.x - centroid.x,
+                                                 g.nodes[nb].pos.y - centroid.y));
+            if (bit < 0) continue;
+            int door = externalDoorIdx ? externalDoorIdx[k] : -1;
+            if (door >= 0) {
+                if (octDoor[bit] < 0) octDoor[bit] = door;
+                octHas[bit] = true;
+                continue;
+            }
+            int deg = Degree(g, nb);
+            int src = externalSrcs ? externalSrcs[k] : -1;
+            Vector edgeStart = (src >= 0 && src < n) ? g.nodes[src].pos : centroid;
+            bool realExit = (deg >= 2) ||
+                            (deg == 1 &&
+                             WalkmeshAgreesDeadEnd(g.nodes[nb].pos, edgeStart));
+            if (realExit) octHas[bit] = true;
+        }
+
+        char dirList[96] = {0};
+        size_t dirLen = 0;
+        int mask = 0;
+        for (int idx = 0; idx < 8; ++idx) {
+            int bit = kOctantEmitOrder[idx];
+            if (!octHas[bit]) continue;
+            mask |= (1 << bit);
+            Id dirId = BitToOctant(bit);
+            const char* dirWord = acc::strings::Get(dirId);
+            if (octDoor[bit] >= 0 && dirWord && dirWord[0]) {
+                char doorEntry[96];
+                RenderDoorDirection(octDoor[bit], dirWord,
+                                    doorEntry, sizeof(doorEntry));
+                if (dirLen > 0 && dirLen + 2 < sizeof(dirList)) {
+                    dirList[dirLen++] = ',';
+                    dirList[dirLen++] = ' ';
+                    dirList[dirLen]   = '\0';
+                }
+                size_t rem = sizeof(dirList) - dirLen;
+                int wr = std::snprintf(dirList + dirLen, rem, "%s", doorEntry);
+                if (wr > 0) dirLen += (static_cast<size_t>(wr) < rem)
+                                          ? static_cast<size_t>(wr) : rem - 1;
+            } else {
+                dirLen = AppendDirEntry(dirList, sizeof(dirList), dirLen,
+                                        dirId, /*markDeadEnd=*/false);
+            }
+        }
+
+        Id axisId = Id::AxisEastWest;
+        bool elong = ComputeCentroidAxis(centroid, centroidFloorZ, axisId);
+        const char* noun  = acc::strings::Get(Id::AreaNoun);
+        const char* axisW = elong ? acc::strings::Get(axisId) : nullptr;
+        if (!noun || !noun[0]) noun = "Bereich";
+        if (elong && axisW && axisW[0] && dirList[0]) {
+            const char* fmt = acc::strings::Get(Id::FmtAreaAxisExits);
+            if (fmt && fmt[0]) std::snprintf(outLabel, outLabelSize, fmt,
+                                             noun, axisW, dirList);
+        } else if (dirList[0]) {
+            const char* fmt = acc::strings::Get(Id::FmtAreaExits);
+            if (fmt && fmt[0]) std::snprintf(outLabel, outLabelSize, fmt,
+                                             noun, dirList);
+        } else if (elong && axisW && axisW[0]) {
+            const char* fmt = acc::strings::Get(Id::FmtAreaAxisOnly);
+            if (fmt && fmt[0]) std::snprintf(outLabel, outLabelSize, fmt,
+                                             noun, axisW);
+        } else {
+            std::snprintf(outLabel, outLabelSize, "%s", noun);
+        }
+        outKind = (areaHint == 1) ? kKindRoom : kKindPlatz;
+        outSig  = (outKind & 0xff) | ((mask & 0xff) << 8);
+        return;
+    }
 
     if (externalCount == 0) {
         const char* s = acc::strings::Get(Id::MapCursorOpenArea);
@@ -2642,14 +2776,21 @@ void BuildForArea(void* area) {
         if (UFFind(root) != root) continue;
         ++clusters;
 
-        // Centroid of all members.
+        // Centroid of all members. Also tally member shape flags + the
+        // calibrated floor z (averaged) so we can decide whether this
+        // cluster is a probe-owned area and feed the axis probe.
         Vector centroid = {0.0f, 0.0f, 0.0f};
         int size = 0;
+        bool hasOpen = false, hasRoom = false;
+        float floorZSum = 0.0f;
         for (int m = 0; m < n; ++m) {
             if (UFFind(m) != root) continue;
             centroid.x += g.nodes[m].pos.x;
             centroid.y += g.nodes[m].pos.y;
             centroid.z += g.nodes[m].pos.z;
+            if (nodeOpen[m]) hasOpen = true;
+            if (nodeRoom[m]) hasRoom = true;
+            floorZSum += nodeFloorZ[m];
             ++size;
         }
         if (size > 0) {
@@ -2657,6 +2798,7 @@ void BuildForArea(void* area) {
             centroid.y /= size;
             centroid.z /= size;
         }
+        float centroidFloorZ = (size > 0) ? floorZSum / size : 0.0f;
         if (size > 1) ++multiNodeClusters;
 
         // External neighbours: edges from any member to a non-member.
@@ -2729,11 +2871,24 @@ void BuildForArea(void* area) {
             }
         }
 
+        // Area decision: a probe-owned merged space speaks as "Bereich".
+        //   - any open-class member            → big area (delayed)
+        //   - multi-node room cluster          → room  (immediate)
+        //   - multi-node 3+-exit merged junction→ big area (delayed)
+        //   - isolated cluster (no exits)       → area (open/room by flag)
+        // Singletons that didn't merge keep their graph label (Kreuzung /
+        // Korridor / Sackgasse), so a stray room-class node isn't relabelled.
+        int areaHint = 0;  // 0 none, 1 room, 2 big
+        bool isArea = (externalCount == 0) || hasOpen ||
+                      (size > 1 && (hasRoom || externalCount >= 3));
+        if (isArea) areaHint = (hasRoom && !hasOpen) ? 1 : 2;
+
         char label[96] = {0};
         int kind = kKindOpenArea, sig = 0;
         bool filtered = false;
         ClassifyCluster(g, centroid, size, externalNbs, externalSrcs,
                         externalDoorIdx, externalCount,
+                        areaHint, centroidFloorZ,
                         label, sizeof(label), kind, sig, filtered);
 
         switch (kind) {
@@ -2741,6 +2896,7 @@ void BuildForArea(void* area) {
             case kKindCorridor: ++corridors; break;
             case kKindJunction: ++junctions; break;
             case kKindPlatz:    ++junctions; break;  // tally w/ junctions
+            case kKindRoom:     ++junctions; break;  // tally w/ junctions
             default:            ++openAreas; break;
         }
 
@@ -3052,14 +3208,14 @@ bool LookupAt(void* area, const Vector& worldPos,
         }
     }
 
-    // No primary, no rescue: emit Offene Fläche when the graph has at
-    // least one candidate (so the player gets one stable "you're in
-    // open space" cue). Return false only when the graph is empty.
+    // No primary, no rescue: emit the neutral "Bereich" when the graph
+    // has at least one candidate (so the player gets one stable "you're
+    // in an area" cue). Return false only when the graph is empty.
     if (best < 0 && bestFiltered < 0 && blockedSeen == 0) {
         return false;
     }
     const char* fallback =
-        acc::strings::Get(acc::strings::Id::MapCursorOpenArea);
+        acc::strings::Get(acc::strings::Id::AreaNoun);
     if (fallback && fallback[0]) {
         std::snprintf(outBuf, bufSize, "%s", fallback);
         outSig = kKindOpenArea & 0xff;

@@ -344,6 +344,10 @@ const char* Get(Id id) {
         case Id::FmtMapCursorPlazaDirs:      return "Place, %s";
         case Id::AxisNorthSouth:             return "nord-sud";
         case Id::AxisEastWest:               return "est-ouest";
+        case Id::AreaNoun:                   return "Zone";
+        case Id::FmtAreaAxisExits:           return "%s %s. Sorties: %s";
+        case Id::FmtAreaExits:               return "%s. Sorties: %s";
+        case Id::FmtAreaAxisOnly:            return "%s %s";
 
         case Id::FmtStorePriceBuyFinite:    return "Prix %d cr\xE9""dits, stock %d";
         case Id::FmtStorePriceBuyUnlimited: return "Prix %d cr\xE9""dits, stock illimit\xE9";

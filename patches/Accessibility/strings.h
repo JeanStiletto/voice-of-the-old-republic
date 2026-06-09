@@ -1053,6 +1053,16 @@ enum class Id : int {
     FmtMapCursorPlazaDirs, // "Platz, %s" / "Place, %s"
     AxisNorthSouth,
     AxisEastWest,
+    // Unified neutral area vocabulary. Open spaces, merged rooms and
+    // merged big junctions all speak as one neutral noun ("Bereich" /
+    // "area") — we never commit to room-vs-place-vs-open. Geometry is the
+    // long axis only when the space is clearly elongated (no size). Then
+    // the exits. The kind (KindPlatz vs KindRoom) decides delayed vs
+    // immediate announce but is never spoken.
+    AreaNoun,            // "Bereich" / "area"
+    FmtAreaAxisExits,    // "%s %s. Ausgänge: %s" — noun + axis + exit list
+    FmtAreaExits,        // "%s. Ausgänge: %s"    — noun + exit list (no axis)
+    FmtAreaAxisOnly,     // "%s %s"               — noun + axis (no exits)
 
     // ---- Store / trading panel (CSWGuiStore).
     //      The store has two modes (Buy / Sell) toggled by the

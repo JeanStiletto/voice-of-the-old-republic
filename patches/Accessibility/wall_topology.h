@@ -21,13 +21,18 @@
 
 namespace acc::wall_topology {
 
-// sig & 0xff = kind. Transitions consumes Platz for delayed-announce.
+// sig & 0xff = kind. Transitions defers the announce for KindPlatz (big
+// merged spaces — the player may be crossing through). KindRoom is a
+// merged small space that announces immediately. Both render the same
+// neutral "Bereich" label; the kind split exists only to drive that
+// delay distinction, never surfaced to the player.
 enum Kind {
     KindDeadEnd     = 0,
     KindCorridor    = 1,
     KindJunction    = 2,
     KindOpenArea    = 4,
     KindPlatz       = 5,
+    KindRoom        = 6,
 };
 
 // Real cluster ids are non-negative UFFind roots. Sentinels:
