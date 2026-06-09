@@ -153,9 +153,15 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
     // Press edge only (param_2 != 0): case 0xdf early-returns on release,
     // so the matching release is already a no-op and we let it pass (the
     // consumed-exit pattern needs the release through the normal path).
+    // Suspended-menu exception: while the unified menu is suspended under a
+    // blocking engine panel (MessageBox / sub-screen), Esc belongs to THAT
+    // panel — it's how the user dismisses it. Consuming it here would close
+    // the menu (or nothing) and leave the popup stuck, so we let Esc through
+    // to the panel's own handler when suspended.
     if (param_2 != 0 &&
         (param_1 == kInputEsc1 || param_1 == kInputEsc2) &&
-        (acc::unified_menu::IsActive() ||
+        ((acc::unified_menu::IsActive() &&
+          !acc::unified_menu::IsSuspended()) ||
          acc::combat::queue::IsActive() ||
          acc::examine_view::IsActive())) {
         acclog::Write("Diag.ClientHIE",

@@ -10,7 +10,7 @@
 #include "engine_input.h"       // kInputNav*, kInputEnter*, kInputEsc*,
                                 // kInputHome/End, kInputCatFirst/Last
 #include "engine_offsets.h"      // kInvalidObjectId
-#include "engine_panels.h"      // HasActiveDialogPanel
+#include "engine_panels.h"      // IsForegroundUiBlocking (arm-time panel gate)
 #include "engine_picker.h"      // ReanchorRadial (per-press target re-anchor)
 #include "engine_player.h"      // SetLeaderQueueModeBit (append-vs-replace)
 #include "engine_radial.h"      // target block read + primitives
@@ -48,6 +48,14 @@ int g_personalSel[kColumnCount] = {0, 0, 0, 0, 0, 0};
 
 struct State {
     bool     active         = false;
+    bool     suspended      = false;// a blocking engine panel (MessageBox,
+                                    // hotkey-opened sub-screen) sits over the
+                                    // menu. We stay armed + keep our state +
+                                    // keep our world pause, but stop owning
+                                    // input so the panel handles its own keys.
+                                    // On the panel's close we resume at the
+                                    // same position (parity with native menus
+                                    // restoring focus under a dismissed popup).
     Cat      cats[kMaxCats];
     int      catCount       = 0;
     int      curCat         = 0;
@@ -72,6 +80,20 @@ int ClampInt(int v, int lo, int hi) {
     if (v < lo) return lo;
     if (v > hi) return hi;
     return v;
+}
+
+// True when a real engine panel / modal / dialog owns the foreground. Our
+// menu has no GUI panel of its own, so it must never arm over a blocking
+// panel: the panel owns input + its own pause, and a menu armed underneath
+// would double-consume the shared nav keys (the quit-confirm double-speak
+// in patch-20260609-111933.log). The matching auto-disarm — for a blocker
+// that appears AFTER we armed (e.g. a hotkey-opened sub-screen) — lives in
+// interact_hotkey's per-tick poll. Broader than the old
+// HasActiveDialogPanel-only gate: also covers MessageBox, TutorialBox,
+// Container / Store, and hotkey-opened sub-screens (the InGameMenu strip
+// stays foreground while any sub-screen is drilled).
+bool ForegroundPanelBlocks() {
+    return acc::engine::IsForegroundUiBlocking();
 }
 
 // ---- per-kind primitive dispatch -----------------------------------------
@@ -321,6 +343,7 @@ uint32_t ResolveNarratedServerHandle() {
 // ---- arm / disarm --------------------------------------------------------
 
 void Arm() {
+    g.suspended = false;
     if (!g.active) {
         g.active = true;
         acc::engine::BeginOverlayPause();
@@ -340,11 +363,64 @@ int TargetSelection(int row) {
 }
 
 bool IsActive() { return g.active; }
+bool IsSuspended() { return g.active && g.suspended; }
+
+// Panel-stack suspend / resume. The menu owns no engine GUI panel, so when
+// the engine pushes a blocking panel over it (a MessageBox, a hotkey-opened
+// sub-screen) it must stop owning input — otherwise both the panel and the
+// menu consume the same nav keys (the quit-confirm double-speak in
+// patch-20260609-111933.log). Unlike a disarm, we keep the menu's state and
+// our world pause so the user returns to the same category/entry when the
+// panel closes — matching how native engine menus restore focus under a
+// dismissed popup (the regression the disarm-only first cut caused). Driven
+// per-tick by interact_hotkey with the current foreground-blocked state; only
+// the edges do work.
+void SetForegroundBlocked(bool blocked) {
+    if (!g.active) { g.suspended = false; return; }
+    if (blocked == g.suspended) return;  // no edge
+    g.suspended = blocked;
+
+    if (blocked) {
+        acclog::Write("UnifiedMenu", "suspended — blocking panel over menu");
+        // Leave our overlay pause held; the blocking panel manages its own
+        // pause on top. We re-assert on resume in case its close churned it.
+        return;
+    }
+
+    // Resume. The closing panel's own cleanup can clear the world pause
+    // (TickInputClassReassert's modal-edge unpause runs for us because we are
+    // not a sub-screen), so re-assert our overlay pause — BeginOverlayPause is
+    // idempotent, so this is a no-op when the pause survived.
+    acc::engine::BeginOverlayPause();
+
+    // Rebuild against the live menus (the engine may have re-populated
+    // action_lists while the panel was up) and re-locate the cursor on the
+    // same category, mirroring HandleInputEvent's entry rebuild. Then re-speak
+    // so the user hears they are back in the menu at the same position.
+    void* tam = acc::engine_radial::ResolveTargetActionMenu();
+    void* mi  = acc::engine_actionbar::ResolveMainInterface();
+    CatKind savedKind = g.cats[g.curCat].kind;
+    int     savedSlot = g.cats[g.curCat].slot;
+    BuildCategoryList(g.hasTargetBlock ? tam : nullptr, mi);
+    if (g.catCount == 0) {
+        // Everything drained while the panel was up — close cleanly rather
+        // than resuming onto an empty menu.
+        acclog::Write("UnifiedMenu", "resume — all categories empty; disarming");
+        ForceDisarm("resume-empty");
+        return;
+    }
+    int loc = LocateCat(savedKind, savedSlot);
+    g.curCat = (loc >= 0) ? loc : ClampInt(g.curCat, 0, g.catCount - 1);
+    acclog::Write("UnifiedMenu", "resumed — blocking panel closed; re-speaking "
+        "cat=%d/%d", g.curCat, g.catCount);
+    SpeakCategory(tam, mi, /*prefix=*/nullptr);
+}
 
 void ForceDisarm(const char* reason) {
     if (!g.active) return;
     acclog::Write("UnifiedMenu", "disarm — reason=%s", reason ? reason : "?");
     g.active = false;
+    g.suspended = false;
     acc::engine::EndOverlayPause();
     g.catCount = 0;
     g.curCat = 0;
@@ -398,8 +474,8 @@ bool ArmFromRadial(const char* name, uint32_t targetHandle) {
 
 bool OpenTarget(int row) {
     if (row < 0 || row >= kRowCount) return false;
-    if (acc::engine::HasActiveDialogPanel()) {
-        acclog::Write("UnifiedMenu", "OpenTarget row=%d — dialog panel; not arming",
+    if (ForegroundPanelBlocks()) {
+        acclog::Write("UnifiedMenu", "OpenTarget row=%d — foreground panel; not arming",
             row);
         return false;
     }
@@ -455,8 +531,8 @@ bool OpenTarget(int row) {
 
 bool OpenPersonal(int col) {
     if (col < 0 || col >= kColumnCount) return false;
-    if (acc::engine::HasActiveDialogPanel()) {
-        acclog::Write("UnifiedMenu", "OpenPersonal col=%d — dialog panel; not arming",
+    if (ForegroundPanelBlocks()) {
+        acclog::Write("UnifiedMenu", "OpenPersonal col=%d — foreground panel; not arming",
             col);
         return false;
     }

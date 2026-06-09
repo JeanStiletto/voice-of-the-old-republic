@@ -57,6 +57,19 @@ bool ArmFromRadial(const char* name, uint32_t targetHandle);
 
 bool IsActive();
 
+// True while armed but suspended under a blocking engine panel (a MessageBox
+// or a hotkey-opened sub-screen). The menu keeps its state + world pause but
+// stops owning input so the panel handles its own keys; it resumes at the
+// same position when the panel closes. Callers route input only when active
+// AND not suspended.
+bool IsSuspended();
+
+// Per-tick panel-stack notification, driven by interact_hotkey. `blocked` is
+// the current IsForegroundUiBlocking() state. Suspends on the rising edge and
+// resumes (re-asserting pause + re-speaking the current category) on the
+// falling edge; a no-op when the state is unchanged or the menu is inactive.
+void SetForegroundBlocked(bool blocked);
+
 // Routed by interact_hotkey's Win32 poll. `code` is one of the engine
 // logical nav codes (kInputNav*, kInputEnter*, kInputEsc*, kInputHome/End)
 // or the internal kInputCatFirst / kInputCatLast. `value` 0 = release

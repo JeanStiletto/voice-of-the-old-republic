@@ -21,6 +21,12 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>Unreleased</h2>
+
+<h3>Bug fixes:</h3>
+
+- The action menu now steps aside for pop-up boxes and other screens instead of fighting them. When a message box (such as the quit confirmation) or another menu came up while the action menu was open, both reacted to the same arrow and Enter presses — so navigating the box also moved the hidden action menu, and Escape closed the menu rather than the box. The action menu now pauses itself while a pop-up or menu is in front of it, leaving those keys to the box, and when you close the box it returns to exactly the category and entry you were on — the same way the game's own menus come back after a pop-up.
+
 <h2>v0.4.4</h2>
 
 <h3>Bug fixes:</h3>

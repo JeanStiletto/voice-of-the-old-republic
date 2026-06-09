@@ -513,6 +513,27 @@ void PollHotkey() {
     Vector unused;
     bool inWorld = acc::engine::GetPlayerPosition(unused);
 
+    // Panel-stack integration for the unified action menu. The menu holds a
+    // world pause and routes nav / Enter / Esc through this Win32 poll
+    // WITHOUT owning an engine GUI panel. When the engine pushes a real
+    // blocking panel over the armed menu — a hotkey-opened sub-screen (Map,
+    // Journal, …) or a MessageBox (quit-confirm, save-overwrite) — that panel
+    // takes the foreground and input, yet the menu would otherwise stay armed
+    // and keep consuming the same arrow / Enter keys, so the modal AND our
+    // menu both react to one keypress (patch-20260609-111933.log — quit-confirm
+    // nav double-spoke "Abbrechen" / "OK" alongside UnifiedMenu entries).
+    //
+    // Notify the menu of the current foreground-blocked state every tick. It
+    // SUSPENDS (stops owning input, keeps its state + pause) while a blocker is
+    // up and RESUMES at the same position when the blocker closes — matching
+    // how native engine menus restore focus under a dismissed popup, rather
+    // than closing outright. Same IsForegroundUiBlocking predicate the Enter-
+    // dispatch gate below uses, so suspend/resume and Enter gating stay
+    // consistent. The arm-time half of the gate lives in the menu's Open*
+    // entry points (they refuse to arm over a blocker).
+    acc::unified_menu::SetForegroundBlocked(
+        acc::engine::IsForegroundUiBlocking());
+
     // Action-bar submenu — Shift+4..Shift+7 opens the column's variant
     // submenu (drives column up_button/down_button widgets via vtable[15]
     // activate). Tested before the radial-active block because the action
@@ -694,7 +715,8 @@ void PollHotkey() {
     // engine-pause-menu open is separately suppressed in input_pipeline).
     // Ctrl+Home / Ctrl+End map to the category-jump codes; plain Home / End
     // jump within the current category.
-    if (inWorld && acc::unified_menu::IsActive()) {
+    if (inWorld && acc::unified_menu::IsActive() &&
+        !acc::unified_menu::IsSuspended()) {
         const bool ctrl = acc::hotkeys::CtrlHeld();
         if (risingEnter) acc::unified_menu::HandleInputEvent(kInputEnter1, 1);
         if (risingUp)    acc::unified_menu::HandleInputEvent(kInputNavUp, 1);
