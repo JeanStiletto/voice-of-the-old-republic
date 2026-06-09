@@ -105,6 +105,28 @@ struct SpeakerInfo {
     char  tag[32];          // CSWSObject.tag (or "" if unread)
 };
 
+// Per-tag never-suppress allowlist. These speakers classify as
+// human/droid by appearance or race, but their subtitle is nonetheless the
+// player's only channel, so it must always be spoken regardless of the
+// HumanSubtitles toggle. Matched case-insensitively on CSWSObject.tag.
+//
+//   - "sasha": Child_Female appearance (classified human), but she speaks an
+//     untranslated invented language with NO per-line VO at all. Her subtitle
+//     — including the bracketed stage directions that decode the words by
+//     gesture — is the entire content of her language-learning sidequest.
+//     Suppressing it silences 100% of her side of the conversation.
+constexpr const char* kNeverSuppressTags[] = {
+    "sasha",
+};
+
+bool IsNeverSuppressTag(const char* tag) {
+    if (!tag || !tag[0]) return false;
+    for (const char* t : kNeverSuppressTags) {
+        if (_stricmp(t, tag) == 0) return true;
+    }
+    return false;
+}
+
 // True iff this speaker's subtitle is redundant given the VO, so we suppress
 // it under the (shared) HumanSubtitles toggle. Two cases:
 //   - human-appearance speakers: intelligible Basic VO the player already
@@ -115,8 +137,11 @@ struct SpeakerInfo {
 //     droids — the conveyed meaning lives in the player's reply choices,
 //     which are narrated separately). Verified from dialog.tlk 2026-06-05.
 // Genuinely alien speakers (Twi'lek crowd, Wookiee) are neither, so their
-// subtitle stays the player's only channel and is always spoken.
+// subtitle stays the player's only channel and is always spoken. The per-tag
+// allowlist overrides the appearance/race verdict for individual characters
+// (e.g. Sasha) who would otherwise be misclassified as suppressible.
 bool IsSuppressibleSpeaker(const SpeakerInfo& info) {
+    if (IsNeverSuppressTag(info.tag)) return false;
     return IsHumanAppearance(info.appearance) || info.raceEnum == kRaceDroid;
 }
 
