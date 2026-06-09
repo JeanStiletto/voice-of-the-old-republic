@@ -2,6 +2,9 @@
 /build/
 **/logs/
 
+# Local KOTOR save backups taken during testing — game data, never committed.
+/save-backups/
+
 # Local cache of crash dumps + log bundles uploaded by beta testers.
 # Often hundreds of MB (full-heap WER dumps); never redistributable.
 /userlogs/
