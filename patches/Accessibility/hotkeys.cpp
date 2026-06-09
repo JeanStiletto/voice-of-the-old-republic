@@ -112,6 +112,7 @@ const char* const kActionNames[static_cast<int>(Action::COUNT)] = {
     "PazaakOppHand",
     "TurretCyclePrev",
     "TurretCycleNext",
+    "DialogRepeatLine",
 };
 
 bool IsDownVk(int vk) {
@@ -349,6 +350,14 @@ void InitDefaults() {
     // active (turret_game.cpp). Forbid every modifier like the Pazaak letters.
     bind(Action::TurretCyclePrev,   'Q',       0, 0,         kModShift | kModCtrl | kModAlt | kModAltGr);
     bind(Action::TurretCycleNext,   'E',       0, 0,         kModShift | kModCtrl | kModAlt | kModAltGr);
+
+    // ----- Dialog -----
+    // Bare R re-speaks the current NPC dialog line. Vanilla R is the in-world
+    // "default action on current target", but a dialog screen has no selected
+    // world target, so R is free here. Polled (Win32) only while a dialog panel
+    // is foreground (dialog_speech.cpp), like the cycle keys. Forbid every
+    // modifier so it stays distinct from any future Shift/Ctrl+R combo.
+    bind(Action::DialogRepeatLine,  'R',       0, 0,         kModShift | kModCtrl | kModAlt | kModAltGr);
 }
 
 }  // namespace

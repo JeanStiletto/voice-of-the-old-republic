@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "engine_area.h"      // GameObjectKind, GetObjectKind
+#include "hotkeys.h"          // Action::DialogRepeatLine (R re-speaks the line)
 #include "engine_manager.h"   // kAddrGuiManagerPtr, kMgrPanels*
 #include "engine_offsets.h"
 #include "engine_panels.h"    // PanelKind, IdentifyPanel
@@ -485,6 +486,17 @@ void Tick() {
                               s_lastComputerRows, rows);
             }
             s_lastComputerRows = rows;
+        }
+
+        // ---- R — re-speak the current NPC line on demand. ----
+        // Gated on a dialog panel being foreground (we're inside the active
+        // branch). Repeats the last captured line verbatim, even if it was
+        // VO-suppressed — pressing R is an explicit "say it again" request,
+        // so the suppression toggle doesn't apply here.
+        if (acc::hotkeys::Pressed(acc::hotkeys::Action::DialogRepeatLine) &&
+            s_lastNpcLine[0] != '\0') {
+            prism::Speak(s_lastNpcLine, /*interrupt=*/true);
+            acclog::Write("Dialog.Speech", "R repeat -> [%.300s]", s_lastNpcLine);
         }
     }
 

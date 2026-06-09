@@ -120,6 +120,9 @@ enum class Action : int {
     TurretCyclePrev,       // Q          (select previous fighter as locked target)
     TurretCycleNext,       // E          (select next fighter)
 
+    // ----- Dialog (polled only while a dialog panel is foreground) -----
+    DialogRepeatLine,      // R          (re-speak the current NPC dialog line)
+
     // ----- Sentinel -----
     COUNT
 };

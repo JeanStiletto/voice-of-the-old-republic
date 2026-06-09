@@ -23,6 +23,10 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.4.5</h2>
 
+<h3>New features:</h3>
+
+- You can now repeat the current line of dialogue by pressing R during a conversation. If you missed what a character just said, R reads their last line again. It also works as a way to hear voiced lines the mod normally skips: when reading of voiced subtitles is turned off, the mod stays quiet for fully voiced human and droid speakers so it doesn't talk over a voice you can already hear — but if you didn't catch one of those lines, pressing R reads it on demand. R only does this while a conversation is on screen; outside dialogue it keeps its normal in-game meaning.
+
 <h3>Bug fixes:</h3>
 
 - Spoken bark lines — the short one-liners characters call out as you walk past — now follow the same voiced-subtitle rules as full conversations. Until now every bark was read aloud no matter who said it, so a fully voiced character's bark was spoken on top of the voice you could already hear, even though the mod correctly stays quiet for that same character in a normal conversation. Barks now identify their speaker the way dialogue does: a fully voiced human or droid bark is skipped (when reading of voiced subtitles is turned off), while system and loudspeaker announcements — which have no speaker — are always read.
