@@ -1397,6 +1397,16 @@ constexpr size_t kDialogComputerMessageListBoxOffset  = 0x2cfc;
 // +0x178 previous speaker, +0x184 third participant.
 constexpr size_t kCGuiInGameDialogSpeakerOffset       = 0x170;
 
+// CSWGuiBarkBubble.object_id @+0x1c0 — the bark speaker's CLIENT object id,
+// written by CSWGuiBarkBubble::SetBark @0x006a9920 (this->object_id = param_1)
+// and consumed by ::Draw @0x006a9ce0 via CClientExoApp::GetGameObject(client,
+// object_id) → AsSWCObject for the 6m proximity/cull test. Sentinel
+// 0x7f000000 means "no owning creature" — system/loudspeaker barks (camera
+// zone messages, area feedback). Resolve a real id through
+// ClientToServerObjectId → ResolveServerObjectHandle to classify the speaker,
+// exactly as the dialog-speaker path does for CGuiInGame +0x170.
+constexpr size_t kBarkBubbleObjectIdOffset            = 0x1c0;
+
 // CSWGuiStore — merchant/trading panel (PanelKind::Store, slot 0x84 in
 // CGuiInGame). Two listboxes plus a description listbox; the mode-toggle
 // flips which one is visible.

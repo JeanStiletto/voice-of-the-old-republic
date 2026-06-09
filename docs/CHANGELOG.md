@@ -21,6 +21,13 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.4.5</h2>
+
+<h3>Bug fixes:</h3>
+
+- Spoken bark lines — the short one-liners characters call out as you walk past — now follow the same voiced-subtitle rules as full conversations. Until now every bark was read aloud no matter who said it, so a fully voiced character's bark was spoken on top of the voice you could already hear, even though the mod correctly stays quiet for that same character in a normal conversation. Barks now identify their speaker the way dialogue does: a fully voiced human or droid bark is skipped (when reading of voiced subtitles is turned off), while system and loudspeaker announcements — which have no speaker — are always read.
+- Some characters now have their subtitles read or skipped correctly. The mod decides whether to read a character's subtitle from how they appear, and a handful of characters were judged wrongly: some who speak in a language you can't understand were having their subtitles skipped, leaving you no way to follow them, while some fully voiced characters were being read aloud over their own speech. These are now sorted correctly, so each character's subtitle is read or skipped to match the way they actually speak.
+
 <h2>v0.4.4</h2>
 
 <h3>New features:</h3>
