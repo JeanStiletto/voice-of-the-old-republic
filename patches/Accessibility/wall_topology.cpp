@@ -1567,6 +1567,128 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
               ((deadEndMask & 0xff) << 16);
 }
 
+// Diagnostic: nav-graph vs wall-cache crossing check.
+//
+// Confirms (and localizes) phantom walls using ONLY engine walkmesh +
+// nav data — no .lyt-room topography enters this test. The engine's
+// path_points / path_connections are the edges it uses for AI
+// pathfinding, so an engine-authored nav edge is provably walkable. If
+// such an edge crosses one of our cached "wall" edges, that wall is
+// phantom by definition: the engine routes creatures straight through
+// it.
+//
+// The crossing test is 3D-aware: a 2D-projection coincidence where the
+// wall sits more than kMaxZcrossM above/below the nav edge (a wall on a
+// different floor) is excluded, so this also measures how much of the
+// runtime WALL-FILTERED noise is pure 2D-projection (would be fixed by
+// a z-overlap guard) versus genuine same-floor phantoms (missed portal
+// seams or straight-line-reachability mismatch).
+//
+// Crossings within kMinNodeClrM of either nav node are ignored — nav
+// nodes routinely hug real walls, and a graze at the node endpoint is
+// not the engine routing *through* a wall.
+//
+// Per-wall material_id + room_id are dumped: a phantom carrying a FLOOR
+// surfacemat (e.g. Metal/Grass) points at a mis-emitted walkable seam;
+// a phantom carrying a wall material points at the straight-line model
+// crossing a real wall the path actually skirts. Read-only; never
+// mutates the graph or the cache.
+void LogNavWallCrossings(const acc::engine::navgraph::NavGraphSnapshot& g) {
+    const acc::engine::WallEdge* walls = nullptr;
+    int wallCount = 0;
+    if (!acc::spatial::change_detector::GetCachedWalls(walls, wallCount) ||
+        !walls || wallCount <= 0) {
+        acclog::Write("WallTopo",
+                      "  navwall-crosscheck: no wall cache available — skipping");
+        return;
+    }
+
+    // Shared with the production SegmentCrossesWalkmesh z-guard so the
+    // diagnostic measures exactly what the runtime test will reject.
+    constexpr float kMaxZcrossM   = acc::engine::kWallCrossZToleranceM;
+    constexpr float kMinNodeClrM  = 0.5f;   // crossing must clear both nav nodes
+    constexpr float kMinNodeClrSq = kMinNodeClrM * kMinNodeClrM;
+    constexpr int   kMaxDump      = 40;
+
+    int n = static_cast<int>(g.nodes.size());
+    if (n > kMaxNodes) n = kMaxNodes;
+
+    // Distinct-wall flag so we count phantom WALLS, not phantom crossings
+    // (one wall may be crossed by several nav edges). 16 KB static, fine
+    // for the single-threaded patch model.
+    constexpr int kWallFlagCap = 16384;
+    static bool s_crossed[kWallFlagCap];
+    int wallN = (wallCount < kWallFlagCap) ? wallCount : kWallFlagCap;
+    for (int i = 0; i < wallN; ++i) s_crossed[i] = false;
+
+    int navEdges = 0, crossings = 0, zSkipped = 0, dumped = 0;
+
+    for (int i = 0; i < n; ++i) {
+        int lo = 0, hi = 0;
+        acc::engine::navgraph::NeighbourRange(g, i, lo, hi);
+        for (int e = lo; e < hi; ++e) {
+            int j = static_cast<int>(g.conns[e]);
+            if (j <= i || j >= n) continue;  // each undirected edge once
+            ++navEdges;
+            const Vector& P = g.nodes[i].pos;
+            const Vector& Q = g.nodes[j].pos;
+            float abx = Q.x - P.x, aby = Q.y - P.y;
+            if (abx * abx + aby * aby < 1e-6f) continue;
+
+            for (int w = 0; w < wallN; ++w) {
+                const acc::engine::WallEdge& we = walls[w];
+                float cdx = we.b.x - we.a.x, cdy = we.b.y - we.a.y;
+                float denom = abx * cdy - aby * cdx;
+                if (denom > -1e-8f && denom < 1e-8f) continue;  // parallel
+                float dx = we.a.x - P.x, dy = we.a.y - P.y;
+                float t = (dx * cdy - dy * cdx) / denom;  // along nav edge
+                float u = (dx * aby - dy * abx) / denom;  // along wall edge
+                if (t < 0.0f || t > 1.0f) continue;
+                if (u < 0.0f || u > 1.0f) continue;
+
+                float cx = P.x + t * abx, cy = P.y + t * aby;
+                float d0x = cx - P.x, d0y = cy - P.y;
+                float d1x = cx - Q.x, d1y = cy - Q.y;
+                if (d0x * d0x + d0y * d0y < kMinNodeClrSq) continue;
+                if (d1x * d1x + d1y * d1y < kMinNodeClrSq) continue;
+
+                // 3D guard: reject different-floor projection coincidences.
+                float navZ  = P.z   + t * (Q.z   - P.z);
+                float wallZ = we.a.z + u * (we.b.z - we.a.z);
+                float adz = navZ - wallZ;
+                if (adz < 0.0f) adz = -adz;
+                if (adz > kMaxZcrossM) { ++zSkipped; continue; }
+
+                ++crossings;
+                s_crossed[w] = true;
+                if (dumped < kMaxDump) {
+                    ++dumped;
+                    acclog::Write(
+                        "WallTopo",
+                        "  navwall-cross[%d]: nav node[%d](%.1f,%.1f,%.1f) -> "
+                        "node[%d](%.1f,%.1f,%.1f) crosses wall[%d] "
+                        "(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f) room=%d mat=%d "
+                        "at (%.1f,%.1f) dz=%.2f",
+                        dumped, i, P.x, P.y, P.z, j, Q.x, Q.y, Q.z,
+                        w, we.a.x, we.a.y, we.a.z, we.b.x, we.b.y, we.b.z,
+                        we.room_id, we.material_id, cx, cy, adz);
+                }
+            }
+        }
+    }
+
+    int distinctWalls = 0;
+    for (int w = 0; w < wallN; ++w) if (s_crossed[w]) ++distinctWalls;
+
+    acclog::Write(
+        "WallTopo",
+        "  navwall-crosscheck: navEdges=%d walls=%d -> crossings=%d "
+        "distinct-phantom-walls=%d (z-skipped=%d at |dz|>%.1fm; "
+        "node-clearance=%.1fm; dumped=%d, cap=%d)",
+        navEdges, wallCount, crossings, distinctWalls, zSkipped,
+        kMaxZcrossM, kMinNodeClrM, dumped, kMaxDump);
+}
+
 }  // namespace
 
 void Reset() {
@@ -2615,6 +2737,11 @@ void BuildForArea(void* area) {
                   "candidates)=%d",
                   s_class_clear, s_class_door, s_class_blocked,
                   s_caveat1_hits, s_caveat2_hits);
+
+    // Phantom-wall confirmation: cross-check the engine's own nav graph
+    // against the cached walls (3D-aware). Any nav edge that crosses a
+    // cached wall proves that wall is phantom — see LogNavWallCrossings.
+    LogNavWallCrossings(g);
 
     // Diagnostic: per multi-node cluster, dump member adjacency. For
     // each member node, list its graph neighbours split into

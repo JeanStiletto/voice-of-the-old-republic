@@ -408,9 +408,24 @@ struct WallEdge {
 // per area-load (doors are separate collision meshes), so cache once.
 int BuildAreaWallCache(void* area, WallEdge* outBuf, int maxEdges);
 
-// 2D segment-vs-perimeter test (Z ignored — K1 rooms are layout-flat
-// enough for planar collision to match engine walkability at cursor
-// scale). Returns closest hit along a→b (smallest t in [0,1]).
+// Same-floor z tolerance for the segment-vs-wall test below (world units
+// = metres). A wall edge whose z at the crossing point differs from the
+// ray's z by more than this is on another floor and is not a blocker —
+// see the 3D guard in SegmentCrossesWalkmesh. 2m clears step/slope edge
+// authoring (~2.25m faces dedup elsewhere) while excluding genuine
+// inter-deck stacks. Confirmed against the engine nav graph: a 3D-aware
+// crosscheck found zero nav-edge/wall crossings across 6 diverse areas
+// (wall cache is phantom-free), and every runtime over-block occurred at
+// elevated z against ground-floor walls — i.e. pure 2D-projection noise
+// this tolerance removes. Shared with wall_topology::LogNavWallCrossings.
+constexpr float kWallCrossZToleranceM = 2.0f;
+
+// Segment-vs-perimeter test in the XY plane, with a 3D guard: a wall is
+// only a blocker when its edge sits within kWallCrossZToleranceM of the
+// ray at the crossing point. Without the guard, a wall on a different
+// floor whose 2D projection happens to lie on a→b would falsely block
+// (the engine's nav graph proves these are not real obstacles). Returns
+// closest qualifying hit along a→b (smallest t in [0,1]).
 //
 // False on: null walls, wallCount<=0, a==b. Degenerate edges (a==b)
 // skipped.

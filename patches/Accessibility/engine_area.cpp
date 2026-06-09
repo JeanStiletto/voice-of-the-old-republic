@@ -1440,6 +1440,20 @@ bool SegmentCrossesWalkmesh(const WallEdge* walls,
         if (t < 0.0f || t > 1.0f) continue;
         if (u < 0.0f || u > 1.0f) continue;
 
+        // 3D guard: the XY test alone treats a wall on another floor as a
+        // blocker whenever its 2D projection lands on a→b. Wall edges are
+        // walkmesh floor-boundary edges, so their z tracks the floor they
+        // bound; reject the hit when the wall edge sits more than a
+        // same-floor tolerance from the ray at the crossing point. This is
+        // the entire remaining over-block population (validated via the
+        // nav-graph crosscheck) — every runtime false-block occurred at
+        // elevated z against a ground-floor wall.
+        float rayZ  = a.z   + t * (b.z   - a.z);
+        float wallZ = w.a.z + u * (w.b.z - w.a.z);
+        float dz = rayZ - wallZ;
+        if (dz < 0.0f) dz = -dz;
+        if (dz > kWallCrossZToleranceM) continue;
+
         if (t < bestT) {
             bestT      = t;
             bestHit.x  = a.x + t * abx;
