@@ -602,13 +602,18 @@ void PollHotkey() {
     // require tracking the engine's own input-mode flags, which we don't
     // currently expose.
     //
-    // Skip the announce when our own submenu is active for that column
-    // — actionbar_menu's Enter path already speaks "X eingesetzt" via its
-    // explicit Prism call, and the user pressing bare 5 with the submenu
-    // open for column 1 would otherwise double-announce. The submenu's
-    // Enter consumes via the routing block below, so this only affects
-    // the bare-press during submenu-active state, which is an unlikely
-    // input pattern but worth handling.
+    // We deliberately do NOT gate this on unified_menu::IsActive(). The
+    // unified action menu stays open as a persistent, paused queueing
+    // surface: a common workflow is to open it, fire one action via Enter,
+    // then spam bare 1 a few times to stack default attacks before Esc'ing
+    // out (and repeat per party member). Those bare presses reach the engine
+    // dispatch unconditionally (input_pipeline's bare-key prep has no menu
+    // gate) and queue normally — but the menu only speaks on Enter, never on
+    // number keys, so without announcing here the queued action lands
+    // silently. There's no double-announce risk: the menu's HandleInputEvent
+    // is never fed number keys (interact_hotkey forwards only Enter / arrows /
+    // Home / End / Esc to it), so this poll path is the sole announcer for
+    // bare 1..7 whether or not the menu is open.
     //
     // Dialog gate: when a dialog reply listbox is foreground the number
     // keys belong to the reply selection, not the action bar. The engine's
@@ -616,8 +621,7 @@ void PollHotkey() {
     // OnClientHandleInputEvent's matching HasActiveDialogPanel guard), so
     // announcing "X eingesetzt" here would be a phantom cue for an action
     // that never fired. Skip the announce while a dialog owns the keys.
-    if (inWorld && !acc::unified_menu::IsActive() &&
-        !acc::engine::HasActiveDialogPanel()) {
+    if (inWorld && !acc::engine::HasActiveDialogPanel()) {
         if (risingK1) AnnounceBareTargetKey(0);
         if (risingK2) AnnounceBareTargetKey(1);
         if (risingK3) AnnounceBareTargetKey(2);

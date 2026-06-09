@@ -21,6 +21,12 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.4.4</h2>
+
+<h3>Bug fixes:</h3>
+
+- Queuing an action with a number key while the action menu is open is now read out. With the menu open and paused, pressing a number key to stack up an action (for example tapping 1 a few times to line up basic attacks before backing out) queued the action but said nothing, so you couldn't tell what you'd added or how many were in the queue. Each press now speaks the action and its place in the queue ("Power Attack, slot 2"), the same as queuing from normal gameplay, and tells you when the queue is full.
+
 <h2>v0.4.3</h2>
 
 <h3>New features:</h3>
