@@ -21,15 +21,15 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
-<h2>Unreleased</h2>
+<h2>v0.4.4</h2>
+
+<h3>New features:</h3>
+
+- You can now open the action menu directly while another menu is on screen. Pressing an action-menu key — Shift+Enter, or Shift+1 through Shift+7 — while you are in the inventory, map, journal, options or any other in-game menu now closes that menu and opens the action menu, the same way the game's own menu keys switch you straight from one screen to another. Pop-up boxes (such as a save or quit confirmation) still block it, exactly as they block the game's menu keys.
 
 <h3>Bug fixes:</h3>
 
 - The action menu now steps aside for pop-up boxes and other screens instead of fighting them. When a message box (such as the quit confirmation) or another menu came up while the action menu was open, both reacted to the same arrow and Enter presses — so navigating the box also moved the hidden action menu, and Escape closed the menu rather than the box. The action menu now pauses itself while a pop-up or menu is in front of it, leaving those keys to the box, and when you close the box it returns to exactly the category and entry you were on — the same way the game's own menus come back after a pop-up.
-
-<h2>v0.4.4</h2>
-
-<h3>Bug fixes:</h3>
 
 - The action menu is now truly unified no matter which key opens it. Opening it at a personal category (Shift+4 through Shift+7 — your own Force powers, medical items, miscellaneous items, explosives) while an enemy is targeted now lets you arrow left and right into the target's categories too — its attacks, the Force powers you can aim at it, and throwable items like grenades. Before, opening at a personal column trapped you among only the personal categories: arrowing toward the target options hit a dead end, and you had to close the menu and reopen it with a different key to reach the enemy's attacks or throw a grenade at it. With no enemy targeted the menu still opens to your personal categories alone, so self-buffs work as before.
 - Queuing an action with a number key while the action menu is open is now read out. With the menu open and paused, pressing a number key to stack up an action (for example tapping 1 a few times to line up basic attacks before backing out) queued the action but said nothing, so you couldn't tell what you'd added or how many were in the queue. Each press now speaks the action and its place in the queue ("Power Attack, slot 2"), the same as queuing from normal gameplay, and tells you when the queue is full.

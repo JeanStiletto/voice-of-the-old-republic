@@ -227,7 +227,6 @@ enum class Id : int {
     //      `FmtActionBarFired`       — fire confirmation. Arg: variant
     //                                  label (`%s`). Spoken on Enter inside
     //                                  the submenu.
-    //      `ActionBarCancelled`      — Esc-out without firing. Fixed phrase.
     FmtActionBarOpened,
     FmtActionBarColumnEmpty,
     ActionBarColumnEmpty,
@@ -244,7 +243,6 @@ enum class Id : int {
     // has no effect. Inferred from the count field staying at 4
     // (pre-press depth == post-press depth == 4).
     FmtFireQueueFull,
-    ActionBarCancelled,
 
     // ---- Unified action menu (Shift+Enter / Shift+1..7) category names +
     //      announce formats. The menu announces a category by NAME as the

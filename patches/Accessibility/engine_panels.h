@@ -190,6 +190,14 @@ bool CallPrevSWInGameGui();
 // half-paused. SEH-wrapped.
 bool CallHideSWInGameGui(int param_1);
 
+// Close the in-game menu (strip + drilled sub-screen) back to the world,
+// replicating a menu tab's own Escape exactly: HideSWInGameGui(0) followed by
+// SetInputClass(0,1). Use this — not bare CallHideSWInGameGui(0) — whenever we
+// programmatically leave the in-game menu, or the engine is left in a non-world
+// input class (dead movement, Esc -> Options reissues). Returns true if the
+// close ran (HideSWInGameGui no-ops, returning 0, when a modal is up).
+bool CloseInGameMenuToWorld();
+
 // True iff foreground UI is capturing input. Blacklist (not whitelist):
 // panels[] keeps stale entries (closed Fade overlays, dismissed Options
 // menus) at the top for seconds, so a whitelist of in-world overlays

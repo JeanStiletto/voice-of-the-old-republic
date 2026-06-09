@@ -88,7 +88,6 @@ const char* Get(Id id) {
         case Id::FmtActionBarFired:       return "%s eingesetzt";
         case Id::FmtFireAtPosition:       return "%s, Platz %d";
         case Id::FmtFireQueueFull:        return "%s, Warteschlange voll";
-        case Id::ActionBarCancelled:      return "Abgebrochen";
 
         case Id::MenuCatAttacks:       return "Angriffe";
         case Id::MenuCatForcePowers:   return "Machtkr\xE4""fte";       // Machtkräfte

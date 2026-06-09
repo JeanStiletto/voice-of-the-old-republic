@@ -617,10 +617,12 @@ bool HandleInputEvent(int code, int value) {
     if (!g.active) return false;
     if (value == 0) return false;
 
-    // Esc — close (ForceDisarm unpauses the world).
+    // Esc — close. Speak nothing here: ForceDisarm → EndOverlayPause resumes
+    // the world, and the engine's pause-resume cue ("Pause aufgehoben") is the
+    // close announcement. The old "Cancelled" phrase was redundant with that
+    // cue and misleading — Esc closes the menu, it doesn't cancel anything;
+    // queued actions stay queued and run on resume.
     if (code == kInputEsc1 || code == kInputEsc2) {
-        prism::Speak(acc::strings::Get(acc::strings::Id::ActionBarCancelled),
-                     /*interrupt=*/true);
         ForceDisarm("esc");
         return true;
     }

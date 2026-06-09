@@ -86,7 +86,6 @@ const char* Get(Id id) {
         case Id::FmtActionBarFired:       return "%s usado";
         case Id::FmtFireAtPosition:       return "%s, posici\xF3n %d";
         case Id::FmtFireQueueFull:        return "%s, cola llena";
-        case Id::ActionBarCancelled:      return "Cancelado";
 
         case Id::MenuCatAttacks:       return "Ataques";
         case Id::MenuCatForcePowers:   return "Poderes de Fuerza";

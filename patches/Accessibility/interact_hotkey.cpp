@@ -34,6 +34,24 @@ namespace acc::interact {
 
 namespace {
 
+// True iff the only thing blocking the action menu from opening is the
+// in-game menu itself (the Escape menu and its tabs — Inventory, Options,
+// Map, Messages, …). The game's own menu hotkeys (J → Messages, M → Map, …)
+// switch freely between those screens, so the action-menu openers should
+// too: we close the in-game menu back to the world first, then open the menu
+// in-world. Message boxes, dialogs, stores and other modal / interaction
+// panels stay hard blockers — the engine doesn't let its menu hotkeys switch
+// out of those either, and neither do we (the open path refuses over them).
+//
+// The InGameMenu strip stays the foreground panel while any of its sub-screens
+// is drilled (see engine_panels::IsForegroundUiBlocking), so a single fgKind
+// check covers every tab.
+bool ShouldSwitchFromInGameMenu() {
+    acc::engine::UiBlockState blk;
+    if (!acc::engine::IsForegroundUiBlocking(&blk)) return false;
+    return blk.fgKind == acc::engine::PanelKind::InGameMenu;
+}
+
 // Pick the per-kind pre-roll string. Mirrors the cycle/passive_narrate
 // kind classification but produces an action verb instead of a label.
 acc::strings::Id PreRollFor(acc::filter::CycleCategory c) {
@@ -509,6 +527,29 @@ void PollHotkey() {
     // Pressed() already self-gates on foreground; if every action is
     // false we can still need to fall through to combat_query /
     // combat_queue (those self-gate). So don't early-return on no edges.
+
+    // Menu-switch parity. The game's built-in menu hotkeys (J, I, M, …) switch
+    // directly from one in-game menu screen to another. The action-menu openers
+    // (Shift+Enter / Shift+1..7) now do the same: pressing one while the in-game
+    // menu is open closes that menu back to the world first — the very close
+    // every tab's own Escape runs (HideSWInGameGui(0) to drop the strip +
+    // drilled sub-screen and unpause, then SetInputClass(0,1) to restore
+    // in-world input; see CloseInGameMenuToWorld) — so the open logic below and
+    // the Enter-dispatch gate then run in-world and arm the menu this same tick.
+    // GetPlayerPosition reads the player server object (not the GUI status) so it
+    // stays true across the close, and the one-shot opener edge isn't lost. Only
+    // the in-game menu is switchable; message boxes / dialogs / stores stay hard
+    // blockers where the openers still refuse — parity with the engine, whose
+    // menu hotkeys don't switch out of those either.
+    const bool openerPressed =
+        risingEnterForce ||
+        risingOpen1 || risingOpen2 || risingOpen3 || risingOpen4 ||
+        risingOpenT1 || risingOpenT2 || risingOpenT3;
+    if (openerPressed && ShouldSwitchFromInGameMenu()) {
+        acclog::Write("Interact",
+            "action-menu opener over in-game menu — closing to world (switch)");
+        acc::engine::CloseInGameMenuToWorld();
+    }
 
     Vector unused;
     bool inWorld = acc::engine::GetPlayerPosition(unused);

@@ -725,6 +725,45 @@ bool CallHideSWInGameGui(int param_1) {
     }
 }
 
+// CClientExoApp::SetInputClass @ 0x005eda60. __thiscall(this, int klass, int).
+// klass 0 = in-world keyboard/mouse routing; the engine raises it while a
+// menu/sub-screen owns input.
+static constexpr uintptr_t kAddrSetInputClass = 0x005eda60;
+typedef void (__thiscall* PFN_SetInputClass)(void* client, int klass, int p2);
+
+bool CloseInGameMenuToWorld() {
+    void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
+    void* gui = ResolveGuiInGame();
+    void* client = appMgr ? *reinterpret_cast<void**>(
+        reinterpret_cast<unsigned char*>(appMgr) + kAppManagerClientOff) : nullptr;
+    if (!gui || !client) {
+        acclog::Write("CloseInGameMenu", "skipped: gui=%p client=%p", gui, client);
+        return false;
+    }
+    __try {
+        // Replicate the in-game menu tabs' own Escape close EXACTLY. Every
+        // CSWGuiInGame*::HandleInputEvent (Inventory @0x006b3ed0, Options, Map,
+        // Journal, …) closes to the world with:
+        //     if (HideSWInGameGui(gui, 0) != 0) SetInputClass(client, 0, 1);
+        // Calling HideSWInGameGui alone (our first cut) left input_class != 0,
+        // so in-world movement was dead AND case 0xdf (Esc -> Options) reissued
+        // to the manager instead of opening the menu — the stuck state in
+        // patch-20260609-115959.log. SetInputClass(0,1) is the missing half.
+        auto hide = reinterpret_cast<PFN_HideSWInGameGui>(kAddrHideSWInGameGui);
+        int ok = hide(gui, 0);
+        if (ok != 0) {
+            auto setClass = reinterpret_cast<PFN_SetInputClass>(kAddrSetInputClass);
+            setClass(client, 0, 1);
+        }
+        acclog::Write("CloseInGameMenu",
+                      "HideSWInGameGui(0)=%d + SetInputClass(0,1) gui=%p", ok, gui);
+        return ok != 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("CloseInGameMenu", "fault gui=%p client=%p", gui, client);
+        return false;
+    }
+}
+
 bool HasActiveMapPanel(void** outPanel) {
     if (outPanel) *outPanel = nullptr;
     void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
