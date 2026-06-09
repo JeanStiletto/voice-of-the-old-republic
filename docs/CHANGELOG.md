@@ -25,6 +25,7 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>Bug fixes:</h3>
 
+- The action menu is now truly unified no matter which key opens it. Opening it at a personal category (Shift+4 through Shift+7 — your own Force powers, medical items, miscellaneous items, explosives) while an enemy is targeted now lets you arrow left and right into the target's categories too — its attacks, the Force powers you can aim at it, and throwable items like grenades. Before, opening at a personal column trapped you among only the personal categories: arrowing toward the target options hit a dead end, and you had to close the menu and reopen it with a different key to reach the enemy's attacks or throw a grenade at it. With no enemy targeted the menu still opens to your personal categories alone, so self-buffs work as before.
 - Queuing an action with a number key while the action menu is open is now read out. With the menu open and paused, pressing a number key to stack up an action (for example tapping 1 a few times to line up basic attacks before backing out) queued the action but said nothing, so you couldn't tell what you'd added or how many were in the queue. Each press now speaks the action and its place in the queue ("Power Attack, slot 2"), the same as queuing from normal gameplay, and tells you when the queue is full.
 
 <h2>v0.4.3</h2>

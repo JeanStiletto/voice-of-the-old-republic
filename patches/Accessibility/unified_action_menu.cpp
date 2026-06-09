@@ -464,24 +464,28 @@ bool OpenPersonal(int col) {
     // engine-call chain corrupts stack locals (see State::reqSlot).
     g.reqSlot = col;
 
-    // Shift+4..7 is the PERSONAL entry point; target actions are reached via
-    // Shift+1..3 / Shift+Enter. Read the LIVE main-interface as-is — do NOT
-    // call PrepareBareDispatch here. The engine keeps the personal columns
-    // populated during in-world play, and the bare-key path in input_pipeline
-    // already re-targets + re-populates them against the invalid sentinel on
-    // the same Shift+number press, so self-buff items (medpacs, force powers,
-    // stims) resolve with or without a target. Calling SetMainInterfaceTarget
-    // + RePopulateMainInterface again from this tick context made the engine
-    // synthesise a phantom confirm one tick later that fired the menu's first
-    // entry (the old separate Shift+N menus never re-populated and never had
-    // this — verified against the 06:55 vs 10:44 logs, 2026-06-07).
+    // Shift+4..7 is a PERSONAL entry point, but the menu is meant to be
+    // TRULY unified: if a hostile target is in focus we fold its three target
+    // rows (Angriffe / Machtkräfte / Gegenstände) in alongside the personal
+    // columns, so Left/Right crosses the personal⇄target border freely. The
+    // cursor still lands on the requested personal column; the target
+    // categories sit one Left away — parity with Shift+1..3 / Shift+Enter.
+    // With no focused target the menu stays personal-only, so self-buffs
+    // (Shift+5 medpac, stims) still work without an enemy.
+    //
+    // Read the LIVE main-interface + target-action menu as-is — do NOT call
+    // PrepareBareDispatch / RePopulateMainInterface here. The bare-key path in
+    // input_pipeline already re-targeted + re-populated BOTH blocks against
+    // the narrated target on this same Shift+number press, in the engine's own
+    // input-dispatch context. Re-populating again from this tick context made
+    // the engine synthesise a phantom confirm one tick later that fired the
+    // menu's first entry (verified against the 06:55 vs 10:44 logs, 2026-06-07;
+    // see the identical note in OpenTarget).
     void* mi = acc::engine_actionbar::ResolveMainInterface();
-
-    BuildCategoryList(/*tam=*/nullptr, mi);  // personal block only
 
     // If the REQUESTED column has no entries (e.g. Shift+4 self-powers on a
     // non-Jedi, Shift+6 explosives with no grenades), announce that column
-    // by name and don't open — never silently jump to a different column.
+    // by name and don't open — never silently jump to a different category.
     if (!mi || acc::engine_actionbar::VariantCount(mi, g.reqSlot) <= 0) {
         Cat reqCat{CatKind::Personal, g.reqSlot};
         const char* name = CategoryName(reqCat);
@@ -500,19 +504,36 @@ bool OpenPersonal(int col) {
         return false;
     }
 
+    // Fold in the target block when a live hostile target is focused and its
+    // rows are populated. Mirrors OpenTarget's resolution, minus the row
+    // requirement: here the personal column is the entry point, so an absent /
+    // unpopulated target simply means personal-only (tam stays null).
+    uint32_t handle = ResolveNarratedServerHandle();
+    void* tam = nullptr;
+    if (handle != 0) {
+        void* t = acc::engine_radial::ResolveTargetActionMenu();
+        if (t && FirstPopulatedTargetRow(t) >= 0) tam = t;
+    }
+    const bool hasTarget = (tam != nullptr);
+
     Arm();
-    g.hasTargetBlock = false;   // personal-only → no per-press re-anchor
-    g.targetHandle   = 0;
-    g.creature       = false;
+    g.hasTargetBlock = hasTarget;   // false → no per-press re-anchor
+    g.targetHandle   = hasTarget ? handle : 0;
+    g.creature       = hasTarget ? DetectCreature(tam, handle) : false;
     g.targetName[0]  = '\0';
 
-    // Requested column is populated → land on it (Left/Right reach the rest).
+    BuildCategoryList(tam, mi);  // tam==nullptr → personal block only
+
+    // Requested column is populated → land on it (Left/Right reach the rest,
+    // including the target rows when folded in).
     int loc = LocateCat(CatKind::Personal, g.reqSlot);
     g.curCat = (loc >= 0) ? loc : 0;
 
-    acclog::Write("UnifiedMenu", "ARMED (personal) col=%d cats=%d curCat=%d",
-        g.reqSlot, g.catCount, g.curCat);
-    SpeakCategory(/*tam=*/nullptr, mi, /*prefix=*/nullptr);
+    acclog::Write("UnifiedMenu", "ARMED (personal) col=%d hasTarget=%d "
+        "target=0x%08x creature=%d cats=%d curCat=%d", g.reqSlot,
+        hasTarget ? 1 : 0, g.targetHandle, g.creature ? 1 : 0,
+        g.catCount, g.curCat);
+    SpeakCategory(tam, mi, /*prefix=*/nullptr);
     return true;
 }
 
