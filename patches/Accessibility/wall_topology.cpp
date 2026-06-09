@@ -108,6 +108,25 @@ bool IsAlcoveAlongAxis(const Vector& pos, float forwardX, float forwardY) {
     return shortCount == 3 && dF > 2.0f;
 }
 
+// 8-ray clearance probe. Casts kProbeLenWu rays on the 8 octants from
+// `pos` against the cached perimeter walls, filling outRays[8] in octant
+// order (E, NE, N, NW, W, SW, S, SE — matching OctantFromVector bucket
+// numbering). Each entry is the distance to the first wall hit, or
+// kProbeLenWu when the ray clears the probe range. Pure diagnostic for
+// now — the clearance-dump uses it to characterise per-node openness so
+// we can pick a principled "is this an open space" statistic before
+// wiring any clearance-driven merge.
+void ProbeClearance8(const acc::engine::WallEdge* walls, int wallCount,
+                     const Vector& pos, float outRays[8]) {
+    static const float kDirX[8] = { 1.0f,  0.70710678f, 0.0f, -0.70710678f,
+                                   -1.0f, -0.70710678f, 0.0f,  0.70710678f};
+    static const float kDirY[8] = { 0.0f,  0.70710678f, 1.0f,  0.70710678f,
+                                    0.0f, -0.70710678f,-1.0f, -0.70710678f};
+    for (int k = 0; k < 8; ++k) {
+        outRays[k] = ProbeWall(walls, wallCount, pos, kDirX[k], kDirY[k]);
+    }
+}
+
 // Tunable parameters.
 
 // Re-use the navgraph cap so per-node arrays line up with the snapshot.
@@ -248,6 +267,42 @@ constexpr float kCorridorStraightCosMax = -0.94f;
 // "corner-corridor C1 → absorbed into B → C2 now sees C1 as part of
 // B → C2 absorbs too" from runaway-merging unrelated chains.
 constexpr float kCornerAbsorptionRadiusM = 7.0f;
+
+// Open-space coalesce (Pass 1g). The open-area analog of the corridor-
+// chain (1e) and corner (1f) passes: where those fold linear/detour
+// artefacts into a real room, this folds the several nav nodes of one
+// open plaza/chamber into a single cluster, so the player hears one
+// place instead of flipping between adjacent Kreuzungen (the Slums
+// central-plaza re-fire — clusters 110/118 swap on every short loop).
+//
+// A node is "open" when at least kOpenMinRays of its 8 clearance rays
+// (cast at the calibrated floor height — see the clearance block) clear
+// kOpenRayDistM. Two open nodes within kOpenMergeRadiusM that are
+// mutually wall-clear and door-free union into one open cluster.
+//
+// Threshold rationale (measured 2026-06-09, Slums vs Manaan Östliches
+// Zentrum): a pure corridor X-junction has at most as many long rays as
+// it has arms, so its over-8m count tops out at ~3-5; a genuinely open
+// room needs its surrounding walls pulled back and reaches 6-8. Setting
+// kOpenMinRays=6 admits real rooms and rejects corridor intersections by
+// construction — confirmed both directions on real content (Slums
+// courtyard junctions 6-8 → merge; Manaan corridor junctions 3-5 →
+// stay). The boundary lives at 5 (≈7m spaces) — nuisance, not safety.
+//
+// kOpenMergeRadiusM=16m is larger than the 7-8m structural gates because
+// open spaces are genuinely bigger; the wall-clear + door-free gates and
+// the both-ends-open requirement bound the blast radius. Raised 12→16
+// from the 2026-06-09 Slums harvest: at 12m the north-of-gate plaza node
+// 110 stranded as a singleton — its nearest open plaza-mate (118) sits
+// 15.4m away, just past the gate. 16m bridges the courtyard while the
+// Haupttor door veto still correctly splits the plaza at the real gate.
+// Tune further from harvested cluster sizes. Known residual: two open
+// rooms joined by a wide, door-less, wall-less opening within range merge
+// across it (the archway case) — accepted for this step; the shape
+// descriptor that consumes these clusters is built next on this data.
+constexpr float kOpenRayDistM     = 8.0f;
+constexpr int   kOpenMinRays      = 6;
+constexpr float kOpenMergeRadiusM = 16.0f;
 
 // Kind values now live in the public header (wall_topology.h) so
 // transitions.cpp can branch on Platz for the delayed-announce path.
@@ -2577,6 +2632,211 @@ void BuildForArea(void* area) {
             deg, triangles, fourCycles, reach);
     }
 
+    // Per-node 8-ray clearance probe. Two jobs:
+    //   1. populate nodeOpen[] / nodeFloorZ[] — the openness flag and
+    //      calibrated floor height that drive the Pass 1g open-space
+    //      coalesce below;
+    //   2. log the full per-node profile for ongoing harvest / tuning.
+    //
+    // The raw min clearance is noise (nav nodes hug walls, so a plaza
+    // node reads min≈0 on the hugged side); the long-ray COUNT is the
+    // discriminator — an open room keeps 6-8 rays long, a corridor
+    // junction only as many as it has arms (≤5). The flag uses rays
+    // clearing kOpenRayDistM at the calibrated floor z; the log carries
+    // the 4/8/12m counts and raw rays so the threshold stays data-driven.
+    bool  nodeOpen  [kMaxNodes];
+    float nodeFloorZ[kMaxNodes];
+    for (int i = 0; i < n; ++i) { nodeOpen[i] = false; nodeFloorZ[i] = 0.0f; }
+    {
+        const acc::engine::WallEdge* cw = nullptr;
+        int cwCount = 0;
+        if (acc::spatial::change_detector::GetCachedWalls(cw, cwCount) &&
+            cw && cwCount > 0) {
+            acclog::Write("WallTopo",
+                          "  clearance-dump: per-node 8-ray openness "
+                          "(feeds Pass 1g open-space coalesce)");
+            for (int i = 0; i < n; ++i) {
+                // Nav nodes are stored at z=0 (logically 2D), but the
+                // walls sit at the real floor height (Slums ground is
+                // z≈1.5-3m). A horizontal ray at z=0 runs under every
+                // wall and the 2m z-guard then rejects them all. Self-
+                // calibrate: probe at the z of the nearest wall endpoint
+                // to this node's XY, so same-floor walls are in range and
+                // the legit multi-floor guard still excludes other decks.
+                Vector probePos = g.nodes[i].pos;
+                float bestEndSq = 1e30f;
+                for (int w = 0; w < cwCount; ++w) {
+                    float ex0 = cw[w].a.x - probePos.x;
+                    float ey0 = cw[w].a.y - probePos.y;
+                    float s0  = ex0 * ex0 + ey0 * ey0;
+                    if (s0 < bestEndSq) { bestEndSq = s0; probePos.z = cw[w].a.z; }
+                    float ex1 = cw[w].b.x - probePos.x;
+                    float ey1 = cw[w].b.y - probePos.y;
+                    float s1  = ex1 * ex1 + ey1 * ey1;
+                    if (s1 < bestEndSq) { bestEndSq = s1; probePos.z = cw[w].b.z; }
+                }
+                nodeFloorZ[i] = probePos.z;
+                float r[8];
+                ProbeClearance8(cw, cwCount, probePos, r);
+                float mn = r[0], mx = r[0];
+                int mnBit = 0, mxBit = 0;
+                for (int k = 1; k < 8; ++k) {
+                    if (r[k] < mn) { mn = r[k]; mnBit = k; }
+                    if (r[k] > mx) { mx = r[k]; mxBit = k; }
+                }
+                int over4 = 0, over8 = 0, over12 = 0, openRays = 0;
+                int longBits = 0;
+                float sum = 0.0f;
+                for (int k = 0; k < 8; ++k) {
+                    sum += r[k];
+                    if (r[k] > 4.0f)  ++over4;
+                    if (r[k] > 8.0f)  ++over8;
+                    if (r[k] > 12.0f) ++over12;
+                    if (r[k] > kOpenRayDistM) { ++openRays; longBits |= (1 << k); }
+                }
+                nodeOpen[i] = (openRays >= kOpenMinRays);
+                float mean = sum / 8.0f;
+
+                // Tentative per-node shape class from the ray profile.
+                // DIAGNOSTIC LABEL ONLY — nothing branches on it. This is
+                // the small-room / corridor reconnaissance: the same way
+                // over8 let us pick the open-band gate from measured data,
+                // we log a first-guess class plus the raw long-ray bitmask
+                // and spread so the enclosed-room and corridor signatures
+                // can be read off real content before any generalized
+                // shape-classifier pass retires the heuristic gates.
+                //   open     — kOpenMinRays+ rays long (already the gate)
+                //   junction — 3-5 long spokes
+                //   corridor — 2 long rays roughly opposite (octant dist≥3)
+                //   corner   — 2 long rays adjacent-ish (an L bend)
+                //   deadend  — 1 long ray
+                //   room     — 0 long rays but bounded all around (max≤10m):
+                //              a real enclosed room, distinct from a tight
+                //              alcove (room? = 0 long and max>10m, ambiguous)
+                const char* shape;
+                if (openRays >= kOpenMinRays) {
+                    shape = "open";
+                } else if (openRays == 0) {
+                    shape = (mx <= 10.0f) ? "room" : "room?";
+                } else if (openRays == 1) {
+                    shape = "deadend";
+                } else if (openRays == 2) {
+                    int b0 = -1, b1 = -1;
+                    for (int k = 0; k < 8; ++k) {
+                        if (longBits & (1 << k)) { if (b0 < 0) b0 = k; else b1 = k; }
+                    }
+                    int d = (b0 >= 0 && b1 >= 0) ? (b1 - b0) : 0;
+                    if (d > 4) d = 8 - d;  // circular octant distance 0..4
+                    shape = (d >= 3) ? "corridor" : "corner";
+                } else {
+                    shape = "junction";
+                }
+
+                int deg = Degree(g, i);
+                acclog::Write(
+                    "WallTopo",
+                    "    clearance node[%d] (%.1f,%.1f) deg=%d probeZ=%.1f "
+                    "min=%.1f@%d max=%.1f@%d mean=%.1f over4=%d over8=%d "
+                    "over12=%d open=%d longbits=0x%02x class=%s "
+                    "rays[E,NE,N,NW,W,SW,S,SE]="
+                    "%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f",
+                    i, g.nodes[i].pos.x, g.nodes[i].pos.y, deg, probePos.z,
+                    mn, mnBit, mx, mxBit, mean, over4, over8, over12,
+                    nodeOpen[i] ? 1 : 0, longBits, shape,
+                    r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]);
+            }
+        } else {
+            acclog::Write("WallTopo",
+                          "  clearance-dump: no wall cache — Pass 1g "
+                          "open-space coalesce skipped (no openness data)");
+        }
+    }
+
+    // Pass 1g: open-space coalesce. Union every pair of open nodes (per
+    // nodeOpen[]) within kOpenMergeRadiusM whose connecting line is wall-
+    // clear at the calibrated floor height and door-free. Union-find makes
+    // it transitive: a plaza authored as several open junction nodes folds
+    // to one cluster regardless of how the nav graph bridges them.
+    //
+    // Why a fresh wall-clear test instead of ClassifyEdge: the nav nodes
+    // are stored at z=0, so a z=0 ClassifyEdge segment runs under the real
+    // walls (z≈floor) and the 3D z-guard then reports every edge "clear" —
+    // i.e. ClassifyEdge gives no wall protection on floors away from z=0.
+    // We lift both endpoints to the calibrated floor z so SegmentCrosses-
+    // Walkmesh sees same-floor walls and still excludes other decks. Doors
+    // are matched in 2D (FindDoorOnEdge drops z) so the door veto is
+    // unaffected by the z lift.
+    int openMerges = 0, openVetoDoor = 0, openVetoWall = 0, openCandidates = 0;
+    {
+        const acc::engine::WallEdge* gw = nullptr;
+        int gwCount = 0;
+        bool haveGW = acc::spatial::change_detector::GetCachedWalls(
+            gw, gwCount) && gw && gwCount > 0;
+        const float kRsq = kOpenMergeRadiusM * kOpenMergeRadiusM;
+        for (int i = 0; i < n; ++i) {
+            if (!nodeOpen[i]) continue;
+            for (int j = i + 1; j < n; ++j) {
+                if (!nodeOpen[j]) continue;
+                float dx = g.nodes[i].pos.x - g.nodes[j].pos.x;
+                float dy = g.nodes[i].pos.y - g.nodes[j].pos.y;
+                if (dx * dx + dy * dy > kRsq) continue;
+                if (UFFind(i) == UFFind(j)) continue;
+                ++openCandidates;
+
+                if (FindDoorOnEdge(g.nodes[i].pos, g.nodes[j].pos) >= 0) {
+                    ++openVetoDoor;
+                    acclog::Write(
+                        "WallTopo",
+                        "  open-coalesce VETOED (door): node[%d] (%.1f,%.1f) "
+                        "<-/-> node[%d] (%.1f,%.1f)",
+                        i, g.nodes[i].pos.x, g.nodes[i].pos.y,
+                        j, g.nodes[j].pos.x, g.nodes[j].pos.y);
+                    continue;
+                }
+
+                if (haveGW) {
+                    Vector a = g.nodes[i].pos;
+                    Vector b = g.nodes[j].pos;
+                    // Lift both ends to a common floor height (mean of the
+                    // two calibrated floor z's) so the wall test runs on
+                    // the real walkmesh, not the z=0 plane.
+                    float fz = 0.5f * (nodeFloorZ[i] + nodeFloorZ[j]);
+                    a.z = fz;
+                    b.z = fz;
+                    Vector hit{};
+                    if (acc::engine::SegmentCrossesWalkmesh(gw, gwCount,
+                                                            a, b, hit)) {
+                        ++openVetoWall;
+                        acclog::Write(
+                            "WallTopo",
+                            "  open-coalesce VETOED (wall): node[%d] "
+                            "(%.1f,%.1f) <-/-> node[%d] (%.1f,%.1f) at z=%.1f "
+                            "— wall between open nodes (separate spaces)",
+                            i, g.nodes[i].pos.x, g.nodes[i].pos.y,
+                            j, g.nodes[j].pos.x, g.nodes[j].pos.y, fz);
+                        continue;
+                    }
+                }
+
+                UFUnite(i, j);
+                ++openMerges;
+                acclog::Write(
+                    "WallTopo",
+                    "  open-coalesce: node[%d] (%.1f,%.1f) + node[%d] "
+                    "(%.1f,%.1f) gap=%.1fm",
+                    i, g.nodes[i].pos.x, g.nodes[i].pos.y,
+                    j, g.nodes[j].pos.x, g.nodes[j].pos.y,
+                    std::sqrt(dx * dx + dy * dy));
+            }
+        }
+    }
+    acclog::Write(
+        "WallTopo",
+        "  open-coalesce: minRays=%d/8 over %.0fm radius=%.0fm -> merged=%d "
+        "(candidates=%d vetoedByDoor=%d vetoedByWall=%d)",
+        kOpenMinRays, kOpenRayDistM, kOpenMergeRadiusM,
+        openMerges, openCandidates, openVetoDoor, openVetoWall);
+
     // Pass 2: per-cluster classification. For each cluster root (the
     // smallest node id in its union-find class), compute the centroid,
     // collect external neighbours (dedup by node id), classify via
@@ -2714,11 +2974,11 @@ void BuildForArea(void* area) {
     acclog::Write("WallTopo",
                   "BuildForArea: area=%p nodes=%d clusters=%d "
                   "merged-pairs=%d merge-vetoed-by-door=%d "
-                  "chain-merges=%d corner-absorbs=%d "
+                  "chain-merges=%d corner-absorbs=%d open-coalesce=%d "
                   "multi-node-clusters=%d "
                   "(dead=%d corridor=%d junction=%d open=%d)",
                   area, n, clusters, mergeEdges, mergeVetoedByDoor,
-                  chainMerges, cornerAbsorbed, multiNodeClusters,
+                  chainMerges, cornerAbsorbed, openMerges, multiNodeClusters,
                   deadEnds, corridors, junctions, openAreas);
 
     // Edge-classification summary. Counts are multi-fire (each graph
