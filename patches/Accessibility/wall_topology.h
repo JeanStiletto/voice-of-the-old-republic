@@ -39,8 +39,8 @@ enum Kind {
 // Real cluster ids are non-negative UFFind roots. Sentinels:
 //   None     — no graph / outside snap radius / all candidates filtered.
 //              "No fact yet, do nothing."
-//   OpenArea — synthetic "Offene Fläche" label. Stable identity so the
-//              entry transition fires exactly once.
+//   OpenArea — synthetic neutral-"Bereich" fallback label. Stable
+//              identity so the entry transition fires exactly once.
 constexpr int kClusterIdNone     = -1;
 constexpr int kClusterIdOpenArea = -2;
 

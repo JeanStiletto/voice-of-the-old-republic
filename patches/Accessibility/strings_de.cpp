@@ -331,7 +331,6 @@ const char* Get(Id id) {
 
         case Id::MapCursorUnexplored:        return "Nebel des Krieges";
         case Id::MapCursorWaypointPOI:       return "Punkt von Interesse";
-        case Id::MapCursorOpenArea:          return "Offene Fl\xE4""che";   // Offene Fläche
         case Id::MapCursorJunction:          return "Kreuzung";
         case Id::MapCursorOffPath:           return "Wand";
         case Id::FmtMapCursorCorridor:       return "%s, %.0f Meter";
@@ -344,7 +343,6 @@ const char* Get(Id id) {
         case Id::FmtMapCursorDoorLandmark:   return "%s %s, %s";           // noun + dir + landmark
         case Id::MapCursorTransitionDoor:    return "T\xFC""rschwelle";  // Türschwelle
         case Id::FmtMapCursorJunctionDeadEndExit: return "Sackgasse %s";
-        case Id::FmtMapCursorPlazaDirs:      return "Platz, %s";
         case Id::AxisNorthSouth:             return "Nord-S\xFC""d";   // Nord-Süd
         case Id::AxisEastWest:               return "Ost-West";
         case Id::AreaNoun:                   return "Bereich";

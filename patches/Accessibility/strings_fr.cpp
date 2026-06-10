@@ -328,7 +328,6 @@ const char* Get(Id id) {
 
         case Id::MapCursorUnexplored:        return "Inexplor\xE9";
         case Id::MapCursorWaypointPOI:       return "Point d'int\xE9r\xEAt";
-        case Id::MapCursorOpenArea:          return "Zone ouverte";
         case Id::MapCursorJunction:          return "Carrefour";
         case Id::MapCursorOffPath:           return "Mur";
         case Id::FmtMapCursorCorridor:       return "%s, %.0f m\xE8tres";
@@ -341,7 +340,6 @@ const char* Get(Id id) {
         case Id::FmtMapCursorDoorLandmark:   return "%s %s, %s";
         case Id::MapCursorTransitionDoor:    return "Embrasure";
         case Id::FmtMapCursorJunctionDeadEndExit: return "cul-de-sac %s";
-        case Id::FmtMapCursorPlazaDirs:      return "Place, %s";
         case Id::AxisNorthSouth:             return "nord-sud";
         case Id::AxisEastWest:               return "est-ouest";
         case Id::AreaNoun:                   return "Zone";

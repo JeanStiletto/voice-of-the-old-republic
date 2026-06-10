@@ -136,7 +136,7 @@ constexpr int kMaxNodes = acc::engine::navgraph::kMaxNodes;
 
 // Snap radius for runtime LookupAt: any player position more than this
 // many world units (KOTOR = metres) from the nearest graph node falls
-// back to "Offene Fläche". 15m matches the typical room-diagonal in
+// back to the neutral "Bereich" label. 15m matches the typical room-diagonal in
 // vanilla content while still catching the central plaza / exterior
 // case where the nav graph is sparse. Tune from log evidence.
 constexpr float kMaxSnapM = 15.0f;
@@ -368,11 +368,11 @@ struct AreaGraph {
     // rendered (Sackgasse + direction) so the LookupAt rescue path can
     // emit it when no unfiltered candidate sits within range — recovers
     // the rare Bucket-3 case (alcove dropped by the geometry gate, no
-    // labelled cluster nearby → would otherwise speak "Offene Fläche").
+    // labelled cluster nearby → would otherwise speak the neutral "Bereich").
     // The primary scan in LookupAt skips filtered nodes, so wall-curve
-    // graph artefacts in inhabited regions stay silent (the merge passes
-    // 1b/1c/1d also absorb most such artefacts before the gate runs;
-    // surviving filtered singletons are graph-isolated and almost
+    // graph artefacts in inhabited regions stay silent (the core-merge and
+    // straggler-absorb passes also absorb most such artefacts before the gate
+    // runs; surviving filtered singletons are graph-isolated and almost
     // always genuine alcoves).
     bool        node_filtered  [kMaxNodes];
     int         door_count   = 0;
@@ -440,45 +440,6 @@ acc::strings::Id OctantFromVector(float dx, float dy) {
         case 7: return Id::DirSoutheast;
     }
     return Id::DirEast;
-}
-
-// "Norded-out" corridor axis. A corridor axis is a line, not a vector —
-// both endpoints are valid. To avoid emitting "Korridor Süd" when the
-// player would experience the same axis as "Korridor Nord" from the
-// other end, always flip the vector to point toward the northern half
-// of the world (engine +Y). At dy == 0 we tie-break to East so a pure
-// East-West corridor always reads as "Korridor Ost", never "Korridor
-// West". Documented here in source for the inevitable "why does it
-// never say south?" question.
-acc::strings::Id NordedOutAxisOctant(float dx, float dy) {
-    if (dy < 0.0f || (dy == 0.0f && dx < 0.0f)) {
-        dx = -dx;
-        dy = -dy;
-    }
-    return OctantFromVector(dx, dy);
-}
-
-// Append a direction word to a comma-separated list. Returns the new
-// length of `dirList`.
-size_t AppendDirWord(char* dirList, size_t bufSize, size_t dirLen,
-                     acc::strings::Id dirId) {
-    const char* word = acc::strings::Get(dirId);
-    if (!word || !word[0]) return dirLen;
-    if (dirLen > 0 && dirLen + 2 < bufSize) {
-        dirList[dirLen++] = ',';
-        dirList[dirLen++] = ' ';
-        dirList[dirLen]   = '\0';
-    }
-    size_t remaining = bufSize > dirLen ? bufSize - dirLen : 0;
-    if (remaining == 0) return dirLen;
-    int n = std::snprintf(dirList + dirLen, remaining, "%s", word);
-    if (n > 0) {
-        size_t advanced = static_cast<size_t>(n) < remaining
-                              ? static_cast<size_t>(n)
-                              : (remaining > 0 ? remaining - 1 : 0);
-        dirLen += advanced;
-    }
-    return dirLen;
 }
 
 // Map an Id::Dir* to a stable bit index 0..7 (for dedup masks). Order
@@ -953,8 +914,9 @@ int FindDoorOnEdge(const Vector& a, const Vector& b) {
 
 // Unified edge classifier — Clear / Door / Blocked.
 
-// Edge verdict for a nav-graph segment AB. Drives both merge-veto gates
-// (Pass 1 / 1b / 1c) and external-neighbour filtering in Pass 2:
+// Edge verdict for a nav-graph segment AB. Drives both the Pass 1
+// core-merge / Pass 2 absorb merge-veto gates and external-neighbour
+// filtering in Pass 3 classification:
 //   - kEdgeClear   → free movement; contributes its direction unmodified
 //   - kEdgeDoor    → free movement through a CSWSDoor (doorIdx valid);
 //                    contributes direction wrapped as "Tür X" / "Tür X
@@ -1010,7 +972,8 @@ int FindDoorNearPoint(const Vector& p, float maxDistM) {
 // because they're rare and high-signal.
 //
 // Multi-fire note: a graph edge (i, j) may be classified from multiple
-// passes (merge veto Pass 1 / 1b / 1c, then external-edge Pass 2). All
+// passes (Pass 1 core-merge + Pass 2 absorb vetoes, then Pass 3
+// external-edge collection). All
 // fires hit the same logic and tally the same counters; the summary
 // line documents the multiplication so a reader doesn't mistake it for
 // per-edge truth. Caveat-1 / caveat-2 LOG ENTRIES include their caller
@@ -1174,7 +1137,7 @@ std::string RenderDoorDirection(int doorIdx, const char* dirWord) {
 //   - non-opposite octants = asymmetric / L-shaped corridor → both
 //     direction words rendered, more-northern-first ("Korridor West,
 //     Süd-Ost"). Caught the "Korridor West" failure mode where the
-//     old NordedOutAxisOctant collapsed an asymmetric corridor to a
+//     old single-octant axis collapsed an asymmetric corridor to a
 //     single direction and lost the other endpoint.
 // When `doorIdx` >= 0 the picked label is wrapped via
 // RenderDoorDirection so corridors that pass through doors read as
@@ -1346,9 +1309,7 @@ bool ComputeCentroidAxis(const Vector& centroid, float floorZ,
 
 // Classify a cluster (1 or more nodes) by its centroid and the list of
 // external neighbour nodes (nodes outside this cluster that share an
-// edge with some member). `clusterSize` is the count of nodes in the
-// cluster — used only to distinguish singleton junctions ("Kreuzung")
-// from merged ones ("Platz"). Renders the label + kind + sig into the
+// edge with some member). Renders the label + kind + sig into the
 // out-params.
 //
 // areaHint: 0 = not an area (use the graph deadend/corridor/junction
@@ -1359,12 +1320,14 @@ bool ComputeCentroidAxis(const Vector& centroid, float floorZ,
 // only when elongated, then the exits. centroidFloorZ feeds the axis
 // probe.
 //
-//   externalCount == 0  → isolated / open area
+// The graph path (areaHint == 0) only ever runs for singleton clusters —
+// every multi-node merge is routed to the area path by the caller — so it
+// renders Sackgasse / Korridor / Kreuzung, never the merged-space "Platz":
 //   externalCount == 1  → dead-end (direction = centroid → that exit)
 //   externalCount == 2  → corridor (axis between the two exits,
 //                                   cardinal cases use "Nord-Süd" /
 //                                   "Ost-West" axis words)
-//   externalCount >= 3  → junction (singleton) or Platz (merged).
+//   externalCount >= 3  → junction ("Kreuzung").
 //                         8-octant bucketing with passable-wins:
 //                         per-octant aggregation marks the octant as
 //                         dead-end only when EVERY exit in it leads
@@ -1373,7 +1336,7 @@ bool ComputeCentroidAxis(const Vector& centroid, float floorZ,
 //                         the order-dependent first-wins bug from the
 //                         initial revision.
 void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
-                     const Vector& centroid, int clusterSize,
+                     const Vector& centroid,
                      const int* externalNbs,
                      const int* externalSrcs,
                      const int* externalDoorIdx,
@@ -1457,11 +1420,9 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
         return;
     }
 
-    if (externalCount == 0) {
-        const char* s = acc::strings::Get(Id::MapCursorOpenArea);
-        if (s && s[0]) outLabel = s;
-        return;
-    }
+    // externalCount == 0 never reaches here: the caller forces areaHint != 0
+    // for any zero-exit cluster (see BuildForArea's isArea test), so an
+    // isolated cluster always takes the "Bereich" area path above.
     if (externalCount == 1) {
         int nb = externalNbs[0];
         if (nb < 0 || nb >= n) return;
@@ -1764,12 +1725,11 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
         AppendListEntry(dirList, DirEntry(dirId, markDeadEnd));
     }
 
-    bool isPlatz = clusterSize > 1;
-    Id fmtId = isPlatz ? Id::FmtMapCursorPlazaDirs
-                       : Id::FmtMapCursorJunctionDirs;
-    int kind = isPlatz ? kKindPlatz : kKindJunction;
-
-    const char* fmt = acc::strings::Get(fmtId);
+    // Singleton junction only: any multi-node merged junction is routed
+    // through the area ("Bereich") path above (BuildForArea sets areaHint=2
+    // for size>1 && externalCount>=3), so this path always renders
+    // "Kreuzung". The merged-space "Platz" wording lives in the area path.
+    const char* fmt = acc::strings::Get(Id::FmtMapCursorJunctionDirs);
     if (fmt && fmt[0] && !dirList.empty()) {
         outLabel = acc::strfmt::Format(fmt, dirList.c_str());
     } else {
@@ -1778,8 +1738,8 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
             outLabel = bare;
         }
     }
-    outKind = kind;
-    outSig  = (kind & 0xff) |
+    outKind = kKindJunction;
+    outSig  = (kKindJunction & 0xff) |
               ((mask & 0xff) << 8) |
               ((deadEndMask & 0xff) << 16);
 }
@@ -1906,6 +1866,158 @@ void LogNavWallCrossings(const acc::engine::navgraph::NavGraphSnapshot& g) {
         kMaxZcrossM, kMinNodeClrM, dumped, kMaxDump);
 }
 
+// Diagnostic-only: dump per-node topology metrics so we can pick a
+// principled gate later. NO MERGE LOGIC USES THESE COUNTS — pure
+// reconnaissance, called from BuildForArea's end-of-build diagnostics
+// block alongside the other Log* dumps. For each node we log:
+//   - degree      (existing nav-graph degree)
+//   - triangles   (3-cycles touching the node — pairs of neighbours that
+//                  are directly connected to each other)
+//   - 4-cycles    (pairs of neighbours that share a common neighbour ≠ the
+//                  node itself, not already counted as a triangle)
+//   - 2-hop reach (distinct nodes reachable within 2 graph-hops, ex-self)
+// Goal: separate "linear corridor" (triangles=0, 4-cycles=0, low reach)
+// from "looped room patrol points" (triangles or 4-cycles ≥1) from
+// "T-junction" (high reach, but triangles=0, 4-cycles=0). Run on Endar
+// Spire quarters + corridors + bridge and Taris South Apartments to
+// compare topology signatures before tuning any gate.
+void LogTopologyMetrics(const acc::engine::navgraph::NavGraphSnapshot& g,
+                        int n) {
+    auto navIsConnected = [&](int a, int b) -> bool {
+        if (a < 0 || a >= n || b < 0 || b >= n || a == b) return false;
+        int lo = 0, hi = 0;
+        acc::engine::navgraph::NeighbourRange(g, a, lo, hi);
+        for (int e = lo; e < hi; ++e) {
+            if (static_cast<int>(g.conns[e]) == b) return true;
+        }
+        return false;
+    };
+    bool reachVisited[kMaxNodes] = {false};
+    acclog::Write(
+        "WallTopo",
+        "  topology-dump: per-node degree / triangles / 4-cycles / "
+        "2-hop reach (diagnostic only — no behaviour change)");
+    for (int i = 0; i < n; ++i) {
+        int lo = 0, hi = 0;
+        acc::engine::navgraph::NeighbourRange(g, i, lo, hi);
+        int deg = hi - lo;
+
+        int triangles = 0;
+        int fourCycles = 0;
+        // For each unordered pair (Y, Z) of i's neighbours.
+        for (int a = lo; a < hi; ++a) {
+            int Y = static_cast<int>(g.conns[a]);
+            if (Y < 0 || Y >= n || Y == i) continue;
+            for (int b = a + 1; b < hi; ++b) {
+                int Z = static_cast<int>(g.conns[b]);
+                if (Z < 0 || Z >= n || Z == i || Z == Y) continue;
+                if (navIsConnected(Y, Z)) {
+                    ++triangles;
+                    continue;  // triangle, not a 4-cycle through this pair
+                }
+                // 4-cycle: do Y and Z share a common neighbour W ≠ i?
+                int yLo = 0, yHi = 0;
+                acc::engine::navgraph::NeighbourRange(g, Y, yLo, yHi);
+                bool found4 = false;
+                for (int c = yLo; c < yHi && !found4; ++c) {
+                    int W = static_cast<int>(g.conns[c]);
+                    if (W < 0 || W >= n) continue;
+                    if (W == i || W == Y || W == Z) continue;
+                    if (navIsConnected(W, Z)) found4 = true;
+                }
+                if (found4) ++fourCycles;
+            }
+        }
+
+        // 2-hop reach: BFS depth 2 from node i, count distinct.
+        for (int k = 0; k < n; ++k) reachVisited[k] = false;
+        reachVisited[i] = true;
+        int reach = 0;
+        for (int a = lo; a < hi; ++a) {
+            int Y = static_cast<int>(g.conns[a]);
+            if (Y < 0 || Y >= n || reachVisited[Y]) continue;
+            reachVisited[Y] = true;
+            ++reach;
+            int yLo = 0, yHi = 0;
+            acc::engine::navgraph::NeighbourRange(g, Y, yLo, yHi);
+            for (int b = yLo; b < yHi; ++b) {
+                int Z = static_cast<int>(g.conns[b]);
+                if (Z < 0 || Z >= n || reachVisited[Z]) continue;
+                reachVisited[Z] = true;
+                ++reach;
+            }
+        }
+
+        acclog::Write(
+            "WallTopo",
+            "    node[%d] (%.1f,%.1f) deg=%d tri=%d c4=%d reach2=%d",
+            i, g.nodes[i].pos.x, g.nodes[i].pos.y,
+            deg, triangles, fourCycles, reach);
+    }
+}
+
+// Diagnostic-only: per multi-node cluster, dump member adjacency. For
+// each member node, list its graph neighbours split into internal (same
+// cluster) and external (cross-cluster), and mark the edge's ClassifyEdge
+// verdict. Passes nullptr for the area diag so this re-walk doesn't
+// double-emit caveat-2 lines already logged during collection. Reads the
+// frozen union-find state, so call it after all merge passes complete.
+void LogClusterMemberAdjacency(const acc::engine::navgraph::NavGraphSnapshot& g,
+                               int n) {
+    for (int root = 0; root < n; ++root) {
+        if (UFFind(root) != root) continue;
+        int size = 0;
+        for (int m = 0; m < n; ++m) if (UFFind(m) == root) ++size;
+        if (size < 2) continue;
+        acclog::Write("WallTopo",
+                      "  cluster[%d] size=%d label=\"%s\"",
+                      root, size, g_graph.node_label[root].c_str());
+        for (int m = 0; m < n; ++m) {
+            if (UFFind(m) != root) continue;
+            int lo = 0, hi = 0;
+            acc::engine::navgraph::NeighbourRange(g, m, lo, hi);
+            for (int e = lo; e < hi; ++e) {
+                int nb = static_cast<int>(g.conns[e]);
+                if (nb < 0 || nb >= n) continue;
+                bool internal = (UFFind(nb) == root);
+                EdgeResult er = ClassifyEdge(/*areaForDiag=*/nullptr,
+                                             g.nodes[m].pos,
+                                             g.nodes[nb].pos,
+                                             "dump");
+                if (er.kind == kEdgeDoor) {
+                    acclog::Write(
+                        "WallTopo",
+                        "    member[%d] (%.1f,%.1f) -> nb[%d] (%.1f,%.1f) "
+                        "%s door[%d] transition=\"%s\"",
+                        m, g.nodes[m].pos.x, g.nodes[m].pos.y,
+                        nb, g.nodes[nb].pos.x, g.nodes[nb].pos.y,
+                        internal ? "INTERNAL" : "EXTERNAL",
+                        er.doorIdx,
+                        g_graph.doors[er.doorIdx].transitionDest[0]
+                            ? g_graph.doors[er.doorIdx].transitionDest
+                            : "(none)");
+                } else if (er.kind == kEdgeBlocked) {
+                    acclog::Write(
+                        "WallTopo",
+                        "    member[%d] (%.1f,%.1f) -> nb[%d] (%.1f,%.1f) "
+                        "%s WALL-BLOCKED",
+                        m, g.nodes[m].pos.x, g.nodes[m].pos.y,
+                        nb, g.nodes[nb].pos.x, g.nodes[nb].pos.y,
+                        internal ? "INTERNAL" : "EXTERNAL");
+                } else {
+                    acclog::Write(
+                        "WallTopo",
+                        "    member[%d] (%.1f,%.1f) -> nb[%d] (%.1f,%.1f) "
+                        "%s clear",
+                        m, g.nodes[m].pos.x, g.nodes[m].pos.y,
+                        nb, g.nodes[nb].pos.x, g.nodes[nb].pos.y,
+                        internal ? "INTERNAL" : "EXTERNAL");
+                }
+            }
+        }
+    }
+}
+
 }  // namespace
 
 void Reset() {
@@ -1932,7 +2044,45 @@ void MaybeRefreshDoors(void* area) {
     if (g_doors_stability.committed) return;
 
     int prevCount = g_graph.door_count;
+
+    // Preserve landmark attachments across the re-snapshot. SnapshotDoors
+    // rebuilds g_graph.doors from scratch (clearing landmarkName), but
+    // AttachLandmarksToDoors only runs once during BuildForArea — re-running
+    // it here would re-log + re-claim every tick. Doors don't move in the
+    // world, so carry the names over by position match. Harmless today (the
+    // cluster labels are already baked to strings before this loop runs), but
+    // keeps DoorRecord.landmarkName authoritative for any future runtime read.
+    struct SavedLandmark { Vector pos; char name[64]; };
+    SavedLandmark saved[kMaxDoors];
+    int savedCount = g_graph.door_count;
+    if (savedCount > kMaxDoors) savedCount = kMaxDoors;
+    for (int i = 0; i < savedCount; ++i) {
+        saved[i].pos = g_graph.doors[i].pos;
+        std::strncpy(saved[i].name, g_graph.doors[i].landmarkName,
+                     sizeof(saved[i].name) - 1);
+        saved[i].name[sizeof(saved[i].name) - 1] = '\0';
+    }
+
     SnapshotDoors(area);
+
+    for (int i = 0; i < g_graph.door_count; ++i) {
+        if (g_graph.doors[i].landmarkName[0]) continue;  // freshly set, keep
+        for (int j = 0; j < savedCount; ++j) {
+            if (!saved[j].name[0]) continue;
+            float dx = saved[j].pos.x - g_graph.doors[i].pos.x;
+            float dy = saved[j].pos.y - g_graph.doors[i].pos.y;
+            float dz = saved[j].pos.z - g_graph.doors[i].pos.z;
+            if (dx * dx + dy * dy + dz * dz < 0.01f) {  // same door (<0.1m)
+                std::strncpy(g_graph.doors[i].landmarkName, saved[j].name,
+                             sizeof(g_graph.doors[i].landmarkName) - 1);
+                g_graph.doors[i]
+                    .landmarkName[sizeof(g_graph.doors[i].landmarkName) - 1]
+                    = '\0';
+                break;
+            }
+        }
+    }
+
     ++g_doors_stability.retry_ticks;
 
     if (g_graph.door_count == g_doors_stability.last_count) {
@@ -1978,7 +2128,17 @@ void BuildForArea(void* area) {
     }
 
     int n = static_cast<int>(g.nodes.size());
-    if (n > kMaxNodes) n = kMaxNodes;
+    if (n > kMaxNodes) {
+        acclog::Write("WallTopo",
+                      "BuildForArea: nav graph has %d nodes — truncating to "
+                      "kMaxNodes=%d; %d node%s dropped from classification "
+                      "(label/exit data for them will be missing)",
+                      static_cast<int>(g.nodes.size()), kMaxNodes,
+                      static_cast<int>(g.nodes.size()) - kMaxNodes,
+                      static_cast<int>(g.nodes.size()) - kMaxNodes == 1
+                          ? "" : "s");
+        n = kMaxNodes;
+    }
     g_graph.node_count = n;
     for (int i = 0; i < n; ++i) {
         g_graph.node_pos[i]        = g.nodes[i].pos;
@@ -2137,96 +2297,6 @@ void BuildForArea(void* area) {
         "vetoedByDoor=%d vetoedByWall=%d",
         coreJunction, coreRoom, coreOpen, coreCorridor,
         coreVetoDoor, coreVetoWall);
-
-// Diagnostic-only pass: dump per-node topology metrics so we can
-    // pick a principled gate later. NO MERGE LOGIC USES THESE COUNTS.
-    // For each node we log:
-    //   - degree                       (existing nav-graph degree)
-    //   - triangles                    (3-cycles touching the node — pairs
-    //                                   of neighbours that are directly
-    //                                   connected to each other)
-    //   - 4-cycles                     (4-cycles touching the node — pairs
-    //                                   of neighbours that share a common
-    //                                   neighbour ≠ the node itself, and
-    //                                   not already counted as a triangle)
-    //   - 2-hop reach                  (distinct nodes reachable within
-    //                                   2 graph-hops, excluding self)
-    // Goal: separate "linear corridor" (triangles=0, 4-cycles=0, low reach)
-    // from "looped room patrol points" (triangles or 4-cycles ≥1) from
-    // "T-junction" (high reach, but triangles=0, 4-cycles=0). Run on
-    // Endar Spire quarters + corridors + bridge and Taris South
-    // Apartments to compare topology signatures before tuning any gate.
-    auto navIsConnected = [&](int a, int b) -> bool {
-        if (a < 0 || a >= n || b < 0 || b >= n || a == b) return false;
-        int lo = 0, hi = 0;
-        acc::engine::navgraph::NeighbourRange(g, a, lo, hi);
-        for (int e = lo; e < hi; ++e) {
-            if (static_cast<int>(g.conns[e]) == b) return true;
-        }
-        return false;
-    };
-    bool reachVisited[kMaxNodes] = {false};
-    acclog::Write(
-        "WallTopo",
-        "  topology-dump: per-node degree / triangles / 4-cycles / "
-        "2-hop reach (diagnostic only — no behaviour change)");
-    for (int i = 0; i < n; ++i) {
-        int lo = 0, hi = 0;
-        acc::engine::navgraph::NeighbourRange(g, i, lo, hi);
-        int deg = hi - lo;
-
-        int triangles = 0;
-        int fourCycles = 0;
-        // For each unordered pair (Y, Z) of i's neighbours.
-        for (int a = lo; a < hi; ++a) {
-            int Y = static_cast<int>(g.conns[a]);
-            if (Y < 0 || Y >= n || Y == i) continue;
-            for (int b = a + 1; b < hi; ++b) {
-                int Z = static_cast<int>(g.conns[b]);
-                if (Z < 0 || Z >= n || Z == i || Z == Y) continue;
-                if (navIsConnected(Y, Z)) {
-                    ++triangles;
-                    continue;  // triangle, not a 4-cycle through this pair
-                }
-                // 4-cycle: do Y and Z share a common neighbour W ≠ i?
-                int yLo = 0, yHi = 0;
-                acc::engine::navgraph::NeighbourRange(g, Y, yLo, yHi);
-                bool found4 = false;
-                for (int c = yLo; c < yHi && !found4; ++c) {
-                    int W = static_cast<int>(g.conns[c]);
-                    if (W < 0 || W >= n) continue;
-                    if (W == i || W == Y || W == Z) continue;
-                    if (navIsConnected(W, Z)) found4 = true;
-                }
-                if (found4) ++fourCycles;
-            }
-        }
-
-        // 2-hop reach: BFS depth 2 from node i, count distinct.
-        for (int k = 0; k < n; ++k) reachVisited[k] = false;
-        reachVisited[i] = true;
-        int reach = 0;
-        for (int a = lo; a < hi; ++a) {
-            int Y = static_cast<int>(g.conns[a]);
-            if (Y < 0 || Y >= n || reachVisited[Y]) continue;
-            reachVisited[Y] = true;
-            ++reach;
-            int yLo = 0, yHi = 0;
-            acc::engine::navgraph::NeighbourRange(g, Y, yLo, yHi);
-            for (int b = yLo; b < yHi; ++b) {
-                int Z = static_cast<int>(g.conns[b]);
-                if (Z < 0 || Z >= n || reachVisited[Z]) continue;
-                reachVisited[Z] = true;
-                ++reach;
-            }
-        }
-
-        acclog::Write(
-            "WallTopo",
-            "    node[%d] (%.1f,%.1f) deg=%d tri=%d c4=%d reach2=%d",
-            i, g.nodes[i].pos.x, g.nodes[i].pos.y,
-            deg, triangles, fourCycles, reach);
-    }
 
     // ===== Pass 2: straggler absorb =====
     // Fold leftover corner / doorway nodes into the core they belong to.
@@ -2584,12 +2654,26 @@ void BuildForArea(void* area) {
                         break;
                     }
                 }
-                if (!seen && externalCount < kMaxExternal) {
-                    externalNbs    [externalCount] = nb;
-                    externalSrcs   [externalCount] = m;
-                    externalDoorIdx[externalCount] =
-                        (er.kind == kEdgeDoor) ? er.doorIdx : -1;
-                    ++externalCount;
+                if (!seen) {
+                    if (externalCount < kMaxExternal) {
+                        externalNbs    [externalCount] = nb;
+                        externalSrcs   [externalCount] = m;
+                        externalDoorIdx[externalCount] =
+                            (er.kind == kEdgeDoor) ? er.doorIdx : -1;
+                        ++externalCount;
+                    } else {
+                        // Cap hit — this exit won't be voiced. Log it rather
+                        // than drop silently so an under-reported plaza is
+                        // visible in the harvest (raise kMaxExternal if real).
+                        acclog::Write(
+                            "WallTopo",
+                            "  external CAP: cluster=%d already has "
+                            "kMaxExternal=%d neighbours — dropping exit to "
+                            "nb[%d] (%.1f,%.1f); this exit will be missing "
+                            "from the label",
+                            root, kMaxExternal, nb,
+                            g.nodes[nb].pos.x, g.nodes[nb].pos.y);
+                    }
                 }
             }
         }
@@ -2609,7 +2693,7 @@ void BuildForArea(void* area) {
         std::string label;
         int kind = kKindOpenArea, sig = 0;
         bool filtered = false;
-        ClassifyCluster(g, centroid, size, externalNbs, externalSrcs,
+        ClassifyCluster(g, centroid, externalNbs, externalSrcs,
                         externalDoorIdx, externalCount,
                         areaHint, centroidFloorZ,
                         label, kind, sig, filtered);
@@ -2654,8 +2738,9 @@ void BuildForArea(void* area) {
                   deadEnds, corridors, junctions, openAreas);
 
     // Edge-classification summary. Counts are multi-fire (each graph
-    // edge is classified by every pass that examines it — Pass 1 / 1b
-    // / 1c merge vetoes, then Pass 2 external-edge collection), so
+    // edge is classified by every pass that examines it — Pass 1
+    // core-merge + Pass 2 absorb vetoes, then Pass 3 external-edge
+    // collection), so
     // reading them as raw per-edge truth would overcount. They're a
     // ratio/anomaly signal: blocked > 0 confirms the wall primitive
     // is catching at least some wall-crossing edges; caveat-1 hits > 0
@@ -2670,70 +2755,17 @@ void BuildForArea(void* area) {
                   s_class_clear, s_class_door, s_class_blocked,
                   s_caveat1_hits, s_caveat2_hits);
 
+    // ===== End-of-build diagnostics (observation only, no behaviour) =====
+    // Per-node topology signatures (degree / triangles / 4-cycles / reach)
+    // for future gate tuning.
+    LogTopologyMetrics(g, n);
     // Phantom-wall confirmation: cross-check the engine's own nav graph
     // against the cached walls (3D-aware). Any nav edge that crosses a
     // cached wall proves that wall is phantom — see LogNavWallCrossings.
     LogNavWallCrossings(g);
-
-    // Diagnostic: per multi-node cluster, dump member adjacency. For
-    // each member node, list its graph neighbours split into
-    // internal (same cluster) and external (cross-cluster), and mark
-    // the edge's ClassifyEdge verdict. Passes nullptr for the area
-    // diag so this re-walk doesn't double-emit caveat-2 lines already
-    // logged during collection.
-    for (int root = 0; root < n; ++root) {
-        if (UFFind(root) != root) continue;
-        int size = 0;
-        for (int m = 0; m < n; ++m) if (UFFind(m) == root) ++size;
-        if (size < 2) continue;
-        acclog::Write("WallTopo",
-                      "  cluster[%d] size=%d label=\"%s\"",
-                      root, size, g_graph.node_label[root].c_str());
-        for (int m = 0; m < n; ++m) {
-            if (UFFind(m) != root) continue;
-            int lo = 0, hi = 0;
-            acc::engine::navgraph::NeighbourRange(g, m, lo, hi);
-            for (int e = lo; e < hi; ++e) {
-                int nb = static_cast<int>(g.conns[e]);
-                if (nb < 0 || nb >= n) continue;
-                bool internal = (UFFind(nb) == root);
-                EdgeResult er = ClassifyEdge(/*areaForDiag=*/nullptr,
-                                             g.nodes[m].pos,
-                                             g.nodes[nb].pos,
-                                             "dump");
-                if (er.kind == kEdgeDoor) {
-                    acclog::Write(
-                        "WallTopo",
-                        "    member[%d] (%.1f,%.1f) -> nb[%d] (%.1f,%.1f) "
-                        "%s door[%d] transition=\"%s\"",
-                        m, g.nodes[m].pos.x, g.nodes[m].pos.y,
-                        nb, g.nodes[nb].pos.x, g.nodes[nb].pos.y,
-                        internal ? "INTERNAL" : "EXTERNAL",
-                        er.doorIdx,
-                        g_graph.doors[er.doorIdx].transitionDest[0]
-                            ? g_graph.doors[er.doorIdx].transitionDest
-                            : "(none)");
-                } else if (er.kind == kEdgeBlocked) {
-                    acclog::Write(
-                        "WallTopo",
-                        "    member[%d] (%.1f,%.1f) -> nb[%d] (%.1f,%.1f) "
-                        "%s WALL-BLOCKED",
-                        m, g.nodes[m].pos.x, g.nodes[m].pos.y,
-                        nb, g.nodes[nb].pos.x, g.nodes[nb].pos.y,
-                        internal ? "INTERNAL" : "EXTERNAL");
-                } else {
-                    acclog::Write(
-                        "WallTopo",
-                        "    member[%d] (%.1f,%.1f) -> nb[%d] (%.1f,%.1f) "
-                        "%s clear",
-                        m, g.nodes[m].pos.x, g.nodes[m].pos.y,
-                        nb, g.nodes[nb].pos.x, g.nodes[nb].pos.y,
-                        internal ? "INTERNAL" : "EXTERNAL");
-                }
-            }
-        }
-    }
-
+    // Per multi-node cluster, dump member adjacency + ClassifyEdge verdicts.
+    LogClusterMemberAdjacency(g, n);
+    // Final per-node cluster/kind/sig/label table.
     DumpGraphToLog();
 }
 
@@ -2769,7 +2801,7 @@ bool LookupAt(void* area, const Vector& worldPos,
     // logged play, including multi-elevation maps). Including dz in
     // the distance broke elevated areas: Taris Sewers spawns the
     // player at z≈28m on the upper platform, which alone exceeds the
-    // 15m snap radius and pins every position to the "Offene Fläche"
+    // 15m snap radius and pins every position to the neutral "Bereich"
     // fallback. Multi-floor disambiguation needs to come from room-id,
     // not z against an always-zero graph.
     //
@@ -2779,9 +2811,9 @@ bool LookupAt(void* area, const Vector& worldPos,
     // Primary wins whenever a candidate sits within snap range. Rescue
     // is consulted only when no primary in range — recovers the
     // Bucket-3 "alcove dropped by the geometry gate, no other labelled
-    // cluster nearby → would have emitted Offene Fläche" case without
+    // cluster nearby → would have emitted the neutral Bereich" case without
     // re-introducing wall-curve artefacts on inhabited terrain (those
-    // get absorbed by the bbox / density / hub merge passes upstream,
+    // get absorbed by the core-merge / straggler-absorb passes upstream,
     // or lose on distance to a real labelled cluster).
     //
     // Wall-reachability filter (added 2026-05-20, originally for the
@@ -2879,7 +2911,7 @@ bool LookupAt(void* area, const Vector& worldPos,
             "WallTopo",
             "LookupAt ALL-BLOCKED at (%.1f,%.1f,%.1f): every labelled "
             "node (%d candidates) was wall-filtered. Falling back to "
-            "Offene Fläche. Possible overfire — check wall cache vs "
+            "neutral Bereich. Possible overfire — check wall cache vs "
             "player position.",
             worldPos.x, worldPos.y, worldPos.z, blockedSeen);
     }
@@ -2900,8 +2932,8 @@ bool LookupAt(void* area, const Vector& worldPos,
     // alcoves the walkmesh-shape gate misjudged when no labelled cluster
     // sits within snap radius. Merge passes upstream eliminate the
     // wall-curve case (artefacts inside inhabited regions get absorbed
-    // by bbox/density/hub merging), so surviving filtered singletons
-    // are graph-isolated and almost always genuine alcoves.
+    // by the core-merge / straggler-absorb passes), so surviving filtered
+    // singletons are graph-isolated and almost always genuine alcoves.
     if (bestFiltered >= 0) {
         float fDist = std::sqrt(bestFilteredSq);
         if (fDist <= kMaxSnapM &&

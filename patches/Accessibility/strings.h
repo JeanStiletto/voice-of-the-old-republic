@@ -1002,7 +1002,6 @@ enum class Id : int {
     // explored, walkable cell with no explicit waypoint/landmark/named-
     // room match. The 4-direction wall probe in map_ui_cursor classifies
     // local walkmesh extents and resolves to one of these.
-    MapCursorOpenArea,
     MapCursorJunction,        // bare "Junction" / "Kreuzung" — fallback only
     MapCursorOffPath,
     FmtMapCursorCorridor,     // "%s, %.0f Meter" / "%s, %.0f meters" — direction-axis + length, "Korridor"/"Corridor" noun dropped 2026-05-22 (terser ambient cue)
@@ -1043,14 +1042,6 @@ enum class Id : int {
     // is wrapped to flag the dead-end so the user doesn't waste a
     // walk attempting it. Single `%s` (the direction word).
     FmtMapCursorJunctionDeadEndExit, // "Sackgasse %s" / "dead end %s" — prefix-style, matches "Tür %s" so junction list reads NOUN-then-direction
-    // Merged-junction announce. Used in place of FmtMapCursorJunctionDirs
-    // when a multi-node cluster has 3+ external exits — semantically the
-    // player is at a wider hub area, not a single point junction.
-    // wall_topology's announce path delays this label by ~1s so the
-    // player has time to walk further into the cluster before the
-    // direction list (computed from the cluster centroid) fires —
-    // gives more accurate centroid-relative direction perception.
-    FmtMapCursorPlazaDirs, // "Platz, %s" / "Place, %s"
     AxisNorthSouth,
     AxisEastWest,
     // Unified neutral area vocabulary. Open spaces, merged rooms and
