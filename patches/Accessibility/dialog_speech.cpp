@@ -116,8 +116,17 @@ struct SpeakerInfo {
 //     — including the bracketed stage directions that decode the words by
 //     gesture — is the entire content of her language-learning sidequest.
 //     Suppressing it silences 100% of her side of the conversation.
+//   - "vek": wears Sith_Male_Twilek (appearance 376), which classifies human
+//     because the row is shared with Basic-voiced Sith soldiers/rogues (see
+//     the build/dump-2da NOTE). But Vek himself — the Manaan Ahto East swoop
+//     handler — is voiced in alien Twi'leki, not Basic, so his subtitle is the
+//     player's only channel. The shared appearance row can't be flipped
+//     without un-suppressing the Sith mooks, so Vek is exempted by tag.
+//     (Reported in-game 2026-06-10; supersedes the 2026-06-09 model-only
+//     verification that assumed every 376 wearer was Basic-voiced.)
 constexpr const char* kNeverSuppressTags[] = {
     "sasha",
+    "vek",
 };
 
 bool IsNeverSuppressTag(const char* tag) {
