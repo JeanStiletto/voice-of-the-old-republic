@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 #include "engine_offsets.h"
 
@@ -72,8 +73,12 @@ void Reset();
 // nearby node. Map cursor wants distance-only snap.
 //
 // False on no-graph / outside bounding box / no matching region.
+//
+// outLabel receives the full region label — never truncated. It is
+// cleared on every call (including the false-returning paths), so callers
+// can read it unconditionally.
 bool LookupAt(void* area, const Vector& worldPos,
-              char* outBuf, size_t bufSize, int& outSig,
+              std::string& outLabel, int& outSig,
               int& outClusterId,
               bool allowDiagLog = true,
               bool requireWallReachable = true);

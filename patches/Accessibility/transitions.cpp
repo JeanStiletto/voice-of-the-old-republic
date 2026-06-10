@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 #include "bringup_announce.h" // IsMovieWindowForeground — gate speech during movies
 #include "combat.h"          // IsCombatActive — gate room-change speech
@@ -217,7 +218,7 @@ void RebuildLandmarkCache(void* area) {
 // the resolved label collapses the spam: as long as the player walks
 // through cells whose label matches, transitions stays quiet. Resets on
 // area change.
-char g_last_spoken_room_text[128] = {0};
+std::string g_last_spoken_room_text;
 
 // Coordinate hysteresis retired 2026-05-13. The original problem it
 // solved — 6 announcements in 6 seconds across 5 small .lyt-rooms with
@@ -243,7 +244,7 @@ bool   g_last_spoken_pos_valid = false;
 // We re-resolve at fire time: if the player has crossed into a
 // different cluster meanwhile, the new label fires instead of the
 // stale one.
-char   g_pending_platz_text[128] = {0};
+std::string g_pending_platz_text;
 DWORD  g_pending_platz_tick      = 0;
 bool   g_pending_platz_valid     = false;
 int    g_pending_platz_room      = -1;
@@ -286,11 +287,10 @@ int   g_lm_prox_last_spoken_idx = -1;
 // degree-2 node as a corridor; real doorway detection would need
 // wall-geometry constriction sensing.
 bool ResolveRoomSpeech(void* area, const Vector& worldPos,
-                       char* outBuf, size_t bufSize,
+                       std::string& outBuf,
                        const char*& outSource,
                        int* outClusterIdOpt = nullptr) {
-    if (!outBuf || bufSize == 0) return false;
-    outBuf[0] = '\0';
+    outBuf.clear();
     outSource = "none";
     if (outClusterIdOpt) *outClusterIdOpt = acc::wall_topology::kClusterIdNone;
 
@@ -308,15 +308,15 @@ bool ResolveRoomSpeech(void* area, const Vector& worldPos,
                                         tier1Buf, sizeof(tier1Buf)) &&
         tier1Buf[0] != '\0' &&
         !IsResrefStyleRoomName(tier1Buf)) {
-        std::snprintf(outBuf, bufSize, "%s", tier1Buf);
+        outBuf = tier1Buf;
         outSource = "room_name";
         // Still consult cluster for the trigger key — fire on either
         // friendly-name OR cluster change.
         if (outClusterIdOpt) {
-            char scratch[128] = {0};
+            std::string scratch;
             int  scratchSig = 0;
             acc::wall_topology::LookupAt(area, worldPos,
-                                         scratch, sizeof(scratch),
+                                         scratch,
                                          scratchSig, *outClusterIdOpt);
         }
         return true;
@@ -333,14 +333,14 @@ bool ResolveRoomSpeech(void* area, const Vector& worldPos,
         return false;
     }
 
-    char path3Buf[128] = {0};
+    std::string path3Buf;
     int  path3Sig    = 0;
     int  clusterId   = acc::wall_topology::kClusterIdNone;
     if (acc::wall_topology::LookupAt(area, worldPos,
-                                     path3Buf, sizeof(path3Buf),
+                                     path3Buf,
                                      path3Sig, clusterId) &&
-        path3Buf[0] != '\0') {
-        std::snprintf(outBuf, bufSize, "%s", path3Buf);
+        !path3Buf.empty()) {
+        outBuf = path3Buf;
         outSource = "shape";
         if (outClusterIdOpt) *outClusterIdOpt = clusterId;
         return true;
@@ -356,11 +356,11 @@ void LogWallTopoComparison(void* area, int roomIndex,
                            const Vector& worldPos,
                            const char* spoken,
                            const char* source) {
-    char path3[128] = {0};
+    std::string path3;
     int  path3Sig    = 0;
     int  path3Cid    = acc::wall_topology::kClusterIdNone;
     bool havePath3 = acc::wall_topology::LookupAt(
-        area, worldPos, path3, sizeof(path3), path3Sig, path3Cid);
+        area, worldPos, path3, path3Sig, path3Cid);
     const int path3Kind = havePath3 ? (path3Sig & 0xff) : -1;
 
     acclog::Write("WallTopo.Compare",
@@ -368,7 +368,7 @@ void LogWallTopoComparison(void* area, int roomIndex,
                   "path3=\"%s\" kind=%d sig=%d cluster=%d",
                   worldPos.x, worldPos.y, roomIndex,
                   spoken ? spoken : "", source ? source : "",
-                  havePath3 ? path3 : "<no graph>",
+                  havePath3 ? path3.c_str() : "<no graph>",
                   path3Kind, path3Sig, path3Cid);
 }
 
@@ -390,13 +390,13 @@ void LogWallTopoComparison(void* area, int roomIndex,
 // goes through ResolveRoomSpeech so the friendly-name tier wins when
 // available (TSL coverage).
 void SpeakRoomChange(void* area, int clusterId, const Vector& worldPos) {
-    char speechBuf[128] = {0};
+    std::string speechBuf;
     const char* source = "none";
     int resolvedCluster = acc::wall_topology::kClusterIdNone;
     if (!ResolveRoomSpeech(area, worldPos,
-                           speechBuf, sizeof(speechBuf), source,
+                           speechBuf, source,
                            &resolvedCluster) ||
-        speechBuf[0] == '\0') {
+        speechBuf.empty()) {
         acclog::Write("Transition",
                       "cluster -> %d unresolved (src=none) — staying silent "
                       "(areaPtr=%p)", clusterId, area);
@@ -408,24 +408,23 @@ void SpeakRoomChange(void* area, int clusterId, const Vector& worldPos) {
     int roomIndex = -1;
     acc::engine::GetRoomAtIndexed(area, worldPos, roomIndex);
 
-    if (std::strncmp(speechBuf, g_last_spoken_room_text,
-                     sizeof(g_last_spoken_room_text)) == 0) {
+    if (speechBuf == g_last_spoken_room_text) {
         acclog::Write("Transition",
                       "cluster -> %d '%s' src=%s room=%d — text-dedup "
                       "match, silent",
-                      clusterId, speechBuf, source, roomIndex);
+                      clusterId, speechBuf.c_str(), source, roomIndex);
         return;
     }
 
     // Peek at the Path 3 kind to decide between immediate announce and
     // Platz-delay path. Re-runs LookupAt — cheap (linear scan over ~50
     // nodes); avoids threading the sig back through ResolveRoomSpeech.
-    char   peekBuf[128] = {0};
+    std::string peekBuf;
     int    peekSig      = 0;
     int    peekCid      = acc::wall_topology::kClusterIdNone;
     int    peekKind     = -1;
     if (acc::wall_topology::LookupAt(area, worldPos,
-                                     peekBuf, sizeof(peekBuf),
+                                     peekBuf,
                                      peekSig, peekCid)) {
         peekKind = peekSig & 0xff;
     }
@@ -435,22 +434,19 @@ void SpeakRoomChange(void* area, int clusterId, const Vector& worldPos) {
         // Tick to fire. Advance g_last_spoken_room_text now so further
         // cluster transitions producing the same label get text-deduped
         // out — we only fire once per Platz entry.
-        std::strncpy(g_pending_platz_text, speechBuf,
-                     sizeof(g_pending_platz_text) - 1);
-        g_pending_platz_text[sizeof(g_pending_platz_text) - 1] = '\0';
+        g_pending_platz_text  = speechBuf;
         g_pending_platz_tick  = GetTickCount();
         g_pending_platz_room  = roomIndex;
         g_pending_platz_pos   = worldPos;
         g_pending_platz_valid = true;
-        std::strncpy(g_last_spoken_room_text, speechBuf,
-                     sizeof(g_last_spoken_room_text) - 1);
-        g_last_spoken_room_text[sizeof(g_last_spoken_room_text) - 1] = '\0';
+        g_last_spoken_room_text = speechBuf;
         acclog::Write("Transition",
                       "cluster -> %d '%s' src=%s room=%d — Platz, deferred "
                       "%lums (areaPtr=%p)",
-                      clusterId, speechBuf, source, roomIndex,
+                      clusterId, speechBuf.c_str(), source, roomIndex,
                       (unsigned long)kPlatzDelayMs, area);
-        LogWallTopoComparison(area, roomIndex, worldPos, speechBuf, source);
+        LogWallTopoComparison(area, roomIndex, worldPos, speechBuf.c_str(),
+                              source);
         return;
     }
 
@@ -460,16 +456,14 @@ void SpeakRoomChange(void* area, int clusterId, const Vector& worldPos) {
     // a different shape, the deferred Platz no longer applies).
     g_pending_platz_valid = false;
 
-    prism::SpeakUrgent(speechBuf);
-    std::strncpy(g_last_spoken_room_text, speechBuf,
-                 sizeof(g_last_spoken_room_text) - 1);
-    g_last_spoken_room_text[sizeof(g_last_spoken_room_text) - 1] = '\0';
+    prism::SpeakUrgent(speechBuf.c_str());
+    g_last_spoken_room_text = speechBuf;
     g_last_spoken_pos       = worldPos;
     g_last_spoken_pos_valid = true;
     acclog::Write("Transition",
                   "cluster -> %d '%s' src=%s room=%d (areaPtr=%p)",
-                  clusterId, speechBuf, source, roomIndex, area);
-    LogWallTopoComparison(area, roomIndex, worldPos, speechBuf, source);
+                  clusterId, speechBuf.c_str(), source, roomIndex, area);
+    LogWallTopoComparison(area, roomIndex, worldPos, speechBuf.c_str(), source);
 }
 
 // Fire any pending Platz announce whose delay has elapsed. Re-resolves
@@ -487,40 +481,35 @@ void TickPendingPlatz(void* area, const Vector& playerPos) {
     int roomIdx = -1;
     acc::engine::GetRoomAtIndexed(area, playerPos, roomIdx);
 
-    char fireBuf[128] = {0};
+    std::string fireBuf;
     const char* source = "none";
     bool resolved = ResolveRoomSpeech(area, playerPos,
-                                      fireBuf, sizeof(fireBuf), source) &&
-                    fireBuf[0] != '\0';
+                                      fireBuf, source) &&
+                    !fireBuf.empty();
 
-    if (resolved &&
-        std::strncmp(fireBuf, g_pending_platz_text,
-                     sizeof(g_pending_platz_text)) == 0) {
+    if (resolved && fireBuf == g_pending_platz_text) {
         // Same Platz still under the player. Fire the announce now.
-        prism::SpeakUrgent(fireBuf);
+        prism::SpeakUrgent(fireBuf.c_str());
         g_last_spoken_pos       = playerPos;
         g_last_spoken_pos_valid = true;
         acclog::Write("Transition",
                       "Platz announce fired after %lums: '%s' (room=%d "
                       "areaPtr=%p)",
                       (unsigned long)(now - g_pending_platz_tick),
-                      fireBuf, roomIdx, area);
-    } else if (resolved &&
-               std::strncmp(fireBuf, g_last_spoken_room_text,
-                            sizeof(g_last_spoken_room_text)) != 0) {
+                      fireBuf.c_str(), roomIdx, area);
+    } else if (resolved && fireBuf != g_last_spoken_room_text) {
         // Player has moved on to a different shape during the delay.
         // Fire the NEW label so we don't leave them unannounced.
-        prism::SpeakUrgent(fireBuf);
-        std::strncpy(g_last_spoken_room_text, fireBuf,
-                     sizeof(g_last_spoken_room_text) - 1);
-        g_last_spoken_room_text[sizeof(g_last_spoken_room_text) - 1] = '\0';
+        prism::SpeakUrgent(fireBuf.c_str());
+        g_last_spoken_room_text = fireBuf;
         g_last_spoken_pos       = playerPos;
         g_last_spoken_pos_valid = true;
         acclog::Write("Transition",
                       "Platz announce superseded after %lums: pending='%s' "
                       "current='%s' src=%s (room=%d areaPtr=%p)",
                       (unsigned long)(now - g_pending_platz_tick),
-                      g_pending_platz_text, fireBuf, source, roomIdx, area);
+                      g_pending_platz_text.c_str(), fireBuf.c_str(), source,
+                      roomIdx, area);
     } else {
         // Either resolution failed or text-dedups against the same
         // last-spoken label (we already advanced last_spoken to the
@@ -529,7 +518,7 @@ void TickPendingPlatz(void* area, const Vector& playerPos) {
         acclog::Write("Transition",
                       "Platz announce expired (no new label) pending='%s' "
                       "(room=%d areaPtr=%p)",
-                      g_pending_platz_text, roomIdx, area);
+                      g_pending_platz_text.c_str(), roomIdx, area);
     }
     g_pending_platz_valid = false;
 }
@@ -735,7 +724,7 @@ void Tick() {
         g_pending_cluster_id    = acc::wall_topology::kClusterIdNone;
         g_pending_cluster_count = 0;
         g_prev_friendly_room_name[0] = '\0';
-        g_last_spoken_room_text[0]   = '\0';
+        g_last_spoken_room_text.clear();
         g_last_spoken_pos_valid      = false;
         g_lm_prox_pending_idx        = -1;
         g_lm_prox_pending_count      = 0;
@@ -808,7 +797,7 @@ void Tick() {
         g_pending_cluster_id    = acc::wall_topology::kClusterIdNone;
         g_pending_cluster_count = 0;
         g_prev_friendly_room_name[0] = '\0';
-        g_last_spoken_room_text[0]   = '\0';
+        g_last_spoken_room_text.clear();
         g_last_spoken_pos_valid      = false;
         g_lm_prox_pending_idx        = -1;
         g_lm_prox_pending_count      = 0;
@@ -868,7 +857,7 @@ void Tick() {
     // distinct human-readable names) still announces on the name flip.
     // K1 vanilla content never trips this — every room name is resref-
     // style and IsResrefStyleRoomName filters it out.
-    char shapeBuf[128] = {0};
+    std::string shapeBuf;
     int  shapeSig      = 0;
     int  clusterId     = acc::wall_topology::kClusterIdNone;
     // Per-tick probe: suppress LookupAt's WALL-FILTERED / ALL-BLOCKED
@@ -878,7 +867,7 @@ void Tick() {
     // filter behaviour without flooding the log with identical lines
     // at 60 fps when the player stands at a wall-filtered boundary.
     acc::wall_topology::LookupAt(area, pos,
-                                 shapeBuf, sizeof(shapeBuf),
+                                 shapeBuf,
                                  shapeSig, clusterId,
                                  /*allowDiagLog=*/false);
 

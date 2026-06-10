@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 #pragma comment(lib, "user32.lib")
 
@@ -54,9 +55,9 @@ struct ViewModeState {
 
     // Region-cursor announce. Text-equality dedup so adjacent rooms with
     // identical labels collapse to one announce.
-    char  region_pending_text[128]   = {0};
+    std::string region_pending_text;
     DWORD region_pending_started_ms  = 0;
-    char  region_last_spoken_text[128] = {0};
+    std::string region_last_spoken_text;
 };
 
 ViewModeState g_state;
@@ -127,9 +128,9 @@ void EnterViewMode() {
     g_state.hover_pending         = 0;
     g_state.hover_pending_obj     = nullptr;
     g_state.hover_pending_started = 0;
-    g_state.region_pending_text[0]      = '\0';
+    g_state.region_pending_text.clear();
     g_state.region_pending_started_ms   = 0;
-    g_state.region_last_spoken_text[0]  = '\0';
+    g_state.region_last_spoken_text.clear();
 
     g_state.active = true;
     prism::Speak(acc::strings::Get(acc::strings::Id::ViewModeOn),
@@ -312,10 +313,9 @@ acc::strings::Id CategoryNameId(acc::filter::CycleCategory c) {
 // Tier order matches the walking adapter: landmark → friendly room name
 // → shape cache. False = no tier resolved; caller stays silent.
 bool ResolveCursorRegionLabel(void* area, const Vector& cursor,
-                              char* outBuf, size_t bufSize,
+                              std::string& outBuf,
                               const char*& outSource) {
-    if (!outBuf || bufSize == 0) return false;
-    outBuf[0] = '\0';
+    outBuf.clear();
     outSource = "none";
 
     // 15m matches the walking adapter's enter/exit windows.
@@ -327,7 +327,7 @@ bool ResolveCursorRegionLabel(void* area, const Vector& cursor,
                 cursor, kLandmarkRangeM,
                 landmarkBuf, sizeof(landmarkBuf), landmarkPos) &&
             landmarkBuf[0] != '\0') {
-            std::snprintf(outBuf, bufSize, "%s", landmarkBuf);
+            outBuf = landmarkBuf;
             outSource = "landmark";
             return true;
         }
@@ -341,20 +341,20 @@ bool ResolveCursorRegionLabel(void* area, const Vector& cursor,
                                             nameBuf, sizeof(nameBuf)) &&
             nameBuf[0] != '\0' &&
             !acc::transitions::IsResrefStyleRoomName(nameBuf)) {
-            std::snprintf(outBuf, bufSize, "%s", nameBuf);
+            outBuf = nameBuf;
             outSource = "room_name";
             return true;
         }
     }
 
-    char shapeBuf[128] = {0};
+    std::string shapeBuf;
     int  shapeSig   = 0;
     int  clusterId  = acc::wall_topology::kClusterIdNone;
     if (acc::wall_topology::LookupAt(area, cursor,
-                                     shapeBuf, sizeof(shapeBuf),
+                                     shapeBuf,
                                      shapeSig, clusterId) &&
-        shapeBuf[0] != '\0') {
-        std::snprintf(outBuf, bufSize, "%s", shapeBuf);
+        !shapeBuf.empty()) {
+        outBuf = shapeBuf;
         outSource = "shape";
         return true;
     }
@@ -365,7 +365,7 @@ bool ResolveCursorRegionLabel(void* area, const Vector& cursor,
 // micro-crossings on a room seam don't fire. World-speech-gated.
 void AnnounceCursorRegion(void* area, const Vector& cursor) {
     if (!area) {
-        g_state.region_pending_text[0]    = '\0';
+        g_state.region_pending_text.clear();
         g_state.region_pending_started_ms = 0;
         return;
     }
@@ -375,50 +375,40 @@ void AnnounceCursorRegion(void* area, const Vector& cursor) {
         return;
     }
 
-    char label[128] = {0};
+    std::string label;
     const char* source = "none";
-    bool resolved = ResolveCursorRegionLabel(area, cursor,
-                                             label, sizeof(label),
-                                             source);
-    if (!resolved || label[0] == '\0') {
-        g_state.region_pending_text[0]    = '\0';
+    bool resolved = ResolveCursorRegionLabel(area, cursor, label, source);
+    if (!resolved || label.empty()) {
+        g_state.region_pending_text.clear();
         g_state.region_pending_started_ms = 0;
         return;
     }
 
-    if (std::strncmp(label, g_state.region_last_spoken_text,
-                     sizeof(g_state.region_last_spoken_text)) == 0) {
+    if (label == g_state.region_last_spoken_text) {
         // Already announced — silent until a differently-labelled region.
-        g_state.region_pending_text[0]    = '\0';
+        g_state.region_pending_text.clear();
         g_state.region_pending_started_ms = 0;
         return;
     }
 
     DWORD now = GetTickCount();
-    if (std::strncmp(label, g_state.region_pending_text,
-                     sizeof(g_state.region_pending_text)) == 0 &&
+    if (label == g_state.region_pending_text &&
         g_state.region_pending_started_ms != 0) {
         if (now - g_state.region_pending_started_ms >= kHoverPauseMs) {
-            prism::SpeakUrgent(label);
-            std::strncpy(g_state.region_last_spoken_text, label,
-                         sizeof(g_state.region_last_spoken_text) - 1);
-            g_state.region_last_spoken_text[
-                sizeof(g_state.region_last_spoken_text) - 1] = '\0';
-            g_state.region_pending_text[0]    = '\0';
+            prism::SpeakUrgent(label.c_str());
+            g_state.region_last_spoken_text = label;
+            g_state.region_pending_text.clear();
             g_state.region_pending_started_ms = 0;
             acclog::Write("ViewMode",
                           "region speak src=%s text=\"%s\" cursor=(%.2f,%.2f,%.2f)",
-                          source, label,
+                          source, label.c_str(),
                           cursor.x, cursor.y, cursor.z);
         }
         return;
     }
 
     // New pending region — arm the timer.
-    std::strncpy(g_state.region_pending_text, label,
-                 sizeof(g_state.region_pending_text) - 1);
-    g_state.region_pending_text[
-        sizeof(g_state.region_pending_text) - 1] = '\0';
+    g_state.region_pending_text = label;
     g_state.region_pending_started_ms = now;
 }
 

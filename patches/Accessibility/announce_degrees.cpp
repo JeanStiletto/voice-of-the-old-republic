@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <string>
 
 #include "camera_announce.h"
 #include "engine_area.h"
@@ -10,6 +11,7 @@
 #include "engine_player.h"
 #include "hotkeys.h"
 #include "log.h"
+#include "strfmt.h"
 #include "strings.h"
 #include "prism.h"
 #include "transitions.h"
@@ -55,28 +57,26 @@ const char* SectorWord(int compassDegrees) {
 // labelled cluster (graph not built, out-of-snap, or open-area-only — too
 // vague to add value). Cluster source matches transitions.cpp so this
 // readout agrees with the last in-world cluster announcement.
-bool ResolveClusterLabelForPlayer(char* outBuf, size_t bufSize) {
-    if (!outBuf || bufSize < 2) return false;
-    outBuf[0] = '\0';
+bool ResolveClusterLabelForPlayer(std::string& outBuf) {
+    outBuf.clear();
 
     Vector pos;
     if (!acc::engine::GetPlayerPosition(pos)) return false;
     void* area = acc::engine::GetCurrentArea();
     if (!area) return false;
 
-    char buf[160] = {0};
+    std::string buf;
     int sig = 0;
     int cid = acc::wall_topology::kClusterIdNone;
-    if (!acc::wall_topology::LookupAt(area, pos, buf, sizeof(buf),
-                                      sig, cid)) {
+    if (!acc::wall_topology::LookupAt(area, pos, buf, sig, cid)) {
         return false;
     }
     if (cid == acc::wall_topology::kClusterIdNone ||
         cid == acc::wall_topology::kClusterIdOpenArea ||
-        buf[0] == '\0') {
+        buf.empty()) {
         return false;
     }
-    std::snprintf(outBuf, bufSize, "%s", buf);
+    outBuf = buf;
     return true;
 }
 
@@ -90,26 +90,26 @@ void OnAnnounceWorldDegrees() {
     int degrees    = CompassDegreesFromEngineYaw(engineYaw);
     const char* sector = SectorWord(degrees);
 
-    char clusterBuf[160];
-    bool haveCluster = ResolveClusterLabelForPlayer(clusterBuf,
-                                                    sizeof(clusterBuf));
+    std::string clusterBuf;
+    bool haveCluster = ResolveClusterLabelForPlayer(clusterBuf);
 
-    char msg[256];
+    std::string msg;
     if (haveCluster) {
-        std::snprintf(msg, sizeof(msg),
+        msg = acc::strfmt::Format(
             acc::strings::Get(acc::strings::Id::FmtWorldStateOriented),
-            sector, clusterBuf);
+            sector, clusterBuf.c_str());
     } else {
-        std::snprintf(msg, sizeof(msg),
+        msg = acc::strfmt::Format(
             acc::strings::Get(acc::strings::Id::FmtWorldStateUnknownCluster),
             sector);
     }
     // Normal priority — one-shot review key, no held-key cancel pressure
     // to bypass. Urgent SAPI would change voice for no benefit.
-    prism::Speak(msg, /*interrupt=*/true);
+    prism::Speak(msg.c_str(), /*interrupt=*/true);
     acclog::Write("AnnounceDegrees",
         "world -> [%s] (camYaw=%.1f, deg=%d, sector=\"%s\", cluster=\"%s\")",
-        msg, engineYaw, degrees, sector, haveCluster ? clusterBuf : "");
+        msg.c_str(), engineYaw, degrees, sector,
+        haveCluster ? clusterBuf.c_str() : "");
 }
 
 // Three-tier room name lookup matching transitions::Tick:

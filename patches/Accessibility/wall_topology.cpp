@@ -22,12 +22,14 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 #include "engine_area.h"        // AreaObjectIterator, GetObjectKind, GameObjectKind::Door, GetObjectPosition, kDoorTransitionDestOffset, SegmentCrossesWalkmesh
 #include "engine_navgraph.h"
 #include "engine_reads.h"       // ExtractTextOrStrRef — transition-destination loc-string read
 #include "log.h"
 #include "spatial_change_detector.h"  // GetCachedWalls — seam-filtered perimeter cache
+#include "strfmt.h"             // Format — heap-backed printf, never truncates announcements
 #include "strings.h"
 #include "transitions.h"        // IterateLandmarks + MarkLandmarkClaimedByDoor — landmark→door matching pass
 
@@ -340,7 +342,7 @@ struct AreaGraph {
     bool        built        = false;
     int         node_count   = 0;
     Vector      node_pos    [kMaxNodes];
-    char        node_label  [kMaxNodes][96];
+    std::string node_label  [kMaxNodes];
     int         node_sig    [kMaxNodes];
     int         node_kind   [kMaxNodes];  // see kKind* constants
     // Frozen UFFind root per node, snapshotted at the end of BuildForArea
@@ -1106,14 +1108,9 @@ EdgeResult ClassifyEdge(void* areaForDiag,
 //      Engine-derived cross-area destination text (e.g. "Taris -
 //      Südliche Oberstadt"). Used when no landmark is attached.
 //   3. bare door form → "%s %s" (FmtMapCursorDoor)
-void RenderDoorDirection(int doorIdx,
-                         const char* dirWord,
-                         char* outBuf, size_t bufSize) {
+std::string RenderDoorDirection(int doorIdx, const char* dirWord) {
     using acc::strings::Id;
-    if (!outBuf || bufSize == 0 || !dirWord || !dirWord[0]) {
-        if (outBuf && bufSize > 0) outBuf[0] = '\0';
-        return;
-    }
+    if (!dirWord || !dirWord[0]) return std::string();
     const char* landmark = "";
     const char* dest     = "";
     const char* locName  = "";
@@ -1142,24 +1139,15 @@ void RenderDoorDirection(int doorIdx,
 
     if (landmark && landmark[0] && !landmarkEqualsNoun) {
         const char* fmt = acc::strings::Get(Id::FmtMapCursorDoorLandmark);
-        if (fmt && fmt[0]) {
-            std::snprintf(outBuf, bufSize, fmt, noun, dirWord, landmark);
-            return;
-        }
+        if (fmt && fmt[0]) return acc::strfmt::Format(fmt, noun, dirWord, landmark);
     }
     if (dest && dest[0]) {
         const char* fmt = acc::strings::Get(Id::FmtMapCursorDoorTransition);
-        if (fmt && fmt[0]) {
-            std::snprintf(outBuf, bufSize, fmt, noun, dirWord, dest);
-            return;
-        }
+        if (fmt && fmt[0]) return acc::strfmt::Format(fmt, noun, dirWord, dest);
     }
     const char* fmt = acc::strings::Get(Id::FmtMapCursorDoor);
-    if (fmt && fmt[0]) {
-        std::snprintf(outBuf, bufSize, fmt, noun, dirWord);
-    } else {
-        std::snprintf(outBuf, bufSize, "%s %s", noun, dirWord);
-    }
+    if (fmt && fmt[0]) return acc::strfmt::Format(fmt, noun, dirWord);
+    return acc::strfmt::Format("%s %s", noun, dirWord);
 }
 
 // Render a corridor's axis label into outBuf. Branches by corridor
@@ -1179,12 +1167,9 @@ void RenderDoorDirection(int doorIdx,
 // When `doorIdx` >= 0 the picked label is wrapped via
 // RenderDoorDirection so corridors that pass through doors read as
 // "Tür <axis>" / "Tür <axis> nach <DEST>".
-void RenderCorridorAxis(int bitA, int bitB, int doorIdx,
-                        char* outBuf, size_t bufSize) {
+std::string RenderCorridorAxis(int bitA, int bitB, int doorIdx) {
     using acc::strings::Id;
-    if (!outBuf || bufSize == 0) return;
-    outBuf[0] = '\0';
-    if (bitA < 0 || bitB < 0 || bitA == bitB) return;
+    if (bitA < 0 || bitB < 0 || bitA == bitB) return std::string();
 
     if ((bitA ^ bitB) == 4) {
         Id wordId;
@@ -1199,15 +1184,11 @@ void RenderCorridorAxis(int bitA, int bitB, int doorIdx,
             wordId = BitToOctant(northBit);
         }
         const char* word = acc::strings::Get(wordId);
-        if (doorIdx >= 0 && word && word[0]) {
-            RenderDoorDirection(doorIdx, word, outBuf, bufSize);
-        } else {
-            const char* fmt = acc::strings::Get(Id::FmtMapCursorCorridorDir);
-            if (fmt && fmt[0] && word && word[0]) {
-                std::snprintf(outBuf, bufSize, fmt, word);
-            }
-        }
-        return;
+        if (!word || !word[0]) return std::string();
+        if (doorIdx >= 0) return RenderDoorDirection(doorIdx, word);
+        const char* fmt = acc::strings::Get(Id::FmtMapCursorCorridorDir);
+        if (fmt && fmt[0]) return acc::strfmt::Format(fmt, word);
+        return std::string();
     }
 
     // Non-opposite octants: render both endpoints. Order by
@@ -1224,19 +1205,14 @@ void RenderCorridorAxis(int bitA, int bitB, int doorIdx,
     }
     const char* wordA = acc::strings::Get(BitToOctant(first));
     const char* wordB = acc::strings::Get(BitToOctant(second));
-    if (!wordA || !wordA[0] || !wordB || !wordB[0]) return;
+    if (!wordA || !wordA[0] || !wordB || !wordB[0]) return std::string();
 
-    char combo[64];
-    std::snprintf(combo, sizeof(combo), "%s, %s", wordA, wordB);
+    std::string combo = acc::strfmt::Format("%s, %s", wordA, wordB);
 
-    if (doorIdx >= 0) {
-        RenderDoorDirection(doorIdx, combo, outBuf, bufSize);
-    } else {
-        const char* fmt = acc::strings::Get(Id::FmtMapCursorCorridorDir);
-        if (fmt && fmt[0]) {
-            std::snprintf(outBuf, bufSize, fmt, combo);
-        }
-    }
+    if (doorIdx >= 0) return RenderDoorDirection(doorIdx, combo.c_str());
+    const char* fmt = acc::strings::Get(Id::FmtMapCursorCorridorDir);
+    if (fmt && fmt[0]) return acc::strfmt::Format(fmt, combo.c_str());
+    return std::string();
 }
 
 // "Is this node a *real* dead-end the player can step into, or is it a
@@ -1295,46 +1271,30 @@ void UFUnite(int a, int b) {
     else         s_uf_parent[ra] = rb;
 }
 
-// Append one direction entry to `dirList`. When `markDeadEnd` is set,
-// the direction word is wrapped via FmtMapCursorJunctionDeadEndExit
-// ("Sackgasse %s") so the user knows that exit doesn't lead onward
-// (option 1 from the 2026-05-13 Dias-cluster discussion — junctions
-// whose edges include degree-1 stubs should call them out). Prefix
-// form mirrors the door rewrite ("Tür %s nach %s") so every special
-// exit reads NOUN-then-direction within the junction list.
-size_t AppendDirEntry(char* dirList, size_t bufSize, size_t dirLen,
-                      acc::strings::Id dirId, bool markDeadEnd) {
-    const char* word = acc::strings::Get(dirId);
-    if (!word || !word[0]) return dirLen;
+// Append `entry` to a comma-separated list string, inserting ", " before
+// it when the list is non-empty. No-op for empty entries.
+void AppendListEntry(std::string& list, const std::string& entry) {
+    if (entry.empty()) return;
+    if (!list.empty()) list += ", ";
+    list += entry;
+}
 
-    char entry[64];
+// Render one direction entry. When `markDeadEnd` is set, the direction
+// word is wrapped via FmtMapCursorJunctionDeadEndExit ("Sackgasse %s") so
+// the user knows that exit doesn't lead onward (option 1 from the
+// 2026-05-13 Dias-cluster discussion — junctions whose edges include
+// degree-1 stubs should call them out). Prefix form mirrors the door
+// rewrite ("Tür %s nach %s") so every special exit reads NOUN-then-
+// direction within the junction list.
+std::string DirEntry(acc::strings::Id dirId, bool markDeadEnd) {
+    const char* word = acc::strings::Get(dirId);
+    if (!word || !word[0]) return std::string();
     if (markDeadEnd) {
         const char* fmt = acc::strings::Get(
             acc::strings::Id::FmtMapCursorJunctionDeadEndExit);
-        if (fmt && fmt[0]) {
-            std::snprintf(entry, sizeof(entry), fmt, word);
-        } else {
-            std::snprintf(entry, sizeof(entry), "%s", word);
-        }
-    } else {
-        std::snprintf(entry, sizeof(entry), "%s", word);
+        if (fmt && fmt[0]) return acc::strfmt::Format(fmt, word);
     }
-
-    if (dirLen > 0 && dirLen + 2 < bufSize) {
-        dirList[dirLen++] = ',';
-        dirList[dirLen++] = ' ';
-        dirList[dirLen]   = '\0';
-    }
-    size_t remaining = bufSize > dirLen ? bufSize - dirLen : 0;
-    if (remaining == 0) return dirLen;
-    int n = std::snprintf(dirList + dirLen, remaining, "%s", entry);
-    if (n > 0) {
-        size_t advanced = static_cast<size_t>(n) < remaining
-                              ? static_cast<size_t>(n)
-                              : (remaining > 0 ? remaining - 1 : 0);
-        dirLen += advanced;
-    }
-    return dirLen;
+    return std::string(word);
 }
 
 // Long-axis test for an area cluster. Probes 8 rays at the cluster
@@ -1407,15 +1367,14 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
                      const int* externalDoorIdx,
                      int externalCount,
                      int areaHint, float centroidFloorZ,
-                     char* outLabel, size_t outLabelSize,
+                     std::string& outLabel,
                      int& outKind, int& outSig,
                      bool& outFiltered) {
     using acc::strings::Id;
-    if (outLabelSize > 0) outLabel[0] = '\0';
+    outLabel.clear();
     outKind = kKindOpenArea;
     outSig  = kKindOpenArea;
     outFiltered = false;
-    if (outLabelSize == 0) return;
     int n = static_cast<int>(g.nodes.size());
 
     // Area path: probe-owned merged spaces (open / room / merged big
@@ -1446,8 +1405,7 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
             if (realExit) octHas[bit] = true;
         }
 
-        char dirList[96] = {0};
-        size_t dirLen = 0;
+        std::string dirList;
         int mask = 0;
         for (int idx = 0; idx < 8; ++idx) {
             int bit = kOctantEmitOrder[idx];
@@ -1456,21 +1414,10 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
             Id dirId = BitToOctant(bit);
             const char* dirWord = acc::strings::Get(dirId);
             if (octDoor[bit] >= 0 && dirWord && dirWord[0]) {
-                char doorEntry[96];
-                RenderDoorDirection(octDoor[bit], dirWord,
-                                    doorEntry, sizeof(doorEntry));
-                if (dirLen > 0 && dirLen + 2 < sizeof(dirList)) {
-                    dirList[dirLen++] = ',';
-                    dirList[dirLen++] = ' ';
-                    dirList[dirLen]   = '\0';
-                }
-                size_t rem = sizeof(dirList) - dirLen;
-                int wr = std::snprintf(dirList + dirLen, rem, "%s", doorEntry);
-                if (wr > 0) dirLen += (static_cast<size_t>(wr) < rem)
-                                          ? static_cast<size_t>(wr) : rem - 1;
+                AppendListEntry(dirList,
+                                RenderDoorDirection(octDoor[bit], dirWord));
             } else {
-                dirLen = AppendDirEntry(dirList, sizeof(dirList), dirLen,
-                                        dirId, /*markDeadEnd=*/false);
+                AppendListEntry(dirList, DirEntry(dirId, /*markDeadEnd=*/false));
             }
         }
 
@@ -1479,20 +1426,19 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
         const char* noun  = acc::strings::Get(Id::AreaNoun);
         const char* axisW = elong ? acc::strings::Get(axisId) : nullptr;
         if (!noun || !noun[0]) noun = "Bereich";
-        if (elong && axisW && axisW[0] && dirList[0]) {
+        if (elong && axisW && axisW[0] && !dirList.empty()) {
             const char* fmt = acc::strings::Get(Id::FmtAreaAxisExits);
-            if (fmt && fmt[0]) std::snprintf(outLabel, outLabelSize, fmt,
-                                             noun, axisW, dirList);
-        } else if (dirList[0]) {
+            if (fmt && fmt[0]) outLabel = acc::strfmt::Format(fmt, noun, axisW,
+                                                              dirList.c_str());
+        } else if (!dirList.empty()) {
             const char* fmt = acc::strings::Get(Id::FmtAreaExits);
-            if (fmt && fmt[0]) std::snprintf(outLabel, outLabelSize, fmt,
-                                             noun, dirList);
+            if (fmt && fmt[0]) outLabel = acc::strfmt::Format(fmt, noun,
+                                                              dirList.c_str());
         } else if (elong && axisW && axisW[0]) {
             const char* fmt = acc::strings::Get(Id::FmtAreaAxisOnly);
-            if (fmt && fmt[0]) std::snprintf(outLabel, outLabelSize, fmt,
-                                             noun, axisW);
+            if (fmt && fmt[0]) outLabel = acc::strfmt::Format(fmt, noun, axisW);
         } else {
-            std::snprintf(outLabel, outLabelSize, "%s", noun);
+            outLabel = noun;
         }
         outKind = (areaHint == 1) ? kKindRoom : kKindPlatz;
         outSig  = (outKind & 0xff) | ((mask & 0xff) << 8);
@@ -1501,7 +1447,7 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
 
     if (externalCount == 0) {
         const char* s = acc::strings::Get(Id::MapCursorOpenArea);
-        if (s && s[0]) std::snprintf(outLabel, outLabelSize, "%s", s);
+        if (s && s[0]) outLabel = s;
         return;
     }
     if (externalCount == 1) {
@@ -1548,18 +1494,19 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
         // running parallel checks here.
         int doorIdx = externalDoorIdx ? externalDoorIdx[0] : -1;
         if (doorIdx >= 0 && word && word[0]) {
-            RenderDoorDirection(doorIdx, word, outLabel, outLabelSize);
+            outLabel = RenderDoorDirection(doorIdx, word);
             if (gateAgrees) {
                 acclog::Write(
                     "WallTopo",
                     "ClassifyCluster: degree-1 at (%.1f,%.1f,%.1f) HIT door "
                     "idx=%d on edge → \"%s\"",
-                    centroid.x, centroid.y, centroid.z, doorIdx, outLabel);
+                    centroid.x, centroid.y, centroid.z, doorIdx,
+                    outLabel.c_str());
             }
         } else {
             const char* fmt  = acc::strings::Get(Id::FmtMapCursorDeadEnd);
             if (fmt && fmt[0] && word && word[0]) {
-                std::snprintf(outLabel, outLabelSize, fmt, word);
+                outLabel = acc::strfmt::Format(fmt, word);
             }
         }
         outKind = kKindDeadEnd;
@@ -1591,13 +1538,13 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
         if (doorIdx < 0) {
             doorIdx = FindDoorOnEdge(g.nodes[nbA].pos, g.nodes[nbB].pos);
         }
-        RenderCorridorAxis(bitA, bitB, doorIdx, outLabel, outLabelSize);
+        outLabel = RenderCorridorAxis(bitA, bitB, doorIdx);
         if (doorIdx >= 0) {
             acclog::Write(
                 "WallTopo",
                 "ClassifyCluster: degree-2 corridor at (%.1f,%.1f,%.1f) "
                 "HIT door idx=%d on segment → \"%s\"",
-                centroid.x, centroid.y, centroid.z, doorIdx, outLabel);
+                centroid.x, centroid.y, centroid.z, doorIdx, outLabel.c_str());
         }
         outKind = kKindCorridor;
         int sigBit = (bitA < bitB) ? bitA : bitB;
@@ -1734,12 +1681,12 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
         Id dirId = BitToOctant(bit);
         const char* dirWord = acc::strings::Get(dirId);
         if (octantDoorIdx[bit] >= 0) {
-            RenderDoorDirection(octantDoorIdx[bit], dirWord ? dirWord : "",
-                                outLabel, outLabelSize);
+            outLabel = RenderDoorDirection(octantDoorIdx[bit],
+                                           dirWord ? dirWord : "");
         } else {
             const char* fmt = acc::strings::Get(Id::FmtMapCursorDeadEnd);
             if (fmt && fmt[0] && dirWord && dirWord[0]) {
-                std::snprintf(outLabel, outLabelSize, fmt, dirWord);
+                outLabel = acc::strfmt::Format(fmt, dirWord);
             }
         }
         outKind = kKindDeadEnd;
@@ -1748,7 +1695,7 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
             "WallTopo",
             "ClassifyCluster: junction at (%.1f,%.1f) DEMOTED to Sackgasse "
             "(real-exits=1) → \"%s\"",
-            centroid.x, centroid.y, outLabel);
+            centroid.x, centroid.y, outLabel.c_str());
         return;
     }
 
@@ -1758,7 +1705,7 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
         int doorIdx = (firstDoorBit >= 0)
                           ? octantDoorIdx[firstDoorBit]
                           : -1;
-        RenderCorridorAxis(bitA, bitB, doorIdx, outLabel, outLabelSize);
+        outLabel = RenderCorridorAxis(bitA, bitB, doorIdx);
         outKind = kKindCorridor;
         int sigBitLo = (bitA < bitB) ? bitA : bitB;
         int sigBitHi = (bitA < bitB) ? bitB : bitA;
@@ -1769,15 +1716,14 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
             "WallTopo",
             "ClassifyCluster: junction at (%.1f,%.1f) DEMOTED to Korridor "
             "(real-exits=2, octants=%d+%d) → \"%s\"",
-            centroid.x, centroid.y, bitA, bitB, outLabel);
+            centroid.x, centroid.y, bitA, bitB, outLabel.c_str());
         return;
     }
 
     // Second pass: emit octants in canonical order (N, NE, E, SE, S,
     // SW, W, NW). Stable across runs; matches the way a compass-oriented
     // player scans for exits clockwise.
-    char dirList[96] = {0};
-    size_t dirLen = 0;
+    std::string dirList;
     int mask = 0;
     int deadEndMask = 0;
     for (int idx = 0; idx < 8; ++idx) {
@@ -1795,31 +1741,15 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
         if (octantDoorIdx[bit] >= 0) {
             const char* dirWord = acc::strings::Get(dirId);
             if (dirWord && dirWord[0]) {
-                char doorEntry[96];
-                RenderDoorDirection(octantDoorIdx[bit], dirWord,
-                                    doorEntry, sizeof(doorEntry));
-                if (dirLen > 0 && dirLen + 2 < sizeof(dirList)) {
-                    dirList[dirLen++] = ',';
-                    dirList[dirLen++] = ' ';
-                    dirList[dirLen]   = '\0';
-                }
-                size_t remaining = sizeof(dirList) - dirLen;
-                int written = std::snprintf(dirList + dirLen, remaining,
-                                            "%s", doorEntry);
-                if (written > 0) {
-                    size_t adv = static_cast<size_t>(written) < remaining
-                                     ? static_cast<size_t>(written)
-                                     : (remaining > 0 ? remaining - 1 : 0);
-                    dirLen += adv;
-                }
+                AppendListEntry(dirList,
+                                RenderDoorDirection(octantDoorIdx[bit], dirWord));
             }
             continue;
         }
 
         bool markDeadEnd = octantAllDeadEnd[bit];
         if (markDeadEnd) deadEndMask |= (1 << bit);
-        dirLen = AppendDirEntry(dirList, sizeof(dirList), dirLen,
-                                dirId, markDeadEnd);
+        AppendListEntry(dirList, DirEntry(dirId, markDeadEnd));
     }
 
     bool isPlatz = clusterSize > 1;
@@ -1828,12 +1758,12 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
     int kind = isPlatz ? kKindPlatz : kKindJunction;
 
     const char* fmt = acc::strings::Get(fmtId);
-    if (fmt && fmt[0] && dirList[0] != '\0') {
-        std::snprintf(outLabel, outLabelSize, fmt, dirList);
+    if (fmt && fmt[0] && !dirList.empty()) {
+        outLabel = acc::strfmt::Format(fmt, dirList.c_str());
     } else {
         const char* bare = acc::strings::Get(Id::MapCursorJunction);
         if (bare && bare[0]) {
-            std::snprintf(outLabel, outLabelSize, "%s", bare);
+            outLabel = bare;
         }
     }
     outKind = kind;
@@ -2040,7 +1970,7 @@ void BuildForArea(void* area) {
     g_graph.node_count = n;
     for (int i = 0; i < n; ++i) {
         g_graph.node_pos[i]        = g.nodes[i].pos;
-        g_graph.node_label[i][0]   = '\0';
+        g_graph.node_label[i].clear();
         g_graph.node_sig[i]        = 0;
         g_graph.node_kind[i]       = kKindOpenArea;
         g_graph.node_cluster_id[i] = kClusterIdNone;
@@ -2883,13 +2813,13 @@ void BuildForArea(void* area) {
                       (size > 1 && (hasRoom || externalCount >= 3));
         if (isArea) areaHint = (hasRoom && !hasOpen) ? 1 : 2;
 
-        char label[96] = {0};
+        std::string label;
         int kind = kKindOpenArea, sig = 0;
         bool filtered = false;
         ClassifyCluster(g, centroid, size, externalNbs, externalSrcs,
                         externalDoorIdx, externalCount,
                         areaHint, centroidFloorZ,
-                        label, sizeof(label), kind, sig, filtered);
+                        label, kind, sig, filtered);
 
         switch (kind) {
             case kKindDeadEnd:  ++deadEnds;  break;
@@ -2903,9 +2833,7 @@ void BuildForArea(void* area) {
         // Write to every cluster member.
         for (int m = 0; m < n; ++m) {
             if (UFFind(m) != root) continue;
-            std::strncpy(g_graph.node_label[m], label,
-                         sizeof(g_graph.node_label[m]) - 1);
-            g_graph.node_label[m][sizeof(g_graph.node_label[m]) - 1] = '\0';
+            g_graph.node_label[m]    = label;
             g_graph.node_kind[m]     = kind;
             g_graph.node_sig[m]      = sig;
             g_graph.node_filtered[m] = filtered;
@@ -2967,7 +2895,7 @@ void BuildForArea(void* area) {
         if (size < 2) continue;
         acclog::Write("WallTopo",
                       "  cluster[%d] size=%d label=\"%s\"",
-                      root, size, g_graph.node_label[root]);
+                      root, size, g_graph.node_label[root].c_str());
         for (int m = 0; m < n; ++m) {
             if (UFFind(m) != root) continue;
             int lo = 0, hi = 0;
@@ -3028,16 +2956,16 @@ void DumpGraphToLog() {
                       "pos=(%.1f,%.1f,%.1f) label=\"%s\"",
                       i, root, g_graph.node_kind[i], g_graph.node_sig[i],
                       g_graph.node_pos[i].x, g_graph.node_pos[i].y,
-                      g_graph.node_pos[i].z, g_graph.node_label[i]);
+                      g_graph.node_pos[i].z, g_graph.node_label[i].c_str());
     }
 }
 
 bool LookupAt(void* area, const Vector& worldPos,
-              char* outBuf, size_t bufSize, int& outSig,
+              std::string& outLabel, int& outSig,
               int& outClusterId,
               bool allowDiagLog,
               bool requireWallReachable) {
-    if (outBuf && bufSize > 0) outBuf[0] = '\0';
+    outLabel.clear();
     outSig = 0;
     outClusterId = kClusterIdNone;
     if (!HasGraphForArea(area)) return false;
@@ -3084,7 +3012,7 @@ bool LookupAt(void* area, const Vector& worldPos,
     float bestBlockedSq  = 1e30f;
     int   blockedSeen    = 0;
     for (int i = 0; i < g_graph.node_count; ++i) {
-        if (g_graph.node_label[i][0] == '\0') continue;
+        if (g_graph.node_label[i].empty()) continue;
         float dx = g_graph.node_pos[i].x - worldPos.x;
         float dy = g_graph.node_pos[i].y - worldPos.y;
         float d2 = dx * dx + dy * dy;
@@ -3142,12 +3070,12 @@ bool LookupAt(void* area, const Vector& worldPos,
             bestBlocked,
             g_graph.node_pos[bestBlocked].x,
             g_graph.node_pos[bestBlocked].y,
-            g_graph.node_label[bestBlocked],
+            g_graph.node_label[bestBlocked].c_str(),
             bDist,
             best,
             best >= 0 ? g_graph.node_pos[best].x : 0.0f,
             best >= 0 ? g_graph.node_pos[best].y : 0.0f,
-            best >= 0 ? g_graph.node_label[best] : "(none)",
+            best >= 0 ? g_graph.node_label[best].c_str() : "(none)",
             pDist,
             blockedSeen);
     }
@@ -3167,8 +3095,8 @@ bool LookupAt(void* area, const Vector& worldPos,
     if (best >= 0) {
         float bestDist = std::sqrt(bestSq);
         if (bestDist <= kMaxSnapM &&
-            g_graph.node_label[best][0] != '\0') {
-            std::snprintf(outBuf, bufSize, "%s", g_graph.node_label[best]);
+            !g_graph.node_label[best].empty()) {
+            outLabel     = g_graph.node_label[best];
             outSig       = g_graph.node_sig[best];
             outClusterId = g_graph.node_cluster_id[best];
             return true;
@@ -3184,7 +3112,7 @@ bool LookupAt(void* area, const Vector& worldPos,
     if (bestFiltered >= 0) {
         float fDist = std::sqrt(bestFilteredSq);
         if (fDist <= kMaxSnapM &&
-            g_graph.node_label[bestFiltered][0] != '\0') {
+            !g_graph.node_label[bestFiltered].empty()) {
             if (allowDiagLog) {
                 float pDist = best >= 0 ? std::sqrt(bestSq) : -1.0f;
                 acclog::Write(
@@ -3197,11 +3125,10 @@ bool LookupAt(void* area, const Vector& worldPos,
                     bestFiltered,
                     g_graph.node_pos[bestFiltered].x,
                     g_graph.node_pos[bestFiltered].y,
-                    g_graph.node_label[bestFiltered],
+                    g_graph.node_label[bestFiltered].c_str(),
                     fDist);
             }
-            std::snprintf(outBuf, bufSize, "%s",
-                          g_graph.node_label[bestFiltered]);
+            outLabel     = g_graph.node_label[bestFiltered];
             outSig       = g_graph.node_sig[bestFiltered];
             outClusterId = g_graph.node_cluster_id[bestFiltered];
             return true;
@@ -3217,7 +3144,7 @@ bool LookupAt(void* area, const Vector& worldPos,
     const char* fallback =
         acc::strings::Get(acc::strings::Id::AreaNoun);
     if (fallback && fallback[0]) {
-        std::snprintf(outBuf, bufSize, "%s", fallback);
+        outLabel = fallback;
         outSig = kKindOpenArea & 0xff;
         outClusterId = kClusterIdOpenArea;
         return true;

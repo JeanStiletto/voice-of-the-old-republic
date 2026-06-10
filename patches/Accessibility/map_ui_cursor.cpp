@@ -14,6 +14,8 @@
 #include <windows.h>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
+#include <string>
 
 #include "audio_bus.h"
 #include "audio_cue_player.h"
@@ -198,7 +200,7 @@ struct CursorState {
     // them as distinct and re-announces on every crossing. Storing
     // the last-spoken text and comparing case-sensitively collapses
     // those into one logical region — same text, no re-announce.
-    char        last_spoken_ambient_text[128] = {0};
+    std::string last_spoken_ambient_text;
 
     // TerrainShape speak buffer: the cluster's description is built at
     // probe time (when we arm the hover-pause), cached on the pending
@@ -207,7 +209,7 @@ struct CursorState {
     // across the cluster's footprint — capturing it once at arm is
     // sufficient. Identity / dedup lives in pending_ambient_room_idx
     // (cluster id for TerrainShape, see comment above).
-    char        pending_shape_text[128]      = {0};
+    std::string pending_shape_text;
 };
 
 CursorState g_state;
@@ -523,8 +525,8 @@ void ResetSessionState() {
     g_state.pending_ambient_started_ms    = 0;
     g_state.last_spoken_ambient_kind      = AmbientKind::None;
     g_state.last_spoken_ambient_room_idx  = -1;
-    g_state.last_spoken_ambient_text[0]   = '\0';
-    g_state.pending_shape_text[0]         = '\0';
+    g_state.last_spoken_ambient_text.clear();
+    g_state.pending_shape_text.clear();
 }
 
 const char* AmbientKindStr(AmbientKind k) {
@@ -544,39 +546,42 @@ const char* AmbientKindStr(AmbientKind k) {
 // hover-pause speak pass uses the stashed pending_shape_text so the
 // rendered label stays stable across the arm→speak window.
 // Returns true iff outBuf got a non-empty string.
-bool ResolveAmbientText(AmbientKind kind, int roomIdx,
-                        const char* landmarkBuf,
-                        const char* shapeText,
-                        char* outBuf, size_t bufSize) {
-    if (!outBuf || bufSize == 0) return false;
-    outBuf[0] = '\0';
+std::string ResolveAmbientText(AmbientKind kind, int roomIdx,
+                               const char* landmarkBuf,
+                               const char* shapeText) {
     switch (kind) {
         case AmbientKind::Unexplored: {
             const char* t = acc::strings::Get(
                 acc::strings::Id::MapCursorUnexplored);
-            if (t) std::snprintf(outBuf, bufSize, "%s", t);
+            if (t) return std::string(t);
             break;
         }
         case AmbientKind::Landmark:
             if (landmarkBuf && landmarkBuf[0] != '\0') {
-                std::snprintf(outBuf, bufSize, "%s", landmarkBuf);
+                return std::string(landmarkBuf);
             }
             break;
         case AmbientKind::RoomName: {
             void* a = acc::engine::GetCurrentArea();
-            if (a) acc::engine::GetRoomDisplayName(a, roomIdx,
-                                                   outBuf, bufSize);
+            if (a) {
+                // GetRoomDisplayName needs a char sink; room names are
+                // short authored strings, so a local buffer is fine here.
+                char roomTmp[160] = {0};
+                acc::engine::GetRoomDisplayName(a, roomIdx,
+                                                roomTmp, sizeof(roomTmp));
+                return std::string(roomTmp);
+            }
             break;
         }
         case AmbientKind::TerrainShape:
             if (shapeText && shapeText[0] != '\0') {
-                std::snprintf(outBuf, bufSize, "%s", shapeText);
+                return std::string(shapeText);
             }
             break;
         case AmbientKind::None:
             break;
     }
-    return outBuf[0] != '\0';
+    return std::string();
 }
 
 
@@ -641,7 +646,7 @@ void PanToWorld(const Vector& world, void* suppressWaypoint) {
     g_state.pending_ambient_kind       = AmbientKind::None;
     g_state.pending_ambient_room_idx   = -1;
     g_state.pending_ambient_started_ms = 0;
-    g_state.pending_shape_text[0]      = '\0';
+    g_state.pending_shape_text.clear();
 
     // Waypoint landing — latch as already-spoken so the cursor stays
     // silent on this pin until the user pans away and back. Non-
@@ -654,7 +659,7 @@ void PanToWorld(const Vector& world, void* suppressWaypoint) {
     }
     g_state.last_spoken_ambient_kind     = AmbientKind::None;
     g_state.last_spoken_ambient_room_idx = -1;
-    g_state.last_spoken_ambient_text[0]  = '\0';
+    g_state.last_spoken_ambient_text.clear();
 
     acclog::Write("MapCursor",
                   "pan to=(%.2f,%.2f) pixel=(%.1f,%.1f) "
@@ -857,7 +862,7 @@ void Tick() {
     // Fog-of-war gate applied first — never expose a shape label for a
     // cell the player hasn't revealed.
     bool cursorExplored = acc::engine::IsWorldPointExplored(areaMap, g_state.world);
-    char shapeTextLocal[128] = {0};
+    std::string shapeTextLocal;
     int  shapeSigLocal  = 0;
     int  shapeClusterId = acc::wall_topology::kClusterIdNone;
     bool haveShape = false;
@@ -866,7 +871,7 @@ void Tick() {
         if (areaForRoom) {
             haveShape = acc::wall_topology::LookupAt(
                 areaForRoom, g_state.world,
-                shapeTextLocal, sizeof(shapeTextLocal),
+                shapeTextLocal,
                 shapeSigLocal, shapeClusterId,
                 /*allowDiagLog=*/false,
                 /*requireWallReachable=*/false);
@@ -884,7 +889,7 @@ void Tick() {
         g_state.pending_ambient_kind       = AmbientKind::None;
         g_state.pending_ambient_room_idx   = -1;
         g_state.pending_ambient_started_ms = 0;
-        g_state.pending_shape_text[0]      = '\0';
+        g_state.pending_shape_text.clear();
 
         if (hit == g_state.last_spoken_waypoint) {
             // Already spoken — keep silence.
@@ -933,24 +938,22 @@ void Tick() {
                     // Append the surrounding terrain shape when we have
                     // one — landmark/POI first, shape second, separated
                     // by ". " so screen readers parse two sentences.
-                    char combined[384];
-                    const char* speakStr = text;
-                    if (haveShape && shapeTextLocal[0] != '\0') {
-                        std::snprintf(combined, sizeof(combined),
-                                      "%s. %s", text, shapeTextLocal);
-                        speakStr = combined;
+                    std::string combined = text;
+                    if (haveShape && !shapeTextLocal.empty()) {
+                        combined += ". ";
+                        combined += shapeTextLocal;
                     }
                     // Routed via the SAPI urgent channel — survives the
                     // typed-character cancellation that the NORMAL screen-
                     // reader path suffers from while WASD is held.
-                    prism::SpeakUrgent(speakStr);
+                    prism::SpeakUrgent(combined.c_str());
                     acclog::Write("MapCursor",
                                   "speak %s=\"%s\" tag=\"%s\" "
                                   "shape=\"%s\" haveText=%d "
                                   "cursor=(%.1f,%.1f)",
                                   kindIsPin ? "pin" : "note",
                                   text, haveTag ? tagBuf : "",
-                                  haveShape ? shapeTextLocal : "",
+                                  haveShape ? shapeTextLocal.c_str() : "",
                                   (int)haveText,
                                   g_state.px, g_state.py);
                 }
@@ -965,7 +968,7 @@ void Tick() {
                 // counts as an "intervening event" that re-arms ambient).
                 g_state.last_spoken_ambient_kind     = AmbientKind::None;
                 g_state.last_spoken_ambient_room_idx = -1;
-                g_state.last_spoken_ambient_text[0]  = '\0';
+                g_state.last_spoken_ambient_text.clear();
             }
         } else {
             g_state.pending_note_waypoint   = hit;
@@ -1073,10 +1076,9 @@ void Tick() {
         // resolve it later). TerrainShape uses this frame's freshly-built
         // shapeTextLocal — what the dedup compares against, not what we
         // eventually speak (that uses the stashed pending_shape_text).
-        char currentAmbientText[128] = {0};
-        ResolveAmbientText(currentKind, currentRoomIdx, currentLandmarkBuf,
-                           shapeTextLocal,
-                           currentAmbientText, sizeof(currentAmbientText));
+        std::string currentAmbientText = ResolveAmbientText(
+            currentKind, currentRoomIdx, currentLandmarkBuf,
+            shapeTextLocal.c_str());
 
         // Dedup overlay: text-equality OR (kind, key) equality.
         // The text path collapses adjacent regions whose labels happen
@@ -1087,9 +1089,8 @@ void Tick() {
         bool sameAsLastSpoken =
             currentKind == g_state.last_spoken_ambient_kind &&
             (classifyKey == g_state.last_spoken_ambient_room_idx ||
-             (currentAmbientText[0] != '\0' &&
-              strcmp(currentAmbientText,
-                     g_state.last_spoken_ambient_text) == 0));
+             (!currentAmbientText.empty() &&
+              currentAmbientText == g_state.last_spoken_ambient_text));
         // Strict (kind, key) match for the pending side too — the old
         // TerrainShape special-case (kind-only) existed to survive
         // per-pixel sig drift inside curved corridors. With cluster id
@@ -1113,8 +1114,8 @@ void Tick() {
             g_state.pending_ambient_started_ms   = 0;
             g_state.last_spoken_ambient_kind     = AmbientKind::None;
             g_state.last_spoken_ambient_room_idx = -1;
-            g_state.last_spoken_ambient_text[0]  = '\0';
-            g_state.pending_shape_text[0]        = '\0';
+            g_state.last_spoken_ambient_text.clear();
+            g_state.pending_shape_text.clear();
         } else if (sameAsLastSpoken) {
             // Already announced this exact ambient zone; stay silent
             // until something else interrupts (waypoint, different
@@ -1135,48 +1136,42 @@ void Tick() {
                 // lifetime is tick-local. TerrainShape uses the stashed
                 // pending_shape_text so the rendered label matches what
                 // armed the timer, not whatever the probe sees now.
-                char speakBuf[128];
-                const char* text = ResolveAmbientText(
+                std::string text = ResolveAmbientText(
                     currentKind, currentRoomIdx, currentLandmarkBuf,
-                    g_state.pending_shape_text,
-                    speakBuf, sizeof(speakBuf)) ? speakBuf : nullptr;
-                if (text && text[0] != '\0') {
+                    g_state.pending_shape_text.c_str());
+                if (!text.empty()) {
                     // Append the shape tail when the primary tier is
                     // Landmark or RoomName (the user explicitly wanted
                     // both spoken — landmark/room first, then shape).
                     // For TerrainShape pure the primary text IS the
                     // shape; for Unexplored we never expose layout.
-                    char combined[384];
-                    const char* speakStr = text;
-                    if (haveShape && shapeTextLocal[0] != '\0' &&
+                    std::string speakStr = text;
+                    if (haveShape && !shapeTextLocal.empty() &&
                         (currentKind == AmbientKind::Landmark ||
                          currentKind == AmbientKind::RoomName)) {
-                        std::snprintf(combined, sizeof(combined),
-                                      "%s. %s", text, shapeTextLocal);
-                        speakStr = combined;
+                        speakStr += ". ";
+                        speakStr += shapeTextLocal;
                     }
                     // Same Prism+SAPI urgent path the waypoint announce
                     // uses — survives NVDA's typed-character cancel
                     // while the user holds WASD.
-                    prism::SpeakUrgent(speakStr);
+                    prism::SpeakUrgent(speakStr.c_str());
                     acclog::Write("MapCursor",
                                   "speak ambient kind=%s key=%d "
                                   "text=\"%s\" shape=\"%s\" "
                                   "cursor=(%.1f,%.1f)",
                                   AmbientKindStr(currentKind),
-                                  classifyKey, text,
-                                  haveShape ? shapeTextLocal : "",
+                                  classifyKey, text.c_str(),
+                                  haveShape ? shapeTextLocal.c_str() : "",
                                   g_state.px, g_state.py);
                 }
                 g_state.last_spoken_ambient_kind     = currentKind;
                 g_state.last_spoken_ambient_room_idx = classifyKey;
-                std::snprintf(g_state.last_spoken_ambient_text,
-                              sizeof(g_state.last_spoken_ambient_text),
-                              "%s", currentAmbientText);
+                g_state.last_spoken_ambient_text     = currentAmbientText;
                 g_state.pending_ambient_kind         = AmbientKind::None;
                 g_state.pending_ambient_room_idx     = -1;
                 g_state.pending_ambient_started_ms   = 0;
-                g_state.pending_shape_text[0]        = '\0';
+                g_state.pending_shape_text.clear();
             }
         } else {
             // New ambient category (or new room within Landmark/RoomName,
@@ -1187,11 +1182,9 @@ void Tick() {
             g_state.pending_ambient_room_idx   = classifyKey;
             g_state.pending_ambient_started_ms = now;
             if (currentKind == AmbientKind::TerrainShape) {
-                std::snprintf(g_state.pending_shape_text,
-                              sizeof(g_state.pending_shape_text),
-                              "%s", shapeTextLocal);
+                g_state.pending_shape_text = shapeTextLocal;
             } else {
-                g_state.pending_shape_text[0] = '\0';
+                g_state.pending_shape_text.clear();
             }
         }
     }
