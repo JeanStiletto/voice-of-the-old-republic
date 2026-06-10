@@ -141,11 +141,25 @@ constexpr int kMaxNodes = acc::engine::navgraph::kMaxNodes;
 // case where the nav graph is sparse. Tune from log evidence.
 constexpr float kMaxSnapM = 15.0f;
 
-// Junction-merge thresholds. Two directly-connected nav-graph nodes
-// that are both degree-≥3 and pass these gates are merged into one
-// composite cluster: the cluster's announce describes the union of
-// their external exits, computed from the centroid of the cluster
-// members. K1 places nav-graph nodes densely around hub areas (Dias
+// Clustering runs in two passes (see BuildForArea). The old six merge
+// passes were two operations wearing six coats, so they fold to:
+//   Pass 1 — core merge: ONE nav-edge walk that unions a clear, door-free
+//            edge whose endpoints share a kind of space. Four rules:
+//            junction (both degree-≥3), room (both room-class), open (both
+//            open-class), corridor (both straight degree-2). The old
+//            junction / room-coalesce / open-coalesce / corridor-chain
+//            passes are these four rules.
+//   Pass 2 — straggler absorb: fold a degree-≤2 corner/spoke that matched
+//            no core rule into an adjacent core (graph-adjacent, or bbox-
+//            contained for graph-unattached nodes). The old hub + bbox
+//            absorption passes.
+// The constants below are the gates, tagged by the rule that uses them.
+//
+// Pass 1 / junction rule — distance + z gates. Two directly-connected
+// nav-graph nodes that are both degree-≥3 and pass these gates merge into
+// one composite cluster: the announce describes the union of their
+// external exits from the cluster centroid. K1 places nav-graph nodes
+// densely around hub areas (Dias
 // Apartment at Taris Apartments has 2 junctions 6m apart, both reading
 // as Kreuzung in sequence); merging collapses these to one perceptual
 // "hub" announce.
@@ -163,27 +177,21 @@ constexpr float kMergeMaxZM        = 1.0f;
 // enclosed room"; the clearance probe now measures room-shape directly
 // and the room-coalesce pass replaces it. See kRoomMergeRadiusM.)
 
-// Hub absorption (Pass 1c): degree-≤2 spokes hanging off a multi-node
-// hub cluster (Pass 1 / 1b output) absorb into the hub. Targets the
-// K1 "two-hub star" small-room pattern: Endar Spire quarters has two
-// deg-4 nodes already merged into one cluster, but 5 surrounding
-// degree-1/2 patrol spokes label independently, producing 5 different
-// shape readings as the player walks. Absorbing the spokes folds the
-// whole room into one cluster with one label.
-//
-// Safety relies on three gates:
-//   - the target cluster must already be multi-node (size ≥ 2 in the
-//     pre-absorption snapshot) — singleton T-junctions don't trigger
-//     absorption, which would eat the corridor arms entering them;
-//   - distance ≤ kHubAbsorptionRadiusM — keeps absorption local;
-//   - no door on the spoke→hub edge — preserves authored room boundaries.
-//
-// R = 7m: covers the bedroom's furthest spoke distance (node 11 sits
-// 6.35m from node 10 in Endar Spire quarters). Tighter risks losing
-// long spokes; looser risks eating short corridor entries.
-constexpr float kHubAbsorptionRadiusM = 7.0f;
+// Pass 2 / straggler absorb — folds a degree-≤2 corner/spoke into an
+// adjacent multi-node core (the merged successor of the old hub + bbox
+// absorption passes). It targets the K1 "two-hub star" small-room pattern
+// (Endar Spire quarters: two deg-4 nodes merge into a core, but the
+// surrounding degree-1/2 patrol spokes would label independently — 5
+// shape readings as the player walks) and the building-corner stragglers
+// in open areas. kStragglerAbsorbMaxM is a sanity cap on the corner→core
+// edge length — adjacency (a real nav edge) is the connector, not
+// distance; 16m covers the Oberstadt store corners (9.9m off the frontage)
+// with headroom while excluding cross-plaza edges. Tune from harvested
+// absorb logs. (The target-must-be-multi-node and door-veto gates that
+// keep corridors from being eaten live in the pass body.)
+constexpr float kStragglerAbsorbMaxM    = 16.0f;
 
-// Corridor-chain merge (Pass 1e): collapse straight degree-2 chain runs
+// Pass 1 / corridor rule — collapse straight degree-2 chain runs
 // into one cluster. K1 corridors are authored as 5-15 degree-2 patrol
 // nodes ~3-5m apart along a single axis; without merging each becomes
 // its own cluster and a 15m hallway re-announces "Korridor Ost-West"
@@ -206,21 +214,21 @@ constexpr float kHubAbsorptionRadiusM = 7.0f;
 // raise toward -0.97 (+/- 15 deg). If straight corridors don't merge
 // fully, drop toward -0.87 (+/- 30 deg).
 //
-// Gates beyond per-node straightness:
-//   - both endpoints must be singletons in the post-1d snapshot
-//     (don't drag chains into junction or hub clusters);
+// Gates beyond per-node straightness (shared by every Pass 1 rule):
 //   - door-on-edge veto (preserves authored room boundaries);
 //   - wall-on-edge veto (cheap insurance — shouldn't fire on real
 //     corridor neighbours, but covers degree-2 nodes the engine
 //     places across a wall in adjacency tables).
+// A straight node adjacent to a junction hub can't merge into it: the hub
+// is degree-≥3 so it fails the straightness test, and the junction rule
+// needs both endpoints degree-≥3, so the corridor stays a distinct core.
 constexpr float kCorridorStraightCosMax = -0.94f;
 
-// Open-space coalesce (Pass 1g). The large-space analog of the corridor-
-// chain (1e) and room-coalesce (1b) passes: it folds the several nav
-// nodes of one open plaza/chamber into a single cluster, so the player
-// hears one
-// place instead of flipping between adjacent Kreuzungen (the Slums
-// central-plaza re-fire — clusters 110/118 swap on every short loop).
+// Pass 1 / open rule — the large-space analog of the corridor and room
+// rules: it folds the several nav nodes of one open plaza/chamber into a
+// single cluster, so the player hears one place instead of flipping
+// between adjacent Kreuzungen (the Slums central-plaza re-fire — clusters
+// 110/118 swap on every short loop).
 //
 // A node is "open" when at least kOpenMinRays of its 8 clearance rays
 // (cast at the calibrated floor height — see the clearance block) clear
@@ -228,8 +236,8 @@ constexpr float kCorridorStraightCosMax = -0.94f;
 // edge), within kOpenMergeRadiusM, mutually wall-clear and door-free
 // union into one open cluster. Adjacency is the connector — proximity
 // alone bridged junction throats (the Oberstadt store/cantina over-merge);
-// the engine's edges define what is actually contiguous. See the pass
-// body (1g) for the full rationale + Slums adjacency audit.
+// the engine's edges define what is actually contiguous. See the Pass 1
+// body for the full rationale + Slums adjacency audit.
 //
 // Threshold rationale (measured 2026-06-09, Slums vs Manaan Östliches
 // Zentrum): a pure corridor X-junction has at most as many long rays as
@@ -275,7 +283,7 @@ constexpr float kRoomNearM        = 2.0f;
 constexpr float kRoomBoundedMaxM  = 10.0f;
 constexpr int   kRoomMinMidRays   = 3;
 
-// Room-coalesce (the small-space sibling of open-coalesce). A node is
+// Pass 1 / room rule (the small-space sibling of the open rule). A node is
 // "room" when it sits in a bounded, evenly-open space: 0-1 rays clear
 // the open scale, max ≤ kRoomBoundedMaxM, and ≥ kRoomMinMidRays rays land
 // in the [near, open) mid-band (the evenness test that separates a real
@@ -290,8 +298,7 @@ constexpr int   kRoomMinMidRays   = 3;
 // Apartments 9) and not outdoors (Slums 3). Radius 8m (vs open's 16m)
 // because rooms are small; the wall/door vetoes + both-ends-room
 // requirement bound it. Corner/doorway stragglers that aren't room-class
-// are still absorbed into the room core by the hub/bbox passes (1c/1d),
-// which run after this and now feed on room cores as well as junctions.
+// are folded into the room core afterwards by Pass 2 (straggler absorb).
 constexpr float kRoomMergeRadiusM = 8.0f;
 
 // Area geometry cue: the only shape we speak for a "Bereich" is its long
@@ -2011,428 +2018,38 @@ void BuildForArea(void* area) {
     float nodeFloorZ[kMaxNodes];
     ComputeNodeShapeFeatures(g, n, nodeOpen, nodeRoom, nodeFloorZ);
 
-    // Pass 1: union-find merge of directly-connected degree-≥3 nodes
-    // within the distance + z gates. The cluster classifier in pass 2
-    // then treats each cluster (singletons included) as one perceptual
-    // place — adjacent same-octant junctions collapse to a single
-    // "Kreuzung" announce with the union of their external exits.
+    // ===== Pass 1: core merge =====
+    // Form perceptual cores by walking the nav graph once and unioning
+    // each clear, door-free edge whose endpoints belong to the SAME kind
+    // of space. This replaces four separate merge passes (junction / room
+    // / corridor-chain / open) — they were the same operation, "union
+    // adjacent same-class nodes", differing only in the class test, so
+    // they fold into one edge-walk. Corner / doorway stragglers that match
+    // no core rule are folded in afterwards by Pass 2 (absorb).
     //
-    // Door-on-edge veto: a nav edge that crosses a CSWSDoor separates
-    // two distinct visual rooms (often a security door into a small
-    // loot room ~12m deep — see tar_m02aa cases for door[1]/[5]/[6]).
-    // Sighted players read each side as its own space; merging hides
-    // the door entirely. Skip the merge; the door surfaces as a "Tür
-    // DIR" exit on each side via ClassifyCluster's external-edge loop.
+    // Each rule is gated on a clear, door-free edge: the door is tested in
+    // 2D (FindDoorOnEdge); the wall is tested on the floor-z-lifted segment
+    // (the nav nodes sit at z=0, so a z=0 segment would run under same-floor
+    // walls). Adjacency — a real engine nav edge — is the connector for
+    // every rule, so two spaces that merely face each other across a
+    // junction throat stay separate (the Oberstadt store / cantina-avenue
+    // fix, generalised to every class).
     //
-    // We tried .wok room-id veto first (build 22:59:21) but engine
-    // rooms in K1 are authoring chunks, not visual rooms — central
-    // hubs split into 4+ adjacent rooms with no real divider between
-    // them, and even single visual rooms can be 2 .wok chunks. Door
-    // presence is the more reliable visual-boundary signal.
+    //   - junction core : both endpoints degree-≥3, within kMergeMaxDistanceM
+    //   - room core      : both endpoints room-class, within kRoomMergeRadiusM
+    //   - open core      : both endpoints open-class, within kOpenMergeRadiusM
+    //   - corridor core  : both endpoints straight degree-2 (collinear
+    //                      neighbours) — collapses a straight chain to one
+    //                      cluster via union-find, no distance cap
     for (int i = 0; i < n; ++i) s_uf_parent[i] = i;
-    int mergeEdges = 0;
-    int mergeVetoedByDoor = 0;
+
+    // Corridor straightness: a degree-2 node whose two edges point roughly
+    // opposite. Precomputed so the corridor rule is a both-straight test in
+    // the edge-walk; also reused by Pass 2 to keep corridor material out of
+    // the straggler absorb.
+    bool chainStraight[kMaxNodes];
     for (int i = 0; i < n; ++i) {
-        if (Degree(g, i) < 3) continue;
-        int lo = 0, hi = 0;
-        acc::engine::navgraph::NeighbourRange(g, i, lo, hi);
-        for (int e = lo; e < hi; ++e) {
-            int j = static_cast<int>(g.conns[e]);
-            if (j < 0 || j >= n) continue;
-            if (j <= i) continue;  // process each unordered pair once
-            if (Degree(g, j) < 3) continue;
-            float dx = g.nodes[i].pos.x - g.nodes[j].pos.x;
-            float dy = g.nodes[i].pos.y - g.nodes[j].pos.y;
-            float dz = g.nodes[i].pos.z - g.nodes[j].pos.z;
-            if (dx * dx + dy * dy >
-                kMergeMaxDistanceM * kMergeMaxDistanceM) continue;
-            if (std::fabs(dz) > kMergeMaxZM) continue;
-            EdgeResult er = ClassifyEdge(area,
-                                         g.nodes[i].pos, g.nodes[j].pos,
-                                         "merge-pass1");
-            if (er.kind != kEdgeClear) {
-                ++mergeVetoedByDoor;
-                acclog::Write(
-                    "WallTopo",
-                    "  merge VETOED (%s on edge): node[%d] (%.1f,%.1f) "
-                    "<-/-> node[%d] (%.1f,%.1f)",
-                    er.kind == kEdgeDoor ? "door" : "wall",
-                    i, g.nodes[i].pos.x, g.nodes[i].pos.y,
-                    j, g.nodes[j].pos.x, g.nodes[j].pos.y);
-                continue;
-            }
-            UFUnite(i, j);
-            ++mergeEdges;
-        }
-    }
-
-    // Pass 1b: room-coalesce (replaces the old density merge). Union every
-    // pair of room-class nodes (per nodeRoom[], the bounded+even clearance
-    // signature) within kRoomMergeRadiusM whose connecting line is wall-
-    // clear at the calibrated floor height and door-free. Union-find makes
-    // it transitive, so the several patrol nodes of one small room fold to
-    // one cluster — the job density did, but driven by measured room-shape
-    // instead of nav-node packing. Corner/doorway stragglers (not room-
-    // class) are absorbed into the core by the hub/bbox passes (1c/1d)
-    // below. Same fresh-wall-test-at-floor-z rationale as open-coalesce
-    // (a z=0 ClassifyEdge segment runs under the walls); doors veto in 2D.
-    int roomMerges = 0, roomVetoDoor = 0, roomVetoWall = 0, roomCandidates = 0;
-    {
-        const acc::engine::WallEdge* gw = nullptr;
-        int gwCount = 0;
-        bool haveGW = acc::spatial::change_detector::GetCachedWalls(
-            gw, gwCount) && gw && gwCount > 0;
-        const float kRsq = kRoomMergeRadiusM * kRoomMergeRadiusM;
-        for (int i = 0; i < n; ++i) {
-            if (!nodeRoom[i]) continue;
-            for (int j = i + 1; j < n; ++j) {
-                if (!nodeRoom[j]) continue;
-                float dx = g.nodes[i].pos.x - g.nodes[j].pos.x;
-                float dy = g.nodes[i].pos.y - g.nodes[j].pos.y;
-                if (dx * dx + dy * dy > kRsq) continue;
-                if (UFFind(i) == UFFind(j)) continue;
-                ++roomCandidates;
-
-                if (FindDoorOnEdge(g.nodes[i].pos, g.nodes[j].pos) >= 0) {
-                    ++roomVetoDoor;
-                    acclog::Write(
-                        "WallTopo",
-                        "  room-coalesce VETOED (door): node[%d] (%.1f,%.1f) "
-                        "<-/-> node[%d] (%.1f,%.1f)",
-                        i, g.nodes[i].pos.x, g.nodes[i].pos.y,
-                        j, g.nodes[j].pos.x, g.nodes[j].pos.y);
-                    continue;
-                }
-                if (haveGW) {
-                    Vector a = g.nodes[i].pos;
-                    Vector b = g.nodes[j].pos;
-                    float fz = 0.5f * (nodeFloorZ[i] + nodeFloorZ[j]);
-                    a.z = fz; b.z = fz;
-                    Vector hit{};
-                    if (acc::engine::SegmentCrossesWalkmesh(gw, gwCount,
-                                                            a, b, hit)) {
-                        ++roomVetoWall;
-                        acclog::Write(
-                            "WallTopo",
-                            "  room-coalesce VETOED (wall): node[%d] "
-                            "(%.1f,%.1f) <-/-> node[%d] (%.1f,%.1f) at z=%.1f "
-                            "— wall between rooms (separate spaces)",
-                            i, g.nodes[i].pos.x, g.nodes[i].pos.y,
-                            j, g.nodes[j].pos.x, g.nodes[j].pos.y, fz);
-                        continue;
-                    }
-                }
-
-                UFUnite(i, j);
-                ++roomMerges;
-                acclog::Write(
-                    "WallTopo",
-                    "  room-coalesce: node[%d] (%.1f,%.1f) + node[%d] "
-                    "(%.1f,%.1f) gap=%.1fm",
-                    i, g.nodes[i].pos.x, g.nodes[i].pos.y,
-                    j, g.nodes[j].pos.x, g.nodes[j].pos.y,
-                    std::sqrt(dx * dx + dy * dy));
-            }
-        }
-    }
-    acclog::Write(
-        "WallTopo",
-        "  room-coalesce: radius=%.0fm -> merged=%d (candidates=%d "
-        "vetoedByDoor=%d vetoedByWall=%d)",
-        kRoomMergeRadiusM, roomMerges, roomCandidates,
-        roomVetoDoor, roomVetoWall);
-
-    // Pass 1c: hub absorption. After Pass 1 + 1b produce multi-node
-    // clusters, absorb any degree-≤2 spoke that hangs off such a cluster
-    // into the cluster's root. K1's authoring style packs no cycles into
-    // nav graphs (topology dump on Endar Spire + Taris confirmed zero
-    // triangles, near-zero 4-cycles), but small rooms appear as a "two-
-    // hub star" — two adjacent deg-≥3 nodes (the hubs, already merged
-    // in Pass 1) with deg-1/2 spokes radiating around them. Absorbing
-    // the spokes collapses the whole room into one cluster.
-    //
-    // Frozen snapshot prevents cascade. If we used live UFFind, a spoke
-    // X that absorbed into multi-node-cluster-C would make X look multi-
-    // node to X's chain-neighbour Y, which would then absorb too — and
-    // we'd eat whatever corridor X belonged to. The snapshot freezes the
-    // cluster membership/size at the post-1b moment, so Y still sees X
-    // as part of its original singleton cluster and stays put.
-    int absorbSnapshotRoot [kMaxNodes] = {0};
-    int absorbSnapshotSize [kMaxNodes] = {0};
-    for (int i = 0; i < n; ++i) absorbSnapshotRoot[i] = UFFind(i);
-    for (int i = 0; i < n; ++i) {
-        int r = absorbSnapshotRoot[i];
-        if (r >= 0 && r < n) ++absorbSnapshotSize[r];
-    }
-
-    int absorbEdges          = 0;
-    int absorbVetoedByDoor   = 0;
-    int absorbVetoedDistance = 0;
-    for (int i = 0; i < n; ++i) {
-        int degI = Degree(g, i);
-        if (degI >= 3) continue;  // hubs absorb others, not the reverse
-        // Already in a multi-node cluster (per snapshot)? Nothing to do.
-        if (absorbSnapshotSize[absorbSnapshotRoot[i]] >= 2) continue;
-
-        int lo = 0, hi = 0;
-        acc::engine::navgraph::NeighbourRange(g, i, lo, hi);
-        for (int e = lo; e < hi; ++e) {
-            int j = static_cast<int>(g.conns[e]);
-            if (j < 0 || j >= n || j == i) continue;
-            int jRoot = absorbSnapshotRoot[j];
-            if (jRoot < 0 || jRoot >= n) continue;
-            if (absorbSnapshotSize[jRoot] < 2) continue;  // singleton — skip
-            if (UFFind(i) == UFFind(j)) continue;         // already same
-            float dx = g.nodes[i].pos.x - g.nodes[j].pos.x;
-            float dy = g.nodes[i].pos.y - g.nodes[j].pos.y;
-            if (dx * dx + dy * dy >
-                kHubAbsorptionRadiusM * kHubAbsorptionRadiusM) {
-                ++absorbVetoedDistance;
-                continue;
-            }
-            EdgeResult er = ClassifyEdge(area,
-                                         g.nodes[i].pos, g.nodes[j].pos,
-                                         "merge-pass1c");
-            if (er.kind != kEdgeClear) {
-                ++absorbVetoedByDoor;
-                acclog::Write(
-                    "WallTopo",
-                    "  absorb VETOED (%s): node[%d] (%.1f,%.1f) deg=%d "
-                    "<-/-> node[%d] (%.1f,%.1f) hub-cluster=%d size=%d",
-                    er.kind == kEdgeDoor ? "door" : "wall",
-                    i, g.nodes[i].pos.x, g.nodes[i].pos.y, degI,
-                    j, g.nodes[j].pos.x, g.nodes[j].pos.y,
-                    jRoot, absorbSnapshotSize[jRoot]);
-                continue;
-            }
-            UFUnite(i, j);
-            ++absorbEdges;
-            acclog::Write(
-                "WallTopo",
-                "  absorb: node[%d] (%.1f,%.1f) deg=%d → hub-cluster=%d "
-                "(via node[%d] at %.1f,%.1f, hub size=%d)",
-                i, g.nodes[i].pos.x, g.nodes[i].pos.y, degI,
-                jRoot, j, g.nodes[j].pos.x, g.nodes[j].pos.y,
-                absorbSnapshotSize[jRoot]);
-            break;  // X is absorbed; don't try other neighbours
-        }
-    }
-    acclog::Write(
-        "WallTopo",
-        "  hub-absorption: radius=%.1fm → absorbed=%d "
-        "vetoedByDoor=%d vetoedByDistance=%d",
-        kHubAbsorptionRadiusM,
-        absorbEdges, absorbVetoedByDoor, absorbVetoedDistance);
-
-    // Pass 1d: bounding-box absorption. Targets the K1 authoring style
-    // where designers place enough nav points for an NPC to patrol part
-    // of a room (back-and-forth + scripted exit) without fledging out
-    // the room's full geometry. The unfledged corners become degree-≤2
-    // singletons whose Voronoi cells stick into what the player
-    // perceives as one room, flipping the announce as the player
-    // crosses the cluster boundary (Endar Spire start: node[3] and
-    // node[6] sit on the Platz's north edge but Pass 1c can't absorb
-    // them — they only connect to each other and to door-vetoed
-    // neighbours, never directly to a Platz member).
-    //
-    // Rule: a singleton X is absorbed into a multi-node cluster C iff:
-    //   - X.pos lies inside C's axis-aligned bounding box (XY plane);
-    //   - some member of C sits within kMergeMaxZM (1 m) of X in Z
-    //     (multi-floor protection — stops a stairwell node above the
-    //      Platz from being folded in just because it shares X/Y);
-    //   - the segment X → nearest_member is wall-clear (`ClassifyEdge`);
-    //   - no door on that segment (preserves authored boundaries).
-    //
-    // Single pass over a frozen snapshot taken AFTER Pass 1c. Bbox is
-    // computed once from the snapshot; absorbing a candidate does NOT
-    // recompute the bbox or re-test other candidates. Iteration could
-    // chain-absorb everything into one cluster, which we explicitly
-    // don't want — a real corridor sticking out of the Platz with
-    // multiple degree-2 nodes shouldn't disappear because the first
-    // one happens to sit on the bbox edge.
-    int bboxSnapRoot[kMaxNodes];
-    int bboxSnapSize[kMaxNodes];
-    for (int i = 0; i < n; ++i) {
-        bboxSnapRoot[i] = UFFind(i);
-        bboxSnapSize[i] = 0;
-    }
-    for (int i = 0; i < n; ++i) {
-        int r = bboxSnapRoot[i];
-        if (r >= 0 && r < n) ++bboxSnapSize[r];
-    }
-
-    struct ClusterBbox {
-        float minX, maxX, minY, maxY;
-        bool  valid;
-    };
-    ClusterBbox bboxByRoot[kMaxNodes];
-    for (int i = 0; i < n; ++i) bboxByRoot[i].valid = false;
-    for (int m = 0; m < n; ++m) {
-        int root = bboxSnapRoot[m];
-        if (root < 0 || root >= n) continue;
-        if (bboxSnapSize[root] < 2) continue;
-        ClusterBbox& bb = bboxByRoot[root];
-        const Vector p = g.nodes[m].pos;
-        if (!bb.valid) {
-            bb.minX = bb.maxX = p.x;
-            bb.minY = bb.maxY = p.y;
-            bb.valid = true;
-        } else {
-            if (p.x < bb.minX) bb.minX = p.x;
-            if (p.x > bb.maxX) bb.maxX = p.x;
-            if (p.y < bb.minY) bb.minY = p.y;
-            if (p.y > bb.maxY) bb.maxY = p.y;
-        }
-    }
-
-    int bboxAbsorbed       = 0;
-    int bboxVetoedByWall   = 0;
-    int bboxVetoedByDoor   = 0;
-    int bboxNoZMatch       = 0;
-    int bboxAmbiguous      = 0;
-    for (int x = 0; x < n; ++x) {
-        // Candidate gate: x is a singleton in the post-1c snapshot.
-        // Nodes already merged into a multi-node cluster are skipped —
-        // bbox-absorption only folds in unattached singletons.
-        if (bboxSnapSize[bboxSnapRoot[x]] != 1) continue;
-        const Vector px = g.nodes[x].pos;
-
-        // Walk every multi-node cluster's bbox; collect candidates
-        // whose box contains x (XY) AND have a member within Z range.
-        int   bestRoot   = -1;
-        int   bestMember = -1;
-        float bestD2     = 1e30f;
-        int   containing = 0;
-        for (int root = 0; root < n; ++root) {
-            const ClusterBbox& bb = bboxByRoot[root];
-            if (!bb.valid) continue;
-            if (px.x < bb.minX || px.x > bb.maxX) continue;
-            if (px.y < bb.minY || px.y > bb.maxY) continue;
-
-            // Nearest member of this cluster, with Z gate. If no
-            // member is within kMergeMaxZM in Z, this cluster doesn't
-            // qualify even though its bbox contains x.
-            int   nearestMember = -1;
-            float nearestD2     = 1e30f;
-            for (int m = 0; m < n; ++m) {
-                if (bboxSnapRoot[m] != root) continue;
-                float dz = g.nodes[m].pos.z - px.z;
-                if (std::fabs(dz) > kMergeMaxZM) continue;
-                float dx = g.nodes[m].pos.x - px.x;
-                float dy = g.nodes[m].pos.y - px.y;
-                float d2 = dx * dx + dy * dy;
-                if (d2 < nearestD2) {
-                    nearestD2     = d2;
-                    nearestMember = m;
-                }
-            }
-            if (nearestMember < 0) continue;
-
-            ++containing;
-            if (nearestD2 < bestD2) {
-                bestD2     = nearestD2;
-                bestRoot   = root;
-                bestMember = nearestMember;
-            }
-        }
-
-        if (bestRoot < 0) {
-            // Either no containing cluster, or every containing
-            // cluster's members are out of Z range. Skip silently
-            // unless we found XY containment but failed Z — that's
-            // worth logging as the multi-floor protection firing.
-            // We track XY-contained-but-no-Z by re-scanning quickly.
-            for (int root = 0; root < n; ++root) {
-                const ClusterBbox& bb = bboxByRoot[root];
-                if (!bb.valid) continue;
-                if (px.x < bb.minX || px.x > bb.maxX) continue;
-                if (px.y < bb.minY || px.y > bb.maxY) continue;
-                ++bboxNoZMatch;
-                acclog::Write(
-                    "WallTopo",
-                    "  bbox-absorption VETOED (z): node[%d] (%.1f,%.1f,%.1f) "
-                    "inside bbox of cluster=%d but no member within "
-                    "%.1fm in Z — multi-floor protection",
-                    x, px.x, px.y, px.z, root, kMergeMaxZM);
-                break;
-            }
-            continue;
-        }
-
-        if (containing > 1) {
-            ++bboxAmbiguous;
-            acclog::Write(
-                "WallTopo",
-                "  bbox-absorption AMBIGUOUS: node[%d] (%.1f,%.1f) sits "
-                "inside %d cluster bboxes; picking nearest (cluster=%d "
-                "via member[%d] at %.1fm)",
-                x, px.x, px.y, containing,
-                bestRoot, bestMember, std::sqrt(bestD2));
-        }
-
-        // Safety gates on the absorb edge x → bestMember.
-        EdgeResult er = ClassifyEdge(area, px, g.nodes[bestMember].pos,
-                                     "bbox-pass1d");
-        if (er.kind == kEdgeBlocked) {
-            ++bboxVetoedByWall;
-            acclog::Write(
-                "WallTopo",
-                "  bbox-absorption VETOED (wall): node[%d] (%.1f,%.1f) "
-                "inside cluster=%d bbox but segment to member[%d] "
-                "(%.1f,%.1f) crosses a wall",
-                x, px.x, px.y, bestRoot,
-                bestMember, g.nodes[bestMember].pos.x,
-                g.nodes[bestMember].pos.y);
-            continue;
-        }
-        if (er.kind == kEdgeDoor) {
-            ++bboxVetoedByDoor;
-            acclog::Write(
-                "WallTopo",
-                "  bbox-absorption VETOED (door): node[%d] (%.1f,%.1f) "
-                "inside cluster=%d bbox but segment to member[%d] "
-                "(%.1f,%.1f) crosses door[%d]",
-                x, px.x, px.y, bestRoot,
-                bestMember, g.nodes[bestMember].pos.x,
-                g.nodes[bestMember].pos.y, er.doorIdx);
-            continue;
-        }
-
-        UFUnite(x, bestMember);
-        ++bboxAbsorbed;
-        acclog::Write(
-            "WallTopo",
-            "  bbox-absorption: node[%d] (%.1f,%.1f,%.1f) → cluster=%d "
-            "(nearest member[%d] at %.1f,%.1f, distance %.1fm)",
-            x, px.x, px.y, px.z, bestRoot,
-            bestMember, g.nodes[bestMember].pos.x,
-            g.nodes[bestMember].pos.y, std::sqrt(bestD2));
-    }
-    acclog::Write(
-        "WallTopo",
-        "  bbox-absorption: absorbed=%d vetoedByWall=%d vetoedByDoor=%d "
-        "vetoedByZ=%d ambiguous-bbox=%d",
-        bboxAbsorbed, bboxVetoedByWall, bboxVetoedByDoor,
-        bboxNoZMatch, bboxAmbiguous);
-
-    // Pass 1e: corridor-chain merge (see tunable docs at top of file).
-    //
-    // For every directly-connected pair (i, j) where both nodes are
-    // singleton (post-1d) degree-2 nodes whose two outgoing edges are
-    // roughly opposite (per-node straightness), union them. The chain
-    // effect happens via union-find: a 5-node straight chain
-    // x1-x2-x3-x4-x5 collapses to one cluster after this single pass.
-    //
-    // Junction-eating prevention: junction nodes are degree-3+, so
-    // chainStraight[junction] is false. The chain endpoint adjacent to
-    // a junction merges with its next chain partner but never with the
-    // junction itself. (Pass 1c may have already absorbed that endpoint
-    // into the junction's hub cluster; the singleton snapshot then
-    // blocks the chain from re-pulling it out.)
-    bool  chainStraight[kMaxNodes];
-    float chainCos     [kMaxNodes];
-    for (int i = 0; i < n; ++i) { chainStraight[i] = false; chainCos[i] = 0.0f; }
-    for (int i = 0; i < n; ++i) {
+        chainStraight[i] = false;
         int lo = 0, hi = 0;
         acc::engine::navgraph::NeighbourRange(g, i, lo, hi);
         if (hi - lo != 2) continue;
@@ -2446,87 +2063,82 @@ void BuildForArea(void* area) {
         float la = std::sqrt(ax * ax + ay * ay);
         float lb = std::sqrt(bx * bx + by * by);
         if (la < 1e-3f || lb < 1e-3f) continue;
-        float cosAngle = (ax * bx + ay * by) / (la * lb);
-        chainCos[i] = cosAngle;
-        if (cosAngle <= kCorridorStraightCosMax) chainStraight[i] = true;
+        if ((ax * bx + ay * by) / (la * lb) <= kCorridorStraightCosMax)
+            chainStraight[i] = true;
     }
 
-    int chainSnapRoot[kMaxNodes];
-    int chainSnapSize[kMaxNodes];
-    for (int i = 0; i < n; ++i) {
-        chainSnapRoot[i] = UFFind(i);
-        chainSnapSize[i] = 0;
-    }
-    for (int i = 0; i < n; ++i) {
-        int r = chainSnapRoot[i];
-        if (r >= 0 && r < n) ++chainSnapSize[r];
-    }
+    // Wall cache for the edge clearness test (shared by Pass 1 and Pass 2).
+    const acc::engine::WallEdge* gw = nullptr;
+    int gwCount = 0;
+    bool haveGW = acc::spatial::change_detector::GetCachedWalls(
+                      gw, gwCount) && gw && gwCount > 0;
 
-    int chainMerges          = 0;
-    int chainVetoedByDoor    = 0;
-    int chainVetoedByWall    = 0;
-    int chainVetoedByCluster = 0;
-    int chainSkippedBend     = 0;
+    int coreJunction = 0, coreRoom = 0, coreOpen = 0, coreCorridor = 0;
+    int coreVetoDoor = 0, coreVetoWall = 0;
+    const float kJsq = kMergeMaxDistanceM * kMergeMaxDistanceM;
+    const float kRsqCore = kRoomMergeRadiusM * kRoomMergeRadiusM;
+    const float kOsqCore = kOpenMergeRadiusM * kOpenMergeRadiusM;
     for (int i = 0; i < n; ++i) {
-        if (!chainStraight[i]) continue;
-        if (chainSnapSize[chainSnapRoot[i]] != 1) continue;
         int lo = 0, hi = 0;
         acc::engine::navgraph::NeighbourRange(g, i, lo, hi);
+        int degI = hi - lo;
         for (int e = lo; e < hi; ++e) {
             int j = static_cast<int>(g.conns[e]);
-            if (j < 0 || j >= n || j == i) continue;
-            if (j <= i) continue;  // unordered pair
-            if (!chainStraight[j]) {
-                ++chainSkippedBend;
-                continue;
-            }
-            if (chainSnapSize[chainSnapRoot[j]] != 1) {
-                ++chainVetoedByCluster;
-                continue;
-            }
+            if (j <= i || j >= n) continue;        // each undirected pair once
             if (UFFind(i) == UFFind(j)) continue;
-            EdgeResult er = ClassifyEdge(area,
-                                         g.nodes[i].pos, g.nodes[j].pos,
-                                         "merge-pass1e");
-            if (er.kind == kEdgeDoor) {
-                ++chainVetoedByDoor;
-                acclog::Write(
-                    "WallTopo",
-                    "  chain-merge VETOED (door): node[%d] (%.1f,%.1f) "
-                    "<-/-> node[%d] (%.1f,%.1f) door[%d]",
-                    i, g.nodes[i].pos.x, g.nodes[i].pos.y,
-                    j, g.nodes[j].pos.x, g.nodes[j].pos.y, er.doorIdx);
+            float dx = g.nodes[i].pos.x - g.nodes[j].pos.x;
+            float dy = g.nodes[i].pos.y - g.nodes[j].pos.y;
+            float dz = g.nodes[i].pos.z - g.nodes[j].pos.z;
+            if (std::fabs(dz) > kMergeMaxZM) continue;   // multi-floor guard
+            float d2 = dx * dx + dy * dy;
+
+            // Decide the core kind before running the edge tests.
+            int degJ = Degree(g, j);
+            const char* kind = nullptr;
+            if (degI >= 3 && degJ >= 3 && d2 <= kJsq)          kind = "junction";
+            else if (nodeRoom[i] && nodeRoom[j] && d2 <= kRsqCore) kind = "room";
+            else if (nodeOpen[i] && nodeOpen[j] && d2 <= kOsqCore) kind = "open";
+            else if (chainStraight[i] && chainStraight[j])     kind = "corridor";
+            if (!kind) continue;
+
+            if (FindDoorOnEdge(g.nodes[i].pos, g.nodes[j].pos) >= 0) {
+                ++coreVetoDoor;
                 continue;
             }
-            if (er.kind == kEdgeBlocked) {
-                ++chainVetoedByWall;
-                acclog::Write(
-                    "WallTopo",
-                    "  chain-merge VETOED (wall): node[%d] (%.1f,%.1f) "
-                    "<-/-> node[%d] (%.1f,%.1f)",
-                    i, g.nodes[i].pos.x, g.nodes[i].pos.y,
-                    j, g.nodes[j].pos.x, g.nodes[j].pos.y);
-                continue;
+            if (haveGW) {
+                Vector a = g.nodes[i].pos, b = g.nodes[j].pos;
+                float fz = 0.5f * (nodeFloorZ[i] + nodeFloorZ[j]);
+                a.z = fz; b.z = fz;
+                Vector hit{};
+                if (acc::engine::SegmentCrossesWalkmesh(gw, gwCount, a, b, hit)) {
+                    ++coreVetoWall;
+                    continue;
+                }
             }
+
             UFUnite(i, j);
-            ++chainMerges;
+            switch (kind[0]) {
+                case 'j': ++coreJunction; break;
+                case 'r': ++coreRoom;     break;
+                case 'o': ++coreOpen;     break;
+                default:  ++coreCorridor; break;
+            }
             acclog::Write(
                 "WallTopo",
-                "  chain-merge: node[%d] (%.1f,%.1f, cos=%.3f) + "
-                "node[%d] (%.1f,%.1f, cos=%.3f)",
-                i, g.nodes[i].pos.x, g.nodes[i].pos.y, chainCos[i],
-                j, g.nodes[j].pos.x, g.nodes[j].pos.y, chainCos[j]);
+                "  core-merge [%s]: node[%d] (%.1f,%.1f) + node[%d] (%.1f,%.1f) "
+                "gap=%.1fm",
+                kind, i, g.nodes[i].pos.x, g.nodes[i].pos.y,
+                j, g.nodes[j].pos.x, g.nodes[j].pos.y, std::sqrt(d2));
         }
     }
     acclog::Write(
         "WallTopo",
-        "  corridor-chain-merge: cosMax=%.3f -> merged=%d "
-        "skipped-bend=%d vetoedByDoor=%d vetoedByWall=%d "
-        "vetoedByCluster=%d",
-        kCorridorStraightCosMax, chainMerges, chainSkippedBend,
-        chainVetoedByDoor, chainVetoedByWall, chainVetoedByCluster);
+        "  core-merge: junction=%d room=%d open=%d corridor=%d "
+        "vetoedByDoor=%d vetoedByWall=%d",
+        coreJunction, coreRoom, coreOpen, coreCorridor,
+        coreVetoDoor, coreVetoWall);
 
-    // Diagnostic-only pass: dump per-node topology metrics so we can
+// Diagnostic-only pass: dump per-node topology metrics so we can
     // pick a principled gate later. NO MERGE LOGIC USES THESE COUNTS.
     // For each node we log:
     //   - degree                       (existing nav-graph degree)
@@ -2616,114 +2228,251 @@ void BuildForArea(void* area) {
             deg, triangles, fourCycles, reach);
     }
 
-    // Pass 1g: open-space coalesce. Walk the nav graph and union each open
-    // node (per nodeOpen[]) with any open GRAPH-NEIGHBOUR across a clear,
-    // door-free edge within kOpenMergeRadiusM. Union-find makes it
-    // transitive: a plaza authored as several open nodes folds to one
-    // cluster as long as the engine's own edges connect them.
+    // ===== Pass 2: straggler absorb =====
+    // Fold leftover corner / doorway nodes into the core they belong to.
+    // The merged successor of the old hub-absorption + bbox-absorption
+    // passes, run HERE (after every core merge, including open) so a corner
+    // hanging off a plaza folds into the plaza, not a singleton. Two
+    // admission rules, both preserving authored boundaries via the door
+    // veto:
     //
-    // Adjacency (not raw proximity) is the connector. The engine's nav
-    // edges define what is actually contiguous, so two open spaces that
-    // merely face each other across a junction throat — different graph
-    // branches with no edge between them — stay separate. This is the
-    // root fix for the Oberstadt store-frontage / cantina-avenue
-    // over-merge, where the old all-pairs-within-radius form bridged a
-    // 14m sightline across the junction the player reads as a corner
-    // (open node 15 ↔ open node 23, not graph-adjacent; the path between
-    // them runs through junction-class nodes 16/25).
+    //   (a) graph-attached: a degree-≤2 singleton that is NOT corridor
+    //       material (chainStraight) folds into an adjacent multi-node core
+    //       across a clear, door-free edge within kStragglerAbsorbMaxM.
+    //       Cascades to a fixpoint on LIVE membership, so a corner two hops
+    //       from a core still folds in (Oberstadt store corner 24 → spoke
+    //       14 → frontage core — the case the old hub pass structurally
+    //       missed, since it froze its snapshot before building the core).
+    //       Real corridors are safe: they are multi-node cores (Pass 1
+    //       chained them) and chainStraight singletons are excluded, so the
+    //       cascade can neither eat a corridor core nor propagate through a
+    //       straight corridor node.
     //
-    // Slums audit (2026-06-10, patch-20260609-213140.log area 160E6008):
-    // every plaza open node that should merge is graph-adjacent to its
-    // mate, directly or via a shared open neighbour (cluster {110,116,118,
-    // 126} all connect through hub node 118 by real edges). The old 16m
-    // radius was compensating for this pass ignoring adjacency — node 110,
-    // documented as "stranded" 15.4m from 118, actually has a direct
-    // member[110]->nb[118] edge. Graph-unattached interior singletons stay
-    // the job of bbox-absorption (Pass 1d), not this pass.
-    //
-    // The radius + wall + door gates are retained unchanged. Why a fresh
-    // wall-clear test instead of ClassifyEdge: the nav nodes are stored at
-    // z=0, so a z=0 ClassifyEdge segment runs under the real walls
-    // (z≈floor) and the 3D z-guard then reports every edge "clear". We lift
-    // both endpoints to the calibrated floor z so SegmentCrossesWalkmesh
-    // sees same-floor walls and still excludes other decks. Doors are
-    // matched in 2D (FindDoorOnEdge drops z) so the door veto is unaffected.
-    int openMerges = 0, openVetoDoor = 0, openVetoWall = 0, openCandidates = 0;
+    //   (b) graph-unattached: a remaining singleton whose XY sits inside a
+    //       core's bounding box, with a member within kMergeMaxZM in Z and a
+    //       wall-/door-clear segment to it. Catches nodes that only connect
+    //       to door-vetoed neighbours (Endar Spire start node[3]/[6]).
+
+    // (a) Adjacency cascade.
+    int absorbAdj = 0, absorbAdjVetoDoor = 0, absorbAdjVetoWall = 0;
     {
-        const acc::engine::WallEdge* gw = nullptr;
-        int gwCount = 0;
-        bool haveGW = acc::spatial::change_detector::GetCachedWalls(
-            gw, gwCount) && gw && gwCount > 0;
-        const float kRsq = kOpenMergeRadiusM * kOpenMergeRadiusM;
-        for (int i = 0; i < n; ++i) {
-            if (!nodeOpen[i]) continue;
-            int lo = 0, hi = 0;
-            acc::engine::navgraph::NeighbourRange(g, i, lo, hi);
-            for (int e = lo; e < hi; ++e) {
-                int j = static_cast<int>(g.conns[e]);
-                if (j <= i || j >= n) continue;  // each undirected pair once
-                if (!nodeOpen[j]) continue;
-                float dx = g.nodes[i].pos.x - g.nodes[j].pos.x;
-                float dy = g.nodes[i].pos.y - g.nodes[j].pos.y;
-                if (dx * dx + dy * dy > kRsq) continue;
-                if (UFFind(i) == UFFind(j)) continue;
-                ++openCandidates;
-
-                if (FindDoorOnEdge(g.nodes[i].pos, g.nodes[j].pos) >= 0) {
-                    ++openVetoDoor;
-                    acclog::Write(
-                        "WallTopo",
-                        "  open-coalesce VETOED (door): node[%d] (%.1f,%.1f) "
-                        "<-/-> node[%d] (%.1f,%.1f)",
-                        i, g.nodes[i].pos.x, g.nodes[i].pos.y,
-                        j, g.nodes[j].pos.x, g.nodes[j].pos.y);
-                    continue;
-                }
-
-                if (haveGW) {
-                    Vector a = g.nodes[i].pos;
-                    Vector b = g.nodes[j].pos;
-                    // Lift both ends to a common floor height (mean of the
-                    // two calibrated floor z's) so the wall test runs on
-                    // the real walkmesh, not the z=0 plane.
-                    float fz = 0.5f * (nodeFloorZ[i] + nodeFloorZ[j]);
-                    a.z = fz;
-                    b.z = fz;
-                    Vector hit{};
-                    if (acc::engine::SegmentCrossesWalkmesh(gw, gwCount,
-                                                            a, b, hit)) {
-                        ++openVetoWall;
-                        acclog::Write(
-                            "WallTopo",
-                            "  open-coalesce VETOED (wall): node[%d] "
-                            "(%.1f,%.1f) <-/-> node[%d] (%.1f,%.1f) at z=%.1f "
-                            "— wall between open nodes (separate spaces)",
-                            i, g.nodes[i].pos.x, g.nodes[i].pos.y,
-                            j, g.nodes[j].pos.x, g.nodes[j].pos.y, fz);
+        int sizeByRoot[kMaxNodes];
+        const float kCapSq = kStragglerAbsorbMaxM * kStragglerAbsorbMaxM;
+        bool changed = true;
+        int  guard   = 0;
+        while (changed && guard++ < n) {
+            changed = false;
+            for (int s = 0; s < n; ++s) sizeByRoot[s] = 0;
+            for (int s = 0; s < n; ++s) {
+                int r = UFFind(s);
+                if (r >= 0 && r < n) ++sizeByRoot[r];
+            }
+            for (int x = 0; x < n; ++x) {
+                if (Degree(g, x) > 2) continue;          // corner / spoke only
+                if (chainStraight[x]) continue;          // corridor material
+                if (sizeByRoot[UFFind(x)] >= 2) continue; // already in a core
+                int lo = 0, hi = 0;
+                acc::engine::navgraph::NeighbourRange(g, x, lo, hi);
+                for (int e = lo; e < hi; ++e) {
+                    int j = static_cast<int>(g.conns[e]);
+                    if (j < 0 || j >= n || j == x) continue;
+                    if (sizeByRoot[UFFind(j)] < 2) continue;  // target = a core
+                    if (UFFind(x) == UFFind(j)) continue;
+                    float dx = g.nodes[x].pos.x - g.nodes[j].pos.x;
+                    float dy = g.nodes[x].pos.y - g.nodes[j].pos.y;
+                    if (dx * dx + dy * dy > kCapSq) continue;
+                    if (FindDoorOnEdge(g.nodes[x].pos, g.nodes[j].pos) >= 0) {
+                        ++absorbAdjVetoDoor;
                         continue;
                     }
+                    if (haveGW) {
+                        Vector a = g.nodes[x].pos, b = g.nodes[j].pos;
+                        float fz = 0.5f * (nodeFloorZ[x] + nodeFloorZ[j]);
+                        a.z = fz; b.z = fz;
+                        Vector hit{};
+                        if (acc::engine::SegmentCrossesWalkmesh(gw, gwCount,
+                                                                a, b, hit)) {
+                            ++absorbAdjVetoWall;
+                            continue;
+                        }
+                    }
+                    acclog::Write(
+                        "WallTopo",
+                        "  absorb [adj]: node[%d] (%.1f,%.1f) deg=%d -> "
+                        "core=%d (via node[%d] at %.1f,%.1f)",
+                        x, g.nodes[x].pos.x, g.nodes[x].pos.y, Degree(g, x),
+                        UFFind(j), j, g.nodes[j].pos.x, g.nodes[j].pos.y);
+                    UFUnite(x, j);
+                    ++absorbAdj;
+                    changed = true;
+                    break;
                 }
-
-                UFUnite(i, j);
-                ++openMerges;
-                acclog::Write(
-                    "WallTopo",
-                    "  open-coalesce: node[%d] (%.1f,%.1f) + node[%d] "
-                    "(%.1f,%.1f) gap=%.1fm (graph-adjacent)",
-                    i, g.nodes[i].pos.x, g.nodes[i].pos.y,
-                    j, g.nodes[j].pos.x, g.nodes[j].pos.y,
-                    std::sqrt(dx * dx + dy * dy));
             }
         }
     }
     acclog::Write(
         "WallTopo",
-        "  open-coalesce: minRays=%d/8 over %.0fm radius=%.0fm -> merged=%d "
-        "(candidates=%d vetoedByDoor=%d vetoedByWall=%d)",
-        kOpenMinRays, kOpenRayDistM, kOpenMergeRadiusM,
-        openMerges, openCandidates, openVetoDoor, openVetoWall);
+        "  absorb [adj]: absorbed=%d vetoedByDoor=%d vetoedByWall=%d "
+        "(cap=%.0fm)",
+        absorbAdj, absorbAdjVetoDoor, absorbAdjVetoWall, kStragglerAbsorbMaxM);
 
-    // Pass 2: per-cluster classification. For each cluster root (the
+    // (b) Bounding-box admission for remaining graph-unattached singletons.
+    // Snapshot taken now, after the adjacency cascade, so the bbox reflects
+    // the final cores. Single pass over a frozen snapshot — absorbing a
+    // candidate does not recompute the bbox or re-test others (iteration
+    // could chain-absorb a real corridor sticking out of a Platz).
+    int bboxSnapRoot[kMaxNodes];
+    int bboxSnapSize[kMaxNodes];
+    for (int i = 0; i < n; ++i) {
+        bboxSnapRoot[i] = UFFind(i);
+        bboxSnapSize[i] = 0;
+    }
+    for (int i = 0; i < n; ++i) {
+        int r = bboxSnapRoot[i];
+        if (r >= 0 && r < n) ++bboxSnapSize[r];
+    }
+
+    struct ClusterBbox {
+        float minX, maxX, minY, maxY;
+        bool  valid;
+    };
+    ClusterBbox bboxByRoot[kMaxNodes];
+    for (int i = 0; i < n; ++i) bboxByRoot[i].valid = false;
+    for (int m = 0; m < n; ++m) {
+        int root = bboxSnapRoot[m];
+        if (root < 0 || root >= n) continue;
+        if (bboxSnapSize[root] < 2) continue;
+        ClusterBbox& bb = bboxByRoot[root];
+        const Vector p = g.nodes[m].pos;
+        if (!bb.valid) {
+            bb.minX = bb.maxX = p.x;
+            bb.minY = bb.maxY = p.y;
+            bb.valid = true;
+        } else {
+            if (p.x < bb.minX) bb.minX = p.x;
+            if (p.x > bb.maxX) bb.maxX = p.x;
+            if (p.y < bb.minY) bb.minY = p.y;
+            if (p.y > bb.maxY) bb.maxY = p.y;
+        }
+    }
+
+    int bboxAbsorbed     = 0;
+    int bboxVetoedByWall = 0;
+    int bboxVetoedByDoor = 0;
+    int bboxNoZMatch     = 0;
+    int bboxAmbiguous    = 0;
+    for (int x = 0; x < n; ++x) {
+        if (bboxSnapSize[bboxSnapRoot[x]] != 1) continue;  // singletons only
+        const Vector px = g.nodes[x].pos;
+
+        int   bestRoot   = -1;
+        int   bestMember = -1;
+        float bestD2     = 1e30f;
+        int   containing = 0;
+        for (int root = 0; root < n; ++root) {
+            const ClusterBbox& bb = bboxByRoot[root];
+            if (!bb.valid) continue;
+            if (px.x < bb.minX || px.x > bb.maxX) continue;
+            if (px.y < bb.minY || px.y > bb.maxY) continue;
+
+            int   nearestMember = -1;
+            float nearestD2     = 1e30f;
+            for (int m = 0; m < n; ++m) {
+                if (bboxSnapRoot[m] != root) continue;
+                float dz = g.nodes[m].pos.z - px.z;
+                if (std::fabs(dz) > kMergeMaxZM) continue;
+                float dx = g.nodes[m].pos.x - px.x;
+                float dy = g.nodes[m].pos.y - px.y;
+                float d2 = dx * dx + dy * dy;
+                if (d2 < nearestD2) {
+                    nearestD2     = d2;
+                    nearestMember = m;
+                }
+            }
+            if (nearestMember < 0) continue;
+
+            ++containing;
+            if (nearestD2 < bestD2) {
+                bestD2     = nearestD2;
+                bestRoot   = root;
+                bestMember = nearestMember;
+            }
+        }
+
+        if (bestRoot < 0) {
+            for (int root = 0; root < n; ++root) {
+                const ClusterBbox& bb = bboxByRoot[root];
+                if (!bb.valid) continue;
+                if (px.x < bb.minX || px.x > bb.maxX) continue;
+                if (px.y < bb.minY || px.y > bb.maxY) continue;
+                ++bboxNoZMatch;
+                acclog::Write(
+                    "WallTopo",
+                    "  bbox-absorb VETOED (z): node[%d] (%.1f,%.1f,%.1f) "
+                    "inside bbox of core=%d but no member within %.1fm in Z "
+                    "— multi-floor protection",
+                    x, px.x, px.y, px.z, root, kMergeMaxZM);
+                break;
+            }
+            continue;
+        }
+
+        if (containing > 1) {
+            ++bboxAmbiguous;
+            acclog::Write(
+                "WallTopo",
+                "  bbox-absorb AMBIGUOUS: node[%d] (%.1f,%.1f) sits inside %d "
+                "core bboxes; picking nearest (core=%d via member[%d] at %.1fm)",
+                x, px.x, px.y, containing,
+                bestRoot, bestMember, std::sqrt(bestD2));
+        }
+
+        EdgeResult er = ClassifyEdge(area, px, g.nodes[bestMember].pos,
+                                     "bbox-absorb");
+        if (er.kind == kEdgeBlocked) {
+            ++bboxVetoedByWall;
+            acclog::Write(
+                "WallTopo",
+                "  bbox-absorb VETOED (wall): node[%d] (%.1f,%.1f) inside "
+                "core=%d bbox but segment to member[%d] (%.1f,%.1f) crosses "
+                "a wall",
+                x, px.x, px.y, bestRoot,
+                bestMember, g.nodes[bestMember].pos.x,
+                g.nodes[bestMember].pos.y);
+            continue;
+        }
+        if (er.kind == kEdgeDoor) {
+            ++bboxVetoedByDoor;
+            acclog::Write(
+                "WallTopo",
+                "  bbox-absorb VETOED (door): node[%d] (%.1f,%.1f) inside "
+                "core=%d bbox but segment to member[%d] (%.1f,%.1f) crosses "
+                "door[%d]",
+                x, px.x, px.y, bestRoot,
+                bestMember, g.nodes[bestMember].pos.x,
+                g.nodes[bestMember].pos.y, er.doorIdx);
+            continue;
+        }
+
+        UFUnite(x, bestMember);
+        ++bboxAbsorbed;
+        acclog::Write(
+            "WallTopo",
+            "  bbox-absorb: node[%d] (%.1f,%.1f,%.1f) -> core=%d "
+            "(nearest member[%d] at %.1f,%.1f, distance %.1fm)",
+            x, px.x, px.y, px.z, bestRoot,
+            bestMember, g.nodes[bestMember].pos.x,
+            g.nodes[bestMember].pos.y, std::sqrt(bestD2));
+    }
+    acclog::Write(
+        "WallTopo",
+        "  bbox-absorb: absorbed=%d vetoedByWall=%d vetoedByDoor=%d "
+        "vetoedByZ=%d ambiguous-bbox=%d",
+        bboxAbsorbed, bboxVetoedByWall, bboxVetoedByDoor,
+        bboxNoZMatch, bboxAmbiguous);
+
+    // ===== Pass 3: per-cluster classification =====
+    // For each cluster root (the
     // smallest node id in its union-find class), compute the centroid,
     // collect external neighbours (dedup by node id), classify via
     // ClassifyCluster, and write the result to every member.
@@ -2879,12 +2628,12 @@ void BuildForArea(void* area) {
     g_graph.built = true;
     acclog::Write("WallTopo",
                   "BuildForArea: area=%p nodes=%d clusters=%d "
-                  "merged-pairs=%d merge-vetoed-by-door=%d "
-                  "chain-merges=%d room-coalesce=%d open-coalesce=%d "
-                  "multi-node-clusters=%d "
+                  "core-merge(junction=%d room=%d open=%d corridor=%d) "
+                  "absorb(adj=%d bbox=%d) multi-node-clusters=%d "
                   "(dead=%d corridor=%d junction=%d open=%d)",
-                  area, n, clusters, mergeEdges, mergeVetoedByDoor,
-                  chainMerges, roomMerges, openMerges, multiNodeClusters,
+                  area, n, clusters,
+                  coreJunction, coreRoom, coreOpen, coreCorridor,
+                  absorbAdj, bboxAbsorbed, multiNodeClusters,
                   deadEnds, corridors, junctions, openAreas);
 
     // Edge-classification summary. Counts are multi-fire (each graph
