@@ -224,8 +224,12 @@ constexpr float kCorridorStraightCosMax = -0.94f;
 //
 // A node is "open" when at least kOpenMinRays of its 8 clearance rays
 // (cast at the calibrated floor height — see the clearance block) clear
-// kOpenRayDistM. Two open nodes within kOpenMergeRadiusM that are
-// mutually wall-clear and door-free union into one open cluster.
+// kOpenRayDistM. Two open nodes that are GRAPH-ADJACENT (share a nav
+// edge), within kOpenMergeRadiusM, mutually wall-clear and door-free
+// union into one open cluster. Adjacency is the connector — proximity
+// alone bridged junction throats (the Oberstadt store/cantina over-merge);
+// the engine's edges define what is actually contiguous. See the pass
+// body (1g) for the full rationale + Slums adjacency audit.
 //
 // Threshold rationale (measured 2026-06-09, Slums vs Manaan Östliches
 // Zentrum): a pure corridor X-junction has at most as many long rays as
@@ -236,17 +240,18 @@ constexpr float kCorridorStraightCosMax = -0.94f;
 // courtyard junctions 6-8 → merge; Manaan corridor junctions 3-5 →
 // stay). The boundary lives at 5 (≈7m spaces) — nuisance, not safety.
 //
-// kOpenMergeRadiusM=16m is larger than the 7-8m structural gates because
-// open spaces are genuinely bigger; the wall-clear + door-free gates and
-// the both-ends-open requirement bound the blast radius. Raised 12→16
-// from the 2026-06-09 Slums harvest: at 12m the north-of-gate plaza node
-// 110 stranded as a singleton — its nearest open plaza-mate (118) sits
-// 15.4m away, just past the gate. 16m bridges the courtyard while the
-// Haupttor door veto still correctly splits the plaza at the real gate.
-// Tune further from harvested cluster sizes. Known residual: two open
-// rooms joined by a wide, door-less, wall-less opening within range merge
-// across it (the archway case) — accepted for this step; the shape
-// descriptor that consumes these clusters is built next on this data.
+// kOpenMergeRadiusM=16m is now a secondary sanity cap on the length of an
+// open→open graph edge we'll coalesce across (adjacency is the primary
+// connector). It covers every real Slums plaza edge (the largest open
+// open-coalesce gap there is 16.0m, node 110↔118 is 15.3m and is a direct
+// nav edge) while leaving long cross-plaza edges (e.g. Oberstadt 11↔18 at
+// 23.7m) as separate spaces — current behaviour. The earlier "raise 12→16
+// to un-strand node 110" tuning is now moot: 110 was never stranded in the
+// graph, only in the old proximity form. The archway residual (two open
+// rooms joined by a wide door-less opening merging across it) is now gated
+// by adjacency too — they only merge if the engine authored an edge across
+// the opening. Tune the cap from harvested cluster sizes if a real plaza
+// turns out to need a longer adjacent edge.
 constexpr float kOpenRayDistM     = 8.0f;
 constexpr int   kOpenMinRays      = 6;
 constexpr float kOpenMergeRadiusM = 16.0f;
@@ -2611,20 +2616,38 @@ void BuildForArea(void* area) {
             deg, triangles, fourCycles, reach);
     }
 
-    // Pass 1g: open-space coalesce. Union every pair of open nodes (per
-    // nodeOpen[]) within kOpenMergeRadiusM whose connecting line is wall-
-    // clear at the calibrated floor height and door-free. Union-find makes
-    // it transitive: a plaza authored as several open junction nodes folds
-    // to one cluster regardless of how the nav graph bridges them.
+    // Pass 1g: open-space coalesce. Walk the nav graph and union each open
+    // node (per nodeOpen[]) with any open GRAPH-NEIGHBOUR across a clear,
+    // door-free edge within kOpenMergeRadiusM. Union-find makes it
+    // transitive: a plaza authored as several open nodes folds to one
+    // cluster as long as the engine's own edges connect them.
     //
-    // Why a fresh wall-clear test instead of ClassifyEdge: the nav nodes
-    // are stored at z=0, so a z=0 ClassifyEdge segment runs under the real
-    // walls (z≈floor) and the 3D z-guard then reports every edge "clear" —
-    // i.e. ClassifyEdge gives no wall protection on floors away from z=0.
-    // We lift both endpoints to the calibrated floor z so SegmentCrosses-
-    // Walkmesh sees same-floor walls and still excludes other decks. Doors
-    // are matched in 2D (FindDoorOnEdge drops z) so the door veto is
-    // unaffected by the z lift.
+    // Adjacency (not raw proximity) is the connector. The engine's nav
+    // edges define what is actually contiguous, so two open spaces that
+    // merely face each other across a junction throat — different graph
+    // branches with no edge between them — stay separate. This is the
+    // root fix for the Oberstadt store-frontage / cantina-avenue
+    // over-merge, where the old all-pairs-within-radius form bridged a
+    // 14m sightline across the junction the player reads as a corner
+    // (open node 15 ↔ open node 23, not graph-adjacent; the path between
+    // them runs through junction-class nodes 16/25).
+    //
+    // Slums audit (2026-06-10, patch-20260609-213140.log area 160E6008):
+    // every plaza open node that should merge is graph-adjacent to its
+    // mate, directly or via a shared open neighbour (cluster {110,116,118,
+    // 126} all connect through hub node 118 by real edges). The old 16m
+    // radius was compensating for this pass ignoring adjacency — node 110,
+    // documented as "stranded" 15.4m from 118, actually has a direct
+    // member[110]->nb[118] edge. Graph-unattached interior singletons stay
+    // the job of bbox-absorption (Pass 1d), not this pass.
+    //
+    // The radius + wall + door gates are retained unchanged. Why a fresh
+    // wall-clear test instead of ClassifyEdge: the nav nodes are stored at
+    // z=0, so a z=0 ClassifyEdge segment runs under the real walls
+    // (z≈floor) and the 3D z-guard then reports every edge "clear". We lift
+    // both endpoints to the calibrated floor z so SegmentCrossesWalkmesh
+    // sees same-floor walls and still excludes other decks. Doors are
+    // matched in 2D (FindDoorOnEdge drops z) so the door veto is unaffected.
     int openMerges = 0, openVetoDoor = 0, openVetoWall = 0, openCandidates = 0;
     {
         const acc::engine::WallEdge* gw = nullptr;
@@ -2634,7 +2657,11 @@ void BuildForArea(void* area) {
         const float kRsq = kOpenMergeRadiusM * kOpenMergeRadiusM;
         for (int i = 0; i < n; ++i) {
             if (!nodeOpen[i]) continue;
-            for (int j = i + 1; j < n; ++j) {
+            int lo = 0, hi = 0;
+            acc::engine::navgraph::NeighbourRange(g, i, lo, hi);
+            for (int e = lo; e < hi; ++e) {
+                int j = static_cast<int>(g.conns[e]);
+                if (j <= i || j >= n) continue;  // each undirected pair once
                 if (!nodeOpen[j]) continue;
                 float dx = g.nodes[i].pos.x - g.nodes[j].pos.x;
                 float dy = g.nodes[i].pos.y - g.nodes[j].pos.y;
@@ -2682,7 +2709,7 @@ void BuildForArea(void* area) {
                 acclog::Write(
                     "WallTopo",
                     "  open-coalesce: node[%d] (%.1f,%.1f) + node[%d] "
-                    "(%.1f,%.1f) gap=%.1fm",
+                    "(%.1f,%.1f) gap=%.1fm (graph-adjacent)",
                     i, g.nodes[i].pos.x, g.nodes[i].pos.y,
                     j, g.nodes[j].pos.x, g.nodes[j].pos.y,
                     std::sqrt(dx * dx + dy * dy));
