@@ -1,6 +1,7 @@
 #include "engine_input.h"
 
 #include <windows.h>
+#include <atomic>
 #include <cstdint>
 
 #include "log.h"
@@ -165,6 +166,25 @@ bool ForceReacquireInput() {
         acclog::Write("EngineInput",
             "ForceReacquireInput: exception during SetActive cycle; skipped");
         return false;
+    }
+}
+
+namespace {
+std::atomic<bool> g_reacquirePending{false};
+}  // namespace
+
+void RequestInputReacquire() {
+    g_reacquirePending.store(true, std::memory_order_relaxed);
+}
+
+void DrainPendingReacquire() {
+    // exchange → coalesce: any number of requests since the last drain
+    // collapse into one SetActive cycle this tick.
+    if (g_reacquirePending.exchange(false, std::memory_order_relaxed)) {
+        acclog::Write("EngineInput",
+            "DrainPendingReacquire: focus/window event flagged a reacquire; "
+            "forcing DirectInput re-grab");
+        ForceReacquireInput();
     }
 }
 

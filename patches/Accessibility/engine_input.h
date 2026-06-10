@@ -44,6 +44,29 @@ bool EnsureInputAcquired();
 // Returns true if dispatched (ExoInput non-null), false otherwise.
 bool ForceReacquireInput();
 
+// Deferred-reacquire request, for focus/window events that arrive on the
+// engine's message-pump thread but at a fragile point (inside the engine's
+// own WM_ACTIVATEAPP / window-recreation handling). Rather than calling
+// ForceReacquireInput re-entrantly from the wndproc, the focus subclass sets
+// this flag and the next Dispatch() drains it — so the SetActive(0)->(1)
+// cycle lands on a clean tick, after the engine has finished rebuilding the
+// render window and re-binding DirectInput to the new HWND.
+//
+// Motivating case: a misbehaving external process repeatedly steals the
+// foreground while KOTOR runs windowed (FullScreen=0). Each focus regain
+// makes the engine tear down and recreate its render window; the input
+// `active` flag desyncs to a stuck 1 and the keyboard goes dead — including
+// in menus, so even the "Do you really want to quit?" dialog stops
+// responding. The area-change reacquire in transitions::Tick never fires
+// (no module load), so this focus-driven path is the only recovery.
+// RequestInputReacquire is set-only and coalescing (multiple requests before
+// one drain collapse to a single cycle); safe to call from any thread.
+void RequestInputReacquire();
+
+// Drains a pending RequestInputReacquire (no-op if none). Call once per tick
+// from the engine thread; runs ForceReacquireInput when a request is set.
+void DrainPendingReacquire();
+
 }  // namespace acc::engine
 
 // Pre-translation codes received by CSWGuiManager::HandleInputEvent.

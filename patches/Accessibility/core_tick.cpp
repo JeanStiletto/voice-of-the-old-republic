@@ -36,6 +36,7 @@
 #include "probe_camera_state.h"
 #include "probe_mouselook.h"
 #include "probe_pathfind.h"
+#include "engine_input.h"
 #include "spatial_change_detector.h"
 #include "swoop_race.h"
 #include "turret_game.h"
@@ -149,6 +150,12 @@ void Dispatch() {
     // Snapshot hotkey state for the whole tick — EndTick at the bottom
     // shifts now→last for next tick's rising-edge math.
     acc::hotkeys::BeginTick();
+
+    // If a focus regain / render-window recreation flagged a DirectInput
+    // reacquire (windowed-mode external focus theft kills engine input
+    // otherwise — see engine_input.h RequestInputReacquire), do it now on a
+    // clean tick, before any handler samples keyboard state.
+    acc::engine::DrainPendingReacquire();
 
     // Defensive — drop stale panel pointers before any handler touches them.
     PHASE("menus.ValidatePanels", acc::menus::ValidatePanels());

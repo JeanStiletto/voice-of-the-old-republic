@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "engine_input.h"
 #include "log.h"
 
 #pragma comment(lib, "ole32.lib")
@@ -55,11 +56,11 @@ std::atomic<HANDLE>      g_pollThread{nullptr};
 // the engine's activation handler re-Acquires input on its own.
 //
 // kGuardWindowMs: how long after arming we keep watching. The observed
-// Game Bar steal lands within ~6 s of the menu; 15 s gives margin without
+// Game Bar steal lands within ~6 s of the menu; 10 s gives margin without
 // trapping a user who wants to leave (after this we never reclaim again).
 // kMaxReclaims caps the reclaim attempts so a persistent overlay can't
 // drag us into an endless focus war — once hit, we give up and disarm.
-constexpr DWORD kGuardWindowMs = 15000;
+constexpr DWORD kGuardWindowMs = 10000;
 constexpr int   kMaxReclaims   = 6;
 
 std::atomic<DWORD> g_guardDeadlineTick{0};  // GetTickCount() deadline; 0 = disarmed
@@ -122,6 +123,19 @@ LRESULT CALLBACK SubclassProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 "WM_ACTIVATEAPP active=%d otherThread=%lu hwnd=%p [%s]",
                 static_cast<int>(wp),
                 static_cast<DWORD>(lp), hwnd, tag);
+            // Focus regained. When KOTOR runs windowed and an external app
+            // repeatedly steals the foreground, each regain forces the engine
+            // to recreate its render window and the DirectInput `active` flag
+            // can stick at 1 with the keyboard actually unacquired — input
+            // goes dead, even in menus. Flag a reacquire for the next tick to
+            // drive a real SetActive(0)->(1) edge (the software alt-tab). We
+            // defer rather than call inline: this wndproc runs mid-pump inside
+            // the engine's own activation handling, before the new render
+            // window's DirectInput is fully rebound. See engine_input.h
+            // RequestInputReacquire for the full mechanism.
+            if (wp != 0) {
+                acc::engine::RequestInputReacquire();
+            }
             break;
         case WM_SETFOCUS:
             acclog::Write("Focus",
