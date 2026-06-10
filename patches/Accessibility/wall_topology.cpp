@@ -144,38 +144,31 @@ constexpr float kMaxSnapM = 15.0f;
 // Clustering runs in two passes (see BuildForArea). The old six merge
 // passes were two operations wearing six coats, so they fold to:
 //   Pass 1 — core merge: ONE nav-edge walk that unions a clear, door-free
-//            edge whose endpoints share a kind of space. Four rules:
-//            junction (both degree-≥3), room (both room-class), open (both
-//            open-class), corridor (both straight degree-2). The old
-//            junction / room-coalesce / open-coalesce / corridor-chain
-//            passes are these four rules.
+//            edge whose endpoints are the same kind. Two rules: space
+//            (both are a place the player stands in — degree-≥3 hub or
+//            open/room by probe) and corridor (both straight degree-2).
+//            Space↔passage never merge. The old junction / room / open
+//            rules collapsed into the single space rule — separating them
+//            only left door-less interiors fragmented at each class seam.
 //   Pass 2 — straggler absorb: fold a degree-≤2 corner/spoke that matched
 //            no core rule into an adjacent core (graph-adjacent, or bbox-
 //            contained for graph-unattached nodes). The old hub + bbox
 //            absorption passes.
 // The constants below are the gates, tagged by the rule that uses them.
 //
-// Pass 1 / junction rule — distance + z gates. Two directly-connected
-// nav-graph nodes that are both degree-≥3 and pass these gates merge into
-// one composite cluster: the announce describes the union of their
-// external exits from the cluster centroid. K1 places nav-graph nodes
-// densely around hub areas (Dias
-// Apartment at Taris Apartments has 2 junctions 6m apart, both reading
-// as Kreuzung in sequence); merging collapses these to one perceptual
-// "hub" announce.
-//
-// - kMergeMaxDistanceM: planar distance gate. 8m matches K1's typical
-//   inter-junction spacing in hub clusters; wider corridors should not
-//   merge their endpoints.
-// - kMergeMaxZM: vertical gate. Stops multi-floor stacks (Sith base,
-//   Endar Spire decks) from collapsing vertically-aligned junctions.
-constexpr float kMergeMaxDistanceM = 8.0f;
-constexpr float kMergeMaxZM        = 1.0f;
+// Pass 1 / space rule — vertical gate. The planar distance gate is the
+// unified space cap (kOpenMergeRadiusM, applied as kSpaceCapSq in the
+// Pass 1 body); this Z gate stops multi-floor stacks (Sith base, Endar
+// Spire decks) from collapsing vertically-aligned nodes. The old separate
+// 8m junction cap is gone — merging two degree-≥3 hubs is just one case of
+// the space rule now (this still collapses the Dias-Apartment pattern of
+// two Kreuzungen ~6m apart into one perceptual hub).
+constexpr float kMergeMaxZM = 1.0f;
 
 // (The old density-based merge — pack ≥N nav nodes within 3m → one
 // cluster — was retired 2026-06-09. It was a crude proxy for "small
 // enclosed room"; the clearance probe now measures room-shape directly
-// and the room-coalesce pass replaces it. See kRoomMergeRadiusM.)
+// and the space rule subsumes it.)
 
 // Pass 2 / straggler absorb — folds a degree-≤2 corner/spoke into an
 // adjacent multi-node core (the merged successor of the old hub + bbox
@@ -283,23 +276,17 @@ constexpr float kRoomNearM        = 2.0f;
 constexpr float kRoomBoundedMaxM  = 10.0f;
 constexpr int   kRoomMinMidRays   = 3;
 
-// Pass 1 / room rule (the small-space sibling of the open rule). A node is
-// "room" when it sits in a bounded, evenly-open space: 0-1 rays clear
-// the open scale, max ≤ kRoomBoundedMaxM, and ≥ kRoomMinMidRays rays land
-// in the [near, open) mid-band (the evenness test that separates a real
-// room interior from a wall-hugging corner/doorway node). Two room nodes
-// within kRoomMergeRadiusM that are mutually wall-clear (at floor z) and
-// door-free union into one room cluster.
+// Room-class probe. A node is "room" when it sits in a bounded, evenly-open
+// space: 0-1 rays clear the open scale, max ≤ kRoomBoundedMaxM, and
+// ≥ kRoomMinMidRays rays land in the [near, open) mid-band (the evenness
+// test that separates a real room interior from a wall-hugging corner /
+// doorway node). This flag, like nodeOpen, no longer drives a merge rule of
+// its own — it marks the node as SPACE for the unified Pass 1 space rule.
 //
-// This is the measured replacement for the density pass (1b): density
-// (≥N nav nodes within 3m) was a crude proxy for "packed small room";
-// the clearance probe measures room-shape directly, and the validated
-// 2026-06-09 harvest fires it where small rooms are (Ebon Hawk 21,
-// Apartments 9) and not outdoors (Slums 3). Radius 8m (vs open's 16m)
-// because rooms are small; the wall/door vetoes + both-ends-room
-// requirement bound it. Corner/doorway stragglers that aren't room-class
-// are folded into the room core afterwards by Pass 2 (straggler absorb).
-constexpr float kRoomMergeRadiusM = 8.0f;
+// (Replaced the old density pass (1b): density — ≥N nav nodes within 3m —
+// was a crude proxy for "packed small room"; the clearance probe measures
+// room-shape directly. The validated 2026-06-09 harvest fires it where
+// small rooms are (Ebon Hawk 21, Apartments 9) and not outdoors (Slums 3).)
 
 // Area geometry cue: the only shape we speak for a "Bereich" is its long
 // axis, and only when the space is clearly elongated. At the cluster
@@ -1307,6 +1294,20 @@ bool ComputeCentroidAxis(const Vector& centroid, float floorZ,
     return true;
 }
 
+// The two opposite octant bits an elongation axis covers, or 0 for a
+// non-axis Id. Used to drop a redundant exit list: an "Ost-West" area whose
+// only exits are exactly Ost + West has an exit list that just echoes the
+// axis word, so we speak "Bereich Ost-West" alone. The four values mirror
+// the axisId cases ComputeCentroidAxis can emit.
+int AxisOctantMask(acc::strings::Id axisId) {
+    using acc::strings::Id;
+    if (axisId == Id::AxisEastWest)   return (1 << 0) | (1 << 4);  // E + W
+    if (axisId == Id::AxisNorthSouth) return (1 << 2) | (1 << 6);  // N + S
+    if (axisId == Id::DirNortheast)   return (1 << 1) | (1 << 5);  // NE + SW
+    if (axisId == Id::DirNorthwest)   return (1 << 3) | (1 << 7);  // NW + SE
+    return 0;
+}
+
 // Classify a cluster (1 or more nodes) by its centroid and the list of
 // external neighbour nodes (nodes outside this cluster that share an
 // edge with some member). Renders the label + kind + sig into the
@@ -1320,9 +1321,13 @@ bool ComputeCentroidAxis(const Vector& centroid, float floorZ,
 // only when elongated, then the exits. centroidFloorZ feeds the axis
 // probe.
 //
-// The graph path (areaHint == 0) only ever runs for singleton clusters —
-// every multi-node merge is routed to the area path by the caller — so it
-// renders Sackgasse / Korridor / Kreuzung, never the merged-space "Platz":
+// The graph path (areaHint == 0) runs for any cluster the caller did NOT
+// flag as a probe-owned place: every singleton, plus multi-node hubs that
+// merged by the space rule but carry no open/room geometry (a merged
+// corridor-junction). It renders Sackgasse / Korridor / Kreuzung from the
+// exit topology, never the merged-space "Platz". For a multi-node hub the
+// centroid is the synthesized member midpoint and externalNbs is the union
+// of every member's external exits, so the same per-octant logic applies:
 //   externalCount == 1  → dead-end (direction = centroid → that exit)
 //   externalCount == 2  → corridor (axis between the two exits,
 //                                   cardinal cases use "Nord-Süd" /
@@ -1401,11 +1406,33 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
         const char* noun  = acc::strings::Get(Id::AreaNoun);
         const char* axisW = elong ? acc::strings::Get(axisId) : nullptr;
         if (!noun || !noun[0]) noun = "Bereich";
-        if (elong && axisW && axisW[0] && !dirList.empty()) {
+
+        // Drop the exit list when it exactly repeats the elongation axis:
+        // an elongated area whose only exits are the two ends of that axis
+        // (both plain directions — a named door exit is always kept, its
+        // destination is information the axis word doesn't carry) reads as
+        // "Bereich Ost-West", not "Bereich Ost-West. Ausgänge: Ost, West".
+        // Narrow by construction — only fires when the exit mask is exactly
+        // the axis pair, so the common case (exits differ from elongation)
+        // is untouched.
+        bool axisCoversExits = false;
+        if (elong) {
+            int axisMask = AxisOctantMask(axisId);
+            if (axisMask != 0 && mask == axisMask) {
+                bool anyDoor = false;
+                for (int bit = 0; bit < 8; ++bit)
+                    if ((axisMask & (1 << bit)) && octDoor[bit] >= 0)
+                        anyDoor = true;
+                axisCoversExits = !anyDoor;
+            }
+        }
+        bool haveExits = !dirList.empty() && !axisCoversExits;
+
+        if (elong && axisW && axisW[0] && haveExits) {
             const char* fmt = acc::strings::Get(Id::FmtAreaAxisExits);
             if (fmt && fmt[0]) outLabel = acc::strfmt::Format(fmt, noun, axisW,
                                                               dirList.c_str());
-        } else if (!dirList.empty()) {
+        } else if (haveExits) {
             const char* fmt = acc::strings::Get(Id::FmtAreaExits);
             if (fmt && fmt[0]) outLabel = acc::strfmt::Format(fmt, noun,
                                                               dirList.c_str());
@@ -1725,10 +1752,9 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
         AppendListEntry(dirList, DirEntry(dirId, markDeadEnd));
     }
 
-    // Singleton junction only: any multi-node merged junction is routed
-    // through the area ("Bereich") path above (BuildForArea sets areaHint=2
-    // for size>1 && externalCount>=3), so this path always renders
-    // "Kreuzung". The merged-space "Platz" wording lives in the area path.
+    // Reached by a hub (singleton or merged) with no open/room geometry, so
+    // this path renders "Kreuzung". A hub that IS open/room was flagged a
+    // probe-owned place by the caller and took the "Bereich" area path above.
     const char* fmt = acc::strings::Get(Id::FmtMapCursorJunctionDirs);
     if (fmt && fmt[0] && !dirList.empty()) {
         outLabel = acc::strfmt::Format(fmt, dirList.c_str());
@@ -2169,38 +2195,42 @@ void BuildForArea(void* area) {
     g_doors_stability.committed   = false;
 
     // Per-node shape features first, so every merge pass below can branch
-    // on the same openness / room flags. The open-coalesce and room-
-    // coalesce passes are the probe-owned bands; the graph-driven passes
-    // (junction, hub/bbox absorb, corridor chain) keep the connectivity
-    // work the probe can't see.
+    // on the same openness / room flags. They no longer drive separate
+    // merge classes — they only decide, per node, whether it is "space"
+    // (a place the player stands in) or "passage" (a link between places);
+    // see the Pass 1 space/passage rule.
     bool  nodeOpen  [kMaxNodes];
     bool  nodeRoom  [kMaxNodes];
     float nodeFloorZ[kMaxNodes];
     ComputeNodeShapeFeatures(g, n, nodeOpen, nodeRoom, nodeFloorZ);
 
     // ===== Pass 1: core merge =====
-    // Form perceptual cores by walking the nav graph once and unioning
-    // each clear, door-free edge whose endpoints belong to the SAME kind
-    // of space. This replaces four separate merge passes (junction / room
-    // / corridor-chain / open) — they were the same operation, "union
-    // adjacent same-class nodes", differing only in the class test, so
-    // they fold into one edge-walk. Corner / doorway stragglers that match
-    // no core rule are folded in afterwards by Pass 2 (absorb).
+    // Form perceptual cores by walking the nav graph once and unioning each
+    // clear, door-free edge whose endpoints are the SAME kind of thing.
+    // Internally there are now only two kinds — the merge layer no longer
+    // separates junction / room / open (they were the same operation,
+    // "union adjacent same-class nodes", and the open-vs-room seam left
+    // door-less interiors fragmented: an Ebon Hawk hold split open↔throat↔
+    // room into three regions). Collapsed to:
+    //
+    //   - SPACE   : a place the player stands in — degree-≥3 hub, or open /
+    //               room by the clearance probe. Two space nodes union.
+    //   - PASSAGE : a straight degree-2 link. Two straight nodes union into
+    //               one corridor run (the L-shaped-corridor rule is carried
+    //               over unchanged: a ~90° bend fails the straightness test
+    //               and breaks the run, so the player still hears the turn).
+    //
+    // PASSAGE↔SPACE never merge — that boundary is exactly the line between
+    // "I'm in a corridor" and "I'm in a room", and is what lets Pass 3 still
+    // voice corridors, junctions and areas distinctly even though the merge
+    // itself stopped distinguishing them.
     //
     // Each rule is gated on a clear, door-free edge: the door is tested in
     // 2D (FindDoorOnEdge); the wall is tested on the floor-z-lifted segment
     // (the nav nodes sit at z=0, so a z=0 segment would run under same-floor
-    // walls). Adjacency — a real engine nav edge — is the connector for
-    // every rule, so two spaces that merely face each other across a
-    // junction throat stay separate (the Oberstadt store / cantina-avenue
-    // fix, generalised to every class).
-    //
-    //   - junction core : both endpoints degree-≥3, within kMergeMaxDistanceM
-    //   - room core      : both endpoints room-class, within kRoomMergeRadiusM
-    //   - open core      : both endpoints open-class, within kOpenMergeRadiusM
-    //   - corridor core  : both endpoints straight degree-2 (collinear
-    //                      neighbours) — collapses a straight chain to one
-    //                      cluster via union-find, no distance cap
+    // walls). Adjacency — a real engine nav edge — is the connector, so two
+    // spaces that merely face each other across a junction throat stay
+    // separate (the Oberstadt store / cantina-avenue fix).
     for (int i = 0; i < n; ++i) s_uf_parent[i] = i;
 
     // Corridor straightness: a degree-2 node whose two edges point roughly
@@ -2233,11 +2263,13 @@ void BuildForArea(void* area) {
     bool haveGW = acc::spatial::change_detector::GetCachedWalls(
                       gw, gwCount) && gw && gwCount > 0;
 
-    int coreJunction = 0, coreRoom = 0, coreOpen = 0, coreCorridor = 0;
+    int coreSpace = 0, coreCorridor = 0;
     int coreVetoDoor = 0, coreVetoWall = 0;
-    const float kJsq = kMergeMaxDistanceM * kMergeMaxDistanceM;
-    const float kRsqCore = kRoomMergeRadiusM * kRoomMergeRadiusM;
-    const float kOsqCore = kOpenMergeRadiusM * kOpenMergeRadiusM;
+    // Unified space cap. The merge layer no longer separates junction (was
+    // 8m) / room (8m) / open (16m); one generous adjacency cap covers all
+    // three. A real nav edge plus the door + wall vetoes keep it honest, so
+    // the 16m reach can't bridge a wall or an authored doorway.
+    const float kSpaceCapSq = kOpenMergeRadiusM * kOpenMergeRadiusM;
     for (int i = 0; i < n; ++i) {
         int lo = 0, hi = 0;
         acc::engine::navgraph::NeighbourRange(g, i, lo, hi);
@@ -2252,12 +2284,16 @@ void BuildForArea(void* area) {
             if (std::fabs(dz) > kMergeMaxZM) continue;   // multi-floor guard
             float d2 = dx * dx + dy * dy;
 
-            // Decide the core kind before running the edge tests.
+            // Decide the core kind before running the edge tests. Space =
+            // degree-≥3 hub or open / room by the probe; passage = straight
+            // degree-2. Space unions with space (one cap); straight unions
+            // with straight (no cap — a chain collapses fully). Passage↔space
+            // falls through and stays unmerged.
             int degJ = Degree(g, j);
+            bool spaceI = (degI >= 3) || nodeOpen[i] || nodeRoom[i];
+            bool spaceJ = (degJ >= 3) || nodeOpen[j] || nodeRoom[j];
             const char* kind = nullptr;
-            if (degI >= 3 && degJ >= 3 && d2 <= kJsq)          kind = "junction";
-            else if (nodeRoom[i] && nodeRoom[j] && d2 <= kRsqCore) kind = "room";
-            else if (nodeOpen[i] && nodeOpen[j] && d2 <= kOsqCore) kind = "open";
+            if (spaceI && spaceJ && d2 <= kSpaceCapSq)         kind = "space";
             else if (chainStraight[i] && chainStraight[j])     kind = "corridor";
             if (!kind) continue;
 
@@ -2278,9 +2314,7 @@ void BuildForArea(void* area) {
 
             UFUnite(i, j);
             switch (kind[0]) {
-                case 'j': ++coreJunction; break;
-                case 'r': ++coreRoom;     break;
-                case 'o': ++coreOpen;     break;
+                case 's': ++coreSpace;    break;
                 default:  ++coreCorridor; break;
             }
             acclog::Write(
@@ -2293,9 +2327,9 @@ void BuildForArea(void* area) {
     }
     acclog::Write(
         "WallTopo",
-        "  core-merge: junction=%d room=%d open=%d corridor=%d "
+        "  core-merge: space=%d corridor=%d "
         "vetoedByDoor=%d vetoedByWall=%d",
-        coreJunction, coreRoom, coreOpen, coreCorridor,
+        coreSpace, coreCorridor,
         coreVetoDoor, coreVetoWall);
 
     // ===== Pass 2: straggler absorb =====
@@ -2678,16 +2712,25 @@ void BuildForArea(void* area) {
             }
         }
 
-        // Area decision: a probe-owned merged space speaks as "Bereich".
-        //   - any open-class member            → big area (delayed)
-        //   - multi-node room cluster          → room  (immediate)
-        //   - multi-node 3+-exit merged junction→ big area (delayed)
-        //   - isolated cluster (no exits)       → area (open/room by flag)
-        // Singletons that didn't merge keep their graph label (Kreuzung /
-        // Korridor / Sackgasse), so a stray room-class node isn't relabelled.
+        // Announce decision — now independent of how the cluster merged.
+        // A cluster speaks as "Bereich" only when the clearance probe says
+        // it is a PLACE: any open-class member, a multi-node room cluster,
+        // or an isolated cluster with no exits. Everything else takes the
+        // graph path and is voiced by its exit topology — a tight merged
+        // hub with no open/room geometry reads as "Kreuzung", a degree-2
+        // run as "Korridor", a single exit as "Sackgasse". This is what
+        // keeps junctions sounding like junctions and corridors like
+        // corridors even though they merge by the same space rule.
+        //
+        // The old "size>1 && externalCount>=3 → area" clause was dropped on
+        // purpose: a merged corridor-junction hub (space-class by degree
+        // alone) must stay a Kreuzung, not become a Bereich.
+        //   - any open-class member       → big area (delayed)
+        //   - multi-node room cluster      → room  (immediate)
+        //   - isolated cluster (no exits)  → area (open/room by flag)
         int areaHint = 0;  // 0 none, 1 room, 2 big
         bool isArea = (externalCount == 0) || hasOpen ||
-                      (size > 1 && (hasRoom || externalCount >= 3));
+                      (size > 1 && hasRoom);
         if (isArea) areaHint = (hasRoom && !hasOpen) ? 1 : 2;
 
         std::string label;
@@ -2729,11 +2772,11 @@ void BuildForArea(void* area) {
     g_graph.built = true;
     acclog::Write("WallTopo",
                   "BuildForArea: area=%p nodes=%d clusters=%d "
-                  "core-merge(junction=%d room=%d open=%d corridor=%d) "
+                  "core-merge(space=%d corridor=%d) "
                   "absorb(adj=%d bbox=%d) multi-node-clusters=%d "
                   "(dead=%d corridor=%d junction=%d open=%d)",
                   area, n, clusters,
-                  coreJunction, coreRoom, coreOpen, coreCorridor,
+                  coreSpace, coreCorridor,
                   absorbAdj, bboxAbsorbed, multiNodeClusters,
                   deadEnds, corridors, junctions, openAreas);
 
