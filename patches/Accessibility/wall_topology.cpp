@@ -194,18 +194,27 @@ constexpr float kStragglerAbsorbMaxM    = 16.0f;
 //
 // A node is "straight" iff its two outgoing edge vectors point in
 // roughly opposite directions (cos(angle) <= kCorridorStraightCosMax).
-// Two adjacent straight singleton degree-2 nodes union. Bend nodes
-// (corners of L-shaped halls, ~90 deg kinks) fail the straightness
-// test and break the chain — an L stays as two clusters meeting at
-// the bend, which matches the perceptual model (the player feels the
-// corridor turning, so it reads as two directions).
+// Two adjacent straight degree-2 nodes union. Sharp bends (~90° kinks)
+// fail the straightness test and break the chain — an L stays as two
+// corridors meeting at the bend, which matches the perceptual model (the
+// player feels the corridor turn, so it reads as two directions).
 //
-// Tolerance picked at +/- 20 deg of straight (cos -0.94): tight
-// enough to keep real bends as separate clusters, loose enough to
-// absorb the small placement jitter present in degree-2 patrol-node
-// authoring. Tune from log evidence — if curved corridors over-merge,
-// raise toward -0.97 (+/- 15 deg). If straight corridors don't merge
-// fully, drop toward -0.87 (+/- 30 deg).
+// Tolerance is +/- 35 deg of straight (cos -0.82): loose enough to keep a
+// gently curving hall as ONE corridor (a series of ~30 deg patrol-node
+// bends used to shatter into one cluster per node — the Ebon Hawk
+// crew-quarters approach split into four), tight enough that a real ~90 deg
+// corner still breaks. The +/-35 cut also tracks navigability: in a narrow
+// hall a bend past ~35 deg drifts you into the wall if you hold the end
+// bearing, so those genuinely need to stay separate turn cues. Tune from
+// log evidence — raise toward -0.9 (+/-25 deg) if gentle curves over-merge,
+// drop toward -0.7 (+/-45 deg) if real halls still fragment.
+//
+// A *sharp* bend isn't left as its own one-node cluster, though: the
+// corner-fold step (right after the Pass 1 core merge) folds it into the
+// adjacent corridor it continues straightest into — its straight edge
+// extends that corridor, its turning edge becomes the boundary to the next
+// one. So an L reads as corridor-A then corridor-B (two axes meeting at the
+// turn), never as a lone "corner" announcement wedged between them.
 //
 // Gates beyond per-node straightness (shared by every Pass 1 rule):
 //   - door-on-edge veto (preserves authored room boundaries);
@@ -213,9 +222,9 @@ constexpr float kStragglerAbsorbMaxM    = 16.0f;
 //     corridor neighbours, but covers degree-2 nodes the engine
 //     places across a wall in adjacency tables).
 // A straight node adjacent to a junction hub can't merge into it: the hub
-// is degree-≥3 so it fails the straightness test, and the junction rule
-// needs both endpoints degree-≥3, so the corridor stays a distinct core.
-constexpr float kCorridorStraightCosMax = -0.94f;
+// is space (degree-≥3 or open/room) and a corridor node is passage, and
+// passage↔space never merge, so the corridor stays a distinct core.
+constexpr float kCorridorStraightCosMax = -0.82f;
 
 // Pass 1 / open rule — the large-space analog of the corridor and room
 // rules: it folds the several nav nodes of one open plaza/chamber into a
@@ -2236,10 +2245,13 @@ void BuildForArea(void* area) {
     // Corridor straightness: a degree-2 node whose two edges point roughly
     // opposite. Precomputed so the corridor rule is a both-straight test in
     // the edge-walk; also reused by Pass 2 to keep corridor material out of
-    // the straggler absorb.
-    bool chainStraight[kMaxNodes];
+    // the straggler absorb, and by the corner-fold step (chainStraightCos
+    // lets it pick the straightest neighbour to fold a bend into).
+    bool  chainStraight   [kMaxNodes];
+    float chainStraightCos[kMaxNodes];  // turn cos at this node; +1 if not deg-2
     for (int i = 0; i < n; ++i) {
-        chainStraight[i] = false;
+        chainStraight[i]    = false;
+        chainStraightCos[i] = 1.0f;
         int lo = 0, hi = 0;
         acc::engine::navgraph::NeighbourRange(g, i, lo, hi);
         if (hi - lo != 2) continue;
@@ -2253,7 +2265,8 @@ void BuildForArea(void* area) {
         float la = std::sqrt(ax * ax + ay * ay);
         float lb = std::sqrt(bx * bx + by * by);
         if (la < 1e-3f || lb < 1e-3f) continue;
-        if ((ax * bx + ay * by) / (la * lb) <= kCorridorStraightCosMax)
+        chainStraightCos[i] = (ax * bx + ay * by) / (la * lb);
+        if (chainStraightCos[i] <= kCorridorStraightCosMax)
             chainStraight[i] = true;
     }
 
@@ -2331,6 +2344,63 @@ void BuildForArea(void* area) {
         "vetoedByDoor=%d vetoedByWall=%d",
         coreSpace, coreCorridor,
         coreVetoDoor, coreVetoWall);
+
+    // ===== Pass 1b: corner fold =====
+    // A sharp bend (degree-2, not chainStraight) is the corner where two
+    // corridor segments meet. Left alone it announces as its own one-node
+    // cluster wedged between the two runs (the Ebon Hawk crew-quarters
+    // 51° dogleg: "corridor / corner / corridor", three cues). Fold it into
+    // the neighbour it continues STRAIGHTEST into — its straight edge extends
+    // that corridor, its turning edge becomes the boundary to the next one.
+    //
+    // "Straightest" = the neighbour nb with the most-opposite edges (smallest
+    // chainStraightCos), among the corner's degree-2 chainStraight neighbours
+    // reachable across a clear, door-free edge. Folding into exactly one side
+    // means the corner NEVER unions across its own bend, so the two corridors
+    // stay distinct (each announced by its own axis) and the player turns at
+    // the boundary — no merged corridor with a misleading end bearing. Runs
+    // before Pass 2 so a corner prefers its straight corridor over being
+    // absorbed into an adjacent space hub. Single pass: folding a corner
+    // can't create a new corner.
+    int cornerFolds = 0;
+    for (int x = 0; x < n; ++x) {
+        int lo = 0, hi = 0;
+        acc::engine::navgraph::NeighbourRange(g, x, lo, hi);
+        if (hi - lo != 2) continue;        // degree-2 only
+        if (chainStraight[x]) continue;    // straight nodes already chained
+        int   bestNb  = -1;
+        float bestCos = 2.0f;              // smaller = straighter pass-through
+        for (int e = lo; e < hi; ++e) {
+            int nb = static_cast<int>(g.conns[e]);
+            if (nb < 0 || nb >= n || nb == x) continue;
+            if (!chainStraight[nb]) continue;   // join must continue straight
+            if (UFFind(nb) == UFFind(x)) continue;
+            if (FindDoorOnEdge(g.nodes[x].pos, g.nodes[nb].pos) >= 0) continue;
+            if (haveGW) {
+                Vector a = g.nodes[x].pos, b = g.nodes[nb].pos;
+                float fz = 0.5f * (nodeFloorZ[x] + nodeFloorZ[nb]);
+                a.z = fz; b.z = fz;
+                Vector hit{};
+                if (acc::engine::SegmentCrossesWalkmesh(gw, gwCount, a, b, hit))
+                    continue;
+            }
+            if (chainStraightCos[nb] < bestCos) {
+                bestCos = chainStraightCos[nb];
+                bestNb  = nb;
+            }
+        }
+        if (bestNb >= 0) {
+            acclog::Write(
+                "WallTopo",
+                "  corner-fold: node[%d] (%.1f,%.1f) bend-cos=%.2f -> corridor "
+                "via node[%d] (%.1f,%.1f) straight-cos=%.2f",
+                x, g.nodes[x].pos.x, g.nodes[x].pos.y, chainStraightCos[x],
+                bestNb, g.nodes[bestNb].pos.x, g.nodes[bestNb].pos.y, bestCos);
+            UFUnite(x, bestNb);
+            ++cornerFolds;
+        }
+    }
+    acclog::Write("WallTopo", "  corner-fold: folded=%d", cornerFolds);
 
     // ===== Pass 2: straggler absorb =====
     // Fold leftover corner / doorway nodes into the core they belong to.
