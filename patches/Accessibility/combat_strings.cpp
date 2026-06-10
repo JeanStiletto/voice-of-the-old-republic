@@ -94,7 +94,12 @@ const MsgStrings kEn = {
     // ---- Engine-side parse anchors (extracted from EN dialog.tlk)
     " succeeds with attack on ",   // phrase_hit       (template 42042 + verb 42043)
     " fails with attack on ",      // phrase_miss      (template 42042 + verb 42044)
-    "  with ",                     // phrase_mit       (suffix template 42119, +1 glue space)
+    " with ",                      // phrase_mit       (42119; EN is the ONLY locale that fills the
+                                   //   suffix's <CUSTOM0> hit/miss tag — strref 42133 "Hit" / 42134
+                                   //   "Miss" (empty in DE/FR/IT/ES). So EN renders "...on <target>.
+                                   //   Hit with N vs..." — a single-space " with " connector, NOT the
+                                   //   glued double-space the extractor assumes for empty-<CUSTOM0>
+                                   //   locales. Single leading space here matches both Hit and Miss.)
     "Defense ",                    // word_verteidigung (42119 gap CUSTOM1..CUSTOM2)
     "damage ",                     // word_schaden_colon (42119 gap CUSTOM2..CUSTOM3)
     " used.",                      // feat_marker      (42046 + engine-appended ".")
