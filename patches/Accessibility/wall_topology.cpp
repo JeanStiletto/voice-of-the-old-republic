@@ -2273,11 +2273,23 @@ void BuildForArea(void* area) {
                 if (sizeByRoot[UFFind(x)] >= 2) continue; // already in a core
                 int lo = 0, hi = 0;
                 acc::engine::navgraph::NeighbourRange(g, x, lo, hi);
-                for (int e = lo; e < hi; ++e) {
+                // Scan valid core-neighbours (clear, door-free, within cap)
+                // and collect the distinct cores X reaches. A node that
+                // reaches >= 2 distinct cores BRIDGES two areas — keep it as
+                // its own announcing junction so both connections stay
+                // audible (Oberstadt node 25 links the store frontage to the
+                // cantina avenue; folding it into the avenue erased the
+                // "Süd" exit cue and the avenue became unfindable from the
+                // frontage). Only a pendant — exactly one reachable core —
+                // folds in.
+                int coreRootA = -1, coreNbA = -1;
+                bool isBridge = false;
+                for (int e = lo; e < hi && !isBridge; ++e) {
                     int j = static_cast<int>(g.conns[e]);
                     if (j < 0 || j >= n || j == x) continue;
-                    if (sizeByRoot[UFFind(j)] < 2) continue;  // target = a core
-                    if (UFFind(x) == UFFind(j)) continue;
+                    int jr = UFFind(j);
+                    if (sizeByRoot[jr] < 2) continue;  // neighbour is not a core
+                    if (jr == UFFind(x)) continue;
                     float dx = g.nodes[x].pos.x - g.nodes[j].pos.x;
                     float dy = g.nodes[x].pos.y - g.nodes[j].pos.y;
                     if (dx * dx + dy * dy > kCapSq) continue;
@@ -2296,16 +2308,21 @@ void BuildForArea(void* area) {
                             continue;
                         }
                     }
+                    if (coreRootA < 0) { coreRootA = jr; coreNbA = j; }
+                    else if (jr != coreRootA) isBridge = true;
+                }
+                if (isBridge) continue;        // keep bridge as its own junction
+                if (coreRootA >= 0) {
                     acclog::Write(
                         "WallTopo",
                         "  absorb [adj]: node[%d] (%.1f,%.1f) deg=%d -> "
                         "core=%d (via node[%d] at %.1f,%.1f)",
                         x, g.nodes[x].pos.x, g.nodes[x].pos.y, Degree(g, x),
-                        UFFind(j), j, g.nodes[j].pos.x, g.nodes[j].pos.y);
-                    UFUnite(x, j);
+                        coreRootA, coreNbA,
+                        g.nodes[coreNbA].pos.x, g.nodes[coreNbA].pos.y);
+                    UFUnite(x, coreNbA);
                     ++absorbAdj;
                     changed = true;
-                    break;
                 }
             }
         }
