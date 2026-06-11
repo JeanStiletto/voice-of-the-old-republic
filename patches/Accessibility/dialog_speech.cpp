@@ -137,6 +137,31 @@ bool IsNeverSuppressTag(const char* tag) {
     return false;
 }
 
+// Per-tag always-suppress list — the mirror image of kNeverSuppressTags.
+// These speakers classify as non-human/non-droid by appearance and race (so
+// the rule below would speak their subtitle), but they are in fact voiced in
+// Basic with full VO, so the subtitle is redundant and clashes with the voice.
+// The shared appearance row can't be flipped without un-suppressing the
+// genuinely alien crowd that wears the same model. Matched case-insensitively
+// on CSWSObject.tag.
+//
+//   - "man26_casandra": wears Alien_Twilek_Female_02 (appearance 270), which
+//     classifies non-human because the row is otherwise the alien Twi'lek
+//     dancer/crowd model. But Cassandra (Manaan Ahto East) speaks Basic with
+//     full VO, so her subtitle clashed with the voice. Suppress by tag.
+//     (Reported in-game 2026-06-11; inverse of the Vek case above.)
+constexpr const char* kAlwaysSuppressTags[] = {
+    "man26_casandra",
+};
+
+bool IsAlwaysSuppressTag(const char* tag) {
+    if (!tag || !tag[0]) return false;
+    for (const char* t : kAlwaysSuppressTags) {
+        if (_stricmp(t, tag) == 0) return true;
+    }
+    return false;
+}
+
 // True iff this speaker's subtitle is redundant given the VO, so we suppress
 // it under the (shared) HumanSubtitles toggle. Two cases:
 //   - human-appearance speakers: intelligible Basic VO the player already
@@ -147,11 +172,14 @@ bool IsNeverSuppressTag(const char* tag) {
 //     droids — the conveyed meaning lives in the player's reply choices,
 //     which are narrated separately). Verified from dialog.tlk 2026-06-05.
 // Genuinely alien speakers (Twi'lek crowd, Wookiee) are neither, so their
-// subtitle stays the player's only channel and is always spoken. The per-tag
-// allowlist overrides the appearance/race verdict for individual characters
-// (e.g. Sasha) who would otherwise be misclassified as suppressible.
+// subtitle stays the player's only channel and is always spoken. The two
+// per-tag lists override the appearance/race verdict for individual characters
+// misclassified by their shared model: never-suppress forces speech on (Sasha,
+// Vek), always-suppress forces it off (Cassandra). Never-suppress wins ties —
+// the safe direction is to keep speech on.
 bool IsSuppressibleSpeaker(const SpeakerInfo& info) {
     if (IsNeverSuppressTag(info.tag)) return false;
+    if (IsAlwaysSuppressTag(info.tag)) return true;
     return IsHumanAppearance(info.appearance) || info.raceEnum == kRaceDroid;
 }
 
