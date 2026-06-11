@@ -21,12 +21,6 @@ namespace {
 constexpr size_t kClientInternalModuleOffset = 0x18;
 constexpr size_t kCSWCModuleCameraOffset     = 0x40;
 
-// Renderer's source-of-truth orientation quaternion. NOT used by the
-// arrival check — quaternion is multi-valued (q and -q encode the same
-// rotation, yielding readings 360° apart); arrival check uses the
-// position-derived yaw from camera_announce instead.
-constexpr size_t kModCameraQuaternionOffset = 0x88;
-
 // DirectInput scan codes. Engine reads keyboard via DirectInput, which
 // sees scancodes only — plain VK SendInput is invisible to it.
 constexpr WORD kDikA = 0x1E;
@@ -109,19 +103,14 @@ bool ReadCurrentEngineYawRad(void* camera, float& out) {
         out = degsFromAnnounce * kDegToRad;
         return true;
     }
-    if (!camera) return false;
-    __try {
-        // Standard float-quaternion layout: +0 qx, +4 qy, +8 qz, +12 qw.
-        // Yaw-from-quaternion uses qz, qw only (camera tilt/roll stay 0).
-        unsigned char* q = reinterpret_cast<unsigned char*>(camera) +
-                           kModCameraQuaternionOffset;
-        float qz = *reinterpret_cast<float*>(q + 0x8);
-        float qw = *reinterpret_cast<float*>(q + 0xc);
-        out = 2.0f * std::atan2(qz, qw);
-        return true;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
+    // Quaternion fallback (camera directly above player → position-derived
+    // yaw degenerates). Reads the camera orientation quaternion correctly
+    // (engine layout w,x,y,z; the earlier 2*atan2(qz,qw) read the wrong
+    // fields — engine y/z — which is why this path looked "multi-valued"
+    // and got abandoned). GetCameraYawRadians yields the same East=0 frame
+    // as the position-derived path. See engine_player.h.
+    (void)camera;  // chain re-walked inside the helper
+    return acc::engine::GetCameraYawRadians(out);
 }
 
 void SendKey(WORD scan, bool down) {

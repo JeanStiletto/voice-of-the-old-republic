@@ -95,27 +95,26 @@ void PollWin32() {
     // Camera+0x7C.
     void* modCamera = SafeRead<void*>(module, 0x40, nullptr);
 
-    // Quaternion at modCamera + 0x88 (x, y, z, w as floats).
-    float qx = SafeRead<float>(modCamera, 0x88 + 0x0, 0.0f);
-    float qy = SafeRead<float>(modCamera, 0x88 + 0x4, 0.0f);
-    float qz = SafeRead<float>(modCamera, 0x88 + 0x8, 0.0f);
-    float qw = SafeRead<float>(modCamera, 0x88 + 0xc, 0.0f);
+    // Quaternion at modCamera + 0x88 — engine layout is w,x,y,z (w first).
+    float qw = SafeRead<float>(modCamera, 0x88 + 0x0, 0.0f);
+    float qx = SafeRead<float>(modCamera, 0x88 + 0x4, 0.0f);
+    float qy = SafeRead<float>(modCamera, 0x88 + 0x8, 0.0f);
+    float qz = SafeRead<float>(modCamera, 0x88 + 0xc, 0.0f);
     // Camera position at +0x7C
     float px = SafeRead<float>(modCamera, 0x7c + 0x0, 0.0f);
     float py = SafeRead<float>(modCamera, 0x7c + 0x4, 0.0f);
     float pz = SafeRead<float>(modCamera, 0x7c + 0x8, 0.0f);
 
-    // Derived yaw from quaternion. KOTOR/Aurora world is Y-up... actually
-    // Z-up per Engine yaw convention (rotation about Z axis, 0=+X). For
-    // a pure-Z-rotation quaternion q = (0,0,sin(yaw/2),cos(yaw/2)):
-    //   yaw = 2 * atan2(z, w)
-    // If the quaternion also has X/Y components (camera pitched), this
-    // approximation still extracts the Z-rotation portion reasonably for
-    // the level-camera orbital case.
-    float yawRad = 2.0f * std::atan2(qz, qw);
-    float yawDeg = yawRad * 57.29577951308232f;
-    while (yawDeg < 0.0f) yawDeg += 360.0f;
-    while (yawDeg >= 360.0f) yawDeg -= 360.0f;
+    // Yaw from the orientation quaternion via the shared, convention-
+    // correct helper (engine yaw frame: 0=+X/East, CCW+). The earlier
+    // 2*atan2(qz,qw) read the wrong quaternion fields (engine y/z).
+    float yawDeg = 0.0f;
+    {
+        float yawRad = 0.0f;
+        if (acc::engine::GetCameraYawRadians(yawRad)) {
+            yawDeg = std::fmod(yawRad * 57.29577951308232f + 360.0f, 360.0f);
+        }
+    }
     float yawCompass = acc::engine::EngineYawToCompass(yawDeg);
 
     // Read the original candidates too for back-comparison.

@@ -134,6 +134,44 @@ bool GetCameraPosition(Vector& out) {
     }
 }
 
+bool GetCameraYawRadians(float& outRad) {
+    constexpr size_t kClientInternalModuleOffset = 0x18;
+    constexpr size_t kCSWCModuleCameraOffset     = 0x40;
+    constexpr size_t kCameraOrientationOffset    = 0x88;  // Camera+0x04 + Gob+0x84
+    __try {
+        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
+        if (!appManager) return false;
+        void* clientApp = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(appManager) +
+            kAppManagerClientAppOffset);
+        if (!clientApp) return false;
+        void* clientInternal = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(clientApp) +
+            kClientExoAppInternalOffset);
+        if (!clientInternal) return false;
+        void* module = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(clientInternal) +
+            kClientInternalModuleOffset);
+        if (!module) return false;
+        void* camera = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(module) +
+            kCSWCModuleCameraOffset);
+        if (!camera) return false;
+        // Quaternion layout w,x,y,z (w first) — verified against engine
+        // Yaw() @0x4a9f40 and the struct header (struct Quaternion).
+        const float* q = reinterpret_cast<float*>(
+            reinterpret_cast<unsigned char*>(camera) + kCameraOrientationOffset);
+        float qw = q[0], qx = q[1], qy = q[2], qz = q[3];
+        float fwdX = 2.0f * (qx * qy - qz * qw);
+        float fwdY = 1.0f - 2.0f * (qx * qx + qz * qz);
+        if (fwdX == 0.0f && fwdY == 0.0f) return false;
+        outRad = std::atan2(fwdY, fwdX);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 void* GetPlayerServerCreature() {
     return GetPlayerServerObject();
 }

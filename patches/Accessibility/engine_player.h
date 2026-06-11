@@ -46,6 +46,17 @@ void* GetPlayerArea();
 // embedded at +0x04, position at Gob+0x78).
 bool GetCameraPosition(Vector& out);
 
+// Camera heading in the engine yaw frame (radians, 0=+X/East, CCW+),
+// read from the module camera's orientation quaternion at Camera+0x88
+// (Gob+0x84). The engine Quaternion layout is w,x,y,z (w first); yaw is
+// the heading of the quaternion-derived forward vector:
+//   fwd.x = 2(x*y - z*w),  fwd.y = 1 - 2(x*x + z*z),  yaw = atan2(fwd.y, fwd.x)
+// This matches the position-derived (player - camera) heading exactly and
+// stays valid when the camera sits directly above the player (where the
+// position-derived path degenerates). Returns false on null chain / SEH.
+// Convention + engine Yaw() @0x4a9f40 verified by decompile 2026-06-11.
+bool GetCameraYawRadians(float& outRad);
+
 // Opaque CSWSCreature* for callers that need to thiscall on the player
 // creature (e.g. AddMoveToPointAction) without redoing the chain walk.
 void* GetPlayerServerCreature();
