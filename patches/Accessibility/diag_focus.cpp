@@ -98,6 +98,53 @@ const char* ApartmentQualifierName(APTTYPEQUALIFIER q) {
     }
 }
 
+// On a focus-loss (WM_ACTIVATEAPP active=0) the foreground has moved to a
+// window outside our process. Resolve and log which application took it —
+// bare exe name, window class, and title — so user log bundles reveal the
+// culprit (Steam/Discord/Game Bar overlays, a deliberate alt-tab target,
+// etc.). Pure diagnostics: we neither announce nor reclaim here. Once we
+// know the typical repeat offenders we can selectively warn for those.
+// `activatingThread` is the WM_ACTIVATEAPP lParam (the thread being
+// activated) logged alongside for cross-check.
+void LogForegroundThief(DWORD activatingThread) {
+    HWND fg = GetForegroundWindow();
+    if (!fg) {
+        acclog::Write("Focus",
+            "ForegroundThief: GetForegroundWindow()=NULL "
+            "(activatingThread=%lu)", activatingThread);
+        return;
+    }
+
+    char cls[64] = {};
+    char title[128] = {};
+    GetClassNameA(fg, cls, sizeof(cls));
+    GetWindowTextA(fg, title, sizeof(title));
+
+    DWORD pid = 0;
+    DWORD thread = GetWindowThreadProcessId(fg, &pid);
+
+    char exe[MAX_PATH] = {};
+    const char* exeName = "?";
+    if (pid == GetCurrentProcessId()) {
+        exeName = "(own process)";
+    } else if (pid != 0) {
+        HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+        if (h) {
+            DWORD sz = sizeof(exe);
+            if (QueryFullProcessImageNameA(h, 0, exe, &sz)) {
+                const char* slash = strrchr(exe, '\\');
+                exeName = slash ? slash + 1 : exe;  // bare exe name
+            }
+            CloseHandle(h);
+        }
+    }
+
+    acclog::Write("Focus",
+        "ForegroundThief: hwnd=%p exe=\"%s\" class=\"%s\" title=\"%s\" "
+        "pid=%lu thread=%lu activatingThread=%lu",
+        fg, exeName, cls, title, pid, thread, activatingThread);
+}
+
 const char* ActivateName(WORD w) {
     switch (w) {
         case WA_INACTIVE:    return "WA_INACTIVE";
@@ -135,6 +182,12 @@ LRESULT CALLBACK SubclassProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             // RequestInputReacquire for the full mechanism.
             if (wp != 0) {
                 acc::engine::RequestInputReacquire();
+            } else if (strcmp(tag, "Render Window") == 0) {
+                // Lost the foreground. Log which app took it — gated on the
+                // Render Window so we emit one thief record per steal rather
+                // than one per game-owned window (they share a thread and all
+                // get WM_ACTIVATEAPP).
+                LogForegroundThief(static_cast<DWORD>(lp));
             }
             break;
         case WM_SETFOCUS:
