@@ -77,8 +77,17 @@ int LoadPoints(const GraphMeta& meta, std::vector<PathPointSnapshot>& out) {
         PathPointSnapshot snap{};
         bool ok = true;
         __try {
-            snap.pos = *reinterpret_cast<const Vector*>(
+            // PathPoint is 2D: x (0x00), y (0x04), then the connections
+            // COUNT (0x08) and first_connection (0x0c) — there is NO height
+            // field. Reading a full Vector here would land the connections
+            // count in pos.z as a denormal-garbage float; read x/y only and
+            // leave z at 0. Consumers that need a floor height supply it
+            // from context (e.g. the player's z).
+            const float* xy = reinterpret_cast<const float*>(
                 p + kPathPointPositionOffset);
+            snap.pos.x = xy[0];
+            snap.pos.y = xy[1];
+            snap.pos.z = 0.0f;
             snap.csrOffset = *reinterpret_cast<const uint32_t*>(
                 p + kPathPointCsrOffset);
         } __except (EXCEPTION_EXECUTE_HANDLER) {

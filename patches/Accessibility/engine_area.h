@@ -420,12 +420,21 @@ int BuildAreaWallCache(void* area, WallEdge* outBuf, int maxEdges);
 // this tolerance removes. Shared with wall_topology::LogNavWallCrossings.
 constexpr float kWallCrossZToleranceM = 2.0f;
 
-// Segment-vs-perimeter test in the XY plane, with a 3D guard: a wall is
-// only a blocker when its edge sits within kWallCrossZToleranceM of the
-// ray at the crossing point. Without the guard, a wall on a different
+// Segment-vs-perimeter test in the XY plane, with an optional 3D guard: a
+// wall is only a blocker when its edge sits within kWallCrossZToleranceM of
+// the ray at the crossing point. Without the guard, a wall on a different
 // floor whose 2D projection happens to lie on a→b would falsely block
 // (the engine's nav graph proves these are not real obstacles). Returns
 // closest qualifying hit along a→b (smallest t in [0,1]).
+//
+// ignoreZ: when true, the z guard is skipped and the test is pure 2D.
+// Callers whose endpoints carry no trustworthy z must set this — notably
+// the waypoint smoother, which feeds 2D nav-graph nodes (no height field;
+// see PathPoint layout in guidance_pathfind.h). A 2D test there fails safe:
+// it can only over-block (keep a redundant waypoint), never miss a real
+// wall and route through it. The default (false) keeps the guard for the
+// room-shape/cursor consumers, where a phantom cross-floor wall would
+// instead corrupt a spoken description.
 //
 // False on: null walls, wallCount<=0, a==b. Degenerate edges (a==b)
 // skipped.
@@ -436,6 +445,7 @@ bool SegmentCrossesWalkmesh(const WallEdge* walls,
                             int wallCount,
                             const Vector& a,
                             const Vector& b,
-                            Vector& outHitPoint);
+                            Vector& outHitPoint,
+                            bool ignoreZ = false);
 
 }  // namespace acc::engine

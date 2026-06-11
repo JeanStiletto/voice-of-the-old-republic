@@ -1404,7 +1404,8 @@ bool SegmentCrossesWalkmesh(const WallEdge* walls,
                             int wallCount,
                             const Vector& a,
                             const Vector& b,
-                            Vector& outHitPoint) {
+                            Vector& outHitPoint,
+                            bool ignoreZ) {
     if (!walls || wallCount <= 0) return false;
 
     // Movement direction in 2D. abx/aby form the player segment; if both
@@ -1448,11 +1449,18 @@ bool SegmentCrossesWalkmesh(const WallEdge* walls,
         // the entire remaining over-block population (validated via the
         // nav-graph crosscheck) — every runtime false-block occurred at
         // elevated z against a ground-floor wall.
-        float rayZ  = a.z   + t * (b.z   - a.z);
-        float wallZ = w.a.z + u * (w.b.z - w.a.z);
-        float dz = rayZ - wallZ;
-        if (dz < 0.0f) dz = -dz;
-        if (dz > kWallCrossZToleranceM) continue;
+        //
+        // Skipped when ignoreZ: callers with untrustworthy endpoint z (the
+        // waypoint smoother feeds 2D nav nodes) must run pure 2D, or the
+        // guard silently drops real same-floor walls when the ray's z is
+        // bogus and routes the path straight through them.
+        if (!ignoreZ) {
+            float rayZ  = a.z   + t * (b.z   - a.z);
+            float wallZ = w.a.z + u * (w.b.z - w.a.z);
+            float dz = rayZ - wallZ;
+            if (dz < 0.0f) dz = -dz;
+            if (dz > kWallCrossZToleranceM) continue;
+        }
 
         if (t < bestT) {
             bestT      = t;

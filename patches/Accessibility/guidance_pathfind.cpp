@@ -290,8 +290,13 @@ bool ComputePath(void* area,
             size_t bestJ = i;
             for (size_t j = i; j < n; ++j) {
                 Vector hit{};
+                // Pure 2D: nav-graph nodes are 2D (PathPoint has no height
+                // field), so the segment endpoints carry no trustworthy z.
+                // A 2D test fails safe here — it can only over-block (keep a
+                // redundant waypoint), never cut through a real wall.
                 bool blocked = acc::engine::SegmentCrossesWalkmesh(
-                    walls, wallCount, anchor, outWaypoints[j], hit);
+                    walls, wallCount, anchor, outWaypoints[j], hit,
+                    /*ignoreZ=*/true);
                 if (blocked) {
                     // Diagnostic: log the specific edge that rejected this
                     // skip. We want to spot spurious room-mesh seams (edges
