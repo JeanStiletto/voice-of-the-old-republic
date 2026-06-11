@@ -7,6 +7,7 @@
 #include "audio_footstep_suppress.h"
 #include "camera_announce.h"
 #include "camera_orient.h"
+#include "camera_spin_diag.h"
 #include "combat.h"
 #include "combat_diag.h"
 #include "combat_query.h"
@@ -219,6 +220,7 @@ void Dispatch() {
     //   view_mode reads camera yaw + walls + region/landmark caches.
     PHASE("camera_announce", acc::camera_announce::Tick());
     PHASE("camera_orient", acc::camera_orient::Tick());
+    PHASE("camera_spin_diag", acc::camera_spin_diag::Tick());
     PHASE("spatial.change_detector", acc::spatial::change_detector::Tick());
 
     // Swoop race entry/exit cues. Gated to CSWMiniGame.type==0.
