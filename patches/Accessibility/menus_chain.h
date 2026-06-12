@@ -39,7 +39,15 @@ struct ChainEntry {
 // Virtual-entry kind tags. 0 is reserved for "real engine control".
 constexpr int kVirtualMod_SettingsRoot = 1;
 
-constexpr int kMaxChainEntries = 64;
+// Upper bound on navigable entries the chain holds for one panel. Sized for
+// the worst real case: a late-game Inventory (or a large merchant Store)
+// whose item listbox alone contributes one entry per item — a hoarder can
+// carry well past 64. The chain is a fixed global (g_chain below), so this is
+// just sizeof(ChainEntry) * kMaxChainEntries ≈ 10 KB of static storage. The
+// per-rebind O(n²) sort/squash runs only on panel open or content change (not
+// per tick — HandleNavStep rebinds only on a panel-pointer change), so the
+// cost at this size is a one-off few-ms burst, not a per-frame hot path.
+constexpr int kMaxChainEntries = 512;
 
 // The chain itself + the cursor that points at the focused entry. Reads
 // dominate; the only mutator outside RebindChain is the chain-step in

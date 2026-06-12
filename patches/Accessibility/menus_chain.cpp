@@ -642,6 +642,47 @@ void RebindChain(void* panel) {
             panel, kEquipLbItemsId);
     }
 
+    // Virtual credits row for Inventory + Store. credits_value_label isn't
+    // IsChainNavigable, so without this the user can't reach the gold display
+    // the engine renders for sighted players. ForEachCreditsRowAnchor is a
+    // no-op for unsupported panel kinds, so we call it unconditionally.
+    //
+    // Registered BEFORE the control/listbox walk below — not after, like the
+    // other per-kind virtual rows — because Inventory's item listbox can
+    // append 60+ entries and fill the chain to kMaxChainEntries; a credits
+    // row queued afterwards silently lost its slot to the cap and vanished
+    // once the player's inventory grew large (Store, with its smaller shop
+    // listbox, stayed under the cap and kept working). The cy-sort below
+    // still lands credits at the top via its synthetic sortCy regardless of
+    // insertion order.
+    {
+        auto onCreditsAnchor = [](void* labelControl, int sortCy,
+                                  void* userData) -> bool {
+            void* p = userData;
+            if (g_chainCount >= kMaxChainEntries) return false;
+            int cx, cy;
+            // cx from the on-screen label so a cursor warp on chain step
+            // lands the mouse on the visible credits readout; cy is the
+            // synthetic sortCy so the entry sorts above real buttons.
+            if (!GetControlCenter(labelControl, cx, cy)) {
+                cx = 0;
+            }
+            // Skip when the engine hasn't yet populated the value (gui_
+            // string empty mid-frame). Row reappears on the next rebind.
+            char probe[8];
+            if (!acc::menus::credits::ExtractCreditsRow(
+                    p, labelControl, probe, sizeof(probe))) {
+                return true;
+            }
+            g_chain[g_chainCount++] = {
+                labelControl, cx, sortCy, /*textOnly=*/true
+            };
+            return true;
+        };
+        acc::menus::credits::ForEachCreditsRowAnchor(panel, onCreditsAnchor,
+                                                    panel);
+    }
+
     for (int i = 0; i < n; ++i) {
         void* c = list->data[i];
         if (!c) continue;
@@ -681,7 +722,14 @@ void RebindChain(void* panel) {
                 reinterpret_cast<unsigned char*>(c) + kListBoxControlsOffset);
             if (lbList && lbList->data) {
                 if (lbList->size > 1) {
-                    int lbN = lbList->size > 256 ? 256 : lbList->size;
+                    // Cap the per-listbox walk at the chain bound — AppendChain
+                    // Entry self-stops there anyway, so anything past it would
+                    // spin the loop for nothing. Using kMaxChainEntries (not a
+                    // separate magic number) keeps the two limits in lockstep,
+                    // so raising the chain size lifts the item ceiling with it.
+                    int lbN = lbList->size > kMaxChainEntries
+                                  ? kMaxChainEntries
+                                  : lbList->size;
                     for (int j = 0; j < lbN; ++j) {
                         AppendChainEntry(lbList->data[j]);
                     }
@@ -762,38 +810,8 @@ void RebindChain(void* panel) {
         }
     }
 
-    // Virtual credits row for Inventory + Store. Same shape as the stat-row
-    // block above: credits_value_label isn't IsChainNavigable, so without
-    // this the user can't reach the gold display the engine renders for
-    // sighted players. menus_credits::ForEachCreditsRowAnchor is a no-op
-    // for unsupported panel kinds, so we call it unconditionally.
-    {
-        auto onCreditsAnchor = [](void* labelControl, int sortCy,
-                                  void* userData) -> bool {
-            void* p = userData;
-            if (g_chainCount >= kMaxChainEntries) return false;
-            int cx, cy;
-            // cx from the on-screen label so a cursor warp on chain step
-            // lands the mouse on the visible credits readout; cy is the
-            // synthetic sortCy so the entry sorts above real buttons.
-            if (!GetControlCenter(labelControl, cx, cy)) {
-                cx = 0;
-            }
-            // Skip when the engine hasn't yet populated the value (gui_
-            // string empty mid-frame). Row reappears on the next rebind.
-            char probe[8];
-            if (!acc::menus::credits::ExtractCreditsRow(
-                    p, labelControl, probe, sizeof(probe))) {
-                return true;
-            }
-            g_chain[g_chainCount++] = {
-                labelControl, cx, sortCy, /*textOnly=*/true
-            };
-            return true;
-        };
-        acc::menus::credits::ForEachCreditsRowAnchor(panel, onCreditsAnchor,
-                                                    panel);
-    }
+    // (Credits row is registered above, before the control/listbox walk, so
+    // a full Inventory item listbox can't starve it of a chain slot.)
 
     // Virtual wager row for the Pazaak wager popup. Same shape as credits:
     // the maximum_label isn't IsChainNavigable, so without this the user
@@ -876,7 +894,9 @@ void RebindChain(void* panel) {
             panel, onModSettingsAnchor, panel);
     }
 
-    // Insertion sort by cy ascending. Stable; n^2 is fine for n<=64.
+    // Insertion sort by cy ascending. Stable; the n^2 is cheap int compares
+    // and runs once per rebind (panel open / content change), not per tick,
+    // so it stays well within budget even at a full kMaxChainEntries chain.
     for (int i = 1; i < g_chainCount; ++i) {
         for (int j = i; j > 0 && g_chain[j].cy < g_chain[j-1].cy; --j) {
             ChainEntry tmp = g_chain[j];
