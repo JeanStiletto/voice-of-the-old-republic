@@ -535,6 +535,85 @@ const char* Get(Id id) {
 
         case Id::GalaxyMapTitle:        return "Galaxiekarte";
 
+        // ---- Help system ----
+        case Id::HelpGroupGeneral:      return "Navigation";
+        case Id::HelpGroupMovement:     return "Bewegung und Kamera";
+        case Id::HelpGroupInteraction:  return "Ziele und Interaktion";
+        case Id::HelpGroupCombat:       return "Kampf und Aktionen";
+        case Id::HelpGroupExploration:  return "Erkundung und Orientierung";
+        case Id::HelpGroupScreens:      return "Bildschirme";
+        case Id::HelpGroupMap:          return "Karte";
+        case Id::HelpGroupMod:          return "Mod-Funktionen";
+
+        case Id::HelpKeyUpDown:          return "Pfeil hoch und runter: durch Listen und Men\xFC""eintr\xE4ge bewegen";
+        case Id::HelpKeyLeftRight:       return "Pfeil links und rechts: Kategorie wechseln oder Wert \xE4ndern";
+        case Id::HelpKeyHomeEnd:         return "Pos1 und Ende: zum ersten oder letzten Eintrag springen";
+        case Id::HelpKeyEnter:           return "Eingabetaste: den fokussierten Eintrag ausl\xF6sen";
+        case Id::HelpKeyEsc:             return "Escape: Bildschirm schlie\xDF""en oder zur\xFC""ck";
+        case Id::HelpKeyReadDescription: return "Umschalt und eine Pfeiltaste: ganze Beschreibung vorlesen, ohne zu wechseln";
+        case Id::HelpKeySwitchWindows:   return "Q und E: Fenster oder Reiter wechseln, Bildschirme im Spielmen\xFC sowie Modi in L\xE4""den und Beh\xE4ltern";
+        case Id::HelpKeyF1:              return "F1: diese Tastenliste \xF6""ffnen oder schlie\xDF""en";
+        case Id::HelpKeyCtrlF1:          return "Strg und F1: die Tasten f\xFCr den aktuellen Bildschirm vorlesen";
+
+        case Id::HelpKeyWalk:           return "W und S: vorw\xE4rts und r\xFC""ckw\xE4rts gehen";
+        case Id::HelpKeyCameraRotate:   return "A und D: Kamera nach links und rechts drehen";
+        case Id::HelpKeyStrafe:         return "Z und C: nach links und rechts treten";
+        case Id::HelpKeyPause:          return "Leertaste: Spiel anhalten und fortsetzen";
+        case Id::HelpKeyViewMode:       return "B: Umsehen-Modus, Position halten und die Kamera drehen";
+        case Id::HelpKeySwitchLeader:   return "Tabulator: gesteuertes Gruppenmitglied wechseln";
+
+        case Id::HelpKeyCycleTargets:   return "Q und E: nahe Ziele durchschalten";
+        case Id::HelpKeyInteract:       return "Eingabetaste: mit dem anvisierten Ziel interagieren oder angreifen";
+        case Id::HelpKeyOpenActionMenu: return "Umschalt und Eingabetaste: Aktionsmen\xFC f\xFCr das anvisierte Ziel \xF6""ffnen";
+        case Id::HelpKeySelfStatus:     return "H: eigene Gesundheit, Effekte und Waffe ansagen";
+        case Id::HelpKeyAnnounceFocus:  return "Minus: das fokussierte Objekt ansagen";
+        case Id::HelpKeyWalkToFocus:    return "Umschalt und Minus: zum fokussierten Objekt gehen";
+        case Id::HelpKeyBeacon:         return "Strg und Minus: Wegweiser zum fokussierten Objekt starten";
+        case Id::HelpKeyDialogRepeat:   return "R: die aktuelle gesprochene Zeile wiederholen";
+
+        case Id::HelpKeyCycleObjects:   return "Komma und Punkt: Objekte der aktuellen Kategorie durchschalten";
+        case Id::HelpKeyCycleCategory:  return "Umschalt und Komma oder Punkt: vorherige oder n\xE4""chste Kategorie";
+        case Id::HelpKeyCycleEnds:      return "Strg und Komma oder Punkt: zum n\xE4""chsten oder entferntesten Objekt springen";
+        case Id::HelpKeyHeading:        return "Rechte Alt-Taste: genaue Blickrichtung in Grad ansagen";
+        case Id::HelpKeyCameraOrient:   return "N: Kamera zur n\xE4""chsten Richtung drehen oder zum n\xE4""chsten Wegpunkt ausrichten";
+        case Id::HelpKeyDropMarker:     return "Umschalt und N: eine Kartenmarkierung an deiner Position setzen";
+
+        case Id::FmtHelpNumberActions:   return "1 bis 7: die zuletzt benutzte Aktion einer Kategorie einsetzen. 1 %s, 2 %s, 3 %s, 4 %s, 5 %s, 6 %s, 7 %s";
+        case Id::HelpKeyOpenCategory:    return "Umschalt und 1 bis 7: die jeweilige Kategorie zum Ausw\xE4hlen \xF6""ffnen";
+        case Id::HelpKeyActionQueue:     return "Umschalt und H: Aktionswarteschlange \xF6""ffnen";
+        case Id::HelpKeyLevelUp:         return "Umschalt und L: Stufenaufstieg \xF6""ffnen";
+        case Id::HelpKeyCancelCombat:    return "F: Kampf abbrechen";
+
+        case Id::HelpKeyScreenMap:       return "M: Karte \xF6""ffnen";
+        case Id::HelpKeyScreenMessages:  return "J: Nachrichten und R\xFC""ckmeldungen";
+        case Id::HelpKeyScreenQuests:    return "L: Aufgaben";
+        case Id::HelpKeyScreenAbilities: return "K: F\xE4higkeiten, Talente und Machtkr\xE4""fte";
+        case Id::HelpKeyScreenCharacter: return "P: Charakterbogen";
+        case Id::HelpKeyScreenInventory: return "I: Gruppeninventar";
+        case Id::HelpKeyScreenEquip:     return "U: Charakter ausr\xFCsten";
+        case Id::HelpKeyScreenOptions:   return "O: Optionen";
+
+        case Id::HelpKeyMapCursor:       return "Pfeiltasten: Kartencursor bewegen, um Gel\xE4nde und Markierungen zu lesen";
+        case Id::HelpKeyMapPosition:     return "Rechte Alt-Taste: Position und Blickrichtung auf der Karte ansagen";
+
+
+        case Id::HelpKeyModSettings:     return "Mod-Einstellungen findest du in den Optionen, ganz unten in der Liste";
+
+        case Id::HelpMenuOpened:    return "Tastenhilfe. Hoch und runter zum Lesen, Escape zum Schlie\xDF""en.";
+        case Id::HelpMenuClosed:    return "Tastenhilfe geschlossen.";
+        case Id::FmtHelpRowOf:      return "%s. %d von %d";
+        case Id::FmtHelpGroupHeader: return "Abschnitt: %s";
+
+        case Id::HelpContextNothing: return "Keine besonderen Tasten f\xFCr diesen Bildschirm.";
+        case Id::FmtHelpContextLine: return "%s %s.";
+        case Id::HelpContextWorld:       return "In der Welt.";
+        case Id::HelpContextMenu:        return "Men\xFC.";
+        case Id::HelpContextMap:         return "Karte.";
+        case Id::HelpContextActionMenu:  return "Aktionsmen\xFC.";
+        case Id::HelpContextDialog:      return "Gespr\xE4""ch.";
+        case Id::HelpContextContainer:   return "Beh\xE4lter.";
+        case Id::HelpContextStore:       return "Laden.";
+
         case Id::Count_:               return "";
     }
     return "";

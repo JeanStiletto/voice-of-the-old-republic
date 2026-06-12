@@ -21,6 +21,13 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.5.1</h2>
+
+<h3>New features:</h3>
+
+- A new key list you can open anywhere with F1. Press F1 — in the world, in any menu, in a conversation, on the map — and the mod reads a grouped list of every important key, both the mod's own keys and the game's. Up and down arrows move through it, Home and End jump to the start or end, Enter repeats the current line, and Escape or F1 again closes it. It's meant as a reference for new players who don't yet know the controls: the list is organised into sections (navigation, movement, targeting, combat, screens, map and so on) so related keys are read together, and shared keys like the arrows are mentioned once rather than repeated in every section.
+- A second key, Ctrl+F1, reads just the keys that matter on the screen you're on right now. Where F1 lists everything, Ctrl+F1 speaks a short summary tailored to your situation — the in-world keys when you're walking around, the menu keys when a menu is open, the map keys on the map, the action-menu keys when it's up, and so on. It's the same idea as the cue the Pazaak board already speaks when it opens, now available on demand across the game.
+
 <h2>v0.5</h2>
 
 <h3>New features:</h3>

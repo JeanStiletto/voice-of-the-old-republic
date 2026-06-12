@@ -20,6 +20,7 @@
 #include "examine_view.h"
 #include "guidance_autowalk.h"
 #include "guidance_beacon.h"
+#include "help.h"
 #include "hotkeys.h"
 #include "interact_hotkey.h"
 #include "log.h"
@@ -166,6 +167,13 @@ void Dispatch() {
     // Esc) on its own tick before those pollers sample them.
     PHASE("pazaak", acc::pazaak::Tick());
 
+    // Help system — F1 toggles the global keybind list, Ctrl+F1 reads the
+    // current screen's keys. Runs ahead of the menu/cycle/interact pollers so
+    // that while the list is open it claims the nav edges (Up/Down/Home/End/
+    // Enter/Esc) before those consumers sample them. After pazaak so the
+    // minigame keeps its own keys.
+    PHASE("help", acc::help::PollWin32());
+
     // Menu monitors (focus/contents/listbox change detection, give-mode poll).
     PHASE("menus.TickMonitors", acc::menus::TickMonitors());
 
@@ -252,6 +260,7 @@ void Dispatch() {
     PHASE("combat.queue", acc::combat::queue::Tick());
     PHASE("combat_diag", acc::combat_diag::Tick());
     PHASE("examine_view", acc::examine_view::Tick());
+    PHASE("help.tick", acc::help::Tick());
     PHASE("combat.special_watch", acc::combat::special_watch::Tick());
 
     // One-shot priority-group dump.

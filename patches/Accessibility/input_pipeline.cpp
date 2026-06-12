@@ -24,6 +24,7 @@
                                // game object before stamping it)
 #include "engine_input.h"
 #include "examine_view.h"      // IsActive — in-world overlay Esc consume
+#include "help.h"              // IsMenuOpen — in-world overlay Esc consume
 #include "engine_radial.h"     // SelectActionInRow — stamp field1[target_type*3
                                // +row] so DoTargetAction fires the user's
                                // last-cycled variant for bare 1..3
@@ -163,7 +164,8 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
         ((acc::unified_menu::IsActive() &&
           !acc::unified_menu::IsSuspended()) ||
          acc::combat::queue::IsActive() ||
-         acc::examine_view::IsActive())) {
+         acc::examine_view::IsActive() ||
+         acc::help::IsMenuOpen())) {
         acclog::Write("Diag.ClientHIE",
                       "seq=%u Esc CONSUMED — in-world overlay active "
                       "(suppressing engine pause-menu open)", seq);

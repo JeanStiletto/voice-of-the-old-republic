@@ -514,6 +514,85 @@ const char* Get(Id id) {
 
         case Id::GalaxyMapTitle:        return "Galaxy map";
 
+        // ---- Help system ----
+        case Id::HelpGroupGeneral:      return "Navigation";
+        case Id::HelpGroupMovement:     return "Movement and camera";
+        case Id::HelpGroupInteraction:  return "Targeting and interaction";
+        case Id::HelpGroupCombat:       return "Combat and actions";
+        case Id::HelpGroupExploration:  return "Exploration and orientation";
+        case Id::HelpGroupScreens:      return "Screens";
+        case Id::HelpGroupMap:          return "Map";
+        case Id::HelpGroupMod:          return "Mod features";
+
+        case Id::HelpKeyUpDown:          return "Up and down arrow: move through lists and menu entries";
+        case Id::HelpKeyLeftRight:       return "Left and right arrow: switch category or change a value";
+        case Id::HelpKeyHomeEnd:         return "Home and End: jump to the first or last entry";
+        case Id::HelpKeyEnter:           return "Enter: activate the focused entry";
+        case Id::HelpKeyEsc:             return "Escape: close the screen or go back";
+        case Id::HelpKeyReadDescription: return "Shift plus an arrow: read the full description without moving";
+        case Id::HelpKeySwitchWindows:   return "Q and E: switch windows or tabs, in-game menu screens, and modes in stores and containers";
+        case Id::HelpKeyF1:              return "F1: open or close this key list";
+        case Id::HelpKeyCtrlF1:          return "Control plus F1: read the keys for the current screen";
+
+        case Id::HelpKeyWalk:           return "W and S: walk forward and back";
+        case Id::HelpKeyCameraRotate:   return "A and D: rotate the camera left and right";
+        case Id::HelpKeyStrafe:         return "Z and C: step left and right";
+        case Id::HelpKeyPause:          return "Space: pause and unpause the game";
+        case Id::HelpKeyViewMode:       return "B: look-around mode, hold position while you turn the camera";
+        case Id::HelpKeySwitchLeader:   return "Tab: switch the party member you control";
+
+        case Id::HelpKeyCycleTargets:   return "Q and E: cycle nearby targets";
+        case Id::HelpKeyInteract:       return "Enter: interact with or attack the focused target";
+        case Id::HelpKeyOpenActionMenu: return "Shift plus Enter: open the action menu for the focused target";
+        case Id::HelpKeySelfStatus:     return "H: announce your own health, effects and weapon";
+        case Id::HelpKeyAnnounceFocus:  return "Minus: announce the focused object";
+        case Id::HelpKeyWalkToFocus:    return "Shift plus minus: walk to the focused object";
+        case Id::HelpKeyBeacon:         return "Control plus minus: start a guidance beacon to the focused object";
+        case Id::HelpKeyDialogRepeat:   return "R: repeat the current spoken line";
+
+        case Id::HelpKeyCycleObjects:   return "Comma and period: cycle objects in the current category";
+        case Id::HelpKeyCycleCategory:  return "Shift plus comma or period: previous or next category";
+        case Id::HelpKeyCycleEnds:      return "Control plus comma or period: jump to the nearest or farthest object";
+        case Id::HelpKeyHeading:        return "Right Alt: announce your exact heading in degrees";
+        case Id::HelpKeyCameraOrient:   return "N: turn the camera to the next direction, or face the next beacon waypoint";
+        case Id::HelpKeyDropMarker:     return "Shift plus N: drop a map marker at your position";
+
+        case Id::FmtHelpNumberActions:   return "1 to 7: use a category's most recent action. 1 %s, 2 %s, 3 %s, 4 %s, 5 %s, 6 %s, 7 %s";
+        case Id::HelpKeyOpenCategory:    return "Shift plus 1 to 7: open that category to choose an action";
+        case Id::HelpKeyActionQueue:     return "Shift plus H: open the action queue";
+        case Id::HelpKeyLevelUp:         return "Shift plus L: open the level-up screen";
+        case Id::HelpKeyCancelCombat:    return "F: cancel combat";
+
+        case Id::HelpKeyScreenMap:       return "M: open the map";
+        case Id::HelpKeyScreenMessages:  return "J: messages and feedback";
+        case Id::HelpKeyScreenQuests:    return "L: quests";
+        case Id::HelpKeyScreenAbilities: return "K: skills, feats and force powers";
+        case Id::HelpKeyScreenCharacter: return "P: character sheet";
+        case Id::HelpKeyScreenInventory: return "I: party inventory";
+        case Id::HelpKeyScreenEquip:     return "U: equip character";
+        case Id::HelpKeyScreenOptions:   return "O: options";
+
+        case Id::HelpKeyMapCursor:       return "Arrow keys: move the map cursor to read terrain and markers";
+        case Id::HelpKeyMapPosition:     return "Right Alt: announce your position and facing on the map";
+
+
+        case Id::HelpKeyModSettings:     return "Mod settings are in Options, at the bottom of the list";
+
+        case Id::HelpMenuOpened:    return "Key help. Up and down to read, Escape to close.";
+        case Id::HelpMenuClosed:    return "Key help closed.";
+        case Id::FmtHelpRowOf:      return "%s. %d of %d";
+        case Id::FmtHelpGroupHeader: return "Section: %s";
+
+        case Id::HelpContextNothing: return "No special keys for this screen.";
+        case Id::FmtHelpContextLine: return "%s %s.";
+        case Id::HelpContextWorld:       return "In the world.";
+        case Id::HelpContextMenu:        return "Menu.";
+        case Id::HelpContextMap:         return "Map.";
+        case Id::HelpContextActionMenu:  return "Action menu.";
+        case Id::HelpContextDialog:      return "Conversation.";
+        case Id::HelpContextContainer:   return "Container.";
+        case Id::HelpContextStore:       return "Store.";
+
         case Id::Count_:               return "";
     }
     return "";

@@ -516,6 +516,85 @@ const char* Get(Id id) {
 
         case Id::GalaxyMapTitle:        return "Mappa galattica";
 
+        // ---- Help system ----
+        case Id::HelpGroupGeneral:      return "Navigazione";
+        case Id::HelpGroupMovement:     return "Movimento e telecamera";
+        case Id::HelpGroupInteraction:  return "Bersagli e interazione";
+        case Id::HelpGroupCombat:       return "Combattimento e azioni";
+        case Id::HelpGroupExploration:  return "Esplorazione e orientamento";
+        case Id::HelpGroupScreens:      return "Schermate";
+        case Id::HelpGroupMap:          return "Mappa";
+        case Id::HelpGroupMod:          return "Funzioni della mod";
+
+        case Id::HelpKeyUpDown:          return "Freccia su e gi\xF9: scorrere elenchi e voci di menu";
+        case Id::HelpKeyLeftRight:       return "Freccia sinistra e destra: cambiare categoria o modificare un valore";
+        case Id::HelpKeyHomeEnd:         return "Inizio e Fine: andare alla prima o all'ultima voce";
+        case Id::HelpKeyEnter:           return "Invio: attivare la voce selezionata";
+        case Id::HelpKeyEsc:             return "Esc: chiudere la schermata o tornare indietro";
+        case Id::HelpKeyReadDescription: return "Maiusc pi\xF9 una freccia: leggere la descrizione completa senza spostarsi";
+        case Id::HelpKeySwitchWindows:   return "Q ed E: cambiare finestra o scheda, schermata di menu, e modalit\xE0 in negozi e contenitori";
+        case Id::HelpKeyF1:              return "F1: aprire o chiudere questo elenco di tasti";
+        case Id::HelpKeyCtrlF1:          return "Ctrl pi\xF9 F1: leggere i tasti della schermata attuale";
+
+        case Id::HelpKeyWalk:           return "W e S: avanzare e indietreggiare";
+        case Id::HelpKeyCameraRotate:   return "A e D: ruotare la telecamera a sinistra e a destra";
+        case Id::HelpKeyStrafe:         return "Z e C: spostarsi di lato a sinistra e a destra";
+        case Id::HelpKeyPause:          return "Spazio: mettere in pausa e riprendere";
+        case Id::HelpKeyViewMode:       return "B: modalit\xE0 osservazione, restare fermi mentre si gira la telecamera";
+        case Id::HelpKeySwitchLeader:   return "Tab: cambiare il membro del gruppo controllato";
+
+        case Id::HelpKeyCycleTargets:   return "Q ed E: scorrere i bersagli vicini";
+        case Id::HelpKeyInteract:       return "Invio: interagire con il bersaglio selezionato o attaccarlo";
+        case Id::HelpKeyOpenActionMenu: return "Maiusc pi\xF9 Invio: aprire il menu azioni del bersaglio selezionato";
+        case Id::HelpKeySelfStatus:     return "H: annunciare la propria salute, gli effetti e l'arma";
+        case Id::HelpKeyAnnounceFocus:  return "Meno: annunciare l'oggetto evidenziato";
+        case Id::HelpKeyWalkToFocus:    return "Maiusc pi\xF9 meno: camminare verso l'oggetto evidenziato";
+        case Id::HelpKeyBeacon:         return "Ctrl pi\xF9 meno: avviare una guida verso l'oggetto evidenziato";
+        case Id::HelpKeyDialogRepeat:   return "R: ripetere la battuta attuale";
+
+        case Id::HelpKeyCycleObjects:   return "Virgola e punto: scorrere gli oggetti della categoria attuale";
+        case Id::HelpKeyCycleCategory:  return "Maiusc pi\xF9 virgola o punto: categoria precedente o successiva";
+        case Id::HelpKeyCycleEnds:      return "Ctrl pi\xF9 virgola o punto: andare all'oggetto pi\xF9 vicino o pi\xF9 lontano";
+        case Id::HelpKeyHeading:        return "Alt destro: annunciare la direzione esatta in gradi";
+        case Id::HelpKeyCameraOrient:   return "N: girare la telecamera verso la direzione successiva, o orientarsi al prossimo punto di passaggio";
+        case Id::HelpKeyDropMarker:     return "Maiusc pi\xF9 N: posizionare un indicatore sulla mappa nella tua posizione";
+
+        case Id::FmtHelpNumberActions:   return "Da 1 a 7: usare l'ultima azione di una categoria. 1 %s, 2 %s, 3 %s, 4 %s, 5 %s, 6 %s, 7 %s";
+        case Id::HelpKeyOpenCategory:    return "Maiusc pi\xF9 1 a 7: aprire quella categoria per scegliere un'azione";
+        case Id::HelpKeyActionQueue:     return "Maiusc pi\xF9 H: aprire la coda delle azioni";
+        case Id::HelpKeyLevelUp:         return "Maiusc pi\xF9 L: aprire la schermata di avanzamento di livello";
+        case Id::HelpKeyCancelCombat:    return "F: annullare il combattimento";
+
+        case Id::HelpKeyScreenMap:       return "M: aprire la mappa";
+        case Id::HelpKeyScreenMessages:  return "J: messaggi e feedback";
+        case Id::HelpKeyScreenQuests:    return "L: missioni";
+        case Id::HelpKeyScreenAbilities: return "K: abilit\xE0, talenti e poteri della Forza";
+        case Id::HelpKeyScreenCharacter: return "P: scheda del personaggio";
+        case Id::HelpKeyScreenInventory: return "I: inventario del gruppo";
+        case Id::HelpKeyScreenEquip:     return "U: equipaggiare il personaggio";
+        case Id::HelpKeyScreenOptions:   return "O: opzioni";
+
+        case Id::HelpKeyMapCursor:       return "Tasti freccia: spostare il cursore della mappa per leggere terreno e indicatori";
+        case Id::HelpKeyMapPosition:     return "Alt destro: annunciare la tua posizione e orientamento sulla mappa";
+
+
+        case Id::HelpKeyModSettings:     return "Le impostazioni della mod sono nelle Opzioni, in fondo all'elenco";
+
+        case Id::HelpMenuOpened:    return "Guida ai tasti. Su e gi\xF9 per leggere, Esc per chiudere.";
+        case Id::HelpMenuClosed:    return "Guida ai tasti chiusa.";
+        case Id::FmtHelpRowOf:      return "%s. %d di %d";
+        case Id::FmtHelpGroupHeader: return "Sezione: %s";
+
+        case Id::HelpContextNothing: return "Nessun tasto speciale per questa schermata.";
+        case Id::FmtHelpContextLine: return "%s %s.";
+        case Id::HelpContextWorld:       return "Nel mondo.";
+        case Id::HelpContextMenu:        return "Menu.";
+        case Id::HelpContextMap:         return "Mappa.";
+        case Id::HelpContextActionMenu:  return "Menu azioni.";
+        case Id::HelpContextDialog:      return "Conversazione.";
+        case Id::HelpContextContainer:   return "Contenitore.";
+        case Id::HelpContextStore:       return "Negozio.";
+
         case Id::Count_:               return "";
     }
     return "";

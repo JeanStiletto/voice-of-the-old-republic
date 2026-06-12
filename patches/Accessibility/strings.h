@@ -1435,6 +1435,114 @@ enum class Id : int {
     //      travels, Esc cancels; Shift+Down reads the planet description.
     GalaxyMapTitle,
 
+    // ---- Help system (help.cpp). Two surfaces share one tagged keybind
+    //      catalog: F1 opens a navigable list of every important binding
+    //      grouped under section headers; Ctrl+F1 speaks the subset tagged
+    //      for the current screen (in-world / menu / map / action menu /
+    //      dialog / container / store). See help.h for the context model.
+    //
+    //      Group headers — spoken as a section marker while scrolling the
+    //      F1 list past a header row (FmtHelpGroupHeader wraps them).
+    HelpGroupGeneral,
+    HelpGroupMovement,
+    HelpGroupInteraction,
+    HelpGroupCombat,
+    HelpGroupExploration,
+    HelpGroupScreens,
+    HelpGroupMap,
+    HelpGroupMod,
+
+    //      Keybind entries — each is one self-contained "KEY: what it does"
+    //      phrase, authored so a join with ". " reads cleanly when Ctrl+F1
+    //      speaks several in a row. Navigation keys (arrows / Enter / Esc)
+    //      live once in the General group and are tagged for every screen
+    //      they apply to, so the user hears them once, not per section.
+    HelpKeyUpDown,
+    HelpKeyLeftRight,
+    HelpKeyHomeEnd,
+    HelpKeyEnter,
+    HelpKeyEsc,
+    HelpKeyReadDescription,
+    HelpKeySwitchWindows,    // Q/E — windows/tabs, menu screens, store/container modes
+    HelpKeyF1,
+    HelpKeyCtrlF1,
+    // Movement & camera (in-world).
+    HelpKeyWalk,
+    HelpKeyCameraRotate,
+    HelpKeyStrafe,
+    HelpKeyPause,
+    HelpKeyViewMode,
+    HelpKeySwitchLeader,
+    // Targeting & interaction (in-world).
+    HelpKeyCycleTargets,
+    HelpKeyInteract,
+    HelpKeyOpenActionMenu,
+    HelpKeySelfStatus,
+    HelpKeyAnnounceFocus,
+    HelpKeyWalkToFocus,
+    HelpKeyBeacon,
+    HelpKeyDialogRepeat,
+    // Exploration / orientation (in-world + map).
+    HelpKeyCycleObjects,
+    HelpKeyCycleCategory,
+    HelpKeyCycleEnds,
+    HelpKeyHeading,
+    HelpKeyCameraOrient,
+    HelpKeyDropMarker,
+    // Combat & actions (in-world). The number keys collapse into two
+    // entries: a bare-key line (composed at runtime from the MenuCat*
+    // category names so the help matches what the action menu speaks) and a
+    // Shift-key "open the category" line.
+    FmtHelpNumberActions,    // composed: "1..7: last action of a category. 1 %s .. 7 %s"
+    HelpKeyOpenCategory,
+    HelpKeyActionQueue,
+    HelpKeyLevelUp,
+    HelpKeyCancelCombat,
+    // Quick screens (in-world hotkeys that open menus).
+    HelpKeyScreenMap,
+    HelpKeyScreenMessages,
+    HelpKeyScreenQuests,
+    HelpKeyScreenAbilities,
+    HelpKeyScreenCharacter,
+    HelpKeyScreenInventory,
+    HelpKeyScreenEquip,
+    HelpKeyScreenOptions,
+    // Map panel.
+    HelpKeyMapCursor,
+    HelpKeyMapPosition,
+    // Mod features.
+    HelpKeyModSettings,
+
+    //      F1 list framing.
+    //   HelpMenuOpened     — opener cue spoken on F1. Tells the user how to
+    //                        read and close the list.
+    //   HelpMenuClosed     — close cue.
+    //   FmtHelpRowOf        — per-row announce. Args: row text (`%s`),
+    //                        1-based index (`%d`), total (`%d`).
+    //   FmtHelpGroupHeader  — wraps a section-header row. Arg: header (`%s`).
+    HelpMenuOpened,
+    HelpMenuClosed,
+    FmtHelpRowOf,
+    FmtHelpGroupHeader,
+
+    //      Ctrl+F1 context help framing.
+    //   HelpContextNothing  — spoken when the current screen has no tagged
+    //                        keys (per feedback_never_silence_fallback_-
+    //                        announcement: say something, don't drop).
+    //   FmtHelpContextLine  — composes "{context name} {joined keys}". Args:
+    //                        context name (`%s`), joined keys (`%s`). No F1
+    //                        hint: a user who found Ctrl+F1 has found F1.
+    //   HelpContext*        — short screen-name prefixes.
+    HelpContextNothing,
+    FmtHelpContextLine,
+    HelpContextWorld,
+    HelpContextMenu,
+    HelpContextMap,
+    HelpContextActionMenu,
+    HelpContextDialog,
+    HelpContextContainer,
+    HelpContextStore,
+
     Count_,
 };
 

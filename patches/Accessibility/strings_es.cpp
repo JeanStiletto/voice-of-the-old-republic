@@ -518,6 +518,85 @@ const char* Get(Id id) {
 
         case Id::GalaxyMapTitle:        return "Mapa gal\xE1""ctico";
 
+        // ---- Help system ----
+        case Id::HelpGroupGeneral:      return "Navegaci\xF3n";
+        case Id::HelpGroupMovement:     return "Movimiento y c\xE1mara";
+        case Id::HelpGroupInteraction:  return "Objetivos e interacci\xF3n";
+        case Id::HelpGroupCombat:       return "Combate y acciones";
+        case Id::HelpGroupExploration:  return "Exploraci\xF3n y orientaci\xF3n";
+        case Id::HelpGroupScreens:      return "Pantallas";
+        case Id::HelpGroupMap:          return "Mapa";
+        case Id::HelpGroupMod:          return "Funciones del mod";
+
+        case Id::HelpKeyUpDown:          return "Flecha arriba y abajo: moverse por listas y entradas de men\xFA";
+        case Id::HelpKeyLeftRight:       return "Flecha izquierda y derecha: cambiar de categor\xED""a o modificar un valor";
+        case Id::HelpKeyHomeEnd:         return "Inicio y Fin: ir a la primera o \xFAltima entrada";
+        case Id::HelpKeyEnter:           return "Intro: activar la entrada seleccionada";
+        case Id::HelpKeyEsc:             return "Escape: cerrar la pantalla o volver";
+        case Id::HelpKeyReadDescription: return "May\xFAs m\xE1s una flecha: leer la descripci\xF3n completa sin moverse";
+        case Id::HelpKeySwitchWindows:   return "Q y E: cambiar de ventana o pesta\xF1""a, de pantalla de men\xFA, y de modo en tiendas y contenedores";
+        case Id::HelpKeyF1:              return "F1: abrir o cerrar esta lista de teclas";
+        case Id::HelpKeyCtrlF1:          return "Ctrl m\xE1s F1: leer las teclas de la pantalla actual";
+
+        case Id::HelpKeyWalk:           return "W y S: avanzar y retroceder";
+        case Id::HelpKeyCameraRotate:   return "A y D: girar la c\xE1mara a la izquierda y a la derecha";
+        case Id::HelpKeyStrafe:         return "Z y C: desplazarse de lado a la izquierda y a la derecha";
+        case Id::HelpKeyPause:          return "Espacio: pausar y reanudar";
+        case Id::HelpKeyViewMode:       return "B: modo observaci\xF3n, mantener la posici\xF3n mientras giras la c\xE1mara";
+        case Id::HelpKeySwitchLeader:   return "Tab: cambiar el miembro del grupo que controlas";
+
+        case Id::HelpKeyCycleTargets:   return "Q y E: recorrer los objetivos cercanos";
+        case Id::HelpKeyInteract:       return "Intro: interactuar con el objetivo seleccionado o atacarlo";
+        case Id::HelpKeyOpenActionMenu: return "May\xFAs m\xE1s Intro: abrir el men\xFA de acciones del objetivo seleccionado";
+        case Id::HelpKeySelfStatus:     return "H: anunciar tu salud, tus efectos y tu arma";
+        case Id::HelpKeyAnnounceFocus:  return "Menos: anunciar el objeto resaltado";
+        case Id::HelpKeyWalkToFocus:    return "May\xFAs m\xE1s menos: caminar hacia el objeto resaltado";
+        case Id::HelpKeyBeacon:         return "Ctrl m\xE1s menos: iniciar una gu\xED""a hacia el objeto resaltado";
+        case Id::HelpKeyDialogRepeat:   return "R: repetir la l\xEDnea actual";
+
+        case Id::HelpKeyCycleObjects:   return "Coma y punto: recorrer los objetos de la categor\xED""a actual";
+        case Id::HelpKeyCycleCategory:  return "May\xFAs m\xE1s coma o punto: categor\xED""a anterior o siguiente";
+        case Id::HelpKeyCycleEnds:      return "Ctrl m\xE1s coma o punto: ir al objeto m\xE1s cercano o m\xE1s lejano";
+        case Id::HelpKeyHeading:        return "Alt derecho: anunciar tu rumbo exacto en grados";
+        case Id::HelpKeyCameraOrient:   return "N: girar la c\xE1mara hacia la siguiente direcci\xF3n, o mirar al siguiente punto de paso";
+        case Id::HelpKeyDropMarker:     return "May\xFAs m\xE1s N: colocar un marcador de mapa en tu posici\xF3n";
+
+        case Id::FmtHelpNumberActions:   return "1 a 7: usar la \xFAltima acci\xF3n de una categor\xED""a. 1 %s, 2 %s, 3 %s, 4 %s, 5 %s, 6 %s, 7 %s";
+        case Id::HelpKeyOpenCategory:    return "May\xFAs m\xE1s 1 a 7: abrir esa categor\xED""a para elegir una acci\xF3n";
+        case Id::HelpKeyActionQueue:     return "May\xFAs m\xE1s H: abrir la cola de acciones";
+        case Id::HelpKeyLevelUp:         return "May\xFAs m\xE1s L: abrir la pantalla de subida de nivel";
+        case Id::HelpKeyCancelCombat:    return "F: cancelar el combate";
+
+        case Id::HelpKeyScreenMap:       return "M: abrir el mapa";
+        case Id::HelpKeyScreenMessages:  return "J: mensajes y notificaciones";
+        case Id::HelpKeyScreenQuests:    return "L: misiones";
+        case Id::HelpKeyScreenAbilities: return "K: habilidades, dotes y poderes de la Fuerza";
+        case Id::HelpKeyScreenCharacter: return "P: hoja de personaje";
+        case Id::HelpKeyScreenInventory: return "I: inventario del grupo";
+        case Id::HelpKeyScreenEquip:     return "U: equipar al personaje";
+        case Id::HelpKeyScreenOptions:   return "O: opciones";
+
+        case Id::HelpKeyMapCursor:       return "Teclas de flecha: mover el cursor del mapa para leer el terreno y los marcadores";
+        case Id::HelpKeyMapPosition:     return "Alt derecho: anunciar tu posici\xF3n y orientaci\xF3n en el mapa";
+
+
+        case Id::HelpKeyModSettings:     return "Los ajustes del mod est\xE1n en Opciones, al final de la lista";
+
+        case Id::HelpMenuOpened:    return "Ayuda de teclas. Arriba y abajo para leer, Escape para cerrar.";
+        case Id::HelpMenuClosed:    return "Ayuda de teclas cerrada.";
+        case Id::FmtHelpRowOf:      return "%s. %d de %d";
+        case Id::FmtHelpGroupHeader: return "Secci\xF3n: %s";
+
+        case Id::HelpContextNothing: return "No hay teclas especiales para esta pantalla.";
+        case Id::FmtHelpContextLine: return "%s %s.";
+        case Id::HelpContextWorld:       return "En el mundo.";
+        case Id::HelpContextMenu:        return "Men\xFA.";
+        case Id::HelpContextMap:         return "Mapa.";
+        case Id::HelpContextActionMenu:  return "Men\xFA de acciones.";
+        case Id::HelpContextDialog:      return "Conversaci\xF3n.";
+        case Id::HelpContextContainer:   return "Contenedor.";
+        case Id::HelpContextStore:       return "Tienda.";
+
         case Id::Count_:               return "";
     }
     return "";

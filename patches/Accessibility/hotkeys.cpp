@@ -298,6 +298,19 @@ void InitDefaults() {
     bind(Action::EditboxSubmit,        VK_RETURN, 0, 0, 0);
     bind(Action::EditboxCancel,        VK_ESCAPE, 0, 0, 0);
 
+    // ----- Help system -----
+    // F1 toggles the global keybind list; Ctrl+F1 reads the current screen's
+    // keys. Both are Win32-polled (help::PollWin32) so they fire in every
+    // context — in-world, menus, dialog, map. F1 forbids every modifier so it
+    // stays distinct from Ctrl+F1; Ctrl+F1 requires Ctrl and forbids the rest.
+    // The engine reuses InputIndex 0x27 (KEYBOARD_F1) as its GUI "activate"
+    // code, so the menu manager hook also suppresses a raw F1 reaching a panel
+    // (see menus.cpp) to stop F1 doubling as Enter in menus.
+    bind(Action::HelpMenuOpen,         VK_F1, 0, 0,
+                                       kModShift | kModCtrl | kModAlt | kModAltGr);
+    bind(Action::HelpContext,          VK_F1, 0, kModCtrl,
+                                       kModShift | kModAlt | kModAltGr);
+
     // ----- In-game auto-updater -----
     // F5 alone. Forbid every modifier so a stray Shift/Ctrl/Alt+F5 (no
     // sibling binding yet, but cheap insurance) can't trigger the

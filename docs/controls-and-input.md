@@ -153,6 +153,13 @@ Bindings introduced by the Accessibility mod itself. All polled via Win32 `GetAs
 
 When this document and `hotkeys.cpp` disagree, `hotkeys.cpp` wins. Update both together.
 
+### Help system
+
+- F1 — Toggle the global keybind list (`help.cpp`). A synthetic in-DLL overlay (no engine panel) that works in EVERY context — in-world, any menu, dialog, map. Lists every important binding grouped under section headers; Up/Down read, Home/End jump, Enter re-reads, Esc or F1 close. Forbids every modifier. In-world the overlay pauses the world (BeginOverlayPause), matching the examine view; in a menu the panel already holds the world. **Note:** the engine reuses InputIndex `0x27` (KEYBOARD_F1) as its GUI "activate" code, so the manager hook (`menus.cpp`) suppresses a raw F1 reaching a panel to stop F1 doubling as Enter in menus.
+- Ctrl+F1 — Speak the keys relevant to the current screen (`help.cpp` SpeakContext). Detects context (in-world / menu / map / action menu / dialog / container / store) and reads the catalog entries tagged for it, ending with "press F1 for the full list". Generalises the per-screen open announcement the Pazaak board already does. Minigames are intentionally left as-is (no minigame context).
+
+Both surfaces share one tagged catalog in `help.cpp` (`kEntries`): `grp` chooses the F1 section a line lists under (F1 is exhaustive), `ctx` is a curated bitmask of the screens that speak it on Ctrl+F1 (kept short). Localised strings: `HelpGroup*` / `HelpKey*` / `HelpContext*` in `strings.h` (all five languages).
+
 ### World interaction
 
 - Enter — Interact with current target (engine click-pipeline path: SetLastClickedOnTarget + HandleMouseClickInWorld). Routes to view-mode owner if active.

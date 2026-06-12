@@ -517,6 +517,85 @@ const char* Get(Id id) {
 
         case Id::GalaxyMapTitle:        return "Carte de la galaxie";
 
+        // ---- Help system ----
+        case Id::HelpGroupGeneral:      return "Navigation";
+        case Id::HelpGroupMovement:     return "D\xE9placement et cam\xE9ra";
+        case Id::HelpGroupInteraction:  return "Cibles et interaction";
+        case Id::HelpGroupCombat:       return "Combat et actions";
+        case Id::HelpGroupExploration:  return "Exploration et orientation";
+        case Id::HelpGroupScreens:      return "\xC9""crans";
+        case Id::HelpGroupMap:          return "Carte";
+        case Id::HelpGroupMod:          return "Fonctions du mod";
+
+        case Id::HelpKeyUpDown:          return "Fl\xE8""ches haut et bas : parcourir les listes et les entr\xE9""es de menu";
+        case Id::HelpKeyLeftRight:       return "Fl\xE8""ches gauche et droite : changer de cat\xE9gorie ou modifier une valeur";
+        case Id::HelpKeyHomeEnd:         return "D\xE9""but et Fin : aller \xE0 la premi\xE8re ou derni\xE8re entr\xE9""e";
+        case Id::HelpKeyEnter:           return "Entr\xE9""e : activer l'\xE9l\xE9ment s\xE9lectionn\xE9";
+        case Id::HelpKeyEsc:             return "\xC9""chap : fermer l'\xE9""cran ou revenir";
+        case Id::HelpKeyReadDescription: return "Maj plus une fl\xE8""che : lire la description compl\xE8te sans se d\xE9placer";
+        case Id::HelpKeySwitchWindows:   return "Q et E : changer de fen\xEAtre ou d'onglet, d'\xE9""cran de menu, et de mode dans les boutiques et conteneurs";
+        case Id::HelpKeyF1:              return "F1 : ouvrir ou fermer cette liste de touches";
+        case Id::HelpKeyCtrlF1:          return "Ctrl plus F1 : lire les touches de l'\xE9""cran actuel";
+
+        case Id::HelpKeyWalk:           return "W et S : avancer et reculer";
+        case Id::HelpKeyCameraRotate:   return "A et D : tourner la cam\xE9ra \xE0 gauche et \xE0 droite";
+        case Id::HelpKeyStrafe:         return "Z et C : pas de c\xF4t\xE9 \xE0 gauche et \xE0 droite";
+        case Id::HelpKeyPause:          return "Espace : mettre en pause et reprendre";
+        case Id::HelpKeyViewMode:       return "B : mode observation, rester sur place en tournant la cam\xE9ra";
+        case Id::HelpKeySwitchLeader:   return "Tab : changer de membre du groupe contr\xF4l\xE9";
+
+        case Id::HelpKeyCycleTargets:   return "Q et E : faire d\xE9""filer les cibles proches";
+        case Id::HelpKeyInteract:       return "Entr\xE9""e : interagir avec la cible vis\xE9""e ou l'attaquer";
+        case Id::HelpKeyOpenActionMenu: return "Maj plus Entr\xE9""e : ouvrir le menu d'action de la cible vis\xE9""e";
+        case Id::HelpKeySelfStatus:     return "H : annoncer votre sant\xE9, vos effets et votre arme";
+        case Id::HelpKeyAnnounceFocus:  return "Moins : annoncer l'objet point\xE9";
+        case Id::HelpKeyWalkToFocus:    return "Maj plus moins : marcher vers l'objet point\xE9";
+        case Id::HelpKeyBeacon:         return "Ctrl plus moins : lancer un guide vers l'objet point\xE9";
+        case Id::HelpKeyDialogRepeat:   return "R : r\xE9p\xE9ter la r\xE9plique en cours";
+
+        case Id::HelpKeyCycleObjects:   return "Virgule et point : faire d\xE9""filer les objets de la cat\xE9gorie actuelle";
+        case Id::HelpKeyCycleCategory:  return "Maj plus virgule ou point : cat\xE9gorie pr\xE9""c\xE9""dente ou suivante";
+        case Id::HelpKeyCycleEnds:      return "Ctrl plus virgule ou point : aller \xE0 l'objet le plus proche ou le plus \xE9loign\xE9";
+        case Id::HelpKeyHeading:        return "Alt droite : annoncer votre cap exact en degr\xE9s";
+        case Id::HelpKeyCameraOrient:   return "N : tourner la cam\xE9ra vers la direction suivante, ou faire face au prochain point de passage";
+        case Id::HelpKeyDropMarker:     return "Maj plus N : poser un marqueur de carte \xE0 votre position";
+
+        case Id::FmtHelpNumberActions:   return "1 \xE0 7 : utiliser la derni\xE8re action d'une cat\xE9gorie. 1 %s, 2 %s, 3 %s, 4 %s, 5 %s, 6 %s, 7 %s";
+        case Id::HelpKeyOpenCategory:    return "Maj plus 1 \xE0 7 : ouvrir cette cat\xE9gorie pour choisir une action";
+        case Id::HelpKeyActionQueue:     return "Maj plus H : ouvrir la file d'actions";
+        case Id::HelpKeyLevelUp:         return "Maj plus L : ouvrir l'\xE9""cran de niveau";
+        case Id::HelpKeyCancelCombat:    return "F : annuler le combat";
+
+        case Id::HelpKeyScreenMap:       return "M : ouvrir la carte";
+        case Id::HelpKeyScreenMessages:  return "J : messages et retours";
+        case Id::HelpKeyScreenQuests:    return "L : qu\xEAtes";
+        case Id::HelpKeyScreenAbilities: return "K : comp\xE9tences, dons et pouvoirs de Force";
+        case Id::HelpKeyScreenCharacter: return "P : fiche de personnage";
+        case Id::HelpKeyScreenInventory: return "I : inventaire du groupe";
+        case Id::HelpKeyScreenEquip:     return "U : \xE9quiper le personnage";
+        case Id::HelpKeyScreenOptions:   return "O : options";
+
+        case Id::HelpKeyMapCursor:       return "Touches fl\xE9""ch\xE9""es : d\xE9placer le curseur de carte pour lire le terrain et les marqueurs";
+        case Id::HelpKeyMapPosition:     return "Alt droite : annoncer votre position et orientation sur la carte";
+
+
+        case Id::HelpKeyModSettings:     return "Les r\xE9glages du mod sont dans les Options, en bas de la liste";
+
+        case Id::HelpMenuOpened:    return "Aide des touches. Haut et bas pour lire, \xC9""chap pour fermer.";
+        case Id::HelpMenuClosed:    return "Aide des touches ferm\xE9""e.";
+        case Id::FmtHelpRowOf:      return "%s. %d sur %d";
+        case Id::FmtHelpGroupHeader: return "Section : %s";
+
+        case Id::HelpContextNothing: return "Aucune touche sp\xE9""ciale pour cet \xE9""cran.";
+        case Id::FmtHelpContextLine: return "%s %s.";
+        case Id::HelpContextWorld:       return "Dans le monde.";
+        case Id::HelpContextMenu:        return "Menu.";
+        case Id::HelpContextMap:         return "Carte.";
+        case Id::HelpContextActionMenu:  return "Menu d'action.";
+        case Id::HelpContextDialog:      return "Conversation.";
+        case Id::HelpContextContainer:   return "Conteneur.";
+        case Id::HelpContextStore:       return "Boutique.";
+
         case Id::Count_:               return "";
     }
     return "";

@@ -91,6 +91,10 @@ enum class Action : int {
     EditboxSubmit,         // Enter while edit-mode armed
     EditboxCancel,         // Esc  while edit-mode armed
 
+    // ----- Help system -----
+    HelpMenuOpen,              // F1 — toggle the global keybind list (works everywhere)
+    HelpContext,               // Ctrl+F1 — speak the keys for the current screen
+
     // ----- In-game auto-updater -----
     CheckForUpdate,            // F5 — main menu only, gated on GetPlayerPosition
 

@@ -45,6 +45,7 @@
 #include "menus_galaxymap.h"  // Galaxy / star-map travel screen — planet cycle
 #include "pazaak.h"           // Pazaak board game — IsBoardForeground
 #include "menus_journal.h"   // Journal (Aufträge) — Enter on quest row → description
+#include "help.h"             // Help list overlay — suppress engine keys while open
 #include "engine_input.h"
 #include "engine_manager.h"
 #include "engine_offsets.h"
@@ -1526,6 +1527,43 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                           acc::engine::InputIndexName(param_1), param_1,
                           param_2);
             return trackPress(1);
+        }
+    }
+
+    // Help list overlay + raw-F1 suppression. The F1 keybind list navigates
+    // itself off Win32 edges (help::PollWin32); here we only stop the engine
+    // events reaching the underlying panel.
+    //
+    //   * Raw F1 (always): a physical F1 arrives at the manager pre-translation
+    //     as InputIndex 0x27 (kInputActivate) — Enter arrives as 0xb5/0xbb, so
+    //     0x27 here is unambiguously F1. The engine reuses 0x27 as its GUI
+    //     "activate" code, so an un-suppressed F1 would fire the focused
+    //     control. Swallow it; help::PollWin32 owns F1's open/close.
+    //   * While the list is open: swallow the nav / Enter / Esc / Home / End
+    //     events so the underlying panel doesn't navigate or activate beneath
+    //     the overlay (mirrors the mod-settings pre-empt above).
+    if (param_2 != 0) {
+        if (param_1 == kInputActivate) {
+            acclog::Write("Menus.Input",
+                          "#%d seq=%u this=%p key=F1(0x27 activate-code) "
+                          "HELP-F1-SUPPRESSED", n, seq, thisPtr);
+            return trackPress(1);
+        }
+        if (acc::help::IsMenuOpen()) {
+            switch (param_1) {
+            case kInputNavUp:   case kInputNavDown:
+            case kInputNavLeft: case kInputNavRight:
+            case kInputHome:    case kInputEnd:
+            case kInputEnter1:  case kInputEnter2:
+            case kInputEsc1:    case kInputEsc2:
+                acclog::Write("Menus.Input",
+                              "#%d seq=%u this=%p key=%s(%d) val=%d HELP-CONSUMED",
+                              n, seq, thisPtr,
+                              acc::engine::InputIndexName(param_1), param_1, param_2);
+                return trackPress(1);
+            default:
+                break;
+            }
         }
     }
 
