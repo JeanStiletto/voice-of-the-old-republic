@@ -169,22 +169,65 @@ bool ForceReacquireInput() {
     }
 }
 
+bool ReleaseInput() {
+    __try {
+        void* exoInput = *reinterpret_cast<void**>(kAddrExoInputGlobal);
+        if (!exoInput) {
+            acclog::Write("EngineInput",
+                "ReleaseInput: ExoInput global is null; skipped");
+            return false;
+        }
+        auto setActive = reinterpret_cast<PFN_CExoInputSetActive>(
+            kAddrCExoInputSetActive);
+        // SetActive(0) unacquires the DirectInput devices. KOTOR acquires its
+        // keyboard at background level (it keeps reading even when another
+        // window is foreground — harmless in fullscreen, how the game shipped).
+        // Windowed, that means menu nav keys bleed into the game while the user
+        // is in another window (e.g. a screen reader). Releasing on focus-loss
+        // makes input mirror foreground: the game holds the keyboard only while
+        // it owns the foreground. The regain edge re-Acquires via
+        // ForceReacquireInput.
+        setActive(exoInput, 0);
+        acclog::Write("EngineInput",
+            "ReleaseInput: CExoInput::SetActive(%p, 0) dispatched "
+            "(lost foreground — unacquire so keys don't bleed into the "
+            "background game)", exoInput);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("EngineInput",
+            "ReleaseInput: exception during SetActive; skipped");
+        return false;
+    }
+}
+
 namespace {
-std::atomic<bool> g_reacquirePending{false};
+// Pending input-acquisition change, set from focus-event wndprocs and drained
+// on the next clean tick. 0 = nothing, 1 = acquire (gained foreground),
+// 2 = release (lost foreground). Last writer wins, so a rapid loss->gain (or
+// gain->loss) flip collapses to its final state at drain — input ends up
+// matching the foreground state that actually settled.
+std::atomic<int> g_pendingInputState{0};
 }  // namespace
 
 void RequestInputReacquire() {
-    g_reacquirePending.store(true, std::memory_order_relaxed);
+    g_pendingInputState.store(1, std::memory_order_relaxed);
+}
+
+void RequestInputRelease() {
+    g_pendingInputState.store(2, std::memory_order_relaxed);
 }
 
 void DrainPendingReacquire() {
-    // exchange → coalesce: any number of requests since the last drain
-    // collapse into one SetActive cycle this tick.
-    if (g_reacquirePending.exchange(false, std::memory_order_relaxed)) {
+    int want = g_pendingInputState.exchange(0, std::memory_order_relaxed);
+    if (want == 1) {
         acclog::Write("EngineInput",
-            "DrainPendingReacquire: focus/window event flagged a reacquire; "
-            "forcing DirectInput re-grab");
+            "DrainPendingReacquire: focus gain flagged; forcing DirectInput "
+            "re-grab");
         ForceReacquireInput();
+    } else if (want == 2) {
+        acclog::Write("EngineInput",
+            "DrainPendingReacquire: focus loss flagged; releasing DirectInput");
+        ReleaseInput();
     }
 }
 

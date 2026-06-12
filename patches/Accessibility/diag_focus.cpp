@@ -184,12 +184,19 @@ LRESULT CALLBACK SubclassProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             // RequestInputReacquire for the full mechanism.
             if (wp != 0) {
                 acc::engine::RequestInputReacquire();
-            } else if (strcmp(tag, "Render Window") == 0) {
-                // Lost the foreground. Log which app took it — gated on the
-                // Render Window so we emit one thief record per steal rather
-                // than one per game-owned window (they share a thread and all
-                // get WM_ACTIVATEAPP).
-                LogForegroundThief(static_cast<DWORD>(lp));
+            } else {
+                // Lost the foreground. Release the engine's DirectInput grab
+                // next tick so background-level key reads stop bleeding into
+                // the game while another window (a screen reader, any app) is
+                // foreground. Input then mirrors foreground: held only while we
+                // own it. Requested on every game-owned window's active=0
+                // (coalesced); the thief log below is gated to the Render
+                // Window so we emit one thief record per steal, not one per
+                // window (they share a thread and all get WM_ACTIVATEAPP).
+                acc::engine::RequestInputRelease();
+                if (strcmp(tag, "Render Window") == 0) {
+                    LogForegroundThief(static_cast<DWORD>(lp));
+                }
             }
             break;
         case WM_SETFOCUS:
@@ -572,6 +579,14 @@ void LogComApartment(const char* tag) {
         "apartment[%s]: %s (type=%d) qualifier=%s",
         tag, ApartmentTypeName(apt), static_cast<int>(apt),
         ApartmentQualifierName(qual));
+}
+
+bool GameOwnsForeground() {
+    HWND fg = GetForegroundWindow();
+    if (!fg) return false;
+    DWORD pid = 0;
+    GetWindowThreadProcessId(fg, &pid);
+    return pid == GetCurrentProcessId();
 }
 
 void StartFocusProbe() {

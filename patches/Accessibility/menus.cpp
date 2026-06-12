@@ -467,29 +467,51 @@ static void AnnouncePanelTitle(void* panel) {
     // self-guard against repeats).
     if (IdentifyPanel(panel) == PanelKind::MainMenu) {
         acclog::BringupMark("main_menu_first_sight");
-        // Cold-start DirectInput wake-up. On a fresh launch the engine often
-        // reaches the main menu with its DirectInput devices unacquired
-        // (CExoRawInputInternal::active == 0), so keyboard input is dead until
-        // the user alt-tabs out and back in. Asserting SetActive(1) here — the
-        // first guaranteed-interactive, post-load moment — replicates the
-        // activate half of that alt-tab and acquires the keyboard immediately.
-        // Idempotent: a no-op if the engine already activated. See
-        // acc::engine::EnsureInputAcquired for the full mechanism.
-        acc::engine::EnsureInputAcquired();
+        // Cold-start DirectInput wake-up. On a fresh launch the engine reaches
+        // the main menu with its DirectInput keyboard unacquired, so menu input
+        // is dead until the user alt-tabs (which forces a SetActive(0)->(1)
+        // edge). We replicate that edge here, at the first guaranteed-
+        // interactive post-load moment.
+        //
+        // Must be the full 0->1 CYCLE, not a bare SetActive(1): on some
+        // machines the engine arrives with active already a STALE 1 (flag set,
+        // devices not actually acquired). A plain SetActive(1) no-ops against
+        // the stuck flag and the keyboard stays dead — observed on tester
+        // kenny's en-US build (patch-20260612-164351.log): EnsureInputAcquired
+        // fired at first-sight yet the input pump did not go live for ~20s,
+        // until his own alt-tab drove the 0->1 edge. ForceReacquireInput's
+        // leading SetActive(0) guarantees the edge regardless of the prior flag
+        // state, so the keyboard acquires immediately without an alt-tab.
+        //
+        // This is the cold-start edge only. Gate it on actually owning the
+        // foreground: input must mirror foreground (the game holds the keyboard
+        // only while it's in front), so acquiring here while an overlay/another
+        // window is in front would bleed nav keys into the background game. If
+        // we're not foreground yet, the regain edge (WM_ACTIVATEAPP active=1 ->
+        // RequestInputReacquire) acquires when the game actually comes forward.
+        if (acc::diag::focus::GameOwnsForeground()) {
+            acc::engine::ForceReacquireInput();
+        } else {
+            acclog::Write("EngineInput",
+                "cold-start acquire skipped: game not foreground at "
+                "first-sight; the focus-regain edge will acquire");
+        }
         acc::update_checker::StartBackgroundCheck();
         // Belt-and-braces — the polling thread spawned at OnRulesInit
         // should already have subclassed every game window by now, but
         // re-calling is a no-op and keeps the safety net in place in
         // case the thread didn't start (CreateThread failure logged).
         acc::diag::focus::StartFocusProbe();
-        // Arm the cold-start foreground guard. EnsureInputAcquired above
-        // fixes the pure case (engine never activated), but it cannot help
-        // when an overlay like the Xbox Game Bar popup owns the foreground
-        // at menu time — DirectInput can't Acquire while a foreign window is
-        // foreground, and the steal can land several seconds AFTER this
-        // point. The guard watches for that theft for ~15 s and pulls the
-        // game back, letting the engine re-Acquire input without an alt-tab.
-        acc::diag::focus::ArmStartupForegroundGuard();
+        // Foreground-reclaim guard retired: input now mirrors foreground
+        // (acquire on the regain edge, release on focus-loss — see
+        // engine_input.h ReleaseInput / RequestInputRelease), so the keyboard
+        // recovers on its own when the user returns to the game, with no need
+        // to forcibly steal the window back. Stealing foreground also fought
+        // screen-reader users who deliberately switch to another window. The
+        // overlay-at-launch case (Game Bar) self-heals: while the overlay is in
+        // front the game stays released (correct), and re-acquires the moment
+        // it regains the foreground. ArmStartupForegroundGuard is intentionally
+        // no longer called.
         const char* title = acc::strings::Get(acc::strings::Id::PanelTitleMainMenu);
         acclog::Write("Menus.PanelWalk",
                       "title parent=%p (main menu override) text=\"%s\"",

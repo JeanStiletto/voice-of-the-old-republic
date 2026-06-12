@@ -44,6 +44,17 @@ bool EnsureInputAcquired();
 // Returns true if dispatched (ExoInput non-null), false otherwise.
 bool ForceReacquireInput();
 
+// Release the engine's DirectInput grab via SetActive(0) — the deactivate
+// half. KOTOR acquires its keyboard at BACKGROUND cooperative level, so once
+// acquired it keeps reading the device even when another window is foreground
+// (harmless fullscreen; how the game shipped). Windowed, that bleeds menu/nav
+// keys into the game while the user is in another window — e.g. a screen-reader
+// user navigating their reader's window also drives the game's menu. Calling
+// this on focus-loss makes input mirror the foreground: the game holds the
+// keyboard only while it owns the foreground; ForceReacquireInput restores it
+// on the regain edge. Returns true if dispatched (ExoInput non-null).
+bool ReleaseInput();
+
 // Deferred-reacquire request, for focus/window events that arrive on the
 // engine's message-pump thread but at a fragile point (inside the engine's
 // own WM_ACTIVATEAPP / window-recreation handling). Rather than calling
@@ -63,8 +74,18 @@ bool ForceReacquireInput();
 // one drain collapse to a single cycle); safe to call from any thread.
 void RequestInputReacquire();
 
-// Drains a pending RequestInputReacquire (no-op if none). Call once per tick
-// from the engine thread; runs ForceReacquireInput when a request is set.
+// Counterpart for focus-LOSS: request that the next drain releases the engine's
+// DirectInput grab (ReleaseInput). Set from the focus subclass on
+// WM_ACTIVATEAPP active=0 so input mirrors foreground — without it the game
+// keeps the (background-level) keyboard acquired and nav keys bleed in while
+// the user is in another window. Set-only and coalescing; last of
+// Reacquire/Release before a drain wins, so the final settled foreground state
+// is what gets applied. Safe to call from any thread.
+void RequestInputRelease();
+
+// Drains a pending input-acquisition change (no-op if none). Call once per tick
+// from the engine thread: runs ForceReacquireInput on a pending focus-gain, or
+// ReleaseInput on a pending focus-loss.
 void DrainPendingReacquire();
 
 }  // namespace acc::engine

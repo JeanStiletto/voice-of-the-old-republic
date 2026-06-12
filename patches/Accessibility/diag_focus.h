@@ -46,6 +46,13 @@ void StartFocusProbe();
 // poll thread (StartFocusProbe) to be running. Call at MainMenu first-sight.
 void ArmStartupForegroundGuard();
 
+// True when the foreground window belongs to our process — i.e. the game owns
+// the foreground. Used to gate the cold-start input acquire: input must mirror
+// foreground, so we only acquire the keyboard at main-menu first-sight if we
+// actually own the foreground (acquiring while an overlay/other window is in
+// front would bleed keys into the background game). Cheap; no allocation.
+bool GameOwnsForeground();
+
 // Drain a pending "input blocked by Steam Big Picture" warning and speak it
 // (no-op if none queued). The focus-probe poll thread flags this when the user
 // presses a key while Steam Big Picture Mode holds the foreground — in
