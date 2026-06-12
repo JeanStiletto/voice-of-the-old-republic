@@ -188,6 +188,10 @@ void NotifyInputPumpLive() {
     TransitionTo(Phase::Responsive, "input pump confirmed live");
 }
 
+bool IsInputPumpLive() {
+    return g_phase.load(std::memory_order_acquire) == Phase::Responsive;
+}
+
 bool IsMovieWindowForeground() {
     return IsOurWindowOfClass(GetForegroundWindow(), "SWMovieWindow");
 }

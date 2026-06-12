@@ -21,6 +21,12 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.5.2</h2>
+
+<h3>Bug fixes:</h3>
+
+- The launch-time keyboard wake-up is now reliable, instead of sometimes still leaving the menus dead for several seconds. Version 0.5.1 made the mod wake the keyboard the moment the main menu appears, but on some machines that single wake-up didn't take — the game would quietly drop it a moment later (for example while it rebuilds its window), and the keyboard stayed dead until you Alt+Tabbed, just as before. The mod now keeps re-doing the wake-up until the menu actually responds to a key press, then stops, so input recovers on its own within a moment of the menu appearing. It only does this while the game is the window in front, so it never grabs the keyboard while you're working in another window.
+
 <h2>v0.5.1</h2>
 
 <h3>New features:</h3>

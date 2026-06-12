@@ -27,6 +27,17 @@ void Start();
 // the phase to Responsive and stops the announce nag from firing again.
 void NotifyInputPumpLive();
 
+// True once NotifyInputPumpLive has fired — i.e. the engine's input pump
+// has provably delivered an event all the way to a panel (2nd MainMenu
+// SetActiveControl or first manager-side consume). The cold-start
+// DirectInput reacquire retry in core_tick uses this as its stop signal:
+// it keeps re-driving the SetActive(0)->(1) edge until input is confirmed
+// live, then never runs again. Immune to the mislabeled cursor-position
+// channel that floods the input hook — those events don't drive
+// SetActiveControl, so they never trip the latch. Cheap atomic read,
+// safe from any thread.
+bool IsInputPumpLive();
+
 // True iff a SWMovieWindow owned by this process is currently the
 // foreground window. Phase-INDEPENDENT (unlike the internal phase
 // machine, which latches to Responsive once gameplay starts and then

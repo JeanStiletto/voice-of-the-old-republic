@@ -5,6 +5,7 @@
 
 #include "announce_degrees.h"
 #include "audio_footstep_suppress.h"
+#include "bringup_announce.h"
 #include "camera_announce.h"
 #include "camera_orient.h"
 #include "camera_spin_diag.h"
@@ -145,6 +146,75 @@ void WatchdogEndTick(const LARGE_INTEGER& tickStart) {
     g_haveLast = true;
 }
 
+// ---------------------------------------------------------------------------
+// Cold-start DirectInput reacquire retry
+// ---------------------------------------------------------------------------
+// On a fresh launch the engine can reach the main menu with its DirectInput
+// keyboard unacquired, so menu input is dead until the user alt-tabs (which
+// forces a SetActive(0)->(1) edge). menus.cpp fires one ForceReacquireInput at
+// MainMenu first-sight, but that single shot is not enough on every machine:
+// in tester kenny's en-US 0.5.1 log the edge fired at first-sight yet the
+// keyboard stayed dead for ~29 s — the mouse worked the whole time (cursor
+// events flowed) but no keypress reached a panel until he physically clicked
+// into the window. The likeliest cause is the engine recreating its Render
+// Window shortly after first-sight and silently dropping the acquire we just
+// drove; with no retry, nothing re-establishes it.
+//
+// This re-drives the edge every tick until input is provably live, then never
+// runs again for the session. Guards:
+//   * Stops permanently once acc::bringup_announce::IsInputPumpLive() — the
+//     pump has delivered an event to a panel. Immune to the mislabeled
+//     cursor-position channel that floods the input hook (it doesn't drive
+//     SetActiveControl, so it never trips the latch).
+//   * Only while the game owns the foreground — never acquire under another
+//     app, so input keeps mirroring foreground (no nav-key bleed into the
+//     background game while a screen reader / other window is in front).
+//   * Throttled to kReacquireRetryMs between edges, so a key that is mid-
+//     delivery isn't shredded by a (0) phase. The pump-live latch fires within
+//     a frame or two of a successful acquire (well under the throttle), so we
+//     stop before ever cycling over a now-working keyboard.
+//   * Bounded to kReacquireMaxAttempts so a genuinely stuck keyboard (e.g.
+//     another process holding it exclusive) doesn't cycle forever — we log a
+//     give-up line and fall silent.
+constexpr ULONGLONG kReacquireRetryMs    = 200;
+constexpr int       kReacquireMaxAttempts = 50;  // ~10 s at 200 ms cadence
+
+void RetryColdStartReacquire() {
+    static bool      s_done     = false;
+    static int       s_attempts = 0;
+    static ULONGLONG s_lastMs   = 0;
+
+    if (s_done) return;
+
+    if (acc::bringup_announce::IsInputPumpLive()) {
+        if (s_attempts > 0) {
+            acclog::Write("EngineInput",
+                "cold-start reacquire: input pump live after %d retr%s — done",
+                s_attempts, s_attempts == 1 ? "y" : "ies");
+        }
+        s_done = true;
+        return;
+    }
+
+    if (!acc::diag::focus::GameOwnsForeground()) return;
+
+    ULONGLONG nowMs = GetTickCount64();
+    if (s_lastMs != 0 && nowMs - s_lastMs < kReacquireRetryMs) return;
+    s_lastMs = nowMs;
+
+    if (s_attempts >= kReacquireMaxAttempts) {
+        acclog::Write("EngineInput",
+            "cold-start reacquire: gave up after %d attempts — keyboard still "
+            "not live while foreground (another app may hold it exclusive)",
+            s_attempts);
+        s_done = true;
+        return;
+    }
+
+    ++s_attempts;
+    acc::engine::ForceReacquireInput();
+}
+
 }  // namespace
 
 void Dispatch() {
@@ -159,6 +229,12 @@ void Dispatch() {
     // otherwise — see engine_input.h RequestInputReacquire), do it now on a
     // clean tick, before any handler samples keyboard state.
     acc::engine::DrainPendingReacquire();
+
+    // Cold-start safety net: the one-shot reacquire at MainMenu first-sight
+    // doesn't always take (the engine can drop it on a Render Window
+    // recreation moments later), leaving the keyboard dead for tens of
+    // seconds. Re-drive the edge until the pump is provably live, then stop.
+    RetryColdStartReacquire();
 
     // Speak the "Steam Big Picture is eating your keypresses" warning if the
     // focus-probe poll thread queued one (windowed-mode focus theft — the
