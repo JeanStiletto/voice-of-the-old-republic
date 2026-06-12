@@ -614,6 +614,10 @@ const char* Get(Id id) {
         case Id::HelpContextContainer:   return "Beh\xE4lter.";
         case Id::HelpContextStore:       return "Laden.";
 
+        case Id::InputBlockedBigPicture:
+            return "Das Spiel kann deine Tasteneingaben nicht empfangen, "
+                   "weil der Steam-Big-Picture-Modus im Vordergrund ist.";
+
         case Id::Count_:               return "";
     }
     return "";

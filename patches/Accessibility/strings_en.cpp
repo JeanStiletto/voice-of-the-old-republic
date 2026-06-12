@@ -593,6 +593,10 @@ const char* Get(Id id) {
         case Id::HelpContextContainer:   return "Container.";
         case Id::HelpContextStore:       return "Store.";
 
+        case Id::InputBlockedBigPicture:
+            return "The game can't receive your key presses because Steam "
+                   "Big Picture Mode is in front.";
+
         case Id::Count_:               return "";
     }
     return "";

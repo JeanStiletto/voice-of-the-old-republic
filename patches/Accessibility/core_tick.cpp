@@ -14,6 +14,7 @@
 #include "combat_queue.h"
 #include "combat_special_watch.h"
 #include "cycle_input.h"
+#include "diag_focus.h"
 #include "dialog_speech.h"
 #include "engine_player.h"
 #include "engine_subscreen.h"
@@ -158,6 +159,12 @@ void Dispatch() {
     // otherwise — see engine_input.h RequestInputReacquire), do it now on a
     // clean tick, before any handler samples keyboard state.
     acc::engine::DrainPendingReacquire();
+
+    // Speak the "Steam Big Picture is eating your keypresses" warning if the
+    // focus-probe poll thread queued one (windowed-mode focus theft — the
+    // user's keys never reach the engine, so menus look dead). Throttled at
+    // the poll thread; this just drains + speaks on a safe main-thread tick.
+    acc::diag::focus::DrainInputBlockedWarning();
 
     // Defensive — drop stale panel pointers before any handler touches them.
     PHASE("menus.ValidatePanels", acc::menus::ValidatePanels());

@@ -28,6 +28,10 @@ and add the German in parentheses if it genuinely aids clarity.
 - A new key list you can open anywhere with F1. Press F1 — in the world, in any menu, in a conversation, on the map — and the mod reads a grouped list of every important key, both the mod's own keys and the game's. Up and down arrows move through it, Home and End jump to the start or end, Enter repeats the current line, and Escape or F1 again closes it. It's meant as a reference for new players who don't yet know the controls: the list is organised into sections (navigation, movement, targeting, combat, screens, map and so on) so related keys are read together, and shared keys like the arrows are mentioned once rather than repeated in every section.
 - A second key, Ctrl+F1, reads just the keys that matter on the screen you're on right now. Where F1 lists everything, Ctrl+F1 speaks a short summary tailored to your situation — the in-world keys when you're walking around, the menu keys when a menu is open, the map keys on the map, the action-menu keys when it's up, and so on. It's the same idea as the cue the Pazaak board already speaks when it opens, now available on demand across the game.
 
+<h3>Bug fixes:</h3>
+
+- If Steam Big Picture Mode is sitting in front of the game, the mod now tells you why your keys aren't working instead of leaving you stuck. When the game runs in a window and Steam Big Picture Mode is in the foreground, your key presses go to Big Picture rather than the game, so menus seem completely dead — you press keys and nothing moves, even though the mod still reads the screen. The mod now detects this and, the moment you press a key while Big Picture has the screen, says "The game can't receive your key presses because Steam Big Picture Mode is in front." It speaks the warning at most once every twenty seconds so it doesn't nag, and it only describes the problem — what to do about Big Picture is left to you.
+
 <h2>v0.5</h2>
 
 <h3>New features:</h3>

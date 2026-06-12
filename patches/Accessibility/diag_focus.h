@@ -46,4 +46,12 @@ void StartFocusProbe();
 // poll thread (StartFocusProbe) to be running. Call at MainMenu first-sight.
 void ArmStartupForegroundGuard();
 
+// Drain a pending "input blocked by Steam Big Picture" warning and speak it
+// (no-op if none queued). The focus-probe poll thread flags this when the user
+// presses a key while Steam Big Picture Mode holds the foreground — in
+// windowed mode those keystrokes go to Big Picture, not the game, so menus
+// look dead. Edge- and cooldown-throttled by the poll thread. Call once per
+// tick on the engine's main thread (speech path is COM-safe there).
+void DrainInputBlockedWarning();
+
 }  // namespace acc::diag::focus

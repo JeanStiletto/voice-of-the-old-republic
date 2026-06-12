@@ -596,6 +596,10 @@ const char* Get(Id id) {
         case Id::HelpContextContainer:   return "Conteneur.";
         case Id::HelpContextStore:       return "Boutique.";
 
+        case Id::InputBlockedBigPicture:
+            return "Le jeu ne peut pas recevoir vos touches, car le mode "
+                   "Steam Big Picture est au premier plan.";
+
         case Id::Count_:               return "";
     }
     return "";

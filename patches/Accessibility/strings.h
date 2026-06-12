@@ -1543,6 +1543,13 @@ enum class Id : int {
     HelpContextContainer,
     HelpContextStore,
 
+    // Spoken when the user presses a key while Steam Big Picture Mode holds
+    // the foreground: in windowed mode the keystrokes go to Big Picture, not
+    // the game, so menus appear dead. A correct error description only — no
+    // how-to (Big Picture users know how to leave it). Throttled by the
+    // focus-probe poll thread; see diag_focus.cpp DrainInputBlockedWarning.
+    InputBlockedBigPicture,
+
     Count_,
 };
 

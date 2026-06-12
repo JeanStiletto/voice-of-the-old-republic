@@ -595,6 +595,10 @@ const char* Get(Id id) {
         case Id::HelpContextContainer:   return "Contenitore.";
         case Id::HelpContextStore:       return "Negozio.";
 
+        case Id::InputBlockedBigPicture:
+            return "Il gioco non pu\xF2 ricevere i tuoi tasti perch\xE9 la "
+                   "modalit\xE0 Steam Big Picture \xE8 in primo piano.";
+
         case Id::Count_:               return "";
     }
     return "";
