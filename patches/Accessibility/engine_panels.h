@@ -190,6 +190,11 @@ bool CallPrevSWInGameGui();
 // half-paused. SEH-wrapped.
 bool CallHideSWInGameGui(int param_1);
 
+// CGuiInGame::SetGlobalDialogState — force the engine's "conversation active"
+// bit. Pass 0 to clear dialog-pending limbo after cancelling a blocked
+// walk-to-talk approach (ActionInitiateDialog set it to 1 before the walk).
+bool SetGlobalDialogState(int state);
+
 // Close the in-game menu (strip + drilled sub-screen) back to the world,
 // replicating a menu tab's own Escape exactly: HideSWInGameGui(0) followed by
 // SetInputClass(0,1). Use this — not bare CallHideSWInGameGui(0) — whenever we

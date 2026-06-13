@@ -406,15 +406,31 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot,
     WriteUInt32(internal, kInternalHoverTargetOffset,         targetClient);
 
     // Disable the per-tick player-input movement clobber for the duration of
-    // whatever the engine action enqueues — walk-to-then-use, walk-to-then-
-    // talk, attack, … all share the same composite shape, so talk is NOT
-    // special-cased. TickPlayerInputRestore flips control back when the
-    // action queue drains (or the walk stalls); on any SEH fault below we
-    // restore immediately. A repeat dispatch (e.g. mashing Enter) re-issues
-    // the engine action but does not extend the restore window — see the
-    // no-re-arm guard in SetPlayerInputEnabled (that was the janicebug
-    // livelock, project_distant_npc_dialogue_stuck).
-    bool inputDisabled = acc::engine::SetPlayerInputEnabled(false);
+    // whatever the engine action enqueues — walk-to-then-use, attack, … share
+    // the same composite shape. TickPlayerInputRestore flips control back when
+    // the action queue drains (or the walk stalls); on any SEH fault below we
+    // restore immediately. A repeat dispatch (e.g. mashing Enter) re-issues the
+    // engine action but does not extend the restore window — see the no-re-arm
+    // guard in SetPlayerInputEnabled (that was the janicebug livelock).
+    //
+    // EXCEPTION — dialog (action 0x3ea): we do NOT disable input. Verified by
+    // decompile + in-game (docs/llm-docs/interaction-dispatch-model.md): the
+    // engine's native walk-then-talk (server input case 8 → SetAILevel(player,1)
+    // → AIActionDialogObject, which AddMoveToPointActionToFront's the player when
+    // >10 m out) only moves the PC with input left ENABLED; disabling it (→
+    // SwitchMode(player,0)) suppressed the approach and produced the ~4 s
+    // distant-talk freeze (project_distant_npc_dialogue_stuck). Because we leave
+    // input enabled here there is no TickPlayerInputRestore session for talk;
+    // the interact feature arms its own dialog-approach watchdog instead (it
+    // breaks the rare livelock where the target is reachable on screen but no
+    // walkable point lands within conversation range — e.g. an NPC behind a
+    // railing — and announces "way blocked").
+    constexpr uint32_t kActionIdDialog = 0x3ea;  // GetDefaultActions talk verb
+    const bool skipInputDisable = (localSnap.action_id == kActionIdDialog);
+    bool inputDisabled = false;
+    if (!skipInputDisable) {
+        inputDisabled = acc::engine::SetPlayerInputEnabled(false);
+    }
 
     // Step 5 — actual dispatch.
     bool dispatched = true;

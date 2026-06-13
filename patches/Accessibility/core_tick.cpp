@@ -290,6 +290,10 @@ void Dispatch() {
     // the queue (or a ceiling backstop fires).
     PHASE("engine.inputRestore", acc::engine::TickPlayerInputRestore());
 
+    // Dialog walk-then-talk leaves input enabled (no restore session); this
+    // watchdog breaks a walkmesh-blocked approach and announces "way blocked".
+    PHASE("interact.dialogApproach", acc::interact::TickDialogApproach());
+
     // Diagnostic: log player action-queue depth changes (delta only).
     PHASE("engine.actionQueueDiag", acc::engine::TickActionQueueDiag());
 

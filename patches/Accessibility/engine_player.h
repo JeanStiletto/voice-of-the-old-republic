@@ -135,6 +135,10 @@ void TickPlayerInputRestore();
 // Used to validate queue behaviour across combat / autowalk / dialog.
 void TickActionQueueDiag();
 
+// Player's pending AI-action count (CSWSObject.action_nodes). -1 = unreadable
+// this tick (no live creature / fault); 0 = drained; >0 = actions pending.
+int GetPlayerActionQueueDepth();
+
 // Walks CServerExoApp.party_table @+0x1b770 (via GetServerPartyTable):
 //   +0x0 pt_num_members  (active followers, 0..2 in normal play — the PC
 //                          is the implicit leader and is NOT counted here)

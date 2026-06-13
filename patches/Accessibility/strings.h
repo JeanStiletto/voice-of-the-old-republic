@@ -125,6 +125,25 @@ enum class Id : int {
     //      phrase so the user immediately knows the toggle latched.
     MovementCancelled,
 
+    // ---- Dialog walk-then-talk approach blocked. Spoken when the engine's
+    //      native walk-to-conversation-range stalls against the walkmesh
+    //      (target reachable on screen but no walkable point lands within
+    //      conversation range — e.g. an NPC behind a railing). Distinct from
+    //      MovementCancelled (user toggle): this is an auto-detected wall
+    //      collision, so it names the cause. The watchdog cancels the stuck
+    //      approach and speaks this. No format args. See
+    //      docs/llm-docs/interaction-dispatch-model.md.
+    //      `InteractWayBlocked`        — plain phrase, used when the target's
+    //                                    name/position can't be read.
+    //      `FmtInteractWayBlockedTarget` — preferred: same phrase plus the
+    //                                    target narrated with LIVE distance +
+    //                                    compass direction so the user can
+    //                                    route around the obstacle. Args:
+    //                                    name (`%s`), metres (`%d`), localised
+    //                                    compass direction word (`%s`).
+    InteractWayBlocked,
+    FmtInteractWayBlockedTarget,
+
     // ---- Pillar 3 Mode B beacon (Ctrl+-).
     //      `FmtBeaconStarted`     — opener spoken when StartBeacon arms.
     //                               One `%s` (resolved destination name).

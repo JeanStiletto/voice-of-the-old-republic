@@ -725,6 +725,34 @@ bool CallHideSWInGameGui(int param_1) {
     }
 }
 
+// CGuiInGame::SetGlobalDialogState @ 0x0062ec60. __thiscall(this, int). The
+// engine sets this to 1 when a conversation is starting and back to 0 when it
+// ends or aborts. ActionInitiateDialog sets it to 1 *before* the walk-to-talk;
+// if that approach is blocked and we cancel it, the bit can be left stuck at 1
+// (engine never runs AIActionDialogObject's bail that would clear it), which
+// then gates further click/interact processing. The dialog-approach watchdog
+// calls this with 0 after cancelling a blocked approach to avoid that limbo.
+static constexpr uintptr_t kAddrSetGlobalDialogState = 0x0062ec60;
+typedef void (__thiscall* PFN_SetGlobalDialogState)(void* gui, int state);
+
+bool SetGlobalDialogState(int state) {
+    void* gui = ResolveGuiInGame();
+    if (!gui) {
+        acclog::Write("GlobalDialogState",
+                      "skipped: CGuiInGame not resolvable yet");
+        return false;
+    }
+    auto fn = reinterpret_cast<PFN_SetGlobalDialogState>(kAddrSetGlobalDialogState);
+    __try {
+        fn(gui, state);
+        acclog::Write("GlobalDialogState", "set state=%d gui=%p", state, gui);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("GlobalDialogState", "fault setting state=%d gui=%p", state, gui);
+        return false;
+    }
+}
+
 // CClientExoApp::SetInputClass @ 0x005eda60. __thiscall(this, int klass, int).
 // klass 0 = in-world keyboard/mouse routing; the engine raises it while a
 // menu/sub-screen owns input.

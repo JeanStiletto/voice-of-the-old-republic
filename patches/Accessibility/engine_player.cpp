@@ -411,24 +411,6 @@ Vector g_progressPos      = {0.0f, 0.0f, 0.0f};
 DWORD  g_progressAt       = 0;
 int    g_lastLoggedQueueDepth = -2;  // ActionQueue.Diag delta tracker
 
-// Player's pending AI-action count (CSWSObject.action_nodes @+0xfc →
-// internal->count @+0x8). Returns -1 if the queue can't be read this tick
-// (no live creature / fault); 0 means drained. See engine_offsets.h.
-int GetPlayerActionQueueDepth() {
-    void* obj = GetPlayerServerObject();
-    if (!obj) return -1;
-    __try {
-        void* internal = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(obj) + kObjectActionNodesOffset);
-        if (!internal) return 0;  // unallocated list ⇒ no pending actions
-        return *reinterpret_cast<int*>(
-            reinterpret_cast<unsigned char*>(internal) +
-            kExoLinkedListInternalCountOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return -1;
-    }
-}
-
 typedef void (__thiscall* PFN_CSWPlayerControlSetEnabled)(void* this_, int enabled);
 
 // Walk *kAddrAppManagerPtr → CClientExoApp → CClientExoAppInternal →
@@ -458,6 +440,26 @@ void* GetPlayerControl() {
 }
 
 }  // namespace
+
+// Player's pending AI-action count (CSWSObject.action_nodes @+0xfc →
+// internal->count @+0x8). Returns -1 if the queue can't be read this tick
+// (no live creature / fault); 0 means drained. See engine_offsets.h. Public
+// so the interact feature's dialog-approach watchdog can tell "walk-to-talk
+// still pending" (depth>0) from "nothing enqueued" (depth 0).
+int GetPlayerActionQueueDepth() {
+    void* obj = GetPlayerServerObject();
+    if (!obj) return -1;
+    __try {
+        void* internal = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(obj) + kObjectActionNodesOffset);
+        if (!internal) return 0;  // unallocated list ⇒ no pending actions
+        return *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(internal) +
+            kExoLinkedListInternalCountOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
 
 bool SetPlayerInputEnabled(bool enabled, bool armAutoRestore) {
     void* playerControl = GetPlayerControl();

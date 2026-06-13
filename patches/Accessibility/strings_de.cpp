@@ -56,6 +56,8 @@ const char* Get(Id id) {
         case Id::GuidingToPoint:       return "Gehe zum Punkt";
 
         case Id::MovementCancelled:    return "Bewegung abgebrochen";
+        case Id::InteractWayBlocked:   return "Bewegung abgebrochen, Weg versperrt";
+        case Id::FmtInteractWayBlockedTarget: return "Bewegung abgebrochen, Weg versperrt. %s, %d Meter, %s";
 
         // Beacon (Ctrl+-).
         case Id::FmtBeaconStarted:     return "Beacon zu %s";

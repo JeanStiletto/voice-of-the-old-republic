@@ -28,4 +28,13 @@ void PollHotkey();
 // semantics, open the radial menu instead of dispatching default.
 void DispatchInteract(void* target, uint32_t handle, bool forceRadial);
 
+// Per-tick watchdog for the engine's native walk-then-talk approach. Armed
+// when a dialog verb (action 0x3ea) is dispatched with player input left
+// enabled (see engine_picker.cpp). Cheap when idle (one flag check). If the
+// approach stalls against the walkmesh — the player stops moving while the
+// dialog action is still queued and no conversation has opened — it cancels
+// the stuck approach, clears dialog-pending state, and announces "way
+// blocked". Call once per tick from core_tick.
+void TickDialogApproach();
+
 }  // namespace acc::interact
