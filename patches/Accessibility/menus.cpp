@@ -43,6 +43,7 @@
 #include "menus_store.h"     // Store / trading panel — price+stock suffix + mode announce
 #include "menus_pazaakdeck.h" // Pazaak side-deck builder — 3-row navigator
 #include "menus_galaxymap.h"  // Galaxy / star-map travel screen — planet cycle
+#include "menus_keymap.h"     // dedicated Tastaturbelegung two-level handler
 #include "pazaak.h"           // Pazaak board game — IsBoardForeground
 #include "menus_journal.h"   // Journal (Aufträge) — Enter on quest row → description
 #include "help.h"             // Help list overlay — suppress engine keys while open
@@ -1819,6 +1820,18 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         }
     }
 
+    // Keyboard-mapping screen — dedicated two-level submenu (tab level:
+    // categories + OK/Cancel/Default; list level: browse + arm rebind) plus
+    // pass-through while a key capture is armed. Runs before the generic chain
+    // so it owns every nav key, mirroring the Fähigkeiten handler above. See
+    // menus_keymap.h.
+    {
+        int rv = 0;
+        if (acc::menus::keymap::HandleInput(activePanel, param_1, param_2, rv)) {
+            return trackPress(rv);
+        }
+    }
+
     // Enter on the focused chain entry — picks the right activation primitive
     // (direct OnEnterSlot for equip/workbench slot, click-sim for tab buttons,
     // store-item-activate / journal-description for those rows, re-announce
@@ -1951,6 +1964,7 @@ void TickMonitors() {
     acc::menus::listbox::TickListboxMonitors();
     acc::menus::editbox::TickEditboxMonitors();
     acc::menus::galaxymap::Tick();
+    acc::menus::keymap::Tick();
 }
 
 void PollHomeEndKeys() {

@@ -911,6 +911,18 @@ void RebindChain(void* panel) {
     // on the value-display entry. Lone empty-text entries with no nearby
     // text-bearing same-row neighbour are kept.
     {
+        // Title-screen Options sub-screens (Advanced Sound EAX, Advanced
+        // Graphics AA/texture/anisotropy, Game Settings difficulty) lay their
+        // spinner rows out as a centred value button flanked by empty
+        // left/right arrow buttons at x=72 / x=288 — ~108 px from the value at
+        // x=180, beyond the 80 px reach that catches chargen's tighter
+        // spinners. Widen the squash for just these kinds so the redundant
+        // arrows (the user cycles the value with Left/Right) drop out of Up/Down
+        // nav instead of speaking "control N". Gated by kind so chargen and
+        // every other panel keep the conservative 80 px reach.
+        const int kSquashDxMax =
+            acc::engine::IsMainMenuOptionsSubScreen(IdentifyPanel(panel))
+                ? 130 : 80;
         int writeIdx = 0;
         for (int i = 0; i < g_chainCount; ++i) {
             char tmp[64];
@@ -921,7 +933,6 @@ void RebindChain(void* panel) {
                 g_chain[writeIdx++] = g_chain[i];
                 continue;
             }
-            constexpr int kSquashDxMax = 80;
             bool sameRowWithText = false;
             for (int j = 0; j < g_chainCount; ++j) {
                 if (j == i) continue;

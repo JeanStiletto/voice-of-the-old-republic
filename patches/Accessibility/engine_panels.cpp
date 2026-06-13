@@ -320,6 +320,46 @@ bool IsPowersLevelUpStructural(void* panel) {
     }
 }
 
+// Title-screen Options sub-screens. Each is a single-instance heap-allocated
+// CSWGui* option panel with no CGuiInGame slot, so — like MainMenu / Options /
+// Pazaak — vtable equality is the cleanest identifier. Vtables captured
+// 2026-06-13 from the PanelProbe "first sight UNKNOWN" dumps in
+// patch-20260613-194918.log; each is paired there with the title the
+// label-walk speaks (e.g. 0x007587c0 → "Soundeinstellungen"). GoG-derived
+// addresses match the Steam build (see memory ghidra_gog_steam_bytes_match),
+// matching every other hardcoded title-screen vtable above.
+struct OptionsSubScreenVtable {
+    uintptr_t vtable;
+    PanelKind kind;
+};
+static const OptionsSubScreenVtable kOptionsSubScreenVtables[] = {
+    { 0x007587c0, PanelKind::SoundSettings            },
+    { 0x00758550, PanelKind::AdvancedSoundSettings    },
+    { 0x007586f8, PanelKind::GraphicsSettings         },
+    { 0x007584a0, PanelKind::AdvancedGraphicsSettings },
+    { 0x00758ee0, PanelKind::AutoPauseOptions         },
+    { 0x007581e8, PanelKind::FeedbackOptions          },
+    { 0x00758e00, PanelKind::GameSettings             },
+    { 0x007585f8, PanelKind::MouseSettings            },
+    { 0x00759358, PanelKind::KeyboardMapping          },
+};
+
+// Returns the specific sub-screen kind, or Unknown if `panel`'s vtable
+// isn't one of the nine. One detector covers all nine (vs. nine near-
+// identical IsXStructural functions) because the only distinguishing
+// signal is the vtable.
+PanelKind IdentifyOptionsSubScreen(void* panel) {
+    if (!panel) return PanelKind::Unknown;
+    __try {
+        uintptr_t vt = reinterpret_cast<uintptr_t>(*reinterpret_cast<void***>(panel));
+        for (const auto& e : kOptionsSubScreenVtables) {
+            if (e.vtable == vt) return e.kind;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+    return PanelKind::Unknown;
+}
+
 }  // namespace
 
 // CGuiInGame resolution chain. Address values verified against Lane's
@@ -406,6 +446,15 @@ static const PanelKindOffset kPanelKindOffsets[] = {
     { kNoSlotOffset, PanelKind::PazaakStart,       "PazaakStart" },
     { kNoSlotOffset, PanelKind::PazaakWager,       "PazaakWager" },
     { kNoSlotOffset, PanelKind::InGameQuestItems,  "InGameQuestItems" },
+    { kNoSlotOffset, PanelKind::SoundSettings,            "SoundSettings" },
+    { kNoSlotOffset, PanelKind::AdvancedSoundSettings,    "AdvancedSoundSettings" },
+    { kNoSlotOffset, PanelKind::GraphicsSettings,         "GraphicsSettings" },
+    { kNoSlotOffset, PanelKind::AdvancedGraphicsSettings, "AdvancedGraphicsSettings" },
+    { kNoSlotOffset, PanelKind::AutoPauseOptions,         "AutoPauseOptions" },
+    { kNoSlotOffset, PanelKind::FeedbackOptions,          "FeedbackOptions" },
+    { kNoSlotOffset, PanelKind::GameSettings,             "GameSettings" },
+    { kNoSlotOffset, PanelKind::MouseSettings,            "MouseSettings" },
+    { kNoSlotOffset, PanelKind::KeyboardMapping,          "KeyboardMapping" },
 };
 static constexpr int kPanelKindOffsetCount =
     sizeof(kPanelKindOffsets) / sizeof(kPanelKindOffsets[0]);
@@ -621,6 +670,12 @@ PanelKind IdentifyPanel(void* panel) {
     if (IsQuestItemStructural(panel)) {
         return recordAndReturn(PanelKind::InGameQuestItems, "InGameQuestItems");
     }
+    // Title-screen Options sub-screens (Sound / Graphics / Advanced variants /
+    // Auto-Pause / Feedback / Game / Mouse / Keyboard). One vtable-table probe
+    // covers all nine.
+    if (PanelKind k = IdentifyOptionsSubScreen(panel); k != PanelKind::Unknown) {
+        return recordAndReturn(k, PanelKindName(k));
+    }
 
     // Last resort: dump diagnostics so we can write a structural detector
     // for this shape later. Deduped by panel vtable so we get exactly one
@@ -632,6 +687,23 @@ PanelKind IdentifyPanel(void* panel) {
 
 bool IsPanelKindInGameMenu(void* panel) {
     return IdentifyPanel(panel) == PanelKind::InGameMenu;
+}
+
+bool IsMainMenuOptionsSubScreen(PanelKind k) {
+    switch (k) {
+    case PanelKind::SoundSettings:
+    case PanelKind::AdvancedSoundSettings:
+    case PanelKind::GraphicsSettings:
+    case PanelKind::AdvancedGraphicsSettings:
+    case PanelKind::AutoPauseOptions:
+    case PanelKind::FeedbackOptions:
+    case PanelKind::GameSettings:
+    case PanelKind::MouseSettings:
+    case PanelKind::KeyboardMapping:
+        return true;
+    default:
+        return false;
+    }
 }
 
 bool IsModalPopupPanel(PanelKind k) {

@@ -228,6 +228,10 @@ const char* Get(Id id) {
         case Id::EditboxRole:                return "Eingabefeld";
         case Id::EditboxEmpty:               return "leer";
         case Id::EditboxEnd:                 return "Ende";
+        case Id::FmtKeyBinding:              return "%s: %s";
+        case Id::KeyBindingFixed:            return " (nicht \xe4nderbar)";
+        case Id::FmtKeyBindCapture:          return "Dr\xfc""cke die neue Taste f\xfcr %s";
+        case Id::KeyBindNotChangeable:       return "Diese Belegung ist nicht \xe4nderbar";
 
         case Id::CombatBegins:               return "Kampf beginnt";
         case Id::CombatEnds:                 return "Kampf beendet";

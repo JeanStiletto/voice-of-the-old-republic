@@ -772,6 +772,18 @@ enum class Id : int {
     EditboxEmpty,
     EditboxEnd,
 
+    // ---- Keyboard-mapping screen (CSWGuiInGameOptKeyMappings). Each row is
+    //      an action paired with its bound key.
+    //      FmtKeyBinding        — "{action}: {key}" focus readout. Args:
+    //                             action name (%s), key name (%s).
+    //      KeyBindingFixed      — suffix appended for non-remappable rows.
+    //      FmtKeyBindCapture    — capture-armed prompt. Arg: action (%s).
+    //      KeyBindNotChangeable — spoken when Enter hits a fixed row.
+    FmtKeyBinding,
+    KeyBindingFixed,
+    FmtKeyBindCapture,
+    KeyBindNotChangeable,
+
     // ---- Combat system, Phase 1A — combat-mode entry/exit announcement.
     //      Spoken when CClientExoApp.combat_mode transitions; debounced via
     //      the stability pattern in camera_announce.cpp.

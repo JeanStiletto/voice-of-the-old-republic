@@ -556,6 +556,44 @@ const char* FromControl(void* control,
                          acc::strings::Id::JournalQuestItemsButton));
             if (outBuf[0] != '\0') source = "perkind-journal-questitems-btn";
         }
+        // Keyboard-mapping row (CSWGuiKeyMapButton). The row's own button text
+        // (action_button at +0) is just the event name ("Vorwärts"); the bound
+        // key lives in the embedded mapped_key_button at +0x1c8. Compose
+        // "{action}: {key}" so the user hears the current binding, and flag
+        // non-remappable rows. Gated on the owning panel kind AND the row
+        // vtable so the panel's other buttons (filter tabs, OK/Abbrechen) fall
+        // through to the normal ladder.
+        if (!source && owner &&
+            IdentifyPanel(owner) == PanelKind::KeyboardMapping) {
+            __try {
+                uintptr_t vt = reinterpret_cast<uintptr_t>(
+                    *reinterpret_cast<void***>(control));
+                if (vt == kVtableKeyMapButton) {
+                    char action[128]; action[0] = '\0';
+                    char key[64];     key[0] = '\0';
+                    acc::engine::ReadButtonText(control, action, sizeof(action));
+                    acc::engine::ReadButtonText(
+                        reinterpret_cast<unsigned char*>(control) +
+                            kKeyMapButtonMappedKeyOffset,
+                        key, sizeof(key));
+                    int fixed = *reinterpret_cast<int*>(
+                        reinterpret_cast<unsigned char*>(control) +
+                            kKeyMapButtonUnchangeableOff);
+                    snprintf(outBuf, bufSize,
+                             acc::strings::Get(acc::strings::Id::FmtKeyBinding),
+                             action, key);
+                    if (fixed != 0) {
+                        size_t cur = strnlen(outBuf, bufSize);
+                        const char* suf = acc::strings::Get(
+                            acc::strings::Id::KeyBindingFixed);
+                        snprintf(outBuf + cur, bufSize - cur, "%s", suf);
+                    }
+                    if (outBuf[0] != '\0') source = "perkind-keybinding";
+                }
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                source = nullptr;
+            }
+        }
     }
 
     // 1. Tooltip on the base class — works for any control that has one.

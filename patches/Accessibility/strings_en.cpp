@@ -217,6 +217,10 @@ const char* Get(Id id) {
         case Id::EditboxRole:                return "edit field";
         case Id::EditboxEmpty:               return "empty";
         case Id::EditboxEnd:                 return "end";
+        case Id::FmtKeyBinding:              return "%s: %s";
+        case Id::KeyBindingFixed:            return " (not remappable)";
+        case Id::FmtKeyBindCapture:          return "Press the new key for %s";
+        case Id::KeyBindNotChangeable:       return "This binding cannot be changed";
 
         case Id::CombatBegins:               return "Combat begins";
         case Id::CombatEnds:                 return "Combat ends";

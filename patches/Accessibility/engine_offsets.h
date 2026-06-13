@@ -140,6 +140,18 @@ constexpr uintptr_t kVtableListBox = 0x0073E840;
 // case — see IsSaveLoadStructural).
 constexpr uintptr_t kVtableCSWGuiButton = 0x0073E658;
 
+// CSWGuiKeyMapButton — the keyboard-mapping screen's row control (vtable
+// 0x007593c8). Each row embeds TWO CSWGuiButtons: action_button at +0 (the
+// event name, "Vorwärts" — read via the normal button offsets) and
+// mapped_key_button at +0x1c8 (the bound key, "W"). Layout decompiled from
+// swkotor.exe.h CSWGuiKeyMapButton + the field-offset anchors
+// (key_mappings ptr at +0x38c ⇒ sizeof(CSWGuiButton)=0x1c4 ⇒ mapped_key_button
+// at +0x1c8). `unchangeable` (non-zero = fixed binding) is at +0x3a4. The key
+// text reads at mapped_key + button offsets, e.g. gui_string at 0x1c8+0x168.
+constexpr uintptr_t kVtableKeyMapButton          = 0x007593c8;
+constexpr size_t    kKeyMapButtonMappedKeyOffset = 0x1c8;
+constexpr size_t    kKeyMapButtonUnchangeableOff = 0x3a4;
+
 // CSWGuiEditbox layout (verified against k1_win_gog_swkotor.exe.xml SYMBOL
 // CSWGuiEditbox_vtable @ 0x0073EAC8 + STRUCTURE size 0x160 + swkotor.exe.h
 // CSWGuiEditbox/CSWGuiEditText). The editbox is single-instance in vanilla

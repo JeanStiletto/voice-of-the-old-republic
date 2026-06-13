@@ -127,6 +127,25 @@ enum class PanelKind {
     // Lists the player's plot/quest items as CSWGuiInGameItemEntry rows with a
     // hover-description box; identified by vtable.
     InGameQuestItems,
+
+    // Title-screen Options sub-screens. All heap-allocated CSWGui* option
+    // panels pushed modally over MainMenuOptions; no CGuiInGame slot, so
+    // identified by vtable equality (see kOptionsSubScreenVtables in
+    // engine_panels.cpp). Vtables captured 2026-06-13 from the PanelProbe
+    // "first sight UNKNOWN" dumps in patch-20260613-194918.log. Titles still
+    // come from the generic label-walk; the kind exists so these screens are
+    // recognised like the others and so chain-side behaviour (the wider
+    // cycle-flanker squash for the spinner panels) can gate on them.
+    // IsMainMenuOptionsSubScreen() groups them.
+    SoundSettings,             // optionssound.gui          vtable 0x007587c0
+    AdvancedSoundSettings,     // optadvsound.gui           vtable 0x00758550
+    GraphicsSettings,          // optionsgraphics.gui       vtable 0x007586f8
+    AdvancedGraphicsSettings,  // optadvgraphics.gui        vtable 0x007584a0
+    AutoPauseOptions,          // optautopause.gui          vtable 0x00758ee0
+    FeedbackOptions,           // optfeedback.gui           vtable 0x007581e8
+    GameSettings,              // optgameplay.gui           vtable 0x00758e00
+    MouseSettings,             // optmouse.gui              vtable 0x007585f8
+    KeyboardMapping,           // optkeymapping.gui         vtable 0x00759358
 };
 
 const char* PanelKindName(PanelKind k);
@@ -148,6 +167,13 @@ bool IsPanelKindInGameMenu(void* panel);
 // text-only entry); each is asked a different question, though MessageBoxModal /
 // TutorialBox / AreaTransition appear in both.
 bool IsModalPopupPanel(PanelKind k);
+
+// True for the title-screen Options sub-screens (Sound, Graphics, their
+// Advanced variants, Auto-Pause, Feedback, Game, Mouse, Keyboard). Groups
+// the nine kinds added 2026-06-13 so chain-side code can apply option-panel
+// behaviour (e.g. the wider cycle-flanker squash that the spinner rows need)
+// without re-listing every kind at the call site.
+bool IsMainMenuOptionsSubScreen(PanelKind k);
 
 // During reply turns the engine swaps fg to a Fade overlay while the
 // real dialog panel stays in panels[]. Scan, don't trust foreground.

@@ -225,6 +225,10 @@ const char* Get(Id id) {
         case Id::EditboxRole:                return "champ de saisie";
         case Id::EditboxEmpty:               return "vide";
         case Id::EditboxEnd:                 return "fin";
+        case Id::FmtKeyBinding:              return "%s : %s";
+        case Id::KeyBindingFixed:            return " (non modifiable)";
+        case Id::FmtKeyBindCapture:          return "Appuyez sur la nouvelle touche pour %s";
+        case Id::KeyBindNotChangeable:       return "Cette affectation ne peut pas \xeatre modifi\xe9""e";
 
         case Id::CombatBegins:               return "D\xE9""but du combat";
         case Id::CombatEnds:                 return "Fin du combat";
