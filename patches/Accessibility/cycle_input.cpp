@@ -26,6 +26,7 @@
 #include "guidance_description.h"
 #include "guidance_pathfind.h"
 #include "hotkeys.h"
+#include "interact_hotkey.h"  // SpeakWayBlocked — autowalk way-blocked guard
 #include "log.h"
 #include "map_ui_cursor.h"
 #include "menus_modsettings.h"
@@ -38,6 +39,33 @@
 namespace acc::cycle_input {
 
 namespace {
+
+// --- Autowalk way-blocked guard -------------------------------------------
+// Mirror of the dialog-approach guard, for the Shift+- autowalk path. Armed
+// with the target's name + position when Shift+- dispatches a walk. Once that
+// walk ends, guidance::ConsumeWalkBlocked() tells us whether it stalled short
+// of the target (blocked) rather than arriving or being cancelled; if so we
+// announce "way blocked" + the target's live distance/direction, exactly like
+// the Enter/dialog path. Tied to one in-flight session so an unrelated walk
+// (e.g. an Enter-interact UseObject) can't borrow our target name.
+struct AutowalkBlockWatch {
+    bool   armed       = false;
+    bool   sawInFlight  = false;
+    char   name[128]   = "";
+    Vector pos         = {0.0f, 0.0f, 0.0f};
+    DWORD  armedTick   = 0;
+};
+AutowalkBlockWatch g_blockWatch;
+constexpr DWORD kBlockWatchGraceMs = 700;  // let the walk start before judging
+
+void ArmAutowalkBlockWatch(const char* name, const Vector& pos) {
+    g_blockWatch.armed      = true;
+    g_blockWatch.sawInFlight = false;
+    std::snprintf(g_blockWatch.name, sizeof(g_blockWatch.name), "%s",
+                  (name && name[0]) ? name : "?");
+    g_blockWatch.pos        = pos;
+    g_blockWatch.armedTick  = GetTickCount();
+}
 
 // Engine-side shift flag, mutated by manager-level shift up/down events.
 // The manager doesn't bake shift into a modifier flag — DirectInput delivers
@@ -684,6 +712,9 @@ void OnPathfindFocus() {
 
     if (ok) {
         prism::Speak(msg, /*interrupt=*/true);
+        // Arm the way-blocked guard: if this walk stalls short of the target
+        // instead of arriving, TickAutowalkApproach announces it.
+        ArmAutowalkBlockWatch(a.name, a.pos);
         acclog::Write("Cycle", "Shift+- -> [%s] via %s obj=%p handle=0x%08x "
                       "pin=%d dest=(%.2f,%.2f,%.2f)",
                       msg, path, a.obj, a.handle, a.isMapPin ? 1 : 0,
@@ -843,6 +874,29 @@ void OnPathfindFocusForce() {
 }
 
 }  // namespace
+
+void TickAutowalkApproach() {
+    if (!g_blockWatch.armed) return;
+
+    if (acc::guidance::IsAutowalkInFlight()) {
+        g_blockWatch.sawInFlight = true;
+        return;                                  // still walking
+    }
+    // Walk is no longer in flight. Give the dispatch a moment to actually start
+    // before judging (the engine may not arm in-flight on the very first tick).
+    if (!g_blockWatch.sawInFlight &&
+        (GetTickCount() - g_blockWatch.armedTick) < kBlockWatchGraceMs) {
+        return;
+    }
+
+    // The walk ended. guidance flags "blocked" only when it stalled short of
+    // the target (not arrival, not user-cancel) — announce that with the
+    // stored name + live distance/direction. Otherwise stay silent.
+    if (acc::guidance::ConsumeWalkBlocked()) {
+        acc::interact::SpeakWayBlocked(g_blockWatch.name, g_blockWatch.pos);
+    }
+    g_blockWatch.armed = false;
+}
 
 bool TryHandleEvent(int param_1, int param_2) {
     // Shift state tracking — fires on both press and release, never consumed.

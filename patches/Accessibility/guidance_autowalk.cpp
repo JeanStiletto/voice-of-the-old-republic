@@ -119,6 +119,11 @@ constexpr DWORD kInFlightGraceMs = 500;
 constexpr DWORD kInFlightStillMs = 1000;
 // Per-tick movement threshold (squared metres). Below this the PC is "still".
 constexpr float kInFlightMoveEpsSq = 0.04f;  // (0.2m)^2
+// A walk that ENDS this far (metres) from its destination ended blocked, not
+// arrived. Above any sensible use-range/arrival distance so a successful
+// walk-up never trips it. Read once by the cycle layer's way-blocked guard.
+constexpr float kBlockedThresholdM = 4.0f;
+bool g_walkBlocked = false;  // one-shot: last walk ended short of its target
 
 // Arm in-flight tracking for a freshly dispatched move. Resets every latch so
 // stale state from a prior walk can't end this one early.
@@ -131,6 +136,7 @@ void ArmInFlight(const Vector& dest) {
     g_inFlight.lastMoveTick = now;
     g_inFlight.sawMoving    = false;
     g_inFlight.haveLastPos  = false;
+    g_walkBlocked           = false;  // fresh walk — clear any stale blocked flag
 }
 
 // Helper to arm the watchdog after a successful dispatch. Same shape
@@ -406,14 +412,22 @@ bool CancelMovement() {
     }
 
     // Clear local state regardless of engine call success — at minimum,
-    // the user said "stop", so don't pretend we're still in flight.
+    // the user said "stop", so don't pretend we're still in flight. A user
+    // cancel is NOT "blocked" — clear the flag so the cycle guard stays quiet.
     g_inFlight.active = false;
     g_watchdog.active = false;
+    g_walkBlocked     = false;
 
     if (ok) {
         acclog::Write("Autowalk", "CancelMovement dispatched (ClearAllActions(0))");
     }
     return ok;
+}
+
+bool ConsumeWalkBlocked() {
+    bool b = g_walkBlocked;
+    g_walkBlocked = false;
+    return b;
 }
 
 bool IsAutowalkInFlight() {
@@ -527,6 +541,15 @@ void TickProgressWatchdog() {
         }
 
         if (done) {
+            // Flag "ended blocked" for the cycle layer's way-blocked guard:
+            // the walk finished on its own (NOT via CancelMovement, which
+            // clears g_inFlight.active directly and never reaches here) but the
+            // PC is still well short of the destination — stalled at a wall /
+            // railing, or the engine dropped an unreachable move. A normal
+            // arrival (within ~1m via the branch above, or use-range a few m
+            // out) is under the threshold and not flagged.
+            g_walkBlocked = havePos &&
+                HorizontalDistance(pos, g_inFlight.dest) > kBlockedThresholdM;
             g_inFlight.active = false;
         }
     }

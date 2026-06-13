@@ -14,6 +14,8 @@
 
 #include <cstdint>
 
+#include "engine_offsets.h"  // Vector (SpeakWayBlocked target position)
+
 namespace acc::interact {
 
 // Self-gates additionally on !view_mode::IsActive — view mode owns
@@ -36,5 +38,12 @@ void DispatchInteract(void* target, uint32_t handle, bool forceRadial);
 // the stuck approach, clears dialog-pending state, and announces "way
 // blocked". Call once per tick from core_tick.
 void TickDialogApproach();
+
+// Announce "way blocked" for an autowalk target the engine couldn't reach,
+// with the target's name plus LIVE distance and compass direction to it (so
+// the user knows which way to close the gap). Same phrasing the dialog-approach
+// guard uses. Falls back to the plain "way blocked" phrase if the player
+// position is unreadable. Called by the cycle autowalk guard.
+void SpeakWayBlocked(const char* name, const Vector& targetPos);
 
 }  // namespace acc::interact

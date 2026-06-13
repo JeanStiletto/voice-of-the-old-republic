@@ -294,6 +294,9 @@ void Dispatch() {
     // watchdog breaks a walkmesh-blocked approach and announces "way blocked".
     PHASE("interact.dialogApproach", acc::interact::TickDialogApproach());
 
+    // Same "way blocked" announce for the Shift+- autowalk path.
+    PHASE("cycle.autowalkApproach", acc::cycle_input::TickAutowalkApproach());
+
     // Diagnostic: log player action-queue depth changes (delta only).
     PHASE("engine.actionQueueDiag", acc::engine::TickActionQueueDiag());
 

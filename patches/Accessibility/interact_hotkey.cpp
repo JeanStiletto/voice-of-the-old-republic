@@ -90,31 +90,16 @@ void ArmDialogApproachMonitor() {
         g_approachTargetObj);
 }
 
-// On a blocked approach, narrate the target with LIVE distance + compass
+// Format "way blocked. <name>, <m> metres, <dir>" with LIVE distance + compass
 // direction (engine positions, never cached numbers) so the user knows which
-// way to close the gap. Writes the full "way blocked + target" line into
-// outMsg. Falls back to false if the target's name/position can't be read,
-// in which case the caller speaks the plain InteractWayBlocked phrase.
-bool BuildWayBlockedTargetMsg(char* outMsg, size_t outSize) {
-    if (!g_approachTargetObj) return false;
-
+// way to close the gap. Shared by the dialog-approach watchdog and the
+// autowalk way-blocked guard. Returns false (caller speaks the plain phrase) if
+// the player position can't be read or the name is empty.
+bool FormatWayBlocked(const char* name, const Vector& targetPos,
+                      char* outMsg, size_t outSize) {
+    if (!name || name[0] == '\0') return false;
     Vector playerPos;
     if (!acc::engine::GetPlayerPosition(playerPos)) return false;
-
-    // Live target position when readable; else the slot's stamped pos (the
-    // NPC hasn't moved). Player pos is always live, so distance/direction stay
-    // accurate either way.
-    Vector targetPos;
-    if (!acc::engine::GetObjectPosition(g_approachTargetObj, targetPos)) {
-        if (!g_approachHaveTargetPos) return false;
-        targetPos = g_approachTargetPos;
-    }
-
-    char name[128] = "";
-    if (!acc::engine::GetObjectName(g_approachTargetObj, name, sizeof(name)) ||
-        name[0] == '\0') {
-        return false;
-    }
 
     float dx = targetPos.x - playerPos.x;
     float dy = targetPos.y - playerPos.y;
@@ -132,6 +117,23 @@ bool BuildWayBlockedTargetMsg(char* outMsg, size_t outSize) {
                   acc::strings::Get(acc::strings::Id::FmtInteractWayBlockedTarget),
                   name, metres, dir);
     return true;
+}
+
+// Dialog watchdog variant: resolve the stored target object's name + position,
+// then format. Live target position when readable, else the slot's stamped pos.
+bool BuildWayBlockedTargetMsg(char* outMsg, size_t outSize) {
+    if (!g_approachTargetObj) return false;
+    Vector targetPos;
+    if (!acc::engine::GetObjectPosition(g_approachTargetObj, targetPos)) {
+        if (!g_approachHaveTargetPos) return false;
+        targetPos = g_approachTargetPos;
+    }
+    char name[128] = "";
+    if (!acc::engine::GetObjectName(g_approachTargetObj, name, sizeof(name)) ||
+        name[0] == '\0') {
+        return false;
+    }
+    return FormatWayBlocked(name, targetPos, outMsg, outSize);
 }
 
 // True iff the only thing blocking the action menu from opening is the
@@ -589,6 +591,16 @@ void AnnounceBareTargetKey(int row) {
 }
 
 }  // namespace
+
+void SpeakWayBlocked(const char* name, const Vector& targetPos) {
+    char msg[192];
+    if (!FormatWayBlocked(name, targetPos, msg, sizeof(msg))) {
+        std::snprintf(msg, sizeof(msg), "%s",
+                      acc::strings::Get(acc::strings::Id::InteractWayBlocked));
+    }
+    prism::Speak(msg, /*interrupt=*/true);
+    acclog::Write("Interact", "way blocked (autowalk) -> [%s]", msg);
+}
 
 void TickDialogApproach() {
     if (!g_approachArmed) return;

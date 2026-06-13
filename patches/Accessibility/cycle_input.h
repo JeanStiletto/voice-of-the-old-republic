@@ -26,4 +26,9 @@ bool TryHandleEvent(int param_1, int param_2);
 
 void PollWin32();
 
+// Per-tick guard for Shift+- autowalk: when a dispatched walk ends stalled
+// short of its target (not arrival, not cancel), announces "way blocked" with
+// the target name + live distance/direction. Cheap when idle. Call from core_tick.
+void TickAutowalkApproach();
+
 }  // namespace acc::cycle_input

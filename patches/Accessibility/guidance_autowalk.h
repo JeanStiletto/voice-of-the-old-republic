@@ -51,6 +51,12 @@ bool CancelMovement();
 // arrival (<1m), or player un-load.
 bool IsAutowalkInFlight();
 
+// One-shot: returns true (and resets) if the most recently ENDED autowalk
+// finished well short of its destination — stalled at a wall / unreachable,
+// not arrived and not user-cancelled. The cycle layer reads this to announce
+// "way blocked" with the target's name. False for arrivals and cancels.
+bool ConsumeWalkBlocked();
+
 // Cancel an in-flight autowalk on a fresh W/S/A/D/C/Y rising edge.
 // Engine-initiated autorun (NPC perception, cutscenes) is untouched —
 // IsAutowalkInFlight is only true for our own dispatches.
