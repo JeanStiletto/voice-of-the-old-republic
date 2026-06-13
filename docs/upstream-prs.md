@@ -498,6 +498,54 @@ etc.) intact.
 
 ---
 
+### PR-7. prism `acquire_best`/`create_best` crash when a backend's `initialize()` faults
+
+**Repo:** `ethindp/prism`
+**Status:** Bug confirmed (pl-PL beta tester, ZDSR). Fixed locally atop upstream
+v0.16.5; recorded in `docs/prism-local-patches.patch`. Not yet drafted as a PR.
+**Discovered:** v0.2.1 startup crash; re-confirmed against upstream v0.16.5
+(2026-06-13) — the unguarded loop is unchanged in the latest release.
+
+**What.** `BackendRegistry::acquire_best()` and `create_best()`
+(`source/backends/backend_registry.cpp`) call each candidate backend's
+`initialize()` in priority order with no exception handling. On Windows, the
+ZDSR / PC-Talker / BoyPC backends reach their reader by delay-loading a vendor
+DLL (`ZDSRAPI.dll`, `PCTKUSR.dll`, `BoyCtrl.dll`, marked `/delayload` in
+`CMakeLists.txt`). If the user's installed DLL exports a mismatched symbol set,
+the MSVC delay-load helper raises a structured exception (`0xC06D007F`
+PROC_NOT_FOUND / `0xC06D007E` MOD_NOT_FOUND) from inside `initialize()`. Being a
+structured exception (not a C++ exception), it isn't caught by `/EHsc` and
+propagates straight out of `acquire_best`, crashing the host process before any
+speech.
+
+**Why undetected.** NVDA/JAWS/SAPI win priority and `acquire_best` returns
+before reaching a broken low-priority backend. Only a user whose higher-priority
+readers all fail (e.g. ZDSR-only) walks into the faulting backend. NVDA reaches
+its reader via a compiled-in RPC stub, JAWS/SAPI/OneCore via COM/OS APIs — none
+delay-load a vendor DLL, so they never trip it.
+
+**Fix.** Wrap each backend's `initialize()` in SEH on Windows and treat a fault
+as "failed to initialize" — skip the backend and continue the priority walk
+(down to SAPI as the universal catch-all) instead of crashing. A faulting
+backend should never take down backend selection for every other reader. See
+`docs/prism-local-patches.patch` for the exact diff (a `seh_safe_initialize`
+helper holding only PODs to satisfy MSVC C2712, plus a portable `try_initialize`
+wrapper used by both `acquire_best` and `create_best`).
+
+**Risks.** Low. Behaviour is unchanged on the common path (no fault). On a
+faulting backend the only change is "skip instead of crash." `BackendResult<>`
+is `std::expected<void, BackendError>` with a trivially destructible payload, so
+the SEH helper compiles clean (no unwinding required). Non-Windows builds use a
+plain call — no SEH.
+
+**Note.** This makes selection crash-safe; it does NOT make a mismatched-DLL
+ZDSR install actually speak through ZDSR (it cleanly falls to SAPI). Making ZDSR
+bind is a separate fix — upstream already did the analogous thing for
+SystemAccess in v0.16.x ("Rewrote the SystemAccess backend to no longer require
+the delay-loaded DLL"); the same de-delay-load treatment would fix ZDSR.
+
+---
+
 ## Conventions
 
 - One PR per coherent change. Keep them small and reviewable.

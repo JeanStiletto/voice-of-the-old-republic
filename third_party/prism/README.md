@@ -11,7 +11,8 @@ Prism requires the following to be met to function properly. If your system does
 * For windows, Windows 10 or later is required. Older versions of windows are NOT supported.
 * Apple platforms require either MacOS 11, iOS 11, tvOS 11, WatchOS 6, or VisionOS 1.
 * Linux requires Glib 2.80.0 or later and Orca 49 or later for the Orca backend to function. Speech-dispatcher will work with any version of speech dispatcher that supports ABI version 2 (which means that versions 0.11.1 and on will definitely work).
-* Android requires version 11 or later.
+* Android requires version 8/API level 26 or later.
+* Web requires that the browser implement the [WebSpeech API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API) to be implemented.
 
 ## Building
 
@@ -71,10 +72,7 @@ We also encourage bindings to either follow the Prism API or the Python bindings
 
 This project is licensed under the Mozilla Public License version 2.0. Full details are available in the LICENSE file.
 
-This project uses code from other projects. Specifically:
-
-* The `simdutf` library is licensed under the Apache-2.0 license, and is used for Unicode validation and conversion.
-* On Windows, Prism includes NVDA controller client RPC definitions originally under LGPL-2.1 (and generated RPC stubs from those inputs). The Prism project has received permission to license the IDL files (and there generated outputs) under the MPL-2.0 regardless of the original license. Thus, you may assume that they are licensed under the MPL-2.0. The LGPL headers and license file in the LICENSES directory remain for providing attribution.
+This project uses code from other projects. The full listing can be found in the `NOTICE` file packaged with each release or at the repository root.
 
 ## Contributing
 

@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: MPL-2.0
 
-cmake_minimum_required(VERSION 3.24)
-
 include(CheckCCompilerFlag)
 include(CheckIPOSupported)
 include(CheckCSourceCompiles)
@@ -15,12 +13,6 @@ set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-project(
-  tolk
-  VERSION 0.14.4
-  DESCRIPTION "Tolk shim for Prism"
-  LANGUAGES C CXX)
 
 check_include_file(stdatomic.h HAS_STD_ATOMICS)
 if(NOT HAS_STD_ATOMICS)
@@ -166,11 +158,15 @@ int main(void) {
 else()
   find_package(Threads REQUIRED)
 endif()
-if(BUILD_SHARED_LIBS)
-  add_library(tolk SHARED tolk.c lock.c simdutf.cpp)
+add_library(tolk SHARED tolk.c lock.c)
+target_link_libraries(tolk PRIVATE prism::prism)
+get_target_property(_prism_type prism TYPE)
+if(NOT _prism_type STREQUAL "STATIC_LIBRARY")
+  target_link_libraries(tolk PRIVATE prism_third_party_simdutf)
 else()
-  add_library(tolk SHARED tolk.c lock.c)
+  target_include_directories(tolk PRIVATE ${CMAKE_SOURCE_DIR}/third_party)
 endif()
+unset(_prism_type)
 target_compile_definitions(tolk PRIVATE TOLK_BUILDING)
 if(NEEDS_C11_ATOMICS_FLAG)
   target_compile_options(tolk PRIVATE /experimental:c11atomics)
@@ -191,7 +187,8 @@ if(NOT MSVC)
 endif()
 if(PRISM_ENABLE_LINTING)
   if(NOT CMAKE_C_COMPILER_ID MATCHES "MSVC")
-    find_program(CLANG_TIDY_EXE NAMES "clang-tidy")
+    find_program(CLANG_TIDY_EXE NAMES "clang-tidy-22" "clang-tidy-21"
+                                      "clang-tidy-20" "clang-tidy")
     if(CLANG_TIDY_EXE)
       set_target_properties(tolk PROPERTIES C_CLANG_TIDY "${CLANG_TIDY_EXE}")
     endif()
@@ -208,22 +205,20 @@ if(PRISM_ENABLE_LINTING)
     set_property(TARGET tolk PROPERTY COMPILE_WARNING_LEVEL 4)
     target_compile_options(
       tolk
-      PRIVATE
-        /external:anglebrackets
-        /external:W0
-        "/external:I$<TARGET_PROPERTY:prism,INTERFACE_INCLUDE_DIRECTORIES>"
-        /analyze
-        /analyze:external-
-        /analyze:log
-        "${CMAKE_BINARY_DIR}/nativecodeanalysis/tolk/"
-        /analyze:log:format:sarif
-        /analyze:ruleset
-        "${_MERGED_RULESET_PATH}")
+      PRIVATE /external:anglebrackets
+              /external:W0
+              "/external:I ${CMAKE_SOURCE_DIR}/third_party/simdutf"
+              /analyze
+              /analyze:external-
+              /analyze:log
+              "${CMAKE_BINARY_DIR}/nativecodeanalysis/tolk/"
+              /analyze:log:format:sarif
+              /analyze:ruleset
+              "${_MERGED_RULESET_PATH}")
   endif()
 endif()
 set_target_properties(tolk PROPERTIES VERSION ${PROJECT_VERSION}
                                       SOVERSION ${PROJECT_VERSION_MAJOR})
-target_link_libraries(tolk PRIVATE prism::prism)
 if(WIN32 OR MINGW)
   target_link_libraries(tolk PRIVATE synchronization)
 elseif(

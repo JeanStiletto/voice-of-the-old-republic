@@ -1,0 +1,89 @@
+# Local modifications to vendored prism (third_party/prism), atop upstream v0.16.5
+# Regenerate after a prism update by re-applying these two changes by hand.
+# 1) backend_registry.cpp: SEH-guard each initialize() in acquire_best/create_best (crash fix; upstream PR candidate).
+# 2) CMakeLists.txt: pin CMAKE_C_STANDARD to 17 (our CMake/MSVC can't map C23; build-env only).
+
+diff --git a/build/prism-0.16.5/CMakeLists.txt b/third_party/prism/CMakeLists.txt
+index 0d7ecac..4ccc030 100644
+--- a/build/prism-0.16.5/CMakeLists.txt
++++ b/third_party/prism/CMakeLists.txt
+@@ -13,7 +13,12 @@ include(ExternalProject)
+ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+ set(CMAKE_CXX_STANDARD 23)
+ set(CMAKE_CXX_STANDARD_REQUIRED ON)
+-set(CMAKE_C_STANDARD 23)
++# Local build-compat patch (voice-of-the-old-republic): upstream sets
++# CMAKE_C_STANDARD 23, but our toolchain's CMake can't map C23 onto MSVC
++# (try_compile ABI detection fails). prism's C code only needs C17 anyway —
++# target_compile_features below declares c_std_17, not c_std_23 — so pin the
++# global default to 17. Pure build-environment fix; no source/ABI change.
++set(CMAKE_C_STANDARD 17)
+ set(CMAKE_C_STANDARD_REQUIRED ON)
+ 
+ project(
+diff --git a/build/prism-0.16.5/source/backends/backend_registry.cpp b/third_party/prism/source/backends/backend_registry.cpp
+index dcc7186..db2bc87 100644
+--- a/build/prism-0.16.5/source/backends/backend_registry.cpp
++++ b/third_party/prism/source/backends/backend_registry.cpp
+@@ -105,6 +105,43 @@ BackendRegistry::create(std::string_view name) {
+   return create([name](const Entry &e) { return e.name == name; });
+ }
+ 
++#ifdef _WIN32
++// SEH-guarded backend initialize(). A backend's initialize() may trigger a
++// delay-loaded vendor DLL (ZDSR -> ZDSRAPI.dll, PC-Talker -> PCTKUSR.dll,
++// BoyPC -> BoyCtrl.dll). When the user's installed DLL exports a mismatched
++// symbol set, the MSVC delay-load helper raises a structured exception
++// (0xC06D007F PROC_NOT_FOUND / 0xC06D007E MOD_NOT_FOUND) from inside
++// initialize(); unguarded it propagates out of *_best() and crashes the host.
++// One broken (typically low-priority) backend must not take down backend
++// selection, so we treat a faulting initialize() as "failed to initialize" and
++// skip it, letting the walk fall through to the next backend (down to SAPI).
++//
++// The helper holds only a raw pointer + int: MSVC forbids __try in a function
++// that needs C++ object unwinding (C2712). BackendResult<> is
++// std::expected<void, BackendError> whose payload is trivially destructible, so
++// the temporary returned by initialize() is unwinding-free here.
++//
++// Returns 1 on success, 0 on a clean failure, -1 if a structured exception was
++// caught.
++static int seh_safe_initialize(TextToSpeechBackend *backend) {
++  __try {
++    return backend->initialize().has_value() ? 1 : 0;
++  } __except (EXCEPTION_EXECUTE_HANDLER) {
++    return -1;
++  }
++}
++#endif
++
++// Run a backend's initialize() crash-safely on Windows; plain call elsewhere.
++// Returns true iff the backend initialised successfully.
++static bool try_initialize(TextToSpeechBackend *backend) {
++#ifdef _WIN32
++  return seh_safe_initialize(backend) == 1;
++#else
++  return backend->initialize().has_value();
++#endif
++}
++
+ std::shared_ptr<TextToSpeechBackend> BackendRegistry::create_best() {
+   std::vector<Factory> factories;
+   {
+@@ -114,7 +151,7 @@ std::shared_ptr<TextToSpeechBackend> BackendRegistry::create_best() {
+       factories.push_back(e.factory);
+   }
+   for (auto &f : factories) {
+-    if (auto b = f(); b && b->initialize())
++    if (auto b = f(); b && try_initialize(b.get()))
+       return b;
+   }
+   return nullptr;
+@@ -149,7 +186,7 @@ std::shared_ptr<TextToSpeechBackend> BackendRegistry::acquire_best() {
+     if (factory == nullptr)
+       continue;
+     auto backend = factory();
+-    if (backend == nullptr || !backend->initialize())
++    if (backend == nullptr || !try_initialize(backend.get()))
+       continue;
+     std::unique_lock lock(mutex);
+     auto it = std::ranges::find_if(

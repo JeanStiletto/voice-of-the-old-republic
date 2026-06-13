@@ -2,12 +2,21 @@
 
 #include "prism.h"
 #include "backends/backend_registry.h"
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <new>
+#include <simdutf/simdutf.h>
 #include <string>
 #ifdef __ANDROID__
 #include <jni.h>
+#endif
+#if (defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) ||      \
+     defined(__OpenBSD__) || defined(__DragonFly__)) &&                        \
+    !defined(__ANDROID__)
+#ifndef NO_ORCA
+#include <giomm/init.h>
+#endif
 #endif
 
 struct PrismContext {
@@ -70,6 +79,13 @@ prism_init(PrismConfig *cfg) {
     owns_com = true;
     break;
   }
+#endif
+#if (defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) ||      \
+     defined(__OpenBSD__) || defined(__DragonFly__)) &&                        \
+    !defined(__ANDROID__)
+#ifndef NO_ORCA
+  Gio::init();
+#endif
 #endif
   if (cfg != nullptr) {
     if (cfg->version != PRISM_CONFIG_VERSION) {
@@ -199,6 +215,8 @@ prism_backend_initialize(PrismBackend *backend) {
 
 PRISM_API PRISM_NODISCARD PrismError PRISM_CALL prism_backend_speak(
     PrismBackend *backend, const char *PRISM_RESTRICT text, bool interrupt) {
+  if (!simdutf::validate_utf8(text, std::string_view{text}.size()))
+    return PRISM_ERROR_INVALID_UTF8;
   const auto r = backend->impl->speak(text, interrupt);
   return r ? PRISM_OK : to_prism_error(r.error());
 }
@@ -206,6 +224,8 @@ PRISM_API PRISM_NODISCARD PrismError PRISM_CALL prism_backend_speak(
 PRISM_API PRISM_NODISCARD PrismError PRISM_CALL prism_backend_speak_to_memory(
     PrismBackend *backend, const char *PRISM_RESTRICT text,
     PrismAudioCallback callback, void *userdata) {
+  if (!simdutf::validate_utf8(text, std::string_view{text}.size()))
+    return PRISM_ERROR_INVALID_UTF8;
   const auto r = backend->impl->speak_to_memory(
       text,
       [callback, userdata](void *, const float *samples, size_t count,
@@ -218,12 +238,16 @@ PRISM_API PRISM_NODISCARD PrismError PRISM_CALL prism_backend_speak_to_memory(
 
 PRISM_API PRISM_NODISCARD PrismError PRISM_CALL
 prism_backend_braille(PrismBackend *backend, const char *PRISM_RESTRICT text) {
+  if (!simdutf::validate_utf8(text, std::string_view{text}.size()))
+    return PRISM_ERROR_INVALID_UTF8;
   const auto r = backend->impl->braille(text);
   return r ? PRISM_OK : to_prism_error(r.error());
 }
 
 PRISM_API PRISM_NODISCARD PrismError PRISM_CALL prism_backend_output(
     PrismBackend *backend, const char *PRISM_RESTRICT text, bool interrupt) {
+  if (!simdutf::validate_utf8(text, std::string_view{text}.size()))
+    return PRISM_ERROR_INVALID_UTF8;
   const auto r = backend->impl->output(text, interrupt);
   return r ? PRISM_OK : to_prism_error(r.error());
 }
@@ -257,18 +281,24 @@ PRISM_API PRISM_NODISCARD PrismError PRISM_CALL prism_backend_is_speaking(
 
 PRISM_API PRISM_NODISCARD PrismError PRISM_CALL
 prism_backend_set_volume(PrismBackend *backend, float volume) {
+  if (!std::isfinite(volume) || volume < 0.0F || volume > 1.0F)
+    return PRISM_ERROR_RANGE_OUT_OF_BOUNDS;
   const auto r = backend->impl->set_volume(volume);
   return r ? PRISM_OK : to_prism_error(r.error());
 }
 
 PRISM_API PRISM_NODISCARD PrismError PRISM_CALL
 prism_backend_set_rate(PrismBackend *backend, float rate) {
+  if (!std::isfinite(rate) || rate < 0.0F || rate > 1.0F)
+    return PRISM_ERROR_RANGE_OUT_OF_BOUNDS;
   const auto r = backend->impl->set_rate(rate);
   return r ? PRISM_OK : to_prism_error(r.error());
 }
 
 PRISM_API PRISM_NODISCARD PrismError PRISM_CALL
 prism_backend_set_pitch(PrismBackend *backend, float pitch) {
+  if (!std::isfinite(pitch) || pitch < 0.0F || pitch > 1.0F)
+    return PRISM_ERROR_RANGE_OUT_OF_BOUNDS;
   const auto r = backend->impl->set_pitch(pitch);
   return r ? PRISM_OK : to_prism_error(r.error());
 }
@@ -404,7 +434,7 @@ prism_error_string(PrismError error) {
                                         "Backend entered undefined state"};
   static_assert(std::size(strings) == PRISM_ERROR_COUNT,
                 "Error string table size mismatches error count");
-  if (error >= PRISM_ERROR_COUNT)
+  if (static_cast<std::uint32_t>(error) >= PRISM_ERROR_COUNT)
     return "Unknown error";
   return strings[error];
 }

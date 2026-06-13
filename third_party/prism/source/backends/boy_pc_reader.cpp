@@ -2,14 +2,12 @@
 // Todo: this file is full of workarounds. Remove them when they are no longer
 // needed.
 
-#include "../simdutf.h"
-#include "backend.h"
-#include "backend_registry.h"
 #ifdef _WIN32
 #if defined(__x86_64) || defined(__x86_64__) || defined(__amd64__) ||          \
     defined(__amd64) || defined(_M_X64) || defined(_M_IX86) ||                 \
     defined(__i386__)
-#include "raw/boy_pc_reader.h"
+#include "backend.h"
+#include "backend_registry.h"
 #include <array>
 #include <atomic>
 #include <bitset>
@@ -17,7 +15,9 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <raw/boy_pc_reader.h>
 #include <shared_mutex>
+#include <simdutf/simdutf.h>
 #include <string_view>
 #include <tchar.h>
 #include <thread>
@@ -275,16 +275,15 @@ public:
         // Temporary workaround to ensure interrupt always stops
         // Todo: remove this when fixed upstream
         if (interrupt) {
-          if (const auto res = BoyCtrlStopSpeaking(false);
-              res != e_bcerr_success) {
+          if (const auto res = BoyCtrlStopSpeaking(); res != e_bcerr_success) {
             if (!is_recoverable(res))
               return std::unexpected(map_error(res));
             needs_recovery = true;
           }
         }
         if (!needs_recovery) {
-          const auto res = BoyCtrlSpeak(wstr.c_str(), false, !interrupt, true,
-                                        complete_callback);
+          const auto res =
+              BoyCtrlSpeak(wstr.c_str(), !interrupt, complete_callback);
           if (res == e_bcerr_success) {
             speaking.test_and_set();
             return {};
@@ -300,9 +299,9 @@ public:
         return std::unexpected(BackendError::BackendNotAvailable);
       std::shared_lock lock(lifecycle_mtx);
       if (interrupt)
-        BoyCtrlStopSpeaking(false);
-      if (const auto res = BoyCtrlSpeak(wstr.c_str(), false, !interrupt, true,
-                                        complete_callback);
+        BoyCtrlStopSpeaking();
+      if (const auto res =
+              BoyCtrlSpeak(wstr.c_str(), !interrupt, complete_callback);
           res != e_bcerr_success)
         return std::unexpected(map_error(res));
       speaking.test_and_set();
@@ -329,7 +328,7 @@ public:
     {
       std::shared_lock lock(lifecycle_mtx);
       if (BoyCtrlIsReaderRunning()) {
-        const auto res = BoyCtrlStopSpeaking(false);
+        const auto res = BoyCtrlStopSpeaking();
         if (res == e_bcerr_success) {
           speaking.clear();
           return {};
@@ -341,7 +340,7 @@ public:
     if (!attempt_recovery())
       return std::unexpected(BackendError::BackendNotAvailable);
     std::shared_lock lock(lifecycle_mtx);
-    if (const auto res = BoyCtrlStopSpeaking(false); res != e_bcerr_success)
+    if (const auto res = BoyCtrlStopSpeaking(); res != e_bcerr_success)
       return std::unexpected(map_error(res));
     speaking.clear();
     return {};

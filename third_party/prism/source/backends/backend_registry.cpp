@@ -105,6 +105,43 @@ BackendRegistry::create(std::string_view name) {
   return create([name](const Entry &e) { return e.name == name; });
 }
 
+#ifdef _WIN32
+// SEH-guarded backend initialize(). A backend's initialize() may trigger a
+// delay-loaded vendor DLL (ZDSR -> ZDSRAPI.dll, PC-Talker -> PCTKUSR.dll,
+// BoyPC -> BoyCtrl.dll). When the user's installed DLL exports a mismatched
+// symbol set, the MSVC delay-load helper raises a structured exception
+// (0xC06D007F PROC_NOT_FOUND / 0xC06D007E MOD_NOT_FOUND) from inside
+// initialize(); unguarded it propagates out of *_best() and crashes the host.
+// One broken (typically low-priority) backend must not take down backend
+// selection, so we treat a faulting initialize() as "failed to initialize" and
+// skip it, letting the walk fall through to the next backend (down to SAPI).
+//
+// The helper holds only a raw pointer + int: MSVC forbids __try in a function
+// that needs C++ object unwinding (C2712). BackendResult<> is
+// std::expected<void, BackendError> whose payload is trivially destructible, so
+// the temporary returned by initialize() is unwinding-free here.
+//
+// Returns 1 on success, 0 on a clean failure, -1 if a structured exception was
+// caught.
+static int seh_safe_initialize(TextToSpeechBackend *backend) {
+  __try {
+    return backend->initialize().has_value() ? 1 : 0;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return -1;
+  }
+}
+#endif
+
+// Run a backend's initialize() crash-safely on Windows; plain call elsewhere.
+// Returns true iff the backend initialised successfully.
+static bool try_initialize(TextToSpeechBackend *backend) {
+#ifdef _WIN32
+  return seh_safe_initialize(backend) == 1;
+#else
+  return backend->initialize().has_value();
+#endif
+}
+
 std::shared_ptr<TextToSpeechBackend> BackendRegistry::create_best() {
   std::vector<Factory> factories;
   {
@@ -114,7 +151,7 @@ std::shared_ptr<TextToSpeechBackend> BackendRegistry::create_best() {
       factories.push_back(e.factory);
   }
   for (auto &f : factories) {
-    if (auto b = f(); b && b->initialize())
+    if (auto b = f(); b && try_initialize(b.get()))
       return b;
   }
   return nullptr;
@@ -149,7 +186,7 @@ std::shared_ptr<TextToSpeechBackend> BackendRegistry::acquire_best() {
     if (factory == nullptr)
       continue;
     auto backend = factory();
-    if (backend == nullptr || !backend->initialize())
+    if (backend == nullptr || !try_initialize(backend.get()))
       continue;
     std::unique_lock lock(mutex);
     auto it = std::ranges::find_if(

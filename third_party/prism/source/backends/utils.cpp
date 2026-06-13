@@ -81,56 +81,25 @@ struct TrimBounds {
   float close_thr_db = -160.0F;
 };
 
-struct counting_it {
-  using value_type = std::size_t;
-  using difference_type = std::ptrdiff_t;
-  using iterator_category = std::random_access_iterator_tag;
-  std::size_t v{};
-  value_type operator*() const noexcept { return v; }
-  counting_it &operator++() noexcept {
-    ++v;
-    return *this;
-  }
-  counting_it operator++(int) noexcept {
-    auto t = *this;
-    ++*this;
-    return t;
-  }
-  counting_it &operator--() noexcept {
-    --v;
-    return *this;
-  }
-  counting_it &operator+=(difference_type n) noexcept {
-    v += static_cast<std::size_t>(n);
-    return *this;
-  }
-  counting_it &operator-=(difference_type n) noexcept {
-    v -= static_cast<std::size_t>(n);
-    return *this;
-  }
-  friend counting_it operator+(counting_it it, difference_type n) noexcept {
-    it += n;
-    return it;
-  }
-  friend counting_it operator-(counting_it it, difference_type n) noexcept {
-    it -= n;
-    return it;
-  }
-  friend difference_type operator-(counting_it a, counting_it b) noexcept {
-    return static_cast<difference_type>(a.v - b.v);
-  }
-  friend bool operator==(counting_it a, counting_it b) noexcept {
-    return a.v == b.v;
-  }
-  friend bool operator<(counting_it a, counting_it b) noexcept {
-    return a.v < b.v;
-  }
-};
-
 struct TrimWorkspace {
   std::vector<float> db;
   std::vector<float> scratch;
 };
+
+[[nodiscard]] static inline std::span<const float>
+hann_window(std::size_t fade_frames) {
+  static thread_local std::vector<float> cache;
+  if (cache.size() != fade_frames) {
+    cache.resize(fade_frames);
+    const auto denom = static_cast<double>(fade_frames - 1);
+    for (std::size_t i = 0; i < fade_frames; ++i) {
+      const double t = static_cast<double>(i) / denom;
+      cache[i] =
+          static_cast<float>(0.5 - (0.5 * std::cos(std::numbers::pi * t)));
+    }
+  }
+  return {cache.data(), cache.size()};
+}
 
 static inline std::size_t ms_to_frames(float ms, std::size_t sample_rate) {
   const auto f =
@@ -143,6 +112,7 @@ static inline float mean_square_to_db(double mean_square) {
   return static_cast<float>(10.0 * std::log10(mean_square + eps));
 }
 
+[[gnu::hot]]
 static inline float frame_db(std::span<const float> interleaved,
                              std::size_t start_frame, std::size_t frame_len,
                              std::size_t total_frames, std::size_t channels) {
@@ -151,11 +121,39 @@ static inline float frame_db(std::span<const float> interleaved,
     return -160.0F;
   const std::size_t nframes = end_frame - start_frame;
   const std::size_t nsamples = nframes * channels;
-  const float *p = interleaved.data() + (start_frame * channels);
-  const float *e = p + nsamples;
-  double sumsq = 0.0;
-  for (; p != e; ++p) {
-    const auto v = static_cast<double>(*p);
+  const float *__restrict p = interleaved.data() + (start_frame * channels);
+  double s0 = 0;
+  double s1 = 0;
+  double s2 = 0;
+  double s3 = 0;
+  double s4 = 0;
+  double s5 = 0;
+  double s6 = 0;
+  double s7 = 0;
+  std::size_t i = 0;
+  const std::size_t lim = nsamples & ~static_cast<std::size_t>(7);
+  for (; i < lim; i += 8) {
+    const double v0 = p[i + 0];
+    const double v1 = p[i + 1];
+    const double v2 = p[i + 2];
+    const double v3 = p[i + 3];
+    const double v4 = p[i + 4];
+    const double v5 = p[i + 5];
+    const double v6 = p[i + 6];
+    const double v7 = p[i + 7];
+    s0 += v0 * v0;
+    s1 += v1 * v1;
+    s2 += v2 * v2;
+    s3 += v3 * v3;
+    s4 += v4 * v4;
+    s5 += v5 * v5;
+    s6 += v6 * v6;
+    s7 += v7 * v7;
+  }
+  // Pairwise tree reduction
+  double sumsq = ((s0 + s1) + (s2 + s3)) + ((s4 + s5) + (s6 + s7));
+  for (; i < nsamples; ++i) {
+    const double v = p[i];
     sumsq += v * v;
   }
   return mean_square_to_db(sumsq / static_cast<double>(nsamples));
@@ -185,42 +183,27 @@ static inline void apply_fade_in(std::span<float> interleaved,
     return;
   const auto total_frames = interleaved.size() / channels;
   fade_frames = std::min(fade_frames, total_frames);
-  if (fade_frames == 0)
+  if (fade_frames <= 1)
     return;
-  const float pi = std::numbers::pi_v<float>;
+  const auto window = hann_window(fade_frames);
+  const float *__restrict w = window.data();
   if (channels == 1) {
-    for (std::size_t i = 0; i < fade_frames; ++i) {
-      float g = 1.0F;
-      if (fade_frames > 1) {
-        const float t =
-            static_cast<float>(i) / static_cast<float>(fade_frames - 1);
-        g = 0.5F - (0.5F * std::cos(pi * t));
-      }
-      interleaved[i] *= g;
-    }
+    float *__restrict p = interleaved.data();
+    for (std::size_t i = 0; i < fade_frames; ++i)
+      p[i] *= w[i];
     return;
   }
   if (channels == 2) {
+    float *__restrict p = interleaved.data();
     for (std::size_t i = 0; i < fade_frames; ++i) {
-      float g = 1.0F;
-      if (fade_frames > 1) {
-        const float t =
-            static_cast<float>(i) / static_cast<float>(fade_frames - 1);
-        g = 0.5F - (0.5F * std::cos(pi * t));
-      }
-      const auto base = i * 2;
-      interleaved[base + 0] *= g;
-      interleaved[base + 1] *= g;
+      const float g = w[i];
+      p[(2 * i) + 0] *= g;
+      p[(2 * i) + 1] *= g;
     }
     return;
   }
   for (std::size_t i = 0; i < fade_frames; ++i) {
-    float g = 1.0F;
-    if (fade_frames > 1) {
-      const float t =
-          static_cast<float>(i) / static_cast<float>(fade_frames - 1);
-      g = 0.5F - (0.5F * std::cos(pi * t));
-    }
+    const float g = w[i];
     const auto base = i * channels;
     for (std::size_t ch = 0; ch < channels; ++ch)
       interleaved[base + ch] *= g;
@@ -237,42 +220,32 @@ static inline void apply_fade_out(std::span<float> interleaved,
   if (fade_frames == 0)
     return;
   const auto start = total_frames - fade_frames;
-  const float pi = std::numbers::pi_v<float>;
+  if (fade_frames == 1) {
+    const auto base = start * channels;
+    for (std::size_t ch = 0; ch < channels; ++ch)
+      interleaved[base + ch] = 0.0F;
+    return;
+  }
+  const auto window = hann_window(fade_frames);
+  const float *__restrict w = window.data();
+  const std::size_t last = fade_frames - 1;
   if (channels == 1) {
-    for (std::size_t i = 0; i < fade_frames; ++i) {
-      float g =
-          (fade_frames > 1)
-              ? (0.5F +
-                 (0.5F * std::cos(pi * (static_cast<float>(i) /
-                                        static_cast<float>(fade_frames - 1)))))
-              : 0.0F;
-      interleaved[start + i] *= g;
-    }
+    float *__restrict p = interleaved.data() + start;
+    for (std::size_t i = 0; i < fade_frames; ++i)
+      p[i] *= w[last - i];
     return;
   }
   if (channels == 2) {
+    float *__restrict p = interleaved.data() + (start * 2);
     for (std::size_t i = 0; i < fade_frames; ++i) {
-      float g =
-          (fade_frames > 1)
-              ? (0.5F +
-                 (0.5F * std::cos(pi * (static_cast<float>(i) /
-                                        static_cast<float>(fade_frames - 1)))))
-              : 0.0F;
-      const auto base = (start + i) * 2;
-      interleaved[base + 0] *= g;
-      interleaved[base + 1] *= g;
+      const float g = w[last - i];
+      p[(2 * i) + 0] *= g;
+      p[(2 * i) + 1] *= g;
     }
     return;
   }
   for (std::size_t i = 0; i < fade_frames; ++i) {
-    float g = 1.0F;
-    if (fade_frames > 1) {
-      const float t =
-          static_cast<float>(i) / static_cast<float>(fade_frames - 1);
-      g = 0.5F + (0.5F * std::cos(pi * t));
-    } else {
-      g = 0.0F;
-    }
+    const float g = w[last - i];
     const auto base = (start + i) * channels;
     for (std::size_t ch = 0; ch < channels; ++ch)
       interleaved[base + ch] *= g;
@@ -282,6 +255,13 @@ static inline void apply_fade_out(std::span<float> interleaved,
 static inline double frame_abs_sum(std::span<const float> interleaved,
                                    std::size_t frame, std::size_t channels) {
   const auto base = frame * channels;
+  if (channels == 1) {
+    return std::abs(interleaved[base]);
+  }
+  if (channels == 2) {
+    return static_cast<double>(std::abs(interleaved[base])) +
+           static_cast<double>(std::abs(interleaved[base + 1]));
+  }
   double s = 0.0;
   for (std::size_t ch = 0; ch < channels; ++ch)
     s += std::abs(interleaved[base + ch]);
@@ -356,14 +336,11 @@ compute_trim_bounds_rms_gate(std::span<const float> samples_interleaved,
   static thread_local TrimWorkspace W;
   W.db.resize(n);
   auto &db = W.db;
-  auto fill_one = [&](std::size_t i) {
+  for (std::size_t i = 0; i < n; ++i) {
     const auto start_frame = i * hop;
     db[i] = frame_db(samples_interleaved, start_frame, frame_len, total_frames,
                      channels);
-  };
-  // todo: instrument this to get actual statistics.
-  // For now, we guess
-  std::for_each(counting_it{0}, counting_it{n}, fill_one);
+  }
   const auto head_frames = std::min<std::size_t>(
       n, std::max<std::size_t>(std::size_t{1},
                                ms_to_frames(P.head_ms, sample_rate) / hop));

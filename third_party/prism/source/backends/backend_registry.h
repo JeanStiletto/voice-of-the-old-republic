@@ -57,6 +57,7 @@ inline constexpr auto PCTalker = "PCTalker"_bid;
 inline constexpr auto SenseReader = "SenseReader"_bid;
 inline constexpr auto SystemAccess = "SystemAccess"_bid;
 inline constexpr auto WindowEyes = "WindowEyes"_bid;
+inline constexpr auto Spiel = "Spiel"_bid;
 } // namespace Backends
 
 class BackendRegistry {
@@ -168,7 +169,9 @@ template <typename T> struct BackendRegistrar {
 };
 
 #define REGISTER_BACKEND(cls, name, priority)                                  \
-  static ::BackendRegistrar<cls> registrar_##cls##_(name, priority)
+  [[gnu::used, gnu::retain]] static ::BackendRegistrar<cls>                    \
+  registrar_##cls##_(name, priority)
 
 #define REGISTER_BACKEND_WITH_ID(cls, id, name, priority)                      \
-  static ::BackendRegistrar<cls> registrar_##cls##_(id, name, priority)
+  [[gnu::used, gnu::retain]] static ::BackendRegistrar<cls>                    \
+  registrar_##cls##_(id, name, priority)
