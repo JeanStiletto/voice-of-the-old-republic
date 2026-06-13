@@ -23,6 +23,10 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.5.2</h2>
 
+<h3>New features:</h3>
+
+- The "guide me there" key (Shift+Dash) now also walks you to map markers and other spots you can't interact with — and it routes around corners. Until now Shift+Dash only worked on things you can act on (doors, characters, containers): it walked you up to them along a proper path. Map markers you'd set yourself, and other targets with nothing to "use", were refused — it told you to use the beacon instead. Now Shift+Dash walks you to those too: focus a map marker (or any point you've cycled to) and press it, and the character sets off and finds its own way there, around walls and through doorways, the same way it does when you click a far-off door. As before, pressing Shift+Dash again while you're walking cancels and hands control back, and tapping a movement key stops it. Targets that are genuinely sealed off (no walkable route at all) still can't be reached — the character walks as far as the path allows.
+
 <h3>Bug fixes:</h3>
 
 - Talking to a distant character now walks you over and starts the conversation, instead of freezing you in place. When you pressed Enter to talk to someone more than about ten metres away, your character would stand frozen — unable to walk or open menus — for roughly four seconds, and the conversation never opened; you had to give up and try again. The mod was telling the game to start the dialogue but never letting it walk you into range first. It now lets the game's own "walk up, then talk" behaviour run — the same thing that happens when a sighted player clicks a far-off character — so you automatically walk into range and the conversation begins on its own, at any distance.

@@ -595,25 +595,30 @@ acc::strings::Id GuidancePreRollFor(acc::filter::CycleCategory c) {
     return S::FmtInteractOpen;
 }
 
-// Shift+- — guide the player to the currently-focused Pillar 4 object via
-// `acc::guidance::UseObject`. Plays the per-category 3D cue as spatial
-// confirmation, then speaks the per-kind pre-roll ("Sprich mit X", "Öffne X",
-// "Hebe X auf"). The engine pathfinds + walks the player + triggers the
-// kind-appropriate USE callback (door open, container loot, item pickup,
-// NPC dialog start, transition cross-load).
+// Shift+- — autowalk the player to the currently-focused target. Hybrid
+// dispatch:
+//   - A real interactable object → `acc::guidance::UseObject`. The engine
+//     walks to use-range and triggers the kind-appropriate callback (door
+//     open, container loot, item pickup, NPC dialog, transition cross-load),
+//     stopping at a sensible distance and facing the object.
+//   - A map pin / waypoint, or any focused target without a usable object
+//     handle (a non-interactable target), or an object whose USE the engine
+//     refuses → `acc::guidance::WalkTo` straight to the world coordinate.
 //
-// Migrated 2026-05-11 from `WalkTo` (AddMoveToPointAction) to `UseObject`
-// (AddUseObjectAction) per Phase 5 architectural pivot — the
-// AddMoveToPointAction queue silently no-ops for the leader (engine routes
-// it through the FollowLeader path). UseObject is engine-proven for the
-// leader case; same primitive the Enter interact hotkey falls back to.
+// The WalkTo coordinate path is new (2026-06-13). It used to be the only
+// path (pre-2026-05-11) and was abandoned because AddMoveToPointAction
+// "no-opped for the leader" — which we now know was a misdiagnosis: the move
+// only needs the player's server AI enabled (and player input NOT disabled),
+// which WalkTo now does. So the two cases that Shift+- previously refused —
+// map pins (redirected to Ctrl+-) and non-interactable targets (spoke a
+// failure) — now autowalk to the target's position like everything else.
 //
 // Empty-state: when no item is focused, speaks GuidanceNoFocus and bails.
 //
 // Cancel-on-second-press: when an autowalk is in flight, the next press
-// cancels it via `acc::guidance::CancelMovement` (ClearAllActions). The
-// `destHint` we pass to UseObject arms in-flight tracking so this toggle
-// works for the new path as well.
+// cancels it via `acc::guidance::CancelMovement` (ClearAllActions, and it
+// restores any AI-level WalkTo raised). Both UseObject (destHint) and WalkTo
+// arm in-flight tracking, so the toggle works regardless of which path ran.
 void OnPathfindFocus() {
     // Toggle-cancel branch — runs before the focus check so the user
     // can cancel with no focus selected (cycled past the end, focus
@@ -639,28 +644,9 @@ void OnPathfindFocus() {
     NarratedActivation a;
     if (!TryResolveOrAnnounceNoFocus(a, "Shift+-")) return;
 
-    // Map pins have no UseObject path — they aren't game objects, so
-    // the engine has nothing to walk-to-and-trigger. Redirect the user
-    // to Ctrl+- which beacons to the pin's world position. Play the
-    // landmark cue at the pin position first so the user still gets
-    // spatial confirmation of WHERE the pin is.
-    if (a.isMapPin) {
-        // Pins are never doors, so RefineDoorCue is a no-op here; left
-        // for symmetry with the other fire sites.
-        auto pinBindings = BindingsFor(a.category);
-        acc::audio::NavCue cue = RefineDoorCue(pinBindings.cue, a.obj);
-        acc::audio::PlayCue3D(acc::audio::GetNavCueResref(cue), a.pos);
-        const char* hint = acc::strings::Get(
-            acc::strings::Id::MapPinShiftDashHint);
-        prism::Speak(hint, /*interrupt=*/true);
-        acclog::Write("Cycle", "Shift+- -> [%s] (map-pin not autowalkable) "
-                      "pin=%p pos=(%.2f,%.2f,%.2f)",
-                      hint, a.obj, a.pos.x, a.pos.y, a.pos.z);
-        return;
-    }
-
-    // Per-category 3D cue at the destination — same spatial-confirmation
-    // pattern the announce path uses.
+    // Per-category 3D cue at the destination — spatial confirmation of WHERE
+    // we're walking, same pattern the announce path uses. (RefineDoorCue is a
+    // no-op for map pins, which are never doors.)
     auto bindings = BindingsFor(a.category);
     {
         acc::audio::NavCue cue = RefineDoorCue(bindings.cue, a.obj);
@@ -672,28 +658,45 @@ void OnPathfindFocus() {
                   acc::strings::Get(GuidancePreRollFor(a.category)),
                   a.name);
 
-    // Disable per-tick player-input clobber for the duration of the AI
-    // action; engine's TickPlayerInputRestore auto-flips back after ~3s.
-    bool inputDisabled = acc::engine::SetPlayerInputEnabled(false);
+    // Dispatch. Map pins and handle-less targets have no object to "use" —
+    // walk straight to the coordinate. Real objects go through UseObject
+    // (walk to use-range + trigger); if the engine refuses the use (a
+    // non-interactable object), fall back to a plain coordinate walk so the
+    // user still gets there. WalkTo manages its own AI-level + leaves player
+    // input enabled, so we must NOT disable input around it; the UseObject
+    // path keeps its proven input-disable.
+    bool ok;
+    const char* path;
+    if (a.isMapPin || a.handle == 0) {
+        ok   = acc::guidance::WalkTo(a.pos);
+        path = "WalkTo(coord)";
+    } else {
+        bool inputDisabled = acc::engine::SetPlayerInputEnabled(false);
+        ok = acc::guidance::UseObject(a.handle, a.pos);
+        if (ok) {
+            path = "UseObject";
+        } else {
+            if (inputDisabled) acc::engine::SetPlayerInputEnabled(true);
+            ok   = acc::guidance::WalkTo(a.pos);
+            path = "UseObject->WalkTo";
+        }
+    }
 
-    bool ok = acc::guidance::UseObject(a.handle, a.pos);
     if (ok) {
         prism::Speak(msg, /*interrupt=*/true);
-        acclog::Write("Cycle", "Shift+- -> [%s] obj=%p handle=0x%08x "
-                      "dest=(%.2f,%.2f,%.2f) input_disabled=%d",
-                      msg, a.obj, a.handle,
-                      a.pos.x, a.pos.y, a.pos.z,
-                      inputDisabled ? 1 : 0);
+        acclog::Write("Cycle", "Shift+- -> [%s] via %s obj=%p handle=0x%08x "
+                      "pin=%d dest=(%.2f,%.2f,%.2f)",
+                      msg, path, a.obj, a.handle, a.isMapPin ? 1 : 0,
+                      a.pos.x, a.pos.y, a.pos.z);
     } else {
-        if (inputDisabled) acc::engine::SetPlayerInputEnabled(true);
         char failMsg[192];
         std::snprintf(failMsg, sizeof(failMsg),
-                      acc::strings::Get(acc::strings::Id::FmtInteractFailed),
+                      acc::strings::Get(acc::strings::Id::FmtGuidingFailed),
                       a.name);
         prism::Speak(failMsg, /*interrupt=*/true);
-        acclog::Write("Cycle", "Shift+- -> [%s] UseObject FAILED obj=%p "
-                      "handle=0x%08x",
-                      failMsg, a.obj, a.handle);
+        acclog::Write("Cycle", "Shift+- -> [%s] all paths FAILED (last=%s) "
+                      "obj=%p handle=0x%08x pin=%d",
+                      failMsg, path, a.obj, a.handle, a.isMapPin ? 1 : 0);
     }
 }
 

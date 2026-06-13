@@ -101,3 +101,42 @@ the proven `AddMoveToPointActionToFront`/`UseObject` path before the talk verb.
   level** — it just calls `CSWCCreature::SwitchMode(player, 0/1)`, which writes
   one client-side mode flag (`field162_0x3a8`). Whether that flag interferes with
   the native dialog walk is the open question above.
+
+## Walk the player to a bare COORDINATE (no object) — verified 2026-06-13
+
+The player CAN be pathfound to an arbitrary walkmesh coordinate (around corners,
+full nav-graph A*), with no target object and no recreated pathfinding. The
+recipe is the engine's own click-to-move, recovered from
+`CSWSMessage::HandlePlayerToServerInputWalkToWaypoint @0x005235b0` (the handler a
+ground-click sends to). The two steps that matter:
+
+1. **Prime the action subsystem first:** `CSWSCreature::ActionManager(creature,
+   8) @0x004f8770` (mode 8 = move/walk). EVERY engine handler that queues a
+   player action primes ActionManager first (dialog/use handlers call it too,
+   mode 8 / 2). Without it the leader's queued move bails — `field427_0xa8c`
+   stays 2 ("never ran"), no path.
+2. **`AddMoveToPointAction` with `secondaryPoint = (0,0,0)`**, `actionId =
+   0xffff`, `objectId2 = INVALID`. The secondary point's X is a line-of-sight
+   shortcut distance in `AIActionMoveToPoint`: non-zero (e.g. passing the
+   destination again) makes the engine take a straight LOS move that stops at
+   the first wall; zero skips the shortcut so the nav-graph A* runs.
+
+Both are required together. `secondary=0` WITHOUT `ActionManager(8)` priming
+gives `field427=2` / no movement (this is the trap an earlier attempt fell into).
+The NPC script command `ExecuteCommandMoveToPoint @0x0053fe00`
+(`ActionMoveToLocation`) uses `secondary=(0,0,0)` too, but it pathfinds for NPCs
+because their action manager is already in the right state; the player needs the
+explicit `ActionManager(8)`.
+
+Implemented in `acc::guidance::WalkTo` (guidance_autowalk.cpp): prime → dispatch.
+Player input is left ENABLED (disabling it flips the client SwitchMode and
+suppresses the walk). In-flight tracking clears on queue-drain OR player-stillness
+(UseObject's composite queue never drains to 0, so distance/stillness is the
+reliable "walk ended" signal). Shift+- (cycle_input `OnPathfindFocus`) routes
+real objects through `UseObject` (engine walks to use-range + triggers) and bare
+points / map pins through this `WalkTo` coordinate path.
+
+**Net correction:** the leader is fully walkable to both objects AND arbitrary
+coordinates using the engine's pathfinder. "Recreate the nav graph" was never
+necessary. The only genuinely unreachable case is a destination with no walkable
+route at all (e.g. an NPC sealed behind geometry).
