@@ -98,8 +98,6 @@ WatchdogState g_watchdog;
 struct InFlightState {
     bool   active        = false;
     Vector dest          = {0.0f, 0.0f, 0.0f};
-    bool   aiRaised      = false;   // we set ai_level=1 for this walk
-    int    priorAiLevel  = 0;       // restore target when the walk ends
     DWORD  dispatchTick  = 0;       // GetTickCount() at dispatch
     bool   sawPending    = false;   // latched once the move is seen queued
     Vector lastPos       = {0.0f, 0.0f, 0.0f};
@@ -133,22 +131,6 @@ void ArmInFlight(const Vector& dest) {
     g_inFlight.lastMoveTick = now;
     g_inFlight.sawMoving    = false;
     g_inFlight.haveLastPos  = false;
-    g_inFlight.aiRaised     = false;  // WalkTo sets true after; UseObject leaves false
-    g_inFlight.priorAiLevel = 0;
-}
-
-bool SetPlayerAILevel(void* creature, int level);  // defined below
-
-// Restore the player's AI level to what it was before we raised it for an
-// autowalk, then clear the raised flag. Safe to call when nothing was raised
-// (no-op). Re-resolves the creature live so it works from the tick path.
-void RestorePlayerAILevelIfRaised() {
-    if (!g_inFlight.aiRaised) return;
-    void* creature = acc::engine::GetPlayerServerCreature();
-    SetPlayerAILevel(creature, g_inFlight.priorAiLevel);
-    acclog::Write("Autowalk", "restored player ai_level=%d (walk ended)",
-                  g_inFlight.priorAiLevel);
-    g_inFlight.aiRaised = false;
 }
 
 // Helper to arm the watchdog after a successful dispatch. Same shape
@@ -172,51 +154,8 @@ float HorizontalDistance(const Vector& a, const Vector& b) {
     return std::sqrt(dx * dx + dy * dy);
 }
 
-// --- Server-side AI-level control -----------------------------------------
-// THE missing piece for player walk-to-point. AddMoveToPointAction queues a
-// move on the player's server creature, but the per-tick action pump only
-// runs that queue when the creature's AI is enabled (ai_level != 0). The
-// engine does exactly this itself before walk-then-talk / walk-then-use:
-// the server input handler calls SetAILevel(player, 1) (decompile-verified,
-// docs/llm-docs/interaction-dispatch-model.md), then queues the move. We
-// replicate it — raise AI around the move, restore the prior level on
-// arrival/cancel — and, critically, do NOT disable player input (that path
-// flips the client creature mode and was observed to suppress the very walk
-// we're trying to run). Addresses/offsets from Lane's gzf (2026-06-13).
-constexpr uintptr_t kAddrServerGetServerAIMaster  = 0x004aed80; // CServerExoApp::GetServerAIMaster()
-constexpr uintptr_t kAddrServerAIMasterSetAILevel = 0x004b08a0; // CServerAIMaster::SetAILevel(creature, lvl)
-constexpr size_t    kAppManagerServerOffset       = 0x8;        // AppManager+0x8 → CServerExoApp*
-constexpr size_t    kServerObjectAiLevelOffset    = 0x78;       // CSWSObject.ai_level
-constexpr size_t    kServerObjectAreaIdOffset     = 0x8c;       // CSWSObject.area_id
-
-void* ResolveServerAIMaster() {
-    __try {
-        void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appMgr) return nullptr;
-        void* server = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appMgr) + kAppManagerServerOffset);
-        if (!server) return nullptr;
-        auto fn = reinterpret_cast<void* (__thiscall*)(void*)>(
-            kAddrServerGetServerAIMaster);
-        return fn(server);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
-bool SetPlayerAILevel(void* creature, int level) {
-    if (!creature) return false;
-    void* master = ResolveServerAIMaster();
-    if (!master) return false;
-    __try {
-        auto fn = reinterpret_cast<void (__thiscall*)(void*, void*, int)>(
-            kAddrServerAIMasterSetAILevel);
-        fn(master, creature, level);
-        return true;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-}
+// CSWSObject.area_id — passed as objectId1 to AddMoveToPointAction.
+constexpr size_t kServerObjectAreaIdOffset = 0x8c;
 
 // CSWSCreature::ActionManager @0x004f8770 — primes the creature's action
 // subsystem for the kind of action about to be queued (mode 8 = move/walk,
@@ -281,27 +220,19 @@ bool WalkTo(const Vector& destination) {
     unsigned int ret = 0;
     unsigned short thisActionId = s_actionId++;
 
-    // Enable the player creature's server AI so the per-tick action pump
-    // actually runs the queued move — this is what the engine does itself
-    // before walk-then-talk/use, and the missing piece that made earlier
-    // standalone WalkTo dispatches no-op (project_addmovetopoint_leader_broken
-    // was a misdiagnosis: not "leader can't walk" but "leader's queue isn't
-    // pumped unless AI is on"). Capture the prior level to restore on arrival.
-    // We deliberately do NOT disable player input here — that flips the client
-    // creature mode and suppresses the walk (observed on the dialog path); AI
-    // ownership already keeps manual keys from fighting the move. Pass the
-    // player's real area id so cross-room pathfinding resolves.
-    int priorAi = g_inFlight.active && g_inFlight.aiRaised
-        ? g_inFlight.priorAiLevel
-        : ReadServerObjInt(creature, kServerObjectAiLevelOffset, 0);
-    bool aiRaised = SetPlayerAILevel(creature, 1);
+    // Pass the player's real area id so cross-room pathfinding resolves. We
+    // deliberately do NOT disable player input — that flips the client creature
+    // mode (SwitchMode 0) and suppresses the walk (observed on the dialog path).
     unsigned long areaId = static_cast<unsigned long>(
         ReadServerObjInt(creature, kServerObjectAreaIdOffset,
                          static_cast<int>(kInvalidObjectId)));
 
     // Prime the action subsystem for a move BEFORE queuing it — the missing
-    // step that made standalone WalkTo dispatches bail for the leader. Mode 8
-    // = move/walk, matching the native click-to-move handler.
+    // step that made standalone WalkTo dispatches bail for the leader (the move
+    // sat unprocessed, field427 stuck at 2). Mode 8 = move/walk, matching the
+    // native click-to-move handler. This priming — not an ai_level change — is
+    // what actually engages the pathfind for the player; the player's natural
+    // ai_level is already non-zero, so no SetAILevel is needed.
     PrimeActionManager(creature, 8);
 
     __try {
@@ -326,10 +257,8 @@ bool WalkTo(const Vector& destination) {
            /*pathContext2=*/0,
            /*flagBit10=*/0);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        // Disarm watchdog — no point measuring progress when the call
-        // itself faulted. Roll back the AI-level raise too.
+        // Disarm watchdog — no point measuring progress when the call faulted.
         g_watchdog.active = false;
-        if (aiRaised) SetPlayerAILevel(creature, priorAi);
         acclog::Write("Autowalk", "WalkTo SEH-FAULT action_id=%u "
                       "dest=(%.2f,%.2f,%.2f)",
                       static_cast<unsigned>(thisActionId),
@@ -343,20 +272,17 @@ bool WalkTo(const Vector& destination) {
     ArmWatchdog(startPos, haveStart, dest, "WalkTo");
 
     ArmInFlight(dest);
-    g_inFlight.aiRaised     = aiRaised;
-    g_inFlight.priorAiLevel = priorAi;
 
     float distToDest = haveStart ? HorizontalDistance(startPos, dest) : -1.0f;
 
     acclog::Write("Autowalk", "WalkTo dispatch dest=(%.2f,%.2f,%.2f) "
                   "from=(%.2f,%.2f,%.2f) dist=%.2fm action_id=%u "
-                  "areaId=0x%08lx aiRaised=%d priorAi=%d ret=0x%08x",
+                  "areaId=0x%08lx ret=0x%08x",
                   dest.x, dest.y, dest.z,
                   startPos.x, startPos.y, startPos.z,
                   distToDest,
                   static_cast<unsigned>(thisActionId),
-                  areaId, aiRaised ? 1 : 0, priorAi,
-                  ret);
+                  areaId, ret);
 
     return true;
 }
@@ -443,7 +369,7 @@ bool UseObject(unsigned long targetHandle, const Vector& destHint) {
     bool destValid = destHint.x != 0.0f || destHint.y != 0.0f ||
                      destHint.z != 0.0f;
     if (ret != 0 && destValid) {
-        ArmInFlight(destHint);  // aiRaised stays false — UseObject doesn't raise
+        ArmInFlight(destHint);
     }
 
     acclog::Write("Autowalk", "UseObject dispatch target=0x%08lx ret=%d "
@@ -455,10 +381,6 @@ bool UseObject(unsigned long targetHandle, const Vector& destHint) {
 }
 
 bool CancelMovement() {
-    // Hand manual control back: undo the AI-level raise from WalkTo before
-    // anything else, so a cancelled walk doesn't leave the player AI-driven.
-    RestorePlayerAILevelIfRaised();
-
     void* creature = acc::engine::GetPlayerServerCreature();
     if (!creature) {
         // Even with no creature, clear our local state — it's
@@ -605,7 +527,6 @@ void TickProgressWatchdog() {
         }
 
         if (done) {
-            RestorePlayerAILevelIfRaised();
             g_inFlight.active = false;
         }
     }
