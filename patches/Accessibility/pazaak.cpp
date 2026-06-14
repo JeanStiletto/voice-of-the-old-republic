@@ -53,6 +53,8 @@ constexpr uintptr_t kAddrGetTotal           = 0x006e4360; // CPazaakPlayer::GetT
 constexpr uintptr_t kAddrHandleContinue     = 0x0067ec20; // End Turn
 constexpr uintptr_t kAddrHandleStand        = 0x0067ed00; // Stand
 constexpr uintptr_t kAddrHandlePlayHandCard = 0x0067ede0; // Play hand card (int slot)
+constexpr uintptr_t kAddrWagerHandleInput   = 0x0067e150; // CSWGuiWagerPopup::HandleInputEvent
+typedef void (__thiscall* PFN_WagerHandleInput)(void* popup, int code, int state);
 
 // ---- Struct offsets ------------------------------------------------------
 constexpr size_t kPanelModelOffset = 0x86d0; // CSWGuiPazaakGame->pazaak (CSWPazaak*)
@@ -725,6 +727,19 @@ bool TryHandleInput(void* /*activePanel*/, int param_1, int param_2, int& rv) {
 }
 
 bool IsBoardForeground() { return g_boardForeground; }
+
+void DispatchWagerInput(void* panel, int code) {
+    if (!panel) return;
+    __try {
+        auto fn = reinterpret_cast<PFN_WagerHandleInput>(kAddrWagerHandleInput);
+        fn(panel, code, 1);
+        acclog::Write("Pazaak", "wager HandleInputEvent panel=%p code=0x%x",
+                      panel, code);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Pazaak", "wager HandleInputEvent SEH panel=%p code=0x%x",
+                      panel, code);
+    }
+}
 
 void Tick() {
     void* mgr = nullptr;

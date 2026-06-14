@@ -37,6 +37,22 @@ bool IsBoardForeground();
 // CSWGuiManager::HandleInputEvent hook ahead of the generic chain.
 bool TryHandleInput(void* activePanel, int param_1, int param_2, int& rv);
 
+// Engine event codes the wager popup's HandleInputEvent switch maps to a
+// less/more step. The BTN_LESS / BTN_MORE speed buttons don't act on these
+// directly — their "pushed" callbacks (CSWGuiSkillsCharGen::OnMinus/
+// OnPlusButtonPushed, reused by the popup) re-dispatch them to the panel's
+// own HandleInputEvent, which clamps to [1, max], plays the click sound, and
+// repaints the value label.
+constexpr int kWagerLessCode = 0x2f;  // decrement
+constexpr int kWagerMoreCode = 0x30;  // increment
+
+// Drive a wager-popup less/more step by calling CSWGuiWagerPopup::
+// HandleInputEvent(panel, code, 1) directly — the same path the engine's own
+// button-push callbacks take. `code` is kWagerLessCode / kWagerMoreCode.
+// SEH-guarded; no-op on a stale/non-popup pointer. The per-tick wager
+// observer (ObserveWager) announces the resulting amount.
+void DispatchWagerInput(void* panel, int code);
+
 void Tick();
 
 }  // namespace acc::pazaak

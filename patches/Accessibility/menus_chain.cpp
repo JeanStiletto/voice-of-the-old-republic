@@ -33,6 +33,7 @@
 #include "menus_pazaakdeck.h"
 #include "menus_pending.h"   // QueueActivate, IsPending, QueueMoveCursor, Queue{ClickAt,EquipSelect,WorkbenchSlotSelect,StoreItemActivate}
 #include "menus_store.h"
+#include "pazaak.h"           // DispatchWagerInput codes — wager less/more Enter
 #include "peek_description.h" // SpeakItemRowDescription — quest-item Enter
 #include "prism.h"
 #include "strings.h"
@@ -1211,6 +1212,33 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
         }
     }
 
+    // Pazaak wager popup less/more buttons (CSWGuiSpeedButton, gui ids 4/5).
+    // They act only on their push callback (OnMinus/OnPlusButtonPushed →
+    // panel HandleInputEvent 0x2f/0x30); the generic vtable[15] activate
+    // (0x27) they ignore — its switch case 0x27 is the popup's *commit*, and
+    // the button-level activate never reaches it, so Enter was a silent no-op.
+    // The wager also starts AT the maximum (the constructor seeds current =
+    // max), so "more" is a no-op until "less" has lowered it. Route Enter to
+    // the panel's own less/more dispatch. cid 4 = less, cid 5 = more.
+    bool isWagerStepButton = false;
+    int  wagerStepCode = 0;
+    if (acc::engine::IdentifyPanel(g_chainPanel) ==
+            acc::engine::PanelKind::PazaakWager) {
+        __try {
+            int cid = *reinterpret_cast<int*>(
+                reinterpret_cast<unsigned char*>(e.control) + kControlIdOffset);
+            if (cid == 4) {
+                isWagerStepButton = true;
+                wagerStepCode = acc::pazaak::kWagerLessCode;
+            } else if (cid == 5) {
+                isWagerStepButton = true;
+                wagerStepCode = acc::pazaak::kWagerMoreCode;
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            isWagerStepButton = false;
+        }
+    }
+
     if (acc::menus::pending::IsPending()) {
         acclog::Write("Enter", "op already pending; ignoring (target=%p)",
                       e.control);
@@ -1284,6 +1312,12 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
                       "armed via direct OnEnterSlot+OnSlotSelected "
                       "(Enter on slot id=%d btn=%p panel=%p)",
                       workbenchUpgradeSlotCid, e.control, g_chainPanel);
+        consumed = true;
+    } else if (isWagerStepButton) {
+        acc::menus::pending::QueueWagerInput(g_chainPanel, wagerStepCode);
+        acclog::Write("Menus.Enter",
+                      "pazaak-wager-step panel=%p index=%d target=%p code=0x%x",
+                      g_chainPanel, g_chainIndex, e.control, wagerStepCode);
         consumed = true;
     } else if (isPartyAddBlocked) {
         // Run the engine's (no-op) toggle for the UI click sound, then tell

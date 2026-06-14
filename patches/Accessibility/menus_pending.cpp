@@ -28,6 +28,7 @@
 #include "menus_chargen_feats.h"    // IsChargenFeatsPanel — chargen sub-screen close
 #include "menus_chargen_skills.h"   // IsChargenSkillsPanel — chargen sub-screen close
 #include "menus_galaxymap.h"        // DispatchInput for GalaxyInput
+#include "pazaak.h"                 // DispatchWagerInput for WagerInput
 #include "menus_journal.h"   // Sort/Swap post-activate list-rebuild repair
 #include "menus_listbox.h"   // DisarmWorkbenchUpgradePicker (post-slot-select cleanup)
 #include "menus_powers_levelup.h"   // IsPowersLevelUpPanel — chargen sub-screen close
@@ -52,6 +53,8 @@ enum class Kind {
     StoreItemActivate, // a = panel (CSWGuiStore), b = row (StoreItemEntry)
     GalaxyInput,       // a = panel (galaxy map), code = engine event,
                        // x = announce-planet flag (0/1)
+    WagerInput,        // a = panel (pazaak wager popup), code = engine event
+                       // (0x2f less / 0x30 more)
 };
 
 struct PendingOp {
@@ -159,6 +162,14 @@ bool QueueGalaxyInput(void* panel, int engineCode, bool announcePlanet) {
     g_op.a = panel;
     g_op.code = engineCode;
     g_op.x = announcePlanet ? 1 : 0;
+    return true;
+}
+
+bool QueueWagerInput(void* panel, int code) {
+    if (g_op.kind != Kind::None) return false;
+    g_op.kind = Kind::WagerInput;
+    g_op.a = panel;
+    g_op.code = code;
     return true;
 }
 
@@ -741,6 +752,17 @@ void Drain(void* gm) {
     // was an Up/Down cycle (op.x == 1).
     case Kind::GalaxyInput: {
         acc::menus::galaxymap::DispatchInput(op.a, op.code, op.x != 0);
+        break;
+    }
+
+    // Pazaak wager less/more step — the popup's BTN_LESS / BTN_MORE speed
+    // buttons only respond to their push callback, which re-dispatches to the
+    // panel's HandleInputEvent (0x2f decrement / 0x30 increment). The generic
+    // vtable[15] activate (0x27) they ignore, so this is the dedicated Enter
+    // path. The engine clamps to [1, max] and repaints LBL_WAGERVAL; the
+    // per-tick wager observer announces the new amount.
+    case Kind::WagerInput: {
+        acc::pazaak::DispatchWagerInput(op.a, op.code);
         break;
     }
     }

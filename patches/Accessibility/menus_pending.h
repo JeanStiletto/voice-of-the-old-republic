@@ -107,6 +107,14 @@ bool QueueStoreItemActivate(void* panel, void* row);
 // acc::menus::galaxymap::DispatchInput.
 bool QueueGalaxyInput(void* panel, int engineCode, bool announcePlanet);
 
+// Queue a Pazaak wager-popup less/more step. On drain calls
+// acc::pazaak::DispatchWagerInput(panel, code) — CSWGuiWagerPopup::
+// HandleInputEvent(panel, code, 1), the same path the popup's own BTN_LESS /
+// BTN_MORE push callbacks take (engine code 0x2f decrement, 0x30 increment).
+// The buttons ignore the generic vtable[15] activate (0x27), so Enter on them
+// was a silent no-op without this dedicated path.
+bool QueueWagerInput(void* panel, int code);
+
 // True if an op is currently queued. All input-handler debounce sites
 // uniformly check this before queueing — single-slot queue means there's
 // no per-kind discrimination to do (the old code's per-site debounce
