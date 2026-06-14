@@ -9,6 +9,17 @@ Reference material curated for LLM consumption. Progressive-disclosure index —
 - **`sarif-cookbook.md`** — jq recipes for querying Lane's local SARIF export (`re/k1_win_gog_swkotor.exe.sarif`). Use when `re/swkotor.exe.h` shows undefined fields or when you need cross-references for an address.
 - **`turret-minigame-model.md`** — engine-confirmed model of the swoop/turret minigame subsystem (decompiled). The reference shape for an RE-model doc: input→state→action→effect chain, function addresses, struct offsets, and a "what we got wrong" section. Produced by `kdev re` then curated here. When reconstructing another subsystem, `kdev re "<ClassRegex>" --decompile` and curate the skeleton to a sibling of this file.
 - **`code-index/`** — per-file LLM-readable summary for each source file under `patches/Accessibility/` (one `.md` per `.cpp`/`.h` plus `_files.txt` inventory). Generated during the llm-mod-refactoring-prompts `code-directory-construction` phase; useful as fast context before reading a file in full. May drift if not refreshed on major restructuring.
+- **`interaction-dispatch-model.md`** — how player/leader walk + verb dispatch (use/talk/take) flow through the engine; the message-bus, ActionManager priming, and the native walk-then-talk model.
+
+### Subsystem RE reference (migrated from the agent memory store, 2026-06-14)
+Each is a consolidation of former memory notes (offsets, addresses, decompiled mechanics). Read the one matching your subsystem; they replace the always-on memory index for engine RE. See `feedback_memory_vs_docs_discipline` in memory for the rule (RE → here, not memory).
+- **`engine-objects-and-architecture.md`** — client/server (CSWS/CSWC) split, object-handle namespaces, party-table indirection, creature/HP/name accessors, player-control toggle, AI action queue.
+- **`gui-and-input-internals.md`** — CSWGui* struct offsets, gui_string text indirection, panel/foreground routing, cursor + hit-test surfaces, listbox model, in-DLL input pipeline + menu chain.
+- **`ingame-screens-reference.md`** — per-screen surfaces: workbench, map, options sub-screens, save/load, party-select, galaxy map, abilities, charsheet, placeables, level-up.
+- **`action-menu-and-combat.md`** — radial/personal action surfaces, the engine action picker, Q/E targeting + ShowObject focus signal, bare-key dispatch, combat-log funnel.
+- **`walk-nav-and-walkmesh.md`** — leader-walk recipe, per-area nav-graph layout, dialog-speaker resolution, WallTopo walkmesh clustering.
+- **`audio-internals.md`** — Play3DOneShotSound gain chain, CExoSoundSource lifecycle, sound-mode pause exemptions, footstep paths, cue/party filtering, droid subtitles.
+- **`camera-and-swoop.md`** — camera screen-edge turn, A/D-vs-W/S decoupling, mouse-look gating, swoop accelerator-pad classification.
 
 ## `re/` — reverse-engineering assets
 
