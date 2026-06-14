@@ -10,6 +10,7 @@
 #include "engine_input.h"       // kInputNav*, kInputEnter*, kInputEsc*,
                                 // kInputHome/End, kInputCatFirst/Last
 #include "engine_offsets.h"      // kInvalidObjectId
+#include "engine_options.h"     // GetActionMenuAutoPause (vanilla pause parity)
 #include "engine_panels.h"      // IsForegroundUiBlocking (arm-time panel gate)
 #include "engine_picker.h"      // ReanchorRadial (per-press target re-anchor)
 #include "engine_player.h"      // SetLeaderQueueModeBit (append-vs-replace)
@@ -73,6 +74,14 @@ struct State {
                                     // it before the first engine call sidesteps
                                     // the corrupted stack slot.
     char     targetName[64] = "";
+    bool     pausedOnOpen   = false;// did we BeginOverlayPause when arming? Set
+                                    // from the "Action Menu" auto-pause option
+                                    // (CClientOptions bit 0x8000) at Arm time so
+                                    // close/resume only touch the pause we own.
+                                    // Off → menu runs over the live world, the
+                                    // vanilla behaviour when that option is
+                                    // unset (decompile-confirmed; see the
+                                    // auto-pause note in action-menu-and-combat).
 };
 State g;
 
@@ -342,11 +351,28 @@ uint32_t ResolveNarratedServerHandle() {
 
 // ---- arm / disarm --------------------------------------------------------
 
+// Vanilla parity: the radial / personal action menus auto-pause the world only
+// when the "Action Menu" auto-pause option is on (CClientOptions bit 0x8000) —
+// off by default. Confirmed by decompiling OnTargetUpArrowPressed /
+// OnActionUpArrowPressed, which gate their SetAutoPaused(1,7) call on that bit.
+// On read failure we default to NOT pausing: matches the vanilla out-of-box
+// default and never freezes the world for a user who didn't opt in.
+bool ActionMenuAutoPauseEnabled() {
+    bool on = false;
+    return acc::engine::GetActionMenuAutoPause(on) && on;
+}
+
 void Arm() {
     g.suspended = false;
     if (!g.active) {
         g.active = true;
-        acc::engine::BeginOverlayPause();
+        g.pausedOnOpen = ActionMenuAutoPauseEnabled();
+        if (g.pausedOnOpen) {
+            acc::engine::BeginOverlayPause();
+        } else {
+            acclog::Write("UnifiedMenu", "open without pause — Action Menu "
+                "auto-pause option off");
+        }
     }
 }
 
@@ -390,8 +416,10 @@ void SetForegroundBlocked(bool blocked) {
     // Resume. The closing panel's own cleanup can clear the world pause
     // (TickInputClassReassert's modal-edge unpause runs for us because we are
     // not a sub-screen), so re-assert our overlay pause — BeginOverlayPause is
-    // idempotent, so this is a no-op when the pause survived.
-    acc::engine::BeginOverlayPause();
+    // idempotent, so this is a no-op when the pause survived. Only when we own
+    // the pause (Action Menu auto-pause on); otherwise the menu runs live and
+    // there is nothing to re-assert.
+    if (g.pausedOnOpen) acc::engine::BeginOverlayPause();
 
     // Rebuild against the live menus (the engine may have re-populated
     // action_lists while the panel was up) and re-locate the cursor on the
@@ -421,7 +449,8 @@ void ForceDisarm(const char* reason) {
     acclog::Write("UnifiedMenu", "disarm — reason=%s", reason ? reason : "?");
     g.active = false;
     g.suspended = false;
-    acc::engine::EndOverlayPause();
+    if (g.pausedOnOpen) acc::engine::EndOverlayPause();
+    g.pausedOnOpen = false;
     g.catCount = 0;
     g.curCat = 0;
     g.targetHandle = 0;
@@ -617,13 +646,20 @@ bool HandleInputEvent(int code, int value) {
     if (!g.active) return false;
     if (value == 0) return false;
 
-    // Esc — close. Speak nothing here: ForceDisarm → EndOverlayPause resumes
-    // the world, and the engine's pause-resume cue ("Pause aufgehoben") is the
-    // close announcement. The old "Cancelled" phrase was redundant with that
-    // cue and misleading — Esc closes the menu, it doesn't cancel anything;
-    // queued actions stay queued and run on resume.
+    // Esc — close. When we held the world pause, ForceDisarm → EndOverlayPause
+    // resumes the world and the engine's pause-resume cue ("Pause aufgehoben")
+    // is the close announcement (no extra phrase — it was redundant and
+    // misleading: Esc closes the menu, it doesn't cancel; queued actions stay
+    // queued and run on resume). When the Action Menu auto-pause option is off
+    // we never paused, so there is no resume cue — speak an explicit close
+    // confirmation instead so the user hears the menu dismissed.
     if (code == kInputEsc1 || code == kInputEsc2) {
+        const bool wasPaused = g.pausedOnOpen;
         ForceDisarm("esc");
+        if (!wasPaused) {
+            prism::Speak(acc::strings::Get(acc::strings::Id::ActionMenuClosed),
+                         /*interrupt=*/true);
+        }
         return true;
     }
 

@@ -115,10 +115,6 @@ A pl-PL beta tester (v0.2.1) crashed at startup, repeatedly, before any speech. 
 
 If an autowalk or beacon is already running and the player triggers a new autowalk or beacon on a different target, the current behaviour just cancels the existing one. Instead it should immediately start the new action on the new target — switching the route in one gesture rather than requiring cancel-then-start.
 
-### Unified action menu should only pause while in combat
-
-The unified (in-world) action menu currently pauses the game whenever it's open. Consider only pausing while in combat — outside combat there's no need to freeze the world to browse the menu, and the constant pause/unpause cues add noise. Evaluate whether gating the pause hold on combat state is safe for the menu's input model (`unified_action_menu`).
-
 ### Mod-settings sliders only save after pressing Enter
 
 The sliders under Mod-Einstellungen (e.g. hint-sound volume) only persist their new value to `acc_settings.ini` once the user presses Enter on the row. Adjusting a slider with Left / Right changes it for the session and previews the new level, but the change isn't written until an explicit Enter — so a player who tweaks a slider and leaves the menu without pressing Enter loses the change on next launch. Slider adjustments should persist on each Left / Right step (the same way the value already updates live), without needing a confirming keypress.

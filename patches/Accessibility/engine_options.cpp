@@ -48,6 +48,20 @@ bool GetMouseLook(bool& out) {
     }
 }
 
+bool GetActionMenuAutoPause(bool& out) {
+    void* options = GetClientOptions();
+    if (!options) return false;
+    __try {
+        unsigned int bits = *reinterpret_cast<unsigned int*>(
+            reinterpret_cast<unsigned char*>(options) +
+            kClientOptionsAutoPauseFlagsOffset);
+        out = (bits & kClientOptionsActionMenuAutoPauseMask) != 0;
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 namespace {
 
 bool WriteMouseLook(void* options, bool enabled) {

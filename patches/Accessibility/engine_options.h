@@ -21,6 +21,15 @@ namespace acc::engine {
 // False on chain failure or SEH; out untouched.
 bool GetMouseLook(bool& out);
 
+// "Action Menu" auto-pause option (AutoPause options screen). Stored in
+// CClientOptions::bit_flags_2 (+0x14), bit 0xf (mask 0x8000) — a DIFFERENT
+// bitfield from the +0x8 mouse_look one above. Mirrors the engine's own gate
+// in CSWGuiMainInterface::OnTargetUpArrowPressed / OnActionUpArrowPressed,
+// which only call SetAutoPaused when this bit is set. Off by default (see
+// CClientOptions::SetDefaultAutopauseOptions). False on chain failure or SEH;
+// out untouched.
+bool GetActionMenuAutoPause(bool& out);
+
 // Resolved CClientOptions* for diagnostic probes. Production code uses
 // Get/Set/ToggleMouseLook.
 void* GetClientOptions();
@@ -35,3 +44,8 @@ bool ToggleMouseLook(bool& outNew);
 constexpr unsigned int kClientAppOptionsOffset      = 0x4;
 constexpr unsigned int kClientOptionsBitFieldOffset = 0x8;
 constexpr unsigned int kClientOptionsMouseLookMask  = 0x2;
+
+// AutoPause options bitfield (CClientOptions::bit_flags_2). Action-menu pause
+// is bit 0xf; siblings live at 0xb..0x10 (see action-menu-and-combat.md).
+constexpr unsigned int kClientOptionsAutoPauseFlagsOffset    = 0x14;
+constexpr unsigned int kClientOptionsActionMenuAutoPauseMask = 0x8000;

@@ -221,6 +221,43 @@ The vanilla KOTOR keyboard-only combat path is **broken by design**: pressing 1-
 
 **How to apply:** Before extending bare-key dispatch behaviour (new keys, new categories), satisfy the engine's invariant by calling `acc::engine_actionbar::PrepareBareDispatch(targetClient)` first. The helper wraps `CGuiInGame::SetMainInterfaceTarget(guiIn, targetClient)` (0x62b000) + `CGuiInGame::RePopulateMainInterface(guiIn)` (0x62b050) under SEH and lives at `patches/Accessibility/engine_actionbar.cpp`. It's wired into `OnClientHandleInputEvent` (input_pipeline.cpp) so the engine's switch sees fresh `action_lists` by the time `DoTargetAction` / `DoPersonalAction` fires.
 
+## Action-menu auto-pause (vanilla behaviour, decompile-confirmed 2026-06-14)
+
+The vanilla radial/personal action menu does **NOT** pause the world by merely
+opening. `CSWGuiMainInterface::PopulateMenus @0x00689d80` and
+`HandleMouseClickInWorld @0x00620350` never call any pause function. The only
+pause tied to the action menu is the optional **"Action Menu" auto-pause**
+option, and it fires when the user *uses* the menu (cycles a row/column arrow):
+
+- `CSWGuiMainInterface::OnTargetUpArrowPressed @0x006884b0` /
+  `OnTargetDownArrowPressed @0x00688520` (radial rows) and
+  `OnActionUpArrowPressed @0x0068af70` / `OnActionDownArrowPressed @0x0068afe0`
+  (personal columns) all run the same gate before acting:
+  ```c
+  pCVar = GetClientOptions(client);            // CClientExoApp::GetClientOptions @0x005ed700
+  if ((char)((uint)pCVar->bit_flags_2 >> 8) < 0)   // tests bit 0xf == 0x8000
+      SetAutoPaused(client, 1, 7);             // CClientExoApp::SetAutoPaused @0x005edee0
+  ```
+- The setting lives in `CClientOptions::bit_flags_2` (+0x14). The six AutoPause
+  checkboxes map to bits 0xb..0x10 (`CSWGuiInGameAutoPause::SaveOptions
+  @0x006e73d0`): 0xb end-round, 0xc enemy-sighted, 0xd mine-sighted, 0xe
+  party-killed, **0xf (0x8000) action-menu**, 0x10 triggers.
+- **Default is OFF.** `CClientOptions::SetDefaultAutopauseOptions @0x0061d500`
+  does `bit_flags_2 = bit_flags_2 & 0xffff77ff | 0x17000` — clears end-round
+  (0x800) and action-menu (0x8000), sets enemy-sighted + mine-sighted +
+  triggers. So out of the box the action menu does not pause at all.
+- `SetAutoPaused` is the engine's *soft* auto-pause (sets `autopause_bit_flags_
+  & 1` + the shared pause field `field206_0x37c |= 4`), distinct from the
+  pause-key `SetPausedByCombat @0x005edc20` our `BeginOverlayPause` uses.
+  There is no combat gate inside the arrow handlers — the gate is purely the
+  setting bit.
+
+**Our parity (unified_action_menu.cpp):** read the bit via
+`acc::engine::GetActionMenuAutoPause` and only `BeginOverlayPause` on open when
+it is set; remember it (`pausedOnOpen`) and resume symmetrically. When off, the
+menu opens without pausing (matching vanilla) and Esc speaks an explicit
+`ActionMenuClosed` cue since there is no pause-resume cue to ride on.
+
 ## Engine quirks worth remembering
 
 - **6↔7 slot inversion.** The engine's `case 0xec` (key 6) calls `DoPersonalAction(slot=3)` and `case 0xee` (key 7) calls `DoPersonalAction(slot=2)`. Our submenu / bare-key paths must mirror this swap or the column the user cycles isn't the column the dispatch fires. Fixed in `interact_hotkey.cpp`'s `risingOpen3/4` and `risingK6/7` branches.

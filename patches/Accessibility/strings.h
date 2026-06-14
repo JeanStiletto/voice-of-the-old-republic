@@ -262,6 +262,10 @@ enum class Id : int {
     // has no effect. Inferred from the count field staying at 4
     // (pre-press depth == post-press depth == 4).
     FmtFireQueueFull,
+    // Spoken when the unified action menu is closed with Esc but the world was
+    // never paused (the "Action Menu" auto-pause option is off, so there is no
+    // engine pause-resume cue to ride on). No format args.
+    ActionMenuClosed,
 
     // ---- Unified action menu (Shift+Enter / Shift+1..7) category names +
     //      announce formats. The menu announces a category by NAME as the
