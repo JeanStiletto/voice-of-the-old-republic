@@ -109,6 +109,7 @@ const char* Get(Id id) {
         case Id::ContainerOneItem:     return "1 Gegenstand";
         case Id::FmtContainerItems:    return "%d Gegenst\xE4nde";              // Gegenstände
         case Id::FmtContainerItemAt:   return "%s, %d von %d";
+        case Id::ContainerEmptySuffix: return "leer";
         case Id::FmtItemStackSuffix:   return "%d St\xFC" "ck";                    // Stück (split: 'c' is a hex digit)
         case Id::FmtItemChargeSuffix:  return "%d Ladungen";
 

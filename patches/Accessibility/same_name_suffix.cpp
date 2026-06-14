@@ -8,6 +8,7 @@
 #include "engine_area.h"
 #include "log.h"
 #include "state_overrides.h"
+#include "strings.h"
 
 namespace acc::narration {
 
@@ -57,6 +58,23 @@ Entry* FindEntry(uint32_t handle) {
         if (e.handle == handle) return &e;
     }
     return nullptr;
+}
+
+// Live "empty" tag for loot containers. Appended last (after the numeric
+// disambiguation suffix and any state-override label) so it reads as a
+// trailing note: "Fu\xDFschlie\xDFfach 2, leer". No-op for everything that
+// isn't an emptied loot container — IsEmptyContainer self-gates on object
+// kind + has_inventory and reads the repository item count fresh, so the
+// tag tracks the player looting the container without any caching.
+void AppendEmptyContainerLabel(void* gameObject, char* outBuf,
+                               size_t bufSize) {
+    if (!acc::engine::IsEmptyContainer(gameObject)) return;
+    const char* word =
+        acc::strings::Get(acc::strings::Id::ContainerEmptySuffix);
+    if (!word || word[0] == '\0') return;
+    size_t curLen = std::strlen(outBuf);
+    if (curLen + std::strlen(word) + 3 >= bufSize) return;
+    std::snprintf(outBuf + curLen, bufSize - curLen, ", %s", word);
 }
 
 }  // namespace
@@ -124,6 +142,7 @@ bool GetSpokenName(void* gameObject, char* outBuf, size_t bufSize) {
     }
     AppendSuffix(gameObject, outBuf, bufSize);
     acc::state::AppendStateLabel(gameObject, outBuf, bufSize);
+    AppendEmptyContainerLabel(gameObject, outBuf, bufSize);
     return true;
 }
 

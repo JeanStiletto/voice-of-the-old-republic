@@ -560,6 +560,36 @@ bool IsUsablePlaceable(void* placeable) {
     }
 }
 
+bool IsEmptyContainer(void* gameObject) {
+    if (!gameObject) return false;
+    // Gate on kind FIRST: has_inventory / item_repository live at
+    // placeable offsets that map to unrelated fields on other object
+    // kinds, so reading them on a creature/door could fake an empty
+    // container.
+    int kind = GetObjectKind(gameObject);
+    if (kind != static_cast<int>(GameObjectKind::Placeable)) {
+        return false;
+    }
+    __try {
+        auto* base = reinterpret_cast<unsigned char*>(gameObject);
+        // Only true loot containers qualify; switches / computer panels and
+        // other usable-but-not-lootable placeables carry HasInventory == 0
+        // and a null repository, and must never get an "empty" tag.
+        if (*reinterpret_cast<int*>(base + kPlaceableHasInventoryOffset) == 0) {
+            return false;
+        }
+        void* repo = *reinterpret_cast<void**>(
+            base + kPlaceableItemRepositoryOffset);
+        if (!repo) return false;
+        int count = *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(repo) +
+            kItemRepositoryItemCountOffset);
+        return count <= 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 bool IsLandmarkWaypoint(void* waypoint) {
     if (!waypoint) return false;
     __try {

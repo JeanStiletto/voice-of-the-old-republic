@@ -107,6 +107,7 @@ const char* Get(Id id) {
         case Id::ContainerOneItem:     return "1 objeto";
         case Id::FmtContainerItems:    return "%d objetos";
         case Id::FmtContainerItemAt:   return "%s, %d de %d";
+        case Id::ContainerEmptySuffix: return "vac\xEDo";
         case Id::FmtItemStackSuffix:   return "%d en la pila";
         case Id::FmtItemChargeSuffix:  return "%d cargas";
 

@@ -128,13 +128,22 @@ bool GetObjectDisplayNameByHandle(uint32_t handle,
 
 // Pillar 4 sub-state predicates (refine the kind filter):
 //   IsUsablePlaceable    CSWSPlaceable.usable @+0x328 OR
-//                        has_inventory @+0x334. Drops scenery placeables.
+//                        has_inventory @+0x324. Drops scenery placeables.
 //   IsLandmarkWaypoint   CSWSWaypoint.has_map_note @+0x228.
 //   IsTransitionTrigger  CSWSTrigger.transition_destination @+0x30c
 //                        (Vector — non-zero indicates set).
 bool IsUsablePlaceable(void* placeable);
 bool IsLandmarkWaypoint(void* waypoint);
 bool IsTransitionTrigger(void* trigger);
+
+// True only when `gameObject` is a loot container (kind == Placeable AND
+// has_inventory != 0) whose CItemRepository currently holds zero items —
+// i.e. a chest/footlocker/corpse the player has already emptied (or that
+// spawned empty). Self-gates on kind so it's safe to call for any object;
+// returns false for creatures, doors, pure usable placeables (switches /
+// computer panels with has_inventory == 0), and on any fault. Read live
+// at narration time, not cached — looting changes the count.
+bool IsEmptyContainer(void* gameObject);
 
 // CSWSDoor.open_state +0x2cc. state >= 1 covers both opening anim and
 // fully open. False on null/fault/state==0.
@@ -331,8 +340,23 @@ constexpr size_t kWaypointLocNameOffset        = 0x238;
 constexpr size_t kTriggerLocNameOffset         = 0x228;
 
 // Pillar 4 sub-state.
-constexpr size_t kPlaceableUsableOffset        = 0x328;
-constexpr size_t kPlaceableHasInventoryOffset  = 0x334;
+constexpr size_t kPlaceableUsableOffset        = 0x328;  // "Useable" GFF flag
+// "HasInventory" GFF flag. Decompiling CSWSPlaceable::LoadPlaceable shows
+// ReadFieldBYTE("HasInventory") is stored to +0x324 (the Ghidra struct
+// mislabels +0x334 as has_inventory — that field is something else and
+// reads 0 even on real loot containers). CSWSPlaceable::OpenInventory
+// gates the container-GUI open on this same +0x324 != 0, then derefs
+// item_repository, confirming it as the authoritative "is a lootable
+// container" flag.
+constexpr size_t kPlaceableHasInventoryOffset  = 0x324;
+// CSWSPlaceable.item_repository @+0x36c → CItemRepository. The repo's
+// live item count sits at +0x10 (items_list @+0xc). Confirmed by
+// decompiling CItemRepository::GetItemInRepository / ItemListGetItem /
+// CalculateContentsWeight — all loop `i < this->item_count` over
+// `items_list[i]`. Reading the count is a single dword load, so the
+// emptiness test is O(1) (no list walk, no per-item handle resolve).
+constexpr size_t kPlaceableItemRepositoryOffset = 0x36c;
+constexpr size_t kItemRepositoryItemCountOffset = 0x10;
 constexpr size_t kWaypointHasMapNoteOffset     = 0x228;
 constexpr size_t kTriggerTransitionDestOffset  = 0x30c;  // Vector
 

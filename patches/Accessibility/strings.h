@@ -317,6 +317,15 @@ enum class Id : int {
     FmtContainerItems,
     FmtContainerItemAt,
 
+    //      `ContainerEmptySuffix` — lowercase "empty" word appended (with a
+    //          leading ", ") to a loot container's narrated name when its
+    //          CItemRepository is live-read as holding zero items. Distinct
+    //          from `ContainerEmpty` (sentence-case standalone phrase used
+    //          inside the loot panel); this one reads as a name tag —
+    //          "Fu\xDFschlie\xDFfach, leer". See engine_area::IsEmptyContainer
+    //          and narration::GetSpokenName.
+    ContainerEmptySuffix,
+
     //      `FmtItemStackSuffix` — appended to inventory + container row
     //          announcements when CSWSItem.stack_size > 1 (medpacs, stims,
     //          grenades — anything the engine renders with a count overlay
