@@ -4,7 +4,8 @@
 #include <cstdint>
 #include <cstring>
 
-#include "engine_offsets.h"   // CExoString
+#include "engine_offsets.h"   // CExoString, Vector
+#include "engine_player.h"    // GetPlayerPosition — world-live replay gate
 #include "log.h"
 #include "prism.h"
 
@@ -124,6 +125,27 @@ extern "C" void __cdecl OnAppendToMsgBuffer(void* /*guiInGame*/,
         return;
     }
     text[n] = '\0';
+
+    // Suppress the message-buffer REPLAY that floods on save-load. When the
+    // engine restores a saved game it re-appends the entire persisted
+    // feedback log — every historical combat result, loot pickup, XP gain
+    // and journal entry — to the in-game message window, firing this hook
+    // once per line. Speaking the whole history back is pure noise; the
+    // player only wants to know which area they loaded into, which
+    // transitions.cpp::SpeakArea already announces on the area-pointer
+    // change. The distinguishing signal: the replay burst runs while the
+    // player creature is NOT yet live (verified in patch-20260614-151235.log
+    // — party pointers null, "PartyLeader: all paths empty" during the
+    // burst), whereas every genuine in-play message fires with the PC
+    // loaded. Gate on player liveness so live combat/loot narration is
+    // untouched. (Module/door transitions keep the same CGuiInGame and do
+    // NOT replay, so this is a no-op there.)
+    Vector scratch{};
+    if (!acc::engine::GetPlayerPosition(scratch)) {
+        acclog::Write("MsgBuf", "replay-suppressed (world not live): [%.200s]",
+                      text);
+        return;
+    }
 
     acc::msg::Router::Instance().Dispatch(text);
 }

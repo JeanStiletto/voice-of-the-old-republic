@@ -1143,6 +1143,24 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
         return;
     }
 
+    // Same storm, no movie: a save-game load (or any module load) makes the
+    // engine reconstruct and activate every in-game GUI panel — HUD, store,
+    // abilities, options strip, message log — firing SetActiveControl on
+    // each. Narrating that burst spams build strings / panel titles /
+    // "control N" fallbacks over the loading screen, ahead of the area-name
+    // announce the player actually wants. Skip the whole handler while the
+    // load is pending (same rationale + same first-sight-preservation
+    // benefit as the movie gate above): the engine re-fires
+    // SetActiveControl on genuine interaction once the world is live, so
+    // first-sight + focus speech resume cleanly then. The latch clears in
+    // transitions::Tick on the first fresh area pointer.
+    if (acc::transitions::IsModuleLoadPending()) {
+        acclog::Write("Menus.SetActive",
+                      "#%d panel=%p — suppressed (module load pending)", n,
+                      panel);
+        return;
+    }
+
     // Bringup handoff (secondary signal — mouse path only). The engine
     // fires one SetActive immediately after panel construction for its
     // auto-focused button ("New Game"); a genuine 2nd SetActive on the
@@ -1225,6 +1243,18 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
 
     static int n = 0;
     ++n;
+
+    // Suppress the in-game-GUI reconstruction burst on a module / save-game
+    // load — same gate as OnSetActiveControl above. The engine fires
+    // per-row SetActiveControl on every listbox it rebuilds (abilities
+    // "Add Power", party stash, options rows); narrating them spams over
+    // the loading screen. Latch clears on the first fresh area pointer.
+    if (acc::transitions::IsModuleLoadPending()) {
+        acclog::Write("Menus.ListBox",
+                      "SetActive #%d list=%p — suppressed (module load pending)",
+                      n, listBox);
+        return;
+    }
 
     // First event for a previously-unseen listbox: dump every row control.
     // Tells us whether the listbox holds N separate child widgets (one per

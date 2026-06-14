@@ -970,6 +970,17 @@ bool IsModuleLoadPending() {
     return g_module_load_pending;
 }
 
+void NotifyExternalLoadStarting(const char* reason) {
+    // Same latch the OnSetMoveToModuleString detour sets — arms the
+    // load-pending window so per-tick / hook consumers (combat narration,
+    // the menu focus hooks) stay quiet while the engine rebuilds the
+    // in-game GUI on a save-game load. Cleared in Tick() on the first
+    // fresh area pointer, exactly like the module-transition path.
+    g_module_load_pending = true;
+    acclog::Write("Transition", "external load latch armed (%s)",
+                  reason ? reason : "?");
+}
+
 void AnnouncePreLoadDestination(void* exoStringPtr) {
     // Latch the module-load transient unconditionally on every fire.
     // Even if the dedup window below suppresses the announce, the engine

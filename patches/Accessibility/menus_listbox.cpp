@@ -31,6 +31,8 @@
 #include "menus_pending.h"
 #include "strings.h"
 #include "prism.h"
+#include "engine_player.h"   // GetPlayerPosition — world-live check
+#include "transitions.h"     // NotifyExternalLoadStarting — load-latch arm
 
 using namespace acc::engine;  // IdentifyPanel, PanelKind, kInput*, etc.
 
@@ -347,6 +349,20 @@ void SaveLoadLogExtra(char* out, size_t outN, const ListBoxNavResult& r) {
 }
 
 bool SaveLoadOnEnter(void* panel) {
+    // Arm the module-load latch when this is a LOAD (not a save). A save
+    // keeps the world live and never changes the area, so the latch would
+    // never clear; a load from the menu happens with no live player. Gate
+    // on player-liveness: !GetPlayerPosition() ⇒ we're loading from the
+    // main menu, so suppress the in-game-GUI reconstruction burst (the
+    // engine activates every sub-screen panel as it rebuilds them, which
+    // the menu focus hooks would otherwise narrate before the area-name
+    // announce). The latch clears on the first fresh area pointer in
+    // transitions::Tick. (Loading a save from *within* the game keeps the
+    // world live here, so it isn't covered by this path.)
+    Vector scratch{};
+    if (!acc::engine::GetPlayerPosition(scratch)) {
+        acc::transitions::NotifyExternalLoadStarting("SaveLoad load from menu");
+    }
     QueueButtonByIdActivate(panel, kSaveLoadBtnSaveLoadId,
                             "SaveLoad: Enter -> saveload_button");
     return true;

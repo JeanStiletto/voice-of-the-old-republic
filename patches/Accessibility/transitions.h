@@ -65,4 +65,13 @@ bool IsWorldSpeechGated();
 // alive).
 bool IsModuleLoadPending();
 
+// Arm the module-load latch for a load path the OnSetMoveToModuleString
+// detour doesn't see — specifically a save-game LOAD launched from the
+// menu (the engine reconstructs the whole in-game GUI without routing
+// through SetMoveToModuleString). The latch clears the normal way, on the
+// next fresh area pointer in Tick(). Callers MUST gate this on "no live
+// player" (a save, unlike a load, keeps the world live and never changes
+// the area, so the latch would otherwise never clear).
+void NotifyExternalLoadStarting(const char* reason);
+
 }  // namespace acc::transitions

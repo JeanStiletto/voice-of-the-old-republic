@@ -702,6 +702,20 @@ void Tick() {
         // player gets from the green banner ("Taris - Südliche
         // Apartments"); blind players need it announced or they lose the
         // "which map am I looking at" anchor.
+        //
+        // Route through the NORMAL screen-reader channel (prism::Speak),
+        // NOT SpeakUrgent. The engine's own panel first-sight announce
+        // speaks the map title ("Karte") on the NVDA channel the instant
+        // the map opens; SpeakUrgent would play this name on the SAPI
+        // channel SIMULTANEOUSLY, so the two TTS engines talk over each
+        // other and the area name is masked (the user reported never
+        // hearing it — patch-20260614-135627.log line 2174 shows the
+        // "[SAPI] Manaan - West-Ahto" landing on top of NVDA's "Karte").
+        // interrupt=false queues it AFTER the title on the same engine, so
+        // the user hears "Karte" then the area name cleanly. The
+        // typed-char-cancel rationale that makes the cursor's PAN narration
+        // use SpeakUrgent doesn't apply here — the map-open title proves
+        // the normal channel survives the open keystroke.
         void* area = acc::engine::GetCurrentArea();
         if (!g_state.announced_area_name) {
             if (area) {
@@ -709,7 +723,7 @@ void Tick() {
                 if (acc::engine::GetAreaDisplayName(area, nameBuf,
                                                    sizeof(nameBuf)) &&
                     nameBuf[0] != '\0') {
-                    prism::SpeakUrgent(nameBuf);
+                    prism::Speak(nameBuf, /*interrupt=*/false);
                     acclog::Write("MapCursor", "area name=\"%s\"", nameBuf);
                 }
             }
