@@ -294,6 +294,22 @@ bool IsQuestItemStructural(void* panel) {
     }
 }
 
+// CSWGuiScriptSelect — the character sheet's "Kurzbefehle" combat-behaviour
+// picker. Heap-allocated modal with no CGuiInGame slot, so vtable equality is
+// the identifier (verified via Ghidra: destructor at 0x006e9ef0, vtable label
+// at 0x007590a8, against the live panel dump in patch-20260613-205358.log).
+constexpr uintptr_t kVtableCSWGuiScriptSelect = 0x007590a8;
+
+bool IsScriptSelectStructural(void* panel) {
+    if (!panel) return false;
+    __try {
+        void** vt = *reinterpret_cast<void***>(panel);
+        return reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiScriptSelect;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 // CSWGuiPowersLevelUp picker (pwrlvlup.gui). The same class backs both the
 // chargen Force-selection screen and the InGameLevelUp "Kr�fte" sub-screen;
 // the SARIF documents the struct (swkotor.exe.h:16603) but doesn't name the
@@ -446,6 +462,7 @@ static const PanelKindOffset kPanelKindOffsets[] = {
     { kNoSlotOffset, PanelKind::PazaakStart,       "PazaakStart" },
     { kNoSlotOffset, PanelKind::PazaakWager,       "PazaakWager" },
     { kNoSlotOffset, PanelKind::InGameQuestItems,  "InGameQuestItems" },
+    { kNoSlotOffset, PanelKind::ScriptSelect,      "ScriptSelect" },
     { kNoSlotOffset, PanelKind::SoundSettings,            "SoundSettings" },
     { kNoSlotOffset, PanelKind::AdvancedSoundSettings,    "AdvancedSoundSettings" },
     { kNoSlotOffset, PanelKind::GraphicsSettings,         "GraphicsSettings" },
@@ -669,6 +686,9 @@ PanelKind IdentifyPanel(void* panel) {
     }
     if (IsQuestItemStructural(panel)) {
         return recordAndReturn(PanelKind::InGameQuestItems, "InGameQuestItems");
+    }
+    if (IsScriptSelectStructural(panel)) {
+        return recordAndReturn(PanelKind::ScriptSelect, "ScriptSelect");
     }
     // Title-screen Options sub-screens (Sound / Graphics / Advanced variants /
     // Auto-Pause / Feedback / Game / Mouse / Keyboard). One vtable-table probe

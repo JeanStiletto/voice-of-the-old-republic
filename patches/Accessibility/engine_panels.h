@@ -128,6 +128,17 @@ enum class PanelKind {
     // hover-description box; identified by vtable.
     InGameQuestItems,
 
+    // Combat-behaviour picker (CSWGuiScriptSelect, vtable 0x007590a8). Heap-
+    // allocated modal opened by the character sheet's "Kurzbefehle" button
+    // (after a one-time TutorialBox). Title "Kurzbefehl-Auswahl". A single
+    // ai_state_list_box (id 0) holds 3 CSWGuiButtonToggle rows — the combat
+    // AI presets (Standardangriff / Grenadier / Jedi-/Droiden-Unterstützung).
+    // It is single-select: the panel's Wählen handler reads the ONE selected
+    // row and writes creature_stats->ai_state, so the toggles' ein/aus is
+    // just a marker of which row is active. Wählen = id 4, Abbrechen = id 3.
+    // Driven as a select-then-confirm listbox in menus_listbox.cpp.
+    ScriptSelect,
+
     // Title-screen Options sub-screens. All heap-allocated CSWGui* option
     // panels pushed modally over MainMenuOptions; no CGuiInGame slot, so
     // identified by vtable equality (see kOptionsSubScreenVtables in
