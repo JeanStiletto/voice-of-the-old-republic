@@ -64,20 +64,24 @@ Die Mod lässt das Standard-Tastaturlayout des Spiels unverändert. Alles, was u
 <h3>Mod-Tasten — Weltinteraktion</h3>
 
 - Enter — Standardaktion auf dem aktuell angesagten Ziel auslösen (entspricht einem Maus-1-Klick in der Welt)
-- Shift+Enter — Radial-Aktionsmenü auf dem aktuellen Ziel öffnen
-- Ö — Untersuchen-Bildschirm für das aktuelle Ziel vorlesen (Umschalter)
+- Shift+Enter — Das vereinheitlichte Aktionsmenü für das aktuelle Ziel öffnen (jede Aktion — angreifen, sprechen, Machtfähigkeiten, Gegenstände, Spezialfähigkeiten — in einem Menü)
+- Shift+1 … Shift+7 — Eine Aktionskategorie zur Auswahl öffnen (1–3 sind die Aktionen des Ziels, 4–7 deine Machtfähigkeiten / Gegenstände / Minen)
+- H — Eigene Gesundheit, aktive Effekte und ausgerüstete Waffe ansagen
+- Ö (deutsches Tastaturlayout) / Backtick (US-Layout) — Untersuchen-Bildschirm für das aktuelle Ziel vorlesen
+- Shift+H — Die Aktionswarteschlange öffnen (Warteschlange prüfen oder leeren)
 - Shift+L — Stufenaufstieg-Bildschirm öffnen
-- Shift+H — Kampfwarteschlangen-Submenü öffnen (Warteschlange prüfen oder leeren)
+- F1 — Die vollständige Tastenliste öffnen oder schließen; Ctrl+F1 — die Tasten für den aktuellen Bildschirm vorlesen
 
-<h3>Mod-Tasten — Welt-Zyklus</h3>
+<h3>Mod-Tasten — Zyklus entdeckter Objekte</h3>
 
-Ein paralleler Zielzyklus, der auch Türen, Behälter, Bereichsübergänge und Kartenmarker abdeckt — Dinge, die das Q / E des Spiels nicht erfasst.
+Ein zweiter Zyklus, zusätzlich zu Q / E, der die Objekte durchschreitet, die du im aktuellen Bereich bereits entdeckt hast — Türen, Behälter, Charaktere, Bereichsübergänge, Landmarken und deine eigenen Kartenmarker — nach Kategorie gruppiert. (Aktiviere „Erweitertes Zyklen" in den Mod-Einstellungen, um auch noch nicht gefundene Dinge einzuschließen.)
 
 - `,` / `.` — Vorheriges / nächstes Objekt in der aktuellen Kategorie
 - Shift+`,` / Shift+`.` — Vorherige / nächste Kategorie (Kreaturen, Türen, Behälter, Übergänge, Kartenmarker, …)
-- `-` (deutsches Tastaturlayout) oder `/` (US-Layout) — Das aktuell fokussierte Zyklusziel ansagen
-- Shift+`-` — Automatisch zu diesem Ziel laufen
-- Ctrl+`-` — Eine Audio-Bake aktivieren, die den Weg zum Ziel beim Gehen pingt
+- Ctrl+`,` / Ctrl+`.` — Zum nächstgelegenen / entferntesten Objekt der Kategorie springen
+- `-` (deutsches Tastaturlayout) oder `/` (US-Layout) — Das aktuell fokussierte Objekt ansagen
+- Shift+`-` (Shift+`/`) — Automatisch zu diesem Objekt laufen
+- Ctrl+`-` (Ctrl+`/`) — Eine Audio-Bake aktivieren, die den Weg beim Gehen pingt
 
 <h3>Mod-Tasten — Orientierung und Gruppe</h3>
 
@@ -91,7 +95,7 @@ Drücke B, um den Sichtmodus zu aktivieren. Solange der Sichtmodus aktiv ist:
 
 - A / D — Kamera schwenken, ohne den Charakter zu bewegen
 - Enter — Mit dem Objekt interagieren, auf das die Kamera zeigt, oder dorthin automatisch laufen
-- Shift+Enter — Radialmenü auf dem Kameraziel erzwingen
+- Shift+Enter — Das Aktionsmenü auf dem Kameraziel öffnen
 - B erneut — Sichtmodus verlassen
 
 <h3>Mod-Tasten — Kartenbildschirm</h3>
@@ -99,17 +103,17 @@ Drücke B, um den Sichtmodus zu aktivieren. Solange der Sichtmodus aktiv ist:
 Bei geöffneter Spielkarte:
 
 - Pfeiltasten / Hoch / Runter — Durch die Notizen und Landmarken der Karte zyklen
-- `,` / `.` — Kartenmarker zyklen (gleiches Vokabular wie der Welt-Zyklus)
+- `,` / `.` — Kartenmarker zyklen (gleiches Vokabular wie der Zyklus entdeckter Objekte)
 - Shift+N — Persönlichen Kartenmarker an der aktuellen Cursor-Weltposition setzen (automatisch nach dem nächstgelegenen Raum oder Landmark benannt). Der neue Marker reiht sich sofort in den Zyklus ein und Ctrl+`-` setzt eine Bake darauf
 
 <h3>Mod-Tasten — Submenüs</h3>
 
-Wenn ein Mod-Submenü geöffnet ist (Aktionsleisten-Submenü, Kampfwarteschlangen-Submenü, Radialmenü):
+Wenn ein Mod-Submenü geöffnet ist (das vereinheitlichte Aktionsmenü, ein Kategoriemenü, die Aktionswarteschlange):
 
 - Hoch / Runter — Fokus verschieben
-- Links / Rechts — Fokus über das 4×3-Raster des Radials verschieben
+- Links / Rechts — Zwischen Spalten oder Varianten wechseln
 - Enter — Die fokussierte Zeile aktivieren
-- Shift+Enter — (nur Kampfwarteschlange) Alle Warteschlangen-Aktionen leeren
+- Shift+Enter — (nur Aktionswarteschlange) Alle Warteschlangen-Aktionen leeren
 - Esc — Submenü schließen
 
 <h3>Mod-Tasten — kontextspezifisch</h3>
@@ -125,31 +129,27 @@ Im Namensfeld der Charaktererstellung (und anderen Texteingabefeldern):
 
 <h2>Navigationssysteme im Überblick</h2>
 
-KOTOR ist ein 3D-Rollenspiel, sodass die meiste Spielzeit damit verbracht wird, einen Charakter durch Räume und um Objekte herum zu bewegen. Die Mod bietet dir mehrere Navigationsweisen, die übereinander geschichtet sind.
+KOTOR ist ein 3D-Rollenspiel, du verbringst also die meiste Zeit damit, dich durch Räume und um Objekte herum zu bewegen. Die Mod schichtet einige Systeme übereinander, damit du orientiert bleibst — jedes sagt sich beim Gebrauch von selbst an.
 
-<h3>Zielwechsel (Q / E)</h3>
+<h3>Zielwechsel — Q / E</h3>
 
-Der spieleigene Zielzyklus. Erfasst Kreaturen, Türen und benutzbare Platzierbare im Umkreis von etwa 30 Metern, die die Kamera sehen kann. Q schreitet nach links, E nach rechts. Was anvisiert ist, ist auch das, worauf R, 1, 2, 3 und die Aktionsleiste wirken. Die Mod sagt jedes neue Ziel an.
+Dein wichtigster Weg, Dinge zu finden und mit ihnen zu interagieren. Q / E schreiten durch die Kreaturen, Türen und benutzbaren Objekte, die die Kamera sehen kann; was anvisiert ist, ist das, worauf Enter und die Aktionstasten 1–7 wirken. Die Mod sagt jedes neue Ziel an.
 
-<h3>Welt-Zyklus (`,` / `.`)</h3>
+<h3>Zyklus entdeckter Objekte — `,` / `.`</h3>
 
-Ein zweiter Zyklus, den die Mod über Q / E legt. Deckt ab, was Q / E nicht erfasst — Bereichsübergänge, Wegpunkte, deine eigenen Kartenmarker — und gruppiert alles nach Kategorie, damit du eine Art Dinge auf einmal durchgehen kannst. Verwende `-` zum Ansagen, Shift+`-` zum automatischen Hingehen, Ctrl+`-` zum Aktivieren einer Audio-Bake.
+Um zu Dingen zurückzufinden, die du bereits entdeckt hast. `,` / `.` schreiten durch jedes Objekt, das du im aktuellen Bereich entdeckt hast — Türen, Behälter, Charaktere, Übergänge, Landmarken, deine eigenen Marker — nach Kategorie gruppiert. Sag eines an, lauf automatisch hin oder aktiviere eine Audio-Bake. (Mod-Einstellungen → „Erweitertes Zyklen" erweitert ihn um Dinge, die du noch nicht gefunden hast.)
 
-<h3>Raumform-Beschreibungen</h3>
+<h3>Vereinheitlichtes Aktionsmenü — Shift+Enter</h3>
 
-Beim Betreten eines neuen Raumes nennt die Mod den Bereichsnamen, die Form des Raumes (Korridor, Kreuzung, Sackgasse, offener Raum) und die von deiner aktuellen Stelle aus sichtbaren Ausgänge. Die Form wird live aus dem Walkmesh des Spiels berechnet, nicht aus einer von Hand verfassten Beschreibung, sodass sie über jeden Bereich des Spiels hinweg präzise bleibt.
+Ein Menü mit jeder Aktion für das aktuelle Ziel — angreifen, sprechen, Machtfähigkeiten, Gegenstände, Spezialfähigkeiten. Pfeiltasten bewegen den Fokus, Enter aktiviert. Es ersetzt die getrennten Radial-, Ziel- und Personal-Menüs des Spiels.
 
-<h3>Wandabstands-Audiocues</h3>
+<h3>Karte — M</h3>
 
-Eine kontinuierliche 3D-Audioschicht spielt leise positionelle Klicks an den dir nächstgelegenen Wänden. Je näher die Wand, desto lauter der Cue; je weiter du entfernt bist, desto leiser. Beim Bewegen ändern sich Tonhöhe, Lautstärke und Richtung der Cues und geben dir ein ständiges räumliches Gefühl dafür, wo die Wände sind, ohne dass du sie abfragen musst. Das ist das Haupt-„Sieh den Raum"-Feature der Mod und am nützlichsten in engen Innenräumen.
+KOTORs spieleigene Karte, navigierbar gemacht. Bewege den Cursor mit den Pfeiltasten, um Gelände und Marker zu lesen, oder zykle die Kartenmarker mit `,` / `.` im selben Vokabular wie in der Welt. Der Kriegsnebel wird respektiert, und Shift+N setzt einen persönlichen Marker am Cursor.
 
-<h3>Sichtmodus (B)</h3>
+<h3>Wandcues und Raumform-Beschreibungen</h3>
 
-Ein „Schau ohne zu gehen"-Modus. Drücke B und deine W / S-Bewegung wird eingefroren; A / D schwenkt nun die Kamera frei, ohne deinen Charakter zu drehen. Von hier aus kannst du die Kamera auf ein entferntes Objekt richten, Enter drücken, um automatisch dorthin zu laufen, oder Shift+Enter, um das Radial darauf zu öffnen. Nützlich für entfernte Platzierbare, die nicht im Q / E- oder `,` / `.`-Zyklus sind, und um einen großen Raum zu vermessen.
-
-<h3>Kartenmodus (M)</h3>
-
-KOTORs spieleigene Karte. Die Mod macht jeden Kartenmarker (Türen, Übergänge, Aufgabenmarker, deine eigenen Shift+N-Marker) mit `,` / `.` zyklbar und sagt sie mit demselben Vokabular wie in der Welt an. Der Kriegsnebel wird respektiert — unerforschte Marker bleiben verborgen, bis du sie gesehen hast. Shift+N setzt einen persönlichen Marker am Cursor, der bestehen bleibt, bis das Panel geschlossen wird, und sich sofort in den Zyklus einreiht.
+Während du dich bewegst, spielt eine kontinuierliche 3D-Audioschicht leise positionelle Klicks von den nächstgelegenen Wänden — nähere Wände klingen lauter — sodass du ein ständiges Gefühl für den Raum um dich herum behältst. Und beim Betreten eines Raumes werden sein Name, seine Form (Korridor, Kreuzung, Sackgasse, offener Raum) und die sichtbaren Ausgänge angesagt, alles live aus dem Walkmesh des Spiels berechnet.
 
 <h2>Fehler melden</h2>
 

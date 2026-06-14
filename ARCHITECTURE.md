@@ -85,7 +85,7 @@ Source files are organised by **role**, not by GUI screen. File-name prefixes gr
 
 Read-only mirrors / vendored binaries:
 
-- `Kotor-Patch-Manager/` — Lane Dibello's hook framework. We patch local copies of upstream bugs here (see `docs/framework-changes-backup.patch`).
+- `Kotor-Patch-Manager/` — Lane Dibello's hook framework. We patch local copies of upstream bugs here (see `archiev/framework-changes-backup.patch`).
 - `KotorMessageInjector/` — out-of-process attach / inject library. Demoted to research tool; not in the runtime path.
 - `prism-dist/` — Prism x86 binaries + MPL-2.0 license.
 - `tolk/` — Tolk + NVDA controller-client x86 binaries + LGPL.
@@ -120,7 +120,7 @@ The author keeps decisions, gotchas, and reverse-engineering findings in `~/.cla
 
 ### Don't reach for upstream fixes silently
 
-If you need the patch framework to behave differently, document the design need in `docs/upstream-prs.md` first, then either work around it locally or patch the vendored copy in `third_party/Kotor-Patch-Manager/`. Local edits are tracked in `docs/framework-changes-backup.patch`.
+If you need the patch framework to behave differently, document the design need in `docs/upstream-prs.md` first, then either work around it locally or patch the vendored copy in `third_party/Kotor-Patch-Manager/`. Local edits are tracked in `archiev/framework-changes-backup.patch`.
 
 ## Pillars (conceptual)
 

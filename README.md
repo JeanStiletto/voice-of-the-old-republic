@@ -63,21 +63,25 @@ The mod keeps the game's default key map intact. Anything not listed below behav
 
 <h3>Mod keys — world interaction</h3>
 
-- Enter — Trigger the default action on the currently narrated target (same as Mouse 1 click in the world)
-- Shift+Enter — Open the radial action menu on the current target
-- Shift+H — Read the Examine panel for the current target
+- Enter — Trigger the default action on the currently narrated target (same as a Mouse 1 click in the world)
+- Shift+Enter — Open the unified action menu for the current target (every action — attack, talk, Force powers, items, special abilities — in one menu)
+- Shift+1 … Shift+7 — Open one action category to choose from it (1–3 are the target's actions, 4–7 your Force powers / items / mines)
+- H — Announce your own health, active effects, and equipped weapon
+- Backtick (US layout) / Ö (German layout) — Read the Examine panel for the current target
+- Shift+H — Open the action queue (review or clear queued actions)
 - Shift+L — Open the level-up panel
-- Shift+K — Open the combat-queue submenu (review or clear queued actions)
+- F1 — Open or close the full key list; Ctrl+F1 — read the keys for the current screen
 
-<h3>Mod keys — in-world cycle</h3>
+<h3>Mod keys — discovered-object cycle</h3>
 
-A parallel target cycle that also covers doors, containers, area transitions, and map markers — things the game's Q / E does not pick up.
+A second cycle, on top of Q / E, that steps through the objects you have already discovered in the current area — doors, containers, characters, area transitions, landmarks, and your own map markers — grouped by category. (Turn on "Extended cycling" in Mod Settings to also include things you haven't found yet.)
 
-- `,` / `.` — Previous / next item in the current category
+- `,` / `.` — Previous / next object in the current category
 - Shift+`,` / Shift+`.` — Previous / next category (creatures, doors, containers, transitions, map pins, …)
-- `-` (German layout) or `/` (US layout) — Announce the currently focused cycle target
-- Shift+`-` — Autowalk to that target
-- Ctrl+`-` — Arm an audio beacon that pings the way to the target as you move
+- Ctrl+`,` / Ctrl+`.` — Jump to the nearest / farthest object in the category
+- `/` (US layout) or `-` (German layout) — Announce the currently focused object
+- Shift+`/` (Shift+`-`) — Autowalk to that object
+- Ctrl+`/` (Ctrl+`-`) — Arm an audio beacon that pings the way as you move
 
 <h3>Mod keys — orientation and party</h3>
 
@@ -91,7 +95,7 @@ Press B to enter view mode. While view mode is active:
 
 - A / D — Pan the camera without moving the character
 - Enter — Interact with whatever the camera is pointing at, or autowalk to that point
-- Shift+Enter — Force-open the radial on the camera target
+- Shift+Enter — Open the action menu on the camera target
 - B again — Leave view mode
 
 <h3>Mod keys — map screen</h3>
@@ -99,17 +103,17 @@ Press B to enter view mode. While view mode is active:
 While the in-game map is open:
 
 - Arrow keys / Up / Down — Cycle through the map's notes and landmarks
-- `,` / `.` — Cycle map pins (same vocabulary as the in-world cycle)
+- `,` / `.` — Cycle map pins (same vocabulary as the discovered-object cycle)
 - Shift+N — Drop a personal map marker at the cursor's current world position (auto-named after the nearest room or landmark). The new pin joins the cycle immediately and Ctrl+`-` will beacon to it
 
 <h3>Mod keys — submenus</h3>
 
-When a mod submenu is open (action-bar submenu, combat-queue submenu, radial menu):
+When a mod submenu is open (the unified action menu, a category menu, the action queue):
 
 - Up / Down — Move focus
-- Left / Right — Move focus across the radial's 4×3 grid
+- Left / Right — Move between columns or variants
 - Enter — Activate the focused row
-- Shift+Enter — (combat-queue only) Clear all queued actions
+- Shift+Enter — (action queue only) Clear all queued actions
 - Esc — Close the submenu
 
 <h3>Mod keys — context-specific</h3>
@@ -141,31 +145,27 @@ On the pre-game wager screen, the top entry reads your current bet, the table ma
 
 <h2>Navigation systems at a glance</h2>
 
-KOTOR is a 3D RPG, so most of the play time is spent moving a character through rooms and around objects. The mod gives you several ways to navigate, layered on top of each other.
+KOTOR is a 3D RPG, so most of your time is spent moving through rooms and around objects. The mod layers a few systems to keep you oriented — each one narrates itself as you use it.
 
-<h3>Target cycling (Q / E)</h3>
+<h3>Target cycling — Q / E</h3>
 
-The game's built-in target cycle. Picks up creatures, doors, and usable placeables within roughly 30 meters that the camera can see. Q steps left, E steps right. Whatever is targeted is what R, 1, 2, 3, and the action bar act on. The mod narrates each new target.
+Your main way to find and act on things. Q / E step through the creatures, doors, and usable objects the camera can see; whatever is targeted is what Enter and the 1–7 action keys act on. The mod speaks each new target.
 
-<h3>In-world cycle (`,` / `.`)</h3>
+<h3>Discovered-object cycle — `,` / `.`</h3>
 
-A second cycle the mod adds on top of Q / E. Covers what Q / E misses — area transitions, waypoints, your own map pins — and groups everything by category so you can scan one kind of thing at a time. Use `-` to announce, Shift+`-` to autowalk there, Ctrl+`-` to arm an audio beacon.
+For getting back to things you've already found. `,` / `.` step through every object you've discovered in the current area — doors, containers, characters, transitions, landmarks, your own markers — grouped by category. Announce one, autowalk to it, or arm an audio beacon. (Mod Settings → "Extended cycling" widens it to also include things you haven't found yet.)
 
-<h3>Room shape descriptions</h3>
+<h3>Unified action menu — Shift+Enter</h3>
 
-When you enter a new room the mod speaks the area name, the room's shape (corridor, junction, dead-end, open space), and the exits visible from your current spot. The shape is computed live from the game's walk-mesh, not from a hand-authored description, so it stays accurate across every area in the game.
+One menu holding every action for the current target — attack, talk, Force powers, items, special abilities. Arrow keys move through it, Enter activates. It replaces the game's separate radial, target, and personal menus.
 
-<h3>Wall-distance audio cues</h3>
+<h3>Map — M</h3>
 
-A continuous 3D audio layer plays soft positional clicks at the nearest walls around you. The closer the wall, the louder the cue; the further you are, the quieter. As you move, the cues shift in pitch, volume, and direction, giving you a constant spatial sense of where the walls are without needing to query them. This is the mod's main "see the room" feature and is most useful for cramped indoor areas.
+KOTOR's in-game map, made navigable. Move the cursor with the arrow keys to read terrain and markers, or cycle the map's pins with `,` / `.` in the same vocabulary used in the world. Fog of war is respected, and Shift+N drops a personal marker at the cursor.
 
-<h3>View mode (B)</h3>
+<h3>Wall cues and room-shape descriptions</h3>
 
-A "look without walking" mode. Press B and your W / S movement freezes; A / D now pans the camera freely without rotating your character. From here you can point the camera at a distant object, press Enter to autowalk there, or Shift+Enter to open the radial on it. Useful for distant placeables that don't sit in the Q / E or `,` / `.` cycle, and for surveying a large room.
-
-<h3>Map mode (M)</h3>
-
-KOTOR's in-game map. The mod makes every map pin (doors, transitions, quest markers, your own Shift+N markers) cycleable with `,` / `.` and announced with the same vocabulary used in the world. Fog of war is respected — unexplored pins stay hidden until you've seen them. Shift+N drops a personal marker at the cursor that survives until the panel closes and joins the cycle immediately.
+As you move, a continuous 3D audio layer plays soft positional clicks off the nearest walls — closer walls sound louder — so you keep a constant feel for the space around you. And entering a room speaks its name, its shape (corridor, junction, dead-end, open space), and the visible exits, all computed live from the game's walk-mesh.
 
 <h2>Reporting bugs</h2>
 

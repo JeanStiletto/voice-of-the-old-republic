@@ -64,20 +64,24 @@ Le mod conserve la table des touches par défaut du jeu. Tout ce qui n'est pas l
 <h3>Touches du mod — interaction avec le monde</h3>
 
 - Entrée — Déclencher l'action par défaut sur la cible actuellement annoncée (équivaut à un clic de Souris 1 dans le monde)
-- Shift+Entrée — Ouvrir le menu d'actions radial sur la cible actuelle
-- Ö — Lire le panneau Examiner pour la cible actuelle (bascule)
+- Shift+Entrée — Ouvrir le menu d'actions unifié pour la cible actuelle (toutes les actions — attaquer, parler, pouvoirs de la Force, objets, capacités spéciales — dans un seul menu)
+- Shift+1 … Shift+7 — Ouvrir une catégorie d'actions pour y choisir (1–3 sont les actions de la cible, 4–7 tes pouvoirs de la Force / objets / mines)
+- H — Annoncer ta propre santé, tes effets actifs et ton arme équipée
+- Ö (clavier allemand) / Accent grave (clavier US) — Lire le panneau Examiner pour la cible actuelle
+- Shift+H — Ouvrir la file d'actions (vérifier ou vider les actions en file)
 - Shift+L — Ouvrir le panneau de gain de niveau
-- Shift+H — Ouvrir le sous-menu de file de combat (vérifier ou vider les actions en file)
+- F1 — Ouvrir ou fermer la liste complète des touches ; Ctrl+F1 — lire les touches de l'écran actuel
 
-<h3>Touches du mod — cycle dans le monde</h3>
+<h3>Touches du mod — cycle des objets découverts</h3>
 
-Un cycle de cibles parallèle qui couvre aussi les portes, conteneurs, transitions de zone et marqueurs de carte — des choses que le Q / E du jeu ne récupère pas.
+Un second cycle, par-dessus Q / E, qui parcourt les objets que tu as déjà découverts dans la zone actuelle — portes, conteneurs, personnages, transitions de zone, points de repère et tes propres marqueurs de carte — regroupés par catégorie. (Active « Cycle étendu » dans les Réglages du mod pour inclure aussi ce que tu n'as pas encore trouvé.)
 
-- `,` / `.` — Élément précédent / suivant dans la catégorie actuelle
+- `,` / `.` — Objet précédent / suivant dans la catégorie actuelle
 - Shift+`,` / Shift+`.` — Catégorie précédente / suivante (créatures, portes, conteneurs, transitions, marqueurs de carte, …)
-- `-` (clavier allemand) ou `/` (clavier US) — Annoncer la cible de cycle actuellement focalisée
-- Shift+`-` — Marche automatique vers cette cible
-- Ctrl+`-` — Armer une balise audio qui pingue le chemin vers la cible à mesure que tu te déplaces
+- Ctrl+`,` / Ctrl+`.` — Sauter à l'objet le plus proche / le plus éloigné de la catégorie
+- `/` (clavier US) ou `-` (clavier allemand) — Annoncer l'objet actuellement focalisé
+- Shift+`/` (Shift+`-`) — Marche automatique vers cet objet
+- Ctrl+`/` (Ctrl+`-`) — Armer une balise audio qui pingue le chemin à mesure que tu te déplaces
 
 <h3>Touches du mod — orientation et équipe</h3>
 
@@ -91,7 +95,7 @@ Appuie sur B pour entrer en mode vue. Tant que le mode vue est actif :
 
 - A / D — Faire pivoter la caméra sans déplacer le personnage
 - Entrée — Interagir avec ce que la caméra pointe, ou marche automatique vers ce point
-- Shift+Entrée — Forcer l'ouverture du radial sur la cible de la caméra
+- Shift+Entrée — Ouvrir le menu d'actions sur la cible de la caméra
 - B à nouveau — Quitter le mode vue
 
 <h3>Touches du mod — écran de carte</h3>
@@ -99,17 +103,17 @@ Appuie sur B pour entrer en mode vue. Tant que le mode vue est actif :
 Lorsque la carte du jeu est ouverte :
 
 - Flèches / Haut / Bas — Parcourir les notes et points de repère de la carte
-- `,` / `.` — Parcourir les marqueurs de carte (même vocabulaire que le cycle dans le monde)
+- `,` / `.` — Parcourir les marqueurs de carte (même vocabulaire que le cycle des objets découverts)
 - Shift+N — Poser un marqueur de carte personnel à la position monde actuelle du curseur (nommé automatiquement d'après la salle ou le repère le plus proche). Le nouveau marqueur rejoint le cycle immédiatement et Ctrl+`-` y posera une balise
 
 <h3>Touches du mod — sous-menus</h3>
 
-Lorsqu'un sous-menu du mod est ouvert (sous-menu de la barre d'action, sous-menu de file de combat, menu radial) :
+Lorsqu'un sous-menu du mod est ouvert (le menu d'actions unifié, une catégorie d'actions, la file d'actions) :
 
 - Haut / Bas — Déplacer le focus
-- Gauche / Droite — Déplacer le focus dans la grille 4×3 du radial
+- Gauche / Droite — Passer d'une colonne ou variante à l'autre
 - Entrée — Activer la ligne focalisée
-- Shift+Entrée — (file de combat uniquement) Vider toutes les actions en file
+- Shift+Entrée — (file d'actions uniquement) Vider toutes les actions en file
 - Esc — Fermer le sous-menu
 
 <h3>Touches du mod — spécifiques au contexte</h3>
@@ -125,31 +129,27 @@ Dans le champ de nom de création de personnage (et autres champs de saisie de t
 
 <h2>Systèmes de navigation en un coup d'œil</h2>
 
-KOTOR est un jeu de rôle en 3D, donc la majeure partie du temps de jeu est passée à déplacer un personnage à travers des salles et autour d'objets. Le mod te donne plusieurs façons de naviguer, superposées les unes aux autres.
+KOTOR est un jeu de rôle en 3D, tu passes donc l'essentiel de ton temps à te déplacer à travers des salles et autour d'objets. Le mod superpose quelques systèmes pour te garder orienté — chacun s'annonce de lui-même à l'usage.
 
-<h3>Cycle de cibles (Q / E)</h3>
+<h3>Cycle de cibles — Q / E</h3>
 
-Le cycle de cibles intégré au jeu. Récupère les créatures, portes et placeables utilisables à environ 30 mètres que la caméra peut voir. Q va à gauche, E va à droite. Ce qui est ciblé est ce sur quoi R, 1, 2, 3 et la barre d'actions agissent. Le mod annonce chaque nouvelle cible.
+Ton principal moyen de trouver des choses et d'agir dessus. Q / E parcourent les créatures, portes et objets utilisables que la caméra peut voir ; ce qui est ciblé est ce sur quoi Entrée et les touches d'action 1–7 agissent. Le mod annonce chaque nouvelle cible.
 
-<h3>Cycle dans le monde (`,` / `.`)</h3>
+<h3>Cycle des objets découverts — `,` / `.`</h3>
 
-Un second cycle que le mod ajoute par-dessus Q / E. Couvre ce que Q / E manque — transitions de zone, points de passage, tes propres marqueurs de carte — et regroupe tout par catégorie pour que tu puisses parcourir un type de chose à la fois. Utilise `-` pour annoncer, Shift+`-` pour la marche automatique, Ctrl+`-` pour armer une balise audio.
+Pour retrouver les choses que tu as déjà découvertes. `,` / `.` parcourent chaque objet que tu as découvert dans la zone actuelle — portes, conteneurs, personnages, transitions, points de repère, tes propres marqueurs — regroupés par catégorie. Annonce-en un, marche automatiquement jusqu'à lui, ou arme une balise audio. (Réglages du mod → « Cycle étendu » l'élargit pour inclure ce que tu n'as pas encore trouvé.)
 
-<h3>Descriptions de la forme des salles</h3>
+<h3>Menu d'actions unifié — Shift+Entrée</h3>
 
-Lorsque tu entres dans une nouvelle salle, le mod prononce le nom de la zone, la forme de la salle (couloir, jonction, cul-de-sac, espace ouvert) et les sorties visibles depuis ta position actuelle. La forme est calculée en direct à partir du walkmesh du jeu, pas à partir d'une description rédigée à la main, donc elle reste exacte dans toutes les zones du jeu.
+Un seul menu contenant toutes les actions pour la cible actuelle — attaquer, parler, pouvoirs de la Force, objets, capacités spéciales. Les flèches déplacent le focus, Entrée active. Il remplace les menus radial, de cible et personnel séparés du jeu.
 
-<h3>Repères audio de distance aux murs</h3>
+<h3>Carte — M</h3>
 
-Une couche audio 3D continue joue de doux clics positionnels aux murs les plus proches autour de toi. Plus le mur est proche, plus le repère est fort ; plus tu es loin, plus il est faible. À mesure que tu te déplaces, les repères changent de hauteur, de volume et de direction, te donnant un sens spatial constant de l'emplacement des murs sans avoir à interroger. C'est la principale fonctionnalité « voir la salle » du mod et la plus utile dans les espaces intérieurs étroits.
+La carte intégrée à KOTOR, rendue navigable. Déplace le curseur avec les flèches pour lire le terrain et les marqueurs, ou parcours les marqueurs de la carte avec `,` / `.` dans le même vocabulaire que dans le monde. Le brouillard de guerre est respecté, et Shift+N pose un marqueur personnel au curseur.
 
-<h3>Mode vue (B)</h3>
+<h3>Repères de murs et descriptions de forme des salles</h3>
 
-Un mode « regarder sans marcher ». Appuie sur B et ton mouvement W / S est gelé ; A / D fait maintenant pivoter librement la caméra sans tourner ton personnage. De là, tu peux pointer la caméra sur un objet distant, appuyer sur Entrée pour la marche automatique vers lui, ou Shift+Entrée pour ouvrir le radial dessus. Utile pour les placeables distants qui ne sont pas dans le cycle Q / E ou `,` / `.`, et pour examiner une grande salle.
-
-<h3>Mode carte (M)</h3>
-
-La carte intégrée à KOTOR. Le mod rend chaque marqueur de carte (portes, transitions, marqueurs de quête, tes propres marqueurs Shift+N) parcourable avec `,` / `.` et annoncé avec le même vocabulaire utilisé dans le monde. Le brouillard de guerre est respecté — les marqueurs inexplorés restent cachés jusqu'à ce que tu les aies vus. Shift+N pose un marqueur personnel au curseur qui persiste jusqu'à la fermeture du panneau et rejoint le cycle immédiatement.
+À mesure que tu te déplaces, une couche audio 3D continue joue de doux clics positionnels depuis les murs les plus proches — les murs plus proches sonnent plus fort — pour que tu gardes un sens constant de l'espace autour de toi. Et entrer dans une salle en prononce le nom, la forme (couloir, jonction, cul-de-sac, espace ouvert) et les sorties visibles, le tout calculé en direct à partir du walkmesh du jeu.
 
 <h2>Signaler des bugs</h2>
 

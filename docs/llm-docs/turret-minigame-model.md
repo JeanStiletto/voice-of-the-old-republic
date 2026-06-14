@@ -2,7 +2,7 @@
 
 This is the **engine-confirmed** model of the KOTOR minigame subsystem, read
 directly from Lane's Ghidra DB (decompile, 2026-06-05). It supersedes every
-runtime-measured theory in `docs/turret-difficulty-investigation.md` and in the
+runtime-measured theory in `archiev/turret-difficulty-investigation.md` and in the
 older turret memories. When in doubt, this document and the decompile win over
 any statistic gathered by hooking the live game.
 

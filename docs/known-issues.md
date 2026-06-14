@@ -60,6 +60,10 @@ Regression from the voiced-speaker subtitle suppression change (CHANGELOG: "Unte
 
 In the combat action menu, switching between the target-options columns isn't always fluid — when targets are far away, the column change sometimes won't go through, so the player can't reliably move across the options. Likely the target-resolution / range gate interfering with the column navigation (the engine re-deriving the target menu from distance). Capture which column move fails, the target distance, and a log; cross-check against `project_engine_action_picker.md` and the bare 1–7 dispatch (`project_bare_combat_keys_dispatch.md`).
 
+### Pazaak wager amount can't be changed
+
+The pre-game Pazaak flow is otherwise functional from the keyboard — building the 10-card side deck from the owned-card collection (`CSWGuiPazaakStart`) and the wager popup (`CSWGuiWagerPopup`) both read and operate correctly. The one remaining gap is setting the wager *amount*: the less/more controls don't take, so the bet value won't change. Fix the wager less/more handling; everything else on these screens works. RE surface mapped in `archiev/pazaak-investigation.md` §11.
+
 ## Unreproduced
 
 ### Zaalbar's subtitles not reading
@@ -71,22 +75,6 @@ Reported that Zaalbar has no subtitles read at all — his Shyriiwook is untrans
 Reported that during level-up and/or character creation the description read aloud belongs to the entry *above* the focused one — e.g. landing on Dexterity reads the Strength description. The focus/selection itself is on the right row; it's the description lookup that's shifted by one, so the player hears the wrong attribute's (or skill's/feat's) text. No reliable repro yet. Needs the exact screen (chargen step vs level-up panel — attribute, skill, or feat list), the row navigated to vs the description heard, and a timestamped log. Likely candidate: the description reader indexing into the row list with an off-by-one (stale-vs-current selection index, or a header/blank row offsetting the mapping).
 
 ## Planned
-
-### Pazaak pre-game deck-build + wager menu
-
-The board game itself is implemented (see Monitor). The pre-game `CSWGuiPazaakStart` screen — build your 10-card side deck from the owned-card collection and set the wager via `CSWGuiWagerPopup` — is still mouse-only. Needs keyboard selection across the owned-card grid and the chosen-deck slots, plus the wager less/more/accept controls. RE surface mapped in `docs/pazaak-investigation.md` §11.
-
-### Turret-shooting minigame accessibility
-
-The Ebon Hawk turret defense sequences (Leviathan, mid-game space encounters) need keyboard aim/fire and audio cues for incoming TIE direction, lock-on, hit/miss, and turret HP.
-
-### Better combat reading
-
-Iterate on combat narration: clearer turn/round structure, attacker → action → target framing, and a cleaner hit/miss/damage rollup that flows when several rolls fire on the same tick. Builds on the `AppendToMsgBuffer` funnel (`project_appendtomsgbuffer_is_combat_log.md`).
-
-### Better combat ability handling
-
-Improve the activation flow for combat abilities — force powers, feats, items — across selection, target picking, and dispatch. Today the bare 1–7 path (`project_bare_combat_keys_dispatch.md`) covers basics; we still need a clean affordance for variant cycling and multi-step abilities.
 
 ### Class-selection chargen screen
 
@@ -100,23 +88,6 @@ On the class-selection chargen screen the three classes are a horizontal row, so
 
 While a beacon (or autowalk) is active, the route announcements should describe the *remaining* way to the active waypoint — leading with the range and direction of the current target — rather than the full original route. The hard part is disambiguating intents: if the player selects another object just to hear where it is, the announcement must not balloon into the long, confusing full-route description for the beacon target. Design questions to resolve: how to keep "where is this thing I just selected" reads short while a beacon is running, and whether the separate Shift+Enter autowalk / Shift+`-` gestures are still needed at all, or whether they can be folded into / replaced by the plain selection + beacon flow. See `project_narrated_target_unified.md` and `project_map_cycle_architecture.md`.
 
-### HP bars exposed to screen reader
-
-Surface current/max HP for the player and party on a read-on-demand hotkey. Live HP data is already located (`project_creature_hp_lives_on_client_stats.md`).
-
-### Party-member talents, feats, and powers inspection
-
-Expose talents, feats, and force powers for the other party members. Today only the player creature is fully read out; companions' progression sheets are unreachable from the screen reader.
-
-### Open-space room narration (shape, form, important exits)
-
-Walltopo handles corridors and junctions well, but open / non-corridor rooms still narrate poorly. Need a clearer summary for plaza/hall-shaped spaces: rough shape, key exits, important landmarks. May need a different topology pass than the chain-merge corridor model (`project_walltopo_chain_merge_idea.md`).
-
-Specifics to address:
-- **Room-shape descriptions often fail in more open spaces** — shape detection produces nothing in plaza/hall geometry and the narration falls back to a generic "open space" line. Make shape detection succeed there.
-- **Improve the announcement of open spaces** generally — more useful summary than the current fallback.
-- **The shape announcement should replace the generic "open space" line** — once we can describe the shape, that description supersedes the generic fallback rather than sitting alongside it.
-
 ### Additional manual map hints
 
 Hand-authored map hints for specific story locations the game doesn't mark but players struggle to find without sight. Backlog so far:
@@ -128,17 +99,11 @@ Add these to the manual map-hint registry (see `project_map_cycle_architecture.m
 
 Add Polish as a supported language. Decide the integration path — installer locale JSON (alongside de/en/fr/it/es) and/or in-game speech strings routed through the shared strings system — and wire it in. Source of the Polish strings (community contribution vs AI draft like fr/it/es) to be determined.
 
-### F1 / Ctrl+F1 keyboard-help commands
-
-Add an on-demand keyboard-help system. F1 reads the hints for the current screen — the keys that do something useful in the context the player is in right now (the action bar, a listbox menu, dialogue, a minigame, in-world navigation, etc.). Ctrl+F1 reads the general keyboard help — the mod's global hotkeys that work everywhere. This gives keyboard-only players a way to discover and re-check the controls without leaving the game or memorising a manual. Needs a per-context hint registry so each screen can supply its own F1 text, plus a single global list for Ctrl+F1.
-
 ### Alternative hotkeys for Alt/Ctrl-bound actions
 
 Some of our actions are bound to Alt+ and Ctrl+ key combinations, which not every user can reach — some keyboards/layouts make those modifiers awkward or unavailable. Offer alternative (and ideally rebindable) bindings so these actions are reachable without the Alt/Ctrl chord.
 
 ## Monitor
-
-_(empty — nothing currently under live watch.)_
 
 ### Startup crash with non-NVDA screen readers (delay-load backend fault) — fix pending tester verification
 
@@ -150,10 +115,6 @@ A pl-PL beta tester (v0.2.1) crashed at startup, repeatedly, before any speech. 
 
 If an autowalk or beacon is already running and the player triggers a new autowalk or beacon on a different target, the current behaviour just cancels the existing one. Instead it should immediately start the new action on the new target — switching the route in one gesture rather than requiring cancel-then-start.
 
-### Bare number hotkeys should announce queuing while a menu is opening
-
-When a menu is opening, pressing a bare number hotkey (the 1–7 combat/action keys) queues an action, but that queuing isn't announced — so the player gets no confirmation that the press registered or what was queued. The queue feedback should be spoken even during the menu-open window. Ties into the bare 1–7 dispatch (`project_bare_combat_keys_dispatch.md`).
-
 ### Unified action menu should only pause while in combat
 
 The unified (in-world) action menu currently pauses the game whenever it's open. Consider only pausing while in combat — outside combat there's no need to freeze the world to browse the menu, and the constant pause/unpause cues add noise. Evaluate whether gating the pause hold on combat state is safe for the menu's input model (`unified_action_menu`).
@@ -161,10 +122,6 @@ The unified (in-world) action menu currently pauses the game whenever it's open.
 ### Mod-settings sliders only save after pressing Enter
 
 The sliders under Mod-Einstellungen (e.g. hint-sound volume) only persist their new value to `acc_settings.ini` once the user presses Enter on the row. Adjusting a slider with Left / Right changes it for the session and previews the new level, but the change isn't written until an explicit Enter — so a player who tweaks a slider and leaves the menu without pressing Enter loses the change on next launch. Slider adjustments should persist on each Left / Right step (the same way the value already updates live), without needing a confirming keypress.
-
-### Clean up announcements when changing in-game panels
-
-Switching between in-game panels (Equip, Inventory, Map, Journal, Options, Character) leaves stale announcements in flight — the previous panel's last row or title can finish speaking after the new panel is already focused. Need to flush or cancel pending narration on panel switch so the new panel's opening cue isn't drowned out.
 
 ### Installer fr/it/es translations are AI drafts
 
