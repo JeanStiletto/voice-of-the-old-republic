@@ -60,10 +60,6 @@ Regression from the voiced-speaker subtitle suppression change (CHANGELOG: "Unte
 
 In the combat action menu, switching between the target-options columns isn't always fluid — when targets are far away, the column change sometimes won't go through, so the player can't reliably move across the options. Likely the target-resolution / range gate interfering with the column navigation (the engine re-deriving the target menu from distance). Capture which column move fails, the target distance, and a log; cross-check against `project_engine_action_picker.md` and the bare 1–7 dispatch (`project_bare_combat_keys_dispatch.md`).
 
-### Pazaak wager amount can't be changed
-
-The pre-game Pazaak flow is otherwise functional from the keyboard — building the 10-card side deck from the owned-card collection (`CSWGuiPazaakStart`) and the wager popup (`CSWGuiWagerPopup`) both read and operate correctly. The one remaining gap is setting the wager *amount*: the less/more controls don't take, so the bet value won't change. Fix the wager less/more handling; everything else on these screens works. RE surface mapped in `archiev/pazaak-investigation.md` §11.
-
 ## Unreproduced
 
 ### Zaalbar's subtitles not reading
@@ -102,6 +98,14 @@ Add Polish as a supported language. Decide the integration path — installer lo
 ### Alternative hotkeys for Alt/Ctrl-bound actions
 
 Some of our actions are bound to Alt+ and Ctrl+ key combinations, which not every user can reach — some keyboards/layouts make those modifiers awkward or unavailable. Offer alternative (and ideally rebindable) bindings so these actions are reachable without the Alt/Ctrl chord.
+
+### Improved tutorial for mod users
+
+A better onboarding/tutorial for players using the mod — introducing the mod's keys and concepts (navigation, cycling, targeting, screens) in a guided way rather than expecting users to discover them. Scope and delivery (in-game guided flow vs. F1/Ctrl+F1 reference vs. external readme) to be decided.
+
+### Improvements to the Pillar 1 wall tones
+
+Refine the in-world wall sounds (the Pillar 1 navigation cues that signal nearby walls) — accuracy, timing, and how clearly they convey wall proximity/direction. Capture concrete cases where the current tones mislead or fall short, then tune the cue logic.
 
 ## Monitor
 

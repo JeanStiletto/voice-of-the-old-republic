@@ -467,6 +467,12 @@ void RebindChain(void* panel) {
         // Pazaak deck builder: drop the overlay value/count/title labels and
         // the unaddable (zero-owned) available cards.
         if (acc::menus::pazaakdeck::IsChainDecorative(panel, c)) return true;
+        // Pazaak wager popup: mask the less/more SpeedButtons (gui ids 4/5).
+        // The wager is adjusted with Left/Right (held = auto-repeat) via
+        // pazaak::Tick's polled stepper, so these buttons are redundant in the
+        // chain — dropping them lets Up/Down step straight from the wager row
+        // to Setzen/Beenden.
+        if (pk == PanelKind::PazaakWager && (cid == 4 || cid == 5)) return true;
         if (pk == PanelKind::InGameCharacter &&
             (cid == 1 || cid == 64 || cid == 65 || cid == 66 || cid == 67)) {
             return true;
@@ -1562,6 +1568,15 @@ void HandleNavStep(void* activePanel, int code, int val, bool& consumed) {
 void HandleLeftRight(void* activePanel, int code, int val, bool& consumed) {
     if (val == 0) return;
     if (code != kInputNavLeft && code != kInputNavRight) return;
+    // Pazaak wager popup owns Left/Right via pazaak::Tick's polled hold-to-
+    // repeat stepper. Consume here so the slider/cycle-arrow path can't also
+    // act (FindAdjacentArrow would otherwise re-fire the masked less/more
+    // button, double-stepping the wager).
+    if (activePanel &&
+        acc::engine::IdentifyPanel(activePanel) == acc::engine::PanelKind::PazaakWager) {
+        consumed = true;
+        return;
+    }
     if (activePanel == nullptr || g_chainPanel != activePanel) return;
     if (g_chainCount <= 0 || g_chainIndex < 0 || g_chainIndex >= g_chainCount) return;
 

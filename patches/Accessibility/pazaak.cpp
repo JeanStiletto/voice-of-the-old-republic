@@ -564,26 +564,95 @@ void HandleEnter(void* panel, void* model, int state) {
     // zones 1 / 2 (boards) are read-only — Enter does nothing.
 }
 
-// ---- Wager popup observer (separate panel from the board) ----------------
+// ---- Wager popup: observe value + Left/Right hold-to-repeat stepper -------
 void* g_wagerPanel = nullptr;
 int   g_wagerLast  = -1;
 
-// Announce the wager amount when it changes. Orientation on entry is the job
-// of the navigable wager row (menus_extract); this only gives the value
-// feedback the static labels can't, since focus doesn't move when the amount
-// steps via the less/more buttons.
-void ObserveWager(void* fg) {
+// The engine's wager only ever changes by ±1 per input event (the less/more
+// CSWGuiSpeedButtons just call HandleInputEvent 0x2f/0x30 — see decomp); a
+// sighted player holds the mouse and the SpeedButton auto-repeats. We mask
+// those buttons out of the chain (menus_chain RebindChain) and drive the wager
+// with Left/Right instead, polled here so we can mirror the hold-to-repeat:
+// a tap is one credit, holding accelerates toward the cap/floor. Per-step
+// click feedback comes free (HandleInputEvent plays the wager-click sound);
+// the spoken value is suppressed during the race and announced once on
+// release (Option A).
+int      g_wagerHeldDir   = 0;  // -1 decrease, +1 increase, 0 idle
+unsigned g_wagerHoldStart = 0;  // GetTickCount at key-down
+unsigned g_wagerNextStep  = 0;  // earliest tick for the next auto-repeat step
+bool     g_wagerRepeating = false;  // crossed from single tap into auto-repeat
+
+constexpr unsigned kWagerHoldDelayMs  = 350;   // grace before auto-repeat starts
+constexpr unsigned kWagerRepeatSlowMs = 140;   // first repeat interval (~7/s)
+constexpr unsigned kWagerRepeatFastMs = 30;    // terminal interval (~33/s)
+constexpr unsigned kWagerRampMs       = 1200;  // accel span from slow to fast
+
+void StepWager(void* fg, int dir) {
+    DispatchWagerInput(fg, dir < 0 ? kWagerLessCode : kWagerMoreCode);
+}
+
+// Run every tick while the wager popup may be foreground (from Tick). Owns the
+// wager Left/Right stepper and announces the amount when it settles.
+void ServiceWagerPopup(void* fg) {
     using namespace acc::strings;
     if (!fg || acc::engine::IdentifyPanel(fg) != acc::engine::PanelKind::PazaakWager) {
-        g_wagerPanel = nullptr;
-        g_wagerLast  = -1;
+        g_wagerPanel     = nullptr;
+        g_wagerLast      = -1;
+        g_wagerHeldDir   = 0;
+        g_wagerRepeating = false;
         return;
     }
+
     int cur = -1, max = -1;
     ReadIntAt(fg, kWagerCurOffset, &cur);
     ReadIntAt(fg, kWagerMaxOffset, &max);
     bool firstSight = (fg != g_wagerPanel);
-    if (!firstSight && cur != g_wagerLast) {
+
+    bool leftDown  = (GetAsyncKeyState(VK_LEFT)  & 0x8000) != 0;
+    bool rightDown = (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0;
+    int  dir = (leftDown == rightDown) ? 0 : (leftDown ? -1 : +1);
+    unsigned now = GetTickCount();
+
+    if (firstSight) {
+        // Adopt the current key state without firing — a key held at popup-open
+        // (left over from navigation) shouldn't auto-step.
+        g_wagerHeldDir   = dir;
+        g_wagerRepeating = false;
+    } else if (dir != 0 && dir != g_wagerHeldDir) {
+        // Rising edge / direction flip → one immediate step. The single-step
+        // value is spoken by the change-announce below.
+        StepWager(fg, dir);
+        g_wagerHeldDir   = dir;
+        g_wagerHoldStart = now;
+        g_wagerNextStep  = now + kWagerHoldDelayMs;
+        g_wagerRepeating = false;
+    } else if (dir != 0) {  // same direction still held → auto-repeat
+        if ((int)(now - g_wagerNextStep) >= 0) {
+            StepWager(fg, dir);
+            g_wagerRepeating = true;
+            unsigned t = now - g_wagerHoldStart - kWagerHoldDelayMs;
+            unsigned interval = (t >= kWagerRampMs)
+                ? kWagerRepeatFastMs
+                : kWagerRepeatSlowMs -
+                      (kWagerRepeatSlowMs - kWagerRepeatFastMs) * t / kWagerRampMs;
+            g_wagerNextStep = now + interval;
+        }
+    } else {  // no direction held
+        if (g_wagerRepeating) {
+            // Option A: silent during the race, announce the final value on
+            // release. Stamp g_wagerLast so the change-announce stays quiet.
+            char msg[96];
+            snprintf(msg, sizeof(msg), Get(Id::PazaakFmtWager), cur, max);
+            Say(msg, true);
+            g_wagerLast = cur;
+        }
+        g_wagerHeldDir   = 0;
+        g_wagerRepeating = false;
+    }
+
+    // Value-change announce for taps (and any non-key change). Suppressed
+    // mid-race; the release branch above owns that announcement.
+    if (!firstSight && !g_wagerRepeating && cur != g_wagerLast) {
         char msg[96];
         snprintf(msg, sizeof(msg), Get(Id::PazaakFmtWager), cur, max);
         Say(msg, true);
@@ -750,7 +819,7 @@ void Tick() {
     void* fg = acc::engine::GetForegroundPanel(mgr);
 
     // The wager popup precedes (and is a different panel from) the board.
-    ObserveWager(fg);
+    ServiceWagerPopup(fg);
 
     // Drop the tracked panel once it leaves the manager (game ended / panel
     // destroyed). IsPanelInManager is deref-free, so it's safe on a stale
