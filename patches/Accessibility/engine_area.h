@@ -139,6 +139,16 @@ bool GetAreaTag(void* area, char* outBuf, size_t bufSize);
 // NUL-terminated on entry.
 bool GetCurrentAreaResName(char* outBuf, size_t bufSize);
 
+// CServerExoApp::GetLoadFromSaveGame @0x004af050 — the engine's own "I am
+// loading a saved game" flag (CServerExoAppInternal.load_from_savegame).
+// Set true by CSWGuiSaveLoad::LoadGame / CGuiInGame::DoQuickLoad for the
+// duration of any save-game load (main-menu OR in-game OR F9 quickload),
+// and held false during a plain save and during normal play. The clean
+// signal for suppressing the message-buffer replay + in-game-GUI
+// reconstruction burst the engine produces while restoring a save. False
+// on no server app / fault.
+bool IsLoadingSaveGame();
+
 // Wraps CClientExoApp::GetObjectName(ulong, CExoString*) — the engine's
 // universal accessor. Better than GetObjectName(obj,...) from a handle
 // because it handles empty first_name with the template + appearance.2da

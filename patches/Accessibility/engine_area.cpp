@@ -827,6 +827,21 @@ bool GetCurrentAreaResName(char* outBuf, size_t bufSize) {
     }
 }
 
+bool IsLoadingSaveGame() {
+    void* serverApp = GetServerApp();  // CServerExoApp facade (AppManager+0x8)
+    if (!serverApp) return false;
+    __try {
+        // CServerExoApp::GetLoadFromSaveGame(this) — returns
+        // this->internal->load_from_savegame (decompile-verified). The getter
+        // does the facade→internal deref itself, so we pass the facade.
+        constexpr uintptr_t kAddrGetLoadFromSaveGame = 0x004af050;
+        using PFN = int(__thiscall*)(void*);
+        return reinterpret_cast<PFN>(kAddrGetLoadFromSaveGame)(serverApp) != 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 bool IsWorldPointExplored(void* areaMap, const Vector& pos) {
     if (!areaMap) return false;
     __try {

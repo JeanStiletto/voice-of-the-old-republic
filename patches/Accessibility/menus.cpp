@@ -47,6 +47,7 @@
 #include "pazaak.h"           // Pazaak board game — IsBoardForeground
 #include "menus_journal.h"   // Journal (Aufträge) — Enter on quest row → description
 #include "help.h"             // Help list overlay — suppress engine keys while open
+#include "engine_area.h"     // IsLoadingSaveGame — gate the save-load GUI burst
 #include "engine_input.h"
 #include "engine_manager.h"
 #include "engine_offsets.h"
@@ -1149,14 +1150,20 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
     // each. Narrating that burst spams build strings / panel titles /
     // "control N" fallbacks over the loading screen, ahead of the area-name
     // announce the player actually wants. Skip the whole handler while the
-    // load is pending (same rationale + same first-sight-preservation
-    // benefit as the movie gate above): the engine re-fires
-    // SetActiveControl on genuine interaction once the world is live, so
-    // first-sight + focus speech resume cleanly then. The latch clears in
-    // transitions::Tick on the first fresh area pointer.
-    if (acc::transitions::IsModuleLoadPending()) {
+    // load is in progress (same rationale + same first-sight-preservation
+    // benefit as the movie gate above): the engine re-fires SetActiveControl
+    // on genuine interaction once the world is live, so first-sight + focus
+    // speech resume cleanly then.
+    //
+    // Two signals: IsModuleLoadPending covers module/door transitions (set by
+    // the SetMoveToModuleString detour); IsLoadingSaveGame is the engine's own
+    // load_from_savegame flag, true across any save-game restore — crucially
+    // the IN-GAME load, where the old world is still live so the module latch
+    // never armed.
+    if (acc::transitions::IsModuleLoadPending() ||
+        acc::engine::IsLoadingSaveGame()) {
         acclog::Write("Menus.SetActive",
-                      "#%d panel=%p — suppressed (module load pending)", n,
+                      "#%d panel=%p — suppressed (save-load / module load)", n,
                       panel);
         return;
     }
@@ -1245,14 +1252,15 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
     ++n;
 
     // Suppress the in-game-GUI reconstruction burst on a module / save-game
-    // load — same gate as OnSetActiveControl above. The engine fires
-    // per-row SetActiveControl on every listbox it rebuilds (abilities
-    // "Add Power", party stash, options rows); narrating them spams over
-    // the loading screen. Latch clears on the first fresh area pointer.
-    if (acc::transitions::IsModuleLoadPending()) {
+    // load — same two-signal gate as OnSetActiveControl above. The engine
+    // fires per-row SetActiveControl on every listbox it rebuilds (abilities
+    // "Add Power", party stash, options rows); narrating them spams over the
+    // loading screen.
+    if (acc::transitions::IsModuleLoadPending() ||
+        acc::engine::IsLoadingSaveGame()) {
         acclog::Write("Menus.ListBox",
-                      "SetActive #%d list=%p — suppressed (module load pending)",
-                      n, listBox);
+                      "SetActive #%d list=%p — suppressed (save-load / module "
+                      "load)", n, listBox);
         return;
     }
 

@@ -304,19 +304,51 @@ void TickLeaderChangeAutoAnnounce() {
     // per-tick activity firing into the engine's teardown window.
     if (acc::transitions::IsModuleLoadPending()) return;
 
-    static char s_lastLeader[64] = "";
+    static char  s_lastLeader[64]   = "";
+    static void* s_lastArea         = nullptr;
+    static DWORD s_areaChangeTick    = 0;
+
+    // Track area-pointer changes. A save-game load OR a module transition
+    // re-establishes the party, so the leader "change" that follows is the
+    // engine wiring up the new party — not a user Tab-switch — and announcing
+    // the PC's name talks over the area-name cue. We re-baseline silently for
+    // a short grace window after any area change. The load_from_savegame flag
+    // can't anchor this: it clears a hair before the new leader becomes
+    // readable (patch-20260614-165512.log — "Bereich: …" and the leader
+    // change both land after the flag has dropped), so the gate missed. The
+    // area-pointer change is the robust anchor — it's exactly what
+    // transitions::SpeakArea fires on.
+    void* area = acc::engine::GetCurrentArea();
+    if (area && area != s_lastArea) {
+        s_lastArea       = area;
+        s_areaChangeTick = GetTickCount();
+    }
+
     char now[64] = "";
     if (!acc::engine::GetActiveLeaderName(now, sizeof(now))) return;
     if (now[0] == '\0') return;
     if (std::strcmp(now, s_lastLeader) == 0) return;
 
     bool wasFirstObservation = (s_lastLeader[0] == '\0');
+    // ~3s covers the lag between the area pointer surfacing and the new
+    // leader name becoming readable (observed simultaneous, same second).
+    constexpr DWORD kAreaChangeGraceMs = 3000;
+    bool recentAreaChange =
+        s_areaChangeTick != 0 &&
+        (GetTickCount() - s_areaChangeTick) < kAreaChangeGraceMs;
     std::strncpy(s_lastLeader, now, sizeof(s_lastLeader) - 1);
     s_lastLeader[sizeof(s_lastLeader) - 1] = '\0';
 
     if (wasFirstObservation) {
         acclog::Write("Combat.PcStat", "first leader observed=[%s]; suppress",
                       now);
+        return;
+    }
+    if (recentAreaChange) {
+        acclog::Write("Combat.PcStat",
+                      "leader changed -> [%s] %lums after area change; suppress "
+                      "(baseline updated)", now,
+                      (unsigned long)(GetTickCount() - s_areaChangeTick));
         return;
     }
     acclog::Write("Combat.PcStat", "leader changed -> [%s]; speaking name only",

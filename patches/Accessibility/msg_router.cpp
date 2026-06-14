@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "engine_offsets.h"   // CExoString, Vector
+#include "engine_area.h"      // IsLoadingSaveGame — engine save-load flag
 #include "engine_player.h"    // GetPlayerPosition — world-live replay gate
 #include "log.h"
 #include "prism.h"
@@ -133,17 +134,22 @@ extern "C" void __cdecl OnAppendToMsgBuffer(void* /*guiInGame*/,
     // once per line. Speaking the whole history back is pure noise; the
     // player only wants to know which area they loaded into, which
     // transitions.cpp::SpeakArea already announces on the area-pointer
-    // change. The distinguishing signal: the replay burst runs while the
-    // player creature is NOT yet live (verified in patch-20260614-151235.log
-    // — party pointers null, "PartyLeader: all paths empty" during the
-    // burst), whereas every genuine in-play message fires with the PC
-    // loaded. Gate on player liveness so live combat/loot narration is
-    // untouched. (Module/door transitions keep the same CGuiInGame and do
+    // change.
+    //
+    // Primary gate: the engine's own load_from_savegame flag
+    // (IsLoadingSaveGame), set across the whole load by CSWGuiSaveLoad::
+    // LoadGame / DoQuickLoad — true for main-menu, in-game AND F9 quickload
+    // restores, false during a plain save and normal play. This catches the
+    // in-game case, where the old player creature lingers so GetPlayerPosition
+    // still succeeds during the replay. The !GetPlayerPosition fallback covers
+    // the main-menu load (no PC at all). Either way live combat/loot narration
+    // is untouched. (Module/door transitions keep the same CGuiInGame and do
     // NOT replay, so this is a no-op there.)
     Vector scratch{};
-    if (!acc::engine::GetPlayerPosition(scratch)) {
-        acclog::Write("MsgBuf", "replay-suppressed (world not live): [%.200s]",
-                      text);
+    if (acc::engine::IsLoadingSaveGame() ||
+        !acc::engine::GetPlayerPosition(scratch)) {
+        acclog::Write("MsgBuf", "replay-suppressed (save-load in progress): "
+                      "[%.200s]", text);
         return;
     }
 
