@@ -3,9 +3,11 @@
 #include <cmath>
 #include <cstdint>
 
+#include "discovery.h"
 #include "engine_area.h"
 #include "engine_player.h"
 #include "log.h"
+#include "menus_modsettings.h"
 
 namespace acc::cycle {
 
@@ -81,6 +83,16 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
     // hard-empty so the cycle-category loop skips them silently. Saves
     // a full area scan + sort per disallowed step on Shift+,/.
     bool mapCtx = (ctx == acc::filter::CycleContext::Map);
+
+    // Discovery tier (the default for the in-world cycle): restrict candidates
+    // to objects the player has organically discovered, UNLESS the "Extended
+    // cycling" mod setting is on — then the cycle widens back to everything in
+    // the area. Map context keeps its own fog-of-war gating and is unaffected.
+    bool discoveryFilter =
+        !mapCtx &&
+        !acc::menus::modsettings::GetToggle(
+            acc::menus::modsettings::Option::ExtendedCycling);
+
     if (mapCtx && !acc::filter::IsMapCycleable(category)) {
         acclog::Write("Cycle",
                       "BuildListing(map) category=%s not-map-cycleable",
@@ -110,6 +122,7 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
             int k = acc::engine::GetObjectKind(obj);
             if (k >= 0 && k < 16) kindCounts[k]++;
             if (!acc::filter::ObjectMatches(obj, category)) continue;
+            if (discoveryFilter && !acc::discovery::IsDiscovered(obj)) continue;
 
             Vector pos;
             if (!acc::engine::GetObjectPosition(obj, pos)) continue;

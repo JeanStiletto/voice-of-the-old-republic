@@ -271,6 +271,26 @@ bool GetAreaDisplayName(void* area, char* outBuf, size_t bufSize) {
     }
 }
 
+bool GetObjectTag(void* gameObject, char* outBuf, size_t bufSize) {
+    if (!gameObject || !outBuf || bufSize < 2) return false;
+    outBuf[0] = '\0';
+    __try {
+        return ReadCExoString(gameObject, kObjectTagOffset, outBuf, bufSize);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool GetAreaTag(void* area, char* outBuf, size_t bufSize) {
+    if (!area || !outBuf || bufSize < 2) return false;
+    outBuf[0] = '\0';
+    __try {
+        return ReadCExoString(area, kAreaTagOffset, outBuf, bufSize);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 bool GetRoomDisplayName(void* area, int roomIndex,
                         char* outBuf, size_t bufSize) {
     if (!area || !outBuf || bufSize < 2 || roomIndex < 0) return false;
@@ -777,6 +797,33 @@ void* GetAreaMap() {
             reinterpret_cast<unsigned char*>(module) + kModuleAreaMapOffset);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return nullptr;
+    }
+}
+
+bool GetCurrentAreaResName(char* outBuf, size_t bufSize) {
+    if (!outBuf || bufSize < 2) return false;
+    outBuf[0] = '\0';
+    void* serverApp = GetServerApp();
+    if (!serverApp) return false;
+    __try {
+        auto getMod = reinterpret_cast<PFN_CServerExoApp_GetModule>(
+            kAddrCServerExoAppGetModule);
+        void* module = getMod(serverApp);
+        if (!module) return false;
+        // CSWSModule::GetModuleResourceName @0x004c4b80 returns a CExoString by
+        // VALUE: hidden out-buffer is the first stack arg, this=module in ECX
+        // (verified: it copy-constructs into the out buffer, so a zero-init
+        // {c_string,len} is safe). We deliberately leak the engine-allocated
+        // c_string — this runs once per area change (matches the engine_reads
+        // leak convention; freeing across the DLL/CRT boundary is riskier).
+        constexpr uintptr_t kAddrGetModuleResourceName = 0x004c4b80;
+        struct { char* p; int len; } out = {nullptr, 0};
+        using PFN = void* (__thiscall*)(void*, void*);
+        reinterpret_cast<PFN>(kAddrGetModuleResourceName)(module, &out);
+        return ReadCExoString(&out, 0, outBuf, bufSize);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        outBuf[0] = '\0';
+        return false;
     }
 }
 

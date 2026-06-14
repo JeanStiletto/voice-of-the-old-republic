@@ -7,6 +7,7 @@
 #include "audio_bus.h"
 #include "audio_cues.h"
 #include "combat_query.h"   // BuildTargetCombatBrief enrichment
+#include "discovery.h"      // organic-discovery recording
 #include "engine_area.h"
 #include "engine_player.h"  // kAddrAppManagerPtr + kClientExoAppInternalOffset chain
 #include "filter_objects.h"
@@ -203,6 +204,13 @@ bool NarrateHandle(uint32_t handle, const char* reason, bool explicitRequest) {
 
     uint32_t serverHandle = acc::engine::GetObjectHandle(obj);
     acc::narrated_target::Stamp(obj, serverHandle);
+
+    // Organic discovery: the player just had this object narrated by focusing
+    // it (passive ShowObject or an explicit Q/E). Record it so the discovery-
+    // tier cycle can resurface it later. No-op for ineligible objects
+    // (items, non-unique creatures). This is the primary discovery channel —
+    // doors, named NPCs, containers all flow through here.
+    acc::discovery::Record(obj);
 
     acclog::Write("PassiveNarrate",
         "%s: 0x%08x cat=%s name=[%s] pos=(%.2f,%.2f,%.2f) havePos=%d serverHandle=0x%08x",

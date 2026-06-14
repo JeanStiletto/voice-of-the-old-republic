@@ -118,6 +118,27 @@ bool GetRoomDisplayName(void* area, int roomIndex,
 // (modder-assigned id).
 bool GetObjectName(void* gameObject, char* outBuf, size_t bufSize);
 
+// CSWSObject.tag CExoString @+0x18 — the modder-assigned, locale-INDEPENDENT
+// object id (e.g. "tar03_mission031"). Unlike GetObjectName this never
+// localizes and never falls back; it's the raw tag or nothing. This is the
+// stable identity component used for the discovery-cycling persistence key.
+// False on empty / fault; outBuf NUL-terminated on entry.
+bool GetObjectTag(void* gameObject, char* outBuf, size_t bufSize);
+
+// CSWSArea.tag CExoString @+0x158 — the area's modder-assigned id. NOTE: in
+// practice this is almost always the GFF default "untitled" (modders rarely set
+// area Tag), so it is NOT a usable per-area key. Prefer GetCurrentAreaResName.
+// False on empty / fault; outBuf NUL-terminated on entry.
+bool GetAreaTag(void* area, char* outBuf, size_t bufSize);
+
+// Current module's resource name via CSWSModule::GetModuleResourceName
+// @0x004c4b80 — the stable, language-INDEPENDENT module/area resref (e.g.
+// "manm26aa"). KOTOR modules are single-area, so this is the canonical per-area
+// id (unlike the area GFF Tag, which defaults to "untitled"). Walks the server
+// module chain; no `area` arg needed. False on no module / fault; outBuf
+// NUL-terminated on entry.
+bool GetCurrentAreaResName(char* outBuf, size_t bufSize);
+
 // Wraps CClientExoApp::GetObjectName(ulong, CExoString*) — the engine's
 // universal accessor. Better than GetObjectName(obj,...) from a handle
 // because it handles empty first_name with the template + appearance.2da

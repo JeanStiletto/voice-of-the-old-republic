@@ -29,7 +29,6 @@
 #include "interact_hotkey.h"  // SpeakWayBlocked — autowalk way-blocked guard
 #include "log.h"
 #include "map_ui_cursor.h"
-#include "menus_modsettings.h"
 #include "narrated_target.h"
 #include "peek_description.h"
 #include "same_name_suffix.h"
@@ -937,16 +936,13 @@ bool TryHandleEvent(int param_1, int param_2) {
             : acc::filter::CycleContext::World;
 
     if (param_1 == kInputKbComma || param_1 == kInputKbPeriod) {
-        // Mod Settings → Extended cycling: when OFF (default), `,` and
-        // `.` are inert in-world; they only respond when the InGameMap
-        // sub-screen is foreground (Map context). The `-` family
-        // (announce / autowalk / beacon) is unaffected — those map to
-        // kInputKbAnnounce below.
-        if (ctx == acc::filter::CycleContext::World &&
-            !acc::menus::modsettings::GetToggle(
-                acc::menus::modsettings::Option::ExtendedCycling)) {
-            return false;
-        }
+        // In-world `,`/`.` are always live: by default they drive the
+        // DISCOVERY tier (only objects the player has organically had
+        // narrated), and the "Extended cycling" mod setting widens the same
+        // keys to everything in the area. That discovery-vs-extended filter
+        // lives in cycle_state::BuildCategoryListing — here we always
+        // dispatch. The `-` family (announce / autowalk / beacon) maps to
+        // kInputKbAnnounce below and is unaffected.
         const bool prev = (param_1 == kInputKbComma);
         // Ctrl+, / Ctrl+. jump to the first / last item of the current
         // category. Ctrl wins over Shift (matches the dash-family
@@ -1023,15 +1019,13 @@ void PollWin32() {
             ? acc::filter::CycleContext::Map
             : acc::filter::CycleContext::World;
 
-    // Mod Settings → Extended cycling: when OFF (default), `,` / `.`
-    // (item + category, both shift variants) are suppressed in World
-    // context. Map context is always live so the user can cycle map
-    // hints regardless. The `-` family below stays unaffected.
-    const bool cycleAllowed =
-        ctx == acc::filter::CycleContext::Map ||
-        acc::menus::modsettings::GetToggle(
-            acc::menus::modsettings::Option::ExtendedCycling);
-    if (cycleAllowed) {
+    // In-world `,`/`.` (item + category, both shift variants) are always
+    // live now: by default they drive the DISCOVERY tier; the "Extended
+    // cycling" mod setting widens the listing to everything. The
+    // discovery-vs-extended filter lives in cycle_state::BuildCategoryListing,
+    // so input always dispatches here. Map context was always live and stays
+    // so. The `-` family below stays unaffected.
+    {
         if (risingCommaItem)      OnCycleItem    (/*prev=*/true,  ctx);
         if (risingCommaCategory)  OnCycleCategory(/*prev=*/true,  ctx);
         if (risingPeriodItem)     OnCycleItem    (/*prev=*/false, ctx);

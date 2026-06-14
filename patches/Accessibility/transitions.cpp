@@ -8,6 +8,7 @@
 
 #include "bringup_announce.h" // IsMovieWindowForeground — gate speech during movies
 #include "combat.h"          // IsCombatActive — gate room-change speech
+#include "discovery.h"       // discovery-tier area reconciliation + landmark record
 #include "engine_area.h"
 #include "engine_input.h"    // ForceReacquireInput — post-load DirectInput re-grab
 #include "engine_panels.h"   // IsForegroundUiBlocking — gate vs. menus / dialogs
@@ -101,9 +102,10 @@ int   g_pending_cluster_count = 0;
 // waypoints each. Cache is invalidated (zeroed) on every area change.
 constexpr int kMaxLandmarks = 128;
 struct Landmark {
-    char   name[128];
-    Vector pos;
-    bool   doorMatched;
+    char     name[128];
+    Vector   pos;
+    bool     doorMatched;
+    uint32_t handle;       // server handle of the source waypoint — for discovery::Record
 };
 Landmark g_landmarks[kMaxLandmarks];
 int      g_landmark_count = 0;
@@ -152,6 +154,7 @@ void RebuildLandmarkCache(void* area) {
         g_landmarks[i].name[0]     = '\0';
         g_landmarks[i].pos         = {0, 0, 0};
         g_landmarks[i].doorMatched = false;
+        g_landmarks[i].handle      = 0;
     }
     g_landmark_count = 0;
 
@@ -193,6 +196,7 @@ void RebuildLandmarkCache(void* area) {
         lm.name[sizeof(lm.name) - 1] = '\0';
         lm.pos         = pos;
         lm.doorMatched = false;
+        lm.handle      = acc::engine::GetObjectHandle(obj);
         acclog::Write("Transition",
                       "landmark[%d] '%s' pos=(%.2f,%.2f,%.2f)",
                       g_landmark_count, note, pos.x, pos.y, pos.z);
@@ -611,6 +615,13 @@ void TickProximityLandmarks(const Vector& playerPos) {
         acclog::Write("Transition",
                       "landmark proximity -> '%s' (idx=%d dist=%.2fm)",
                       g_landmarks[nearest].name, nearest, std::sqrt(bestD2));
+        // Organic discovery: the player walked close enough to hear this
+        // landmark named. Record the source waypoint so the discovery-tier
+        // cycle can resurface it. Only on the spoken (non-gated) path —
+        // a silently-advanced gate means the player never heard it.
+        void* lmObj = acc::engine::ResolveServerObjectHandle(
+            g_landmarks[nearest].handle);
+        if (lmObj) acc::discovery::Record(lmObj);
     }
     g_lm_prox_last_spoken_idx = nearest;
     g_lm_prox_pending_idx     = -1;
@@ -775,6 +786,13 @@ void Tick() {
         // get a false-positive validation). Explicit Clear is the safe
         // path.
         acc::narrated_target::Clear();
+        // Reconcile the discovery-tier index for the new area: capture its
+        // tag and clear the in-memory set. The actual read of the save var is
+        // deferred (discovery::Tick) until the player creature's table has
+        // settled — a read here, on the save-load tick, can race
+        // CSWSObject::LoadObjectState. On a normal walk-through transition the
+        // creature isn't reloaded, so this is effectively just a re-key.
+        acc::discovery::OnAreaChanged(area);
         // Rebuild the per-room landmark cache for the new area before
         // any room-change branch can fire — the first room announce
         // after an area change should already use the curated label

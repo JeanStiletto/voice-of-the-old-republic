@@ -34,9 +34,12 @@ char s_rootSentinel = 0;
 
 // Toggle state. In-memory only — persistence is a follow-up.
 //
-// Defaults per user 2026-05-27:
-//   - ExtendedCycling = OFF. `,` and `.` are inert in-world; only the
-//     map cycle path responds. User opts in if they want world cycle.
+// Defaults per user 2026-05-27 (ExtendedCycling semantics revised 2026-06-14):
+//   - ExtendedCycling = OFF. In-world `,`/`.` are ALWAYS live; OFF means the
+//     cycle is restricted to the DISCOVERY tier (objects the player has
+//     organically had narrated — see discovery.*). Turning it ON widens the
+//     cycle to everything in the area (the old "extended/spoilery" listing).
+//     The filter lives in cycle_state::BuildCategoryListing.
 //   - RoomShapes      = ON. Preserves the current corridor / junction /
 //     Platz announce flow on cluster transitions.
 //   - WallSounds      = ON. Preserves the Pillar 1 wall-cue beats.

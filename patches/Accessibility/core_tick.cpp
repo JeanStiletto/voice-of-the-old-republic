@@ -17,6 +17,7 @@
 #include "cycle_input.h"
 #include "diag_focus.h"
 #include "dialog_speech.h"
+#include "discovery.h"
 #include "engine_player.h"
 #include "engine_subscreen.h"
 #include "examine_view.h"
@@ -330,6 +331,9 @@ void Dispatch() {
 
     // Area + room transition announces.
     PHASE("transitions", acc::transitions::Tick());
+
+    // Discovery-tier deferred load (runs after transitions has set the area).
+    PHASE("discovery", acc::discovery::Tick());
 
     PHASE("view_mode", acc::view_mode::Tick());
 
