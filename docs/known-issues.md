@@ -20,18 +20,6 @@ The mod's promise is "no mouse, no screen," yet several code paths silently assu
 
 Secondary finding from the same session log: `Lang: unknown LanguageID=5; defaulting to German`. LanguageID 5 is Polish; we had no mapping for it. Fixed: `DetectLanguageFromTlk` in `core_dllmain.cpp` now defaults to English (`L::En`) on every fallback path — unrecognised LanguageID, unreadable/bad `dialog.tlk`, and the path-resolution failures — since English is the most universal fallback for the non-DE user base. A correctly-installed DE copy still detects LanguageID=2 → German. Still tracks with the "Integrate a Polish translation" Planned item for proper PL labels.
 
-### Character occasionally spins erratically in-world
-
-The player character sometimes starts spinning around with no apparent trigger. Root cause unknown — no reliable repro yet. Likely candidates: a stale movement command we're re-queuing, an AI-action conflict with our autowalk path, or a camera-orient call leaking onto the creature. Needs a way to capture the offending tick (timestamped patch log + screen-reader narration of what happened just before).
-
-### Menus lag noticeably on first open
-
-The first open of a menu panel in a session has a perceptible delay; subsequent opens of the same panel are smooth. Likely first-touch cost of our menu wiring (string-table lookup, listbox enumeration, voice/SAPI warm-up). Profile a cold open against a warm one via `kdev logs` timestamps to identify the slow stage.
-
-### Map-hint filter double-announces items
-
-Items in the map-hint filter are announced twice on a single cycle step. Likely a duplicate fire — one from our cycle dispatcher and one from an engine-side re-narration path, or the unified Map-hint category folding waypoints + pins announces both rows for a single underlying object. See `project_map_cycle_architecture.md` for the category structure.
-
 ### Endless leveling bug
 
 The character can keep levelling up with no cap enforced — the level-up flow can be entered/applied repeatedly past where it should stop. Needs a clean repro (class, current level, and entry path — Shift+L vs the engine's own level-up prompt) and a check of whether our level-up wiring (`engine_levelup.cpp`, `menus_powers_levelup.cpp`) is re-firing the apply, or the engine is being driven twice.
@@ -44,6 +32,10 @@ The in-game tutorial popups (`Tutorial Popups=1`) may not be read aloud correctl
 
 In some droid conversations not every reply option is read while cycling the choices. Possibly a listbox enumeration miss or an options-changed re-read race. Note which droid / conversation; check the option enumeration in `dialog_speech.cpp`.
 
+### Dialogue options read mistakenly as deactivated
+
+Some dialogue reply options are announced as deactivated/unavailable when they're actually selectable. The "deactivated" tag is being applied to options the player can choose, so a usable reply sounds like a dead end. Likely a misread of the option's active/enabled state in the reply enumeration. Note the conversation and which option(s) are mis-tagged, and check the active-state read in `dialog_speech.cpp`.
+
 ### Hacking/security dialogues — options read twice, plus general jank
 
 Computer-spike / security "dialogues" read their options twice, and the interaction feels janky/slow. Likely the same double-read path as the Shift+Down item below (our description/option reader firing alongside an engine re-narration on the menu's option refresh). Confirm whether it's the engine re-firing or our reader, and whether the jank is a separate per-tick cost.
@@ -51,10 +43,6 @@ Computer-spike / security "dialogues" read their options twice, and the interact
 ### Shift+Down reads descriptions twice (Journal, items)
 
 Pressing Shift+Down to read a full description often reads it twice — seen in the Journal and on items. Duplicate fire between our Shift+arrow description reader and an engine re-narration, or a missing Consume so the key both drives our read and falls through. Same shape as the hacking double-read above; likely one root cause.
-
-### Subtitle filter regression — barks still read (voiced-speaker suppression)
-
-Regression from the voiced-speaker subtitle suppression change (CHANGELOG: "Untertitel vertonter Sprecher vorlesen"), in `dialog_speech.cpp`'s speaker classification: **some barks / ambient one-liner lines still have their subtitles read** over the audio, when the filter should already cover them (under-suppressing). We already have the suppression code; it's mis-classifying these. Tune the voiced-speaker vs read-anyway decision so every voiced line (including barks) is suppressed. (The companion over-suppression case — Zaalbar's alien speech going unread — is under Unreproduced.)
 
 ### Combat target-options columns stick when targets are far away
 
