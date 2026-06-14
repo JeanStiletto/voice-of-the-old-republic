@@ -150,8 +150,14 @@ bool IsNeverSuppressTag(const char* tag) {
 //     dancer/crowd model. But Cassandra (Manaan Ahto East) speaks Basic with
 //     full VO, so her subtitle clashed with the voice. Suppress by tag.
 //     (Reported in-game 2026-06-11; inverse of the Vek case above.)
+//   - "man28_merc": the surviving Republic mercenary barricaded in the Hrakert
+//     Rift station (Manaan, module 28). Wears appearance 269, which classifies
+//     non-human, but he is human (race == HUMAN) and voiced in Basic with full
+//     VO, so his subtitle is redundant and clashed with the voice. Same case as
+//     Cassandra. (Reported in-game 2026-06-14.)
 constexpr const char* kAlwaysSuppressTags[] = {
     "man26_casandra",
+    "man28_merc",
 };
 
 bool IsAlwaysSuppressTag(const char* tag) {

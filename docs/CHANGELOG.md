@@ -21,6 +21,14 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.5.3</h2>
+
+<h3>Bug fixes:</h3>
+
+- Hacking and computer-terminal dialogue options are no longer read twice. When you arrowed through the choices on a security or computer-spike terminal, each option was spoken twice in a row — once with its position and once without — because two parts of the mod were both announcing it. Now each option is read once, together with its position in the list ("Hack the computer… , 1 of 2").
+- Computer-terminal options are no longer wrongly announced as unavailable. Some perfectly selectable choices on hacking and security terminals were read as disabled, because the mod was checking a flag on the option that tracks which row is highlighted rather than whether the option can be picked. That false "unavailable" tag is gone; the game already leaves out options you genuinely can't choose, so anything listed can be selected.
+- A mercenary on Manaan no longer has his lines read aloud over his own voice. The surviving Republic mercenary barricaded in the Hrakert Rift station is voiced in full, but because of his appearance the mod treated him as a non-speaking alien and read his subtitles on top of the voice acting. He's now on the list of voiced characters whose subtitles stay quiet, so you simply hear him speak.
+
 <h2>v0.5.2</h2>
 
 <h3>New features:</h3>

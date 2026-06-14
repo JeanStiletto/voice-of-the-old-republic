@@ -837,39 +837,16 @@ void* DialogFindRepliesLb(void* p) {
     return reinterpret_cast<unsigned char*>(p) + kDialogRepliesListBoxOffset;
 }
 
-void DialogReplyAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
-    if (!r.row) return;
-    char rowText[512];
-    if (!acc::menus::extract::FromControl(r.row, rowText, sizeof(rowText))) {
-        return;
-    }
-    // is_active gate (CSWGuiControl.is_active @+0x4c) â€” when non-zero the
-    // reply is selectable; zero means the engine greyed it out
-    // (skill-check / alignment-locked). Append a "(unavailable)" suffix
-    // so the user knows.
-    bool active = true;
-    __try {
-        active = *(reinterpret_cast<unsigned char*>(r.row) +
-                   kControlIsActiveOffset) != 0;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        active = true;
-    }
-    char msg[640];
-    if (active) {
-        snprintf(msg, sizeof(msg),
-                 acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
-                 rowText, r.newSel + 1, r.rowCount);
-    } else {
-        snprintf(msg, sizeof(msg),
-                 acc::strings::Get(
-                     acc::strings::Id::FmtDialogReplyUnavailableRow),
-                 rowText,
-                 acc::strings::Get(
-                     acc::strings::Id::DialogReplyUnavailable),
-                 r.newSel + 1, r.rowCount);
-    }
-    prism::Speak(msg, /*interrupt=*/false);
-}
+// Dialogue reply panels intentionally have NO announce callback: the engine
+// does not navigate the reply listbox by keyboard, so the dialog specs exist
+// only to DRIVE the listbox cursor (DriveListBoxSelection) and CONSUME the nav
+// keys. The actual speech is owned solely by MonitorDialogReplies (a per-tick
+// poll), which catches both engine-driven changes (the first reply when a node
+// opens) and our cursor moves. Having a second announce here read every nav
+// keypress was the "options read twice" bug; its is_active@+0x4c "unavailable"
+// gate also mis-fired on selectable replies (the field tracks highlight state
+// on a reply row, not selectability), which was the "shown disabled but
+// actually available" bug. Both are gone now that the poll is the only speaker.
 
 constexpr ListBoxPanelSpec kDialogCinematicSpec = {
     /*logTag*/                  "DialogCinematic",
@@ -878,7 +855,7 @@ constexpr ListBoxPanelSpec kDialogCinematicSpec = {
     /*resetStale*/              nullptr,
     /*findListBox*/             DialogFindRepliesLb,
     /*minSel*/                  0,
-    /*announce*/                DialogReplyAnnounce,
+    /*announce*/                nullptr,
     /*enrichRow*/               nullptr,
     /*logExtra*/                nullptr,
     /*onEnter*/                 nullptr,
@@ -894,7 +871,7 @@ constexpr ListBoxPanelSpec kDialogCinematicCopySpec = {
     /*resetStale*/              nullptr,
     /*findListBox*/             DialogFindRepliesLb,
     /*minSel*/                  0,
-    /*announce*/                DialogReplyAnnounce,
+    /*announce*/                nullptr,
     /*enrichRow*/               nullptr,
     /*logExtra*/                nullptr,
     /*onEnter*/                 nullptr,
@@ -910,7 +887,7 @@ constexpr ListBoxPanelSpec kDialogComputerSpec = {
     /*resetStale*/              nullptr,
     /*findListBox*/             DialogFindRepliesLb,
     /*minSel*/                  0,
-    /*announce*/                DialogReplyAnnounce,
+    /*announce*/                nullptr,
     /*enrichRow*/               nullptr,
     /*logExtra*/                nullptr,
     /*onEnter*/                 nullptr,
@@ -926,7 +903,7 @@ constexpr ListBoxPanelSpec kDialogComputerCameraSpec = {
     /*resetStale*/              nullptr,
     /*findListBox*/             DialogFindRepliesLb,
     /*minSel*/                  0,
-    /*announce*/                DialogReplyAnnounce,
+    /*announce*/                nullptr,
     /*enrichRow*/               nullptr,
     /*logExtra*/                nullptr,
     /*onEnter*/                 nullptr,
@@ -1392,7 +1369,9 @@ bool DispatchKeyDownEdge(const ListBoxPanelSpec& spec, void* panel,
         ListBoxNavResult r;
         if (lb && DriveListBoxSelection(lb, op,
                                         static_cast<short>(spec.minSel), r)) {
-            spec.announce(lb, r);
+            // Specs with no announce callback (dialogue replies) drive the
+            // cursor + consume the key here but defer speech to a poll monitor.
+            if (spec.announce) spec.announce(lb, r);
             if (spec.enrichRow) spec.enrichRow(panel, r);
             char extra[128] = {0};
             if (spec.logExtra) spec.logExtra(extra, sizeof(extra), r);

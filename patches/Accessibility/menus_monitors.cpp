@@ -648,7 +648,15 @@ void MonitorDialogReplies() {
         acclog::Write("Menus.DialogReply", "selected: panel=%p kind=%s listbox=%p "
                       "sel=%d (was %d) src=%s text=\"%s\"",
                       fg, PanelKindName(k), lb, selIdx, prev, src, text);
-        prism::Speak(text, /*interrupt=*/false);
+        // Sole speaker for dialogue replies (the input path drives the cursor
+        // silently — see the no-announce note on the dialog specs in
+        // menus_listbox.cpp). Append the "%d von %d" position so the user knows
+        // how many replies there are.
+        char msg[320];
+        snprintf(msg, sizeof(msg),
+                 acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
+                 text, selIdx + 1, lbList->size);
+        prism::Speak(msg, /*interrupt=*/false);
     } else {
         char vtbl[160];
         DumpControlVtable(row, vtbl, sizeof(vtbl));

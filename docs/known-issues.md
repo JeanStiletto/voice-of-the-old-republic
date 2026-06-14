@@ -32,17 +32,9 @@ The in-game tutorial popups (`Tutorial Popups=1`) may not be read aloud correctl
 
 In some droid conversations not every reply option is read while cycling the choices. Possibly a listbox enumeration miss or an options-changed re-read race. Note which droid / conversation; check the option enumeration in `dialog_speech.cpp`.
 
-### Dialogue options read mistakenly as deactivated
-
-Some dialogue reply options are announced as deactivated/unavailable when they're actually selectable. The "deactivated" tag is being applied to options the player can choose, so a usable reply sounds like a dead end. Likely a misread of the option's active/enabled state in the reply enumeration. Note the conversation and which option(s) are mis-tagged, and check the active-state read in `dialog_speech.cpp`.
-
-### Hacking/security dialogues — options read twice, plus general jank
-
-Computer-spike / security "dialogues" read their options twice, and the interaction feels janky/slow. Likely the same double-read path as the Shift+Down item below (our description/option reader firing alongside an engine re-narration on the menu's option refresh). Confirm whether it's the engine re-firing or our reader, and whether the jank is a separate per-tick cost.
-
 ### Shift+Down reads descriptions twice (Journal, items)
 
-Pressing Shift+Down to read a full description often reads it twice — seen in the Journal and on items. Duplicate fire between our Shift+arrow description reader and an engine re-narration, or a missing Consume so the key both drives our read and falls through. Same shape as the hacking double-read above; likely one root cause.
+Pressing Shift+Down to read a full description often reads it twice — seen in the Journal and on items. Duplicate fire between our Shift+arrow description reader and an engine re-narration, or a missing Consume so the key both drives our read and falls through. (The superficially similar hacking-dialogue double-read, fixed in v0.5.3, turned out to be two separate reply readers — an input-path announce plus a poll monitor — both speaking; worth checking whether this Shift+Down case is the same shape: a second reader rather than a missing Consume.)
 
 ### Combat target-options columns stick when targets are far away
 
@@ -86,6 +78,18 @@ Add Polish as a supported language. Decide the integration path — installer lo
 ### Alternative hotkeys for Alt/Ctrl-bound actions
 
 Some of our actions are bound to Alt+ and Ctrl+ key combinations, which not every user can reach — some keyboards/layouts make those modifiers awkward or unavailable. Offer alternative (and ideally rebindable) bindings so these actions are reachable without the Alt/Ctrl chord.
+
+### Configurable mod keybinds
+
+Let players rebind the mod's own hotkeys, the way the game's Key Mapping screen rebinds the engine controls. Right now every mod key (cycling, targeting, the action menu, autowalk/beacon, F1 help, and so on) is hardcoded, so a user whose layout, screen reader, or physical reach clashes with one of them has no way out. Decide the surface (an extra section in the in-game Key Mapping flow vs. a Mod-Settings screen vs. an `acc_settings.ini` block), how to persist and validate bindings, and how to handle conflicts with engine keys. Supersedes/absorbs the "Alternative hotkeys for Alt/Ctrl-bound actions" item above once shipped.
+
+### Nameable personal map pins
+
+Let players give their own map pins a name when they drop one, and read that name back when cycling to the pin. Personal pins currently announce only a generic label plus position, so a player who marks several spots can't tell them apart. Needs a text-entry path that works from the keyboard with a screen reader (see the save-naming item below — likely the same input mechanism), storage of the label alongside the pin in the save, and the cycle/focus announcements updated to speak it. See `project_narrated_target_unified.md` / `map_user_markers.cpp`.
+
+### More accessible save naming
+
+Make naming a save game accessible. The save-name entry field isn't readable/usable with a screen reader today, so players can't tell what they're typing, can't review or edit an existing name, and fall back on default slot names. Needs the text field's current contents read on focus, characters/edits echoed as they're typed, and a clear confirm/cancel — the same keyboard text-entry mechanism the nameable-pins item above will need.
 
 ### Improved tutorial for mod users
 
