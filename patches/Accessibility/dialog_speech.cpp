@@ -124,9 +124,15 @@ struct SpeakerInfo {
 //     without un-suppressing the Sith mooks, so Vek is exempted by tag.
 //     (Reported in-game 2026-06-10; supersedes the 2026-06-09 model-only
 //     verification that assumed every 376 wearer was Basic-voiced.)
+//   - "tat17_03komad_01": Komad Fortuna, the hunter-guild member outside
+//     Anchorhead (Tatooine, module tat17). Wears appearance 445, which
+//     classifies human, but he is a Twi'lek voiced in alien Twi'leki, so his
+//     translated subtitle is the player's only channel. Same case as Vek.
+//     (Reported in-game 2026-06-15.)
 constexpr const char* kNeverSuppressTags[] = {
     "sasha",
     "vek",
+    "tat17_03komad_01",
 };
 
 bool IsNeverSuppressTag(const char* tag) {
