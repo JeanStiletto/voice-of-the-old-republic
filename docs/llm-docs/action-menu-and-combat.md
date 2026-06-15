@@ -260,7 +260,17 @@ menu opens without pausing (matching vanilla) and Esc speaks an explicit
 
 ## Engine quirks worth remembering
 
-- **6↔7 slot inversion.** The engine's `case 0xec` (key 6) calls `DoPersonalAction(slot=3)` and `case 0xee` (key 7) calls `DoPersonalAction(slot=2)`. Our submenu / bare-key paths must mirror this swap or the column the user cycles isn't the column the dispatch fires. Fixed in `interact_hotkey.cpp`'s `risingOpen3/4` and `risingK6/7` branches.
+- **Personal-key dispatch is LINEAR — there is NO 6↔7 slot swap.** (Corrected 2026-06-15; an earlier version of this note claimed an inversion — that was wrong, see below.) `DoPersonalAction` fires column `N-4` for key `N`:
+  - key 4 → column 0 (Friendly Force / self powers)
+  - key 5 → column 1 (Medical)
+  - key 6 → column 2 (Misc / Sonstiges)
+  - key 7 → column 3 (Explosives / Sprengstoffe)
+
+  Subtlety that fed the old mistake: the **logical input codes** for keys 6 and 7 are themselves swapped — keyboard **6 emits `0xee`**, keyboard **7 emits `0xec`** (keys 4/5 are `0xe8`/`0xea`, sequential). So *by logical code* the dispatch is `0xe8`→col0, `0xea`→col1, `0xee`→col2, `0xec`→col3. The `input_pipeline.cpp` restamp switch is keyed on logical code and is correct as `0xec`→3, `0xee`→2.
+
+  Our announce / menu-opener paths must be **linear** too (`risingK6`→col2 / `risingK7`→col3; `risingOpen3`→col2 / `risingOpen4`→col3 in `interact_hotkey.cpp`, and the F1 help list in `help.cpp`). They were previously *swapped* to match the mythical inversion, which made the spoken label point at the opposite column from what fired ("press 7 for Sonstiges, get an explosive"; on the Manaan seabed pressing 7 for the sonic emitter announced it but hit the empty Explosives column, while bare 6 used it silently).
+
+  **Why the inversion was believed and how it was disproven:** the original RE compared the *key pressed* against our own **announce** (which was itself swapped), not against a real engine fire. Ground truth came from a clean seabed log (`patch-20260615-010243`, only the Schallgenerator present, in column 2): bare **6** produced `benutzt Schallgenerator` (column 2) while bare **7** routed to the empty column 3. When pinning a key→column mapping, verify against a `Combat.MsgBuf benutzt <item>` / `ADD [PLAYER]` line, never against our own announce.
 
 - **Next-attack feats don't queue.** Critical Strike, Power Attack, Flurry, Power Blast etc. apply as **immediate stat modifiers consumed by the next attack**, not as `CSWSCreature.combat_round.actions` entries. So `Combat.SpecialWatch` will report `specials=0` even when these feats are firing correctly. The signal that they fired is the next `Combat.Attack` line carrying out-of-range damage (e.g., vibroblade rolling 8+ instead of the normal 2-7 cap).
 
