@@ -183,20 +183,6 @@ void ResolvePinNoteText(void* pin, char* outBuf, size_t bufSize) {
     }
 }
 
-// North-to-south world ordering. KOTOR's +Y axis points north (the
-// compass derives heading as 90 - engineYaw, so a bearing of due north
-// corresponds to increasing Y), which makes the greatest-Y entry the
-// northmost. Ranking greatest-Y-first therefore numbers from north to
-// south; X then Z break exact ties so the order is total and reproducible.
-// Because the rank keys purely off fixed world position — never the player
-// or cycle order — the same marker keeps its number across every visit,
-// save, and player.
-bool PositionLess(const Vector& a, const Vector& b) {
-    if (a.y != b.y) return a.y > b.y;  // greater Y = more north = ranks first
-    if (a.x != b.x) return a.x < b.x;
-    return a.z < b.z;
-}
-
 // Resolve listing entry `idx`'s spoken label, mirroring AnnounceCurrent's
 // focused-entry cascade so the same-name comparison used for numbering
 // keys off exactly the string the user hears. Returns an empty key when no
@@ -220,19 +206,24 @@ void ResolveEntryName(const acc::cycle::CategoryListing& listing, int idx,
     }
 }
 
-// Append a north-to-south positional ordinal to a static entry's name when
+// Append a north-to-south positional ordinal to a LISTING entry's name when
 // two or more entries in the listing share the same spoken label. Designer
-// map "hints" (Nordpfad ×4, Südlicher Pfad ×N) and duplicate placeables
-// (Fußlocker ×3) repeat the same label; the appended number lets the user
-// refer back to a specific one. Stateless and recomputed from world
-// position each call, so — being a pure function of the entry's fixed
-// coordinates — "Nordpfad 3" is the same marker every visit, on every save,
-// for every player, regardless of entry direction or distance.
+// map "hints" (Nordpfad ×4) and duplicate placeables (Fußlocker ×3) repeat
+// the same label; the appended number lets the user refer back to a specific
+// one.
 //
-// Pins and like-shaped peers are numbered among themselves. Used for pins
-// and static world objects (doors, placeables, containers, transitions,
-// map-note waypoints); creatures move, so position-ranking would swap their
-// numbers as they walk — they keep the handle-keyed serial instead.
+// Listing-relative (ranks within `listing`, not the whole area) — used only
+// for the MAP context, where the listing is the full eligible pin/landmark
+// set (never discovery-filtered), so listing-relative already equals global.
+// It also handles map pins + map-note waypoints, whose spoken label comes
+// from pin note_text / GetWaypointMapNote rather than GetObjectName, so the
+// area-scanning AppendAreaPositionOrdinal can't substitute here.
+//
+// World-context statics instead go through acc::narration::AppendDisambiguator
+// → AppendAreaPositionOrdinal, which ranks against the WHOLE area (not the
+// discovery-filtered listing) so a number can't shift as more peers are
+// discovered, and matches the number the Q/E focus path speaks for the same
+// object.
 void AppendPositionOrdinal(const acc::cycle::CategoryListing& listing,
                            int focusedIndex, bool mapHint, char* name,
                            size_t nameSize) {
@@ -253,7 +244,8 @@ void AppendPositionOrdinal(const acc::cycle::CategoryListing& listing,
         ResolveEntryName(listing, j, mapHint, other, sizeof(other));
         if (std::strcmp(other, focusKey) != 0) continue;
         ++peerCount;
-        if (j != focusedIndex && PositionLess(listing.positions[j], fp)) {
+        if (j != focusedIndex &&
+            acc::narration::PositionLess(listing.positions[j], fp)) {
             ++rank;
         }
     }
@@ -350,24 +342,27 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
 
     // Disambiguate same-name entries with a stable ordinal, so repeated
     // labels ("Nordpfad" ×4, "Kath-Hund" ×3) are individually referable.
-    // Two keying strategies by mobility:
-    //  - Static entries (pins, doors, placeables, containers, transitions,
-    //    map-note waypoints) number by north-to-south world position, so
-    //    "Nordpfad 3" is the same marker every visit, save, and player —
-    //    a global reference frame independent of entry direction or
-    //    distance.
+    // Two keying strategies by mobility, and they must match what the Q/E
+    // focus path speaks for the same object:
+    //  - Static objects number by north-to-south world position, so
+    //    "Nordpfad 3" is the same marker every visit, save, and player — a
+    //    global reference frame independent of entry direction or distance.
     //  - Creatures move; position-ranking would swap their numbers as they
-    //    walk. They keep the handle-keyed same-name suffix instead —
-    //    assigned once per object, persists for the area lifetime, and
-    //    shares buckets with combat/passive narration so a given creature
-    //    keeps one number everywhere.
-    bool useHandleSerial =
-        !isPin && s.category == acc::filter::CycleCategory::Npc;
-    if (useHandleSerial) {
-        acc::narration::AppendSuffix(s.focusedObj, name, sizeof(name));
-    } else {
+    //    walk. They keep the handle-keyed same-name suffix instead, shared
+    //    with combat/passive narration so a creature keeps one number
+    //    everywhere.
+    // Map context uses the listing-relative AppendPositionOrdinal: its
+    // listing is the full eligible set (never discovery-filtered), and it
+    // alone resolves pin / map-note labels. World context funnels through
+    // acc::narration::AppendDisambiguator — the SAME entry point Q/E uses —
+    // which routes creatures to the serial and statics to the whole-area
+    // position ordinal (stable as more peers are discovered).
+    if (mapCtx) {
         AppendPositionOrdinal(listing, s.focusedIndex, mapHint, name,
                               sizeof(name));
+    } else {
+        acc::narration::AppendDisambiguator(s.focusedObj, s.category, name,
+                                            sizeof(name));
     }
 
     Vector playerPos;

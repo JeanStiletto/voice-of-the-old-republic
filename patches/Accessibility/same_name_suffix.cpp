@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "engine_area.h"
+#include "filter_objects.h"
 #include "log.h"
 #include "state_overrides.h"
 #include "strings.h"
@@ -132,7 +133,74 @@ void AppendSuffix(void* gameObject, char* outBuf, size_t bufSize) {
     }
 }
 
-bool GetSpokenName(void* gameObject, char* outBuf, size_t bufSize) {
+bool PositionLess(const Vector& a, const Vector& b) {
+    if (a.y != b.y) return a.y > b.y;  // greater Y = more north = ranks first
+    if (a.x != b.x) return a.x < b.x;
+    return a.z < b.z;
+}
+
+void AppendAreaPositionOrdinal(void* gameObject,
+                               acc::filter::CycleCategory category,
+                               char* outBuf, size_t bufSize) {
+    if (!gameObject || !outBuf || bufSize < 4 || outBuf[0] == '\0') return;
+
+    Vector focusPos;
+    if (!acc::engine::GetObjectPosition(gameObject, focusPos)) return;
+
+    void* area = acc::engine::GetCurrentArea();
+    if (!area) return;
+
+    // outBuf holds the spoken base name; rank against same-category peers
+    // whose spoken name (engine GetObjectName) matches it. Keying off the
+    // spoken string — not a raw tag — keeps numbering aligned with what the
+    // user actually hears, and shared with the Q/E path which keys the same
+    // way. Both the focus (Q/E resolves the server twin via +0xf8; the cycle
+    // listing comes straight off the iterator) and the scan candidates are
+    // server objects, so pointer identity below is reliable.
+    char focusKey[128];
+    std::strncpy(focusKey, outBuf, sizeof(focusKey) - 1);
+    focusKey[sizeof(focusKey) - 1] = '\0';
+
+    int rank      = 1;  // 1-based, northmost = 1
+    int peerCount = 0;
+    acc::engine::AreaObjectIterator it(area);
+    while (void* cand = it.Next()) {
+        if (!acc::filter::ObjectMatches(cand, category)) continue;
+        char other[128];
+        if (!acc::engine::GetObjectName(cand, other, sizeof(other)) ||
+            std::strcmp(other, focusKey) != 0) {
+            continue;
+        }
+        ++peerCount;
+        if (cand == gameObject) continue;  // self never ranks north of itself
+        Vector cp;
+        if (!acc::engine::GetObjectPosition(cand, cp)) continue;
+        if (PositionLess(cp, focusPos)) ++rank;
+    }
+
+    if (peerCount < 2) return;  // unique label — no number needed
+    size_t curLen = std::strlen(outBuf);
+    if (curLen + 5 < bufSize) {
+        std::snprintf(outBuf + curLen, bufSize - curLen, " %d", rank);
+    }
+}
+
+void AppendDisambiguator(void* gameObject, acc::filter::CycleCategory category,
+                         char* outBuf, size_t bufSize) {
+    // Mobile creatures keep the encounter-order serial (a spatial rank would
+    // swap their numbers as they walk); every static object gets the
+    // position-stable global ordinal. This is the single decision point both
+    // the Q/E and in-world cycle paths funnel through, so the same object
+    // hears one number regardless of which surface narrated it.
+    if (category == acc::filter::CycleCategory::Npc) {
+        AppendSuffix(gameObject, outBuf, bufSize);
+    } else {
+        AppendAreaPositionOrdinal(gameObject, category, outBuf, bufSize);
+    }
+}
+
+bool GetSpokenName(void* gameObject, acc::filter::CycleCategory category,
+                   char* outBuf, size_t bufSize) {
     if (!gameObject || !outBuf || bufSize < 2) return false;
     outBuf[0] = '\0';
 
@@ -140,7 +208,7 @@ bool GetSpokenName(void* gameObject, char* outBuf, size_t bufSize) {
         outBuf[0] == '\0') {
         return false;
     }
-    AppendSuffix(gameObject, outBuf, bufSize);
+    AppendDisambiguator(gameObject, category, outBuf, bufSize);
     acc::state::AppendStateLabel(gameObject, outBuf, bufSize);
     AppendEmptyContainerLabel(gameObject, outBuf, bufSize);
     return true;

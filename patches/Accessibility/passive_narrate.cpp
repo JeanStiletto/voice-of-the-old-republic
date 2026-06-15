@@ -178,7 +178,7 @@ bool NarrateHandle(uint32_t handle, const char* reason, bool explicitRequest) {
     bool havePos = acc::engine::GetObjectPosition(obj, pos);
 
     char name[128] = "";
-    if (!acc::narration::GetSpokenName(obj, name, sizeof(name)) ||
+    if (!acc::narration::GetSpokenName(obj, cat, name, sizeof(name)) ||
         name[0] == '\0') {
         std::snprintf(name, sizeof(name), "%s",
                       acc::strings::Get(CategoryNameId(cat)));
