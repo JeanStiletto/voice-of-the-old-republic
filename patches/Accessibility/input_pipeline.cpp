@@ -172,14 +172,16 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
         return 1;  // consume → consumed_exit 0x00622120 (POP*5 + RET 8)
     }
 
-    // Bare 1..7 dispatch prep. Decompile session 2026-05-21 confirmed:
+    // Bare 1..7 dispatch prep. Logical codes (raw input logs + decompile):
     //   * The engine's keymap routes bare 1..3 → logical action codes
     //     0xe2/0xe4/0xe6 (DoTargetAction row 0/1/2).
-    //   * Bare 4..7 → 0xe8/0xea/0xec/0xee. Slot mapping is NOT linear:
-    //         key 4 → DoPersonalAction(slot=0)  Friendly Force
-    //         key 5 → DoPersonalAction(slot=1)  Medical
-    //         key 6 → DoPersonalAction(slot=3)  ← Mine (engine swaps)
-    //         key 7 → DoPersonalAction(slot=2)  ← Misc (engine swaps)
+    //   * Bare 4..7 → DoPersonalAction, LINEAR in key number (key N → column
+    //     N-4). The logical codes for 6/7 are themselves swapped (key 6=0xee,
+    //     key 7=0xec), so by logical code:
+    //         0xe8 (key 4) → DoPersonalAction(slot=0)  Friendly Force
+    //         0xea (key 5) → DoPersonalAction(slot=1)  Medical
+    //         0xee (key 6) → DoPersonalAction(slot=2)  Misc (Sonstiges)
+    //         0xec (key 7) → DoPersonalAction(slot=3)  Explosives
     //   * Both DoTargetAction and DoPersonalAction read `creature_id` from
     //     the action-list item (CSWGuiInterfaceAction+0x1c) and bail
     //     silently when GetGameObject(creature_id) returns NULL.
@@ -282,6 +284,22 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
         // value. So we re-stamp AFTER RePopulate, using the current
         // descriptor's action_id at the index our submenu shadow
         // tracks.
+        // Logical-code → column mapping MUST match the engine's own
+        // DoPersonalAction dispatch, or we stamp the chosen variant onto
+        // the wrong column. Ground truth from a clean seabed log
+        // (patch-20260615-010243): keyboard 6 emits 0xee and the engine
+        // fires column 2 (Misc/Schallgenerator); keyboard 7 emits 0xec and
+        // the engine routes to column 3 (Explosives). So the engine is
+        // LINEAR in key number (key 4→col0, 5→col1, 6→col2, 7→col3) — the
+        // earlier "engine swaps 6↔7" belief was wrong (it was read off our
+        // own announce, not a real `benutzt` line). In logical-code terms:
+        //   0xe8 (key 4) → col 0   Friendly Force
+        //   0xea (key 5) → col 1   Medical
+        //   0xee (key 6) → col 2   Misc
+        //   0xec (key 7) → col 3   Explosives
+        // NOTE: the announce path in interact_hotkey is currently crossed
+        // the other way (it labels key 7 as Misc); that mismatch is the
+        // live bug being chased — do not "align" this restamp to it.
         int barSlot = -1;
         switch (param_1) {
             case 0xe8: barSlot = 0; break;

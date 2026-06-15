@@ -786,23 +786,26 @@ void PollHotkey() {
     // the next disarm via "rows-empty"). Bare 4..7 fall straight through
     // to the engine-native fast-fire path.
     if (inWorld) {
-        // Slot mapping mirrors the engine's bare-key dispatch (decompile
-        // of CClientExoAppInternal::HandleInputEvent, 2026-05-21):
+        // Slot mapping is LINEAR — key N drives column N-4:
         //   key 4 / Shift+4 → slot 0  Friendly Force
         //   key 5 / Shift+5 → slot 1  Medical
-        //   key 6 / Shift+6 → slot 3  ← engine swaps 6↔7
-        //   key 7 / Shift+7 → slot 2  ←
-        // Without this swap, the submenu cycled column 2 while bare 6
-        // fired column 3 (and vice versa), so the user's submenu choice
-        // didn't apply to what the engine actually dispatched.
+        //   key 6 / Shift+6 → slot 2  Misc (Sonstiges)
+        //   key 7 / Shift+7 → slot 3  Explosives (Sprengstoffe)
+        // This matches the engine's own DoPersonalAction dispatch, proven
+        // from a clean seabed log (patch-20260615-010243): bare 6 fired the
+        // Schallgenerator in Sonstiges while bare 7 hit the empty Explosives
+        // column. The earlier "engine swaps 6↔7" belief was wrong — it had
+        // been read off our own announce, not a real `benutzt` line — and it
+        // left the announce/menu pointing at the opposite column from what
+        // the engine actually fired (press 7 for Sonstiges, get Explosives).
         if (risingOpen1) acc::unified_menu::OpenPersonal(0);
         if (risingOpen2) acc::unified_menu::OpenPersonal(1);
-        if (risingOpen3) acc::unified_menu::OpenPersonal(3);
-        if (risingOpen4) acc::unified_menu::OpenPersonal(2);
+        if (risingOpen3) acc::unified_menu::OpenPersonal(2);
+        if (risingOpen4) acc::unified_menu::OpenPersonal(3);
 
         // Shift+1..3 — open the unified menu on a target-action row. Direct
-        // row mapping (1→row 0, 2→row 1, 3→row 2); unlike the personal-column
-        // 6↔7 swap, the engine routes target keys linearly via DoTargetAction.
+        // row mapping (1→row 0, 2→row 1, 3→row 2); the engine routes target
+        // keys linearly via DoTargetAction.
         if (risingOpenT1) acc::unified_menu::OpenTarget(0);
         if (risingOpenT2) acc::unified_menu::OpenTarget(1);
         if (risingOpenT3) acc::unified_menu::OpenTarget(2);
@@ -887,12 +890,12 @@ void PollHotkey() {
         if (risingK1) AnnounceBareTargetKey(0);
         if (risingK2) AnnounceBareTargetKey(1);
         if (risingK3) AnnounceBareTargetKey(2);
-        // Slot 6↔7 swap matches the engine's bare-key dispatch — see the
-        // Open mapping block above for the decompile reference.
+        // Linear slot mapping (key N → column N-4) — matches the engine's
+        // bare-key dispatch; see the Open mapping block above.
         if (risingK4) AnnounceBarePersonalKey(0);
         if (risingK5) AnnounceBarePersonalKey(1);
-        if (risingK6) AnnounceBarePersonalKey(3);
-        if (risingK7) AnnounceBarePersonalKey(2);
+        if (risingK6) AnnounceBarePersonalKey(2);
+        if (risingK7) AnnounceBarePersonalKey(3);
     }
 
     // Combat system, Phase 2C — Ö opens the navigable examine view

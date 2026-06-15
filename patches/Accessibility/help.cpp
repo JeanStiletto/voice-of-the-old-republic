@@ -157,8 +157,8 @@ constexpr Entry kEntries[] = {
     // ---- Combat & actions ----
     // Bare 1..7 fire a category's most recent action; Shift+1..7 open the
     // category. The bare-key line is composed from the MenuCat* names so it
-    // matches what the action menu speaks (1 Attacks .. 7 Misc; the engine's
-    // 6/7 swap is already baked into this order).
+    // matches what the action menu speaks (1 Attacks .. 6 Misc, 7 Explosives;
+    // linear key→column order, matching the engine dispatch).
     { S::FmtHelpNumberActions,   Grp::Combat, 0, /*composed=*/true },
     { S::HelpKeyOpenCategory,    Grp::Combat, 0 },
     { S::HelpKeyActionQueue,     Grp::Combat, 0 },
@@ -209,8 +209,8 @@ State g_state;
 
 // Resolve a composed entry's text. The bare-number line lists the category
 // names (1..7) using the same MenuCat* strings the action menu speaks, so the
-// help never drifts from what the user navigates. Key→category order matches
-// the engine dispatch (the 6/7 Explosives/Misc swap is baked in here).
+// help never drifts from what the user navigates. Key→category order is linear
+// and matches the engine dispatch: 6 → Misc (Sonstiges), 7 → Explosives.
 void BuildComposedText(S formatId, char* out, size_t cap) {
     if (formatId == S::FmtHelpNumberActions) {
         std::snprintf(out, cap, acc::strings::Get(formatId),
@@ -219,8 +219,8 @@ void BuildComposedText(S formatId, char* out, size_t cap) {
                       acc::strings::Get(S::MenuCatItems),
                       acc::strings::Get(S::MenuCatSelfPowers),
                       acc::strings::Get(S::MenuCatMedical),
-                      acc::strings::Get(S::MenuCatExplosives),
-                      acc::strings::Get(S::MenuCatMisc));
+                      acc::strings::Get(S::MenuCatMisc),
+                      acc::strings::Get(S::MenuCatExplosives));
         return;
     }
     std::snprintf(out, cap, "%s", acc::strings::Get(formatId));
