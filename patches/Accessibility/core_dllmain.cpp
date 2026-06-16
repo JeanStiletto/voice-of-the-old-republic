@@ -13,6 +13,7 @@
 #include "bringup_announce.h"
 #include "diag_focus.h"
 #include "diag_settings.h"
+#include "engine_keymap.h"
 #include "log.h"
 #include "mod_version.h"
 #include "prism.h"
@@ -226,6 +227,13 @@ extern "C" void __cdecl OnRulesInit(void* /*rulesThis*/) {
     // bundle from now on carries the user's full config without needing a
     // follow-up "what's in your ini?" round-trip.
     acc::diag::settings::LogStartupSnapshot();
+    // Build the engine keybinding table (hardcoded command -> scancode -> VK,
+    // resolved against the active keyboard layout) so the input hooks can
+    // swallow the engine's bare-key action when a modifier-using mod hotkey
+    // shadows an engine-bound key. The shadowed gameplay hotkeys are hardcoded
+    // in the engine (not in the rebindable Key Mapping screen), so this is a
+    // one-time build per session.
+    acc::engine_keymap::Rebuild();
     // Apartment probe — see diag_focus.h. prism.dll's SAPI backend
     // calls CoInitializeEx internally; if it picks MTA on the engine's
     // main thread (where the engine's own message loop + DirectInput

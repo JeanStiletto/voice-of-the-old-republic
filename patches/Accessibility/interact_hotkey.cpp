@@ -455,6 +455,19 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
 // is_action=0); we mirror that by speaking the empty-column phrase rather
 // than claiming a fire when is_action is 0.
 void AnnounceBarePersonalKey(int slot) {
+    // Engine-dispatch gate. ReportPrePressDepth runs only when input_pipeline
+    // let the engine's bare-key action through this press; a consumed Shift+combo
+    // skips it, so GetPrePressDepth (consume-on-read) returns -1. Without this,
+    // the shift-release race (PersonalKey rising after Shift lifts on a Shift+4
+    // submenu open) would speak a phantom "X, Platz 0" for an action that never
+    // fired. Read it first so every early-out below also stays silent on phantoms.
+    int preDepth = acc::combat::queue::GetPrePressDepth();
+    if (preDepth < 0) {
+        acclog::Write("ActionBar", "bare key slot=%d — no engine dispatch this "
+            "press (preDepth=-1); skipping phantom announce", slot);
+        return;
+    }
+
     void* mi = acc::engine_actionbar::ResolveMainInterface();
     if (!mi) {
         acclog::Write("ActionBar", "bare key slot=%d — main_interface unresolved",
@@ -501,17 +514,15 @@ void AnnounceBarePersonalKey(int slot) {
         return;
     }
 
-    // Compute the slot from the PRE-press depth (snapshot taken in
-    // input_pipeline before the engine's switch-case dispatch). Reading
-    // the POST count from interact_hotkey's tick poll races the engine
-    // — sometimes the engine has already grown the queue, sometimes not
-    // — which produced the off-by-one "Starke Explosion eingesetzt /
-    // Platz 1 / 1 / 2 / 3 / voll" pattern we kept seeing. PRE is
-    // deterministic: the queue depth before our press. The press, if it
-    // succeeds, lands at preDepth + 1. If preDepth was already 4 the
-    // engine's `if (3 < count) { free; return; }` arm rejects, so we
-    // announce cap-hit.
-    int preDepth = acc::combat::queue::GetPrePressDepth();
+    // Slot comes from the PRE-press depth read at the top of this function
+    // (snapshot taken in input_pipeline before the engine's switch-case
+    // dispatch). Reading the POST count from interact_hotkey's tick poll races
+    // the engine — sometimes the engine has already grown the queue, sometimes
+    // not — which produced the off-by-one "Starke Explosion eingesetzt / Platz 1
+    // / 1 / 2 / 3 / voll" pattern we kept seeing. PRE is deterministic: the
+    // queue depth before our press. The press, if it succeeds, lands at
+    // preDepth + 1. If preDepth was already 4 the engine's
+    // `if (3 < count) { free; return; }` arm rejects, so we announce cap-hit.
     const bool capHit  = (preDepth >= 4);
     const int  slotNum = preDepth + 1;
     char msg[192];
@@ -543,6 +554,15 @@ void AnnounceBarePersonalKey(int slot) {
 // In that case RowActionCount==0 → empty phrase; matches the personal-
 // column empty path.
 void AnnounceBareTargetKey(int row) {
+    // Engine-dispatch gate — see AnnounceBarePersonalKey. -1 means this press
+    // didn't fire a bare engine action (consumed Shift+combo); stay silent.
+    int preDepth = acc::combat::queue::GetPrePressDepth();
+    if (preDepth < 0) {
+        acclog::Write("ActionBar", "bare target row=%d — no engine dispatch this "
+            "press (preDepth=-1); skipping phantom announce", row);
+        return;
+    }
+
     void* tam = acc::engine_radial::ResolveTargetActionMenu();
     if (!tam) {
         acclog::Write("ActionBar", "bare target row=%d — TAM unresolved",
@@ -569,9 +589,8 @@ void AnnounceBareTargetKey(int row) {
         return;
     }
 
-    // PRE-only slot calc — see AnnounceBarePersonalKey above for the
-    // race-condition rationale.
-    int preDepth = acc::combat::queue::GetPrePressDepth();
+    // PRE-only slot calc (preDepth read at the top) — see AnnounceBarePersonalKey
+    // above for the race-condition rationale.
     const bool capHit  = (preDepth >= 4);
     const int  slotNum = preDepth + 1;
     char msg[192];

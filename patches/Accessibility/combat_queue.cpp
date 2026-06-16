@@ -540,7 +540,14 @@ void ReportPrePressDepth() {
 }
 
 int GetPrePressDepth() {
-    return g_prePressDepth;
+    // Consume on read: reset to the sentinel so a later press that did NOT go
+    // through ReportPrePressDepth (e.g. a Shift+combo consumed in input_pipeline
+    // before the bare-key prep, surfacing in the announce path only via the
+    // shift-release race) reads -1 instead of this press's stale depth. The
+    // announce treats -1 as "engine didn't dispatch a bare key" and stays silent.
+    int d = g_prePressDepth;
+    g_prePressDepth = -1;
+    return d;
 }
 
 bool IsActive() { return g_state.active; }

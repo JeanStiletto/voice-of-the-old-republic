@@ -450,6 +450,36 @@ bool AltGrHeld() {
     return IsDownVk(VK_RMENU);
 }
 
+uint32_t CurrentModifiers() {
+    return ReadModifiers();
+}
+
+bool ModifiedComboOwns(int vk) {
+    if (vk == 0) return false;
+    InitDefaults();
+    uint32_t mods = ReadModifiers();
+    // No modifier held → nothing to route away from the engine. (Bare keys are
+    // the engine's to handle; we only intercept genuine modifier combos.)
+    if ((mods & (kModShift | kModCtrl | kModAlt | kModAltGr)) == 0) return false;
+    for (int i = 0; i < static_cast<int>(Action::COUNT); ++i) {
+        const Binding& b = g_bindings[i];
+        if (b.modsRequired == 0) continue;                 // bare binding — skip
+        if (b.vk != vk && b.altVk != vk) continue;         // different key
+        // NOTE: we deliberately do NOT require IsDownVk(vk) here. This is called
+        // from the engine input hooks, where the engine event ITSELF is proof
+        // the key was just pressed — re-checking GetAsyncKeyState races a quick
+        // tap (a buffered engine command can reach us after the key already
+        // lifted, e.g. Shift+L: L releases before the journal-open command
+        // arrives). Shift/Ctrl/Alt are typically still held, so matching on the
+        // modifier requirement alone is both sufficient and reliable.
+        if ((mods & b.modsRequired)  == b.modsRequired &&
+            (mods & b.modsForbidden) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // ----- Rebinding ------------------------------------------------------------
 
 Binding Get(Action a) {

@@ -169,6 +169,18 @@ bool CtrlHeld();
 bool AltHeld();
 bool AltGrHeld();
 
+// Current OS modifier mask (kMod* bits) — the same read BeginTick uses for
+// edge matching. No edge, no foreground gate.
+uint32_t CurrentModifiers();
+
+// True iff some registered binding on `vk` (primary or alt key) REQUIRES at
+// least one modifier and currently matches the live keyboard (its key is down,
+// every required modifier is held, no forbidden modifier is held). The input
+// hooks call this to decide whether to swallow the engine's modifier-blind
+// bare-key action because the user actually pressed a mod-owned combo on that
+// key. Registry-driven, so it follows free rebinds automatically.
+bool ModifiedComboOwns(int vk);
+
 bool IsForegroundGame();
 
 // IsUserRebindable returns false for diagnostic probes (excluded from

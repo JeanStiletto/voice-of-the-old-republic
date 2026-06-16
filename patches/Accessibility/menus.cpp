@@ -49,6 +49,7 @@
 #include "help.h"             // Help list overlay — suppress engine keys while open
 #include "engine_area.h"     // IsLoadingSaveGame — gate the save-load GUI burst
 #include "engine_input.h"
+#include "engine_keymap.h"   // VksForCode — modifier-shadow consume (manager side)
 #include "engine_manager.h"
 #include "engine_offsets.h"
 #include "engine_panels.h"
@@ -1533,6 +1534,30 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         }
         s_lastConsumedPress = 0;
         return 1;
+    }
+
+    // ---- Modifier-shadow consume (manager side) ----------------------------
+    // Mirror of the in-world consume in input_pipeline.cpp: the engine is
+    // modifier-blind, so a mod hotkey that reuses an engine GUI key with a
+    // modifier (e.g. a future Ctrl+rebind, or Shift+number while a panel owns
+    // the keys) would otherwise also drive the engine's bare-key handling. When
+    // a registered mod binding owns the combo on the physical key this code
+    // represents, swallow the engine event. Press edge only; routed through
+    // trackPress so the matching release is pair-consumed and the engine's
+    // release path can't fire onClick on a now-different control.
+    if (param_2 != 0) {
+        int vks[4];
+        int nv = acc::engine_keymap::VksForCode(param_1, vks, 4);
+        for (int i = 0; i < nv; ++i) {
+            if (acc::hotkeys::ModifiedComboOwns(vks[i])) {
+                acclog::Write("Menus.Input",
+                    "#%d seq=%u this=%p key=%s(%d) CONSUMED — modifier-shadowed "
+                    "mod hotkey owns vk=0x%02x (mods=0x%x)",
+                    n, seq, thisPtr, acc::engine::InputIndexName(param_1),
+                    param_1, vks[i], acc::hotkeys::CurrentModifiers());
+                return trackPress(1);
+            }
+        }
     }
 
     // Synthesised-Esc passthrough. CClientExoAppInternal::HandleInputEvent's

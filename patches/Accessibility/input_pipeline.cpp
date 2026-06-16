@@ -28,8 +28,14 @@
 #include "engine_radial.h"     // SelectActionInRow — stamp field1[target_type*3
                                // +row] so DoTargetAction fires the user's
                                // last-cycled variant for bare 1..3
+#include "engine_keymap.h"   // VksForCode — map this engine code back to the
+                             // physical-key VK(s) so we can detect a
+                             // modifier-shadowed mod hotkey
 #include "engine_manager.h"  // kAddrGuiManagerPtr, modal_stack offsets
 #include "engine_offsets.h"
+#include "hotkeys.h"         // ModifiedComboOwns / CurrentModifiers — the
+                             // registry decides if this press belongs to a mod
+                             // hotkey rather than the engine's bare action
 #include "engine_panels.h"   // HasActiveDialogPanel — suppress the bare 1..7
                              // combat dispatch while a dialog reply listbox
                              // owns the number keys
@@ -129,6 +135,57 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
                       "seq=%u this=%p caller=0x%08x key=%s(%d) val=%d",
                       seq, this_ptr, caller_eip,
                       acc::engine::InputIndexName(param_1), param_1, param_2);
+    }
+
+    // ---- Modifier-space reservation (in-world) -----------------------------
+    // The engine reads DirectInput scancodes, which are modifier-blind: it has
+    // NO modifier combos of its own, so Shift+4 still fires the bare "4" action,
+    // Shift+L still opens Quests, etc. That means ANY modified press of an
+    // engine-bound key is, by definition, not meant for the engine — it's either
+    // one of our mod hotkeys (Shift+1..7, Shift+L, …) or a combo the user will
+    // bind once free hotkey configuration lands. So we reserve the entire
+    // modifier space in-world: on a press with Shift/Ctrl/Alt held, swallow the
+    // engine event. Bare keys (no modifier) still reach the engine, so the user
+    // keeps every vanilla shortcut on its unmodified key. The mod's own Win32
+    // poller fires the intended hotkey this frame (when a binding exists;
+    // otherwise the combo is simply reserved, doing nothing — never the wrong
+    // engine action).
+    //
+    // Safe to be this broad here: this in-world handler only receives the
+    // engine's quick-action codes (quick-menu screens, action-menu numbers, Q/E
+    // cycle, Esc/back, F1) — movement/camera keys never route through it
+    // (verified: no WASD codes ever appear in Diag.ClientHIE) — and the modifier
+    // keys themselves don't arrive as events. We still let Esc and the GUI
+    // nav-forward codes through: they keep their own routing below (overlay-close
+    // + modal arrow forwarding) and aren't part of the reservable hotkey space.
+    //
+    // Press edge only (param_2 != 0): releases for a consumed press are no-ops
+    // here (the engine's switch-cases early-out on release), so we let them pass.
+    if (param_2 != 0) {
+        uint32_t m = acc::hotkeys::CurrentModifiers();
+        const bool modHeld =
+            (m & (acc::hotkeys::kModShift | acc::hotkeys::kModCtrl |
+                  acc::hotkeys::kModAlt)) != 0;
+        const bool passThrough =
+            param_1 == kInputEsc1 || param_1 == kInputEsc2 ||
+            (param_1 >= 0xb6 && param_1 <= 0xb9);  // GUI nav-forward range
+        if (modHeld && !passThrough) {
+            // Name the key + note whether a mod binding actually claims this
+            // combo today (purely for the log — we reserve it either way).
+            int vks[4];
+            int nv = acc::engine_keymap::VksForCode(param_1, vks, 4);
+            bool owned = false;
+            for (int i = 0; i < nv; ++i) {
+                if (acc::hotkeys::ModifiedComboOwns(vks[i])) { owned = true; break; }
+            }
+            acclog::Write("Diag.ModShadow",
+                "seq=%u code=%s(%d) mods=0x%x CONSUMED — %s",
+                seq, acc::engine::InputIndexName(param_1), param_1, m,
+                owned ? "mod hotkey owns this combo; engine action suppressed"
+                      : "modifier space reserved (no mod binding yet); engine "
+                        "action suppressed");
+            return 1;  // consume → consumed_exit (POP*5 + RET 8)
+        }
     }
 
     // In-world overlay Esc consume — the menu-vs-pause-menu fix.
