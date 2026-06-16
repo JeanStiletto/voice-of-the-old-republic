@@ -198,6 +198,20 @@ bool DetectTabsCluster(void* panel, int& outStart, int& outCount) {
     // quit-confirm popup.
     if (acc::menus::store::IsStorePanel(panel)) return false;
 
+    // The workbench upgrade panel (upgrade.gui) is the same shape: LB_ITEMS
+    // at controls[0] followed by the seven slot buttons (ids 12-18) as a
+    // contiguous navigable run. Those are slot pickers, not page tabs.
+    // Latching them as tabs routes their Enter through the tab click-sim path
+    // (which opens nothing) instead of the chain handler's
+    // OnEnterSlot+OnSlotSelected arm. The detection fired the first time only
+    // after the user opened a slot, so re-entering any slot after a picker Esc
+    // did nothing until the workbench was closed and reopened
+    // (patch-20260616-141620.log).
+    if (acc::engine::IdentifyPanel(panel) ==
+            acc::engine::PanelKind::WorkbenchUpgrade) {
+        return false;
+    }
+
     auto* panelList = reinterpret_cast<CExoArrayList*>(
         reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
     if (!panelList->data || panelList->size < 2) return false;

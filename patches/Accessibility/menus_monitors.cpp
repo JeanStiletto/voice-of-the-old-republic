@@ -67,7 +67,8 @@ void AnnounceControl(void* control) {
     // user-driven navigation events where missing the announce makes
     // focus feel frozen; engine-driven panel-open auto-focus on a
     // container is a different class of event.
-    if (IsListBox(control)) {
+    const bool isListBoxContainer = IsListBox(control);
+    if (isListBoxContainer) {
         auto* lb = reinterpret_cast<CExoArrayList*>(
             reinterpret_cast<unsigned char*>(control) + kListBoxControlsOffset);
         if (lb && lb->data && lb->size > 1) {
@@ -98,6 +99,18 @@ void AnnounceControl(void* control) {
         return;
     }
     if (g_currentPanel && IsClassSelectionIcon(g_currentPanel, control)) {
+        return;
+    }
+    // A listbox container with no extractable text is the engine's panel-open
+    // auto-focus on an empty / not-yet-populated list (e.g. the workbench
+    // LB_ITEMS at controls[0], id 0, before the slot is chosen), not a
+    // navigable terminal. The multi-row guard above only catches populated
+    // lists; an empty one fell through to "control N" — the "control 0" spoken
+    // on workbench open. Containers carrying real text (message-box single-row
+    // listboxes) already returned via the FromControl success path above, so
+    // suppressing here only drops contentless containers, never a real focus
+    // event (the "never silence the fallback" rule is about navigable controls).
+    if (isListBoxContainer) {
         return;
     }
     int id = *reinterpret_cast<int*>(

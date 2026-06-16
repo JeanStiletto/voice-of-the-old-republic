@@ -2104,7 +2104,8 @@ void DrainPendingAnnounce() {
     // Inventar open after the FromControl listbox-blob path was removed.
     // Row navigation inside the listbox is owned by ListBoxPanelSpec /
     // chain handlers.
-    if (IsListBox(control)) {
+    const bool isListBoxContainer = IsListBox(control);
+    if (isListBoxContainer) {
         auto* lb = reinterpret_cast<CExoArrayList*>(
             reinterpret_cast<unsigned char*>(control) + kListBoxControlsOffset);
         if (lb && lb->data && lb->size > 1) return;
@@ -2136,6 +2137,14 @@ void DrainPendingAnnounce() {
         SpeakIfChanged(/*channel=*/0, text);
         return;
     }
+
+    // A listbox container with no extractable text is the engine's panel-open
+    // auto-focus on an empty / not-yet-populated list (workbench LB_ITEMS at
+    // controls[0], id 0). The multi-row guard above only catches populated
+    // lists; an empty one leaked the "control 0" spoken on workbench open.
+    // Containers carrying real text returned via the FromControl success path,
+    // so this drops only contentless containers, never a navigable control.
+    if (isListBoxContainer) return;
 
     // No extractable text: announce a "control N" placeholder. Bypasses
     // SpeakIfChanged dedup deliberately (memory:
