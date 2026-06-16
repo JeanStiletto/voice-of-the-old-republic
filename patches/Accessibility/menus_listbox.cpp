@@ -1009,6 +1009,7 @@ namespace {
 constexpr int kWorkbenchUpgradeLbId        = 0;
 constexpr int kWorkbenchUpgradeBtnAssemble = 24;
 constexpr int kWorkbenchUpgradeBtnBack     = 28;
+constexpr int kWorkbenchUpgradeTitleId     = 25;  // LBL_TITLE ("Werkbank")
 }  // namespace
 
 bool WorkbenchUpgradeMatches(void* p) {
@@ -1137,9 +1138,33 @@ bool WorkbenchUpgradeOnEnter(void* panel) {
 // is on a slot button or BTN_ASSEMBLE/BTN_BACK) is handled by the
 // workbench-specific block in menus.cpp's Esc handler.
 bool WorkbenchUpgradeOnEsc(void* panel) {
-    acclog::Write("WorkbenchUpgrade", "Esc -> disarm (panel=%p)", panel);
+    // Back out of the picker the way commit does: close the item zone so the
+    // engine re-enables the sibling slot buttons (OnSlotSelected disabled them
+    // and only undoes it on commit). Without this they keep reading
+    // "unavailable" until the workbench is closed and reopened.
+    if (!acc::menus::pending::IsPending()) {
+        acc::menus::pending::QueueWorkbenchPickerCancel(panel);
+    }
+    acclog::Write("WorkbenchUpgrade", "Esc -> cancel picker + disarm (panel=%p)", panel);
     DisarmWorkbenchUpgradePicker();
     return true;
+}
+
+// The generic title-walk would land on the first leftover placeholder label
+// (id 19 "Item Property" — a design-time string the engine repopulates per
+// slot at runtime, alongside id 20 "Slot Name" / id 21 "Lightsaber Slot Name")
+// instead of the real title. Read LBL_TITLE (id 25, "Werkbank") directly so
+// first-sight speaks the panel name. Returns nullptr to fall back to the
+// generic walk if the title control can't be read.
+const char* WorkbenchUpgradeTitleOverride(void* panel) {
+    if (!panel) return nullptr;
+    void* title = FindControlById(panel, kWorkbenchUpgradeTitleId);
+    if (!title) return nullptr;
+    static char buf[128];
+    if (acc::menus::extract::FromControl(title, buf, sizeof(buf)) && buf[0]) {
+        return buf;
+    }
+    return nullptr;
 }
 
 constexpr ListBoxPanelSpec kWorkbenchUpgradeSpec = {
@@ -1154,7 +1179,7 @@ constexpr ListBoxPanelSpec kWorkbenchUpgradeSpec = {
     /*logExtra*/                nullptr,
     /*onEnter*/                 WorkbenchUpgradeOnEnter,
     /*onEsc*/                   WorkbenchUpgradeOnEsc,
-    /*titleOverride*/           nullptr,
+    /*titleOverride*/           WorkbenchUpgradeTitleOverride,
     /*emptyStateId*/            acc::strings::Id::WorkbenchUpgradesEmpty,
     /*alwaysReturnFromHandler*/ false,  // fall through so chain nav reaches the slot/assemble buttons
     /*minSelFn*/                WorkbenchUpgradeMinSel,  // hide row-0 remove entry on power slots

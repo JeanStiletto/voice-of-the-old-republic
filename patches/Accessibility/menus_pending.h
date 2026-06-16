@@ -76,6 +76,12 @@ bool QueueWorkbenchSlotSelect(void* panel, void* slot);
 // as the slot-button select issue above).
 bool QueueWorkbenchUpgradeCommit(void* panel, void* row, void* btnAssemble);
 
+// Queue a cancel/back-out of the workbench mod-picker. Calls
+// CSWGuiUpgrade::ShowItems(panel, 0) to undo OnSlotSelected's ShowItems(1)
+// (which disabled the sibling slot buttons) and clears the panel's
+// "picker open" bit, so after Esc the slots stop reading "unavailable".
+bool QueueWorkbenchPickerCancel(void* panel);
+
 // Queue a slider value adjustment via vtable[15].HandleInputEvent(code, 1)
 // where code is 500 (increment) or 501 (decrement). The slider's handler
 // runs the full pipeline: SetCurValue + bounds clamp + gui_object callback

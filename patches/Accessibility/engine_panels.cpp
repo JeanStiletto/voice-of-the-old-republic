@@ -156,16 +156,28 @@ bool IsWorkbenchItemsStructural(void* panel) {
 // id 10. Identified by the pair Button-at-0 + Button-at-9 + Button-at-10
 // — id 0 is a Button on this panel (BTN_RANGED), distinguishing it from
 // every other workbench panel where id 0 is a ListBox.
+// CSWGuiUpgradeSelection (upgradesel.gui — the workbench category chooser:
+// Ranged / Lightsaber / Melee / Armor). Heap-allocated, single class, so the
+// vtable is a clean identifier (symbol CSWGuiUpgradeSelection_vtable). The
+// structural check below was rejecting this panel — its category buttons use a
+// button subclass whose vtable isn't kVtableCSWGuiButton — so it fell through
+// to Unknown; the vtable test fixes that.
+constexpr uintptr_t kVtableCSWGuiUpgradeSelection = 0x007571b0;
+
 bool IsWorkbenchSelectStructural(void* panel) {
     if (!panel) return false;
     __try {
-        // id 0 on upgradesel.gui is BTN_RANGED (Button), not a ListBox.
-        // This single check is enough to skip the items / upgrade panels.
-        void* btnFirst = FindControlByGuiId(panel, /*BTN_RANGED=*/0);
-        if (!ControlHasVtable(btnFirst, kVtableCSWGuiButton)) return false;
+        void** vt = *reinterpret_cast<void***>(panel);
+        if (reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiUpgradeSelection) {
+            return true;
+        }
+        // Fallback structural signature (kept in case a build relocates the
+        // vtable): id 9 = BTN_UPGRADEITEMS, id 10 = BTN_BACK are plain buttons.
         void* btnUpg  = FindControlByGuiId(panel, /*BTN_UPGRADEITEMS=*/9);
         void* btnBack = FindControlByGuiId(panel, /*BTN_BACK=*/10);
-        return ControlHasVtable(btnUpg,  kVtableCSWGuiButton) &&
+        void* btnFirst = FindControlByGuiId(panel, /*BTN_RANGED=*/0);
+        return btnFirst != nullptr &&
+               ControlHasVtable(btnUpg,  kVtableCSWGuiButton) &&
                ControlHasVtable(btnBack, kVtableCSWGuiButton);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;

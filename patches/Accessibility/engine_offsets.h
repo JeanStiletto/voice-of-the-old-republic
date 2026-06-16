@@ -858,6 +858,20 @@ typedef void (__thiscall* PFN_CSWGuiUpgradeOnControlEntered)(void* panel, void* 
 constexpr uintptr_t kAddrCSWGuiUpgradeOnControlEntered = 0x006c5370;
 constexpr size_t    kUpgradeDescLabelOffset            = 0x1f60;  // panel.field9 (CSWGuiLabel)
 
+// CSWGuiUpgrade::ShowItems @0x006c2f80 — __thiscall(int visible). visible!=0
+// opens the mod-picker zone (disables the slot buttons + slot labels, shows
+// items_listbox); visible==0 closes it: re-enables the slot buttons (re-sets
+// their interactive bit by category), re-shows the slot labels, SetActiveControl
+// back to the slot zone, and clears items_listbox visibility. We call the
+// close form to undo OnSlotSelected's open when the user backs out of the
+// picker, so sibling slots stop reading "unavailable". OnUpgradeSelected runs
+// this on commit; we mirror it on cancel.
+typedef void (__thiscall* PFN_CSWGuiUpgradeShowItems)(void* panel, int visible);
+constexpr uintptr_t kAddrCSWGuiUpgradeShowItems = 0x006c2f80;
+// CSWGuiUpgrade.field24_0x2f48 — bit 0 is the "picker open" state (set by
+// OnSlotSelected, cleared by OnUpgradeSelected's close tail). Clear it on cancel.
+constexpr size_t    kUpgradePickerOpenFlagOff = 0x2f48;  // panel.field24
+
 // CSWGuiUpgrade slot-type table — 16 entries × 12 bytes, indexed by
 // `(slot_btn.custom_value - 4) + panel.field25_0x2f4c * 4`. Each entry:
 //   +0 (int)     UpgradeType — matches upgrades_2da's UpgradeType column

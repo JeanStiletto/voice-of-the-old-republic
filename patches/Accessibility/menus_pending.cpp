@@ -49,6 +49,7 @@ enum class Kind {
     EquipCommit,       // a = panel, b = row, c = btn
     WorkbenchSlotSelect,    // a = panel, b = slot
     WorkbenchUpgradeCommit, // a = panel, b = row, c = btnAssemble
+    WorkbenchPickerCancel,  // a = panel — close the mod-picker zone (re-enable slots)
     SliderInput,       // a = target, code = direction (500 inc / 501 dec)
     StoreItemActivate, // a = panel (CSWGuiStore), b = row (StoreItemEntry)
     GalaxyInput,       // a = panel (galaxy map), code = engine event,
@@ -137,6 +138,13 @@ bool QueueWorkbenchUpgradeCommit(void* panel, void* row, void* btnAssemble) {
     g_op.a = panel;
     g_op.b = row;
     g_op.c = btnAssemble;
+    return true;
+}
+
+bool QueueWorkbenchPickerCancel(void* panel) {
+    if (g_op.kind != Kind::None) return false;
+    g_op.kind = Kind::WorkbenchPickerCancel;
+    g_op.a = panel;
     return true;
 }
 
@@ -708,6 +716,28 @@ void Drain(void* gm) {
         } else {
             acclog::Write("Update", "WorkbenchUpgradeCommit panel=%p row=%p btn=%p (skipped)",
                           panel, row, btn);
+        }
+        break;
+    }
+
+    // Back out of the mod-picker without committing (Esc). OnSlotSelected's
+    // ShowItems(1) disabled the sibling slot buttons; the engine only undoes
+    // that on commit. Mirror its close tail so the slots stop reading
+    // "unavailable": ShowItems(0) re-enables them (and SetActiveControl's back
+    // to the slot zone), then clear the panel's "picker open" bit.
+    case Kind::WorkbenchPickerCancel: {
+        void* panel = op.a;
+        if (panel) {
+            auto showItems = reinterpret_cast<PFN_CSWGuiUpgradeShowItems>(
+                kAddrCSWGuiUpgradeShowItems);
+            showItems(panel, 0);
+            uint32_t* flag = reinterpret_cast<uint32_t*>(
+                reinterpret_cast<unsigned char*>(panel) + kUpgradePickerOpenFlagOff);
+            *flag &= ~1u;
+            acclog::Write("Update", "WorkbenchPickerCancel panel=%p (ShowItems(0) + "
+                          "cleared picker-open bit)", panel);
+        } else {
+            acclog::Write("Update", "WorkbenchPickerCancel panel=%p (skipped)", panel);
         }
         break;
     }
