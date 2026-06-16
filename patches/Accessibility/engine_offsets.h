@@ -843,6 +843,21 @@ constexpr uintptr_t kAddrCSWGuiUpgradeOnSlotSelected   = 0x006c6500;
 constexpr uintptr_t kAddrCSWGuiUpgradeOnUpgradeSelected = 0x006c5510;
 constexpr uintptr_t kAddrCSWGuiUpgradeOnAssemble       = 0x006c6190;
 
+// CSWGuiUpgrade::OnControlEntered @0x006c5370 — __thiscall(panel, item_entry).
+// The workbench picker's own hover handler. Unlike the generic item tooltip
+// (CSWSItem::GetPropertyDescription, which omits the property block entirely
+// for lightsaber crystals), this builds the description shown on-screen:
+//   description_indentified  (or GUI string 0x7dac when empty), and
+//   for saber upgrades (panel.field25 == 1) on a non-color slot it PREPENDS
+//   GetKeyedPropertyString(base_item, key) — the keyed bonus line sighted
+//   players see and the generic path drops. Gates on item_entry->is_active
+//   (same gate as Inventory/Store; drive via CallOnControlEnteredWithActive).
+// SetDescription writes the resulting string into the description label at
+// panel + kUpgradeDescLabelOffset, so we read it back from there.
+typedef void (__thiscall* PFN_CSWGuiUpgradeOnControlEntered)(void* panel, void* item_entry);
+constexpr uintptr_t kAddrCSWGuiUpgradeOnControlEntered = 0x006c5370;
+constexpr size_t    kUpgradeDescLabelOffset            = 0x1f60;  // panel.field9 (CSWGuiLabel)
+
 // CSWGuiUpgrade slot-type table — 16 entries × 12 bytes, indexed by
 // `(slot_btn.custom_value - 4) + panel.field25_0x2f4c * 4`. Each entry:
 //   +0 (int)     UpgradeType — matches upgrades_2da's UpgradeType column
@@ -867,6 +882,19 @@ constexpr size_t    kUpgradeSlotCustomValueOff = 0x58;   // slot_btn.custom_valu
 // branch) and OnSlotSelected @0x006c6500 (install/remove branch) index this
 // array by custom_value, so it is the authoritative per-slot occupancy field.
 constexpr size_t    kUpgradeSlotInstalledItemsOff = 0x2f74;  // panel.field35
+
+// CSWGuiUpgrade.field27_0x2f54 — the CSWSItem* currently being upgraded (the
+// weapon/armor/saber). OnEnterSlot / OnControlEntered pass it to
+// GetKeyedPropertyString to render a slot's keyed bonus line.
+constexpr size_t    kUpgradeBaseItemOff   = 0x2f54;  // panel.field27 (CSWSItem*)
+// CSWGuiUpgrade.field71_0x2fa4 — per-slot property-key byte array, indexed by
+// the slot button's custom_value. OnUpgradeSelected writes the installed mod's
+// key here; GetKeyedPropertyString(base, field71[cv]) yields that slot's bonus.
+constexpr size_t    kUpgradeSlotKeyArrayOff = 0x2fa4;  // panel.field71 (byte[])
+// CSWGuiUpgrade.field74_0x2fb0 — the slot button whose mod-picker is currently
+// open (set by OnSlotSelected, read as `field74+0x58` for custom_value by
+// OnUpgradeSelected). Lets us recover the active slot while the picker is up.
+constexpr size_t    kUpgradeActiveSlotOff = 0x2fb0;  // panel.field74 (slot btn*)
 
 // Combat system — engine surfaces (per docs/combat-system.md, all
 // "suspected" / "known (DB)" until live-validated).
@@ -1585,15 +1613,28 @@ constexpr uintptr_t kAddrServerExoAppClientToServerObjectId = 0x004aea30;
 constexpr uintptr_t kAddrServerExoAppGetItemByGameObjectID  = 0x004ae760;
 
 // CSWSItem::GetPropertyDescription — __thiscall(CExoString* out) -> CExoString*.
-// Returns the full formatted property description block (the text that
-// Inventory/Store/Equip render into their description listbox on hover):
-// damage, feats, defence, on-hit, base description, etc. The caller passes
-// uninitialised stack memory for `out`; the function constructs a CExoString
-// in place by allocating a heap c_string. We then read out the c_string and
-// deliberately leak the allocation rather than calling ~CExoString (heap
-// ownership across the DLL/EXE boundary risks CRT mismatch; see the same
-// pattern in LookupTlk above).
+// The text Inventory/Store/Equip render into their description listbox on
+// hover: the formatted property block (damage, feats, defence, on-hit, attack
+// mod, misc) followed by the base description. IMPORTANT (decompile-verified):
+// for base item_type 0x2e (lightsaber crystals) and 6 (grenades) it SKIPS the
+// whole property block and returns ONLY the description — for a crystal that's
+// usually just the bare "Spezial:" header, since crystal templates carry no
+// item properties (the bonus lives on the assembled saber / in the workbench's
+// keyed-property line, see kAddrCSWSItemGetKeyedPropertyString). The caller
+// passes uninitialised stack memory for `out`; the function constructs a
+// CExoString in place by allocating a heap c_string. We then read out the
+// c_string and deliberately leak the allocation rather than calling
+// ~CExoString (heap ownership across the DLL/EXE boundary risks CRT mismatch;
+// see the same pattern in LookupTlk above).
 constexpr uintptr_t kAddrCSWSItemGetPropertyDescription     = 0x0055f340;
+
+// CSWSItem::GetKeyedPropertyString — __thiscall(CExoString* out, byte key) ->
+// CExoString*. Formats just the properties on this item whose slot-key byte
+// matches `key` into the "Spezielle Eigenschaften: …" block (same header +
+// sorting as GetSortedPropertyStrings). This is the keyed bonus line the
+// workbench shows for an upgrade slot — the gameplay text crystals lack in
+// GetPropertyDescription. Same heap-leak rule as GetPropertyDescription.
+constexpr uintptr_t kAddrCSWSItemGetKeyedPropertyString     = 0x0055f510;
 
 // AppManager indirection to CServerExoApp. AppManager+0x8 → CServerExoApp*.
 // (Same constant as engine_player.h's kAppManagerServerOffsetPlayer.)

@@ -133,6 +133,14 @@ void* ResolveItemFromClientHandle(uint32_t clientHandle);
 // we deliberately leak (CRT-mismatch — same pattern as LookupTlk).
 bool ReadItemPropertyDescription(void* item, char* outBuf, size_t bufSize);
 
+// The "Spezielle Eigenschaften: …" block for just the properties on `item`
+// whose slot-key byte matches `key` (CSWSItem::GetKeyedPropertyString). Used to
+// surface a workbench upgrade slot's keyed bonus line — the gameplay text that
+// GetPropertyDescription omits for crystals. Same heap-leak rule. False on
+// fault / empty result.
+bool ReadItemKeyedPropertyString(void* item, uint8_t key,
+                                 char* outBuf, size_t bufSize);
+
 // Workbench upgrade slot → installed-mod item. Given the CSWGuiUpgrade panel
 // and a slot button control (upgrade.gui IDs 12..18), reads the slot button's
 // custom_value and returns the installed mod CSWSItem* at
@@ -141,6 +149,24 @@ bool ReadItemPropertyDescription(void* item, char* outBuf, size_t bufSize);
 // the mod template) and is safe to pass to ReadItemPropertyDescription /
 // ExtractTextOrStrRef(+0x280). SEH-guarded. See kUpgradeSlotInstalledItemsOff.
 void* GetWorkbenchSlotInstalledItem(void* upgradePanel, void* slotControl);
+
+// Layout of the workbench mod-picker (LB_ITEMS) for the currently-open slot.
+// The picker only appears for SABER slots (non-saber slots install/remove
+// their single compatible mod directly). The row layout depends on slot type:
+//   * Saber color slot (active slot custom_value == 1): row 0 is the
+//     currently-set color crystal; every row is a real selectable choice and
+//     there is no remove entry → minSel 0, installedRow 0.
+//   * Saber power slot (custom_value != 1): row 0 is the 0x7f000000 "remove
+//     upgrade" entry (hidden from nav → minSel 1); row 1 is the installed
+//     crystal when the slot is occupied (installedRow 1), else installedRow -1.
+// `valid` is false when the active slot can't be resolved (picker not open).
+struct WorkbenchPickerInfo {
+    bool valid        = false;
+    bool isColorSlot  = false;
+    int  minSel       = 0;   // first navigable LB_ITEMS row
+    int  installedRow = -1;  // LB_ITEMS index of the installed/current crystal
+};
+WorkbenchPickerInfo GetWorkbenchPickerInfo(void* upgradePanel);
 
 // CSWGuiInterfaceAction.action_id → human-readable description.
 // Dispatches on the high-nibble tag stamped by each entry-creator:

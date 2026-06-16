@@ -1264,6 +1264,9 @@ enum class Id : int {
     WorkbenchFmtSlotItem,      // 2 %s (slot type, mod name) — connecting word
                                // between so identical names don't read twice
                                // ("Panzerverst\xE4rkung, belegt mit Panzerverst\xE4rkung")
+    WorkbenchPickerInstalled,  // suffix/marker for the picker row that is the
+                               // crystal currently installed in (or colour set
+                               // on) the open slot ("…, eingesetzt")
 
     // ---- Sound options panel (optionssound.gui) label fix-up.
     //      The stock German .gui labels the 4th slider (movie/video volume)

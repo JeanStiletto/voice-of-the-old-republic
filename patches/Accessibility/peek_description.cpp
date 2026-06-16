@@ -305,6 +305,11 @@ const ItemTooltipPanelInfo* LookupItemTooltipPanel(acc::engine::PanelKind k) {
 
 constexpr std::size_t kItemEntryGameObjectIdOffset = 0x1c4;
 
+// Defined below (uses ReadRowText). Builds the workbench picker description
+// via the engine's own hover handler for saber upgrades.
+bool TryReadWorkbenchSaberDescription(void* panel, void* row,
+                                      char* outBuf, std::size_t bufSize);
+
 // Caller consumes the key regardless of return (predictable behaviour).
 bool HandleItemTooltip(acc::engine::PanelKind kind,
                        const ItemTooltipPanelInfo& info,
@@ -355,6 +360,37 @@ bool HandleItemTooltip(acc::engine::PanelKind kind,
                       "panel=%s row=%p SEH reading item handle",
                       acc::engine::PanelKindName(kind), row);
         return false;
+    }
+
+    // Workbench saber picker: prefer the engine's own hover description, which
+    // prepends the keyed bonus line that GetPropertyDescription drops for
+    // crystals. Falls through to GetPropertyDescription for non-saber items
+    // (where that path is richer) and on empty result.
+    if (kind == acc::engine::PanelKind::WorkbenchUpgrade) {
+        char wb[8192];
+        if (TryReadWorkbenchSaberDescription(activePanel, row, wb, sizeof(wb))) {
+            // Lead with the "installed" marker when peeking the crystal that's
+            // already in (or the colour already set on) the slot.
+            auto pick = acc::engine::GetWorkbenchPickerInfo(activePanel);
+            bool installed = pick.valid && pick.installedRow >= 0 &&
+                             (int)selIdx == pick.installedRow;
+            if (installed) {
+                char marked[8192];
+                snprintf(marked, sizeof(marked), "%s\n%s",
+                         acc::strings::Get(
+                             acc::strings::Id::WorkbenchPickerInstalled),
+                         wb);
+                prism::Speak(marked, /*interrupt=*/true);
+            } else {
+                prism::Speak(wb, /*interrupt=*/true);
+            }
+            acclog::Write("Peek.Workbench",
+                          "panel=%s saber picker sel=%d/%d row=%p installed=%d "
+                          "text=\"%s\"",
+                          acc::engine::PanelKindName(kind), (int)selIdx,
+                          rowCount, row, installed ? 1 : 0, wb);
+            return true;
+        }
     }
 
     void* item = acc::engine::ResolveItemFromClientHandle(clientHandle);
@@ -411,6 +447,45 @@ bool ShiftHeld() {
     // OS-level query; the engine-side flag can latch stale on swallowed
     // up-edges.
     return acc::hotkeys::ShiftHeld();
+}
+
+// Workbench saber-upgrade picker: build the description the way the engine's
+// own hover handler (CSWGuiUpgrade::OnControlEntered) does, so the keyed bonus
+// line it prepends — which the generic GetPropertyDescription path drops for
+// crystals (item type 46) — is spoken too. Exact parity with the on-screen
+// text. Saber category only (panel.field25 == 1); returns false for non-saber
+// items so the caller keeps GetPropertyDescription (richer there: it carries
+// those mods' full property block, which the workbench picker also omits).
+bool TryReadWorkbenchSaberDescription(void* panel, void* row,
+                                      char* outBuf, std::size_t bufSize) {
+    if (!panel || !row || !outBuf || bufSize < 2) return false;
+
+    int category = 0;
+    __try {
+        category = *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(panel) + kUpgradePanelCategoryOff);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (category != 1) return false;  // non-saber → caller uses GetPropertyDescription
+
+    // Drive the engine's hover handler; SetDescription then writes the combined
+    // keyed-property + description string into the panel's description label.
+    // The is_active gate applies (keyboard nav never sets it), same workaround
+    // as the Inventory/Store refresh path.
+    __try {
+        CallOnControlEnteredWithActive(kAddrCSWGuiUpgradeOnControlEntered,
+                                       panel, row);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Peek.Workbench",
+                      "panel=%p row=%p OnControlEntered SEH", panel, row);
+        return false;
+    }
+
+    void* descLabel = reinterpret_cast<unsigned char*>(panel) +
+                      kUpgradeDescLabelOffset;
+    const char* src = ReadRowText(descLabel, outBuf, bufSize);
+    return src != nullptr && outBuf[0] != '\0';
 }
 
 }  // namespace
@@ -483,11 +558,17 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
     // Workbench upgrade slot button (upgrade.gui IDs 12..18): speak the
     // installed mod's description, or "empty". Runs before the item-tooltip
     // path because that path targets LB_ITEMS — the mod picker shown only
-    // after a slot is drilled into. While focus sits on a slot button the
-    // list is empty, so without this branch Shift+arrow would say nothing.
-    // When the user has drilled into a slot, focus moves to LB_ITEMS rows
-    // (id != 12..18) and this branch falls through to the picker path.
-    if (kind == acc::engine::PanelKind::WorkbenchUpgrade && focusedControl) {
+    // after a slot is drilled into.
+    //
+    // Skip while the picker is armed — exactly like the InGameEquip case
+    // above: once a slot is drilled into, chain focus STAYS on the slot
+    // button while the offered-mod rows are driven by DriveListBoxSelection
+    // (verified from the patch log: Shift+arrow kept hitting the slot button
+    // with the picker open). Without this gate we'd keep reading the slot's
+    // installed mod instead of letting the item-tooltip path read the
+    // offered crystal the user is actually sitting on.
+    if (kind == acc::engine::PanelKind::WorkbenchUpgrade && focusedControl &&
+        !acc::menus::listbox::IsWorkbenchUpgradePickerArmed()) {
         int cid = -1;
         __try {
             cid = *reinterpret_cast<int*>(

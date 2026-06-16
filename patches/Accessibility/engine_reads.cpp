@@ -720,6 +720,33 @@ bool ReadItemPropertyDescription(void* item, char* outBuf, size_t bufSize) {
     return ok;
 }
 
+typedef CExoString* (__thiscall* PFN_GetKeyedPropertyString)(void* this_,
+                                                             CExoString* out,
+                                                             uint8_t key);
+
+bool ReadItemKeyedPropertyString(void* item, uint8_t key,
+                                 char* outBuf, size_t bufSize) {
+    if (!item || !outBuf || bufSize < 2) return false;
+    CExoString tmp = {nullptr, 0};
+    bool ok = false;
+    __try {
+        auto fn = reinterpret_cast<PFN_GetKeyedPropertyString>(
+            kAddrCSWSItemGetKeyedPropertyString);
+        fn(item, &tmp, key);
+        if (tmp.c_string && tmp.length > 0 && tmp.length < bufSize) {
+            memcpy(outBuf, tmp.c_string, tmp.length);
+            outBuf[tmp.length] = '\0';
+            ok = true;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Engine.Reads",
+                      "GetKeyedPropertyString SEH for item=%p key=%u",
+                      item, (unsigned)key);
+        ok = false;
+    }
+    return ok;
+}
+
 void* GetWorkbenchSlotInstalledItem(void* upgradePanel, void* slotControl) {
     if (!upgradePanel || !slotControl) return nullptr;
     void* item = nullptr;
@@ -740,6 +767,45 @@ void* GetWorkbenchSlotInstalledItem(void* upgradePanel, void* slotControl) {
         return nullptr;
     }
     return item;
+}
+
+WorkbenchPickerInfo GetWorkbenchPickerInfo(void* upgradePanel) {
+    WorkbenchPickerInfo info;
+    if (!upgradePanel) return info;
+
+    void* slotBtn = nullptr;
+    int customValue = -1;
+    __try {
+        slotBtn = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(upgradePanel) +
+            kUpgradeActiveSlotOff);
+        if (slotBtn) {
+            customValue = *reinterpret_cast<int*>(
+                reinterpret_cast<unsigned char*>(slotBtn) +
+                kUpgradeSlotCustomValueOff);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Engine.Reads",
+                      "GetWorkbenchPickerInfo SEH panel=%p", upgradePanel);
+        return info;
+    }
+    if (!slotBtn) return info;
+
+    info.valid = true;
+    if (customValue == 1) {
+        // Saber color slot: row 0 is the current colour crystal, every row is
+        // a real choice, no remove entry.
+        info.isColorSlot  = true;
+        info.minSel       = 0;
+        info.installedRow = 0;
+    } else {
+        // Power / non-color saber slot: row 0 is the 0x7f000000 remove entry;
+        // row 1 is the installed crystal when the slot is occupied.
+        info.minSel       = 1;
+        void* installed = GetWorkbenchSlotInstalledItem(upgradePanel, slotBtn);
+        info.installedRow = installed ? 1 : -1;
+    }
+    return info;
 }
 
 bool ReadCreatureForcePoints(void* clientCreature, int* outCur, int* outMax) {

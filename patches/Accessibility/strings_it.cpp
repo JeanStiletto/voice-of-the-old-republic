@@ -435,6 +435,7 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotFilled:        return "occupato";
         case Id::WorkbenchSlotPeekEmpty:     return "Alloggiamento vuoto, nessun miglioramento installato";
         case Id::WorkbenchFmtSlotItem:       return "%s, con %s";
+        case Id::WorkbenchPickerInstalled:   return "installato";
 
         case Id::SoundOptionsMovieVolume:    return "Volume video";
 

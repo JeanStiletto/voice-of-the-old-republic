@@ -208,6 +208,12 @@ struct ListBoxPanelSpec {
     //   * EquipPicker = false: unhandled keys fall through to slot-zone
     //     navigation (the rest of OnHandleInputEvent).
     bool alwaysReturnFromHandler;
+
+    // Optional dynamic first-row override. When non-null the dispatcher uses
+    // its return value instead of the constant `minSel`. WorkbenchUpgrade uses
+    // it because the picker's row 0 is a hidden remove entry on power slots but
+    // a real choice on the colour slot. nullptr = use `minSel` (most specs).
+    int (*minSelFn)(void* panel);
 };
 
 // ============================================================================
@@ -1037,17 +1043,45 @@ void WorkbenchUpgradeAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
     if (!acc::menus::extract::FromControl(r.row, rowText, sizeof(rowText))) {
         return;
     }
-    char msg[320];
+    // The picker layout (hidden remove entry vs. all-rows-real) decides the
+    // first navigable row, so the spoken position is 1-based over the visible
+    // rows only. Same panel the picker is armed against.
+    auto info = acc::engine::GetWorkbenchPickerInfo(s_workbenchUpgradePickerPanel);
+    int minSel = info.valid ? info.minSel : 0;
+
+    // Mark the row that's already installed in / set on the slot.
+    char marked[320];
+    if (info.valid && info.installedRow >= 0 && r.newSel == info.installedRow) {
+        snprintf(marked, sizeof(marked), "%s, %s", rowText,
+                 acc::strings::Get(acc::strings::Id::WorkbenchPickerInstalled));
+    } else {
+        snprintf(marked, sizeof(marked), "%s", rowText);
+    }
+
+    char msg[384];
     snprintf(msg, sizeof(msg),
              acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
-             rowText, r.newSel + 1, r.rowCount);
+             marked, r.newSel - minSel + 1, r.rowCount - minSel);
     prism::Speak(msg, /*interrupt=*/false);
+}
+
+// Dynamic minSel: hide the row-0 remove entry on power slots (minSel 1); show
+// every row on the colour slot (minSel 0). See GetWorkbenchPickerInfo.
+int WorkbenchUpgradeMinSel(void* panel) {
+    auto info = acc::engine::GetWorkbenchPickerInfo(panel);
+    return info.valid ? info.minSel : 0;
 }
 
 // Enter (armed): commit the currently-selected LB_ITEMS row via a single
 // pending op that fires vtable[15] on the row (stage), then on
 // BTN_ASSEMBLE (install). Mirrors EquipPickerOnEnter's row-then-commit
 // shape; disarms the picker after queueing.
+//
+// Remove gesture (power slots only): Enter on the currently-installed crystal
+// row routes the commit to the hidden row-0 entry (item id 0x7f000000), whose
+// OnUpgradeSelected branch removes the mod and returns it to inventory — the
+// same trick the equip picker uses to unequip. The colour slot has no remove
+// entry, so it always installs the selected colour.
 bool WorkbenchUpgradeOnEnter(void* panel) {
     if (acc::menus::pending::IsPending()) {
         acclog::Write("WorkbenchUpgrade", "Enter â€” op already pending; ignoring");
@@ -1057,6 +1091,7 @@ bool WorkbenchUpgradeOnEnter(void* panel) {
     void* lb  = FindControlById(panel, kWorkbenchUpgradeLbId);
     void* btn = FindControlById(panel, kWorkbenchUpgradeBtnAssemble);
     void* row = nullptr;
+    void* removeRow = nullptr;  // row 0 — the 0x7f000000 remove entry (power slots)
     short selIdx = -1;
     int   rowCount = 0;
     if (lb) {
@@ -1066,12 +1101,24 @@ bool WorkbenchUpgradeOnEnter(void* panel) {
         rowCount = (lbList && lbList->data) ? lbList->size : 0;
         selIdx = *reinterpret_cast<short*>(
             lbBase + kListBoxSelectionIndexOffset);
-        if (lbList && lbList->data &&
-            selIdx >= 0 && selIdx < rowCount) {
-            row = lbList->data[selIdx];
+        if (lbList && lbList->data) {
+            if (selIdx >= 0 && selIdx < rowCount) row = lbList->data[selIdx];
+            if (rowCount >= 1) removeRow = lbList->data[0];
         }
     }
-    if (row && btn) {
+
+    auto info = acc::engine::GetWorkbenchPickerInfo(panel);
+    bool removeGesture = info.valid && !info.isColorSlot &&
+                         info.installedRow >= 0 && selIdx == info.installedRow;
+
+    if (removeGesture && removeRow && btn) {
+        acc::menus::pending::QueueWorkbenchUpgradeCommit(panel, removeRow, btn);
+        prism::Speak(acc::strings::Get(acc::strings::Id::WorkbenchSlotRemoved),
+                     /*interrupt=*/false);
+        acclog::Write("WorkbenchUpgrade", "Enter -> remove (installed row sel=%d, "
+                      "commit remove row %p btn_assemble=%p panel=%p)",
+                      selIdx, removeRow, btn, panel);
+    } else if (row && btn) {
         acc::menus::pending::QueueWorkbenchUpgradeCommit(panel, row, btn);
         acclog::Write("WorkbenchUpgrade", "Enter -> commit (row sel=%d %p "
                       "btn_assemble=%p panel=%p)",
@@ -1110,6 +1157,7 @@ constexpr ListBoxPanelSpec kWorkbenchUpgradeSpec = {
     /*titleOverride*/           nullptr,
     /*emptyStateId*/            acc::strings::Id::WorkbenchUpgradesEmpty,
     /*alwaysReturnFromHandler*/ false,  // fall through so chain nav reaches the slot/assemble buttons
+    /*minSelFn*/                WorkbenchUpgradeMinSel,  // hide row-0 remove entry on power slots
 };
 
 // PowersLevelUp (pwrlvlup.gui) is NOT a flat listbox despite the
@@ -1366,9 +1414,10 @@ bool DispatchKeyDownEdge(const ListBoxPanelSpec& spec, void* panel,
 
     if (dirTag) {
         void* lb = spec.findListBox(panel);
+        int effMinSel = spec.minSelFn ? spec.minSelFn(panel) : spec.minSel;
         ListBoxNavResult r;
         if (lb && DriveListBoxSelection(lb, op,
-                                        static_cast<short>(spec.minSel), r)) {
+                                        static_cast<short>(effMinSel), r)) {
             // Specs with no announce callback (dialogue replies) drive the
             // cursor + consume the key here but defer speech to a poll monitor.
             if (spec.announce) spec.announce(lb, r);

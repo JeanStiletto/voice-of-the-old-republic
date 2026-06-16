@@ -447,6 +447,7 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotFilled:        return "belegt";
         case Id::WorkbenchSlotPeekEmpty:     return "Leerer Steckplatz, keine Aufwertung eingesetzt";
         case Id::WorkbenchFmtSlotItem:       return "%s, belegt mit %s";
+        case Id::WorkbenchPickerInstalled:   return "eingesetzt";
 
         case Id::SoundOptionsMovieVolume:    return "Video-Lautst\xE4rke";  // Lautstärke
 

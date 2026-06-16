@@ -428,6 +428,7 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotFilled:        return "occupied";
         case Id::WorkbenchSlotPeekEmpty:     return "Empty slot, no upgrade installed";
         case Id::WorkbenchFmtSlotItem:       return "%s, holds %s";
+        case Id::WorkbenchPickerInstalled:   return "installed";
 
         case Id::SoundOptionsMovieVolume:    return "Movie volume";
 

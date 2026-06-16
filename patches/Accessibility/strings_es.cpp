@@ -437,6 +437,7 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotFilled:        return "ocupada";
         case Id::WorkbenchSlotPeekEmpty:     return "Ranura vac\xED""a, sin mejora instalada";
         case Id::WorkbenchFmtSlotItem:       return "%s, con %s";
+        case Id::WorkbenchPickerInstalled:   return "instalado";
 
         case Id::SoundOptionsMovieVolume:    return "Volumen de v\xED""deo";
 
