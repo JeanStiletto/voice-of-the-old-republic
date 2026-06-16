@@ -1650,6 +1650,43 @@ constexpr uintptr_t kAddrCSWSItemGetPropertyDescription     = 0x0055f340;
 // GetPropertyDescription. Same heap-leak rule as GetPropertyDescription.
 constexpr uintptr_t kAddrCSWSItemGetKeyedPropertyString     = 0x0055f510;
 
+// Per-category property-block builders that GetPropertyDescription calls in
+// fixed order (decompile-verified at 0055f340). Each is
+// __thiscall(CSWSItem* this, CExoString* accumulator) and *appends* its
+// labelled block to the accumulator (never clears it). Calling them into our
+// own separate accumulators lets us reconstruct the four screen-reader blocks
+// (tags / values / properties / description) without parsing the localised
+// blob — see engine_reads::BuildItemDescriptionBlocks. The engine's own guards
+// (replicated by the caller) are: skip ALL of these when item_type is 0x2e
+// (crystal) or 6 (grenade); call the five weapon-only builders only when
+// weapon_type != 0.
+typedef void (__thiscall* PFN_AddItemProperty)(void* item, CExoString* accum);
+constexpr uintptr_t kAddrItemAddFeatRequirements     = 0x00556490;  // -> "tags"
+constexpr uintptr_t kAddrItemAddDamageProperties     = 0x00556de0;  // weapon-only
+constexpr uintptr_t kAddrItemAddRangeProperties      = 0x005543b0;  // weapon-only
+constexpr uintptr_t kAddrItemAddCriticalThreatProps  = 0x00558950;  // weapon-only
+constexpr uintptr_t kAddrItemAddOnHitProperties      = 0x00558c10;  // weapon-only
+constexpr uintptr_t kAddrItemAddWeaponSizeProperties = 0x005544f0;  // weapon-only
+constexpr uintptr_t kAddrItemAddAttackModifierProps  = 0x0055e930;  // -> "values"
+constexpr uintptr_t kAddrItemAddDefenceProperties    = 0x005599d0;  // -> "values"
+constexpr uintptr_t kAddrItemAddMiscellaneousProps   = 0x0055a510;  // -> "properties"
+
+// CExoString default constructor — __thiscall(CExoString* this). Initialises a
+// valid empty string the engine builders can append to. (GetPropertyDescription
+// calls this on its accumulator before the Add* sequence.)
+typedef CExoString* (__thiscall* PFN_CExoStringCtor)(CExoString* this_);
+constexpr uintptr_t kAddrCExoStringDefaultCtor       = 0x005b3190;
+
+// CSWItem::GetBaseItem — __thiscall(CSWItem* this) -> CSWBaseItem*. The CSWItem
+// subobject is at offset 0 of CSWSItem, so the CSWSItem* we already hold is a
+// valid `this`. Offsets into the returned CSWBaseItem (CMP-verified from the
+// GetPropertyDescription disassembly, NOT the placeholder struct header):
+//   +0x09 (byte) weapon_type — 0 = not a weapon
+//   +0xac (byte) item_type   — 0x2e crystal, 6 grenade
+constexpr uintptr_t kAddrCSWItemGetBaseItem          = 0x005b4790;
+constexpr size_t    kBaseItemWeaponTypeOffset        = 0x09;
+constexpr size_t    kBaseItemItemTypeOffset          = 0xac;
+
 // AppManager indirection to CServerExoApp. AppManager+0x8 → CServerExoApp*.
 // (Same constant as engine_player.h's kAppManagerServerOffsetPlayer.)
 constexpr size_t    kAppManagerServerExoAppOffset          = 0x8;

@@ -133,6 +133,23 @@ void* ResolveItemFromClientHandle(uint32_t clientHandle);
 // we deliberately leak (CRT-mismatch — same pattern as LookupTlk).
 bool ReadItemPropertyDescription(void* item, char* outBuf, size_t bufSize);
 
+// The four screen-reader navigation blocks of an item's property description,
+// reconstructed by calling the engine's own per-category builders (the same
+// ones GetPropertyDescription chains) into separate accumulators. Each field is
+// an empty string ("") when that category has no content for this item; callers
+// skip empties. Locale-clean (no string parsing). See BuildItemDescriptionBlocks.
+struct ItemDescriptionBlocks {
+    char tags[2048];        // required feats / weapon proficiency / restriction
+    char values[2048];      // damage, range, crit, on-hit, attack & defence bonus
+    char properties[4096];  // "Spezial:" special / enchant-style modifications
+    char description[4096]; // RPG flavour text
+};
+
+// Build the four blocks for `item` (a CSWSItem*). Returns false on null/fault or
+// when even GetPropertyDescription yields nothing. The per-category accumulators
+// are deliberately leaked (CRT-mismatch — same rule as ReadItemPropertyDescription).
+bool BuildItemDescriptionBlocks(void* item, ItemDescriptionBlocks* out);
+
 // The "Spezielle Eigenschaften: …" block for just the properties on `item`
 // whose slot-key byte matches `key` (CSWSItem::GetKeyedPropertyString). Used to
 // surface a workbench upgrade slot's keyed bonus line — the gameplay text that

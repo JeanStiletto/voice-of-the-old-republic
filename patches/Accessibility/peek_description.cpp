@@ -16,6 +16,7 @@
 
 using acc::menus::detail::FindControlById;
 
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -28,6 +29,89 @@ namespace {
 constexpr int kCursorReset = -1;
 
 int g_blockIdx = kCursorReset;
+
+// Item-block navigator state. While Shift is held, Shift+Up/Down moves over the
+// non-empty categorised blocks (Tags / Values / Properties / Description) of the
+// focused item; the cache is rebuilt when the focused item changes and cleared
+// on Shift release (OnShiftReleased). g_blockIdx (above) is the shared cursor.
+void* g_blockCacheItem = nullptr;
+acc::engine::ItemDescriptionBlocks g_blocks;
+const char* g_blockPtrs[4] = {nullptr, nullptr, nullptr, nullptr};
+int g_blockCount = 0;
+
+bool IsBlank(const char* s) {
+    for (; s && *s; ++s) {
+        if (!std::isspace(static_cast<unsigned char>(*s))) return false;
+    }
+    return true;
+}
+
+// Copy src into dst with leading/trailing whitespace stripped (the engine
+// builders pad each block with a trailing "\n\n").
+void TrimCopy(char* dst, std::size_t cap, const char* src) {
+    if (!dst || cap == 0) return;
+    while (*src && std::isspace(static_cast<unsigned char>(*src))) ++src;
+    std::size_t n = std::strlen(src);
+    while (n > 0 && std::isspace(static_cast<unsigned char>(src[n - 1]))) --n;
+    if (n >= cap) n = cap - 1;
+    std::memcpy(dst, src, n);
+    dst[n] = '\0';
+}
+
+// Read the item entry row's client handle (+0x1c4) and resolve it to a
+// CSWSItem*. Null on fault / non-item control. Forward-declared offset below.
+void* ResolveRowItem(void* row);
+
+// Shift+Up/Down over an item's four categorised description blocks. Rebuilds the
+// cache when `item` changes, advances the shared cursor (clamped at both ends —
+// the re-spoken boundary block is the "end of list" cue), and speaks the current
+// block trimmed. Empty categories are dropped at build time, so navigation only
+// visits blocks that have content. Returns true when a block was spoken (caller
+// still consumes the key on the no-content path for predictable behaviour).
+bool SpeakItemBlocks(void* item, bool down) {
+    if (!item) return false;
+
+    if (item != g_blockCacheItem) {
+        if (!acc::engine::BuildItemDescriptionBlocks(item, &g_blocks)) {
+            g_blockCacheItem = nullptr;
+            g_blockCount = 0;
+            acclog::Write("Peek.Blocks", "item=%p build failed; silent", item);
+            return false;
+        }
+        g_blockCacheItem = item;
+        g_blockCount = 0;
+        const char* all[4] = {g_blocks.tags, g_blocks.values,
+                              g_blocks.properties, g_blocks.description};
+        for (int i = 0; i < 4; ++i) {
+            if (!IsBlank(all[i])) g_blockPtrs[g_blockCount++] = all[i];
+        }
+        g_blockIdx = kCursorReset;  // fresh navigation for the new item
+    }
+
+    if (g_blockCount == 0) {
+        acclog::Write("Peek.Blocks", "item=%p no non-empty blocks; silent",
+                      item);
+        return false;
+    }
+
+    int prev = g_blockIdx;
+    if (g_blockIdx == kCursorReset) {
+        g_blockIdx = 0;  // first press speaks block 0 in either direction
+    } else if (down) {
+        if (g_blockIdx < g_blockCount - 1) ++g_blockIdx;
+    } else {
+        if (g_blockIdx > 0) --g_blockIdx;
+    }
+    if (g_blockIdx >= g_blockCount) g_blockIdx = g_blockCount - 1;
+
+    char spoken[4096];
+    TrimCopy(spoken, sizeof(spoken), g_blockPtrs[g_blockIdx]);
+    prism::Speak(spoken, /*interrupt=*/true);
+    acclog::Write("Peek.Blocks",
+                  "item=%p block %d/%d (was %d) text=\"%s\"",
+                  item, g_blockIdx, g_blockCount, prev, spoken);
+    return true;
+}
 
 typedef void (__thiscall* PFN_PanelOnControl)(void* panel, void* control);
 
@@ -207,7 +291,8 @@ const EquipSlotPeekInfo* FindEquipSlotByControl(void* control) {
 
 // True on a non-empty description spoken; false on empty slot / unresolved
 // item. Caller still consumes the key (predictable-behaviour rule).
-bool HandleEquipSlotTooltip(void* panel, const EquipSlotPeekInfo& info) {
+bool HandleEquipSlotTooltip(void* panel, const EquipSlotPeekInfo& info,
+                            bool down) {
     if (!panel) return false;
     uint32_t handle = 0;
     __try {
@@ -236,19 +321,10 @@ bool HandleEquipSlotTooltip(void* panel, const EquipSlotPeekInfo& info) {
         return false;
     }
 
-    char text[4096];
-    if (!acc::engine::ReadItemPropertyDescription(item, text, sizeof(text))) {
-        acclog::Write("Peek.EquipSlot",
-                      "panel=%p cid=%d item=%p empty description",
-                      panel, info.cid, item);
-        return false;
-    }
-
-    prism::Speak(text, /*interrupt=*/true);
     acclog::Write("Peek.EquipSlot",
-                  "panel=%p cid=%d handle=0x%x item=%p text=\"%s\"",
-                  panel, info.cid, handle, item, text);
-    return true;
+                  "panel=%p cid=%d handle=0x%x item=%p -> block nav",
+                  panel, info.cid, handle, item);
+    return SpeakItemBlocks(item, down);
 }
 
 // Shift+arrow on a workbench upgrade slot button (upgrade.gui IDs 12..18):
@@ -257,7 +333,7 @@ bool HandleEquipSlotTooltip(void* panel, const EquipSlotPeekInfo& info) {
 // CSWGuiUpgrade.field35_0x2f74[slot_btn.custom_value] (engine-constructed from
 // the mod template — see OnPanelAdded). Mirrors HandleEquipSlotTooltip; caller
 // consumes the key regardless of return so behaviour is predictable.
-bool HandleWorkbenchSlotTooltip(void* panel, void* control) {
+bool HandleWorkbenchSlotTooltip(void* panel, void* control, bool down) {
     void* installed =
         acc::engine::GetWorkbenchSlotInstalledItem(panel, control);
     if (!installed) {
@@ -269,16 +345,14 @@ bool HandleWorkbenchSlotTooltip(void* panel, void* control) {
         return true;
     }
 
-    char text[4096];
-    if (acc::engine::ReadItemPropertyDescription(installed, text,
-                                                 sizeof(text))) {
-        prism::Speak(text, /*interrupt=*/true);
+    if (SpeakItemBlocks(installed, down)) {
         acclog::Write("Peek.Workbench",
-                      "panel=%p control=%p item=%p text=\"%s\"",
-                      panel, control, installed, text);
+                      "panel=%p control=%p item=%p -> block nav",
+                      panel, control, installed);
         return true;
     }
 
+    char text[4096];
     // Occupied but no property text — fall back to the mod's name so the peek
     // still says what's installed rather than going silent.
     if (acc::engine::ExtractTextOrStrRef(installed, kItemLocNameOffset,
@@ -305,6 +379,22 @@ const ItemTooltipPanelInfo* LookupItemTooltipPanel(acc::engine::PanelKind k) {
 
 constexpr std::size_t kItemEntryGameObjectIdOffset = 0x1c4;
 
+// Read an item entry row's client handle (+0x1c4) and resolve it to a CSWSItem*.
+// Shared by the Inventory/Store focused-row path and SpeakItemRowDescription.
+// Null on fault or when the control isn't an item row.
+void* ResolveRowItem(void* row) {
+    if (!row) return nullptr;
+    uint32_t clientHandle = 0;
+    __try {
+        clientHandle = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(row) +
+            kItemEntryGameObjectIdOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+    return acc::engine::ResolveItemFromClientHandle(clientHandle);
+}
+
 // Defined below (uses ReadRowText). Builds the workbench picker description
 // via the engine's own hover handler for saber upgrades.
 bool TryReadWorkbenchSaberDescription(void* panel, void* row,
@@ -313,7 +403,7 @@ bool TryReadWorkbenchSaberDescription(void* panel, void* row,
 // Caller consumes the key regardless of return (predictable behaviour).
 bool HandleItemTooltip(acc::engine::PanelKind kind,
                        const ItemTooltipPanelInfo& info,
-                       void* activePanel) {
+                       void* activePanel, bool down) {
     void* lb = info.findLb ? info.findLb(activePanel) : nullptr;
     if (!lb) {
         acclog::Write("Peek.Item",
@@ -401,20 +491,11 @@ bool HandleItemTooltip(acc::engine::PanelKind kind,
         return false;
     }
 
-    char text[4096];
-    if (!acc::engine::ReadItemPropertyDescription(item, text, sizeof(text))) {
-        acclog::Write("Peek.Item",
-                      "panel=%s item=%p empty description",
-                      acc::engine::PanelKindName(kind), item);
-        return false;
-    }
-
-    prism::Speak(text, /*interrupt=*/true);
     acclog::Write("Peek.Item",
-                  "panel=%s row sel=%d/%d item=%p handle=0x%x text=\"%s\"",
+                  "panel=%s row sel=%d/%d item=%p handle=0x%x -> block nav",
                   acc::engine::PanelKindName(kind), (int)selIdx, rowCount,
-                  item, clientHandle, text);
-    return true;
+                  item, clientHandle);
+    return SpeakItemBlocks(item, down);
 }
 
 // Rows can be CSWGuiLabel OR CSWGuiButton (engine uses both for text-only
@@ -496,6 +577,10 @@ void OnShiftReleased() {
                       g_blockIdx);
     }
     g_blockIdx = kCursorReset;
+    // Drop the item-block cache so the next peek rebuilds for whatever item is
+    // focused then (the user may have moved to a different row meanwhile).
+    g_blockCacheItem = nullptr;
+    g_blockCount = 0;
 }
 
 bool SpeakItemRowDescription(void* row) {
@@ -535,6 +620,7 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
     if (!ShiftHeld()) return false;
     if (!activePanel) return false;
 
+    const bool down = (param_1 == kInputNavDown);
     auto kind = acc::engine::IdentifyPanel(activePanel);
 
     // Slot path runs before picker-listbox because InGameEquip hosts
@@ -550,7 +636,7 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
         !acc::menus::listbox::IsEquipPickerArmed()) {
         if (const EquipSlotPeekInfo* slotInfo =
                 FindEquipSlotByControl(focusedControl)) {
-            HandleEquipSlotTooltip(activePanel, *slotInfo);
+            HandleEquipSlotTooltip(activePanel, *slotInfo, down);
             return true;
         }
     }
@@ -578,7 +664,7 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
             cid = -1;
         }
         if (cid >= 12 && cid <= 18) {
-            HandleWorkbenchSlotTooltip(activePanel, focusedControl);
+            HandleWorkbenchSlotTooltip(activePanel, focusedControl, down);
             return true;
         }
     }
@@ -593,8 +679,23 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
 
     // Item-tooltip path (Container, Equip picker, Workbench listboxes).
     if (const ItemTooltipPanelInfo* itemInfo = LookupItemTooltipPanel(kind)) {
-        HandleItemTooltip(kind, *itemInfo, activePanel);
+        HandleItemTooltip(kind, *itemInfo, activePanel, down);
         return true;
+    }
+
+    // Inventory / Store: the chain-focused control is the item entry row itself
+    // (client item handle at +0x1c4). Read the item and navigate its four
+    // categorised blocks, instead of paging the single-row description listbox
+    // the engine renders. Falls through to the listbox path only if the focused
+    // row doesn't resolve to an item (e.g. focus parked on a non-item control).
+    if (kind == acc::engine::PanelKind::InGameInventory ||
+        kind == acc::engine::PanelKind::Store) {
+        if (void* item = ResolveRowItem(focusedControl)) {
+            acclog::Write("Peek.Blocks",
+                          "panel=%s focused row item=%p -> block nav",
+                          acc::engine::PanelKindName(kind), item);
+            if (SpeakItemBlocks(item, down)) return true;
+        }
     }
 
     const PanelPeekInfo* info = LookupPanel(kind);
@@ -646,7 +747,6 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
         return true;
     }
 
-    bool down = (param_1 == kInputNavDown);
     int prev = g_blockIdx;
     if (g_blockIdx == kCursorReset) {
         // First press after a release speaks block 0 in either direction.
