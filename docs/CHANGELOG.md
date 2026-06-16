@@ -23,6 +23,11 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.5.3</h2>
 
+<h3>New features:</h3>
+
+- You can now reassign every one of the mod's own hotkeys from the keyboard, and bind them to key combinations of your choice. A new "Key bindings" entry in Mod Settings (Options → Mod Settings → Key bindings) opens the mod's actions grouped into categories — World and actions, Exploration and camera, Menus and input, Minigames, and General. Step into a category, pick an action (each read together with the key it's currently on, for example "Level up: Shift+L"), press Enter, then press the key you want. Modifiers are captured too, so you can assign combinations like Shift+Space or Shift+K, not just single keys. If the key you press is already used by another mod action — or by one of the game's own keys — the mod tells you what it clashes with and waits for you to press a different one; Escape cancels the capture. A "Restore defaults" entry at the bottom puts every binding back. Your changes are saved and carry over when you quit and relaunch.
+- The mod and the game now warn you about key clashes between them. The game has no knowledge of the mod's keys, so binding a game action onto a key one of the mod's shortcuts already uses would silently make both fire at once. Now, when you assign a key in the game's own Key Mapping screen (Options → Game Settings → Key Mapping) that one of the mod's shortcuts uses, the mod speaks a warning naming the mod action it collides with — and the reverse is covered in the mod's own Key bindings screen, which checks the key you pick against your complete current game keymap (read live from your settings), not just a handful of built-in keys.
+
 <h3>Bug fixes:</h3>
 
 - Hacking and computer-terminal dialogue options are no longer read twice. When you arrowed through the choices on a security or computer-spike terminal, each option was spoken twice in a row — once with its position and once without — because two parts of the mod were both announcing it. Now each option is read once, together with its position in the list ("Hack the computer… , 1 of 2").

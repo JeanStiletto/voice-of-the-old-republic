@@ -627,6 +627,94 @@ const char* Get(Id id) {
             return "Das Spiel kann deine Tasteneingaben nicht empfangen, "
                    "weil der Steam-Big-Picture-Modus im Vordergrund ist.";
 
+        // ---- Tastenbelegung (mod keybind configurator) ----
+        case Id::KeybindsRootLabel:       return "Tastenbelegung";
+        case Id::KeybindsOpened:          return "Tastenbelegung ge\xF6""ffnet";
+        case Id::KeybindCatWorld:         return "Welt und Aktionen";
+        case Id::KeybindCatExploration:   return "Erkundung und Kamera";
+        case Id::KeybindCatMenus:         return "Men\xFCs und Eingabe";
+        case Id::KeybindCatMinigames:     return "Minispiele";
+        case Id::KeybindCatGeneral:       return "Allgemein";
+        case Id::KeybindResetAll:         return "Standard wiederherstellen";
+        case Id::KeybindResetDone:        return "Tastenbelegung zur\xFC""ckgesetzt";
+        case Id::FmtKeybindCapturePrompt: return "Neue Taste f\xFCr %s dr\xFC""cken. Escape bricht ab.";
+        case Id::FmtKeybindRebound:       return "%s neu belegt: %s";
+        case Id::FmtKeybindConflictMod:   return "Bereits belegt mit %s. Andere Taste dr\xFC""cken.";
+        case Id::KeybindConflictEngine:   return "Vom Spiel belegt. Andere Taste dr\xFC""cken.";
+        case Id::KeybindCaptureCancelled: return "Abgebrochen";
+        case Id::FmtKeymapModConflict:    return "Achtung: Der Mod nutzt diese Taste f\xFCr %s";
+        // World & actions
+        case Id::KbNameInteractTarget:      return "Interagieren";
+        case Id::KbNameInteractForceRadial: return "Radialmen\xFC erzwingen";
+        case Id::KbNameTargetKey1:          return "Zieltaste 1";
+        case Id::KbNameTargetKey2:          return "Zieltaste 2";
+        case Id::KbNameTargetKey3:          return "Zieltaste 3";
+        case Id::KbNamePersonalKey1:        return "Eigene Aktion 1";
+        case Id::KbNamePersonalKey2:        return "Eigene Aktion 2";
+        case Id::KbNamePersonalKey3:        return "Eigene Aktion 3";
+        case Id::KbNamePersonalKey4:        return "Eigene Aktion 4";
+        case Id::KbNameActionBarOpen1:      return "Aktionsleiste 1 \xF6""ffnen";
+        case Id::KbNameActionBarOpen2:      return "Aktionsleiste 2 \xF6""ffnen";
+        case Id::KbNameActionBarOpen3:      return "Aktionsleiste 3 \xF6""ffnen";
+        case Id::KbNameActionBarOpen4:      return "Aktionsleiste 4 \xF6""ffnen";
+        case Id::KbNameTargetActionOpen1:   return "Zielaktion 1 \xF6""ffnen";
+        case Id::KbNameTargetActionOpen2:   return "Zielaktion 2 \xF6""ffnen";
+        case Id::KbNameTargetActionOpen3:   return "Zielaktion 3 \xF6""ffnen";
+        case Id::KbNameLevelUpOpen:         return "Stufenaufstieg";
+        case Id::KbNameExamineOpen:         return "Untersuchen";
+        case Id::KbNameCombatQueueOpen:     return "Aktionswarteschlange";
+        case Id::KbNameSelfStatusAnnounce:  return "Eigener Status";
+        // Exploration & camera
+        case Id::KbNameCycleItemPrev:       return "Objekt zur\xFC""ck";
+        case Id::KbNameCycleCategoryPrev:   return "Kategorie zur\xFC""ck";
+        case Id::KbNameCycleItemNext:       return "Objekt vor";
+        case Id::KbNameCycleCategoryNext:   return "Kategorie vor";
+        case Id::KbNameCycleItemFirst:      return "Erstes Objekt";
+        case Id::KbNameCycleItemLast:       return "Letztes Objekt";
+        case Id::KbNameAnnounceFocus:       return "Fokus ansagen";
+        case Id::KbNamePathfindFocus:       return "Zum Fokus gehen";
+        case Id::KbNamePathfindFocusForce:  return "Zum Fokus gehen erzwingen";
+        case Id::KbNameBeaconFocus:         return "Beacon zum Fokus";
+        case Id::KbNameAnnounceDegrees:     return "Blickrichtung in Grad";
+        case Id::KbNamePartyLeaderAnnounce: return "Gruppenanf\xFChrer ansagen";
+        case Id::KbNameCameraOrient:        return "Kamera ausrichten";
+        case Id::KbNameSaveMarkerAtCursor:  return "Marke setzen";
+        case Id::KbNameViewModeToggle:      return "Ansichtsmodus";
+        // Menus & input
+        case Id::KbNameNavUp:               return "Men\xFC hoch";
+        case Id::KbNameNavDown:             return "Men\xFC runter";
+        case Id::KbNameNavLeft:             return "Men\xFC links";
+        case Id::KbNameNavRight:            return "Men\xFC rechts";
+        case Id::KbNameNavHome:             return "Zum Anfang";
+        case Id::KbNameNavEnd:              return "Zum Ende";
+        case Id::KbNameSubmenuEsc:          return "Men\xFC schlie\xDF""en";
+        case Id::KbNameQueueClearAll:       return "Warteschlange leeren";
+        case Id::KbNameContainerGiveMode:   return "Beh\xE4lter Geben-Modus";
+        case Id::KbNameStoreModeToggle:     return "Laden Kaufen oder Verkaufen";
+        case Id::KbNameEditboxReReadUp:     return "Eingabefeld erneut lesen hoch";
+        case Id::KbNameEditboxReReadDown:   return "Eingabefeld erneut lesen runter";
+        case Id::KbNameEditboxSubmit:       return "Eingabe best\xE4tigen";
+        case Id::KbNameEditboxCancel:       return "Eingabe abbrechen";
+        // Minigames
+        case Id::KbNamePazaakStand:         return "Pazaak: Stehen";
+        case Id::KbNamePazaakEndTurn:       return "Pazaak: Zug beenden";
+        case Id::KbNamePazaakReviewHand:    return "Pazaak: Handkarten";
+        case Id::KbNamePazaakReviewTable:   return "Pazaak: Tisch";
+        case Id::KbNamePazaakNextCard:      return "Pazaak: N\xE4""chste Karte";
+        case Id::KbNamePazaakPrevCard:      return "Pazaak: Vorige Karte";
+        case Id::KbNamePazaakPlay:          return "Pazaak: Karte spielen";
+        case Id::KbNamePazaakOptLeft:       return "Pazaak: Option links";
+        case Id::KbNamePazaakOptRight:      return "Pazaak: Option rechts";
+        case Id::KbNamePazaakCancel:        return "Pazaak: Abbrechen";
+        case Id::KbNamePazaakOppHand:       return "Pazaak: Gegnerhand";
+        case Id::KbNameTurretCyclePrev:     return "Gesch\xFCtz: Ziel zur\xFC""ck";
+        case Id::KbNameTurretCycleNext:     return "Gesch\xFCtz: Ziel vor";
+        // General
+        case Id::KbNameHelpMenuOpen:        return "Tastenhilfe";
+        case Id::KbNameHelpContext:         return "Kontexthilfe";
+        case Id::KbNameCheckForUpdate:      return "Nach Update suchen";
+        case Id::KbNameDialogRepeatLine:    return "Dialogzeile wiederholen";
+
         case Id::Count_:               return "";
     }
     return "";

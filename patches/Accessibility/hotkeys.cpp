@@ -5,7 +5,11 @@
 
 #include <windows.h>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+
+#include "log.h"                 // acclog::PatchDir / Write — override load gate
+#include "mod_settings_store.h"  // persist user rebinds across launches
 
 #pragma comment(lib, "user32.lib")
 
@@ -19,6 +23,12 @@ namespace {
 // here changes the binding mod-wide. Future rebind UI overwrites at runtime
 // via `Set()`.
 Binding g_bindings[static_cast<int>(Action::COUNT)] = {};
+
+// Factory defaults, frozen at InitDefaults time before any user override is
+// applied. The configurator's "restore defaults" copies these back into
+// g_bindings. Kept separate from g_bindings so a runtime rebind never loses the
+// original value.
+Binding g_defaults[static_cast<int>(Action::COUNT)] = {};
 
 // Per-Action edge-detection state. Stored in arrays parallel to `g_bindings`
 // so an Action's index lookup is a single subscript. `now` is sampled in
@@ -169,7 +179,7 @@ void InitDefaults() {
 
     auto bind = [](Action a, int vk, int altVk = 0,
                    uint32_t req = 0, uint32_t forbid = 0) {
-        g_bindings[static_cast<int>(a)] = {vk, altVk, req, forbid};
+        g_defaults[static_cast<int>(a)] = {vk, altVk, req, forbid};
     };
 
     // ----- World interaction -----
@@ -371,6 +381,71 @@ void InitDefaults() {
     // is foreground (dialog_speech.cpp), like the cycle keys. Forbid every
     // modifier so it stays distinct from any future Shift/Ctrl+R combo.
     bind(Action::DialogRepeatLine,  'R',       0, 0,         kModShift | kModCtrl | kModAlt | kModAltGr);
+
+    // Seed the live table from the freshly-built defaults. User overrides (if
+    // any) are layered on top later by EnsureOverridesLoaded once the settings
+    // file is reachable (PatchDir known) — see BeginTick.
+    for (int i = 0; i < static_cast<int>(Action::COUNT); ++i) {
+        g_bindings[i] = g_defaults[i];
+    }
+}
+
+// ----- User-override persistence --------------------------------------------
+// Each rebindable action persists under "Bind_<Name>" in acc_settings.ini as
+// "vk,altVk,req,forbid". The English Name() identifiers are stable keys.
+bool g_overridesLoaded = false;
+
+void BindKey(Action a, char* out, size_t cap) {
+    snprintf(out, cap, "Bind_%s", Name(a));
+}
+
+void SerializeBinding(const Binding& b, char* out, size_t cap) {
+    snprintf(out, cap, "%d,%d,%u,%u", b.vk, b.altVk,
+             static_cast<unsigned>(b.modsRequired),
+             static_cast<unsigned>(b.modsForbidden));
+}
+
+// Parse "vk,altVk,req,forbid"; returns true on a full 4-field parse.
+bool ParseBinding(const char* s, Binding& out) {
+    if (!s || !*s) return false;
+    int vk = 0, altVk = 0;
+    unsigned req = 0, forbid = 0;
+    if (sscanf_s(s, "%d,%d,%u,%u", &vk, &altVk, &req, &forbid) != 4) {
+        return false;
+    }
+    out.vk            = vk;
+    out.altVk         = altVk;
+    out.modsRequired  = req;
+    out.modsForbidden = forbid;
+    return true;
+}
+
+// Layer persisted user rebinds over the defaults. No-op (and leaves the retry
+// flag clear) until the settings path is resolvable, so a launch where this
+// runs before the patch dir is known retries on the next tick instead of
+// locking in the defaults.
+void EnsureOverridesLoaded() {
+    if (g_overridesLoaded) return;
+    const char* dir = acclog::PatchDir();
+    if (!dir || !*dir) return;  // settings file not reachable yet — retry later
+    g_overridesLoaded = true;
+    int applied = 0;
+    for (int i = 0; i < static_cast<int>(Action::COUNT); ++i) {
+        Action a = static_cast<Action>(i);
+        if (!IsUserRebindable(a)) continue;
+        char key[64];
+        BindKey(a, key, sizeof(key));
+        char val[64];
+        if (!acc::settings::GetStr(key, val, sizeof(val))) continue;
+        Binding b{};
+        if (!ParseBinding(val, b)) continue;
+        g_bindings[i] = b;
+        ++applied;
+    }
+    if (applied > 0) {
+        acclog::Write("Hotkeys", "loaded %d user rebind(s) from settings",
+                      applied);
+    }
 }
 
 }  // namespace
@@ -379,6 +454,7 @@ void InitDefaults() {
 
 void BeginTick() {
     InitDefaults();
+    EnsureOverridesLoaded();
     uint32_t mods = ReadModifiers();
     for (int i = 0; i < static_cast<int>(Action::COUNT); ++i) {
         g_edge[i].now = BindingMatches(g_bindings[i], mods);
@@ -501,6 +577,60 @@ void Set(Action a, Binding b) {
     g_edge[idx].claimed = false;
 }
 
+Binding GetDefault(Action a) {
+    InitDefaults();
+    int idx = static_cast<int>(a);
+    if (idx < 0 || idx >= static_cast<int>(Action::COUNT)) return {};
+    return g_defaults[idx];
+}
+
+void SetUserBinding(Action a, Binding b) {
+    int idx = static_cast<int>(a);
+    if (idx < 0 || idx >= static_cast<int>(Action::COUNT)) return;
+    Set(a, b);
+    char key[64], val[64];
+    BindKey(a, key, sizeof(key));
+    SerializeBinding(b, val, sizeof(val));
+    acc::settings::SetStr(key, val);
+    acclog::Write("Hotkeys", "user rebind %s -> %s", Name(a), val);
+}
+
+void ResetUserBindings() {
+    InitDefaults();
+    for (int i = 0; i < static_cast<int>(Action::COUNT); ++i) {
+        Action a = static_cast<Action>(i);
+        if (!IsUserRebindable(a)) continue;
+        Set(a, g_defaults[i]);
+        // Overwrite the persisted value with the default so the file reflects
+        // the reset state (rather than leaving a stale override behind).
+        char key[64], val[64];
+        BindKey(a, key, sizeof(key));
+        SerializeBinding(g_defaults[i], val, sizeof(val));
+        acc::settings::SetStr(key, val);
+    }
+    acclog::Write("Hotkeys", "all user rebinds reset to defaults");
+}
+
+Action FindConflict(Action self, int vk, uint32_t mods) {
+    InitDefaults();
+    if (vk == 0) return Action::COUNT;
+    for (int i = 0; i < static_cast<int>(Action::COUNT); ++i) {
+        Action a = static_cast<Action>(i);
+        if (a == self) continue;
+        if (!IsUserRebindable(a)) continue;
+        const Binding& b = g_bindings[i];
+        if (b.vk != vk && b.altVk != vk) continue;
+        // Would binding b ALSO fire when this exact combo is pressed? That is
+        // the double-fire condition: every modifier b requires is held, and no
+        // modifier b forbids is held.
+        if ((mods & b.modsRequired)  == b.modsRequired &&
+            (mods & b.modsForbidden) == 0) {
+            return a;
+        }
+    }
+    return Action::COUNT;
+}
+
 bool IsUserRebindable(Action a) {
     switch (a) {
     case Action::ProbePathfind:
@@ -510,6 +640,9 @@ bool IsUserRebindable(Action a) {
     case Action::ProbeMouseLookToggle:
     case Action::ProbeCameraDistDump:
     case Action::ProbeCameraDistClampToggle:
+    // Shift+B camera-state probe — a developer diagnostic, not a player
+    // hotkey; keep it out of the configurator alongside the F-key probes.
+    case Action::CameraStateProbe:
         return false;
     default:
         return true;

@@ -50,6 +50,7 @@ enum class Option {
     SkipIntros,        // filesystem-backed — state is biologo.bik vs biologo.bik.disabled
     CueVolume,         // slider — global hint-sound volume (audio_bus owns the value)
     UrgentVolume,      // slider — SAPI spoken-announcement volume (prism owns the value)
+    Keybindings,       // submenu pivot — the mod keybind configurator (menus_keybinds)
     AudioGlossary,
     Count
 };

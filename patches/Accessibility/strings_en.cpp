@@ -606,6 +606,94 @@ const char* Get(Id id) {
             return "The game can't receive your key presses because Steam "
                    "Big Picture Mode is in front.";
 
+        // ---- Tastenbelegung (mod keybind configurator) ----
+        case Id::KeybindsRootLabel:       return "Key bindings";
+        case Id::KeybindsOpened:          return "Key bindings opened";
+        case Id::KeybindCatWorld:         return "World and actions";
+        case Id::KeybindCatExploration:   return "Exploration and camera";
+        case Id::KeybindCatMenus:         return "Menus and input";
+        case Id::KeybindCatMinigames:     return "Minigames";
+        case Id::KeybindCatGeneral:       return "General";
+        case Id::KeybindResetAll:         return "Restore defaults";
+        case Id::KeybindResetDone:        return "Key bindings reset to defaults";
+        case Id::FmtKeybindCapturePrompt: return "Press the new key for %s. Escape cancels.";
+        case Id::FmtKeybindRebound:       return "%s rebound to %s";
+        case Id::FmtKeybindConflictMod:   return "Already bound to %s. Press another key.";
+        case Id::KeybindConflictEngine:   return "Bound by the game. Press another key.";
+        case Id::KeybindCaptureCancelled: return "Cancelled";
+        case Id::FmtKeymapModConflict:    return "Warning: the mod uses this key for %s";
+        // World & actions
+        case Id::KbNameInteractTarget:      return "Interact";
+        case Id::KbNameInteractForceRadial: return "Force radial menu";
+        case Id::KbNameTargetKey1:          return "Target key 1";
+        case Id::KbNameTargetKey2:          return "Target key 2";
+        case Id::KbNameTargetKey3:          return "Target key 3";
+        case Id::KbNamePersonalKey1:        return "Personal action 1";
+        case Id::KbNamePersonalKey2:        return "Personal action 2";
+        case Id::KbNamePersonalKey3:        return "Personal action 3";
+        case Id::KbNamePersonalKey4:        return "Personal action 4";
+        case Id::KbNameActionBarOpen1:      return "Open action bar 1";
+        case Id::KbNameActionBarOpen2:      return "Open action bar 2";
+        case Id::KbNameActionBarOpen3:      return "Open action bar 3";
+        case Id::KbNameActionBarOpen4:      return "Open action bar 4";
+        case Id::KbNameTargetActionOpen1:   return "Open target action 1";
+        case Id::KbNameTargetActionOpen2:   return "Open target action 2";
+        case Id::KbNameTargetActionOpen3:   return "Open target action 3";
+        case Id::KbNameLevelUpOpen:         return "Level up";
+        case Id::KbNameExamineOpen:         return "Examine";
+        case Id::KbNameCombatQueueOpen:     return "Action queue";
+        case Id::KbNameSelfStatusAnnounce:  return "Self status";
+        // Exploration & camera
+        case Id::KbNameCycleItemPrev:       return "Previous object";
+        case Id::KbNameCycleCategoryPrev:   return "Previous category";
+        case Id::KbNameCycleItemNext:       return "Next object";
+        case Id::KbNameCycleCategoryNext:   return "Next category";
+        case Id::KbNameCycleItemFirst:      return "First object";
+        case Id::KbNameCycleItemLast:       return "Last object";
+        case Id::KbNameAnnounceFocus:       return "Announce focus";
+        case Id::KbNamePathfindFocus:       return "Walk to focus";
+        case Id::KbNamePathfindFocusForce:  return "Walk to focus, force";
+        case Id::KbNameBeaconFocus:         return "Beacon to focus";
+        case Id::KbNameAnnounceDegrees:     return "Heading in degrees";
+        case Id::KbNamePartyLeaderAnnounce: return "Announce party leader";
+        case Id::KbNameCameraOrient:        return "Orient camera";
+        case Id::KbNameSaveMarkerAtCursor:  return "Drop marker";
+        case Id::KbNameViewModeToggle:      return "View mode";
+        // Menus & input
+        case Id::KbNameNavUp:               return "Menu up";
+        case Id::KbNameNavDown:             return "Menu down";
+        case Id::KbNameNavLeft:             return "Menu left";
+        case Id::KbNameNavRight:            return "Menu right";
+        case Id::KbNameNavHome:             return "To start";
+        case Id::KbNameNavEnd:              return "To end";
+        case Id::KbNameSubmenuEsc:          return "Close menu";
+        case Id::KbNameQueueClearAll:       return "Clear queue";
+        case Id::KbNameContainerGiveMode:   return "Container give mode";
+        case Id::KbNameStoreModeToggle:     return "Store buy or sell";
+        case Id::KbNameEditboxReReadUp:     return "Edit field re-read up";
+        case Id::KbNameEditboxReReadDown:   return "Edit field re-read down";
+        case Id::KbNameEditboxSubmit:       return "Submit input";
+        case Id::KbNameEditboxCancel:       return "Cancel input";
+        // Minigames
+        case Id::KbNamePazaakStand:         return "Pazaak: Stand";
+        case Id::KbNamePazaakEndTurn:       return "Pazaak: End turn";
+        case Id::KbNamePazaakReviewHand:    return "Pazaak: Review hand";
+        case Id::KbNamePazaakReviewTable:   return "Pazaak: Review table";
+        case Id::KbNamePazaakNextCard:      return "Pazaak: Next card";
+        case Id::KbNamePazaakPrevCard:      return "Pazaak: Previous card";
+        case Id::KbNamePazaakPlay:          return "Pazaak: Play card";
+        case Id::KbNamePazaakOptLeft:       return "Pazaak: Option left";
+        case Id::KbNamePazaakOptRight:      return "Pazaak: Option right";
+        case Id::KbNamePazaakCancel:        return "Pazaak: Cancel";
+        case Id::KbNamePazaakOppHand:       return "Pazaak: Opponent hand";
+        case Id::KbNameTurretCyclePrev:     return "Turret: Previous target";
+        case Id::KbNameTurretCycleNext:     return "Turret: Next target";
+        // General
+        case Id::KbNameHelpMenuOpen:        return "Key help";
+        case Id::KbNameHelpContext:         return "Context help";
+        case Id::KbNameCheckForUpdate:      return "Check for update";
+        case Id::KbNameDialogRepeatLine:    return "Repeat dialog line";
+
         case Id::Count_:               return "";
     }
     return "";

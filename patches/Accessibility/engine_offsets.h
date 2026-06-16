@@ -151,6 +151,11 @@ constexpr uintptr_t kVtableCSWGuiButton = 0x0073E658;
 constexpr uintptr_t kVtableKeyMapButton          = 0x007593c8;
 constexpr size_t    kKeyMapButtonMappedKeyOffset = 0x1c8;
 constexpr size_t    kKeyMapButtonUnchangeableOff = 0x3a4;
+// CSWGuiKeyMapButton.key_code @ +0x39c — the engine InputIndices value of the
+// freshly captured key (KEYBOARD_*; NOT a DIK scancode — set with `updated`=1 on
+// capture, written to swkotor.ini in decimal on Accept). Resolve to a VK via
+// engine_keymap::InputIndexToVk to test the new game bind against mod hotkeys.
+constexpr size_t    kKeyMapButtonKeyCodeOff      = 0x39c;
 
 // CSWGuiEditbox layout (verified against k1_win_gog_swkotor.exe.xml SYMBOL
 // CSWGuiEditbox_vtable @ 0x0073EAC8 + STRUCTURE size 0x160 + swkotor.exe.h

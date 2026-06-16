@@ -9,14 +9,17 @@
 #include "menus_keymap.h"
 
 #include "engine_input.h"
+#include "engine_keymap.h"       // InputIndexToVk — new game bind -> VK for mod check
 #include "engine_manager.h"      // IsPanelInManager
 #include "engine_offsets.h"
 #include "engine_panels.h"
 #include "engine_reads.h"        // ReadButtonText
+#include "hotkeys.h"             // FindConflict — does a mod bare bind use this key?
 #include "log.h"
 #include "menus_chain.h"         // RebindChain (refresh after list repopulates)
 #include "menus_extract.h"       // FromControl ("{action}: {key}" readout)
 #include "menus_internal.h"      // DriveListBoxSelection / ListBoxNav*
+#include "menus_keybinds.h"      // DisplayName — name the clashing mod action
 #include "menus_pending.h"       // QueueActivate (click-sim for OK/Cancel/Default)
 #include "prism.h"
 #include "strings.h"
@@ -166,6 +169,36 @@ void ArmCapture(void* panel, void* row) {
     }
 }
 
+// After the engine applies a freshly captured key to a game action, warn if that
+// same physical key also drives a mod hotkey. The engine is modifier-blind, so
+// the just-bound key is bare — only a mod BARE bind genuinely double-fires (a
+// modified mod combo is reserved in-world and never collides). Spoken as a queued
+// follow-up so it trails the row re-announce rather than cutting it off.
+void WarnIfModBindClash(void* row) {
+    if (!row) return;
+    int keyCode = 0;
+    __try {
+        keyCode = *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(row) + kKeyMapButtonKeyCodeOff);
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return; }
+    if (keyCode <= 0) return;
+    // key_code is an engine InputIndices value (KEYBOARD_*), not a DIK scancode.
+    int vk = acc::engine_keymap::InputIndexToVk(keyCode);
+    if (vk == 0) return;
+    acc::hotkeys::Action clash =
+        acc::hotkeys::FindConflict(acc::hotkeys::Action::COUNT, vk, /*mods=*/0);
+    if (clash == acc::hotkeys::Action::COUNT) return;
+    const char* name = acc::menus::keybinds::DisplayName(clash);
+    if (!name || !name[0]) return;
+    char line[224];
+    snprintf(line, sizeof(line),
+             acc::strings::Get(acc::strings::Id::FmtKeymapModConflict), name);
+    prism::Speak(line, /*interrupt=*/false);
+    acclog::Write("Menus.KeyMap",
+                  "new game bind vk=0x%02x clashes with mod action %s",
+                  vk, acc::hotkeys::Name(clash));
+}
+
 }  // namespace
 
 bool IsKeyMapPanel(void* panel) {
@@ -192,6 +225,10 @@ void Tick() {
     s_armedPanel = nullptr;
     SpeakControl(panel, row);
     acclog::Write("Menus.KeyMap", "capture done; re-announced row=%p", row);
+    // If the player just bound a game action onto a key a mod hotkey already
+    // uses, warn them — the game's own conflict check doesn't know about mod
+    // binds, so the double-fire would otherwise be silent.
+    WarnIfModBindClash(row);
 }
 
 bool HandleInput(void* activePanel, int param_1, int param_2, int& outRv) {

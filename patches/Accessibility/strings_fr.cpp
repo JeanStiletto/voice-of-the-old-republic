@@ -609,6 +609,94 @@ const char* Get(Id id) {
             return "Le jeu ne peut pas recevoir vos touches, car le mode "
                    "Steam Big Picture est au premier plan.";
 
+        // ---- Tastenbelegung (mod keybind configurator) ----
+        case Id::KeybindsRootLabel:       return "Raccourcis clavier";
+        case Id::KeybindsOpened:          return "Raccourcis clavier ouverts";
+        case Id::KeybindCatWorld:         return "Monde et actions";
+        case Id::KeybindCatExploration:   return "Exploration et cam\xE9ra";
+        case Id::KeybindCatMenus:         return "Menus et saisie";
+        case Id::KeybindCatMinigames:     return "Mini-jeux";
+        case Id::KeybindCatGeneral:       return "G\xE9n\xE9ral";
+        case Id::KeybindResetAll:         return "R\xE9tablir les valeurs par d\xE9""faut";
+        case Id::KeybindResetDone:        return "Raccourcis clavier r\xE9initialis\xE9s";
+        case Id::FmtKeybindCapturePrompt: return "Appuyez sur la nouvelle touche pour %s. \xC9""chap annule.";
+        case Id::FmtKeybindRebound:       return "%s r\xE9""affect\xE9 \xE0 %s";
+        case Id::FmtKeybindConflictMod:   return "D\xE9j\xE0 affect\xE9 \xE0 %s. Appuyez sur une autre touche.";
+        case Id::KeybindConflictEngine:   return "Utilis\xE9 par le jeu. Appuyez sur une autre touche.";
+        case Id::KeybindCaptureCancelled: return "Annul\xE9";
+        case Id::FmtKeymapModConflict:    return "Attention : le mod utilise cette touche pour %s";
+        // World & actions
+        case Id::KbNameInteractTarget:      return "Interagir";
+        case Id::KbNameInteractForceRadial: return "Forcer le menu radial";
+        case Id::KbNameTargetKey1:          return "Touche de cible 1";
+        case Id::KbNameTargetKey2:          return "Touche de cible 2";
+        case Id::KbNameTargetKey3:          return "Touche de cible 3";
+        case Id::KbNamePersonalKey1:        return "Action personnelle 1";
+        case Id::KbNamePersonalKey2:        return "Action personnelle 2";
+        case Id::KbNamePersonalKey3:        return "Action personnelle 3";
+        case Id::KbNamePersonalKey4:        return "Action personnelle 4";
+        case Id::KbNameActionBarOpen1:      return "Ouvrir la barre d'action 1";
+        case Id::KbNameActionBarOpen2:      return "Ouvrir la barre d'action 2";
+        case Id::KbNameActionBarOpen3:      return "Ouvrir la barre d'action 3";
+        case Id::KbNameActionBarOpen4:      return "Ouvrir la barre d'action 4";
+        case Id::KbNameTargetActionOpen1:   return "Ouvrir l'action de cible 1";
+        case Id::KbNameTargetActionOpen2:   return "Ouvrir l'action de cible 2";
+        case Id::KbNameTargetActionOpen3:   return "Ouvrir l'action de cible 3";
+        case Id::KbNameLevelUpOpen:         return "Mont\xE9""e de niveau";
+        case Id::KbNameExamineOpen:         return "Examiner";
+        case Id::KbNameCombatQueueOpen:     return "File d'actions";
+        case Id::KbNameSelfStatusAnnounce:  return "\xC9tat personnel";
+        // Exploration & camera
+        case Id::KbNameCycleItemPrev:       return "Objet pr\xE9""c\xE9""dent";
+        case Id::KbNameCycleCategoryPrev:   return "Cat\xE9gorie pr\xE9""c\xE9""dente";
+        case Id::KbNameCycleItemNext:       return "Objet suivant";
+        case Id::KbNameCycleCategoryNext:   return "Cat\xE9gorie suivante";
+        case Id::KbNameCycleItemFirst:      return "Premier objet";
+        case Id::KbNameCycleItemLast:       return "Dernier objet";
+        case Id::KbNameAnnounceFocus:       return "Annoncer la cible";
+        case Id::KbNamePathfindFocus:       return "Aller \xE0 la cible";
+        case Id::KbNamePathfindFocusForce:  return "Aller \xE0 la cible, forcer";
+        case Id::KbNameBeaconFocus:         return "Balise vers la cible";
+        case Id::KbNameAnnounceDegrees:     return "Orientation en degr\xE9s";
+        case Id::KbNamePartyLeaderAnnounce: return "Annoncer le chef de groupe";
+        case Id::KbNameCameraOrient:        return "Orienter la cam\xE9ra";
+        case Id::KbNameSaveMarkerAtCursor:  return "Poser un marqueur";
+        case Id::KbNameViewModeToggle:      return "Mode observation";
+        // Menus & input
+        case Id::KbNameNavUp:               return "Menu haut";
+        case Id::KbNameNavDown:             return "Menu bas";
+        case Id::KbNameNavLeft:             return "Menu gauche";
+        case Id::KbNameNavRight:            return "Menu droite";
+        case Id::KbNameNavHome:             return "Au d\xE9""but";
+        case Id::KbNameNavEnd:              return "\xC0 la fin";
+        case Id::KbNameSubmenuEsc:          return "Fermer le menu";
+        case Id::KbNameQueueClearAll:       return "Vider la file";
+        case Id::KbNameContainerGiveMode:   return "Conteneur mode donner";
+        case Id::KbNameStoreModeToggle:     return "Boutique acheter ou vendre";
+        case Id::KbNameEditboxReReadUp:     return "Relire le champ vers le haut";
+        case Id::KbNameEditboxReReadDown:   return "Relire le champ vers le bas";
+        case Id::KbNameEditboxSubmit:       return "Valider la saisie";
+        case Id::KbNameEditboxCancel:       return "Annuler la saisie";
+        // Minigames
+        case Id::KbNamePazaakStand:         return "Pazaak : Rester";
+        case Id::KbNamePazaakEndTurn:       return "Pazaak : Fin du tour";
+        case Id::KbNamePazaakReviewHand:    return "Pazaak : Main";
+        case Id::KbNamePazaakReviewTable:   return "Pazaak : Table";
+        case Id::KbNamePazaakNextCard:      return "Pazaak : Carte suivante";
+        case Id::KbNamePazaakPrevCard:      return "Pazaak : Carte pr\xE9""c\xE9""dente";
+        case Id::KbNamePazaakPlay:          return "Pazaak : Jouer la carte";
+        case Id::KbNamePazaakOptLeft:       return "Pazaak : Option gauche";
+        case Id::KbNamePazaakOptRight:      return "Pazaak : Option droite";
+        case Id::KbNamePazaakCancel:        return "Pazaak : Annuler";
+        case Id::KbNamePazaakOppHand:       return "Pazaak : Main de l'adversaire";
+        case Id::KbNameTurretCyclePrev:     return "Tourelle : Cible pr\xE9""c\xE9""dente";
+        case Id::KbNameTurretCycleNext:     return "Tourelle : Cible suivante";
+        // General
+        case Id::KbNameHelpMenuOpen:        return "Aide des touches";
+        case Id::KbNameHelpContext:         return "Aide contextuelle";
+        case Id::KbNameCheckForUpdate:      return "Rechercher une mise \xE0 jour";
+        case Id::KbNameDialogRepeatLine:    return "R\xE9p\xE9ter la ligne de dialogue";
+
         case Id::Count_:               return "";
     }
     return "";

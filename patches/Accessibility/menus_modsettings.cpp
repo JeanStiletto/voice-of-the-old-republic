@@ -19,6 +19,7 @@
 #include "intro_skip.h"      // SkipIntros toggle — filesystem-backed state
 #include "log.h"
 #include "menus_chain.h"
+#include "menus_keybinds.h"  // nested keybind configurator submenu
 #include "mod_settings_store.h"  // persist toggles across launches
 #include "prism.h"
 #include "strings.h"
@@ -73,6 +74,7 @@ bool s_toggles[static_cast<int>(Option::Count)] = {
                                   // audio_bus (Get/SetGlobalCueVolumePercent).
     /* UrgentVolume    */ false,  // unused — RowKind::Slider; value lives in
                                   // prism (Get/SetUrgentVolumePercent).
+    /* Keybindings     */ false,  // unused — RowKind::Submenu (configurator pivot)
     /* AudioGlossary   */ false,  // unused — RowKind::Submenu
 };
 
@@ -98,6 +100,10 @@ void*  s_parentPanel     = nullptr;
 void*  s_fgAtOpen        = nullptr;
 bool   s_glossaryOpen    = false;
 int    s_glossaryFocused = 0;
+// True while the nested keybind configurator (menus_keybinds) owns input.
+// Unlike the glossary it keeps its own state in that TU; we only track that we
+// routed into it so HandleInput / Tick / Close can defer to it.
+bool   s_keybindsOpen    = false;
 
 // Pending glossary playback. Stamped by Enter on a glossary row;
 // drained by Tick() once GetTickCount() ≥ s_pendingFireAt. The pause
@@ -171,6 +177,7 @@ constexpr OptionSpec k_options[] = {
     { Option::SkipIntros,      acc::strings::Id::ModSettingSkipIntros,      RowKind::Toggle  },
     { Option::CueVolume,       acc::strings::Id::ModSettingCueVolume,       RowKind::Slider  },
     { Option::UrgentVolume,    acc::strings::Id::ModSettingUrgentVolume,    RowKind::Slider  },
+    { Option::Keybindings,     acc::strings::Id::KeybindsRootLabel,         RowKind::Submenu },
     { Option::AudioGlossary,   acc::strings::Id::ModSettingAudioGlossary,   RowKind::Submenu },
 };
 constexpr int k_optionCount = static_cast<int>(
@@ -431,6 +438,7 @@ void Close() {
     s_focused         = 0;
     s_glossaryOpen    = false;
     s_glossaryFocused = 0;
+    if (s_keybindsOpen) { acc::menus::keybinds::Reset(); s_keybindsOpen = false; }
     CancelPendingGlossaryCue();
     void* parent = s_parentPanel;
     s_parentPanel = nullptr;
@@ -463,6 +471,7 @@ void AutoCloseSilent() {
     s_focused         = 0;
     s_glossaryOpen    = false;
     s_glossaryFocused = 0;
+    if (s_keybindsOpen) { acc::menus::keybinds::Reset(); s_keybindsOpen = false; }
     CancelPendingGlossaryCue();
     s_parentPanel = nullptr;
     s_fgAtOpen    = nullptr;
@@ -585,6 +594,9 @@ bool HandleInputRoot(int keyCode) {
         if (row.kind == RowKind::Submenu) {
             if (row.option == Option::AudioGlossary) {
                 OpenGlossarySubMenu();
+            } else if (row.option == Option::Keybindings) {
+                s_keybindsOpen = true;
+                acc::menus::keybinds::Open();
             }
             return true;
         }
@@ -689,9 +701,23 @@ bool HandleInput(int keyCode) {
         return false;
     }
 
-    bool handled = s_glossaryOpen
-        ? HandleInputGlossary(keyCode)
-        : HandleInputRoot(keyCode);
+    bool handled;
+    if (s_keybindsOpen) {
+        // Route to the keybind configurator. When the user Esc's out of its
+        // top (category) level it flips IsOpen() to false — we then drop the
+        // routing and re-announce the Tastenbelegung row so the user is
+        // anchored back at the Mod-settings root.
+        handled = acc::menus::keybinds::HandleInput(keyCode);
+        if (!acc::menus::keybinds::IsOpen()) {
+            s_keybindsOpen = false;
+            SpeakFocusedOption();
+            return true;
+        }
+    } else if (s_glossaryOpen) {
+        handled = HandleInputGlossary(keyCode);
+    } else {
+        handled = HandleInputRoot(keyCode);
+    }
     if (handled) return true;
 
     // Block every other GUI-key press from reaching the parent panel
@@ -716,6 +742,9 @@ bool HandleInput(int keyCode) {
 }
 
 void Tick() {
+    // Drive the keybind configurator's capture poll while it's open. Cheap
+    // (single early-out) when no capture is armed.
+    if (s_keybindsOpen) acc::menus::keybinds::Tick();
     if (!s_pendingValid) return;
     DWORD now = GetTickCount();
     // GetTickCount wraps every ~49 days. Use signed-subtract semantics

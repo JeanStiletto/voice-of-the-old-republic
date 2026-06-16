@@ -608,6 +608,94 @@ const char* Get(Id id) {
             return "Il gioco non pu\xF2 ricevere i tuoi tasti perch\xE9 la "
                    "modalit\xE0 Steam Big Picture \xE8 in primo piano.";
 
+        // ---- Tastenbelegung (mod keybind configurator) ----
+        case Id::KeybindsRootLabel:       return "Combinazioni di tasti";
+        case Id::KeybindsOpened:          return "Combinazioni di tasti aperte";
+        case Id::KeybindCatWorld:         return "Mondo e azioni";
+        case Id::KeybindCatExploration:   return "Esplorazione e telecamera";
+        case Id::KeybindCatMenus:         return "Menu e immissione";
+        case Id::KeybindCatMinigames:     return "Minigiochi";
+        case Id::KeybindCatGeneral:       return "Generale";
+        case Id::KeybindResetAll:         return "Ripristina predefiniti";
+        case Id::KeybindResetDone:        return "Combinazioni di tasti ripristinate";
+        case Id::FmtKeybindCapturePrompt: return "Premi il nuovo tasto per %s. Esc annulla.";
+        case Id::FmtKeybindRebound:       return "%s riassegnato a %s";
+        case Id::FmtKeybindConflictMod:   return "Gi\xE0 assegnato a %s. Premi un altro tasto.";
+        case Id::KeybindConflictEngine:   return "Usato dal gioco. Premi un altro tasto.";
+        case Id::KeybindCaptureCancelled: return "Annullato";
+        case Id::FmtKeymapModConflict:    return "Attenzione: il mod usa questo tasto per %s";
+        // World & actions
+        case Id::KbNameInteractTarget:      return "Interagisci";
+        case Id::KbNameInteractForceRadial: return "Forza menu radiale";
+        case Id::KbNameTargetKey1:          return "Tasto bersaglio 1";
+        case Id::KbNameTargetKey2:          return "Tasto bersaglio 2";
+        case Id::KbNameTargetKey3:          return "Tasto bersaglio 3";
+        case Id::KbNamePersonalKey1:        return "Azione personale 1";
+        case Id::KbNamePersonalKey2:        return "Azione personale 2";
+        case Id::KbNamePersonalKey3:        return "Azione personale 3";
+        case Id::KbNamePersonalKey4:        return "Azione personale 4";
+        case Id::KbNameActionBarOpen1:      return "Apri barra azioni 1";
+        case Id::KbNameActionBarOpen2:      return "Apri barra azioni 2";
+        case Id::KbNameActionBarOpen3:      return "Apri barra azioni 3";
+        case Id::KbNameActionBarOpen4:      return "Apri barra azioni 4";
+        case Id::KbNameTargetActionOpen1:   return "Apri azione bersaglio 1";
+        case Id::KbNameTargetActionOpen2:   return "Apri azione bersaglio 2";
+        case Id::KbNameTargetActionOpen3:   return "Apri azione bersaglio 3";
+        case Id::KbNameLevelUpOpen:         return "Avanzamento di livello";
+        case Id::KbNameExamineOpen:         return "Esamina";
+        case Id::KbNameCombatQueueOpen:     return "Coda azioni";
+        case Id::KbNameSelfStatusAnnounce:  return "Stato personale";
+        // Exploration & camera
+        case Id::KbNameCycleItemPrev:       return "Oggetto precedente";
+        case Id::KbNameCycleCategoryPrev:   return "Categoria precedente";
+        case Id::KbNameCycleItemNext:       return "Oggetto successivo";
+        case Id::KbNameCycleCategoryNext:   return "Categoria successiva";
+        case Id::KbNameCycleItemFirst:      return "Primo oggetto";
+        case Id::KbNameCycleItemLast:       return "Ultimo oggetto";
+        case Id::KbNameAnnounceFocus:       return "Annuncia bersaglio";
+        case Id::KbNamePathfindFocus:       return "Vai al bersaglio";
+        case Id::KbNamePathfindFocusForce:  return "Vai al bersaglio, forza";
+        case Id::KbNameBeaconFocus:         return "Segnale al bersaglio";
+        case Id::KbNameAnnounceDegrees:     return "Direzione in gradi";
+        case Id::KbNamePartyLeaderAnnounce: return "Annuncia capogruppo";
+        case Id::KbNameCameraOrient:        return "Orienta telecamera";
+        case Id::KbNameSaveMarkerAtCursor:  return "Posiziona segnaposto";
+        case Id::KbNameViewModeToggle:      return "Modalit\xE0 osservazione";
+        // Menus & input
+        case Id::KbNameNavUp:               return "Menu su";
+        case Id::KbNameNavDown:             return "Menu gi\xF9";
+        case Id::KbNameNavLeft:             return "Menu sinistra";
+        case Id::KbNameNavRight:            return "Menu destra";
+        case Id::KbNameNavHome:             return "All'inizio";
+        case Id::KbNameNavEnd:              return "Alla fine";
+        case Id::KbNameSubmenuEsc:          return "Chiudi menu";
+        case Id::KbNameQueueClearAll:       return "Svuota coda";
+        case Id::KbNameContainerGiveMode:   return "Contenitore modalit\xE0 dare";
+        case Id::KbNameStoreModeToggle:     return "Negozio compra o vendi";
+        case Id::KbNameEditboxReReadUp:     return "Rileggi campo verso l'alto";
+        case Id::KbNameEditboxReReadDown:   return "Rileggi campo verso il basso";
+        case Id::KbNameEditboxSubmit:       return "Conferma immissione";
+        case Id::KbNameEditboxCancel:       return "Annulla immissione";
+        // Minigames
+        case Id::KbNamePazaakStand:         return "Pazaak: Stai";
+        case Id::KbNamePazaakEndTurn:       return "Pazaak: Fine turno";
+        case Id::KbNamePazaakReviewHand:    return "Pazaak: Mano";
+        case Id::KbNamePazaakReviewTable:   return "Pazaak: Tavolo";
+        case Id::KbNamePazaakNextCard:      return "Pazaak: Carta successiva";
+        case Id::KbNamePazaakPrevCard:      return "Pazaak: Carta precedente";
+        case Id::KbNamePazaakPlay:          return "Pazaak: Gioca carta";
+        case Id::KbNamePazaakOptLeft:       return "Pazaak: Opzione sinistra";
+        case Id::KbNamePazaakOptRight:      return "Pazaak: Opzione destra";
+        case Id::KbNamePazaakCancel:        return "Pazaak: Annulla";
+        case Id::KbNamePazaakOppHand:       return "Pazaak: Mano avversario";
+        case Id::KbNameTurretCyclePrev:     return "Torretta: Bersaglio precedente";
+        case Id::KbNameTurretCycleNext:     return "Torretta: Bersaglio successivo";
+        // General
+        case Id::KbNameHelpMenuOpen:        return "Aiuto tasti";
+        case Id::KbNameHelpContext:         return "Aiuto contestuale";
+        case Id::KbNameCheckForUpdate:      return "Cerca aggiornamenti";
+        case Id::KbNameDialogRepeatLine:    return "Ripeti battuta di dialogo";
+
         case Id::Count_:               return "";
     }
     return "";

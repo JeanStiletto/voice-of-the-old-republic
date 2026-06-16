@@ -42,8 +42,29 @@ void Rebuild();
 int VksForCode(int code, int* out, int cap);
 
 // Reverse lookup: the first engine command code a given VK fires, or 0 if the VK
-// is not in the table. For the upcoming free mod-hotkey configurator (warn when
-// a chosen key collides with an engine binding).
+// is not in the table. Covers only the hardcoded quick keys; use IsKeyUsedByGame
+// for the complete picture.
 int CodeForVk(int vk);
+
+// True iff `vk` is bound to ANY game action — a hardcoded quick key (CodeForVk)
+// OR a player-configurable bind read from swkotor.ini [Keymapping]. This is the
+// unified "is this physical key used by the game" query the mod keybind
+// configurator warns on. Auto-loads the config on first use.
+bool IsKeyUsedByGame(int vk);
+
+// (Re)read the configurable [Keymapping] binds from swkotor.ini. Called at
+// startup (Rebuild) and when fresh game-side state is wanted (e.g. opening the
+// configurator, since the player may have changed game binds since launch).
+void ReloadGameConfig();
+
+// Resolve a DirectInput scancode to a Win32 VK against the active layout. Used
+// internally for the hardcoded command-code table (those are DIK scancodes).
+int ScancodeToVk(int scancode);
+
+// Resolve an engine InputIndices value (KEYBOARD_*/MOUSE_* — what the keymap
+// row's key_code and swkotor.ini [Keymapping] actually store) to a Win32 VK.
+// Exposed for the Key Mapping screen accessibility layer, which reads a row's
+// captured key_code and needs the VK to test it against mod bindings.
+int InputIndexToVk(int inputIndex);
 
 }  // namespace acc::engine_keymap

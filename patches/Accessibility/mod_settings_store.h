@@ -25,4 +25,14 @@ int  GetInt (const char* key, int  defValue);
 void SetBool(const char* key, bool value);
 void SetInt (const char* key, int  value);
 
+// String-typed access. GetStr copies the persisted value into `outBuf`
+// (NUL-terminated, truncated to bufSize) and returns true iff the key was
+// present; on absence it leaves `outBuf` empty and returns false. SetStr
+// stores the raw string verbatim (no escaping — callers must keep values on a
+// single line with no '=' before the first one, which the binding encoding
+// "vk,altVk,req,forbid" satisfies). Used by the hotkey configurator to persist
+// rebinds.
+bool GetStr(const char* key, char* outBuf, int bufSize);
+void SetStr(const char* key, const char* value);
+
 }  // namespace acc::settings

@@ -71,14 +71,6 @@ Add these to the manual map-hint registry (see `project_map_cycle_architecture.m
 
 Add Polish as a supported language. Decide the integration path — installer locale JSON (alongside de/en/fr/it/es) and/or in-game speech strings routed through the shared strings system — and wire it in. Source of the Polish strings (community contribution vs AI draft like fr/it/es) to be determined.
 
-### Alternative hotkeys for Alt/Ctrl-bound actions
-
-Some of our actions are bound to Alt+ and Ctrl+ key combinations, which not every user can reach — some keyboards/layouts make those modifiers awkward or unavailable. Offer alternative (and ideally rebindable) bindings so these actions are reachable without the Alt/Ctrl chord.
-
-### Configurable mod keybinds
-
-Let players rebind the mod's own hotkeys, the way the game's Key Mapping screen rebinds the engine controls. Right now every mod key (cycling, targeting, the action menu, autowalk/beacon, F1 help, and so on) is hardcoded, so a user whose layout, screen reader, or physical reach clashes with one of them has no way out. Decide the surface (an extra section in the in-game Key Mapping flow vs. a Mod-Settings screen vs. an `acc_settings.ini` block), how to persist and validate bindings, and how to handle conflicts with engine keys. Supersedes/absorbs the "Alternative hotkeys for Alt/Ctrl-bound actions" item above once shipped.
-
 ### Nameable personal map pins
 
 Let players give their own map pins a name when they drop one, and read that name back when cycling to the pin. Personal pins currently announce only a generic label plus position, so a player who marks several spots can't tell them apart. Needs a text-entry path that works from the keyboard with a screen reader (see the save-naming item below — likely the same input mechanism), storage of the label alongside the pin in the save, and the cycle/focus announcements updated to speak it. See `project_narrated_target_unified.md` / `map_user_markers.cpp`.

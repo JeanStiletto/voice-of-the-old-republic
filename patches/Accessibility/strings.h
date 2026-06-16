@@ -1600,6 +1600,120 @@ enum class Id : int {
     // focus-probe poll thread; see diag_focus.cpp DrainInputBlockedWarning.
     InputBlockedBigPicture,
 
+    // ---- Mod-settings → Tastenbelegung (mod keybind configurator,
+    //      menus_keybinds.cpp). Reached via the "Tastenbelegung" row in Mod
+    //      settings. Two-level: a category list, then the actions in a
+    //      category. Enter on an action arms capture; the next physical key +
+    //      held modifiers becomes the new binding. Esc cancels capture / backs
+    //      out a level. Row readout reuses FmtKeyBinding ("%s: %s").
+    //
+    //      Chrome:
+    //   KeybindsRootLabel        — the Mod-settings row + nested-open title.
+    //   KeybindsOpened           — opener cue.
+    //   KeybindCat*              — the five category names.
+    //   KeybindResetAll          — the "restore defaults" entry.
+    //   KeybindResetDone         — spoken after a reset.
+    //   FmtKeybindCapturePrompt  — capture-armed prompt. Arg: action (%s).
+    //   FmtKeybindRebound        — rebind confirmation. Args: action (%s),
+    //                              new binding (%s).
+    //   FmtKeybindConflictMod    — clash with another mod hotkey. Arg: the
+    //                              clashing action name (%s).
+    //   KeybindConflictEngine    — clash with a hardcoded game key.
+    //   KeybindCaptureCancelled  — Esc during capture.
+    KeybindsRootLabel,
+    KeybindsOpened,
+    KeybindCatWorld,
+    KeybindCatExploration,
+    KeybindCatMenus,
+    KeybindCatMinigames,
+    KeybindCatGeneral,
+    KeybindResetAll,
+    KeybindResetDone,
+    FmtKeybindCapturePrompt,
+    FmtKeybindRebound,
+    FmtKeybindConflictMod,
+    KeybindConflictEngine,
+    KeybindCaptureCancelled,
+    // Spoken in the GAME's Key Mapping screen (menus_keymap) when the player
+    // binds a game action onto a key a mod hotkey already uses. Arg: the mod
+    // action's display name (%s).
+    FmtKeymapModConflict,
+
+    //      Per-action display names, one per user-rebindable hotkeys::Action.
+    //      Order groups by configurator category (World, Exploration, Menus,
+    //      Minigames, General); the Action→Id map lives in menus_keybinds.cpp.
+    //      World & actions:
+    KbNameInteractTarget,
+    KbNameInteractForceRadial,
+    KbNameTargetKey1,
+    KbNameTargetKey2,
+    KbNameTargetKey3,
+    KbNamePersonalKey1,
+    KbNamePersonalKey2,
+    KbNamePersonalKey3,
+    KbNamePersonalKey4,
+    KbNameActionBarOpen1,
+    KbNameActionBarOpen2,
+    KbNameActionBarOpen3,
+    KbNameActionBarOpen4,
+    KbNameTargetActionOpen1,
+    KbNameTargetActionOpen2,
+    KbNameTargetActionOpen3,
+    KbNameLevelUpOpen,
+    KbNameExamineOpen,
+    KbNameCombatQueueOpen,
+    KbNameSelfStatusAnnounce,
+    //      Exploration & camera:
+    KbNameCycleItemPrev,
+    KbNameCycleCategoryPrev,
+    KbNameCycleItemNext,
+    KbNameCycleCategoryNext,
+    KbNameCycleItemFirst,
+    KbNameCycleItemLast,
+    KbNameAnnounceFocus,
+    KbNamePathfindFocus,
+    KbNamePathfindFocusForce,
+    KbNameBeaconFocus,
+    KbNameAnnounceDegrees,
+    KbNamePartyLeaderAnnounce,
+    KbNameCameraOrient,
+    KbNameSaveMarkerAtCursor,
+    KbNameViewModeToggle,
+    //      Menus & input:
+    KbNameNavUp,
+    KbNameNavDown,
+    KbNameNavLeft,
+    KbNameNavRight,
+    KbNameNavHome,
+    KbNameNavEnd,
+    KbNameSubmenuEsc,
+    KbNameQueueClearAll,
+    KbNameContainerGiveMode,
+    KbNameStoreModeToggle,
+    KbNameEditboxReReadUp,
+    KbNameEditboxReReadDown,
+    KbNameEditboxSubmit,
+    KbNameEditboxCancel,
+    //      Minigames:
+    KbNamePazaakStand,
+    KbNamePazaakEndTurn,
+    KbNamePazaakReviewHand,
+    KbNamePazaakReviewTable,
+    KbNamePazaakNextCard,
+    KbNamePazaakPrevCard,
+    KbNamePazaakPlay,
+    KbNamePazaakOptLeft,
+    KbNamePazaakOptRight,
+    KbNamePazaakCancel,
+    KbNamePazaakOppHand,
+    KbNameTurretCyclePrev,
+    KbNameTurretCycleNext,
+    //      General:
+    KbNameHelpMenuOpen,
+    KbNameHelpContext,
+    KbNameCheckForUpdate,
+    KbNameDialogRepeatLine,
+
     Count_,
 };
 

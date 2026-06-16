@@ -129,4 +129,25 @@ void SetInt(const char* key, int value) {
     acclog::Write("Settings", "set %s=%d", key, value);
 }
 
+bool GetStr(const char* key, char* outBuf, int bufSize) {
+    if (!outBuf || bufSize <= 0) return false;
+    outBuf[0] = '\0';
+    if (!key) return false;
+    std::lock_guard<std::mutex> lk(g_mtx);
+    EnsureLoaded();
+    auto it = g_kv.find(key);
+    if (it == g_kv.end()) return false;
+    strncpy_s(outBuf, static_cast<size_t>(bufSize), it->second.c_str(), _TRUNCATE);
+    return true;
+}
+
+void SetStr(const char* key, const char* value) {
+    if (!key) return;
+    std::lock_guard<std::mutex> lk(g_mtx);
+    EnsureLoaded();
+    g_kv[key] = value ? value : "";
+    Save();
+    acclog::Write("Settings", "set %s=%s", key, value ? value : "");
+}
+
 }  // namespace acc::settings
