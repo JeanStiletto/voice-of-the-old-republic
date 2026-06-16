@@ -835,6 +835,16 @@ void PollHotkey() {
                     /*interrupt=*/true);
                 acclog::Write("Interact",
                     "Shift+L -> already-open guard, skipping dispatch");
+            } else if (!acc::engine_levelup::PlayerCanLevelUp()) {
+                // Respect the engine's btn_levelup enabled state: the leader
+                // hasn't earned the next level (or is level-capped). Without
+                // this the forced level_up_mode=1 opened the wizard anyway,
+                // letting the player level up endlessly.
+                prism::Speak(
+                    acc::strings::Get(acc::strings::Id::LevelUpNotReady),
+                    /*interrupt=*/true);
+                acclog::Write("Interact",
+                    "Shift+L -> CanLevelUp=0, refusing (not enough XP / capped)");
             } else {
                 const char* opener = acc::strings::Get(
                     acc::strings::Id::LevelUpOpen);

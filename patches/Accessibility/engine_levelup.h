@@ -14,8 +14,20 @@
 
 namespace acc::engine_levelup {
 
-// True iff chain resolved + dispatched without SEH. Engine-side
-// can-level-up gates run inside ShowLevelUpGUI itself.
+// True iff the active leader has actually earned the next level, per the
+// engine's own CSWSCreatureStats::CanLevelUp @0x005a6810 — the same
+// predicate that drives the Charakterblatt btn_levelup enabled state
+// (checks level cap, accumulated XP vs the required-XP table, and the
+// class-side gates). Pure read-only; safe to poll. False when the leader
+// can't be resolved (returns the same as "not ready" so callers gate
+// conservatively).
+bool PlayerCanLevelUp();
+
+// True iff chain resolved + dispatched without SEH. Refuses (returns
+// false, leaves level_up_mode untouched) when PlayerCanLevelUp() is
+// false — the engine's ShowLevelUpGUI only gates on level_up_mode, which
+// we force to 1, so without this guard the wizard opens regardless of XP
+// and the player can level up endlessly.
 bool TriggerLevelUp();
 
 }  // namespace acc::engine_levelup

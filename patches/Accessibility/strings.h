@@ -563,6 +563,12 @@ enum class Id : int {
     LevelUpOpen,
     LevelUpFailed,
     LevelUpAlreadyOpen,
+    // Spoken when Shift+L is pressed but the leader hasn't earned the next
+    // level yet — gates on the engine's own CSWSCreatureStats::CanLevelUp
+    // predicate (the same check that greys out the Charakterblatt
+    // btn_levelup button). Without this the mod force-opened the wizard
+    // regardless of XP and the player could level up endlessly.
+    LevelUpNotReady,
 
     // ---- Chargen portrait selection (CSWGuiPortraitCharGen).
     //      The left/right arrow buttons have no own text (image-only);

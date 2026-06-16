@@ -20,10 +20,6 @@ The mod's promise is "no mouse, no screen," yet several code paths silently assu
 
 Secondary finding from the same session log: `Lang: unknown LanguageID=5; defaulting to German`. LanguageID 5 is Polish; we had no mapping for it. Fixed: `DetectLanguageFromTlk` in `core_dllmain.cpp` now defaults to English (`L::En`) on every fallback path — unrecognised LanguageID, unreadable/bad `dialog.tlk`, and the path-resolution failures — since English is the most universal fallback for the non-DE user base. A correctly-installed DE copy still detects LanguageID=2 → German. Still tracks with the "Integrate a Polish translation" Planned item for proper PL labels.
 
-### Endless leveling bug
-
-The character can keep levelling up with no cap enforced — the level-up flow can be entered/applied repeatedly past where it should stop. Needs a clean repro (class, current level, and entry path — Shift+L vs the engine's own level-up prompt) and a check of whether our level-up wiring (`engine_levelup.cpp`, `menus_powers_levelup.cpp`) is re-firing the apply, or the engine is being driven twice.
-
 ### Tutorial popups not reading correctly?
 
 The in-game tutorial popups (`Tutorial Popups=1`) may not be read aloud correctly — text missing, partial, or not spoken at all. These are a distinct message-box type from normal dialogue; confirm what's spoken vs shown and capture a log on a known tutorial trigger.

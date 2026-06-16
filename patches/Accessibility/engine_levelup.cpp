@@ -4,6 +4,8 @@
 #include <cstdint>
 
 #include "engine_panels.h"  // ResolveGuiInGame
+#include "engine_player.h"  // GetClientLeader, kClientObjectServerObjectOffset
+#include "engine_offsets.h" // kCreatureStatsPointerOffset
 #include "log.h"
 
 namespace acc::engine_levelup {
@@ -43,6 +45,17 @@ constexpr uintptr_t kAddrCSWGuiInGameCharacterShowLevelUpGUI = 0x006b0bb0;
 // level_up_mode = 0. Seems to prevent level ups from occurring?")
 // confirms the directionality: 0 = block, 1 = allow.
 constexpr uintptr_t kAddrCGuiInGameSetLevelUpMode = 0x00628650;
+
+// CSWSCreatureStats::CanLevelUp — undefined4 __thiscall(void) @0x005a6810.
+// Pure read-only predicate (RE'd by byte dump 2026-06-16): returns 1 only
+// when the leader's current level is below the level cap, accumulated
+// experience >= required_exp_per_level[level] (rules table at 0x007a3a28),
+// AND the two class-side gates pass — i.e. exactly when the Charakterblatt
+// btn_levelup button is enabled. No writes, no allocations, so it's safe
+// to call purely as a gate. ECX = CSWSCreatureStats*, no stack params.
+constexpr uintptr_t kAddrCSWSCreatureStatsCanLevelUp = 0x005a6810;
+
+typedef uint32_t (__thiscall* PFN_CanLevelUp)(void* this_);
 
 // CGuiInGame.in_game_character — slot @+0x14 per swkotor.exe.h:10225,
 // matching the panel-kind classifier in engine_panels.cpp.
@@ -84,7 +97,44 @@ bool SetLevelUpMode(void* gui, int mode) {
 
 }  // namespace
 
+bool PlayerCanLevelUp() {
+    void* clientLeader = acc::engine::GetClientLeader();
+    if (!clientLeader) {
+        acclog::Write("LevelUp", "PlayerCanLevelUp -- no client leader");
+        return false;
+    }
+    // Leader's *server* creature owns the authoritative stats (same chain
+    // engine_player.cpp uses): client +0xf8 -> CSWSCreature, +0xa74 ->
+    // CSWSCreatureStats. CanLevelUp is a server-side predicate.
+    __try {
+        void* serverCreature = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(clientLeader) +
+            kClientObjectServerObjectOffset);
+        if (!serverCreature) return false;
+        void* stats = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(serverCreature) +
+            kCreatureStatsPointerOffset);
+        if (!stats) return false;
+        auto fn = reinterpret_cast<PFN_CanLevelUp>(
+            kAddrCSWSCreatureStatsCanLevelUp);
+        return fn(stats) != 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("LevelUp", "PlayerCanLevelUp -- SEH fault resolving stats");
+        return false;
+    }
+}
+
 bool TriggerLevelUp() {
+    // Root-cause guard: ShowLevelUpGUI only gates on level_up_mode, which
+    // we force to 1 below, so the engine's natural XP check never runs.
+    // Refuse here when the leader hasn't earned the level — otherwise the
+    // wizard re-opens indefinitely (known-issues.md endless-level-up).
+    if (!PlayerCanLevelUp()) {
+        acclog::Write("LevelUp",
+            "TriggerLevelUp -- CanLevelUp=0, refusing (capped / not enough XP)");
+        return false;
+    }
+
     void* gui = acc::engine::ResolveGuiInGame();
     if (!gui) {
         acclog::Write("LevelUp", "TriggerLevelUp -- CGuiInGame unresolved");

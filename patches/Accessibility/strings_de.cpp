@@ -174,6 +174,7 @@ const char* Get(Id id) {
         case Id::LevelUpOpen:          return "Stufenaufstieg";
         case Id::LevelUpFailed:        return "Stufenaufstieg fehlgeschlagen";
         case Id::LevelUpAlreadyOpen:   return "Stufenaufstieg bereits offen";
+        case Id::LevelUpNotReady:      return "Noch nicht genug Erfahrung f\xFCr einen Stufenaufstieg"; // für
 
         case Id::PortraitLabel:        return "Portr\xE4t";              // Porträt
         case Id::PortraitArrowPrev:    return "Vorheriges Portr\xE4t";  // Porträt
