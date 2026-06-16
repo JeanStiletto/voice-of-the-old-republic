@@ -1,8 +1,8 @@
 // editbox (text-input field) input dispatcher + monitor.
 //
-// One vanilla user: the chargen Name screen's `name_editbox` (the only
-// CSWGuiEditbox in the game). The TU is shaped as a spec-table mirror of
-// menus_listbox.{h,cpp} so adding a future editbox (mod-introduced) is one
+// Two vanilla users: the chargen Name screen's `name_editbox` and the save-
+// name popup's `edit_box` (CSWGuiSaveGameEditBox). The TU is shaped as a
+// spec-table mirror of menus_listbox.{h,cpp} so adding another editbox is one
 // new spec value, not another copy of the dispatch+monitor scaffolding.
 //
 // Edit-mode model (patch-internal, NOT an engine state):

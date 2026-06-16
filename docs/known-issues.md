@@ -73,11 +73,7 @@ Add Polish as a supported language. Decide the integration path — installer lo
 
 ### Nameable personal map pins
 
-Let players give their own map pins a name when they drop one, and read that name back when cycling to the pin. Personal pins currently announce only a generic label plus position, so a player who marks several spots can't tell them apart. Needs a text-entry path that works from the keyboard with a screen reader (see the save-naming item below — likely the same input mechanism), storage of the label alongside the pin in the save, and the cycle/focus announcements updated to speak it. See `project_narrated_target_unified.md` / `map_user_markers.cpp`.
-
-### More accessible save naming
-
-Make naming a save game accessible. The save-name entry field isn't readable/usable with a screen reader today, so players can't tell what they're typing, can't review or edit an existing name, and fall back on default slot names. Needs the text field's current contents read on focus, characters/edits echoed as they're typed, and a clear confirm/cancel — the same keyboard text-entry mechanism the nameable-pins item above will need.
+Let players give their own map pins a name when they drop one, and read that name back when cycling to the pin. Personal pins currently announce only a generic label plus position, so a player who marks several spots can't tell them apart. Needs a text-entry path that works from the keyboard with a screen reader (the editbox handling shipped for chargen + save naming — `menus_editbox.cpp` — is the closest existing mechanism, though map pins aren't an engine editbox so the entry surface differs), storage of the label alongside the pin in the save, and the cycle/focus announcements updated to speak it. See `project_narrated_target_unified.md` / `map_user_markers.cpp`.
 
 ### Improved tutorial for mod users
 

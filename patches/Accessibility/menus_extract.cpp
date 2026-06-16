@@ -710,8 +710,9 @@ const char* FromControl(void* control,
     }
 
     // 6b. CSWGuiEditbox — same vtable-identity pattern as slider (no AsEditbox
-    //     accessor exists). The chargen Name screen's `name_editbox` is the
-    //     only editbox in vanilla KOTOR. Speech format: "{role}. {value}" so
+    //     accessor exists). Two vanilla editboxes match (IsEditbox accepts both
+    //     vtables): the chargen Name `name_editbox` and the save-name popup's
+    //     CSWGuiSaveGameEditBox. Speech format: "{role}. {value}" so
     //     the screen-reader user immediately knows they've landed in an input
     //     field plus the current contents. The per-tick poll in
     //     menus_editbox.cpp owns subsequent text-change announcements (single

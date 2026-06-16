@@ -774,9 +774,8 @@ enum class Id : int {
     ChargenFeatStatusLocked,
     ChargenFeatStatusChosen,
 
-    // ---- Editbox / input field (only the chargen Name screen has one
-    //      in vanilla KOTOR, but the speech is shaped to suit any future
-    //      editbox).
+    // ---- Editbox / input field (chargen Name screen + save-name popup in
+    //      vanilla KOTOR; the speech is shaped to suit any future editbox).
     //
     //      EditboxRole  — role word ("Eingabefeld" / "edit field"). Spoken
     //                     on focus-enter, separated from the current value

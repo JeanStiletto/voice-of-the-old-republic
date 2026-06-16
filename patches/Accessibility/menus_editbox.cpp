@@ -73,7 +73,7 @@ struct EditboxPanelSpec {
     const char* (*titleOverride)(void* panel);
 };
 
-// Chargen Name panel — `CSWGuiNameChargen`. The only vanilla user.
+// Chargen Name panel — `CSWGuiNameChargen`. One of two vanilla users.
 
 bool ChargenNameMatches(void* panel) {
     if (!panel) return false;
@@ -115,8 +115,51 @@ constexpr EditboxPanelSpec kChargenNameSpec = {
     /*titleOverride*/    ChargenNameTitleOverride,
 };
 
+// Save-name panel — `CSWGuiSaveNamePanel`. The "Enter name for saved game"
+// modal popup over the SaveLoad screen. Same editbox UX as chargen; only the
+// host panel (vtable + embedded-control offsets) differs.
+
+bool SaveNameMatches(void* panel) {
+    if (!panel) return false;
+    void** vt = *reinterpret_cast<void***>(panel);
+    return reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiSaveNamePanel;
+}
+
+void* SaveNameFindEditbox(void* panel) {
+    if (!panel) return nullptr;
+    return static_cast<unsigned char*>(panel) + kSaveNameEditboxOffset;
+}
+
+void* SaveNameFindSubmitButton(void* panel) {
+    if (!panel) return nullptr;
+    return static_cast<unsigned char*>(panel) + kSaveNameOkButtonOffset;
+}
+
+// Substitute the save-name popup's title speech with its own title_label.
+// Unlike chargen, this panel carries the screen-specific title here (no stale
+// parent header), so reading the live label preserves localisation.
+const char* SaveNameTitleOverride(void* panel) {
+    if (!panel) return nullptr;
+    void* title =
+        static_cast<unsigned char*>(panel) + kSaveNameTitleLabelOffset;
+    static char s_buf[128];
+    if (acc::menus::extract::FromControl(title, s_buf, sizeof(s_buf), panel)) {
+        return s_buf;
+    }
+    return nullptr;
+}
+
+constexpr EditboxPanelSpec kSaveNameSpec = {
+    /*logTag*/           "SaveName",
+    /*matches*/          SaveNameMatches,
+    /*findEditbox*/      SaveNameFindEditbox,
+    /*findSubmitButton*/ SaveNameFindSubmitButton,
+    /*titleOverride*/    SaveNameTitleOverride,
+};
+
 constexpr const EditboxPanelSpec* kSpecs[] = {
     &kChargenNameSpec,
+    &kSaveNameSpec,
 };
 constexpr int kNumSpecs = static_cast<int>(sizeof(kSpecs) / sizeof(kSpecs[0]));
 

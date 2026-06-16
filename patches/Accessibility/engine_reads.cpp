@@ -333,7 +333,11 @@ bool IsEditbox(void* control) {
     if (!control) return false;
     __try {
         void** vt = *reinterpret_cast<void***>(control);
-        return reinterpret_cast<uintptr_t>(vt) == kVtableEditbox;
+        uintptr_t v = reinterpret_cast<uintptr_t>(vt);
+        // CSWGuiSaveGameEditBox (save-name popup) is a subclass with its own
+        // vtable but the same struct layout — accept it so its focus-enter
+        // announce + field reads go through the same path as the plain editbox.
+        return v == kVtableEditbox || v == kVtableSaveGameEditbox;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }

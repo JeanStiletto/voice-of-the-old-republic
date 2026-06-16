@@ -159,8 +159,10 @@ constexpr size_t    kKeyMapButtonKeyCodeOff      = 0x39c;
 
 // CSWGuiEditbox layout (verified against k1_win_gog_swkotor.exe.xml SYMBOL
 // CSWGuiEditbox_vtable @ 0x0073EAC8 + STRUCTURE size 0x160 + swkotor.exe.h
-// CSWGuiEditbox/CSWGuiEditText). The editbox is single-instance in vanilla
-// KOTOR — it appears only on the chargen Name panel as `name_editbox`.
+// CSWGuiEditbox/CSWGuiEditText). Two vanilla editboxes share this layout: the
+// chargen Name panel's `name_editbox` (this exact vtable) and the save-name
+// popup's `edit_box` (a CSWGuiSaveGameEditBox subclass, kVtableSaveGameEditbox
+// below — same struct, only HandleKeyPress overridden).
 //
 //   +0x00..+0x6c   CSWGuiNavigable navigable
 //   +0x6c..+0xe0   CSWGuiBorder    border  (single border, not the dual-
@@ -182,6 +184,13 @@ constexpr size_t    kKeyMapButtonKeyCodeOff      = 0x39c;
 // on every diff so we can verify on first run; once confirmed, we strip
 // the diagnostic.
 constexpr uintptr_t kVtableEditbox             = 0x0073EAC8;
+// CSWGuiSaveGameEditBox — subclass embedded in CSWGuiSaveNamePanel. Struct
+// size is identical (0x160) and the whole body is a CSWGuiEditbox; only
+// HandleKeyPress is overridden (engine-side filename-char filter). It carries
+// its own vtable (k1_win_gog_swkotor.exe.xml Address-table symbol
+// CSWGuiSaveGameEditBox @ 0x007575B0), so vtable-identity predicates must
+// accept it alongside kVtableEditbox; the field offsets below apply unchanged.
+constexpr uintptr_t kVtableSaveGameEditbox     = 0x007575B0;
 constexpr size_t    kEditboxShortA             = 0x150;
 constexpr size_t    kEditboxShortB             = 0x152;
 constexpr size_t    kEditboxStringCStrOffset   = 0x158;
@@ -196,7 +205,7 @@ constexpr size_t    kEditboxStringLengthOffset = 0x15c;
 //   +0x64          undefined4 field1
 //   +0x68          undefined4 field2
 //   +0x6c          CSWGuiButton   end_button   (BTN_OK — "Annehmen")
-//   +0x230         CSWGuiEditbox  name_editbox (the only editbox in vanilla)
+//   +0x230         CSWGuiEditbox  name_editbox
 //   +0x390         CSWGuiLabel    main_title_label
 //   +0x4d0         CSWGuiLabel    subtitle_label
 //   +0x610         CSWGuiButton   back_button  (BTN_CANCEL — "Abbrechen")
@@ -219,6 +228,30 @@ constexpr size_t    kNameChargenEndButtonOffset = 0x6c;
 // they're on. The editbox spec's titleOverride reads subtitle_label
 // directly via this offset to substitute the correct title speech.
 constexpr size_t    kNameChargenSubtitleLabelOffset = 0x4d0;
+
+// CSWGuiSaveNamePanel (the "Enter name for saved game" modal popup that opens
+// on top of the SaveLoad screen when committing a save). Verified against
+// k1_win_gog_swkotor.exe.xml SYMBOL CSWGuiSaveNamePanel_vtable @ 0x007576D0 +
+// the SARIF DATATYPE field layout.
+//
+//   +0x00..+0x64   CSWGuiPanel           panel
+//   +0x64          undefined4            field1
+//   +0x68          CSWGuiButton          ok_button     (submit — "Annehmen")
+//   +0x22c         CSWGuiButton          cancel_button ("Abbrechen")
+//   +0x3f0         CSWGuiSaveGameEditBox edit_box
+//   +0x550         CSWGuiLabel           title_label
+//
+// `edit_box` is a CSWGuiSaveGameEditBox: struct size 0x160, body is entirely a
+// CSWGuiEditbox (only HandleKeyPress is overridden, engine-side, to filter
+// filename-illegal chars). So the string fields sit at the same offsets as a
+// plain editbox (c_string +0x158, length +0x15c) and ReadEditbox works
+// unchanged. Unlike CSWGuiNameChargen, title_label is the screen-specific
+// title (no stale parent header), so the spec's titleOverride reads it
+// directly.
+constexpr uintptr_t kVtableCSWGuiSaveNamePanel    = 0x007576D0;
+constexpr size_t    kSaveNameEditboxOffset        = 0x3f0;
+constexpr size_t    kSaveNameOkButtonOffset       = 0x68;
+constexpr size_t    kSaveNameTitleLabelOffset     = 0x550;
 
 // CSWGuiClassSelection (chargen "Klassenauswahl" panel — also backs the
 // second-level "Standard- vs. Eigener Charakter" prompt). Verified against
