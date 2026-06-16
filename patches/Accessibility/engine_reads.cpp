@@ -814,6 +814,26 @@ void ComputeSectionOffsets(void* item, uint8_t weaponType,
     }
 }
 
+// Resolve the item's identified-description text through the TLK strref,
+// bypassing the (sometimes corrupt) inline CExoLocString substring that
+// GetPropertyDescription/GetString prefer. Returns false when there's no strref
+// (-1 sentinel) or the lookup fails / is empty. outStrref reports the strref for
+// logging.
+bool ReadItemDescriptionViaTlk(void* item, char* outBuf, size_t bufSize,
+                               uint32_t& outStrref) {
+    outStrref = 0xFFFFFFFF;
+    if (!item || !outBuf || bufSize < 2) return false;
+    __try {
+        outStrref = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(item) +
+            kItemDescriptionLocStringOffset + kExoLocStringStrRefOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (outStrref == 0xFFFFFFFF) return false;  // no TLK entry for this locstring
+    return LookupTlk(outStrref, outBuf, bufSize) && outBuf[0] != '\0';
+}
+
 // Copy src[start..end) into dst (NUL-terminated, bounded by cap).
 void CopySlice(char* dst, size_t cap, const char* src, size_t start, size_t end) {
     if (!dst || cap == 0) return;
@@ -861,20 +881,33 @@ bool BuildItemDescriptionBlocks(void* item, ItemDescriptionBlocks* out) {
         offTags = offValues = offProps = 0;
     }
 
-    CopySlice(out->tags,        sizeof(out->tags),        full, 0,        offTags);
-    CopySlice(out->values,      sizeof(out->values),      full, offTags,  offValues);
-    CopySlice(out->properties,  sizeof(out->properties),  full, offValues, offProps);
-    CopySlice(out->description, sizeof(out->description),  full, offProps, fullLen);
+    CopySlice(out->tags,       sizeof(out->tags),       full, 0,         offTags);
+    CopySlice(out->values,     sizeof(out->values),     full, offTags,   offValues);
+    CopySlice(out->properties, sizeof(out->properties), full, offValues, offProps);
+
+    // Description: prefer the TLK strref (clean cp1252) over the inline copy that
+    // GetPropertyDescription emits — some German items have a corrupt inline
+    // description (umlauts collapsed to 0xFD). Fall back to the GetPropertyDescription
+    // tail when there's no usable strref.
+    uint32_t descStrref = 0xFFFFFFFF;
+    bool descViaTlk = ReadItemDescriptionViaTlk(item, out->description,
+                                                sizeof(out->description),
+                                                descStrref);
+    if (!descViaTlk) {
+        CopySlice(out->description, sizeof(out->description), full, offProps,
+                  fullLen);
+    }
 
     acclog::Write("Engine.Reads",
                   "BuildItemDescriptionBlocks item=%p itemType=%u weaponType=%u "
                   "fullLen=%zu offsets(tags=%zu values=%zu props=%zu) "
+                  "descStrref=0x%x descViaTlk=%d "
                   "lens(tags=%zu values=%zu props=%zu desc=%zu)",
                   item, (unsigned)itemType, (unsigned)weaponType, fullLen,
-                  offTags, offValues, offProps,
+                  offTags, offValues, offProps, descStrref, descViaTlk ? 1 : 0,
                   strlen(out->tags), strlen(out->values),
                   strlen(out->properties), strlen(out->description));
-    return fullLen > 0;
+    return fullLen > 0 || out->description[0] != '\0';
 }
 
 void* GetWorkbenchSlotInstalledItem(void* upgradePanel, void* slotControl) {

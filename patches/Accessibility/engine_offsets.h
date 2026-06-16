@@ -1671,6 +1671,17 @@ constexpr uintptr_t kAddrItemAddAttackModifierProps  = 0x0055e930;  // -> "value
 constexpr uintptr_t kAddrItemAddDefenceProperties    = 0x005599d0;  // -> "values"
 constexpr uintptr_t kAddrItemAddMiscellaneousProps   = 0x0055a510;  // -> "properties"
 
+// CSWSItem.description_indentified is a CExoLocString. GetPropertyDescription
+// appends its text via CExoLocString::GetString, which returns the INLINE
+// substring first (the per-item embedded copy) and only falls back to the TLK
+// strref when there's no inline. Some German items carry a corrupt inline copy
+// (all umlauts collapsed to 0xFD) while the TLK string is clean — so for the
+// description block we resolve the strref directly through the TLK
+// (LookupTlk), bypassing the bad inline copy. CExoLocString = { internal @0,
+// strref @0x4 } (decompile-verified at CExoLocString::GetString 005ea130).
+constexpr size_t    kItemDescriptionLocStringOffset = 0x270;
+constexpr size_t    kExoLocStringStrRefOffset       = 0x4;
+
 // CExoString default constructor — __thiscall(CExoString* this). Initialises a
 // valid empty string the engine builders can append to. (GetPropertyDescription
 // calls this on its accumulator before the Add* sequence.)
