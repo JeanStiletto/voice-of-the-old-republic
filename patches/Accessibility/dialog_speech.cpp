@@ -129,10 +129,16 @@ struct SpeakerInfo {
 //     classifies human, but he is a Twi'lek voiced in alien Twi'leki, so his
 //     translated subtitle is the player's only channel. Same case as Vek.
 //     (Reported in-game 2026-06-15.)
+//   - "kas22_xkomad_01": the same Komad Fortuna, reappearing on Kashyyyk
+//     (module kas22 — he references his earlier Tatooine hunt in dialogue).
+//     Same appearance 445, same alien-Twi'leki voice, but a different tag, so
+//     the Tatooine exemption above doesn't catch him. (Reported in-game
+//     2026-06-17.)
 constexpr const char* kNeverSuppressTags[] = {
     "sasha",
     "vek",
     "tat17_03komad_01",
+    "kas22_xkomad_01",
 };
 
 bool IsNeverSuppressTag(const char* tag) {

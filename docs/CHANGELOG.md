@@ -33,6 +33,12 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.5.5</h2>
+
+<h3>Bug fixes:</h3>
+
+- Komad Fortuna's lines are read on Kashyyyk. The Twi'lek hunter speaks an untranslated alien tongue, so his subtitles are your only channel — but on Kashyyyk the game gives him a different internal name than on Tatooine, where the mod already knew to read him, so his lines fell silent. He's now on the read-aloud list in both places.
+
 <h2>v0.5.4</h2>
 
 <h3>Bug fixes:</h3>
