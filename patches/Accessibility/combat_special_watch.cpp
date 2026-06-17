@@ -25,28 +25,16 @@ namespace {
 // likely mastered hotter than the grenade-bounce family.
 constexpr const char* kCueResref = "c_drdastro_hit2";
 
-// Priority-group bucket. CExoSoundSourceInternal::SetPriorityGroup
-// indexes into the engine's priority_groups[] table — each entry
-// carries its OWN volume scalar (0-127), pitch variance, and 3D
-// falloff. Probed live 2026-05-14 (see probe_priority_groups.cpp):
-//
-//   group 0    vol=106  (default — what cues used to sit on)
-//   group 3,6,7,10-17  vol=127 (max byte volume)
-//   group 14,15        vol=127 + variance=0.3 (weapon swings)
-//   group 24           vol=127 (priority=10, max_dist=100)
-//
-// We pick 15 — same group weapon swings use, vol=127, sits in the
-// "tactical combat event" tier the engine itself uses for melee
-// SFX. Should compete on equal footing with combat audio for voice
-// slots.
-constexpr uint8_t kCuePriorityGroup = 15;
-
-// Per-source volume byte on top of the priority-group bus. 127 is
-// the max byte; combined with kCuePriorityGroup's vol=127 this
-// maxes the source side of the gain chain. Final loudness depends
-// on slider × bias_2d3d × playback path (2D linear vs 3D
-// compressor).
-constexpr uint8_t kCueVolumeByte = 127;
+// Priority group: ride the mod's dedicated full-volume cue group like
+// every other one-shot cue (resolved by PlayCue's default arg →
+// audio::GetCuePriorityGroup — the installer-stamped vol=127 sentinel
+// row, fallback vanilla group 26). This previously hard-coded group 15
+// (the engine's weapon-swing tier, also vol=127), which predated the
+// dedicated group and meant this was the last one-shot cue not riding
+// the shared cue bus. Functionally equivalent on loudness (both vol=127,
+// and this plays 2D so the group's 3D falloff never applies), but now
+// it follows any future change to the shared cue group and stays
+// consistent with the rest of the cue funnel.
 
 // 2D playback. The 3D-at-listener trick gave a small (+3-6 dB)
 // perceived boost via the engine's pow(x, 0.6) compressor but read
@@ -242,17 +230,17 @@ void FireCue(const char* reason, int specials, DWORD now) {
         } else {
             // No camera (early init / between-area) — fall through to
             // 2D so we still fire rather than going silent.
-            acc::audio::PlayCue(kCueResref, kCuePriorityGroup,
-                                kCueVolumeByte);
+            acc::audio::PlayCue(kCueResref);
         }
     } else {
-        acc::audio::PlayCue(kCueResref, kCuePriorityGroup, kCueVolumeByte);
+        acc::audio::PlayCue(kCueResref);
     }
     GetState().lastTickAt = now;
     acclog::Write("Combat.SpecialWatch",
-                  "tick reason=%s specials=%d priority=%u vol=%u 3d=%d",
-                  reason, specials, (unsigned)kCuePriorityGroup,
-                  (unsigned)kCueVolumeByte, kCuePlayAs3D ? 1 : 0);
+                  "tick reason=%s specials=%d priority=%u 3d=%d",
+                  reason, specials,
+                  (unsigned)acc::audio::GetCuePriorityGroup(),
+                  kCuePlayAs3D ? 1 : 0);
 }
 
 }  // namespace
