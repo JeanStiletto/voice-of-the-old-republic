@@ -33,6 +33,12 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.5.4</h2>
+
+<h3>Bug fixes:</h3>
+
+- The Force Powers screen at level-up reads its power tree again. A recent change to how the mod recognises the workbench screens accidentally matched the Force Powers picker too, so opening "Force Powers" while leveling up a Jedi fell silent — nothing read and you couldn't pick a power. The mod now identifies that screen unambiguously, so its powers, their availability, and descriptions speak as before.
+
 <h2>v0.5.3</h2>
 
 <h3>New features:</h3>

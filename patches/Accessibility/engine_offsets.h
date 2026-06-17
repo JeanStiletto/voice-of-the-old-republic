@@ -629,6 +629,14 @@ constexpr uintptr_t kAddrCSWGuiPowersLevelUpOnPowerPicked   = 0x006f2030;
 // chargen_feats — see kFeatsCharGenChartOffset).
 constexpr size_t    kPowersLevelUpChartOffset              = 0x19fc;
 
+// CSWGuiPowersLevelUp identity by vtable — single heap-allocated class with
+// no CGuiInGame slot, so (like CSWGuiFeatsCharGen / CSWGuiLevelUpPanel) the
+// vtable is the clean, collision-proof identifier. SYMBOL
+// GuiPowersLevelUp_vtable @ 0x00759780 (absoluteAddress 7706496 in Lane's
+// SARIF; GoG bytes match Steam). Sits just below CSWGuiFeatsCharGen_vtable
+// (0x007598b0) in the vtable region, as expected for sibling GUI classes.
+constexpr uintptr_t kVtableCSWGuiPowersLevelUp             = 0x00759780;
+
 // CSWGuiSkillFlowChart::SetSelectedSkill — sets the chart's render-side
 // selection state by feat ID. Walks rows × cols looking for the matching
 // feat, updates the chart's (selected_col, selected_row) pair and the

@@ -335,6 +335,18 @@ bool IsScriptSelectStructural(void* panel) {
 bool IsPowersLevelUpStructural(void* panel) {
     if (!panel) return false;
     __try {
+        // Primary: vtable equality — the clean, collision-proof identifier
+        // used by every other single-instance heap panel (feats, level-up,
+        // main menu, options sub-screens). This is what makes the powers
+        // screen robust against loose structural signatures elsewhere in
+        // the ladder, not merely its probe position.
+        void** vt = *reinterpret_cast<void***>(panel);
+        if (reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiPowersLevelUp) {
+            return true;
+        }
+        // Fallback structural signature (kept in case a build relocates the
+        // vtable): powers_listbox (id 6) and description_listbox (id 7) are
+        // ListBoxes; BTN_ACCEPT (id 11) and BTN_BACK (id 12) are buttons.
         void* lbPowers = FindControlByGuiId(panel, /*powers_listbox=*/6);
         if (!ControlHasVtable(lbPowers, kVtableListBox)) return false;
         void* lbDesc   = FindControlByGuiId(panel, /*description_listbox=*/7);
@@ -669,6 +681,19 @@ PanelKind IdentifyPanel(void* panel) {
     if (IsWorkbenchItemsStructural(panel)) {
         return recordAndReturn(PanelKind::WorkbenchItems, "WorkbenchItems");
     }
+    // PowersLevelUp must probe before WorkbenchSelect. WorkbenchSelect's
+    // structural fallback was loosened (commit 29bdb2b) to "id 0 present +
+    // id 9 button + id 10 button" — a signature the force-power picker
+    // (pwrlvlup.gui) also satisfies (id 0 placeholder, id 9 "Empfohlen",
+    // id 10 BTN_SELECT), so it stole the powers panel and the skill tree
+    // went silent. PowersLevelUp now identifies by vtable (collision-proof),
+    // but the workbench fallback is purely structural and ignores the vtable,
+    // so it would still grab the powers panel if probed first — hence the
+    // order. Per the "tighter first" rule above, the more-distinctive
+    // detector claims its panel before the loose workbench fallback.
+    if (IsPowersLevelUpStructural(panel)) {
+        return recordAndReturn(PanelKind::PowersLevelUp, "PowersLevelUp");
+    }
     if (IsWorkbenchSelectStructural(panel)) {
         return recordAndReturn(PanelKind::WorkbenchSelect, "WorkbenchSelect");
     }
@@ -680,9 +705,6 @@ PanelKind IdentifyPanel(void* panel) {
     }
     if (IsCharGenStructural(panel)) {
         return recordAndReturn(PanelKind::CharGen, "CharGen");
-    }
-    if (IsPowersLevelUpStructural(panel)) {
-        return recordAndReturn(PanelKind::PowersLevelUp, "PowersLevelUp");
     }
     if (IsMainMenuOptionsStructural(panel)) {
         return recordAndReturn(PanelKind::MainMenuOptions, "MainMenuOptions");
