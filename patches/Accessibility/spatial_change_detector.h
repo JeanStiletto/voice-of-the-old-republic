@@ -12,13 +12,18 @@
 // crossing.
 //
 // Trigger 2 — foremost-in-front (±45°). Closest wall-or-object in the
-// Front sector. Identity change + kT2QuietMs stability → one cue. Cone-
-// clear = silence (turn_announce confirms rotation).
+// Front sector. A change of foremost identity (including wall→wall)
+// fires one cue, debounced like the compass: on settle (kT2QuietMs) or,
+// during a continuous sweep, at the kT2HeldIntervalMs cadence. Cone-
+// clear = silence, which is the "open space ahead" signal. The incumbent
+// foremost is sticky (kT2SwitchHysteresisMeters) so near-equidistant
+// front walls don't thrash.
 //
-// T1/T2 coordination via shared last_cued_at. T1 stamps on fire; T2
-// only fires when the foremost hasn't been recently stamped. Result:
-// approach reads as T1-only; T2 only adds audio during stationary
-// rotation or rotation across already-stamped features.
+// T1 and T2 carry distinct signals and run independently: T1 is the 360°
+// distance/approach channel (silent on pure in-place rotation — it is
+// world-frame), T2 is the front-geometry-change channel (silent on a
+// straight approach to a single wall). A short same-surface dedup
+// (last_cued_at) stops them double-announcing the identical wall in one beat.
 //
 // The wall-cache + surface clustering subsystem (built on area change,
 // read here per tick) lives in spatial_wall_surfaces.{h,cpp}. The

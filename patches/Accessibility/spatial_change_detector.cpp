@@ -14,7 +14,8 @@
 #include "spatial_wall_surfaces.h" // wall cache + clustering
 #include "view_mode.h"            // GetEffectiveOrientationYawDegrees —
                                   // routes T2 cone through camera yaw
-                                  // when view mode is active
+                                  // (where the user is looking) in both
+                                  // normal play and view mode
 #include "filter_objects.h"
 #include "log.h"
 
@@ -146,13 +147,31 @@ ObjectState g_object_state[kMaxTrackedObjects];
 
 // --- Trigger 2 — foremost-in-front debounce state ----------------------
 //
-// Three-variable pattern ported from turn_announce.cpp. The "feature
-// identity" can be a wall surface (by surface index) or an object (by
-// engine handle) or None (cone clear). Equality compares (kind +
-// discriminator) so a wall and an object with happenstance-matching
-// integers are distinguishable.
+// The "feature identity" can be a wall surface (by surface index) or an
+// object (by engine handle) or None (cone clear). Equality compares
+// (kind + discriminator) so a wall and an object with happenstance-
+// matching integers are distinguishable.
+//
+// Firing model mirrors camera_announce's proven compass debounce: a
+// foremost change is announced when it has either been STABLE for
+// kT2QuietMs (you stopped on it) or — during a continuous sweep where
+// the foremost keeps changing every tick and never settles — at most
+// once per kT2HeldIntervalMs, so you hear the geometry pass through the
+// cone instead of only the wall you land on. Cone-clear (None) stays
+// silent: the gap between cues is the "open space ahead" signal.
 
-constexpr DWORD kT2QuietMs = 250;
+constexpr DWORD kT2QuietMs        = 250;   // settle window (matches compass kQuietMs)
+constexpr DWORD kT2HeldIntervalMs = 300;   // max cadence during a continuous sweep (matches compass kMinIntervalHeldMs)
+
+// Foremost-switch hysteresis. The incumbent foremost (g_t2_last_fired)
+// gets this distance discount when selecting the closest in-cone
+// feature, so a challenger must be at least this much closer before it
+// displaces the incumbent. Without it, two near-equidistant front
+// surfaces (e.g. the left/right walls of a corridor walked straight
+// down) flip-flop the foremost every tick and the held-interval path
+// fires on the thrash. Distance-space analog of compass's 5° boundary
+// hysteresis.
+constexpr float kT2SwitchHysteresisMeters = 0.5f;
 
 enum class FeatureKind : int {
     None   = 0,
@@ -185,18 +204,23 @@ const char* ForemostKindTag(FeatureKind k) {
     return "?";
 }
 
-Foremost g_t2_last_fired      = { FeatureKind::None, -1, 0u };
-Foremost g_t2_pending         = { FeatureKind::None, -1, 0u };
+Foremost g_t2_last_fired         = { FeatureKind::None, -1, 0u };
+Foremost g_t2_pending            = { FeatureKind::None, -1, 0u };
 DWORD    g_t2_pending_changed_at = 0;
-bool     g_t2_initialised     = false;
+DWORD    g_t2_last_fired_at      = 0;   // baseline for the held-interval cadence; 0 = never fired
+bool     g_t2_initialised        = false;
 
-// Timestamp of the last T1 wall fire (any sector). T2 wall fires are
-// suppressed within kSectorCooldownMs of this — when T1 has just
-// announced wall geometry, the player is already getting wall info this
-// beat and a T2 "wall in front" cue is a duplicate even if it's a
-// different surface than T1 picked. Object T2 fires are NOT gated by
-// this (they carry distinct semantic content). 0 = never fired.
-DWORD    g_t1_wall_last_fired_at = 0;
+// Effective comparison distance for T2 foremost selection. The incumbent
+// foremost is "sticky" (see kT2SwitchHysteresisMeters): its raw distance
+// is discounted so near-equidistant challengers don't steal foremost and
+// cause thrash. The raw distance is still used for the cue + log.
+float T2EffectiveDistance(const Foremost& cand, float rawDist) {
+    if (ForemostEqual(cand, g_t2_last_fired)) {
+        float d = rawDist - kT2SwitchHysteresisMeters;
+        return d < 0.0f ? 0.0f : d;
+    }
+    return rawDist;
+}
 
 // --- Geometry -----------------------------------------------------------
 
@@ -451,8 +475,8 @@ void OnAreaChange(void* area) {
     g_t2_last_fired         = { FeatureKind::None, -1, 0u };
     g_t2_pending            = { FeatureKind::None, -1, 0u };
     g_t2_pending_changed_at = 0;
+    g_t2_last_fired_at      = 0;
     g_t2_initialised        = false;
-    g_t1_wall_last_fired_at = 0;
 }
 
 // Calibration scan — runs once per area-change after OnAreaChange has
@@ -661,12 +685,12 @@ void Tick() {
 
     DWORD now = GetTickCount();
 
-    // Hoisted yaw — used for both T1 wall-sector binning and T2 Front-cone
-    // candidate detection. One read per tick. Camera yaw when view mode
-    // is active (T2 tracks where the user is looking as they pan A/D);
-    // player yaw otherwise. T1 distance-delta now also follows the
-    // cursor in view mode (see referencePos above), so its sector
-    // binning riding the same camera-yaw is the right pairing.
+    // Hoisted yaw — used ONLY for the T2 Front-cone candidate detection
+    // (T1's sector binning is world-frame and ignores this). One read per
+    // tick. This is the camera facing — where the user is looking — in
+    // both normal play and view mode, so panning the camera to scan
+    // sweeps the cone across the geometry even when the character stays
+    // put. See GetEffectiveOrientationYawDegrees.
     float effectiveYaw = 0.0f;
     if (!acc::view_mode::GetEffectiveOrientationYawDegrees(effectiveYaw)) {
         effectiveYaw = 0.0f;
@@ -684,7 +708,8 @@ void Tick() {
     // a T2 candidate, regardless of whether its distance crossed the
     // T1 threshold this tick.
     Foremost           t2_best        = { FeatureKind::None, -1, 0u };
-    float              t2_best_dist   = 1e30f;
+    float              t2_best_dist   = 1e30f;  // raw distance of t2_best (cue + log)
+    float              t2_best_eff    = 1e30f;  // hysteresis-discounted distance (selection only)
     Vector             t2_best_pos    = { 0.0f, 0.0f, 0.0f };
     acc::audio::NavCue t2_best_cue    = acc::audio::NavCue::Wall;
     const bool         t2_enabled     = settings.trigger2FrontCone;
@@ -763,15 +788,27 @@ void Tick() {
         WallSector playerSec = ClassifyRelativeBearing(worldBearing - effectiveYaw);
 
         // T2 candidate — player-relative Front cone (in front of the
-        // user's view direction, not world-east).
+        // user's view direction, not world-east). Selection uses the
+        // hysteresis-discounted distance so the incumbent foremost is
+        // sticky; the raw distance is kept for the cue + log.
+        //
+        // Cap at the true awareness range (not the rangeExit hysteresis
+        // band): a wall beyond `range` can't play — the cue player drops
+        // it as out-of-range — so letting it become foremost only churns
+        // the foremost state and logs dropped "fires" at ~5 m. The
+        // hysteresis band is a T1 sector-stability concept, irrelevant to
+        // T2's closest-in-front pick.
         if (t2_enabled && playerSec == WallSector::Front &&
-                ss.best_distance < t2_best_dist) {
-            t2_best_dist                = ss.best_distance;
-            t2_best.kind                = FeatureKind::Wall;
-            t2_best.wall_surface_index  = s;
-            t2_best.object_handle       = 0;
-            t2_best_pos                 = ss.best_closest_point;
-            t2_best_cue                 = acc::audio::NavCue::Wall;
+                ss.best_distance <= range) {
+            Foremost cand = { FeatureKind::Wall, s, 0u };
+            float eff = T2EffectiveDistance(cand, ss.best_distance);
+            if (eff < t2_best_eff) {
+                t2_best_eff  = eff;
+                t2_best_dist = ss.best_distance;
+                t2_best      = cand;
+                t2_best_pos  = ss.best_closest_point;
+                t2_best_cue  = acc::audio::NavCue::Wall;
+            }
         }
 
         // T1 per-sector aggregation — world-frame to immunise against
@@ -913,7 +950,6 @@ void Tick() {
                     referencePos, range)) {
                 ++walls_cued;
                 g_sector_last_cued_at[c.sector_index] = now;
-                g_t1_wall_last_fired_at = now;
                 if (c.best_surface_index >= 0 &&
                     c.best_surface_index < ws::kMaxWallSurfaces) {
                     g_surface_last_cued_at[c.best_surface_index] = now;
@@ -996,17 +1032,19 @@ void Tick() {
         // T2 candidate detection — Front-sector + closer than current
         // best wins. atan2 with horizontal delta only (Z ignored to
         // match the cycle/passive-narrate horizontal convention).
-        if (t2_enabled) {
+        if (t2_enabled && dist <= range) {  // true range, not the hysteresis band (see wall pass)
             float wb = std::atan2(dy, dx) * 57.29577951308232f;
             if (ClassifyRelativeBearing(wb - effectiveYaw) ==
-                    WallSector::Front &&
-                dist < t2_best_dist) {
-                t2_best_dist                = dist;
-                t2_best.kind                = FeatureKind::Object;
-                t2_best.wall_surface_index  = -1;
-                t2_best.object_handle       = handle;
-                t2_best_pos                 = pos;
-                t2_best_cue                 = cue;
+                    WallSector::Front) {
+                Foremost cand = { FeatureKind::Object, -1, handle };
+                float eff = T2EffectiveDistance(cand, dist);
+                if (eff < t2_best_eff) {
+                    t2_best_eff  = eff;
+                    t2_best_dist = dist;
+                    t2_best      = cand;
+                    t2_best_pos  = pos;
+                    t2_best_cue  = cue;
+                }
             }
         }
 
@@ -1064,67 +1102,53 @@ void Tick() {
             acclog::Write("ChangeDetector", "T2 first-tick suppress; foremost=%s",
                 ForemostKindTag(t2_best.kind));
         } else {
-            // Track most-recent-observed foremost + when it last
-            // changed. While the player is mid-rotation across multiple
-            // features, this fires every tick and keeps changed_at
-            // moving — no announcement until the rotation settles.
+            // Track most-recent-observed foremost + when it last changed.
+            // During a continuous sweep this updates every tick and keeps
+            // changed_at pinned to now, so the settle path never trips —
+            // the held-interval path carries the sweep instead.
             if (!ForemostEqual(t2_best, g_t2_pending)) {
                 g_t2_pending            = t2_best;
                 g_t2_pending_changed_at = now;
             }
 
-            if (!ForemostEqual(g_t2_pending, g_t2_last_fired) &&
-                now - g_t2_pending_changed_at >= kT2QuietMs) {
-                // Settled on a new foremost. Three exit paths:
-                //   1. None  → cone-clear silence (record, don't fire).
-                //   2. Wall  → fire only on `none → wall` AND no recent
-                //              T1 wall fire (kSectorCooldownMs).
-                //   3. Object → check ObjectState.last_cued_at.
+            // Announce a new foremost when it has either settled
+            // (kT2QuietMs of stability — you stopped on it) or, during a
+            // continuous sweep where it never settles, at the held-
+            // interval cadence (kT2HeldIntervalMs since the last T2 fire).
+            // First-ever fire is allowed immediately. Mirrors
+            // camera_announce's stable-or-held compass debounce.
+            bool changed = !ForemostEqual(g_t2_pending, g_t2_last_fired);
+            bool stable  = now - g_t2_pending_changed_at >= kT2QuietMs;
+            bool held    = g_t2_last_fired_at != 0 &&
+                           now - g_t2_last_fired_at >= kT2HeldIntervalMs;
+            bool first   = g_t2_last_fired_at == 0;
+            if (changed && (stable || held || first)) {
+                // Fire on any foremost identity change — including
+                // wall→wall, which is a real change in the geometry ahead
+                // (you swept onto a different wall) and the core of the
+                // "scan what's in front" feature. The only remaining gate
+                // is a short same-surface dedup so T1 and T2 don't double-
+                // announce the identical wall in one beat. None (cone
+                // clear) records but never fires: that silence is the
+                // "open space ahead" signal.
                 bool fire = false;
                 if (g_t2_pending.kind == FeatureKind::Wall &&
                     g_t2_pending.wall_surface_index >= 0 &&
                     g_t2_pending.wall_surface_index < surfaceCount) {
-                    // (C) Only announce walls when the cone transitions
-                    // from clear/object → wall. `wall → wall` (foremost
-                    // wall identity changed because the player panned
-                    // or walked) is mostly noise: T1 already announces
-                    // per-direction wall distance changes, so the
-                    // player isn't missing wall info on those beats.
-                    bool coneEnteredWall =
-                        g_t2_last_fired.kind != FeatureKind::Wall;
-                    // (B) Suppress within the T1 wall cooldown window.
-                    // When T1 just announced any wall in any sector,
-                    // adding a T2 "wall in front" cue is a duplicate
-                    // signal even if it's a different surface — the
-                    // player is already being told about wall geometry
-                    // this beat.
-                    bool t1Quiet =
-                        g_t1_wall_last_fired_at == 0 ||
-                        now - g_t1_wall_last_fired_at >= kSectorCooldownMs;
                     DWORD lastAt = g_surface_last_cued_at[
                         g_t2_pending.wall_surface_index];
                     bool surfaceQuiet =
                         lastAt == 0 || now - lastAt > kT2QuietMs;
-                    if (coneEnteredWall && t1Quiet && surfaceQuiet) {
+                    if (surfaceQuiet) {
                         fire = true;
                     } else {
-                        // Diagnostic: the foremost wall settled on a
-                        // new value but a gate suppressed the cue.
-                        // Lets us tell "no T2 wall fires because the
-                        // cone never sees one" (correct silence) from
-                        // "T2 wanted to fire but was gated" (also
-                        // correct, just useful to see). Only logs on
-                        // actual transition events, not every tick.
+                        // Diagnostic: the same physical wall was just
+                        // announced by T1 (or T2) this beat, so the dedup
+                        // held the cue. Distinguishes "nothing to say"
+                        // from "suppressed duplicate."
                         acclog::Write("ChangeDetector", "T2 wall blocked "
-                            "coneEnteredWall=%d t1Quiet=%d "
-                            "surfaceQuiet=%d (%s -> wall) surface=%d "
-                            "dist=%.2f",
-                            coneEnteredWall ? 1 : 0,
-                            t1Quiet ? 1 : 0,
-                            surfaceQuiet ? 1 : 0,
-                            ForemostKindTag(g_t2_last_fired.kind),
-                            g_t2_pending.wall_surface_index,
-                            t2_best_dist);
+                            "surfaceQuiet=0 surface=%d dist=%.2f",
+                            g_t2_pending.wall_surface_index, t2_best_dist);
                     }
                 } else if (g_t2_pending.kind == FeatureKind::Object) {
                     ObjectState* s = FindObjectState(
@@ -1138,7 +1162,8 @@ void Tick() {
                     bool ok = acc::audio::PlayCueAtPosition(
                         t2_best_cue, t2_best_pos, referencePos, range);
                     if (ok) {
-                        t2_fired = true;
+                        t2_fired           = true;
+                        g_t2_last_fired_at = now;
                         if (g_t2_pending.kind == FeatureKind::Wall) {
                             g_surface_last_cued_at[
                                 g_t2_pending.wall_surface_index] = now;
@@ -1149,9 +1174,11 @@ void Tick() {
                         }
                     }
                     acclog::Write("ChangeDetector", "T2 fire kind=%s dist=%.2f "
-                        "played=%d (%s -> %s)",
+                        "played=%d via=%s surface=%d (%s -> %s)",
                         ForemostKindTag(g_t2_pending.kind),
                         t2_best_dist, ok ? 1 : 0,
+                        first ? "first" : (stable ? "stable" : "held"),
+                        g_t2_pending.wall_surface_index,
                         ForemostKindTag(g_t2_last_fired.kind),
                         ForemostKindTag(g_t2_pending.kind));
                 }

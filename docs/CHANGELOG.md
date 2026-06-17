@@ -39,6 +39,7 @@ and add the German in parentheses if it genuinely aids clarity.
 
 - Wall, door, container, NPC, item and transition cues now fall off with distance — louder as you close in, quieter as you move away — so their volume tells you how near something is. They previously played at full volume anywhere within range, giving no sense of distance.
 - Wall cues repeat less often when you maneuver back and forth in a tight space, where small movements used to set off a rapid flicker of pings from every side at once.
+- Turn the camera to scan the space ahead. Walls and objects in your line of sight now announce as they pass through the front of your view while you turn, and a silent stretch marks an opening you can head for — so you can find your way by sweeping the view and walking into the quiet. This front-of-view cue previously tracked only your character's facing, which barely moves when you orbit the camera to look around, so turning in place to scan produced no sound.
 
 <h3>Open-area navigation:</h3>
 

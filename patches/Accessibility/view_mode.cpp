@@ -613,17 +613,22 @@ bool TryGetCursorPosition(Vector& out) {
 }
 
 bool GetEffectiveOrientationYawDegrees(float& out) {
-    if (g_state.active) {
-        float cameraYaw = 0.0f;
-        if (acc::camera_announce::TryGetCameraEngineYawDegrees(cameraYaw)) {
-            out = cameraYaw;
-            return true;
-        }
-        // Fall through to player yaw — happens on the very first ticks
-        // of view mode if the user toggled in before camera_announce::
-        // Tick() ran a single anchoring pass. Acceptable: T2 cone uses
-        // character yaw for one tick, then switches to camera yaw.
+    // T2's front cone tracks where the user is *looking* — the camera
+    // facing — in BOTH normal play and view mode. The camera is what the
+    // user sweeps when scanning for walls/openings: in third-person the
+    // character often stays put while the camera orbits (confirmed in
+    // logs — the compass swept full circles while character yaw barely
+    // moved). Anchoring the cone to character yaw made turning-in-place
+    // produce no cone movement and no cues. Mirrors camera_announce,
+    // which uses camera yaw for exactly this reason.
+    float cameraYaw = 0.0f;
+    if (acc::camera_announce::TryGetCameraEngineYawDegrees(cameraYaw)) {
+        out = cameraYaw;
+        return true;
     }
+    // Camera pose not anchored yet (first ticks before camera_announce::
+    // Tick() ran its anchoring pass, or camera unavailable): fall back to
+    // character yaw for that tick, then switch to camera yaw.
     return acc::engine::GetPlayerYawDegrees(out);
 }
 
