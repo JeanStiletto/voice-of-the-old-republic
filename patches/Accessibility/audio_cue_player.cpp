@@ -99,7 +99,13 @@ bool PlayCueAtPosition(NavCue cue,
         return false;
     }
 
-    bool ok = PlayCue3D(GetNavCueResref(cue), worldPos);
+    // Passive proximity cues ride the near-field "spatial" group (tight 1m/8m
+    // falloff) so loudness tracks distance across the awareness range. This is
+    // the funnel for the world cues only (wall/door/container/NPC/item/
+    // transition/hazard); the on-demand cycling cues call PlayCue3D directly and
+    // stay on the flat full group, where a distant target must remain audible.
+    bool ok = PlayCue3D(GetNavCueResref(cue), worldPos,
+                        GetSpatialCuePriorityGroup());
 
     float dist = (distSq > 0.0f) ? std::sqrt(distSq) : 0.0f;
     acclog::Write("CuePlayer", "%s cue=%s pos=(%.2f,%.2f,%.2f) dist=%.2f",

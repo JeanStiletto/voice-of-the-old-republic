@@ -46,6 +46,14 @@ int  GetGlobalCueVolumePercent();
 // first successful resolve. See audio_bus.cpp for the mechanism.
 uint8_t GetCuePriorityGroup();
 
+// Near-field cue group — the installer's second sentinel row, a tight 1m/8m
+// falloff band so loudness tracks distance across the passive proximity cues'
+// ~5m awareness range (the flat group above is full-volume out to 10m, so
+// near-field cues never varied with distance). Resolved/cached like
+// GetCuePriorityGroup; falls back to the flat group if the spatial row is
+// absent. Used by PlayCueAtPosition; pass it explicitly to PlayCue3D.
+uint8_t GetSpatialCuePriorityGroup();
+
 // 2D one-shot cue (centred, no spatial position).
 //   resref:        ≤16-char .wav tag, resolved through Override\ →
 //                  streamwaves\ → streamsounds\ → streammusic\ → BIF/RIM.

@@ -39,15 +39,21 @@ namespace KotorAccessibilityInstaller
     /// </summary>
     public static class PriorityGroup2da
     {
-        /// <summary>Fingerprint stamped into the appended row's FadeTime column.</summary>
+        /// <summary>Fingerprint stamped into the flat full-volume row's FadeTime column.</summary>
         public const ushort SentinelFadeTime = 31337;
 
+        /// <summary>Fingerprint for the near-field "spatial" row (tight falloff band).</summary>
+        public const ushort SpatialSentinelFadeTime = 31338;
+
         // Appended row values by column. "label" is empty (every row's is).
-        // Clone of vanilla group 0 (priority 0, 4 voices, 20m/10m falloff, no
-        // playback variance) but Volume=127 (full) and FadeTime=sentinel.
-        // Interrupt=1 so a fresh cue preempts an old one when the voice budget
-        // is full rather than being dropped.
-        private static readonly Dictionary<string, string> NewRow =
+        //
+        // Flat full-volume group: clone of vanilla group 0 (priority 0, 4 voices,
+        // 10m full-volume radius / 20m floor, no playback variance) but Volume=127
+        // (full) and FadeTime=sentinel. Interrupt=1 so a fresh cue preempts an old
+        // one when the voice budget is full rather than being dropped. Used by the
+        // on-demand cues (cycling, beacon, combat) that may target distant objects
+        // and just need to stay audible at range.
+        private static readonly Dictionary<string, string> FlatRow =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 { "priority", "0" },
@@ -58,6 +64,38 @@ namespace KotorAccessibilityInstaller
                 { "maxvolumedist", "10" },
                 { "minvolumedist", "20" },
                 { "playbackvariance", "0" },
+            };
+
+        // Near-field "spatial" group: same Volume=127 but a TIGHT falloff band —
+        // full volume only within 1m, ramping to the floor by 8m. This restores a
+        // distance-loudness gradient across the passive proximity cues' ~5m
+        // awareness range (the flat group is full-volume out to 10m, so cues fired
+        // within 5m never varied with distance). Mirrors the engine's own
+        // near-field SFX groups (e.g. vanilla groups 19/20: full to 4m, floor 8m),
+        // compressed tighter to fit our shorter awareness range. Used only by the
+        // passive wall/door/container/NPC/item/transition cues that funnel through
+        // PlayCueAtPosition. One-shot cues take their falloff band from their
+        // priority group (the one-shot engine API has no per-source distance), so
+        // a dedicated group is the only way to give them a band of their own.
+        private static readonly Dictionary<string, string> SpatialRow =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "priority", "0" },
+                { "volume", "127" },
+                { "maxplaying", "4" },
+                { "interrupt", "1" },
+                { "fadetime", SpatialSentinelFadeTime.ToString() },
+                { "maxvolumedist", "1" },
+                { "minvolumedist", "8" },
+                { "playbackvariance", "0" },
+            };
+
+        // Every accessibility row we maintain, paired with its sentinel.
+        private static readonly (ushort Sentinel, Dictionary<string, string> Row)[] AccRows =
+            new[]
+            {
+                (SentinelFadeTime, FlatRow),
+                (SpatialSentinelFadeTime, SpatialRow),
             };
 
         private static readonly byte[] Magic = Encoding.ASCII.GetBytes("2DA V2.b\n");
@@ -145,28 +183,30 @@ namespace KotorAccessibilityInstaller
         private static int FadeTimeCol(Table t) =>
             t.Cols.FindIndex(c => c.Equals("fadetime", StringComparison.OrdinalIgnoreCase));
 
-        /// <summary>True if the table already carries our sentinel row.</summary>
+        /// <summary>True if the parsed table carries a row with the given sentinel.</summary>
+        private static bool HasSentinel(Table t, int fadeCol, ushort sentinel)
+        {
+            if (fadeCol < 0) return false;
+            string s = sentinel.ToString();
+            for (int r = 0; r < t.RowCount; r++)
+                if (Cell(t, r, fadeCol) == s) return true;
+            return false;
+        }
+
+        /// <summary>True if the table already carries ALL of our sentinel rows.</summary>
         public static bool HasAccGroup(byte[] buf)
         {
             var t = Parse(buf);
             int fc = FadeTimeCol(t);
             if (fc < 0) return false;
-            string s = SentinelFadeTime.ToString();
-            for (int r = 0; r < t.RowCount; r++)
-                if (Cell(t, r, fc) == s) return true;
-            return false;
+            foreach (var (sentinel, _) in AccRows)
+                if (!HasSentinel(t, fc, sentinel)) return false;
+            return true;
         }
 
-        /// <summary>
-        /// Returns the 2da bytes with our full-volume row appended. Idempotent:
-        /// returns <paramref name="source"/> unchanged if the sentinel row is
-        /// already present. Throws on a malformed/unrecognised 2da.
-        /// </summary>
-        public static byte[] AppendAccGroup(byte[] source)
+        // Appends one row (dictionary keyed by column name) to the parsed table.
+        private static void AppendRow(Table t, Dictionary<string, string> row)
         {
-            if (HasAccGroup(source)) return source;
-
-            var t = Parse(source);
             int newIdx = t.RowCount;
             var data = new List<byte>(t.DataBlock);
 
@@ -179,7 +219,7 @@ namespace KotorAccessibilityInstaller
                     t.Offsets.Add(0);
                     continue;
                 }
-                NewRow.TryGetValue(c, out string val);
+                row.TryGetValue(c, out string? val);
                 val ??= "";  // unknown column -> empty cell (defensive, forward-compat)
                 int off = data.Count;
                 data.AddRange(Encoding.ASCII.GetBytes(val));
@@ -190,13 +230,36 @@ namespace KotorAccessibilityInstaller
             t.RowCount += 1;
             t.Labels.Add(newIdx.ToString());
             t.DataBlock = data.ToArray();
+        }
+
+        /// <summary>
+        /// Returns the 2da bytes with every accessibility row appended that isn't
+        /// already present. Idempotent: returns <paramref name="source"/> unchanged
+        /// when all our rows are already there (so callers can detect "no change"
+        /// via reference equality). Adds only the missing rows otherwise — an
+        /// install that already has the flat row but not the spatial row gains just
+        /// the spatial one. Throws on a malformed/unrecognised 2da.
+        /// </summary>
+        public static byte[] AppendAccGroup(byte[] source)
+        {
+            var t = Parse(source);
+            int fc = FadeTimeCol(t);
+
+            bool changed = false;
+            foreach (var (sentinel, row) in AccRows)
+            {
+                if (HasSentinel(t, fc, sentinel)) continue;
+                AppendRow(t, row);
+                changed = true;
+            }
+            if (!changed) return source;
 
             byte[] outBytes = Build(t);
 
-            // Self-check: the freshly written row must read back as our group.
+            // Self-check: every row must read back from the freshly written bytes.
             if (!HasAccGroup(outBytes))
                 throw new InvalidDataException(
-                    "prioritygroups.2da append self-check failed (sentinel not found in output)");
+                    "prioritygroups.2da append self-check failed (a sentinel row is missing from output)");
             return outBytes;
         }
     }

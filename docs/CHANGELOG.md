@@ -35,6 +35,10 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.5.6</h2>
 
+<h3>Spatial cues:</h3>
+
+- Wall, door, container, NPC, item and transition cues now fall off with distance — louder as you close in, quieter as you move away — so their volume tells you how near something is. They previously played at full volume anywhere within range, giving no sense of distance.
+
 <h3>Open-area navigation:</h3>
 
 - Very large open spaces now announce as "large area" instead of "area". The label sets the expectation that wall and object cues are naturally sparse when you cross a space this big, so quiet stretches read as the size of the place rather than something gone wrong.
