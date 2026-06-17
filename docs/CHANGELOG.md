@@ -38,6 +38,7 @@ and add the German in parentheses if it genuinely aids clarity.
 <h3>Spatial cues:</h3>
 
 - Wall, door, container, NPC, item and transition cues now fall off with distance — louder as you close in, quieter as you move away — so their volume tells you how near something is. They previously played at full volume anywhere within range, giving no sense of distance.
+- Wall cues repeat less often when you maneuver back and forth in a tight space, where small movements used to set off a rapid flicker of pings from every side at once.
 
 <h3>Open-area navigation:</h3>
 

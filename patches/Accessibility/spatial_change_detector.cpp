@@ -108,7 +108,7 @@ constexpr float kFireDedupTolSquared  = kFireDedupTolMeters * kFireDedupTolMeter
 // wall's current closest point and is louder than the previous because
 // the wall is closer.
 
-constexpr DWORD kSectorCooldownMs = 1000;
+constexpr DWORD kSectorCooldownMs = 1800;
 
 // Hysteresis on the awareness-range boundary itself. A wall enters the
 // 5 m bubble at the configured range; once in, it has to recede past
