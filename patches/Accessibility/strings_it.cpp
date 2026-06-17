@@ -351,6 +351,7 @@ const char* Get(Id id) {
         case Id::AxisNorthSouth:             return "nord-sud";
         case Id::AxisEastWest:               return "est-ovest";
         case Id::AreaNoun:                   return "Zona";
+        case Id::AreaNounLarge:              return "Grande zona";
         case Id::FmtAreaAxisExits:           return "%s %s. Uscite: %s";
         case Id::FmtAreaExits:               return "%s. Uscite: %s";
         case Id::FmtAreaAxisOnly:            return "%s %s";

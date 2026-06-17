@@ -1100,6 +1100,10 @@ enum class Id : int {
     // the exits. The kind (KindPlatz vs KindRoom) decides delayed vs
     // immediate announce but is never spoken.
     AreaNoun,            // "Bereich" / "area"
+    AreaNounLarge,       // "Großer Bereich" / "large area" — noun swapped in
+                         // for clusters whose footprint exceeds
+                         // kLargeAreaExtentMeters; sets the expectation that
+                         // wall/object cues are sparse here by design.
     FmtAreaAxisExits,    // "%s %s. Ausgänge: %s" — noun + axis + exit list
     FmtAreaExits,        // "%s. Ausgänge: %s"    — noun + exit list (no axis)
     FmtAreaAxisOnly,     // "%s %s"               — noun + axis (no exits)

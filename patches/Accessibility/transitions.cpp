@@ -915,6 +915,25 @@ void Tick() {
         return;
     }
 
+    // Snap-gap seam suppression. kClusterIdOpenArea is the synthetic
+    // fallback LookupAt returns when the player sits beyond the snap
+    // radius of every cluster node. In an area that already has labelled
+    // clusters that is almost never "genuinely open" — it's a thin
+    // coverage seam *between* two regions (the Kashyyyk Great Walkway has
+    // a ~15 m band between cluster 4 and cluster 12 where neither node is
+    // in range). Announcing the bare "Bereich" there and re-acquiring the
+    // real cluster on the far side produces boundary thrash (observed:
+    // cluster 4 -> -2 -> cluster 12 -> -2 over tens of seconds of pacing).
+    // Hold the last real cluster across the seam by collapsing the
+    // fallback to the previous id, so it reads as "still in that region."
+    // A genuinely open area still announces the fallback once: there the
+    // previous committed id is None/-2 (no real cluster was ever in
+    // range), so this guard doesn't fire.
+    if (clusterId == acc::wall_topology::kClusterIdOpenArea &&
+        g_prev_cluster_id >= 0) {
+        clusterId = g_prev_cluster_id;
+    }
+
     bool clusterChanged  = (clusterId != g_prev_cluster_id);
     bool friendlyChanged = (std::strncmp(friendlyBuf,
                                          g_prev_friendly_room_name,

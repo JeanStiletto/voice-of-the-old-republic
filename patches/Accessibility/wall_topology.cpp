@@ -305,6 +305,15 @@ constexpr int   kRoomMinMidRays   = 3;
 // spaces fall below the ratio and get no axis word (just "Bereich").
 constexpr float kAxisElongRatio = 1.8f;
 
+// Large-area threshold: a cluster whose member-node bounding box has its
+// longer side ≥ this many metres speaks as "Großer Bereich" instead of
+// "Bereich". Pure label swap — axis, exits, kind and delay are unchanged;
+// it just sets the expectation that wall/object cues are sparse across a
+// space this big (the Kashyyyk Great Walkway's main cluster spans ~160 m,
+// normal merged rooms ~20-30 m). Tuned conservatively so only genuinely
+// large open spaces trip it; raise/lower after in-game feedback.
+constexpr float kLargeAreaExtentMeters = 40.0f;
+
 // Kind values now live in the public header (wall_topology.h) so
 // transitions.cpp can branch on Platz for the delayed-announce path.
 // Aliases here keep the local code compact.
@@ -1356,6 +1365,7 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
                      const int* externalDoorIdx,
                      int externalCount,
                      int areaHint, float centroidFloorZ,
+                     bool isLargeArea,
                      std::string& outLabel,
                      int& outKind, int& outSig,
                      bool& outFiltered) {
@@ -1412,7 +1422,12 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
 
         Id axisId = Id::AxisEastWest;
         bool elong = ComputeCentroidAxis(centroid, centroidFloorZ, axisId);
-        const char* noun  = acc::strings::Get(Id::AreaNoun);
+        // Large-footprint clusters swap the neutral "Bereich" noun for
+        // "Großer Bereich" — expectation-setting only; axis/exits/kind
+        // are identical. Large areas only take the areaHint != 0 path
+        // anyway (they're merged spaces), so the swap lives here.
+        const char* noun  = acc::strings::Get(isLargeArea ? Id::AreaNounLarge
+                                                          : Id::AreaNoun);
         const char* axisW = elong ? acc::strings::Get(axisId) : nullptr;
         if (!noun || !noun[0]) noun = "Bereich";
 
@@ -2680,11 +2695,22 @@ void BuildForArea(void* area) {
         int size = 0;
         bool hasOpen = false, hasRoom = false;
         float floorZSum = 0.0f;
+        // Member-node bounding box (X/Y) → footprint extent for the
+        // large-area label swap. Node positions, not walls, so it under-
+        // reads true area, but the relative gap between a sprawling open
+        // cluster (~160 m) and a normal merged room (~20-30 m) is huge,
+        // so a coarse threshold separates them cleanly.
+        float minX =  1e30f, minY =  1e30f;
+        float maxX = -1e30f, maxY = -1e30f;
         for (int m = 0; m < n; ++m) {
             if (UFFind(m) != root) continue;
             centroid.x += g.nodes[m].pos.x;
             centroid.y += g.nodes[m].pos.y;
             centroid.z += g.nodes[m].pos.z;
+            if (g.nodes[m].pos.x < minX) minX = g.nodes[m].pos.x;
+            if (g.nodes[m].pos.x > maxX) maxX = g.nodes[m].pos.x;
+            if (g.nodes[m].pos.y < minY) minY = g.nodes[m].pos.y;
+            if (g.nodes[m].pos.y > maxY) maxY = g.nodes[m].pos.y;
             if (nodeOpen[m]) hasOpen = true;
             if (nodeRoom[m]) hasRoom = true;
             floorZSum += nodeFloorZ[m];
@@ -2697,6 +2723,16 @@ void BuildForArea(void* area) {
         }
         float centroidFloorZ = (size > 0) ? floorZSum / size : 0.0f;
         if (size > 1) ++multiNodeClusters;
+
+        // Longer bounding-box side = footprint extent. Single-node
+        // clusters have zero extent and can never be "large".
+        float bboxExtent = 0.0f;
+        if (size > 0) {
+            float w = maxX - minX;
+            float h = maxY - minY;
+            bboxExtent = (w > h) ? w : h;
+        }
+        bool isLargeArea = bboxExtent >= kLargeAreaExtentMeters;
 
         // External neighbours: edges from any member to a non-member.
         // Dedup by node id so multi-edge connections to the same
@@ -2808,7 +2844,7 @@ void BuildForArea(void* area) {
         bool filtered = false;
         ClassifyCluster(g, centroid, externalNbs, externalSrcs,
                         externalDoorIdx, externalCount,
-                        areaHint, centroidFloorZ,
+                        areaHint, centroidFloorZ, isLargeArea,
                         label, kind, sig, filtered);
 
         switch (kind) {
@@ -2818,6 +2854,14 @@ void BuildForArea(void* area) {
             case kKindPlatz:    ++junctions; break;  // tally w/ junctions
             case kKindRoom:     ++junctions; break;  // tally w/ junctions
             default:            ++openAreas; break;
+        }
+
+        if (isLargeArea) {
+            acclog::Write("WallTopo",
+                          "  large-area: cluster=%d size=%d extent=%.1fm "
+                          "(>= %.1fm) -> '%s'",
+                          root, size, bboxExtent, kLargeAreaExtentMeters,
+                          label.c_str());
         }
 
         // Write to every cluster member.

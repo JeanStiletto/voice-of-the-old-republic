@@ -33,6 +33,13 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.5.6</h2>
+
+<h3>Open-area navigation:</h3>
+
+- Very large open spaces now announce as "large area" instead of "area". The label sets the expectation that wall and object cues are naturally sparse when you cross a space this big, so quiet stretches read as the size of the place rather than something gone wrong.
+- Large open areas no longer flicker their region name. While crossing a big space such as the Kashyyyk Great Walkway, small gaps in the navigation graph between two named regions made the mod repeatedly announce a bare, nameless "area" and then re-announce the region on the far side, back and forth as you walked the seam. The mod now holds the last named region across those gaps, so you stay oriented instead of hearing the name drop out and return.
+
 <h2>v0.5.5</h2>
 
 <h3>Bug fixes:</h3>
