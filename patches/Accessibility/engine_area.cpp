@@ -126,20 +126,23 @@ void* GetClientExoApp() {
 
 }  // namespace
 
-void* ResolveClientObjectHandle(uint32_t handle) {
+void* ResolveClientObject(uint32_t handle) {
     if (IsSentinelHandle(handle)) return nullptr;
 
     void* clientApp = GetClientExoApp();
     if (!clientApp) return nullptr;
 
-    void* clientObject = nullptr;
     __try {
         auto fn = reinterpret_cast<PFN_CClientGetGameObject>(
             kAddrCClientExoAppGetGameObject);
-        clientObject = fn(clientApp, handle);
+        return fn(clientApp, handle);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return nullptr;
     }
+}
+
+void* ResolveClientObjectHandle(uint32_t handle) {
+    void* clientObject = ResolveClientObject(handle);
     if (!clientObject) return nullptr;
 
     // CSWCObject.server_object @+0xf8 → CSWSObject*. Same offset

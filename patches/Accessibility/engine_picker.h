@@ -37,6 +37,31 @@
 
 namespace acc::picker {
 
+// Walk-to-act world verbs that GetDefaultActions emits for targets the PC must
+// approach before acting: 0x3ea talk, 0x3f7 use/open, 0x3f5 bash, 0x3f2 door
+// toggle, 0x3f4 disable mine. These share one composite shape — the engine
+// enqueues a walk-to-the-object segment, then the act. Disabling player input
+// (→ SwitchMode(player,0)) suppresses that server-side approach, so a target
+// out of immediate range never gets walked to and the queued action drains
+// silently (the distant_npc_dialogue_stuck mechanism — originally only fixed
+// for talk). Drive() leaves input ENABLED for all of them and interact arms its
+// approach watchdog instead, which announces "way blocked" if the walkmesh
+// won't let the PC reach interaction range.
+//
+// 0x404 (noop) is deliberately excluded — it does nothing and never walks.
+inline bool IsWalkToActVerb(uint32_t action_id) {
+    switch (action_id) {
+        case 0x3ea:  // talk (dialogue)
+        case 0x3f2:  // door toggle
+        case 0x3f4:  // disable mine
+        case 0x3f5:  // bash
+        case 0x3f7:  // use / open container (loot)
+            return true;
+        default:
+            return false;
+    }
+}
+
 // Snapshot of the first descriptor at +0x4c8 after GetDefaultActions.
 struct ActionSnapshot {
     uint32_t action_id;
@@ -60,14 +85,24 @@ struct ActionSnapshot {
 // case: a locked door with Bash + Security in the radial but a single
 // "Öffnen" default.
 //
-// Returns true iff descriptor populated AND HandleMouseClickInWorld
-// called. False on chain failure, invalid target, empty descriptor,
-// SEH fault.
+// populateOnly: run only the read half — SetMainInterfaceTarget +
+// GetDefaultActions + snapshot, plus the radial fallback (PopulateMenus) when
+// there's no default action — and SKIP the default-action dispatch
+// (last_*/+0x4a4 click gate + input-disable + HandleMouseClickInWorld). The
+// caller inspects outSnapshot and dispatches itself: use-equivalent verbs
+// (talk/open) go through the robust AddUseObjectAction primitive
+// (guidance::UseObject), the rest re-call Drive with populateOnly=false to use
+// the engine click pipeline. Lets us keep the picker as the verb/​radial source
+// of truth while choosing the dispatch primitive per verb.
+//
+// Returns true iff: (radial opened) OR (populateOnly && descriptor populated)
+// OR (!populateOnly && HandleMouseClickInWorld called). False on chain failure,
+// invalid target, empty descriptor, SEH fault.
 //
 // Side effect: writes engine state (main-interface target, last_*,
 // +0x4c8 array). Reversible by normal cursor hover.
 bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot,
-           bool forceRadial = false);
+           bool forceRadial = false, bool populateOnly = false);
 
 // Re-assert the radial's target and rebuild the engine target-action
 // menu for it, WITHOUT dispatching. Mirrors Drive's force-radial setup
@@ -86,5 +121,23 @@ bool ReanchorRadial(uint32_t targetServerHandle);
 // (cursor-hover or passive-selection-driven) for diagnostics or refined
 // narration of what Enter would pick now.
 bool ReadCurrent(ActionSnapshot* outSnapshot);
+
+// Start a conversation with the target DIRECTLY via CSWCCreature::Action-
+// InitiateDialog @0x0060f620 — the function HandleMouseClickInWorld's confirm
+// branch calls. Calling it ourselves bypasses HandleMouseClickInWorld's
+// first-click-vs-confirm gate, which otherwise needs two Enter presses to talk
+// (first press opens the empty in-world menu, second confirms). Decompile-
+// verified: the function ignores its two stack params and acts entirely on
+// `this` = the TARGET NPC's client creature (ClearAllActions on it, orient it
+// toward party char 0, SendPlayerToServerInput_Dialog(its id), SetGlobalDialog-
+// State(1)); the engine then walks-then-talks server-side, so the caller leaves
+// player input ENABLED. This is the dialogue analogue of routing loot through
+// AddUseObjectAction (guidance::UseObject).
+//
+// targetServerHandle is the server id; the client high bit (0x80000000) is OR'd
+// internally to resolve the client creature. Returns true iff the engine call
+// ran without faulting (engine-side readiness gates may still no-op it; the
+// interact watchdog covers the unreachable case).
+bool InitiateDialog(uint32_t targetServerHandle);
 
 }  // namespace acc::picker

@@ -40,26 +40,42 @@ namespace acc::interact {
 
 namespace {
 
-// ---- Dialog-approach watchdog -------------------------------------------
-// Dialog dispatch leaves player input ENABLED (engine_picker.cpp) so the
-// engine's native walk-to-conversation-range runs. That has no
-// TickPlayerInputRestore session, so a livelock — target reachable on screen
-// but no walkable point lands within conversation range (e.g. an NPC behind a
-// railing) — would otherwise leave the player's action queue bouncing forever,
-// the auto-walk nudging the PC into the wall against their manual input. This
-// watchdog detects the stall (dialog action still queued, no conversation
-// open, PC not moving for kApproachBlockedMs) and breaks it: cancel the queue,
-// clear dialog-pending state, announce "way blocked". Healthy walks never trip
-// it — the PC keeps moving until the conversation opens (HasActiveDialogPanel),
-// which disarms quietly.
-constexpr DWORD kApproachGraceMs    = 300;     // post-dispatch enqueue race
-constexpr DWORD kApproachBlockedMs  = 1800;    // no-movement while queued = blocked
+// ---- Approach watchdog ---------------------------------------------------
+// Walk-to-act dispatch (talk / use / open / bash / door / disable-mine — the
+// IsWalkToActVerb family) leaves player input ENABLED (engine_picker.cpp) so
+// the engine's native walk-to-interaction-range runs over the walkmesh. This
+// watchdog is a LAST-RESORT stuck detector, not a babysitter: it stays out of
+// the engine's way while the PC is closing the distance and only intervenes on
+// a genuine livelock — PC wedged against geometry, not moving, far from the
+// target (an NPC behind a railing it can't path to). On that it cancels the
+// bouncing walk, clears dialog-pending state (talk only) and announces "way
+// blocked" with the target's live distance + direction.
+//
+// Liveness is MOVEMENT, never the action-queue depth. The engine drains its
+// action queue to 0 transiently between walkmesh waypoints and on mid-path
+// pauses, so trusting depth mistook live walks for finished ones — it produced
+// flaky "way blocked" warnings and cancelled walks the engine was still running
+// (patch-20260618-082831.log). So we watch position only and let the walkmesh
+// do its job. Successes disarm quietly: a conversation opening
+// (HasActiveDialogPanel), an interaction panel opening (container loot), or the
+// PC simply settling within reach of the target.
+constexpr DWORD kApproachBlockedMs  = 1800;    // sustained no-movement = settled/blocked
 constexpr DWORD kApproachCeilingMs  = 12000;   // hard backstop (unreadable state)
 constexpr float kApproachProgressEpsSq = 0.25f; // (0.5m)^2 — moved threshold
+constexpr float kApproachReachedMSq = 36.0f;    // (6m)^2 — once the PC stops
+                                                // moving, a gap below this means
+                                                // it effectively arrived (or a
+                                                // difficult-terrain near-miss
+                                                // left it close); disarm quietly
+                                                // rather than nag. Only a stall
+                                                // beyond this counts as a true
+                                                // "can't reach". Generous on
+                                                // purpose — false "way blocked"
+                                                // is worse than a silent retry.
 
 bool   g_approachArmed     = false;
+bool   g_approachIsDialog  = false;  // talk (0x3ea) vs other walk-to-act verbs
 DWORD  g_approachArmedAt   = 0;
-bool   g_approachSawPending = false;
 bool   g_approachHaveProgress = false;
 Vector g_approachLastPos   = {0.0f, 0.0f, 0.0f};
 DWORD  g_approachProgressAt = 0;
@@ -73,10 +89,10 @@ void*  g_approachTargetObj = nullptr;
 Vector g_approachTargetPos = {0.0f, 0.0f, 0.0f};  // stamp-time fallback pos
 bool   g_approachHaveTargetPos = false;
 
-void ArmDialogApproachMonitor() {
+void ArmApproachMonitor(bool isDialog) {
     g_approachArmed       = true;
+    g_approachIsDialog    = isDialog;
     g_approachArmedAt     = GetTickCount();
-    g_approachSawPending  = false;
     g_approachHaveProgress = false;
     g_approachProgressAt  = g_approachArmedAt;
 
@@ -85,12 +101,12 @@ void ArmDialogApproachMonitor() {
     acc::narrated_target::Slot slot;
     if (acc::narrated_target::TryGet(slot) && !slot.isMapPin && slot.obj) {
         g_approachTargetObj    = slot.obj;
-        g_approachTargetPos    = slot.pos;   // frozen at stamp; NPC is stationary
+        g_approachTargetPos    = slot.pos;   // frozen at stamp; target is stationary
         g_approachHaveTargetPos = true;
     }
-    acclog::Write("Interact", "dialog-approach watchdog armed (input stays "
-        "enabled; watching for walkmesh-blocked stall) targetObj=%p",
-        g_approachTargetObj);
+    acclog::Write("Interact", "approach watchdog armed (input stays enabled; "
+        "watching for walkmesh-blocked stall) isDialog=%d targetObj=%p",
+        isDialog ? 1 : 0, g_approachTargetObj);
 }
 
 // Format "way blocked. <name>, <m> metres, <dir>" with LIVE distance + compass
@@ -137,6 +153,49 @@ bool BuildWayBlockedTargetMsg(char* outMsg, size_t outSize) {
         return false;
     }
     return FormatWayBlocked(name, targetPos, outMsg, outSize);
+}
+
+// Best-effort "PC reached interaction range of the approach target". Used in the
+// queue-drained branch to tell a successful walk-to-act (PC got there, engine
+// acted — no panel for door / bash / disable-mine) from a blocked one (engine
+// cancelled the approach short of range). Live target position when readable,
+// else the slot's stamped pos. Returns false when either position is unreadable;
+// the caller only treats not-reached as blocked together with sawPending, and
+// the hard ceiling backstops a wedged unreadable state.
+bool ApproachTargetWithinReach() {
+    if (!g_approachTargetObj) return false;
+    Vector targetPos;
+    if (!acc::engine::GetObjectPosition(g_approachTargetObj, targetPos)) {
+        if (!g_approachHaveTargetPos) return false;
+        targetPos = g_approachTargetPos;
+    }
+    Vector pos;
+    if (!acc::engine::GetPlayerPosition(pos)) return false;
+    float dx = targetPos.x - pos.x;
+    float dy = targetPos.y - pos.y;
+    return (dx * dx + dy * dy) <= kApproachReachedMSq;
+}
+
+// Break a blocked approach: cancel the bouncing walk, clear dialog-pending limbo
+// (talk only — ActionInitiateDialog sets that bit before the walk; the other
+// verbs never touch it), and announce "way blocked" with the target's live
+// distance + direction so the user can route around the obstacle. Disarms.
+void AnnounceApproachBlocked(DWORD stalledMs, const char* how) {
+    acc::guidance::CancelMovement();
+    if (g_approachIsDialog) {
+        acc::engine::SetGlobalDialogState(0);
+    }
+    char msg[192];
+    if (!BuildWayBlockedTargetMsg(msg, sizeof(msg))) {
+        std::snprintf(msg, sizeof(msg), "%s",
+            acc::strings::Get(acc::strings::Id::InteractWayBlocked));
+    }
+    prism::Speak(msg, /*interrupt=*/true);
+    acclog::Write("Interact", "approach watchdog: BLOCKED (%s) — isDialog=%d "
+        "stalled=%lums; cancelled approach -> [%s]",
+        how, g_approachIsDialog ? 1 : 0,
+        static_cast<unsigned long>(stalledMs), msg);
+    g_approachArmed = false;
 }
 
 // True iff the only thing blocking the action menu from opening is the
@@ -322,8 +381,12 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
     // target name when valid; otherwise we keep the per-category fallback
     // string (which still tells the user *something* happened even when
     // the engine refuses to enumerate actions).
+    // Populate the descriptor + open the radial when there's no default action,
+    // but do NOT dispatch yet — the dispatch block after the announce picks the
+    // primitive per verb (use-equivalent talk/open → robust UseObject; the rest
+    // → engine click pipeline).
     acc::picker::ActionSnapshot snap = {};
-    bool dispatched = acc::picker::Drive(handle, &snap, forceRadial);
+    acc::picker::Drive(handle, &snap, forceRadial, /*populateOnly=*/true);
 
     // Radial-opened path: arm the input gate and speak the row+action
     // announce in one call. ArmAfterPopulate handles the speech itself
@@ -402,46 +465,147 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
         snap.label, snap.action_id, snap.count,
         snap.radial_opened ? 1 : 0);
 
-    if (dispatched) {
-        if (snap.radial_opened) {
-            acclog::Write("Interact", "radial opened (no default action) target=0x%08x",
-                handle);
-        } else {
-            acclog::Write("Interact", "engine picker dispatched action_id=0x%x "
-                "label=[%s] target=0x%08x",
-                snap.action_id, snap.label, handle);
-            // Dialog verb dispatched with input left enabled (picker skipped
-            // the input-disable) → arm the walkmesh-block watchdog. 0x3ea must
-            // match kActionIdDialog in engine_picker.cpp.
-            if (snap.action_id == 0x3ea) {
-                ArmDialogApproachMonitor();
-            }
-        }
+    // Radial already opened by the populate-only Drive (no default action /
+    // Shift+Enter / locked door). Nothing to dispatch.
+    if (snap.radial_opened) {
+        acclog::Write("Interact", "radial opened (no default action) target=0x%08x",
+            handle);
         return;
     }
 
-    // Picker either had no descriptor (engine has no default action for
-    // this leader/target) or faulted. Fall back to AddUseObjectAction —
-    // it's the right primitive for the simple "walk over and open / talk
-    // / pick up" cases that have always worked, and avoids regressing
-    // those while the picker is still being shaken down.
-    bool inputDisabled = acc::engine::SetPlayerInputEnabled(false);
-    bool fallbackOk    = acc::guidance::UseObject(handle);
-
-    if (fallbackOk) {
-        acclog::Write("Interact", "fallback UseObject dispatched (input_disabled=%d) "
-            "after picker returned valid=%d count=%d",
-            inputDisabled ? 1 : 0, snap.valid ? 1 : 0, snap.count);
+    // Resolve a TRUSTWORTHY server handle for the dispatch. The `handle`/`target`
+    // params reaching here can be the wrong-namespace ~0x1 cursor value (see the
+    // g_approachTargetObj note; the radial path distrusts `handle` the same way
+    // via snap.target_id). The old HandleMouseClickInWorld path never used the
+    // handle directly so it tolerated this — but AddUseObjectAction does, and a
+    // bogus id enqueues an action against a non-object that crashes the engine
+    // the next frame (patch-20260618-090725/090858.log: handle 0x1 → freeze).
+    // snap.target_id is the client id the engine actually built the descriptor
+    // against; clear the high bit for the server namespace AI actions use. Fall
+    // back to the narrated slot (the source ResolveInteractTarget read) then the
+    // raw handle.
+    uint32_t dispatchHandle;
+    if (snap.valid && snap.target_id) {
+        dispatchHandle = snap.target_id & ~0x80000000u;
     } else {
-        if (inputDisabled) acc::engine::SetPlayerInputEnabled(true);
-        char failMsg[192];
-        std::snprintf(failMsg, sizeof(failMsg),
-                      acc::strings::Get(
-                          acc::strings::Id::FmtInteractFailed),
-                      name);
-        prism::Speak(failMsg, /*interrupt=*/true);
-        acclog::Write("Interact", "dispatch FAILED -> [%s]", failMsg);
+        acc::narrated_target::Slot s;
+        if (acc::narrated_target::TryGet(s) && !s.isMapPin && s.handle) {
+            dispatchHandle = s.handle;
+        } else {
+            dispatchHandle = handle;
+        }
     }
+    const bool handleUsable = dispatchHandle != 0u &&
+                              dispatchHandle != 1u &&
+                              dispatchHandle != 0xFFFFFFFFu;
+
+    acclog::Write("Interact", "dispatch handle resolve: param_handle=0x%08x "
+        "snap.target_id=0x%08x -> dispatchHandle=0x%08x usable=%d",
+        handle, snap.target_id, dispatchHandle, handleUsable ? 1 : 0);
+
+    if (snap.valid && handleUsable) {
+        // Open/use (0x3f7) → AddUseObjectAction via guidance::UseObject. This is
+        // the primitive Enter used before the action picker; bc855de switched to
+        // the picker only for context (engine-picked verb + radial), never for
+        // reliability. As a *direct server action* it robustly walks the leader
+        // to use-range over rough terrain and triggers the open — verified fixing
+        // the distant-corpse loot (patch-20260618-091931.log: fgKind container
+        // panels opened). Input-disabled is its proven contract (the Shift+-
+        // path); TickPlayerInputRestore returns control on arrival / stall.
+        //
+        // NOT talk: AddUseObjectAction "uses" an object — a creature isn't used,
+        // so it walks-then-does-nothing for dialogue (same log: every 0x3ea
+        // UseObject ended "settled within reach", never "conversation open").
+        // Talk is a separate engine action (case-8 → AIActionDialogObject); it
+        // falls through to the engine click pipeline below, which is the
+        // d6733e2 walk-then-talk path (input stays enabled per engine_picker's
+        // IsWalkToActVerb skip) — now driven with the trustworthy dispatchHandle.
+        if (snap.action_id == 0x3f7) {
+            bool inputDisabled = acc::engine::SetPlayerInputEnabled(false);
+            bool ok = acc::guidance::UseObject(dispatchHandle);
+            if (ok) {
+                acclog::Write("Interact", "use-verb dispatched via UseObject "
+                    "(action_id=0x%x input_disabled=%d) target=0x%08x",
+                    snap.action_id, inputDisabled ? 1 : 0, dispatchHandle);
+                // Movement-based approach watchdog announces "way blocked" if the
+                // walkmesh can't reach use-range. Armed without a guidance
+                // dest-hint (single-arg UseObject → no ArmInFlight), so it never
+                // cross-talks with Shift+-'s ConsumeWalkBlocked.
+                ArmApproachMonitor(snap.action_id == 0x3ea);
+                return;
+            }
+            // UseObject refused — undo the input-disable and fall through to the
+            // engine click pipeline as a backup.
+            if (inputDisabled) acc::engine::SetPlayerInputEnabled(true);
+        }
+
+        // Talk (0x3ea) → CSWCCreature::ActionInitiateDialog directly, bypassing
+        // HandleMouseClickInWorld's first-click/confirm gate that needed two
+        // Enter presses (patch-20260618-100224.log: first press → menu branch,
+        // nothing queued; second press → confirm → dialog opened). Input stays
+        // ENABLED so the engine walks-then-talks server-side (disabling it
+        // suppresses the approach — the distant_npc freeze). The movement-based
+        // approach watchdog covers the genuinely-unreachable case.
+        if (snap.action_id == 0x3ea) {
+            if (acc::picker::InitiateDialog(dispatchHandle)) {
+                acclog::Write("Interact", "dialogue dispatched via "
+                    "ActionInitiateDialog target=0x%08x", dispatchHandle);
+                ArmApproachMonitor(/*isDialog=*/true);
+                return;
+            }
+            // InitiateDialog faulted / client creature unresolved — fall through
+            // to the engine click pipeline (HandleMouseClickInWorld) as a backup.
+        }
+
+        // Everything else — door/mine/bash, attack, … (and talk only as a
+        // backup if ActionInitiateDialog above failed) — → engine click
+        // pipeline. Re-run Drive against the trustworthy handle to perform the
+        // click-gate + HandleMouseClickInWorld dispatch (idempotent re-populate).
+        // The IsWalkToActVerb verbs keep input enabled per engine_picker's skip
+        // so the native walk-then-act runs; attack stays input-disabled.
+        bool dispatched = acc::picker::Drive(dispatchHandle, &snap, forceRadial,
+                                             /*populateOnly=*/false);
+        if (dispatched) {
+            acclog::Write("Interact", "engine picker dispatched action_id=0x%x "
+                "label=[%s] target=0x%08x", snap.action_id, snap.label,
+                dispatchHandle);
+            if (acc::picker::IsWalkToActVerb(snap.action_id)) {
+                ArmApproachMonitor(snap.action_id == 0x3ea);
+            }
+            return;
+        }
+        // Fall through to the generic fallback below.
+    }
+
+    // Picker had no descriptor (engine has no default action for this
+    // leader/target) or the engine dispatch faulted. Fall back to
+    // AddUseObjectAction — the right primitive for the simple "walk over and
+    // open / talk / pick up" cases that have always worked. Guarded on a usable
+    // handle so a wrong-namespace value can never reach the engine.
+    if (handleUsable) {
+        bool inputDisabled = acc::engine::SetPlayerInputEnabled(false);
+        bool fallbackOk    = acc::guidance::UseObject(dispatchHandle);
+        if (fallbackOk) {
+            acclog::Write("Interact", "fallback UseObject dispatched "
+                "(input_disabled=%d target=0x%08x) after picker returned "
+                "valid=%d count=%d",
+                inputDisabled ? 1 : 0, dispatchHandle, snap.valid ? 1 : 0,
+                snap.count);
+            // Same robustness path as the use-verb branch — arm the approach
+            // watchdog so an unreachable target still announces "way blocked".
+            ArmApproachMonitor(/*isDialog=*/false);
+            return;
+        }
+        if (inputDisabled) acc::engine::SetPlayerInputEnabled(true);
+    }
+
+    char failMsg[192];
+    std::snprintf(failMsg, sizeof(failMsg),
+                  acc::strings::Get(acc::strings::Id::FmtInteractFailed),
+                  name);
+    prism::Speak(failMsg, /*interrupt=*/true);
+    acclog::Write("Interact", "dispatch FAILED (handleUsable=%d dispatchHandle="
+        "0x%08x) -> [%s]", handleUsable ? 1 : 0, dispatchHandle, failMsg);
 }
 
 // Speak "{label} eingesetzt" (or the empty-column phrase) for a bare-press
@@ -628,11 +792,24 @@ void TickDialogApproach() {
     if (!g_approachArmed) return;
     DWORD now = GetTickCount();
 
-    // Success: a conversation opened. The PC reached range and the dialog
-    // started — disarm quietly, nothing to cancel.
+    // Success path 1 — a conversation opened (talk verbs). PC reached range and
+    // the dialog started — disarm quietly, nothing to cancel.
     if (acc::engine::HasActiveDialogPanel()) {
-        acclog::Write("Interact", "dialog-approach watchdog: conversation open "
-            "— disarm (walk-to-talk succeeded)");
+        acclog::Write("Interact", "approach watchdog: conversation open — disarm "
+            "(walk-to-talk succeeded)");
+        g_approachArmed = false;
+        return;
+    }
+
+    // Success path 2 — an interaction panel opened (open-container loot and the
+    // like put a blocking modal in the foreground). The watchdog only ever arms
+    // in-world with nothing blocking, so a blocker appearing now is the
+    // interaction result. Disarm quietly.
+    acc::engine::UiBlockState blk;
+    if (acc::engine::IsForegroundUiBlocking(&blk)) {
+        acclog::Write("Interact", "approach watchdog: interaction panel open "
+            "(fgKind=%d) — disarm (walk-to-use succeeded)",
+            static_cast<int>(blk.fgKind));
         g_approachArmed = false;
         return;
     }
@@ -642,68 +819,56 @@ void TickDialogApproach() {
         // Position unreadable (transient). Don't act on a blind read; fall back
         // to the hard ceiling so a wedged state can't keep us armed forever.
         if (now - g_approachArmedAt >= kApproachCeilingMs) {
-            acclog::Write("Interact", "dialog-approach watchdog: ceiling "
+            acclog::Write("Interact", "approach watchdog: ceiling "
                 "(position unreadable) — disarm");
             g_approachArmed = false;
         }
         return;
     }
 
-    int depth = acc::engine::GetPlayerActionQueueDepth();
-    if (depth > 0) {
-        // Approach / dialog action genuinely queued. Latch that we saw it, then
-        // judge progress: any movement resets the stall timer (a long but
-        // healthy walk is never cut off). No movement for kApproachBlockedMs ⇒
-        // the walkmesh won't let the PC reach conversation range → blocked.
-        g_approachSawPending = true;
-        float dx = pos.x - g_approachLastPos.x;
-        float dy = pos.y - g_approachLastPos.y;
-        if (!g_approachHaveProgress || (dx * dx + dy * dy) >= kApproachProgressEpsSq) {
-            g_approachLastPos    = pos;
-            g_approachProgressAt = now;
-            g_approachHaveProgress = true;
-            return;
-        }
-        if (now - g_approachProgressAt < kApproachBlockedMs) return;
+    // Liveness is MOVEMENT, never the action-queue depth. The engine's walk-to-
+    // act drains its queue to 0 transiently between walkmesh waypoints and when
+    // it pauses mid-path, so a depth read mistakes a live walk for a finished
+    // one: that produced flaky "way blocked" warnings AND cancelled walks the
+    // engine was still running (patch-20260618-082831.log — a talk walk killed
+    // 375 ms in at full stride; a loot walk disarmed as "done" while the PC was
+    // still running). So while the PC is closing the distance we leave the
+    // engine's walk completely alone — the walkmesh handles the terrain. Only a
+    // genuine, sustained immobile stall is actionable.
+    //
+    // Movement accumulates against g_approachLastPos (updated only when the PC
+    // has moved ≥0.5 m), so a normal <0.5 m/tick walk still registers progress
+    // every few ticks and keeps resetting the stall timer — a long cross-terrain
+    // walk is never cut off.
+    if (!g_approachHaveProgress) {
+        g_approachLastPos      = pos;
+        g_approachProgressAt   = now;
+        g_approachHaveProgress = true;
+        return;
+    }
+    float dx = pos.x - g_approachLastPos.x;
+    float dy = pos.y - g_approachLastPos.y;
+    if ((dx * dx + dy * dy) >= kApproachProgressEpsSq) {
+        g_approachLastPos    = pos;
+        g_approachProgressAt = now;
+        return;
+    }
+    if (now - g_approachProgressAt < kApproachBlockedMs) return;  // brief pause
 
-        // Blocked. Break the livelock: cancel the stuck queue, clear the
-        // dialog-pending bit ActionInitiateDialog set before the walk (so it
-        // doesn't gate further interaction), and tell the user why — with the
-        // target's live distance + direction so they can route around the
-        // obstacle (the talk range is usually reachable from another angle).
-        acc::guidance::CancelMovement();
-        acc::engine::SetGlobalDialogState(0);
-        char msg[192];
-        if (!BuildWayBlockedTargetMsg(msg, sizeof(msg))) {
-            std::snprintf(msg, sizeof(msg), "%s",
-                acc::strings::Get(acc::strings::Id::InteractWayBlocked));
-        }
-        prism::Speak(msg, /*interrupt=*/true);
-        acclog::Write("Interact", "dialog-approach watchdog: BLOCKED — PC stalled "
-            "%lums with dialog action queued (depth=%d) and no conversation; "
-            "cancelled approach + cleared dialog state -> [%s]",
-            static_cast<unsigned long>(now - g_approachProgressAt), depth, msg);
+    // The PC has not moved for the full window and no success surfaced. Either it
+    // effectively arrived (engine completed a no-panel act — door/bash/mine — or
+    // a difficult-terrain near-miss left it close: don't nag), or it never got
+    // anywhere near the target (no walkable route within reach → genuinely
+    // blocked, e.g. wedged against geometry). Distinguish by the live PC→target
+    // gap; only the truly-far case warns.
+    if (ApproachTargetWithinReach()) {
+        acclog::Write("Interact", "approach watchdog: PC settled within reach "
+            "(stalled %lums) — disarm, no nag",
+            static_cast<unsigned long>(now - g_approachProgressAt));
         g_approachArmed = false;
         return;
     }
-
-    if (depth == 0) {
-        // Queue drained. If we'd seen it populate, the action completed without
-        // a conversation opening (handled above) — treat as done. If nothing
-        // ever enqueued within the grace, the dispatch was a no-op; either way
-        // there's no stuck walk to break. Disarm quietly.
-        if (g_approachSawPending || now - g_approachArmedAt >= kApproachGraceMs) {
-            g_approachArmed = false;
-        }
-        return;
-    }
-
-    // depth < 0 ⇒ queue unreadable. Ceiling backstop.
-    if (now - g_approachArmedAt >= kApproachCeilingMs) {
-        acclog::Write("Interact", "dialog-approach watchdog: ceiling "
-            "(queue unreadable) — disarm");
-        g_approachArmed = false;
-    }
+    AnnounceApproachBlocked(now - g_approachProgressAt, "stalled-out-of-range");
 }
 
 // Public seam introduced 2026-05-06 (lay-off 5). Thin forwarder into the

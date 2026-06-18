@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <cstring>
 
+#include "engine_area.h"        // ResolveClientObject — client creature for
+                                // the direct ActionInitiateDialog call.
 #include "engine_offsets.h"     // CExoString, kAddrAppManagerPtr,
                                 // kAppManagerClientAppOffset,
                                 // kClientExoAppInternalOffset
@@ -240,7 +242,7 @@ void SnapshotDescriptor(void* internal, acc::picker::ActionSnapshot* snap) {
 namespace acc::picker {
 
 bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot,
-           bool forceRadial) {
+           bool forceRadial, bool populateOnly) {
     ActionSnapshot localSnap = {};
 
     if (targetServerHandle == 0u || targetServerHandle == 0xFFFFFFFFu ||
@@ -392,9 +394,16 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot,
     if (outSnapshot) *outSnapshot = localSnap;
 
     acclog::Write("Picker", "descriptor populated target=0x%08x action_id=0x%x "
-        "label=[%s] icon=[%s] count=%d",
+        "label=[%s] icon=[%s] count=%d%s",
         targetClient, localSnap.action_id,
-        localSnap.label, localSnap.icon, localSnap.count);
+        localSnap.label, localSnap.icon, localSnap.count,
+        populateOnly ? " (populate-only; caller dispatches)" : "");
+
+    // populate-only: the read half is done. The caller picks the dispatch
+    // primitive per verb (use-equivalent → guidance::UseObject; rest →
+    // re-call with populateOnly=false). Skip the click gate + input-disable +
+    // HandleMouseClickInWorld below.
+    if (populateOnly) return true;
 
     // Step 4 — set the engine's click gate so HandleMouseClickInWorld
     // takes the dispatch branch instead of the PopulateMenus branch.
@@ -413,20 +422,23 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot,
     // engine action but does not extend the restore window — see the no-re-arm
     // guard in SetPlayerInputEnabled (that was the janicebug livelock).
     //
-    // EXCEPTION — dialog (action 0x3ea): we do NOT disable input. Verified by
-    // decompile + in-game (docs/llm-docs/interaction-dispatch-model.md): the
-    // engine's native walk-then-talk (server input case 8 → SetAILevel(player,1)
-    // → AIActionDialogObject, which AddMoveToPointActionToFront's the player when
-    // >10 m out) only moves the PC with input left ENABLED; disabling it (→
-    // SwitchMode(player,0)) suppressed the approach and produced the ~4 s
-    // distant-talk freeze (project_distant_npc_dialogue_stuck). Because we leave
-    // input enabled here there is no TickPlayerInputRestore session for talk;
-    // the interact feature arms its own dialog-approach watchdog instead (it
-    // breaks the rare livelock where the target is reachable on screen but no
-    // walkable point lands within conversation range — e.g. an NPC behind a
-    // railing — and announces "way blocked").
-    constexpr uint32_t kActionIdDialog = 0x3ea;  // GetDefaultActions talk verb
-    const bool skipInputDisable = (localSnap.action_id == kActionIdDialog);
+    // EXCEPTION — walk-to-act verbs (talk / use / bash / door / disable-mine,
+    // see IsWalkToActVerb): we do NOT disable input. Verified by decompile +
+    // in-game (docs/llm-docs/interaction-dispatch-model.md): the engine's native
+    // walk-then-act (server input case 8 → SetAILevel(player,1) → the AI action
+    // that AddMoveToPointActionToFront's the player when out of range) only moves
+    // the PC with input left ENABLED; disabling it (→ SwitchMode(player,0))
+    // suppresses the approach and produced the distant-talk freeze
+    // (project_distant_npc_dialogue_stuck) — and, for 0x3f7 use/open, the
+    // silent distant-corpse loot failure (save "lootbugbarriere?",
+    // patch-20260618-080635.log: the near corpse opened, far ones never walked).
+    // The talk-only fix is now generalised to the whole family. Because input
+    // stays enabled there is no TickPlayerInputRestore session for these; the
+    // interact feature arms its own approach watchdog instead, which breaks the
+    // livelock where the target is reachable on screen but no walkable point
+    // lands within interaction range (e.g. behind a railing) and announces
+    // "way blocked".
+    const bool skipInputDisable = acc::picker::IsWalkToActVerb(localSnap.action_id);
     bool inputDisabled = false;
     if (!skipInputDisable) {
         inputDisabled = acc::engine::SetPlayerInputEnabled(false);
@@ -503,6 +515,46 @@ bool ReadCurrent(ActionSnapshot* outSnapshot) {
     SnapshotDescriptor(internal, &localSnap);
     if (outSnapshot) *outSnapshot = localSnap;
     return localSnap.valid;
+}
+
+// CSWCCreature::ActionInitiateDialog @0x0060f620. __thiscall; decompile shows
+// the two declared stack params are unused, but __thiscall is callee-cleanup so
+// we must still push them (the function ret 8's). this = target NPC client
+// creature.
+constexpr uintptr_t kAddrCSWCCreatureActionInitiateDialog = 0x0060f620;
+typedef void (__thiscall* PFN_ActionInitiateDialog)(void* this_,
+                                                    uint32_t unused1,
+                                                    void* unused2);
+
+bool InitiateDialog(uint32_t targetServerHandle) {
+    if (targetServerHandle == 0u || targetServerHandle == 0xFFFFFFFFu ||
+        targetServerHandle == kInvalidObjectId) {
+        return false;
+    }
+    uint32_t clientHandle =
+        (targetServerHandle & 0x80000000u) ? targetServerHandle
+                                           : (targetServerHandle | 0x80000000u);
+
+    void* targetClientCreature = acc::engine::ResolveClientObject(clientHandle);
+    if (!targetClientCreature) {
+        acclog::Write("Picker", "InitiateDialog: client creature unresolved "
+            "(target=0x%08x)", clientHandle);
+        return false;
+    }
+
+    __try {
+        auto fn = reinterpret_cast<PFN_ActionInitiateDialog>(
+            kAddrCSWCCreatureActionInitiateDialog);
+        fn(targetClientCreature, 0u, nullptr);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Picker", "InitiateDialog: SEH-FAULT target=0x%08x "
+            "creature=%p", clientHandle, targetClientCreature);
+        return false;
+    }
+
+    acclog::Write("Picker", "InitiateDialog dispatched (target=0x%08x creature=%p)",
+        clientHandle, targetClientCreature);
+    return true;
 }
 
 }  // namespace acc::picker

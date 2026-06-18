@@ -78,6 +78,12 @@ void* ResolveServerObjectHandle(uint32_t handle);
 // won't find them.
 void* ResolveClientObjectHandle(uint32_t handle);
 
+// Same first step WITHOUT the +0xf8 chain — returns the CLIENT object
+// (CSWCObject* / CSWCCreature*) for a high-bit client handle. Needed by engine
+// calls that operate on the client creature directly (e.g. dialogue initiation
+// via CSWCCreature::ActionInitiateDialog). nullptr on sentinel / miss / fault.
+void* ResolveClientObject(uint32_t handle);
+
 // CSWSObject +0x90. False on null / fault.
 bool GetObjectPosition(void* gameObject, Vector& out);
 
