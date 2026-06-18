@@ -81,6 +81,8 @@ Lane's RE work also lives in a Ghidra `.gzf` archive on Google Drive (linked fro
 
 - **Our scripts:** `tools/ghidra-scripts/` (in repo, shareable). Currently:
   - `DumpBytes.java` — print N bytes at given addresses; used to discover detour `original_bytes` for new hooks.
+  - `Decompile.java` — print decompiled C for one or more functions by entry-point address. If the FIRST arg is a path it writes **clean** C to that file (no Ghidra log prefixes / doubled lines / banner); otherwise it `println`s (noisy — the headless logger mirrors+prefixes each line, so output comes out doubled). Prefer the wrapper below.
+- **Decompile a function — clean one-liner:** `bash tools/ghidra-scripts/decomp.sh 0x<addr> [0x<addr> ...]`. Picks a temp out-file, runs headless, prints pure C. ~30-60s (JVM + 28 MB project load — inherent to Ghidra headless, not a hang; the run auto-backgrounds via the Bash tool, so read the task output on completion). Only one headless run at a time against the `kotor1` project (it takes a lock).
 - **Standard headless invocation pattern** (read-only against the imported project):
   ```
   "C:/Tools/ghidra_12.0.4_PUBLIC/support/analyzeHeadless.bat" \
