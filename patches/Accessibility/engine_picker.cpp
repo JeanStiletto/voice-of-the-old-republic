@@ -81,8 +81,17 @@ constexpr uintptr_t kAddrCSWGuiMainInterfacePopulateMenus            = 0x00689d8
 
 typedef void (__thiscall* PFN_GetDefaultActions)(void* this_);
 typedef void (__thiscall* PFN_HandleMouseClickInWorld)(void* this_);
+// SetMainInterfaceTarget purges 8 bytes (ret 8) per its Ghidra stack frame
+// (k1_win_gog_swkotor.exe.xml: BYTES_PURGED="8"), i.e. it cleans TWO dwords off
+// the stack even though the decompiler only references param_1. Declaring a
+// single arg made us push 4 bytes while the callee popped 8 — a -4 stack
+// imbalance that corrupted the CALLER's frame (DispatchInteractImpl's `handle`/
+// `target` locals read back a fixed garbage pointer 0x049cc2d0 right after the
+// Drive that calls this; patch-20260618-162656.log DIAG[1] vs DIAG[2]). Pushing
+// a matching second dword (unused by the engine) balances the cleanup.
 typedef void (__thiscall* PFN_SetMainInterfaceTarget)(void* this_,
-                                                     uint32_t target);
+                                                     uint32_t target,
+                                                     uint32_t pad);
 typedef void (__thiscall* PFN_PopulateMenus)(void* this_);
 
 void* GetClientExoApp() {
@@ -280,8 +289,9 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot,
             auto fn = reinterpret_cast<PFN_SetMainInterfaceTarget>(
                 kAddrCGuiInGameSetMainInterfaceTarget);
             // SetMainInterfaceTarget takes the CGuiInGame*, not the
-            // main_interface — the wrapper resolves through this.
-            fn(guiIn, targetClient);
+            // main_interface — the wrapper resolves through this. The trailing 0
+            // is the unused second dword the callee purges (ret 8); see typedef.
+            fn(guiIn, targetClient, 0u);
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             acclog::Write("Picker", "SetMainInterfaceTarget SEH-FAULT target=0x%08x",
                 targetClient);
@@ -491,7 +501,7 @@ bool ReanchorRadial(uint32_t targetServerHandle) {
     __try {
         auto setTgt = reinterpret_cast<PFN_SetMainInterfaceTarget>(
             kAddrCGuiInGameSetMainInterfaceTarget);
-        setTgt(guiIn, targetClient);
+        setTgt(guiIn, targetClient, 0u);  // trailing 0: callee purges 8 (ret 8)
 
         auto getActions = reinterpret_cast<PFN_GetDefaultActions>(
             kAddrCClientExoAppInternalGetDefaultActions);
