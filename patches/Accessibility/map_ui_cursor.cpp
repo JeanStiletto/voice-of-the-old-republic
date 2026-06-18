@@ -26,6 +26,7 @@
 #include "engine_player.h"
 #include "engine_reads.h"             // ReadCExoString — waypoint tag log
 #include "log.h"
+#include "map_user_markers.h"         // IsUserMarkerPin — fog-exempt marker id
 #include "strings.h"
 #include "prism.h"
 #include "transitions.h"
@@ -449,12 +450,15 @@ void* FindNearestExploredMapNote(void* mapPanel, void* areaMap,
     return bestObj;
 }
 
-// Hit-test against user-placed map pins in `CSWCArea.map_pins[]`. Engine
-// quest pins (flags high-bit clear) are deliberately skipped — sighted-
-// parity for the curated "Map hint" surface, same filter cycle_state
-// applies. Returns nullptr if no user pin is within hover radius. The
-// closer-of-two scan in the hover loop picks waypoint or pin based on
-// pixel distance.
+// Hit-test against the mod's own saved markers in `CSWCArea.map_pins[]`.
+// Markers are identified by IDENTITY (map_user_markers registry), not by a
+// reference-number bit test: engine map-note pins are keyed by the
+// waypoint's client object id (always high-bit set), so the former
+// `flags & 0x80000000` filter matched them too and leaked unexplored
+// notes. Engine notes are handled solely by FindNearestExploredMapNote,
+// which is fog-gated. Returns nullptr if no user marker is within hover
+// radius. The closer-of-two scan in the hover loop picks waypoint or
+// marker based on pixel distance.
 void* FindNearestUserMapPin(void* clientArea, void* areaMap,
                             float cursorPx, float cursorPy,
                             int* outScannedCount = nullptr,
@@ -472,12 +476,11 @@ void* FindNearestUserMapPin(void* clientArea, void* areaMap,
         void* pin = acc::engine::GetMapPinAt(clientArea, i);
         if (!pin) continue;
         ++scanned;
+        if (!acc::map_user_markers::IsUserMarkerPin(pin)) continue;  // ours only
         if (!acc::engine::IsMapPinEnabled(pin)) continue;
-        uint32_t flags = acc::engine::GetMapPinFlags(pin);
-        if ((flags & 0x80000000u) == 0u) continue;  // skip engine pins
         Vector pos;
         if (!acc::engine::GetMapPinPosition(pin, pos)) continue;
-        // User pins skip fog: the player dropped them, so revealing their
+        // User markers skip fog: the player dropped them, so revealing their
         // own location to themselves isn't a spoiler.
         float ppx, ppy;
         if (!WorldToPixel(areaMap, pos, ppx, ppy)) continue;

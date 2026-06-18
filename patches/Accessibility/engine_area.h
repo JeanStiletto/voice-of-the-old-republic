@@ -234,9 +234,13 @@ void* GetMapPinAt(void* clientArea, int i);
 // CGameObject offset). Z is the live server-written value.
 bool GetMapPinPosition(void* mapPin, Vector& out);
 
-// CSWCMapPin.flags +0x108. Engine pins use a monotonic counter from 1.
-// User markers reserve the high-half range so consumers can distinguish:
-//   isUserMarker = (flags & 0x80000000) != 0
+// CSWCMapPin.reference_number +0x108 (the engine's GetMapPin lookup key).
+// NOT a flag bitfield: for engine map-note pins this is the source
+// waypoint's CLIENT object id (set by HandleServerToPlayerMapPinEnabled /
+// ...ReferenceNumber), which always carries the 0x80000000 client-namespace
+// high bit. So it CANNOT discriminate the mod's saved markers from engine
+// note pins — use acc::map_user_markers::IsUserMarkerPin (identity) for
+// that. Kept as a raw field accessor; no current caller.
 uint32_t GetMapPinFlags(void* mapPin);
 
 // CSWCMapPin.enabled +0xfc. SetMapPinEnabled toggles without removing

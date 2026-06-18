@@ -22,12 +22,33 @@ namespace {
 void*    g_lastArea    = nullptr;
 uint32_t g_seqInArea   = 0;
 
-// Reset the per-area sequence when the player changes area. Caller
-// supplies the current area so we don't re-resolve.
+// Registry of CSWCMapPin* this mod created in the current area. The engine
+// frees all map pins on area transition (ClearAllMapPins), so the registry
+// is reset in lockstep when the area pointer changes — no stale pointers
+// survive into a new area-load. Markers per area are few (the user drops a
+// handful), so a small fixed array beats a heap container here.
+constexpr int kMaxUserMarkers = 64;
+void* g_userMarkers[kMaxUserMarkers] = {nullptr};
+int   g_userMarkerCount = 0;
+
+// Reset the per-area sequence + marker registry when the player changes
+// area. Caller supplies the current area so we don't re-resolve.
 void MaybeResetForArea(void* currentArea) {
     if (currentArea != g_lastArea) {
-        g_lastArea  = currentArea;
-        g_seqInArea = 0;
+        g_lastArea        = currentArea;
+        g_seqInArea       = 0;
+        g_userMarkerCount = 0;
+        for (int i = 0; i < kMaxUserMarkers; ++i) g_userMarkers[i] = nullptr;
+    }
+}
+
+// Record a pin we just created so IsUserMarkerPin can recognise it. No-op
+// past capacity (the marker still works; it just won't skip fog in the
+// cycle/cursor — acceptable degradation at 64+ markers in one area).
+void RegisterUserMarker(void* pin) {
+    if (!pin) return;
+    if (g_userMarkerCount < kMaxUserMarkers) {
+        g_userMarkers[g_userMarkerCount++] = pin;
     }
 }
 
@@ -132,6 +153,11 @@ void OnDrop() {
         return;
     }
 
+    // Track identity so the map-hint cycle / cursor recognise this as a
+    // player marker (fog-exempt) rather than guessing from its reference
+    // number, which collides with the engine's client-id-keyed pins.
+    RegisterUserMarker(newPin);
+
     char msg[160];
     std::snprintf(msg, sizeof(msg),
         acc::strings::Get(acc::strings::Id::FmtSavedMarkerPlaced), name);
@@ -144,6 +170,20 @@ void OnDrop() {
 }
 
 }  // namespace
+
+bool IsUserMarkerPin(void* pin) {
+    if (!pin) return false;
+    // Self-sync to the current area first: if the player has since changed
+    // area, the registry holds freed pointers from the old load and must be
+    // cleared before any identity compare (a recycled allocation could
+    // otherwise alias a stale entry). Cheap — MaybeResetForArea only does
+    // work on an actual area change.
+    MaybeResetForArea(acc::engine::GetCurrentArea());
+    for (int i = 0; i < g_userMarkerCount; ++i) {
+        if (g_userMarkers[i] == pin) return true;
+    }
+    return false;
+}
 
 void PollWin32() {
     if (!acc::hotkeys::Pressed(acc::hotkeys::Action::SaveMarkerAtCursor)) {

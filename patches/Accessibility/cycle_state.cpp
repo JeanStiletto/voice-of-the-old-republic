@@ -7,6 +7,7 @@
 #include "engine_area.h"
 #include "engine_player.h"
 #include "log.h"
+#include "map_user_markers.h"
 #include "menus_modsettings.h"
 
 namespace acc::cycle {
@@ -104,28 +105,45 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
     int  scanned = 0;
     int  kindCounts[16] = {0};
 
-    // Map+Landmark: skip the waypoint iteration entirely. Quest scripts
-    // create a CSWCMapPin for every visible "Hinweis" the player is meant
-    // to see, and area designers typically place a CSWSWaypoint with the
-    // same map note text at the same world position. Iterating both
-    // sources produced duplicate announces ("Apartamento de Dia, 3
-    // o'clock, 37 metres" twice). The engine's own up/down "Hinweis"
-    // cycle reads map_pins[] — matching that as the single source gives
-    // sighted parity without dedup logic.
-    bool useMapPinsOnly =
+    // Map+Landmark sources the authoritative waypoint map-note list with
+    // the engine's exact gate (map_note_enabled + IsWorldPointExplored),
+    // then folds in the mod's own saved markers below. It deliberately does
+    // NOT read CSWCArea.map_pins[] for the engine's notes: those pins mirror
+    // the waypoints but carry no fog state of their own (the area-map
+    // renderer CSWGuiMapHider::Draw and GetNext/PrevMapNote read the
+    // waypoint and apply fog there), so surfacing the pin array leaked
+    // unexplored notes. Reading the waypoint matches what a sighted player
+    // sees and grows correctly as the player reveals the map.
+    bool mapLandmark =
         mapCtx && category == acc::filter::CycleCategory::Landmark;
+    void* areaMapForFog = mapLandmark ? acc::engine::GetAreaMap() : nullptr;
 
-    if (!useMapPinsOnly) {
+    {
         acc::engine::AreaObjectIterator it(area);
         while (void* obj = it.Next()) {
             ++scanned;
             int k = acc::engine::GetObjectKind(obj);
             if (k >= 0 && k < 16) kindCounts[k]++;
             if (!acc::filter::ObjectMatches(obj, category)) continue;
-            if (discoveryFilter && !acc::discovery::IsDiscovered(obj)) continue;
+
+            if (mapLandmark) {
+                // has_map_note already checked by ObjectMatches(Landmark);
+                // add the engine's two remaining gates.
+                if (!acc::engine::IsMapNoteEnabled(obj)) continue;
+            } else if (discoveryFilter && !acc::discovery::IsDiscovered(obj)) {
+                continue;
+            }
 
             Vector pos;
             if (!acc::engine::GetObjectPosition(obj, pos)) continue;
+
+            // Fog-of-war gate — map context only, applied after position is
+            // resolved. Spoiler-correct by construction: never surface a
+            // note for a cell the player hasn't revealed.
+            if (mapLandmark &&
+                !acc::engine::IsWorldPointExplored(areaMapForFog, pos)) {
+                continue;
+            }
 
             if (out.count >= CategoryListing::kMaxObjects) {
                 overflowed = true;
@@ -139,28 +157,30 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
         }
     }
 
-    // Map context + Landmark: fold user-placed map pins into the same
-    // listing. Engine quest pins (high-bit clear) are deliberately skipped
-    // — the user dropped that channel as noisy / spoiler-laden. User pins
-    // (flags & 0x80000000) are explicit player bookmarks, no fog gate
-    // applies (the player put them there, so revealing the location to
-    // themselves is fine).
+    // Map context + Landmark: fold the mod's own saved markers into the
+    // same listing. Markers are identified by IDENTITY (the registry of
+    // pins we created), not by a reference-number bit test: engine map-note
+    // pins are keyed by the waypoint's client object id, which always has
+    // the 0x80000000 high bit, so the old `flags & 0x80000000` test
+    // misclassified every engine note pin as a user marker and leaked
+    // unexplored notes. Our markers legitimately skip the fog gate — the
+    // player placed them, so revealing the spot to themselves isn't a
+    // spoiler.
     int pinUser = 0;
-    int pinSkippedEngine = 0;
+    int pinSkippedNonUser = 0;
     int pinSkippedDisabled = 0;
-    if (mapCtx && category == acc::filter::CycleCategory::Landmark) {
+    if (mapLandmark) {
         void* clientArea = acc::engine::GetClientArea(area);
         int   pinCount   = acc::engine::GetMapPinCount(clientArea);
         for (int i = 0; i < pinCount; ++i) {
             void* pin = acc::engine::GetMapPinAt(clientArea, i);
             if (!pin) continue;
-            if (!acc::engine::IsMapPinEnabled(pin)) {
-                ++pinSkippedDisabled;
+            if (!acc::map_user_markers::IsUserMarkerPin(pin)) {
+                ++pinSkippedNonUser;
                 continue;
             }
-            uint32_t flags = acc::engine::GetMapPinFlags(pin);
-            if ((flags & 0x80000000u) == 0u) {
-                ++pinSkippedEngine;
+            if (!acc::engine::IsMapPinEnabled(pin)) {
+                ++pinSkippedDisabled;
                 continue;
             }
             Vector pos;
@@ -176,11 +196,11 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
             ++out.count;
             ++pinUser;
         }
-        if (pinUser > 0 || pinSkippedEngine > 0) {
+        if (pinUser > 0 || pinSkippedNonUser > 0) {
             acclog::Write("Cycle",
-                          "BuildListing(map) pin-merge user=%d engine-skip=%d "
+                          "BuildListing(map) pin-merge user=%d non-user-skip=%d "
                           "disabled-skip=%d",
-                          pinUser, pinSkippedEngine, pinSkippedDisabled);
+                          pinUser, pinSkippedNonUser, pinSkippedDisabled);
         }
     }
 
