@@ -25,6 +25,9 @@
 #include "filter_objects.h"
 #include "guidance_autowalk.h"
 #include "hotkeys.h"
+#include "input_pipeline.h" // NoteOverlayEscClosed — latch the poll-driven
+                            // overlay Esc-close so the engine-event consume
+                            // guard wins the poll-vs-event race
 #include "log.h"
 #include "narrated_target.h"
 #include "strings.h"
@@ -955,6 +958,7 @@ void PollHotkey() {
         }
         if (risingEsc) {
             acc::examine_view::HandleInputEvent(kInputEsc1, 1);
+            acc::input::NoteOverlayEscClosed();
         }
         return;
     }
@@ -975,6 +979,7 @@ void PollHotkey() {
         }
         if (risingEsc) {
             acc::combat::queue::HandleInputEvent(kInputEsc1, 1);
+            acc::input::NoteOverlayEscClosed();
         }
         return;
     }
@@ -1000,7 +1005,10 @@ void PollHotkey() {
                              ctrl ? kInputCatFirst : kInputHome, 1);
         if (risingEnd)   acc::unified_menu::HandleInputEvent(
                              ctrl ? kInputCatLast : kInputEnd, 1);
-        if (risingEsc)   acc::unified_menu::HandleInputEvent(kInputEsc1, 1);
+        if (risingEsc) {
+            acc::unified_menu::HandleInputEvent(kInputEsc1, 1);
+            acc::input::NoteOverlayEscClosed();
+        }
         return;
     }
 

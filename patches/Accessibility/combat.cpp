@@ -17,6 +17,8 @@
 #include "strings.h"
 #include "prism.h"
 #include "transitions.h"      // IsModuleLoadPending — gate during cutscene-load
+#include "unified_action_menu.h" // ForceDisarm — auto-close the queueing menu
+                                 // when combat ends (experimental)
                               // transient (engine LYT loader use-after-free)
 
 namespace acc::combat {
@@ -104,6 +106,18 @@ void TickCombatMode() {
                   s_lastSpoken ? "leaving" : "entering",
                   phrase, static_cast<unsigned>(now - s_changedAt));
     s_lastSpoken = s_pending;
+
+    // Experimental: auto-close the unified action menu the moment combat
+    // ends. It's a persistent paused queueing surface that otherwise lingers
+    // across the combat→explore boundary, so the first post-fight Enter lands
+    // on a menu entry instead of the world object the user meant to use
+    // (observed in patch-20260617-215141.log: Enter queued "Heilen" instead of
+    // using the Versorgungsstation). Disarming here keeps Enter meaning
+    // "interact" once the fight is over. Debounced via the same quiet window
+    // as the announcement, so a brief lull mid-fight won't tear it down.
+    if (!inCombatNow && acc::unified_menu::IsActive()) {
+        acc::unified_menu::ForceDisarm("combat-end");
+    }
 }
 
 // ============================================================================

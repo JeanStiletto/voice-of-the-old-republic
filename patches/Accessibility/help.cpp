@@ -15,6 +15,9 @@
 #include "engine_player.h"      // GetPlayerPosition / Vector
 #include "engine_subscreen.h"   // Begin/EndOverlayPause
 #include "hotkeys.h"
+#include "input_pipeline.h"     // NoteOverlayEscClosed — latch the Esc-close
+                                // so the engine-event consume guard wins the
+                                // poll-vs-event race (no stray Options open)
 #include "log.h"
 #include "prism.h"
 #include "strings.h"
@@ -409,6 +412,7 @@ void PollWin32() {
     }
     if (acc::hotkeys::Pressed(A::SubmenuEsc)) {
         CloseMenu();
+        acc::input::NoteOverlayEscClosed();
         acc::hotkeys::Consume(A::SubmenuEsc);
     }
 }

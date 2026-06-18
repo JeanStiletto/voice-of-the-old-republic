@@ -57,10 +57,28 @@ namespace {
 // after 4G events — fine, the diagnostic only cares about adjacency.
 volatile LONG s_seq = 0;
 
+// Overlay-Esc consume latch. 0 = unset; otherwise the GetTickCount() of the
+// last poll-driven overlay close via Esc. Window kept tight: the poll and the
+// engine event for one physical press land in the same frame (or adjacent),
+// so a few hundred ms is plenty without risking a later unrelated Esc.
+DWORD s_escClosedAt = 0;
+constexpr DWORD kEscLatchWindowMs = 150;
+
 }  // namespace
 
 unsigned int NextSeq() {
     return static_cast<unsigned int>(InterlockedIncrement(&s_seq));
+}
+
+void NoteOverlayEscClosed() {
+    s_escClosedAt = GetTickCount();
+}
+
+bool ConsumeOverlayEscLatch() {
+    if (s_escClosedAt == 0) return false;
+    DWORD elapsed = GetTickCount() - s_escClosedAt;  // wrap-safe unsigned diff
+    s_escClosedAt = 0;                               // single-shot
+    return elapsed <= kEscLatchWindowMs;
 }
 
 }  // namespace acc::input
@@ -217,16 +235,25 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
     // the menu (or nothing) and leave the popup stuck, so we let Esc through
     // to the panel's own handler when suspended.
     if (param_2 != 0 &&
-        (param_1 == kInputEsc1 || param_1 == kInputEsc2) &&
-        ((acc::unified_menu::IsActive() &&
-          !acc::unified_menu::IsSuspended()) ||
-         acc::combat::queue::IsActive() ||
-         acc::examine_view::IsActive() ||
-         acc::help::IsMenuOpen())) {
-        acclog::Write("Diag.ClientHIE",
-                      "seq=%u Esc CONSUMED — in-world overlay active "
-                      "(suppressing engine pause-menu open)", seq);
-        return 1;  // consume → consumed_exit 0x00622120 (POP*5 + RET 8)
+        (param_1 == kInputEsc1 || param_1 == kInputEsc2)) {
+        const bool overlayActive =
+            (acc::unified_menu::IsActive() &&
+             !acc::unified_menu::IsSuspended()) ||
+            acc::combat::queue::IsActive() ||
+            acc::examine_view::IsActive() ||
+            acc::help::IsMenuOpen();
+        // The poll path may have already closed the overlay this frame,
+        // leaving overlayActive false even though THIS Esc is the one that
+        // closed it. ConsumeOverlayEscLatch() catches that case (see the
+        // latch note in input_pipeline.h). Order: check the live overlay
+        // first so we don't burn the latch on an Esc that wasn't ours.
+        if (overlayActive || acc::input::ConsumeOverlayEscLatch()) {
+            acclog::Write("Diag.ClientHIE",
+                          "seq=%u Esc CONSUMED — in-world overlay %s "
+                          "(suppressing engine pause-menu open)", seq,
+                          overlayActive ? "active" : "just-closed (latch)");
+            return 1;  // consume → consumed_exit 0x00622120 (POP*5 + RET 8)
+        }
     }
 
     // Bare 1..7 dispatch prep. Logical codes (raw input logs + decompile):
