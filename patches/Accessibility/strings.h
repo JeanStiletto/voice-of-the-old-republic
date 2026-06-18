@@ -807,6 +807,11 @@ enum class Id : int {
     //      the stability pattern in camera_announce.cpp.
     CombatBegins,
     CombatEnds,
+    // Subtle cue: the controlled leader is at peace while other party members
+    // are still fighting (e.g. Tab to a not-yet-engaged member mid-encounter).
+    // Distinct from CombatEnds — the encounter is NOT over, only this character
+    // is out of it. Drives no menu auto-close / pause release.
+    CombatLeaderAtPeace,
 
     // ---- Bare-H / leader-status fallback when no player creature is
     //      resolved (chargen→world transient, minigame slots).

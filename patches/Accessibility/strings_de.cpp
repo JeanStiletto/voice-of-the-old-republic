@@ -238,6 +238,7 @@ const char* Get(Id id) {
 
         case Id::CombatBegins:               return "Kampf beginnt";
         case Id::CombatEnds:                 return "Kampf beendet";
+        case Id::CombatLeaderAtPeace:        return "Nicht im Kampf";
 
         case Id::PcStatNoCharacter:          return "Kein Status verf\xFCgbar.";
 

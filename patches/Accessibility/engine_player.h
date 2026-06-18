@@ -94,6 +94,15 @@ void* GetClientLeader();
 // resolution / SEH failure (no write performed).
 int SetLeaderQueueModeBit(int on);
 
+// True when ANY party member's per-creature combat bit (CSWCCreature
+// field200_0x440 bit 0) is set — the real "is the encounter active" signal.
+// The engine's global combat_mode (GetCombatMode) only reflects the controlled
+// leader and gets re-synced to the new leader on every Tab, so it reads as
+// "combat ended" when you switch to a peaceful member mid-fight; OR-ing the
+// per-member bit avoids that. Client-side, SEH-guarded; false on any fault or
+// before the party is wired up.
+bool IsAnyPartyMemberInCombat();
+
 // Three resolution paths, in order:
 //   1. GetObjectDisplayNameByHandle — engine's universal localised-name
 //      accessor (same one sighted UI uses). "Trask Ulgo" etc.

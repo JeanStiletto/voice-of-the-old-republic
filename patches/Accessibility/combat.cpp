@@ -74,49 +74,101 @@ void TickCombatMode() {
     int mode = 0;
     if (!ReadCombatMode(mode)) return;
 
-    bool inCombatNow = (mode != 0);
-
-    static int   s_lastSpoken = -1;          // -1 = first tick, suppress
-    static int   s_pending    = -1;
-    static DWORD s_changedAt  = 0;
+    // Two distinct signals (see action-menu-and-combat.md "combat-mode"):
+    //   leaderInCombat — the engine global (GetCombatMode). It only mirrors the
+    //     *controlled* leader's combat bit and is re-synced to the new leader on
+    //     every Tab (CSWParty::SetLeader → SetCombatMode), so it flips to peace
+    //     when you switch to a not-yet-engaged member even mid-encounter.
+    //   partyInCombat — OR of every party member's per-creature combat bit. This
+    //     is the true "is the encounter active" state, immune to which member
+    //     happens to be controlled. We drive the strong begin/end cue (and the
+    //     menu auto-close) off THIS so a party switch can't fake a combat end.
+    bool leaderInCombat = (mode != 0);
+    bool partyInCombat  = acc::engine::IsAnyPartyMemberInCombat() || leaderInCombat;
 
     DWORD now = GetTickCount();
 
-    if (s_lastSpoken < 0) {
-        s_lastSpoken = inCombatNow ? 1 : 0;
-        s_pending    = s_lastSpoken;
-        s_changedAt  = now;
-        acclog::Write("Combat.Mode", "first-tick suppress; mode=%d", mode);
-        return;
+    // ---- Strong cue: real encounter begin/end, debounced on partyInCombat. ----
+    static int   s_lastParty    = -1;        // -1 = first tick, suppress
+    static int   s_pendingParty = -1;
+    static DWORD s_partyChanged  = 0;
+
+    if (s_lastParty < 0) {
+        s_lastParty    = partyInCombat ? 1 : 0;
+        s_pendingParty = s_lastParty;
+        s_partyChanged = now;
+        acclog::Write("Combat.Mode", "first-tick suppress; mode=%d party=%d",
+                      mode, partyInCombat);
+    } else {
+        int desired = partyInCombat ? 1 : 0;
+        if (desired != s_pendingParty) {
+            s_pendingParty = desired;
+            s_partyChanged = now;
+        }
+        if (s_pendingParty != s_lastParty &&
+            (now - s_partyChanged) >= kCombatModeQuietMs) {
+            bool nowInCombat = (s_pendingParty == 1);
+            auto id = nowInCombat ? acc::strings::Id::CombatBegins
+                                  : acc::strings::Id::CombatEnds;
+            const char* phrase = acc::strings::Get(id);
+            prism::Speak(phrase, /*interrupt=*/false);
+            acclog::Write("Combat.Mode", "%s -> [%s] (debounced %ums)",
+                          nowInCombat ? "entering" : "leaving",
+                          phrase, static_cast<unsigned>(now - s_partyChanged));
+            s_lastParty = s_pendingParty;
+
+            // Auto-close the unified action menu the moment the *encounter*
+            // ends — it's a persistent paused queueing surface that otherwise
+            // lingers across the combat→explore boundary, so the first
+            // post-fight Enter lands on a menu entry instead of the world
+            // object the user meant to use (patch-20260617-215141.log: Enter
+            // queued "Heilen" instead of using the Versorgungsstation). Gated
+            // on partyInCombat, not the leader global, so a Tab to a peaceful
+            // member no longer tears the menu down (and releases its pause)
+            // mid-fight.
+            if (!nowInCombat && acc::unified_menu::IsActive()) {
+                acc::unified_menu::ForceDisarm("combat-end");
+            }
+        }
     }
 
-    int desired = inCombatNow ? 1 : 0;
-    if (desired != s_pending) {
-        s_pending   = desired;
-        s_changedAt = now;
-    }
-    if (s_pending == s_lastSpoken) return;
-    if (now - s_changedAt < kCombatModeQuietMs) return;
+    // ---- Subtle cue: the controlled leader is at peace while the encounter
+    //      continues (Tab to a not-yet-engaged member, or the leader breaking
+    //      off while companions still fight). Debounced on the leader global so
+    //      a flicker doesn't spam; only the falling edge while the party is
+    //      still fighting is surprising enough to call out. The inverse (Tab
+    //      onto a fighting member) is covered by the leader-name announce. ----
+    static int   s_lastLeader    = -1;
+    static int   s_pendingLeader = -1;
+    static DWORD s_leaderChanged  = 0;
 
-    auto id = inCombatNow ? acc::strings::Id::CombatBegins
-                          : acc::strings::Id::CombatEnds;
-    const char* phrase = acc::strings::Get(id);
-    prism::Speak(phrase, /*interrupt=*/false);
-    acclog::Write("Combat.Mode", "%s -> [%s] (debounced %ums)",
-                  s_lastSpoken ? "leaving" : "entering",
-                  phrase, static_cast<unsigned>(now - s_changedAt));
-    s_lastSpoken = s_pending;
-
-    // Experimental: auto-close the unified action menu the moment combat
-    // ends. It's a persistent paused queueing surface that otherwise lingers
-    // across the combat→explore boundary, so the first post-fight Enter lands
-    // on a menu entry instead of the world object the user meant to use
-    // (observed in patch-20260617-215141.log: Enter queued "Heilen" instead of
-    // using the Versorgungsstation). Disarming here keeps Enter meaning
-    // "interact" once the fight is over. Debounced via the same quiet window
-    // as the announcement, so a brief lull mid-fight won't tear it down.
-    if (!inCombatNow && acc::unified_menu::IsActive()) {
-        acc::unified_menu::ForceDisarm("combat-end");
+    if (s_lastLeader < 0) {
+        s_lastLeader    = leaderInCombat ? 1 : 0;
+        s_pendingLeader = s_lastLeader;
+        s_leaderChanged = now;
+    } else {
+        int desired = leaderInCombat ? 1 : 0;
+        if (desired != s_pendingLeader) {
+            s_pendingLeader = desired;
+            s_leaderChanged = now;
+        }
+        if (s_pendingLeader != s_lastLeader &&
+            (now - s_leaderChanged) >= kCombatModeQuietMs) {
+            bool wasLeaving = (s_pendingLeader == 0);
+            s_lastLeader = s_pendingLeader;
+            // Only speak when the leader dropped to peace but the encounter is
+            // still live (partyInCombat). On a real end both fall together and
+            // partyInCombat is already false here, so the strong "Kampf
+            // beendet" fires instead and this stays silent.
+            if (wasLeaving && partyInCombat) {
+                const char* phrase =
+                    acc::strings::Get(acc::strings::Id::CombatLeaderAtPeace);
+                prism::Speak(phrase, /*interrupt=*/false);
+                acclog::Write("Combat.Mode",
+                              "leader at peace while party fights -> [%s]",
+                              phrase);
+            }
+        }
     }
 }
 

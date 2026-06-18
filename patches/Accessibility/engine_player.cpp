@@ -211,6 +211,54 @@ int SetLeaderQueueModeBit(int on) {
     }
 }
 
+bool IsAnyPartyMemberInCombat() {
+    // The global combat flag we poll (CClientExoApp::GetCombatMode) only ever
+    // mirrors the *controlled* leader's per-creature combat bit — CSWParty::
+    // SetLeader re-syncs it on every Tab (call-at 0x0063596d), so switching to
+    // a not-yet-engaged member reads as "combat ended" mid-encounter. The bit
+    // is in fact maintained for ALL party members every tick by
+    // CClientExoAppInternal::UpdateCombatMode @0x005f3ad0, which loops
+    // CSWParty::GetCharacter and calls CSWCCreature::SetCombatMode per member.
+    // OR that bit across the whole party for the true encounter state. Stays
+    // client-side on the same field/namespace as the global we already poll,
+    // so there is no client/server timing skew between the two.
+    constexpr size_t    kInternalPartyOffset          = 0x270;     // CClientExoAppInternal.party
+    constexpr size_t    kCSWCCreatureCombatModeOffset = 0x440;     // field200_0x440 bit 0
+    constexpr uintptr_t kAddrCSWPartyGetCharacter     = 0x006346C0; // __thiscall(int) -> CSWCCreature*
+    constexpr int       kPartyScanCap                 = 8;          // KOTOR party <=3; generous cap
+    typedef void* (__thiscall* PFN_GetCharacter)(void* this_, int index);
+    __try {
+        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
+        if (!appManager) return false;
+        void* exoApp = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(appManager) +
+            kAppManagerClientAppOffset);
+        if (!exoApp) return false;
+        void* internal = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(exoApp) +
+            kClientExoAppInternalOffset);
+        if (!internal) return false;
+        void* party = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(internal) + kInternalPartyOffset);
+        if (!party) return false;
+        auto getChar = reinterpret_cast<PFN_GetCharacter>(
+            kAddrCSWPartyGetCharacter);
+        // GetCharacter is internally bounds-checked (returns null for any
+        // index >= party_count), so a fixed cap with a null-skip is safe even
+        // though party_member_datas is contiguous.
+        for (int i = 0; i < kPartyScanCap; ++i) {
+            void* c = getChar(party, i);
+            if (!c) continue;
+            uint8_t bits = *(reinterpret_cast<uint8_t*>(c) +
+                             kCSWCCreatureCombatModeOffset);
+            if (bits & 0x01u) return true;
+        }
+        return false;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 bool GetActiveLeaderName(char* outBuf, size_t bufSize) {
     if (!outBuf || bufSize < 2) return false;
     outBuf[0] = '\0';
