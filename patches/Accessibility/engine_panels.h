@@ -190,6 +190,13 @@ bool IsMainMenuOptionsSubScreen(PanelKind k);
 // real dialog panel stays in panels[]. Scan, don't trust foreground.
 bool HasActiveDialogPanel();
 
+// True when a bark bubble is currently in the panel stack. A bark is an
+// independent, non-blocking overlay (CSWGuiBarkBubble), so it never appears
+// in HasActiveDialogPanel / IsForegroundUiBlocking. Used by the approach
+// watchdog to recognise a use-script that delivered its result as a bark
+// (e.g. examining an off-walkmesh placeable) as a fired interaction.
+bool HasActiveBarkBubble();
+
 // Same reason as HasActiveDialogPanel — drilled sub-screens hide under
 // stale Fade overlays. Sub-screens are popped on close so no stale-block.
 bool HasActiveSubScreen();

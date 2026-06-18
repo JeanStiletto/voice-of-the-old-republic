@@ -35,6 +35,10 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.5.6</h2>
 
+<h3>Bug fixes:</h3>
+
+- Examining an out-of-reach object now reads its result to the end instead of being cut off with "way blocked". Some objects sit off the walkable floor — the hovering Mandalorian swoop bikes on Tatooine, for instance — so your character can trigger them but never physically arrive. When such an object answered with a floating bark line rather than a full conversation, the walk-to watchdog mistook the unfinished approach for a dead end, cancelled it, and spoke "way blocked" over the line. It now treats the bark surfacing as proof the interaction fired and bows out quietly.
+
 <h3>Spatial cues:</h3>
 
 - Wall, door, container, NPC, item and transition cues now fall off with distance — louder as you close in, quieter as you move away — so their volume tells you how near something is. They previously played at full volume anywhere within range, giving no sense of distance.

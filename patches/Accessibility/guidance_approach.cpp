@@ -40,6 +40,7 @@ struct ApproachState {
     bool          inputDisabled = false;
     bool          isDialog      = false;
     bool          speakBlocked  = true;
+    bool          barkAtArm     = false;
 
     DWORD         armedAt       = 0;
     bool          haveProgress  = false;
@@ -124,6 +125,10 @@ void ArmApproach(const ApproachArm& arm) {
     g_st.inputDisabled = arm.inputDisabled;
     g_st.isDialog      = arm.isDialog;
     g_st.speakBlocked  = arm.speakBlocked;
+    // Snapshot any bark already showing so a lingering ambient bubble can't
+    // instantly disarm a fresh walk; only a bark that *surfaces* after arm
+    // counts as this interaction's output.
+    g_st.barkAtArm     = acc::engine::HasActiveBarkBubble();
     g_st.armedAt       = now;
     g_st.haveProgress  = false;
     g_st.progressAt    = now;
@@ -165,6 +170,19 @@ void TickApproach() {
     if (acc::engine::IsForegroundUiBlocking(&blk)) {
         acclog::Write("Approach", "interaction panel open (fgKind=%d) — disarm "
             "(walk-to-use OK)", static_cast<int>(blk.fgKind));
+        g_st.active = false;
+        return;
+    }
+
+    // Success 3 — the use-script delivered its result as a bark bubble rather
+    // than a conversation (e.g. examining an off-walkmesh placeable: the
+    // hovering swoop bikes). The bark surfacing proves the interaction fired
+    // even though the body never physically arrived. Disarm quietly — never
+    // CancelMovement (it would ClearAllActions and kill any queued follow-up)
+    // and never announce "way blocked". engine_player's queue-watched restore
+    // re-enables input on its own when the queue drains/stalls.
+    if (!g_st.barkAtArm && acc::engine::HasActiveBarkBubble()) {
+        acclog::Write("Approach", "bark surfaced — disarm (interaction fired)");
         g_st.active = false;
         return;
     }
