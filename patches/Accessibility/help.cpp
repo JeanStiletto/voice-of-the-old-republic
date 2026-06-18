@@ -340,7 +340,8 @@ void OpenMenu() {
     // the engine panel already holds the world, and BeginOverlayPause routes
     // through the server-side combat pause which has no meaning there.
     g_state.pausedWorld = (DetectContext() == Context::World);
-    if (g_state.pausedWorld) acc::engine::BeginOverlayPause();
+    if (g_state.pausedWorld)
+        acc::engine::BeginOverlayPause(acc::engine::OverlayPauseOwner::Help);
 
     acclog::Write("Help", "menu opened rows=%d entries=%d pausedWorld=%d",
                   g_state.rowCount, g_state.entryTotal,
@@ -355,7 +356,7 @@ void CloseMenu() {
     acclog::Write("Help", "menu closed");
     g_state.open = false;
     if (g_state.pausedWorld) {
-        acc::engine::EndOverlayPause();
+        acc::engine::EndOverlayPause(acc::engine::OverlayPauseOwner::Help);
         g_state.pausedWorld = false;
     }
     g_state.focus    = 0;
@@ -429,7 +430,7 @@ void Tick() {
             // Close without the "closed" speech — the transition has its own
             // announce path and we don't want to step on it.
             g_state.open = false;
-            acc::engine::EndOverlayPause();
+            acc::engine::EndOverlayPause(acc::engine::OverlayPauseOwner::Help);
             g_state.pausedWorld = false;
             g_state.focus    = 0;
             g_state.rowCount = 0;

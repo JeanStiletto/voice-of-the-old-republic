@@ -368,7 +368,8 @@ void Arm() {
         g.active = true;
         g.pausedOnOpen = ActionMenuAutoPauseEnabled();
         if (g.pausedOnOpen) {
-            acc::engine::BeginOverlayPause();
+            acc::engine::BeginOverlayPause(
+                acc::engine::OverlayPauseOwner::UnifiedMenu);
         } else {
             acclog::Write("UnifiedMenu", "open without pause — Action Menu "
                 "auto-pause option off");
@@ -390,6 +391,31 @@ int TargetSelection(int row) {
 
 bool IsActive() { return g.active; }
 bool IsSuspended() { return g.active && g.suspended; }
+
+// Re-speak the current category against the live menus. Used when a stacked
+// overlay (the combat queue) closes back onto this menu: the world stayed
+// paused (owner-tracked overlay pause), so the user needs to hear they have
+// landed back here at the same position. Mirrors the resume re-speak in
+// SetForegroundBlocked, minus the suspend bookkeeping. No-op when inactive or
+// suspended (a blocking engine panel still owns input in that case).
+void ReannounceCurrent() {
+    if (!g.active || g.suspended) return;
+    void* tam = acc::engine_radial::ResolveTargetActionMenu();
+    void* mi  = acc::engine_actionbar::ResolveMainInterface();
+    CatKind savedKind = g.cats[g.curCat].kind;
+    int     savedSlot = g.cats[g.curCat].slot;
+    BuildCategoryList(g.hasTargetBlock ? tam : nullptr, mi);
+    if (g.catCount == 0) {
+        acclog::Write("UnifiedMenu",
+                      "reannounce — all categories empty; disarming");
+        ForceDisarm("reannounce-empty");
+        return;
+    }
+    int loc = LocateCat(savedKind, savedSlot);
+    g.curCat = (loc >= 0) ? loc : ClampInt(g.curCat, 0, g.catCount - 1);
+    acclog::Write("UnifiedMenu", "reannounce cat=%d/%d", g.curCat, g.catCount);
+    SpeakCategory(tam, mi, /*prefix=*/nullptr);
+}
 
 // Panel-stack suspend / resume. The menu owns no engine GUI panel, so when
 // the engine pushes a blocking panel over it (a MessageBox, a hotkey-opened
@@ -419,7 +445,9 @@ void SetForegroundBlocked(bool blocked) {
     // idempotent, so this is a no-op when the pause survived. Only when we own
     // the pause (Action Menu auto-pause on); otherwise the menu runs live and
     // there is nothing to re-assert.
-    if (g.pausedOnOpen) acc::engine::BeginOverlayPause();
+    if (g.pausedOnOpen)
+        acc::engine::BeginOverlayPause(
+            acc::engine::OverlayPauseOwner::UnifiedMenu);
 
     // Rebuild against the live menus (the engine may have re-populated
     // action_lists while the panel was up) and re-locate the cursor on the
@@ -449,7 +477,9 @@ void ForceDisarm(const char* reason) {
     acclog::Write("UnifiedMenu", "disarm — reason=%s", reason ? reason : "?");
     g.active = false;
     g.suspended = false;
-    if (g.pausedOnOpen) acc::engine::EndOverlayPause();
+    if (g.pausedOnOpen)
+        acc::engine::EndOverlayPause(
+            acc::engine::OverlayPauseOwner::UnifiedMenu);
     g.pausedOnOpen = false;
     g.catCount = 0;
     g.curCat = 0;

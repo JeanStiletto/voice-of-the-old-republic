@@ -57,6 +57,13 @@ bool ArmFromRadial(const char* name, uint32_t targetHandle);
 
 bool IsActive();
 
+// Re-speak the current category against the live menus, re-locating the cursor
+// on the same slot. Called when a stacked overlay (the combat queue, opened via
+// Shift+H from within this menu) closes back onto it: the world stayed paused
+// (owner-tracked overlay pause), so the user is returned here and needs to hear
+// where they landed. No-op when inactive or suspended.
+void ReannounceCurrent();
+
 // True while armed but suspended under a blocking engine panel (a MessageBox
 // or a hotkey-opened sub-screen). The menu keeps its state + world pause but
 // stops owning input so the panel handles its own keys; it resumes at the

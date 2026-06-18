@@ -54,6 +54,7 @@ and add the German in parentheses if it genuinely aids clarity.
 
 - Queueing combat actions now announces the correct slot. Stacking actions on the bar — force powers, attacks, items — reads each at its true position ("Force Wave, position 1 … 2 … 3", then "queue full" on the fifth), because the cue now rides the engine's actual queue instead of a pre-press guess. Fast presses and key auto-repeat previously made the count skip, repeat, or fall silent, so queued actions seemed to vanish.
 - A disabling status landing on someone in your party — stunned, poisoned, and the like — is now spoken urgently, cutting through queued combat chatter the way a defeat does; the damage that delivered it stays at normal priority. This matters most for a stun, which makes the engine clear that character's queued actions: hearing it immediately is your signal that the orders you stacked were just wiped.
+- The action queue menu (Shift+H) now moves seamlessly to and from the other in-world menus instead of dropping the pause. Closing the queue with Escape while the action menu is still open underneath returns you there, still paused, and re-announces where you landed; and pressing a Shift+number from inside the queue switches straight to that action category. Previously Escape was the only way out of the queue and it always resumed the world, breaking a queueing session mid-flow.
 
 <h2>v0.5.5</h2>
 

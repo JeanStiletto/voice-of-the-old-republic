@@ -208,19 +208,35 @@ void DispatchOverlayPause(const char* trigger, int paused) {
 // it resumes" behaviour, via the same SetPausedByCombat path the pause key
 // uses.
 //
-// Unconditional pause-on-open / resume-on-close, by design: a first-level
-// mod menu should freeze the world when it opens and resume when it closes.
-// Switching directly between two of our overlays stays paused in practice —
-// the outgoing overlay's resume and the incoming one's pause both run inside
-// the same input frame, before the next world tick, so no world time passes.
-// SetPausedByCombat is internally idempotent (it no-ops when the requested
-// state already matches), so redundant calls are harmless.
-void BeginOverlayPause() {
+// Owner-tracked, by design: a first-level mod menu should freeze the world
+// when it opens and resume when it closes — BUT our overlays stack (the combat
+// queue opens on top of the unified action menu, the help list over it, ...),
+// and the world must stay frozen until the LAST overlay closes. We track which
+// owners currently hold the pause in a bitmask; the world only actually resumes
+// on the empty-mask edge. Switching directly between two overlays stays paused
+// regardless of order, even when the inner one closes first (the combat-queue-
+// Esc-unpauses bug). SetPausedByCombat is internally idempotent (it no-ops when
+// the requested state already matches), so the redundant re-assert on Begin is
+// harmless and keeps the existing "re-assert on resume" call sites working.
+namespace {
+unsigned g_overlayPauseOwners = 0;
+}  // namespace
+
+void BeginOverlayPause(OverlayPauseOwner owner) {
+    g_overlayPauseOwners |= static_cast<unsigned>(owner);
     DispatchOverlayPause("overlay opened", 1);
 }
 
-void EndOverlayPause() {
-    DispatchOverlayPause("overlay closed", 0);
+void EndOverlayPause(OverlayPauseOwner owner) {
+    g_overlayPauseOwners &= ~static_cast<unsigned>(owner);
+    if (g_overlayPauseOwners == 0) {
+        DispatchOverlayPause("overlay closed", 0);
+    } else {
+        acclog::Write("PauseToggle",
+                      "overlay closed (owner=0x%02x) — 0x%02x still holds; "
+                      "staying paused",
+                      static_cast<unsigned>(owner), g_overlayPauseOwners);
+    }
 }
 
 void TickInputClassReassert() {

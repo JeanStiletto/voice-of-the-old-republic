@@ -24,6 +24,8 @@
 #include "prism.h"
 #include "transitions.h"      // IsModuleLoadPending — gate during cutscene-load
                               // transient (engine LYT loader use-after-free)
+#include "unified_action_menu.h"  // IsActive / ReannounceCurrent — return to the
+                                  // menu underneath the queue without unpausing
 
 namespace acc::combat::queue {
 
@@ -669,7 +671,7 @@ void ForceDisarm(const char* reason) {
     acclog::Write("Combat.Queue", "disarm reason=%s",
                   reason ? reason : "?");
     g_state.active = false;
-    acc::engine::EndOverlayPause();
+    acc::engine::EndOverlayPause(acc::engine::OverlayPauseOwner::CombatQueue);
     g_state.focusIdx = 0;
     g_state.count = 0;
 }
@@ -684,7 +686,7 @@ bool Open() {
     }
 
     g_state.active   = true;
-    acc::engine::BeginOverlayPause();
+    acc::engine::BeginOverlayPause(acc::engine::OverlayPauseOwner::CombatQueue);
     g_state.focusIdx = 0;
 
     char msg[128];
@@ -779,10 +781,24 @@ bool HandleInputEvent(int code, int value) {
         }
         case kInputEsc1:
         case kInputEsc2: {
-            prism::Speak(acc::strings::Get(acc::strings::Id::QueueClosed),
-                        /*interrupt=*/true);
-            acclog::Write("Combat.Queue", "Esc -> close");
+            // Disarm first so EndOverlayPause clears OUR pause-owner bit. If the
+            // unified action menu is still open underneath (the common Shift+H-
+            // from-the-menu flow), it keeps holding the world pause, so the world
+            // stays frozen — closing the queue returns the user to the menu
+            // seamlessly rather than resuming the world. Re-announce where they
+            // land instead of speaking "closed" (which would imply the whole
+            // queueing session ended).
             ForceDisarm("esc");
+            if (acc::unified_menu::IsActive()) {
+                acclog::Write("Combat.Queue",
+                              "Esc -> close; unified menu still active, "
+                              "re-announcing (world stays paused)");
+                acc::unified_menu::ReannounceCurrent();
+            } else {
+                prism::Speak(acc::strings::Get(acc::strings::Id::QueueClosed),
+                            /*interrupt=*/true);
+                acclog::Write("Combat.Queue", "Esc -> close");
+            }
             return true;
         }
         default:

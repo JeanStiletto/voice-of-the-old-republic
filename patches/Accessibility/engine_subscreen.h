@@ -36,12 +36,28 @@ void TickInputClassReassert();
 // In-world overlay pause hold. Our keyboard-driven in-world menus (examine
 // view, action queue, the Shift-number action menus) have no engine panel,
 // so the engine doesn't pause the world for them like it does for native
-// sub-screens. Call BeginOverlayPause() when such an overlay opens and
-// EndOverlayPause() when it closes to get the native "menu freezes the
+// sub-screens. Call BeginOverlayPause(owner) when such an overlay opens and
+// EndOverlayPause(owner) when it closes to get the native "menu freezes the
 // world" behaviour. Routes through SetPausedByCombat (the same pause the
-// pause key uses), unconditional pause-on-open / resume-on-close.
-void BeginOverlayPause();
-void EndOverlayPause();
+// pause key uses).
+//
+// Owner-tracked, because our overlays STACK: the combat queue opens on top of
+// the unified action menu (Shift+H from within it), the help list opens over
+// the unified menu, etc. A naive unconditional resume-on-close would unpause
+// the world when the INNER overlay closes even though the OUTER one is still
+// open and still wants the world frozen (the combat-queue-Esc-unpauses bug).
+// Each owner sets its bit on Begin and clears it on End; the world only
+// actually resumes when the LAST owner releases. Begin re-asserts the engine
+// pause every call (idempotent), so the existing "re-assert on resume" call
+// sites stay correct.
+enum class OverlayPauseOwner : unsigned {
+    UnifiedMenu = 1u << 0,
+    CombatQueue = 1u << 1,
+    ExamineView = 1u << 2,
+    Help        = 1u << 3,
+};
+void BeginOverlayPause(OverlayPauseOwner owner);
+void EndOverlayPause(OverlayPauseOwner owner);
 
 }  // namespace acc::engine
 

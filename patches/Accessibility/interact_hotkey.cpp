@@ -693,6 +693,26 @@ void PollHotkey() {
     // the next disarm via "rows-empty"). Bare 4..7 fall straight through
     // to the engine-native fast-fire path.
     if (inWorld) {
+        // Menu-switch: a Shift+number opener pressed while the combat queue
+        // (Shift+H) is open switches cleanly to the action menu — close the
+        // queue first so it stops shadowing input, then the OpenPersonal /
+        // OpenTarget calls below arm / re-point the unified menu this same tick.
+        // The owner-tracked overlay pause keeps the world frozen across the
+        // switch: the queue's EndOverlayPause clears only its own owner bit, and
+        // the menu re-holds (or already holds) the pause in the same input frame,
+        // so no world time passes. Mirrors the game's own J / I / M hotkeys
+        // switching between screens — the queue, like those, has no engine panel
+        // to defer to, so this precedence is purely ours to set.
+        const bool numberOpener =
+            risingOpen1 || risingOpen2 || risingOpen3 || risingOpen4 ||
+            risingOpenT1 || risingOpenT2 || risingOpenT3;
+        if (numberOpener && acc::combat::queue::IsActive()) {
+            acclog::Write("Interact",
+                "Shift+number over combat queue — closing queue, switching to "
+                "action menu");
+            acc::combat::queue::ForceDisarm("switch-to-action-menu");
+        }
+
         // Slot mapping is LINEAR — key N drives column N-4:
         //   key 4 / Shift+4 → slot 0  Friendly Force
         //   key 5 / Shift+5 → slot 1  Medical
