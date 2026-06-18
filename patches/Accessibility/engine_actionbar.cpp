@@ -58,8 +58,13 @@ constexpr uintptr_t kAddrRePopulateMainInterface   = 0x0062b050;
 
 typedef void (__thiscall* PFN_DoPersonalAction)(void* this_,
                                                 int slot, int param_2);
+// ret 8: the callee purges TWO dwords (Ghidra BYTES_PURGED="8") though it only
+// uses param_1. A single-arg typedef under-pushes by 4 and corrupts the caller's
+// frame — the SetMainInterfaceTarget stack bug (see engine_picker.cpp). Push a
+// matching unused second dword to balance the cleanup.
 typedef void (__thiscall* PFN_SetMainInterfaceTarget)(void* this_,
-                                                      uint32_t target);
+                                                      uint32_t target,
+                                                      uint32_t pad);
 typedef void (__thiscall* PFN_RePopulateMainInterface)(void* this_);
 
 // Local chain helpers (same shape as engine_radial / engine_picker).
@@ -281,7 +286,7 @@ bool PrepareBareDispatch(uint32_t targetClientHandle) {
     __try {
         auto setTgt = reinterpret_cast<PFN_SetMainInterfaceTarget>(
             kAddrSetMainInterfaceTarget);
-        setTgt(guiIn, targetClientHandle);
+        setTgt(guiIn, targetClientHandle, 0u);  // trailing 0: callee purges 8
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         acclog::Write("ActionBar.Prep",
             "SetMainInterfaceTarget SEH-FAULT target=0x%08x",

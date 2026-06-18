@@ -141,6 +141,11 @@ constexpr size_t kDoorStateOffset          = 0x11c;
 constexpr size_t kDoorField17Offset        = 0x138;
 
 typedef void (__thiscall* PFN_RowOp)(void* this_, int row);
+// DoTargetAction shares the (this, int row) shape with Select Next/Prev but does
+// ret 8 (Ghidra BYTES_PURGED="8" vs 4 for the Select ops) — it purges a second
+// dword it doesn't use. A bare PFN_RowOp under-pushes by 4 and corrupts the
+// caller's frame (the SetMainInterfaceTarget class of bug); push a matching pad.
+typedef void (__thiscall* PFN_DoTargetAction)(void* this_, int row, int pad);
 typedef void* (__thiscall* PFN_GetGameObject)(void* exoApp, uint32_t handle);
 typedef void* (__thiscall* PFN_AsClass)(void* gameObject);
 typedef bool (__thiscall* PFN_GetCanUseSkill)(void* stats, uint16_t skillIdx);
@@ -605,8 +610,8 @@ bool SelectPrevActionInRow(void* tam, int row) {
 bool DispatchRowAction(void* tam, int row) {
     if (!tam || row < 0 || row >= kRowCount) return false;
     __try {
-        auto fn = reinterpret_cast<PFN_RowOp>(kAddrDoTargetAction);
-        fn(tam, row);
+        auto fn = reinterpret_cast<PFN_DoTargetAction>(kAddrDoTargetAction);
+        fn(tam, row, 0);  // trailing 0: DoTargetAction purges 8 (ret 8)
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         acclog::Write("Radial", "DispatchRowAction SEH-FAULT row=%d", row);

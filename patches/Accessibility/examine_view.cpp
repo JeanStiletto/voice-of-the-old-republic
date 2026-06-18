@@ -518,7 +518,15 @@ bool ReadDeadFlag(void* serverCreature) {
 }
 
 bool ReadInvisibleFlag(void* serverCreature) {
-    int v = CallIntThis(serverCreature, kAddrCSWSCreatureGetInvisible);
+    // GetInvisible is `int GetInvisible(CSWSObject* param_1)` — unlike the
+    // zero-arg GetDead/GetBlind, it takes one stack arg and does ret 4. Calling
+    // it through the zero-arg CallIntThis under-pushed by 4 and corrupted the
+    // caller's frame (the SetMainInterfaceTarget class of bug), while also
+    // feeding the function a garbage object pointer. Route it through the
+    // one-arg helper so the stack stays balanced. param_1 is passed null
+    // (observer not modelled); its exact semantics are unverified, but this is
+    // strictly better than the prior garbage-pointer + stack-imbalance call.
+    int v = CallIntThisInt(serverCreature, 0, kAddrCSWSCreatureGetInvisible);
     return v != 0 && v != -1;
 }
 
