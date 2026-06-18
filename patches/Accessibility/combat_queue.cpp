@@ -1,5 +1,7 @@
 #include "combat_queue.h"
 
+#include <windows.h>  // GetTickCount — user-attribution freshness window
+
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -364,25 +366,21 @@ int BuildRows() {
     return g_state.count;
 }
 
-// Speak the focused row at index `idx` (0-based) of `count` total.
-void SpeakRow(int idx) {
-    if (idx < 0 || idx >= g_state.count) return;
-    const Row& row = g_state.rows[idx];
-    void* action = GetQueueAction(row.combatRound, row.perCreatureIdx);
-
+// Build the spoken label for a queued action node: the SPECIFIC ability name
+// for force powers / items / feats (type 9/10/11), else the generic verb
+// ("Angriff" / "Talent einsetzen" / ...). Shared by SpeakRow (Shift+H review)
+// and OnEngineActionAdded (the live queue announce) so both name a queued
+// entry identically.
+//   type=9  (Force power) — spell_id @+0x24 → CSWSpell::GetSpellNameText
+//   type=10 (Item use)    — handle   @+0x64 → engine display-name accessor
+//   type=11 (Use feat)    — feat_id  @+0x5c → CSWFeat::GetNameText
+void BuildActionLabel(void* action, char* out, size_t n) {
+    if (!out || n == 0) return;
+    out[0] = '\0';
     unsigned char type = 0xff;
     uint32_t target = 0;
     ReadActionFields(action, type, target);
 
-    // Default: localized verb keyed off action_type ("Talent einsetzen" /
-    // "Angriff" / ...). For type=9/10/11 swap in the SPECIFIC ability
-    // name resolved from the engine — turns the generic verb into the
-    // user-recognisable ability label.
-    //   type=9  (Force power) — spell_id  @+0x24 → CSWSpell::GetSpellNameText
-    //   type=10 (Item use)    — handle    @+0x64 → engine display-name accessor
-    //   type=11 (Use feat)    — feat_id   @+0x5c → CSWFeat::GetNameText
-    // type=1 (Attack), 6/7 (Equip/Unequip) keep the generic verb — there
-    // isn't a single specific-ability name per entry there.
     char abilityName[96] = "";
     const char* verb = acc::strings::Get(VerbForActionType(type));
     if (type == 11) {
@@ -410,6 +408,52 @@ void SpeakRow(int idx) {
             verb = abilityName;
         }
     }
+    std::strncpy(out, verb, n - 1);
+    out[n - 1] = '\0';
+}
+
+// Read the raw queue count from a combat round (engine's own
+// actions->internal->count — the value AddAction's `if (3 < count)` cap
+// inspects). -1 on read fault. Same field CountPlayerEntries reads, but on
+// an arbitrary round (the one the AddAction detour hands us).
+int RawRoundCount(void* combatRound) {
+    if (!combatRound) return -1;
+    __try {
+        void* listPtr = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(combatRound) +
+            kCombatRoundActionsOffset);
+        if (!listPtr) return -1;
+        void* internalPtr = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(listPtr) +
+            kListInternalOffset);
+        if (!internalPtr) return 0;
+        int n = *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(internalPtr) +
+            kListInternalCountOffset);
+        if (n < 0 || n > 64) return -1;
+        return n;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
+// Speak the focused row at index `idx` (0-based) of `count` total.
+void SpeakRow(int idx) {
+    if (idx < 0 || idx >= g_state.count) return;
+    const Row& row = g_state.rows[idx];
+    void* action = GetQueueAction(row.combatRound, row.perCreatureIdx);
+
+    unsigned char type = 0xff;
+    uint32_t target = 0;
+    ReadActionFields(action, type, target);
+
+    // Default: localized verb keyed off action_type, with the SPECIFIC
+    // ability name swapped in for type=9/10/11 (see BuildActionLabel).
+    // type=1 (Attack), 6/7 (Equip/Unequip) keep the generic verb — there
+    // isn't a single specific-ability name per entry there.
+    char verbBuf[96] = "";
+    BuildActionLabel(action, verbBuf, sizeof(verbBuf));
+    const char* verb = verbBuf;
 
     char tgtName[64] = "";
     if (target != 0u && target != 0x7F000000u) {
@@ -529,6 +573,74 @@ int CountPlayerEntries() {
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return 0;
     }
+}
+
+namespace {
+// User-attribution latch (see ArmUserQueueAdd). 0 = not armed; otherwise the
+// GetTickCount() at the most recent user press. The engine auto-queues the
+// controlled leader's default attack through the same AddAction on the same
+// round, so the round-identity check alone can't tell a user press from an
+// auto-attack — only this freshness window can.
+DWORD g_userAddArmTick = 0;
+// Window from press to the resulting AddAction. The dispatch is same-frame or
+// next-tick (tens of ms); the leader's auto-attacks fire on the round cadence
+// (~seconds) only when the queue is empty, so they fall outside. Refresh-on-
+// arm + no-consume keeps a rapid press burst all announcing.
+constexpr DWORD kUserAddWindowMs = 250;
+}  // namespace
+
+void ArmUserQueueAdd() { g_userAddArmTick = GetTickCount(); }
+
+void OnEngineActionAdded(void* combatRound, void* action) {
+    if (!combatRound) return;
+
+    // Only the controlled creature's queue is the user's. The AddAction detour
+    // fires for every creature's round (companions, enemies); bail silently
+    // (no log) on those to avoid spamming a line per combat action in the
+    // area. GetPlayerServerCreature follows Tab control, so this tracks
+    // whichever party member the user is currently queueing onto.
+    void* leader = acc::engine::GetPlayerServerCreature();
+    if (!leader) return;
+    void* leaderRound = ReadCombatRound(leader);
+    if (!leaderRound || combatRound != leaderRound) return;
+
+    // Attribution gate: the engine auto-queues the controlled leader's default
+    // attack through this same path on this same round, so round identity
+    // alone can't tell a user press from an auto-attack. Only adds within the
+    // freshness window of a user press are the user's; auto-attacks (no
+    // preceding press) fall outside and stay silent.
+    DWORD armed = g_userAddArmTick;
+    if (armed == 0 || (GetTickCount() - armed) > kUserAddWindowMs) {
+        acclog::Write("Combat.Queue",
+                      "engine-add on leader round, no user arm — silent "
+                      "(auto-action)");
+        return;
+    }
+
+    // Pre-add count (detour fires at function entry, before the node is
+    // inserted). Engine cap is `if (3 < count)`: 0..3 accept → slot count+1,
+    // >=4 reject → "Warteschlange voll".
+    int preCount = RawRoundCount(combatRound);
+    if (preCount < 0) return;
+
+    char label[96] = "";
+    BuildActionLabel(action, label, sizeof(label));
+    if (!label[0]) std::strncpy(label, "?", sizeof(label) - 1);
+
+    char msg[192];
+    if (preCount >= 4) {
+        std::snprintf(msg, sizeof(msg),
+                      acc::strings::Get(acc::strings::Id::FmtFireQueueFull),
+                      label);
+    } else {
+        std::snprintf(msg, sizeof(msg),
+                      acc::strings::Get(acc::strings::Id::FmtFireAtPosition),
+                      label, preCount + 1);
+    }
+    prism::Speak(msg, /*interrupt=*/true);
+    acclog::Write("Combat.Queue",
+                  "engine-add slot=%d full=%d label=[%s] -> [%s]",
+                  preCount + 1, preCount >= 4 ? 1 : 0, label, msg);
 }
 
 namespace {

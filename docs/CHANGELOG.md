@@ -50,6 +50,11 @@ and add the German in parentheses if it genuinely aids clarity.
 - Very large open spaces now announce as "large area" instead of "area". The label sets the expectation that wall and object cues are naturally sparse when you cross a space this big, so quiet stretches read as the size of the place rather than something gone wrong.
 - Large open areas no longer flicker their region name. While crossing a big space such as the Kashyyyk Great Walkway, small gaps in the navigation graph between two named regions made the mod repeatedly announce a bare, nameless "area" and then re-announce the region on the far side, back and forth as you walked the seam. The mod now holds the last named region across those gaps, so you stay oriented instead of hearing the name drop out and return.
 
+<h3>Combat:</h3>
+
+- Queueing combat actions now announces the correct slot. Stacking actions on the bar — force powers, attacks, items — reads each at its true position ("Force Wave, position 1 … 2 … 3", then "queue full" on the fifth), because the cue now rides the engine's actual queue instead of a pre-press guess. Fast presses and key auto-repeat previously made the count skip, repeat, or fall silent, so queued actions seemed to vanish.
+- A disabling status landing on someone in your party — stunned, poisoned, and the like — is now spoken urgently, cutting through queued combat chatter the way a defeat does; the damage that delivered it stays at normal priority. This matters most for a stun, which makes the engine clear that character's queued actions: hearing it immediately is your signal that the orders you stacked were just wiped.
+
 <h2>v0.5.5</h2>
 
 <h3>Bug fixes:</h3>

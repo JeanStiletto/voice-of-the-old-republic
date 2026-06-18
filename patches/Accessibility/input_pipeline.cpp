@@ -336,6 +336,10 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
         // CSWSCombatRound::AddAction; that function silently free's the
         // node when internal->count > 3.
         acc::combat::queue::ReportPrePressDepth();
+        // Attribute the resulting CSWSCombatRound::AddAction to this press so
+        // its detour speaks the authoritative "X, Platz N" cue (and engine
+        // auto-attacks, which have no press, stay silent).
+        acc::combat::queue::ArmUserQueueAdd();
         acc::combat_diag::LogPreFire(diag_label);
 
         uint32_t targetClient = 0x7F000000u;

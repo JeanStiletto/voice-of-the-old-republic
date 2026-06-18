@@ -519,31 +519,17 @@ void AnnounceBarePersonalKey(int slot) {
         return;
     }
 
-    // Slot comes from the PRE-press depth read at the top of this function
-    // (snapshot taken in input_pipeline before the engine's switch-case
-    // dispatch). Reading the POST count from interact_hotkey's tick poll races
-    // the engine — sometimes the engine has already grown the queue, sometimes
-    // not — which produced the off-by-one "Starke Explosion eingesetzt / Platz 1
-    // / 1 / 2 / 3 / voll" pattern we kept seeing. PRE is deterministic: the
-    // queue depth before our press. The press, if it succeeds, lands at
-    // preDepth + 1. If preDepth was already 4 the engine's
-    // `if (3 < count) { free; return; }` arm rejects, so we announce cap-hit.
-    const bool capHit  = (preDepth >= 4);
-    const int  slotNum = preDepth + 1;
-    char msg[192];
-    if (capHit) {
-        std::snprintf(msg, sizeof(msg),
-                      acc::strings::Get(acc::strings::Id::FmtFireQueueFull),
-                      label);
-    } else {
-        std::snprintf(msg, sizeof(msg),
-                      acc::strings::Get(acc::strings::Id::FmtFireAtPosition),
-                      label, slotNum);
-    }
-    prism::Speak(msg, /*interrupt=*/true);
+    // Non-empty column: the engine queued (or cap-rejected) the action. The
+    // authoritative "X, Platz N" / "Warteschlange voll" cue is spoken by the
+    // CSWSCombatRound::AddAction detour (queue::OnEngineActionAdded), which is
+    // 1:1 with real adds — no rising-edge under-count on key auto-repeat, no
+    // pre/post race against the queue drain. This poll path now only keeps the
+    // empty-column feedback above; the successful-queue announce moved to the
+    // hook. preDepth is still consumed at the top purely as the phantom-press
+    // gate (a consumed Shift+combo / dialog key must not even speak "leer").
     acclog::Write("ActionBar", "bare key slot=%d variants=%d idx=%d label=[%s] "
-        "pre=%d slot=%d capHit=%d -> [%s]",
-        slot, nVar, idx, label, preDepth, slotNum, capHit ? 1 : 0, msg);
+        "pre=%d — queued; announce via AddAction hook",
+        slot, nVar, idx, label, preDepth);
 }
 
 // Speak "{label} eingesetzt" for a bare-press of target-action key 1..3.
@@ -594,24 +580,13 @@ void AnnounceBareTargetKey(int row) {
         return;
     }
 
-    // PRE-only slot calc (preDepth read at the top) — see AnnounceBarePersonalKey
-    // above for the race-condition rationale.
-    const bool capHit  = (preDepth >= 4);
-    const int  slotNum = preDepth + 1;
-    char msg[192];
-    if (capHit) {
-        std::snprintf(msg, sizeof(msg),
-                      acc::strings::Get(acc::strings::Id::FmtFireQueueFull),
-                      label);
-    } else {
-        std::snprintf(msg, sizeof(msg),
-                      acc::strings::Get(acc::strings::Id::FmtFireAtPosition),
-                      label, slotNum);
-    }
-    prism::Speak(msg, /*interrupt=*/true);
+    // Non-empty row: the authoritative "X, Platz N" / "Warteschlange voll"
+    // cue is spoken by the CSWSCombatRound::AddAction detour
+    // (queue::OnEngineActionAdded) — see AnnounceBarePersonalKey. This poll
+    // path keeps only the empty-row feedback above. preDepth stays consumed at
+    // the top as the phantom-press gate.
     acclog::Write("ActionBar", "bare target row=%d label=[%s] "
-        "pre=%d slot=%d capHit=%d -> [%s]",
-        row, label, preDepth, slotNum, capHit ? 1 : 0, msg);
+        "pre=%d — queued; announce via AddAction hook", row, label, preDepth);
 }
 
 }  // namespace

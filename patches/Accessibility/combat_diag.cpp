@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdio>
 
+#include "combat_queue.h"    // OnEngineActionAdded — authoritative queue announce
 #include "engine_offsets.h"
 #include "engine_player.h"   // GetPlayerServerCreature, GetClientLeader,
                              // kAddrAppManagerPtr, kAppManagerClientAppOffset
@@ -315,6 +316,13 @@ extern "C" void __cdecl OnCombatRoundAddAction(void* this_combatRound,
         acc::combat_diag::RoleTag(this_combatRound),
         this_combatRound, action,
         static_cast<unsigned>(action_type), param2);
+
+    // Authoritative "X, Platz N" / "Warteschlange voll" announce. This hook
+    // fires once per genuine add at function entry, so it never under-counts
+    // on key auto-repeat or races the queue drain the way the old rising-edge
+    // poll did. OnEngineActionAdded self-filters to the controlled creature's
+    // round.
+    acc::combat::queue::OnEngineActionAdded(this_combatRound, action);
 }
 
 extern "C" void __cdecl OnCombatRoundRemoveAllActions(void* this_combatRound) {

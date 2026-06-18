@@ -4,7 +4,7 @@
 #include <cstring>
 
 #include "combat_diag.h"        // LogPreFire / LogPostFire around dispatch
-#include "combat_queue.h"       // ReportPrePressDepth / GetPrePressDepth
+#include "combat_queue.h"       // ArmUserQueueAdd — attribute the AddAction
 #include "engine_actionbar.h"   // personal block read + primitives
 #include "engine_area.h"        // ResolveServerObjectHandle, kInvalidObjectId
 #include "engine_input.h"       // kInputNav*, kInputEnter*, kInputEsc*,
@@ -794,32 +794,25 @@ bool HandleInputEvent(int code, int value) {
             // mode is untouched.
             int prevQueueBit = acc::engine::SetLeaderQueueModeBit(1);
 
-            acc::combat::queue::ReportPrePressDepth();
             acc::combat_diag::LogPreFire("menu-enter");
+            // Attribute the AddAction this dispatch triggers to the user so its
+            // detour speaks the "X, Platz N" cue (see ArmUserQueueAdd).
+            acc::combat::queue::ArmUserQueueAdd();
             bool ok = Dispatch(tam, mi, cur);
             acc::combat_diag::LogPostFire("menu-enter");
 
             if (prevQueueBit >= 0) acc::engine::SetLeaderQueueModeBit(prevQueueBit);
 
-            int preDepth = acc::combat::queue::GetPrePressDepth();
-            const bool capHit  = (preDepth >= 4);
-            const int  slotNum = preDepth + 1;
-            char msg[192];
-            if (capHit) {
-                std::snprintf(msg, sizeof(msg),
-                              acc::strings::Get(acc::strings::Id::FmtFireQueueFull),
-                              label[0] ? label : "?");
-            } else {
-                std::snprintf(msg, sizeof(msg),
-                              acc::strings::Get(acc::strings::Id::FmtFireAtPosition),
-                              label[0] ? label : "?", slotNum);
-            }
-            prism::Speak(msg, /*interrupt=*/true);
+            // The queued-action confirmation ("X, Platz N" / "Warteschlange
+            // voll") is spoken by the CSWSCombatRound::AddAction detour
+            // (queue::OnEngineActionAdded) that Dispatch() triggers — one
+            // authoritative cue per real add, shared with the bare-key path.
+            // No separate pre/post snapshot here: it raced the queue drain and
+            // double-announced against the hook.
             acclog::Write("UnifiedMenu", "ENTER kind=%s slot=%d idx=%d label=[%s] "
-                "ok=%d pre=%d slot=%d capHit=%d -> [%s]",
+                "ok=%d — queued; announce via AddAction hook",
                 cur.kind == CatKind::Target ? "target" : "personal",
-                cur.slot, sel, label, ok ? 1 : 0, preDepth, slotNum,
-                capHit ? 1 : 0, msg);
+                cur.slot, sel, label, ok ? 1 : 0);
 
             // Stay armed + paused after firing so the user can stack several
             // actions into the engine queue (grenade → force power → attack)
