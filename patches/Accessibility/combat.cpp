@@ -840,6 +840,25 @@ void BuildIncomingLine(const AttackBlock& b, char* out, size_t cap) {
     }
 }
 
+// A status condition applied to a party member (stunned, poisoned, paralysed,
+// feared — whatever the engine echoes in "<target> ist <status>") is a
+// disabling state the player needs to act on, so it shouldn't wait behind
+// queued combat chatter. When `victim` is a party member and `status` is
+// non-empty, deliver it as its own urgent cue on the SAPI channel
+// ("<victim> ist <status>") — the same channel a kill uses — and return true
+// so the caller drops the status from the normal-priority damage/effect line.
+// No new information: the status word is moved to the urgent channel, not
+// duplicated; the (non-urgent) damage stays on the normal channel.
+bool MaybeSpeakStatusUrgent(const char* victim, const char* status) {
+    if (!status || !status[0] || !IsPartyMember(victim)) return false;
+    const auto& L = acc::combat::loc::Get();
+    char line[160];
+    snprintf(line, sizeof(line), "%s%s%s", victim, L.status_ist_marker, status);
+    prism::SpeakUrgent(line);
+    acc::msg::Router::Instance().LogEmit("emit-status-urgent", line);
+    return true;
+}
+
 // Filter + emit decision for a fully-buffered attack block.
 //
 //   party attack (feat, or plain hit)  → actor-led result line
@@ -867,6 +886,10 @@ void FlushPending() {
         r.Speak(buf);
         r.LogEmit("emit-outgoing", buf);
     } else if (g_pending.hit && target_is_party) {
+        // Peel any applied status off the damage line and re-speak it
+        // urgently (see MaybeSpeakStatusUrgent). The damage stays normal.
+        if (MaybeSpeakStatusUrgent(g_pending.target, g_pending.status))
+            g_pending.status[0] = '\0';
         BuildIncomingLine(g_pending, buf, sizeof(buf));
         r.Speak(buf);
         r.LogEmit("emit-incoming", buf);
@@ -1080,6 +1103,10 @@ void BuildEffectLine(const EffectTarget& e, char* out, size_t cap) {
 // Speak (and clear) one accumulated effect slot. Party-relevant only — an
 // NPC-vs-NPC power exchange is logged but not spoken, matching the weapon path.
 void FlushEffect(EffectTarget& e) {
+    // A force/grenade status on a party member: lift it to the urgent channel
+    // before building the line, so the disabling state cuts through (same as
+    // the weapon path in FlushPending). Status moved, not duplicated.
+    if (MaybeSpeakStatusUrgent(e.target, e.status)) e.status[0] = '\0';
     char line[300];
     BuildEffectLine(e, line, sizeof(line));
     if (line[0]) {
