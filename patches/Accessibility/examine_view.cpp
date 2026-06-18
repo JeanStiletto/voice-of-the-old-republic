@@ -517,18 +517,15 @@ bool ReadDeadFlag(void* serverCreature) {
     return v != 0 && v != -1;
 }
 
-bool ReadInvisibleFlag(void* serverCreature) {
-    // GetInvisible is `int GetInvisible(CSWSObject* param_1)` — unlike the
-    // zero-arg GetDead/GetBlind, it takes one stack arg and does ret 4. Calling
-    // it through the zero-arg CallIntThis under-pushed by 4 and corrupted the
-    // caller's frame (the SetMainInterfaceTarget class of bug), while also
-    // feeding the function a garbage object pointer. Route it through the
-    // one-arg helper so the stack stays balanced. param_1 is passed null
-    // (observer not modelled); its exact semantics are unverified, but this is
-    // strictly better than the prior garbage-pointer + stack-imbalance call.
-    int v = CallIntThisInt(serverCreature, 0, kAddrCSWSCreatureGetInvisible);
-    return v != 0 && v != -1;
-}
+// NOTE: there is intentionally no ReadInvisibleFlag here. The engine's
+// CSWSCreature::GetInvisible @0x00501950 is NOT a pure read — its SANCTUARY
+// branch rolls a saving throw and mutates perception state (PacifyCreature /
+// AddToVisibleList), so it must not be called from this passive readout. And it
+// is redundant: AppendEffectRows below already walks the effect list read-only
+// and names an active INVISIBILITY effect (type 47 → "Unsichtbar"). Decompile of
+// GetInvisible: param_1 is the OBSERVER; it answers "is this creature invisible
+// to that observer" (Stealth/Sanctuary, gated by the observer's see-invisibility
+// flags + a Will save). See git history for the full analysis.
 
 bool ReadBlindFlag(void* serverCreature) {
     int v = CallIntThis(serverCreature, kAddrCSWSCreatureGetBlind);
@@ -843,13 +840,8 @@ int BuildRows() {
     if (isCreature) {
         // Status flags — only emit a row when the flag is set, so a
         // healthy normal creature doesn't get a row of "not invisible".
-        if (idx < kMaxRows && ReadInvisibleFlag(obj)) {
-            std::strncpy(g_state.rows[idx],
-                         acc::strings::Get(S::ExamineRowStatusInvisible),
-                         sizeof(g_state.rows[0]) - 1);
-            g_state.rows[idx][sizeof(g_state.rows[0]) - 1] = '\0';
-            ++idx;
-        }
+        // (Invisible is covered read-only by the effect list — see the note on
+        // ReadBlindFlag; the engine GetInvisible call was removed.)
         if (idx < kMaxRows && ReadBlindFlag(obj)) {
             std::strncpy(g_state.rows[idx],
                          acc::strings::Get(S::ExamineRowStatusBlind),
