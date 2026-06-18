@@ -21,6 +21,7 @@
 #include "engine_player.h"
 #include "engine_subscreen.h"
 #include "examine_view.h"
+#include "guidance_approach.h"
 #include "guidance_autowalk.h"
 #include "guidance_beacon.h"
 #include "help.h"
@@ -282,8 +283,7 @@ void Dispatch() {
     PHASE("probe_camera_distance", acc::probe_camera_distance::Tick());
     PHASE("view_mode.poll", acc::view_mode::PollWin32());
 
-    // Autowalk watchdog + W/S/A/D/C/Y panic-cancel + beacon driver.
-    PHASE("guidance.progress", acc::guidance::TickProgressWatchdog());
+    // W/S/A/D/C/Y panic-cancel + beacon driver.
     PHASE("guidance.cancel", acc::guidance::PollMovementKeysCancel());
     PHASE("guidance.beacon", acc::guidance::beacon::Tick());
 
@@ -291,12 +291,10 @@ void Dispatch() {
     // the queue (or a ceiling backstop fires).
     PHASE("engine.inputRestore", acc::engine::TickPlayerInputRestore());
 
-    // Dialog walk-then-talk leaves input enabled (no restore session); this
-    // watchdog breaks a walkmesh-blocked approach and announces "way blocked".
-    PHASE("interact.dialogApproach", acc::interact::TickDialogApproach());
-
-    // Same "way blocked" announce for the Shift+- autowalk path.
-    PHASE("cycle.autowalkApproach", acc::cycle_input::TickAutowalkApproach());
+    // Unified walk-to-act approach tracker — both the Shift+- autowalk and the
+    // Enter-interact (loot/talk/door) dispatches arm it; it disarms quietly on
+    // success and announces "way blocked" on a walkmesh-blocked stall.
+    PHASE("guidance.approach", acc::guidance::TickApproach());
 
     // Diagnostic: log player action-queue depth changes (delta only).
     PHASE("engine.actionQueueDiag", acc::engine::TickActionQueueDiag());

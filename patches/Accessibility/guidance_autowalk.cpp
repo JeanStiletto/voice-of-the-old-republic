@@ -5,6 +5,8 @@
 #include <cstdint>
 
 #include "engine_player.h"
+#include "guidance_approach.h"  // IsApproachInFlight / CancelApproach — the
+                                // unified tracker now owns in-flight semantics
 #include "hotkeys.h"  // IsForegroundGame — gate movement-key cancel polling
                       // so keys pressed in another app while Alt+Tabbed out
                       // don't kill an in-flight autowalk silently.
@@ -66,93 +68,11 @@ typedef void (__thiscall* PFN_ForceMoveToPoint)(
     void*              this_,
     CSWSForcedAction*  action);
 
-// Progress-watchdog state. Captured on every WalkTo / ForceWalkTo so
-// subsequent OnUpdate ticks can correlate position deltas against the
-// dispatch. Module-scope statics (single in-flight autowalk; new
-// dispatch resets the watchdog and supersedes any in-flight observation).
-struct WatchdogState {
-    bool          active        = false;
-    Vector        startPos      = {0.0f, 0.0f, 0.0f};
-    Vector        dest          = {0.0f, 0.0f, 0.0f};
-    DWORD         dispatchTick  = 0;     // GetTickCount() at dispatch
-    bool          firedAt1s     = false;
-    bool          firedAt3s     = false;
-    bool          haveStartPos  = false; // false if pre-dispatch read failed
-    const char*   tag           = "?";   // "WalkTo" / "Force" — log prefix
-};
-WatchdogState g_watchdog;
-
-// In-flight tracker — distinct from the diagnostic watchdog. The
-// watchdog only fires twice (t+1s, t+3s) and self-disengages, but
-// "is the player still autowalking?" can persist far longer (long
-// cross-area moves). We track it independently so cycle_input's
-// toggle-cancel semantics work for the full duration of a walk.
-//
-// Set on successful dispatch (WalkTo / ForceWalkTo). Cleared on:
-//   - explicit CancelMovement,
-//   - per-tick distance check observing arrival (dist < 1.0m),
-//   - player creature unresolvable (un-loaded mid-flight).
-//
-// Single-instance (only one autowalk in flight at a time; new dispatch
-// supersedes prior). No thread safety — patch is single-threaded.
-struct InFlightState {
-    bool   active        = false;
-    Vector dest          = {0.0f, 0.0f, 0.0f};
-    DWORD  dispatchTick  = 0;       // GetTickCount() at dispatch
-    bool   sawPending    = false;   // latched once the move is seen queued
-    Vector lastPos       = {0.0f, 0.0f, 0.0f};
-    DWORD  lastMoveTick  = 0;       // last time the PC actually moved
-    bool   sawMoving     = false;   // latched once the PC has moved at all
-    bool   haveLastPos   = false;   // lastPos seeded yet?
-};
-InFlightState g_inFlight;
-
-// Post-dispatch grace: the engine may not have enqueued / started the move on
-// the first tick(s) after dispatch, so "drained" / "still" reads in that
-// window must NOT be treated as "done".
-constexpr DWORD kInFlightGraceMs = 500;
-// The walk is over once the PC has been motionless this long. This is the
-// signal that works for BOTH dispatch kinds: WalkTo's move drains to 0 (PC
-// stops), and UseObject's composite queue never drains (it oscillates 4↔6
-// through the walk and the conversation it opens) but the PC still stops once
-// it reaches use-range. Queue-depth==0 alone misses the UseObject case.
-constexpr DWORD kInFlightStillMs = 1000;
-// Per-tick movement threshold (squared metres). Below this the PC is "still".
-constexpr float kInFlightMoveEpsSq = 0.04f;  // (0.2m)^2
-// A walk that ENDS this far (metres) from its destination ended blocked, not
-// arrived. Above any sensible use-range/arrival distance so a successful
-// walk-up never trips it. Read once by the cycle layer's way-blocked guard.
-constexpr float kBlockedThresholdM = 4.0f;
-bool g_walkBlocked = false;  // one-shot: last walk ended short of its target
-
-// Arm in-flight tracking for a freshly dispatched move. Resets every latch so
-// stale state from a prior walk can't end this one early.
-void ArmInFlight(const Vector& dest) {
-    DWORD now = GetTickCount();
-    g_inFlight.active       = true;
-    g_inFlight.dest         = dest;
-    g_inFlight.dispatchTick = now;
-    g_inFlight.sawPending   = false;
-    g_inFlight.lastMoveTick = now;
-    g_inFlight.sawMoving    = false;
-    g_inFlight.haveLastPos  = false;
-    g_walkBlocked           = false;  // fresh walk — clear any stale blocked flag
-}
-
-// Helper to arm the watchdog after a successful dispatch. Same shape
-// regardless of which engine entry point did the dispatch — only the
-// log prefix differs.
-void ArmWatchdog(const Vector& startPos, bool haveStart,
-                 const Vector& dest, const char* tag) {
-    g_watchdog.active        = true;
-    g_watchdog.startPos      = startPos;
-    g_watchdog.dest          = dest;
-    g_watchdog.dispatchTick  = GetTickCount();
-    g_watchdog.firedAt1s     = false;
-    g_watchdog.firedAt3s     = false;
-    g_watchdog.haveStartPos  = haveStart;
-    g_watchdog.tag           = tag;
-}
+// Walk dispatch is now a pure primitive: WalkTo / ForceWalkTo / UseObject queue
+// the engine action and return. Watching whether the walk arrives, settles, or
+// stalls — and the toggle-cancel / way-blocked semantics that used to live here
+// as g_inFlight / g_watchdog / g_walkBlocked — is the unified approach tracker's
+// job (guidance_approach.{h,cpp}). Callers arm it after a successful dispatch.
 
 float HorizontalDistance(const Vector& a, const Vector& b) {
     float dx = a.x - b.x;
@@ -263,21 +183,12 @@ bool WalkTo(const Vector& destination) {
            /*pathContext2=*/0,
            /*flagBit10=*/0);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        // Disarm watchdog — no point measuring progress when the call faulted.
-        g_watchdog.active = false;
         acclog::Write("Autowalk", "WalkTo SEH-FAULT action_id=%u "
                       "dest=(%.2f,%.2f,%.2f)",
                       static_cast<unsigned>(thisActionId),
                       dest.x, dest.y, dest.z);
         return false;
     }
-
-    // Arm the watchdog. New dispatch supersedes any prior in-flight
-    // observation — the user pressed Shift+- again or a new caller fired,
-    // so the prior baseline is no longer the relevant reference point.
-    ArmWatchdog(startPos, haveStart, dest, "WalkTo");
-
-    ArmInFlight(dest);
 
     float distToDest = haveStart ? HorizontalDistance(startPos, dest) : -1.0f;
 
@@ -322,18 +233,12 @@ bool ForceWalkTo(const Vector& destination) {
             kAddrCSWSCreatureForceMoveToPoint);
         fn(creature, &action);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        g_watchdog.active = false;
         if (inputDisabled) acc::engine::SetPlayerInputEnabled(true);
         acclog::Write("Autowalk", "Force-dispatch SEH-FAULT action_id=%u "
                       "dest=(%.2f,%.2f,%.2f)",
                       action.action_id, dest.x, dest.y, dest.z);
         return false;
     }
-
-    ArmWatchdog(startPos, haveStart, dest, "Force");
-
-    g_inFlight.active = true;
-    g_inFlight.dest   = dest;
 
     float distToDest = haveStart ? HorizontalDistance(startPos, dest) : -1.0f;
     acclog::Write("Autowalk", "Force-dispatch dest=(%.2f,%.2f,%.2f) "
@@ -345,7 +250,7 @@ bool ForceWalkTo(const Vector& destination) {
     return true;
 }
 
-bool UseObject(unsigned long targetHandle, const Vector& destHint) {
+bool UseObject(unsigned long targetHandle) {
     void* creature = acc::engine::GetPlayerServerCreature();
     if (!creature) return false;
 
@@ -368,33 +273,14 @@ bool UseObject(unsigned long targetHandle, const Vector& destHint) {
         return false;
     }
 
-    // Arm in-flight tracking when caller supplied a destination hint.
-    // The shared TickProgressWatchdog clears the flag when the player
-    // reaches within 1m, so cycle_input's Shift+- toggle-cancel sees
-    // the same "in flight" state UseObject paths set as WalkTo paths.
-    bool destValid = destHint.x != 0.0f || destHint.y != 0.0f ||
-                     destHint.z != 0.0f;
-    if (ret != 0 && destValid) {
-        ArmInFlight(destHint);
-    }
-
-    acclog::Write("Autowalk", "UseObject dispatch target=0x%08lx ret=%d "
-                  "destHint=(%.2f,%.2f,%.2f) inFlightArmed=%d",
-                  targetHandle, ret,
-                  destHint.x, destHint.y, destHint.z,
-                  (ret != 0 && destValid) ? 1 : 0);
+    acclog::Write("Autowalk", "UseObject dispatch target=0x%08lx ret=%d",
+                  targetHandle, ret);
     return ret != 0;
 }
 
 bool CancelMovement() {
     void* creature = acc::engine::GetPlayerServerCreature();
-    if (!creature) {
-        // Even with no creature, clear our local state — it's
-        // definitively stale.
-        g_inFlight.active = false;
-        g_watchdog.active = false;
-        return false;
-    }
+    if (!creature) return false;
 
     typedef void (__thiscall* PFN_ClearAllActions)(void* this_, int param_1);
 
@@ -411,36 +297,18 @@ bool CancelMovement() {
         acclog::Write("Autowalk", "CancelMovement SEH-FAULT");
     }
 
-    // Clear local state regardless of engine call success — at minimum,
-    // the user said "stop", so don't pretend we're still in flight. A user
-    // cancel is NOT "blocked" — clear the flag so the cycle guard stays quiet.
-    g_inFlight.active = false;
-    g_watchdog.active = false;
-    g_walkBlocked     = false;
-
     if (ok) {
         acclog::Write("Autowalk", "CancelMovement dispatched (ClearAllActions(0))");
     }
     return ok;
 }
 
-bool ConsumeWalkBlocked() {
-    bool b = g_walkBlocked;
-    g_walkBlocked = false;
-    return b;
-}
-
-bool IsAutowalkInFlight() {
-    return g_inFlight.active;
-}
-
 void PollMovementKeysCancel() {
-    // Only cancel our own autowalks. Engine-initiated autorun (Canderous
-    // recruitment dialog hand-off, area onEnter scripts, cutscene moves)
-    // keeps `g_inFlight.active` false because we never set it for those —
-    // so this gate preserves script-driven sequences from accidental
-    // cancellation by stray W presses.
-    if (!g_inFlight.active) return;
+    // Only cancel our own Cycle-owned autowalks (Shift+-). Engine-initiated
+    // autorun (Canderous recruitment hand-off, area onEnter scripts, cutscene
+    // moves) and Enter-interact approaches are never Cycle-owned, so this gate
+    // preserves them from accidental cancellation by stray W presses.
+    if (!IsApproachInFlight()) return;
 
     // Foreground gate — GetAsyncKeyState reads OS-global state, so a W
     // press in another app while the user is Alt+Tabbed out would
@@ -465,7 +333,7 @@ void PollMovementKeysCancel() {
     // Rising-edge gate. If the user happens to be holding W when an
     // autowalk dispatches (e.g. Shift+- then immediate W), we don't
     // want to cancel on tick 1 just because the key was already down —
-    // wait for a fresh press. After cancel, g_inFlight.active flips to
+    // wait for a fresh press. After cancel, IsApproachInFlight() flips to
     // false and the early-return at top of this function takes over;
     // s_prevDown stays accurate for the next dispatch.
     static bool s_prevDown = false;
@@ -475,6 +343,7 @@ void PollMovementKeysCancel() {
 
     bool ok = CancelMovement();
     if (ok) {
+        CancelApproach();  // clear the in-flight tracker (no announce)
         // Re-enable manual control immediately — the user wants the
         // keyboard back NOW, not after the 3s auto-restore. Same
         // sequence as the Shift+- toggle-cancel path in cycle_input.cpp.
@@ -491,143 +360,5 @@ void PollMovementKeysCancel() {
     }
 }
 
-void TickProgressWatchdog() {
-    // In-flight arrival check — runs even when the diagnostic watchdog has
-    // self-disengaged. Cheap (one position read + horizontal-distance
-    // compare) and only when actually in flight.
-    if (g_inFlight.active) {
-        Vector pos;
-        bool   havePos = acc::engine::GetPlayerPosition(pos);
-        int    depth   = acc::engine::GetPlayerActionQueueDepth();
-        DWORD  now     = GetTickCount();
-        bool   pastGrace = (now - g_inFlight.dispatchTick) >= kInFlightGraceMs;
-
-        bool done = false;
-        if (!havePos) {
-            done = true;                                   // player gone
-        } else if (HorizontalDistance(pos, g_inFlight.dest) < 1.0f) {
-            done = true;                                   // arrived at the point
-        } else {
-            // Track movement: refresh the "last moved" stamp whenever the PC
-            // displaces past the epsilon.
-            if (!g_inFlight.haveLastPos) {
-                g_inFlight.lastPos     = pos;
-                g_inFlight.haveLastPos = true;
-            } else {
-                float dx = pos.x - g_inFlight.lastPos.x;
-                float dy = pos.y - g_inFlight.lastPos.y;
-                if (dx * dx + dy * dy >= kInFlightMoveEpsSq) {
-                    g_inFlight.lastPos      = pos;
-                    g_inFlight.lastMoveTick = now;
-                    g_inFlight.sawMoving    = true;
-                }
-            }
-            if (depth > 0) g_inFlight.sawPending = true;
-
-            // Two completion signals, whichever fires first:
-            //   (a) queue fully drained — the fast path for WalkTo (a single
-            //       move action that completes / is dropped at a wall);
-            //   (b) the PC has been motionless for kInFlightStillMs — the only
-            //       reliable signal for UseObject, whose composite queue never
-            //       drains to 0 (it oscillates through the walk and into the
-            //       conversation it opens) but which still leaves the PC
-            //       standing still once it reaches use-range.
-            // Both gate on grace / having-seen-activity so the post-dispatch
-            // ramp-up isn't mistaken for completion.
-            bool drained = depth == 0 && (g_inFlight.sawPending || pastGrace);
-            bool stalled = (g_inFlight.sawMoving || pastGrace) &&
-                           (now - g_inFlight.lastMoveTick) >= kInFlightStillMs;
-            if (drained || stalled) done = true;
-        }
-
-        if (done) {
-            // Flag "ended blocked" for the cycle layer's way-blocked guard:
-            // the walk finished on its own (NOT via CancelMovement, which
-            // clears g_inFlight.active directly and never reaches here) but the
-            // PC is still well short of the destination — stalled at a wall /
-            // railing, or the engine dropped an unreachable move. A normal
-            // arrival (within ~1m via the branch above, or use-range a few m
-            // out) is under the threshold and not flagged.
-            g_walkBlocked = havePos &&
-                HorizontalDistance(pos, g_inFlight.dest) > kBlockedThresholdM;
-            g_inFlight.active = false;
-        }
-    }
-
-    if (!g_watchdog.active) return;
-
-    DWORD now = GetTickCount();
-    DWORD elapsedMs = now - g_watchdog.dispatchTick;
-
-    // We need a current position to compare against the dispatch baseline.
-    // If reading fails (player un-loaded mid-flight, area teardown), shut
-    // down the watchdog cleanly — there's nothing useful to log.
-    Vector pos;
-    if (!acc::engine::GetPlayerPosition(pos)) {
-        g_watchdog.active = false;
-        return;
-    }
-
-    // Two checkpoints. After the second, disengage — beyond ~3 seconds
-    // we can't distinguish "engine still pathing" from "user took manual
-    // control" without extra state, and the diagnostic question
-    // ("did the engine actually move us?") is already answered by t+1s.
-    if (!g_watchdog.firedAt1s && elapsedMs >= 1000) {
-        g_watchdog.firedAt1s = true;
-
-        // Diagnostic: read the same fields we sampled at dispatch so we
-        // can see if AIActionMoveToPoint ran (and which branch).
-        // field427_0xa8c value codes: 2=never ran, 1=switch case took it,
-        // 0=short-tail or long-branch path, -1=long-branch reset.
-        int32_t  curField427 = 0;
-        uint32_t curField101 = 0;
-        void* creature = acc::engine::GetPlayerServerCreature();
-        if (creature) {
-            __try {
-                auto* base = reinterpret_cast<unsigned char*>(creature);
-                curField427 = *reinterpret_cast<int32_t*>(base + 0xa8c);
-                curField101 = *reinterpret_cast<uint32_t*>(base + 0x1f8);
-            } __except (EXCEPTION_EXECUTE_HANDLER) {}
-        }
-
-        if (g_watchdog.haveStartPos) {
-            float moved = HorizontalDistance(g_watchdog.startPos, pos);
-            float distToDest = HorizontalDistance(pos, g_watchdog.dest);
-            const char* state = (moved < 0.1f) ? "stuck" : "moving";
-            acclog::Write("Autowalk", "%s t+1s moved=%.2fm dist=%.2fm (%s) "
-                "field427=%d field101=0x%08x",
-                g_watchdog.tag, moved, distToDest, state,
-                curField427, static_cast<unsigned>(curField101));
-        } else {
-            // No baseline: still useful — we know whether we're near the
-            // destination at the 1s mark.
-            float distToDest = HorizontalDistance(pos, g_watchdog.dest);
-            acclog::Write("Autowalk", "%s t+1s dist=%.2fm (no baseline) "
-                "field427=%d field101=0x%08x",
-                g_watchdog.tag, distToDest,
-                curField427, static_cast<unsigned>(curField101));
-        }
-    }
-
-    if (!g_watchdog.firedAt3s && elapsedMs >= 3000) {
-        g_watchdog.firedAt3s = true;
-        float distToDest = HorizontalDistance(pos, g_watchdog.dest);
-        if (g_watchdog.haveStartPos) {
-            float moved = HorizontalDistance(g_watchdog.startPos, pos);
-            const char* state =
-                (distToDest < 1.0f) ? "reached"      :
-                (moved      < 0.1f) ? "still stuck"  :
-                                       "moving";
-            acclog::Write("Autowalk", "%s t+3s moved=%.2fm dist=%.2fm (%s)",
-                          g_watchdog.tag, moved, distToDest, state);
-        } else {
-            const char* state = (distToDest < 1.0f) ? "reached" : "unknown";
-            acclog::Write("Autowalk", "%s t+3s dist=%.2fm (%s, no baseline)",
-                          g_watchdog.tag, distToDest, state);
-        }
-        // Disengage. Future user actions (next Shift+-, etc.) will re-arm.
-        g_watchdog.active = false;
-    }
-}
 
 }  // namespace acc::guidance

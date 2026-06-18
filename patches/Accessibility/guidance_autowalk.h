@@ -11,11 +11,10 @@
 
 namespace acc::guidance {
 
-// True = queued (does not guarantee arrival — pathfinder may fail,
-// target may be unreachable, the player may interrupt). False = no
-// player loaded or engine call faulted.
-//
-// Arms the progress watchdog.
+// True = queued (does not guarantee arrival — pathfinder may fail, target may
+// be unreachable, the player may interrupt). False = no player loaded or engine
+// call faulted. Pure dispatch primitive: watching the walk to completion is the
+// approach tracker's job — arm it (guidance_approach.h) after a true return.
 bool WalkTo(const Vector& destination);
 
 // Diagnostic alternate via CSWSCreature::ForceMoveToPoint — bypasses the
@@ -24,42 +23,24 @@ bool WalkTo(const Vector& destination);
 // "Autowalk: Force-..." for filtering.
 bool ForceWalkTo(const Vector& destination);
 
-// Watchdog. Emits one line at t+1s and one at t+3s with displacement +
-// stuck verdict. Self-disengages after t+3s.
-void TickProgressWatchdog();
-
 // Enqueue ACTION_USEOBJECT (0x28) — same primitive as NWScript's
-// ActionInteractObject. Engine handles walk-then-use sequencing.
-// Caller owns the SetPlayerInputEnabled(false) toggle around dispatch.
-//
-// destHint arms the in-flight tracker so IsAutowalkInFlight returns
-// true; pass zero vector to skip arming (e.g. interact_hotkey's picker
-// fallback where the engine picks the geometry).
-bool UseObject(unsigned long targetHandle,
-               const Vector& destHint = {0.0f, 0.0f, 0.0f});
+// ActionInteractObject. Engine handles walk-then-use sequencing. Caller owns
+// the SetPlayerInputEnabled(false) toggle around dispatch, and arms the
+// approach tracker (guidance_approach.h) for the in-flight / way-blocked
+// lifecycle.
+bool UseObject(unsigned long targetHandle);
 
-// Clears the full action queue via CSWSObject::ClearAllActions —
-// acceptable because the typical Shift+- stop case has only our move
-// queued. The per-action primitive (CSWSCreature::RemoveAction by id)
-// would need action-id tracking we don't yet have.
-//
-// Also clears in-flight state. Caller should follow with
-// SetPlayerInputEnabled(true) to restore manual control immediately.
+// Clears the full action queue via CSWSObject::ClearAllActions — acceptable
+// because the typical Shift+- stop case has only our move queued. The
+// per-action primitive (CSWSCreature::RemoveAction by id) would need action-id
+// tracking we don't yet have. Caller should follow with SetPlayerInputEnabled(
+// true) to restore manual control immediately, and CancelApproach() to clear
+// the tracker (this primitive no longer owns that state).
 bool CancelMovement();
 
-// In-flight set on successful dispatch; cleared on CancelMovement,
-// arrival (<1m), or player un-load.
-bool IsAutowalkInFlight();
-
-// One-shot: returns true (and resets) if the most recently ENDED autowalk
-// finished well short of its destination — stalled at a wall / unreachable,
-// not arrived and not user-cancelled. The cycle layer reads this to announce
-// "way blocked" with the target's name. False for arrivals and cancels.
-bool ConsumeWalkBlocked();
-
-// Cancel an in-flight autowalk on a fresh W/S/A/D/C/Y rising edge.
-// Engine-initiated autorun (NPC perception, cutscenes) is untouched —
-// IsAutowalkInFlight is only true for our own dispatches.
+// Cancel a Cycle-owned (Shift+-) autowalk on a fresh W/S/A/D/C/Y rising edge.
+// Engine-initiated autorun and Enter-interact approaches are untouched —
+// guidance::IsApproachInFlight() is only true for our own Shift+- dispatches.
 void PollMovementKeysCancel();
 
 }  // namespace acc::guidance
