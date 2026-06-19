@@ -38,7 +38,7 @@ and add the German in parentheses if it genuinely aids clarity.
 <h3>Installer:</h3>
 
 - Downloads no longer fail with a "403" rate-limit error. The installer and in-game updater fetched every file through GitHub's REST API, which caps unauthenticated use at 60 requests per hour and counts them per network address — so anyone sharing an IP (mobile, campus, office, or VPN connections) could be blocked even on their first try, regardless of how small or rarely-downloaded the files are. Downloads now go through GitHub's direct release links, which aren't rate-limited, and only fall back to the API during an actual GitHub outage.
-- The "Collect logs for beta test" bundle is now a `.7z` archive instead of a `.zip`, roughly a third smaller — a typical bundle drops from ~64 MB to ~45 MB. The crash dump is the bulk of it, and ZIP's Deflate can't pack it well; LZMA2 does. If 7-Zip can't run for any reason it falls back to the old `.zip` automatically.
+- The "Collect logs for beta test" bundle is now small enough to send over Discord directly — a typical bundle drops from ~64 MB to around 2 MB. Two changes do it: the crash dump is stripped down to just the parts we read during triage (the game's own code, all thread stacks, the crash-referenced data, and the module list), discarding the bulk — stock Windows and graphics-driver memory that's reconstructible and never inspected, which on a real dump was ~145 MB of ~151 MB; and the whole bundle is then packed as `.7z` (LZMA2) instead of `.zip`. Both steps fall back safely (full dump / plain `.zip`) if anything goes wrong, so the bundle is never empty.
 
 <h2>v0.5.6</h2>
 

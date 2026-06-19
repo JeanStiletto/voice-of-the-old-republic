@@ -59,9 +59,27 @@ namespace KotorAccessibilityInstaller
                     string newestDump = FindNewestCrashDump();
                     if (newestDump != null)
                     {
-                        File.Copy(newestDump, Path.Combine(staging, Path.GetFileName(newestDump)), overwrite: true);
+                        string dumpDest = Path.Combine(staging, Path.GetFileName(newestDump));
+                        // Strip the dump down to what triage uses (swkotor.exe +
+                        // our DLLs, thread stacks, referenced heap, contexts,
+                        // module list), dropping stock system/driver module
+                        // code+data. A real ~150 MB dump becomes ~6 MB this way,
+                        // so the bundle fits Discord without a file host. Any
+                        // structural surprise throws — we then bundle the full
+                        // dump so we never ship nothing.
+                        try
+                        {
+                            var st = MinidumpStripper.StripFile(newestDump, dumpDest);
+                            Logger.Info($"[LogCollector] Stripped crash dump {newestDump}: " +
+                                $"{st.OriginalBytes / 1048576.0:F1} MB -> {st.StrippedBytes / 1048576.0:F1} MB " +
+                                $"(kept {st.KeptRanges} ranges, dropped {st.DroppedRanges})");
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Warning($"[LogCollector] Dump strip failed ({ex.Message}); bundling full dump");
+                            File.Copy(newestDump, dumpDest, overwrite: true);
+                        }
                         result.DumpCount = 1;
-                        Logger.Info($"[LogCollector] Included crash dump: {newestDump}");
                     }
                     else
                     {
