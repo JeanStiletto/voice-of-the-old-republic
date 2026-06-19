@@ -33,6 +33,12 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.5.7</h2>
+
+<h3>Installer:</h3>
+
+- Downloads no longer fail with a "403" rate-limit error. The installer and in-game updater fetched every file through GitHub's REST API, which caps unauthenticated use at 60 requests per hour and counts them per network address — so anyone sharing an IP (mobile, campus, office, or VPN connections) could be blocked even on their first try, regardless of how small or rarely-downloaded the files are. Downloads now go through GitHub's direct release links, which aren't rate-limited, and only fall back to the API during an actual GitHub outage.
+
 <h2>v0.5.6</h2>
 
 <h3>Bug fixes:</h3>

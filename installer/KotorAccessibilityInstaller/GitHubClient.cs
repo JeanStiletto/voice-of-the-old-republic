@@ -28,30 +28,15 @@ namespace KotorAccessibilityInstaller
         {
             try
             {
-                string apiUrl = repoUrl.Replace("github.com", "api.github.com/repos") + "/releases/latest";
-                Logger.Info($"Fetching latest mod version from: {apiUrl}");
-
-                var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
-                request.Headers.Add("Accept", "application/vnd.github.v3+json");
-                var response = await _httpClient.SendAsync(request);
-
-                if (!response.IsSuccessStatusCode)
+                string tag = await ResolveLatestTagAsync(repoUrl);
+                if (string.IsNullOrEmpty(tag))
                 {
-                    Logger.Warning($"GitHub API returned {response.StatusCode}");
+                    Logger.Warning("Could not determine latest release tag");
                     return null;
                 }
-
-                string json = await response.Content.ReadAsStringAsync();
-                var match = Regex.Match(json, @"""tag_name""\s*:\s*""v?([^""]+)""");
-                if (match.Success)
-                {
-                    string version = match.Groups[1].Value;
-                    Logger.Info($"Latest mod version: {version}");
-                    return version;
-                }
-
-                Logger.Warning("Could not parse version from GitHub API response");
-                return null;
+                string version = tag.TrimStart('v', 'V');
+                Logger.Info($"Latest mod version: {version}");
+                return version;
             }
             catch (Exception ex)
             {
@@ -69,48 +54,181 @@ namespace KotorAccessibilityInstaller
         /// Used for our .kpatch (which tracks the latest release).
         /// For pinned tags, use <see cref="DownloadReleaseAssetByTagAsync"/>.
         /// </summary>
-        public Task<string> DownloadReleaseAssetAsync(string repoUrl, string assetName, Action<int> progress = null)
-            => DownloadReleaseAssetInternalAsync(repoUrl, releasePathSegment: "latest", assetName, progress);
-
-        /// <summary>
-        /// Download a named release asset from a specific tagged release.
-        /// Used for HoloPatcher (NickHugi/PyKotor's "latest" release is the
-        /// Toolset, not HoloPatcher — we have to pin to the patcher tag).
-        /// </summary>
-        public Task<string> DownloadReleaseAssetByTagAsync(string repoUrl, string tag, string assetName, Action<int> progress = null)
-            => DownloadReleaseAssetInternalAsync(repoUrl, releasePathSegment: $"tags/{Uri.EscapeDataString(tag)}", assetName, progress);
-
-        private async Task<string> DownloadReleaseAssetInternalAsync(string repoUrl, string releasePathSegment, string assetName, Action<int> progress)
+        public async Task<string> DownloadReleaseAssetAsync(string repoUrl, string assetName, Action<int> progress = null)
         {
             try
             {
-                string apiUrl = repoUrl.Replace("github.com", "api.github.com/repos") + "/releases/" + releasePathSegment;
-                Logger.Info($"Fetching release info from: {apiUrl}");
-
-                var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
-                request.Headers.Add("Accept", "application/vnd.github.v3+json");
-                var response = await _httpClient.SendAsync(request);
-                response.EnsureSuccessStatusCode();
-
-                string json = await response.Content.ReadAsStringAsync();
-                string pattern = $"\"browser_download_url\"\\s*:\\s*\"([^\"]*{Regex.Escape(assetName)}[^\"]*)\"";
-                var match = Regex.Match(json, pattern);
-
-                if (!match.Success)
-                    throw new Exception($"Asset '{assetName}' not found in release '{releasePathSegment}' at {repoUrl}.\n\nUpload the file as a release asset and retry.");
-
-                string downloadUrl = match.Groups[1].Value;
-                Logger.Info($"Downloading {assetName} from: {downloadUrl}");
-
-                string tempFile = Path.Combine(Path.GetTempPath(), assetName);
-                await DownloadFileAsync(downloadUrl, tempFile, progress);
-                return tempFile;
+                string tag = await ResolveLatestTagAsync(repoUrl);
+                if (string.IsNullOrEmpty(tag))
+                    throw new Exception($"Could not determine the latest release tag at {repoUrl}.");
+                return await DownloadTaggedAssetAsync(repoUrl, tag, assetName, progress);
             }
             catch (Exception ex)
             {
                 Logger.Error($"Failed to download release asset '{assetName}'", ex);
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Download a named release asset from a specific tagged release.
+        /// Used for HoloPatcher (NickHugi/PyKotor's "latest" release is the
+        /// Toolset, not HoloPatcher — we have to pin to the patcher tag).
+        /// </summary>
+        public async Task<string> DownloadReleaseAssetByTagAsync(string repoUrl, string tag, string assetName, Action<int> progress = null)
+        {
+            try
+            {
+                return await DownloadTaggedAssetAsync(repoUrl, tag, assetName, progress);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"Failed to download release asset '{assetName}'", ex);
+                throw;
+            }
+        }
+
+        // ----- Download path (rate-limit-free primary, API fallback) ------------
+        //
+        // Both download entry points funnel here. The PRIMARY path hits the
+        // github.com release-download redirect (.../releases/download/<tag>/<asset>),
+        // which is NOT the api.github.com REST API and therefore does NOT count
+        // against GitHub's 60-request/hour unauthenticated rate limit. That limit
+        // is per source IP, so users behind shared/CGNAT/VPN addresses were
+        // tripping a 403 even on a first install when the API was used for every
+        // metadata fetch.
+        //
+        // The redirect host can 504 during partial GitHub outages (the bug fixed
+        // for the in-game updater in v0.4.1). So on failure we FALL BACK to the
+        // api.github.com asset endpoint with Accept: application/octet-stream —
+        // the resilient path that stays up during those outages. It is
+        // rate-limited, but only runs during an outage, exactly when there is no
+        // steady traffic competing for the IP's hourly budget.
+        private async Task<string> DownloadTaggedAssetAsync(string repoUrl, string tag, string assetName, Action<int> progress)
+        {
+            string tempFile = Path.Combine(Path.GetTempPath(), assetName);
+            string directUrl =
+                $"{repoUrl}/releases/download/{Uri.EscapeDataString(tag)}/{Uri.EscapeDataString(assetName)}";
+
+            try
+            {
+                Logger.Info($"Downloading {assetName} (direct release-download) from: {directUrl}");
+                await DownloadFileAsync(directUrl, tempFile, progress);
+                return tempFile;
+            }
+            catch (Exception ex) when (
+                ex is HttpRequestException || ex is TaskCanceledException || ex is IOException)
+            {
+                Logger.Warning(
+                    $"Direct download of {assetName} failed ({ex.Message}); " +
+                    "falling back to api.github.com asset endpoint");
+            }
+
+            await DownloadViaApiAssetAsync(repoUrl, tag, assetName, tempFile, progress);
+            return tempFile;
+        }
+
+        /// <summary>
+        /// Outage fallback: resolve the asset's API url from the release JSON and
+        /// download it with Accept: application/octet-stream (which 302-redirects
+        /// to the storage backend). Mirrors the in-game updater's resilient path.
+        /// </summary>
+        private async Task DownloadViaApiAssetAsync(
+            string repoUrl, string tag, string assetName, string destPath, Action<int> progress)
+        {
+            string apiUrl = repoUrl.Replace("github.com", "api.github.com/repos")
+                            + "/releases/tags/" + Uri.EscapeDataString(tag);
+            Logger.Info($"Fetching release info from: {apiUrl}");
+
+            using var infoReq = new HttpRequestMessage(HttpMethod.Get, apiUrl);
+            infoReq.Headers.Add("Accept", "application/vnd.github.v3+json");
+            using var infoResp = await _httpClient.SendAsync(infoReq);
+            infoResp.EnsureSuccessStatusCode();
+            string json = await infoResp.Content.ReadAsStringAsync();
+
+            string apiAssetUrl = FindAssetApiUrl(json, assetName);
+            if (apiAssetUrl == null)
+                throw new Exception(
+                    $"Asset '{assetName}' not found in release '{tag}' at {repoUrl}.\n\n" +
+                    "Upload the file as a release asset and retry.");
+
+            Logger.Info($"Downloading {assetName} (API asset endpoint) from: {apiAssetUrl}");
+            var dlReq = new HttpRequestMessage(HttpMethod.Get, apiAssetUrl);
+            dlReq.Headers.Add("Accept", "application/octet-stream");
+            await DownloadFileAsync(dlReq, destPath, progress);
+        }
+
+        // ----- Tag resolution (redirect-first, API fallback) --------------------
+
+        /// <summary>
+        /// Resolve a repo's latest release tag. The PRIMARY path reads the
+        /// redirect target of github.com/.../releases/latest (which 302s to
+        /// .../releases/tag/&lt;tag&gt;) — no api.github.com call, no rate-limit
+        /// hit. Falls back to the rate-limited API only if the redirect path
+        /// fails (e.g. during a partial GitHub outage).
+        /// </summary>
+        private async Task<string> ResolveLatestTagAsync(string repoUrl)
+        {
+            try
+            {
+                string tag = await ResolveLatestTagViaRedirectAsync(repoUrl);
+                if (!string.IsNullOrEmpty(tag)) return tag;
+                Logger.Warning("Could not parse tag from /releases/latest redirect; falling back to API");
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning($"/releases/latest redirect failed ({ex.Message}); falling back to API");
+            }
+            return await ResolveLatestTagViaApiAsync(repoUrl);
+        }
+
+        private async Task<string> ResolveLatestTagViaRedirectAsync(string repoUrl)
+        {
+            string latestUrl = $"{repoUrl}/releases/latest";
+            // HttpClient auto-follows redirects; after the hop the final request
+            // URI is .../releases/tag/<tag>. ResponseHeadersRead avoids pulling
+            // the HTML release page body.
+            using var resp = await _httpClient.GetAsync(latestUrl, HttpCompletionOption.ResponseHeadersRead);
+            resp.EnsureSuccessStatusCode();
+            string finalPath = resp.RequestMessage?.RequestUri?.AbsolutePath ?? string.Empty;
+            var m = Regex.Match(finalPath, @"/releases/tag/([^/]+)/?$");
+            return m.Success ? Uri.UnescapeDataString(m.Groups[1].Value) : null;
+        }
+
+        private async Task<string> ResolveLatestTagViaApiAsync(string repoUrl)
+        {
+            string apiUrl = repoUrl.Replace("github.com", "api.github.com/repos") + "/releases/latest";
+            using var req = new HttpRequestMessage(HttpMethod.Get, apiUrl);
+            req.Headers.Add("Accept", "application/vnd.github.v3+json");
+            using var resp = await _httpClient.SendAsync(req);
+            resp.EnsureSuccessStatusCode();
+            string json = await resp.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.TryGetProperty("tag_name", out var t) ? t.GetString() : null;
+        }
+
+        /// <summary>
+        /// Find the asset whose "name" contains <paramref name="assetName"/> and
+        /// return its API "url" (api.github.com/.../releases/assets/&lt;id&gt;) —
+        /// NOT browser_download_url. The API url + octet-stream Accept is the
+        /// outage-resilient download path. Substring match mirrors the prior
+        /// regex behaviour (tolerates version-suffixed asset names). Returns
+        /// null if not present.
+        /// </summary>
+        private static string FindAssetApiUrl(string json, string assetName)
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("assets", out var assets)
+                || assets.ValueKind != JsonValueKind.Array)
+                return null;
+            foreach (var a in assets.EnumerateArray())
+            {
+                if (a.TryGetProperty("name", out var n)
+                    && (n.GetString()?.Contains(assetName) ?? false)
+                    && a.TryGetProperty("url", out var u))
+                    return u.GetString();
+            }
+            return null;
         }
 
         /// <summary>
@@ -270,9 +388,13 @@ namespace KotorAccessibilityInstaller
         private static string Shorten(string sha) =>
             string.IsNullOrEmpty(sha) || sha.Length < 7 ? sha : sha.Substring(0, 7);
 
-        private async Task DownloadFileAsync(string url, string destinationPath, Action<int> progress = null)
+        private Task DownloadFileAsync(string url, string destinationPath, Action<int> progress = null)
+            => DownloadFileAsync(new HttpRequestMessage(HttpMethod.Get, url), destinationPath, progress);
+
+        private async Task DownloadFileAsync(HttpRequestMessage request, string destinationPath, Action<int> progress = null)
         {
-            using (var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead))
+            using (request)
+            using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead))
             {
                 response.EnsureSuccessStatusCode();
                 long? totalBytes = response.Content.Headers.ContentLength;

@@ -61,8 +61,21 @@ namespace {
 
 // Mirrors installer/KotorAccessibilityInstaller/Config.cs ModRepositoryUrl.
 // Owner + repo split because WinHTTP needs the host separately from the path.
-constexpr const wchar_t* kGitHubHost     = L"api.github.com";
-constexpr const wchar_t* kReleasesPath   = L"/repos/JeanStiletto/voice-of-the-old-republic/releases/latest";
+//
+// Two hosts, by design (same split as the installer's GitHubClient):
+//   - kWebHost (github.com) serves the redirect endpoints below. These are
+//     NOT the REST API, so they do NOT count against GitHub's 60-request/hour
+//     unauthenticated, per-IP rate limit. This is the PRIMARY path.
+//   - kApiHost (api.github.com) is the rate-limited REST API. Used only as the
+//     outage FALLBACK: github.com's redirect/download host can 504 during
+//     partial GitHub outages, and the API asset endpoint stays up then.
+constexpr const wchar_t* kApiHost        = L"api.github.com";
+constexpr const wchar_t* kApiReleasesLatest = L"/repos/JeanStiletto/voice-of-the-old-republic/releases/latest";
+constexpr const wchar_t* kWebHost        = L"github.com";
+constexpr const wchar_t* kWebReleasesLatest = L"/JeanStiletto/voice-of-the-old-republic/releases/latest";
+// printf format for the direct release-download URL: <tag>, <asset filename>.
+constexpr const char*    kReleaseDownloadUrlFmt =
+    "https://github.com/JeanStiletto/voice-of-the-old-republic/releases/download/%s/%s";
 constexpr const wchar_t* kUserAgent      = L"VoiceOfTheOldRepublic/UpdateChecker";
 
 // Asset filename to download (matches release.ps1 + installer's
@@ -176,6 +189,10 @@ std::atomic<DWORD> g_exit_at_tick{0};
 // flipping the corresponding flag; read by main AFTER observing the flag.
 // Fixed buffers so we don't drag heap allocators across threads.
 char g_latest_version[64] = {};
+// Raw release tag (e.g. "v0.5.3"), as published — used to build the direct
+// release-download URL. Written by the version check before g_update_available
+// flips; read by DownloadWorker. Empty in dev test mode (no real release).
+char g_latest_tag[64] = {};
 char g_installer_path[MAX_PATH] = {};
 
 // Cached release JSON — populated by the version check, reused by the
@@ -185,9 +202,9 @@ std::string g_release_json;
 
 // ----- WinHTTP helpers ------------------------------------------------------
 
-// Open the GitHub host with our User-Agent + redirect policy. Caller closes
-// session + connection on completion.
-bool OpenGitHubSession(HINTERNET& session, HINTERNET& connection) {
+// Open an HTTPS session+connection to `host` with our User-Agent. Caller
+// closes session + connection on completion.
+bool OpenSession(const wchar_t* host, HINTERNET& session, HINTERNET& connection) {
     session = WinHttpOpen(
         kUserAgent,
         WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
@@ -200,7 +217,7 @@ bool OpenGitHubSession(HINTERNET& session, HINTERNET& connection) {
     }
     connection = WinHttpConnect(
         session,
-        kGitHubHost,
+        host,
         INTERNET_DEFAULT_HTTPS_PORT,
         0);
     if (!connection) {
@@ -272,6 +289,66 @@ bool HttpGetToString(HINTERNET connection, const wchar_t* path,
     }
     WinHttpCloseHandle(req);
     return !out.empty();
+}
+
+// GET `path` on `connection` with automatic redirects DISABLED, then copy the
+// 3xx response's Location header (the redirect target URL) into `outLoc`.
+// Returns true if a Location was captured. Used to read the tag that
+// github.com/.../releases/latest redirects to, without touching the
+// rate-limited REST API.
+bool HttpGetRedirectLocation(HINTERNET connection, const wchar_t* path,
+                             int timeoutMs, wchar_t* outLoc, size_t outCap) {
+    HINTERNET req = WinHttpOpenRequest(
+        connection, L"GET", path, nullptr,
+        WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
+    if (!req) {
+        acclog::Write("Update", "redirect WinHttpOpenRequest failed: %lu", GetLastError());
+        return false;
+    }
+    WinHttpSetTimeouts(req, timeoutMs, timeoutMs, timeoutMs, timeoutMs);
+
+    // Disable auto-redirect so the 302 (with its Location header) comes back
+    // to us instead of WinHTTP silently following it to the HTML release page.
+    DWORD disable = WINHTTP_DISABLE_REDIRECTS;
+    WinHttpSetOption(req, WINHTTP_OPTION_DISABLE_FEATURE, &disable, sizeof(disable));
+
+    bool ok = false;
+    if (outCap > 0) outLoc[0] = L'\0';
+    if (WinHttpSendRequest(req, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                           WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
+        WinHttpReceiveResponse(req, nullptr)) {
+        DWORD len = (DWORD)(outCap * sizeof(wchar_t));
+        if (WinHttpQueryHeaders(req, WINHTTP_QUERY_LOCATION,
+                                WINHTTP_HEADER_NAME_BY_INDEX,
+                                outLoc, &len, WINHTTP_NO_HEADER_INDEX)) {
+            ok = (outLoc[0] != L'\0');
+        } else {
+            acclog::Write("Update", "no Location header on /releases/latest: %lu",
+                          GetLastError());
+        }
+    } else {
+        acclog::Write("Update", "redirect GET send/receive failed: %lu", GetLastError());
+    }
+    WinHttpCloseHandle(req);
+    return ok;
+}
+
+// Parse the tag out of a release URL like
+// https://github.com/<owner>/<repo>/releases/tag/v0.5.3 — copies the trailing
+// path segment after "/releases/tag/" into `out` (tags are ASCII). Returns
+// false if the marker isn't present.
+bool ParseTagFromLocation(const wchar_t* loc, char* out, size_t outCap) {
+    static const wchar_t kMarker[] = L"/releases/tag/";
+    const wchar_t* p = wcsstr(loc, kMarker);
+    if (!p) return false;
+    p += (sizeof(kMarker) / sizeof(wchar_t)) - 1;
+    size_t i = 0;
+    while (*p && *p != L'/' && *p != L'?' && *p != L'#') {
+        if (i + 1 < outCap) out[i++] = (char)*p;
+        ++p;
+    }
+    if (i < outCap) out[i] = '\0';
+    return out[0] != '\0';
 }
 
 // GET an asset-download URL to a file on disk. The URL is the
@@ -412,20 +489,12 @@ const char* ReadQuotedString(const char* p, char* out, size_t outCap) {
     return p + 1;
 }
 
-// Extract the top-level `"tag_name": "vX.Y.Z"` value. Returns true if
-// found; out is written with the leading 'v' stripped (and any " " /
-// "-pre" suffix removed, mirroring arena's NormalizeVersion).
-bool ExtractTagName(const std::string& json, char* out, size_t outCap) {
-    const char* p = strstr(json.c_str(), "\"tag_name\"");
-    if (!p) return false;
-    p = SkipColon(p + strlen("\"tag_name\""));
-    if (!p) return false;
-    char raw[128] = {};
-    if (!ReadQuotedString(p, raw, sizeof(raw))) return false;
-    // Strip leading v/V.
-    const char* start = raw;
+// Copy a raw release tag (e.g. "v0.5.3") into `out`, stripping the leading
+// v/V and any " " / "-pre" suffix — mirrors arena's NormalizeVersion. The
+// result is the comparable/displayable version string.
+void StripTagToVersion(const char* rawTag, char* out, size_t outCap) {
+    const char* start = (rawTag && *rawTag) ? rawTag : "";
     if (*start == 'v' || *start == 'V') ++start;
-    // Strip pre-release suffix at '-' or whitespace.
     size_t copyLen = strlen(start);
     for (size_t i = 0; i < copyLen; ++i) {
         if (start[i] == '-' || start[i] == ' ') { copyLen = i; break; }
@@ -433,6 +502,24 @@ bool ExtractTagName(const std::string& json, char* out, size_t outCap) {
     if (copyLen >= outCap) copyLen = outCap - 1;
     memcpy(out, start, copyLen);
     out[copyLen] = '\0';
+}
+
+// Extract the top-level `"tag_name"` value verbatim (no stripping) — the exact
+// tag the release is published under, needed to build the direct-download URL.
+bool ExtractRawTagName(const std::string& json, char* out, size_t outCap) {
+    const char* p = strstr(json.c_str(), "\"tag_name\"");
+    if (!p) return false;
+    p = SkipColon(p + strlen("\"tag_name\""));
+    if (!p) return false;
+    if (!ReadQuotedString(p, out, outCap)) return false;
+    return out[0] != '\0';
+}
+
+// Extract `"tag_name": "vX.Y.Z"` with the leading 'v' and any suffix stripped.
+bool ExtractTagName(const std::string& json, char* out, size_t outCap) {
+    char raw[128] = {};
+    if (!ExtractRawTagName(json, raw, sizeof(raw))) return false;
+    StripTagToVersion(raw, out, outCap);
     return out[0] != '\0';
 }
 
@@ -559,30 +646,50 @@ void CheckVersionWorkerImpl() {
         return;
     }
 
-    HINTERNET session = nullptr, connection = nullptr;
-    if (!OpenGitHubSession(session, connection)) {
-        g_check_complete.store(true, std::memory_order_release);
-        return;
+    // Resolve the latest release tag. PRIMARY: read the tag that
+    // github.com/.../releases/latest redirects to — no api.github.com call, so
+    // it never burns the 60-request/hour unauthenticated, per-IP rate limit
+    // (the same limit that 403s the installer). FALLBACK: the rate-limited REST
+    // API, used only if the redirect path fails (e.g. a partial GitHub outage).
+    char rawTag[64] = {};
+    {
+        HINTERNET session = nullptr, connection = nullptr;
+        if (OpenSession(kWebHost, session, connection)) {
+            wchar_t loc[2048] = {};
+            if (HttpGetRedirectLocation(connection, kWebReleasesLatest,
+                                        kCheckTimeoutMs, loc,
+                                        sizeof(loc) / sizeof(wchar_t))) {
+                ParseTagFromLocation(loc, rawTag, sizeof(rawTag));
+            }
+            WinHttpCloseHandle(connection);
+            WinHttpCloseHandle(session);
+        }
     }
 
-    std::string json;
-    bool ok = HttpGetToString(connection, kReleasesPath, kCheckTimeoutMs, json);
+    if (rawTag[0] == '\0') {
+        // Fallback to the REST API. Cache the JSON so the download path can
+        // reuse it (the redirect path leaves g_release_json empty).
+        acclog::Write("Update", "redirect tag lookup failed; trying REST API");
+        HINTERNET session = nullptr, connection = nullptr;
+        if (OpenSession(kApiHost, session, connection)) {
+            std::string json;
+            bool ok = HttpGetToString(connection, kApiReleasesLatest, kCheckTimeoutMs, json);
+            WinHttpCloseHandle(connection);
+            WinHttpCloseHandle(session);
+            if (ok && ExtractRawTagName(json, rawTag, sizeof(rawTag))) {
+                g_release_json = std::move(json);
+            }
+        }
+    }
 
-    WinHttpCloseHandle(connection);
-    WinHttpCloseHandle(session);
-
-    if (!ok) {
-        acclog::Write("Update", "version check failed (no response body)");
+    if (rawTag[0] == '\0') {
+        acclog::Write("Update", "version check failed (no tag resolved)");
         g_check_complete.store(true, std::memory_order_release);
         return;
     }
 
     char remote[64] = {};
-    if (!ExtractTagName(json, remote, sizeof(remote))) {
-        acclog::Write("Update", "version check: could not parse tag_name");
-        g_check_complete.store(true, std::memory_order_release);
-        return;
-    }
+    StripTagToVersion(rawTag, remote, sizeof(remote));
 
     if (IsRemoteNewer(remote, acc::kModVersion)) {
         // Write strings BEFORE flipping the flag — readers use acquire
@@ -591,8 +698,8 @@ void CheckVersionWorkerImpl() {
         // checking g_check_complete), so this store must be release; Tick
         // reads g_check_complete with acquire and can use relaxed for the
         // dependent fields.
+        strncpy_s(g_latest_tag, rawTag, _TRUNCATE);
         strncpy_s(g_latest_version, remote, _TRUNCATE);
-        g_release_json = std::move(json);
         g_update_available.store(true, std::memory_order_release);
         acclog::Write("Update", "update available: %s (installed %s)",
                       remote, acc::kModVersion);
@@ -635,40 +742,59 @@ void DownloadWorker() {
         return;
     }
 
-    // If the background-check JSON is still cached, reuse it; otherwise
-    // fetch fresh. Arena does the same fallback — caller may have pressed
-    // F5 before the background check populated the cache (rare, since F5
-    // is gated on _updateAvailable, but the safety net is cheap).
-    std::string json;
-    if (!g_release_json.empty()) {
-        json = g_release_json;
-    } else {
-        HINTERNET session = nullptr, connection = nullptr;
-        if (OpenGitHubSession(session, connection)) {
-            HttpGetToString(connection, kReleasesPath, kDownloadTimeoutMs, json);
-            WinHttpCloseHandle(connection);
-            WinHttpCloseHandle(session);
+    bool downloaded = false;
+
+    // PRIMARY: direct release-download URL on github.com — no api.github.com
+    // call, so it doesn't consume the rate limit. Needs the raw tag the version
+    // check stashed.
+    if (g_latest_tag[0] != '\0') {
+        char urlA[512] = {};
+        _snprintf_s(urlA, _TRUNCATE, kReleaseDownloadUrlFmt, g_latest_tag, kInstallerAsset);
+        wchar_t urlW[512] = {};
+        const size_t wcap = sizeof(urlW) / sizeof(wchar_t);
+        for (size_t i = 0; urlA[i] && i + 1 < wcap; ++i)
+            urlW[i] = (wchar_t)(unsigned char)urlA[i];  // URL is ASCII
+        acclog::Write("Update", "downloading (direct) from %s", urlA);
+        downloaded = HttpDownloadUrlToFile(urlW, destPath, kDownloadTimeoutMs);
+        if (!downloaded)
+            acclog::Write("Update",
+                          "direct download failed; falling back to API asset endpoint");
+    }
+
+    // FALLBACK: api.github.com asset endpoint — stays up when github.com's
+    // download host 504s during partial outages. Reuses cached release JSON if
+    // the version check stashed it (it does only when it fell back to the API),
+    // otherwise fetches it.
+    if (!downloaded) {
+        std::string json;
+        if (!g_release_json.empty()) {
+            json = g_release_json;
+        } else {
+            HINTERNET session = nullptr, connection = nullptr;
+            if (OpenSession(kApiHost, session, connection)) {
+                HttpGetToString(connection, kApiReleasesLatest, kDownloadTimeoutMs, json);
+                WinHttpCloseHandle(connection);
+                WinHttpCloseHandle(session);
+            }
+        }
+        if (json.empty()) {
+            acclog::Write("Update", "download: no release JSON available");
+        } else {
+            wchar_t assetUrl[1024] = {};
+            if (!ExtractAssetApiUrl(json, kInstallerAsset, assetUrl,
+                                    sizeof(assetUrl) / sizeof(wchar_t))) {
+                acclog::Write("Update", "download: asset '%s' not in release JSON",
+                              kInstallerAsset);
+            } else {
+                downloaded = HttpDownloadUrlToFile(assetUrl, destPath, kDownloadTimeoutMs);
+                if (!downloaded)
+                    acclog::Write("Update", "download: HTTP fetch failed for %s",
+                                  kInstallerAsset);
+            }
         }
     }
-    if (json.empty()) {
-        acclog::Write("Update", "download: no release JSON available");
-        g_download_failed.store(true, std::memory_order_relaxed);
-        g_download_complete.store(true, std::memory_order_release);
-        return;
-    }
 
-    wchar_t assetUrl[1024] = {};
-    if (!ExtractAssetApiUrl(json, kInstallerAsset, assetUrl,
-                            sizeof(assetUrl) / sizeof(wchar_t))) {
-        acclog::Write("Update", "download: asset '%s' not in release JSON",
-                      kInstallerAsset);
-        g_download_failed.store(true, std::memory_order_relaxed);
-        g_download_complete.store(true, std::memory_order_release);
-        return;
-    }
-
-    if (!HttpDownloadUrlToFile(assetUrl, destPath, kDownloadTimeoutMs)) {
-        acclog::Write("Update", "download: HTTP fetch failed for %s", kInstallerAsset);
+    if (!downloaded) {
         g_download_failed.store(true, std::memory_order_relaxed);
         g_download_complete.store(true, std::memory_order_release);
         return;
