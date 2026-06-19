@@ -109,12 +109,12 @@
     "Program_UpToDate_Title": "Mod ist aktuell",
     "Program_UpToDate_Format": "Voice of the Old Republic v{0} ist bereits installiert und aktuell.\n\nMöchtest du eine vollständige Neuinstallation durchführen?",
 
-    "InstalledOptions_Body_Format": "Voice of the Old Republic v{0} ist installiert und aktuell.\n\nRäumlicher Klang (dsoal): {1}\n\nWähle eine Aktion:\n- Neu installieren: führt den vollständigen Installer erneut aus und erneuert alle Dateien.\n- Räumlichen Klang umschalten: zwischen modifiziertem Klang (HRTF + EAX) und vanilla wechseln. Spiel danach neu starten.\n- Logs für Beta-Test sammeln: erstellt im Downloads-Ordner ein Zip mit dem neuesten Patch-Log und Crash-Dump, fertig zum Senden an den Entwickler.\n- Schließen: nichts tun und beenden.",
+    "InstalledOptions_Body_Format": "Voice of the Old Republic v{0} ist installiert und aktuell.\n\nRäumlicher Klang (dsoal): {1}\n\nWähle eine Aktion:\n- Neu installieren: führt den vollständigen Installer erneut aus und erneuert alle Dateien.\n- Räumlichen Klang umschalten: zwischen modifiziertem Klang (HRTF + EAX) und vanilla wechseln. Spiel danach neu starten.\n- Logs für Beta-Test sammeln: erstellt im Downloads-Ordner ein Archiv mit dem neuesten Patch-Log und Crash-Dump, fertig zum Senden an den Entwickler.\n- Schließen: nichts tun und beenden.",
     "InstalledOptions_ReinstallButton": "Neu installieren",
 
     "CollectLogs_Button": "Logs für Beta-Test sammeln",
     "CollectLogs_Success_Title": "Logs gesammelt",
-    "CollectLogs_Success_Format": "Ein Log-Paket wurde gespeichert unter:\n\n{0}\n\nInhalt:\n- Enthaltene Patch-Logs: {1}\n- Enthaltene Crash-Dumps: {2}\n- Installer-Log + Systeminfo\n\nBitte hänge diese Zip-Datei an deinen Bug-Report an und schicke sie an den Entwickler. Der Explorer wird mit der Zip-Datei geöffnet.",
+    "CollectLogs_Success_Format": "Ein Log-Paket wurde gespeichert unter:\n\n{0}\n\nInhalt:\n- Enthaltene Patch-Logs: {1}\n- Enthaltene Crash-Dumps: {2}\n- Installer-Log + Systeminfo\n\nBitte hänge diese Archivdatei an deinen Bug-Report an und schicke sie an den Entwickler. Der Explorer wird mit der Archivdatei geöffnet.",
     "CollectLogs_Error_Title": "Logs konnten nicht gesammelt werden",
     "CollectLogs_Error_Format": "Das Log-Paket konnte nicht erstellt werden:\n\n{0}\n\nWeitere Details findest du im Installer-Log auf deinem Desktop.",
 

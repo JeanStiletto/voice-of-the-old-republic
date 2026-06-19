@@ -297,10 +297,11 @@ namespace KotorAccessibilityInstaller
         }
 
         /// <summary>
-        /// Build a beta-test zip in the user's Downloads folder containing
-        /// the newest patch log, the newest swkotor crash dump, the installer
-        /// log, and a system-info summary. Opens Explorer with the zip
-        /// selected so the user can attach it to a bug report directly.
+        /// Build a beta-test archive (.7z, LZMA2; .zip fallback) in the user's
+        /// Downloads folder containing the newest patch log, the newest swkotor
+        /// crash dump, the installer log, and a system-info summary. Opens
+        /// Explorer with the archive selected so the user can attach it to a
+        /// bug report directly.
         /// </summary>
         private static void CollectLogsAndReport(string gamePath)
         {
@@ -321,7 +322,7 @@ namespace KotorAccessibilityInstaller
 
             string message = InstallerLocale.Format(
                 "CollectLogs_Success_Format",
-                result.ZipPath,
+                result.ArchivePath,
                 result.LogCount,
                 result.DumpCount);
             MessageBox.Show(
@@ -330,7 +331,7 @@ namespace KotorAccessibilityInstaller
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
 
-            LogCollector.RevealInExplorer(result.ZipPath);
+            LogCollector.RevealInExplorer(result.ArchivePath);
         }
 
         /// <summary>

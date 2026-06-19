@@ -38,6 +38,7 @@ and add the German in parentheses if it genuinely aids clarity.
 <h3>Installer:</h3>
 
 - Downloads no longer fail with a "403" rate-limit error. The installer and in-game updater fetched every file through GitHub's REST API, which caps unauthenticated use at 60 requests per hour and counts them per network address — so anyone sharing an IP (mobile, campus, office, or VPN connections) could be blocked even on their first try, regardless of how small or rarely-downloaded the files are. Downloads now go through GitHub's direct release links, which aren't rate-limited, and only fall back to the API during an actual GitHub outage.
+- The "Collect logs for beta test" bundle is now a `.7z` archive instead of a `.zip`, roughly a third smaller — a typical bundle drops from ~64 MB to ~45 MB. The crash dump is the bulk of it, and ZIP's Deflate can't pack it well; LZMA2 does. If 7-Zip can't run for any reason it falls back to the old `.zip` automatically.
 
 <h2>v0.5.6</h2>
 

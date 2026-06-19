@@ -66,6 +66,13 @@
          Override (or this bundled vanilla if absent) — see
          InstallationManager.InstallPriorityGroup / PriorityGroup2da. -->
     <EmbeddedResource Include="Resources\prioritygroups.2da" />
+    <!-- 7zr.exe: official standalone 7-Zip console (reduced, .7z only) from
+         7-zip.org. Used by LogCollector to compress the beta-test log bundle
+         with LZMA2 — a 158 MB crash dump deflates to ~67 MB but LZMA2-packs to
+         ~46 MB, and .NET's ZipArchive can only write Deflate. Extracted to temp
+         at collect time and shelled out to. LGPL; license bundled alongside. -->
+    <EmbeddedResource Include="Resources\7zr.exe" />
+    <EmbeddedResource Include="Resources\7zip-License.txt" />
     <!-- HoloPatcher is NOT bundled. It's downloaded from upstream
          NickHugi/PyKotor @ pinned tag at install time (see HoloPatcherProvider). -->
   </ItemGroup>

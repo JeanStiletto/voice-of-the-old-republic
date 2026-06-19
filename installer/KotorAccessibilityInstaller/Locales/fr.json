@@ -109,12 +109,12 @@
     "Program_UpToDate_Title": "Mod à jour",
     "Program_UpToDate_Format": "Voice of the Old Republic v{0} est déjà installé et à jour.\n\nVoulez-vous effectuer une réinstallation complète ?",
 
-    "InstalledOptions_Body_Format": "Voice of the Old Republic v{0} est installé et à jour.\n\nAudio spatial (dsoal) : {1}\n\nChoisissez une action :\n- Réinstaller : relance l'installateur complet pour rafraîchir tous les fichiers.\n- Basculer l'audio spatial : alterne entre l'audio modifié (HRTF + EAX) et l'audio vanilla. Redémarrez le jeu après le basculement.\n- Collecter les logs pour le test bêta : crée une archive zip dans votre dossier Téléchargements contenant le journal de patch le plus récent et le dump de crash, prête à envoyer au développeur.\n- Fermer : ne rien faire et quitter.",
+    "InstalledOptions_Body_Format": "Voice of the Old Republic v{0} est installé et à jour.\n\nAudio spatial (dsoal) : {1}\n\nChoisissez une action :\n- Réinstaller : relance l'installateur complet pour rafraîchir tous les fichiers.\n- Basculer l'audio spatial : alterne entre l'audio modifié (HRTF + EAX) et l'audio vanilla. Redémarrez le jeu après le basculement.\n- Collecter les logs pour le test bêta : crée une archive dans votre dossier Téléchargements contenant le journal de patch le plus récent et le dump de crash, prête à envoyer au développeur.\n- Fermer : ne rien faire et quitter.",
     "InstalledOptions_ReinstallButton": "Réinstaller",
 
     "CollectLogs_Button": "Collecter les logs pour le test bêta",
     "CollectLogs_Success_Title": "Logs collectés",
-    "CollectLogs_Success_Format": "Un paquet de logs a été enregistré dans :\n\n{0}\n\nContenu :\n- Logs de patch inclus : {1}\n- Dumps de crash inclus : {2}\n- Log de l'installateur + infos système\n\nMerci de joindre ce fichier zip à votre rapport de bug et de l'envoyer au développeur. L'Explorateur s'ouvre avec le zip sélectionné.",
+    "CollectLogs_Success_Format": "Un paquet de logs a été enregistré dans :\n\n{0}\n\nContenu :\n- Logs de patch inclus : {1}\n- Dumps de crash inclus : {2}\n- Log de l'installateur + infos système\n\nMerci de joindre ce fichier d'archive à votre rapport de bug et de l'envoyer au développeur. L'Explorateur s'ouvre avec l'archive sélectionnée.",
     "CollectLogs_Error_Title": "Impossible de collecter les logs",
     "CollectLogs_Error_Format": "Le paquet de logs n'a pas pu être créé :\n\n{0}\n\nLe log d'installateur sur votre Bureau contient peut-être plus de détails.",
 

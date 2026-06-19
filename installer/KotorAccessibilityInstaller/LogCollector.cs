@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using Microsoft.Win32;
 
@@ -18,7 +19,7 @@ namespace KotorAccessibilityInstaller
         public class Result
         {
             public bool Success;
-            public string ZipPath;
+            public string ArchivePath;
             public int LogCount;
             public int DumpCount;
             public bool IncludedInstallerLog;
@@ -82,13 +83,20 @@ namespace KotorAccessibilityInstaller
                         return result;
                     }
 
-                    string zipPath = Path.Combine(downloadsDir, $"KotorAccessibility-Logs-{stamp}.zip");
-                    if (File.Exists(zipPath)) File.Delete(zipPath);
-                    ZipFile.CreateFromDirectory(staging, zipPath, CompressionLevel.Optimal, includeBaseDirectory: false);
+                    // Crash dumps are the bulk of the bundle (a real swkotor
+                    // minidump runs ~150 MB and only deflates to ~67 MB), so we
+                    // pack with LZMA2 via the bundled 7zr.exe — that lands the
+                    // same dump at ~46 MB. .NET's ZipArchive can only write
+                    // Deflate, hence shelling out. If 7z fails for any reason
+                    // (AV quarantine of 7zr.exe, etc.) we fall back to a plain
+                    // Deflate .zip so the feature never produces nothing.
+                    string archivePath = CompressWith7z(staging, downloadsDir, stamp);
+                    if (archivePath == null)
+                        archivePath = CompressWithZip(staging, downloadsDir, stamp);
 
-                    result.ZipPath = zipPath;
+                    result.ArchivePath = archivePath;
                     result.Success = true;
-                    Logger.Info($"[LogCollector] Wrote {zipPath}");
+                    Logger.Info($"[LogCollector] Wrote {archivePath}");
                     return result;
                 }
                 finally
@@ -106,14 +114,14 @@ namespace KotorAccessibilityInstaller
         }
 
         /// <summary>
-        /// Open Explorer with the produced zip selected, so the user lands on
-        /// it ready to attach to an email / Discord message.
+        /// Open Explorer with the produced archive selected, so the user lands
+        /// on it ready to attach to an email / Discord message.
         /// </summary>
-        public static void RevealInExplorer(string zipPath)
+        public static void RevealInExplorer(string archivePath)
         {
             try
             {
-                var psi = new ProcessStartInfo("explorer.exe", $"/select,\"{zipPath}\"")
+                var psi = new ProcessStartInfo("explorer.exe", $"/select,\"{archivePath}\"")
                 {
                     UseShellExecute = true
                 };
@@ -123,6 +131,121 @@ namespace KotorAccessibilityInstaller
             {
                 Logger.Warning($"[LogCollector] Could not open Explorer: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Compress every file in <paramref name="staging"/> into a single .7z
+        /// (LZMA2, max level) in Downloads using the bundled 7zr.exe. Returns
+        /// the archive path on success, or null if 7z compression failed — the
+        /// caller then falls back to a plain Deflate .zip.
+        /// </summary>
+        private static string CompressWith7z(string staging, string downloadsDir, string stamp)
+        {
+            string sevenZrPath = null;
+            try
+            {
+                // Extract 7zr.exe next to (not inside) the staging dir so the
+                // archive wildcard never sweeps it in.
+                sevenZrPath = Path.Combine(Path.GetTempPath(), $"7zr_{stamp}.exe");
+                ExtractResource("7zr.exe", sevenZrPath);
+
+                string archivePath = Path.Combine(downloadsDir, $"KotorAccessibility-Logs-{stamp}.7z");
+                if (File.Exists(archivePath)) File.Delete(archivePath);
+
+                // a       add to archive
+                // -t7z    7z format
+                // -m0=LZMA2 -mx=5  LZMA2 at the "normal" level. On a real
+                //         ~158 MB dump this lands ~44.6 MB in ~27 s; -mx=9 only
+                //         shaves ~1.3 MB but doubles the time to ~55 s, and the
+                //         collect runs synchronously with no progress window —
+                //         less wait = less dead air for a screen-reader user.
+                //         (-mmt gave no speedup: the dump packs as one solid
+                //         stream.)
+                // -bso0 -bse0  silence stdout/stderr banners
+                // -y      assume yes
+                // *       all staged files (7zr does its own wildcard expansion);
+                //         WorkingDirectory=staging stores them with flat names.
+                var psi = new ProcessStartInfo(sevenZrPath)
+                {
+                    WorkingDirectory = staging,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                };
+                psi.ArgumentList.Add("a");
+                psi.ArgumentList.Add("-t7z");
+                psi.ArgumentList.Add("-m0=LZMA2");
+                psi.ArgumentList.Add("-mx=5");
+                psi.ArgumentList.Add("-bso0");
+                psi.ArgumentList.Add("-bse0");
+                psi.ArgumentList.Add("-y");
+                psi.ArgumentList.Add(archivePath);
+                psi.ArgumentList.Add("*");
+
+                using var proc = Process.Start(psi);
+                if (proc == null)
+                {
+                    Logger.Warning("[LogCollector] 7zr.exe did not start; falling back to zip");
+                    return null;
+                }
+                string stderr = proc.StandardError.ReadToEnd();
+                proc.StandardOutput.ReadToEnd();
+                proc.WaitForExit();
+
+                if (proc.ExitCode != 0 || !File.Exists(archivePath))
+                {
+                    Logger.Warning($"[LogCollector] 7zr.exe exited {proc.ExitCode}; falling back to zip. {stderr}");
+                    return null;
+                }
+                return archivePath;
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning($"[LogCollector] 7z compression failed ({ex.Message}); falling back to zip");
+                return null;
+            }
+            finally
+            {
+                if (sevenZrPath != null)
+                {
+                    try { if (File.Exists(sevenZrPath)) File.Delete(sevenZrPath); }
+                    catch (Exception ex) { Logger.Warning($"[LogCollector] Could not delete temp 7zr.exe: {ex.Message}"); }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Plain Deflate .zip fallback (and the original behaviour) for when
+        /// the bundled 7zr.exe cannot run on the user's machine.
+        /// </summary>
+        private static string CompressWithZip(string staging, string downloadsDir, string stamp)
+        {
+            string zipPath = Path.Combine(downloadsDir, $"KotorAccessibility-Logs-{stamp}.zip");
+            if (File.Exists(zipPath)) File.Delete(zipPath);
+            ZipFile.CreateFromDirectory(staging, zipPath, CompressionLevel.Optimal, includeBaseDirectory: false);
+            return zipPath;
+        }
+
+        private static void ExtractResource(string resourceShortName, string targetPath)
+        {
+            var assembly = Assembly.GetExecutingAssembly();
+            string fullName = null;
+            foreach (var name in assembly.GetManifestResourceNames())
+            {
+                if (name.EndsWith(resourceShortName, StringComparison.OrdinalIgnoreCase))
+                {
+                    fullName = name;
+                    break;
+                }
+            }
+            if (fullName == null)
+                throw new FileNotFoundException($"Embedded resource not found: {resourceShortName}");
+
+            using var stream = assembly.GetManifestResourceStream(fullName)
+                ?? throw new InvalidOperationException($"Could not open resource stream: {fullName}");
+            using var fileStream = new FileStream(targetPath, FileMode.Create, FileAccess.Write);
+            stream.CopyTo(fileStream);
         }
 
         private static string FindNewestPatchLog(string gamePath)

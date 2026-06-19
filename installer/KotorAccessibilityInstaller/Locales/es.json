@@ -109,12 +109,12 @@
     "Program_UpToDate_Title": "El mod está actualizado",
     "Program_UpToDate_Format": "Voice of the Old Republic v{0} ya está instalado y actualizado.\n\n¿Desea realizar una reinstalación completa?",
 
-    "InstalledOptions_Body_Format": "Voice of the Old Republic v{0} está instalado y actualizado.\n\nAudio espacial (dsoal): {1}\n\nElija una acción:\n- Reinstalar: vuelve a ejecutar el instalador completo para refrescar todos los archivos.\n- Activar/desactivar audio espacial: alterna entre audio modificado (HRTF + EAX) y audio vanilla. Reinicie el juego tras el cambio.\n- Recopilar registros para la prueba beta: crea un zip en su carpeta Descargas con el registro de parche más reciente y el volcado de fallo, listo para enviar al desarrollador.\n- Cerrar: no hacer nada y salir.",
+    "InstalledOptions_Body_Format": "Voice of the Old Republic v{0} está instalado y actualizado.\n\nAudio espacial (dsoal): {1}\n\nElija una acción:\n- Reinstalar: vuelve a ejecutar el instalador completo para refrescar todos los archivos.\n- Activar/desactivar audio espacial: alterna entre audio modificado (HRTF + EAX) y audio vanilla. Reinicie el juego tras el cambio.\n- Recopilar registros para la prueba beta: crea un archivo comprimido en su carpeta Descargas con el registro de parche más reciente y el volcado de fallo, listo para enviar al desarrollador.\n- Cerrar: no hacer nada y salir.",
     "InstalledOptions_ReinstallButton": "Reinstalar",
 
     "CollectLogs_Button": "Recopilar registros para la prueba beta",
     "CollectLogs_Success_Title": "Registros recopilados",
-    "CollectLogs_Success_Format": "Un paquete de registros se ha guardado en:\n\n{0}\n\nContenido:\n- Registros de parche incluidos: {1}\n- Volcados de fallo incluidos: {2}\n- Registro del instalador + información del sistema\n\nAdjunte este archivo zip a su informe de error y envíelo al desarrollador. El Explorador se está abriendo con el zip seleccionado.",
+    "CollectLogs_Success_Format": "Un paquete de registros se ha guardado en:\n\n{0}\n\nContenido:\n- Registros de parche incluidos: {1}\n- Volcados de fallo incluidos: {2}\n- Registro del instalador + información del sistema\n\nAdjunte este archivo comprimido a su informe de error y envíelo al desarrollador. El Explorador se está abriendo con el archivo seleccionado.",
     "CollectLogs_Error_Title": "No se pudieron recopilar los registros",
     "CollectLogs_Error_Format": "No se pudo crear el paquete de registros:\n\n{0}\n\nEl registro del instalador en su Escritorio puede contener más detalles.",
 

@@ -109,12 +109,12 @@
     "Program_UpToDate_Title": "Mod aggiornato",
     "Program_UpToDate_Format": "Voice of the Old Republic v{0} è già installato e aggiornato.\n\nVuoi eseguire una reinstallazione completa?",
 
-    "InstalledOptions_Body_Format": "Voice of the Old Republic v{0} è installato e aggiornato.\n\nAudio spaziale (dsoal): {1}\n\nScegli un'azione:\n- Reinstalla: riesegue il programma di installazione completo per rinfrescare tutti i file.\n- Attiva/disattiva audio spaziale: passa tra audio modificato (HRTF + EAX) e audio vanilla. Riavvia il gioco dopo il cambio.\n- Raccogli log per il beta test: crea un file zip nella cartella Download contenente l'ultimo log della patch e il dump di crash, pronto per essere inviato allo sviluppatore.\n- Chiudi: non fare nulla ed esci.",
+    "InstalledOptions_Body_Format": "Voice of the Old Republic v{0} è installato e aggiornato.\n\nAudio spaziale (dsoal): {1}\n\nScegli un'azione:\n- Reinstalla: riesegue il programma di installazione completo per rinfrescare tutti i file.\n- Attiva/disattiva audio spaziale: passa tra audio modificato (HRTF + EAX) e audio vanilla. Riavvia il gioco dopo il cambio.\n- Raccogli log per il beta test: crea un archivio nella cartella Download contenente l'ultimo log della patch e il dump di crash, pronto per essere inviato allo sviluppatore.\n- Chiudi: non fare nulla ed esci.",
     "InstalledOptions_ReinstallButton": "Reinstalla",
 
     "CollectLogs_Button": "Raccogli log per il beta test",
     "CollectLogs_Success_Title": "Log raccolti",
-    "CollectLogs_Success_Format": "Un pacchetto di log è stato salvato in:\n\n{0}\n\nContenuto:\n- Log della patch inclusi: {1}\n- Dump di crash inclusi: {2}\n- Log dell'installer + info di sistema\n\nAllega questo file zip alla tua segnalazione e invialo allo sviluppatore. Esplora risorse si sta aprendo con il file zip selezionato.",
+    "CollectLogs_Success_Format": "Un pacchetto di log è stato salvato in:\n\n{0}\n\nContenuto:\n- Log della patch inclusi: {1}\n- Dump di crash inclusi: {2}\n- Log dell'installer + info di sistema\n\nAllega questo archivio alla tua segnalazione e invialo allo sviluppatore. Esplora risorse si sta aprendo con l'archivio selezionato.",
     "CollectLogs_Error_Title": "Impossibile raccogliere i log",
     "CollectLogs_Error_Format": "Impossibile creare il pacchetto di log:\n\n{0}\n\nIl log dell'installer sul tuo Desktop può contenere maggiori dettagli.",
 
