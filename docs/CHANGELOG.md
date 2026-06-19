@@ -37,7 +37,12 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>Bug fixes:</h3>
 
+- Distant or awkwardly-placed containers and bodies now open reliably. Reaching for loot across rough or raised ground used to leave your character stopped short of the target without ever opening it; interaction now keeps walking until it's close enough to act.
+- Starting a conversation now works on the first Enter, instead of sometimes needing the key pressed several times.
+- Opening a container or using an object that takes a moment to play out no longer gets cut short with "way blocked". The walk-to watchdog that warns when something is genuinely unreachable could fire while you were standing right at the object mid-open, cancelling it before it finished. It now holds that warning unless it can actually confirm you're stranded out of reach.
 - Examining an out-of-reach object now reads its result to the end instead of being cut off with "way blocked". Some objects sit off the walkable floor — the hovering Mandalorian swoop bikes on Tatooine, for instance — so your character can trigger them but never physically arrive. When such an object answered with a floating bark line rather than a full conversation, the walk-to watchdog mistook the unfinished approach for a dead end, cancelled it, and spoke "way blocked" over the line. It now treats the bark surfacing as proof the interaction fired and bows out quietly.
+- Closing a mod menu with Escape no longer pops open the game's pause/Options menu. Escape now just closes the action menu (or the action-queue, examine, or help overlay) and drops you back into the world.
+- Map-note hints no longer list notes for areas you haven't explored. The map-hint cycle now follows fog-of-war the way the game's own map does, so it surfaces only notes in regions you've actually uncovered.
 
 <h3>Spatial cues:</h3>
 

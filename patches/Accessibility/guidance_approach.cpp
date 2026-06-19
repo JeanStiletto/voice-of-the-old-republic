@@ -223,6 +223,24 @@ void TickApproach() {
     // Stalled with no success surfaced. Either it effectively arrived (a no-panel
     // act — door/bash/mine — or a near-miss left it close: don't nag), or it
     // never got near the target (genuinely blocked). Distinguish by the live gap.
+    //
+    // First: if we can't resolve the target position at all, we cannot prove the
+    // PC is out of range — so we must NOT cancel the (possibly still-running)
+    // interaction or announce a false "way blocked". The pre-unify watchdog hit
+    // exactly this: a wrong-namespace targetObj faulted GetObjectPosition and the
+    // (0,0,0) fallback pos read as "miles away" → bogus "Bewegung abgebrochen"
+    // mid-open (patch-20260618-223250.log, a stale build). The unify already
+    // snapshots a real pos at arm so the common path resolves; this keeps the
+    // blocked verdict honest for any caller whose target can't be positioned —
+    // disarm quietly and let engine_player's queue-watched restore re-enable
+    // input. (Mirrors the bark branch: when in doubt the interaction fired.)
+    Vector tgt;
+    if (!ResolveTargetPos(tgt)) {
+        acclog::Write("Approach", "stalled but target position unresolvable — "
+            "disarm quietly (cannot prove out of reach; not cancelling)");
+        g_st.active = false;
+        return;
+    }
     if (WithinReach()) {
         acclog::Write("Approach", "settled within reach (stalled %lums) — disarm, "
             "no nag", static_cast<unsigned long>(now - g_st.progressAt));
