@@ -508,7 +508,6 @@ const char* Get(Id id) {
         case Id::GlossaryEntryBeaconActive:         return "Baliza activa";
         case Id::GlossaryEntryBeaconWaypoint:       return "Punto intermedio alcanzado";
         case Id::GlossaryEntryBeaconDestination:    return "Destino alcanzado";
-        case Id::GlossaryEntrySwoopAccelTick:       return "Tic de la barra de marchas Swoop";
         case Id::GlossaryEntrySwoopAccelpadBoost:   return "Panel acelerador Swoop";
         case Id::GlossaryEntrySwoopObstacleWarn:    return "Aviso de obst\xE1""culo Swoop";
         case Id::GlossaryEntrySwoopWallImpact:      return "Impacto contra pared Swoop";

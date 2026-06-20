@@ -89,40 +89,16 @@ constexpr size_t kMiniPlayerMaxSpeedOffset      = 0x1dc;
 // See swoop_spatial_audio.cpp for the layout commentary, vtable
 // downcast pattern, and pool-split rationale (obstacles vs enemies).
 
-// ----- Acceleration progress cue -----
+// ----- (removed) Acceleration progress "speedometer" tick -----
 //
-// External description of the bike's HUD (player-written game manual
-// quote, cited 2026-05-24 by the user during this session):
-//   "As you hold down the accelerator, your speed marker increases at
-//    the bottom of the screen. When the bar is full, you need to tap
-//    the acceleration button to shift gears. You can then immediately
-//    hold down the acceleration button again to gain more speed."
-//
-// Sighted players see a horizontal speed bar that fills from
-// (speed=min_speed) to (speed=max_speed); when it fills they tap to
-// shift. Blind equivalent: a short tick sound whose REPETITION RATE
-// scales with `(speed-min_speed)/(max_speed-min_speed)` — slow ticks
-// at the bottom of the gear, very fast ticks at the top, telling
-// the player "your bar is filling, get ready to tap". Tap shifts the
-// envelope up so the next tick is back near the bottom; the rate
-// resets to slow and starts climbing again. Same mental model as the
-// visual bar, delivered as audio.
-//
-// The KOTOR engine has loop-capable engine samples (mgs_engine_NNl)
-// and the CExoSoundSource lifecycle for managing them is now mapped
-// (see audio_bus.h kAddrCExoSoundSource* and
-// memory/project_cexosoundsource_loop_api.md). For the accel tick
-// the re-fire model still fits — the cadence IS the cue, so a loop
-// wouldn't help. Loop wrappers are reserved for wall scrape /
-// obstacle proximity / similar sustained cues.
-constexpr const char* kAccelTickResref =
-    acc::audio::GetNavCueResref(acc::audio::NavCue::SwoopAccelTick);
-
-// Tick interval bounds: slow at 0% throttle, fast at 100% throttle.
-// Same 80 ms floor the Pillar 1 wall change-detector uses for closest-
-// edge heartbeats — comfortably audible without sample-overlap chatter.
-constexpr ULONGLONG kAccelTickIntervalMinMs     = 80;    // bar full
-constexpr ULONGLONG kAccelTickIntervalMaxMs     = 600;   // bar empty
+// A re-fired tick whose cadence scaled with (speed-min)/(max-min) used to
+// model a filling throttle bar. Removed 2026-06-20: the decompile of
+// CSWMiniPlayer::Control + the onfire.ncs gear script proved there is NO
+// analog held-throttle in swoop. The bike auto-accelerates to max_speed on
+// its own (engine, always-on), and each accelerate press is a DISCRETE shift
+// event (onfire raises max_speed one notch: 35→60→100→150→210 and plays the
+// native Shift1/2/3 + Engine0N sounds). So a "bar filling" cue modelled a
+// mechanic that doesn't exist. See the session report / camera-and-swoop.md.
 
 // ============================================================================
 // Tunable behaviour parameters.
@@ -276,11 +252,6 @@ struct State {
     // gear.
     int           gear                    = 0;
     float         last_max_speed          = 0.0f;
-
-    // Last-fire timestamp for the acceleration progress tick. See
-    // kAccelTickResref / kAccelTickInterval{Min,Max}Ms for the cadence
-    // model.
-    ULONGLONG     last_accel_tick_ms      = 0;
 
     // Side-wall collision detector state. See the kCollision* constants
     // above for the stall-detection model. last_player_x_valid is false
@@ -488,51 +459,6 @@ void TickGearWatch(void* miniGame) {
 }
 
 // ============================================================================
-// Acceleration progress tick.
-//
-// Replaces the visual speed bar for blind play. The cadence of the
-// re-fired short cue tracks how full the bar is — slow at the bottom
-// of the current gear, very fast at the top. When the user taps shift
-// the bar resets visually; here, max_speed widens, so the same `speed`
-// value maps to a smaller fraction of the new gear's range, and the
-// tick rate naturally drops back down. No extra "shift detected"
-// branch needed — the rate change does that.
-// ============================================================================
-
-void TickAccelerationCue(void* miniGame) {
-    void* player = SafeReadPtr(miniGame, kMiniGamePlayerOffset);
-    if (!player) return;
-
-    float speed    = SafeReadFloat(player, kFollowerSpeedOffset);
-    float minSpeed = SafeReadFloat(player, kMiniPlayerMinSpeedOffset);
-    float maxSpeed = SafeReadFloat(player, kMiniPlayerMaxSpeedOffset);
-
-    // Race not yet armed (engine hasn't loaded the envelope) — stay
-    // silent rather than spamming ticks at a degenerate denominator.
-    if (maxSpeed <= 0.0f) return;
-    if (maxSpeed <= minSpeed) return;
-
-    float norm = (speed - minSpeed) / (maxSpeed - minSpeed);
-    if (norm < 0.0f) norm = 0.0f;
-    if (norm > 1.0f) norm = 1.0f;
-
-    // Linear interpolation: norm=0 → max interval (slow), norm=1 → min
-    // interval (fast). Same shape as the engine's gauge bar.
-    ULONGLONG interval = static_cast<ULONGLONG>(
-        kAccelTickIntervalMaxMs +
-        (kAccelTickIntervalMinMs - kAccelTickIntervalMaxMs) *
-        static_cast<ULONGLONG>(norm * 1000) / 1000);
-
-    const ULONGLONG now = GetTickCount64();
-    if (now - g_state.last_accel_tick_ms < interval) return;
-    g_state.last_accel_tick_ms = now;
-
-    // 2D cue (centered, no spatial position) — this is an instrument
-    // panel, not a world event. Default priority group.
-    acc::audio::PlayCue(kAccelTickResref);
-}
-
-// ============================================================================
 // Side-wall collision cue.
 //
 // Stall-detection heuristic — see kCollision* constants for the model.
@@ -706,7 +632,6 @@ void HandleEnter(void* mg) {
     g_state.ticks_since_lost    = 0;
     g_state.gear                = 0;
     g_state.last_max_speed      = 0.0f;
-    g_state.last_accel_tick_ms  = 0;
     g_state.last_player_x_valid = false;
     g_state.last_player_x       = 0.0f;
     g_state.lateral_ema_abs     = 0.0f;
@@ -822,7 +747,6 @@ void Tick() {
     if (!g_state.latched_mini_game) return;
 
     TickGearWatch(g_state.latched_mini_game);
-    TickAccelerationCue(g_state.latched_mini_game);
     TickWallCollision(g_state.latched_mini_game);
     TickSpatialAudio(g_state.latched_mini_game);
     EmitDiagSnapshot(g_state.latched_mini_game);
