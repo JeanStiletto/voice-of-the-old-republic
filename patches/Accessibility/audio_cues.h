@@ -39,7 +39,7 @@ enum class NavCue {
     // Swoop race minigame — playback paths in swoop_race.cpp and
     // swoop_spatial_audio.cpp use GetNavCueResref for these so the
     // glossary preview and the live race fire the same sample.
-    SwoopAccelpadBoost,     // acc_boost (nearest accelerator-pad loop)
+    SwoopAccelpadBoost,     // acc_boost (panned racing-line steering guide)
     SwoopObstacleWarn,      // mgs_hover_07l (in-range obstacle loop)
     SwoopWallImpact,        // mgs_sith_hit1 (side-wall thump one-shot)
 };

@@ -78,6 +78,12 @@ Three findings from Phase 4 lay-off 2 probe (`patches/Accessibility/probe_mousel
 ## swoop_accelpads_are_enemies
 _Where booster pads live in the engine — iterate enemies (vtable[0x1c]=AsEnemy), not obstacles, to expose them as cues_
 
+> **HOW THE HIT IS DETECTED is now fully decompiled in
+> [`swoop-accelpad-hit-model.md`](swoop-accelpad-hit-model.md)** (swept CCD
+> sphere test, combined radius 6.0 Taris / 5.0 others, speed-independent;
+> boost = +5% speed / +10% accel via `accelpad.ncs`). The note below covers
+> only where the pads live in the object pools.
+
 Swoop racing has TWO separate object pools, and the accelerator (boost) pads
 are in the one we don't iterate yet.
 

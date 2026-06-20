@@ -132,6 +132,7 @@ constexpr const char* kAccelpadLoopResref =
 // the band floor (kSwoopCueMinVolDistM). Change both together.
 constexpr float       kAccelpadCueRangeM        = 300.0f;
 
+
 // Accelpads use the SAME multi-source pass as obstacles — every in-range
 // pad gets its own continuously-playing loop.
 //
@@ -156,6 +157,28 @@ constexpr float       kAccelpadCueRangeM        = 300.0f;
 // 0x60 + mini_game ptr 0x4 + field2_0x64 0x4).
 constexpr size_t kTrackFollowerModelsDataOffset = 0x68;
 constexpr size_t kModelVtableSlotGetPosition    = 0x64;
+
+// ----- Lateral-pan diagnostic (added 2026-06-20) -----
+//
+// To tune the accelpad pan we need the lateral geometry the engine
+// actually pans on, none of which was in the log before (pan tuning was
+// blind): the listener (camera) X, the bike's own world X, the player's
+// tunnel-frame lane X, and the nearest-ahead pad's lateral error +
+// resulting pan angle. The open question this answers: does the chase
+// camera strafe sideways with the bike — so aligning the bike centres
+// the cue — or stay near lane centre, so steering barely moves the pan?
+// Compare listenerX against bikeWorldX across a run: if they track, the
+// pan reference is sound and the problem is the sample / concurrency; if
+// listenerX stays put while bikeWorldX swings, the pan can never centre.
+//
+// Engine confirmed (docs/llm-docs/swoop-accelpad-hit-model.md): hit band
+// is player.Sphere_Radius + pad.Sphere_Radius (Taris 6.0, Tatooine /
+// Manaan 5.0) in world units; world-X tracks tunnel-X 1:1 (lane ±20).
+// CSWMiniGame.player at +0x24; CSWMiniPlayer.offset (tunnel lane coord,
+// x = lateral) at +0x1c4.
+constexpr size_t kMiniGamePlayerOffset          = 0x24;
+constexpr size_t kMiniPlayerOffsetVectorOffset  = 0x1c4;
+constexpr float  kRadToDeg                       = 57.2957795f;
 
 // ============================================================================
 // Continuous obstacle-proximity cue parameters.
@@ -223,9 +246,19 @@ constexpr const char* kObstacleWarnLoopResref =
 //      magnitude is, and we want that flat.
 //
 //   kSwoopPanForwardRefM — fixed depth the pan is read against. Smaller =
-//      stronger pan (a given lane offset reads as a wider angle). ~12 m
-//      ≈ the lane's own scale, so the ±20 m lane spans a strong, well-
-//      spread L/R without saturating at the edges.
+//      stronger pan (a given lane offset reads as a wider angle), AND a
+//      steeper gradient near centre — which is the point. 6 m (was 12 m,
+//      tuned down 2026-06-20): the pan-diagnostic run showed ~10 of 22
+//      pad misses were undershoots, stopping 6-11 units short because at
+//      12 m "sounds centred" spanned wider than the ±5 unit catch band
+//      (5 units off was only ~24°). At 6 m the same 5-unit error reads
+//      ~40° and 1 unit reads ~9.5° (vs 4.8° before) — roughly double the
+//      near-centre sensitivity, so the band between "aligned" and "close"
+//      is far more audible. Shared by obstacle + accelpad cues so the two
+//      stay on one coherent projection (an obstacle and a pad at the same
+//      lateral offset pan identically). Trade-off: far targets saturate to
+//      hard L/R sooner, which is fine — out there you only need "go right",
+//      the fine resolution that matters is near the catch band.
 //   kSwoopFlatBandMaxM / kSwoopFlatBandMinM — both past any source's
 //      fixed-depth distance, so engine attenuation is flat (full).
 //   kSwoopVolNearByte / kSwoopVolFarByte — linear loudness ramp endpoints:
@@ -242,11 +275,67 @@ constexpr const char* kObstacleWarnLoopResref =
 //   - TRUE position + flat band + manual volume — honest, no overshoot,
 //     but true pan made far targets a ~2° whisper: not localisable
 //     (patch-20260620-122348.log). Hence the fixed-depth pan reference.
-constexpr float       kSwoopPanForwardRefM = 12.0f;
+constexpr float       kSwoopPanForwardRefM = 6.0f;
 constexpr float       kSwoopFlatBandMaxM   = 350.0f;
 constexpr float       kSwoopFlatBandMinM   = 400.0f;
 constexpr int         kSwoopVolNearByte    = 127;
 constexpr int         kSwoopVolFarByte     = 50;
+
+// ----- Steering-guide controller (2026-06-20 rework) ------------------------
+//
+// The guide is the SAME panned tone as before (acc_boost, kAccelpadLoopResref)
+// — what changed is HOW its pan setpoint is computed: a look-ahead pure-pursuit
+// controller (below) instead of the old "line at the bike's current depth",
+// which overshot.
+//
+// Why not the game's own engine hum (the SpaghettiKart design): it is not a
+// reachable engine-owned source. RE this session found the bike's engine loop
+// would live at player+0x144 (CSWTrackFollower "Engine" slot, SetSoundName/
+// Set3D), BUT the swoop Player's <Engine> resref is EMPTY in all three area
+// GFFs (m03/m17/m26 — only the pads carry a Death sound), so SetSoundName makes
+// no source and player+0x144 is always null (confirmed live: src=0/playing=-1
+// across a whole race, patch-20260620-160229.log). The hum you hear is a
+// model-attached sound the engine moves with the bike, not a follower source
+// we can address — so we keep panning our own acc_boost tone instead.
+
+// The pads are scattered GATES (they alternate nearly full-lane: 112→81→119→
+// 97…), not a smooth racing line — so we aim straight at the next pad's lane,
+// not at an interpolated line between pads (that points at the mid-lane, the
+// WRONG way; it sent the guide opposite the gate — patch-20260620-212526.log).
+//
+// The bike has real lateral inertia (engine CSWMiniPlayer::DoInertia), but the
+// cue does NOT try to predict around it (see below) — predicting off a noisy
+// velocity pulled the bike off pads it had reached.
+//
+// PD cue (2026-06-21): err = padErr − kSteerLeadTicks·velocity, where padErr =
+// padLane − bikeX. The velocity term is DAMPING — it eases the cue toward
+// centre as you build speed toward a pad, so you ease off before overshooting
+// (the medium-pad overshoot fix). Two clamps make it holdable, which is what
+// the earlier predictive versions lacked:
+//   * ANTI-REVERSAL: the damping may ease err toward 0 but may NOT flip its
+//     sign — it never tells you to steer AWAY from a pad you haven't reached.
+//     Once lead·vel exceeds padErr the cue just goes neutral ("you'll make it,
+//     coast in"); only a REAL overshoot (padErr itself flips) says "come back".
+//   * SETTLE deadzone on padErr: on the lane the cue is centred regardless of
+//     any residual drift, so you can hold it.
+// This is why the prior lead failed: with no clamp it reversed you off pads you
+// were sitting on (...215730.log, X=112 pad). With the clamps the lead can be
+// meaningful without breaking settling.
+constexpr float kSteerLeadTicks  = 4.0f;
+constexpr float kSteerVelSmooth  = 0.30f;  // EMA on the noisy per-tick velocity
+constexpr float kSteerVelClamp   = 8.0f;   // reject one-tick bike-X glitches
+// Low-pass on the panned offset. snap on pad handoff (below) avoids carry-over.
+constexpr float kSteerPanSmooth  = 0.45f;
+// Settle deadzone: within this lateral error of the pad lane the cue reads
+// dead-centre (and damping is off) so you can hold it. 1.5 u is well inside the
+// 5-6 u catch radius.
+constexpr float kSteerDeadzoneUnits = 1.5f;
+// Clamp on the steer error (the panned magnitude) and on how far a pad may sit
+// laterally from the bike to count as real. The lane is only ~±20 wide, so a
+// pad more than 60 u to the side is a junk read (one came back at X=1933 and
+// poisoned the smoothed pan to 1695 for ~12 ticks). Both are hard guards.
+constexpr float kSteerMaxErr     = 40.0f;
+constexpr float kMaxPadLateral   = 60.0f;
 
 // Linear volume byte for a source at 3D distance `dist` within `range`:
 // full (kSwoopVolNearByte) at the listener, ramping to kSwoopVolFarByte
@@ -273,7 +362,22 @@ struct SpatialAudioState {
     // return null for mismatches), never both, so the two arrays don't
     // overlap on any one slot. Auto-cleans at DLL unload via RAII.
     acc::audio::LoopSource obstacle_loops[kMgoArraySlotCount];
-    acc::audio::LoopSource accelpad_loops[kMgoArraySlotCount];
+
+    // The panned steering-guide tone (acc_boost). Pan setpoint = the look-ahead
+    // pure-pursuit controller in TickAccelpadCues; centred = on the line.
+    acc::audio::LoopSource accelpad_line_loop;
+
+    // Low-pass state for the panned steering offset (eased toward the damped,
+    // deadzoned err each tick; snapped on pad handoff).
+    float smoothed_steer_err = 0.0f;
+    // Lateral-velocity tracking for the PD damping term: bike world X last tick
+    // and the smoothed per-tick lateral velocity.
+    float prev_bike_x      = 0.0f;
+    bool  have_prev_bike_x = false;
+    float smoothed_vel     = 0.0f;
+    // The pad slot targeted last tick — when it changes (a pad crossed) we snap
+    // the pan instead of easing, so no stale carry-over into the next approach.
+    int   prev_ahead_slot    = -1;
 
     // Diagnostic guards for the first-pass inventory dumps. One log
     // entry per race describing every obstacle / accelpad seen.
@@ -587,26 +691,46 @@ void TickObstacleCues(void* /*miniGame*/) {
 }
 
 // ============================================================================
-// Continuous accelerator-pad proximity cues.
+// Accelerator-pad STEERING GUIDE — panned tone, look-ahead pure-pursuit.
 //
-// Sibling sweep of TickObstacleCues over the same 255-slot MGO array,
-// but downcasting via AsEnemy (vtable[0x1c]) instead of AsObstacle.
-// Accelpads are spawned as CSWMiniEnemy with Trigger=1, each riding
-// its own track (mgt02..mgt31) — see the "Object pool split" comment
-// at top of file.
+// A single continuous tone (acc_boost) panned toward the side to steer, so you
+// drive TOWARD the sound — the centering paradigm real racing-game a11y mods
+// use (SpaghettiKart / "Super Blind Kart"). We pan our OWN tone rather than the
+// game's bike hum because that hum is not a reachable engine source (the swoop
+// Player's <Engine> resref is empty in every area GFF, so player+0x144 is null
+// — see the constants block above).
 //
-// Same multi-source policy, range, forward-margin, anisotropic
-// projection and falloff band as the obstacle path so booster and
-// obstacle cues are spatially comparable in flight. Different loop
-// sample (acc_boost) so they're tonally distinguishable.
+// The pads are scattered GATES, not a smooth racing line (they alternate
+// nearly full-lane). The setpoint targets the NEXT pad with a PD (proportional-
+// derivative) controller:
+//   1. Pick the next gate: nearest pad ahead whose lateral position is sane
+//      (outlier guard — a junk X=1933 read once poisoned the pan for a second).
+//   2. padErr = padLane − bikeX (proportional). err = padErr − lead·velocity
+//      (the derivative/damping eases you off before you overshoot), with two
+//      clamps so it stays holdable: anti-reversal (never points away from a pad
+//      you've not reached) and a settle deadzone (centred + damping off on the
+//      lane). See the constants block for why the clamps are the crux.
+//   3. Pan the tone to that offset against a fixed depth; centred = on the lane,
+//      and it STAYS centred so you can hold it. World +X is listener-right.
 //
-// Position retrieval differs: enemies don't carry a flat CAurObject
-// pointer at +0x60; instead, the world position lives behind the
-// first model in their models CExoArrayList, retrieved via
-// vtable[+0x64] on that model wrapper. See ReadTrackFollowerPosition.
+// Pad world positions come from each CSWMiniEnemy's first model via
+// vtable[+0x64] (ReadTrackFollowerPosition); pads are reached via the AsEnemy
+// (vtable[0x1c]) downcast.
+//
+// One dead end we backed out of: an interpolated pad-to-pad line — the pads
+// alternate full-lane, so the line ran through the mid-lane and pointed the
+// guide at the WRONG side (...212526.log). The first PD attempts also failed,
+// but for a fixable reason (no anti-reversal/settle clamp → it reversed you off
+// pads you sat on); the clamps above are that fix.
+//
+// Honest limit: the steepest alternating-lane gates are a near-full-lane swing
+// in well under a second — at the physical edge of the inert bike, so some get
+// cut like a sighted player cuts them. The damping is tuned (kSteerLeadTicks)
+// to convert the medium pads without breaking settle. Levers: kSteerLeadTicks
+// (more damping = ease earlier), kSteerPanSmooth, kSteerDeadzoneUnits.
 // ============================================================================
 
-void TickAccelpadCues(void* /*miniGame*/) {
+void TickAccelpadCues(void* miniGame) {
     void* mgoArray = ResolveMgoArray();
     if (!mgoArray) {
         acclog::Trace("SwoopRace", "accelpad cues: mgo array unresolved");
@@ -621,19 +745,25 @@ void TickAccelpadCues(void* /*miniGame*/) {
         return;
     }
 
+    // Bike world position (player follower). The line is evaluated at the
+    // bike's own forward Y so the lateral target is "where you should be
+    // right now"; the camera (listener) sits a little behind, but its X
+    // tracks the bike's to ~0.04 units (verified), so it's the pan anchor.
+    void* player = SafeReadPtr(miniGame, kMiniGamePlayerOffset);
+    Vector bikePos;  const bool bikeOk = ReadTrackFollowerPosition(player, bikePos);
+    Vector tunnel;   const bool tunOk  =
+        SafeReadVector(player, kMiniPlayerOffsetVectorOffset, tunnel);
+    const float refY = bikeOk ? bikePos.y : listener_pos.y;
+
     int slots_seen = 0;
     int accelpads_found = 0;
     int accelpads_ahead = 0;
-    int accelpads_in_range = 0;
-    int loops_started_this_tick = 0;
-    int loops_stopped_this_tick = 0;
-    // Per-tick "still in range" flag, same as the obstacle pass. A slot
-    // marked true is Started (loop wasn't active) or UpdatePosition'd
-    // (already running); any active loop NOT marked is out of range
-    // (passed / unresolved) and gets Stop'd at the end of the tick.
-    bool active_this_tick[kMgoArraySlotCount] = {};
 
-    const float rangeSq = kAccelpadCueRangeM * kAccelpadCueRangeM;
+    // The gate to aim at = next pad to cross: the smallest-Y pad strictly ahead
+    // whose lateral position is plausible (within kMaxPadLateral of the bike).
+    // The outlier guard drops junk reads (one pad came back at X=1933).
+    const float bikeXref = bikeOk ? bikePos.x : listener_pos.x;
+    int   ahead_slot = -1;  float ahead_y = 0.0f;  Vector ahead_pos = {0,0,0};
 
     for (int i = 0; i < kMgoArraySlotCount; ++i) {
         void* obj = SafeReadPtr(mgoArray,
@@ -642,10 +772,6 @@ void TickAccelpadCues(void* /*miniGame*/) {
         if (!obj) continue;
         ++slots_seen;
 
-        // AsEnemy returns the same pointer if `obj` is a CSWMiniEnemy.
-        // All accelpads classify as enemies; in vanilla swoop tracks
-        // there are no non-accelpad enemies, but a model-name filter
-        // could be added below if a track ever ships hostile enemies.
         void* enemy = CallAsCast(obj, kVtableSlotAsEnemy);
         if (!enemy) continue;
         ++accelpads_found;
@@ -663,60 +789,11 @@ void TickAccelpadCues(void* /*miniGame*/) {
                           i, enemy, vt, pos.x, pos.y, pos.z);
         }
 
-        // Same forward-only filter as obstacles. Once we've passed an
-        // accelpad it can no longer give a boost, so behind-listener
-        // pads would just be soundstage noise.
-        if (pos.y < listener_pos.y - kObstacleForwardMargin) continue;
+        if (pos.y < refY) continue;                          // behind us
+        if (std::fabs(pos.x - bikeXref) > kMaxPadLateral) continue;  // junk read
         ++accelpads_ahead;
-
-        const float dx = pos.x - listener_pos.x;
-        const float dy = pos.y - listener_pos.y;
-        const float dz = pos.z - listener_pos.z;
-        const float distSq = dx*dx + dy*dy + dz*dz;
-        if (distSq > rangeSq) continue;
-        ++accelpads_in_range;
-
-        // Decoupled cue, same as obstacles: lateral/vertical true, forward
-        // pinned to a fixed reference depth (pan = lane error only),
-        // loudness from our manual curve on the real 3D distance.
-        const float dist = (distSq > 0.0f) ? std::sqrt(distSq) : 0.0f;
-        Vector cue_pos = pos;
-        cue_pos.y = listener_pos.y + kSwoopPanForwardRefM;
-        const int vol_byte = SwoopVolumeByte(dist, kAccelpadCueRangeM);
-
-        active_this_tick[i] = true;
-        if (g_state.accelpad_loops[i].IsActive()) {
-            g_state.accelpad_loops[i].UpdatePosition(cue_pos);
-            g_state.accelpad_loops[i].UpdateVolume(vol_byte);
-        } else {
-            if (g_state.accelpad_loops[i].Start(
-                    kAccelpadLoopResref, cue_pos, /*looping=*/true,
-                    /*spatial=*/true, /*priorityGroup=*/-1,
-                    /*volumeByte=*/vol_byte,
-                    /*maxVolDist=*/kSwoopFlatBandMaxM,
-                    /*minVolDist=*/kSwoopFlatBandMinM)) {
-                ++loops_started_this_tick;
-                acclog::Trace("SwoopRace",
-                              "accelpad loop start slot=%d "
-                              "padPos=(%.1f,%.1f,%.1f) "
-                              "cuePos=(%.1f,%.1f,%.1f) dist=%.1f res=%s",
-                              i, pos.x, pos.y, pos.z,
-                              cue_pos.x, cue_pos.y, cue_pos.z,
-                              dist, kAccelpadLoopResref);
-            }
-        }
-    }
-
-    // Stop any loop whose pad wasn't in range this tick (passed behind
-    // us, or obj/pos read failed after succeeding last tick). Stop is
-    // idempotent.
-    for (int i = 0; i < kMgoArraySlotCount; ++i) {
-        if (!active_this_tick[i] && g_state.accelpad_loops[i].IsActive()) {
-            g_state.accelpad_loops[i].Stop();
-            ++loops_stopped_this_tick;
-            acclog::Trace("SwoopRace",
-                          "accelpad loop stop slot=%d "
-                          "(out of range / unresolved)", i);
+        if (ahead_slot < 0 || pos.y < ahead_y) {
+            ahead_slot = i; ahead_y = pos.y; ahead_pos = pos;
         }
     }
 
@@ -724,13 +801,122 @@ void TickAccelpadCues(void* /*miniGame*/) {
         g_state.accelpad_diag_emitted = true;
     }
 
+    // ----- Lateral velocity (units/tick), smoothed + clamped. -----
+    if (bikeOk) {
+        if (g_state.have_prev_bike_x) {
+            float v = bikePos.x - g_state.prev_bike_x;
+            if (v >  kSteerVelClamp) v =  kSteerVelClamp;
+            if (v < -kSteerVelClamp) v = -kSteerVelClamp;
+            g_state.smoothed_vel += (v - g_state.smoothed_vel) * kSteerVelSmooth;
+        }
+        g_state.prev_bike_x = bikePos.x;
+        g_state.have_prev_bike_x = true;
+    }
+
+    // ----- Steering setpoint: the next gate, PD-damped. -----
+    // padErr = padLane − bikeX (true current miss). err = padErr − lead·vel:
+    // the damping eases the cue toward centre as you approach, so you ease off
+    // before overshooting. Then the two clamps that make it holdable:
+    //   * anti-reversal: damping may ease err toward 0 but not FLIP its sign
+    //     (never "steer away" from a pad you've not reached — that's what pulled
+    //     you off pads before). Past neutral it just reads centred until you
+    //     actually overshoot (padErr itself flips).
+    //   * settle deadzone on padErr: on the lane, centred + damping off.
+    const bool have_target = (ahead_slot >= 0) && bikeOk;
+    const float padErr = have_target ? (ahead_pos.x - bikePos.x) : 0.0f;
+    float err = padErr;
+    if (have_target) {
+        err = padErr - kSteerLeadTicks * g_state.smoothed_vel;
+        if ((padErr > 0.0f && err < 0.0f) || (padErr < 0.0f && err > 0.0f)) {
+            err = 0.0f;  // damping would reverse you — clamp to neutral instead
+        }
+    }
+    if (err >  kSteerMaxErr) err =  kSteerMaxErr;
+    if (err < -kSteerMaxErr) err = -kSteerMaxErr;
+    if (padErr > -kSteerDeadzoneUnits && padErr < kSteerDeadzoneUnits) {
+        err = 0.0f;  // on the lane → settle
+    }
+
+    // Snap (don't ease) when the target pad changes, so a stale hard-over pan
+    // from the pad just crossed can't bleed into the next approach and oversteer
+    // you. Within one approach, low-pass as usual.
+    const bool handoff = (ahead_slot != g_state.prev_ahead_slot);
+    g_state.prev_ahead_slot = ahead_slot;
+    if (handoff) {
+        g_state.smoothed_steer_err = err;
+    } else {
+        g_state.smoothed_steer_err +=
+            (err - g_state.smoothed_steer_err) * kSteerPanSmooth;
+    }
+    const float pan_err = g_state.smoothed_steer_err;
+
+    // ----- Drive the panned steering tone (acc_boost). -----
+    // Place the source pan_err to the listener's side at the fixed pan depth:
+    // engine pan = atan2(pan_err, depth) → 0 when you're tracking onto the next
+    // gate. World +X is listener-right during the race (camera faces +Y), so
+    // +pan_err = steer right. Volume swells as the gate nears (crossing cue).
+    float next_dist = 0.0f;
+    if (ahead_slot >= 0) {
+        const float dx = ahead_pos.x - listener_pos.x;
+        const float dy = ahead_pos.y - listener_pos.y;
+        const float dz = ahead_pos.z - listener_pos.z;
+        next_dist = std::sqrt(dx*dx + dy*dy + dz*dz);
+    }
+    int vol_byte = 0;
+    if (have_target) {
+        Vector cue_pos;
+        cue_pos.x = listener_pos.x + pan_err;
+        cue_pos.y = listener_pos.y + kSwoopPanForwardRefM;
+        cue_pos.z = listener_pos.z;
+        vol_byte = SwoopVolumeByte(next_dist, kAccelpadCueRangeM);
+
+        if (g_state.accelpad_line_loop.IsActive()) {
+            g_state.accelpad_line_loop.UpdatePosition(cue_pos);
+            g_state.accelpad_line_loop.UpdateVolume(vol_byte);
+        } else {
+            g_state.accelpad_line_loop.Start(
+                kAccelpadLoopResref, cue_pos, /*looping=*/true,
+                /*spatial=*/true, /*priorityGroup=*/-1,
+                /*volumeByte=*/vol_byte,
+                /*maxVolDist=*/kSwoopFlatBandMaxM,
+                /*minVolDist=*/kSwoopFlatBandMinM);
+            acclog::Trace("SwoopRace",
+                          "steer tone start cuePos=(%.1f,%.1f,%.1f) pan_err=%.2f "
+                          "nextDist=%.1f vol=%d res=%s",
+                          cue_pos.x, cue_pos.y, cue_pos.z, pan_err, next_dist,
+                          vol_byte, kAccelpadLoopResref);
+        }
+    } else {
+        g_state.accelpad_line_loop.Stop();
+    }
+
+    // ----- Steering diagnostic -----
+    //
+    // padX/bikeX : next gate lane and bike world X. padErr = padX − bikeX is the
+    //              true current miss (|padErr| < combined Sphere_Radius 5.0/6.0
+    //              at the crossing = a hit). On-pad it should read ~0 and STAY 0.
+    // vel/err    : smoothed lateral velocity and the PD-damped, clamped setpoint
+    //              (err vs padErr shows the damping / anti-reversal at work).
+    // smoothed   : low-passed offset actually panned (panDeg = its angle).
+    if (have_target) {
+        const float panDeg =
+            std::atan2(pan_err, kSwoopPanForwardRefM) * kRadToDeg;
+        const float fwdGap = ahead_pos.y - refY;
+        acclog::Trace("SwoopRace",
+                      "steer tone: active=%d padX=%.2f bikeX=%.2f padErr=%.2f "
+                      "vel=%.2f err=%.2f smoothed=%.2f panDeg=%.1f fwdGap=%.1f "
+                      "tunnelX=%s%.2f vol=%d",
+                      g_state.accelpad_line_loop.IsActive() ? 1 : 0,
+                      ahead_pos.x, bikePos.x, padErr, g_state.smoothed_vel, err,
+                      pan_err, panDeg, fwdGap,
+                      tunOk ? "" : "FAULT:", tunOk ? tunnel.x : 0.0f, vol_byte);
+    }
+
     acclog::Trace("SwoopRace",
-                  "accelpad scan: slots=%d accelpads=%d ahead=%d inRange=%d "
-                  "(%.0fm) started=%d stopped=%d listenerY=%.1f",
-                  slots_seen, accelpads_found, accelpads_ahead,
-                  accelpads_in_range, kAccelpadCueRangeM,
-                  loops_started_this_tick, loops_stopped_this_tick,
-                  listener_pos.y);
+                  "accelpad scan: slots=%d accelpads=%d ahead=%d aheadSlot=%d "
+                  "smoothed=%.2f refY=%.1f",
+                  slots_seen, accelpads_found, accelpads_ahead, ahead_slot,
+                  g_state.smoothed_steer_err, refY);
 }
 
 }  // namespace
@@ -747,9 +933,14 @@ void TickSpatialAudio(void* miniGame) {
 void ResetSpatialAudio() {
     g_state.obstacle_diag_emitted = false;
     g_state.accelpad_diag_emitted = false;
+    g_state.smoothed_steer_err    = 0.0f;
+    g_state.prev_bike_x           = 0.0f;
+    g_state.have_prev_bike_x      = false;
+    g_state.smoothed_vel          = 0.0f;
+    g_state.prev_ahead_slot       = -1;
+    g_state.accelpad_line_loop.Stop();
     for (int i = 0; i < kMgoArraySlotCount; ++i) {
         g_state.obstacle_loops[i].Stop();
-        g_state.accelpad_loops[i].Stop();
     }
 }
 
