@@ -67,6 +67,13 @@ Hand-authored map hints for specific story locations the game doesn't mark but p
 - The backdoor of the Sandral estate.
 Add these to the manual map-hint registry (see `project_map_cycle_architecture.md` / `map_user_markers.cpp` for how user/manual hints fold into the map-hint cycle). Confirm the exact module and in-world position for each before adding.
 
+### Waypoints
+
+Navigation waypoint / map-hint issues on specific maps. Maintainer-reported from play; the specifics below are as-described and need the exact module and in-world position confirmed before acting.
+
+- **Dantooine paths correlate with nearby area transitions.** On Dantooine the route guidance / waypoints appear to line up with (or get pulled toward) the nearby area-transition points, so the path read points at a transition rather than the intended route. Investigate how the Dantooine route waypoints / map hints are derived near transitions, and which module(s) and transitions are involved. May turn out to be a bug rather than planned work once reproduced.
+- **Missing waypoint for the banthas near the "dragon cafe".** Add a map hint / waypoint for the banthas by the "dragon cafe" (maintainer's name for the spot — confirm the actual landmark, module, and in-world position). Folds into the manual map-hint registry alongside the "Additional manual map hints" backlog above.
+
 ### Integrate a Polish translation
 
 Add Polish as a supported language. Decide the integration path — installer locale JSON (alongside de/en/fr/it/es) and/or in-game speech strings routed through the shared strings system — and wire it in. Source of the Polish strings (community contribution vs AI draft like fr/it/es) to be determined.
