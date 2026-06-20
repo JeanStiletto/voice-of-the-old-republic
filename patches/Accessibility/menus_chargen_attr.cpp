@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <cstdio>
+#include <cstring>
 
 #include "menus_chargen_attr.h"
 
@@ -182,6 +183,97 @@ void FormatModifier(int mod, char* outBuf, size_t bufSize) {
 }
 
 }  // namespace
+
+// Synchronously call the engine's OnEnterPointsButton with the FOCUSED
+// button so description_listbox is populated for the row the user is on,
+// then read controls[0] and speak it. Mirror of
+// chargen_skills::AnnounceChainStepDescription — see that function and the
+// kAddrCSWGuiAbilitiesCharGenOnEnterPointsButton comment for why we bypass
+// the engine's hover/cursor-warp path (resolution-dependent: the hit-test
+// can resolve to the neighbouring ability and paint the wrong description).
+//
+// The OnEnterPointsButton call fires SetActive on description_listbox, which
+// trips our listbox hook; IsChargenAttributesDescriptionListbox below lets
+// menus.cpp silence that engine-side echo so this is the only speaker.
+bool AnnounceChainStepDescription(void* panel, void* control) {
+    int idx = AbilityIndexFromButton(panel, control);
+    if (idx < 0) return false;
+
+    typedef void (__thiscall* PFN_OnEnter)(void* this_, void* btn);
+    __try {
+        auto fn = reinterpret_cast<PFN_OnEnter>(
+            kAddrCSWGuiAbilitiesCharGenOnEnterPointsButton);
+        fn(panel, control);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+
+    auto* base = reinterpret_cast<unsigned char*>(panel);
+    void* listBox = base + kAbilitiesCharGenDescriptionListBoxOffset;
+    auto* lbList = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(listBox) + kListBoxControlsOffset);
+    void* row = nullptr;
+    __try {
+        if (lbList && lbList->data && lbList->size > 0) {
+            row = lbList->data[0];
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (!row) return false;
+
+    char buf[1024];
+    buf[0] = '\0';
+    __try {
+        if (acc::engine::ReadGuiString(row, kLabelGuiStringPtrOffset,
+                                       buf, sizeof(buf)) &&
+            buf[0] != '\0') {
+            // ok
+        } else if (acc::engine::ExtractTextOrStrRefIndirect(
+                       row,
+                       kLabelTextOffset,
+                       kLabelStrRefOffset,
+                       kLabelTextObjectOffset,
+                       buf, sizeof(buf))) {
+            // ok
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (buf[0] == '\0') return false;
+
+    // Flatten embedded newlines (engine renders "Attribut: <attr>.\n<body>")
+    // for the single-line diagnostic log.
+    char dump[1024];
+    {
+        size_t n = strnlen(buf, sizeof(buf) - 1);
+        if (n >= sizeof(dump)) n = sizeof(dump) - 1;
+        for (size_t i = 0; i < n; ++i) {
+            char c = buf[i];
+            dump[i] = (c == '\n' || c == '\r') ? ' ' : c;
+        }
+        dump[n] = '\0';
+    }
+
+    prism::Speak(buf, /*interrupt=*/false);
+    acclog::Write("Menus.ChargenAttr",
+                  "chain-step description focus=%p idx=%d (first 300 chars: \"%.300s\")",
+                  control, idx, dump);
+    return true;
+}
+
+// True iff `listBox` is the chargen Attributes panel's description_listbox.
+// Dual of AnnounceChainStepDescription: lets menus.cpp's listbox SetActive
+// hook silence the engine's hover-driven description echo, since we speak
+// the focused row's description ourselves from the chain-step handler.
+bool IsChargenAttributesDescriptionListbox(void* listBox) {
+    if (!listBox) return false;
+    void* panel = acc::menus::chain::g_chainPanel;
+    if (!IsChargenAttributesPanel(panel)) return false;
+    auto* base = reinterpret_cast<unsigned char*>(panel);
+    return listBox == reinterpret_cast<void*>(
+        base + kAbilitiesCharGenDescriptionListBoxOffset);
+}
 
 void AnnounceChainStepSuffix(void* panel, void* control) {
     int idx = AbilityIndexFromButton(panel, control);

@@ -1504,6 +1504,7 @@ void HandleNavStep(void* activePanel, int code, int val, bool& consumed) {
     // Per-row info suffixes / descriptions across panels that need them.
     // Each helper no-ops on every panel except its own.
     acc::menus::chargen_attr::AnnounceChainStepSuffix(g_chainPanel, e.control);
+    acc::menus::chargen_attr::AnnounceChainStepDescription(g_chainPanel, e.control);
     acc::menus::chargen_skills::AnnounceChainStepSuffix(g_chainPanel, e.control);
     acc::menus::chargen_skills::AnnounceChainStepDescription(g_chainPanel, e.control);
     acc::menus::store::AnnounceChainStepSuffix(g_chainPanel, e.control);

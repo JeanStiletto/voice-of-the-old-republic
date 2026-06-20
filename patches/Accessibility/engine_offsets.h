@@ -468,6 +468,26 @@ constexpr size_t    kAbilitiesCharGenRemainingValueOffset = 0x70c;
 constexpr size_t    kAbilitiesCharGenCostValueOffset      = 0xc0c;
 constexpr size_t    kAbilitiesCharGenModifierValueOffset  = 0xe8c;
 
+// CSWGuiAbilitiesCharGen::OnEnterPointsButton — twin of the Skills panel's
+// OnEnterPointsButton (0x006f4bf0). Populates description_listbox with the
+// description for the given ability button. We call it synchronously with
+// the FOCUSED button so the description is keyed by the row the user is on,
+// bypassing the engine's hover-driven path. That hover path is fired by our
+// chain-step cursor warp's hit-test, which is resolution-dependent (the same
+// "resolves one row above" shift Y compensation only papers over at the
+// tested resolution) and silently paints the wrong ability's description at
+// other GUI scales. Direct call + read removes the coordinate dependency,
+// mirroring CSWGuiSkillsCharGen exactly.
+//
+// Signature per SARIF (SYMBOL @ 0x006f70e0):
+//   void __thiscall OnEnterPointsButton(CSWGuiControl* param_1)
+// Callee-pops 4 bytes.
+constexpr uintptr_t kAddrCSWGuiAbilitiesCharGenOnEnterPointsButton = 0x006f70e0;
+
+// description_listbox offset within CSWGuiAbilitiesCharGen (per SARIF) —
+// same +0x6c as the Skills panel.
+constexpr size_t    kAbilitiesCharGenDescriptionListBoxOffset      = 0x6c;
+
 // CSWGuiFeatsCharGen (chargen "Talente" panel — step 5 of Eigener Charakter,
 // also reused at level-up). Verified against k1_win_gog_swkotor.exe.xml
 // SYMBOL CSWGuiFeatsCharGen_vtable @ 0x007598b0 + STRUCTURE size 0x1a1c.

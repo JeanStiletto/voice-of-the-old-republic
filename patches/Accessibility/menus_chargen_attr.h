@@ -95,6 +95,20 @@ void CaptureLabelsIfApplicable(void* panel);
 // synchronously, with a clean "0" instead of "-".
 void AnnounceChainStepSuffix(void* panel, void* control);
 
+// Speak the focused ability's description by calling the engine's
+// OnEnterPointsButton directly with the focused button (keyed by control,
+// not by a resolution-dependent cursor-warp hit-test) and reading the
+// resulting description_listbox row. Returns true when something was
+// spoken. Mirror of chargen_skills::AnnounceChainStepDescription — fixes
+// the "wrong description on the wrong attribute at non-tested resolutions"
+// class of bug by removing the coordinate dependency.
+bool AnnounceChainStepDescription(void* panel, void* control);
+
+// True iff `listBox` is this panel's description_listbox. Used by menus.cpp
+// to silence the engine's hover-driven description echo (we speak it
+// ourselves from the chain step). Dual of AnnounceChainStepDescription.
+bool IsChargenAttributesDescriptionListbox(void* listBox);
+
 // On a +/- press, override the default "{label}, {value}"
 // re-announcement with "{value}, verbleibende Punkte {remaining}".
 // Returns true when the override fired (caller should NOT also speak

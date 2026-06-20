@@ -1344,6 +1344,16 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
             acclog::Write("Menus.ListBox",
                           "chargen-skills description silenced "
                           "(handled by chain-step direct read)");
+        } else if (acc::menus::chargen_attr::IsChargenAttributesDescriptionListbox(
+                       listBox)) {
+            // Same treatment as chargen-skills: the engine's hover-driven
+            // population is resolution-dependent (cursor-warp hit-test can
+            // resolve to the neighbouring ability), so the text here may be
+            // the wrong row. We speak the focused ability's description from
+            // the chain-step handler via OnEnterPointsButton direct call.
+            acclog::Write("Menus.ListBox",
+                          "chargen-attr description silenced "
+                          "(handled by chain-step direct read)");
         } else if (strchr(text, '\n')) {
             // Multi-line listbox blob (Options-style: all settings concatenated
             // by '\n' into a single CSWGuiLabel row). Always silenced — bulk

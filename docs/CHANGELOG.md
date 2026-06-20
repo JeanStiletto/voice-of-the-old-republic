@@ -38,6 +38,7 @@ and add the German in parentheses if it genuinely aids clarity.
 <h3>Bug fixes:</h3>
 
 - Dialogue reply options no longer go missing in droid and computer hacking interfaces. When a conversation had more replies than fit in the on-screen list, the options scrolled off the visible page read as blank during navigation — so the lower-numbered choices spoke fine but the rest were silently skipped, most visibly the parts- and spike-cost repair actions in the droid-manipulation screens. The reply text is now read from the engine's own reply data, which always holds every active option, rather than from the on-screen rows, whose text only fills in for the lines currently drawn. It surfaced only for players whose screen resolution made the reply list scroll, which is why it never reproduced on a wider list.
+- Attribute descriptions on the character-creation and level-up Attributes screen should no longer be shifted or mismatched. As you arrowed between Strength, Dexterity and the rest, the spoken description could belong to the neighbouring attribute instead of the one you were on — the description was driven by a mouse-hover hit-test whose result shifted with screen resolution, so it landed on the wrong row at scales other than the one it was tuned for. The description is now requested for the focused attribute directly, removing the resolution dependency the way the Skills, Feats and Force-power screens already do. (Fixed on inference — it never reproduced locally, so confirmation from an affected setup is welcome.)
 
 <h3>Installer:</h3>
 
