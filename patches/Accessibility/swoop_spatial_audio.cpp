@@ -119,24 +119,34 @@ constexpr size_t kAurVtableSlotGetName          = 0xc;
 constexpr const char* kAccelpadLoopResref =
     acc::audio::GetNavCueResref(acc::audio::NavCue::SwoopAccelpadBoost);
 
-// Same 200 m horizon as obstacles. 100 m was tested and gave only
-// ~0.5 s reaction time at gear 3 (max 190 u/s) — not enough to
-// commit to a lane change. The masking concern from the first pass
-// (30 concurrent thrust loops drowning obstacles) is already solved
-// by the nearest-only policy below; range no longer needs to be a
-// secondary mitigation. At 200 m reaction time scales:
-//   gear 1 (max 70 u/s):  ~2.86 s
-//   gear 2 (max 120 u/s): ~1.67 s
-//   gear 3 (max 190 u/s): ~1.05 s
-constexpr float       kAccelpadCueRangeM        = 200.0f;
+// Same 300 m horizon as obstacles (raised from 200 m on 2026-06-20 —
+// 200 m gave too little time to "pendel in" on the pan at gear 3). The
+// masking concern from the first pass (30 concurrent thrust loops
+// drowning obstacles) is already solved by the nearest-only policy
+// below; range no longer needs to be a secondary mitigation. Reaction
+// time (first-audible lead) at 300 m:
+//   gear 1 (max 70 u/s):  ~4.3 s
+//   gear 2 (max 120 u/s): ~2.5 s
+//   gear 3 (max 190 u/s): ~1.6 s
+// NOTE: kForwardCompression is tied to this — it maps this range onto
+// the band floor (kSwoopCueMinVolDistM). Change both together.
+constexpr float       kAccelpadCueRangeM        = 300.0f;
 
-// Only the nearest in-range accelpad fires a loop at any moment.
-// Reasoning: the booster soundstage was the noisy half of the first
-// pass — 3-4 thrust loops simultaneously masked obstacle cues and
-// blurred any individual pad's spatial pan. Single-source keeps the
-// booster channel clean and unambiguous. Obstacles keep their
-// multi-source pass (they're avoidance cues; missing one is a hit).
-constexpr int         kAccelpadConcurrentLoops  = 1;
+// Accelpads use the SAME multi-source pass as obstacles — every in-range
+// pad gets its own continuously-playing loop.
+//
+// SUPERSEDED — nearest-only (one loop at a time). It was adopted because
+// the first multi-pad pass blurred: under the old UNIFORM 1:9 compression
+// lateral pan was squashed to ±2 m, so 3-4 pads all sounded centred and
+// smeared together. With anisotropic projection (true lateral) each pad
+// now pans to its real lane, so concurrent pads are spatially distinct.
+// Nearest-only also caused the audible cue to teleport side-to-side at
+// every hand-off and gave no approach ramp (a pad popped in already at
+// full volume at ~112 m). Per-slot loops fix both: a passed pad dies
+// behind you, a new one fades in faint at the far edge, and the pads
+// between play continuously — confirmed via patch-20260620-114139.log
+// analysis. If the stage gets cluttered, cap to the nearest N (the band
+// already floors distant pads, so a cap loses little).
 
 // Position retrieval for a CSWMiniEnemy (and any CSWTrackFollower):
 // the engine's CSWTrackFollower::GetPosition @0x0066d5d0 walks
@@ -174,7 +184,7 @@ constexpr size_t kModelVtableSlotGetPosition    = 0x64;
 //                            immediately-adjacent obstacles (mid-pass) to
 //                            keep cueing for one tick so the spatial pan
 //                            completes its sweep.
-constexpr float       kObstacleCueRangeM     = 200.0f;
+constexpr float       kObstacleCueRangeM     = 300.0f;
 constexpr float       kObstacleForwardMargin = 10.0f;
 constexpr const char* kObstacleWarnLoopResref =
     acc::audio::GetNavCueResref(acc::audio::NavCue::SwoopObstacleWarn);
@@ -182,31 +192,75 @@ constexpr const char* kObstacleWarnLoopResref =
 // "v_dur_shldred"  — Duros voice; routed to voice bus, way too quiet
 // "mgs_warnbust"   — one-shot warning used before the loop refactor
 
-// ----- Source-position rescaling (engine audibility) -----
+// ----- Decoupled cue: lateral→pan, real distance→loudness -----
 //
-// The engine's 3D audio attenuation curve is tuned for the 5-20 m
-// range Pillar-1 nav cues + footsteps live in; at 100-200 m the source
-// is below audible threshold (live-confirmed 2026-05-24,
-// patch-20260524-215240.log).
+// The classic audiogame "one looping sound that gets louder and pans"
+// works only when the two facts it carries land on SEPARATE, each-
+// perceptible channels. With a plain 3D source they don't: pan and
+// loudness both fall out of the single position, so forward distance
+// (huge) governs both and the left/right offset (small) becomes an
+// inaudible ~2° whisper. We split them:
 //
-// First pass clamped every distant obstacle onto a fixed 8 m sphere,
-// which kept them audible but made all obstacles equally loud — the
-// volume/pan distance cue was dead and only the cadence ramp carried
-// "how close". Revised approach: linear 1:9 compression so loudness
-// AND pan rotation both encode distance naturally. A 180 m obstacle
-// renders at 20 m (engine edge, just audible), 90 m at 10 m (clearly
-// audible), 9 m at 1 m (right on top). At bike speed ~50 m/s the
-// compressed source closes at ~5.5 m/s, which the engine's curve
-// resolves into an audible swelling approach + pass.
+//   1. PAN (which lane / how far to steer) ← LATERAL only.
+//      The cue position keeps lateral (X) and vertical (Z) true, but
+//      replaces the forward (Y) component with a FIXED reference depth
+//      (kSwoopPanForwardRefM). So pan = atan(lateral / fixed_ref): it
+//      depends ONLY on your lane error, scaled so a quarter-lane offset
+//      reads as a clear pan. Crucially the reference is CONSTANT, not the
+//      real (or a compressed real) distance — so the pan is stable: it
+//      moves only when you steer or the pad's lane differs from yours,
+//      never lurching as the pad passes. That kills the overshoot the
+//      forward-compression builds had (pan inflating as forward shrank).
 //
-// Floor at 1 m to avoid sub-meter / inside-the-head pan singularity
-// during the close-pass moment (real <9 m). Direction stays correct;
-// the source just stops getting closer once it would otherwise fall
-// inside the floor.
-constexpr float       kObstacleDistanceCompression = 1.0f / 9.0f;
-constexpr float       kObstacleMinSourceDistanceM  = 1.0f;
-// SUPERSEDED — fixed-radius sphere kept commented for A/B revert:
-// constexpr float       kObstacleSourceRadiusM = 8.0f;
+//   2. LOUDNESS (how soon / approach speed) ← REAL distance.
+//      Driven by us via LoopSource::UpdateVolume on a linear curve over
+//      the real 3D distance (full up close → kSwoopVolFarByte at the
+//      300 m edge). Keeps the full distance cue, including speed: the
+//      faster you close, the faster it swells. The FLAT BAND below makes
+//      the engine apply full volume regardless of the source's (now
+//      fixed-depth, hence near) position, so our manual curve is the sole
+//      loudness control. Pan is unaffected by the band — only attenuation
+//      magnitude is, and we want that flat.
+//
+//   kSwoopPanForwardRefM — fixed depth the pan is read against. Smaller =
+//      stronger pan (a given lane offset reads as a wider angle). ~12 m
+//      ≈ the lane's own scale, so the ±20 m lane spans a strong, well-
+//      spread L/R without saturating at the edges.
+//   kSwoopFlatBandMaxM / kSwoopFlatBandMinM — both past any source's
+//      fixed-depth distance, so engine attenuation is flat (full).
+//   kSwoopVolNearByte / kSwoopVolFarByte — linear loudness ramp endpoints:
+//      near → full, far (dist = cue range) → ~⅓. Raise the far byte if
+//      distant pads are too quiet to localise; lower it for more contrast.
+//
+// SUPERSEDED:
+//   - 1:9 UNIFORM compression — squashed lateral pan to ±2 m, too weak to
+//     hit pads by intent (patch-20260620-104051.log).
+//   - TRUE position + 5/200 band — too quiet (patch-20260620-111927.log).
+//   - Forward 1:10 + 3/30 band — nearly silent (max_vol too small).
+//   - Forward 1:15 + 15/30 band — loud, but compression inflated the pan
+//     angle → overshoot ("steer, hit wall, it passes").
+//   - TRUE position + flat band + manual volume — honest, no overshoot,
+//     but true pan made far targets a ~2° whisper: not localisable
+//     (patch-20260620-122348.log). Hence the fixed-depth pan reference.
+constexpr float       kSwoopPanForwardRefM = 12.0f;
+constexpr float       kSwoopFlatBandMaxM   = 350.0f;
+constexpr float       kSwoopFlatBandMinM   = 400.0f;
+constexpr int         kSwoopVolNearByte    = 127;
+constexpr int         kSwoopVolFarByte     = 50;
+
+// Linear volume byte for a source at 3D distance `dist` within `range`:
+// full (kSwoopVolNearByte) at the listener, ramping to kSwoopVolFarByte
+// at the range edge. Clamped to the endpoints outside [0, range].
+inline int SwoopVolumeByte(float dist, float range) {
+    if (range <= 0.0f) return kSwoopVolNearByte;
+    float t = dist / range;                 // 0 near .. 1 far
+    if (t < 0.0f) t = 0.0f; else if (t > 1.0f) t = 1.0f;
+    int vb = static_cast<int>(
+        kSwoopVolNearByte + t * (kSwoopVolFarByte - kSwoopVolNearByte) + 0.5f);
+    if (vb < kSwoopVolFarByte)  vb = kSwoopVolFarByte;
+    if (vb > kSwoopVolNearByte) vb = kSwoopVolNearByte;
+    return vb;
+}
 
 // ============================================================================
 // Module state. Single-threaded under the engine OnUpdate tick.
@@ -462,31 +516,28 @@ void TickObstacleCues(void* /*miniGame*/) {
         // see TickAccelpadCues).
         const char* resref = kObstacleWarnLoopResref;
 
-        // Project source proportionally so distance encodes via volume
-        // + pan rotation rather than a flat sphere. 1:9 compression
-        // with 1 m floor — close-pass lands at 1 m (correct direction,
-        // no sub-meter pan flip), farthest in-range obstacle (~180 m
-        // real) lands at 20 m (engine audibility edge).
+        // Decoupled cue: lateral (X) + vertical (Z) true, forward (Y)
+        // pinned to a FIXED reference depth → pan encodes lane error only,
+        // stable. Loudness comes from our manual curve on the REAL 3D
+        // distance. See the design comment above.
         const float dist = (distSq > 0.0f) ? std::sqrt(distSq) : 0.0f;
         Vector cue_pos = pos;
-        if (dist > 0.0f) {
-            float compressed = dist * kObstacleDistanceCompression;
-            if (compressed < kObstacleMinSourceDistanceM) {
-                compressed = kObstacleMinSourceDistanceM;
-            }
-            const float k = compressed / dist;
-            cue_pos.x = listener_pos.x + dx * k;
-            cue_pos.y = listener_pos.y + dy * k;
-            cue_pos.z = listener_pos.z + dz * k;
-        }
+        cue_pos.y = listener_pos.y + kSwoopPanForwardRefM;
+        const int vol_byte = SwoopVolumeByte(dist, kObstacleCueRangeM);
 
         active_this_tick[i] = true;
         if (g_state.obstacle_loops[i].IsActive()) {
-            // Existing loop — just move it.
+            // Existing loop — move it and re-assert the distance volume.
             g_state.obstacle_loops[i].UpdatePosition(cue_pos);
+            g_state.obstacle_loops[i].UpdateVolume(vol_byte);
         } else {
-            // First in-range tick for this obstacle — Start the loop.
-            if (g_state.obstacle_loops[i].Start(resref, cue_pos)) {
+            // First in-range tick for this obstacle — Start the loop with
+            // the flat band so only our manual volume modulates loudness.
+            if (g_state.obstacle_loops[i].Start(
+                    resref, cue_pos, /*looping=*/true, /*spatial=*/true,
+                    /*priorityGroup=*/-1, /*volumeByte=*/vol_byte,
+                    /*maxVolDist=*/kSwoopFlatBandMaxM,
+                    /*minVolDist=*/kSwoopFlatBandMinM)) {
                 ++loops_started_this_tick;
                 acclog::Trace("SwoopRace",
                               "loop start slot=%d name=[%s] "
@@ -544,10 +595,10 @@ void TickObstacleCues(void* /*miniGame*/) {
 // its own track (mgt02..mgt31) — see the "Object pool split" comment
 // at top of file.
 //
-// Same range / forward-margin / 1:9 distance compression as the
-// obstacle path so booster and obstacle cues are spatially
-// comparable in flight. Different loop sample (acc_boost) so they're
-// tonally distinguishable.
+// Same multi-source policy, range, forward-margin, anisotropic
+// projection and falloff band as the obstacle path so booster and
+// obstacle cues are spatially comparable in flight. Different loop
+// sample (acc_boost) so they're tonally distinguishable.
 //
 // Position retrieval differs: enemies don't carry a flat CAurObject
 // pointer at +0x60; instead, the world position lives behind the
@@ -570,19 +621,17 @@ void TickAccelpadCues(void* /*miniGame*/) {
         return;
     }
 
-    // Single-pass scan. We need (a) the nearest in-range accelpad so
-    // we know which slot to loop, and (b) its cue position. Keep the
-    // raw pad position too — we recompute the compressed cue position
-    // once at the end, both to save work in the hot loop and to keep
-    // the resolution path obvious.
     int slots_seen = 0;
     int accelpads_found = 0;
     int accelpads_ahead = 0;
     int accelpads_in_range = 0;
-
-    int   nearest_slot      = -1;
-    float nearest_dist_sq   = 0.0f;
-    Vector nearest_pos      = {0.0f, 0.0f, 0.0f};
+    int loops_started_this_tick = 0;
+    int loops_stopped_this_tick = 0;
+    // Per-tick "still in range" flag, same as the obstacle pass. A slot
+    // marked true is Started (loop wasn't active) or UpdatePosition'd
+    // (already running); any active loop NOT marked is out of range
+    // (passed / unresolved) and gets Stop'd at the end of the tick.
+    bool active_this_tick[kMgoArraySlotCount] = {};
 
     const float rangeSq = kAccelpadCueRangeM * kAccelpadCueRangeM;
 
@@ -627,66 +676,47 @@ void TickAccelpadCues(void* /*miniGame*/) {
         if (distSq > rangeSq) continue;
         ++accelpads_in_range;
 
-        // Track nearest only — see kAccelpadConcurrentLoops rationale.
-        if (nearest_slot < 0 || distSq < nearest_dist_sq) {
-            nearest_slot    = i;
-            nearest_dist_sq = distSq;
-            nearest_pos     = pos;
-        }
-    }
+        // Decoupled cue, same as obstacles: lateral/vertical true, forward
+        // pinned to a fixed reference depth (pan = lane error only),
+        // loudness from our manual curve on the real 3D distance.
+        const float dist = (distSq > 0.0f) ? std::sqrt(distSq) : 0.0f;
+        Vector cue_pos = pos;
+        cue_pos.y = listener_pos.y + kSwoopPanForwardRefM;
+        const int vol_byte = SwoopVolumeByte(dist, kAccelpadCueRangeM);
 
-    // ---- Apply: at most one loop active, on the nearest slot. -----------
-    int loops_started_this_tick = 0;
-    int loops_stopped_this_tick = 0;
-
-    // Stop any active loop that isn't the current nearest. Covers the
-    // hand-off case where the previous-tick nearest just got passed
-    // and the new nearest is a different slot.
-    for (int i = 0; i < kMgoArraySlotCount; ++i) {
-        if (i == nearest_slot) continue;
+        active_this_tick[i] = true;
         if (g_state.accelpad_loops[i].IsActive()) {
-            g_state.accelpad_loops[i].Stop();
-            ++loops_stopped_this_tick;
-            acclog::Trace("SwoopRace",
-                          "accelpad loop stop slot=%d "
-                          "(no longer nearest)", i);
-        }
-    }
-
-    if (nearest_slot >= 0) {
-        // Compress the nearest pad's position onto the engine's 5-20 m
-        // audibility band, same 1:9 ratio + 1 m floor used for obstacles.
-        const float dist = std::sqrt(nearest_dist_sq);
-        Vector cue_pos = nearest_pos;
-        if (dist > 0.0f) {
-            float compressed = dist * kObstacleDistanceCompression;
-            if (compressed < kObstacleMinSourceDistanceM) {
-                compressed = kObstacleMinSourceDistanceM;
-            }
-            const float k = compressed / dist;
-            const float dx = nearest_pos.x - listener_pos.x;
-            const float dy = nearest_pos.y - listener_pos.y;
-            const float dz = nearest_pos.z - listener_pos.z;
-            cue_pos.x = listener_pos.x + dx * k;
-            cue_pos.y = listener_pos.y + dy * k;
-            cue_pos.z = listener_pos.z + dz * k;
-        }
-
-        if (g_state.accelpad_loops[nearest_slot].IsActive()) {
-            g_state.accelpad_loops[nearest_slot].UpdatePosition(cue_pos);
+            g_state.accelpad_loops[i].UpdatePosition(cue_pos);
+            g_state.accelpad_loops[i].UpdateVolume(vol_byte);
         } else {
-            if (g_state.accelpad_loops[nearest_slot].Start(
-                    kAccelpadLoopResref, cue_pos)) {
+            if (g_state.accelpad_loops[i].Start(
+                    kAccelpadLoopResref, cue_pos, /*looping=*/true,
+                    /*spatial=*/true, /*priorityGroup=*/-1,
+                    /*volumeByte=*/vol_byte,
+                    /*maxVolDist=*/kSwoopFlatBandMaxM,
+                    /*minVolDist=*/kSwoopFlatBandMinM)) {
                 ++loops_started_this_tick;
                 acclog::Trace("SwoopRace",
                               "accelpad loop start slot=%d "
                               "padPos=(%.1f,%.1f,%.1f) "
                               "cuePos=(%.1f,%.1f,%.1f) dist=%.1f res=%s",
-                              nearest_slot,
-                              nearest_pos.x, nearest_pos.y, nearest_pos.z,
+                              i, pos.x, pos.y, pos.z,
                               cue_pos.x, cue_pos.y, cue_pos.z,
                               dist, kAccelpadLoopResref);
             }
+        }
+    }
+
+    // Stop any loop whose pad wasn't in range this tick (passed behind
+    // us, or obj/pos read failed after succeeding last tick). Stop is
+    // idempotent.
+    for (int i = 0; i < kMgoArraySlotCount; ++i) {
+        if (!active_this_tick[i] && g_state.accelpad_loops[i].IsActive()) {
+            g_state.accelpad_loops[i].Stop();
+            ++loops_stopped_this_tick;
+            acclog::Trace("SwoopRace",
+                          "accelpad loop stop slot=%d "
+                          "(out of range / unresolved)", i);
         }
     }
 
@@ -696,10 +726,9 @@ void TickAccelpadCues(void* /*miniGame*/) {
 
     acclog::Trace("SwoopRace",
                   "accelpad scan: slots=%d accelpads=%d ahead=%d inRange=%d "
-                  "(%.0fm) nearest=%d started=%d stopped=%d listenerY=%.1f",
+                  "(%.0fm) started=%d stopped=%d listenerY=%.1f",
                   slots_seen, accelpads_found, accelpads_ahead,
                   accelpads_in_range, kAccelpadCueRangeM,
-                  nearest_slot,
                   loops_started_this_tick, loops_stopped_this_tick,
                   listener_pos.y);
 }

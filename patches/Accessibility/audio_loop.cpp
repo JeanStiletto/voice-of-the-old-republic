@@ -205,6 +205,21 @@ void LoopSource::UpdatePosition(const Vector& worldPosition) {
     }
 }
 
+void LoopSource::UpdateVolume(int volumeByte) {
+    if (!source_) return;
+    unsigned char v = volumeByte < 0   ? 0
+                    : volumeByte > 127 ? 127
+                                       : static_cast<unsigned char>(volumeByte);
+    __try {
+        reinterpret_cast<PFN_SetVolume>(kAddrCExoSoundSourceSetVolume)(source_, v);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        // Engine torn down — drop the pointer, don't poke dead memory.
+        acclog::Write("LoopSource",
+                      "volume update faulted, dropping source %p", source_);
+        source_ = nullptr;
+    }
+}
+
 void LoopSource::SetPitchMultiplier(float multiplier) {
     if (!source_ || base_hz_ <= 0) return;
     // Clamp to +/- 2 octaves; the engine clamps internally too (minPitch/

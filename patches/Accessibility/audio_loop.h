@@ -52,6 +52,15 @@ public:
                float minVolDist = -1.0f);
 
     void UpdatePosition(const Vector& worldPosition);  // safe no-op if inactive
+
+    // Live per-source volume for a playing loop. volumeByte 0..127 (clamped;
+    // engine clamps >127 too). Lets the caller drive its own loudness curve
+    // each tick instead of relying on the 3D distance falloff — used by the
+    // swoop cues, which pan off a fixed depth reference under a FLAT distance
+    // band, then modulate volume here on a linear distance curve so loudness
+    // tracks the real distance. Safe no-op if inactive.
+    void UpdateVolume(int volumeByte);
+
     void Stop();                                       // idempotent
 
     // Live playback-pitch control for a playing 3D source. `multiplier` is
