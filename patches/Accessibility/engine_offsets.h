@@ -1497,6 +1497,25 @@ constexpr size_t kDialogComputerMessageListBoxOffset  = 0x2cfc;
 // +0x178 previous speaker, +0x184 third participant.
 constexpr size_t kCGuiInGameDialogSpeakerOffset       = 0x170;
 
+// CGuiInGame reply-text model — the engine's authoritative, render-independent
+// store of the CURRENT entry's selectable reply strings. Populated by
+// CGuiInGame::SetReplyData @0x00628750 (one call per active reply), consumed by
+// CGuiInGame::UpdateDialog @0x006339c0 which reads the chosen reply's text from
+// `field70_0x118 + selIdx*8`. Each entry is a CExoString (char* + uint32 len, 8
+// bytes), indexed by the SAME reply index as the replies listbox selection_index
+// (see SelectReply→SetDialogSelection→UpdateDialog).
+//
+// This is why we read replies from here, NOT from the listbox row CSWGuiLabels:
+// the reply listbox is a scrolling list whose row gui_string materialises only
+// for rendered (on-page) rows, so off-page replies (option 3+ at smaller GUI
+// page sizes) read empty from the controls — the silent-dropped "missing
+// entries" bug in the droid/computer (DialogCinematicCopy) interfaces. The
+// CExoString array here always carries every active reply's resolved text.
+//   field69_0x114  reply array capacity/count (SetReplyData bounds-guards on it)
+//   field70_0x118  pointer to the CExoString[] array
+constexpr size_t kCGuiInGameReplyCountOffset          = 0x114;
+constexpr size_t kCGuiInGameReplyTextArrayOffset      = 0x118;
+
 // CSWGuiBarkBubble.object_id @+0x1c0 — the bark speaker's CLIENT object id,
 // written by CSWGuiBarkBubble::SetBark @0x006a9920 (this->object_id = param_1)
 // and consumed by ::Draw @0x006a9ce0 via CClientExoApp::GetGameObject(client,

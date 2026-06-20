@@ -653,10 +653,21 @@ void MonitorDialogReplies() {
     }
 
     void* row = lbList->data[selIdx];
-    if (!row) return;
 
+    // Authoritative source: the engine's render-independent reply-text array
+    // on CGuiInGame (populated by SetReplyData per active reply). The reply
+    // listbox rows are a scrolling list whose CSWGuiLabel text materialises
+    // only for on-page rows, so reading the row directly silently drops
+    // off-page replies (the "missing entries" bug in droid/computer
+    // interfaces). Fall back to the row label only if the state read misses.
     char text[256];
-    const char* src = acc::menus::extract::FromControl(row, text, sizeof(text));
+    const char* src = nullptr;
+    if (acc::engine::ReadDialogReplyText(selIdx, text, sizeof(text)) &&
+        text[0] != '\0') {
+        src = "dialog-state";
+    } else if (row) {
+        src = acc::menus::extract::FromControl(row, text, sizeof(text));
+    }
     if (src) {
         acclog::Write("Menus.DialogReply", "selected: panel=%p kind=%s listbox=%p "
                       "sel=%d (was %d) src=%s text=\"%s\"",
@@ -672,7 +683,8 @@ void MonitorDialogReplies() {
         prism::Speak(msg, /*interrupt=*/false);
     } else {
         char vtbl[160];
-        DumpControlVtable(row, vtbl, sizeof(vtbl));
+        if (row) DumpControlVtable(row, vtbl, sizeof(vtbl));
+        else     snprintf(vtbl, sizeof(vtbl), "row=NULL");
         acclog::Write("Menus.DialogReply", "selected (src=none): panel=%p listbox=%p "
                       "sel=%d row=%p %s", fg, lb, selIdx, row, vtbl);
     }

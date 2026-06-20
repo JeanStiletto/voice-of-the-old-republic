@@ -164,6 +164,14 @@ const char* PanelKindName(PanelKind k);
 // AppManager → ClientExoApp → Internal → CGuiInGame. Null on any null link.
 void* ResolveGuiInGame();
 
+// Read the resolved text of the current dialog entry's reply at `replyIndex`
+// from CGuiInGame's render-independent reply-text array (see
+// kCGuiInGameReplyTextArrayOffset). `replyIndex` is the listbox
+// selection_index. Returns false (outBuf="") on null GUI, out-of-range index,
+// empty text, or SEH fault. Use this instead of reading the reply listbox row
+// labels — those go empty for off-page rows. SEH-guarded.
+bool ReadDialogReplyText(int replyIndex, char* outBuf, size_t bufSize);
+
 // PanelKind::Unknown on no match. First (panel,kind) sighting is logged;
 // subsequent calls hit a cache.
 PanelKind IdentifyPanel(void* panel);

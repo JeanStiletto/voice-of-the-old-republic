@@ -521,6 +521,31 @@ void* ResolveGuiInGame() {
         reinterpret_cast<unsigned char*>(internal) + kClientExoAppGuiInGameOff);
 }
 
+bool ReadDialogReplyText(int replyIndex, char* outBuf, size_t bufSize) {
+    if (!outBuf || bufSize < 2) return false;
+    outBuf[0] = '\0';
+    if (replyIndex < 0) return false;
+    void* gui = ResolveGuiInGame();
+    if (!gui) return false;
+    __try {
+        auto* base = reinterpret_cast<unsigned char*>(gui);
+        // field69_0x114 = reply array capacity/count (SetReplyData guards on it).
+        uint32_t count = *reinterpret_cast<uint32_t*>(
+            base + kCGuiInGameReplyCountOffset);
+        if (count == 0 || count > 256) return false;  // sanity bound
+        if (static_cast<uint32_t>(replyIndex) >= count) return false;
+        // field70_0x118 = pointer to the CExoString[] array (8 bytes/entry).
+        void* arr = *reinterpret_cast<void**>(
+            base + kCGuiInGameReplyTextArrayOffset);
+        if (!arr) return false;
+        return ReadCExoString(arr, static_cast<size_t>(replyIndex) * 8,
+                              outBuf, bufSize);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        outBuf[0] = '\0';
+        return false;
+    }
+}
+
 // (panel, kind) pairs already logged. Keeps the log tidy when persistent
 // panels (HUD) get re-checked on every input event. FIFO-evicted at cap.
 struct PanelKindCacheEntry {
