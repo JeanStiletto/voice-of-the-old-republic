@@ -308,28 +308,28 @@ constexpr int         kSwoopVolFarByte     = 50;
 // velocity pulled the bike off pads it had reached.
 //
 // PD cue (2026-06-21): err = padErr − kSteerLeadTicks·velocity, where padErr =
-// padLane − bikeX. The velocity term is DAMPING — it eases the cue toward
-// centre as you build speed toward a pad, so you ease off before overshooting
-// (the medium-pad overshoot fix). Two clamps make it holdable, which is what
-// the earlier predictive versions lacked:
-//   * ANTI-REVERSAL: the damping may ease err toward 0 but may NOT flip its
-//     sign — it never tells you to steer AWAY from a pad you haven't reached.
-//     Once lead·vel exceeds padErr the cue just goes neutral ("you'll make it,
-//     coast in"); only a REAL overshoot (padErr itself flips) says "come back".
-//   * SETTLE deadzone on padErr: on the lane the cue is centred regardless of
-//     any residual drift, so you can hold it.
-// This is why the prior lead failed: with no clamp it reversed you off pads you
-// were sitting on (...215730.log, X=112 pad). With the clamps the lead can be
-// meaningful without breaking settling.
-constexpr float kSteerLeadTicks  = 4.0f;
+// padLane − bikeX. The velocity term is the BRAKE — as you build speed toward a
+// pad it pushes err the OTHER way ("counter-steer now"), so you bleed off the
+// bike's lateral momentum before you arrive instead of sailing past into the
+// wall. The brake is ALLOWED to reverse sign; that reversal IS the cue to stop
+// overshooting. (An earlier anti-reversal clamp suppressed exactly this and the
+// bike overshot to the wall even at crawl speed — ...222112.log first-pad trace.)
+//
+// The thing that must NOT happen is the brake pulling you off a pad you're
+// PARKED on. That's handled by the settle gate: it fires only when you are on
+// the lane AND barely moving (kSteerSettleVel). Centred-but-still-sliding does
+// NOT settle, so the brake survives when you need it. (The prior versions
+// settled on centre alone, which is why the brake was lost mid-slide.)
+constexpr float kSteerLeadTicks  = 5.0f;
 constexpr float kSteerVelSmooth  = 0.30f;  // EMA on the noisy per-tick velocity
 constexpr float kSteerVelClamp   = 8.0f;   // reject one-tick bike-X glitches
 // Low-pass on the panned offset. snap on pad handoff (below) avoids carry-over.
 constexpr float kSteerPanSmooth  = 0.45f;
-// Settle deadzone: within this lateral error of the pad lane the cue reads
-// dead-centre (and damping is off) so you can hold it. 1.5 u is well inside the
-// 5-6 u catch radius.
+// Settle gate: within this lateral error of the lane AND below this lateral
+// speed, the cue reads dead-centre so you can hold it. 1.5 u is well inside the
+// 5-6 u catch radius; 0.4 u/tick is "barely drifting" (active steering is ~1-2).
 constexpr float kSteerDeadzoneUnits = 1.5f;
+constexpr float kSteerSettleVel     = 0.4f;
 // Clamp on the steer error (the panned magnitude) and on how far a pad may sit
 // laterally from the bike to count as real. The lane is only ~±20 wide, so a
 // pad more than 60 u to the side is a junk read (one came back at X=1933 and
@@ -706,10 +706,11 @@ void TickObstacleCues(void* /*miniGame*/) {
 //   1. Pick the next gate: nearest pad ahead whose lateral position is sane
 //      (outlier guard — a junk X=1933 read once poisoned the pan for a second).
 //   2. padErr = padLane − bikeX (proportional). err = padErr − lead·velocity
-//      (the derivative/damping eases you off before you overshoot), with two
-//      clamps so it stays holdable: anti-reversal (never points away from a pad
-//      you've not reached) and a settle deadzone (centred + damping off on the
-//      lane). See the constants block for why the clamps are the crux.
+//      (the derivative is a BRAKE: it counter-steers you to bleed off lateral
+//      momentum before you overshoot). A settle gate zeroes it only when you're
+//      on the lane AND barely moving, so the brake survives mid-slide but you
+//      can still park. See the constants block for why the gate (not a reversal
+//      clamp) is the crux.
 //   3. Pan the tone to that offset against a fixed depth; centred = on the lane,
 //      and it STAYS centred so you can hold it. World +X is listener-right.
 //
@@ -814,27 +815,24 @@ void TickAccelpadCues(void* miniGame) {
     }
 
     // ----- Steering setpoint: the next gate, PD-damped. -----
-    // padErr = padLane − bikeX (true current miss). err = padErr − lead·vel:
-    // the damping eases the cue toward centre as you approach, so you ease off
-    // before overshooting. Then the two clamps that make it holdable:
-    //   * anti-reversal: damping may ease err toward 0 but not FLIP its sign
-    //     (never "steer away" from a pad you've not reached — that's what pulled
-    //     you off pads before). Past neutral it just reads centred until you
-    //     actually overshoot (padErr itself flips).
-    //   * settle deadzone on padErr: on the lane, centred + damping off.
+    // padErr = padLane − bikeX (true current miss). err = padErr − lead·vel: as
+    // you build speed toward the pad the brake term flips err the other way
+    // ("counter-steer now"), so you stop the bike's momentum before overshooting
+    // into the wall. The reversal is intentional — it is the brake.
     const bool have_target = (ahead_slot >= 0) && bikeOk;
     const float padErr = have_target ? (ahead_pos.x - bikePos.x) : 0.0f;
     float err = padErr;
     if (have_target) {
         err = padErr - kSteerLeadTicks * g_state.smoothed_vel;
-        if ((padErr > 0.0f && err < 0.0f) || (padErr < 0.0f && err > 0.0f)) {
-            err = 0.0f;  // damping would reverse you — clamp to neutral instead
-        }
     }
     if (err >  kSteerMaxErr) err =  kSteerMaxErr;
     if (err < -kSteerMaxErr) err = -kSteerMaxErr;
-    if (padErr > -kSteerDeadzoneUnits && padErr < kSteerDeadzoneUnits) {
-        err = 0.0f;  // on the lane → settle
+    // Settle ONLY when genuinely parked — on the lane AND barely moving. A
+    // centred-but-still-sliding bike must keep the brake cue, or it coasts off.
+    if (padErr > -kSteerDeadzoneUnits && padErr < kSteerDeadzoneUnits &&
+        g_state.smoothed_vel > -kSteerSettleVel &&
+        g_state.smoothed_vel <  kSteerSettleVel) {
+        err = 0.0f;
     }
 
     // Snap (don't ease) when the target pad changes, so a stale hard-over pan
