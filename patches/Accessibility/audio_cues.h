@@ -42,6 +42,17 @@ enum class NavCue {
     SwoopAccelpadBoost,     // acc_boost (panned racing-line steering guide)
     SwoopObstacleWarn,      // mgs_hover_07l (in-range obstacle loop)
     SwoopWallImpact,        // mgs_sith_hit1 (side-wall thump one-shot)
+    // Co-pilot discrete-command steering (experimental, 2026-06-21). A
+    // repeating directional tick (panned AND pitched to the side to steer) +
+    // a single rising "on the line, release" tone — replaces the continuous
+    // panned guide. Custom synthesised WAVs (Override\acc_steer_*.wav): loud,
+    // short tones, since the stock UI clicks first tried were far too quiet
+    // (gui_invselect RMS 3.3% vs these ~44%). Low pitch = left, high = right,
+    // so direction is carried by pitch as well as pan (pan alone localises
+    // poorly in the race — the weakness that sank the old guide).
+    SwoopSteerLeft,         // acc_steer_l  (low square tick — steer LEFT)
+    SwoopSteerRight,        // acc_steer_r  (high square tick — steer RIGHT)
+    SwoopSteerAligned,      // acc_steer_ok (rising tone — on the line / release)
 };
 
 constexpr const char* GetNavCueResref(NavCue cue) {
@@ -66,6 +77,9 @@ constexpr const char* GetNavCueResref(NavCue cue) {
         case NavCue::SwoopAccelpadBoost:       return "acc_boost";
         case NavCue::SwoopObstacleWarn:        return "mgs_hover_07l";
         case NavCue::SwoopWallImpact:          return "mgs_sith_hit1";
+        case NavCue::SwoopSteerLeft:           return "acc_steer_l";
+        case NavCue::SwoopSteerRight:          return "acc_steer_r";
+        case NavCue::SwoopSteerAligned:        return "acc_steer_ok";
     }
     return "";
 }

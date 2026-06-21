@@ -13,6 +13,8 @@
 #include <cstdint>
 #include <cstddef>
 
+#include "audio_bus.h"        // PlayCue3D — co-pilot directional / aligned
+                              //     one-shots (discrete steering commands)
 #include "audio_cues.h"       // NavCue + GetNavCueResref (centralised
                               //     resref vocabulary — Audio glossary
                               //     and live race fire the same samples)
@@ -337,6 +339,82 @@ constexpr float kSteerSettleVel     = 0.4f;
 constexpr float kSteerMaxErr     = 40.0f;
 constexpr float kMaxPadLateral   = 60.0f;
 
+// ----- Co-pilot discrete-command steering (experimental, 2026-06-21) --------
+//
+// The continuous panned guide (above) made the PLAYER the controller of a
+// high-inertia, delayed plant — and that loop is unstable: the 2026-06-20
+// 222843 log shows the bike overshooting and oscillating around even the easy
+// first pad (reached the lane ~0.75 s early, then sailed 6 units past it). No
+// re-encoding of "where to go" fixes that, because the instability is in the
+// human-in-the-loop, not the information.
+//
+// The co-pilot takes the control DECISION off the player. Code runs the
+// controller every tick and issues discrete, pre-timed commands:
+//   coast = smoothed_vel * kCoastTicks  — where the bike drifts to if you
+//                                         RELEASE the steer key now (your
+//                                         reaction delay + the bike's inertial
+//                                         stop, bundled into one lead term).
+//   proj  = padErr - coast              — the lane miss AFTER that coast.
+//   |proj| <= kReleaseBand → ALIGNED (release now; you coast onto the pad).
+//   proj > 0  → steer RIGHT;  proj < 0 → steer LEFT.
+// The player does only coarse hold/release; code owns the hard part (WHEN to
+// stop). The loop stays closed in code (real bike X re-read each tick), so an
+// early/late reaction just re-issues the command — robust to coast-model error.
+enum {
+    kSteerCmdLeft    = -1,
+    kSteerCmdNone    = 0,
+    kSteerCmdRight   = 1,
+    kSteerCmdAligned = 2,
+};
+// Lead term, in ticks of current lateral velocity. RAISE to release earlier
+// (cures overshoot); LOWER to release later (cures undershoot). Primary knob.
+// Tuned 2026-06-21 from the 055727 practice runs: with 12, 7 of 9 near-misses
+// were UNDERSHOOTS (released too early, landed short) vs only 2 overshoots —
+// the lead overestimated the real coast, so cut it to 8 to hold the steer
+// longer and land deeper into the pad.
+constexpr float       kCoastTicks    = 8.0f;
+// Post-coast miss within this band reads as "on the line" → release/hold. Kept
+// inside the pad catch radius (~5-6 u) so a released coast still lands a hit.
+constexpr float       kReleaseBand   = 4.0f;
+// Directional-tick geometry (camera-relative, mirroring the proven wall-impact
+// pan path) and cadence. Lateral ±pan at a slight forward depth gives a hard
+// but slightly-ahead L/R image (atan2(8,2) ≈ 76°), and the 3D distance
+// (≈8.3 m) sits in the audible 5-10 m band — cues closer than ~5 m attenuate
+// oddly (see the wall-impact notes: 3 m was inaudible).
+constexpr float       kSteerTickPanM    = 8.0f;
+constexpr float       kSteerTickFwdM    = 2.0f;
+// The aligned/release blip is centred (no pan), so it needs real forward depth
+// to clear the near-field dead zone; 7 m keeps it audible and within range.
+constexpr float       kSteerAlignedFwdM = 7.0f;
+constexpr ULONGLONG   kSteerTickMs      = 160;
+// Directional ticks carry the side in BOTH pitch (low=left, high=right) and
+// pan, so a missed pan read is backed up by pitch. Aligned is a centred rising
+// tone. All three are loud custom WAVs — see audio_cues.h.
+constexpr const char* kSteerLeftResref =
+    acc::audio::GetNavCueResref(acc::audio::NavCue::SwoopSteerLeft);
+constexpr const char* kSteerRightResref =
+    acc::audio::GetNavCueResref(acc::audio::NavCue::SwoopSteerRight);
+constexpr const char* kSteerAlignedResref =
+    acc::audio::GetNavCueResref(acc::audio::NavCue::SwoopSteerAligned);
+// Per-cue base volume (0..127). The synthesised tones are hot (RMS ~44-48%);
+// 96 ≈ 75% trims them from "a bit too loud" without losing them in the race
+// mix. The global cue slider still scales this.
+constexpr uint8_t     kSteerCueVolume = 96;
+
+// ----- Next-gate preview (2026-06-21) ---------------------------------------
+//
+// The geometry proves the gates are reachable (worst 39 u lateral jump needs
+// ~7 ticks; the forward gap gives 8-18) — what kills the tight ones is that the
+// co-pilot only revealed the next gate AT the handoff, so the player's ~6-tick
+// reaction delay ate the front of the window. Preview fixes that the way a
+// sighted player does: a soft, single heads-up of the FOLLOWING gate's
+// direction, fired once you're settled on the current gate, so the direction is
+// pre-loaded before the loud steer-now ticks start. Same pitch language (low =
+// left, high = right) but quieter — "get ready", not "act".
+constexpr float       kPreviewLeadU  = 120.0f;  // announce next gate when current
+                                                //   is within this far ahead
+constexpr uint8_t     kPreviewVolume = 55;      // softer than the steer-now ticks
+
 // Linear volume byte for a source at 3D distance `dist` within `range`:
 // full (kSwoopVolNearByte) at the listener, ramping to kSwoopVolFarByte
 // at the range edge. Clamped to the endpoints outside [0, range].
@@ -378,6 +456,26 @@ struct SpatialAudioState {
     // The pad slot targeted last tick — when it changes (a pad crossed) we snap
     // the pan instead of easing, so no stale carry-over into the next approach.
     int   prev_ahead_slot    = -1;
+
+    // Co-pilot command state (experimental). steer_cmd is the last command
+    // issued (kSteerCmd*); the aligned blip fires once on a steering→aligned
+    // transition. last_steer_tick_ms paces the repeating directional tick.
+    int       steer_cmd          = kSteerCmdNone;
+    ULONGLONG last_steer_tick_ms = 0;
+
+    // Next-gate preview: the ahead_slot we've already announced the follow-on
+    // gate for, so the heads-up fires once per gate.
+    int       previewed_slot     = -1;
+
+    // Crossing-event scoring: last tick's targeted gate + its lateral miss and
+    // forward gap, so when the target changes we can interpolate the EXACT
+    // lateral miss at fwdGap=0 (ground-truth hit, vs the noisy periodic copilot
+    // samples). prev_ahead_slot above is reused as the gate id.
+    bool      have_prev_ahead    = false;
+    float     prev_ahead_posX    = 0.0f;
+    float     prev_ahead_posY    = 0.0f;
+    float     prev_ahead_padErr  = 0.0f;
+    float     prev_ahead_fwdGap  = 0.0f;
 
     // Diagnostic guards for the first-pass inventory dumps. One log
     // entry per race describing every obstacle / accelpad seen.
@@ -765,6 +863,8 @@ void TickAccelpadCues(void* miniGame) {
     // The outlier guard drops junk reads (one pad came back at X=1933).
     const float bikeXref = bikeOk ? bikePos.x : listener_pos.x;
     int   ahead_slot = -1;  float ahead_y = 0.0f;  Vector ahead_pos = {0,0,0};
+    // Second-nearest gate ahead — drives the preview heads-up.
+    int   next_slot  = -1;  float next_y  = 0.0f;  Vector next_pos  = {0,0,0};
 
     for (int i = 0; i < kMgoArraySlotCount; ++i) {
         void* obj = SafeReadPtr(mgoArray,
@@ -794,7 +894,11 @@ void TickAccelpadCues(void* miniGame) {
         if (std::fabs(pos.x - bikeXref) > kMaxPadLateral) continue;  // junk read
         ++accelpads_ahead;
         if (ahead_slot < 0 || pos.y < ahead_y) {
+            // New nearest gate — demote the old nearest to second.
+            next_slot = ahead_slot; next_y = ahead_y; next_pos = ahead_pos;
             ahead_slot = i; ahead_y = pos.y; ahead_pos = pos;
+        } else if (next_slot < 0 || pos.y < next_y) {
+            next_slot = i; next_y = pos.y; next_pos = pos;
         }
     }
 
@@ -814,107 +918,149 @@ void TickAccelpadCues(void* miniGame) {
         g_state.have_prev_bike_x = true;
     }
 
-    // ----- Steering setpoint: the next gate, PD-damped. -----
-    // padErr = padLane − bikeX (true current miss). err = padErr − lead·vel: as
-    // you build speed toward the pad the brake term flips err the other way
-    // ("counter-steer now"), so you stop the bike's momentum before overshooting
-    // into the wall. The reversal is intentional — it is the brake.
+    // ----- Crossing-event log (ground-truth hit scoring). -----
+    // When the targeted gate changes, the previous gate has just passed. We have
+    // its last in-front sample (prev_ahead_fwdGap > 0, prev_ahead_padErr) and we
+    // can recompute its geometry from THIS tick's bike position (fwdGap now <= 0)
+    // — so interpolate the exact lateral miss at fwdGap=0. That is the engine's
+    // real hit test (|miss| <= ~6 on Taris), unambiguous, unlike the periodic
+    // copilot samples that land ~4 u before the true crossing.
+    if (bikeOk && g_state.have_prev_ahead &&
+        ahead_slot != g_state.prev_ahead_slot && g_state.prev_ahead_slot >= 0) {
+        const float fwdGap_now = g_state.prev_ahead_posY - refY;
+        const float padErr_now = g_state.prev_ahead_posX - bikePos.x;
+        if (g_state.prev_ahead_fwdGap > 0.0f &&
+            fwdGap_now < g_state.prev_ahead_fwdGap) {
+            float t = g_state.prev_ahead_fwdGap /
+                      (g_state.prev_ahead_fwdGap - fwdGap_now);
+            if (t < 0.0f) t = 0.0f; else if (t > 1.0f) t = 1.0f;
+            const float crossErr =
+                g_state.prev_ahead_padErr +
+                (padErr_now - g_state.prev_ahead_padErr) * t;
+            const float acrx = crossErr < 0.0f ? -crossErr : crossErr;
+            acclog::Write("SwoopRace",
+                          "CROSS slot=%d padX=%.2f crossErr=%.2f abs=%.2f "
+                          "hit=%d vel=%.2f",
+                          g_state.prev_ahead_slot, g_state.prev_ahead_posX,
+                          crossErr, acrx, (acrx <= 6.0f) ? 1 : 0,
+                          g_state.smoothed_vel);
+        }
+    }
+
+    // ----- Co-pilot command for the current gate (experimental). -----
+    // padErr = padLane − bikeX (true current miss). coast = where the bike will
+    // drift to if you release the steer key NOW (reaction + inertia, bundled).
+    // proj = the post-coast miss the controller actually acts on.
     const bool have_target = (ahead_slot >= 0) && bikeOk;
     const float padErr = have_target ? (ahead_pos.x - bikePos.x) : 0.0f;
-    float err = padErr;
+    const float fwdGap = have_target ? (ahead_pos.y - refY) : -1.0f;
+
+    int   desired = kSteerCmdNone;
+    float coast   = 0.0f;
+    float proj    = 0.0f;
     if (have_target) {
-        err = padErr - kSteerLeadTicks * g_state.smoothed_vel;
-    }
-    if (err >  kSteerMaxErr) err =  kSteerMaxErr;
-    if (err < -kSteerMaxErr) err = -kSteerMaxErr;
-    // Settle ONLY when genuinely parked — on the lane AND barely moving. A
-    // centred-but-still-sliding bike must keep the brake cue, or it coasts off.
-    if (padErr > -kSteerDeadzoneUnits && padErr < kSteerDeadzoneUnits &&
-        g_state.smoothed_vel > -kSteerSettleVel &&
-        g_state.smoothed_vel <  kSteerSettleVel) {
-        err = 0.0f;
+        coast = g_state.smoothed_vel * kCoastTicks;
+        proj  = padErr - coast;
+        if (proj >  kReleaseBand)      desired = kSteerCmdRight;
+        else if (proj < -kReleaseBand) desired = kSteerCmdLeft;
+        else                            desired = kSteerCmdAligned;
     }
 
-    // Snap (don't ease) when the target pad changes, so a stale hard-over pan
-    // from the pad just crossed can't bleed into the next approach and oversteer
-    // you. Within one approach, low-pass as usual.
-    const bool handoff = (ahead_slot != g_state.prev_ahead_slot);
-    g_state.prev_ahead_slot = ahead_slot;
-    if (handoff) {
-        g_state.smoothed_steer_err = err;
-    } else {
-        g_state.smoothed_steer_err +=
-            (err - g_state.smoothed_steer_err) * kSteerPanSmooth;
-    }
-    const float pan_err = g_state.smoothed_steer_err;
-
-    // ----- Drive the panned steering tone (acc_boost). -----
-    // Place the source pan_err to the listener's side at the fixed pan depth:
-    // engine pan = atan2(pan_err, depth) → 0 when you're tracking onto the next
-    // gate. World +X is listener-right during the race (camera faces +Y), so
-    // +pan_err = steer right. Volume swells as the gate nears (crossing cue).
-    float next_dist = 0.0f;
-    if (ahead_slot >= 0) {
-        const float dx = ahead_pos.x - listener_pos.x;
-        const float dy = ahead_pos.y - listener_pos.y;
-        const float dz = ahead_pos.z - listener_pos.z;
-        next_dist = std::sqrt(dx*dx + dy*dy + dz*dz);
-    }
-    int vol_byte = 0;
-    if (have_target) {
-        Vector cue_pos;
-        cue_pos.x = listener_pos.x + pan_err;
-        cue_pos.y = listener_pos.y + kSwoopPanForwardRefM;
-        cue_pos.z = listener_pos.z;
-        vol_byte = SwoopVolumeByte(next_dist, kAccelpadCueRangeM);
-
-        if (g_state.accelpad_line_loop.IsActive()) {
-            g_state.accelpad_line_loop.UpdatePosition(cue_pos);
-            g_state.accelpad_line_loop.UpdateVolume(vol_byte);
-        } else {
-            g_state.accelpad_line_loop.Start(
-                kAccelpadLoopResref, cue_pos, /*looping=*/true,
-                /*spatial=*/true, /*priorityGroup=*/-1,
-                /*volumeByte=*/vol_byte,
-                /*maxVolDist=*/kSwoopFlatBandMaxM,
-                /*minVolDist=*/kSwoopFlatBandMinM);
-            acclog::Trace("SwoopRace",
-                          "steer tone start cuePos=(%.1f,%.1f,%.1f) pan_err=%.2f "
-                          "nextDist=%.1f vol=%d res=%s",
-                          cue_pos.x, cue_pos.y, cue_pos.z, pan_err, next_dist,
-                          vol_byte, kAccelpadLoopResref);
+    // ----- Render the command as discrete one-shots. -----
+    // Directional ticks repeat at kSteerTickMs (panned hard to the side to
+    // steer) so "keep going this way" is reinforced; they fire IMMEDIATELY on a
+    // direction change so a correction isn't delayed by the cadence. Silence =
+    // hold / you're on the line. One aligned blip marks the release moment — the
+    // most time-critical signal, so it rides the lowest-latency cue and is
+    // followed by silence.
+    const ULONGLONG now = GetTickCount64();
+    bool tick_fired = false;
+    if (desired == kSteerCmdLeft || desired == kSteerCmdRight) {
+        const bool dir_changed = (desired != g_state.steer_cmd);
+        if (dir_changed || now - g_state.last_steer_tick_ms >= kSteerTickMs) {
+            Vector cue = listener_pos;
+            cue.x = listener_pos.x +
+                    (desired == kSteerCmdRight ? +kSteerTickPanM : -kSteerTickPanM);
+            cue.y = listener_pos.y + kSteerTickFwdM;
+            cue.z = listener_pos.z;
+            acc::audio::PlayCue3D(
+                desired == kSteerCmdRight ? kSteerRightResref : kSteerLeftResref,
+                cue, /*priorityGroup=*/0, kSteerCueVolume);
+            g_state.last_steer_tick_ms = now;
+            tick_fired = true;
         }
-    } else {
-        g_state.accelpad_line_loop.Stop();
+    } else if (desired == kSteerCmdAligned) {
+        if (g_state.steer_cmd == kSteerCmdLeft ||
+            g_state.steer_cmd == kSteerCmdRight) {
+            Vector cue = listener_pos;          // centred — no pan
+            cue.y = listener_pos.y + kSteerAlignedFwdM;
+            acc::audio::PlayCue3D(kSteerAlignedResref, cue,
+                                  /*priorityGroup=*/0, kSteerCueVolume);
+        }
+    }
+    g_state.steer_cmd = desired;
+
+    // The continuous pan tone is retired in co-pilot mode; silence any loop
+    // left active by a prior build / race so the two cues never overlap.
+    if (g_state.accelpad_line_loop.IsActive()) g_state.accelpad_line_loop.Stop();
+
+    // ----- Next-gate preview heads-up. -----
+    // Once you're SETTLED on the current gate (aligned) and it's within the lead
+    // window, announce the FOLLOWING gate's direction (relative to the current
+    // gate's lane — that's where you'll be at the crossing). Soft + single =
+    // "get ready", so it pre-loads the direction before the loud steer-now ticks,
+    // recovering the reaction delay the old handoff snap used to eat. Once/gate.
+    if (have_target && desired == kSteerCmdAligned && next_slot >= 0 &&
+        g_state.previewed_slot != ahead_slot && fwdGap < kPreviewLeadU) {
+        const float nextDelta = next_pos.x - ahead_pos.x;
+        if (std::fabs(nextDelta) > kReleaseBand) {       // a real move is coming
+            const bool nextRight = nextDelta > 0.0f;
+            Vector cue = listener_pos;
+            cue.x = listener_pos.x +
+                    (nextRight ? +kSteerTickPanM : -kSteerTickPanM);
+            cue.y = listener_pos.y + kSteerTickFwdM;
+            cue.z = listener_pos.z;
+            acc::audio::PlayCue3D(nextRight ? kSteerRightResref : kSteerLeftResref,
+                                  cue, /*priorityGroup=*/0, kPreviewVolume);
+            acclog::Trace("SwoopRace",
+                          "preview: cur=%d next=%d nextDelta=%.1f dir=%s fwdGap=%.1f",
+                          ahead_slot, next_slot, nextDelta,
+                          nextRight ? "R" : "L", fwdGap);
+        }
+        g_state.previewed_slot = ahead_slot;   // mark done even if no move
     }
 
-    // ----- Steering diagnostic -----
-    //
-    // padX/bikeX : next gate lane and bike world X. padErr = padX − bikeX is the
-    //              true current miss (|padErr| < combined Sphere_Radius 5.0/6.0
-    //              at the crossing = a hit). On-pad it should read ~0 and STAY 0.
-    // vel/err    : smoothed lateral velocity and the PD-damped, clamped setpoint
-    //              (err vs padErr shows the damping / anti-reversal at work).
-    // smoothed   : low-passed offset actually panned (panDeg = its angle).
+    // ----- Co-pilot diagnostic -----
+    // cmd: -1 left, +1 right, 2 aligned, 0 none. Tune kCoastTicks so the
+    // steering→aligned transition lands |padErr| ~0 at the crossing (fwdGap≈0).
     if (have_target) {
-        const float panDeg =
-            std::atan2(pan_err, kSwoopPanForwardRefM) * kRadToDeg;
-        const float fwdGap = ahead_pos.y - refY;
         acclog::Trace("SwoopRace",
-                      "steer tone: active=%d padX=%.2f bikeX=%.2f padErr=%.2f "
-                      "vel=%.2f err=%.2f smoothed=%.2f panDeg=%.1f fwdGap=%.1f "
-                      "tunnelX=%s%.2f vol=%d",
-                      g_state.accelpad_line_loop.IsActive() ? 1 : 0,
-                      ahead_pos.x, bikePos.x, padErr, g_state.smoothed_vel, err,
-                      pan_err, panDeg, fwdGap,
-                      tunOk ? "" : "FAULT:", tunOk ? tunnel.x : 0.0f, vol_byte);
+                      "copilot: padX=%.2f bikeX=%.2f padErr=%.2f vel=%.2f "
+                      "coast=%.2f proj=%.2f cmd=%d tick=%d fwdGap=%.1f "
+                      "tunnelX=%s%.2f",
+                      ahead_pos.x, bikePos.x, padErr, g_state.smoothed_vel,
+                      coast, proj, desired, tick_fired ? 1 : 0, fwdGap,
+                      tunOk ? "" : "FAULT:", tunOk ? tunnel.x : 0.0f);
     }
 
     acclog::Trace("SwoopRace",
                   "accelpad scan: slots=%d accelpads=%d ahead=%d aheadSlot=%d "
-                  "smoothed=%.2f refY=%.1f",
+                  "cmd=%d refY=%.1f",
                   slots_seen, accelpads_found, accelpads_ahead, ahead_slot,
-                  g_state.smoothed_steer_err, refY);
+                  g_state.steer_cmd, refY);
+
+    // Remember this tick's targeted gate for next tick's crossing interpolation.
+    if (have_target) {
+        g_state.prev_ahead_slot   = ahead_slot;
+        g_state.prev_ahead_posX   = ahead_pos.x;
+        g_state.prev_ahead_posY   = ahead_pos.y;
+        g_state.prev_ahead_padErr = padErr;
+        g_state.prev_ahead_fwdGap = fwdGap;
+        g_state.have_prev_ahead   = true;
+    } else {
+        g_state.have_prev_ahead   = false;
+        g_state.prev_ahead_slot   = -1;
+    }
 }
 
 }  // namespace
@@ -936,6 +1082,14 @@ void ResetSpatialAudio() {
     g_state.have_prev_bike_x      = false;
     g_state.smoothed_vel          = 0.0f;
     g_state.prev_ahead_slot       = -1;
+    g_state.steer_cmd             = kSteerCmdNone;
+    g_state.last_steer_tick_ms    = 0;
+    g_state.previewed_slot        = -1;
+    g_state.have_prev_ahead       = false;
+    g_state.prev_ahead_posX       = 0.0f;
+    g_state.prev_ahead_posY       = 0.0f;
+    g_state.prev_ahead_padErr     = 0.0f;
+    g_state.prev_ahead_fwdGap     = 0.0f;
     g_state.accelpad_line_loop.Stop();
     for (int i = 0; i < kMgoArraySlotCount; ++i) {
         g_state.obstacle_loops[i].Stop();
