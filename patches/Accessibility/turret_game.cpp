@@ -47,6 +47,7 @@
 #include "engine_offsets.h"   // Vector
 #include "engine_player.h"    // AppManager chain (kAddrAppManagerPtr ...) +
                               //   GetCameraPosition / GetPlayerPosition
+#include "minigame_aim.h"     // shared offset read/write + magnetism math
 #include "log.h"
 #include "prism.h"            // SpeakUrgent — entry/exit must beat NVDA's
                               //              typed-character cancel (the
@@ -76,7 +77,9 @@ constexpr size_t kMiniGameTypeOffset       = 0x80;   // 1=swoop, 2=turret
 //   offset.x = elevation° (W/S axis), offset.z = azimuth° (A/D axis), y unused.
 // WASD drives it natively. We aim-assist by WRITING this field (the engine
 // re-integrates it next tick, so a per-tick write sticks); see AimAssist below.
-constexpr size_t kMiniPlayerAimOffset      = 0x1c4;  // Vector{x=elev,_,z=azi}
+// The field address + the read/write primitives live in minigame_aim.h
+// (acc::minigame::kMiniPlayerOffsetVectorOffset); here offset.x = elevation,
+// offset.z = azimuth.
 
 // The turret minigame type discriminator. swoop is type 1 (swoop_race.cpp);
 // anything else on this struct is not ours.
@@ -802,22 +805,20 @@ bool ReadAimLine(Vector& outDir, Vector& outOrigin) {
 // z = azimuth°. Writing it steers the gun (the engine re-integrates next tick).
 bool ReadOffset(float& azOut, float& elOut) {
     void* player = SafeReadPtr(g_state.latched_mini_game, kMiniGamePlayerOffset);
-    if (!player) return false;
-    elOut = SafeReadF32(player, kMiniPlayerAimOffset + 0x0);  // offset.x
-    azOut = SafeReadF32(player, kMiniPlayerAimOffset + 0x8);  // offset.z
+    Vector v;
+    if (!acc::minigame::ReadOffsetVector(player, v)) return false;
+    elOut = v.x;   // offset.x = elevation
+    azOut = v.z;   // offset.z = azimuth
     return true;
 }
 
 void WriteOffset(float az, float el) {
     void* player = SafeReadPtr(g_state.latched_mini_game, kMiniGamePlayerOffset);
-    if (!player) return;
-    __try {
-        auto* off = reinterpret_cast<float*>(
-            reinterpret_cast<unsigned char*>(player) + kMiniPlayerAimOffset);
-        off[0] = el;   // offset.x = elevation
-        off[2] = az;   // offset.z = azimuth
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-    }
+    Vector v;
+    if (!acc::minigame::ReadOffsetVector(player, v)) return;  // preserve offset.y
+    v.x = el;   // offset.x = elevation
+    v.z = az;   // offset.z = azimuth
+    acc::minigame::WriteOffsetVector(player, v);
 }
 
 // Angle (degrees) between the aim ray and the (already normalised)
@@ -1465,25 +1466,22 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
     if (steer) {
         const int sAz = g_state.calib_sign_az ? g_state.calib_sign_az : 1;
         const int sEl = g_state.calib_sign_el ? g_state.calib_sign_el : 1;
+        float newAz, newEl;
         if (fullAuto) {
-            gain = kAssistGainAuto;
+            // Full lock-on (turret-only autoplay): snap hard, uncapped.
+            gain  = kAssistGainAuto;
+            newAz = offAz - sAz * errAz * gain;
+            newEl = offEl - sEl * errEl * gain;
         } else {
-            // Ramp gain with proximity: t=0 at the engage edge, 1 dead-on. t^2
-            // keeps the far end gentle (a guide) and the near end strong (sticky).
-            float t = 1.0f - angle / kMagnetEngageDeg;
-            if (t < 0.0f) t = 0.0f;
-            gain = kMagnetGainFar + t * t * (kMagnetGainNear - kMagnetGainFar);
+            // Magnetism (shared facility, minigame_aim.h): proximity-ramped
+            // (t=0 at the engage edge, 1 dead-on), per-tick-capped pull blended
+            // on top of the player's own WASD swing.
+            const acc::minigame::MagnetParams mp{
+                kMagnetGainFar, kMagnetGainNear, kMagnetMaxStepDeg};
+            gain  = acc::minigame::MagnetGain(1.0f - angle / kMagnetEngageDeg, mp);
+            newAz = acc::minigame::MagnetStep(offAz, sAz * errAz, gain, mp);
+            newEl = acc::minigame::MagnetStep(offEl, sEl * errEl, gain, mp);
         }
-        float stepAz = -sAz * errAz * gain;
-        float stepEl = -sEl * errEl * gain;
-        if (!fullAuto) {  // cap the magnet pull so a far target is pulled, not yanked
-            if (stepAz >  kMagnetMaxStepDeg) stepAz =  kMagnetMaxStepDeg;
-            else if (stepAz < -kMagnetMaxStepDeg) stepAz = -kMagnetMaxStepDeg;
-            if (stepEl >  kMagnetMaxStepDeg) stepEl =  kMagnetMaxStepDeg;
-            else if (stepEl < -kMagnetMaxStepDeg) stepEl = -kMagnetMaxStepDeg;
-        }
-        float newAz = offAz + stepAz;
-        float newEl = offEl + stepEl;
         while (newAz >= 360.0f) newAz -= 360.0f;  // KeepInTunnel wraps too, but
         while (newAz <   0.0f)  newAz += 360.0f;  // avoid a one-frame out-of-range
         WriteOffset(newAz, newEl);

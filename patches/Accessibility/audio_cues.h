@@ -40,7 +40,10 @@ enum class NavCue {
     // swoop_spatial_audio.cpp use GetNavCueResref for these so the
     // glossary preview and the live race fire the same sample.
     SwoopAccelpadBoost,     // acc_boost (panned racing-line steering guide)
-    SwoopObstacleWarn,      // mgs_hover_07l (in-range obstacle loop)
+    SwoopObstacleWarn,      // cb_gr_boncehard2 (short metallic grenade-bounce;
+                            //   looped = constant un-ignorable clicking. Replaced
+                            //   mgs_hover_07l, a quiet sustained hover drone whose
+                            //   faint attack got lost in the ~0.7s in-range window)
     SwoopWallImpact,        // mgs_sith_hit1 (side-wall thump one-shot)
     // Co-pilot discrete-command steering (experimental, 2026-06-21). A
     // repeating directional tick (panned AND pitched to the side to steer) +
@@ -75,7 +78,7 @@ constexpr const char* GetNavCueResref(NavCue cue) {
         case NavCue::BeaconWaypointReached:    return "gui_prompt";
         case NavCue::BeaconDestinationReached: return "gui_complete";
         case NavCue::SwoopAccelpadBoost:       return "acc_boost";
-        case NavCue::SwoopObstacleWarn:        return "mgs_hover_07l";
+        case NavCue::SwoopObstacleWarn:        return "cb_gr_boncehard2";
         case NavCue::SwoopWallImpact:          return "mgs_sith_hit1";
         case NavCue::SwoopSteerLeft:           return "acc_steer_l";
         case NavCue::SwoopSteerRight:          return "acc_steer_r";

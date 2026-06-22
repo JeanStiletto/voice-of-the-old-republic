@@ -25,6 +25,8 @@
                               //     anchor — engine swaps the player
                               //     creature during the race, so
                               //     GetPlayerPosition is fallback)
+#include "minigame_aim.h"     // shared offset read/write + magnetism (the
+                              //     turret aim-assist port — lateral steering)
 #include "log.h"
 
 namespace acc::swoop_race {
@@ -159,6 +161,14 @@ constexpr float       kAccelpadCueRangeM        = 300.0f;
 // 0x60 + mini_game ptr 0x4 + field2_0x64 0x4).
 constexpr size_t kTrackFollowerModelsDataOffset = 0x68;
 constexpr size_t kModelVtableSlotGetPosition    = 0x64;
+// CSWTrackFollower combat/physics scalars (shared layout with the turret —
+// turret_game.cpp reads sphere_radius at the same offset). sphere_radius is the
+// engine's real hit primitive: the accelpad hit test is a swept sphere-vs-sphere
+// at player.sphere_radius + pad.sphere_radius (swoop-accelpad-hit-model.md), so
+// we read BOTH live and sum them for the CROSS scoring rather than hard-coding a
+// per-track literal. speed gates the steering magnet off during the start hold.
+constexpr size_t kFollowerSphereRadiusOffset    = 0x84;  // float
+constexpr size_t kFollowerSpeedOffset           = 0x98;  // float
 
 // ----- Lateral-pan diagnostic (added 2026-06-20) -----
 //
@@ -196,10 +206,15 @@ constexpr float  kRadToDeg                       = 57.2957795f;
 //                            only ~150 ms warning — confirmed too late by
 //                            the user 2026-05-24.
 //
-//   kObstacleWarnLoopResref — engine sample played for each obstacle.
-//                            mgs_hover_07l (the `l` suffix is the engine
-//                            convention for designed-to-loop samples,
-//                            same family as mgs_engine_NNl).
+//   kObstacleWarnLoopResref — engine sample looped for each obstacle.
+//                            cb_gr_boncehard2 — a short metallic grenade-bounce
+//                            SFX with steady pitch/volume, so looping it reads as
+//                            a constant metallic clicking that can't be ignored
+//                            in the ~0.7s in-range window. Replaced mgs_hover_07l,
+//                            a quiet sustained hover drone whose faint attack was
+//                            lost in that window (the "obstacles easy to ignore"
+//                            bug — the same long-drone problem the accelpad loop
+//                            sample was trimmed to fix).
 //
 //   kObstacleForwardMargin — obstacles whose Y (forward axis on the
 //                            tunnel track — the bike moves from low Y to
@@ -409,13 +424,14 @@ constexpr ULONGLONG   kWallCueDebounceMs = 400;   // don't machine-gun while pin
 constexpr float       kWallCuePanM      = 5.0f;   // ±pan of the cue to the wall side
 constexpr const char* kWallCueResref =
     acc::audio::GetNavCueResref(acc::audio::NavCue::SwoopWallImpact);
-// Combined accel-pad hit radius (player.Sphere_Radius + pad.Sphere_Radius), used
-// ONLY for the cosmetic hit= flag on the CROSS scoring line. It is track- and
-// mod-dependent: stock Taris = 6, stock Tatooine/Manaan = 5; our widened
-// Tatooine .are makes it 8 (player 3 + pad 5). Set to the current test target so
-// the log flag matches reality — re-scoring at other radii is still a one-liner
-// over the abs= field. (The engine's real test isn't read here; see
-// swoop-accelpad-hit-model.md.)
+// FALLBACK combined accel-pad hit radius (player.Sphere_Radius +
+// pad.Sphere_Radius) for the CROSS hit= flag. The scoring now reads BOTH radii
+// LIVE off the engine (player + nearest pad, at +0x84) and sums them, so the flag
+// matches the real swept sphere-vs-sphere test on whatever track/mod is loaded —
+// no per-track literal to keep in sync. This constant is used only if a radius
+// read faults. Reference values: stock Taris 6 (player 3 + pad 3), stock
+// Tatooine/Manaan 5, our widened Tatooine .are 8 (player 3 + pad 5).
+// See swoop-accelpad-hit-model.md.
 constexpr float       kAccelpadHitRadiusU = 8.0f;
 // Post-coast miss within this band reads as "on the line" → release/hold. Kept
 // inside the pad catch radius (~5-6 u) so a released coast still lands a hit.
@@ -441,9 +457,52 @@ constexpr const char* kSteerRightResref =
 constexpr const char* kSteerAlignedResref =
     acc::audio::GetNavCueResref(acc::audio::NavCue::SwoopSteerAligned);
 // Per-cue base volume (0..127). The synthesised tones are hot (RMS ~44-48%);
-// 96 ≈ 75% trims them from "a bit too loud" without losing them in the race
-// mix. The global cue slider still scales this.
-constexpr uint8_t     kSteerCueVolume = 96;
+// the global cue slider still scales this. Lowered 96->67 (-30%) then 67->54
+// (-20% more, 2026-06-22, both by user request) — the constant directional
+// beeping was too loud against the race mix now that the steering magnet carries
+// the actual catching.
+constexpr uint8_t     kSteerCueVolume = 54;
+
+// ----- Lateral steering magnetism (2026-06-22, shared aim-assist port) -------
+//
+// The console-style "sticky aim" from the shipped turret assist, applied to the
+// swoop bike's ONE steering axis. The three advisory-cue models (object-in-
+// world, ideal-line, co-pilot) all plateaued at ~34% gates because they left
+// the PLAYER as the controller of a sub-second full-lane swing — informing
+// better can't beat a too-small time budget. Magnetism instead WRITES the
+// control field (offset.x at +0x1c4, the bike's lateral lane coord) toward the
+// next gate's lane: gentle far, sticky near, capped per tick, BLENDED on top of
+// the player's own steering. The cap is well below the player's bank authority
+// (±10/tick), so holding a key still overrides — this closes the last units of a
+// near-miss, it does not drive the bike. (No full lock-on / autoplay variant —
+// that stays turret-only, per the user.)
+//
+// Grounding: offset.x maps 1:1 to world-X (camera-and-swoop.md), so the
+// corrective step is the world lateral error (padErr) directly and the
+// offset→world sign is a known +1 (no calibration needed, unlike the turret's
+// rotated gun aim). Mid-lane lateral inertia is ~nil (the ±10 bank is not a
+// momentum accumulator; real post-release coast ~1 u — see swoop_steering
+// notes), so a written offset.x lands cleanly without an inertia model.
+//
+// UNVERIFIED IN-GAME: this assumes writing offset.x steers the bike the same way
+// writing it aims the turret gun (engine re-integrates offset each tick, so the
+// write sticks). The throttled SwoopAssist log reports offsetX before/after +
+// bikeX so the first test confirms the write takes and the bike tracks it. If it
+// is clobbered, switch the write target to the bank level (AdjustPosition
+// field10_0x1d0) instead.
+//
+// kSwoopMagnetEngageU — engage only when the next gate is within this lateral
+//   error (lane is ±20; gates jump up to ~40 apart). Beyond it, no pull — the
+//   player initiates the swing, as with the turret's engage angle.
+constexpr float kSwoopMagnetEngageU   = 24.0f;  // lane-units; magnetism engages within
+constexpr float kSwoopMagnetGainFar   = 0.06f;  // pull at the engage edge (gentle guide)
+constexpr float kSwoopMagnetGainNear  = 0.35f;  // pull dead-on the lane (sticky; < turret 0.50)
+constexpr float kSwoopMagnetMaxStepU  = 2.5f;   // per-tick cap (lane-units); < player bank authority
+// During the pre-race countdown the engine force-centers the bike (speed=0, our
+// offset write is clobbered back to lane center), so the magnet would write
+// uselessly and spam the heartbeat log. Gate it on the bike actually moving.
+// Live: start hold reads speed=0; gear 1 launches to ~9 then 30+ u/s.
+constexpr float kSwoopMinRaceSpeed    = 1.0f;   // u/s; below this the race hasn't launched
 
 // ----- Next-gate preview (2026-06-21) ---------------------------------------
 //
@@ -457,7 +516,8 @@ constexpr uint8_t     kSteerCueVolume = 96;
 // left, high = right) but quieter — "get ready", not "act".
 constexpr float       kPreviewLeadU  = 120.0f;  // announce next gate when current
                                                 //   is within this far ahead
-constexpr uint8_t     kPreviewVolume = 55;      // softer than the steer-now ticks
+constexpr uint8_t     kPreviewVolume = 38;      // softer than the steer-now ticks
+                                                //   (-30% with the co-pilot, 2026-06-22)
 
 // Linear volume byte for a source at 3D distance `dist` within `range`:
 // full (kSwoopVolNearByte) at the listener, ramping to kSwoopVolFarByte
@@ -515,6 +575,11 @@ struct SpatialAudioState {
     // wall-impact sound, so it doesn't machine-gun while the bike sits pinned.
     ULONGLONG last_wall_cue_ms    = 0;
 
+    // Lateral steering magnetism: throttle for the ~1/s SwoopAssist heartbeat
+    // log (the assist writes offset.x every in-band tick; we only log once a
+    // second so normal play isn't spammed).
+    ULONGLONG last_magnet_log_ms  = 0;
+
     // Crossing-event scoring: last tick's targeted gate + its lateral miss and
     // forward gap, so when the target changes we can interpolate the EXACT
     // lateral miss at fwdGap=0 (ground-truth hit, vs the noisy periodic copilot
@@ -556,6 +621,16 @@ bool SafeReadVector(void* base, size_t off, Vector& out) {
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
+    }
+}
+
+float SafeReadFloat(void* base, size_t off) {
+    if (!base) return 0.0f;
+    __try {
+        return *reinterpret_cast<float*>(
+            reinterpret_cast<unsigned char*>(base) + off);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0.0f;
     }
 }
 
@@ -901,6 +976,10 @@ void TickAccelpadCues(void* miniGame) {
     Vector tunnel;   const bool tunOk  =
         SafeReadVector(player, kMiniPlayerOffsetVectorOffset, tunnel);
     const float refY = bikeOk ? bikePos.y : listener_pos.y;
+    // Live physics scalars: bike forward speed (gates the magnet off at the start
+    // hold) and the player's own sphere_radius (half of the real hit radius).
+    const float bikeSpeed   = SafeReadFloat(player, kFollowerSpeedOffset);
+    const float playerRadius = SafeReadFloat(player, kFollowerSphereRadiusOffset);
 
     int slots_seen = 0;
     int accelpads_found = 0;
@@ -911,6 +990,8 @@ void TickAccelpadCues(void* miniGame) {
     // The outlier guard drops junk reads (one pad came back at X=1933).
     const float bikeXref = bikeOk ? bikePos.x : listener_pos.x;
     int   ahead_slot = -1;  float ahead_y = 0.0f;  Vector ahead_pos = {0,0,0};
+    float ahead_radius = 0.0f;  // the nearest gate's sphere_radius (other half of
+                                // the real hit radius; all pads share one value).
     // Second-nearest gate ahead — drives the preview heads-up.
     int   next_slot  = -1;  float next_y  = 0.0f;  Vector next_pos  = {0,0,0};
 
@@ -945,6 +1026,7 @@ void TickAccelpadCues(void* miniGame) {
             // New nearest gate — demote the old nearest to second.
             next_slot = ahead_slot; next_y = ahead_y; next_pos = ahead_pos;
             ahead_slot = i; ahead_y = pos.y; ahead_pos = pos;
+            ahead_radius = SafeReadFloat(enemy, kFollowerSphereRadiusOffset);
         } else if (next_slot < 0 || pos.y < next_y) {
             next_slot = i; next_y = pos.y; next_pos = pos;
         }
@@ -986,12 +1068,20 @@ void TickAccelpadCues(void* miniGame) {
                 g_state.prev_ahead_padErr +
                 (padErr_now - g_state.prev_ahead_padErr) * t;
             const float acrx = crossErr < 0.0f ? -crossErr : crossErr;
+            // Real hit radius, read live = player.sphere_radius + pad.sphere_radius
+            // (the engine's swept sphere-vs-sphere test). All pads share one
+            // radius, so the current nearest gate's value scores the just-crossed
+            // one. Fall back to the literal only if a read faulted (radius <= 0).
+            const float combinedRadius =
+                (playerRadius > 0.0f && ahead_radius > 0.0f)
+                    ? (playerRadius + ahead_radius)
+                    : kAccelpadHitRadiusU;
             acclog::Write("SwoopRace",
                           "CROSS slot=%d padX=%.2f crossErr=%.2f abs=%.2f "
-                          "hit=%d vel=%.2f",
+                          "hit=%d radius=%.1f vel=%.2f",
                           g_state.prev_ahead_slot, g_state.prev_ahead_posX,
-                          crossErr, acrx, (acrx <= kAccelpadHitRadiusU) ? 1 : 0,
-                          g_state.smoothed_vel);
+                          crossErr, acrx, (acrx <= combinedRadius) ? 1 : 0,
+                          combinedRadius, g_state.smoothed_vel);
         }
     }
 
@@ -1047,6 +1137,39 @@ void TickAccelpadCues(void* miniGame) {
         }
     }
     g_state.steer_cmd = desired;
+
+    // ----- Lateral steering magnetism (shared aim-assist facility). -----
+    // Nudge the bike's lane (offset.x at +0x1c4) toward the next gate's lane:
+    // gentle far, sticky near, capped per tick, blended on top of the player's
+    // own steering. offset.x maps 1:1 to world-X, so the corrective step is the
+    // world lateral error (padErr) directly, sign +1 (no calibration). See the
+    // constants block for the engine grounding and the in-game-verification plan.
+    // `tunnel` IS the offset Vector (+0x1c4) read above; we replace only its x.
+    if (have_target && bikeOk && tunOk && player &&
+        bikeSpeed > kSwoopMinRaceSpeed &&
+        std::fabs(padErr) <= kSwoopMagnetEngageU) {
+        const acc::minigame::MagnetParams mp{
+            kSwoopMagnetGainFar, kSwoopMagnetGainNear, kSwoopMagnetMaxStepU};
+        const float t    = 1.0f - std::fabs(padErr) / kSwoopMagnetEngageU;
+        const float gain = acc::minigame::MagnetGain(t, mp);
+        // mappedErr = bikeX − padX = −padErr, so the pull (−mappedErr·gain) is
+        // toward the pad's lane.
+        const float newOffX =
+            acc::minigame::MagnetStep(tunnel.x, -padErr, gain, mp);
+        Vector newOff = tunnel;
+        newOff.x = newOffX;
+        acc::minigame::WriteOffsetVector(player, newOff);
+
+        const ULONGLONG nowMag = GetTickCount64();
+        if (nowMag - g_state.last_magnet_log_ms >= 1000) {
+            g_state.last_magnet_log_ms = nowMag;
+            acclog::Write("SwoopAssist",
+                          "magnet slot=%d padErr=%.2f gain=%.2f offX %.2f->%.2f "
+                          "bikeX=%.2f padX=%.2f fwdGap=%.1f",
+                          ahead_slot, padErr, gain, tunnel.x, newOffX,
+                          bikePos.x, ahead_pos.x, fwdGap);
+        }
+    }
 
     // ----- Predictive overshoot / wall cue. -----
     // Fire the wall-impact sound ~kWallLeadTicks before the bike pins instead of
@@ -1169,6 +1292,7 @@ void ResetSpatialAudio() {
     g_state.last_steer_tick_ms    = 0;
     g_state.previewed_slot        = -1;
     g_state.last_wall_cue_ms      = 0;
+    g_state.last_magnet_log_ms    = 0;
     g_state.have_prev_ahead       = false;
     g_state.prev_ahead_posX       = 0.0f;
     g_state.prev_ahead_posY       = 0.0f;
