@@ -323,7 +323,11 @@ constexpr int         kSwoopVolFarByte     = 50;
 // NOT settle, so the brake survives when you need it. (The prior versions
 // settled on centre alone, which is why the brake was lost mid-slide.)
 constexpr float kSteerLeadTicks  = 5.0f;
-constexpr float kSteerVelSmooth  = 0.30f;  // EMA on the noisy per-tick velocity
+// EMA on the noisy per-tick velocity. Raised 0.30->0.50 (2026-06-22, Flaw 5):
+// with the coast lead cut to ~1 tick (kCoastTicks), velocity no longer feeds a
+// x8 amplifier, so the heavy smoothing that was hiding per-tick noise is no
+// longer needed — and its ~3-tick lag hurt responsiveness more than the noise.
+constexpr float kSteerVelSmooth  = 0.50f;
 constexpr float kSteerVelClamp   = 8.0f;   // reject one-tick bike-X glitches
 // Low-pass on the panned offset. snap on pad handoff (below) avoids carry-over.
 constexpr float kSteerPanSmooth  = 0.45f;
@@ -366,13 +370,53 @@ enum {
     kSteerCmdRight   = 1,
     kSteerCmdAligned = 2,
 };
-// Lead term, in ticks of current lateral velocity. RAISE to release earlier
-// (cures overshoot); LOWER to release later (cures undershoot). Primary knob.
-// Tuned 2026-06-21 from the 055727 practice runs: with 12, 7 of 9 near-misses
-// were UNDERSHOOTS (released too early, landed short) vs only 2 overshoots —
-// the lead overestimated the real coast, so cut it to 8 to hold the steer
-// longer and land deeper into the pad.
-constexpr float       kCoastTicks    = 8.0f;
+// Lead term, in ticks of current lateral velocity — predicts where the bike
+// drifts if you release the steer key now.
+//
+// Engine grounding (decompiled 2026-06-22, CSWMiniPlayer::{AdjustPosition,
+// Control,DoInertia,KeepInTunnel}): swoop steering is a BANK LEVEL clamped to
+// [-10,+10] (AdjustPosition.field10_0x1d0), NOT a momentum accumulator, and the
+// only lateral "inertia" is collision-plane bump inertia (DoInertia, gated on
+// CSWMiniGame::use_inertia and only non-zero at a wall). Mid-lane there is
+// essentially no momentum to coast on. Live traces confirm it: lateral velocity
+// reverses in ~5-8 ticks and the real post-release coast is ~1 unit — whereas
+// the old vel*8 model predicted ~13 (patch-20260622 slot 26: predicted 12.8 u,
+// actual ~1 u). That ~10x overestimate fired the "aligned/release" cue 10-20 u
+// short of the pad on 29% of gates — the dominant miss cause (Flaw 1).
+//
+// So this is a small velocity lead, NOT a stopping-distance estimate. RAISE a
+// little if the bike still overshoots; do NOT restore the old large value.
+//
+// Probe 2026-06-22: raised 1.0 -> 2.5. With 1.0 the controller held "steer" all
+// the way to ~2u and the bike overshot to the wall on 32% of ticks (up from
+// 22%). Releasing a bit earlier should cut the wall-slamming and still land
+// inside the 8u catch (real coast ~1u, so an aligned call near ~6u still lands
+// ~5u). If this reintroduces undershoot, step back toward ~1.5.
+constexpr float       kCoastTicks    = 2.5f;
+// ----- Predictive overshoot / wall cue (2026-06-22) -------------------------
+// Fire the existing wall-impact sound ~kWallLeadTicks BEFORE the bike pins,
+// instead of on contact, so the player starts re-steering that much sooner (you
+// can't out-react the pin, but you waste less time stuck against the wall). Lead
+// is small on purpose: at top lateral speed the 40u lane crosses in ~0.3s, so a
+// big lead would fire across most of the lane. ~3 ticks ≈ 0.1s. The cue is
+// guarded to a genuine OVERSHOOT (moving away from the target pad toward the
+// wall) so it doesn't cry wolf on the ~38% of pads that legitimately sit at the
+// edges — that guard is one sign comparison, not a new subsystem.
+constexpr float       kWallLeadTicks    = 3.0f;   // ticks of velocity look-ahead (~0.1s)
+constexpr float       kWallEdgeOffsetU  = 20.0f;  // lane half-width in tunnel-offset units
+constexpr float       kWallMinVel       = 0.5f;   // ignore slow drift (u/tick)
+constexpr ULONGLONG   kWallCueDebounceMs = 400;   // don't machine-gun while pinned
+constexpr float       kWallCuePanM      = 5.0f;   // ±pan of the cue to the wall side
+constexpr const char* kWallCueResref =
+    acc::audio::GetNavCueResref(acc::audio::NavCue::SwoopWallImpact);
+// Combined accel-pad hit radius (player.Sphere_Radius + pad.Sphere_Radius), used
+// ONLY for the cosmetic hit= flag on the CROSS scoring line. It is track- and
+// mod-dependent: stock Taris = 6, stock Tatooine/Manaan = 5; our widened
+// Tatooine .are makes it 8 (player 3 + pad 5). Set to the current test target so
+// the log flag matches reality — re-scoring at other radii is still a one-liner
+// over the abs= field. (The engine's real test isn't read here; see
+// swoop-accelpad-hit-model.md.)
+constexpr float       kAccelpadHitRadiusU = 8.0f;
 // Post-coast miss within this band reads as "on the line" → release/hold. Kept
 // inside the pad catch radius (~5-6 u) so a released coast still lands a hit.
 constexpr float       kReleaseBand   = 4.0f;
@@ -466,6 +510,10 @@ struct SpatialAudioState {
     // Next-gate preview: the ahead_slot we've already announced the follow-on
     // gate for, so the heads-up fires once per gate.
     int       previewed_slot     = -1;
+
+    // Predictive overshoot/wall cue debounce: last time we fired the early
+    // wall-impact sound, so it doesn't machine-gun while the bike sits pinned.
+    ULONGLONG last_wall_cue_ms    = 0;
 
     // Crossing-event scoring: last tick's targeted gate + its lateral miss and
     // forward gap, so when the target changes we can interpolate the EXACT
@@ -942,15 +990,15 @@ void TickAccelpadCues(void* miniGame) {
                           "CROSS slot=%d padX=%.2f crossErr=%.2f abs=%.2f "
                           "hit=%d vel=%.2f",
                           g_state.prev_ahead_slot, g_state.prev_ahead_posX,
-                          crossErr, acrx, (acrx <= 6.0f) ? 1 : 0,
+                          crossErr, acrx, (acrx <= kAccelpadHitRadiusU) ? 1 : 0,
                           g_state.smoothed_vel);
         }
     }
 
-    // ----- Co-pilot command for the current gate (experimental). -----
-    // padErr = padLane − bikeX (true current miss). coast = where the bike will
-    // drift to if you release the steer key NOW (reaction + inertia, bundled).
-    // proj = the post-coast miss the controller actually acts on.
+    // ----- Co-pilot command (experimental). -----
+    // padErr/fwdGap are always the TRUE nearest-gate values — scoring (the CROSS
+    // interpolation) and the preview both rely on them, so they must not move.
+    // coast = where the bike drifts if you release now. proj = post-coast miss.
     const bool have_target = (ahead_slot >= 0) && bikeOk;
     const float padErr = have_target ? (ahead_pos.x - bikePos.x) : 0.0f;
     const float fwdGap = have_target ? (ahead_pos.y - refY) : -1.0f;
@@ -1000,6 +1048,35 @@ void TickAccelpadCues(void* miniGame) {
     }
     g_state.steer_cmd = desired;
 
+    // ----- Predictive overshoot / wall cue. -----
+    // Fire the wall-impact sound ~kWallLeadTicks before the bike pins instead of
+    // on contact, so re-steering starts sooner. Guard: only on a genuine
+    // OVERSHOOT — projected to cross the lane edge AND moving away from the
+    // target pad (vel and padErr opposite signs) — so it stays silent when you're
+    // correctly racing toward a pad that sits near the edge. tunnel.x is the lane
+    // offset (±kWallEdgeOffsetU = wall); smoothed_vel is the lateral velocity
+    // (world-X delta, same units as the offset delta).
+    if (have_target && tunOk) {
+        const float vel       = g_state.smoothed_vel;
+        const float projected = tunnel.x + vel * kWallLeadTicks;
+        const bool  toward_wall  = std::fabs(projected) >= kWallEdgeOffsetU &&
+                                   std::fabs(tunnel.x)  <  kWallEdgeOffsetU;
+        const bool  overshooting = vel * padErr < 0.0f;  // moving away from pad
+        if (toward_wall && overshooting && std::fabs(vel) > kWallMinVel &&
+            now - g_state.last_wall_cue_ms >= kWallCueDebounceMs) {
+            const int side = (vel > 0.0f) ? +1 : -1;
+            Vector cue = listener_pos;
+            cue.x += (side > 0) ? +kWallCuePanM : -kWallCuePanM;
+            acc::audio::PlayCue3D(kWallCueResref, cue);
+            g_state.last_wall_cue_ms = now;
+            acclog::Write("SwoopRace",
+                          "wall predict side=%s tunnelX=%.1f vel=%.2f "
+                          "proj=%.1f padErr=%.1f",
+                          side > 0 ? "right" : "left", tunnel.x, vel,
+                          projected, padErr);
+        }
+    }
+
     // The continuous pan tone is retired in co-pilot mode; silence any loop
     // left active by a prior build / race so the two cues never overlap.
     if (g_state.accelpad_line_loop.IsActive()) g_state.accelpad_line_loop.Stop();
@@ -1010,7 +1087,13 @@ void TickAccelpadCues(void* miniGame) {
     // gate's lane — that's where you'll be at the crossing). Soft + single =
     // "get ready", so it pre-loads the direction before the loud steer-now ticks,
     // recovering the reaction delay the old handoff snap used to eat. Once/gate.
-    if (have_target && desired == kSteerCmdAligned && next_slot >= 0 &&
+    // Flaw 2 fix (2026-06-22): fire the heads-up once per gate whenever the
+    // current gate is within the lead window — NOT only when you're aligned on
+    // it. Gating on alignment meant a missed gate (you never settle) suppressed
+    // the NEXT gate's preview, so one miss cascaded into a run of misses
+    // (patch-20260622 miss clusters 26-28, 36-38, 47-51). The next-gate
+    // direction is meaningful whether or not you caught the current one.
+    if (have_target && next_slot >= 0 &&
         g_state.previewed_slot != ahead_slot && fwdGap < kPreviewLeadU) {
         const float nextDelta = next_pos.x - ahead_pos.x;
         if (std::fabs(nextDelta) > kReleaseBand) {       // a real move is coming
@@ -1085,6 +1168,7 @@ void ResetSpatialAudio() {
     g_state.steer_cmd             = kSteerCmdNone;
     g_state.last_steer_tick_ms    = 0;
     g_state.previewed_slot        = -1;
+    g_state.last_wall_cue_ms      = 0;
     g_state.have_prev_ahead       = false;
     g_state.prev_ahead_posX       = 0.0f;
     g_state.prev_ahead_posY       = 0.0f;

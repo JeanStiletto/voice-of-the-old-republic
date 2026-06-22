@@ -18,15 +18,8 @@
 #include <cstdio>
 #include <cstring>
 
-#include "audio_bus.h"        // PlayCue3D — wall-impact one-shot
 #include "engine_area.h"      // GetClientArea + map-pin chain (back-pointer)
 #include "engine_offsets.h"   // Vector
-#include "engine_player.h"    // GetCameraPosition (primary listener anchor
-                              //                    during race — the engine
-                              //                    swaps the player creature
-                              //                    so GetPlayerPosition can't
-                              //                    be relied on here),
-                              //                    GetPlayerPosition (fallback)
 #include "log.h"
 #include "prism.h"            // SpeakUrgent — entry/exit/gear must beat
                               //              NVDA's typed-character cancel
@@ -34,9 +27,6 @@
 #include "strings.h"          // Get(SwoopRaceStarted/Controls/Ended) +
                               //     FmtSwoopRaceGear
 #include "swoop_spatial_audio.h"  // TickSpatialAudio + ResetSpatialAudio
-#include "audio_cues.h"       // NavCue + GetNavCueResref (centralised
-                              //     resref vocabulary — Audio glossary
-                              //     and live race fire the same samples)
 
 namespace acc::swoop_race {
 
@@ -136,84 +126,14 @@ constexpr ULONGLONG kDiagLogIntervalMs    = 1000;
 
 // ----- Side-wall collision detection -----
 //
-// Sighted players see+hear a brief bounce-off animation when the bike
-// scrapes the lane wall. Heuristic detection (no engine collision hook
-// yet identified): watch CSWMiniPlayer.offset_vector.x (the tunnel-
-// frame lane coordinate). When the player has had non-trivial lateral
-// motion over the recent EMA window and the per-tick delta then
-// collapses to ~0, the lane shift has stalled — the bike is pinned
-// against a wall in the direction it was moving.
-//
-// Side is the sign of the recent SIGNED lateral EMA: positive = was
-// moving +X (right wall hit), negative = -X (left wall hit). The cue
-// is fired as a 3D one-shot offset by ±kCollisionPanOffsetM in the
-// listener's local X so the engine pans hard left or right; the
-// camera follows the bike with +Y forward orientation during the
-// race, so world +X aligns with listener-local right.
-//
-// Single-shot per impact: the recent-EMA accumulators reset to zero
-// after a fire so a sustained wall-hug doesn't machine-gun the cue.
-// kCollisionDebounceMs is a belt-and-braces floor for the same reason.
-//
-// Threshold units are world-X per OnUpdate tick. The 2026-05-24 1 Hz
-// snapshot showed lateral excursions of 0.5..8 units/s at the
-// listener; per-tick (~30 Hz) that's 0.02..0.27 units/tick. Movement
-// floor 0.10 and stall ceiling 0.02 sit comfortably either side of
-// the noise floor without triggering on slow drift.
-constexpr float       kCollisionMovingThreshold = 0.10f;  // units/tick
-constexpr float       kCollisionStalledThreshold = 0.02f; // units/tick
-constexpr float       kCollisionEmaAlpha         = 0.30f;
-// Pan offset: 5 m is the lower end of the engine's well-tuned 5-20 m
-// curve (audio_bus.h comment). 3 m was inaudible in
-// patch-20260524-223840.log — the engine's near-field (<5 m)
-// attenuates oddly.
-constexpr float       kCollisionPanOffsetM       = 5.0f;
-constexpr ULONGLONG   kCollisionDebounceMs       = 500;
-
-// Lane-X gate. An "impact" only counts when the bike is actually at
-// the lane edge; without this, a brief pause between A/D taps
-// mid-track triggered a false impact (patch-20260524-225225.log line
-// 2268: impact fired at laneX=-3.93, nowhere near the ±20 walls).
-// m03mg lane edge is ±20; 15 leaves a 5-unit margin in case other
-// tracks clamp slightly inside their nominal edge. If a track has
-// significantly narrower lanes we'll need to make this per-track.
-constexpr float       kCollisionMinWallLaneX     = 15.0f;
-
-// Wall-impact sample. gui_invdrop (NavCue::Collision) was inaudible in
-// the 2026-05-24 swoop test — it's a short UI click, easily masked.
-// mgs_sith_hit1 is the heavier "ship took a hit" sample from the
-// space combat minigame; contextually fits "your bike just thumped a
-// wall" and is loud enough to cut through the 4 Hz obstacle ticks.
-constexpr const char* kCollisionCueResref =
-    acc::audio::GetNavCueResref(acc::audio::NavCue::SwoopWallImpact);
-
-// ----- Sustained wall-scrape -----
-//
-// The initial-hit detector only fires on the "lateral motion stalls"
-// transition — it can't re-fire while the bike is pinned against the
-// wall (dx = 0 for the entire scrape, so the moving-EMA never re-
-// arms). Without a sustained cue the player hears one thump at the
-// moment of impact, then has no way to tell they're still grinding
-// the wall.
-//
-// Pinned detection: after an initial hit, store the lane-X at impact.
-// Release on the first tick where dx points AWAY from the pinned
-// wall (toward centre) by more than the noise floor. Distance-only
-// release (drift > 3.0) was over-tolerant — patch-20260524-225225.log
-// showed 2-3 extra scrape fires after the bike had already started
-// drifting back to centre. Direction-aware release cuts the cue at
-// the moment the player commits to steering away.
-constexpr float       kCollisionReleaseAwayDx      = 0.10f; // units/tick
-
-// Sustained-scrape cue (continuous metal-strain loop + 2 s re-fire
-// heartbeat that preceded it) is DROPPED — even at the loop's clean
-// timbre the constant tone was too much noise during a race where
-// the bike spends long stretches at the wall. Only the impact thump
-// at the moment of contact remains; pinned-state tracking is kept so
-// the impact doesn't re-trigger every tick while the bike sits at
-// the edge. Earlier attempts kept for context:
-// constexpr const char* kScrapeLoopResref      = "cs_metalstrn_01";  // loop
-// constexpr ULONGLONG   kCollisionScrapeMs     = 2000;               // re-fire
+// MOVED to swoop_spatial_audio.cpp (2026-06-22). The reactive stall-based
+// detector that used to live here (EMA of lateral dx → "was moving, now
+// stalled at the edge" → fire) was replaced by a *predictive* overshoot cue in
+// the co-pilot: it fires the same wall-impact sound ~0.1s BEFORE the bike pins,
+// and only on a genuine overshoot (moving away from the target pad toward the
+// wall). That cue lives next to the co-pilot because the overshoot guard needs
+// the target-pad direction, and folding it in let us delete this module's
+// duplicate lateral-velocity tracker. See TickAccelpadCues.
 
 // ============================================================================
 // Module state. Single-threaded under the engine OnUpdate tick.
@@ -252,24 +172,8 @@ struct State {
     // gear.
     int           gear                    = 0;
     float         last_max_speed          = 0.0f;
-
-    // Side-wall collision detector state. See the kCollision* constants
-    // above for the stall-detection model. last_player_x_valid is false
-    // until we've sampled the first tick post-ENTER so the very first
-    // dx isn't a garbage "this-X minus zero" of ~100 units.
-    bool          last_player_x_valid     = false;
-    float         last_player_x           = 0.0f;
-    float         lateral_ema_abs         = 0.0f;
-    float         lateral_ema_signed      = 0.0f;
-    ULONGLONG     last_collision_ms       = 0;
-
-    // Pin-state for the sustained wall-scrape cue. wall_pinned_side is
-    // 0 when clear, +1 when pinned against the right wall, -1 left.
-    // wall_pinned_at_x snapshots the lane-X at the moment of impact so
-    // we can detect release without hardcoding the per-track lane
-    // width (m03mg edge is ±20 but other swoop tracks may differ).
-    int                wall_pinned_side   = 0;
-    float              wall_pinned_at_x   = 0.0f;
+    // (Side-wall collision state moved to swoop_spatial_audio.cpp — see the
+    // note where the old detector used to live.)
 };
 
 State g_state;
@@ -458,129 +362,8 @@ void TickGearWatch(void* miniGame) {
     }
 }
 
-// ============================================================================
-// Side-wall collision cue.
-//
-// Stall-detection heuristic — see kCollision* constants for the model.
-// Sample player lane X each tick, maintain a short EMA of dx (both
-// magnitude and signed). When magnitude EMA crosses the "was moving"
-// threshold and the latest dx falls below the "now stopped" threshold,
-// the bike has just pinned against a wall in the direction of the
-// signed EMA. Fire the standard Collision cue offset to that side of
-// the listener so the engine pans hard left/right.
-// ============================================================================
-
-// Resolve the side-panned cue position for a wall on the given side.
-// Camera is chase-cam behind the bike along +Y, so world +X aligns
-// with listener-local "right" during the race. Returns false if
-// neither camera nor player position is resolvable.
-bool ResolveWallCuePos(int side, Vector& out_listener, Vector& out_cue) {
-    if (!acc::engine::GetCameraPosition(out_listener) &&
-        !acc::engine::GetPlayerPosition(out_listener)) {
-        return false;
-    }
-    out_cue = out_listener;
-    out_cue.x += (side > 0) ? +kCollisionPanOffsetM : -kCollisionPanOffsetM;
-    return true;
-}
-
-// Fire the one-shot impact cue on the given side. Used only at the
-// moment of contact; the sustained scrape goes through the loop.
-void FireWallImpact(int side, float laneX) {
-    Vector listener_pos, cue_pos;
-    if (!ResolveWallCuePos(side, listener_pos, cue_pos)) {
-        acclog::Write("SwoopRace",
-                      "wall impact: no listener anchor, skip pan");
-        return;
-    }
-    const bool fired = acc::audio::PlayCue3D(kCollisionCueResref, cue_pos);
-    acclog::Write("SwoopRace",
-                  "wall impact side=%s laneX=%.2f listener=(%.1f,%.1f,%.1f) "
-                  "cuePos=(%.1f,%.1f,%.1f) resref=%s fired=%d",
-                  (side > 0) ? "right" : "left", laneX,
-                  listener_pos.x, listener_pos.y, listener_pos.z,
-                  cue_pos.x, cue_pos.y, cue_pos.z,
-                  kCollisionCueResref, fired ? 1 : 0);
-}
-
-void TickWallCollision(void* miniGame) {
-    void* player = SafeReadPtr(miniGame, kMiniGamePlayerOffset);
-    if (!player) return;
-
-    Vector offset;
-    if (!SafeReadVector(player, kMiniPlayerOffsetVectorOffset, offset)) {
-        return;
-    }
-
-    // First sample post-ENTER establishes the baseline. The delta on
-    // the very first tick would otherwise be "current_X minus 0" which
-    // is hundreds of units of garbage motion.
-    if (!g_state.last_player_x_valid) {
-        g_state.last_player_x       = offset.x;
-        g_state.last_player_x_valid = true;
-        return;
-    }
-
-    const float dx = offset.x - g_state.last_player_x;
-    g_state.last_player_x = offset.x;
-
-    const ULONGLONG now = GetTickCount64();
-
-    // --- Sustained-scrape branch: bike already pinned at a wall. ---
-    if (g_state.wall_pinned_side != 0) {
-        // dx in the "away from wall" direction: pinned at right (+1)
-        // → away is -dx; pinned at left (-1) → away is +dx.
-        const float away_dx = -static_cast<float>(g_state.wall_pinned_side) * dx;
-        if (away_dx > kCollisionReleaseAwayDx) {
-            // Player committed to steering off the wall. Clear the
-            // pin so the initial-hit detector can re-arm for the
-            // next impact.
-            acclog::Write("SwoopRace",
-                          "wall released side=%s laneX=%.2f away_dx=%.3f",
-                          g_state.wall_pinned_side > 0 ? "right" : "left",
-                          offset.x, away_dx);
-            g_state.wall_pinned_side = 0;
-            // Fall through so the same tick can update EMAs etc.
-        } else {
-            // Still pinned. Suppress re-impact (only the first contact
-            // should thump) and skip EMA updates — dx is ~0 here so
-            // they'd only decay further.
-            return;
-        }
-    }
-
-    // --- Initial-hit branch: detect the "was moving, now stalled" edge. ---
-    g_state.lateral_ema_abs =
-        (1.0f - kCollisionEmaAlpha) * g_state.lateral_ema_abs +
-        kCollisionEmaAlpha * std::fabs(dx);
-    g_state.lateral_ema_signed =
-        (1.0f - kCollisionEmaAlpha) * g_state.lateral_ema_signed +
-        kCollisionEmaAlpha * dx;
-
-    if (g_state.lateral_ema_abs <= kCollisionMovingThreshold) return;
-    if (std::fabs(dx) >= kCollisionStalledThreshold)            return;
-    // Bike must actually be at the lane edge; without this gate, any
-    // pause between A/D taps mid-track registered as an impact
-    // (patch-20260524-225225.log: laneX=-3.93 false-impact at line
-    // 2268).
-    if (std::fabs(offset.x) < kCollisionMinWallLaneX)           return;
-    if (now - g_state.last_collision_ms < kCollisionDebounceMs) return;
-    g_state.last_collision_ms = now;
-
-    const int side = (g_state.lateral_ema_signed > 0.0f) ? +1 : -1;
-    FireWallImpact(side, offset.x);
-
-    // Enter pinned state — pin branch above suppresses re-impact
-    // until the player steers away from the wall edge.
-    g_state.wall_pinned_side = side;
-    g_state.wall_pinned_at_x = offset.x;
-
-    // Reset the EMAs so we don't immediately re-fire the impact on the
-    // next tick (would happen if dx stays at 0 — though the pin branch
-    // would intercept that anyway, this keeps the gates clean).
-    g_state.lateral_ema_abs    = 0.0f;
-    g_state.lateral_ema_signed = 0.0f;
-}
+// Side-wall collision cue moved to swoop_spatial_audio.cpp (predictive overshoot
+// cue in TickAccelpadCues — see the note above where the old detector lived).
 
 // Continuous obstacle + accelpad proximity cues moved to
 // swoop_spatial_audio.cpp on 2026-05-27 (large-file-handling split).
@@ -632,13 +415,6 @@ void HandleEnter(void* mg) {
     g_state.ticks_since_lost    = 0;
     g_state.gear                = 0;
     g_state.last_max_speed      = 0.0f;
-    g_state.last_player_x_valid = false;
-    g_state.last_player_x       = 0.0f;
-    g_state.lateral_ema_abs     = 0.0f;
-    g_state.lateral_ema_signed  = 0.0f;
-    g_state.last_collision_ms   = 0;
-    g_state.wall_pinned_side    = 0;
-    g_state.wall_pinned_at_x    = 0.0f;
     // Defensive cleanup for obstacle + accelpad loops — any active
     // loop from a previous race must not survive into this one.
     ResetSpatialAudio();
@@ -668,7 +444,6 @@ void HandleExit() {
     // Stop every obstacle + accelpad loop — some may still be active
     // if the race ended while objects were in range.
     ResetSpatialAudio();
-    g_state.wall_pinned_side    = 0;
     g_state.active              = false;
     g_state.latched_mini_game   = nullptr;
     g_state.latched_vtable      = nullptr;
@@ -747,7 +522,6 @@ void Tick() {
     if (!g_state.latched_mini_game) return;
 
     TickGearWatch(g_state.latched_mini_game);
-    TickWallCollision(g_state.latched_mini_game);
     TickSpatialAudio(g_state.latched_mini_game);
     EmitDiagSnapshot(g_state.latched_mini_game);
 }
