@@ -21,6 +21,7 @@
 #include "engine_area.h"      // GetClientArea + map-pin chain (back-pointer)
 #include "engine_offsets.h"   // Vector
 #include "log.h"
+#include "audio_bus.h"        // PlayCue — non-positional "you can shift now" cue
 #include "prism.h"            // SpeakUrgent — entry/exit/gear must beat
                               //              NVDA's typed-character cancel
                               //              (race input is held Space/Enter)
@@ -110,6 +111,31 @@ constexpr size_t kMiniPlayerMaxSpeedOffset      = 0x1dc;
 // above the jitter and well below the smallest plausible shift.
 constexpr float kGearShiftMaxDeltaMs      = 5.0f;
 
+// ----- "You can shift now" cue (Option A — exact onfire.ncs gate) -----
+//
+// onfire.ncs (the manual-accelerate StartingConditional, decompiled from
+// build/swoop-rim/onfire.ncs 2026-06-22) only upshifts from gear N when the
+// CURRENT speed already exceeds gear N+1's min-speed; below that the accelerate
+// press is a SILENT no-op. So the earliest legal shift moment is the frame
+// speed first crosses that gate. We fire a one-shot cue there so the player can
+// shift as early as possible — the gate always sits BELOW the gear's own
+// max_speed, so you never have to redline to upshift.
+//
+// The gate ladder lives in per-track NWScript, but all three shipped swoop
+// tracks share it (Taris/Tatooine/Manaan: gear min-speeds 35/60/100/150/210;
+// only the per-track *_SWOOP_ACCEL accel rate differs). Indexed by the CURRENT
+// gear; the value is the speed you must EXCEED to upshift out of it. 0 = no
+// gate (gear 0 launch is unconditional; gear 5 is top). Gears 1..4 are gated.
+constexpr float kShiftGateSpeed[]         = { 0.0f, 60.0f, 100.0f, 150.0f,
+                                              210.0f, 0.0f };
+constexpr int   kFirstGatedGear           = 1;
+constexpr int   kLastGatedGear            = 4;
+
+// Reuse the turret minigame's "entered killable range" cue — same meaning to
+// the player (a window just opened), already mixed and volume-grouped. See
+// turret_game.cpp kRangeCueResref.
+constexpr const char* kShiftReadyCueResref = "c_drdastro_atk1";
+
 // Exit-debounce. After we lose the latched pointer, hold off announcing
 // EXIT until the loss persists for this many consecutive ticks. The
 // race-start transition flips the area chain in < 5 ticks, so 60 ticks
@@ -172,6 +198,11 @@ struct State {
     // gear.
     int           gear                    = 0;
     float         last_max_speed          = 0.0f;
+
+    // "You can shift now" cue latch. True once we've fired the cue for the
+    // CURRENT gear; re-armed by TickGearWatch on every detected shift, so the
+    // cue fires at most once per gear. See kShiftGateSpeed / TickShiftReady.
+    bool          shift_ready_announced   = false;
     // (Side-wall collision state moved to swoop_spatial_audio.cpp — see the
     // note where the old detector used to live.)
 };
@@ -346,8 +377,10 @@ void TickGearWatch(void* miniGame) {
 
     // Shift-up event: max_speed jumped by at least the noise floor.
     if (maxSpeed > g_state.last_max_speed + kGearShiftMaxDeltaMs) {
-        g_state.gear           += 1;
-        g_state.last_max_speed  = maxSpeed;
+        g_state.gear                  += 1;
+        g_state.last_max_speed         = maxSpeed;
+        // Re-arm the shift-ready cue for the gear we just entered.
+        g_state.shift_ready_announced  = false;
 
         char buf[64];
         const char* fmt = acc::strings::Get(acc::strings::Id::FmtSwoopRaceGear);
@@ -360,6 +393,41 @@ void TickGearWatch(void* miniGame) {
                           g_state.last_max_speed);
         }
     }
+}
+
+// ============================================================================
+// "You can shift now" cue (Option A — exact onfire.ncs gate, see
+// kShiftGateSpeed).
+// ============================================================================
+//
+// Fires a one-shot cue the frame current speed first crosses the gate for the
+// current gear, i.e. the earliest frame a manual shift would actually take.
+// Latched per gear (TickGearWatch re-arms it on each real shift). Self-guards
+// against a non-stock gate ladder: never announces a gate that sits at or above
+// the gear's own max_speed (an unreachable gate the bike can't climb to), so a
+// mod track with a different ladder degrades to silence, never a false cue.
+void TickShiftReady(void* miniGame) {
+    if (g_state.shift_ready_announced) return;
+
+    const int gear = g_state.gear;
+    if (gear < kFirstGatedGear || gear > kLastGatedGear) return;  // launch / top gear: no gate
+    const float gate = kShiftGateSpeed[gear];
+    if (gate <= 0.0f) return;
+
+    void* player = SafeReadPtr(miniGame, kMiniGamePlayerOffset);
+    if (!player) return;
+
+    const float maxSpeed = SafeReadFloat(player, kMiniPlayerMaxSpeedOffset);
+    if (maxSpeed <= 0.0f || gate >= maxSpeed) return;  // self-guard: gate unreachable
+
+    const float speed = SafeReadFloat(player, kFollowerSpeedOffset);
+    if (speed <= gate) return;
+
+    g_state.shift_ready_announced = true;
+    acc::audio::PlayCue(kShiftReadyCueResref);
+    acclog::Write("SwoopRace",
+                  "shift-ready cue: gear=%d speed=%.2f > gate=%.2f (max=%.2f)",
+                  gear, speed, gate, maxSpeed);
 }
 
 // Side-wall collision cue moved to swoop_spatial_audio.cpp (predictive overshoot
@@ -415,6 +483,7 @@ void HandleEnter(void* mg) {
     g_state.ticks_since_lost    = 0;
     g_state.gear                = 0;
     g_state.last_max_speed      = 0.0f;
+    g_state.shift_ready_announced = false;
     // Defensive cleanup for obstacle + accelpad loops — any active
     // loop from a previous race must not survive into this one.
     ResetSpatialAudio();
@@ -450,6 +519,7 @@ void HandleExit() {
     g_state.ticks_since_lost    = 0;
     g_state.gear                = 0;
     g_state.last_max_speed      = 0.0f;
+    g_state.shift_ready_announced = false;
     AnnounceExit();
 }
 
@@ -522,6 +592,7 @@ void Tick() {
     if (!g_state.latched_mini_game) return;
 
     TickGearWatch(g_state.latched_mini_game);
+    TickShiftReady(g_state.latched_mini_game);
     TickSpatialAudio(g_state.latched_mini_game);
     EmitDiagSnapshot(g_state.latched_mini_game);
 }

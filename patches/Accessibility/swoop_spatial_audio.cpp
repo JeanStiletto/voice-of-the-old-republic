@@ -493,16 +493,38 @@ constexpr uint8_t     kSteerCueVolume = 54;
 //
 // kSwoopMagnetEngageU — engage only when the next gate is within this lateral
 //   error (lane is ±20; gates jump up to ~40 apart). Beyond it, no pull — the
-//   player initiates the swing, as with the turret's engage angle.
-constexpr float kSwoopMagnetEngageU   = 24.0f;  // lane-units; magnetism engages within
+//   player initiates the swing, as with the turret's engage angle. Raised
+//   24->28 (2026-06-22) so the close starts a touch earlier (still not always-on).
+constexpr float kSwoopMagnetEngageU   = 28.0f;  // lane-units; magnetism engages within
 constexpr float kSwoopMagnetGainFar   = 0.06f;  // pull at the engage edge (gentle guide)
 constexpr float kSwoopMagnetGainNear  = 0.35f;  // pull dead-on the lane (sticky; < turret 0.50)
-constexpr float kSwoopMagnetMaxStepU  = 2.5f;   // per-tick cap (lane-units); < player bank authority
+// Per-tick cap. The 2026-06-22 lateral-authority probe measured the PLAYER's own
+// bank at ~85 u/s peak (~4.7 u/tick at the ~18 Hz swoop tick), p90 ~46-56 u/s.
+// Raised 2.5->3.5 (45->63 u/s) so the magnet can actually FINISH a near-miss
+// close in the forward time available (was the "engaged but didn't finish"
+// bucket) — still ~1.2 u/tick below the player's peak, so holding a key away
+// still overrides. (Old comment's "±10/tick" authority was a guess; measured is
+// ~4.7.)
+constexpr float kSwoopMagnetMaxStepU  = 3.5f;   // per-tick cap (lane-units); < player bank authority
+// Hold-through-crossing window (item 2): within this many seconds of reaching a
+// gate's forward position, the pull ramps to fully sticky regardless of lateral
+// error, so anticipatory drift toward the next (often opposite-lane) gate can't
+// peel the bike off this gate before it scores. Seconds (not units) so the
+// window is gear-independent. ~0.35 s ≈ the last ~6 ticks before a crossing.
+constexpr float kSwoopMagnetHoldSec   = 0.35f;
 // During the pre-race countdown the engine force-centers the bike (speed=0, our
 // offset write is clobbered back to lane center), so the magnet would write
 // uselessly and spam the heartbeat log. Gate it on the bike actually moving.
 // Live: start hold reads speed=0; gear 1 launches to ~9 then 30+ u/s.
 constexpr float kSwoopMinRaceSpeed    = 1.0f;   // u/s; below this the race hasn't launched
+
+// ----- Lateral-authority probe (temporary diagnostic, 2026-06-22) -----------
+// Per-tick, unthrottled trace of the bike's lateral state (tag "SwoopProbe"),
+// so we can measure the TRUE per-tick lateral velocity the throttled copilot /
+// magnet logs can't. Used to size the magnet's hold/finish tuning and the
+// rock-repel step. Flip to false (or delete the probe block in TickAccelpadCues)
+// once the authority number is captured — it is a measurement aid, not a feature.
+constexpr bool  kSwoopLateralProbe    = true;
 
 // ----- Next-gate preview (2026-06-21) ---------------------------------------
 //
@@ -1037,8 +1059,14 @@ void TickAccelpadCues(void* miniGame) {
     }
 
     // ----- Lateral velocity (units/tick), smoothed + clamped. -----
+    // probeRawDx: the UNCLAMPED per-tick world-X delta, captured for the
+    // lateral-authority probe below (the smoothing path clamps + filters it).
+    float probeRawDx   = 0.0f;
+    bool  probeHadPrev = false;
     if (bikeOk) {
         if (g_state.have_prev_bike_x) {
+            probeRawDx   = bikePos.x - g_state.prev_bike_x;
+            probeHadPrev = true;
             float v = bikePos.x - g_state.prev_bike_x;
             if (v >  kSteerVelClamp) v =  kSteerVelClamp;
             if (v < -kSteerVelClamp) v = -kSteerVelClamp;
@@ -1145,12 +1173,28 @@ void TickAccelpadCues(void* miniGame) {
     // world lateral error (padErr) directly, sign +1 (no calibration). See the
     // constants block for the engine grounding and the in-game-verification plan.
     // `tunnel` IS the offset Vector (+0x1c4) read above; we replace only its x.
+    bool probeMagnetWrote = false;
     if (have_target && bikeOk && tunOk && player &&
         bikeSpeed > kSwoopMinRaceSpeed &&
         std::fabs(padErr) <= kSwoopMagnetEngageU) {
         const acc::minigame::MagnetParams mp{
             kSwoopMagnetGainFar, kSwoopMagnetGainNear, kSwoopMagnetMaxStepU};
-        const float t    = 1.0f - std::fabs(padErr) / kSwoopMagnetEngageU;
+        float t = 1.0f - std::fabs(padErr) / kSwoopMagnetEngageU;
+        if (t < 0.0f) t = 0.0f;
+        // Hold-through-crossing (item 2): in the last kSwoopMagnetHoldSec before
+        // this gate's forward position is reached, ramp the pull to fully sticky
+        // (t->1) regardless of lateral error, so anticipatory drift toward the
+        // NEXT gate can't peel the bike off this one before it scores. Speed-
+        // scaled (time-to-cross) so the window is the same in every gear. Targets
+        // the "dead-on then drifted out" + "engaged but didn't finish" misses
+        // (22 of 31, 2026-06-22 probe).
+        if (fwdGap > 0.0f && bikeSpeed > 1.0f) {
+            const float ttc = fwdGap / bikeSpeed;                  // seconds to crossing
+            if (ttc < kSwoopMagnetHoldSec) {
+                const float hold = 1.0f - ttc / kSwoopMagnetHoldSec;  // 0 far -> 1 at crossing
+                t += (1.0f - t) * hold;
+            }
+        }
         const float gain = acc::minigame::MagnetGain(t, mp);
         // mappedErr = bikeX − padX = −padErr, so the pull (−mappedErr·gain) is
         // toward the pad's lane.
@@ -1159,6 +1203,7 @@ void TickAccelpadCues(void* miniGame) {
         Vector newOff = tunnel;
         newOff.x = newOffX;
         acc::minigame::WriteOffsetVector(player, newOff);
+        probeMagnetWrote = true;
 
         const ULONGLONG nowMag = GetTickCount64();
         if (nowMag - g_state.last_magnet_log_ms >= 1000) {
@@ -1169,6 +1214,21 @@ void TickAccelpadCues(void* miniGame) {
                           ahead_slot, padErr, gain, tunnel.x, newOffX,
                           bikePos.x, ahead_pos.x, fwdGap);
         }
+    }
+
+    // ----- Lateral-authority probe (per-tick, unthrottled). -----
+    // Full-fidelity per-frame trace so analysis can measure the TRUE per-tick
+    // lateral velocity. dX = unclamped world-X delta this tick; mag = whether the
+    // magnet wrote (so samples with mag=0 AND |padErr|>engage isolate the player's
+    // own bank authority). spd lets us check whether authority scales with speed.
+    // See kSwoopLateralProbe.
+    if (kSwoopLateralProbe && bikeOk && probeHadPrev) {
+        acclog::Write("SwoopProbe",
+                      "ms=%llu bikeX=%.2f tunnelX=%.2f dX=%.3f spd=%.1f "
+                      "padErr=%.2f fwdGap=%.1f mag=%d slot=%d",
+                      GetTickCount64(), bikePos.x, tunnel.x, probeRawDx,
+                      bikeSpeed, padErr, fwdGap, probeMagnetWrote ? 1 : 0,
+                      ahead_slot);
     }
 
     // ----- Predictive overshoot / wall cue. -----
