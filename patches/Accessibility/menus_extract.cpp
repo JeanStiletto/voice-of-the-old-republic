@@ -1339,7 +1339,18 @@ const char* FromControl(void* control,
             cid = -1;
         }
         if (cid >= 12 && cid <= 18) {
-            // Resolve the engine's slot type name via the strref table.
+            // The two diagnostic lines below (slot-type classification +
+            // occupancy state) are re-emitted every frame by the focused-
+            // control monitor while the user dwells on a slot. They share the
+            // "Menus.PerKind" tag and INTERLEAVE (A,B,A,B…), which defeats
+            // Trace's line-level dedup (each line differs from the one just
+            // before it). BlockLog would be the usual fold for interleaved
+            // lines, but this function uses __try/__except and MSVC forbids an
+            // object with a destructor there (C2712). So instead we split the
+            // two lines onto SEPARATE tags: each tag then sees only its own
+            // line repeated identically during a dwell (A,A,A… / B,B,B…) and
+            // Trace folds each to "(repeated Nx more)". No information lost —
+            // any change (new slot, new mod) flushes and re-prints in full.
             uint8_t category = 0;
             int customValue = -1;
             __try {
@@ -1375,7 +1386,7 @@ const char* FromControl(void* control,
                 }
             }
             if (resolved) {
-                acclog::Write("Menus.PerKind",
+                acclog::Trace("Menus.PerKind",
                               "WorkbenchUpgrade control=%p id=%d cat=%d cval=%d "
                               "table_idx=%d strref=%u -> \"%s\"",
                               control, cid, (int)category, customValue,
@@ -1402,7 +1413,7 @@ const char* FromControl(void* control,
                     if (llen > 0 && llen + 1 <= bufSize) {
                         memcpy(outBuf, lit, llen + 1);
                         source = "perkind-workbench-slot";
-                        acclog::Write("Menus.PerKind",
+                        acclog::Trace("Menus.PerKind",
                                       "WorkbenchUpgrade control=%p id=%d cat=%d cval=%d "
                                       "table_idx=%d strref=%u (sentinel/empty) -> fallback \"%s\"",
                                       control, cid, (int)category, customValue,
@@ -1449,7 +1460,7 @@ const char* FromControl(void* control,
                         snprintf(outBuf, bufSize, Get(Id::FmtEquipSlotEmpty),
                                  slotName);
                     }
-                    acclog::Write("Menus.PerKind",
+                    acclog::Trace("Menus.PerKind.SlotState",
                                   "WorkbenchUpgrade slot state control=%p "
                                   "installed=%p -> \"%s\"",
                                   control, installed, outBuf);

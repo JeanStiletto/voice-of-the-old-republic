@@ -663,6 +663,22 @@ void RebindChain(void* panel) {
             panel, kEquipLbItemsId);
     }
 
+    // WorkbenchUpgrade LB_ITEMS (id=0): the compatible-crystal list. Exactly
+    // the same hazard as the equip picker above — the engine keeps the listbox
+    // in panel.controls[] (just toggles its visibility via ShowItems), so the
+    // generic flatten would expose every crystal row, including rows scrolled
+    // off the visible page, as standalone chain buttons. Those off-page rows
+    // are un-presented phantoms: their hit-test returns NULL and FireActivate
+    // on one AVs the engine (lightsabercrystalcrash — a user arrowed onto the
+    // leaked off-page row after Esc-ing the picker and the game shut down).
+    // The picker has its own spec (WorkbenchUpgradeSpec) that drives row
+    // selection + scroll safely while armed; chain nav must never step into it.
+    void* workbenchUpgradeLb = nullptr;
+    if (IdentifyPanel(panel) == PanelKind::WorkbenchUpgrade) {
+        workbenchUpgradeLb = acc::menus::detail::FindControlById(
+            panel, kWorkbenchUpgradeLbItemsId);
+    }
+
     // Virtual credits row for Inventory + Store. credits_value_label isn't
     // IsChainNavigable, so without this the user can't reach the gold display
     // the engine renders for sighted players. ForEachCreditsRowAnchor is a
@@ -737,6 +753,9 @@ void RebindChain(void* panel) {
                 continue;
             }
             if (c == equipPickerLb) {
+                continue;
+            }
+            if (c == workbenchUpgradeLb) {
                 continue;
             }
             auto* lbList = reinterpret_cast<CExoArrayList*>(

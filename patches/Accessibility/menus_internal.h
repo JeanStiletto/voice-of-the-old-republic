@@ -133,6 +133,10 @@ constexpr int kEquipBtnWeapRId   = 19;  // BTN_INV_WEAP_R   (TLK 31379)
 constexpr int kEquipBtnArmRId    = 21;  // BTN_INV_ARM_R    (TLK 31377)
 constexpr int kEquipBtnHandsId   = 23;  // BTN_INV_HANDS    (TLK 31383)
 constexpr int kEquipLbItemsId    =  5;  // LB_ITEMS
+// upgrade.gui LB_ITEMS — the compatible-crystal list the workbench upgrade
+// picker drives. Same role as the equip picker's LB_ITEMS: excluded from the
+// generic chain flatten so its rows aren't double-exposed as stale buttons.
+constexpr int kWorkbenchUpgradeLbItemsId = 0;  // LB_ITEMS
 constexpr int kEquipBtnBackId    = 36;  // BTN_BACK         (TLK 1582 = Schliess.)
 constexpr int kEquipBtnEquipId   = 37;  // BTN_EQUIP        (TLK 1580 = OK)
 

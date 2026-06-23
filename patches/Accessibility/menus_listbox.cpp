@@ -1800,6 +1800,44 @@ void MonitorWorkbenchUpgradePicker() {
         acclog::Write("WorkbenchUpgrade", "disarm â€” panel gone from panels[]");
         s_workbenchUpgradePickerActive = false;
         s_workbenchUpgradePickerPanel  = nullptr;
+        return;
+    }
+
+    // TEMPORARY DIAGNOSTIC (lightsabercrystalcrash investigation): trace the
+    // LB_ITEMS selection state every frame while the picker is armed, to find
+    // what reverts our DriveListBoxSelection write between keypresses. The
+    // crystal picker's selection never advances past row 2 in the field log —
+    // every "Down" reads selection_index==1 again — so something resets it.
+    // Trace folds a steady value to one line + "(repeated Nx more)"; only a
+    // flip emits a fresh line, so this adds no spam. Read it against the
+    // per-keypress "WorkbenchUpgrade: Down lb=.. sel=X->Y" logs:
+    //   * trace shows our stepped value (e.g. 2) then a separate revert to 1
+    //     => the engine reverts on a LATER frame (catchable, can re-assert).
+    //   * trace NEVER shows 2, only ever 1, while the keypress log says 1->2
+    //     => the revert happens within the same frame as our write (the engine
+    //     re-selects synchronously; we'd need to write later in the tick).
+    // rows/top/ipp included so a per-frame listbox REPOPULATION (rowCount or
+    // row pointers churning) is visible too — that would reset selection as a
+    // side effect. Remove once the mechanism is identified.
+    void* lb = FindControlById(s_workbenchUpgradePickerPanel,
+                               kWorkbenchUpgradeLbId);
+    if (lb) {
+        auto* lbBase = reinterpret_cast<unsigned char*>(lb);
+        auto* lbList = reinterpret_cast<CExoArrayList*>(
+            lbBase + kListBoxControlsOffset);
+        int rowCount = (lbList && lbList->data) ? lbList->size : 0;
+        short sel = *reinterpret_cast<short*>(
+            lbBase + kListBoxSelectionIndexOffset);
+        short top = *reinterpret_cast<short*>(
+            lbBase + kListBoxTopVisibleIndexOffset);
+        short ipp = *reinterpret_cast<short*>(
+            lbBase + kListBoxItemsPerPageOffset);
+        void* selRow = (sel >= 0 && sel < rowCount && lbList && lbList->data)
+                           ? lbList->data[sel]
+                           : nullptr;
+        acclog::Trace("WorkbenchSel",
+                      "lb=%p sel=%d top=%d ipp=%d rows=%d selRow=%p",
+                      lb, sel, top, ipp, rowCount, selRow);
     }
 }
 
