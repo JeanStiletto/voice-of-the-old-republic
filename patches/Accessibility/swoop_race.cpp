@@ -216,7 +216,13 @@ struct State {
     bool          have_start_ms           = false;
     uint32_t      race_start_ms           = 0;
     uint32_t      race_mph                = 2;     // world calendar minutes/hour
-    float         race_max_speed          = 0.0f;  // running top speed (band ref)
+    float         race_max_speed          = 0.0f;  // running top envelope speed
+                                                   //   (envelope-finish "did we race" ref)
+    float         race_peak_speed         = 0.0f;  // running top ACTUAL speed
+                                                   //   (coast-fallback "did we race" ref —
+                                                   //   must NOT use the envelope, which is
+                                                   //   already 70 at launch and would let
+                                                   //   the 1->10 launch ramp false-trigger)
     bool          have_race_time          = false;
     float         race_time_seconds       = 0.0f;
     // Idempotency latch: the race-end cue is spoken once — by whichever fires
@@ -395,20 +401,25 @@ bool ReadWorldClockMs(void* server, uint32_t& outMs, uint32_t& outMph) {
     }
 }
 
-// "At racing speed" band: while bike speed is within this fraction of its
-// running max we treat the tick as part of the run and freeze the elapsed.
-// Speed rises monotonically toward the finish, so the LAST in-band tick is the
-// finish-line crossing; a rock-hit dip (speed resets to min) and the
-// post-finish coast (speed only falls) both drop out of band and don't move
-// the frozen time forward — so it isn't inflated by the ~5 s of decel + exit
-// debounce that follow the actual finish.
-constexpr float kRaceSpeedBandFrac  = 0.90f;
+// Finish detection. The engine ZEROES the speed envelope (min_speed = max_speed
+// = 0) the instant the bike crosses the finish line and race control ends —
+// observed live: the per-tick snapshot flips from e.g. [210..420] to [0..0]
+// while the bike is still coasting at ~120 u/s. So the last tick with a live
+// envelope (max_speed > 0) IS the finish crossing; we update the elapsed every
+// active tick and let the zero-transition freeze it there.
+//
+// Superseded: a "speed within 0.9 * running-max" band, which actually froze the
+// clock at the speed PEAK (mid-race), not the finish — so a slow run that peaked
+// early reported the same (or a better) time than a fast one. patch-20260623-
+// 111743: a gear-4 run and a gear-5 run both announced ~24.1 s despite a ~4 s
+// real-clock gap, because both peaked around the same world-time.
 constexpr float kRaceTimeMaxSeconds = 600.0f;   // implausible-read ceiling
 constexpr long  kRaceStartFreshMaxMs = 5000;    // start-stamp freshness window
-// Terminal-stop early announce: when a bike that has raced (top speed cleared
-// kRaceMinTopSpeed) decelerates below kTerminalStopSpeed the race is over.
-// Rock hits reset speed to the gear minimum (>=35), never this low, so only
-// the real post-finish decel trips it.
+// Race-end announce: fire once the finish is crossed (envelope zeroed) on a bike
+// that actually raced (running envelope cleared kRaceMinTopSpeed). kTerminalStop
+// is a fallback trigger for an abnormal end where the envelope never zeroes and
+// the bike just coasts below it. Rock hits reset speed to the gear minimum
+// (>=35), never this low, so the fallback won't trip mid-race.
 constexpr float kTerminalStopSpeed  = 10.0f;
 constexpr float kRaceMinTopSpeed    = 40.0f;
 
@@ -422,20 +433,37 @@ void SpeakRaceEndMessage();
 void TickRaceTimer(void* miniGame) {
     void* player = SafeReadPtr(miniGame, kMiniGamePlayerOffset);
     if (!player) return;
-    const float speed = SafeReadFloat(player, kFollowerSpeedOffset);
+    const float speed    = SafeReadFloat(player, kFollowerSpeedOffset);
+    const float maxSpeed = SafeReadFloat(player, kMiniPlayerMaxSpeedOffset);
 
-    // Terminal-stop early announce — the race is over and we're in the clear
-    // air before control returns and the post-race heading narration fires, so
-    // the full time announcement isn't interrupted. (Checked before the
-    // launch guard below because at a terminal stop speed is ~0.)
-    if (g_state.have_race_time && !g_state.race_time_announced &&
-        g_state.race_max_speed > kRaceMinTopSpeed &&
-        speed < kTerminalStopSpeed) {
-        SpeakRaceEndMessage();
-        return;
+    // Finish crossing = the speed envelope just zeroed (maxSpeed -> 0) on a bike
+    // that reached a real gear; see the kRaceTimeMaxSeconds block. Announce here,
+    // in the clear air right after the finish while the bike coasts, using
+    // race_time_seconds frozen at the last live-envelope tick.
+    //
+    // Fallback: an abnormal end where the envelope never zeroes but the bike has
+    // actually RACED and coasts below kTerminalStopSpeed. CRITICAL: the fallback
+    // is gated on peak ACTUAL speed, not the envelope peak. The envelope is
+    // already 70 the instant gear 1 engages at launch, so gating the fallback on
+    // it would let the launch ramp (speed climbing through [1..10]) fire the
+    // speed<10 trigger and end the race at ~0 s — the launch-ramp bug. Actual
+    // peak speed only clears kRaceMinTopSpeed once the bike is genuinely fast, by
+    // which point speed is well above kTerminalStopSpeed. (Checked before the
+    // launch guard below because at the finish speed is still high but maxSpeed
+    // is already 0.)
+    if (g_state.have_race_time && !g_state.race_time_announced) {
+        const bool envelope_finished =
+            g_state.race_max_speed > kRaceMinTopSpeed && maxSpeed <= 0.0f;
+        const bool coasted_to_stop =
+            g_state.race_peak_speed > kRaceMinTopSpeed && speed < kTerminalStopSpeed;
+        if (envelope_finished || coasted_to_stop) {
+            SpeakRaceEndMessage();
+            return;
+        }
     }
 
-    if (speed <= 1.0f) return;  // countdown / not launched yet
+    if (speed <= 1.0f) return;     // countdown / not launched yet
+    if (maxSpeed <= 0.0f) return;  // race already ended — envelope cleared
 
     void* server = GetServerApp();
     if (!server) return;
@@ -466,13 +494,16 @@ void TickRaceTimer(void* miniGame) {
                       sH, sM, sS, sC, mph, startMs, nowMs, initialElapsed);
     }
 
-    // Finish-band gate (see kRaceSpeedBandFrac).
-    if (speed >= g_state.race_max_speed) {
-        g_state.race_max_speed = speed;
-    } else if (speed < g_state.race_max_speed * kRaceSpeedBandFrac) {
-        return;  // rock-hit dip or terminal decel — not a finish-band tick
-    }
+    // Running top ENVELOPE speed — "did we race" ref for the envelope-zero finish
+    // (a real gear pushes max_speed past kRaceMinTopSpeed). race_peak_speed is the
+    // running top ACTUAL speed — the separate ref for the coast fallback (see the
+    // finish guard above for why the two must not be conflated).
+    if (maxSpeed > g_state.race_max_speed) g_state.race_max_speed = maxSpeed;
+    if (speed    > g_state.race_peak_speed) g_state.race_peak_speed = speed;
 
+    // Elapsed, every active tick. No speed-band gate: the envelope-zero finish
+    // detector (above) freezes this at the crossing, so a slow run that never
+    // reaches top gear still counts its full duration to the finish line.
     uint32_t nowMs = 0, mph = g_state.race_mph;
     if (!ReadWorldClockMs(server, nowMs, mph)) return;
     const long elapsedMs =
@@ -718,6 +749,7 @@ void HandleEnter(void* mg) {
     g_state.race_start_ms       = 0;
     g_state.race_mph            = 2;
     g_state.race_max_speed      = 0.0f;
+    g_state.race_peak_speed     = 0.0f;
     g_state.have_race_time      = false;
     g_state.race_time_seconds   = 0.0f;
     g_state.race_time_announced = false;

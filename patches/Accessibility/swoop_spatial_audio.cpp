@@ -297,6 +297,27 @@ constexpr float       kSwoopFlatBandMaxM   = 350.0f;
 constexpr float       kSwoopFlatBandMinM   = 400.0f;
 constexpr int         kSwoopVolNearByte    = 127;
 constexpr int         kSwoopVolFarByte     = 50;
+// Pan depth for the accelpad STEERING GUIDE specifically (the obstacle cues keep
+// the 6 m shared depth above). Opened to 10 m so the pan angle spreads MAGNITUDE
+// across the lane — "how far to swing" — for the big alternating gates: at 10 m a
+// 12 u offset reads ~50°, a 35 u offset ~74°, so far gates stay distinguishable
+// instead of both saturating to hard-pan. The shared depth was tuned DOWN to 6 m
+// for near-centre precision; the magnet now owns near centre, so the guide is
+// free to optimise for far-gate magnitude. (Larger = more linear magnitude, less
+// near-centre angle — fine, the deadzone + magnet cover near centre.)
+constexpr float       kSwoopGuidePanForwardRefM = 10.0f;
+// The guide rests (goes silent) only when you're essentially ON the pad — within
+// this lateral error, roughly the catch radius — NOT across the whole assist
+// gap. First cut silenced it within the full 12 u gap, but most steering is small
+// nudges (< 12 u), so the tone fell silent during exactly the common case and
+// you were "listening for something and hearing nothing". A small rest zone keeps
+// the tone present for all real steering and only quiets when truly locked on.
+constexpr float       kSwoopGuideSilenceU   = 5.0f;
+// Volume floor for the guide so distant gates stay clearly audible — the shared
+// distance curve ramps down toward ~⅓ at range, which let the tone blend into the
+// race mix. Floored here so the guide always cuts through (the cue slider still
+// scales it).
+constexpr int         kSwoopGuideMinVolByte = 90;
 
 // ----- Steering-guide controller (2026-06-20 rework) ------------------------
 //
@@ -433,9 +454,38 @@ constexpr const char* kWallCueResref =
 // Tatooine/Manaan 5, our widened Tatooine .are 8 (player 3 + pad 5).
 // See swoop-accelpad-hit-model.md.
 constexpr float       kAccelpadHitRadiusU = 8.0f;
-// Post-coast miss within this band reads as "on the line" → release/hold. Kept
-// inside the pad catch radius (~5-6 u) so a released coast still lands a hit.
-constexpr float       kReleaseBand   = 4.0f;
+
+// ----- The assist gap: the ONE difficulty knob (2026-06-23) ------------------
+//
+// Accessibility intent (user, 2026-06-23): keep the SAME challenge a sighted
+// player has — the assist must fill only the gap the player cannot close by ear,
+// never drive for them. So there is a single lateral tolerance, in lane-units,
+// that means BOTH:
+//   * the magnet's engage radius — it only pulls once you are within this, and
+//   * the cue's release band — the directional cue goes quiet ("you're close
+//     enough") here, because this is roughly the precision sound can give you.
+// The player steers by ear until inside the gap; the magnet quietly closes the
+// rest. That literally "calculates the magnetism into" the cue: you are never
+// told to steer for error the magnet will absorb, so steering eases off at the
+// end instead of demanding a dead-center read.
+//
+// ONE knob for difficulty: smaller → the player must steer more precisely by ear
+// and fails more (closer to the sighted challenge); larger → the magnet covers
+// more. Was an implicit 28u magnet + 4u cue band (magnet did ~everything; cue
+// still nagged for dead-center). 16u (2026-06-23, raised from 12u): log analysis
+// of a 28.5s run showed 5 "near-miss" gates at 9-14u — the player got that close
+// by ear but the magnet (weak at its outer edge) couldn't finish in time. 16u
+// pulls those inside reach while the 16-23u medium gates still demand a real
+// swing, so challenge stays. Still well inside the ±20 lane. Drop toward ~8 for
+// more bite. (The hit itself is still the engine's swept sphere test — this is
+// only how much lateral slack the assist forgives.)
+constexpr float       kSwoopAssistGapU = 16.0f;
+
+// Post-coast miss within the assist gap reads as "on the line" → release/hold:
+// the magnet finishes from here, so the player need not nail dead-center by ear.
+// (Was 4u — inside the catch radius, demanding a released coast land the hit on
+// its own. The magnet lands it now; the cue only has to get you into the gap.)
+constexpr float       kReleaseBand   = kSwoopAssistGapU;
 // Directional-tick geometry (camera-relative, mirroring the proven wall-impact
 // pan path) and cadence. Lateral ±pan at a slight forward depth gives a hard
 // but slightly-ahead L/R image (atan2(8,2) ≈ 76°), and the 3D distance
@@ -446,7 +496,12 @@ constexpr float       kSteerTickFwdM    = 2.0f;
 // The aligned/release blip is centred (no pan), so it needs real forward depth
 // to clear the near-field dead zone; 7 m keeps it audible and within range.
 constexpr float       kSteerAlignedFwdM = 7.0f;
-constexpr ULONGLONG   kSteerTickMs      = 160;
+// Repeat cadence for a held steer direction. A direction CHANGE always fires
+// immediately (see TickAccelpadCues), so this only paces the "keep going this
+// way" reminder. Raised 160→400 (2026-06-23): with the release band now the full
+// assist gap, the cue only speaks when you're genuinely off-line, so it no longer
+// needs to machine-gun — a calmer reminder reads as a natural nudge, not a nag.
+constexpr ULONGLONG   kSteerTickMs      = 400;
 // Directional ticks carry the side in BOTH pitch (low=left, high=right) and
 // pan, so a missed pan read is backed up by pitch. Aligned is a centred rising
 // tone. All three are loud custom WAVs — see audio_cues.h.
@@ -493,9 +548,13 @@ constexpr uint8_t     kSteerCueVolume = 54;
 //
 // kSwoopMagnetEngageU — engage only when the next gate is within this lateral
 //   error (lane is ±20; gates jump up to ~40 apart). Beyond it, no pull — the
-//   player initiates the swing, as with the turret's engage angle. Raised
-//   24->28 (2026-06-22) so the close starts a touch earlier (still not always-on).
-constexpr float kSwoopMagnetEngageU   = 28.0f;  // lane-units; magnetism engages within
+//   player initiates the swing, as with the turret's engage angle. Now bound to
+//   the shared assist gap (was a standalone 28u, near full-lane, so the magnet
+//   did almost everything → the race steered itself). At the gap (12u) the magnet
+//   is a final-approach gap-filler: the player must close the lane down to the
+//   gap by ear, and only then does the magnet quietly finish it. This is THE
+//   loosening lever — see kSwoopAssistGapU. (Tune the gap, not this.)
+constexpr float kSwoopMagnetEngageU   = kSwoopAssistGapU;  // lane-units; magnetism engages within
 constexpr float kSwoopMagnetGainFar   = 0.06f;  // pull at the engage edge (gentle guide)
 constexpr float kSwoopMagnetGainNear  = 0.35f;  // pull dead-on the lane (sticky; < turret 0.50)
 // Per-tick cap. The 2026-06-22 lateral-authority probe measured the PLAYER's own
@@ -584,10 +643,15 @@ struct SpatialAudioState {
     int   prev_ahead_slot    = -1;
 
     // Co-pilot command state (experimental). steer_cmd is the last command
-    // issued (kSteerCmd*); the aligned blip fires once on a steering→aligned
-    // transition. last_steer_tick_ms paces the repeating directional tick.
+    // issued (kSteerCmd*); last_steer_tick_ms paced the (now retired) directional
+    // tick. Retained for the steering-guide diagnostic.
     int       steer_cmd          = kSteerCmdNone;
     ULONGLONG last_steer_tick_ms = 0;
+
+    // Panned-guide aligned confirmation: whether the guide tone was sounding
+    // (off-pad) last tick, so we fire one centred "on track, stop steering" blip
+    // on the steering→locked transition. Re-arms when you steer off again.
+    bool      guide_was_active    = false;
 
     // Next-gate preview: the ahead_slot we've already announced the follow-on
     // gate for, so the heads-up fires once per gate.
@@ -934,44 +998,40 @@ void TickObstacleCues(void* /*miniGame*/) {
 }
 
 // ============================================================================
-// Accelerator-pad STEERING GUIDE — panned tone, look-ahead pure-pursuit.
+// Accelerator-pad STEERING GUIDE — continuous panned tone (2026-06-23).
 //
-// A single continuous tone (acc_boost) panned toward the side to steer, so you
-// drive TOWARD the sound — the centering paradigm real racing-game a11y mods
-// use (SpaghettiKart / "Super Blind Kart"). We pan our OWN tone rather than the
-// game's bike hum because that hum is not a reachable engine source (the swoop
-// Player's <Engine> resref is empty in every area GFF, so player+0x144 is null
-// — see the constants block above).
+// A single looping tone (acc_boost) panned to the NEXT gate's lateral offset, so
+// you "drive toward the sound": the pan DIRECTION says which way and the pan
+// MAGNITUDE says how far to swing (a slight pan = nudge, a hard pan = full-lane
+// gate). Loudness rises as the gate nears, so you also hear urgency / how soon.
+// This is the centering paradigm real racing-game a11y mods use (SpaghettiKart /
+// "Super Blind Kart"). We pan our OWN tone, not the bike hum — that hum is not a
+// reachable engine source (the swoop Player's <Engine> resref is empty in every
+// area GFF, so player+0x144 is null; see the constants block above).
 //
-// The pads are scattered GATES, not a smooth racing line (they alternate
-// nearly full-lane). The setpoint targets the NEXT pad with a PD (proportional-
-// derivative) controller:
-//   1. Pick the next gate: nearest pad ahead whose lateral position is sane
-//      (outlier guard — a junk X=1933 read once poisoned the pan for a second).
-//   2. padErr = padLane − bikeX (proportional). err = padErr − lead·velocity
-//      (the derivative is a BRAKE: it counter-steers you to bleed off lateral
-//      momentum before you overshoot). A settle gate zeroes it only when you're
-//      on the lane AND barely moving, so the brake survives mid-slide but you
-//      can still park. See the constants block for why the gate (not a reversal
-//      clamp) is the crux.
-//   3. Pan the tone to that offset against a fixed depth; centred = on the lane,
-//      and it STAYS centred so you can hold it. World +X is listener-right.
+// Decoupled pan: the cue keeps the pad's true lateral (X) + vertical (Z) but
+// pins forward (Y) to a FIXED depth (kSwoopGuidePanForwardRefM), so pan encodes
+// lane offset ONLY and is stable — it doesn't lurch as the gate nears.
 //
-// Pad world positions come from each CSWMiniEnemy's first model via
-// vtable[+0x64] (ReadTrackFollowerPosition); pads are reached via the AsEnemy
-// (vtable[0x1c]) downcast.
+// Rest zone = ~the catch radius (kSwoopGuideSilenceU): the tone goes silent only
+// when you're essentially ON the pad, where the magnet finishes the last units.
+// It stays present for all real steering (including small nudges) so you never
+// "listen for nothing"; it quiets only when you're locked on. Division of labour:
+// you do the coarse positioning by ear, the magnet closes the final gap. (First
+// cut rested across the whole assist gap, which silenced the common small-nudge
+// case — fixed 2026-06-23.)
 //
-// One dead end we backed out of: an interpolated pad-to-pad line — the pads
-// alternate full-lane, so the line ran through the mid-lane and pointed the
-// guide at the WRONG side (...212526.log). The first PD attempts also failed,
-// but for a fixable reason (no anti-reversal/settle clamp → it reversed you off
-// pads you sat on); the clamps above are that fix.
+// History: this REPLACES the discrete left/right "co-pilot" ticks (retired
+// 2026-06-23). An earlier continuous PD pure-pursuit version oscillated because
+// the PLAYER had to null the pan precisely on a high-inertia bike (an unstable
+// human-in-the-loop). That precondition is gone now that the magnet closes the
+// final gap — the player only needs coarse magnitude, which is exactly what pan
+// gives for free. (Also dead: an interpolated pad-to-pad line — pads alternate
+// full-lane, so it pointed mid-lane, the WRONG side, ...212526.log.)
 //
-// Honest limit: the steepest alternating-lane gates are a near-full-lane swing
-// in well under a second — at the physical edge of the inert bike, so some get
-// cut like a sighted player cuts them. The damping is tuned (kSteerLeadTicks)
-// to convert the medium pads without breaking settle. Levers: kSteerLeadTicks
-// (more damping = ease earlier), kSteerPanSmooth, kSteerDeadzoneUnits.
+// Pad world positions come from each CSWMiniEnemy's first model via vtable[+0x64]
+// (ReadTrackFollowerPosition); pads are reached via the AsEnemy (vtable[0x1c])
+// downcast.
 // ============================================================================
 
 void TickAccelpadCues(void* miniGame) {
@@ -1014,8 +1074,6 @@ void TickAccelpadCues(void* miniGame) {
     int   ahead_slot = -1;  float ahead_y = 0.0f;  Vector ahead_pos = {0,0,0};
     float ahead_radius = 0.0f;  // the nearest gate's sphere_radius (other half of
                                 // the real hit radius; all pads share one value).
-    // Second-nearest gate ahead — drives the preview heads-up.
-    int   next_slot  = -1;  float next_y  = 0.0f;  Vector next_pos  = {0,0,0};
 
     for (int i = 0; i < kMgoArraySlotCount; ++i) {
         void* obj = SafeReadPtr(mgoArray,
@@ -1045,12 +1103,8 @@ void TickAccelpadCues(void* miniGame) {
         if (std::fabs(pos.x - bikeXref) > kMaxPadLateral) continue;  // junk read
         ++accelpads_ahead;
         if (ahead_slot < 0 || pos.y < ahead_y) {
-            // New nearest gate — demote the old nearest to second.
-            next_slot = ahead_slot; next_y = ahead_y; next_pos = ahead_pos;
             ahead_slot = i; ahead_y = pos.y; ahead_pos = pos;
             ahead_radius = SafeReadFloat(enemy, kFollowerSphereRadiusOffset);
-        } else if (next_slot < 0 || pos.y < next_y) {
-            next_slot = i; next_y = pos.y; next_pos = pos;
         }
     }
 
@@ -1132,38 +1186,11 @@ void TickAccelpadCues(void* miniGame) {
         else                            desired = kSteerCmdAligned;
     }
 
-    // ----- Render the command as discrete one-shots. -----
-    // Directional ticks repeat at kSteerTickMs (panned hard to the side to
-    // steer) so "keep going this way" is reinforced; they fire IMMEDIATELY on a
-    // direction change so a correction isn't delayed by the cadence. Silence =
-    // hold / you're on the line. One aligned blip marks the release moment — the
-    // most time-critical signal, so it rides the lowest-latency cue and is
-    // followed by silence.
+    // The steering command is no longer rendered as discrete L/R ticks — the
+    // continuous panned guide loop (below) now carries direction AND magnitude.
+    // `desired` is still computed (above) for the diagnostic log; `now` is kept
+    // for the wall-cue debounce; steer_cmd retains the last intended direction.
     const ULONGLONG now = GetTickCount64();
-    bool tick_fired = false;
-    if (desired == kSteerCmdLeft || desired == kSteerCmdRight) {
-        const bool dir_changed = (desired != g_state.steer_cmd);
-        if (dir_changed || now - g_state.last_steer_tick_ms >= kSteerTickMs) {
-            Vector cue = listener_pos;
-            cue.x = listener_pos.x +
-                    (desired == kSteerCmdRight ? +kSteerTickPanM : -kSteerTickPanM);
-            cue.y = listener_pos.y + kSteerTickFwdM;
-            cue.z = listener_pos.z;
-            acc::audio::PlayCue3D(
-                desired == kSteerCmdRight ? kSteerRightResref : kSteerLeftResref,
-                cue, /*priorityGroup=*/0, kSteerCueVolume);
-            g_state.last_steer_tick_ms = now;
-            tick_fired = true;
-        }
-    } else if (desired == kSteerCmdAligned) {
-        if (g_state.steer_cmd == kSteerCmdLeft ||
-            g_state.steer_cmd == kSteerCmdRight) {
-            Vector cue = listener_pos;          // centred — no pan
-            cue.y = listener_pos.y + kSteerAlignedFwdM;
-            acc::audio::PlayCue3D(kSteerAlignedResref, cue,
-                                  /*priorityGroup=*/0, kSteerCueVolume);
-        }
-    }
     g_state.steer_cmd = desired;
 
     // ----- Lateral steering magnetism (shared aim-assist facility). -----
@@ -1260,52 +1287,64 @@ void TickAccelpadCues(void* miniGame) {
         }
     }
 
-    // The continuous pan tone is retired in co-pilot mode; silence any loop
-    // left active by a prior build / race so the two cues never overlap.
-    if (g_state.accelpad_line_loop.IsActive()) g_state.accelpad_line_loop.Stop();
-
-    // ----- Next-gate preview heads-up. -----
-    // Once you're SETTLED on the current gate (aligned) and it's within the lead
-    // window, announce the FOLLOWING gate's direction (relative to the current
-    // gate's lane — that's where you'll be at the crossing). Soft + single =
-    // "get ready", so it pre-loads the direction before the loud steer-now ticks,
-    // recovering the reaction delay the old handoff snap used to eat. Once/gate.
-    // Flaw 2 fix (2026-06-22): fire the heads-up once per gate whenever the
-    // current gate is within the lead window — NOT only when you're aligned on
-    // it. Gating on alignment meant a missed gate (you never settle) suppressed
-    // the NEXT gate's preview, so one miss cascaded into a run of misses
-    // (patch-20260622 miss clusters 26-28, 36-38, 47-51). The next-gate
-    // direction is meaningful whether or not you caught the current one.
-    if (have_target && next_slot >= 0 &&
-        g_state.previewed_slot != ahead_slot && fwdGap < kPreviewLeadU) {
-        const float nextDelta = next_pos.x - ahead_pos.x;
-        if (std::fabs(nextDelta) > kReleaseBand) {       // a real move is coming
-            const bool nextRight = nextDelta > 0.0f;
-            Vector cue = listener_pos;
-            cue.x = listener_pos.x +
-                    (nextRight ? +kSteerTickPanM : -kSteerTickPanM);
-            cue.y = listener_pos.y + kSteerTickFwdM;
-            cue.z = listener_pos.z;
-            acc::audio::PlayCue3D(nextRight ? kSteerRightResref : kSteerLeftResref,
-                                  cue, /*priorityGroup=*/0, kPreviewVolume);
-            acclog::Trace("SwoopRace",
-                          "preview: cur=%d next=%d nextDelta=%.1f dir=%s fwdGap=%.1f",
-                          ahead_slot, next_slot, nextDelta,
-                          nextRight ? "R" : "L", fwdGap);
+    // ----- Continuous panned steering guide (see the function header). -----
+    // Pan = next gate's lateral offset (decoupled: true X/Z, forward pinned to a
+    // fixed depth → pan encodes lane offset only). Loudness = real approach
+    // distance (urgency), floored so it stays audible. Rests (silent) only when
+    // you're within ~the catch radius of the pad — the magnet finishes from there.
+    bool guide_active = false;
+    if (have_target && bikeOk && std::fabs(padErr) > kSwoopGuideSilenceU) {
+        const float dx = ahead_pos.x - listener_pos.x;
+        const float dy = ahead_pos.y - listener_pos.y;
+        const float dz = ahead_pos.z - listener_pos.z;
+        const float dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+        Vector cue_pos = ahead_pos;
+        cue_pos.y = listener_pos.y + kSwoopGuidePanForwardRefM;
+        int vol_byte = SwoopVolumeByte(dist, kAccelpadCueRangeM);
+        if (vol_byte < kSwoopGuideMinVolByte) vol_byte = kSwoopGuideMinVolByte;
+        if (g_state.accelpad_line_loop.IsActive()) {
+            g_state.accelpad_line_loop.UpdatePosition(cue_pos);
+            g_state.accelpad_line_loop.UpdateVolume(vol_byte);
+        } else {
+            g_state.accelpad_line_loop.Start(
+                kAccelpadLoopResref, cue_pos, /*looping=*/true, /*spatial=*/true,
+                /*priorityGroup=*/-1, /*volumeByte=*/vol_byte,
+                /*maxVolDist=*/kSwoopFlatBandMaxM,
+                /*minVolDist=*/kSwoopFlatBandMinM);
         }
-        g_state.previewed_slot = ahead_slot;   // mark done even if no move
+        guide_active = true;
+    }
+    if (!guide_active && g_state.accelpad_line_loop.IsActive()) {
+        g_state.accelpad_line_loop.Stop();  // within the rest zone / no target
     }
 
-    // ----- Co-pilot diagnostic -----
-    // cmd: -1 left, +1 right, 2 aligned, 0 none. Tune kCoastTicks so the
-    // steering→aligned transition lands |padErr| ~0 at the crossing (fwdGap≈0).
+    // On-pad confirmation: when the tone just went from sounding (steering) to
+    // rest (you reached the catch radius), play one centred "aligned" blip —
+    // "you're on track, you can stop steering." The panned tone's silence alone
+    // was ambiguous (off? blended out? actually locked?); this makes the rest
+    // state a positive cue. Fires once per approach (on the transition), re-arms
+    // when you steer off again. Reuses the retired co-pilot's aligned sample.
+    if (have_target && g_state.guide_was_active && !guide_active) {
+        Vector cue = listener_pos;                      // centred — no pan
+        cue.y = listener_pos.y + kSteerAlignedFwdM;
+        acc::audio::PlayCue3D(kSteerAlignedResref, cue,
+                              /*priorityGroup=*/0, kSteerCueVolume);
+        acclog::Trace("SwoopRace", "guide aligned: padErr=%.2f slot=%d",
+                      padErr, ahead_slot);
+    }
+    g_state.guide_was_active = guide_active;
+
+    // ----- Steering-guide diagnostic -----
+    // cmd: -1 left, +1 right, 2 aligned, 0 none (intended direction). guide=1
+    // when the panned tone is sounding (off-line, outside the assist gap), 0 when
+    // silent (within the gap / no target — magnet handing off).
     if (have_target) {
         acclog::Trace("SwoopRace",
-                      "copilot: padX=%.2f bikeX=%.2f padErr=%.2f vel=%.2f "
-                      "coast=%.2f proj=%.2f cmd=%d tick=%d fwdGap=%.1f "
+                      "guide: padX=%.2f bikeX=%.2f padErr=%.2f vel=%.2f "
+                      "coast=%.2f proj=%.2f cmd=%d guide=%d fwdGap=%.1f "
                       "tunnelX=%s%.2f",
                       ahead_pos.x, bikePos.x, padErr, g_state.smoothed_vel,
-                      coast, proj, desired, tick_fired ? 1 : 0, fwdGap,
+                      coast, proj, desired, guide_active ? 1 : 0, fwdGap,
                       tunOk ? "" : "FAULT:", tunOk ? tunnel.x : 0.0f);
     }
 
@@ -1350,6 +1389,7 @@ void ResetSpatialAudio() {
     g_state.prev_ahead_slot       = -1;
     g_state.steer_cmd             = kSteerCmdNone;
     g_state.last_steer_tick_ms    = 0;
+    g_state.guide_was_active      = false;
     g_state.previewed_slot        = -1;
     g_state.last_wall_cue_ms      = 0;
     g_state.last_magnet_log_ms    = 0;
