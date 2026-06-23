@@ -1319,6 +1319,11 @@ enum class Id : int {
     // CSWMiniPlayer is unconfirmed at this lay-off — see swoop_race.cpp
     // DiagnosticDump for the candidate-pointer-bytes capture.
     FmtSwoopRaceGear,
+    // Final race time appended to the exit cue. Two ints: whole seconds
+    // and centiseconds (00..99). Read from the engine world clock minus
+    // the NWScript start-stamp globals (MIN_TIME_*), frozen at the
+    // finish-line crossing — see swoop_race.cpp TickRaceTimer.
+    FmtSwoopRaceTime,
 
     // ---- Turret (space-combat gunner) minigame (CSWMiniGame.type==3).
     //      Shares the CSWMiniGame struct with swoop racing (same vtable)

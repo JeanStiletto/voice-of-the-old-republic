@@ -449,6 +449,10 @@ const char* Get(Id id) {
             return "Obstacle %d meters ahead";
         case Id::FmtSwoopRaceGear:
             return "Gear %d";
+        case Id::FmtSwoopRaceTime:
+            // Time-FIRST: the post-race auto-movement fires other speech that
+            // interrupts this cue, so the number must lead to survive a cut.
+            return "Time: %d.%02d seconds. Swoop race ended.";
 
         case Id::TurretGameStarted:
             // Terse opener — concatenated with TurretGameControls below

@@ -456,6 +456,8 @@ const char* Get(Id id) {
             return "Ostacolo a %d metri";
         case Id::FmtSwoopRaceGear:
             return "Marcia %d";
+        case Id::FmtSwoopRaceTime:
+            return "Tempo: %d,%02d secondi. Corsa Swoop terminata.";
 
         case Id::TurretGameStarted:
             // Terse opener — concatenated with TurretGameControls below

@@ -20,6 +20,8 @@
 
 #include "engine_area.h"      // GetClientArea + map-pin chain (back-pointer)
 #include "engine_offsets.h"   // Vector
+#include "engine_player.h"    // kAddrAppManagerPtr (server-app chain for the
+                              //   real race-timer read — see TickRaceTimer)
 #include "log.h"
 #include "audio_bus.h"        // PlayCue — non-positional "you can shift now" cue
 #include "prism.h"            // SpeakUrgent — entry/exit/gear must beat
@@ -205,6 +207,23 @@ struct State {
     bool          shift_ready_announced   = false;
     // (Side-wall collision state moved to swoop_spatial_audio.cpp — see the
     // note where the old detector used to live.)
+
+    // ---- Real race-timer state (see TickRaceTimer). ----
+    // race_start_ms is the engine world-clock ms-of-day stamped at the "Go!"
+    // signal, cached once from the MIN_TIME_* NWScript globals (constant for
+    // the whole race). race_time_seconds is (world clock − start) frozen at
+    // the finish-line crossing — the value announced on EXIT.
+    bool          have_start_ms           = false;
+    uint32_t      race_start_ms           = 0;
+    uint32_t      race_mph                = 2;     // world calendar minutes/hour
+    float         race_max_speed          = 0.0f;  // running top speed (band ref)
+    bool          have_race_time          = false;
+    float         race_time_seconds       = 0.0f;
+    // Idempotency latch: the race-end cue is spoken once — by whichever fires
+    // first, the terminal-stop detector in TickRaceTimer (preferred: lands in
+    // the clear air before the post-race heading narration) or HandleExit
+    // (fallback for an abnormal end where the bike never decelerated).
+    bool          race_time_announced     = false;
 };
 
 State g_state;
@@ -275,6 +294,194 @@ bool LatchedStillValid() {
     if (!g_state.latched_mini_game || !g_state.latched_vtable) return false;
     void* vt = SafeReadPtr(g_state.latched_mini_game, kMiniGameVtableOffset);
     return vt == g_state.latched_vtable;
+}
+
+// ============================================================================
+// Real race timer (engine world clock − NWScript start-stamp globals).
+// ============================================================================
+//
+// KOTOR's swoop timer is NWScript-driven: each track's heartbeat stamps the
+// race START time into the global-number table (MIN_TIME_HOUR/MIN/SEC/MIL,
+// the last in centiseconds) at the "Go!" signal, then the displayed clock is
+// (current world time − that stamp). No engine struct holds elapsed race time
+// (CSWMiniGame / CSWMiniPlayer are pure geometry), so we reproduce the script:
+//
+//   server  = *AppManager + 0x8                          (CServerExoApp)
+//   timer   = CServerExoApp::GetWorldTimer(server)        (CWorldTimer)
+//   GetWorldTime(timer,&day,&nowMs)                       nowMs = ms-of-day
+//   mph     = timer->minutes_per_hour  (+0x38, byte)      (compressed calendar)
+//   table   = CServerExoApp::GetGlobalVariableTable(server)
+//   sH/sM/sS/sC = GetValueNumber(table,"MIN_TIME_*")      start-stamp parts
+//   startMs = (((sH*mph + sM)*60 + sS)*1000) + sC*10
+//   elapsedMs = nowMs − startMs
+//
+// GetWorldTimeHour/Minute divide by minutes_per_hour, so the H/M/S split is
+// NOT a normal clock — we reassemble through mph. Addresses decompiled
+// 2026-06-23 (ExecuteCommandGetTimeHour / GetTimeMillisecond / GetGlobalNumber
+// and the CWorldTimer / CSWGlobalVariableTable accessors). The start stamp is
+// constant for the race, so it's cached on first valid read.
+constexpr uintptr_t kAddrCServerExoAppGetWorldTimer     = 0x004aede0;
+constexpr uintptr_t kAddrCWorldTimerGetWorldTime        = 0x004ade40;
+constexpr uintptr_t kAddrCServerExoAppGetGlobalVarTable = 0x004aee60;
+constexpr uintptr_t kAddrGlobalVarTableGetValueNumber   = 0x00529240;
+constexpr size_t    kWorldTimerMinutesPerHourOffset     = 0x38;  // byte
+// AppManager (global ptr kAddrAppManagerPtr) + 0x8 → CServerExoApp.
+constexpr size_t    kAppManagerServerExoAppOffset       = 0x8;
+
+typedef void* (__thiscall* PFN_GetWorldTimer)(void* server);
+typedef void  (__thiscall* PFN_GetWorldTime)(void* timer, uint32_t* outDay,
+                                             uint32_t* outMs);
+typedef void* (__thiscall* PFN_GetGlobalVarTable)(void* server);
+typedef void  (__thiscall* PFN_GetValueNumber)(void* table, void* nameExoStr,
+                                               int* outValue);
+
+// Matches CExoString { char* c_string; ulong length; }. GetValueNumber only
+// reads it (hash + compare), never frees — a stack literal is safe.
+struct EngineExoString { const char* c_string; uint32_t length; };
+
+void* GetServerApp() {
+    __try {
+        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
+        if (!appManager) return nullptr;
+        return *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(appManager) +
+            kAppManagerServerExoAppOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+// One global NUMBER (engine stores it as a byte) by name. -1 on failure; the
+// engine writes 0 for an unknown name.
+int ReadGlobalNumber(void* server, const char* name) {
+    if (!server || !name) return -1;
+    __try {
+        auto getTable = reinterpret_cast<PFN_GetGlobalVarTable>(
+            kAddrCServerExoAppGetGlobalVarTable);
+        void* table = getTable(server);
+        if (!table) return -1;
+        EngineExoString nameStr{ name, static_cast<uint32_t>(std::strlen(name)) };
+        int value = 0;  // GetValueNumber writes only the low byte
+        auto getNum = reinterpret_cast<PFN_GetValueNumber>(
+            kAddrGlobalVarTableGetValueNumber);
+        getNum(table, &nameStr, &value);
+        return value & 0xff;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
+// Current world-clock time-of-day in ms (the value GetTime* read) + the
+// calendar's minutes-per-hour. False on any null link / SEH fault.
+bool ReadWorldClockMs(void* server, uint32_t& outMs, uint32_t& outMph) {
+    if (!server) return false;
+    __try {
+        auto getTimer = reinterpret_cast<PFN_GetWorldTimer>(
+            kAddrCServerExoAppGetWorldTimer);
+        void* timer = getTimer(server);
+        if (!timer) return false;
+        uint32_t day = 0, ms = 0;
+        auto getTime = reinterpret_cast<PFN_GetWorldTime>(
+            kAddrCWorldTimerGetWorldTime);
+        getTime(timer, &day, &ms);
+        uint32_t mph = *(reinterpret_cast<unsigned char*>(timer) +
+                         kWorldTimerMinutesPerHourOffset);
+        if (mph == 0) mph = 2;  // KOTOR default; guards a bad read
+        outMs  = ms;
+        outMph = mph;
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// "At racing speed" band: while bike speed is within this fraction of its
+// running max we treat the tick as part of the run and freeze the elapsed.
+// Speed rises monotonically toward the finish, so the LAST in-band tick is the
+// finish-line crossing; a rock-hit dip (speed resets to min) and the
+// post-finish coast (speed only falls) both drop out of band and don't move
+// the frozen time forward — so it isn't inflated by the ~5 s of decel + exit
+// debounce that follow the actual finish.
+constexpr float kRaceSpeedBandFrac  = 0.90f;
+constexpr float kRaceTimeMaxSeconds = 600.0f;   // implausible-read ceiling
+constexpr long  kRaceStartFreshMaxMs = 5000;    // start-stamp freshness window
+// Terminal-stop early announce: when a bike that has raced (top speed cleared
+// kRaceMinTopSpeed) decelerates below kTerminalStopSpeed the race is over.
+// Rock hits reset speed to the gear minimum (>=35), never this low, so only
+// the real post-finish decel trips it.
+constexpr float kTerminalStopSpeed  = 10.0f;
+constexpr float kRaceMinTopSpeed    = 40.0f;
+
+// Speaks the race-end cue once per race (forward-declared: TickRaceTimer fires
+// it on the terminal stop; the definition with the HandleExit fallback is
+// further down).
+void SpeakRaceEndMessage();
+
+// Per-tick: cache the start stamp once, then freeze the elapsed at each
+// finish-band tick. Called only while the latch is alive.
+void TickRaceTimer(void* miniGame) {
+    void* player = SafeReadPtr(miniGame, kMiniGamePlayerOffset);
+    if (!player) return;
+    const float speed = SafeReadFloat(player, kFollowerSpeedOffset);
+
+    // Terminal-stop early announce — the race is over and we're in the clear
+    // air before control returns and the post-race heading narration fires, so
+    // the full time announcement isn't interrupted. (Checked before the
+    // launch guard below because at a terminal stop speed is ~0.)
+    if (g_state.have_race_time && !g_state.race_time_announced &&
+        g_state.race_max_speed > kRaceMinTopSpeed &&
+        speed < kTerminalStopSpeed) {
+        SpeakRaceEndMessage();
+        return;
+    }
+
+    if (speed <= 1.0f) return;  // countdown / not launched yet
+
+    void* server = GetServerApp();
+    if (!server) return;
+
+    // Cache the fixed start stamp once the heartbeat has written THIS race's
+    // value. MIN_TIME_* persists between races, so a stale previous-race stamp
+    // would read as a huge initial elapsed — defer until it's fresh (a
+    // just-stamped start gives a sub-second elapsed at launch).
+    if (!g_state.have_start_ms) {
+        uint32_t nowMs = 0, mph = 2;
+        if (!ReadWorldClockMs(server, nowMs, mph)) return;
+        const int sH = ReadGlobalNumber(server, "MIN_TIME_HOUR");
+        const int sM = ReadGlobalNumber(server, "MIN_TIME_MIN");
+        const int sS = ReadGlobalNumber(server, "MIN_TIME_SEC");
+        const int sC = ReadGlobalNumber(server, "MIN_TIME_MIL");  // centiseconds
+        if (sH < 0 || sM < 0 || sS < 0 || sC < 0) return;
+        const uint32_t startMs = static_cast<uint32_t>(
+            (((sH * static_cast<int>(mph) + sM) * 60 + sS) * 1000) + sC * 10);
+        const long initialElapsed =
+            static_cast<long>(nowMs) - static_cast<long>(startMs);
+        if (initialElapsed < 0 || initialElapsed > kRaceStartFreshMaxMs) return;
+        g_state.race_start_ms = startMs;
+        g_state.race_mph      = mph;
+        g_state.have_start_ms = true;
+        acclog::Write("SwoopRace",
+                      "race timer start: %d:%d:%d.%02d mph=%u startMs=%u "
+                      "nowMs=%u initElapsed=%ldms",
+                      sH, sM, sS, sC, mph, startMs, nowMs, initialElapsed);
+    }
+
+    // Finish-band gate (see kRaceSpeedBandFrac).
+    if (speed >= g_state.race_max_speed) {
+        g_state.race_max_speed = speed;
+    } else if (speed < g_state.race_max_speed * kRaceSpeedBandFrac) {
+        return;  // rock-hit dip or terminal decel — not a finish-band tick
+    }
+
+    uint32_t nowMs = 0, mph = g_state.race_mph;
+    if (!ReadWorldClockMs(server, nowMs, mph)) return;
+    const long elapsedMs =
+        static_cast<long>(nowMs) - static_cast<long>(g_state.race_start_ms);
+    if (elapsedMs < 0) return;                       // clock wrap — skip tick
+    const float seconds = elapsedMs / 1000.0f;
+    if (seconds > kRaceTimeMaxSeconds) return;       // implausible — reject
+    g_state.race_time_seconds = seconds;
+    g_state.have_race_time    = true;
 }
 
 // ============================================================================
@@ -464,10 +671,33 @@ void AnnounceEntry() {
     acclog::Write("SwoopRace", "spoke entry: [%s]", buf);
 }
 
-void AnnounceExit() {
-    const char* msg = acc::strings::Get(acc::strings::Id::SwoopRaceEnded);
+void SpeakRaceEndMessage() {
+    if (g_state.race_time_announced) return;  // idempotent — first call wins
+    g_state.race_time_announced = true;
+
+    char buf[160];
+    const char* msg = nullptr;
+    // If we captured a finish-line time, speak the time-bearing variant (it
+    // leads with the number and includes the "race ended" phrase); otherwise
+    // the plain exit cue.
+    if (g_state.have_race_time) {
+        const char* fmt = acc::strings::Get(acc::strings::Id::FmtSwoopRaceTime);
+        if (fmt && *fmt) {
+            int whole = static_cast<int>(g_state.race_time_seconds);
+            int centi = static_cast<int>(
+                (g_state.race_time_seconds - static_cast<float>(whole)) * 100.0f
+                + 0.5f);
+            if (centi >= 100) { centi = 0; ++whole; }
+            std::snprintf(buf, sizeof(buf), fmt, whole, centi);
+            msg = buf;
+        }
+    }
+    if (!msg) msg = acc::strings::Get(acc::strings::Id::SwoopRaceEnded);
     if (msg && *msg) prism::SpeakUrgent(msg);
-    acclog::Write("SwoopRace", "spoke exit: [%s]", msg ? msg : "");
+    acclog::Write("SwoopRace",
+                  "spoke race end: [%s] (raceTime=%.2f have=%d)",
+                  msg ? msg : "", g_state.race_time_seconds,
+                  g_state.have_race_time ? 1 : 0);
 }
 
 // ============================================================================
@@ -484,6 +714,13 @@ void HandleEnter(void* mg) {
     g_state.gear                = 0;
     g_state.last_max_speed      = 0.0f;
     g_state.shift_ready_announced = false;
+    g_state.have_start_ms       = false;
+    g_state.race_start_ms       = 0;
+    g_state.race_mph            = 2;
+    g_state.race_max_speed      = 0.0f;
+    g_state.have_race_time      = false;
+    g_state.race_time_seconds   = 0.0f;
+    g_state.race_time_announced = false;
     // Defensive cleanup for obstacle + accelpad loops — any active
     // loop from a previous race must not survive into this one.
     ResetSpatialAudio();
@@ -520,7 +757,9 @@ void HandleExit() {
     g_state.gear                = 0;
     g_state.last_max_speed      = 0.0f;
     g_state.shift_ready_announced = false;
-    AnnounceExit();
+    // Fallback: if the terminal-stop detector already spoke the time (the
+    // common path), this is a no-op; otherwise speak it now.
+    SpeakRaceEndMessage();
 }
 
 }  // namespace
@@ -594,6 +833,7 @@ void Tick() {
     TickGearWatch(g_state.latched_mini_game);
     TickShiftReady(g_state.latched_mini_game);
     TickSpatialAudio(g_state.latched_mini_game);
+    TickRaceTimer(g_state.latched_mini_game);
     EmitDiagSnapshot(g_state.latched_mini_game);
 }
 
