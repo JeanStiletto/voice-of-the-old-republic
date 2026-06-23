@@ -555,16 +555,28 @@ constexpr uint8_t     kSteerCueVolume = 54;
 //   gap by ear, and only then does the magnet quietly finish it. This is THE
 //   loosening lever — see kSwoopAssistGapU. (Tune the gap, not this.)
 constexpr float kSwoopMagnetEngageU   = kSwoopAssistGapU;  // lane-units; magnetism engages within
-constexpr float kSwoopMagnetGainFar   = 0.06f;  // pull at the engage edge (gentle guide)
-constexpr float kSwoopMagnetGainNear  = 0.35f;  // pull dead-on the lane (sticky; < turret 0.50)
+// Gains raised 2026-06-23 (0.06->0.15 far, 0.35->0.50 near) to compensate for
+// the removed widened-pad Override: the hit radius drops 8u -> vanilla 5u, so the
+// magnet must pull "reached ~8u" down to "crosses <=5u" — closing ~3 extra units.
+// At 8u the pull goes 1.6 -> ~2.6 u/tick, recovering the catches that landed in
+// the old 5-8u band. (Net forgiveness ~unchanged: same ~8u effective window, now
+// via active pull to the real vanilla target instead of a fattened target.)
+constexpr float kSwoopMagnetGainFar   = 0.15f;  // pull at the engage edge
+constexpr float kSwoopMagnetGainNear  = 0.50f;  // pull dead-on the lane (turret-level)
 // Per-tick cap. The 2026-06-22 lateral-authority probe measured the PLAYER's own
 // bank at ~85 u/s peak (~4.7 u/tick at the ~18 Hz swoop tick), p90 ~46-56 u/s.
-// Raised 2.5->3.5 (45->63 u/s) so the magnet can actually FINISH a near-miss
-// close in the forward time available (was the "engaged but didn't finish"
-// bucket) — still ~1.2 u/tick below the player's peak, so holding a key away
-// still overrides. (Old comment's "±10/tick" authority was a guess; measured is
-// ~4.7.)
-constexpr float kSwoopMagnetMaxStepU  = 3.5f;   // per-tick cap (lane-units); < player bank authority
+// Raised 3.5->5.0 (2026-06-23) — just ABOVE the player's peak — so the magnet can
+// ARREST an overshoot against a still-held steer key. The trace showed last-second
+// misses are overshoots (you reach the pad then sail past while holding the key);
+// at 3.5 (< player 4.7) the magnet lost that tug-of-war. Contained to near-pad
+// overshoot (engages only within the gap; brake only counter-pulls on inward
+// velocity), so the player keeps full control elsewhere.
+constexpr float kSwoopMagnetMaxStepU  = 5.0f;   // per-tick cap (lane-units)
+// Velocity brake (PD derivative): the magnet aims at (padErr − brakeTicks·vel),
+// not raw padErr, so when you're closing fast it eases / counter-pulls BEFORE you
+// reach the pad — bleeding the overshoot momentum raw position pull can't. Small
+// lead (1.5 ticks): enough to anticipate overshoot, not so much you undershoot.
+constexpr float kSwoopMagnetBrakeTicks = 1.5f;
 // Hold-through-crossing window (item 2): within this many seconds of reaching a
 // gate's forward position, the pull ramps to fully sticky regardless of lateral
 // error, so anticipatory drift toward the next (often opposite-lane) gate can't
@@ -1223,10 +1235,15 @@ void TickAccelpadCues(void* miniGame) {
             }
         }
         const float gain = acc::minigame::MagnetGain(t, mp);
-        // mappedErr = bikeX − padX = −padErr, so the pull (−mappedErr·gain) is
-        // toward the pad's lane.
+        // Velocity brake: aim at where you'll coast to (padErr − brakeTicks·vel),
+        // not the raw pad, so when you're closing fast this goes negative before
+        // you arrive and the magnet counter-pulls, bleeding overshoot momentum.
+        // smoothed_vel is bike-X velocity (+ = right); padErr = padX − bikeX (+ =
+        // pad to the right), so subtracting the velocity lead damps inward motion
+        // on either side. mappedErr = −(target error).
+        const float brakedErr = padErr - kSwoopMagnetBrakeTicks * g_state.smoothed_vel;
         const float newOffX =
-            acc::minigame::MagnetStep(tunnel.x, -padErr, gain, mp);
+            acc::minigame::MagnetStep(tunnel.x, -brakedErr, gain, mp);
         Vector newOff = tunnel;
         newOff.x = newOffX;
         acc::minigame::WriteOffsetVector(player, newOff);
@@ -1236,9 +1253,10 @@ void TickAccelpadCues(void* miniGame) {
         if (nowMag - g_state.last_magnet_log_ms >= 1000) {
             g_state.last_magnet_log_ms = nowMag;
             acclog::Write("SwoopAssist",
-                          "magnet slot=%d padErr=%.2f gain=%.2f offX %.2f->%.2f "
-                          "bikeX=%.2f padX=%.2f fwdGap=%.1f",
-                          ahead_slot, padErr, gain, tunnel.x, newOffX,
+                          "magnet slot=%d padErr=%.2f vel=%.2f brakedErr=%.2f "
+                          "gain=%.2f offX %.2f->%.2f bikeX=%.2f padX=%.2f fwdGap=%.1f",
+                          ahead_slot, padErr, g_state.smoothed_vel, brakedErr,
+                          gain, tunnel.x, newOffX,
                           bikePos.x, ahead_pos.x, fwdGap);
         }
     }
