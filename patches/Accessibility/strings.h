@@ -1422,6 +1422,8 @@ enum class Id : int {
     GlossaryEntrySwoopAccelpadBoost,
     GlossaryEntrySwoopObstacleWarn,
     GlossaryEntrySwoopWallImpact,
+    GlossaryEntrySwoopAligned,
+    GlossaryEntrySwoopShiftReady,
 
     // ---- In-game auto-updater (UpdateChecker).
     //      Background version check fires on first hook (CSWRules construction);

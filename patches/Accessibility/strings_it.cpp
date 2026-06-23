@@ -449,7 +449,7 @@ const char* Get(Id id) {
             // Short cheat sheet. Full keymap (Enter/Mouse 1 also work,
             // Pause pauses the race, etc.) is in the manual — verbose
             // spoken intro got in the way of the start countdown.
-            return "Spazio per accelerare. A e D per sterzare.";
+            return "Spazio per salire di marcia al segnale audio. Sterza con A e D. Evita gli ostacoli e colpisci le piastre acceleratrici per battere il tempo.";
         case Id::SwoopRaceEnded:
             return "Corsa Swoop terminata.";
         case Id::SwoopRaceObstacleNear:
@@ -511,6 +511,8 @@ const char* Get(Id id) {
         case Id::GlossaryEntrySwoopAccelpadBoost:   return "Piastra acceleratrice Swoop";
         case Id::GlossaryEntrySwoopObstacleWarn:    return "Allerta ostacolo Swoop";
         case Id::GlossaryEntrySwoopWallImpact:      return "Impatto contro muro Swoop";
+        case Id::GlossaryEntrySwoopAligned:         return "Swoop in traiettoria";
+        case Id::GlossaryEntrySwoopShiftReady:      return "Swoop cambio marcia pronto";
 
         case Id::FmtUpdateAvailable:    return "Aggiornamento disponibile, versione %s. Premi F5 dal menu principale per installare.";
         case Id::UpdateDownloadStarting: return "Avvio del download.";

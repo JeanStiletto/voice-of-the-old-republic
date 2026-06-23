@@ -462,7 +462,7 @@ const char* Get(Id id) {
             // Pause pauses the race, etc.) is documented in the manual
             // — verbose spoken intro got in the way of the start
             // countdown so the shorter form is preferred.
-            return "Leertaste beschleunigt. A und D zum Lenken.";
+            return "Leertaste zum Hochschalten beim Audiosignal. Mit A und D lenken. Weiche den Hindernissen aus und triff die Beschleunigerfelder, um die Zeit zu schlagen.";
         case Id::SwoopRaceEnded:
             return "Swoop-Rennen beendet.";
         case Id::SwoopRaceObstacleNear:
@@ -527,6 +527,8 @@ const char* Get(Id id) {
         case Id::GlossaryEntrySwoopAccelpadBoost:   return "Swoop-Beschleunigerfeld";
         case Id::GlossaryEntrySwoopObstacleWarn:    return "Swoop-Hinderniswarnung";
         case Id::GlossaryEntrySwoopWallImpact:      return "Swoop-Wandaufprall";
+        case Id::GlossaryEntrySwoopAligned:         return "Swoop auf Kurs";
+        case Id::GlossaryEntrySwoopShiftReady:      return "Swoop-Gangwechsel bereit";
 
         // "drücken" — the hex escape \xFC followed by literal 'c' would be
         // parsed as \xFCc (out of range). Split the literal across two

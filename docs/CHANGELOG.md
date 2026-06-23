@@ -42,6 +42,9 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>Swoop racing:</h3>
 
+- Swoop racing is now playable by ear. Each accelerator pad sounds a panned tone that points to its lane — steer with A and D to centre it, and a short "on track" blip confirms the catch. Obstacles and the side walls warn with their own cues, and a separate cue tells you the moment you can shift up a gear (Space). Every swoop sound is listed in the audio glossary under Mod settings so you can learn them first.
+- A steering-assist magnet nudges the bike onto the pad you're aiming at, so a near-miss still catches instead of sailing past.
+- Race cues stay silent through the start countdown and begin the instant the race does.
 - Swoop races no longer play a repeating acceleration tick that sped up as you went faster. It was meant to stand in for the on-screen speed bar, but the bike has no held throttle to track: it accelerates to each gear's top speed on its own, and you shift up with a single press of the accelerator. The tick modelled a control that doesn't exist, so it was just noise.
 
 <h3>Installer:</h3>

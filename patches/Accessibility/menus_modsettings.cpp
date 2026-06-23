@@ -245,6 +245,8 @@ constexpr GlossaryEntry k_glossary[] = {
     { acc::audio::NavCue::SwoopAccelpadBoost,       acc::strings::Id::GlossaryEntrySwoopAccelpadBoost },
     { acc::audio::NavCue::SwoopObstacleWarn,        acc::strings::Id::GlossaryEntrySwoopObstacleWarn  },
     { acc::audio::NavCue::SwoopWallImpact,          acc::strings::Id::GlossaryEntrySwoopWallImpact    },
+    { acc::audio::NavCue::SwoopSteerAligned,        acc::strings::Id::GlossaryEntrySwoopAligned       },
+    { acc::audio::NavCue::SwoopShiftReady,          acc::strings::Id::GlossaryEntrySwoopShiftReady    },
 };
 constexpr int k_glossaryCount = static_cast<int>(
     sizeof(k_glossary) / sizeof(k_glossary[0]));

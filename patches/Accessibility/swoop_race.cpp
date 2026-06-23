@@ -24,6 +24,7 @@
                               //   real race-timer read — see TickRaceTimer)
 #include "log.h"
 #include "audio_bus.h"        // PlayCue — non-positional "you can shift now" cue
+#include "audio_cues.h"       // NavCue + GetNavCueResref (shift-ready resref)
 #include "prism.h"            // SpeakUrgent — entry/exit/gear must beat
                               //              NVDA's typed-character cancel
                               //              (race input is held Space/Enter)
@@ -135,8 +136,10 @@ constexpr int   kLastGatedGear            = 4;
 
 // Reuse the turret minigame's "entered killable range" cue — same meaning to
 // the player (a window just opened), already mixed and volume-grouped. See
-// turret_game.cpp kRangeCueResref.
-constexpr const char* kShiftReadyCueResref = "c_drdastro_atk1";
+// turret_game.cpp kRangeCueResref. Resref centralised in audio_cues.h so the
+// audio glossary auditions the same sample.
+constexpr const char* kShiftReadyCueResref =
+    acc::audio::GetNavCueResref(acc::audio::NavCue::SwoopShiftReady);
 
 // Exit-debounce. After we lose the latched pointer, hold off announcing
 // EXIT until the loss persists for this many consecutive ticks. The
@@ -864,8 +867,14 @@ void Tick() {
 
     TickGearWatch(g_state.latched_mini_game);
     TickShiftReady(g_state.latched_mini_game);
-    TickSpatialAudio(g_state.latched_mini_game);
+    // TickRaceTimer first so have_start_ms is current this tick: it flips true
+    // at the "Go!" launch (actual speed > 1 + fresh MIN_TIME stamp). Gate the
+    // obstacle + accelpad proximity cues behind it so they stay silent through
+    // the pre-race countdown and only begin once the race is actually underway.
     TickRaceTimer(g_state.latched_mini_game);
+    if (g_state.have_start_ms) {
+        TickSpatialAudio(g_state.latched_mini_game);
+    }
     EmitDiagSnapshot(g_state.latched_mini_game);
 }
 

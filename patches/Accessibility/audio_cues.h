@@ -56,6 +56,9 @@ enum class NavCue {
     SwoopSteerLeft,         // acc_steer_l  (low square tick — steer LEFT)
     SwoopSteerRight,        // acc_steer_r  (high square tick — steer RIGHT)
     SwoopSteerAligned,      // acc_steer_ok (rising tone — on the line / release)
+    // "You can shift up a gear now" cue (swoop_race.cpp TickShiftReady). Was a
+    // bare literal there; centralised here so the glossary can audition it.
+    SwoopShiftReady,        // c_drdastro_atk1 (short droid-attack chirp)
 };
 
 constexpr const char* GetNavCueResref(NavCue cue) {
@@ -83,6 +86,7 @@ constexpr const char* GetNavCueResref(NavCue cue) {
         case NavCue::SwoopSteerLeft:           return "acc_steer_l";
         case NavCue::SwoopSteerRight:          return "acc_steer_r";
         case NavCue::SwoopSteerAligned:        return "acc_steer_ok";
+        case NavCue::SwoopShiftReady:          return "c_drdastro_atk1";
     }
     return "";
 }
