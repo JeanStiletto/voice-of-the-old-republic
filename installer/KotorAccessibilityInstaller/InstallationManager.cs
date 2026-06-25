@@ -30,7 +30,7 @@ namespace KotorAccessibilityInstaller
         // ResLoader to pick up by bare resref. Mirrored as the
         // OverrideAssetNames list on PerformUninstall so removal stays
         // in sync.
-        private static readonly string[] OverrideAssets = { "acc_boost.wav", "acc_turret_loop.wav", "acc_turret_lock.wav", "acc_turret_tick.wav", "acc_steer_l.wav", "acc_steer_r.wav", "acc_steer_ok.wav" };
+        private static readonly string[] OverrideAssets = { "acc_boost.wav", "acc_turret_loop.wav", "acc_turret_lock.wav", "acc_turret_tick.wav", "acc_steer_ok.wav" };
         public static IReadOnlyList<string> OverrideAssetNames => OverrideAssets;
 
         public InstallationManager(string gameDir)
@@ -206,12 +206,26 @@ namespace KotorAccessibilityInstaller
             string overrideDir = Path.Combine(_gameDir, "Override");
             Directory.CreateDirectory(overrideDir);
 
+            // Per-asset isolation: a single missing/un-embedded resource must
+            // not abort the whole set. Before this guard, one omission (the
+            // v0.5.7 acc_steer_*.wav, never added to the .csproj EmbeddedResource
+            // list) threw on the first steer cue and silently dropped every
+            // asset after it — leaving the swoop steering guidance with no audio.
+            int installed = 0;
             foreach (var name in OverrideAssets)
             {
                 string dest = Path.Combine(overrideDir, name);
-                ExtractEmbeddedResource(name, dest);
+                try
+                {
+                    ExtractEmbeddedResource(name, dest);
+                    installed++;
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warning($"Override asset '{name}' could not be installed: {ex.Message}");
+                }
             }
-            Logger.Info($"Installed Override assets into: {overrideDir}");
+            Logger.Info($"Installed {installed}/{OverrideAssets.Length} Override assets into: {overrideDir}");
         }
 
         /// <summary>

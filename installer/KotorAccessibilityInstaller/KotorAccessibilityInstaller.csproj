@@ -61,6 +61,12 @@
     <EmbeddedResource Include="Resources\acc_turret_loop.wav" />
     <EmbeddedResource Include="Resources\acc_turret_lock.wav" />
     <EmbeddedResource Include="Resources\acc_turret_tick.wav" />
+    <!-- Swoop-race "on the line" rising tone (swoop_spatial_audio.cpp, resref
+         acc_steer_ok): the centred blip that confirms the bike has reached a
+         pad. The earlier panned acc_steer_l / acc_steer_r directional ticks were
+         retired when the steering magnet replaced the discrete co-pilot guide,
+         so only this aligned cue is still played. -->
+    <EmbeddedResource Include="Resources\acc_steer_ok.wav" />
     <!-- Vanilla prioritygroups.2da. The installer appends the mod's
          dedicated full-volume audio priority group to whatever copy is in
          Override (or this bundled vanilla if absent) — see
