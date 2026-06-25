@@ -667,7 +667,16 @@ void OnPathfindFocus() {
     bool  inputDisabledForArm = false;
     void* armObj = nullptr;   // live-pos source for the tracker; coord walks
                               // (map pins) have no usable object → targetPos only
-    if (a.isMapPin || a.handle == 0) {
+    // Transitions are TRIGGER regions — they fire when the PC walks *into* them,
+    // not on "use". UseObject on a trigger queues a walk-to-use the engine can't
+    // resolve (no use-node), so the PC never moves and the approach tracker
+    // declares a false "Weg versperrt". Route them as a coordinate walk like map
+    // pins: the engine A* walks to the trigger's position and crossing into the
+    // region fires the transition.
+    const bool walkToCoord =
+        a.isMapPin || a.handle == 0 ||
+        a.category == acc::filter::CycleCategory::Transition;
+    if (walkToCoord) {
         ok   = acc::guidance::WalkTo(a.pos);
         path = "WalkTo(coord)";
     } else {

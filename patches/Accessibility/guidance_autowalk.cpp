@@ -4,15 +4,16 @@
 #include <cmath>
 #include <cstdint>
 
+#include "camera_orient.h"  // IsActive — its synthesised A/D snap-turn must not
+                            // self-trip the movement-key cancel.
 #include "engine_player.h"
-#include "guidance_approach.h"  // IsApproachInFlight / CancelApproach — the
-                                // unified tracker now owns in-flight semantics
+#include "guidance_approach.h"  // IsAnyModApproachInFlight / CancelByMovement —
+                                // the unified tracker owns in-flight semantics
+                                // and the owner-aware cancel teardown.
 #include "hotkeys.h"  // IsForegroundGame — gate movement-key cancel polling
                       // so keys pressed in another app while Alt+Tabbed out
                       // don't kill an in-flight autowalk silently.
 #include "log.h"
-#include "prism.h"
-#include "strings.h"
 
 namespace acc::guidance {
 
@@ -304,23 +305,32 @@ bool CancelMovement() {
 }
 
 void PollMovementKeysCancel() {
-    // Only cancel our own Cycle-owned autowalks (Shift+-). Engine-initiated
-    // autorun (Canderous recruitment hand-off, area onEnter scripts, cutscene
-    // moves) and Enter-interact approaches are never Cycle-owned, so this gate
-    // preserves them from accidental cancellation by stray W presses.
-    if (!IsApproachInFlight()) return;
+    // Cancel ANY mod-armed walk — Shift+- discovery (Cycle) or Enter interact
+    // (Interact) — on a movement key. Engine-initiated movement (Canderous
+    // recruitment hand-off, area onEnter scripts, cutscene moves) never arms the
+    // tracker, so it is structurally unreachable here: we only ever cancel a walk
+    // we ourselves dispatched.
+    if (!acc::guidance::IsAnyModApproachInFlight()) return;
 
-    // Foreground gate — GetAsyncKeyState reads OS-global state, so a W
-    // press in another app while the user is Alt+Tabbed out would
-    // otherwise cancel the in-flight autowalk silently. Match the
-    // hotkeys-module convention here.
+    // Foreground gate — GetAsyncKeyState reads OS-global state, so a movement
+    // key pressed in another app while the user is Alt+Tabbed out would
+    // otherwise cancel the in-flight autowalk silently.
     if (!acc::hotkeys::IsForegroundGame()) return;
 
-    // User's movement-key set on QWERTZ (German) layout. VK_W / VK_S /
-    // VK_A / VK_D / VK_C / VK_Y map to the physical positions the user
-    // listed. If their layout produces different VK codes for some of
-    // these letters we'll see no cancel firing on the offending key and
-    // can extend the list.
+    // camera_orient's snap-turn drives the camera by SendInput'ing A/D scancodes,
+    // which GetAsyncKeyState reports as real presses. Don't let that self-cancel
+    // an in-flight walk while the auto-rotation is running.
+    if (acc::camera_orient::IsActive()) return;
+
+    // User's movement-key set on QWERTZ (German) layout. VK_W / VK_S / VK_A /
+    // VK_D / VK_C / VK_Y map to the physical positions the user listed.
+    //
+    // Level-triggered (no rising-edge requirement): any of these keys held cancels
+    // — so holding A to turn breaks out of an autowalk just like a fresh tap. The
+    // old rising-edge gate meant a key already held when the walk dispatched never
+    // produced an edge, stranding the user in a long autowalk with no manual turn.
+    // The arm grace that prevents a pre-dispatch key from cancelling too early
+    // lives in CancelByMovement (kCancelGraceMs), keyed off the tracker's arm time.
     constexpr int kMovementKeys[] = {'W', 'S', 'A', 'D', 'C', 'Y'};
     bool anyDown = false;
     for (int vk : kMovementKeys) {
@@ -329,35 +339,9 @@ void PollMovementKeysCancel() {
             break;
         }
     }
+    if (!anyDown) return;
 
-    // Rising-edge gate. If the user happens to be holding W when an
-    // autowalk dispatches (e.g. Shift+- then immediate W), we don't
-    // want to cancel on tick 1 just because the key was already down —
-    // wait for a fresh press. After cancel, IsApproachInFlight() flips to
-    // false and the early-return at top of this function takes over;
-    // s_prevDown stays accurate for the next dispatch.
-    static bool s_prevDown = false;
-    bool risingEdge = anyDown && !s_prevDown;
-    s_prevDown = anyDown;
-    if (!risingEdge) return;
-
-    bool ok = CancelMovement();
-    if (ok) {
-        CancelApproach();  // clear the in-flight tracker (no announce)
-        // Re-enable manual control immediately — the user wants the
-        // keyboard back NOW, not after the 3s auto-restore. Same
-        // sequence as the Shift+- toggle-cancel path in cycle_input.cpp.
-        acc::engine::SetPlayerInputEnabled(true);
-        const char* msg = acc::strings::Get(
-            acc::strings::Id::MovementCancelled);
-        prism::Speak(msg, /*interrupt=*/true);
-        acclog::Write("Autowalk", "movement-key cancel — %s rising edge",
-                      "W/S/A/D/C/Y");
-    } else {
-        // CancelMovement SEH-faulted (logged inside that function). Drop
-        // s_prevDown back to false so the next press still tries.
-        s_prevDown = false;
-    }
+    acc::guidance::CancelByMovement();
 }
 
 

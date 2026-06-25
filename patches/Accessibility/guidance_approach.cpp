@@ -29,6 +29,10 @@ constexpr float kReachedMSq     = 36.0f;   // (6m)^2 — stalled within this of 
                                            // difficult-terrain near-miss; disarm
                                            // quietly rather than nag. Only a stall
                                            // beyond this counts as truly blocked.
+constexpr DWORD kCancelGraceMs  = 300;     // movement-key cancel ignores the
+                                           // first 300ms after a dispatch — covers
+                                           // a key still held from before the walk
+                                           // and the engine's enqueue ramp-up.
 
 struct ApproachState {
     bool          active        = false;
@@ -256,6 +260,34 @@ bool IsApproachInFlight() {
 
 void CancelApproach() {
     g_st.active = false;
+}
+
+bool IsAnyModApproachInFlight() {
+    return g_st.active;
+}
+
+bool CancelByMovement() {
+    if (!g_st.active) return false;
+    // Arm grace: a movement key still down from before the dispatch (or the
+    // engine's post-dispatch enqueue ramp-up) must not cancel the walk before
+    // it has a chance to start.
+    if (GetTickCount() - g_st.armedAt < kCancelGraceMs) return false;
+
+    acc::guidance::CancelMovement();
+    if (g_st.inputDisabled) {
+        acc::engine::SetPlayerInputEnabled(true);
+    }
+    if (g_st.isDialog) {
+        acc::engine::SetGlobalDialogState(0);
+    }
+    const char* msg = acc::strings::Get(acc::strings::Id::MovementCancelled);
+    prism::Speak(msg, /*interrupt=*/true);
+    acclog::Write("Approach", "movement-cancel — owner=%d isDialog=%d "
+        "inputDisabled=%d name=[%s] (manual control reclaimed)",
+        static_cast<int>(g_st.owner), g_st.isDialog ? 1 : 0,
+        g_st.inputDisabled ? 1 : 0, g_st.name);
+    g_st.active = false;
+    return true;
 }
 
 void SpeakWayBlocked(const char* name, const Vector& targetPos) {

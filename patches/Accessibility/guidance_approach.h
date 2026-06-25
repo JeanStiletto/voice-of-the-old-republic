@@ -58,10 +58,24 @@ void ArmApproach(const ApproachArm& arm);
 // Per-tick driver. Cheap when idle (one flag check). Call once per tick.
 void TickApproach();
 
-// True while a Cycle-owned approach is in flight — the Shift+- toggle-cancel
-// and W/S/A/D panic-cancel query this. Interact-owned arms read as not-in-flight
-// here so they can't be cancelled by those paths.
+// True while a Cycle-owned approach is in flight — the Shift+- second-press
+// toggle-cancel queries this. Interact-owned arms read as not-in-flight here so
+// the Shift+- toggle can't cancel an Enter walk.
 bool IsApproachInFlight();
+
+// True while ANY mod-armed approach is in flight, regardless of owner. The
+// movement-key cancel queries this: both Shift+- (Cycle) and Enter (Interact)
+// walks should yield to manual movement. Game/cutscene-driven movement never
+// arms the tracker, so it is structurally out of this function's reach.
+bool IsAnyModApproachInFlight();
+
+// Movement-key cancel: reclaim manual control from an in-flight mod-armed walk.
+// Owner-agnostic teardown — cancels the bouncing walk, restores input if the
+// arming caller disabled it, clears dialog-pending state (Enter walk-to-talk),
+// speaks "movement cancelled", and disarms. No-op (returns false) when nothing
+// is armed or the arm grace (kCancelGraceMs) hasn't elapsed, so a movement key
+// still held from before the dispatch can't kill the walk before it starts.
+bool CancelByMovement();
 
 // Clear tracker state without announcing — for the explicit Shift+- / panic
 // cancel paths, where the caller already runs CancelMovement + input restore.

@@ -38,9 +38,14 @@ bool UseObject(unsigned long targetHandle);
 // the tracker (this primitive no longer owns that state).
 bool CancelMovement();
 
-// Cancel a Cycle-owned (Shift+-) autowalk on a fresh W/S/A/D/C/Y rising edge.
-// Engine-initiated autorun and Enter-interact approaches are untouched —
-// guidance::IsApproachInFlight() is only true for our own Shift+- dispatches.
+// Cancel ANY mod-armed autowalk — Shift+- discovery (Cycle) or Enter interact
+// (Interact) — while a W/S/A/D/C/Y movement key is held. Level-triggered (a key
+// already held when the walk dispatched still cancels, after the tracker's arm
+// grace), so the user can always turn/walk their way out. Engine-initiated
+// movement (autorun, area onEnter scripts, cutscene moves) never arms the
+// tracker, so guidance::IsAnyModApproachInFlight() is false for it and it is
+// structurally untouched. Delegates the owner-aware teardown to
+// guidance::CancelByMovement().
 void PollMovementKeysCancel();
 
 }  // namespace acc::guidance

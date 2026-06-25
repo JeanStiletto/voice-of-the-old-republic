@@ -232,6 +232,37 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
             leader, leaderId, leaderName);
     }
 
+    // Transitions are TRIGGER regions that fire on walk-IN, not on "use". The
+    // engine action picker has no verb for a trigger, so the dispatch below would
+    // fall through to the UseObject fallback, which queues a walk-to-use the
+    // engine can't resolve (no use-node) → the PC never moves → false "Weg
+    // versperrt". Walk to the trigger's coordinate instead (engine A*, input left
+    // enabled like the cycle coord-walk); crossing into the region fires the
+    // transition. Same fix as cycle_input::OnPathfindFocus.
+    if (cat == acc::filter::CycleCategory::Transition) {
+        Vector tpos{};
+        if (acc::engine::GetObjectPosition(target, tpos) &&
+            acc::guidance::WalkTo(tpos)) {
+            char tmsg[192];
+            std::snprintf(tmsg, sizeof(tmsg),
+                          acc::strings::Get(PreRollFor(cat)), name);
+            prism::Speak(tmsg, /*interrupt=*/true);
+            // Coord walk leaves input enabled, so the tracker doesn't own input
+            // restore (matches the cycle WalkTo path).
+            ArmInteractApproach(name, target, /*inputDisabled=*/false,
+                                /*isDialog=*/false);
+            acclog::Write("Interact", "%s -> [%s] transition trigger via "
+                "WalkTo(coord) target=0x%08x pos=(%.2f,%.2f,%.2f)",
+                forceRadial ? "Shift+Enter" : "Enter", tmsg, handle,
+                tpos.x, tpos.y, tpos.z);
+            return;
+        }
+        // Couldn't resolve the position / WalkTo faulted — fall through to the
+        // normal picker pipeline as a backup.
+        acclog::Write("Interact", "transition WalkTo dispatch unavailable — "
+            "falling through to picker/UseObject");
+    }
+
     // First: try the engine action picker. It runs the same picker the
     // cursor uses on hover (open / talk / Security / Bash / Disable Trap
     // / …) and dispatches the result through the engine's own click

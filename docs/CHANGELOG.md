@@ -39,6 +39,11 @@ and add the German in parentheses if it genuinely aids clarity.
 
 - You can now reach every crystal, upgrade, and item in the workbench and equipment pickers. After the v0.5.7 crash fix moved crystals into a dedicated picker, some setups could still only land on the first item — pressing down briefly read the next one and snapped straight back, so the rest of the list stayed out of reach and Enter installed whichever item the selection had snapped back to. The picker now drives the game's own selection (the same path the on-screen scrollbar uses, so the highlight, the select sound, and multi-page scrolling are all the engine's) and keeps the mouse pointer off the list so the game's per-frame hover-tracking can't drag the selection back onto the row under the cursor. It only bit at screen resolutions where the parked pointer happened to fall on the list, which is why it surfaced for some players and never reproduced locally.
 
+<h3>Navigation:</h3>
+
+- Movement keys now cancel an auto-walk in progress. While the mod is walking you somewhere — Shift+- to a discovered object, or Enter to interact — pressing W, A, S or D (or your other movement keys) stops it at once and hands manual control back. Previously only a fresh key-press cancelled, so if you were already holding a key the auto-walk ran to the end; a long walk to a distant target could leave you unable to turn until it arrived. Movement the game itself drives — cut-scenes and scripted walks — is never cancelled, only walks the mod started.
+- Auto-walking to an area transition now works. Doorways and area exits (such as the Tatooine Swoop Registration) are trigger zones that fire when you step into them, but the auto-walk was treating them as an object to "use" — which the engine can't path to — so it stalled and announced "way blocked" within a second or two. It now walks you to the spot the way it walks to a map marker, and crossing into the zone fires the transition. Fixed for both the Shift+- auto-walk and the Enter interact key.
+
 <h2>v0.5.7</h2>
 
 <h3>Bug fixes:</h3>

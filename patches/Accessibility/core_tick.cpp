@@ -283,8 +283,7 @@ void Dispatch() {
     PHASE("probe_camera_distance", acc::probe_camera_distance::Tick());
     PHASE("view_mode.poll", acc::view_mode::PollWin32());
 
-    // W/S/A/D/C/Y panic-cancel + beacon driver.
-    PHASE("guidance.cancel", acc::guidance::PollMovementKeysCancel());
+    // Beacon driver.
     PHASE("guidance.beacon", acc::guidance::beacon::Tick());
 
     // Restore player input once the handed-off engine action drains from
@@ -295,6 +294,12 @@ void Dispatch() {
     // Enter-interact (loot/talk/door) dispatches arm it; it disarms quietly on
     // success and announces "way blocked" on a walkmesh-blocked stall.
     PHASE("guidance.approach", acc::guidance::TickApproach());
+
+    // W/S/A/D/C/Y movement-cancel. Runs AFTER TickApproach so that if a
+    // dialog/loot/cutscene result surfaced this tick, the tracker has already
+    // disarmed and the cancel sees nothing in flight — it can't clobber a
+    // freshly-queued scripted move on the same tick the scene takes over.
+    PHASE("guidance.cancel", acc::guidance::PollMovementKeysCancel());
 
     // Diagnostic: log player action-queue depth changes (delta only).
     PHASE("engine.actionQueueDiag", acc::engine::TickActionQueueDiag());
