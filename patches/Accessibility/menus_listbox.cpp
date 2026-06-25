@@ -41,6 +41,7 @@ using acc::menus::detail::FindListBoxChild;
 using acc::menus::detail::IsSaveLoadPanel;
 using acc::menus::detail::ReadSaveLoadEntryString;
 using acc::menus::detail::DriveListBoxSelection;
+using acc::menus::detail::DriveListBoxSelectionEngine;
 using acc::menus::detail::ListBoxNavOp;
 using acc::menus::detail::ListBoxNavResult;
 using acc::menus::detail::QueueButtonByIdActivate;
@@ -72,6 +73,16 @@ namespace {
 bool  s_equipPickerActive = false;
 void* s_equipPickerPanel  = nullptr;
 
+// One-shot "park the cursor off the LB_ITEMS list" latch, set when a picker
+// arms and cleared once the monitor has warped the cursor to BTN_BACK (or on
+// disarm). The park is deferred to the per-frame monitor — which runs in the
+// Update tick, NOT the input hook — because MoveMouseToPosition recurses through
+// HandleMouseMove and must stay off the input-dispatch stack. With the cursor
+// off the list, the engine's hover-select can't re-select the row under it each
+// frame, so DriveListBoxSelectionEngine's SetSelectedControl writes stick.
+bool  s_equipParkPending = false;
+bool  s_workbenchUpgradeParkPending = false;
+
 // Workbench upgrade picker â€” arms when the user activates a slot button
 // (BTN_UPGRADE3X/4X at .gui IDs 12..18) on upgrade.gui. While armed, the
 // LB_ITEMS spec takes over arrow keys to drive the compatible-mods listbox
@@ -88,11 +99,13 @@ void* EquipPickerPanel()   { return s_equipPickerPanel; }
 void ArmEquipPicker(void* panel) {
     s_equipPickerActive = true;
     s_equipPickerPanel  = panel;
+    s_equipParkPending  = true;
 }
 
 void DisarmEquipPicker() {
     s_equipPickerActive = false;
     s_equipPickerPanel  = nullptr;
+    s_equipParkPending  = false;
 }
 
 bool  IsWorkbenchUpgradePickerArmed() { return s_workbenchUpgradePickerActive; }
@@ -100,11 +113,13 @@ bool  IsWorkbenchUpgradePickerArmed() { return s_workbenchUpgradePickerActive; }
 void ArmWorkbenchUpgradePicker(void* panel) {
     s_workbenchUpgradePickerActive = true;
     s_workbenchUpgradePickerPanel  = panel;
+    s_workbenchUpgradeParkPending  = true;
 }
 
 void DisarmWorkbenchUpgradePicker() {
     s_workbenchUpgradePickerActive = false;
     s_workbenchUpgradePickerPanel  = nullptr;
+    s_workbenchUpgradeParkPending  = false;
 }
 
 // ============================================================================
@@ -214,6 +229,17 @@ struct ListBoxPanelSpec {
     // it because the picker's row 0 is a hidden remove entry on power slots but
     // a real choice on the colour slot. nullptr = use `minSel` (most specs).
     int (*minSelFn)(void* panel);
+
+    // When true, Up/Down/Home/End drive the engine's own
+    // CSWGuiListBox::SetSelectedControl (real row highlight + native multipage
+    // scroll) via DriveListBoxSelectionEngine, instead of the raw selection_index
+    // write of DriveListBoxSelection. Requires the cursor to be parked off the
+    // list while armed — the picker arm path warps it to BTN_BACK — so the
+    // engine's per-frame hover-select (HandleMouseMove → SetSelectedControl on
+    // the row under the cursor) can't revert the selection. The workbench
+    // upgrade and equipment pickers use it; everything else keeps the raw write.
+    // false = raw write (default).
+    bool useEngineSelect;
 };
 
 // ============================================================================
@@ -539,6 +565,8 @@ constexpr ListBoxPanelSpec kEquipPickerSpec = {
     /*titleOverride*/           nullptr,
     /*emptyStateId*/            acc::strings::Id::Count_,
     /*alwaysReturnFromHandler*/ false,  // fall through so slot-zone nav still works
+    /*minSelFn*/                nullptr,
+    /*useEngineSelect*/         true,  // engine SetSelectedControl + cursor parked off-list
 };
 
 // ============================================================================
@@ -1183,6 +1211,7 @@ constexpr ListBoxPanelSpec kWorkbenchUpgradeSpec = {
     /*emptyStateId*/            acc::strings::Id::WorkbenchUpgradesEmpty,
     /*alwaysReturnFromHandler*/ false,  // fall through so chain nav reaches the slot/assemble buttons
     /*minSelFn*/                WorkbenchUpgradeMinSel,  // hide row-0 remove entry on power slots
+    /*useEngineSelect*/         true,  // engine SetSelectedControl + cursor parked off-list
 };
 
 // PowersLevelUp (pwrlvlup.gui) is NOT a flat listbox despite the
@@ -1441,8 +1470,12 @@ bool DispatchKeyDownEdge(const ListBoxPanelSpec& spec, void* panel,
         void* lb = spec.findListBox(panel);
         int effMinSel = spec.minSelFn ? spec.minSelFn(panel) : spec.minSel;
         ListBoxNavResult r;
-        if (lb && DriveListBoxSelection(lb, op,
-                                        static_cast<short>(effMinSel), r)) {
+        bool moved = lb && (spec.useEngineSelect
+            ? DriveListBoxSelectionEngine(lb, op,
+                                          static_cast<short>(effMinSel), r)
+            : DriveListBoxSelection(lb, op,
+                                    static_cast<short>(effMinSel), r));
+        if (moved) {
             // Specs with no announce callback (dialogue replies) drive the
             // cursor + consume the key here but defer speech to a poll monitor.
             if (spec.announce) spec.announce(lb, r);
@@ -1681,6 +1714,34 @@ void MonitorContainerSelection() {
                   lb, selIdx, prev, rowText, stack, charges);
 }
 
+// Warp the OS cursor onto `panel`'s BTN_BACK so it sits OFF the LB_ITEMS list
+// while a picker is armed. The engine re-selects the listbox row under the
+// cursor on every frame (HandleMouseMove → SetSelectedControl); parking the
+// cursor on a button well clear of the list makes that hover-select inert, so
+// DriveListBoxSelectionEngine's selection writes survive. Runs only from the
+// per-frame monitors (Update tick), never the input hook, because
+// MoveMouseToPosition recurses through the hover pipeline. BTN_BACK is a plain
+// button (safe for MoveMouseToPosition's hover→active promotion, unlike a
+// label) and a harmless parking spot — we never synthesise a click, and Enter/
+// Esc are dispatched explicitly by the picker handlers regardless of hover.
+// Returns true once the warp is issued (caller clears its park-pending latch).
+static bool ParkPickerCursorOffList(void* panel, int backBtnId,
+                                    const char* tag) {
+    if (!panel) return false;
+    void* gm = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!gm) return false;
+    void* backBtn = FindControlById(panel, backBtnId);
+    if (!backBtn) return false;
+    int cx = 0, cy = 0;
+    if (!acc::menus::detail::GetControlCenter(backBtn, cx, cy)) return false;
+    auto move = reinterpret_cast<PFN_MoveMouseToPosition>(
+        kAddrMoveMouseToPosition);
+    move(gm, cx, cy);
+    acclog::Write(tag, "park cursor off LB_ITEMS -> BTN_BACK id=%d at (%d,%d) "
+                  "(neutralises hover-select)", backBtnId, cx, cy);
+    return true;
+}
+
 void MonitorEquipPickerSelection() {
     void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
     if (!mgr) return;
@@ -1711,6 +1772,7 @@ void MonitorEquipPickerSelection() {
             acclog::Write("EquipPicker", "disarm â€” panel gone from panels[]");
             s_equipPickerActive = false;
             s_equipPickerPanel  = nullptr;
+            s_equipParkPending  = false;
         }
         return;
     }
@@ -1721,6 +1783,15 @@ void MonitorEquipPickerSelection() {
     auto* lbList = reinterpret_cast<CExoArrayList*>(
         reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
     int rowCount = (lbList && lbList->data) ? lbList->size : 0;
+
+    // One-shot cursor park: once the picker is armed and its LB_ITEMS has been
+    // populated (rowCount > 0), warp the cursor off the list so the engine's
+    // per-frame hover-select stops fighting our SetSelectedControl writes.
+    if (s_equipPickerActive && s_equipParkPending && rowCount > 0) {
+        if (ParkPickerCursorOffList(equipPanel, kEquipBtnBackId, "EquipPicker")) {
+            s_equipParkPending = false;
+        }
+    }
 
     short selIdx = *reinterpret_cast<short*>(
         reinterpret_cast<unsigned char*>(lb) + kListBoxSelectionIndexOffset);
@@ -1800,6 +1871,7 @@ void MonitorWorkbenchUpgradePicker() {
         acclog::Write("WorkbenchUpgrade", "disarm â€” panel gone from panels[]");
         s_workbenchUpgradePickerActive = false;
         s_workbenchUpgradePickerPanel  = nullptr;
+        s_workbenchUpgradeParkPending  = false;
         return;
     }
 
@@ -1838,6 +1910,17 @@ void MonitorWorkbenchUpgradePicker() {
         acclog::Trace("WorkbenchSel",
                       "lb=%p sel=%d top=%d ipp=%d rows=%d selRow=%p",
                       lb, sel, top, ipp, rowCount, selRow);
+
+        // One-shot cursor park: once the compatible-mods list is populated
+        // (rowCount > 0), warp the cursor off LB_ITEMS so the engine's
+        // hover-select stops reverting our SetSelectedControl writes.
+        if (s_workbenchUpgradeParkPending && rowCount > 0) {
+            if (ParkPickerCursorOffList(s_workbenchUpgradePickerPanel,
+                                        kWorkbenchUpgradeBtnBack,
+                                        "WorkbenchUpgrade")) {
+                s_workbenchUpgradeParkPending = false;
+            }
+        }
     }
 }
 

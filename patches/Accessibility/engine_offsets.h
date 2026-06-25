@@ -693,6 +693,25 @@ constexpr size_t kListBoxItemsPerPageOffset     = 0x2c4;
 constexpr size_t kListBoxSelectionIndexOffset   = 0x2c6;
 constexpr size_t kListBoxTopVisibleIndexOffset  = 0x2c8;
 
+// CSWGuiListBox::SetSelectedControl @0x0041c040 — __thiscall(listbox, index,
+// playSound). The engine's canonical "select row N": deselects the previously
+// selected row, writes selection_index, selects the new row (sets its highlight
+// state via the row's HandleInputEvent, plays the GUI select sound when
+// playSound != 0), sets the scroll-follow bit (bit_flags & 0x1000), and runs
+// OrganizeControls so the visible page scrolls to keep the selection on-screen
+// — native multipage, identical to a scrollbar drag. This is the SAME call the
+// engine's own hover-select (HandleMouseMove) and keyboard nav (HandleInputEvent
+// codes 0x3d/0x3e) make. Driving it directly — instead of writing selection_index
+// raw via DriveListBoxSelection — gives real selection + scrolling and, with the
+// cursor parked off the list so per-frame hover-select can't fight it, the
+// selection sticks (the lightsabercrystal "can't reach some crystals" bug:
+// hover re-selected the row under the parked cursor every frame, reverting our
+// raw write). index < 0 or >= controls.size clears the selection.
+typedef void (__thiscall* PFN_CSWGuiListBoxSetSelectedControl)(void* listbox,
+                                                               int index,
+                                                               int playSound);
+constexpr uintptr_t kAddrCSWGuiListBoxSetSelectedControl = 0x0041c040;
+
 // CSWGuiControl.extent is an inline CSWGuiExtent (16 bytes) at +0x4:
 //   +0x0  left    int
 //   +0x4  top     int

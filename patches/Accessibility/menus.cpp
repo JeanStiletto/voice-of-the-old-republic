@@ -766,6 +766,64 @@ bool acc::menus::detail::DriveListBoxSelection(void* listbox, ListBoxNavOp op,
     return true;
 }
 
+bool acc::menus::detail::DriveListBoxSelectionEngine(void* listbox,
+                                                     ListBoxNavOp op,
+                                                     short minSel,
+                                                     ListBoxNavResult& out)
+{
+    out = {};
+    if (!listbox) return false;
+
+    auto* lbBase = reinterpret_cast<unsigned char*>(listbox);
+    auto* lbList = reinterpret_cast<CExoArrayList*>(
+        lbBase + kListBoxControlsOffset);
+    int rowCount = (lbList && lbList->data) ? lbList->size : 0;
+    if (rowCount <= 0) {
+        out.rowCount = 0;
+        return false;
+    }
+
+    short oldSel = *reinterpret_cast<short*>(
+        lbBase + kListBoxSelectionIndexOffset);
+
+    // Identical no-wrap clamp to DriveListBoxSelection — only the commit path
+    // differs (engine SetSelectedControl vs. raw field write).
+    short newSel;
+    if (op == ListBoxNavOp::JumpFirst) {
+        newSel = minSel;
+    } else if (op == ListBoxNavOp::JumpLast) {
+        newSel = (short)(rowCount - 1);
+        if (newSel < minSel) newSel = minSel;
+    } else if (oldSel < minSel) {
+        newSel = minSel;
+    } else if (op == ListBoxNavOp::StepDown) {
+        newSel = (short)(oldSel + 1);
+        if (newSel >= rowCount) newSel = (short)(rowCount - 1);
+    } else {  // StepUp
+        newSel = (short)(oldSel - 1);
+        if (newSel < minSel) newSel = minSel;
+    }
+
+    // Drive the engine's real selection. Re-assert even on a boundary clamp
+    // (newSel == oldSel) so a frame of hover drift is corrected on the next
+    // keypress; only play the select sound when the selection actually moves.
+    auto setSel = reinterpret_cast<PFN_CSWGuiListBoxSetSelectedControl>(
+        kAddrCSWGuiListBoxSetSelectedControl);
+    setSel(listbox, newSel, newSel != oldSel ? 1 : 0);
+
+    // Read selection_index back — SetSelectedControl is authoritative (it can
+    // clamp internally), so the announce/commit see exactly what the engine set.
+    short engineSel = *reinterpret_cast<short*>(
+        lbBase + kListBoxSelectionIndexOffset);
+    out.oldSel   = oldSel;
+    out.newSel   = engineSel;
+    out.rowCount = rowCount;
+    out.row      = (engineSel >= 0 && engineSel < rowCount)
+                       ? lbList->data[engineSel]
+                       : nullptr;
+    return true;
+}
+
 // Queue activation of the chain-navigable button child of `panel` whose
 // .gui-time id matches `buttonId`. Mirrors the activate path used by
 // chain-Enter elsewhere: queues an Activate op via menus_pending and sets

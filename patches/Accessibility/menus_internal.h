@@ -104,6 +104,19 @@ enum class ListBoxNavOp { StepUp, StepDown, JumpFirst, JumpLast };
 bool DriveListBoxSelection(void* listbox, ListBoxNavOp op, short minSel,
                            ListBoxNavResult& out);
 
+// Same contract as DriveListBoxSelection, but drives the engine's own
+// CSWGuiListBox::SetSelectedControl instead of writing selection_index raw.
+// SetSelectedControl sets the row's real highlight state, plays the GUI select
+// sound, and scrolls the page natively (OrganizeControls) — so multipage lists
+// work the engine's way and the selection survives the per-frame hover-select
+// that overwrites a raw index write. The target index is computed with the same
+// no-wrap clamp as DriveListBoxSelection. Callers that use this MUST also keep
+// the mouse cursor off the list while armed (see the picker arm path), otherwise
+// the engine's hover handler re-selects the row under the cursor every frame.
+// Returns false iff listbox is null or rowCount == 0.
+bool DriveListBoxSelectionEngine(void* listbox, ListBoxNavOp op, short minSel,
+                                 ListBoxNavResult& out);
+
 // Queue activation of the chain-navigable button child of `panel` whose
 // +0x50 ID matches `buttonId`. Reserved for select-then-confirm panels
 // (Container / SaveLoad spec entries). Returns false on debounce or

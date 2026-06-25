@@ -33,6 +33,12 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.5.8</h2>
+
+<h3>Bug fixes:</h3>
+
+- You can now reach every crystal, upgrade, and item in the workbench and equipment pickers. After the v0.5.7 crash fix moved crystals into a dedicated picker, some setups could still only land on the first item — pressing down briefly read the next one and snapped straight back, so the rest of the list stayed out of reach and Enter installed whichever item the selection had snapped back to. The picker now drives the game's own selection (the same path the on-screen scrollbar uses, so the highlight, the select sound, and multi-page scrolling are all the engine's) and keeps the mouse pointer off the list so the game's per-frame hover-tracking can't drag the selection back onto the row under the cursor. It only bit at screen resolutions where the parked pointer happened to fall on the list, which is why it surfaced for some players and never reproduced locally.
+
 <h2>v0.5.7</h2>
 
 <h3>Bug fixes:</h3>
