@@ -372,6 +372,7 @@ constexpr size_t kDoorGenericTypeOffset        = 0x2a1;  // byte → genericdoor
 constexpr size_t kDoorLockedOffset             = 0x2c4;  // undefined4 (bool)
 constexpr size_t kDoorOpenStateOffset          = 0x2cc;  // byte
 constexpr size_t kDoorDescriptionOffset        = 0x3a4;
+constexpr size_t kDoorStaticOffset             = 0x3c0;  // undefined4 (UTD Static flag)
 constexpr size_t kDoorTransitionDestOffset     = 0x3c8;
 constexpr size_t kCreatureStatsPtrOffset       = 0xa74;  // CSWSCreatureStats*
 constexpr size_t kCreatureStatsFirstNameOffset = 0x14;

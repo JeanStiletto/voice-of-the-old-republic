@@ -33,6 +33,12 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.5.9</h2>
+
+<h3>World navigation:</h3>
+
+- Sealed decorative doors now read as "cosmetic" instead of "locked". Some doors in the world are pure set dressing — the game never lets anyone open them, and no key or security check exists for them. They were announced as "locked door", which sent you hunting for a way through that isn't there (the Manaan Sith base has three of them). They now say "cosmetic door" so you can tell them apart from a genuinely locked door and move on. Because the label changed, they also stop sharing the "locked door 1/2/3…" numbering with real locked doors, so the count of actual locked doors in an area is no longer inflated by scenery.
+
 <h2>v0.5.8</h2>
 
 <h3>Bug fixes:</h3>

@@ -137,6 +137,7 @@ const char* Get(Id id) {
 
         case Id::DoorOpen:             return "aperta";
         case Id::DoorLocked:           return "chiusa a chiave";
+        case Id::DoorCosmetic:         return "decorativa";
 
         case Id::DirNorth:             return "Nord";
         case Id::DirNortheast:         return "Nord-Est";

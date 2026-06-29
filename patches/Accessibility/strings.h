@@ -436,6 +436,11 @@ enum class Id : int {
     //      cycle/narrate stays terse. See `BuildDoorSuffix`.
     DoorOpen,
     DoorLocked,
+    // Static/decorative door — the engine never lets anyone open it (UTD
+    // Static flag, CSWSDoor +0x3c0). Set dressing, not a real passage; we
+    // label it so the player can tell it apart from a genuinely locked door
+    // and stop trying to open it. See `BuildDoorSuffix`.
+    DoorCosmetic,
 
     // ---- Octagonal compass directions for turn announcement
     //      (Pillar 2 sub-feature C). German uses traditional
