@@ -24,17 +24,9 @@ Secondary finding from the same session log: `Lang: unknown LanguageID=5; defaul
 
 The in-game tutorial popups (`Tutorial Popups=1`) may not be read aloud correctly — text missing, partial, or not spoken at all. These are a distinct message-box type from normal dialogue; confirm what's spoken vs shown and capture a log on a known tutorial trigger.
 
-### Droids sometimes don't read all dialogue options
-
-In some droid conversations not every reply option is read while cycling the choices. Possibly a listbox enumeration miss or an options-changed re-read race. Note which droid / conversation; check the option enumeration in `dialog_speech.cpp`.
-
 ### Shift+Down reads descriptions twice (Journal, items)
 
 Pressing Shift+Down to read a full description often reads it twice — seen in the Journal and on items. Duplicate fire between our Shift+arrow description reader and an engine re-narration, or a missing Consume so the key both drives our read and falls through. (The superficially similar hacking-dialogue double-read, fixed in v0.5.3, turned out to be two separate reply readers — an input-path announce plus a poll monitor — both speaking; worth checking whether this Shift+Down case is the same shape: a second reader rather than a missing Consume.)
-
-### Combat target-options columns stick when targets are far away
-
-In the combat action menu, switching between the target-options columns isn't always fluid — when targets are far away, the column change sometimes won't go through, so the player can't reliably move across the options. Likely the target-resolution / range gate interfering with the column navigation (the engine re-deriving the target menu from distance). Capture which column move fails, the target distance, and a log; cross-check against `project_engine_action_picker.md` and the bare 1–7 dispatch (`project_bare_combat_keys_dispatch.md`).
 
 ## Unreproduced
 
@@ -85,6 +77,8 @@ Let players give their own map pins a name when they drop one, and read that nam
 ### Improved tutorial for mod users
 
 A better onboarding/tutorial for players using the mod — introducing the mod's keys and concepts (navigation, cycling, targeting, screens) in a guided way rather than expecting users to discover them. Scope and delivery (in-game guided flow vs. F1/Ctrl+F1 reference vs. external readme) to be decided.
+
+- **Endar Spire scenery-battle hint.** Beta finding (userlogs/endarspiresoldiersunreachable1): in the Command Module (`END_M01AA`) the scripted background firefight actors — tags `end_cut2_sith1`–`5` and `end_cut2_soldier1`–`4`, plus the Jedi/Sith Apprentice duel pair — are neutral cutscene props, but Q/E focuses them and the enemy-style brief (One Damage Blaster, permanent effects) makes them sound fightable. The engine's default verb for them is Dialog, so Enter just walks the PC into the crowd (often ending in "way blocked"); one tester spent most of a session trying to fight them across three restarts. When the tutorial work lands, speak a one-shot custom hint if the player Q/E-focuses exactly these creatures ("scripted battle, no need to fight — walk past"), keyed on the `end_cut2_*` tags. A general friendly/neutral marker on every creature was considered and rejected as too chatty for a tutorial-only confusion; sighted players get the same information from the reticle colour, and outside the tutorial hostile-looking neutrals are rare.
 
 ### Improvements to the Pillar 1 wall tones
 
