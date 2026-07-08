@@ -59,11 +59,17 @@ constexpr uintptr_t kAddrExoSoundPtr    = 0x007a39ec;
 constexpr unsigned char kPauseBitMenu   = 0x02;
 
 // ---- State ----
-uint32_t    s_pendingStrref = 0;
-const char* s_pendingHint   = nullptr;
-bool        s_active        = false;   // synthetic popup on screen
-const char* s_activeHint    = nullptr;
-bool        s_paused        = false;   // we issued the pause
+// Trask often delivers several rewritten tutorial lines back-to-back before a
+// reply break; accumulate their hints (newline-joined) so the popup carries all
+// of them, not just the last. Buffers are generous so long combined text is not
+// truncated anywhere in the speak path.
+char        s_pendingHints[4096] = {0};  // accumulated hints since last break
+uint32_t    s_pendingStrref = 0;         // first accumulated line's strref (visible text)
+int         s_pendingCount  = 0;
+bool        s_active        = false;     // synthetic popup on screen
+char        s_activeHintBuf[4096] = {0}; // the combined hint spoken while active
+const char* s_activeHint    = nullptr;   // -> s_activeHintBuf while active
+bool        s_paused        = false;     // we issued the pause
 
 void SetPause(bool on) {
     __try {
@@ -154,20 +160,33 @@ void FirePopup(uint32_t strref, const char* hint) {
 
 void RecordPendingHint(uint32_t strref, const char* hint) {
     if (!hint || !hint[0]) return;
-    s_pendingStrref = strref;
-    s_pendingHint   = hint;
-    acclog::Write("TutorialPopup", "pending recorded: strref=%u hint=\"%.80s\"",
-                  strref, hint);
+    if (s_pendingCount == 0) {
+        s_pendingStrref  = strref;   // first line drives the popup's visible text
+        s_pendingHints[0] = '\0';
+    } else {
+        // Newline between hints so the screen reader pauses between concepts.
+        strncat_s(s_pendingHints, sizeof(s_pendingHints), "\n", _TRUNCATE);
+    }
+    strncat_s(s_pendingHints, sizeof(s_pendingHints), hint, _TRUNCATE);
+    ++s_pendingCount;
+    acclog::Write("TutorialPopup", "pending #%d recorded: strref=%u hint=\"%.80s\"",
+                  s_pendingCount, strref, hint);
 }
 
-void FirePendingAtReplyBreak() {
-    if (!s_pendingHint) return;
-    if (s_active) return;  // a popup is already up; don't stack
+bool FirePendingAtReplyBreak() {
+    if (s_pendingCount == 0) return false;
+    if (s_active) return false;  // a popup is already up; don't stack
+    // Move the accumulated hints into the active buffer (kept alive for the
+    // popup's lifetime; the speak paths read SyntheticHint()).
+    strncpy_s(s_activeHintBuf, sizeof(s_activeHintBuf), s_pendingHints, _TRUNCATE);
     uint32_t strref = s_pendingStrref;
-    const char* hint = s_pendingHint;
-    s_pendingHint   = nullptr;
-    s_pendingStrref = 0;
-    FirePopup(strref, hint);
+    int count = s_pendingCount;
+    s_pendingHints[0] = '\0';
+    s_pendingStrref   = 0;
+    s_pendingCount    = 0;
+    acclog::Write("TutorialPopup", "firing %d accumulated hint(s)", count);
+    FirePopup(strref, s_activeHintBuf);
+    return true;
 }
 
 bool SyntheticActive()      { return s_active; }

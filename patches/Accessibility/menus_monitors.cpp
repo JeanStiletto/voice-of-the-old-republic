@@ -167,14 +167,14 @@ void MonitorFocusedControl() {
         focused, text, sizeof(text), acc::menus::chain::g_chainPanel);
     if (!source) return;
 
-    // Synthetic tutorial popup message row: route to the keyboard hint, the same
-    // way AnnounceControl does. Without this, this monitor reads the raw mouse
-    // text off the control, sees it differ from the hint AnnounceControl just
-    // recorded, and re-speaks the mouse text (the 5th announce path). Decide by
-    // identity (the popup's only single-row listbox is its message).
+    // Synthetic tutorial popup message row: AnnounceControl already speaks the
+    // full keyboard hint on arrow-nav. This monitor would otherwise re-read the
+    // raw mouse text off the control (the 5th announce path) — and copying the
+    // hint into the 256-char `text` buffer would clip a long combined hint — so
+    // just skip it here. Decide by identity (the popup's only single-row listbox
+    // is its message).
     if (acc::tutorial_popup::SyntheticActive() && IsListBox(focused)) {
-        const char* h = acc::tutorial_popup::SyntheticHint();
-        if (h && h[0]) strncpy_s(text, sizeof(text), h, _TRUNCATE);
+        return;
     }
 
     if (focused == s_focusMonitorControl) {
@@ -665,18 +665,6 @@ void MonitorDialogReplies() {
     PanelKind k = dialogKind;
     void* fg = dialogPanel;
 
-    // Reply prompt reached (the game's own break: OK / repeat / explain-more).
-    // If a rewritten tutorial line was just spoken, pop a real tutorial window
-    // carrying its keyboard hint now that Trask has finished talking. No-op
-    // unless a hint is pending; fires once per pending line.
-    {
-        auto* replyList = reinterpret_cast<CExoArrayList*>(
-            reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
-        if (replyList && replyList->data && replyList->size >= 1) {
-            acc::tutorial_popup::FirePendingAtReplyBreak();
-        }
-    }
-
     short selIdx = *reinterpret_cast<short*>(
         reinterpret_cast<unsigned char*>(lb) + kListBoxSelectionIndexOffset);
 
@@ -727,6 +715,12 @@ void MonitorDialogReplies() {
         acclog::Write("Menus.DialogReply", "selected: panel=%p kind=%s listbox=%p "
                       "sel=%d (was %d) src=%s text=\"%s\"",
                       fg, PanelKindName(k), lb, selIdx, prev, src, text);
+        // A reply is now readable/navigable — the entry's VO has ended and the
+        // player can choose. This is the moment to pop the pending tutorial
+        // hint (not at VO start: that talked over Trask and stole Enter-as-skip).
+        // If it fired, skip re-speaking this reply so it doesn't overlap the
+        // popup; the player hears the reply when they navigate after dismissing.
+        if (acc::tutorial_popup::FirePendingAtReplyBreak()) return;
         // Sole speaker for dialogue replies (the input path drives the cursor
         // silently — see the no-announce note on the dialog specs in
         // menus_listbox.cpp). Append the "%d von %d" position so the user knows

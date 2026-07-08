@@ -24,9 +24,10 @@ namespace acc::tutorial_popup {
 // the next reply-prompt break.
 void RecordPendingHint(uint32_t strref, const char* hint);
 
-// Called when a dialogue reply prompt appears. If a hint is pending, mount the
-// tutorial popup carrying it and clear the pending hint. No-op otherwise.
-void FirePendingAtReplyBreak();
+// Called when a dialogue reply becomes navigable. If a hint is pending, mount
+// the tutorial popup carrying it and clear the pending hint. Returns true if it
+// fired (so the caller can skip its own announce), false otherwise.
+bool FirePendingAtReplyBreak();
 
 // True while our synthetic tutorial popup is on screen — the TutorialBox speech
 // paths (fingerprint override, listbox suppression, chain gate) route the hint
