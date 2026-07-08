@@ -91,15 +91,16 @@ void AnnounceControl(void* control) {
     const char* source = acc::menus::extract::FromControl(
         control, text, sizeof(text), acc::menus::chain::g_chainPanel);
     if (source) {
-        // Tutorial popup message: arrow-navigating onto the mouse-worded message
-        // row speaks the keyboard hint instead of the raw mouse text (matches
-        // only the message row, not the Weiter/OK buttons). Surface-1 popups
-        // match via the tutorial.2da mouse strrefs; the synthetic Trask popup's
-        // message is a dialogue line, matched via HintForDialogLine (only while
-        // the synthetic popup is up, so it can't fire in ordinary dialogue).
-        const char* spoken = acc::tutorial_hints::HintForMouseText(text);
-        if (!spoken && acc::tutorial_popup::SyntheticActive())
-            spoken = acc::tutorial_hints::HintForDialogLine(text);
+        // Tutorial popup message: arrow-navigating onto the message row speaks
+        // the keyboard hint instead of the raw mouse text (buttons read their
+        // own labels). Decide by IDENTITY, not text: the synthetic Trask popup's
+        // message is its only single-row listbox, so a listbox control here IS
+        // the message — speak the hint. (Surface-1 popups still match by the
+        // tutorial.2da mouse strref via HintForMouseText.)
+        const char* spoken = nullptr;
+        if (acc::tutorial_popup::SyntheticActive() && isListBoxContainer)
+            spoken = acc::tutorial_popup::SyntheticHint();
+        if (!spoken) spoken = acc::tutorial_hints::HintForMouseText(text);
         if (!spoken) spoken = text;
         prism::Speak(spoken, /*interrupt=*/false);
         // Prime channel-0 dedup so the engine's post-nav SetActive echo
@@ -165,6 +166,16 @@ void MonitorFocusedControl() {
     const char* source = acc::menus::extract::FromControl(
         focused, text, sizeof(text), acc::menus::chain::g_chainPanel);
     if (!source) return;
+
+    // Synthetic tutorial popup message row: route to the keyboard hint, the same
+    // way AnnounceControl does. Without this, this monitor reads the raw mouse
+    // text off the control, sees it differ from the hint AnnounceControl just
+    // recorded, and re-speaks the mouse text (the 5th announce path). Decide by
+    // identity (the popup's only single-row listbox is its message).
+    if (acc::tutorial_popup::SyntheticActive() && IsListBox(focused)) {
+        const char* h = acc::tutorial_popup::SyntheticHint();
+        if (h && h[0]) strncpy_s(text, sizeof(text), h, _TRUNCATE);
+    }
 
     if (focused == s_focusMonitorControl) {
         if (strncmp(s_focusMonitorText, text, sizeof(s_focusMonitorText)) != 0) {
