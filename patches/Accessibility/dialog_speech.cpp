@@ -16,6 +16,8 @@
 #include "menus_modsettings.h" // GetToggle(Option::HumanSubtitles)
 #include "prism.h"
 #include "transitions.h"      // IsModuleLoadPending — gate during cutscene-load
+#include "tutorial_hints.h"   // HintForDialogLine — detect a rewritten tutorial line
+#include "tutorial_popup.h"   // RecordPendingHint — fire a popup at the reply break
                               // transient (engine LYT loader use-after-free)
 
 namespace acc::dialog_speech {
@@ -562,6 +564,16 @@ void Tick() {
         bool gotNpc = acc::engine::ReadLabelTextAt(m.panel, kDialogMessageLabelOffset,
                                     npc, sizeof(npc));
         if (gotNpc && std::strcmp(npc, s_lastNpcLine) != 0) {
+            // Rewritten tutorial line (Trask / pop): keep it suppressed during
+            // his Basic VO, but remember its keyboard hint + source strref so
+            // the reply-prompt monitor can pop a real tutorial window with it
+            // once he's finished speaking. Recorded regardless of suppression.
+            uint32_t tutStrref = 0;
+            if (const char* tutHint =
+                    acc::tutorial_hints::HintForDialogLine(npc, &tutStrref)) {
+                acc::tutorial_popup::RecordPendingHint(tutStrref, tutHint);
+            }
+
             // Per-line speaker classification: log race + appearance even
             // when we end up speaking, so future override decisions can
             // be made on real (speaker tag, race, appearance_type) data.

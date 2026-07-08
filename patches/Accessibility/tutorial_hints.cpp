@@ -201,7 +201,7 @@ bool IsSuppressedTutorialText(const char* text) {
     return HintForMouseText(text) != nullptr;
 }
 
-const char* HintForDialogLine(const char* renderedLine) {
+const char* HintForDialogLine(const char* renderedLine, uint32_t* outStrref) {
     if (!renderedLine || !renderedLine[0]) return nullptr;
     BuildResolvedIfNeeded();
     if (!s_resolvedBuilt) return nullptr;
@@ -209,7 +209,11 @@ const char* HintForDialogLine(const char* renderedLine) {
         if (!s_resolved[i].valid) continue;
         if (EqualsTrimmed(renderedLine, s_resolved[i].text)) {
             const char* s = acc::strings::Get(s_resolved[i].id);
-            return (s && s[0]) ? s : nullptr;
+            if (!s || !s[0]) return nullptr;
+            // s_resolved is built parallel to kDialogHints, so index i carries
+            // the source strref.
+            if (outStrref) *outStrref = kDialogHints[i].strref;
+            return s;
         }
     }
     return nullptr;

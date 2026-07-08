@@ -41,6 +41,7 @@
 #include "menus_modsettings.h" // Virtual mod-settings submenu (Optionen panels)
 #include "menus_monitors.h"  // Post-Step-5 — general per-tick monitors
 #include "tutorial_hints.h"  // mapped tutorial-popup gate (mouse-announce suppression)
+#include "tutorial_popup.h"  // synthetic Trask-line popup (suppress its listbox row)
 #include "menus_store.h"     // Store / trading panel — price+stock suffix + mode announce
 #include "menus_pazaakdeck.h" // Pazaak side-deck builder — 3-row navigator
 #include "menus_galaxymap.h"  // Galaxy / star-map travel screen — planet cycle
@@ -1125,13 +1126,15 @@ static void SpeakPanelTitleOnFirstSight(void* panel) {
 // suppression stays at write-time: drowning the per-row container monitor
 // would still be wrong, so we just don't queue.
 static void AnnounceNewFocusedControl(int n, void* panel, void* newControl) {
-    // Mapped tutorial popups: the message body is spoken as a keyboard hint by
-    // the content-fingerprint monitor. Suppress the engine-focus-driven announce
-    // of the raw control here so the mouse-worded body isn't also read on the
-    // popup's first-sight SetActiveControl. Non-mapped tutorials are unaffected.
+    // Mapped tutorial popups (Surface 1) and our synthetic Trask popup (Surface
+    // 2): the message body is spoken as a keyboard hint by the content-fingerprint
+    // monitor, and the buttons read on arrow-nav. Suppress the engine-focus-driven
+    // announce of the raw control here so neither the mouse body nor a button
+    // (e.g. "Abbrechen") is read on the popup's first-sight SetActiveControl.
     if (IdentifyPanel(panel) == PanelKind::TutorialBox &&
-        acc::tutorial_hints::HintForTutorialRow(
-            acc::tutorial_hints::ReadTutorialRow(panel)) != nullptr) {
+        (acc::tutorial_popup::SyntheticActive() ||
+         acc::tutorial_hints::HintForTutorialRow(
+             acc::tutorial_hints::ReadTutorialRow(panel)) != nullptr)) {
         return;
     }
 
@@ -1452,12 +1455,15 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
                               "sub-screen description listbox silenced "
                               "(panel kind=%s)",
                               PanelKindName(IdentifyPanel(g_currentPanel)));
-            } else if (acc::tutorial_hints::IsSuppressedTutorialText(text)) {
+            } else if (acc::tutorial_hints::IsSuppressedTutorialText(text) ||
+                       acc::tutorial_popup::SyntheticActive()) {
                 // The tutorial popup's single-row message listbox: the keyboard
                 // hint is spoken by the content-fingerprint monitor. Suppress
                 // the raw (mouse-worded) row text here so it isn't also read.
                 // Matched on text (not panel identity) because this fires before
                 // the popup registers in panels[]. See tutorial_hints.cpp.
+                // The synthetic Trask popup (SyntheticActive) shows the original
+                // mouse strref as its visible text — suppress that row too.
                 acclog::Write("Menus.ListBox",
                               "tutorial mouse message suppressed "
                               "(keyboard hint owns the announce)");

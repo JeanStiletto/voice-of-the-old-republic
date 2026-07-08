@@ -27,6 +27,7 @@
 #include "strings.h"
 #include "prism.h"
 #include "tutorial_hints.h"  // TutorialBox keyboard-hint substitution (Surface 1)
+#include "tutorial_popup.h"  // synthetic Trask-line tutorial popup (Surface 2)
 
 using namespace acc::engine;
 
@@ -90,12 +91,15 @@ void AnnounceControl(void* control) {
     const char* source = acc::menus::extract::FromControl(
         control, text, sizeof(text), acc::menus::chain::g_chainPanel);
     if (source) {
-        // Tutorial popup message: when the user arrow-navigates onto the
-        // mouse-worded message row in the popup's chain, speak the keyboard
-        // hint instead of the raw mouse text. (First-sight is owned by the
-        // content-fingerprint monitor; this only fires on user chain nav, so
-        // there is no double-speak.)
+        // Tutorial popup message: arrow-navigating onto the mouse-worded message
+        // row speaks the keyboard hint instead of the raw mouse text (matches
+        // only the message row, not the Weiter/OK buttons). Surface-1 popups
+        // match via the tutorial.2da mouse strrefs; the synthetic Trask popup's
+        // message is a dialogue line, matched via HintForDialogLine (only while
+        // the synthetic popup is up, so it can't fire in ordinary dialogue).
         const char* spoken = acc::tutorial_hints::HintForMouseText(text);
+        if (!spoken && acc::tutorial_popup::SyntheticActive())
+            spoken = acc::tutorial_hints::HintForDialogLine(text);
         if (!spoken) spoken = text;
         prism::Speak(spoken, /*interrupt=*/false);
         // Prime channel-0 dedup so the engine's post-nav SetActive echo
@@ -535,8 +539,12 @@ void MonitorPanelContents() {
         // arrow-nav chain entry are separately gated off for these rows in
         // menus.cpp / menus_chain.cpp so this is the sole speaker.
         if (k == PanelKind::TutorialBox) {
-            const char* hint = acc::tutorial_hints::HintForTutorialRow(
-                acc::tutorial_hints::ReadTutorialRow(p));
+            // Synthetic Trask-line popup: speak its keyboard hint regardless of
+            // the (repurposed) row. Otherwise fall back to the row-keyed hint.
+            const char* hint = acc::tutorial_popup::SyntheticActive()
+                                   ? acc::tutorial_popup::SyntheticHint()
+                                   : acc::tutorial_hints::HintForTutorialRow(
+                                         acc::tutorial_hints::ReadTutorialRow(p));
             if (hint) strncpy_s(fingerprint, sizeof(fingerprint), hint, _TRUNCATE);
         }
 
@@ -646,6 +654,18 @@ void MonitorDialogReplies() {
     PanelKind k = dialogKind;
     void* fg = dialogPanel;
 
+    // Reply prompt reached (the game's own break: OK / repeat / explain-more).
+    // If a rewritten tutorial line was just spoken, pop a real tutorial window
+    // carrying its keyboard hint now that Trask has finished talking. No-op
+    // unless a hint is pending; fires once per pending line.
+    {
+        auto* replyList = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
+        if (replyList && replyList->data && replyList->size >= 1) {
+            acc::tutorial_popup::FirePendingAtReplyBreak();
+        }
+    }
+
     short selIdx = *reinterpret_cast<short*>(
         reinterpret_cast<unsigned char*>(lb) + kListBoxSelectionIndexOffset);
 
@@ -729,6 +749,8 @@ void TickGeneralMonitors() {
     MonitorFocusedControl();
     MonitorPanelContents();
     MonitorDialogReplies();
+    // Detect our synthetic Trask-line tutorial popup closing → unpause + reset.
+    acc::tutorial_popup::PollDismiss();
     // Re-assert chargen Attribute panel's selected_ability against chain
     // focus. The engine's cursor-warp → OnEnterPointsButton path silently
     // overwrites this field between our chain-step sync and the queued

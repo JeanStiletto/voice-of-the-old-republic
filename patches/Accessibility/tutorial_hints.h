@@ -18,6 +18,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 namespace acc::tutorial_hints {
 
 // Read the tutorial.2da row index off a live TutorialBox panel
@@ -32,8 +34,10 @@ const char* HintForTutorialRow(int row);
 // Keyboard-hint replacement for a rendered dialogue line whose source strref
 // is a known mouse-oriented tutorial line. Returns nullptr when the line is
 // not one we rewrite. Language-independent: the target strrefs are resolved
-// through the engine's own TLK the first time this is called.
-const char* HintForDialogLine(const char* renderedLine);
+// through the engine's own TLK the first time this is called. When a match is
+// found and outStrref is non-null, it receives the line's source strref (used
+// as the on-demand popup's visible text).
+const char* HintForDialogLine(const char* renderedLine, uint32_t* outStrref = nullptr);
 
 // If `text` is the raw (mouse-worded) message of a mapped tutorial popup — the
 // engine TLK resolution of one of the mapped rows' message strrefs — return the
