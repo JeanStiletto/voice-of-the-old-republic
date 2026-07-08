@@ -1736,6 +1736,55 @@ enum class Id : int {
     KbNameCheckForUpdate,
     KbNameDialogRepeatLine,
 
+    // ---- Endar Spire tutorial keyboard hints. The vanilla tutorial popups
+    //      (tutorial.2da → TutorialBox) and Trask's guided-conversation lines
+    //      are worded for mouse ("Linksklick", "Mausrad", "Klicke auf …").
+    //      We leave the on-screen text untouched (sighted / rest-sight mouse
+    //      users still read it) and substitute a keyboard-oriented line into
+    //      the *spoken* channel only. See tutorial_hints.cpp.
+    //
+    //      Surface 1 — silent tutorial.2da popups, keyed by row index
+    //      (CSWGuiTutorialBox +0x994). Game-wide, not just the Endar Spire.
+    TutHintCombatFeat,       // row 0  Use_Combat_Feat
+    TutHintGrenade,          // row 1  Use_Grenade
+    TutHintMine,             // row 2  Set_Mine
+    TutHintFriendlyPower,    // row 3  Use_Friendly_Force_Power
+    TutHintHostilePower,     // row 4  Use_Hostile_Force_Power
+    TutHintActionMenuScroll, // row 5  Use_Vertical_Menu
+    TutHintOpenScreens,      // row 7  Press_Start
+    TutHintCycleTargets,     // row 8  Use_Triggers_To_Cycle_Through_Targets
+    TutHintEquipSlot,        // row 11 Press_A_On_Equip_Screen
+    TutHintEnemyNear,        // row 21 Hostile_Creature_Encountered
+    TutHintBash,             // row 33 Bash
+    TutHintAttack,           // row 34 Attack (message0+1 folded)
+    TutHintAttackAuto,       // row 35 Attack_Button_Mash
+    //
+    //      Surface 2 — Endar Spire dialogue (Trask + pop windows), voice-acted.
+    //      Keyed by the line's source strref, matched via the engine's own TLK
+    //      (LookupTlk) so it stays language-independent. The German VO still
+    //      says "mouse"; the screen reader speaks the keyboard line.
+    TutTraskEquipOpen,       // 48330
+    TutTraskEquipBrowse,     // 48331
+    TutTraskEquipWeapon,     // 48332
+    TutTraskCamera,          // 48344
+    TutTraskFootlocker,      // 48345
+    TutTraskPickItem,        // 48348
+    TutTraskLeader,          // 48350
+    TutTraskMakeLeader,      // 48351
+    TutTraskMenus,           // 48353
+    TutTraskTabs,            // 48354
+    TutTraskActionMenu,      // 48360
+    TutTraskMedkit,          // 48363
+    TutTraskOpenDoor,        // 48441
+    TutTraskActivateEntry,   // 48544
+    TutTraskTargetMenu,      // 48547
+    TutTraskConfirmEntry,    // 48550
+    TutTraskPaused,          // 48551
+    TutTraskWalkTo,          // 48552
+    TutTraskSecurity,        // 48555
+    TutTraskHealWounded,     // 48556
+    TutLevelUp,              // 48324 (end_levelup)
+
     Count_,
 };
 

@@ -26,6 +26,7 @@
 #include "menus_journal.h"   // LogEntryCounts — entry-count completeness diagnostic
 #include "strings.h"
 #include "prism.h"
+#include "tutorial_hints.h"  // TutorialBox keyboard-hint substitution (Surface 1)
 
 using namespace acc::engine;
 
@@ -89,13 +90,20 @@ void AnnounceControl(void* control) {
     const char* source = acc::menus::extract::FromControl(
         control, text, sizeof(text), acc::menus::chain::g_chainPanel);
     if (source) {
-        prism::Speak(text, /*interrupt=*/false);
+        // Tutorial popup message: when the user arrow-navigates onto the
+        // mouse-worded message row in the popup's chain, speak the keyboard
+        // hint instead of the raw mouse text. (First-sight is owned by the
+        // content-fingerprint monitor; this only fires on user chain nav, so
+        // there is no double-speak.)
+        const char* spoken = acc::tutorial_hints::HintForMouseText(text);
+        if (!spoken) spoken = text;
+        prism::Speak(spoken, /*interrupt=*/false);
         // Prime channel-0 dedup so the engine's post-nav SetActive echo
         // (which lands in the pending-announce slot and gets drained next
         // tick) sees the same text as last-spoken and stays silent.
-        acc::menus::MarkSpoken(/*channel=*/0, text);
+        acc::menus::MarkSpoken(/*channel=*/0, spoken);
         s_focusMonitorControl = control;
-        strncpy_s(s_focusMonitorText, text, _TRUNCATE);
+        strncpy_s(s_focusMonitorText, spoken, _TRUNCATE);
         return;
     }
     if (g_currentPanel && IsClassSelectionIcon(g_currentPanel, control)) {
@@ -515,6 +523,22 @@ void MonitorPanelContents() {
 
         char fingerprint[8192];
         BuildContentFingerprint(p, fingerprint, sizeof(fingerprint));
+
+        // Tutorial popups: the vanilla message is worded for mouse. Leave the
+        // on-screen text alone (sighted / rest-sight users still read it) and
+        // speak a keyboard-oriented line instead. Keyed by the popup's source
+        // tutorial.2da row (+0x994). Overriding the fingerprint with a constant
+        // hint makes SpeakNewSegments say it once on first sight and stay quiet
+        // as the engine pages through multi-message tutorials. Non-mapped rows
+        // (no mouse wording) fall through to the vanilla rendered text. The
+        // engine-focus mouse announce (AnnounceNewFocusedControl) and the
+        // arrow-nav chain entry are separately gated off for these rows in
+        // menus.cpp / menus_chain.cpp so this is the sole speaker.
+        if (k == PanelKind::TutorialBox) {
+            const char* hint = acc::tutorial_hints::HintForTutorialRow(
+                acc::tutorial_hints::ReadTutorialRow(p));
+            if (hint) strncpy_s(fingerprint, sizeof(fingerprint), hint, _TRUNCATE);
+        }
 
         char* last = GetContentSnapshot(p);
         if (strncmp(last, fingerprint, sizeof(s_contentSnapshots[0].text)) == 0) {

@@ -722,6 +722,78 @@ const char* Get(Id id) {
         case Id::KbNameCheckForUpdate:      return "Nach Update suchen";
         case Id::KbNameDialogRepeatLine:    return "Dialogzeile wiederholen";
 
+        // ---- Endar Spire tutorial keyboard hints (Surface 1: popups) ----
+        case Id::TutHintCombatFeat:
+            return "Kampf-Talente findest du im Aktionsmen\xFC. \xD6""ffne die Angriffe mit Umschalt und 1 und l\xF6se mit der Eingabetaste aus.";
+        case Id::TutHintGrenade:
+            return "Granaten wirfst du \xFC""ber das Aktionsmen\xFC. \xD6""ffne Sprengstoff mit Umschalt und 7 und l\xF6se mit der Eingabetaste aus.";
+        case Id::TutHintMine:
+            return "Minen legst du \xFC""ber das Aktionsmen\xFC. \xD6""ffne Sprengstoff mit Umschalt und 7 und l\xF6se mit der Eingabetaste aus.";
+        case Id::TutHintFriendlyPower:
+            return "Freundliche Macht-F\xE4higkeiten findest du im Aktionsmen\xFC. \xD6""ffne die eigenen Kr\xE4""fte mit Umschalt und 4 und l\xF6se mit der Eingabetaste aus.";
+        case Id::TutHintHostilePower:
+            return "Offensive Macht-F\xE4higkeiten findest du im Aktionsmen\xFC. \xD6""ffne die Kr\xE4""fte gegen dein Ziel mit Umschalt und 2 und l\xF6se mit der Eingabetaste aus.";
+        case Id::TutHintActionMenuScroll:
+            return "Im Aktionsmen\xFC wechselst du die Eintr\xE4ge mit Pfeil hoch und runter und die Kategorie mit Pfeil links und rechts.";
+        case Id::TutHintOpenScreens:
+            return "Spielmen\xFCs \xF6""ffnest du direkt: M Karte, J Nachrichten, L Auftr\xE4ge, K F\xE4higkeiten, P Charakter, I Inventar, U Ausr\xFCstung, O Optionen. Mit Escape zur\xFC""ck.";
+        case Id::TutHintCycleTargets:
+            return "Ziele w\xE4hlst du mit Q und E. Objekte schaltest du mit Komma und Punkt durch; die Minus-Taste sagt das fokussierte Objekt an.";
+        case Id::TutHintEquipSlot:
+            return "Im Ausr\xFCstungsbildschirm w\xE4hlst du einen Steckplatz mit den Pfeiltasten und der Eingabetaste, dann w\xE4hlst du aus der Liste einen Gegenstand.";
+        case Id::TutHintEnemyNear:
+            return "Ein Feind ist in der N\xE4he. Schalte Ziele mit Q und E durch und greife mit der Eingabetaste an.";
+        case Id::TutHintBash:
+            return "Zum Aufbrechen anvisiere die T\xFCr oder den Beh\xE4lter, \xF6""ffne mit Umschalt und Eingabetaste das Aktionsmen\xFC und w\xE4hle Schlagen.";
+        case Id::TutHintAttack:
+            return "Anvisiere einen Feind mit Q und E und greife mit der Eingabetaste an. Ein einziger Druck gen\xFCgt; deine Figur greift dann jede Runde automatisch an, bis du ein anderes Ziel w\xE4hlst.";
+        case Id::TutHintAttackAuto:
+            return "Denke daran: Ein einziger Druck auf die Eingabetaste greift jede Runde automatisch an. Erst ein neues Ziel \xE4ndert das.";
+
+        // ---- Endar Spire tutorial keyboard hints (Surface 2: Trask / pop) ----
+        case Id::TutTraskEquipOpen:
+            return "Im Ausr\xFCstungsbildschirm w\xE4hlst du R\xFCstung und Waffen. \xD6""ffne ihn mit U.";
+        case Id::TutTraskEquipBrowse:
+            return "Bl\xE4ttere mit den Pfeiltasten durch die Steckpl\xE4tze; rechts stehen die Gegenst\xE4nde, die du zuweisen kannst.";
+        case Id::TutTraskEquipWeapon:
+            return "W\xE4hle den Waffen-Steckplatz und best\xE4tige mit der Eingabetaste, dann w\xE4hle in der Liste eine Waffe.";
+        case Id::TutTraskCamera:
+            return "Die Kamera drehst du mit A und D. Mit N richtest du sie zur n\xE4""chsten Richtung aus.";
+        case Id::TutTraskFootlocker:
+            return "Anvisiere die Feldkiste, indem du mit Komma und Punkt durch die Objekte schaltest, und \xF6""ffne sie mit der Eingabetaste.";
+        case Id::TutTraskPickItem:
+            return "W\xE4hle einen Steckplatz mit den Pfeiltasten und der Eingabetaste, bl\xE4ttere durch die Liste und best\xE4tige den Gegenstand mit der Eingabetaste.";
+        case Id::TutTraskLeader:
+            return "Du steuerst den Anf\xFChrer der Gruppe. Mit dem Tabulator wechselst du das gesteuerte Mitglied.";
+        case Id::TutTraskMakeLeader:
+            return "Wechsle mit dem Tabulator zu mir als Anf\xFChrer und \xF6""ffne dann die T\xFCr.";
+        case Id::TutTraskMenus:
+            return "Spielmen\xFCs \xF6""ffnest du direkt mit Tasten: L Auftr\xE4ge, M Karte und weitere.";
+        case Id::TutTraskTabs:
+            return "Zwischen Reitern wechselst du mit Q und E.";
+        case Id::TutTraskActionMenu:
+            return "Das Aktionsmen\xFC \xF6""ffnest du mit Umschalt und Eingabetaste f\xFCr dein Ziel, oder mit Umschalt und einer Zahl von 1 bis 7 f\xFCr eine Kategorie.";
+        case Id::TutTraskMedkit:
+            return "Medikits benutzt du \xFC""ber das Aktionsmen\xFC. \xD6""ffne Medizin mit Umschalt und 5 und l\xF6se mit der Eingabetaste aus.";
+        case Id::TutTraskOpenDoor:
+            return "Anvisiere die T\xFCr mit Komma und Punkt und \xF6""ffne sie mit der Eingabetaste.";
+        case Id::TutTraskActivateEntry:
+            return "Im Aktionsmen\xFC w\xE4hlst du einen Eintrag mit Pfeil hoch und runter und l\xF6st ihn mit der Eingabetaste aus.";
+        case Id::TutTraskTargetMenu:
+            return "Anvisiere ein Ziel mit Q und E oder Objekte mit Komma und Punkt. Mit der Eingabetaste f\xFChrst du die Standardaktion aus, mit Umschalt und Eingabetaste \xF6""ffnest du das Aktionsmen\xFC.";
+        case Id::TutTraskConfirmEntry:
+            return "Markiere den Eintrag mit Pfeil hoch und runter und best\xE4tige mit der Eingabetaste.";
+        case Id::TutTraskPaused:
+            return "Auch in der Pause w\xE4hlst du Ziele mit Q und E und wechselst mit dem Tabulator das gesteuerte Mitglied.";
+        case Id::TutTraskWalkTo:
+            return "Anvisiere die Feldkiste mit Komma und Punkt und gehe mit Umschalt und Minus zu ihr.";
+        case Id::TutTraskSecurity:
+            return "Anvisiere die T\xFCr, \xF6""ffne mit Umschalt und Eingabetaste das Aktionsmen\xFC und w\xE4hle Sicherheit.";
+        case Id::TutTraskHealWounded:
+            return "Wechsle mit dem Tabulator zur verletzten Figur, \xF6""ffne Medizin mit Umschalt und 5 und w\xE4hle das Medikit.";
+        case Id::TutLevelUp:
+            return "Zum Stufenaufstieg dr\xFC""cke Umschalt und L und folge den Anweisungen.";
+
         case Id::Count_:               return "";
     }
     return "";

@@ -703,6 +703,78 @@ const char* Get(Id id) {
         case Id::KbNameCheckForUpdate:      return "Check for update";
         case Id::KbNameDialogRepeatLine:    return "Repeat dialog line";
 
+        // ---- Endar Spire tutorial keyboard hints (Surface 1: popups) ----
+        case Id::TutHintCombatFeat:
+            return "Combat feats are in the action menu. Open Attacks with Shift and 1 and activate with Enter.";
+        case Id::TutHintGrenade:
+            return "Throw grenades from the action menu. Open Explosives with Shift and 7 and activate with Enter.";
+        case Id::TutHintMine:
+            return "Place mines from the action menu. Open Explosives with Shift and 7 and activate with Enter.";
+        case Id::TutHintFriendlyPower:
+            return "Friendly Force powers are in the action menu. Open self powers with Shift and 4 and activate with Enter.";
+        case Id::TutHintHostilePower:
+            return "Hostile Force powers are in the action menu. Open target powers with Shift and 2 and activate with Enter.";
+        case Id::TutHintActionMenuScroll:
+            return "In the action menu, move between entries with up and down, and between categories with left and right.";
+        case Id::TutHintOpenScreens:
+            return "Open game screens directly: M map, J messages, L quests, K abilities, P character, I inventory, U equip, O options. Escape returns.";
+        case Id::TutHintCycleTargets:
+            return "Choose targets with Q and E. Cycle objects with comma and period; the minus key announces the focused object.";
+        case Id::TutHintEquipSlot:
+            return "On the equip screen, choose a slot with the arrows and Enter, then pick an item from the list.";
+        case Id::TutHintEnemyNear:
+            return "An enemy is near. Cycle targets with Q and E and attack with Enter.";
+        case Id::TutHintBash:
+            return "To bash, focus the door or container, open the action menu with Shift and Enter, and choose Bash.";
+        case Id::TutHintAttack:
+            return "Focus an enemy with Q and E and attack with Enter. One press is enough; your character then attacks automatically each round until you choose another target.";
+        case Id::TutHintAttackAuto:
+            return "Remember: one press of Enter attacks automatically each round. Only a new target changes that.";
+
+        // ---- Endar Spire tutorial keyboard hints (Surface 2: Trask / pop) ----
+        case Id::TutTraskEquipOpen:
+            return "The equip screen is where you choose armor and weapons. Open it with U.";
+        case Id::TutTraskEquipBrowse:
+            return "Move through the slots with the arrows; on the right are the items you can assign.";
+        case Id::TutTraskEquipWeapon:
+            return "Select the weapon slot and press Enter, then choose a weapon from the list.";
+        case Id::TutTraskCamera:
+            return "Rotate the camera with A and D. Press N to face the next direction.";
+        case Id::TutTraskFootlocker:
+            return "Focus the footlocker by cycling objects with comma and period, and open it with Enter.";
+        case Id::TutTraskPickItem:
+            return "Choose a slot with the arrows and Enter, browse the list, and confirm the item with Enter.";
+        case Id::TutTraskLeader:
+            return "You control the party leader. Press Tab to switch the member you control.";
+        case Id::TutTraskMakeLeader:
+            return "Press Tab to make me the leader, then open the door.";
+        case Id::TutTraskMenus:
+            return "Open game screens directly with keys: L quests, M map, and more.";
+        case Id::TutTraskTabs:
+            return "Switch between tabs with Q and E.";
+        case Id::TutTraskActionMenu:
+            return "Open the action menu with Shift and Enter for your target, or Shift and a number 1 to 7 for a category.";
+        case Id::TutTraskMedkit:
+            return "Use medkits from the action menu. Open Medical with Shift and 5 and activate with Enter.";
+        case Id::TutTraskOpenDoor:
+            return "Focus the door with comma and period and open it with Enter.";
+        case Id::TutTraskActivateEntry:
+            return "In the action menu, choose an entry with up and down and activate it with Enter.";
+        case Id::TutTraskTargetMenu:
+            return "Focus a target with Q and E, or objects with comma and period. Press Enter for the default action, or Shift and Enter to open the action menu.";
+        case Id::TutTraskConfirmEntry:
+            return "Highlight the entry with up and down and confirm with Enter.";
+        case Id::TutTraskPaused:
+            return "Even while paused, choose targets with Q and E and switch the controlled member with Tab.";
+        case Id::TutTraskWalkTo:
+            return "Focus the footlocker with comma and period and walk to it with Shift and minus.";
+        case Id::TutTraskSecurity:
+            return "Focus the door, open the action menu with Shift and Enter, and choose Security.";
+        case Id::TutTraskHealWounded:
+            return "Switch to the wounded character with Tab, open Medical with Shift and 5, and choose the medkit.";
+        case Id::TutLevelUp:
+            return "To level up, press Shift and L and follow the prompts.";
+
         case Id::Count_:               return "";
     }
     return "";

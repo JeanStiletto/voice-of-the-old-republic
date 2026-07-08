@@ -33,6 +33,12 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.6.0</h2>
+
+<h3>Tutorial:</h3>
+
+- The in-game tutorial pop-ups now teach the keyboard controls instead of the mouse. Throughout the game these windows explained actions in terms of clicking and the mouse wheel — "left-click to attack", "scroll to the medkit", "click the tabs to open a menu" — which is no help without sight. Each one now speaks the matching keyboard command instead: focus a target with Q and E and attack with Enter, open the action menu with Shift and Enter, open Explosives with Shift and 7, and so on. The on-screen text is left as-is, so a sighted or partially-sighted player using a mouse still reads the original mouse wording — only the spoken line changes. You can also arrow onto the pop-up's message to re-read the keyboard version. Covers the combat-feat, grenade, mine, Force-power, action-menu-scroll, target-cycling, equip-slot, enemy-encountered, bash, and attack pop-ups.
+
 <h2>v0.5.9</h2>
 
 <h3>World navigation:</h3>
