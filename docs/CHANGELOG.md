@@ -33,13 +33,12 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
-<h2>v0.6.0</h2>
+<h2>v0.5.9</h2>
 
 <h3>Tutorial:</h3>
 
-- The in-game tutorial pop-ups now teach the keyboard controls instead of the mouse. Throughout the game these windows explained actions in terms of clicking and the mouse wheel — "left-click to attack", "scroll to the medkit", "click the tabs to open a menu" — which is no help without sight. Each one now speaks the matching keyboard command instead: focus a target with Q and E and attack with Enter, open the action menu with Shift and Enter, open Explosives with Shift and 7, and so on. The on-screen text is left as-is, so a sighted or partially-sighted player using a mouse still reads the original mouse wording — only the spoken line changes. You can also arrow onto the pop-up's message to re-read the keyboard version. Covers the combat-feat, grenade, mine, Force-power, action-menu-scroll, target-cycling, equip-slot, enemy-encountered, bash, and attack pop-ups.
-
-<h2>v0.5.9</h2>
+- The whole in-game tutorial now teaches the keyboard instead of the mouse. Every one of the game's built-in tutorial pop-ups used to explain actions by clicking, dragging and the mouse wheel — no help without sight — so each now speaks the matching keyboard command. The opening movement pop-up points you to the F1 help list and Ctrl+F1 for the current screen's keys before giving the walk keys; the map pop-up covers moving the map cursor, cycling map hints, dropping your own, and starting a beacon or an auto-walk to one; and the action-menu, targeting, equipment, combat and bash pop-ups each speak their keys, including the number and Shift+number action-menu shortcuts. The on-screen text is left as the original mouse wording, so a sighted or low-vision player using a mouse still reads it — only the spoken line changes, and you can arrow onto the message to hear it again.
+- On the Endar Spire, Trask's spoken tutorial now raises its own keyboard pop-up at each step. His guided walkthrough coaches the mouse — click your gear, aim the camera at the footlocker, click a portrait to change leader — so as each of his lines finishes the mod pauses the game with a pop-up that gives the keys instead: opening and browsing your equipment, finding and walking to the footlocker, switching who you control, opening screens, using the action menu and medkits, opening doors, slicing security, and levelling up. Where two of his lines carry the same advice, the pop-up speaks it once.
 
 <h3>World navigation:</h3>
 

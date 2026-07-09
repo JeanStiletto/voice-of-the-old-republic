@@ -609,7 +609,7 @@ const char* Get(Id id) {
         case Id::HelpKeyScreenEquip:     return "U: Charakter ausr\xFCsten";
         case Id::HelpKeyScreenOptions:   return "O: Optionen";
 
-        case Id::HelpKeyMapCursor:       return "Pfeiltasten: Kartencursor bewegen, um Gel\xE4nde und Markierungen zu lesen";
+        case Id::HelpKeyMapCursor:       return "W, A, S und D: Kartencursor bewegen, um Gel\xE4nde und Markierungen zu lesen";
         case Id::HelpKeyMapPosition:     return "Rechte Alt-Taste: Position und Blickrichtung auf der Karte ansagen";
 
 
@@ -749,18 +749,21 @@ const char* Get(Id id) {
             return "Anvisiere einen Feind mit Q und E und greife mit der Eingabetaste an. Ein einziger Druck gen\xFCgt; deine Figur greift dann jede Runde automatisch an, bis du ein anderes Ziel w\xE4hlst.";
         case Id::TutHintAttackAuto:
             return "Denke daran: Ein einziger Druck auf die Eingabetaste greift jede Runde automatisch an. Erst ein neues Ziel \xE4ndert das.";
+        case Id::TutHintMovement:
+            return "Dr\xFC""cke jederzeit F1 f\xFCr die Tastenhilfe, eine Liste aller Tasten, und Strg und F1 f\xFCr die Tasten des aktuellen Bildschirms. Zum Gehen dr\xFC""ckst du W und S f\xFCr vorw\xE4rts und r\xFC""ckw\xE4rts, A und D drehen die Kamera nach links und rechts, und mit Z und C trittst du zur Seite.";
+        case Id::TutHintMapScreen:
+            return "Auf der Karte sind alle erforschten Gebiete eines Levels eingezeichnet. Wichtige Bereiche werden markiert. Einige Gebiete, zum Beispiel St\xE4""dte, sind bereits kartografiert, bevor du sie erforschst. Mit W, A, S und D bewegst du dich auf der Karte. Mit Komma und Punkt wechselst du zwischen den Kartenhinweisen. Mit Umschalt und N setzt du an deiner Position einen eigenen Kartenhinweis. Mit Strg und Minus startest du einen Wegweiser, der dich per Ton zum Kartenhinweis f\xFChrt, mit Umschalt und Minus gehst du automatisch zum ausgew\xE4hlten Kartenhinweis.";
 
         // ---- Endar Spire tutorial keyboard hints (Surface 2: Trask / pop) ----
         case Id::TutTraskEquipOpen:
             return "Im Ausr\xFCstungsbildschirm w\xE4hlst du R\xFCstung und Waffen. \xD6""ffne ihn mit U.";
         case Id::TutTraskEquipBrowse:
-            return "Bl\xE4ttere mit den Pfeiltasten durch die Steckpl\xE4tze; rechts stehen die Gegenst\xE4nde, die du zuweisen kannst.";
+            return "Bl\xE4ttere mit den Pfeiltasten durch die Steckpl\xE4tze; jedem Steckplatz kannst du einen Gegenstand zuweisen.";
         case Id::TutTraskEquipWeapon:
             return "W\xE4hle den Waffen-Steckplatz und best\xE4tige mit der Eingabetaste, dann w\xE4hle in der Liste eine Waffe.";
         case Id::TutTraskCamera:
-            return "Die Kamera drehst du mit A und D. Mit N richtest du sie zur n\xE4""chsten Richtung aus.";
         case Id::TutTraskFootlocker:
-            return "Anvisiere die Feldkiste, indem du mit Komma und Punkt durch die Objekte schaltest, und \xF6""ffne sie mit der Eingabetaste.";
+            return "Die Kamera und damit deine Laufrichtung ver\xE4nderst du mit A und D. N dreht dich um 90 Grad. Q und E schalten durch alle sichtbaren Objekte. Komma und Punkt navigieren eine Liste aller Objekte, die du schon einmal gesehen hast. Umschalt und Komma oder Punkt wechselt zwischen den Objektkategorien. Mit der Eingabetaste gehst du zu einem ausgew\xE4hlten Objekt und aktivierst es.";
         case Id::TutTraskPickItem:
             return "W\xE4hle einen Steckplatz mit den Pfeiltasten und der Eingabetaste, bl\xE4ttere durch die Liste und best\xE4tige den Gegenstand mit der Eingabetaste.";
         case Id::TutTraskLeader:
@@ -772,7 +775,7 @@ const char* Get(Id id) {
         case Id::TutTraskTabs:
             return "Zwischen Reitern wechselst du mit Q und E.";
         case Id::TutTraskActionMenu:
-            return "Das Aktionsmen\xFC \xF6""ffnest du mit Umschalt und Eingabetaste f\xFCr dein Ziel, oder mit Umschalt und einer Zahl von 1 bis 7 f\xFCr eine Kategorie.";
+            return "Das Aktionsmen\xFC \xF6""ffnest du mit Umschalt und Eingabetaste f\xFCr dein Ziel. Eine Zahl von 1 bis 7 setzt die zuletzt benutzte Aktion der jeweiligen Kategorie ein, mit Umschalt und einer Zahl von 1 bis 7 \xF6""ffnest du die Kategorie zum Ausw\xE4hlen.";
         case Id::TutTraskMedkit:
             return "Medikits benutzt du \xFC""ber das Aktionsmen\xFC. \xD6""ffne Medizin mit Umschalt und 5 und l\xF6se mit der Eingabetaste aus.";
         case Id::TutTraskOpenDoor:

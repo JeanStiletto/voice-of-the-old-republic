@@ -590,7 +590,7 @@ const char* Get(Id id) {
         case Id::HelpKeyScreenEquip:     return "U: equipaggiare il personaggio";
         case Id::HelpKeyScreenOptions:   return "O: opzioni";
 
-        case Id::HelpKeyMapCursor:       return "Tasti freccia: spostare il cursore della mappa per leggere terreno e indicatori";
+        case Id::HelpKeyMapCursor:       return "W, A, S e D: spostare il cursore della mappa per leggere terreno e indicatori";
         case Id::HelpKeyMapPosition:     return "Alt destro: annunciare la tua posizione e orientamento sulla mappa";
 
 

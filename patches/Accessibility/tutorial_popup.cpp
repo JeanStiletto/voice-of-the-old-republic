@@ -43,8 +43,10 @@ constexpr size_t kTutorialBoxRowOffset = 0x994;
 constexpr size_t kShownBitsBase = 0xba8;
 
 // Fixed reason we repurpose for our on-demand popup. 0x2a = 42 = Movement_Keys,
-// the last tutorial.2da row: shown once at game start, never again, and NOT in
-// our keyboard-hint row map, so nothing else collides with it.
+// the last tutorial.2da row: shown once at game start, never again. Row 42 IS
+// mapped to a keyboard hint (the game-start walking popup), but every announce
+// path checks SyntheticActive() first and speaks SyntheticHint() when we own the
+// box, so the row-keyed hint never fires for our synthetic popups.
 constexpr int kSyntheticReason = 0x2a;
 
 // ---- Pause (mirrors engine_subscreen; kept self-contained here) ----
@@ -158,8 +160,30 @@ void FirePopup(uint32_t strref, const char* hint) {
 
 }  // namespace
 
+// True if `hint` is already one of the newline-separated segments accumulated
+// this break. Two adjacent Trask lines can carry the same keyboard hint (e.g.
+// the camera line and the footlocker line share one object-navigation hint);
+// when they land in the same popup we speak it once, not twice.
+bool PendingContainsHint(const char* hint) {
+    size_t hlen = std::strlen(hint);
+    const char* p = s_pendingHints;
+    while (*p) {
+        const char* nl = std::strchr(p, '\n');
+        size_t seglen = nl ? static_cast<size_t>(nl - p) : std::strlen(p);
+        if (seglen == hlen && std::memcmp(p, hint, hlen) == 0) return true;
+        if (!nl) break;
+        p = nl + 1;
+    }
+    return false;
+}
+
 void RecordPendingHint(uint32_t strref, const char* hint) {
     if (!hint || !hint[0]) return;
+    if (s_pendingCount > 0 && PendingContainsHint(hint)) {
+        acclog::Write("TutorialPopup",
+                      "pending dup skipped: strref=%u hint=\"%.60s\"", strref, hint);
+        return;
+    }
     if (s_pendingCount == 0) {
         s_pendingStrref  = strref;   // first line drives the popup's visible text
         s_pendingHints[0] = '\0';

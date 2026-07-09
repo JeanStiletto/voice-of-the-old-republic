@@ -1758,6 +1758,8 @@ enum class Id : int {
     TutHintBash,             // row 33 Bash
     TutHintAttack,           // row 34 Attack (message0+1 folded)
     TutHintAttackAuto,       // row 35 Attack_Button_Mash
+    TutHintMovement,         // row 42 Movement_Keys (first popup at game start)
+    TutHintMapScreen,        // row 13 Enter_Map_Screen
     //
     //      Surface 2 — Endar Spire dialogue (Trask + pop windows), voice-acted.
     //      Keyed by the line's source strref, matched via the engine's own TLK

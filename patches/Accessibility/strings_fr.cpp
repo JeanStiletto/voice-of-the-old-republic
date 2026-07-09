@@ -591,7 +591,7 @@ const char* Get(Id id) {
         case Id::HelpKeyScreenEquip:     return "U : \xE9quiper le personnage";
         case Id::HelpKeyScreenOptions:   return "O : options";
 
-        case Id::HelpKeyMapCursor:       return "Touches fl\xE9""ch\xE9""es : d\xE9placer le curseur de carte pour lire le terrain et les marqueurs";
+        case Id::HelpKeyMapCursor:       return "W, A, S et D : d\xE9placer le curseur de carte pour lire le terrain et les marqueurs";
         case Id::HelpKeyMapPosition:     return "Alt droite : annoncer votre position et orientation sur la carte";
 
 

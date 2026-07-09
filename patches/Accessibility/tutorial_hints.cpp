@@ -123,10 +123,12 @@ const char* HintForTutorialRow(int row) {
         case 7:  id = Id::TutHintOpenScreens;      break;  // Press_Start
         case 8:  id = Id::TutHintCycleTargets;     break;  // Use_Triggers_To_Cycle...
         case 11: id = Id::TutHintEquipSlot;        break;  // Press_A_On_Equip_Screen
+        case 13: id = Id::TutHintMapScreen;        break;  // Enter_Map_Screen
         case 21: id = Id::TutHintEnemyNear;        break;  // Hostile_Creature_Encountered
         case 33: id = Id::TutHintBash;             break;  // Bash
         case 34: id = Id::TutHintAttack;           break;  // Attack
         case 35: id = Id::TutHintAttackAuto;       break;  // Attack_Button_Mash
+        case 42: id = Id::TutHintMovement;         break;  // Movement_Keys
         default: return nullptr;
     }
     const char* s = acc::strings::Get(id);
@@ -154,12 +156,14 @@ constexpr MouseMsg kTutorialMouseMsgs[] = {
     {48371, Id::TutHintOpenScreens},      // row 7  Press_Start
     {48372, Id::TutHintCycleTargets},     // row 8  Use_Triggers_To_Cycle...
     {48374, Id::TutHintEquipSlot},        // row 11 Press_A_On_Equip_Screen
+    {41881, Id::TutHintMapScreen},        // row 13 Enter_Map_Screen
     {48375, Id::TutHintEnemyNear},        // row 21 Hostile_Creature_Encountered
     {48565, Id::TutHintBash},             // row 33 Bash
     {48566, Id::TutHintAttack},           // row 34 Attack page 0
     {42458, Id::TutHintAttack},           // row 34 Attack page 1
     {48567, Id::TutHintAttackAuto},       // row 35 Attack_Button_Mash page 0
     {48568, Id::TutHintAttackAuto},       // row 35 Attack_Button_Mash page 1
+    {49121, Id::TutHintMovement},         // row 42 Movement_Keys
 };
 constexpr int kTutorialMouseMsgCount =
     static_cast<int>(sizeof(kTutorialMouseMsgs) / sizeof(kTutorialMouseMsgs[0]));

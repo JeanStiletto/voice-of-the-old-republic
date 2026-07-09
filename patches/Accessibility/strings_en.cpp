@@ -590,7 +590,7 @@ const char* Get(Id id) {
         case Id::HelpKeyScreenEquip:     return "U: equip character";
         case Id::HelpKeyScreenOptions:   return "O: options";
 
-        case Id::HelpKeyMapCursor:       return "Arrow keys: move the map cursor to read terrain and markers";
+        case Id::HelpKeyMapCursor:       return "W, A, S and D: move the map cursor to read terrain and markers";
         case Id::HelpKeyMapPosition:     return "Right Alt: announce your position and facing on the map";
 
 
@@ -730,18 +730,21 @@ const char* Get(Id id) {
             return "Focus an enemy with Q and E and attack with Enter. One press is enough; your character then attacks automatically each round until you choose another target.";
         case Id::TutHintAttackAuto:
             return "Remember: one press of Enter attacks automatically each round. Only a new target changes that.";
+        case Id::TutHintMovement:
+            return "Press F1 anytime for the help menu, a list of every key, and Ctrl and F1 for the keys of the current screen. To move, press W and S to walk forward and back, A and D to turn the camera left and right, and Z and C to step sideways.";
+        case Id::TutHintMapScreen:
+            return "The map shows every explored area of a level. Important areas are marked, and some areas, such as cities, are mapped before you explore them. Move around the map with W, A, S and D. Switch between map hints with comma and period. Press Shift and N to place your own map hint at your position. Press Ctrl and minus to start a beacon that guides you to the map hint by sound, or Shift and minus to walk automatically to the selected map hint.";
 
         // ---- Endar Spire tutorial keyboard hints (Surface 2: Trask / pop) ----
         case Id::TutTraskEquipOpen:
             return "The equip screen is where you choose armor and weapons. Open it with U.";
         case Id::TutTraskEquipBrowse:
-            return "Move through the slots with the arrows; on the right are the items you can assign.";
+            return "Move through the equip slots with the arrows; each slot holds an item you can assign.";
         case Id::TutTraskEquipWeapon:
             return "Select the weapon slot and press Enter, then choose a weapon from the list.";
         case Id::TutTraskCamera:
-            return "Rotate the camera with A and D. Press N to face the next direction.";
         case Id::TutTraskFootlocker:
-            return "Focus the footlocker by cycling objects with comma and period, and open it with Enter.";
+            return "You change the camera, and with it your walking direction, with A and D. N turns you 90 degrees. Q and E cycle through all visible objects. Comma and period navigate a list of every object you have already seen. Shift with comma or period switches between object categories. Press Enter to walk to a selected object and activate it.";
         case Id::TutTraskPickItem:
             return "Choose a slot with the arrows and Enter, browse the list, and confirm the item with Enter.";
         case Id::TutTraskLeader:
@@ -753,7 +756,7 @@ const char* Get(Id id) {
         case Id::TutTraskTabs:
             return "Switch between tabs with Q and E.";
         case Id::TutTraskActionMenu:
-            return "Open the action menu with Shift and Enter for your target, or Shift and a number 1 to 7 for a category.";
+            return "Open the action menu with Shift and Enter for your target. A number from 1 to 7 fires the last used action of that category; Shift and a number 1 to 7 opens the category to choose.";
         case Id::TutTraskMedkit:
             return "Use medkits from the action menu. Open Medical with Shift and 5 and activate with Enter.";
         case Id::TutTraskOpenDoor:
