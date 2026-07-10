@@ -151,7 +151,21 @@ namespace KotorAccessibilityInstaller
         public void InstallLoader()
         {
             string dest = Path.Combine(_gameDir, LoaderDllName);
-            ExtractEmbeddedResource(LoaderDllName, dest);
+            try
+            {
+                ExtractEmbeddedResource(LoaderDllName, dest);
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException || ex is IOException)
+            {
+                // The proxy loader is the one file security software reliably
+                // blocks: dropping a "dinput8.dll" into an application folder is
+                // the textbook DLL-hijack pattern, so Defender / Kaspersky flag
+                // it by name+behaviour even though our use is legitimate. The
+                // resilient writer has already retried, so an access-denied /
+                // sharing violation here is a persistent block. Turn the raw
+                // exception into actionable antivirus guidance for the user.
+                throw new LoaderBlockedException(_gameDir, dest, ex);
+            }
             Logger.Info($"Installed dinput8.dll proxy loader to: {dest}");
         }
 
@@ -328,22 +342,73 @@ namespace KotorAccessibilityInstaller
 
         private static void ExtractEmbeddedResource(string shortName, string targetPath)
         {
-            var assembly = Assembly.GetExecutingAssembly();
-            string fullName = FindResourceName(assembly, shortName);
-            if (fullName == null)
-                throw new FileNotFoundException($"Embedded resource not found: {shortName}");
+            byte[] data = ReadEmbeddedResourceBytes(shortName);
+            WriteFileResilient(targetPath, data, shortName);
+            Logger.Info($"Extracted: {shortName} -> {targetPath}");
+        }
 
-            using (var stream = assembly.GetManifestResourceStream(fullName))
+        // Backoff schedule (ms) between write retries. Antivirus / security
+        // software occasionally holds a brief lock on files we drop into the
+        // game folder while it scans them, so a first FileMode.Create can fail
+        // with a sharing violation or "access denied" that clears a moment
+        // later. One initial attempt plus these delays ≈ 3s of best-effort
+        // retry — enough to ride out a transient scan-lock without hanging the
+        // install on a genuine, persistent block.
+        private static readonly int[] WriteRetryBackoffMs = { 200, 400, 800, 1600 };
+
+        /// <summary>
+        /// Writes <paramref name="data"/> to <paramref name="targetPath"/>,
+        /// clearing any stale read-only attribute first and retrying on
+        /// transient I/O / access errors with backoff. If every attempt fails
+        /// the final exception propagates unchanged, so callers can still
+        /// distinguish an <see cref="UnauthorizedAccessException"/> (e.g. an
+        /// antivirus block) from other failures.
+        /// </summary>
+        private static void WriteFileResilient(string targetPath, byte[] data, string shortName)
+        {
+            int totalAttempts = WriteRetryBackoffMs.Length + 1;
+            for (int attempt = 1; ; attempt++)
             {
-                if (stream == null)
-                    throw new InvalidOperationException($"Could not open resource stream: {fullName}");
-
-                using (var fileStream = new FileStream(targetPath, FileMode.Create, FileAccess.Write))
+                try
                 {
-                    stream.CopyTo(fileStream);
+                    ClearReadOnly(targetPath);
+                    using (var fileStream = new FileStream(targetPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                    {
+                        fileStream.Write(data, 0, data.Length);
+                    }
+                    return;
+                }
+                catch (Exception ex) when ((ex is IOException || ex is UnauthorizedAccessException) && attempt < totalAttempts)
+                {
+                    int delay = WriteRetryBackoffMs[attempt - 1];
+                    Logger.Warning($"Write of {shortName} to {targetPath} failed (attempt {attempt}/{totalAttempts}): {ex.Message}. Retrying in {delay} ms...");
+                    System.Threading.Thread.Sleep(delay);
                 }
             }
-            Logger.Info($"Extracted: {shortName} -> {targetPath}");
+        }
+
+        /// <summary>
+        /// Best-effort clear of the read-only attribute on an existing target so
+        /// FileMode.Create can overwrite it. A prior install (or a mod archive
+        /// extracted read-only) can leave dinput8.dll / prism.dll read-only,
+        /// which otherwise fails the write instantly with "access denied".
+        /// </summary>
+        private static void ClearReadOnly(string path)
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    var attrs = File.GetAttributes(path);
+                    if ((attrs & FileAttributes.ReadOnly) != 0)
+                        File.SetAttributes(path, attrs & ~FileAttributes.ReadOnly);
+                }
+            }
+            catch
+            {
+                // Non-fatal: the write attempt itself will surface any real
+                // permission problem with a clearer, actionable exception.
+            }
         }
 
         private static string FindResourceName(Assembly assembly, string shortName)
@@ -357,6 +422,27 @@ namespace KotorAccessibilityInstaller
             foreach (var name in assembly.GetManifestResourceNames())
                 Logger.Warning($"  - {name}");
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Raised when the dinput8.dll proxy loader cannot be written into the game
+    /// folder even after the resilient writer's retries — almost always because
+    /// antivirus / Windows Defender blocked the drop (the proxy-DLL name trips
+    /// DLL-hijack heuristics). Carries the game directory and loader path so
+    /// MainForm can show localized "add an exclusion and re-run" guidance
+    /// instead of a raw access-denied message.
+    /// </summary>
+    public class LoaderBlockedException : Exception
+    {
+        public string GameDir { get; }
+        public string LoaderPath { get; }
+
+        public LoaderBlockedException(string gameDir, string loaderPath, Exception inner)
+            : base($"Could not write the mod loader to '{loaderPath}' — the write was blocked, most likely by antivirus/Windows Defender.", inner)
+        {
+            GameDir = gameDir;
+            LoaderPath = loaderPath;
         }
     }
 }

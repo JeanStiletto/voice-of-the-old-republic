@@ -106,6 +106,9 @@
     "Main_ErrorInstall_Format": "Installation fehlgeschlagen: {0}",
     "Main_ErrorUpdate_Format": "Aktualisierung fehlgeschlagen: {0}",
 
+    "Main_LoaderBlocked_Title": "Antivirus hat den Mod-Loader blockiert",
+    "Main_LoaderBlocked_Format": "Der Mod ist fast vollständig installiert, aber die letzte Loader-Datei konnte nicht geschrieben werden:\n\n{0}\n\nDiese Datei (dinput8.dll) wurde blockiert – fast immer durch ein Antivirenprogramm oder Windows Defender. Der Mod verwendet sie, um sich beim Spielstart selbst zu laden, und ihr Name entspricht einem Muster, das Sicherheitssoftware häufig fälschlicherweise meldet. Ihre Spieldateien sind sicher und unverändert.\n\nSo schließen Sie die Installation ab:\n\n1. Öffnen Sie Ihr Antivirenprogramm (oder Windows-Sicherheit) und fügen Sie eine Ausnahme für den Spielordner hinzu:\n{1}\n\n2. Wenn Sie Windows-Sicherheit verwenden, prüfen Sie außerdem unter Ransomware-Schutz den überwachten Ordnerzugriff und schalten Sie ihn aus oder erlauben Sie diesen Installer.\n\n3. Führen Sie diesen Installer danach erneut aus. Er wird sauber neu angewendet.\n\nWenn das Problem weiterhin besteht, hilft es meist, den Echtzeitschutz während der Installation vorübergehend zu deaktivieren. Sie können ihn danach wieder einschalten.",
+
     "Program_UpToDate_Title": "Mod ist aktuell",
     "Program_UpToDate_Format": "Voice of the Old Republic v{0} ist bereits installiert und aktuell.\n\nMöchtest du eine vollständige Neuinstallation durchführen?",
 

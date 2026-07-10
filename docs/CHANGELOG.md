@@ -44,6 +44,10 @@ and add the German in parentheses if it genuinely aids clarity.
 
 - Sealed decorative doors now read as "cosmetic" instead of "locked". Some doors in the world are pure set dressing — the game never lets anyone open them, and no key or security check exists for them. They were announced as "locked door", which sent you hunting for a way through that isn't there (the Manaan Sith base has three of them). They now say "cosmetic door" so you can tell them apart from a genuinely locked door and move on. Because the label changed, they also stop sharing the "locked door 1/2/3…" numbering with real locked doors, so the count of actual locked doors in an area is no longer inflated by scenery.
 
+<h3>Installer:</h3>
+
+- The installer now recognises when antivirus blocks the mod loader and tells you how to fix it. The mod loads itself through a file named `dinput8.dll`, and that name matches a pattern security software (Windows Defender, Kaspersky and others) often flags by mistake, so the drop can be blocked with a raw "access denied" that stopped the install with no explanation. The installer now retries briefly in case the block is a momentary scan-lock, clears any leftover read-only flag first, and — if it's still blocked — shows a dedicated message explaining it's almost certainly antivirus, confirming your game files are safe, and giving the exact steps to add a game-folder exclusion and re-run.
+
 <h2>v0.5.8</h2>
 
 <h3>Bug fixes:</h3>

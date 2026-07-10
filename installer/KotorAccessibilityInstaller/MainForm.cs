@@ -478,12 +478,26 @@ namespace KotorAccessibilityInstaller
             {
                 Logger.Error($"{(_updateOnly ? "Update" : "Installation")} failed", ex);
 
-                MessageBox.Show(
-                    InstallerLocale.Format(
-                        _updateOnly ? "Main_ErrorUpdate_Format" : "Main_ErrorInstall_Format", ex.Message),
-                    InstallerLocale.Get(_updateOnly ? "Main_ErrorUpdate_Title" : "Main_ErrorInstall_Title"),
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                if (ex is LoaderBlockedException lbex)
+                {
+                    // Almost-complete install stopped only by a blocked loader
+                    // drop. Give the user the antivirus-exclusion + re-run path
+                    // rather than a bare "access denied".
+                    MessageBox.Show(
+                        InstallerLocale.Format("Main_LoaderBlocked_Format", lbex.LoaderPath, lbex.GameDir),
+                        InstallerLocale.Get("Main_LoaderBlocked_Title"),
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                }
+                else
+                {
+                    MessageBox.Show(
+                        InstallerLocale.Format(
+                            _updateOnly ? "Main_ErrorUpdate_Format" : "Main_ErrorInstall_Format", ex.Message),
+                        InstallerLocale.Get(_updateOnly ? "Main_ErrorUpdate_Title" : "Main_ErrorInstall_Title"),
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                }
 
                 if (_headless)
                 {
