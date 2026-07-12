@@ -541,14 +541,22 @@ bool TryReadWorkbenchSaberDescription(void* panel, void* row,
                                       char* outBuf, std::size_t bufSize) {
     if (!panel || !row || !outBuf || bufSize < 2) return false;
 
-    int category = 0;
+    // field25 is a 1-byte category (0/1/2); read it as uint8_t to match the
+    // proven-correct menus_extract.cpp read. A 4-byte int read here pulls in
+    // neighbouring panel bytes and mis-compares against 1 when they're non-zero.
+    uint8_t category = 0;
     __try {
-        category = *reinterpret_cast<int*>(
-            reinterpret_cast<unsigned char*>(panel) + kUpgradePanelCategoryOff);
+        category = *(reinterpret_cast<unsigned char*>(panel) +
+                     kUpgradePanelCategoryOff);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
-    if (category != 1) return false;  // non-saber → caller uses GetPropertyDescription
+    if (category != 1) {  // non-saber → caller uses GetPropertyDescription
+        acclog::Write("Peek.Workbench",
+                      "panel=%p row=%p category=%u (!=1); non-saber path",
+                      panel, row, (unsigned)category);
+        return false;
+    }
 
     // Drive the engine's hover handler; SetDescription then writes the combined
     // keyed-property + description string into the panel's description label.
@@ -566,7 +574,13 @@ bool TryReadWorkbenchSaberDescription(void* panel, void* row,
     void* descLabel = reinterpret_cast<unsigned char*>(panel) +
                       kUpgradeDescLabelOffset;
     const char* src = ReadRowText(descLabel, outBuf, bufSize);
-    return src != nullptr && outBuf[0] != '\0';
+    if (src == nullptr || outBuf[0] == '\0') {
+        acclog::Write("Peek.Workbench",
+                      "panel=%p row=%p desc label empty (src=%s); fall through",
+                      panel, row, src ? src : "null");
+        return false;
+    }
+    return true;
 }
 
 }  // namespace
