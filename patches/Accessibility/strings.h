@@ -1768,6 +1768,9 @@ enum class Id : int {
     //      Keyed by the line's source strref, matched via the engine's own TLK
     //      (LookupTlk) so it stays language-independent. The German VO still
     //      says "mouse"; the screen reader speaks the keyboard line.
+    TutTraskGettingStarted,  // 10326 (end_trask "grab your things, we have to go" —
+                             //        the intro tree's closing line, fired as the
+                             //        player is first given control: core controls)
     TutTraskEquipOpen,       // 48330
     TutTraskEquipBrowse,     // 48331
     TutTraskEquipWeapon,     // 48332

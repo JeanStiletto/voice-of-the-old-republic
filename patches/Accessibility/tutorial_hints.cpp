@@ -28,6 +28,12 @@ struct DialogHint {
     Id       id;
 };
 constexpr DialogHint kDialogHints[] = {
+    // Closing line of Trask's intro tree ("grab your things, we have to go").
+    // Not a rewritten tutorial line — this is stock story VO — but it's the
+    // point where the intro conversation ends and the player is first handed
+    // control, so we hang the core-controls popup off it (fires on the
+    // dialogue-close flush, since the tree ends here with no reply break).
+    {10326, Id::TutTraskGettingStarted},
     {48330, Id::TutTraskEquipOpen},
     {48331, Id::TutTraskEquipBrowse},
     {48332, Id::TutTraskEquipWeapon},

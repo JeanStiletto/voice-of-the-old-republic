@@ -742,6 +742,8 @@ const char* Get(Id id) {
             return "A party member has fallen. Members downed in combat are revived after the fight, but if all members die the game is over. Press Tab to control a different member.";
 
         // ---- Endar Spire tutorial keyboard hints (Surface 2: Trask / pop) ----
+        case Id::TutTraskGettingStarted:
+            return "You now have control. The basics: press F1 anytime for the full list of keys, or Ctrl and F1 for the keys of the current screen. W and S walk forward and back, A and D turn your walking direction left and right, and Z and C step sideways. Q and E switch between targets and objects, and Enter interacts with the focused object.";
         case Id::TutTraskEquipOpen:
             return "The equip screen is where you choose armor and weapons. Open it with U.";
         case Id::TutTraskEquipBrowse:

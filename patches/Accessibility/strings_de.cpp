@@ -761,6 +761,8 @@ const char* Get(Id id) {
             return "Ein Mitglied deiner Gruppe ist gefallen. Im Kampf neutralisierte Mitglieder werden nach dem Kampf wiederbelebt; sterben jedoch alle Mitglieder, ist das Spiel vorbei. Mit dem Tabulator steuerst du ein anderes Mitglied.";
 
         // ---- Endar Spire tutorial keyboard hints (Surface 2: Trask / pop) ----
+        case Id::TutTraskGettingStarted:
+            return "Du hast jetzt die Kontrolle. Die Grundlagen: Dr\xFC""cke jederzeit F1 f\xFCr die vollst\xE4ndige Tastenliste oder Strg und F1 f\xFCr die Tasten des aktuellen Bildschirms. W und S gehen vorw\xE4rts und r\xFC""ckw\xE4rts, A und D drehen deine Laufrichtung nach links und rechts, und mit Y und C trittst du zur Seite. Mit Q und E wechselst du zwischen Zielen und Objekten, und mit der Eingabetaste interagierst du mit dem fokussierten Objekt.";
         case Id::TutTraskEquipOpen:
             return "Im Ausr\xFCstungsbildschirm w\xE4hlst du R\xFCstung und Waffen. \xD6""ffne ihn mit U.";
         case Id::TutTraskEquipBrowse:
