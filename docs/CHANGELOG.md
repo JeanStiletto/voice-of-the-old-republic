@@ -43,6 +43,10 @@ and add the German in parentheses if it genuinely aids clarity.
 - Trask's follow-up questions now raise their pop-up too. Asking him again about opening doors, using a medkit or improving your character used to end and return you to the world with no keyboard pop-up, because the recap only fired at a reply break the branch never reached. It now also fires when the conversation closes.
 - The opening movement pop-up now also mentions the exploration cues: tones warn you as you near a wall, the shape of the room is described as you move, and the right Alt key repeats your facing direction and current room.
 
+<h3>World navigation:</h3>
+
+- Opening a door now speaks the direction you end up facing. The game turns your character toward whatever you interact with — and often walks you there first — so it's easy to lose track of which way you're now pointing, and where you came from. When you open a door the mod announces your facing (e.g. "East"), just the direction and nothing else. If that same direction was already announced within the last second — as happens when the game spins you toward a door right next to you — it stays silent so you don't hear it twice; a door you reached after walking and turning gets the announcement. Only doors you open yourself trigger it, not ones a companion, an enemy, or a scripted event opens, and it fires as the door starts to open rather than after.
+
 <h2>v0.5.9</h2>
 
 <h3>Tutorial:</h3>

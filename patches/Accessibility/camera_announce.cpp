@@ -200,6 +200,48 @@ void Tick() {
     s_lastSpokenAt     = now;
 }
 
+bool AnnounceCurrentFacing(unsigned int dedupMs) {
+    float camCompass = 0.0f;
+    if (!ReadCameraCompass(camCompass)) return false;
+
+    // Never speak a scripted-camera direction as a player-facing readout.
+    if (acc::engine::HasActiveDialogPanel()) return false;
+
+    DWORD now    = GetTickCount();
+    int   sector = acc::engine::CompassToSector(camCompass);
+
+    // Dedup: the autoturn that faced the target just announced this exact
+    // sector (within the window), so the door-open readout would only echo it.
+    // A tiny autoturn that stayed in-sector never fired an announce, so
+    // s_lastSpokenAt is old and this speaks — which is what we want.
+    if (sector == s_lastSpokenSector && s_lastSpokenSector >= 0 &&
+        (now - s_lastSpokenAt) < dedupMs) {
+        acclog::Write("CameraAnnounce",
+            "facing readout deduped: sector %d spoken %lums ago (<%ums)",
+            sector, now - s_lastSpokenAt, dedupMs);
+        return false;
+    }
+
+    auto id = acc::engine::SectorString(sector);
+    const char* phrase = acc::strings::Get(id);
+    // Urgent SAPI: a normal Speak here gets swallowed — the interact keypress
+    // that opened the door trips NVDA's typed-char cancel (which ignores
+    // priority), so route around it the same way the A/D-held turn announce
+    // does.
+    prism::SpeakUrgent(phrase, /*voiceId=*/0);
+    acclog::Write("CameraAnnounce",
+        "facing readout: sector %d (%s) camCompass=%.1f", sector, phrase,
+        camCompass);
+
+    // Adopt this as the last-spoken sector so the per-tick announcer treats it
+    // as the anchor and won't re-announce the same sector a beat later.
+    s_lastSpokenSector = sector;
+    s_pendingSector    = sector;
+    s_lastChangeAt     = now;
+    s_lastSpokenAt     = now;
+    return true;
+}
+
 bool TryGetCameraEngineYawDegrees(float& out) {
     if (s_lastCamCompass < 0.0f) return false;
     // Compass → engine: involution; same formula as EngineYawToCompass.

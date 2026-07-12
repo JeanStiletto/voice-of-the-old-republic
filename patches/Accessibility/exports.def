@@ -24,3 +24,4 @@ EXPORTS
     OnSetPauseState
     OnTurretBulletHit
     OnPlayerFire
+    OnDoorOpen

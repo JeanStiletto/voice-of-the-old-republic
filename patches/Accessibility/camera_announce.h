@@ -22,4 +22,17 @@ void Tick();
 // False until Tick has anchored at least once.
 bool TryGetCameraEngineYawDegrees(float& out);
 
+// One-shot facing readout for event triggers (e.g. a door beginning to open)
+// that want to re-orient the user after the engine autoturns them at their
+// target. Speaks the player's current camera-facing sector, EXCEPT when the
+// SAME sector was already spoken within `dedupMs` — i.e. the per-tick
+// direction-change announce from the autoturn already said it, so we stay
+// silent to avoid doubling. Speaking shares state with the per-tick announcer
+// (last-spoken sector + timestamp) so it won't immediately repeat the readout.
+//
+// Returns true if it spoke. No-op (false) when camera facing is unavailable
+// (menu / area-load transient / degenerate geometry) or an engine cinematic is
+// driving the camera.
+bool AnnounceCurrentFacing(unsigned int dedupMs);
+
 }  // namespace acc::camera_announce

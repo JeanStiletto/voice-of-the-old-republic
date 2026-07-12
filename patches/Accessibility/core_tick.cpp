@@ -18,6 +18,7 @@
 #include "diag_focus.h"
 #include "dialog_speech.h"
 #include "discovery.h"
+#include "door_announce.h"
 #include "engine_player.h"
 #include "engine_subscreen.h"
 #include "examine_view.h"
@@ -321,6 +322,9 @@ void Dispatch() {
     //     change uses stale walls from the previous area.
     //   view_mode reads camera yaw + walls + region/landmark caches.
     PHASE("camera_announce", acc::camera_announce::Tick());
+    // Door-open facing readout — after camera_announce so its same-sector
+    // dedup sees this frame's last-spoken direction. Cheap when idle.
+    PHASE("door_announce", acc::door_announce::Tick());
     PHASE("camera_orient", acc::camera_orient::Tick());
     PHASE("camera_spin_diag", acc::camera_spin_diag::Tick());
     PHASE("spatial.change_detector", acc::spatial::change_detector::Tick());

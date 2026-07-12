@@ -1155,3 +1155,47 @@ exclude_from_restore = []
 [[hooks.parameters]]
 source = "ecx"
 type = "pointer"
+
+# CSWSDoor::OpenDoor — hooked mid-function at 0x00589ceb, the START of the open:
+# the instruction that stamps the opener id into the door (this->field46_0x31c =
+# param_1) right before CALL SetOpenState @0x00589600 begins the animation /
+# state change. NOT the end of the open. We announce the player's current camera
+# facing here so the user re-orients after the engine autoturns them at the door
+# (door_announce::Tick applies the player-opener filter + same-sector dedup).
+#
+# Function entry @0x00589c70 loads param_1 (opener's SERVER object id) → EDI
+# (MOV EDI,[ESP+0x10] after 3 pushes) and this (CSWSDoor*) → ESI (MOV ESI,ECX).
+# Neither is reassigned before our cut, so at 0x00589ceb: ESI = door, EDI =
+# opener id. Both callee-saved registers — captured as register param sources,
+# side-stepping the framework's esp+X stack-param LEA bug entirely
+# (project_kpatchmanager_lea_bug.md).
+#
+# Signature per Ghidra: void __thiscall CSWSDoor::OpenDoor(ulong param_1).
+# Bytes from DumpBytes.java @0x00589ceb (GoG == Steam at this address,
+# project_ghidra_gog_steam_bytes_match):
+#   89 be 1c 03 00 00   MOV dword ptr [ESI+0x31c], EDI
+# Cut at 6 bytes, instruction boundary (next is CALL @0x00589cf1). The store is
+# memory/register-only (no IP-relative) so it relocates cleanly, and ESI/EDI are
+# restored by the wrapper's POPAD before it runs — the opener stamp still lands.
+# 0x00589ceb is NOT a jump target (the swing-direction branches converge one
+# instruction earlier at 0x00589ce6), so overwriting these bytes is safe.
+[[hooks]]
+address = 0x00589ceb
+type = "detour"
+function = "OnDoorOpen"
+
+original_bytes = [0x89, 0xbe, 0x1c, 0x03, 0x00, 0x00]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+# CSWSDoor* this (door) — ESI. Unused today; kept for logging / future material
+# or transition-aware cues.
+[[hooks.parameters]]
+source = "esi"
+type = "pointer"
+
+# param_1 = opener's server object id — EDI.
+[[hooks.parameters]]
+source = "edi"
+type = "int"
