@@ -738,7 +738,7 @@ const char* Get(Id id) {
         case Id::TutHintOpenScreens:
             return "Spielmen\xFCs \xF6""ffnest du direkt: M Karte, J Nachrichten, L Auftr\xE4ge, K F\xE4higkeiten, P Charakter, I Inventar, U Ausr\xFCstung, O Optionen. Mit Escape zur\xFC""ck.";
         case Id::TutHintCycleTargets:
-            return "Ziele w\xE4hlst du mit Q und E. Objekte schaltest du mit Komma und Punkt durch; die Minus-Taste sagt das fokussierte Objekt an.";
+            return "Ziele w\xE4hlst du mit Q und E. Objekte schaltest du mit Komma und Punkt durch; die Minus-Taste sagt das fokussierte Objekt an. Im Kampf zielst du nur auf Feinde.";
         case Id::TutHintEquipSlot:
             return "Im Ausr\xFCstungsbildschirm w\xE4hlst du einen Steckplatz mit den Pfeiltasten und der Eingabetaste, dann w\xE4hlst du aus der Liste einen Gegenstand.";
         case Id::TutHintEnemyNear:
@@ -750,9 +750,15 @@ const char* Get(Id id) {
         case Id::TutHintAttackAuto:
             return "Denke daran: Ein einziger Druck auf die Eingabetaste greift jede Runde automatisch an. Erst ein neues Ziel \xE4ndert das.";
         case Id::TutHintMovement:
-            return "Dr\xFC""cke jederzeit F1 f\xFCr die Tastenhilfe, eine Liste aller Tasten, und Strg und F1 f\xFCr die Tasten des aktuellen Bildschirms. Zum Gehen dr\xFC""ckst du W und S f\xFCr vorw\xE4rts und r\xFC""ckw\xE4rts, A und D drehen die Kamera nach links und rechts, und mit Z und C trittst du zur Seite.";
+            return "Dr\xFC""cke jederzeit F1 f\xFCr die Tastenhilfe, eine Liste aller Tasten, und Strg und F1 f\xFCr die Tasten des aktuellen Bildschirms. Zum Gehen dr\xFC""ckst du W und S f\xFCr vorw\xE4rts und r\xFC""ckw\xE4rts, A und D drehen die Kamera nach links und rechts, und mit Z und C trittst du zur Seite. T\xF6ne warnen dich, wenn du dich einer Wand n\xE4herst, und w\xE4hrend du gehst, wird die Form des Raums um dich herum beschrieben. Mit der rechten Alt-Taste wiederholst du deine Blickrichtung und den aktuellen Raum.";
         case Id::TutHintMapScreen:
             return "Auf der Karte sind alle erforschten Gebiete eines Levels eingezeichnet. Wichtige Bereiche werden markiert. Einige Gebiete, zum Beispiel St\xE4""dte, sind bereits kartografiert, bevor du sie erforschst. Mit W, A, S und D bewegst du dich auf der Karte. Mit Komma und Punkt wechselst du zwischen den Kartenhinweisen. Mit Umschalt und N setzt du an deiner Position einen eigenen Kartenhinweis. Mit Strg und Minus startest du einen Wegweiser, der dich per Ton zum Kartenhinweis f\xFChrt, mit Umschalt und Minus gehst du automatisch zum ausgew\xE4hlten Kartenhinweis.";
+        case Id::TutHintJournal:
+            return "Im Auftragsbildschirm findest du Informationen \xFC""ber deine Fortschritte und Tipps zur weiteren Vorgehensweise. \xD6""ffne ihn mit L.";
+        case Id::TutHintMessages:
+            return "Im Nachrichtenbildschirm siehst du Werte wie Erfahrungspunkte, Angriffs- und Schadenswerte sowie \xC4nderungen an deinem Charakter. \xD6""ffne ihn mit J.";
+        case Id::TutHintPartyDies:
+            return "Ein Mitglied deiner Gruppe ist gefallen. Im Kampf neutralisierte Mitglieder werden nach dem Kampf wiederbelebt; sterben jedoch alle Mitglieder, ist das Spiel vorbei. Mit dem Tabulator steuerst du ein anderes Mitglied.";
 
         // ---- Endar Spire tutorial keyboard hints (Surface 2: Trask / pop) ----
         case Id::TutTraskEquipOpen:

@@ -33,6 +33,16 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>Unreleased</h2>
+
+<h3>Tutorial:</h3>
+
+- More of the game's built-in tutorial pop-ups now teach the keyboard. The "new journal entry" notice now points you to the quest screen and its key (L); the messages-screen notice does the same for J; and the "party member has fallen" notice keeps its revival explanation and adds that Tab switches who you control. These three used to speak only the original mouse-era wording.
+- The targeting pop-up keeps its combat rule. It now ends with "in combat you can only target enemies" after the Q/E and object-cycling keys, instead of dropping that clause.
+- Fixed a double-read on tutorial pop-ups. On the targeting and equipment pop-ups the mod spoke the correct keyboard hint and then, a moment later, read the original mouse wording again over it — the per-tick focus monitor only knew about Trask's pop-ups, not the game's own. Now you can arrow onto the pop-up's message and hear only the keyboard hint.
+- Trask's follow-up questions now raise their pop-up too. Asking him again about opening doors, using a medkit or improving your character used to end and return you to the world with no keyboard pop-up, because the recap only fired at a reply break the branch never reached. It now also fires when the conversation closes.
+- The opening movement pop-up now also mentions the exploration cues: tones warn you as you near a wall, the shape of the room is described as you move, and the right Alt key repeats your facing direction and current room.
+
 <h2>v0.5.9</h2>
 
 <h3>Tutorial:</h3>

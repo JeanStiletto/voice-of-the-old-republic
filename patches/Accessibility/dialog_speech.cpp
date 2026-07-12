@@ -550,6 +550,13 @@ void Tick() {
             acclog::Write("Dialog.Speech", "panel closed");
             s_lastPanel = nullptr;
             s_lastNpcLine[0] = '\0';
+            // A Trask Q&A branch (e.g. "Wie kann ich Türen öffnen?") can record
+            // its keyboard hint and then return straight to the world with no
+            // further reply break — so the reply-break trigger in
+            // MonitorDialogReplies never flushed it. Flush on dialogue close so
+            // the recap popup still fires. Idempotent: no-ops if nothing pending
+            // or a popup is already up (it fired at an earlier reply break).
+            acc::tutorial_popup::FirePendingAtReplyBreak();
         }
     } else {
         // First sight — set baseline silently. Don't replay history on

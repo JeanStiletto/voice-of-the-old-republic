@@ -167,13 +167,20 @@ void MonitorFocusedControl() {
         focused, text, sizeof(text), acc::menus::chain::g_chainPanel);
     if (!source) return;
 
-    // Synthetic tutorial popup message row: AnnounceControl already speaks the
-    // full keyboard hint on arrow-nav. This monitor would otherwise re-read the
-    // raw mouse text off the control (the 5th announce path) — and copying the
-    // hint into the 256-char `text` buffer would clip a long combined hint — so
-    // just skip it here. Decide by identity (the popup's only single-row listbox
-    // is its message).
-    if (acc::tutorial_popup::SyntheticActive() && IsListBox(focused)) {
+    // Tutorial popup message row: AnnounceControl already speaks the keyboard
+    // hint on arrow-nav. This monitor would otherwise re-read the raw mouse text
+    // off the control (the 5th announce path) — and copying the hint into the
+    // 256-char `text` buffer would clip a long hint — so just skip it here.
+    //   * Surface 2 (synthetic Trask popup): decide by identity — the popup's
+    //     only single-row listbox is its message.
+    //   * Surface 1 (mapped tutorial.2da popup): decide by text — the row still
+    //     carries its mouse-worded strref, which HintForMouseText recognises.
+    // Without the Surface-1 arm this monitor re-spoke the raw mouse line a tick
+    // after AnnounceControl substituted the hint (the double-read on the
+    // targeting / equip popups).
+    if (IsListBox(focused) &&
+        (acc::tutorial_popup::SyntheticActive() ||
+         acc::tutorial_hints::HintForMouseText(text) != nullptr)) {
         return;
     }
 

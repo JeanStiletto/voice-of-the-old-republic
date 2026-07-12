@@ -719,7 +719,7 @@ const char* Get(Id id) {
         case Id::TutHintOpenScreens:
             return "Open game screens directly: M map, J messages, L quests, K abilities, P character, I inventory, U equip, O options. Escape returns.";
         case Id::TutHintCycleTargets:
-            return "Choose targets with Q and E. Cycle objects with comma and period; the minus key announces the focused object.";
+            return "Choose targets with Q and E. Cycle objects with comma and period; the minus key announces the focused object. In combat you can only target enemies.";
         case Id::TutHintEquipSlot:
             return "On the equip screen, choose a slot with the arrows and Enter, then pick an item from the list.";
         case Id::TutHintEnemyNear:
@@ -731,9 +731,15 @@ const char* Get(Id id) {
         case Id::TutHintAttackAuto:
             return "Remember: one press of Enter attacks automatically each round. Only a new target changes that.";
         case Id::TutHintMovement:
-            return "Press F1 anytime for the help menu, a list of every key, and Ctrl and F1 for the keys of the current screen. To move, press W and S to walk forward and back, A and D to turn the camera left and right, and Z and C to step sideways.";
+            return "Press F1 anytime for the help menu, a list of every key, and Ctrl and F1 for the keys of the current screen. To move, press W and S to walk forward and back, A and D to turn the camera left and right, and Z and C to step sideways. Tones warn you when you approach a wall, and as you move the shape of the room around you is described. Press right Alt to repeat your facing direction and current room.";
         case Id::TutHintMapScreen:
             return "The map shows every explored area of a level. Important areas are marked, and some areas, such as cities, are mapped before you explore them. Move around the map with W, A, S and D. Switch between map hints with comma and period. Press Shift and N to place your own map hint at your position. Press Ctrl and minus to start a beacon that guides you to the map hint by sound, or Shift and minus to walk automatically to the selected map hint.";
+        case Id::TutHintJournal:
+            return "The quest screen shows your progress and hints on what to do next. Open it with L.";
+        case Id::TutHintMessages:
+            return "The messages screen shows values such as experience points, attack and damage rolls, and changes to your character. Open it with J.";
+        case Id::TutHintPartyDies:
+            return "A party member has fallen. Members downed in combat are revived after the fight, but if all members die the game is over. Press Tab to control a different member.";
 
         // ---- Endar Spire tutorial keyboard hints (Surface 2: Trask / pop) ----
         case Id::TutTraskEquipOpen:
