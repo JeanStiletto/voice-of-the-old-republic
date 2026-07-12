@@ -172,23 +172,16 @@ bool PartyTableIsNPCAvailable(int npcSlot);
 // allowed to pick — false on story-locked but available companions.
 bool PartyTableIsNPCSelectable(int npcSlot);
 
-// Display name of a live active party follower (the non-leader member).
-// Resolves via GetPartyMembers → GetObjectDisplayNameByHandle, skipping the
-// entry whose name matches the current leader (the PC). Used to name a
-// PartySelection portrait whose roster-slot lookup can't resolve a live
-// creature but which IS occupied by a real active member — the tutorial
-// case where Trask joins into the slot the engine flags as "Bastila".
-// False on empty party / SEH; outBuf is always NUL-terminated.
-bool GetActivePartyOccupantName(char* outBuf, size_t bufSize);
-
-// Walks GetNPCObject → GetCreatureByGameObjectID → universal-name
-// accessor. When the live path fails and `inActiveParty` is true, resolves
-// the real active member via GetActivePartyOccupantName before falling back
-// to the fixed-roster name table (so the tutorial Trask-in-Bastila's-slot
-// portrait names Trask, not Bastila). False on unavailable / unresolved /
-// SEH; outBuf is always NUL-terminated.
-bool GetPartyNpcNameForSlot(int npcSlot, bool inActiveParty,
-                            char* outBuf, size_t bufSize);
+// Resolves a PartySelection roster slot to a display name. Tries the engine's
+// live creature via GetNPCObject: first the client-side universal-name
+// accessor, then — when that can't see the handle (the Endar Spire slot-0
+// occupant Trask is a live server object with no client-side name) — the
+// server creature's stats.first_name (else its tag), so the tutorial slot
+// names the actual occupant rather than the fixed-roster "Bastila". Falls back
+// to the fixed-roster name table when no live creature resolves (companion
+// recruited but not in the current module). False on unavailable / unresolved
+// / SEH; outBuf is always NUL-terminated.
+bool GetPartyNpcNameForSlot(int npcSlot, char* outBuf, size_t bufSize);
 
 }  // namespace acc::engine
 

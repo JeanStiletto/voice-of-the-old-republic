@@ -873,8 +873,7 @@ const char* FromControl(void* control,
             if ((inActiveParty || available) &&
                 npcSlot >= 0 && npcSlot < kPartyRosterSlotCount) {
                 char name[128];
-                if (GetPartyNpcNameForSlot(npcSlot, inActiveParty,
-                                           name, sizeof(name)) &&
+                if (GetPartyNpcNameForSlot(npcSlot, name, sizeof(name)) &&
                     name[0]) {
                     // Compose "{name}, im Team" / "{name}, verfügbar" so the
                     // user hears whether the slot is currently selected for

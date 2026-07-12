@@ -673,34 +673,7 @@ static const char* const kCompanionNamesBySlot[kPartyRosterSlotCount] = {
     "Zaalbar",
 };
 
-bool GetActivePartyOccupantName(char* outBuf, size_t bufSize) {
-    if (!outBuf || bufSize == 0) return false;
-    outBuf[0] = '\0';
-    uint32_t handles[kPartyTableMaxMembers] = {};
-    int n = GetPartyMembers(handles, kPartyTableMaxMembers);
-    if (n <= 0) return false;
-    // GetPartyMembers already excludes the PC in normal play, but the leader
-    // can be Tab'd to a companion — resolve the current leader name and skip
-    // any member matching it so we never echo the controlled character.
-    char leader[128] = {};
-    GetActiveLeaderName(leader, sizeof(leader));
-    for (int i = 0; i < n; ++i) {
-        char buf[128] = {};
-        if (!GetObjectDisplayNameByHandle(handles[i], buf, sizeof(buf)) ||
-            !buf[0]) {
-            continue;
-        }
-        if (leader[0] && strcmp(buf, leader) == 0) continue;  // PC / leader
-        size_t nlen = strnlen(buf, sizeof(buf));
-        if (nlen + 1 > bufSize) return false;
-        memcpy(outBuf, buf, nlen + 1);
-        return true;
-    }
-    return false;
-}
-
-bool GetPartyNpcNameForSlot(int npcSlot, bool inActiveParty,
-                            char* outBuf, size_t bufSize) {
+bool GetPartyNpcNameForSlot(int npcSlot, char* outBuf, size_t bufSize) {
     if (!outBuf || bufSize == 0) return false;
     outBuf[0] = '\0';
     if (npcSlot < 0 || npcSlot >= kPartyRosterSlotCount) return false;
@@ -724,25 +697,49 @@ bool GetPartyNpcNameForSlot(int npcSlot, bool inActiveParty,
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             handle = 0;
         }
-        if (handle != 0 &&
-            GetObjectDisplayNameByHandle(handle, outBuf, bufSize) &&
-            outBuf[0] != '\0') {
-            return true;
+        if (handle != 0) {
+            // Path A: client-side universal display-name accessor. Resolves
+            // in-module companions on the normal PartySelection screen.
+            if (GetObjectDisplayNameByHandle(handle, outBuf, bufSize) &&
+                outBuf[0] != '\0') {
+                return true;
+            }
+            // Path B: the client namespace can't see this handle. On the Endar
+            // Spire the slot-0 occupant is Trask — a live SERVER object whose
+            // client-side name won't resolve (GetNPCObject hands back its
+            // server id). Resolve the server creature and name it: prefer
+            // stats.first_name via ExtractTextOrStrRef (a populated, localized
+            // name where present), else the universal accessor. For this Trask
+            // instance first_name is empty, so we land on his tag ("end_trask")
+            // — still the real occupant, and preferable to the fixed-roster
+            // "Bastila" the table below would otherwise emit.
+            outBuf[0] = '\0';
+            void* serverObj = ResolveServerObjectHandle(handle);
+            if (serverObj) {
+                void* stats = nullptr;
+                __try {
+                    stats = *reinterpret_cast<void**>(
+                        reinterpret_cast<unsigned char*>(serverObj) +
+                        kCreatureStatsPtrOffset);
+                } __except (EXCEPTION_EXECUTE_HANDLER) {
+                    stats = nullptr;
+                }
+                if (stats &&
+                    ExtractTextOrStrRef(stats, kCreatureStatsFirstNameOffset,
+                                        kCreatureStatsFirstNameOffset + 4,
+                                        outBuf, bufSize) &&
+                    outBuf[0] != '\0') {
+                    return true;
+                }
+                outBuf[0] = '\0';
+                if (GetObjectName(serverObj, outBuf, bufSize) &&
+                    outBuf[0] != '\0') {
+                    return true;
+                }
+            }
         }
         outBuf[0] = '\0';
     }
-    // Live path failed but the portrait is flagged as in the active party:
-    // the slot is occupied by a real member the slot-indexed accessor can't
-    // reach. This is the Endar Spire tutorial — Trask joins into the slot the
-    // engine marks "Bastila available", so GetNPCObject(0) resolves nothing
-    // yet Trask is a genuine active follower. Name the actual occupant rather
-    // than the fixed-roster label. (An in-module active companion always
-    // resolves via the live path above, so this only fires for the anomaly.)
-    if (inActiveParty && GetActivePartyOccupantName(outBuf, bufSize) &&
-        outBuf[0] != '\0') {
-        return true;
-    }
-    outBuf[0] = '\0';
     // Engine path didn't resolve — most often because the companion is on
     // the roster but not in the current module (open-world PartySelection
     // screen, away from base). Fall back to the fixed-roster table.

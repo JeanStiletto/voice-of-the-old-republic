@@ -797,7 +797,7 @@ const char* Get(Id id) {
         case Id::TutTraskPaused:
             return "Auch in der Pause w\xE4hlst du Ziele mit Q und E und wechselst mit dem Tabulator das gesteuerte Mitglied.";
         case Id::TutTraskWalkTo:
-            return "Anvisiere die Feldkiste mit Komma und Punkt und gehe mit Umschalt und Minus zu ihr.";
+            return "Anvisiere die Feldkiste mit Q und E und \xF6""ffne sie mit der Eingabetaste.";
         case Id::TutTraskSecurity:
             return "Anvisiere die T\xFCr, \xF6""ffne mit Umschalt und Eingabetaste das Aktionsmen\xFC und w\xE4hle Sicherheit.";
         case Id::TutTraskHealWounded:

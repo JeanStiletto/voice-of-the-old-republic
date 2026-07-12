@@ -53,6 +53,11 @@ and add the German in parentheses if it genuinely aids clarity.
 
 - The whole in-game tutorial now teaches the keyboard instead of the mouse. Every one of the game's built-in tutorial pop-ups used to explain actions by clicking, dragging and the mouse wheel — no help without sight — so each now speaks the matching keyboard command. The opening movement pop-up points you to the F1 help list and Ctrl+F1 for the current screen's keys before giving the walk keys; the map pop-up covers moving the map cursor, cycling map hints, dropping your own, and starting a beacon or an auto-walk to one; and the action-menu, targeting, equipment, combat and bash pop-ups each speak their keys, including the number and Shift+number action-menu shortcuts. The on-screen text is left as the original mouse wording, so a sighted or low-vision player using a mouse still reads it — only the spoken line changes, and you can arrow onto the message to hear it again.
 - On the Endar Spire, Trask's spoken tutorial now raises its own keyboard pop-up at each step. His guided walkthrough coaches the mouse — click your gear, aim the camera at the footlocker, click a portrait to change leader — so as each of his lines finishes the mod pauses the game with a pop-up that gives the keys instead: opening and browsing your equipment, finding and walking to the footlocker, switching who you control, opening screens, using the action menu and medkits, opening doors, slicing security, and levelling up. Where two of his lines carry the same advice, the pop-up speaks it once.
+- Trask's footlocker step now teaches the direct gesture — cycle to the footlocker with Q and E and press Enter to walk over and open it. It previously pointed at the discovered-object keys (comma/period, then Shift+minus to walk), which are for revisiting things you have already found rather than acting on the object right in front of you.
+
+<h3>Party screen:</h3>
+
+- The party-select screen no longer calls Trask "Bastila Shan" during the Endar Spire tutorial. Trask occupies the roster slot the game reserves for Bastila, and when the screen couldn't look up a live name for that slot it fell back to a fixed companion list and announced the wrong name for a portrait that is actually Trask. It now reads the character actually occupying the slot, so it identifies him as Trask.
 
 <h3>World navigation:</h3>
 

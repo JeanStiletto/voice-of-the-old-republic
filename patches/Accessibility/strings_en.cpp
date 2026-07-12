@@ -778,7 +778,7 @@ const char* Get(Id id) {
         case Id::TutTraskPaused:
             return "Even while paused, choose targets with Q and E and switch the controlled member with Tab.";
         case Id::TutTraskWalkTo:
-            return "Focus the footlocker with comma and period and walk to it with Shift and minus.";
+            return "Focus the footlocker with Q and E and open it with Enter.";
         case Id::TutTraskSecurity:
             return "Focus the door, open the action menu with Shift and Enter, and choose Security.";
         case Id::TutTraskHealWounded:
