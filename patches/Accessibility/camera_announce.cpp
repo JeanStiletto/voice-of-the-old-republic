@@ -7,6 +7,7 @@
 
 #include "camera_orient.h"
 #include "engine_compass.h"
+#include "engine_panels.h"  // HasActiveDialogPanel: gate engine-driven cinematics
 #include "engine_player.h"
 #include "hotkeys.h"  // IsForegroundGame: diagnostic only; speech still fires
                       // regardless of focus.
@@ -47,6 +48,10 @@ DWORD s_lastChangeAt      = 0;
 DWORD s_lastSpokenAt      = 0;
 float s_lastCamCompass    = -1.0f;  // cached for TryGetCameraEngineYawDegrees
 bool  s_prevRelevantHeld  = false;  // falling edge fires release-edge announce
+bool  s_mutedByCutscene   = false;  // latched while an engine cinematic drives
+                                    // the camera; forces a silent re-anchor on
+                                    // exit so the cutscene's final direction is
+                                    // never spoken as a player turn.
 
 bool ReadCameraCompass(float& outCompass) {
     Vector cameraPos;
@@ -75,11 +80,35 @@ void Tick() {
         s_lastSpokenSector = -1;
         s_pendingSector    = -1;
         s_lastCamCompass   = -1.0f;
+        s_mutedByCutscene  = false;
         return;
     }
 
     s_lastCamCompass = camCompass;
     DWORD now = GetTickCount();
+
+    // Mute while the engine drives the camera through a cinematic / dialog
+    // (a DialogCinematic* panel sits in the stack). The player can't steer
+    // the camera during those, so every scripted pan would otherwise be
+    // spoken as a bogus "you turned" — the Endar Spire opening cutscene fired
+    // a full burst of sector announces this way. Latch so the first tick
+    // AFTER the cutscene ends re-anchors silently: the cutscene's final
+    // resting direction must not fire a spurious announce as control returns.
+    if (acc::engine::HasActiveDialogPanel()) {
+        s_mutedByCutscene = true;
+        return;
+    }
+    if (s_mutedByCutscene) {
+        s_mutedByCutscene  = false;
+        s_lastSpokenSector = acc::engine::CompassToSector(camCompass);
+        s_pendingSector    = s_lastSpokenSector;
+        s_lastChangeAt     = now;
+        s_lastSpokenAt     = now;
+        s_prevRelevantHeld = false;  // drop any stale A/D release edge
+        acclog::Write("CameraAnnounce", "cutscene end; silent re-anchor "
+            "camCompass=%.1f sector=%d", camCompass, s_lastSpokenSector);
+        return;
+    }
 
     // Mute while camera_orient drives the camera. Hysteresis + kQuietMs
     // then announces the post-rotation final sector iff it differs.
