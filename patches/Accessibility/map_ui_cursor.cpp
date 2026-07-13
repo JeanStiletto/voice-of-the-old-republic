@@ -21,6 +21,7 @@
 #include "audio_cue_player.h"
 #include "audio_cues.h"
 #include "engine_area.h"
+#include "engine_keymap.h"            // MoveAxisVks — bound move/turn keys
 #include "engine_manager.h"
 #include "engine_panels.h"
 #include "engine_player.h"
@@ -608,6 +609,19 @@ bool KeyDown(int vk) {
     return (GetAsyncKeyState(vk) & 0x8000) != 0;
 }
 
+// True if any key bound to the given movement/turn direction is held. Drives
+// the map cursor with the SAME keys the player uses to move/turn in the world
+// (forward→up, back→down, turn-left→left, turn-right→right) so it follows a
+// rebind; the WASD defaults are always in the bucket, so it never regresses.
+bool AxisDown(acc::engine_keymap::MoveAxis axis) {
+    int vks[8];
+    int n = acc::engine_keymap::MoveAxisVks(axis, vks, 8);
+    for (int i = 0; i < n; ++i) {
+        if (KeyDown(vks[i])) return true;
+    }
+    return false;
+}
+
 }  // namespace
 
 bool IsActive() { return g_state.active; }
@@ -751,14 +765,17 @@ void Tick() {
     if (dt > kMaxDtSec) dt = kMaxDtSec;
     if (dt < 0.0f) dt = 0.0f;
 
-    // Cursor delta from movement keys. Map-frame axes: W = -py (up on
-    // map = lower pixel), S = +py, A = -px, D = +px. Pixel space y
-    // grows down per the engine's screen convention.
+    // Cursor delta from the player's bound movement/turn keys. Map-frame axes:
+    // forward = -py (up on map = lower pixel), back = +py, turn-left = -px,
+    // turn-right = +px. Pixel space y grows down per the engine's screen
+    // convention. Reading the bound keys (not hardcoded WASD) keeps the map
+    // cursor on the same keys the player turns/moves with in the world.
     float vx = 0.0f, vy = 0.0f;
-    bool w = KeyDown('W');
-    bool s = KeyDown('S');
-    bool a = KeyDown('A');
-    bool d = KeyDown('D');
+    using acc::engine_keymap::MoveAxis;
+    bool w = AxisDown(MoveAxis::Forward);
+    bool s = AxisDown(MoveAxis::Backward);
+    bool a = AxisDown(MoveAxis::TurnLeft);
+    bool d = AxisDown(MoveAxis::TurnRight);
     if (w || s || a || d) {
         acclog::Trace("MapCursor", "input W=%d S=%d A=%d D=%d", w, s, a, d);
     }

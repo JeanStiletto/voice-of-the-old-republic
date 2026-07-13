@@ -31,6 +31,78 @@ int  s_gameVks[kMaxGameVks];
 int  s_gameVkCount = 0;
 bool s_gameLoaded  = false;
 
+// ---- Movement / turn axis buckets ------------------------------------------
+// The player's bound movement + turn keys, resolved from swkotor.ini
+// [Keymapping] alongside the flat game-VK set above. These let the mod detect
+// "the player is moving / turning" and steer the map cursor by the SAME keys
+// the player uses in the world — no matter which physical keys those are
+// (so nothing breaks when turn is rebound off A/D).
+//
+// The [Keymapping] movement/turn actions come in slot pairs "Action<id>A" /
+// "Action<id>B". Verified against the stock kotor.ini defaults, slot 'A' of
+// each action group is the "negative" direction and slot 'B' the "positive":
+//   move  Action280/282 : A=W (forward)  B=S (back)    | Action285 : A=Up B=Down
+//   turn  Action283/284 : A=A-key (left) B=D (right)   | Action286 : A=Left B=Right
+// A rebind changes the KEY inside a slot, not which slot is which direction,
+// so reading a slot always yields that direction's current key.
+constexpr int kMoveAxisCount = 4;  // Forward, Backward, TurnLeft, TurnRight
+constexpr int kMaxAxisVks    = 8;
+int s_axisVks[kMoveAxisCount][kMaxAxisVks];
+int s_axisVkCount[kMoveAxisCount] = {0, 0, 0, 0};
+
+// The DIK scancode camera_orient synthesises to drive the engine's turn axis,
+// per direction [0]=left [1]=right. Captured from the configured primary turn
+// binds (Action283/284) so a rebind is honoured; 0 = not configured → the
+// A/D DIK fallback in TurnScancode(). Scancode (not VK) because the engine
+// reads keyboard via DirectInput, which sees scancodes only.
+int s_turnScan[2] = {0, 0};
+
+// Default VK per axis (WASD) — always seeded so the buckets are never empty,
+// even before the ini is read or if it is missing. Index matches MoveAxis.
+constexpr int kAxisDefaultVk[kMoveAxisCount] = {'W', 'S', 'A', 'D'};
+
+// (axis, [Keymapping] action id, slot letter) contributors.
+struct AxisContrib { int axis; int actionId; char slot; };
+constexpr AxisContrib kAxisContribs[] = {
+    {0, 280, 'A'}, {0, 282, 'A'}, {0, 285, 'A'},   // Forward  : W / Up
+    {1, 280, 'B'}, {1, 282, 'B'}, {1, 285, 'B'},   // Backward : S / Down
+    {2, 283, 'A'}, {2, 284, 'A'}, {2, 286, 'A'},   // TurnLeft : A / Left
+    {3, 283, 'B'}, {3, 284, 'B'}, {3, 286, 'B'},   // TurnRight: D / Right
+};
+
+bool IsDownVk(int vk) {
+    return vk != 0 && (GetAsyncKeyState(vk) & 0x8000) != 0;
+}
+
+void AddAxisVk(int axis, int vk) {
+    if (vk == 0 || axis < 0 || axis >= kMoveAxisCount) return;
+    if (s_axisVkCount[axis] >= kMaxAxisVks) return;
+    for (int i = 0; i < s_axisVkCount[axis]; ++i) {
+        if (s_axisVks[axis][i] == vk) return;  // dedup
+    }
+    s_axisVks[axis][s_axisVkCount[axis]++] = vk;
+}
+
+// Engine InputIndices value -> DIK (PS/2 set-1) scancode, DIRECTLY. Both are
+// physical-key identifiers, so this is layout-independent — unlike routing
+// through InputIndexToVk + the active layout, which on QWERTZ swaps Y/Z (turn
+// bound to physical Z came out as physical Y and drove nothing). DirectInput,
+// which the engine polls for the turn axis, wants the physical scancode. Covers
+// the keys a turn bind realistically uses (letters, digits, space); returns 0
+// for anything else so the caller can fall back.
+int InputIndexToScancode(int ii) {
+    // A..Z (InputIndex 0x33..0x4c) → DIK by physical position (not alphabetical).
+    static const unsigned char kLetterDik[26] = {
+        0x1E, 0x30, 0x2E, 0x20, 0x12, 0x21, 0x22, 0x23, 0x17, 0x24, 0x25, 0x26,
+        0x32, 0x31, 0x18, 0x19, 0x10, 0x13, 0x1F, 0x14, 0x16, 0x2F, 0x11, 0x2D,
+        0x15, 0x2C};
+    if (ii >= 0x33 && ii <= 0x4c) return kLetterDik[ii - 0x33];  // A..Z
+    if (ii >= 0x4d && ii <= 0x55) return 0x02 + (ii - 0x4d);     // 1..9
+    if (ii == 0x56)               return 0x0B;                   // 0
+    if (ii == 0x57)               return 0x39;                   // Space
+    return 0;
+}
+
 // ---- Engine hardcoded keyboard map -----------------------------------------
 // The engine's in-world client handler (CClientExoAppInternal::HandleInputEvent)
 // receives an internal "quick action" COMMAND code, then runs the bound action.
@@ -183,6 +255,15 @@ void ReloadGameConfig() {
     s_gameLoaded  = true;  // mark loaded even on read failure: a missing ini just
                            // means no configurable binds to warn about (defaults
                            // are the hardcoded set, already covered).
+    // Seed the movement/turn axis buckets with the WASD defaults BEFORE any
+    // early-out below, so the buckets are never empty even if the ini is
+    // missing/unreadable. Configured binds are layered on top during the parse.
+    for (int a = 0; a < kMoveAxisCount; ++a) {
+        s_axisVkCount[a] = 0;
+        AddAxisVk(a, kAxisDefaultVk[a]);
+    }
+    s_turnScan[0] = 0;
+    s_turnScan[1] = 0;
     char path[MAX_PATH];
     if (!ResolveIniPath(path, sizeof(path))) {
         s_gameLoaded = false;  // patch dir unknown yet — retry on next query
@@ -215,12 +296,46 @@ void ReloadGameConfig() {
         char* eq = strchr(p, '=');
         if (!eq) continue;
         int inputIndex = atoi(eq + 1);   // RHS = decimal InputIndices value (key_code)
-        AddGameVk(InputIndexToVk(inputIndex));
+        int vk = InputIndexToVk(inputIndex);
+        AddGameVk(vk);
+
+        // LHS form "Action<digits>[A|B]" — parse the action id and slot so we
+        // can route movement/turn binds into the directional axis buckets.
+        int  actionId = 0;
+        char slot     = 0;
+        if (_strnicmp(p, "Action", 6) == 0) {
+            const char* q = p + 6;
+            while (*q >= '0' && *q <= '9') { actionId = actionId * 10 + (*q - '0'); ++q; }
+            if (q < eq && (*q == 'A' || *q == 'a')) slot = 'A';
+            else if (q < eq && (*q == 'B' || *q == 'b')) slot = 'B';
+        }
+        if (slot != 0) {
+            for (const AxisContrib& c : kAxisContribs) {
+                if (c.actionId != actionId || c.slot != slot) continue;
+                AddAxisVk(c.axis, vk);
+                // Capture the configured turn scancode for camera_orient's
+                // synthetic-key drive. Only the A/D-family turn actions
+                // (283/284) — skip the arrow alt (286) to avoid extended-
+                // scancode SendInput handling. First configured value wins.
+                // Convert straight from the InputIndex so the physical scancode
+                // is layout-correct (the VK path swaps Y/Z on QWERTZ).
+                if ((c.axis == 2 || c.axis == 3) &&
+                    (c.actionId == 283 || c.actionId == 284)) {
+                    int di = (c.axis == 2) ? 0 : 1;
+                    int sc = InputIndexToScancode(inputIndex);
+                    if (sc != 0 && s_turnScan[di] == 0) s_turnScan[di] = sc;
+                }
+            }
+        }
     }
     fclose(f);
     acclog::Write("EngineKeymap",
-                  "loaded %d configurable game bind VK(s) from swkotor.ini",
-                  s_gameVkCount);
+                  "loaded %d configurable game bind VK(s) from swkotor.ini "
+                  "(axis fwd=%d back=%d left=%d right=%d; turnScan L=0x%02x "
+                  "R=0x%02x)",
+                  s_gameVkCount, s_axisVkCount[0], s_axisVkCount[1],
+                  s_axisVkCount[2], s_axisVkCount[3], s_turnScan[0],
+                  s_turnScan[1]);
 }
 
 bool IsKeyUsedByGame(int vk) {
@@ -269,6 +384,42 @@ int CodeForVk(int vk) {
         if (s_pairs[i].vk == vk) return s_pairs[i].code;
     }
     return 0;
+}
+
+int MoveAxisVks(MoveAxis axis, int* out, int cap) {
+    if (!s_gameLoaded) ReloadGameConfig();  // populates axis buckets
+    int a = static_cast<int>(axis);
+    if (a < 0 || a >= kMoveAxisCount || !out || cap <= 0) return 0;
+    int n = 0;
+    for (int i = 0; i < s_axisVkCount[a] && n < cap; ++i) {
+        out[n++] = s_axisVks[a][i];
+    }
+    return n;
+}
+
+int TurnScancode(bool left) {
+    if (!s_gameLoaded) ReloadGameConfig();
+    int idx = left ? 0 : 1;
+    if (s_turnScan[idx] != 0) return s_turnScan[idx];
+    return left ? 0x1E : 0x20;  // DIK A / D fallback (vanilla / ini unreadable)
+}
+
+bool AnyMovementKeyHeld() {
+    if (!s_gameLoaded) ReloadGameConfig();
+    // The four directional buckets (bound move/turn keys + WASD defaults)…
+    for (int a = 0; a < kMoveAxisCount; ++a) {
+        for (int i = 0; i < s_axisVkCount[a]; ++i) {
+            if (IsDownVk(s_axisVks[a][i])) return true;
+        }
+    }
+    // …plus the legacy extras the German QWERTZ set relies on that aren't in
+    // the directional groups (the Z/C axis + the physical-Z VK 'Y'). Kept so
+    // this never regresses below the old hardcoded {W,S,A,D,C,Y} check.
+    static const int kExtra[] = {'C', 'Y', 'Z'};
+    for (int vk : kExtra) {
+        if (IsDownVk(vk)) return true;
+    }
+    return false;
 }
 
 }  // namespace acc::engine_keymap

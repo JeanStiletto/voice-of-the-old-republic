@@ -4,8 +4,10 @@
 #include <cmath>
 #include <cstdint>
 
-#include "camera_orient.h"  // IsActive — its synthesised A/D snap-turn must not
-                            // self-trip the movement-key cancel.
+#include "camera_orient.h"  // IsActive — its snap-turn must not self-trip the
+                            // movement-key cancel.
+#include "engine_keymap.h"  // AnyMovementKeyHeld — the player's bound move/turn
+                            // keys, so cancel works regardless of rebinds.
 #include "engine_player.h"
 #include "guidance_approach.h"  // IsAnyModApproachInFlight / CancelByMovement —
                                 // the unified tracker owns in-flight semantics
@@ -322,24 +324,17 @@ void PollMovementKeysCancel() {
     // an in-flight walk while the auto-rotation is running.
     if (acc::camera_orient::IsActive()) return;
 
-    // User's movement-key set on QWERTZ (German) layout. VK_W / VK_S / VK_A /
-    // VK_D / VK_C / VK_Y map to the physical positions the user listed.
+    // Any of the player's bound movement / turn keys held cancels the walk —
+    // read from swkotor.ini [Keymapping] (engine_keymap) so this follows a
+    // rebind instead of assuming A/D/W/S, and still covers the legacy German
+    // QWERTZ extras (C/Y/Z) as a union so it never regresses.
     //
-    // Level-triggered (no rising-edge requirement): any of these keys held cancels
-    // — so holding A to turn breaks out of an autowalk just like a fresh tap. The
-    // old rising-edge gate meant a key already held when the walk dispatched never
-    // produced an edge, stranding the user in a long autowalk with no manual turn.
-    // The arm grace that prevents a pre-dispatch key from cancelling too early
-    // lives in CancelByMovement (kCancelGraceMs), keyed off the tracker's arm time.
-    constexpr int kMovementKeys[] = {'W', 'S', 'A', 'D', 'C', 'Y'};
-    bool anyDown = false;
-    for (int vk : kMovementKeys) {
-        if (GetAsyncKeyState(vk) & 0x8000) {
-            anyDown = true;
-            break;
-        }
-    }
-    if (!anyDown) return;
+    // Level-triggered (no rising-edge requirement): a key already held when the
+    // walk dispatched still cancels, so the user can always turn/walk their way
+    // out. The arm grace that prevents a pre-dispatch key from cancelling too
+    // early lives in CancelByMovement (kCancelGraceMs), keyed off the tracker's
+    // arm time.
+    if (!acc::engine_keymap::AnyMovementKeyHeld()) return;
 
     acc::guidance::CancelByMovement();
 }

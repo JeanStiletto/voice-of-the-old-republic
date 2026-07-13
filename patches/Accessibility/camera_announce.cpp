@@ -28,10 +28,18 @@ constexpr float kHysteresis  = 5.0f;
 // transient flips during fast rotation.
 constexpr DWORD kQuietMs = 250;
 
-// While exactly one of A/D is held, announce at most this often even if
+// While the camera is actively rotating, announce at most this often even if
 // the sector keeps changing. At default 200°/s DPS that's ~1 announce
 // per 1.3 sectors.
 constexpr DWORD kMinIntervalHeldMs = 300;
+
+// The camera counts as "actively rotating" above this angular speed. Well
+// above the few °/s of jitter the position-derived compass shows while
+// standing/walking straight, well below a real key-driven turn (~200°/s), so
+// the release edge fires cleanly ~0.1s after the player stops turning.
+// Derived from the camera compass velocity rather than reading specific turn
+// keys, so it is independent of which keys the player has bound turning to.
+constexpr float kRotatingThresholdDps = 30.0f;
 
 // Below this XY distance the (player - camera) direction is unstable
 // (vertical component dominates, physics smoothing). Refuse to announce.
@@ -47,7 +55,10 @@ int   s_pendingSector     = -1;
 DWORD s_lastChangeAt      = 0;
 DWORD s_lastSpokenAt      = 0;
 float s_lastCamCompass    = -1.0f;  // cached for TryGetCameraEngineYawDegrees
-bool  s_prevRelevantHeld  = false;  // falling edge fires release-edge announce
+float s_prevVelCompass    = -1.0f;  // previous tick's compass for velocity calc
+DWORD s_prevVelAt         = 0;      // timestamp of s_prevVelCompass
+bool  s_prevRelevantHeld  = false;  // was-rotating; falling edge fires the
+                                    // release-edge announce
 bool  s_mutedByCutscene   = false;  // latched while an engine cinematic drives
                                     // the camera; forces a silent re-anchor on
                                     // exit so the cutscene's final direction is
@@ -80,6 +91,7 @@ void Tick() {
         s_lastSpokenSector = -1;
         s_pendingSector    = -1;
         s_lastCamCompass   = -1.0f;
+        s_prevVelCompass   = -1.0f;
         s_mutedByCutscene  = false;
         return;
     }
@@ -104,17 +116,20 @@ void Tick() {
         s_pendingSector    = s_lastSpokenSector;
         s_lastChangeAt     = now;
         s_lastSpokenAt     = now;
-        s_prevRelevantHeld = false;  // drop any stale A/D release edge
+        s_prevRelevantHeld = false;  // drop any stale rotation release edge
+        s_prevVelCompass   = -1.0f;  // re-seed velocity after the mute gap
         acclog::Write("CameraAnnounce", "cutscene end; silent re-anchor "
             "camCompass=%.1f sector=%d", camCompass, s_lastSpokenSector);
         return;
     }
 
     // Mute while camera_orient drives the camera. Hysteresis + kQuietMs
-    // then announces the post-rotation final sector iff it differs.
-    // s_prevRelevantHeld stays unchanged so the synthesised A/D release
-    // doesn't fire a release-edge announce mid-settle.
+    // then announces the post-rotation final sector iff it differs. Force the
+    // was-rotating flag false and drop the velocity sample so the first
+    // post-orient tick can't fire a spurious release-edge announce mid-settle.
     if (acc::camera_orient::IsActive()) {
+        s_prevRelevantHeld = false;
+        s_prevVelCompass   = -1.0f;
         return;
     }
 
@@ -124,17 +139,30 @@ void Tick() {
         s_pendingSector    = s_lastSpokenSector;
         s_lastChangeAt     = now;
         s_lastSpokenAt     = now;
+        s_prevRelevantHeld = false;
+        s_prevVelCompass   = -1.0f;
         acclog::Write("CameraAnnounce", "first-tick anchor; camCompass=%.1f sector=%d",
             camCompass, s_lastSpokenSector);
         return;
     }
 
-    auto down = [](int vk) -> bool {
-        return (GetAsyncKeyState(vk) & 0x8000) != 0;
-    };
-    bool aHeld = down('A');
-    bool dHeld = down('D');
-    bool relevantHeldNow  = (aHeld != dHeld);  // XOR — both held = no net rotation
+    // Detect active rotation from the camera's own angular velocity rather
+    // than reading specific turn keys — so it works regardless of which keys
+    // the player bound turning to, and also covers mouse-edge turns and Q/E
+    // target snaps. (camera_orient / cutscene rotations are muted above, so
+    // this only ever sees genuine player-driven turning.)
+    float rotDps = 0.0f;
+    if (s_prevVelCompass >= 0.0f) {
+        DWORD dtMs = now - s_prevVelAt;
+        if (dtMs > 0) {
+            rotDps = std::fabs(AngularDelta(camCompass, s_prevVelCompass)) /
+                     (static_cast<float>(dtMs) * 0.001f);
+        }
+    }
+    s_prevVelCompass = camCompass;
+    s_prevVelAt      = now;
+
+    bool relevantHeldNow  = (rotDps >= kRotatingThresholdDps);
     bool relevantHeldPrev = s_prevRelevantHeld;
     s_prevRelevantHeld    = relevantHeldNow;
     bool releaseEdge      = relevantHeldPrev && !relevantHeldNow;
@@ -147,8 +175,8 @@ void Tick() {
         if (finalSector != s_lastSpokenSector) {
             auto id = acc::engine::SectorString(finalSector);
             const char* phrase = acc::strings::Get(id);
-            // Urgent SAPI: A/D held; normal Speak gets eaten by NVDA's
-            // typed-char cancel.
+            // Urgent SAPI: mid-turn; a normal Speak gets eaten by NVDA's
+            // typed-char cancel when the turn key is a typing key.
             prism::SpeakUrgent(phrase, /*voiceId=*/0);
             acclog::Write("CameraAnnounce", "release-edge sector %d -> %d (%s); "
                 "camCompass=%.1f fg=%d",
@@ -190,9 +218,9 @@ void Tick() {
     const char* phrase = acc::strings::Get(id);
     prism::SpeakUrgent(phrase, /*voiceId=*/0);
     acclog::Write("CameraAnnounce", "sector %d -> %d (%s); camCompass=%.1f "
-        "(a=%d d=%d %s fg=%d)",
+        "(rot=%.0f°/s %s fg=%d)",
         s_lastSpokenSector, s_pendingSector, phrase, camCompass,
-        aHeld ? 1 : 0, dHeld ? 1 : 0,
+        rotDps,
         stable ? "quiet" : "held",
         isForeground ? 1 : 0);
 

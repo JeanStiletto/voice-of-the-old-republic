@@ -7,6 +7,7 @@
 
 #include "camera_announce.h"  // TryGetCameraEngineYawDegrees
 #include "engine_compass.h"
+#include "engine_keymap.h"    // TurnScancode — bound turn key
 #include "engine_offsets.h"
 #include "engine_player.h"
 #include "guidance_beacon.h"
@@ -21,10 +22,17 @@ namespace {
 constexpr size_t kClientInternalModuleOffset = 0x18;
 constexpr size_t kCSWCModuleCameraOffset     = 0x40;
 
-// DirectInput scan codes. Engine reads keyboard via DirectInput, which
-// sees scancodes only — plain VK SendInput is invisible to it.
-constexpr WORD kDikA = 0x1E;
-constexpr WORD kDikD = 0x20;
+// Drive mechanism: we synthesise the player's *bound* turn key via SendInput
+// with KEYEVENTF_SCANCODE, so the engine's own UpdateCamera runs its full
+// poll-axis → AcclTurnCamera → apply sequence exactly as if the player held
+// the key. This is the mechanism that has always worked; the only change vs.
+// the old hardcoded A/D is that the scancode now comes from engine_keymap's
+// TurnScancode() (read from swkotor.ini [Keymapping]), so a turn rebind is
+// honoured. (Calling AcclTurnCamera directly from our out-of-band tick was
+// tried and does NOT reliably move the chase-cam — its accumulator is only
+// consumed inside the engine's own per-frame UpdateCamera pass.) The engine
+// reads keyboard via DirectInput, which sees scancodes only — plain-VK
+// SendInput is invisible to it.
 
 // Single rotation at a time. Rate-based predictive release: each tick
 // samples yaw + timestamp so the next tick projects time-to-target and
@@ -32,8 +40,8 @@ constexpr WORD kDikD = 0x20;
 // Without prediction the engine keeps rotating ~30-50ms after our keyup.
 struct Rotation {
     bool   active             = false;
-    WORD   holdScan           = 0;
-    char   debugKey           = 0;       // 'A' / 'D' for log readability
+    WORD   holdScan           = 0;       // DIK scancode of the held turn key
+    char   debugKey           = 0;       // 'L' / 'R' for log readability
     float  targetEngineYawRad = 0.0f;
     float  initialAbsDeltaRad = 0.0f;    // overshoot detection
     DWORD  startedMs          = 0;
@@ -54,8 +62,13 @@ constexpr float kFallbackArrivalRad = 0.05f;
 // 0.57°/s, well below any real key-driven rate.
 constexpr float kMinRateRadPerMs = 1e-5f;
 
+// Note: driving the engine's turn function directly (AcclTurnCamera @0x640090)
+// from our out-of-band tick was tried and does NOT reliably move the chase-cam
+// — its yaw accumulator is only consumed inside the engine's own per-frame
+// UpdateCamera pass. The synthesised-keypress path below is the proven one.
+
 // Safety cap for "engine ignored our input" (load screen, modal, scripted
-// takeover) — must not strand the key pressed.
+// takeover) — must not strand the synthesised key held.
 constexpr DWORD kTimeoutMs = 3000;
 
 constexpr float kPi      = 3.14159265358979323846f;
@@ -86,12 +99,6 @@ void* GetModule() {
     return SafeDeref(clientInternal, kClientInternalModuleOffset);
 }
 
-void* GetCamera() {
-    void* module = GetModule();
-    if (!module) return nullptr;
-    return SafeDeref(module, kCSWCModuleCameraOffset);
-}
-
 // Prefer camera_announce's position-derived yaw — atan2(player - camera)
 // is single-valued, the quaternion path returns antipodal readings 360°
 // apart and breaks the arrival check. Falls back to the quaternion if
@@ -111,6 +118,12 @@ bool ReadCurrentEngineYawRad(void* camera, float& out) {
     // as the position-derived path. See engine_player.h.
     (void)camera;  // chain re-walked inside the helper
     return acc::engine::GetCameraYawRadians(out);
+}
+
+void* GetCamera() {
+    void* module = GetModule();
+    if (!module) return nullptr;
+    return SafeDeref(module, kCSWCModuleCameraOffset);
 }
 
 void SendKey(WORD scan, bool down) {
@@ -157,7 +170,7 @@ void ReleaseAndDisarm(const char* reason, float curYawRad) {
     // IsActive() drops on the next tick.
 
     acclog::Write("CameraOrient",
-                  "release: reason=%s key=%c cur=%.1f° (compass=%.1f° "
+                  "release: reason=%s dir=%c cur=%.1f° (compass=%.1f° "
                   "sector=%d) target=%.1f° elapsed=%ums",
                   reason,
                   g_rot.debugKey,
@@ -171,10 +184,9 @@ void ReleaseAndDisarm(const char* reason, float curYawRad) {
 
 }  // namespace
 
-// Covers two windows g_rot.active alone misses: (1) the rising-edge tick
-// itself, since camera_announce::Tick runs before us in core_tick and
-// would otherwise speak the pre-rotation sector; (2) the gap between
-// ReleaseAndDisarm and the physical key release.
+// Covers the window g_rot.active alone misses: the rising-edge tick itself,
+// since camera_announce::Tick runs before us in core_tick and would otherwise
+// speak the pre-rotation sector on the frame N is pressed.
 bool IsActive() {
     if (g_rot.active) return true;
     return acc::hotkeys::Held(acc::hotkeys::Action::CameraOrient);
@@ -186,11 +198,11 @@ void Tick() {
     // In-flight rotation: tick the state machine.
     if (g_rot.active) {
         if (!camera) {
-            // Camera vanished (area transition / shutdown) — release the
-            // key so it isn't stranded across the load screen.
+            // Camera vanished (area transition / shutdown) — release the key
+            // so it isn't stranded across the load screen.
             SendKey(g_rot.holdScan, /*down=*/false);
             acclog::Write("CameraOrient",
-                          "release: reason=camera_lost key=%c",
+                          "release: reason=camera_lost dir=%c",
                           g_rot.debugKey);
             g_rot.active = false;
         } else {
@@ -313,10 +325,12 @@ void Tick() {
         return;
     }
 
-    // Engine frame (0=East, CCW+): positive delta = CCW = A, negative = D.
-    bool isA = (delta > 0.0f);
-    WORD scan = isA ? kDikA : kDikD;
-    char debugKey = isA ? 'A' : 'D';
+    // Engine frame (0=East, CCW+): positive delta = CCW = turn LEFT, negative
+    // = CW = turn RIGHT. The scancode to synthesise for each direction comes
+    // from the player's bound turn keys (engine_keymap), so a rebind is honoured.
+    bool isLeft = (delta > 0.0f);
+    WORD scan = static_cast<WORD>(acc::engine_keymap::TurnScancode(isLeft));
+    char debugKey = isLeft ? 'L' : 'R';
 
     DWORD nowMs = GetTickCount();
     g_rot.active              = true;
@@ -334,7 +348,7 @@ void Tick() {
     SendKey(scan, /*down=*/true);
 
     acclog::Write("CameraOrient",
-                  "arm: mode=%s cur=%.1f° target=%.1f° delta=%.1f° key=%c "
+                  "arm: mode=%s cur=%.1f° target=%.1f° delta=%.1f° dir=%c "
                   "(scan=0x%02x)",
                   beaconMode ? "beacon" : "cardinal",
                   curYawRad * kRadToDeg,

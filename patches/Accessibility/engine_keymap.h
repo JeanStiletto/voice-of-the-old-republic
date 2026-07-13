@@ -67,4 +67,30 @@ int ScancodeToVk(int scancode);
 // captured key_code and needs the VK to test it against mod bindings.
 int InputIndexToVk(int inputIndex);
 
+// ---- Movement / turn axis queries ------------------------------------------
+// The player's bound movement + turn keys, so the mod can react to "the player
+// is moving / turning" and steer the map cursor by the same keys the player
+// uses in the world — independent of which physical keys they've bound (turning
+// off A/D no longer breaks anything). Resolved from swkotor.ini [Keymapping];
+// each axis is always seeded with its WASD default so it is never empty.
+enum class MoveAxis { Forward = 0, Backward = 1, TurnLeft = 2, TurnRight = 3 };
+
+// Fill `out` with up to `cap` distinct VKs bound to the given movement/turn
+// direction (default key + any [Keymapping] binds on that direction's slots).
+// Returns the count written. Auto-loads the config on first use.
+int MoveAxisVks(MoveAxis axis, int* out, int cap);
+
+// DIK scancode to synthesise (via SendInput KEYEVENTF_SCANCODE) to drive the
+// engine's camera-turn axis in the given direction — resolved from the
+// player's configured primary turn bind (Action283/284), so it follows a
+// rebind. Falls back to DIK A (left, 0x1E) / D (right, 0x20) when the ini has
+// no turn bind (vanilla defaults / unreadable ini). Used by camera_orient's
+// N-hotkey snap-turn. Auto-loads the config on first use.
+int TurnScancode(bool left);
+
+// True iff any bound movement/turn key is currently held down. Union of all
+// four directional buckets plus the legacy German-layout extras (Z/C/Y), so it
+// never regresses below the old hardcoded {W,S,A,D,C,Y} movement check.
+bool AnyMovementKeyHeld();
+
 }  // namespace acc::engine_keymap
