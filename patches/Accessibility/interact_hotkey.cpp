@@ -1019,6 +1019,20 @@ void PollHotkey() {
                       acc::engine::PanelKindName(ui.fgKind));
     }
 
+    // Swallow the Enter that just confirmed a save-name editbox. That popup is
+    // foreground but classifies as kind=Unknown, so the blocking gate above
+    // lets Enter through; the editbox monitor (menus.TickMonitors, earlier this
+    // same tick) set the latch when it saw the confirm Enter. Without this the
+    // single confirm Enter also queues an ActionInitiateDialog on the narrated
+    // target, which fires when the world unpauses on menu-exit. Self-expiring +
+    // single-shot, so a genuine later Enter is unaffected.
+    if (acc::input::ConsumeEditboxSubmitLatch()) {
+        acclog::Write("Interact", "%s swallowed -- editbox submit closed a modal "
+                      "this tick (save-name confirm); not dispatching interact",
+                      keyTag);
+        return;
+    }
+
     OnInteract(forceRadial);
 }
 

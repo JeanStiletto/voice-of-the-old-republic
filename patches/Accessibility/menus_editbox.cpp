@@ -22,6 +22,8 @@
 #include "engine_panels.h"
 #include "engine_reads.h"
 #include "hotkeys.h"
+#include "input_pipeline.h"  // NoteEditboxSubmitClosed — latch the submit Enter
+                             // so it doesn't leak into an in-world interact
 #include "log.h"
 #include "menus.h"            // ClearPendingAnnounce — editbox arm owns the announce
 #include "menus_extract.h"
@@ -388,6 +390,20 @@ void PollModalKeys(ArmedState& s) {
                       "(engine handles submit natively)",
                       s.spec->logTag);
         s.editMode = false;
+
+        // Latch this submit Enter so interact::PollHotkey (which runs later
+        // this same tick) swallows it. The save-name popup is foreground but
+        // classified kind=Unknown, so the interact gate does NOT block it — the
+        // same physical Enter that confirmed the name falls through as an
+        // in-world interact and queues an ActionInitiateDialog on the narrated
+        // target. That queued action then fires the moment the world unpauses
+        // (when the user Escapes out of the menu after the save completes),
+        // which is why the unwanted dialogue appears on menu-exit rather than
+        // at the keypress. Confirmed in patch-20260713-002917.log lines
+        // 3247-3257: VK_RETURN edit-mode-off and Enter->Dialoge on the same
+        // tick, panel still in the stack. Self-expiring so a later genuine
+        // interact is unaffected.
+        acc::input::NoteEditboxSubmitClosed();
     }
 
     if (escEdge) {

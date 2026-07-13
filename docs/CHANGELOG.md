@@ -66,6 +66,7 @@ and add the German in parentheses if it genuinely aids clarity.
 <h3>Bug fixes:</h3>
 
 - Lightsaber crystal stats read correctly again at the workbench. When item tooltips were grouped into categorised blocks (Tags/Values/Properties/Description) you step through with Shift+arrow, crystals lost their numbers: a crystal's stats don't divide into those blocks, so it fell back to the description alone — which for a crystal is lore text with no attack or damage figures. Browsing crystals in a saber's upgrade picker now speaks the game's own computed bonuses again, the same text the workbench shows on screen.
+- Saving no longer starts an unwanted conversation. When you confirmed a save-game name with Enter while an NPC was your current target, that same Enter also registered as an in-world interact and quietly queued a "talk to" action; with the world paused it waited until you left the menu, then walked you over and opened dialogue the instant play resumed. The naming box now consumes its confirm Enter so saving leaves your target alone.
 
 <h3>Installer:</h3>
 

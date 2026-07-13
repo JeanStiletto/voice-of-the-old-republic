@@ -44,4 +44,26 @@ unsigned int NextSeq();
 void NoteOverlayEscClosed();
 bool ConsumeOverlayEscLatch();
 
+// Editbox-submit consume latch — stops the Enter that confirms a save-name
+// editbox from also firing an in-world interact.
+//
+// The save-name popup (CSWGuiSaveNamePanel) is foreground while the user types,
+// but it classifies as PanelKind::Unknown, so IsForegroundUiBlocking does NOT
+// treat it as a blocker and the interact gate lets Enter through. Both
+// EditboxSubmit and InteractTarget bind VK_RETURN, so the single confirm Enter
+// fires both on the same tick: the editbox monitor (menus.TickMonitors) drops
+// edit mode, then interact::PollHotkey (later that same tick) dispatches an
+// ActionInitiateDialog on the narrated target. Because the world is paused the
+// queued action sits until the user Escapes back out, then executes on unpause
+// — the unwanted dialogue appears on menu-exit, not at the keypress. Confirmed
+// in patch-20260713-002917.log lines 3247-3257.
+//
+// NoteEditboxSubmitClosed() stamps GetTickCount() from the editbox monitor's
+// Enter handler (PollModalKeys). ConsumeEditboxSubmitLatch() returns true (and
+// clears the latch) if that stamp is within a short window, so
+// interact::PollHotkey swallows exactly that one coincident Enter. Self-
+// expiring so it can never eat a later deliberate interact.
+void NoteEditboxSubmitClosed();
+bool ConsumeEditboxSubmitLatch();
+
 }  // namespace acc::input

@@ -64,6 +64,14 @@ volatile LONG s_seq = 0;
 DWORD s_escClosedAt = 0;
 constexpr DWORD kEscLatchWindowMs = 150;
 
+// Editbox-submit consume latch — same shape as the Esc latch above, but for
+// the Enter that confirms a save-name editbox. The editbox monitor sets it and
+// the interact poller consumes it on the SAME tick (both run inside one
+// Dispatch, monitor before interact), so the window only needs to cover that
+// single tick plus a couple of frames of slack.
+DWORD s_editboxSubmitAt = 0;
+constexpr DWORD kEditboxSubmitLatchWindowMs = 150;
+
 }  // namespace
 
 unsigned int NextSeq() {
@@ -79,6 +87,17 @@ bool ConsumeOverlayEscLatch() {
     DWORD elapsed = GetTickCount() - s_escClosedAt;  // wrap-safe unsigned diff
     s_escClosedAt = 0;                               // single-shot
     return elapsed <= kEscLatchWindowMs;
+}
+
+void NoteEditboxSubmitClosed() {
+    s_editboxSubmitAt = GetTickCount();
+}
+
+bool ConsumeEditboxSubmitLatch() {
+    if (s_editboxSubmitAt == 0) return false;
+    DWORD elapsed = GetTickCount() - s_editboxSubmitAt;  // wrap-safe unsigned diff
+    s_editboxSubmitAt = 0;                               // single-shot
+    return elapsed <= kEditboxSubmitLatchWindowMs;
 }
 
 }  // namespace acc::input
