@@ -279,11 +279,13 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
     //     (+0x100), populated by map_user_markers::BuildAutoName.
     //  2) Map-context waypoint: GetWaypointMapNote (+0x230) — the engine's
     //     localised map-note text, same string sighted players see.
-    //  3) Anything else: GetObjectName (waypoint LocName / door / NPC /
-    //     ...). World-context Landmark goes here too.
-    // The waypoint LocName at +0x238 is almost always empty in stock K1
-    // modules; falling back through GetObjectName would land on the raw
-    // tag ("wp_loc1") — the "just numbers" announce we're trying to avoid.
+    //  3) Anything else: GetObjectName (door / NPC / ...). World-context
+    //     Landmark + Transition go here too — GetObjectName now folds the
+    //     waypoint map-note (+0x230) and the trigger transition_destination
+    //     (+0x30c) into its own fallback chain, so those resolve to the
+    //     human-readable label ("Zur Oberstadt") instead of the raw tag.
+    // The map-context branch below still reads GetWaypointMapNote directly
+    // so its same-name numbering keys off the exact map string.
     bool isPin = listing.isPin[s.focusedIndex];
     bool mapHint = mapCtx &&
                    s.category == acc::filter::CycleCategory::Landmark;

@@ -570,12 +570,37 @@ bool GetObjectName(void* gameObject, char* outBuf, size_t bufSize) {
                                    outBuf, bufSize);
             break;
         case K::Waypoint:
+            // For a landmark waypoint the curated map-note label (+0x230)
+            // IS the canonical name — the exact string sighted players
+            // read off the area map, and what the map-context cycle
+            // already prioritises. Prefer it outright: stock K1 leaves the
+            // waypoint LocName (+0x238) empty but sets a resref-style Tag
+            // ("k35_map_dreshdae"), so a LocName-first order would let that
+            // machine name win in world context. Non-landmark waypoints
+            // have no map note; GetWaypointMapNote returns false and we
+            // fall through to LocName → tag.
+            if (GetWaypointMapNote(gameObject, outBuf, bufSize)) {
+                got = true;
+                break;
+            }
             got = TryReadLocString(gameObject, kWaypointLocNameOffset,
                                    outBuf, bufSize);
             break;
         case K::Trigger:
             got = TryReadLocString(gameObject, kTriggerLocNameOffset,
                                    outBuf, bufSize);
+            // Area-transition triggers carry their human-readable "to X"
+            // label in the transition_destination LocString (CSWSTrigger
+            // +0x30c), exactly like doors (BuildDoorSuffix reads the door
+            // equivalent). The trigger LocName above is near-always empty
+            // in stock K1, so without this the Transition cycle category
+            // falls through to the raw tag. Non-transition triggers (trap
+            // / encounter) have an empty transition_destination and still
+            // fall to the tag below.
+            if (!got || outBuf[0] == '\0') {
+                got = TryReadLocString(gameObject, kTriggerTransitionDestOffset,
+                                       outBuf, bufSize);
+            }
             break;
         default:
             return false;

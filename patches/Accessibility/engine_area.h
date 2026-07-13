@@ -400,7 +400,12 @@ constexpr size_t kPlaceableHasInventoryOffset  = 0x324;
 constexpr size_t kPlaceableItemRepositoryOffset = 0x36c;
 constexpr size_t kItemRepositoryItemCountOffset = 0x10;
 constexpr size_t kWaypointHasMapNoteOffset     = 0x228;
-constexpr size_t kTriggerTransitionDestOffset  = 0x30c;  // Vector
+// CSWSTrigger.transition_destination — a CExoLocString holding the
+// human-readable "to X" exit label (e.g. "Zur Oberstadt"). Read as a
+// LocString by GetObjectName's Trigger case. IsTransitionTrigger reads
+// its leading 12 bytes as a Vector purely as a populated/empty presence
+// probe (a real area-transition trigger has a non-empty destination).
+constexpr size_t kTriggerTransitionDestOffset  = 0x30c;  // CExoLocString
 
 // BioWare-authored map-note labels (CSWSWaypoint SIZE=0x240).
 constexpr size_t kWaypointMapNoteEnabledOffset = 0x22c;
