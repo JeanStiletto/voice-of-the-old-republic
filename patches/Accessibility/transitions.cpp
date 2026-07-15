@@ -248,6 +248,51 @@ std::string g_last_spoken_room_text;
 Vector g_last_spoken_pos       = {0.0f, 0.0f, 0.0f};
 bool   g_last_spoken_pos_valid = false;
 
+// Boundary flap dedup (2026-07-15, Shyrack-Höhle). A small-catchment
+// cluster next to a large one flips the nearest-node winner with half
+// a step near the seam: the log shows 'Nord-Süd' ↔ 'Nord-West, Süd'
+// alternating four times in 16 s at one spot, and a Kreuzung ↔ Bereich
+// pair re-announcing 11 s apart from the same walkmesh room. Suppress
+// only the RETURN leg: a label is skipped when it was itself spoken
+// within kFlapWindowMs AND the player is still within kFlapRadiusM of
+// where they heard it. First-time sequences through distinct regions
+// (Korridor → Kreuzung → Bereich) stay fast and untouched, and a real
+// revisit (walked away and back) re-announces. Unlike the retired
+// 2026-05-13 coordinate hysteresis this can never silence a NEW label —
+// it only ever eats the exact label heard seconds ago at the same spot.
+constexpr DWORD kFlapWindowMs = 15000;
+constexpr float kFlapRadiusM  = 4.0f;
+// Label spoken one before the current g_last_spoken_room_text, with
+// where/when it was spoken.
+std::string g_flap_prev_text;
+Vector      g_flap_prev_pos    = {0.0f, 0.0f, 0.0f};
+DWORD       g_flap_prev_ms     = 0;
+// Where/when the CURRENT g_last_spoken_room_text was spoken (rotates
+// into the prev slot on the next commit).
+Vector      g_flap_cur_pos     = {0.0f, 0.0f, 0.0f};
+DWORD       g_flap_cur_ms      = 0;
+
+// True when speaking `text` at `pos` would be the flap return-leg.
+bool IsFlapRepeat(const std::string& text, const Vector& pos, DWORD now) {
+    if (text.empty() || text != g_flap_prev_text) return false;
+    if ((now - g_flap_prev_ms) >= kFlapWindowMs)  return false;
+    const float dx = pos.x - g_flap_prev_pos.x;
+    const float dy = pos.y - g_flap_prev_pos.y;
+    return (dx * dx + dy * dy) < (kFlapRadiusM * kFlapRadiusM);
+}
+
+// Rotate the two-deep spoken-label history. Call wherever a label is
+// committed as spoken (or Platz-enqueued, which commits the text).
+void CommitSpokenLabel(const std::string& text, const Vector& pos,
+                       DWORD now) {
+    g_flap_prev_text = g_last_spoken_room_text;
+    g_flap_prev_pos  = g_flap_cur_pos;
+    g_flap_prev_ms   = g_flap_cur_ms;
+    g_flap_cur_pos   = pos;
+    g_flap_cur_ms    = now;
+    g_last_spoken_room_text = text;
+}
+
 // Platz delayed-announce state. When a multi-node Path 3 cluster
 // resolves (kind == KindPlatz) we defer the SAPI announce for
 // kPlatzDelayMs ms so the player has time to walk further into the
@@ -447,6 +492,21 @@ void SpeakRoomChange(void* area, int clusterId, const Vector& worldPos) {
         return;
     }
 
+    // Boundary flap: this exact label was spoken moments ago and the
+    // player hasn't really left the spot — the return leg of a seam
+    // ping-pong, not new information. History is NOT rotated on the
+    // suppressed leg, so the pair stays quiet until real displacement
+    // or the window expiring re-arms it.
+    if (IsFlapRepeat(speechBuf, worldPos, GetTickCount())) {
+        acclog::Write("Transition",
+                      "cluster -> %d '%s' src=%s room=%d — flap-dedup "
+                      "(spoken %lums ago within %.1fm), silent",
+                      clusterId, speechBuf.c_str(), source, roomIndex,
+                      (unsigned long)(GetTickCount() - g_flap_prev_ms),
+                      kFlapRadiusM);
+        return;
+    }
+
     // Peek at the Path 3 kind to decide between immediate announce and
     // Platz-delay path. Re-runs LookupAt — cheap (linear scan over ~50
     // nodes); avoids threading the sig back through ResolveRoomSpeech.
@@ -470,7 +530,7 @@ void SpeakRoomChange(void* area, int clusterId, const Vector& worldPos) {
         g_pending_platz_room  = roomIndex;
         g_pending_platz_pos   = worldPos;
         g_pending_platz_valid = true;
-        g_last_spoken_room_text = speechBuf;
+        CommitSpokenLabel(speechBuf, worldPos, g_pending_platz_tick);
         acclog::Write("Transition",
                       "cluster -> %d '%s' src=%s room=%d — Platz, deferred "
                       "%lums (areaPtr=%p)",
@@ -488,7 +548,7 @@ void SpeakRoomChange(void* area, int clusterId, const Vector& worldPos) {
     g_pending_platz_valid = false;
 
     prism::SpeakUrgent(speechBuf.c_str());
-    g_last_spoken_room_text = speechBuf;
+    CommitSpokenLabel(speechBuf, worldPos, GetTickCount());
     g_last_spoken_pos       = worldPos;
     g_last_spoken_pos_valid = true;
     acclog::Write("Transition",
@@ -532,7 +592,7 @@ void TickPendingPlatz(void* area, const Vector& playerPos) {
         // Player has moved on to a different shape during the delay.
         // Fire the NEW label so we don't leave them unannounced.
         prism::SpeakUrgent(fireBuf.c_str());
-        g_last_spoken_room_text = fireBuf;
+        CommitSpokenLabel(fireBuf, playerPos, now);
         g_last_spoken_pos       = playerPos;
         g_last_spoken_pos_valid = true;
         acclog::Write("Transition",
@@ -920,6 +980,9 @@ void Tick() {
         g_gated_cluster_pending      = false;
         g_gate_clear_since_ms        = 0;
         g_landmark_recheck_last_ms   = 0;
+        g_flap_prev_text.clear();
+        g_flap_prev_ms               = 0;
+        g_flap_cur_ms                = 0;
     } else if (!acc::wall_topology::HasGraphForArea(area)) {
         // Same area as last tick but the graph still isn't built —
         // wall cache wasn't ready when the area-change branch fired.
