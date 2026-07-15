@@ -136,11 +136,20 @@ struct SpeakerInfo {
 //     Same appearance 445, same alien-Twi'leki voice, but a different tag, so
 //     the Tatooine exemption above doesn't catch him. (Reported in-game
 //     2026-06-17.)
+//   - "kor35_tariga": Tariga, the Sith archaeologist at the Valley of the
+//     Dark Lords entrance (Korriban, module kor35). Wears Sith_Fem_Asian_02
+//     (appearance 495), a genuinely human model with race == HUMAN — but she
+//     is voiced in alien Twi'leki, so her translated subtitle is the player's
+//     only channel. Unlike Vek/Komad this isn't a shared-alien-model
+//     misclassification; the appearance verdict is "correct" and only the VO
+//     language makes the subtitle essential, so a tag exemption is the only
+//     possible fix. (Reported in-game 2026-07-15.)
 constexpr const char* kNeverSuppressTags[] = {
     "sasha",
     "vek",
     "tat17_03komad_01",
     "kas22_xkomad_01",
+    "kor35_tariga",
 };
 
 bool IsNeverSuppressTag(const char* tag) {
