@@ -53,6 +53,13 @@ void BuildForArea(void* area);
 // count holds for N ticks. No-op once committed.
 void MaybeRefreshDoors(void* area);
 
+// Landmark→door matching pass. Runs inside BuildForArea; also invoked
+// by transitions.cpp after a mid-session landmark-cache rebuild (map
+// notes can be script-enabled long after area entry) so late-arriving
+// landmarks still claim their door labels. Safe to re-run: iterates
+// the current landmark cache against the current door snapshot.
+void AttachLandmarksToDoors(void* area);
+
 bool HasGraphForArea(void* area);
 
 void Reset();

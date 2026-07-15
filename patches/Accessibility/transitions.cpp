@@ -146,6 +146,15 @@ void SpeakArea(void* area) {
     acclog::Write("Transition", "area -> '%s' (areaPtr=%p)", nameBuf, area);
 }
 
+// Landmark-cache staleness tracking. Map notes can be script-enabled long
+// after area entry (Shyrack-Höhle 2026-07-15: the 'Abtrünniger Sith'
+// note was disabled at the 14:31 entry scan and enabled ~35 min later;
+// the stale cache made it invisible to proximity announce + discovery
+// for the whole visit). g_landmark_enabled_at_scan records the enabled
+// count seen by the last RebuildLandmarkCache; TickLandmarkCacheRecheck
+// re-counts periodically and rebuilds on drift.
+int g_landmark_enabled_at_scan = 0;
+
 void RebuildLandmarkCache(void* area) {
     // Reset cache. Use the index loop instead of memset so the Vector
     // member alignment guarantees survive any future struct refactor;
@@ -213,6 +222,7 @@ void RebuildLandmarkCache(void* area) {
     acclog::Write("Transition", "landmark cache rebuilt — scanned=%d landmarks=%d "
         "placed=%d (areaPtr=%p)",
         scanned, landmarks, placed, area);
+    g_landmark_enabled_at_scan = landmarks;
 }
 
 // Last spoken room label, used as the text-equality dedup key. The .lyt-
@@ -271,6 +281,23 @@ constexpr int   kLandmarkStabilityTicks  = 5;
 int   g_lm_prox_pending_idx     = -1;
 int   g_lm_prox_pending_count   = 0;
 int   g_lm_prox_last_spoken_idx = -1;
+
+// Cadence for TickLandmarkCacheRecheck (see g_landmark_enabled_at_scan
+// above RebuildLandmarkCache for the staleness story).
+constexpr DWORD kLandmarkRecheckMs = 1000;
+DWORD g_landmark_recheck_last_ms  = 0;
+
+// Post-gate cluster re-announce. Cluster changes during combat / blocking
+// UI advance state silently; without a refire the player ends combat
+// standing in a room they never heard described (Shyrack-Höhle: clusters
+// 33/75/76/125/141 all swallowed on first entry). When a gated change is
+// recorded, refire the CURRENT room label once the gate has stayed clear
+// for kGatedRefireDelayMs — the delay keeps it from talking over the
+// combat-end announcement. Text-dedup in SpeakRoomChange makes this a
+// no-op when the player is back in the last-spoken room.
+constexpr DWORD kGatedRefireDelayMs   = 1500;
+bool  g_gated_cluster_pending   = false;
+DWORD g_gate_clear_since_ms     = 0;
 
 // Resolve the speech at `worldPos` using a two-tier order:
 //   1. Friendly room name at the resolved .lyt-room (filters resref-
@@ -527,8 +554,77 @@ void TickPendingPlatz(void* area, const Vector& playerPos) {
     g_pending_platz_valid = false;
 }
 
+// Forward declaration — defined below near TickProximityLandmarks.
+bool IsWorldSpeechGatedImpl();
+
+// Refire the current room label after a gated cluster change, once the
+// gate (combat / blocking UI) has stayed clear for kGatedRefireDelayMs.
+// Resolution happens at the CURRENT player position — if several gated
+// changes piled up during a fight, only where the player actually ended
+// up gets spoken. SpeakRoomChange's text-dedup keeps this silent when
+// the player is back in the last room they already heard.
+void TickGatedClusterRefire(void* area, const Vector& playerPos) {
+    if (!g_gated_cluster_pending) return;
+
+    DWORD now = GetTickCount();
+    if (IsWorldSpeechGatedImpl()) {
+        g_gate_clear_since_ms = 0;  // gate re-engaged — restart the clock
+        return;
+    }
+    if (g_gate_clear_since_ms == 0) {
+        g_gate_clear_since_ms = now;
+        return;
+    }
+    if ((now - g_gate_clear_since_ms) < kGatedRefireDelayMs) return;
+
+    g_gated_cluster_pending = false;
+    g_gate_clear_since_ms   = 0;
+    acclog::Write("Transition",
+                  "gated-cluster refire: gate clear for %lums — "
+                  "re-resolving at current position",
+                  (unsigned long)kGatedRefireDelayMs);
+    SpeakRoomChange(area, g_prev_cluster_id, playerPos);
+}
+
 // Forward declaration so TickProximityLandmarks can call it.
 bool IsWorldSpeechGatedImpl();
+
+// Detect map notes whose enabled flag flipped since the last cache scan
+// and rebuild. Cheap: one flag sweep over the area object list, at most
+// once per kLandmarkRecheckMs. On drift the proximity state is reset —
+// cache indices are positional and a mid-list insertion would leave the
+// pending/last-spoken indices pointing at the wrong entry.
+void TickLandmarkCacheRecheck(void* area) {
+    DWORD now = GetTickCount();
+    if (g_landmark_recheck_last_ms != 0 &&
+        (now - g_landmark_recheck_last_ms) < kLandmarkRecheckMs) {
+        return;
+    }
+    g_landmark_recheck_last_ms = now;
+
+    int enabled = 0;
+    acc::engine::AreaObjectIterator iter(area);
+    while (void* obj = iter.Next()) {
+        if (acc::engine::GetObjectKind(obj) != static_cast<int>(
+                acc::engine::GameObjectKind::Waypoint)) {
+            continue;
+        }
+        if (!acc::engine::IsLandmarkWaypoint(obj)) continue;
+        if (!acc::engine::IsMapNoteEnabled(obj))   continue;
+        ++enabled;
+    }
+    if (enabled == g_landmark_enabled_at_scan) return;
+
+    acclog::Write("Transition",
+                  "landmark recheck: enabled notes %d -> %d — rebuilding "
+                  "cache (areaPtr=%p)",
+                  g_landmark_enabled_at_scan, enabled, area);
+    RebuildLandmarkCache(area);
+    acc::wall_topology::AttachLandmarksToDoors(area);
+    g_lm_prox_pending_idx     = -1;
+    g_lm_prox_pending_count   = 0;
+    g_lm_prox_last_spoken_idx = -1;
+}
 
 // Per-tick scan over the landmark cache. Decoupled from .lyt-room
 // crossings so landmarks whose room is a thin sliver still announce
@@ -821,6 +917,9 @@ void Tick() {
         g_lm_prox_pending_count      = 0;
         g_lm_prox_last_spoken_idx    = -1;
         g_pending_platz_valid        = false;
+        g_gated_cluster_pending      = false;
+        g_gate_clear_since_ms        = 0;
+        g_landmark_recheck_last_ms   = 0;
     } else if (!acc::wall_topology::HasGraphForArea(area)) {
         // Same area as last tick but the graph still isn't built —
         // wall cache wasn't ready when the area-change branch fired.
@@ -842,6 +941,11 @@ void Tick() {
     // any landmark waypoint, with stability + exit-hysteresis. Must
     // run BEFORE the room-transition early-returns so it isn't gated
     // by the player standing still in one .lyt-room.
+    // Staleness recheck must run BEFORE the proximity scan so a note the
+    // engine just enabled becomes proximity-eligible on the same tick the
+    // player is already standing next to it.
+    TickLandmarkCacheRecheck(area);
+
     TickProximityLandmarks(pos);
 
     // Pending Platz announce: fires whenever its delay elapses,
@@ -850,6 +954,11 @@ void Tick() {
     // deferred speech reliably lands ~1s after entering a Platz
     // cluster.
     TickPendingPlatz(area, pos);
+
+    // Post-combat room refire: if a cluster change was gated during the
+    // fight, describe where the player actually ended up once speech is
+    // allowed again.
+    TickGatedClusterRefire(area, pos);
 
     // Cluster-based trigger (replaces .lyt-room change 2026-05-22).
     //
@@ -969,6 +1078,8 @@ void Tick() {
             acclog::Write("Transition",
                           "cluster -> %d gated (combat / blocking UI), "
                           "state advanced silently", clusterId);
+            g_gated_cluster_pending = true;
+            g_gate_clear_since_ms   = 0;
         } else {
             SpeakRoomChange(area, clusterId, pos);
         }

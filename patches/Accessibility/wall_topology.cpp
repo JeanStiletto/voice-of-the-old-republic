@@ -746,126 +746,6 @@ void LogDoorSnapshotDetails(void* area) {
     }
 }
 
-// Match each landmark waypoint (registered in transitions.cpp's per-area
-// landmark cache during RebuildLandmarkCache) to the nearest door within
-// kLandmarkDoorMatchMaxM. When a match lands, the door's landmarkName is
-// populated and the landmark is flagged via MarkLandmarkClaimedByDoor so
-// the proximity-fire path won't re-announce the same name a second later.
-//
-// Greedy first-come — if two landmarks contest the same door (rare in
-// vanilla content, only seen at hub doors with multiple co-located
-// waypoints), the first-iterated one wins and the second logs a
-// conflict line. Tuning the rule beyond first-come needs evidence first.
-//
-// Threshold rationale: 3.0m. Empirical evidence from
-// patch-20260522-141304.log:
-//   "Zur Oberstadt" landmark @ (112.61, 83.34) ↔ door[4] @ (112.5, 81.8)
-//   → 1.5m — well inside the gate.
-// 3m gives 2x slack for authoring noise without admitting cross-cluster
-// matches (corridor doors usually sit ≥6m from the next nearest door).
-//
-// Diagnostics: per-landmark match / unmatched line + summary line for
-// rate analysis. Unmatched lines include the nearest-door distance so
-// post-mortem can tell whether the threshold needs widening for a
-// particular area or whether the landmark genuinely isn't door-shaped.
-void AttachLandmarksToDoors(void* /*area*/) {
-    constexpr float kLandmarkDoorMatchMaxM = 3.0f;
-    constexpr float kMaxSq = kLandmarkDoorMatchMaxM * kLandmarkDoorMatchMaxM;
-
-    if (g_graph.door_count <= 0) {
-        acclog::Write("WallTopo",
-                      "AttachLandmarks: no doors snapshotted — skipping");
-        return;
-    }
-
-    int matched = 0, unmatched = 0, conflicts = 0;
-
-    int cursor = 0;
-    char name[128] = {0};
-    Vector lmPos = {0.0f, 0.0f, 0.0f};
-    int landmarkIdx = -1;
-    while (acc::transitions::IterateLandmarks(
-               cursor, name, sizeof(name), lmPos, landmarkIdx)) {
-        // Linear scan over doors — door_count is tiny (≤128, in practice
-        // <30 for vanilla areas), so the O(landmarks * doors) sweep is
-        // a few hundred multiplies total per area build.
-        int   bestDoor = -1;
-        float bestSq   = 1e30f;
-        for (int d = 0; d < g_graph.door_count; ++d) {
-            float dx = g_graph.doors[d].pos.x - lmPos.x;
-            float dy = g_graph.doors[d].pos.y - lmPos.y;
-            float dsq = dx * dx + dy * dy;
-            if (dsq < bestSq) {
-                bestSq   = dsq;
-                bestDoor = d;
-            }
-        }
-
-        if (bestDoor < 0) continue;
-        float bestDist = std::sqrt(bestSq);
-
-        if (bestSq > kMaxSq) {
-            // Nearest door beyond threshold — keep landmark out-of-band
-            // for the proximity-fire path. Log the candidate distance so
-            // post-mortem can tune the threshold per-area if needed.
-            ++unmatched;
-            acclog::Write(
-                "WallTopo",
-                "AttachLandmarks: UNMATCHED landmark[%d] '%s' "
-                "lmPos=(%.2f,%.2f) — nearest door[%d] pos=(%.2f,%.2f) "
-                "dist=%.2fm > %.1fm threshold (transition=\"%s\")",
-                landmarkIdx, name,
-                lmPos.x, lmPos.y,
-                bestDoor,
-                g_graph.doors[bestDoor].pos.x, g_graph.doors[bestDoor].pos.y,
-                bestDist, kLandmarkDoorMatchMaxM,
-                g_graph.doors[bestDoor].transitionDest[0]
-                    ? g_graph.doors[bestDoor].transitionDest
-                    : "(none)");
-            continue;
-        }
-
-        // Within threshold. Greedy claim: first-iterated landmark wins.
-        if (g_graph.doors[bestDoor].landmarkName[0] != '\0') {
-            ++conflicts;
-            acclog::Write(
-                "WallTopo",
-                "AttachLandmarks: CONFLICT landmark[%d] '%s' "
-                "would match door[%d] (dist=%.2fm) but door already "
-                "claimed by '%s' — skipping",
-                landmarkIdx, name, bestDoor, bestDist,
-                g_graph.doors[bestDoor].landmarkName);
-            continue;
-        }
-
-        std::strncpy(g_graph.doors[bestDoor].landmarkName, name,
-                     sizeof(g_graph.doors[bestDoor].landmarkName) - 1);
-        g_graph.doors[bestDoor]
-            .landmarkName[sizeof(g_graph.doors[bestDoor].landmarkName) - 1] = '\0';
-        acc::transitions::MarkLandmarkClaimedByDoor(landmarkIdx);
-        ++matched;
-        acclog::Write(
-            "WallTopo",
-            "AttachLandmarks: matched landmark[%d] '%s' → door[%d] "
-            "lmPos=(%.2f,%.2f) doorPos=(%.2f,%.2f) dist=%.2fm "
-            "(was transitionDest=\"%s\")",
-            landmarkIdx, name, bestDoor,
-            lmPos.x, lmPos.y,
-            g_graph.doors[bestDoor].pos.x, g_graph.doors[bestDoor].pos.y,
-            bestDist,
-            g_graph.doors[bestDoor].transitionDest[0]
-                ? g_graph.doors[bestDoor].transitionDest
-                : "(none)");
-    }
-
-    acclog::Write(
-        "WallTopo",
-        "AttachLandmarks: summary — matched=%d unmatched=%d conflicts=%d "
-        "(landmarks scanned=%d, doors=%d, threshold=%.1fm)",
-        matched, unmatched, conflicts,
-        matched + unmatched + conflicts, g_graph.door_count,
-        kLandmarkDoorMatchMaxM);
-}
 
 // Door-on-edge test. Per design choice (c): door is "on" the segment
 // AB iff its projection parameter t is in [0,1] AND its perpendicular
@@ -2069,6 +1949,127 @@ void LogClusterMemberAdjacency(const acc::engine::navgraph::NavGraphSnapshot& g,
 }
 
 }  // namespace
+
+// Match each landmark waypoint (registered in transitions.cpp's per-area
+// landmark cache during RebuildLandmarkCache) to the nearest door within
+// kLandmarkDoorMatchMaxM. When a match lands, the door's landmarkName is
+// populated and the landmark is flagged via MarkLandmarkClaimedByDoor so
+// the proximity-fire path won't re-announce the same name a second later.
+//
+// Greedy first-come — if two landmarks contest the same door (rare in
+// vanilla content, only seen at hub doors with multiple co-located
+// waypoints), the first-iterated one wins and the second logs a
+// conflict line. Tuning the rule beyond first-come needs evidence first.
+//
+// Threshold rationale: 3.0m. Empirical evidence from
+// patch-20260522-141304.log:
+//   "Zur Oberstadt" landmark @ (112.61, 83.34) ↔ door[4] @ (112.5, 81.8)
+//   → 1.5m — well inside the gate.
+// 3m gives 2x slack for authoring noise without admitting cross-cluster
+// matches (corridor doors usually sit ≥6m from the next nearest door).
+//
+// Diagnostics: per-landmark match / unmatched line + summary line for
+// rate analysis. Unmatched lines include the nearest-door distance so
+// post-mortem can tell whether the threshold needs widening for a
+// particular area or whether the landmark genuinely isn't door-shaped.
+void AttachLandmarksToDoors(void* /*area*/) {
+    constexpr float kLandmarkDoorMatchMaxM = 3.0f;
+    constexpr float kMaxSq = kLandmarkDoorMatchMaxM * kLandmarkDoorMatchMaxM;
+
+    if (g_graph.door_count <= 0) {
+        acclog::Write("WallTopo",
+                      "AttachLandmarks: no doors snapshotted — skipping");
+        return;
+    }
+
+    int matched = 0, unmatched = 0, conflicts = 0;
+
+    int cursor = 0;
+    char name[128] = {0};
+    Vector lmPos = {0.0f, 0.0f, 0.0f};
+    int landmarkIdx = -1;
+    while (acc::transitions::IterateLandmarks(
+               cursor, name, sizeof(name), lmPos, landmarkIdx)) {
+        // Linear scan over doors — door_count is tiny (≤128, in practice
+        // <30 for vanilla areas), so the O(landmarks * doors) sweep is
+        // a few hundred multiplies total per area build.
+        int   bestDoor = -1;
+        float bestSq   = 1e30f;
+        for (int d = 0; d < g_graph.door_count; ++d) {
+            float dx = g_graph.doors[d].pos.x - lmPos.x;
+            float dy = g_graph.doors[d].pos.y - lmPos.y;
+            float dsq = dx * dx + dy * dy;
+            if (dsq < bestSq) {
+                bestSq   = dsq;
+                bestDoor = d;
+            }
+        }
+
+        if (bestDoor < 0) continue;
+        float bestDist = std::sqrt(bestSq);
+
+        if (bestSq > kMaxSq) {
+            // Nearest door beyond threshold — keep landmark out-of-band
+            // for the proximity-fire path. Log the candidate distance so
+            // post-mortem can tune the threshold per-area if needed.
+            ++unmatched;
+            acclog::Write(
+                "WallTopo",
+                "AttachLandmarks: UNMATCHED landmark[%d] '%s' "
+                "lmPos=(%.2f,%.2f) — nearest door[%d] pos=(%.2f,%.2f) "
+                "dist=%.2fm > %.1fm threshold (transition=\"%s\")",
+                landmarkIdx, name,
+                lmPos.x, lmPos.y,
+                bestDoor,
+                g_graph.doors[bestDoor].pos.x, g_graph.doors[bestDoor].pos.y,
+                bestDist, kLandmarkDoorMatchMaxM,
+                g_graph.doors[bestDoor].transitionDest[0]
+                    ? g_graph.doors[bestDoor].transitionDest
+                    : "(none)");
+            continue;
+        }
+
+        // Within threshold. Greedy claim: first-iterated landmark wins.
+        if (g_graph.doors[bestDoor].landmarkName[0] != '\0') {
+            ++conflicts;
+            acclog::Write(
+                "WallTopo",
+                "AttachLandmarks: CONFLICT landmark[%d] '%s' "
+                "would match door[%d] (dist=%.2fm) but door already "
+                "claimed by '%s' — skipping",
+                landmarkIdx, name, bestDoor, bestDist,
+                g_graph.doors[bestDoor].landmarkName);
+            continue;
+        }
+
+        std::strncpy(g_graph.doors[bestDoor].landmarkName, name,
+                     sizeof(g_graph.doors[bestDoor].landmarkName) - 1);
+        g_graph.doors[bestDoor]
+            .landmarkName[sizeof(g_graph.doors[bestDoor].landmarkName) - 1] = '\0';
+        acc::transitions::MarkLandmarkClaimedByDoor(landmarkIdx);
+        ++matched;
+        acclog::Write(
+            "WallTopo",
+            "AttachLandmarks: matched landmark[%d] '%s' → door[%d] "
+            "lmPos=(%.2f,%.2f) doorPos=(%.2f,%.2f) dist=%.2fm "
+            "(was transitionDest=\"%s\")",
+            landmarkIdx, name, bestDoor,
+            lmPos.x, lmPos.y,
+            g_graph.doors[bestDoor].pos.x, g_graph.doors[bestDoor].pos.y,
+            bestDist,
+            g_graph.doors[bestDoor].transitionDest[0]
+                ? g_graph.doors[bestDoor].transitionDest
+                : "(none)");
+    }
+
+    acclog::Write(
+        "WallTopo",
+        "AttachLandmarks: summary — matched=%d unmatched=%d conflicts=%d "
+        "(landmarks scanned=%d, doors=%d, threshold=%.1fm)",
+        matched, unmatched, conflicts,
+        matched + unmatched + conflicts, g_graph.door_count,
+        kLandmarkDoorMatchMaxM);
+}
 
 void Reset() {
     g_graph.area_owner = nullptr;

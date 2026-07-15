@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdio>
 
+#include "combat.h"          // IsCombatActive — combat bypasses suppression
 #include "engine_area.h"
 #include "engine_offsets.h"
 #include "engine_player.h"
@@ -17,24 +18,56 @@ namespace acc::audio::footstep_suppress {
 
 namespace {
 
-// Velocity-based threshold, frame-rate independent. 0.3 m/s sits safely
-// below walk (2 m/s) and run (5 m/s) but above wall-slide noise.
-constexpr float kStuckSpeedMetersPerSec = 0.3f;
-constexpr float kStuckSpeedSq =
-    kStuckSpeedMetersPerSec * kStuckSpeedMetersPerSec;
+// Windowed net-progress stuck detection (replaced the per-frame 0.3 m/s
+// sample 2026-07-15). Wall contact is not a steady state at frame level:
+// the engine alternates exact dead-stop frames with micro-slide / bounce
+// frames at 1-14 m/s, so any instantaneous threshold flaps (Shyrack-Höhle
+// log: 1250 stuck edges in 38 min, ~60% of footsteps leaking during
+// wall-grinding). Judge NET displacement over a rolling window instead —
+// bounce cancels out, genuine movement accumulates.
+//
+// KOTOR has exactly two commanded gaits (walk ≈ 2 m/s, run ≈ 5.4 m/s;
+// no analog input), so sustained net speed well below walk gait can only
+// mean the engine is fighting an obstacle. Hysteresis bands sit under
+// the walk gait with a gap against border-speed flapping:
+//   enter stuck below 0.8 m/s, exit above 1.2 m/s.
+// Semantics: footsteps = progress. A shallow wall-slide at 3-4 m/s keeps
+// its steps (you are genuinely covering ground); a steep grind netting
+// <1 m/s goes silent.
+constexpr uint64_t kWindowMs           = 500;   // rolling judgement window
+constexpr uint64_t kMinHistoryMs       = 300;   // no stuck verdict before this
+constexpr float    kStuckEnterSpeed    = 0.8f;  // m/s, windowed net speed
+constexpr float    kStuckExitSpeed     = 1.2f;  // m/s, windowed net speed
 
-// Below this dt the speed sample is noisy; preserve previous state.
+// Below this dt the sample is redundant frame noise; skip it.
 constexpr uint64_t kMinDeltaMs = 8;
 
-bool      g_have_last_sample = false;
-Vector    g_last_pos          = {0.0f, 0.0f, 0.0f};
-uint64_t  g_last_tick_ms      = 0;
-bool      g_was_stuck         = false;
+// Position ring buffer. At the observed ~30-50 ms tick cadence, 500 ms
+// spans ~10-16 samples; 32 slots cover slower frames with margin. When
+// the window outruns the buffer the oldest surviving sample is used —
+// judged over a slightly longer window, which is harmless.
+constexpr int kSampleCapacity = 32;
+struct PosSample { Vector pos; uint64_t ms; };
+PosSample g_samples[kSampleCapacity];
+int       g_sample_head  = 0;   // next write slot
+int       g_sample_count = 0;
+uint64_t  g_last_tick_ms = 0;
+bool      g_was_stuck    = false;
 
 // Stuck-direction probe gating: leader-footstep freshness ⇒ walking;
 // 0.5 m over 2 s window ⇒ no progress despite walk-anim. Probe latches
 // once per episode; re-arms on meaningful displacement.
-constexpr uint64_t kFootstepFreshnessMs           = 200;
+//
+// Freshness window sizing: leader PlayFootstep events arrive every
+// ~350-600 ms at normal gait and degrade to ~2 s gaps when the engine
+// stalls the walk anim against a wall. The original 200 ms window was
+// below even the normal cadence, so `walking` flickered false between
+// steps, the progress checkpoint reset every time, and the 2 s
+// no-progress window could never complete — 18 sessions of logs
+// (through 2026-07-15) show zero probe fires despite 20 s wall-grinding
+// episodes. 1200 ms covers the normal cadence with margin; hard-stall
+// gaps beyond it still re-arm within one step once the anim resumes.
+constexpr uint64_t kFootstepFreshnessMs           = 1200;
 constexpr uint64_t kStuckWindowMs                 = 2000;
 constexpr float    kAnnounceDisplacementMeters    = 0.5f;
 constexpr float    kAnnounceDisplacementMetersSq  =
@@ -322,7 +355,9 @@ void Tick() {
     Vector pos;
     if (!acc::engine::GetPlayerPosition(pos)) {
         // No player loaded — reset so next observation seeds fresh.
-        g_have_last_sample = false;
+        g_sample_count = 0;
+        g_sample_head  = 0;
+        g_last_tick_ms = 0;
         g_was_stuck = false;
         g_progress_checkpoint_ms = 0;
         g_stuck_announced = false;
@@ -335,10 +370,11 @@ void Tick() {
 
     const uint64_t now_ms = GetTickCount64();
 
-    if (!g_have_last_sample) {
-        g_last_pos = pos;
+    if (g_sample_count == 0) {
+        g_samples[0] = {pos, now_ms};
+        g_sample_head  = 1 % kSampleCapacity;
+        g_sample_count = 1;
         g_last_tick_ms = now_ms;
-        g_have_last_sample = true;
         g_was_stuck = false;
         acclog::Write("FootstepSup", "Tick seed pos=(%.3f,%.3f,%.3f)",
                       pos.x, pos.y, pos.z);
@@ -346,28 +382,56 @@ void Tick() {
     }
 
     const uint64_t dt_ms = now_ms - g_last_tick_ms;
-    if (dt_ms < kMinDeltaMs) return;  // sample too fresh to trust
+    if (dt_ms < kMinDeltaMs) return;  // redundant frame — skip the sample
+    g_last_tick_ms = now_ms;
 
-    const float dx = pos.x - g_last_pos.x;
-    const float dy = pos.y - g_last_pos.y;
-    // Z excluded — vertical jitter on uneven walkmesh isn't motion.
-    const float distSq = dx * dx + dy * dy;
-    const float dt_s = static_cast<float>(dt_ms) * 0.001f;
-    const float speedSq = distSq / (dt_s * dt_s);
-    const bool prev_stuck = g_was_stuck;
-    g_was_stuck = (speedSq < kStuckSpeedSq);
+    // Push the new sample.
+    g_samples[g_sample_head] = {pos, now_ms};
+    g_sample_head = (g_sample_head + 1) % kSampleCapacity;
+    if (g_sample_count < kSampleCapacity) ++g_sample_count;
+
+    // Reference sample: the NEWEST one at least kWindowMs old, so the
+    // judged span stays close to the nominal window instead of growing
+    // with buffer depth. Falls back to the oldest sample when none is
+    // old enough (early after a seed/reset).
+    const PosSample* ref = nullptr;
+    for (int i = 1; i <= g_sample_count; ++i) {
+        // Walk backwards from newest-1 to oldest.
+        int idx = (g_sample_head - 1 - i + 2 * kSampleCapacity)
+                  % kSampleCapacity;
+        const PosSample& s = g_samples[idx];
+        if ((now_ms - s.ms) >= kWindowMs) { ref = &s; break; }
+        ref = &s;  // remember the oldest seen so far as fallback
+    }
+
+    const uint64_t span_ms = ref ? (now_ms - ref->ms) : 0;
+    float netDist = 0.0f;
+    float wSpeed  = 0.0f;
+    if (ref && span_ms > 0) {
+        // Z excluded — vertical jitter on uneven walkmesh isn't motion.
+        const float dx = pos.x - ref->pos.x;
+        const float dy = pos.y - ref->pos.y;
+        netDist = sqrtf(dx * dx + dy * dy);
+        wSpeed  = netDist / (static_cast<float>(span_ms) * 0.001f);
+    }
+
+    // Hysteresis: enter stuck only on a full window of evidence, leave
+    // on clear net progress, hold state in the dead band between.
+    if (g_was_stuck) {
+        if (wSpeed > kStuckExitSpeed) g_was_stuck = false;
+    } else {
+        if (span_ms >= kMinHistoryMs && wSpeed < kStuckEnterSpeed) {
+            g_was_stuck = true;
+        }
+    }
 
     // Edge-driven log: full fidelity without per-tick spam.
-    (void)prev_stuck;
     acclog::Edge("FootstepSup.stuck", g_was_stuck ? 1 : 0,
-        "Tick pos=(%.3f,%.3f) d=(%.4f,%.4f) dt_ms=%llu speed=%.3f m/s stuck=%d",
-        pos.x, pos.y, dx, dy,
-        static_cast<unsigned long long>(dt_ms),
-        sqrtf(speedSq),
+        "Tick pos=(%.3f,%.3f) net=%.3fm span_ms=%llu wspeed=%.3f m/s stuck=%d",
+        pos.x, pos.y, netDist,
+        static_cast<unsigned long long>(span_ms),
+        wSpeed,
         g_was_stuck ? 1 : 0);
-
-    g_last_pos = pos;
-    g_last_tick_ms = now_ms;
 
     TickStuckAnnounce(pos, now_ms);
 
@@ -406,13 +470,20 @@ extern "C" int __cdecl OnPlayFootstep(void* creature) {
     void* leader = acc::engine::GetClientLeader();
     const bool is_leader = (leader && creature == leader);
     const bool stuck = acc::audio::footstep_suppress::WasStuckLastTick();
+    // Combat bypass: in-combat movement is legitimately low-net-progress
+    // (engine auto-positioning, circling at melee range, shuffle steps),
+    // so the windowed detector would read the melee dance as "stuck" and
+    // mute steps that carry situational awareness — including a second
+    // enemy running up. "Am I blocked" is an exploration question; during
+    // combat every footstep passes through.
+    const bool in_combat = acc::combat::IsCombatActive();
     // Suppress non-leader footsteps too while the leader is stuck — otherwise
     // a companion or scripted NPC walking nearby fills the silence the player
     // relies on to detect "I'm blocked". KOTOR's footstep audio attenuates
     // with distance, so any non-leader footstep we'd hear is by definition
     // close enough to mask the leader's own silence; safe to mute the whole
     // class until the leader's velocity recovers.
-    const int verdict = stuck ? 1 : 0;
+    const int verdict = (stuck && !in_combat) ? 1 : 0;
 
     if (is_leader) {
         // Stamps walk-anim freshness for the stuck-direction probe gate.
@@ -420,9 +491,9 @@ extern "C" int __cdecl OnPlayFootstep(void* creature) {
     }
 
     acclog::Write("FootstepSup", "PlayFootstep this=%p leader=%p field20=0x%x "
-        "is_leader=%d stuck=%d verdict=%d",
+        "is_leader=%d stuck=%d combat=%d verdict=%d",
         creature, leader, field20,
-        is_leader ? 1 : 0, stuck ? 1 : 0, verdict);
+        is_leader ? 1 : 0, stuck ? 1 : 0, in_combat ? 1 : 0, verdict);
 
     return verdict;  // 1 = suppress (wrapper jumps to 0x0061a632)
 }
