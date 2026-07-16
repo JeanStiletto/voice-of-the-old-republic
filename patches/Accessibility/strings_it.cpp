@@ -721,8 +721,6 @@ const char* Get(Id id) {
         case Id::PlatesAllDark:      return "Tutte le piastre spente";
         case Id::FloorPuzzleSolved:
             return "Enigma risolto. La porta massiccia si apre.";
-        case Id::FmtPlateWarnClose:  return "Attenzione, %s, a meno di un metro %s";
-        case Id::PlateResetHint:     return "Spegne tutte le piastre";
 
         case Id::Count_:               return "";
     }

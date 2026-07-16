@@ -722,8 +722,6 @@ const char* Get(Id id) {
         case Id::PlatesAllDark:      return "Toutes les dalles \xE9teintes";
         case Id::FloorPuzzleSolved:
             return "\xC9nigme r\xE9solue. La porte massive s'ouvre.";
-        case Id::FmtPlateWarnClose:  return "Attention, %s, \xE0 moins d'un m\xE8tre %s";
-        case Id::PlateResetHint:     return "\xC9teint toutes les dalles";
 
         case Id::Count_:               return "";
     }

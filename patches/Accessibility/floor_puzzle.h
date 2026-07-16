@@ -21,8 +21,9 @@
 //     count (plates named by compass position + centre),
 //   - continuous nearest-plate announcements while walking the plate-free
 //     margins (west lane ~1.4m, east lane pinching to ~0.6m, aprons
-//     north/south), with a close-range warning inside ~0.6m,
-//   - reset-plate identification with a what-it-does hint,
+//     north/south), phrased as per-axis cardinal offsets,
+//   - reset-plate identification (its name plus the "all plates dark"
+//     delta says what it does),
 //   - a solved announcement, after which the module goes quiet (the
 //     engine inerts the plates via the UNK_TILES global; we mirror that
 //     by observing the all-lit board).

@@ -723,8 +723,6 @@ const char* Get(Id id) {
         case Id::PlatesAllDark:      return "Todas las placas apagadas";
         case Id::FloorPuzzleSolved:
             return "Enigma resuelto. La puerta maciza se abre.";
-        case Id::FmtPlateWarnClose:  return "Atenci\xF3n, %s, a menos de un metro %s";
-        case Id::PlateResetHint:     return "Apaga todas las placas";
 
         case Id::Count_:               return "";
     }

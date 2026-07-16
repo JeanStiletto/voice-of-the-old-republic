@@ -1,14 +1,14 @@
 // German string table.
 //
-// Encoding: Windows-1252 hex escapes for non-ASCII (\xE4=ä, \xF6=ö,
-// \xFC=ü, \xDF=ß, \xC4=Ä, \xD6=Ö, \xDC=Ü). Prism's ANSI overload converts
+// Encoding: Windows-1252 hex escapes for non-ASCII (\xE4=?, \xF6=?,
+// \xFC=?, \xDF=?, \xC4=?, \xD6=?, \xDC=?). Prism's ANSI overload converts
 // from CP_ACP via MultiByteToWideChar; on a German Windows install
 // CP_ACP = Windows-1252, so the literal bytes here pass through
 // unchanged. UTF-8 source would also work but only with /utf-8 set, and
 // the patch build script (create-patch.bat) doesn't pass that flag.
 //
 // Direction frame: German nav uses "auf X Uhr" ("at X o'clock") rather
-// than the English "X o'clock" — the bare "X Uhr" form would read as
+// than the English "X o'clock" ? the bare "X Uhr" form would read as
 // time-of-day. Plurals: empty-state phrases use the plural form
 // (T\xFCren, not T\xFCr) since "Keine T\xFCr in Reichweite" sounds odd.
 
@@ -18,28 +18,28 @@ namespace acc::strings::lang_de {
 
 const char* Get(Id id) {
     switch (id) {
-        case Id::CategoryDoor:        return "T\xFCr";              // Tür
+        case Id::CategoryDoor:        return "T\xFCr";              // T?r
         case Id::CategoryNpc:         return "Person";
-        case Id::CategoryContainer:   return "Beh\xE4lter";         // Behälter
+        case Id::CategoryContainer:   return "Beh\xE4lter";         // Beh?lter
         case Id::CategoryItem:        return "Gegenstand";
         case Id::CategoryLandmark:    return "Ort";
-        case Id::CategoryTransition:  return "\xDC" "bergang";       // Übergang
+        case Id::CategoryTransition:  return "\xDC" "bergang";       // ?bergang
         case Id::CategoryMapHint:     return "Hinweis";
 
-        case Id::EmptyDoors:          return "Keine T\xFCren in Reichweite";        // Türen
+        case Id::EmptyDoors:          return "Keine T\xFCren in Reichweite";        // T?ren
         case Id::EmptyNpcs:           return "Keine Personen in Reichweite";
-        case Id::EmptyContainers:     return "Keine Beh\xE4lter in Reichweite";     // Behälter (sg=pl)
-        case Id::EmptyItems:          return "Keine Gegenst\xE4nde in Reichweite";  // Gegenstände
+        case Id::EmptyContainers:     return "Keine Beh\xE4lter in Reichweite";     // Beh?lter (sg=pl)
+        case Id::EmptyItems:          return "Keine Gegenst\xE4nde in Reichweite";  // Gegenst?nde
         case Id::EmptyLandmarks:      return "Keine Orte in Reichweite";
-        case Id::EmptyTransitions:    return "Keine \xDC" "berg\xE4nge in Reichweite"; // Übergänge
+        case Id::EmptyTransitions:    return "Keine \xDC" "berg\xE4nge in Reichweite"; // ?berg?nge
         case Id::EmptyMapHints:       return "Keine Hinweise auf dieser Karte";
         case Id::EmptyAll:            return "Keine Objekte in Reichweite";
         case Id::CycleNoTarget:       return "Kein Ziel";
 
         case Id::MapPinNoText:        return "Marke";
-        case Id::MapPinShiftDashHint: return "Marke l\xE4sst sich nicht direkt ansteuern. Strg+Bindestrich f\xFCr Beacon."; // lässt, für
-        case Id::MapPinAltDashUnsupported: return "Marke: Alt+Bindestrich nicht unterst\xFCtzt"; // unterstützt
-        case Id::MapPinInteractHint:  return "Marke. Strg+Bindestrich f\xFCr Beacon."; // für
+        case Id::MapPinShiftDashHint: return "Marke l\xE4sst sich nicht direkt ansteuern. Strg+Bindestrich f\xFCr Beacon."; // l?sst, f?r
+        case Id::MapPinAltDashUnsupported: return "Marke: Alt+Bindestrich nicht unterst\xFCtzt"; // unterst?tzt
+        case Id::MapPinInteractHint:  return "Marke. Strg+Bindestrich f\xFCr Beacon."; // f?r
 
         case Id::FmtSavedMarkerAutoNumber:   return "Marke %d";
         case Id::FmtSavedMarkerAutoWithRoom: return "%s - Marke %d";
@@ -54,7 +54,7 @@ const char* Get(Id id) {
 
         case Id::FmtGuidingTo:         return "Gehe zu %s";
         case Id::FmtGuidingFailed:     return "Gehe zu %s fehlgeschlagen";
-        case Id::GuidanceNoFocus:      return "Kein Ziel ausgew\xE4hlt";  // ausgewählt
+        case Id::GuidanceNoFocus:      return "Kein Ziel ausgew\xE4hlt";  // ausgew?hlt
         case Id::GuidingToPoint:       return "Gehe zum Punkt";
 
         case Id::MovementCancelled:    return "Bewegung abgebrochen";
@@ -73,31 +73,31 @@ const char* Get(Id id) {
         case Id::FmtRouteHeader:       return "Route zu %s (%d Meter): %s. %s.";
         case Id::FmtRouteSegment:      return "%d Meter %s";
         case Id::RouteJoinSeparator:   return ", ";
-        case Id::RouteOneTransition:   return "Ein \xDC" "bergang";          // Übergang
-        case Id::RouteNoTransition:    return "Kein \xDC" "bergang";         // Übergang
+        case Id::RouteOneTransition:   return "Ein \xDC" "bergang";          // ?bergang
+        case Id::RouteNoTransition:    return "Kein \xDC" "bergang";         // ?bergang
         case Id::FmtBeaconNextSegment: return "Weiter %d Meter %s";
 
         case Id::FmtInteractTalk:      return "Sprich mit %s";
-        case Id::FmtInteractOpen:      return "\xD6" "ffne %s";                 // Öffne
+        case Id::FmtInteractOpen:      return "\xD6" "ffne %s";                 // ?ffne
         case Id::FmtInteractTake:      return "Hebe %s auf";
         case Id::FmtInteractFailed:    return "Interaktion mit %s fehlgeschlagen";
         case Id::FmtInteractEngine:    return "%s %s";
-        case Id::FmtInteractRadial:    return "Aktionsmen\xFC, %s";          // Aktionsmenü
-        case Id::FmtInteractNoActionsRedirect: return "Keine Aktionen verf\xFC" "gbar f\xFCr %s. Enter zum Aktivieren."; // verfügbar / für
-        case Id::FmtInteractNoActions: return "Keine Aktionen verf\xFC" "gbar f\xFCr %s.";  // verfügbar / für
+        case Id::FmtInteractRadial:    return "Aktionsmen\xFC, %s";          // Aktionsmen?
+        case Id::FmtInteractNoActionsRedirect: return "Keine Aktionen verf\xFC" "gbar f\xFCr %s. Enter zum Aktivieren."; // verf?gbar / f?r
+        case Id::FmtInteractNoActions: return "Keine Aktionen verf\xFC" "gbar f\xFCr %s.";  // verf?gbar / f?r
 
-        case Id::FmtActionBarOpened:      return "Aktionsmen\xFC Spalte %d: %s, %d Optionen"; // Aktionsmenü
+        case Id::FmtActionBarOpened:      return "Aktionsmen\xFC Spalte %d: %s, %d Optionen"; // Aktionsmen?
         case Id::FmtActionBarColumnEmpty: return "Spalte %d ist leer";
         case Id::ActionBarColumnEmpty:    return "Spalte ist leer";
         case Id::FmtActionBarFired:       return "%s eingesetzt";
         case Id::FmtFireAtPosition:       return "%s, Platz %d";
         case Id::FmtFireQueueFull:        return "%s, Warteschlange voll";
-        case Id::ActionMenuClosed:        return "Aktionsmenü geschlossen.";
+        case Id::ActionMenuClosed:        return "Aktionsmen? geschlossen.";
 
         case Id::MenuCatAttacks:       return "Angriffe";
-        case Id::MenuCatForcePowers:   return "Machtkr\xE4""fte";       // Machtkräfte
-        case Id::MenuCatItems:         return "Gegenst\xE4nde";          // Gegenstände
-        case Id::MenuCatSelfPowers:    return "Eigene Machtkr\xE4""fte"; // Eigene Machtkräfte
+        case Id::MenuCatForcePowers:   return "Machtkr\xE4""fte";       // Machtkr?fte
+        case Id::MenuCatItems:         return "Gegenst\xE4nde";          // Gegenst?nde
+        case Id::MenuCatSelfPowers:    return "Eigene Machtkr\xE4""fte"; // Eigene Machtkr?fte
         case Id::MenuCatMedical:       return "Medizin";
         case Id::MenuCatMisc:          return "Sonstiges";
         case Id::MenuCatExplosives:    return "Sprengstoffe";
@@ -106,30 +106,30 @@ const char* Get(Id id) {
         case Id::FmtMenuPlainMulti:    return "%s, %d Optionen";
         case Id::FmtMenuCategoryEmpty: return "%s: leer";
 
-        case Id::NoTooltipAvailable:   return "Keine Beschreibung verf\xFC" "gbar";  // verfügbar
+        case Id::NoTooltipAvailable:   return "Keine Beschreibung verf\xFC" "gbar";  // verf?gbar
 
         case Id::ContainerEmpty:       return "Leer";
         case Id::ContainerOneItem:     return "1 Gegenstand";
-        case Id::FmtContainerItems:    return "%d Gegenst\xE4nde";              // Gegenstände
+        case Id::FmtContainerItems:    return "%d Gegenst\xE4nde";              // Gegenst?nde
         case Id::FmtContainerItemAt:   return "%s, %d von %d";
         case Id::ContainerEmptySuffix: return "leer";
-        case Id::FmtItemStackSuffix:   return "%d St\xFC" "ck";                    // Stück (split: 'c' is a hex digit)
+        case Id::FmtItemStackSuffix:   return "%d St\xFC" "ck";                    // St?ck (split: 'c' is a hex digit)
         case Id::FmtItemChargeSuffix:  return "%d Ladungen";
 
         case Id::EquipSlotHead:        return "Kopf";
         case Id::EquipSlotImplant:     return "Implantat";
-        case Id::EquipSlotBody:        return "K\xF6rper";                       // Körper
+        case Id::EquipSlotBody:        return "K\xF6rper";                       // K?rper
         case Id::EquipSlotArmL:        return "Linker Arm";
         case Id::EquipSlotArmR:        return "Rechter Arm";
         case Id::EquipSlotWeapL:       return "Linke Waffe";
         case Id::EquipSlotWeapR:       return "Rechte Waffe";
-        case Id::EquipSlotBelt:        return "G\xFCrtel";                       // Gürtel
-        case Id::EquipSlotHands:       return "H\xE4nde";                        // Hände
+        case Id::EquipSlotBelt:        return "G\xFCrtel";                       // G?rtel
+        case Id::EquipSlotHands:       return "H\xE4nde";                        // H?nde
 
         case Id::FmtEquipSlotItem:     return "%s, %s";
         case Id::FmtEquipSlotEmpty:    return "%s, leer";
         case Id::EquipUnequipped:      return "Ausr\xFCstung abgelegt";
-        case Id::FmtEquipVitality:     return "Vitalit\xE4t %s";                  // Vitalität
+        case Id::FmtEquipVitality:     return "Vitalit\xE4t %s";                  // Vitalit?t
         case Id::FmtEquipDefense:      return "Verteidigung %s";
         case Id::FmtEquipAttack:       return "Angriff %s";
         case Id::FmtEquipAttackDual:   return "Angriff links %s, rechts %s";
@@ -148,9 +148,9 @@ const char* Get(Id id) {
         case Id::DirNorth:             return "Nord";
         case Id::DirNortheast:         return "Nord-Ost";
         case Id::DirEast:              return "Ost";
-        case Id::DirSoutheast:         return "S\xFC" "d-Ost";                  // Süd-Ost
-        case Id::DirSouth:             return "S\xFC" "d";                      // Süd
-        case Id::DirSouthwest:         return "S\xFC" "d-West";                 // Süd-West
+        case Id::DirSoutheast:         return "S\xFC" "d-Ost";                  // S?d-Ost
+        case Id::DirSouth:             return "S\xFC" "d";                      // S?d
+        case Id::DirSouthwest:         return "S\xFC" "d-West";                 // S?d-West
         case Id::DirWest:              return "West";
         case Id::DirNorthwest:         return "Nord-West";
 
@@ -177,26 +177,26 @@ const char* Get(Id id) {
         case Id::LevelUpOpen:          return "Stufenaufstieg";
         case Id::LevelUpFailed:        return "Stufenaufstieg fehlgeschlagen";
         case Id::LevelUpAlreadyOpen:   return "Stufenaufstieg bereits offen";
-        case Id::LevelUpNotReady:      return "Noch nicht genug Erfahrung f\xFCr einen Stufenaufstieg"; // für
+        case Id::LevelUpNotReady:      return "Noch nicht genug Erfahrung f\xFCr einen Stufenaufstieg"; // f?r
 
-        case Id::PortraitLabel:        return "Portr\xE4t";              // Porträt
-        case Id::PortraitArrowPrev:    return "Vorheriges Portr\xE4t";  // Porträt
-        case Id::PortraitArrowNext:    return "N\xE4" "chstes Portr\xE4t"; // Nächstes Porträt
+        case Id::PortraitLabel:        return "Portr\xE4t";              // Portr?t
+        case Id::PortraitArrowPrev:    return "Vorheriges Portr\xE4t";  // Portr?t
+        case Id::PortraitArrowNext:    return "N\xE4" "chstes Portr\xE4t"; // N?chstes Portr?t
         case Id::FmtPortraitArrow:     return "%s: %s";
         case Id::FmtPortraitArrowId:   return "%s %d";
         case Id::PortraitGenderFemale: return "weiblich";
-        case Id::PortraitGenderMale:   return "m\xE4nnlich";              // männlich
+        case Id::PortraitGenderMale:   return "m\xE4nnlich";              // m?nnlich
         case Id::PortraitRaceAsian:    return "asiatisch";
-        case Id::PortraitRaceDark:     return "dunkelh\xE4utig";          // dunkelhäutig
-        case Id::PortraitRaceLight:    return "hellh\xE4utig";            // hellhäutig
+        case Id::PortraitRaceDark:     return "dunkelh\xE4utig";          // dunkelh?utig
+        case Id::PortraitRaceLight:    return "hellh\xE4utig";            // hellh?utig
         case Id::FmtPortraitDescription: return "%s %s %d";
 
         case Id::FmtPartyPortraitInTeam:    return "%s, im Team";
-        case Id::FmtPartyPortraitAvailable: return "%s, verf\xFC""gbar";    // verfügbar
+        case Id::FmtPartyPortraitAvailable: return "%s, verf\xFC""gbar";    // verf?gbar
         case Id::PartySelectionFull:        return "Gruppe voll";
 
-        case Id::DisabledSuffix:       return ", nicht verf\xFC""gbar";   // nicht verfügbar
-        case Id::FmtLevelUpDoStepFirst: return "Zuerst %s abschlie\xDF""en.";  // abschließen
+        case Id::DisabledSuffix:       return ", nicht verf\xFC""gbar";   // nicht verf?gbar
+        case Id::FmtLevelUpDoStepFirst: return "Zuerst %s abschlie\xDF""en.";  // abschlie?en
         case Id::LevelUpStepLocked:    return "Noch nicht an der Reihe.";
 
         case Id::FmtCharSheetClass:    return "%s. ";
@@ -204,7 +204,7 @@ const char* Get(Id id) {
         case Id::FmtCharSheetXp:       return "Erfahrung %s von %s. ";
         case Id::FmtCharSheetHp:       return "Lebenspunkte %s. ";
         case Id::FmtCharSheetFp:       return "Machtpunkte %s. ";
-        case Id::FmtCharSheetStr:      return "St\xE4rke %s%s%s. ";          // Stärke
+        case Id::FmtCharSheetStr:      return "St\xE4rke %s%s%s. ";          // St?rke
         case Id::FmtCharSheetDex:      return "Geschicklichkeit %s%s%s. ";
         case Id::FmtCharSheetCon:      return "Verfassung %s%s%s. ";
         case Id::FmtCharSheetInt:      return "Intelligenz %s%s%s. ";
@@ -221,15 +221,15 @@ const char* Get(Id id) {
         case Id::FmtChargenSkillInfoSuffix:  return "Preis %s";
         case Id::FmtChargenSkillValueChange: return "%s, verbleibende Punkte %s";
 
-        case Id::ChargenFeatGrantedTitle:    return "Du erh\xE4ltst diese Talente";  // erhältst
+        case Id::ChargenFeatGrantedTitle:    return "Du erh\xE4ltst diese Talente";  // erh?ltst
         case Id::FmtChargenFeatGrantedRow:   return "%s, %d von %d";
 
         case Id::FmtChargenFeatChartCell:    return "%s, %s";
-        case Id::ChargenFeatStatusAvailable: return "verf\xFCgbar";              // verfügbar
+        case Id::ChargenFeatStatusAvailable: return "verf\xFCgbar";              // verf?gbar
         case Id::ChargenFeatStatusExisting:  return "bereits gelernt";
         case Id::ChargenFeatStatusGranted:   return "automatisch erhalten";
         case Id::ChargenFeatStatusLocked:    return "Voraussetzung fehlt";
-        case Id::ChargenFeatStatusChosen:    return "ausgew\xE4hlt";              // ausgewählt
+        case Id::ChargenFeatStatusChosen:    return "ausgew\xE4hlt";              // ausgew?hlt
 
         case Id::EditboxRole:                return "Eingabefeld";
         case Id::EditboxEmpty:               return "leer";
@@ -340,7 +340,7 @@ const char* Get(Id id) {
         case Id::MessagesTitleDialogLog:     return "Dialogverlauf.";
 
         case Id::MapPrevNote:                return "Vorheriger Hinweis";
-        case Id::MapNextNote:                return "N\xE4""chster Hinweis";  // Nächster
+        case Id::MapNextNote:                return "N\xE4""chster Hinweis";  // N?chster
 
         case Id::MapCursorUnexplored:        return "Nebel des Krieges";
         case Id::MapCursorWaypointPOI:       return "Punkt von Interesse";
@@ -350,16 +350,16 @@ const char* Get(Id id) {
         case Id::FmtMapCursorDeadEnd:        return "Sackgasse, %s";
         case Id::FmtMapCursorJunctionDirs:   return "Kreuzung, %s";
         case Id::FmtMapCursorCorridorDir:    return "%s";
-        case Id::MapCursorDoorNoun:          return "T\xFC""r";            // Tür
+        case Id::MapCursorDoorNoun:          return "T\xFC""r";            // T?r
         case Id::FmtMapCursorDoor:           return "%s %s";               // noun + dir
         case Id::FmtMapCursorDoorTransition: return "%s %s nach %s";       // noun + dir + dest
         case Id::FmtMapCursorDoorLandmark:   return "%s %s, %s";           // noun + dir + landmark
-        case Id::MapCursorTransitionDoor:    return "T\xFC""rschwelle";  // Türschwelle
+        case Id::MapCursorTransitionDoor:    return "T\xFC""rschwelle";  // T?rschwelle
         case Id::FmtMapCursorJunctionDeadEndExit: return "Sackgasse %s";
-        case Id::AxisNorthSouth:             return "Nord-S\xFC""d";   // Nord-Süd
+        case Id::AxisNorthSouth:             return "Nord-S\xFC""d";   // Nord-S?d
         case Id::AxisEastWest:               return "Ost-West";
         case Id::AreaNoun:                   return "Bereich";
-        case Id::AreaNounLarge:              return "Gro\xDF""er Bereich";  // Großer Bereich
+        case Id::AreaNounLarge:              return "Gro\xDF""er Bereich";  // Gro?er Bereich
         case Id::FmtAreaAxisExits:           return "%s %s. Ausg\xE4""nge: %s";
         case Id::FmtAreaExits:               return "%s. Ausg\xE4""nge: %s";
         case Id::FmtAreaAxisOnly:            return "%s %s";
@@ -373,8 +373,8 @@ const char* Get(Id id) {
         case Id::StoreBought:               return "Gekauft";
         case Id::StoreCannotSell:           return "Kann nicht verkauft werden";
         case Id::StoreCannotBuy:            return "Kann nicht gekauft werden";
-        case Id::FmtStoreSoldFor:           return "Verkauft f\xFC""r %d Credits";  // für
-        case Id::FmtStoreBoughtFor:         return "Gekauft f\xFC""r %d Credits";   // für
+        case Id::FmtStoreSoldFor:           return "Verkauft f\xFC""r %d Credits";  // f?r
+        case Id::FmtStoreBoughtFor:         return "Gekauft f\xFC""r %d Credits";   // f?r
 
         // ----- Pazaak -----
         case Id::PazaakStart:            return "Pazaak. Dr\xFC""cke C f\xFC""r deine Hand, T f\xFC""r den Tisch.";
@@ -430,13 +430,13 @@ const char* Get(Id id) {
         case Id::FmtCredits:                return "Credits: %s";
 
         // Workbench slot labels. The seven BTN_UPGRADE3X/4X buttons have
-        // no inline text — their visual content is the installed mod's
+        // no inline text ? their visual content is the installed mod's
         // icon + name set programmatically. Speak "Aufwertungssteckplatz N"
         // (upgrade slot N) for weapon slots and "Kristall-Steckplatz N"
         // for lightsaber crystal slots so the user can tell which slot
         // is focused. Concrete category words ("Vibrationszelle",
-        // "Skopus", …) would require reading LBL_SLOTNAME dynamically
-        // for the active slot only — deferred to a future enrichment.
+        // "Skopus", ?) would require reading LBL_SLOTNAME dynamically
+        // for the active slot only ? deferred to a future enrichment.
         case Id::WorkbenchSlotWeapon1:       return "Aufwertungssteckplatz 1";
         case Id::WorkbenchSlotWeapon2:       return "Aufwertungssteckplatz 2";
         case Id::WorkbenchSlotWeapon3:       return "Aufwertungssteckplatz 3";
@@ -444,7 +444,7 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotSaberCrystal2: return "Kristall-Steckplatz 2";
         case Id::WorkbenchSlotSaberCrystal3: return "Kristall-Steckplatz 3";
         case Id::WorkbenchSlotSaberCrystal4: return "Kristall-Steckplatz 4";
-        case Id::WorkbenchItemsEmpty:        return "Keine aufwertbaren Gegenst\xE4nde in dieser Kategorie";  // Gegenstände
+        case Id::WorkbenchItemsEmpty:        return "Keine aufwertbaren Gegenst\xE4nde in dieser Kategorie";  // Gegenst?nde
         case Id::WorkbenchUpgradesEmpty:     return "Keine kompatiblen Aufwertungen im Inventar";
         case Id::WorkbenchSlotInstalled:     return "Aufwertung eingesetzt";
         case Id::WorkbenchSlotRemoved:       return "Aufwertung entfernt";
@@ -454,16 +454,16 @@ const char* Get(Id id) {
         case Id::WorkbenchFmtSlotItem:       return "%s, belegt mit %s";
         case Id::WorkbenchPickerInstalled:   return "eingesetzt";
 
-        case Id::SoundOptionsMovieVolume:    return "Video-Lautst\xE4rke";  // Lautstärke
+        case Id::SoundOptionsMovieVolume:    return "Video-Lautst\xE4rke";  // Lautst?rke
 
         case Id::SwoopRaceStarted:
-            // Terse opener — concatenated with SwoopRaceControls below
+            // Terse opener ? concatenated with SwoopRaceControls below
             // into one utterance by swoop_race.cpp::AnnounceEntry.
             return "Swoop-Rennen.";
         case Id::SwoopRaceControls:
             // Short cheat sheet. Full keymap (Enter/Mouse 1 also work,
             // Pause pauses the race, etc.) is documented in the manual
-            // — verbose spoken intro got in the way of the start
+            // ? verbose spoken intro got in the way of the start
             // countdown so the shorter form is preferred.
             return "Leertaste zum Hochschalten beim Audiosignal. Mit A und D lenken. Weiche den Hindernissen aus und triff die Beschleunigerfelder, um die Zeit zu schlagen.";
         case Id::SwoopRaceEnded:
@@ -476,24 +476,24 @@ const char* Get(Id id) {
             return "Zeit: %d,%02d Sekunden. Swoop-Rennen beendet.";
 
         case Id::TurretGameStarted:
-            // Terse opener — concatenated with TurretGameControls below
+            // Terse opener ? concatenated with TurretGameControls below
             // into one utterance by turret_game.cpp::AnnounceEntry.
-            return "Gesch\xFCtzturm.";  // Geschützturm
+            return "Gesch\xFCtzturm.";  // Gesch?tzturm
         case Id::TurretGameControls:
             return "Mit WASD zielen. Leertaste zum Feuern. Q und E w\xE4hlen Ziele.";
         case Id::TurretGameEnded:
             return "Gesch\xFCtzturm beendet.";
         case Id::FmtTurretTarget:
-            return "J\xE4ger %d, %d Meter";  // Jäger
+            return "J\xE4ger %d, %d Meter";  // J?ger
         case Id::FmtTurretDestroyed:
-            return "J\xE4ger %d zerst\xF6rt.";  // Jäger %d zerstört.
+            return "J\xE4ger %d zerst\xF6rt.";  // J?ger %d zerst?rt.
         case Id::TurretNoTargets:
             return "Keine Ziele.";
         case Id::TurretTargetLost:
             return "Ziel verloren.";
 
         // "Mod Einstellungen" / "Erweitertes Wechseln" / "Raumformen" /
-        // "Wandger\xe4usche" — \xe4 = ä, \xfc = ü. Encoding matches the
+        // "Wandger\xe4usche" ? \xe4 = ?, \xfc = ?. Encoding matches the
         // Windows-1252 convention used throughout strings_de.cpp.
         case Id::ModSettingsRootLabel:        return "Mod-Einstellungen";
         case Id::ModSettingsOpened:           return "Mod-Einstellungen ge\xf6""ffnet";
@@ -533,7 +533,7 @@ const char* Get(Id id) {
         case Id::GlossaryEntrySwoopAligned:         return "Swoop auf Kurs";
         case Id::GlossaryEntrySwoopShiftReady:      return "Swoop-Gangwechsel bereit";
 
-        // "drücken" — the hex escape \xFC followed by literal 'c' would be
+        // "dr?cken" ? the hex escape \xFC followed by literal 'c' would be
         // parsed as \xFCc (out of range). Split the literal across two
         // string tokens to keep the escape sequence terminated.
         case Id::FmtUpdateAvailable:    return "Update verf\xFCgbar, Version %s. Im Hauptmen\xFC F5 dr\xFC" "cken, um zu installieren.";
@@ -809,22 +809,20 @@ const char* Get(Id id) {
 
         case Id::FloorPuzzleIntro:
             return "Bodenplatten-R\xE4tsel: neun Platten in drei mal drei Anordnung, "
-                   "R\xFC""cksetzfeld auf der S\xFC""dseite.";  // Rätsel, Rücksetzfeld, Südseite
+                   "R\xFC""cksetzfeld auf der S\xFC""dseite.";  // R?tsel, R?cksetzfeld, S?dseite
         case Id::FmtFloorSoloHint:
             return "Tipp: Solo-Modus aktivieren, Taste %s, sonst schalten Begleiter Platten mit um.";
         case Id::FloorPartyToggled:  return "Begleiter hat Platten umgeschaltet";
         case Id::FmtPlateName:       return "Platte %s";
         case Id::PlateCenterWord:    return "Mitte";
-        case Id::PlateResetName:     return "R\xFC""cksetzfeld";        // Rücksetzfeld
+        case Id::PlateResetName:     return "R\xFC""cksetzfeld";        // R?cksetzfeld
         case Id::FmtPlateEntered:    return "%s betreten";
         case Id::FmtPlateLit:        return "%s leuchtet";
         case Id::FmtPlateDark:       return "%s dunkel";
         case Id::FmtPlateLitCount:   return "%d von 9 leuchten";
         case Id::PlatesAllDark:      return "Alle Platten dunkel";
         case Id::FloorPuzzleSolved:
-            return "R\xE4tsel gel\xF6st. Die massive T\xFCr \xF6""ffnet sich.";  // Rätsel gelöst, Tür öffnet
-        case Id::FmtPlateWarnClose:  return "Achtung, %s, unter einem Meter %s";
-        case Id::PlateResetHint:     return "Setzt alle Platten auf dunkel";
+            return "R\xE4tsel gel\xF6st. Die massive T\xFCr \xF6""ffnet sich.";  // R?tsel gel?st, T?r ?ffnet
 
         case Id::Count_:               return "";
     }

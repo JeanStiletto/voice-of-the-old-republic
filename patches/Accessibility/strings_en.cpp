@@ -804,8 +804,6 @@ const char* Get(Id id) {
         case Id::PlatesAllDark:      return "All plates dark";
         case Id::FloorPuzzleSolved:
             return "Puzzle solved. The massive door opens.";
-        case Id::FmtPlateWarnClose:  return "Caution, %s, under one metre %s";
-        case Id::PlateResetHint:     return "Turns all plates dark";
 
         case Id::Count_:               return "";
     }

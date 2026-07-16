@@ -1827,13 +1827,6 @@ enum class Id : int {
     //      FmtPlateLitCount    — 1 `%d` (lit count of 9).
     //      PlatesAllDark       — board cleared (reset plate / self-undo).
     //      FloorPuzzleSolved   — all nine lit; door opens.
-    //      FmtPlateWarnClose   — proximity warning inside ~0.6m of a
-    //                            plate edge while off-plate. 2 args:
-    //                            `%s` plate name, `%s` cardinal word
-    //                            (world-frame — the puzzle is walked by
-    //                            cardinal stutter-steps, so no clock).
-    //      PlateResetHint      — appended the first time the reset plate
-    //                            is the nearest/entered plate.
     FloorPuzzleIntro,
     FmtFloorSoloHint,
     FloorPartyToggled,
@@ -1846,8 +1839,6 @@ enum class Id : int {
     FmtPlateLitCount,
     PlatesAllDark,
     FloorPuzzleSolved,
-    FmtPlateWarnClose,
-    PlateResetHint,
 
     Count_,
 };

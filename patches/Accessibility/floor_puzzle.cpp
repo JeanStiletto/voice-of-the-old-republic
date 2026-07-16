@@ -44,12 +44,6 @@ constexpr int kLitBooleanIndex = 10;
 constexpr int kSoloModeActionId = 207;
 constexpr int kSoloModeDefaultVk = 'V';
 
-// Proximity warning band while off-plate (metres to the nearest plate
-// edge). Enter under 0.6m — inside one step of the edge but before the
-// polygon; re-arm only after backing off past 1.1m.
-constexpr float kWarnEnterM = 0.6f;
-constexpr float kWarnExitM  = 1.1f;
-
 // Nearest-plate announcements: re-announce on identity change, but not
 // faster than this (walking a lane past the grid changes the nearest
 // plate every ~2m; unthrottled that is chatter, throttled it reads as a
@@ -76,6 +70,10 @@ struct Plate {
     Vector   poly[kMaxPolyVerts];
     int      vertCount  = 0;
     Vector   center     = {0.0f, 0.0f, 0.0f};
+    // Axis-aligned span (the plates are authored as axis-aligned quads).
+    // Directions speak the plate as an AREA, not a point: an axis counts
+    // only when the player is outside this span on it.
+    float    minX = 0.0f, maxX = 0.0f, minY = 0.0f, maxY = 0.0f;
 };
 
 // Grid-position word per plate index (tag number - 1). Rows run
@@ -96,13 +94,20 @@ bool  g_isPuzzleArea = false;
 bool  g_lit[kPlateCount] = {};
 bool  g_haveLit    = false;
 int   g_curPlate   = -1;     // -1 none, 0..8 plate, 9 reset
-int   g_lastNearest = -1;
+std::string g_lastNearestLine;   // last spoken off-plate announcement
 DWORD g_nearestSpokenAt = 0;
-bool  g_warnArmed[kTrackCount] = {};
 DWORD g_lastEntryAt = 0;     // leader stepped onto a plate (0..8) at this tick
+
+// Entry announcements are HELD briefly to be merged with the toggle
+// delta into ONE utterance: the plate script usually runs a poll after
+// we see the position change, and speaking the entry immediately meant
+// the delta line interrupted it mid-word one tick later (both ride the
+// urgent channel). -1 = nothing pending.
+int   g_pendingEntry   = -1;
+DWORD g_pendingEntryAt = 0;
+constexpr DWORD kEntryMergeWindowMs = 500;
 bool  g_introSpoken    = false;
 bool  g_solvedQuiet    = false;
-bool  g_resetHintSpoken = false;
 DWORD g_lastScan = 0;
 
 void ResetAreaState() {
@@ -110,13 +115,13 @@ void ResetAreaState() {
     g_cacheReady = false;
     g_haveLit    = false;
     g_curPlate   = -1;
-    g_lastNearest = -1;
+    g_lastNearestLine.clear();
     g_nearestSpokenAt = 0;
-    for (auto& w : g_warnArmed) w = true;
     g_lastEntryAt = 0;
-    g_introSpoken     = false;
-    g_solvedQuiet     = false;
-    g_resetHintSpoken = false;
+    g_pendingEntry   = -1;
+    g_pendingEntryAt = 0;
+    g_introSpoken    = false;
+    g_solvedQuiet    = false;
 }
 
 // ---- Naming -----------------------------------------------------------------
@@ -176,43 +181,40 @@ float DistToPlate(const Plate& p, float x, float y) {
     return best;
 }
 
-// World-cardinal axis offsets toward `target`, e.g. "2 Meter Nord,
-// 1 Meter West" — per user direction the puzzle is walked with cardinal
-// stutter-steps (align north once, then forward/back + strafe), so
-// facing-relative clock bearings are the wrong frame here: they mix both
-// axes into one diagonal number. Vocabulary is limited to the four
-// cardinal words; an axis already aligned within half a metre is
-// dropped. Empty when both axes are aligned.
-std::string AxisPhrase(const Vector& playerPos, const Vector& target) {
-    float dN = target.y - playerPos.y;  // world +Y = north
-    float dE = target.x - playerPos.x;  // world +X = east
+// World-cardinal offsets to the plate's AREA, e.g. "2 Meter Nord" —
+// per user direction the puzzle is walked with cardinal stutter-steps
+// (align north once, then forward/back + strafe), and the player aims
+// at the plate as a whole, not its centre point. An axis is spoken only
+// when the player is OUTSIDE the plate's span on that axis, measured to
+// the near edge of the span. Standing anywhere in the gap beside a
+// plate therefore yields a single word ("1 Meter Nord" = one step
+// north lands on it); the earlier centre-based version reported a
+// diagonal ("1 Meter Nord, 1 Meter Ost") from the same spot, which
+// read as two moves where one was needed (2026-07-16 session review).
+// Empty when inside both spans (i.e. on the plate).
+std::string AxisPhrase(const Vector& playerPos, const Plate& p) {
     const char* fmt = Get(Id::FmtRouteSegment);
     std::string out;
-    if (std::fabs(dN) >= 0.5f) {
+    float dN = 0.0f;
+    if (playerPos.y < p.minY)      dN = p.minY - playerPos.y;  // go north
+    else if (playerPos.y > p.maxY) dN = p.maxY - playerPos.y;  // go south
+    float dE = 0.0f;
+    if (playerPos.x < p.minX)      dE = p.minX - playerPos.x;  // go east
+    else if (playerPos.x > p.maxX) dE = p.maxX - playerPos.x;  // go west
+    if (dN != 0.0f) {
         int m = static_cast<int>(std::fabs(dN) + 0.5f);
         if (m < 1) m = 1;
         out = acc::strfmt::Format(fmt, m,
-                                  Get(dN >= 0 ? Id::DirNorth : Id::DirSouth));
+                                  Get(dN > 0 ? Id::DirNorth : Id::DirSouth));
     }
-    if (std::fabs(dE) >= 0.5f) {
+    if (dE != 0.0f) {
         int m = static_cast<int>(std::fabs(dE) + 0.5f);
         if (m < 1) m = 1;
         if (!out.empty()) out += ", ";
         out += acc::strfmt::Format(fmt, m,
-                                   Get(dE >= 0 ? Id::DirEast : Id::DirWest));
+                                   Get(dE > 0 ? Id::DirEast : Id::DirWest));
     }
     return out;
-}
-
-// The louder of the two axis components, for the close-range warning
-// ("unter einem Meter Nord").
-const char* DominantCardinal(const Vector& playerPos, const Vector& target) {
-    float dN = target.y - playerPos.y;
-    float dE = target.x - playerPos.x;
-    if (std::fabs(dN) >= std::fabs(dE)) {
-        return Get(dN >= 0 ? Id::DirNorth : Id::DirSouth);
-    }
-    return Get(dE >= 0 ? Id::DirEast : Id::DirWest);
 }
 
 // ---- Cache -------------------------------------------------------------------
@@ -280,6 +282,14 @@ bool BuildCache(void* area) {
             p.center.x /= p.vertCount;
             p.center.y /= p.vertCount;
             p.center.z /= p.vertCount;
+            p.minX = p.maxX = p.poly[0].x;
+            p.minY = p.maxY = p.poly[0].y;
+            for (int i = 1; i < p.vertCount; ++i) {
+                if (p.poly[i].x < p.minX) p.minX = p.poly[i].x;
+                if (p.poly[i].x > p.maxX) p.maxX = p.poly[i].x;
+                if (p.poly[i].y < p.minY) p.minY = p.poly[i].y;
+                if (p.poly[i].y > p.maxY) p.maxY = p.poly[i].y;
+            }
             ++trigFound;
         } else if (kind ==
                    static_cast<int>(acc::engine::GameObjectKind::Placeable)) {
@@ -420,7 +430,7 @@ void Tick() {
     // ---- Solved --------------------------------------------------------
     if (!g_solvedQuiet && litCount == kPlateCount && anyFlip) {
         g_solvedQuiet = true;
-        prism::Speak(Get(Id::FloorPuzzleSolved), /*interrupt=*/false);
+        prism::SpeakUrgent(Get(Id::FloorPuzzleSolved));
         acclog::Write("FloorPuzzle", "solved — module going quiet");
         return;
     }
@@ -442,7 +452,7 @@ void Tick() {
         if (entered) g_lastEntryAt = now;
         // Stepping off into open floor: drop the nearest anchor so the
         // off-plate stream re-announces the closest plate once.
-        if (newPlate < 0 && g_curPlate >= 0) g_lastNearest = -1;
+        if (newPlate < 0 && g_curPlate >= 0) g_lastNearestLine.clear();
         g_curPlate = newPlate;
     }
 
@@ -451,32 +461,55 @@ void Tick() {
     // "their" toggle; a flip outside it means a follower walked the grid.
     bool leaderCaused =
         (now - g_lastEntryAt) <= kLeaderToggleWindowMs && g_lastEntryAt != 0;
-    std::string line;
+
+    auto entryText = [&](int plate) {
+        // The reset plate gets no explanatory sentence: its name plus the
+        // "all plates dark" delta that follows says everything.
+        return acc::strfmt::Format(Get(Id::FmtPlateEntered),
+                                   FullName(plate).c_str());
+    };
+
     if (entered) {
-        line = acc::strfmt::Format(Get(Id::FmtPlateEntered),
-                                   FullName(newPlate).c_str());
-        if (newPlate == kResetIndex && !g_resetHintSpoken) {
-            g_resetHintSpoken = true;
-            line += ". ";
-            line += Get(Id::PlateResetHint);
+        if (g_pendingEntry >= 0) {
+            // The previous entry never saw its delta (fast crossing) —
+            // speak it before the new entry claims the merge slot.
+            std::string old = entryText(g_pendingEntry);
+            prism::SpeakUrgent(old.c_str());
+            acclog::Write("FloorPuzzle", "announce: [%s] (pending flush)",
+                          old.c_str());
         }
+        g_pendingEntry   = newPlate;
+        g_pendingEntryAt = now;
     }
+
+    std::string line;
     if (anyFlip) {
-        if (!line.empty()) {
+        if (g_pendingEntry >= 0) {
+            line = entryText(g_pendingEntry);
             line += ". ";
+            g_pendingEntry = -1;
         } else if (!leaderCaused) {
-            line += Get(Id::FloorPartyToggled);
+            line = Get(Id::FloorPartyToggled);
             line += ": ";
         }
         line += DeltaText(flipped, lit, litCount);
+    } else if (g_pendingEntry >= 0 &&
+               (now - g_pendingEntryAt) >= kEntryMergeWindowMs) {
+        // No toggle followed (reset plate on an already-dark board, or a
+        // timing miss) — the entry still gets spoken, just alone.
+        line = entryText(g_pendingEntry);
+        g_pendingEntry = -1;
     }
     if (!line.empty()) {
-        prism::Speak(line.c_str(), /*interrupt=*/false);
+        // Urgent channel: normal-priority speech is cancelled by the
+        // screen reader on every keypress, and this feedback lands
+        // exactly while the player is hammering movement keys — plate
+        // entries were audibly swallowed mid-line in testing (see
+        // project_prism_sapi_bypass for the mechanism).
+        prism::SpeakUrgent(line.c_str());
         acclog::Write("FloorPuzzle",
                       "announce: [%s] (plate=%d lit=%d leaderCaused=%d)",
                       line.c_str(), newPlate, litCount, leaderCaused ? 1 : 0);
-        // Entering a plate consumes any pending edge warnings.
-        for (auto& w : g_warnArmed) w = true;
         return;
     }
 
@@ -488,7 +521,11 @@ void Tick() {
         if (g_introSpoken) return;
     }
 
-    // ---- Off-plate: nearest plate + close-range warning -------------------
+    // ---- Off-plate: nearest-plate stream ---------------------------------
+    // No separate close-range warning: solve-run data (2026-07-16,
+    // patch-20260716-204901.log) showed 12 of 19 warnings were redundant
+    // with a deliberate step or fired after leaving a plate; the stream's
+    // 1-metre floor covers the rest.
     if (g_curPlate >= 0) return;
     int   nearest = -1;
     float nearestDist = 1e9f;
@@ -498,38 +535,22 @@ void Tick() {
     }
     if (nearest < 0) return;
 
-    // Close-range warning has priority over the identity stream: it is
-    // the "stop before you step" cue.
-    if (nearestDist < kWarnEnterM && g_warnArmed[nearest]) {
-        g_warnArmed[nearest] = false;
-        std::string warn = acc::strfmt::Format(
-            Get(Id::FmtPlateWarnClose), FullName(nearest).c_str(),
-            DominantCardinal(pos, g_plates[nearest].center));
-        prism::Speak(warn.c_str(), /*interrupt=*/false);
-        acclog::Write("FloorPuzzle", "edge warn: [%s] dist=%.2f",
-                      warn.c_str(), nearestDist);
-        g_lastNearest = nearest;
-        g_nearestSpokenAt = now;
-        return;
+    // Re-announce whenever the SPOKEN CONTENT changes, not just the
+    // nearest identity: with identity-only gating, walking several steps
+    // toward the same plate was silent (23s gaps in the 2026-07-16
+    // session review). Content-change gating speaks each step that
+    // changes the situation and stays quiet when standing still.
+    std::string say = FullName(nearest);
+    std::string axes = AxisPhrase(pos, g_plates[nearest]);
+    if (!axes.empty()) {
+        say += ", ";
+        say += axes;
     }
-    for (int i = 0; i < kTrackCount; ++i) {
-        if (!g_warnArmed[i] &&
-            DistToPlate(g_plates[i], pos.x, pos.y) > kWarnExitM) {
-            g_warnArmed[i] = true;
-        }
-    }
-
-    if (nearest != g_lastNearest &&
+    if (say != g_lastNearestLine &&
         (now - g_nearestSpokenAt) >= kNearestMinGapMs) {
-        g_lastNearest = nearest;
+        g_lastNearestLine = say;
         g_nearestSpokenAt = now;
-        std::string say = FullName(nearest);
-        std::string axes = AxisPhrase(pos, g_plates[nearest].center);
-        if (!axes.empty()) {
-            say += ", ";
-            say += axes;
-        }
-        prism::Speak(say.c_str(), /*interrupt=*/false);
+        prism::SpeakUrgent(say.c_str());
         acclog::Write("FloorPuzzle", "nearest: [%s] dist=%.2f", say.c_str(),
                       nearestDist);
     }
