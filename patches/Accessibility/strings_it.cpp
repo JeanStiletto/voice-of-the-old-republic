@@ -1,7 +1,7 @@
 // Italian string table.
 //
-// Encoding: Windows-1252 hex escapes for non-ASCII (\xE0=à, \xE8=è,
-// \xE9=é, \xEC=ì, \xF2=ò, \xF9=ù). Prism's ANSI overload converts from
+// Encoding: Windows-1252 hex escapes for non-ASCII (\xE0=?, \xE8=?,
+// \xE9=?, \xEC=?, \xF2=?, \xF9=?). Prism's ANSI overload converts from
 // CP_ACP via MultiByteToWideChar; on an Italian Windows install CP_ACP
 // = Windows-1252, so the literal bytes pass through unchanged.
 //
@@ -445,12 +445,12 @@ const char* Get(Id id) {
         case Id::SoundOptionsMovieVolume:    return "Volume video";
 
         case Id::SwoopRaceStarted:
-            // Terse opener — concatenated with SwoopRaceControls below
+            // Terse opener ? concatenated with SwoopRaceControls below
             // into one utterance by swoop_race.cpp::AnnounceEntry.
             return "Corsa Swoop.";
         case Id::SwoopRaceControls:
             // Short cheat sheet. Full keymap (Enter/Mouse 1 also work,
-            // Pause pauses the race, etc.) is in the manual — verbose
+            // Pause pauses the race, etc.) is in the manual ? verbose
             // spoken intro got in the way of the start countdown.
             return "Spazio per salire di marcia al segnale audio. Sterza con A e D. Evita gli ostacoli e colpisci le piastre acceleratrici per battere il tempo.";
         case Id::SwoopRaceEnded:
@@ -463,7 +463,7 @@ const char* Get(Id id) {
             return "Tempo: %d,%02d secondi. Corsa Swoop terminata.";
 
         case Id::TurretGameStarted:
-            // Terse opener — concatenated with TurretGameControls below
+            // Terse opener ? concatenated with TurretGameControls below
             // into one utterance by turret_game.cpp::AnnounceEntry.
             return "Torretta.";
         case Id::TurretGameControls:
@@ -704,6 +704,25 @@ const char* Get(Id id) {
         case Id::KbNameHelpContext:         return "Aiuto contestuale";
         case Id::KbNameCheckForUpdate:      return "Cerca aggiornamenti";
         case Id::KbNameDialogRepeatLine:    return "Ripeti battuta di dialogo";
+
+        case Id::FloorPuzzleIntro:
+            return "Enigma delle piastre: nove piastre in una griglia tre per tre, "
+                   "piastra di ripristino sul lato sud.";
+        case Id::FmtFloorSoloHint:
+            return "Consiglio: attiva la modalit\xE0 solo, tasto %s, altrimenti anche i compagni attivano le piastre.";
+        case Id::FloorPartyToggled:  return "Un compagno ha cambiato delle piastre";
+        case Id::FmtPlateName:       return "Piastra %s";
+        case Id::PlateCenterWord:    return "Centro";
+        case Id::PlateResetName:     return "Piastra di ripristino";
+        case Id::FmtPlateEntered:    return "Su %s";
+        case Id::FmtPlateLit:        return "%s accesa";
+        case Id::FmtPlateDark:       return "%s spenta";
+        case Id::FmtPlateLitCount:   return "%d su 9 accese";
+        case Id::PlatesAllDark:      return "Tutte le piastre spente";
+        case Id::FloorPuzzleSolved:
+            return "Enigma risolto. La porta massiccia si apre.";
+        case Id::FmtPlateWarnClose:  return "Attenzione, %s, a meno di un metro %s";
+        case Id::PlateResetHint:     return "Spegne tutte le piastre";
 
         case Id::Count_:               return "";
     }

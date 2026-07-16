@@ -1,4 +1,4 @@
-// English string table. Plain ASCII — no escape sequences needed.
+// English string table. Plain ASCII ? no escape sequences needed.
 //
 // See strings.h for the encoding convention and string-id semantics.
 
@@ -438,12 +438,12 @@ const char* Get(Id id) {
         case Id::SoundOptionsMovieVolume:    return "Movie volume";
 
         case Id::SwoopRaceStarted:
-            // Terse opener — concatenated with SwoopRaceControls below
+            // Terse opener ? concatenated with SwoopRaceControls below
             // into one utterance by swoop_race.cpp::AnnounceEntry.
             return "Swoop race.";
         case Id::SwoopRaceControls:
             // Short cheat sheet. Full keymap (Enter/Mouse 1 also work,
-            // Pause pauses the race, etc.) is in the manual — verbose
+            // Pause pauses the race, etc.) is in the manual ? verbose
             // spoken intro got in the way of the start countdown.
             return "Press space to shift up on the audio cue. Steer with A and D. Avoid the obstacles and hit the accelerator pads to beat the time.";
         case Id::SwoopRaceEnded:
@@ -458,12 +458,12 @@ const char* Get(Id id) {
             return "Time: %d.%02d seconds. Swoop race ended.";
 
         case Id::TurretGameStarted:
-            // Terse opener — concatenated with TurretGameControls below
+            // Terse opener ? concatenated with TurretGameControls below
             // into one utterance by turret_game.cpp::AnnounceEntry.
             return "Turret.";
         case Id::TurretGameControls:
             // Aiming AND firing are both native keyboard actions (W/S
-            // raise-lower, A/D swing, Space/Enter fire) — live-confirmed
+            // raise-lower, A/D swing, Space/Enter fire) ? live-confirmed
             // via the reticle diagnostic. The opener's whole job is to
             // tell the player those keys exist; kept terse so it doesn't
             // bleed into the start of combat.
@@ -787,6 +787,25 @@ const char* Get(Id id) {
             return "Switch to the wounded character with Tab, open Medical with Shift and 5, and choose the medkit.";
         case Id::TutLevelUp:
             return "To level up, press Shift and L and follow the prompts.";
+
+        case Id::FloorPuzzleIntro:
+            return "Floor plate puzzle: nine plates in a three by three grid, "
+                   "reset plate on the south side.";
+        case Id::FmtFloorSoloHint:
+            return "Tip: enable solo mode, key %s, or companions will toggle plates too.";
+        case Id::FloorPartyToggled:  return "Companion toggled plates";
+        case Id::FmtPlateName:       return "Plate %s";
+        case Id::PlateCenterWord:    return "Center";
+        case Id::PlateResetName:     return "Reset plate";
+        case Id::FmtPlateEntered:    return "Stepped on %s";
+        case Id::FmtPlateLit:        return "%s lit";
+        case Id::FmtPlateDark:       return "%s dark";
+        case Id::FmtPlateLitCount:   return "%d of 9 lit";
+        case Id::PlatesAllDark:      return "All plates dark";
+        case Id::FloorPuzzleSolved:
+            return "Puzzle solved. The massive door opens.";
+        case Id::FmtPlateWarnClose:  return "Caution, %s, under one metre %s";
+        case Id::PlateResetHint:     return "Turns all plates dark";
 
         case Id::Count_:               return "";
     }

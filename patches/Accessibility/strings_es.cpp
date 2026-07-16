@@ -1,8 +1,8 @@
 // Spanish string table.
 //
-// Encoding: Windows-1252 hex escapes for non-ASCII (\xE1=á, \xE9=é,
-// \xED=í, \xF3=ó, \xFA=ú, \xF1=ñ, \xFC=ü, \xC1=Á, \xC9=É, \xCD=Í,
-// \xD3=Ó, \xDA=Ú, \xD1=Ñ, \xBF=¿, \xA1=¡). Prism's ANSI overload
+// Encoding: Windows-1252 hex escapes for non-ASCII (\xE1=?, \xE9=?,
+// \xED=?, \xF3=?, \xFA=?, \xF1=?, \xFC=?, \xC1=?, \xC9=?, \xCD=?,
+// \xD3=?, \xDA=?, \xD1=?, \xBF=?, \xA1=?). Prism's ANSI overload
 // converts from CP_ACP via MultiByteToWideChar; on a Spanish Windows
 // install CP_ACP = Windows-1252, so the literal bytes pass through
 // unchanged.
@@ -90,14 +90,14 @@ const char* Get(Id id) {
         case Id::FmtActionBarFired:       return "%s usado";
         case Id::FmtFireAtPosition:       return "%s, posici\xF3n %d";
         case Id::FmtFireQueueFull:        return "%s, cola llena";
-        case Id::ActionMenuClosed:        return "Menú de acción cerrado.";
+        case Id::ActionMenuClosed:        return "Men? de acci?n cerrado.";
 
         case Id::MenuCatAttacks:       return "Ataques";
         case Id::MenuCatForcePowers:   return "Poderes de Fuerza";
         case Id::MenuCatItems:         return "Objetos";
         case Id::MenuCatSelfPowers:    return "Poderes propios";
-        case Id::MenuCatMedical:       return "M\xE9""dico";            // Médico
-        case Id::MenuCatMisc:          return "Miscel\xE1neos";          // Misceláneos
+        case Id::MenuCatMedical:       return "M\xE9""dico";            // M?dico
+        case Id::MenuCatMisc:          return "Miscel\xE1neos";          // Miscel?neos
         case Id::MenuCatExplosives:    return "Explosivos";
         case Id::FmtMenuCatMulti:      return "%s: %s, %d opciones";
         case Id::FmtMenuCatSingle:     return "%s: %s";
@@ -175,7 +175,7 @@ const char* Get(Id id) {
         case Id::LevelUpOpen:          return "Subir de nivel";
         case Id::LevelUpFailed:        return "Subir de nivel fallido";
         case Id::LevelUpAlreadyOpen:   return "Subir de nivel ya abierto";
-        case Id::LevelUpNotReady:      return "Todav\xED""a no hay experiencia suficiente para subir de nivel"; // Todavía
+        case Id::LevelUpNotReady:      return "Todav\xED""a no hay experiencia suficiente para subir de nivel"; // Todav?a
 
         case Id::PortraitLabel:        return "Retrato";
         case Id::PortraitArrowPrev:    return "Retrato anterior";
@@ -195,7 +195,7 @@ const char* Get(Id id) {
 
         case Id::DisabledSuffix:       return ", no disponible";
         case Id::FmtLevelUpDoStepFirst: return "Completa primero %s.";
-        case Id::LevelUpStepLocked:    return "A\xFAn no disponible.";  // Aún
+        case Id::LevelUpStepLocked:    return "A\xFAn no disponible.";  // A?n
 
         case Id::FmtCharSheetClass:    return "%s. ";
         case Id::FmtCharSheetLevel:    return "Nivel %s. ";
@@ -447,12 +447,12 @@ const char* Get(Id id) {
         case Id::SoundOptionsMovieVolume:    return "Volumen de v\xED""deo";
 
         case Id::SwoopRaceStarted:
-            // Terse opener — concatenated with SwoopRaceControls below
+            // Terse opener ? concatenated with SwoopRaceControls below
             // into one utterance by swoop_race.cpp::AnnounceEntry.
             return "Carrera de Swoop.";
         case Id::SwoopRaceControls:
             // Short cheat sheet. Full keymap (Enter/Mouse 1 also work,
-            // Pause pauses the race, etc.) is in the manual — verbose
+            // Pause pauses the race, etc.) is in the manual ? verbose
             // spoken intro got in the way of the start countdown.
             return "Espacio para subir de marcha con la se\xF1""al de audio. Gira con A y D. Esquiva los obst\xE1""culos y pisa los paneles aceleradores para batir el tiempo.";
         case Id::SwoopRaceEnded:
@@ -465,7 +465,7 @@ const char* Get(Id id) {
             return "Tiempo: %d,%02d segundos. Carrera de Swoop terminada.";
 
         case Id::TurretGameStarted:
-            // Terse opener — concatenated with TurretGameControls below
+            // Terse opener ? concatenated with TurretGameControls below
             // into one utterance by turret_game.cpp::AnnounceEntry.
             return "Torreta.";
         case Id::TurretGameControls:
@@ -706,6 +706,25 @@ const char* Get(Id id) {
         case Id::KbNameHelpContext:         return "Ayuda contextual";
         case Id::KbNameCheckForUpdate:      return "Buscar actualizaci\xF3n";
         case Id::KbNameDialogRepeatLine:    return "Repetir l\xEDnea de di\xE1logo";
+
+        case Id::FloorPuzzleIntro:
+            return "Enigma de las placas: nueve placas en una cuadr\xED""cula de tres por tres, "
+                   "placa de reinicio en el lado sur.";
+        case Id::FmtFloorSoloHint:
+            return "Consejo: activa el modo solo, tecla %s, o los compa\xF1""eros tambi\xE9n activar\xE1n las placas.";
+        case Id::FloorPartyToggled:  return "Un compa\xF1""ero ha cambiado placas";
+        case Id::FmtPlateName:       return "Placa %s";
+        case Id::PlateCenterWord:    return "Centro";
+        case Id::PlateResetName:     return "Placa de reinicio";
+        case Id::FmtPlateEntered:    return "Sobre %s";
+        case Id::FmtPlateLit:        return "%s encendida";
+        case Id::FmtPlateDark:       return "%s apagada";
+        case Id::FmtPlateLitCount:   return "%d de 9 encendidas";
+        case Id::PlatesAllDark:      return "Todas las placas apagadas";
+        case Id::FloorPuzzleSolved:
+            return "Enigma resuelto. La puerta maciza se abre.";
+        case Id::FmtPlateWarnClose:  return "Atenci\xF3n, %s, a menos de un metro %s";
+        case Id::PlateResetHint:     return "Apaga todas las placas";
 
         case Id::Count_:               return "";
     }

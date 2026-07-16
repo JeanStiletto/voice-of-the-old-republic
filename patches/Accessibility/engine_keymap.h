@@ -57,6 +57,12 @@ bool IsKeyUsedByGame(int vk);
 // configurator, since the player may have changed game binds since launch).
 void ReloadGameConfig();
 
+// The VK currently bound to a slotless [Keymapping] game action ("Action<id>="
+// lines, e.g. 207 = Solo Mode — keymap.2da row + 200). 0 when the ini has no
+// such line (the game then uses the keymap.2da default) or the ini is
+// unreadable. Auto-loads the config on first use.
+int GameActionVk(int actionId);
+
 // Resolve a DirectInput scancode to a Win32 VK against the active layout. Used
 // internally for the hardcoded command-code table (those are DIK scancodes).
 int ScancodeToVk(int scancode);

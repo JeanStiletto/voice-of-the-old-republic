@@ -22,6 +22,7 @@
 #include "engine_player.h"
 #include "engine_subscreen.h"
 #include "examine_view.h"
+#include "floor_puzzle.h"
 #include "guidance_approach.h"
 #include "guidance_autowalk.h"
 #include "guidance_beacon.h"
@@ -347,6 +348,10 @@ void Dispatch() {
     // detected-by lists for sighted-parity trap warnings. Internally
     // throttled to 250ms scans.
     PHASE("trap_watch", acc::trap_watch::Tick());
+
+    // Temple floor-plate puzzle assist — inert outside unk_m44ab.
+    // Internally throttled to 150ms scans.
+    PHASE("floor_puzzle", acc::floor_puzzle::Tick());
 
     PHASE("view_mode", acc::view_mode::Tick());
 

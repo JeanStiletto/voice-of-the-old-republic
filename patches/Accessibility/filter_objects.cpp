@@ -1,6 +1,7 @@
 #include "filter_objects.h"
 
 #include "engine_player.h"   // GetPlayerServerCreature
+#include "floor_puzzle.h"    // IsPuzzlePlateTrigger — plate cue/cycle exclusion
 
 namespace acc::filter {
 
@@ -48,7 +49,13 @@ bool ObjectMatches(void* gameObject, CycleCategory category) {
             return kind == int(K::Waypoint) &&
                    acc::engine::IsLandmarkWaypoint(gameObject);
         case CycleCategory::Transition:
+            // Temple floor-plate triggers structurally pass the
+            // destination test but are puzzle machinery, not exits —
+            // floor_puzzle owns their announcements (and the Transition
+            // proximity cue on nine adjacent plates is pure noise).
             return kind == int(K::Trigger) &&
+                   !acc::floor_puzzle::IsPuzzlePlateTrigger(
+                       acc::engine::GetObjectHandle(gameObject)) &&
                    acc::engine::IsTransitionTrigger(gameObject);
         case CycleCategory::Count_:
             return false;

@@ -807,6 +807,25 @@ const char* Get(Id id) {
         case Id::TutLevelUp:
             return "Zum Stufenaufstieg dr\xFC""cke Umschalt und L und folge den Anweisungen.";
 
+        case Id::FloorPuzzleIntro:
+            return "Bodenplatten-R\xE4tsel: neun Platten in drei mal drei Anordnung, "
+                   "R\xFC""cksetzfeld auf der S\xFC""dseite.";  // Rätsel, Rücksetzfeld, Südseite
+        case Id::FmtFloorSoloHint:
+            return "Tipp: Solo-Modus aktivieren, Taste %s, sonst schalten Begleiter Platten mit um.";
+        case Id::FloorPartyToggled:  return "Begleiter hat Platten umgeschaltet";
+        case Id::FmtPlateName:       return "Platte %s";
+        case Id::PlateCenterWord:    return "Mitte";
+        case Id::PlateResetName:     return "R\xFC""cksetzfeld";        // Rücksetzfeld
+        case Id::FmtPlateEntered:    return "%s betreten";
+        case Id::FmtPlateLit:        return "%s leuchtet";
+        case Id::FmtPlateDark:       return "%s dunkel";
+        case Id::FmtPlateLitCount:   return "%d von 9 leuchten";
+        case Id::PlatesAllDark:      return "Alle Platten dunkel";
+        case Id::FloorPuzzleSolved:
+            return "R\xE4tsel gel\xF6st. Die massive T\xFCr \xF6""ffnet sich.";  // Rätsel gelöst, Tür öffnet
+        case Id::FmtPlateWarnClose:  return "Achtung, %s, unter einem Meter %s";
+        case Id::PlateResetHint:     return "Setzt alle Platten auf dunkel";
+
         case Id::Count_:               return "";
     }
     return "";

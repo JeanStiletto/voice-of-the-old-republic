@@ -619,6 +619,18 @@ void* GetServerPartyTable() {
     }
 }
 
+bool GetSoloMode() {
+    void* table = GetServerPartyTable();
+    if (!table) return false;
+    __try {
+        return *reinterpret_cast<uint32_t*>(
+                   reinterpret_cast<unsigned char*>(table) +
+                   kPartyTableSoloModeOffset) != 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 namespace {
 
 typedef int  (__thiscall* PFN_PartyTableGetIsNPCAvailable)(void*, int);

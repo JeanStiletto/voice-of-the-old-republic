@@ -657,8 +657,6 @@ const char* Name(Action a) {
     return kActionNames[idx];
 }
 
-namespace {
-
 const char* VkLabel(int vk) {
     switch (vk) {
     case 0:             return "(unbound)";
@@ -713,6 +711,8 @@ const char* VkLabel(int vk) {
     }
     return "?";
 }
+
+namespace {
 
 // Rotating buffer pool so several Describe() calls in one log line can
 // coexist. 4 slots × 32 chars covers "Shift+Ctrl+AltGr+OEM_MINUS" easily.

@@ -1,8 +1,8 @@
 // French string table.
 //
-// Encoding: Windows-1252 hex escapes for non-ASCII (\xE9=é, \xE8=è,
-// \xEA=ê, \xE0=à, \xE2=â, \xE7=ç, \xEE=î, \xEF=ï, \xF4=ô, \xF9=ù,
-// \xFB=û, \xFC=ü). Prism's ANSI overload converts from CP_ACP via
+// Encoding: Windows-1252 hex escapes for non-ASCII (\xE9=?, \xE8=?,
+// \xEA=?, \xE0=?, \xE2=?, \xE7=?, \xEE=?, \xEF=?, \xF4=?, \xF9=?,
+// \xFB=?, \xFC=?). Prism's ANSI overload converts from CP_ACP via
 // MultiByteToWideChar; on a French Windows install CP_ACP =
 // Windows-1252, so the literal bytes pass through unchanged.
 //
@@ -89,13 +89,13 @@ const char* Get(Id id) {
         case Id::FmtActionBarFired:       return "%s utilis\xE9";
         case Id::FmtFireAtPosition:       return "%s, position %d";
         case Id::FmtFireQueueFull:        return "%s, file pleine";
-        case Id::ActionMenuClosed:        return "Menu d'action fermé.";
+        case Id::ActionMenuClosed:        return "Menu d'action ferm?.";
 
         case Id::MenuCatAttacks:       return "Attaques";
         case Id::MenuCatForcePowers:   return "Pouvoirs de Force";
         case Id::MenuCatItems:         return "Objets";
         case Id::MenuCatSelfPowers:    return "Pouvoirs personnels";
-        case Id::MenuCatMedical:       return "M\xE9""dical";           // Médical
+        case Id::MenuCatMedical:       return "M\xE9""dical";           // M?dical
         case Id::MenuCatMisc:          return "Divers";
         case Id::MenuCatExplosives:    return "Explosifs";
         case Id::FmtMenuCatMulti:      return "%s : %s, %d options";
@@ -174,7 +174,7 @@ const char* Get(Id id) {
         case Id::LevelUpOpen:          return "Mont\xE9""e de niveau";
         case Id::LevelUpFailed:        return "Mont\xE9""e de niveau \xE9""chou\xE9""e";
         case Id::LevelUpAlreadyOpen:   return "Mont\xE9""e de niveau d\xE9j\xE0 ouverte";
-        case Id::LevelUpNotReady:      return "Pas encore assez d'exp\xE9rience pour monter de niveau"; // expérience
+        case Id::LevelUpNotReady:      return "Pas encore assez d'exp\xE9rience pour monter de niveau"; // exp?rience
 
         case Id::PortraitLabel:        return "Portrait";
         case Id::PortraitArrowPrev:    return "Portrait pr\xE9""c\xE9""dent";
@@ -446,12 +446,12 @@ const char* Get(Id id) {
         case Id::SoundOptionsMovieVolume:    return "Volume des vid\xE9os";
 
         case Id::SwoopRaceStarted:
-            // Terse opener — concatenated with SwoopRaceControls below
+            // Terse opener ? concatenated with SwoopRaceControls below
             // into one utterance by swoop_race.cpp::AnnounceEntry.
             return "Course de Swoop.";
         case Id::SwoopRaceControls:
             // Short cheat sheet. Full keymap (Enter/Mouse 1 also work,
-            // Pause pauses the race, etc.) is in the manual — verbose
+            // Pause pauses the race, etc.) is in the manual ? verbose
             // spoken intro got in the way of the start countdown.
             return "Espace pour monter une vitesse au signal sonore. Dirigez avec A et D. \xC9vitez les obstacles et touchez les plaques d'acc\xE9l\xE9ration pour battre le temps.";
         case Id::SwoopRaceEnded:
@@ -464,7 +464,7 @@ const char* Get(Id id) {
             return "Temps : %d,%02d secondes. Course de Swoop termin\xE9""e.";
 
         case Id::TurretGameStarted:
-            // Terse opener — concatenated with TurretGameControls below
+            // Terse opener ? concatenated with TurretGameControls below
             // into one utterance by turret_game.cpp::AnnounceEntry.
             return "Tourelle.";
         case Id::TurretGameControls:
@@ -474,7 +474,7 @@ const char* Get(Id id) {
         case Id::FmtTurretTarget:
             return "Chasseur %d, %d m\xE8tres";
         case Id::FmtTurretDestroyed:
-            return "Chasseur %d d\xE9truit.";  // détruit
+            return "Chasseur %d d\xE9truit.";  // d?truit
         case Id::TurretNoTargets:
             return "Aucune cible.";
         case Id::TurretTargetLost:
@@ -705,6 +705,25 @@ const char* Get(Id id) {
         case Id::KbNameHelpContext:         return "Aide contextuelle";
         case Id::KbNameCheckForUpdate:      return "Rechercher une mise \xE0 jour";
         case Id::KbNameDialogRepeatLine:    return "R\xE9p\xE9ter la ligne de dialogue";
+
+        case Id::FloorPuzzleIntro:
+            return "\xC9nigme des dalles : neuf dalles en grille de trois sur trois, "
+                   "dalle de r\xE9initialisation au sud.";
+        case Id::FmtFloorSoloHint:
+            return "Conseil : activez le mode solo, touche %s, sinon les compagnons d\xE9""clenchent aussi les dalles.";
+        case Id::FloorPartyToggled:  return "Un compagnon a modifi\xE9 des dalles";
+        case Id::FmtPlateName:       return "Dalle %s";
+        case Id::PlateCenterWord:    return "Centre";
+        case Id::PlateResetName:     return "Dalle de r\xE9initialisation";
+        case Id::FmtPlateEntered:    return "Sur %s";
+        case Id::FmtPlateLit:        return "%s allum\xE9""e";
+        case Id::FmtPlateDark:       return "%s \xE9teinte";
+        case Id::FmtPlateLitCount:   return "%d sur 9 allum\xE9""es";
+        case Id::PlatesAllDark:      return "Toutes les dalles \xE9teintes";
+        case Id::FloorPuzzleSolved:
+            return "\xC9nigme r\xE9solue. La porte massive s'ouvre.";
+        case Id::FmtPlateWarnClose:  return "Attention, %s, \xE0 moins d'un m\xE8tre %s";
+        case Id::PlateResetHint:     return "\xC9teint toutes les dalles";
 
         case Id::Count_:               return "";
     }

@@ -35,6 +35,13 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>Unreleased</h2>
 
+<h3>Temple floor-plate puzzle (Unknown World):</h3>
+
+- The Rakatan temple's nine-plate floor puzzle — the last known blind-play blocker — is now fully playable by ear, by skill rather than automation. The plates form a 3-by-3 lights-out grid: stepping on one toggles it and its orthogonal neighbours, and all nine lit at once opens the massive door (verified against the decompiled plate scripts; there is no required order, only toggle parity). The mod speaks what a sighted player sees: an orientation line on approach, each plate entry with the full list of plates that flipped ("lit"/"dark") plus a running count, the reset plate with what it does, a warning line when a follower flips plates behind you, and a success line when the door opens. Plates are named by compass position (north-west plate, center plate, ...); a solved room goes quiet, on this and every later visit.
+- Directions inside the puzzle room use per-axis cardinal words instead of clock bearings: "north-west plate, 2 metres north, 1 metre west". The room is walked by aligning north once and then stepping forward/back and strafing, so each announcement translates one-to-one into steps — one plate is about two metres. An axis you're already aligned on is omitted.
+- On approach, if companions are in the party and solo mode is off, the mod recommends solo mode and speaks the game's currently bound key for it (default V, read live from the game's key mapping) — the plate scripts react to any creature, so followers scramble the board.
+- The plate triggers no longer fire the exit-transition proximity sound cue and no longer appear in transition cycling; the puzzle announcements replace them. (Engine-side they look like exits with an empty label — the same quirk that made cycling speak raw tags like "kfloorpanel02" in that room.)
+
 <h3>Tutorial:</h3>
 
 - More of the game's built-in tutorial pop-ups now teach the keyboard. The "new journal entry" notice now points you to the quest screen and its key (L); the messages-screen notice does the same for J; and the "party member has fallen" notice keeps its revival explanation and adds that Tab switches who you control. These three used to speak only the original mouse-era wording.

@@ -694,6 +694,37 @@ bool IsTransitionTrigger(void* trigger) {
     }
 }
 
+int GetTriggerGeometry(void* trigger, Vector* out, int maxVerts) {
+    if (!trigger || !out || maxVerts <= 0) return 0;
+    __try {
+        unsigned char* p = reinterpret_cast<unsigned char*>(trigger);
+        int count = *reinterpret_cast<int*>(p + kTriggerGeometryCountOffset);
+        Vector* verts =
+            *reinterpret_cast<Vector**>(p + kTriggerGeometryOffset);
+        // Authored polygons are 3..8 vertices; anything outside a sane
+        // range is a mis-read (wrong object kind / stale pointer), not a
+        // real shape.
+        if (!verts || count < 3 || count > 32) return 0;
+        if (count > maxVerts) count = maxVerts;
+        for (int i = 0; i < count; ++i) out[i] = verts[i];
+        return count;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
+bool GetObjectLocalBoolean(void* gameObject, int index) {
+    if (!gameObject || index < 0 || index >= 96) return false;
+    __try {
+        uint32_t* words = reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(gameObject) +
+            kObjectVarTableOffset);
+        return (words[index >> 5] & (1u << (index & 31))) != 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 bool TrapDetectedByAnyOf(void* gameObject,
                          const uint32_t* ids, int idCount) {
     if (!gameObject || !ids || idCount <= 0) return false;

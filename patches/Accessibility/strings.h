@@ -1804,6 +1804,51 @@ enum class Id : int {
     TutTraskHealWounded,     // 48556
     TutLevelUp,              // 48324 (end_levelup)
 
+    // ---- Rakatan temple floor-plate puzzle (floor_puzzle.cpp; Unknown
+    //      World Temple Main Floor, module unk_m44ab). A 3x3 lights-out
+    //      grid: stepping a plate toggles itself + orthogonal neighbours;
+    //      all nine lit opens the massive door. Plates are named by
+    //      compass position (DirNorth.. words / PlateCenterWord), per
+    //      user direction; states are "lit"/"dark".
+    //
+    //      FloorPuzzleIntro    — one-shot orientation line on approach.
+    //      FmtFloorSoloHint    — appended to the intro when >1 party
+    //                            member and solo mode off. 1 `%s` (the
+    //                            game's current solo-mode key label).
+    //      FloorPartyToggled   — prefix when the board changed without
+    //                            the leader entering a plate (a follower
+    //                            stepped on one).
+    //      FmtPlateName        — "Platte %s" wrapper; `%s` is a Dir word
+    //                            or PlateCenterWord.
+    //      PlateCenterWord     — the centre plate's direction word.
+    //      PlateResetName      — the reset plate's full spoken name.
+    //      FmtPlateEntered     — 1 `%s` (plate name) — spoken on entry.
+    //      FmtPlateLit/Dark    — delta items, 1 `%s` (short name).
+    //      FmtPlateLitCount    — 1 `%d` (lit count of 9).
+    //      PlatesAllDark       — board cleared (reset plate / self-undo).
+    //      FloorPuzzleSolved   — all nine lit; door opens.
+    //      FmtPlateWarnClose   — proximity warning inside ~0.6m of a
+    //                            plate edge while off-plate. 2 args:
+    //                            `%s` plate name, `%s` cardinal word
+    //                            (world-frame — the puzzle is walked by
+    //                            cardinal stutter-steps, so no clock).
+    //      PlateResetHint      — appended the first time the reset plate
+    //                            is the nearest/entered plate.
+    FloorPuzzleIntro,
+    FmtFloorSoloHint,
+    FloorPartyToggled,
+    FmtPlateName,
+    PlateCenterWord,
+    PlateResetName,
+    FmtPlateEntered,
+    FmtPlateLit,
+    FmtPlateDark,
+    FmtPlateLitCount,
+    PlatesAllDark,
+    FloorPuzzleSolved,
+    FmtPlateWarnClose,
+    PlateResetHint,
+
     Count_,
 };
 

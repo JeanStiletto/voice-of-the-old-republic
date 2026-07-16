@@ -164,6 +164,11 @@ int GetPartyMembers(uint32_t* outHandles, int maxCount);
 // availability/selectability can hit the engine's thiscalls directly.
 void* GetServerPartyTable();
 
+// CSWPartyTable.pt_solomode @+0x190 — the flag the engine's own
+// ExecuteCommandGetSoloMode @0x00546af0 returns and SetSoloMode @0x00565500
+// writes (both decompiled 2026-07-16). False on no party table / fault.
+bool GetSoloMode();
+
 // CSWPartyTable::GetIsNPCAvailable @0x005636B0. True iff companion at
 // slot is recruited and in the active roster.
 bool PartyTableIsNPCAvailable(int npcSlot);
@@ -227,6 +232,7 @@ constexpr size_t    kServerInternalPartyTableOffset = 0x1b770;
 constexpr size_t    kServerExoAppPartyTableOffset  = kServerInternalPartyTableOffset;
 constexpr size_t    kPartyTableNumMembersOffset    = 0x0;
 constexpr size_t    kPartyTableMemberIdsOffset     = 0x4;
+constexpr size_t    kPartyTableSoloModeOffset      = 0x190;  // pt_solomode ulong
 constexpr int       kPartyTableMaxMembers          = 11;
 
 // CSWPartyTable thiscalls used by the PartySelection extractor (same

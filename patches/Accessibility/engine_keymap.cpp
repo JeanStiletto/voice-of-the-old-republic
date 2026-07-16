@@ -61,6 +61,16 @@ int s_turnScan[2] = {0, 0};
 // even before the ini is read or if it is missing. Index matches MoveAxis.
 constexpr int kAxisDefaultVk[kMoveAxisCount] = {'W', 'S', 'A', 'D'};
 
+// ---- Slotless action binds ---------------------------------------------------
+// Non-movement [Keymapping] entries ("Action207=72", no A/B slot suffix) mapped
+// to their resolved VK, captured during the same ini parse. Lets consumers ask
+// "what key currently fires game action N" — e.g. Action207 = Solo Mode (keymap
+// .2da row 7 'PartyActive' + 200; verified: Action264 = row 64 STEALTH = G).
+constexpr int kMaxActionVks = 160;  // stock ini ships ~120 Action lines
+struct ActionVk { int actionId; int vk; };
+ActionVk s_actionVks[kMaxActionVks];
+int      s_actionVkCount = 0;
+
 // (axis, [Keymapping] action id, slot letter) contributors.
 struct AxisContrib { int axis; int actionId; char slot; };
 constexpr AxisContrib kAxisContribs[] = {
@@ -251,7 +261,8 @@ int InputIndexToVk(int ii) {
 }
 
 void ReloadGameConfig() {
-    s_gameVkCount = 0;
+    s_gameVkCount   = 0;
+    s_actionVkCount = 0;
     s_gameLoaded  = true;  // mark loaded even on read failure: a missing ini just
                            // means no configurable binds to warn about (defaults
                            // are the hardcoded set, already covered).
@@ -309,6 +320,12 @@ void ReloadGameConfig() {
             if (q < eq && (*q == 'A' || *q == 'a')) slot = 'A';
             else if (q < eq && (*q == 'B' || *q == 'b')) slot = 'B';
         }
+        if (slot == 0 && actionId > 0 && vk != 0 &&
+            s_actionVkCount < kMaxActionVks) {
+            s_actionVks[s_actionVkCount].actionId = actionId;
+            s_actionVks[s_actionVkCount].vk       = vk;
+            ++s_actionVkCount;
+        }
         if (slot != 0) {
             for (const AxisContrib& c : kAxisContribs) {
                 if (c.actionId != actionId || c.slot != slot) continue;
@@ -346,6 +363,14 @@ bool IsKeyUsedByGame(int vk) {
         if (s_gameVks[i] == vk) return true;
     }
     return false;
+}
+
+int GameActionVk(int actionId) {
+    if (!s_gameLoaded) ReloadGameConfig();
+    for (int i = 0; i < s_actionVkCount; ++i) {
+        if (s_actionVks[i].actionId == actionId) return s_actionVks[i].vk;
+    }
+    return 0;
 }
 
 void Rebuild() {

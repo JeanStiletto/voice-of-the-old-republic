@@ -176,6 +176,23 @@ bool IsUsablePlaceable(void* placeable);
 bool IsLandmarkWaypoint(void* waypoint);
 bool IsTransitionTrigger(void* trigger);
 
+// Copies the trigger's footprint polygon (CSWSTrigger.geometry — Vector
+// array in WORLD space, count @+0x284, data @+0x288) into `out`, up to
+// maxVerts. Returns the number of vertices written; 0 on null / non-sane
+// count / fault. Authored trigger polygons are 3..8 vertices (GIT
+// Geometry list); the engine stores them pre-translated, so consumers can
+// run point-in-polygon against player world coordinates directly.
+int GetTriggerGeometry(void* trigger, Vector* out, int maxVerts);
+
+// Reads one bit of the object's fixed NWScript local-boolean table
+// (CSWVarTable @ CSWSObject+0x110, `ulong local_booleans[3]` — the table
+// GetLocalBoolean/SetLocalBoolean script commands hit; bit layout
+// confirmed against CSWVarTable::GetLocalBoolean @0x0059b000). Valid
+// index 0..95. False on null / out-of-range / fault. NOT the named
+// CSWSScriptVarTable at +0x100 — see persistence-scriptvartable.md for
+// the two-table split.
+bool GetObjectLocalBoolean(void* gameObject, int index);
+
 // True only when `gameObject` is a loot container (kind == Placeable AND
 // has_inventory != 0) whose CItemRepository currently holds zero items —
 // i.e. a chest/footlocker/corpse the player has already emptied (or that
@@ -432,6 +449,17 @@ constexpr size_t kWaypointMapNoteLocOffset     = 0x230;
 // CSWSCreature::UpdateMineCheck decompile (the engine's own consumer).
 constexpr size_t kTriggerTrapDetectedListOffset   = 0x2a8;
 constexpr size_t kTriggerIsTrapOffset             = 0x2bc;  // undefined4, != 0 on mines
+
+// CSWSTrigger footprint polygon (world-space Vector array). Offsets from
+// the Ghidra CSWSTrigger struct, anchored by the verified neighbours
+// localized_name @+0x228 and the trap fields @+0x2a8/0x2bc above.
+constexpr size_t kTriggerGeometryCountOffset      = 0x284;  // int
+constexpr size_t kTriggerGeometryOffset           = 0x288;  // Vector*
+
+// Fixed NWScript local-variable table (CSWVarTable: ulong[3] boolean bits
+// + byte[8] numbers) embedded at CSWSObject+0x110. This is the mislabeled
+// `script_var_table_2` — see persistence-scriptvartable.md.
+constexpr size_t kObjectVarTableOffset            = 0x110;
 constexpr size_t kDoorTrapDetectedListOffset      = 0x2dc;
 constexpr size_t kPlaceableTrapDetectedListOffset = 0x318;
 
