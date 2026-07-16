@@ -354,6 +354,30 @@ struct DoorRecord {
 
 constexpr int kMaxDoors = 128;
 
+// Walk-through area-transition triggers (CSWSTrigger with a non-empty
+// transition destination). Outdoor maps (Lehon beaches) use these instead
+// of doors for area exits: the walkmesh simply ends inside the trigger
+// polygon, so the nav graph sees a dead end there and the cluster label
+// said "Sackgasse" at the very spot that leaves the area (2026-07-16
+// Südlicher Strand session — the only walk-through exit spoke as a dead
+// end for 40 minutes). Snapshotted once per build like doors; each record
+// binds to its nearest nav node so Pass 3 can voice the transition as a
+// named exit of that node's cluster.
+struct TransitionRecord {
+    Vector pos;
+    char   destName[64];   // resolved TransitionDestin ("Unbekannte Welt -
+                           // Tempel-Außenbereich"); spoken with the
+                           // "<planet> - " prefix stripped
+    int    nearestNode;    // -1 when no nav node within attach range
+};
+
+constexpr int   kMaxTransitions       = 16;
+// Nearest-node attach cap. The trigger sits past the walkmesh edge, so it
+// is farther from its nav node than a door is from its frame (Südlicher
+// Strand temple trigger: 7.3 m). Beyond this we leave the trigger
+// unattached and log it rather than guess across half the map.
+constexpr float kTransitionAttachMaxM = 12.0f;
+
 struct AreaGraph {
     void*       area_owner   = nullptr;
     bool        built        = false;
@@ -380,8 +404,15 @@ struct AreaGraph {
     // runs; surviving filtered singletons are graph-isolated and almost
     // always genuine alcoves).
     bool        node_filtered  [kMaxNodes];
+    // Longest bounding-box side of the node's cluster, written alongside
+    // label/kind in Pass 3. Consumed by GetClusterInfo so transitions.cpp
+    // can dwell-gate sub-perceptual clusters (extent below a floor) at
+    // announce time without touching the clustering itself.
+    float       node_extent    [kMaxNodes];
     int         door_count   = 0;
     DoorRecord  doors       [kMaxDoors];
+    int              transition_count = 0;
+    TransitionRecord transitions[kMaxTransitions];
 };
 
 AreaGraph g_graph;
@@ -746,6 +777,101 @@ void LogDoorSnapshotDetails(void* area) {
     }
 }
 
+
+// Collect every walk-through area-transition trigger into
+// g_graph.transitions. Mirrors SnapshotDoors: kind filter + SEH-bounded
+// reads, partial set on fault. Requires g_graph.node_pos to be populated
+// (BuildForArea fills nodes before calling us) so each record can bind to
+// its nearest nav node up front.
+//
+// Traps, shield triggers without a destination, and script-only triggers
+// fail IsTransitionTrigger and are skipped — only triggers the engine
+// would actually use to leave the area get voiced as exits.
+void SnapshotTransitionTriggers(void* area) {
+    g_graph.transition_count = 0;
+    if (!area) return;
+
+    acc::engine::AreaObjectIterator iter(area);
+    void* obj = nullptr;
+    while ((obj = iter.Next()) != nullptr) {
+        if (g_graph.transition_count >= kMaxTransitions) {
+            acclog::Write("WallTopo",
+                          "SnapshotTransitions: hit kMaxTransitions=%d — "
+                          "truncating", kMaxTransitions);
+            break;
+        }
+        int kind = acc::engine::GetObjectKind(obj);
+        if (kind != static_cast<int>(acc::engine::GameObjectKind::Trigger)) {
+            continue;
+        }
+        if (!acc::engine::IsTransitionTrigger(obj)) continue;
+        Vector pos;
+        if (!acc::engine::GetObjectPosition(obj, pos)) continue;
+
+        TransitionRecord& rec = g_graph.transitions[g_graph.transition_count];
+        rec.pos         = pos;
+        rec.destName[0] = '\0';
+        rec.nearestNode = -1;
+        acc::engine::ExtractTextOrStrRef(
+            obj,
+            kTriggerTransitionDestOffset,
+            kTriggerTransitionDestOffset + 4,
+            rec.destName, sizeof(rec.destName));
+        if (!rec.destName[0]) continue;  // unreadable destination — skip
+
+        float bestSq = kTransitionAttachMaxM * kTransitionAttachMaxM;
+        for (int i = 0; i < g_graph.node_count; ++i) {
+            float dx = g_graph.node_pos[i].x - pos.x;
+            float dy = g_graph.node_pos[i].y - pos.y;
+            float d2 = dx * dx + dy * dy;
+            if (d2 < bestSq) { bestSq = d2; rec.nearestNode = i; }
+        }
+
+        acclog::Write("WallTopo",
+                      "SnapshotTransitions: transition[%d] pos=(%.1f,%.1f) "
+                      "dest=\"%s\" nearestNode=%d (dist=%.1fm)",
+                      g_graph.transition_count, pos.x, pos.y, rec.destName,
+                      rec.nearestNode,
+                      rec.nearestNode >= 0 ? std::sqrt(bestSq) : -1.0f);
+        if (rec.nearestNode < 0) {
+            acclog::Write("WallTopo",
+                          "SnapshotTransitions: transition[%d] UNATTACHED — "
+                          "no nav node within %.1fm",
+                          g_graph.transition_count, kTransitionAttachMaxM);
+        }
+        ++g_graph.transition_count;
+    }
+    acclog::Write("WallTopo", "SnapshotTransitions: collected %d transition "
+                  "trigger%s", g_graph.transition_count,
+                  g_graph.transition_count == 1 ? "" : "s");
+}
+
+// Spoken form of an attached transition trigger, e.g. "Übergang Ost nach
+// Tempel-Außenbereich". Reuses the door-transition format with the generic
+// transition noun (walk-through triggers have no authored loc_name). The
+// destination drops the "<planet> - " prefix — every trigger destination
+// shares the current planet, so the prefix is pure filler in a label
+// that is already the longest entry in its exit list.
+std::string RenderTransitionExit(int trigIdx, const Vector& centroid) {
+    using acc::strings::Id;
+    if (trigIdx < 0 || trigIdx >= g_graph.transition_count) {
+        return std::string();
+    }
+    const TransitionRecord& t = g_graph.transitions[trigIdx];
+    Id dirId = OctantFromVector(t.pos.x - centroid.x, t.pos.y - centroid.y);
+    const char* dirWord = acc::strings::Get(dirId);
+    if (!dirWord || !dirWord[0]) return std::string();
+
+    const char* dest = t.destName;
+    if (const char* sep = std::strstr(dest, " - ")) {
+        if (sep[3] != '\0') dest = sep + 3;
+    }
+    const char* noun = acc::strings::Get(Id::CategoryTransition);
+    if (!noun || !noun[0]) noun = "Übergang";
+    const char* fmt = acc::strings::Get(Id::FmtMapCursorDoorTransition);
+    if (fmt && fmt[0]) return acc::strfmt::Format(fmt, noun, dirWord, dest);
+    return acc::strfmt::Format("%s %s %s", noun, dirWord, dest);
+}
 
 // Door-on-edge test. Per design choice (c): door is "on" the segment
 // AB iff its projection parameter t is in [0,1] AND its perpendicular
@@ -1238,12 +1364,19 @@ int AxisOctantMask(acc::strings::Id axisId) {
 //                         in the octant suppresses the marker — fixes
 //                         the order-dependent first-wins bug from the
 //                         initial revision.
+// trigIdxs/trigCount: indices into g_graph.transitions attached to this
+// cluster (nearest nav node is a member). Each renders as a named exit
+// entry appended to the label — and a dead-end cluster that carries one
+// is no dead end at all: the walkmesh ends there because the AREA ends
+// there, so it re-renders as a passage toward the transition instead of
+// "Sackgasse" (the Südlicher Strand exit-corridor fix).
 void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
                      const Vector& centroid,
                      const int* externalNbs,
                      const int* externalSrcs,
                      const int* externalDoorIdx,
                      int externalCount,
+                     const int* trigIdxs, int trigCount,
                      int areaHint, float centroidFloorZ,
                      bool isLargeArea,
                      std::string& outLabel,
@@ -1255,6 +1388,15 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
     outSig  = kKindOpenArea;
     outFiltered = false;
     int n = static_cast<int>(g.nodes.size());
+
+    // Pre-render the attached transition-trigger exits once; the paths
+    // below append them to whatever list form they build. Empty when the
+    // cluster has no attached transitions (the overwhelmingly common case).
+    std::string trigEntries;
+    for (int t = 0; t < trigCount; ++t) {
+        AppendListEntry(trigEntries,
+                        RenderTransitionExit(trigIdxs[t], centroid));
+    }
 
     // Area path: probe-owned merged spaces (open / room / merged big
     // junction). One neutral "Bereich" label, long-axis cue only when
@@ -1300,6 +1442,10 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
             }
         }
 
+        // Attached transition triggers are exits like any other — appended
+        // last so the compass entries keep their canonical clockwise order.
+        AppendListEntry(dirList, trigEntries);
+
         Id axisId = Id::AxisEastWest;
         bool elong = ComputeCentroidAxis(centroid, centroidFloorZ, axisId);
         // Large-footprint clusters swap the neutral "Bereich" noun for
@@ -1320,7 +1466,7 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
         // the axis pair, so the common case (exits differ from elongation)
         // is untouched.
         bool axisCoversExits = false;
-        if (elong) {
+        if (elong && trigEntries.empty()) {
             int axisMask = AxisOctantMask(axisId);
             if (axisMask != 0 && mask == axisMask) {
                 bool anyDoor = false;
@@ -1357,6 +1503,35 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
     if (externalCount == 1) {
         int nb = externalNbs[0];
         if (nb < 0 || nb >= n) return;
+
+        // A "dead end" carrying a transition trigger is the area exit,
+        // not a dead end — the walkmesh stops because the AREA stops.
+        // Render as a passage: the transition entry first (the salient
+        // information), then the direction back into the map. Corridor
+        // kind so the announce path treats it as a normal passage.
+        if (!trigEntries.empty()) {
+            float bdx = g.nodes[nb].pos.x - centroid.x;
+            float bdy = g.nodes[nb].pos.y - centroid.y;
+            const char* backWord =
+                acc::strings::Get(OctantFromVector(bdx, bdy));
+            std::string list = trigEntries;
+            if (backWord && backWord[0]) {
+                AppendListEntry(list, std::string(backWord));
+            }
+            outLabel = list;
+            outKind  = kKindCorridor;
+            int backBit = OctantBit(OctantFromVector(bdx, bdy));
+            outSig = (kKindCorridor & 0xff) |
+                     (((backBit < 0 ? 0 : backBit) & 0xff) << 8);
+            acclog::Write(
+                "WallTopo",
+                "ClassifyCluster: degree-1 at (%.1f,%.1f) carries %d "
+                "transition trigger%s — rendered as passage \"%s\" instead "
+                "of Sackgasse",
+                centroid.x, centroid.y, trigCount,
+                trigCount == 1 ? "" : "s", outLabel.c_str());
+            return;
+        }
 
         // Walkmesh-shape gate: a degree-1 graph node is treated as a
         // primary candidate only when the walkmesh at the node's
@@ -1443,6 +1618,7 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
             doorIdx = FindDoorOnEdge(g.nodes[nbA].pos, g.nodes[nbB].pos);
         }
         outLabel = RenderCorridorAxis(bitA, bitB, doorIdx);
+        AppendListEntry(outLabel, trigEntries);
         if (doorIdx >= 0) {
             acclog::Write(
                 "WallTopo",
@@ -1584,6 +1760,27 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
         int bit = realExitBits[0];
         Id dirId = BitToOctant(bit);
         const char* dirWord = acc::strings::Get(dirId);
+        if (!trigEntries.empty()) {
+            // Same rule as the degree-1 path: a transition trigger makes
+            // this a passage toward the exit, not a Sackgasse.
+            std::string list = trigEntries;
+            if (octantDoorIdx[bit] >= 0) {
+                AppendListEntry(list,
+                                RenderDoorDirection(octantDoorIdx[bit],
+                                                    dirWord ? dirWord : ""));
+            } else if (dirWord && dirWord[0]) {
+                AppendListEntry(list, std::string(dirWord));
+            }
+            outLabel = list;
+            outKind  = kKindCorridor;
+            outSig   = (kKindCorridor & 0xff) | ((bit & 0xff) << 8);
+            acclog::Write(
+                "WallTopo",
+                "ClassifyCluster: junction at (%.1f,%.1f) carries transition "
+                "trigger — rendered as passage \"%s\" instead of Sackgasse",
+                centroid.x, centroid.y, outLabel.c_str());
+            return;
+        }
         if (octantDoorIdx[bit] >= 0) {
             outLabel = RenderDoorDirection(octantDoorIdx[bit],
                                            dirWord ? dirWord : "");
@@ -1610,6 +1807,7 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
                           ? octantDoorIdx[firstDoorBit]
                           : -1;
         outLabel = RenderCorridorAxis(bitA, bitB, doorIdx);
+        AppendListEntry(outLabel, trigEntries);
         outKind = kKindCorridor;
         int sigBitLo = (bitA < bitB) ? bitA : bitB;
         int sigBitHi = (bitA < bitB) ? bitB : bitA;
@@ -1655,6 +1853,9 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
         if (markDeadEnd) deadEndMask |= (1 << bit);
         AppendListEntry(dirList, DirEntry(dirId, markDeadEnd));
     }
+
+    // Attached transition triggers appended last, same as the area path.
+    AppendListEntry(dirList, trigEntries);
 
     // Reached by a hub (singleton or merged) with no open/room geometry, so
     // this path renders "Kreuzung". A hub that IS open/room was flagged a
@@ -2076,6 +2277,7 @@ void Reset() {
     g_graph.built      = false;
     g_graph.node_count = 0;
     g_graph.door_count = 0;
+    g_graph.transition_count = 0;
     s_class_clear   = 0;
     s_class_door    = 0;
     s_class_blocked = 0;
@@ -2197,6 +2399,7 @@ void BuildForArea(void* area) {
         g_graph.node_sig[i]        = 0;
         g_graph.node_kind[i]       = kKindOpenArea;
         g_graph.node_cluster_id[i] = kClusterIdNone;
+        g_graph.node_extent[i]     = 0.0f;
     }
 
     // Snapshot doors before classifying clusters — ClassifyCluster's
@@ -2214,6 +2417,9 @@ void BuildForArea(void* area) {
     // flags matched landmarks in the transitions cache so the
     // proximity-fire path won't double-announce.
     AttachLandmarksToDoors(area);
+    // Walk-through area-transition triggers — the door analog for outdoor
+    // maps. Needs node_pos[] (filled above) for the nearest-node binding.
+    SnapshotTransitionTriggers(area);
     g_doors_stability.last_count  = g_graph.door_count;
     g_doors_stability.streak      = 0;
     g_doors_stability.retry_ticks = 0;
@@ -2840,11 +3046,25 @@ void BuildForArea(void* area) {
                       (size > 1 && hasRoom);
         if (isArea) areaHint = (hasRoom && !hasOpen) ? 1 : 2;
 
+        // Transition triggers whose nearest nav node is a member of this
+        // cluster become named exits in its label.
+        constexpr int kMaxClusterTransitions = 4;
+        int trigIdxs[kMaxClusterTransitions];
+        int trigCount = 0;
+        for (int t = 0; t < g_graph.transition_count &&
+                        trigCount < kMaxClusterTransitions; ++t) {
+            int nn = g_graph.transitions[t].nearestNode;
+            if (nn >= 0 && nn < n && UFFind(nn) == root) {
+                trigIdxs[trigCount++] = t;
+            }
+        }
+
         std::string label;
         int kind = kKindOpenArea, sig = 0;
         bool filtered = false;
         ClassifyCluster(g, centroid, externalNbs, externalSrcs,
                         externalDoorIdx, externalCount,
+                        trigIdxs, trigCount,
                         areaHint, centroidFloorZ, isLargeArea,
                         label, kind, sig, filtered);
 
@@ -2872,6 +3092,7 @@ void BuildForArea(void* area) {
             g_graph.node_kind[m]     = kind;
             g_graph.node_sig[m]      = sig;
             g_graph.node_filtered[m] = filtered;
+            g_graph.node_extent[m]   = bboxExtent;
         }
     }
 
@@ -2941,6 +3162,21 @@ void DumpGraphToLog() {
                       g_graph.node_pos[i].x, g_graph.node_pos[i].y,
                       g_graph.node_pos[i].z, g_graph.node_label[i].c_str());
     }
+}
+
+bool GetClusterInfo(void* area, int clusterId,
+                    int& outKind, float& outExtentM) {
+    outKind    = -1;
+    outExtentM = -1.0f;
+    if (clusterId < 0) return false;
+    if (!HasGraphForArea(area)) return false;
+    for (int i = 0; i < g_graph.node_count; ++i) {
+        if (g_graph.node_cluster_id[i] != clusterId) continue;
+        outKind    = g_graph.node_kind[i];
+        outExtentM = g_graph.node_extent[i];
+        return true;
+    }
+    return false;
 }
 
 bool LookupAt(void* area, const Vector& worldPos,

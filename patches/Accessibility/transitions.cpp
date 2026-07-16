@@ -76,6 +76,32 @@ constexpr int kClusterStabilityTicks = 5;
 int   g_pending_cluster_id    = acc::wall_topology::kClusterIdNone;
 int   g_pending_cluster_count = 0;
 
+// Minor-cluster dwell gate (2026-07-16, Südlicher Strand). Outdoor
+// organic walkmesh (rock paths on the Lehon beaches) fragments into
+// clusters of 3-8m extent — crossed in one to three seconds, announced
+// as bare compass lists. Over ~40 min on the Strand the four dominant
+// micro-labels fired 100+ times while the map's one meaningful region
+// ("Großer Bereich") fired 3 times. A region smaller than the player's
+// stride is sub-perceptual: hearing it mid-stride is noise, and worse,
+// crossing it resets the "current region" so re-entering the big
+// neighbour re-announces.
+//
+// Gate: a cluster whose footprint extent is below kMinorClusterExtentM
+// only announces after the player has actually STAYED in it for
+// kMinorClusterDwellMs. Passing through keeps the previous region
+// committed (no announce, no re-announce of the neighbour on exit).
+// Stop anywhere and the local label still arrives within ~2s, and the
+// on-demand facing+region query is unaffected.
+//
+// Unlike the retired 2026-05-13 coordinate hysteresis this can't
+// permanently silence a new label — the gate is purely "linger vs
+// pass-through", keyed to time inside the cluster, not displacement.
+// Friendly-name changes (authored content) bypass the gate entirely.
+constexpr float kMinorClusterExtentM = 12.0f;
+constexpr DWORD kMinorClusterDwellMs = 1800;
+DWORD g_pending_cluster_since_ms = 0;
+bool  g_pending_cluster_minor    = false;
+
 // Flat landmark cache. Built once on each area change by scanning
 // every CSWSWaypoint with has_map_note != 0 AND map_note_enabled != 0
 // and recording its world position + map_note CExoLocString text. The
@@ -1174,8 +1200,33 @@ void Tick() {
     if (clusterId == g_pending_cluster_id) {
         ++g_pending_cluster_count;
     } else {
-        g_pending_cluster_id    = clusterId;
-        g_pending_cluster_count = 1;
+        g_pending_cluster_id       = clusterId;
+        g_pending_cluster_count    = 1;
+        g_pending_cluster_since_ms = GetTickCount();
+        // Classify once on first observation — labels are baked per
+        // build, so the verdict can't change while pending.
+        g_pending_cluster_minor = false;
+        int   pendKind   = -1;
+        float pendExtent = -1.0f;
+        if (acc::wall_topology::GetClusterInfo(area, clusterId,
+                                               pendKind, pendExtent) &&
+            pendExtent >= 0.0f && pendExtent < kMinorClusterExtentM) {
+            g_pending_cluster_minor = true;
+            acclog::Write("Transition",
+                          "cluster -> %d is minor (extent=%.1fm < %.1fm, "
+                          "kind=%d) — dwell-gated %lums",
+                          clusterId, pendExtent, kMinorClusterExtentM,
+                          pendKind, (unsigned long)kMinorClusterDwellMs);
+        }
+    }
+
+    if (g_pending_cluster_count >= kClusterStabilityTicks &&
+        g_pending_cluster_minor && !friendlyChanged &&
+        (GetTickCount() - g_pending_cluster_since_ms) < kMinorClusterDwellMs) {
+        // Sub-perceptual cluster and the player hasn't lingered yet:
+        // hold. Passing through never commits, so the previous region
+        // stays current and won't re-announce on return.
+        return;
     }
 
     if (g_pending_cluster_count >= kClusterStabilityTicks) {

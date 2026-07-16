@@ -90,6 +90,14 @@ bool LookupAt(void* area, const Vector& worldPos,
               bool allowDiagLog = true,
               bool requireWallReachable = true);
 
+// Kind + footprint extent (longest bounding-box side of the member
+// nodes, metres) for a real cluster id returned by LookupAt. Lets
+// transitions.cpp dwell-gate sub-perceptual clusters without a second
+// label resolution. False (kind=-1, extent=-1) on sentinel ids, unknown
+// ids, or no graph.
+bool GetClusterInfo(void* area, int clusterId,
+                    int& outKind, float& outExtentM);
+
 void DumpGraphToLog();
 
 }  // namespace acc::wall_topology
