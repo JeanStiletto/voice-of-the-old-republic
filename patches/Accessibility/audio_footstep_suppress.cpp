@@ -55,8 +55,11 @@ uint64_t  g_last_tick_ms = 0;
 bool      g_was_stuck    = false;
 
 // Stuck-direction probe gating: leader-footstep freshness ⇒ walking;
-// 0.5 m over 2 s window ⇒ no progress despite walk-anim. Probe latches
-// once per episode; re-arms on meaningful displacement.
+// 0.5 m over 5 s window ⇒ no progress despite walk-anim. Probe latches
+// once per episode; re-arms on meaningful displacement. (Window raised
+// 2 s → 5 s 2026-07-16: the free-directions announce fired too eagerly
+// during normal wall-hugging navigation — user wants it only after a
+// genuinely sustained stall.)
 //
 // Freshness window sizing: leader PlayFootstep events arrive every
 // ~350-600 ms at normal gait and degrade to ~2 s gaps when the engine
@@ -68,7 +71,7 @@ bool      g_was_stuck    = false;
 // episodes. 1200 ms covers the normal cadence with margin; hard-stall
 // gaps beyond it still re-arm within one step once the anim resumes.
 constexpr uint64_t kFootstepFreshnessMs           = 1200;
-constexpr uint64_t kStuckWindowMs                 = 2000;
+constexpr uint64_t kStuckWindowMs                 = 5000;
 constexpr float    kAnnounceDisplacementMeters    = 0.5f;
 constexpr float    kAnnounceDisplacementMetersSq  =
     kAnnounceDisplacementMeters * kAnnounceDisplacementMeters;
@@ -89,7 +92,7 @@ bool     g_stuck_announced         = false;
 
 // ---------- Circling-detection state ------------------------------------
 //
-// Existing TickStuckAnnounce gates on "displaced < 0.5m over 2s" — fires
+// Existing TickStuckAnnounce gates on "displaced < 0.5m over kStuckWindowMs" — fires
 // when the player is wedged motionless. In the 2026-05-27 cantina
 // reproduction the player is moving ~3m per rotation pivot, easily
 // exceeding the 0.5m threshold, so the checkpoint resets on every
@@ -99,9 +102,14 @@ bool     g_stuck_announced         = false;
 // Circling detector measures path length (sum of per-tick |delta|)
 // vs net displacement (|end - start|). High ratio = lots of motion,
 // little net progress = oscillating in obstacles.
-constexpr uint64_t kCirclingWindowMs       = 4000;   // 4s window
-constexpr float    kCirclingMinPathMeters  = 4.0f;   // need real motion first
-                                                     // (4m at 1m/s ⇒ walking)
+// Window raised 4 s → 5 s (and min-path scaled with it) 2026-07-16,
+// same complaint as kStuckWindowMs: the circling path was the actual
+// source of nearly all "Frei:" fires in the 2026-07-16 session logs and
+// interrupted deliberate tight manoeuvring. Longer window = the player
+// must keep going nowhere for a full 5 s before the probe speaks.
+constexpr uint64_t kCirclingWindowMs       = 5000;   // 5s window
+constexpr float    kCirclingMinPathMeters  = 5.0f;   // need real motion first
+                                                     // (5m at 1m/s ⇒ walking)
 constexpr float    kCirclingMaxNetMeters   = 2.5f;   // and went nowhere
 constexpr float    kCirclingPathRatio      = 2.5f;   // path/net >= ratio
 
