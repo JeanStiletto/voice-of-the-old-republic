@@ -199,6 +199,15 @@ DoorMaterial GetDoorMaterial(void* serverDoor);
 // map-note text — disabled until the player discovers via map-pin trigger.
 bool IsMapNoteEnabled(void* waypoint);
 
+// Replica of the write path in ExecuteCommandSetMapPinEnabled(TRUE)
+// @0x0054b460: guard on has_map_note (+0x228), then set the int at
+// +0x22c on the SERVER waypoint. The engine action's follow-up client
+// message only updates CSWCMapPin quest markers (a GetMapPin miss for
+// GIT waypoints), so this field write is the complete effect for map
+// notes: the in-game map, our cycle/beacon, and save serialization all
+// read this field. False on null / no-map-note / fault.
+bool EnableMapNote(void* waypoint);
+
 // AppManager → CServerExoApp → GetModule → CSWSModule.area_map @+0x218.
 // Shared by map_ui_cursor (cursor projection + fog) and cycle_state
 // (map-context fog filter).

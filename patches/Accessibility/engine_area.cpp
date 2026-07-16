@@ -789,6 +789,22 @@ bool IsMapNoteEnabled(void* waypoint) {
     }
 }
 
+bool EnableMapNote(void* waypoint) {
+    if (!waypoint) return false;
+    __try {
+        unsigned char* base = reinterpret_cast<unsigned char*>(waypoint);
+        // Same guard the engine action applies before its write: only
+        // waypoints authored with a map note carry the enabled field.
+        if (*reinterpret_cast<int*>(base + kWaypointHasMapNoteOffset) == 0) {
+            return false;
+        }
+        *reinterpret_cast<int*>(base + kWaypointMapNoteEnabledOffset) = 1;
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 bool GetWaypointMapNote(void* waypoint, char* outBuf, size_t bufSize) {
     if (!waypoint || !outBuf || bufSize < 2) return false;
     outBuf[0] = '\0';

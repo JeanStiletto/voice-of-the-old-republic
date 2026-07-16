@@ -332,6 +332,21 @@ int   g_lm_prox_last_spoken_idx = -1;
 constexpr DWORD kLandmarkRecheckMs = 1000;
 DWORD g_landmark_recheck_last_ms  = 0;
 
+// Proximity auto-discovery for script-gated map notes. Vanilla enables
+// these via thin OnEnter tripwire triggers that assume centre-of-
+// corridor walking: the Tempeleingang note (unk_m41ad, 2026-07-16) is
+// enabled by a ~1.5m-wide strip with a ~3m walkable gap along the north
+// wall — the wall-following navigation style threads that gap every
+// pass, and the player stood 10m from the note without ever discovering
+// it. The Unknown World gates roughly half its notes this way (all
+// other planets author notes enabled from module entry). When the
+// leader is physically standing at the spot, enable the note ourselves
+// — same engine write the tripwire script performs, one-way. Radius is
+// deliberately tighter than the vanilla tripwires and below
+// kLandmarkEnterRangeM, so the proximity announce fires on the same
+// recheck tick that surfaces the note.
+constexpr float kMapNoteAutoDiscoverRangeM = 5.0f;
+
 // Post-gate cluster re-announce. Cluster changes during combat / blocking
 // UI advance state silently; without a refire the player ends combat
 // standing in a room they never heard described (Shyrack-Höhle: clusters
@@ -649,12 +664,40 @@ void TickGatedClusterRefire(void* area, const Vector& playerPos) {
 // Forward declaration so TickProximityLandmarks can call it.
 bool IsWorldSpeechGatedImpl();
 
+// If `waypoint` (a landmark whose note is still disabled) sits within
+// auto-discover range of the leader, enable it via the engine's own
+// field write. Returns true when the note was enabled this call.
+bool TryAutoDiscoverMapNote(void* waypoint, const Vector& playerPos) {
+    Vector lmPos;
+    if (!acc::engine::GetObjectPosition(waypoint, lmPos)) return false;
+    float dx = playerPos.x - lmPos.x;
+    float dy = playerPos.y - lmPos.y;
+    float d2 = dx * dx + dy * dy;
+    if (d2 > kMapNoteAutoDiscoverRangeM * kMapNoteAutoDiscoverRangeM) {
+        return false;
+    }
+    if (!acc::engine::EnableMapNote(waypoint)) return false;
+    char note[128] = {0};
+    acc::engine::GetWaypointMapNote(waypoint, note, sizeof(note));
+    acclog::Write("Transition",
+                  "landmark auto-discover: map note '%s' enabled at "
+                  "%.2fm — leader reached the spot without crossing the "
+                  "authored tripwire trigger",
+                  note, std::sqrt(d2));
+    return true;
+}
+
 // Detect map notes whose enabled flag flipped since the last cache scan
 // and rebuild. Cheap: one flag sweep over the area object list, at most
 // once per kLandmarkRecheckMs. On drift the proximity state is reset —
 // cache indices are positional and a mid-list insertion would leave the
 // pending/last-spoken indices pointing at the wrong entry.
-void TickLandmarkCacheRecheck(void* area) {
+// The same sweep performs proximity auto-discovery (see
+// kMapNoteAutoDiscoverRangeM): a disabled note the leader is standing
+// on is enabled in place and counts toward the drift check, so the
+// cache rebuild + door attach + proximity announce all follow on this
+// same tick.
+void TickLandmarkCacheRecheck(void* area, const Vector& playerPos) {
     DWORD now = GetTickCount();
     if (g_landmark_recheck_last_ms != 0 &&
         (now - g_landmark_recheck_last_ms) < kLandmarkRecheckMs) {
@@ -670,7 +713,10 @@ void TickLandmarkCacheRecheck(void* area) {
             continue;
         }
         if (!acc::engine::IsLandmarkWaypoint(obj)) continue;
-        if (!acc::engine::IsMapNoteEnabled(obj))   continue;
+        if (!acc::engine::IsMapNoteEnabled(obj) &&
+            !TryAutoDiscoverMapNote(obj, playerPos)) {
+            continue;
+        }
         ++enabled;
     }
     if (enabled == g_landmark_enabled_at_scan) return;
@@ -1007,7 +1053,7 @@ void Tick() {
     // Staleness recheck must run BEFORE the proximity scan so a note the
     // engine just enabled becomes proximity-eligible on the same tick the
     // player is already standing next to it.
-    TickLandmarkCacheRecheck(area);
+    TickLandmarkCacheRecheck(area, pos);
 
     TickProximityLandmarks(pos);
 
