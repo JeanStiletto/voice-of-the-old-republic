@@ -144,12 +144,20 @@ struct SpeakerInfo {
 //     misclassification; the appearance verdict is "correct" and only the VO
 //     language makes the subtitle essential, so a tag exemption is the only
 //     possible fix. (Reported in-game 2026-07-15.)
+//   - "kor35_adrenas": Adrenas, a Sith student in the Korriban academy
+//     (module kor35). Wears Sith_Mal_Asian (appearance 302, race == HUMAN), a
+//     genuinely human model shared with the academy's Basic-voiced students —
+//     but he is voiced in alien Twi'leki, so his translated subtitle is the
+//     player's only channel. Same case as Tariga: the appearance verdict is
+//     correct and only the VO language makes the subtitle essential.
+//     (Reported in-game 2026-07-15.)
 constexpr const char* kNeverSuppressTags[] = {
     "sasha",
     "vek",
     "tat17_03komad_01",
     "kas22_xkomad_01",
     "kor35_tariga",
+    "kor35_adrenas",
 };
 
 bool IsNeverSuppressTag(const char* tag) {
@@ -178,9 +186,15 @@ bool IsNeverSuppressTag(const char* tag) {
 //     non-human, but he is human (race == HUMAN) and voiced in Basic with full
 //     VO, so his subtitle is redundant and clashed with the voice. Same case as
 //     Cassandra. (Reported in-game 2026-06-14.)
+//   - "kor35_yuthura": Yuthura Ban, the Twi'lek second-in-command of the
+//     Korriban Sith academy (module kor35). Wears her one-off model
+//     (Unique_Yuthura_Ban, appearance 280), which classifies non-human — but
+//     like the party's Twi'leks she speaks Basic with full VO, so her subtitle
+//     is redundant and clashed with the voice. (Reported in-game 2026-07-15.)
 constexpr const char* kAlwaysSuppressTags[] = {
     "man26_casandra",
     "man28_merc",
+    "kor35_yuthura",
 };
 
 bool IsAlwaysSuppressTag(const char* tag) {
