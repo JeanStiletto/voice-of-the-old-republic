@@ -1139,12 +1139,17 @@ std::string RenderDoorDirection(int doorIdx, const char* dirWord) {
 // Render a corridor's axis label into outBuf. Branches by corridor
 // symmetry so the spoken form stays terse for clean axes but exposes
 // both endpoints when the corridor turns:
-//   - opposite octants (bit XOR == 4) = symmetric corridor → single
-//     label. Cardinal pairs (N+S, E+W) use the dedicated axis words
-//     ("Nord-Süd" / "Ost-West"); diagonal pairs (NE+SW, NW+SE) use
-//     the northern-half octant word ("Nord-Ost" / "Nord-West") —
-//     diagonals are symmetric enough that the abbreviation reads
-//     naturally.
+//   - opposite CARDINAL octants (N+S, E+W) → the dedicated axis words
+//     ("Nord-Süd" / "Ost-West"). Unambiguous: neither is an octant
+//     name, so they can only be heard as an axis.
+//   - opposite DIAGONAL octants (NE+SW, NW+SE) → both direction words,
+//     same as the asymmetric form below. These USED to abbreviate to
+//     the northern-half octant word ("Nord-Ost") — but that word IS a
+//     direction name, so by ear it read as "one exit, north-east" and
+//     hid the south-west continuation entirely. On the Südlicher
+//     Strand (2026-07-16 session) the abbreviated NE–SW connector
+//     between the two Kreuzungen was the only route to the beach, and
+//     its south-west end was never voiced.
 //   - non-opposite octants = asymmetric / L-shaped corridor → both
 //     direction words rendered, more-northern-first ("Korridor West,
 //     Süd-Ost"). Caught the "Korridor West" failure mode where the
@@ -1157,18 +1162,11 @@ std::string RenderCorridorAxis(int bitA, int bitB, int doorIdx) {
     using acc::strings::Id;
     if (bitA < 0 || bitB < 0 || bitA == bitB) return std::string();
 
-    if ((bitA ^ bitB) == 4) {
-        Id wordId;
-        if (bitA == 2 || bitB == 2) {
-            wordId = Id::AxisNorthSouth;  // N <-> S
-        } else if (bitA == 0 || bitB == 0) {
-            wordId = Id::AxisEastWest;    // E <-> W
-        } else {
-            // Diagonal pair: NE(1)+SW(5) or NW(3)+SE(7). Northern
-            // half always has the lower bit number in these pairs.
-            int northBit = (bitA < bitB) ? bitA : bitB;
-            wordId = BitToOctant(northBit);
-        }
+    bool cardinalPair = ((bitA ^ bitB) == 4) &&
+                        (bitA == 2 || bitB == 2 || bitA == 0 || bitB == 0);
+    if (cardinalPair) {
+        Id wordId = (bitA == 2 || bitB == 2) ? Id::AxisNorthSouth   // N <-> S
+                                             : Id::AxisEastWest;    // E <-> W
         const char* word = acc::strings::Get(wordId);
         if (!word || !word[0]) return std::string();
         if (doorIdx >= 0) return RenderDoorDirection(doorIdx, word);
