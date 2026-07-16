@@ -168,7 +168,10 @@ bool GetObjectDisplayNameByHandle(uint32_t handle,
 //                        has_inventory @+0x324. Drops scenery placeables.
 //   IsLandmarkWaypoint   CSWSWaypoint.has_map_note @+0x228.
 //   IsTransitionTrigger  CSWSTrigger.transition_destination @+0x30c
-//                        (Vector — non-zero indicates set).
+//                        (loc-string presence: inline text, or a valid
+//                        TLK strref — the 0xFFFFFFFF sentinel means no
+//                        destination, i.e. trap / banter / script
+//                        trigger, NOT a transition).
 bool IsUsablePlaceable(void* placeable);
 bool IsLandmarkWaypoint(void* waypoint);
 bool IsTransitionTrigger(void* trigger);
@@ -411,14 +414,26 @@ constexpr size_t kItemRepositoryItemCountOffset = 0x10;
 constexpr size_t kWaypointHasMapNoteOffset     = 0x228;
 // CSWSTrigger.transition_destination — a CExoLocString holding the
 // human-readable "to X" exit label (e.g. "Zur Oberstadt"). Read as a
-// LocString by GetObjectName's Trigger case. IsTransitionTrigger reads
-// its leading 12 bytes as a Vector purely as a populated/empty presence
-// probe (a real area-transition trigger has a non-empty destination).
+// LocString by GetObjectName's Trigger case. IsTransitionTrigger tests
+// presence structurally: inline text pointer at +0 (with length at +4),
+// else the +4 slot is the TLK strref, where the GFF sentinel 0xFFFFFFFF
+// means "no destination" (trap / banter / script trigger).
 constexpr size_t kTriggerTransitionDestOffset  = 0x30c;  // CExoLocString
 
 // BioWare-authored map-note labels (CSWSWaypoint SIZE=0x240).
 constexpr size_t kWaypointMapNoteEnabledOffset = 0x22c;
 constexpr size_t kWaypointMapNoteLocOffset     = 0x230;
+
+// Trap ("mine") detected-by bookkeeping — engine model in
+// docs/llm-docs/mine-trap-model.md. Each trappable kind carries a
+// CExoArrayList<ulong> of SERVER object ids that have detected its trap
+// (party detection adds every party member at once). Layout at the given
+// offset: data pointer at +0, count at +4. Offsets verified against the
+// CSWSCreature::UpdateMineCheck decompile (the engine's own consumer).
+constexpr size_t kTriggerTrapDetectedListOffset   = 0x2a8;
+constexpr size_t kTriggerIsTrapOffset             = 0x2bc;  // undefined4, != 0 on mines
+constexpr size_t kDoorTrapDetectedListOffset      = 0x2dc;
+constexpr size_t kPlaceableTrapDetectedListOffset = 0x318;
 
 // Walkmesh wall-edge extraction. Pillar 1 foundation.
 //
@@ -451,6 +466,14 @@ constexpr size_t kWalkmeshFaceStride               = 0xc;   // 3 × ulong
 constexpr uintptr_t kAddrCollisionMeshLocalToWorld = 0x00596aa0;
 
 namespace acc::engine {
+
+// True when `gameObject`'s trap has been detected by any of the given
+// SERVER object ids (pass the current party's ids). Kind-dispatched to
+// the per-kind detected-by list (kTriggerTrapDetectedListOffset etc.
+// above); false for untrappable kinds, empty lists, null/fault. idCount
+// small (party ≤ 4 incl. PC).
+bool TrapDetectedByAnyOf(void* gameObject,
+                         const uint32_t* ids, int idCount);
 
 // One perimeter walkmesh edge — a triangle side that has no neighbour
 // (`SurfaceMeshAdjacency.indices[e] == -1`) and therefore corresponds to a

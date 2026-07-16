@@ -665,13 +665,64 @@ bool IsLandmarkWaypoint(void* waypoint) {
 bool IsTransitionTrigger(void* trigger) {
     if (!trigger) return false;
     __try {
-        Vector dest = *reinterpret_cast<Vector*>(
-            reinterpret_cast<unsigned char*>(trigger) +
-            kTriggerTransitionDestOffset);
-        return dest.x != 0.0f || dest.y != 0.0f || dest.z != 0.0f;
+        // CSWSTrigger.transition_destination: inline text pointer at +0
+        // with length-or-strref at +4 (same dual-slot convention
+        // ExtractTextOrStrRef consumes for doors). A trigger with no
+        // destination has a null text pointer and the GFF "no strref"
+        // sentinel 0xFFFFFFFF in the +4 slot.
+        //
+        // The old probe read the first 12 bytes as a Vector and tested
+        // != 0.0f — but the 0xFFFFFFFF sentinel decodes as NaN, and
+        // NaN != 0.0f is true, so EVERY destination-less trigger (traps,
+        // banter/dialogue triggers, shield triggers) classified as a
+        // transition: they polluted the Übergang cycling category and
+        // fired the Transition proximity cue on approach (2026-07-16
+        // Südlicher Strand session). Mirror ExtractTextOrStrRef's
+        // resolution order instead, with LookupTlk's strref validity
+        // bounds, minus the actual TLK call (this predicate runs per
+        // object per tick in the change detector).
+        unsigned char* p = reinterpret_cast<unsigned char*>(trigger) +
+                           kTriggerTransitionDestOffset;
+        const char* text = *reinterpret_cast<const char**>(p);
+        uint32_t    aux  = *reinterpret_cast<uint32_t*>(p + 4);
+        if (text) return aux > 0;  // inline text: aux is its length
+        // No inline text: aux is the TLK strref (0 / -1 / out-of-range
+        // all mean "no destination", matching LookupTlk).
+        return aux != 0 && aux != 0xFFFFFFFFu && aux <= 0x100000u;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
+}
+
+bool TrapDetectedByAnyOf(void* gameObject,
+                         const uint32_t* ids, int idCount) {
+    if (!gameObject || !ids || idCount <= 0) return false;
+    size_t listOff = 0;
+    int kind = GetObjectKind(gameObject);
+    if (kind == static_cast<int>(GameObjectKind::Trigger)) {
+        listOff = kTriggerTrapDetectedListOffset;
+    } else if (kind == static_cast<int>(GameObjectKind::Door)) {
+        listOff = kDoorTrapDetectedListOffset;
+    } else if (kind == static_cast<int>(GameObjectKind::Placeable)) {
+        listOff = kPlaceableTrapDetectedListOffset;
+    } else {
+        return false;
+    }
+    __try {
+        unsigned char* base = reinterpret_cast<unsigned char*>(gameObject);
+        uint32_t* data  = *reinterpret_cast<uint32_t**>(base + listOff);
+        int       count = *reinterpret_cast<int*>(base + listOff + 4);
+        if (!data || count <= 0) return false;
+        if (count > 64) count = 64;  // sanity cap on a corrupt read
+        for (int i = 0; i < count; ++i) {
+            for (int j = 0; j < idCount; ++j) {
+                if (data[i] == ids[j]) return true;
+            }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return false;
 }
 
 bool IsDoorOpen(void* serverDoor) {
