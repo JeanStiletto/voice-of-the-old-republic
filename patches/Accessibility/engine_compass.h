@@ -22,4 +22,11 @@ float EngineYawToCompass(float engineYawDeg);
 int   CompassToSector(float compassDeg);
 acc::strings::Id SectorString(int sector);
 
+// Clock position of the world-space offset (dx, dy) relative to a
+// facing given in ENGINE yaw degrees: 12 = directly ahead, 3 = right,
+// 6 = behind, 9 = left. 30° buckets, round-to-nearest; the ahead bucket
+// returns 12 (never 0). Moved here from cycle_input.cpp so trap/object
+// announcements share one definition.
+int ClockPosition(float playerYawDeg, float dx, float dy);
+
 }  // namespace acc::engine

@@ -46,6 +46,7 @@
 #include "engine_input.h"
 #include "spatial_change_detector.h"
 #include "swoop_race.h"
+#include "trap_watch.h"
 #include "turret_game.h"
 #include "transitions.h"
 #include "update_checker.h"
@@ -341,6 +342,11 @@ void Dispatch() {
 
     // Discovery-tier deferred load (runs after transitions has set the area).
     PHASE("discovery", acc::discovery::Tick());
+
+    // Trap ("mine") detected-state watcher — mirrors the engine's per-trap
+    // detected-by lists for sighted-parity trap warnings. Internally
+    // throttled to 250ms scans.
+    PHASE("trap_watch", acc::trap_watch::Tick());
 
     PHASE("view_mode", acc::view_mode::Tick());
 

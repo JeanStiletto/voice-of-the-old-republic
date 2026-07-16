@@ -26,6 +26,17 @@ int CompassToSector(float compassDeg) {
     return s;
 }
 
+int ClockPosition(float playerYawDeg, float dx, float dy) {
+    constexpr float kRadToDeg = 57.29577951308232f;
+    float worldAngle = std::atan2(dy, dx) * kRadToDeg;
+    float relCcw = worldAngle - playerYawDeg;
+    float clockDeg = -relCcw;  // flip to clockwise from +ahead
+    while (clockDeg < 0.0f)    clockDeg += 360.0f;
+    while (clockDeg >= 360.0f) clockDeg -= 360.0f;
+    int hour = static_cast<int>(clockDeg / 30.0f + 0.5f) % 12;
+    return hour == 0 ? 12 : hour;
+}
+
 acc::strings::Id SectorString(int sector) {
     using S = acc::strings::Id;
     switch (sector) {

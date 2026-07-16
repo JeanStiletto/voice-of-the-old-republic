@@ -97,6 +97,17 @@ enum class Id : int {
     FmtAnnounceNoClock,
     FmtCategoryItem,
 
+    // ---- Trap warnings (trap_watch.cpp; engine model in
+    //      docs/llm-docs/mine-trap-model.md).
+    //      `FmtTrapDetected` takes the trapped object's name (`%s`) —
+    //      spoken when a door/placeable trap enters the party's
+    //      detected state (the engine emits a feedback line only for
+    //      ground mines, not for trapped doors/containers).
+    //      `MineNoun` is the fallback noun for a detected ground mine
+    //      whose trigger has no authored localized name.
+    FmtTrapDetected,
+    MineNoun,
+
     // ---- Pillar 4 → guidance binding (Shift+-).
     //      `FmtGuidingTo`     takes the resolved focused-object name (`%s`).
     //      `FmtGuidingFailed` takes the same `%s` — spoken when WalkTo

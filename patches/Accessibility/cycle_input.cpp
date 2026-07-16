@@ -17,6 +17,7 @@
 #include "audio_cues.h"
 #include "cycle_state.h"
 #include "engine_area.h"
+#include "engine_compass.h"      // ClockPosition — shared clock-direction math
 #include "engine_input.h"
 #include "engine_panels.h"
 #include "engine_player.h"
@@ -55,16 +56,8 @@ bool g_engineShiftHeld = false;
 // "ahead"; clocks tick CW, so we negate before bucketing into 30° slots.
 //
 // Returns 12 for the directly-ahead bucket (which would otherwise be 0).
-int ClockPosition(float playerYawDeg, float dx, float dy) {
-    constexpr float kRadToDeg = 57.29577951308232f;
-    float worldAngle = std::atan2(dy, dx) * kRadToDeg;
-    float relCcw = worldAngle - playerYawDeg;
-    float clockDeg = -relCcw;  // flip to clockwise from +ahead
-    while (clockDeg < 0.0f)    clockDeg += 360.0f;
-    while (clockDeg >= 360.0f) clockDeg -= 360.0f;
-    int hour = static_cast<int>(clockDeg / 30.0f + 0.5f) % 12;
-    return hour == 0 ? 12 : hour;
-}
+// Shared definition lives in engine_compass (also used by trap_watch).
+using acc::engine::ClockPosition;
 
 // Map a CycleCategory to its strings::Id pair (singular name + empty
 // message) and its 3D audio cue. Centralises the table so OnCycleItem /

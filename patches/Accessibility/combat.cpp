@@ -322,7 +322,10 @@ void TickCombatLog() {
 
 #include "msg_router.h"
 #include "combat_strings.h"
+#include "engine_compass.h"   // ClockPosition — mine-detect line enrichment
 #include "party_cache.h"
+#include "strfmt.h"           // Format — heap-backed line assembly
+#include "trap_watch.h"       // PeekFreshMine / ConsumeFreshMine correlation
 
 namespace acc::combat {
 namespace {
@@ -1257,6 +1260,65 @@ bool RuleKill(const char* text) {
     return true;  // claimed: urgent speech handled here
 }
 
+// Mine-detection feedback enrichment. The engine line (TLK 42132,
+// "<detector> entdeckt <Minenname>: Bewusstsein <roll> gegen SK <dc>")
+// tells the player a mine exists but not WHERE — sighted players see the
+// red ground overlay appear at the same moment. trap_watch records every
+// fresh party mine detection (name + position); when a message-buffer
+// line arrives that contains that mine's localized name, it is the
+// detect line, in ANY locale — no per-language anchor needed. Rewrite:
+// keep the text up to the roll-math colon (the math is review-log
+// detail, same reasoning as RuleBedrohung) and append clock direction +
+// distance via the shared announce format:
+//   "Jolee entdeckt Normale Blitzmine, auf 2 Uhr, 6 Meter"
+bool RuleMineDetect(const char* text) {
+    char   mineName[96];
+    Vector minePos;
+    if (!acc::trap_watch::PeekFreshMine(mineName, sizeof(mineName),
+                                        minePos)) {
+        // The engine can append the feedback line before our throttled
+        // scan noticed the detected-by transition — force one rescan
+        // (rate-limited inside) before concluding this isn't a detect line.
+        acc::trap_watch::ScanNow();
+        if (!acc::trap_watch::PeekFreshMine(mineName, sizeof(mineName),
+                                            minePos)) {
+            return false;
+        }
+    }
+    if (!mineName[0] || !strstr(text, mineName)) return false;
+    acc::trap_watch::ConsumeFreshMine();
+
+    // Prefix = everything before the stat separator (the last colon —
+    // the roll math after it carries no colon of its own). Fall back to
+    // the whole line if the shape is unexpected.
+    char prefix[256];
+    const char* colon = strrchr(text, ':');
+    size_t plen = colon ? (size_t)(colon - text) : strlen(text);
+    if (plen >= sizeof(prefix)) plen = sizeof(prefix) - 1;
+    memcpy(prefix, text, plen);
+    prefix[plen] = '\0';
+
+    std::string line(prefix);
+    Vector p{};
+    float  yaw = 0.0f;
+    if (acc::engine::GetPlayerPosition(p) &&
+        acc::engine::GetPlayerYawDegrees(yaw)) {
+        int clock = acc::engine::ClockPosition(yaw, minePos.x - p.x,
+                                               minePos.y - p.y);
+        float dx = minePos.x - p.x, dy = minePos.y - p.y;
+        int m = static_cast<int>(sqrtf(dx * dx + dy * dy) + 0.5f);
+        if (m < 1) m = 1;
+        const char* fmt =
+            acc::strings::Get(acc::strings::Id::FmtAnnounceWithClock);
+        if (fmt && fmt[0]) line = acc::strfmt::Format(fmt, prefix, clock, m);
+    }
+
+    auto& r = acc::msg::Router::Instance();
+    r.Speak(line.c_str());
+    r.LogEmit("emit-mine-detect", line.c_str());
+    return true;  // claimed
+}
+
 void OnUnmatched(const char* /*text*/) {
     // Unknown mid-block line is a clean boundary — emit whatever
     // breakdown we have (typically a miss whose Schadensstatistik
@@ -1268,6 +1330,10 @@ void OnUnmatched(const char* /*text*/) {
 
 void RegisterCombatMsgRules() {
     auto& r = acc::msg::Router::Instance();
+    // Mine-detect first: it only activates while a fresh detection is
+    // queued (cheap peek), and its line shape ("<actor> entdeckt <mine>:
+    // ...") must not fall through to the generic rules.
+    r.AddRule("CombatMineDetect", RuleMineDetect);
     r.AddRule("CombatSummary",   RuleSummary);
     r.AddRule("CombatAngriff",   RuleAngriff);
     r.AddRule("CombatAbwehr",    RuleAbwehr);

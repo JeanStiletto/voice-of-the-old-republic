@@ -46,6 +46,8 @@ const char* Get(Id id) {
         case Id::FmtAnnounceWithClock: return "%s, alle ore %d, %d metri";
         case Id::FmtAnnounceNoClock:   return "%s, %d metri";
         case Id::FmtCategoryItem:      return "%s. %s";
+        case Id::FmtTrapDetected:      return "Trappola individuata: %s";
+        case Id::MineNoun:             return "Mina";
 
         case Id::FmtGuidingTo:         return "Guida verso %s";
         case Id::FmtGuidingFailed:     return "Guida verso %s fallita";
