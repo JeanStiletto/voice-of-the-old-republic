@@ -367,6 +367,7 @@ void Dispatch() {
     PHASE("combat.mode", acc::combat::TickCombatMode());
     PHASE("combat.log", acc::combat::TickCombatLog());
     PHASE("combat.absorb", acc::combat::TickCombatAbsorb());
+    PHASE("combat.deflect", acc::combat::TickCombatDeflect());
     PHASE("combat.effects", acc::combat::TickCombatEffects());
     PHASE("combat.leaderChange", acc::combat::query::TickLeaderChangeAutoAnnounce());
     PHASE("combat.queue", acc::combat::queue::Tick());

@@ -162,6 +162,71 @@ void Persist() {
     acc::engine::SetPlayerVarString(g_varName.c_str(), val.c_str());
 }
 
+// ---- Auto-discovery seeds -------------------------------------------------
+// Combat-critical placeables the player must be able to cycle to even if
+// they never walked past them in a discovery phase — mid-fight there is no
+// calm exploration window. Seeded into the discovered set right after the
+// area's save var loads, keyed by object tag (tags extracted from the
+// module rims with xoreos-tools, 2026-07-17).
+//   sta_m45ab — deck-2 turret-defense computers ("Computerterminal")
+//   sta_m45ac — battle-droid control terminals (Terminal Typ A/D/E/F + MK)
+//   sta_m45ad — Malak fight: the captive Jedi (tags captive2..captive8)
+struct AreaSeed {
+    const char*        areaKey;   // module resref, matches g_areaTag
+    const char* const* tags;      // nullptr-terminated tag list
+};
+
+const char* const kSeedTagsStaM45ab[] = {
+    "sta45_turretcomp", nullptr,
+};
+const char* const kSeedTagsStaM45ac[] = {
+    "k45_plc_assdroid", "k45_plc_prbdroid", "k45_plc_excharge",
+    "k45_plc_wardroid", "k45_plc_mk", nullptr,
+};
+const char* const kSeedTagsStaM45ad[] = {
+    "sta_plc_captive2", "sta_plc_captive3", "sta_plc_captive4",
+    "sta_plc_captive5", "sta_plc_captive6", "sta_plc_captive7",
+    "sta_plc_captive8", nullptr,
+};
+
+const AreaSeed kAreaSeeds[] = {
+    {"sta_m45ab", kSeedTagsStaM45ab},
+    {"sta_m45ac", kSeedTagsStaM45ac},
+    {"sta_m45ad", kSeedTagsStaM45ad},
+};
+
+// Record every area object whose tag is on the current area's seed list.
+// Runs once per area reconciliation (right after LoadFromSave); Record's
+// own dup check makes revisits no-ops.
+void ApplySeeds() {
+    const char* const* tags = nullptr;
+    for (const auto& s : kAreaSeeds) {
+        if (g_areaTag == s.areaKey) { tags = s.tags; break; }
+    }
+    if (!tags || !g_area) return;
+
+    int seeded = 0;
+    acc::engine::AreaObjectIterator it(g_area);
+    while (void* obj = it.Next()) {
+        char tag[96];
+        if (!acc::engine::GetObjectTag(obj, tag, sizeof(tag)) || !tag[0]) {
+            continue;
+        }
+        for (const char* const* t = tags; *t; ++t) {
+            if (std::strcmp(tag, *t) == 0) {
+                size_t before = g_keys.size();
+                Record(obj);
+                if (g_keys.size() > before) ++seeded;
+                break;
+            }
+        }
+    }
+    if (seeded > 0) {
+        acclog::Write("Discovery", "auto-seeded %d objects for area %s",
+                      seeded, g_areaTag.c_str());
+    }
+}
+
 }  // namespace
 
 void OnAreaChanged(void* area) {
@@ -217,6 +282,7 @@ void Tick() {
     if (cre != g_creature) { g_creature = cre; g_settle = 1; return; }
     if (++g_settle < kSettleTicks) return;
     LoadFromSave();
+    ApplySeeds();
 }
 
 void Record(void* gameObject) {

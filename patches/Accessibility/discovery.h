@@ -46,9 +46,13 @@ void Tick();
 
 // Record `gameObject` as organically discovered. Called from the organic
 // narration sites ONLY (never from extended/map-side cycling, or the tier
-// would auto-discover everything). Derives the key; no-op when the object is
-// ineligible (item / non-unique NPC / no tag) or already recorded. Persists
-// the area's set into the save on a new discovery.
+// would auto-discover everything). One deliberate exception: the internal
+// per-area auto-seed pass (combat-critical placeables like the Star Forge
+// droid terminals and captive Jedi) records its tag list on area load, so
+// mid-fight cycling can reach them without a prior discovery walk. Derives
+// the key; no-op when the object is ineligible (item / non-unique NPC / no
+// tag) or already recorded. Persists the area's set into the save on a new
+// discovery.
 void Record(void* gameObject);
 
 // True iff `gameObject` is in the current area's discovered set. Used by

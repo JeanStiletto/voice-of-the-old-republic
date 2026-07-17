@@ -362,14 +362,38 @@ AttackBlock g_pending = {};
 // line once kAbsorbQuietMs passes with no new absorb. namepart/suffix are
 // captured verbatim from the engine line so the spoken total stays locale-
 // agnostic: "<namepart>absorbiert <total><suffix>".
-constexpr DWORD kAbsorbQuietMs   = 600;    // flush after this long with no new absorb
-constexpr DWORD kAbsorbMaxHoldMs = 2500;   // ...or this long since the burst began
+// Windows widened 600/2500 → 1500/5000 (2026-07-17, Star Forge feedback):
+// autofire volleys spaced ~1s kept splitting into a spoken line per volley —
+// 296 absorb lines in one session. One line per exchange is the target.
+constexpr DWORD kAbsorbQuietMs   = 1500;   // flush after this long with no new absorb
+constexpr DWORD kAbsorbMaxHoldMs = 5000;   // ...or this long since the burst began
 char  g_absorb_namepart[160] = {};   // text before the anchor (incl. trailing space)
 char  g_absorb_suffix[64]    = {};   // text after the number, up to " :" or end
 int   g_absorb_total         = 0;
 int   g_absorb_count         = 0;
 DWORD g_absorb_last_tick     = 0;
 DWORD g_absorb_first_tick    = 0;
+
+// ---- Blaster-deflection burst coalescing.
+// The engine emits one full "Reflexionsstatistik: ..." breakdown per
+// deflected pellet — a Jedi tanking turret autofire produced 322 raw
+// spoken lines in one session (patch-20260716-221327.log). We claim the
+// line, count per deflector, and flush "<actor> reflektiert N Schüsse"
+// on the same debounce shape as the absorb burst. Party deflectors only
+// reach speech; NPC-vs-NPC deflections are logged and dropped, matching
+// the weapon-path policy.
+constexpr DWORD kDeflectQuietMs   = 1500;
+constexpr DWORD kDeflectMaxHoldMs = 5000;
+constexpr int   kMaxDeflectSlots  = 4;   // concurrent distinct deflectors
+
+struct DeflectSlot {
+    bool  used;
+    char  actor[96];
+    int   count;
+    DWORD first_tick;
+    DWORD last_tick;
+};
+DeflectSlot g_deflect[kMaxDeflectSlots] = {};
 
 // ---- Ability / grenade / force-power effect merging.
 // A power's use, each target's saving throw, the damage, and any applied
@@ -1217,6 +1241,16 @@ bool RuleAbsorb(const char* text) {
     memcpy(namepart, text, nlen);
     namepart[nlen] = '\0';
 
+    // Normalize the damage-resistance variant ("<name> : Schadensresistenz
+    // absorbiert ...") to the bare "<name> " the energy-shield lines use:
+    // cut at the " : " separator, keeping the name's trailing space. Both
+    // sources then share one burst key — they fire together for the same
+    // volley — and the engine's odd colon phrasing never reaches speech.
+    if (char* sep = strstr(namepart, " : ")) {
+        sep[1] = '\0';
+        nlen = strlen(namepart);
+    }
+
     char suffix[64];
     const char* cut = strstr(numEnd, " :");        // drop "...: M Punkte verbleiben"
     const char* e   = cut ? cut : numEnd + strlen(numEnd);
@@ -1236,6 +1270,73 @@ bool RuleAbsorb(const char* text) {
     g_absorb_total += pts;
     ++g_absorb_count;
     g_absorb_last_tick = now;
+    return true;  // claimed
+}
+
+// Flush one deflection slot as a single spoken line ("<actor> reflektiert
+// N Schüsse"). Party deflectors only; an NPC deflecting our shots is the
+// same information the suppressed miss line already carried, so it stays
+// log-only.
+void FlushDeflect(DeflectSlot& s) {
+    if (!s.used || s.count <= 0) { s = {}; return; }
+    const auto& L = acc::combat::loc::Get();
+    char line[160];
+    if (s.count == 1) snprintf(line, sizeof(line), L.fmt_deflect_one, s.actor);
+    else              snprintf(line, sizeof(line), L.fmt_deflect_many, s.actor, s.count);
+    auto& r = acc::msg::Router::Instance();
+    if (IsPartyMember(s.actor)) {
+        r.Speak(line);
+        r.LogEmit("emit-deflect", line);
+    } else {
+        r.LogEmit("emit-deflect-suppressed", line);
+    }
+    s = {};
+}
+
+// "Reflexionsstatistik: <actor> reflektiert Projektil mit N = <roll math>
+// gegen Angriff N" — one full breakdown per deflected pellet. Claim it,
+// count per actor, flush via TickCombatDeflect. The matching miss summary
+// ("... Reflektiert!") is already suppressed with all plain misses, so this
+// burst line is the only audible trace of deflection — by design one line
+// per volley instead of one per pellet.
+bool RuleDeflect(const char* text) {
+    const auto& L = acc::combat::loc::Get();
+    if (!MsgStartsWith(text, L.prefix_reflexion)) return false;
+
+    char actor[96] = "";
+    const char* astart = text + strlen(L.prefix_reflexion);
+    const char* mid    = strstr(astart, L.reflect_mid_marker);
+    if (mid) CopyRange(actor, sizeof(actor), astart, mid);
+    if (!actor[0]) return true;  // unexpected shape — still claim; the
+                                 // breakdown must never reach raw speech
+
+    DWORD now = GetTickCount();
+    DeflectSlot* slot = nullptr;
+    for (int i = 0; i < kMaxDeflectSlots; ++i) {
+        if (g_deflect[i].used && strcmp(g_deflect[i].actor, actor) == 0) {
+            slot = &g_deflect[i];
+            break;
+        }
+    }
+    if (!slot) {
+        for (int i = 0; i < kMaxDeflectSlots; ++i) {
+            if (!g_deflect[i].used) { slot = &g_deflect[i]; break; }
+        }
+        // Table full: flush the oldest to make room rather than dropping.
+        if (!slot) {
+            slot = &g_deflect[0];
+            for (int i = 1; i < kMaxDeflectSlots; ++i) {
+                if (g_deflect[i].first_tick < slot->first_tick) slot = &g_deflect[i];
+            }
+            FlushDeflect(*slot);
+        }
+        *slot = {};
+        slot->used = true;
+        memcpy(slot->actor, actor, strnlen(actor, sizeof(slot->actor) - 1) + 1);
+        slot->first_tick = now;
+    }
+    ++slot->count;
+    slot->last_tick = now;
     return true;  // claimed
 }
 
@@ -1340,6 +1441,7 @@ void RegisterCombatMsgRules() {
     r.AddRule("CombatSchaden",   RuleSchaden);
     r.AddRule("CombatAuswirkung", RuleAuswirkung);
     r.AddRule("CombatAbsorb",    RuleAbsorb);
+    r.AddRule("CombatDeflect",   RuleDeflect);
     r.AddRule("CombatAbilityUse", RuleAbilityUse);
     r.AddRule("CombatSaveThrow", RuleSaveThrow);
     r.AddRule("CombatDirectDamage", RuleDirectDamage);
@@ -1354,6 +1456,16 @@ void TickCombatAbsorb() {
     bool quiet  = (now - g_absorb_last_tick)  >= kAbsorbQuietMs;
     bool maxAge = (now - g_absorb_first_tick) >= kAbsorbMaxHoldMs;
     if (quiet || maxAge) FlushAbsorb();
+}
+
+void TickCombatDeflect() {
+    DWORD now = GetTickCount();
+    for (int i = 0; i < kMaxDeflectSlots; ++i) {
+        if (!g_deflect[i].used) continue;
+        bool quiet  = (now - g_deflect[i].last_tick)  >= kDeflectQuietMs;
+        bool maxAge = (now - g_deflect[i].first_tick) >= kDeflectMaxHoldMs;
+        if (quiet || maxAge) FlushDeflect(g_deflect[i]);
+    }
 }
 
 void TickCombatEffects() {

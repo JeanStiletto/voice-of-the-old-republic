@@ -272,3 +272,20 @@ CSWPlayerControl::SetEnabled @0x006792E0: writes `enabled` (+0xc) then GetCreatu
 
 ---
 
+
+## effect_icons — the sighted buff/debuff icon row (RE'd 2026-07-17)
+_CSWSCreature.effect_icons at +0x8f4/+0x8f8; one CEffectIconObject per EFFECTICON effect; effecticon.2da drives sprite + priority; exact sighted-parity source for spoken effect names_
+
+- The portrait's buff/debuff icon row is NOT derived from the raw `CSWSObject.effects` array directly. Force powers and item shields apply an extra effect of type **EFFECTICON=67** whose integer param 0 is a row id in **effecticon.2da** (61 rows: force powers, stims, grenades, energy shields, droid items, flash-mine stun; columns `iconresref`, `good`, `priority`).
+- `CSWSEffectListHandler::OnApplyEffectIcon` @0x004e4790: gates on `AsSWSCreature`, reads `CGameEffect::GetInteger(effect, 0)` (the icon id) and `(subtype & 7) != 0`, dedups against the creature's existing icon list, reads IconResRef/Priority/Good from `effecticon`, and inserts a new `CEffectIconObject` priority-sorted into **`CSWSCreature.effect_icons`** — `CExoArrayList<CEffectIconObject*>` with data ptr at **+0x8f4** and size at **+0x8f8** (raw offsets confirmed in OnRemoveEffectIcon @0x004e30d0, which also cross-checks `creature_stats` at the known +0xa74).
+- `CEffectIconObject` (0x20 bytes): **+0x0 ushort icon row id**, +0x2 CResRef icon resref, +0x18 ushort priority.
+- Reading +0x8f4/+0x8f8 and mapping row id → name is exact sighted parity (same icons, same display order). Mod-side: `engine_offsets.h` `kCreatureEffectIcons*`, `examine_view::EffectIconName` (names resolved from spells.2da name strrefs across all 5 locale TLKs), consumed by `combat_query::BuildEffectIconSummary`.
+- `CGameEffect` full layout (swkotor.exe.h has a real body): id, +0x8 type, +0xa subtype, +0xc duration, +0x10 expire_day, +0x14 expire_time, +0x18 creator_id, **+0x1c spell_id**, +0x30 num_integers, +0x34 int* integer_list, then float/string/object lists. spell_id → `examine_view::ResolveSpellName` works for future per-effect power naming.
+
+## starforge_placeable_state — captive Jedi + droid terminals (RE'd 2026-07-17)
+_Star Forge module scripts track "placeable used up" in NWScript local boolean 19 on the placeable; readable as bit 19 of the CSWVarTable word at CSWSObject+0x110_
+
+- Malak-fight captive Jedi: placeables `sta_plc_captive2..8` in `sta_m45ad` (LocName 35430 "Gefangener Jedi", Useable=1, OnSpellCastAt=`k_psta_castat`, OnUsed=`sta_cap_onuse`, Conversation=`sta_captive_conv`). The freeing path (`k_psta_castat`) plays a deactivate animation, sets a global counter, sets a local boolean and destroys a helper object; the conversation's state conditions `mal_chk_free`/`mal_chk_drain`/`mal_chk_kill` all read the same GetLocalBoolean slot (live: local-bool word bit 2).
+- Deck droid-control terminals in `sta_m45ac`: `k45_plc_assdroid` ("Terminal Typ A"), `k45_plc_prbdroid` (Typ D), `k45_plc_excharge` (Typ E), `k45_plc_wardroid` (Typ F), `k45_plc_mk` (2×); deck-2 turret computers `sta45_turretcomp` ("Computerterminal") in `sta_m45ab`. Their dialog condition `k_psta_genactive` reads the same slot.
+- Runtime read: local booleans live in the fixed `CSWVarTable` at **CSWSObject+0x110** (`ulong local_booleans[3]` + `byte local_numbers[8]`, see persistence-scriptvartable.md §1). LIVE-CONFIRMED (patch-20260717-125936.log): the used-state flag is **bit 2** of the first ulong (0x0 → 0x4 on freeing a captive Jedi, in lockstep with animation 10000 → 10075); the ncsdis "CONSTI 19" was a script-globals value, not the GetLocalBoolean index. Polarity: set = used/freed/deactivated.
+- Placeable extras from `CSWSPlaceable::Load/SavePlaceable` @0x00585670/@0x00586a70: `usable` (+0x328, GFF `Useable`), `open` (+0x338, GFF `Open`), current animation persists via `(CSWSObject).animation` at **+0xd4** (GFF `Animation`, INT).

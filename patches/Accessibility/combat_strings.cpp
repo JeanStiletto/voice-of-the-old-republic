@@ -82,6 +82,12 @@ const MsgStrings kDe = {
 
     // ---- Status-echo copula
     " ist ",                       // status_ist_marker
+
+    // ---- Blaster-deflection breakdown (42417)
+    "Reflexionsstatistik: ",       // prefix_reflexion
+    " reflektiert Projektil mit ", // reflect_mid_marker
+    "%s reflektiert 1 Schuss",     // fmt_deflect_one
+    "%s reflektiert %d Sch\xFCsse", // fmt_deflect_many
 };
 
 // English — engine anchors extracted from EN dialog.tlk on 2026-05-28
@@ -155,6 +161,12 @@ const MsgStrings kEn = {
 
     // ---- Status-echo copula
     " is ",                              // status_ist_marker
+
+    // ---- Blaster-deflection breakdown (42417)
+    "Deflection Breakdown: ",            // prefix_reflexion
+    " deflects projectile with ",        // reflect_mid_marker
+    "%s deflects 1 shot",                // fmt_deflect_one
+    "%s deflects %d shots",              // fmt_deflect_many
 };
 
 // French — engine anchors extracted from FR dialog.tlk on 2026-05-28
@@ -227,6 +239,12 @@ const MsgStrings kFr = {
 
     // ---- Status-echo copula
     " est ",                                           // status_ist_marker
+
+    // ---- Blaster-deflection breakdown (42417)
+    "D\xE9""composition de la parade : ",              // prefix_reflexion
+    " d\xE9tourne un projectile gr\xE2""ce \xE0 un ",  // reflect_mid_marker
+    "%s d\xE9vie 1 tir",                               // fmt_deflect_one
+    "%s d\xE9vie %d tirs",                             // fmt_deflect_many
 };
 
 // Italian — engine anchors extracted from IT dialog.tlk on 2026-05-28
@@ -296,6 +314,12 @@ const MsgStrings kIt = {
 
     // ---- Status-echo copula
     " \xE8 ",                                       // status_ist_marker (" è ")
+
+    // ---- Blaster-deflection breakdown (42417)
+    "Divisione Respinta: ",                         // prefix_reflexion
+    " respinge il proiettile con ",                 // reflect_mid_marker
+    "%s devia 1 colpo",                             // fmt_deflect_one
+    "%s devia %d colpi",                            // fmt_deflect_many
 };
 
 // Spanish — engine anchors extracted from ES dialog.tlk on 2026-05-28
@@ -366,6 +390,12 @@ const MsgStrings kEs = {
 
     // ---- Status-echo copula
     " es ",                                  // status_ist_marker
+
+    // ---- Blaster-deflection breakdown (42417)
+    "Colapso de desv\xEDo: ",                // prefix_reflexion
+    " desv\xED""a proyectil con ",           // reflect_mid_marker
+    "%s desv\xED""a 1 disparo",              // fmt_deflect_one
+    "%s desv\xED""a %d disparos",            // fmt_deflect_many
 };
 
 }  // namespace

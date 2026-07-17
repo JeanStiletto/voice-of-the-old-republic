@@ -1230,6 +1230,17 @@ constexpr size_t    kCombatRoundActionFeatIdOffset    = 0x5c;
 // CSWSObject.effects → walk to get CGameEffect*, then read +0x8 for type.
 constexpr size_t    kGameEffectTypeOffset             = 0x8;
 
+// CSWSCreature.effect_icons — CExoArrayList<CEffectIconObject*> with data
+// ptr at +0x8f4 and size at +0x8f8. This is the sighted buff/debuff icon
+// row on the portrait: CSWSEffectListHandler::OnApplyEffectIcon inserts one
+// entry per applied EFFECTICON effect (priority-sorted, deduped by icon id)
+// and OnRemoveEffectIcon walks the same raw offsets — both decompile-
+// verified 2026-07-17. Each CEffectIconObject (0x20 bytes): +0x0 ushort
+// effecticon.2da row id, +0x2 CResRef icon resref, +0x18 ushort priority.
+constexpr size_t    kCreatureEffectIconsDataOffset    = 0x8f4;
+constexpr size_t    kCreatureEffectIconsSizeOffset    = 0x8f8;
+constexpr size_t    kEffectIconObjectIdOffset         = 0x0;
+
 // CSWSCreature.inventory @+0xa2c → CSWInventory*. Server-side equipment
 // container. Combined with CSWInventory::GetItemInSlot below this gives
 // us "what is the creature wielding right now".

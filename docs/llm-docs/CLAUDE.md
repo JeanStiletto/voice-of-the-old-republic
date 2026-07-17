@@ -17,7 +17,7 @@ Reference material curated for LLM consumption. Progressive-disclosure index —
 
 ### Subsystem RE reference (migrated from the agent memory store, 2026-06-14)
 Each is a consolidation of former memory notes (offsets, addresses, decompiled mechanics). Read the one matching your subsystem; they replace the always-on memory index for engine RE. See `feedback_memory_vs_docs_discipline` in memory for the rule (RE → here, not memory).
-- **`engine-objects-and-architecture.md`** — client/server (CSWS/CSWC) split, object-handle namespaces, party-table indirection, creature/HP/name accessors, player-control toggle, AI action queue.
+- **`engine-objects-and-architecture.md`** — client/server (CSWS/CSWC) split, object-handle namespaces, party-table indirection, creature/HP/name accessors, player-control toggle, AI action queue, effect-icon row (sighted buff/debuff parity), Star Forge placeable state (local boolean 19).
 - **`gui-and-input-internals.md`** — CSWGui* struct offsets, gui_string text indirection, panel/foreground routing, cursor + hit-test surfaces, listbox model, in-DLL input pipeline + menu chain.
 - **`ingame-screens-reference.md`** — per-screen surfaces: workbench, map, options sub-screens, save/load, party-select, galaxy map, abilities, charsheet, placeables, level-up.
 - **`action-menu-and-combat.md`** — radial/personal action surfaces, the engine action picker, Q/E targeting + ShowObject focus signal, bare-key dispatch, combat-log funnel.

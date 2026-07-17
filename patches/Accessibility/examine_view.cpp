@@ -433,6 +433,346 @@ const char* EffectNameIt(int type) {
     }
 }
 
+// effecticon.2da row → display name. This is the SIGHTED icon row: the
+// engine mirrors each applied EFFECTICON effect into the creature's
+// effect-icon array (CSWSEffectListHandler::OnApplyEffectIcon reads the
+// row's IconResRef/Priority/Good columns), and the portrait renders those
+// icons. Speaking these names is exact sighted parity — one name per icon
+// a sighted player sees, in the same priority order.
+//
+// Names are the game's own: each row label matches a spells.2da row whose
+// name strref was resolved in all five locale TLKs (2026-07-17). Hand
+// deviations: the two speed abbreviations are expanded (DE "Geschw.-Schub"
+// → "Geschwindigkeitsschub" — no homonym abbreviations in speech), droid
+// item names drop the "Typ 1" tail (one icon serves all types), and row 59
+// (flash-mine stun, no spells row) is hand-labelled. Rows 0/60/61
+// (NULL/alignment gauges) stay unmapped.
+
+const char* EffectIconNameEn(int id) {
+    switch (id) {
+        case 1:  return "Affliction";
+        case 2:  return "Burst of Speed";
+        case 3:  return "Choke";
+        case 4:  return "Disable Droid";
+        case 5:  return "Destroy Droid";
+        case 6:  return "Fear";
+        case 7:  return "Force Armor";
+        case 8:  return "Force Aura";
+        case 9:  return "Force Immunity";
+        case 10: return "Force Valor";
+        case 11: return "Force Push";
+        case 12: return "Force Shield";
+        case 13: return "Force Wave";
+        case 14: return "Force Whirlwind";
+        case 15: return "Stasis";
+        case 16: return "Horror";
+        case 17: return "Insanity";
+        case 18: return "Kill";
+        case 19: return "Knight Valor";
+        case 20: return "Knight Speed";
+        case 21: return "Master Valor";
+        case 22: return "Master Speed";
+        case 23: return "Plague";
+        case 24: return "Improved Energy Resistance";
+        case 25: return "Force Resistance";
+        case 26: return "Energy Resistance";
+        case 27: return "Stasis Field";
+        case 28: return "Slow";
+        case 29: return "Stun";
+        case 30: return "Stun Droid";
+        case 31: return "Wound";
+        case 32: return "Adrenaline Shot: Strength";
+        case 33: return "Adrenaline Shot: Alacrity";
+        case 34: return "Adrenaline Shot: Stamina";
+        case 35: return "Hyper Adrenaline Shot: Strength";
+        case 36: return "Hyper Adrenaline Shot: Alacrity";
+        case 37: return "Hyper Adrenaline Shot: Stamina";
+        case 38: return "Combat Shot: Battle Stimulant";
+        case 39: return "Combat Shot: Hyper Battle Stimulant";
+        case 40: return "Combat Shot: Speed Stimulant";
+        case 41: return "Grenade: Stun";
+        case 42: return "Grenade: Sonic";
+        case 43: return "Grenade: Adhesive";
+        case 44: return "Grenade: Cryoban";
+        case 45: return "Energy Shield";
+        case 46: return "Sith Energy Shield";
+        case 47: return "Arkanian Energy Shield";
+        case 48: return "Echani Shield";
+        case 49: return "Mandalorian Melee Shield";
+        case 50: return "Mandalorian Power Shield";
+        case 51: return "Echani Dueling Shield";
+        case 52: return "Yusanis' Dueling Shield";
+        case 53: return "Proto-type Verpine Energy Shield";
+        case 54: return "Droid Force Field";
+        case 55: return "Droid Stun Ray";
+        case 56: return "Droid Flame Thrower";
+        case 57: return "Droid Carbonite Stream";
+        case 58: return "Droid Gravity Generator";
+        case 59: return "Flash mine";
+        default: return nullptr;
+    }
+}
+
+const char* EffectIconNameDe(int id) {
+    switch (id) {
+        case 1:  return "Leid";
+        case 2:  return "Geschwindigkeitsschub";
+        case 3:  return "W\xFCrgen";
+        case 4:  return "Droiden deaktivieren";
+        case 5:  return "Droiden zerst\xF6ren";
+        case 6:  return "Angst";
+        case 7:  return "Machtr\xFCstung";
+        case 8:  return "Machtaura";
+        case 9:  return "Machtimmunit\xE4t";
+        case 10: return "Macht-Tapferkeit";
+        case 11: return "Machtsto\xDF";
+        case 12: return "Machtschild";
+        case 13: return "Machtwelle";
+        case 14: return "Machtwirbelsturm";
+        case 15: return "L\xE4hmung";
+        case 16: return "Horror";
+        case 17: return "Wahnsinn";
+        case 18: return "T\xF6ten";
+        case 19: return "Ritter-Tapferkeit";
+        case 20: return "Ritter-Geschwindigkeit";
+        case 21: return "Meister-Tapferkeit";
+        case 22: return "Meister-Geschwindigkeit";
+        case 23: return "Seuche";
+        case 24: return "Verbesserter Energiewiderstand";
+        case 25: return "Verbesserter Machtwiderstand";
+        case 26: return "Energiewiderstand";
+        case 27: return "L\xE4hmungsfeld";
+        case 28: return "Langsam";
+        case 29: return "Bet\xE4uben";
+        case 30: return "Droiden bet\xE4uben";
+        case 31: return "Verwunden";
+        case 32: return "Adrenalinsto\xDF: St\xE4rke";
+        case 33: return "Adrenalinsto\xDF: Eifer";
+        case 34: return "Adrenalinsto\xDF: Ausdauer";
+        case 35: return "Hyper-Adrenalinsto\xDF: St\xE4rke";
+        case 36: return "Hyper-Adrenalinsto\xDF: Eifer";
+        case 37: return "Hyper-Adrenalinsto\xDF: Ausdauer";
+        case 38: return "Kampfbonus: Kampf-Stimulans";
+        case 39: return "Kampfbonus: Hyper-Kampf-Stimulans";
+        case 40: return "Kampfbonus: Tempo-Stimulans";
+        case 41: return "Granate: Bet\xE4ubung";
+        case 42: return "Granate: Schall";
+        case 43: return "Granate: Adh\xE4sion";
+        case 44: return "Granate: CryoBan";
+        case 45: return "Energieschild";
+        case 46: return "Sith-Energieschild";
+        case 47: return "Arkanischer Energieschild";
+        case 48: return "Echani-Schild";
+        case 49: return "Mandalorianischer Nahkampfschild";
+        case 50: return "Mandalorianischer Energieschild";
+        case 51: return "Echani-Duellierschild";
+        case 52: return "Yusanis Duellierschild";
+        case 53: return "Energieschild-Prototyp der Verpinen";
+        case 54: return "Droiden-Energiefeld";
+        case 55: return "Droiden-Bet\xE4ubungsstrahl";
+        case 56: return "Droiden-Flammenwerfer";
+        case 57: return "Droiden-Karbonitstrahl";
+        case 58: return "Droiden-Gravitationsgenerator";
+        case 59: return "Blitzmine";
+        default: return nullptr;
+    }
+}
+
+const char* EffectIconNameFr(int id) {
+    switch (id) {
+        case 1:  return "Affliction";
+        case 2:  return "Pointe de vitesse";
+        case 3:  return "Etouffement";
+        case 4:  return "D\xE9sactivation de dro\xEF""de";
+        case 5:  return "Destruction de dro\xEF""de";
+        case 6:  return "Terreur";
+        case 7:  return "Armure de Force";
+        case 8:  return "Aura de Force";
+        case 9:  return "Immunit\xE9 contre la Force";
+        case 10: return "Talent de Force";
+        case 11: return "Pouss\xE9""e de Force";
+        case 12: return "Bouclier de Force";
+        case 13: return "Vague de Force";
+        case 14: return "Tourbillon de Force";
+        case 15: return "Stase";
+        case 16: return "Horreur";
+        case 17: return "Insanit\xE9";
+        case 18: return "Mise \xE0 mort";
+        case 19: return "Talent de chevalier";
+        case 20: return "Vitesse de chevalier";
+        case 21: return "Talent de ma\xEEtre";
+        case 22: return "Vitesse de ma\xEEtre";
+        case 23: return "Peste";
+        case 24: return "Science de l'\xE9nergie am\xE9lior\xE9""e";
+        case 25: return "R\xE9sistance \xE0 la Force";
+        case 26: return "R\xE9sistance \xE0 l'\xE9nergie";
+        case 27: return "Champ de stase";
+        case 28: return "Lenteur";
+        case 29: return "Etourdissement";
+        case 30: return "Etourdissement de dro\xEF""de";
+        case 31: return "Blessure";
+        case 32: return "Injection d'adr\xE9naline : force";
+        case 33: return "Injection d'adr\xE9naline : promptitude";
+        case 34: return "Injection d'adr\xE9naline : endurance";
+        case 35: return "Hyper-injection d'adr\xE9naline : force";
+        case 36: return "Hyper-injection d'adr\xE9naline : promptitude";
+        case 37: return "Hyper-injection d'adr\xE9naline : endurance";
+        case 38: return "Injection de combat : stimulant";
+        case 39: return "Injection de combat : hyper-stimulant";
+        case 40: return "Injection de combat : stimulant de rapidit\xE9";
+        case 41: return "Grenade : aveuglante";
+        case 42: return "Grenade : sonique";
+        case 43: return "Grenade : adh\xE9sive";
+        case 44: return "Grenade : cryoban";
+        case 45: return "Bouclier \xE0 \xE9nergie";
+        case 46: return "Bouclier \xE0 \xE9nergie sith";
+        case 47: return "Bouclier \xE0 \xE9nergie arkanien";
+        case 48: return "Bouclier \xE9""chani";
+        case 49: return "Bouclier de m\xEAl\xE9""e mandalorien";
+        case 50: return "Bouclier MF mandalorien";
+        case 51: return "Bouclier de duel \xE9""chani";
+        case 52: return "Bouclier de duel de Yusanis";
+        case 53: return "Prototype de bouclier verpine";
+        case 54: return "Champ de force pour dro\xEF""de";
+        case 55: return "Rayon \xE9tourdissant pour dro\xEF""de";
+        case 56: return "Lance-flammes pour dro\xEF""de";
+        case 57: return "Jet de carbonite pour dro\xEF""de";
+        case 58: return "G\xE9n\xE9rateur de gravit\xE9 pour dro\xEF""de";
+        case 59: return "Mine flash";
+        default: return nullptr;
+    }
+}
+
+const char* EffectIconNameIt(int id) {
+    switch (id) {
+        case 1:  return "Afflizione";
+        case 2:  return "Esplosione di velocit\xE0";
+        case 3:  return "Soffocamento";
+        case 4:  return "Disattivazione droide";
+        case 5:  return "Distruzione droide";
+        case 6:  return "Paura";
+        case 7:  return "Armatura di Forza";
+        case 8:  return "Aura di Forza";
+        case 9:  return "Immunit\xE0 alla Forza";
+        case 10: return "Valore della Forza";
+        case 11: return "Spinta di Forza";
+        case 12: return "Scudo di Forza";
+        case 13: return "Onda di Forza";
+        case 14: return "Tornado di Forza";
+        case 15: return "Stasi";
+        case 16: return "Orrore";
+        case 17: return "Follia";
+        case 18: return "Uccisione";
+        case 19: return "Valore del Cavaliere";
+        case 20: return "Velocit\xE0 del Cavaliere";
+        case 21: return "Valore del Maestro";
+        case 22: return "Velocit\xE0 del Maestro";
+        case 23: return "Pestilenza";
+        case 24: return "Resistenza all'energia potenziata";
+        case 25: return "Resistenza alla Forza";
+        case 26: return "Resistenza all'energia";
+        case 27: return "Campo di stasi";
+        case 28: return "Lentezza";
+        case 29: return "Stordimento";
+        case 30: return "Stordimento droide";
+        case 31: return "Ferita";
+        case 32: return "Scarica di adrenalina: Forza";
+        case 33: return "Scarica di adrenalina: Velocit\xE0";
+        case 34: return "Scarica di adrenalina: Resistenza";
+        case 35: return "Iper-scarica di adrenalina: Forza";
+        case 36: return "Iper-scarica di adrenalina: Velocit\xE0";
+        case 37: return "Iper-scarica di adrenalina: Resistenza";
+        case 38: return "Scarica di combattimento: Stimolante da battaglia";
+        case 39: return "Scarica di combattimento: Iper-stimolante da battaglia";
+        case 40: return "Scarica di combattimento: Stimolante di velocit\xE0";
+        case 41: return "Granata: stordente";
+        case 42: return "Granata: sonica";
+        case 43: return "Granata: adesiva";
+        case 44: return "Granata: Cryoban";
+        case 45: return "Scudo di energia";
+        case 46: return "Scudo di energia Sith";
+        case 47: return "Scudo energia Arkaniano";
+        case 48: return "Scudo Echani";
+        case 49: return "Scudo da duello Mandaloriano";
+        case 50: return "Scudo di potenza Mandaloriano";
+        case 51: return "Scudo da duello Echani";
+        case 52: return "Scudo da duello di Yusani";
+        case 53: return "Prototipo scudo di energia Verpino";
+        case 54: return "Droide campo di forza";
+        case 55: return "Droide raggio stordente";
+        case 56: return "Droide lanciafiamme";
+        case 57: return "Droide a flusso di carbonite";
+        case 58: return "Droide generatore di gravit\xE0";
+        case 59: return "Mina flash";
+        default: return nullptr;
+    }
+}
+
+const char* EffectIconNameEs(int id) {
+    switch (id) {
+        case 1:  return "Aflicci\xF3n";
+        case 2:  return "Potenciador de Velocidad";
+        case 3:  return "Estrangular";
+        case 4:  return "Desactivar Droide";
+        case 5:  return "Destruir Droide";
+        case 6:  return "Miedo";
+        case 7:  return "Armadura de Fuerza";
+        case 8:  return "Aura de Fuerza";
+        case 9:  return "Inmunidad a la Fuerza";
+        case 10: return "Soltura con la Fuerza";
+        case 11: return "Empuj\xF3n con la Fuerza";
+        case 12: return "Escudo de Fuerza";
+        case 13: return "Ola de Fuerza";
+        case 14: return "Remolino de Fuerza";
+        case 15: return "Estasis";
+        case 16: return "Horror";
+        case 17: return "Locura";
+        case 18: return "Matar";
+        case 19: return "Soltura de Caballero";
+        case 20: return "Velocidad de Caballero";
+        case 21: return "Soltura Maestra";
+        case 22: return "Velocidad Maestra";
+        case 23: return "Peste";
+        case 24: return "Resistencia a energ\xED""a mejorada";
+        case 25: return "Resistencia a la Fuerza";
+        case 26: return "Resistencia a la Energ\xED""a";
+        case 27: return "Campo de estasis";
+        case 28: return "Lento";
+        case 29: return "Aturdir";
+        case 30: return "Droide Aturdidor";
+        case 31: return "Herida";
+        case 32: return "Tiro de Adrenalina: Fuerza";
+        case 33: return "Tiro de Adrenalina: Aceleraci\xF3n";
+        case 34: return "Tiro de Adrenalina: Resistencia";
+        case 35: return "Hiper Tiro de Adrenalina: Fuerza";
+        case 36: return "Hiper Tiro de Adrenalina: Aceleraci\xF3n";
+        case 37: return "Hiper Tiro de Adrenalina: Resistencia";
+        case 38: return "Disparo de Combate: Estimulante de Combate";
+        case 39: return "Disparo de Combate: Hiper Estimulante de Combate";
+        case 40: return "Disparo de Combate: Estimulante de Velocidad";
+        case 41: return "Granada: Aturdidora";
+        case 42: return "Granada: S\xF3nica";
+        case 43: return "Granada: Adhesiva";
+        case 44: return "Granada: Cryoban";
+        case 45: return "Escudo de Energ\xED""a";
+        case 46: return "Escudo de Energ\xED""a Sith";
+        case 47: return "Escudo de Energ\xED""a Arkaniano";
+        case 48: return "Escudo Echani";
+        case 49: return "Escudo Mandaloriano de Refriega";
+        case 50: return "Escudo Poderoso Mandaloriano";
+        case 51: return "Escudo de Duelo Echani";
+        case 52: return "Escudo de Duelo de Yusani";
+        case 53: return "Prototipo de Escudo Poderoso Verpine";
+        case 54: return "Campo de Fuerza para Droides";
+        case 55: return "Rayo Aturdidor para Droides";
+        case 56: return "Lanzallamas para Droides";
+        case 57: return "Corriente de Carbonita para Droides";
+        case 58: return "Generador de Gravedad para Droides";
+        case 59: return "Mina de fogonazo";
+        default: return nullptr;
+    }
+}
+
 uint32_t ReadLastTargetHandle();  // forward decl
 
 bool IsSentinel(uint32_t handle) {
@@ -1010,6 +1350,17 @@ const char* EffectName(int type) {
         case acc::strings::Lang::En: break;
     }
     return EffectNameEn(type);
+}
+
+const char* EffectIconName(int iconId) {
+    switch (acc::strings::GetLanguage()) {
+        case acc::strings::Lang::De: return EffectIconNameDe(iconId);
+        case acc::strings::Lang::Fr: return EffectIconNameFr(iconId);
+        case acc::strings::Lang::It: return EffectIconNameIt(iconId);
+        case acc::strings::Lang::Es: return EffectIconNameEs(iconId);
+        case acc::strings::Lang::En: break;
+    }
+    return EffectIconNameEn(iconId);
 }
 
 bool IsActive() { return g_state.active; }

@@ -25,6 +25,11 @@ void TickCombatLog();
 // total. Cheap and idle when no absorb burst is pending.
 void TickCombatAbsorb();
 
+// Flushes debounced blaster-deflection bursts into one spoken line per
+// deflector ("<actor> reflektiert N Schüsse"). Cheap and idle when none
+// is pending.
+void TickCombatDeflect();
+
 // Flushes debounced per-target ability/grenade/force-power effects into one
 // merged spoken line each. Cheap and idle when no effect is pending.
 void TickCombatEffects();

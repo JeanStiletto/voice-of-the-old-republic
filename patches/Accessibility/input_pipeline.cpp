@@ -102,6 +102,33 @@ bool ConsumeEditboxSubmitLatch() {
 
 }  // namespace acc::input
 
+namespace {
+
+// SetTarget + RePopulate the engine's action lists against the narrated
+// target (kInvalidObjectId when none resolves — PopulateMenus then builds
+// empty target rows instead of stale ones). Shared by the bare 1..7 dispatch
+// prep and the ModShadow-consumed Shift+1..7 path; both run inside
+// HandleInputEvent, the context where repopulating is proven safe (the
+// poll/tick context is NOT — see the phantom-confirm note in
+// unified_action_menu::OpenPersonal).
+void PrepareBareDispatchForNarratedTarget() {
+    uint32_t targetClient = 0x7F000000u;
+    acc::narrated_target::Slot slot{};
+    if (acc::narrated_target::TryGet(slot) && !slot.isMapPin &&
+        slot.handle != 0u && slot.handle != 0x7F000000u)
+    {
+        void* obj = acc::engine::ResolveServerObjectHandle(slot.handle);
+        if (obj) {
+            targetClient = (slot.handle & 0x80000000u)
+                ? slot.handle
+                : (slot.handle | 0x80000000u);
+        }
+    }
+    (void)acc::engine_actionbar::PrepareBareDispatch(targetClient);
+}
+
+}  // namespace
+
 // CClientExoAppInternal::ProcessInput @ 0x006227e0 — frame-boundary seq tick.
 //
 // Hooked at 0x006227fb (after SEH frame + locals are set up, BEFORE the
@@ -221,6 +248,24 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
                 owned ? "mod hotkey owns this combo; engine action suppressed"
                       : "modifier space reserved (no mod binding yet); engine "
                         "action suppressed");
+            // Shift+1..7 open the unified action menu via the Win32 poller
+            // later this same frame — and that opener deliberately reads the
+            // engine's action lists WITHOUT re-populating (doing so from the
+            // poll/tick context synthesised a phantom confirm, 2026-06-07).
+            // The bare-key prep below never runs for a consumed press, so
+            // without this the menu shows whatever target the lists were
+            // last built for — the "Spalte N ist leer" misfires on the
+            // Star Forge captive Jedi (patch-20260717-093733.log). Run the
+            // same SetTarget + RePopulate here, in the engine's own
+            // input-dispatch context, where the bare path has proven safe.
+            // Dialog gate mirrors the bare path: while a reply listbox owns
+            // the number keys, nothing may repopulate or fire.
+            if ((param_1 == 0xe2 || param_1 == 0xe4 || param_1 == 0xe6 ||
+                 param_1 == 0xe8 || param_1 == 0xea || param_1 == 0xec ||
+                 param_1 == 0xee) &&
+                !acc::engine::HasActiveDialogPanel()) {
+                PrepareBareDispatchForNarratedTarget();
+            }
             return 1;  // consume → consumed_exit (POP*5 + RET 8)
         }
     }
@@ -361,25 +406,13 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
         acc::combat::queue::ArmUserQueueAdd();
         acc::combat_diag::LogPreFire(diag_label);
 
-        uint32_t targetClient = 0x7F000000u;
-        acc::narrated_target::Slot slot{};
-        if (acc::narrated_target::TryGet(slot) && !slot.isMapPin &&
-            slot.handle != 0u && slot.handle != 0x7F000000u)
-        {
-            void* obj = acc::engine::ResolveServerObjectHandle(slot.handle);
-            if (obj) {
-                targetClient = (slot.handle & 0x80000000u)
-                    ? slot.handle
-                    : (slot.handle | 0x80000000u);
-            }
-        }
         // Fire the refresh. PrepareBareDispatch logs its own status line
         // (`ActionBar.Prep: target=0x... — SetTarget + RePopulate done`)
         // — between that and the upstream `Diag.ClientHIE: ... key=?(N)
         // val=128` line printed earlier in this same call, the trigger
         // and its outcome are both already in the log without us adding
         // a third line per press.
-        (void)acc::engine_actionbar::PrepareBareDispatch(targetClient);
+        PrepareBareDispatchForNarratedTarget();
 
         // Stamp the engine's per-column selected_action_id with the
         // user's last-chosen variant for the personal-action keys

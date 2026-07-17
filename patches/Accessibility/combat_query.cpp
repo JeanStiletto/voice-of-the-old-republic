@@ -192,19 +192,72 @@ int ReadEffectCount(void* serverObject) {
     }
 }
 
-// Walk CSWSObject.effects and produce a comma-joined string of unique
-// localized effect-type names — sighted-player parity for the buff/debuff
-// icon row on the target portrait. Mapped types only (unmapped engine
-// types skipped, since they'd surface as "Effect #N" noise during auto-
-// firing Q/E cycle announcements; user can Ö for full enumeration).
-// Caps at 5 distinct names to keep speech terse.
+// Read the creature's effect-icon row (CSWSCreature.effect_icons — the
+// exact icon list the sighted portrait renders; see engine_offsets.h) and
+// join the localized icon names. Returns the number of names written, 0
+// when the row is empty / unreadable / the object is not a creature.
+// The engine keeps the array priority-sorted and deduped by icon id, so
+// array order is the sighted display order.
+int BuildEffectIconSummary(void* serverObject, char* outBuf, size_t outBufSize) {
+    if (!outBuf || outBufSize < 2) return 0;
+    outBuf[0] = '\0';
+    if (!serverObject) return 0;
+    if (acc::engine::GetObjectKind(serverObject) !=
+        static_cast<int>(acc::engine::GameObjectKind::Creature)) {
+        return 0;
+    }
+
+    constexpr int kMaxSpoken = 5;
+    int written = 0;
+    __try {
+        void** data = *reinterpret_cast<void***>(
+            reinterpret_cast<unsigned char*>(serverObject) +
+            kCreatureEffectIconsDataOffset);
+        int size = *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(serverObject) +
+            kCreatureEffectIconsSizeOffset);
+        if (!data || size <= 0 || size > 64) return 0;
+
+        size_t off = 0;
+        for (int i = 0; i < size && written < kMaxSpoken; ++i) {
+            void* icon = data[i];
+            if (!icon) continue;
+            int id = static_cast<int>(*reinterpret_cast<unsigned short*>(
+                reinterpret_cast<unsigned char*>(icon) +
+                kEffectIconObjectIdOffset));
+            const char* name = acc::examine_view::EffectIconName(id);
+            if (!name) continue;  // NULL_ICON / alignment gauges
+            int n = std::snprintf(outBuf + off, outBufSize - off,
+                                  (off == 0) ? "%s" : ", %s", name);
+            if (n < 0) break;
+            off += static_cast<size_t>(n);
+            ++written;
+            if (off >= outBufSize) { off = outBufSize - 1; break; }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        // Partial result is fine.
+    }
+    return outBuf[0] ? written : 0;
+}
+
+// Produce a comma-joined effects string for the brief / self status.
+// Primary source: the effect-icon row (sighted parity — the same icons a
+// sighted player sees on the portrait, by name, in display order). When a
+// creature has effects but no icons (script-applied buffs without an
+// EFFECTICON — e.g. Malak's fight buffs), fall back to the legacy walk of
+// CSWSObject.effects mapping raw EFFECT_TYPES, so no information that was
+// spoken before this rework is lost. Mapped names only, capped at 5.
 //
-// Returns true when at least one named effect was written; outBuf is
-// empty-string on false.
+// Returns true when at least one name was written; outBuf is empty-string
+// on false.
 bool BuildEffectsSummary(void* serverObject, char* outBuf, size_t outBufSize) {
     if (!outBuf || outBufSize < 2) return false;
     outBuf[0] = '\0';
     if (!serverObject) return false;
+
+    if (BuildEffectIconSummary(serverObject, outBuf, outBufSize) > 0) {
+        return true;
+    }
 
     constexpr int kMaxDistinct = 5;
     int seenTypes[kMaxDistinct] = {0};

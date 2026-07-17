@@ -113,6 +113,10 @@ const char* Get(Id id) {
         case Id::FmtContainerItems:    return "%d Gegenst\xE4nde";              // Gegenst?nde
         case Id::FmtContainerItemAt:   return "%s, %d von %d";
         case Id::ContainerEmptySuffix: return "leer";
+        case Id::PlaceableStateCaptive:     return "gefangen";
+        case Id::PlaceableStateFreed:       return "befreit";
+        case Id::PlaceableStateActive:      return "aktiv";
+        case Id::PlaceableStateDeactivated: return "deaktiviert";
         case Id::FmtItemStackSuffix:   return "%d St\xFC" "ck";                    // St?ck (split: 'c' is a hex digit)
         case Id::FmtItemChargeSuffix:  return "%d Ladungen";
 

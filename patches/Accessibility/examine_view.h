@@ -26,6 +26,13 @@ namespace acc::examine_view {
 // Shared with combat_query's Q/E brief.
 const char* EffectName(int type);
 
+// Localized effecticon.2da row → display name — the names behind the
+// sighted buff/debuff icon row on the portrait (the engine mirrors each
+// EFFECTICON effect into the creature's effect-icon array, one icon per
+// row id). Nullptr for unmapped rows (NULL_ICON, alignment gauges).
+// Shared with combat_query's brief + self status.
+const char* EffectIconName(int iconId);
+
 // Look up a feat's localized name by feat_index (CSWFeat[] index, ushort).
 // Drives CSWRules::GetFeat → CSWFeat::GetNameText with SEH guards. Returns
 // true and writes a null-terminated string when the engine resolves a

@@ -33,6 +33,23 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.6.0</h2>
+
+<h3>Late-game finale:</h3>
+
+- The Shift+number action menus now always match your current target. Opening a target's attack or Force-power column with Shift+1 to Shift+3 read whatever target the engine's menu had last been built for, so on a freshly focused target it often announced an empty column until a bare number key had been pressed once — most noticeable on story objects you must target mid-fight. The consumed Shift press now rebuilds the menu against the narrated target exactly like the bare number keys do.
+- Story objects in the finale now speak their state the way doors speak open and closed: the captives in the last arena read "captive" or "freed", and the droid-control terminals on the decks before it read "active" or "deactivated". The state is spoken on every surface — Q/E targeting, passive focus, and comma/period cycling — so a used-up object that offers no more actions is self-explanatory the moment you hear its name.
+- The fight-critical terminals and captives of the last levels are discovered automatically on entering. Finding a never-visited console for the first time while under fire is close to impossible without sight, so they are placed into discovered-object cycling the moment the level loads — no prior exploration walk needed.
+
+<h3>Combat speech:</h3>
+
+- Blaster deflection no longer spams raw dice math. Every deflected shot used to speak the game's full "Deflection Breakdown: … roll 12 + Jedi Defense 6 + …" line — over three hundred such lines in one logged session. Deflections now collapse into one short line per volley, "X deflects 3 shots", spoken for party members only.
+- Shield and damage-resistance absorbs merge into one spoken total. The engine's odd colon phrasing of the resistance line ("name : damage resistance absorbs …") is normalized to the plain shape, both absorb sources feed one running total, and the collection window is widened so an autofire volley speaks once instead of once per pellet.
+
+<h3>Status effects:</h3>
+
+- Effects now speak the same names sighted players see as icons. The buff/debuff icon row on the portrait is read directly, so instead of the generic type words "Immunity" and "State" you hear the actual source — "Force Immunity", "Energy Shield", "Sith Energy Shield", "Stun", "Master Valor", "Adrenaline Shot: Strength" — using the game's own names in all five supported languages, in icon order. Script-applied buffs that display no icon fall back to the previous generic type names, so nothing that was audible before is lost.
+
 <h2>v0.5.9</h2>
 
 <h3>The last blocker:</h3>

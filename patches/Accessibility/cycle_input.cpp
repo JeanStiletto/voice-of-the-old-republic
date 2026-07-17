@@ -34,6 +34,7 @@
 #include "narrated_target.h"
 #include "peek_description.h"
 #include "same_name_suffix.h"
+#include "state_overrides.h"    // AppendStateLabel — placeable state suffix
 #include "strings.h"
 #include "prism.h"
 
@@ -332,6 +333,11 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
     } else {
         acc::narration::AppendDisambiguator(s.focusedObj, s.category, name,
                                             sizeof(name));
+        // Placeable state tag (", gefangen" / ", deaktiviert" …) — same
+        // suffix the Q/E narration path appends via GetSpokenName, so an
+        // object speaks one consistent state everywhere. Self-gates on the
+        // override tag table; no-op for everything else.
+        acc::state::AppendStateLabel(s.focusedObj, name, sizeof(name));
     }
 
     Vector playerPos;

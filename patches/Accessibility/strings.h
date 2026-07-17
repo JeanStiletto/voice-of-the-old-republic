@@ -341,6 +341,16 @@ enum class Id : int {
     //          and narration::GetSpokenName.
     ContainerEmptySuffix,
 
+    //      Star Forge placeable state tags — appended like the wall-switch
+    //          labels via state_overrides (", gefangen" / ", befreit" on the
+    //          Malak-fight captive Jedi; ", aktiv" / ", deaktiviert" on the
+    //          battle-droid control terminals). Lowercase name tags, same
+    //          register as ContainerEmptySuffix.
+    PlaceableStateCaptive,
+    PlaceableStateFreed,
+    PlaceableStateActive,
+    PlaceableStateDeactivated,
+
     //      `FmtItemStackSuffix` — appended to inventory + container row
     //          announcements when CSWSItem.stack_size > 1 (medpacs, stims,
     //          grenades — anything the engine renders with a count overlay

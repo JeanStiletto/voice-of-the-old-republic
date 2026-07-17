@@ -114,6 +114,18 @@ struct MsgStrings {
     // the status word is simply omitted (line still suppressed/shortened —
     // no regression).
     const char* status_ist_marker;   // " ist " (leading + trailing space)
+
+    // ---- Blaster-deflection breakdown (strref 42417: "Reflexionsstatistik:
+    // <CUSTOM0> reflektiert Projektil mit <CUSTOM1> = <CUSTOM2> gegen Angriff
+    // <CUSTOM3>"). The engine fires one full breakdown per deflected pellet —
+    // a Jedi tanking turret fire spams hundreds of raw lines. We claim the
+    // line, extract the deflector (between prefix and mid marker), and burst-
+    // coalesce into "<actor> reflektiert N Schüsse" (party members only).
+    // Anchors extracted from all five locale TLKs 2026-07-17.
+    const char* prefix_reflexion;    // "Reflexionsstatistik: "
+    const char* reflect_mid_marker;  // " reflektiert Projektil mit "
+    const char* fmt_deflect_one;     // "%s reflektiert 1 Schuss"
+    const char* fmt_deflect_many;    // "%s reflektiert %d Schüsse"
 };
 
 const MsgStrings& Get();

@@ -109,6 +109,10 @@ const char* Get(Id id) {
         case Id::FmtContainerItems:    return "%d oggetti";
         case Id::FmtContainerItemAt:   return "%s, %d di %d";
         case Id::ContainerEmptySuffix: return "vuoto";
+        case Id::PlaceableStateCaptive:     return "prigioniero";
+        case Id::PlaceableStateFreed:       return "liberato";
+        case Id::PlaceableStateActive:      return "attivo";
+        case Id::PlaceableStateDeactivated: return "disattivato";
         case Id::FmtItemStackSuffix:   return "%d nella pila";
         case Id::FmtItemChargeSuffix:  return "%d cariche";
 
