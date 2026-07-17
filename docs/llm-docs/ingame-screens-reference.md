@@ -113,6 +113,25 @@ Cycle's `AnnounceCurrent` in map context calls `acc::map_ui_cursor::PanToWorld(w
 
 ---
 
+## fog_of_war_exploration_model
+_CSWSAreaMap explored-grid mechanics decompiled 2026-07-17; answers "how far away does a sighted player discover a map note"_
+
+**Reveal loop**: `CServerExoAppInternal::UpdateMapData @0x004b4e80` runs per server tick; for every party member it calls `CSWSAreaMap::SetWorldPointExplored(pos, 1) @0x005792d0`. The radius argument is **1 fog-grid cell** — the function marks an L1 diamond (own cell + 4 orthogonal neighbours) via `SetMapPointExplored @0x00579000` (bitset write, one bit per grid cell). The only other caller is `ExecuteCommandRevealMap @0x00547240` (NWScript `RevealMap`, scripted full/partial reveals). `SetEntireMapExplored @0x00578fa0` exists for the reveal-all path.
+
+**Grid geometry** (`CSWSAreaMap::Initialize @0x00578c60`): map-pixel space is fixed 440x256. Grid resolution comes from the .are `Map` struct: grid X count = `MapResX` (clamped to 88), grid Y count = `ftol(MapResX * 0.58181816)` (= 256/440, truncated). World-units-per-map-pixel (`+0x18` / `+0x1c`, same fields map_ui_cursor inverts) = rotated world-point span / map-pixel span from `WorldPt1/2` + `MapPt1/2` (MapPt normalized, x440 / x256). So **one fog cell in metres = (440/MapResX) * worldUnitsPerPxX by (256/MapResY) * worldUnitsPerPxY** — all readable at runtime from the live CSWSAreaMap (`+0x8` MapResX, `+0xc` MapResY, `+0x18`/`+0x1c` world-per-px).
+
+**Consequence — discovery range scales with map size.** A map note becomes visible (and cycle-able via GetNext/PrevMapNote) the moment its cell is explored, i.e. when a party member's cell is within L1 distance 1 of the note's cell — roughly 1 to 2 cell-widths in world metres depending on in-cell positions. Measured cell sizes (from .are Map structs, computed 2026-07-17):
+- danm14aa Dantooine plains: 26.7 x 32.1 m
+- tat_m18aa Dune Sea: 44.1 x 47.5 m
+- unk_m41aa Unknown World beach: 18.6 x 21.0 m
+- kas_m25aa Shadowlands: 30.0 x 34.0 m
+- danm13 Jedi Enclave: 7.8 x 7.8 m
+- tar_m02aa Taris apartment: 5.7 x 6.4 m
+
+So vanilla "sighted discovery" ranges from ~6 m (small interiors) to ~45-90 m (Dune Sea), while `transitions.cpp kLandmarkEnterRangeM` is a flat 8 m — the mismatch reported on open maps 2026-07-17.
+
+**How to apply**: for parity with sighted discovery, derive the landmark proximity/discovery range per-area from the live fog cell size (e.g. `k * max(cellX, cellY)`, floored at the current 8 m) instead of a global constant.
+
 ## csw_mappin_layout
 _Quest-marker pin struct offsets confirmed via Ghidra decomp 2026-05-18; CSWCArea.map_pins is pointer-array despite Lane's singular-pointer typing_
 

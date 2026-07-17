@@ -993,6 +993,30 @@ bool IsWorldPointExplored(void* areaMap, const Vector& pos) {
     }
 }
 
+bool GetFogCellSizeM(void* areaMap, float& outCellXM, float& outCellYM) {
+    if (!areaMap) return false;
+    __try {
+        auto* base = reinterpret_cast<unsigned char*>(areaMap);
+        int resX = *reinterpret_cast<int*>(base + kAreaMapResXOffset);
+        int resY = *reinterpret_cast<int*>(base + kAreaMapResYOffset);
+        float wppx =
+            *reinterpret_cast<float*>(base + kAreaMapWorldPerPxXOffset);
+        float wppy =
+            *reinterpret_cast<float*>(base + kAreaMapWorldPerPxYOffset);
+        if (resX <= 0 || resY <= 0) return false;
+        // Calibration axes can run negative (map north vs world axes);
+        // cell extent is the magnitude.
+        float cellX = std::fabs(wppx) * (440.0f / static_cast<float>(resX));
+        float cellY = std::fabs(wppy) * (256.0f / static_cast<float>(resY));
+        if (cellX <= 0.0f || cellY <= 0.0f) return false;
+        outCellXM = cellX;
+        outCellYM = cellY;
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 bool GetMapRotateCCWFromWorldOrientation(void* areaMap,
                                          const Vector& orientation,
                                          float& outDegCCW) {

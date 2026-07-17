@@ -33,6 +33,19 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>Unreleased</h2>
+
+<h3>World navigation:</h3>
+
+- Landmark announcements now trigger from the same distance at which sighted
+  players discover them. The game reveals map notes through its fog-of-war grid,
+  whose cell size scales with the map: about 6-8 m in interiors but 27-48 m on
+  open maps like the Dune Sea or the Dantooine plains. Our fixed 8 m range meant
+  you could run straight past landmarks that had long appeared on a sighted
+  player's map. The range is now derived per area from that fog grid (1.5x the
+  cell size, never below the old 8 m), so open-world landmarks announce from
+  realistic distances while interiors behave as before.
+
 <h2>v0.6.0</h2>
 
 <h3>Late-game finale:</h3>

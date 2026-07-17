@@ -237,6 +237,15 @@ void* GetAreaMap();
 // cycle output so we don't narrate undiscovered landmarks.
 bool IsWorldPointExplored(void* areaMap, const Vector& pos);
 
+// Fog-of-war grid cell size in world metres. The engine reveals the map
+// around each party member per tick via SetWorldPointExplored(pos, 1) —
+// the member's own cell plus its 4 orthogonal neighbours — so this cell
+// size is the scale of the sighted player's map-note discovery (a note
+// appears once its cell is explored, i.e. from ~1-2 cell-widths away).
+// Full model: ingame-screens-reference.md fog_of_war_exploration_model.
+// False on null map or degenerate grid fields; outputs untouched then.
+bool GetFogCellSizeM(void* areaMap, float& outCellXM, float& outCellYM);
+
 // CSWSAreaMap::GetMapRotateCCWFromWorldOrientation @0x00578ed0.
 // Engine runs Yaw(orientation) + 0/90/180/270 (per area map's own
 // orientation tag). Returns the rotation to apply to the compass-arrow
@@ -352,6 +361,15 @@ constexpr uintptr_t kAddrCSWSAreaMapIsWorldPointExplored = 0x00579210;
 // __thiscall(this, Vector by value). Returns float10 via ST(0).
 // BYTES_PURGED=12 (callee pops 3-float Vector).
 constexpr uintptr_t kAddrCSWSAreaMapGetMapRotateCCW       = 0x00578ED0;
+// CSWSAreaMap fog grid geometry (Initialize @0x00578c60): fixed 440x256
+// map-pixel space, MapResX cells across, MapResY = MapResX * 256/440
+// truncated; world-units-per-map-pixel from the .are Map calibration.
+// map_ui_cursor keeps a local copy of the transform fields (+0x18..+0x24)
+// for its cursor projection.
+constexpr size_t kAreaMapResXOffset        = 0x8;
+constexpr size_t kAreaMapResYOffset        = 0xc;
+constexpr size_t kAreaMapWorldPerPxXOffset = 0x18;
+constexpr size_t kAreaMapWorldPerPxYOffset = 0x1c;
 
 // CSWCMapPin allocation chain. operator_new at 0x43e1b0 is matched to
 // the _free that CExoString::operator= and ~CSWCMapPin invoke.

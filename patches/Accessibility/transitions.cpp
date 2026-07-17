@@ -181,6 +181,10 @@ void SpeakArea(void* area) {
 // re-counts periodically and rebuilds on drift.
 int g_landmark_enabled_at_scan = 0;
 
+// Defined below the landmark-proximity state block (which owns the
+// range globals); rebuild triggers a per-area range recompute.
+void RecomputeLandmarkRanges();
+
 void RebuildLandmarkCache(void* area) {
     // Reset cache. Use the index loop instead of memset so the Vector
     // member alignment guarantees survive any future struct refactor;
@@ -249,6 +253,7 @@ void RebuildLandmarkCache(void* area) {
         "placed=%d (areaPtr=%p)",
         scanned, landmarks, placed, area);
     g_landmark_enabled_at_scan = landmarks;
+    RecomputeLandmarkRanges();
 }
 
 // Last spoken room label, used as the text-equality dedup key. The .lyt-
@@ -346,12 +351,53 @@ constexpr DWORD kPlatzDelayMs = 1000;
 // speak it. Exit at a larger range so a landmark re-announces when
 // the player walks away and comes back, but not when standing
 // nearby for a long time.
-constexpr float kLandmarkEnterRangeM     = 8.0f;
-constexpr float kLandmarkExitRangeM      = 12.0f;
+//
+// Ranges are per-area since 2026-07-17: scaled from the engine's
+// fog-of-war cell size so our discovery distance matches the sighted
+// map reveal (UpdateMapData explores the party member's cell + 4
+// neighbours each tick; a map note pops once its cell is explored —
+// see ingame-screens-reference.md fog_of_war_exploration_model). The
+// old flat 8m happened to match interiors (Jedi Enclave cell = 7.8m)
+// but fell far short on open maps (Dune Sea cell = 44-48m), so the
+// player ran past landmarks sighted players had long since seen.
+// Computed in RebuildLandmarkCache; floor keeps the historic 8m/12m
+// behaviour as the minimum, and the exit range keeps the same 1.5x
+// hysteresis ratio.
+constexpr float kLandmarkEnterRangeFloorM = 8.0f;
+constexpr float kLandmarkFogCellScale     = 1.5f;
+constexpr float kLandmarkExitRatio        = 1.5f;
+float g_lm_enter_range_m = kLandmarkEnterRangeFloorM;
+float g_lm_exit_range_m  = kLandmarkEnterRangeFloorM * kLandmarkExitRatio;
 constexpr int   kLandmarkStabilityTicks  = 5;
 int   g_lm_prox_pending_idx     = -1;
 int   g_lm_prox_pending_count   = 0;
 int   g_lm_prox_last_spoken_idx = -1;
+
+// False while the last recompute ran without a live area map (early
+// area-change tick); TickLandmarkCacheRecheck retries on its 1s cadence
+// until the map resolves. Areas genuinely without a map stay on the
+// floor via this same path — the retry is 4 field reads, negligible.
+bool g_lm_ranges_from_fog = false;
+
+void RecomputeLandmarkRanges() {
+    float cellX = 0.0f, cellY = 0.0f;
+    float enter = kLandmarkEnterRangeFloorM;
+    bool  haveCell = acc::engine::GetFogCellSizeM(
+        acc::engine::GetAreaMap(), cellX, cellY);
+    g_lm_ranges_from_fog = haveCell;
+    if (haveCell) {
+        float cell   = cellX > cellY ? cellX : cellY;
+        float scaled = kLandmarkFogCellScale * cell;
+        if (scaled > enter) enter = scaled;
+    }
+    g_lm_enter_range_m = enter;
+    g_lm_exit_range_m  = enter * kLandmarkExitRatio;
+    acclog::Write("Transition",
+                  "landmark ranges: enter=%.1fm exit=%.1fm "
+                  "(fog cell %.1fx%.1fm, %s)",
+                  g_lm_enter_range_m, g_lm_exit_range_m, cellX, cellY,
+                  haveCell ? "per-area" : "no area map -> floor");
+}
 
 // Cadence for TickLandmarkCacheRecheck (see g_landmark_enabled_at_scan
 // above RebuildLandmarkCache for the staleness story).
@@ -368,9 +414,11 @@ DWORD g_landmark_recheck_last_ms  = 0;
 // other planets author notes enabled from module entry). When the
 // leader is physically standing at the spot, enable the note ourselves
 // — same engine write the tripwire script performs, one-way. Radius is
-// deliberately tighter than the vanilla tripwires and below
-// kLandmarkEnterRangeM, so the proximity announce fires on the same
-// recheck tick that surfaces the note.
+// deliberately tighter than the vanilla tripwires and below the
+// landmark enter-range floor, so the proximity announce fires on the
+// same recheck tick that surfaces the note. Kept flat on purpose (user
+// decision 2026-07-17): it substitutes for stepping on a tripwire, not
+// for seeing the map, so it does not scale with the fog cell size.
 constexpr float kMapNoteAutoDiscoverRangeM = 5.0f;
 
 // Post-gate cluster re-announce. Cluster changes during combat / blocking
@@ -731,6 +779,8 @@ void TickLandmarkCacheRecheck(void* area, const Vector& playerPos) {
     }
     g_landmark_recheck_last_ms = now;
 
+    if (!g_lm_ranges_from_fog) RecomputeLandmarkRanges();
+
     int enabled = 0;
     acc::engine::AreaObjectIterator iter(area);
     while (void* obj = iter.Next()) {
@@ -763,8 +813,8 @@ void TickLandmarkCacheRecheck(void* area, const Vector& playerPos) {
 // when the player walks close to the waypoint. Three-state machine
 // mirroring turn_announce: pending idx + pending count for stability,
 // last-spoken idx for "already announced this approach" suppression;
-// last-spoken resets when the player walks past `kLandmarkExitRangeM`
-// so a return visit re-announces.
+// last-spoken resets when the player walks past the per-area exit
+// range so a return visit re-announces.
 void TickProximityLandmarks(const Vector& playerPos) {
     // Re-arm: if the last-spoken landmark is now beyond exit range,
     // clear it so we can re-announce on a future approach.
@@ -774,11 +824,11 @@ void TickProximityLandmarks(const Vector& playerPos) {
             float dx = playerPos.x - g_landmarks[i].pos.x;
             float dy = playerPos.y - g_landmarks[i].pos.y;
             float d2 = dx * dx + dy * dy;
-            if (d2 > kLandmarkExitRangeM * kLandmarkExitRangeM) {
+            if (d2 > g_lm_exit_range_m * g_lm_exit_range_m) {
                 acclog::Write("Transition",
                               "landmark proximity re-arm idx=%d "
                               "(dist=%.2fm > %.1fm exit)",
-                              i, std::sqrt(d2), kLandmarkExitRangeM);
+                              i, std::sqrt(d2), g_lm_exit_range_m);
                 g_lm_prox_last_spoken_idx = -1;
             }
         } else {
@@ -794,7 +844,7 @@ void TickProximityLandmarks(const Vector& playerPos) {
     // the next legitimate cue (see project memory on the
     // cluster-vs-landmark double-announce regression).
     int   nearest = -1;
-    float bestD2  = kLandmarkEnterRangeM * kLandmarkEnterRangeM;
+    float bestD2  = g_lm_enter_range_m * g_lm_enter_range_m;
     for (int i = 0; i < g_landmark_count; ++i) {
         if (g_landmarks[i].name[0] == '\0') continue;
         if (g_landmarks[i].doorMatched)     continue;
