@@ -702,9 +702,13 @@ const char* FromControl(void* control,
             labelText = label;
         }
         if (labelText) {
-            snprintf(outBuf, bufSize, "%s %u von %u", labelText, cur, max);
+            snprintf(outBuf, bufSize,
+                     acc::strings::Get(acc::strings::Id::FmtSliderValueLabeled),
+                     labelText, cur, max);
         } else {
-            snprintf(outBuf, bufSize, "%u von %u", cur, max);
+            snprintf(outBuf, bufSize,
+                     acc::strings::Get(acc::strings::Id::FmtSliderValue),
+                     cur, max);
         }
         source = "slider";
     }
@@ -1153,9 +1157,19 @@ const char* FromControl(void* control,
                     }
                 }
                 if (!gotTlk) {
-                    size_t nlen = strlen(spec.literal);
+                    // No-strref entries (Equipment: the engine never asks for
+                    // its caption via TLK) can't reach the locale-stable
+                    // strref path, so route them through the localised string
+                    // table instead of the hardcoded German literal. The
+                    // table literal stays as an ASCII last-ditch fallback.
+                    const char* fallback = spec.literal;
+                    if (spec.strref == 0xFFFFFFFFu) {
+                        fallback = acc::strings::Get(
+                            acc::strings::Id::EquipMenuName);
+                    }
+                    size_t nlen = strlen(fallback);
                     if (nlen + 1 <= bufSize) {
-                        memcpy(outBuf, spec.literal, nlen + 1);
+                        memcpy(outBuf, fallback, nlen + 1);
                         source = "perkind-literal";
                         acclog::Write("Menus.PerKind", "InGameMenu literal control=%p "
                                       "panelIdx=%d strref=%u -> \"%s\"",
@@ -1807,7 +1821,8 @@ const char* FromControl(void* control,
     if (source && IsToggle(control)) {
         bool on = ReadToggleState(control);
         size_t len = strnlen(outBuf, bufSize);
-        const char* suffix = on ? ", ein" : ", aus";
+        const char* suffix = acc::strings::Get(
+            on ? acc::strings::Id::ToggleOn : acc::strings::Id::ToggleOff);
         size_t suffixLen = strlen(suffix);
         if (len + suffixLen + 1 <= bufSize) {
             memcpy(outBuf + len, suffix, suffixLen + 1);

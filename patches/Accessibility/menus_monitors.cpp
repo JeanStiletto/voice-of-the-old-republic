@@ -315,9 +315,18 @@ void AnnounceNewSubScreens(void** panels, int count) {
             spoke = true;
         }
         if (!spoke) {
+            // No-strref sub-screens (Equipment: the engine never asks for
+            // its caption via TLK) can't reach the locale-stable strref
+            // path, so route them through the localised string table rather
+            // than the hardcoded German literal. The table literal stays as
+            // an ASCII last-ditch fallback.
+            const char* literal = spec->literal;
+            if (spec->strref == 0xFFFFFFFFu && k == PanelKind::InGameEquip) {
+                literal = acc::strings::Get(acc::strings::Id::EquipMenuName);
+            }
             acclog::Write("Menus.SubScreen", "panel=%p kind=%s text=\"%s\" (literal)",
-                          p, PanelKindName(k), spec->literal);
-            prism::Speak(spec->literal, /*interrupt=*/false);
+                          p, PanelKindName(k), literal);
+            prism::Speak(literal, /*interrupt=*/false);
         }
 
         // (Charakterblatt no longer reads the full stat block on open —

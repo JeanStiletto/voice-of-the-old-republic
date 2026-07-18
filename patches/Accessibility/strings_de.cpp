@@ -200,6 +200,11 @@ const char* Get(Id id) {
         case Id::PartySelectionFull:        return "Gruppe voll";
 
         case Id::DisabledSuffix:       return ", nicht verf\xFC""gbar";   // nicht verf?gbar
+        case Id::ToggleOn:             return ", ein";
+        case Id::ToggleOff:            return ", aus";
+        case Id::FmtSliderValueLabeled: return "%s %u von %u";
+        case Id::FmtSliderValue:       return "%u von %u";
+        case Id::EquipMenuName:        return "Ausr\xFC""stung";          // Ausruestung
         case Id::FmtLevelUpDoStepFirst: return "Zuerst %s abschlie\xDF""en.";  // abschlie?en
         case Id::LevelUpStepLocked:    return "Noch nicht an der Reihe.";
 

@@ -88,6 +88,10 @@ and add the German in parentheses if it genuinely aids clarity.
 
 - Effects now speak the same names sighted players see as icons. The buff/debuff icon row on the portrait is read directly, so instead of the generic type words "Immunity" and "State" you hear the actual source — "Force Immunity", "Energy Shield", "Sith Energy Shield", "Stun", "Master Valor", "Adrenaline Shot: Strength" — using the game's own names in all five supported languages, in icon order. Script-applied buffs that display no icon fall back to the previous generic type names, so nothing that was audible before is lost.
 
+<h3>Bug fixes:</h3>
+
+- Menu text that always spoke German on non-German installs now follows the game's language. Three spoken strings bypassed the localization table and were hardcoded to German: options-screen toggle states (now spoken as "on"/"off" in your language rather than "ein"/"aus"), slider value readouts ("8 of 10" rather than "8 von 10"), and the name of the Equipment sub-screen — the one main-menu screen whose caption the engine never exposes through its string table, so it fell back to a literal "Ausrüstung". All three now resolve through the localized table in every supported language (English, German, French, Italian, Spanish).
+
 <h2>v0.5.9</h2>
 
 <h3>The last blocker:</h3>

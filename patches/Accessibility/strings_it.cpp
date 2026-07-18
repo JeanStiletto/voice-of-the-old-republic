@@ -196,6 +196,11 @@ const char* Get(Id id) {
         case Id::PartySelectionFull:        return "Gruppo al completo";
 
         case Id::DisabledSuffix:       return ", non disponibile";
+        case Id::ToggleOn:             return ", attivato";
+        case Id::ToggleOff:            return ", disattivato";
+        case Id::FmtSliderValueLabeled: return "%s %u di %u";
+        case Id::FmtSliderValue:       return "%u di %u";
+        case Id::EquipMenuName:        return "Equipaggiamento";
         case Id::FmtLevelUpDoStepFirst: return "Completa prima %s.";
         case Id::LevelUpStepLocked:    return "Non ancora disponibile.";
 

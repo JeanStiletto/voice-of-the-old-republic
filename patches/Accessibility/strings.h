@@ -667,6 +667,36 @@ enum class Id : int {
     //      does nothing.
     DisabledSuffix,
 
+    // ---- Toggle (checkbox) element-state suffix. Appended (with leading
+    //      ", ") to an options-screen toggle's announced label to voice its
+    //      on/off state — e.g. "Untertitel, ein" / "Subtitles, on". Read
+    //      from the control via ReadToggleState. Distinct from the full
+    //      ViewModeOn/MouseLookOn *phrases*: these are bare name-tag
+    //      suffixes, same register as DisabledSuffix.
+    ToggleOn,
+    ToggleOff,
+
+    // ---- Slider value readout. Composed for options-screen sliders
+    //      (volume, difficulty, gamma, …). The engine exposes only a raw
+    //      cur/max pair (CSWGuiSlider +cur/+max); we join them with the
+    //      localised "of" idiom so the reader hears "8 of 10" / "8 von 10".
+    //      `FmtSliderValueLabeled` — label present. Args: label (`%s`),
+    //                                cur (`%u`), max (`%u`).
+    //      `FmtSliderValue`        — no sibling label resolved. Args: cur
+    //                                (`%u`), max (`%u`).
+    FmtSliderValueLabeled,
+    FmtSliderValue,
+
+    // ---- Equipment sub-screen name. Unlike the other seven in-game
+    //      sub-screens (Inventory, Character, Map, …), the Equipment screen
+    //      has no dialog.tlk strref — the engine never requests its caption
+    //      via TLK — so the strref-based localisation path can't reach it.
+    //      This Id supplies the per-language name so a non-German install
+    //      stops hearing the hardcoded "Ausrüstung" literal. Used for both
+    //      the icon-strip label (menus_extract) and the sub-screen-open
+    //      announce (menus_monitors).
+    EquipMenuName,
+
     // ---- Level-up step ordering. The InGameLevelUp wizard enforces
     //      sequential leveling: exactly one category button carries
     //      bit_flags bit 3 (0x8 = CSWGuiControl::SetEnabled) at a time —

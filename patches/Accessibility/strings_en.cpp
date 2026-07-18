@@ -189,6 +189,11 @@ const char* Get(Id id) {
         case Id::PartySelectionFull:        return "Party full";
 
         case Id::DisabledSuffix:       return ", unavailable";
+        case Id::ToggleOn:             return ", on";
+        case Id::ToggleOff:            return ", off";
+        case Id::FmtSliderValueLabeled: return "%s %u of %u";
+        case Id::FmtSliderValue:       return "%u of %u";
+        case Id::EquipMenuName:        return "Equipment";
         case Id::FmtLevelUpDoStepFirst: return "Finish %s first.";
         case Id::LevelUpStepLocked:    return "Not your turn yet.";
 
