@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "combat.h"             // IsPartyInCombat — out-of-combat fire-and-close
 #include "combat_diag.h"        // LogPreFire / LogPostFire around dispatch
 #include "combat_queue.h"       // ArmUserQueueAdd — attribute the AddAction
 #include "engine_actionbar.h"   // personal block read + primitives
@@ -1004,10 +1005,42 @@ bool HandleInputEvent(int code, int value) {
                 cur.kind == CatKind::Target ? "target" : "personal",
                 cur.slot, sel, label, ok ? 1 : 0);
 
-            // Stay armed + paused after firing so the user can stack several
-            // actions into the engine queue (grenade → force power → attack)
-            // without re-pausing between each. The world only resumes — and
-            // the queue runs — on Esc (ForceDisarm → EndOverlayPause). The
+            // Out of combat: fire-and-close, matching the sighted mouse radial
+            // (click an action → it runs → the radial closes). Queueing several
+            // actions is a combat affordance; out of combat you almost always
+            // want one action and an immediate return to the world, so keeping
+            // the menu open + paused just adds an unpause/Esc step vanilla never
+            // charges — and a lingering paused surface across the explore world
+            // has actively misfired (first post-fire Enter landing on a menu
+            // entry instead of the world object, patch-20260617-215141.log).
+            // ForceDisarm here is the same close the Esc path runs, and we're
+            // in the sanctioned input-dispatch context (HandleInputEvent), so it
+            // obeys the HARD RULE (no populate off the poll/Open path).
+            //
+            // Combat is the encounter-level truth (IsPartyInCombat), not the
+            // controlled-leader bit, so Tabbing to a not-yet-engaged member
+            // mid-fight can't collapse the menu into fire-and-close and unpause
+            // an active encounter — the exact confusion that shaped the
+            // party-in-combat auto-close in combat.cpp.
+            if (!acc::combat::IsPartyInCombat()) {
+                acclog::Write("UnifiedMenu",
+                    "out-of-combat fire — closing (fire-and-close)");
+                // Close is silent by design: the action's own confirmation
+                // was just spoken by the AddAction hook ("<action>, Platz 1" —
+                // out-of-combat actions still route through the leader's
+                // combat round, and ArmUserQueueAdd above put us in its
+                // attribution window). If the auto-pause option was on we DID
+                // hold a pause, and ForceDisarm → EndOverlayPause rides the
+                // engine's "Pause aufgehoben" resume cue for the close; if it
+                // was off there was no pause and nothing more to announce.
+                ForceDisarm("fire-out-of-combat");
+                return true;
+            }
+
+            // In combat: stay armed + paused after firing so the user can stack
+            // several actions into the engine queue (grenade → force power →
+            // attack) without re-pausing between each. The world only resumes —
+            // and the queue runs — on Esc (ForceDisarm → EndOverlayPause). The
             // confirmation message ("…, Position N") is the cue that the menu
             // is still open on the same entry; press Enter again to re-queue,
             // or arrow to another category. Selection/category are preserved;

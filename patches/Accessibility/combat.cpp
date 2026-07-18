@@ -63,6 +63,16 @@ bool IsCombatActive() {
     return mode != 0;
 }
 
+// Encounter-level combat: OR of the controlled leader's global combat bit and
+// every party member's per-creature bit. Read live (one chain walk + party
+// scan) — cheap enough for a per-keypress gate, not a per-tick caller. Mirrors
+// the partyInCombat derivation in TickCombatMode so the two never disagree.
+bool IsPartyInCombat() {
+    int mode = 0;
+    bool leaderInCombat = ReadCombatMode(mode) && mode != 0;
+    return acc::engine::IsAnyPartyMemberInCombat() || leaderInCombat;
+}
+
 void TickCombatMode() {
     // Module-load latch — see transitions.h IsModuleLoadPending. Combat
     // mode is read via a CClientExoApp engine accessor; probing it

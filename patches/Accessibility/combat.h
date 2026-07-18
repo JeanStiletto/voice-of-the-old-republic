@@ -16,7 +16,14 @@
 namespace acc::combat {
 
 // Cross-feature gating read — false on chain fault (treat as not-in-combat).
+// IsCombatActive mirrors only the *controlled leader's* combat bit, so a Tab to
+// a not-yet-engaged member reads peace mid-encounter. IsPartyInCombat is the
+// encounter-level truth (OR of every party member's per-creature combat bit),
+// immune to which member is controlled — the same signal TickCombatMode's
+// begin/end cue and menu auto-close already trust. Prefer it for anything that
+// must not flip just because the player switched leaders during a fight.
 bool IsCombatActive();
+bool IsPartyInCombat();
 
 void TickCombatMode();
 void TickCombatLog();
