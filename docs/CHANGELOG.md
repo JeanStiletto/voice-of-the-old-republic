@@ -86,6 +86,11 @@ and add the German in parentheses if it genuinely aids clarity.
 
 - Effects now speak the same names sighted players see as icons. The buff/debuff icon row on the portrait is read directly, so instead of the generic type words "Immunity" and "State" you hear the actual source — "Force Immunity", "Energy Shield", "Sith Energy Shield", "Stun", "Master Valor", "Adrenaline Shot: Strength" — using the game's own names in all five supported languages, in icon order. Script-applied buffs that display no icon fall back to the previous generic type names, so nothing that was audible before is lost.
 
+<h3>Tutorial:</h3>
+
+- The journal, equipment and inventory tutorial pop-ups now explain how to read full details. As you arrow through these screens you hear only the focused entry's title or item name; the pop-ups now add that Shift and an arrow key reads the whole thing — the quest entry's text in the journal, an item's description in equipment and inventory.
+- The inventory (party stash) tutorial pop-up is now covered like the others. It wasn't among the mapped tutorial screens, so opening the inventory read out its original mouse-era wording; it now speaks a keyboard-oriented hint instead.
+
 <h3>Bug fixes:</h3>
 
 - Droid and computer terminal menus read their reply choices correctly again

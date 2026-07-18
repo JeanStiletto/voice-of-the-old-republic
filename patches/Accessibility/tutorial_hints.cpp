@@ -129,6 +129,7 @@ const char* HintForTutorialRow(int row) {
         case 7:  id = Id::TutHintOpenScreens;      break;  // Press_Start
         case 8:  id = Id::TutHintCycleTargets;     break;  // Use_Triggers_To_Cycle...
         case 11: id = Id::TutHintEquipSlot;        break;  // Press_A_On_Equip_Screen
+        case 20: id = Id::TutHintInventory;        break;  // party stash / inventory
         case 12: id = Id::TutHintMessages;         break;  // Enter_Messages_Screen
         case 13: id = Id::TutHintMapScreen;        break;  // Enter_Map_Screen
         case 14: id = Id::TutHintJournal;          break;  // Receive_Journal_Entry
@@ -165,6 +166,7 @@ constexpr MouseMsg kTutorialMouseMsgs[] = {
     {48371, Id::TutHintOpenScreens},      // row 7  Press_Start
     {48372, Id::TutHintCycleTargets},     // row 8  Use_Triggers_To_Cycle...
     {48374, Id::TutHintEquipSlot},        // row 11 Press_A_On_Equip_Screen
+    {42136, Id::TutHintInventory},        // row 20 party stash / inventory
     {41880, Id::TutHintMessages},         // row 12 Enter_Messages_Screen
     {41881, Id::TutHintMapScreen},        // row 13 Enter_Map_Screen
     {41882, Id::TutHintJournal},          // row 14 Receive_Journal_Entry

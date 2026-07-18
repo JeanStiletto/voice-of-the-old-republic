@@ -732,7 +732,7 @@ const char* Get(Id id) {
         case Id::TutHintCycleTargets:
             return "Choose targets with Q and E. Cycle objects with comma and period; the minus key announces the focused object. In combat you can only target enemies.";
         case Id::TutHintEquipSlot:
-            return "On the equip screen, choose a slot with the arrows and Enter, then pick an item from the list.";
+            return "On the equip screen, choose a slot with the arrows and Enter, then pick an item from the list. Read an item's description with Shift and an arrow.";
         case Id::TutHintEnemyNear:
             return "An enemy is near. Cycle targets with Q and E and attack with Enter.";
         case Id::TutHintBash:
@@ -746,7 +746,9 @@ const char* Get(Id id) {
         case Id::TutHintMapScreen:
             return "The map shows every explored area of a level. Important areas are marked, and some areas, such as cities, are mapped before you explore them. Move around the map with W, A, S and D. Switch between map hints with comma and period. Press Shift and N to place your own map hint at your position. Press Ctrl and minus to start a beacon that guides you to the map hint by sound, or Shift and minus to walk automatically to the selected map hint.";
         case Id::TutHintJournal:
-            return "The quest screen shows your progress and hints on what to do next. Open it with L.";
+            return "The quest screen shows your progress and hints on what to do next. Open it with L. Choose an entry with the arrows and read its details with Shift and an arrow.";
+        case Id::TutHintInventory:
+            return "The inventory lists your party's items, shared across all members. Open it with I. Move through the items with the arrows and read an item's description with Shift and an arrow.";
         case Id::TutHintMessages:
             return "The messages screen shows values such as experience points, attack and damage rolls, and changes to your character. Open it with J.";
         case Id::TutHintPartyDies:
@@ -758,7 +760,7 @@ const char* Get(Id id) {
         case Id::TutTraskEquipOpen:
             return "The equip screen is where you choose armor and weapons. Open it with U.";
         case Id::TutTraskEquipBrowse:
-            return "Move through the equip slots with the arrows; each slot holds an item you can assign.";
+            return "Move through the equip slots with the arrows; each slot holds an item you can assign. Read the item's description with Shift and an arrow.";
         case Id::TutTraskEquipWeapon:
             return "Select the weapon slot and press Enter, then choose a weapon from the list.";
         case Id::TutTraskCamera:

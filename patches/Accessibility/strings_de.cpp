@@ -751,7 +751,7 @@ const char* Get(Id id) {
         case Id::TutHintCycleTargets:
             return "Ziele w\xE4hlst du mit Q und E. Objekte schaltest du mit Komma und Punkt durch; die Minus-Taste sagt das fokussierte Objekt an. Im Kampf zielst du nur auf Feinde.";
         case Id::TutHintEquipSlot:
-            return "Im Ausr\xFCstungsbildschirm w\xE4hlst du einen Steckplatz mit den Pfeiltasten und der Eingabetaste, dann w\xE4hlst du aus der Liste einen Gegenstand.";
+            return "Im Ausr\xFCstungsbildschirm w\xE4hlst du einen Steckplatz mit den Pfeiltasten und der Eingabetaste, dann w\xE4hlst du aus der Liste einen Gegenstand. Die Beschreibung eines Gegenstands liest du mit Umschalt und einer Pfeiltaste.";
         case Id::TutHintEnemyNear:
             return "Ein Feind ist in der N\xE4he. Schalte Ziele mit Q und E durch und greife mit der Eingabetaste an.";
         case Id::TutHintBash:
@@ -765,7 +765,9 @@ const char* Get(Id id) {
         case Id::TutHintMapScreen:
             return "Auf der Karte sind alle erforschten Gebiete eines Levels eingezeichnet. Wichtige Bereiche werden markiert. Einige Gebiete, zum Beispiel St\xE4""dte, sind bereits kartografiert, bevor du sie erforschst. Mit W, A, S und D bewegst du dich auf der Karte. Mit Komma und Punkt wechselst du zwischen den Kartenhinweisen. Mit Umschalt und N setzt du an deiner Position einen eigenen Kartenhinweis. Mit Strg und Minus startest du einen Wegweiser, der dich per Ton zum Kartenhinweis f\xFChrt, mit Umschalt und Minus gehst du automatisch zum ausgew\xE4hlten Kartenhinweis.";
         case Id::TutHintJournal:
-            return "Im Auftragsbildschirm findest du Informationen \xFC""ber deine Fortschritte und Tipps zur weiteren Vorgehensweise. \xD6""ffne ihn mit L.";
+            return "Im Auftragsbildschirm findest du Informationen \xFC""ber deine Fortschritte und Tipps zur weiteren Vorgehensweise. \xD6""ffne ihn mit L. W\xE4hle einen Eintrag mit den Pfeiltasten und lies seine Einzelheiten mit Umschalt und einer Pfeiltaste.";
+        case Id::TutHintInventory:
+            return "Das Inventar listet die Gegenst\xE4nde deiner Gruppe, auf die alle Mitglieder Zugriff haben. \xD6""ffne es mit I. Bl\xE4ttere mit den Pfeiltasten durch die Gegenst\xE4nde und lies die Beschreibung eines Gegenstands mit Umschalt und einer Pfeiltaste.";
         case Id::TutHintMessages:
             return "Im Nachrichtenbildschirm siehst du Werte wie Erfahrungspunkte, Angriffs- und Schadenswerte sowie \xC4nderungen an deinem Charakter. \xD6""ffne ihn mit J.";
         case Id::TutHintPartyDies:
@@ -777,7 +779,7 @@ const char* Get(Id id) {
         case Id::TutTraskEquipOpen:
             return "Im Ausr\xFCstungsbildschirm w\xE4hlst du R\xFCstung und Waffen. \xD6""ffne ihn mit U.";
         case Id::TutTraskEquipBrowse:
-            return "Bl\xE4ttere mit den Pfeiltasten durch die Steckpl\xE4tze; jedem Steckplatz kannst du einen Gegenstand zuweisen.";
+            return "Bl\xE4ttere mit den Pfeiltasten durch die Steckpl\xE4tze; jedem Steckplatz kannst du einen Gegenstand zuweisen. Die Beschreibung liest du mit Umschalt und einer Pfeiltaste.";
         case Id::TutTraskEquipWeapon:
             return "W\xE4hle den Waffen-Steckplatz und best\xE4tige mit der Eingabetaste, dann w\xE4hle in der Liste eine Waffe.";
         case Id::TutTraskCamera:

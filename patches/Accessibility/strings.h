@@ -1814,6 +1814,7 @@ enum class Id : int {
     TutHintJournal,          // row 14 Receive_Journal_Entry
     TutHintMessages,         // row 12 Enter_Messages_Screen
     TutHintPartyDies,        // row 15 Party_Member_Dies
+    TutHintInventory,        // row 20 (party stash / inventory screen, strref 42136)
     //
     //      Surface 2 — Endar Spire dialogue (Trask + pop windows), voice-acted.
     //      Keyed by the line's source strref, matched via the engine's own TLK
