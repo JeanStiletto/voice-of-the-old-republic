@@ -136,6 +136,28 @@ void AnnounceControl(void* control) {
 namespace {
 
 void MonitorFocusedControl() {
+    // Eager rebind for the chargen portrait-selection panel. CSWGuiPortrait-
+    // CharGen is pushed by its parent sub-menu ("Eigener Charakter") WITHOUT
+    // firing OnSetActiveControl, so the chain stays bound to the parent until
+    // the user's first arrow press. HandleNavStep then rebinds AND steps in a
+    // single call, so the first Down lands on index 1 ("OK") and the initially-
+    // anchored portrait (index 0) is never announced — the user had to press
+    // Up to hear it. Rebinding here the moment the panel is foreground lets the
+    // focus monitor below announce the anchored portrait on open, before any
+    // keypress. Scoped to this one vtable: it's the only panel known to open
+    // without an OnSetActiveControl focus event. A no-op once bound (fg ==
+    // g_chainPanel) so it never re-anchors while the user navigates the panel.
+    if (void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr)) {
+        void* fg = GetForegroundPanel(mgr);
+        if (fg && fg != acc::menus::chain::g_chainPanel) {
+            void** vt = *reinterpret_cast<void***>(fg);
+            if (reinterpret_cast<uintptr_t>(vt) ==
+                    kVtableCSWGuiPortraitCharGen) {
+                acc::menus::chain::RebindChain(fg);
+            }
+        }
+    }
+
     if (acc::menus::chain::g_chainCount <= 0 ||
         acc::menus::chain::g_chainIndex < 0 ||
         acc::menus::chain::g_chainIndex >= acc::menus::chain::g_chainCount) {

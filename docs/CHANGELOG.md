@@ -98,6 +98,7 @@ and add the German in parentheses if it genuinely aids clarity.
   reply list is now addressed by its fixed position in the dialog structure,
   which no interface mod can move.
 - Menu text that always spoke German on non-German installs now follows the game's language. Three spoken strings bypassed the localization table and were hardcoded to German: options-screen toggle states (now spoken as "on"/"off" in your language rather than "ein"/"aus"), slider value readouts ("8 of 10" rather than "8 von 10"), and the name of the Equipment sub-screen — the one main-menu screen whose caption the engine never exposes through its string table, so it fell back to a literal "Ausrüstung". All three now resolve through the localized table in every supported language (English, German, French, Italian, Spanish).
+- The character-creation portrait selector now works the moment it opens: it announces the current portrait immediately, and Left/Right speaks each newly-selected portrait as you cycle. The panel is pushed by its parent menu without an engine focus event, so keyboard navigation stayed bound to the parent until your first arrow press — leaving the panel silent on open and making Left/Right fall through to a bare click with no readout. You previously had to press Down then Up to wake it up. Navigation now binds to the portrait panel as soon as it appears.
 
 <h2>v0.5.9</h2>
 
