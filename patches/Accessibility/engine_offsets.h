@@ -1801,6 +1801,7 @@ constexpr size_t    kAppManagerServerExoAppOffset          = 0x8;
 // rebuild captures half-built rows (base CSWGuiObject vtable, unreadable text);
 // force PopulateItemListBox first. Swap (0x2a) repopulates synchronously inside
 // the handler — just invalidate the chain so it re-binds to the new list.
+constexpr size_t    kJournalItemsListBoxOffset             = 0x5c4;
 constexpr size_t    kJournalQuestItemsButtonOffset         = 0x8a4;
 constexpr size_t    kJournalSwapTextButtonOffset           = 0xa68;
 constexpr size_t    kJournalSortButtonOffset               = 0xc2c;

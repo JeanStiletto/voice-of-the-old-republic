@@ -758,10 +758,23 @@ void RebindChain(void* panel) {
             if (c == workbenchUpgradeLb) {
                 continue;
             }
+            // The journal's quest list (items_listbox @ panel+0x5c4) must
+            // expose its rows even when only ONE quest is active — otherwise
+            // the lone entry (the norm in the Endar Spire tutorial, where the
+            // sole quest is "Angriff auf die Endar Spire") is unreachable and
+            // the user hears no journal content. Its rows carry the dedicated
+            // journal-entry Enter handler (isJournalRow below), so descend via
+            // AppendChainEntry exactly like the size>1 path. The description
+            // listbox (+0x1a4) is a different control and stays skipped.
+            const bool isJournalItemsLb =
+                IdentifyPanel(panel) == PanelKind::InGameJournal &&
+                c == reinterpret_cast<unsigned char*>(panel) +
+                         kJournalItemsListBoxOffset;
             auto* lbList = reinterpret_cast<CExoArrayList*>(
                 reinterpret_cast<unsigned char*>(c) + kListBoxControlsOffset);
             if (lbList && lbList->data) {
-                if (lbList->size > 1) {
+                if (lbList->size > 1 ||
+                    (isJournalItemsLb && lbList->size == 1)) {
                     // Cap the per-listbox walk at the chain bound — AppendChain
                     // Entry self-stops there anyway, so anything past it would
                     // spin the loop for nothing. Using kMaxChainEntries (not a

@@ -589,7 +589,7 @@ const char* Get(Id id) {
         case Id::HelpKeyViewMode:       return "B: Umsehen-Modus, Position halten und die Kamera drehen";
         case Id::HelpKeySwitchLeader:   return "Tabulator: gesteuertes Gruppenmitglied wechseln";
 
-        case Id::HelpKeyCycleTargets:   return "Q und E: nahe Ziele durchschalten";
+        case Id::HelpKeyCycleTargets:   return "Q und E: aktuell sichtbare Objekte durchschalten";
         case Id::HelpKeyInteract:       return "Eingabetaste: mit dem anvisierten Ziel interagieren oder angreifen";
         case Id::HelpKeyOpenActionMenu: return "Umschalt und Eingabetaste: Aktionsmen\xFC f\xFCr das anvisierte Ziel \xF6""ffnen";
         case Id::HelpKeySelfStatus:     return "H: eigene Gesundheit, Effekte und Waffe ansagen";
@@ -598,7 +598,7 @@ const char* Get(Id id) {
         case Id::HelpKeyBeacon:         return "Strg und Minus: Wegweiser zum fokussierten Objekt starten";
         case Id::HelpKeyDialogRepeat:   return "R: die aktuelle gesprochene Zeile wiederholen";
 
-        case Id::HelpKeyCycleObjects:   return "Komma und Punkt: Objekte der aktuellen Kategorie durchschalten";
+        case Id::HelpKeyCycleObjects:   return "Komma und Punkt: bereits entdeckte Objekte der aktuellen Kategorie durchschalten";
         case Id::HelpKeyCycleCategory:  return "Umschalt und Komma oder Punkt: vorherige oder n\xE4""chste Kategorie";
         case Id::HelpKeyCycleEnds:      return "Strg und Komma oder Punkt: zum n\xE4""chsten oder entferntesten Objekt springen";
         case Id::HelpKeyHeading:        return "Rechte Alt-Taste: genaue Blickrichtung in Grad ansagen";

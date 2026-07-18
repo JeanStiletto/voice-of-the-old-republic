@@ -571,7 +571,7 @@ const char* Get(Id id) {
         case Id::HelpKeyViewMode:       return "B : mode observation, rester sur place en tournant la cam\xE9ra";
         case Id::HelpKeySwitchLeader:   return "Tab : changer de membre du groupe contr\xF4l\xE9";
 
-        case Id::HelpKeyCycleTargets:   return "Q et E : faire d\xE9""filer les cibles proches";
+        case Id::HelpKeyCycleTargets:   return "Q et E : faire d\xE9""filer les objets actuellement visibles";
         case Id::HelpKeyInteract:       return "Entr\xE9""e : interagir avec la cible vis\xE9""e ou l'attaquer";
         case Id::HelpKeyOpenActionMenu: return "Maj plus Entr\xE9""e : ouvrir le menu d'action de la cible vis\xE9""e";
         case Id::HelpKeySelfStatus:     return "H : annoncer votre sant\xE9, vos effets et votre arme";
@@ -580,7 +580,7 @@ const char* Get(Id id) {
         case Id::HelpKeyBeacon:         return "Ctrl plus moins : lancer un guide vers l'objet point\xE9";
         case Id::HelpKeyDialogRepeat:   return "R : r\xE9p\xE9ter la r\xE9plique en cours";
 
-        case Id::HelpKeyCycleObjects:   return "Virgule et point : faire d\xE9""filer les objets de la cat\xE9gorie actuelle";
+        case Id::HelpKeyCycleObjects:   return "Virgule et point : faire d\xE9""filer les objets d\xE9j\xE0 d\xE9""couverts de la cat\xE9gorie actuelle";
         case Id::HelpKeyCycleCategory:  return "Maj plus virgule ou point : cat\xE9gorie pr\xE9""c\xE9""dente ou suivante";
         case Id::HelpKeyCycleEnds:      return "Ctrl plus virgule ou point : aller \xE0 l'objet le plus proche ou le plus \xE9loign\xE9";
         case Id::HelpKeyHeading:        return "Alt droite : annoncer votre cap exact en degr\xE9s";

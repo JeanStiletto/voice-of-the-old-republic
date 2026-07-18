@@ -570,7 +570,7 @@ const char* Get(Id id) {
         case Id::HelpKeyViewMode:       return "B: modalit\xE0 osservazione, restare fermi mentre si gira la telecamera";
         case Id::HelpKeySwitchLeader:   return "Tab: cambiare il membro del gruppo controllato";
 
-        case Id::HelpKeyCycleTargets:   return "Q ed E: scorrere i bersagli vicini";
+        case Id::HelpKeyCycleTargets:   return "Q ed E: scorrere gli oggetti attualmente visibili";
         case Id::HelpKeyInteract:       return "Invio: interagire con il bersaglio selezionato o attaccarlo";
         case Id::HelpKeyOpenActionMenu: return "Maiusc pi\xF9 Invio: aprire il menu azioni del bersaglio selezionato";
         case Id::HelpKeySelfStatus:     return "H: annunciare la propria salute, gli effetti e l'arma";
@@ -579,7 +579,7 @@ const char* Get(Id id) {
         case Id::HelpKeyBeacon:         return "Ctrl pi\xF9 meno: avviare una guida verso l'oggetto evidenziato";
         case Id::HelpKeyDialogRepeat:   return "R: ripetere la battuta attuale";
 
-        case Id::HelpKeyCycleObjects:   return "Virgola e punto: scorrere gli oggetti della categoria attuale";
+        case Id::HelpKeyCycleObjects:   return "Virgola e punto: scorrere gli oggetti gi\xE0 scoperti della categoria attuale";
         case Id::HelpKeyCycleCategory:  return "Maiusc pi\xF9 virgola o punto: categoria precedente o successiva";
         case Id::HelpKeyCycleEnds:      return "Ctrl pi\xF9 virgola o punto: andare all'oggetto pi\xF9 vicino o pi\xF9 lontano";
         case Id::HelpKeyHeading:        return "Alt destro: annunciare la direzione esatta in gradi";

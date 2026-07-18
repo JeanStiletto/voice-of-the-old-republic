@@ -570,7 +570,7 @@ const char* Get(Id id) {
         case Id::HelpKeyViewMode:       return "B: look-around mode, hold position while you turn the camera";
         case Id::HelpKeySwitchLeader:   return "Tab: switch the party member you control";
 
-        case Id::HelpKeyCycleTargets:   return "Q and E: cycle nearby targets";
+        case Id::HelpKeyCycleTargets:   return "Q and E: cycle objects currently in view";
         case Id::HelpKeyInteract:       return "Enter: interact with or attack the focused target";
         case Id::HelpKeyOpenActionMenu: return "Shift plus Enter: open the action menu for the focused target";
         case Id::HelpKeySelfStatus:     return "H: announce your own health, effects and weapon";
@@ -579,7 +579,7 @@ const char* Get(Id id) {
         case Id::HelpKeyBeacon:         return "Control plus minus: start a guidance beacon to the focused object";
         case Id::HelpKeyDialogRepeat:   return "R: repeat the current spoken line";
 
-        case Id::HelpKeyCycleObjects:   return "Comma and period: cycle objects in the current category";
+        case Id::HelpKeyCycleObjects:   return "Comma and period: cycle objects you have already discovered, in the current category";
         case Id::HelpKeyCycleCategory:  return "Shift plus comma or period: previous or next category";
         case Id::HelpKeyCycleEnds:      return "Control plus comma or period: jump to the nearest or farthest object";
         case Id::HelpKeyHeading:        return "Right Alt: announce your exact heading in degrees";

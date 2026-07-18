@@ -572,7 +572,7 @@ const char* Get(Id id) {
         case Id::HelpKeyViewMode:       return "B: modo observaci\xF3n, mantener la posici\xF3n mientras giras la c\xE1mara";
         case Id::HelpKeySwitchLeader:   return "Tab: cambiar el miembro del grupo que controlas";
 
-        case Id::HelpKeyCycleTargets:   return "Q y E: recorrer los objetivos cercanos";
+        case Id::HelpKeyCycleTargets:   return "Q y E: recorrer los objetos visibles en pantalla";
         case Id::HelpKeyInteract:       return "Intro: interactuar con el objetivo seleccionado o atacarlo";
         case Id::HelpKeyOpenActionMenu: return "May\xFAs m\xE1s Intro: abrir el men\xFA de acciones del objetivo seleccionado";
         case Id::HelpKeySelfStatus:     return "H: anunciar tu salud, tus efectos y tu arma";
@@ -581,7 +581,7 @@ const char* Get(Id id) {
         case Id::HelpKeyBeacon:         return "Ctrl m\xE1s menos: iniciar una gu\xED""a hacia el objeto resaltado";
         case Id::HelpKeyDialogRepeat:   return "R: repetir la l\xEDnea actual";
 
-        case Id::HelpKeyCycleObjects:   return "Coma y punto: recorrer los objetos de la categor\xED""a actual";
+        case Id::HelpKeyCycleObjects:   return "Coma y punto: recorrer los objetos ya descubiertos de la categor\xED""a actual";
         case Id::HelpKeyCycleCategory:  return "May\xFAs m\xE1s coma o punto: categor\xED""a anterior o siguiente";
         case Id::HelpKeyCycleEnds:      return "Ctrl m\xE1s coma o punto: ir al objeto m\xE1s cercano o m\xE1s lejano";
         case Id::HelpKeyHeading:        return "Alt derecho: anunciar tu rumbo exacto en grados";
