@@ -645,6 +645,7 @@ const char* Get(Id id) {
         // World & actions
         case Id::KbNameInteractTarget:      return "Interact";
         case Id::KbNameInteractForceRadial: return "Force radial menu";
+        case Id::KbNameInteractForceRadialSecondary: return "Force radial menu (secondary)";
         case Id::KbNameTargetKey1:          return "Target key 1";
         case Id::KbNameTargetKey2:          return "Target key 2";
         case Id::KbNameTargetKey3:          return "Target key 3";
@@ -802,6 +803,10 @@ const char* Get(Id id) {
         case Id::FloorPuzzleIntro:
             return "Floor plate puzzle: nine plates in a three by three grid, "
                    "reset plate on the south side.";
+        case Id::FmtFloorReadHint:
+            return "Press %s to read the plate state.";
+        case Id::FloorPuzzleStoryHint:
+            return "You should have found a story hint that will help you solve the puzzle.";
         case Id::FmtFloorSoloHint:
             return "Tip: enable solo mode, key %s, or companions will toggle plates too.";
         case Id::FloorPartyToggled:  return "Companion toggled plates";
@@ -809,8 +814,8 @@ const char* Get(Id id) {
         case Id::PlateCenterWord:    return "Center";
         case Id::PlateResetName:     return "Reset plate";
         case Id::FmtPlateEntered:    return "Stepped on %s";
-        case Id::FmtPlateLit:        return "%s lit";
-        case Id::FmtPlateDark:       return "%s dark";
+        case Id::FmtPlateLit:        return "%s lights up";
+        case Id::FmtPlateDark:       return "%s goes dark";
         case Id::FmtPlateLitCount:   return "%d of 9 lit";
         case Id::PlatesAllDark:      return "All plates dark";
         case Id::FloorPuzzleSolved:

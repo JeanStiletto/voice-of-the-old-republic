@@ -1718,6 +1718,7 @@ enum class Id : int {
     //      World & actions:
     KbNameInteractTarget,
     KbNameInteractForceRadial,
+    KbNameInteractForceRadialSecondary,
     KbNameTargetKey1,
     KbNameTargetKey2,
     KbNameTargetKey3,
@@ -1853,6 +1854,10 @@ enum class Id : int {
     //      user direction; states are "lit"/"dark".
     //
     //      FloorPuzzleIntro    — one-shot orientation line on approach.
+    //      FmtFloorReadHint    — appended to the intro; 1 `%s` (the key
+    //                            that reads the live board on demand).
+    //      FloorPuzzleStoryHint— appended to the intro; points the player
+    //                            at the in-story clue to the solution.
     //      FmtFloorSoloHint    — appended to the intro when >1 party
     //                            member and solo mode off. 1 `%s` (the
     //                            game's current solo-mode key label).
@@ -1864,11 +1869,16 @@ enum class Id : int {
     //      PlateCenterWord     — the centre plate's direction word.
     //      PlateResetName      — the reset plate's full spoken name.
     //      FmtPlateEntered     — 1 `%s` (plate name) — spoken on entry.
-    //      FmtPlateLit/Dark    — delta items, 1 `%s` (short name).
+    //      FmtPlateLit/Dark    — delta items, 1 `%s` (short name); phrased
+    //                            as the TRANSITION ("lights up" / "goes
+    //                            dark"), since the delta lists only plates
+    //                            that flipped this step.
     //      FmtPlateLitCount    — 1 `%d` (lit count of 9).
     //      PlatesAllDark       — board cleared (reset plate / self-undo).
     //      FloorPuzzleSolved   — all nine lit; door opens.
     FloorPuzzleIntro,
+    FmtFloorReadHint,
+    FloorPuzzleStoryHint,
     FmtFloorSoloHint,
     FloorPartyToggled,
     FmtPlateName,

@@ -102,6 +102,12 @@ constexpr int kInputEsc1     = 0xb4;
 constexpr int kInputEsc2     = 0xdf;
 constexpr int kInputActivate = 0x27;   // KEYBOARD_F1, engine's activate code
 
+// "Default action on current target" — the command keymap.2da row
+// `DefaultAction` (default key R) emits. CClientExoAppInternal::HandleInputEvent
+// case 0xef: GetDefaultActions on last_target, then calls the descriptor's
+// action function (talk/open/bash/use…). The keyboard twin of Mouse 1.
+constexpr int kInputDefaultAction = 0xef;
+
 // Raw InputIndices — engine has no logical-action translation for these.
 // Stock kotor.ini has no [Keymapping] for scancodes 32/33, so they arrive
 // bare at the manager hook.

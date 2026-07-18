@@ -17,6 +17,8 @@
 #include "prism.h"
 #include "strfmt.h"
 #include "strings.h"
+#include "view_mode.h"       // IsActive, TryGetCursorPosition — cursor drives
+                             // the distance/entry stream while view mode is on
 
 namespace acc::floor_puzzle {
 
@@ -327,6 +329,15 @@ void SpeakIntro(const Vector& playerPos) {
     if (dx * dx + dy * dy > kIntroRadiusM * kIntroRadiusM) return;
     g_introSpoken = true;
     std::string line(Get(Id::FloorPuzzleIntro));
+    // On-demand read hint — name the actual key bound to the board readout
+    // (DialogRepeatLine, default R), so a rebind is reflected.
+    line += " ";
+    line += acc::strfmt::Format(
+        Get(Id::FmtFloorReadHint),
+        acc::hotkeys::Describe(acc::hotkeys::Action::DialogRepeatLine));
+    // Point the player at the in-story clue to the solution.
+    line += " ";
+    line += Get(Id::FloorPuzzleStoryHint);
     uint32_t followers[12];
     int followerCount = acc::engine::GetPartyMembers(
         followers, static_cast<int>(sizeof(followers) / sizeof(followers[0])));
@@ -337,12 +348,13 @@ void SpeakIntro(const Vector& playerPos) {
         line += acc::strfmt::Format(Get(Id::FmtFloorSoloHint),
                                     acc::hotkeys::VkLabel(vk));
     }
-    prism::Speak(line.c_str(), /*interrupt=*/false);
+    prism::SpeakUrgent(line.c_str());
     acclog::Write("FloorPuzzle", "intro spoken (followers=%d solo=%d)",
                   followerCount, acc::engine::GetSoloMode() ? 1 : 0);
 }
 
-// Itemized flip list ("Nord-West leuchtet, West dunkel") + lit count.
+// Itemized flip list, phrased as the TRANSITION each plate just made
+// ("Nord-West leuchtet auf, West erlischt") + running lit count.
 std::string DeltaText(const bool* flipped, const bool* lit, int litCount) {
     std::string out;
     if (litCount == 0) {
@@ -360,7 +372,55 @@ std::string DeltaText(const bool* flipped, const bool* lit, int litCount) {
     return out;
 }
 
+// Live board summary spoken on demand (R key). Unlike DeltaText this
+// ignores flips — it names every lit plate plus the count so the player
+// can re-orient at any point ("Nord-West, Mitte, Süd-Ost. 3 von 9
+// leuchten."). Reuses the delta strings; nothing lit -> "all dark".
+std::string BoardStateText(const bool* lit, int litCount) {
+    if (litCount == 0) return std::string(Get(Id::PlatesAllDark));
+    std::string out;
+    for (int i = 0; i < kPlateCount; ++i) {
+        if (!lit[i]) continue;
+        if (!out.empty()) out += ", ";
+        out += ShortName(i);
+    }
+    out += ". ";
+    out += acc::strfmt::Format(Get(Id::FmtPlateLitCount), litCount);
+    return out;
+}
+
+// Board-navigation position: the view-mode virtual cursor when view mode
+// is active, otherwise the real party leader. In view mode the leader is
+// frozen in place, so without this the distance/entry stream would never
+// move; feeding it the cursor lets "Platte X betreten" and the nearest-
+// plate offsets track where the player is scanning. The cursor never steps
+// on a plate, so no lit/dark toggle — and thus no delta — can fire off it.
+bool GetNavPosition(Vector& out) {
+    if (acc::view_mode::IsActive() &&
+        acc::view_mode::TryGetCursorPosition(out)) {
+        return true;
+    }
+    return acc::engine::GetPlayerPosition(out);
+}
+
+// Read the live lit/dark state off the plate placeables. Returns the lit
+// count; fills lit[0..kPlateCount). Cheap enough to call every frame (the
+// R board-read path does, so the one-tick key edge is never missed).
+int ReadLiveBoard(bool* lit) {
+    int litCount = 0;
+    for (int i = 0; i < kPlateCount; ++i) {
+        void* plc = acc::engine::ResolveServerObjectHandle(
+            g_plates[i].plcHandle);
+        lit[i] = plc &&
+                 acc::engine::GetObjectLocalBoolean(plc, kLitBooleanIndex);
+        if (lit[i]) ++litCount;
+    }
+    return litCount;
+}
+
 }  // namespace
+
+bool IsActive() { return g_isPuzzleArea && g_cacheReady; }
 
 bool IsPuzzlePlateTrigger(uint32_t handle) {
     if (!g_isPuzzleArea || !g_cacheReady || handle == 0) return false;
@@ -372,6 +432,25 @@ bool IsPuzzlePlateTrigger(uint32_t handle) {
 
 void Tick() {
     DWORD now = GetTickCount();
+
+    // ---- On-demand board read (R) — every frame, ABOVE the scan throttle ---
+    // The rising edge from Pressed() lives for exactly one OnUpdate tick
+    // (~16ms). The 150ms scan throttle below early-returns on ~8 of every 9
+    // frames, so checking R inside the throttled body dropped most presses
+    // (the "R often does nothing" report). Sample it here, unthrottled, and
+    // read the live board on demand. In the puzzle room bare R reports the
+    // board rather than a dialog line (no dialog panel here); input_pipeline
+    // also swallows the engine's native R so it can't ALSO interact.
+    if (g_isPuzzleArea && g_cacheReady &&
+        acc::hotkeys::Pressed(acc::hotkeys::Action::DialogRepeatLine)) {
+        bool lit[kPlateCount];
+        int  litCount = ReadLiveBoard(lit);
+        std::string board = BoardStateText(lit, litCount);
+        prism::SpeakUrgent(board.c_str());
+        acclog::Write("FloorPuzzle", "R board read -> [%s] (lit=%d)",
+                      board.c_str(), litCount);
+    }
+
     if ((now - g_lastScan) < kScanIntervalMs) return;
     g_lastScan = now;
 
@@ -399,14 +478,8 @@ void Tick() {
 
     // ---- Board state ---------------------------------------------------
     bool lit[kPlateCount];
-    int  litCount = 0;
-    for (int i = 0; i < kPlateCount; ++i) {
-        void* plc = acc::engine::ResolveServerObjectHandle(
-            g_plates[i].plcHandle);
-        lit[i] = plc &&
-                 acc::engine::GetObjectLocalBoolean(plc, kLitBooleanIndex);
-        if (lit[i]) ++litCount;
-    }
+    int  litCount = ReadLiveBoard(lit);
+
     bool flipped[kPlateCount] = {};
     bool anyFlip = false;
     if (g_haveLit) {
@@ -436,9 +509,11 @@ void Tick() {
     }
     if (g_solvedQuiet) return;
 
-    // ---- Leader position vs plates --------------------------------------
+    // ---- Nav position vs plates -----------------------------------------
+    // Leader while walking; the virtual cursor while view mode (B) is
+    // active, so the distance/entry stream follows what the player scans.
     Vector pos{};
-    bool havePos = acc::engine::GetPlayerPosition(pos);
+    bool havePos = GetNavPosition(pos);
     int newPlate = -1;
     if (havePos) {
         for (int i = 0; i < kTrackCount; ++i) {

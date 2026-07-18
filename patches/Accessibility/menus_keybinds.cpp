@@ -32,6 +32,7 @@ struct ActionEntry { A action; S name; };
 constexpr ActionEntry kWorld[] = {
     { A::InteractTarget,      S::KbNameInteractTarget },
     { A::InteractForceRadial, S::KbNameInteractForceRadial },
+    { A::InteractForceRadialSecondary, S::KbNameInteractForceRadialSecondary },
     { A::TargetKey1,          S::KbNameTargetKey1 },
     { A::TargetKey2,          S::KbNameTargetKey2 },
     { A::TargetKey3,          S::KbNameTargetKey3 },

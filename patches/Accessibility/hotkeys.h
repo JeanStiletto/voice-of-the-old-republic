@@ -28,6 +28,7 @@ enum class Action : int {
     // ----- World interaction -----
     InteractTarget,        // Enter
     InteractForceRadial,   // Shift+Enter
+    InteractForceRadialSecondary,  // Shift+R — second key for the same force-radial
     TargetKey1,            // 1   (bare; engine fires action, we announce)
     TargetKey2,            // 2
     TargetKey3,            // 3

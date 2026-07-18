@@ -664,6 +664,7 @@ const char* Get(Id id) {
         // World & actions
         case Id::KbNameInteractTarget:      return "Interagieren";
         case Id::KbNameInteractForceRadial: return "Radialmen\xFC erzwingen";
+        case Id::KbNameInteractForceRadialSecondary: return "Radialmen\xFC erzwingen (Sekund\xE4rtaste)";
         case Id::KbNameTargetKey1:          return "Zieltaste 1";
         case Id::KbNameTargetKey2:          return "Zieltaste 2";
         case Id::KbNameTargetKey3:          return "Zieltaste 3";
@@ -821,6 +822,10 @@ const char* Get(Id id) {
         case Id::FloorPuzzleIntro:
             return "Bodenplatten-R\xE4tsel: neun Platten in drei mal drei Anordnung, "
                    "R\xFC""cksetzfeld auf der S\xFC""dseite.";  // R?tsel, R?cksetzfeld, S?dseite
+        case Id::FmtFloorReadHint:
+            return "Dr\xFC""cke %s, um den Plattenzustand anzusagen.";
+        case Id::FloorPuzzleStoryHint:
+            return "Du solltest einen Story-Hinweis gefunden haben, der dir hilft, das R\xE4tsel zu l\xF6sen.";
         case Id::FmtFloorSoloHint:
             return "Tipp: Solo-Modus aktivieren, Taste %s, sonst schalten Begleiter Platten mit um.";
         case Id::FloorPartyToggled:  return "Begleiter hat Platten umgeschaltet";
@@ -828,8 +833,8 @@ const char* Get(Id id) {
         case Id::PlateCenterWord:    return "Mitte";
         case Id::PlateResetName:     return "R\xFC""cksetzfeld";        // R?cksetzfeld
         case Id::FmtPlateEntered:    return "%s betreten";
-        case Id::FmtPlateLit:        return "%s leuchtet";
-        case Id::FmtPlateDark:       return "%s dunkel";
+        case Id::FmtPlateLit:        return "%s leuchtet auf";
+        case Id::FmtPlateDark:       return "%s erlischt";
         case Id::FmtPlateLitCount:   return "%d von 9 leuchten";
         case Id::PlatesAllDark:      return "Alle Platten dunkel";
         case Id::FloorPuzzleSolved:

@@ -36,6 +36,7 @@
 #include "hotkeys.h"         // ModifiedComboOwns / CurrentModifiers — the
                              // registry decides if this press belongs to a mod
                              // hotkey rather than the engine's bare action
+#include "floor_puzzle.h"    // IsActive — puzzle room owns bare R (board readout)
 #include "engine_panels.h"   // HasActiveDialogPanel — suppress the bare 1..7
                              // combat dispatch while a dialog reply listbox
                              // owns the number keys
@@ -199,6 +200,26 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
                       "seq=%u this=%p caller=0x%08x key=%s(%d) val=%d",
                       seq, this_ptr, caller_eip,
                       acc::engine::InputIndexName(param_1), param_1, param_2);
+    }
+
+    // ---- Puzzle-room bare-R ownership --------------------------------------
+    // In the Rakatan floor-plate room the mod binds bare R to the board-state
+    // readout (floor_puzzle::Tick). Vanilla R is "default action on current
+    // target" (case 0xef), so without this the same press would ALSO interact
+    // with whatever is targeted while the player is just reading the board.
+    // Swallow the UNMODIFIED DefaultAction here so bare R only speaks the
+    // board. Modified R (Shift+R = force radial) falls through to the modifier
+    // reservation below, which consumes it exactly like any other combo.
+    if (param_2 != 0 && param_1 == kInputDefaultAction &&
+        acc::floor_puzzle::IsActive()) {
+        uint32_t m = acc::hotkeys::CurrentModifiers();
+        if ((m & (acc::hotkeys::kModShift | acc::hotkeys::kModCtrl |
+                  acc::hotkeys::kModAlt)) == 0) {
+            acclog::Write("Diag.ClientHIE",
+                "seq=%u DefaultAction(R) CONSUMED — puzzle room owns bare R "
+                "(board readout)", seq);
+            return 1;  // consume → consumed_exit (POP*5 + RET 8)
+        }
     }
 
     // ---- Modifier-space reservation (in-world) -----------------------------

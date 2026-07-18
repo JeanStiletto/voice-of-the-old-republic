@@ -645,6 +645,7 @@ const char* Get(Id id) {
         // World & actions
         case Id::KbNameInteractTarget:      return "Interagisci";
         case Id::KbNameInteractForceRadial: return "Forza menu radiale";
+        case Id::KbNameInteractForceRadialSecondary: return "Forza menu radiale (secondario)";
         case Id::KbNameTargetKey1:          return "Tasto bersaglio 1";
         case Id::KbNameTargetKey2:          return "Tasto bersaglio 2";
         case Id::KbNameTargetKey3:          return "Tasto bersaglio 3";
@@ -717,6 +718,10 @@ const char* Get(Id id) {
         case Id::FloorPuzzleIntro:
             return "Enigma delle piastre: nove piastre in una griglia tre per tre, "
                    "piastra di ripristino sul lato sud.";
+        case Id::FmtFloorReadHint:
+            return "Premi %s per leggere lo stato delle piastre.";
+        case Id::FloorPuzzleStoryHint:
+            return "Dovresti aver trovato un indizio della storia che ti aiuter\xE0 a risolvere l'enigma.";
         case Id::FmtFloorSoloHint:
             return "Consiglio: attiva la modalit\xE0 solo, tasto %s, altrimenti anche i compagni attivano le piastre.";
         case Id::FloorPartyToggled:  return "Un compagno ha cambiato delle piastre";
@@ -724,8 +729,8 @@ const char* Get(Id id) {
         case Id::PlateCenterWord:    return "Centro";
         case Id::PlateResetName:     return "Piastra di ripristino";
         case Id::FmtPlateEntered:    return "Su %s";
-        case Id::FmtPlateLit:        return "%s accesa";
-        case Id::FmtPlateDark:       return "%s spenta";
+        case Id::FmtPlateLit:        return "%s si accende";
+        case Id::FmtPlateDark:       return "%s si spegne";
         case Id::FmtPlateLitCount:   return "%d su 9 accese";
         case Id::PlatesAllDark:      return "Tutte le piastre spente";
         case Id::FloorPuzzleSolved:

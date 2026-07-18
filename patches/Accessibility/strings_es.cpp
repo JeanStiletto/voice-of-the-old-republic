@@ -647,6 +647,7 @@ const char* Get(Id id) {
         // World & actions
         case Id::KbNameInteractTarget:      return "Interactuar";
         case Id::KbNameInteractForceRadial: return "Forzar men\xFA radial";
+        case Id::KbNameInteractForceRadialSecondary: return "Forzar men\xFA radial (secundario)";
         case Id::KbNameTargetKey1:          return "Tecla de objetivo 1";
         case Id::KbNameTargetKey2:          return "Tecla de objetivo 2";
         case Id::KbNameTargetKey3:          return "Tecla de objetivo 3";
@@ -719,6 +720,10 @@ const char* Get(Id id) {
         case Id::FloorPuzzleIntro:
             return "Enigma de las placas: nueve placas en una cuadr\xED""cula de tres por tres, "
                    "placa de reinicio en el lado sur.";
+        case Id::FmtFloorReadHint:
+            return "Pulsa %s para leer el estado de las placas.";
+        case Id::FloorPuzzleStoryHint:
+            return "Deber\xED""as haber encontrado una pista de la historia que te ayudar\xE1 a resolver el enigma.";
         case Id::FmtFloorSoloHint:
             return "Consejo: activa el modo solo, tecla %s, o los compa\xF1""eros tambi\xE9n activar\xE1n las placas.";
         case Id::FloorPartyToggled:  return "Un compa\xF1""ero ha cambiado placas";
@@ -726,8 +731,8 @@ const char* Get(Id id) {
         case Id::PlateCenterWord:    return "Centro";
         case Id::PlateResetName:     return "Placa de reinicio";
         case Id::FmtPlateEntered:    return "Sobre %s";
-        case Id::FmtPlateLit:        return "%s encendida";
-        case Id::FmtPlateDark:       return "%s apagada";
+        case Id::FmtPlateLit:        return "%s se enciende";
+        case Id::FmtPlateDark:       return "%s se apaga";
         case Id::FmtPlateLitCount:   return "%d de 9 encendidas";
         case Id::PlatesAllDark:      return "Todas las placas apagadas";
         case Id::FloorPuzzleSolved:

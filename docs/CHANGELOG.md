@@ -60,6 +60,16 @@ and add the German in parentheses if it genuinely aids clarity.
   an earlier target — silently navigable underneath, so firing from it hit
   that old target. The refusal now closes the stale menu outright.
 
+<h3>World interaction:</h3>
+
+- Shift+R is a second key for the force-radial action menu, alongside
+  Shift+Enter. It is an independent, separately rebindable binding — both
+  open the same menu, so whichever is easier to reach works.
+- Pressing R on your current target now speaks the default action it takes —
+  open, talk, attack, and so on. R has always performed the game's default
+  action on the focused object; the mod now announces which action that is as
+  it fires.
+
 <h3>World navigation:</h3>
 
 - Landmark announcements now trigger from the same distance at which sighted
@@ -76,6 +86,13 @@ and add the German in parentheses if it genuinely aids clarity.
 - The Shift+number action menus now always match your current target. Opening a target's attack or Force-power column with Shift+1 to Shift+3 read whatever target the engine's menu had last been built for, so on a freshly focused target it often announced an empty column until a bare number key had been pressed once — most noticeable on story objects you must target mid-fight. The consumed Shift press now rebuilds the menu against the narrated target exactly like the bare number keys do.
 - Story objects in the finale now speak their state the way doors speak open and closed: the captives in the last arena read "captive" or "freed", and the droid-control terminals on the decks before it read "active" or "deactivated". The state is spoken on every surface — Q/E targeting, passive focus, and comma/period cycling — so a used-up object that offers no more actions is self-explanatory the moment you hear its name.
 - The fight-critical terminals and captives of the last levels are discovered automatically on entering. Finding a never-visited console for the first time while under fire is close to impossible without sight, so they are placed into discovered-object cycling the moment the level loads — no prior exploration walk needed.
+
+<h3>Floor-plate puzzle:</h3>
+
+- Press R at any time in the puzzle room to hear the whole board — which plates are lit, and how many of nine. Until now you had to carry the running state in your head from the step-by-step announcements alone.
+- Stepping on a plate now names what changed rather than the resulting state — "north-west lights up, west goes dark" instead of "north-west lit, west dark" — so a toggle reads as an event, with the lit tally still following.
+- View mode (B) drives the puzzle's distance and entry announcements. With the character frozen you can sweep the virtual cursor across the grid and hear each plate's compass offset, and its name as the cursor crosses onto it — a way to survey the board without stepping, and without triggering any state change.
+- The room's introduction is now spoken urgently so it is not cut off as you walk in, names the key that reads the board, and reminds you that a story clue points to the solution.
 
 <h3>Combat speech:</h3>
 
@@ -107,6 +124,7 @@ and add the German in parentheses if it genuinely aids clarity.
 - The character-creation portrait selector now works the moment it opens: it announces the current portrait immediately, and Left/Right speaks each newly-selected portrait as you cycle. The panel is pushed by its parent menu without an engine focus event, so keyboard navigation stayed bound to the parent until your first arrow press — leaving the panel silent on open and making Left/Right fall through to a bare click with no readout. You previously had to press Down then Up to wake it up. Navigation now binds to the portrait panel as soon as it appears.
 - The quest journal now reaches its entry when only one quest is active. With a single active quest — the norm early on, where the Endar Spire's "Attack on the Endar Spire" is your only entry — the quest list was dropped from keyboard navigation, so opening the journal and arrowing through it reached only the footer buttons and never the quest; a "new journal entry" notice appeared to lead nowhere. The lone entry is now navigable and reads its full text on Enter, exactly as it already did with two or more quests.
 - The F1 help now describes the two object-cycling key pairs accurately. Q/E was labelled "cycle nearby targets" and comma/period "cycle objects in the current category", which wrongly implied one was for enemies and the other for objects — both cycle objects. The lines now draw the real distinction: Q/E steps through what is currently in view, comma/period through the objects you have already discovered.
+- The turret minigame's "select next target" key works again, and saved keybinds are stored under their correct names. An internal keybind name-table was missing two entries, which shifted every later name and left this action mislabelled and bound to R instead of E; it also wrote malformed lines — including a blank "(null)" entry — into the saved-keybinds file. The table is corrected and bindings now persist under their proper names.
 
 <h2>v0.5.9</h2>
 

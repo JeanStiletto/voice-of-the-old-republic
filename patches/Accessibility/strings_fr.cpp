@@ -646,6 +646,7 @@ const char* Get(Id id) {
         // World & actions
         case Id::KbNameInteractTarget:      return "Interagir";
         case Id::KbNameInteractForceRadial: return "Forcer le menu radial";
+        case Id::KbNameInteractForceRadialSecondary: return "Forcer le menu radial (secondaire)";
         case Id::KbNameTargetKey1:          return "Touche de cible 1";
         case Id::KbNameTargetKey2:          return "Touche de cible 2";
         case Id::KbNameTargetKey3:          return "Touche de cible 3";
@@ -718,6 +719,10 @@ const char* Get(Id id) {
         case Id::FloorPuzzleIntro:
             return "\xC9nigme des dalles : neuf dalles en grille de trois sur trois, "
                    "dalle de r\xE9initialisation au sud.";
+        case Id::FmtFloorReadHint:
+            return "Appuie sur %s pour lire l'\xE9tat des dalles.";
+        case Id::FloorPuzzleStoryHint:
+            return "Tu devrais avoir trouv\xE9 un indice de l'histoire qui t'aidera \xE0 r\xE9soudre l'\xE9nigme.";
         case Id::FmtFloorSoloHint:
             return "Conseil : activez le mode solo, touche %s, sinon les compagnons d\xE9""clenchent aussi les dalles.";
         case Id::FloorPartyToggled:  return "Un compagnon a modifi\xE9 des dalles";
@@ -725,8 +730,8 @@ const char* Get(Id id) {
         case Id::PlateCenterWord:    return "Centre";
         case Id::PlateResetName:     return "Dalle de r\xE9initialisation";
         case Id::FmtPlateEntered:    return "Sur %s";
-        case Id::FmtPlateLit:        return "%s allum\xE9""e";
-        case Id::FmtPlateDark:       return "%s \xE9teinte";
+        case Id::FmtPlateLit:        return "%s s'allume";
+        case Id::FmtPlateDark:       return "%s s'\xE9teint";
         case Id::FmtPlateLitCount:   return "%d sur 9 allum\xE9""es";
         case Id::PlatesAllDark:      return "Toutes les dalles \xE9teintes";
         case Id::FloorPuzzleSolved:

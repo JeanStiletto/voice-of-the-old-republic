@@ -21,6 +21,7 @@
 #include "engine_player.h"
 #include "engine_radial.h"
 #include "filter_objects.h"
+#include "floor_puzzle.h"   // IsActive — puzzle room owns bare R (board readout)
 #include "guidance_approach.h"   // ArmApproach — unified walk-to-act tracker
 #include "guidance_autowalk.h"   // UseObject primitive
 #include "hotkeys.h"
@@ -637,7 +638,10 @@ void PollHotkey() {
     namespace hk = acc::hotkeys;
 
     bool risingEnterPlain = hk::Pressed(hk::Action::InteractTarget);
-    bool risingEnterForce = hk::Pressed(hk::Action::InteractForceRadial);
+    // Shift+Enter and Shift+R are two independent keys for the same
+    // force-radial action — either one arms it.
+    bool risingEnterForce = hk::Pressed(hk::Action::InteractForceRadial) ||
+                            hk::Pressed(hk::Action::InteractForceRadialSecondary);
     bool risingEnter      = risingEnterPlain || risingEnterForce;
     bool risingUp    = hk::Pressed(hk::Action::NavUp);
     bool risingDown  = hk::Pressed(hk::Action::NavDown);
@@ -946,6 +950,47 @@ void PollHotkey() {
             acc::input::NoteOverlayEscClosed();
         }
         return;
+    }
+
+    // ---- Bare R: narrate the native default action -----------------------
+    // Vanilla R ("default action on current target", engine case 0xef) still
+    // fires in-world on its own — the engine dispatches it against last_target.
+    // We don't reimplement that (Enter already covers the narrated-target set);
+    // we only add the spoken pre-roll so an R-presser hears what R just did.
+    // Read-only: ReadCurrent snapshots the engine's live default-action
+    // descriptor without driving anything, so there's no double-dispatch.
+    // Skipped where another consumer owns bare R (dialog reply-repeat via
+    // dialog_speech, puzzle board readout via floor_puzzle) or where native R
+    // can't act (a UI panel is foreground). Reaching here already means no mod
+    // overlay is armed (their routing blocks returned above).
+    if (inWorld && hk::Pressed(hk::Action::DialogRepeatLine) &&
+        !acc::engine::HasActiveDialogPanel() &&
+        !acc::floor_puzzle::IsActive() &&
+        !acc::engine::IsForegroundUiBlocking()) {
+        acc::picker::ActionSnapshot snap = {};
+        if (acc::picker::ReadCurrent(&snap) && snap.valid && snap.label[0]) {
+            char name[128] = "";
+            void* obj = acc::engine::ResolveClientObjectHandle(snap.target_id);
+            if (obj) acc::engine::GetObjectName(obj, name, sizeof(name));
+            char msg[192];
+            if (name[0]) {
+                std::snprintf(msg, sizeof(msg),
+                    acc::strings::Get(acc::strings::Id::FmtInteractEngine),
+                    snap.label, name);
+            } else {
+                std::snprintf(msg, sizeof(msg), "%s", snap.label);
+            }
+            prism::Speak(msg, /*interrupt=*/true);
+            acclog::Write("Interact", "R native-default announce -> [%s] "
+                "action=0x%x target=0x%08x", msg, snap.action_id,
+                snap.target_id);
+        } else {
+            acclog::Write("Interact", "R native-default announce — no valid "
+                "descriptor (snap.valid=%d); silent", snap.valid ? 1 : 0);
+        }
+        // Not a return: R never overlaps Enter, and nothing below acts on the
+        // R edge — fall through so a same-tick Enter (impossible on one key,
+        // but cheap to allow) still routes normally.
     }
 
     // Non-radial path: Enter (with optional Shift) drives interact.

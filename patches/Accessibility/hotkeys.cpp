@@ -53,6 +53,7 @@ EdgeState g_edge[static_cast<int>(Action::COUNT)] = {};
 const char* const kActionNames[static_cast<int>(Action::COUNT)] = {
     "InteractTarget",
     "InteractForceRadial",
+    "InteractForceRadialSecondary",
     "TargetKey1",
     "TargetKey2",
     "TargetKey3",
@@ -101,6 +102,8 @@ const char* const kActionNames[static_cast<int>(Action::COUNT)] = {
     "EditboxReReadDown",
     "EditboxSubmit",
     "EditboxCancel",
+    "HelpMenuOpen",
+    "HelpContext",
     "CheckForUpdate",
     "ProbePathfind",
     "ProbeAudioCycle",
@@ -185,6 +188,13 @@ void InitDefaults() {
     // ----- World interaction -----
     bind(Action::InteractTarget,       VK_RETURN, 0, 0,         kModShift);
     bind(Action::InteractForceRadial,  VK_RETURN, 0, kModShift, 0);
+    // Shift+R is a SECOND, independently-rebindable key for the same
+    // force-radial action (its own keybind-list entry, not a replacement for
+    // Shift+Enter). R is the vanilla "default action" key; Shift+R has no
+    // distinct engine meaning (case 0xef ignores the shift bit), and the
+    // modifier-space reservation in input_pipeline already swallows the
+    // engine's plain R under any modifier — so it can't double-fire.
+    bind(Action::InteractForceRadialSecondary, 'R', 0, kModShift, 0);
     bind(Action::TargetKey1,           '1',       0, 0,         kModShift);
     bind(Action::TargetKey2,           '2',       0, 0,         kModShift);
     bind(Action::TargetKey3,           '3',       0, 0,         kModShift);
