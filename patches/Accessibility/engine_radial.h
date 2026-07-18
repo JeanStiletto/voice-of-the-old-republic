@@ -92,6 +92,31 @@ bool DispatchRowAction   (void* tam, int row);
 // (rebuilds reassign action_ids, so re-stamp after each refresh).
 bool SelectActionInRow(void* tam, int row, int index);
 
+// action_lists[row].data[index].action_id — by POSITION, unlike
+// ReadSelectedRowActionId which goes through the engine's field1
+// selection tracking. 0 on empty row / out-of-range / fault. Paired
+// with FindRowIndexByActionId to carry a selection across a
+// PopulateMenus rebuild by identity (rebuilds may reorder or drop
+// entries, so the shadow index alone is not stable).
+uint32_t ReadRowActionIdAtIndex(void* tam, int row, int index);
+
+// Index of the descriptor in action_lists[row] whose action_id matches,
+// -1 when absent (or actionId == 0 / fault). See ReadRowActionIdAtIndex.
+int FindRowIndexByActionId(void* tam, int row, uint32_t actionId);
+
+// Overwrites the creature_id (+0x1c) of EVERY descriptor in
+// action_lists[row] with targetClientHandle. DoTargetAction dispatches
+// at the creature_id baked into the matched descriptor at PopulateMenus
+// time — and the engine re-bakes the lists against its own current
+// target (combat reassert / cursor hover) while the unified menu sits
+// open, so a dispatch seconds after arming fires at the wrong object
+// (Machtbruch-on-Malak, patch-20260717-131859.log). Raw field writes
+// only — safe from the Win32 poll context where RePopulate is not
+// (phantom-confirm, see unified_action_menu::OpenTarget). Logs a
+// stale-target line when the stored creature_id differed. Returns the
+// number of entries stamped; -1 on null TAM / empty row / fault.
+int RetargetRowActions(void* tam, int row, uint32_t targetClientHandle);
+
 // target_actions[row].action_button. Coincides with the array entry's
 // start (action_button is field 0).
 void* GetRowActionButton(void* tam, int row);

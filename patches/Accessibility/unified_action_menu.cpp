@@ -74,6 +74,12 @@ struct State {
                                     // it before the first engine call sidesteps
                                     // the corrupted stack slot.
     char     targetName[64] = "";
+    uint32_t unfoldDeclined = 0;    // last narrated handle whose mid-menu
+                                    // target-block unfold found no populated
+                                    // rows. Suppresses re-running the populate
+                                    // chain for that same handle on every
+                                    // subsequent keypress; any other narrated
+                                    // handle retries. Reset on disarm.
     bool     pausedOnOpen   = false;// did we BeginOverlayPause when arming? Set
                                     // from the "Action Menu" auto-pause option
                                     // (CClientOptions bit 0x8000) at Arm time so
@@ -488,6 +494,7 @@ void ForceDisarm(const char* reason) {
     g.hasTargetBlock = false;
     g.reqSlot = 0;
     g.targetName[0] = '\0';
+    g.unfoldDeclined = 0;
     // Shadows persist intentionally — keep the user's per-slot variant.
 }
 
@@ -569,7 +576,19 @@ bool OpenTarget(int row) {
         prism::Speak(msg, /*interrupt=*/true);
         acclog::Write("UnifiedMenu", "OpenTarget row=%d empty (target=0x%08x)",
             g.reqSlot, g.targetHandle);
-        g.targetHandle = 0;   // not arming — don't leave a stale target
+        // A menu still armed from an earlier open (possibly against a
+        // DIFFERENT target) must not survive this refusal: it kept its old
+        // categories navigable after "Spalte N ist leer", so the user
+        // browsed and fired the OLD target's menu believing it was the new
+        // one (the 13:20 Machtbruch-on-Malak in patch-20260717-131859.log).
+        // Worse, the g.targetHandle capture above had already clobbered the
+        // armed menu's target. Close it outright — matching the "all
+        // categories empty" disarms — so the refusal leaves no ghost menu.
+        if (g.active) {
+            ForceDisarm("open-empty-row");
+        } else {
+            g.targetHandle = 0;   // not arming — don't leave a stale target
+        }
         return false;
     }
 
@@ -696,6 +715,97 @@ bool HandleInputEvent(int code, int value) {
     void* tam = acc::engine_radial::ResolveTargetActionMenu();
     void* mi  = acc::engine_actionbar::ResolveMainInterface();
 
+    // FOLLOW-CYCLING re-anchor: when the narrated target changed while the
+    // menu sat open (`,`/`.`/Q/E/passive all stamp the same slot), rebuild
+    // the target rows against the NEW target so the menu always shows that
+    // target's real options and Enter fires at it. One re-anchor per cycle
+    // (the handle comparison self-quiesces), so the per-keypress churn that
+    // originally forced the lazy design doesn't return. The user's selected
+    // action follows BY IDENTITY: each row's shadow index is re-located to
+    // the entry with the same action_id, so cycle → Enter casts the same
+    // power at the next target. A row whose previous action_id is absent on
+    // the new target marks its selection as not-carried; Enter (only) is
+    // then consumed as orientation instead of firing something unheard —
+    // see the Enter case.
+    bool targetChanged = false;
+    bool selectionCarried = true;
+    bool rowCarried[kRowCount] = {true, true, true};
+    if (tam) {
+        uint32_t narrated = ResolveNarratedServerHandle();
+        const bool haveBlock = g.hasTargetBlock && g.targetHandle != 0;
+        if (narrated != 0 && haveBlock &&
+            (narrated & ~0x80000000u) != (g.targetHandle & ~0x80000000u)) {
+            uint32_t prevId[kRowCount];
+            for (int r = 0; r < kRowCount; ++r) {
+                prevId[r] = acc::engine_radial::ReadRowActionIdAtIndex(
+                    tam, r, g_targetSel[r]);
+            }
+            if (acc::picker::ReanchorRadial(narrated)) {
+                uint32_t oldHandle = g.targetHandle;
+                targetChanged  = true;
+                g.targetHandle = narrated;
+                g.creature     = DetectCreature(tam, narrated);
+                if (!acc::engine_radial::ReadTargetName(
+                        tam, g.targetName, sizeof(g.targetName))) {
+                    g.targetName[0] = '\0';
+                }
+                for (int r = 0; r < kRowCount; ++r) {
+                    int ni = acc::engine_radial::FindRowIndexByActionId(
+                        tam, r, prevId[r]);
+                    rowCarried[r] = (ni >= 0);
+                    if (ni >= 0) g_targetSel[r] = ni;
+                }
+                acclog::Write("UnifiedMenu",
+                    "follow-cycle re-anchor 0x%08x -> 0x%08x creature=%d "
+                    "name=[%s] carried=%d%d%d", oldHandle, narrated,
+                    g.creature ? 1 : 0, g.targetName,
+                    rowCarried[0] ? 1 : 0, rowCarried[1] ? 1 : 0,
+                    rowCarried[2] ? 1 : 0);
+            } else {
+                acclog::Write("UnifiedMenu",
+                    "follow-cycle re-anchor FAILED for 0x%08x — keeping "
+                    "0x%08x", narrated, g.targetHandle);
+            }
+        } else if (narrated != 0 && !haveBlock &&
+                   narrated != g.unfoldDeclined) {
+            // UNFOLD: the menu is personal-only (opened without a target, or
+            // its target was lost) and the user cycled onto something.
+            // Populate the target rows against it and fold them in — the
+            // mid-menu equivalent of OpenPersonal's open-time fold-in, which
+            // could not happen back then because nothing was narrated. Rows
+            // empty → target has no actions → stay personal-only and don't
+            // re-run the populate chain for this handle on every keypress.
+            if (acc::picker::ReanchorRadial(narrated)) {
+                if (FirstPopulatedTargetRow(tam) >= 0) {
+                    targetChanged    = true;
+                    g.hasTargetBlock = true;
+                    g.targetHandle   = narrated;
+                    g.creature       = DetectCreature(tam, narrated);
+                    if (!acc::engine_radial::ReadTargetName(
+                            tam, g.targetName, sizeof(g.targetName))) {
+                        g.targetName[0] = '\0';
+                    }
+                    g.unfoldDeclined = 0;
+                    // Nothing in the new rows was ever selected by the user
+                    // in this menu session — treat all as not-carried so an
+                    // Enter that somehow lands there orients instead of
+                    // firing. The user's personal category re-locates and
+                    // stays carried, so Enter there fires as normal.
+                    rowCarried[0] = rowCarried[1] = rowCarried[2] = false;
+                    acclog::Write("UnifiedMenu",
+                        "follow-cycle unfold target=0x%08x creature=%d "
+                        "name=[%s]", narrated, g.creature ? 1 : 0,
+                        g.targetName);
+                } else {
+                    g.unfoldDeclined = narrated;
+                    acclog::Write("UnifiedMenu",
+                        "follow-cycle unfold declined 0x%08x — no target "
+                        "actions", narrated);
+                }
+            }
+        }
+    }
+
     // LAZY re-anchor: re-anchoring on EVERY keypress broke target-menu
     // navigation (the engine's per-press re-derivation churned the rows so
     // arrows produced nothing). Instead, only re-anchor to RESTORE the menu
@@ -703,7 +813,9 @@ bool HandleInputEvent(int code, int value) {
     // (the cursor-coupling case, project_radial_cursor_coupling). In the
     // normal paused-overlay case the rows persist, so we skip re-anchor and
     // navigate the stable snapshot — exactly like the personal-only menu.
-    if (g.hasTargetBlock && g.targetHandle != 0 && tam) {
+    // Skipped when the follow-cycle re-anchor above already rebuilt this
+    // press (an actionless new target legitimately has zero rows).
+    if (!targetChanged && g.hasTargetBlock && g.targetHandle != 0 && tam) {
         int t = acc::engine_radial::RowActionCount(tam, 0) +
                 acc::engine_radial::RowActionCount(tam, 1) +
                 acc::engine_radial::RowActionCount(tam, 2);
@@ -736,6 +848,15 @@ bool HandleInputEvent(int code, int value) {
     }
     int loc = LocateCat(savedKind, savedSlot);
     g.curCat = (loc >= 0) ? loc : ClampInt(g.curCat, 0, g.catCount - 1);
+
+    // Selection survives a follow-cycle re-anchor only when the category the
+    // user was on still exists AND (for target rows) its action_id was found
+    // on the new target. Not-carried gates Enter into orientation mode.
+    if (targetChanged) {
+        const Cat& c = g.cats[g.curCat];
+        selectionCarried = (loc >= 0) &&
+            (c.kind != CatKind::Target || rowCarried[c.slot]);
+    }
 
     Cat cur = g.cats[g.curCat];
     int count = CountForCat(tam, mi, cur);
@@ -809,9 +930,48 @@ bool HandleInputEvent(int code, int value) {
         }
         case kInputEnter1:
         case kInputEnter2: {
+            // Follow-cycling contract: Enter right after cycling fires
+            // immediately when the user's selected action exists on the new
+            // target (selection carried by action_id above). When it does
+            // NOT — the action is unavailable there, or the whole category
+            // vanished — firing would dispatch something the user never
+            // heard. Consume this press as orientation instead: announce
+            // the new target's menu context; the next Enter fires what was
+            // just spoken.
+            if (targetChanged && !selectionCarried) {
+                char prefix[160] = "";
+                std::snprintf(prefix, sizeof(prefix),
+                              acc::strings::Get(
+                                  acc::strings::Id::FmtInteractRadial),
+                              g.targetName);
+                acclog::Write("UnifiedMenu", "ENTER after follow-cycle — "
+                    "selection not carried; announcing instead of firing");
+                SpeakCategory(tam, mi, prefix);
+                return true;
+            }
+
             ApplySelection(tam, mi, cur, sel);
             char label[128] = "";
             ReadLabel(tam, mi, cur, sel, label, sizeof(label));
+
+            // DoTargetAction dispatches at the creature_id baked into the
+            // matched list descriptor at PopulateMenus time — and while the
+            // menu sits open the engine re-bakes the lists against its own
+            // current target (combat reassert / cursor hover), so an Enter
+            // seconds after arming fired at the wrong object (Machtbruch
+            // meant for a Gefangener-Jedi container hit Malak, patch-
+            // 20260717-131859.log). Restamp the whole row with the menu's
+            // armed target right before dispatch: raw field writes, safe
+            // from this poll context (unlike RePopulate — phantom-confirm,
+            // see OpenTarget). Same client-handle convention as input_
+            // pipeline's PrepareBareDispatchForNarratedTarget.
+            if (cur.kind == CatKind::Target && g.targetHandle != 0) {
+                uint32_t targetClient = (g.targetHandle & 0x80000000u)
+                    ? g.targetHandle
+                    : (g.targetHandle | 0x80000000u);
+                (void)acc::engine_radial::RetargetRowActions(
+                    tam, cur.slot, targetClient);
+            }
 
             // Force the engine's APPEND path. Both DoPersonalAction and
             // DoTargetAction wipe the leader's action queue before dispatching

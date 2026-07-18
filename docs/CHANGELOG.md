@@ -35,6 +35,31 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>Unreleased</h2>
 
+<h3>Action menu:</h3>
+
+- Actions fired from the menu now always hit the focused target. During an
+  active fight the engine kept re-aiming its internal action lists at your
+  current combat opponent for as long as the menu sat open, so a Force power
+  picked for a cycled-to object could silently fire at the enemy you were
+  already fighting — a Force Breach meant for a captive Jedi landed on Malak
+  instead. The intended target is now restamped into the engine's lists at the
+  moment of firing, closing the window entirely.
+- The open menu now follows target cycling. Cycling with comma/period or Q/E
+  while the menu is open re-anchors it to the new target: the rows rebuild to
+  that target's real options, and your selected action carries over by
+  identity — so cycle, Enter, cycle, Enter casts the same power on one target
+  after another, each cast on the right object. If the new target doesn't
+  offer your selected action, that Enter announces the new target's menu
+  instead of firing something you haven't heard; the next Enter fires.
+- A menu opened without a target grows the target rows mid-session. Cycling
+  onto an enemy or door while a personal-only menu is open folds its
+  attack/power/item rows in, exactly as if it had been focused at open time;
+  targets with no actions leave the menu personal-only.
+- Opening a target column that turns out empty no longer leaves the previous
+  menu armed. "Column N is empty" used to keep the earlier menu — built for
+  an earlier target — silently navigable underneath, so firing from it hit
+  that old target. The refusal now closes the stale menu outright.
+
 <h3>World navigation:</h3>
 
 - Landmark announcements now trigger from the same distance at which sighted

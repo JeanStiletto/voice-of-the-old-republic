@@ -649,6 +649,74 @@ bool SelectActionInRow(void* tam, int row, int index) {
     }
 }
 
+uint32_t ReadRowActionIdAtIndex(void* tam, int row, int index) {
+    if (!tam || row < 0 || row >= kRowCount || index < 0) return 0;
+    __try {
+        auto* base   = reinterpret_cast<unsigned char*>(tam);
+        size_t listOff = kTamActionListsOffset + row * kActionListStride;
+        void* dataPtr = *reinterpret_cast<void**>(base + listOff);
+        int32_t size  = *reinterpret_cast<int32_t*>(
+            base + listOff + kActionListSizeOffset);
+        if (!dataPtr || index >= size) return 0;
+        return static_cast<uint32_t>(*reinterpret_cast<int32_t*>(
+            reinterpret_cast<unsigned char*>(dataPtr) +
+            index * kIfActionStride + kIfActionIdOffset));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
+int FindRowIndexByActionId(void* tam, int row, uint32_t actionId) {
+    if (!tam || row < 0 || row >= kRowCount || actionId == 0) return -1;
+    __try {
+        auto* base   = reinterpret_cast<unsigned char*>(tam);
+        size_t listOff = kTamActionListsOffset + row * kActionListStride;
+        void* dataPtr = *reinterpret_cast<void**>(base + listOff);
+        int32_t size  = *reinterpret_cast<int32_t*>(
+            base + listOff + kActionListSizeOffset);
+        if (!dataPtr) return -1;
+        auto* entries = reinterpret_cast<unsigned char*>(dataPtr);
+        for (int i = 0; i < size; ++i) {
+            uint32_t id = static_cast<uint32_t>(*reinterpret_cast<int32_t*>(
+                entries + i * kIfActionStride + kIfActionIdOffset));
+            if (id == actionId) return i;
+        }
+        return -1;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
+int RetargetRowActions(void* tam, int row, uint32_t targetClientHandle) {
+    if (!tam || row < 0 || row >= kRowCount) return -1;
+    __try {
+        auto* base   = reinterpret_cast<unsigned char*>(tam);
+        size_t listOff = kTamActionListsOffset + row * kActionListStride;
+        void* dataPtr = *reinterpret_cast<void**>(base + listOff);
+        int32_t size  = *reinterpret_cast<int32_t*>(
+            base + listOff + kActionListSizeOffset);
+        if (!dataPtr || size <= 0) return -1;
+
+        auto* entries = reinterpret_cast<unsigned char*>(dataPtr);
+        uint32_t prev = *reinterpret_cast<uint32_t*>(
+            entries + kIfActionTargetOffset);
+        for (int i = 0; i < size; ++i) {
+            *reinterpret_cast<uint32_t*>(
+                entries + i * kIfActionStride + kIfActionTargetOffset) =
+                    targetClientHandle;
+        }
+        if (prev != targetClientHandle) {
+            acclog::Write("Radial",
+                "retarget row=%d stale creature_id 0x%08x -> 0x%08x "
+                "(%d entries)", row, prev, targetClientHandle, size);
+        }
+        return size;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Radial", "RetargetRowActions SEH-FAULT row=%d", row);
+        return -1;
+    }
+}
+
 void* GetRowActionButton(void* tam, int row) {
     if (!tam || row < 0 || row >= kRowCount) return nullptr;
     // target_actions[row].action_button. action_button is at offset 0
