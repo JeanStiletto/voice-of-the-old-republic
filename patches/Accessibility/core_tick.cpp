@@ -29,6 +29,7 @@
 #include "help.h"
 #include "hotkeys.h"
 #include "interact_hotkey.h"
+#include "locked_recall.h"
 #include "log.h"
 #include "map_ui_cursor.h"
 #include "map_user_markers.h"
@@ -327,6 +328,9 @@ void Dispatch() {
     // Door-open facing readout — after camera_announce so its same-sector
     // dedup sees this frame's last-spoken direction. Cheap when idle.
     PHASE("door_announce", acc::door_announce::Tick());
+    // Story-locked-object bark replay — flushes a queued explanation the frame
+    // after the router spoke the generic "locked" line, so ordering holds.
+    PHASE("locked_recall", acc::locked_recall::Tick());
     PHASE("camera_orient", acc::camera_orient::Tick());
     PHASE("camera_spin_diag", acc::camera_spin_diag::Tick());
     PHASE("spatial.change_detector", acc::spatial::change_detector::Tick());

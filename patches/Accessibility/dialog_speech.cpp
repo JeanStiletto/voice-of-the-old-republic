@@ -17,6 +17,7 @@
 #include "prism.h"
 #include "transitions.h"      // IsModuleLoadPending — gate during cutscene-load
 #include "tutorial_hints.h"   // HintForDialogLine — detect a rewritten tutorial line
+#include "locked_recall.h"    // MaybeCapture — story-locked-object bark recall
 #include "tutorial_popup.h"   // RecordPendingHint — fire a popup at the reply break
                               // transient (engine LYT loader use-after-free)
 
@@ -722,6 +723,11 @@ void Tick() {
             if (!suppress) {
                 prism::Speak(text, /*interrupt=*/false);
             }
+            // Story-locked doors/containers explain themselves via an ownerless
+            // bark that fires once. Offer it for capture so a later locked
+            // attempt on the same object can replay the reason (see
+            // locked_recall.h). Ownerless == resolved false.
+            acc::locked_recall::MaybeCapture(text, /*ownerless=*/!resolved);
             acclog::Write("Dialog.Speech",
                           "bark panel=%p speaker=[%s] appearance=%d race=%d "
                           "suppressible=%d suppress=%d -> [%.300s]",

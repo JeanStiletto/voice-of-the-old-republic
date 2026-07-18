@@ -161,6 +161,7 @@ extern "C" void __cdecl OnAppendToMsgBuffer(void* /*guiInGame*/,
 // concerns while still keeping the registration explicit.
 
 namespace acc::combat { void RegisterCombatMsgRules(); }
+namespace acc::locked_recall { void RegisterMsgRule(); }
 
 namespace {
 
@@ -170,6 +171,9 @@ void EnsureRulesRegistered() {
     s_done = true;
     acc::msg::Router::Instance().SetLogTag("Combat.MsgBuf");
     acc::combat::RegisterCombatMsgRules();
+    // Story-locked-object bark recall — notes the "This object is locked"
+    // feedback (strref 1437), never consumes it. See locked_recall.h.
+    acc::locked_recall::RegisterMsgRule();
 }
 
 }  // namespace

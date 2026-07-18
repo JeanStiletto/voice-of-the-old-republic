@@ -93,6 +93,7 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>Bug fixes:</h3>
 
+- A story-locked door or container now repeats its explanation on every attempt, not just the first. These objects say why they won't open — "Security lock, access code required" and the like — through a one-time bark that the game fires only on your first try; every later attempt spoke just the generic "This object is locked", so if you missed that first bark the reason was gone for good. The mod now remembers each locked object's explanation and replays it after the generic line each time you try the object again.
 - Droid and computer terminal menus read their reply choices correctly again
   when an interface mod is installed. These panels carry a second, hidden list
   — the scrolling terminal output — alongside the reply choices, and the mod
