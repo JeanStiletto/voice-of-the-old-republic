@@ -172,6 +172,12 @@ void* ResolveGuiInGame();
 // labels — those go empty for off-page rows. SEH-guarded.
 bool ReadDialogReplyText(int replyIndex, char* outBuf, size_t bufSize);
 
+// Number of active replies in CGuiInGame's render-independent reply-text array
+// (field69_0x114). Diagnostic use: lets the dialog-reply monitor log whether
+// the authoritative reply store is populated (vs. having to infer it from a
+// failed ReadDialogReplyText). Returns -1 on null GUI or SEH fault. SEH-guarded.
+int ReadDialogReplyCount();
+
 // PanelKind::Unknown on no match. First (panel,kind) sighting is logged;
 // subsequent calls hit a cache.
 PanelKind IdentifyPanel(void* panel);

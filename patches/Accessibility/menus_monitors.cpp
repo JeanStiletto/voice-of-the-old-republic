@@ -676,8 +676,24 @@ void MonitorDialogReplies() {
         return;
     }
 
-    void* lb = FindListBoxChild(dialogPanel);
-    if (!lb) return;
+    // The reply listbox is a FIXED member of CSWGuiDialog at +0x19c4 in every
+    // dialogue variant (cinematic / cinematic-copy / computer / computer-camera),
+    // set by the exe's struct layout — NOT by the .gui. We must NOT locate it by
+    // "first listbox in controls[]" (FindListBoxChild): the computer/droid panel
+    // (CSWGuiDialogComputer) carries a SECOND listbox — the terminal-output
+    // LB_MESSAGE — and CSWGuiPanel::InitControl slots controls into controls[] by
+    // their .gui layout id, not registration order. On the stock computer.gui the
+    // scan happens to work (LB_REPLIES id=11 < LB_MESSAGE id=17, so LB_REPLIES is
+    // reached first), which is why this never reproduced in-house. But a UI mod
+    // (widescreen/HD packs ship replacement .gui files) that renumbers LB_MESSAGE
+    // below LB_REPLIES makes the scan return the terminal listbox instead of the
+    // replies — the droid/computer menu then tracks the wrong selection index and
+    // reads garbage / only one option. Addressing by struct offset is immune to
+    // any layout renumbering. (Verified via decompiled InitControl + the shipped
+    // .gui control ids, 2026-07-18.)
+    void* lb = reinterpret_cast<unsigned char*>(dialogPanel) +
+               kDialogRepliesListBoxOffset;
+    if (!acc::engine::IsListBox(lb)) return;
     PanelKind k = dialogKind;
     void* fg = dialogPanel;
 
@@ -687,8 +703,26 @@ void MonitorDialogReplies() {
     if (s_dialogReplyState.listBox != lb) {
         s_dialogReplyState.listBox = lb;
         s_dialogReplyState.lastSelection = selIdx;
+        // Diagnostic: log what the OLD first-listbox scan WOULD have returned and
+        // its offset within the panel. If scanOff != 0x19c4 the reporter is on a
+        // renumbered .gui (UI mod) and the pre-fix build was reading the wrong
+        // listbox — the root-cause confirmation for the droid/computer menu bug.
+        // replyCount shows whether the authoritative reply store is populated.
+        void* scanLb = FindListBoxChild(dialogPanel);
+        char  scanOff[24];
+        if (scanLb) {
+            snprintf(scanOff, sizeof(scanOff), "0x%lx",
+                     static_cast<unsigned long>(
+                         reinterpret_cast<unsigned char*>(scanLb) -
+                         reinterpret_cast<unsigned char*>(dialogPanel)));
+        } else {
+            std::strcpy(scanOff, "none");
+        }
         acclog::Write("Menus.DialogReply", "monitor armed: panel=%p kind=%s listbox=%p "
-                      "initialSel=%d", fg, PanelKindName(k), lb, selIdx);
+                      "(fixed off=0x%x) scanListbox=%p scanOff=%s replyCount=%d "
+                      "initialSel=%d", fg, PanelKindName(k), lb,
+                      (unsigned)kDialogRepliesListBoxOffset, scanLb, scanOff,
+                      acc::engine::ReadDialogReplyCount(), selIdx);
         return;
     }
 
@@ -728,9 +762,13 @@ void MonitorDialogReplies() {
         src = acc::menus::extract::FromControl(row, text, sizeof(text));
     }
     if (src) {
+        // src=row-label (not dialog-state) means ReadDialogReplyText missed and
+        // we fell back to the on-page row label — the paging-drop failure mode.
+        // size vs replyCount exposes a listbox/reply-array count mismatch.
         acclog::Write("Menus.DialogReply", "selected: panel=%p kind=%s listbox=%p "
-                      "sel=%d (was %d) src=%s text=\"%s\"",
-                      fg, PanelKindName(k), lb, selIdx, prev, src, text);
+                      "sel=%d (was %d) src=%s size=%d replyCount=%d text=\"%s\"",
+                      fg, PanelKindName(k), lb, selIdx, prev, src, lbList->size,
+                      acc::engine::ReadDialogReplyCount(), text);
         // A reply is now readable/navigable — the entry's VO has ended and the
         // player can choose. This is the moment to pop the pending tutorial
         // hint (not at VO start: that talked over Trask and stole Enter-as-skip).

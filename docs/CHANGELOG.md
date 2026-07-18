@@ -33,7 +33,7 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
-<h2>Unreleased</h2>
+<h2>v0.6.0</h2>
 
 <h3>Action menu:</h3>
 
@@ -71,8 +71,6 @@ and add the German in parentheses if it genuinely aids clarity.
   cell size, never below the old 8 m), so open-world landmarks announce from
   realistic distances while interiors behave as before.
 
-<h2>v0.6.0</h2>
-
 <h3>Late-game finale:</h3>
 
 - The Shift+number action menus now always match your current target. Opening a target's attack or Force-power column with Shift+1 to Shift+3 read whatever target the engine's menu had last been built for, so on a freshly focused target it often announced an empty column until a bare number key had been pressed once — most noticeable on story objects you must target mid-fight. The consumed Shift press now rebuilds the menu against the narrated target exactly like the bare number keys do.
@@ -90,6 +88,15 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>Bug fixes:</h3>
 
+- Droid and computer terminal menus read their reply choices correctly again
+  when an interface mod is installed. These panels carry a second, hidden list
+  — the scrolling terminal output — alongside the reply choices, and the mod
+  located the choice list by scanning for the first list in the panel. That
+  works on the unmodified game, but a widescreen/HD interface mod that renumbers
+  the panel's controls could make the scan latch onto the terminal-output list
+  instead, leaving the reply options unreadable or stuck on a single entry. The
+  reply list is now addressed by its fixed position in the dialog structure,
+  which no interface mod can move.
 - Menu text that always spoke German on non-German installs now follows the game's language. Three spoken strings bypassed the localization table and were hardcoded to German: options-screen toggle states (now spoken as "on"/"off" in your language rather than "ein"/"aus"), slider value readouts ("8 of 10" rather than "8 von 10"), and the name of the Equipment sub-screen — the one main-menu screen whose caption the engine never exposes through its string table, so it fell back to a literal "Ausrüstung". All three now resolve through the localized table in every supported language (English, German, French, Italian, Spanish).
 
 <h2>v0.5.9</h2>

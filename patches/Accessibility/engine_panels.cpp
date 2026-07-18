@@ -546,6 +546,17 @@ bool ReadDialogReplyText(int replyIndex, char* outBuf, size_t bufSize) {
     }
 }
 
+int ReadDialogReplyCount() {
+    void* gui = ResolveGuiInGame();
+    if (!gui) return -1;
+    __try {
+        return *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(gui) + kCGuiInGameReplyCountOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
 // (panel, kind) pairs already logged. Keeps the log tidy when persistent
 // panels (HUD) get re-checked on every input event. FIFO-evicted at cap.
 struct PanelKindCacheEntry {
