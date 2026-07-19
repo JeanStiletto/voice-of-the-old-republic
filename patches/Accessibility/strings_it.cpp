@@ -736,6 +736,9 @@ const char* Get(Id id) {
         case Id::FloorPuzzleSolved:
             return "Enigma risolto. La porta massiccia si apre.";
 
+        case Id::DialogRepeatLineHint:
+            return "Premi R per ripetere l'ultima battuta di dialogo.";
+
         case Id::Count_:               return "";
     }
     return "";

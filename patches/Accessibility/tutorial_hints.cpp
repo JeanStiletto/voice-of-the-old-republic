@@ -219,6 +219,43 @@ bool IsSuppressedTutorialText(const char* text) {
     return HintForMouseText(text) != nullptr;
 }
 
+// ---- Forced-spoken VO-less subtitle lines --------------------------------
+//
+// Curated strrefs whose dialogue node ships as subtitle text with no VO. The
+// speaker (Trask) classifies as a voiced human, so dialog_speech's human-
+// subtitle suppression would silence these entirely. We resolve each strref to
+// the current locale's text once (same lazy TLK path as the hint map) and
+// trim-match it against the rendered line so dialog_speech can force it spoken.
+//
+//   39454 — "Du hast genug Erfahrung, um aufzusteigen. Mache den Levelaufstieg,
+//            bevor du durch diese Tür gehst." Trask's Endar Spire level-up-gate
+//            line, said when the player tries the locked door before assigning
+//            their first level. No VO recorded; subtitle only. (verified in the
+//            German dialog.tlk, 2026-07-19)
+constexpr uint32_t kForcedSpokenStrrefs[] = { 39454 };
+constexpr int kForcedSpokenCount =
+    static_cast<int>(sizeof(kForcedSpokenStrrefs) / sizeof(kForcedSpokenStrrefs[0]));
+
+char s_forcedText[kForcedSpokenCount][512];
+bool s_forcedTextBuilt = false;
+
+void BuildForcedTextIfNeeded() {
+    if (s_forcedTextBuilt) return;
+    int resolved = 0;
+    for (int i = 0; i < kForcedSpokenCount; ++i) {
+        s_forcedText[i][0] = '\0';
+        if (acc::engine::LookupTlk(kForcedSpokenStrrefs[i], s_forcedText[i],
+                                   sizeof(s_forcedText[i]))) {
+            ++resolved;
+        }
+    }
+    if (resolved > 0) {
+        s_forcedTextBuilt = true;
+        acclog::Write("TutorialHint", "forced-spoken map built: %d/%d strrefs resolved",
+                      resolved, kForcedSpokenCount);
+    }
+}
+
 const char* HintForDialogLine(const char* renderedLine, uint32_t* outStrref) {
     if (!renderedLine || !renderedLine[0]) return nullptr;
     BuildResolvedIfNeeded();
@@ -235,6 +272,18 @@ const char* HintForDialogLine(const char* renderedLine, uint32_t* outStrref) {
         }
     }
     return nullptr;
+}
+
+bool IsForcedSpokenDialogLine(const char* renderedLine) {
+    if (!renderedLine || !renderedLine[0]) return false;
+    BuildForcedTextIfNeeded();
+    if (!s_forcedTextBuilt) return false;
+    for (int i = 0; i < kForcedSpokenCount; ++i) {
+        if (s_forcedText[i][0] && EqualsTrimmed(renderedLine, s_forcedText[i])) {
+            return true;
+        }
+    }
+    return false;
 }
 
 }  // namespace acc::tutorial_hints

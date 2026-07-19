@@ -52,4 +52,12 @@ const char* HintForMouseText(const char* text);
 // keyboard hint is the sole speaker there.
 bool IsSuppressedTutorialText(const char* text);
 
+// True iff `renderedLine` is one of the curated VO-less subtitle lines that must
+// be spoken even though its speaker classifies as a voiced human (and would
+// otherwise be silenced by the human-subtitle suppression). A tiny hand-picked
+// set — these are developer oversights where a tutorial dialogue node shipped as
+// subtitle text with no recorded VO. Keyed by the line's source strref and
+// resolved through the engine's own TLK, so it stays language-independent.
+bool IsForcedSpokenDialogLine(const char* renderedLine);
+
 }  // namespace acc::tutorial_hints

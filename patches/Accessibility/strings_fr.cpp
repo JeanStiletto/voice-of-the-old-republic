@@ -737,6 +737,9 @@ const char* Get(Id id) {
         case Id::FloorPuzzleSolved:
             return "\xC9nigme r\xE9solue. La porte massive s'ouvre.";
 
+        case Id::DialogRepeatLineHint:
+            return "Appuyez sur R pour r\xE9p\xE9ter la derni\xE8re ligne de dialogue.";
+
         case Id::Count_:               return "";
     }
     return "";

@@ -819,6 +819,8 @@ const char* Get(Id id) {
             return "Wechsle mit dem Tabulator zur verletzten Figur, \xF6""ffne Medizin mit Umschalt und 5 und w\xE4hle das Medikit.";
         case Id::TutLevelUp:
             return "Zum Stufenaufstieg dr\xFC""cke Umschalt und L und folge den Anweisungen.";
+        case Id::DialogRepeatLineHint:
+            return "Dr\xFC""cke R, um die letzte Dialogzeile zu wiederholen.";
 
         case Id::FloorPuzzleIntro:
             return "Bodenplatten-R\xE4tsel: neun Platten in drei mal drei Anordnung, "

@@ -1856,6 +1856,16 @@ enum class Id : int {
     TutTraskHealWounded,     // 48556
     TutLevelUp,              // 48324 (end_levelup)
 
+    //      Surface 3 — VO-less subtitle lines. A handful of tutorial dialogue
+    //      nodes ship as subtitle text with NO voice-over (the developer never
+    //      recorded one), yet the speaker classifies as a voiced human, so the
+    //      human-subtitle suppression would silence them entirely. We force
+    //      those specific lines back into the spoken channel (see
+    //      tutorial_hints::IsForcedSpokenDialogLine, keyed by strref). Because
+    //      such a line is silent unless force-spoken, we append a one-off hint
+    //      that R re-speaks it — the only other way to hear it.
+    DialogRepeatLineHint,    // "Press R to repeat the last dialogue line."
+
     // ---- Rakatan temple floor-plate puzzle (floor_puzzle.cpp; Unknown
     //      World Temple Main Floor, module unk_m44ab). A 3x3 lights-out
     //      grid: stepping a plate toggles itself + orthogonal neighbours;

@@ -15,6 +15,7 @@
 #include "menus_extract.h"    // FromControl
 #include "menus_modsettings.h" // GetToggle(Option::HumanSubtitles)
 #include "prism.h"
+#include "strings.h"          // DialogRepeatLineHint — R-repeat cue for forced lines
 #include "transitions.h"      // IsModuleLoadPending — gate during cutscene-load
 #include "tutorial_hints.h"   // HintForDialogLine — detect a rewritten tutorial line
 #include "locked_recall.h"    // MaybeCapture — story-locked-object bark recall
@@ -611,8 +612,14 @@ void Tick() {
             SpeakerInfo info;
             bool resolved     = ResolveDialogSpeaker(info);
             bool suppressible = resolved && IsSuppressibleSpeaker(info);
-            bool suppress = suppressible && !acc::menus::modsettings::GetToggle(
-                acc::menus::modsettings::Option::HumanSubtitles);
+            // A curated VO-less subtitle line (e.g. Trask's Endar Spire level-up
+            // gate, strref 39454) ships with no voice-over, so the human-subtitle
+            // suppression would silence it entirely. Force those specific lines
+            // back into the spoken channel regardless of the toggle.
+            bool forcedSpoken = acc::tutorial_hints::IsForcedSpokenDialogLine(npc);
+            bool suppress = suppressible && !forcedSpoken &&
+                !acc::menus::modsettings::GetToggle(
+                    acc::menus::modsettings::Option::HumanSubtitles);
 
             // When suppressing, still surface a leading skill-check outcome
             // marker ([Erfolg]/[Fehlschlag] etc.) so a Persuade/Computer/Repair
@@ -620,19 +627,32 @@ void Tick() {
             char marker[80] = "";
             bool spokeMarker = false;
             if (!suppress) {
-                prism::Speak(npc, /*interrupt=*/true);
+                // A forced VO-less line queues (interrupt=false) so it lands
+                // AFTER a cue already in flight from the same interaction — the
+                // "Dieses Objekt ist gesperrt" feedback that triggered this
+                // dialogue — instead of clobbering it. Normal lines interrupt.
+                prism::Speak(npc, /*interrupt=*/!forcedSpoken);
+                // The line is silent unless force-spoken, so tell the player once
+                // that R re-speaks it — their only other way to hear it. Queued
+                // after the line itself.
+                if (forcedSpoken) {
+                    prism::Speak(
+                        acc::strings::Get(acc::strings::Id::DialogRepeatLineHint),
+                        /*interrupt=*/false);
+                }
             } else if (ExtractSkillCheckMarker(npc, marker, sizeof(marker))) {
                 prism::Speak(marker, /*interrupt=*/true);
                 spokeMarker = true;
             }
             acclog::Write("Dialog.Speech",
                           "NPC line panel=%p kind=%s speaker=[%s] "
-                          "appearance=%d race=%d suppressible=%d suppress=%d "
-                          "marker=[%s] -> [%.300s]",
+                          "appearance=%d race=%d suppressible=%d forced=%d "
+                          "suppress=%d marker=[%s] -> [%.300s]",
                           m.panel, acc::engine::PanelKindName(m.kind),
                           resolved ? info.tag : "?",
                           info.appearance, info.raceEnum,
-                          suppressible ? 1 : 0, suppress ? 1 : 0,
+                          suppressible ? 1 : 0, forcedSpoken ? 1 : 0,
+                          suppress ? 1 : 0,
                           spokeMarker ? marker : "", npc);
             std::strncpy(s_lastNpcLine, npc, sizeof(s_lastNpcLine) - 1);
             s_lastNpcLine[sizeof(s_lastNpcLine) - 1] = '\0';

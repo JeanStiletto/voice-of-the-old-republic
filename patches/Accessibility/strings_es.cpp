@@ -738,6 +738,9 @@ const char* Get(Id id) {
         case Id::FloorPuzzleSolved:
             return "Enigma resuelto. La puerta maciza se abre.";
 
+        case Id::DialogRepeatLineHint:
+            return "Pulsa R para repetir la \xFAltima l\xEDnea de di\xE1logo.";
+
         case Id::Count_:               return "";
     }
     return "";
