@@ -820,6 +820,8 @@ const char* Get(Id id) {
             return "Wechsle mit dem Tabulator zur verletzten Figur, \xF6""ffne Medizin mit Umschalt und 5 und w\xE4hle das Medikit.";
         case Id::TutLevelUp:
             return "Zum Stufenaufstieg dr\xFC""cke Umschalt und L und folge den Anweisungen.";
+        case Id::TutStealthMode:
+            return "Dr\xFC""cke G, um den Tarnmodus ein- oder auszuschalten. Daf\xFC""r musst du einen Tarnfeldgenerator tragen.";
         case Id::DialogRepeatLineHint:
             return "Dr\xFC""cke R, um die letzte Dialogzeile zu wiederholen.";
 

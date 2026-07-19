@@ -1864,6 +1864,11 @@ enum class Id : int {
     TutTraskHealWounded,     // 48556
     TutLevelUp,              // 48324 (end_levelup)
 
+    //      Taris — Carth's stealth tutorial (voice-acted; identical Surface 2
+    //      mechanic, keyed by strref). The mouse-worded "click the Stealth
+    //      ability to activate it" line is rewritten to the G keyboard toggle.
+    TutStealthMode,          // 48557 (n_m1bncart01030_ "Klickt auf ... Tarnung")
+
     //      Surface 3 — VO-less subtitle lines. A handful of tutorial dialogue
     //      nodes ship as subtitle text with NO voice-over (the developer never
     //      recorded one), yet the speaker classifies as a voiced human, so the

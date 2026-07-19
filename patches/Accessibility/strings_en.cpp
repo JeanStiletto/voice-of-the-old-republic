@@ -801,6 +801,8 @@ const char* Get(Id id) {
             return "Switch to the wounded character with Tab, open Medical with Shift and 5, and choose the medkit.";
         case Id::TutLevelUp:
             return "To level up, press Shift and L and follow the prompts.";
+        case Id::TutStealthMode:
+            return "Press G to turn stealth mode on or off. You must have a stealth field generator equipped to use it.";
         case Id::DialogRepeatLineHint:
             return "Press R to repeat the last dialogue line.";
 

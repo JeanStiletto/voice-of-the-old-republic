@@ -48,6 +48,7 @@
 #include "probe_pathfind.h"
 #include "engine_input.h"
 #include "spatial_change_detector.h"
+#include "stealth_watch.h"
 #include "swoop_race.h"
 #include "trap_watch.h"
 #include "turret_game.h"
@@ -389,6 +390,11 @@ void Dispatch() {
     PHASE("examine_view", acc::examine_view::Tick());
     PHASE("help.tick", acc::help::Tick());
     PHASE("combat.special_watch", acc::combat::special_watch::Tick());
+
+    // Stealth distance readout — while the leader is stealthed and a hostile
+    // creature is the narrated-target focus, speak the closing distance every
+    // ~2 m. Inert otherwise (no stealth / no hostile focus).
+    PHASE("stealth_watch", acc::stealth_watch::Tick());
 
     // One-shot priority-group dump.
     PHASE("probe.priority_groups", acc::probe::priority_groups::Tick());

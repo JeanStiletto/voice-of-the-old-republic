@@ -35,6 +35,18 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.6.0</h2>
 
+<h3>Stealth:</h3>
+
+- While Stealth mode is on and a hostile creature is focused, the distance to
+  it is now spoken as a bare metre count as it changes, so you can hear an
+  enemy closing and know when you are inside the ten-metre range where a strike
+  from stealth lands the Sneak Attack bonus. Silent when not stealthed or with
+  no hostile focused.
+- Carth's stealth tutorial on Taris now teaches the keyboard control. His
+  mouse-worded "click the Stealth ability to activate it" line fires a popup
+  telling you to press G to turn stealth mode on or off (German and English;
+  other languages keep the original line for now).
+
 <h3>Action menu:</h3>
 
 - Actions fired from the menu now always hit the focused target. During an

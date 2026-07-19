@@ -55,6 +55,10 @@ constexpr DialogHint kDialogHints[] = {
     {48555, Id::TutTraskSecurity},
     {48556, Id::TutTraskHealWounded},
     {48324, Id::TutLevelUp},
+    // Taris — Carth's stealth tutorial. His mouse-worded "Klickt auf die
+    // Fähigkeit Tarnung, um diese zu aktivieren" line becomes the G-key hint,
+    // fired as a popup at the reply break / dialogue close like the Trask set.
+    {48557, Id::TutStealthMode},
 };
 constexpr int kDialogHintCount =
     static_cast<int>(sizeof(kDialogHints) / sizeof(kDialogHints[0]));

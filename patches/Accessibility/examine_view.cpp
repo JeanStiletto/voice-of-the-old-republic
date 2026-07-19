@@ -1252,6 +1252,23 @@ void SpeakRow(int idx) {
 
 }  // namespace
 
+// Public — true iff serverObject is a Creature whose faction classifies as
+// hostile. Reuses the same faction table that drives the examine panel's
+// Faction row (ReadFactionId + FactionWordIdFor), so the classification stays
+// consistent with what the user hears elsewhere. SEH-guarded via the readers.
+// Companions (faction 0/2/4 → Friendly) and neutral townsfolk are excluded;
+// a neutral-until-provoked enemy would also read as non-hostile until it turns.
+bool IsHostileCreature(void* serverObject) {
+    if (!serverObject) return false;
+    if (acc::engine::GetObjectKind(serverObject) !=
+        static_cast<int>(acc::engine::GameObjectKind::Creature)) {
+        return false;
+    }
+    int faction = ReadFactionId(serverObject);
+    if (faction < 0) return false;
+    return FactionWordIdFor(faction) == acc::strings::Id::FactionHostile;
+}
+
 // Public — same shape as ResolveFeatName below, but for the spells
 // array. Reads Rules->spells (CSWSpellArray* at +kRulesSpellsOffset),
 // resolves a CSWSpell* via GetSpell(spell_id), then formats the

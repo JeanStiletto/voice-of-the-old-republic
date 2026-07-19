@@ -46,6 +46,11 @@ bool ResolveFeatName(unsigned short featIdx, char* outBuf, size_t outBufSize);
 // action_type=9 (Cast Force Power) queue entries via spell_id @+0x24.
 bool ResolveSpellName(int spellId, char* outBuf, size_t outBufSize);
 
+// True iff serverObject is a Creature whose faction classifies as hostile
+// (same faction table as the examine Faction row). SEH-guarded. Shared with
+// stealth_watch's focus gate.
+bool IsHostileCreature(void* serverObject);
+
 bool Open();
 bool IsActive();
 
