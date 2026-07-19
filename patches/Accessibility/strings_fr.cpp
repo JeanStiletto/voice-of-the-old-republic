@@ -717,6 +717,93 @@ const char* Get(Id id) {
         case Id::KbNameCheckForUpdate:      return "Rechercher une mise \xE0 jour";
         case Id::KbNameDialogRepeatLine:    return "R\xE9p\xE9ter la ligne de dialogue";
 
+        // ---- Endar Spire tutorial keyboard hints (Surface 1: popups) ----
+        case Id::TutHintCombatFeat:
+            return "Les dons de combat sont dans le menu d'action. Ouvrez les Attaques avec Maj et 1 et activez avec Entr\xE9""e.";
+        case Id::TutHintGrenade:
+            return "Lancez des grenades depuis le menu d'action. Ouvrez les Explosifs avec Maj et 7 et activez avec Entr\xE9""e.";
+        case Id::TutHintMine:
+            return "Posez des mines depuis le menu d'action. Ouvrez les Explosifs avec Maj et 7 et activez avec Entr\xE9""e.";
+        case Id::TutHintFriendlyPower:
+            return "Les pouvoirs de la Force b\xE9n\xE9""fiques sont dans le menu d'action. Ouvrez les pouvoirs sur vous avec Maj et 4 et activez avec Entr\xE9""e.";
+        case Id::TutHintHostilePower:
+            return "Les pouvoirs de la Force hostiles sont dans le menu d'action. Ouvrez les pouvoirs sur la cible avec Maj et 2 et activez avec Entr\xE9""e.";
+        case Id::TutHintActionMenuScroll:
+            return "Dans le menu d'action, d\xE9placez-vous entre les entr\xE9""es avec haut et bas, et entre les cat\xE9gories avec gauche et droite.";
+        case Id::TutHintOpenScreens:
+            return "Ouvrez les \xE9""crans de jeu directement : M carte, J messages, L qu\xEAtes, K aptitudes, P personnage, I inventaire, U \xE9quipement, O options. \xC9""chap revient.";
+        case Id::TutHintCycleTargets:
+            return "Choisissez les cibles avec Q et E. Faites d\xE9""filer les objets avec virgule et point ; la touche moins annonce l'objet s\xE9lectionn\xE9. En combat, vous ne pouvez cibler que des ennemis.";
+        case Id::TutHintEquipSlot:
+            return "Sur l'\xE9""cran d'\xE9quipement, choisissez un emplacement avec les fl\xE8""ches et Entr\xE9""e, puis choisissez un objet dans la liste. Lisez la description d'un objet avec Maj et une fl\xE8""che.";
+        case Id::TutHintEnemyNear:
+            return "Un ennemi est proche. Faites d\xE9""filer les cibles avec Q et E et attaquez avec Entr\xE9""e.";
+        case Id::TutHintBash:
+            return "Pour forcer, s\xE9lectionnez la porte ou le conteneur, ouvrez le menu d'action avec Maj et Entr\xE9""e, et choisissez Forcer.";
+        case Id::TutHintAttack:
+            return "S\xE9lectionnez un ennemi avec Q et E et attaquez avec Entr\xE9""e. Une seule pression suffit ; votre personnage attaque ensuite automatiquement \xE0 chaque tour jusqu'\xE0 ce que vous choisissiez une autre cible.";
+        case Id::TutHintAttackAuto:
+            return "Rappel : une seule pression sur Entr\xE9""e attaque automatiquement \xE0 chaque tour. Seule une nouvelle cible change cela.";
+        case Id::TutHintMovement:
+            return "Appuyez sur F1 \xE0 tout moment pour le menu d'aide, une liste de toutes les touches, et Ctrl et F1 pour les touches de l'\xE9""cran actuel. Pour vous d\xE9placer, appuyez sur W et S pour avancer et reculer, A et D pour faire un pas de c\xF4t\xE9 \xE0 gauche et \xE0 droite, et Z et C pour tourner \xE0 gauche et \xE0 droite. Z et C font pivoter la cam\xE9ra et, avec elle, votre direction de marche, si bien que les deux pointent toujours dans la m\xEAme direction. Des sons vous avertissent quand vous approchez d'un mur, et pendant que vous vous d\xE9placez, la forme de la pi\xE8""ce autour de vous est d\xE9""crite. Appuyez sur Alt droit pour r\xE9p\xE9ter votre orientation et la pi\xE8""ce actuelle.";
+        case Id::TutHintMapScreen:
+            return "La carte montre chaque zone explor\xE9""e d'un niveau. Les zones importantes sont indiqu\xE9""es, et certaines zones, comme les villes, sont cartographi\xE9""es avant que vous les exploriez. D\xE9placez-vous sur la carte avec W, A, S et D. Changez d'indice de carte avec virgule et point. Appuyez sur Maj et N pour poser votre propre indice de carte \xE0 votre position. Appuyez sur Ctrl et moins pour lancer un signal sonore qui vous guide vers l'indice de carte, ou Maj et moins pour marcher automatiquement vers l'indice s\xE9lectionn\xE9.";
+        case Id::TutHintJournal:
+            return "L'\xE9""cran des qu\xEAtes montre votre progression et des indices sur la suite. Ouvrez-le avec L. Choisissez une entr\xE9""e avec les fl\xE8""ches et lisez ses d\xE9tails avec Maj et une fl\xE8""che.";
+        case Id::TutHintInventory:
+            return "L'inventaire liste les objets de votre groupe, partag\xE9s entre tous les membres. Ouvrez-le avec I. Parcourez les objets avec les fl\xE8""ches et lisez la description d'un objet avec Maj et une fl\xE8""che.";
+        case Id::TutHintMessages:
+            return "L'\xE9""cran des messages affiche des valeurs comme les points d'exp\xE9rience, les jets d'attaque et de d\xE9g\xE2ts, et les changements de votre personnage. Ouvrez-le avec J.";
+        case Id::TutHintPartyDies:
+            return "Un membre du groupe est tomb\xE9. Les membres mis \xE0 terre au combat sont r\xE9""anim\xE9s apr\xE8s le combat, mais si tous les membres meurent, la partie est termin\xE9""e. Appuyez sur Tab pour contr\xF4ler un autre membre.";
+
+        // ---- Endar Spire tutorial keyboard hints (Surface 2: Trask / pop) ----
+        case Id::TutTraskGettingStarted:
+            return "Vous avez maintenant le contr\xF4le. Les bases : appuyez sur F1 \xE0 tout moment pour la liste compl\xE8te des touches, ou Ctrl et F1 pour les touches de l'\xE9""cran actuel. W et S avancent et reculent, A et D vous font faire un pas de c\xF4t\xE9 \xE0 gauche et \xE0 droite, et Z et C vous font tourner \xE0 gauche et \xE0 droite. Z et C font pivoter la cam\xE9ra et, avec elle, votre direction de marche, si bien que les deux pointent toujours dans la m\xEAme direction. Q et E basculent entre cibles et objets, et Entr\xE9""e interagit avec l'objet s\xE9lectionn\xE9.";
+        case Id::TutTraskEquipOpen:
+            return "Sur l'\xE9""cran d'\xE9quipement, vous choisissez armure et armes. Ouvrez-le avec U.";
+        case Id::TutTraskEquipBrowse:
+            return "Parcourez les emplacements d'\xE9quipement avec les fl\xE8""ches ; chaque emplacement contient un objet que vous pouvez assigner. Lisez la description de l'objet avec Maj et une fl\xE8""che.";
+        case Id::TutTraskEquipWeapon:
+            return "S\xE9lectionnez l'emplacement de l'arme et appuyez sur Entr\xE9""e, puis choisissez une arme dans la liste.";
+        case Id::TutTraskCamera:
+        case Id::TutTraskFootlocker:
+            return "Vous changez la cam\xE9ra, et avec elle votre direction de marche, avec Z et C. N vous tourne de 90 degr\xE9s. Q et E font d\xE9""filer tous les objets visibles. Virgule et point parcourent une liste de tous les objets que vous avez d\xE9j\xE0 vus. Maj avec virgule ou point change de cat\xE9gorie d'objets. Appuyez sur Entr\xE9""e pour marcher vers un objet s\xE9lectionn\xE9 et l'activer.";
+        case Id::TutTraskPickItem:
+            return "Choisissez un emplacement avec les fl\xE8""ches et Entr\xE9""e, parcourez la liste et confirmez l'objet avec Entr\xE9""e.";
+        case Id::TutTraskLeader:
+            return "Vous contr\xF4lez le chef de groupe. Appuyez sur Tab pour changer le membre que vous contr\xF4lez.";
+        case Id::TutTraskMakeLeader:
+            return "Appuyez sur Tab pour faire de moi le chef, puis ouvrez la porte.";
+        case Id::TutTraskMenus:
+            return "Ouvrez les \xE9""crans de jeu directement avec les touches : L qu\xEAtes, M carte, et plus encore.";
+        case Id::TutTraskTabs:
+            return "Changez d'onglet avec Q et E.";
+        case Id::TutTraskActionMenu:
+            return "Ouvrez le menu d'action avec Maj et Entr\xE9""e pour votre cible. Un chiffre de 1 \xE0 7 d\xE9""clenche la derni\xE8""re action utilis\xE9""e de cette cat\xE9gorie ; Maj et un chiffre de 1 \xE0 7 ouvre la cat\xE9gorie pour choisir.";
+        case Id::TutTraskMedkit:
+            return "Utilisez des kits m\xE9""dicaux depuis le menu d'action. Ouvrez M\xE9""dical avec Maj et 5 et activez avec Entr\xE9""e.";
+        case Id::TutTraskOpenDoor:
+            return "S\xE9lectionnez la porte avec virgule et point et ouvrez-la avec Entr\xE9""e.";
+        case Id::TutTraskActivateEntry:
+            return "Dans le menu d'action, choisissez une entr\xE9""e avec haut et bas et activez-la avec Entr\xE9""e.";
+        case Id::TutTraskTargetMenu:
+            return "S\xE9lectionnez une cible avec Q et E, ou des objets avec virgule et point. Appuyez sur Entr\xE9""e pour l'action par d\xE9""faut, ou Maj et Entr\xE9""e pour ouvrir le menu d'action.";
+        case Id::TutTraskConfirmEntry:
+            return "Mettez l'entr\xE9""e en surbrillance avec haut et bas et confirmez avec Entr\xE9""e.";
+        case Id::TutTraskPaused:
+            return "M\xEAme en pause, choisissez les cibles avec Q et E et changez le membre contr\xF4l\xE9 avec Tab.";
+        case Id::TutTraskWalkTo:
+            return "S\xE9lectionnez le casier avec Q et E et ouvrez-le avec Entr\xE9""e.";
+        case Id::TutTraskSecurity:
+            return "S\xE9lectionnez la porte, ouvrez le menu d'action avec Maj et Entr\xE9""e, et choisissez S\xE9""curit\xE9.";
+        case Id::TutTraskHealWounded:
+            return "Passez au personnage bless\xE9 avec Tab, ouvrez M\xE9""dical avec Maj et 5, et choisissez le kit m\xE9""dical.";
+        case Id::TutLevelUp:
+            return "Pour monter de niveau, appuyez sur Maj et L et suivez les instructions.";
+        case Id::TutStealthMode:
+            return "Appuyez sur G pour activer ou d\xE9sactiver le mode furtif. Vous devez avoir un g\xE9n\xE9rateur de champ furtif \xE9quip\xE9 pour l'utiliser.";
+
         case Id::FloorPuzzleIntro:
             return "\xC9nigme des dalles : neuf dalles en grille de trois sur trois, "
                    "dalle de r\xE9initialisation au sud.";

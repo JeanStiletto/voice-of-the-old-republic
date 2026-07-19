@@ -718,6 +718,93 @@ const char* Get(Id id) {
         case Id::KbNameCheckForUpdate:      return "Buscar actualizaci\xF3n";
         case Id::KbNameDialogRepeatLine:    return "Repetir l\xEDnea de di\xE1logo";
 
+        // ---- Endar Spire tutorial keyboard hints (Surface 1: popups) ----
+        case Id::TutHintCombatFeat:
+            return "Las dotes de combate est\xE1n en el men\xFA de acciones. Abre los Ataques con May\xFAs y 1 y activa con Intro.";
+        case Id::TutHintGrenade:
+            return "Lanza granadas desde el men\xFA de acciones. Abre los Explosivos con May\xFAs y 7 y activa con Intro.";
+        case Id::TutHintMine:
+            return "Coloca minas desde el men\xFA de acciones. Abre los Explosivos con May\xFAs y 7 y activa con Intro.";
+        case Id::TutHintFriendlyPower:
+            return "Los poderes de la Fuerza beneficiosos est\xE1n en el men\xFA de acciones. Abre los poderes sobre ti con May\xFAs y 4 y activa con Intro.";
+        case Id::TutHintHostilePower:
+            return "Los poderes de la Fuerza hostiles est\xE1n en el men\xFA de acciones. Abre los poderes sobre el objetivo con May\xFAs y 2 y activa con Intro.";
+        case Id::TutHintActionMenuScroll:
+            return "En el men\xFA de acciones, mu\xE9vete entre las entradas con arriba y abajo, y entre las categor\xED""as con izquierda y derecha.";
+        case Id::TutHintOpenScreens:
+            return "Abre las pantallas del juego directamente: M mapa, J mensajes, L misiones, K habilidades, P personaje, I inventario, U equipo, O opciones. Esc vuelve.";
+        case Id::TutHintCycleTargets:
+            return "Elige objetivos con Q y E. Recorre los objetos con coma y punto; la tecla menos anuncia el objeto seleccionado. En combate solo puedes apuntar a enemigos.";
+        case Id::TutHintEquipSlot:
+            return "En la pantalla de equipo, elige una ranura con las flechas e Intro, luego elige un objeto de la lista. Lee la descripci\xF3n de un objeto con May\xFAs y una flecha.";
+        case Id::TutHintEnemyNear:
+            return "Hay un enemigo cerca. Recorre los objetivos con Q y E y ataca con Intro.";
+        case Id::TutHintBash:
+            return "Para forzar, selecciona la puerta o el contenedor, abre el men\xFA de acciones con May\xFAs e Intro y elige Forzar.";
+        case Id::TutHintAttack:
+            return "Selecciona un enemigo con Q y E y ataca con Intro. Basta una pulsaci\xF3n; tu personaje ataca despu\xE9s autom\xE1ticamente cada asalto hasta que elijas otro objetivo.";
+        case Id::TutHintAttackAuto:
+            return "Recuerda: una sola pulsaci\xF3n de Intro ataca autom\xE1ticamente cada asalto. Solo un nuevo objetivo lo cambia.";
+        case Id::TutHintMovement:
+            return "Pulsa F1 en cualquier momento para el men\xFA de ayuda, una lista de todas las teclas, y Ctrl y F1 para las teclas de la pantalla actual. Para moverte, pulsa W y S para caminar adelante y atr\xE1s, A y D para desplazarte de lado a la izquierda y a la derecha, y Z y C para girar a la izquierda y a la derecha. Z y C giran la c\xE1mara y, con ella, tu direcci\xF3n de marcha, de modo que ambas apuntan siempre en la misma direcci\xF3n. Unos tonos te avisan cuando te acercas a una pared, y mientras te mueves se describe la forma de la sala a tu alrededor. Pulsa Alt derecho para repetir tu orientaci\xF3n y la sala actual.";
+        case Id::TutHintMapScreen:
+            return "El mapa muestra todas las zonas exploradas de un nivel. Las zonas importantes est\xE1n marcadas, y algunas zonas, como las ciudades, est\xE1n cartografiadas antes de explorarlas. Mu\xE9vete por el mapa con W, A, S y D. Cambia entre las marcas del mapa con coma y punto. Pulsa May\xFAs y N para colocar tu propia marca en tu posici\xF3n. Pulsa Ctrl y menos para iniciar una gu\xED""a sonora hacia la marca del mapa, o May\xFAs y menos para caminar autom\xE1ticamente a la marca seleccionada.";
+        case Id::TutHintJournal:
+            return "La pantalla de misiones muestra tu progreso y pistas sobre qu\xE9 hacer a continuaci\xF3n. \xC1""brela con L. Elige una entrada con las flechas y lee sus detalles con May\xFAs y una flecha.";
+        case Id::TutHintInventory:
+            return "El inventario enumera los objetos de tu grupo, compartidos entre todos los miembros. \xC1""brelo con I. Recorre los objetos con las flechas y lee la descripci\xF3n de un objeto con May\xFAs y una flecha.";
+        case Id::TutHintMessages:
+            return "La pantalla de mensajes muestra valores como los puntos de experiencia, las tiradas de ataque y da\xF1o, y los cambios en tu personaje. \xC1""brela con J.";
+        case Id::TutHintPartyDies:
+            return "Un miembro del grupo ha ca\xED""do. Los miembros derribados en combate se reaniman tras la pelea, pero si mueren todos los miembros la partida termina. Pulsa Tab para controlar a otro miembro.";
+
+        // ---- Endar Spire tutorial keyboard hints (Surface 2: Trask / pop) ----
+        case Id::TutTraskGettingStarted:
+            return "Ahora tienes el control. Lo b\xE1sico: pulsa F1 en cualquier momento para la lista completa de teclas, o Ctrl y F1 para las teclas de la pantalla actual. W y S caminan adelante y atr\xE1s, A y D te desplazan de lado a la izquierda y a la derecha, y Z y C te giran a la izquierda y a la derecha. Z y C giran la c\xE1mara y, con ella, tu direcci\xF3n de marcha, de modo que ambas apuntan siempre en la misma direcci\xF3n. Q y E cambian entre objetivos y objetos, e Intro interact\xFA""a con el objeto seleccionado.";
+        case Id::TutTraskEquipOpen:
+            return "En la pantalla de equipo eliges armadura y armas. \xC1""brela con U.";
+        case Id::TutTraskEquipBrowse:
+            return "Recorre las ranuras de equipo con las flechas; cada ranura contiene un objeto que puedes asignar. Lee la descripci\xF3n del objeto con May\xFAs y una flecha.";
+        case Id::TutTraskEquipWeapon:
+            return "Selecciona la ranura del arma y pulsa Intro, luego elige un arma de la lista.";
+        case Id::TutTraskCamera:
+        case Id::TutTraskFootlocker:
+            return "Cambias la c\xE1mara, y con ella tu direcci\xF3n de marcha, con Z y C. N te gira 90 grados. Q y E recorren todos los objetos visibles. Coma y punto navegan por una lista de todos los objetos que ya has visto. May\xFAs con coma o punto cambia entre las categor\xED""as de objetos. Pulsa Intro para caminar hacia un objeto seleccionado y activarlo.";
+        case Id::TutTraskPickItem:
+            return "Elige una ranura con las flechas e Intro, explora la lista y confirma el objeto con Intro.";
+        case Id::TutTraskLeader:
+            return "Controlas al l\xED""der del grupo. Pulsa Tab para cambiar el miembro que controlas.";
+        case Id::TutTraskMakeLeader:
+            return "Pulsa Tab para convertirme en el l\xED""der, luego abre la puerta.";
+        case Id::TutTraskMenus:
+            return "Abre las pantallas del juego directamente con teclas: L misiones, M mapa y m\xE1s.";
+        case Id::TutTraskTabs:
+            return "Cambia entre las pesta\xF1""as con Q y E.";
+        case Id::TutTraskActionMenu:
+            return "Abre el men\xFA de acciones con May\xFAs e Intro para tu objetivo. Un n\xFAmero del 1 al 7 activa la \xFAltima acci\xF3n usada de esa categor\xED""a; May\xFAs y un n\xFAmero del 1 al 7 abre la categor\xED""a para elegir.";
+        case Id::TutTraskMedkit:
+            return "Usa botiquines desde el men\xFA de acciones. Abre M\xE9""dico con May\xFAs y 5 y activa con Intro.";
+        case Id::TutTraskOpenDoor:
+            return "Selecciona la puerta con coma y punto y \xE1""brela con Intro.";
+        case Id::TutTraskActivateEntry:
+            return "En el men\xFA de acciones, elige una entrada con arriba y abajo y act\xEDvala con Intro.";
+        case Id::TutTraskTargetMenu:
+            return "Selecciona un objetivo con Q y E, o los objetos con coma y punto. Pulsa Intro para la acci\xF3n predeterminada, o May\xFAs e Intro para abrir el men\xFA de acciones.";
+        case Id::TutTraskConfirmEntry:
+            return "Resalta la entrada con arriba y abajo y confirma con Intro.";
+        case Id::TutTraskPaused:
+            return "Incluso en pausa, elige objetivos con Q y E y cambia el miembro controlado con Tab.";
+        case Id::TutTraskWalkTo:
+            return "Selecciona el casillero con Q y E y \xE1""brelo con Intro.";
+        case Id::TutTraskSecurity:
+            return "Selecciona la puerta, abre el men\xFA de acciones con May\xFAs e Intro y elige Seguridad.";
+        case Id::TutTraskHealWounded:
+            return "Cambia al personaje herido con Tab, abre M\xE9""dico con May\xFAs y 5 y elige el botiqu\xEDn.";
+        case Id::TutLevelUp:
+            return "Para subir de nivel, pulsa May\xFAs y L y sigue las indicaciones.";
+        case Id::TutStealthMode:
+            return "Pulsa G para activar o desactivar el modo sigilo. Debes tener equipado un generador de campo de sigilo para usarlo.";
+
         case Id::FloorPuzzleIntro:
             return "Enigma de las placas: nueve placas en una cuadr\xED""cula de tres por tres, "
                    "placa de reinicio en el lado sur.";

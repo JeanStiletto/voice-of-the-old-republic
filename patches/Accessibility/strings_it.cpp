@@ -716,6 +716,93 @@ const char* Get(Id id) {
         case Id::KbNameCheckForUpdate:      return "Cerca aggiornamenti";
         case Id::KbNameDialogRepeatLine:    return "Ripeti battuta di dialogo";
 
+        // ---- Endar Spire tutorial keyboard hints (Surface 1: popups) ----
+        case Id::TutHintCombatFeat:
+            return "Le tecniche di combattimento sono nel menu azioni. Apri gli Attacchi con Maiusc e 1 e attiva con Invio.";
+        case Id::TutHintGrenade:
+            return "Lancia le granate dal menu azioni. Apri gli Esplosivi con Maiusc e 7 e attiva con Invio.";
+        case Id::TutHintMine:
+            return "Posiziona le mine dal menu azioni. Apri gli Esplosivi con Maiusc e 7 e attiva con Invio.";
+        case Id::TutHintFriendlyPower:
+            return "I poteri della Forza benefici sono nel menu azioni. Apri i poteri su di te con Maiusc e 4 e attiva con Invio.";
+        case Id::TutHintHostilePower:
+            return "I poteri della Forza offensivi sono nel menu azioni. Apri i poteri sul bersaglio con Maiusc e 2 e attiva con Invio.";
+        case Id::TutHintActionMenuScroll:
+            return "Nel menu azioni, spostati tra le voci con su e gi\xF9 e tra le categorie con sinistra e destra.";
+        case Id::TutHintOpenScreens:
+            return "Apri le schermate di gioco direttamente: M mappa, J messaggi, L missioni, K abilit\xE0, P personaggio, I inventario, U equipaggiamento, O opzioni. Esc torna indietro.";
+        case Id::TutHintCycleTargets:
+            return "Scegli i bersagli con Q e E. Scorri gli oggetti con virgola e punto; il tasto meno annuncia l'oggetto selezionato. In combattimento puoi prendere di mira solo i nemici.";
+        case Id::TutHintEquipSlot:
+            return "Nella schermata dell'equipaggiamento, scegli uno slot con le frecce e Invio, poi scegli un oggetto dall'elenco. Leggi la descrizione di un oggetto con Maiusc e una freccia.";
+        case Id::TutHintEnemyNear:
+            return "Un nemico \xE8 vicino. Scorri i bersagli con Q e E e attacca con Invio.";
+        case Id::TutHintBash:
+            return "Per sfondare, seleziona la porta o il contenitore, apri il menu azioni con Maiusc e Invio e scegli Sfonda.";
+        case Id::TutHintAttack:
+            return "Seleziona un nemico con Q e E e attacca con Invio. Basta una pressione; il tuo personaggio attacca poi automaticamente ogni round finch\xE9 non scegli un altro bersaglio.";
+        case Id::TutHintAttackAuto:
+            return "Ricorda: una sola pressione di Invio attacca automaticamente ogni round. Solo un nuovo bersaglio lo cambia.";
+        case Id::TutHintMovement:
+            return "Premi F1 in qualsiasi momento per il menu di aiuto, un elenco di tutti i tasti, e Ctrl e F1 per i tasti della schermata attuale. Per muoverti, premi W e S per camminare avanti e indietro, A e D per spostarti di lato a sinistra e a destra, e Z e C per girarti a sinistra e a destra. Z e C ruotano la telecamera e, con essa, la tua direzione di marcia, cos\xEC le due puntano sempre nella stessa direzione. Dei toni ti avvertono quando ti avvicini a una parete, e mentre ti muovi viene descritta la forma della stanza intorno a te. Premi Alt destro per ripetere la direzione in cui sei rivolto e la stanza attuale.";
+        case Id::TutHintMapScreen:
+            return "La mappa mostra ogni area esplorata di un livello. Le aree importanti sono segnate, e alcune aree, come le citt\xE0, sono gi\xE0 cartografate prima di esplorarle. Spostati sulla mappa con W, A, S e D. Cambia tra gli indicatori della mappa con virgola e punto. Premi Maiusc e N per posizionare un tuo indicatore alla tua posizione. Premi Ctrl e meno per avviare un segnale acustico che ti guida all'indicatore della mappa, o Maiusc e meno per camminare automaticamente all'indicatore selezionato.";
+        case Id::TutHintJournal:
+            return "La schermata delle missioni mostra i tuoi progressi e suggerimenti su cosa fare dopo. Aprila con L. Scegli una voce con le frecce e leggi i dettagli con Maiusc e una freccia.";
+        case Id::TutHintInventory:
+            return "L'inventario elenca gli oggetti del tuo gruppo, condivisi tra tutti i membri. Aprilo con I. Spostati tra gli oggetti con le frecce e leggi la descrizione di un oggetto con Maiusc e una freccia.";
+        case Id::TutHintMessages:
+            return "La schermata dei messaggi mostra valori come i punti esperienza, i tiri di attacco e danno e i cambiamenti al tuo personaggio. Aprila con J.";
+        case Id::TutHintPartyDies:
+            return "Un membro del gruppo \xE8 caduto. I membri messi fuori combattimento vengono rianimati dopo lo scontro, ma se muoiono tutti i membri la partita finisce. Premi Tab per controllare un altro membro.";
+
+        // ---- Endar Spire tutorial keyboard hints (Surface 2: Trask / pop) ----
+        case Id::TutTraskGettingStarted:
+            return "Ora hai il controllo. Le basi: premi F1 in qualsiasi momento per l'elenco completo dei tasti, o Ctrl e F1 per i tasti della schermata attuale. W e S camminano avanti e indietro, A e D ti spostano di lato a sinistra e a destra, e Z e C ti girano a sinistra e a destra. Z e C ruotano la telecamera e, con essa, la tua direzione di marcia, cos\xEC le due puntano sempre nella stessa direzione. Q e E passano tra bersagli e oggetti, e Invio interagisce con l'oggetto selezionato.";
+        case Id::TutTraskEquipOpen:
+            return "Nella schermata dell'equipaggiamento scegli armatura e armi. Aprila con U.";
+        case Id::TutTraskEquipBrowse:
+            return "Spostati tra gli slot dell'equipaggiamento con le frecce; ogni slot contiene un oggetto che puoi assegnare. Leggi la descrizione dell'oggetto con Maiusc e una freccia.";
+        case Id::TutTraskEquipWeapon:
+            return "Seleziona lo slot dell'arma e premi Invio, poi scegli un'arma dall'elenco.";
+        case Id::TutTraskCamera:
+        case Id::TutTraskFootlocker:
+            return "Cambi la telecamera, e con essa la tua direzione di marcia, con Z e C. N ti gira di 90 gradi. Q e E scorrono tutti gli oggetti visibili. Virgola e punto navigano un elenco di ogni oggetto che hai gi\xE0 visto. Maiusc con virgola o punto cambia tra le categorie di oggetti. Premi Invio per camminare verso un oggetto selezionato e attivarlo.";
+        case Id::TutTraskPickItem:
+            return "Scegli uno slot con le frecce e Invio, sfoglia l'elenco e conferma l'oggetto con Invio.";
+        case Id::TutTraskLeader:
+            return "Controlli il capogruppo. Premi Tab per cambiare il membro che controlli.";
+        case Id::TutTraskMakeLeader:
+            return "Premi Tab per rendermi il capogruppo, poi apri la porta.";
+        case Id::TutTraskMenus:
+            return "Apri le schermate di gioco direttamente con i tasti: L missioni, M mappa e altro.";
+        case Id::TutTraskTabs:
+            return "Cambia tra le schede con Q e E.";
+        case Id::TutTraskActionMenu:
+            return "Apri il menu azioni con Maiusc e Invio per il tuo bersaglio. Un numero da 1 a 7 attiva l'ultima azione usata di quella categoria; Maiusc e un numero da 1 a 7 apre la categoria per scegliere.";
+        case Id::TutTraskMedkit:
+            return "Usa i kit medici dal menu azioni. Apri Medico con Maiusc e 5 e attiva con Invio.";
+        case Id::TutTraskOpenDoor:
+            return "Seleziona la porta con virgola e punto e aprila con Invio.";
+        case Id::TutTraskActivateEntry:
+            return "Nel menu azioni, scegli una voce con su e gi\xF9 e attivala con Invio.";
+        case Id::TutTraskTargetMenu:
+            return "Seleziona un bersaglio con Q e E, o gli oggetti con virgola e punto. Premi Invio per l'azione predefinita, o Maiusc e Invio per aprire il menu azioni.";
+        case Id::TutTraskConfirmEntry:
+            return "Evidenzia la voce con su e gi\xF9 e conferma con Invio.";
+        case Id::TutTraskPaused:
+            return "Anche in pausa, scegli i bersagli con Q e E e cambia il membro controllato con Tab.";
+        case Id::TutTraskWalkTo:
+            return "Seleziona la cassa con Q e E e aprila con Invio.";
+        case Id::TutTraskSecurity:
+            return "Seleziona la porta, apri il menu azioni con Maiusc e Invio e scegli Sicurezza.";
+        case Id::TutTraskHealWounded:
+            return "Passa al personaggio ferito con Tab, apri Medico con Maiusc e 5 e scegli il kit medico.";
+        case Id::TutLevelUp:
+            return "Per avanzare di livello, premi Maiusc e L e segui le istruzioni.";
+        case Id::TutStealthMode:
+            return "Premi G per attivare o disattivare la modalit\xE0 furtiva. Devi avere un generatore di campo occultante equipaggiato per usarla.";
+
         case Id::FloorPuzzleIntro:
             return "Enigma delle piastre: nove piastre in una griglia tre per tre, "
                    "piastra di ripristino sul lato sud.";

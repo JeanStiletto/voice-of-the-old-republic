@@ -40,9 +40,9 @@ Reported that during level-up and/or character creation the description read alo
 
 ## Planned
 
-### Tutorial keyboard hints: no French / Italian / Spanish translation yet
+### Tutorial keyboard hints: French / Italian / Spanish translation — DONE (2026-07-19), AI drafts pending native review
 
-The tutorial keyboard-hint content (both the game's own pop-ups and Trask's Endar Spire walkthrough — see CHANGELOG v0.5.9) is authored only in German and English. French, Italian and Spanish installs have no `TutHint*` / `TutTrask*` entries in their `acc::strings` tables, and `acc::strings::Get()` has no English fallback (it returns empty for a missing id), so those installs simply fall back to the game's **vanilla localized tutorial pop-ups** — the original mouse-worded text in the player's own language, with no keyboard substitution and no custom Trask pop-up. Deferred deliberately for now to save on translation budget; the wiring is language-independent (hints resolve by strref through the engine TLK), so adding the three languages is only a matter of filling in the `TutHint*` / `TutTrask*` cases in `strings_fr.cpp` / `strings_it.cpp` / `strings_es.cpp`. A cheaper interim option, if wanted, is an English fallback in `Get()` for these ids so blind FR/IT/ES players at least hear an actionable keyboard hint instead of vanilla mouse wording.
+The full tutorial keyboard-hint set (game pop-ups + Trask's Endar Spire walkthrough + the level-up and stealth hints) is now authored in all five languages: the `TutHint*` / `TutTrask*` / `TutLevelUp` / `TutStealthMode` cases were filled into `strings_fr.cpp` / `strings_it.cpp` / `strings_es.cpp`, mirroring DE/EN. FR/IT/ES installs now speak the keyboard hint instead of falling back to the vanilla mouse-worded pop-up. **Caveat:** like the installer strings (see below), the three new-language sets are Claude-authored drafts, not reviewed by native speakers — same standing review item.
 
 ### Class-selection chargen screen
 

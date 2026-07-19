@@ -57,7 +57,15 @@ and add the German in parentheses if it genuinely aids clarity.
   bindings alone. The swoop and turret minigames keep A/D steering.
 - The movement tutorials now teach all six keys and explain that turning
   rotates the camera and your walking direction together, so the two always
-  point the same way (German and English).
+  point the same way.
+
+<h3>Localisation:</h3>
+
+- The tutorial popups are now translated into Italian, Spanish and French,
+  matching the existing German and English. This covers the whole set — the
+  rewritten silent game tutorials and our own Endar Spire popups (Trask's
+  guided-conversation hints, the level-up hint and the stealth hint). These
+  three languages previously fell back to the vanilla mouse-worded text.
 
 <h3>Action menu:</h3>
 
