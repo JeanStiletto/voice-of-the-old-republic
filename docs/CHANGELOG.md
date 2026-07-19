@@ -91,6 +91,14 @@ and add the German in parentheses if it genuinely aids clarity.
   menu armed. "Column N is empty" used to keep the earlier menu — built for
   an earlier target — silently navigable underneath, so firing from it hit
   that old target. The refusal now closes the stale menu outright.
+- Out of combat, firing an action now closes the menu and hands control back
+  to the world. The menu used to stay open and paused after every Enter so you
+  could stack several actions into the engine's queue — a combat affordance —
+  but out of combat you almost always want one action and an immediate return,
+  so the lingering paused surface only added an Esc/unpause step the sighted
+  mouse radial never charges. Out of combat, Enter now fires and closes, matching
+  that radial; in combat the menu still stays open so you can queue several
+  actions and run them with Esc.
 
 <h3>World interaction:</h3>
 
@@ -101,13 +109,6 @@ and add the German in parentheses if it genuinely aids clarity.
   open, talk, attack, and so on. R has always performed the game's default
   action on the focused object; the mod now announces which action that is as
   it fires.
-- Interacting with the sealed "Test Door" in the Endar Spire opening room now
-  says "Sealed. It will not open." instead of announcing an Open action that
-  does nothing. This is a leftover, permanently locked door BioWare never gave
-  a story line; the engine offered a misleading Open prompt and then fell
-  silent, which is confusing in the first minutes of the game. Only this one
-  door is affected — the neighbouring locked door still gives its Trask "make
-  your way to the Starboard Deck" line.
 
 <h3>World navigation:</h3>
 
@@ -163,6 +164,24 @@ and add the German in parentheses if it genuinely aids clarity.
 
 - The journal, equipment and inventory tutorial pop-ups now explain how to read full details. As you arrow through these screens you hear only the focused entry's title or item name; the pop-ups now add that Shift and an arrow key reads the whole thing — the quest entry's text in the journal, an item's description in equipment and inventory.
 - The inventory (party stash) tutorial pop-up is now covered like the others. It wasn't among the mapped tutorial screens, so opening the inventory read out its original mouse-era wording; it now speaks a keyboard-oriented hint instead.
+
+<h3>Endar Spire opening:</h3>
+
+- Interacting with the sealed "Test Door" in the Endar Spire opening room now
+  says "Sealed. It will not open." instead of announcing an Open action that
+  does nothing. This is a leftover, permanently locked door BioWare never gave
+  a story line; the engine offered a misleading Open prompt and then fell
+  silent, which is confusing in the first minutes of the game. Only this one
+  door is affected — the neighbouring locked door still gives its Trask "make
+  your way to the Starboard Deck" line.
+- Trask's level-up reminder at the Endar Spire's locked door now speaks on its
+  own. His line telling you that you have enough experience and should level up
+  before going through the door ships as subtitle text with no recorded voice,
+  and because Trask counts as a voiced human the mod's human-subtitle
+  suppression silenced it entirely — you only got it by pressing R. It is now
+  force-spoken in every supported language, queued after the door's locked cue
+  rather than over it, and followed by a one-off reminder that R repeats the
+  last spoken line.
 - The Endar Spire's doomed-soldier scene now announces itself as a moment to pass, not join — one of the tutorial's main confusion points. In the command module you come upon Republic soldiers making a last stand against the Sith across a walkmesh gap you cannot cross; sighted players watch the firefight and move on, but the mod previously gave only the soldier's name, and a walk toward him ended in a generic "way blocked" — reading as an ally you inexplicably couldn't reach. Focusing one of these soldiers now speaks an in-world line that they are lost, you cannot help them, and must hurry to the bridge, and every attempt to walk to one repeats it.
 
 <h3>Bug fixes:</h3>
