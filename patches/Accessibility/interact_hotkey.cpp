@@ -203,6 +203,27 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
         return;
     }
 
+    // Endar Spire "Test Door" (tag end_door19): a permanently plot-locked
+    // leftover with no key and no bash. Its OnFailToOpen is wired to the
+    // Trask-death cutscene script, which never fires here — so the engine path
+    // below speaks a misleading "Open …" pre-roll and then dispatches a silent
+    // no-op, leaving the player poking at a mute door in the first minutes of
+    // the game. Give it an explicit sealed line and skip the dead dispatch.
+    // Keyed on the tag, which is unique to this Endar Spire door.
+    {
+        char tag[64] = "";
+        if (acc::engine::GetObjectTag(target, tag, sizeof(tag)) &&
+            _stricmp(tag, "end_door19") == 0) {
+            const char* line =
+                acc::strings::Get(acc::strings::Id::DoorSealedNoOpen);
+            prism::Speak(line, /*interrupt=*/true);
+            acclog::Write("Interact",
+                "%s -> [%s] sealed test door tag=%s handle=0x%08x",
+                forceRadial ? "Shift+Enter" : "Enter", line, tag, handle);
+            return;
+        }
+    }
+
     char name[128] = "";
     if (!acc::engine::GetObjectName(target, name, sizeof(name)) ||
         name[0] == '\0') {

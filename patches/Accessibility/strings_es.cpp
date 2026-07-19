@@ -83,6 +83,7 @@ const char* Get(Id id) {
         case Id::FmtInteractRadial:    return "Men\xFA de acciones, %s";
         case Id::FmtInteractNoActionsRedirect: return "No hay acciones disponibles para %s. Pulsa Intro para activar.";
         case Id::FmtInteractNoActions: return "No hay acciones disponibles para %s.";
+        case Id::DoorSealedNoOpen: return "Sellada. No se puede abrir.";
 
         case Id::FmtActionBarOpened:      return "Barra de acciones columna %d: %s, %d opciones";
         case Id::FmtActionBarColumnEmpty: return "La columna %d est\xE1 vac\xED""a";

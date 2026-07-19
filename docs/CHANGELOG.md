@@ -69,6 +69,13 @@ and add the German in parentheses if it genuinely aids clarity.
   open, talk, attack, and so on. R has always performed the game's default
   action on the focused object; the mod now announces which action that is as
   it fires.
+- Interacting with the sealed "Test Door" in the Endar Spire opening room now
+  says "Sealed. It will not open." instead of announcing an Open action that
+  does nothing. This is a leftover, permanently locked door BioWare never gave
+  a story line; the engine offered a misleading Open prompt and then fell
+  silent, which is confusing in the first minutes of the game. Only this one
+  door is affected — the neighbouring locked door still gives its Trask "make
+  your way to the Starboard Deck" line.
 
 <h3>World navigation:</h3>
 

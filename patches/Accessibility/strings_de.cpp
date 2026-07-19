@@ -86,6 +86,7 @@ const char* Get(Id id) {
         case Id::FmtInteractRadial:    return "Aktionsmen\xFC, %s";          // Aktionsmen?
         case Id::FmtInteractNoActionsRedirect: return "Keine Aktionen verf\xFC" "gbar f\xFCr %s. Enter zum Aktivieren."; // verf?gbar / f?r
         case Id::FmtInteractNoActions: return "Keine Aktionen verf\xFC" "gbar f\xFCr %s.";  // verf?gbar / f?r
+        case Id::DoorSealedNoOpen: return "Versiegelt. L\xE4sst sich nicht \xF6" "ffnen.";  // Lasst / offnen
 
         case Id::FmtActionBarOpened:      return "Aktionsmen\xFC Spalte %d: %s, %d Optionen"; // Aktionsmen?
         case Id::FmtActionBarColumnEmpty: return "Spalte %d ist leer";

@@ -249,6 +249,14 @@ enum class Id : int {
     FmtInteractNoActionsRedirect,
     FmtInteractNoActions,
 
+    // ---- Sealed-door override. Spoken when the player interacts with the
+    //      Endar Spire "Test Door" (tag end_door19): a permanently plot-locked
+    //      leftover with no key, no bash, and an OnFailToOpen wired to the
+    //      Trask-death cutscene that never fires there. Left to the engine it
+    //      gives a misleading "Open …" pre-roll and then silence, which is
+    //      confusing in the tutorial. No args.
+    DoorSealedNoOpen,
+
     // ---- Player action bar (Aktionsmenü) submenu, armed by Shift+4..7.
     //      `FmtActionBarOpened`      — opener pre-roll. Args: column
     //                                  number 1..6 (`%d`), current variant
