@@ -206,6 +206,16 @@ bool IsEmptyContainer(void* gameObject);
 // fully open. False on null/fault/state==0.
 bool IsDoorOpen(void* serverDoor);
 
+// Root-cause fix (2026-07-19, rev 2): the Endar Spire opening HOLDS the global
+// fade at alpha=1.0 (engine re-asserts it every frame, so it can't be cleared)
+// after the fade animation finishes, while the player keeps world control. That
+// gates MainLoop's DoPassiveSelection off, freezing the Q/E candidate halo and
+// passive narration. Call once per frame from OnUpdate: when the only blocker
+// is the held obscuring fade (world input, area displayed, fade finished), it
+// drives DoPassiveSelection directly so targeting + narration stay live. The
+// visible fade is left untouched. Returns true when it drove a pass.
+bool MaybeDrivePassiveSelection();
+
 // Derived from CSWSDoor.generic_type +0x2a1 via a static 65-entry table
 // (genericdoors.2da ⋈ placeableobjsnds.2da on soundapptype). Rows 0-12
 // don't set soundapptype; classified by label keyword. Metal is the

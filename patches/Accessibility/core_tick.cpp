@@ -19,6 +19,7 @@
 #include "dialog_speech.h"
 #include "discovery.h"
 #include "door_announce.h"
+#include "engine_area.h"
 #include "engine_player.h"
 #include "engine_subscreen.h"
 #include "examine_view.h"
@@ -241,6 +242,15 @@ void Dispatch() {
     // recreation moments later), leaving the keyboard dead for tens of
     // seconds. Re-drive the edge until the pump is provably live, then stop.
     RetryColdStartReacquire();
+
+    // The Endar Spire opening holds the global fade at alpha=1.0 (engine
+    // re-asserts it every frame) after the fade finishes, while the player still
+    // has world control. That gates MainLoop's DoPassiveSelection off, freezing
+    // the Q/E candidate halo and passive narration (root cause of the second-
+    // door "Q/E can't find the door in front of me"). Since the fade can't be
+    // cleared, drive DoPassiveSelection ourselves while that's the only blocker.
+    // No-op in normal play. See engine_area.cpp.
+    acc::engine::MaybeDrivePassiveSelection();
 
     // Speak the "Steam Big Picture is eating your keypresses" warning if the
     // focus-probe poll thread queued one (windowed-mode focus theft — the
