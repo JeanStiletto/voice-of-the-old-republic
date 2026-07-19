@@ -80,6 +80,23 @@ and add the German in parentheses if it genuinely aids clarity.
   player's map. The range is now derived per area from that fog grid (1.5x the
   cell size, never below the old 8 m), so open-world landmarks announce from
   realistic distances while interiors behave as before.
+- The blocked end of a corridor now reads as a dead end instead of the
+  corridor's through-direction. Standing at the walled-off west end of an
+  east-west hallway, the room description spoke "east-west" — the corridor's
+  orientation — which reads as though the passage keeps going west, sending you
+  searching for an exit that isn't there. The test that decides whether a dead
+  end is a real spot you can walk into recognized only tight alcoves, not the
+  wider end of a corridor, so it threw away the correct "dead end, exit east"
+  label and fell back to the adjacent corridor's axis. It now also recognizes a
+  corridor terminus — an open way back, a wall close behind, and corridor-width
+  walls to either side — so the end of the hall announces as a dead end and
+  points you back the way you came.
+- Cosmetic (set-dressing) doors are no longer named as exits in room
+  descriptions. A sealed decorative door on a corridor wall could be folded into
+  the passage's shape label as a door you could pass through, so a hall that
+  actually ends there read as a way onward. Being non-interactive, these doors
+  are now left out of the room-shape door labels entirely, so a corridor is
+  described by its walkable geometry rather than a door you can't use.
 
 <h3>Late-game finale:</h3>
 

@@ -385,28 +385,26 @@ void BuildDoorSuffix(void* serverDoor, char* outBuf, size_t bufSize) {
     outBuf[0] = '\0';
     if (!serverDoor) return;
 
-    uint32_t locked    = 0;
-    uint8_t  openState = 0;
-    uint32_t isStatic  = 0;
-    __try {
-        auto* base = reinterpret_cast<unsigned char*>(serverDoor);
-        locked    = *reinterpret_cast<uint32_t*>(base + kDoorLockedOffset);
-        openState = *reinterpret_cast<uint8_t*> (base + kDoorOpenStateOffset);
-        isStatic  = *reinterpret_cast<uint32_t*>(base + kDoorStaticOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        // leave defaults; suffix will skip the state line
-    }
-
     // Static doors are non-interactive set dressing — the engine never lets
     // anyone open them (it offers no actions at all). They're frequently also
     // flagged locked in the blueprint, but "verriegelt" misleads the player
     // into hunting for a key/slice that doesn't exist. Label them "kosmetisch"
     // instead and skip the rest of the suffix (state/transition/description are
     // all meaningless on a door that can't be used).
-    if (isStatic != 0) {
+    if (IsDoorStatic(serverDoor)) {
         AppendCommaSeparated(outBuf, bufSize,
             acc::strings::Get(acc::strings::Id::DoorCosmetic));
         return;
+    }
+
+    uint32_t locked    = 0;
+    uint8_t  openState = 0;
+    __try {
+        auto* base = reinterpret_cast<unsigned char*>(serverDoor);
+        locked    = *reinterpret_cast<uint32_t*>(base + kDoorLockedOffset);
+        openState = *reinterpret_cast<uint8_t*> (base + kDoorOpenStateOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        // leave defaults; suffix will skip the state line
     }
 
     if (locked != 0) {
@@ -761,6 +759,17 @@ bool IsDoorOpen(void* serverDoor) {
     __try {
         return *(reinterpret_cast<unsigned char*>(serverDoor) +
                  kDoorOpenStateOffset) != 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool IsDoorStatic(void* serverDoor) {
+    if (!serverDoor) return false;
+    __try {
+        return *reinterpret_cast<uint32_t*>(
+                   reinterpret_cast<unsigned char*>(serverDoor) +
+                   kDoorStaticOffset) != 0;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }

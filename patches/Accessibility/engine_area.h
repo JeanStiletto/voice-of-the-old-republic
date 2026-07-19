@@ -206,6 +206,14 @@ bool IsEmptyContainer(void* gameObject);
 // fully open. False on null/fault/state==0.
 bool IsDoorOpen(void* serverDoor);
 
+// CSWSDoor Static flag +0x3c0 (UTD Static). A static door is
+// non-interactive set dressing — the engine never lets anyone open it and
+// offers no actions on it. We label these "cosmetic" in narration and
+// exclude them from the room-shape door announcements (a cosmetic door in a
+// corridor must not read as a way through). True only when the flag is
+// non-zero; false on null/fault.
+bool IsDoorStatic(void* serverDoor);
+
 // Root-cause fix (2026-07-19, rev 2): the Endar Spire opening HOLDS the global
 // fade at alpha=1.0 (engine re-asserts it every frame, so it can't be cleared)
 // after the fade animation finishes, while the player keeps world control. That

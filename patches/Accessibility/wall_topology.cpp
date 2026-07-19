@@ -82,10 +82,35 @@ float ProbeDistance(const Vector& pos, float dx, float dy) {
     return ProbeWall(walls, wallCount, pos, dx / mag, dy / mag);
 }
 
-// 4-ray alcove test rotated to align with (forwardX,forwardY): true
-// when the forward probe clears 2m AND the three perpendiculars/back
-// all hit a wall within 2m. Fail-open if the wall cache isn't ready.
+// Dead-end shape gate, a 4-ray probe rotated to align with
+// (forwardX,forwardY) — the direction from the degree-1 node toward its
+// graph parent, i.e. the way in. True when the forward ray is open (the
+// entrance) while the node is boxed in on the other three sides. Two shapes
+// qualify:
+//   - tight alcove      — all three non-forward rays within kDeadEndBackM.
+//   - corridor terminus — a close wall behind (back ray within kDeadEndBackM)
+//     with the perpendicular walls merely bounded to corridor width
+//     (kDeadEndSideM). This is the blocked end of a hallway: forward = the
+//     long corridor you came down, back = the end wall a metre or two away,
+//     sides = the corridor walls (~2.5-2.8m). The old alcove-only test
+//     (all three rays within 2m) rejected these because a corridor is wider
+//     than an alcove, so the terminus got filtered and LookupAt spoke the
+//     corridor body's axis ("Ost-West") while the player stood on its dead
+//     end instead of "Sackgasse" (2026-07-19 Endar Spire node[5]:
+//     rays E=17.2 back-W=1.4 sides N=2.8/S=2.5).
+// A wall-curve artefact in an open area fails both: it sits ALONG a wall, so
+// its back and/or a side ray runs off into open space beyond kDeadEndSideM.
+// Fail-open if the wall cache isn't ready.
 bool IsAlcoveAlongAxis(const Vector& pos, float forwardX, float forwardY) {
+    // Entrance must be open; terminal wall close behind; sides bounded to
+    // corridor width (not open). kDeadEndSideM > kDeadEndBackM is what lets
+    // a corridor end through while still requiring the node be enclosed on
+    // three sides. Tune from the clearance-dump rays if a real terminus is
+    // still filtered.
+    constexpr float kDeadEndForwardM = 2.0f;
+    constexpr float kDeadEndBackM    = 2.0f;
+    constexpr float kDeadEndSideM    = 4.0f;
+
     const acc::engine::WallEdge* walls = nullptr;
     int wallCount = 0;
     if (!acc::spatial::change_detector::GetCachedWalls(walls, wallCount) ||
@@ -103,11 +128,10 @@ bool IsAlcoveAlongAxis(const Vector& pos, float forwardX, float forwardY) {
     float dB = ProbeWall(walls, wallCount, pos, -fx, -fy);
     float dR = ProbeWall(walls, wallCount, pos,  px,  py);
     float dL = ProbeWall(walls, wallCount, pos, -px, -py);
-    int shortCount = 0;
-    if (dB <= 2.0f) ++shortCount;
-    if (dR <= 2.0f) ++shortCount;
-    if (dL <= 2.0f) ++shortCount;
-    return shortCount == 3 && dF > 2.0f;
+    return dF > kDeadEndForwardM &&
+           dB <= kDeadEndBackM &&
+           dR <= kDeadEndSideM &&
+           dL <= kDeadEndSideM;
 }
 
 // 8-ray clearance probe. Casts kProbeLenWu rays on the 8 octants from
@@ -664,6 +688,14 @@ void SnapshotDoors(void* area) {
         if (kind != static_cast<int>(acc::engine::GameObjectKind::Door)) {
             continue;
         }
+        // Cosmetic (static) doors are non-interactive set dressing — the
+        // engine offers no actions on them. In the room-shape system a
+        // cosmetic door at the end of a corridor otherwise reads as a "Tür"
+        // exit, sending the player hunting for a way through that doesn't
+        // exist. Skip them here so they never enter the door snapshot: the
+        // edge then classifies on walkmesh geometry alone (dead end / wall),
+        // which is the truth. Interactive doors are unaffected.
+        if (acc::engine::IsDoorStatic(obj)) continue;
         Vector pos;
         if (!acc::engine::GetObjectPosition(obj, pos)) continue;
 
