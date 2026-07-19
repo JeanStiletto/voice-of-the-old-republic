@@ -155,6 +155,16 @@ enum class Id : int {
     InteractWayBlocked,
     FmtInteractWayBlockedTarget,
 
+    // Scoped dramatic cue for the Endar Spire command-module scripted
+    // "spectator battle" (module END_M01AA): Republic soldiers make a doomed
+    // stand against the Sith beyond a walkmesh gap the player cannot cross.
+    // Spoken once on first sight of a scene soldier (tag end_cut2_soldier*) and
+    // again each time a walk toward one is cancelled "way blocked", so a blind
+    // player understands this is a watch-and-press-on moment, not an ally they
+    // inexplicably can't reach. Hard-scoped by creature tag until more such
+    // battles surface. See spectator_scene.cpp. No format args.
+    SpectatorBattleDoomed,
+
     // ---- Pillar 3 Mode B beacon (Ctrl+-).
     //      `FmtBeaconStarted`     — opener spoken when StartBeacon arms.
     //                               One `%s` (resolved destination name).

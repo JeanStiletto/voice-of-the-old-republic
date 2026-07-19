@@ -60,6 +60,7 @@ const char* Get(Id id) {
         case Id::MovementCancelled:    return "Bewegung abgebrochen";
         case Id::InteractWayBlocked:   return "Bewegung abgebrochen, Weg versperrt";
         case Id::FmtInteractWayBlockedTarget: return "Bewegung abgebrochen, Weg versperrt. %s, %d Meter, %s";
+        case Id::SpectatorBattleDoomed: return "Die republikanischen Soldaten sind verloren. Du kannst ihnen nicht mehr helfen. Der Weg ist versperrt. Eile weiter zur Br\xFC" "cke!";  // Br?cke
 
         // Beacon (Ctrl+-).
         case Id::FmtBeaconStarted:     return "Beacon zu %s";

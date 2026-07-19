@@ -13,6 +13,7 @@
 #include "guidance_autowalk.h"// CancelMovement
 #include "log.h"
 #include "prism.h"
+#include "spectator_scene.h" // Endar Spire scripted spectator-battle cue
 #include "strings.h"
 
 namespace acc::guidance {
@@ -94,14 +95,25 @@ void OnBlocked(DWORD stalledMs) {
     }
 
     if (g_st.speakBlocked) {
-        Vector tgt;
-        char msg[192];
-        if (ResolveTargetPos(tgt) && g_st.name[0]) {
-            SpeakWayBlocked(g_st.name, tgt);
+        // Scoped Endar Spire spectator battle: a walk toward one of the
+        // doomed Republic soldiers can never land (walkmesh gap). Swap the
+        // generic "way blocked" for the dramatic in-world line so the repeat
+        // reinforces "you can't reach them, press on to the bridge".
+        if (acc::spectator::IsScriptedBattleSoldier(g_st.targetObj)) {
+            prism::Speak(acc::spectator::DramaticLine(), /*interrupt=*/true);
+            acclog::Write("Approach",
+                "blocked on scripted-battle soldier -> [%s]",
+                acc::spectator::DramaticLine());
         } else {
-            std::snprintf(msg, sizeof(msg), "%s",
-                          acc::strings::Get(acc::strings::Id::InteractWayBlocked));
-            prism::Speak(msg, /*interrupt=*/true);
+            Vector tgt;
+            char msg[192];
+            if (ResolveTargetPos(tgt) && g_st.name[0]) {
+                SpeakWayBlocked(g_st.name, tgt);
+            } else {
+                std::snprintf(msg, sizeof(msg), "%s",
+                              acc::strings::Get(acc::strings::Id::InteractWayBlocked));
+                prism::Speak(msg, /*interrupt=*/true);
+            }
         }
     }
 

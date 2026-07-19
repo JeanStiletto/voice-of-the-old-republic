@@ -50,6 +50,7 @@ const char* Get(Id id) {
         case Id::MovementCancelled:    return "Movement cancelled";
         case Id::InteractWayBlocked:   return "Movement cancelled, way blocked";
         case Id::FmtInteractWayBlockedTarget: return "Movement cancelled, way blocked. %s, %d metres, %s";
+        case Id::SpectatorBattleDoomed: return "The Republic soldiers are lost. You cannot help them. The way is blocked. Hurry on to the bridge!";
 
         // Beacon (Ctrl+-).
         case Id::FmtBeaconStarted:     return "Beacon to %s";

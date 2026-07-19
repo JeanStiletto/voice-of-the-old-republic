@@ -107,6 +107,7 @@ and add the German in parentheses if it genuinely aids clarity.
 
 - The journal, equipment and inventory tutorial pop-ups now explain how to read full details. As you arrow through these screens you hear only the focused entry's title or item name; the pop-ups now add that Shift and an arrow key reads the whole thing — the quest entry's text in the journal, an item's description in equipment and inventory.
 - The inventory (party stash) tutorial pop-up is now covered like the others. It wasn't among the mapped tutorial screens, so opening the inventory read out its original mouse-era wording; it now speaks a keyboard-oriented hint instead.
+- The Endar Spire's doomed-soldier scene now announces itself as a moment to pass, not join — one of the tutorial's main confusion points. In the command module you come upon Republic soldiers making a last stand against the Sith across a walkmesh gap you cannot cross; sighted players watch the firefight and move on, but the mod previously gave only the soldier's name, and a walk toward him ended in a generic "way blocked" — reading as an ally you inexplicably couldn't reach. Focusing one of these soldiers now speaks an in-world line that they are lost, you cannot help them, and must hurry to the bridge, and every attempt to walk to one repeats it.
 
 <h3>Bug fixes:</h3>
 

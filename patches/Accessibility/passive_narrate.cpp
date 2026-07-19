@@ -14,6 +14,7 @@
 #include "log.h"
 #include "narrated_target.h"
 #include "same_name_suffix.h"
+#include "spectator_scene.h" // Endar Spire scripted spectator-battle cue
 #include "strings.h"
 #include "prism.h"
 
@@ -204,6 +205,11 @@ bool NarrateHandle(uint32_t handle, const char* reason, bool explicitRequest) {
 
     uint32_t serverHandle = acc::engine::GetObjectHandle(obj);
     acc::narrated_target::Stamp(obj, serverHandle);
+
+    // Scoped Endar Spire spectator-battle warning: first time a scripted
+    // Republic soldier is narrated this area visit, follow the name with the
+    // dramatic "you can't help them, press on" line. No-op everywhere else.
+    acc::spectator::OnObjectNarrated(obj);
 
     // Organic discovery: the player just had this object narrated by focusing
     // it (passive ShowObject or an explicit Q/E). Record it so the discovery-
