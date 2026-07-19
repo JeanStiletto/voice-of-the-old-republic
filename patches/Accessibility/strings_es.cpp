@@ -567,8 +567,8 @@ const char* Get(Id id) {
         case Id::HelpKeyCtrlF1:          return "Ctrl m\xE1s F1: leer las teclas de la pantalla actual";
 
         case Id::HelpKeyWalk:           return "W y S: avanzar y retroceder";
-        case Id::HelpKeyCameraRotate:   return "A y D: girar la c\xE1mara a la izquierda y a la derecha";
-        case Id::HelpKeyStrafe:         return "Z y C: desplazarse de lado a la izquierda y a la derecha";
+        case Id::HelpKeyCameraRotate:   return "Z y C: girar la c\xE1mara a la izquierda y a la derecha";
+        case Id::HelpKeyStrafe:         return "A y D: desplazarse de lado a la izquierda y a la derecha";
         case Id::HelpKeyPause:          return "Espacio: pausar y reanudar";
         case Id::HelpKeyViewMode:       return "B: modo observaci\xF3n, mantener la posici\xF3n mientras giras la c\xE1mara";
         case Id::HelpKeySwitchLeader:   return "Tab: cambiar el miembro del grupo que controlas";

@@ -566,8 +566,8 @@ const char* Get(Id id) {
         case Id::HelpKeyCtrlF1:          return "Control plus F1: read the keys for the current screen";
 
         case Id::HelpKeyWalk:           return "W and S: walk forward and back";
-        case Id::HelpKeyCameraRotate:   return "A and D: rotate the camera left and right";
-        case Id::HelpKeyStrafe:         return "Z and C: step left and right";
+        case Id::HelpKeyCameraRotate:   return "Z and C: rotate the camera left and right";
+        case Id::HelpKeyStrafe:         return "A and D: step left and right";
         case Id::HelpKeyPause:          return "Space: pause and unpause the game";
         case Id::HelpKeyViewMode:       return "B: look-around mode, hold position while you turn the camera";
         case Id::HelpKeySwitchLeader:   return "Tab: switch the party member you control";
@@ -745,7 +745,7 @@ const char* Get(Id id) {
         case Id::TutHintAttackAuto:
             return "Remember: one press of Enter attacks automatically each round. Only a new target changes that.";
         case Id::TutHintMovement:
-            return "Press F1 anytime for the help menu, a list of every key, and Ctrl and F1 for the keys of the current screen. To move, press W and S to walk forward and back, A and D to turn the camera left and right, and Z and C to step sideways. Tones warn you when you approach a wall, and as you move the shape of the room around you is described. Press right Alt to repeat your facing direction and current room.";
+            return "Press F1 anytime for the help menu, a list of every key, and Ctrl and F1 for the keys of the current screen. To move, press W and S to walk forward and back, A and D to step sideways left and right, and Z and C to turn left and right. Z and C rotate the camera and, with it, your walking direction, so the two always point the same way. Tones warn you when you approach a wall, and as you move the shape of the room around you is described. Press right Alt to repeat your facing direction and current room.";
         case Id::TutHintMapScreen:
             return "The map shows every explored area of a level. Important areas are marked, and some areas, such as cities, are mapped before you explore them. Move around the map with W, A, S and D. Switch between map hints with comma and period. Press Shift and N to place your own map hint at your position. Press Ctrl and minus to start a beacon that guides you to the map hint by sound, or Shift and minus to walk automatically to the selected map hint.";
         case Id::TutHintJournal:
@@ -759,7 +759,7 @@ const char* Get(Id id) {
 
         // ---- Endar Spire tutorial keyboard hints (Surface 2: Trask / pop) ----
         case Id::TutTraskGettingStarted:
-            return "You now have control. The basics: press F1 anytime for the full list of keys, or Ctrl and F1 for the keys of the current screen. W and S walk forward and back, A and D turn your walking direction left and right, and Z and C step sideways. Q and E switch between targets and objects, and Enter interacts with the focused object.";
+            return "You now have control. The basics: press F1 anytime for the full list of keys, or Ctrl and F1 for the keys of the current screen. W and S walk forward and back, A and D step sideways left and right, and Z and C turn left and right. Z and C rotate the camera and, with it, your walking direction, so the two always point the same way. Q and E switch between targets and objects, and Enter interacts with the focused object.";
         case Id::TutTraskEquipOpen:
             return "The equip screen is where you choose armor and weapons. Open it with U.";
         case Id::TutTraskEquipBrowse:
@@ -768,7 +768,7 @@ const char* Get(Id id) {
             return "Select the weapon slot and press Enter, then choose a weapon from the list.";
         case Id::TutTraskCamera:
         case Id::TutTraskFootlocker:
-            return "You change the camera, and with it your walking direction, with A and D. N turns you 90 degrees. Q and E cycle through all visible objects. Comma and period navigate a list of every object you have already seen. Shift with comma or period switches between object categories. Press Enter to walk to a selected object and activate it.";
+            return "You change the camera, and with it your walking direction, with Z and C. N turns you 90 degrees. Q and E cycle through all visible objects. Comma and period navigate a list of every object you have already seen. Shift with comma or period switches between object categories. Press Enter to walk to a selected object and activate it.";
         case Id::TutTraskPickItem:
             return "Choose a slot with the arrows and Enter, browse the list, and confirm the item with Enter.";
         case Id::TutTraskLeader:

@@ -585,8 +585,8 @@ const char* Get(Id id) {
         case Id::HelpKeyCtrlF1:          return "Strg und F1: die Tasten f\xFCr den aktuellen Bildschirm vorlesen";
 
         case Id::HelpKeyWalk:           return "W und S: vorw\xE4rts und r\xFC""ckw\xE4rts gehen";
-        case Id::HelpKeyCameraRotate:   return "A und D: Kamera nach links und rechts drehen";
-        case Id::HelpKeyStrafe:         return "Z und C: nach links und rechts treten";
+        case Id::HelpKeyCameraRotate:   return "Y und C: Kamera nach links und rechts drehen";
+        case Id::HelpKeyStrafe:         return "A und D: nach links und rechts treten";
         case Id::HelpKeyPause:          return "Leertaste: Spiel anhalten und fortsetzen";
         case Id::HelpKeyViewMode:       return "B: Umsehen-Modus, Position halten und die Kamera drehen";
         case Id::HelpKeySwitchLeader:   return "Tabulator: gesteuertes Gruppenmitglied wechseln";
@@ -764,7 +764,7 @@ const char* Get(Id id) {
         case Id::TutHintAttackAuto:
             return "Denke daran: Ein einziger Druck auf die Eingabetaste greift jede Runde automatisch an. Erst ein neues Ziel \xE4ndert das.";
         case Id::TutHintMovement:
-            return "Dr\xFC""cke jederzeit F1 f\xFCr die Tastenhilfe, eine Liste aller Tasten, und Strg und F1 f\xFCr die Tasten des aktuellen Bildschirms. Zum Gehen dr\xFC""ckst du W und S f\xFCr vorw\xE4rts und r\xFC""ckw\xE4rts, A und D drehen die Kamera nach links und rechts, und mit Z und C trittst du zur Seite. T\xF6ne warnen dich, wenn du dich einer Wand n\xE4herst, und w\xE4hrend du gehst, wird die Form des Raums um dich herum beschrieben. Mit der rechten Alt-Taste wiederholst du deine Blickrichtung und den aktuellen Raum.";
+            return "Dr\xFC""cke jederzeit F1 f\xFCr die Tastenhilfe, eine Liste aller Tasten, und Strg und F1 f\xFCr die Tasten des aktuellen Bildschirms. Zum Bewegen dr\xFC""ckst du W und S f\xFCr vorw\xE4rts und r\xFC""ckw\xE4rts, mit A und D trittst du zur Seite nach links und rechts, und mit Y und C drehst du dich nach links und rechts. Y und C drehen die Kamera und damit zugleich deine Laufrichtung, die immer in dieselbe Richtung zeigen. T\xF6ne warnen dich, wenn du dich einer Wand n\xE4herst, und w\xE4hrend du gehst, wird die Form des Raums um dich herum beschrieben. Mit der rechten Alt-Taste wiederholst du deine Blickrichtung und den aktuellen Raum.";
         case Id::TutHintMapScreen:
             return "Auf der Karte sind alle erforschten Gebiete eines Levels eingezeichnet. Wichtige Bereiche werden markiert. Einige Gebiete, zum Beispiel St\xE4""dte, sind bereits kartografiert, bevor du sie erforschst. Mit W, A, S und D bewegst du dich auf der Karte. Mit Komma und Punkt wechselst du zwischen den Kartenhinweisen. Mit Umschalt und N setzt du an deiner Position einen eigenen Kartenhinweis. Mit Strg und Minus startest du einen Wegweiser, der dich per Ton zum Kartenhinweis f\xFChrt, mit Umschalt und Minus gehst du automatisch zum ausgew\xE4hlten Kartenhinweis.";
         case Id::TutHintJournal:
@@ -778,7 +778,7 @@ const char* Get(Id id) {
 
         // ---- Endar Spire tutorial keyboard hints (Surface 2: Trask / pop) ----
         case Id::TutTraskGettingStarted:
-            return "Du hast jetzt die Kontrolle. Die Grundlagen: Dr\xFC""cke jederzeit F1 f\xFCr die vollst\xE4ndige Tastenliste oder Strg und F1 f\xFCr die Tasten des aktuellen Bildschirms. W und S gehen vorw\xE4rts und r\xFC""ckw\xE4rts, A und D drehen deine Laufrichtung nach links und rechts, und mit Y und C trittst du zur Seite. Mit Q und E wechselst du zwischen Zielen und Objekten, und mit der Eingabetaste interagierst du mit dem fokussierten Objekt.";
+            return "Du hast jetzt die Kontrolle. Die Grundlagen: Dr\xFC""cke jederzeit F1 f\xFCr die vollst\xE4ndige Tastenliste oder Strg und F1 f\xFCr die Tasten des aktuellen Bildschirms. W und S gehen vorw\xE4rts und r\xFC""ckw\xE4rts, mit A und D trittst du zur Seite nach links und rechts, und mit Y und C drehst du dich nach links und rechts. Y und C drehen die Kamera und damit deine Laufrichtung, die immer gleich ausgerichtet sind. Mit Q und E wechselst du zwischen Zielen und Objekten, und mit der Eingabetaste interagierst du mit dem fokussierten Objekt.";
         case Id::TutTraskEquipOpen:
             return "Im Ausr\xFCstungsbildschirm w\xE4hlst du R\xFCstung und Waffen. \xD6""ffne ihn mit U.";
         case Id::TutTraskEquipBrowse:
@@ -787,7 +787,7 @@ const char* Get(Id id) {
             return "W\xE4hle den Waffen-Steckplatz und best\xE4tige mit der Eingabetaste, dann w\xE4hle in der Liste eine Waffe.";
         case Id::TutTraskCamera:
         case Id::TutTraskFootlocker:
-            return "Die Kamera und damit deine Laufrichtung ver\xE4nderst du mit A und D. N dreht dich um 90 Grad. Q und E schalten durch alle sichtbaren Objekte. Komma und Punkt navigieren eine Liste aller Objekte, die du schon einmal gesehen hast. Umschalt und Komma oder Punkt wechselt zwischen den Objektkategorien. Mit der Eingabetaste gehst du zu einem ausgew\xE4hlten Objekt und aktivierst es.";
+            return "Die Kamera und damit deine Laufrichtung ver\xE4nderst du mit Y und C. N dreht dich um 90 Grad. Q und E schalten durch alle sichtbaren Objekte. Komma und Punkt navigieren eine Liste aller Objekte, die du schon einmal gesehen hast. Umschalt und Komma oder Punkt wechselt zwischen den Objektkategorien. Mit der Eingabetaste gehst du zu einem ausgew\xE4hlten Objekt und aktivierst es.";
         case Id::TutTraskPickItem:
             return "W\xE4hle einen Steckplatz mit den Pfeiltasten und der Eingabetaste, bl\xE4ttere durch die Liste und best\xE4tige den Gegenstand mit der Eingabetaste.";
         case Id::TutTraskLeader:

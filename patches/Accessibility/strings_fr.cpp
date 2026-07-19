@@ -566,8 +566,8 @@ const char* Get(Id id) {
         case Id::HelpKeyCtrlF1:          return "Ctrl plus F1 : lire les touches de l'\xE9""cran actuel";
 
         case Id::HelpKeyWalk:           return "W et S : avancer et reculer";
-        case Id::HelpKeyCameraRotate:   return "A et D : tourner la cam\xE9ra \xE0 gauche et \xE0 droite";
-        case Id::HelpKeyStrafe:         return "Z et C : pas de c\xF4t\xE9 \xE0 gauche et \xE0 droite";
+        case Id::HelpKeyCameraRotate:   return "Z et C : tourner la cam\xE9ra \xE0 gauche et \xE0 droite";
+        case Id::HelpKeyStrafe:         return "A et D : pas de c\xF4t\xE9 \xE0 gauche et \xE0 droite";
         case Id::HelpKeyPause:          return "Espace : mettre en pause et reprendre";
         case Id::HelpKeyViewMode:       return "B : mode observation, rester sur place en tournant la cam\xE9ra";
         case Id::HelpKeySwitchLeader:   return "Tab : changer de membre du groupe contr\xF4l\xE9";

@@ -565,8 +565,8 @@ const char* Get(Id id) {
         case Id::HelpKeyCtrlF1:          return "Ctrl pi\xF9 F1: leggere i tasti della schermata attuale";
 
         case Id::HelpKeyWalk:           return "W e S: avanzare e indietreggiare";
-        case Id::HelpKeyCameraRotate:   return "A e D: ruotare la telecamera a sinistra e a destra";
-        case Id::HelpKeyStrafe:         return "Z e C: spostarsi di lato a sinistra e a destra";
+        case Id::HelpKeyCameraRotate:   return "Z e C: ruotare la telecamera a sinistra e a destra";
+        case Id::HelpKeyStrafe:         return "A e D: spostarsi di lato a sinistra e a destra";
         case Id::HelpKeyPause:          return "Spazio: mettere in pausa e riprendere";
         case Id::HelpKeyViewMode:       return "B: modalit\xE0 osservazione, restare fermi mentre si gira la telecamera";
         case Id::HelpKeySwitchLeader:   return "Tab: cambiare il membro del gruppo controllato";

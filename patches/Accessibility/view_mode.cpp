@@ -94,9 +94,11 @@ constexpr DWORD kPendingDispatchMinElapsedMs = 16;  // ~1 frame at 60fps
 // after OnUpdate. The detour substitutes cursor_pos for the engine's
 // camera-derived Vector while view mode is active.
 //
-// No Mouse Look forcing / cursor recentring needed: stock A/D rotates the
-// camera only, the character only snaps on W/S commit. So freezing W/S via
-// SetPlayerInputEnabled(false) is enough — A/D keeps panning natively.
+// No Mouse Look forcing / cursor recentring needed: the camera-rotate keys
+// (Y/C under our keymap defaults) pan the camera only, the character only
+// snaps on W/S commit. So freezing W/S via SetPlayerInputEnabled(false) is
+// enough — the camera keys keep panning natively while W/S and the strafe
+// keys (A/D) are frozen, so we can safely reuse A/D to drive the view cursor.
 
 void EnterViewMode() {
     // armAutoRestore=false: view mode lasts until the user toggles back.
@@ -212,10 +214,10 @@ void StepCursor(float dt) {
 
     bool w = down('W');
     bool s = down('S');
-    bool c = down('C');  // strafe right
-    bool y = down('Y');  // strafe left
+    bool d = down('D');  // strafe right
+    bool a = down('A');  // strafe left
     float forwardSign = (w ? 1.0f : 0.0f) - (s ? 1.0f : 0.0f);
-    float strafeSign  = (c ? 1.0f : 0.0f) - (y ? 1.0f : 0.0f);
+    float strafeSign  = (d ? 1.0f : 0.0f) - (a ? 1.0f : 0.0f);
     if (forwardSign == 0.0f && strafeSign == 0.0f) return;
 
     // Pre-step yaw refresh from the engine's camera reader; fall back to

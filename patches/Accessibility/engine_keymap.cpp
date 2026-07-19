@@ -39,12 +39,21 @@ bool s_gameLoaded  = false;
 // (so nothing breaks when turn is rebound off A/D).
 //
 // The [Keymapping] movement/turn actions come in slot pairs "Action<id>A" /
-// "Action<id>B". Verified against the stock kotor.ini defaults, slot 'A' of
-// each action group is the "negative" direction and slot 'B' the "positive":
-//   move  Action280/282 : A=W (forward)  B=S (back)    | Action285 : A=Up B=Down
-//   turn  Action283/284 : A=A-key (left) B=D (right)   | Action286 : A=Left B=Right
+// "Action<id>B". Slot 'A' of each group is the "negative" direction and slot
+// 'B' the "positive". Names/defaults verified against keymap.2da (Action id =
+// keymap row + 200):
+//   280 ActionUp/Down          : A=W fwd    B=S back   (on-foot move)
+//   281 ActionLeft/Right       : A=strafe-L B=strafe-R (on-foot strafe; vanilla Z/C, our A/D)
+//   282 MGActionUp/Down        : A=W        B=S        (minigame accel/brake)
+//   283 MGActionLeft/Right     : A=A        B=D        (minigame steer — always A/D)
+//   284 CameraRotateLeft/Right : A=turn-L   B=turn-R   (in-world camera; vanilla A/D, our Y/C)
+//   285 ArrowUp/Down           : A=Up       B=Down     (arrow move alt)
+//   286 ArrowLeft/Right        : A=Left     B=Right    (arrow turn alt)
 // A rebind changes the KEY inside a slot, not which slot is which direction,
-// so reading a slot always yields that direction's current key.
+// so reading a slot always yields that direction's current key. NOTE: the turn
+// buckets below intentionally read Action283 (minigame A/D) + seeds so the map
+// cursor keeps A/D left/right panning; the *camera* turn key for camera_orient
+// is captured separately from Action284 (see s_turnScan in ReloadGameConfig).
 constexpr int kMoveAxisCount = 4;  // Forward, Backward, TurnLeft, TurnRight
 constexpr int kMaxAxisVks    = 8;
 int s_axisVks[kMoveAxisCount][kMaxAxisVks];
@@ -331,13 +340,14 @@ void ReloadGameConfig() {
                 if (c.actionId != actionId || c.slot != slot) continue;
                 AddAxisVk(c.axis, vk);
                 // Capture the configured turn scancode for camera_orient's
-                // synthetic-key drive. Only the A/D-family turn actions
-                // (283/284) — skip the arrow alt (286) to avoid extended-
-                // scancode SendInput handling. First configured value wins.
-                // Convert straight from the InputIndex so the physical scancode
-                // is layout-correct (the VK path swaps Y/Z on QWERTZ).
-                if ((c.axis == 2 || c.axis == 3) &&
-                    (c.actionId == 283 || c.actionId == 284)) {
+                // synthetic-key drive. Only Action284 = CameraRotateLeft/Right,
+                // the in-world camera turn (Y/C under our defaults, A/D vanilla)
+                // — NOT Action283 (MGActionLeft/Right = minigame steer, always
+                // A/D) and NOT the arrow alt (286, extended-scancode SendInput).
+                // First configured value wins. Convert straight from the
+                // InputIndex so the physical scancode is layout-correct (the VK
+                // path swaps Y/Z on QWERTZ).
+                if ((c.axis == 2 || c.axis == 3) && c.actionId == 284) {
                     int di = (c.axis == 2) ? 0 : 1;
                     int sc = InputIndexToScancode(inputIndex);
                     if (sc != 0 && s_turnScan[di] == 0) s_turnScan[di] = sc;

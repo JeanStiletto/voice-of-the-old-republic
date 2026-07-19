@@ -373,6 +373,18 @@ namespace KotorAccessibilityInstaller
                     Logger.Warning($"Stability tweaks failed: {iniResult.Error}");
                 }
 
+                // Step 4.5b: on a FULL install only, set the mod's movement keybinds
+                // (strafe on A/D, camera turn on Y/C). Skipped on the update path so
+                // we never clobber bindings a returning player has customised.
+                if (!_updateOnly)
+                {
+                    var keymapResult = await Task.Run(() => SwkotorIniTweaker.ApplyKeymapDefaults(_gamePath));
+                    if (!keymapResult.Success)
+                    {
+                        Logger.Warning($"Keymap defaults failed: {keymapResult.Error}");
+                    }
+                }
+
                 // Step 4.6: disable the three launch-time intro movies
                 // (biologo / leclogo / legal). Cuts ~10–20 s off cold start
                 // AND eliminates the engine bug where alt-tab during an

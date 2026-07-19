@@ -7,13 +7,14 @@ namespace KotorAccessibilityInstaller
 {
     /// <summary>
     /// In-place editor for <c>swkotor.ini</c> that applies the community-recommended
-    /// stability tweaks alongside our screen-reader compatibility setting.
+    /// stability tweaks alongside our screen-reader compatibility setting, and (on a
+    /// full install only) the mod's recommended movement keybinds.
     ///
-    /// Targets the <c>[Graphics Options]</c> section. Preserves all other sections,
-    /// keys, ordering, comments, and trailing whitespace. Idempotent — re-running
-    /// the installer doesn't double-up.
+    /// Targets the <c>[Graphics Options]</c> and <c>[Keymapping]</c> sections.
+    /// Preserves all other sections, keys, ordering, comments, and trailing
+    /// whitespace. Idempotent — re-running the installer doesn't double-up.
     ///
-    /// Tweaks applied (sourced from the neocities full build's "Misc. Basegame
+    /// Stability tweaks (sourced from the neocities full build's "Misc. Basegame
     /// Issues &amp; Fixes" section and our own accessibility-investigation.md):
     /// <list type="bullet">
     ///   <item><c>V-Sync=1</c> — fixes "character stuck after combat" engine bug on 60 Hz monitors</item>
@@ -26,6 +27,7 @@ namespace KotorAccessibilityInstaller
     {
         private const string IniFileName = "swkotor.ini";
         private const string GraphicsSectionHeader = "[Graphics Options]";
+        private const string KeymappingSectionHeader = "[Keymapping]";
 
         // Exact key spellings the engine reads. Case-sensitive on the engine side.
         private static readonly (string Key, string Value)[] Tweaks =
@@ -34,6 +36,26 @@ namespace KotorAccessibilityInstaller
             ("Frame Buffer", "0"),
             ("Disable Vertex Buffer Objects", "1"),
             ("FullScreen", "0"),
+        };
+
+        // Movement-keybind defaults for mod users. Values are the engine's
+        // InputIndices (the decimal codes swkotor.ini stores), and they encode the
+        // *physical* key position — so 76 is the bottom-left letter key (labelled Y
+        // on a German keyboard, Z on a US keyboard) regardless of layout.
+        //
+        // We swap vanilla's two in-world action pairs so blind players get an
+        // ergonomic bottom-row cluster: strafe on A/D, camera turn on Y/C. Confirmed
+        // against keymap.2da:
+        //   Action281 = ActionLeft/ActionRight   = on-foot strafe   (vanilla Z/C)
+        //   Action284 = CameraRotateLeft/Right    = camera turn      (vanilla A/D)
+        // Action283 (MGActionLeft/Right = minigame steering) is left on A/D so the
+        // swoop/turret minigames are unaffected.
+        private static readonly (string Key, string Value)[] KeymapTweaks =
+        {
+            ("Action281A", "51"),  // strafe left  = A
+            ("Action281B", "54"),  // strafe right = D
+            ("Action284A", "76"),  // camera turn left  = bottom-left key (Y on DE / Z on US)
+            ("Action284B", "53"),  // camera turn right = C
         };
 
         public sealed class Result
@@ -53,6 +75,24 @@ namespace KotorAccessibilityInstaller
         /// appended at end of file.
         /// </summary>
         public static Result ApplyAccessibilityDefaults(string gameDir)
+            => ApplySectionPairs(gameDir, GraphicsSectionHeader, Tweaks);
+
+        /// <summary>
+        /// Apply the mod's movement keybinds (strafe on A/D, camera turn on Y/C) to
+        /// the <c>[Keymapping]</c> section of <c>&lt;gameDir&gt;/swkotor.ini</c>.
+        /// Full-install only — the caller must skip this on the update path so a
+        /// returning player's customised bindings are never overwritten.
+        /// </summary>
+        public static Result ApplyKeymapDefaults(string gameDir)
+            => ApplySectionPairs(gameDir, KeymappingSectionHeader, KeymapTweaks);
+
+        /// <summary>
+        /// Shared in-place editor: sets each <paramref name="pairs"/> key=value inside
+        /// <paramref name="sectionHeader"/>, appending missing keys to the section and
+        /// the section itself if absent. Preserves ordering, comments, and whitespace.
+        /// </summary>
+        private static Result ApplySectionPairs(
+            string gameDir, string sectionHeader, (string Key, string Value)[] pairs)
         {
             string iniPath = Path.Combine(gameDir, IniFileName);
             if (!File.Exists(iniPath))
@@ -74,23 +114,23 @@ namespace KotorAccessibilityInstaller
                 // Build a quick "which tweaks still need to land" set so we can detect
                 // missing keys and append them at the end of the section.
                 var remaining = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var (key, value) in Tweaks) remaining[key] = value;
+                foreach (var (key, value) in pairs) remaining[key] = value;
 
                 int changed = 0;
                 int alreadyCorrect = 0;
                 int added = 0;
 
-                int sectionStart = FindSectionStart(lines, GraphicsSectionHeader);
+                int sectionStart = FindSectionStart(lines, sectionHeader);
                 int sectionEndExclusive;
 
                 if (sectionStart < 0)
                 {
                     // Section missing entirely — append a fresh one at EOF and dump all tweaks into it.
                     if (lines.Count > 0 && !string.IsNullOrEmpty(lines[^1])) lines.Add(string.Empty);
-                    lines.Add(GraphicsSectionHeader);
+                    lines.Add(sectionHeader);
                     sectionStart = lines.Count - 1;
                     sectionEndExclusive = lines.Count;
-                    Logger.Info($"  {GraphicsSectionHeader} not found in {IniFileName}; appending");
+                    Logger.Info($"  {sectionHeader} not found in {IniFileName}; appending");
                 }
                 else
                 {

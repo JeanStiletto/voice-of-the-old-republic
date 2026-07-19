@@ -22,6 +22,16 @@ The official manual contains **zero** references to gamepads, joysticks, control
 - Caps Lock — Toggle Free Look
 - Hold Ctrl (or hold Mouse 2) — Look About (free pan)
 
+**Mod default remap (full install only).** The accessibility installer swaps
+strafe and camera-rotate on a fresh install so the two form an ergonomic
+bottom-row cluster: **strafe → A/D**, **camera rotate → Z/C** (the physical
+bottom-left key + C; labelled **Y/C** on a German keyboard). W/S is unchanged.
+This is done by rewriting `swkotor.ini` `[Keymapping]`: `Action281` (keymap.2da
+`ActionLeft/Right` = strafe) → A/D, `Action284` (`CameraRotateLeft/Right`) →
+bottom-left/C. `Action283` (`MGActionLeft/Right` = minigame steer) stays A/D, so
+swoop/turret are unaffected. The update path deliberately leaves bindings alone.
+See `installer/.../SwkotorIniTweaker.cs` (`ApplyKeymapDefaults`).
+
 ### Interacting with the world
 - Spacebar (or Pause/Break) — Pause game
 - Q — Cycle targets to the left

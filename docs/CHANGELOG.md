@@ -47,6 +47,18 @@ and add the German in parentheses if it genuinely aids clarity.
   telling you to press G to turn stealth mode on or off (German and English;
   other languages keep the original line for now).
 
+<h3>Controls:</h3>
+
+- New installs now default to an ergonomic movement layout for blind play:
+  strafe on A and D, and turn (camera and walking direction together) on the
+  bottom-left key and C — Y and C on a German keyboard, Z and C on a US
+  keyboard. W and S still walk forward and back. The installer writes this into
+  swkotor.ini on a full install only; updating an existing install leaves your
+  bindings alone. The swoop and turret minigames keep A/D steering.
+- The movement tutorials now teach all six keys and explain that turning
+  rotates the camera and your walking direction together, so the two always
+  point the same way (German and English).
+
 <h3>Action menu:</h3>
 
 - Actions fired from the menu now always hit the focused target. During an
