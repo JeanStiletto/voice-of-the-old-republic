@@ -653,6 +653,45 @@ struct DialogReplyState {
 };
 DialogReplyState s_dialogReplyState = { nullptr, -1 };
 
+// One-shot "park the cursor off the reply list" latch, armed when a dialog
+// reply panel first appears and cleared once the park is issued (or on disarm).
+bool s_dialogReplyParkPending = false;
+
+// The engine slaves the reply listbox's selection_index to whatever row the
+// mouse cursor hovers: CSWGuiListBox::HandleMouseMove does
+// HitCheckMouseLocal -> SetSelectedControl on every mouse move the manager
+// processes, and CSWGuiDialog::SetReplies calls HandleMouseMove explicitly when
+// a node opens. That silently overwrites the keyboard-driven selection we write
+// in DriveListBoxSelection whenever the OS cursor happens to sit over a reply
+// row — which is exactly what a widescreen/HD geometry produces: the resting
+// cursor lands on the reply list where a 4:3 cursor sits in empty space, so the
+// hover-select keeps snapping selection back to the row under it (observed as
+// the droid repair submenu's middle options being unreachable). The
+// workbench/equip pickers hit the same engine behaviour and defeat it by
+// parking the cursor off their listbox (ParkPickerCursorOffList in
+// menus_listbox.cpp); mirror that here. We warp to the top-left letterbox
+// corner rather than a computed off-list point on the panel because the
+// computer/droid dialog is label-rich (SetType/UpdateSkills paints skill and
+// resource readouts near the replies) and MoveMouseToPosition's hover->active
+// promotion crashes on a label — the corner is empty in every dialog variant
+// and trivially off any centred reply list at any resolution. Runs only from
+// the per-tick monitor (Update tick), never the input hook, because
+// MoveMouseToPosition recurses through the hover pipeline.
+bool ParkDialogCursorOffReplies(void* replyLb) {
+    void* gm = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!gm) return false;
+    // Log the reply-list geometry so a bad park is diagnosable from the field
+    // log without a repro on our end.
+    auto* ext = reinterpret_cast<int*>(
+        reinterpret_cast<unsigned char*>(replyLb) + kControlExtentOffset);
+    reinterpret_cast<PFN_MoveMouseToPosition>(kAddrMoveMouseToPosition)(gm, 2, 2);
+    acclog::Write("Menus.DialogReply",
+                  "park cursor to top-left corner (2,2) [reply list x=%d y=%d "
+                  "w=%d h=%d] — neutralises engine hover-select",
+                  ext[0], ext[1], ext[2], ext[3]);
+    return true;
+}
+
 bool IsDialogPanelKind(PanelKind k) {
     switch (k) {
     case PanelKind::DialogCinematic:
@@ -694,6 +733,7 @@ void MonitorDialogReplies() {
             acclog::Write("Menus.DialogReply", "monitor disarmed: no dialog panel in stack");
             s_dialogReplyState.listBox = nullptr;
             s_dialogReplyState.lastSelection = -1;
+            s_dialogReplyParkPending = false;
         }
         return;
     }
@@ -725,6 +765,7 @@ void MonitorDialogReplies() {
     if (s_dialogReplyState.listBox != lb) {
         s_dialogReplyState.listBox = lb;
         s_dialogReplyState.lastSelection = selIdx;
+        s_dialogReplyParkPending = true;
         // Diagnostic: log what the OLD first-listbox scan WOULD have returned and
         // its offset within the panel. If scanOff != 0x19c4 the reporter is on a
         // renumbered .gui (UI mod) and the pre-fix build was reading the wrong
@@ -748,6 +789,20 @@ void MonitorDialogReplies() {
         return;
     }
 
+    auto* lbList = reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
+
+    // One-shot cursor park: once the reply list is populated, warp the cursor
+    // off it so the engine's hover-select stops overwriting our keyboard-driven
+    // selection (see ParkDialogCursorOffReplies). Deferred to here (Update tick)
+    // rather than the arm branch so it fires after the rows exist; runs before
+    // the selection-change dedup so a stale hover-snap doesn't gate it.
+    if (s_dialogReplyParkPending && lbList && lbList->data && lbList->size > 0) {
+        if (ParkDialogCursorOffReplies(lb)) {
+            s_dialogReplyParkPending = false;
+        }
+    }
+
     if (selIdx == s_dialogReplyState.lastSelection) return;
     short prev = s_dialogReplyState.lastSelection;
     s_dialogReplyState.lastSelection = selIdx;
@@ -758,8 +813,6 @@ void MonitorDialogReplies() {
         return;
     }
 
-    auto* lbList = reinterpret_cast<CExoArrayList*>(
-        reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
     if (!lbList || !lbList->data || selIdx >= lbList->size) {
         acclog::Write("Menus.DialogReply", "selection out of range: listbox=%p sel=%d "
                       "size=%d", lb, selIdx,

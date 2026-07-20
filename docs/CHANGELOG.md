@@ -33,6 +33,12 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.6.1</h2>
+
+<h3>Bug fixes:</h3>
+
+- Droid and computer terminal reply menus can reach every option again when a widescreen or high-resolution patch is installed. These interfaces have no native keyboard reply navigation — the game ties the highlighted reply to the mouse position, so the mod moves the highlight itself — but the game re-applies that mouse-driven highlight whenever the cursor sits over a reply row. On a 4:3 screen the resting cursor sits in empty space, so this never showed; a widescreen layout can leave the cursor hovering a reply, and the game then kept snapping the highlight back to that row so the keyboard could never rest on the options above it. Most visibly, a droid's repair submenu lost its manual-repair path and its Back option — both went unreachable and unspoken. The mod now parks the cursor clear of the reply list while a conversation is open, so keyboard navigation reaches and speaks every reply regardless of screen resolution.
+
 <h2>v0.6.0</h2>
 
 <h3>Stealth:</h3>
