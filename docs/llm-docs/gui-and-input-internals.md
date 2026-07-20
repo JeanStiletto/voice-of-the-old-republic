@@ -269,6 +269,22 @@ disambiguate a row); the sub-dialog is still the real interaction surface.
 
 ---
 
+## dialog_reply_hover_select
+_Why the mod parks the cursor during dialogue. Decompiled 2026-07-20 (droid repair-menu field report)._
+
+The `CSWGuiDialog` reply listbox (`+0x19c4`) has **no native keyboard reply navigation** — vanilla only ever selects a reply by mouse. Its selection is slaved to the cursor:
+
+- `CSWGuiListBox::HandleMouseMove @0x0041c400` — `HitCheckMouseLocal` finds the row under the cursor and, if it differs from `selection_index` (and `bit_flags & 1` is clear), calls `SetSelectedControl(this, hitRow, 1)`. So every mouse move the manager processes forces `selection_index` onto the hovered row.
+- `CSWGuiManager::HandleMouseMove @0x0040c1e0` tail-calls the listbox's `HandleMouseMove` for the listbox under the cursor.
+- `CSWGuiDialog::SetReplies @0x006a86a0` selects row 0, then **explicitly calls `CSWGuiManager::HandleMouseMove(mouse_x, mouse_y)`** (line ~210) when a node opens — so the initial selection immediately snaps to whatever row the resting cursor sits on.
+- `CSWGuiDialogComputer::SetReplies @0x006a94e0` → `UpdateSkills @0x006a8240` paints Repair/Computer-Use ranks + spike/part counts into labels near the replies; the computer dialog is label-rich.
+
+**Consequence for the mod:** dialogue reply nav is faked by writing `selection_index` directly (`DriveListBoxSelection`), but the engine's hover-select overwrites that write whenever the OS cursor overlaps a reply row. On 4:3 the resting cursor sits in empty space so it never bites; a widescreen/HD layout can leave it hovering a reply, and the engine then re-snaps selection to that row on every `HandleMouseMove`, making the other replies unreachable (field log: Tatooine Dune Sea droid `tat18_10droid_03`, repair submenu — manual-repair + Back rows unreachable/unspoken).
+
+**Mitigation (shipped v0.6.1):** `MonitorDialogReplies` parks the OS cursor to the top-left letterbox corner `(2,2)` once a reply panel arms (one-shot latch), so hover-select finds no row and the keyboard writes stick. Corner, not a computed off-list point, because `MoveMouseToPosition`'s hover→active promotion **crashes on a label** and the corner is empty in every dialog variant. Same engine behaviour and the same fix as the workbench/equip pickers (`ParkPickerCursorOffList`). Alternative not taken: setting the listbox `bit_flags | 1` disables hover-select at the source (see the `& 1` gate above) — cheaper but bit 0's other semantics are unverified.
+
+---
+
 ## listbox_spec_extensions
 _Two optional callbacks added to the listbox-driven panel dispatcher; lifts panel-specific title speech and per-row enrichment out of inline special cases_
 
