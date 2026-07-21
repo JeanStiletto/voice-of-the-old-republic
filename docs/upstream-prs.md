@@ -37,6 +37,46 @@ dated):
 the vendored tree's `git log` is the record. Do not submit any upstream PR
 without the dev's explicit go-ahead.
 
+## Submission grouping (2026-07-21) — how the internal PR-1..PR-5 map to real PRs
+
+The internal PR numbers below are our *tracking* IDs, not the shape of the
+actual PRs. Code-quality reviewed and the vendored comments scrubbed of all
+project-internal references (our PR numbers, doc/memory paths, task jargon like
+"Phase 3 lay-off 5", accessibility/CSWGuiManager/UniWS specifics) — the tree is
+now PR-ready. Three PRs, in suggested submission order:
+
+**PR A — "Fix selective-POPAD ESP-slot handling in the detour wrapper"** (was PR-3)
+- One file: `src/KotorPatcher/src/wrappers/wrapper_x86_win32.cpp`.
+- Skip the ESP slot in the manual pop loop (`POP ESP` corrupts the restore), and
+  use `LEA ESP,[ESP+4]` instead of `ADD ESP,4` for skipped slots (flag-preserving).
+- Small, self-evidently correct bugfix in *existing* code (the selective-restore
+  path used when `exclude_from_restore` is non-empty). Latent upstream — no
+  shipping patch exercises that path yet — so it reads as a clean latent-bug fix.
+  Submit first; it stands alone.
+
+**PR B — "Add consumed_exit_address: conditional consumed-event exit"** (was PR-1 + PR-4)
+- Eight files: C# plumbing (`Models/Hook.cs`, `Parsers/HooksParser.cs`,
+  `Applicators/ConfigGenerator.cs`), C++ plumbing (`include/patcher.h`,
+  `include/wrappers/wrapper_base.h`, `src/config_reader.cpp`, `src/patcher.cpp`),
+  and the codegen (`src/wrappers/wrapper_x86_win32.cpp`).
+- Additive, default-off feature: when a handler returns non-zero, the wrapper
+  jumps to a caller-specified address instead of the natural fall-through — lets
+  a hook consume an event. Includes the `PUSHFD`/`POPFD` around the consume
+  `TEST` (internal PR-4) as part of getting the feature right — do NOT split the
+  feature from its own flag-correctness. Pairs naturally after PR A, since using
+  it requires `exclude_from_restore = ["eax"]`, which is the path PR A fixes.
+
+**PR C — "Add AllowVersionMismatch install option"** (was PR-5)
+- One file: `src/KPatchCore/Applicators/PatchApplicator.cs`.
+- Opt-in flag on `InstallOptions`: demotes a supported-versions hash mismatch to a
+  warning; per-hook `original_bytes` verification stays the real gate. Fully
+  independent of A/B — can go any time.
+
+**Not a PR yet — the `esp+X` LEA-vs-MOV bug (was PR-2).** We don't fix it in code
+(we avoid `esp+X`). Before offering it, re-read whether the `LEA ECX,[ESP+off]`
+emit is actually the `type=pointer` path (where LEA is correct). File as an
+*issue* with a repro, not a code PR, until that's settled.
+
 ## Active
 
 ### PR-1. Wrapper `consumed_exit_address` for conditional flow

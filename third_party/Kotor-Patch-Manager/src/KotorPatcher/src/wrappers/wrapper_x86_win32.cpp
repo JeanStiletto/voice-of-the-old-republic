@@ -198,21 +198,12 @@ namespace KotorPatcher {
                             // for the ESP slot, or honors the user's exclusion
                             // for other slots).
                             //
-                            // Use LEA ESP, [ESP+4] instead of ADD ESP, 4. ADD
-                            // sets EFLAGS based on the result (ZF/SF/CF/OF),
-                            // which silently corrupts the flags POPFD restored
-                            // a few instructions earlier. LEA is the standard
-                            // flag-preserving alternative for stack
-                            // adjustments. PR-4 fixed the TEST EAX,EAX
-                            // clobber but missed this one — selective POPAD
-                            // was also clobbering ZF, which made the
-                            // CSWGuiManager Esc dispatch take the press path
-                            // for release events (val=0 → ZF=1 from engine's
-                            // CMP, but ADD ESP,4 reset ZF=0, so the
-                            // downstream JZ saw "press" and translated
-                            // 0xdf→0x28 + val→1, auto-closing pause on
-                            // every Esc release). 4 bytes vs 3 — minor
-                            // size cost for correctness.
+                            // Use LEA ESP, [ESP+4] instead of ADD ESP, 4: ADD
+                            // sets EFLAGS (ZF/SF/CF/OF) from the result, which
+                            // would clobber flag state the restored context or
+                            // downstream target code depends on. LEA is the
+                            // standard flag-preserving stack adjustment.
+                            // 4 bytes vs 3 — a minor size cost for correctness.
                             EmitByte(code, 0x8D);  // LEA r32, m
                             EmitByte(code, 0x64);  // ModRM: ESP, [ESP+disp8] (SIB follows)
                             EmitByte(code, 0x24);  // SIB: [ESP]
@@ -247,13 +238,10 @@ namespace KotorPatcher {
             //   POPFD                     ; fall-through path: restore EFLAGS
             //
             // PUSHFD/POPFD wraps the TEST so that the cut bytes' flag state
-            // (e.g. a CMP whose ZF the engine's downstream Jcc reads) survives
-            // through to the natural-resume JMP. Without this, hooks whose cut
-            // ends in or directly precedes a Jcc were silently misrouted —
-            // documented in `docs/upstream-prs.md` (PR-4) and the project
-            // memory `project_kpatchmanager_consume_test_bugs.md` (Phase 3
-            // lay-off 5 footstep hook + Esc dispatch in CSWGuiManager were
-            // both bitten by this).
+            // (e.g. a CMP whose ZF the target's downstream Jcc reads) survives
+            // through to the natural-resume JMP. Without it, a hook whose cut
+            // ends in or directly precedes a flag-consuming Jcc would be
+            // silently misrouted, since TEST EAX,EAX overwrites those flags.
             //
             // Caller is responsible for excluding "eax" from POPAD restoration
             // so the handler's return value reaches the TEST.

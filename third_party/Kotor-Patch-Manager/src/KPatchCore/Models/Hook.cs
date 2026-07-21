@@ -95,9 +95,10 @@ public sealed class Hook
     public bool SkipOriginalBytes { get; init; } = false;
 
     /// <summary>
-    /// When set, the wrapper jumps to this address (instead of resuming at
-    /// hookAddress + originalBytes.size()) whenever the handler returns a
-    /// non-zero int. Lets a hook selectively consume engine events at runtime.
+    /// When set, the wrapper jumps to this address (instead of resuming at the
+    /// natural fall-through point — the hook address plus the original bytes'
+    /// length) whenever the handler returns a non-zero int. Lets a hook
+    /// selectively consume events at runtime.
     /// Caller must include "eax" in <see cref="ExcludeFromRestore"/> so the
     /// handler's return value survives the wrapper. Stack state at the target
     /// must match stack state at the natural fall-through point.

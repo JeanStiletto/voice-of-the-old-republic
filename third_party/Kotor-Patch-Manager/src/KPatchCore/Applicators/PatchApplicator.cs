@@ -48,15 +48,15 @@ public class PatchApplicator
         public string? ProxyDllPath { get; init; }
 
         /// <summary>
-        /// When true, a SHA-256 mismatch between the detected swkotor.exe and the
-        /// manifest's supported_versions becomes a warning instead of a hard error.
-        /// Per-hook original_bytes verification (in StaticHookApplicator) remains
-        /// the gate against applying static hooks to bytes that don't match.
+        /// When true, a SHA-256 mismatch between the detected game executable and
+        /// the manifest's supported_versions becomes a warning instead of a hard
+        /// error. Per-hook original_bytes verification (in StaticHookApplicator)
+        /// remains the gate against applying static hooks to bytes that don't match.
         ///
         /// Intended for callers that have legitimately modified the executable
-        /// before our install — e.g. an installer that applied UniWS widescreen
-        /// patches first and knows the resulting hash will not match any baked
-        /// supported_versions entry.
+        /// before installation — e.g. a front-end that applied a widescreen or
+        /// other exe-patching mod first and knows the resulting hash will not
+        /// match any baked supported_versions entry.
         /// </summary>
         public bool AllowVersionMismatch { get; init; } = false;
     }
