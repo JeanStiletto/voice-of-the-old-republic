@@ -38,6 +38,10 @@ Reported that Zaalbar has no subtitles read at all — his Shyriiwook is untrans
 
 Reported that during level-up and/or character creation the description read aloud belongs to the entry *above* the focused one — e.g. landing on Dexterity reads the Strength description. The focus/selection itself is on the right row; it's the description lookup that's shifted by one, so the player hears the wrong attribute's (or skill's/feat's) text. No reliable repro yet. Needs the exact screen (chargen step vs level-up panel — attribute, skill, or feat list), the row navigated to vs the description heard, and a timestamped log. Likely candidate: the description reader indexing into the row list with an off-by-one (stale-vs-current selection index, or a header/blank row offsetting the mapping).
 
+### Russian translation reported to cause problems
+
+A beta tester on a Russian translation reported problems (specifics not yet captured). The likely culprit is **not** the exe-hash gate: the current KOTOR 1 Russian translation (by Allard) is described as a resident tool that must stay running while playing, so the most probable failure is a **runtime injector conflict** with our `dinput8.dll` → KotorPatcher injection — not a version rejection. Need the tester's direct link, `patch-*.log`, and precise symptom (install refused vs crash on launch vs ran-but-English). **Parked** — full findings in `docs/translation-additions.md`.
+
 ## Planned
 
 ### Tutorial keyboard hints: French / Italian / Spanish translation — DONE (2026-07-19), AI drafts pending native review
@@ -72,7 +76,7 @@ Navigation waypoint / map-hint issues on specific maps. Maintainer-reported from
 
 ### Integrate a Polish translation
 
-Add Polish as a supported language. Decide the integration path — installer locale JSON (alongside de/en/fr/it/es) and/or in-game speech strings routed through the shared strings system — and wire it in. Source of the Polish strings (community contribution vs AI draft like fr/it/es) to be determined.
+Add Polish as a supported language. Decide the integration path — installer locale JSON (alongside de/en/fr/it/es) and/or in-game speech strings routed through the shared strings system — and wire it in. Source of the Polish strings (community contribution vs AI draft like fr/it/es) to be determined. **Parked pending tester links** — full findings, the two-case (Case A tlk-only vs Case B modified-exe) model, the confirmed Polish LanguageID=5, the LEM-official-edition `dialogF.tlk`/different-exe lead, the Prism encoding decision (Polish is Windows-1250, not 1252), and the verified code seams live in `docs/translation-additions.md`.
 
 ### Nameable personal map pins
 
