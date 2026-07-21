@@ -37,6 +37,13 @@ dated):
 the vendored tree's `git log` is the record. Do not submit any upstream PR
 without the dev's explicit go-ahead.
 
+## Submission status (2026-07-21)
+
+- **PR A — SUBMITTED:** LaneDibello/Kotor-Patch-Manager **#132** (selective-POPAD ESP-slot fix). Open, awaiting review.
+- **PR B — SUBMITTED:** LaneDibello/Kotor-Patch-Manager **#133** (`consumed_exit_address`), stacked on #132. Open, awaiting review.
+- **PR C — NOT YET:** `AllowVersionMismatch` — held back deliberately; the dev wants to check something first (a later session).
+- Fork: `JeanStiletto/Kotor-Patch-Manager` (branches `pr-a`, `pr-b`). Both build-verified (C++ + C#) before submission. Disclaimer included in each PR body (well-tested downstream, but AI-assisted — review critically).
+
 ## Submission grouping (2026-07-21) — how the internal PR-1..PR-5 map to real PRs
 
 The internal PR numbers below are our *tracking* IDs, not the shape of the
