@@ -5,6 +5,38 @@ captures: what, why, where, and current state.
 
 Most upstream is `LaneDibello/Kotor-Patch-Manager`. Others added as they come up.
 
+## Re-verification note (2026-07-21, after rebasing our vendored tree onto KPM 0.6.0)
+
+Our vendored KPM tree was rebased from base `677a72d` onto tag `0.6.0`
+(commit `ca58d1a`). Re-verified each KPM PR against the current 0.6.0 source
+before trusting these briefs (they were written early and some framing is
+dated):
+
+- **PR-1 (consumed_exit_address):** present in our tree; upstream never touched
+  `wrapper_x86_win32.cpp` or any PR-1 support file, so it still applies cleanly
+  to master. File references below predate the rebase — line numbers shifted.
+- **PR-2 (LEA-vs-MOV `esp+X`):** bug **still live** upstream and in our tree.
+  The buggy emit is `LEA ECX, [ESP+offset]` (now ~lines 414/419/425 of
+  `wrapper_x86_win32.cpp`), a *separate* path from the correct `MOV` (0x8B)
+  param path. Before filing, re-read whether this LEA is the `type=pointer`
+  path (in which case LEA is correct and the bug is narrower than documented) —
+  do not file half-checked. We still avoid `esp+X` (register sources only).
+- **PR-3 (selective-POPAD LEA-ESP) / PR-4 (EFLAGS PUSHFD/POPFD):** both present
+  in our tree (`LEA ESP,[ESP+4]` and `PUSHFD`/`POPFD` around the consume TEST).
+  Wrapper untouched upstream, so both still apply cleanly.
+- **PR-5 (AllowVersionMismatch):** not upstream. 0.6.0's version gate still
+  hard-fails (`ValidateAllPatchesSupported`), and `InstallOptions` gained
+  `ProxyDllPath` but no bypass. Our field/branch merged in beside it. 0.6.0's
+  managed-install-state (#94) is a *related but narrower* mechanism (tracks the
+  clean hash after KPM's own edits; does not cover a third-party-modified exe).
+- **New empirical note:** static exe patches cannot apply to the SteamStub-
+  encrypted Steam exe (confirmed live — `borderless_fullscreen` byte-verify
+  failed). Relevant to any static-hook PR validated only on GoG.
+
+`docs/framework-changes-backup.patch` (referenced by old notes) was removed;
+the vendored tree's `git log` is the record. Do not submit any upstream PR
+without the dev's explicit go-ahead.
+
 ## Active
 
 ### PR-1. Wrapper `consumed_exit_address` for conditional flow

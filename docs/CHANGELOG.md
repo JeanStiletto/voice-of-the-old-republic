@@ -37,6 +37,7 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>Bug fixes:</h3>
 
+- Neutral creatures no longer repeat their name over and over after a fight ends. When combat finishes, the game's target focus can flicker on and off a nearby bystander (a Gizka standing near the battle, say), and the mod was re-announcing it every few seconds. An auto-focused creature is now announced once and stays quiet while the focus keeps flickering back to it; cycling targets yourself with the hostile-cycle keys still re-speaks on demand.
 - Droid and computer terminal reply menus can reach every option again when a widescreen or high-resolution patch is installed. These interfaces have no native keyboard reply navigation — the game ties the highlighted reply to the mouse position, so the mod moves the highlight itself — but the game re-applies that mouse-driven highlight whenever the cursor sits over a reply row. On a 4:3 screen the resting cursor sits in empty space, so this never showed; a widescreen layout can leave the cursor hovering a reply, and the game then kept snapping the highlight back to that row so the keyboard could never rest on the options above it. Most visibly, a droid's repair submenu lost its manual-repair path and its Back option — both went unreachable and unspoken. The mod now parks the cursor clear of the reply list while a conversation is open, so keyboard navigation reaches and speaks every reply regardless of screen resolution.
 
 <h2>v0.6.0</h2>
