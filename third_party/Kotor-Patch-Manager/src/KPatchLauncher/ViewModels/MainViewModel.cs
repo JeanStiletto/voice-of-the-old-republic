@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
@@ -14,6 +15,7 @@ using KPatchCore.Managers;
 using KPatchCore.Models;
 using KPatchCore.Applicators;
 using KPatchCore.Detectors;
+using KPatchCore.Launcher;
 using KPatchCore.Validators;
 using KPatchLauncher.Models;
 
@@ -28,19 +30,30 @@ public class MainViewModel : ViewModelBase
     private GameVersion? _detectedGameVersion;
     private PatchItemViewModel? _selectedPatch;
     private PatchRepository? _repository;
+    private readonly HashSet<string> _installedPatchIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly AppSettings _settings;
     private bool _hasInstalledPatches;
     private bool _isOperationInProgress;
     private double _progressValue = 0;
+    private bool? _selectAllPatches = false;
+    private bool _isUpdatingSelectAllState;
+    private bool _isBulkUpdatingPatchChecks;
+    private int _patchStatusRequestVersion;
+    private bool _useCustomLaunch;
+    private string _customLaunchCommand = string.Empty;
 
     public MainViewModel()
     {
         AllPatches = new ObservableCollection<PatchItemViewModel>();
 
-        // Load settings
+        // Load settings. Pending patch selections are intentionally not restored at startup;
+        // installed patch state is reloaded from the selected game's patch_config.toml.
         _settings = AppSettings.Load();
         _gamePath = _settings.GamePath;
         _patchesPath = _settings.PatchesPath;
+        _useCustomLaunch = _settings.LaunchMethod == LaunchMethod.Custom;
+        _customLaunchCommand = _settings.CustomLaunchCommand;
+        ClearPersistedPatchSelection();
 
         // Create simple commands
         BrowseGameCommand = new SimpleCommand(async () => await BrowseGame());
@@ -63,6 +76,27 @@ public class MainViewModel : ViewModelBase
 
     public IEnumerable<PatchItemViewModel> VisiblePatches =>
         AllPatches.Where(p => p.IsCompatible);
+
+    public bool HasVisiblePatches => VisiblePatches.Any();
+
+    public bool? SelectAllPatches
+    {
+        get => _selectAllPatches;
+        set
+        {
+            if (_isUpdatingSelectAllState)
+            {
+                SetProperty(ref _selectAllPatches, value);
+                return;
+            }
+
+            var requestedState = value == true;
+            if (SetProperty(ref _selectAllPatches, (bool?)requestedState))
+            {
+                SetPatchSelectionFromSelectAll(requestedState);
+            }
+        }
+    }
 
     public PatchItemViewModel? SelectedPatch
     {
@@ -102,7 +136,10 @@ public class MainViewModel : ViewModelBase
             if (SetProperty(ref _gamePath, value))
             {
                 _settings.GamePath = value;
+                UpdateGameBrowseDirectory(value);
                 _settings.Save();
+
+                InvalidatePatchStateForGamePathChange();
 
                 // Check patch status when game path is set
                 if (!string.IsNullOrWhiteSpace(value) && File.Exists(value))
@@ -121,13 +158,67 @@ public class MainViewModel : ViewModelBase
             if (SetProperty(ref _patchesPath, value))
             {
                 _settings.PatchesPath = value;
+                UpdatePatchesBrowseDirectory(value);
                 _settings.Save();
+
+                ClearAllPatchSelections(clearInstalledState: true, removeOrphanedPatches: true);
 
                 // Load patches from new directory
                 if (!string.IsNullOrWhiteSpace(value))
                 {
                     _ = LoadPatchesFromDirectoryAsync(value);
                 }
+                else
+                {
+                    _repository = null;
+                    AllPatches.Clear();
+                    SelectedPatch = null;
+                    OnPropertyChanged(nameof(VisiblePatches));
+                    UpdateSelectAllState();
+                    UpdatePendingChanges();
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether the launch-method controls apply. Only the proxy deployment method
+    /// reads them (Steam or a custom command); the injection method ignores launch
+    /// config, so they stay hidden there.
+    /// </summary>
+    public bool ShowLaunchSettings =>
+        DeploymentPolicy.ForCurrentPlatform() == DeploymentMethod.Proxy;
+
+    /// <summary>
+    /// When true, the game is launched with <see cref="CustomLaunchCommand"/>
+    /// instead of through Steam. Applies to the proxy deployment method.
+    /// </summary>
+    public bool UseCustomLaunch
+    {
+        get => _useCustomLaunch;
+        set
+        {
+            if (SetProperty(ref _useCustomLaunch, value))
+            {
+                _settings.LaunchMethod = value ? LaunchMethod.Custom : LaunchMethod.Steam;
+                _settings.Save();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Command used when <see cref="UseCustomLaunch"/> is set. "{exe}" is replaced
+    /// with the game executable path.
+    /// </summary>
+    public string CustomLaunchCommand
+    {
+        get => _customLaunchCommand;
+        set
+        {
+            if (SetProperty(ref _customLaunchCommand, value))
+            {
+                _settings.CustomLaunchCommand = value;
+                _settings.Save();
             }
         }
     }
@@ -148,8 +239,17 @@ public class MainViewModel : ViewModelBase
     {
         get
         {
-            var checkedPatches = AllPatches.Where(p => p.IsChecked).Select(p => p.Id).OrderBy(x => x).ToList();
-            var installedPatches = AllPatches.Where(p => !p.IsOrphaned && IsInstalled(p.Id)).Select(p => p.Id).OrderBy(x => x).ToList();
+            var checkedPatches = AllPatches
+                .Where(p => p.IsChecked && !p.IsOrphaned)
+                .Select(p => p.Id)
+                .OrderBy(x => x)
+                .ToList();
+
+            var installedPatches = AllPatches
+                .Where(p => !p.IsOrphaned && IsInstalled(p.Id))
+                .Select(p => p.Id)
+                .OrderBy(x => x)
+                .ToList();
 
             if (checkedPatches.SequenceEqual(installedPatches))
                 return 0;
@@ -171,12 +271,7 @@ public class MainViewModel : ViewModelBase
     public ICommand UninstallAllCommand { get; }
     public ICommand LaunchGameCommand { get; }
 
-    private bool IsInstalled(string patchId)
-    {
-        // Check if patch is currently installed in the game
-        var info = PatchRemover.GetInstallationInfo(GamePath);
-        return info.Success && info.Data != null && info.Data.InstalledPatches.Contains(patchId);
-    }
+    private bool IsInstalled(string patchId) => _installedPatchIds.Contains(patchId);
 
     private async Task BrowseGame()
     {
@@ -193,6 +288,7 @@ public class MainViewModel : ViewModelBase
             {
                 Title = "Select Game Executable",
                 AllowMultiple = false,
+                SuggestedStartLocation = await TryGetSuggestedStartFolderAsync(window, GetGameBrowseStartDirectory()),
                 FileTypeFilter = new[]
                 {
                     new FilePickerFileType("Executable Files")
@@ -228,7 +324,8 @@ public class MainViewModel : ViewModelBase
             var result = await window.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
             {
                 Title = "Select Patches Directory",
-                AllowMultiple = false
+                AllowMultiple = false,
+                SuggestedStartLocation = await TryGetSuggestedStartFolderAsync(window, GetPatchesBrowseStartDirectory())
             });
 
             if (result.Count > 0)
@@ -272,11 +369,71 @@ public class MainViewModel : ViewModelBase
         return null;
     }
 
+    private string? GetGameBrowseStartDirectory()
+    {
+        return GetDirectoryForExistingFile(GamePath)
+            ?? GetExistingDirectory(_settings.LastGameBrowseDirectory);
+    }
+
+    private string? GetPatchesBrowseStartDirectory()
+    {
+        return GetExistingDirectory(PatchesPath)
+            ?? GetExistingDirectory(_settings.LastPatchesBrowseDirectory);
+    }
+
+    private async Task<IStorageFolder?> TryGetSuggestedStartFolderAsync(Window window, string? directory)
+    {
+        if (string.IsNullOrWhiteSpace(directory))
+            return null;
+
+        try
+        {
+            return await window.StorageProvider.TryGetFolderFromPathAsync(directory);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? GetDirectoryForExistingFile(string? filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+            return null;
+
+        return GetExistingDirectory(Path.GetDirectoryName(filePath));
+    }
+
+    private static string? GetExistingDirectory(string? directory)
+    {
+        return !string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory)
+            ? directory
+            : null;
+    }
+
+    private void UpdateGameBrowseDirectory(string gamePath)
+    {
+        var directory = GetDirectoryForExistingFile(gamePath);
+        if (directory != null)
+        {
+            _settings.LastGameBrowseDirectory = directory;
+        }
+    }
+
+    private void UpdatePatchesBrowseDirectory(string patchesPath)
+    {
+        var directory = GetExistingDirectory(patchesPath);
+        if (directory != null)
+        {
+            _settings.LastPatchesBrowseDirectory = directory;
+        }
+    }
+
     private void OnPatchCheckedChanged(object? sender, EventArgs e)
     {
         if (sender is PatchItemViewModel patch)
         {
-            if (patch.IsChecked)
+            if (!_isBulkUpdatingPatchChecks && patch.IsChecked)
             {
                 // Move to top of list
                 var index = AllPatches.IndexOf(patch);
@@ -286,9 +443,78 @@ public class MainViewModel : ViewModelBase
                 }
             }
 
-            SaveCheckedPatches();
-            UpdatePendingChanges();
+            if (!_isBulkUpdatingPatchChecks)
+            {
+                SaveCheckedPatches();
+                UpdatePendingChanges();
+                UpdateSelectAllState();
+            }
         }
+    }
+
+    private void SetPatchSelectionFromSelectAll(bool isChecked)
+    {
+        var targetPatches = isChecked
+            ? VisiblePatches.Where(p => !p.IsOrphaned).ToList()
+            : AllPatches.ToList();
+
+        if (targetPatches.Count == 0)
+        {
+            UpdateSelectAllState();
+            return;
+        }
+
+        _isBulkUpdatingPatchChecks = true;
+        try
+        {
+            foreach (var patch in targetPatches)
+            {
+                patch.IsChecked = isChecked;
+            }
+        }
+        finally
+        {
+            _isBulkUpdatingPatchChecks = false;
+        }
+
+        SaveCheckedPatches();
+        UpdatePendingChanges();
+        UpdateSelectAllState();
+        StatusMessage = isChecked
+            ? $"Selected {targetPatches.Count} visible patch{(targetPatches.Count == 1 ? "" : "es")}"
+            : "Cleared all patch selections";
+    }
+
+    private void UpdateSelectAllState()
+    {
+        var visiblePatches = VisiblePatches.Where(p => !p.IsOrphaned).ToList();
+        bool? newState;
+
+        if (visiblePatches.Count == 0)
+        {
+            newState = false;
+        }
+        else
+        {
+            var checkedCount = visiblePatches.Count(p => p.IsChecked);
+            newState = checkedCount == 0
+                ? false
+                : checkedCount == visiblePatches.Count
+                    ? true
+                    : null;
+        }
+
+        _isUpdatingSelectAllState = true;
+        try
+        {
+            SelectAllPatches = newState;
+        }
+        finally
+        {
+            _isUpdatingSelectAllState = false;
+        }
+
+        OnPropertyChanged(nameof(HasVisiblePatches));
     }
 
     private void MoveUp()
@@ -319,6 +545,125 @@ public class MainViewModel : ViewModelBase
             StatusMessage = $"Moved {patch.Name} down";
             UpdatePendingChanges();
         }
+    }
+
+    private void InvalidatePatchStateForGamePathChange()
+    {
+        ClearAllPatchSelections(clearInstalledState: true, removeOrphanedPatches: true);
+        _detectedGameVersion = null;
+        KotorVersion = "Unknown";
+        UpdatePatchCompatibility();
+    }
+
+    private void ClearAllPatchSelections(bool clearInstalledState, bool removeOrphanedPatches)
+    {
+        _patchStatusRequestVersion++;
+
+        if (clearInstalledState)
+        {
+            _installedPatchIds.Clear();
+            HasInstalledPatches = false;
+        }
+
+        SelectedPatch = null;
+
+        if (removeOrphanedPatches)
+        {
+            RemoveOrphanedPatches();
+        }
+
+        _isBulkUpdatingPatchChecks = true;
+        try
+        {
+            foreach (var patch in AllPatches)
+            {
+                patch.IsChecked = false;
+            }
+        }
+        finally
+        {
+            _isBulkUpdatingPatchChecks = false;
+        }
+
+        ClearPersistedPatchSelection();
+        UpdateSelectAllState();
+        UpdatePendingChanges();
+    }
+
+    private void SyncPatchSelectionWithInstalledPatches(IEnumerable<string> installedPatchIds)
+    {
+        var normalizedInstalledIds = installedPatchIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        _installedPatchIds.Clear();
+        foreach (var patchId in normalizedInstalledIds)
+        {
+            _installedPatchIds.Add(patchId);
+        }
+
+        HasInstalledPatches = _installedPatchIds.Count > 0;
+        RemoveOrphanedPatches();
+
+        _isBulkUpdatingPatchChecks = true;
+        try
+        {
+            foreach (var patch in AllPatches)
+            {
+                patch.IsChecked = _installedPatchIds.Contains(patch.Id);
+            }
+        }
+        finally
+        {
+            _isBulkUpdatingPatchChecks = false;
+        }
+
+        foreach (var patchId in normalizedInstalledIds)
+        {
+            if (AllPatches.Any(p => string.Equals(p.Id, patchId, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            var orphanedPatch = new PatchItemViewModel
+            {
+                Id = patchId,
+                Name = $"{patchId} (not found)",
+                Version = "?",
+                Author = "Unknown",
+                Description = "This patch is installed but not found in patches directory",
+                IsOrphaned = true,
+                IsChecked = true,
+                IsCompatible = false,
+                CompatibilityStatus = "Patch files not found"
+            };
+            orphanedPatch.CheckedChanged += OnPatchCheckedChanged;
+            AllPatches.Insert(0, orphanedPatch);
+        }
+
+        SaveCheckedPatches();
+        UpdateSelectAllState();
+        UpdatePendingChanges();
+    }
+
+    private void RemoveOrphanedPatches()
+    {
+        for (var i = AllPatches.Count - 1; i >= 0; i--)
+        {
+            if (!AllPatches[i].IsOrphaned)
+                continue;
+
+            AllPatches[i].CheckedChanged -= OnPatchCheckedChanged;
+            AllPatches.RemoveAt(i);
+        }
+    }
+
+    private void ClearPersistedPatchSelection()
+    {
+        if (_settings.CheckedPatchIds.Count == 0)
+            return;
+
+        _settings.CheckedPatchIds.Clear();
+        _settings.Save();
     }
 
     private void SaveCheckedPatches()
@@ -365,7 +710,7 @@ public class MainViewModel : ViewModelBase
 
         try
         {
-            var checkedPatches = AllPatches.Where(p => p.IsChecked && !p.IsOrphaned).ToList();
+            var checkedPatches = AllPatches.Where(p => p.IsChecked && !p.IsOrphaned && p.IsCompatible).ToList();
 
             // If no patches are checked, uninstall all
             if (checkedPatches.Count == 0)
@@ -379,6 +724,7 @@ public class MainViewModel : ViewModelBase
                 {
                     if (uninstallResult.Success)
                     {
+                        SyncPatchSelectionWithInstalledPatches(Array.Empty<string>());
                         SetOperationInProgress(false, "All patches uninstalled successfully");
                     }
                     else
@@ -392,13 +738,17 @@ public class MainViewModel : ViewModelBase
             // Otherwise, uninstall existing patches and install checked ones
             SetOperationInProgress(true, "Applying patches...");
 
-            // First, uninstall any existing patches
-            await Task.Run(() => PatchRemover.RemoveAllPatches(GamePath));
+            // First, uninstall any existing patches, but preserve KPM's managed
+            // identity file so a statically-patched EXE can still be recognized
+            // during the reinstall that follows.
+            await Task.Run(() => PatchRemover.RemoveAllPatches(GamePath, removeManagedState: false));
 
             // Get patcher DLL path (should be in same directory as launcher)
             // AppContext.BaseDirectory works reliably with both regular and single-file builds
             var appDir = AppContext.BaseDirectory;
             var patcherDllPath = Path.Combine(appDir, "KotorPatcher.dll");
+            // The KProxy ships alongside the launcher; staged when deploying via proxy.
+            var proxyDllPath = Path.Combine(appDir, "binkw32.dll");
 
             var applicator = new PatchApplicator(_repository);
             var options = new PatchApplicator.InstallOptions
@@ -406,7 +756,8 @@ public class MainViewModel : ViewModelBase
                 GameExePath = GamePath,
                 PatchIds = checkedPatches.Select(p => p.Id).ToList(),
                 CreateBackup = true,
-                PatcherDllPath = File.Exists(patcherDllPath) ? patcherDllPath : null
+                PatcherDllPath = File.Exists(patcherDllPath) ? patcherDllPath : null,
+                ProxyDllPath = File.Exists(proxyDllPath) ? proxyDllPath : null
             };
 
             // Run on background thread
@@ -450,12 +801,22 @@ public class MainViewModel : ViewModelBase
             SetOperationInProgress(true, "Uninstalling all patches...");
 
             // Uncheck all patches
-            foreach (var patch in AllPatches)
+            _isBulkUpdatingPatchChecks = true;
+            try
             {
-                patch.IsChecked = false;
+                foreach (var patch in AllPatches)
+                {
+                    patch.IsChecked = false;
+                }
+            }
+            finally
+            {
+                _isBulkUpdatingPatchChecks = false;
             }
 
             SaveCheckedPatches();
+            UpdatePendingChanges();
+            UpdateSelectAllState();
 
             // Now apply (which will uninstall since nothing is checked)
             await ApplyPatches();
@@ -481,19 +842,30 @@ public class MainViewModel : ViewModelBase
         {
             SetOperationInProgress(true, "Launching game...");
 
+            var launchConfig = new LaunchConfig
+            {
+                Method = _useCustomLaunch ? LaunchMethod.Custom : LaunchMethod.Steam,
+                CustomCommand = _customLaunchCommand
+            };
+
             // Use KPatchCore's game launcher (handles patch detection and injection automatically)
             var result = await Task.Run(() =>
             {
                 var orchestrator = new PatchOrchestrator(_patchesPath ?? string.Empty);
-                return orchestrator.LaunchGame(GamePath, commandLineArgs: null);
+                return orchestrator.LaunchGame(GamePath, commandLineArgs: null, launchConfig);
             });
 
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                if (result.Success)
+                if (result.Success && result.ProcessId.HasValue)
                 {
                     var mode = result.VanillaLaunch ? "no patches" : "with patches";
                     SetOperationInProgress(false, $"Game launched {mode} (PID: {result.ProcessId})");
+                }
+                else if (result.Success)
+                {
+                    // Process-less launch (e.g. through Steam); show its message.
+                    SetOperationInProgress(false, result.Messages.FirstOrDefault() ?? "Game launched");
                 }
                 else
                 {
@@ -566,6 +938,7 @@ public class MainViewModel : ViewModelBase
 
                 // Update compatibility status for loaded patches
                 UpdatePatchCompatibility();
+                UpdateSelectAllState();
 
                 SetOperationInProgress(false, $"Loaded {patchViewModels.Count} patches from {Path.GetFileName(directory)}");
             });
@@ -590,102 +963,49 @@ public class MainViewModel : ViewModelBase
         if (_repository == null)
             return;
 
+        var requestVersion = ++_patchStatusRequestVersion;
+
         try
         {
             SetOperationInProgress(true, "Checking patch status...", isAutoRefresh);
 
-            // Get installation info and game version on background thread
+            // Get installation info and game version on background thread.
             var (installInfo, versionInfo) = await Task.Run(() =>
             {
                 var install = PatchRemover.GetInstallationInfo(gameExePath);
-                var version = GameDetector.DetectVersion(gameExePath);
+                var version = GameDetector.DetectVersion(
+                    gameExePath,
+                    allowManagedInstallState: true);
                 return (install, version);
             });
 
-            // Update game version display
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                if (versionInfo.Success && versionInfo.Data != null)
-                {
-                    var v = versionInfo.Data;
-                    _detectedGameVersion = v;
-                    KotorVersion = $"{v.DisplayName})";
+                if (!IsPatchStatusRequestCurrent(requestVersion, gameExePath))
+                    return;
 
-                    // Switch theme based on detected game title
-                    if (Application.Current is App app)
-                    {
-                        app.LoadTheme(v.Title);
-                    }
-                }
-                else
-                {
-                    _detectedGameVersion = null;
-                    KotorVersion = "Unknown";
-
-                    // Load default theme (KOTOR 1) for unknown games
-                    if (Application.Current is App app)
-                    {
-                        app.LoadTheme(KPatchCore.Models.GameTitle.KOTOR1);
-                    }
-                }
-
-                // Update patch compatibility after version detection
+                ApplyDetectedGameVersion(versionInfo);
                 UpdatePatchCompatibility();
-            });
 
-            if (!installInfo.Success || installInfo.Data == null)
-            {
-                HasInstalledPatches = false;
-                SetOperationInProgress(false, isAutoRefresh ? null : "No patches detected", isAutoRefresh);
-                return;
-            }
-
-            var info = installInfo.Data;
-
-            // Update UI on UI thread
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                HasInstalledPatches = info.InstalledPatches.Count > 0;
-
-                if (info.InstalledPatches.Count == 0)
+                if (!installInfo.Success || installInfo.Data == null)
                 {
-                    SetOperationInProgress(false, isAutoRefresh ? null : "No patches currently installed", isAutoRefresh);
+                    SyncPatchSelectionWithInstalledPatches(Array.Empty<string>());
+                    SetOperationInProgress(false, isAutoRefresh ? null : "No patches detected", isAutoRefresh);
                     return;
                 }
 
-                var installedIds = info.InstalledPatches.ToHashSet();
+                var info = installInfo.Data;
+                SyncPatchSelectionWithInstalledPatches(info.InstalledPatches);
 
-                // Check boxes for installed patches
-                foreach (var patch in AllPatches)
-                {
-                    if (installedIds.Contains(patch.Id))
-                    {
-                        patch.IsChecked = true;
-                    }
-                }
-
-                // Add orphaned patches (installed but not in directory)
-                foreach (var patchId in info.InstalledPatches)
-                {
-                    if (!AllPatches.Any(p => p.Id == patchId))
-                    {
-                        var orphanedPatch = new PatchItemViewModel
-                        {
-                            Id = patchId,
-                            Name = $"{patchId} (not found)",
-                            Version = "?",
-                            Author = "Unknown",
-                            Description = "This patch is installed but not found in patches directory",
-                            IsOrphaned = true,
-                            IsChecked = true
-                        };
-                        orphanedPatch.CheckedChanged += OnPatchCheckedChanged;
-                        AllPatches.Insert(0, orphanedPatch);
-                    }
-                }
-
-                SaveCheckedPatches();
-                SetOperationInProgress(false, isAutoRefresh ? null : $"Found {info.InstalledPatches.Count} installed patches", isAutoRefresh);
+                var installedCount = _installedPatchIds.Count;
+                SetOperationInProgress(
+                    false,
+                    isAutoRefresh
+                        ? null
+                        : installedCount == 0
+                            ? "No patches currently installed"
+                            : $"Found {installedCount} installed patch{(installedCount == 1 ? "" : "es")}",
+                    isAutoRefresh);
             });
         }
         catch (Exception ex)
@@ -693,8 +1013,68 @@ public class MainViewModel : ViewModelBase
             // Silent failure - not critical
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
+                if (!IsPatchStatusRequestCurrent(requestVersion, gameExePath))
+                    return;
+
+                SyncPatchSelectionWithInstalledPatches(Array.Empty<string>());
                 SetOperationInProgress(false, isAutoRefresh ? null : $"Could not check patch status: {ex.Message}", isAutoRefresh);
             });
+        }
+    }
+
+    private bool IsPatchStatusRequestCurrent(int requestVersion, string gameExePath)
+    {
+        return requestVersion == _patchStatusRequestVersion
+            && PathsEqual(GamePath, gameExePath);
+    }
+
+    private static bool PathsEqual(string? left, string? right)
+    {
+        if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+            return false;
+
+        try
+        {
+            return string.Equals(
+                Path.GetFullPath(left),
+                Path.GetFullPath(right),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private void ApplyDetectedGameVersion(PatchResult<GameVersion> versionInfo)
+    {
+        if (versionInfo.Success && versionInfo.Data != null)
+        {
+            var v = versionInfo.Data;
+            _detectedGameVersion = v;
+            KotorVersion = v.DisplayName;
+
+            // Switch theme based on detected game title
+            if (Application.Current is App app)
+            {
+                app.LoadTheme(v.Title);
+            }
+        }
+        else
+        {
+            ApplyUnknownGameVersion();
+        }
+    }
+
+    private void ApplyUnknownGameVersion()
+    {
+        _detectedGameVersion = null;
+        KotorVersion = "Unknown";
+
+        // Load default theme (KOTOR 1) for unknown games
+        if (Application.Current is App app)
+        {
+            app.LoadTheme(KPatchCore.Models.GameTitle.KOTOR1);
         }
     }
 
@@ -748,5 +1128,7 @@ public class MainViewModel : ViewModelBase
 
         // Notify UI that VisiblePatches may have changed
         OnPropertyChanged(nameof(VisiblePatches));
+        OnPropertyChanged(nameof(HasVisiblePatches));
+        UpdateSelectAllState();
     }
 }

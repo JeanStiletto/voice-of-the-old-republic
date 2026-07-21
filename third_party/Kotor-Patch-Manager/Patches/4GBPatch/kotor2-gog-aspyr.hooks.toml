@@ -1,0 +1,21 @@
+[metadata]
+target_versions = ["777BEE235A9E8BDD9863F6741BC3AC54BB6A113B62B1D2E4D12BBE6DB963A914"]
+
+# 4GB Memory for KOTOR2
+# Source pattern:
+#   find:    03 01 0B 01 09
+#   replace: 23 01 0B 01 09
+#
+# Validated for GOG Aspyr:
+#   SHA-256:              777BEE235A9E8BDD9863F6741BC3AC54BB6A113B62B1D2E4D12BBE6DB963A914
+#   PE header offset:     0x00000110
+#   Characteristics off:  0x00000126
+#   Characteristics VA:   0x00400126
+#   original flags:       0x0103
+#   patched flags:        0x0123
+#   exact source match:   yes
+[[hooks]]
+address = 0x00400126
+type = "static"
+original_bytes = [0x03, 0x01]
+replacement_bytes = [0x23, 0x01]

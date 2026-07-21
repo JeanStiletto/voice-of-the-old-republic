@@ -1,4 +1,6 @@
+using System.Text.Json;
 using KPatchCore.Common;
+using KPatchCore.Managers;
 using KPatchCore.Models;
 
 namespace KPatchCore.Detectors;
@@ -8,6 +10,8 @@ namespace KPatchCore.Detectors;
 /// </summary>
 public static class GameDetector
 {
+    private const string PatchConfigFileName = "patch_config.toml";
+
     /// <summary>
     /// Known game versions database
     /// Maps SHA256 hash to GameVersion
@@ -100,11 +104,25 @@ public static class GameDetector
     };
 
     /// <summary>
-    /// Detects game version from executable path
+    /// Detects game version from executable path.
     /// </summary>
     /// <param name="exePath">Path to game executable</param>
+    /// <param name="allowManagedInstallState">
+    /// If true, an unknown current executable hash can be resolved from KPM's
+    /// persisted managed-install state or legacy KPM identity carriers. This is
+    /// intended for UI status, launch decisions, and subsequent KPM-managed patch
+    /// installs after STATIC hooks have intentionally modified the executable.
+    /// </param>
+    /// <param name="requireKnownManagedStateHash">
+    /// If true, kpm_install_state.json is accepted only when OriginalHash maps to
+    /// a known GameVersion. Legacy patch_config.toml and backup fallbacks are not
+    /// disabled by this setting.
+    /// </param>
     /// <returns>Result containing GameVersion or error</returns>
-    public static PatchResult<GameVersion> DetectVersion(string exePath)
+    public static PatchResult<GameVersion> DetectVersion(
+        string exePath,
+        bool allowManagedInstallState = false,
+        bool requireKnownManagedStateHash = false)
     {
         if (!File.Exists(exePath))
         {
@@ -117,12 +135,26 @@ public static class GameDetector
             var (hash, fileSize) = FileHasher.ComputeHashAndSize(exePath);
 
             // Look up in known versions
-            if (KnownVersions.TryGetValue(hash, out var gameVersion))
+            if (TryGetKnownVersion(hash, out var gameVersion))
             {
                 return PatchResult<GameVersion>.Ok(
                     gameVersion,
                     $"Detected: {gameVersion.DisplayName}"
                 );
+            }
+
+            // STATIC hooks intentionally mutate the executable. When enabled,
+            // resolve the game identity from KPM-owned persisted state.
+            if (allowManagedInstallState)
+            {
+                var managedResult = DetectVersionFromManagedInstallState(
+                    exePath,
+                    hash,
+                    requireKnownManagedStateHash);
+                if (managedResult.Success && managedResult.Data != null)
+                {
+                    return managedResult;
+                }
             }
 
             // Version not recognized - create unknown version with hash info
@@ -139,12 +171,194 @@ public static class GameDetector
 
             return PatchResult<GameVersion>.Ok(
                 unknownVersion,
-                $"Unknown version (hash: {hash.Substring(0, 16)}...)"
+                $"Unknown version (hash: {PreviewHash(hash)}...)"
             );
         }
         catch (Exception ex)
         {
             return PatchResult<GameVersion>.Fail($"Failed to detect version: {ex.Message}");
+        }
+    }
+
+    private static PatchResult<GameVersion> DetectVersionFromManagedInstallState(
+        string exePath,
+        string currentHash,
+        bool requireKnownManagedStateHash)
+    {
+        // Primary source: KPM's explicit managed install state. This is the
+        // authoritative post-install identity for statically-patched executables.
+        var stateResult = InstallStateManager.Load(exePath);
+        if (stateResult.Success && stateResult.Data != null)
+        {
+            var state = stateResult.Data;
+            var version = ResolveVersionFromState(state, requireKnownManagedStateHash);
+            if (version != null)
+            {
+                return PatchResult<GameVersion>.Ok(
+                    version,
+                    $"Detected from KPM install state: {version.DisplayName}"
+                );
+            }
+        }
+
+        // Legacy compatibility: older KPM installs already write target_version_sha
+        // to patch_config.toml even if they do not have kpm_install_state.json yet.
+        var configVersion = TryReadVersionFromPatchConfig(exePath);
+        if (configVersion != null)
+        {
+            return PatchResult<GameVersion>.Ok(
+                configVersion,
+                $"Detected from patch_config.toml: {configVersion.DisplayName}"
+            );
+        }
+
+        // Last resort: backup metadata contains the original clean executable hash
+        // and detected version captured before static hooks were applied.
+        var backupVersion = TryReadVersionFromLatestBackup(exePath);
+        if (backupVersion != null)
+        {
+            return PatchResult<GameVersion>.Ok(
+                backupVersion,
+                $"Detected from latest backup metadata: {backupVersion.DisplayName}"
+            );
+        }
+
+        return PatchResult<GameVersion>.Fail(
+            $"Managed KPM identity sources did not identify executable hash {PreviewHash(currentHash)}...");
+    }
+
+    private static GameVersion? ResolveVersionFromState(
+        ManagedInstallState state,
+        bool requireKnownManagedStateHash)
+    {
+        if (!string.IsNullOrWhiteSpace(state.OriginalHash) &&
+            TryGetKnownVersion(state.OriginalHash, out var versionFromKnownHash))
+        {
+            return versionFromKnownHash;
+        }
+
+        if (requireKnownManagedStateHash)
+        {
+            return null;
+        }
+
+        if (state.OriginalVersion != null && state.OriginalVersion.Version != "Unknown")
+        {
+            return state.OriginalVersion;
+        }
+
+        return null;
+    }
+
+    private static GameVersion? TryReadVersionFromPatchConfig(string exePath)
+    {
+        var gameDir = Path.GetDirectoryName(exePath);
+        if (string.IsNullOrWhiteSpace(gameDir))
+        {
+            return null;
+        }
+
+        var configPath = Path.Combine(gameDir, PatchConfigFileName);
+        var targetVersionSha = TryReadTargetVersionSha(configPath);
+        if (!string.IsNullOrWhiteSpace(targetVersionSha) &&
+            TryGetKnownVersion(targetVersionSha, out var configuredVersion))
+        {
+            return configuredVersion;
+        }
+
+        return null;
+    }
+
+    private static string? TryReadTargetVersionSha(string configPath)
+    {
+        if (!File.Exists(configPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            foreach (var line in File.ReadLines(configPath))
+            {
+                var trimmed = line.Trim();
+                if (trimmed.Length == 0 || trimmed.StartsWith("#"))
+                {
+                    continue;
+                }
+
+                var parts = trimmed.Split('=', 2);
+                if (parts.Length != 2)
+                {
+                    continue;
+                }
+
+                var key = parts[0].Trim();
+                if (!key.Equals("target_version_sha", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                return parts[1]
+                    .Trim()
+                    .Trim('"')
+                    .Trim('\'')
+                    .Trim();
+            }
+        }
+        catch
+        {
+            return null;
+        }
+
+        return null;
+    }
+
+    private static GameVersion? TryReadVersionFromLatestBackup(string exePath)
+    {
+        var backupPath = PathHelpers.FindLatestBackup(exePath);
+        if (string.IsNullOrWhiteSpace(backupPath))
+        {
+            return null;
+        }
+
+        var metadataPath = $"{backupPath}.json";
+        if (File.Exists(metadataPath))
+        {
+            try
+            {
+                var backupInfo = JsonSerializer.Deserialize<BackupInfo>(File.ReadAllText(metadataPath));
+                if (backupInfo != null)
+                {
+                    if (backupInfo.DetectedVersion != null &&
+                        backupInfo.DetectedVersion.Version != "Unknown")
+                    {
+                        return backupInfo.DetectedVersion;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(backupInfo.Hash) &&
+                        TryGetKnownVersion(backupInfo.Hash, out var versionFromMetadataHash))
+                    {
+                        return versionFromMetadataHash;
+                    }
+                }
+            }
+            catch
+            {
+                // Fall back to hashing the backup file below.
+            }
+        }
+
+        try
+        {
+            var (backupHash, _) = FileHasher.ComputeHashAndSize(backupPath);
+
+            return TryGetKnownVersion(backupHash, out var versionFromBackupHash)
+                ? versionFromBackupHash
+                : null;
+        }
+        catch
+        {
+            return null;
         }
     }
 
@@ -159,12 +373,13 @@ public static class GameDetector
     {
         try
         {
-            if (KnownVersions.ContainsKey(hash))
+            var normalizedHash = NormalizeHash(hash);
+            if (KnownVersions.ContainsKey(normalizedHash))
             {
-                return PatchResult.Fail($"Hash already registered: {hash.Substring(0, 16)}...");
+                return PatchResult.Fail($"Hash already registered: {PreviewHash(normalizedHash)}...");
             }
 
-            KnownVersions[hash] = version;
+            KnownVersions[normalizedHash] = version;
 
             return PatchResult.Ok($"Registered version: {version.DisplayName}");
         }
@@ -190,7 +405,7 @@ public static class GameDetector
     /// <returns>True if hash is known, false otherwise</returns>
     public static bool IsKnownVersion(string hash)
     {
-        return KnownVersions.ContainsKey(hash);
+        return KnownVersions.ContainsKey(NormalizeHash(hash));
     }
 
     /// <summary>
@@ -218,5 +433,22 @@ public static class GameDetector
         {
             return PatchResult<(string, long)>.Fail($"Failed to get executable info: {ex.Message}");
         }
+    }
+
+    private static bool TryGetKnownVersion(string hash, out GameVersion version)
+    {
+        var found = KnownVersions.TryGetValue(NormalizeHash(hash), out var matchedVersion);
+        version = matchedVersion!;
+        return found;
+    }
+
+    private static string NormalizeHash(string hash)
+    {
+        return hash.Trim().ToUpperInvariant();
+    }
+
+    private static string PreviewHash(string hash)
+    {
+        return hash.Length > 16 ? hash.Substring(0, 16) : hash;
     }
 }

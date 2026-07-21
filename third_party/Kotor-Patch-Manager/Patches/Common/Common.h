@@ -1,7 +1,9 @@
 #pragma once
+#include "Platform.h"
 #include <windows.h>
 #include <cstdio>
 #include <cstdarg>
+#include <type_traits>
 #include "VirtualFunctionCall.h"
 #pragma pack(push, 4)
 
@@ -53,6 +55,60 @@ inline void setObjectProperty(void* object, int offset, propType value) {
 	*((propType*)((char*)object + offset)) = value;
 }
 
+// ===== MEMBER FUNCTION -> RAW CODE ADDRESS =====
+//
+// The game stores GUI callbacks ("menuFunc") as a plain code address and invokes
+// them as __thiscall: the registered guiObject in ECX, one parameter on the stack.
+// A non-virtual C++ member function has exactly that ABI on both MSVC and MinGW (both
+// pass 'this' in ECX and callee-clean the stack), so a real member can serve as a
+// menuFunc directly. Register the owning object as the guiObject and its 'this' lands
+// in ECX.
+//
+// The language forbids casting a pointer-to-member to void*, so this helper punches
+// through that. The extraction differs by compiler because the pointer-to-member
+// representation does (see the two branches below): MSVC packs a non-virtual member
+// into a 4-byte code address, MinGW into an 8-byte Itanium { code_ptr, this_adjust }
+// pair. The MSVC static_assert rejects any member that is not a plain address (a
+// virtual member, or multiple/virtual inheritance) so a bad pointer fails at compile
+// time instead of being silently handed to the game. That same precondition is what
+// makes MinGW's first-word read the real code address, so the two paths cannot
+// disagree: anything that compiles on MSVC extracts correctly under MinGW.
+//
+// USAGE:
+//   button.AddEvent(0x27, this, memberFuncAddr(&MyPanel::OnClick));
+template<typename MemFn>
+inline void* memberFuncAddr(MemFn fn) {
+#if defined(_MSC_VER)
+	// MSVC: the member pointer is already a 4-byte code address; alias it out.
+	static_assert(sizeof(MemFn) == sizeof(void*),
+		"Member function pointer is not a plain code address "
+		"(virtual member, or multiple/virtual inheritance?)");
+	union { MemFn m; void* p; } u;
+	u.m = fn;
+	return u.p;
+#else
+	// MinGW (Itanium ABI): read the code_ptr (first word) out of the 8-byte pair.
+	void* p;
+	__builtin_memcpy(&p, &fn, sizeof(p));
+	return p;
+#endif
+}
+
+// ===== FREE FUNCTION -> RAW CODE ADDRESS =====
+//
+// The same idea as memberFuncAddr, but for a plain (non-member) callback. MSVC
+// allows the implicit function-pointer-to-void* conversion; GCC requires the
+// explicit cast. Works for any calling convention (__cdecl, __fastcall, ...).
+//
+// USAGE:
+//   button.AddEvent(0x27, this, funcAddr(&SomeFreeCallback));
+template<typename Fn>
+inline void* funcAddr(Fn fn) {
+	static_assert(std::is_function<std::remove_pointer_t<Fn>>::value,
+		"funcAddr expects a function pointer; use memberFuncAddr for members.");
+	return reinterpret_cast<void*>(fn);
+}
+
 // ===== X87 FPU FUNCTION CALL WRAPPER =====
 //
 // KotOR uses the x87 FPU which returns floating-point values in the ST(0) register
@@ -70,6 +126,8 @@ inline void setObjectProperty(void* object, int offset, propType value) {
 
 // Type alias for functions returning via x87 FPU ST(0)
 typedef float float10;
+
+#ifndef __GNUC__
 
 // Template wrapper for calling x87 FPU functions with no additional parameters
 template<typename FuncPtr>
@@ -140,6 +198,21 @@ inline float CallFPUFunction(FuncPtr funcPtr, void* thisPtr, Arg1 arg1, Arg2 arg
 	}
 	return result;
 }
+
+#else
+
+// GCC/MinGW cannot parse MSVC's Intel __asm blocks. It does not need them: on
+// i686 a function that returns `float` already returns it in ST(0), which is
+// exactly what the MSVC thunks above read out by hand with `fstp dword ptr`. So
+// a correctly-typed __thiscall call is ABI-identical, and one variadic template
+// covers every arity the overloads above did.
+template<typename FuncPtr, typename... Args>
+inline float CallFPUFunction(FuncPtr funcPtr, void* thisPtr, Args... args) {
+	auto fn = reinterpret_cast<float(__thiscall*)(void*, Args...)>(funcPtr);
+	return fn(thisPtr, args...);
+}
+
+#endif
 
 typedef enum ResourceType {
     NONE = -1,

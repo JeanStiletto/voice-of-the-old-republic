@@ -1,5 +1,6 @@
 using KPatchCore.Common;
 using KPatchCore.Detectors;
+using KPatchCore.Launcher;
 using KPatchCore.Managers;
 using KPatchCore.Models;
 using KPatchCore.Validators;
@@ -37,6 +38,14 @@ public class PatchApplicator
         /// Path to KotorPatcher.dll (if null, assumes it's in same directory as game exe)
         /// </summary>
         public string? PatcherDllPath { get; init; }
+
+        /// <summary>
+        /// Path to the KProxy (binkw32.dll) to stage when deploying via proxy
+        /// so the game loads KotorPatcher under Wine/Proton.
+        /// Ignored on Windows (live injection).
+        /// If null on Linux, DLL-based patches won't load under Wine.
+        /// </summary>
+        public string? ProxyDllPath { get; init; }
 
         /// <summary>
         /// When true, a SHA-256 mismatch between the detected swkotor.exe and the
@@ -135,7 +144,10 @@ public class PatchApplicator
 
             // Step 2: Detect game version
             messages.Add("Step 2/7: Detecting game version...");
-            var versionResult = GameDetector.DetectVersion(options.GameExePath);
+            var versionResult = GameDetector.DetectVersion(
+                options.GameExePath,
+                allowManagedInstallState: true,
+                requireKnownManagedStateHash: true);
             if (!versionResult.Success || versionResult.Data == null)
             {
                 return new InstallResult
@@ -147,7 +159,14 @@ public class PatchApplicator
             }
 
             var gameVersion = versionResult.Data;
-            messages.Add($"  Detected: {gameVersion.DisplayName}");
+            if (versionResult.Messages.Count > 0)
+            {
+                messages.AddRange(versionResult.Messages.Select(m => $"  {m}"));
+            }
+            else
+            {
+                messages.Add($"  Detected: {gameVersion.DisplayName}");
+            }
 
             // Step 3: Load and validate patches
             messages.Add("Step 3/7: Loading and validating patches...");
@@ -223,8 +242,33 @@ public class PatchApplicator
                 }
             }
 
-            // Check for hook conflicts
-            var hooksByPatch = patchEntries.ToDictionary(kv => kv.Key, kv => kv.Value.Hooks);
+            // Load version-specific hooks before validating or applying anything.
+            // PatchEntry.Hooks is populated during repository scan and is intentionally not
+            // version-specific; using it here causes multi-version static patches to always
+            // use whichever hooks file appears first in the archive.
+            var hooksByPatch = new Dictionary<string, List<Hook>>();
+            foreach (var patchId in options.PatchIds)
+            {
+                var hooksResult = _repository.LoadHooksForVersion(patchId, gameVersion.Hash);
+                if (!hooksResult.Success || hooksResult.Data == null)
+                {
+                    return new InstallResult
+                    {
+                        Success = false,
+                        Error = $"Failed to load hooks for {patchId}: {hooksResult.Error}",
+                        DetectedVersion = gameVersion,
+                        Messages = messages
+                    };
+                }
+
+                hooksByPatch[patchId] = hooksResult.Data;
+                foreach (var message in hooksResult.Messages)
+                {
+                    messages.Add($"  {patchId}: {message}");
+                }
+            }
+
+            // Check for hook conflicts using only hooks that apply to the detected version.
             var hookConflictResult = HookValidator.ValidateMultiPatchHooks(hooksByPatch);
             if (!hookConflictResult.Success)
             {
@@ -285,12 +329,12 @@ public class PatchApplicator
             // Step 4.5: Apply STATIC hooks to executable
             messages.Add("Step 4.5/8: Applying static hooks...");
 
-            // Collect all static hooks from all patches
+            // Collect all static hooks from all patches for the detected game version.
             var allStaticHooks = new List<Hook>();
             foreach (var patchId in installOrder)
             {
-                var entry = patchEntries[patchId];
-                var staticHooks = entry.Hooks.Where(h => h.Type == HookType.Static).ToList();
+                var hooks = hooksByPatch[patchId];
+                var staticHooks = hooks.Where(h => h.Type == HookType.Static).ToList();
 
                 if (staticHooks.Count > 0)
                 {
@@ -342,9 +386,9 @@ public class PatchApplicator
             var extractedDlls = new Dictionary<string, string>();
             foreach (var patchId in installOrder)
             {
-                var entry = patchEntries[patchId];
-                var hasDetourHooks = entry.Hooks.Any(h => h.Type == HookType.Detour);
-                var hasDllOnlyPatch = entry.Hooks.Count == 0; // DLL-only patch (no hooks)
+                var hooks = hooksByPatch[patchId];
+                var hasDetourHooks = hooks.Any(h => h.Type == HookType.Detour);
+                var hasDllOnlyPatch = hooks.Count == 0; // DLL-only patch (no hooks)
 
                 // Try to extract DLL if it exists (supports DETOUR hooks and DLL-only patches)
                 var extractResult = _repository.ExtractPatchDll(patchId, patchesDir);
@@ -390,8 +434,8 @@ public class PatchApplicator
                     }
                     else
                     {
-                        // SIMPLE patch - no DLL required
-                        messages.Add($"  Skipped: {patchId} (SIMPLE patch, no DLL)");
+                        // SIMPLE, REPLACE, or STATIC-only patch - no DLL required
+                        messages.Add($"  Skipped: {patchId} (no DLL required for selected hooks)");
                     }
                 }
             }
@@ -405,28 +449,7 @@ public class PatchApplicator
 
             foreach (var patchId in installOrder)
             {
-                // Load version-specific hooks for this patch
-                var hooksResult = _repository.LoadHooksForVersion(patchId, gameVersion.Hash);
-                if (!hooksResult.Success || hooksResult.Data == null)
-                {
-                    // Cleanup on failure
-                    if (backup != null)
-                    {
-                        BackupManager.RestoreBackup(backup);
-                    }
-
-                    return new InstallResult
-                    {
-                        Success = false,
-                        Error = $"Failed to load hooks for {patchId}: {hooksResult.Error}",
-                        DetectedVersion = gameVersion,
-                        Backup = backup,
-                        Messages = messages
-                    };
-                }
-
-                var hooks = hooksResult.Data;
-                messages.Add($"  {patchId}: {hooksResult.Data}");
+                var hooks = hooksByPatch[patchId];
 
                 // Get DLL path if this patch has DETOUR hooks, otherwise use empty string
                 var dllPath = extractedDlls.ContainsKey(patchId)
@@ -544,6 +567,7 @@ public class PatchApplicator
             messages.Add("Step 7/8: Installing patcher DLL and dependencies...");
 
             // Copy KotorPatcher.dll to game directory if path provided
+            var destPath = Path.Combine(gameDir, "KotorPatcher.dll");
             if (!string.IsNullOrEmpty(options.PatcherDllPath))
             {
                 if (!File.Exists(options.PatcherDllPath))
@@ -558,24 +582,62 @@ public class PatchApplicator
                     };
                 }
 
-                var destPath = Path.Combine(gameDir, "KotorPatcher.dll");
-                File.Copy(options.PatcherDllPath, destPath, overwrite: true);
-                messages.Add($"  ✓ Copied KotorPatcher.dll to game directory");
+                // If DLL already present, skip copy step
+                if (PathHelpers.SamePath(options.PatcherDllPath, destPath))
+                {
+                    messages.Add($"  ✓ KotorPatcher.dll already in place (Patch Manager runs from the game directory)");
+                }
+                else
+                {
+                    try
+                    {
+                        File.Copy(options.PatcherDllPath, destPath, overwrite: true);
+                    }
+                    catch (Exception ex)
+                    {
+                        if (backup != null)
+                        {
+                            BackupManager.RestoreBackup(backup);
+                        }
+
+                        return new InstallResult
+                        {
+                            Success = false,
+                            Error = $"Failed to copy KotorPatcher.dll to game directory: {ex.Message}",
+                            DetectedVersion = gameVersion,
+                            Backup = backup,
+                            Messages = messages
+                        };
+                    }
+
+                    messages.Add($"  ✓ Copied KotorPatcher.dll to game directory");
+                }
 
                 // Copy sqlite3.dll (should be in same directory as KotorPatcher.dll)
                 var patcherDir = Path.GetDirectoryName(options.PatcherDllPath);
                 if (patcherDir != null)
                 {
                     var sqliteDllSource = Path.Combine(patcherDir, "sqlite3.dll");
-                    if (File.Exists(sqliteDllSource))
+                    var sqliteDllDest = Path.Combine(gameDir, "sqlite3.dll");
+                    if (!File.Exists(sqliteDllSource))
                     {
-                        var sqliteDllDest = Path.Combine(gameDir, "sqlite3.dll");
-                        File.Copy(sqliteDllSource, sqliteDllDest, overwrite: true);
-                        messages.Add($"  ✓ Copied sqlite3.dll to game directory");
+                        messages.Add($"  ⚠️ Warning: sqlite3.dll not found at: {sqliteDllSource}");
+                    }
+                    else if (PathHelpers.SamePath(sqliteDllSource, sqliteDllDest))
+                    {
+                        messages.Add($"  ✓ sqlite3.dll already in place (Patch Manager runs from the game directory)");
                     }
                     else
                     {
-                        messages.Add($"  ⚠️ Warning: sqlite3.dll not found at: {sqliteDllSource}");
+                        try
+                        {
+                            File.Copy(sqliteDllSource, sqliteDllDest, overwrite: true);
+                            messages.Add($"  ✓ Copied sqlite3.dll to game directory");
+                        }
+                        catch (Exception ex)
+                        {
+                            messages.Add($"  ⚠️ Warning: failed to copy sqlite3.dll: {ex.Message}");
+                        }
                     }
                 }
             }
@@ -583,6 +645,77 @@ public class PatchApplicator
             {
                 messages.Add($"  ⚠️ Warning: KotorPatcher.dll path not provided");
                 messages.Add($"  ⚠️ Make sure KotorPatcher.dll and sqlite3.dll are in game directory");
+            }
+
+            // Fail loudly if the DLL never made it to the destination
+            if (!File.Exists(destPath))
+            {
+                if (backup != null)
+                {
+                    BackupManager.RestoreBackup(backup);
+                }
+
+                return new InstallResult
+                {
+                    Success = false,
+                    Error = "KotorPatcher.dll is missing from the game directory after installation.",
+                    DetectedVersion = gameVersion,
+                    Backup = backup,
+                    Messages = messages
+                };
+            }
+
+            // Step 7.5: for the proxy deployment method, stage the KProxy so
+            // the game loads KotorPatcher when it starts (injection does not).
+            var proxyInstalled = false;
+            if (DeploymentPolicy.ForCurrentPlatform() == DeploymentMethod.Proxy)
+            {
+                if (string.IsNullOrEmpty(options.ProxyDllPath))
+                {
+                    // Without the proxy staged nothing loads KotorPatcher, so DLL
+                    // (DETOUR) patches won't take effect. Static patches still do.
+                    messages.Add($"  ⚠️ Warning: KProxy (binkw32.dll) not found next to the launcher");
+                    messages.Add($"  ⚠️ DLL patches won't load under Wine; static patches still apply");
+                }
+                else
+                {
+                    var proxyResult = KProxyInstaller.Install(gameDir, options.ProxyDllPath);
+                    if (!proxyResult.Success)
+                    {
+                        // Undo any half-done rename before rolling back the executable.
+                        KProxyInstaller.Uninstall(gameDir);
+                        if (backup != null)
+                        {
+                            BackupManager.RestoreBackup(backup);
+                        }
+
+                        return new InstallResult
+                        {
+                            Success = false,
+                            Error = $"KProxy install failed: {proxyResult.Error}",
+                            DetectedVersion = gameVersion,
+                            Backup = backup,
+                            Messages = messages
+                        };
+                    }
+
+                    proxyInstalled = true;
+                    messages.Add($"  ✓ {proxyResult.Messages.FirstOrDefault()}");
+                }
+            }
+
+            var stateResult = InstallStateManager.SaveOrUpdate(
+                options.GameExePath,
+                gameVersion,
+                installOrder,
+                proxyInstalled);
+            if (stateResult.Success)
+            {
+                messages.Add($"  {stateResult.Messages.FirstOrDefault() ?? "Managed install state saved"}");
+            }
+            else
+            {
+                messages.Add($"  ⚠️ Warning: Failed to save managed install state: {stateResult.Error}");
             }
 
             return new InstallResult

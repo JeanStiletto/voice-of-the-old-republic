@@ -1,0 +1,31 @@
+[metadata]
+target_versions = [
+	"9C10E0450A6EECA417E036E3CDE7474FED1F0A92AAB018446D156944DEA91435",
+	"761F9466F456A83909036BAEBB5C43167D722387BE66E54617BA20A8C49E9886",
+	"34E6D971C034222A417995D8E1E8FDD9F8781795C9C289BD86C499A439F34C88"
+]
+
+# Borderless Fullscreen for KOTOR1 GOG 1.03
+#
+# This is the KOTOR1 equivalent of the KOTOR2 Aspyr fullscreen-borderless patch.
+# It changes the windowed-mode style constant:
+#
+#   original:    0x02CF0000  ; WS_CLIPCHILDREN | WS_OVERLAPPEDWINDOW-style border/chrome
+#   replacement: 0x90000000  ; WS_POPUP | WS_VISIBLE
+#
+# Validated for KOTOR1 GOG 1.03:
+#   SHA-256:     9C10E0450A6EECA417E036E3CDE7474FED1F0A92AAB018446D156944DEA91435
+#   file offset: 0x0004DC0C
+#   VA:          0x0044DC0C
+#   section:     .text
+#
+# Original disassembly:
+#   0x0044DC0C  BE 00 00 CF 02    mov esi, 0x02CF0000
+#
+# Patched disassembly:
+#   0x0044DC0C  BE 00 00 00 90    mov esi, 0x90000000
+[[hooks]]
+address = 0x0044DC0C
+type = "static"
+original_bytes = [0xBE, 0x00, 0x00, 0xCF, 0x02]
+replacement_bytes = [0xBE, 0x00, 0x00, 0x00, 0x90]

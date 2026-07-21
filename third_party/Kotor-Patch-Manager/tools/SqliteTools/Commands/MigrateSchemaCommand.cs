@@ -32,8 +32,26 @@ public class MigrateSchemaCommand : ICommand
             Console.WriteLine("Applied migration 002: Add function metadata columns");
         }
 
+        if (currentVersion < 3)
+        {
+            ApplyMigration(connection, "003_add_classes_table.sql");
+            Console.WriteLine("Applied migration 003: Add classes table");
+        }
+
+        if (currentVersion < 4)
+        {
+            ApplyMigration(connection, "004_add_platform.sql");
+            Console.WriteLine("Applied migration 004: Add platform column");
+        }
+
+        if (currentVersion < 5)
+        {
+            ApplyMigration(connection, "005_add_class_vtable.sql");
+            Console.WriteLine("Applied migration 005: Add class vtable column");
+        }
+
         // Future migrations would go here
-        // if (currentVersion < 3) { ApplyMigration(connection, "003_..."); }
+        // if (currentVersion < 6) { ApplyMigration(connection, "006_..."); }
 
         int newVersion = GetCurrentSchemaVersion(connection);
         Console.WriteLine($"Schema migration complete. Current version: {newVersion}");

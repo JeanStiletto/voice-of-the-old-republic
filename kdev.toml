@@ -8,9 +8,13 @@
 install = 'C:\Program Files (x86)\Steam\steamapps\common\swkotor'
 
 [patch_manager]
-# Extracted release of LaneDibello/Kotor-Patch-Manager.
-# kdev loads KPatchCore.dll from <release>/bin/ at runtime.
-release = 'C:\Tools\KotorPatchManager-v0.4.2'
+# Runtime release layout for LaneDibello/Kotor-Patch-Manager.
+# kdev consumes <release>/bin/KotorPatcher.dll (the injected runtime) and
+# <release>/patches/*.kpatch (bundled additional patches) at apply time.
+# This holds our rebuilt 0.6.0 KotorPatcher.dll (KPM 0.6.0 base + our PR-1/3/4/5)
+# plus the 0.6.0 AddressDatabases. KPatchCore itself is compiled from the
+# vendored source under [upstream].clone via kdev.csproj's project reference.
+release = 'C:\Tools\KotorPatchManager-v0.6.0'
 
 [upstream]
 # Source clone of the patch manager. Used by 'kdev build' to set up the layout
@@ -26,13 +30,21 @@ build_output = 'build'
 patch_id = 'accessibility'
 # Additional patch IDs to install alongside ours on every 'kdev apply'. These
 # must already exist as .kpatch files inside <patch_manager.release>/patches/.
-# - 'widescreen' — Lane's Widescreen patch; fixes the tiny 640x480 windowed-mode default.
 #
-# '4gb-patch' is intentionally not listed: its manifest declares a different
-# Steam SHA than ours (34E6D971... vs. its hardcoded other-Steam hash) and the
-# applicator rejects it. We don't need it for now (no large mod loadout); fork
-# the manifest later if/when we do.
-additional_patches = ['widescreen']
+# Currently EMPTY on purpose. The old 'widescreen' patch was deleted upstream in
+# 0.6.0; its intended replacement 'borderless_fullscreen' turns out to be a
+# STATIC exe byte-patch, which cannot apply to the Steam release — SteamStub
+# encrypts .text on disk, so the byte-verify fails (confirmed 2026-07-21: hook
+# at 0x0044DC0C expected [BE 00 00 CF 02], got ciphertext), and because the
+# install is one transaction it aborts our runtime accessibility patch too.
+# This is the same Steam static-hook wall documented for J0-o/KotorUniResPatch's
+# Resolution Unlocker — see docs/unified-resolution-patch-compatibility.md. Our
+# own patch is all runtime detours, so it applies on Steam alone. Revisit the
+# screen-patch story (runtime resolution-unlock / K1 DeSteamify) separately.
+#
+# '4gb-patch' also intentionally not listed: its manifest declares a different
+# Steam SHA than ours and the applicator rejects it.
+additional_patches = []
 
 # [re] — reverse-engineering assets consumed by `kdev re`. ALL OPTIONAL: the
 # defaults below (shown commented) match docs/tools.md, so on the canonical

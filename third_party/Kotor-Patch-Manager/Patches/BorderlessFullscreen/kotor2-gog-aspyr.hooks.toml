@@ -1,0 +1,18 @@
+[metadata]
+target_versions = ["777BEE235A9E8BDD9863F6741BC3AC54BB6A113B62B1D2E4D12BBE6DB963A914"]
+
+# Borderless Fullscreen for KOTOR2
+# Source pattern:
+#   find:    00 00 CF 02 C7 45
+#   replace: 00 00 00 90 C7 45
+#
+# Validated for GOG Aspyr:
+#   SHA-256:    777BEE235A9E8BDD9863F6741BC3AC54BB6A113B62B1D2E4D12BBE6DB963A914
+#   file offset: 0x00468049
+#   VA:          0x00868C49
+#   section:     .text
+[[hooks]]
+address = 0x00868C49
+type = "static"
+original_bytes = [0x00, 0x00, 0xCF, 0x02, 0xC7, 0x45]
+replacement_bytes = [0x00, 0x00, 0x00, 0x90, 0xC7, 0x45]

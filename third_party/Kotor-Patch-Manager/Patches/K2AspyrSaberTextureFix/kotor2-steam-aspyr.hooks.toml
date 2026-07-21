@@ -1,0 +1,18 @@
+[metadata]
+target_versions = ["6A522E71631DCEE93467BD2010F3B23D9145326E1E2E89305F13AB104DBBFFEF"]
+
+# Public executable name: swkotor2.exe
+# PartEmitter particle submit helper cleanup.
+# NOPs only the GL_TEXTURE_COORD_ARRAY disable sequence:
+#   xor ecx, ecx
+#   shl ecx, 2
+#   mov edx, [0x00988658 + ecx]  ; table[0] = 0x8078 GL_TEXTURE_COORD_ARRAY
+#   push edx
+#   call glDisableClientState
+# Leaves the preceding GL_COLOR_ARRAY cleanup intact.
+# Steam Aspyr VA 0x004313A2, file offset 0x000307A2.
+[[hooks]]
+address = 0x004313A2
+type = "simple"
+original_bytes = [0x33, 0xC9, 0xC1, 0xE1, 0x02, 0x8B, 0x91, 0x58, 0x86, 0x98, 0x00, 0x52, 0xFF, 0x15, 0x00, 0x63, 0x98, 0x00]
+replacement_bytes = [0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90]

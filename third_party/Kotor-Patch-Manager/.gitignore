@@ -25,6 +25,9 @@ mono_crash.*
 # patch Results
 *.kpatch
 
+# Temporary Files
+*.temp
+
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/
@@ -380,3 +383,13 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+Patches/K2AspyrColorCorrection/create-patch.bat
+.gitignore
+Patches/K2AspyrMusicFix/create-patch.bat
+Patches/K2AspyrNormalMapsFix/create-patch.bat
+Patches/K2AspyrSaberTextureFix/create-patch.bat
+Patches/K2AspyrFogReflectionFix/create-patch.bat
+*debug*
+*ActiveParty*
+*K1K2*
+

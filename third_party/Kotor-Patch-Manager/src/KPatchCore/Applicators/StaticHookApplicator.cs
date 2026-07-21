@@ -69,10 +69,18 @@ public static class StaticHookApplicator
                 continue;
             }
 
-            // Verify original bytes match
+            // Verify original bytes match. If the replacement bytes are already present,
+            // treat this hook as already applied. This keeps KPM-managed reapply flows from
+            // failing solely because a STATIC patch previously changed the executable.
             var actualBytes = readResult.Data;
             if (!hook.OriginalBytes.SequenceEqual(actualBytes))
             {
+                if (hook.ReplacementBytes != null && hook.ReplacementBytes.SequenceEqual(actualBytes))
+                {
+                    appliedCount++;
+                    continue;
+                }
+
                 var expectedHex = BitConverter.ToString(hook.OriginalBytes).Replace("-", " ");
                 var actualHex = BitConverter.ToString(actualBytes).Replace("-", " ");
                 errors.Add($"Hook at 0x{hook.Address:X8}: Byte mismatch - expected [{expectedHex}], got [{actualHex}]");

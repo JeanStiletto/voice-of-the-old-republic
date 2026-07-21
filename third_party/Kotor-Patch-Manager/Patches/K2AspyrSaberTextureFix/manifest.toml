@@ -1,0 +1,12 @@
+[patch]
+id = "k2-aspyr-saber-hilt-texture-fix"
+name = "K2 Aspyr Saber Hilt Texture Fix"
+version = "1.0.0"
+author = "Vriff"
+description = "Fixes Aspyr KOTOR2 lightsaber hilt diffuse/detail loss by NOPing the PartEmitter small-particle fast-path cleanup block that disables GL_TEXTURE_COORD_ARRAY. This leaves the GL_COLOR_ARRAY cleanup intact and removes only the existing GL_TEXTURE_COORD_ARRAY disable sequence."
+
+requires = []
+
+[patch.supported_versions]
+kotor2_gog_aspyr = "777BEE235A9E8BDD9863F6741BC3AC54BB6A113B62B1D2E4D12BBE6DB963A914"
+kotor2_steam_aspyr = "6A522E71631DCEE93467BD2010F3B23D9145326E1E2E89305F13AB104DBBFFEF"

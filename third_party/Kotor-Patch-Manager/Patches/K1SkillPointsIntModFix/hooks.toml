@@ -1,0 +1,53 @@
+# Function:
+#   CSWCLevelUpStats::AddSkillPointsPerLevel
+#
+# Stock later-level formula:
+#   award = max((storedSkillPointBase + INTMod) / 2, 1)
+#
+# Fixed later-level formula:
+#   award = max((storedSkillPointBase / 2) + INTMod, 1)
+#
+# The first-level path is already correct and is intentionally left unchanged:
+#   award = max((storedSkillPointBase / 2) + INTMod, 1) * 4
+
+# Later-level minimum-check pass.
+#
+# Original:
+#   add eax, edx
+#   cdq
+#   sub eax, edx
+#   sar eax, 1
+#
+# Replacement:
+#   shr edx, 1
+#   add eax, edx
+#   nop
+#   nop
+#   nop
+[[hooks]]
+address = 0x00648AE2
+type = "simple"
+original_bytes = [0x03, 0xC2, 0x99, 0x2B, 0xC2, 0xD1, 0xF8]
+replacement_bytes = [0xD1, 0xEA, 0x03, 0xC2, 0x90, 0x90, 0x90]
+
+# Later-level actual-award pass.
+#
+# Original:
+#   add eax, ecx
+#   cdq
+#   sub eax, edx
+#   pop ebx
+#   sar eax, 1
+#
+# Replacement:
+#   shr ecx, 1
+#   add eax, ecx
+#   pop ebx
+#   nop
+#   nop
+#   nop
+[[hooks]]
+address = 0x00648AFE
+type = "simple"
+original_bytes = [0x03, 0xC1, 0x99, 0x2B, 0xC2, 0x5B, 0xD1, 0xF8]
+replacement_bytes = [0xD1, 0xE9, 0x03, 0xC1, 0x5B, 0x90, 0x90, 0x90]

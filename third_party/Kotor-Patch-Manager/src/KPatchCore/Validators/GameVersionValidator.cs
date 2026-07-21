@@ -26,15 +26,14 @@ public static class GameVersionValidator
         }
 
         // Check if the detected hash is in supported versions
-        if (manifest.SupportedVersions.ContainsValue(detectedVersion.Hash))
-        {
-            // Find the version key for this hash
-            var versionKey = manifest.SupportedVersions
-                .FirstOrDefault(kvp => kvp.Value.Equals(detectedVersion.Hash, StringComparison.OrdinalIgnoreCase))
-                .Key;
+        var versionKey = manifest.SupportedVersions
+            .FirstOrDefault(kvp => kvp.Value.Equals(detectedVersion.Hash, StringComparison.OrdinalIgnoreCase))
+            .Key;
 
+        if (versionKey != null)
+        {
             return PatchResult.Ok(
-                $"Game version is supported (matched: {versionKey ?? "unknown"})"
+                $"Game version is supported (matched: {versionKey})"
             );
         }
 

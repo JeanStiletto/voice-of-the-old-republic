@@ -150,22 +150,26 @@ public class PatchRepository
                 return PatchResult<PatchEntry>.Ok(patchEntry, $"Loaded patch: {manifest.Id} (no hooks)");
             }
 
-            // For initial repository scan, load first hooks file to get basic info
-            // The actual version-specific selection happens during installation
-            List<Hook> hooks;
-            using (var stream = hooksEntries[0].Open())
-            using (var reader = new StreamReader(stream))
+            // For initial repository scan, parse all hooks files to get a complete
+            // patch summary. Version-specific filtering still happens during installation
+            // in LoadHooksForVersion().
+            var hooks = new List<Hook>();
+            foreach (var hooksEntry in hooksEntries)
             {
+                using var stream = hooksEntry.Open();
+                using var reader = new StreamReader(stream);
                 var hooksContent = reader.ReadToEnd();
                 var parseResult = HooksParser.ParseString(hooksContent);
                 if (!parseResult.Success || parseResult.Data == null)
                 {
-                    return PatchResult<PatchEntry>.Fail($"Failed to parse hooks: {parseResult.Error}");
+                    return PatchResult<PatchEntry>.Fail(
+                        $"Failed to parse hooks file '{hooksEntry.FullName}': {parseResult.Error}");
                 }
-                hooks = parseResult.Data;
+
+                hooks.AddRange(parseResult.Data);
             }
 
-            // Check if this patch has any DETOUR hooks (which require a DLL)
+            // Check if any version of this patch has DETOUR hooks (which require a DLL)
             var hasDetourHooks = hooks.Any(h => h.Type == HookType.Detour);
 
             // Verify binary exists only if DETOUR hooks are present
@@ -357,15 +361,18 @@ public class PatchRepository
 
                     // Include if: no target_versions specified OR our SHA is in the list
                     if (metadata.TargetVersions.Count == 0 ||
-                        metadata.TargetVersions.Contains(targetVersionSha))
+                        metadata.TargetVersions.Any(v => v.Equals(targetVersionSha, StringComparison.OrdinalIgnoreCase)))
                     {
                         // This file applies to our version - parse and merge hooks
                         var parseResult = HooksParser.ParseFile(tempPath);
-                        if (parseResult.Success && parseResult.Data != null)
+                        if (!parseResult.Success || parseResult.Data == null)
                         {
-                            allHooks.AddRange(parseResult.Data);
-                            matchedFiles.Add(Path.GetFileName(entry.FullName));
+                            return PatchResult<List<Hook>>.Fail(
+                                $"Failed to parse matching hooks file '{entry.FullName}': {parseResult.Error}");
                         }
+
+                        allHooks.AddRange(parseResult.Data);
+                        matchedFiles.Add(entry.FullName);
                     }
                 }
 

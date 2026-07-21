@@ -1,0 +1,11 @@
+[metadata]
+target_versions = ["6A522E71631DCEE93467BD2010F3B23D9145326E1E2E89305F13AB104DBBFFEF"]
+
+#NOP the CSWGuiPartySelection::OnPanelAdded() call site to the stock party-selection shared-slot collapse routine in CSWGuiPartySelection::UpdateVisibleCharacters().
+[[hooks]]
+address = 0x0089E319
+type = "simple"
+original_bytes = [0xE8, 0x42, 0x26, 0x00, 0x00]
+replacement_bytes = [0x90, 0x90, 0x90, 0x90, 0x90]
+
+
