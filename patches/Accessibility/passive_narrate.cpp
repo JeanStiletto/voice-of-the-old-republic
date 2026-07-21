@@ -58,6 +58,26 @@ struct QEState {
 };
 QEState s_qe;
 
+// Auto focus-follow re-narrate debounce.
+//
+// The engine's ShowObject focus can oscillate onto the nearest object with
+// no user action — most visibly when a fight ends and a neutral creature
+// (e.g. a Gizka) lingers nearby: the focus flickers
+// target -> sentinel(0x7F000000) -> target every few seconds. The delta
+// guard in OnEngineShowObject is defeated by the intervening sentinel (it
+// clobbers s_last_announced), so the same object gets re-announced on the
+// automatic path again and again.
+//
+// Suppress a repeat auto-narration of the same handle while it keeps
+// re-appearing inside this quiet window. The stamp is refreshed on every
+// auto sighting (including suppressed ones), so a sustained flicker stays
+// quiet after the first announcement; a genuinely new focus (different
+// handle) or a gap longer than the window narrates normally. Explicit Q/E
+// cycles bypass this entirely — the user can always re-hear on demand.
+constexpr DWORD kAutoRenarrateQuietMs = 10000;
+uint32_t s_last_auto_handle = 0u;
+DWORD    s_last_auto_tick   = 0u;
+
 // Mirrors cycle_input.cpp's mapping. If these get out of sync, lift into
 // a shared filter_objects helper.
 acc::audio::NavCue ClosedDoorCueForMaterial(void* obj) {
@@ -173,6 +193,22 @@ bool NarrateHandle(uint32_t handle, const char* reason, bool explicitRequest) {
             "%s: handle 0x%08x is party member, auto-focus suppressed",
             reason, handle);
         return false;
+    }
+
+    // Auto focus-follow re-narrate debounce (see s_last_auto_handle above).
+    // Only the automatic path is throttled; explicit Q/E always speaks.
+    if (!explicitRequest) {
+        DWORD now = GetTickCount();
+        if (handle == s_last_auto_handle &&
+            (now - s_last_auto_tick) < kAutoRenarrateQuietMs) {
+            s_last_auto_tick = now;   // keep the streak alive during flicker
+            acclog::Write("PassiveNarrate",
+                "%s: 0x%08x re-narrate within %lums, debounced",
+                reason, handle, (unsigned long)kAutoRenarrateQuietMs);
+            return false;
+        }
+        s_last_auto_handle = handle;
+        s_last_auto_tick   = now;
     }
 
     Vector pos{};
