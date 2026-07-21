@@ -35,6 +35,10 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.6.1</h2>
 
+<h3>Installer:</h3>
+
+- The bundled patch framework is updated to Kotor Patch Manager 0.6.0 — a rebuilt patcher DLL (carrying our wrapper fixes) and the refreshed 0.6.0 address database.
+
 <h3>Bug fixes:</h3>
 
 - Neutral creatures no longer repeat their name over and over after a fight ends. When combat finishes, the game's target focus can flicker on and off a nearby bystander (a Gizka standing near the battle, say), and the mod was re-announcing it every few seconds. An auto-focused creature is now announced once and stays quiet while the focus keeps flickering back to it; cycling targets yourself with the hostile-cycle keys still re-speaks on demand.
