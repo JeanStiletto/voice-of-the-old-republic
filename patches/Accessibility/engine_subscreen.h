@@ -59,6 +59,23 @@ enum class OverlayPauseOwner : unsigned {
 void BeginOverlayPause(OverlayPauseOwner owner);
 void EndOverlayPause(OverlayPauseOwner owner);
 
+// True when the in-world simulation is currently frozen by any pause source
+// (manual pause key, combat auto-pause, or one of our overlay holds). Reads the
+// live server pause-bit shadow (g_pauseShadow bit 0x02) that OnSetPauseState
+// maintains — synchronous with every pause mutation, including our own. The
+// unified action menu uses this OUT OF COMBAT to decide fire-and-close (world
+// running) vs. queue-and-stay-open / "stack mode" (world paused).
+bool WorldIsPaused();
+
+// Resume the real world pause (CClientExoApp::SetPausedByCombat(0,4,0)) IF the
+// world is currently paused; no-op (returns false) when already running. Unlike
+// EndOverlayPause this call is NOT self-flagged, so the engine's resume cue
+// ("Fortgesetzt") speaks — the unified menu's out-of-combat Esc uses that as its
+// close announcement, matching how native sub-screens unpause on Esc. Also
+// clears our overlay-owner bookkeeping so the mask can't outlive the resume.
+// Returns true if it issued a resume.
+bool ResumeWorldIfPaused(const char* reason);
+
 }  // namespace acc::engine
 
 // Detour @0x0062cf2d (5-byte cut after EBX = GUI_id is loaded).

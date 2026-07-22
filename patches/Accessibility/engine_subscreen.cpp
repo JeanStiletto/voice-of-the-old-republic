@@ -239,6 +239,47 @@ void EndOverlayPause(OverlayPauseOwner owner) {
     }
 }
 
+bool WorldIsPaused() {
+    return (g_pauseShadow & kPauseBitManualOrMenu) != 0;
+}
+
+bool ResumeWorldIfPaused(const char* reason) {
+    const char* tag = reason ? reason : "?";
+    if ((g_pauseShadow & kPauseBitManualOrMenu) == 0) {
+        acclog::Write("PauseToggle",
+                      "%s: resume requested but world already running", tag);
+        return false;
+    }
+    // Drop any overlay hold we still track so g_overlayPauseOwners can't
+    // outlive the resume (the menu's own owner is already cleared by
+    // ForceDisarm; this also covers the manual-pause case where we never held
+    // an overlay pause at all).
+    g_overlayPauseOwners = 0;
+    acclog::Write("PauseToggle", "%s: resume world SetPausedByCombat(0,4,0)", tag);
+    __try {
+        void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtrLocal);
+        if (!appMgr) {
+            acclog::Write("PauseToggle", "resume skipped: AppManager NULL");
+            return false;
+        }
+        void* client = *reinterpret_cast<void**>(
+            static_cast<unsigned char*>(appMgr) + kAppManagerClientOffset);
+        if (!client) {
+            acclog::Write("PauseToggle", "resume skipped: client NULL");
+            return false;
+        }
+        // Deliberately NOT flagged as our own call: we WANT OnSetPauseState to
+        // fire un-suppressed so the engine's resume cue ("Fortgesetzt") speaks
+        // as the menu-close announcement.
+        reinterpret_cast<PFN_SetPausedByCombat>(kAddrSetPausedByCombat)(
+            client, 0, 4, 0);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("PauseToggle", "fault in ResumeWorldIfPaused");
+        return false;
+    }
+    return true;
+}
+
 void TickInputClassReassert() {
     // Two edges trigger the same unpause cleanup:
     //

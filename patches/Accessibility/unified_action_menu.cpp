@@ -704,9 +704,26 @@ bool HandleInputEvent(int code, int value) {
     // we never paused, so there is no resume cue — speak an explicit close
     // confirmation instead so the user hears the menu dismissed.
     if (code == kInputEsc1 || code == kInputEsc2) {
-        const bool wasPaused = g.pausedOnOpen;
+        const bool wasPaused   = g.pausedOnOpen;
+        const bool outOfCombat = !acc::combat::IsPartyInCombat();
         ForceDisarm("esc");
-        if (!wasPaused) {
+        if (outOfCombat) {
+            // Native sub-screens unpause the world on Esc; the unified menu now
+            // matches that out of combat. ForceDisarm already released our own
+            // overlay pause (auto-pause option on) via EndOverlayPause; if the
+            // world is STILL paused that is the player's own manual pause, so
+            // resume it here — the engine's "Fortgesetzt" resume cue is then the
+            // close announcement. When nothing resumed (never paused, or the
+            // overlay release already unpaused silently) speak an explicit close
+            // confirmation so the close is never silent.
+            if (!acc::engine::ResumeWorldIfPaused("unified-esc")) {
+                prism::Speak(acc::strings::Get(acc::strings::Id::ActionMenuClosed),
+                             /*interrupt=*/true);
+            }
+        } else if (!wasPaused) {
+            // In combat: unchanged. Esc keeps the tactical pause exactly as
+            // before — ForceDisarm → EndOverlayPause resumes only the pause we
+            // owned; the encounter's own pause is untouched.
             prism::Speak(acc::strings::Get(acc::strings::Id::ActionMenuClosed),
                          /*interrupt=*/true);
         }
@@ -1023,16 +1040,45 @@ bool HandleInputEvent(int code, int value) {
             // an active encounter — the exact confusion that shaped the
             // party-in-combat auto-close in combat.cpp.
             if (!acc::combat::IsPartyInCombat()) {
+                // Out of combat, the pause state picks the interaction model:
+                //
+                //   World PAUSED (the player pressed the pause key, or the
+                //   Action Menu auto-pause option froze the world on open) →
+                //   STACK MODE: queue this action and stay armed so several
+                //   actions can be lined up without re-opening the menu between
+                //   each, exactly like the in-combat menu. The world stays
+                //   paused; Esc (or a manual unpause) commits the queue and
+                //   closes. The "<action>, Platz N" cue from the AddAction hook
+                //   is the confirmation that the menu stayed open on this entry.
+                //
+                //   World RUNNING → fire-and-close, matching the sighted mouse
+                //   radial (click an action → it runs → the radial closes).
+                //   Keeping the menu open here just adds an Esc step vanilla
+                //   never charges, and a lingering live surface has misfired
+                //   (patch-20260617-215141.log). ForceDisarm is the same close
+                //   the Esc path runs, and we are in the sanctioned
+                //   input-dispatch context (HandleInputEvent), so it obeys the
+                //   HARD RULE (no populate off the poll/Open path).
+                //
+                // Combat is the encounter-level truth (IsPartyInCombat), not the
+                // controlled-leader bit, so Tabbing to a not-yet-engaged member
+                // mid-fight can't collapse the menu into fire-and-close and
+                // unpause an active encounter — the confusion that shaped the
+                // party-in-combat auto-close in combat.cpp.
+                if (acc::engine::WorldIsPaused()) {
+                    acclog::Write("UnifiedMenu",
+                        "out-of-combat fire while paused — staying open "
+                        "(stack mode); announce via AddAction hook");
+                    return true;
+                }
+                // Close is silent by design: the action's confirmation was just
+                // spoken by the AddAction hook ("<action>, Platz 1" —
+                // out-of-combat actions still route through the leader's combat
+                // round, and ArmUserQueueAdd above put us in its attribution
+                // window).
                 acclog::Write("UnifiedMenu",
-                    "out-of-combat fire — closing (fire-and-close)");
-                // Close is silent by design: the action's own confirmation
-                // was just spoken by the AddAction hook ("<action>, Platz 1" —
-                // out-of-combat actions still route through the leader's
-                // combat round, and ArmUserQueueAdd above put us in its
-                // attribution window). If the auto-pause option was on we DID
-                // hold a pause, and ForceDisarm → EndOverlayPause rides the
-                // engine's "Pause aufgehoben" resume cue for the close; if it
-                // was off there was no pause and nothing more to announce.
+                    "out-of-combat fire (world running) — closing "
+                    "(fire-and-close)");
                 ForceDisarm("fire-out-of-combat");
                 return true;
             }

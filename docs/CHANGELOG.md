@@ -39,6 +39,10 @@ and add the German in parentheses if it genuinely aids clarity.
 
 - The bundled patch framework is updated to Kotor Patch Manager 0.6.0 — a rebuilt patcher DLL (carrying our wrapper fixes) and the refreshed 0.6.0 address database.
 
+<h3>Action menu:</h3>
+
+- Out of combat you can now queue several actions from the action menu in one pass. Pause the game first (the pause key), and each action you pick is queued while the menu stays open on your selection, so you can line up the next one without reopening. Escape then closes the menu, resumes the game, and runs the queue — the same way the game's own menus unpause on Escape. With the game running, picking an action fires it and closes the menu, so a single action stays one keypress.
+
 <h3>Bug fixes:</h3>
 
 - Neutral creatures no longer repeat their name over and over after a fight ends. When combat finishes, the game's target focus can flicker on and off a nearby bystander (a Gizka standing near the battle, say), and the mod was re-announcing it every few seconds. An auto-focused creature is now announced once and stays quiet while the focus keeps flickering back to it; cycling targets yourself with the hostile-cycle keys still re-speaks on demand.
