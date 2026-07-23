@@ -203,22 +203,34 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
         return;
     }
 
-    // Endar Spire "Test Door" (tag end_door19): a permanently plot-locked
-    // leftover with no key and no bash. Its OnFailToOpen is wired to the
-    // Trask-death cutscene script, which never fires here — so the engine path
-    // below speaks a misleading "Open …" pre-roll and then dispatches a silent
-    // no-op, leaving the player poking at a mute door in the first minutes of
-    // the game. Give it an explicit sealed line and skip the dead dispatch.
-    // Keyed on the tag, which is unique to this Endar Spire door.
+    // Endar Spire plot doors that never open and have no key/bash. The engine
+    // path below would speak a misleading "Open …" pre-roll and then dispatch a
+    // dead no-op (or, for the cutscene barrier, bark the generic "gesperrt"
+    // that reads like a pickable lock), leaving the player poking at a door
+    // they can never get through in the first minutes of the game. Give both an
+    // explicit sealed line and skip the dead dispatch. Keyed on the tags, which
+    // are unique to these Endar Spire doors:
+    //   - end_door19      : the "Test Door" leftover; OnFailToOpen is wired to
+    //                       the Trask-death cutscene script, which never fires
+    //                       here, so the open action is a silent no-op.
+    //   - end_door10_cut2 : the barrier for the doomed "cut2" battle (same
+    //                       scripted scene as the end_cut2_* soldiers). Its
+    //                       blueprint is Locked=0, but the cutscene script locks
+    //                       it at runtime — so it narrates "verriegelt" and
+    //                       barks "gesperrt" as if a key existed. It never opens.
+    // Both are Plot doors, but Plot alone can't gate this: every Endar Spire
+    // door is Plot=1, including the ones you walk through — so the match must
+    // stay tag-scoped, not flag-derived.
     {
         char tag[64] = "";
         if (acc::engine::GetObjectTag(target, tag, sizeof(tag)) &&
-            _stricmp(tag, "end_door19") == 0) {
+            (_stricmp(tag, "end_door19") == 0 ||
+             _stricmp(tag, "end_door10_cut2") == 0)) {
             const char* line =
                 acc::strings::Get(acc::strings::Id::DoorSealedNoOpen);
             prism::Speak(line, /*interrupt=*/true);
             acclog::Write("Interact",
-                "%s -> [%s] sealed test door tag=%s handle=0x%08x",
+                "%s -> [%s] sealed plot door tag=%s handle=0x%08x",
                 forceRadial ? "Shift+Enter" : "Enter", line, tag, handle);
             return;
         }
