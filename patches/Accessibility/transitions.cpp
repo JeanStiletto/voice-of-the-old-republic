@@ -9,6 +9,7 @@
 #include "bringup_announce.h" // IsMovieWindowForeground — gate speech during movies
 #include "combat.h"          // IsCombatActive — gate room-change speech
 #include "discovery.h"       // discovery-tier area reconciliation + landmark record
+#include "endar_softlock.h"  // Endar Spire room-5 softlock guard
 #include "engine_area.h"
 #include "engine_input.h"    // ForceReacquireInput — post-load DirectInput re-grab
 #include "engine_panels.h"   // IsForegroundUiBlocking — gate vs. menus / dialogs
@@ -1071,6 +1072,7 @@ void Tick() {
         // CSWSObject::LoadObjectState. On a normal walk-through transition the
         // creature isn't reloaded, so this is effectively just a re-key.
         acc::discovery::OnAreaChanged(area);
+        acc::endar::OnAreaChanged(area);   // Endar Spire softlock guard re-key
         // Rebuild the per-room landmark cache for the new area before
         // any room-change branch can fire — the first room announce
         // after an area change should already use the curated label

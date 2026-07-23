@@ -76,6 +76,8 @@ const char* Get(Id id) {
         case Id::FmtInteractNoActionsRedirect: return "No actions available for %s. Press Enter to activate.";
         case Id::FmtInteractNoActions: return "No actions available for %s.";
         case Id::DoorSealedNoOpen: return "Sealed. It will not open.";
+        case Id::EndarDoorBattleHint: return "This door stays sealed until the battle in this area is over.";
+        case Id::EndarStuckReloadHint: return "If there are no enemies left nearby, the tutorial may be stuck. Load an earlier save from before this room.";
 
         case Id::FmtActionBarOpened:      return "Action bar column %d: %s, %d options";
         case Id::FmtActionBarColumnEmpty: return "Column %d is empty";

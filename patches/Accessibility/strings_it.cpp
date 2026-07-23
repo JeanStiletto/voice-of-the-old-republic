@@ -82,6 +82,8 @@ const char* Get(Id id) {
         case Id::FmtInteractNoActionsRedirect: return "Nessuna azione disponibile per %s. Premi Invio per attivare.";
         case Id::FmtInteractNoActions: return "Nessuna azione disponibile per %s.";
         case Id::DoorSealedNoOpen: return "Sigillata. Non si apre.";
+        case Id::EndarDoorBattleHint: return "Questa porta resta chiusa finch\xE9 la battaglia in quest'area non \xE8 finita.";
+        case Id::EndarStuckReloadHint: return "Se non ci sono pi\xF9 nemici nei paraggi, il tutorial potrebbe essere bloccato. Carica un salvataggio precedente a questa stanza.";
 
         case Id::FmtActionBarOpened:      return "Barra azioni colonna %d: %s, %d opzioni";
         case Id::FmtActionBarColumnEmpty: return "La colonna %d \xE8 vuota";

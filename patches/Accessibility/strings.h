@@ -257,6 +257,19 @@ enum class Id : int {
     //      confusing in the tutorial. No args.
     DoorSealedNoOpen,
 
+    // ---- Endar Spire room-5 door (tag end_door16) softlock guidance. This
+    //      door on the west corridor to the bridge stays locked until the
+    //      room-5 fight is cleared (a plot script unlocks it). Blind players
+    //      guided toward the bridge can arrive and repeatedly poke it with no
+    //      clue why. `EndarDoorBattleHint` is the always-helpful first cue
+    //      (tells them the door opens after the fight — nudges normal players
+    //      to go clear the room). `EndarStuckReloadHint` is the stronger cue
+    //      spoken after several failed attempts, when the sequence has likely
+    //      stalled unrecoverably (no enemies left) and reloading is the escape.
+    //      No args.
+    EndarDoorBattleHint,
+    EndarStuckReloadHint,
+
     // ---- Player action bar (Aktionsmenü) submenu, armed by Shift+4..7.
     //      `FmtActionBarOpened`      — opener pre-roll. Args: column
     //                                  number 1..6 (`%d`), current variant

@@ -1060,6 +1060,29 @@ bool GetCurrentAreaResName(char* outBuf, size_t bufSize) {
     }
 }
 
+int ReadGlobalNumber(const char* name) {
+    if (!name || !name[0]) return -1;
+    void* serverApp = GetServerApp();
+    if (!serverApp) return -1;
+    __try {
+        // table = CServerExoApp::GetGlobalVariableTable(server)
+        constexpr uintptr_t kAddrGetGlobalVarTable   = 0x004aee60;
+        constexpr uintptr_t kAddrGlobalVarGetNumber  = 0x00529240;
+        using PFN_GetTable = void* (__thiscall*)(void*);
+        void* table = reinterpret_cast<PFN_GetTable>(kAddrGetGlobalVarTable)(serverApp);
+        if (!table) return -1;
+        // GetValueNumber(table, &CExoString{name,len}, &out) — writes low byte.
+        struct { const char* p; uint32_t len; } nameStr{
+            name, static_cast<uint32_t>(std::strlen(name)) };
+        int value = 0;
+        using PFN_GetNum = void (__thiscall*)(void*, void*, int*);
+        reinterpret_cast<PFN_GetNum>(kAddrGlobalVarGetNumber)(table, &nameStr, &value);
+        return value & 0xff;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
 bool IsLoadingSaveGame() {
     void* serverApp = GetServerApp();  // CServerExoApp facade (AppManager+0x8)
     if (!serverApp) return false;

@@ -145,6 +145,14 @@ bool GetAreaTag(void* area, char* outBuf, size_t bufSize);
 // NUL-terminated on entry.
 bool GetCurrentAreaResName(char* outBuf, size_t bufSize);
 
+// One global plot NUMBER (engine stores it as a byte) by name, via
+// CServerExoApp::GetGlobalVariableTable @0x004aee60 + GetValueNumber
+// @0x00529240. Returns -1 on any null link / fault; the engine writes 0 for an
+// unknown name. Language-independent (globals are keyed by ASCII name). Read
+// live — plot scripts mutate these. (Mirrors swoop_race's private reader; this
+// is the shared home for non-swoop callers.)
+int ReadGlobalNumber(const char* name);
+
 // CServerExoApp::GetLoadFromSaveGame @0x004af050 — the engine's own "I am
 // loading a saved game" flag (CServerExoAppInternal.load_from_savegame).
 // Set true by CSWGuiSaveLoad::LoadGame / CGuiInGame::DoQuickLoad for the

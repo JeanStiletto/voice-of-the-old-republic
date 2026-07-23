@@ -18,6 +18,7 @@
 #include "diag_focus.h"
 #include "dialog_speech.h"
 #include "discovery.h"
+#include "endar_softlock.h"
 #include "door_announce.h"
 #include "engine_area.h"
 #include "engine_player.h"
@@ -358,6 +359,10 @@ void Dispatch() {
 
     // Discovery-tier deferred load (runs after transitions has set the area).
     PHASE("discovery", acc::discovery::Tick());
+
+    // Endar Spire room-5 softlock guard + plot-state diagnostic. Inert outside
+    // END_M01AA (self-gated); flushes queued door hints every frame.
+    PHASE("endar_softlock", acc::endar::Tick());
 
     // Trap ("mine") detected-state watcher — mirrors the engine's per-trap
     // detected-by lists for sighted-parity trap warnings. Internally

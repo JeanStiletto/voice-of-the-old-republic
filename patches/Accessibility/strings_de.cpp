@@ -87,6 +87,8 @@ const char* Get(Id id) {
         case Id::FmtInteractNoActionsRedirect: return "Keine Aktionen verf\xFC" "gbar f\xFCr %s. Enter zum Aktivieren."; // verf?gbar / f?r
         case Id::FmtInteractNoActions: return "Keine Aktionen verf\xFC" "gbar f\xFCr %s.";  // verf?gbar / f?r
         case Id::DoorSealedNoOpen: return "Versiegelt. L\xE4sst sich nicht \xF6" "ffnen.";  // Lasst / offnen
+        case Id::EndarDoorBattleHint: return "Diese T\xFCr bleibt verschlossen, bis der Kampf in diesem Bereich vorbei ist.";
+        case Id::EndarStuckReloadHint: return "Falls keine Gegner mehr in der N\xE4he sind, steckt das Tutorial m\xF6glicherweise fest. Lade einen fr\xFCheren Spielstand von vor diesem Raum.";
 
         case Id::FmtActionBarOpened:      return "Aktionsmen\xFC Spalte %d: %s, %d Optionen"; // Aktionsmen?
         case Id::FmtActionBarColumnEmpty: return "Spalte %d ist leer";

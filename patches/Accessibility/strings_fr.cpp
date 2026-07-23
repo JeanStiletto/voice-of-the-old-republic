@@ -83,6 +83,8 @@ const char* Get(Id id) {
         case Id::FmtInteractNoActionsRedirect: return "Aucune action disponible pour %s. Appuyez sur Entr\xE9""e pour activer.";
         case Id::FmtInteractNoActions: return "Aucune action disponible pour %s.";
         case Id::DoorSealedNoOpen: return "Scell\xE9""e. Elle ne s'ouvre pas.";
+        case Id::EndarDoorBattleHint: return "Cette porte reste verrouill\xE9""e jusqu'\xE0 la fin du combat dans cette zone.";
+        case Id::EndarStuckReloadHint: return "S'il ne reste aucun ennemi \xE0 proximit\xE9, le tutoriel est peut-\xEAtre bloqu\xE9. Chargez une sauvegarde ant\xE9rieure \xE0 cette salle.";
 
         case Id::FmtActionBarOpened:      return "Barre d'action colonne %d : %s, %d options";
         case Id::FmtActionBarColumnEmpty: return "La colonne %d est vide";

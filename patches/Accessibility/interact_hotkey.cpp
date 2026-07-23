@@ -10,6 +10,7 @@
 #include "combat_query.h"   // Phase 2C — Ö Examine + Phase 2A PC stat read
 #include "combat_queue.h"   // Phase 3A — action-queue submenu (Shift+H)
 #include "engine_actionbar.h"
+#include "endar_softlock.h" // Endar Spire room-5 door softlock guidance
 #include "engine_area.h"
 #include "examine_view.h"   // Phase 2C v2 — navigable Ö examine list
 #include "engine_input.h"   // kInputEnter1 / kInputNavUp/Down/Left/Right
@@ -223,7 +224,8 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
     // stay tag-scoped, not flag-derived.
     {
         char tag[64] = "";
-        if (acc::engine::GetObjectTag(target, tag, sizeof(tag)) &&
+        bool haveTag = acc::engine::GetObjectTag(target, tag, sizeof(tag));
+        if (haveTag &&
             (_stricmp(tag, "end_door19") == 0 ||
              _stricmp(tag, "end_door10_cut2") == 0)) {
             const char* line =
@@ -234,6 +236,10 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
                 forceRadial ? "Shift+Enter" : "Enter", line, tag, handle);
             return;
         }
+        // Not a permanent seal, but the Endar Spire room-5 door (end_door16) is
+        // locked until its fight clears — guide the player instead of letting
+        // them poke a mute locked door. Self-gates on tag + module + room state.
+        if (haveTag) acc::endar::NoteDoorInteract(tag);
     }
 
     char name[128] = "";

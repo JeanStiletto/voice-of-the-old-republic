@@ -84,6 +84,8 @@ const char* Get(Id id) {
         case Id::FmtInteractNoActionsRedirect: return "No hay acciones disponibles para %s. Pulsa Intro para activar.";
         case Id::FmtInteractNoActions: return "No hay acciones disponibles para %s.";
         case Id::DoorSealedNoOpen: return "Sellada. No se puede abrir.";
+        case Id::EndarDoorBattleHint: return "Esta puerta permanece cerrada hasta que termine el combate en esta zona.";
+        case Id::EndarStuckReloadHint: return "Si no quedan enemigos cerca, puede que el tutorial est\xE9 bloqueado. Carga una partida anterior a esta sala.";
 
         case Id::FmtActionBarOpened:      return "Barra de acciones columna %d: %s, %d opciones";
         case Id::FmtActionBarColumnEmpty: return "La columna %d est\xE1 vac\xED""a";
