@@ -250,11 +250,13 @@ enum class Id : int {
     FmtInteractNoActions,
 
     // ---- Sealed-door override. Spoken when the player interacts with the
-    //      Endar Spire "Test Door" (tag end_door19): a permanently plot-locked
-    //      leftover with no key, no bash, and an OnFailToOpen wired to the
-    //      Trask-death cutscene that never fires there. Left to the engine it
-    //      gives a misleading "Open …" pre-roll and then silence, which is
-    //      confusing in the tutorial. No args.
+    //      Endar Spire cutscene barrier beside the doomed "cut2" battle
+    //      (tag end_door10_cut2): script-locked at runtime with an empty
+    //      OnFailToOpen, so the engine open attempt is a dead no-op it narrates
+    //      as a pickable "gesperrt" lock. No args.
+    //      NOTE: this is NOT for end_door19 — that door's open attempt fires the
+    //      Trask-death story trigger and must reach the engine (see the WARNING
+    //      in interact_hotkey.cpp).
     DoorSealedNoOpen,
 
     // ---- Endar Spire room-5 door (tag end_door16) softlock guidance. This

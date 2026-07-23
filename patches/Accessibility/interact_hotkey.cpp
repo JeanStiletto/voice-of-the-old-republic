@@ -204,30 +204,29 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
         return;
     }
 
-    // Endar Spire plot doors that never open and have no key/bash. The engine
-    // path below would speak a misleading "Open …" pre-roll and then dispatch a
-    // dead no-op (or, for the cutscene barrier, bark the generic "gesperrt"
-    // that reads like a pickable lock), leaving the player poking at a door
-    // they can never get through in the first minutes of the game. Give both an
-    // explicit sealed line and skip the dead dispatch. Keyed on the tags, which
-    // are unique to these Endar Spire doors:
-    //   - end_door19      : the "Test Door" leftover; OnFailToOpen is wired to
-    //                       the Trask-death cutscene script, which never fires
-    //                       here, so the open action is a silent no-op.
-    //   - end_door10_cut2 : the barrier for the doomed "cut2" battle (same
-    //                       scripted scene as the end_cut2_* soldiers). Its
-    //                       blueprint is Locked=0, but the cutscene script locks
-    //                       it at runtime — so it narrates "verriegelt" and
-    //                       barks "gesperrt" as if a key existed. It never opens.
-    // Both are Plot doors, but Plot alone can't gate this: every Endar Spire
-    // door is Plot=1, including the ones you walk through — so the match must
-    // stay tag-scoped, not flag-derived.
+    // Endar Spire cutscene barrier (tag end_door10_cut2, template end_door012_2):
+    // the door beside the doomed "cut2" battle (same scripted scene as the
+    // end_cut2_* soldiers). Its blueprint is Locked=0 with an EMPTY OnFailToOpen,
+    // but the cutscene script locks it at runtime — so trying to open it is a
+    // genuine dead no-op the engine narrates as "verriegelt" then a generic
+    // "gesperrt", reading like a pickable lock. Give it the explicit sealed line
+    // and skip the dead dispatch. Tag-scoped because every Endar Spire door is
+    // Plot=1, including the ones you walk through — Plot alone can't gate this.
+    //
+    // WARNING — do NOT add end_door19 here. It LOOKS like a dead plot door
+    // (Plot=1, Locked=1, no reachable key), but its OnFailToOpen is wired to
+    // k_pend_traskdie1 — the Trask-death sequence. The open ATTEMPT is the story
+    // trigger: before you level up it makes Trask say "level up before this
+    // door"; once you have, the same attempt fires his sacrifice cutscene and
+    // opens the way. Sealing it (commits 0a4d3a2, 6e76ce1) returned before the
+    // engine dispatch and so suppressed that trigger, stranding the player at the
+    // one door they must push through. Confirmed against end_m01aa.mod:
+    // end_door19.utd OnFailToOpen = k_pend_traskdie1, and the runtime log shows
+    // Trask speaking the level-up line at this exact door (tag=end_door19).
     {
         char tag[64] = "";
         bool haveTag = acc::engine::GetObjectTag(target, tag, sizeof(tag));
-        if (haveTag &&
-            (_stricmp(tag, "end_door19") == 0 ||
-             _stricmp(tag, "end_door10_cut2") == 0)) {
+        if (haveTag && _stricmp(tag, "end_door10_cut2") == 0) {
             const char* line =
                 acc::strings::Get(acc::strings::Id::DoorSealedNoOpen);
             prism::Speak(line, /*interrupt=*/true);
