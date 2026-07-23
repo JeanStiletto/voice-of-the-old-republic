@@ -40,4 +40,10 @@ bool TriggerLevelUp();
 // pause is held.
 void TickLevelUpPause();
 
+// True only during the synchronous ShowLevelUpGUI dispatch, when the wizard's
+// SkillInfoBox sub-panel first-sight fires before the wizard is on the modal
+// stack (so HasActiveLevelUpPanel() is not yet true). SkillInfoBoxTitleOverride
+// checks this to speak the level-up hint instead of the BioWare placeholder.
+bool IsOpeningLevelUp();
+
 }  // namespace acc::engine_levelup

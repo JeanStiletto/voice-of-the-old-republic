@@ -175,6 +175,7 @@ const char* Get(Id id) {
         case Id::LevelUpFailed:        return "Level Up failed";
         case Id::LevelUpAlreadyOpen:   return "Level Up already open";
         case Id::LevelUpNotReady:      return "Not enough experience to level up yet";
+        case Id::LevelUpScreenHint:    return "Use the arrow keys to choose a category and press Enter to open it. Spend your points there, then choose Accept to finish.";
 
         case Id::PortraitLabel:        return "Portrait";
         case Id::PortraitArrowPrev:    return "Previous portrait";

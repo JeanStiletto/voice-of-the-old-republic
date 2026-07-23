@@ -628,6 +628,14 @@ enum class Id : int {
     // btn_levelup button). Without this the mod force-opened the wizard
     // regardless of XP and the player could level up endlessly.
     LevelUpNotReady,
+    // Spoken as the level-up screen's title/overview when it opens in-world
+    // (Shift+L). It substitutes for the SkillInfoBox's BioWare-leftover
+    // placeholder label ("Items Available to Place in Container and blah blah
+    // blah") that rides along on the category screen — silencing that gibberish
+    // AND giving a blind player the "what do I do here" they can't see. Gated on
+    // an active in-world level-up wizard (see SkillInfoBoxTitleOverride); the
+    // chargen Feats flow keeps its own ChargenFeatGrantedTitle. No args.
+    LevelUpScreenHint,
 
     // ---- Chargen portrait selection (CSWGuiPortraitCharGen).
     //      The left/right arrow buttons have no own text (image-only);

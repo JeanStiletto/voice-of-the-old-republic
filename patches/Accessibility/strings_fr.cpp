@@ -182,6 +182,7 @@ const char* Get(Id id) {
         case Id::LevelUpFailed:        return "Mont\xE9""e de niveau \xE9""chou\xE9""e";
         case Id::LevelUpAlreadyOpen:   return "Mont\xE9""e de niveau d\xE9j\xE0 ouverte";
         case Id::LevelUpNotReady:      return "Pas encore assez d'exp\xE9rience pour monter de niveau"; // exp?rience
+        case Id::LevelUpScreenHint:    return "Utilisez les fl\xE8""ches pour choisir une cat\xE9gorie et appuyez sur Entr\xE9""e pour l'ouvrir. R\xE9partissez vos points, puis choisissez Accepter pour terminer."; // fleches categorie Entree Repartissez
 
         case Id::PortraitLabel:        return "Portrait";
         case Id::PortraitArrowPrev:    return "Portrait pr\xE9""c\xE9""dent";

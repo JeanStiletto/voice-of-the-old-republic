@@ -140,6 +140,14 @@ bool s_pauseHeld = false;   // open state outstanding (status driven + pause hel
 bool s_sawPanel  = false;   // wizard panel observed live at least once — guards
                             // against releasing in the frame before the panel
                             // registers
+// True only across the synchronous ShowLevelUpGUI call. The wizard's
+// SkillInfoBox sub-panel is added — and its first-sight title narration fires —
+// INSIDE that call, before the wizard panel itself lands on the modal stack, so
+// HasActiveLevelUpPanel() is still false when SkillInfoBoxTitleOverride runs.
+// This flag lets that override know a level-up open is in progress and speak the
+// level-up hint instead of the BioWare placeholder. (Later re-sights are covered
+// by HasActiveLevelUpPanel once the wizard is on the stack.)
+bool s_openingLevelUp = false;
 
 void NoteLevelUpOpened(void* gui) {
     if (s_pauseHeld) return;  // idempotent per open
@@ -229,13 +237,16 @@ bool TriggerLevelUp() {
         __try {
             auto fn = reinterpret_cast<PFN_ShowLevelUpGUI>(
                 kAddrCSWGuiInGameCharacterShowLevelUpGUI);
+            s_openingLevelUp = true;   // covers the SkillInfoBox first-sight
             uint32_t ret = fn(charPanel, 0);
+            s_openingLevelUp = false;
             acclog::Write("LevelUp", "CSWGuiInGameCharacter::ShowLevelUpGUI "
                 "dispatched panel=%p ret=0x%08x",
                 charPanel, ret);
             NoteLevelUpOpened(gui);
             return true;
         } __except (EXCEPTION_EXECUTE_HANDLER) {
+            s_openingLevelUp = false;
             acclog::Write("LevelUp", "CSWGuiInGameCharacter::ShowLevelUpGUI faulted "
                 "panel=%p — falling back to CGuiInGame variant",
                 charPanel);
@@ -252,18 +263,23 @@ bool TriggerLevelUp() {
     __try {
         auto fn = reinterpret_cast<PFN_ShowLevelUpGUI>(
             kAddrCGuiInGameShowLevelUpGUI);
+        s_openingLevelUp = true;   // covers the SkillInfoBox first-sight
         uint32_t ret = fn(gui, 0);
+        s_openingLevelUp = false;
         acclog::Write("LevelUp", "CGuiInGame::ShowLevelUpGUI dispatched gui=%p "
             "ret=0x%08x",
             gui, ret);
         NoteLevelUpOpened(gui);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
+        s_openingLevelUp = false;
         acclog::Write("LevelUp", "CGuiInGame::ShowLevelUpGUI faulted gui=%p",
                       gui);
         return false;
     }
 }
+
+bool IsOpeningLevelUp() { return s_openingLevelUp; }
 
 void TickLevelUpPause() {
     if (!s_pauseHeld) return;

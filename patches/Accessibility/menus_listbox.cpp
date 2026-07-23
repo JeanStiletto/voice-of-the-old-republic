@@ -22,6 +22,7 @@
 #include "engine_manager.h"
 #include "engine_offsets.h"
 #include "engine_panels.h"
+#include "engine_levelup.h"  // IsOpeningLevelUp — SkillInfoBox title override
 #include "engine_reads.h"
 #include "hotkeys.h"
 #include "log.h"
@@ -768,6 +769,17 @@ bool SkillInfoBoxOnEnter(void* panel) {
 const char* SkillInfoBoxTitleOverride(void* /*panel*/) {
     if (FindFeatsCharGenPanel()) {
         return acc::strings::Get(acc::strings::Id::ChargenFeatGrantedTitle);
+    }
+    // In-world level-up (Shift+L): the SkillInfoBox rides along on the category
+    // screen carrying the same BioWare placeholder ("Items Available to Place in
+    // Container and blah blah blah"), which the level-up flow never overwrites.
+    // Speak a short level-up hint instead — the "what do I do here" a blind
+    // player can't see — which also silences that gibberish. Gated on an active
+    // in-world level-up wizard so it never fires for a SkillInfoBox shown from
+    // any other host.
+    if (acc::engine::HasActiveLevelUpPanel() ||
+        acc::engine_levelup::IsOpeningLevelUp()) {
+        return acc::strings::Get(acc::strings::Id::LevelUpScreenHint);
     }
     return nullptr;  // unknown SkillInfoBox host â€” let the generic walk run
 }

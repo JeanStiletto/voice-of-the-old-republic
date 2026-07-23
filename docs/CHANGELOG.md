@@ -33,6 +33,12 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.6.2</h2>
+
+<h3>Bug fixes:</h3>
+
+- Opening the Level Up screen (Shift+L) now speaks a short instruction instead of a leftover placeholder. The game's own level-up description box carries an unfinished developer label ("Items Available to Place in Container and blah blah blah") that no language ever fills in, and the mod read it aloud on entry. In its place you now hear a brief how-to — choose a category with the arrow keys, press Enter to open it, spend your points, then Accept — so the moment guides you instead of confusing you. Spoken in all five languages. (Character creation already suppressed the same leftover.)
+
 <h2>v0.6.1</h2>
 
 <h3>Installer:</h3>

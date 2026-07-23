@@ -183,6 +183,7 @@ const char* Get(Id id) {
         case Id::LevelUpFailed:        return "Subir de nivel fallido";
         case Id::LevelUpAlreadyOpen:   return "Subir de nivel ya abierto";
         case Id::LevelUpNotReady:      return "Todav\xED""a no hay experiencia suficiente para subir de nivel"; // Todav?a
+        case Id::LevelUpScreenHint:    return "Usa las flechas para elegir una categor\xED""a y pulsa Intro para abrirla. Reparte tus puntos y luego elige Aceptar para terminar."; // categoria
 
         case Id::PortraitLabel:        return "Retrato";
         case Id::PortraitArrowPrev:    return "Retrato anterior";
