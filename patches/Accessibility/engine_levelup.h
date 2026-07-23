@@ -30,4 +30,14 @@ bool PlayerCanLevelUp();
 // and the player can level up endlessly.
 bool TriggerLevelUp();
 
+// Per-frame maintenance for the level-up overlay pause. TriggerLevelUp freezes
+// the world with BeginOverlayPause(LevelUp) when it opens the wizard (the same
+// in-world overlay pause the action menu uses — NOT a sub-screen open, which
+// would flip the input class and break the wizard's keyboard nav). The wizard
+// closes via its own engine buttons (Accept / Back), so nothing calls
+// EndOverlayPause at the close site; this tick releases the pause once the
+// panel is gone. Call once per frame from core_tick. Inert when no level-up
+// pause is held.
+void TickLevelUpPause();
+
 }  // namespace acc::engine_levelup

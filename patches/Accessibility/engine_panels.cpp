@@ -970,6 +970,52 @@ bool CloseInGameMenuToWorld() {
     }
 }
 
+// Read the live input_class (CClientExoAppInternal +0x9c). 0/4 = in-world,
+// 2 = a menu/sub-screen owns input (mouse shown). Diagnostic + gating helper.
+// Chain: *kAddrAppManagerPtr → +0x4 CClientExoApp → +0x4 Internal → +0x9c.
+int GetInputClass() {
+    __try {
+        void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
+        if (!appMgr) return -1;
+        void* client = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(appMgr) + kAppManagerClientOff);
+        if (!client) return -1;
+        void* internal = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(client) + 0x04);
+        if (!internal) return -1;
+        return *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(internal) + 0x9c);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
+// Set the client input class via the engine's own setter. klass 0 = in-world
+// routing; 2 = menu/GUI (mouse shown), the value the in-game screens run in.
+// Exposed so the level-up wizard — which we open WITHOUT the full
+// ShowSWInGameGui — can put the client into GUI input mode itself. Without it,
+// physical keys stay world-coded (L/U/J → 208/214/221) and never translate to
+// the manager's nav codes (181-185), so the wizard sits unreachable on the
+// modal stack (the "frozen until Escape" limbo).
+bool SetGuiInputClass(int klass) {
+    void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
+    void* client = appMgr ? *reinterpret_cast<void**>(
+        reinterpret_cast<unsigned char*>(appMgr) + kAppManagerClientOff) : nullptr;
+    if (!client) {
+        acclog::Write("InputClass", "SetGuiInputClass(%d) skipped: no client", klass);
+        return false;
+    }
+    __try {
+        reinterpret_cast<PFN_SetInputClass>(kAddrSetInputClass)(client, klass, 1);
+        acclog::Write("InputClass", "SetInputClass(%d,1) -> now=%d",
+                      klass, GetInputClass());
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("InputClass", "SetGuiInputClass(%d) faulted", klass);
+        return false;
+    }
+}
+
 bool HasActiveMapPanel(void** outPanel) {
     if (outPanel) *outPanel = nullptr;
     void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);

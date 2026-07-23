@@ -261,6 +261,14 @@ bool SetGlobalDialogState(int state);
 // close ran (HideSWInGameGui no-ops, returning 0, when a modal is up).
 bool CloseInGameMenuToWorld();
 
+// Read the live client input_class (0/4 = in-world, 2 = menu/GUI owns input).
+int GetInputClass();
+
+// Set the client input class via the engine setter. klass 0 = in-world, 2 =
+// menu/GUI. Used to put the level-up wizard into GUI input mode without the
+// full ShowSWInGameGui (see the freeze investigation in engine_levelup.cpp).
+bool SetGuiInputClass(int klass);
+
 // True iff foreground UI is capturing input. Blacklist (not whitelist):
 // panels[] keeps stale entries (closed Fade overlays, dismissed Options
 // menus) at the top for seconds, so a whitelist of in-world overlays

@@ -55,6 +55,7 @@ enum class OverlayPauseOwner : unsigned {
     CombatQueue = 1u << 1,
     ExamineView = 1u << 2,
     Help        = 1u << 3,
+    LevelUp     = 1u << 4,
 };
 void BeginOverlayPause(OverlayPauseOwner owner);
 void EndOverlayPause(OverlayPauseOwner owner);

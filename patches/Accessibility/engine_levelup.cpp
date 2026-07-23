@@ -3,9 +3,11 @@
 #include <windows.h>
 #include <cstdint>
 
-#include "engine_panels.h"  // ResolveGuiInGame
-#include "engine_player.h"  // GetClientLeader, kClientObjectServerObjectOffset
-#include "engine_offsets.h" // kCreatureStatsPointerOffset
+#include "engine_panels.h"    // ResolveGuiInGame, HasActiveLevelUpPanel
+#include "engine_player.h"    // GetClientLeader, kClientObjectServerObjectOffset
+#include "engine_offsets.h"   // kCreatureStatsPointerOffset
+#include "engine_subscreen.h" // Begin/EndOverlayPause — freeze the world like
+                              // the action menu, WITHOUT opening a sub-screen
 #include "log.h"
 
 namespace acc::engine_levelup {
@@ -95,6 +97,69 @@ bool SetLevelUpMode(void* gui, int mode) {
     }
 }
 
+// CGuiInGame::SetSWGuiStatus — __thiscall(int status, int p2) -> void
+// @0x0062aa00. Decompiled: a small state setter. status 3 = a sub-screen owns
+// input; 4 = sub-screen finishing (restores status to 1). After the switch it
+// only adds/removes the main-interface HUD panel and destroys a leftover pause
+// panel — no scripts, no input-class change, no character panel.
+//
+// This is the ONE thing the wizard needs and the ONLY thing we take from the
+// full sub-screen open: with status==1 (in-world) the engine routes keyboard to
+// the world, so the wizard sits foreground on the modal stack but receives
+// nothing until some transition sets status=3 (the "frozen until you press
+// Escape once" symptom — Escape opened a real sub-screen, which set it).
+// ShowSWInGameGui also sets status=3, but it ADDITIONALLY adds the Character
+// panel (screen 2), whose input handler re-codes the wizard's nav keys
+// (181/182/183 → 208/214/221) and breaks our forwarding. Driving the status bit
+// alone keeps the in-world key codes — confirmed by the F2-opened menu strip in
+// patch-20260723-161404.log, which set status=3 with NO character panel and the
+// wizard then navigated with 181/182/183.
+constexpr uintptr_t kAddrCGuiInGameSetSWGuiStatus = 0x0062aa00;
+typedef void (__thiscall* PFN_SetSWGuiStatus)(void* this_, int status, int p2);
+
+void DriveSWGuiStatus(void* gui, int status, int p2) {
+    if (!gui) return;
+    __try {
+        reinterpret_cast<PFN_SetSWGuiStatus>(kAddrCGuiInGameSetSWGuiStatus)(
+            gui, status, p2);
+        acclog::Write("LevelUp", "DriveSWGuiStatus(%d,%d) gui=%p",
+                      status, p2, gui);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("LevelUp", "DriveSWGuiStatus(%d) faulted gui=%p",
+                      status, gui);
+    }
+}
+
+// Wizard-open bookkeeping. Two engine touches, no sub-screen open:
+//   1. sw_gui_status = 3 → the engine routes keyboard to the wizard modal
+//      (fixes "frozen until Escape") while keeping the in-world key codes.
+//   2. BeginOverlayPause → freeze the world the same way the action menu does
+//      (no movement leak). status=3 alone does NOT pause the simulation.
+// TickLevelUpPause reverses both once the wizard closes.
+bool s_pauseHeld = false;   // open state outstanding (status driven + pause held)
+bool s_sawPanel  = false;   // wizard panel observed live at least once — guards
+                            // against releasing in the frame before the panel
+                            // registers
+
+void NoteLevelUpOpened(void* gui) {
+    if (s_pauseHeld) return;  // idempotent per open
+    // Replicate the THREE things a real sub-screen open establishes, minus the
+    // Character panel that re-routes nothing useful for us:
+    //   1. input_class = 2 (menu/GUI) → physical keys translate to the manager's
+    //      nav codes (181-185); without it they stay world-coded (208/214/221)
+    //      and the wizard is unreachable (the "frozen until Escape" limbo).
+    //   2. sw_gui_status = 3 → the client routes input to the GUI manager, which
+    //      dispatches to the top modal (our wizard).
+    //   3. BeginOverlayPause → freeze the world (status/class don't pause sim).
+    acc::engine::SetGuiInputClass(2);
+    DriveSWGuiStatus(gui, 3, 1);
+    acc::engine::BeginOverlayPause(acc::engine::OverlayPauseOwner::LevelUp);
+    s_pauseHeld = true;
+    s_sawPanel  = false;
+    acclog::Write("LevelUp", "wizard opened: input_class=2 + sw_gui_status=3 + "
+        "overlay pause (input routed to wizard, world frozen)");
+}
+
 }  // namespace
 
 bool PlayerCanLevelUp() {
@@ -168,6 +233,7 @@ bool TriggerLevelUp() {
             acclog::Write("LevelUp", "CSWGuiInGameCharacter::ShowLevelUpGUI "
                 "dispatched panel=%p ret=0x%08x",
                 charPanel, ret);
+            NoteLevelUpOpened(gui);
             return true;
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             acclog::Write("LevelUp", "CSWGuiInGameCharacter::ShowLevelUpGUI faulted "
@@ -190,12 +256,34 @@ bool TriggerLevelUp() {
         acclog::Write("LevelUp", "CGuiInGame::ShowLevelUpGUI dispatched gui=%p "
             "ret=0x%08x",
             gui, ret);
+        NoteLevelUpOpened(gui);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         acclog::Write("LevelUp", "CGuiInGame::ShowLevelUpGUI faulted gui=%p",
                       gui);
         return false;
     }
+}
+
+void TickLevelUpPause() {
+    if (!s_pauseHeld) return;
+    if (acc::engine::HasActiveLevelUpPanel()) {
+        s_sawPanel = true;   // wizard is live — keep the world frozen
+        return;
+    }
+    if (!s_sawPanel) return; // just opened; panel not registered yet — wait
+                             // until we've seen it before releasing the pause
+    // Reverse the three open touches, in reverse order. status 4 =
+    // "sub-screen finishing": the decompile restores sw_gui_status to 1 (unless
+    // it was 2) and re-adds the HUD panel. input_class 0 = back to in-world key
+    // routing (same call the in-game menus use to close, SetInputClass(0,1)).
+    // Then release the world pause.
+    DriveSWGuiStatus(acc::engine::ResolveGuiInGame(), 4, 1);
+    acc::engine::SetGuiInputClass(0);
+    acc::engine::EndOverlayPause(acc::engine::OverlayPauseOwner::LevelUp);
+    s_pauseHeld = false;
+    acclog::Write("LevelUp",
+        "wizard closed — input_class/status restored + overlay pause released");
 }
 
 }  // namespace acc::engine_levelup

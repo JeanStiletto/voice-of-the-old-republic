@@ -31,6 +31,7 @@
 #include "help.h"
 #include "hotkeys.h"
 #include "interact_hotkey.h"
+#include "engine_levelup.h"  // TickLevelUpPause — release the wizard overlay pause
 #include "locked_recall.h"
 #include "log.h"
 #include "map_ui_cursor.h"
@@ -409,6 +410,12 @@ void Dispatch() {
 
     // Enter (interact) — engine click pipeline with localised pre-roll.
     PHASE("interact", acc::interact::PollHotkey());
+
+    // Release the level-up wizard's overlay pause once the panel closes (the
+    // wizard's own Accept/Back buttons close it, so there's no close site to
+    // call EndOverlayPause). After PollHotkey so a wizard opened this frame is
+    // already live when we check.
+    PHASE("levelup_pause", acc::engine_levelup::TickLevelUpPause());
 
     // MessageBoxModal close cleanup — engine's close path doesn't unpause
     // or unmute on its own.
