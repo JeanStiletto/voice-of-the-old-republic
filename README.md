@@ -9,9 +9,15 @@ permalink: /
 
 <h2>What is this mod</h2>
 
-**Voice of the Old Republic** is a screen-reader and keyboard-navigation mod for **Star Wars: Knights of the Old Republic 1** (BioWare, 2003, Steam release) that lets fully blind players play KOTOR 1 with any modern screen reader. Speech is routed through the Prism speech bridge, which supports every major screen reader on every major platform.
+**Voice of the Old Republic** is a screen-reader and keyboard-navigation mod for **Star Wars: Knights of the Old Republic 1** (BioWare, 2003, Steam / GoG release) that lets fully blind players play KOTOR 1 with any modern screen reader. It adds spoken output and keyboard navigation to nearly every part of the game — moving through the world, combat, dialogue, inventory, the map, level-ups, and the minigames.
 
-The mod is written by a blind developer. Every workflow — installing, playing, contributing — is designed to be doable with a screen reader and keyboard alone.
+This mod is for **blind and visually impaired players**. Speech is routed through the Prism speech bridge, which supports every major screen reader on every major platform, so if your screen reader works with anything else on your system, it will work here. The mod is written by a fully blind developer, and every workflow — installing, playing, contributing — is designed to be doable with a screen reader and keyboard alone.
+
+<h2>What is Knights of the Old Republic</h2>
+
+Knights of the Old Republic (KOTOR) is a story-driven Star Wars role-playing game made by BioWare in 2003, set about four thousand years before the films. You create your own character, gather a party of companions, travel between planets, and shape the story through your dialogue choices and whether you follow the light or dark side of the Force. Combat is real-time with a pause, built on the tabletop Star Wars d20 rules — you queue actions and the dice resolve them.
+
+It is widely considered one of the greatest RPGs ever made, and for over twenty years it had no screen-reader access at all. If you have played other BioWare RPGs like Baldur's Gate or Mass Effect, you will recognise the structure. If you are new to the genre, the game eases you in, and this mod narrates the parts you would otherwise have to see.
 
 <h2>Requirements</h2>
 
@@ -32,22 +38,39 @@ If the installer reports a version mismatch, file an issue with the displayed ha
 
 1. Download `VoiceOfTheOldRepublicInstaller.exe` from the latest release on GitHub
 2. Close KOTOR if it is running
-3. Right-click the installer and choose **Run as administrator**. On the first run Windows SmartScreen will warn about an "Unknown publisher" — click **More info → Run anyway**. The installer is not code-signed yet, so this warning is expected
+3. Right-click the installer and choose **Run as administrator**. On the first run Windows SmartScreen will warn about an "Unknown publisher" — click **More info → Run anyway**. The installer is not code-signed yet, so this warning is expected (see [Troubleshooting](#troubleshooting) for how to verify the download)
 4. (Recommended) Back up your save folder at `%USERPROFILE%\Documents\Swkotor\saves\` before installing if you have an existing playthrough
 5. Step through the installer screens. It will detect your KOTOR install, install the patch framework, deploy the mod, and (by default) bundle the K1 Community Patch plus the widescreen / high-resolution-menus fixes
 6. Launch the game from the installer's final screen or from Steam
 
-To uninstall, run the installer again and choose the uninstall option, or use Add/Remove Programs. The uninstaller removes only this mod's files — K1CP and any other optional mods you chose at install time are left in place. To return to a fully vanilla KOTOR, use Steam's "Verify integrity of game files" or reinstall from GoG after uninstalling.
+<h2>Uninstallation</h2>
+
+Run the installer again and choose the uninstall option, or use Add/Remove Programs. The uninstaller removes only this mod's files — K1CP and any other optional mods you chose at install time are left in place. To return to a fully vanilla KOTOR, use Steam's "Verify integrity of game files" or reinstall from GoG after uninstalling.
+
+<h2>First steps</h2>
+
+When you start a new game, KOTOR first walks you through **character creation**: you pick a class (Soldier, Scout, or Scoundrel), a portrait, and adjust your attributes, skills, and feats. The mod reads each panel as you move through it — take your time; nothing is timed.
+
+You then wake on the **Endar Spire**, a Republic ship under attack. This is the game's tutorial area. The mod replaces the game's on-screen tutorial popups with custom keyboard hints written for screen-reader users, so you learn the controls as you go. Follow Trask, your guide, toward the escape pods.
+
+A few habits that make the early game much easier:
+
+- **Save often.** F4 quick-saves; F5 quick-loads.
+- **Find things with Q / E**, and get back to things you have already found with the `,` / `.` cycle (see the keyboard shortcuts below).
+- **Press H** at any time to hear your health and status, and **F1** for the full list of keys.
+- **Listen to the room.** Entering a room speaks its name, shape, and exits, and a soft audio layer keeps you aware of the nearest walls as you move.
+
+After the Endar Spire you reach **Taris**, the first large world, and the story opens up from there.
 
 <h2>Keyboard shortcuts</h2>
 
-The mod keeps the game's default key map intact. Anything not listed below behaves as in the unmodded game. Every action below can be re-bound in `swkotor.ini` (game keys) or, for mod-added keys, will be re-bindable from an in-game settings screen in a later release.
+The mod keeps the game's default key map intact, with one ergonomic change the installer applies on a fresh install (see the strafe / camera-rotate note below). Anything not listed here behaves as in the unmodded game. Game keys can be re-bound in `swkotor.ini`; mod-added keys will be re-bindable from an in-game settings screen in a later release.
 
 <h3>Game keys you will use most</h3>
 
 - W / S — Move forward / backward
-- A / D — Rotate camera left / right
-- Z / C — Strafe left / right
+- A / D — Strafe left / right
+- Z / C — Rotate camera left / right (**Y / C** on a German QWERTZ keyboard)
 - Q / E — Cycle target left / right
 - R — Default action on current target (attack, talk, open)
 - 1 / 2 / 3 — Use the three actions on the current target's action menu
@@ -56,10 +79,12 @@ The mod keeps the game's default key map intact. Anything not listed below behav
 - F — Cancel combat, G — Stealth, V — Solo mode, X — Flourish weapon
 - Spacebar — Pause
 - Esc — Game menu
-- F4 — Quick save, F5 — Quick load
+- F4 — Quick save, F5 — Quick load (on the main menu, F5 instead checks for a mod update)
 - I — Party inventory, U — Equip, P — Player record, K — Skills / feats / powers
 - M — Map, L — Quests, J — Messages, O — Options
 - Mouse 1 — Click in the 3D world (rarely needed; see view mode below)
+
+> **Strafe / camera-rotate:** KOTOR's own defaults are Z / C to strafe and A / D to rotate the camera. The accessibility installer swaps these on a fresh full install so the two form a comfortable bottom-row cluster — **strafe on A / D, camera rotate on Z / C**. That is the mapping listed above. If you updated from an existing install, or you rebind them yourself in `swkotor.ini`, your keys may differ.
 
 <h3>Mod keys — world interaction</h3>
 
@@ -167,6 +192,45 @@ KOTOR's in-game map, made navigable. Move the cursor with the arrow keys to read
 
 As you move, a continuous 3D audio layer plays soft positional clicks off the nearest walls — closer walls sound louder — so you keep a constant feel for the space around you. And entering a room speaks its name, its shape (corridor, junction, dead-end, open space), and the visible exits, all computed live from the game's walk-mesh.
 
+<h2>Troubleshooting</h2>
+
+<h3>No speech after launching the game</h3>
+
+- Make sure your screen reader is running before you launch KOTOR.
+- The Prism speech runtime ships with the mod and is placed automatically by the installer. If you installed manually, make sure its files are present in the game folder.
+- Check the newest patch log at `<install>\logs\patch-*.log` for errors (the installer's **Collect logs** button gathers it for you).
+
+<h3>Game crashes on startup, or the mod doesn't load</h3>
+
+- Run the installer as administrator — it deploys the `dinput8.dll` proxy that auto-loads the mod when the game starts.
+- Confirm your game version is supported (see "Game versions not supported" above). The installer checks the `swkotor.exe` hash and will tell you if it doesn't match.
+- If the game updated recently, re-run the installer — an update can overwrite the loader.
+
+<h3>The mod was working but stopped after a game update</h3>
+
+- Steam and GoG updates can overwrite the mod's loader files. Run the installer again to redeploy the mod.
+
+<h3>Keyboard shortcuts not working</h3>
+
+- Make sure the game window is focused (Alt+Tab to it).
+- Press F1. If you hear the key list, the mod is active.
+- Some keys only work in a specific context (the Pazaak keys only work on the Pazaak board, the submenu keys only inside a mod submenu, and so on).
+
+<h3>Wrong language</h3>
+
+- The mod picks its language automatically from your game's language (read from the game's `dialog.tlk`). There is no in-game language switch yet, so to change the mod's language, install the game in that language. The five languages KOTOR ships in — English, French, German, Italian, Spanish — are supported.
+
+<h3>Windows warns the installer or the DLL is unsafe</h3>
+
+The installer and the mod are not code-signed. Code-signing certificates cost hundreds of euros per year, which is not realistic for a free accessibility project, so Windows SmartScreen will warn you the first time you run the installer and may flag the files as coming from an unknown publisher.
+
+To verify the file you downloaded matches the one published on GitHub, each release lists a SHA-256 checksum. You can compute the hash of your download and compare:
+
+- PowerShell: `Get-FileHash <filename> -Algorithm SHA256`
+- Command Prompt: `certutil -hashfile <filename> SHA256`
+
+If the hash matches the one in the release notes, the file is genuine. To run past the SmartScreen warning, choose "More info" and then "Run anyway."
+
 <h2>Reporting bugs</h2>
 
 The installer's post-install screen has a **Collect logs** button that zips the most recent patch log and any Windows Error Reporting dump into your Downloads folder. Attach that zip to a [GitHub issue](https://github.com/JeanStiletto/voice-of-the-old-republic/issues) and describe what you were doing. If you can reproduce a crash, mention which area you were in — the room or area announce will have said it just before.
@@ -175,29 +239,66 @@ The installer's post-install screen has a **Collect logs** button that zips the 
 
 For the current backlog of bugs, planned features, and rough edges, see [docs/known-issues.md](docs/known-issues.md).
 
-<h2>Contributing</h2>
+<h2>Disclaimers</h2>
 
-Contributions are welcome — especially fixes for languages, system configurations, or screen readers the developer cannot test locally. Before starting work, skim the known-issues file above to see if your idea is already on the backlog.
+<h3>Other accessibilities</h3>
+
+For now, this is a screen-reader accessibility mod. I am a fully blind developer, and screen-reader access is the area I know. I would genuinely like to cover more disabilities — low vision, motor impairments, and so on — but questions like colour, contrast, and font are abstract to me as a fully blind person. If you need something in that direction and can describe your needs clearly and help test the result, please get in touch. I would be happy to make the mod live up to its name for more people.
+
+<h3>AI use</h3>
+
+The code of this mod is written with heavy assistance from Anthropic's Claude, using the Opus models (development spanned the Opus 4.5, 4.6, and 4.7 generations). I am aware of the debates around AI-assisted development. But at a time when the games industry has never delivered the accessibility we need — in quality or in quantity — for titles like KOTOR, these tools are what make a project this size feasible for a single blind developer. Every change is reviewed and tested in-game, by ear, before it ships.
+
+<h2>How to contribute</h2>
+
+Contributions are welcome — especially fixes for languages, system configurations, or screen readers I cannot test locally. Take feature requests too. Before starting work, skim the known-issues file above to see if your idea is already on the backlog.
 
 - Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Architecture overview: [ARCHITECTURE.md](ARCHITECTURE.md)
+- Accessibility modding guide (general craft + native-binary specifics): [ACCESSIBILITY_MODDING_GUIDE.md](ACCESSIBILITY_MODDING_GUIDE.md)
+- Translating the mod's spoken cues: [docs/CONTRIBUTING_TRANSLATIONS.md](docs/CONTRIBUTING_TRANSLATIONS.md)
 
-<h2>AI use</h2>
+<h2>Credits</h2>
 
-The mod's code is written with heavy assistance from Anthropic's Claude (Opus series). In a games industry that has historically refused to ship native accessibility for titles like KOTOR, AI-assisted modding is what makes a project this size feasible for a single blind developer. Every change is reviewed and tested in-game by the author before it ships.
+This project stands on a lot of other people's work, and on a community that helped, taught, and encouraged along the way. Please DM me if I forgot you, or if you'd like to be listed under a different name or not at all.
+
+The reverse-engineering and patch framework this mod runs on top of come from **Lane Dibello**, whose [Kotor-Patch-Manager](https://github.com/LaneDibello/Kotor-Patch-Manager) and Ghidra work made it possible to hook the game at all. Thanks also to the KOTOR modding community around **DeadlyStream**, who figured out the tools and formats I only had to pick up and use, and to **Ahix** for the [refactoring prompts for large AI-coded projects](https://github.com/ahicks92/llm-mod-refactoring-prompts) I ran on top of my own to keep the code maintainable.
+
+**Foundations and dependencies:**
+
+- **Lane Dibello** — [Kotor-Patch-Manager](https://github.com/LaneDibello/Kotor-Patch-Manager), the reverse-engineered Ghidra database, and the patch framework
+- **Prism** (Ethin P.) — cross-platform speech bridge covering every major screen reader, with SAPI fallback
+- **K1 Community Patch** team (KOTORCommunityPatches) — bundled bug-fix layer
+- **xoreos / xoreos-tools** — open-source engine reimplementation; cross-reference for file formats
+- **DeadlyStream community** — modding knowledge base
+
+<h3>Tools used</h3>
+
+- Claude (Anthropic) — pair-programming partner across the Opus 4.5, 4.6, and 4.7 generations
+- Kotor-Patch-Manager — runtime DLL-injection patch framework
+- Prism — screen-reader speech bridge
+- Tolk — screen-reader library (fallback path)
+- Ghidra — reverse-engineering
+- xoreos-tools — headless extraction of game file formats
+- K1 Community Patch — bundled community bug-fix layer
+
+<h2>Support your modder</h2>
+
+Building this mod has been a lot of fun and a real source of empowerment, but it also cost a lot of time and real money in Claude subscriptions. I intend to keep those running to maintain the project and improve it over the coming years. If you are able and willing to make a one-time or recurring donation, I would deeply appreciate it — it recognises the work and gives me a stable base to keep improving Voice of the Old Republic and, hopefully, other large accessibility projects.
+
+[Ko-fi: ko-fi.com/jeanstiletto](https://ko-fi.com/jeanstiletto)
 
 <h2>License</h2>
 
 The mod source is licensed under the GNU General Public License v3 (see [LICENSE](LICENSE)). Vendored dependencies under `third_party/` keep their own licenses (Prism is MPL-2.0; Tolk is LGPL; Kotor-Patch-Manager is bundled per its upstream terms; dsoal and OpenAL Soft, when the optional spatial-audio path is enabled, are LGPL-2.1). The game itself and BioWare's data files are not redistributed by this project.
 
-<h2>Credits</h2>
+<h2>Links</h2>
 
-- **Lane Dibello** — [Kotor-Patch-Manager](https://github.com/LaneDibello/Kotor-Patch-Manager), the reverse-engineered Ghidra database, and the patch framework this mod runs on top of
-- **Prism** (Ethin P.) — cross-platform speech bridge covering every major screen reader, with SAPI fallback
-- **K1 Community Patch** team (KOTORCommunityPatches) — bundled bug-fix layer
-- **xoreos / xoreos-tools** — open-source engine reimplementation; cross-reference for file formats
-- **DeadlyStream community** — modding knowledge base
-- **Claude (Anthropic)** — pair-programming partner across the Opus 4.5, 4.6, and 4.7 generations
+- [GitHub](https://github.com/JeanStiletto/voice-of-the-old-republic)
+- [Report an issue](https://github.com/JeanStiletto/voice-of-the-old-republic/issues)
+- [Kotor-Patch-Manager](https://github.com/LaneDibello/Kotor-Patch-Manager)
+- [K1 Community Patch (DeadlyStream)](https://deadlystream.com/)
+- [Ko-fi (support the project)](https://ko-fi.com/jeanstiletto)
 
 <h2>Other languages</h2>
 
@@ -206,4 +307,4 @@ The mod source is licensed under the GNU General Public License v3 (see [LICENSE
 - [Italiano](/voice-of-the-old-republic/docs/README.it.html)
 - [Español](/voice-of-the-old-republic/docs/README.es.html)
 
-Translations are kept in `docs/README.{de,fr,it,es}.md`. To improve or add a translation, see [CONTRIBUTING.md](CONTRIBUTING.md).
+Translations are kept in `docs/README.{de,fr,it,es}.md`. To improve or add a translation, see [docs/CONTRIBUTING_TRANSLATIONS.md](docs/CONTRIBUTING_TRANSLATIONS.md).

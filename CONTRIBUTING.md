@@ -119,6 +119,8 @@ If you need to add a hook on a function the project doesn't already use:
 ## Where to find things
 
 - **What an engine function does:** `docs/llm-docs/re/swkotor.exe.h` (Lane's headers), or run `Decompile.java` for an address.
+- **General accessibility-modding craft (portable + KOTOR native-binary specifics):** `ACCESSIBILITY_MODDING_GUIDE.md`.
+- **Adding or fixing a translation:** `docs/CONTRIBUTING_TRANSLATIONS.md`.
 - **Tool inventory + install paths:** `docs/tools.md`.
 - **Active upstream PR backlog:** `docs/upstream-prs.md`.
 - **Why a past decision was made:** check the memory index (`~/.claude/projects/<this repo>/memory/MEMORY.md`) and the relevant `project_*` / `feedback_*` entries. Most non-obvious code has a memory entry.

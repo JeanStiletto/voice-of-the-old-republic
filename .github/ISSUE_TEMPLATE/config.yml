@@ -1,0 +1,7 @@
+blank_issues_enabled: true
+# To add a Discord (or other) contact link in the "New issue" picker once an
+# invite is ready, uncomment and fill in:
+# contact_links:
+#   - name: Discord
+#     url: https://discord.gg/...
+#     about: Quicker turnaround for questions or unclear issues
