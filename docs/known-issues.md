@@ -38,14 +38,6 @@ Reported that Zaalbar has no subtitles read at all — his Shyriiwook is untrans
 
 Reported that during level-up and/or character creation the description read aloud belongs to the entry *above* the focused one — e.g. landing on Dexterity reads the Strength description. The focus/selection itself is on the right row; it's the description lookup that's shifted by one, so the player hears the wrong attribute's (or skill's/feat's) text. No reliable repro yet. Needs the exact screen (chargen step vs level-up panel — attribute, skill, or feat list), the row navigated to vs the description heard, and a timestamped log. Likely candidate: the description reader indexing into the row list with an off-by-one (stale-vs-current selection index, or a header/blank row offsetting the mapping).
 
-### Russian translation reported to cause problems
-
-A beta tester on a Russian translation reported problems (specifics not yet captured). The likely culprit is **not** the exe-hash gate: the current KOTOR 1 Russian translation (by Allard) is described as a resident tool that must stay running while playing, so the most probable failure is a **runtime injector conflict** with our `dinput8.dll` → KotorPatcher injection — not a version rejection. Need the tester's direct link, `patch-*.log`, and precise symptom (install refused vs crash on launch vs ran-but-English). Full findings in `docs/translation-additions.md`.
-
-**Version detection fixed (2026-07-25).** KPatchCore resolved the game's identity from its cached install state without checking that the cache still described the exe on disk, so a game patched before the translation was applied kept reporting the vanilla version — and since hooks files are selected by that hash, it loaded vanilla hook addresses into the Russian binary. Fixed in the vendored tree (`GameDetector` ignores a cache the exe no longer matches; `InstallStateManager` no longer inherits an identity that disagrees with what was just detected). Briefs for upstream are PR-8 and PR-9 in `docs/upstream-prs.md`.
-
-**Support for the Allard 1.72 exe is now built and confirmed running (2026-07-25).** It ships its own relinked `swkotor.exe`; all 260 engine addresses have been rebased onto it — 216 in `.text` and 44 `.rdata` vtables (`acc::addr::R` at runtime, `allard.hooks.toml` for the detours) and the hash is in `manifest.toml`. A live session on that exe confirmed hooks installing and firing, correct runtime remapping, and speech across menus, navigation and combat. Both addresses that signature scanning could not place — resolved by cross-reference — were exercised live: the input-reacquire path dispatched four times, and creating a new map pin succeeded. This also does **not** address the injector-conflict theory above, which remains the open question about the reported symptom.
-
 ## Planned
 
 ### Tutorial keyboard hints: French / Italian / Spanish translation — DONE (2026-07-19), AI drafts pending native review
