@@ -666,7 +666,93 @@ plain call — no SEH.
 ZDSR install actually speak through ZDSR (it cleanly falls to SAPI). Making ZDSR
 bind is a separate fix — upstream already did the analogous thing for
 SystemAccess in v0.16.x ("Rewrote the SystemAccess backend to no longer require
-the delay-loaded DLL"); the same de-delay-load treatment would fix ZDSR.
+the delay-loaded DLL"); the same de-delay-load treatment would fix ZDSR. That
+follow-up is now PR-10, and it also identifies *why* the symbol set looked
+"mismatched": the defs, not the user's DLL.
+
+---
+
+### PR-10. prism: ZDSR / BoyPC / PC-Talker can never bind on 32-bit (decorated import names)
+
+**Repo:** `ethindp/prism`
+**Status:** Root cause confirmed by binary inspection 2026-07-26; fixed locally
+atop upstream v0.16.5, recorded in `docs/prism-local-patches.patch` (change 3).
+Not yet drafted as a PR. Upstream `defs/zdsr32.def` still has the bug on `main`.
+**Relationship to PR-7:** PR-7 stops the crash; this is the actual defect that
+caused it. Both are wanted — PR-7 remains valuable defence in depth.
+
+**What.** The x86 import definitions (`defs/zdsr32.def`,
+`defs/boy_pc_reader32.def`, `defs/pc_talker32.def`) list **decorated**
+`__stdcall` export names — `InitTTS@12`, `Speak@8`, `BoyCtrlSpeak@12`,
+`PCTKPReadW@12`, … The shipped vendor DLLs export the **undecorated** names.
+Confirmed by dumping a genuine 32-bit `ZDSRAPI.dll` (4 exports: `GetSpeakState`,
+`InitTTS`, `Speak`, `StopSpeak`) and `BoyCtrl.dll` (`BoyCtrlSpeak`,
+`BoyCtrlInitializeU8`, …), and by `dumpbin /imports` on a release `prism.dll`,
+which asks for the `@N` forms. The name lookup therefore always fails and the
+delay-load helper raises `0xC06D007F` `ERROR_PROC_NOT_FOUND` on the first call
+into the backend.
+
+The stub fallback in `source/delayimp.cpp` cannot rescue it either: its
+`dliFailGetProc` table is keyed on the *undecorated* names
+(`.func = "InitTTS"`), so `strcmp("InitTTS@12", "InitTTS")` never matches and
+the hook returns null. The stub table and the defs disagree with each other, and
+the defs are the ones that are wrong.
+
+**Why undetected.** x64 has no `__stdcall` decoration, so `defs/zdsr.def` and
+friends are correct there and these backends work on 64-bit hosts. The bug is
+invisible unless you build 32-bit *and* have one of these three readers
+installed. Every 32-bit prism host is affected — for us, KOTOR 1 is a 32-bit
+process, and a beta tester with ZDSR hit it as a hard startup crash.
+
+**Fix (implemented locally).** Drop the import library and `/delayload` for
+these three DLLs and resolve them at runtime with `LoadLibrary` +
+`GetProcAddress`, the way Tolk's drivers do. New header
+`source/backends/raw/dynamic_library.h` holds a `resolve()` helper plus the
+search order previously implemented in the delay-load failure hook: standard
+search order → prism's own directory → the reader's install path from the
+registry (`HKLM\SOFTWARE\zhiduo\zdsr` value `path` for ZDSR, the BoyPC
+uninstall key's `InstallLocation`). Each `raw/*.h` becomes function pointers
+plus a `load()` that resolves once (thread-safe via a function-local static);
+required entry points gate `load()`, optional ones may stay null. Backends call
+`load()` in `initialize()` (and `get_features()` for PC-Talker) and report
+`BackendNotAvailable` when it fails. Callers are otherwise untouched — a
+`using namespace` keeps every existing call site identical.
+
+**Extra benefits.** A missing vendor DLL becomes an ordinary
+"backend unavailable" instead of a structured exception, so this class of crash
+disappears at the source. It also lifts the MinGW restriction for these three
+backends (`CMakeLists.txt` currently warns "Delay loading will malfunction and
+is NOT supported by MinGW"). And it lets a host application ship the client DLL
+next to `prism.dll` and have it found.
+
+**Verification.** Built x86 against the real vendor DLLs. Before: probing
+`ZDSR`, `BoyPCReader` and `PCTalker` via `prism_registry_create` +
+`prism_backend_initialize` faults `0xC06D007F` on all three. After: all three
+return clean `PrismError` values, and BoyPC returns
+`PRISM_ERROR_INTERNAL` — mapped from `e_bcerr_fail`, which can only come from a
+real call into a genuine `BoyCtrl.dll`, proving the runtime binding works.
+`acquire_best` still selects NVDA unchanged.
+
+**Open questions for the maintainer.**
+- `defs`/CMake called the BoyPC library `byctrl.dll` / `byctrl-x64.dll`, but the
+  vendor SDK and Tolk both ship it as `BoyCtrl.dll` / `BoyCtrl-x64.dll`. Our
+  loader tries both. Which is correct?
+- `PCTKUSR.dll` could not be verified — no copy available. Same decorated-name
+  pattern, so presumably the same bug, but a PC-Talker user should confirm.
+- Current `main` added `Braille@8` to the ZDSR defs and `zdsr.cpp` now calls it
+  from `output()`. The 2024 `ZDSRAPI.dll` exports no `Braille` at all, so on
+  **x64** that looks like a fresh fault for anyone on that build. Unverified —
+  worth checking whether a newer ZDSRAPI adds the export, and treating it as an
+  optional entry point either way.
+- The ZDSR/BoyPC/PC-Talker branches of `source/delayimp.cpp` (stub table plus
+  the registry probing in `dliFailLoadLib`) are unreachable once these DLLs are
+  no longer delay-loaded. Left in place to keep the diff focused; happy to
+  remove them in the same PR if preferred.
+
+**Risks.** Low, but not zero: the vendor DLL is now loaded eagerly on the first
+`load()` call rather than lazily per function, and PC-Talker's all-uppercase
+alias exports were not carried over (nothing calls them). Behaviour on a working
+x64 install is unchanged.
 
 ---
 

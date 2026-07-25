@@ -413,13 +413,10 @@ if(WIN32)
     add_dependencies(prism_backend_nvda prism_nvda_codegen)
   endif()
   target_link_libraries(${PROJECT_NAME} PRIVATE rpcrt4)
+  # The ZDSR, BoyPC Reader and PC-Talker client libraries are resolved at
+  # runtime (see source/backends/raw/dynamic_library.h), not through an import
+  # library, so only prism's own bridges are linked here.
   if(_comp_arch_id_lc STREQUAL "x86" OR _comp_arch_id_lc STREQUAL "i386")
-    add_import_library(ZDSR ${CMAKE_CURRENT_SOURCE_DIR}/defs/zdsr32.def
-                       ZDSRAPI.dll)
-    add_import_library(
-      byctrl ${CMAKE_CURRENT_SOURCE_DIR}/defs/boy_pc_reader32.def byctrl.dll)
-    add_import_library(
-      PCTalker ${CMAKE_CURRENT_SOURCE_DIR}/defs/pc_talker32.def PCTKUSR.dll)
     add_import_library(
       PrismOrcaBridge ${CMAKE_CURRENT_SOURCE_DIR}/defs/prism_orca_bridge32.def
       prism_orca_bridge.dll)
@@ -427,37 +424,7 @@ if(WIN32)
       PrismSpeechDispatcherBridge
       ${CMAKE_CURRENT_SOURCE_DIR}/defs/prism_speech_dispatcher_bridge32.def
       prism_speech_dispatcher_bridge.dll)
-    target_link_libraries(
-      ${PROJECT_NAME}
-      PRIVATE "$<BUILD_INTERFACE:ZDSR>"
-              "$<BUILD_INTERFACE:byctrl>"
-              "$<BUILD_INTERFACE:PCTalker>"
-              "$<BUILD_INTERFACE:PrismOrcaBridge>"
-              "$<BUILD_INTERFACE:PrismSpeechDispatcherBridge>")
-  elseif(NOT _comp_arch_id_lc MATCHES "arm64|aarch64|arm64ec")
-    add_import_library(ZDSR ${CMAKE_CURRENT_SOURCE_DIR}/defs/zdsr.def
-                       ZDSRAPI_x64.dll)
-    add_import_library(
-      byctrl ${CMAKE_CURRENT_SOURCE_DIR}/defs/boy_pc_reader.def byctrl-x64.dll)
-    add_import_library(PCTalker ${CMAKE_CURRENT_SOURCE_DIR}/defs/pc_talker.def
-                       PCTKUSR.dll)
-    add_import_library(
-      PrismOrcaBridge ${CMAKE_CURRENT_SOURCE_DIR}/defs/prism_orca_bridge.def
-      prism_orca_bridge.dll)
-    add_import_library(
-      PrismSpeechDispatcherBridge
-      ${CMAKE_CURRENT_SOURCE_DIR}/defs/prism_speech_dispatcher_bridge.def
-      prism_speech_dispatcher_bridge.dll)
-    target_link_libraries(
-      ${PROJECT_NAME}
-      PRIVATE "$<BUILD_INTERFACE:ZDSR>"
-              "$<BUILD_INTERFACE:byctrl>"
-              "$<BUILD_INTERFACE:PCTalker>"
-              "$<BUILD_INTERFACE:PrismOrcaBridge>"
-              "$<BUILD_INTERFACE:PrismSpeechDispatcherBridge>")
   else()
-    add_import_library(PCTalker ${CMAKE_CURRENT_SOURCE_DIR}/defs/pc_talker.def
-                       PCTKUSR.dll)
     add_import_library(
       PrismOrcaBridge ${CMAKE_CURRENT_SOURCE_DIR}/defs/prism_orca_bridge.def
       prism_orca_bridge.dll)
@@ -465,12 +432,11 @@ if(WIN32)
       PrismSpeechDispatcherBridge
       ${CMAKE_CURRENT_SOURCE_DIR}/defs/prism_speech_dispatcher_bridge.def
       prism_speech_dispatcher_bridge.dll)
-    target_link_libraries(
-      ${PROJECT_NAME}
-      PRIVATE "$<BUILD_INTERFACE:PCTalker>"
-              "$<BUILD_INTERFACE:PrismOrcaBridge>"
-              "$<BUILD_INTERFACE:PrismSpeechDispatcherBridge>")
   endif()
+  target_link_libraries(
+    ${PROJECT_NAME}
+    PRIVATE "$<BUILD_INTERFACE:PrismOrcaBridge>"
+            "$<BUILD_INTERFACE:PrismSpeechDispatcherBridge>")
 endif()
 if(APPLE)
   find_library(FOUNDATION_FRAMEWORK Foundation REQUIRED)
@@ -594,30 +560,9 @@ if(WIN32 OR WINDOWS_STORE)
 endif()
 if(MSVC)
   target_link_options(${PROJECT_NAME} PRIVATE "/STACK:8388608")
-  if(_comp_arch_id_lc STREQUAL "x86" OR _comp_arch_id_lc STREQUAL "i386")
-    target_link_options(
-      ${PROJECT_NAME}
-      ${_PRISM_LINK_VIS}
-      /delayload:ZDSRAPI.dll
-      /delayload:byctrl.dll
-      /delayload:PCTKUSR.dll
-      /delayload:prism_orca_bridge.dll
-      /delayload:prism_speech_dispatcher_bridge.dll)
-  elseif(NOT _comp_arch_id_lc MATCHES "arm64|aarch64|arm64ec")
-    target_link_options(
-      ${PROJECT_NAME}
-      ${_PRISM_LINK_VIS}
-      /delayload:ZDSRAPI_x64.dll
-      /delayload:byctrl-x64.dll
-      /delayload:PCTKUSR.dll
-      /delayload:prism_orca_bridge.dll
-      /delayload:prism_speech_dispatcher_bridge.dll)
-  else()
-    target_link_options(
-      ${PROJECT_NAME} ${_PRISM_LINK_VIS} /delayload:PCTKUSR.dll
-      /delayload:prism_orca_bridge.dll
-      /delayload:prism_speech_dispatcher_bridge.dll)
-  endif()
+  target_link_options(
+    ${PROJECT_NAME} ${_PRISM_LINK_VIS} /delayload:prism_orca_bridge.dll
+    /delayload:prism_speech_dispatcher_bridge.dll)
   check_cxx_compiler_flag(/utf-8 MSVC_HAS_UTF8_OPTION)
   check_cxx_compiler_flag(/bigobj MSVC_HAS_BIGOBJ)
   check_cxx_compiler_flag(/Zc:enumTypes MSVC_HAS_ZC_ENUM_TYPES)
@@ -637,33 +582,11 @@ elseif(
   CMAKE_CXX_COMPILER_ID MATCHES "Clang"
   AND WIN32
   AND NOT MINGW)
-  if(_comp_arch_id_lc STREQUAL "x86" OR _comp_arch_id_lc STREQUAL "i386")
-    target_link_options(${PROJECT_NAME} PRIVATE "LINKER:/STACK:8388608")
-    target_link_options(
-      ${PROJECT_NAME}
-      ${_PRISM_LINK_VIS}
-      "LINKER:/delayload:ZDSRAPI.dll"
-      "LINKER:/delayload:byctrl.dll"
-      "LINKER:/delayload:PCTKUSR.dll"
-      "LINKER:/delayload:prism_orca_bridge.dll"
-      "LINKER:/delayload:prism_speech_dispatcher_bridge.dll")
-  elseif(NOT _comp_arch_id_lc MATCHES "arm64|aarch64|arm64ec")
-    target_link_options(${PROJECT_NAME} PRIVATE "LINKER:/STACK:8388608")
-    target_link_options(
-      ${PROJECT_NAME}
-      ${_PRISM_LINK_VIS}
-      "LINKER:/delayload:ZDSRAPI_x64.dll"
-      "LINKER:/delayload:byctrl-x64.dll"
-      "LINKER:/delayload:PCTKUSR.dll"
-      "LINKER:/delayload:prism_orca_bridge.dll"
-      "LINKER:/delayload:prism_speech_dispatcher_bridge.dll")
-  else()
-    target_link_options(${PROJECT_NAME} PRIVATE "LINKER:/STACK:8388608")
-    target_link_options(
-      ${PROJECT_NAME} ${_PRISM_LINK_VIS} "LINKER:/delayload:PCTKUSR.dll"
-      "LINKER:/delayload:prism_orca_bridge.dll"
-      "LINKER:/delayload:prism_speech_dispatcher_bridge.dll")
-  endif()
+  target_link_options(${PROJECT_NAME} PRIVATE "LINKER:/STACK:8388608")
+  target_link_options(
+    ${PROJECT_NAME} ${_PRISM_LINK_VIS}
+    "LINKER:/delayload:prism_orca_bridge.dll"
+    "LINKER:/delayload:prism_speech_dispatcher_bridge.dll")
 elseif(WIN32 AND MINGW)
   message(
     WARNING "Delay loading will malfunction and is NOT supported by MinGW!")

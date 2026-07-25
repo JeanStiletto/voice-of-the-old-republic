@@ -14,6 +14,8 @@
 #include <tlhelp32.h>
 #include <windows.h>
 
+using namespace prism::raw::zdsr;
+
 class ZdsrBackend final : public TextToSpeechBackend {
 public:
   ~ZdsrBackend() override = default;
@@ -49,6 +51,8 @@ public:
   }
 
   BackendResult<> initialize() override {
+    if (!load())
+      return std::unexpected(BackendError::BackendNotAvailable);
     if (const auto res = InitTTS(0, nullptr, TRUE); res > 0)
       return std::unexpected(BackendError::BackendNotAvailable);
     if (const auto state = GetSpeakState(); state == 1 || state == 2)
@@ -57,6 +61,8 @@ public:
   }
 
   BackendResult<> speak(std::string_view text, bool interrupt) override {
+    if (!load())
+      return std::unexpected(BackendError::BackendNotAvailable);
     if (const auto res = GetSpeakState(); res == 1 || res == 2)
       return std::unexpected(BackendError::BackendNotAvailable);
     const auto len = simdutf::utf16_length_from_utf8(text.data(), text.size());
@@ -78,6 +84,8 @@ public:
   }
 
   BackendResult<> stop() override {
+    if (!load())
+      return std::unexpected(BackendError::BackendNotAvailable);
     if (const auto res = GetSpeakState(); res == 1 || res == 2)
       return std::unexpected(BackendError::BackendNotAvailable);
     StopSpeak();
@@ -85,6 +93,8 @@ public:
   }
 
   BackendResult<bool> is_speaking() override {
+    if (!load())
+      return std::unexpected(BackendError::BackendNotAvailable);
     switch (GetSpeakState()) {
     case 1:
     case 2:

@@ -44,6 +44,8 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>Bug fixes:</h3>
 
+- ZDSR users now hear the mod through ZDSR itself instead of a Windows voice. The speech library the mod uses asked ZDSR's client library for its functions under names no ZDSR release has ever published, so the connection could never succeed — at first that crashed the game at startup, and once the crash was contained it degraded quietly to a system voice, ignoring your screen reader's own voice, speed and language. The lookup now uses the published names, and the client library is found next to the mod or through ZDSR's own installation entry when it is not already on the system path. The same fault blocked BoyPC Reader and PC-Talker, which are fixed with it. It only ever affected 32-bit games — KOTOR is one — which is why it went unnoticed in the speech library itself; the fix has been offered upstream so other games benefit too. This one still needs confirmation from an affected user, since it cannot be tested without those screen readers installed.
+
 - The Key Mapping screen is navigable again — every binding in a category can be reached and heard, instead of just two. Arrowing through a category only ever spoke the two entries either side of one fixed position, and that middle entry was never spoken at all: the game re-selects a row in that list on its own between keypresses, so the mod's keyboard position was discarded each time and every step was computed from the game's row rather than yours. The mod now keeps its own position in the list and asserts it before each step. Pressing Enter also binds the entry you actually navigated to — with the position hijacked it could otherwise have armed a rebind on an entry you never visited.
 
 <h2>v0.6.2</h2>

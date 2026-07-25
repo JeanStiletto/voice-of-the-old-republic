@@ -12,6 +12,8 @@
 #include <simdutf/simdutf.h>
 #include <windows.h>
 
+using namespace prism::raw::pc_talker;
+
 class BrailleMarshaller {
 private:
   HANDLE request{};
@@ -110,7 +112,7 @@ public:
   [[nodiscard]] std::bitset<64> get_features() const override {
     using namespace BackendFeature;
     std::bitset<64> features;
-    if (PCTKStatus() != 0) {
+    if (load() && PCTKStatus() != 0) {
       features |= IS_SUPPORTED_AT_RUNTIME;
     }
     features |= SUPPORTS_SPEAK | SUPPORTS_OUTPUT | SUPPORTS_BRAILLE |
@@ -121,6 +123,9 @@ public:
   BackendResult<> initialize() override {
     if (initialized.test()) {
       return std::unexpected(BackendError::AlreadyInitialized);
+    }
+    if (!load()) {
+      return std::unexpected(BackendError::BackendNotAvailable);
     }
     if (PCTKStatus() == 0) {
       return std::unexpected(BackendError::BackendNotAvailable);

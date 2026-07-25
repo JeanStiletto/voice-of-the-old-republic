@@ -25,6 +25,8 @@
 #include <utility>
 #include <windows.h>
 
+using namespace prism::raw::boy_pc_reader;
+
 // Whoever designed this screen reader API needs to learn how to properly design
 // C callbacks...
 class BoyPCReaderBackend;
@@ -234,6 +236,8 @@ public:
   BackendResult<> initialize() override {
     if (initialized.test())
       return std::unexpected(BackendError::AlreadyInitialized);
+    if (!load())
+      return std::unexpected(BackendError::BackendNotAvailable);
     if (complete_callback == nullptr) {
       complete_callback = Slots::acquire(this);
       if (complete_callback == nullptr)

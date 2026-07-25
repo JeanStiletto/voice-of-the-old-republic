@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
+// PC-Talker's client library, resolved at runtime. See raw/dynamic_library.h
+// for why these entry points are not imported through a .def-generated import
+// library.
+
 #pragma once
+#ifdef _WIN32
+#include <raw/dynamic_library.h>
 #include <windows.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 
 #define PS_STATUS       0x10001
 #define PS_PREV         0x10002
@@ -32,99 +33,144 @@ extern "C" {
 #define PCTK_PIN_MODE_3         0xC0000000u
 #define PCTK_PIN_MODE_MASK      0xC0000000u
 
+namespace prism::raw::pc_talker {
 
-__declspec(dllimport) BOOL  __stdcall PCTKStatus(void);
-__declspec(dllimport) DWORD __stdcall PCTKGetVersion(void);
-__declspec(dllimport) BOOL __stdcall PCTKPRead(
-    const char *text, int priority, BOOL analyze);
-__declspec(dllimport) BOOL __stdcall PCTKPReadEx(
-    const char *text, int priority, BOOL analyze, int flags);
-__declspec(dllimport) BOOL __stdcall PCTKPReadW(
-    const wchar_t *text, int priority, BOOL analyze);
-__declspec(dllimport) BOOL __stdcall PCTKPReadExW(
-    const wchar_t *text, int priority, BOOL analyze, int flags);
-__declspec(dllimport) void __stdcall PCTKVReset(void);
-__declspec(dllimport) BOOL __stdcall PCTKGetVStatus(void);
-__declspec(dllimport) void __stdcall PCTKVoiceGuide(const char *text);
-__declspec(dllimport) void __stdcall PCTKBeep(int type, int param);
-__declspec(dllimport) BOOL __stdcall PCTKCGuide(
-    const char *text, DWORD mode);
-__declspec(dllimport) BOOL __stdcall PCTKCGuideEx(
-    const char *text, DWORD mode, int flags);
-__declspec(dllimport) BOOL __stdcall PCTKCGuideW(
-    const wchar_t *text, DWORD mode);
-__declspec(dllimport) BOOL __stdcall PCTKCGuideExW(
-    const wchar_t *text, DWORD mode, int flags);
-__declspec(dllimport) DWORD __stdcall PCTKGetStatus(
-    UINT item, LPVOID param1, LPVOID param2);
-__declspec(dllimport) DWORD __stdcall PCTKSetStatus(
-    UINT item, LPVOID param1, LPVOID param2);
-__declspec(dllimport) int __stdcall PCTKCommand(
-    const char *cmdstr, LPARAM param1, LPARAM param2);
-__declspec(dllimport) BOOL __stdcall PCTKLoadUserDict(void);
-__declspec(dllimport) BOOL __stdcall PCTKPinStatus(void);
-__declspec(dllimport) BOOL __stdcall PCTKPinFocus(
-    LONG_PTR context, const char *text, DWORD disp_flags,
-    const char *aux_text, LONG_PTR aux_param);
-__declspec(dllimport) BOOL __stdcall PCTKPinFocusW(
-    LONG_PTR context, const wchar_t *text, DWORD disp_flags,
-    const wchar_t *aux_text, LONG_PTR aux_param);
-__declspec(dllimport) BOOL __stdcall PCTKPinIsFocus(LONG_PTR context);
-__declspec(dllimport) BOOL __stdcall PCTKPinWrite(
-    const char *text, int mode, int flags);
-__declspec(dllimport) BOOL __stdcall PCTKPinWriteW(
-    const wchar_t *text, int mode, int flags);
-__declspec(dllimport) BOOL __stdcall PCTKPinEDWrite(
-    const char *text, int edit_mode, int cursor_pos,
-    int sel_start, int sel_len, int line_offset, int char_attr);
-__declspec(dllimport) BOOL __stdcall PCTKPinEDWriteW(
-    const wchar_t *text, int edit_mode, int cursor_pos,
-    int sel_start, int sel_len, int line_offset, int char_attr);
-__declspec(dllimport) BOOL __stdcall PCTKPinStatusCell(
-    const void *cell_data, void *out_buf);
-__declspec(dllimport) BOOL __stdcall PCTKPinStatusCellW(
-    const void *cell_data, void *out_buf);
-__declspec(dllimport) void __stdcall PCTKPinReset(void);
-__declspec(dllimport) BOOL __stdcall SoundMessage(
-    const char *text, int flags);
-__declspec(dllimport) BOOL __stdcall SoundStatus(void);
-__declspec(dllimport) BOOL __stdcall SoundModifyMode(int on, int off);
-__declspec(dllimport) BOOL __stdcall SoundPause(BOOL sw);
-__declspec(dllimport) int      __stdcall AGSEvent(
-    int event_type, LPARAM param1, LPARAM param2);
-__declspec(dllimport) LONGLONG __stdcall GetUIActionMode(void);
-__declspec(dllimport) BOOL     __stdcall IsImmInput(HWND hwnd);
-__declspec(dllimport) int  __stdcall PCTKEventHook(void);
-__declspec(dllimport) int  __stdcall PCTKGetVoiceLog(void);
-__declspec(dllimport) int  __stdcall SetKeyBreak(void);
-__declspec(dllimport) void __stdcall EncodeFlags(void);
-__declspec(dllimport) int  __stdcall dic_regist(void);
-__declspec(dllimport) int  __stdcall dic_regist_detail(void);
-__declspec(dllimport) int  __stdcall dic_reg_from_file(void);
-__declspec(dllimport) int  __stdcall dic_text_out(void);
-__declspec(dllimport) int  __stdcall dic_reg_detail_from_file(void);
-__declspec(dllimport) int  __stdcall dic_detail_text_out(void);
-__declspec(dllimport) BOOL    __stdcall PCTKSTATUS(void);
-__declspec(dllimport) DWORD   __stdcall PCTKGETVERSION(void);
-__declspec(dllimport) BOOL    __stdcall PCTKGETVSTATUS(void);
-__declspec(dllimport) DWORD   __stdcall PCTKGETSTATUS(UINT, LPVOID, LPVOID);
-__declspec(dllimport) DWORD   __stdcall PCTKSETSTATUS(UINT, LPVOID, LPVOID);
-__declspec(dllimport) BOOL    __stdcall PCTKPREAD(const char *, int, BOOL);
-__declspec(dllimport) BOOL    __stdcall PCTKPREADEX(const char *, int, BOOL, int);
-__declspec(dllimport) BOOL    __stdcall PCTKPREADW(const wchar_t *, int, BOOL);
-__declspec(dllimport) BOOL    __stdcall PCTKPREADEXW(const wchar_t *, int, BOOL, int);
-__declspec(dllimport) BOOL    __stdcall PCTKCGUIDE(const char *, DWORD);
-__declspec(dllimport) BOOL    __stdcall PCTKCGUIDEEX(const char *, DWORD, int);
-__declspec(dllimport) BOOL    __stdcall PCTKCGUIDEW(const wchar_t *, DWORD);
-__declspec(dllimport) BOOL    __stdcall PCTKCGUIDEEXW(const wchar_t *, DWORD, int);
-__declspec(dllimport) int     __stdcall PCTKCOMMAND(const char *, LPARAM, LPARAM);
-__declspec(dllimport) void    __stdcall PCTKVOICEGUIDE(const char *);
-__declspec(dllimport) void    __stdcall PCTKVRESET(void);
-__declspec(dllimport) void    __stdcall PCTKBEEP(int, int);
-__declspec(dllimport) BOOL    __stdcall PCTKLOADUSERDICT(void);
-__declspec(dllimport) int     __stdcall PCTKEVENTHOOK(void);
-__declspec(dllimport) int     __stdcall PCTKGETVOICELOG(void);
+// Required by the backend; non-null once load() has returned true.
+inline BOOL(__stdcall *PCTKStatus)(void) = nullptr;
+inline BOOL(__stdcall *PCTKPReadW)(const wchar_t *text, int priority,
+                                   BOOL analyze) = nullptr;
+inline void(__stdcall *PCTKVReset)(void) = nullptr;
+inline BOOL(__stdcall *PCTKGetVStatus)(void) = nullptr;
+inline BOOL(__stdcall *PCTKPinStatus)(void) = nullptr;
+inline BOOL(__stdcall *PCTKPinFocusW)(LONG_PTR context, const wchar_t *text,
+                                      DWORD disp_flags, const wchar_t *aux_text,
+                                      LONG_PTR aux_param) = nullptr;
+inline BOOL(__stdcall *PCTKPinIsFocus)(LONG_PTR context) = nullptr;
+inline BOOL(__stdcall *PCTKPinWriteW)(const wchar_t *text, int mode,
+                                      int flags) = nullptr;
 
-#ifdef __cplusplus
+// Optional; may be null even when load() succeeded, so check before calling.
+inline DWORD(__stdcall *PCTKGetVersion)(void) = nullptr;
+inline BOOL(__stdcall *PCTKPRead)(const char *text, int priority,
+                                  BOOL analyze) = nullptr;
+inline BOOL(__stdcall *PCTKPReadEx)(const char *text, int priority,
+                                    BOOL analyze, int flags) = nullptr;
+inline BOOL(__stdcall *PCTKPReadExW)(const wchar_t *text, int priority,
+                                     BOOL analyze, int flags) = nullptr;
+inline void(__stdcall *PCTKVoiceGuide)(const char *text) = nullptr;
+inline void(__stdcall *PCTKBeep)(int type, int param) = nullptr;
+inline BOOL(__stdcall *PCTKCGuide)(const char *text, DWORD mode) = nullptr;
+inline BOOL(__stdcall *PCTKCGuideEx)(const char *text, DWORD mode,
+                                     int flags) = nullptr;
+inline BOOL(__stdcall *PCTKCGuideW)(const wchar_t *text, DWORD mode) = nullptr;
+inline BOOL(__stdcall *PCTKCGuideExW)(const wchar_t *text, DWORD mode,
+                                      int flags) = nullptr;
+inline DWORD(__stdcall *PCTKGetStatus)(UINT item, LPVOID param1,
+                                       LPVOID param2) = nullptr;
+inline DWORD(__stdcall *PCTKSetStatus)(UINT item, LPVOID param1,
+                                       LPVOID param2) = nullptr;
+inline int(__stdcall *PCTKCommand)(const char *cmdstr, LPARAM param1,
+                                   LPARAM param2) = nullptr;
+inline BOOL(__stdcall *PCTKLoadUserDict)(void) = nullptr;
+inline BOOL(__stdcall *PCTKPinFocus)(LONG_PTR context, const char *text,
+                                     DWORD disp_flags, const char *aux_text,
+                                     LONG_PTR aux_param) = nullptr;
+inline BOOL(__stdcall *PCTKPinWrite)(const char *text, int mode,
+                                     int flags) = nullptr;
+inline BOOL(__stdcall *PCTKPinEDWrite)(const char *text, int edit_mode,
+                                       int cursor_pos, int sel_start,
+                                       int sel_len, int line_offset,
+                                       int char_attr) = nullptr;
+inline BOOL(__stdcall *PCTKPinEDWriteW)(const wchar_t *text, int edit_mode,
+                                        int cursor_pos, int sel_start,
+                                        int sel_len, int line_offset,
+                                        int char_attr) = nullptr;
+inline BOOL(__stdcall *PCTKPinStatusCell)(const void *cell_data,
+                                          void *out_buf) = nullptr;
+inline BOOL(__stdcall *PCTKPinStatusCellW)(const void *cell_data,
+                                           void *out_buf) = nullptr;
+inline void(__stdcall *PCTKPinReset)(void) = nullptr;
+inline BOOL(__stdcall *SoundMessage)(const char *text, int flags) = nullptr;
+inline BOOL(__stdcall *SoundStatus)(void) = nullptr;
+inline BOOL(__stdcall *SoundModifyMode)(int on, int off) = nullptr;
+inline BOOL(__stdcall *SoundPause)(BOOL sw) = nullptr;
+inline int(__stdcall *AGSEvent)(int event_type, LPARAM param1,
+                                LPARAM param2) = nullptr;
+inline LONGLONG(__stdcall *GetUIActionMode)(void) = nullptr;
+inline BOOL(__stdcall *IsImmInput)(HWND hwnd) = nullptr;
+inline int(__stdcall *PCTKEventHook)(void) = nullptr;
+inline int(__stdcall *PCTKGetVoiceLog)(void) = nullptr;
+inline int(__stdcall *SetKeyBreak)(void) = nullptr;
+inline void(__stdcall *EncodeFlags)(void) = nullptr;
+inline int(__stdcall *dic_regist)(void) = nullptr;
+inline int(__stdcall *dic_regist_detail)(void) = nullptr;
+inline int(__stdcall *dic_reg_from_file)(void) = nullptr;
+inline int(__stdcall *dic_text_out)(void) = nullptr;
+inline int(__stdcall *dic_reg_detail_from_file)(void) = nullptr;
+inline int(__stdcall *dic_detail_text_out)(void) = nullptr;
+
+// PCTKUSR.dll also exports all-uppercase aliases of most of the above
+// (PCTKSTATUS, PCTKPREADW, ...). They are not declared here because nothing
+// calls them; add them as further optional pointers if that changes.
+
+// Resolves the entry points above on first call; thread-safe and idempotent.
+// Returns false when PC-Talker is not installed or its client library is
+// missing one of the required entry points.
+inline bool load() {
+  static const bool loaded = [] {
+    const HMODULE module = load_vendor_library(L"PCTKUSR.dll");
+    if (module == nullptr)
+      return false;
+    resolve(module, PCTKGetVersion, "PCTKGetVersion");
+    resolve(module, PCTKPRead, "PCTKPRead");
+    resolve(module, PCTKPReadEx, "PCTKPReadEx");
+    resolve(module, PCTKPReadExW, "PCTKPReadExW");
+    resolve(module, PCTKVoiceGuide, "PCTKVoiceGuide");
+    resolve(module, PCTKBeep, "PCTKBeep");
+    resolve(module, PCTKCGuide, "PCTKCGuide");
+    resolve(module, PCTKCGuideEx, "PCTKCGuideEx");
+    resolve(module, PCTKCGuideW, "PCTKCGuideW");
+    resolve(module, PCTKCGuideExW, "PCTKCGuideExW");
+    resolve(module, PCTKGetStatus, "PCTKGetStatus");
+    resolve(module, PCTKSetStatus, "PCTKSetStatus");
+    resolve(module, PCTKCommand, "PCTKCommand");
+    resolve(module, PCTKLoadUserDict, "PCTKLoadUserDict");
+    resolve(module, PCTKPinFocus, "PCTKPinFocus");
+    resolve(module, PCTKPinWrite, "PCTKPinWrite");
+    resolve(module, PCTKPinEDWrite, "PCTKPinEDWrite");
+    resolve(module, PCTKPinEDWriteW, "PCTKPinEDWriteW");
+    resolve(module, PCTKPinStatusCell, "PCTKPinStatusCell");
+    resolve(module, PCTKPinStatusCellW, "PCTKPinStatusCellW");
+    resolve(module, PCTKPinReset, "PCTKPinReset");
+    resolve(module, SoundMessage, "SoundMessage");
+    resolve(module, SoundStatus, "SoundStatus");
+    resolve(module, SoundModifyMode, "SoundModifyMode");
+    resolve(module, SoundPause, "SoundPause");
+    resolve(module, AGSEvent, "AGSEvent");
+    resolve(module, GetUIActionMode, "GetUIActionMode");
+    resolve(module, IsImmInput, "IsImmInput");
+    resolve(module, PCTKEventHook, "PCTKEventHook");
+    resolve(module, PCTKGetVoiceLog, "PCTKGetVoiceLog");
+    resolve(module, SetKeyBreak, "SetKeyBreak");
+    resolve(module, EncodeFlags, "EncodeFlags");
+    resolve(module, dic_regist, "dic_regist");
+    resolve(module, dic_regist_detail, "dic_regist_detail");
+    resolve(module, dic_reg_from_file, "dic_reg_from_file");
+    resolve(module, dic_text_out, "dic_text_out");
+    resolve(module, dic_reg_detail_from_file, "dic_reg_detail_from_file");
+    resolve(module, dic_detail_text_out, "dic_detail_text_out");
+    return resolve(module, PCTKStatus, "PCTKStatus") &&
+           resolve(module, PCTKPReadW, "PCTKPReadW") &&
+           resolve(module, PCTKVReset, "PCTKVReset") &&
+           resolve(module, PCTKGetVStatus, "PCTKGetVStatus") &&
+           resolve(module, PCTKPinStatus, "PCTKPinStatus") &&
+           resolve(module, PCTKPinFocusW, "PCTKPinFocusW") &&
+           resolve(module, PCTKPinIsFocus, "PCTKPinIsFocus") &&
+           resolve(module, PCTKPinWriteW, "PCTKPinWriteW");
+  }();
+  return loaded;
 }
+
+} // namespace prism::raw::pc_talker
+
 #endif
