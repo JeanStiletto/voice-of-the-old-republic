@@ -86,3 +86,10 @@ Thumbs.db
 /third_party/prism/.github/
 /third_party/prism/.cache/
 /third_party/prism/gdextension/godot-cpp/
+
+# Third-party game translations kept locally for testing. Redistributing
+# someone else's translation is not ours to do, and the archives are large
+# (Allard's Russian 1.72 is ~166 MB). Mirror from the community source when
+# a rebased build needs re-verifying; the addresses derived from it live in
+# patches/Accessibility/engine_rebase*.inc, which IS committed.
+/KotOR_Rus_*.rar
