@@ -110,7 +110,29 @@ namespace KotorAccessibilityInstaller
                 };
             }
 
-            var patchIds = new List<string> { Config.PatchId, Config.WidescreenPatchId };
+            var patchIds = new List<string> { Config.PatchId };
+
+            // Widescreen is optional and only ships hashes for the three vanilla
+            // 1.0.3 builds. An install is one transaction, so including it on an
+            // executable it does not declare fails the shared version gate and
+            // takes our patch down with it -- which is how a Russian-translation
+            // install (its own relinked executable) ended up unable to install
+            // the mod at all. Include it only when this executable is one it
+            // claims, and carry on without it otherwise: widescreen is a
+            // nice-to-have, the accessibility patch is the point.
+            //
+            // Deliberately NOT solved with a version-mismatch override: widescreen
+            // writes to the executable, and forcing that onto a build whose
+            // addresses it was never built for is the one thing worth refusing.
+            if (IsWidescreenSupported(repository, gameExe, out string widescreenSkipReason))
+            {
+                patchIds.Add(Config.WidescreenPatchId);
+            }
+            else
+            {
+                Logger.Info($"Skipping widescreen patch: {widescreenSkipReason}");
+            }
+
             Logger.Info($"Installing [{string.Join(", ", patchIds)}] into {gameExe}...");
             var applicator = new PatchApplicator(repository);
 
@@ -135,6 +157,46 @@ namespace KotorAccessibilityInstaller
             {
                 try { Directory.SetCurrentDirectory(previousCwd); } catch { /* best-effort */ }
             }
+        }
+
+        /// <summary>
+        /// Whether the bundled widescreen patch declares support for this exact
+        /// executable. Compares the file's SHA-256 against the patch manifest's
+        /// supported_versions rather than asking for a version *name*, because an
+        /// unrecognised build has no name to ask about.
+        /// </summary>
+        private static bool IsWidescreenSupported(PatchRepository repository, string gameExe, out string reason)
+        {
+            var entry = repository.GetPatch(Config.WidescreenPatchId);
+            if (!entry.Success || entry.Data?.Manifest == null)
+            {
+                reason = $"patch '{Config.WidescreenPatchId}' not found in the staged repository";
+                return false;
+            }
+
+            string hash;
+            try
+            {
+                hash = KPatchCore.Common.FileHasher.ComputeSha256(gameExe);
+            }
+            catch (Exception ex)
+            {
+                reason = $"could not hash {Path.GetFileName(gameExe)}: {ex.Message}";
+                return false;
+            }
+
+            foreach (var supported in entry.Data.Manifest.SupportedVersions)
+            {
+                if (string.Equals(supported.Value, hash, StringComparison.OrdinalIgnoreCase))
+                {
+                    reason = null;
+                    return true;
+                }
+            }
+
+            reason = $"this swkotor.exe (SHA-256 {hash.Substring(0, 16)}...) is not one of the " +
+                     $"{entry.Data.Manifest.SupportedVersions.Count} builds it supports";
+            return false;
         }
 
         /// <summary>
