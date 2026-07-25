@@ -425,9 +425,23 @@ all 25 base sites still match the reference image, and the packaged `.kpatch`
 carries both hooks files with disjoint `target_versions` (so exactly one is
 selected per install).
 
-Still untested **in game** — nobody has run this on the Allard exe yet. Clean
-build and byte-verified addresses are not the same as working, per
-`feedback_no_untested_commits`.
+**Confirmed in game on the Allard exe (2026-07-25).** A live session (patch log
+`patch-20260725-204636.log`) showed: hooks installed and firing, the build
+detected and `acc::addr::R` remapping correctly (the save-crash guard landed at
+the rebased `ImageScale` address), and speech working across the title menu,
+in-world navigation, combat and the action menu. Consumed-exit hooks are proven
+by the `CONSUMED` / `PAIR-CONSUMED` input lines — those could only be verified
+statically before.
+
+Both cross-referenced addresses were exercised: `CExoInput::SetActive` dispatched
+four times via `ForceReacquireInput`, and `CSWCMapPin::CSWCMapPin` created a new
+user map pin (`UserMarker: drop ok`). Those were the two least-proven values in
+the whole table, and both were resolved against candidates that content matching
+had either mis-ranked or got outright wrong.
+
+One caveat on the bring-up itself: it only worked after clearing KPatchCore's
+cached game identity, which had been reporting the exe as vanilla Steam and
+loading the vanilla hooks file. Fixed since — see PR-8 in `docs/upstream-prs.md`.
 
 Build note: adding the Iced package forced a fresh NuGet restore, which
 surfaced **CVE-2025-6965** in `SQLitePCLRaw.lib.e_sqlite3` — transitive via
