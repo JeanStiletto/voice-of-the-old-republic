@@ -191,6 +191,27 @@ public static class GameDetector
         if (stateResult.Success && stateResult.Data != null)
         {
             var state = stateResult.Data;
+
+            // ...but only while it still describes the file on disk. State exists
+            // because static hooks mutate the executable, so an unrecognised hash
+            // is normally OUR edit and the remembered identity is right. It is not
+            // right when the executable was replaced wholesale — a community
+            // translation, a re-pack, a reinstall — and the two cases look
+            // identical from the hash alone. Since hooks files are selected by the
+            // detected version's hash, guessing wrong here does not refuse the
+            // install, it silently aims a patch's hooks at a different build.
+            if (!StateDescribesCurrentExecutable(state, currentHash))
+            {
+                // Deliberately do NOT fall through to patch_config.toml or backup
+                // metadata below. Neither records what the executable should hash
+                // to after a KPM install, so neither can notice the replacement —
+                // they would just repeat this stale answer with less evidence.
+                return PatchResult<GameVersion>.Fail(
+                    $"KPM install state describes a different executable " +
+                    $"(recorded {PreviewHash(state.CurrentHash ?? state.OriginalHash)}..., " +
+                    $"found {PreviewHash(currentHash)}...). Treating as unknown.");
+            }
+
             var version = ResolveVersionFromState(state, requireKnownManagedStateHash);
             if (version != null)
             {
@@ -225,6 +246,31 @@ public static class GameDetector
 
         return PatchResult<GameVersion>.Fail(
             $"Managed KPM identity sources did not identify executable hash {PreviewHash(currentHash)}...");
+    }
+
+    /// <summary>
+    /// Whether a managed install state still describes the executable on disk.
+    /// True when the live hash is the clean original KPM recorded, or the hash
+    /// KPM left behind after its last install.
+    /// </summary>
+    private static bool StateDescribesCurrentExecutable(ManagedInstallState state, string currentHash)
+    {
+        if (!string.IsNullOrWhiteSpace(state.OriginalHash) &&
+            state.OriginalHash.Equals(currentHash, StringComparison.OrdinalIgnoreCase))
+        {
+            // Clean executable, or a DLL-only install that never touched it.
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(state.CurrentHash))
+        {
+            // State predates CurrentHash being recorded, so staleness cannot be
+            // proven. Keep the old behaviour rather than invalidating the
+            // identity of installs that are probably fine.
+            return true;
+        }
+
+        return state.CurrentHash.Equals(currentHash, StringComparison.OrdinalIgnoreCase);
     }
 
     private static GameVersion? ResolveVersionFromState(

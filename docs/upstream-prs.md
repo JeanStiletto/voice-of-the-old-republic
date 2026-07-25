@@ -41,7 +41,9 @@ without the dev's explicit go-ahead.
 
 - **PR A — SUBMITTED:** LaneDibello/Kotor-Patch-Manager **#132** (selective-POPAD ESP-slot fix). Open, awaiting review.
 - **PR B — SUBMITTED:** LaneDibello/Kotor-Patch-Manager **#133** (`consumed_exit_address`), stacked on #132. Open, awaiting review.
-- **PR C — NOT YET:** `AllowVersionMismatch` — held back deliberately; the dev wants to check something first (a later session).
+- **PR C — NOT YET:** `AllowVersionMismatch` — held back deliberately; the dev wants to check something first (a later session). **Re-scoped 2026-07-25:** submit PR D (below) first. PR C removes an early refusal; PR D is what makes the identity behind that refusal trustworthy in the first place. Landing C alone would widen a hole D closes.
+- **PR D — NOT YET (new, 2026-07-25):** `GameDetector` trusts its cached identity over the executable on disk (PR-8). Found live while bringing up the Allard Russian exe. Self-contained bug fix; the natural predecessor to PR C.
+- **PR E — NOT YET (new, 2026-07-25):** a missing address database should not be fatal (PR-9). Already applied in our vendored tree; blocks installing *any* runtime-detour patch on a community build.
 - Fork: `JeanStiletto/Kotor-Patch-Manager` (branches `pr-a`, `pr-b`). Both build-verified (C++ + C#) before submission. Disclaimer included in each PR body (well-tested downstream, but AI-assisted — review critically).
 
 ## Submission grouping (2026-07-21) — how the internal PR-1..PR-5 map to real PRs
@@ -78,6 +80,23 @@ now PR-ready. Three PRs, in suggested submission order:
 - Opt-in flag on `InstallOptions`: demotes a supported-versions hash mismatch to a
   warning; per-hook `original_bytes` verification stays the real gate. Fully
   independent of A/B — can go any time.
+- **Stack it on PR D** (2026-07-25). Independent of A/B still holds, but not of D:
+  PR C's whole argument is "the hash gate is a friendly early failure, the byte
+  check is the real net". PR D is what makes the hash being checked actually be
+  *this* executable's hash. Submitting C first offers a reviewer a leniency flag
+  built on an identity source we know can be stale.
+
+**PR D — "Do not trust cached game identity over the executable on disk"** (PR-8)
+- One file: `src/KPatchCore/Detectors/GameDetector.cs`.
+- A managed identity source is used only when the live exe hash matches a hash
+  that source recorded. Found live, not theorised — see the brief.
+- Shaped like PR A: small, self-evidently correct, fixes existing behaviour.
+  Submit before C.
+
+**PR E — "Missing address database should not fail the install"** (PR-9)
+- One file: `src/KPatchCore/Applicators/PatchApplicator.cs` (same file as C, so
+  sequence them; the hunks don't overlap).
+- Already applied in our vendored tree because it blocked the Allard bring-up.
 
 **Not a PR yet — the `esp+X` LEA-vs-MOV bug (was PR-2).** We don't fix it in code
 (we avoid `esp+X`). Before offering it, re-read whether the `LEA ECX,[ESP+off]`
@@ -431,6 +450,32 @@ corruption risk.
 - Whether to add the same flag to `cli-kpatch` as `--allow-version-mismatch`
   so command-line callers have parity. Trivial follow-up.
 
+**Revision 2026-07-25 — what the Allard bring-up changed about this brief.**
+
+Two of the arguments above need correcting, and one gets empirical support.
+
+*The identity is not just a gate any more.* This brief was written when the
+detected version only decided pass/fail. Since multi-version hooks files, that
+same identity also decides **which `*.hooks.toml` loads** — `LoadHooksForVersion`
+matches `[metadata] target_versions` against `gameVersion.Hash`. So a wrong
+identity does not merely refuse or permit; it silently selects a different set
+of hook addresses. Our own patch now ships two hooks files (vanilla and Allard),
+which is exactly the shape that turns a detection slip into wrong addresses.
+
+*"Worst case is silently inert hooks" — confirmed, but for a different reason
+than stated.* The claim rested on DLL-only patches degrading harmlessly. The
+actual net is in KotorPatcher: `patcher.cpp` verifies each hook's original bytes
+in-process and refuses with "Original bytes mismatch at hookAddress %X - wrong
+game version?". That is a real, load-bearing check and it does hold — but it is
+the *last* line, not a second opinion, once the SHA gate is opted out of.
+
+*Interaction with PR D.* With `AllowVersionMismatch` set AND a stale cached
+identity (PR-8), both hash-level defences are gone at once: the manifest gate is
+opted out by the caller, and the hooks-file selection is being driven by the hash
+of a binary that is no longer on disk. Everything then rests on the runtime byte
+check. That is survivable but it is not what this brief promised. Hence: land
+PR D first, and say so in PR C's description.
+
 ---
 
 ### PR-6. K1CP ships `.lyt` / `.vis` with LF-only line endings, crashes engine parser
@@ -622,6 +667,137 @@ ZDSR install actually speak through ZDSR (it cleanly falls to SAPI). Making ZDSR
 bind is a separate fix — upstream already did the analogous thing for
 SystemAccess in v0.16.x ("Rewrote the SystemAccess backend to no longer require
 the delay-loaded DLL"); the same de-delay-load treatment would fix ZDSR.
+
+---
+
+### PR-8. `GameDetector` trusts cached identity over the executable on disk
+
+**Repo:** `LaneDibello/Kotor-Patch-Manager`
+**Status:** Found live 2026-07-25, not yet fixed anywhere (not even in our
+vendored tree — see "Our local fix" below for the decision).
+**Discovered:** bringing up support for the Allard 1.72 Russian translation,
+which ships its own relinked `swkotor.exe`.
+
+**What.** `GameDetector.DetectVersion` hashes the executable and looks the hash
+up in `KnownVersions`. When that misses and `allowManagedInstallState` is set, it
+consults three cached identity sources in turn — `kpm_install_state.json`, then
+`patch_config.toml`'s `target_version_sha`, then the newest
+`swkotor.exe.backup.*.json` — and **none of them checks whether the cached
+identity still describes the file on disk**. Each simply answers with the version
+it remembers.
+
+**Why it matters.** The cache exists for a good reason: static hooks mutate the
+executable, so after patching, the exe's hash is nobody's known version and KPM
+must remember what it *was*. But "the bytes changed because we patched them" and
+"the file was replaced by a different build" are indistinguishable to every one
+of these three sources. A user who installs a KPM patch and then applies a
+community translation, re-pack, or exe-modifying mod ends up with KPM confidently
+reporting the old identity for a binary it has never seen.
+
+Since multi-version hooks files, that identity picks which `*.hooks.toml`
+`LoadHooksForVersion` loads. So the consequence is not a refusal — it is a
+different set of hook addresses, aimed at a build where those addresses point
+into unrelated code.
+
+**Evidence (2026-07-25).** Vanilla Steam install with our patch applied, exe
+replaced by the Allard 1.72 build (SHA `7B961A14…`, itself unknown to
+`KnownVersions`), then `kdev apply`:
+
+```
+Step 2/7: Detecting game version...
+  Detected from KPM install state: KOTOR 1.0.3 (Steam, Windows, x86)
+Step 3/7: Loading and validating patches...
+  accessibility: Loaded 25 hook(s) from 1 file(s): hooks.toml
+```
+
+`hooks.toml` is the vanilla file; the correct one for that exe was
+`allard.hooks.toml`. The generated `patch_config.toml` then carried
+`target_version_sha = 34E6D971…` (the Steam hash, for a Steam exe that is no
+longer present) together with vanilla addresses.
+
+Removing `kpm_install_state.json` did not help — detection fell to
+`patch_config.toml` and gave the same wrong answer. Removing that too fell to the
+newest backup's `.json`, same answer again. Only after parking all three did
+detection report `Unknown version (hash: 7B961A14…)` and select
+`allard.hooks.toml` correctly.
+
+Note that `PatchApplicator` already passes `requireKnownManagedStateHash: true`
+here, which reads like a guard but is not one for this case: it requires the
+state's *OriginalHash* to map to a known version, which it does — the install
+genuinely started life as Steam 1.0.3. It validates the cache's provenance, not
+its freshness.
+
+**Fix.** Use a cached identity only when the live hash matches a hash that source
+itself recorded:
+
+- `ResolveVersionFromState` — return null unless the live hash equals
+  `state.CurrentHash` or `state.OriginalHash`. The state already carries both, so
+  this is a comparison, not a schema change. This alone fixes the common case.
+- When a state file exists but is stale, **do not fall through** to
+  `patch_config.toml` or backup metadata. Those are weaker sources that will
+  assert the same stale answer, as the evidence above shows; falling through
+  converts a caught staleness into an uncaught one.
+- The two fallbacks cannot self-validate today (neither records the hash the exe
+  is expected to have *after* patching). Either restrict them to "no state file
+  present at all", or stamp the post-install hash into `patch_config.toml` so
+  they gain the same check. The former is the smaller PR.
+
+Net behaviour change: an exe that was swapped out from under KPM resolves as
+`Unknown` instead of as its predecessor. `Unknown` is honest and already handled
+— hooks-file selection then matches on the real hash, which is what a
+multi-version patch wants.
+
+**Files to change:** `src/KPatchCore/Detectors/GameDetector.cs` only.
+
+**Risks.** Low, and the risky direction is the safe one: the change can only
+*withhold* a cached identity, never invent one. The scenario it affects — live
+hash matching neither the recorded original nor the recorded current — is
+precisely the scenario where the cached answer is known to be about a different
+file. Users with a genuinely statically-patched exe still match `CurrentHash` and
+are unaffected.
+
+**Our local fix.** Because we vendor KPatchCore and the end-user installer
+references it directly, fixing `GameDetector.cs` in the vendored tree covers both
+`kdev apply` and the shipped installer in one place — no separate downstream
+workaround, and the same diff is the PR. Preferred over guarding at the call
+sites.
+
+---
+
+### PR-9. A missing address database should not fail the install
+
+**Repo:** `LaneDibello/Kotor-Patch-Manager`
+**Status:** Applied in our vendored tree 2026-07-25 (it blocked the Allard
+bring-up); not yet offered upstream.
+
+**What.** `PatchApplicator` step 6.5 scans `AddressDatabases/*.db` for one whose
+`game_version.sha256_hash` matches the detected version, and hard-fails the whole
+install when none matches:
+
+```
+ERROR: No address database found for game version SHA: 7B961A140667336D...
+```
+
+Make that case a skipped step with a message instead.
+
+**Why.** `addresses.db` is consumed only by patches that resolve engine addresses
+*by name* through `GameAPI`'s `GameVersion` class. `KotorPatcher` itself never
+opens it (it reads `patch_config.toml` and sets `KOTOR_VERSION_SHA`), and a patch
+carrying literal addresses — verified per hook via `original_bytes` at install
+time — needs nothing from it. As written, the absence of a database authored for
+some community build locks that build out of *every* runtime-detour patch,
+including patches that would never have queried it.
+
+A patch that genuinely needs the database still fails, just later and in its own
+logs, where the cause is unambiguous ("failed to open addresses.db"). The
+alternative — shipping the nearest database — is worse than failing: `GameVersion`
+would answer address lookups with plausible, wrong numbers.
+
+**Files to change:** `src/KPatchCore/Applicators/PatchApplicator.cs`, one branch.
+
+**Risks.** Low. Patches that use named lookups get a later, clearer failure
+instead of an earlier, misleading one. Nothing that succeeds today starts
+failing.
 
 ---
 

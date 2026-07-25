@@ -53,21 +53,36 @@ public static class InstallStateManager
             var existing = existingResult.Success ? existingResult.Data : null;
             var (currentHash, currentFileSize) = FileHasher.ComputeHashAndSize(gameExePath);
 
-            var originalHash = !string.IsNullOrWhiteSpace(existing?.OriginalHash)
-                ? existing.OriginalHash
+            // Inherit the recorded identity only when it agrees with the identity
+            // just detected. They disagree when the executable was replaced rather
+            // than patched by us — a community translation, a re-pack, a reinstall.
+            // Carrying the old identity forward in that case is what makes a stale
+            // state self-consistent: OriginalHash would keep naming a binary that
+            // is gone while CurrentHash names the new one, and every later run
+            // would accept the pair as "we patched this ourselves".
+            var identityStillApplies =
+                existing != null &&
+                !string.IsNullOrWhiteSpace(existing.OriginalHash) &&
+                !string.IsNullOrWhiteSpace(originalVersion.Hash) &&
+                existing.OriginalHash.Equals(originalVersion.Hash, StringComparison.OrdinalIgnoreCase);
+
+            var inherited = identityStillApplies ? existing : null;
+
+            var originalHash = !string.IsNullOrWhiteSpace(inherited?.OriginalHash)
+                ? inherited.OriginalHash
                 : !string.IsNullOrWhiteSpace(originalVersion.Hash)
                     ? originalVersion.Hash
                     : currentHash;
 
-            var originalFileSize = existing?.OriginalFileSize > 0
-                ? existing.OriginalFileSize
+            var originalFileSize = inherited?.OriginalFileSize > 0
+                ? inherited.OriginalFileSize
                 : originalVersion.FileSize > 0
                     ? originalVersion.FileSize
                     : currentFileSize;
 
-            var originalVersionForState = existing?.OriginalVersion != null &&
-                existing.OriginalVersion.Version != "Unknown"
-                    ? existing.OriginalVersion
+            var originalVersionForState = inherited?.OriginalVersion != null &&
+                inherited.OriginalVersion.Version != "Unknown"
+                    ? inherited.OriginalVersion
                     : originalVersion;
 
             var state = new ManagedInstallState
