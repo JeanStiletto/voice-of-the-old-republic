@@ -677,6 +677,19 @@ bool s_dialogReplyParkPending = false;
 // and trivially off any centred reply list at any resolution. Runs only from
 // the per-tick monitor (Update tick), never the input hook, because
 // MoveMouseToPosition recurses through the hover pipeline.
+//
+// The park must clear the engine's screen-edge camera-turn band. A cursor left
+// sitting in that band makes UpdateCamera accumulate-turn every frame once world
+// control returns, so the camera spins endlessly with no input and no cure but
+// restarting. This originally parked at x=2 and did exactly that after every
+// conversation (patch-20260724-230031.log: continuous 100-222 deg/s spin from
+// the moment a Bandon dialogue closed, while camera_spin_diag's guard — whose
+// band bottoms out at kMinBandPx — never fired because x=2 sat just outside it).
+// Keep kDialogParkX comfortably above that floor; y stays at the very top, where
+// the corner is empty in every dialog variant.
+constexpr int kDialogParkX = 24;
+constexpr int kDialogParkY = 2;
+
 bool ParkDialogCursorOffReplies(void* replyLb) {
     void* gm = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
     if (!gm) return false;
@@ -684,11 +697,13 @@ bool ParkDialogCursorOffReplies(void* replyLb) {
     // log without a repro on our end.
     auto* ext = reinterpret_cast<int*>(
         reinterpret_cast<unsigned char*>(replyLb) + kControlExtentOffset);
-    reinterpret_cast<PFN_MoveMouseToPosition>(kAddrMoveMouseToPosition)(gm, 2, 2);
+    reinterpret_cast<PFN_MoveMouseToPosition>(kAddrMoveMouseToPosition)(
+        gm, kDialogParkX, kDialogParkY);
     acclog::Write("Menus.DialogReply",
-                  "park cursor to top-left corner (2,2) [reply list x=%d y=%d "
-                  "w=%d h=%d] — neutralises engine hover-select",
-                  ext[0], ext[1], ext[2], ext[3]);
+                  "park cursor to top-left corner (%d,%d) [reply list x=%d y=%d "
+                  "w=%d h=%d] — neutralises engine hover-select, clear of the "
+                  "camera edge-turn band",
+                  kDialogParkX, kDialogParkY, ext[0], ext[1], ext[2], ext[3]);
     return true;
 }
 

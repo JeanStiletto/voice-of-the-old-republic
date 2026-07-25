@@ -179,8 +179,20 @@ void Tick() {
     uint32_t mouseX = SafeReadOff<uint32_t>(gui, kGuiMouseXOffset, 0);
     int16_t  vpW    = SafeReadOff<int16_t>(gui, kGuiViewportWidthOffset, 0);
     float pct       = SafeRead<float>(kAddrScreenFramePercent, 0.0f);
+    // Floor the detection band well above what the config arithmetic gives. At
+    // an 800px viewport with the default screenFramePercentage (0.001) that is
+    // 0.8px, and the old 1px floor proved too tight: a cursor parked at x=2 spun
+    // the camera for the rest of the session in patch-20260724-230031.log while
+    // this guard never fired once. So the engine's real turn band is wider than
+    // screenFramePercentage suggests, and under-detecting here costs the player
+    // an unrecoverable spin. Over-detecting costs nothing — the guard below also
+    // requires live rotation, foreground, and in-world, so a wider band cannot
+    // misfire on a paused menu with the cursor resting near an edge.
+    // Cursor parks must stay clear of this; see kDialogParkX in
+    // menus_monitors.cpp.
+    constexpr int kMinBandPx = 6;
     int bandPx = (int)((float)vpW * pct);
-    if (bandPx < 1) bandPx = 1;
+    if (bandPx < kMinBandPx) bandPx = kMinBandPx;
     bool leftEdge  = vpW > 0 && (int)mouseX <= bandPx;
     bool rightEdge = vpW > 0 && (int)mouseX >= (int)vpW - bandPx;
     const char* edge = leftEdge ? "LEFT" : rightEdge ? "RIGHT" : "none";
@@ -189,7 +201,7 @@ void Tick() {
 
     // --- Cursor-edge guard (Option A, the fix) ---
     // The engine edge-turn (UpdateCamera @0x5f5e10) spins the camera while
-    // the cursor sits in the ~1px edge band. Fire only on an actual spin:
+    // the cursor sits in the edge band. Fire only on an actual spin:
     // in-world (gated above), foreground, cursor in band, and rotating.
     // Tying it to live rotation means it can't disturb a paused menu (no
     // rotation there). Write the engine cursor position straight to viewport

@@ -2,8 +2,7 @@
 // endlessly with no input" bug, plus the cursor-edge guard that fixes it.
 //
 // Driver (confirmed in-game 2026-06-11, decompiled UpdateCamera @0x5f5e10):
-// when the cursor sits in the left/right screen edge band
-// (width * screenFramePercentage, default 0.001 → ~1px) the engine calls
+// when the cursor sits in the left/right screen edge band the engine calls
 // CSWCModule::AcclTurnCamera @0x640090 every frame → continuous
 // accumulate-turn with no input. (The keyboard turn axis 0x11c — what our
 // synthesised A/D feeds — is the same accumulator via a different source.)
@@ -11,7 +10,9 @@
 // Guard (the fix): on an actual edge-turn spin — in-world, foreground,
 // cursor in band, camera rotating — nudge the physical cursor a small inset
 // inward (SetCursorPos), clearing the band. Gating on live rotation keeps it
-// from disturbing a paused menu.
+// from disturbing a paused menu. The detection band is floored at kMinBandPx
+// rather than the config arithmetic (which under-reports the engine's real
+// band); anything that parks the cursor must stay clear of that floor.
 //
 // Diagnostic (tag CameraSpinDiag), episode-based to avoid per-frame spam:
 //   - "edge-guard START" once when an edge-guard episode begins.
