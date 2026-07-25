@@ -10,7 +10,6 @@
 #include "combat_query.h"   // Phase 2C — Ö Examine + Phase 2A PC stat read
 #include "combat_queue.h"   // Phase 3A — action-queue submenu (Shift+H)
 #include "engine_actionbar.h"
-#include "endar_softlock.h" // Endar Spire room-5 door softlock guidance
 #include "engine_area.h"
 #include "examine_view.h"   // Phase 2C v2 — navigable Ö examine list
 #include "engine_input.h"   // kInputEnter1 / kInputNavUp/Down/Left/Right
@@ -204,42 +203,24 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
         return;
     }
 
-    // Endar Spire cutscene barrier (tag end_door10_cut2, template end_door012_2):
-    // the door beside the doomed "cut2" battle (same scripted scene as the
-    // end_cut2_* soldiers). Its blueprint is Locked=0 with an EMPTY OnFailToOpen,
-    // but the cutscene script locks it at runtime — so trying to open it is a
-    // genuine dead no-op the engine narrates as "verriegelt" then a generic
-    // "gesperrt", reading like a pickable lock. Give it the explicit sealed line
-    // and skip the dead dispatch. Tag-scoped because every Endar Spire door is
-    // Plot=1, including the ones you walk through — Plot alone can't gate this.
-    //
-    // WARNING — do NOT add end_door19 here. It LOOKS like a dead plot door
-    // (Plot=1, Locked=1, no reachable key), but its OnFailToOpen is wired to
-    // k_pend_traskdie1 — the Trask-death sequence. The open ATTEMPT is the story
-    // trigger: before you level up it makes Trask say "level up before this
-    // door"; once you have, the same attempt fires his sacrifice cutscene and
-    // opens the way. Sealing it (commits 0a4d3a2, 6e76ce1) returned before the
-    // engine dispatch and so suppressed that trigger, stranding the player at the
-    // one door they must push through. Confirmed against end_m01aa.mod:
-    // end_door19.utd OnFailToOpen = k_pend_traskdie1, and the runtime log shows
-    // Trask speaking the level-up line at this exact door (tag=end_door19).
-    {
-        char tag[64] = "";
-        bool haveTag = acc::engine::GetObjectTag(target, tag, sizeof(tag));
-        if (haveTag && _stricmp(tag, "end_door10_cut2") == 0) {
-            const char* line =
-                acc::strings::Get(acc::strings::Id::DoorSealedNoOpen);
-            prism::Speak(line, /*interrupt=*/true);
-            acclog::Write("Interact",
-                "%s -> [%s] sealed plot door tag=%s handle=0x%08x",
-                forceRadial ? "Shift+Enter" : "Enter", line, tag, handle);
-            return;
-        }
-        // Not a permanent seal, but the Endar Spire room-5 door (end_door16) is
-        // locked until its fight clears — guide the player instead of letting
-        // them poke a mute locked door. Self-gates on tag + module + room state.
-        if (haveTag) acc::endar::NoteDoorInteract(tag);
-    }
+    // WARNING — do NOT add a tag-keyed "this door is sealed, skip the dispatch"
+    // shortcut here, however dead the door looks. In this engine the open
+    // ATTEMPT is frequently the story trigger, carried by the door's OnOpen /
+    // OnFailToOpen script, and returning before the engine call suppresses it:
+    //   - end_door19  (Endar Spire): Plot=1, Locked=1, no reachable key — looks
+    //     inert, but OnFailToOpen = k_pend_traskdie1 is the Trask-death
+    //     sequence. The attempt makes Trask demand you level up first, then
+    //     fires his sacrifice. Sealing it (0a4d3a2) stranded the player at the
+    //     one door they must push against to advance.
+    //   - end_door10_cut2 (Endar Spire): Locked=0 in both blueprint and GIT,
+    //     with OnOpen = k_pend_room5_02 — the script that runs the doomed-
+    //     soldier battle and the Sith reinforcement wave. Sealing it (6e76ce1)
+    //     meant the door never opened, so the tutorial's fight never started
+    //     and end_door16 to the bridge never unlocked.
+    // Door guidance now hangs off the engine's own "This object is locked"
+    // report instead (endar_softlock::RegisterMsgRule), where a line can only
+    // ever speak when the door genuinely refused to open — and never replaces
+    // the attempt. Put new door hints there, not here.
 
     char name[128] = "";
     if (!acc::engine::GetObjectName(target, name, sizeof(name)) ||

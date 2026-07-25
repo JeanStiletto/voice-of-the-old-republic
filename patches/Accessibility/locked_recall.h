@@ -31,6 +31,14 @@ namespace acc::locked_recall {
 // alongside the other Register*MsgRules() from the router bootstrap.
 void RegisterMsgRule();
 
+// True when `text` is the engine's generic "This object is locked." feedback
+// (strref 1437, resolved through the TLK so it stays language-independent).
+// Shared so other router rules can hang area-specific door guidance off the
+// engine's own locked report instead of intercepting the interact dispatch —
+// see the WARNING in interact_hotkey.cpp for why that distinction matters.
+// False until the TLK table is live (main menu / early load).
+bool IsGenericLockedMessage(const char* text);
+
 // Offer a freshly-surfaced bark for capture. `ownerless` is true when the bark
 // resolved to no speaker (the shape of a system/script bark). No-ops unless a
 // locked interaction happened within the capture window and the object has no

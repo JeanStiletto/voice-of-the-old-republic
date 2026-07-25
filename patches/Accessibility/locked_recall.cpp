@@ -136,6 +136,10 @@ void RegisterMsgRule() {
     acc::msg::Router::Instance().AddRule("LockedRecall", RuleLocked);
 }
 
+bool IsGenericLockedMessage(const char* text) {
+    return IsLockedMessage(text);
+}
+
 void MaybeCapture(const char* barkText, bool ownerless) {
     if (!ownerless || !barkText || !barkText[0]) return;
     if (s_recentHandle == 0) return;

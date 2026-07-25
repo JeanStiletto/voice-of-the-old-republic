@@ -162,6 +162,7 @@ extern "C" void __cdecl OnAppendToMsgBuffer(void* /*guiInGame*/,
 
 namespace acc::combat { void RegisterCombatMsgRules(); }
 namespace acc::locked_recall { void RegisterMsgRule(); }
+namespace acc::endar { void RegisterMsgRule(); }
 
 namespace {
 
@@ -174,6 +175,10 @@ void EnsureRulesRegistered() {
     // Story-locked-object bark recall — notes the "This object is locked"
     // feedback (strref 1437), never consumes it. See locked_recall.h.
     acc::locked_recall::RegisterMsgRule();
+    // Endar Spire tutorial door guidance — explains the locked doors of the
+    // opening off the engine's own locked report, never consumes it. See
+    // endar_softlock.h for why this hangs here and not on the interact path.
+    acc::endar::RegisterMsgRule();
 }
 
 }  // namespace

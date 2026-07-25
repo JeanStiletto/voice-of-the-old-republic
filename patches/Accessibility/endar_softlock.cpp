@@ -4,9 +4,12 @@
 #include <cstdint>
 #include <cstring>
 
-#include "engine_area.h"    // GetCurrentAreaResName, ReadGlobalNumber
-#include "engine_player.h"  // IsAnyPartyMemberInCombat
+#include "engine_area.h"     // GetCurrentAreaResName, ReadGlobalNumber, GetObjectTag
+#include "engine_player.h"   // IsAnyPartyMemberInCombat
+#include "locked_recall.h"   // IsGenericLockedMessage — the router seam we hang off
 #include "log.h"
+#include "msg_router.h"
+#include "narrated_target.h" // the object the locked feedback refers to
 #include "prism.h"
 #include "strings.h"
 
@@ -22,6 +25,30 @@ constexpr char kCommandModule[] = "end_m01aa";
 // the guidance stays precise — the other gated doors (end_door08/15) sit past
 // this one and are never reached while it's shut.
 constexpr char kRoom5Door[] = "end_door16";
+
+// The door beside the doomed "cut2" battle. Its blueprint is Locked=0 with an
+// empty OnFailToOpen, and opening it is what fires k_pend_room5_02 — the script
+// that runs the scripted battle and the Sith reinforcement wave behind it. So
+// this line must NEVER be spoken in place of an open attempt (v0.6.1 did that
+// and softlocked the tutorial); it only fires if the engine itself reports the
+// door as locked, which on a healthy playthrough never happens.
+constexpr char kCut2Door[] = "end_door10_cut2";
+
+// The Trask door. Locked=1 from area load with OnFailToOpen wired to
+// k_pend_traskdie1, so the engine reports it locked at TWO different points and
+// only the second one means "sealed":
+//   * before the sacrifice — the failed open IS the story trigger. It makes
+//     Trask demand you level up first, then plays his death scene. Announcing
+//     "will not open" here would send the player away from the one door that
+//     advances the plot: the same harm the old interact-site seal did, just
+//     delivered as wrong words instead of a suppressed engine call.
+//   * after the sacrifice — Trask has gone through it and it never opens again.
+//     The way on is the Starboard Deck, and the line is exactly right.
+// Gate: Trask is the only companion in END_M01AA, so an empty companion roster
+// means his scene has played. Confirmed in patch-20260724-232609.log — the door
+// read unlocked at 23:34:01 (the open ran the sacrifice dialogue) and locked on
+// every attempt from 23:34:22 on.
+constexpr char kTraskDoor[] = "end_door19";
 
 // Failed opens on the room-5 door before we escalate from "the door opens
 // after the fight" to "you may be stuck, reload". A normal player pokes it
@@ -104,24 +131,58 @@ void ResetVisit() {
     g_lastSnap        = Snapshot{};
 }
 
-}  // namespace
-
-void OnAreaChanged(void* /*area*/) {
-    bool nowIn = IsCommandModule();
-    if (nowIn && !g_inModule) {
-        ResetVisit();
-        Snapshot s = ReadSnapshot();
-        g_lastSnap = s;
-        LogSnapshot("enter END_M01AA:", s);
-    } else if (!nowIn && g_inModule) {
-        ResetVisit();
-    }
-    g_inModule = nowIn;
+// Active companions, PC excluded (the engine's party table counts followers
+// only). 0 while Trask is gone; 0 is also what the accessor returns on an
+// early-init/fault read, which can't coincide with the player pressing Enter on
+// a door in a live world.
+int CompanionCount() {
+    uint32_t handles[8] = {};
+    return acc::engine::GetPartyMembers(handles, 8);
 }
 
-void NoteDoorInteract(const char* tag) {
-    if (!tag || !tag[0] || !EqualsCI(tag, kRoom5Door)) return;
-    if (!IsCommandModule()) return;
+// Queue a line to be spoken after the generic "locked" the router is about to
+// emit. Rules run before the router speaks an unclaimed line, so speaking
+// inline would land ahead of it; deferring a beat keeps the order
+// "locked" -> explanation.
+void QueueHint(acc::strings::Id which) {
+    g_pendingHint     = which;
+    g_hasPendingHint  = true;
+    g_pendingHintAtMs = GetTickCount() + kHintDelayMs;
+}
+
+// The engine just reported `tag` as locked. Speak the area-specific reason
+// where we have one. Cheap no-op for every other tag and every other module.
+void OnDoorLocked(const char* tag) {
+    if (!tag || !tag[0] || !IsCommandModule()) return;
+
+    // The cutscene-battle door. Blueprint-unlocked, so reaching here at all
+    // means the engine really did refuse the open — say so plainly instead of
+    // leaving the generic "locked" reading like a lock that could be picked.
+    if (EqualsCI(tag, kCut2Door)) {
+        QueueHint(acc::strings::Id::DoorSealedNoOpen);
+        acclog::Write("Endar.Softlock",
+            "%s reported locked -> queue sealed line", kCut2Door);
+        return;
+    }
+
+    // The Trask door — only sealed once he is gone. See kTraskDoor.
+    if (EqualsCI(tag, kTraskDoor)) {
+        int companions = CompanionCount();
+        if (companions > 0) {
+            acclog::Write("Endar.Softlock",
+                "%s reported locked, but %d companion(s) still in the party — "
+                "the level-up gate / sacrifice is still ahead, staying quiet",
+                kTraskDoor, companions);
+            return;
+        }
+        QueueHint(acc::strings::Id::DoorSealedNoOpen);
+        acclog::Write("Endar.Softlock",
+            "%s reported locked with an empty companion roster (Trask gone) "
+            "-> queue sealed line", kTraskDoor);
+        return;
+    }
+
+    if (!EqualsCI(tag, kRoom5Door)) return;
 
     // room 5 cleared -> the door is (or will be) open; no guidance needed.
     int room5 = acc::engine::ReadGlobalNumber("END_ROOM5_DEAD");
@@ -143,12 +204,49 @@ void NoteDoorInteract(const char* tag) {
         return;
     }
 
-    g_pendingHint     = which;
-    g_hasPendingHint  = true;
-    g_pendingHintAtMs = GetTickCount() + kHintDelayMs;
+    QueueHint(which);
     acclog::Write("Endar.Softlock",
         "end_door16 try #%d (room5=0) -> queue hint id=%d",
         g_door16Attempts, static_cast<int>(which));
+}
+
+// Feedback-router rule. Never consumes: the engine's generic "locked" still
+// speaks through the router's default path and our explanation follows it.
+// Runs for every locked report in the game; self-gates on module + tag.
+bool RuleEndarDoorLocked(const char* text) {
+    if (!acc::locked_recall::IsGenericLockedMessage(text)) return false;
+
+    // The locked feedback carries no object id — the object is whatever the
+    // player just acted on, i.e. the narrated-target slot the interact used.
+    acc::narrated_target::Slot slot;
+    if (!acc::narrated_target::TryGet(slot) || slot.isMapPin || !slot.obj) {
+        return false;
+    }
+
+    char tag[64] = "";
+    if (acc::engine::GetObjectTag(slot.obj, tag, sizeof(tag))) {
+        OnDoorLocked(tag);
+    }
+    return false;
+}
+
+}  // namespace
+
+void RegisterMsgRule() {
+    acc::msg::Router::Instance().AddRule("EndarDoorLocked", RuleEndarDoorLocked);
+}
+
+void OnAreaChanged(void* /*area*/) {
+    bool nowIn = IsCommandModule();
+    if (nowIn && !g_inModule) {
+        ResetVisit();
+        Snapshot s = ReadSnapshot();
+        g_lastSnap = s;
+        LogSnapshot("enter END_M01AA:", s);
+    } else if (!nowIn && g_inModule) {
+        ResetVisit();
+    }
+    g_inModule = nowIn;
 }
 
 void Tick() {
