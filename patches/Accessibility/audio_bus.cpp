@@ -10,6 +10,7 @@
 #include "log.h"
 #include "mod_settings_store.h"  // persist the cue-volume slider across launches
 #include "view_mode.h"
+#include "engine_rebase.h"
 
 namespace acc::audio {
 
@@ -352,7 +353,7 @@ namespace {
 typedef void (__thiscall* PFN_InternalSetListenerPosition)(
     void* internal_, Vector* pos);
 
-constexpr uintptr_t kAddrCExoSoundInternalSetListenerPosition = 0x005D6600;
+const uintptr_t kAddrCExoSoundInternalSetListenerPosition = acc::addr::R(0x005D6600);
 
 // Diagnostic toggle. False = always passthrough (verified independent of
 // view-mode WalkTo and Trigger-1 cue silence). Kept as a quick override

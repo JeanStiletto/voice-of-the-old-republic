@@ -10,6 +10,7 @@
                              // kAddrAppManagerPtr, kAppManagerClientAppOffset
 #include "log.h"
 #include "narrated_target.h"
+#include "engine_rebase.h"
 
 namespace acc::combat_diag {
 
@@ -21,8 +22,8 @@ namespace {
 constexpr size_t kCSWCCreatureCombatModeOffset = 0x440;
 
 // Engine accessors used by DoPersonalAction's chain branch.
-constexpr uintptr_t kAddrCClientExoAppGetAutoPaused = 0x005edef0;
-constexpr uintptr_t kAddrCClientExoAppGetPauseState = 0x005ed640;
+const uintptr_t kAddrCClientExoAppGetAutoPaused = acc::addr::R(0x005edef0);
+const uintptr_t kAddrCClientExoAppGetPauseState = acc::addr::R(0x005ed640);
 
 // main_interface.field1_0x64 — the engine target handle SetTarget stamps.
 // Resolved through the standard chain so we can compare per-press.

@@ -45,6 +45,7 @@
 #include "narrated_target.h" // TryGet — pull the unified "current focus"
                              // slot to drive deterministic targeting
 #include "passive_narrate.h" // ReannounceCurrentShowObjectTarget — Q/E
+#include "engine_rebase.h"
                              // re-announce path for the single-enemy
                              // combat case where the engine's cycle
                              // is a no-op but the user still expects
@@ -572,7 +573,7 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
 
         if (mgr && modalSize > 0) {
             using PFN_MgrHIE = void(__thiscall*)(void*, int, int);
-            constexpr uintptr_t kAddrMgrHIE = 0x0040c8e0;
+            const uintptr_t kAddrMgrHIE = acc::addr::R(0x0040c8e0);
             auto fn = reinterpret_cast<PFN_MgrHIE>(kAddrMgrHIE);
             __try {
                 fn(mgr, param_1, param_2);

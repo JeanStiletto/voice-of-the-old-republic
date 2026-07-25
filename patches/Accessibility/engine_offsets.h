@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "engine_rebase.h"
 
 // GuiControlMethods vtable indices for RTTI-style downcasts.
 //
@@ -330,7 +331,7 @@ constexpr size_t    kResRefSize                      = 16;
 // CSWCCreatureStats.portrait_id at +0x11c, CSWGuiPortraitCharGen.portrait_id
 // at +0x1238, and CSWCObject.portrait at +0xa8 are all stale during chargen
 // — this accessor is the only reliable read-side primitive we have.
-constexpr uintptr_t kAddrCSWCCreatureGetPortraitId   = 0x00617070;
+const uintptr_t kAddrCSWCCreatureGetPortraitId = acc::addr::R(0x00617070);
 
 // CSWCCreature::GetPortrait — __thiscall, fills caller-supplied CResRef
 // (16 bytes) with the current portrait baseresref (e.g. "po_pmhc3").
@@ -340,7 +341,7 @@ constexpr uintptr_t kAddrCSWCCreatureGetPortraitId   = 0x00617070;
 // only ever pass 0 since chargen doesn't ladder dark side. Caller-pops
 // 8 bytes (BYTES_PURGED=8). Resref is 16 bytes, NOT necessarily null-
 // terminated when length == 16, so we always reserve a 17-byte buffer.
-constexpr uintptr_t kAddrCSWCCreatureGetPortrait     = 0x00617030;
+const uintptr_t kAddrCSWCCreatureGetPortrait = acc::addr::R(0x00617030);
 
 // CSWGuiAbilitiesCharGen (chargen "Attribute" panel — step 2 of Eigener
 // Charakter). Verified against k1_win_gog_swkotor.exe.xml SYMBOL @
@@ -390,7 +391,7 @@ constexpr size_t    kCSWGuiButtonSize                      = 0x1c4;
 // Signature per SARIF (k1_win_gog_swkotor.exe.xml SYMBOL @ 0x006f6bb0):
 //   int __thiscall GetAbilityPointCost(int param_1)
 // Callee-pops 4 bytes (BYTES_PURGED=4).
-constexpr uintptr_t kAddrCSWGuiAbilitiesCharGenGetCost = 0x006f6bb0;
+const uintptr_t kAddrCSWGuiAbilitiesCharGenGetCost = acc::addr::R(0x006f6bb0);
 
 // CSWGuiSkillsCharGen (chargen "Fähigkeiten" panel — step 3 of Eigener
 // Charakter). Same shape as CSWGuiAbilitiesCharGen — three info-pair
@@ -430,7 +431,7 @@ constexpr size_t    kSkillsCharGenCostValueOffset        = 0xc0c;
 // Signature per SARIF (SYMBOL @ 0x006f4b60):
 //   int __thiscall IsClassSkill(ushort param_1)
 // Callee-pops 4 bytes (param is widened to dword on the stack).
-constexpr uintptr_t kAddrCSWGuiSkillsCharGenIsClassSkill = 0x006f4b60;
+const uintptr_t kAddrCSWGuiSkillsCharGenIsClassSkill = acc::addr::R(0x006f4b60);
 
 // CSWGuiSkillsCharGen::OnEnterPointsButton — engine handler that
 // populates description_list_box with the description for the given
@@ -444,7 +445,7 @@ constexpr uintptr_t kAddrCSWGuiSkillsCharGenIsClassSkill = 0x006f4b60;
 // Signature per SARIF (SYMBOL @ 0x006f4bf0):
 //   void __thiscall OnEnterPointsButton(CSWGuiControl* param_1)
 // Callee-pops 4 bytes.
-constexpr uintptr_t kAddrCSWGuiSkillsCharGenOnEnterPointsButton = 0x006f4bf0;
+const uintptr_t kAddrCSWGuiSkillsCharGenOnEnterPointsButton = acc::addr::R(0x006f4bf0);
 
 // description_list_box offset within CSWGuiSkillsCharGen (per SARIF).
 constexpr size_t    kSkillsCharGenDescriptionListBoxOffset      = 0x6c;
@@ -482,7 +483,7 @@ constexpr size_t    kAbilitiesCharGenModifierValueOffset  = 0xe8c;
 // Signature per SARIF (SYMBOL @ 0x006f70e0):
 //   void __thiscall OnEnterPointsButton(CSWGuiControl* param_1)
 // Callee-pops 4 bytes.
-constexpr uintptr_t kAddrCSWGuiAbilitiesCharGenOnEnterPointsButton = 0x006f70e0;
+const uintptr_t kAddrCSWGuiAbilitiesCharGenOnEnterPointsButton = acc::addr::R(0x006f70e0);
 
 // description_listbox offset within CSWGuiAbilitiesCharGen (per SARIF) —
 // same +0x6c as the Skills panel.
@@ -599,7 +600,7 @@ constexpr size_t    kFeatNameStrRefOffset         = 0x08;
 // Signature per Ghidra decomp (DECOMP @0x006f2fb0):
 //   void __thiscall OnEnterFeat(ushort param_1)
 // Callee-pops 4 bytes (ushort widened to dword on stack).
-constexpr uintptr_t kAddrCSWGuiFeatsCharGenOnEnterFeat   = 0x006f2fb0;
+const uintptr_t kAddrCSWGuiFeatsCharGenOnEnterFeat = acc::addr::R(0x006f2fb0);
 
 // CSWGuiFeatsCharGen::OnFeatPicked — the canonical "user clicked this
 // feat" engine entry point. Calls DetermineFeat to derive the user's
@@ -613,7 +614,7 @@ constexpr uintptr_t kAddrCSWGuiFeatsCharGenOnEnterFeat   = 0x006f2fb0;
 // Signature per Ghidra decomp (DECOMP @0x006f3c20):
 //   void __thiscall OnFeatPicked(ulong param_1)
 // Callee-pops 4 bytes.
-constexpr uintptr_t kAddrCSWGuiFeatsCharGenOnFeatPicked  = 0x006f3c20;
+const uintptr_t kAddrCSWGuiFeatsCharGenOnFeatPicked = acc::addr::R(0x006f3c20);
 
 // CSWGuiPowersLevelUp engine surfaces — Force-power picker (pwrlvlup.gui)
 // used by both the chargen Power-selection screen and the InGameLevelUp
@@ -632,7 +633,7 @@ constexpr uintptr_t kAddrCSWGuiFeatsCharGenOnFeatPicked  = 0x006f3c20;
 //   void __thiscall OnEnterPower(ulong powerId)
 // Mirror of CSWGuiFeatsCharGen::OnEnterFeat — refreshes power_label,
 // description_listbox, BTN_SELECT label/colour for the given power.
-constexpr uintptr_t kAddrCSWGuiPowersLevelUpOnEnterPower    = 0x006f1460;
+const uintptr_t kAddrCSWGuiPowersLevelUpOnEnterPower = acc::addr::R(0x006f1460);
 
 // Signature per Lane's SARIF (FUNCTIONS entry @0x006f2030):
 //   void __thiscall OnPowerPicked(ulong powerId)
@@ -640,7 +641,7 @@ constexpr uintptr_t kAddrCSWGuiPowersLevelUpOnEnterPower    = 0x006f1460;
 // BTN_SELECT" entry. Dispatches DeterminePower → AddChosenPower /
 // RemoveChosenPower / can't-change message box. Calling directly with the
 // focused cell's powerId lets us bypass the click-sim on Hinzuf. Macht.
-constexpr uintptr_t kAddrCSWGuiPowersLevelUpOnPowerPicked   = 0x006f2030;
+const uintptr_t kAddrCSWGuiPowersLevelUpOnPowerPicked = acc::addr::R(0x006f2030);
 
 // Offset of the embedded CSWGuiSkillFlowChart inside CSWGuiPowersLevelUp.
 // Matches struct field33_0x19fc (swkotor.exe.h:16637). We call
@@ -669,7 +670,7 @@ constexpr uintptr_t kVtableCSWGuiPowersLevelUp             = 0x00759780;
 // Signature per Ghidra decomp (DECOMP @0x006cdc00):
 //   void __thiscall SetSelectedSkill(ulong param_1)
 // Callee-pops 4 bytes.
-constexpr uintptr_t kAddrCSWGuiSkillFlowChartSetSelectedSkill = 0x006cdc00;
+const uintptr_t kAddrCSWGuiSkillFlowChartSetSelectedSkill = acc::addr::R(0x006cdc00);
 
 // Container offsets verified against Lane's SARIF (DATATYPE entries for
 // CSWGuiPanel and CSWGuiListBox). CExoArrayList layout:
@@ -710,7 +711,7 @@ constexpr size_t kListBoxTopVisibleIndexOffset  = 0x2c8;
 typedef void (__thiscall* PFN_CSWGuiListBoxSetSelectedControl)(void* listbox,
                                                                int index,
                                                                int playSound);
-constexpr uintptr_t kAddrCSWGuiListBoxSetSelectedControl = 0x0041c040;
+const uintptr_t kAddrCSWGuiListBoxSetSelectedControl = acc::addr::R(0x0041c040);
 
 // CSWGuiControl.extent is an inline CSWGuiExtent (16 bytes) at +0x4:
 //   +0x0  left    int
@@ -805,7 +806,7 @@ struct CExoString {
 typedef CExoString* (__thiscall* PFN_GetSimpleString)(void* this_,
                                                       CExoString* out,
                                                       uint32_t strref);
-constexpr uintptr_t kAddrGetSimpleString = 0x0041e8f0;
+const uintptr_t kAddrGetSimpleString = acc::addr::R(0x0041e8f0);
 constexpr uintptr_t kAddrTlkTablePtr     = 0x007a3a08;
 
 // CSWGuiInGameEquip slot handlers — invoked directly to bypass click-sim
@@ -825,8 +826,8 @@ constexpr uintptr_t kAddrTlkTablePtr     = 0x007a3a08;
 // decompile of OnSelectSlot's prologue test).
 typedef void (__thiscall* PFN_InGameEquipOnEnterSlot)(void* panel, void* slot_btn);
 typedef void (__thiscall* PFN_InGameEquipOnSelectSlot)(void* panel, void* slot_btn);
-constexpr uintptr_t kAddrInGameEquipOnEnterSlot  = 0x006b9470;
-constexpr uintptr_t kAddrInGameEquipOnSelectSlot = 0x006b8eb0;
+const uintptr_t kAddrInGameEquipOnEnterSlot = acc::addr::R(0x006b9470);
+const uintptr_t kAddrInGameEquipOnSelectSlot = acc::addr::R(0x006b8eb0);
 constexpr size_t    kControlIsActiveOffset       = 0x4c;
 
 // Picker-side commit handlers.
@@ -845,8 +846,8 @@ constexpr size_t    kControlIsActiveOffset       = 0x4c;
 //     `panel.field33_0x4270 & 1` (latter set by OnSelectSlot).
 typedef void (__thiscall* PFN_InGameEquipOnItemSelected)(void* panel, void* item_entry);
 typedef void (__thiscall* PFN_InGameEquipOnOKPressed)(void* panel, void* btn_equip);
-constexpr uintptr_t kAddrInGameEquipOnItemSelected = 0x006b7920;
-constexpr uintptr_t kAddrInGameEquipOnOKPressed    = 0x006b9160;
+const uintptr_t kAddrInGameEquipOnItemSelected = acc::addr::R(0x006b7920);
+const uintptr_t kAddrInGameEquipOnOKPressed = acc::addr::R(0x006b9160);
 
 // CSWGuiUpgrade (workbench upgrade.gui) slot-pick + commit chain.
 // Same structural shape as the equip-screen pair above, RE'd from Lane's
@@ -885,10 +886,10 @@ typedef void (__thiscall* PFN_CSWGuiUpgradeOnEnterSlot)     (void* panel, void* 
 typedef void (__thiscall* PFN_CSWGuiUpgradeOnSlotSelected)  (void* panel, void* slot_btn);
 typedef void (__thiscall* PFN_CSWGuiUpgradeOnUpgradeSelected)(void* panel, void* item_entry);
 typedef void (__thiscall* PFN_CSWGuiUpgradeOnAssemble)      (void* panel, void* btn_assemble);
-constexpr uintptr_t kAddrCSWGuiUpgradeOnEnterSlot      = 0x006c3c30;
-constexpr uintptr_t kAddrCSWGuiUpgradeOnSlotSelected   = 0x006c6500;
-constexpr uintptr_t kAddrCSWGuiUpgradeOnUpgradeSelected = 0x006c5510;
-constexpr uintptr_t kAddrCSWGuiUpgradeOnAssemble       = 0x006c6190;
+const uintptr_t kAddrCSWGuiUpgradeOnEnterSlot = acc::addr::R(0x006c3c30);
+const uintptr_t kAddrCSWGuiUpgradeOnSlotSelected = acc::addr::R(0x006c6500);
+const uintptr_t kAddrCSWGuiUpgradeOnUpgradeSelected = acc::addr::R(0x006c5510);
+const uintptr_t kAddrCSWGuiUpgradeOnAssemble = acc::addr::R(0x006c6190);
 
 // CSWGuiUpgrade::OnControlEntered @0x006c5370 — __thiscall(panel, item_entry).
 // The workbench picker's own hover handler. Unlike the generic item tooltip
@@ -902,7 +903,7 @@ constexpr uintptr_t kAddrCSWGuiUpgradeOnAssemble       = 0x006c6190;
 // SetDescription writes the resulting string into the description label at
 // panel + kUpgradeDescLabelOffset, so we read it back from there.
 typedef void (__thiscall* PFN_CSWGuiUpgradeOnControlEntered)(void* panel, void* item_entry);
-constexpr uintptr_t kAddrCSWGuiUpgradeOnControlEntered = 0x006c5370;
+const uintptr_t kAddrCSWGuiUpgradeOnControlEntered = acc::addr::R(0x006c5370);
 constexpr size_t    kUpgradeDescLabelOffset            = 0x1f60;  // panel.field9 (CSWGuiLabel)
 
 // CSWGuiUpgrade::ShowItems @0x006c2f80 — __thiscall(int visible). visible!=0
@@ -914,7 +915,7 @@ constexpr size_t    kUpgradeDescLabelOffset            = 0x1f60;  // panel.field
 // picker, so sibling slots stop reading "unavailable". OnUpgradeSelected runs
 // this on commit; we mirror it on cancel.
 typedef void (__thiscall* PFN_CSWGuiUpgradeShowItems)(void* panel, int visible);
-constexpr uintptr_t kAddrCSWGuiUpgradeShowItems = 0x006c2f80;
+const uintptr_t kAddrCSWGuiUpgradeShowItems = acc::addr::R(0x006c2f80);
 // CSWGuiUpgrade.field24_0x2f48 — bit 0 is the "picker open" state (set by
 // OnSlotSelected, cleared by OnUpgradeSelected's close tail). Clear it on cancel.
 constexpr size_t    kUpgradePickerOpenFlagOff = 0x2f48;  // panel.field24
@@ -1090,15 +1091,15 @@ constexpr unsigned char kActionTypeCutscene        = 8;
 // Server-side combat-mode global. Read via accessor for safety; the
 // CClientExoApp facade is 8 bytes (vtable + internal), and the actual
 // flag lives on the internal struct.
-constexpr uintptr_t kAddrGetCombatMode                = 0x005ede70;
-constexpr uintptr_t kAddrGetPausedByCombat            = 0x005edc10;
+const uintptr_t kAddrGetCombatMode = acc::addr::R(0x005ede70);
+const uintptr_t kAddrGetPausedByCombat = acc::addr::R(0x005edc10);
 
 // CSWSCreature engine getters — Phase 2A snapshot path.
-constexpr uintptr_t kAddrCSWSCreatureGetMaxHitPoints  = 0x004ed310;
-constexpr uintptr_t kAddrCSWSCreatureGetArmorClass    = 0x004ed1d0;
-constexpr uintptr_t kAddrCSWSCreatureGetMaxForcePoints = 0x004fd490;
-constexpr uintptr_t kAddrCSWSCreatureGetDead          = 0x004ef820;
-constexpr uintptr_t kAddrCSWSObjectGetCurrentHitPoints = 0x004caec0;
+const uintptr_t kAddrCSWSCreatureGetMaxHitPoints = acc::addr::R(0x004ed310);
+const uintptr_t kAddrCSWSCreatureGetArmorClass = acc::addr::R(0x004ed1d0);
+const uintptr_t kAddrCSWSCreatureGetMaxForcePoints = acc::addr::R(0x004fd490);
+const uintptr_t kAddrCSWSCreatureGetDead = acc::addr::R(0x004ef820);
+const uintptr_t kAddrCSWSObjectGetCurrentHitPoints = acc::addr::R(0x004caec0);
 
 // CSWSObject::GetDamageLevel @0x004cb020 — `ulong __thiscall(this)`.
 // Returns a 0..5 byte (verified via decompile 2026-05-22) representing
@@ -1111,33 +1112,33 @@ constexpr uintptr_t kAddrCSWSObjectGetCurrentHitPoints = 0x004caec0;
 //   5 = dead      (<= 0%)
 // No accessor-validation concern — this is a pure ratio computation
 // over fields we already trust.
-constexpr uintptr_t kAddrCSWSObjectGetDamageLevel     = 0x004cb020;
+const uintptr_t kAddrCSWSObjectGetDamageLevel = acc::addr::R(0x004cb020);
 
 // CSWSCreatureStats::GetLevel @0x005a5fd0 — `int __thiscall(this, int subNegLevels)`.
 // Sums level over each entry in CSWSCreatureStats.classes[2]. param_1=0
 // → raw total (don't subtract negative levels from drain effects);
 // param_1=1 → effective level. Use 0 for the displayed level.
-constexpr uintptr_t kAddrCSWSCreatureStatsGetLevel    = 0x005a5fd0;
+const uintptr_t kAddrCSWSCreatureStatsGetLevel = acc::addr::R(0x005a5fd0);
 
 // CSWSCreature::GetInvisible @0x00501950 / GetBlind @0x004ee210 — bool
 // __thiscall(this). Direct flag accessors; safe to call from manual
 // paths. We only emit a row when the flag is set (no need to announce
 // "not invisible").
-constexpr uintptr_t kAddrCSWSCreatureGetInvisible     = 0x00501950;
-constexpr uintptr_t kAddrCSWSCreatureGetBlind         = 0x004ee210;
+const uintptr_t kAddrCSWSCreatureGetInvisible = acc::addr::R(0x00501950);
+const uintptr_t kAddrCSWSCreatureGetBlind = acc::addr::R(0x004ee210);
 
 // CSWSCreatureStats getters — saves + attribute scores. CSWSCreatureStats
 // lives at CSWSCreature +0xa74 (kCreatureStatsPtrOffset).
-constexpr uintptr_t kAddrStatsGetSTR                  = 0x005a6190;
-constexpr uintptr_t kAddrStatsGetDEX                  = 0x005a61a0;  // tentative — adjacent slots
-constexpr uintptr_t kAddrStatsGetCON                  = 0x005a61b0;
-constexpr uintptr_t kAddrStatsGetINT                  = 0x005a61c0;
-constexpr uintptr_t kAddrStatsGetWIS                  = 0x005a61d0;
-constexpr uintptr_t kAddrStatsGetCHA                  = 0x005a61e0;
-constexpr uintptr_t kAddrStatsGetFortSave             = 0x005ab810;
-constexpr uintptr_t kAddrStatsGetWillSave             = 0x005ab880;
-constexpr uintptr_t kAddrStatsGetReflexSave           = 0x005ab8f0;
-constexpr uintptr_t kAddrStatsGetSimpleAlignmentGoodEvil = 0x005a5110;
+const uintptr_t kAddrStatsGetSTR = acc::addr::R(0x005a6190);
+const uintptr_t kAddrStatsGetDEX = acc::addr::R(0x005a61a0);  // tentative — adjacent slots
+const uintptr_t kAddrStatsGetCON = acc::addr::R(0x005a61b0);
+const uintptr_t kAddrStatsGetINT = acc::addr::R(0x005a61c0);
+const uintptr_t kAddrStatsGetWIS = acc::addr::R(0x005a61d0);
+const uintptr_t kAddrStatsGetCHA = acc::addr::R(0x005a61e0);
+const uintptr_t kAddrStatsGetFortSave = acc::addr::R(0x005ab810);
+const uintptr_t kAddrStatsGetWillSave = acc::addr::R(0x005ab880);
+const uintptr_t kAddrStatsGetReflexSave = acc::addr::R(0x005ab8f0);
+const uintptr_t kAddrStatsGetSimpleAlignmentGoodEvil = acc::addr::R(0x005a5110);
 
 // CSWSCreatureStats inline attribute-total bytes (post-mod totals). Read
 // these directly to avoid relying on the GetXStat dispatch table (some of
@@ -1161,7 +1162,7 @@ constexpr size_t kStatsFactionIdOffset                = 0x78;
 // need to query the dynamic reputation table (custom mod factions
 // outside the standard enum). The direct faction_id field-read above
 // covers the typical hostile/friendly/neutral classification.
-constexpr uintptr_t kAddrCSWSCreatureGetFaction       = 0x00513fc0;
+const uintptr_t kAddrCSWSCreatureGetFaction = acc::addr::R(0x00513fc0);
 
 // Rules global pointer used for feat lookup — see kAddrRulesGlobal
 // definition higher up in this file (line ~526). Dereferences to a
@@ -1171,19 +1172,19 @@ constexpr uintptr_t kAddrCSWSCreatureGetFaction       = 0x00513fc0;
 // CSWRules::GetFeat — __thiscall(ushort feat_index) -> CSWFeat*.
 // Returns nullptr if index out-of-range or feat not loaded (bit_flags
 // & 0x10 unset). BYTES_PURGED=4.
-constexpr uintptr_t kAddrCSWRulesGetFeat              = 0x00550c00;
+const uintptr_t kAddrCSWRulesGetFeat = acc::addr::R(0x00550c00);
 
 // CSWFeat::GetNameText — __thiscall(CExoString* out) -> CExoString*.
 // Fetches localized feat name via CTlkTable::Fetch using the feat's
 // `field2_0x8` strref. Constructs the out CExoString in place; caller
 // must read .c_string before destruct (we deliberately leak the heap
 // string, same pattern as CSWSItem::GetPropertyDescription).
-constexpr uintptr_t kAddrCSWFeatGetNameText           = 0x005cd760;
+const uintptr_t kAddrCSWFeatGetNameText = acc::addr::R(0x005cd760);
 
 // CSWFeat::GetDescriptionText — __thiscall(CExoString* out) -> CExoString*.
 // Sibling of GetNameText. Resolves the feat's `description` strref at
 // +0x0c through CTlkTable; same heap-leak rule applies.
-constexpr uintptr_t kAddrCSWFeatGetDescriptionText    = 0x005cd800;
+const uintptr_t kAddrCSWFeatGetDescriptionText = acc::addr::R(0x005cd800);
 
 // CSWRules.spells — the spells array. CSWSpellArray* at offset 0x8c
 // (140 bytes) per SARIF layout dump. The array exposes GetSpell(id) ->
@@ -1194,13 +1195,13 @@ constexpr size_t    kRulesSpellsOffset                = 0x8c;
 // CSWSpellArray::GetSpell — __thiscall(int spell_id) -> CSWSpell* (cast
 // as int in the Ghidra signature). Returns nullptr / 0 if spell_id is
 // out of range. BYTES_PURGED=4.
-constexpr uintptr_t kAddrCSWSpellArrayGetSpell        = 0x0059b6d0;
+const uintptr_t kAddrCSWSpellArrayGetSpell = acc::addr::R(0x0059b6d0);
 
 // CSWSpell::GetSpellNameText — __thiscall(CExoString* out) -> CExoString*.
 // Same shape as CSWFeat::GetNameText: constructs the localized name into
 // the out string in place; caller must read .c_string before any
 // destructor runs (we leak — CRT mismatch otherwise). BYTES_PURGED=4.
-constexpr uintptr_t kAddrCSWSpellGetSpellNameText     = 0x0059b940;
+const uintptr_t kAddrCSWSpellGetSpellNameText = acc::addr::R(0x0059b940);
 
 // CSWSpell.spell_description — int (TLK strref) at +0x0c per SARIF
 // DATATYPE dump. CSWSpell has no GetSpellDescriptionText accessor, so
@@ -1379,27 +1380,27 @@ constexpr size_t    kAbilitiesDescListBoxOffset      = 0x33BC;  // (13244) LB_DE
 // mouse-hit-test driven) are what keyboard nav must call. All are
 // __thiscall(this, <one 4-byte arg>) — purgeSize 4; the typedef must carry the
 // arg or the callee's `ret 4` corrupts the caller frame.
-constexpr uintptr_t kAddrAbilitiesOnEnterSkill        = 0x006ad180;  // (this, CSWGuiControl* row)
-constexpr uintptr_t kAddrAbilitiesOnEnterFeat         = 0x006ad410;  // (this, ushort featId)
-constexpr uintptr_t kAddrAbilitiesOnEnterPower        = 0x006acce0;  // (this, int) — crashes when powers empty
+const uintptr_t kAddrAbilitiesOnEnterSkill = acc::addr::R(0x006ad180);  // (this, CSWGuiControl* row)
+const uintptr_t kAddrAbilitiesOnEnterFeat = acc::addr::R(0x006ad410);  // (this, ushort featId)
+const uintptr_t kAddrAbilitiesOnEnterPower = acc::addr::R(0x006acce0);  // (this, int) — crashes when powers empty
 // OnAbilitySelectionChanged is the engine's mouse-driven selection handler
 // (hit-tests cursor vs the CSWGuiSkillFlow chart). Kept for reference; do NOT
 // call it for keyboard nav.
-constexpr uintptr_t kAddrAbilitiesOnAbilitySelChanged = 0x006ad4b0;  // (this, int) mouse-driven
-constexpr uintptr_t kAddrAbilitiesUpdateView          = 0x006ad560;  // void(void)
-constexpr uintptr_t kAddrAbilitiesOnSkillsButton      = 0x006adad0;  // void(void) — field139=0 + UpdateView
-constexpr uintptr_t kAddrAbilitiesOnFeatsButton       = 0x006ada70;  // void(void) — field139=2 + UpdateView
-constexpr uintptr_t kAddrAbilitiesOnPowersButton      = 0x006adaa0;  // void(void) — field139=1 + UpdateView
+const uintptr_t kAddrAbilitiesOnAbilitySelChanged = acc::addr::R(0x006ad4b0);  // (this, int) mouse-driven
+const uintptr_t kAddrAbilitiesUpdateView = acc::addr::R(0x006ad560);  // void(void)
+const uintptr_t kAddrAbilitiesOnSkillsButton = acc::addr::R(0x006adad0);  // void(void) — field139=0 + UpdateView
+const uintptr_t kAddrAbilitiesOnFeatsButton = acc::addr::R(0x006ada70);  // void(void) — field139=2 + UpdateView
+const uintptr_t kAddrAbilitiesOnPowersButton = acc::addr::R(0x006adaa0);  // void(void) — field139=1 + UpdateView
 // DisplayPowers() — predicate: returns 1 iff the character is a Jedi AND the
 // powers chart has rows. Used to decide whether the Powers tab exists (the
 // engine's own tab cycle uses it to skip an empty Powers tab). Pure check.
-constexpr uintptr_t kAddrAbilitiesDisplayPowers       = 0x006abe70;  // int(void)
+const uintptr_t kAddrAbilitiesDisplayPowers = acc::addr::R(0x006abe70);  // int(void)
 
 // CSWGuiInGameAbilities::HandleInputEvent(this, int code, int val). The panel's
 // own input handler; code 0x29 runs the engine's smart tab cycle
 // (Skills -> Powers-if-any -> Feats -> Skills, auto-skipping an empty Powers
 // tab). These are panel-internal codes, distinct from the manager kInput* codes.
-constexpr uintptr_t kAddrAbilitiesHandleInputEvent    = 0x006ae5f0;
+const uintptr_t kAddrAbilitiesHandleInputEvent = acc::addr::R(0x006ae5f0);
 constexpr int       kAbilitiesPanelCodeCycleTab       = 0x29;
 // Chart-nav codes consumed by HandleInputEvent on the Feats/Powers tabs and
 // routed to CSWGuiSkillFlowChart::HandleInput (@0x006cdd80): 0x31/0x32 step the
@@ -1450,8 +1451,8 @@ constexpr size_t    kStatsFeatsListOffset             = 0x0;
 // sighted-player "Examine" action renders its content from the local
 // in-world UI overlay, not a separate panel. Keep the address constant
 // in case we want to drive a TLK-strref popup later (e.g. for help text).
-constexpr uintptr_t kAddrCGuiInGameShowExamineBox     = 0x0062d3e0;
-constexpr uintptr_t kAddrCGuiInGameHideExamineBox     = 0x0062d440;
+const uintptr_t kAddrCGuiInGameShowExamineBox = acc::addr::R(0x0062d3e0);
+const uintptr_t kAddrCGuiInGameHideExamineBox = acc::addr::R(0x0062d440);
 
 // CSWGuiExamine.message_box.listbox_message lives at panel +0x67c. Kept
 // for the kExamineSpec ListBoxPanelSpec entry — if the engine itself ever
@@ -1471,7 +1472,7 @@ constexpr size_t    kExaminePanelHandleOffset         = 0x984;
 // engine_area::GetObjectName when working from a handle (queue targets,
 // LastTarget) — the latter falls back to the modder-assigned tag for
 // generic enemies whose `first_name` strref is empty.
-constexpr uintptr_t kAddrCClientExoAppGetObjectName   = 0x005ed350;
+const uintptr_t kAddrCClientExoAppGetObjectName = acc::addr::R(0x005ed350);
 
 // CSWGuiInGameMessages — combat log + dialog history panel.
 //   panel        @+0x0
@@ -1679,8 +1680,8 @@ constexpr size_t    kSwsItemMaxChargesOffset               = 0x25c;
 
 // CSWGuiStore::GetItemBuyValue / GetItemSellValue — __thiscall returning
 // ulong, single CSWSItem* argument. Both pop 4 bytes (callee).
-constexpr uintptr_t kAddrCSWGuiStoreGetItemBuyValue        = 0x006c0790;
-constexpr uintptr_t kAddrCSWGuiStoreGetItemSellValue       = 0x006c07f0;
+const uintptr_t kAddrCSWGuiStoreGetItemBuyValue = acc::addr::R(0x006c0790);
+const uintptr_t kAddrCSWGuiStoreGetItemSellValue = acc::addr::R(0x006c07f0);
 
 // CSWGuiStore::OnControlInvAButton / OnControlStoreAButton — the engine
 // click handlers attached to the accept_button in Sell / Buy mode
@@ -1695,13 +1696,13 @@ constexpr uintptr_t kAddrCSWGuiStoreGetItemSellValue       = 0x006c07f0;
 // Both open the engine's confirmation MessageBox if the price exceeds
 // the player's level threshold; otherwise they commit the trade
 // immediately via SellItem / BuyItem.
-constexpr uintptr_t kAddrCSWGuiStoreOnControlInvAButton    = 0x006c0f40;
-constexpr uintptr_t kAddrCSWGuiStoreOnControlStoreAButton  = 0x006c1130;
+const uintptr_t kAddrCSWGuiStoreOnControlInvAButton = acc::addr::R(0x006c0f40);
+const uintptr_t kAddrCSWGuiStoreOnControlStoreAButton = acc::addr::R(0x006c1130);
 
 // CServerExoApp::ClientToServerObjectId — __thiscall(ulong) -> ulong.
 // CServerExoApp::GetItemByGameObjectID — __thiscall(ulong) -> CSWSItem*.
-constexpr uintptr_t kAddrServerExoAppClientToServerObjectId = 0x004aea30;
-constexpr uintptr_t kAddrServerExoAppGetItemByGameObjectID  = 0x004ae760;
+const uintptr_t kAddrServerExoAppClientToServerObjectId = acc::addr::R(0x004aea30);
+const uintptr_t kAddrServerExoAppGetItemByGameObjectID = acc::addr::R(0x004ae760);
 
 // CSWSItem::GetPropertyDescription — __thiscall(CExoString* out) -> CExoString*.
 // The text Inventory/Store/Equip render into their description listbox on
@@ -1717,7 +1718,7 @@ constexpr uintptr_t kAddrServerExoAppGetItemByGameObjectID  = 0x004ae760;
 // c_string and deliberately leak the allocation rather than calling
 // ~CExoString (heap ownership across the DLL/EXE boundary risks CRT mismatch;
 // see the same pattern in LookupTlk above).
-constexpr uintptr_t kAddrCSWSItemGetPropertyDescription     = 0x0055f340;
+const uintptr_t kAddrCSWSItemGetPropertyDescription = acc::addr::R(0x0055f340);
 
 // CSWSItem::GetKeyedPropertyString — __thiscall(CExoString* out, byte key) ->
 // CExoString*. Formats just the properties on this item whose slot-key byte
@@ -1725,7 +1726,7 @@ constexpr uintptr_t kAddrCSWSItemGetPropertyDescription     = 0x0055f340;
 // sorting as GetSortedPropertyStrings). This is the keyed bonus line the
 // workbench shows for an upgrade slot — the gameplay text crystals lack in
 // GetPropertyDescription. Same heap-leak rule as GetPropertyDescription.
-constexpr uintptr_t kAddrCSWSItemGetKeyedPropertyString     = 0x0055f510;
+const uintptr_t kAddrCSWSItemGetKeyedPropertyString = acc::addr::R(0x0055f510);
 
 // Per-category property-block builders that GetPropertyDescription calls in
 // fixed order (decompile-verified at 0055f340). Each is
@@ -1738,15 +1739,15 @@ constexpr uintptr_t kAddrCSWSItemGetKeyedPropertyString     = 0x0055f510;
 // (crystal) or 6 (grenade); call the five weapon-only builders only when
 // weapon_type != 0.
 typedef void (__thiscall* PFN_AddItemProperty)(void* item, CExoString* accum);
-constexpr uintptr_t kAddrItemAddFeatRequirements     = 0x00556490;  // -> "tags"
-constexpr uintptr_t kAddrItemAddDamageProperties     = 0x00556de0;  // weapon-only
-constexpr uintptr_t kAddrItemAddRangeProperties      = 0x005543b0;  // weapon-only
-constexpr uintptr_t kAddrItemAddCriticalThreatProps  = 0x00558950;  // weapon-only
-constexpr uintptr_t kAddrItemAddOnHitProperties      = 0x00558c10;  // weapon-only
-constexpr uintptr_t kAddrItemAddWeaponSizeProperties = 0x005544f0;  // weapon-only
-constexpr uintptr_t kAddrItemAddAttackModifierProps  = 0x0055e930;  // -> "values"
-constexpr uintptr_t kAddrItemAddDefenceProperties    = 0x005599d0;  // -> "values"
-constexpr uintptr_t kAddrItemAddMiscellaneousProps   = 0x0055a510;  // -> "properties"
+const uintptr_t kAddrItemAddFeatRequirements = acc::addr::R(0x00556490);  // -> "tags"
+const uintptr_t kAddrItemAddDamageProperties = acc::addr::R(0x00556de0);  // weapon-only
+const uintptr_t kAddrItemAddRangeProperties = acc::addr::R(0x005543b0);  // weapon-only
+const uintptr_t kAddrItemAddCriticalThreatProps = acc::addr::R(0x00558950);  // weapon-only
+const uintptr_t kAddrItemAddOnHitProperties = acc::addr::R(0x00558c10);  // weapon-only
+const uintptr_t kAddrItemAddWeaponSizeProperties = acc::addr::R(0x005544f0);  // weapon-only
+const uintptr_t kAddrItemAddAttackModifierProps = acc::addr::R(0x0055e930);  // -> "values"
+const uintptr_t kAddrItemAddDefenceProperties = acc::addr::R(0x005599d0);  // -> "values"
+const uintptr_t kAddrItemAddMiscellaneousProps = acc::addr::R(0x0055a510);  // -> "properties"
 
 // CSWSItem.description_indentified is a CExoLocString. GetPropertyDescription
 // appends its text via CExoLocString::GetString, which returns the INLINE
@@ -1763,7 +1764,7 @@ constexpr size_t    kExoLocStringStrRefOffset       = 0x4;
 // valid empty string the engine builders can append to. (GetPropertyDescription
 // calls this on its accumulator before the Add* sequence.)
 typedef CExoString* (__thiscall* PFN_CExoStringCtor)(CExoString* this_);
-constexpr uintptr_t kAddrCExoStringDefaultCtor       = 0x005b3190;
+const uintptr_t kAddrCExoStringDefaultCtor = acc::addr::R(0x005b3190);
 
 // CSWItem::GetBaseItem — __thiscall(CSWItem* this) -> CSWBaseItem*. The CSWItem
 // subobject is at offset 0 of CSWSItem, so the CSWSItem* we already hold is a
@@ -1771,7 +1772,7 @@ constexpr uintptr_t kAddrCExoStringDefaultCtor       = 0x005b3190;
 // GetPropertyDescription disassembly, NOT the placeholder struct header):
 //   +0x09 (byte) weapon_type — 0 = not a weapon
 //   +0xac (byte) item_type   — 0x2e crystal, 6 grenade
-constexpr uintptr_t kAddrCSWItemGetBaseItem          = 0x005b4790;
+const uintptr_t kAddrCSWItemGetBaseItem = acc::addr::R(0x005b4790);
 constexpr size_t    kBaseItemWeaponTypeOffset        = 0x09;
 constexpr size_t    kBaseItemItemTypeOffset          = 0xac;
 
@@ -1811,7 +1812,7 @@ constexpr size_t    kJournalExitButtonOffset               = 0xdf0;
 // and rebuilds one CSWGuiJournalItemEntry per quest in the current
 // active/done + sort mode, then clears the journal's HasChanged flag (so the
 // next Draw won't repopulate again).
-constexpr uintptr_t kAddrJournalPopulateItemListBox        = 0x00645330;
+const uintptr_t kAddrJournalPopulateItemListBox = acc::addr::R(0x00645330);
 
 // CSWGuiJournalItemEntry rows are CSWGuiButton-derived (size 0x1cc) with
 // their own vtable. The journal's OnControlEntered fires on mouse hover

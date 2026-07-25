@@ -32,6 +32,7 @@
 #include <cstdint>
 
 #include "engine_offsets.h"  // Vector
+#include "engine_rebase.h"
 
 namespace acc::engine {
 
@@ -365,12 +366,12 @@ private:
 
 // CSWSArea::GetRoom — __thiscall. Third arg is an int* outRoomIndex
 // (NULL-passable per PositionWalkable's decomp).
-constexpr uintptr_t kAddrCSWSAreaGetRoom = 0x004BB600;
+const uintptr_t kAddrCSWSAreaGetRoom = acc::addr::R(0x004BB600);
 
 // Handle-resolution chain (server-side master object table).
 constexpr size_t    kAppManagerServerOffset      = 0x8;
-constexpr uintptr_t kAddrCServerExoAppGetObjectArray = 0x004AED70;
-constexpr uintptr_t kAddrCGameObjectArrayGetGameObject = 0x004D8230;
+const uintptr_t kAddrCServerExoAppGetObjectArray = acc::addr::R(0x004AED70);
+const uintptr_t kAddrCGameObjectArrayGetGameObject = acc::addr::R(0x004D8230);
 
 // Client-side resolver: CClientExoApp::GetGameObject(ulong) -> CSWCObject*.
 // Direct one-call wrapper around the client-side game object array (the
@@ -378,15 +379,15 @@ constexpr uintptr_t kAddrCGameObjectArrayGetGameObject = 0x004D8230;
 // instance; we never need to touch it directly because GetGameObject
 // hides the array layer). Verified live 2026-05-04 — see
 // ResolveClientObjectHandle's docs.
-constexpr uintptr_t kAddrCClientExoAppGetGameObject = 0x005ED580;
+const uintptr_t kAddrCClientExoAppGetGameObject = acc::addr::R(0x005ED580);
 
 // Map + fog-of-war chain.
-constexpr uintptr_t kAddrCServerExoAppGetModule          = 0x004AE6B0;
+const uintptr_t kAddrCServerExoAppGetModule = acc::addr::R(0x004AE6B0);
 constexpr size_t    kModuleAreaMapOffset                 = 0x218;
-constexpr uintptr_t kAddrCSWSAreaMapIsWorldPointExplored = 0x00579210;
+const uintptr_t kAddrCSWSAreaMapIsWorldPointExplored = acc::addr::R(0x00579210);
 // __thiscall(this, Vector by value). Returns float10 via ST(0).
 // BYTES_PURGED=12 (callee pops 3-float Vector).
-constexpr uintptr_t kAddrCSWSAreaMapGetMapRotateCCW       = 0x00578ED0;
+const uintptr_t kAddrCSWSAreaMapGetMapRotateCCW = acc::addr::R(0x00578ED0);
 // CSWSAreaMap fog grid geometry (Initialize @0x00578c60): fixed 440x256
 // map-pixel space, MapResX cells across, MapResY = MapResX * 256/440
 // truncated; world-units-per-map-pixel from the .are Map calibration.
@@ -399,10 +400,10 @@ constexpr size_t kAreaMapWorldPerPxYOffset = 0x1c;
 
 // CSWCMapPin allocation chain. operator_new at 0x43e1b0 is matched to
 // the _free that CExoString::operator= and ~CSWCMapPin invoke.
-constexpr uintptr_t kAddrOperatorNew                = 0x0043E1B0;  // __cdecl(ulong)
-constexpr uintptr_t kAddrCSWCMapPinCtor             = 0x00692540;
-constexpr uintptr_t kAddrCExoStringAssignFromCString= 0x005E5140;  // __thiscall(CExoString*, char*)
-constexpr uintptr_t kAddrCSWCAreaAddMapPin          = 0x00606D90;  // __thiscall(CSWCArea*, pin)
+const uintptr_t kAddrOperatorNew = acc::addr::R(0x0043E1B0);  // __cdecl(ulong)
+const uintptr_t kAddrCSWCMapPinCtor = acc::addr::R(0x00692540);
+const uintptr_t kAddrCExoStringAssignFromCString = acc::addr::R(0x005E5140);  // __thiscall(CExoString*, char*)
+const uintptr_t kAddrCSWCAreaAddMapPin = acc::addr::R(0x00606D90);  // __thiscall(CSWCArea*, pin)
 
 // Server→client back-pointer (CSWSArea ends at +0x2d0 preceded by
 // CPathfindInformation* at +0x2cc).
@@ -535,7 +536,7 @@ constexpr size_t kSurfaceMeshAdjacenciesOffset     = 0x88;
 
 constexpr size_t kWalkmeshFaceStride               = 0xc;   // 3 × ulong
 
-constexpr uintptr_t kAddrCollisionMeshLocalToWorld = 0x00596aa0;
+const uintptr_t kAddrCollisionMeshLocalToWorld = acc::addr::R(0x00596aa0);
 
 namespace acc::engine {
 

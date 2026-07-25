@@ -17,6 +17,7 @@
 #include "spectator_scene.h" // Endar Spire scripted spectator-battle cue
 #include "strings.h"
 #include "prism.h"
+#include "engine_rebase.h"
 
 namespace acc::passive_narrate {
 
@@ -427,8 +428,8 @@ void Tick() {
         // __thiscall(int param_1, int param_2) — same signature the
         // input-pipeline detour observes. dir 204=E / 205=Q.
         using PFN_HIE = void(__thiscall*)(void*, int, int);
-        constexpr uintptr_t kAddrCClientExoAppInternalHandleInputEvent =
-            0x00621210;
+        const uintptr_t kAddrCClientExoAppInternalHandleInputEvent =
+            acc::addr::R(0x00621210);
         auto fn = reinterpret_cast<PFN_HIE>(
             kAddrCClientExoAppInternalHandleInputEvent);
 

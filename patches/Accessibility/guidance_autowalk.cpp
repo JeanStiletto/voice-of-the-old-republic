@@ -16,6 +16,7 @@
                       // so keys pressed in another app while Alt+Tabbed out
                       // don't kill an in-flight autowalk silently.
 #include "log.h"
+#include "engine_rebase.h"
 
 namespace acc::guidance {
 
@@ -93,7 +94,7 @@ constexpr size_t kServerObjectAreaIdOffset = 0x8c;
 // does ActionManager(8) before AddMoveToPointAction). Without it the leader's
 // queued move bails (field427 stays 2, no path) — this is the priming our
 // earlier WalkTo dispatches were missing.
-constexpr uintptr_t kAddrCSWSCreatureActionManager = 0x004f8770;
+const uintptr_t kAddrCSWSCreatureActionManager = acc::addr::R(0x004f8770);
 void PrimeActionManager(void* creature, int mode) {
     if (!creature) return;
     __try {

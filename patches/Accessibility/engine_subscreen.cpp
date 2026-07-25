@@ -11,6 +11,7 @@
 #include "menus_chain.h"     // InvalidateChain — teardown-window stale-pointer guard
 #include "prism.h"           // Speak — pause/resume cue
 #include "strings.h"         // Id::GamePaused / Id::GameResumed
+#include "engine_rebase.h"
 
 namespace acc::engine {
 
@@ -34,7 +35,7 @@ namespace {
 // CSWCMessage::SendPlayerToServerInput_TogglePauseRequest passes 2 to
 // CServerExoApp::TogglePauseState, so bit 2 is the "menu pause" source
 // the Esc-menu close path also clears.
-constexpr uintptr_t kAddrSetPauseState = 0x004ae9a0;
+const uintptr_t kAddrSetPauseState = acc::addr::R(0x004ae9a0);
 using PFN_SetPauseState =
     void(__thiscall *)(void* server, int source_bit, unsigned long on_off);
 
@@ -52,7 +53,7 @@ constexpr size_t    kAppManagerServerOff    = 0x08;
 // is the engine's canonical caller — it flips mode 2 <-> 0 when entering
 // or leaving combat-style pauses. We call it with mode 0 to unmute the
 // audio mixer after a MessageBoxModal close.
-constexpr uintptr_t kAddrSetSoundMode = 0x005d5e80;
+const uintptr_t kAddrSetSoundMode = acc::addr::R(0x005d5e80);
 using PFN_SetSoundMode = void(__thiscall *)(void* self, int mode);
 
 // ExoSound global @ 0x007a39ec. Pointer to the CExoSoundInternal
@@ -167,7 +168,7 @@ void DispatchUnpauseCleanup(const char* trigger) {
 // The facade forwards to the internal via this->internal; we pass the
 // public CClientExoApp pointer (AppManager + 0x4). paused 1=pause/0=resume,
 // source 4 = the value the pause key passes, force 0.
-constexpr uintptr_t kAddrSetPausedByCombat   = 0x005edc20;
+const uintptr_t kAddrSetPausedByCombat = acc::addr::R(0x005edc20);
 constexpr size_t    kAppManagerClientOffset  = 0x4;
 using PFN_SetPausedByCombat =
     void(__thiscall *)(void* clientApp, int paused, int source, int force);

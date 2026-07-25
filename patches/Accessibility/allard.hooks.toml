@@ -1,0 +1,443 @@
+# GENERATED for the Allard Russian build of swkotor.exe -- addresses only.
+#
+# Same hooks as hooks.toml, same original_bytes: the engine code at every
+# hook site is byte-identical between the two builds, the linker just put it
+# elsewhere (displacements of +16..+512 bytes, varying per function). The
+# addresses come from `kdev sigscan`, which locates each site by a
+# relocation-tolerant signature; the report is in build/re/sigscan/.
+#
+# consumed_exit_address values are NOT emitted by sigscan. They were rebased
+# by their own hook's delta and each verified by comparing the opcode bytes
+# at the rebased address against the reference image (2026-07-25). For the
+# two shared epilogues the jump table that follows corroborates the delta:
+# every entry shifts by the same amount.
+#
+# Design rationale for each hook -- why this cut, why these registers, which
+# framework bugs it works around -- lives in hooks.toml. Do not duplicate it
+# here; keep this file mechanical so it stays easy to regenerate.
+
+[metadata]
+target_versions = ["7B961A140667336D22B06686CBDCBE2DDDF8A0EA13C20A27B63BDC57A75D7628"]
+
+[[hooks]]
+# OnRulesInit -- was 0x00552c9a (+288 bytes)
+address = 0x00552dba
+type = "detour"
+function = "OnRulesInit"
+original_bytes = [0x8d, 0x7e, 0x38, 0xb9, 0x15, 0x00, 0x00, 0x00, 0xf3, 0xab]
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "esi"
+type = "pointer"
+
+[[hooks]]
+# OnHandleFocusChange -- was 0x0041896b (+96 bytes)
+address = 0x004189cb
+type = "detour"
+function = "OnHandleFocusChange"
+original_bytes = [0x8b, 0x4f, 0x34, 0x85, 0xc9]
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "edi"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "eax"
+type = "int"
+
+[[hooks]]
+# OnSetActiveControl -- was 0x0040a638 (+160 bytes)
+address = 0x0040a6d8
+type = "detour"
+function = "OnSetActiveControl"
+original_bytes = [0x8b, 0x4f, 0x1c, 0x3b, 0xce]
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "edi"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esi"
+type = "pointer"
+
+[[hooks]]
+# OnHandleInputEvent -- was 0x0040c907 (+240 bytes)
+address = 0x0040c9f7
+type = "detour"
+function = "OnHandleInputEvent"
+original_bytes = [0x8b, 0xf1, 0x57, 0x89, 0x5e, 0x68]
+skip_original_bytes = false
+exclude_from_restore = ["eax"]
+# was 0x0040cbcb (+240 bytes)
+consumed_exit_address = 0x0040ccbb
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "ebx"
+type = "int"
+
+[[hooks.parameters]]
+source = "eax"
+type = "int"
+
+[[hooks]]
+# OnUpdate -- was 0x0040ce76 (+240 bytes)
+address = 0x0040cf66
+type = "detour"
+function = "OnUpdate"
+original_bytes = [0x8b, 0x85, 0x8c, 0x00, 0x00, 0x00]
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ebp"
+type = "pointer"
+
+[[hooks]]
+# OnSetMoveToModuleString -- was 0x004aecd0 (+96 bytes)
+address = 0x004aed30
+type = "detour"
+function = "OnSetMoveToModuleString"
+original_bytes = [0x8b, 0x49, 0x04, 0x81, 0xc1, 0x84, 0x00, 0x01, 0x00]
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+4"
+type = "pointer"
+
+[[hooks]]
+# OnListBoxSetActiveControl -- was 0x0041c16b (+96 bytes)
+address = 0x0041c1cb
+type = "detour"
+function = "OnListBoxSetActiveControl"
+original_bytes = [0x50, 0x51, 0x8d, 0x8e, 0x9c, 0x02, 0x00, 0x00]
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "esi"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "eax"
+type = "int"
+
+[[hooks]]
+# OnPlayFootstep -- was 0x0061a31a (+416 bytes)
+address = 0x0061a4ba
+type = "detour"
+function = "OnPlayFootstep"
+original_bytes = [0x0f, 0x84, 0x12, 0x03, 0x00, 0x00]
+skip_original_bytes = true
+exclude_from_restore = ["eax"]
+# was 0x0061a632 (+416 bytes)
+consumed_exit_address = 0x0061a7d2
+
+[[hooks.parameters]]
+source = "esi"
+type = "pointer"
+
+[[hooks]]
+# OnSetListenerPosition -- was 0x005d5df0 (+512 bytes)
+address = 0x005d5ff0
+type = "detour"
+function = "OnSetListenerPosition"
+original_bytes = [0x8b, 0x09, 0x85, 0xc9, 0x74, 0x05]
+skip_original_bytes = true
+exclude_from_restore = ["eax"]
+# was 0x005d5dfb (+512 bytes)
+consumed_exit_address = 0x005d5ffb
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+4"
+type = "pointer"
+
+[[hooks]]
+# OnCalculatePitchVarianceFrequency -- was 0x005db3d0 (+432 bytes)
+address = 0x005db580
+type = "detour"
+function = "OnCalculatePitchVarianceFrequency"
+original_bytes = [0x51, 0x56, 0x57, 0x8b, 0xf1]
+skip_original_bytes = false
+exclude_from_restore = ["eax"]
+# was 0x005db449 (+432 bytes)
+consumed_exit_address = 0x005db5f9
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks]]
+# OnSwitchToSWInGameGui -- was 0x0062cf2d (+400 bytes)
+address = 0x0062d0bd
+type = "detour"
+function = "OnSwitchToSWInGameGui"
+original_bytes = [0x85, 0xdb, 0x56, 0x8b, 0xf1]
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "ebx"
+type = "int"
+
+[[hooks]]
+# OnProcessInput -- was 0x006227fb (+400 bytes)
+address = 0x0062298b
+type = "detour"
+function = "OnProcessInput"
+original_bytes = [0x53, 0x55, 0x56, 0x8b, 0xf1]
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks]]
+# OnClientHandleInputEvent -- was 0x00621210 (+400 bytes)
+address = 0x006213a0
+type = "detour"
+function = "OnClientHandleInputEvent"
+original_bytes = [0x51, 0x53, 0x55, 0x56, 0x57]
+skip_original_bytes = false
+exclude_from_restore = ["eax"]
+# was 0x00622120 (+400 bytes)
+consumed_exit_address = 0x006222b0
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+4"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+8"
+type = "pointer"
+
+[[hooks]]
+# OnSetSWGuiStatus -- was 0x0062aa00 (+400 bytes)
+address = 0x0062ab90
+type = "detour"
+function = "OnSetSWGuiStatus"
+original_bytes = [0x8b, 0x44, 0x24, 0x04, 0x56]
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+4"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+8"
+type = "pointer"
+
+[[hooks]]
+# OnAppendToMsgBuffer -- was 0x0062b5c0 (+400 bytes)
+address = 0x0062b750
+type = "detour"
+function = "OnAppendToMsgBuffer"
+original_bytes = [0x57, 0x8b, 0xf9, 0x8b, 0x4c, 0x24, 0x08]
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+4"
+type = "pointer"
+
+[[hooks]]
+# OnHideSWInGameGui -- was 0x0062cba0 (+400 bytes)
+address = 0x0062cd30
+type = "detour"
+function = "OnHideSWInGameGui"
+original_bytes = [0x56, 0x8b, 0xf1, 0x8b, 0x86, 0x08, 0x01, 0x00, 0x00]
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+4"
+type = "pointer"
+
+[[hooks]]
+# OnShowObject -- was 0x005f9c8e (+512 bytes)
+address = 0x005f9e8e
+type = "detour"
+function = "OnShowObject"
+original_bytes = [0x8b, 0x4e, 0x40, 0x6a, 0x00]
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ebx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "eax"
+type = "int"
+
+[[hooks]]
+# OnCombatRoundAddAction -- was 0x004d3660 (+272 bytes)
+address = 0x004d3770
+type = "detour"
+function = "OnCombatRoundAddAction"
+original_bytes = [0x53, 0x56, 0x8b, 0xf1, 0x8b, 0x86, 0xb0, 0x09, 0x00, 0x00]
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+4"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+8"
+type = "pointer"
+
+[[hooks]]
+# OnCombatRoundRemoveAllActions -- was 0x004d3770 (+272 bytes)
+address = 0x004d3880
+type = "detour"
+function = "OnCombatRoundRemoveAllActions"
+original_bytes = [0x56, 0x8b, 0xf1, 0x8b, 0x86, 0xb0, 0x09, 0x00, 0x00]
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks]]
+# OnCombatRoundSetCurrentAction -- was 0x004d2b40 (+272 bytes)
+address = 0x004d2c50
+type = "detour"
+function = "OnCombatRoundSetCurrentAction"
+original_bytes = [0x8a, 0x44, 0x24, 0x04, 0x88, 0x81, 0xd0, 0x09, 0x00, 0x00]
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+4"
+type = "pointer"
+
+[[hooks]]
+# OnCombatRoundRemoveLastAction -- was 0x004d37b0 (+272 bytes)
+address = 0x004d38c0
+type = "detour"
+function = "OnCombatRoundRemoveLastAction"
+original_bytes = [0x8b, 0x89, 0xb0, 0x09, 0x00, 0x00]
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks]]
+# OnSetPauseState -- was 0x004b8110 (+288 bytes)
+address = 0x004b8230
+type = "detour"
+function = "OnSetPauseState"
+original_bytes = [0x51, 0x53, 0x8b, 0x5c, 0x24, 0x0c]
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+4"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+8"
+type = "pointer"
+
+[[hooks]]
+# OnTurretBulletHit -- was 0x0066c190 (+16 bytes)
+address = 0x0066c1a0
+type = "detour"
+function = "OnTurretBulletHit"
+original_bytes = [0x64, 0xa1, 0x00, 0x00, 0x00, 0x00]
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks]]
+# OnPlayerFire -- was 0x0066dc50 (+16 bytes)
+address = 0x0066dc60
+type = "detour"
+function = "OnPlayerFire"
+original_bytes = [0x53, 0x56, 0x57, 0x8b, 0xf9]
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks]]
+# OnDoorOpen -- was 0x00589ceb (+256 bytes)
+address = 0x00589deb
+type = "detour"
+function = "OnDoorOpen"
+original_bytes = [0x89, 0xbe, 0x1c, 0x03, 0x00, 0x00]
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "esi"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "edi"
+type = "int"

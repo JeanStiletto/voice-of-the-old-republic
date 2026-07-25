@@ -203,11 +203,21 @@ namespace KotorAccessibilityInstaller.ModInstallers
             {
                 GameLocale.German => "translation_german",
                 GameLocale.French => "translation_french",
-                // Russian: vanilla KOTOR doesn't ship a Russian dialog.tlk and our
-                // GameLocale enum doesn't currently include Russian, so we can't
-                // detect it. K1CP DOES ship two Russian overlays (olegkuz1997 and
-                // JayDominus under tslpatchdata/translation_russian/) — wire these
-                // up once a Russian user reports.
+                // Russian is now detectable (GameLocaleDetector's CP1251 content
+                // probe), but the overlay is still deliberately unwired. Two
+                // reasons, both needing a human decision rather than a guess:
+                //
+                //  1. K1CP ships TWO Russian overlays under
+                //     tslpatchdata/translation_russian/ (olegkuz1997 and
+                //     JayDominus). They are different translations; picking the
+                //     wrong one gives the player K1CP's bugfix strings in a
+                //     different voice from the rest of their game.
+                //  2. The Allard translation's author states that K1CP has not
+                //     been tested against it at all. The mod-selection screen
+                //     surfaces that to the user (Russian_K1cpUntested_Body).
+                //
+                // Until one is chosen, a Russian install gets the English
+                // append.tlk — the same treatment as Italian and Spanish.
                 _ => null,
             };
 
@@ -217,6 +227,12 @@ namespace KotorAccessibilityInstaller.ModInstallers
                 {
                     Logger.Info($"K1CP: no official translation for {locale}; " +
                                 "installing English append.tlk (bugfix strings will appear in English).");
+                }
+                else if (locale == GameLocale.Russian)
+                {
+                    Logger.Info("K1CP: Russian install detected. K1CP ships two Russian overlays and " +
+                                "neither has been chosen yet, so the English append.tlk is used " +
+                                "(bugfix strings will appear in English). See ApplyLocaleOverlay.");
                 }
                 else if (locale == GameLocale.English)
                 {

@@ -44,8 +44,19 @@ namespace KotorAccessibilityInstaller
         /// </summary>
         public ModSelection Selection { get; private set; } = ModSelection.AllOn();
 
-        public ModSelectionForm()
+        /// <summary>
+        /// Detected locale of the game install, used to extend the footnote.
+        /// A Russian install gets two extra paragraphs: confirmation that the
+        /// translation was found, and the translation author's statement that
+        /// K1CP is untested against it. Folded into the existing footnote
+        /// rather than shown as its own dialog so the flow keeps the same
+        /// number of steps for everyone.
+        /// </summary>
+        private readonly GameLocale _gameLocale;
+
+        public ModSelectionForm(GameLocale gameLocale = GameLocale.Unknown)
         {
+            _gameLocale = gameLocale;
             InitializeComponents();
             ApplyLocale();
             InstallerLocale.OnLanguageChanged += ApplyLocale;
@@ -189,7 +200,7 @@ namespace KotorAccessibilityInstaller
             // _companionsCheckBox.Text = InstallerLocale.Get("ModSelection_CompanionsCheckbox");
             // _companionsDescription.Text = InstallerLocale.Get("ModSelection_CompanionsDescription");
 
-            _footnoteLabel.Text = InstallerLocale.Get("ModSelection_FootnoteBody");
+            _footnoteLabel.Text = BuildFootnote();
 
             _backButton.Text = InstallerLocale.Get("ModSelection_BackButton");
             _nextButton.Text = InstallerLocale.Get("ModSelection_NextButton");
@@ -205,6 +216,25 @@ namespace KotorAccessibilityInstaller
             string body = $"{_titleLabel.Text}. {_descriptionLabel.Text}";
             AccessibleDescription = body;
             _nextButton.AccessibleDescription = body;
+        }
+
+        /// <summary>
+        /// Base footnote, plus the Russian-specific paragraphs when the game
+        /// install is a Russian community translation.
+        /// </summary>
+        private string BuildFootnote()
+        {
+            string footnote = InstallerLocale.Get("ModSelection_FootnoteBody");
+            if (_gameLocale != GameLocale.Russian) return footnote;
+
+            return string.Join("\n\n", new[]
+            {
+                $"{InstallerLocale.Get("Russian_Detected_Heading")}: " +
+                InstallerLocale.Get("Russian_Detected_Body"),
+                $"{InstallerLocale.Get("Russian_K1cpUntested_Heading")}: " +
+                InstallerLocale.Get("Russian_K1cpUntested_Body"),
+                footnote
+            });
         }
     }
 }

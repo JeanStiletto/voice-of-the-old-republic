@@ -43,6 +43,13 @@
     "ModSelection_NextButton": "Continue to install",
     "ModSelection_BackButton": "Back",
 
+    "Russian_Detected_Heading": "Russian translation detected",
+    "Russian_Detected_Body": "Your dialog.tlk is a Russian community translation, so the mod will speak Russian. The Russian accessibility text is a machine-translated first pass and will be improved by contributors over time.",
+    "Russian_NotFound_Heading": "Russian game translation",
+    "Russian_NotFound_Body": "You chose Russian, but this KOTOR install is not translated to Russian. The mod can speak Russian, but the game's own text will stay in its current language.\n\nKOTOR has no official Russian release. The community translation is by Artyom 'Allard' Andreev, based on the SerGEAnt's Zone of Games localisation. We cannot bundle or download it for you: it is not published under a licence that allows redistribution, and it has no stable download location we could verify.\n\nTo get it, obtain the translation from the author's own channels:\n  https://vk.com/allardchannel\n  http://www.rpgnuke.ru\n\nInstall the translation first, then run this installer again. It will detect the Russian text automatically.",
+    "Russian_K1cpUntested_Heading": "Note on K1CP with the Russian translation",
+    "Russian_K1cpUntested_Body": "The author of the Russian translation states that the KOTOR 1 Community Patch has not been tested against it. K1CP is still recommended for everyone else, but on a Russian install this combination is untested by both projects. You can leave K1CP enabled, or uncheck it on the optional mods page if you would rather not risk it.",
+
     "Main_TitleInstaller": "Voice of the Old Republic - Installer",
     "Main_TitleUpdater": "Voice of the Old Republic - Updater",
     "Main_StatusInstall": "This installs Voice of the Old Republic into your Steam copy of Knights of the Old Republic.\nThe mod enables blind players to play using any modern screen reader.",

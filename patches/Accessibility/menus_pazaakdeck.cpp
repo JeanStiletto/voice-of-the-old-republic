@@ -21,6 +21,7 @@
 #include "pazaak.h"          // FormatCardLabel, CardContext
 #include "prism.h"
 #include "strings.h"
+#include "engine_rebase.h"
 
 namespace acc::menus::pazaakdeck {
 
@@ -132,8 +133,8 @@ namespace {
 
 typedef int (__thiscall* PFN_AddChosenCard)(void* panel, int cardType, int slot);
 typedef int (__thiscall* PFN_RemoveChosenCard)(void* panel, int slot);
-constexpr uintptr_t kAddrAddChosenCard    = 0x0067fb10;
-constexpr uintptr_t kAddrRemoveChosenCard = 0x0067fd10;
+const uintptr_t kAddrAddChosenCard = acc::addr::R(0x0067fb10);
+const uintptr_t kAddrRemoveChosenCard = acc::addr::R(0x0067fd10);
 constexpr int kControlPlayId = 78;  // "Spielen" button (.gui id, locale-stable)
 
 enum class Op { None, Add, Remove, Play };

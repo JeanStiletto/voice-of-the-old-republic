@@ -12,18 +12,19 @@
 #include "engine_player.h"   // GetPlayerServerCreature
 #include "engine_reads.h"    // ReadCExoString
 #include "log.h"
+#include "engine_rebase.h"
 
 namespace acc::engine {
 namespace {
 
 // CSWSScriptVarTable accessors + CExoString ctor/dtor (GOG/Steam swkotor.exe;
 // GoG bytes match Steam). Addresses from Lane's RE — see the persistence doc.
-constexpr uintptr_t kAddrSetString   = 0x0059a8e0;  // __thiscall(table, name, value)
-constexpr uintptr_t kAddrGetString   = 0x0059a590;  // __thiscall(table, out, name) -> out
-constexpr uintptr_t kAddrSetInt      = 0x0059a6f0;  // __thiscall(table, name, value, journalArg)
-constexpr uintptr_t kAddrGetInt      = 0x0059a530;  // __thiscall(table, name) -> int
-constexpr uintptr_t kAddrExoCtorCStr = 0x005e5a90;  // CExoString::CExoString(char*)
-constexpr uintptr_t kAddrExoDtor     = 0x005e5c20;  // CExoString::~CExoString()
+const uintptr_t kAddrSetString = acc::addr::R(0x0059a8e0);  // __thiscall(table, name, value)
+const uintptr_t kAddrGetString = acc::addr::R(0x0059a590);  // __thiscall(table, out, name) -> out
+const uintptr_t kAddrSetInt = acc::addr::R(0x0059a6f0);  // __thiscall(table, name, value, journalArg)
+const uintptr_t kAddrGetInt = acc::addr::R(0x0059a530);  // __thiscall(table, name) -> int
+const uintptr_t kAddrExoCtorCStr = acc::addr::R(0x005e5a90);  // CExoString::CExoString(char*)
+const uintptr_t kAddrExoDtor = acc::addr::R(0x005e5c20);  // CExoString::~CExoString()
 
 // Named, string-capable CSWSScriptVarTable embedded in CSWSObject at +0x100.
 // (Ghidra's struct MISLABELS the fields: the symbol "script_var_table_2" at

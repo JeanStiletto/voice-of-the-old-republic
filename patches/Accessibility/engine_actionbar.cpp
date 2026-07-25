@@ -8,6 +8,7 @@
 #include "engine_player.h"   // kAddrAppManagerPtr / kAppManagerClientAppOffset /
                              // kClientExoAppInternalOffset
 #include "log.h"
+#include "engine_rebase.h"
 
 namespace {
 
@@ -41,20 +42,20 @@ constexpr size_t kIfActionStride         = 0x38;
 // Engine entry points (verified from k1_win_gog_swkotor.exe.xml +
 // docs/action-menu-investigation.md). GoG bytes match Steam per memory
 // project_ghidra_gog_steam_bytes_match.
-constexpr uintptr_t kAddrDoPersonalAction         = 0x0068ad60;
+const uintptr_t kAddrDoPersonalAction = acc::addr::R(0x0068ad60);
 
 // CGuiInGame::SetMainInterfaceTarget @ 0x0062b000 — same wrapper as
 // the radial/picker drive uses. Thin forwarder to
 // CSWGuiMainInterface::SetTarget (stores field1_0x64 + resets the
 // refresh-hint float field21_0x5cb0).
-constexpr uintptr_t kAddrSetMainInterfaceTarget    = 0x0062b000;
+const uintptr_t kAddrSetMainInterfaceTarget = acc::addr::R(0x0062b000);
 
 // CGuiInGame::RePopulateMainInterface @ 0x0062b050 — thin forwarder to
 // CSWGuiMainInterface::PopulateMenus @ 0x00689d80. Refreshes both the
 // six personal-action lists (field5_0x74[0..5] via GetPersonalActions)
 // and target_action_menu.action_lists[0..2] (via GetTargetActions for
 // each row) against the currently-stamped main-interface target.
-constexpr uintptr_t kAddrRePopulateMainInterface   = 0x0062b050;
+const uintptr_t kAddrRePopulateMainInterface = acc::addr::R(0x0062b050);
 
 typedef void (__thiscall* PFN_DoPersonalAction)(void* this_,
                                                 int slot, int param_2);

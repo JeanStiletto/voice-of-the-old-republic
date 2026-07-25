@@ -16,3 +16,10 @@ conflicts = []
 kotor1_steam_103 = "34E6D971C034222A417995D8E1E8FDD9F8781795C9C289BD86C499A439F34C88"
 kotor1_gog_103 = "9C10E0450A6EECA417E036E3CDE7474FED1F0A92AAB018446D156944DEA91435"
 kotor1_gog_103_cdrepack = "761F9466F456A83909036BAEBB5C43167D722387BE66E54617BA20A8C49E9886"
+
+# Allard Russian translation 1.72. Same BioWare source, relinked: the engine
+# code is byte-identical but relocated (+16..+512 bytes, per function). Hook
+# addresses come from allard.hooks.toml; the in-DLL constants are remapped at
+# runtime by acc::addr::R (engine_rebase.cpp), which identifies the build from
+# its PE link timestamp.
+kotor1_allard_ru_172 = "7B961A140667336D22B06686CBDCBE2DDDF8A0EA13C20A27B63BDC57A75D7628"

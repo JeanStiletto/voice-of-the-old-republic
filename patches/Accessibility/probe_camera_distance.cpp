@@ -11,6 +11,7 @@
 #include "hotkeys.h"
 #include "log.h"
 #include "prism.h"
+#include "engine_rebase.h"
 
 namespace acc::probe_camera_distance {
 
@@ -37,10 +38,10 @@ constexpr size_t kBehTargetDistOffset  = 0x110;
 constexpr size_t kBehZOffsetOffset     = 0x120;
 
 // Engine primitives.
-constexpr uintptr_t kAddrCameraGetDist  = 0x0045C1D0;
-constexpr uintptr_t kAddrCameraGetYaw   = 0x0045C170;
-constexpr uintptr_t kAddrCameraGetPitch = 0x0045C1A0;
-constexpr uintptr_t kAddrZoomCamera     = 0x006401D0;
+const uintptr_t kAddrCameraGetDist = acc::addr::R(0x0045C1D0);
+const uintptr_t kAddrCameraGetYaw = acc::addr::R(0x0045C170);
+const uintptr_t kAddrCameraGetPitch = acc::addr::R(0x0045C1A0);
+const uintptr_t kAddrZoomCamera = acc::addr::R(0x006401D0);
 
 // Camera-tuning globals identified via ListSymbolsByName.java. Read-only in
 // the probe — logged on snapshot so we can correlate a stomped clamp with

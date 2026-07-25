@@ -1,3 +1,16 @@
+# The addresses in this file are the vanilla 1.0.3 layout, shared by the Steam,
+# GoG and GoG-equivalent CD re-pack builds (project_ghidra_gog_steam_bytes_match).
+# Other builds relocate the same engine code — the Allard Russian exe by
+# +16..+512 bytes per function — so this file must NOT be applied to them;
+# allard.hooks.toml carries the rebased addresses for that one. Without
+# target_versions the framework applies a hooks file to every version it sees.
+[metadata]
+target_versions = [
+    "34E6D971C034222A417995D8E1E8FDD9F8781795C9C289BD86C499A439F34C88",  # Steam 1.0.3
+    "9C10E0450A6EECA417E036E3CDE7474FED1F0A92AAB018446D156944DEA91435",  # GoG 1.0.3
+    "761F9466F456A83909036BAEBB5C43167D722387BE66E54617BA20A8C49E9886",  # GoG-equivalent CD re-pack
+]
+
 # Note: the CExoRawInputInternal::InitializeDirectInputMouse no-mouse crash
 # guard is installed inline from core_dllmain.cpp's InstallMouseGuard(),
 # called from OnRulesInit. A KPatchManager detour at the function entry

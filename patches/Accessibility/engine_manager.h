@@ -11,6 +11,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "engine_rebase.h"
 
 namespace acc::engine {
 
@@ -54,7 +55,7 @@ constexpr size_t kMgrModalStackSizeOffset  = 0x98;
 // Cursor move + hover refresh in one call. Updates hover only;
 // panel.activeControl lags unless explicitly committed (PanelSetActive-
 // Control, or the click-sim path which runs full press+release).
-constexpr uintptr_t kAddrMoveMouseToPosition = 0x0040c790;
+const uintptr_t kAddrMoveMouseToPosition = acc::addr::R(0x0040c790);
 typedef void (__thiscall* PFN_MoveMouseToPosition)(void* gm, int x, int y);
 
 // Click-sim primitives.
@@ -76,7 +77,7 @@ typedef void (__thiscall* PFN_MoveMouseToPosition)(void* gm, int x, int y);
 // SetActiveControl path that crashed at mgr+5: we no longer skip the
 // HandleLMouseDown prelude writes, so the engine's press+release
 // invariant stays intact.
-constexpr uintptr_t kAddrManagerLMouseDown = 0x0040c570;
-constexpr uintptr_t kAddrManagerLMouseUp   = 0x0040a170;
+const uintptr_t kAddrManagerLMouseDown = acc::addr::R(0x0040c570);
+const uintptr_t kAddrManagerLMouseUp = acc::addr::R(0x0040a170);
 typedef int (__thiscall* PFN_ManagerLMouseDown)(void* gm, int press);
 typedef int (__thiscall* PFN_ManagerLMouseUp)(void* gm);

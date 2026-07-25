@@ -9,6 +9,7 @@
 #include "engine_subscreen.h" // Begin/EndOverlayPause — freeze the world like
                               // the action menu, WITHOUT opening a sub-screen
 #include "log.h"
+#include "engine_rebase.h"
 
 namespace acc::engine_levelup {
 
@@ -19,7 +20,7 @@ namespace {
 // without opening a panel because of the same gate as
 // CSWGuiInGameCharacter::ShowLevelUpGUI (level_up_mode == 0). Kept as a
 // fallback when the InGameCharacter panel slot is null.
-constexpr uintptr_t kAddrCGuiInGameShowLevelUpGUI = 0x0062dc00;
+const uintptr_t kAddrCGuiInGameShowLevelUpGUI = acc::addr::R(0x0062dc00);
 
 // CSWGuiInGameCharacter::ShowLevelUpGUI — __thiscall(int) @0x006b0bb0.
 // btn_levelup click handler. RE'd via runtime peek (DumpFunctionBytes
@@ -38,7 +39,7 @@ constexpr uintptr_t kAddrCGuiInGameShowLevelUpGUI = 0x0062dc00;
 // Both gates explain the 0-return-no-panel behaviour seen in our runs:
 // `level_up_mode` is 0 in normal gameplay and only flipped to 1 when
 // the engine wants to open the level-up wizard (via SetLevelUpMode below).
-constexpr uintptr_t kAddrCSWGuiInGameCharacterShowLevelUpGUI = 0x006b0bb0;
+const uintptr_t kAddrCSWGuiInGameCharacterShowLevelUpGUI = acc::addr::R(0x006b0bb0);
 
 // CGuiInGame::SetLevelUpMode — __thiscall(int) -> void @0x00628650.
 // Tiny setter (function range 0x00628650..0x00628664 = 0x14 bytes).
@@ -46,7 +47,7 @@ constexpr uintptr_t kAddrCSWGuiInGameCharacterShowLevelUpGUI = 0x006b0bb0;
 // Existing Ghidra comment at 0x0066aa28 ("Sets the in-game
 // level_up_mode = 0. Seems to prevent level ups from occurring?")
 // confirms the directionality: 0 = block, 1 = allow.
-constexpr uintptr_t kAddrCGuiInGameSetLevelUpMode = 0x00628650;
+const uintptr_t kAddrCGuiInGameSetLevelUpMode = acc::addr::R(0x00628650);
 
 // CSWSCreatureStats::CanLevelUp — undefined4 __thiscall(void) @0x005a6810.
 // Pure read-only predicate (RE'd by byte dump 2026-06-16): returns 1 only
@@ -55,7 +56,7 @@ constexpr uintptr_t kAddrCGuiInGameSetLevelUpMode = 0x00628650;
 // AND the two class-side gates pass — i.e. exactly when the Charakterblatt
 // btn_levelup button is enabled. No writes, no allocations, so it's safe
 // to call purely as a gate. ECX = CSWSCreatureStats*, no stack params.
-constexpr uintptr_t kAddrCSWSCreatureStatsCanLevelUp = 0x005a6810;
+const uintptr_t kAddrCSWSCreatureStatsCanLevelUp = acc::addr::R(0x005a6810);
 
 typedef uint32_t (__thiscall* PFN_CanLevelUp)(void* this_);
 
@@ -114,7 +115,7 @@ bool SetLevelUpMode(void* gui, int mode) {
 // alone keeps the in-world key codes — confirmed by the F2-opened menu strip in
 // patch-20260723-161404.log, which set status=3 with NO character panel and the
 // wizard then navigated with 181/182/183.
-constexpr uintptr_t kAddrCGuiInGameSetSWGuiStatus = 0x0062aa00;
+const uintptr_t kAddrCGuiInGameSetSWGuiStatus = acc::addr::R(0x0062aa00);
 typedef void (__thiscall* PFN_SetSWGuiStatus)(void* this_, int status, int p2);
 
 void DriveSWGuiStatus(void* gui, int status, int p2) {

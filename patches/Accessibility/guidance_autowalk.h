@@ -8,6 +8,7 @@
 #include <cstdint>
 
 #include "engine_offsets.h"
+#include "engine_rebase.h"
 
 namespace acc::guidance {
 
@@ -51,16 +52,16 @@ void PollMovementKeysCancel();
 }  // namespace acc::guidance
 
 // CSWSCreature::AddMoveToPointAction — __thiscall, 17 stack args.
-constexpr uintptr_t kAddrCSWSCreatureAddMoveToPointAction = 0x004F8B60;
+const uintptr_t kAddrCSWSCreatureAddMoveToPointAction = acc::addr::R(0x004F8B60);
 
 // CSWSCreature::ForceMoveToPoint — __thiscall(CSWSForcedAction*).
 // Bypasses the queue; still pathfinds.
-constexpr uintptr_t kAddrCSWSCreatureForceMoveToPoint = 0x004EDBA0;
+const uintptr_t kAddrCSWSCreatureForceMoveToPoint = acc::addr::R(0x004EDBA0);
 
 // CSWSObject::AddUseObjectAction — __thiscall(ulong, ulong) → int.
 // Forwards to AddAction(this, 0x28=ACTION_USEOBJECT, ...).
-constexpr uintptr_t kAddrCSWSObjectAddUseObjectAction = 0x0057C810;
+const uintptr_t kAddrCSWSObjectAddUseObjectAction = acc::addr::R(0x0057C810);
 
 // CSWSObject::ClearAllActions — __thiscall(int) → void. param=0 here;
 // semantics not fully decoded.
-constexpr uintptr_t kAddrCSWSObjectClearAllActions = 0x004CCD80;
+const uintptr_t kAddrCSWSObjectClearAllActions = acc::addr::R(0x004CCD80);

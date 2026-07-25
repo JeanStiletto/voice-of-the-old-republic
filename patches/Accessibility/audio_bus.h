@@ -14,6 +14,7 @@
 #include <cstdint>
 
 #include "engine_offsets.h"  // Vector
+#include "engine_rebase.h"
 
 namespace acc::audio {
 
@@ -96,16 +97,16 @@ bool PlayCue3D(const char* resref, const Vector& worldPosition,
 constexpr uintptr_t kAddrCExoSoundPtr = 0x007A39EC;
 
 // CExoSound::PlayOneShotSound  — __thiscall, RET 0x18 (6 × 4-byte args).
-constexpr uintptr_t kAddrCExoSoundPlayOneShotSound   = 0x005D5E00;
+const uintptr_t kAddrCExoSoundPlayOneShotSound = acc::addr::R(0x005D5E00);
 
 // CExoSound::Play3DOneShotSound — __thiscall, RET 0x28 (CResRef* +
 // Vector + 7 × 4-byte slots).
-constexpr uintptr_t kAddrCExoSoundPlay3DOneShotSound = 0x005D5E10;
+const uintptr_t kAddrCExoSoundPlay3DOneShotSound = acc::addr::R(0x005D5E10);
 
 // CExoSound::SetListenerPosition(Vector*) — __thiscall. Engine writes
 // this every frame from the camera; we detour rather than race that
 // from OnUpdate. Hook target for view-mode listener override.
-constexpr uintptr_t kAddrCExoSoundSetListenerPosition = 0x005D5DF0;
+const uintptr_t kAddrCExoSoundSetListenerPosition = acc::addr::R(0x005D5DF0);
 
 // CExoSoundSourceInternal::CalculatePitchVarianceFrequency — __thiscall,
 // returns the per-fire randomised playback frequency. We detour this
@@ -130,18 +131,18 @@ constexpr uintptr_t kAddrCExoSoundSourceInternalCalculatePitchVarianceFrequency
 //   5. Stop → dtor → free.
 //
 // CResRef-takers (Play, SetResRef) use the 16-byte CResRef struct.
-constexpr uintptr_t kAddrCExoSoundSourceCtor             = 0x005D5870;
-constexpr uintptr_t kAddrCExoSoundSourceCtorWithResRef   = 0x005D60E0;
-constexpr uintptr_t kAddrCExoSoundSourceDtor             = 0x005D60A0;
-constexpr uintptr_t kAddrCExoSoundSourceSetPriorityGroup = 0x005D5900;
-constexpr uintptr_t kAddrCExoSoundSourceSet3D            = 0x005D5910;
-constexpr uintptr_t kAddrCExoSoundSourcePlay             = 0x005D5930;
-constexpr uintptr_t kAddrCExoSoundSourceSetVolume        = 0x005D5950;
-constexpr uintptr_t kAddrCExoSoundSourceSetPitchVariance = 0x005D5980;
-constexpr uintptr_t kAddrCExoSoundSourceSetLooping       = 0x005D59D0;
-constexpr uintptr_t kAddrCExoSoundSourceSetPosition      = 0x005D59E0;
-constexpr uintptr_t kAddrCExoSoundSourceStop             = 0x005D5A20;
-constexpr uintptr_t kAddrCExoSoundSourceSetFixedVariance = 0x005D5A30;
-constexpr uintptr_t kAddrCExoSoundSourceGetLooping       = 0x005D6190;
-constexpr uintptr_t kAddrCExoSoundSourceSetDistance      = 0x005D61A0;
-constexpr uintptr_t kAddrCExoSoundSourceSetResRef        = 0x005D61C0;
+const uintptr_t kAddrCExoSoundSourceCtor = acc::addr::R(0x005D5870);
+const uintptr_t kAddrCExoSoundSourceCtorWithResRef = acc::addr::R(0x005D60E0);
+const uintptr_t kAddrCExoSoundSourceDtor = acc::addr::R(0x005D60A0);
+const uintptr_t kAddrCExoSoundSourceSetPriorityGroup = acc::addr::R(0x005D5900);
+const uintptr_t kAddrCExoSoundSourceSet3D = acc::addr::R(0x005D5910);
+const uintptr_t kAddrCExoSoundSourcePlay = acc::addr::R(0x005D5930);
+const uintptr_t kAddrCExoSoundSourceSetVolume = acc::addr::R(0x005D5950);
+const uintptr_t kAddrCExoSoundSourceSetPitchVariance = acc::addr::R(0x005D5980);
+const uintptr_t kAddrCExoSoundSourceSetLooping = acc::addr::R(0x005D59D0);
+const uintptr_t kAddrCExoSoundSourceSetPosition = acc::addr::R(0x005D59E0);
+const uintptr_t kAddrCExoSoundSourceStop = acc::addr::R(0x005D5A20);
+const uintptr_t kAddrCExoSoundSourceSetFixedVariance = acc::addr::R(0x005D5A30);
+const uintptr_t kAddrCExoSoundSourceGetLooping = acc::addr::R(0x005D6190);
+const uintptr_t kAddrCExoSoundSourceSetDistance = acc::addr::R(0x005D61A0);
+const uintptr_t kAddrCExoSoundSourceSetResRef = acc::addr::R(0x005D61C0);

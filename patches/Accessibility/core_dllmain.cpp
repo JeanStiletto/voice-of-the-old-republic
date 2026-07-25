@@ -20,6 +20,7 @@
 #include "save_crash_guard.h"
 #include "strings.h"
 #include "update_checker.h"
+#include "engine_rebase.h"
 
 namespace {
 
@@ -32,19 +33,56 @@ const char* LangName(acc::strings::Lang l) {
         case acc::strings::Lang::Fr: return "French";
         case acc::strings::Lang::It: return "Italian";
         case acc::strings::Lang::Es: return "Spanish";
+        case acc::strings::Lang::Ru: return "Russian";
     }
     return "Unknown";
 }
 
-// Read the LanguageID byte from <install>/dialog.tlk to determine the
-// engine locale the player has actually installed, so combat-anchor
-// matching + Id::* speech route to the right table. Defaults to English
-// on any failure or unrecognised LanguageID — the most universal fallback
-// for the broader (non-DE) user base. A correctly-installed DE copy still
-// detects LanguageID=2 and routes to German; only a genuine detection
-// failure or an unsupported locale lands on English.
+// Sample the tlk's string blob and report whether it reads as Windows-1251
+// Cyrillic. Needed because community Russian translations do not use a Russian
+// LanguageID — Allard 1.72 (the current active one) ships LanguageID=0, the
+// English slot, with the strings re-encoded in CP1251. So the declared ID
+// cannot tell Russian from English and the bytes have to be inspected.
 //
-// TLK header layout (12 bytes): "TLK " "V3.0" int32_le LanguageID.
+// In CP1251 the Cyrillic block is a solid run at 0xC0-0xFF, so Russian prose
+// is overwhelmingly high-byte: measured on Allard's dialog.tlk, 78% of the
+// sampled bytes were >= 0xC0. English prose is ~0%. The 20% threshold sits
+// far from both, so a mixed tlk (Russian text with long ASCII resrefs) still
+// classifies correctly and no plausible Latin-1 text trips it.
+//
+// `entriesOffset` is the tlk header's offset-to-string-entries field.
+bool TlkLooksCyrillic(FILE* fp, uint32_t entriesOffset) {
+    if (fseek(fp, static_cast<long>(entriesOffset), SEEK_SET) != 0) return false;
+
+    unsigned char sample[64 * 1024];
+    size_t got = fread(sample, 1, sizeof(sample), fp);
+    // Too small to judge; treat as not-Cyrillic and let the ID switch decide.
+    if (got < 512) return false;
+
+    size_t cyrillic = 0;
+    for (size_t i = 0; i < got; ++i) {
+        if (sample[i] >= 0xC0) ++cyrillic;
+    }
+    const double ratio = static_cast<double>(cyrillic) / static_cast<double>(got);
+    acclog::Write("Lang", "tlk CP1251 probe: %zu/%zu bytes >= 0xC0 (%.1f%%)",
+                  cyrillic, got, ratio * 100.0);
+    return ratio >= 0.20;
+}
+
+// Read the LanguageID from <install>/dialog.tlk to determine the engine locale
+// the player has actually installed, so combat-anchor matching + Id::* speech
+// route to the right table. Defaults to English on any failure or unrecognised
+// LanguageID — the most universal fallback for the broader (non-DE) user base.
+// A correctly-installed DE copy still detects LanguageID=2 and routes to
+// German; only a genuine detection failure or an unsupported locale lands on
+// English.
+//
+// The CP1251 content probe runs *before* the ID switch and overrides it,
+// because a Russian tlk can declare any ID (Allard uses 0). That ordering also
+// means a future Russian repack on a different ID is picked up for free.
+//
+// TLK header layout (20 bytes): "TLK " "V3.0" int32_le LanguageID
+// uint32_le StringCount uint32_le OffsetToStringEntries.
 // Locale IDs (per kdev `LanguageIdToCode`): 0=En 1=Fr 2=De 3=It 4=Es.
 acc::strings::Lang DetectLanguageFromTlk() {
     using L = acc::strings::Lang;
@@ -70,17 +108,31 @@ acc::strings::Lang DetectLanguageFromTlk() {
         return L::En;
     }
 
-    unsigned char header[12] = {};
+    unsigned char header[20] = {};
     size_t got = fread(header, 1, sizeof(header), fp);
-    fclose(fp);
 
     if (got < sizeof(header) || memcmp(header, "TLK ", 4) != 0) {
+        fclose(fp);
         acclog::Write("Lang", "dialog.tlk bad header (%zu bytes); defaulting to English", got);
         return L::En;
     }
 
     int32_t langId = 0;
     memcpy(&langId, header + 8, sizeof(langId));
+    uint32_t entriesOffset = 0;
+    memcpy(&entriesOffset, header + 16, sizeof(entriesOffset));
+
+    // Content probe first — it outranks the declared ID. See TlkLooksCyrillic.
+    const bool cyrillic = TlkLooksCyrillic(fp, entriesOffset);
+    fclose(fp);
+
+    if (cyrillic) {
+        acclog::Write("Lang",
+                      "dialog.tlk declares LanguageID=%d but reads as CP1251 "
+                      "Cyrillic -> Russian",
+                      langId);
+        return L::Ru;
+    }
 
     L detected;
     switch (langId) {
@@ -140,9 +192,9 @@ void EnsurePrismInitialized() {
 // Crash report: userlogs/swkotor.exe.58504.dmp.
 namespace {
 
-constexpr uintptr_t kInitMouseAddr        = 0x005e3fa0;  // function entry
-constexpr uintptr_t kInitMouseContinue    = 0x005e3faa;  // MOV ECX,[EAX]
-constexpr uintptr_t kInitMouseFailEpilogue = 0x005e401f; // POP EDI; XOR EAX,EAX; ...
+const uintptr_t kInitMouseAddr = acc::addr::R(0x005e3fa0);  // function entry
+const uintptr_t kInitMouseContinue = acc::addr::R(0x005e3faa);  // MOV ECX,[EAX]
+const uintptr_t kInitMouseFailEpilogue = acc::addr::R(0x005e401f); // POP EDI; XOR EAX,EAX; ...
 
 void InstallMouseGuard() {
     static bool installed = false;
@@ -221,7 +273,15 @@ extern "C" void __cdecl OnRulesInit(void* /*rulesThis*/) {
     acclog::BringupMark("rules_init");
     InstallMouseGuard();
     acc::save_guard::InstallSaveScreenshotGuard();
-    acc::strings::SetLanguage(DetectLanguageFromTlk());
+    // Order matters: pin the narrow-text codepage from the detected language
+    // before Prism comes up, so the very first utterance (the version greeting
+    // in EnsurePrismInitialized) is already widened correctly. Russian is
+    // CP1251 and must not go through CP_ACP — see prism::SetSpeechCodepage.
+    {
+        const acc::strings::Lang lang = DetectLanguageFromTlk();
+        acc::strings::SetLanguage(lang);
+        prism::SetSpeechCodepage(acc::strings::CodepageFor(lang));
+    }
     EnsurePrismInitialized();
     // Baseline snapshot of swkotor.ini + install-root DLLs so every support
     // bundle from now on carries the user's full config without needing a

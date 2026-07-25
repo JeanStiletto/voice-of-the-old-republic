@@ -4,10 +4,12 @@
 // `kdev combat-strings-extract` (the strref→field map lives in
 // CombatStringsExtractCommand.cs); speech-side labels are hand-translated.
 //
-// Encoding: Windows-1252 hex escapes for non-ASCII (\xFC=ü, \xF6=ö,
-// \xE4=ä, \xDF=ß). Engine emits CP-1252 bytes in CExoString::c_string
-// on a German Windows install, so anchor strings must use the same
-// byte sequences for direct memcmp/strstr to work.
+// Encoding: hex escapes in the *game's* codepage, because the anchors are
+// memcmp'd/strstr'd directly against CExoString bytes. For de/en/fr/it/es
+// that is Windows-1252 (\xFC=ü, \xF6=ö, \xE4=ä, \xDF=ß). kRu is the
+// exception: Russian installs are Windows-1251, so its escapes are 1251 and
+// must not be read as 1252. acc::strings::CodepageFor(Lang) reports which,
+// and prism::SetSpeechCodepage pins it for the speech path.
 //
 // Field order in the initialiser MUST match the declaration order in
 // combat_strings.h — we use positional init (no designated initialisers
@@ -398,6 +400,124 @@ const MsgStrings kEs = {
     "%s desv\xED""a %d disparos",            // fmt_deflect_many
 };
 
+// Russian — engine anchors extracted from Allard 1.72's dialog.tlk on
+// 2026-07-25 via `kdev combat-strings-extract --tlk <allard>/dialog.tlk`.
+// Speech labels hand-translated (machine-translation quality bar, same as
+// fr/it/es — flagged for a native-speaker pass).
+//
+// Encoding: Windows-1251, NOT 1252. Russian is the first locale whose bytes
+// differ from the OS codepage on a typical player's machine, which is why
+// prism::SetSpeechCodepage exists — see acc::strings::CodepageFor(Lang::Ru).
+//
+// Two Russian-specific engine quirks, both verified against the TLK:
+//
+//  (a) 42042 is "<CUSTOM0> <CUSTOM1> \xE0\xF2\xE0\xEA\xF3\xE5\xF2 <CUSTOM2>"
+//      (actor / adverb / "attacks" / target) with the adverb supplied by
+//      42043 "\xF3\xF1\xEF\xE5\xF8\xED\xEE" (successfully) or 42044
+//      "\xE1\xE5\xE7\xF3\xF1\xEF\xE5\xF8\xED\xEE" (unsuccessfully). So the
+//      hit/miss distinction rides a prefix on the same verb, unlike DE/EN
+//      where the verb itself changes.
+//
+//  (b) There is NO status-echo copula. 42158 is bare "<CUSTOM0> <CUSTOM1>"
+//      because Russian drops "to be" in the present tense, so the rendered
+//      line is "<target> <status>" with only a space between them. A single
+//      space is unusable as an anchor: RuleAttackSummary searches for
+//      "<target>" + marker inside the summary, and 42119's gap after the
+//      target is "  \xF1 " (glue space + "with"), so a " " marker would
+//      match there and capture the entire rest of the line as the status.
+//      Per combat_strings.h's documented fallback for locales with a
+//      different construction, we use a byte the TLK can never contain: the
+//      status word is simply not extracted, the line is still claimed and
+//      suppressed by prefix_auswirkung, and nothing regresses. Improving
+//      this needs a parser change, not a table change.
+const MsgStrings kRu = {
+    // ---- Engine-side parse anchors (extracted from Allard dialog.tlk)
+    " \xF3\xF1\xEF\xE5\xF8\xED\xEE \xE0\xF2\xE0\xEA\xF3\xE5\xF2 ",  // phrase_hit  (42042 + adverb 42043)
+    " \xE1\xE5\xE7\xF3\xF1\xEF\xE5\xF8\xED\xEE \xE0\xF2\xE0\xEA\xF3\xE5\xF2 ",  // phrase_miss (42042 + adverb 42044)
+    "  \xF1 ",                                  // phrase_mit        (42119, +1 glue space)
+    "\xC7\xE0\xF9\xE8\xF2\xFB ",                // word_verteidigung (42119 gap CUSTOM1..CUSTOM2)
+    "\xEF\xEE\xE2\xF0\xE5\xE6\xE4\xE5\xED\xE8\xFF ",  // word_schaden_colon (42119 gap CUSTOM2..CUSTOM3)
+    " \xE8\xF1\xEF\xEE\xEB\xFC\xE7\xEE\xE2\xE0\xED\xEE.",  // feat_marker (42046 + engine-appended ".")
+    "\xC0\xED\xE0\xEB\xE8\xE7 \xE0\xF2\xE0\xEA\xE8: ",     // prefix_angriff   (42146)
+    "\xC0\xED\xE0\xEB\xE8\xE7 \xE7\xE0\xF9\xE8\xF2\xFB: ", // prefix_abwehr    (42149)
+    "\xC0\xED\xE0\xEB\xE8\xE7 \xF3\xF0\xEE\xED\xE0: ",     // prefix_schaden   (42150)
+    "\xC0\xED\xE0\xEB\xE8\xE7 \xEE\xEF\xE0\xF1\xED\xEE\xF1\xF2\xE8:",  // prefix_bedrohung (42148)
+    "\xCA\xF0\xE8\xF2\xE8\xF7\xE5\xF1\xEA\xE8\xE9 \xF3\xE4\xE0\xF0!",  // tag_krit_summary (1511)
+    "\xC0\xE2\xF2\xEE\xEC\xE0\xF2\xE8\xF7\xE5\xF1\xEA\xE8\xE9 \xF3\xE4\xE0\xF0!",    // tag_auto_hit  (42390)
+    "\xC0\xE2\xF2\xEE\xEC\xE0\xF2\xE8\xF7\xE5\xF1\xEA\xE8\xE9 \xEF\xF0\xEE\xEC\xE0\xF5!",  // tag_auto_fail (42391)
+    "\xE1\xF0\xEE\xF1\xEE\xEA ",                // token_wuerfel    (42316)
+    "\xEC\xEE\xE4\xE8\xF4\xE8\xEA\xE0\xF2\xEE\xF0 \xEB\xEE\xE2\xEA\xEE\xF1\xF2\xE8 ",  // token_gesch_mod (42339)
+    "\xC1\xEE\xED\xF3\xF1 \xE1\xEB\xE8\xE7\xEE\xF1\xF2\xE8 ",  // token_entfernung (42330)
+    "\xC1\xEE\xED\xF3\xF1 \xFD\xF4\xF4\xE5\xEA\xF2\xE0 ",      // token_effekt     (42332)
+    // 42386 renders as "Kriticheskiy KH<CUSTOM0> na". The multiplier marker is
+    // a Cyrillic 'kha' (0xF5), NOT a Latin 'x', and the tail carries no
+    // trailing space (unlike DE's " f\xFCr ").
+    "\xCA\xF0\xE8\xF2\xE8\xF7\xE5\xF1\xEA\xE8\xE9 \xF5",  // krit_x_prefix  (42386)
+    " \xED\xE0",                                // phrase_fuer       (42386 tail)
+    "\xE1\xEE\xED\xF3\xF1\xED\xFB\xE5 \xEF\xEE\xE2\xF0\xE5\xE6\xE4\xE5\xED\xE8\xFF",  // token_bonusschaden (42155)
+    "\xCF\xF0\xE0\xE2\xE0\xFF \xF0\xF3\xEA\xE0",  // hand_main       (42314)
+
+    // ---- Output-side labels (hand-translated)
+    // Russian verbs take a preposition where German/English take a direct
+    // object, so the connector is folded into the verb: "<actor> попадает в
+    // <target>" / "<actor> промахивается по <target>".
+    "\xEF\xEE\xEF\xE0\xE4\xE0\xE5\xF2 \xE2",    // verb_hit       "попадает в"
+    "\xEF\xF0\xEE\xEC\xE0\xF5\xE8\xE2\xE0\xE5\xF2\xF1\xFF \xEF\xEE",  // verb_miss "промахивается по"
+    "\xEA\xF0\xE8\xF2\xE8\xF7\xE5\xF1\xEA\xE8",  // word_critical "критически"
+    "\xC0\xF2\xE0\xEA\xE0",                     // word_angriff   "Атака"
+    "\xC7\xE0\xF9.",                            // word_vert      "Защ."
+    "\xEF\xF0\xEE\xF2\xE8\xE2",                 // word_gg        "против"
+    "\xD3\xF0\xEE\xED",                         // word_schaden   "Урон"
+    "\xE8\xE7",                                 // word_von       "из"
+    "\xC0\xE2\xF2\xEE\xEF\xEE\xEF\xE0\xE4\xE0\xED\xE8\xE5.",  // word_auto_hit  "Автопопадание."
+    "\xC0\xE2\xF2\xEE\xEF\xF0\xEE\xEC\xE0\xF5.",              // word_auto_fail "Автопромах."
+
+    // ---- Short replacements. Spelled out rather than clipped to initials:
+    // a screen reader renders a two-letter stub as noise, and the project
+    // rule is that a short label must never sound like another word.
+    "\xE1\xF0\xEE\xF1\xEE\xEA",                 // short_wuerfel    "бросок"
+    "\xEB\xEE\xE2\xEA ",                        // short_gesch      "ловк "
+    "\xE4\xE8\xF1\xF2 ",                        // short_reichweite "дист "
+    "\xFD\xF4\xF4\xE5\xEA\xF2 ",                // short_effekt     "эффект "
+    "\xE1\xEE\xED\xF3\xF1",                     // short_bonus      "бонус"
+
+    // ---- Results-only labels + effect/save/damage/kill anchors
+    "\xEC\xE8\xEC\xEE",                         // word_failed  "мимо" (idiomatic "off-target")
+    "\xC0\xED\xE0\xEB\xE8\xE7 \xCF\xF0\xE8\xEC\xE5\xED\xE5\xED\xED\xFB\xF5 \xDD\xF4\xF4\xE5\xEA\xF2\xEE\xE2:",  // prefix_auswirkung (42157)
+    // "urona" (genitive of "damage") is the last word before <CUSTOM1> in
+    // 1455 and also appears in the 1454 energy-shield variant, so unlike DE
+    // this single anchor covers both absorb forms. The genitive ending keeps
+    // it distinct from damage_marker, which carries the accusative "uron v".
+    "\xF3\xF0\xEE\xED\xE0",                     // absorb_anchor
+    " \xE8\xF1\xEF\xEE\xEB\xFC\xE7\xF3\xE5\xF2 ",  // ability_use_marker (32292)
+    // The three save types (1374-1376) share a leading word ("Spasbrosok
+    // <kind>"), not a trailing one, so unlike DE there is no common suffix to
+    // anchor on; 1406's type/result separator is all that is usable.
+    ". ",                                       // save_marker      (1406 gap C1..C2)
+    "\xD3\xE4\xE0\xF7\xE0!",                    // save_success     (1392 + "!")
+    "\xCD\xE5\xF3\xE4\xE0\xF7\xE0!",            // save_fail        (1393 + "!")
+    " \xED\xE0\xED\xB8\xF1 \xF3\xF0\xEE\xED \xE2 ",  // damage_marker (1403; note ё = 0xB8)
+    "\xF1\xEE\xEF\xF0\xEE\xF2\xE8\xE2\xEB\xFF\xE5\xF2\xF1\xFF",  // word_resists    "сопротивляется"
+    "\xEF\xF0\xEE\xE2\xE0\xEB\xE5\xED\xEE",     // word_save_failed "провалено"
+    "\xF3\xE1\xE8\xEB",                         // kill_marker      (1407)
+
+    // ---- Status-echo copula: none in Russian. See quirk (b) above; 0x01
+    // cannot occur in TLK text, so the status word is skipped rather than
+    // mis-captured.
+    "\x01",                                     // status_ist_marker (sentinel)
+
+    // ---- Blaster-deflection breakdown (42417: "Анализ отражения: <CUSTOM0>
+    // отражает направленный луч при помощи <CUSTOM1> = <CUSTOM2> против
+    // атаки <CUSTOM3>"). Hand-derived — the extractor predates these fields.
+    "\xC0\xED\xE0\xEB\xE8\xE7 \xEE\xF2\xF0\xE0\xE6\xE5\xED\xE8\xFF: ",  // prefix_reflexion
+    " \xEE\xF2\xF0\xE0\xE6\xE0\xE5\xF2 \xED\xE0\xEF\xF0\xE0\xE2\xEB\xE5\xED\xED\xFB\xE9 \xEB\xF3\xF7 \xEF\xF0\xE8 \xEF\xEE\xEC\xEE\xF9\xE8 ",  // reflect_mid_marker
+    // Russian numerals need three plural forms (1 / 2-4 / 5+) and the format
+    // API offers two, so the many-form uses the 5+ genitive plural. Correct
+    // for 0 and 5+, understandable for 2-4.
+    "%s \xEE\xF2\xF0\xE0\xE6\xE0\xE5\xF2 1 \xE2\xFB\xF1\xF2\xF0\xE5\xEB",  // fmt_deflect_one
+    "%s \xEE\xF2\xF0\xE0\xE6\xE0\xE5\xF2 %d \xE2\xFB\xF1\xF2\xF0\xE5\xEB\xEE\xE2",  // fmt_deflect_many
+};
+
 }  // namespace
 
 const MsgStrings& Get() {
@@ -407,6 +527,7 @@ const MsgStrings& Get() {
         case acc::strings::Lang::Fr: return kFr;
         case acc::strings::Lang::It: return kIt;
         case acc::strings::Lang::Es: return kEs;
+        case acc::strings::Lang::Ru: return kRu;
     }
     return kDe;
 }

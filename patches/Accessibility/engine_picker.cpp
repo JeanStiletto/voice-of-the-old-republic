@@ -22,6 +22,7 @@
                                 // target's class+state so empty-rows logs
                                 // are self-explanatory.
 #include "log.h"
+#include "engine_rebase.h"
 
 namespace {
 
@@ -69,15 +70,15 @@ constexpr size_t kResRefMaxLen                  = 16;
 // Engine entry points. Addresses confirmed from XML symbol table
 // (k1_win_gog_swkotor.exe.xml) on 2026-05-05; GoG bytes match Steam
 // per memory project_ghidra_gog_steam_bytes_match.
-constexpr uintptr_t kAddrCClientExoAppInternalGetDefaultActions      = 0x00620620;
-constexpr uintptr_t kAddrCClientExoAppInternalHandleMouseClickInWorld = 0x00620350;
-constexpr uintptr_t kAddrCGuiInGameSetMainInterfaceTarget            = 0x0062b000;
+const uintptr_t kAddrCClientExoAppInternalGetDefaultActions = acc::addr::R(0x00620620);
+const uintptr_t kAddrCClientExoAppInternalHandleMouseClickInWorld = acc::addr::R(0x00620350);
+const uintptr_t kAddrCGuiInGameSetMainInterfaceTarget = acc::addr::R(0x0062b000);
 // CSWGuiMainInterface::PopulateMenus @0x00689d80 — builds the radial
 // action menu. Called by HandleMouseClickInWorld's NOT-MATCH branch
 // (vanilla first-click-on-target behavior). We invoke it directly when
 // the engine descriptor is empty (no default action available) so the
 // user gets the same fallback UI a sighted player would see.
-constexpr uintptr_t kAddrCSWGuiMainInterfacePopulateMenus            = 0x00689d80;
+const uintptr_t kAddrCSWGuiMainInterfacePopulateMenus = acc::addr::R(0x00689d80);
 
 typedef void (__thiscall* PFN_GetDefaultActions)(void* this_);
 typedef void (__thiscall* PFN_HandleMouseClickInWorld)(void* this_);
@@ -531,7 +532,7 @@ bool ReadCurrent(ActionSnapshot* outSnapshot) {
 // the two declared stack params are unused, but __thiscall is callee-cleanup so
 // we must still push them (the function ret 8's). this = target NPC client
 // creature.
-constexpr uintptr_t kAddrCSWCCreatureActionInitiateDialog = 0x0060f620;
+const uintptr_t kAddrCSWCCreatureActionInitiateDialog = acc::addr::R(0x0060f620);
 typedef void (__thiscall* PFN_ActionInitiateDialog)(void* this_,
                                                     uint32_t unused1,
                                                     void* unused2);

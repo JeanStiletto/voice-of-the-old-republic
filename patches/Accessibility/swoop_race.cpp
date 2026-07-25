@@ -31,6 +31,7 @@
 #include "strings.h"          // Get(SwoopRaceStarted/Controls/Ended) +
                               //     FmtSwoopRaceGear
 #include "swoop_spatial_audio.h"  // TickSpatialAudio + ResetSpatialAudio
+#include "engine_rebase.h"
 
 namespace acc::swoop_race {
 
@@ -329,10 +330,10 @@ bool LatchedStillValid() {
 // 2026-06-23 (ExecuteCommandGetTimeHour / GetTimeMillisecond / GetGlobalNumber
 // and the CWorldTimer / CSWGlobalVariableTable accessors). The start stamp is
 // constant for the race, so it's cached on first valid read.
-constexpr uintptr_t kAddrCServerExoAppGetWorldTimer     = 0x004aede0;
-constexpr uintptr_t kAddrCWorldTimerGetWorldTime        = 0x004ade40;
-constexpr uintptr_t kAddrCServerExoAppGetGlobalVarTable = 0x004aee60;
-constexpr uintptr_t kAddrGlobalVarTableGetValueNumber   = 0x00529240;
+const uintptr_t kAddrCServerExoAppGetWorldTimer = acc::addr::R(0x004aede0);
+const uintptr_t kAddrCWorldTimerGetWorldTime = acc::addr::R(0x004ade40);
+const uintptr_t kAddrCServerExoAppGetGlobalVarTable = acc::addr::R(0x004aee60);
+const uintptr_t kAddrGlobalVarTableGetValueNumber = acc::addr::R(0x00529240);
 constexpr size_t    kWorldTimerMinutesPerHourOffset     = 0x38;  // byte
 // AppManager (global ptr kAddrAppManagerPtr) + 0x8 → CServerExoApp.
 constexpr size_t    kAppManagerServerExoAppOffset       = 0x8;

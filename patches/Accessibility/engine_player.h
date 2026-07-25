@@ -22,6 +22,7 @@
 #include <cstdint>
 
 #include "engine_offsets.h"
+#include "engine_rebase.h"
 
 namespace acc::engine {
 
@@ -194,8 +195,8 @@ bool GetPartyNpcNameForSlot(int npcSlot, char* outBuf, size_t bufSize);
 constexpr uintptr_t kAddrAppManagerPtr           = 0x007A39FC;
 constexpr size_t    kAppManagerClientAppOffset   = 0x4;
 
-constexpr uintptr_t kAddrGetPlayerCreature = 0x005ED540;
-constexpr uintptr_t kAddrCSWSObjectGetArea = 0x004CB120;
+const uintptr_t kAddrGetPlayerCreature = acc::addr::R(0x005ED540);
+const uintptr_t kAddrCSWSObjectGetArea = acc::addr::R(0x004CB120);
 
 // CSWCObject.server_object — same for every client object.
 constexpr size_t kClientObjectServerObjectOffset = 0xf8;
@@ -210,10 +211,10 @@ constexpr size_t kClientExoAppInternalOffset = 0x4;
 // CClientExoAppInternal.player_control @+0x2a0.
 constexpr size_t kClientAppPlayerControlOffset = 0x2a0;
 
-constexpr uintptr_t kAddrCSWPlayerControlSetEnabled = 0x006792E0;
+const uintptr_t kAddrCSWPlayerControlSetEnabled = acc::addr::R(0x006792E0);
 
 // __thiscall(void) → CExoString*. Backed by player_character_name @+0x294.
-constexpr uintptr_t kAddrCClientExoAppGetPlayerCharacterName = 0x005EDAB0;
+const uintptr_t kAddrCClientExoAppGetPlayerCharacterName = acc::addr::R(0x005EDAB0);
 
 // CServerExoApp mirrors the facade/internal split:
 //   public facade = 8 bytes (vtable@0, internal@4).
@@ -237,9 +238,9 @@ constexpr int       kPartyTableMaxMembers          = 11;
 
 // CSWPartyTable thiscalls used by the PartySelection extractor (same
 // accessors CSWGuiPartySelection::OnPanelAdded uses to build portraits).
-constexpr uintptr_t kAddrCSWPartyTableGetIsNPCAvailable     = 0x005636B0;
-constexpr uintptr_t kAddrCSWPartyTableGetNPCSelectability   = 0x005637C0;
-constexpr uintptr_t kAddrCSWPartyTableGetNPCObject          = 0x00564700;
+const uintptr_t kAddrCSWPartyTableGetIsNPCAvailable = acc::addr::R(0x005636B0);
+const uintptr_t kAddrCSWPartyTableGetNPCSelectability = acc::addr::R(0x005637C0);
+const uintptr_t kAddrCSWPartyTableGetNPCObject = acc::addr::R(0x00564700);
 
 // PartySelection renders 9 portraits in a 3x3 grid.
 constexpr int kPartyRosterSlotCount = 9;

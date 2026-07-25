@@ -29,6 +29,7 @@
 #include "menus_internal.h"
 #include "menus_modsettings.h"
 #include "strings.h"
+#include "engine_rebase.h"
 
 using namespace acc::engine;
 
@@ -1299,7 +1300,7 @@ const char* FromControl(void* control,
     //     never reach this fallback.
     if (!source && ownerForPerkind &&
         IdentifyPanel(ownerForPerkind) == PanelKind::InGameMap) {
-        constexpr uintptr_t kInGameMapUpButtonOffset   = 0xab0;
+        constexpr uintptr_t kInGameMapUpButtonOffset = 0xab0;
         constexpr uintptr_t kInGameMapDownButtonOffset = 0xc74;
         uintptr_t panelBase = reinterpret_cast<uintptr_t>(ownerForPerkind);
         uintptr_t ctrl      = reinterpret_cast<uintptr_t>(control);

@@ -1954,7 +1954,16 @@ enum class Lang : int {
     Fr,
     It,
     Es,
+    // Russian — community translation (Allard). Unlike the five above it is
+    // NOT identified by the dialog.tlk LanguageID: Allard's tlk declares ID 0
+    // (the English slot) and re-encodes the strings in Windows-1251, so
+    // detection is content-based. See DetectLanguageFromTlk.
+    Ru,
 };
+
+// Windows codepage the language's narrow string bytes are written in. Fed to
+// prism::SetSpeechCodepage so Cyrillic renders on a non-Russian Windows.
+unsigned CodepageFor(Lang l);
 
 // Set the active language. Default is German (per user direction at
 // lay-off 4 wiring). Thread-safe in the sense that the patch DLL is
@@ -1977,5 +1986,6 @@ namespace lang_de { const char* Get(Id id); }
 namespace lang_fr { const char* Get(Id id); }
 namespace lang_it { const char* Get(Id id); }
 namespace lang_es { const char* Get(Id id); }
+namespace lang_ru { const char* Get(Id id); }
 
 }  // namespace acc::strings

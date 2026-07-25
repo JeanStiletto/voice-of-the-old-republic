@@ -34,6 +34,7 @@
 #include "log.h"
 #include "prism.h"
 #include "strings.h"
+#include "engine_rebase.h"
 
 namespace acc::pazaak {
 
@@ -49,11 +50,11 @@ typedef int  (__thiscall* PFN_GetTotal)(void* player);
 typedef void (__thiscall* PFN_HandleCtrl)(void* panel, void* control);
 typedef void (__thiscall* PFN_HandleInt)(void* panel, int index);
 
-constexpr uintptr_t kAddrGetTotal           = 0x006e4360; // CPazaakPlayer::GetTotal
-constexpr uintptr_t kAddrHandleContinue     = 0x0067ec20; // End Turn
-constexpr uintptr_t kAddrHandleStand        = 0x0067ed00; // Stand
-constexpr uintptr_t kAddrHandlePlayHandCard = 0x0067ede0; // Play hand card (int slot)
-constexpr uintptr_t kAddrWagerHandleInput   = 0x0067e150; // CSWGuiWagerPopup::HandleInputEvent
+const uintptr_t kAddrGetTotal = acc::addr::R(0x006e4360); // CPazaakPlayer::GetTotal
+const uintptr_t kAddrHandleContinue = acc::addr::R(0x0067ec20); // End Turn
+const uintptr_t kAddrHandleStand = acc::addr::R(0x0067ed00); // Stand
+const uintptr_t kAddrHandlePlayHandCard = acc::addr::R(0x0067ede0); // Play hand card (int slot)
+const uintptr_t kAddrWagerHandleInput = acc::addr::R(0x0067e150); // CSWGuiWagerPopup::HandleInputEvent
 typedef void (__thiscall* PFN_WagerHandleInput)(void* popup, int code, int state);
 
 // ---- Struct offsets ------------------------------------------------------

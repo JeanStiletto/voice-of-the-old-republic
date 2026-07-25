@@ -158,17 +158,26 @@ bool Resolve(HMODULE lib, T& fn, const char* name, bool required = true) {
     return fn != nullptr;
 }
 
-// CP_ACP (Windows-1252 on the German build, current default on en-US) → UTF-8.
-// Prism's SAPI backend strict-validates UTF-8 and returns PRISM_ERROR_INVALID_UTF8
-// on any non-UTF-8 lead byte. The NVDA backend also strings text through
-// simdutf-style validators in places. KOTOR's CExoString payload is whatever
-// the OS active codepage is, so any non-ASCII byte (German umlauts etc.) is an
-// invalid UTF-8 lead → whole utterance dropped without this re-encode.
+// Active narrow-text codepage. Both our own string tables and the engine's
+// CExoString payload are in the *game's* codepage, not necessarily the OS one:
+// a Russian install is Windows-1251 even on a German or English Windows, where
+// CP_ACP is 1252. Defaulting to CP_ACP keeps the pre-existing en/de/fr/it/es
+// behaviour byte-for-byte (those are all 1252, which is what CP_ACP resolves to
+// on their users' systems); SetSpeechCodepage pins it explicitly once the
+// language is known. See DetectLanguageFromTlk in core_dllmain.cpp.
+UINT g_speechCodepage = CP_ACP;
+
+// Game codepage → UTF-8. Prism's SAPI backend strict-validates UTF-8 and
+// returns PRISM_ERROR_INVALID_UTF8 on any non-UTF-8 lead byte. The NVDA backend
+// also strings text through simdutf-style validators in places. So any
+// non-ASCII byte (German umlauts, Cyrillic, ...) is an invalid UTF-8 lead →
+// whole utterance dropped without this re-encode.
 //
 // Writes a NUL-terminated UTF-8 string into `outBuf`. Returns true on success.
 bool ReencodeAcpToUtf8(const char* in, char* outBuf, size_t outBufSize) {
     if (!in || !outBuf || outBufSize == 0) return false;
-    int wideLen = MultiByteToWideChar(CP_ACP, 0, in, -1, nullptr, 0);
+    const UINT cp = g_speechCodepage;
+    int wideLen = MultiByteToWideChar(cp, 0, in, -1, nullptr, 0);
     if (wideLen <= 0) return false;
     wchar_t wStack[256];
     wchar_t* w = wStack;
@@ -178,7 +187,7 @@ bool ReencodeAcpToUtf8(const char* in, char* outBuf, size_t outBufSize) {
         if (!wHeap) return false;
         w = wHeap;
     }
-    int gotWide = MultiByteToWideChar(CP_ACP, 0, in, -1, w, wideLen);
+    int gotWide = MultiByteToWideChar(cp, 0, in, -1, w, wideLen);
     if (gotWide <= 0) {
         if (wHeap) free(wHeap);
         return false;
@@ -526,17 +535,26 @@ void Speak(const wchar_t* text, bool interrupt) {
     if (heap_audit) free(heap_audit);
 }
 
+void SetSpeechCodepage(unsigned codepage) {
+    if (codepage == 0) return;
+    if (g_speechCodepage == codepage) return;
+    g_speechCodepage = static_cast<UINT>(codepage);
+    acclog::Write("Speech", "narrow-text codepage set to %u", codepage);
+}
+
+unsigned GetSpeechCodepage() { return g_speechCodepage; }
+
 void Speak(const char* text, bool interrupt) {
     if (!g_normalReady || !text || !*text) return;
     acclog::Trace("Speech.spoke", "%s%s", interrupt ? "[!] " : "", text);
 
-    // CP_ACP → UTF-8 via heap when needed. Chargen skill descriptions are
-    // ~600+ ANSI chars, so we size dynamically.
+    // Game codepage → UTF-8 via heap when needed. Chargen skill descriptions
+    // are ~600+ narrow chars, so we size dynamically.
     char stack_buf[1024];
     char* buf = stack_buf;
     char* heap_buf = nullptr;
-    // 4× worst-case expansion (CP_ACP codepoints emit at most 3 UTF-8 bytes;
-    // we keep a small safety margin) + NUL.
+    // 4× worst-case expansion (a single-byte codepoint emits at most 3 UTF-8
+    // bytes; we keep a small safety margin) + NUL.
     size_t need_cap = strlen(text) * 4 + 1;
     if (need_cap > sizeof(stack_buf)) {
         heap_buf = (char*)malloc(need_cap);

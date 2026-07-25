@@ -9,6 +9,7 @@
 #include "engine_reads.h"   // ExtractTextOrStrRef, ReadCExoString
 #include "log.h"            // seam-filter telemetry
 #include "strings.h"        // door state suffix lookup (DoorOpen/DoorLocked)
+#include "engine_rebase.h"
 
 namespace acc::engine {
 
@@ -803,8 +804,8 @@ bool MaybeDrivePassiveSelection() {
     constexpr size_t kFadeAlphaOffset      = 0x4c;   // CSWGuiFade.panel.alpha
     constexpr size_t kInputClassOffset     = 0x9c;   // internal.input_class
     constexpr size_t kAreaNotReadyOffset   = 0x288;  // internal.area_not_ready
-    constexpr uintptr_t kAddrIsGlobalFading     = 0x0062ac60;  // __thiscall(gui)->int
-    constexpr uintptr_t kAddrDoPassiveSelection = 0x005fa5a0;  // __thiscall(internal,float)
+    const uintptr_t kAddrIsGlobalFading = acc::addr::R(0x0062ac60);  // __thiscall(gui)->int
+    const uintptr_t kAddrDoPassiveSelection = acc::addr::R(0x005fa5a0);  // __thiscall(internal,float)
     using PFN_Fade      = int(__thiscall*)(void*);
     using PFN_DoPassive = void(__thiscall*)(void*, float);
 
@@ -1049,7 +1050,7 @@ bool GetCurrentAreaResName(char* outBuf, size_t bufSize) {
         // {c_string,len} is safe). We deliberately leak the engine-allocated
         // c_string — this runs once per area change (matches the engine_reads
         // leak convention; freeing across the DLL/CRT boundary is riskier).
-        constexpr uintptr_t kAddrGetModuleResourceName = 0x004c4b80;
+        const uintptr_t kAddrGetModuleResourceName = acc::addr::R(0x004c4b80);
         struct { char* p; int len; } out = {nullptr, 0};
         using PFN = void* (__thiscall*)(void*, void*);
         reinterpret_cast<PFN>(kAddrGetModuleResourceName)(module, &out);
@@ -1066,8 +1067,8 @@ int ReadGlobalNumber(const char* name) {
     if (!serverApp) return -1;
     __try {
         // table = CServerExoApp::GetGlobalVariableTable(server)
-        constexpr uintptr_t kAddrGetGlobalVarTable   = 0x004aee60;
-        constexpr uintptr_t kAddrGlobalVarGetNumber  = 0x00529240;
+        const uintptr_t kAddrGetGlobalVarTable = acc::addr::R(0x004aee60);
+        const uintptr_t kAddrGlobalVarGetNumber = acc::addr::R(0x00529240);
         using PFN_GetTable = void* (__thiscall*)(void*);
         void* table = reinterpret_cast<PFN_GetTable>(kAddrGetGlobalVarTable)(serverApp);
         if (!table) return -1;
@@ -1090,7 +1091,7 @@ bool IsLoadingSaveGame() {
         // CServerExoApp::GetLoadFromSaveGame(this) — returns
         // this->internal->load_from_savegame (decompile-verified). The getter
         // does the facade→internal deref itself, so we pass the facade.
-        constexpr uintptr_t kAddrGetLoadFromSaveGame = 0x004af050;
+        const uintptr_t kAddrGetLoadFromSaveGame = acc::addr::R(0x004af050);
         using PFN = int(__thiscall*)(void*);
         return reinterpret_cast<PFN>(kAddrGetLoadFromSaveGame)(serverApp) != 0;
     } __except (EXCEPTION_EXECUTE_HANDLER) {

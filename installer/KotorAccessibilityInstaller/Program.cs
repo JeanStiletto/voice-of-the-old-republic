@@ -276,16 +276,22 @@ namespace KotorAccessibilityInstaller
                 return;
             }
 
+            string resolvedPath = pathArgOverride ?? DetectGamePath() ?? gamePath;
+
+            // Detect the game's own language before the optional-mods screen so
+            // the Russian notes can ride that screen's footnote instead of
+            // adding a step. Content-based for Russian — see GameLocaleDetector.
+            GameLocale gameLocale = GameLocaleDetector.Detect(resolvedPath);
+            WarnIfRussianTranslationMissing(welcomeForm.SelectedLanguage, gameLocale);
+
             // Optional mods: K1CP / cut content / companion + swoop. All default on.
-            var selectionForm = new ModSelectionForm();
+            var selectionForm = new ModSelectionForm(gameLocale);
             Application.Run(selectionForm);
             if (!selectionForm.ProceedWithInstall)
             {
                 Logger.Info("Installation cancelled from mod-selection screen");
                 return;
             }
-
-            string resolvedPath = pathArgOverride ?? DetectGamePath() ?? gamePath;
 
             // Make Windows Error Reporting capture full minidumps under
             // %LOCALAPPDATA%\CrashDumps next time swkotor.exe faults. Without
@@ -294,6 +300,29 @@ namespace KotorAccessibilityInstaller
             WerLocalDumps.Enable();
 
             Application.Run(new MainForm(resolvedPath, language: welcomeForm.SelectedLanguage, modSelection: selectionForm.Selection, localKpatchPath: localKpatchPath));
+        }
+
+        /// <summary>
+        /// The user picked Russian for the installer but the game itself is not
+        /// translated. Point them at the translation's own source and stop
+        /// there: KOTOR has no official Russian release, and the community
+        /// translation is not published under a licence that lets us bundle or
+        /// mirror it, nor at a location stable enough to download and verify.
+        /// The mod still speaks Russian either way, so this is guidance, not an
+        /// error, and it must not block the install.
+        /// </summary>
+        private static void WarnIfRussianTranslationMissing(string installerLanguage, GameLocale gameLocale)
+        {
+            if (!string.Equals(installerLanguage, "ru", StringComparison.OrdinalIgnoreCase)) return;
+            if (gameLocale == GameLocale.Russian) return;
+
+            Logger.Info($"Installer language is Russian but game locale is {gameLocale}; " +
+                        "showing translation guidance.");
+            MessageBox.Show(
+                InstallerLocale.Get("Russian_NotFound_Body"),
+                InstallerLocale.Get("Russian_NotFound_Heading"),
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
         }
 
         /// <summary>

@@ -40,7 +40,9 @@ Reported that during level-up and/or character creation the description read alo
 
 ### Russian translation reported to cause problems
 
-A beta tester on a Russian translation reported problems (specifics not yet captured). The likely culprit is **not** the exe-hash gate: the current KOTOR 1 Russian translation (by Allard) is described as a resident tool that must stay running while playing, so the most probable failure is a **runtime injector conflict** with our `dinput8.dll` → KotorPatcher injection — not a version rejection. Need the tester's direct link, `patch-*.log`, and precise symptom (install refused vs crash on launch vs ran-but-English). **Parked** — full findings in `docs/translation-additions.md`.
+A beta tester on a Russian translation reported problems (specifics not yet captured). The likely culprit is **not** the exe-hash gate: the current KOTOR 1 Russian translation (by Allard) is described as a resident tool that must stay running while playing, so the most probable failure is a **runtime injector conflict** with our `dinput8.dll` → KotorPatcher injection — not a version rejection. Need the tester's direct link, `patch-*.log`, and precise symptom (install refused vs crash on launch vs ran-but-English). Full findings in `docs/translation-additions.md`.
+
+**Support for the Allard 1.72 exe is now built but untested in game (2026-07-25).** It ships its own relinked `swkotor.exe`; all 216 engine addresses have been rebased onto it (`acc::addr::R` at runtime, `allard.hooks.toml` for the detours) and the hash is in `manifest.toml`, so the mod will now install and load there instead of being refused. Nobody has actually played on it yet — first run needs a `patch-*.log` from the tester. This also does **not** address the injector-conflict theory above, which remains the open question about the reported symptom.
 
 ## Planned
 

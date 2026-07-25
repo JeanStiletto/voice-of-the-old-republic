@@ -6,6 +6,7 @@
 #include "engine_manager.h"  // kAddrGuiManagerPtr, kMgrPanels*
 #include "engine_panels.h"   // ResolveGuiInGame, IdentifyPanel, PanelKind
 #include "log.h"
+#include "engine_rebase.h"
 
 namespace acc::tutorial_popup {
 
@@ -18,19 +19,19 @@ namespace {
 // NOT populate the message; we set it ourselves.
 using PFN_ShowTutorial =
     void(__thiscall*)(void* gui, int reason, uint32_t p2, uint32_t p3, uint32_t p4);
-constexpr uintptr_t kAddrShowTutorialWindow = 0x0062f4a0;
+const uintptr_t kAddrShowTutorialWindow = acc::addr::R(0x0062f4a0);
 
 // CSWGuiMessageBox::SetMessage(strref) @0x006249d0 — resolves the strref via the
 // TLK and sets the box text. (The CExoString overload @0x006271a0 destroys its
 // arg, so we use the strref one.)
 using PFN_SetMessageStrref = void(__thiscall*)(void* box, uint32_t strref);
-constexpr uintptr_t kAddrSetMessageStrref = 0x006249d0;
+const uintptr_t kAddrSetMessageStrref = acc::addr::R(0x006249d0);
 
 // CSWGuiTutorialBox::SetTutorialReason @0x006aa900 — configures the box as a
 // TUTORIAL (single "Weiter"/OK prompt, page state) for a row, the way the funnel
 // does. Without it the box renders as a generic two-button message box.
 using PFN_SetTutorialReason = void(__thiscall*)(void* box, int reason);
-constexpr uintptr_t kAddrSetTutorialReason = 0x006aa900;
+const uintptr_t kAddrSetTutorialReason = acc::addr::R(0x006aa900);
 
 // CGuiInGame member: tutorial_box pointer @+0xa0.
 constexpr size_t kGuiTutorialBoxOffset = 0xa0;
@@ -52,9 +53,9 @@ constexpr int kSyntheticReason = 0x2a;
 // ---- Pause (mirrors engine_subscreen; kept self-contained here) ----
 using PFN_SetPauseState =
     void(__thiscall*)(void* server, int source_bit, unsigned long on_off);
-constexpr uintptr_t kAddrSetPauseState  = 0x004ae9a0;
+const uintptr_t kAddrSetPauseState = acc::addr::R(0x004ae9a0);
 using PFN_SetSoundMode = void(__thiscall*)(void* self, int mode);
-constexpr uintptr_t kAddrSetSoundMode   = 0x005d5e80;
+const uintptr_t kAddrSetSoundMode = acc::addr::R(0x005d5e80);
 constexpr uintptr_t kAddrAppManagerPtr  = 0x007A39FC;
 constexpr size_t    kAppManagerServerOff = 0x08;
 constexpr uintptr_t kAddrExoSoundPtr    = 0x007a39ec;

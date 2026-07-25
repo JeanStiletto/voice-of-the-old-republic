@@ -19,8 +19,25 @@ const char* Get(Id id) {
         case Lang::Fr: return lang_fr::Get(id);
         case Lang::It: return lang_it::Get(id);
         case Lang::Es: return lang_es::Get(id);
+        case Lang::Ru: return lang_ru::Get(id);
     }
     return "";
+}
+
+unsigned CodepageFor(Lang l) {
+    switch (l) {
+        // Western European — the byte escapes in these tables are Windows-1252,
+        // which is also CP_ACP on their users' systems.
+        case Lang::En:
+        case Lang::De:
+        case Lang::Fr:
+        case Lang::It:
+        case Lang::Es: return 1252;
+        // Cyrillic. Must be pinned: a Russian KOTOR install is commonly run on
+        // a non-Russian Windows, where CP_ACP would be 1252 and garble it.
+        case Lang::Ru: return 1251;
+    }
+    return 1252;
 }
 
 }  // namespace acc::strings

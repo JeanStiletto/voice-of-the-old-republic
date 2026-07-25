@@ -543,25 +543,28 @@ public class PatchApplicator
 
             if (matchingAddressDb == null)
             {
-                if (backup != null)
-                {
-                    BackupManager.RestoreBackup(backup);
-                }
-
-                return new InstallResult
-                {
-                    Success = false,
-                    Error = $"No address database found for game version SHA: {gameVersion.Hash.Substring(0, 16)}...",
-                    DetectedVersion = gameVersion,
-                    Backup = backup,
-                    Messages = messages
-                };
+                // Not fatal. addresses.db is consumed only by patches that resolve
+                // engine addresses BY NAME through GameAPI's GameVersion class;
+                // KotorPatcher itself never opens it, and a patch carrying literal
+                // addresses (with original_bytes the patcher verifies at install
+                // time) needs nothing from it. Failing here would lock every
+                // community build out of runtime-detour patches purely because
+                // nobody has authored an address database for that executable.
+                //
+                // A patch that DOES need the database still fails, just later and
+                // in its own logs, where the cause is unambiguous. Shipping a
+                // mismatched database instead would be worse: it would answer
+                // address lookups with plausible, wrong numbers.
+                messages.Add($"  No address database for SHA {gameVersion.Hash.Substring(0, 16)}... " +
+                             "- skipped (only name-based address lookups need it)");
             }
-
-            // Copy to game directory as addresses.db (generic name)
-            var addressDbDest = Path.Combine(gameDir, "addresses.db");
-            File.Copy(matchingAddressDb, addressDbDest, overwrite: true);
-            messages.Add($"  Copied: {Path.GetFileName(matchingAddressDb)} -> addresses.db");
+            else
+            {
+                // Copy to game directory as addresses.db (generic name)
+                var addressDbDest = Path.Combine(gameDir, "addresses.db");
+                File.Copy(matchingAddressDb, addressDbDest, overwrite: true);
+                messages.Add($"  Copied: {Path.GetFileName(matchingAddressDb)} -> addresses.db");
+            }
 
             // Step 7: Copy patcher DLL and SQLite
             messages.Add("Step 7/8: Installing patcher DLL and dependencies...");

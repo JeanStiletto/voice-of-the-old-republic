@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "log.h"
+#include "engine_rebase.h"
 
 namespace acc::save_guard {
 
@@ -13,14 +14,14 @@ namespace {
 // void* __cdecl ImageScale(byte* src, int srcW, int srcH, int bpp,
 //                          int dstW, int dstH)
 //   @0x0045dad0. Divisor (srcW*srcH) is unguarded; destination area is.
-constexpr uintptr_t kImageScaleAddr     = 0x0045dad0;
+const uintptr_t kImageScaleAddr = acc::addr::R(0x0045dad0);
 // Continue point = entry + 8: just past the three prologue instructions we
 // relocate into the trampoline (SUB ESP,0x30 / PUSH EBX / MOV EBX,[ESP+0x4c]).
-constexpr uintptr_t kImageScaleContinue = 0x0045dad8;
+const uintptr_t kImageScaleContinue = acc::addr::R(0x0045dad8);
 // Engine operator new (malloc-backed in this binary — AurSaveGameSnapshot
 // allocates the source buffer with it and frees it with _free, so a buffer
 // we return here is freed correctly by the caller's _free(pbVar5)).
-constexpr uintptr_t kEngineOperatorNew  = 0x006fa7e6;
+const uintptr_t kEngineOperatorNew = acc::addr::R(0x006fa7e6);
 
 // The first 8 bytes of ImageScale — three whole instructions, none of them
 // position-relative, so they relocate verbatim into the trampoline.

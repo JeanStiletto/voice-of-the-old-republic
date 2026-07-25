@@ -15,6 +15,7 @@
                               // kClientObjectServerObjectOffset,
                               // GetClientLeader (for Security skill check)
 #include "log.h"
+#include "engine_rebase.h"
 
 namespace {
 
@@ -80,18 +81,18 @@ constexpr size_t kIfActionStride          = 0x38;
 
 // Engine entry points (k1_win_gog_swkotor.exe.xml symbol table; GoG bytes
 // match Steam per project_ghidra_gog_steam_bytes_match).
-constexpr uintptr_t kAddrSelectNextAction = 0x006865b0;
-constexpr uintptr_t kAddrSelectPrevAction = 0x00686680;
-constexpr uintptr_t kAddrDoTargetAction   = 0x00689610;
+const uintptr_t kAddrSelectNextAction = acc::addr::R(0x006865b0);
+const uintptr_t kAddrSelectPrevAction = acc::addr::R(0x00686680);
+const uintptr_t kAddrDoTargetAction = acc::addr::R(0x00689610);
 
 // CClientExoApp::GetGameObject @ 0x005ED580 — same address engine_area /
 // engine_picker use. (this, handle) -> CGameObject*.
-constexpr uintptr_t kAddrCClientGetGameObject = 0x005ED580;
+const uintptr_t kAddrCClientGetGameObject = acc::addr::R(0x005ED580);
 
 // CSWCCreatureStats::GetCanUseSkill @ 0x006477e0 — bool __thiscall
 // (CSWCCreatureStats*, ushort skill_idx). Used by CSWCDoor::GetTargetActions
 // to gate the Security row (skill_idx=6 = Security).
-constexpr uintptr_t kAddrGetCanUseSkill = 0x006477E0;
+const uintptr_t kAddrGetCanUseSkill = acc::addr::R(0x006477E0);
 
 // CSWCCreature.lvl_up_stats @ +0x2f8 → CSWCLevelUpStats*. The CSWC-
 // CreatureStats inline-member sits at +0x00 of CSWCLevelUpStats, so this

@@ -18,6 +18,7 @@
 #include "strings.h"
 #include "prism.h"
 #include "transitions.h"      // IsModuleLoadPending — engine-panel watcher gate
+#include "engine_rebase.h"
 
 namespace acc::examine_view {
 
@@ -1047,7 +1048,7 @@ int AppendFeatRows(void* serverCreature, char rows[][192],
 // Reuse the same LastTarget read path combat_query uses. Local copy to
 // avoid header cycle with combat_query.
 typedef uint32_t (__thiscall* PFN_GetLastTarget)(void* this_);
-constexpr uintptr_t kAddrCClientExoAppGetLastTargetLocal = 0x005EDD80;
+const uintptr_t kAddrCClientExoAppGetLastTargetLocal = acc::addr::R(0x005EDD80);
 
 void* GetClientExoAppLocal() {
     __try {
@@ -1364,6 +1365,8 @@ const char* EffectName(int type) {
         case acc::strings::Lang::Fr: return EffectNameFr(type);
         case acc::strings::Lang::It: return EffectNameIt(type);
         case acc::strings::Lang::Es: return EffectNameEs(type);
+        // No Russian effect-name table yet; English is the fallback.
+        case acc::strings::Lang::Ru:
         case acc::strings::Lang::En: break;
     }
     return EffectNameEn(type);
@@ -1375,6 +1378,8 @@ const char* EffectIconName(int iconId) {
         case acc::strings::Lang::Fr: return EffectIconNameFr(iconId);
         case acc::strings::Lang::It: return EffectIconNameIt(iconId);
         case acc::strings::Lang::Es: return EffectIconNameEs(iconId);
+        // No Russian effect-icon table yet; English is the fallback.
+        case acc::strings::Lang::Ru:
         case acc::strings::Lang::En: break;
     }
     return EffectIconNameEn(iconId);

@@ -8,6 +8,7 @@
                            // kCreatureStatsPtrOffset etc. — used by GetActiveLeaderName
 #include "engine_reads.h"  // ReadCExoString, ExtractTextOrStrRef
 #include "log.h"           // acclog::Write — diagnostics on the
+#include "engine_rebase.h"
                            // SetPlayerInputEnabled toggle / auto-restore tick
 
 namespace acc::engine {
@@ -224,7 +225,7 @@ bool IsAnyPartyMemberInCombat() {
     // so there is no client/server timing skew between the two.
     constexpr size_t    kInternalPartyOffset          = 0x270;     // CClientExoAppInternal.party
     constexpr size_t    kCSWCCreatureCombatModeOffset = 0x440;     // field200_0x440 bit 0
-    constexpr uintptr_t kAddrCSWPartyGetCharacter     = 0x006346C0; // __thiscall(int) -> CSWCCreature*
+    const uintptr_t kAddrCSWPartyGetCharacter = acc::addr::R(0x006346C0); // __thiscall(int) -> CSWCCreature*
     constexpr int       kPartyScanCap                 = 8;          // KOTOR party <=3; generous cap
     typedef void* (__thiscall* PFN_GetCharacter)(void* this_, int index);
     __try {

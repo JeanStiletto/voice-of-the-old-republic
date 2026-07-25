@@ -19,9 +19,22 @@ bool IsAvailable();
 // Normal-channel speech via the user's screen reader (NVDA/JAWS/etc).
 void Speak(const wchar_t* text, bool interrupt);
 
-// ANSI overload — converts via MultiByteToWideChar(CP_ACP). Right entry
-// point for CExoString-sourced text.
+// Narrow overload — converts via MultiByteToWideChar(GetSpeechCodepage()).
+// Right entry point for CExoString-sourced text.
 void Speak(const char* text, bool interrupt);
+
+// Codepage used to widen every narrow string on the way to the screen reader
+// — both our own tables and engine CExoString text. Defaults to CP_ACP, which
+// reproduces the historical behaviour for en/de/fr/it/es (all Windows-1252).
+// Must be pinned explicitly for languages whose codepage differs from the
+// player's OS codepage: a Russian install is Windows-1251 (1251) even on a
+// German or English Windows, where CP_ACP is 1252 and would garble every
+// Cyrillic byte. Polish (1250) will need the same treatment.
+//
+// Set once from the detected game language at startup; a 0 argument is
+// ignored. Safe to call before Init().
+void SetSpeechCodepage(unsigned codepage);
+unsigned GetSpeechCodepage();
 
 // Urgent speech routes through SAPI to bypass NVDA's typed-character
 // cancel (which silences NORMAL-priority queued speech). voiceId picks

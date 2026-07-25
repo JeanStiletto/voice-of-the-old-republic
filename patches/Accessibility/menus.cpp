@@ -77,6 +77,7 @@
 #include "diag_focus.h"         // WindowProc subclass for WM_ACTIVATE logging
 #include "bringup_announce.h"   // Loading-phase nag when user presses arrows too early
 #include "transitions.h"        // Phase 2 lay-off 7 — Pillar 2 area+room announce
+#include "engine_rebase.h"
 
 // Engine readers + offset constants moved to engine_reads.{h,cpp} +
 // engine_offsets.h in Phase 0 lay-off 2. Pull the readers' names into the
@@ -222,7 +223,7 @@ using acc::menus::MarkSpoken;
 // behind the cursor unless we explicitly set it. Enter / F1 activates
 // panel.activeControl, so without this call the engine activates the
 // previously-clicked button instead of the cursor target.
-constexpr uintptr_t kAddrPanelSetActiveControl = 0x0040a630;
+const uintptr_t kAddrPanelSetActiveControl = acc::addr::R(0x0040a630);
 typedef void (__thiscall* PFN_PanelSetActiveControl)(void* panel, void* control);
 
 // The "fire activate" primitive (vtable[15].HandleInputEvent(0x27, 1)) used

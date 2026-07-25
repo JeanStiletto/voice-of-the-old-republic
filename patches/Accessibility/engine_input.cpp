@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "log.h"
+#include "engine_rebase.h"
 
 namespace acc::engine {
 
@@ -19,7 +20,7 @@ constexpr uintptr_t kAddrExoInputGlobal = 0x007a39e4;
 // CExoInputInternal active flags and forwards to
 // CExoRawInputInternal::SetActive, which Acquire()s the DirectInput
 // keyboard/mouse/joystick devices on the 0->1 transition.
-constexpr uintptr_t kAddrCExoInputSetActive = 0x005df540;
+const uintptr_t kAddrCExoInputSetActive = acc::addr::R(0x005df540);
 
 typedef void(__thiscall* PFN_CExoInputSetActive)(void* this_, int active);
 

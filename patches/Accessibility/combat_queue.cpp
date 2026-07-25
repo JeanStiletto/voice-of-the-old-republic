@@ -25,6 +25,7 @@
 #include "transitions.h"      // IsModuleLoadPending — gate during cutscene-load
                               // transient (engine LYT loader use-after-free)
 #include "unified_action_menu.h"  // IsActive / ReannounceCurrent — return to the
+#include "engine_rebase.h"
                                   // menu underneath the queue without unpausing
 
 namespace acc::combat::queue {
@@ -35,8 +36,8 @@ namespace {
 
 typedef int  (__thiscall* PFN_RemoveLastAction)(void* combatRound);
 
-constexpr uintptr_t kAddrCombatRoundRemoveLastAction =
-    0x004d37b0;  // CSWSCombatRound::RemoveLastAction
+const uintptr_t kAddrCombatRoundRemoveLastAction =
+    acc::addr::R(0x004d37b0);  // CSWSCombatRound::RemoveLastAction
 
 // Read CSWSCreature.combat_round @+0x9c8.
 void* ReadCombatRound(void* serverCreature) {

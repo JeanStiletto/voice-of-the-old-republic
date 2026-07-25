@@ -23,6 +23,7 @@
 #include "menus_pending.h"       // QueueActivate (click-sim for OK/Cancel/Default)
 #include "prism.h"
 #include "strings.h"
+#include "engine_rebase.h"
 
 using acc::menus::detail::DriveListBoxSelectionEngine;
 using acc::menus::detail::ListBoxNavOp;
@@ -33,10 +34,10 @@ namespace acc::menus::keymap {
 namespace {
 
 // Engine entry points (decompiled, build/re/optkeymappings-keymapbutton).
-constexpr uintptr_t kAddrSetCaptureEvent = 0x006ed480;  // (panel, row) arm capture
-constexpr uintptr_t kAddrOnFilterMove    = 0x006ed390;  // (panel) → MOVEMENT
-constexpr uintptr_t kAddrOnFilterGame    = 0x006ed3e0;  // (panel) → GAME
-constexpr uintptr_t kAddrOnFilterMini    = 0x006ed430;  // (panel) → MINIGAME
+const uintptr_t kAddrSetCaptureEvent = acc::addr::R(0x006ed480);  // (panel, row) arm capture
+const uintptr_t kAddrOnFilterMove = acc::addr::R(0x006ed390);  // (panel) → MOVEMENT
+const uintptr_t kAddrOnFilterGame = acc::addr::R(0x006ed3e0);  // (panel) → GAME
+const uintptr_t kAddrOnFilterMini = acc::addr::R(0x006ed430);  // (panel) → MINIGAME
 
 // CSWGuiInGameOptKeyMappings: field11_0xf2c == 1 while a capture is armed.
 constexpr size_t kCaptureActiveOff = 0xf2c;
