@@ -848,7 +848,7 @@ const char* FromControl(void* control,
     //     unavailable slots are dropped from arrow nav entirely.
     if (!source) {
         void** vt = *reinterpret_cast<void***>(control);
-        if (reinterpret_cast<uintptr_t>(vt) == 0x00756BB8) {
+        if (reinterpret_cast<uintptr_t>(vt) == acc::addr::R(0x00756BB8)) {
             // Live "selected" flag written by
             // CSWGuiPartySelectionButton::SetSelected @0x006be370 on every
             // toggle (OnToggled @0x006bf2a0 → SetSelected). 1 = currently in
@@ -961,7 +961,10 @@ const char* FromControl(void* control,
         void** vt = *reinterpret_cast<void***>(control);
         uintptr_t vta = reinterpret_cast<uintptr_t>(vt);
         for (const auto& ov : k_knownOverrides) {
-            if (ov.vtable != vta) continue;
+            // Table stays reference-build and compile-time: giving it a runtime
+            // initialiser would make this function need object unwinding, which
+            // its __try blocks below forbid (C2712). Map at the comparison.
+            if (acc::addr::R(ov.vtable) != vta) continue;
             char text[256];
             bool got = false;
             if (ov.tryLabel) {

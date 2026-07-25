@@ -27,9 +27,9 @@ namespace acc::menus::pazaakdeck {
 
 namespace {
 
-constexpr uintptr_t kVtablePazaakStart = 0x007532e8;  // CSWGuiPazaakStart
-constexpr uintptr_t kVtablePazaakCard  = 0x007531c0;  // CSWGuiPazaakCard
-constexpr uintptr_t kVtableCSWGuiLabel = 0x0073e5b8;  // CSWGuiLabel (overlay text)
+const uintptr_t kVtablePazaakStart = acc::addr::R(0x007532e8);  // CSWGuiPazaakStart
+const uintptr_t kVtablePazaakCard  = acc::addr::R(0x007531c0);  // CSWGuiPazaakCard
+const uintptr_t kVtableCSWGuiLabel = acc::addr::R(0x0073e5b8);  // CSWGuiLabel (overlay text)
 
 constexpr size_t kAllCardsOff    = 0x1A4;   // all_cards[18]   (stride 0x31C)
 constexpr size_t kSidedeckGuiOff = 0x501C;  // sidedeck_gui[10] (stride 0x31C)

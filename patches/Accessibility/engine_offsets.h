@@ -111,14 +111,14 @@ constexpr size_t kAurGuiStringCStrOffset   = 0x14;   // CAurGUIStringInternal.fi
 // CAurGUIStringInternal_vtable @ 0x00741878). Used to validate that a
 // gui_string pointer actually refers to a CAurGUIStringInternal object
 // before dereferencing it — see ReadGuiString for why this matters.
-constexpr uintptr_t kVtableCAurGUIStringInternal = 0x00741878;
+const uintptr_t kVtableCAurGUIStringInternal = acc::addr::R(0x00741878);
 
 // Slider class identity by vtable address. Resolved via SARIF xrefs:
 // 0x0073E9D0 is referenced by CSWGuiSlider's constructor (0x41bb0d) and
 // destructor (0x41bb9d) — i.e. it's the slider's vftable. Sliders have no
 // AsSlider downcast accessor in GuiControlMethods, so vtable equality is
 // the only safe identity check.
-constexpr uintptr_t kVtableSlider = 0x0073E9D0;
+const uintptr_t kVtableSlider = acc::addr::R(0x0073E9D0);
 
 // CSWGuiListBox vtable. Same identity-by-vtable pattern as the slider:
 // no AsListBox accessor exists in GuiControlMethods, so we identify by
@@ -128,7 +128,7 @@ constexpr uintptr_t kVtableSlider = 0x0073E9D0;
 // a listbox's rows when the panel walk encounters one as a child — the
 // recurring `vtable=0073E840 src=none` cases in our log are listbox
 // containers wrapping the actual message text).
-constexpr uintptr_t kVtableListBox = 0x0073E840;
+const uintptr_t kVtableListBox = acc::addr::R(0x0073E840);
 
 // CSWGuiButton vtable. The standard button class — used by SaveLoad's
 // BTN_DELETE / BTN_BACK / BTN_SAVELOAD, the equipment screen's slot
@@ -139,7 +139,7 @@ constexpr uintptr_t kVtableListBox = 0x0073E840;
 // from a Label/LabelHilight child sharing the same .gui-time ID (the
 // SaveLoad-vs-Workbench-upgrade collision at ID 11 is the canonical
 // case — see IsSaveLoadStructural).
-constexpr uintptr_t kVtableCSWGuiButton = 0x0073E658;
+const uintptr_t kVtableCSWGuiButton = acc::addr::R(0x0073E658);
 
 // CSWGuiKeyMapButton — the keyboard-mapping screen's row control (vtable
 // 0x007593c8). Each row embeds TWO CSWGuiButtons: action_button at +0 (the
@@ -149,7 +149,7 @@ constexpr uintptr_t kVtableCSWGuiButton = 0x0073E658;
 // (key_mappings ptr at +0x38c ⇒ sizeof(CSWGuiButton)=0x1c4 ⇒ mapped_key_button
 // at +0x1c8). `unchangeable` (non-zero = fixed binding) is at +0x3a4. The key
 // text reads at mapped_key + button offsets, e.g. gui_string at 0x1c8+0x168.
-constexpr uintptr_t kVtableKeyMapButton          = 0x007593c8;
+const uintptr_t kVtableKeyMapButton          = acc::addr::R(0x007593c8);
 constexpr size_t    kKeyMapButtonMappedKeyOffset = 0x1c8;
 constexpr size_t    kKeyMapButtonUnchangeableOff = 0x3a4;
 // CSWGuiKeyMapButton.key_code @ +0x39c — the engine InputIndices value of the
@@ -184,14 +184,14 @@ constexpr size_t    kKeyMapButtonKeyCodeOff      = 0x39c;
 // caret, +0x152 = selection length. The polling monitor logs both values
 // on every diff so we can verify on first run; once confirmed, we strip
 // the diagnostic.
-constexpr uintptr_t kVtableEditbox             = 0x0073EAC8;
+const uintptr_t kVtableEditbox             = acc::addr::R(0x0073EAC8);
 // CSWGuiSaveGameEditBox — subclass embedded in CSWGuiSaveNamePanel. Struct
 // size is identical (0x160) and the whole body is a CSWGuiEditbox; only
 // HandleKeyPress is overridden (engine-side filename-char filter). It carries
 // its own vtable (k1_win_gog_swkotor.exe.xml Address-table symbol
 // CSWGuiSaveGameEditBox @ 0x007575B0), so vtable-identity predicates must
 // accept it alongside kVtableEditbox; the field offsets below apply unchanged.
-constexpr uintptr_t kVtableSaveGameEditbox     = 0x007575B0;
+const uintptr_t kVtableSaveGameEditbox     = acc::addr::R(0x007575B0);
 constexpr size_t    kEditboxShortA             = 0x150;
 constexpr size_t    kEditboxShortB             = 0x152;
 constexpr size_t    kEditboxStringCStrOffset   = 0x158;
@@ -216,7 +216,7 @@ constexpr size_t    kEditboxStringLengthOffset = 0x15c;
 // `name_editbox` is at a fixed offset within the panel struct (not just in
 // panel.controls[]), so the spec's findEditbox callback can index directly
 // rather than walking children for the unique vtable.
-constexpr uintptr_t kVtableCSWGuiNameChargen   = 0x00759F38;
+const uintptr_t kVtableCSWGuiNameChargen   = acc::addr::R(0x00759F38);
 constexpr size_t    kNameChargenEditboxOffset  = 0x230;
 constexpr size_t    kNameChargenEndButtonOffset = 0x6c;
 
@@ -249,7 +249,7 @@ constexpr size_t    kNameChargenSubtitleLabelOffset = 0x4d0;
 // unchanged. Unlike CSWGuiNameChargen, title_label is the screen-specific
 // title (no stale parent header), so the spec's titleOverride reads it
 // directly.
-constexpr uintptr_t kVtableCSWGuiSaveNamePanel    = 0x007576D0;
+const uintptr_t kVtableCSWGuiSaveNamePanel    = acc::addr::R(0x007576D0);
 constexpr size_t    kSaveNameEditboxOffset        = 0x3f0;
 constexpr size_t    kSaveNameOkButtonOffset       = 0x68;
 constexpr size_t    kSaveNameTitleLabelOffset     = 0x550;
@@ -277,7 +277,7 @@ constexpr size_t    kSaveNameTitleLabelOffset     = 0x550;
 // (engine updates it on hover/focus via CSWGuiClassSelection::OnEnterButton
 // @ 0x006dba70). Read its gui_string instead of the icon button's empty
 // inline text or the misleading sibling-label fallback.
-constexpr uintptr_t kVtableCSWGuiClassSelection      = 0x00758020;
+const uintptr_t kVtableCSWGuiClassSelection      = acc::addr::R(0x00758020);
 constexpr size_t    kClassSelectionsArrayOffset      = 0x6c;
 constexpr size_t    kClassSelCharSize                = 0x25c;
 constexpr int       kClassSelectionsCount            = 6;
@@ -310,7 +310,7 @@ constexpr size_t    kClassSelectionClassLabelOffset  = 0x1254;
 // (0x006f8ad0) writes the new resref there on every cycle. Reading 16
 // bytes at panel.creature + 0xa8 yields a string like "po_pmhc3" which
 // we parse into a localised description (gender + race + variant).
-constexpr uintptr_t kVtableCSWGuiPortraitCharGen     = 0x00759ea8;
+const uintptr_t kVtableCSWGuiPortraitCharGen     = acc::addr::R(0x00759ea8);
 constexpr size_t    kPortraitCharGenCreatureOffset   = 0x64;
 constexpr size_t    kPortraitLabelOffset             = 0x2ec;
 constexpr size_t    kPortraitRightArrowOffset        = 0xe84;
@@ -371,7 +371,7 @@ const uintptr_t kAddrCSWCCreatureGetPortrait = acc::addr::R(0x00617030);
 // tab cluster). With selected_ability stuck at 0, every Left/Right press
 // modifies STR. We mirror chain focus into the field on every chain
 // rebind / step so +/- targets the focused row.
-constexpr uintptr_t kVtableCSWGuiAbilitiesCharGen          = 0x00759c68;
+const uintptr_t kVtableCSWGuiAbilitiesCharGen          = acc::addr::R(0x00759c68);
 constexpr size_t    kAbilitiesCharGenLabelsArrayOffset     = 0x110c;
 constexpr size_t    kAbilitiesCharGenButtonsArrayOffset    = 0x188c;
 constexpr size_t    kAbilitiesCharGenSelectedAbilityOffset = 0x3dec;
@@ -413,7 +413,7 @@ const uintptr_t kAddrCSWGuiAbilitiesCharGenGetCost = acc::addr::R(0x006f6bb0);
 // Skill order matches struct order matches visual top-to-bottom (no
 // swap as on the Attribute panel): Computer, Demolitions, Stealth,
 // Awareness, Persuade, Repair, Security, Treat Injury.
-constexpr uintptr_t kVtableCSWGuiSkillsCharGen           = 0x00759990;
+const uintptr_t kVtableCSWGuiSkillsCharGen           = acc::addr::R(0x00759990);
 constexpr size_t    kSkillsCharGenLabelsArrayOffset      = 0xfcc;
 constexpr size_t    kSkillsCharGenButtonsArrayOffset     = 0x19cc;
 constexpr size_t    kSkillsCharGenSelectedSkillOffset    = 0x49bc;
@@ -513,7 +513,7 @@ constexpr size_t    kAbilitiesCharGenDescriptionListBoxOffset      = 0x6c;
 // rendered on top, with its own listbox of granted feats. The main panel
 // stays underneath; its description_listbox.controls[0] mirrors the picker
 // selection so reading from there gives the focused-feat description.
-constexpr uintptr_t kVtableCSWGuiFeatsCharGen           = 0x007598b0;
+const uintptr_t kVtableCSWGuiFeatsCharGen           = acc::addr::R(0x007598b0);
 constexpr size_t    kFeatsCharGenNameLabelOffset        = 0xbac;
 constexpr size_t    kFeatsCharGenSelectButtonOffset     = 0x1238;
 constexpr size_t    kFeatsCharGenFeatsListBoxOffset     = 0x13fc;
@@ -656,7 +656,7 @@ constexpr size_t    kPowersLevelUpChartOffset              = 0x19fc;
 // GuiPowersLevelUp_vtable @ 0x00759780 (absoluteAddress 7706496 in Lane's
 // SARIF; GoG bytes match Steam). Sits just below CSWGuiFeatsCharGen_vtable
 // (0x007598b0) in the vtable region, as expected for sibling GUI classes.
-constexpr uintptr_t kVtableCSWGuiPowersLevelUp             = 0x00759780;
+const uintptr_t kVtableCSWGuiPowersLevelUp             = acc::addr::R(0x00759780);
 
 // CSWGuiSkillFlowChart::SetSelectedSkill — sets the chart's render-side
 // selection state by feat ID. Walks rows × cols looking for the matching
@@ -930,7 +930,7 @@ constexpr size_t    kUpgradePickerOpenFlagOff = 0x2f48;  // panel.field24
 // the category doesn't use. RE'd from OnEnterSlot @0x006c3c30 (the
 // `DAT_00756fb8` reference, +8 from the table base) and verified against
 // a 240-byte dump at 0x00756fb0.
-constexpr uintptr_t kAddrUpgradeSlotTypeTable = 0x00756fb0;
+const uintptr_t kAddrUpgradeSlotTypeTable = acc::addr::R(0x00756fb0);
 constexpr size_t    kUpgradeSlotTypeStride    = 12;
 constexpr size_t    kUpgradeSlotTypeStrRefOff = 8;
 constexpr size_t    kUpgradePanelCategoryOff  = 0x2f4c;  // panel.field25
@@ -1597,15 +1597,15 @@ constexpr size_t kBarkBubbleObjectIdOffset            = 0x1c0;
 // ClientToServerObjectId before CServerExoApp::GetItemByGameObjectID.
 // CSWSItem.stack_size + bit_flags expose the stock count / infinite-stock
 // flag (bit 2 = infinite, per CSWGuiStore::OnControlEntered).
-constexpr uintptr_t kVtableCSWGuiStore                     = 0x00756e38;
-constexpr uintptr_t kVtableCSWGuiStoreItemEntry            = 0x00756850;
+const uintptr_t kVtableCSWGuiStore                     = acc::addr::R(0x00756e38);
+const uintptr_t kVtableCSWGuiStoreItemEntry            = acc::addr::R(0x00756850);
 
 // CSWGuiInGameItemEntry — rows of CSWGuiInGameInventory.item_listbox AND
 // Container's loot listbox. Same shape as CSWGuiStoreItemEntry: button at
 // offset 0, item_game_object_id at +0x1c4. Resolves through
 // ResolveItemFromClientHandle and reads stack_size via the same offsets
 // above.
-constexpr uintptr_t kVtableCSWGuiInGameItemEntry           = 0x007568f8;
+const uintptr_t kVtableCSWGuiInGameItemEntry           = acc::addr::R(0x007568f8);
 
 constexpr size_t    kStoreShopItemsListBoxOffset           = 0x1480;
 constexpr size_t    kStoreInvItemsListBoxOffset            = 0x1760;
@@ -1817,4 +1817,4 @@ const uintptr_t kAddrJournalPopulateItemListBox = acc::addr::R(0x00645330);
 // CSWGuiJournalItemEntry rows are CSWGuiButton-derived (size 0x1cc) with
 // their own vtable. The journal's OnControlEntered fires on mouse hover
 // over a row and rewrites item_description_label with the full text.
-constexpr uintptr_t kVtableCSWGuiJournalItemEntry          = 0x007518c0;
+const uintptr_t kVtableCSWGuiJournalItemEntry          = acc::addr::R(0x007518c0);

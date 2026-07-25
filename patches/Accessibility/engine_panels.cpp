@@ -1,4 +1,5 @@
 #include "engine_panels.h"
+#include "engine_rebase.h"
 
 #include <windows.h>  // SEH __try / __except
 #include <cstddef>
@@ -162,7 +163,7 @@ bool IsWorkbenchItemsStructural(void* panel) {
 // structural check below was rejecting this panel — its category buttons use a
 // button subclass whose vtable isn't kVtableCSWGuiButton — so it fell through
 // to Unknown; the vtable test fixes that.
-constexpr uintptr_t kVtableCSWGuiUpgradeSelection = 0x007571b0;
+const uintptr_t kVtableCSWGuiUpgradeSelection = acc::addr::R(0x007571b0);
 
 bool IsWorkbenchSelectStructural(void* panel) {
     if (!panel) return false;
@@ -188,7 +189,7 @@ bool IsWorkbenchSelectStructural(void* panel) {
 // CSWGuiInGameCharacter::ShowLevelUpGUI when the user clicks Levelaufst.,
 // so it has no CGuiInGame slot. Lane's SARIF labels the vtable at
 // 0x00759568 (verified via Ghidra ListSymbolsByName 2026-05-14).
-constexpr uintptr_t kVtableCSWGuiLevelUpPanel = 0x00759568;
+const uintptr_t kVtableCSWGuiLevelUpPanel = acc::addr::R(0x00759568);
 
 bool IsLevelUpStructural(void* panel) {
     if (!panel) return false;
@@ -208,8 +209,8 @@ bool IsLevelUpStructural(void* panel) {
 // their build steps (Porträt / Attribute / Fähigkeiten / Talente / Name /
 // Spielen) sequentially, enabling one at a time via CSWGuiControl::SetEnabled
 // (bit_flags bit 3) — same shape as the in-game level-up wizard.
-constexpr uintptr_t kVtableCSWGuiCustomPanel = 0x007595e0;
-constexpr uintptr_t kVtableCSWGuiQuickPanel  = 0x00759668;
+const uintptr_t kVtableCSWGuiCustomPanel = acc::addr::R(0x007595e0);
+const uintptr_t kVtableCSWGuiQuickPanel  = acc::addr::R(0x00759668);
 
 bool IsCharGenStructural(void* panel) {
     if (!panel) return false;
@@ -227,7 +228,7 @@ bool IsCharGenStructural(void* panel) {
 // vtable equality is the cleanest identifier. Captured 2026-05-26 via the
 // LogUnknownPanelDiagnostics probe (PanelProbe block in
 // patch-20260526-180650.log).
-constexpr uintptr_t kVtableCSWGuiOptions = 0x00758838;
+const uintptr_t kVtableCSWGuiOptions = acc::addr::R(0x00758838);
 
 bool IsMainMenuOptionsStructural(void* panel) {
     if (!panel) return false;
@@ -245,7 +246,7 @@ bool IsMainMenuOptionsStructural(void* panel) {
 // `PanelProbe: first sight UNKNOWN panel=077F49D8 vtable=0x00752f70`.
 // Classifying this lets AnnouncePanelTitle skip the generic label-walk
 // (which lands on the DLC notice) and speak Id::PanelTitleMainMenu.
-constexpr uintptr_t kVtableCSWGuiMainMenu = 0x00752f70;
+const uintptr_t kVtableCSWGuiMainMenu = acc::addr::R(0x00752f70);
 
 bool IsMainMenuStructural(void* panel) {
     if (!panel) return false;
@@ -261,7 +262,7 @@ bool IsMainMenuStructural(void* panel) {
 // slot), single class, so vtable equality is the identifier. Verified against
 // the live panel dump (patch-20260601-071641.log: 79-control panel,
 // vtable=0x007532e8).
-constexpr uintptr_t kVtableCSWGuiPazaakStart = 0x007532e8;
+const uintptr_t kVtableCSWGuiPazaakStart = acc::addr::R(0x007532e8);
 
 bool IsPazaakStartStructural(void* panel) {
     if (!panel) return false;
@@ -277,7 +278,7 @@ bool IsPazaakStartStructural(void* panel) {
 // side-deck builder. Single class, heap-allocated, so vtable equality is the
 // identifier (CSWGuiWagerPopup_vtable, verified against the live panel dump in
 // patch-20260601-090245.log: 8-control panel, vtable=0x007534c8).
-constexpr uintptr_t kVtableCSWGuiWagerPopup = 0x007534c8;
+const uintptr_t kVtableCSWGuiWagerPopup = acc::addr::R(0x007534c8);
 
 bool IsPazaakWagerStructural(void* panel) {
     if (!panel) return false;
@@ -294,7 +295,7 @@ bool IsPazaakWagerStructural(void* panel) {
 // vtable equality is the identifier (CSWGuiQuestItem_vtable, verified against
 // the live panel dump in patch-20260603-090028.log: 3-element chain with a
 // BTN_BACK at the bottom).
-constexpr uintptr_t kVtableCSWGuiQuestItem = 0x00757c20;
+const uintptr_t kVtableCSWGuiQuestItem = acc::addr::R(0x00757c20);
 
 bool IsQuestItemStructural(void* panel) {
     if (!panel) return false;
@@ -310,7 +311,7 @@ bool IsQuestItemStructural(void* panel) {
 // picker. Heap-allocated modal with no CGuiInGame slot, so vtable equality is
 // the identifier (verified via Ghidra: destructor at 0x006e9ef0, vtable label
 // at 0x007590a8, against the live panel dump in patch-20260613-205358.log).
-constexpr uintptr_t kVtableCSWGuiScriptSelect = 0x007590a8;
+const uintptr_t kVtableCSWGuiScriptSelect = acc::addr::R(0x007590a8);
 
 bool IsScriptSelectStructural(void* panel) {
     if (!panel) return false;
@@ -373,15 +374,15 @@ struct OptionsSubScreenVtable {
     PanelKind kind;
 };
 static const OptionsSubScreenVtable kOptionsSubScreenVtables[] = {
-    { 0x007587c0, PanelKind::SoundSettings            },
-    { 0x00758550, PanelKind::AdvancedSoundSettings    },
-    { 0x007586f8, PanelKind::GraphicsSettings         },
-    { 0x007584a0, PanelKind::AdvancedGraphicsSettings },
-    { 0x00758ee0, PanelKind::AutoPauseOptions         },
-    { 0x007581e8, PanelKind::FeedbackOptions          },
-    { 0x00758e00, PanelKind::GameSettings             },
-    { 0x007585f8, PanelKind::MouseSettings            },
-    { 0x00759358, PanelKind::KeyboardMapping          },
+    { acc::addr::R(0x007587c0), PanelKind::SoundSettings            },
+    { acc::addr::R(0x00758550), PanelKind::AdvancedSoundSettings    },
+    { acc::addr::R(0x007586f8), PanelKind::GraphicsSettings         },
+    { acc::addr::R(0x007584a0), PanelKind::AdvancedGraphicsSettings },
+    { acc::addr::R(0x00758ee0), PanelKind::AutoPauseOptions         },
+    { acc::addr::R(0x007581e8), PanelKind::FeedbackOptions          },
+    { acc::addr::R(0x00758e00), PanelKind::GameSettings             },
+    { acc::addr::R(0x007585f8), PanelKind::MouseSettings            },
+    { acc::addr::R(0x00759358), PanelKind::KeyboardMapping          },
 };
 
 // Returns the specific sub-screen kind, or Unknown if `panel`'s vtable

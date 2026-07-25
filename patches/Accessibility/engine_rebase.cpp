@@ -18,6 +18,30 @@ constexpr Entry kTable[] = {
 
 constexpr size_t kTableCount = sizeof(kTable) / sizeof(kTable[0]);
 
+// .rdata map — vtables and the two data pointers beside them. Separate from the
+// generated .text table because `kdev sigscan` cannot yet resolve .rdata: there
+// is no code at these addresses to take a signature from.
+//
+// Stage 2 skipped .rdata on the belief that we held no bare .rdata constants,
+// only vtable references inside functions. That was wrong — 44 of them, and on
+// a rebased build every vtable-identity check silently failed, which is how the
+// character-creation screen ended up reading its class buttons as "control 11".
+//
+// Resolved 2026-07-25 by two independent methods that had to agree:
+//   * operand cross-reference — the address appears in .text as an imm32 (the
+//     constructor storing the vtable); locate that code in the target with
+//     operands masked and read the new value;
+//   * vtable content verification — walk a candidate's first entries and compare
+//     the *functions* they point at byte-for-byte. Only real vtables qualify,
+//     which is why the import-table entry and the upgrade-slot table resolved by
+//     operand alone.
+// 23 resolved by both, 19 by content, 2 by operand; no disagreements.
+constexpr Entry kRdataTable[] = {
+#include "engine_rebase_rdata.inc"
+};
+
+constexpr size_t kRdataCount = sizeof(kRdataTable) / sizeof(kRdataTable[0]);
+
 // Hand-resolved supplement. `kdev sigscan` cannot place these two by their own
 // bytes, so they are NOT in the generated table and must live here — putting
 // them in the .inc would lose them on the next regeneration.
@@ -108,8 +132,21 @@ uintptr_t R(uintptr_t referenceVa) {
             return kTable[mid].target;
         }
     }
-    // Not in the generated table — try the hand-resolved supplement. Linear,
-    // because it holds two entries.
+    // Not in the generated .text table — try the .rdata map (also sorted).
+    lo = 0;
+    hi = kRdataCount;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (kRdataTable[mid].reference < referenceVa) {
+            lo = mid + 1;
+        } else if (kRdataTable[mid].reference > referenceVa) {
+            hi = mid;
+        } else {
+            return kRdataTable[mid].target;
+        }
+    }
+
+    // Then the hand-resolved supplement. Linear, because it holds two entries.
     for (size_t i = 0; i < kXrefCount; ++i) {
         if (kXrefTable[i].reference == referenceVa) return kXrefTable[i].target;
     }

@@ -10,6 +10,7 @@
 #include <cstring>
 
 #include "menus_chain.h"
+#include "engine_rebase.h"
 
 #include "engine_input.h"
 #include "engine_manager.h"
@@ -560,7 +561,7 @@ void RebindChain(void* panel) {
         // returns true for that roster index.
         if (pk == PanelKind::PartySelection) {
             void** vt = *reinterpret_cast<void***>(c);
-            if (reinterpret_cast<uintptr_t>(vt) == 0x00756BB8) {
+            if (reinterpret_cast<uintptr_t>(vt) == acc::addr::R(0x00756BB8)) {
                 constexpr size_t kPartyPortraitPartyIdOffset = 0x44c;
                 constexpr size_t kPartyPortraitNpcSlotOffset = 0x450;
                 int partyId = -1, npcSlot = -1;
@@ -1226,7 +1227,7 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
     if (acc::engine::IdentifyPanel(g_chainPanel) ==
             acc::engine::PanelKind::PartySelection) {
         void** vt = *reinterpret_cast<void***>(e.control);
-        if (reinterpret_cast<uintptr_t>(vt) == 0x00756BB8) {
+        if (reinterpret_cast<uintptr_t>(vt) == acc::addr::R(0x00756BB8)) {
             __try {
                 int selected = *reinterpret_cast<int*>(
                     reinterpret_cast<unsigned char*>(e.control) + 0x1c4);

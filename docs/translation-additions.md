@@ -388,6 +388,9 @@ soft (log and return false) — that safety net stays, it just no longer fires.
   transcribing addresses by hand).
 - **195 `.text` constants across 32 files** now route through `R()`;
   the 51 `.data` constants were deliberately left as `constexpr`.
+- **44 `.rdata` constants** route through `R()` as well — see the Stage 4 note
+  below. The original claim here, that `.rdata` needed no attention because we
+  held no bare constants in it, was wrong and cost a release candidate.
 
 Verification: 105 TUs recompiled with zero errors (so nothing depended on these
 being compile-time constants), and a cross-check confirms every address routed
@@ -451,6 +454,59 @@ affected, "None" listed as fixed). Suppressed in `kdev.csproj` with a targeted
 `NuGetAuditSuppress` and a written justification. **The same dependency ships
 in the end-user installer**, which does not treat warnings as errors and so
 never flagged it — worth a separate look.
+
+### Stage 4 — the `.rdata` vtables (2026-07-25)
+
+Stage 2 excluded `.rdata` on the reasoning that we hold no bare `.rdata`
+constants, "only vtable references inside functions, which move with their
+function". Wrong: **44** of them, and on a rebased build every vtable-identity
+check silently failed. Symptom, found by playing rather than by any check we had:
+character creation read its class buttons as "control 11" instead of "Männlich:
+Soldat". Half the menu system identifies controls by vtable, so options
+sub-screens, key mapping, the store, the journal and the level-up panels were all
+degraded the same way.
+
+**Why the first Allard session looked clean.** It exercised navigation, combat,
+the action menu and save lists — none of which use vtable identity. The evidence
+was in that same log all along: 365 `SpecRead: miss` lines against 6 in the Steam
+baseline. Nobody was counting them.
+
+**Resolution method.** A vtable cannot be signature-scanned — there is no code at
+the address. Two independent methods, required to agree:
+
+- *Operand cross-reference.* The address appears in `.text` as an `imm32` operand
+  in the constructor that stores it. Locate that code in the target with all
+  operands masked, read the new value.
+- *Vtable content verification.* Walk a candidate's first eight entries and
+  compare the **functions** they point at byte-for-byte, with operands masked and
+  the window truncated at the inter-function padding. That truncation matters:
+  many slots hold an empty virtual compiled to a bare `ret 8`, and a fixed-width
+  window spills into whatever the linker placed next, which is exactly what
+  differs between builds. Identity comes from contents, not position.
+
+44 of 44 resolved, no disagreements: 23 by both methods, 19 by content alone, 2
+by operand alone (an import-table entry and the upgrade-slot table — neither has
+function pointers to compare).
+
+Layout, for reference: below ~`0x751000` everything maps to itself; above,
+everything shifts by +24. Each was resolved individually anyway — "the
+neighbours moved by 24" is an inference, and this is not a file where inference
+is cheap.
+
+The map lives in `engine_rebase_rdata.inc`, separate from the generated `.text`
+table because `kdev sigscan` cannot produce it yet. **Teaching sigscan this pass
+is open work** — until then the two scan methods above are the reproducible
+record, and the report's `data … .rdata` rows are the checklist.
+
+One implementation trap: `menus_extract.cpp`'s override table must stay
+`constexpr` and map at the comparison instead. A runtime initialiser on that
+function-local static makes the function need object unwinding, which its `__try`
+blocks forbid (C2712).
+
+**Regression signal, for next time:** `grep -c "SpecRead: miss"` on the session
+log. 6 on Steam, 365 on Allard before the fix, 53 after (all the benign
+"image-only button has no inline text" path, which is what the Steam baseline's 6
+are too).
 
 ### Speech encoding — the parked blocker is already solved
 

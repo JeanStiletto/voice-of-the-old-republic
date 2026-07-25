@@ -1,4 +1,5 @@
 #include "audio_loop.h"
+#include "engine_rebase.h"
 
 #include <windows.h>
 #include <cstdlib>
@@ -50,7 +51,7 @@ constexpr size_t   kVoiceHandleOffset           = 0x04;  // Miles handle inside 
 // SetPitchVariance reaches the Miles setter via `call dword ptr [0x0073d4e8]`;
 // the slot holds the resolved AIL_set_3D_sample_playback_rate import. Calling
 // through the engine's own IAT slot avoids resolving mss32.dll ourselves.
-constexpr uintptr_t kIatAilSet3DPlaybackRate    = 0x0073D4E8;
+const uintptr_t kIatAilSet3DPlaybackRate    = acc::addr::R(0x0073D4E8);
 typedef void (__stdcall* PFN_AIL_set_3D_sample_playback_rate)(void* handle, int rate);
 
 typedef void* (__thiscall* PFN_SourceCtor)(void* this_);
