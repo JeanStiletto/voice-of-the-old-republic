@@ -35,6 +35,13 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.6.3</h2>
 
+<h3>Russian translation:</h3>
+
+- The mod now runs on the Russian translation (Allard 1.72). That translation replaces the game's own program file with its own build, which the mod previously refused to install onto — so Russian players could not use it at all. The mod now recognises that build and works on it: every address it uses inside the game had to be re-found there, because the code is the same but the linker put all of it in different places. Menus, navigation, combat, character creation and the map all behave as they do on the standard game.
+- The mod speaks Russian. It detects a Russian installation by inspecting the game's text file rather than trusting what that file declares — the translation identifies itself as English — and switches both its own announcements and the game's text to Russian. **The Russian announcements are a machine-translated first draft and have not been checked by a native speaker; corrections are very welcome.** The other translations added this way (French, Italian, Spanish) carry the same caveat.
+- Installing a game translation *after* the mod no longer leaves the mod misbehaving. The patch framework remembered which version of the game it had originally been installed onto and kept trusting that memory even once the program file had been replaced, so it would drive the new build with the old build's addresses. It now notices that the program file is no longer the one it recorded. This affects any translation or re-pack that replaces the game's program file, not only the Russian one.
+- If you already installed a translation on top of the mod and saw odd behaviour, reinstalling the mod now sorts it out.
+
 <h3>Bug fixes:</h3>
 
 - The Key Mapping screen is navigable again — every binding in a category can be reached and heard, instead of just two. Arrowing through a category only ever spoke the two entries either side of one fixed position, and that middle entry was never spoken at all: the game re-selects a row in that list on its own between keypresses, so the mod's keyboard position was discarded each time and every step was computed from the game's row rather than yours. The mod now keeps its own position in the list and asserts it before each step. Pressing Enter also binds the entry you actually navigated to — with the position hijacked it could otherwise have armed a rebind on an entry you never visited.
