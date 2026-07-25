@@ -33,6 +33,12 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.6.3</h2>
+
+<h3>Bug fixes:</h3>
+
+- The Key Mapping screen is navigable again — every binding in a category can be reached and heard, instead of just two. Arrowing through a category only ever spoke the two entries either side of one fixed position, and that middle entry was never spoken at all: the game re-selects a row in that list on its own between keypresses, so the mod's keyboard position was discarded each time and every step was computed from the game's row rather than yours. The mod now keeps its own position in the list and asserts it before each step. Pressing Enter also binds the entry you actually navigated to — with the position hijacked it could otherwise have armed a rebind on an entry you never visited.
+
 <h2>v0.6.2</h2>
 
 <h3>Bug fixes:</h3>

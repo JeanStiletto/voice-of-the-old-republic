@@ -24,7 +24,7 @@
 #include "prism.h"
 #include "strings.h"
 
-using acc::menus::detail::DriveListBoxSelection;
+using acc::menus::detail::DriveListBoxSelectionEngine;
 using acc::menus::detail::ListBoxNavOp;
 using acc::menus::detail::ListBoxNavResult;
 
@@ -78,6 +78,28 @@ int   s_tabCursor      = 0;
 void* s_armedRow       = nullptr;
 void* s_armedPanel     = nullptr;
 
+// One-shot "park the cursor off LST_EventList" latch, armed by HandleInput on a
+// fresh panel and cleared once Tick issues the warp. Without it the engine
+// re-selects the binding row under the resting cursor every frame and our
+// keyboard selection_index writes never survive to the next keypress — Up/Down
+// then only ever reach the two rows flanking the hovered one, and the hovered
+// row itself is never spoken (field log patch-20260725-145611: every step reads
+// back "sel 2 -> 3" / "sel 2 -> 1", oldSel pinned at the hovered row).
+//
+// Armed from the input hook rather than sniffed off the manager in Tick: this
+// panel is an Options SUB-screen and never enters CSWGuiManager::panels[], so
+// GetForegroundPanel can't see it (that was the first attempt — it never fired).
+// HandleInput is handed the panel directly. The warp itself still runs from Tick
+// because MoveMouseToPosition recurses through the hover pipeline.
+// See ParkCursorToCorner in menus_internal.h.
+bool  s_parkPending    = false;
+
+// OUR authoritative binding-list cursor, -1 = not browsing a category. The
+// listbox's own selection_index cannot serve this role: the engine rewrites it
+// between keypresses (see SetSelectionIndex), which pinned every Up/Down to the
+// two rows flanking one fixed index and left that index unreachable.
+short s_rowCursor      = -1;
+
 void* FindByGuiId(void* panel, int wantId) {
     if (!panel) return nullptr;
     __try {
@@ -96,21 +118,35 @@ void* FindByGuiId(void* panel, int wantId) {
     return nullptr;
 }
 
-void* SelectedRow(void* panel) {
+// Row control at `index`, or nullptr if the list is shorter than that.
+void* RowAt(void* panel, short index) {
     void* row = nullptr;
     __try {
         void* lb = FindByGuiId(panel, kIdListBox);
         if (!lb) return nullptr;
-        auto* base = reinterpret_cast<unsigned char*>(lb);
-        short sel = *reinterpret_cast<short*>(base + kListBoxSelectionIndexOffset);
-        auto* rows = reinterpret_cast<CExoArrayList*>(base + kListBoxControlsOffset);
-        if (rows && rows->data && sel >= 0 && sel < rows->size) {
-            row = rows->data[sel];
+        auto* rows = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
+        if (rows && rows->data && index >= 0 && index < rows->size) {
+            row = rows->data[index];
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         row = nullptr;
     }
     return row;
+}
+
+// Force the listbox's selection_index back to OUR cursor before a step. The
+// engine re-selects a row on its own between keypresses — its hit-test clamps
+// to the nearest rendered row rather than missing the list, so no parking spot
+// makes it inert (parking at the top-left corner only moved the pinned row from
+// 2 to 1; log patch-20260725-150854). selection_index is therefore not a
+// reliable record of where the keyboard user is, and we keep our own.
+void SetSelectionIndex(void* lb, short v) {
+    __try {
+        *reinterpret_cast<short*>(
+            reinterpret_cast<unsigned char*>(lb) +
+            kListBoxSelectionIndexOffset) = v;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
 }
 
 int CaptureActive(void* panel) {
@@ -139,8 +175,24 @@ void AnnounceTabEntry(void* panel, int idx) {
                   kTabEntries[idx].guiId);
 }
 
-void AnnounceSelectedRow(void* panel) {
-    SpeakControl(panel, SelectedRow(panel));
+// Step the binding list from OUR remembered cursor and announce the row we land
+// on. Returns false only if the listbox is missing/empty.
+bool StepRow(void* panel, ListBoxNavOp op) {
+    void* lb = FindByGuiId(panel, kIdListBox);
+    if (!lb) return false;
+    if (s_rowCursor >= 0) SetSelectionIndex(lb, s_rowCursor);
+    ListBoxNavResult r;
+    // Engine-driven commit (SetSelectedControl): sets the row's real highlight
+    // and scrolls the page natively, so the row we announce is the row the list
+    // actually shows — the 29-entry "Spiel" category is multipage.
+    if (!DriveListBoxSelectionEngine(lb, op, 0, r)) {
+        return false;
+    }
+    s_rowCursor = r.newSel;
+    SpeakControl(panel, r.row);
+    acclog::Write("Menus.KeyMap", "row step op=%d sel %d -> %d of %d",
+                  (int)op, r.oldSel, r.newSel, r.rowCount);
+    return true;
 }
 
 // Switch the displayed category by calling OnFilter* directly (synchronous, so
@@ -208,6 +260,13 @@ bool IsKeyMapPanel(void* panel) {
 }
 
 void Tick() {
+    // Cursor park — must run from the Update tick, never the input hook
+    // (MoveMouseToPosition recurses through the hover pipeline).
+    if (s_parkPending &&
+        acc::menus::detail::ParkCursorToCorner("Menus.KeyMap")) {
+        s_parkPending = false;
+    }
+
     if (!s_armedPanel) return;
     // Panel gone (closed) — drop the pending re-announce.
     if (!acc::engine::IsPanelInManager(s_armedPanel)) {
@@ -234,11 +293,15 @@ void Tick() {
 bool HandleInput(void* activePanel, int param_1, int param_2, int& outRv) {
     if (!IsKeyMapPanel(activePanel)) return false;
 
-    // Fresh open → start at the tab level on the first entry.
+    // Fresh open → start at the tab level on the first entry, and arm the
+    // cursor park (issued from Tick) so the engine's hover-select stops
+    // overwriting the keyboard selection on LST_EventList.
     if (activePanel != s_panel) {
-        s_panel     = activePanel;
-        s_drilled   = false;
-        s_tabCursor = 0;
+        s_panel       = activePanel;
+        s_drilled     = false;
+        s_tabCursor   = 0;
+        s_rowCursor   = -1;
+        s_parkPending = true;
     }
 
     // While a capture is armed, hand EVERY key to the engine: it grabs the next
@@ -283,10 +346,13 @@ bool HandleInput(void* activePanel, int param_1, int param_2, int& outRv) {
                 // kept the earlier inline version from crashing.)
                 acc::menus::chain::RebindChain(activePanel);
                 s_drilled = true;
-                ListBoxNavResult r;
-                void* lb = FindByGuiId(activePanel, kIdListBox);
-                if (lb) DriveListBoxSelection(lb, ListBoxNavOp::JumpFirst, 0, r);
-                AnnounceSelectedRow(activePanel);
+                // Re-arm the park: entering the list is the moment hover-select
+                // starts mattering, and re-opening the screen can hand back a
+                // recycled panel pointer that the fresh-open check above misses.
+                s_parkPending = true;
+                // Anchor our cursor on the first binding and announce it.
+                s_rowCursor = 0;
+                StepRow(activePanel, ListBoxNavOp::JumpFirst);
                 acclog::Write("Menus.KeyMap", "drill into category id=%d", e.guiId);
             } else {
                 // OK / Abbrechen / Standard — activate via the engine's own
@@ -315,16 +381,15 @@ bool HandleInput(void* activePanel, int param_1, int param_2, int& outRv) {
                         : isDown ? ListBoxNavOp::StepDown
                         : isHome ? ListBoxNavOp::JumpFirst
                                  : ListBoxNavOp::JumpLast;
-        void* lb = FindByGuiId(activePanel, kIdListBox);
-        ListBoxNavResult r;
-        if (lb && DriveListBoxSelection(lb, op, 0, r)) {
-            SpeakControl(activePanel, r.row);
-        }
+        StepRow(activePanel, op);
         outRv = 1;
         return true;
     }
     if (isEnter) {
-        void* row = SelectedRow(activePanel);
+        // Bind the row OUR cursor is on, never the listbox's selection_index —
+        // the engine's re-select would otherwise rebind a key the user never
+        // navigated to.
+        void* row = RowAt(activePanel, s_rowCursor);
         if (!row) { outRv = 1; return true; }
         int fixed = 0;
         __try {
@@ -351,7 +416,8 @@ bool HandleInput(void* activePanel, int param_1, int param_2, int& outRv) {
         return true;
     }
     if (isEsc) {
-        s_drilled = false;
+        s_drilled   = false;
+        s_rowCursor = -1;
         AnnounceTabEntry(activePanel, s_tabCursor);
         acclog::Write("Menus.KeyMap", "undrill to tab level cursor=%d", s_tabCursor);
         outRv = 1;

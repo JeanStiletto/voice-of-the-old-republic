@@ -117,6 +117,18 @@ bool DriveListBoxSelection(void* listbox, ListBoxNavOp op, short minSel,
 bool DriveListBoxSelectionEngine(void* listbox, ListBoxNavOp op, short minSel,
                                  ListBoxNavResult& out);
 
+// Warp the OS cursor to the empty top-left corner of the screen so the engine's
+// per-frame hover-select (CSWGuiListBox::HandleMouseMove -> HitCheckMouseLocal
+// -> SetSelectedControl) finds no row under it and stops overwriting the
+// keyboard-driven selection_index writes DriveListBoxSelection makes. Any panel
+// that drives a listbox from the keyboard must park the cursor while it is up.
+//
+// MUST be called from a per-tick monitor (Update tick), never from the input
+// hook — MoveMouseToPosition recurses through the hover pipeline. `tag` is the
+// caller's acclog tag. Defined in menus_monitors.cpp, next to the park-position
+// rationale (the corner has to clear the camera edge-turn band).
+bool ParkCursorToCorner(const char* tag);
+
 // Queue activation of the chain-navigable button child of `panel` whose
 // +0x50 ID matches `buttonId`. Reserved for select-then-confirm panels
 // (Container / SaveLoad spec entries). Returns false on debounce or

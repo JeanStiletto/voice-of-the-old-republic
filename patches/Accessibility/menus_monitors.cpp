@@ -37,6 +37,59 @@ using acc::menus::detail::FindListBoxChild;
 // g_currentPanel still owns its definition in menus.cpp (set by
 // OnSetActiveControl). Read via extern from menus_internal.h.
 
+// ---------------------------------------------------------------------------
+// Cursor park — shared by every keyboard-driven listbox screen.
+//
+// The engine slaves a listbox's selection_index to whatever row the mouse
+// cursor hovers: CSWGuiListBox::HandleMouseMove does HitCheckMouseLocal ->
+// SetSelectedControl on every mouse move the manager processes, and
+// CSWGuiDialog::SetReplies calls HandleMouseMove explicitly when a node opens.
+// That silently overwrites the keyboard-driven selection we write in
+// DriveListBoxSelection whenever the OS cursor happens to sit over a row —
+// which is exactly what a widescreen/HD geometry produces: the resting cursor
+// lands on the list where a 4:3 cursor sits in empty space, so the hover-select
+// keeps snapping selection back to the row under it. Symptom is always the
+// same: only the two rows adjacent to the hovered one are reachable, and the
+// hovered row itself is never announced (observed first on the droid repair
+// submenu, then on the Tastenbelegung screen). The workbench/equip pickers hit
+// the same engine behaviour and defeat it by parking the cursor off their
+// listbox (ParkPickerCursorOffList in menus_listbox.cpp).
+//
+// We warp to the top-left letterbox corner rather than a computed off-list
+// point on the panel because these panels are label-rich (the computer dialog's
+// UpdateSkills paints skill/resource readouts near the replies) and
+// MoveMouseToPosition's hover->active promotion crashes on a label — the corner
+// is empty on every panel and trivially off any centred list at any resolution.
+// It also keeps the park from promoting a button to active and firing a
+// spurious focus announce. Runs only from the per-tick monitors (Update tick),
+// never the input hook, because MoveMouseToPosition recurses through the hover
+// pipeline. Self-correcting for mouse users: moving the mouse un-parks it.
+//
+// The park must clear the engine's screen-edge camera-turn band. A cursor left
+// sitting in that band makes UpdateCamera accumulate-turn every frame once world
+// control returns, so the camera spins endlessly with no input and no cure but
+// restarting. This originally parked at x=2 and did exactly that after every
+// conversation (patch-20260724-230031.log: continuous 100-222 deg/s spin from
+// the moment a Bandon dialogue closed, while camera_spin_diag's guard — whose
+// band bottoms out at kMinBandPx — never fired because x=2 sat just outside it).
+// Keep kCursorParkX comfortably above that floor; y stays at the very top.
+namespace {
+constexpr int kCursorParkX = 24;
+constexpr int kCursorParkY = 2;
+}  // namespace
+
+bool acc::menus::detail::ParkCursorToCorner(const char* tag) {
+    void* gm = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!gm) return false;
+    reinterpret_cast<PFN_MoveMouseToPosition>(kAddrMoveMouseToPosition)(
+        gm, kCursorParkX, kCursorParkY);
+    acclog::Write(tag,
+                  "park cursor to top-left corner (%d,%d) — neutralises engine "
+                  "hover-select, clear of the camera edge-turn band",
+                  kCursorParkX, kCursorParkY);
+    return true;
+}
+
 namespace acc::menus::monitors {
 
 // ============================================================================
@@ -657,54 +710,14 @@ DialogReplyState s_dialogReplyState = { nullptr, -1 };
 // reply panel first appears and cleared once the park is issued (or on disarm).
 bool s_dialogReplyParkPending = false;
 
-// The engine slaves the reply listbox's selection_index to whatever row the
-// mouse cursor hovers: CSWGuiListBox::HandleMouseMove does
-// HitCheckMouseLocal -> SetSelectedControl on every mouse move the manager
-// processes, and CSWGuiDialog::SetReplies calls HandleMouseMove explicitly when
-// a node opens. That silently overwrites the keyboard-driven selection we write
-// in DriveListBoxSelection whenever the OS cursor happens to sit over a reply
-// row — which is exactly what a widescreen/HD geometry produces: the resting
-// cursor lands on the reply list where a 4:3 cursor sits in empty space, so the
-// hover-select keeps snapping selection back to the row under it (observed as
-// the droid repair submenu's middle options being unreachable). The
-// workbench/equip pickers hit the same engine behaviour and defeat it by
-// parking the cursor off their listbox (ParkPickerCursorOffList in
-// menus_listbox.cpp); mirror that here. We warp to the top-left letterbox
-// corner rather than a computed off-list point on the panel because the
-// computer/droid dialog is label-rich (SetType/UpdateSkills paints skill and
-// resource readouts near the replies) and MoveMouseToPosition's hover->active
-// promotion crashes on a label — the corner is empty in every dialog variant
-// and trivially off any centred reply list at any resolution. Runs only from
-// the per-tick monitor (Update tick), never the input hook, because
-// MoveMouseToPosition recurses through the hover pipeline.
-//
-// The park must clear the engine's screen-edge camera-turn band. A cursor left
-// sitting in that band makes UpdateCamera accumulate-turn every frame once world
-// control returns, so the camera spins endlessly with no input and no cure but
-// restarting. This originally parked at x=2 and did exactly that after every
-// conversation (patch-20260724-230031.log: continuous 100-222 deg/s spin from
-// the moment a Bandon dialogue closed, while camera_spin_diag's guard — whose
-// band bottoms out at kMinBandPx — never fired because x=2 sat just outside it).
-// Keep kDialogParkX comfortably above that floor; y stays at the very top, where
-// the corner is empty in every dialog variant.
-constexpr int kDialogParkX = 24;
-constexpr int kDialogParkY = 2;
-
 bool ParkDialogCursorOffReplies(void* replyLb) {
-    void* gm = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!gm) return false;
     // Log the reply-list geometry so a bad park is diagnosable from the field
     // log without a repro on our end.
     auto* ext = reinterpret_cast<int*>(
         reinterpret_cast<unsigned char*>(replyLb) + kControlExtentOffset);
-    reinterpret_cast<PFN_MoveMouseToPosition>(kAddrMoveMouseToPosition)(
-        gm, kDialogParkX, kDialogParkY);
-    acclog::Write("Menus.DialogReply",
-                  "park cursor to top-left corner (%d,%d) [reply list x=%d y=%d "
-                  "w=%d h=%d] — neutralises engine hover-select, clear of the "
-                  "camera edge-turn band",
-                  kDialogParkX, kDialogParkY, ext[0], ext[1], ext[2], ext[3]);
-    return true;
+    acclog::Write("Menus.DialogReply", "reply list x=%d y=%d w=%d h=%d",
+                  ext[0], ext[1], ext[2], ext[3]);
+    return acc::menus::detail::ParkCursorToCorner("Menus.DialogReply");
 }
 
 bool IsDialogPanelKind(PanelKind k) {
