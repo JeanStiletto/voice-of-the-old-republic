@@ -1,12 +1,8 @@
-# camera_orient.h (26 lines)
+# camera_orient.h (30 lines)
 
-Camera-orient hotkey (N). Rotates camera to beacon target or next CW cardinal.
-Drive mechanism: synthesised A/D keypresses via DirectInput scancodes (SendInput
-with KEYEVENTF_SCANCODE). camera_announce stays muted while IsActive() is true.
+Header for the N-key camera-orient hotkey. Documents the SendInput-scancode drive mechanism (bound-key aware via engine_keymap, honours rebinds) and that camera_announce stays muted while a rotation is in flight, announcing only the final direction on release.
 
 ## Declarations (in source order)
 
-- L16 — `namespace acc::camera_orient`
-- L19 — `void Tick()`
-- L24 — `bool IsActive()`
-  note: true during auto-rotation AND while N hotkey is physically held; covers camera_announce mute window
+- L23 — `void Tick()` — per-tick poll + state-machine driver, cheap when idle
+- L28 — `bool IsActive()` — true while auto-rotation in flight; lets camera_announce distinguish player-held-turn from auto-drive

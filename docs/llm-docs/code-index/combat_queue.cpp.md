@@ -1,48 +1,51 @@
-# combat_queue.cpp (548 lines)
+# combat_queue.cpp (834 lines)
 
-Implements the Phase 3 combat action-queue submenu. Walks CSWSCombatRound.actions
-(CExoLinkedList) for every party member, builds a flat Row list, and handles
-Up/Down/Enter/Esc navigation. Tail-only remove via RemoveLastAction.
+Implements the Shift+H queue submenu and the live fire-announce. `BuildRows` sources the controlled creature's queue via `GetPlayerServerCreature` FIRST (party-table walk resolves only NPC roster slots — the PC never appears there), then appends every other party member's queue via `GetPartyMembers`. Each queued action is decoded via `VerbForActionType` (enum confirmed by decompiling `CSWGuiMainInterface::GetActionIcon`) with the specific ability name substituted for type 9/10/11 (force power / item / feat) via `BuildActionLabel`. `RemoveRow` is tail-only (`CSWSCombatRound::RemoveLastAction` is the engine's only public per-round primitive) — non-tail remove is an unimplemented "open" item. `OnEngineActionAdded` uses a `kUserAddWindowMs=250` freshness-window latch (`ArmUserQueueAdd`) to distinguish a user press from the engine's own auto-queued leader attack sharing the same `AddAction` path/round.
 
 ## Declarations (in source order)
 
-- L21 — `namespace acc::combat::queue`
-- L27 — `typedef int (__thiscall* PFN_RemoveLastAction)(void* combatRound)`
-- L29 — `constexpr uintptr_t kAddrCombatRoundRemoveLastAction`
-- L33 — `void* ReadCombatRound(void* serverCreature)`
-  note: reads CSWSCreature.combat_round @+0x9c8; SEH-guarded
-- L57 — `bool ReadNodeActionType(void* node, unsigned char& outType)`
-  note: reads action_type byte via node->data; returns false on null data or fault
-- L72 — `int CountQueueEntries(void* combatRound)`
-  note: walks linked list; skips 0xFF placeholder head nodes; returns real queued count
-- L102 — `void* GetQueueAction(void* combatRound, int index)`
-  note: returns CSWSCombatRoundAction* at 0-based index (skipping 0xFF placeholders); nullptr if out of range
-- L155 — `acc::strings::Id VerbForActionType(unsigned char actionType)`
-  note: maps action_type byte to a localized verb string ID; derived from GetActionIcon @0x686fb0 decompile
-- L168 — `bool ReadActionFields(void* action, unsigned char& outType, uint32_t& outTarget)`
-- L194 — `struct Row`
-  note: one entry in the flat queue list; carries creature, combatRound, perCreatureIdx/Count for tail-remove matching, and charName
-- L207 — `constexpr int kMaxRows`
-- L207 — `struct State`
-  note: full submenu state: active flag, focusIdx, count, Row array
-- L214 — `State g_state`
-- L222 — `void ResolveMemberName(uint32_t handle, bool isPC, char* outBuf, size_t bufSize)`
-  note: PC slot (index 0) falls back to GetPlayerCharacterName; others use GetObjectDisplayNameByHandle
-- L241 — `int BuildRows()`
-  note: rebuilds g_state.rows from live party engine state; fallback to leader-only when party table unreadable
-- L305 — `void SpeakRow(int idx)`
-  note: speaks "charName verb target, N von M" for the focused row
-- L349 — `bool RemoveRow(int idx)`
-  note: tail-only — only removes when perCreatureIdx == perCreatureCount-1; logs non-tail attempts as unimplemented
-- L376 — `bool ClearAllRows()`
-  note: iterates rows back-to-front calling RemoveLastAction on each; returns true if any succeeded
-- L398 — `bool IsActive()`
-- L400 — `void ForceDisarm(const char* reason)`
-- L409 — `bool Open()`
-  note: builds rows; speaks count + first row; returns false if empty
-- L432 — `bool HandleInputEvent(int code, int value)`
-  note: Up/Down navigates; Enter = tail-remove (Shift+Enter = clear-all); Esc = close; rebuilds rows on every press
-- L524 — `void Tick()`
-  note: auto-disarms when queue drains between ticks; obeys module-load latch
-- L538 — `void PollWin32Hotkey()`
-  note: opens on Action::CombatQueueOpen (Shift+H); self-gates on GetPlayerPosition
+- L31 — `namespace acc::combat::queue`
+- L37 — `typedef int (__thiscall* PFN_RemoveLastAction)(void* combatRound)`
+- L39-40 — `kAddrCombatRoundRemoveLastAction`
+- L43 — `void* ReadCombatRound(void* serverCreature)`
+- L65 — `constexpr int kMaxQueueWalk = 64`
+- L67 — `bool ReadNodeActionType(void* node, unsigned char& outType)`
+- L82 — `int CountQueueEntries(void* combatRound)`
+  note: skips the engine's leading 0xFF placeholder node (validated 2026-05-10)
+- L118 — `void* GetQueueAction(void* combatRound, int index)`
+- L175 — `acc::strings::Id VerbForActionType(unsigned char actionType)`
+  note: enum decoded from CSWGuiMainInterface::GetActionIcon @0x686fb0's case 0xc switch
+- L188 — `bool ReadActionFields(void* action, unsigned char& outType, uint32_t& outTarget)`
+- L210 — `unsigned short ReadActionFeatId(void* action)`
+- L224 — `int ReadActionSpellId(void* action)`
+- L238 — `uint32_t ReadActionItemHandle(void* action)`
+- L260 — `struct Row` (creature/combatRound/perCreatureIdx/perCreatureCount/charName)
+- L270 — `constexpr int kMaxRows = 32`
+- L273 — `struct State` (active/focusIdx/count/rows[]) / L280 `State g_state`
+- L288 — `void ResolveMemberName(uint32_t handle, char* outBuf, size_t bufSize)`
+- L300 — `int BuildRows()`
+  note: PC's queue sourced separately from GetPlayerServerCreature; fixed 2026-06-07 bug where party-walk alone left it empty
+- L380 — `void BuildActionLabel(void* action, char* out, size_t n)`
+  note: shared by SpeakRow and OnEngineActionAdded so both name an entry identically
+- L422 — `int RawRoundCount(void* combatRound)`
+  note: same field CountPlayerEntries reads, but on an arbitrary round
+- L444 — `void SpeakRow(int idx)`
+- L494 — `bool RemoveRow(int idx)`
+  note: tail-only; non-tail remove logs and returns false
+- L521 — `bool ClearAllRows()`
+  note: iterates rows back-to-front so each per-creature tail-remove matches RemoveLastAction
+- L543 — `int CountPlayerEntries()`
+  note: deliberately does NOT filter the 0xFF placeholder — must match the engine's raw cap-check count
+- L587 — `DWORD g_userAddArmTick`, `constexpr DWORD kUserAddWindowMs = 250`
+- L595 — `void ArmUserQueueAdd()`
+- L597 — `void OnEngineActionAdded(void* combatRound, void* action)`
+  note: attribution gate — only adds within 250ms of a user press are announced; engine auto-attacks stay silent
+- L650 — `int g_prePressDepth` / L653 `void ReportPrePressDepth()` / L657 `int GetPrePressDepth()`
+  note: consume-on-read so a press that skipped ReportPrePressDepth reads -1, not a stale value
+- L668 — `bool IsActive()`
+- L670 — `void ForceDisarm(const char* reason)`
+- L680 — `bool Open()`
+- L704 — `bool HandleInputEvent(int code, int value)`
+  note: Up/Down clamp (no wrap); Enter removes-and-reannounces; Shift+Enter clears all; Esc re-announces the unified menu if still open underneath instead of speaking "closed"
+- L810 — `void Tick()`
+- L824 — `void PollWin32Hotkey()`

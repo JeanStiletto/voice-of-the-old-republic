@@ -1,22 +1,37 @@
-# menus_chargen_attr.cpp (425 lines)
+# menus_chargen_attr.cpp (424 lines)
 
-Chargen Attributes panel accessibility implementation. Handles chain-step suffix (value/cost/modifier) and value-change announcement for the 6 ability scores.
+Implements the chargen Attributes-panel fixes: mirrors each ability button's
+matching label into the cycle-category cache ("Stärke, 8" instead of bare
+"8"), syncs chain focus into the engine's `selected_ability` so Left/Right
+targets the focused row (the engine only writes that field on a real mouse
+click), and speaks a computed modifier/cost suffix + the engine's own
+description text on each chain step. The modifier/cost math is hand-computed
+(D&D 3.5 floor rule + the engine's point-cost accessor) rather than read from
+the engine's labels because those refresh asynchronously and render a
+modifier of 0 as a bare "-" that sounds broken.
 
 ## Declarations (in source order)
 
-- L22 — `bool acc::menus::chargen_attr::IsChargenAttributesPanel(void* panel)`
-- L33 — `int acc::menus::chargen_attr::AbilityIndexFromButton(void* panel, void* control)`
-- L48 — `void acc::menus::chargen_attr::SyncSelectedAbilityFromChainFocus()`
-- L79 — `int acc::menus::chargen_attr::RowPitchForCursorWarp(void* panel, void* control)`
-- L105 — `void acc::menus::chargen_attr::CaptureLabelsIfApplicable(void* panel)`
-- L149 — `bool ReadLabelTextAt(void* panel, size_t offset, char* outBuf, size_t bufSize)` — SEH-guarded panel-offset label read (anonymous ns)
-- L179 — `bool ReadButtonTextDirect(void* button, char* outBuf, size_t bufSize)` — reads gui_string from a button (anonymous ns)
-- L211 — `int ParseAbilityValueText(const char* text)` — parses the numeric value from the engine's ability-value label string (anonymous ns)
-- L231 — `int ComputeAbilityModifier(int value)` — standard D&D modifier formula: (value-10)/2 (anonymous ns)
-- L244 — `typedef int (__thiscall* PFN_GetAbilityPointCost)(void* this_, int param)` (anonymous ns)
-- L246 — `int ReadEngineAbilityCost(void* panel, int currentValue)` — calls engine's point-cost thiscall (anonymous ns)
-- L268 — `void FormatModifier(int mod, char* outBuf, size_t bufSize)` — formats "+N" / "-N" / "0" (anonymous ns)
-- L280 — `void acc::menus::chargen_attr::AnnounceChainStepSuffix(void* panel, void* control)`
-- L322 — `struct ChangeTracker` + `ChangeTracker s_tracker` — tracks (panel, abilityIdx, lastValue) to detect changes (anonymous ns)
-- L329 — `void ResetTrackerIfPanelChanged(void* panel)` (anonymous ns)
-- L339 — `bool acc::menus::chargen_attr::AnnounceValueChange(void* panel, void* control)`
+- L22 — `namespace acc::menus::chargen_attr`
+- L24 — `bool IsChargenAttributesPanel(void* panel)`
+- L29 — `int AbilityIndexFromButton(void* panel, void* control)`
+- L37 — `void SyncSelectedAbilityFromChainFocus()`
+- L68 — `int RowPitchForCursorWarp(void* panel, void* control)`
+- L74 — `void CaptureLabelsIfApplicable(void* panel)`
+- L118 — `int ParseAbilityValueText(const char* text)` (anonymous ns)
+  note: tolerant of transient dash/empty renders; range-checked 1..30
+- L138 — `int ComputeAbilityModifier(int value)` (anonymous ns)
+  note: D&D 3.5 floor((value-10)/2), adjusted for true floor on negative deltas
+- L153 — `typedef PFN_GetAbilityPointCost` / `int ReadEngineAbilityCost(void* panel, int currentValue)` (anonymous ns)
+  note: param is the ability's CURRENT VALUE, not its index — verified after index-based calls always returned cost=1
+- L175 — `void FormatModifier(int mod, char* outBuf, size_t bufSize)` (anonymous ns)
+  note: renders 0 as bare "0" (engine's own "-" render sounds broken)
+- L198 — `bool AnnounceChainStepDescription(void* panel, void* control)`
+  note: calls the engine's OnEnterPointsButton directly keyed by the FOCUSED button — bypasses the cursor-warp hover hit-test, which resolves to the row above
+- L269 — `bool IsChargenAttributesDescriptionListbox(void* listBox)`
+  note: lets menus.cpp's listbox hook silence the engine's own hover-driven echo on this listbox
+- L278 — `void AnnounceChainStepSuffix(void* panel, void* control)`
+- L319-334 — `struct ChangeTracker` / `ChangeTracker s_tracker` (anonymous ns)
+  note: per-ability last-mod/last-cost; sentinel INT_MIN = "not yet tracked" (first observation seeds silently)
+- L337 — `bool AnnounceValueChange(void* panel, void* control)`
+  note: only announces modifier/cost when a +/- press tipped it across a breakpoint

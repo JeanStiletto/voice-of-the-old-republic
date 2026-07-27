@@ -1,18 +1,17 @@
-# menus_modsettings.h (122 lines)
+# menus_modsettings.h (128 lines)
 
-Public surface for the mod-settings virtual overlay (Options screen extension). Declares `namespace acc::menus::modsettings`.
+Header for the virtual "Mod Einstellungen" submenu. Documents the sentinel-pointer chain-entry design (never touches an engine-allocated control), that the submenu itself has no engine panel (menus.cpp's input hook routes keys through HandleInput while IsOpen()), and the three scaffolded toggle options.
 
 ## Declarations (in source order)
 
-- L1 — `namespace acc::menus::modsettings`
-- L10 — `enum class Option` — enumerates each settings option (toggle rows + AudioGlossary submenu row)
-- L20 — `void* GetRootAnchor()` — returns the address of the static s_rootSentinel byte; chain builder uses it as a virtual entry pointer
-- L22 — `bool IsRootAnchor(void* control)` — true when control == &s_rootSentinel
-- L24 — `void ForEachRootAnchor(void* panel, bool (*callback)(...), void* userData)` — invokes callback with the sentinel and synthetic sort coordinates (cx=180, cy=9000) when panel is InGameOptions or MainMenuOptions
-- L30 — `bool ExtractRootLabel(char* outBuf, size_t bufSize)` — fills outBuf with the localised "Mod settings" label
-- L34 — `void OpenSubMenu(void* parentPanel)` — opens the overlay, snapshots engine foreground, speaks opened cue + first option
-- L36 — `bool IsOpen()`
-- L38 — `void Close()` — closes overlay, speaks closed cue, rebinds chain on parent
-- L40 — `bool HandleInput(int keyCode)` — routes Up/Down/Enter/Esc; auto-closes on foreground divergence; blocks Left/Right/Home/End from reaching parent
-- L42 — `bool GetToggle(Option option)` — returns current toggle state; returns false for non-toggle rows
-- L44 — `void Tick()` — fires a pending audio-glossary sound cue after the 750 ms delay
+- L44 — `enum class acc::menus::modsettings::Option { ExtendedCycling, RoomShapes, WallSounds, HumanSubtitles, TurretAutoAim, SkipIntros, CueVolume, UrgentVolume, Keybindings, AudioGlossary, Count }`
+- L62 — `void* GetRootAnchor()`
+- L68 — `bool IsRootAnchor(void* control)`
+- L76 — `void ForEachRootAnchor(void* panel, bool(*callback)(void*,int,int,void*), void* userData)` — fires once for InGameOptions/MainMenuOptions
+- L84 — `bool ExtractRootLabel(char* outBuf, size_t bufSize)`
+- L88 — `void OpenSubMenu(void* parentPanel)`
+- L93 — `bool IsOpen()`
+- L98 — `void Close()`
+- L112 — `bool HandleInput(int keyCode)` — press-edges only; keyCode is the engine's kInput* value
+- L119 — `bool GetToggle(Option option)`
+- L126 — `void Tick()` — drives the Audio glossary's delayed-playback timer; safe to call unconditionally

@@ -1,25 +1,31 @@
-# guidance_beacon.cpp (203 lines)
+# guidance_beacon.cpp (266 lines)
 
-Implementation of the audio beacon. Fires 3D heartbeat cues at the next waypoint, 2D arrival cues on reach, advances the cursor, re-announces next-segment distance+direction after each reach, and auto-disarms on final arrival or player un-load.
+Drives Pillar 1 3D audio cues along a pathfinder waypoint sequence — Pillar 3
+Mode B's "audio guide" half. Fires a 3D-positional heartbeat cue toward the
+next waypoint every kHeartbeatMs, soft-knee compressing distant waypoints
+(beyond 18m) asymptotically toward the engine's ~20m audible ceiling along
+the listener-to-target ray so bearing stays exact while apparent distance
+stays hearable. On reaching a waypoint (3m tolerance) it fires a 2D-centred
+arrival cue (unaffected by camera pan/voice-budget), speaks the next segment's
+distance+compass, and advances; the final waypoint disarms with a distinct
+destination-reached cue. Talks to audio_bus (PlayCue 2D), audio_cue_player
+(PlayCue3D), engine_compass, and engine_player.
 
 ## Declarations (in source order)
 
 - L16 — `namespace acc::guidance::beacon`
-- L18 — `namespace { // anonymous`
-- L20 — `struct BeaconState`
-- L26 — `BeaconState g_state;`
-- L28 — `float DistXY(const Vector& a, const Vector& b)`
-- L40 — `constexpr float kBeaconHeartbeatGain = 8.0f;`
-  note: 2x kAccCueGain (8.0x linear = ~+18 dB) so the cue carries at 15–25m distances against falloff
-- L45 — `void EmitHeartbeat(const Vector& worldPos, const Vector& listenerPos)`
-  note: 3D-positional so the user can localise the next waypoint by pan + falloff
-- L61 — `void EmitArrivalCue(acc::audio::NavCue cue, const char* tag)`
-  note: 2D-centred (not positional) — user IS at the waypoint, so direction is moot and 2D always audible
-- L79 — `void SpeakNextSegment(const Vector& playerPos, const Vector& nextWp)`
-  note: called after each waypoint reach; interrupt=false to queue behind the just-emitted arrival cue
-- L100 — `} // namespace (anonymous)`
-- L102 — `void StartBeacon(const std::vector<Vector>& waypoints)`
-- L117 — `void CancelBeacon()`
-- L126 — `bool IsActive()`
-- L130 — `bool GetCurrentTarget(Vector& out)`
-- L137 — `void Tick()`
+- L20 — `struct BeaconState` — path/nextIdx/lastHeartbeat/active
+- L26 — `BeaconState g_state`
+- L28 — `float DistXY(const Vector&, const Vector&)`
+- L64-66 — `kHeartbeatKneeMeters=18`, `kHeartbeatCeilingMeters=20`, `kHeartbeatFarScaleMeters=40`
+- L68 — `Vector CompressHeartbeatPosition(const Vector& target, const Vector& listener)`
+  note: pure radial scale — direction/pan unchanged, only apparent distance bent.
+- L106 — `void EmitHeartbeat(const Vector& worldPos, const Vector& listenerPos)`
+  note: bypasses audio_cue_player's 80m range gate — the beacon must carry at any distance.
+- L124 — `void EmitArrivalCue(acc::audio::NavCue cue, const char* tag)` — 2D, not 3D
+- L142 — `void SpeakNextSegment(const Vector& playerPos, const Vector& nextWp)`
+- L165 — `void StartBeacon(const std::vector<Vector>& waypoints)` — public
+- L180 — `void CancelBeacon()` — public, idempotent
+- L189 — `bool IsActive()` — public
+- L193 — `bool GetCurrentTarget(Vector& out)` — public; used by camera_orient
+- L200 — `void Tick()` — public; reach-check, heartbeat cadence, auto-disarm on unload

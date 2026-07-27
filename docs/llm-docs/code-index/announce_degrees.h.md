@@ -1,11 +1,7 @@
 # announce_degrees.h (20 lines)
 
-On-demand exact-heading hotkey (AltGr / Right Alt). Speaks camera facing in
-compass degrees. In-world frame by default; map-frame when InGameMap is
-foreground. Uses Win32 polling because AltGr is unbound in stock kotor.ini.
+Public interface for the exact-heading hotkey. Camera (not character) facing is used because A/D rotates the camera and W only snaps the character on commit — every other orient cue references camera direction.
 
 ## Declarations (in source order)
 
-- L16 — `namespace acc::announce_degrees`
-- L18 — `void PollWin32()`
-  note: reads camera yaw and dispatches to world or map variant based on active panel
+- L18 — `void PollWin32()` — Win32-polled entry point (AltGr unbound in kotor.ini, engine keymap drops unbound scancodes)

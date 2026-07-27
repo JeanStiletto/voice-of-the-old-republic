@@ -1,11 +1,7 @@
 # audio_cue_player.h (28 lines)
 
-Single callsite for "play NavCue at position". Wraps audio::PlayCue3D with
-two shared gates: per-kind toggle from core_settings, and awareness-range cap.
-No per-NavCue debounce — change detector's per-feature cadence is the control.
+Header for the Pillar-1 cue-playback single callsite. Documents its two shared gates (per-kind toggle + per-call awareness-range cap) and explicitly notes there is no per-NavCue debounce here — the spatial change detector's per-feature last-cued-distance is the cadence control.
 
 ## Declarations (in source order)
 
-- L20 — `namespace acc::audio`
-- L23 — `bool PlayCueAtPosition(NavCue cue, const Vector& worldPos, const Vector& listenerPos, float rangeMax)`
-  note: returns true iff audio_bus accepted; false on gate reject or singleton miss.
+- L23 — `bool PlayCueAtPosition(NavCue cue, const Vector& worldPos, const Vector& listenerPos, float rangeMax)` — true iff audio_bus accepted; false on gate reject or singleton miss

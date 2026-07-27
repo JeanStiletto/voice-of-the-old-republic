@@ -1,18 +1,26 @@
-# menus_chargen_skills.cpp (354 lines)
+# menus_chargen_skills.cpp (277 lines)
 
-Chargen Skills panel accessibility implementation. Handles chain-step suffix (rank/cost/class-skill marker) and value-change announcement.
+Mirror of menus_chargen_attr.cpp for the chargen Skills panel
+(CSWGuiSkillsCharGen): mirrors skill_button → skill_label text into the
+cycle-category cache, syncs chain focus into `selected_skill_index`, and
+speaks a per-row cost suffix + description on chain step. Cost is computed
+via the engine's `IsClassSkill` predicate (1 = class skill, 2 = cross-class)
+rather than read from a label, matching the same refresh-timing avoidance
+used in the Attributes panel. No D&D modifier concept here (skills only have
+rank + flat cost).
 
 ## Declarations (in source order)
 
-- L21 — `bool acc::menus::chargen_skills::IsChargenSkillsPanel(void* panel)`
-- L32 — `int acc::menus::chargen_skills::SkillIndexFromButton(void* panel, void* control)`
-- L45 — `void acc::menus::chargen_skills::SyncSelectedSkillFromChainFocus()`
-- L76 — `void acc::menus::chargen_skills::CaptureLabelsIfApplicable(void* panel)`
-- L140 — `bool ReadButtonTextDirect(void* button, char* outBuf, size_t bufSize)` (anonymous ns)
-- L164 — `bool ReadLabelTextAt(void* panel, size_t offset, char* outBuf, size_t bufSize)` (anonymous ns)
-- L195 — `typedef int (__thiscall* PFN_IsClassSkill)(void* this_, unsigned short skillIdx)` (anonymous ns)
-- L197 — `int ReadEngineSkillCost(void* panel, int skillIdx)` — calls engine's thiscall to get the point cost for the skill (1 for class skills, 2 for cross-class) (anonymous ns)
-- L213 — `void acc::menus::chargen_skills::AnnounceChainStepSuffix(void* panel, void* control)`
-- L238 — `bool acc::menus::chargen_skills::AnnounceChainStepDescription(void* panel, void* control)`
-- L317 — `bool acc::menus::chargen_skills::IsChargenSkillsDescriptionListbox(void* listBox)`
-- L326 — `bool acc::menus::chargen_skills::AnnounceValueChange(void* panel, void* control)`
+- L20 — `namespace acc::menus::chargen_skills`
+- L22 — `bool IsChargenSkillsPanel(void* panel)`
+- L27 — `int SkillIndexFromButton(void* panel, void* control)`
+- L35 — `void SyncSelectedSkillFromChainFocus()`
+- L66 — `void CaptureLabelsIfApplicable(void* panel)`
+- L104 — `int RowPitchForCursorWarp(void* panel, void* control)`
+- L117 — `typedef PFN_IsClassSkill` / `int ReadEngineSkillCost(void* panel, int skillIdx)` (anonymous ns)
+- L135 — `void AnnounceChainStepSuffix(void* panel, void* control)`
+- L160 — `bool AnnounceChainStepDescription(void* panel, void* control)`
+  note: calls the engine's OnEnterPointsButton with the FOCUSED button — bypasses the hover hit-test, which is reliably off-by-one on this panel due to label overlap
+- L239 — `bool IsChargenSkillsDescriptionListbox(void* listBox)`
+- L248 — `bool AnnounceValueChange(void* panel, void* control)`
+  note: omits both label and cost from the re-announce — cost is constant per skill, already heard in the chain-step suffix

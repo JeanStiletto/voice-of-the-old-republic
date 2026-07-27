@@ -1,15 +1,18 @@
-# menus_store.h (100 lines)
+# menus_store.h (101 lines)
 
-Public surface for the store (merchant screen) accessibility module. Declares `namespace acc::menus::store`.
+Public surface for the store/trading panel module. Documents the two-mode
+listbox-visibility-bit design and that both buy/sell price checks are
+language-agnostic (no title/button text reads). Notes the chain still carries
+rows from both lists regardless of visible mode — filtering by mode is called
+out as a separate follow-up, not yet done.
 
 ## Declarations (in source order)
 
-- L1 — `namespace acc::menus::store`
-- L10 — `bool IsStorePanel(void* panel)`
-- L12 — `bool IsHiddenStoreListBox(void* panel, void* listBox)` — true when the given listbox is the inactive (hidden) buy/sell list; used by chain builder to skip it
-- L15 — `void AnnounceChainStepSuffix(void* panel, void* control)` — speaks price and stock after the item name when the user chains to a store row
-- L18 — `void TickMonitorMode()` — detects buy/sell mode changes, trade outcomes (list size delta), and polls the StoreModeToggle hotkey
-- L22 — `bool IsStoreItemRow(void* control)` — true when the control is a CSWGuiInventoryItemEntry-style store row
-- L25 — `void DispatchTradeAction(void* panel, void* row)` — calls engine's OnControlStoreAButton or OnControlInvAButton; pre-checks gold for buy; arms the trade outcome watcher
-- L29 — `bool ToggleModeFromHotkey()` — queues FireActivate on the toggle button when the StoreModeToggle hotkey fires
-- L32 — `bool CloseFromEsc()` — queues FireActivate on the cancel button when Esc is pressed on the store panel
+- L29 — `bool IsStorePanel(void* panel)`
+- L41 — `bool IsHiddenStoreListBox(void* panel, void* listBox)` — chain-recursion skip filter for the hidden shop/inv listbox
+- L50 — `void AnnounceChainStepSuffix(void* panel, void* control)` — price/stock speech after AnnounceControl; no-op on non-item rows
+- L63 — `void TickMonitorMode()` — mode-change speech + chain rebind on trade/mode-flip
+- L70 — `bool IsStoreItemRow(void* control)` — routes Enter to trade-action path vs generic FireActivate
+- L86 — `void DispatchTradeAction(void* panel, void* row)` — drain handler for Kind::StoreItemActivate; arms/reports the outcome watcher
+- L93 — `bool ToggleModeFromHotkey()`
+- L98 — `bool CloseFromEsc()`

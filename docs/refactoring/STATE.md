@@ -63,9 +63,17 @@ KOTOR 2 (TSL), which runs a very similar engine but a different executable
   - [x] Branch `refactor/pre-k2-cleanup` created
   - [x] STATE.md + reports/ + file-inventory.txt created
   - [ ] Plan improvements discussed with user, decisions recorded here
-  - [ ] Code index refreshed (docs/llm-docs/code-index is stale: 2026-06-07,
-        178 of 264 files) — needs user go-ahead (subagent fan-out)
-  - [ ] Build baseline captured (clean `kdev build`, warning count, .kpatch size)
+  - [x] Code index fully refreshed 2026-07-27 (user-approved fan-out, 15 Sonnet
+        agents): all 262 patch files re-indexed, 6 orphan entries for deleted
+        sources removed (actionbar_menu, radial_menu, target_action_menu),
+        _files.txt regenerated; NEW code-index/kdev/ (25 files) and
+        code-index/installer/ (42 files incl. ModInstallers/). Completeness
+        verified by scripted diff (sources ↔ .md, zero missing). Agents reported
+        heavy staleness in the old index — trust the new entries only.
+  - [x] Build baseline captured 2026-07-27: `kdev build --clean` OK — 178 TUs
+        in 121.3s, 0 compiler warnings, Accessibility.kpatch + loader
+        dinput8.dll produced. (178 TUs > 130 patch .cpp because the KPatchManager
+        framework wrapper TUs compile into the patch too.)
 - **Phase 1 — Structure audit.** Mod-wide structure: gigantic files
   (wall_topology 3404, menus 2269, turret_game 2072, strings.h 2003...),
   over-split files, misplaced responsibilities, naming/module-prefix
@@ -92,10 +100,21 @@ KOTOR 2 (TSL), which runs a very similar engine but a different executable
 
 - 2026-07-27: Infrastructure created; state file lives in-repo (survives
   sessions), moves to archiev/ at wrap-up.
-- (pending) Scope: patches/Accessibility only, or also tools/kdev + installer?
-- (pending) Merge strategy at the end (merge commit vs squash).
-- (pending) Whether Phase 3 and Phase 4 run as one per-file sweep with two
-  checklists (cheaper) or as two separate sweeps.
+- 2026-07-27: **Scope = everything**: patches/Accessibility (full treatment),
+  tools/kdev, and installer/KotorAccessibilityInstaller. User notes the
+  installer already had recent prep/cleanup work, so expect fewer findings there.
+- 2026-07-27: **Merge strategy: regular merge commit** (keep branch history
+  for bisectability).
+- 2026-07-27: **Phases 3+4 merged into ONE per-file sweep** with two explicit
+  checklists — general low-level cleanup AND a dedicated AI-pattern search per
+  file. Report keeps two separately approvable candidate sections. (Phase
+  numbering below unchanged; "Phase 3+4" is a single sweep.)
+- 2026-07-27: All plan suggestions from the 2026-07-27 report approved by user
+  (K2-portability lens in Phase 2, Phase-0 baseline, do-not-touch list,
+  approval workflow, Phase-1 items may defer to Phase 2).
+- 2026-07-27: Code-index refresh approved: full re-index of ALL patch files
+  (stale entries too), plus NEW index coverage for kdev (code-index/kdev/) and
+  installer (code-index/installer/). ~15 Sonnet agents.
 
 ## Codebase snapshot (2026-07-27)
 
@@ -116,3 +135,8 @@ KOTOR 2 (TSL), which runs a very similar engine but a different executable
 
 - 2026-07-27 (session 1): Branch + infrastructure created. Plan-improvement
   suggestions delivered to user; awaiting decisions.
+- 2026-07-27 (session 1, cont.): User decisions recorded (scope=all, merge
+  commit, phases 3+4 merged with explicit AI-pattern checklist). Build baseline
+  captured (0 warnings). Full code-index refresh executed and verified.
+  Phase 0 COMPLETE. Next action: start Phase 1 (structure audit) — user said
+  to report candidates before executing anything.

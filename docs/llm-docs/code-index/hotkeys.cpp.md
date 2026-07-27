@@ -1,32 +1,45 @@
-# hotkeys.cpp (504 lines)
+# hotkeys.cpp (763 lines)
 
-Hotkey registry implementation. Default bindings table (g_bindings), per-action edge state (g_edge: now/last/claimed), modifier sampling (ReadModifiers reads VK_SHIFT/CONTROL/MENU/RMENU), binding match logic (BindingMatches). InitDefaults fills the binding table in Action enum order. Describe() uses rotating 4-slot buffer.
+Implementation of the central hotkey registry (see hotkeys.h). Holds the
+default-binding table (`g_bindings`/`g_defaults`, indexed by `Action`), OS
+modifier reads, per-Action rising-edge state (`g_edge[]`, with a one-shot
+`claimed` guard for the manager-hook input window), and user-rebind
+persistence through `acc::settings` (key `Bind_<Name>`, format
+"vk,altVk,req,forbid"). `InitDefaults()` is the single lazy-init gate every
+public entry point routes through; binding order must track the `Action`
+enum exactly or presses silently misfire. Talks to `mod_settings_store` (user
+rebind persistence) and `log.h` (`PatchDir` gates when overrides load).
 
 ## Declarations (in source order)
 
-- L12 — `namespace acc::hotkeys`
-- L102 — `static bool IsDownVk(int vk)` (anonymous namespace)
-- L112 — `static uint32_t ReadModifiers()` (anonymous namespace)
-- L131 — `static bool BindingMatches(const Binding& b, uint32_t mods)` (anonymous namespace)
-- L150 — `static void InitDefaults()` (anonymous namespace)
-  note: fills g_bindings in Action enum order; guarded by g_inited flag
-- L296 — `void BeginTick()`
-- L304 — `void EndTick()`
-  note: shifts now→last; clears claimed flags
-- L313 — `bool IsForegroundGame()`
-- L321 — `bool Pressed(Action a)`
-- L330 — `bool Held(Action a)`
-- L337 — `void Consume(Action a)`
-- L346 — `void ClaimRisingEdge(Action a)`
-- L353 — `bool ShiftHeld()`
-- L357 — `bool CtrlHeld()`
-- L361 — `bool AltHeld()`
-- L365 — `bool AltGrHeld()`
-- L371 — `Binding Get(Action a)`
-- L378 — `void Set(Action a, Binding b)`
-  note: also resets edge state so a brand-new binding doesn't fire on held keys
-- L390 — `bool IsUserRebindable(Action a)`
-- L407 — `const char* Name(Action a)`
-- L415 — `static const char* VkLabel(int vk)` (anonymous namespace)
-  note: maps VK codes to human-readable strings; printable A-Z and 0-9 via thread_local buffers
-- L476 — `const char* Describe(Action a)`
+- L25 — `Binding g_bindings[Action::COUNT]` — the live table every call site reads
+- L31 — `Binding g_defaults[Action::COUNT]` — frozen factory defaults for reset
+- L43 — `struct EdgeState { bool now; bool last; bool claimed; }` + `g_edge[]`
+  note: `claimed` lets sites firing between EndTick/BeginTick (manager hook window) pre-suppress a rising edge Consume() can't reach yet
+- L53 — `const char* const kActionNames[]` — must stay in sync with the Action enum, one row per action
+- L131 — `bool IsDownVk(int vk)`
+- L141 — `uint32_t ReadModifiers()` — Shift/Ctrl/Alt/AltGr from GetAsyncKeyState, AltGr tracked independently from Alt
+- L160 — `bool BindingMatches(const Binding& b, uint32_t mods)`
+- L179 — `void InitDefaults()`
+  note: every default binding assignment for all ~75 Actions; comments document key-collision precedence (forbidden-mod carve-outs) per binding — see file for the full table
+- L408 — `void BindKey(Action a, char* out, size_t cap)` — "Bind_<Name>" settings key
+- L412 — `void SerializeBinding` / L419 `bool ParseBinding` — "vk,altVk,req,forbid" round-trip
+- L437 — `void EnsureOverridesLoaded()`
+  note: no-op until PatchDir() resolves; retries every BeginTick rather than locking in defaults on an early call
+- L465 — `void BeginTick()` — InitDefaults + EnsureOverridesLoaded + sample `now` edges from live modifiers
+- L474 — `void EndTick()` — shift now→last, clear claimed
+- L483 — `bool IsForegroundGame()`
+- L491 — `bool Pressed(Action a)` — rising edge AND foreground AND not claimed
+- L500 — `bool Held(Action a)`
+- L507 — `void Consume(Action a)` — forces last==now for the rest of this tick
+- L516 — `void ClaimRisingEdge(Action a)` — pre-claims the NEXT rising edge for pre-BeginTick callers
+- L523 — `bool ShiftHeld()` / `bool CtrlHeld()` / `bool AltHeld()` / `bool AltGrHeld()` / `uint32_t CurrentModifiers()`
+- L543 — `bool ModifiedComboOwns(int vk)`
+  note: deliberately does NOT re-check GetAsyncKeyState(vk) — called from engine hooks where the event itself proves the key was pressed, sidestepping a quick-tap release race
+- L571 — `Binding Get(Action a)` / L578 `void Set` / L590 `GetDefault` / L597 `SetUserBinding` / L608 `ResetUserBindings`
+- L624 — `Action FindConflict(Action self, int vk, uint32_t mods)` — configurator double-fire scan
+- L644 — `bool IsUserRebindable(Action a)` — excludes diagnostic probes + CameraStateProbe
+- L664 — `const char* Name(Action a)`
+- L670 — `const char* VkLabel(int vk)` — printable/spoken label table for common VKs, falls back to raw char or "?"
+- L725 — rotating `g_describeBufs[4][32]` for `Describe()`
+- L734 — `const char* Describe(Action a)` — builds "Ctrl+AltGr+Shift+Key" style string from a binding

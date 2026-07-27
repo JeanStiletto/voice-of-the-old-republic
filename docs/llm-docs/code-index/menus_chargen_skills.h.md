@@ -1,16 +1,20 @@
-# menus_chargen_skills.h (105 lines)
+# menus_chargen_skills.h (106 lines)
 
-Public surface for the chargen Skills panel accessibility module. Declares `namespace acc::menus::chargen_skills`.
+Public surface mirroring menus_chargen_attr.h for CSWGuiSkillsCharGen (8
+skills instead of 6 attributes, straight top-to-bottom struct order, flat
+class/cross-class cost instead of a D&D modifier).
 
 ## Declarations (in source order)
 
-- L1 — `namespace acc::menus::chargen_skills`
-- L10 — `bool IsChargenSkillsPanel(void* panel)`
-- L14 — `int SkillIndexFromButton(void* panel, void* control)` — maps a +/- button to 0-based skill index
-- L18 — `void SyncSelectedSkillFromChainFocus()` — re-stamps engine's selected_skill_index each tick to guard against cursor-warp overwrite race
-- L22 — `void CaptureLabelsIfApplicable(void* panel)` — snapshots skill label texts into the per-panel cache on first sight
-- L26 — `int RowPitchForCursorWarp(void* panel, void* control)` — y-pixel pitch for Options-style hit-test shift compensation
-- L30 — `void AnnounceChainStepSuffix(void* panel, void* control)` — speaks current rank, point cost, and class-skill marker on chain step
-- L34 — `bool AnnounceChainStepDescription(void* panel, void* control)` — speaks the skill description from the description listbox; returns true when announced
-- L38 — `bool IsChargenSkillsDescriptionListbox(void* listBox)` — true when the listbox is the skills-description listbox (used to suppress default listbox nav on it)
-- L42 — `bool AnnounceValueChange(void* panel, void* control)` — speaks updated rank and cost after + or - press; returns true when announced
+- L36 — `namespace acc::menus::chargen_skills`
+- L39 — `bool IsChargenSkillsPanel(void* panel)`
+- L45 — `int SkillIndexFromButton(void* panel, void* control)`
+  note: struct order Computer, Demolitions, Stealth, Awareness, Persuade, Repair, Security, Treat Injury
+- L54 — `void SyncSelectedSkillFromChainFocus()`
+- L58 — `void CaptureLabelsIfApplicable(void* panel)`
+- L64 — `int RowPitchForCursorWarp(void* panel, void* control)`
+- L72 — `void AnnounceChainStepSuffix(void* panel, void* control)`
+- L86 — `bool AnnounceChainStepDescription(void* panel, void* control)`
+  note: reads the description listbox directly rather than skill_descriptions[i] array (per the .cpp implementation)
+- L92 — `bool IsChargenSkillsDescriptionListbox(void* listBox)`
+- L103 — `bool AnnounceValueChange(void* panel, void* control)`

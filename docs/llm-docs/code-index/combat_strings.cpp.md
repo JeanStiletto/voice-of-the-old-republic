@@ -1,16 +1,15 @@
-# combat_strings.cpp (88 lines)
+# combat_strings.cpp (535 lines)
 
-Provides the MsgStrings instances for DE and EN. DE strings are engine-verified against
-patch-20260521-100345.log. EN is aliased to DE pending real-install capture (safe
-degradation: EN combat lines fall through to raw speech unfiltered).
-Non-ASCII encoded as Windows-1252 hex escapes to match engine's CExoString byte output.
+Six `MsgStrings` locale tables (kDe, kEn, kFr, kIt, kEs, kRu) built with positional initialisers matching combat_strings.h's declaration order, plus the `Get()` dispatcher keyed on `acc::strings::GetLanguage()`. Encoding is the game's own codepage — hex escapes are Windows-1252 for de/en/fr/it/es and Windows-1251 for Russian (the exception; `acc::strings::CodepageFor(Lang::Ru)` and `prism::SetSpeechCodepage` handle the split). Each non-DE table carries inline comments documenting per-locale quirks discovered while extracting anchors from that language's dialog.tlk (word order, missing copula, glued multiplier tokens, etc.) — e.g. Italian's "X" krit_x_prefix (multiplier-first), Russian's missing "to be" copula (status_ist_marker uses a `\x01` sentinel that can never occur in TLK text), French's " : " separator style requiring short anchors.
 
 ## Declarations (in source order)
 
-- L17 — `namespace acc::combat::loc`
-- L22 — `const MsgStrings kDe`
-  note: German engine-verified anchor strings + output labels; positional init order must match MsgStrings field declaration
-- L76 — `const MsgStrings kEn`
-  note: aliases kDe — EN engine-side anchors not yet verified; safe fallback is raw speech passthrough
-- L80 — `const MsgStrings& Get()`
-  note: returns kEn or kDe by acc::strings::GetLanguage(); falls back to kDe for unrecognised language
+- L22 — `namespace acc::combat::loc`
+- L27 — `const MsgStrings kDe` — German, engine-verified against patch-20260521-100345.log
+- L101 — `const MsgStrings kEn` — English; one flagged rough spot (BuildCompact's German word order for "critical")
+- L182 — `const MsgStrings kFr` — French; uses " : " separators instead of word-prefixes
+- L259 — `const MsgStrings kIt` — Italian; krit_x_prefix is bare "X" (multiplier-first word order)
+- L335 — `const MsgStrings kEs` — Spanish; multiplier glued directly to "Crítico" with no space
+- L433 — `const MsgStrings kRu` — Russian, Windows-1251; extracted from Allard 1.72's community-translated TLK which declares LanguageID=0 (English slot) despite being Cyrillic — detected by content-probe (`TlkLooksCyrillic` in core_dllmain.cpp), not the declared ID
+  note: no status-echo copula exists in Russian; status word is skipped rather than mis-captured (see quirk (b) comment)
+- L523 — `const MsgStrings& Get()`

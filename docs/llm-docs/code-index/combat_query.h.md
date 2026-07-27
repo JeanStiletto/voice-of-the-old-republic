@@ -1,25 +1,13 @@
-# combat_query.h
+# combat_query.h (33 lines)
 
-Read-only queries over creature stats and the examine panel. No engine re-entry beyond
-documented accessors. Each entry self-gates on player loaded.
-
-Surfaces: leader-change auto-announce; cycle/passive-narrate enrichment for
-Creature-kind targets; Ö Examine; bare-H self-status.
+Read-only combat queries over `creature_stats @+0xa74` and related engine surfaces. Surfaces: leader-change auto-announce (Tab speaks the new leader's name), cycle/passive-narrate target-brief enrichment for Creature-kind targets, and the bare-H self-status readout (HP/FP/effects/equipped weapons). Every entry self-gates on player-loaded.
 
 ## Declarations (in source order)
 
-- `namespace acc::combat::query`
-- `void TickLeaderChangeAutoAnnounce()`
-  note: polls active leader name; speaks name only on change
-- `bool BuildTargetCombatBrief(void* targetServerObject, const char* targetName, char* outBuf, size_t outBufSize)`
-  note: appends condition/distance/effects/weapons suffix to outBuf; Creature-kind only; called by Q/E cycle and Ö examine
-- L35 — `void HotkeyShiftH()`
-  note: Phase 2C — resolves LastTarget, speaks name+brief opener; examine text per-row via TickExaminePanel
-- L37 — `void TickExaminePanel()`
-  note: logs open/close edges only; speech is owned by HotkeyShiftH (opener) + menus_listbox kExamineSpec (rows)
-- L39 — `void PollWin32Hotkey()`
-  note: Win32 poll for Action::ExamineOpen (Ö); self-gates on player loaded
-- L42 — `void SpeakSelfStatus()`
-  note: bare-H self-status — HP + active effects (deduped) + equipped weapons; always self, no distance
-- L45 — `void PollWin32SelfStatusHotkey()`
-  note: Win32 poll for Action::SelfStatusAnnounce (H); gates on player loaded + no blocking UI panel
+- L15 — `namespace acc::combat::query`
+- L18 — `void TickLeaderChangeAutoAnnounce()`
+- L23 — `bool BuildTargetCombatBrief(void* targetServerObject, const char* targetName, char* outBuf, size_t outBufSize)`
+  note: caller has already resolved targetServerObject; not re-resolved here
+- L29 — `void SpeakSelfStatus()`
+  note: bare H — no name/distance (always self)
+- L31 — `void PollWin32SelfStatusHotkey()`

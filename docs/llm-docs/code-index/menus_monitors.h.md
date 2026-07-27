@@ -1,11 +1,10 @@
 # menus_monitors.h (59 lines)
 
-Public surface for general per-tick monitors (focus, panel-contents, dialog replies, sub-screen tracking). Declares `namespace acc::menus::monitors`.
+Header for the 3 general per-tick monitors (post-Step-5 cleanup). Documents that the 3 subsystem-paired monitors (Container/EquipPicker/give-mode-key) live in menus_listbox.cpp instead, co-located with the state they watch, and that `AnnounceControl` travels with the focus monitor because they share last-seen-state.
 
 ## Declarations (in source order)
 
-- L1 — `namespace acc::menus::monitors`
-- L10 — `void TickGeneralMonitors()` — drains pending announce, runs MonitorFocusedControl / MonitorPanelContents / MonitorDialogReplies, syncs chargen Attribute and Skills selected indices
-- L20 — `void AnnounceControl(void* control)` — speak the control's text now; also primes channel-0 dedup and writes monitor state
-- L25 — `void* FindActiveSubScreenPanel()` — scans manager panels[] for a known in-game sub-screen kind; returns first match or nullptr
-- L28 — `bool IsInGameSubScreenKind(PanelKind k)` — true when k is one of the 8 in-game sub-screen kinds tracked by AnnounceNewSubScreens
+- L40 — `void acc::menus::monitors::TickGeneralMonitors()` — called from menus.cpp's TickMonitors, itself called from core_tick::Dispatch
+- L45 — `void acc::menus::monitors::AnnounceControl(void* control)` — used by chain-step and Enter-on-text-only handlers in OnHandleInputEvent
+- L51 — `void* acc::menus::monitors::FindActiveSubScreenPanel()` — used by the drill router to retarget the chain onto whichever sub-screen just opened
+- L57 — `bool acc::menus::monitors::IsInGameSubScreenKind(acc::engine::PanelKind k)` — used by the Esc-drill handler

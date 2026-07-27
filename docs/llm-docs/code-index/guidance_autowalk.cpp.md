@@ -1,31 +1,31 @@
-# guidance_autowalk.cpp (562 lines)
+# guidance_autowalk.cpp (344 lines)
 
-Implementation of the autowalk primitives. Includes WalkTo (AddMoveToPointAction with detailed diagnostic field reads), ForceWalkTo (ForceMoveToPoint queue-bypass), UseObject (AddUseObjectAction — the primary player-walk path), CancelMovement, in-flight tracking, movement-key cancel polling, and the two-checkpoint progress watchdog.
+Pure dispatch primitives over CSWSCreature's movement/use action queue:
+WalkTo (AddMoveToPointAction, primed via ActionManager(8) — the missing step
+that made earlier standalone dispatches bail), ForceWalkTo (ForceMoveToPoint,
+bypasses the queue), UseObject (AddUseObjectAction / ACTION_USEOBJECT), and
+CancelMovement (ClearAllActions). Watching a dispatched walk to completion is
+NOT this file's job — that is guidance_approach's tracker, which callers arm
+after a successful dispatch. PollMovementKeysCancel reclaims manual control
+from any mod-armed walk when a bound movement key is held, gated on
+foreground-game and not self-tripping on camera_orient's snap-turn SendInput.
 
 ## Declarations (in source order)
 
-- L15 — `namespace acc::guidance`
-- L17 — `namespace { // anonymous`
-- L25 — `typedef unsigned int (__thiscall* PFN_AddMoveToPointAction)(...)`
-  note: full 17-arg signature for CSWSCreature::AddMoveToPointAction
-- L54 — `struct CSWSForcedAction`
-  note: 28-byte layout (static_assert-verified) for CSWSCreature::ForceMoveToPoint argument
-- L65 — `typedef void (__thiscall* PFN_ForceMoveToPoint)(void* this_, CSWSForcedAction* action);`
-- L73 — `struct WatchdogState`
-  note: diagnostic-only; captures dispatch baseline and fires t+1s/t+3s log lines; self-disengages
-- L83 — `WatchdogState g_watchdog;`
-- L98 — `struct InFlightState`
-  note: distinct from watchdog; tracks whether an acc-dispatched autowalk is still in flight for the toggle-cancel gate
-- L102 — `InFlightState g_inFlight;`
-- L107 — `void ArmWatchdog(const Vector& startPos, bool haveStart, const Vector& dest, const char* tag)`
-- L119 — `float HorizontalDistance(const Vector& a, const Vector& b)`
-- L125 — `} // namespace (anonymous)`
-- L127 — `bool WalkTo(const Vector& destination)`
-- L282 — `bool ForceWalkTo(const Vector& destination)`
-- L334 — `bool UseObject(unsigned long targetHandle, const Vector& destHint)`
-- L376 — `bool CancelMovement()`
-- L412 — `bool IsAutowalkInFlight()`
-- L416 — `void PollMovementKeysCancel()`
-  note: rising-edge gate prevents cancellation if W was already held at dispatch time
-- L473 — `void TickProgressWatchdog()`
-  note: also handles in-flight arrival check (dist < 1m clears g_inFlight); watchdog self-disengages after t+3s
+- L21 — `namespace acc::guidance`
+- L31 — `PFN_AddMoveToPointAction` — 17-arg __thiscall typedef
+  note: full signature decoded in investigation §Q3; internally releases any facing lock via SetLockOrientationToObject.
+- L60 — `struct CSWSForcedAction` — 28-byte layout (action_id/group_id/target_area/target_loc/target_object)
+- L71 — `PFN_ForceMoveToPoint` typedef
+- L81 — `float HorizontalDistance(const Vector&, const Vector&)`
+- L88 — `constexpr size_t kServerObjectAreaIdOffset = 0x8c`
+- L97 — `kAddrCSWSCreatureActionManager` (0x004f8770), `void PrimeActionManager(void*, int mode)`
+  note: mode 8=move/walk; the native click-to-move handler always calls this before AddMoveToPointAction — omitting it left field427 stuck at 2.
+- L109 — `int ReadServerObjInt(void*, size_t off, int dflt)`
+- L121 — `bool WalkTo(const Vector& destination)` — public
+  note: passes secondary=(0,0,0) WITH priming to force full A* pathfind instead of the LOS direct-move shortcut.
+- L211 — `bool ForceWalkTo(const Vector& destination)` — public
+- L257 — `bool UseObject(unsigned long targetHandle)` — public
+- L285 — `bool CancelMovement()` — public; ClearAllActions(0)
+- L310 — `void PollMovementKeysCancel()` — public
+  note: engine-initiated movement never arms the tracker, so this can only ever cancel a mod-dispatched walk.

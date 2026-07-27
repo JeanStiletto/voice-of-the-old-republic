@@ -1,16 +1,14 @@
-# narrated_target.h (48 lines)
+# narrated_target.h (49 lines)
 
-Unified "last narrated target" slot header. Whichever narration channel spoke a bare target name most recently owns the activation target. Stamp sites: passive_narrate, cycle_input, view_mode hover-pause. Non-name narration does NOT stamp.
+Declares the unified narrated-target slot shared across narration channels.
+Non-name narration (pre-rolls, empty-state phrases, heading/turn/beacon
+waypoints) deliberately does NOT stamp — only channels that spoke a bare
+target name do.
 
 ## Declarations (in source order)
 
-- L24 — `namespace acc::narrated_target`
-- L26 — `struct Slot`
-  note: obj is CSWSObject* OR CSWCMapPin*; handle=0 for map pins; pos is frozen stamp-time position (only meaningful for map pins); isMapPin discriminates the two shapes
-- L36 — `void Stamp(void* obj, uint32_t serverHandle);`
-  note: both args must be server-side; no-ops on zero/sentinel handles
-- L39 — `void StampMapPin(void* pin, const Vector& pos);`
-  note: pos frozen at stamp time since map pins don't move
-- L41 — `void Clear();`
-- L46 — `bool TryGet(Slot& out);`
-  note: re-validates on every read; clears stale slots (destroyed object, area-switch without Clear, pin removed from map_pins[])
+- L26-L32 — `struct Slot { obj, handle, pos, tickStamp, isMapPin }`
+- L36 — `void Stamp(void* obj, uint32_t serverHandle)` — both args must be server-side (use `engine::GetObjectHandle` if only a client-side handle is on hand)
+- L39 — `void StampMapPin(void* pin, const Vector& pos)`
+- L41 — `void Clear()`
+- L46 — `bool TryGet(Slot& out)` — false + zeroed out on stale slots (destroyed object, area switch, pin removed)

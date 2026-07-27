@@ -1,9 +1,11 @@
-# party_leader_announce.h (17 lines)
+# party_leader_announce.h (18 lines)
 
-Tab leader-change announce. Speaks the new controlled creature's name on Tab rising-edge. Repetition is intentional — solo Tab confirms "still solo". Fires in panels too (engine strip re-binds to new leader).
+Header for the Tab leader-change announce. Documents that repetition on a
+same-creature (solo-party) Tab press is intentional UX confirmation, and that
+the announce is wanted in both world and UI panel contexts since strip panels
+re-bind to the new leader too.
 
 ## Declarations (in source order)
 
-- L12 — `namespace acc::party_leader_announce`
 - L15 — `void Tick()`
-  note: foreground + player-loaded gates inside; delayed by kPendingWindowTicks=6 to wait for engine leader-swap
+  note: foreground + player-loaded gates are internal; caller just calls every tick.

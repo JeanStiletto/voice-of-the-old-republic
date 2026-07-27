@@ -1,19 +1,18 @@
-# combat.h (35 lines)
+# combat.h (44 lines)
 
-Poll-based combat event narration. Channels: combat mode entry/exit (debounced),
-combat log (messages_listbox poll via CGuiInGame), attack resolution (attacks_list[7]
-diff), saving throws (skeleton). Each Tick is cheap and idle when nothing is happening.
+Public surface for combat-mode entry/exit narration and the combat-log message-bus glue. Distinguishes `IsCombatActive` (controlled-leader-only global) from `IsPartyInCombat` (encounter-level OR across the party) — callers that must not flip on a mid-fight Tab should prefer the latter. The four `Tick*` functions are cheap/idle no-ops absent activity; each flushes a specific debounced burst (absorb, deflect, merged ability/grenade/force effects).
 
 ## Declarations (in source order)
 
-- L19 — `namespace acc::combat`
-- L22 — `bool IsCombatActive()`
-  note: cross-feature gate; returns false on chain fault, not only on peaceful state
-- L24 — `void TickCombatMode()`
-  note: Phase 1A — debounced combat-mode enter/exit; speaks CombatBegins / CombatEnds
-- L25 — `void TickCombatLog()`
-  note: Phase 1B — polls CSWGuiInGameMessages.messages_listbox for new rows (log-only, no speech — live narration is via OnAppendToMsgBuffer hook)
-- L29 — `void TickAttackResolutions()`
-  note: Phase 4A — player creature only; diffs attacks_list[7] for 0->resolved transitions
-- L33 — `void TickSavingThrows()`
-  note: Phase 4B skeleton — no-op; real signal needs hook on SavingThrowRoll
+- L16 — `namespace acc::combat`
+- L25 — `bool IsCombatActive()`
+  note: mirrors only the controlled leader's combat bit; flips to peace on Tab to a not-yet-engaged member
+- L26 — `bool IsPartyInCombat()`
+  note: OR of every party member's per-creature combat bit; the stable "encounter active" signal
+- L28 — `void TickCombatMode()`
+  note: debounced begin/end "Kampf beginnt"/"Kampf beendet" cue + menu auto-close
+- L29 — `void TickCombatLog()`
+  note: diagnostic-only poll of the messages listbox; live narration comes from the OnAppendToMsgBuffer hook instead
+- L33 — `void TickCombatAbsorb()`
+- L38 — `void TickCombatDeflect()`
+- L42 — `void TickCombatEffects()`

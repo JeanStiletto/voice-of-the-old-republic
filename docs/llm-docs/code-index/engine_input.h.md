@@ -1,29 +1,21 @@
-# engine_input.h (44 lines)
+# engine_input.h (133 lines)
 
-Engine input-code translation. Pure read-side; no engine state access.
+Engine input-code translation + DirectInput acquire/release control surface (pure read-side plus the SetActive drive primitives). Also carries file-scope (non-namespaced) pre-translation input-code constants used by menu hooks.
 
 ## Declarations (in source order)
 
-- L4 — `namespace acc::engine`
 - L8 — `const char* InputIndexName(int code)`
-  note: returns human-readable name for InputIndices enum values; "?" for unknown, "INPUTDEVICE_NONE" for -1
-- L12 — `int ManagerTranslateCode(int code)`
-  note: translates KOTOR logical-action codes that CSWGuiManager::HandleInputEvent rewrites; unknown codes pass through unchanged
-- L17 — `constexpr int kInputNavUp    = 0xb6`
-- L18 — `constexpr int kInputNavDown  = 0xb7`
-- L19 — `constexpr int kInputNavLeft  = 0xb8`
-- L20 — `constexpr int kInputNavRight = 0xb9`
-- L21 — `constexpr int kInputEnter1   = 0xb5`
-- L22 — `constexpr int kInputEnter2   = 0xbb`
-- L23 — `constexpr int kInputEsc1     = 0xb4`
-- L24 — `constexpr int kInputEsc2     = 0xdf`
-- L25 — `constexpr int kInputActivate = 0x27`
-  note: KEYBOARD_F1; the engine's activate code post-translation
-- L30 — `constexpr int kInputHome     = 32`
-- L31 — `constexpr int kInputEnd      = 33`
-- L36 — `constexpr int kInputKbLeftShift  = 24`
-- L37 — `constexpr int kInputKbRightShift = 25`
-- L38 — `constexpr int kInputKbComma      = 103`
-- L39 — `constexpr int kInputKbPeriod     = 104`
-- L40 — `constexpr int kInputKbAnnounce   = 105`
-  note: physical key right of `.` (KEYBOARD_SLASH) — labelled `-` on QWERTZ, `/` on QWERTY; contiguous with `,` `.`
+- L13 — `int ManagerTranslateCode(int code)`
+- L29 — `bool EnsureInputAcquired()` — cold-start DirectInput wake, byte-for-byte HideLoadScreen replica
+- L45 — `bool ForceReacquireInput()` — forced 0->1 edge, software equivalent of alt-tab
+- L56 — `bool ReleaseInput()` — deactivate half, makes input mirror foreground
+- L75 — `void RequestInputReacquire()` — set-only, coalescing, safe from any thread
+- L84 — `void RequestInputRelease()` — counterpart for focus-loss
+- L89 — `void DrainPendingReacquire()` — call once per tick from the engine thread
+- L95-98 — `kInputNavUp=0xb6`, `kInputNavDown=0xb7`, `kInputNavLeft=0xb8`, `kInputNavRight=0xb9`
+- L99-103 — `kInputEnter1=0xb5`, `kInputEnter2=0xbb`, `kInputEsc1=0xb4`, `kInputEsc2=0xdf`, `kInputActivate=0x27`
+- L109 — `kInputDefaultAction = 0xef` — keymap.2da `DefaultAction` row (default key R), keyboard twin of Mouse 1
+- L114-115 — `kInputHome=32`, `kInputEnd=33` — raw InputIndices, no [Keymapping] entry in stock ini
+- L121-122 — `kInputCatFirst=0x201`, `kInputCatLast=0x202` — internal routing codes (NOT engine InputIndices), synthesised by interact_hotkey for Ctrl+Home/End category jump
+- L128-132 — `kInputKbLeftShift=24`, `kInputKbRightShift=25`, `kInputKbComma=103`, `kInputKbPeriod=104`, `kInputKbAnnounce=105`
+  note: kInputKbAnnounce keeps `,` `.` `-`/`/` contiguous across QWERTZ/QWERTY

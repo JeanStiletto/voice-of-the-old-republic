@@ -1,20 +1,24 @@
-# combat_queue.h (37 lines)
+# combat_queue.h (78 lines)
 
-Combat action-queue submenu (Phase 3). Active mode: Open speaks count, Up/Down cycles
-entries, Enter removes focused tail entry, Shift+Enter clears all, Esc closes.
-Self-disarms when queue empties between ticks. Positional (non-tail) remove is unresolved.
+The Shift+H combat action-queue submenu: Open speaks depth, Up/Down cycles entries with clamped focus, Enter removes the focused (tail-only — the engine exposes no positional-remove primitive), Shift+Enter clears all, Esc closes (returning to the unified action menu if it's still open underneath). Also owns the "X, Platz N"/"Warteschlange voll" fire-announce plumbing consumed by the `combat_diag`-hooked `AddAction` detour, gated by a user-press freshness-window latch so engine auto-attacks stay silent.
 
 ## Declarations (in source order)
 
 - L20 — `namespace acc::combat::queue`
-- L24 — `bool Open()`
-  note: builds flat row list from party; speaks count + first row; returns false (and speaks "leer") if queue empty
-- L26 — `bool IsActive()`
-- L28 — `bool HandleInputEvent(int code, int value)`
-  note: press-edge only; rebuilds rows on every keypress to stay consistent with engine-draining the queue between ticks
-- L31 — `void ForceDisarm(const char* reason)`
-  note: resets active state without engine-side cleanup (engine owns the queue)
-- L33 — `void Tick()`
-  note: auto-disarms if queue drains between keypresses; also obeys module-load latch
-- L34 — `void PollWin32Hotkey()`
-  note: opens queue on Action::CombatQueueOpen (Shift+H); self-gates on GetPlayerPosition
+- L26 — `int CountPlayerEntries()`
+  note: raw engine count including the 0xFF placeholder — matches AddAction's own cap check
+- L36 — `void ReportPrePressDepth()`
+- L41 — `int GetPrePressDepth()`
+  note: consume-on-read; -1 sentinel means no bare-key dispatch happened this press
+- L50 — `void ArmUserQueueAdd()`
+  note: refresh-on-arm, no consume — a rapid press burst all announce
+- L61 — `void OnEngineActionAdded(void* combatRound, void* action)`
+  note: authoritative announce, called from the AddAction detour
+- L65 — `bool Open()`
+  note: returns false (speaks "leer") when queue is empty — does not arm
+- L67 — `bool IsActive()`
+- L70 — `bool HandleInputEvent(int code, int value)`
+  note: press-edge only
+- L73 — `void ForceDisarm(const char* reason)`
+- L75 — `void Tick()`
+- L76 — `void PollWin32Hotkey()`

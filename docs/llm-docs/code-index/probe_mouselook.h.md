@@ -1,22 +1,14 @@
-# probe_mouselook.h (46 lines)
+# probe_mouselook.h (47 lines)
 
-Phase 4 lay-off 2 — view-mode "Mouse Look" probe.
-
-Diagnostic-only hotkey: Shift+AltGr toggles `CClientOptions.mouse_look`
-and announces the new state. Intended to answer the long-term-plan question
-"does forcing engine Mouse Look ON give us 90% of view mode for free?".
-
-Once the probe has informed the view-mode design, this file goes away or the
-hotkey rebinds to the actual view-mode toggle.
-
-Key choice rationale: AltGr alone is `announce_degrees`; Shift+AltGr is
-unbound by stock kotor.ini and rare in German typing. Same Win32-polling
-rationale as other unbound probes.
+Header for the view-mode "Mouse Look" feasibility probe. Notes the file is
+intended to go away (or the hotkey rebinds to a real view-mode toggle) once
+the probe has answered its question. Documents the Shift+AltGr key choice
+(AltGr alone is `announce_degrees`; Shift+AltGr avoids collision and is
+unbound/rare in German typing).
 
 ## Declarations (in source order)
 
-- L26 — `namespace acc::probe_mouselook`
 - L34 — `void PollWin32()`
-  note: reads Shift+AltGr rising edge, toggles mouse_look, logs pre/post/readback, speaks cue, starts synthetic sweep on toggle-to-ON
+  note: toggles engine Mouse Look, speaks on/off, kicks off TickSweep when landing ON.
 - L44 — `void TickSweep()`
-  note: per-tick driver for the synthetic mouse-sweep state machine (park-at-apex shape: 0.3s ramp → 1.5s hold → 0.3s ramp back); cheap when idle
+  note: emits SendInput relative-motion deltas at tick cadence over ~2.1s total; listener is camera-anchored, so audible panning during the sweep confirms mouse motion drives camera rotation.

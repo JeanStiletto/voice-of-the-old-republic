@@ -1,10 +1,15 @@
-# swoop_race.h (33 lines)
+# swoop_race.h (35 lines)
 
-Swoop race minigame accessibility. Polls CSWCArea.mini_game (+0x264) once per tick. Entry/exit announce + keybind cheat sheet; gear-shift announce; continuous obstacle/accelerator-pad cues. Latches the CSWMiniGame pointer on first detect to avoid churn during race-start transition.
+Public surface for the swoop-race minigame accessibility module: a per-tick
+poll of `CSWCArea.mini_game`, entry/exit narration, and hand-off to
+`swoop_spatial_audio` for continuous obstacle/accelpad cues. Documents the
+CSWMiniGame/CSWMiniPlayer offsets used by the .cpp and the detection
+rationale (engine pointer, not area-tag, because CSWMiniGame is shared with
+the turret minigame — distinguished by `type` 1 vs 2).
 
 ## Declarations (in source order)
 
-- L26 — `namespace acc::swoop_race`
-- L29 — `void Tick()`
-  note: no-op when not in a minigame; cheap when idle
-- L31 — `bool IsActive()`
+- L28 — `namespace acc::swoop_race`
+- L31 — `void Tick()`
+  note: no-op when not in a minigame; called every engine tick
+- L33 — `bool IsActive()`

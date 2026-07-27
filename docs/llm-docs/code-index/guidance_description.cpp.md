@@ -1,24 +1,22 @@
 # guidance_description.cpp (194 lines)
 
-Implementation of the turn-by-turn path description. Builds merged segment list via SegmentBuilder, formats per-segment "{metres} Meter {direction}", assembles the route header, and speaks via Prism.
+Turn-by-turn TTS readout of a computed waypoint path: builds merged compass-
+sector segments (SegmentBuilder folds consecutive same-sector hops so a long
+corridor reads as one "20 metres north" instead of five short ones; sub-1m
+hops accumulate into a pending bucket rather than being classified) and
+speaks "Route to <target>: total <N>m: <seg1>, <seg2>, ... <transition
+note>." Handles empty-path ("no path") and already-there (all-sub-threshold)
+cases. Talks to engine_compass (EngineYawToCompass/CompassToSector) and
+prism.
 
 ## Declarations (in source order)
 
 - L12 — `namespace acc::guidance::description`
-- L14 — `namespace { // anonymous`
-- L16 — `constexpr float kMinSegmentMeters = 1.0f;`
-  note: hops shorter than this are accumulated into a pending bucket and merged, not spoken independently
-- L18 — `constexpr float kRadToDeg = 57.29577951308232f;`
-- L20 — `struct Segment`
-  note: one merged compass sector + distance in metres
+- L16 — `constexpr float kMinSegmentMeters = 1.0f`
+- L20 — `struct Segment { int sector; float dist; }`
 - L29 — `int CompassSectorOf(float dx, float dy)`
-  note: converts a displacement vector to an 8-point compass sector (0..7) via EngineYawToCompass + CompassToSector
-- L42 — `class SegmentBuilder`
-  note: stateful builder that folds consecutive same-sector hops and accumulates sub-threshold hops into a pending bucket
-- L44 — `    void AddHop(float dx, float dy)`
-- L74 — `    const std::vector<Segment>& Segments() const`
-- L76 — `    float Pending() const`
-- L85 — `int FormatSegment(const Segment& seg, char* outBuf, size_t outBufSize)`
-- L97 — `int TotalMetres(const std::vector<Segment>& segs, float pending)`
-- L105 — `} // namespace (anonymous)`
-- L107 — `bool Speak(const Vector& playerPos, const std::vector<Vector>& waypoints, const char* targetName, bool isTransition, bool interrupt)`
+- L42 — `class SegmentBuilder` — `AddHop`, `Segments()`, `Pending()`
+  note: sub-threshold hops accumulate in pending_ and attach to whichever segment (same-sector merge or new) follows.
+- L85 — `int FormatSegment(const Segment&, char* outBuf, size_t)`
+- L97 — `int TotalMetres(const std::vector<Segment>&, float pending)`
+- L107 — `bool Speak(const Vector& playerPos, const std::vector<Vector>& waypoints, const char* targetName, bool isTransition, bool interrupt)` — public

@@ -1,49 +1,36 @@
-# menus_listbox.cpp (1779 lines)
+# menus_listbox.cpp (1982 lines)
 
-Listbox accessibility dispatcher TU. Contains the `ListBoxPanelSpec` spec table, all spec entries (Container, SaveLoad, EquipPicker, SkillInfoBox, InGameMessages, four dialog variants, WorkbenchItems, WorkbenchUpgrade, Examine), the generic dispatcher, and co-located subsystem monitors.
+Spec-table dispatcher for every "arrow-drives-a-listbox, Enter-confirms, Esc-backs-out" panel: Container (loot), SaveLoad, EquipPicker, SkillInfoBox (chargen feat-granted popup + in-world level-up hint), InGameMessages (combat log), 4 dialogue-reply variants (Cinematic/CinematicCopy/Computer/ComputerCamera — cursor-drive only, speech owned by a separate monitor), WorkbenchItems, WorkbenchUpgrade, Examine, ScriptSelect (character-sheet AI-behaviour picker). Each panel is one `ListBoxPanelSpec` value (matches/armed/findListBox/announce/enrichRow/onEnter/onEsc/titleOverride/emptyStateId/alwaysReturnFromHandler/minSelFn/useEngineSelect callbacks); `TryHandleInput` walks the table generically. Also owns 3 per-tick "subsystem-paired" monitors co-located with their spec's state: `MonitorContainerSelection`, `MonitorEquipPickerSelection` (+ `ParkPickerCursorOffList` for both equip and workbench pickers), `MonitorWorkbenchUpgradePicker`, `PollContainerGiveModeKey`. Talks to `menus_extract` (FromControl row text), `menus_pending` (deferred button activation), `menus_internal` (DriveListBoxSelection[Engine], FindControlById), `engine_levelup`, `transitions` (external-load latch on SaveLoad-load).
 
 ## Declarations (in source order)
 
-- L82 — `bool acc::menus::listbox::IsEquipPickerArmed()`
-- L83 — `void* acc::menus::listbox::EquipPickerPanel()`
-- L85 — `void acc::menus::listbox::ArmEquipPicker(void* panel)`
-- L90 — `void acc::menus::listbox::DisarmEquipPicker()`
-- L95 — `bool acc::menus::listbox::IsWorkbenchUpgradePickerArmed()`
-- L97 — `void acc::menus::listbox::ArmWorkbenchUpgradePicker(void* panel)`
-- L102 — `void acc::menus::listbox::DisarmWorkbenchUpgradePicker()`
-- L114 — `struct ListBoxPanelSpec` — spec fields: logTag, matches, armed, resetStale, findListBox, minSel, announce, enrichRow, logExtra, onEnter, onEsc, titleOverride, emptyStateId, alwaysReturnFromHandler (anonymous ns, private to TU)
-- L214 — `bool ContainerMatches(void* p)` — Container spec helper (anonymous ns)
-- L275 — `constexpr ListBoxPanelSpec kContainerSpec`
-- L296 — SaveLoad spec static helper functions (anonymous ns)
-- L353 — `constexpr ListBoxPanelSpec kSaveLoadSpec`
-- L376 — EquipPicker spec static helper functions: `EquipPickerMatches`, `EquipPickerArmed`, `EquipPickerResetStale`, `EquipPickerFindLb`, `EquipPickerAnnounce`, `EquipPickerEnrichRow`, `EquipPickerOnEnter`, `EquipPickerOnEsc` (anonymous ns)
-- L471 — `constexpr ListBoxPanelSpec kEquipPickerSpec`
-- L514 — SkillInfoBox spec helper functions (anonymous ns)
-- L713 — `constexpr ListBoxPanelSpec kSkillInfoBoxSpec`
-- L743 — InGameMessages spec helper functions (anonymous ns)
-- L770 — `constexpr ListBoxPanelSpec kInGameMessagesSpec`
-- L794 — Dialog spec helper functions (anonymous ns) + `kDialogCinematicSpec`, `kDialogCinematicCopySpec`, `kDialogComputerSpec`, `kDialogComputerCameraSpec`
-- L910 — WorkbenchItems spec helper functions: `WorkbenchItemsMatches`, `WorkbenchItemsFindLb`, `WorkbenchItemsAnnounce`, `WorkbenchItemsOnEnter`, `WorkbenchItemsOnEsc` (anonymous ns)
-- L960 — `constexpr ListBoxPanelSpec kWorkbenchItemsSpec`
-- L1003 — WorkbenchUpgrade spec helper functions: `WorkbenchUpgradeMatches`, `WorkbenchUpgradeArmed`, `WorkbenchUpgradeResetStale`, `WorkbenchUpgradeFindLb`, `WorkbenchUpgradeAnnounce`, `WorkbenchUpgradeOnEnter`, `WorkbenchUpgradeOnEsc` (anonymous ns)
-- L1093 — `constexpr ListBoxPanelSpec kWorkbenchUpgradeSpec`
-- L1130 — Examine spec helper functions: `ExamineMatches`, `ExamineFindLb`, `ExamineAnnounce` (anonymous ns)
-- L1153 — `constexpr ListBoxPanelSpec kExamineSpec`
-- L1175 — `constexpr const ListBoxPanelSpec* kSpecs[]` — 12-entry ordered spec table
-- L1192 — `constexpr int kNumSpecs`
-- L1199 — `bool DispatchKeyDownEdge(const ListBoxPanelSpec& spec, void* panel, int param_1)` — handles Up/Down/Home/End/Enter/Esc for a matched spec (anonymous ns)
-- L1255 — `void LogStandard(int n, void* thisPtr, int param_1, int param_2, bool consumed)` — shared log helper (anonymous ns)
-- L1274 — `bool acc::menus::listbox::TryHandleInput(int n, void* thisPtr, void* activePanel, int param_1, int param_2, int& outRv)`
-- L1329 — `struct ContainerSelState` + `ContainerSelState s_containerSelState` (anonymous ns)
-- L1337 — `struct EquipSelState` + `EquipSelState s_equipSelState` (anonymous ns)
-- L1343 — `void MonitorContainerSelection()` — per-tick; arms on Container panel entry, announces row text on selection change (anonymous ns)
-- L1447 — `void MonitorEquipPickerSelection()` — per-tick; arms on InGameEquip panel entry, announces equipped item on selection change (anonymous ns)
-- L1542 — `void MonitorWorkbenchUpgradePicker()` — per-tick; disarms picker when upgrade.gui panel leaves panels[] (anonymous ns)
-- L1569 — `void PollContainerGiveModeKey()` — polls ContainerGiveMode hotkey; queues FireActivate on BTN_GIVEITEMS (anonymous ns)
-- L1594 — `void acc::menus::listbox::TickListboxMonitors()`
-- L1601 — `const char* acc::menus::listbox::GetTitleOverride(void* panel)` — probes spec table for titleOverride callback
-- L1616 — `void* s_loggedFeatsPanel` (anonymous ns)
-- L1623 — `int FeatNameStrref(unsigned short featId)` — reads feat name strref from engine rules table for diagnostic logging (anonymous ns)
-- L1641 — `void DumpUshortListSEH(unsigned char* base, size_t dataOff, size_t sizeOff, const char* tag)` — logs a ushort list field from CSWGuiFeatsCharGen (anonymous ns)
-- L1677 — `void DumpChartCells(void* fcp)` — logs the full SkillFlow chart cell grid (anonymous ns)
-- L1744 — `void acc::menus::listbox::DumpFeatsCharGenStructureIfNeeded(void* panel)`
+- L55-61 — `constexpr int kContainerBtnOkId/GiveId/CancelId, kSaveLoadLbGamesId/BtnBackId/BtnSaveLoadId` (anonymous ns)
+- L74-124 — EquipPicker state: `s_equipPickerActive, s_equipPickerPanel, s_equipParkPending, s_workbenchUpgradeParkPending, s_workbenchUpgradePickerActive, s_workbenchUpgradePickerPanel`; accessors `IsEquipPickerArmed/EquipPickerPanel/ArmEquipPicker/DisarmEquipPicker`, `IsWorkbenchUpgradePickerArmed/Arm.../Disarm...`
+- L133 — `struct ListBoxPanelSpec` — the 16-field spec (see header note); `useEngineSelect` gates raw vs engine-native SetSelectedControl drive
+- L250-334 — Container spec: `ContainerMatches/FindLb/Announce/OnEnter/OnEsc`, `kContainerSpec`
+  note: per-item take is UNRESOLVED (row FireActivate and click-sim both fail); Enter dispatches BTN_OK (take-all) unconditionally
+- L340-425 — SaveLoad spec: `SaveLoadMatches/FindLb/Announce/LogExtra/OnEnter/OnEsc`, `kSaveLoadSpec`
+  note: OnEnter arms the module-load latch via NotifyExternalLoadStarting only when !GetPlayerPosition() (load-from-menu, not in-world)
+- L433-571 — EquipPicker spec: `EquipPickerMatchesPanel/Armed/ResetStale/FindLb/Announce/LogExtra/OnEnter/OnEsc`, `kEquipPickerSpec`
+  note: Enter routes to unequip (row-0 0x7f000000 empty entry) when the selected row's field6_0x394 bit 0x2 marks it already-equipped
+- L596-802 — SkillInfoBox spec (chargen "ShowGranted" feats popup / in-world level-up hint): `FindFeatsCharGenPanel`, `ResolveFeatIdFromRowStrref` (reverse feat-name-strref lookup against Rules->feats[]), `SkillInfoBoxAnnounce/EnrichRow/OnEnter/TitleOverride`, `kSkillInfoBoxSpec`
+- L817-859 — InGameMessages spec (combat log, Phase 1C): `InGameMessagesMatches/FindLb/Announce/TitleOverride`, `kInGameMessagesSpec`
+- L868-960 — Dialog reply specs (Phase 1D, cursor-drive only, no announce — MonitorDialogReplies in menus_monitors.cpp is sole speaker): `DialogCinematicMatches/CopyMatches/ComputerMatches/ComputerCameraMatches`, `DialogFindRepliesLb`, 4 specs
+- L970-1026 — WorkbenchItems spec (per-category item picker): `WorkbenchItemsMatches/FindLb/Announce/OnEnter/OnEsc`, `kWorkbenchItemsSpec`
+- L1048-1227 — WorkbenchUpgrade spec (slot detail): `WorkbenchUpgradeMatches/Armed/ResetStale/FindLb/Announce/MinSel/OnEnter/OnEsc/TitleOverride`, `kWorkbenchUpgradeSpec`
+  note: dynamic minSel hides the row-0 remove entry on power slots but not the colour slot (GetWorkbenchPickerInfo); remove-gesture routes Enter on the installed row to that hidden row
+- L1249-1287 — Examine spec (Ö key panel): `ExamineMatches/FindLb/Announce`, `kExamineSpec`
+- L1310-1426 — ScriptSelect spec (charsheet "Kurzbefehle" AI-behaviour picker): `ScriptSelectMatches/FindLb/Announce/EnrichRow/OnEnter/OnEsc`, `kScriptSelectSpec`
+  note: EnrichRow resolves DESCRIPTION_STRREF from the panel's option table by row control-id, bypassing the engine's hover-only description refresh
+- L1440 — `constexpr ListBoxPanelSpec* kSpecs[13]` — probe order table
+- L1466 — `bool DispatchKeyDownEdge(spec, panel, param_1)` — routes Up/Down/Home/End to DriveListBoxSelection[Engine] + announce/enrichRow/logExtra, Enter/Esc to spec callbacks
+- L1529 — `void LogStandard(n, thisPtr, param_1, param_2, consumed)`
+- L1548 — `bool acc::menus::listbox::TryHandleInput(n, thisPtr, activePanel, param_1, param_2, outRv)` — walks kSpecs, honours armed()/resetStale/alwaysReturnFromHandler
+- L1605-1615 — `struct ContainerSelState/EquipSelState { listBox, lastSelection }`
+- L1617 — `void MonitorContainerSelection()` — per-tick row-change announce + first-arm empty/one/N-item speech
+- L1740 — `static bool ParkPickerCursorOffList(panel, backBtnId, tag)` — warps OS cursor to BTN_BACK so engine hover-select can't fight keyboard-driven SetSelectedControl
+- L1757 — `void MonitorEquipPickerSelection()` — disarms on panel-gone, one-shot cursor park, per-tick row-change announce
+- L1862 — `void MonitorWorkbenchUpgradePicker()` — disarms on panel-gone, temporary per-frame selection trace diagnostic, one-shot cursor park
+- L1939 — `void PollContainerGiveModeKey()` — Win32-polls the give-mode hotkey since the engine's player-control layer eats Tab before menu dispatch
+- L1964 — `void acc::menus::listbox::TickListboxMonitors()`
+- L1971 — `const char* acc::menus::listbox::GetTitleOverride(void* panel)`

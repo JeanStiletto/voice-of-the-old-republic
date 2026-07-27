@@ -1,10 +1,9 @@
-# menus_extract.h (57 lines)
+# menus_extract.h (66 lines)
 
-Public surface for the control-text extraction module. Declares `namespace acc::menus::extract`.
+Header for the control-text extraction ladder. Documents the cycle-category cache contract (populated by OnSetActiveControl in menus.cpp before any activation runs; read internally by FromControl) and that `ownerPanel` lets callers who already know the panel skip the FindOwningPanel/g_currentPanel fallback resolution.
 
 ## Declarations (in source order)
 
-- L1 — `namespace acc::menus::extract`
-- L10 — `const char* FromControl(void* control, char* outBuf, size_t bufSize, void* ownerPanel = nullptr)` — the announce ladder; returns a source tag string on success, nullptr if no text found
-- L20 — `void ResetCycleCategoryCache()`
-- L22 — `void CaptureCycleCategory(void* control, const char* category)` — stores the pre-activation category text for a cycle widget so FromControl can prefix it after the engine overwrites the value button
+- L40 — `const char* acc::menus::extract::FromControl(void* control, char* outBuf, size_t bufSize, void* ownerPanel = nullptr)` — returns a diagnostic source tag or nullptr
+- L54 — `void acc::menus::extract::ResetCycleCategoryCache()` / L55 `void CaptureCycleCategory(void* control, const char* category)`
+- L61 — `void acc::menus::extract::ForEachWagerRowAnchor(void* panel, bool(*callback)(void*,int,void*), void* userData)` — Pazaak wager virtual row registration, mirrors menus_credits

@@ -1,11 +1,14 @@
-# swoop_spatial_audio.h (~22 lines)
+# swoop_spatial_audio.h (23 lines)
 
-Public API for the swoop race continuous obstacle + accelerator-pad cues. Split from swoop_race on 2026-05-27.
+Public surface for the swoop-race continuous spatial-audio sweep: walks
+the global CSWMiniGameObjectArray each tick to drive per-obstacle warning
+loops and an accelpad steering-guide tone. Split out of swoop_race.cpp
+(2026-05-27) purely for file-size management; swoop_race.cpp owns the race
+lifecycle and calls these two entry points.
 
 ## Declarations (in source order)
 
-- L13 — `namespace acc::swoop_race`
-- L17 — `void TickSpatialAudio(void* miniGame);`
-  Drive per-tick obstacle + accelpad loops. No-op if miniGame is null.
-- L22 — `void ResetSpatialAudio();`
-  Stop all live loops and clear the per-race diagnostic guards. Called on race ENTER (defensive wipe) and EXIT.
+- L11 — `namespace acc::swoop_race`
+- L16 — `void TickSpatialAudio(void* miniGame)`
+  note: safe to call with miniGame == nullptr; listener via GetCameraPosition with GetPlayerPosition fallback
+- L21 — `void ResetSpatialAudio()` — stops all loops; called on race ENTER (defensive) and EXIT

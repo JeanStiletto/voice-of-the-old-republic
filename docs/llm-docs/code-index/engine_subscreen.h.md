@@ -1,17 +1,23 @@
-# engine_subscreen.h (55 lines)
+# engine_subscreen.h (99 lines)
 
-CGuiInGame::SwitchToSWInGameGui detour and MessageBoxModal close cleanup. Documents the stale-panel accumulation bug (InGameOptions::OnQuit reorders panels[] without popping), the single-site fix via PrevSWInGameGui on redrill, and the two-edge unpause cleanup (modal_stack pop + last sub-screen left panels[]).
+Public contract for engine_subscreen.cpp: sub-screen redrill cleanup,
+in-world overlay-pause holds (owner-bitmask, stacking-safe), and the three
+detour entry points (OnSwitchToSWInGameGui, OnHideSWInGameGui,
+OnSetSWGuiStatus).
 
 ## Declarations (in source order)
 
 - L16 — `namespace acc::engine`
 - L20 — `extern bool g_switchHookEverFired`
-  note: diagnostic; true once the SwitchToSWInGameGui detour has fired at least once
 - L34 — `void TickInputClassReassert()`
-  note: edge-triggered on modal_stack non-zero → 0 and on has-active-sub-screen true → false; dispatches SetPauseState(server,2,0) + SetSoundMode(exoSound,0) to clean up pause bit and audio mixer that MessageBoxModal close paths skip; historical name (earlier iteration touched input_class)
-- L40 — `extern "C" void __cdecl OnSwitchToSWInGameGui(void* thisPtr, int guiId)`
-  note: detour at SwitchToSWInGameGui+5 (after EBX=GUI_id loaded); calls PrevSWInGameGui if a sub-screen is already active, then lets the original push the new one onto clean panels[]
-- L46 — `extern "C" void __cdecl OnHideSWInGameGui(void* thisPtr, void* p1_addr)`
-  note: diagnostic detour at HideSWInGameGui; logs which engine path invokes close via caller_eip
-- L53 — `extern "C" void __cdecl OnSetSWGuiStatus(void* thisPtr, void* p1_addr, void* p2_addr)`
-  note: diagnostic detour at SetSWGuiStatus; logs every status transition + caller_eip; on status=4 calls InvalidateChain + ClearPendingAnnounce to prevent stale-pointer faults in the next tick's DrainPendingAnnounce
+- L53 — `enum class OverlayPauseOwner : unsigned { UnifiedMenu, CombatQueue, ExamineView, Help, LevelUp }`
+- L60 — `void BeginOverlayPause(OverlayPauseOwner owner)`
+- L61 — `void EndOverlayPause(OverlayPauseOwner owner)`
+- L69 — `bool WorldIsPaused()`
+- L78 — `bool ResumeWorldIfPaused(const char* reason)`
+- L84 — `extern "C" void OnSwitchToSWInGameGui(void*, int guiId)`
+  note: detour @0x0062cf2d, 5-byte cut after EBX load.
+- L90 — `extern "C" void OnHideSWInGameGui(void*, void*)`
+  note: detour @0x0062cba0, 9-byte cut, all-relative operands.
+- L97 — `extern "C" void OnSetSWGuiStatus(void*, void*, void*)`
+  note: detour @0x0062aa00, 5-byte cut; status 1=in-world,2=main menu,3=sub-screen.
