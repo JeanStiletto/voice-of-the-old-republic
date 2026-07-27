@@ -303,6 +303,28 @@ Next: execution, batch by batch, in candidate order.
   BuildForArea 780 lines) and hand it to the Phase-3 decomposition sweep,
   which is where the report already put the comparable menus_extract case.
 
+- **Candidate 13 (transitions.cpp landmark cache) — ATTEMPTED, REVERTED.**
+  The scan called this a "looser seam" and it is looser than even that
+  suggested. A function-level scan looks encouraging: the speech side calls
+  only four landmark lifecycle functions, and the landmark side calls only
+  IsWorldSpeechGatedImpl. But the anon-namespace *state* is interleaved at
+  variable granularity, which a function-name scan does not see:
+    * The block that reads as "landmark proximity state" also holds
+      g_last_spoken_room_text / g_last_spoken_pos / g_last_spoken_pos_valid,
+      which are room-speech state.
+    * The speech side resets the landmark proximity trio
+      (g_lm_prox_pending_idx / _pending_count / _last_spoken_idx) directly
+      on area change and after speaking a room label.
+  A correct split therefore needs per-variable sorting plus a new
+  reset API for the cross-side pokes — i.e. more than the approved verbatim
+  move, and with more of the same likely still hidden. Attempt was reverted
+  (tree clean, build green) rather than improvised past.
+  Options for the user: (a) drop it — transitions.cpp at 1412 lines is
+  cohesive enough; (b) approve a version that may add small reset/accessor
+  functions instead of moving raw state, and budget an in-game
+  room+landmark narration pass for it; (c) fold it into the Phase-2
+  coupling work, where "who owns this state" is the actual question.
+
 ## Decisions log
 
 - 2026-07-27: Infrastructure created; state file lives in-repo (survives
