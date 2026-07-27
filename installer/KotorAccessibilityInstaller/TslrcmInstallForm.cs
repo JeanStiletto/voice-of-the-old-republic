@@ -2,7 +2,6 @@ using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
-using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -167,7 +166,7 @@ namespace KotorAccessibilityInstaller
                 }
 
                 UpdateStatus(InstallerLocale.Get("K2Tslrcm_Verifying"), announce: true);
-                string hash = await Task.Run(() => ComputeSha256(dest));
+                string hash = await Task.Run(() => DeadlyStreamClient.ComputeSha256(dest));
                 if (!hash.Equals(Config.TslrcmInstallerSha256, StringComparison.OrdinalIgnoreCase))
                 {
                     throw new InvalidOperationException(
@@ -366,13 +365,6 @@ namespace KotorAccessibilityInstaller
             {
                 Logger.Warning($"Could not raise automation notification: {ex.Message}");
             }
-        }
-
-        private static string ComputeSha256(string path)
-        {
-            using var sha = SHA256.Create();
-            using var fs = File.OpenRead(path);
-            return Convert.ToHexString(sha.ComputeHash(fs));
         }
 
         private static void TryDelete(string path)

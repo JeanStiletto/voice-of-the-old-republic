@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -105,6 +106,18 @@ namespace KotorAccessibilityInstaller
             }
 
             Logger.Info($"DeadlyStream: downloaded {done} bytes to {destPath}");
+        }
+
+        /// <summary>
+        /// SHA-256 of a file as an uppercase hex string. Every scraped
+        /// DeadlyStream download is verified against a pinned hash before
+        /// anything is run or installed from it.
+        /// </summary>
+        public static string ComputeSha256(string path)
+        {
+            using var sha = SHA256.Create();
+            using var fs = File.OpenRead(path);
+            return Convert.ToHexString(sha.ComputeHash(fs));
         }
 
         public void Dispose() => _http.Dispose();

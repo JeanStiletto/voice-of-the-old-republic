@@ -92,6 +92,31 @@ namespace KotorAccessibilityInstaller
         public const string K2BorderlessPatchId = "borderless_fullscreen";
 
         // ---------------------------------------------------------------------
+        // Unofficial TSLRCM Tweak Pack — source pin
+        // ---------------------------------------------------------------------
+        // DeadlyStream-hosted RAR5 archive, downloaded via the same guest
+        // scrape as TSLRCM and extracted with Windows' built-in tar.exe
+        // (libarchive reads RAR5). Contains per-component TSLPatcher payloads
+        // that TweakPackInstaller drives through HoloPatcher one by one.
+        // Requires TSLRCM 1.8.3+ — the KOTOR 2 flow gates on TSLRCM presence.
+
+        public const string TweakPackDownloadPageUrl =
+            "https://deadlystream.com/files/file/296-unofficial-tslrcm-tweak-pack/";
+        public const string TweakPackArchiveFileName = "tweakpack.rar";
+        public const string TweakPackDisplayVersion = "v1.3";
+
+        /// <summary>
+        /// SHA-256 of the Tweak Pack archive as downloaded 2026-07-27.
+        /// Same fail-closed rule as the TSLRCM pin: a changed upstream file is
+        /// not installed until this constant is bumped and re-verified.
+        /// </summary>
+        public const string TweakPackArchiveSha256 =
+            "E98C94D53DFCCADDF6753AA58662E1AFD1D6EBB0241F66C8000BA0FF3A2F13B5";
+
+        /// <summary>Archive size in bytes (progress fallback).</summary>
+        public const long TweakPackArchiveSizeBytes = 1366051;
+
+        // ---------------------------------------------------------------------
         // K2CP (KOTOR 2 Community Patch) — source pin
         // ---------------------------------------------------------------------
         // Same GitHub org as K1CP. The repo has NO export-ignore on tslpatchdata

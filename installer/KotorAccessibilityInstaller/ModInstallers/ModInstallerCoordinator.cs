@@ -28,16 +28,17 @@ namespace KotorAccessibilityInstaller.ModInstallers
         }
 
         /// <summary>
-        /// Pipeline for a KOTOR 2 install directory. Prepared but not invoked
-        /// yet — the KOTOR 2 flow activates once the TSLRCM-first ordering is
-        /// resolved (TSLRCM must be present before K2CP; see K2cpInstaller's
-        /// activation gates and docs/installer.md, "KOTOR 2 mod bundle").
+        /// Pipeline for a KOTOR 2 install directory, run by
+        /// <see cref="Kotor2ModsInstallForm"/> AFTER the TSLRCM step: the
+        /// caller gates on TSLRCM presence (installed this run or detected)
+        /// so the community-mandated order TSLRCM → K2CP → Tweak Pack holds.
         /// </summary>
         public static IReadOnlyList<IModInstaller> BuildKotor2Pipeline()
         {
             return new List<IModInstaller>
             {
                 new K2cpInstaller(),
+                new TweakPackInstaller(),
             };
         }
 

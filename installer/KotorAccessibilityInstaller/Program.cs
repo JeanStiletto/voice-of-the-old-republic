@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Security.Principal;
+using System.Text;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
@@ -331,19 +332,17 @@ namespace KotorAccessibilityInstaller
         }
 
         /// <summary>
-        /// Runs when the user checks KOTOR 2 on the game-version screen. A
-        /// Yes/No MessageBox (NVDA/JAWS read it in full; Ctrl+C copies it,
-        /// link included) explains that KOTOR 2 support is in preparation,
-        /// reports whether a KOTOR 2 install was found, and offers to install
-        /// TSLRCM now — TSLRCM is first in the K2 install order, so setting it
-        /// up early is safe. On Yes, <see cref="TslrcmInstallForm"/> scrapes
-        /// the guest download off DeadlyStream, verifies the pinned SHA-256,
-        /// and runs TSLRCM's own Inno Setup silently into the detected KOTOR 2
-        /// folder (their installer does game detection and obsolete-file
-        /// cleanup we should not reimplement; silent because its wizard is
-        /// English-only while this installer speaks the user's language). The
-        /// visible English wizard remains the fallback when no KOTOR 2 folder
-        /// was detected or the silent run fails.
+        /// Runs when the user checks KOTOR 2 on the game-version screen.
+        /// Sequence: apply the engine patches (their result rides the
+        /// selection form's description), show
+        /// <see cref="Kotor2ModSelectionForm"/> (TSLRCM / K2CP / Tweak Pack —
+        /// all on by default), install TSLRCM via
+        /// <see cref="TslrcmInstallForm"/> (silent Inno; visible wizard as
+        /// fallback), then run the K2CP + Tweak Pack pipeline via
+        /// <see cref="Kotor2ModsInstallForm"/> — gated on TSLRCM being
+        /// installed (this run or detected via <see cref="TslrcmDetector"/>)
+        /// so the community-mandated order TSLRCM → K2CP → Tweak Pack always
+        /// holds. Ends with one spoken per-mod summary box.
         /// </summary>
         private static void RunKotor2PreparationFlow(string k2Path)
         {
@@ -351,29 +350,98 @@ namespace KotorAccessibilityInstaller
                 ? InstallerLocale.Format("K2Prep_Detected_Format", k2Path)
                 : InstallerLocale.Get("K2Prep_NotDetected");
 
-            // Engine patches first: fast, local, independent of the TSLRCM
-            // choice. Their result line rides the status slot of the offer box
-            // below so the whole preparation step stays a single dialog.
+            // Engine patches first: fast, local, independent of the mod
+            // choices below.
             if (k2Path != null)
             {
                 statusLine += "\n\n" + ApplyKotor2EnginePatches(k2Path);
             }
 
-            string body =
-                InstallerLocale.Format("K2Prep_Body_Format", statusLine, Config.TslrcmDownloadPageUrl) +
-                InstallerLocale.Get("K2Tslrcm_Question");
-
-            var choice = MessageBox.Show(
-                body,
-                InstallerLocale.Get("K2Prep_Title"),
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Question);
-
-            if (choice != DialogResult.Yes)
+            var selectionForm = new Kotor2ModSelectionForm(statusLine);
+            Application.Run(selectionForm);
+            if (!selectionForm.ProceedWithInstall)
             {
-                Logger.Info("User declined TSLRCM install");
+                Logger.Info("KOTOR 2 mod selection cancelled");
                 return;
             }
+
+            var summary = new StringBuilder();
+            summary.AppendLine(InstallerLocale.Get("ModInstall_SummaryHeading"));
+            const string tslrcmName = "TSLRCM 1.8.6";
+
+            bool tslrcmPresent;
+            if (selectionForm.InstallTslrcm)
+            {
+                RunTslrcmInstall(k2Path);
+                // The detector is the ground truth either way: the silent path
+                // sets the registry entry via Inno, and after the visible
+                // wizard it is the only signal we have for the outcome.
+                tslrcmPresent = TslrcmDetector.IsInstalled();
+                summary.AppendLine(tslrcmPresent
+                    ? InstallerLocale.Format("ModInstall_SummaryOk_Format", tslrcmName)
+                    : InstallerLocale.Format("ModInstall_SummaryFailed_Format", tslrcmName, "(not installed)"));
+            }
+            else
+            {
+                tslrcmPresent = TslrcmDetector.IsInstalled();
+                summary.AppendLine(InstallerLocale.Format("ModInstall_SummarySkipped_Format", tslrcmName));
+            }
+
+            if (selectionForm.Selection.K2cp || selectionForm.Selection.TweakPack)
+            {
+                if (k2Path == null || !tslrcmPresent)
+                {
+                    // Order gate: without a known install dir, or without
+                    // TSLRCM in place, installing K2CP / Tweak Pack now would
+                    // bake in the wrong order (TSLRCM must come first).
+                    if (k2Path != null)
+                    {
+                        MessageBox.Show(
+                            InstallerLocale.Get("K2Mods_NoTslrcm_Text"),
+                            InstallerLocale.Get("K2Prep_Title"),
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning);
+                    }
+                    Logger.Info($"K2CP/Tweak Pack skipped (k2Path={(k2Path ?? "null")}, tslrcmPresent={tslrcmPresent})");
+                    if (selectionForm.Selection.K2cp)
+                        summary.AppendLine(InstallerLocale.Format("ModInstall_SummarySkipped_Format", "k2cp"));
+                    if (selectionForm.Selection.TweakPack)
+                        summary.AppendLine(InstallerLocale.Format("ModInstall_SummarySkipped_Format", "tweakpack"));
+                }
+                else
+                {
+                    var installForm = new Kotor2ModsInstallForm(k2Path, selectionForm.Selection);
+                    Application.Run(installForm);
+                    foreach (var r in installForm.Results)
+                    {
+                        if (r.Skipped)
+                            summary.AppendLine(InstallerLocale.Format("ModInstall_SummarySkipped_Format", r.Id));
+                        else if (r.Success)
+                            summary.AppendLine(InstallerLocale.Format("ModInstall_SummaryOk_Format", r.Id));
+                        else
+                            summary.AppendLine(InstallerLocale.Format("ModInstall_SummaryFailed_Format", r.Id, r.Error ?? "(no detail)"));
+                    }
+                }
+            }
+
+            MessageBox.Show(
+                summary.ToString(),
+                InstallerLocale.Get("K2Prep_Title"),
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+
+        /// <summary>
+        /// TSLRCM step: silent install when the KOTOR 2 folder is known,
+        /// visible English wizard as fallback (no folder detected, or the
+        /// silent run failed and the user accepts the fallback). The caller
+        /// determines success via <see cref="TslrcmDetector"/> afterwards.
+        /// </summary>
+        private static void RunTslrcmInstall(string k2Path)
+        {
+            string statusLine = k2Path != null
+                ? InstallerLocale.Format("K2Prep_Detected_Format", k2Path)
+                : InstallerLocale.Get("K2Prep_NotDetected");
 
             var form = new TslrcmInstallForm(k2Path);
             Application.Run(form);
@@ -381,11 +449,6 @@ namespace KotorAccessibilityInstaller
             switch (form.Outcome)
             {
                 case TslrcmOutcome.SilentInstalled:
-                    MessageBox.Show(
-                        InstallerLocale.Format("K2Tslrcm_SilentDone_Format", k2Path),
-                        InstallerLocale.Get("K2Prep_Title"),
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Information);
                     TryDeleteTempFile(form.InstallerPath);
                     break;
 
@@ -418,8 +481,8 @@ namespace KotorAccessibilityInstaller
 
                 case TslrcmOutcome.Cancelled:
                 default:
-                    // User cancelled — they already have the manual link in the
-                    // offer text, so stay quiet.
+                    // User cancelled — the manual link is on the selection
+                    // form's footnote, so stay quiet.
                     break;
             }
         }

@@ -18,16 +18,21 @@ namespace KotorAccessibilityInstaller
         public bool CompanionAndSwoopUpgrades { get; init; } = true;
 
         /// <summary>
-        /// KOTOR 2 Community Patch. Only meaningful once the KOTOR 2 install
-        /// flow is wired (see <see cref="ModInstallers.K2cpInstaller"/>); the
-        /// KOTOR 1 flow's <see cref="ModSelectionForm"/> forces it false.
+        /// KOTOR 2 Community Patch. Set by <see cref="Kotor2ModSelectionForm"/>;
+        /// the KOTOR 1 flow's <see cref="ModSelectionForm"/> forces it false.
         /// </summary>
         public bool K2cp { get; init; } = true;
+
+        /// <summary>
+        /// Unofficial TSLRCM Tweak Pack (KOTOR 2). Set by
+        /// <see cref="Kotor2ModSelectionForm"/>; forced false on the KOTOR 1 flow.
+        /// </summary>
+        public bool TweakPack { get; init; } = true;
 
         public static ModSelection AllOn() => new();
 
         public override string ToString() =>
             $"K1cp={K1cp}, RestoredCutContent={RestoredCutContent}, " +
-            $"CompanionAndSwoopUpgrades={CompanionAndSwoopUpgrades}, K2cp={K2cp}";
+            $"CompanionAndSwoopUpgrades={CompanionAndSwoopUpgrades}, K2cp={K2cp}, TweakPack={TweakPack}";
     }
 }

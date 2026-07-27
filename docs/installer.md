@@ -208,14 +208,13 @@ restorations that were arguably cut intentionally by Obsidian.
   own `changes.ini` (1-Kaevee_Removal incl. Part_2, 2-Saedhe, 3-Ravager,
   4-Atton, 5-Kreia_Atris_DLG, 6-Mandalore_Trayus, Extras/1-Trayus_Sith_Lords,
   Extras/2-Gand_Warrior) and a root `namespaces.ini`.
-- Install route: we never run the bundled TSLPatcher exes — extract the RAR,
-  point HoloPatcher at each selected component's `tslpatchdata`, same
-  headless drive as K1CP/K2CP. Open design points: which components to
-  select (follow the neocities-recommended subset vs. user choice — these
-  are taste tweaks, not pure fixes), whether HoloPatcher's CLI handles the
-  `namespaces.ini` multi-component layout directly or we invoke
-  per-component, and per-component language vetting (the components ship
-  `.dlg` edits; strref-based, but verify against a localized TSLRCM install).
+- Install route (implemented in `TweakPackInstaller`): we never run the
+  bundled TSLPatcher exes — extract the RAR, stage each component as a
+  standalone `tslpatchdata`, drive HoloPatcher per component (bypasses
+  `namespaces.ini`, so no CLI namespace support needed). Component set: the
+  seven main entries; Extras excluded by our filters. Still open:
+  per-component language vetting (the components ship `.dlg` edits;
+  strref-based, but verify against a localized TSLRCM install).
 - Requires TSLRCM 1.8.3+.
 
 ### Second-tier candidates from the neocities spoiler-free build
@@ -252,26 +251,49 @@ KOTOR 2 flow:
   Next requires at least one checked; zero-checked shows an explanatory
   MessageBox rather than a silently disabled button (screen-reader reasoning
   in the class comment).
-- **KOTOR 2 preparation flow with unattended TSLRCM install** — checking
-  KOTOR 2 shows a localized Yes/No offer: whether a KOTOR 2 Steam install was
-  detected (App ID 208580 / `swkotor2.exe`, `Program.DetectKotor2GamePath`),
-  the no-Workshop warning, the manual DeadlyStream link, and the question
-  "download TSLRCM now (~138 MB)?". On Yes, `TslrcmInstallForm` scrapes the
-  guest download via `DeadlyStreamClient` (cookie + csrfKey two-step),
-  verifies the pinned SHA-256 (fail-closed: a changed upstream file routes to
-  the manual link), then — when the KOTOR 2 folder was detected — runs
-  TSLRCM's Inno Setup **silently** (`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART
-  /SP- /DIR=<path> /LOG=<temp>`); silent is the default because the TSLRCM
-  wizard is English-only while our installer speaks the user's language. The
-  silent run is verified by a before/after `dialog.tlk` fingerprint (TSLRCM
-  always replaces it; exit 0 with unchanged tlk = failure). Fallbacks: no
-  detected path → announce handoff, run the wizard visibly; silent failure →
-  Yes/No offer of the visible wizard. Download progress announces via UIA
-  notifications at 25% steps; the install phase heartbeats ~15 s and disables
-  Cancel (aborting Inno mid-install would leave a half-written mod install).
-  Untested end-to-end as of 2026-07-27: the scrape was proven live via curl,
-  the C# path and the silent switches still need a real run on a KOTOR 2
-  install. KOTOR-2-only selections exit after this flow.
+- **KOTOR 2 mod-selection flow (`Kotor2ModSelectionForm`)** — the K2
+  counterpart of the K1 optional-mods screen. Checking KOTOR 2 runs the
+  engine patches, then shows one form: detection + patch result as the
+  description, three checkboxes (TSLRCM 1.8.6, K2CP, Tweak Pack), all
+  default-on and labeled highly recommended, plus a footnote explaining the
+  automatic install order and the manual TSLRCM link. The flow then runs:
+  TSLRCM step → `TslrcmDetector` gate → `Kotor2ModsInstallForm` (K2CP +
+  Tweak Pack pipeline) → one spoken per-mod summary box.
+- **Unattended TSLRCM install (`TslrcmInstallForm`)** — `DeadlyStreamClient`
+  scrapes the guest download (cookie + csrfKey two-step), verifies the
+  pinned SHA-256 (fail-closed: a changed upstream file routes to the manual
+  link), then — when the KOTOR 2 folder was detected — runs TSLRCM's Inno
+  Setup **silently** (`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-
+  /DIR=<path> /LOG=<temp>`); silent is the default because the TSLRCM wizard
+  is English-only while our installer speaks the user's language. The silent
+  run is verified by a before/after `dialog.tlk` fingerprint (TSLRCM always
+  replaces it; exit 0 with unchanged tlk = failure). Fallbacks: no detected
+  path → announce handoff, run the wizard visibly; silent failure → Yes/No
+  offer of the visible wizard. Download progress announces via UIA
+  notifications at 25% steps; the install phase heartbeats ~15 s and
+  disables Cancel (aborting Inno mid-install would leave a half-written mod
+  install).
+- **TSLRCM-first gate (`TslrcmDetector`)** — K2CP/Tweak Pack run only when
+  TSLRCM is present: detected via the uninstall registry entry TSLRCM's Inno
+  installer registers (DisplayName contains "Sith Lords Restored Content";
+  both hives × both views scanned). UNVERIFIED assumption flagged in the
+  class: that 1.8.6's Inno script registers an uninstall entry — if not,
+  switch to a file marker. Without TSLRCM, the dependent mods are skipped
+  with a spoken explanation, never installed in the wrong order.
+- **`TweakPackInstaller`** — DeadlyStream scrape of the pinned RAR5 archive,
+  SHA-256 verify, extraction via Windows' built-in `tar.exe` (libarchive
+  reads RAR5), then one headless HoloPatcher run per component. Components
+  are staged individually as standalone `tslpatchdata` dirs (Part 2's
+  `changes2.ini` renamed on staging), bypassing the archive's
+  `namespaces.ini` and its bundled TSLPatcher exes entirely. Installed set:
+  the seven main entries (Kaevee Removal 1+2, Saedhe's Head, Ravager,
+  Atton, Kreia-Atris, Trayus Mandalore); the two Extras are excluded by our
+  filters (Sith Lord Masks = visual, Gand Awareness = rebalance).
+- **Untested end-to-end as of 2026-07-27**: the scrapes and archive layout
+  were proven live via curl/tar, but the C# flow, the Inno silent switches,
+  the registry detection, and the per-component HoloPatcher runs all still
+  need a real run against a KOTOR 2 Steam Aspyr install. KOTOR-2-only
+  selections exit after this flow.
 - **KOTOR 2 engine patches (wired, analog to the K1 widescreen flow)** —
   checking KOTOR 2 with a detected install applies Lane's two static kpatches
   to `swkotor2.exe` before the TSLRCM offer: `4gb-patch` (LAA flag) and
@@ -288,13 +310,12 @@ KOTOR 2 flow:
   windowed is the screen-reader baseline). Result is reported as one line
   inside the preparation dialog. No backup — Steam "Verify integrity"
   restores vanilla; uninstall does not touch KOTOR 2.
-- **`K2cpInstaller`** — complete and buildable, mirrors `K1cpInstaller`
-  (GitHub tree fetch at pinned SHA → headless HoloPatcher). Not in any active
-  pipeline; `ModInstallerCoordinator.BuildKotor2Pipeline()` exists but is not
-  invoked. Two activation gates documented in the class: TSLRCM-presence
-  check (order: TSLRCM before K2CP) and a `.lyt`/`.vis` line-ending audit of
-  K2CP's files (K1CP needed CRLF normalization; K2 engine uses the same
-  parser family).
+- **`K2cpInstaller`** — mirrors `K1cpInstaller` (GitHub tree fetch at pinned
+  SHA → headless HoloPatcher), now ACTIVE in
+  `ModInstallerCoordinator.BuildKotor2Pipeline()` behind the TSLRCM gate.
+  Still open before release: a `.lyt`/`.vis` line-ending audit of K2CP's
+  files (K1CP needed CRLF normalization; K2 engine uses the same parser
+  family).
 - **Shared helpers** extracted so K1CP/K2CP don't duplicate code:
   `GitHubTslpatchdataFetcher` (tree API + raw.githubusercontent.com download)
   and `HoloPatcherRunner` (headless HoloPatcher drive with throttled status
