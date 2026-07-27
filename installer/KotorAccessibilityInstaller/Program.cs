@@ -424,6 +424,15 @@ namespace KotorAccessibilityInstaller
                 }
             }
 
+            // TSLRCM's readme buries this in an English document in the game
+            // folder; a one-click install would never surface it. Speak it in
+            // the summary: old saves are incompatible, a fresh game is required.
+            if (selectionForm.InstallTslrcm && tslrcmPresent)
+            {
+                summary.AppendLine();
+                summary.AppendLine(InstallerLocale.Get("K2Mods_NewGameHint"));
+            }
+
             MessageBox.Show(
                 summary.ToString(),
                 InstallerLocale.Get("K2Prep_Title"),

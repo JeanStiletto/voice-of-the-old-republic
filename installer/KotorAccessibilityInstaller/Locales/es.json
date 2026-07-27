@@ -65,6 +65,7 @@
     "K2Mods_TweakPackDescription": "Muy recomendado. Revierte un puñado de restauraciones de TSLRCM que Obsidian muy probablemente recortó a propósito, manteniendo la historia coherente.",
     "K2Mods_Footnote_Format": "El orden de instalación se gestiona automáticamente: primero TSLRCM, luego K2CP y después el Tweak Pack. Si TSLRCM no está seleccionado ni ya instalado, K2CP y el Tweak Pack se omiten para preservar ese orden. Descarga manual de TSLRCM: {0}",
     "K2Mods_NoTslrcm_Text": "TSLRCM no está instalado, así que K2CP y el Tweak Pack se omitieron para preservar el orden correcto de instalación. Instala primero TSLRCM y vuelve a ejecutar este instalador para añadirlos.",
+    "K2Mods_NewGameHint": "Importante: empieza una partida NUEVA. Las partidas guardadas del juego sin mods no son compatibles con TSLRCM.",
     "K2Tslrcm_Downloading": "Descargando TSLRCM desde deadlystream.com (unos 138 MB)...",
     "K2Tslrcm_Progress_Format": "Descargando TSLRCM: {0} de {1} MB",
     "K2Tslrcm_Verifying": "Verificando el archivo descargado...",
