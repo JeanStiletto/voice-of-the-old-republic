@@ -20,10 +20,12 @@ KOTOR 2 (TSL), which runs a very similar engine but a different executable
 
 ## Current status
 
-- **Active phase:** Phase 0 (infrastructure) — set up, awaiting user feedback
-  on the overall plan before Phase 1 starts.
-- **Next action:** User reviews the plan-improvement suggestions (delivered in
-  chat 2026-07-27); incorporate decisions here, then start Phase 1.
+- **Active phase:** Phase 1 (structure audit) — scans COMPLETE, consolidated
+  report written, **awaiting user approval of the candidate list**.
+- **Next action:** Walk the candidate list in
+  `docs/refactoring/reports/phase-1-structure.md` with the user (item by
+  item or per batch), record approvals/rejections here, then execute
+  approved batches with a build (+ in-game check where marked) after each.
 - **Branch:** `refactor/pre-k2-cleanup` (created 2026-07-27 from main @ bc9492b).
 - **Working tree:** clean except docs/refactoring/.
 
@@ -140,3 +142,15 @@ KOTOR 2 (TSL), which runs a very similar engine but a different executable
   captured (0 warnings). Full code-index refresh executed and verified.
   Phase 0 COMPLETE. Next action: start Phase 1 (structure audit) — user said
   to report candidates before executing anything.
+- 2026-07-27 (session 2): Phase 1 structure scans executed — 3 Sonnet agents
+  (menus/engine/strings; rest of patch; kdev+installer), within the ≤3-agent
+  no-go-ahead limit. Scan reports: phase-1-scan-a/b/c under reports/.
+  Cross-cutting checks in main session: build glob is flat (subfolders in
+  patches/ would need kdev BuildCommand change + break --bat), header
+  hygiene good, fan-out hotspots quantified, kdev/installer code index
+  verified complete. Consolidated report + numbered candidate list written:
+  reports/phase-1-structure.md (28 candidates in 5 batches, plus
+  rejected-list and Phase-2/3 carry-forwards). Notable: probe_priority_groups
+  confirmed dead in practice; combat_diag hosts a shipped production hook;
+  strings.h split explicitly rejected. NO code changed. Awaiting item-by-item
+  user approval.
