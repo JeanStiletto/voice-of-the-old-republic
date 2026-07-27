@@ -247,6 +247,33 @@ Next: execution, batch by batch, in candidate order.
   queue, region/landmark narration, hotkey routing, installer/kdev
   build note).
 
+## Execution findings (deviations from the scan reports)
+
+- **Candidate 10 (engine_offsets.h regroup) — STOPPED, not executed.**
+  Two reasons, both discovered at execution time:
+  1. The scan claimed "the file's own section index already documents ~13
+     natural per-subsystem blocks". There is no section index. The file is
+     a continuous stream of per-topic comments with structs
+     (CExoArrayList, Vector, CExoString), typedefs and constants
+     interleaved — several typedefs depend on structs declared earlier, so
+     a 5-way cut needs a hand-verified dependency order, not a line-range
+     split.
+  2. The approved technique (keep engine_offsets.h as a thin aggregator so
+     all 77 includers keep compiling) does NOT deliver the benefit the
+     report claimed for it. If the aggregator still includes every new
+     header, every includer still pulls in every constant and still
+     rebuilds when any block changes. The rebuild-fan-out win only lands
+     once includers migrate to narrower headers — which is candidate 28,
+     explicitly DEFERRED. So as approved, the candidate delivers header
+     navigability only, at the cost of the largest and most
+     dependency-sensitive diff in the batch.
+  Per the execution protocol ("if reality deviates from a report, STOP
+  that candidate, note it here, report to user; do not improvise a
+  different split") this was left unexecuted for the user to re-decide.
+  Options to put to the user: (a) drop it; (b) do it together with
+  candidate 28 so the benefit is real; (c) do a smaller conservative
+  version moving only the clearly-contiguous topical runs.
+
 ## Decisions log
 
 - 2026-07-27: Infrastructure created; state file lives in-repo (survives
