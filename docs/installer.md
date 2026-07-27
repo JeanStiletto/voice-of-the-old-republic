@@ -157,10 +157,22 @@ mod setup without it.
   localized game content is still unverified — needs an innoextract or a test
   install on a German copy.
 - Steam/Aspyr: explicitly supported by the 1.8.6 installer.
-- Languages: credits list French, Italian, Spanish, German, Russian
-  translation teams. **Verify:** whether the single 1.8.6 exe carries all
-  locales (and how it picks one) or whether localized builds are separate
-  downloads.
+- Languages — RESOLVED 2026-07-27 by extracting the exe with innoextract:
+  the DeadlyStream `tslrcm2022.exe` is **English-only**. It contains 1134
+  files including two `dialog.tlk` variants, both language ID 0 (English);
+  no localized files, no language selection logic. Installing it on a
+  German (or any non-English) KOTOR 2 replaces the localized `dialog.tlk`
+  with English — all game text becomes English; German VO remains only for
+  vanilla lines (mixed-language result). The readme's FR/IT/ES/DE/RU
+  translation credits refer to the separately-distributed localized
+  editions: per-language Steam Workshop items maintained by the TSLRCM team
+  (the (German) item was updated 2022-09 and author-confirmed as 1.8.6) —
+  but Workshop distribution conflicts with directory-installed mods (K2CP,
+  Tweak Pack), which is exactly what the neocities build prohibits mixing.
+  Open decision: for non-English installs either (a) accept English text
+  and warn on the selection form, or (b) source the localized TSLRCM
+  content another way (e.g. steamcmd fetch of the language Workshop item,
+  converted to a directory install — permission/fragility questions apply).
 - **Auto-download problem: no GitHub presence, no API-friendly host.** This is
   the one essential mod without a clean scripted download path. Options, in
   preference order: (1) ask the TSLRCM team (zbyl2 et al.) for permission to
