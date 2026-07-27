@@ -109,7 +109,7 @@ namespace KotorAccessibilityInstaller
                 UpdateStatus(InstallerLocale.Get("Uninstall_StatusRemoving"));
                 _progressBar.Value = 30;
 
-                await Task.Run(() => Program.PerformUninstall(_gamePath));
+                await Task.Run(() => UninstallFlow.PerformUninstall(_gamePath));
 
                 _progressBar.Value = 100;
                 UpdateStatus(InstallerLocale.Get("Uninstall_StatusComplete"));

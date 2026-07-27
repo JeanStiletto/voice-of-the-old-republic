@@ -221,7 +221,7 @@ namespace KotorAccessibilityInstaller
         public PatchApplicator.InstallResult ApplyKotor2StaticPatches(out string skipReason)
         {
             skipReason = null;
-            string gameExe = Path.Combine(_gameDir, Program.Kotor2ExeName);
+            string gameExe = Path.Combine(_gameDir, GamePathDetector.Kotor2ExeName);
             string stagingRoot = Path.Combine(Path.GetTempPath(), $"kotor_acc_k2patch_{Guid.NewGuid():N}");
 
             try

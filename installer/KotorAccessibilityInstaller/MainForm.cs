@@ -95,7 +95,7 @@ namespace KotorAccessibilityInstaller
 
             _pathTextBox = new TextBox
             {
-                Text = _gamePath ?? Program.DefaultGamePath,
+                Text = _gamePath ?? GamePathDetector.DefaultGamePath,
                 Location = new Point(20, 155),
                 Size = new Size(370, 25),
                 ReadOnly = true
@@ -200,7 +200,7 @@ namespace KotorAccessibilityInstaller
 
         private void ValidatePath()
         {
-            bool isValid = Program.IsValidGamePath(_pathTextBox.Text);
+            bool isValid = GamePathDetector.IsValidGamePath(_pathTextBox.Text);
             _installButton.Enabled = isValid;
 
             if (!isValid && !string.IsNullOrEmpty(_pathTextBox.Text))
@@ -612,7 +612,7 @@ namespace KotorAccessibilityInstaller
         {
             try
             {
-                string exePath = Path.Combine(_gamePath, Program.GameExeName);
+                string exePath = Path.Combine(_gamePath, GamePathDetector.GameExeName);
                 if (!File.Exists(exePath)) return;
 
                 // steam://run/32370 launches whatever copy Steam has registered
@@ -622,7 +622,7 @@ namespace KotorAccessibilityInstaller
                 // the steam:// route when _gamePath matches Steam's registered
                 // install (then we get the overlay, cloud saves, and a non-
                 // elevated launch). Otherwise launch the patched exe directly.
-                bool useSteamUrl = Program.IsSteamPath(_gamePath);
+                bool useSteamUrl = GamePathDetector.IsSteamPath(_gamePath);
                 Logger.Info($"Launching KOTOR: {exePath} (steam-route={useSteamUrl})");
 
                 if (useSteamUrl)

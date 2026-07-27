@@ -69,7 +69,7 @@ namespace KotorAccessibilityInstaller
         {
             try
             {
-                if (!Program.IsValidGamePath(gameDir))
+                if (!GamePathDetector.IsValidGamePath(gameDir))
                 {
                     return new Result { Success = false, Error = $"swkotor.exe not found at {gameDir}" };
                 }
@@ -102,7 +102,7 @@ namespace KotorAccessibilityInstaller
         {
             try
             {
-                if (!Program.IsValidGamePath(gameDir))
+                if (!GamePathDetector.IsValidGamePath(gameDir))
                 {
                     return new Result { Success = false, Error = $"swkotor.exe not found at {gameDir}" };
                 }
