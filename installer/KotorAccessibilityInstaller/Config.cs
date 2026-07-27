@@ -100,6 +100,12 @@ namespace KotorAccessibilityInstaller
         // that TweakPackInstaller drives through HoloPatcher one by one.
         // Requires TSLRCM 1.8.3+ — the KOTOR 2 flow gates on TSLRCM presence.
 
+        /// <summary>
+        /// Steam App ID of KOTOR 2 (Aspyr build) as a string, used for the
+        /// workshop content path <c>steamapps/workshop/content/&lt;app&gt;/</c>.
+        /// </summary>
+        public const string Kotor2WorkshopAppId = "208580";
+
         public const string TweakPackDownloadPageUrl =
             "https://deadlystream.com/files/file/296-unofficial-tslrcm-tweak-pack/";
         public const string TweakPackArchiveFileName = "tweakpack.rar";

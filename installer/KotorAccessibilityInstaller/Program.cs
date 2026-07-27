@@ -365,6 +365,11 @@ namespace KotorAccessibilityInstaller
                 return;
             }
 
+            // Detect the game's language BEFORE TSLRCM runs: the English-only
+            // TSLRCM replaces dialog.tlk, after which the original language is
+            // no longer readable from the install.
+            GameLocale k2Locale = k2Path != null ? GameLocaleDetector.Detect(k2Path) : GameLocale.Unknown;
+
             var summary = new StringBuilder();
             summary.AppendLine(InstallerLocale.Get("ModInstall_SummaryHeading"));
             const string tslrcmName = "TSLRCM 1.8.6";
@@ -385,6 +390,57 @@ namespace KotorAccessibilityInstaller
             {
                 tslrcmPresent = TslrcmDetector.IsInstalled();
                 summary.AppendLine(InstallerLocale.Format("ModInstall_SummarySkipped_Format", tslrcmName));
+            }
+
+            // Localized-text harvest — must run AFTER TSLRCM (whose English
+            // dialog.tlk it replaces) and BEFORE the K2CP / Tweak Pack
+            // pipeline (which appends strings to dialog.tlk; replacing the
+            // file afterwards would orphan their strrefs).
+            if (selectionForm.InstallTslrcm && tslrcmPresent && k2Path != null &&
+                k2Locale != GameLocale.English && k2Locale != GameLocale.Unknown &&
+                WorkshopTlkHarvestForm.TryGetWorkshopItem(k2Locale, out string workshopItemId))
+            {
+                const string harvestName = "dialog.tlk (Workshop)";
+                var offer = MessageBox.Show(
+                    InstallerLocale.Get("K2Lang_Offer_Text"),
+                    InstallerLocale.Get("K2Prep_Title"),
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+
+                if (offer == DialogResult.Yes)
+                {
+                    var harvestForm = new WorkshopTlkHarvestForm(k2Path, k2Locale, workshopItemId);
+                    Application.Run(harvestForm);
+
+                    if (harvestForm.Success)
+                    {
+                        MessageBox.Show(
+                            InstallerLocale.Get("K2Lang_Done_Text"),
+                            InstallerLocale.Get("K2Prep_Title"),
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Information);
+                        summary.AppendLine(InstallerLocale.Format("ModInstall_SummaryOk_Format", harvestName));
+                    }
+                    else if (harvestForm.FailureReason != null)
+                    {
+                        MessageBox.Show(
+                            InstallerLocale.Format("K2Lang_Failed_Format", harvestForm.FailureReason),
+                            InstallerLocale.Get("K2Prep_Title"),
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning);
+                        summary.AppendLine(InstallerLocale.Format("ModInstall_SummaryFailed_Format",
+                            harvestName, harvestForm.FailureReason));
+                    }
+                    else
+                    {
+                        summary.AppendLine(InstallerLocale.Format("ModInstall_SummarySkipped_Format", harvestName));
+                    }
+                }
+                else
+                {
+                    Logger.Info("User declined localized-text harvest");
+                    summary.AppendLine(InstallerLocale.Format("ModInstall_SummarySkipped_Format", harvestName));
+                }
             }
 
             if (selectionForm.Selection.K2cp || selectionForm.Selection.TweakPack)

@@ -169,10 +169,27 @@ mod setup without it.
   (the (German) item was updated 2022-09 and author-confirmed as 1.8.6) —
   but Workshop distribution conflicts with directory-installed mods (K2CP,
   Tweak Pack), which is exactly what the neocities build prohibits mixing.
-  Open decision: for non-English installs either (a) accept English text
-  and warn on the selection form, or (b) source the localized TSLRCM
-  content another way (e.g. steamcmd fetch of the language Workshop item,
-  converted to a directory install — permission/fragility questions apply).
+- Localized-text solution (implemented in `WorkshopTlkHarvestForm`,
+  community-endorsed "subscribe and copy the tlk out" route): no anonymous
+  direct download exists (GetPublishedFileDetails returns an empty
+  `file_url` — UGC-depot hosted, ~335 MB for the German item), but every
+  affected user owns KOTOR 2 on Steam. After the English TSLRCM install on
+  a non-English game (locale detected BEFORE TSLRCM overwrites
+  dialog.tlk), the installer offers: open the language's Workshop page via
+  `steam://url/CommunityFilePage/<id>` (user presses Subscribe — the one
+  manual step, in Steam's own UI), poll
+  `steamapps/workshop/content/208580/<id>/` for `dialog.tlk` until its size
+  is stable, verify the language via `GameLocaleDetector` (header ID for
+  DE/FR/IT/ES, CP1251 content probe for RU), back up the English tlk as
+  `dialog.tlk.english.bak`, copy the localized one in, then remind the user
+  to UNSUBSCRIBE. Runs before K2CP/Tweak Pack so their tlk appends land on
+  the localized file. Item IDs (all official TSLRCM-team uploads): DE
+  485551190, FR 485553656, IT 485556965, ES 485555217, RU 2143250983.
+  KOTOR 2 has no localized VO anyway (text-only localization), so the tlk
+  swap is the complete localization story. Re-run caveat: once English
+  TSLRCM is installed, the original language is no longer detectable from
+  the install — the harvest offer only appears in the same run that
+  installed TSLRCM.
 - **Auto-download problem: no GitHub presence, no API-friendly host.** This is
   the one essential mod without a clean scripted download path. Options, in
   preference order: (1) ask the TSLRCM team (zbyl2 et al.) for permission to
