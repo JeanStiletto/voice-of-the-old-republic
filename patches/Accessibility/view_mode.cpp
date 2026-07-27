@@ -27,7 +27,7 @@
 #include "strings.h"
 #include "prism.h"
 #include "transitions.h"
-#include "wall_topology.h"
+#include "room_topology.h"
 
 namespace acc::view_mode {
 
@@ -351,8 +351,8 @@ bool ResolveCursorRegionLabel(void* area, const Vector& cursor,
 
     std::string shapeBuf;
     int  shapeSig   = 0;
-    int  clusterId  = acc::wall_topology::kClusterIdNone;
-    if (acc::wall_topology::LookupAt(area, cursor,
+    int  clusterId  = acc::room_topology::kClusterIdNone;
+    if (acc::room_topology::LookupAt(area, cursor,
                                      shapeBuf,
                                      shapeSig, clusterId) &&
         !shapeBuf.empty()) {

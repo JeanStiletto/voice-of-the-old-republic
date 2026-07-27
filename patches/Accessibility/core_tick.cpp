@@ -333,7 +333,7 @@ void Dispatch() {
     //   camera_announce derives camera yaw from positions.
     //   camera_orient reads it for closed-loop arrival (same frame).
     //   spatial::change_detector reads camera yaw + rebuilds wall cache.
-    //   transitions builds wall_topology that depends on the wall cache —
+    //   transitions builds room_topology that depends on the wall cache —
     //     must run AFTER change_detector or the first tick of an area
     //     change uses stale walls from the previous area.
     //   view_mode reads camera yaw + walls + region/landmark caches.

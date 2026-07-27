@@ -3,7 +3,7 @@
 // Split out of engine_area.cpp by the Phase-1 structure pass (refactoring
 // candidate 3). This is the Pillar-1 geometry foundation: it reads room
 // collision meshes, transforms face edges to world space, and builds the
-// per-area wall cache that wall_topology.cpp consumes. Nothing here
+// per-area wall cache that room_topology.cpp consumes. Nothing here
 // touches the object model or the map surface - it is pure geometry over
 // CSWSArea's room list.
 //

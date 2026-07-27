@@ -5,7 +5,7 @@
 //
 // Algorithm: classify per-node by CSR-adjacency degree on the engine's
 // nav graph, then collapse hub clusters and straight corridor chains
-// into perceptual regions. Implementation lives in wall_topology.cpp.
+// into perceptual regions. Implementation lives in room_topology.cpp.
 //
 // Replaced an earlier per-.lyt-room walkmesh-probe classifier — .lyt-
 // rooms over-segment KOTOR into corridor-sized cells with frequent
@@ -20,7 +20,7 @@
 
 #include "engine_offsets.h"
 
-namespace acc::wall_topology {
+namespace acc::room_topology {
 
 // sig & 0xff = kind. Transitions defers the announce for KindPlatz (big
 // merged spaces — the player may be crossing through). KindRoom is a
@@ -100,4 +100,4 @@ bool GetClusterInfo(void* area, int clusterId,
 
 void DumpGraphToLog();
 
-}  // namespace acc::wall_topology
+}  // namespace acc::room_topology

@@ -1,4 +1,4 @@
-// Wall-topology decomposition — see wall_topology.h for goal + algorithm.
+// Wall-topology decomposition — see room_topology.h for goal + algorithm.
 //
 // EXPERIMENTAL — alternative-direction-calculation-system branch.
 //
@@ -16,7 +16,7 @@
 // trusts it for path solving, so we're operating on the same ground truth
 // the level designers were aware of.
 
-#include "wall_topology.h"
+#include "room_topology.h"
 
 #include <windows.h>
 #include <cmath>
@@ -29,129 +29,22 @@
 #include "engine_reads.h"       // ExtractTextOrStrRef — transition-destination loc-string read
 #include "log.h"
 #include "spatial_change_detector.h"  // GetCachedWalls — seam-filtered perimeter cache
+#include "wall_probe.h"         // the wall system this module reads (Phase-1 split)
 #include "strfmt.h"             // Format — heap-backed printf, never truncates announcements
 #include "strings.h"
 #include "transitions.h"        // IterateLandmarks + MarkLandmarkClaimedByDoor — landmark→door matching pass
 
-namespace acc::wall_topology {
+namespace acc::room_topology {
+
+// The walkmesh-probe primitives moved to wall_probe.{h,cpp} in the Phase-1
+// structure pass: they are the wall system ("is there a wall, how far"),
+// this module is the room-shape system that consumes them. Brought back
+// into unqualified scope so the call sites below read as they did.
+using acc::wall_probe::ProbeDistance;
+using acc::wall_probe::IsAlcoveAlongAxis;
+using acc::wall_probe::ProbeClearance8;
 
 namespace {
-
-// Walkmesh-probe primitives.
-//
-// Single-ray casts against the cached perimeter walls. Used for two
-// gates inside this module:
-//   - door diagnostics (BuildForArea logs 4-cardinal probe distances at
-//     each door so we can see how the walkmesh looks at the threshold);
-//   - dead-end alcove agreement (WalkmeshAgreesDeadEnd spins the 4-ray
-//     probe along the graph-edge axis and checks the alcove signature
-//     before believing a graph-degree-1 dead-end claim).
-//
-// Lived in region_classifier until 2026-05-27; absorbed here when the
-// region module was retired in favour of pure nav-graph classification.
-
-constexpr float kProbeLenWu = 25.0f;
-
-float ProbeWall(const acc::engine::WallEdge* walls, int wallCount,
-                const Vector& origin, float dx, float dy) {
-    Vector b;
-    b.x = origin.x + dx * kProbeLenWu;
-    b.y = origin.y + dy * kProbeLenWu;
-    b.z = origin.z;
-    Vector hit;
-    if (acc::engine::SegmentCrossesWalkmesh(walls, wallCount,
-                                            origin, b, hit)) {
-        float ddx = hit.x - origin.x;
-        float ddy = hit.y - origin.y;
-        return std::sqrt(ddx * ddx + ddy * ddy);
-    }
-    return kProbeLenWu;
-}
-
-// Distance to first wall along (dx,dy). Returns kProbeLenWu when the
-// ray clears the probe range, -1.0 when the wall cache is empty.
-float ProbeDistance(const Vector& pos, float dx, float dy) {
-    const acc::engine::WallEdge* walls = nullptr;
-    int wallCount = 0;
-    if (!acc::spatial::change_detector::GetCachedWalls(walls, wallCount) ||
-        !walls || wallCount <= 0) {
-        return -1.0f;
-    }
-    float mag = std::sqrt(dx * dx + dy * dy);
-    if (mag < 1e-6f) return -1.0f;
-    return ProbeWall(walls, wallCount, pos, dx / mag, dy / mag);
-}
-
-// Dead-end shape gate, a 4-ray probe rotated to align with
-// (forwardX,forwardY) — the direction from the degree-1 node toward its
-// graph parent, i.e. the way in. True when the forward ray is open (the
-// entrance) while the node is boxed in on the other three sides. Two shapes
-// qualify:
-//   - tight alcove      — all three non-forward rays within kDeadEndBackM.
-//   - corridor terminus — a close wall behind (back ray within kDeadEndBackM)
-//     with the perpendicular walls merely bounded to corridor width
-//     (kDeadEndSideM). This is the blocked end of a hallway: forward = the
-//     long corridor you came down, back = the end wall a metre or two away,
-//     sides = the corridor walls (~2.5-2.8m). The old alcove-only test
-//     (all three rays within 2m) rejected these because a corridor is wider
-//     than an alcove, so the terminus got filtered and LookupAt spoke the
-//     corridor body's axis ("Ost-West") while the player stood on its dead
-//     end instead of "Sackgasse" (2026-07-19 Endar Spire node[5]:
-//     rays E=17.2 back-W=1.4 sides N=2.8/S=2.5).
-// A wall-curve artefact in an open area fails both: it sits ALONG a wall, so
-// its back and/or a side ray runs off into open space beyond kDeadEndSideM.
-// Fail-open if the wall cache isn't ready.
-bool IsAlcoveAlongAxis(const Vector& pos, float forwardX, float forwardY) {
-    // Entrance must be open; terminal wall close behind; sides bounded to
-    // corridor width (not open). kDeadEndSideM > kDeadEndBackM is what lets
-    // a corridor end through while still requiring the node be enclosed on
-    // three sides. Tune from the clearance-dump rays if a real terminus is
-    // still filtered.
-    constexpr float kDeadEndForwardM = 2.0f;
-    constexpr float kDeadEndBackM    = 2.0f;
-    constexpr float kDeadEndSideM    = 4.0f;
-
-    const acc::engine::WallEdge* walls = nullptr;
-    int wallCount = 0;
-    if (!acc::spatial::change_detector::GetCachedWalls(walls, wallCount) ||
-        !walls || wallCount <= 0) {
-        return true;  // no data — fail open
-    }
-    float magSq = forwardX * forwardX + forwardY * forwardY;
-    if (magSq < 1e-6f) return true;
-    float inv = 1.0f / std::sqrt(magSq);
-    float fx  = forwardX * inv;
-    float fy  = forwardY * inv;
-    float px  = fy;
-    float py  = -fx;
-    float dF = ProbeWall(walls, wallCount, pos,  fx,  fy);
-    float dB = ProbeWall(walls, wallCount, pos, -fx, -fy);
-    float dR = ProbeWall(walls, wallCount, pos,  px,  py);
-    float dL = ProbeWall(walls, wallCount, pos, -px, -py);
-    return dF > kDeadEndForwardM &&
-           dB <= kDeadEndBackM &&
-           dR <= kDeadEndSideM &&
-           dL <= kDeadEndSideM;
-}
-
-// 8-ray clearance probe. Casts kProbeLenWu rays on the 8 octants from
-// `pos` against the cached perimeter walls, filling outRays[8] in octant
-// order (E, NE, N, NW, W, SW, S, SE — matching OctantFromVector bucket
-// numbering). Each entry is the distance to the first wall hit, or
-// kProbeLenWu when the ray clears the probe range. Pure diagnostic for
-// now — the clearance-dump uses it to characterise per-node openness so
-// we can pick a principled "is this an open space" statistic before
-// wiring any clearance-driven merge.
-void ProbeClearance8(const acc::engine::WallEdge* walls, int wallCount,
-                     const Vector& pos, float outRays[8]) {
-    static const float kDirX[8] = { 1.0f,  0.70710678f, 0.0f, -0.70710678f,
-                                   -1.0f, -0.70710678f, 0.0f,  0.70710678f};
-    static const float kDirY[8] = { 0.0f,  0.70710678f, 1.0f,  0.70710678f,
-                                    0.0f, -0.70710678f,-1.0f, -0.70710678f};
-    for (int k = 0; k < 8; ++k) {
-        outRays[k] = ProbeWall(walls, wallCount, pos, kDirX[k], kDirY[k]);
-    }
-}
 
 // Tunable parameters.
 
@@ -338,7 +231,7 @@ constexpr float kAxisElongRatio = 1.8f;
 // large open spaces trip it; raise/lower after in-game feedback.
 constexpr float kLargeAreaExtentMeters = 40.0f;
 
-// Kind values now live in the public header (wall_topology.h) so
+// Kind values now live in the public header (room_topology.h) so
 // transitions.cpp can branch on Platz for the delayed-announce path.
 // Aliases here keep the local code compact.
 constexpr int kKindDeadEnd  = KindDeadEnd;
@@ -3401,4 +3294,4 @@ bool LookupAt(void* area, const Vector& worldPos,
     return false;
 }
 
-}  // namespace acc::wall_topology
+}  // namespace acc::room_topology

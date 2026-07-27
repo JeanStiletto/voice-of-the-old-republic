@@ -22,7 +22,7 @@
 #include "same_name_suffix.h"   // Reset() on area transition
 #include "strings.h"
 #include "prism.h"
-#include "wall_topology.h"      // single source of truth for perceptual-
+#include "room_topology.h"      // single source of truth for perceptual-
                                 // region labels (nav-graph decomposition)
 
 // Forward decl from core_dllmain.cpp. The OnSetMoveToModuleString detour
@@ -46,12 +46,12 @@ namespace {
 // Trigger moved off .lyt-room ids 2026-05-22 (see
 // docs/room-shape-improvements.md). Empirical: room ids flipped on
 // 94–98 % of player-step samples in dense Taris areas, forcing a text-
-// dedup escape hatch to collapse the noise. `wall_topology` cluster
+// dedup escape hatch to collapse the noise. `room_topology` cluster
 // ids are spatially stable and correspond to perceptual regions —
 // walking inside a corridor keeps the id constant, crossing into a
 // junction flips it once. Cluster-change is the right signal.
 void* g_prev_area        = nullptr;
-int   g_prev_cluster_id  = acc::wall_topology::kClusterIdNone;
+int   g_prev_cluster_id  = acc::room_topology::kClusterIdNone;
 
 // Latch covering the cutscene-load transient (see IsModuleLoadPending
 // in the header for the why). Set in AnnouncePreLoadDestination from
@@ -74,7 +74,7 @@ char  g_prev_friendly_room_name[64] = {0};
 // boundary. ~80ms at 60fps — too short to feel laggy, long enough to
 // absorb a single-tick boundary glitch.
 constexpr int kClusterStabilityTicks = 5;
-int   g_pending_cluster_id    = acc::wall_topology::kClusterIdNone;
+int   g_pending_cluster_id    = acc::room_topology::kClusterIdNone;
 int   g_pending_cluster_count = 0;
 
 // Minor-cluster dwell gate (2026-07-16, Südlicher Strand). Outdoor
@@ -119,7 +119,7 @@ bool  g_pending_cluster_minor    = false;
 // aren't in the cache; we fall back to room-name / shape tiers —
 // same information channel the sighted player has.
 //
-// `doorMatched` is set by wall_topology::AttachLandmarksToDoors when
+// `doorMatched` is set by room_topology::AttachLandmarksToDoors when
 // this landmark's name has been embedded in a cluster label.
 // TickProximityLandmarks skips matched entries so the player doesn't
 // hear "Kreuzung, Ost, Tür Süd, Zur Oberstadt" followed by a redundant
@@ -437,11 +437,11 @@ DWORD g_gate_clear_since_ms     = 0;
 // Resolve the speech at `worldPos` using a two-tier order:
 //   1. Friendly room name at the resolved .lyt-room (filters resref-
 //      style ids) → "room_name"
-//   2. wall_topology::LookupAt (nav-graph topology) → "shape"
+//   2. room_topology::LookupAt (nav-graph topology) → "shape"
 //
 // Tier 1 stays on .lyt-room ids: the friendly-name table is keyed by
 // room index, and the room-name look-up itself is stable for the rare
-// authored names. Tier 2 is cluster-aware via wall_topology. Returns
+// authored names. Tier 2 is cluster-aware via room_topology. Returns
 // false (and leaves outBuf empty) when no tier resolves. Vanilla
 // resref-style rooms with no shape classification stay silent rather
 // than announce a meaningless engine-internal id.
@@ -458,7 +458,7 @@ bool ResolveRoomSpeech(void* area, const Vector& worldPos,
                        int* outClusterIdOpt = nullptr) {
     outBuf.clear();
     outSource = "none";
-    if (outClusterIdOpt) *outClusterIdOpt = acc::wall_topology::kClusterIdNone;
+    if (outClusterIdOpt) *outClusterIdOpt = acc::room_topology::kClusterIdNone;
 
     // Landmark tier removed from the room-transition path 2026-05-13.
     // Landmarks now fire via TickProximityLandmarks below, which scans
@@ -481,7 +481,7 @@ bool ResolveRoomSpeech(void* area, const Vector& worldPos,
         if (outClusterIdOpt) {
             std::string scratch;
             int  scratchSig = 0;
-            acc::wall_topology::LookupAt(area, worldPos,
+            acc::room_topology::LookupAt(area, worldPos,
                                          scratch,
                                          scratchSig, *outClusterIdOpt);
         }
@@ -489,7 +489,7 @@ bool ResolveRoomSpeech(void* area, const Vector& worldPos,
     }
 
     // Mod Settings → Room shape descriptions: when OFF, skip the
-    // wall_topology shape tier entirely. Friendly room names (tier 1)
+    // room_topology shape tier entirely. Friendly room names (tier 1)
     // still announce because they're authored content, not synthesised
     // corridor / junction / Platz vocabulary. Cluster-id stays at None
     // so SpeakRoomChange's caller logs "unresolved" and the Platz
@@ -501,8 +501,8 @@ bool ResolveRoomSpeech(void* area, const Vector& worldPos,
 
     std::string path3Buf;
     int  path3Sig    = 0;
-    int  clusterId   = acc::wall_topology::kClusterIdNone;
-    if (acc::wall_topology::LookupAt(area, worldPos,
+    int  clusterId   = acc::room_topology::kClusterIdNone;
+    if (acc::room_topology::LookupAt(area, worldPos,
                                      path3Buf,
                                      path3Sig, clusterId) &&
         !path3Buf.empty()) {
@@ -514,7 +514,7 @@ bool ResolveRoomSpeech(void* area, const Vector& worldPos,
     return false;
 }
 
-// Diagnostic — log wall_topology's resolution at this position alongside
+// Diagnostic — log room_topology's resolution at this position alongside
 // whatever the resolved speech was (room name, shape, or transition
 // compose). Mirrors the announcement quad we see in MapCursor / ViewMode
 // so a single grep across categories shows every nav-graph decision.
@@ -524,8 +524,8 @@ void LogWallTopoComparison(void* area, int roomIndex,
                            const char* source) {
     std::string path3;
     int  path3Sig    = 0;
-    int  path3Cid    = acc::wall_topology::kClusterIdNone;
-    bool havePath3 = acc::wall_topology::LookupAt(
+    int  path3Cid    = acc::room_topology::kClusterIdNone;
+    bool havePath3 = acc::room_topology::LookupAt(
         area, worldPos, path3, path3Sig, path3Cid);
     const int path3Kind = havePath3 ? (path3Sig & 0xff) : -1;
 
@@ -558,7 +558,7 @@ void LogWallTopoComparison(void* area, int roomIndex,
 void SpeakRoomChange(void* area, int clusterId, const Vector& worldPos) {
     std::string speechBuf;
     const char* source = "none";
-    int resolvedCluster = acc::wall_topology::kClusterIdNone;
+    int resolvedCluster = acc::room_topology::kClusterIdNone;
     if (!ResolveRoomSpeech(area, worldPos,
                            speechBuf, source,
                            &resolvedCluster) ||
@@ -602,15 +602,15 @@ void SpeakRoomChange(void* area, int clusterId, const Vector& worldPos) {
     // nodes); avoids threading the sig back through ResolveRoomSpeech.
     std::string peekBuf;
     int    peekSig      = 0;
-    int    peekCid      = acc::wall_topology::kClusterIdNone;
+    int    peekCid      = acc::room_topology::kClusterIdNone;
     int    peekKind     = -1;
-    if (acc::wall_topology::LookupAt(area, worldPos,
+    if (acc::room_topology::LookupAt(area, worldPos,
                                      peekBuf,
                                      peekSig, peekCid)) {
         peekKind = peekSig & 0xff;
     }
 
-    if (peekKind == acc::wall_topology::KindPlatz) {
+    if (peekKind == acc::room_topology::KindPlatz) {
         // Defer: stash the resolved label + context for the timer in
         // Tick to fire. Advance g_last_spoken_room_text now so further
         // cluster transitions producing the same label get text-deduped
@@ -803,7 +803,7 @@ void TickLandmarkCacheRecheck(void* area, const Vector& playerPos) {
                   "cache (areaPtr=%p)",
                   g_landmark_enabled_at_scan, enabled, area);
     RebuildLandmarkCache(area);
-    acc::wall_topology::AttachLandmarksToDoors(area);
+    acc::room_topology::AttachLandmarksToDoors(area);
     g_lm_prox_pending_idx     = -1;
     g_lm_prox_pending_count   = 0;
     g_lm_prox_last_spoken_idx = -1;
@@ -839,7 +839,7 @@ void TickProximityLandmarks(const Vector& playerPos) {
     }
 
     // Find the nearest landmark inside enter range. Skip entries whose
-    // landmark wall_topology already embedded in a cluster label — the
+    // landmark room_topology already embedded in a cluster label — the
     // player heard the name as part of the room-shape announce on
     // cluster entry, and a redundant standalone fire would talk over
     // the next legitimate cue (see project memory on the
@@ -1010,8 +1010,8 @@ void Tick() {
         // cleanly (matches camera_announce's reset-on-gate-failure
         // discipline).
         g_prev_area       = nullptr;
-        g_prev_cluster_id = acc::wall_topology::kClusterIdNone;
-        g_pending_cluster_id    = acc::wall_topology::kClusterIdNone;
+        g_prev_cluster_id = acc::room_topology::kClusterIdNone;
+        g_pending_cluster_id    = acc::room_topology::kClusterIdNone;
         g_pending_cluster_count = 0;
         g_prev_friendly_room_name[0] = '\0';
         g_last_spoken_room_text.clear();
@@ -1020,7 +1020,7 @@ void Tick() {
         g_lm_prox_pending_count      = 0;
         g_lm_prox_last_spoken_idx    = -1;
         g_pending_platz_valid        = false;
-        acc::wall_topology::Reset();
+        acc::room_topology::Reset();
         acc::narration::Reset();
         // Leave g_module_load_pending alone. Player-loss is the standard
         // mid-load symptom (PC slot wiped while the engine swaps modules);
@@ -1089,10 +1089,10 @@ void Tick() {
         // later in the dispatch order). BuildForArea silently leaves
         // the graph empty when that's the case; we retry below on
         // every tick until it builds successfully.
-        acc::wall_topology::BuildForArea(area);
+        acc::room_topology::BuildForArea(area);
         g_prev_area             = area;
-        g_prev_cluster_id       = acc::wall_topology::kClusterIdNone;
-        g_pending_cluster_id    = acc::wall_topology::kClusterIdNone;
+        g_prev_cluster_id       = acc::room_topology::kClusterIdNone;
+        g_pending_cluster_id    = acc::room_topology::kClusterIdNone;
         g_pending_cluster_count = 0;
         g_prev_friendly_room_name[0] = '\0';
         g_last_spoken_room_text.clear();
@@ -1107,13 +1107,13 @@ void Tick() {
         g_flap_prev_text.clear();
         g_flap_prev_ms               = 0;
         g_flap_cur_ms                = 0;
-    } else if (!acc::wall_topology::HasGraphForArea(area)) {
+    } else if (!acc::room_topology::HasGraphForArea(area)) {
         // Same area as last tick but the graph still isn't built —
         // wall cache wasn't ready when the area-change branch fired.
         // Retry cheaply each tick until it builds. BuildForArea
         // self-gates on the wall cache (no-op until populated) and
         // is idempotent on a same-area call once built.
-        acc::wall_topology::BuildForArea(area);
+        acc::room_topology::BuildForArea(area);
     }
 
     // Door snapshot stabiliser. The initial SnapshotDoors call inside
@@ -1121,7 +1121,7 @@ void Tick() {
     // populated server-object array; this per-tick refresh keeps
     // re-snapshotting until the count settles. No-op once the door
     // set commits or until the graph itself is built.
-    acc::wall_topology::MaybeRefreshDoors(area);
+    acc::room_topology::MaybeRefreshDoors(area);
 
     // Proximity-based landmark scan runs every tick, independent of
     // .lyt-room crossings. Fires when the player enters within 8m of
@@ -1149,7 +1149,7 @@ void Tick() {
 
     // Cluster-based trigger (replaces .lyt-room change 2026-05-22).
     //
-    // We probe wall_topology at the player position each tick — this is
+    // We probe room_topology at the player position each tick — this is
     // the canonical "what perceptual region am I in" signal. cluster_id
     // is stable across .lyt-room flicker (the 94-98% per-step room flips
     // collapse to ~one flip per genuine region entry).
@@ -1173,14 +1173,14 @@ void Tick() {
     // style and IsResrefStyleRoomName filters it out.
     std::string shapeBuf;
     int  shapeSig      = 0;
-    int  clusterId     = acc::wall_topology::kClusterIdNone;
+    int  clusterId     = acc::room_topology::kClusterIdNone;
     // Per-tick probe: suppress LookupAt's WALL-FILTERED / ALL-BLOCKED
     // diagnostic logs. Speech-time call sites (SpeakRoomChange peek,
     // ResolveRoomSpeech, LogWallTopoComparison) still emit them on
     // every cluster transition, so we keep full visibility into wall-
     // filter behaviour without flooding the log with identical lines
     // at 60 fps when the player stands at a wall-filtered boundary.
-    acc::wall_topology::LookupAt(area, pos,
+    acc::room_topology::LookupAt(area, pos,
                                  shapeBuf,
                                  shapeSig, clusterId,
                                  /*allowDiagLog=*/false);
@@ -1206,7 +1206,7 @@ void Tick() {
     // Nothing to compare against yet — wait for the next tick where the
     // graph has finished building. Don't advance prev state on kClusterIdNone
     // so the first real cluster observation still triggers.
-    if (clusterId == acc::wall_topology::kClusterIdNone &&
+    if (clusterId == acc::room_topology::kClusterIdNone &&
         friendlyBuf[0] == '\0') {
         return;
     }
@@ -1225,7 +1225,7 @@ void Tick() {
     // A genuinely open area still announces the fallback once: there the
     // previous committed id is None/-2 (no real cluster was ever in
     // range), so this guard doesn't fire.
-    if (clusterId == acc::wall_topology::kClusterIdOpenArea &&
+    if (clusterId == acc::room_topology::kClusterIdOpenArea &&
         g_prev_cluster_id >= 0) {
         clusterId = g_prev_cluster_id;
     }
@@ -1239,7 +1239,7 @@ void Tick() {
         // Stable inside the same cluster + same friendly name — clear
         // any pending different-cluster observation (player wandered
         // toward the boundary then back).
-        g_pending_cluster_id    = acc::wall_topology::kClusterIdNone;
+        g_pending_cluster_id    = acc::room_topology::kClusterIdNone;
         g_pending_cluster_count = 0;
         return;
     }
@@ -1260,7 +1260,7 @@ void Tick() {
         g_pending_cluster_minor = false;
         int   pendKind   = -1;
         float pendExtent = -1.0f;
-        if (acc::wall_topology::GetClusterInfo(area, clusterId,
+        if (acc::room_topology::GetClusterInfo(area, clusterId,
                                                pendKind, pendExtent) &&
             pendExtent >= 0.0f && pendExtent < kMinorClusterExtentM) {
             g_pending_cluster_minor = true;
@@ -1299,7 +1299,7 @@ void Tick() {
         std::strncpy(g_prev_friendly_room_name, friendlyBuf,
                      sizeof(g_prev_friendly_room_name) - 1);
         g_prev_friendly_room_name[sizeof(g_prev_friendly_room_name) - 1] = '\0';
-        g_pending_cluster_id    = acc::wall_topology::kClusterIdNone;
+        g_pending_cluster_id    = acc::room_topology::kClusterIdNone;
         g_pending_cluster_count = 0;
     }
 }

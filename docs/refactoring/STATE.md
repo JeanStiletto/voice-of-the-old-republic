@@ -274,6 +274,35 @@ Next: execution, batch by batch, in candidate order.
   candidate 28 so the benefit is real; (c) do a smaller conservative
   version moving only the clearly-contiguous topical runs.
 
+- **Candidate 12 (wall_topology 5-way split) — PARTIALLY executed.**
+  Done: the wall-vs-roomshape system split the user asked for.
+  `wall_probe.{h,cpp}` now holds the probe primitives (ProbeWall stays
+  private; ProbeDistance / IsAlcoveAlongAxis / ProbeClearance8 published),
+  and the rest became `room_topology.{h,cpp}` with namespace
+  `acc::room_topology` (candidate 12b). The probe block was verified
+  self-contained: it reads the perimeter-wall cache directly and holds no
+  room-topology state, so the extraction needed no shared externs at all —
+  the silent-state-duplication risk never materialised.
+  NOT done: the further doors / classify / build / diag 4-way split of
+  what is now room_topology.cpp (3289 lines). Measured the cross-block
+  call matrix before cutting; the "documented phases" are not separable.
+  Nearly every anon-namespace helper is called from 2-5 of the proposed
+  files — e.g. UFFind is used 18x from the build block, 4x from diag, 3x
+  from the union-find block; ClassifyEdge from 4 blocks; OctantFromVector
+  from 4; RenderDoorDirection from 4; SnapshotDoors from 3. Executing the
+  split would mean publishing ~25 internal functions plus 6 pieces of
+  mutable state (g_graph, g_doors_stability, s_uf_parent, the three
+  s_class_* counters) through an internal header — turning a cohesive TU
+  into a wide-interface mini-library, which is the opposite of the phase's
+  goal and is exactly where the silent-duplication risk lives.
+  Per the execution protocol this stops for the user to re-decide.
+  Options: (a) accept room_topology.cpp at 3289 lines as cohesive;
+  (b) extract only the diag block (~248 lines, needs ~5 declarations +
+  s_uf_parent/s_class_* published) as a smaller, bounded step;
+  (c) treat the real problem as function-level (ClassifyCluster 530 lines,
+  BuildForArea 780 lines) and hand it to the Phase-3 decomposition sweep,
+  which is where the report already put the comparable menus_extract case.
+
 ## Decisions log
 
 - 2026-07-27: Infrastructure created; state file lives in-repo (survives

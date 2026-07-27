@@ -16,7 +16,7 @@
 // regularly spans multiple rooms. The geometric tests decide alone.
 //
 // Each clustered surface is also reduced to a single straight segment
-// (two extreme endpoints + unit direction + length) so wall_topology
+// (two extreme endpoints + unit direction + length) so room_topology
 // doesn't have to re-merge the edge soup.
 
 #pragma once
@@ -37,7 +37,7 @@ constexpr int kMaxWallSurfaces = 1024;
 // clustered at area-load via union-find.
 //
 // a/b = the two extreme endpoints (only ones used by exactly one edge).
-// Consumed by wall_topology to skip a redundant merge pass.
+// Consumed by room_topology to skip a redundant merge pass.
 //
 // edge_count == 0 flags a degenerate surface (closed loop or zero free
 // endpoints) — GetSurfaceDesc returns false for those.
