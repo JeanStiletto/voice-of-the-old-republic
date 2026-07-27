@@ -44,6 +44,12 @@ const char* Get(Id id) {
         case Id::FmtSavedMarkerPlaced:       return "Marqueur enregistr\xE9 : %s";
         case Id::SavedMarkerFailed:          return "Impossible d'enregistrer le marqueur";
 
+        case Id::HintBackEntrance:    return "Entr\xE9""e arri\xE8re";
+        case Id::HintRebelCorpse:     return "Rebelle mort";
+        case Id::HintBanthaHerd:      return "Troupeau de banthas";
+        case Id::MapNoteFrontExit:    return "Sortie avant";
+        case Id::MapNoteBackExit:     return "Sortie arri\xE8re";
+
         case Id::FmtAnnounceWithClock: return "%s, \xE0 %d heures, %d m\xE8tres";
         case Id::FmtAnnounceNoClock:   return "%s, %d m\xE8tres";
         case Id::FmtCategoryItem:      return "%s. %s";

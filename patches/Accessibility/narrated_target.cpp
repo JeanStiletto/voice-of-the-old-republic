@@ -3,8 +3,9 @@
 #include <windows.h>  // GetTickCount
 #include <cstdint>
 
-#include "engine_area.h"  // ResolveServerObjectHandle for validation
+#include "engine_area.h"        // ResolveServerObjectHandle for validation
 #include "log.h"
+#include "map_shipped_hints.h"  // shipped hints share the map-pin slot shape
 
 namespace acc::narrated_target {
 
@@ -59,8 +60,12 @@ void Clear() {
 namespace {
 
 // Quest scripts can call SetMapPinEnabled(off) — defensive membership walk.
+// Shipped curated hints share the map-pin slot shape but live in a static
+// table, not the engine pin array; IsShippedHint validates identity AND
+// that the hint's module is still the current one (stale on transition).
 bool IsMapPinStillPresent(void* pin) {
     if (!pin) return false;
+    if (acc::map_shipped_hints::IsShippedHint(pin)) return true;
     void* area = acc::engine::GetCurrentArea();
     if (!area) return false;
     void* clientArea = acc::engine::GetClientArea(area);

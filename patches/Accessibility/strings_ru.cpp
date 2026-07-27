@@ -58,6 +58,14 @@ const char* Get(Id id) {
         case Id::FmtSavedMarkerPlaced:       return "\xCC\xE5\xF2\xEA\xE0 \xF1\xEE\xF5\xF0\xE0\xED\xE5\xED\xE0: %s";
         case Id::SavedMarkerFailed:          return "\xCD\xE5 \xF3\xE4\xE0\xEB\xEE\xF1\xFC \xF1\xEE\xF5\xF0\xE0\xED\xE8\xF2\xFC \xEC\xE5\xF2\xEA\xF3";
 
+        // Windows-1251 escapes: Chyornyj khod / Myortvyj povstanets /
+        // Stado bant / Perednij vykhod / Zadnij vykhod
+        case Id::HintBackEntrance:    return "\xD7\xB8\xF0\xED\xFB\xE9 \xF5\xEE\xE4";
+        case Id::HintRebelCorpse:     return "\xCC\xB8\xF0\xF2\xE2\xFB\xE9 \xEF\xEE\xE2\xF1\xF2\xE0\xED\xE5\xF6";
+        case Id::HintBanthaHerd:      return "\xD1\xF2\xE0\xE4\xEE \xE1\xE0\xED\xF2";
+        case Id::MapNoteFrontExit:    return "\xCF\xE5\xF0\xE5\xE4\xED\xE8\xE9 \xE2\xFB\xF5\xEE\xE4";
+        case Id::MapNoteBackExit:     return "\xC7\xE0\xE4\xED\xE8\xE9 \xE2\xFB\xF5\xEE\xE4";
+
         case Id::FmtAnnounceWithClock: return "%s, %d \xF7\xE0\xF1\xEE\xE2, %d \xEC\xE5\xF2\xF0\xEE\xE2";
         case Id::FmtAnnounceNoClock:   return "%s, %d \xEC\xE5\xF2\xF0\xEE\xE2";
         case Id::FmtCategoryItem:      return "%s. %s";

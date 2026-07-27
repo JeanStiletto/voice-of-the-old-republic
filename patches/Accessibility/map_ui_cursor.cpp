@@ -27,6 +27,7 @@
 #include "engine_player.h"
 #include "engine_reads.h"             // ReadCExoString — waypoint tag log
 #include "log.h"
+#include "map_shipped_hints.h"        // shipped curated hints in the hover scan
 #include "map_user_markers.h"         // IsUserMarkerPin — fog-exempt marker id
 #include "strings.h"
 #include "prism.h"
@@ -498,6 +499,42 @@ void* FindNearestUserMapPin(void* clientArea, void* areaMap,
     return bestPin;
 }
 
+// Hit-test the mod's shipped curated hints (map_shipped_hints) — static
+// table rows with no engine object behind them. Fog-GATED like engine
+// notes (unlike user markers): a hint only becomes hoverable once its
+// cell is explored, mirroring the cycle's gate so both surfaces agree on
+// what exists.
+const acc::map_shipped_hints::ShippedHint* FindNearestShippedHint(
+        void* areaMap, float cursorPx, float cursorPy,
+        int* outScannedCount = nullptr, float* outBestDist2 = nullptr) {
+    if (outScannedCount) *outScannedCount = 0;
+    if (outBestDist2) *outBestDist2 = 1e30f;
+    if (!areaMap) return nullptr;
+    const acc::map_shipped_hints::ShippedHint* hints[8];
+    int n = acc::map_shipped_hints::CollectForCurrentModule(hints, 8);
+    const acc::map_shipped_hints::ShippedHint* best = nullptr;
+    float bestDist2 = (float)(kHoverHitRadiusPx * kHoverHitRadiusPx);
+    int scanned = 0;
+    for (int i = 0; i < n; ++i) {
+        ++scanned;
+        if (!acc::engine::IsWorldPointExplored(areaMap, hints[i]->pos)) {
+            continue;
+        }
+        float ppx, ppy;
+        if (!WorldToPixel(areaMap, hints[i]->pos, ppx, ppy)) continue;
+        float dx = ppx - cursorPx;
+        float dy = ppy - cursorPy;
+        float d2 = dx * dx + dy * dy;
+        if (d2 < bestDist2) {
+            bestDist2 = d2;
+            best = hints[i];
+        }
+    }
+    if (outScannedCount) *outScannedCount = scanned;
+    if (outBestDist2) *outBestDist2 = best ? bestDist2 : 1e30f;
+    return best;
+}
+
 bool ReadWaypointMapNoteText(void* waypoint, char* outBuf, size_t bufSize) {
     return acc::engine::GetWaypointMapNote(waypoint, outBuf, bufSize);
 }
@@ -839,18 +876,23 @@ void Tick() {
         }
     }
 
-    // Hover-pause narration — two parallel scans:
+    // Hover-pause narration — three parallel scans:
     //   1) FindNearestExploredMapNote — CSWSWaypoint map-notes (engine-
     //      authored landmarks).
     //   2) FindNearestUserMapPin — user-placed CSWCMapPin entries
     //      (Shift+N drops). Engine quest pins are filtered out at this
     //      tier so the cursor stays on the curated "Map hint" surface.
-    // Whichever is closer in pixel space wins. `hitIsPin` propagates to
-    // the speak path so the right text accessor gets called.
+    //   3) FindNearestShippedHint — the mod's shipped curated hints
+    //      (static table rows, fog-gated).
+    // Whichever is closest in pixel space wins. `hitIsPin` propagates to
+    // the speak path so the right text accessor gets called; shipped
+    // hints are re-identified there via IsShippedHint on the pointer.
     int   scannedCount = 0;
     int   scannedPins  = 0;
-    float bestDistWay2 = 1e30f;
-    float bestDistPin2 = 1e30f;
+    int   scannedHints = 0;
+    float bestDistWay2  = 1e30f;
+    float bestDistPin2  = 1e30f;
+    float bestDistHint2 = 1e30f;
     void* hitWaypoint = FindNearestExploredMapNote(mapPanel, areaMap,
                                                    g_state.px, g_state.py,
                                                    &scannedCount,
@@ -863,26 +905,33 @@ void Tick() {
     void* hitPin = FindNearestUserMapPin(clientAreaForPins, areaMap,
                                          g_state.px, g_state.py,
                                          &scannedPins, &bestDistPin2);
+    const acc::map_shipped_hints::ShippedHint* hitHint =
+        FindNearestShippedHint(areaMap, g_state.px, g_state.py,
+                               &scannedHints, &bestDistHint2);
 
     void* hit      = nullptr;
     bool  hitIsPin = false;
-    if (hitWaypoint && hitPin) {
-        if (bestDistPin2 < bestDistWay2) { hit = hitPin; hitIsPin = true; }
-        else                              { hit = hitWaypoint; }
-    } else if (hitPin) {
-        hit = hitPin; hitIsPin = true;
-    } else {
-        hit = hitWaypoint;
+    float bestHit2 = 1e30f;
+    if (hitWaypoint) { hit = hitWaypoint; bestHit2 = bestDistWay2; }
+    if (hitPin && bestDistPin2 < bestHit2) {
+        hit = hitPin; hitIsPin = true; bestHit2 = bestDistPin2;
+    }
+    if (hitHint && bestDistHint2 < bestHit2) {
+        hit = const_cast<void*>(static_cast<const void*>(hitHint));
+        hitIsPin = false; bestHit2 = bestDistHint2;
     }
 
     if (moved) {
         acclog::Trace("MapCursor",
                       "tick pixel=(%.1f,%.1f) world=(%.2f,%.2f) "
-                      "scanned=%d pins=%d hit=%p kind=%s",
+                      "scanned=%d pins=%d hints=%d hit=%p kind=%s",
                       g_state.px, g_state.py,
                       g_state.world.x, g_state.world.y,
-                      scannedCount, scannedPins,
-                      hit, hitIsPin ? "pin" : "waypoint");
+                      scannedCount, scannedPins, scannedHints,
+                      hit,
+                      hitIsPin ? "pin"
+                               : (hitHint && hit == hitHint ? "hint"
+                                                            : "waypoint"));
     }
 
     // Resolve the terrain shape via the nav-graph topology (built once
@@ -937,7 +986,22 @@ void Tick() {
                 char tagBuf[128] = {0};
                 bool haveTag = false;
                 bool kindIsPin = g_state.pending_note_is_pin;
-                if (kindIsPin) {
+                bool kindIsHint =
+                    acc::map_shipped_hints::IsShippedHint(hit);
+                if (kindIsHint) {
+                    // Shipped curated hint — mod-localised label from the
+                    // static table; no engine object to read.
+                    haveText = acc::map_shipped_hints::GetLabel(
+                                   hit, text, sizeof(text)) &&
+                               text[0] != '\0';
+                    if (!haveText) {
+                        const char* poi = acc::strings::Get(
+                            acc::strings::Id::MapCursorWaypointPOI);
+                        if (poi && poi[0]) {
+                            std::snprintf(text, sizeof(text), "%s", poi);
+                        }
+                    }
+                } else if (kindIsPin) {
                     // Map-pin path — note_text CExoString @+0x100.
                     haveText = acc::engine::GetMapPinNoteText(
                                    hit, text, sizeof(text)) &&
@@ -985,7 +1049,8 @@ void Tick() {
                                   "speak %s=\"%s\" tag=\"%s\" "
                                   "shape=\"%s\" haveText=%d "
                                   "cursor=(%.1f,%.1f)",
-                                  kindIsPin ? "pin" : "note",
+                                  kindIsHint ? "hint"
+                                             : (kindIsPin ? "pin" : "note"),
                                   text, haveTag ? tagBuf : "",
                                   haveShape ? shapeTextLocal.c_str() : "",
                                   (int)haveText,

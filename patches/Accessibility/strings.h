@@ -86,6 +86,18 @@ enum class Id : int {
     FmtSavedMarkerPlaced,
     SavedMarkerFailed,
 
+    // ---- Shipped map hints (map_shipped_hints) — labels for the mod's
+    //      own curated hints folded into the Map hint cycle, and
+    //      replacement labels for the curated note renames
+    //      (map_note_renames) where the destination-area name doesn't
+    //      apply (danm16's two exits share one "Ausgang" strref and are
+    //      told apart by which door they sit at).
+    HintBackEntrance,
+    HintRebelCorpse,
+    HintBanthaHerd,
+    MapNoteFrontExit,
+    MapNoteBackExit,
+
     // ---- Per-item announce format templates.
     //      `WithClock`   takes (name, clock_int, metres_int).
     //      `NoClock`     takes (name, metres_int) — used when the player

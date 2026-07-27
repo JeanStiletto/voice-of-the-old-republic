@@ -35,6 +35,11 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.6.3</h2>
 
+<h3>Map hints:</h3>
+
+- Dantooine's cryptic path markers now speak their destination. Vanilla reuses the same map-note strings for different transitions — "Southern Path" (Südlicher Pfad) marks the way to three different areas depending on the map, "Northern Path" (Nordpfad) three more, and "Exit" (Ausgang) four — so the spoken hint never said where the path actually leads. Those notes now announce the destination area's own name instead ("Matale Estate", "Courtyard", "Grove", ...), taken live from the game's string table so it self-localises in every game language. The two identical "Exit" notes inside the Sandral estate are now told apart as front exit and back exit. Speech-side only: no game file is modified, and mods that rewrite these notes keep their own text.
+- The mod now ships its own curated map hints for story spots the game never marks: the unmarked backdoor of the Sandral estate (the feud-quest sneak entrance), the two dead rebels with the Promised-Land datapads in the Taris sewers, and the bantha herd's grazing ground near the krayt dragon cave. They appear in the map-hint cycle and under the map cursor like vanilla notes — hidden until the player has explored that part of the map — and support the beacon like a placed marker, but are never drawn on the visual map.
+
 <h3>Russian translation:</h3>
 
 - The mod now runs on the Russian translation (Allard 1.72). That translation replaces the game's own program file with its own build, which the mod previously refused to install onto — so Russian players could not use it at all. The mod now recognises that build and works on it: every address it uses inside the game had to be re-found there, because the code is the same but the linker put all of it in different places. Menus, navigation, combat, character creation and the map all behave as they do on the standard game.

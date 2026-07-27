@@ -7,6 +7,7 @@
 #include "engine_area.h"
 #include "engine_player.h"
 #include "log.h"
+#include "map_shipped_hints.h"
 #include "map_user_markers.h"
 #include "menus_modsettings.h"
 
@@ -23,18 +24,21 @@ void SortByDistanceAscending(CategoryListing& l) {
         Vector savePos = l.positions[i];
         float  saveDst = l.distances[i];
         bool   saveIsPin = l.isPin[i];
+        bool   saveIsStatic = l.isStatic[i];
         int j = i - 1;
         while (j >= 0 && l.distances[j] > saveDst) {
             l.objs[j + 1]      = l.objs[j];
             l.positions[j + 1] = l.positions[j];
             l.distances[j + 1] = l.distances[j];
             l.isPin[j + 1]     = l.isPin[j];
+            l.isStatic[j + 1]  = l.isStatic[j];
             --j;
         }
         l.objs[j + 1]      = saveObj;
         l.positions[j + 1] = savePos;
         l.distances[j + 1] = saveDst;
         l.isPin[j + 1]     = saveIsPin;
+        l.isStatic[j + 1]  = saveIsStatic;
     }
 }
 
@@ -153,6 +157,7 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
             out.positions[out.count] = pos;
             out.distances[out.count] = HorizontalDistance(pos, playerPos);
             out.isPin[out.count]     = false;
+            out.isStatic[out.count]  = false;
             ++out.count;
         }
     }
@@ -193,6 +198,7 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
             out.positions[out.count] = pos;
             out.distances[out.count] = HorizontalDistance(pos, playerPos);
             out.isPin[out.count]     = true;
+            out.isStatic[out.count]  = false;
             ++out.count;
             ++pinUser;
         }
@@ -201,6 +207,44 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
                           "BuildListing(map) pin-merge user=%d non-user-skip=%d "
                           "disabled-skip=%d",
                           pinUser, pinSkippedNonUser, pinSkippedDisabled);
+        }
+    }
+
+    // Map context + Landmark: fold in the mod's shipped curated hints
+    // (map_shipped_hints) — static table rows, no engine object behind
+    // them. Gated through the engine's own fog test so they reveal
+    // exactly like vanilla map notes: walk close enough to explore the
+    // cell, the hint appears. (User markers above legitimately skip fog —
+    // the player placed those; shipped hints must not.)
+    if (mapLandmark) {
+        const acc::map_shipped_hints::ShippedHint* hints[8];
+        int hintCount = acc::map_shipped_hints::CollectForCurrentModule(
+            hints, 8);
+        int folded = 0;
+        for (int i = 0; i < hintCount; ++i) {
+            if (!acc::engine::IsWorldPointExplored(areaMapForFog,
+                                                   hints[i]->pos)) {
+                continue;
+            }
+            if (out.count >= CategoryListing::kMaxObjects) {
+                overflowed = true;
+                continue;
+            }
+            out.objs[out.count]      = const_cast<void*>(
+                static_cast<const void*>(hints[i]));
+            out.positions[out.count] = hints[i]->pos;
+            out.distances[out.count] = HorizontalDistance(hints[i]->pos,
+                                                          playerPos);
+            out.isPin[out.count]     = false;
+            out.isStatic[out.count]  = true;
+            ++out.count;
+            ++folded;
+        }
+        if (hintCount > 0) {
+            acclog::Write("Cycle",
+                          "BuildListing(map) shipped-hints module-total=%d "
+                          "explored=%d",
+                          hintCount, folded);
         }
     }
 

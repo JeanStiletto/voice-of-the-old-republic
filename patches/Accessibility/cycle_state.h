@@ -18,9 +18,12 @@ namespace acc::cycle {
 // docks ~30 NPCs, Taris cantina ~20 placeables); overflow truncates +
 // warns once.
 //
-// isPin[i] discriminates entry shape: CSWSObject* (game object) vs
-// CSWCMapPin* (user-placed map pin folded into the Map hint cycle).
-// Consumers branch on this for name resolution and narrated_target stamping.
+// isPin[i] / isStatic[i] discriminate entry shape: CSWSObject* (game
+// object) vs CSWCMapPin* (user-placed map pin folded into the Map hint
+// cycle) vs map_shipped_hints::ShippedHint* (the mod's curated static
+// hints, Map context only). At most one of the two flags is set per
+// entry. Consumers branch on these for name resolution and
+// narrated_target stamping.
 struct CategoryListing {
     static constexpr int kMaxObjects = 64;
 
@@ -28,6 +31,7 @@ struct CategoryListing {
     Vector positions[kMaxObjects];
     float  distances[kMaxObjects];
     bool   isPin[kMaxObjects];
+    bool   isStatic[kMaxObjects];
 
     int count = 0;
 };

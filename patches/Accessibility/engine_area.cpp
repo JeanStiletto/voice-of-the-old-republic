@@ -8,6 +8,7 @@
 #include "engine_player.h"  // GetPlayerArea, kAddrAppManagerPtr
 #include "engine_reads.h"   // ExtractTextOrStrRef, ReadCExoString
 #include "log.h"            // seam-filter telemetry
+#include "map_note_renames.h"  // curated map-note label overrides
 #include "strings.h"        // door state suffix lookup (DoorOpen/DoorLocked)
 #include "engine_rebase.h"
 
@@ -984,11 +985,23 @@ bool EnableMapNote(void* waypoint) {
 bool GetWaypointMapNote(void* waypoint, char* outBuf, size_t bufSize) {
     if (!waypoint || !outBuf || bufSize < 2) return false;
     outBuf[0] = '\0';
-    bool ok = ExtractTextOrStrRef(waypoint,
-                                  kWaypointMapNoteLocOffset,
-                                  kWaypointMapNoteLocOffset + 4,
-                                  outBuf, bufSize);
-    return ok && outBuf[0] != '\0';
+    // Mirrors ExtractTextOrStrRef's order with one insertion: embedded
+    // note text (mods author it directly) always wins; strref-resolved
+    // notes first consult the curated rename table — vanilla's cryptic
+    // corridor labels ("S\xFCdlicher Pfad") speak their transition
+    // destination instead (see map_note_renames) — then fall back to the
+    // vanilla tlk text.
+    if (ReadCExoString(waypoint, kWaypointMapNoteLocOffset,
+                       outBuf, bufSize)) {
+        return outBuf[0] != '\0';
+    }
+    uint32_t strref = ReadU32(waypoint, kWaypointMapNoteLocOffset + 4);
+    Vector notePos;
+    if (GetObjectPosition(waypoint, notePos) &&
+        acc::map_note_renames::Override(strref, notePos, outBuf, bufSize)) {
+        return true;
+    }
+    return LookupTlk(strref, outBuf, bufSize) && outBuf[0] != '\0';
 }
 
 namespace {
@@ -1219,16 +1232,22 @@ bool IsMapPinEnabled(void* mapPin) {
 bool GetMapPinNoteText(void* mapPin, char* outBuf, size_t bufSize) {
     if (!mapPin || !outBuf || bufSize < 2) return false;
     outBuf[0] = '\0';
-    // CExoString at +0x100; engine_reads::ExtractTextOrStrRef tries the
-    // inline c_string first, falls back to the strref at the same
-    // CExoString's +0x04 slot via TLK lookup. Map pins served over the
-    // wire from the server carry inline text; quest-script-created pins
-    // may carry strref-only. ExtractTextOrStrRef handles both.
-    bool ok = ExtractTextOrStrRef(mapPin,
-                                  kMapPinNoteTextOffset,
-                                  kMapPinNoteStrrefOffset,
-                                  outBuf, bufSize);
-    return ok && outBuf[0] != '\0';
+    // CExoString at +0x100; inline c_string first, falling back to the
+    // strref at the same CExoString's +0x04 slot via TLK lookup. Map pins
+    // served over the wire from the server carry inline text; quest-
+    // script-created pins may carry strref-only. Strref-resolved pins get
+    // the same curated rename pass as GetWaypointMapNote so both readers
+    // of one note always speak one label.
+    if (ReadCExoString(mapPin, kMapPinNoteTextOffset, outBuf, bufSize)) {
+        return outBuf[0] != '\0';
+    }
+    uint32_t strref = ReadU32(mapPin, kMapPinNoteStrrefOffset);
+    Vector notePos;
+    if (GetMapPinPosition(mapPin, notePos) &&
+        acc::map_note_renames::Override(strref, notePos, outBuf, bufSize)) {
+        return true;
+    }
+    return LookupTlk(strref, outBuf, bufSize) && outBuf[0] != '\0';
 }
 
 namespace {

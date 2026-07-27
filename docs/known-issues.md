@@ -56,19 +56,14 @@ On the class-selection chargen screen the three classes are a horizontal row, so
 
 While a beacon (or autowalk) is active, the route announcements should describe the *remaining* way to the active waypoint — leading with the range and direction of the current target — rather than the full original route. The hard part is disambiguating intents: if the player selects another object just to hear where it is, the announcement must not balloon into the long, confusing full-route description for the beacon target. Design questions to resolve: how to keep "where is this thing I just selected" reads short while a beacon is running, and whether the separate Shift+Enter autowalk / Shift+`-` gestures are still needed at all, or whether they can be folded into / replaced by the plain selection + beacon flow. See `project_narrated_target_unified.md` and `project_map_cycle_architecture.md`.
 
-### Additional manual map hints
+### Shipped map hints + Dantooine note renames — IMPLEMENTED, awaiting in-game test
 
-Hand-authored map hints for specific story locations the game doesn't mark but players struggle to find without sight. Backlog so far:
-- Rebel corpses.
-- The backdoor of the Sandral estate.
-Add these to the manual map-hint registry (see `project_map_cycle_architecture.md` / `map_user_markers.cpp` for how user/manual hints fold into the map-hint cycle). Confirm the exact module and in-world position for each before adding.
+The former "Additional manual map hints" / "Waypoints" backlog, resolved 2026-07-27 from module data (no in-game collection needed):
 
-### Waypoints
-
-Navigation waypoint / map-hint issues on specific maps. Maintainer-reported from play; the specifics below are as-described and need the exact module and in-world position confirmed before acting.
-
-- **Dantooine paths correlate with nearby area transitions.** On Dantooine the route guidance / waypoints appear to line up with (or get pulled toward) the nearby area-transition points, so the path read points at a transition rather than the intended route. Investigate how the Dantooine route waypoints / map hints are derived near transitions, and which module(s) and transitions are involved. May turn out to be a bug rather than planned work once reproduced.
-- **Missing waypoint for the banthas near the "dragon cafe".** Add a map hint / waypoint for the banthas by the "dragon cafe" (maintainer's name for the spot — confirm the actual landmark, module, and in-world position). Folds into the manual map-hint registry alongside the "Additional manual map hints" backlog above.
+- **Curated shipped hints** (`map_shipped_hints.cpp`): static per-module table folded into the Map hint cycle, fog-gated through the engine's own `IsWorldPointExplored` (reveals like a vanilla note), never drawn as a visual pin. Entries: Sandral-estate backdoor (danm14ad, the unmarked second door — the marked one is the front), the two "Toter Rebell" Promised-Land corpse containers (tar_m05aa, lower sewers — this is what "rebel corpses" referred to), bantha grazing-band centroid (tat_m18ac, near the krayt-dragon cave; the herd patrols a ~90×160 m band, one bantha in sight progresses Komad's quest).
+- **Dantooine note renames** (`map_note_renames.cpp`, applied inside `GetWaypointMapNote`/`GetMapPinNoteText`): vanilla reuses one tlk string per corridor style ("Südlicher Pfad" ×3 modules, "Nordpfad" ×3, "Ausgang" ×4) — spoken hints now say the destination area name (resolved from the destination .are name strref via `LookupTlk`, planet prefix stripped; self-localising). danm16's two same-strref "Ausgang" notes are disambiguated by position anchor into front/back exit. Keyed (module, strref) so modded notes keep their own text.
+- The old "Dantooine paths correlate with transitions" observation is **explained, not a bug**: the vanilla notes ARE transition markers, authored 2–11 m from the transition triggers with corridor names instead of destinations. The rename addresses the actual confusion.
+- The map-cursor WASD hover finds shipped hints too (`FindNearestShippedHint`, third scan next to waypoints and user pins, fog-gated, closest-in-pixel-space wins). Like the cycle, the hover never surfaces an unexplored hint.
 
 ### Integrate a Polish translation
 

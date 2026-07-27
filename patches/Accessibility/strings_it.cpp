@@ -43,6 +43,12 @@ const char* Get(Id id) {
         case Id::FmtSavedMarkerPlaced:       return "Marcatore salvato: %s";
         case Id::SavedMarkerFailed:          return "Impossibile salvare il marcatore";
 
+        case Id::HintBackEntrance:    return "Ingresso posteriore";
+        case Id::HintRebelCorpse:     return "Ribelle morto";
+        case Id::HintBanthaHerd:      return "Branco di bantha";
+        case Id::MapNoteFrontExit:    return "Uscita anteriore";
+        case Id::MapNoteBackExit:     return "Uscita posteriore";
+
         case Id::FmtAnnounceWithClock: return "%s, alle ore %d, %d metri";
         case Id::FmtAnnounceNoClock:   return "%s, %d metri";
         case Id::FmtCategoryItem:      return "%s. %s";

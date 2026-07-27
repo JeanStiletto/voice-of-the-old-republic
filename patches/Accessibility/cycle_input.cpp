@@ -30,6 +30,7 @@
 #include "guidance_pathfind.h"
 #include "hotkeys.h"
 #include "log.h"
+#include "map_shipped_hints.h"  // shipped curated hints in the Map cycle
 #include "map_ui_cursor.h"
 #include "narrated_target.h"
 #include "peek_description.h"
@@ -159,6 +160,10 @@ void ResolvePinNoteText(void* pin, char* outBuf, size_t bufSize) {
 void ResolveEntryName(const acc::cycle::CategoryListing& listing, int idx,
                       bool mapHint, char* out, size_t size) {
     out[0] = '\0';
+    if (listing.isStatic[idx]) {
+        acc::map_shipped_hints::GetLabel(listing.objs[idx], out, size);
+        return;
+    }
     if (listing.isPin[idx]) {
         ResolvePinNoteText(listing.objs[idx], out, size);
         return;
@@ -202,12 +207,15 @@ void AppendPositionOrdinal(const acc::cycle::CategoryListing& listing,
 
     // Count how many like-shaped, same-named peers sort north of the
     // focused entry; that rank (1-based, northmost = 1) is its ordinal.
-    const bool    focusIsPin = listing.isPin[focusedIndex];
-    const Vector& fp         = listing.positions[focusedIndex];
+    const bool    focusIsPin    = listing.isPin[focusedIndex];
+    const bool    focusIsStatic = listing.isStatic[focusedIndex];
+    const Vector& fp            = listing.positions[focusedIndex];
     int rank      = 1;
     int peerCount = 0;
     for (int j = 0; j < listing.count; ++j) {
-        if (listing.isPin[j] != focusIsPin) continue;  // compare like with like
+        // Compare like with like — same entry shape only.
+        if (listing.isPin[j] != focusIsPin) continue;
+        if (listing.isStatic[j] != focusIsStatic) continue;
         char other[128];
         ResolveEntryName(listing, j, mapHint, other, sizeof(other));
         if (std::strcmp(other, focusKey) != 0) continue;
@@ -268,23 +276,29 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
     acc::audio::PlayCue3D(acc::audio::GetNavCueResref(cue), objPos);
 
     char name[128] = "";
-    // Three name-resolution paths share the "Map hint" announce:
-    //  1) User-placed map pin (listing.isPin=true): CSWCMapPin.note_text
+    // Four name-resolution paths share the "Map hint" announce:
+    //  1) Shipped curated hint (listing.isStatic=true): the mod-localised
+    //     label from the map_shipped_hints table.
+    //  2) User-placed map pin (listing.isPin=true): CSWCMapPin.note_text
     //     (+0x100), populated by map_user_markers::BuildAutoName.
-    //  2) Map-context waypoint: GetWaypointMapNote (+0x230) — the engine's
+    //  3) Map-context waypoint: GetWaypointMapNote (+0x230) — the engine's
     //     localised map-note text, same string sighted players see.
-    //  3) Anything else: GetObjectName (door / NPC / ...). World-context
+    //  4) Anything else: GetObjectName (door / NPC / ...). World-context
     //     Landmark + Transition go here too — GetObjectName now folds the
     //     waypoint map-note (+0x230) and the trigger transition_destination
     //     (+0x30c) into its own fallback chain, so those resolve to the
     //     human-readable label ("Zur Oberstadt") instead of the raw tag.
     // The map-context branch below still reads GetWaypointMapNote directly
     // so its same-name numbering keys off the exact map string.
-    bool isPin = listing.isPin[s.focusedIndex];
+    bool isPin    = listing.isPin[s.focusedIndex];
+    bool isStatic = listing.isStatic[s.focusedIndex];
     bool mapHint = mapCtx &&
                    s.category == acc::filter::CycleCategory::Landmark;
     bool nameOk = false;
-    if (isPin) {
+    if (isStatic) {
+        nameOk = acc::map_shipped_hints::GetLabel(s.focusedObj,
+                                                  name, sizeof(name));
+    } else if (isPin) {
         nameOk = acc::engine::GetMapPinNoteText(s.focusedObj,
                                                 name, sizeof(name)) &&
                  name[0] != '\0';
@@ -298,7 +312,9 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
                                                  name, sizeof(name)) &&
                  name[0] != '\0';
     }
-    if (!nameOk) {
+    // Static hints never fall through to GetObjectName — the table row is
+    // not an engine object; a failed GetLabel lands on the category name.
+    if (!nameOk && !isStatic) {
         nameOk = acc::engine::GetObjectName(s.focusedObj,
                                             name, sizeof(name)) &&
                  name[0] != '\0';
@@ -370,7 +386,10 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
     // since pins don't resolve through ResolveServerObjectHandle; game-
     // object stamp re-derives the server handle for the AI primitives.
     uint32_t serverHandle = 0;
-    if (isPin) {
+    if (isPin || isStatic) {
+        // Shipped hints share the map-pin stamp shape: frozen position,
+        // no server handle. narrated_target validates them back through
+        // map_shipped_hints::IsShippedHint.
         acc::narrated_target::StampMapPin(s.focusedObj, objPos);
     } else {
         serverHandle = acc::engine::GetObjectHandle(s.focusedObj);
@@ -387,14 +406,16 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
     if (mapCtx) {
         acc::map_ui_cursor::PanToWorld(
             objPos,
-            (!isPin && s.category == acc::filter::CycleCategory::Landmark)
+            (!isPin && !isStatic &&
+             s.category == acc::filter::CycleCategory::Landmark)
                 ? s.focusedObj
                 : nullptr);
     }
 
-    acclog::Write("Cycle", "-> [%s] obj=%p handle=0x%08x ctx=%s isPin=%d",
+    acclog::Write("Cycle",
+                  "-> [%s] obj=%p handle=0x%08x ctx=%s isPin=%d isStatic=%d",
                   fullMsg, s.focusedObj, serverHandle,
-                  mapCtx ? "Map" : "World", (int)isPin);
+                  mapCtx ? "Map" : "World", (int)isPin, (int)isStatic);
 }
 
 // ---- Per-action handlers (shared by both ingestion paths) ----
@@ -480,17 +501,23 @@ bool ResolveNarratedActivation(NarratedActivation& out) {
 
     if (slot.isMapPin) {
         // Map-pin path: pos is frozen at stamp time (pins don't move).
-        // Name resolves from CSWCMapPin.note_text; fall back to the
-        // generic placeholder when missing (user-placed pins always
-        // have one assigned, but defended for safety).
+        // Shipped curated hints share this slot shape and resolve their
+        // label from the map_shipped_hints table; real pins resolve from
+        // CSWCMapPin.note_text. Fall back to the generic placeholder when
+        // missing (user-placed pins always have one assigned, but
+        // defended for safety).
         out.obj      = slot.obj;
         out.handle   = 0;
         out.pos      = slot.pos;
         out.category = acc::filter::CycleCategory::Landmark;  // for cue
         out.isMapPin = true;
-        if (!acc::engine::GetMapPinNoteText(slot.obj, out.name,
-                                            sizeof(out.name)) ||
-            out.name[0] == '\0') {
+        bool named = acc::map_shipped_hints::IsShippedHint(slot.obj)
+            ? acc::map_shipped_hints::GetLabel(slot.obj, out.name,
+                                               sizeof(out.name))
+            : (acc::engine::GetMapPinNoteText(slot.obj, out.name,
+                                              sizeof(out.name)) &&
+               out.name[0] != '\0');
+        if (!named) {
             const char* fallback = acc::strings::Get(
                 acc::strings::Id::MapPinNoText);
             std::snprintf(out.name, sizeof(out.name), "%s", fallback);
