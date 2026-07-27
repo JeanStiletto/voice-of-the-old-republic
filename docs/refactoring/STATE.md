@@ -325,6 +325,22 @@ Next: execution, batch by batch, in candidate order.
   room+landmark narration pass for it; (c) fold it into the Phase-2
   coupling work, where "who owns this state" is the actual question.
 
+- **tools/ is gitignored — kdev refactoring cannot be committed.**
+  Discovered while executing candidate 26. `.gitignore:49` excludes
+  `/tools/` ("Internal dev tooling ... Excluded from the public repo for
+  now; may be released separately later") and `git ls-files tools/`
+  returns zero files. Consequences the Phase-1 plan did not account for:
+  the kdev candidates (15, 16, 25a, 26) produce no commits, are not
+  bisectable, and have no rollback path — the passing build is the only
+  safety net. They were executed anyway (all verified: `dotnet build`
+  clean at 0 errors / 0 warnings, `kdev --help` runs, `kdev build`
+  produces the kpatch), and the resulting source was copied to the
+  session scratchpad as a manual backup.
+  Decision needed from the user: leave kdev unversioned, un-ignore
+  `/tools/` so dev tooling gets history too, or give it its own repo.
+  Until that is settled, treat further kdev refactoring as higher-risk
+  than the patch-side work, not lower.
+
 ## Decisions log
 
 - 2026-07-27: Infrastructure created; state file lives in-repo (survives
