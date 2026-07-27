@@ -17,9 +17,17 @@ namespace KotorAccessibilityInstaller
         /// <summary>Thematic KOTOR Companions + Swoop Bike Upgrades.</summary>
         public bool CompanionAndSwoopUpgrades { get; init; } = true;
 
+        /// <summary>
+        /// KOTOR 2 Community Patch. Only meaningful once the KOTOR 2 install
+        /// flow is wired (see <see cref="ModInstallers.K2cpInstaller"/>); the
+        /// KOTOR 1 flow's <see cref="ModSelectionForm"/> forces it false.
+        /// </summary>
+        public bool K2cp { get; init; } = true;
+
         public static ModSelection AllOn() => new();
 
         public override string ToString() =>
-            $"K1cp={K1cp}, RestoredCutContent={RestoredCutContent}, CompanionAndSwoopUpgrades={CompanionAndSwoopUpgrades}";
+            $"K1cp={K1cp}, RestoredCutContent={RestoredCutContent}, " +
+            $"CompanionAndSwoopUpgrades={CompanionAndSwoopUpgrades}, K2cp={K2cp}";
     }
 }

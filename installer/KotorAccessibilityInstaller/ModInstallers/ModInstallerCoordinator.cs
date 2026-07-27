@@ -28,6 +28,20 @@ namespace KotorAccessibilityInstaller.ModInstallers
         }
 
         /// <summary>
+        /// Pipeline for a KOTOR 2 install directory. Prepared but not invoked
+        /// yet — the KOTOR 2 flow activates once the TSLRCM-first ordering is
+        /// resolved (TSLRCM must be present before K2CP; see K2cpInstaller's
+        /// activation gates and docs/installer.md, "KOTOR 2 mod bundle").
+        /// </summary>
+        public static IReadOnlyList<IModInstaller> BuildKotor2Pipeline()
+        {
+            return new List<IModInstaller>
+            {
+                new K2cpInstaller(),
+            };
+        }
+
+        /// <summary>
         /// Run every installer whose <see cref="IModInstaller.IsSelected"/> returns true.
         /// Returns a per-mod result list. A failure from one installer does NOT short-
         /// circuit the rest — the user gets a per-mod summary at the end.

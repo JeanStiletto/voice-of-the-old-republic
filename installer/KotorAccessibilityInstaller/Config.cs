@@ -76,6 +76,69 @@ namespace KotorAccessibilityInstaller
         public const string K1cpPinnedRef = "4778ae5e2f5facc2bb6449cf7ffa3720e35a5b0f";
         public const string K1cpDisplayVersion = "v1.10.1";
 
+        // ---------------------------------------------------------------------
+        // KOTOR 2 engine patches (Lane's static kpatches)
+        // ---------------------------------------------------------------------
+        // Both are pure static byte patches (no DLL payload), bundled as
+        // resources and applied to swkotor2.exe when the user selects KOTOR 2.
+        // Packaged from third_party/Kotor-Patch-Manager/Patches/<name>/; the
+        // patch IDs must match each manifest.toml. Feature-equivalent to the
+        // community 3C-FD tool's 4GB + borderless patches (see
+        // docs/installer.md, "KOTOR 2 mod bundle").
+
+        public const string K2FourGbKPatchAssetName = "4GBPatch.kpatch";
+        public const string K2FourGbPatchId = "4gb-patch";
+        public const string K2BorderlessKPatchAssetName = "BorderlessFullscreen.kpatch";
+        public const string K2BorderlessPatchId = "borderless_fullscreen";
+
+        // ---------------------------------------------------------------------
+        // K2CP (KOTOR 2 Community Patch) — source pin
+        // ---------------------------------------------------------------------
+        // Same GitHub org as K1CP. The repo has NO export-ignore on tslpatchdata
+        // and publishes no releases or tags; we pin the commit whose date matches
+        // the v1.6.2 DeadlyStream release (both 2025-09-26). Not yet installed by
+        // any shipped flow — see K2cpInstaller for the activation gates.
+
+        public const string K2cpRepoOwner = "KOTORCommunityPatches";
+        public const string K2cpRepoName = "TSL_Community_Patch";
+        public const string K2cpPinnedRef = "4850a441368678ff72f3a173b33366c3c960d95e";
+        public const string K2cpDisplayVersion = "v1.6.2";
+
+        /// <summary>
+        /// TSLRCM download page on DeadlyStream. TSLRCM has no auto-download
+        /// host (no GitHub, ModDB is Cloudflare-gated, Steam Workshop version
+        /// prohibited by the community build), so until a permission-based
+        /// mirror exists the installer points the user at this page. The
+        /// page's Download button serves the file to guests without an account.
+        /// </summary>
+        public const string TslrcmDownloadPageUrl =
+            "https://deadlystream.com/files/file/578-tsl-restored-content-mod/";
+
+        /// <summary>
+        /// Filename DeadlyStream serves for the TSLRCM 1.8.6 installer
+        /// (Content-Disposition on the download response), reused as the local
+        /// temp filename.
+        /// </summary>
+        public const string TslrcmInstallerFileName = "tslrcm2022.exe";
+
+        /// <summary>
+        /// SHA-256 of the TSLRCM 1.8.6 installer exe as downloaded from
+        /// DeadlyStream on 2026-07-27. The scraped download is verified against
+        /// this before we run the exe — the file comes from a third-party site
+        /// over a scraped endpoint, so run nothing that doesn't match. If
+        /// TSLRCM ships an update, verification fails closed and the user is
+        /// pointed at the manual browser download; bump this constant (and
+        /// re-verify) to adopt the new file.
+        /// </summary>
+        public const string TslrcmInstallerSha256 =
+            "94C99C4807DA4B304DE6E0EFED1BE55E0F43D13CC5A274582ED3323AC0E2F1A6";
+
+        /// <summary>
+        /// Size of the TSLRCM installer in bytes (progress fallback when the
+        /// server omits Content-Length). Same capture as the hash above.
+        /// </summary>
+        public const long TslrcmInstallerSizeBytes = 137947655;
+
         /// <summary>
         /// HoloPatcher binary filename used at install time to drive
         /// TSLPatcher-style mod installs headlessly (K1CP and similar).

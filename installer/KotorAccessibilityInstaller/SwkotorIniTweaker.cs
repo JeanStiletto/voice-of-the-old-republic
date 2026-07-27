@@ -26,6 +26,7 @@ namespace KotorAccessibilityInstaller
     public static class SwkotorIniTweaker
     {
         private const string IniFileName = "swkotor.ini";
+        private const string Kotor2IniFileName = "swkotor2.ini";
         private const string GraphicsSectionHeader = "[Graphics Options]";
         private const string KeymappingSectionHeader = "[Keymapping]";
 
@@ -68,6 +69,16 @@ namespace KotorAccessibilityInstaller
             public string IniPath { get; init; }
         }
 
+        // KOTOR 2 settings required by Lane's BorderlessFullscreen patch (its
+        // manifest: "Requires AllowWindowedMode=1 and Fullscreen=0") — and
+        // windowed mode is our screen-reader baseline on KOTOR 1 too
+        // (exclusive fullscreen breaks NVDA/JAWS focus).
+        private static readonly (string Key, string Value)[] Kotor2Tweaks =
+        {
+            ("AllowWindowedMode", "1"),
+            ("FullScreen", "0"),
+        };
+
         /// <summary>
         /// Apply the stability tweaks to <c>&lt;gameDir&gt;/swkotor.ini</c>. Reads the
         /// file, modifies the relevant keys inside <c>[Graphics Options]</c>, writes
@@ -75,7 +86,7 @@ namespace KotorAccessibilityInstaller
         /// appended at end of file.
         /// </summary>
         public static Result ApplyAccessibilityDefaults(string gameDir)
-            => ApplySectionPairs(gameDir, GraphicsSectionHeader, Tweaks);
+            => ApplySectionPairs(gameDir, IniFileName, GraphicsSectionHeader, Tweaks);
 
         /// <summary>
         /// Apply the mod's movement keybinds (strafe on A/D, camera turn on Y/C) to
@@ -84,23 +95,31 @@ namespace KotorAccessibilityInstaller
         /// returning player's customised bindings are never overwritten.
         /// </summary>
         public static Result ApplyKeymapDefaults(string gameDir)
-            => ApplySectionPairs(gameDir, KeymappingSectionHeader, KeymapTweaks);
+            => ApplySectionPairs(gameDir, IniFileName, KeymappingSectionHeader, KeymapTweaks);
+
+        /// <summary>
+        /// Apply the windowed-mode settings the BorderlessFullscreen patch needs
+        /// to <c>&lt;k2GameDir&gt;/swkotor2.ini</c>.
+        /// </summary>
+        public static Result ApplyKotor2WindowedDefaults(string k2GameDir)
+            => ApplySectionPairs(k2GameDir, Kotor2IniFileName, GraphicsSectionHeader, Kotor2Tweaks);
 
         /// <summary>
         /// Shared in-place editor: sets each <paramref name="pairs"/> key=value inside
-        /// <paramref name="sectionHeader"/>, appending missing keys to the section and
-        /// the section itself if absent. Preserves ordering, comments, and whitespace.
+        /// <paramref name="sectionHeader"/> of <paramref name="iniFileName"/>, appending
+        /// missing keys to the section and the section itself if absent. Preserves
+        /// ordering, comments, and whitespace.
         /// </summary>
         private static Result ApplySectionPairs(
-            string gameDir, string sectionHeader, (string Key, string Value)[] pairs)
+            string gameDir, string iniFileName, string sectionHeader, (string Key, string Value)[] pairs)
         {
-            string iniPath = Path.Combine(gameDir, IniFileName);
+            string iniPath = Path.Combine(gameDir, iniFileName);
             if (!File.Exists(iniPath))
             {
                 return new Result
                 {
                     Success = false,
-                    Error = $"{IniFileName} not found at {iniPath}",
+                    Error = $"{iniFileName} not found at {iniPath}",
                     IniPath = iniPath
                 };
             }
@@ -130,7 +149,7 @@ namespace KotorAccessibilityInstaller
                     lines.Add(sectionHeader);
                     sectionStart = lines.Count - 1;
                     sectionEndExclusive = lines.Count;
-                    Logger.Info($"  {sectionHeader} not found in {IniFileName}; appending");
+                    Logger.Info($"  {sectionHeader} not found in {iniFileName}; appending");
                 }
                 else
                 {
@@ -193,7 +212,7 @@ namespace KotorAccessibilityInstaller
                 foreach (var line in lines) sb.Append(line).Append("\r\n");
                 File.WriteAllText(iniPath, sb.ToString(), new UTF8Encoding(false));
 
-                Logger.Info($"  swkotor.ini updated ({changed} changed, {added} added, {alreadyCorrect} already correct)");
+                Logger.Info($"  {iniFileName} updated ({changed} changed, {added} added, {alreadyCorrect} already correct)");
 
                 return new Result
                 {

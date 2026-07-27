@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -267,6 +268,33 @@ namespace KotorAccessibilityInstaller
                 return;
             }
 
+            // Which game(s) to target. KOTOR 1 continues into the flow below.
+            // KOTOR 2 support is in preparation: the selection is collected and
+            // logged, K2cpInstaller exists, but the KOTOR 2 install flow is not
+            // wired yet (TSLRCM-first ordering must be resolved first — see
+            // docs/installer.md, "KOTOR 2 mod bundle"). Until then a KOTOR 2
+            // selection gets a notice with the manual TSLRCM download steps.
+            var gameVersionForm = new GameVersionSelectionForm();
+            Application.Run(gameVersionForm);
+            if (!gameVersionForm.ProceedWithInstall)
+            {
+                Logger.Info("Installation cancelled from game-version selection");
+                return;
+            }
+
+            if (gameVersionForm.Selection.Kotor2)
+            {
+                string k2Path = DetectKotor2GamePath();
+                Logger.Info($"KOTOR 2 selected; detected install: {k2Path ?? "(not found)"}");
+                RunKotor2PreparationFlow(k2Path);
+            }
+
+            if (!gameVersionForm.Selection.Kotor1)
+            {
+                Logger.Info("KOTOR 2 only selected; nothing installable in this version — exiting.");
+                return;
+            }
+
             // Base-components info: accessibility mod + Prism + widescreen (always installed).
             var infoForm = new ModdingInfoForm();
             Application.Run(infoForm);
@@ -300,6 +328,198 @@ namespace KotorAccessibilityInstaller
             WerLocalDumps.Enable();
 
             Application.Run(new MainForm(resolvedPath, language: welcomeForm.SelectedLanguage, modSelection: selectionForm.Selection, localKpatchPath: localKpatchPath));
+        }
+
+        /// <summary>
+        /// Runs when the user checks KOTOR 2 on the game-version screen. A
+        /// Yes/No MessageBox (NVDA/JAWS read it in full; Ctrl+C copies it,
+        /// link included) explains that KOTOR 2 support is in preparation,
+        /// reports whether a KOTOR 2 install was found, and offers to install
+        /// TSLRCM now — TSLRCM is first in the K2 install order, so setting it
+        /// up early is safe. On Yes, <see cref="TslrcmInstallForm"/> scrapes
+        /// the guest download off DeadlyStream, verifies the pinned SHA-256,
+        /// and runs TSLRCM's own Inno Setup silently into the detected KOTOR 2
+        /// folder (their installer does game detection and obsolete-file
+        /// cleanup we should not reimplement; silent because its wizard is
+        /// English-only while this installer speaks the user's language). The
+        /// visible English wizard remains the fallback when no KOTOR 2 folder
+        /// was detected or the silent run fails.
+        /// </summary>
+        private static void RunKotor2PreparationFlow(string k2Path)
+        {
+            string statusLine = k2Path != null
+                ? InstallerLocale.Format("K2Prep_Detected_Format", k2Path)
+                : InstallerLocale.Get("K2Prep_NotDetected");
+
+            // Engine patches first: fast, local, independent of the TSLRCM
+            // choice. Their result line rides the status slot of the offer box
+            // below so the whole preparation step stays a single dialog.
+            if (k2Path != null)
+            {
+                statusLine += "\n\n" + ApplyKotor2EnginePatches(k2Path);
+            }
+
+            string body =
+                InstallerLocale.Format("K2Prep_Body_Format", statusLine, Config.TslrcmDownloadPageUrl) +
+                InstallerLocale.Get("K2Tslrcm_Question");
+
+            var choice = MessageBox.Show(
+                body,
+                InstallerLocale.Get("K2Prep_Title"),
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+
+            if (choice != DialogResult.Yes)
+            {
+                Logger.Info("User declined TSLRCM install");
+                return;
+            }
+
+            var form = new TslrcmInstallForm(k2Path);
+            Application.Run(form);
+
+            switch (form.Outcome)
+            {
+                case TslrcmOutcome.SilentInstalled:
+                    MessageBox.Show(
+                        InstallerLocale.Format("K2Tslrcm_SilentDone_Format", k2Path),
+                        InstallerLocale.Get("K2Prep_Title"),
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                    TryDeleteTempFile(form.InstallerPath);
+                    break;
+
+                case TslrcmOutcome.DownloadedOnly:
+                    // No KOTOR 2 folder detected — silent /DIR would be a guess,
+                    // so let TSLRCM's own wizard do its game detection visibly.
+                    RunTslrcmWizardInteractive(form.InstallerPath, statusLine);
+                    break;
+
+                case TslrcmOutcome.SilentInstallFailed:
+                    var fallback = MessageBox.Show(
+                        InstallerLocale.Format("K2Tslrcm_SilentFailed_Format", form.FailureReason),
+                        InstallerLocale.Get("K2Prep_Title"),
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Warning);
+                    if (fallback == DialogResult.Yes)
+                        RunTslrcmWizardInteractive(form.InstallerPath, statusLine);
+                    else
+                        TryDeleteTempFile(form.InstallerPath);
+                    break;
+
+                case TslrcmOutcome.DownloadFailed:
+                    MessageBox.Show(
+                        InstallerLocale.Format("K2Tslrcm_Failed_Format",
+                            form.FailureReason, Config.TslrcmDownloadPageUrl),
+                        InstallerLocale.Get("K2Prep_Title"),
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    break;
+
+                case TslrcmOutcome.Cancelled:
+                default:
+                    // User cancelled — they already have the manual link in the
+                    // offer text, so stay quiet.
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Applies Lane's static engine patches (4 GB memory + borderless
+        /// fullscreen) to swkotor2.exe and sets swkotor2.ini to windowed mode
+        /// (the borderless patch requires AllowWindowedMode=1 + FullScreen=0,
+        /// and windowed is our screen-reader baseline anyway). Returns a
+        /// localized one-line result for the preparation dialog. A null result
+        /// from the applicator means the exe hash is not a declared build —
+        /// already patched by an earlier run, or an unknown variant — which is
+        /// reported as a skip, not an error.
+        /// </summary>
+        private static string ApplyKotor2EnginePatches(string k2Path)
+        {
+            try
+            {
+                var manager = new InstallationManager(k2Path);
+                var result = manager.ApplyKotor2StaticPatches(out string skipReason);
+
+                if (result == null)
+                {
+                    return InstallerLocale.Format("K2Patches_Skipped_Format", skipReason);
+                }
+
+                foreach (var msg in result.Messages ?? new List<string>())
+                    Logger.Info($"  K2 patch: {msg}");
+
+                if (!result.Success)
+                {
+                    Logger.Error($"KOTOR 2 engine patches failed: {result.Error}");
+                    return InstallerLocale.Format("K2Patches_Failed_Format", result.Error);
+                }
+
+                var iniResult = SwkotorIniTweaker.ApplyKotor2WindowedDefaults(k2Path);
+                if (!iniResult.Success)
+                {
+                    // Patch bytes landed; only the ini step failed. Report the
+                    // partial state rather than calling the whole step failed.
+                    Logger.Warning($"swkotor2.ini tweak failed: {iniResult.Error}");
+                    return InstallerLocale.Format("K2Patches_Failed_Format",
+                        $"swkotor2.ini: {iniResult.Error}");
+                }
+
+                Logger.Info("KOTOR 2 engine patches + swkotor2.ini windowed defaults applied.");
+                return InstallerLocale.Get("K2Patches_Applied");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("KOTOR 2 engine patch step failed", ex);
+                return InstallerLocale.Format("K2Patches_Failed_Format", ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Visible-wizard fallback: announce the handoff (so an unannounced
+        /// English wizard doesn't steal focus from the screen reader), launch
+        /// TSLRCM's Inno wizard, block until it exits, delete the temp exe.
+        /// </summary>
+        private static void RunTslrcmWizardInteractive(string installerExe, string statusLine)
+        {
+            MessageBox.Show(
+                InstallerLocale.Format("K2Tslrcm_WizardIntro_Format", statusLine),
+                InstallerLocale.Get("K2Prep_Title"),
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+
+            try
+            {
+                Logger.Info($"Launching TSLRCM installer: {installerExe}");
+                using var proc = Process.Start(new ProcessStartInfo
+                {
+                    FileName = installerExe,
+                    UseShellExecute = true
+                });
+                proc?.WaitForExit();
+                Logger.Info($"TSLRCM installer exited with code {proc?.ExitCode}");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("Could not launch TSLRCM installer", ex);
+                MessageBox.Show(
+                    InstallerLocale.Format("K2Tslrcm_Failed_Format",
+                        ex.Message, Config.TslrcmDownloadPageUrl),
+                    InstallerLocale.Get("K2Prep_Title"),
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                TryDeleteTempFile(installerExe);
+            }
+        }
+
+        private static void TryDeleteTempFile(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return;
+            try { if (File.Exists(path)) File.Delete(path); }
+            catch (Exception ex) { Logger.Warning($"Could not delete temp file {path}: {ex.Message}"); }
         }
 
         /// <summary>
@@ -564,6 +784,53 @@ namespace KotorAccessibilityInstaller
                 return key?.GetValue("InstallLocation") as string;
             }
             catch { return null; }
+        }
+
+        // ------------------------------------------------------------------
+        // KOTOR 2 detection — used by the game-version screen's preparation
+        // notice today; becomes the KOTOR 2 flow's path detection when that
+        // flow activates. Mirrors the KOTOR 1 chain minus the registry entry
+        // we write ourselves (nothing is registered for KOTOR 2 yet).
+        // ------------------------------------------------------------------
+
+        public const string Kotor2ExeName = "swkotor2.exe";
+
+        public static string DetectKotor2GamePath()
+        {
+            string steamReg = TryReadSteamKotor2InstallPath();
+            if (IsValidKotor2GamePath(steamReg)) return steamReg;
+
+            foreach (var root in new[]
+            {
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles)
+            })
+            {
+                if (string.IsNullOrEmpty(root)) continue;
+                string candidate = Path.Combine(root, "Steam", "steamapps", "common",
+                    "Knights of the Old Republic II");
+                if (IsValidKotor2GamePath(candidate)) return candidate;
+            }
+
+            return null;
+        }
+
+        private static string TryReadSteamKotor2InstallPath()
+        {
+            try
+            {
+                // KOTOR 2 Steam App ID = 208580 (the Aspyr build).
+                using var key = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry32)
+                    .OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 208580");
+                return key?.GetValue("InstallLocation") as string;
+            }
+            catch { return null; }
+        }
+
+        public static bool IsValidKotor2GamePath(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return false;
+            return File.Exists(Path.Combine(path, Kotor2ExeName));
         }
 
         public static bool IsValidGamePath(string path)

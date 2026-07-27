@@ -161,11 +161,14 @@ namespace KotorAccessibilityInstaller
                 // ModSelection's default-true would silently auto-enable those
                 // groupings the moment we add the installers, bypassing user
                 // consent. Re-enable when the toggles return.
+                // K2cp likewise forced false: this form belongs to the KOTOR 1
+                // flow; the KOTOR 2 flow gets its own selection UI when it lands.
                 Selection = new ModSelection
                 {
                     K1cp = _k1cpCheckBox.Checked,
                     RestoredCutContent = false,
-                    CompanionAndSwoopUpgrades = false
+                    CompanionAndSwoopUpgrades = false,
+                    K2cp = false
                 };
                 Logger.Info($"Mod selection: {Selection}");
                 ProceedWithInstall = true;

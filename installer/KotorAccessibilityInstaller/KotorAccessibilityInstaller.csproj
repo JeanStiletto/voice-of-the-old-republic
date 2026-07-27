@@ -37,6 +37,13 @@
     <!-- Lane's Widescreen patch (runtime-detour DLL @ IsValidResolution).
          Tiny + pinned + SHA-gated; bundled rather than downloaded. -->
     <EmbeddedResource Include="Resources\Widescreen.kpatch" />
+    <!-- Lane's KOTOR 2 engine patches (static byte patches, no DLL payload):
+         4GBPatch = Large Address Aware flag; BorderlessFullscreen = window-style
+         NOP. Packaged from third_party/Kotor-Patch-Manager/Patches/<name>/
+         (manifest.toml + *.hooks.toml zipped, same layout kdev build emits) and
+         applied to swkotor2.exe by InstallationManager.ApplyKotor2StaticPatches. -->
+    <EmbeddedResource Include="Resources\4GBPatch.kpatch" />
+    <EmbeddedResource Include="Resources\BorderlessFullscreen.kpatch" />
     <!-- dsoal + OpenAL Soft binaries for the spatial-audio toggle.
          LGPL 2.1; license files bundled alongside. Source: kcat/dsoal. -->
     <EmbeddedResource Include="Resources\dsoal-dsound.dll" />

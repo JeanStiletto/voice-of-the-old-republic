@@ -159,18 +159,21 @@ namespace KotorAccessibilityInstaller
             }
         }
 
+        private static bool IsWidescreenSupported(PatchRepository repository, string gameExe, out string reason)
+            => IsPatchSupportedForExe(repository, Config.WidescreenPatchId, gameExe, out reason);
+
         /// <summary>
-        /// Whether the bundled widescreen patch declares support for this exact
-        /// executable. Compares the file's SHA-256 against the patch manifest's
+        /// Whether a staged patch declares support for this exact executable.
+        /// Compares the file's SHA-256 against the patch manifest's
         /// supported_versions rather than asking for a version *name*, because an
         /// unrecognised build has no name to ask about.
         /// </summary>
-        private static bool IsWidescreenSupported(PatchRepository repository, string gameExe, out string reason)
+        private static bool IsPatchSupportedForExe(PatchRepository repository, string patchId, string gameExe, out string reason)
         {
-            var entry = repository.GetPatch(Config.WidescreenPatchId);
+            var entry = repository.GetPatch(patchId);
             if (!entry.Success || entry.Data?.Manifest == null)
             {
-                reason = $"patch '{Config.WidescreenPatchId}' not found in the staged repository";
+                reason = $"patch '{patchId}' not found in the staged repository";
                 return false;
             }
 
@@ -194,9 +197,95 @@ namespace KotorAccessibilityInstaller
                 }
             }
 
-            reason = $"this swkotor.exe (SHA-256 {hash.Substring(0, 16)}...) is not one of the " +
+            reason = $"this {Path.GetFileName(gameExe)} (SHA-256 {hash.Substring(0, 16)}...) is not one of the " +
                      $"{entry.Data.Manifest.SupportedVersions.Count} builds it supports";
             return false;
+        }
+
+        /// <summary>
+        /// Applies Lane's static engine patches for KOTOR 2 — 4 GB Large
+        /// Address Aware flag + borderless fullscreen — to <c>swkotor2.exe</c>.
+        /// The instance must have been constructed with the KOTOR 2 install
+        /// root. Both patches are pure static byte patches with no DLL
+        /// payload, so no patcher runtime, loader, or address database lands
+        /// in the KOTOR 2 folder: the applicator writes the bytes and emits a
+        /// patch_config.toml that is inert without a loader. No backup — a
+        /// Steam "Verify integrity of game files" restores the vanilla exe.
+        ///
+        /// Returns null with <paramref name="skipReason"/> set when the
+        /// current exe's SHA-256 is not one the patch manifests declare —
+        /// which covers both "already patched by a previous run" (re-running
+        /// stays idempotent instead of failing the original-bytes check) and
+        /// genuinely unknown builds (3C-FD'd, repacked, future Aspyr update).
+        /// </summary>
+        public PatchApplicator.InstallResult ApplyKotor2StaticPatches(out string skipReason)
+        {
+            skipReason = null;
+            string gameExe = Path.Combine(_gameDir, Program.Kotor2ExeName);
+            string stagingRoot = Path.Combine(Path.GetTempPath(), $"kotor_acc_k2patch_{Guid.NewGuid():N}");
+
+            try
+            {
+                string patchesDir = Path.Combine(stagingRoot, "patches");
+                Directory.CreateDirectory(patchesDir);
+                // PatchApplicator hard-fails when AddressDatabases/ is missing
+                // next to the executing assembly (which resolves relative to
+                // CWD in a single-file app — see StagePatcherRuntime). An empty
+                // dir satisfies it: no db matches the K2 SHA and the applicator
+                // treats that as skippable for literal-address static hooks.
+                Directory.CreateDirectory(Path.Combine(stagingRoot, "AddressDatabases"));
+
+                ExtractEmbeddedResource(Config.K2FourGbKPatchAssetName,
+                    Path.Combine(patchesDir, Config.K2FourGbKPatchAssetName));
+                ExtractEmbeddedResource(Config.K2BorderlessKPatchAssetName,
+                    Path.Combine(patchesDir, Config.K2BorderlessKPatchAssetName));
+
+                var repository = new PatchRepository(patchesDir);
+                var scanResult = repository.ScanPatches();
+                if (!scanResult.Success)
+                {
+                    return new PatchApplicator.InstallResult
+                    {
+                        Success = false,
+                        Error = $"Failed to scan staged K2 patches dir: {scanResult.Error}"
+                    };
+                }
+
+                // Same hash gate as the K1 widescreen patch: only apply to an
+                // exe the manifests declare. Both manifests list the same two
+                // K2 hashes (Steam Aspyr + GOG Aspyr), so checking one is
+                // checking both.
+                if (!IsPatchSupportedForExe(repository, Config.K2FourGbPatchId, gameExe, out skipReason))
+                {
+                    Logger.Info($"Skipping KOTOR 2 engine patches: {skipReason}");
+                    return null;
+                }
+
+                Logger.Info($"Installing [{Config.K2FourGbPatchId}, {Config.K2BorderlessPatchId}] into {gameExe}...");
+                var applicator = new PatchApplicator(repository);
+
+                string previousCwd = Directory.GetCurrentDirectory();
+                try
+                {
+                    Directory.SetCurrentDirectory(stagingRoot);
+                    return applicator.InstallPatches(new PatchApplicator.InstallOptions
+                    {
+                        GameExePath = gameExe,
+                        PatchIds = new List<string> { Config.K2FourGbPatchId, Config.K2BorderlessPatchId },
+                        // Static-only install: no runtime DLL to deploy.
+                        PatcherDllPath = null,
+                        CreateBackup = false
+                    });
+                }
+                finally
+                {
+                    try { Directory.SetCurrentDirectory(previousCwd); } catch { /* best-effort */ }
+                }
+            }
+            finally
+            {
+                CleanupStaging(stagingRoot);
+            }
         }
 
         /// <summary>
