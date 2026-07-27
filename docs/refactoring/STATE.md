@@ -215,6 +215,38 @@ WALK COMPLETE 2026-07-27. Approved: 1-18, 19(opt 2), 20(opt 1),
 and 12b. Rejected: 25b, 25c. Deferred: 27a, 27b, 28.
 Next: execution, batch by batch, in candidate order.
 
+## Execution protocol (agreed 2026-07-27, binding for the executor)
+
+- User decision: ALL approved candidates execute in ONE long run
+  (user tests everything once at the end, in one in-game session).
+  Session runs on Opus 5 by user's choice (mechanical work; scan
+  reports + this file carry the judgment already made).
+- Order: candidate number order (1..26 as approved). One commit per
+  candidate; tightly-coupled pairs (12+internal header) may share.
+- After EVERY patch-side candidate: `kdev build` must pass with 0
+  warnings (baseline: Phase 0, 178 TUs). After every C# candidate:
+  `dotnet build` clean. A failure stops the line — fix before moving on.
+- Candidate 10 extra check: scripted name/value diff of the
+  preprocessed engine_offsets constant set, must be empty.
+- Candidates 12/12b/13 extra check: BEFORE touching wall_topology,
+  capture a DumpGraphToLog output for a fixed area from the current
+  build (needs the game once — if not feasible pre-execution, capture
+  the dump instructions for the user's end test instead and rely on the
+  extern audit). After 12, 12b, and 13: same dump must be byte-identical.
+  Plus: grep-audit that every former file-static appears exactly once
+  as a definition (silent-state-duplication guard).
+- Seam boundaries: follow the scan reports (phase-1-scan-a/b/c.md)
+  — line numbers were grep-verified there. If reality deviates from a
+  report (seam messier than documented), STOP that candidate, note it
+  here, report to user; do not improvise a different split.
+- Behavior-preserving only; do-not-touch list in Rules of engagement
+  applies unchanged (hook addresses/bytes, offset VALUES, calling
+  conventions, exports.def names).
+- End deliverable: summary + the user's single smoke-test checklist
+  (menus nav, leader announce + input restore, combat announces +
+  queue, region/landmark narration, hotkey routing, installer/kdev
+  build note).
+
 ## Decisions log
 
 - 2026-07-27: Infrastructure created; state file lives in-repo (survives
