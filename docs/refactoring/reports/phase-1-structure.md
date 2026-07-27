@@ -95,6 +95,20 @@ done.
     externs. Risk: a missed extern can silently duplicate state. Verify:
     build; in-game pass through a nav-heavy area confirming region
     narration is unchanged.
+    **Extended during approval walk (user finding):** the file mixes two
+    systems whose names got entangled during development — wall probing
+    ("is there a wall / how far", feeds wall sounds) vs room-shape
+    labeling (Korridor/Kreuzung/Bereich perceptual regions). New files
+    are named by system (wall_probe.cpp vs room_topology*.cpp, exact
+    names finalized at execution); functions are sorted by which system
+    consumes them, ambiguous cases reported rather than silently filed.
+12b. **Wall-vs-roomshape symbol rename** (NEW, user-requested during
+    walk): after the 12 split builds clean, rename namespaces/functions/
+    headers so the two systems are cleanly name-separated codebase-wide.
+    Own commit (bisectable independently of the split). Compiler-checked
+    rename — missed call sites are build errors, not silent bugs;
+    wall_topology.h has 5 direct includers. The candidate-12 in-game
+    nav-narration check covers both commits.
 13. **transitions.cpp (1412) → + transitions_landmarks.cpp** (B5): the
     landmark-cache subsystem (~500) moves out; ResolveRoomSpeech keeps
     reading it through a small exposed surface. Looser seam than the

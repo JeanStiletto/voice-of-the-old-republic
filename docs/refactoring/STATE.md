@@ -98,6 +98,123 @@ KOTOR 2 (TSL), which runs a very similar engine but a different executable
   readiness notes), merge to main, move docs/refactoring/ to archiev/,
   delete the refactoring branch.
 
+## Phase-1 candidate approvals (running record)
+
+- Candidate 1 (menus.cpp three-way split → menus_internal.cpp /
+  menus_focus.cpp / menus_dispatch.cpp): **APPROVED** 2026-07-27.
+  Execution pending explicit execute command after the walk.
+- Candidate 2 (menus_chain.cpp → menus_chain_input.cpp, five input
+  handlers move verbatim): **APPROVED** 2026-07-27.
+- Candidate 3 (engine_area.cpp → + engine_area_map.cpp +
+  engine_area_walls.cpp; move AreaObjectIterator::Next() back with core):
+  **APPROVED** 2026-07-27.
+- Candidate 4 (engine_reads.cpp → + engine_reads_items.cpp, contiguous
+  cut at the domain boundary): **APPROVED** 2026-07-27.
+- Candidate 5 (engine_player.cpp → + engine_player_party.cpp +
+  engine_player_inputlock.cpp; non-contiguous cuts, extra care +
+  in-game leader-announce/input-restore check): **APPROVED** 2026-07-27.
+- Candidate 6 (engine_panels.cpp → + engine_panels_state.cpp, cpp-only
+  move, declarations stay in engine_panels.h): **APPROVED** 2026-07-27.
+  (User also raised the many-small-files question; answered in chat —
+  splits stay seam-driven, burden of proof on the split.)
+- Candidate 7 (combat.cpp → + combat_log.cpp, msg-router parser rule set
+  moves; small internal header; in-game combat-announce check):
+  **APPROVED** 2026-07-27.
+- Candidate 8 (examine_view.cpp → + examine_view_effect_names.cpp, pure
+  locale-data move): **APPROVED** 2026-07-27.
+- Candidate 9 (update_checker.cpp → + update_checker_http.cpp, generic
+  WinHTTP/JSON/version-compare primitives move): **APPROVED** 2026-07-27.
+- Candidate 10 (engine_offsets.h → ~5 subsystem headers behind thin
+  aggregator; values byte-for-byte; verify via scripted name/value diff
+  of the preprocessed constant set): **APPROVED** 2026-07-27.
+- Candidate 11 (hooks.toml subsystem banners, BANNERS-ONLY variant — no
+  entry reordering): **APPROVED** 2026-07-27. Batch 1 fully approved.
+- Candidate 12 (wall_topology.cpp 5-way split) **APPROVED EXTENDED**
+  2026-07-27: new files named by SYSTEM, not wall_topology_* — the file
+  mixes two systems the user wants name-split: wall probing ("is there a
+  wall": wall_probe.cpp) vs room-shape/perceptual-region labeling
+  (Korridor/Kreuzung/Bereich: room_topology*.cpp). Ambiguous functions
+  sorted by which system consumes them; unclear ones reported, not
+  silently filed. wall_topology_internal.h extern-audit + in-game
+  nav-area narration check required.
+- Candidate 12b (NEW, user-requested): symbol/namespace/header rename to
+  complete the wall-vs-roomshape name split across the codebase.
+  **APPROVED** 2026-07-27. Own commit right after the 12 split builds
+  clean (bisectable); compiler-checked rename; same in-game check covers
+  both.
+
+- Candidate 13 (transitions.cpp → + transitions_landmarks.cpp; small
+  header for the 2-3 cross-boundary cache reads; runs after 12/12b per
+  execution order; in-game room/landmark narration check):
+  **APPROVED** 2026-07-27.
+- Candidate 14 (combat_diag.cpp → production hook OnCombatRoundAddAction
+  + shared queue-size readers move to NEW combat_queue_hooks.cpp; export
+  names unchanged; in-game queue-announce check): **APPROVED**
+  2026-07-27. Batch 2 fully approved.
+- Candidate 15 (kdev SoundScoreCommand.cs → extract WavAnalysis.cs,
+  ~835-line self-contained engine; no finer engine split): **APPROVED**
+  2026-07-27.
+- Candidate 16 (kdev WalkmeshGeometryAuditCommand.cs → extract
+  WalkmeshGeometryAnalysis.cs, ~590-line engine; BWM-reader dedup with
+  WalkmeshStatsCommand stays a Phase-2 item): **APPROVED** 2026-07-27.
+- Candidate 17 (installer Program.cs → GamePathDetector.cs +
+  InstallFlow.cs + UninstallFlow.cs; version-compare STAYS in
+  Program.cs; manual install/uninstall pass required before next
+  release): **APPROVED** 2026-07-27. Batch 3 fully approved.
+- Candidate 18 (menu_speak.* → menus_speak.* rename, one includer;
+  final grep before executing): **APPROVED** 2026-07-27.
+- Candidate 19 (interact_hotkey.cpp charter): **APPROVED, OPTION 2**
+  2026-07-27 — PollHotkey (~450 lines) moves to NEW input_poll_router.cpp
+  (poll-side router), interact dispatch stays/renames to
+  interact_dispatch.cpp; input_pipeline.cpp UNTOUCHED (sensitive
+  engine-detour path). Routing priority ladder preserved verbatim.
+  In-game input smoke test required.
+- Candidate 20 (minigame prefix): **APPROVED, OPTION 1** 2026-07-27 —
+  rename drivers into the family: turret_game.* → minigame_turret.*,
+  swoop_race.* → minigame_swoop_race.*, swoop_spatial_audio.* →
+  minigame_swoop_audio.*, pazaak.* → minigame_pazaak.*; minigame_aim.*
+  keeps its name (shared primitives). ~10-15 include sites updated;
+  exported function names and hooks.toml untouched (they reference
+  functions, not files). User chose rename over document-only.
+- Candidate 21 (probe_/diag_ convention): **APPROVED, OPTION 2**
+  2026-07-27 — document the convention (probe_* = throwaway RE tooling;
+  diag_* = diagnostic-only) AND rename the two production-critical
+  files out of the diag namespace: diag_focus.* → focus_guard.*,
+  camera_spin_diag.* → camera_spin_guard.*. One includer each.
+  Background per user: diag names are leftovers from
+  "something-is-broken" investigations that later became shipped fixes.
+- Candidate 22 (probe_priority_groups.cpp/.h DELETE + remove stale
+  include from core_tick.cpp; confirmed dead — Tick/DumpOnce called
+  nowhere; git history preserves it): **APPROVED (delete)** 2026-07-27.
+  Batch 4 fully approved.
+- Candidate 23 (menus_listbox.cpp → + menus_listbox_picker.cpp, the two
+  externally-observed armed picker specs + monitors, ~575 lines):
+  **APPROVED** 2026-07-27.
+- Candidate 24 (engine_radial.cpp → + engine_radial_diag.cpp, ~370
+  lines debug-only logging; consistent with the candidate-21 diag
+  convention): **APPROVED** 2026-07-27.
+- Candidate 25 (small kdev extractions): **25a APPROVED** (TlkFile →
+  top-level TlkFile.cs, matches PeInfo/Signatures convention);
+  **25b/25c REJECTED** (MsvcToolchain, minidump reader — marginal).
+  2026-07-27.
+- Candidate 26 (kdev Core/ folder + Kdev.Core namespace for Config,
+  EngineAddresses, GameProcess, PeInfo, Signatures + the new
+  WavAnalysis/WalkmeshGeometryAnalysis/TlkFile engines; real namespace
+  change, full dotnet build to verify): **APPROVED** 2026-07-27.
+  (25a's TlkFile lands directly in Core/ since 26 is approved.)
+- Candidate 27 (27a swoop_spatial_audio split, 27b turret_game reads
+  extraction): **DEFERRED (both)** 2026-07-27 — coherence outweighs
+  size; swoop file still under active tuning (rock-avoidance next).
+- Candidate 28 (migrate includers of engine_player/area/panels/reads.h
+  to narrower headers): **DEFERRED** 2026-07-27 — the cpp splits use
+  aggregator-style old headers (zero includer churn); migrate
+  opportunistically as Phase 3's per-file sweep touches each file.
+
+WALK COMPLETE 2026-07-27. Approved: 1-18, 19(opt 2), 20(opt 1),
+21(opt 2), 22(delete), 23, 24, 25a, 26, plus user additions 12-extended
+and 12b. Rejected: 25b, 25c. Deferred: 27a, 27b, 28.
+Next: execution, batch by batch, in candidate order.
+
 ## Decisions log
 
 - 2026-07-27: Infrastructure created; state file lives in-repo (survives
