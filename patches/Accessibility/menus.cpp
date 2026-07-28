@@ -68,7 +68,7 @@
 #include "camera_announce.h"    // Phase 2 ad-hoc — camera-direction on A/D
 #include "input_pipeline.h"  // Cross-stream seq counter for input diag
 #include "diag_chargen_feats.h"   // One-shot CSWGuiFeatsCharGen structure dump
-#include "interact_hotkey.h"    // Phase 2 lay-off 9b
+#include "interact_dispatch.h"    // Phase 2 lay-off 9b
 #include "passive_narrate.h"    // Phase 2 lay-off 9a
 #include "peek_description.h"   // Shift+arrow description peek
 #include "spatial_change_detector.h"  // Phase 3 lay-off 3 — Pillar 1 Trigger 1

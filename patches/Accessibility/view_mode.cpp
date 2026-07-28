@@ -20,7 +20,7 @@
 #include "filter_objects.h"
 #include "guidance_autowalk.h"
 #include "hotkeys.h"
-#include "interact_hotkey.h"
+#include "interact_dispatch.h"
 #include "log.h"
 #include "narrated_target.h"
 #include "spatial_change_detector.h"

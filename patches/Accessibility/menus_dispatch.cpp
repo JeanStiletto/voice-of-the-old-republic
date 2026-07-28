@@ -53,7 +53,7 @@
 #include "help.h"
 #include "hotkeys.h"
 #include "input_pipeline.h"
-#include "interact_hotkey.h"
+#include "interact_dispatch.h"
 #include "minigame_pazaak.h"
 #include "peek_description.h"
 #include "tutorial_hints.h"

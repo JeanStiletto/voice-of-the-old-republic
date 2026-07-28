@@ -30,7 +30,8 @@
 #include "guidance_beacon.h"
 #include "help.h"
 #include "hotkeys.h"
-#include "interact_hotkey.h"
+#include "interact_dispatch.h"
+#include "input_poll_router.h"
 #include "engine_levelup.h"  // TickLevelUpPause — release the wizard overlay pause
 #include "locked_recall.h"
 #include "log.h"
@@ -409,7 +410,7 @@ void Dispatch() {
     PHASE("dialog_speech", acc::dialog_speech::Tick());
 
     // Enter (interact) — engine click pipeline with localised pre-roll.
-    PHASE("interact", acc::interact::PollHotkey());
+    PHASE("interact", acc::input_poll::PollHotkey());
 
     // Release the level-up wizard's overlay pause once the panel closes (the
     // wizard's own Accept/Back buttons close it, so there's no close site to
