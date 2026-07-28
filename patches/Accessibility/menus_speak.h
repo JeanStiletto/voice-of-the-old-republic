@@ -5,7 +5,7 @@
 
 #pragma once
 
-namespace acc::menu_speak {
+namespace acc::menus::speak {
 
 // Speak `label` (interrupt=true) and log it under `tag` with a printf-
 // formatted context. Empty/null label is logged as "-> empty" and not
@@ -14,4 +14,4 @@ namespace acc::menu_speak {
 void SpeakChoice(const char* tag, const char* label,
                  const char* ctxFmt, ...);
 
-}  // namespace acc::menu_speak
+}  // namespace acc::menus::speak

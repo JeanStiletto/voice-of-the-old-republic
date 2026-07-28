@@ -341,6 +341,23 @@ Next: execution, batch by batch, in candidate order.
   Until that is settled, treat further kdev refactoring as higher-risk
   than the patch-side work, not lower.
 
+- **Candidate 22 (delete probe_priority_groups) — CANCELLED, premise false.**
+  The scan reported it "confirmed dead in practice — included by
+  core_tick.cpp but its Tick()/DumpOnce() is called nowhere". It is live:
+  `core_tick.cpp:405` calls
+  `PHASE("probe.priority_groups", acc::probe::priority_groups::Tick())`.
+  The scan's grep looked for `probe_priority_groups::`, but the namespace
+  is `acc::probe::priority_groups` — file name and namespace differ, so
+  the search missed every call site. The deletion was attempted, the
+  compiler caught it immediately, and the files plus the core_tick include
+  were restored (tree back to baseline, build green).
+  Two follow-ups worth noting for later phases: (1) the same file-name vs
+  namespace mismatch means any other "is this dead?" judgement in the scan
+  reports that relied on a file-name grep should be re-checked before
+  acting; (2) if the probe really has served its purpose, retiring it is
+  still a reasonable question — but it is a live-code removal decision,
+  not the dead-code cleanup it was approved as.
+
 ## Decisions log
 
 - 2026-07-27: Infrastructure created; state file lives in-repo (survives

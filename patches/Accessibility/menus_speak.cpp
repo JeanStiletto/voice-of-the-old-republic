@@ -1,4 +1,4 @@
-#include "menu_speak.h"
+#include "menus_speak.h"
 
 #include <cstdarg>
 #include <cstdio>
@@ -6,7 +6,7 @@
 #include "log.h"
 #include "prism.h"
 
-namespace acc::menu_speak {
+namespace acc::menus::speak {
 
 void SpeakChoice(const char* tag, const char* label,
                  const char* ctxFmt, ...) {
@@ -23,4 +23,4 @@ void SpeakChoice(const char* tag, const char* label,
     acclog::Write(tag, "speak %s [%s]", ctx, label);
 }
 
-}  // namespace acc::menu_speak
+}  // namespace acc::menus::speak
