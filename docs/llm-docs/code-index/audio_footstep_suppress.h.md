@@ -1,16 +1,9 @@
-# audio_footstep_suppress.h (41 lines)
+# audio_footstep_suppress.h (47 lines)
 
-Stuck-detection via footstep suppression. Tick() samples position; when
-displacement is sub-epsilon the OnPlayFootstep detour suppresses the footstep
-audio (silence = stuck cue for blind players). Gates on player leader identity
-so NPC footsteps are never suppressed.
+Header for the stuck-via-footstep-suppression mechanism. Documents that the hook is a mid-function cut at the engine's own JZ (not a "clean" entry-point hook — earlier attempts landed cut bytes across TEST EAX,EAX and clobbered ZF, silencing all footsteps) and that NPC footsteps are gated on GetClientLeader identity like the engine's own priority-group assignment logic.
 
 ## Declarations (in source order)
 
-- L28 — `namespace acc::audio::footstep_suppress`
-- L31 — `void Tick()`
-  note: self-gates on player resolved; idempotent.
-- L35 — `bool WasStuckLastTick()`
-  note: reflects the previous tick's displacement (~33ms lag at 30Hz); read by OnPlayFootstep.
-- L39 — `void NoteLeaderFootstep()`
-  note: stamps the timestamp the stuck-direction probe gates on; called from OnPlayFootstep without exposing internal state.
+- L37 — `void Tick()` — self-gates on player resolved; idempotent
+- L41 — `bool WasStuckLastTick()` — read by OnPlayFootstep
+- L45 — `void NoteLeaderFootstep()` — stamps stuck-direction-probe freshness timestamp

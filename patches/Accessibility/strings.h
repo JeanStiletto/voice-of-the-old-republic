@@ -568,7 +568,7 @@ enum class Id : int {
     //      InGameMap panel is NOT foreground (player is just standing in
     //      the world). Reads the camera heading as a sector word + exact
     //      degrees and adds the current perceptual cluster label
-    //      (wall_topology::LookupAt) so the user can re-orient without
+    //      (room_topology::LookupAt) so the user can re-orient without
     //      walking. Cluster vs .lyt-room: the map variant uses .lyt rooms
     //      because that matches what the map UI labels; in the world we
     //      want the perceptual region (corridor / junction / Platz) the

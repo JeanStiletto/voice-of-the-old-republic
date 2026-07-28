@@ -11,6 +11,9 @@ target_versions = [
     "761F9466F456A83909036BAEBB5C43167D722387BE66E54617BA20A8C49E9886",  # GoG-equivalent CD re-pack
 ]
 
+# ============================================================================
+# Bring-up and rules init
+# ============================================================================
 # Note: the CExoRawInputInternal::InitializeDirectInputMouse no-mouse crash
 # guard is installed inline from core_dllmain.cpp's InstallMouseGuard(),
 # called from OnRulesInit. A KPatchManager detour at the function entry
@@ -44,6 +47,11 @@ exclude_from_restore = []
 source = "esi"
 type = "pointer"
 
+# ============================================================================
+# GUI focus and input dispatch
+#
+# The panel focus signal, the central GUI input dispatcher and the focus-change logger. Handlers in menus.cpp / menus_dispatch.cpp.
+# ============================================================================
 # CSWGuiControl::HandleFocusChange — hooked mid-function at 0x41896b, after
 # the engine has loaded param_1 into EAX and 'this' into EDI. We deliberately
 # skip the function-entry hook to avoid the framework's stack-param feature,
@@ -188,6 +196,11 @@ type = "int"
 source = "eax"
 type = "int"
 
+# ============================================================================
+# Per-tick driver
+#
+# The single Update detour the whole mod fans out from (core_tick.cpp).
+# ============================================================================
 # CSWGuiManager::Update — hooked mid-function at 0x0040ce76. Per-frame tick
 # from CClientExoAppInternal::MainLoop @ 0x602eb0 (one call per frame, after
 # input dispatch). Used as a deferred-call site for chain-navigation cursor
@@ -223,6 +236,9 @@ exclude_from_restore = []
 source = "ebp"
 type = "pointer"
 
+# ============================================================================
+# Area and module transitions
+# ============================================================================
 # CServerExoApp::SetMoveToModuleString — hooked at function entry @0x004aecd0.
 # Captures the destination module name (CExoString*) at the start of the
 # area-transition pipeline. Per investigation Q-area-transitions, the engine
@@ -273,6 +289,9 @@ type = "pointer"
 source = "esp+4"
 type = "pointer"
 
+# ============================================================================
+# GUI listbox focus
+# ============================================================================
 # CSWGuiListBox::SetActiveControl — hooked mid-function at 0x0041c16b. Listbox
 # row navigation (race/class/portrait pickers in chargen, save-game list, etc.)
 # does NOT bubble up to CSWGuiPanel::SetActiveControl; the listbox calls its
@@ -317,6 +336,11 @@ type = "pointer"
 source = "eax"
 type = "int"
 
+# ============================================================================
+# Audio
+#
+# Footsteps, 3D listener placement and the pitch-variance gate that our cue playback brackets.
+# ============================================================================
 # CSWCCreature::PlayFootstep — detour @0x0061a31a. Phase 3 lay-off 5 (Pillar
 # 1 stuck-detection via footstep suppression). Replaces the engine's own
 # field6_0x20==0 early-out JZ with a handler that combines the engine's
@@ -497,6 +521,9 @@ consumed_exit_address = 0x005db449
 source = "ecx"
 type = "pointer"
 
+# ============================================================================
+# In-game GUI switch
+# ============================================================================
 # CGuiInGame::SwitchToSWInGameGui — detour at 0x0062cf2d (mid-function,
 # 5-byte cut). This is the engine's universal sub-screen-open primitive:
 # called by strip icon onClicks, in-game keymap hotkeys (M for Map, I for
@@ -561,6 +588,11 @@ type = "pointer"
 source = "ebx"
 type = "int"
 
+# ============================================================================
+# Player input pipeline
+#
+# The two engine-side input entry points feeding input_pipeline.cpp.
+# ============================================================================
 # CSWGuiListBox entry-point hooks — TOMBSTONED. A diagnostic pass tried to
 # instrument four CSWGuiListBox entry points to trace listbox input dispatch:
 #   * HandleLMouseDown      @0x0041c4a0
@@ -696,6 +728,9 @@ type = "pointer"
 source = "esp+8"
 type = "pointer"
 
+# ============================================================================
+# GUI status and visibility
+# ============================================================================
 # CGuiInGame::SetSWGuiStatus @ 0x0062aa00 — diagnostic only, finds the
 # caller that flips sw_gui_status from 3 (sub-screen showing) to 1
 # (in-world) and auto-closes pause within ~1s of opening. The status
@@ -741,6 +776,11 @@ type = "pointer"
 source = "esp+8"
 type = "pointer"
 
+# ============================================================================
+# Combat and world message log
+#
+# Feeds the msg::Router rule set in combat_log.cpp.
+# ============================================================================
 # CGuiInGame::AppendToMsgBuffer @ 0x0062b5c0 — live combat-log row append.
 # Decoded from Init.REPeek bytes (patch-20260521-100041.log). Function
 # signature: `void __thiscall AppendToMsgBuffer(CExoString* msg)`. Body
@@ -781,6 +821,9 @@ type = "pointer"
 source = "esp+4"
 type = "pointer"
 
+# ============================================================================
+# GUI hide
+# ============================================================================
 # CSWGuiInGameMessages::AddMessages @ 0x00626920 — DISABLED 2026-05-21.
 # SARIF xref analysis showed AddMessages has only ONE caller —
 # CGuiInGame::ShowDialogEntry @0x62b730 — on the dialog path, not combat.
@@ -847,6 +890,9 @@ source = "esp+4"
 type = "pointer"
 
 
+# ============================================================================
+# Object focus (ShowObject)
+# ============================================================================
 # CClientExoAppInternal::ShowObject @ 0x005f9c60 — the engine's single
 # point of user-driven main-interface target change. Called from:
 #   - DoPassiveSelection (mouse-hover auto-target / enemy sighting)
@@ -1059,6 +1105,9 @@ exclude_from_restore = []
 source = "ecx"
 type = "pointer"
 
+# ============================================================================
+# Pause state
+# ============================================================================
 # CServerExoAppInternal::SetPauseState @ 0x004b8110 — every pause-state
 # mutation (manual Space, menu pause, combat autopause, dialog autopause)
 # routes through here. __thiscall(this, int mask, ulong on_off). param_1
@@ -1104,6 +1153,11 @@ type = "pointer"
 source = "esp+8"
 type = "pointer"
 
+# ============================================================================
+# Minigames
+#
+# Turret gunnery and swoop racing.
+# ============================================================================
 # CSWMiniGameObject::OnHitBullet @ 0x0066c190 — TurretHitGeom diagnostic.
 #
 # Fires once per engine-CONFIRMED bullet hit: HitCheckBullet runs the
@@ -1169,6 +1223,9 @@ exclude_from_restore = []
 source = "ecx"
 type = "pointer"
 
+# ============================================================================
+# World objects
+# ============================================================================
 # CSWSDoor::OpenDoor — hooked mid-function at 0x00589ceb, the START of the open:
 # the instruction that stamps the opener id into the door (this->field46_0x31c =
 # param_1) right before CALL SetOpenState @0x00589600 begins the animation /

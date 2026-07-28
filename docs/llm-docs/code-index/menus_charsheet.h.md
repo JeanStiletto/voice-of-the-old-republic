@@ -1,11 +1,19 @@
-# menus_charsheet.h (70 lines)
+# menus_charsheet.h (71 lines)
 
-Public surface for the character sheet virtual-row (stat-row) module. Declares `namespace acc::menus::charsheet`.
+Public surface for the character-sheet (Charakterblatt) opener + virtual
+stat-row chain entries. Drives both ends of the virtual chain: RebindChain
+(menus_chain.cpp) inserts text-only entries at the anchor labels'
+synthetic y-positions, and FromControl (menus_extract.cpp) routes through
+`ExtractStatRow` so the user hears a composed phrase ("Stärke 14, +2")
+rather than the bare label text.
 
 ## Declarations (in source order)
 
-- L1 — `namespace acc::menus::charsheet`
-- L10 — `void MaybeAnnounce(void* panel)` — speaks the character sheet summary when panel is InGameCharacter kind; no-op otherwise
-- L14 — `bool ExtractStatRow(void* panel, void* labelControl, char* outBuf, size_t bufSize)` — reads the stat-row value (and modifier/threshold if applicable) into outBuf
-- L18 — `bool IsStatRowAnchor(void* panel, void* labelControl)` — true when the label is the anchor for a stat row on this panel
-- L22 — `void ForEachStatRowAnchor(void* panel, bool (*callback)(void*, void*, void*), void* userData)` — iterates all stat-row anchors, invoking callback for each
+- L20 — `namespace acc::menus::charsheet`
+- L27 — `void MaybeAnnounce(void* panel)`
+  note: self-gates on PanelKind::InGameCharacter
+- L48 — `bool ExtractStatRow(void* panel, void* labelControl, char* outBuf, size_t bufSize)`
+  note: re-reads live label text every call — reflects character-cycling or level-up changes immediately
+- L55 — `bool IsStatRowAnchor(void* panel, void* labelControl)`
+- L65 — `void ForEachStatRowAnchor(void* panel, callback, userData)`
+  note: anchors emitted in spec-table order; RebindChain uses sortCy to force logical reading order

@@ -32,7 +32,7 @@
 #include "strings.h"
 #include "prism.h"
 #include "transitions.h"
-#include "wall_topology.h"            // nav-graph region lookup — same source
+#include "room_topology.h"            // nav-graph region lookup — same source
                                       // the in-world walking adapter speaks
                                       // from, so cursor + walking agree
 
@@ -187,7 +187,7 @@ struct CursorState {
     //
     // pending_ambient_room_idx is the identity key, repurposed across
     // kinds: flat-cache landmark index for Landmark, .lyt-room index
-    // for RoomName, wall_topology cluster id for TerrainShape (stable
+    // for RoomName, room_topology cluster id for TerrainShape (stable
     // per perceptual region — no sig drift inside a curved corridor),
     // -1 otherwise. The kind tag disambiguates numerically-overlapping
     // values across these three namespaces, so renaming the field
@@ -207,7 +207,7 @@ struct CursorState {
 
     // TerrainShape speak buffer: the cluster's description is built at
     // probe time (when we arm the hover-pause), cached on the pending
-    // side, and consumed when the timer elapses. wall_topology builds
+    // side, and consumed when the timer elapses. room_topology builds
     // the label per cluster at BuildForArea time, so the text is stable
     // across the cluster's footprint — capturing it once at arm is
     // sufficient. Identity / dedup lives in pending_ambient_room_idx
@@ -217,7 +217,7 @@ struct CursorState {
 
 CursorState g_state;
 
-// Region shape is served by wall_topology (nav-graph decomposition,
+// Region shape is served by room_topology (nav-graph decomposition,
 // built once on area-enter by transitions::Tick). The in-world walking
 // adapter speaks from the same source — cursor and walking can never
 // disagree about whether a position is a corridor / junction / dead-end.
@@ -792,7 +792,7 @@ void Tick() {
         // cache wasn't ready when transitions tried. BuildForArea is
         // idempotent on the same area pointer.
         if (area) {
-            acc::wall_topology::BuildForArea(area);
+            acc::room_topology::BuildForArea(area);
         }
     }
 
@@ -947,12 +947,12 @@ void Tick() {
     bool cursorExplored = acc::engine::IsWorldPointExplored(areaMap, g_state.world);
     std::string shapeTextLocal;
     int  shapeSigLocal  = 0;
-    int  shapeClusterId = acc::wall_topology::kClusterIdNone;
+    int  shapeClusterId = acc::room_topology::kClusterIdNone;
     bool haveShape = false;
     if (cursorExplored) {
         void* areaForRoom = acc::engine::GetCurrentArea();
         if (areaForRoom) {
-            haveShape = acc::wall_topology::LookupAt(
+            haveShape = acc::room_topology::LookupAt(
                 areaForRoom, g_state.world,
                 shapeTextLocal,
                 shapeSigLocal, shapeClusterId,
@@ -1150,7 +1150,7 @@ void Tick() {
         // (different waypoints re-announce, hovering the same waypoint
         // stays silent). For RoomName, the .lyt-room index keys the
         // identity (room display name comes from the engine's room
-        // table). For TerrainShape we key off the wall_topology
+        // table). For TerrainShape we key off the room_topology
         // cluster id, which is stable across the cluster's footprint —
         // a curved corridor reads as one cluster even though the
         // per-position sig drifts. The kind tag disambiguates the
@@ -1226,7 +1226,7 @@ void Tick() {
             // Same cluster / room as the armed timer — keep counting
             // toward the hover-pause deadline without resetting. The
             // text stashed at arm time is the cluster's stable label,
-            // so no refresh is needed (wall_topology builds the label
+            // so no refresh is needed (room_topology builds the label
             // once per cluster at BuildForArea, not per probe).
             if (g_state.pending_ambient_started_ms != 0 &&
                 now - g_state.pending_ambient_started_ms >= kHoverPauseMs) {

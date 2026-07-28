@@ -20,7 +20,7 @@
 #include "engine_subscreen.h"   // Begin/EndOverlayPause
 #include "hotkeys.h"            // ShiftHeld
 #include "log.h"
-#include "menu_speak.h"
+#include "menus_speak.h"
 #include "narrated_target.h"
 #include "strings.h"
 #include "prism.h"
@@ -338,7 +338,7 @@ void SpeakEntry(void* tam, void* mi) {
     char label[128] = "";
     ReadLabel(tam, mi, c, sel, label, sizeof(label));
     AppendItemQuantity(tam, mi, c, sel, label, sizeof(label));
-    acc::menu_speak::SpeakChoice("UnifiedMenu", label,
+    acc::menus::speak::SpeakChoice("UnifiedMenu", label,
                                  "entry cat=%d slot=%d idx=%d",
                                  g.curCat, c.slot, sel);
 }

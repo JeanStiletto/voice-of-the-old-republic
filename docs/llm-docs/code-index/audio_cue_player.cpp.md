@@ -1,16 +1,11 @@
-# audio_cue_player.cpp (111 lines)
+# audio_cue_player.cpp (117 lines)
 
-Implementation of PlayCueAtPosition. Applies per-kind enabled checks against
-core_settings (and the Mod Settings wall-sounds toggle for Wall cues). Landmark
-cue is permanently disabled here — it announces via TTS only. Guidance/view-mode
-cues (Collision, Beacon*) always pass.
+Pillar-1 single callsite for "play a NavCue at a world position": gates on the per-kind Mod Settings toggle (core_settings pillar1 + WallSounds menu toggle for Wall specifically), gates on squared-distance range, then calls `PlayCue3D` riding the near-field spatial priority group so loudness tracks distance across the ~5m awareness band. Landmark cues are permanently disabled here (TTS-only). Talks to audio_bus, audio_cues, core_settings, menus_modsettings.
 
 ## Declarations (in source order)
 
-- L11 — `namespace acc::audio`
-- L13 — `namespace` (anonymous)
-- L16 — `const char* CueLabel(NavCue cue)`
-  note: English log labels only — used in acclog::Write calls, not for speech.
-- L37 — `bool IsCueEnabled(NavCue cue)`
-- L73 — `float DistanceSquared(const Vector& a, const Vector& b)`
-- L82 — `bool PlayCueAtPosition(NavCue cue, const Vector& worldPos, const Vector& listenerPos, float rangeMax)`
+- L16 — `const char* CueLabel(NavCue cue)` — English log-only label switch
+- L37 — `bool IsCueEnabled(NavCue cue)` — per-kind toggle dispatch
+  note: Wall additionally ANDs the Mod Settings WallSounds switch; Landmark always returns false (TTS-only, avoids empty-resref PlayCue3D call); Collision/Beacon* always true (owned upstream)
+- L73 — `float DistanceSquared(const Vector&, const Vector&)` — 3D squared distance, avoids sqrt on cold path
+- L82 — `bool PlayCueAtPosition(NavCue, const Vector& worldPos, const Vector& listenerPos, float rangeMax)` — enabled-gate → range-gate → PlayCue3D with GetSpatialCuePriorityGroup(); full-fidelity logging on every drop/play path

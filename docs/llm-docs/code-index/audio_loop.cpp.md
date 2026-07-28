@@ -1,32 +1,21 @@
-# audio_loop.cpp (155 lines)
+# audio_loop.cpp (270 lines)
 
-Implements LoopSource over the CExoSoundSource lifecycle (ctor, SetResRef,
-Set3D, SetPosition, SetLooping, Play, Stop, dtor). Applies the same
-character-relative listener bias as PlayCue3D so loops + one-shots land at
-consistent world positions. The outer 16-byte struct is caller-owned; engine
-owns the internal 0xa0-byte CExoSoundSourceInternal.
+Implements `LoopSource`, a RAII wrapper over engine-managed `CExoSoundSource` for sustained spatial audio (continuous tones, per-tick position updates, live pitch/volume control) where PlayCue3D's one-shot model doesn't fit. Start() constructs the engine source, sets resref/3D/position/distance-band/priority-group/looping/volume, then Play()s it, caching the sample's natural playback rate for later `SetPitchMultiplier` calls. SetPitchMultiplier reaches into CExoSoundSourceInternal's fields directly and calls the engine's own IAT-resolved `AIL_set_3D_sample_playback_rate` Miles import to push an absolute rate (bypassing the engine's randomised variance) — used by the turret elevation cue and swoop steering cues. All engine calls SEH-guarded; a fault during Start tears down and frees. Talks to audio_bus (address table, BiasForListener mirrors PlayCue3D's camera-relative shift), view_mode, engine_player.
 
 ## Declarations (in source order)
 
-- L12 — `namespace acc::audio`
-- L14 — `namespace` (anonymous)
-- L17 — `struct CResRef`
-  note: local mirror of the 16-byte tag from audio_bus.cpp (not shared to avoid header coupling).
-- L21 — `void FillResRef(CResRef& out, const char* tag)`
-- L38 — `typedef void* (__thiscall* PFN_SourceCtor)(void* this_)`
-- L40 — `typedef void (__thiscall* PFN_SourceDtor)(void* this_, unsigned char free_flag)`
-  note: free_flag bit 0 = "engine _free(this) after destruct"; always pass 0 — caller owns outer alloc.
-- L43 — `typedef void (__thiscall* PFN_SetResRef)(void* this_, const CResRef* res, int param2)`
-- L44 — `typedef void (__thiscall* PFN_Set3D)(void* this_, int enabled)`
-- L45 — `typedef void (__thiscall* PFN_SetPosition)(void* this_, const Vector* pos, float z_offset)`
-- L46 — `typedef void (__thiscall* PFN_SetLooping)(void* this_, int looping)`
-- L47 — `typedef int (__thiscall* PFN_Play)(void* this_)`
-- L48 — `typedef void (__thiscall* PFN_Stop)(void* this_)`
-- L52 — `Vector BiasForListener(const Vector& worldPosition)`
-  note: mirrors PlayCue3D's camera-minus-character offset so loops and one-shots pan consistently.
-- L67 — `void TeardownEngineSource(void* src, const char* whence)`
-  note: SEH-guarded dtor + free; used by Stop and Start error path.
-- L81 — `LoopSource::~LoopSource()`
-- L85 — `bool LoopSource::Start(const char* resref, const Vector& worldPosition)`
-- L125 — `void LoopSource::UpdatePosition(const Vector& worldPosition)`
-- L139 — `void LoopSource::Stop()`
+- L18 — `struct CResRef { char string[16]; }` — local mirror of audio_bus's tag struct
+- L22 — `void FillResRef(CResRef&, const char*)`
+- L37 — `kSourceStructSize = 16` — outer struct size we malloc/free (engine owns the 0xa0-byte internal via its own operator new/dtor)
+- L46-54 — pitch-control offsets (`kSoundSourceInternalOffset`=0x04, `kInternalBaseFrequencyOffset`=0x48, `kInternalPitchVarFreqOffset`=0x54, `kInternalVoice3DOffset`=0x3c, `kVoiceHandleOffset`=0x04) + `kIatAilSet3DPlaybackRate` IAT slot
+  note: decompile-verified against CExoSoundSourceInternal::SetPitchVariance @0x005dba40
+- L57-70 — PFN typedefs for the CExoSoundSource lifecycle (Ctor, Dtor, SetResRef, Set3D, SetPosition, SetDistance, SetLooping, SetPriorityGroup, SetVolume, Play, Stop)
+  note: PFN_SourceDtor bit0 always passed 0 — engine CRT may not match our DLL's, we free the outer struct with our own free()
+- L74 — `Vector BiasForListener(const Vector&)` — camera-relative shift, skipped under view_mode
+- L89 — `void TeardownEngineSource(void*, const char* whence)` — SEH-guarded dtor + free, used by Stop and Start's error path
+- L103 — `LoopSource::~LoopSource()` — calls Stop()
+- L107 — `bool LoopSource::Start(resref, worldPosition, looping, spatial, priorityGroup, volumeByte, maxVolDist, minVolDist)` — full construct/configure/play sequence; caches base_hz_ (0 disables pitch control, 2D sources skip it)
+- L195 — `void LoopSource::UpdatePosition(const Vector&)` — SEH-guarded SetPosition; drops the pointer (source_=nullptr) on fault
+- L209 — `void LoopSource::UpdateVolume(int volumeByte)` — clamped SetVolume; drops pointer on fault
+- L224 — `void LoopSource::SetPitchMultiplier(float multiplier)` — clamps to [0.25,4.0]x, writes internal pitch-var field + calls Miles rate setter directly if the 3D voice exists yet
+- L254 — `void LoopSource::Stop()` — idempotent; Stop() then TeardownEngineSource

@@ -1,20 +1,13 @@
-# msg_router.h (54 lines)
+# msg_router.h (55 lines)
 
-In-game message-buffer router. Owns the CGuiInGame::AppendToMsgBuffer @0x0062b5c0 hook. First-match-wins rule dispatch. Unclaimed lines fire OnUnmatched hooks then speak raw. All policy (suppression, merging, priority) lives in registered rules, not in the router.
+Declares the `acc::msg::Router` class: owns the `AppendToMsgBuffer` hook and
+dispatches each engine-emitted message-buffer line through registered rules
+(first-match-wins), falling back to on-unmatched cleanup hooks then raw
+speech. Main-thread-only, no locking. All suppression/merging/priority policy
+is meant to live in registered rules, not in the router itself.
 
 ## Declarations (in source order)
 
-- L16 — `namespace acc::msg`
 - L18 — `using RuleFn = bool (*)(const char* text)`
-- L23 — `using OnUnmatchedFn = void (*)(const char* text)`
-- L25 — `class Router`
-  - L27 — `static Router& Instance()`
-  - L29 — `void AddRule(const char* name, RuleFn fn)`
-  - L30 — `void AddOnUnmatched(OnUnmatchedFn fn)`
-  - L31 — `void SetLogTag(const char* tag)`
-  - L33 — `void Dispatch(const char* text)`
-  - L35 — `void Speak(const char* text)`
-  - L36 — `void LogRaw(const char* text)`
-  - L37 — `void LogEmit(const char* subTag, const char* text)`
-  - L42 — `static constexpr int kMaxRules = 32`
-  - L43 — `struct Rule { const char* name; RuleFn fn; }`
+- L23 — `using OnUnmatchedFn = void (*)(const char* text)` — fires on unclaimed lines before raw speech, for stateful flush-on-boundary rules
+- L25-L52 — `class Router`: `static Router& Instance()`, `AddRule`, `AddOnUnmatched`, `SetLogTag` (default "MsgBuf"), `Dispatch`, `Speak`, `LogRaw`, `LogEmit`; private fixed arrays `rules_[32]`/`unmatched_[4]`

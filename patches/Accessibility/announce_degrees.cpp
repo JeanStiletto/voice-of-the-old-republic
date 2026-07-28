@@ -15,7 +15,7 @@
 #include "strings.h"
 #include "prism.h"
 #include "transitions.h"
-#include "wall_topology.h"
+#include "room_topology.h"
 
 namespace acc::announce_degrees {
 
@@ -67,12 +67,12 @@ bool ResolveClusterLabelForPlayer(std::string& outBuf) {
 
     std::string buf;
     int sig = 0;
-    int cid = acc::wall_topology::kClusterIdNone;
-    if (!acc::wall_topology::LookupAt(area, pos, buf, sig, cid)) {
+    int cid = acc::room_topology::kClusterIdNone;
+    if (!acc::room_topology::LookupAt(area, pos, buf, sig, cid)) {
         return false;
     }
-    if (cid == acc::wall_topology::kClusterIdNone ||
-        cid == acc::wall_topology::kClusterIdOpenArea ||
+    if (cid == acc::room_topology::kClusterIdNone ||
+        cid == acc::room_topology::kClusterIdOpenArea ||
         buf.empty()) {
         return false;
     }

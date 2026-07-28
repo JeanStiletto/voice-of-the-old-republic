@@ -33,8 +33,14 @@
 //     OnHandleInputEvent equip-slot detector / equip-picker handler in
 //     menus.cpp.
 //
-// `kSaveLoad*` and the in-game-menu-icon name table stay private to their
-// owning TU because only one side uses them.
+// The in-game-menu-icon name table stays private to its owning TU because
+// only one side uses it. `kSaveLoad*` moved to menus_internal.cpp with
+// IsSaveLoadPanel, its only consumer.
+//
+// The declarations in this header are implemented in menus_internal.cpp
+// (they lived in menus.cpp until the Phase-1 structure pass split that
+// file into menus.cpp / menus_internal.cpp / menus_focus.cpp /
+// menus_dispatch.cpp).
 
 #pragma once
 
@@ -141,6 +147,28 @@ bool QueueButtonByIdActivate(void* panel, int buttonId, const char* logPrefix);
 // File-scope global maintained by OnSetActiveControl in menus.cpp.
 // Read-only from menus_extract.cpp; never assign here.
 extern void* g_currentPanel;
+
+// Cross-TU state owned by menus.cpp, touched by the two TUs the Phase-1
+// split carved out of it. These were file-static / anonymous-namespace
+// while everything lived in one TU; the split is the only reason they are
+// declared at all, so treat them as private to the menus module.
+//
+//   * g_drilledIntoSubScreen — arrow-nav retarget flag. Set/cleared by the
+//     drill router + Esc gate in menus_dispatch.cpp, published to the rest
+//     of the mod through menus.h's IsDrilledIntoSubScreen accessor.
+//   * s_synthesizedNav — true while PollHomeEndKeys (menus.cpp) is
+//     synthesising a call into OnHandleInputEvent (menus_dispatch.cpp), so
+//     the press/release pair tracker there skips the synthetic press.
+//   * s_pendingAnnounce{Panel,Control} — the last-write-wins focus slot.
+//     Written by AnnounceNewFocusedControl (menus_focus.cpp), drained once
+//     per tick by DrainPendingAnnounce (menus.cpp).
+extern bool g_drilledIntoSubScreen;
+
+namespace acc::menus {
+extern bool  s_synthesizedNav;
+extern void* s_pendingAnnouncePanel;
+extern void* s_pendingAnnounceControl;
+}  // namespace acc::menus
 
 // Equipment screen control IDs from equip.gui (extracted via xoreos-tools
 // gff2xml). The 9 BTN_INV_* slot buttons + the picker listbox + the two

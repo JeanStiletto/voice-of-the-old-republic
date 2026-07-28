@@ -1,24 +1,28 @@
-# menus_pending.cpp (705 lines)
+# menus_pending.cpp (802 lines)
 
-Deferred-op queue implementation. All operations are queued from input hooks and executed in `Drain` which is called from `core_tick::Dispatch` after monitors run.
+Single-slot deferred menu-operation queue: input handlers across the menu
+modules call `Queue*` to stage one op (cursor move, click, activate, equip
+select/commit, workbench slot select/upgrade-commit/picker-cancel, slider,
+store trade, galaxy-map input, pazaak wager input); `Drain(gm)` runs once per
+tick from the update loop and dispatches deep engine calls that are unsafe to
+run mid-input-dispatch. Talks to `engine_manager`/`engine_offsets` (control
+offsets, CExoArrayList), `menus_chain` (chain invalidate/validate after
+Activate), `menus_journal`/`menus_listbox`/`menus_store`/`menus_galaxymap`/
+`pazaak.h` for per-panel post-dispatch repair, and `prism`/`log` for
+speech/diagnostics.
 
 ## Declarations (in source order)
 
-- L39 — `enum class Kind` — None, MoveCursor, ClickAt, Activate, EquipSelect, EquipCommit, WorkbenchSlotSelect, WorkbenchUpgradeCommit, SliderInput, PrevSWInGameGui, StoreItemActivate (anonymous ns)
-- L53 — `struct PendingOp` — fields: kind, a/b/c (void* params), x/y (int coords), code (int) (anonymous ns)
-- L63 — `PendingOp g_op` — the single pending-op slot (anonymous ns)
-- L68 — `constexpr int kVtableHandleInputEvent = 15` (anonymous ns)
-- L68 — `typedef ... PFN_ControlHandleInputEvent` (anonymous ns)
-- L71 — `void Reset()` — zeroes g_op (anonymous ns)
-- L77 — `bool acc::menus::pending::QueueMoveCursor(int x, int y, void* target)`
-- L86 — `bool acc::menus::pending::QueueClickAt(int x, int y, void* target)`
-- L95 — `bool acc::menus::pending::QueueActivate(void* target)`
-- L102 — `bool acc::menus::pending::QueueEquipSelect(void* panel, void* slot)`
-- L110 — `bool acc::menus::pending::QueueEquipCommit(void* panel, void* row, void* btn)`
-- L119 — `bool acc::menus::pending::QueueWorkbenchSlotSelect(void* panel, void* slot)`
-- L127 — `bool acc::menus::pending::QueueWorkbenchUpgradeCommit(void* panel, void* row, void* btnAssemble)`
-- L136 — `bool acc::menus::pending::QueueSliderInput(void* target, int code)`
-- L144 — `bool acc::menus::pending::QueuePrevSWInGameGui()`
-- L151 — `bool acc::menus::pending::QueueStoreItemActivate(void* panel, void* row)`
-- L159 — `bool acc::menus::pending::IsPending()`
-- L163 — `void acc::menus::pending::Drain(void* gm)` — executes the pending op via a switch on Kind; handles all 10 non-None kinds; includes LevelUp Annehmen self-destroy guard, chargen-sub-close chain-invalidate, and WorkbenchSlotSelect non-saber install/remove announce
+- L43-L59 — `enum class Kind`: MoveCursor, ClickAt, Activate, EquipSelect, EquipCommit, WorkbenchSlotSelect, WorkbenchUpgradeCommit, WorkbenchPickerCancel, SliderInput, StoreItemActivate, GalaxyInput, WagerInput
+  note: `PrevSWInGameGui` from an earlier revision is gone; `WorkbenchPickerCancel`, `GalaxyInput`, `WagerInput` are new since the last index refresh
+- L61-L69 — `struct PendingOp { kind, x, y, a, b, c, code }`
+- L71 — `PendingOp g_op` — the single queue slot
+- L76-L77 — `kVtableHandleInputEvent=15`, `PFN_ControlHandleInputEvent` typedef (local copy; ODR-safe duplicate of menus.cpp's)
+- L79-L81 — `void Reset()`
+- L85-L182 — `Queue*` family (QueueMoveCursor, QueueClickAt, QueueActivate, QueueEquipSelect, QueueEquipCommit, QueueWorkbenchSlotSelect, QueueWorkbenchUpgradeCommit, QueueWorkbenchPickerCancel, QueueSliderInput, QueueStoreItemActivate, QueueGalaxyInput, QueueWagerInput)
+  note: every Queue* returns false if `g_op.kind != Kind::None` (uniform debounce, replacing the old code's inconsistent per-site subsets)
+- L184-L186 — `bool IsPending()`
+- L188-L799 — `void Drain(void* gm)`: snapshot-then-clear-then-dispatch switch over `Kind`
+  note: Activate branch raises `is_active` 0→1 only (never clobbers non-zero engine bookkeeping — 5→1 clobber caused a CSWRoomSurfaceMesh crash once), nulls the chain entry only for InGameLevelUp (self-destroying Annehmen button), and repairs Journal Sort/Swap + chargen sub-screen chain invalidation post-dispatch
+  note: WorkbenchSlotSelect infers install/remove/no-match by diffing `field35_0x2f74[slot_idx]` before/after and looks up the slot's TLK name via `kAddrUpgradeSlotTypeTable`
+  note: GalaxyInput and WagerInput branches are thin forwards to `menus::galaxymap::DispatchInput` / `pazaak::DispatchWagerInput`

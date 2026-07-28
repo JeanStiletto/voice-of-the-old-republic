@@ -18,7 +18,7 @@
 #include "engine_manager.h"  // IsPanelInManager
 #include "engine_offsets.h"  // CExoArrayList, kPanelControlsOffset, kControlIdOffset
 #include "menus_pending.h"   // QueueActivate (Play button)
-#include "pazaak.h"          // FormatCardLabel, CardContext
+#include "minigame_pazaak.h"          // FormatCardLabel, CardContext
 #include "prism.h"
 #include "strings.h"
 #include "engine_rebase.h"

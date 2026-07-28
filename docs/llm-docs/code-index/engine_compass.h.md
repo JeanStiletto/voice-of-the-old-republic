@@ -1,13 +1,11 @@
-# engine_compass.h (25 lines)
+# engine_compass.h (33 lines)
 
-Engine yaw ↔ compass yaw ↔ 8-point sector helpers. Pure math, no state.
-
-Documents two coordinate frames: Engine (0°=East, CCW positive) and Compass (0°=North, CW positive). EngineYawToCompass is involutive. Sectors 0..7 = N/NE/E/SE/S/SW/W/NW with half-sector snap, no hysteresis.
+Engine yaw ↔ compass yaw ↔ 8-point sector helpers, pure math. Engine frame: 0°=+X=East, CCW positive. Compass frame: 0°=North, 90°=East, CW positive (what screen readers think in).
 
 ## Declarations (in source order)
 
-- L19 — `namespace acc::engine`
 - L21 — `float EngineYawToCompass(float engineYawDeg)`
 - L22 — `int CompassToSector(float compassDeg)`
 - L23 — `acc::strings::Id SectorString(int sector)`
-  note: returns a strings::Id enum value (not a raw string); caller passes to acc::strings::Get
+- L30 — `int ClockPosition(float playerYawDeg, float dx, float dy)`
+  note: moved here from cycle_input.cpp so trap/object announcements share one definition; 12=ahead, 3=right, 6=behind, 9=left

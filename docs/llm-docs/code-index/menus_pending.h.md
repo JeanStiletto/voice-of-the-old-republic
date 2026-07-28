@@ -1,19 +1,27 @@
-# menus_pending.h (122 lines)
+# menus_pending.h (136 lines)
 
-Public surface for the deferred-op queue (operations queued during input dispatch, drained on the next tick to avoid re-entrancy). Declares `namespace acc::menus::pending`.
+Public interface for the deferred menu op queue. Explains why deferral is
+needed (invoking deep engine functions mid-input-dispatch recurses through
+HandleMouseMove → UpdateMouseOverControl, destabilising earlier listbox
+hooks) and that queue depth is exactly one op — Prism speech still fires
+synchronously from the input hook so the audible response feels instant even
+though the engine action lands next tick (~16ms).
 
 ## Declarations (in source order)
 
-- L1 — `namespace acc::menus::pending`
-- L10 — `bool QueueMoveCursor(int x, int y, void* target)` — MoveMouseToPosition only, no click
-- L14 — `bool QueueClickAt(int x, int y, void* target)` — MoveMouseToPosition + HandleLMouseDown/Up
-- L18 — `bool QueueActivate(void* target)` — vtable[15] FireActivate via HandleInputEvent(0x27, 1)
-- L22 — `bool QueueEquipSelect(void* panel, void* slot)` — OnEnterSlot + OnSelectSlot for equip screen
-- L26 — `bool QueueEquipCommit(void* panel, void* row, void* btn)` — OnItemSelected + OnOKPressed
-- L30 — `bool QueueWorkbenchSlotSelect(void* panel, void* slot)` — OnEnterSlot + OnSlotSelected for workbench
-- L34 — `bool QueueWorkbenchUpgradeCommit(void* panel, void* row, void* btnAssemble)` — OnUpgradeSelected + OnAssemble
-- L38 — `bool QueueSliderInput(void* target, int code)` — vtable[15] HandleInputEvent with code 500/501
-- L42 — `bool QueuePrevSWInGameGui()` — calls engine's CallPrevSWInGameGui to pop active sub-screen
-- L46 — `bool QueueStoreItemActivate(void* panel, void* row)` — dispatches per-mode store click handler
-- L50 — `bool IsPending()` — true when a non-None op is queued
-- L52 — `void Drain(void* gm)` — execute the pending op against the GuiManager singleton
+- L33 — `bool QueueMoveCursor(int x, int y, void* target)`
+- L40 — `bool QueueClickAt(int x, int y, void* target)` — cursor warp + LMouseDown/Up, for tab buttons gated on is_active
+- L46 — `bool QueueActivate(void* target)` — direct vtable[15].HandleInputEvent(0x27,1), bypasses hit-test
+- L52 — `bool QueueEquipSelect(void* panel, void* slot)`
+- L58 — `bool QueueEquipCommit(void* panel, void* row, void* btn)`
+- L67 — `bool QueueWorkbenchSlotSelect(void* panel, void* slot)`
+- L77 — `bool QueueWorkbenchUpgradeCommit(void* panel, void* row, void* btnAssemble)`
+- L83 — `bool QueueWorkbenchPickerCancel(void* panel)`
+- L90 — `bool QueueSliderInput(void* target, int code)` — code 500 inc / 501 dec
+- L106 — `bool QueueStoreItemActivate(void* panel, void* row)`
+- L114 — `bool QueueGalaxyInput(void* panel, int engineCode, bool announcePlanet)`
+- L122 — `bool QueueWagerInput(void* panel, int code)` — pazaak wager popup, code 0x2f dec / 0x30 inc
+- L128 — `bool IsPending()`
+- L133 — `void Drain(void* gm)` — call once per tick after all monitors have run; resets + logs if `gm` is null
+
+note: `QueuePrevSWInGameGui` documented in a prior index revision no longer exists in this header.

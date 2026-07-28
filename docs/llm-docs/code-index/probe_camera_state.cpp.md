@@ -1,18 +1,20 @@
 # probe_camera_state.cpp (161 lines)
 
-Implementation of the camera-state probe. Walks the AppManager chain to
-CSWCModule and the PlayerControl camera, reads a quaternion from the
-module-owned Camera object, derives yaw via atan2(qz, qw), and logs
-alongside candidate raw floats at pcCamera+0x90/0x94 and the dead-reckoned
-camera yaw from camera_announce.
+One-shot F12 diagnostic dump that reads the engine's cached camera yaw
+(`CSWCModule + 0x98`, written by `AcclTurnCamera`) plus the camera's world
+orientation quaternion, player yaw, and this mod's own dead-reckoned camera
+estimate (`camera_announce::TryGetCameraEngineYawDegrees`), all converted to
+compass degrees via `engine_compass::EngineYawToCompass`. Purpose: cross-check
+units/frame/offset between the engine's true camera yaw and the mod's
+dead-reckoning so `camera_announce` can be validated or corrected.
 
 ## Declarations (in source order)
 
-- L15 — `namespace acc::probe_camera_state`
+- L19-27 — chain-walk offsets `kClientInternalModuleOffset=0x18; kCSWCModuleCameraYawOffset=0x98; kCSWPlayerControlCameraOffset=0x08; kCameraYawOffsetA=0x90; kCameraYawOffsetB=0x94; kCameraYawOffsetC=0x40`
+  note: A/B/C are candidate yaw-offset fields referenced in Control_UpdateCameraDesiredOrientation, logged for back-comparison rather than trusted.
 - L30 — `void* GetClientInternal()`
-  note: SEH-guarded walk of AppManager→CClientExoApp→CClientExoAppInternal
 - L46 — `void* GetCSWCModule(void* clientInternal)`
 - L57 — `void* GetPlayerControlCamera(void* clientInternal)`
-  note: reads CSWPlayerControl+0x08 (CAurCamera*)
-- L72 — `template <typename T> T SafeRead(void* base, size_t offset, T fallback)`
+- L72 — `template<T> T SafeRead(void* base, size_t offset, T fallback)`
 - L85 — `void PollWin32()`
+  note: reads camera quaternion at modCamera+0x88 (engine layout w,x,y,z — w first) and position at +0x7c; yaw computed via the shared engine_compass::GetCameraYawRadians helper (an earlier `2*atan2(qz,qw)` read the wrong quaternion fields).

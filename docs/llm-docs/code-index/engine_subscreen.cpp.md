@@ -1,21 +1,44 @@
-# engine_subscreen.cpp (338 lines)
+# engine_subscreen.cpp (573 lines)
 
-Implementation of engine_subscreen.h. No leading comment block.
+Implements the CGuiInGame::SwitchToSWInGameGui detour (stale sub-screen
+cleanup on redrill) plus the mod's pause/unpause machinery: server pause-bit
+toggling via CServerExoApp::SetPauseState, audio-mixer resync via
+SetSoundMode, and the "real" world-freeze via CClientExoApp::SetPausedByCombat
+(the same path the pause key/combat auto-pause use). Owner-tracked overlay
+pause (BeginOverlayPause/EndOverlayPause) lets stacking keyboard-only overlays
+(examine view, action queue, help, level-up) share one freeze without an
+inner-close prematurely resuming the world. Talks to engine_manager
+(GuiManagerPtr/modal-stack), engine_panels (HasActiveSubScreen), menus/
+menus_chain (InvalidateChain — stale-pointer teardown guard), and prism
+(pause/resume speech). Diagnostic hooks OnSetSWGuiStatus/OnHideSWInGameGui log
+callers to find engine auto-close paths; OnSetPauseState maintains a live
+pause-bit shadow (g_pauseShadow) since the Ghidra-labelled offset reads 0.
 
 ## Declarations (in source order)
 
-- L13 — `namespace acc::engine`
-- L15 — `bool g_switchHookEverFired = false`
-- L17 — `namespace { ... }` (anonymous; PFN typedefs + local address constants)
-  note: kAddrSetPauseState, kAddrSetSoundMode, kAddrExoSoundPtr, kAddrAppManagerPtrLocal; CServerExoApp::SetPauseState @0x004ae9a0 is idempotent (short-circuits if bit already at requested value); prefers SetPauseState over TogglePauseState because Toggle XOR-alternates state
-- L62 — `namespace { DispatchUnpauseCleanup }` (anonymous)
-- L69 — `void DispatchUnpauseCleanup(const char* trigger)`
-  note: calls SetPauseState(server,2,0) then SetSoundMode(ExoSound,0); both SEH-guarded; logs trigger label for diagnosis; idempotent on already-clean state
-- L129 — `void TickInputClassReassert()`
-  note: two edges: (1) modal_stack > 0 → 0 when no sub-screen still in panels[] — popup closed, unpause; (2) hasSubScreen true → false — last sub-screen left panels[]; suppresses modal edge when a sub-screen is still alive (popup-on-top-of-panel pattern)
-- L207 — `extern "C" void __cdecl OnSwitchToSWInGameGui(void* thisPtr, int guiId)`
-  note: first-fire diagnostic; only acts when HasActiveSubScreen() is true (warm path); calls CallPrevSWInGameGui to pop prior sub-screen; cold path (first sub-screen open) returns immediately without intervention
-- L259 — `extern "C" void __cdecl OnSetSWGuiStatus(void* thisPtr, void* p1_addr, void* p2_addr)`
-  note: logs new_status, param_2, caller_eip; on new_status=4 calls InvalidateChain + ClearPendingAnnounce; crash dumps 20996/2288 identified stale Hinzuf. button pointer surviving into the next tick's DrainPendingAnnounce
-- L319 — `extern "C" void __cdecl OnHideSWInGameGui(void* thisPtr, void* p1_addr)`
-  note: diagnostic only; logs param_1 and caller_eip; identifies which engine path auto-closes pause
+- L16 — `namespace acc::engine`
+- L18 — `bool g_switchHookEverFired`
+- L38 — `kAddrSetPauseState` — CServerExoApp::SetPauseState @0x004ae9a0
+  note: first arg is a bit MASK not an index; bit 0x02 = manual/menu pause source.
+- L47-48 — `kAddrAppManagerPtrLocal`, `kAppManagerServerOff`
+- L56 — `kAddrSetSoundMode` — CExoSoundInternal::SetSoundMode @0x005d5e80
+- L61 — `kAddrExoSoundPtr`
+- L68 — `kPauseBitManualOrMenu = 0x02`
+- L76 — `unsigned char g_pauseShadow` — live-maintained pause-bit shadow
+  note: Ghidra's pause_state_ offset reads 0 even when paused; this hook-accumulated shadow IS the live state by construction.
+- L82 — `bool g_inOwnPauseCall` — suppresses self-triggered OnSetPauseState speech
+- L93 — `void DispatchUnpauseCleanup(const char* trigger)` — idempotent SetPauseState(2,0) + SetSoundMode(0)
+- L171 — `kAddrSetPausedByCombat` — CClientExoApp::SetPausedByCombat @0x005edc20
+  note: the REAL world-freeze the pause key uses; SetPauseState bit 2 alone does not stop simulation (verified live 2026-06-07).
+- L176 — `void DispatchOverlayPause(const char* trigger, int paused)`
+- L223 — `unsigned g_overlayPauseOwners` — bitmask of held overlay-pause owners
+- L226 — `void BeginOverlayPause(OverlayPauseOwner owner)`
+- L231 — `void EndOverlayPause(OverlayPauseOwner owner)` — only resumes world on empty mask
+- L243 — `bool WorldIsPaused()`
+- L247 — `bool ResumeWorldIfPaused(const char* reason)` — un-flagged so engine's own resume cue speaks
+- L284 — `void TickInputClassReassert()` — modal-stack and sub-screen-empty edges both trigger unpause cleanup
+- L362 — `extern "C" void OnSwitchToSWInGameGui(void*, int guiId)` — pops stale sub-screen on redrill
+- L414 — `extern "C" void OnSetSWGuiStatus(void*, void*, void*)` — diagnostic + status==4 chain/pending-announce invalidation
+  note: guards against stale control pointers from crash dumps 20996/2288 (2026-05-22).
+- L474 — `extern "C" void OnHideSWInGameGui(void*, void*)` — diagnostic, logs caller EIP
+- L506 — `extern "C" void OnSetPauseState(void*, void*, void*)` — maintains g_pauseShadow, speaks Paused/Resumed when no UI is blocking

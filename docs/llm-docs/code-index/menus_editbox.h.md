@@ -1,10 +1,9 @@
 # menus_editbox.h (77 lines)
 
-Public surface for the editbox accessibility module. Declares `namespace acc::menus::editbox`.
+Public surface for the editbox dispatcher/monitor. Documents the "auto-enter edit mode on focus" model: focus-enter speech comes from `FromControl` (extract.cpp step 6b), the per-tick monitor here only initialises the diff snapshot and doesn't speak that entry. Details the announce rules for insert/delete/bulk-change and notes Left/Right/Backspace flow to the engine untouched.
 
 ## Declarations (in source order)
 
-- L1 — `namespace acc::menus::editbox`
-- L10 — `bool TryHandleInput(int n, void* thisPtr, void* activePanel, int param_1, int param_2, int& outRv)` — arms on editbox-panel entry; handles Up/Down (re-read), intercepts character-announcement; returns true when consumed
-- L16 — `void TickEditboxMonitors()` — polls armed editbox for text diff and announces changes (new chars, deletions)
-- L20 — `const char* GetTitleOverride(void* panel)` — returns spec-driven panel title for the chargen-name panel or nullptr
+- L55 — `bool acc::menus::editbox::TryHandleInput(int n, void* thisPtr, void* activePanel, int param_1, int param_2, int& outRv)` — called from menus.cpp's OnHandleInputEvent after listbox dispatch, before chain nav
+- L63 — `void acc::menus::editbox::TickEditboxMonitors()` — called from menus.cpp's TickMonitors
+- L75 — `const char* acc::menus::editbox::GetTitleOverride(void* panel)` — called from AnnouncePanelTitle alongside the listbox equivalent

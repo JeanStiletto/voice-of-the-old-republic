@@ -40,7 +40,7 @@ bool IterateLandmarks(int& cursor,
                       char* nameOut, size_t nameBufSize,
                       Vector& posOut, int& outLandmarkIdx);
 
-// wall_topology embedded this landmark into a cluster label — suppress
+// room_topology embedded this landmark into a cluster label — suppress
 // the per-tick proximity announce so the same name doesn't fire twice
 // within a second. Cleared per area rebuild.
 void MarkLandmarkClaimedByDoor(int landmarkIdx);

@@ -1,29 +1,35 @@
-# menus_store.cpp (559 lines)
+# menus_store.cpp (632 lines)
 
-Store (merchant screen) accessibility implementation. Detects buy/sell mode from visible listbox bits, announces price/stock on chain step, watches trade outcomes via list-size delta, and handles Esc/G hotkeys.
+CSWGuiStore (merchant buy/sell screen) accessibility. Resolves the current
+Buy/Sell mode from the visibility bit on the two item listboxes, speaks a
+per-row price+stock chain-step suffix, and runs a per-tick trade-outcome
+watcher keyed primarily off the player's cached gold field (listbox size is
+an unreliable trade signal for multi-stock buys / partial-stack sells).
+Talks to `engine_manager` (GetForegroundPanel), `engine_reads`
+(ResolveItemFromClientHandle), `menus_chain` (RebindChain/
+RebindChainPreserveIndex), `menus_pending` (QueueActivate for G/Esc), and
+`hotkeys` (StoreModeToggle poll).
 
 ## Declarations (in source order)
 
-- L25 — `enum class Mode` — Unknown, Buy, Sell (anonymous ns)
-- L31 — `uint32_t ReadListBoxControlBitFlags(void* panel, size_t listOffset)` — reads CSWGuiListBox.bit_flags from a panel-relative list offset (anonymous ns)
-- L46 — `Mode ResolveMode(void* panel)` — determines Buy/Sell by which of the two listboxes has the visible bit set (anonymous ns)
-- L59 — `uint32_t ReadRowObjId(void* row)` — reads the obj_id handle from a store item row at +0x1c4 (anonymous ns)
-- L73 — `bool IsStoreItemEntry(void* control)` — true when the control's vtable matches CSWGuiInventoryItemEntry (anonymous ns)
-- L87 — `int ReadListBoxSize(void* panel, size_t listOffset)` — reads controls.size from the listbox at the given panel-relative offset (anonymous ns)
-- L102 — `inline void* ResolveItemFromHandle(uint32_t clientHandle)` — resolves a client object handle to a CSWSItem* (anonymous ns)
-- L108 — `typedef uint32_t (__thiscall* PFN_GetItemValue)(void* this_, void* item)` (anonymous ns)
-- L110 — `uint32_t CallGetItemValue(uintptr_t fnAddr, void* storePanel, void* item)` — thiscall to engine's buy or sell value accessor (anonymous ns)
-- L126 — `int ReadItemStock(void* item, bool& outFinite)` — reads the item's stack count / merchant stock; sets outFinite (anonymous ns)
-- L149 — `void* g_lastSeenStorePanel`, `Mode g_lastSeenMode`, `int g_lastSeenActiveListBoxSize`
-- L165 — `bool g_tradeWatchArmed`, `Mode g_tradeWatchMode`, `int g_tradeWatchSizeAtArm`, `int g_tradeWatchTicksRemaining`, `uint32_t g_tradeWatchPrice`
-- L166 — `constexpr int kTradeWatchTicks = 4`
-- L175 — `uint32_t ReadStorePlayerGold(void* panel)` — reads the player's current gold from the store panel's cached value (anonymous ns)
-- L187 — `bool acc::menus::store::IsStorePanel(void* panel)`
-- L198 — `bool acc::menus::store::IsHiddenStoreListBox(void* panel, void* listBox)`
-- L214 — `void acc::menus::store::AnnounceChainStepSuffix(void* panel, void* control)` — speaks "Price: N credits, Stock: N" (or "unlimited") after the item name
-- L265 — `void acc::menus::store::TickMonitorMode()` — polls StoreModeToggle hotkey; detects first-sighting, mode changes (speaks mode word + force chain rebind), and trade outcomes via list-size delta
-- L410 — `bool acc::menus::store::IsStoreItemRow(void* control)` — delegates to IsStoreItemEntry
-- L414 — `typedef void (__thiscall* PFN_StoreOnControlButton)(void* this_, void* param_1)` (anonymous ns)
-- L416 — `void acc::menus::store::DispatchTradeAction(void* panel, void* row)` — pre-checks gold for buy; arms trade watcher; calls OnControlStoreAButton or OnControlInvAButton
-- L511 — `bool acc::menus::store::ToggleModeFromHotkey()`
-- L535 — `bool acc::menus::store::CloseFromEsc()`
+- L26 — `enum class Mode { Unknown, Buy, Sell }`
+- L32-L40 — `uint32_t ReadListBoxControlBitFlags(panel, listOffset)` — SEH-guarded; fault reads as "not the active listbox"
+- L47-L56 — `Mode ResolveMode(void* panel)` — bit 0x02 on shop vs inv listbox
+- L60-L69 — `uint32_t ReadRowObjId(void* row)` — +0x1c4, SEH-guarded
+- L74-L83 — `bool IsStoreItemEntry(void* control)` — vtable check vs the 3 action buttons
+  note: vtable is `kVtableCSWGuiStoreItemEntry` (store-specific), not a generic inventory-entry vtable
+- L88-L99 — `int ReadListBoxSize(panel, listOffset)`
+- L103-L105 — `ResolveItemFromHandle` — thin alias to `engine_reads`
+- L109-L119 — `PFN_GetItemValue`, `CallGetItemValue` — thiscall to GetItemBuyValue/GetItemSellValue
+- L127-L145 — `int ReadItemStock(void* item, bool& outFinite)` — checks the infinite-stock bit
+- L150-L178 — trade-watch statics: `g_lastSeenStorePanel`/`g_lastSeenMode`, `g_lastSeenActiveListBoxSize`, `g_tradeWatchArmed`/`Mode`/`SizeAtArm`/`TicksRemaining`/`Price`/`GoldAtArm`, `kTradeWatchTicks=4`
+  note: gold-at-arm is the primary success signal — BuyItem/SellItem move gold synchronously even when the listbox size doesn't (multi-stock buy, partial-stack sell)
+- L182-L190 — `uint32_t ReadStorePlayerGold(void* panel)`
+- L194-L203 — `bool IsStorePanel(void* panel)`
+- L205-L218 — `bool IsHiddenStoreListBox(void* panel, void* listBox)` — RebindChain recursion filter
+- L220-L281 — `void AnnounceChainStepSuffix(void* panel, void* control)` — price/stock + charge-count speech per chain step
+- L283-L452 — `void TickMonitorMode()` — polls StoreModeToggle hotkey, mode-change announce + chain rebind + cursor reset, trade-outcome detection (gold move OR size delta) with the ~4-tick refusal window
+- L454-L456 — `bool IsStoreItemRow(void* control)`
+- L458-L581 — `void DispatchTradeAction(void* panel, void* row)`: pre-checks buy-mode gold vs price (skips the engine's ShowExamineBox popup on insufficient funds), arms the trade watcher, conditionally raises row.is_active, calls OnControlStoreAButton/OnControlInvAButton
+- L583-L605 — `bool ToggleModeFromHotkey()` — synthesizes a click on examine_button via QueueActivate
+- L607-L629 — `bool CloseFromEsc()` — synthesizes a click on cancel_button via QueueActivate

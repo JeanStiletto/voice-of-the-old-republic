@@ -593,7 +593,7 @@ int BuildAreaWallCache(void* area, WallEdge* outBuf, int maxEdges);
 // crosscheck found zero nav-edge/wall crossings across 6 diverse areas
 // (wall cache is phantom-free), and every runtime over-block occurred at
 // elevated z against ground-floor walls — i.e. pure 2D-projection noise
-// this tolerance removes. Shared with wall_topology::LogNavWallCrossings.
+// this tolerance removes. Shared with room_topology::LogNavWallCrossings.
 constexpr float kWallCrossZToleranceM = 2.0f;
 
 // Segment-vs-perimeter test in the XY plane, with an optional 3D guard: a

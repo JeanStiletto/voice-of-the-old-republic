@@ -1,20 +1,21 @@
-# narrated_target.cpp (109 lines)
+# narrated_target.cpp (115 lines)
 
-Implementation of the unified narrated-target slot. Validates game-object slots via ResolveServerObjectHandle; validates map-pin slots via membership walk of the client area's map_pins[].
+Implements the unified "last narrated target" slot: a single global `Slot`
+that any narration channel (passive_narrate, cycle_input, view_mode) stamps
+with a bare-target-name, so activation keys (Enter, Shift/Ctrl/Alt+-, `-`)
+all read one place instead of resolving their own focus. Two slot shapes:
+game-object (validated via server-handle resolve) and map-pin (validated via
+membership in the client area's map_pins[], or via `map_shipped_hints`'
+`IsShippedHint` for curated hints that share the slot shape but live outside
+the engine pin array — this shipped-hints check is new since the last index
+refresh).
 
 ## Declarations (in source order)
 
-- L9 — `namespace acc::narrated_target`
-- L11 — `namespace { // anonymous`
-- L13 — `Slot g_slot;`
-- L15 — `} // namespace (anonymous)`
-- L17 — `void Stamp(void* obj, uint32_t serverHandle)`
-  note: no-ops on zero, 0xFFFFFFFF, and 0x7F000000 (INVALID) handles; only logs when the slot actually changes
-- L35 — `void StampMapPin(void* pin, const Vector& pos)`
-- L50 — `void Clear()`
-- L59 — `namespace { // anonymous`
-- L62 — `bool IsMapPinStillPresent(void* pin)`
-  note: defensive membership walk; handles quest scripts calling SetMapPinEnabled(off)
-- L74 — `} // namespace (anonymous)`
-- L76 — `bool TryGet(Slot& out)`
-  note: map-pin path: checks IsMapPinStillPresent; game-object path: resolves handle and compares pointer to catch area-switch staleness
+- L14 — `Slot g_slot` — the single global slot
+- L18-L34 — `void Stamp(void* obj, uint32_t serverHandle)` — rejects null/0/0xFFFFFFFF/0x7F000000 handles; clears cached pos (game objects re-read pos at use time)
+- L36-L49 — `void StampMapPin(void* pin, const Vector& pos)` — pos is frozen at stamp time
+- L51-L58 — `void Clear()`
+- L66-L77 — `bool IsMapPinStillPresent(void* pin)` — checks `IsShippedHint` first, else walks `GetMapPinAt` over the current client area
+  note: quest scripts can call SetMapPinEnabled(off), so membership is re-checked defensively rather than trusted from stamp time
+- L81-L112 — `bool TryGet(Slot& out)` — re-validates on every read; game-object path re-resolves the server handle and requires the resolved pointer to match `g_slot.obj` exactly, clearing on any mismatch

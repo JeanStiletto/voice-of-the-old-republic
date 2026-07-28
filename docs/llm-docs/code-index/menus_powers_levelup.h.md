@@ -1,10 +1,11 @@
-# menus_powers_levelup.h (56 lines)
+# menus_powers_levelup.h (57 lines)
 
-Public surface for the PowersLevelUp panel (pwrlvlup.gui CSWGuiSkillFlow tree) accessibility module. Declares `namespace acc::menus::powers_levelup`.
+Public surface for the Force-power picker. Documents that CSWGuiPowersLevelUp
+is shared between chargen and in-game level-up, and that it is structurally a
+2D skill tree (not a flat listbox) identical in shape to chargen Talente.
 
 ## Declarations (in source order)
 
-- L1 — `namespace acc::menus::powers_levelup`
-- L10 — `bool IsPowersLevelUpPanel(void* panel)`
-- L14 — `const char* GetTitleOverride(void* panel)` — returns a thread_local formatted title string including the current power-point budget
-- L18 — `bool HandleInput(int n, void* thisPtr, void* panel, int param_1, int param_2, int& outRv)` — 2D Up/Down/Left/Right nav over the 3-column SkillFlow tree; mirrors chargen_feats shape
+- L35 — `bool IsPowersLevelUpPanel(void* panel)`
+- L42 — `const char* GetTitleOverride(void* panel)` — thread-local buffer; returns nullptr when not a PowersLevelUp screen; returns the panel's own sub_title_label text (not a power-point-budget string)
+- L53 — `bool HandleInput(int n, void* thisPtr, void* panel, int param_1, int param_2, int& outRv)` — Up/Down change row+column-snap, Left/Right step filled columns, Enter activate (cell→OnPowerPicked, button→QueueButtonByIdActivate), Esc→BTN_BACK

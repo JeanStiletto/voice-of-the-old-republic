@@ -1,14 +1,10 @@
-# combat_strings.h (69 lines)
+# combat_strings.h (133 lines)
 
-Combat-message localization table. Holds locale-dependent tokens for the msg-bus rules:
-engine-side parse anchors (substrings scanned in engine output) and output-side labels
-(what gets spoken). Separate from strings.h so the Id enum stays user-facing only.
-EN anchors unverified; kEn aliases kDe until an EN tester captures real strings.
+Locale table of engine-side parse anchors (exact substrings the German/English/French/Italian/Spanish/Russian engine emits into the combat message buffer) plus our shortened output labels, consumed by combat.cpp's message-bus rules. Kept separate from strings.h so the user-facing `acc::strings::Id` enum stays about what's spoken, not what the engine says. DE is engine-verified against a real log; other locales were extracted mechanically from each dialog.tlk and reproduce the DE rules byte-for-byte, but want an in-locale capture to fully confirm. Any anchor that doesn't match falls through to raw speech (no regression).
 
 ## Declarations (in source order)
 
-- L17 — `namespace acc::combat::loc`
-- L19 — `struct MsgStrings`
-  note: all fields are const char*; field order in the .cpp initialiser must match declaration order (no designated initialisers in this codebase)
-- L67 — `const MsgStrings& Get()`
-  note: returns kDe or kEn based on acc::strings::GetLanguage(); kEn currently aliases kDe
+- L21 — `namespace acc::combat::loc`
+- L23 — `struct MsgStrings`
+  note: ~45 const char* fields — engine anchors (phrase_hit, prefix_angriff, absorb_anchor, etc.) then output-side labels (verb_hit, word_critical, short_wuerfel, etc.); field order must match the positional initialisers in combat_strings.cpp
+- L131 — `const MsgStrings& Get()`

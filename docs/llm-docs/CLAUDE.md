@@ -9,7 +9,7 @@ Reference material curated for LLM consumption. Progressive-disclosure index —
 - **`sarif-cookbook.md`** — jq recipes for querying Lane's local SARIF export (`re/k1_win_gog_swkotor.exe.sarif`). Use when `re/swkotor.exe.h` shows undefined fields or when you need cross-references for an address.
 - **`turret-minigame-model.md`** — engine-confirmed model of the swoop/turret minigame subsystem (decompiled). The reference shape for an RE-model doc: input→state→action→effect chain, function addresses, struct offsets, and a "what we got wrong" section. Produced by `kdev re` then curated here. When reconstructing another subsystem, `kdev re "<ClassRegex>" --decompile` and curate the skeleton to a sibling of this file.
 - **`swoop-accelpad-hit-model.md`** — engine-confirmed model of **how the swoop bike hits an accelerator pad** (decompiled). The hit is a swept (CCD) sphere-vs-sphere test, combined radius 6.0 (Taris) / 5.0 (Tatooine, Manaan); speed-independent, no timing window — difficulty is purely lateral lane alignment. Includes the boost script (`accelpad.ncs`: +5% speed / +10% accel) and live pad-position spread. Read when tuning the accelpad spatial-audio cue.
-- **`code-index/`** — per-file LLM-readable summary for each source file under `patches/Accessibility/` (one `.md` per `.cpp`/`.h` plus `_files.txt` inventory). Generated during the llm-mod-refactoring-prompts `code-directory-construction` phase; useful as fast context before reading a file in full. May drift if not refreshed on major restructuring.
+- **`code-index/`** — per-file LLM-readable summary for each source file under `patches/Accessibility/` (one `.md` per `.cpp`/`.h` plus `_files.txt` inventory), plus subfolders `kdev/` (tools/kdev C# sources) and `installer/` (KotorAccessibilityInstaller C# sources). Useful as fast context before reading a file in full. Fully regenerated 2026-07-27 (pre-K2 refactoring Phase 0); may drift if not refreshed on major restructuring.
 - **`interaction-dispatch-model.md`** — how player/leader walk + verb dispatch (use/talk/take) flow through the engine; the message-bus, ActionManager priming, and the native walk-then-talk model.
 - **`tutorial-popup-mechanics.md`** — how the mod drives the engine's own tutorial popup with custom text on demand (Surface 1 silent-popup speech substitution + Surface 2 Trask post-VO custom popups): `ShowTutorialWindow` direct mount, the once-shown bitfield (+0xba8), `SetTutorialReason`, the safe/unsafe `SetMessage` overloads, pause via `SetPauseState`, the reply-break trigger, and the FIVE UI-announce paths that must all be gated. Read before touching tutorial popups or any modal-popup speech.
 - **`mine-trap-model.md`** — engine-confirmed mine/trap model: Awareness-based periodic detection (UpdateMineCheck), per-trap detected-by id lists (triggers/doors/placeables), the 0x13 detection broadcast, and the client's red-polygon render for detected hostile mines. Read before building trap warnings or anything touching trigger visibility.
@@ -24,6 +24,40 @@ Each is a consolidation of former memory notes (offsets, addresses, decompiled m
 - **`walk-nav-and-walkmesh.md`** — leader-walk recipe, per-area nav-graph layout, dialog-speaker resolution, WallTopo walkmesh clustering.
 - **`audio-internals.md`** — Play3DOneShotSound gain chain, CExoSoundSource lifecycle, sound-mode pause exemptions, footstep paths, cue/party filtering, droid subtitles.
 - **`camera-and-swoop.md`** — camera screen-edge turn, A/D-vs-W/S decoupling, mouse-look gating, swoop accelerator-pad classification.
+
+## Source-file naming conventions (patch side)
+
+Established during the Phase-1 structure pass (2026-07-28). These prefixes
+carry meaning — trust them when deciding whether code is safe to remove.
+
+- **`probe_*`** — throwaway reverse-engineering tooling. One-shot or
+  hotkey-triggered dumps that log engine state and change nothing. Safe to
+  treat as disposable once the question they answered is settled.
+  **Caveat:** the file name is not the namespace. `probe_priority_groups.cpp`
+  lives in `acc::probe::priority_groups`, so a grep for
+  `probe_priority_groups::` finds nothing even though `core_tick.cpp`
+  calls it every tick. Always grep the *namespace* before concluding a
+  probe is dead — a Phase-1 candidate to delete this file was approved on
+  exactly that false negative and had to be reverted.
+- **`diag_*`** — diagnostic-only, no shipped behaviour. Currently
+  `diag_settings` (startup environment dump for support logs) and
+  `diag_chargen_feats` (on-demand panel dump).
+- **`*_guard`** — a shipped production fix that also logs. The logging is
+  not the point and must not be removed as "diagnostics":
+  `focus_guard.cpp` (DirectInput reacquire / foreground reclaim / Big
+  Picture keystroke warning — the keyboard-death fix) and
+  `camera_spin_guard.cpp` (edge-turn spin guard). Both were named
+  `diag_*` until Phase 1 because they started as investigations and kept
+  their investigation-era names after becoming fixes.
+- **`minigame_*`** — the minigame family: `minigame_turret`,
+  `minigame_swoop_race`, `minigame_swoop_audio`, `minigame_pazaak`, plus
+  `minigame_aim` for the primitives shared across them.
+- **`menus_*`** — everything menu-side, including `menus_speak`.
+- **`wall_probe` vs `room_topology`** — two systems that used to share the
+  name `wall_topology`. `wall_probe` answers "is there a wall, how far"
+  (ray casts against the perimeter-wall cache, feeds wall sounds).
+  `room_topology` builds the nav-graph clusters and produces the
+  perceptual-region vocabulary (Korridor / Kreuzung / Bereich).
 
 ## `re/` — reverse-engineering assets
 

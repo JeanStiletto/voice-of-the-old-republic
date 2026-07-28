@@ -1,17 +1,21 @@
 # menus.h (49 lines)
 
-Public surface for the menus accessibility module. Declares namespace `acc::menus`.
+Public surface of menus.cpp — the entry points `core_tick` calls each frame,
+plus the channel-keyed speech dedup shared with the listbox-row hook.
 
 ## Declarations (in source order)
 
-- L1 — `namespace acc::menus`
-- L10 — `void ValidatePanels()`
-- L14 — `void TickMonitors()`
-- L18 — `void PollHomeEndKeys()`
-- L22 — `void TickPendingOps()`
-- L27 — `void DrainPendingAnnounce()`
-- L37 — `void ClearPendingAnnounce()`
-- L41 — `void SpeakIfChanged(int channel, const char* text)`
-- L44 — `void MarkSpoken(int channel, const char* text)`
-- L47 — `bool IsDrilledIntoSubScreen()`
-- L48 — `void SetDrilledIntoSubScreen(bool drilled)`
+- L5 — `namespace acc::menus`
+- L9 — `void ValidatePanels()`
+  note: called first per tick — drops pointers the engine may have freed (tabbed-panel cluster)
+- L13 — `void TickMonitors()`
+- L17 — `void PollHomeEndKeys()`
+  note: engine drops these keys pre-hook (no [Keymapping] action); Win32-polled and re-dispatched
+- L20 — `void TickPendingOps()`
+  note: runs LAST per tick so no monitor sees a partially-applied state
+- L26 — `void DrainPendingAnnounce()`
+- L31 — `void ClearPendingAnnounce()`
+- L37 — `void SpeakIfChanged(int channel, const char* text)` / `void MarkSpoken(int channel, const char* text)`
+  note: non-static so the focus monitor's voluntary AnnounceControl can prime ch 0's dedup cache
+- L46-47 — `bool IsDrilledIntoSubScreen()` / `void SetDrilledIntoSubScreen(bool drilled)`
+  note: drill retargets nav from the InGameMenu strip (kept foreground by the engine) to the visible sub-screen

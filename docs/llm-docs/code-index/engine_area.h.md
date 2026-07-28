@@ -1,55 +1,43 @@
-# engine_area.h (427 lines)
+# engine_area.h (628 lines)
 
-Per-area object iteration and room lookup. SEH-guarded; no engine re-entry beyond CSWSArea::GetRoom. Documents handle resolution chain (server vs client paths), CSWSArea layout, walkmesh wall-edge extraction offsets, and map-pin creation.
+Per-area object iteration, handle resolution (server/client namespaces), object naming, per-kind sub-state predicates, global-variable/save-flag reads, map-pin CRUD, fog-of-war geometry, and the walkmesh wall-edge extraction API (BuildAreaWallCache / SegmentCrossesWalkmesh). Header carries most of the offset documentation quoted directly in engine_area.cpp; declares `AreaObjectIterator` and the `GameObjectKind`/`DoorMaterial` enums plus `WallEdge` struct.
 
 ## Declarations (in source order)
 
-- L36 — `namespace acc::engine`
-- L39 — `enum class GameObjectKind : int`
-  note: GAME_OBJECT_TYPES at CSWSObject +0x8; do not reorder — engine values
-- L55 — `void* GetCurrentArea()`
-- L61 — `int GetObjectKind(void* gameObject)`
-  note: reads ONE byte; wide reads corrupt results for objects with non-zero adjacent field bytes
-- L65 — `uint32_t GetObjectHandle(void* gameObject)`
-- L73 — `void* ResolveServerObjectHandle(uint32_t handle)`
-- L79 — `void* ResolveClientObjectHandle(uint32_t handle)`
-  note: for handles with high bit set (0x800000XX); server-side CGameObjectArray won't find these
-- L82 — `bool GetObjectPosition(void* gameObject, Vector& out)`
-- L85 — `void* GetRoomAt(void* area, const Vector& pos)`
-- L89 — `void* GetRoomAtIndexed(void* area, const Vector& pos, int& outIndex)`
-- L97 — `bool GetRoomRepresentativeWorld(void* area, int roomIdx, Vector& outWorld, int* outFailReason = nullptr)`
-- L102 — `bool GetAreaDisplayName(void* area, char* outBuf, size_t bufSize)`
-- L108 — `bool GetRoomDisplayName(void* area, int roomIndex, char* outBuf, size_t bufSize)`
-- L122 — `bool GetObjectName(void* gameObject, char* outBuf, size_t bufSize)`
-- L128 — `bool GetObjectDisplayNameByHandle(uint32_t handle, char* outBuf, size_t bufSize)`
-  note: uses engine's universal accessor with racialtypes.2da/appearance.2da fallbacks; prefer over GetObjectName for handle-based callers
-- L137 — `bool IsUsablePlaceable(void* placeable)`
-- L138 — `bool IsLandmarkWaypoint(void* waypoint)`
-- L139 — `bool IsTransitionTrigger(void* trigger)`
-- L143 — `bool IsDoorOpen(void* serverDoor)`
-- L149 — `enum class DoorMaterial { Metal, Wood, Stone }`
-- L152 — `DoorMaterial GetDoorMaterial(void* serverDoor)`
-- L155 — `bool IsMapNoteEnabled(void* waypoint)`
-- L161 — `void* GetAreaMap()`
-- L165 — `bool IsWorldPointExplored(void* areaMap, const Vector& pos)`
-- L172 — `bool GetMapRotateCCWFromWorldOrientation(void* areaMap, const Vector& orientation, float& outDegCCW)`
-- L180 — `void* GetClientArea(void* serverArea)`
-- L182 — `int GetMapPinCount(void* clientArea)`
-- L187 — `void* GetMapPinAt(void* clientArea, int i)`
-- L191 — `bool GetMapPinPosition(void* mapPin, Vector& out)`
-- L196 — `uint32_t GetMapPinFlags(void* mapPin)`
-- L201 — `bool IsMapPinEnabled(void* mapPin)`
-- L204 — `bool GetMapPinNoteText(void* mapPin, char* outBuf, size_t bufSize)`
-- L221 — `bool CreateMapPin(void* clientArea, const Vector& pos, const char* name, uint32_t referenceNumber, void** outPin = nullptr)`
-  note: in-area only; pins vanish on area transition; replicates engine's HandleServerToPlayerMapPinReferenceNumber pattern
-- L228 — `bool GetWaypointMapNote(void* waypoint, char* outBuf, size_t bufSize)`
-- L235 — `class AreaObjectIterator`
-  note: snapshots game_objects array at construction; safe for single-tick scans; resolves handles via CGameObjectArray
-- L241 — `void* AreaObjectIterator::Next()`
-  note: skips 0-handles and GetGameObject misses (engine uses some as sentinels during area-unload)
-- L243 — `int AreaObjectIterator::SnapshotSize() const`
-- L373 — `struct WallEdge`
-  note: one perimeter walkmesh edge with world-space endpoints; room_id and material_id included
-- L409 — `int BuildAreaWallCache(void* area, WallEdge* outBuf, int maxEdges)`
-  note: null outBuf returns pre-filter discovered count for buffer sizing; non-null writes post-seam-filter edges (real walls only)
-- L424 — `bool SegmentCrossesWalkmesh(const WallEdge* walls, int wallCount, const Vector& a, const Vector& b, Vector& outHitPoint)`
+- L41 — `enum class GameObjectKind : int { Area=4, Creature=5, Item=6, Trigger=7, Projectile=8, Placeable=9, Door=10, AreaOfEffect=11, Waypoint=12, Encounter=13, Store=14, Sound=16 }`
+- L56/62/66 — `GetCurrentArea()`, `GetObjectKind(void*)`, `GetObjectHandle(void*)`
+- L74/80/86 — `ResolveServerObjectHandle`, `ResolveClientObjectHandle`, `ResolveClientObject` — two independent handle namespaces (server 0x000000XX vs client 0x800000XX high-bit)
+- L89 — `bool GetObjectPosition(void* gameObject, Vector& out)`
+- L94/103 — `GetRoomAtIndexed`, `GetRoomRepresentativeWorld`
+- L107/112 — `GetAreaDisplayName`, `GetRoomDisplayName`
+- L126 — `bool GetObjectName(void* gameObject, char* outBuf, size_t bufSize)` — per-kind LocString table documented inline
+- L133/139 — `GetObjectTag`, `GetAreaTag`
+  note: area Tag is almost always the useless GFF default "untitled" — prefer GetCurrentAreaResName
+- L147 — `bool GetCurrentAreaResName(char* outBuf, size_t bufSize)` — stable per-area id (module resref)
+- L155 — `int ReadGlobalNumber(const char* name)` — -1 on fault
+- L165 — `bool IsLoadingSaveGame()`
+- L172 — `bool GetObjectDisplayNameByHandle(uint32_t handle, char* outBuf, size_t bufSize)`
+- L184-186 — `IsUsablePlaceable`, `IsLandmarkWaypoint`, `IsTransitionTrigger`
+- L194 — `int GetTriggerGeometry(void* trigger, Vector* out, int maxVerts)`
+- L203 — `bool GetObjectLocalBoolean(void* gameObject, int index)` — fixed CSWVarTable @+0x110, NOT the named ScriptVarTable @+0x100
+- L212 — `bool IsEmptyContainer(void* gameObject)`
+- L216 — `bool IsDoorOpen(void* serverDoor)`
+- L224 — `bool IsDoorStatic(void* serverDoor)`
+- L234 — `bool MaybeDrivePassiveSelection()` — Endar Spire held-fade root-cause fix, called once per frame from OnUpdate
+- L240 — `enum class DoorMaterial { Metal, Wood, Stone }`
+- L243 — `DoorMaterial GetDoorMaterial(void* serverDoor)`
+- L247/256 — `IsMapNoteEnabled`, `EnableMapNote`
+- L261 — `void* GetAreaMap()`
+- L265/274/284 — `IsWorldPointExplored`, `GetFogCellSizeM`, `GetMapRotateCCWFromWorldOrientation`
+- L289/291/296/300/309/313/317 — `GetClientArea`, `GetMapPinCount`, `GetMapPinAt`, `GetMapPinPosition`, `GetMapPinFlags`, `IsMapPinEnabled`, `GetMapPinNoteText`
+- L334 — `bool CreateMapPin(void* clientArea, const Vector& pos, const char* name, uint32_t referenceNumber, void** outPin)`
+- L342 — `bool GetWaypointMapNote(void* waypoint, char* outBuf, size_t bufSize)`
+- L348 — `class AreaObjectIterator { explicit AreaObjectIterator(void* area); void* Next(); int SnapshotSize() const; }`
+  note: snapshots data pointer + size at construction; safe for single-tick scans since game_objects rebuilds only on area-load
+- L369-536 — file-scope (non-namespaced) offset/address constants: handle-resolution chain, map/fog-of-war chain, CSWCMapPin allocation chain, CSWSArea layout, per-subclass localized-name offsets, Pillar-4 sub-state offsets, trap detected-by lists, trigger geometry, walkmesh wall-edge struct layout (CSWRoomSurfaceMesh/CSWCollisionMesh/SurfaceMeshAdjacency)
+- L548 — `bool TrapDetectedByAnyOf(void* gameObject, const uint32_t* ids, int idCount)`
+- L556 — `struct WallEdge { Vector a; Vector b; int room_id; int material_id; }`
+- L585 — `int BuildAreaWallCache(void* area, WallEdge* outBuf, int maxEdges)`
+  note: outBuf==nullptr or maxEdges<=0 returns pre-filter discovered count for buffer sizing; cache once per area-load (immutable)
+- L597 — `constexpr float kWallCrossZToleranceM = 2.0f`
+- L620 — `bool SegmentCrossesWalkmesh(const WallEdge* walls, int wallCount, const Vector& a, const Vector& b, Vector& outHitPoint, bool ignoreZ = false)`

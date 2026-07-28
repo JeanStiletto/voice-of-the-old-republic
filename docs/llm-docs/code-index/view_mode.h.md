@@ -1,9 +1,12 @@
 # view_mode.h (46 lines)
 
-View mode (B hotkey). Freezes the character in place while keeping the camera
-live. W/S drive a virtual cursor instead of the character. 3D listener is
-rerouted to the cursor position via a detour on CExoSound::SetListenerPosition.
-Enter / Shift+Enter act on whatever the cursor is hovering over.
+View mode (B hotkey — chosen because V is stock-bound to Solo Mode and B
+is unbound). Freezes the character in place while keeping the camera
+live: A/D still pan the camera natively (KOTOR's A/D only rotates the
+camera; the character snaps to face it only on a W/S commit), while W/S/
+A/D instead drive a virtual cursor. The 3D listener is rerouted to the
+cursor position via a detour on CExoSound::SetListenerPosition. Enter /
+Shift+Enter act on whatever the cursor is hovering over.
 
 ## Declarations (in source order)
 

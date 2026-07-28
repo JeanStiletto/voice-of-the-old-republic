@@ -1,18 +1,11 @@
-# menus_listbox.h (103 lines)
+# menus_listbox.h (91 lines)
 
-Public surface for the listbox accessibility dispatcher. Declares `namespace acc::menus::listbox`.
+Header for the spec-table-driven "listbox-arrow-nav + Enter-confirm + Esc-back" dispatcher shared by Container/SaveLoad/EquipPicker-shaped panels. Explains the design rationale: divergence between panels isn't decorative (different Enter targets), so a spec struct with onEnter/onEsc callbacks keeps the dispatcher generic. EquipPicker's armed-flag + bound-panel state lives in the .cpp because its input handler is the primary mutator; two outside touch sites in menus.cpp use the accessors declared here.
 
 ## Declarations (in source order)
 
-- L1 — `namespace acc::menus::listbox`
-- L10 — `bool TryHandleInput(int n, void* thisPtr, void* activePanel, int param_1, int param_2, int& outRv)` — probes the spec table; returns true when consumed
-- L16 — `const char* GetTitleOverride(void* panel)` — returns spec-driven panel title or nullptr
-- L20 — `void DumpFeatsCharGenStructureIfNeeded(void* panel)` — one-shot diagnostic dump of CSWGuiFeatsCharGen internals to log
-- L24 — `bool IsEquipPickerArmed()`
-- L25 — `void* EquipPickerPanel()`
-- L27 — `void ArmEquipPicker(void* panel)`
-- L29 — `void DisarmEquipPicker()`
-- L32 — `bool IsWorkbenchUpgradePickerArmed()`
-- L34 — `void ArmWorkbenchUpgradePicker(void* panel)`
-- L36 — `void DisarmWorkbenchUpgradePicker()`
-- L40 — `void TickListboxMonitors()` — fans out to MonitorContainerSelection, MonitorEquipPickerSelection, MonitorWorkbenchUpgradePicker, PollContainerGiveModeKey
+- L46 — `bool acc::menus::listbox::TryHandleInput(int n, void* thisPtr, void* activePanel, int param_1, int param_2, int& outRv)`
+- L60 — `const char* acc::menus::listbox::GetTitleOverride(void* panel)`
+- L69-72 — `bool IsEquipPickerArmed()`, `void* EquipPickerPanel()`, `void ArmEquipPicker(void* panel)`, `void DisarmEquipPicker()`
+- L79-81 — `bool IsWorkbenchUpgradePickerArmed()`, `void ArmWorkbenchUpgradePicker(void* panel)`, `void DisarmWorkbenchUpgradePicker()`
+- L89 — `void acc::menus::listbox::TickListboxMonitors()` — fans out MonitorContainerSelection, MonitorEquipPickerSelection, MonitorWorkbenchUpgradePicker, PollContainerGiveModeKey

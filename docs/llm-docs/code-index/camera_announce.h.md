@@ -1,12 +1,9 @@
-# camera_announce.h (25 lines)
+# camera_announce.h (38 lines)
 
-Camera-direction announce. Derives yaw per tick from orbital camera position
-(player - camera vector). 8 x 45 degree compass sectors with 5 degree hysteresis.
-Urgent SAPI speech to survive NVDA typed-char cancel while A/D is held.
+Header for the per-tick camera-direction announcer. Documents why camera (not character) direction is announced: A/D rotates the camera only, W snaps the character to face it on commit, so without this the user can't tell where the camera points until moving.
 
 ## Declarations (in source order)
 
-- L17 — `namespace acc::camera_announce`
 - L19 — `void Tick()`
-- L23 — `bool TryGetCameraEngineYawDegrees(float& out)`
-  note: returns engine-frame yaw (0=+X, CCW+), not compass degrees; false until Tick anchors
+- L23 — `bool TryGetCameraEngineYawDegrees(float& out)` — most recent observed camera yaw, engine frame (0°=+X, CCW+); false until anchored
+- L36 — `bool AnnounceCurrentFacing(unsigned int dedupMs)` — one-shot facing readout for event triggers (e.g. door autoturn); dedups against an already-spoken same sector within dedupMs; false during cinematics or unresolved facing

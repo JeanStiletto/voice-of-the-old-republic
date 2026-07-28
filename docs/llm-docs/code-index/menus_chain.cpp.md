@@ -1,31 +1,56 @@
-# menus_chain.cpp (847 lines)
+# menus_chain.cpp (1828 lines)
 
-Chain navigation implementation TU. The main `RebindChain` function (~520 lines) walks all panel controls, inserts ChainEntry records sorted by (cy, cx), handles tabs clusters, equip slots, virtual entries (mod-settings sentinel, credits rows, stat rows, equip-stat rows), and deduplicates by control pointer.
+Implements the chain-navigation state and its four input handlers
+(`HandleNavStep`, `HandleEnterActivation`, `HandleLeftRight`, `HandleEsc`) plus
+`RebindChain` — the ~700-line heart of the module that walks panel.controls,
+recurses into sub-dialog listboxes, inserts virtual entries (credits row,
+InGameCharacter/StatusSummary/Pazaak-wager/Equip-stat rows, mod-settings
+sentinel), filters per-kind decorative controls, sorts by y, squashes
+cycle-arrow flankers, and computes the three click-offset compensations.
+`HandleEnterActivation` classifies the focused entry (virtual/tab/equip-slot/
+workbench-slot/store-item/journal-row/quest-item/party-add-blocked/
+level-up-inactive-step/wager-step/text-only/default) and queues the matching
+pending op. Talks to nearly every menus_* module for per-panel special
+cases.
 
 ## Declarations (in source order)
 
-- L44 — `acc::menus::chain::ChainEntry g_chain[kMaxChainEntries]` — exported chain array
-- L45 — `void* g_chainPanel` — panel the chain is bound to
-- L46 — `int g_chainIndex` — currently focused chain slot
-- L47 — `int g_chainCount` — number of valid entries in g_chain
-- L48 — `void* g_tabbedPanel` — the enclosing tabbed panel (Options-style), or nullptr
-- L49 — `int g_tabsStart`, `g_tabsCount` — range within g_chain of tab buttons
-- L50 — `int g_tabClickOffsetY` — y-pixel compensation for Options-style hit-test shift
-- L51 — `int g_equipSlotClickOffsetY` — y-pixel compensation for equip-slot hit-test shift
-- L52 — `int g_classIconClickOffsetX` — x-pixel compensation for class-icon hit-test
-- L60 — `bool IsModalTextPanel(PanelKind k)` — returns true for TutorialBox, BarkBubble, AreaTransition, MessageBoxModal (anonymous ns)
-- L76 — `void* acc::menus::chain::ReadPanelActiveControl(void* panel)` — reads panel.active_control at +0x4c
-- L82 — `int acc::menus::chain::FindChainEntry(void* control)` — linear scan of g_chain; returns index or -1
-- L94 — `bool acc::menus::chain::DetectTabsCluster(void* panel, int& outStart, int& outCount)` — locates contiguous tab-button run in g_chain for Options-style tabbed panels
-- L140 — `void acc::menus::chain::ResetTabbedState()`
-- L146 — `void acc::menus::chain::RebindChainPreserveIndex(void* panel)` — rebuilds chain and restores g_chainIndex to the nearest valid slot
-- L158 — `void acc::menus::chain::InvalidateChain()` — zeroes g_chainCount and nulls g_chainPanel; call before a panel is freed to prevent stale-pointer dereferences in monitors
-- L165 — `void acc::menus::chain::ValidateTabbedPanel()` — clears g_tabbedPanel if the panel is no longer in the manager
-- L183 — `void acc::menus::chain::ValidateChainPanel()` — calls InvalidateChain if g_chainPanel is no longer in the manager
-- L205 — `bool acc::menus::chain::IsTabButton(void* control)` — true when control is in the g_chain tabs cluster
-- L217 — `void* acc::menus::chain::FindAdjacentArrow(void* panel, void* focused, bool toRight)` — finds the cycle-widget flanker arrow spatially adjacent to `focused` on the same row
-- L254 — `void* acc::menus::chain::FindCloseButton(void* panel)` — scans controls for a Schliess/OK/Weiter button by .gui ID or text
-- L276 — `void* acc::menus::chain::FindCancelButton(void* panel)` — scans controls for an Abbrechen/Cancel button by .gui ID or text
-- L299 — `void AppendChainEntry(void* control)` — inserts sorted by (cy, cx) into g_chain (anonymous ns)
-- L307 — `void AppendChainTextOnly(void* control, void* panel)` — inserts a text-only entry for controls that announce but aren't click-targets (anonymous ns)
-- L326 — `void acc::menus::chain::RebindChain(void* panel)` — full rebuild; iterates panel.controls, virtual rows (credits, stat rows, equip-stat rows, mod-settings sentinel), filters non-navigable and hidden controls, sorts, detects tabs cluster
+- L48 — `namespace acc::menus::chain`
+- L54-64 — `ChainEntry g_chain[]` / `g_chainPanel` / `g_chainIndex` / `g_chainCount` / `g_tabbedPanel` / `g_tabsStart` / `g_tabsCount` / `g_equipSlotClickOffsetY` / `g_classIconClickOffsetX` (definitions)
+- L66 — `int ComputeTabClickOffsetY(void* panel)`
+- L84 — `bool IsModalTextPanel(PanelKind k)` (anonymous ns)
+  note: MessageBoxModal/TutorialBox/AreaTransition only — StatusSummary handled separately (label cluster, not listbox)
+- L107 — `bool IsPanelLive(void* panel)` (anonymous ns)
+  note: guards stale g_currentPanel against a freed-and-reused heap block reading back as garbage/ASCII (crash dump swkotor.exe(1).31228.dmp)
+- L127 — `void* ReadPanelActiveControl(void* panel)`
+- L133 — `int FindChainEntry(void* control)`
+- L148 — `void SpeakLevelUpDoStepFirst()`
+  note: finds the level-up category with bit_flags bit 3 set (the engine's "current step" gate) and names it
+- L180 — `bool DetectTabsCluster(void* panel, int& outStart, int& outCount)`
+  note: excludes Store (action buttons, not tabs) and WorkbenchUpgrade (slot pickers, not tabs) explicitly
+- L246 — `void ResetTabbedState()`
+- L252 — `void RebindChainPreserveIndex(void* panel)`
+- L264 — `void InvalidateChain()`
+  note: deliberately does NOT reset tabbed-panel state — orthogonal lifetimes
+- L278 — `void ValidateTabbedPanel()`
+- L286 — `void ValidateChainPanel()`
+- L298 — `bool IsTabButton(void* control)`
+- L310 — `void* FindAdjacentArrow(void* panel, void* focused, bool toRight)`
+- L347 — `void* FindCloseButton(void* panel)`
+  note: matches "Schliess"/"Close"/"OK"/"Weiter"/"Continue" text prefixes
+- L369 — `void* FindCancelButton(void* panel)`
+  note: matches "Abbrechen"/"Cancel"/"Nein"/"No" — probed before FindCloseButton at Esc call sites
+- L392 — `void AppendChainEntry(void* control)` (anonymous ns)
+- L400 — `void AppendChainTextOnly(void* control, void* panel)` (anonymous ns)
+- L419 — `void RebindChain(void* panel)`
+  note: per-kind decorative filter (isDecorative lambda) drops InGameCharacter model-rotate button, InGameEquip OK/Back/party-cycle, InGameLevelUp Zurück/Abbrechen, PartySelection unavailable portraits, WorkbenchUpgrade inactive slots, and the universal strref-1582 close-button match; virtual-row registration (credits, InGameCharacter stats, StatusSummary, Pazaak wager, Equip stats, mod-settings root) happens before the y-sort
+- L1102 — `void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)`
+  note: classification order — virtual entry, tab button, equip slot (direct OnEnterSlot+OnSelectSlot bypass, NOT click-sim — labels cover buttons in z-order), workbench-upgrade slot (same z-order trap), store item row, journal row, quest-item row, party-add-blocked, level-up inactive step, Pazaak wager step, else generic FireActivate
+- L1397 — `void WalkChildren(const char* label, void* parent, size_t offset, const char* kindName)`
+  note: uses acclog::BlockLog with pointer-stripped Key() so repeated walks of a recreated panel fold to "(repeated Nx)"
+- L1457 — `void HandleNavStep(void* activePanel, int code, int val, bool& consumed)`
+  note: silences in-flight speech before each step on the chargen Skills panel (long descriptions otherwise queue one step behind); applies tab/class-icon/attr/skill cursor-warp Y compensations
+- L1616 — `void HandleLeftRight(void* activePanel, int code, int val, bool& consumed)`
+  note: Pazaak wager popup owns Left/Right itself; sliders route to QueueSliderInput; else cycle-arrow neighbour (with a CSWGuiPortraitCharGen direct-offset override since right_arrow is filtered from the chain)
+- L1693 — `void HandleEsc(void* activePanel, int code, int val, bool& consumed)`
+  note: Store and WorkbenchUpgrade get dedicated direct-button routes (neither is a modal popup nor tabbed); generic path probes FindCancelButton before FindCloseButton so confirm dialogs route to the safe choice; InvalidateChain() called for InGameOptions sub-screen closes (deferred-destroy crash guard, dump TID 16116)

@@ -1,6 +1,6 @@
 // CSWSArea nav-graph reader — shared snapshot helpers.
 //
-// Pure read, SEH-guarded. Used by guidance_pathfind and wall_topology
+// Pure read, SEH-guarded. Used by guidance_pathfind and room_topology
 // (the offset constants live in guidance_pathfind.h — one canonical
 // location).
 //
@@ -32,7 +32,7 @@ struct NavGraphSnapshot {
 };
 
 // Observed worst case ~104 nodes; 512 cap. Late nodes truncate (A* over
-// the prefix still works; wall_topology degrades to "open area").
+// the prefix still works; room_topology degrades to "open area").
 constexpr int kMaxNodes = 512;
 constexpr int kMaxEdges = kMaxNodes * 8;
 

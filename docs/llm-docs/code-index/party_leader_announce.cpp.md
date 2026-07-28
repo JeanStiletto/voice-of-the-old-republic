@@ -1,10 +1,19 @@
 # party_leader_announce.cpp (99 lines)
 
-Tab leader-change announce implementation. Arms a pending announce on Tab rising-edge (captures pre-press leader pointer), then watches for engine leader-swap over kPendingWindowTicks=6 ticks (~100ms). Announces on pointer change or window expiry.
+Speaks the newly-controlled party member's name on Tab rising-edge. Reads on
+a *later* tick rather than the press tick because the engine's own input pump
+(which swaps `CClientExoApp::GetPlayerCreature` to the next member) runs after
+our hotkey edge-detector in `core_tick::Dispatch` — reading immediately would
+announce the stale (pre-swap) leader. Talks to `engine_player` (leader/position
+accessors), `hotkeys` (Tab edge + foreground gate), and `prism` (speech).
 
 ## Declarations (in source order)
 
-- L10 — `namespace acc::party_leader_announce`
-- L39 — `static void Speak()` (anonymous namespace)
-  note: reads GetActiveLeaderName and calls prism::Speak(interrupt=true)
+- L35 — `constexpr int kPendingWindowTicks = 6`
+  note: ~100ms at 60fps; window during which a leader-pointer swap is watched for after Tab.
+- L36-37 — `int g_pendingTicks; void* g_pendingLeader`
+  note: g_pendingLeader is the pre-press leader pointer, used both to detect the swap and as the solo-party fallback.
+- L39 — `void Speak()`
+  note: resolves the active leader's name via GetActiveLeaderName and speaks it interrupt=true.
 - L51 — `void Tick()`
+  note: arms on Tab rising edge (gated on player-loaded via GetPlayerPosition); each subsequent tick checks GetClientLeader() for a pointer change or expires the window (solo-party case) and speaks the current leader either way so every Tab press is audible.

@@ -1,27 +1,23 @@
-# menus_editbox.cpp (580 lines)
+# menus_editbox.cpp (639 lines)
 
-Editbox accessibility implementation. Arms on entering an editbox-hosting panel, polls the engine's append-only c_string for character diffs, and handles modal keys (Esc/Enter/Up/Down).
+Editbox dispatcher + per-tick monitor. Single armed-editbox model (`s_state`) since vanilla KOTOR has exactly one editbox at a time, mirrored across two specs: chargen `CSWGuiNameChargen` and the save-name popup `CSWGuiSaveNamePanel`. Engine consumes keystrokes at the editbox before the manager-level input hook sees them, so text changes are caught by a per-tick strnlen-based diff (`ReadEditbox`/`PollAndAnnounceDiff`) rather than by handling letters/Backspace directly; modal keys (Up/Down re-read, Enter submit, Esc exit) are polled via Win32 (`PollModalKeys`) because they're likewise swallowed by the engine. Talks to `menus_extract` (FromControl for title overrides), `hotkeys` (edge-detect registry), `input_pipeline` (NoteEditboxSubmitClosed to prevent a false in-world interact), `menus_pending`/`menus.h`.
 
 ## Declarations (in source order)
 
-- L44 — `struct EditboxPanelSpec` — fields: matches callback, findEditbox, findSubmitButton, titleOverride callback (anonymous ns)
-- L78 — `bool ChargenNameMatches(void* panel)` (anonymous ns)
-- L84 — `void* ChargenNameFindEditbox(void* panel)` (anonymous ns)
-- L89 — `void* ChargenNameFindSubmitButton(void* panel)` (anonymous ns)
-- L99 — `const char* ChargenNameTitleOverride(void* panel)` (anonymous ns)
-- L110 — `constexpr EditboxPanelSpec kChargenNameSpec` (anonymous ns)
-- L118 — `constexpr const EditboxPanelSpec* kSpecs[]` — one entry: chargen-name panel (anonymous ns)
-- L127 — `struct ArmedState` — captures editbox pointer, text snapshot, lengths, and panel pointer for diff polling (anonymous ns)
-- L144 — `ArmedState s_state` — the single armed-state slot (anonymous ns)
-- L186 — `bool ReadEditbox(void* editbox, char* outText, size_t outCap, uint32_t& outLen, uint32_t& outRawLen, short& outA, short& outB)` — SEH-guarded read of the editbox's c_string and length fields (anonymous ns)
-- L209 — `void SnapshotInto(ArmedState& s)` — captures current editbox text into ArmedState (anonymous ns)
-- L218 — `void SpeakFullText(const char* text, uint32_t len)` — speaks the complete current text (anonymous ns)
-- L230 — `void SpeakSingleChar(char c)` — speaks a single typed character (anonymous ns)
-- L239 — `void PollAndAnnounceDiff(ArmedState& s)` — compares current vs. snapshot and speaks additions or deletions (anonymous ns)
-- L308 — `void PollModalKeys(ArmedState& s)` — polls Up/Down hotkeys and re-reads full text on press (anonymous ns)
-- L370 — `struct PanelMatch` (anonymous ns)
-- L375 — `PanelMatch FindMatchingPanel()` — scans manager panels[] against kSpecs; returns matched spec + panel (anonymous ns)
-- L398 — `void DisarmIfArmed(const char* reason)` — clears s_state and logs the reason (anonymous ns)
-- L411 — `bool acc::menus::editbox::TryHandleInput(int n, void* thisPtr, void* activePanel, int param_1, int param_2, int& outRv)`
-- L476 — `void acc::menus::editbox::TickEditboxMonitors()`
-- L569 — `const char* acc::menus::editbox::GetTitleOverride(void* panel)`
+- L46 — `struct EditboxPanelSpec { logTag, matches, findEditbox, findSubmitButton, titleOverride }` — one entry per panel kind hosting an editbox
+- L80 — `bool ChargenNameMatches/FindEditbox/FindSubmitButton/TitleOverride(void*)` — CSWGuiNameChargen spec callbacks; title override reads subtitle_label instead of the stale main_title_label
+- L124 — `bool SaveNameMatches/FindEditbox/FindSubmitButton/TitleOverride(void*)` — CSWGuiSaveNamePanel spec callbacks
+- L162 — `constexpr EditboxPanelSpec* kSpecs[]` — the two specs
+- L172 — `struct ArmedState { spec, panel, editbox, editMode, text[64], textLen, rawLenField, shortA, shortB }`
+  note: textLen is strnlen(c_string), NOT the engine's +0x15c field — verified the raw field desyncs on Backspace
+- L189 — `ArmedState s_state` — file-static single-slot arm state
+- L231 — `bool ReadEditbox(editbox, outText, outCap, outLen, outRawLen, outA, outB)` — reads (text, length, shortA/B) from the editbox
+- L254 — `void SnapshotInto(ArmedState&)`
+- L263 — `void SpeakFullText(text, len)` / L275 `void SpeakSingleChar(c)`
+- L284 — `void PollAndAnnounceDiff(ArmedState&)` — diffs text vs last snapshot; ±1-char delta speaks the single inserted/deleted char (assumes append-at-end, no caret tracked), else speaks full new text
+- L353 — `void PollModalKeys(ArmedState&)` — Win32 edge-detect Up/Down (re-read), Enter (drop edit mode only — engine handles submit natively; double-QueueActivate caused a modal-stack lockup, see comment), Esc (soft exit)
+- L434 — `struct PanelMatch { spec, panel }`; `PanelMatch FindMatchingPanel()` — walks manager panels[] for a spec match
+- L457 — `void DisarmIfArmed(reason)`
+- L470 — `bool acc::menus::editbox::TryHandleInput(n, thisPtr, activePanel, param_1, param_2, outRv)` — consumes Esc/Enter/Up/Down/Home/End while armed+editMode; lets letters/Backspace/Left/Right fall to the engine
+- L535 — `void acc::menus::editbox::TickEditboxMonitors()` — arms on focus-enter (speaks "Editbox. <value>", consumes held-key edges via hotkeys::Consume), disarms on focus-leave or panel gone, else runs PollAndAnnounceDiff + PollModalKeys
+- L628 — `const char* acc::menus::editbox::GetTitleOverride(void* panel)` — dispatches to the matching spec's titleOverride

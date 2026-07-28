@@ -1,36 +1,24 @@
-# combat_special_watch.cpp (324 lines)
+# combat_special_watch.cpp (312 lines)
 
-Implements the specials-queue heartbeat cue (Phase 3 side-channel). Walks all party
-members' combat_round.actions each tick, counts "specials" (non-routine actions), and
-plays an audio cue when the count drops to zero or repeats on a 6s cadence.
+Implements the specials heartbeat. `IsRoutineAutoAttack` classifies a queued `CSWSCombatRoundAction` as routine only if action_type==1 (attack), attack_feat==0 (@+0x84, per Lane's type DB), and the target resolves to a Creature — anything else (feats, casts, item-uses, equips, object bashes, or a read fault) counts as "special" (fail-safe: better to under-silence than over-fire on corrupt state). `CountPartySpecials` walks every party member's combat_round via `GetPartyMembers`, falling back to the controlled creature alone if the party table is unreadable. The state machine (`State`) tracks combat-entry time, previous specials count, and last-fire time; fires the cue via `audio_bus::PlayCue` (2D, resref `c_drdastro_hit2`, chosen after `gui_actqueue` and `cb_gr_boncehard2` proved too soft). Priority group now rides the mod's shared full-volume cue group via `PlayCue`'s default arg (`audio::GetCuePriorityGroup`) rather than a hardcoded group 15.
 
 ## Declarations (in source order)
 
 - L18 — `namespace acc::combat::special_watch`
-- L26 — `constexpr const char* kCueResref`
-  note: "c_drdastro_hit2" — astromech droid hit; chosen over gui_actqueue/cb_gr_boncehard2 for better audibility under combat audio
-- L42 — `constexpr uint8_t kCuePriorityGroup`
-  note: priority group 15 — same as weapon swings, vol=127; competes on equal footing with combat SFX
-- L49 — `constexpr uint8_t kCueVolumeByte`
-- L56 — `constexpr bool kCuePlayAs3D`
-  note: false — reverted from 3D-at-listener trick; clean 2D, same API as nav cues
-- L61 — `constexpr DWORD kFirstRoundQuietMs`
-  note: 6000ms — matches KOTOR's 6s round length; keeps "Kampf beginnt" announcement clean
-- L64 — `constexpr DWORD kRepeatPeriodMs`
-- L73 — `constexpr size_t kActionAttackFeatOffset`
-  note: @+0x84 on CSWSCombatRoundAction — feat ID for Power Attack / Flurry / Critical Strike; non-zero means special
-- L76 — `void* ReadCombatRound(void* serverCreature)`
-- L93 — `bool IsRoutineAutoAttack(void* action)`
-  note: true only for action_type=1 + feat=0 + Creature-kind target; fault returns false (fail-safe, better to silence than over-fire)
-- L135 — `int CountSpecialsForCreature(void* creature, const char* tag)`
-  note: walks one creature's action list; emits per-item diagnostic log for every non-placeholder item (intentionally noisy during development)
-- L189 — `int CountPartySpecials()`
-  note: aggregates CountSpecialsForCreature over all party members; falls back to leader-only when party table unreadable
-- L214 — `struct State`
-  note: watcher state machine — inCombatPrev, specialsPrev, combatEnteredAt, lastTickAt; resets cleanly across combat boundaries
-- L221 — `State& GetState()`
-- L226 — `void ResetForExit(State& s)`
-- L233 — `void FireCue(const char* reason, int specials, DWORD now)`
-  note: plays kCueResref via PlayCue (2D) or PlayCue3D (if kCuePlayAs3D); updates lastTickAt
-- L260 — `void Tick()`
-  note: state machine: combat-entry edge sets baseline; first-round gate; edge-fire on specials >=1->0; repeat heartbeat when specials==0 and period elapsed
+- L26 — `constexpr const char* kCueResref = "c_drdastro_hit2"`
+- L44 — `constexpr bool kCuePlayAs3D = false`
+  note: reverted from a 3D-at-listener trick (small perceived loudness gain) as an overcomplicated quirk-exploit
+- L49 — `constexpr DWORD kFirstRoundQuietMs = 6000`
+- L52 — `constexpr DWORD kRepeatPeriodMs = 6000`
+- L61 — `constexpr size_t kActionAttackFeatOffset = 0x84`
+- L64 — `void* ReadCombatRound(void* serverCreature)`
+- L81 — `bool IsRoutineAutoAttack(void* action)`
+  note: fail-safe — any SEH fault or ambiguous field treats the action as special
+- L123 — `int CountSpecialsForCreature(void* creature, const char* tag)`
+  note: emits a per-item Combat.QueueRaw log line for every non-placeholder entry (intentionally noisy diagnostic)
+- L177 — `int CountPartySpecials()`
+- L202 — `struct State` (inCombatPrev/specialsPrev/combatEnteredAt/lastTickAt) / L209 `State& GetState()`
+- L214 — `void ResetForExit(State& s)`
+- L221 — `void FireCue(const char* reason, int specials, DWORD now)`
+- L248 — `void Tick()`
+  note: combat-entry edge → first-round gate → falling-edge-to-zero fires immediately → else 6s repeat heartbeat while empty

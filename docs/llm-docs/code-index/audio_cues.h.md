@@ -1,13 +1,9 @@
-# audio_cues.h (64 lines)
+# audio_cues.h (94 lines)
 
-Data-only header. Maps NavCue enum values to engine resref strings via
-GetNavCueResref. Swapping a resref requires changing the string literal in the
-switch. CResRef has a 16-char hard limit (silent truncation on miss).
+Data-only navigation-cue vocabulary: `NavCue` enum plus `GetNavCueResref` mapping each to a ≤16-char engine resref. Covers Pillar-4 per-kind cues (doors split by open-state + material, NPC, container, item, landmark [silent], transition, wall, hazard), guidance/view-mode signals (collision, beacon variants), and the swoop-race minigame's steering/warning cues (shared between the live race and the glossary preview). CResRef truncates silently past 16 chars — a resolution miss is a silent cue, so resrefs must be checked against `build/sounds-extracted-full/`.
 
 ## Declarations (in source order)
 
-- L17 — `namespace acc::audio`
-- L19 — `enum class NavCue`
-  note: per-kind cues (DoorOpen/DoorClosedMetal/Wood/Stone, NpcCreature, ContainerPlaceable, Item, Landmark, TransitionExit, Wall, HazardLedge) plus guidance/view-mode signals (Collision, BeaconActive, BeaconWaypointReached, BeaconDestinationReached).
-- L41 — `constexpr const char* GetNavCueResref(NavCue cue)`
-  note: Landmark returns "" to short-circuit PlayCue3D without an engine call (announces via TTS only).
+- L19 — `enum class NavCue` — DoorOpen/ClosedMetal/ClosedWood/ClosedStone, NpcCreature, ContainerPlaceable, Item, Landmark, TransitionExit, Wall, HazardLedge, Collision, BeaconActive/WaypointReached/DestinationReached, SwoopAccelpadBoost/ObstacleWarn/WallImpact, SwoopSteerLeft/Right/Aligned, SwoopShiftReady
+  note: Landmark maps to empty resref ("") — TTS-only, short-circuits PlayCue3D
+- L64 — `constexpr const char* GetNavCueResref(NavCue cue)` — switch mapping enum → resref string, e.g. DoorOpen→"gui_close", Wall→"as_nt_wtrdrip_09", SwoopSteerLeft→"acc_steer_l" (custom Override WAV)
