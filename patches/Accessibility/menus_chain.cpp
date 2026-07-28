@@ -34,7 +34,7 @@
 #include "menus_pazaakdeck.h"
 #include "menus_pending.h"   // QueueActivate, IsPending, QueueMoveCursor, Queue{ClickAt,EquipSelect,WorkbenchSlotSelect,StoreItemActivate}
 #include "menus_store.h"
-#include "pazaak.h"           // DispatchWagerInput codes — wager less/more Enter
+#include "minigame_pazaak.h"           // DispatchWagerInput codes — wager less/more Enter
 #include "peek_description.h" // SpeakItemRowDescription — quest-item Enter
 #include "prism.h"
 #include "strings.h"

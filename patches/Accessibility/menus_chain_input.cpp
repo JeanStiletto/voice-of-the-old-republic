@@ -44,7 +44,7 @@
 #include "menus_pazaakdeck.h"
 #include "menus_pending.h"
 #include "menus_store.h"
-#include "pazaak.h"
+#include "minigame_pazaak.h"
 #include "peek_description.h"
 #include "prism.h"
 #include "strings.h"

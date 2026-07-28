@@ -11,7 +11,7 @@
 #include <cstring>
 
 #include "bringup_announce.h"
-#include "diag_focus.h"
+#include "focus_guard.h"
 #include "diag_settings.h"
 #include "engine_keymap.h"
 #include "log.h"
@@ -299,13 +299,13 @@ extern "C" void __cdecl OnRulesInit(void* /*rulesThis*/) {
     // main thread (where the engine's own message loop + DirectInput
     // dispatch live) that conflicts with anything else on the thread
     // that wants STA, and shows up as "fine until first focus loss".
-    acc::diag::focus::LogComApartment("post_prism_init");
+    acc::focus_guard::LogComApartment("post_prism_init");
     // Spin up the focus-probe polling thread now (rather than at
     // MainMenu first-sight) so we catch focus events during intro-movie
     // playback + the SWMovieWindow → Render Window handoff that
     // happens before the main menu shows. Idempotent — re-call from
     // MainMenu first-sight is a no-op.
-    acc::diag::focus::StartFocusProbe();
+    acc::focus_guard::StartFocusProbe();
     // Bringup-phase nag — speaks "Game is still loading" once if the
     // user presses an arrow / Enter / Space during the post-intro
     // pre-pump-live window. Silent during movies + after pump live.

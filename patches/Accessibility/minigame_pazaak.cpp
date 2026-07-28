@@ -25,7 +25,7 @@
 #include <cstdio>
 #include <cstring>
 
-#include "pazaak.h"
+#include "minigame_pazaak.h"
 
 #include "engine_input.h"     // kInputNav* / kInputEnter* / kInputEsc*
 #include "engine_manager.h"   // GetForegroundPanel, IsPanelInManager, kAddrGuiManagerPtr

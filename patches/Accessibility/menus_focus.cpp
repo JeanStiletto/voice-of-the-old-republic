@@ -40,7 +40,7 @@
 #include "tutorial_popup.h"
 #include "update_checker.h"
 #include "diag_chargen_feats.h"
-#include "diag_focus.h"
+#include "focus_guard.h"
 
 using namespace acc::engine;
 
@@ -152,7 +152,7 @@ static void AnnouncePanelTitle(void* panel) {
         // window is in front would bleed nav keys into the background game. If
         // we're not foreground yet, the regain edge (WM_ACTIVATEAPP active=1 ->
         // RequestInputReacquire) acquires when the game actually comes forward.
-        if (acc::diag::focus::GameOwnsForeground()) {
+        if (acc::focus_guard::GameOwnsForeground()) {
             acc::engine::ForceReacquireInput();
         } else {
             acclog::Write("EngineInput",
@@ -164,7 +164,7 @@ static void AnnouncePanelTitle(void* panel) {
         // should already have subclassed every game window by now, but
         // re-calling is a no-op and keeps the safety net in place in
         // case the thread didn't start (CreateThread failure logged).
-        acc::diag::focus::StartFocusProbe();
+        acc::focus_guard::StartFocusProbe();
         // Foreground-reclaim guard retired: input now mirrors foreground
         // (acquire on the regain edge, release on focus-loss — see
         // engine_input.h ReleaseInput / RequestInputRelease), so the keyboard

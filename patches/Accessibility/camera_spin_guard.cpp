@@ -1,4 +1,4 @@
-#include "camera_spin_diag.h"
+#include "camera_spin_guard.h"
 
 #include <windows.h>
 #include <cmath>
@@ -12,7 +12,7 @@
 
 #pragma comment(lib, "user32.lib")
 
-namespace acc::camera_spin_diag {
+namespace acc::camera_spin_guard {
 
 namespace {
 
@@ -253,4 +253,4 @@ void Tick() {
     }
 }
 
-}  // namespace acc::camera_spin_diag
+}  // namespace acc::camera_spin_guard

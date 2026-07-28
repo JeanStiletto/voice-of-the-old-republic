@@ -28,7 +28,7 @@
 #include "menus_chargen_feats.h"    // IsChargenFeatsPanel — chargen sub-screen close
 #include "menus_chargen_skills.h"   // IsChargenSkillsPanel — chargen sub-screen close
 #include "menus_galaxymap.h"        // DispatchInput for GalaxyInput
-#include "pazaak.h"                 // DispatchWagerInput for WagerInput
+#include "minigame_pazaak.h"                 // DispatchWagerInput for WagerInput
 #include "menus_journal.h"   // Sort/Swap post-activate list-rebuild repair
 #include "menus_listbox.h"   // DisarmWorkbenchUpgradePicker (post-slot-select cleanup)
 #include "menus_powers_levelup.h"   // IsPowersLevelUpPanel — chargen sub-screen close

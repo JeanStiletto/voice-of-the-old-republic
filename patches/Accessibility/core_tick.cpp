@@ -8,14 +8,14 @@
 #include "bringup_announce.h"
 #include "camera_announce.h"
 #include "camera_orient.h"
-#include "camera_spin_diag.h"
+#include "camera_spin_guard.h"
 #include "combat.h"
 #include "combat_diag.h"
 #include "combat_query.h"
 #include "combat_queue.h"
 #include "combat_special_watch.h"
 #include "cycle_input.h"
-#include "diag_focus.h"
+#include "focus_guard.h"
 #include "dialog_speech.h"
 #include "discovery.h"
 #include "endar_softlock.h"
@@ -41,7 +41,7 @@
 #include "menus_pazaakdeck.h"
 #include "party_leader_announce.h"
 #include "passive_narrate.h"
-#include "pazaak.h"
+#include "minigame_pazaak.h"
 #include "probe_audio_frame.h"
 #include "probe_priority_groups.h"
 #include "probe_camera_distance.h"
@@ -51,9 +51,9 @@
 #include "engine_input.h"
 #include "spatial_change_detector.h"
 #include "stealth_watch.h"
-#include "swoop_race.h"
+#include "minigame_swoop_race.h"
 #include "trap_watch.h"
-#include "turret_game.h"
+#include "minigame_turret.h"
 #include "transitions.h"
 #include "update_checker.h"
 #include "view_mode.h"
@@ -206,7 +206,7 @@ void RetryColdStartReacquire() {
         return;
     }
 
-    if (!acc::diag::focus::GameOwnsForeground()) return;
+    if (!acc::focus_guard::GameOwnsForeground()) return;
 
     ULONGLONG nowMs = GetTickCount64();
     if (s_lastMs != 0 && nowMs - s_lastMs < kReacquireRetryMs) return;
@@ -259,7 +259,7 @@ void Dispatch() {
     // focus-probe poll thread queued one (windowed-mode focus theft — the
     // user's keys never reach the engine, so menus look dead). Throttled at
     // the poll thread; this just drains + speaks on a safe main-thread tick.
-    acc::diag::focus::DrainInputBlockedWarning();
+    acc::focus_guard::DrainInputBlockedWarning();
 
     // Defensive — drop stale panel pointers before any handler touches them.
     PHASE("menus.ValidatePanels", acc::menus::ValidatePanels());
@@ -345,7 +345,7 @@ void Dispatch() {
     // after the router spoke the generic "locked" line, so ordering holds.
     PHASE("locked_recall", acc::locked_recall::Tick());
     PHASE("camera_orient", acc::camera_orient::Tick());
-    PHASE("camera_spin_diag", acc::camera_spin_diag::Tick());
+    PHASE("camera_spin_diag", acc::camera_spin_guard::Tick());
     PHASE("spatial.change_detector", acc::spatial::change_detector::Tick());
 
     // Swoop race entry/exit cues. Gated to CSWMiniGame.type==0.

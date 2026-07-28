@@ -32,7 +32,7 @@
 //     the engine still plays its own one-shot mgs_sith_hit / _expl on
 //     hit/kill, which covers "you connected" without us adding anything.
 
-#include "turret_game.h"
+#include "minigame_turret.h"
 
 #include <windows.h>
 #include <cmath>

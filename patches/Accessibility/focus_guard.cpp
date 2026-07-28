@@ -1,4 +1,4 @@
-#include "diag_focus.h"
+#include "focus_guard.h"
 
 #include <windows.h>
 #include <objbase.h>
@@ -13,7 +13,7 @@
 
 #pragma comment(lib, "ole32.lib")
 
-namespace acc::diag::focus {
+namespace acc::focus_guard {
 
 namespace {
 
@@ -628,4 +628,4 @@ void ArmStartupForegroundGuard() {
         "focus-theft, e.g. Game Bar)", kGuardWindowMs);
 }
 
-}  // namespace acc::diag::focus
+}  // namespace acc::focus_guard

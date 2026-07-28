@@ -10,7 +10,7 @@
 // where ENTER fired at T+0 and a spurious EXIT fired at T+125 ms even
 // though the actual race continued for 40 more seconds.
 
-#include "swoop_race.h"
+#include "minigame_swoop_race.h"
 
 #include <windows.h>
 #include <cmath>
@@ -30,7 +30,7 @@
                               //              (race input is held Space/Enter)
 #include "strings.h"          // Get(SwoopRaceStarted/Controls/Ended) +
                               //     FmtSwoopRaceGear
-#include "swoop_spatial_audio.h"  // TickSpatialAudio + ResetSpatialAudio
+#include "minigame_swoop_audio.h"  // TickSpatialAudio + ResetSpatialAudio
 #include "engine_rebase.h"
 
 namespace acc::swoop_race {

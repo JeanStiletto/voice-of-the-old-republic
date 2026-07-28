@@ -25,6 +25,40 @@ Each is a consolidation of former memory notes (offsets, addresses, decompiled m
 - **`audio-internals.md`** — Play3DOneShotSound gain chain, CExoSoundSource lifecycle, sound-mode pause exemptions, footstep paths, cue/party filtering, droid subtitles.
 - **`camera-and-swoop.md`** — camera screen-edge turn, A/D-vs-W/S decoupling, mouse-look gating, swoop accelerator-pad classification.
 
+## Source-file naming conventions (patch side)
+
+Established during the Phase-1 structure pass (2026-07-28). These prefixes
+carry meaning — trust them when deciding whether code is safe to remove.
+
+- **`probe_*`** — throwaway reverse-engineering tooling. One-shot or
+  hotkey-triggered dumps that log engine state and change nothing. Safe to
+  treat as disposable once the question they answered is settled.
+  **Caveat:** the file name is not the namespace. `probe_priority_groups.cpp`
+  lives in `acc::probe::priority_groups`, so a grep for
+  `probe_priority_groups::` finds nothing even though `core_tick.cpp`
+  calls it every tick. Always grep the *namespace* before concluding a
+  probe is dead — a Phase-1 candidate to delete this file was approved on
+  exactly that false negative and had to be reverted.
+- **`diag_*`** — diagnostic-only, no shipped behaviour. Currently
+  `diag_settings` (startup environment dump for support logs) and
+  `diag_chargen_feats` (on-demand panel dump).
+- **`*_guard`** — a shipped production fix that also logs. The logging is
+  not the point and must not be removed as "diagnostics":
+  `focus_guard.cpp` (DirectInput reacquire / foreground reclaim / Big
+  Picture keystroke warning — the keyboard-death fix) and
+  `camera_spin_guard.cpp` (edge-turn spin guard). Both were named
+  `diag_*` until Phase 1 because they started as investigations and kept
+  their investigation-era names after becoming fixes.
+- **`minigame_*`** — the minigame family: `minigame_turret`,
+  `minigame_swoop_race`, `minigame_swoop_audio`, `minigame_pazaak`, plus
+  `minigame_aim` for the primitives shared across them.
+- **`menus_*`** — everything menu-side, including `menus_speak`.
+- **`wall_probe` vs `room_topology`** — two systems that used to share the
+  name `wall_topology`. `wall_probe` answers "is there a wall, how far"
+  (ray casts against the perimeter-wall cache, feeds wall sounds).
+  `room_topology` builds the nav-graph clusters and produces the
+  perceptual-region vocabulary (Korridor / Kreuzung / Bereich).
+
 ## `re/` — reverse-engineering assets
 
 - **`swkotor.exe.h`** — Ghidra-exported C header, ~25k lines. Primary source for struct layouts; ~205 structs have real bodies, ~797 are `PlaceHolder`. Cross-check with SARIF when a struct returns garbage.

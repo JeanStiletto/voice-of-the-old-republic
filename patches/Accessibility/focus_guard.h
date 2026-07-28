@@ -21,7 +21,7 @@
 
 #pragma once
 
-namespace acc::diag::focus {
+namespace acc::focus_guard {
 
 // Log a single line describing the calling thread's COM apartment.
 // `tag` is appended so the same probe can fire at multiple sites
@@ -61,4 +61,4 @@ bool GameOwnsForeground();
 // tick on the engine's main thread (speech path is COM-safe there).
 void DrainInputBlockedWarning();
 
-}  // namespace acc::diag::focus
+}  // namespace acc::focus_guard

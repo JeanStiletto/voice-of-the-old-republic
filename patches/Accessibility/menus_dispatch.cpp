@@ -54,7 +54,7 @@
 #include "hotkeys.h"
 #include "input_pipeline.h"
 #include "interact_hotkey.h"
-#include "pazaak.h"
+#include "minigame_pazaak.h"
 #include "peek_description.h"
 #include "tutorial_hints.h"
 #include "tutorial_popup.h"

@@ -24,8 +24,8 @@
 
 #pragma once
 
-namespace acc::camera_spin_diag {
+namespace acc::camera_spin_guard {
 
 void Tick();
 
-}  // namespace acc::camera_spin_diag
+}  // namespace acc::camera_spin_guard

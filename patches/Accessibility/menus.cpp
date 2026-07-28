@@ -47,7 +47,7 @@
 #include "menus_pazaakdeck.h" // Pazaak side-deck builder — 3-row navigator
 #include "menus_galaxymap.h"  // Galaxy / star-map travel screen — planet cycle
 #include "menus_keymap.h"     // dedicated Tastaturbelegung two-level handler
-#include "pazaak.h"           // Pazaak board game — IsBoardForeground
+#include "minigame_pazaak.h"           // Pazaak board game — IsBoardForeground
 #include "menus_journal.h"   // Journal (Aufträge) — Enter on quest row → description
 #include "help.h"             // Help list overlay — suppress engine keys while open
 #include "engine_area.h"     // IsLoadingSaveGame — gate the save-load GUI burst
@@ -75,7 +75,7 @@
 #include "audio_footstep_suppress.h"  // Phase 3 lay-off 5 — stuck-detection
 #include "strings.h"            // Container loot panel announces
 #include "update_checker.h"     // Deferred background version check + bringup mark
-#include "diag_focus.h"         // WindowProc subclass for WM_ACTIVATE logging
+#include "focus_guard.h"         // WindowProc subclass for WM_ACTIVATE logging
 #include "bringup_announce.h"   // Loading-phase nag when user presses arrows too early
 #include "transitions.h"        // Phase 2 lay-off 7 — Pillar 2 area+room announce
 #include "engine_rebase.h"

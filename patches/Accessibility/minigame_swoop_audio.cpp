@@ -6,7 +6,7 @@
 // walks the 255-slot CSWMiniGameObjectArray to surface obstacles and
 // accelpads as 3D loops lives here.
 
-#include "swoop_spatial_audio.h"
+#include "minigame_swoop_audio.h"
 
 #include <windows.h>
 #include <cmath>
