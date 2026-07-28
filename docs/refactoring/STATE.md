@@ -23,11 +23,14 @@ KOTOR 2 (TSL), which runs a very similar engine but a different executable
 - **Active phase:** Phase 1 (structure audit) — EXECUTED. 14 of 21 approved
   candidates landed; 5 stopped or reverted with findings; 1 not reached;
   1 (kdev) landed but is unversioned.
-- **Next action:** USER IN-GAME SMOKE TEST (checklist at the bottom of this
-  file). Nothing merges to main until that passes. Then: decide the five
-  open questions the findings raise (candidates 10, 12-rest, 13, 22, 24,
-  plus the tools/ versioning question), and either close Phase 1 or
-  schedule a follow-up pass.
+- **IN-GAME SMOKE TEST: PASSED** (user, 2026-07-28). All eight checklist
+  items confirmed working — menus, leader announce + input restore, combat
+  announces + queue, region/landmark narration, hotkey routing, minigames,
+  focus guard. Phase 1's executed work is verified, not just built.
+- **Next action:** decide the open questions the findings raise
+  (candidates 10+28, 12-rest, 13, 23, 24, and the tools/ versioning
+  question), decide whether to merge Phase 1 to main now rather than
+  carrying the branch through Phases 2-5, then start Phase 2.
 - **Branch:** `refactor/pre-k2-cleanup`. Every executed candidate is its
   own commit; reverts left the tree clean and the build green.
 - **Build state:** `kdev build --clean` green, 0 warnings. Patch TU count
@@ -382,6 +385,20 @@ Next: execution, batch by batch, in candidate order.
   their panel pointers), which is precisely the category that broke
   candidates 13 and 24 — measure the *variables*, not just the function
   names, before cutting.
+
+- **Candidates 10 + 28 are one job, and it belongs in Phase 2, not here.**
+  They are coupled: the engine_offsets.h split (10) only pays for itself
+  once includers move to the narrow headers (28). Doing 10 alone buys
+  header navigability at the cost of the batch's largest diff.
+  The stronger reason to wait: `engine_offsets.h` is the single most
+  K1-specific artifact in the codebase — on a KOTOR 2 port every value in
+  it changes. Phase 2 carries the K2-portability lens, so that is where
+  the right cut lines get decided (which offsets are engine-version
+  facts, which are structural, where the abstraction seam goes). Cutting
+  it into arbitrary subsystem headers now would mean re-cutting it in
+  Phase 2 along different lines. 28's includer migration then falls out
+  of Phase 3's per-file sweep, which visits every one of those files
+  anyway.
 
 ## Decisions log
 
