@@ -565,6 +565,33 @@ void ComputeNodeShapeFeatures(const acc::engine::navgraph::NavGraphSnapshot& g,
 // differs between the initial build and the per-tick refresh loop) and
 // the per-door diagnostic dump via LogDoorSnapshotDetails.
 void SnapshotDoors(void* area) {
+    // Landmark attribution survives a re-snapshot.
+    //
+    // This function owns the whole DoorRecord lifecycle, including the
+    // one field it does not itself produce: landmarkName is written by
+    // AttachLandmarksToDoors, which runs once per area during
+    // BuildForArea. MaybeRefreshDoors re-snapshots on later ticks while
+    // the door set settles, and re-running the attachment there would
+    // re-log and re-claim every landmark every tick. So the names are
+    // carried across by position instead — doors do not move.
+    //
+    // Keeping this here rather than in the caller is the point: whoever
+    // rebuilds the array is responsible for not destroying data it does
+    // not own. On a fresh BuildForArea the preceding Reset() has already
+    // zeroed door_count, so nothing is carried across an area change —
+    // which is exactly right, since the previous area's landmark names
+    // must not leak into the new one.
+    struct SavedLandmark { Vector pos; char name[64]; };
+    SavedLandmark saved[kMaxDoors];
+    int savedCount = g_graph.door_count;
+    if (savedCount > kMaxDoors) savedCount = kMaxDoors;
+    for (int i = 0; i < savedCount; ++i) {
+        saved[i].pos = g_graph.doors[i].pos;
+        std::strncpy(saved[i].name, g_graph.doors[i].landmarkName,
+                     sizeof(saved[i].name) - 1);
+        saved[i].name[sizeof(saved[i].name) - 1] = '\0';
+    }
+
     g_graph.door_count = 0;
     if (!area) return;
 
@@ -615,6 +642,27 @@ void SnapshotDoors(void* area) {
             kDoorLocNameOffset + 4,
             rec.locName, sizeof(rec.locName));
         ++g_graph.door_count;
+    }
+
+    // Restore the landmark attribution saved above. A door that already
+    // carries a name this pass keeps it; otherwise match by position
+    // (<0.1m) against the pre-snapshot set.
+    for (int i = 0; i < g_graph.door_count; ++i) {
+        if (g_graph.doors[i].landmarkName[0]) continue;  // freshly set, keep
+        for (int j = 0; j < savedCount; ++j) {
+            if (!saved[j].name[0]) continue;
+            float dx = saved[j].pos.x - g_graph.doors[i].pos.x;
+            float dy = saved[j].pos.y - g_graph.doors[i].pos.y;
+            float dz = saved[j].pos.z - g_graph.doors[i].pos.z;
+            if (dx * dx + dy * dy + dz * dz < 0.01f) {  // same door (<0.1m)
+                std::strncpy(g_graph.doors[i].landmarkName, saved[j].name,
+                             sizeof(g_graph.doors[i].landmarkName) - 1);
+                g_graph.doors[i]
+                    .landmarkName[sizeof(g_graph.doors[i].landmarkName) - 1]
+                    = '\0';
+                break;
+            }
+        }
     }
 }
 
@@ -2221,43 +2269,10 @@ void MaybeRefreshDoors(void* area) {
 
     int prevCount = g_graph.door_count;
 
-    // Preserve landmark attachments across the re-snapshot. SnapshotDoors
-    // rebuilds g_graph.doors from scratch (clearing landmarkName), but
-    // AttachLandmarksToDoors only runs once during BuildForArea — re-running
-    // it here would re-log + re-claim every tick. Doors don't move in the
-    // world, so carry the names over by position match. Harmless today (the
-    // cluster labels are already baked to strings before this loop runs), but
-    // keeps DoorRecord.landmarkName authoritative for any future runtime read.
-    struct SavedLandmark { Vector pos; char name[64]; };
-    SavedLandmark saved[kMaxDoors];
-    int savedCount = g_graph.door_count;
-    if (savedCount > kMaxDoors) savedCount = kMaxDoors;
-    for (int i = 0; i < savedCount; ++i) {
-        saved[i].pos = g_graph.doors[i].pos;
-        std::strncpy(saved[i].name, g_graph.doors[i].landmarkName,
-                     sizeof(saved[i].name) - 1);
-        saved[i].name[sizeof(saved[i].name) - 1] = '\0';
-    }
-
+    // SnapshotDoors preserves landmark attribution itself — it owns the
+    // DoorRecord lifecycle, so this caller does not have to save and
+    // restore the field around it any more.
     SnapshotDoors(area);
-
-    for (int i = 0; i < g_graph.door_count; ++i) {
-        if (g_graph.doors[i].landmarkName[0]) continue;  // freshly set, keep
-        for (int j = 0; j < savedCount; ++j) {
-            if (!saved[j].name[0]) continue;
-            float dx = saved[j].pos.x - g_graph.doors[i].pos.x;
-            float dy = saved[j].pos.y - g_graph.doors[i].pos.y;
-            float dz = saved[j].pos.z - g_graph.doors[i].pos.z;
-            if (dx * dx + dy * dy + dz * dz < 0.01f) {  // same door (<0.1m)
-                std::strncpy(g_graph.doors[i].landmarkName, saved[j].name,
-                             sizeof(g_graph.doors[i].landmarkName) - 1);
-                g_graph.doors[i]
-                    .landmarkName[sizeof(g_graph.doors[i].landmarkName) - 1]
-                    = '\0';
-                break;
-            }
-        }
-    }
 
     ++g_doors_stability.retry_ticks;
 
