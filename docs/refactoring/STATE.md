@@ -20,14 +20,20 @@ KOTOR 2 (TSL), which runs a very similar engine but a different executable
 
 ## Current status
 
-- **Active phase:** Phase 1 (structure audit) — scans COMPLETE, consolidated
-  report written, **awaiting user approval of the candidate list**.
-- **Next action:** Walk the candidate list in
-  `docs/refactoring/reports/phase-1-structure.md` with the user (item by
-  item or per batch), record approvals/rejections here, then execute
-  approved batches with a build (+ in-game check where marked) after each.
-- **Branch:** `refactor/pre-k2-cleanup` (created 2026-07-27 from main @ bc9492b).
-- **Working tree:** clean except docs/refactoring/.
+- **Active phase:** Phase 1 (structure audit) — EXECUTED. 14 of 21 approved
+  candidates landed; 5 stopped or reverted with findings; 1 not reached;
+  1 (kdev) landed but is unversioned.
+- **Next action:** USER IN-GAME SMOKE TEST (checklist at the bottom of this
+  file). Nothing merges to main until that passes. Then: decide the five
+  open questions the findings raise (candidates 10, 12-rest, 13, 22, 24,
+  plus the tools/ versioning question), and either close Phase 1 or
+  schedule a follow-up pass.
+- **Branch:** `refactor/pre-k2-cleanup`. Every executed candidate is its
+  own commit; reverts left the tree clean and the build green.
+- **Build state:** `kdev build --clean` green, 0 warnings. Patch TU count
+  grew from 178 (Phase-0 baseline) to ~195 with the new files.
+  `dotnet build` green for kdev (0/0) and the installer (1 pre-existing
+  warning in an untouched file).
 
 ## Rules of engagement (binding for every phase)
 
@@ -358,6 +364,25 @@ Next: execution, batch by batch, in candidate order.
   still a reasonable question — but it is a live-code removal decision,
   not the dead-code cleanup it was approved as.
 
+- **Candidate 24 (engine_radial diagnostics) — ATTEMPTED, REVERTED.**
+  Same shape of miss as candidate 13: a function-name scan looked clean
+  (the operational half never calls the four dump functions), but the
+  dumps also need ~10 anonymous-namespace *constants* (kResRefMaxLen,
+  kTamTargetActionsOffset, kTargetActionStride, the kRow*Offset family),
+  and `CallVtableAsClass` — which the scan called "used only by
+  LogTargetDiag" — is also called by the operational
+  `IsCreatureClientTarget`. Making it work means publishing a batch of
+  offset constants through an internal header for what the report itself
+  rated the smallest structural win in the list. Cost/benefit inverted,
+  so it was reverted rather than pushed through. Tree clean, build green.
+- **Candidate 23 (menus_listbox picker split) — NOT REACHED.**
+  Ran out of session before it. It is the one remaining approved,
+  unexecuted, un-attempted candidate. Note before anyone picks it up: it
+  moves state (s_equipPickerActive / s_workbenchUpgradePickerActive and
+  their panel pointers), which is precisely the category that broke
+  candidates 13 and 24 — measure the *variables*, not just the function
+  names, before cutting.
+
 ## Decisions log
 
 - 2026-07-27: Infrastructure created; state file lives in-repo (survives
@@ -414,3 +439,39 @@ Next: execution, batch by batch, in candidate order.
   confirmed dead in practice; combat_diag hosts a shipped production hook;
   strings.h split explicitly rejected. NO code changed. Awaiting item-by-item
   user approval.
+
+## In-game smoke-test checklist (Phase 1 execution, 2026-07-28)
+
+Everything below built clean, but a clean build is not a working mod. Test
+these before merging. Each line names the commit(s) to bisect to if it
+misbehaves.
+
+1. **Menu navigation** — arrow through inventory, a dialog, chargen, and one
+   listbox screen (save/load or container). Titles, focus announcements and
+   Enter activation must sound exactly as before.
+   → Refactor(1) menus split, Refactor(2) chain input.
+2. **Leader announce + input restore** — Tab between party members; run a
+   dialog or scripted action and confirm control comes back afterwards.
+   → Refactor(5) engine_player split.
+3. **Combat announces + queue** — fight something. Attack/damage/absorb
+   lines, and the "X, Platz N" / "Warteschlange voll" queue announces.
+   → Refactor(7) combat_log, Refactor(14) combat_queue_hooks.
+4. **Region and landmark narration** — walk a nav-heavy area (Taris Upper
+   City or the Sewers). Korridor / Kreuzung / Bereich labels, door and exit
+   descriptions, landmark announces.
+   → Refactor(12,12b) wall_probe + room_topology rename.
+5. **Hotkey routing** — Shift+N action bar, examine view, combat queue,
+   unified action menu, bare 1-7, bare R, Enter/Shift+Enter interact.
+   Order matters: each should still win the key it used to.
+   → Refactor(19) input_poll_router.
+6. **Minigames** — a swoop race and a turret sequence, briefly.
+   → Refactor(20) minigame_* renames (file renames only, but they touched
+   every includer).
+7. **Focus guard** — alt-tab away and back; confirm the keyboard still
+   works. → Refactor(21) focus_guard rename.
+8. **Installer** — a full install and an uninstall pass before the next
+   release. → Refactor(17) installer split. This one is end-user facing;
+   do not ship without it.
+
+Areas deliberately NOT touched and not needing a test: input_pipeline.cpp,
+hook addresses/byte patterns, engine_offsets.h values, exports.def.
