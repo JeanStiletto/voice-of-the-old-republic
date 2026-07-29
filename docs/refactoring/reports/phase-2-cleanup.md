@@ -195,6 +195,54 @@ main tool and solving this problem is what it is for.
 - **Candidate 28** (migrating includers to narrow headers) — still
   deferred; falls out of Phase 3 naturally.
 
+## C8 — specified, NOT executed (next session picks this up)
+
+Approved 2026-07-29 and designed, but deliberately not started: it is an
+1820-line reorganisation of the one file where a wrong value is silent
+(the do-not-touch rule exists because these are RE facts), and it was
+reached at the end of a long session. Half-doing it would be worse than
+not starting. Everything needed to execute it is below.
+
+**Measured type spread** (this is the whole file, 358 constants):
+- 236 `constexpr size_t` — struct field offsets.
+- 103 `const uintptr_t` — .text addresses. 84 go through `acc::addr::R()`;
+  **19 do not, and that discrepancy should be understood before moving
+  them** — either they are .data misfiled as .text, or they are genuine
+  gaps in the rebase seam. Check each against engine_rebase.h's ".text
+  only" rule.
+- 11 `constexpr int` — vtable indices and misc.
+- 10 `constexpr unsigned`, 5 `constexpr uint32_t` — flags, strrefs.
+- 2 `constexpr uintptr_t` — .data global pointers (raw by design).
+
+**Proposed split**, matching the upstream AddressDatabase taxonomy so each
+group later maps 1:1 onto a `GameVersion::Get*` query:
+- `engine_offsets_addresses.h` — the 103 .text function addresses plus
+  the 2 .data global pointers, in clearly separated sections (they are
+  different upstream tables: `functions` vs `global_pointers`, and only
+  the former is R()-eligible).
+- `engine_offsets_structs.h` — the 236 field offsets (upstream `offsets`,
+  keyed class + member — the class name is the piece our flat `k*Offset`
+  names lose, and worth capturing in comments while splitting).
+- `engine_offsets_values.h` — vtable indices, strrefs, flags, tunables.
+  These are NOT in the address database at all; strrefs and `.gui` IDs are
+  resource-derived and vary independently of the executable.
+- `engine_offsets.h` stays as a thin aggregator including all three, so
+  all 86 includers are untouched.
+
+**Ordering hazard** (the reason this is not a mechanical line-range cut):
+structs (`CExoArrayList`, `Vector`, `CExoString`) and typedefs are
+interleaved with the constants through all 1820 lines, and some typedef
+signatures depend on those structs. The structs must land in a base header
+included first by the other three. Do not cut by line range without
+resolving the dependency order.
+
+**Verification recipe** (run before and after; the diff must be empty):
+    grep -oE "^(inline )?(constexpr|const) [a-z0-9_:]+ +k[A-Za-z0-9_]+ *= *[^;]+" \
+      engine_offsets*.h | sed 's/.*\(k[A-Za-z0-9_]*\) *= */\1=/' | sort
+Plus a clean `kdev build` (0 warnings) and the 358-name count check —
+`/tmp/c8_names_before.txt` from this session recorded the baseline name
+list; regenerate it from git if lost.
+
 ## Status
 
 Awaiting item-by-item approval. No code changed in Phase 2 so far; the

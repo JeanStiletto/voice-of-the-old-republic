@@ -492,3 +492,42 @@ misbehaves.
 
 Areas deliberately NOT touched and not needing a test: input_pipeline.cpp,
 hook addresses/byte patterns, engine_offsets.h values, exports.def.
+
+## Phase 2 status (2026-07-29)
+
+Branch `refactor/phase2-coupling`, from main @ 4c4e216. Build green
+throughout (194 TUs, 0 warnings); kdev and installer build 0/0.
+
+**Executed:**
+- A1-A3 state ownership — transitions per-group Reset()s (17 variables
+  verified preserved), SnapshotDoors owns landmarkName, corrected the
+  dispatch-order comment that contradicted core_tick.
+- B4-B6 duplication — minigame SEH primitives + ResolveMgoArray +
+  CallAsCast + follower-position read consolidated into minigame_aim;
+  engine_panels_internal.h AppManager constants folded into
+  engine_player.h's; kHoverPauseMs published from view_mode.h.
+- B7 kdev — BWM parsing hoisted to Core/BwmFile.cs (3 consumers).
+- C9, C11 — K2 portability recorded in docs/llm-docs/CLAUDE.md.
+
+**Findings that changed the plan:**
+- C10 was a FALSE ALARM. audio_bus.h's kAddrCExoSoundPtr is a .data
+  global; R() covers .text only, so wrapping it would have been a bug,
+  not a consistency fix. Documented in place. Also recorded: R() is a
+  same-game build-variant seam and does nothing for a K2 port.
+- C11 found the upstream AddressDatabases are real and K2 is SEEDED —
+  both K2 dbs carry all 14 global pointers under K1's names. User decided
+  to adopt the mechanism; this reshaped C8's design.
+
+**Next action: execute C8.** Fully specified in
+`reports/phase-2-cleanup.md` (type spread, proposed split, ordering
+hazard, verification recipe). Baseline constant-name list saved at
+`docs/refactoring/c8-constant-names-baseline.txt`. Note the 19 .text
+addresses that are NOT R()-wrapped — understand them before moving them.
+
+**Also open:** candidate 23 (menus_listbox picker, carried from Phase 1),
+C4 (doorMatched split, deferred to Phase 3), candidate 28 (includer
+migration, falls out of Phase 3).
+
+**Untested in game:** everything in Phase 2. B4 rewired the read
+primitives all three minigames use — a short swoop race and turret
+sequence is the check. A1/A2 touch room + landmark narration.
