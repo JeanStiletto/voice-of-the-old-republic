@@ -19,7 +19,6 @@ namespace acc::probe_pathfind {
 
 namespace {
 
-constexpr int kVK_F9 = 0x78;
 
 // CSWSCreature.path_find_info: at offset +0x340 is a CPathfindInformation*
 // POINTER (per swkotor.exe.h:9154). Our previous probe pass dumped 256 bytes

@@ -8,7 +8,7 @@
 // download a file, pick fields out of the response, compare versions.
 //
 // Moved verbatim. The helpers that only this file uses (SkipColon,
-// ReadQuotedString, ExtractTagName, ParseVersion and the ParsedVersion
+// ReadQuotedString, ParseVersion and the ParsedVersion
 // struct) came along and are not declared in update_checker_http.h.
 
 #include "update_checker_http.h"
@@ -344,14 +344,6 @@ bool ExtractRawTagName(const std::string& json, char* out, size_t outCap) {
     return out[0] != '\0';
 }
 
-// Extract `"tag_name": "vX.Y.Z"` with the leading 'v' and any suffix stripped.
-bool ExtractTagName(const std::string& json, char* out, size_t outCap) {
-    char raw[128] = {};
-    if (!ExtractRawTagName(json, raw, sizeof(raw))) return false;
-    StripTagToVersion(raw, out, outCap);
-    return out[0] != '\0';
-}
-
 // Find the asset whose `"name"` equals assetName and return its API
 // `"url"` field — the api.github.com/.../releases/assets/<id> endpoint,
 // NOT the browser_download_url. Downloading via the API endpoint with
@@ -417,7 +409,7 @@ struct ParsedVersion {
 ParsedVersion ParseVersion(const char* s) {
     ParsedVersion v = {{0, 0, 0, 0}};
     if (!s || !*s) return v;
-    // Strip leading v if present (extra defence; ExtractTagName already does this).
+    // Strip leading v if present (extra defence; StripTagToVersion already does this).
     if (*s == 'v' || *s == 'V') ++s;
     int idx = 0;
     while (*s && idx < 4) {

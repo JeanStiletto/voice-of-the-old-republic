@@ -306,7 +306,6 @@ bool GetMapPinPosition(void* mapPin, Vector& out);
 // high bit. So it CANNOT discriminate the mod's saved markers from engine
 // note pins — use acc::map_user_markers::IsUserMarkerPin (identity) for
 // that. Kept as a raw field accessor; no current caller.
-uint32_t GetMapPinFlags(void* mapPin);
 
 // CSWCMapPin.enabled +0xfc. SetMapPinEnabled toggles without removing
 // the array slot — filter callers check before surfacing text.

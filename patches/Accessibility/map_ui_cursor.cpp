@@ -122,7 +122,6 @@ constexpr size_t kCExoLLNodePayloadOffset      = 0x8;
 // so the cursor code is self-documenting).
 constexpr size_t kWaypointPositionOffset = 0x90;
 constexpr size_t kWaypointHasMapNoteOff  = 0x22c;
-constexpr size_t kWaypointMapNoteLocOff  = 0x230;
 
 // GetAreaMap / IsWorldPointExplored entry points moved to engine_area.
 // engine_area.h carries the shared constants (kAddrCServerExoAppGetModule,

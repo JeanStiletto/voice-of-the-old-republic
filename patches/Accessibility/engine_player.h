@@ -228,9 +228,6 @@ const uintptr_t kAddrCClientExoAppGetPlayerCharacterName = acc::addr::R(0x005EDA
 constexpr size_t    kAppManagerServerOffsetPlayer  = 0x8;
 constexpr size_t    kServerExoAppInternalOffset    = 0x4;
 constexpr size_t    kServerInternalPartyTableOffset = 0x1b770;
-// Legacy alias kept for source compatibility while old (incorrect) path
-// callers are audited.
-constexpr size_t    kServerExoAppPartyTableOffset  = kServerInternalPartyTableOffset;
 constexpr size_t    kPartyTableNumMembersOffset    = 0x0;
 constexpr size_t    kPartyTableMemberIdsOffset     = 0x4;
 constexpr size_t    kPartyTableSoloModeOffset      = 0x190;  // pt_solomode ulong

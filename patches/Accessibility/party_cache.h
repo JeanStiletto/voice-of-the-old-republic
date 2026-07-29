@@ -16,8 +16,5 @@ namespace acc::combat {
 // Case-sensitive, byte-exact. Lazily refreshes per refresh window.
 bool IsPartyMember(const char* name);
 
-// Force refresh on next call. Optional — time-based backstop catches
-// roster changes anyway.
-void InvalidatePartyCache();
 
 }  // namespace acc::combat

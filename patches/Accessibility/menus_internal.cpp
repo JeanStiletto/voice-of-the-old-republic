@@ -62,20 +62,6 @@ bool acc::menus::detail::GetControlCenter(void* control, int& outCx, int& outCy)
 // positions), so one accumulation step is sufficient for the InGameEquip
 // LB_ITEMS case. If we ever need to click rows in a deeper-nested listbox,
 // generalise this into a parent-chain walk.
-static bool GetListBoxRowScreenCenter(void* lb, void* row, int& outCx, int& outCy) {
-    if (!lb || !row) return false;
-    auto* lbExt  = reinterpret_cast<int*>(
-        reinterpret_cast<unsigned char*>(lb)  + kControlExtentOffset);
-    auto* rowExt = reinterpret_cast<int*>(
-        reinterpret_cast<unsigned char*>(row) + kControlExtentOffset);
-    int rowW = rowExt[2];
-    int rowH = rowExt[3];
-    if (rowW <= 0 || rowH <= 0) return false;
-    outCx = lbExt[0] + rowExt[0] + rowW / 2;
-    outCy = lbExt[1] + rowExt[1] + rowH / 2;
-    return true;
-}
-
 // True if the control is button-like (CSWGuiButton or its subclasses
 // CharButton / ActivatedButton / ButtonToggle) OR a CSWGuiSlider.
 // MoveMouseToPosition's hover→active promotion path is safe for buttons but

@@ -278,15 +278,6 @@ bool GetMapPinPosition(void* mapPin, Vector& out) {
     }
 }
 
-uint32_t GetMapPinFlags(void* mapPin) {
-    if (!mapPin) return 0;
-    __try {
-        return *reinterpret_cast<uint32_t*>(
-            reinterpret_cast<unsigned char*>(mapPin) + kMapPinFlagsOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return 0;
-    }
-}
 
 bool IsMapPinEnabled(void* mapPin) {
     if (!mapPin) return false;

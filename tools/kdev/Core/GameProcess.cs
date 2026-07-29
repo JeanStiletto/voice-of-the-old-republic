@@ -18,11 +18,6 @@ public static class GameProcess
     }
 
     /// <summary>
-    /// True if at least one swkotor.exe process is currently running.
-    /// </summary>
-    public static bool IsRunning() => Process.GetProcessesByName(ProcessName).Length > 0;
-
-    /// <summary>
     /// Terminates every running swkotor.exe and waits for them to exit.
     /// Logs each PID as it is killed. Returns a summary; caller decides how to report.
     /// </summary>

@@ -366,25 +366,16 @@ constexpr int         kSwoopGuideMinVolByte = 90;
 // the lane AND barely moving (kSteerSettleVel). Centred-but-still-sliding does
 // NOT settle, so the brake survives when you need it. (The prior versions
 // settled on centre alone, which is why the brake was lost mid-slide.)
-constexpr float kSteerLeadTicks  = 5.0f;
 // EMA on the noisy per-tick velocity. Raised 0.30->0.50 (2026-06-22, Flaw 5):
 // with the coast lead cut to ~1 tick (kCoastTicks), velocity no longer feeds a
 // x8 amplifier, so the heavy smoothing that was hiding per-tick noise is no
 // longer needed — and its ~3-tick lag hurt responsiveness more than the noise.
 constexpr float kSteerVelSmooth  = 0.50f;
 constexpr float kSteerVelClamp   = 8.0f;   // reject one-tick bike-X glitches
-// Low-pass on the panned offset. snap on pad handoff (below) avoids carry-over.
-constexpr float kSteerPanSmooth  = 0.45f;
-// Settle gate: within this lateral error of the lane AND below this lateral
-// speed, the cue reads dead-centre so you can hold it. 1.5 u is well inside the
-// 5-6 u catch radius; 0.4 u/tick is "barely drifting" (active steering is ~1-2).
-constexpr float kSteerDeadzoneUnits = 1.5f;
-constexpr float kSteerSettleVel     = 0.4f;
 // Clamp on the steer error (the panned magnitude) and on how far a pad may sit
 // laterally from the bike to count as real. The lane is only ~±20 wide, so a
 // pad more than 60 u to the side is a junk read (one came back at X=1933 and
 // poisoned the smoothed pan to 1695 for ~12 ticks). Both are hard guards.
-constexpr float kSteerMaxErr     = 40.0f;
 constexpr float kMaxPadLateral   = 60.0f;
 
 // ----- Co-pilot discrete-command steering (experimental, 2026-06-21) --------
@@ -499,24 +490,12 @@ constexpr float       kReleaseBand   = kSwoopAssistGapU;
 // but slightly-ahead L/R image (atan2(8,2) ≈ 76°), and the 3D distance
 // (≈8.3 m) sits in the audible 5-10 m band — cues closer than ~5 m attenuate
 // oddly (see the wall-impact notes: 3 m was inaudible).
-constexpr float       kSteerTickPanM    = 8.0f;
-constexpr float       kSteerTickFwdM    = 2.0f;
 // The aligned/release blip is centred (no pan), so it needs real forward depth
 // to clear the near-field dead zone; 7 m keeps it audible and within range.
 constexpr float       kSteerAlignedFwdM = 7.0f;
-// Repeat cadence for a held steer direction. A direction CHANGE always fires
-// immediately (see TickAccelpadCues), so this only paces the "keep going this
-// way" reminder. Raised 160→400 (2026-06-23): with the release band now the full
-// assist gap, the cue only speaks when you're genuinely off-line, so it no longer
-// needs to machine-gun — a calmer reminder reads as a natural nudge, not a nag.
-constexpr ULONGLONG   kSteerTickMs      = 400;
 // Directional ticks carry the side in BOTH pitch (low=left, high=right) and
 // pan, so a missed pan read is backed up by pitch. Aligned is a centred rising
 // tone. All three are loud custom WAVs — see audio_cues.h.
-constexpr const char* kSteerLeftResref =
-    acc::audio::GetNavCueResref(acc::audio::NavCue::SwoopSteerLeft);
-constexpr const char* kSteerRightResref =
-    acc::audio::GetNavCueResref(acc::audio::NavCue::SwoopSteerRight);
 constexpr const char* kSteerAlignedResref =
     acc::audio::GetNavCueResref(acc::audio::NavCue::SwoopSteerAligned);
 // Per-cue base volume (0..127). The synthesised tones are hot (RMS ~44-48%);
@@ -615,10 +594,6 @@ constexpr bool  kSwoopLateralProbe    = true;
 // direction, fired once you're settled on the current gate, so the direction is
 // pre-loaded before the loud steer-now ticks start. Same pitch language (low =
 // left, high = right) but quieter — "get ready", not "act".
-constexpr float       kPreviewLeadU  = 120.0f;  // announce next gate when current
-                                                //   is within this far ahead
-constexpr uint8_t     kPreviewVolume = 38;      // softer than the steer-now ticks
-                                                //   (-30% with the co-pilot, 2026-06-22)
 
 // Linear volume byte for a source at 3D distance `dist` within `range`:
 // full (kSwoopVolNearByte) at the listener, ramping to kSwoopVolFarByte
@@ -652,7 +627,6 @@ struct SpatialAudioState {
 
     // Low-pass state for the panned steering offset (eased toward the damped,
     // deadzoned err each tick; snapped on pad handoff).
-    float smoothed_steer_err = 0.0f;
     // Lateral-velocity tracking for the PD damping term: bike world X last tick
     // and the smoothed per-tick lateral velocity.
     float prev_bike_x      = 0.0f;
@@ -666,7 +640,6 @@ struct SpatialAudioState {
     // issued (kSteerCmd*); last_steer_tick_ms paced the (now retired) directional
     // tick. Retained for the steering-guide diagnostic.
     int       steer_cmd          = kSteerCmdNone;
-    ULONGLONG last_steer_tick_ms = 0;
 
     // Panned-guide aligned confirmation: whether the guide tone was sounding
     // (off-pad) last tick, so we fire one centred "on track, stop steering" blip
@@ -675,7 +648,6 @@ struct SpatialAudioState {
 
     // Next-gate preview: the ahead_slot we've already announced the follow-on
     // gate for, so the heads-up fires once per gate.
-    int       previewed_slot     = -1;
 
     // Predictive overshoot/wall cue debounce: last time we fired the early
     // wall-impact sound, so it doesn't machine-gun while the bike sits pinned.
@@ -1312,15 +1284,12 @@ void TickSpatialAudio(void* miniGame) {
 void ResetSpatialAudio() {
     g_state.obstacle_diag_emitted = false;
     g_state.accelpad_diag_emitted = false;
-    g_state.smoothed_steer_err    = 0.0f;
     g_state.prev_bike_x           = 0.0f;
     g_state.have_prev_bike_x      = false;
     g_state.smoothed_vel          = 0.0f;
     g_state.prev_ahead_slot       = -1;
     g_state.steer_cmd             = kSteerCmdNone;
-    g_state.last_steer_tick_ms    = 0;
     g_state.guide_was_active      = false;
-    g_state.previewed_slot        = -1;
     g_state.last_wall_cue_ms      = 0;
     g_state.last_magnet_log_ms    = 0;
     g_state.have_prev_ahead       = false;
