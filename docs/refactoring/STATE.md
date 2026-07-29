@@ -106,10 +106,64 @@ Phase-2 work is NOT yet in-game tested. Smoke-test list:
 - A conversation that gets interrupted or walked away from, to exercise
   the dialog-state unstick.
 
-**Also still open:** candidate 23 (menus_listbox picker, carried from
-Phase 1 — moves state, so measure the variables not just the function
-names), C4 (doorMatched split → Phase 3), candidate 28 (includer
-migration → falls out of Phase 3).
+**Also still open:** C4 (doorMatched split → Phase 3), candidate 28
+(includer migration → falls out of Phase 3). Candidate 23 is now DONE —
+see its entry further down.
+
+## SESSION END 2026-07-29 (afternoon) — START HERE NEXT SESSION
+
+Phase 2 is code-complete and committed. What happened this session, and
+what is genuinely still owed:
+
+**Done and committed:** candidate 23 in a narrowed form (state + monitors
+moved to `menus_listbox_picker.cpp`, all thirteen specs stayed put — the
+reasoning is in this file under the candidate-23 entry), a `FindPanelByKind`
+helper replacing eight hand-copied panels[] scans, plus two performance
+bugs found while investigating a user-reported stall (below). `tools/` is
+now tracked in git.
+
+**THE VERIFICATION GAP — read this before trusting the smoke-test list
+above.** Two of the three in-game sessions this day ran a STALE DLL
+(2026-07-27), because `kdev apply` silently skips the copy while the game
+holds the file open. The user reported "all tested and working" against
+that stale binary, so that report does not cover any of this session's
+work. Only the 13:43 session ran the new code, and it was a pure turret
+run: it never opened an equipment picker, a workbench picker, a loot
+container, a bark bubble, a tutorial popup or the galaxy map.
+
+So **the candidate-23 picker split has still never actually executed.**
+It builds clean and the state analysis is sound, but no picker code path
+has run. What to exercise, in order of risk:
+
+1. Equipment picker — open a slot, arrow through items, Enter to equip.
+2. Equip an already-equipped item (the unequip route).
+3. Workbench upgrade — arm a crystal slot, arrow, commit; then close the
+   panel WHILE ARMED and reopen it. That last step is the one that
+   exercises the disarm-on-panel-gone path and the park-latch change.
+4. Loot container, a bark bubble, the galaxy map, a tutorial popup — one
+   each, they moved onto `FindPanelByKind`.
+
+**Lesson worth keeping:** after `kdev apply`, check the mtime on
+`<install>/patches/accessibility.dll` before believing any test result.
+This cost a full round trip today.
+
+**Performance thread — closed deliberately, not exhausted.** Two real
+bugs found and fixed (both committed): an unbounded per-frame nav-graph
+rebuild retry in `room_topology`, and a no-op combat-round clear logging
+360x/second. A third avenue was measured and dropped: the per-line
+`fflush` in `log.cpp` is only microseconds per call, so even the worst
+burst in the log (1203 lines in one second) costs ~6ms — not worth
+changing. Residual "a bit laggy" during the turret cutscene sequence is
+NOT explained. The engine's own module loads there are 5-11s each and
+dominate; our Dispatch never tripped the 200ms SLOW TICK threshold, but
+that threshold is blind to the 5-15ms band where the symptom would live.
+If it is picked up again, the cheap next step is lowering
+`kSlowDispatchMs` in `core_tick.cpp` to ~10 for one diagnostic run — it
+prints only when a tick is actually slow and names the worst of the 39
+phases. The user declined a per-second budget reporter as too noisy.
+
+**Next phase:** Phase 3 (per-file sweep). Not started. It absorbs C4 and
+candidate 28.
 
 ## Rules of engagement (binding for every phase)
 
@@ -451,13 +505,31 @@ Next: execution, batch by batch, in candidate order.
   offset constants through an internal header for what the report itself
   rated the smallest structural win in the list. Cost/benefit inverted,
   so it was reverted rather than pushed through. Tree clean, build green.
-- **Candidate 23 (menus_listbox picker split) — NOT REACHED.**
-  Ran out of session before it. It is the one remaining approved,
-  unexecuted, un-attempted candidate. Note before anyone picks it up: it
-  moves state (s_equipPickerActive / s_workbenchUpgradePickerActive and
-  their panel pointers), which is precisely the category that broke
-  candidates 13 and 24 — measure the *variables*, not just the function
-  names, before cutting.
+- **Candidate 23 (menus_listbox picker split) — EXECUTED 2026-07-29,
+  NARROWED.** The state measured clean: every reference to the six picker
+  statics fell inside four picker-owned clusters (accessors, the two spec
+  callback blocks, the two monitors). Nothing outside touched them — so
+  this was *not* the category that broke candidates 13 and 24.
+
+  The cut was narrowed anyway, on a different cost the original approval
+  had not priced in. Moving the two SPECS out (the approved ~575-line
+  version) would have forced `ListBoxPanelSpec` — deliberately private,
+  16 fields, mostly documentation — into a shared header, and left the
+  dispatcher's 13-entry probe table pointing at two entries in another
+  file. So what moved is the state, `ParkPickerCursorOffList`, and the
+  two picker monitors; all thirteen specs stayed together.
+
+  `menus_listbox.cpp` 1982 → 1691, new `menus_listbox_picker.cpp` 305.
+  Zero new headers: the spec callbacks reach the state through the
+  accessors `menus_listbox.h` already published for menus.cpp, plus one
+  addition (`WorkbenchUpgradePickerPanel()`) and a `TickPickerMonitors()`
+  fan-out. Two knock-ons: routing the stale-reset paths through
+  `Disarm*` now also clears the park-pending latch (the old inline
+  version left it set — the panel is gone, so clearing is correct), and
+  `menus_listbox.cpp`'s local `kWorkbenchUpgradeLbId` was dropped in
+  favour of the identical `kWorkbenchUpgradeLbItemsId` that already
+  existed in `menus_internal.h`. Build green, zero warnings.
+  NOT yet verified in-game — see the caveat at the top of this file.
 
 - **Candidates 10 + 28 are one job, and it belongs in Phase 2, not here.**
   They are coupled: the engine_offsets.h split (10) only pays for itself

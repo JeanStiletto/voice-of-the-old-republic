@@ -473,8 +473,20 @@ list; regenerate it from git if lost.
 
 Phase 2 is **code-complete**. Executed: A1-A3, B4-B7, C8, C9, C11, plus the
 Allard address fix that C8's investigation surfaced. C10 was a false alarm
-(documented in place). The only unexecuted item in this report's list is
-number 12 — candidate 23, carried from Phase 1.
+(documented in place). Item 12 — candidate 23, carried from Phase 1 — was
+executed 2026-07-29 in a narrowed form (state + monitors only, specs stayed
+put); the reasoning is recorded in `STATE.md`. Nothing in this report's list
+is now unexecuted.
+
+Executed alongside it, from the same evaluation: a `FindPanelByKind` helper
+in `engine_panels`, replacing the hand-copied "walk `CSWGuiManager.panels[]`,
+cap at 16, compare `IdentifyPanel`" loop at eight call sites across six files
+(listbox container + equip + workbench monitors, bark-bubble presence and
+lookup, map, galaxy map, tutorial box). Raw `kMgrPanels*Offset` uses fell
+from 25 to 17; what remains is the multi-kind predicate scans and the
+pointer/vtable-equality walks, which want a different shape and were left
+alone. The helper SEH-guards the two manager-field reads, which only one of
+the eight sites previously did.
 
 Nothing here has been played in-game yet. That is the gate before Phase 3;
 the per-build smoke-test list is in `STATE.md`.
