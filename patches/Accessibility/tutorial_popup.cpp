@@ -3,7 +3,6 @@
 #include <windows.h>
 #include <cstring>
 
-#include "engine_manager.h"  // kAddrGuiManagerPtr, kMgrPanels*
 #include "engine_panels.h"   // ResolveGuiInGame, IdentifyPanel, PanelKind
 #include "log.h"
 #include "engine_rebase.h"

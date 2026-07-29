@@ -8,7 +8,6 @@
 #include "engine_player.h"  // GetPlayerArea, kAddrAppManagerPtr
 #include "engine_reads.h"   // ExtractTextOrStrRef, ReadCExoString
 #include "log.h"            // seam-filter telemetry
-#include "map_note_renames.h"  // curated map-note label overrides
 #include "strings.h"        // door state suffix lookup (DoorOpen/DoorLocked)
 #include "engine_rebase.h"
 

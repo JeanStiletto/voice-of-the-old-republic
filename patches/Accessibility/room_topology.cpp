@@ -18,7 +18,6 @@
 
 #include "room_topology.h"
 
-#include <windows.h>
 #include <cmath>
 #include <cstdio>
 #include <cstring>

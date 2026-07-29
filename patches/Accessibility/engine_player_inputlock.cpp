@@ -18,13 +18,9 @@
 #include "engine_player_internal.h"
 
 #include <windows.h>
-#include <cmath>
 #include <cstdint>
 
-#include "engine_area.h"
-#include "engine_reads.h"
 #include "log.h"
-#include "engine_rebase.h"
 
 namespace acc::engine {
 

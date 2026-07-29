@@ -10,10 +10,9 @@
 #include <cstring>
 
 #include "menus_chain.h"
+#include "engine_manager.h"
 #include "engine_rebase.h"
 
-#include "engine_input.h"
-#include "engine_manager.h"
 #include "engine_offsets.h"
 #include "engine_panels.h"
 #include "engine_player.h"   // PartyTableIsNPCAvailable / *Selectable /
@@ -27,15 +26,9 @@
 #include "menus_equipstats.h"
 #include "menus_extract.h"
 #include "menus_internal.h"
-#include "menus_journal.h"   // IsJournalEntry, SpeakDescription
-#include "menus_listbox.h"   // IsWorkbenchUpgradePickerArmed, ArmEquipPicker, ArmWorkbenchUpgradePicker
 #include "menus_modsettings.h"
-#include "menus_monitors.h"  // AnnounceControl
 #include "menus_pazaakdeck.h"
-#include "menus_pending.h"   // QueueActivate, IsPending, QueueMoveCursor, Queue{ClickAt,EquipSelect,WorkbenchSlotSelect,StoreItemActivate}
 #include "menus_store.h"
-#include "minigame_pazaak.h"           // DispatchWagerInput codes — wager less/more Enter
-#include "peek_description.h" // SpeakItemRowDescription — quest-item Enter
 #include "prism.h"
 #include "strings.h"
 

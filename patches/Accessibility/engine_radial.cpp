@@ -3,7 +3,6 @@
 #include <windows.h>
 #include <cstdint>
 #include <cstdio>
-#include <cstring>
 
 #include "engine_offsets.h"   // kButtonGuiStringPtrOffset,
                               // kButtonTextOffset, kLabelGuiStringPtrOffset,

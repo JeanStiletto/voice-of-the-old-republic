@@ -14,15 +14,12 @@
 #include <windows.h>
 #include <cmath>
 #include <cstdio>
-#include <cstring>
 #include <string>
 
 #include "audio_bus.h"
-#include "audio_cue_player.h"
 #include "audio_cues.h"
 #include "engine_area.h"
 #include "engine_keymap.h"            // MoveAxisVks — bound move/turn keys
-#include "engine_manager.h"
 #include "engine_panels.h"
 #include "engine_player.h"
 #include "engine_reads.h"             // ReadCExoString — waypoint tag log

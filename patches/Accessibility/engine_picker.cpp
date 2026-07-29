@@ -2,7 +2,6 @@
 
 #include <windows.h>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 
 #include "engine_area.h"        // ResolveClientObject — client creature for

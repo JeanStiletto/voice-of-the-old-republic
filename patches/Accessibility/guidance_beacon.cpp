@@ -5,7 +5,6 @@
 #include <cstdio>
 
 #include "audio_bus.h"          // PlayCue (2D) for arrival confirmations
-#include "audio_cue_player.h"   // PlayCueAtPosition (3D) for heartbeat
 #include "audio_cues.h"
 #include "engine_compass.h"
 #include "engine_player.h"

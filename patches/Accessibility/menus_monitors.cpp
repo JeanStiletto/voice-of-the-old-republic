@@ -17,7 +17,6 @@
 #include "engine_reads.h"
 #include "log.h"
 #include "menus.h"            // SetDrilledIntoSubScreen — sole drill-arm site
-#include "menus_charsheet.h"
 #include "menus_chargen_attr.h"
 #include "menus_chargen_skills.h"
 #include "menus_chain.h"

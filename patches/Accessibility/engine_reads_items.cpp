@@ -18,7 +18,6 @@
 
 #include <windows.h>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 
 #include "engine_player.h"  // kAddrAppManagerPtr

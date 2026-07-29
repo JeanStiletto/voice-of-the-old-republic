@@ -17,7 +17,6 @@
 #include "engine_player_internal.h"
 
 #include <windows.h>
-#include <cmath>
 #include <cstdint>
 
 #include "engine_area.h"

@@ -8,16 +8,13 @@
 
 #include "engine_area.h"
 #include "engine_input.h"
-#include "engine_manager.h"   // kAddrGuiManagerPtr — engine-panel watcher
 #include "engine_offsets.h"
-#include "engine_panels.h"    // PanelKind / IdentifyPanel — engine-panel watcher
 #include "engine_player.h"
 #include "engine_subscreen.h" // Begin/EndOverlayPause — freeze the world while open
 #include "hotkeys.h"
 #include "log.h"
 #include "strings.h"
 #include "prism.h"
-#include "transitions.h"      // IsModuleLoadPending — engine-panel watcher gate
 #include "engine_rebase.h"
 
 namespace acc::examine_view {

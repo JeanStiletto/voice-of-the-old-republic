@@ -13,12 +13,8 @@
 #include "engine_area.h"
 
 #include <windows.h>
-#include <cmath>
 #include <cstdint>
-#include <cstring>
 
-#include "engine_player.h"
-#include "engine_reads.h"
 #include "log.h"
 #include "engine_rebase.h"
 

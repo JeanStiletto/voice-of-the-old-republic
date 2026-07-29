@@ -13,13 +13,6 @@
 #include <cmath>
 #include <cstdint>
 
-#include "engine_area.h"   // GetObjectHandle / GetObjectDisplayNameByHandle /
-                           // kCreatureStatsPtrOffset etc. — used by GetActiveLeaderName
-#include "engine_reads.h"  // ReadCExoString, ExtractTextOrStrRef
-#include "log.h"           // acclog::Write — diagnostics on the
-#include "engine_rebase.h"
-                           // SetPlayerInputEnabled toggle / auto-restore tick
-
 namespace acc::engine {
 
 // Declared in engine_player_internal.h (with the chain-walk rationale) —

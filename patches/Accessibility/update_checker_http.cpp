@@ -16,7 +16,6 @@
 #include <windows.h>
 #include <winhttp.h>
 
-#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>

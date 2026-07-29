@@ -2,8 +2,6 @@
 
 #include <windows.h>
 #include <cmath>
-#include <cstdint>
-#include <cstring>
 #include <limits>
 
 #include "engine_area.h"                // WallEdge, SegmentCrossesWalkmesh

@@ -14,7 +14,6 @@
 #include "minigame_swoop_race.h"
 
 #include <windows.h>
-#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>

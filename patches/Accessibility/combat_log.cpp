@@ -22,12 +22,8 @@
 #include <cstdio>
 #include <cstring>
 
-#include "engine_area.h"
-#include "engine_manager.h"
 #include "engine_offsets.h"
-#include "engine_panels.h"
 #include "engine_player.h"
-#include "engine_reads.h"
 #include "log.h"
 #include "menus_extract.h"
 #include "same_name_suffix.h"

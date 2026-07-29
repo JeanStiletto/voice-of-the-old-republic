@@ -21,11 +21,8 @@
 #include <windows.h>  // SEH __try / __except
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 
 #include "engine_manager.h"
-#include "engine_offsets.h"
-#include "engine_reads.h"
 #include "log.h"
 
 namespace acc::engine {

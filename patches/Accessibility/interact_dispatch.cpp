@@ -8,25 +8,17 @@
 
 #pragma comment(lib, "user32.lib")
 
-#include "combat_query.h"   // Phase 2C — Ö Examine + Phase 2A PC stat read
 #include "combat_queue.h"   // Phase 3A — action-queue submenu (Shift+H)
 #include "engine_actionbar.h"
 #include "engine_area.h"
-#include "examine_view.h"   // Phase 2C v2 — navigable Ö examine list
-#include "engine_input.h"   // kInputEnter1 / kInputNavUp/Down/Left/Right
-#include "engine_levelup.h"
-#include "engine_manager.h"
 #include "engine_offsets.h"
 #include "engine_panels.h"
 #include "engine_picker.h"
 #include "engine_player.h"
 #include "engine_radial.h"
 #include "filter_objects.h"
-#include "floor_puzzle.h"   // IsActive — puzzle room owns bare R (board readout)
 #include "guidance_approach.h"   // ArmApproach — unified walk-to-act tracker
 #include "guidance_autowalk.h"   // UseObject primitive
-#include "hotkeys.h"
-#include "input_pipeline.h" // NoteOverlayEscClosed — latch the poll-driven
                             // overlay Esc-close so the engine-event consume
                             // guard wins the poll-vs-event race
 #include "log.h"
@@ -34,7 +26,6 @@
 #include "strings.h"
 #include "prism.h"
 #include "unified_action_menu.h"  // one menu for target + personal actions
-#include "view_mode.h"      // IsActive() — Enter is owned by view_mode
                             // while active (lay-off 5)
 
 namespace acc::interact {

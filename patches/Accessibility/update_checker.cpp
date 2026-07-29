@@ -37,9 +37,7 @@
 #include <winhttp.h>
 
 #include <atomic>
-#include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <thread>

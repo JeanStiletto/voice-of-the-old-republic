@@ -6,11 +6,9 @@
 #include <cstring>
 
 #include "engine_area.h"      // GetObjectName, ResolveServerObjectHandle
-#include "engine_manager.h"   // kAddrGuiManagerPtr, kMgrPanels*Offset
 #include "engine_offsets.h"
 #include "engine_panels.h"    // PanelKind, IdentifyPanel
 #include "engine_player.h"    // GetPlayerServerCreature
-#include "engine_reads.h"
 #include "log.h"
 #include "menus_extract.h"    // FromControl — listbox row text reader
 #include "same_name_suffix.h" // AppendSuffix for same-LocName disambiguator

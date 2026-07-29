@@ -21,7 +21,6 @@
 #include "engine_reads.h"
 #include "log.h"
 #include "map_note_renames.h"
-#include "strings.h"
 #include "engine_rebase.h"
 
 namespace acc::engine {
