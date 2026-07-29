@@ -32,7 +32,6 @@
                              // physical-key VK(s) so we can detect a
                              // modifier-shadowed mod hotkey
 #include "engine_manager.h"  // kAddrGuiManagerPtr, modal_stack offsets
-#include "engine_offsets.h"
 #include "hotkeys.h"         // ModifiedComboOwns / CurrentModifiers — the
                              // registry decides if this press belongs to a mod
                              // hotkey rather than the engine's bare action
@@ -40,7 +39,6 @@
 #include "engine_panels.h"   // HasActiveDialogPanel — suppress the bare 1..7
                              // combat dispatch while a dialog reply listbox
                              // owns the number keys
-#include "engine_player.h"   // GetPlayerServerCreature
 #include "log.h"
 #include "narrated_target.h" // TryGet — pull the unified "current focus"
                              // slot to drive deterministic targeting
