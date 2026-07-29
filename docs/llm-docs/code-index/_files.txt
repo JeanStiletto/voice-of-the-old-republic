@@ -172,6 +172,7 @@ menus_keymap.cpp
 menus_keymap.h
 menus_listbox.cpp
 menus_listbox.h
+menus_listbox_picker.cpp
 menus_modsettings.cpp
 menus_modsettings.h
 menus_monitors.cpp

@@ -1,4 +1,8 @@
-# menus_listbox.h (91 lines)
+# menus_listbox.h
+
+> Updated 2026-07-29: also declares `WorkbenchUpgradePickerPanel()` and
+> `TickPickerMonitors()`. The armed-picker accessors are now *implemented* in
+> `menus_listbox_picker.cpp`, not `menus_listbox.cpp`. (91 lines)
 
 Header for the spec-table-driven "listbox-arrow-nav + Enter-confirm + Esc-back" dispatcher shared by Container/SaveLoad/EquipPicker-shaped panels. Explains the design rationale: divergence between panels isn't decorative (different Enter targets), so a spec struct with onEnter/onEsc callbacks keeps the dispatcher generic. EquipPicker's armed-flag + bound-panel state lives in the .cpp because its input handler is the primary mutator; two outside touch sites in menus.cpp use the accessors declared here.
 
