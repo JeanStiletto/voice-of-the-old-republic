@@ -676,10 +676,6 @@ constexpr size_t kListInternalCountOffset  = 0x8;  // CExoLinkedListInternal+8 -
 constexpr size_t kLinkedListNodeNextOff    = 0x4;  // CExoLinkedListNode    +4 -> next
 constexpr size_t kLinkedListNodeDataOff    = 0x8;  // CExoLinkedListNode    +8 -> data
 
-// Legacy name kept so existing call sites compile. Same value/meaning
-// as kListInternalOffset (the offset from CExoLinkedList to its
-// internal pointer).
-constexpr size_t kLinkedListHeadOffset     = kListInternalOffset;
 
 constexpr size_t kCombatRoundActionTypeOffset       = 0x10;
 constexpr size_t kCombatRoundActionTargetOffset     = 0x14;

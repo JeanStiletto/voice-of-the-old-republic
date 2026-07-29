@@ -131,9 +131,20 @@ int CountSpecialsForCreature(void* creature, const char* tag) {
             reinterpret_cast<unsigned char*>(round) +
             kCombatRoundActionsOffset);
         if (!listPtr) return 0;
-        void* node = *reinterpret_cast<void**>(
+        // listPtr is CExoLinkedList<T>*. Three derefs to reach the head
+        // node: list -> internal -> head. Then walk via Node.next at +4.
+        // This previously did only TWO derefs via the legacy
+        // kLinkedListHeadOffset alias, which is defined equal to
+        // kListInternalOffset — so it stopped on the list's INTERNAL header
+        // and read it as if it were the first action node. Matches
+        // combat_queue.cpp's walk now.
+        void* internalPtr = *reinterpret_cast<void**>(
             reinterpret_cast<unsigned char*>(listPtr) +
-            kLinkedListHeadOffset);
+            kListInternalOffset);
+        if (!internalPtr) return 0;
+        void* node = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(internalPtr) +
+            kListInternalHeadOffset);
         constexpr int kMaxWalk = 64;
         int walked = 0;
         while (node && walked < kMaxWalk) {
