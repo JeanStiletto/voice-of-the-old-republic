@@ -184,6 +184,22 @@ PanelKind IdentifyPanel(void* panel);
 
 bool IsPanelKindInGameMenu(void* panel);
 
+// First panel in CSWGuiManager.panels[] whose IdentifyPanel is `kind`, or
+// nullptr. The "walk panels[], cap the scan at 16, compare IdentifyPanel"
+// loop was hand-copied into eight call sites (listbox monitors, bark-bubble
+// checks, map/galaxy-map/tutorial lookups); this is that loop, once.
+//
+// Scan, don't trust the foreground: the engine parks Fade overlays and the
+// in-game-menu strip on top of panels that are still live and still ours to
+// drive, which is why every one of those sites walked the array instead of
+// asking GetForegroundPanel.
+//
+// The two manager-field reads are SEH-guarded (the manager pointer can be
+// mid-teardown on a module transition); a fault yields nullptr. The 16-entry
+// cap matches every site it replaces — panels[] is small and a runaway size
+// field would otherwise walk off the array.
+void* FindPanelByKind(PanelKind kind);
+
 // Engine-pushed standalone modal popups whose dismissal requires our Esc-routes-
 // to-close handler (the engine's own Esc handling on these is to open the
 // quit-confirm sibling, leaving the user stacked deeper instead of backing out).

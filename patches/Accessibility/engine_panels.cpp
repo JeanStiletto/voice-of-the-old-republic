@@ -779,6 +779,30 @@ bool IsPanelKindInGameMenu(void* panel) {
     return IdentifyPanel(panel) == PanelKind::InGameMenu;
 }
 
+void* FindPanelByKind(PanelKind kind) {
+    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    if (!mgr) return nullptr;
+    auto* base = reinterpret_cast<unsigned char*>(mgr);
+
+    int    panelCount = 0;
+    void** panelData  = nullptr;
+    __try {
+        panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+        panelData  = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+    if (!panelData || panelCount <= 0) return nullptr;
+
+    int n = panelCount > 16 ? 16 : panelCount;
+    for (int i = 0; i < n; ++i) {
+        void* p = panelData[i];
+        if (!p) continue;
+        if (IdentifyPanel(p) == kind) return p;
+    }
+    return nullptr;
+}
+
 bool IsMainMenuOptionsSubScreen(PanelKind k) {
     switch (k) {
     case PanelKind::SoundSettings:

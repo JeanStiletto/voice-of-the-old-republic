@@ -497,22 +497,7 @@ DialogPanelMatch FindActiveDialogPanel() {
 
 // Find a BarkBubble panel (independent lifecycle from main dialog).
 void* FindBarkBubblePanel() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return nullptr;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (!panelData || panelCount <= 0) return nullptr;
-    int n = panelCount > 16 ? 16 : panelCount;
-    for (int i = 0; i < n; ++i) {
-        void* p = panelData[i];
-        if (!p) continue;
-        if (acc::engine::IdentifyPanel(p) ==
-            acc::engine::PanelKind::BarkBubble) {
-            return p;
-        }
-    }
-    return nullptr;
+    return acc::engine::FindPanelByKind(acc::engine::PanelKind::BarkBubble);
 }
 
 // Read row count of a CSWGuiListBox at panel + offset.

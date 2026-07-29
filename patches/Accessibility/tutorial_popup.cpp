@@ -99,19 +99,8 @@ void SetPause(bool on) {
 
 // Is a TutorialBox panel currently in the GUI manager's stack?
 bool TutorialBoxPresent() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return false;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   count = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** data = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (!data || count <= 0) return false;
-    int n = count > 16 ? 16 : count;
-    for (int i = 0; i < n; ++i) {
-        void* p = data[i];
-        if (p && acc::engine::IdentifyPanel(p) == acc::engine::PanelKind::TutorialBox)
-            return true;
-    }
-    return false;
+    return acc::engine::FindPanelByKind(acc::engine::PanelKind::TutorialBox)
+           != nullptr;
 }
 
 void FirePopup(uint32_t strref, const char* hint) {

@@ -55,19 +55,7 @@ bool HasActiveDialogPanel() {
 }
 
 bool HasActiveBarkBubble() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return false;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (!panelData || panelCount <= 0) return false;
-    int n = panelCount > 16 ? 16 : panelCount;
-    for (int i = 0; i < n; ++i) {
-        void* p = panelData[i];
-        if (!p) continue;
-        if (IdentifyPanel(p) == PanelKind::BarkBubble) return true;
-    }
-    return false;
+    return FindPanelByKind(PanelKind::BarkBubble) != nullptr;
 }
 
 // CGuiInGame::PrevSWInGameGui — engine-internal sub-screen pop.

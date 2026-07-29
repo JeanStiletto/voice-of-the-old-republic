@@ -239,30 +239,9 @@ bool IsForegroundProcess() {
 // the map. Walk panels[] explicitly looking for any InGameMap entry;
 // that's how `MonitorPanelContents` finds the sub-screen too.
 bool IsMapPanelActive(void** outPanel) {
-    if (outPanel) *outPanel = nullptr;
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return false;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int panelSize = 0;
-    void** panelData = nullptr;
-    __try {
-        panelSize = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-        panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-    if (!panelData || panelSize <= 0) return false;
-    int n = panelSize > 16 ? 16 : panelSize;
-    for (int i = 0; i < n; ++i) {
-        void* p = panelData[i];
-        if (!p) continue;
-        if (acc::engine::IdentifyPanel(p) ==
-            acc::engine::PanelKind::InGameMap) {
-            if (outPanel) *outPanel = p;
-            return true;
-        }
-    }
-    return false;
+    void* p = acc::engine::FindPanelByKind(acc::engine::PanelKind::InGameMap);
+    if (outPanel) *outPanel = p;
+    return p != nullptr;
 }
 
 // GetServerApp / GetAreaMap / IsWorldPointExplored lifted to engine_area

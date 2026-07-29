@@ -67,18 +67,7 @@ void AnnouncePlanetName(void* panel, bool interrupt) {
 void* s_announcedPanel = nullptr;
 
 void* FindGalaxyMapInPanels() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return nullptr;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int    count = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** data  = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (!data || count <= 0) return nullptr;
-    int n = count > 16 ? 16 : count;
-    for (int i = 0; i < n; ++i) {
-        void* p = data[i];
-        if (p && IdentifyPanel(p) == PanelKind::InGameGalaxyMap) return p;
-    }
-    return nullptr;
+    return FindPanelByKind(PanelKind::InGameGalaxyMap);
 }
 
 }  // namespace
