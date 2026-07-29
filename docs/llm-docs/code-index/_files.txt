@@ -72,6 +72,10 @@ engine_manager.h
 engine_navgraph.cpp
 engine_navgraph.h
 engine_offsets.h
+engine_offsets_addresses.h
+engine_offsets_fields.h
+engine_offsets_types.h
+engine_offsets_values.h
 engine_options.cpp
 engine_options.h
 engine_panels.cpp

@@ -195,7 +195,167 @@ main tool and solving this problem is what it is for.
 - **Candidate 28** (migrating includers to narrow headers) — still
   deferred; falls out of Phase 3 naturally.
 
-## C8 — specified, NOT executed (next session picks this up)
+## C8 — EXECUTED 2026-07-29
+
+Done. `engine_offsets.h` is now a 28-line aggregator over four headers:
+
+- `engine_offsets_types.h` (62 lines) — `CExoArrayList`, `Vector`,
+  `CExoString`. Also carries the family's rationale comment.
+- `engine_offsets_addresses.h` (727) — 105 constants: 103 `.text`
+  function/vtable addresses (all `acc::addr::R()`-wrapped) plus the 2
+  `.data` global pointers in their own banner-marked section, and the 15
+  `PFN_*` typedefs.
+- `engine_offsets_fields.h` (1128) — 244 constants: struct field offsets
+  plus the geometry and bit-mask/sentinel constants that decode them.
+- `engine_offsets_values.h` (74) — 18 constants: vtable slot indices,
+  strrefs, sentinels, action-type enum bytes, panel input codes.
+
+**Verification** (all green):
+- 367 `constexpr`/`const` declarations match before and after on **type,
+  name and value** — not just name. Zero diff.
+- 15 typedefs and 3 structs byte-identical.
+- Every non-blank source line accounted for exactly once; no duplicates.
+  Exactly two lines changed, both deliberate: the stale in-file
+  cross-reference `"see kAddrRulesGlobal definition higher up in this file
+  (line ~526)"` — which pointed at the wrong line even before the move
+  (the constant was at 583) and would have been actively misleading after
+  it.
+- Name list matches `c8-constant-names-baseline.txt` exactly (358/358).
+- `kdev build --clean`: 194 TUs, 0 warnings, 0 errors. Matches baseline.
+
+**Deviations from the spec above, and why:**
+
+1. **Four files, not three.** The spec's "ordering hazard" (structs and
+   typedefs interleaved through all 1820 lines, some typedefs depending on
+   the structs) resolves cleanly by giving the three structs their own base
+   header. The `PFN_*` typedefs did *not* need to go there — each one
+   documents the calling convention of the address declared next to it, so
+   they stayed with their addresses and `engine_offsets_addresses.h`
+   includes the types header.
+2. **`engine_offsets_fields.h`, not `engine_offsets_structs.h`.** Having
+   `_structs.h` mean "field offsets" while `_types.h` means "actual C++
+   structs" was a name collision waiting to be misread. `fields` says what
+   it holds.
+3. **The split is not purely by declared type.** 26 of the file's 132
+   comment blocks span categories — a class's vtable address and its member
+   offsets are documented in one flowing narrative. Cutting purely by type
+   would have orphaned about a third of the documentation from the
+   constants it explains. Rule applied instead: the narrative stays with
+   the half it actually documents (layout narrative → fields, function
+   narrative → addresses), and the other half gets a one-line pointer.
+   17 blocks were hand-split this way; the other 9 stayed whole because
+   their "value" member is really struct geometry (element counts, strides)
+   or field interpretation (bit masks, sentinels), which is now stated as a
+   scope rule in the fields header.
+4. **The spec's constant count of 358 is an undercount.** Its own grep
+   recipe does not match multi-word types, so it silently skips the nine
+   `constexpr unsigned char kActionType*` constants. True total is 367.
+   Both figures were checked; the recipe is fine for a before/after diff
+   (it is lossy in the same way on both sides) but should not be quoted as
+   a census.
+
+**Not done, deliberately:** the constants were not renamed to carry their
+class (upstream's `offsets` table is keyed class + member; our flat
+`k*Offset` names lose that). The class name is in the comment above each
+group, which is enough for the eventual `GameVersion::GetOffset` swap and
+avoids a 244-constant rename touching 86 includers. Renaming is a separate
+decision, not a side effect of a file move.
+
+## The 19 unwrapped .text addresses — investigated, and the number was wrong
+
+The spec flagged "19 of 103 .text addresses not wrapped in `acc::addr::R()`"
+and said to understand them before moving them. Doing that produced a
+different and worse picture than the note suggested.
+
+**Inside `engine_offsets.h` there was no gap at all.** Measured against the
+actual PE section table of the reference exe (`.text` 0x00401000-0x0073D000,
+`.rdata` to 0x0078D000, `.data` to 0x00835498): all 103 `.text` constants
+were wrapped, and the only 2 unwrapped `uintptr_t` constants
+(`kAddrRulesGlobal` 0x007a3a28, `kAddrTlkTablePtr` 0x007a3a08) are `.data`
+globals, correctly raw. The spec's own type-spread section already said
+this on the next line — "2 `constexpr uintptr_t` — .data global pointers
+(raw by design)" — so the 19 figure contradicted the paragraph below it.
+
+**Codebase-wide, however, there is a real gap: 12 addresses.** Scanning all
+of `patches/Accessibility` for VA-range literals in *code* (comments
+stripped) and classifying by PE section:
+
+- `engine_panels_state.cpp` — `kAddrPrevSWInGameGui` (0x0062cdf0),
+  `kAddrHideSWInGameGui` (0x0062cba0), `kAddrSetGlobalDialogState`
+  (0x0062ec60), `kAddrSetInputClass` (0x005eda60)
+- `peek_description.cpp` — `kAddrInventoryOnControlEntered` (0x006b3d10),
+  `kAddrStoreOnControlEntered` (0x006c0aa0),
+  `kAddrJournalOnControlEntered` (0x00645100)
+- `menus_journal.cpp` — `kAddrJournalOnControlEntered` (0x00645100, a
+  second copy), plus two inline `reinterpret_cast`s of 0x005ed320
+  (`GetQuestJournal`) and 0x005ed690 (`GetInGameGui`)
+- `menus_galaxymap.cpp` — `kAddrGalaxyHandleInput` (0x00695980)
+
+Every one is `reinterpret_cast` to a function pointer and **called**.
+
+**Are they really wrong on the Russian exe? Yes.** Three independent lines
+of evidence:
+
+1. Of the 214 `.text` addresses `kdev sigscan` resolved against the Allard
+   build, **zero** kept their reference value. Not one.
+2. Two of the twelve are already in the generated rebase table under their
+   hook names — `0x005DB3D0 → 0x005DB580` (+432) and
+   `0x0062CBA0 → 0x0062CD30` (+400). So for those we can state the error
+   exactly: the code calls an address 400-432 bytes off.
+3. The other nine are absent from the table, but every one is bracketed by
+   resolved neighbours with large non-zero deltas on both sides, several
+   within 50-80 bytes. `kAddrSetInputClass` sits 80 bytes below a +432
+   neighbour; `GetQuestJournal` 48 bytes below a +464 one;
+   `kAddrPrevSWInGameGui` has +400 neighbours 592 bytes before and 317
+   bytes after; `kAddrStoreOnControlEntered` has -272 neighbours on both
+   sides within 1.2 KB. Displacements are per-object-file, so these are
+   near-certain to carry the neighbouring delta.
+
+Consequence on the Allard build: a `__thiscall` into the middle of an
+unrelated function. Four of the twelve sites are SEH-guarded, which
+converts a fault into a logged failure but does nothing about a call that
+runs and corrupts state without faulting. Five have no guard at all.
+
+**Why they were missed — the mechanism, which is the actually useful
+finding.** `kdev`'s `EngineAddresses.Collect` harvests addresses with one
+regex: `^\s*(constexpr|const)\s+uintptr_t\s+NAME\s*=\s*(0x…)\s*;`. All
+twelve are declared in a form it cannot see — `static constexpr uintptr_t`
+(leading `static`), `constexpr std::uintptr_t` (`std::` prefix), or an
+inline `reinterpret_cast<PFN>(0x…)` that is not a declaration at all. Being
+invisible to the harvester, they never got a signature, never got a table
+entry, and were never reported as unresolved. The sigscan report confirms
+it: searching it for those nine addresses returns nothing — they were never
+even attempted.
+
+Note the second-order effect: the harvester also cannot see the *wrapped*
+form `= acc::addr::R(0x…);`, so a re-run of `kdev sigscan` today would
+harvest almost none of the 103 constants in `engine_offsets_addresses.h`.
+The current table survives only because it was generated (2026-07-25)
+before the R() wrapping was applied. Regenerating it now would silently
+produce a much smaller table.
+
+**Not fixed here, on purpose.** Two reasons. It is a behaviour change on a
+shipped build, which the rules of engagement reserve for the user. And the
+naive fix is worse than the bug: wrapping these in `R()` makes them return
+0 on Allard (they are not in the table), so every call becomes a null
+dispatch — a guaranteed crash instead of a probable one. The fix is a
+three-parter and belongs in its own change:
+
+1. Widen `EngineAddresses.Collect` to match `static`, `std::uintptr_t` and
+   the `R(...)` form, so nothing can hide from it again. Ideally make an
+   unresolvable `.text` address a hard error in the report rather than a
+   silent absence.
+2. Re-run `kdev sigscan` against the Allard exe (the archive is in the repo
+   root; no rar extractor is installed on this machine, so extracting it is
+   a prerequisite step) and regenerate `engine_rebase_table.inc`.
+3. Then wrap the twelve, and guard the call sites with `acc::addr::Ok()`
+   per `engine_rebase.h`'s own instruction for addresses sigscan cannot
+   place.
+
+Recommend doing 1 first regardless — it is cheap, it is in `tools/`, and
+until it is done any future engine address can repeat this silently.
+
+## C8 — original specification (kept for reference)
 
 Approved 2026-07-29 and designed, but deliberately not started: it is an
 1820-line reorganisation of the one file where a wrong value is silent

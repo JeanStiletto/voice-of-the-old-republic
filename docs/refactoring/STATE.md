@@ -32,34 +32,49 @@ KOTOR 2 (TSL), which runs a very similar engine but a different executable
   (the installer's single warning is pre-existing, in a file we never
   touched).
 
-### NEXT ACTION: execute candidate C8
+### C8 is DONE (2026-07-29). Next action: user decision on the Allard bug.
 
-Everything needed is written down. Do not re-derive it:
+**C8 executed and verified.** `engine_offsets.h` is now a 28-line
+aggregator over `engine_offsets_types.h` / `_addresses.h` / `_fields.h` /
+`_values.h`. All 367 declarations identical before and after on type, name
+AND value; typedefs and structs byte-identical; every source line
+accounted for once; `kdev build --clean` 194 TUs, 0 warnings. Full detail
+and the four spec deviations (four files not three, `_fields` not
+`_structs`, narrative-follows-meaning rather than a pure type cut, and the
+spec's 358 being an undercount of 367) are in
+`reports/phase-2-cleanup.md`, section "C8 — EXECUTED 2026-07-29".
+Code-index refreshed: `engine_offsets.h.md` rewritten plus four new
+entries, `_files.txt` updated.
 
-1. Spec: `docs/refactoring/reports/phase-2-cleanup.md`, section
-   "C8 — specified, NOT executed". It has the measured type spread, the
-   proposed split, the ordering hazard, and the verification recipe.
-2. Baseline for verification:
-   `docs/refactoring/c8-constant-names-baseline.txt` (358 names).
-3. Why the split is shaped the way it is: the "Major finding" section of
-   the same report — the split mirrors KPatchManager's AddressDatabase
-   taxonomy because the user decided to adopt that mechanism.
+**The "19 unwrapped addresses" note was wrong, and the truth is worse.**
+Inside `engine_offsets.h` there was no gap at all — all 103 .text
+constants were wrapped and the 2 unwrapped ones are .data globals,
+correctly raw (verified against the exe's real PE section table). But a
+codebase-wide scan found **12 genuinely unwrapped .text addresses** in
+`engine_panels_state.cpp`, `peek_description.cpp`, `menus_journal.cpp` and
+`menus_galaxymap.cpp`, every one `reinterpret_cast` and called.
 
-Two things to be careful about, both already discovered:
-- **The structs and typedefs are interleaved with the constants through
-  all 1820 lines and some typedefs depend on the structs.** This is NOT a
-  line-range cut. Resolve dependency order first; the structs belong in a
-  base header the other three include.
-- **19 of the 103 .text addresses are not wrapped in `acc::addr::R()`.**
-  Understand why before moving them. Per engine_rebase.h, R() is
-  mandatory for .text and wrong for .data, so this is either a misfiling
-  or a genuine gap in the rebase seam — in which case those addresses are
-  wrong on the Allard Russian build and it is a bug, not a refactor
-  detail. Report it rather than silently "fixing" it.
+They ARE wrong on the Russian build: zero of the 214 addresses sigscan
+resolved against Allard kept their reference value, two of the twelve are
+already in the rebase table displaced by +400 and +432 bytes, and the
+other nine are bracketed by resolved neighbours with large non-zero deltas
+on both sides. Root cause: kdev's address harvester regex cannot see
+`static constexpr`, `constexpr std::uintptr_t`, or inline
+`reinterpret_cast` — so they were never even attempted by sigscan. Same
+blind spot means the harvester also cannot see the `R(...)` form, so
+regenerating the table today would silently shrink it.
+
+NOT fixed here (behaviour change on a shipped build = user's call, and the
+naive fix makes it worse: wrapping them returns 0 on Allard, turning a
+probable crash into a certain one). The three-step fix is written up in
+the report. Recommend step 1 — widening the kdev harvester — regardless,
+since it is cheap and prevents a silent repeat.
 
 Phase-2 work is NOT yet in-game tested. B4 rewired the SEH read
 primitives all three minigames share (a short swoop race + turret
-sequence covers it) and A1/A2 touch room + landmark narration.
+sequence covers it) and A1/A2 touch room + landmark narration. C8 itself
+is compile-verified only, but it is a pure constant move with a proved
+identical constant set — the in-game risk is the same as B4/A1/A2's.
 
 **Also still open:** candidate 23 (menus_listbox picker, carried from
 Phase 1 — moves state, so measure the variables not just the function
@@ -536,6 +551,8 @@ throughout (194 TUs, 0 warnings); kdev and installer build 0/0.
   engine_player.h's; kHoverPauseMs published from view_mode.h.
 - B7 kdev — BWM parsing hoisted to Core/BwmFile.cs (3 consumers).
 - C9, C11 — K2 portability recorded in docs/llm-docs/CLAUDE.md.
+- C8 engine_offsets.h four-way split (2026-07-29) — see the status block
+  at the top of this file.
 
 **Findings that changed the plan:**
 - C10 was a FALSE ALARM. audio_bus.h's kAddrCExoSoundPtr is a .data
@@ -546,11 +563,16 @@ throughout (194 TUs, 0 warnings); kdev and installer build 0/0.
   both K2 dbs carry all 14 global pointers under K1's names. User decided
   to adopt the mechanism; this reshaped C8's design.
 
-**Next action: execute C8.** Fully specified in
-`reports/phase-2-cleanup.md` (type spread, proposed split, ordering
-hazard, verification recipe). Baseline constant-name list saved at
-`docs/refactoring/c8-constant-names-baseline.txt`. Note the 19 .text
-addresses that are NOT R()-wrapped — understand them before moving them.
+- C8 finding: the spec's "19 unwrapped .text addresses" was a
+  miscount — engine_offsets.h had none. But 12 real ones exist elsewhere
+  in the patch and are provably wrong on the Allard Russian build. Root
+  cause is kdev's address-harvester regex, not the header. Full analysis
+  and the three-step fix in `reports/phase-2-cleanup.md`; awaiting a user
+  decision because it is a behaviour change on a shipped build.
+
+**Next action: user decision on the 12 Allard-wrong addresses** (see the
+status block at the top of this file). Nothing else in Phase 2 is
+blocked on it.
 
 **Also open:** candidate 23 (menus_listbox picker, carried from Phase 1),
 C4 (doorMatched split, deferred to Phase 3), candidate 28 (includer

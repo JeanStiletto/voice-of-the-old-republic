@@ -1,5 +1,12 @@
 # Phase 2 scan: the KOTOR 2 portability lens
 
+> **Stale line references (2026-07-29).** This is a point-in-time scan.
+> C8 has since split `engine_offsets.h` into `engine_offsets_types.h` /
+> `_addresses.h` / `_fields.h` / `_values.h`, so every `engine_offsets.h:NNN`
+> citation below now points at the aggregator, which holds no constants.
+> The constant names are all still valid — grep by name. The findings
+> themselves stand; only the coordinates moved.
+
 Scope: `patches/Accessibility/` (282 files). Question: map every K1-specific
 dependency and propose where an engine-abstraction seam should go, and in
 particular how `engine_offsets.h` should be partitioned for portability
