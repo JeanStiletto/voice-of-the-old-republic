@@ -1,7 +1,6 @@
 using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.IO;
-using System.Text;
 
 using static Kdev.BwmFile;
 
@@ -79,12 +78,17 @@ public static class WalkmeshFaceTypesCommand
             return 1;
         }
         var bytes = File.ReadAllBytes(path);
-        if (Encoding.ASCII.GetString(bytes, 0, 8) != "BWM V1.0")
+        // Use BwmFile.HasValidHeader, which checks LENGTH before reading the
+        // magic. The old inline check read bytes 0..8 unconditionally, so a
+        // short or non-BWM file died with a raw ArgumentOutOfRangeException
+        // instead of this command's own error - while the --dir path a few
+        // dozen lines below has always had the length check.
+        if (!HasValidHeader(bytes))
         { Console.Error.WriteLine("not BWM v1.0"); return 1; }
-        uint type = ReadU32(bytes, 0x08);
+        uint type = ReadU32(bytes, OffType);
         if (type != 1) { Console.WriteLine($"type={type} (not walkmesh)"); return 0; }
-        uint faceCount = ReadU32(bytes, 0x50);
-        uint faceTypeOff = ReadU32(bytes, 0x58);
+        uint faceCount = ReadU32(bytes, OffFaceCount);
+        uint faceTypeOff = ReadU32(bytes, OffFaceTypeOffset);
 
         var hist = new SortedDictionary<int, int>();
         for (int i = 0; i < faceCount; i++)
@@ -120,12 +124,11 @@ public static class WalkmeshFaceTypesCommand
             areaRoomFiles++;
             byte[] bytes;
             try { bytes = File.ReadAllBytes(path); } catch { continue; }
-            if (bytes.Length < 0x88) continue;
-            if (Encoding.ASCII.GetString(bytes, 0, 8) != "BWM V1.0") continue;
-            uint t = ReadU32(bytes, 0x08);
+            if (!HasValidHeader(bytes)) continue;
+            uint t = ReadU32(bytes, OffType);
             if (t != 1) continue;
-            uint faceCount = ReadU32(bytes, 0x50);
-            uint faceTypeOff = ReadU32(bytes, 0x58);
+            uint faceCount = ReadU32(bytes, OffFaceCount);
+            uint faceTypeOff = ReadU32(bytes, OffFaceTypeOffset);
             for (int i = 0; i < faceCount; i++)
             {
                 int ty = (int)ReadU32(bytes, (int)faceTypeOff + i * 4);
