@@ -45,17 +45,21 @@ uint8_t ReadCombatModeBit(void* clientLeader) {
     }
 }
 
-int ReadQueueSize(void* serverCreature) {
-    if (!serverCreature) return -1;
+// Queued-action count on a CSWSCombatRound directly. 0 means "nothing
+// queued" — including the case where the round has no action list at all,
+// which is the engine's own TEST EAX,EAX / JZ bail condition at the top of
+// RemoveAllActions. -1 means "couldn't tell" (null round, or a faulted read).
+//
+// Callers that need to distinguish "empty" from "unknown" must check for -1;
+// the RemoveAllActions hook relies on exactly that, so do not collapse the
+// two.
+int ReadRoundActionCount(void* combatRound) {
+    if (!combatRound) return -1;
     __try {
-        void* combatRound = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(serverCreature) +
-            kCreatureCombatRoundOffset);
-        if (!combatRound) return -1;
         void* listPtr = *reinterpret_cast<void**>(
             reinterpret_cast<unsigned char*>(combatRound) +
             kCombatRoundActionsOffset);
-        if (!listPtr) return -1;
+        if (!listPtr) return 0;
         // Fast path — read internal.count directly (engine's own size
         // field). Avoids the walker entirely. Walk path stays as a
         // backup for filtered-count semantics.
@@ -68,6 +72,18 @@ int ReadQueueSize(void* serverCreature) {
             kListInternalCountOffset);
         if (rawCount < 0 || rawCount > 64) return -1;  // sanity
         return rawCount;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
+int ReadQueueSize(void* serverCreature) {
+    if (!serverCreature) return -1;
+    __try {
+        void* combatRound = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(serverCreature) +
+            kCreatureCombatRoundOffset);
+        return ReadRoundActionCount(combatRound);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return -1;
     }
@@ -286,10 +302,35 @@ const char* RoleTag(void* combatRound) {
 
 
 extern "C" void __cdecl OnCombatRoundRemoveAllActions(void* this_combatRound) {
+    // Skip no-op clears. The engine's very next instruction after our cut is
+    // TEST EAX,EAX / JZ — a clear against a round with no queued actions
+    // removes nothing and returns immediately. This hook exists to answer
+    // "did the engine silently cull queued entries?", and a clear that culled
+    // nothing never answers it.
+    //
+    // The one thing this does give up: a clear dispatched against an already-
+    // empty queue is no longer visible, so "the engine took the overwrite
+    // path from an empty queue" now looks the same as "it chained". That
+    // distinction has no observable effect (there was nothing to overwrite)
+    // and the following ADD line still records the outcome.
+    //
+    // It matters because the engine re-clears every live combat round once
+    // per frame while combat is being torn down for a cutscene handover. On
+    // the run-up to the turret sequence that was six rounds a frame for seven
+    // seconds — 2542 log lines at ~360/s, each one a formatted write plus an
+    // fflush under a lock on the game thread (patch-20260729-085456.log,
+    // 08:58:00-08:58:07). Everywhere else in that two-hour session the same
+    // line fired 1-3 times a second.
+    //
+    // -1 is "couldn't read the count", not "empty" — log those, or a genuine
+    // clear disappears whenever the read faults.
+    int actions = acc::combat_diag::ReadRoundActionCount(this_combatRound);
+    if (actions == 0) return;
+
     acclog::Write("Combat.Diag",
-        "CLEAR [%s] round=%p",
+        "CLEAR [%s] round=%p actions=%d",
         acc::combat_diag::RoleTag(this_combatRound),
-        this_combatRound);
+        this_combatRound, actions);
 }
 
 extern "C" void __cdecl OnCombatRoundSetCurrentAction(void* this_combatRound,
