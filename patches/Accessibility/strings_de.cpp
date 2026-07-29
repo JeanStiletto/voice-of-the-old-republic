@@ -816,6 +816,11 @@ const char* Get(Id id) {
         case Id::FloorPuzzleSolved:
             return "R\xE4tsel gel\xF6st. Die massive T\xFCr \xF6""ffnet sich.";  // R?tsel gel?st, T?r ?ffnet
 
+        case Id::FmtModLoadedVersion:   return "Voice of the Old Republic geladen, Version %s";
+        case Id::FmtChargenFeatUnnamed: return "Talent %u";
+        case Id::ChargenBtnRecommended: return "Empfohlen";
+        case Id::ChargenBtnAccept:      return "Akzeptieren";
+        case Id::ChargenBtnBack:        return "Zurü" "ck";
         case Id::Count_:               return "";
     }
     return "";

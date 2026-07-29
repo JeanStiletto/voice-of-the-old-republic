@@ -231,6 +231,8 @@ void AdvanceClampMode() {
 
     // Spoken feedback so the user knows which mode we're in without
     // checking the log mid-test.
+    // Developer-facing diagnostic - see the note in probe_audio_frame.cpp.
+    // Deliberately not localised; probe_* is RE tooling, not player output.
     char msg[64];
     std::snprintf(msg, sizeof(msg), "Camera distance probe: %s",
                   ModeName(g_clampMode));

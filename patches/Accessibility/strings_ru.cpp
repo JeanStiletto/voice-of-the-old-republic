@@ -821,6 +821,11 @@ const char* Get(Id id) {
         case Id::FloorPuzzleSolved:
             return "\xC3\xEE\xEB\xEE\xE2\xEE\xEB\xEE\xEC\xEA\xE0 \xF0\xE5\xF8\xE5\xED\xE0. \xCC\xE0\xF1\xF1\xE8\xE2\xED\xE0\xFF \xE4\xE2\xE5\xF0\xFC \xEE\xF2\xEA\xF0\xFB\xE2\xE0\xE5\xF2\xF1\xFF.";
 
+        case Id::FmtModLoadedVersion:   return "Voice of the Old Republic загружен, версия %s";
+        case Id::FmtChargenFeatUnnamed: return "Умение %u";
+        case Id::ChargenBtnRecommended: return "Рекомендуется";
+        case Id::ChargenBtnAccept:      return "Принять";
+        case Id::ChargenBtnBack:        return "Назад";
         case Id::Count_:               return "";
     }
     return "";

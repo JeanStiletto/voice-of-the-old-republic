@@ -67,6 +67,11 @@ void FireProbe(int sector, const char* tag) {
     const char* dirName = acc::strings::Get(
         acc::engine::SectorString(sector));
 
+    // Developer-facing: probe_* files are throwaway RE tooling per the
+    // project convention, and this line is spoken to whoever is running the
+    // probe during an investigation - not to a player. Deliberately NOT
+    // routed through strings::Get(); the sector name it interpolates already
+    // is.
     char msg[64];
     std::snprintf(msg, sizeof(msg), "Probe %s", dirName);
     prism::Speak(msg, /*interrupt=*/true);

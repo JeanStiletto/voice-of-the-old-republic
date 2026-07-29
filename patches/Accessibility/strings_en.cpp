@@ -797,6 +797,11 @@ const char* Get(Id id) {
         case Id::FloorPuzzleSolved:
             return "Puzzle solved. The massive door opens.";
 
+        case Id::FmtModLoadedVersion:   return "Voice of the Old Republic loaded, version %s";
+        case Id::FmtChargenFeatUnnamed: return "Feat %u";
+        case Id::ChargenBtnRecommended: return "Recommended";
+        case Id::ChargenBtnAccept:      return "Accept";
+        case Id::ChargenBtnBack:        return "Back";
         case Id::Count_:               return "";
     }
     return "";

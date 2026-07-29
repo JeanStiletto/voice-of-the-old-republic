@@ -797,6 +797,11 @@ const char* Get(Id id) {
         case Id::DialogRepeatLineHint:
             return "Premi R per ripetere l'ultima battuta di dialogo.";
 
+        case Id::FmtModLoadedVersion:   return "Voice of the Old Republic caricato, versione %s";
+        case Id::FmtChargenFeatUnnamed: return "Talento %u";
+        case Id::ChargenBtnRecommended: return "Consigliato";
+        case Id::ChargenBtnAccept:      return "Accetta";
+        case Id::ChargenBtnBack:        return "Indietro";
         case Id::Count_:               return "";
     }
     return "";

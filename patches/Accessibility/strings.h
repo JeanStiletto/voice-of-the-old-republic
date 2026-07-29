@@ -1920,6 +1920,14 @@ enum class Id : int {
     PlatesAllDark,
     FloorPuzzleSolved,
 
+    // ---- Startup + chargen fallbacks (Phase-3 F8). These paths used to
+    //      speak hardcoded English regardless of the active language.
+    FmtModLoadedVersion,      // spoken once at DLL init - the first thing heard
+    FmtChargenFeatUnnamed,    // fallback when the feat's name label is empty
+    ChargenBtnRecommended,    // fallback when the button's own text is empty
+    ChargenBtnAccept,
+    ChargenBtnBack,
+
     Count_,
 };
 
