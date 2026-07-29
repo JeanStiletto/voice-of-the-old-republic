@@ -119,7 +119,7 @@ constexpr uint32_t kActionIdTagFeat     = 0x10000000;
 constexpr uint32_t kActionIdTagSpell    = 0x20000000;
 constexpr uint32_t kActionIdTagItem     = 0x40000000;
 
-void* ResolveItemFromServerHandle(uint32_t serverHandle) {
+static void* ResolveItemFromServerHandle(uint32_t serverHandle) {
     if (serverHandle == 0 || serverHandle == 0xffffffff) return nullptr;
     void* appMgr = nullptr;
     __try {
@@ -150,7 +150,7 @@ void* ResolveItemFromServerHandle(uint32_t serverHandle) {
     return item;
 }
 
-void* GetRulesGlobal() {
+static void* GetRulesGlobal() {
     void* rules = nullptr;
     __try {
         rules = *reinterpret_cast<void**>(kAddrRulesGlobal);

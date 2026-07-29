@@ -153,7 +153,7 @@ void FirePopup(uint32_t strref, const char* hint) {
 // this break. Two adjacent Trask lines can carry the same keyboard hint (e.g.
 // the camera line and the footlocker line share one object-navigation hint);
 // when they land in the same popup we speak it once, not twice.
-bool PendingContainsHint(const char* hint) {
+static bool PendingContainsHint(const char* hint) {
     size_t hlen = std::strlen(hint);
     const char* p = s_pendingHints;
     while (*p) {
