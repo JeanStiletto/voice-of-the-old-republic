@@ -576,9 +576,9 @@ void Drain(void* gm) {
             // and item → 0 on remove (verified in OnSlotSelected non-saber
             // branch and the InsertUpgrade path).
             int slotIdx = *reinterpret_cast<int*>(
-                reinterpret_cast<unsigned char*>(slotBtn) + 0x58);
+                reinterpret_cast<unsigned char*>(slotBtn) + kUpgradeSlotCustomValueOff);
             void** field35Slot = reinterpret_cast<void**>(
-                reinterpret_cast<unsigned char*>(panel) + 0x2f74 + slotIdx * 4);
+                reinterpret_cast<unsigned char*>(panel) + kUpgradeSlotInstalledItemsOff + slotIdx * 4);
             void* prevItem = *field35Slot;
 
             onEnter(panel, slotBtn);
@@ -601,7 +601,7 @@ void Drain(void* gm) {
             // the non-saber install/remove path — disarm the picker and
             // announce the outcome by comparing field35_0x2f74[slot_idx]
             // before vs after.
-            uint8_t saberFlag = *(reinterpret_cast<unsigned char*>(panel) + 0x2f4c);
+            uint8_t saberFlag = *(reinterpret_cast<unsigned char*>(panel) + kUpgradePanelCategoryOff);
             int lbRows = 0;
             auto* controls = reinterpret_cast<CExoArrayList*>(
                 reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);

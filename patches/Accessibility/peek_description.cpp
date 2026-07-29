@@ -205,7 +205,7 @@ constexpr PanelPeekInfo kPanels[] = {
     { acc::engine::PanelKind::InGameInventory,  0x0844, RefreshInventory  },  // CSWGuiInGameInventory.description_listbox
     { acc::engine::PanelKind::InGameJournal,    0x01a4, RefreshJournal    },  // CSWGuiInGameJournal.item_description_label (a CSWGuiListBox)
     { acc::engine::PanelKind::InGameAbilities,  kAbilitiesDescListBoxOffset, RefreshAbilities },  // LB_DESC (0x33bc); refresh repaints it for the focused entry
-    { acc::engine::PanelKind::Store,            0x1a40, RefreshStore      },  // CSWGuiStore.description_listbox
+    { acc::engine::PanelKind::Store,            kStoreDescriptionListBoxOffset, RefreshStore      },  // CSWGuiStore.description_listbox
     // CSWGuiInGameEquip is handled via the item-tooltip path below: its
     // arrow-key nav goes through DriveListBoxSelection which bypasses the
     // engine's onSelectionChanged callback, so description_listbox at

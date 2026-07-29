@@ -211,7 +211,7 @@ void LogEntryCounts(void* panel) {
 
         int listRows = -1;
         if (panel) {
-            void* lb = reinterpret_cast<unsigned char*>(panel) + 0x5c4;
+            void* lb = reinterpret_cast<unsigned char*>(panel) + kJournalItemsListBoxOffset;
             auto* lbList = reinterpret_cast<CExoArrayList*>(
                 reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
             if (lbList) listRows = lbList->size;

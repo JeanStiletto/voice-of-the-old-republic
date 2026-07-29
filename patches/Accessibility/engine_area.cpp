@@ -79,7 +79,7 @@ namespace {
 // 0xFFFFFFFF (removed), 0x7F000000 (kInvalidObjectId — the "no object"
 // marker the action queue and LastTarget use).
 bool IsSentinelHandle(uint32_t handle) {
-    return handle == 0u || handle == 0xFFFFFFFFu || handle == 0x7F000000u;
+    return handle == 0u || handle == 0xFFFFFFFFu || handle == kInvalidObjectId;
 }
 
 }  // namespace

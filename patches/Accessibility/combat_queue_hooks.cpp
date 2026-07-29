@@ -54,7 +54,7 @@ extern "C" void __cdecl OnCombatRoundAddAction(void* this_combatRound,
     uint8_t action_type = 0xff;
     if (action) {
         __try {
-            action_type = *(reinterpret_cast<uint8_t*>(action) + 0x10);
+            action_type = *(reinterpret_cast<uint8_t*>(action) + kCombatRoundActionTypeOffset);
         } __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
 

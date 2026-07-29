@@ -149,7 +149,7 @@ bool AppendStateLabel(void* gameObject, char* outBuf, size_t bufSize) {
             // + current animation (CSWSObject+0xd4). If live speech is
             // inverted, this line shows which signal actually flipped.
             int usable = *reinterpret_cast<int*>(
-                reinterpret_cast<unsigned char*>(gameObject) + 0x328);
+                reinterpret_cast<unsigned char*>(gameObject) + kPlaceableUsableOffset);
             int anim   = *reinterpret_cast<int*>(
                 reinterpret_cast<unsigned char*>(gameObject) + 0xd4);
             acclog::Write("PlaceableState",
