@@ -469,7 +469,12 @@ Plus a clean `kdev build` (0 warnings) and the 358-name count check —
 `/tmp/c8_names_before.txt` from this session recorded the baseline name
 list; regenerate it from git if lost.
 
-## Status
+## Status (updated 2026-07-29)
 
-Awaiting item-by-item approval. No code changed in Phase 2 so far; the
-only writes are the four report files and STATE.md.
+Phase 2 is **code-complete**. Executed: A1-A3, B4-B7, C8, C9, C11, plus the
+Allard address fix that C8's investigation surfaced. C10 was a false alarm
+(documented in place). The only unexecuted item in this report's list is
+number 12 — candidate 23, carried from Phase 1.
+
+Nothing here has been played in-game yet. That is the gate before Phase 3;
+the per-build smoke-test list is in `STATE.md`.
