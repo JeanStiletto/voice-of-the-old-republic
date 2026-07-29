@@ -59,37 +59,15 @@
 // menu-side TU so callsites stay as they were.
 using namespace acc::engine;
 
-// Step 2B seam: the four detail-namespace helpers + GetControlCenter live
-// in this TU (chain-side has many more callers than extract-side). The
-// using-declarations bring their unqualified names back into scope so
-// existing call sites don't need to be touched.
-using acc::menus::detail::IsChainNavigable;
-using acc::menus::detail::IsClassSelectionIcon;
-using acc::menus::detail::ClassLabelCacheLookup;
-using acc::menus::detail::ClassLabelCacheStore;
-using acc::menus::detail::GetControlCenter;
-
-// Step 4 seam: the listbox-driven panel handlers live in menus_listbox.cpp,
-// but their helpers (FindControlById, FindListBoxChild, IsSaveLoadPanel,
-// ReadSaveLoadEntryString, DriveListBoxSelection, QueueButtonByIdActivate)
-// stay defined here because they're called from menus.cpp's monitors and
-// chain code too. Same using-declaration pattern as Step 2B.
-using acc::menus::detail::FindControlById;
-using acc::menus::detail::FindListBoxChild;
-using acc::menus::detail::IsSaveLoadPanel;
-using acc::menus::detail::ReadSaveLoadEntryString;
-using acc::menus::detail::DriveListBoxSelection;
-using acc::menus::detail::ListBoxNavResult;
-using acc::menus::detail::QueueButtonByIdActivate;
-
-// Step 5 seam: chain state + helpers live in menus_chain.cpp. Bring all
-// the names into unqualified scope so the dense reads in OnHandleInputEvent
-// / OnSetActiveControl / monitors stay as they were. Writes to the
-// externs (g_chainIndex on chain-step advance) work the same way through
-// using-declarations.
-using acc::menus::chain::ChainEntry;
-using acc::menus::chain::kMaxChainEntries;
-using acc::menus::chain::kVirtualMod_SettingsRoot;
+// Chain seam: chain state + the panel-validation helpers live in
+// menus_chain.cpp. These using-declarations bring the names this file
+// still reads into unqualified scope, so the dense reads in
+// OnSetActiveControl / the monitors stay as they were. Writes to the
+// externs (g_chainIndex on chain-step advance) work the same way.
+//
+// The Step-2B (detail::) and Step-4 (listbox helper) seam blocks that used
+// to sit here are gone: every one of those helpers moved out with its
+// callers in the Phase-1 split, so nothing in this file referenced them.
 using acc::menus::chain::g_chain;
 using acc::menus::chain::g_chainPanel;
 using acc::menus::chain::g_chainIndex;
@@ -97,25 +75,10 @@ using acc::menus::chain::g_chainCount;
 using acc::menus::chain::g_tabbedPanel;
 using acc::menus::chain::g_tabsStart;
 using acc::menus::chain::g_tabsCount;
-using acc::menus::chain::g_equipSlotClickOffsetY;
-using acc::menus::chain::g_classIconClickOffsetX;
-using acc::menus::chain::RebindChain;
-using acc::menus::chain::ResetTabbedState;
 using acc::menus::chain::ValidateTabbedPanel;
 using acc::menus::chain::ValidateChainPanel;
 using acc::menus::chain::DetectTabsCluster;
-using acc::menus::chain::IsTabButton;
-using acc::menus::chain::FindAdjacentArrow;
-using acc::menus::chain::FindCloseButton;
-using acc::menus::chain::FindCancelButton;
-using acc::menus::chain::FindChainEntry;
-using acc::menus::chain::ReadPanelActiveControl;
 using acc::menus::chain::WalkChildren;
-
-// Post-Step-5 cleanup: general-monitor TU and listbox-monitor extension.
-// AnnounceControl (writes monitor state) lives in menus_monitors; chain
-// handlers in OnHandleInputEvent below call it through this using-decl.
-using acc::menus::monitors::AnnounceControl;
 
 // Phase-1 structure split: the first-sight / focus-capture step functions
 // moved to menus_focus.cpp. OnSetActiveControl below is their only caller
@@ -137,10 +100,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
 
 // Forward declarations + the shared kEquipBtn* / kEquipLb* constants moved
 // to menus_internal.h in Step 2B. g_currentPanel is declared there as
-// extern; defined later in this TU. The four detail-namespace helpers
-// (IsChainNavigable, IsClassSelectionIcon, ClassLabelCache*) and
-// GetControlCenter are defined further down with the chain machinery and
-// brought back into unqualified scope by the using-declarations above.
+// extern; defined later in this TU.
 
 
 

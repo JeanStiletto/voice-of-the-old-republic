@@ -49,7 +49,6 @@ using acc::menus::detail::ClassLabelCacheLookup;
 using acc::menus::detail::ClassLabelCacheStore;
 using acc::menus::chain::WalkChildren;
 using acc::menus::chain::FindAdjacentArrow;
-using acc::menus::monitors::AnnounceControl;
 
 // Tracks the last panel for which we spoke the title (AnnouncePanelTitle).
 // Re-entering the same panel pointer must not re-announce. A distinct static
