@@ -84,29 +84,35 @@ void* FindOwningPanel(void* control) {
 
 void* GetForegroundPanel(void* mgr) {
     if (!mgr) return nullptr;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   modalSize = *reinterpret_cast<int*>(base + kMgrModalStackSizeOffset);
-    void** modalData = *reinterpret_cast<void***>(base + kMgrModalStackDataOffset);
-    if (modalSize > 0 && modalData) {
-        void* top = modalData[modalSize - 1];
-        if (top) return top;
-    }
-    int   panelSize = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (panelSize > 0 && panelData) {
-        // Walk down from the top, skipping render-only kinds (Fade) so the
-        // returned fg is the topmost panel that actually accepts input.
-        // Bound the walk to a sane limit just in case panelSize is corrupt.
-        int n = panelSize > 32 ? 32 : panelSize;
-        for (int i = n - 1; i >= 0; --i) {
-            void* p = panelData[i];
-            if (!p) continue;
-            if (IsTransparentForegroundKind(IdentifyPanel(p))) continue;
-            return p;
+    // SEH-guarded: the null checks below cannot catch a STALE manager or
+    // panel pointer, which is what this array holds during teardown.
+    __try {
+        auto* base = reinterpret_cast<unsigned char*>(mgr);
+        int   modalSize = *reinterpret_cast<int*>(base + kMgrModalStackSizeOffset);
+        void** modalData = *reinterpret_cast<void***>(base + kMgrModalStackDataOffset);
+        if (modalSize > 0 && modalData) {
+            void* top = modalData[modalSize - 1];
+            if (top) return top;
         }
-        // Every entry was either null or transparent — return the actual
-        // top so callers still see *something* and can decide what to do.
-        return panelData[panelSize - 1];
+        int   panelSize = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+        void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+        if (panelSize > 0 && panelData) {
+            // Walk down from the top, skipping render-only kinds (Fade) so the
+            // returned fg is the topmost panel that actually accepts input.
+            // Bound the walk to a sane limit just in case panelSize is corrupt.
+            int n = panelSize > 32 ? 32 : panelSize;
+            for (int i = n - 1; i >= 0; --i) {
+                void* p = panelData[i];
+                if (!p) continue;
+                if (IsTransparentForegroundKind(IdentifyPanel(p))) continue;
+                return p;
+            }
+            // Every entry was either null or transparent — return the actual
+            // top so callers still see *something* and can decide what to do.
+            return panelData[panelSize - 1];
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
     }
     return nullptr;
 }

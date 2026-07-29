@@ -12,10 +12,27 @@ namespace acc::engine {
 
 bool ReadControlNameFields(void* control, const char*& outTip,
                            uint32_t& outTipLen, int& outId) {
-    auto* base = reinterpret_cast<unsigned char*>(control);
-    outTip    = *reinterpret_cast<const char**>(base + 0x28);
-    outTipLen = *reinterpret_cast<uint32_t*>   (base + 0x2c);
-    outId     = *reinterpret_cast<int*>        (base + kControlIdOffset);
+    // Always initialise the outs: callers (OnHandleFocusChange) log them
+    // unconditionally, so an early return must not leave them garbage.
+    outTip    = nullptr;
+    outTipLen = 0;
+    outId     = 0;
+    if (!control) return false;
+    // SEH-guarded like CallDowncast below. This is called straight from the
+    // OnHandleFocusChange detour, which fires during engine control
+    // teardown - exactly the window where `control` is stale rather than
+    // null, which a null check cannot catch.
+    __try {
+        auto* base = reinterpret_cast<unsigned char*>(control);
+        outTip    = *reinterpret_cast<const char**>(base + 0x28);
+        outTipLen = *reinterpret_cast<uint32_t*>   (base + 0x2c);
+        outId     = *reinterpret_cast<int*>        (base + kControlIdOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        outTip    = nullptr;
+        outTipLen = 0;
+        outId     = 0;
+        return false;
+    }
     return outTip && outTipLen > 0;
 }
 

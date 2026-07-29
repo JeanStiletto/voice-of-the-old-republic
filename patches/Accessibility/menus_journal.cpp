@@ -229,6 +229,15 @@ void LogEntryCounts(void* panel) {
 
 void ForceRepopulate(void* panel) {
     if (!panel) return;
+    // Unresolved address behaves like the SEH path: skip the repopulate
+    // rather than dispatching through 0. Same guard the OnControlEntered
+    // sibling above uses; this one was missing it.
+    if (!acc::addr::Ok(kAddrJournalPopulateItemListBox)) {
+        acclog::Write("Menus.Journal",
+                      "ForceRepopulate skipped (unresolved on build %s)",
+                      acc::addr::ActiveBuildName());
+        return;
+    }
     __try {
         auto fn = reinterpret_cast<PFN_PanelThiscall>(
             kAddrJournalPopulateItemListBox);

@@ -28,25 +28,32 @@
 namespace acc::engine {
 
 bool HasActiveDialogPanel() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return false;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (!panelData || panelCount <= 0) return false;
-    int n = panelCount > 16 ? 16 : panelCount;
-    for (int i = 0; i < n; ++i) {
-        void* p = panelData[i];
-        if (!p) continue;
-        switch (IdentifyPanel(p)) {
-        case PanelKind::DialogCinematic:
-        case PanelKind::DialogCinematicCopy:
-        case PanelKind::DialogComputer:
-        case PanelKind::DialogComputerCamera:
-            return true;
-        default:
-            break;
+    // SEH-guarded like every other panels[] walk in this TU: the null checks
+    // below cannot catch a STALE manager/panel pointer, which is exactly what
+    // this array holds during a module teardown or cutscene handoff.
+    __try {
+        void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+        if (!mgr) return false;
+        auto* base = reinterpret_cast<unsigned char*>(mgr);
+        int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+        void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+        if (!panelData || panelCount <= 0) return false;
+        int n = panelCount > 16 ? 16 : panelCount;
+        for (int i = 0; i < n; ++i) {
+            void* p = panelData[i];
+            if (!p) continue;
+            switch (IdentifyPanel(p)) {
+            case PanelKind::DialogCinematic:
+            case PanelKind::DialogCinematicCopy:
+            case PanelKind::DialogComputer:
+            case PanelKind::DialogComputerCamera:
+                return true;
+            default:
+                break;
+            }
         }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
     }
     return false;
 }
@@ -317,29 +324,34 @@ bool IsInGameOptionsSubScreen(void* panel) {
 }
 
 bool HasActiveSubScreen() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return false;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (!panelData || panelCount <= 0) return false;
-    int n = panelCount > 16 ? 16 : panelCount;
-    for (int i = 0; i < n; ++i) {
-        void* p = panelData[i];
-        if (!p) continue;
-        switch (IdentifyPanel(p)) {
-        case PanelKind::InGameEquip:
-        case PanelKind::InGameInventory:
-        case PanelKind::InGameCharacter:
-        case PanelKind::InGameAbilities:
-        case PanelKind::InGameMessages:
-        case PanelKind::InGameJournal:
-        case PanelKind::InGameMap:
-        case PanelKind::InGameOptions:
-            return true;
-        default:
-            break;
+    // SEH-guarded — see the note on HasActiveDialogPanel.
+    __try {
+        void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+        if (!mgr) return false;
+        auto* base = reinterpret_cast<unsigned char*>(mgr);
+        int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+        void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+        if (!panelData || panelCount <= 0) return false;
+        int n = panelCount > 16 ? 16 : panelCount;
+        for (int i = 0; i < n; ++i) {
+            void* p = panelData[i];
+            if (!p) continue;
+            switch (IdentifyPanel(p)) {
+            case PanelKind::InGameEquip:
+            case PanelKind::InGameInventory:
+            case PanelKind::InGameCharacter:
+            case PanelKind::InGameAbilities:
+            case PanelKind::InGameMessages:
+            case PanelKind::InGameJournal:
+            case PanelKind::InGameMap:
+            case PanelKind::InGameOptions:
+                return true;
+            default:
+                break;
+            }
         }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
     }
     return false;
 }
