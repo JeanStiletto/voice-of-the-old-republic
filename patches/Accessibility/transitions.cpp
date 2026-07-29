@@ -1143,6 +1143,11 @@ void Tick() {
         // ran later; it does not, and the retry is not the reason the
         // ordering exists. See core_tick.cpp's dispatch-order notes,
         // which are authoritative.
+        // Re-arm the nav-graph retry before building: this is the only
+        // genuine "we entered an area" edge, so an area previously
+        // abandoned as unreadable gets a fresh set of attempts here (and
+        // only here). Ordering matters — BuildForArea consults the latch.
+        acc::room_topology::ResetNavGraphRetry();
         acc::room_topology::BuildForArea(area);
         g_prev_area = area;
         ResetRoomSpeechState();

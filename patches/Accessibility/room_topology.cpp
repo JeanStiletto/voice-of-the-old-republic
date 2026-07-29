@@ -367,6 +367,40 @@ struct DoorStabilityState {
 };
 DoorStabilityState g_doors_stability;
 
+// Nav-graph build retry cap.
+//
+// transitions.cpp deliberately re-calls BuildForArea every tick until the
+// graph builds, because the engine can have the area live before its
+// walkmesh/path-point data is readable — a transient miss that resolves in
+// a tick or two. That retry had no ceiling, so an area whose nav graph is
+// *permanently* unreadable retried forever: measured at a steady 60/s for
+// 82 unbroken seconds in module m40ad (2801 attempts, patch-20260729-103259
+// .log, 10:33:46-10:35:08). m40ad is a cutscene-staging module with nothing
+// walkable to read, so the miss is not transient and never resolves. Each
+// attempt re-reads the engine's nav-graph metadata and logged a line, which
+// is why the turret cutscene sequence stutters when ordinary area
+// transitions do not.
+//
+// 120 ticks (~2s at 60fps) is a generous margin over the transient case the
+// retry exists for, while turning the permanent case into a bounded cost.
+// On giving up the area keeps an unbuilt graph, which is the same state it
+// had while retrying — room_topology degrades to "open area" and no caller
+// changes behaviour.
+//
+// The latch is per-area and is cleared on genuine area (re-)entry via
+// ResetNavGraphRetry, NOT merely on an area-pointer change. That matters:
+// the door-set stabiliser above carries a scar from precisely this shape of
+// bug, where a bad result got locked in for the session and re-entering the
+// area did not recover it.
+constexpr int kNavGraphRetryCapTicks = 120;
+
+struct NavGraphRetryState {
+    void* area         = nullptr;
+    int   failed_ticks = 0;
+    bool  gave_up      = false;
+};
+NavGraphRetryState g_navgraph_retry;
+
 // Direction helpers.
 
 // 8-way octant classifier. Engine frame: +X = East, +Y = North. Returns
@@ -2263,6 +2297,10 @@ bool HasGraphForArea(void* area) {
            g_graph.area_owner == area;
 }
 
+void ResetNavGraphRetry() {
+    g_navgraph_retry = NavGraphRetryState{};
+}
+
 void MaybeRefreshDoors(void* area) {
     if (!HasGraphForArea(area))      return;
     if (g_doors_stability.committed) return;
@@ -2307,16 +2345,38 @@ void BuildForArea(void* area) {
     if (!area) return;
     if (HasGraphForArea(area)) return;
 
+    // Per-area retry accounting — see kNavGraphRetryCapTicks.
+    if (g_navgraph_retry.area != area) {
+        g_navgraph_retry.area         = area;
+        g_navgraph_retry.failed_ticks = 0;
+        g_navgraph_retry.gave_up      = false;
+    }
+    if (g_navgraph_retry.gave_up) return;
+
     Reset();
     g_graph.area_owner = area;
 
     acc::engine::navgraph::NavGraphSnapshot g;
     if (!acc::engine::navgraph::SnapshotNavGraph(area, g)) {
-        acclog::Write("WallTopo",
-                      "BuildForArea: nav graph empty / unreadable (areaPtr=%p) "
-                      "— leaving graph unbuilt", area);
+        // Log the first miss so an unreadable graph is still visible in the
+        // log immediately, then stay quiet until we give up. Logging all 120
+        // adds nothing — they are identical by construction.
+        if (g_navgraph_retry.failed_ticks == 0) {
+            acclog::Write("WallTopo",
+                          "BuildForArea: nav graph empty / unreadable (areaPtr=%p) "
+                          "— leaving graph unbuilt, retrying", area);
+        }
+        if (++g_navgraph_retry.failed_ticks >= kNavGraphRetryCapTicks) {
+            g_navgraph_retry.gave_up = true;
+            acclog::Write("WallTopo",
+                          "BuildForArea: nav graph still unreadable after %d ticks "
+                          "(areaPtr=%p) — giving up for this area; room topology "
+                          "degrades to open-area until it is re-entered",
+                          g_navgraph_retry.failed_ticks, area);
+        }
         return;
     }
+    g_navgraph_retry.failed_ticks = 0;
 
     int n = static_cast<int>(g.nodes.size());
     if (n > kMaxNodes) {
