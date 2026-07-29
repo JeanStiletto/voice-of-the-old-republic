@@ -753,3 +753,54 @@ that `kHoverPauseMs`'s two copies agree (drift risk, not a live bug).
 3. **Add an encoding check to the execution protocol** before executing
    anything (see P3-A9) — the mojibake is isolated to the one file a
    recent edit rewrote, so our tooling can reintroduce it.
+
+## Phase 3 Section A — EXECUTED 2026-07-29 (11 commits, da24fac..d6123e0)
+
+User lifted the Phase-2 smoke-test gate (Phase 2 was tested in the interim)
+and approved Section A as cleanup not needing per-item approval.
+
+Verification: `kdev build --clean` = 195 TUs, 0 warnings. kdev and installer
+`dotnet build` = 0 errors. Every candidate built green before commit.
+
+Executed: A1 (118 dead includes, 34 files), A1b (input_pipeline's 2, own
+commit), A2 (27 dead using-declarations + the 3 seam comments describing
+them), A3 (dead functions/constants), A4 (37 dead string Ids across enum +
+6 tables), A5 (30 narrowed Get() guards), A6 (8 raw hex -> named constants),
+A7 (local redeclarations), A8 (stale comments), A9 (55 mojibake chars),
+A11 (4 linkage fixes).
+
+### Three scan claims were WRONG and the build/verification caught them
+
+1. A1: three "dead" includes were live — engine_manager.h in menus_chain.cpp
+   (IsPanelLive reads kAddrGuiManagerPtr directly; the read IS the usage),
+   <type_traits> in prism.cpp, engine_reads.h in combat_query.cpp. Restored.
+2. A5 was mis-framed as "dead null-checks". The guards are compound
+   `if (!x || !x[0])` and the EMPTY-STRING half is load-bearing (Get() does
+   return "" for unmapped ids). Deleting the whole guard would have been a
+   bug. Only the null half was removed, scoped strictly to Get()-assigned
+   variables — an identical guard on a ReadCExoString result IS a real null
+   check.
+3. A7 contained a live trap: map_ui_cursor.cpp declared
+   `kWaypointHasMapNoteOff = 0x22c`, but the canonical constant of that NAME
+   is 0x228. Substituting by name would have silently changed behaviour.
+   Substituted by VALUE (kWaypointMapNoteEnabledOffset).
+
+### NOT executed from Section A, deliberately
+
+- **A10 (leftover diagnostics)** — the combat_special_watch logging is
+  evidence for bug F1, which is still open. Removing it would destroy the
+  trace for a live bug. The other three sites are still available.
+- **A12 (per-tick recompute)** — a behaviour/performance change, not
+  cleanup. Needs its own decision.
+- **probe_camera_state.cpp's 4 unused offset constants** — offset constants
+  are on the do-not-touch list; an unused one is a question, not a removal.
+- **core_settings.h pillar structs** — they ARE referenced as members of a
+  parent struct; "zero consumers" meant their fields are unread, which is a
+  different and non-mechanical change.
+- **minigame_swoop_audio.cpp design commentary** — the constants were
+  deleted but the broader design prose was left, since that file is under
+  active tuning. One residue: the settle-gate paragraph now describes a gate
+  with no implementation.
+
+### NEXT: the 9 possible bugs (Section F) were reported to the user.
+Section B (structural, 7 items) is untouched and still needs approval.
