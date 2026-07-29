@@ -94,6 +94,16 @@ bool PlayCue3D(const char* resref, const Vector& worldPosition,
 }  // namespace acc::audio
 
 // CExoSound facade. *kAddrCExoSoundPtr; nullptr in early DLL-attach.
+//
+// Deliberately NOT passed through acc::addr::R(): this is a .data global
+// pointer, and per engine_rebase.h the rebase seam covers .text only —
+// .data is byte-stable across the builds R() exists for. Same treatment as
+// kAddrGuiManagerPtr (engine_manager.h) and kAddrAppManagerPtr
+// (engine_player.h). Wrapping it would be wrong, not merely redundant.
+//
+// For a KOTOR 2 port this is one of the values the upstream address
+// database already carries by name — see the EXO_RESOURCE_MANAGER_PTR /
+// APP_MANAGER_PTR cluster in KPatchManager's AddressDatabases.
 constexpr uintptr_t kAddrCExoSoundPtr = 0x007A39EC;
 
 // CExoSound::PlayOneShotSound  — __thiscall, RET 0x18 (6 × 4-byte args).

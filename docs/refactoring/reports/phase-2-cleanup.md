@@ -51,6 +51,46 @@ Also found: KPatchManager upstream already has a `GameVersion` /
 `addresses.toml` seam designed for this kind of split, and our patch uses
 it nowhere.
 
+## Major finding: the upstream address database is real, and K2 is seeded
+
+Investigated while answering the user's C11 question ("can we improve the
+code now to be compatible?"). The answer is yes, and the mechanism is much
+further along than the scan reported.
+
+`third_party/Kotor-Patch-Manager/AddressDatabases/` holds SQLite databases
+keyed by executable SHA-256, with three entry types:
+- **global_pointers** — name -> address
+- **functions** — class + function -> address
+- **offsets** — class + member -> offset
+
+Measured contents:
+- `kotor1_0_3.db`: 9710 functions, 4720 offsets, 977 classes, 16 global
+  pointers. Thoroughly populated.
+- `kotor2_steam_aspyr.db` and `kotor2_gog_aspyr.db`: 48 functions, 21
+  offsets, 14 global pointers, 0 classes. A seed, not a port — but not
+  empty, and someone upstream has already started K2.
+
+Two verifications that matter:
+1. Our hardcoded `kAddrAppManagerPtr = 0x007A39FC` is in the K1 database
+   as `APP_MANAGER_PTR`. Our globals are already named upstream.
+2. **The same names are already mapped for K2.** `APP_MANAGER_PTR` is
+   `0x00A1B4A4` in K2 Steam; all 14 global pointers exist in both. And
+   `CAppManager|Client` is `0x4` in K2 — identical to our K1 value, so
+   some struct offsets are stable across the two games while others
+   plainly are not.
+
+Consequence for this phase: **C8's split should use the upstream taxonomy**
+(global pointers / functions / offsets) rather than the volatility axis
+invented by the scan. They largely coincide, but matching upstream means
+each group maps one-to-one onto a `GameVersion::Get*` query, so adopting
+the mechanism later is a substitution rather than a redesign. Resource-
+derived values (`.gui` control IDs, TLK strrefs) remain a fourth category
+that the address database does not model, because they come from game
+resources rather than the executable.
+
+User decision (2026-07-29): adopt the KPatchManager mechanism. It is our
+main tool and solving this problem is what it is for.
+
 ## Candidate list
 
 ### Batch A — state ownership (the Phase-1 blockers, now fixable)
