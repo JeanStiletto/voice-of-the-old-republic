@@ -146,7 +146,7 @@ const char* HintForTutorialRow(int row) {
         default: return nullptr;
     }
     const char* s = acc::strings::Get(id);
-    return (s && s[0]) ? s : nullptr;
+    return (s[0]) ? s : nullptr;
 }
 
 // The message strrefs (Message0/1/2 columns of tutorial.2da) for every mapped
@@ -213,7 +213,7 @@ const char* HintForMouseText(const char* text) {
     for (int i = 0; i < kTutorialMouseMsgCount; ++i) {
         if (s_mouseText[i][0] && EqualsTrimmed(text, s_mouseText[i])) {
             const char* s = acc::strings::Get(kTutorialMouseMsgs[i].hint);
-            return (s && s[0]) ? s : nullptr;
+            return (s[0]) ? s : nullptr;
         }
     }
     return nullptr;
@@ -268,7 +268,7 @@ const char* HintForDialogLine(const char* renderedLine, uint32_t* outStrref) {
         if (!s_resolved[i].valid) continue;
         if (EqualsTrimmed(renderedLine, s_resolved[i].text)) {
             const char* s = acc::strings::Get(s_resolved[i].id);
-            if (!s || !s[0]) return nullptr;
+            if (!s[0]) return nullptr;
             // s_resolved is built parallel to kDialogHints, so index i carries
             // the source strref.
             if (outStrref) *outStrref = kDialogHints[i].strref;

@@ -866,16 +866,16 @@ std::string RenderTransitionExit(int trigIdx, const Vector& centroid) {
     const TransitionRecord& t = g_graph.transitions[trigIdx];
     Id dirId = OctantFromVector(t.pos.x - centroid.x, t.pos.y - centroid.y);
     const char* dirWord = acc::strings::Get(dirId);
-    if (!dirWord || !dirWord[0]) return std::string();
+    if (!dirWord[0]) return std::string();
 
     const char* dest = t.destName;
     if (const char* sep = std::strstr(dest, " - ")) {
         if (sep[3] != '\0') dest = sep + 3;
     }
     const char* noun = acc::strings::Get(Id::CategoryTransition);
-    if (!noun || !noun[0]) noun = "Übergang";
+    if (!noun[0]) noun = "Übergang";
     const char* fmt = acc::strings::Get(Id::FmtMapCursorDoorTransition);
-    if (fmt && fmt[0]) return acc::strfmt::Format(fmt, noun, dirWord, dest);
+    if (fmt[0]) return acc::strfmt::Format(fmt, noun, dirWord, dest);
     return acc::strfmt::Format("%s %s %s", noun, dirWord, dest);
 }
 
@@ -1131,14 +1131,14 @@ std::string RenderDoorDirection(int doorIdx, const char* dirWord) {
 
     if (landmark && landmark[0] && !landmarkEqualsNoun) {
         const char* fmt = acc::strings::Get(Id::FmtMapCursorDoorLandmark);
-        if (fmt && fmt[0]) return acc::strfmt::Format(fmt, noun, dirWord, landmark);
+        if (fmt[0]) return acc::strfmt::Format(fmt, noun, dirWord, landmark);
     }
     if (dest && dest[0]) {
         const char* fmt = acc::strings::Get(Id::FmtMapCursorDoorTransition);
-        if (fmt && fmt[0]) return acc::strfmt::Format(fmt, noun, dirWord, dest);
+        if (fmt[0]) return acc::strfmt::Format(fmt, noun, dirWord, dest);
     }
     const char* fmt = acc::strings::Get(Id::FmtMapCursorDoor);
-    if (fmt && fmt[0]) return acc::strfmt::Format(fmt, noun, dirWord);
+    if (fmt[0]) return acc::strfmt::Format(fmt, noun, dirWord);
     return acc::strfmt::Format("%s %s", noun, dirWord);
 }
 
@@ -1174,10 +1174,10 @@ std::string RenderCorridorAxis(int bitA, int bitB, int doorIdx) {
         Id wordId = (bitA == 2 || bitB == 2) ? Id::AxisNorthSouth   // N <-> S
                                              : Id::AxisEastWest;    // E <-> W
         const char* word = acc::strings::Get(wordId);
-        if (!word || !word[0]) return std::string();
+        if (!word[0]) return std::string();
         if (doorIdx >= 0) return RenderDoorDirection(doorIdx, word);
         const char* fmt = acc::strings::Get(Id::FmtMapCursorCorridorDir);
-        if (fmt && fmt[0]) return acc::strfmt::Format(fmt, word);
+        if (fmt[0]) return acc::strfmt::Format(fmt, word);
         return std::string();
     }
 
@@ -1195,13 +1195,13 @@ std::string RenderCorridorAxis(int bitA, int bitB, int doorIdx) {
     }
     const char* wordA = acc::strings::Get(BitToOctant(first));
     const char* wordB = acc::strings::Get(BitToOctant(second));
-    if (!wordA || !wordA[0] || !wordB || !wordB[0]) return std::string();
+    if (!wordA[0] || !wordB[0]) return std::string();
 
     std::string combo = acc::strfmt::Format("%s, %s", wordA, wordB);
 
     if (doorIdx >= 0) return RenderDoorDirection(doorIdx, combo.c_str());
     const char* fmt = acc::strings::Get(Id::FmtMapCursorCorridorDir);
-    if (fmt && fmt[0]) return acc::strfmt::Format(fmt, combo.c_str());
+    if (fmt[0]) return acc::strfmt::Format(fmt, combo.c_str());
     return std::string();
 }
 
@@ -1278,11 +1278,11 @@ void AppendListEntry(std::string& list, const std::string& entry) {
 // direction within the junction list.
 std::string DirEntry(acc::strings::Id dirId, bool markDeadEnd) {
     const char* word = acc::strings::Get(dirId);
-    if (!word || !word[0]) return std::string();
+    if (!word[0]) return std::string();
     if (markDeadEnd) {
         const char* fmt = acc::strings::Get(
             acc::strings::Id::FmtMapCursorJunctionDeadEndExit);
-        if (fmt && fmt[0]) return acc::strfmt::Format(fmt, word);
+        if (fmt[0]) return acc::strfmt::Format(fmt, word);
     }
     return std::string(word);
 }
@@ -1438,7 +1438,7 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
             mask |= (1 << bit);
             Id dirId = BitToOctant(bit);
             const char* dirWord = acc::strings::Get(dirId);
-            if (octDoor[bit] >= 0 && dirWord && dirWord[0]) {
+            if (octDoor[bit] >= 0 && dirWord[0]) {
                 AppendListEntry(dirList,
                                 RenderDoorDirection(octDoor[bit], dirWord));
             } else {
@@ -1459,7 +1459,7 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
         const char* noun  = acc::strings::Get(isLargeArea ? Id::AreaNounLarge
                                                           : Id::AreaNoun);
         const char* axisW = elong ? acc::strings::Get(axisId) : nullptr;
-        if (!noun || !noun[0]) noun = "Bereich";
+        if (!noun[0]) noun = "Bereich";
 
         // Drop the exit list when it exactly repeats the elongation axis:
         // an elongated area whose only exits are the two ends of that axis
@@ -1484,15 +1484,15 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
 
         if (elong && axisW && axisW[0] && haveExits) {
             const char* fmt = acc::strings::Get(Id::FmtAreaAxisExits);
-            if (fmt && fmt[0]) outLabel = acc::strfmt::Format(fmt, noun, axisW,
+            if (fmt[0]) outLabel = acc::strfmt::Format(fmt, noun, axisW,
                                                               dirList.c_str());
         } else if (haveExits) {
             const char* fmt = acc::strings::Get(Id::FmtAreaExits);
-            if (fmt && fmt[0]) outLabel = acc::strfmt::Format(fmt, noun,
+            if (fmt[0]) outLabel = acc::strfmt::Format(fmt, noun,
                                                               dirList.c_str());
         } else if (elong && axisW && axisW[0]) {
             const char* fmt = acc::strings::Get(Id::FmtAreaAxisOnly);
-            if (fmt && fmt[0]) outLabel = acc::strfmt::Format(fmt, noun, axisW);
+            if (fmt[0]) outLabel = acc::strfmt::Format(fmt, noun, axisW);
         } else {
             outLabel = noun;
         }
@@ -1588,7 +1588,7 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
             }
         } else {
             const char* fmt  = acc::strings::Get(Id::FmtMapCursorDeadEnd);
-            if (fmt && fmt[0] && word && word[0]) {
+            if (fmt[0] && word && word[0]) {
                 outLabel = acc::strfmt::Format(fmt, word);
             }
         }
@@ -1790,7 +1790,7 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
                                            dirWord ? dirWord : "");
         } else {
             const char* fmt = acc::strings::Get(Id::FmtMapCursorDeadEnd);
-            if (fmt && fmt[0] && dirWord && dirWord[0]) {
+            if (fmt[0] && dirWord && dirWord[0]) {
                 outLabel = acc::strfmt::Format(fmt, dirWord);
             }
         }
@@ -1846,7 +1846,7 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
         // gateway.
         if (octantDoorIdx[bit] >= 0) {
             const char* dirWord = acc::strings::Get(dirId);
-            if (dirWord && dirWord[0]) {
+            if (dirWord[0]) {
                 AppendListEntry(dirList,
                                 RenderDoorDirection(octantDoorIdx[bit], dirWord));
             }
@@ -1865,11 +1865,11 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
     // this path renders "Kreuzung". A hub that IS open/room was flagged a
     // probe-owned place by the caller and took the "Bereich" area path above.
     const char* fmt = acc::strings::Get(Id::FmtMapCursorJunctionDirs);
-    if (fmt && fmt[0] && !dirList.empty()) {
+    if (fmt[0] && !dirList.empty()) {
         outLabel = acc::strfmt::Format(fmt, dirList.c_str());
     } else {
         const char* bare = acc::strings::Get(Id::MapCursorJunction);
-        if (bare && bare[0]) {
+        if (bare[0]) {
             outLabel = bare;
         }
     }

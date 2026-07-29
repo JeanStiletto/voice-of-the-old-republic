@@ -973,7 +973,7 @@ void Tick() {
                     if (!haveText) {
                         const char* poi = acc::strings::Get(
                             acc::strings::Id::MapCursorWaypointPOI);
-                        if (poi && poi[0]) {
+                        if (poi[0]) {
                             std::snprintf(text, sizeof(text), "%s", poi);
                         }
                     }
@@ -985,7 +985,7 @@ void Tick() {
                     if (!haveText) {
                         const char* generic = acc::strings::Get(
                             acc::strings::Id::MapPinNoText);
-                        if (generic && generic[0]) {
+                        if (generic[0]) {
                             std::snprintf(text, sizeof(text), "%s", generic);
                         }
                     }
@@ -1003,7 +1003,7 @@ void Tick() {
                         // engine still renders the coloured dot.
                         const char* poi = acc::strings::Get(
                             acc::strings::Id::MapCursorWaypointPOI);
-                        if (poi && poi[0]) {
+                        if (poi[0]) {
                             std::snprintf(text, sizeof(text), "%s", poi);
                         }
                     }
