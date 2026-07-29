@@ -35,6 +35,10 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>Unreleased</h2>
 
+<h3>Russian translation:</h3>
+
+- Item, store and quest descriptions, galaxy-map navigation and closing a menu back to the world now work on the Russian translation (Allard 1.72). Twelve places in the mod still called into the game using addresses valid only for the standard build. On the Russian build the code is identical but the linker moved it, so those calls landed a few hundred bytes off, in the middle of an unrelated function — anything from nothing happening to a crash. They now go through the same address-translation the rest of the mod uses, and each one checks that its address resolved before calling, so a future gap degrades to a logged no-op instead of a crash. The standard game is unaffected: there the translation step is an identity.
+
 <h3>Map hints:</h3>
 
 - Dantooine's cryptic path markers now speak their destination. Vanilla reuses the same map-note strings for different transitions — "Southern Path" (Südlicher Pfad) marks the way to three different areas depending on the map, "Northern Path" (Nordpfad) three more, and "Exit" (Ausgang) four — so the spoken hint never said where the path actually leads. Those notes now announce the destination area's own name instead ("Matale Estate", "Courtyard", "Grove", ...), taken live from the game's string table so it self-localises in every game language. The two identical "Exit" notes inside the Sandral estate are now told apart as front exit and back exit. Speech-side only: no game file is modified, and mods that rewrite these notes keep their own text.

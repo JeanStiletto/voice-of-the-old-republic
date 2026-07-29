@@ -32,7 +32,11 @@ KOTOR 2 (TSL), which runs a very similar engine but a different executable
   (the installer's single warning is pre-existing, in a file we never
   touched).
 
-### C8 is DONE (2026-07-29). Next action: user decision on the Allard bug.
+### C8 is DONE (2026-07-29), and the Allard address bug it surfaced is FIXED.
+
+**NEXT ACTION: in-game smoke test.** Nothing in Phase 2 has been played yet.
+Two builds are worth covering, and the Russian one is now the interesting
+case — see the smoke-test list at the end of this block.
 
 **C8 executed and verified.** `engine_offsets.h` is now a 28-line
 aggregator over `engine_offsets_types.h` / `_addresses.h` / `_fields.h` /
@@ -64,17 +68,43 @@ on both sides. Root cause: kdev's address harvester regex cannot see
 blind spot means the harvester also cannot see the `R(...)` form, so
 regenerating the table today would silently shrink it.
 
-NOT fixed here (behaviour change on a shipped build = user's call, and the
-naive fix makes it worse: wrapping them returns 0 on Allard, turning a
-probable crash into a certain one). The three-step fix is written up in
-the report. Recommend step 1 — widening the kdev harvester — regardless,
-since it is cheap and prevents a silent repeat.
+**FIXED 2026-07-29** (user asked for the full fix, all three steps):
+1. kdev's harvester now sweeps every in-range hex literal instead of
+   matching declaration shapes, with explicit `kdev-sigscan: ignore`
+   opt-outs; an unresolved `.text` address now exits 7 instead of 0.
+2. The Allard exe was extracted from the repo-root archive with Windows'
+   own bsdtar (System32\tar.exe reads RAR5 — no third-party tool needed;
+   it is a WinRAR SFX, PE timestamp matches kTimestampAllard172) and
+   `engine_rebase_table.inc` regenerated: 214 → 223 entries, nothing lost
+   or changed, the 9 additions exactly the missing addresses. Final
+   resolve: 221 unique + 2 ordinal + 2 hand-resolved = all 225, zero
+   unresolved.
+3. All twelve wrapped in R() and guarded with Ok(), guards placed per site
+   (is_active must not be left forced; CloseInGameMenuToWorld needs both
+   its addresses or neither).
 
-Phase-2 work is NOT yet in-game tested. B4 rewired the SEH read
-primitives all three minigames share (a short swoop race + turret
-sequence covers it) and A1/A2 touch room + landmark narration. C8 itself
-is compile-verified only, but it is a pure constant move with a proved
-identical constant set — the in-game risk is the same as B4/A1/A2's.
+Zero behaviour change on the reference build — R() is identity there.
+A repo-wide scan now finds zero unwrapped `.text` addresses outside
+engine_rebase.cpp's own mapping table. Full detail in the report.
+
+Phase-2 work is NOT yet in-game tested. Smoke-test list:
+
+*On the standard (Steam/GoG) build — covers all of Phase 2:*
+- A short swoop race and a turret sequence. B4 rewired the SEH read
+  primitives all three minigames share.
+- Room + landmark narration in a nav-heavy area. A1/A2 touch it.
+- C8 is a pure constant move with a proved-identical constant set, and the
+  address fix is a no-op here (R() is identity), so neither needs its own
+  test beyond the above.
+
+*On the Russian build (Allard 1.72) — the paths that were broken:*
+- Item and store descriptions (inventory, a merchant), and a quest
+  description in the journal.
+- Galaxy-map planet navigation.
+- Opening an in-game menu and closing it back to the world with Esc —
+  movement must still work afterwards.
+- A conversation that gets interrupted or walked away from, to exercise
+  the dialog-state unstick.
 
 **Also still open:** candidate 23 (menus_listbox picker, carried from
 Phase 1 — moves state, so measure the variables not just the function
@@ -563,16 +593,15 @@ throughout (194 TUs, 0 warnings); kdev and installer build 0/0.
   both K2 dbs carry all 14 global pointers under K1's names. User decided
   to adopt the mechanism; this reshaped C8's design.
 
-- C8 finding: the spec's "19 unwrapped .text addresses" was a
-  miscount — engine_offsets.h had none. But 12 real ones exist elsewhere
-  in the patch and are provably wrong on the Allard Russian build. Root
-  cause is kdev's address-harvester regex, not the header. Full analysis
-  and the three-step fix in `reports/phase-2-cleanup.md`; awaiting a user
-  decision because it is a behaviour change on a shipped build.
+- C8 finding, now FIXED: the spec's "19 unwrapped .text addresses" was a
+  miscount — engine_offsets.h had none. 12 real ones existed elsewhere and
+  were provably wrong on the Allard Russian build. Root cause was kdev's
+  address-harvester regex, not the header. Harvester widened, rebase table
+  regenerated against the Allard exe, all 12 wrapped and guarded. Full
+  analysis in `reports/phase-2-cleanup.md`.
 
-**Next action: user decision on the 12 Allard-wrong addresses** (see the
-status block at the top of this file). Nothing else in Phase 2 is
-blocked on it.
+**Next action: the in-game smoke test** (see the status block at the top of
+this file for the per-build list). Nothing in Phase 2 is code-blocked.
 
 **Also open:** candidate 23 (menus_listbox picker, carried from Phase 1),
 C4 (doorMatched split, deferred to Phase 3), candidate 28 (includer

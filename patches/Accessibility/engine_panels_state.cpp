@@ -74,10 +74,15 @@ bool HasActiveBarkBubble() {
 // Verified address from the RE database (Lane's gzf, exposed via
 // k1_win_gog_swkotor.exe.xml: FUNCTION ENTRY_POINT="0062cdf0").
 // __thiscall, this in ECX, no params, void return.
-static constexpr uintptr_t kAddrPrevSWInGameGui = 0x0062cdf0;
+static const uintptr_t kAddrPrevSWInGameGui = acc::addr::R(0x0062cdf0);
 typedef void (__thiscall* PFN_PrevSWInGameGui)(void* gui);
 
 bool CallPrevSWInGameGui() {
+    if (!acc::addr::Ok(kAddrPrevSWInGameGui)) {
+        acclog::Write("PrevSWInGameGui", "skipped: address unresolved on build %s",
+                      acc::addr::ActiveBuildName());
+        return false;
+    }
     void* gui = ResolveGuiInGame();
     if (!gui) {
         acclog::Write("PrevSWInGameGui",
@@ -99,10 +104,15 @@ bool CallPrevSWInGameGui() {
 //
 // __thiscall, this in ECX, single int parameter on the stack, undefined4
 // return.
-static constexpr uintptr_t kAddrHideSWInGameGui = 0x0062cba0;
+static const uintptr_t kAddrHideSWInGameGui = acc::addr::R(0x0062cba0);
 typedef int (__thiscall* PFN_HideSWInGameGui)(void* gui, int param_1);
 
 bool CallHideSWInGameGui(int param_1) {
+    if (!acc::addr::Ok(kAddrHideSWInGameGui)) {
+        acclog::Write("HideSWInGameGui", "skipped: address unresolved on build %s",
+                      acc::addr::ActiveBuildName());
+        return false;
+    }
     void* gui = ResolveGuiInGame();
     if (!gui) {
         acclog::Write("HideSWInGameGui",
@@ -129,10 +139,15 @@ bool CallHideSWInGameGui(int param_1) {
 // (engine never runs AIActionDialogObject's bail that would clear it), which
 // then gates further click/interact processing. The dialog-approach watchdog
 // calls this with 0 after cancelling a blocked approach to avoid that limbo.
-static constexpr uintptr_t kAddrSetGlobalDialogState = 0x0062ec60;
+static const uintptr_t kAddrSetGlobalDialogState = acc::addr::R(0x0062ec60);
 typedef void (__thiscall* PFN_SetGlobalDialogState)(void* gui, int state);
 
 bool SetGlobalDialogState(int state) {
+    if (!acc::addr::Ok(kAddrSetGlobalDialogState)) {
+        acclog::Write("GlobalDialogState", "skipped: address unresolved on build %s",
+                      acc::addr::ActiveBuildName());
+        return false;
+    }
     void* gui = ResolveGuiInGame();
     if (!gui) {
         acclog::Write("GlobalDialogState",
@@ -153,10 +168,18 @@ bool SetGlobalDialogState(int state) {
 // CClientExoApp::SetInputClass @ 0x005eda60. __thiscall(this, int klass, int).
 // klass 0 = in-world keyboard/mouse routing; the engine raises it while a
 // menu/sub-screen owns input.
-static constexpr uintptr_t kAddrSetInputClass = 0x005eda60;
+static const uintptr_t kAddrSetInputClass = acc::addr::R(0x005eda60);
 typedef void (__thiscall* PFN_SetInputClass)(void* client, int klass, int p2);
 
 bool CloseInGameMenuToWorld() {
+    // Both halves are required — closing without the SetInputClass leaves
+    // input_class != 0 and in-world movement dead (see the comment inside), so
+    // if either address is unresolved, do neither.
+    if (!acc::addr::Ok(kAddrHideSWInGameGui) || !acc::addr::Ok(kAddrSetInputClass)) {
+        acclog::Write("CloseInGameMenu", "skipped: address unresolved on build %s",
+                      acc::addr::ActiveBuildName());
+        return false;
+    }
     void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
     void* gui = ResolveGuiInGame();
     void* client = appMgr ? *reinterpret_cast<void**>(

@@ -59,9 +59,15 @@ constexpr size_t kRdataCount = sizeof(kRdataTable) / sizeof(kRdataTable[0]);
 //   CSWCMapPin::CSWCMapPin — has a near-twin that shares its whole prologue.
 //   3 of 3 call sites agreed on 0x00692430; the twin (0x005fcca0) diverges 30
 //   bytes in, which is what rules it out.
+//
+// The `kdev-sigscan: ignore` markers keep the harvester off these lines: the
+// right-hand column is an Allard address, which is meaningless in the reference
+// build and would be scanned as if it were one. Both left-hand values are
+// harvested from their real declarations instead (engine_input.cpp:23 and
+// engine_area.h:404), so nothing is lost by skipping the pair here.
 constexpr Entry kXrefTable[] = {
-    { 0x005DF540, 0x005DF710 },  // kAddrCExoInputSetActive
-    { 0x00692540, 0x00692430 },  // kAddrCSWCMapPinCtor
+    { 0x005DF540, 0x005DF710 },  // kAddrCExoInputSetActive  kdev-sigscan: ignore
+    { 0x00692540, 0x00692430 },  // kAddrCSWCMapPinCtor      kdev-sigscan: ignore
 };
 
 constexpr size_t kXrefCount = sizeof(kXrefTable) / sizeof(kXrefTable[0]);

@@ -69,12 +69,20 @@ treatment in their own headers.
 - **Journal** — `PopulateItemListBox` (lazy-repopulate gotcha documented in
   place).
 
-## Known gap outside this file
+## The gap that used to exist outside this file (fixed 2026-07-29)
 
-Twelve `.text` addresses elsewhere in the patch are declared raw and are
-therefore wrong on the Allard build — see the C8 findings in
-`docs/refactoring/reports/phase-2-cleanup.md`. They are invisible to
-`kdev sigscan`'s harvester because of their declaration form
+Twelve `.text` addresses elsewhere in the patch were declared raw and were
+therefore wrong on the Allard build — off by -272..+464 bytes each. They were
+invisible to `kdev sigscan`'s harvester because of their declaration form
 (`static constexpr`, `constexpr std::uintptr_t`, or an inline
-`reinterpret_cast`), which is why they never got a rebase-table entry. New
-engine addresses belong in this file, in this file's declaration form.
+`reinterpret_cast`), so they never got a rebase-table entry and were never
+reported as unresolved either.
+
+All three layers are fixed: the harvester now sweeps every in-range literal
+rather than matching declaration shapes, the rebase table was regenerated (223
+entries, all 225 `.text` addresses accounted for), and the twelve call sites are
+wrapped and guarded with `acc::addr::Ok()`. Details in
+`docs/refactoring/reports/phase-2-cleanup.md`.
+
+The standing rule is unchanged and is the cheap way to stay out of that hole:
+new engine addresses belong in this file, in this file's declaration form.

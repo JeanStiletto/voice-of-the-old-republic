@@ -4,6 +4,7 @@
 #include "engine_input.h"
 #include "engine_offsets.h"
 #include "engine_panels.h"
+#include "engine_rebase.h"
 #include "engine_reads.h"
 #include "hotkeys.h"
 #include "log.h"
@@ -122,6 +123,15 @@ typedef void (__thiscall* PFN_PanelOnControl)(void* panel, void* control);
 static void CallOnControlEnteredWithActive(std::uintptr_t addr,
                                            void* panel, void* focused)
 {
+    // Guard before touching is_active: on a rebased build an unmapped address
+    // is 0, and we must not force the flag and then fail to make the call that
+    // restores it.
+    if (!acc::addr::Ok(addr)) {
+        acclog::Write("Peek", "OnControlEntered skipped: address unresolved on build %s",
+                      acc::addr::ActiveBuildName());
+        return;
+    }
+
     auto* isActivePtr = reinterpret_cast<std::uint32_t*>(
         reinterpret_cast<unsigned char*>(focused) + kControlIsActiveOffset);
     std::uint32_t saved = *isActivePtr;
@@ -134,7 +144,7 @@ static void CallOnControlEnteredWithActive(std::uintptr_t addr,
 }
 
 // CSWGuiInGameInventory::OnControlEntered — is_active gate applies.
-constexpr std::uintptr_t kAddrInventoryOnControlEntered = 0x006b3d10;
+const std::uintptr_t kAddrInventoryOnControlEntered = acc::addr::R(0x006b3d10);
 
 static void RefreshInventory(void* panel, void* focused) {
     if (!panel || !focused) return;
@@ -143,7 +153,7 @@ static void RefreshInventory(void* panel, void* focused) {
 }
 
 // CSWGuiStore::OnControlEntered — same is_active gate as Inventory.
-constexpr std::uintptr_t kAddrStoreOnControlEntered = 0x006c0aa0;
+const std::uintptr_t kAddrStoreOnControlEntered = acc::addr::R(0x006c0aa0);
 
 static void RefreshStore(void* panel, void* focused) {
     if (!panel || !focused) return;
@@ -152,10 +162,15 @@ static void RefreshStore(void* panel, void* focused) {
 }
 
 // CSWGuiInGameJournal::OnControlEntered — no is_active gate, direct call.
-constexpr std::uintptr_t kAddrJournalOnControlEntered = 0x00645100;
+const std::uintptr_t kAddrJournalOnControlEntered = acc::addr::R(0x00645100);
 
 static void RefreshJournal(void* panel, void* focused) {
     if (!panel || !focused) return;
+    if (!acc::addr::Ok(kAddrJournalOnControlEntered)) {
+        acclog::Write("Peek", "RefreshJournal skipped: address unresolved on build %s",
+                      acc::addr::ActiveBuildName());
+        return;
+    }
     auto fn = reinterpret_cast<PFN_PanelOnControl>(
         kAddrJournalOnControlEntered);
     fn(panel, focused);

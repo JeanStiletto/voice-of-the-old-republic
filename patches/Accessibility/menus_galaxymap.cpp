@@ -8,6 +8,7 @@
 #include "engine_manager.h"   // kAddrGuiManagerPtr, kMgrPanels{Data,Size}Offset
 #include "engine_offsets.h"   // kLabelGuiStringPtrOffset
 #include "engine_panels.h"    // IdentifyPanel / PanelKind / PanelKindName
+#include "engine_rebase.h"    // acc::addr::R / Ok
 #include "engine_reads.h"     // ReadGuiString
 #include "log.h"
 #include "menus_pending.h"    // QueueGalaxyInput
@@ -159,7 +160,12 @@ void DispatchInput(void* panel, int engineCode, bool announcePlanet) {
     // index mismatch.
     typedef void(__thiscall* PFN_GalaxyHandleInput)(void* this_, int code,
                                                     int state);
-    constexpr std::uintptr_t kAddrGalaxyHandleInput = 0x00695980;
+    const std::uintptr_t kAddrGalaxyHandleInput = acc::addr::R(0x00695980);
+    if (!acc::addr::Ok(kAddrGalaxyHandleInput)) {
+        acclog::Write("GalaxyMap", "DispatchInput skipped: address unresolved on build %s",
+                      acc::addr::ActiveBuildName());
+        return;
+    }
     auto fn = reinterpret_cast<PFN_GalaxyHandleInput>(kAddrGalaxyHandleInput);
     __try {
         fn(panel, engineCode, 1);

@@ -261,7 +261,7 @@ group, which is enough for the eventual `GameVersion::GetOffset` swap and
 avoids a 244-constant rename touching 86 includers. Renaming is a separate
 decision, not a side effect of a file move.
 
-## The 19 unwrapped .text addresses — investigated, and the number was wrong
+## The 19 unwrapped .text addresses — investigated, and FIXED (2026-07-29)
 
 The spec flagged "19 of 103 .text addresses not wrapped in `acc::addr::R()`"
 and said to understand them before moving them. Doing that produced a
@@ -334,26 +334,92 @@ The current table survives only because it was generated (2026-07-25)
 before the R() wrapping was applied. Regenerating it now would silently
 produce a much smaller table.
 
-**Not fixed here, on purpose.** Two reasons. It is a behaviour change on a
-shipped build, which the rules of engagement reserve for the user. And the
-naive fix is worse than the bug: wrapping these in `R()` makes them return
-0 on Allard (they are not in the table), so every call becomes a null
-dispatch — a guaranteed crash instead of a probable one. The fix is a
-three-parter and belongs in its own change:
+**FIXED 2026-07-29, all three layers** (user asked for the full fix rather
+than the finding).
 
-1. Widen `EngineAddresses.Collect` to match `static`, `std::uintptr_t` and
-   the `R(...)` form, so nothing can hide from it again. Ideally make an
-   unresolvable `.text` address a hard error in the report rather than a
-   silent absence.
-2. Re-run `kdev sigscan` against the Allard exe (the archive is in the repo
-   root; no rar extractor is installed on this machine, so extracting it is
-   a prerequisite step) and regenerate `engine_rebase_table.inc`.
-3. Then wrap the twelve, and guard the call sites with `acc::addr::Ok()`
-   per `engine_rebase.h`'s own instruction for addresses sigscan cannot
-   place.
+*Step 1 — the harvester.* `EngineAddresses.Collect` no longer matches
+declaration shapes. It sweeps **every hex literal in the image's VA range**
+and matches declaration shapes only to recover a readable name for the
+report, so a new declaration style cannot hide again. Opt-out is explicit:
+`kdev-sigscan: ignore` per line, `kdev-sigscan: ignore-file` per file. The
+one place that needs it is `engine_rebase.cpp`'s `kXrefTable`, whose
+right-hand column holds target-build addresses that are meaningless in the
+reference image. Harvest went 264 → 281 distinct addresses, 216 → 225 in
+`.text`.
 
-Recommend doing 1 first regardless — it is cheap, it is in `tools/`, and
-until it is done any future engine address can repeat this silently.
+Also made unresolved loud: any `.text` address left ambiguous or not-found
+now exits **7** with an explicit message (documented in
+`docs/kdev-design.md`). Previously it exited 0 — the one condition the
+command exists to detect was the one it stayed quiet about. Two follow-on
+corrections were needed to keep that signal honest: addresses already
+mapped by hand in `kXrefTable` are reclassified `hand-resolved` and
+excluded from the count (otherwise the warning is permanently on, and a
+permanent warning is ignored), and a signature that failed to *build* no
+longer fails the run if the ordinal pass or the hand-resolved supplement
+placed the address anyway.
+
+*Step 2 — the table.* The Allard exe was extracted from the repo-root
+archive with Windows' own bsdtar (`C:\Windows\System32\tar.exe`, libarchive
+3.8.4, reads RAR5 — no third-party extractor needed). It is a WinRAR SFX
+containing `swkotor.exe`; PE link timestamp `0x4047CD47` matches
+`kTimestampAllard172` exactly. `kdev sigscan` regenerated
+`engine_rebase_table.inc`: **214 → 223 entries, nothing lost, nothing
+changed**, and the 9 additions are exactly the missing addresses. Final
+resolve: 221 unique + 2 ordinal + 2 hand-resolved = all 225, zero
+unresolved, `hooks.toml` cross-check 25/25, exit 0. `target.hooks.toml`
+hook addresses are byte-identical to the shipped `allard.hooks.toml`, so
+that file needed no change.
+
+Measured displacements, against the predictions made from bracketing:
+
+- `0x005ED320` GetQuestJournal → +464 (predicted +464)
+- `0x005ED690` GetInGameGui → +464 (predicted +432 or +464)
+- `0x005EDA60` SetInputClass → +432 (predicted +432)
+- `0x0062CDF0` PrevSWInGameGui → +400 (predicted +400)
+- `0x0062EC60` SetGlobalDialogState → +384 (predicted +384..+400)
+- `0x00645100` JournalOnControlEntered → +192 (predicted ~+192)
+- `0x006B3D10` InventoryOnControlEntered → -256 (predicted -256..-272)
+- `0x006C0AA0` StoreOnControlEntered → -272 (predicted -272)
+- `0x00695980` GalaxyHandleInput → -208 (predicted -320..-256; the only
+  miss, and the one whose nearest resolved neighbours were 44-85 KB away)
+
+Eight of nine landed on the exact byte. Every one is non-zero, which is the
+part that mattered: the bug was real at all twelve sites.
+
+*Step 3 — the call sites.* All twelve wrapped in `acc::addr::R()` and
+guarded with `acc::addr::Ok()` in `engine_panels_state.cpp`,
+`peek_description.cpp`, `menus_journal.cpp` and `menus_galaxymap.cpp`. The
+guards are placed by what each site actually needs rather than uniformly:
+
+- `CallOnControlEnteredWithActive` guards *before* touching `is_active`,
+  since it force-sets that flag and restores it after the call — bailing
+  mid-way would leave it set.
+- `CloseInGameMenuToWorld` requires *both* its addresses, because
+  hiding the GUI without the matching `SetInputClass` leaves input_class
+  != 0 and in-world movement dead — a documented past bug.
+- `menus_journal::SpeakDescription` treats an unresolved address like its
+  existing SEH path: skip the repaint, still read whatever the listbox
+  holds.
+
+Also swept up: `audio_bus.h`'s
+`kAddrCExoSoundSourceInternalCalculatePitchVarianceFrequency` was raw but
+also unused — the detour is declared in `hooks.toml`. Wrapped anyway so the
+file has one rule rather than an exception, with a comment saying why it
+exists.
+
+*Verification.* A repo-wide scan for VA-range literals in code (comments
+stripped, classified against the exe's real PE section table) now reports
+**zero** unwrapped `.text` addresses outside `engine_rebase.cpp`'s mapping
+table itself. `kdev build --clean`: 194 TUs, 0 warnings. `dotnet build`
+for kdev: 0 errors. Re-running sigscan against the wrapped sources produces
+a byte-identical table, which is the regression test that the wrapping did
+not change what gets harvested.
+
+**Zero behaviour change on the reference build**: `R()` is the identity
+function there, so `Ok()` always passes. The fix is only observable on
+Allard. Still needs an in-game pass on the Russian build to confirm the
+now-working paths (item/store/journal descriptions, galaxy-map nav, closing
+a menu back to the world).
 
 ## C8 — original specification (kept for reference)
 
