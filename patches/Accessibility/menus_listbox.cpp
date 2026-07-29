@@ -2,7 +2,7 @@
 //
 // See menus_listbox.h for the motivation. This file holds:
 //
-//   * The ListBoxPanelSpec struct (private) â€” one entry per panel kind.
+//   * The ListBoxPanelSpec struct (private) — one entry per panel kind.
 //   * All thirteen spec entries. Each carries ~5-6 small static callbacks
 //     that capture its quirks (announce format, button IDs, custom Enter
 //     dispatch, etc.).
@@ -49,7 +49,7 @@ using acc::menus::detail::ListBoxNavOp;
 using acc::menus::detail::ListBoxNavResult;
 using acc::menus::detail::QueueButtonByIdActivate;
 
-// .gui-time IDs (Container loot panel + SaveLoad dialog) â€” see menus.cpp
+// .gui-time IDs (Container loot panel + SaveLoad dialog) — see menus.cpp
 // for the full table. Duplicated locally because the spec entries need
 // them at file scope and menus.cpp's copies are static. The IDs are
 // .gui-resource-baked, stable across localizations.
@@ -67,7 +67,7 @@ namespace acc::menus::listbox {
 
 // ============================================================================
 // Spec struct. One value per panel kind. All variation flows through the
-// callback fields â€” the dispatcher itself is panel-agnostic.
+// callback fields — the dispatcher itself is panel-agnostic.
 // ============================================================================
 
 namespace {
@@ -101,20 +101,20 @@ struct ListBoxPanelSpec {
 
     // Format + speak the focused row. Called on every successful Up/Down
     // step (and on no-op clamps so the user gets feedback at boundaries).
-    // Callback decides internally whether to actually speak â€” Container/
+    // Callback decides internally whether to actually speak — Container/
     // EquipPicker speak only on clamp (per-tick monitor handles normal
     // moves), SaveLoad speaks on every step (no monitor watches it).
     void (*announce)(void* lb, const ListBoxNavResult& r);
 
     // Optional per-row enrichment, fired AFTER `announce`. Used when the
     // spec needs to fetch supplementary speech text from an auxiliary
-    // engine source â€” e.g. the SkillInfoBox spec calls
+    // engine source — e.g. the SkillInfoBox spec calls
     // CSWGuiFeatsCharGen::OnEnterFeat(featId) on the underlying main panel
     // to repopulate its description_listbox, then reads + speaks it.
     //
     // Why split off `announce`: the row-name-and-position speech is a
     // common shape across all specs, but the "fetch from elsewhere and
-    // speak extra context" path is intentionally a side-channel â€” it can
+    // speak extra context" path is intentionally a side-channel — it can
     // call into the engine, can fault, can early-return, and shouldn't
     // pollute the simpler announce path. Keeping the two callbacks
     // separate means a spec that just wants to speak a row title (Container)
@@ -144,7 +144,7 @@ struct ListBoxPanelSpec {
     // placeholder ("Items Available to Place in Container and blah blah
     // blah") that the chargen flow doesn't override at runtime.
     //
-    // nullptr = no override (most specs â€” the generic title walk works).
+    // nullptr = no override (most specs — the generic title walk works).
     const char* (*titleOverride)(void* panel);
 
     // Optional spoken phrase when the user navigates an empty listbox.
@@ -188,7 +188,7 @@ struct ListBoxPanelSpec {
 };
 
 // ============================================================================
-// Container â€” loot chest / corpse panel ("PlÃ¼ndern").
+// Container — loot chest / corpse panel ("PlÃ¼ndern").
 // ============================================================================
 
 bool ContainerMatches(void* p) {
@@ -200,7 +200,7 @@ void* ContainerFindLb(void* p) {
 }
 
 // Inline announce only on a no-op clamp (boundary). Normal moves are
-// caught by MonitorContainerSelection on the next tick â€” see menus.cpp.
+// caught by MonitorContainerSelection on the next tick — see menus.cpp.
 void ContainerAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
     if (r.newSel != r.oldSel) return;
     if (!r.row) return;
@@ -236,15 +236,15 @@ void ContainerAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
 bool ContainerOnEnter(void* panel) {
     // Container per-item take is currently UNRESOLVED. Both tested
     // primitives fail:
-    //   * vtable[15] FireActivate on the row â†’ engine doesn't translate
-    //     to "take this row" â€” rowCount stays unchanged.
-    //   * Click-sim at row.GetControlCenter() coords â†’ cursor hits dead
+    //   * vtable[15] FireActivate on the row → engine doesn't translate
+    //     to "take this row" — rowCount stays unchanged.
+    //   * Click-sim at row.GetControlCenter() coords → cursor hits dead
     //     space (Down=0, Up=0). Row extents are listbox-local, not
     //     screen-absolute; we'd need parent offset accumulation.
     //
     // Until we identify the engine's row-take primitive (likely embedded
     // in CSWGuiContainer::HandleInputEvent at 0x006b92f0 or the protoitem's
-    // onClick), Enter dispatches BTN_OK unconditionally â€” the working
+    // onClick), Enter dispatches BTN_OK unconditionally — the working
     // "take-all" gesture. Per-item take = lost feature, deferred. See
     // docs/equip-flow-investigation.md for the parallel investigation
     // that landed the same shape on equip.
@@ -278,7 +278,7 @@ constexpr ListBoxPanelSpec kContainerSpec = {
 };
 
 // ============================================================================
-// SaveLoad â€” Spiel laden / Spiel speichern dialog.
+// SaveLoad — Spiel laden / Spiel speichern dialog.
 // ============================================================================
 
 bool SaveLoadMatches(void* p) { return IsSaveLoadPanel(p); }
@@ -288,7 +288,7 @@ void* SaveLoadFindLb(void* p) {
 }
 
 // Speak on every step (no per-tick monitor watches the SaveLoad listbox).
-// Pull planet/area from the row entry's CExoString fields directly â€” the
+// Pull planet/area from the row entry's CExoString fields directly — the
 // preview labels at id=4/id=6 only refresh through the engine's
 // onSelectionChanged callback that DriveListBoxSelection bypasses.
 void SaveLoadAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
@@ -369,7 +369,7 @@ constexpr ListBoxPanelSpec kSaveLoadSpec = {
 };
 
 // ============================================================================
-// EquipPicker â€” modal item-pick zone inside the equipment screen.
+// EquipPicker — modal item-pick zone inside the equipment screen.
 // Armed when a slot Enter (BTN_INV_*) opens LB_ITEMS for that slot;
 // disarmed on row commit, Esc, panel close, or panel-pointer drift.
 // ============================================================================
@@ -418,10 +418,10 @@ void EquipPickerLogExtra(char* out, size_t outN, const ListBoxNavResult& r) {
 
 // Custom Enter: lookup row + btn from listbox.selection_index, queue an
 // EquipCommit op, disarm. Direct call to OnItemSelected/OnOKPressed
-// bypasses click-sim entirely â€” see docs/equip-flow-investigation.md.
+// bypasses click-sim entirely — see docs/equip-flow-investigation.md.
 bool EquipPickerOnEnter(void* panel) {
     if (acc::menus::pending::IsPending()) {
-        acclog::Write("EquipPicker", "Enter â€” op already pending; ignoring");
+        acclog::Write("EquipPicker", "Enter — op already pending; ignoring");
         DisarmEquipPicker();
         return true;
     }
@@ -515,24 +515,24 @@ constexpr ListBoxPanelSpec kEquipPickerSpec = {
 };
 
 // ============================================================================
-// SkillInfoBox â€” engine slot for "info popups" with a row list and OK.
+// SkillInfoBox — engine slot for "info popups" with a row list and OK.
 //
 // skillinfo.gui mounted on the engine's SkillInfoBox slot. Three live
 // controls: title label (id=0), LB_SKILLS listbox (id=2), BTN_OK (id=4).
 // The .gui's title is hard-baked to the BioWare placeholder "Items
-// Available to Place in Container and blah blah blah" â€” the chargen flow
+// Available to Place in Container and blah blah blah" — the chargen flow
 // doesn't override it at runtime, so we substitute via titleOverride.
 //
-// In the chargen Talente flow this surfaces as the "ShowGranted" popup â€”
+// In the chargen Talente flow this surfaces as the "ShowGranted" popup —
 // CSWGuiFeatsCharGen mounts skillinfo.gui to dump the class's auto-granted
-// feats (different per class â€” Soldat, Schurke, SpÃ¤her) before letting the
+// feats (different per class — Soldat, Schurke, SpÃ¤her) before letting the
 // user proceed to actual feat selection on the underlying main panel.
 // Each row carries only icon + name strref; the feat ID itself isn't
 // stored on the row, so we recover it by reverse-lookup against the
 // rules' CSWFeat[] array (matching name strrefs).
 //
 // The underlying CSWGuiFeatsCharGen panel sits below this overlay on the
-// modal stack â€” calling its OnEnterFeat(featId) repopulates its
+// modal stack — calling its OnEnterFeat(featId) repopulates its
 // description_listbox.controls[0] with the wrapped feat description,
 // which we then read for the per-row enrichment speech.
 // ============================================================================
@@ -550,7 +550,7 @@ void* SkillInfoBoxFindLb(void* p) {
 
 // Walk the manager's panels[] for a CSWGuiFeatsCharGen instance. Returns
 // nullptr when none is mounted (e.g. SkillInfoBox shown from a different
-// chargen substep). Cheap â€” panels.size is â‰¤16 in practice and we only
+// chargen substep). Cheap — panels.size is ≤16 in practice and we only
 // fire from picker arrow steps.
 void* FindFeatsCharGenPanel() {
     void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
@@ -577,10 +577,10 @@ void* FindFeatsCharGenPanel() {
 }
 
 // Reverse-lookup: given the strref the engine wrote onto a SkillEntry row
-// (kLabelStrRefOffset within the SkillEntry â€” its label_hilight.label.text
+// (kLabelStrRefOffset within the SkillEntry — its label_hilight.label.text
 // .text_params.str_ref), find the matching feat in Rules->feats[] and
 // return the feat ID. Returns -1 on miss (row strref unset, lookup fault,
-// or no feat with matching name strref â€” happens in non-feat contexts
+// or no feat with matching name strref — happens in non-feat contexts
 // where SkillInfoBox would be reused for skills/force-powers).
 int ResolveFeatIdFromRowStrref(void* row, int& outRowStrref) {
     outRowStrref = 0;
@@ -634,7 +634,7 @@ void SkillInfoBoxEnrichRow(void* /*panel*/, const ListBoxNavResult& r) {
 
     void* fcp = FindFeatsCharGenPanel();
     if (!fcp) {
-        // SkillInfoBox shown from a non-feat context â€” silent skip.
+        // SkillInfoBox shown from a non-feat context — silent skip.
         return;
     }
 
@@ -648,7 +648,7 @@ void SkillInfoBoxEnrichRow(void* /*panel*/, const ListBoxNavResult& r) {
     }
     unsigned short featId = static_cast<unsigned short>(featIdx);
 
-    // Synchronous engine call â€” fires DetermineFeat â†’ SetDescription â†’
+    // Synchronous engine call — fires DetermineFeat → SetDescription →
     // ClearItems + AddControls on description_listbox. After this returns,
     // description_listbox.controls[0] holds the wrapped text for featId.
     typedef void (__thiscall* PFN_OnEnterFeat)(void* this_,
@@ -708,7 +708,7 @@ bool SkillInfoBoxOnEnter(void* panel) {
 
 // Title override: substitute the localised "Du erhÃ¤ltst diese Talente"
 // string for the BioWare placeholder text baked into skillinfo.gui.
-// Only applies in the chargen Feats flow â€” gated by FindFeatsCharGenPanel
+// Only applies in the chargen Feats flow — gated by FindFeatsCharGenPanel
 // so future Force-Powers / Skills reuse can layer on different titles.
 const char* SkillInfoBoxTitleOverride(void* /*panel*/) {
     if (FindFeatsCharGenPanel()) {
@@ -725,7 +725,7 @@ const char* SkillInfoBoxTitleOverride(void* /*panel*/) {
         acc::engine_levelup::IsOpeningLevelUp()) {
         return acc::strings::Get(acc::strings::Id::LevelUpScreenHint);
     }
-    return nullptr;  // unknown SkillInfoBox host â€” let the generic walk run
+    return nullptr;  // unknown SkillInfoBox host — let the generic walk run
 }
 
 constexpr ListBoxPanelSpec kSkillInfoBoxSpec = {
@@ -742,16 +742,16 @@ constexpr ListBoxPanelSpec kSkillInfoBoxSpec = {
     /*onEsc*/                   nullptr,            // no Cancel button on this overlay
     /*titleOverride*/           SkillInfoBoxTitleOverride,
     /*emptyStateId*/            acc::strings::Id::Count_,
-    /*alwaysReturnFromHandler*/ true,               // modal popup â€” don't fall through
+    /*alwaysReturnFromHandler*/ true,               // modal popup — don't fall through
 };
 
 // ============================================================================
-// InGameMessages â€” combat-feedback log + dialog history. Two listboxes
+// InGameMessages — combat-feedback log + dialog history. Two listboxes
 // inside the same panel (messages_listbox @+0x64, dialog_listbox @+0x344);
 // the user toggles which is shown via show_button @+0x76c.
 //
 // Phase 1C of the combat-system plan. Skeleton routes Up/Down to
-// messages_listbox by default â€” switching to dialog_listbox requires a
+// messages_listbox by default — switching to dialog_listbox requires a
 // state bit we don't yet capture from the toggle button. The user can
 // still navigate the active view via the engine's mouse-driven toggle;
 // the spec-driven keyboard nav follows the messages_listbox until that
@@ -803,9 +803,9 @@ constexpr ListBoxPanelSpec kInGameMessagesSpec = {
 };
 
 // ============================================================================
-// CSWGuiDialog â€” replies_listbox @+0x19c4. Phase 1D of the combat-system
+// CSWGuiDialog — replies_listbox @+0x19c4. Phase 1D of the combat-system
 // plan. Same shape applies to DialogCinematic / DialogCinematicCopy /
-// DialogComputer / DialogComputerCamera variants â€” registered as four
+// DialogComputer / DialogComputerCamera variants — registered as four
 // matchers all pointing at the shared listbox locator.
 // ============================================================================
 
@@ -904,10 +904,10 @@ constexpr ListBoxPanelSpec kDialogComputerCameraSpec = {
 };
 
 // ============================================================================
-// WorkbenchItems â€” per-category item picker (upgradeitems.gui).
+// WorkbenchItems — per-category item picker (upgradeitems.gui).
 // LB_ITEMS at ID 0 holds the player's upgradable weapons in the chosen
-// category. Enter â†’ BTN_UPGRADEITEM (ID 4, "Aufwerten") commits the
-// selection and opens the slot-detail panel. Esc â†’ BTN_BACK (ID 5,
+// category. Enter → BTN_UPGRADEITEM (ID 4, "Aufwerten") commits the
+// selection and opens the slot-detail panel. Esc → BTN_BACK (ID 5,
 // "Schliess.") closes back to upgradesel.gui.
 // ============================================================================
 
@@ -970,14 +970,14 @@ constexpr ListBoxPanelSpec kWorkbenchItemsSpec = {
 };
 
 // ============================================================================
-// WorkbenchUpgrade â€” slot detail (upgrade.gui). 29 controls; the LB_ITEMS
+// WorkbenchUpgrade — slot detail (upgrade.gui). 29 controls; the LB_ITEMS
 // listbox at ID 0 holds compatible upgrade mods from the player's
 // inventory for the currently selected slot. Enter on a row commits
 // (stage + BTN_ASSEMBLE) via QueueWorkbenchUpgradeCommit; Esc disarms the
 // picker so chain nav resumes on the slot buttons.
 //
 // Spec is armed only after the user activates one of the seven slot
-// buttons (BTN_UPGRADE3X/4X at .gui IDs 12..18) â€” the click-sim wired in
+// buttons (BTN_UPGRADE3X/4X at .gui IDs 12..18) — the click-sim wired in
 // menus.cpp's chain Enter handler runs the engine's slot-select via
 // MoveMouseToPosition + LMouseDown/Up, which populates LB_ITEMS with the
 // inventory mods compatible with that slot. While not armed, the spec
@@ -985,7 +985,7 @@ constexpr ListBoxPanelSpec kWorkbenchItemsSpec = {
 // nav and the user can move between slot buttons / BTN_ASSEMBLE / BTN_BACK.
 //
 // Esc-to-close (BTN_BACK at ID 28) when the picker is not armed is
-// handled by an explicit workbench branch in menus.cpp's Esc handler â€”
+// handled by an explicit workbench branch in menus.cpp's Esc handler —
 // FindCancelButton resolves to "Abbrechen" reliably for this panel.
 // ============================================================================
 
@@ -1019,7 +1019,7 @@ void* WorkbenchUpgradeFindLb(void* p) {
     return FindControlById(p, kWorkbenchUpgradeLbItemsId);
 }
 
-// LB_ITEMS rows are CSWGuiInventoryItemEntry-style â€” their text comes
+// LB_ITEMS rows are CSWGuiInventoryItemEntry-style — their text comes
 // from the item resref's localised name. Same announce shape as the
 // items picker.
 void WorkbenchUpgradeAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
@@ -1069,7 +1069,7 @@ int WorkbenchUpgradeMinSel(void* panel) {
 // entry, so it always installs the selected colour.
 bool WorkbenchUpgradeOnEnter(void* panel) {
     if (acc::menus::pending::IsPending()) {
-        acclog::Write("WorkbenchUpgrade", "Enter â€” op already pending; ignoring");
+        acclog::Write("WorkbenchUpgrade", "Enter — op already pending; ignoring");
         DisarmWorkbenchUpgradePicker();
         return true;
     }
@@ -1174,17 +1174,17 @@ constexpr ListBoxPanelSpec kWorkbenchUpgradeSpec = {
 // "powers_listbox" name in the SARIF struct. Its rows are CSWGuiSkillFlow
 // tree-rows with up to 3 cells per row (base / improved / master variants),
 // identical in shape to the chargen Talente chart. A ListBoxPanelSpec can't
-// represent that 2D structure â€” Up/Down would only change row, not column,
+// represent that 2D structure — Up/Down would only change row, not column,
 // and the row text via FromControl returns empty because the row IS a
 // CSWGuiSkillFlow with no rendered label. Handled in menus_powers_levelup.cpp
 // with the chargen_feats-style 2D dispatcher; title override moved to the
 // AnnouncePanelTitle path in menus.cpp.
 
 // ============================================================================
-// Examine â€” CSWGuiExamine panel opened by Ö. Listbox is the embedded
+// Examine — CSWGuiExamine panel opened by Ö. Listbox is the embedded
 // CSWGuiMessageBox.listbox_message at +0x67c. The engine populates the
 // rows from a local object cache when ShowExamineBox(handle, 0) is called
-// (vtable[27] on the listbox does the populate-from-object â€” verified
+// (vtable[27] on the listbox does the populate-from-object — verified
 // 2026-05-22 from the ShowExamineBox decomp). Up/Down speak each row;
 // Enter / Esc let the engine's HandleInputEvent handle close natively
 // (Schliess. and Abbrechen buttons both call HideExamineBox).
@@ -1378,7 +1378,7 @@ constexpr ListBoxPanelSpec kScriptSelectSpec = {
 
 // Spec table. Probe order matters: SaveLoad's structural matcher
 // (FindControlById signature check) is a superset that could in principle
-// match other panels with the same control IDs â€” Container and EquipPicker
+// match other panels with the same control IDs — Container and EquipPicker
 // have distinct PanelKind values, so they probe first by identity. In
 // practice the matchers are disjoint; ordering here is just defensive.
 constexpr const ListBoxPanelSpec* kSpecs[] = {
@@ -1386,7 +1386,7 @@ constexpr const ListBoxPanelSpec* kSpecs[] = {
     &kSaveLoadSpec,
     &kEquipPickerSpec,
     &kSkillInfoBoxSpec,
-    // Combat-system plan, Phase 1C/1D â€” read-only review screens.
+    // Combat-system plan, Phase 1C/1D — read-only review screens.
     &kInGameMessagesSpec,
     &kDialogCinematicSpec,
     &kDialogCinematicCopySpec,
@@ -1395,7 +1395,7 @@ constexpr const ListBoxPanelSpec* kSpecs[] = {
     // Workbench panels (Phase: workbench accessibility).
     &kWorkbenchItemsSpec,
     &kWorkbenchUpgradeSpec,
-    // Combat-system plan, Phase 2C â€” Ö Examine engine panel.
+    // Combat-system plan, Phase 2C — Ö Examine engine panel.
     &kExamineSpec,
     // Character sheet "Kurzbefehle" combat-behaviour picker.
     &kScriptSelectSpec,
@@ -1403,7 +1403,7 @@ constexpr const ListBoxPanelSpec* kSpecs[] = {
 constexpr int kNumSpecs = static_cast<int>(sizeof(kSpecs) / sizeof(kSpecs[0]));
 
 // ============================================================================
-// Dispatcher â€” generic over the spec table. Mirrors the structure of the
+// Dispatcher — generic over the spec table. Mirrors the structure of the
 // original three inline blocks in menus.cpp's OnHandleInputEvent.
 // ============================================================================
 
@@ -1414,7 +1414,7 @@ bool DispatchKeyDownEdge(const ListBoxPanelSpec& spec, void* panel,
     // optional enrichment. Home / End are absolute jumps to the first
     // (minSel) / last (rowCount-1) row; Up / Down are Â±1 steps. The
     // announce + enrichment + log paths are shape-identical across all
-    // four â€” only the ListBoxNavOp selection and the direction tag differ.
+    // four — only the ListBoxNavOp selection and the direction tag differ.
     ListBoxNavOp op;
     const char* dirTag = nullptr;
     if      (param_1 == kInputNavUp)   { op = ListBoxNavOp::StepUp;    dirTag = "Up";   }
@@ -1504,7 +1504,7 @@ bool TryHandleInput(int n, void* thisPtr, void* activePanel,
 
         // If the spec is gated by an armed-check and isn't armed, fall
         // through so the rest of OnHandleInputEvent can run (chain nav,
-        // slot-zone nav). Don't log here â€” the caller's outer log path
+        // slot-zone nav). Don't log here — the caller's outer log path
         // takes over.
         if (spec.armed && !spec.armed()) return false;
 
