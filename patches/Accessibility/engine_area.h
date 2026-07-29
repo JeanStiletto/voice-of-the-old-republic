@@ -4,7 +4,8 @@
 // CSWSArea:
 //   +0x190 game_objects      ulong*  — HANDLE array (not CSWSObject**).
 //   +0x194 game_object_count int
-//   +0x230 rooms             CSWSRoom[] inline, stride 0x4c
+//   +0x230 rooms             CSWSRoom* — POINTER to an inline-stride
+//                            (0x4c) array; deref before indexing.
 //   +0x25c room_names        CExoString*
 //
 // CSWSArea::GetRoom @0x4bb600(this, Vector*, int* outRoomIndex /*nullable*/)

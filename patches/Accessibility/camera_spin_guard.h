@@ -8,8 +8,12 @@
 // synthesised A/D feeds — is the same accumulator via a different source.)
 //
 // Guard (the fix): on an actual edge-turn spin — in-world, foreground,
-// cursor in band, camera rotating — nudge the physical cursor a small inset
-// inward (SetCursorPos), clearing the band. Gating on live rotation keeps it
+// cursor in band, camera rotating — write the ENGINE cursor X field
+// directly to viewport centre, clearing the band. Note this is NOT
+// SetCursorPos: the post-load input pipeline ignores injected motion
+// (SetCursorPos and SendInput were both tried and both failed — see the
+// note in camera_spin_guard.cpp), which is why a direct field write is
+// used. Gating on live rotation keeps it
 // from disturbing a paused menu. The detection band is floored at kMinBandPx
 // rather than the config arithmetic (which under-reports the engine's real
 // band); anything that parks the cursor must stay clear of that floor.

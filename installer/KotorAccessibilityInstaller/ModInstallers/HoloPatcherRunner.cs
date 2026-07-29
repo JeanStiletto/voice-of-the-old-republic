@@ -21,8 +21,9 @@ namespace KotorAccessibilityInstaller.ModInstallers
         private const int ForwardThrottleMs = 2500;
 
         // Heartbeat tick when HoloPatcher hasn't said anything forwardable.
-        // Set just under the forward throttle so an "any progress?" update lands
-        // at predictable intervals even when HoloPatcher goes quiet.
+        // Set to double the forward throttle (2500 ms), so a quiet-period
+        // "any progress?" update lands at predictable intervals without
+        // competing with real forwarded output.
         private const int HeartbeatMs = 5000;
 
         public static async Task<(bool Success, string Error)> RunAsync(

@@ -1990,9 +1990,10 @@ const char* Get(Id id);
 
 // Per-language tables. Defined in strings_en.cpp / strings_de.cpp /
 // strings_fr.cpp; the dispatcher in strings.cpp picks one based on the
-// active language. lang_fr currently aliases lang_en for the Id::*
-// speech path (full FR translation pass is deferred); combat speech is
-// fully French via combat_strings.cpp::kFr.
+// active language. All six are complete, independent tables — strings_fr.cpp
+// is a real 651-entry French translation, not an alias for lang_en (that
+// claim was stale). Combat speech is localised separately, in
+// combat_strings.cpp.
 namespace lang_en { const char* Get(Id id); }
 namespace lang_de { const char* Get(Id id); }
 namespace lang_fr { const char* Get(Id id); }

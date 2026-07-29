@@ -1,5 +1,5 @@
 // Shared speech+log helper for the per-menu Speak* paths
-// (unified_action_menu, examine_view, combat_queue — same shape: speak a
+// (currently only unified_action_menu — same shape: speak a
 // label with interrupt, then log it under the menu's tag with a context
 // printf string).
 
