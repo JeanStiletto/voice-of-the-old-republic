@@ -61,7 +61,6 @@ enum class Id : int {
     // when GetMapPinNoteText returns empty (shouldn't happen for user pins —
     // BuildAutoName always assigns one — but defended for safety).
     MapPinNoText,
-    MapPinShiftDashHint,
     MapPinAltDashUnsupported,
     MapPinInteractHint,
 
@@ -300,10 +299,7 @@ enum class Id : int {
     //      `FmtActionBarFired`       — fire confirmation. Arg: variant
     //                                  label (`%s`). Spoken on Enter inside
     //                                  the submenu.
-    FmtActionBarOpened,
     FmtActionBarColumnEmpty,
-    ActionBarColumnEmpty,
-    FmtActionBarFired,
     // Same fire-confirmation slot, but with the queue position the user
     // just landed on. Args: variant label (`%s`), 1-indexed queue
     // position (`%d`). Used in place of FmtActionBarFired whenever the
@@ -474,7 +470,6 @@ enum class Id : int {
     //      prefix is what tells the user this is a room name and not an
     //      arbitrary token.
     FmtTransitionArea,
-    FmtTransitionRoom,
 
     // Synthesised room label, used when CSWSArea.room_names[index]
     // resolves to a resref-style identifier (e.g. `m01aa_10`,
@@ -540,7 +535,6 @@ enum class Id : int {
     //      degrees in [0, 359]. German speaks "47 Grad", English speaks
     //      "47 degrees" — using "Grad"/"degrees" rather than the "°"
     //      glyph so screen readers pronounce it consistently.
-    FmtCompassDegrees,
 
     // ---- Phase 6 lay-off 2 — map-state announcement (AltGr while the
     //      InGameMap panel is foreground). Builds a multi-segment line
@@ -663,8 +657,6 @@ enum class Id : int {
     //                 directional-fallback path (single-arrow chains where
     //                 the anchor consolidation isn't possible).
     PortraitLabel,
-    PortraitArrowPrev,
-    PortraitArrowNext,
     FmtPortraitArrow,
     // FmtPortraitArrowId — final fallback when neither portrait_label nor
     // the resref-derived description resolve. Args: direction (`%s`),
@@ -895,7 +887,6 @@ enum class Id : int {
     //                     last character (no char to read at the new caret).
     EditboxRole,
     EditboxEmpty,
-    EditboxEnd,
 
     // ---- Keyboard-mapping screen (CSWGuiInGameOptKeyMappings). Each row is
     //      an action paired with its bound key.
@@ -940,7 +931,6 @@ enum class Id : int {
     FactionHostile,
     FactionFriendly,
     FactionNeutral,
-    TargetIsDead,
 
     // Brief enrichment clauses — appended (with leading space) to the
     // FmtTargetCombatBrief base line. Designed for composition so we
@@ -962,8 +952,6 @@ enum class Id : int {
     FmtBriefEffects,
     FmtBriefWielding,
     FmtBriefOffHand,
-    FmtBriefEffectsCount,
-    FmtBriefFeatsCount,
 
     // ---- Bare-H self status. HP opener — the rest of the line reuses
     //      FmtBriefEffects / FmtBriefWielding / FmtBriefOffHand so the
@@ -982,7 +970,6 @@ enum class Id : int {
 
     // ---- Combat system, Phase 2C — examine hotkey (Ö). Spoken on
     //      open / close / no-target failure.
-    ExamineOpened,
     ExamineNoTarget,
     ExamineFailed,
 
@@ -1052,7 +1039,6 @@ enum class Id : int {
     FmtExamineRowHead,
     FmtExamineRowTorso,
     FmtExamineRowHands,
-    ExamineRowStatusInvisible,
     ExamineRowStatusBlind,
 
     // ---- Combat system, Phase 3A — action queue submenu.
@@ -1087,10 +1073,7 @@ enum class Id : int {
     QueueVerbItemCast,
     QueueVerbEquip,
     QueueVerbUnequip,
-    QueueVerbMove,
-    QueueVerbHeal,
     QueueVerbUseTalent,
-    QueueVerbCutscene,
     QueueVerbUnknown,
 
     // ---- Combat system, Phase 4A — per-attack resolved callout.
@@ -1102,36 +1085,24 @@ enum class Id : int {
     //      `FmtAttackDeflected` — args: attacker, target.
     //      Used by combat::Phase4Tick when an attack record's attack_result
     //      transitions from pending (0) to resolved.
-    FmtAttackHit,
-    FmtAttackMiss,
-    FmtAttackCrit,
-    FmtAttackDeflected,
 
     // ---- Combat system, Phase 4B — saving-throw callout.
     //      `FmtSavingThrowSucceeded` / `FmtSavingThrowFailed` — args:
     //      target (`%s`), saveType (`%s`), roll (`%d`), dc (`%d`).
     //      `SaveTypeFort` / `SaveTypeReflex` / `SaveTypeWill` — type words.
-    FmtSavingThrowSucceeded,
-    FmtSavingThrowFailed,
-    SaveTypeFort,
-    SaveTypeReflex,
-    SaveTypeWill,
 
     // ---- Dialog screen — reply availability cue.
     //      `DialogReplyUnavailable` — suffix appended via enrichRow when a
     //      reply is gated (active=0).
-    DialogReplyUnavailable,
     // Per-row reply announce when the entry is greyed (active=0). Args:
     // row_text (`%s`), unavailable_word (`%s`), index (`%d`), total
     // (`%d`). Separate from FmtContainerItemAt so the localised "von" /
     // "of" stays in the table.
-    FmtDialogReplyUnavailableRow,
 
     // ---- Messages-panel review titles. Spoken when the InGameMessages
     //      panel becomes foreground (titleOverride). Two channels — the
     //      combat log and the dialog history.
     MessagesTitleCombatLog,
-    MessagesTitleDialogLog,
 
     // ---- In-game map UI (CSWGuiInGameMap, Phase 5 lay-off 6).
     //      Two image-only buttons sit on either side of the map render
@@ -1164,8 +1135,6 @@ enum class Id : int {
     // room match. The 4-direction wall probe in map_ui_cursor classifies
     // local walkmesh extents and resolves to one of these.
     MapCursorJunction,        // bare "Junction" / "Kreuzung" — fallback only
-    MapCursorOffPath,
-    FmtMapCursorCorridor,     // "%s, %.0f Meter" / "%s, %.0f meters" — direction-axis + length, "Korridor"/"Corridor" noun dropped 2026-05-22 (terser ambient cue)
     FmtMapCursorDeadEnd,      // "Dead end opening %s"
     FmtMapCursorJunctionDirs, // "Junction, openings %s" — comma-separated direction list
     // Path-3 nav-graph topology vocabulary. Corridor labels are
@@ -1197,7 +1166,6 @@ enum class Id : int {
     // and would yield awkward "… nach Zur Oberstadt"). Comma separator
     // avoids the prep-clash.
     FmtMapCursorDoorLandmark,    // "%s %s, %s"       — noun + direction + landmark
-    MapCursorTransitionDoor,  // "Türschwelle" / "Doorway"
     // Junction-edge annotation: when a junction's direction leads
     // directly to a degree-1 dead-end neighbour, the direction word
     // is wrapped to flag the dead-end so the user doesn't waste a
@@ -1247,8 +1215,6 @@ enum class Id : int {
     //      `StoreCannotSell` / `StoreCannotBuy` — fired when the engine's
     //          handler returned without changing the listbox (item not
     //          sellable / not buyable — plot item, no funds, equipped, etc.).
-    StoreSold,
-    StoreBought,
     StoreCannotSell,
     StoreCannotBuy,
     // ---- Per-trade speech with price.
@@ -1289,7 +1255,6 @@ enum class Id : int {
     PazaakFmtOppBoard,
     PazaakNoPlayable,
     PazaakNotYourTurn,
-    PazaakSelectCardFirst,
     PazaakChooseSign,
     PazaakCancelled,
     // Side-deck builder (CSWGuiPazaakStart)
@@ -1418,7 +1383,6 @@ enum class Id : int {
     SwoopRaceStarted,
     SwoopRaceControls,
     SwoopRaceEnded,
-    SwoopRaceObstacleNear,
     // Gear-shift cue spoken urgently on each shift event so the player
     // hears "Gang 2 / 3 / 4 / 5" through NVDA's typed-character cancel.
     // One %d (1..5). Reset to 1 on race entry and on suspected reset
@@ -1463,7 +1427,6 @@ enum class Id : int {
     FmtTurretTarget,
     FmtTurretDestroyed,
     TurretNoTargets,
-    TurretTargetLost,
 
     // ---- Mod-settings virtual submenu (menus_modsettings).
     //      Root label: text spoken when the user lands on the virtual

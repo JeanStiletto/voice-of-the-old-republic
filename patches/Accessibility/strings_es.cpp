@@ -36,7 +36,6 @@ const char* Get(Id id) {
         case Id::CycleNoTarget:       return "Sin objetivo";
 
         case Id::MapPinNoText:        return "Marcador";
-        case Id::MapPinShiftDashHint: return "El marcador no se puede alcanzar directamente. Ctrl+Gui\xF3n para baliza.";
         case Id::MapPinAltDashUnsupported: return "Marcador: Alt+Gui\xF3n no soportado";
         case Id::MapPinInteractHint:  return "Marcador. Ctrl+Gui\xF3n para baliza.";
 
@@ -93,10 +92,7 @@ const char* Get(Id id) {
         case Id::EndarDoorBattleHint: return "Esta puerta permanece cerrada hasta que termine el combate en esta zona.";
         case Id::EndarStuckReloadHint: return "Si no quedan enemigos cerca, puede que el tutorial est\xE9 bloqueado. Carga una partida anterior a esta sala.";
 
-        case Id::FmtActionBarOpened:      return "Barra de acciones columna %d: %s, %d opciones";
         case Id::FmtActionBarColumnEmpty: return "La columna %d est\xE1 vac\xED""a";
-        case Id::ActionBarColumnEmpty:    return "Columna vac\xED""a";
-        case Id::FmtActionBarFired:       return "%s usado";
         case Id::FmtFireAtPosition:       return "%s, posici\xF3n %d";
         case Id::FmtFireQueueFull:        return "%s, cola llena";
         case Id::ActionMenuClosed:        return "Men? de acci?n cerrado.";
@@ -148,7 +144,6 @@ const char* Get(Id id) {
         case Id::FmtEquipDamageDual:   return "Da\xF1o izquierdo %s, derecho %s";
 
         case Id::FmtTransitionArea:    return "\xC1rea: %s";
-        case Id::FmtTransitionRoom:    return "Habitaci\xF3n: %s";
         case Id::FmtTransitionRoomIndex: return "Habitaci\xF3n %d";
         case Id::FmtTransitionLoading: return "Cargando: %s";
 
@@ -168,7 +163,6 @@ const char* Get(Id id) {
         case Id::StuckFreeDirsPrefix:  return "Libre";
         case Id::StuckAllBlocked:      return "Todo bloqueado";
 
-        case Id::FmtCompassDegrees:    return "%d grados";
 
         case Id::FmtMapStateOriented:    return "%s. Orientado a %d grados en el mapa, %s.";
         case Id::FmtMapStateUnknownRoom: return "Orientado a %d grados en el mapa, %s.";
@@ -192,8 +186,6 @@ const char* Get(Id id) {
         case Id::LevelUpScreenHint:    return "Usa las flechas para elegir una categor\xED""a y pulsa Intro para abrirla. Reparte tus puntos y luego elige Aceptar para terminar."; // categoria
 
         case Id::PortraitLabel:        return "Retrato";
-        case Id::PortraitArrowPrev:    return "Retrato anterior";
-        case Id::PortraitArrowNext:    return "Retrato siguiente";
         case Id::FmtPortraitArrow:     return "%s: %s";
         case Id::FmtPortraitArrowId:   return "%s %d";
         case Id::PortraitGenderFemale: return "femenino";
@@ -250,7 +242,6 @@ const char* Get(Id id) {
 
         case Id::EditboxRole:                return "campo de texto";
         case Id::EditboxEmpty:               return "vac\xEDo";
-        case Id::EditboxEnd:                 return "fin";
         case Id::FmtKeyBinding:              return "%s: %s";
         case Id::KeyBindingFixed:            return " (no reasignable)";
         case Id::FmtKeyBindCapture:          return "Pulsa la nueva tecla para %s";
@@ -269,20 +260,16 @@ const char* Get(Id id) {
         case Id::FactionHostile:             return "hostil";
         case Id::FactionFriendly:            return "amistoso";
         case Id::FactionNeutral:             return "neutral";
-        case Id::TargetIsDead:               return "muerto";
 
         case Id::FmtBriefCondition:          return " %s.";
         case Id::FmtBriefDistanceMeters:     return " %d metros.";
         case Id::FmtBriefEffects:            return " %s.";
         case Id::FmtBriefWielding:           return " %s.";
         case Id::FmtBriefOffHand:            return " mano secundaria %s.";
-        case Id::FmtBriefEffectsCount:       return " %d efectos activos.";
-        case Id::FmtBriefFeatsCount:         return " %d talentos.";
         case Id::FmtSelfStatusHp:            return "%d puntos de vida.";
         case Id::FmtSelfStatusHpOf:          return "%d de %d puntos de vida.";
         case Id::FmtSelfStatusFpOf:          return "%d de %d puntos de Fuerza.";
 
-        case Id::ExamineOpened:              return "Examinar.";
         case Id::ExamineNoTarget:            return "Sin objetivo para examinar.";
         case Id::ExamineFailed:              return "Examinar fallido.";
 
@@ -315,7 +302,6 @@ const char* Get(Id id) {
         case Id::FmtExamineRowHead:          return "Cabeza: %s";
         case Id::FmtExamineRowTorso:         return "Armadura: %s";
         case Id::FmtExamineRowHands:         return "Manos: %s";
-        case Id::ExamineRowStatusInvisible:  return "Invisible";
         case Id::ExamineRowStatusBlind:      return "Ciego";
 
         case Id::FmtQueueOpen:               return "Cola de acciones, %d acciones.";
@@ -330,31 +316,16 @@ const char* Get(Id id) {
         case Id::QueueVerbItemCast:          return "Usar objeto";
         case Id::QueueVerbEquip:             return "Equipar";
         case Id::QueueVerbUnequip:           return "Desequipar";
-        case Id::QueueVerbMove:              return "Mover";
-        case Id::QueueVerbHeal:              return "Curar";
         case Id::QueueVerbUseTalent:         return "Usar talento";
-        case Id::QueueVerbCutscene:          return "Cinem\xE1tica";
         case Id::QueueVerbUnknown:           return "Acci\xF3n";
 
         // Skeleton: max-HP is not yet read safely (suspected engine
         // accessor), so the hit / crit messages omit the "X of Y hp"
         // tail. Args reduced to (attacker, target, damage).
-        case Id::FmtAttackHit:               return "%s acierta a %s por %d de da\xF1o.";
-        case Id::FmtAttackMiss:              return "%s falla a %s.";
-        case Id::FmtAttackCrit:              return "\xA1""Cr\xEDtico! %s golpea a %s por %d de da\xF1o.";
-        case Id::FmtAttackDeflected:         return "El ataque de %s sobre %s es desviado.";
 
-        case Id::FmtSavingThrowSucceeded:    return "%s supera la tirada: %s %d contra %d.";
-        case Id::FmtSavingThrowFailed:       return "%s falla la tirada: %s %d contra %d.";
-        case Id::SaveTypeFort:               return "Fortaleza";
-        case Id::SaveTypeReflex:             return "Reflejos";
-        case Id::SaveTypeWill:               return "Voluntad";
 
-        case Id::DialogReplyUnavailable:     return "no disponible";
-        case Id::FmtDialogReplyUnavailableRow: return "%s, %s, %d de %d";
 
         case Id::MessagesTitleCombatLog:     return "Registro de combate.";
-        case Id::MessagesTitleDialogLog:     return "Registro de di\xE1logo.";
 
         case Id::MapPrevNote:                return "Nota anterior";
         case Id::MapNextNote:                return "Nota siguiente";
@@ -362,8 +333,6 @@ const char* Get(Id id) {
         case Id::MapCursorUnexplored:        return "Inexplorado";
         case Id::MapCursorWaypointPOI:       return "Punto de inter\xE9s";
         case Id::MapCursorJunction:          return "Cruce";
-        case Id::MapCursorOffPath:           return "Pared";
-        case Id::FmtMapCursorCorridor:       return "%s, %.0f metros";
         case Id::FmtMapCursorDeadEnd:        return "Callej\xF3n sin salida, %s";
         case Id::FmtMapCursorJunctionDirs:   return "Cruce, %s";
         case Id::FmtMapCursorCorridorDir:    return "%s";
@@ -371,7 +340,6 @@ const char* Get(Id id) {
         case Id::FmtMapCursorDoor:           return "%s %s";
         case Id::FmtMapCursorDoorTransition: return "%s %s hacia %s";
         case Id::FmtMapCursorDoorLandmark:   return "%s %s, %s";
-        case Id::MapCursorTransitionDoor:    return "Umbral";
         case Id::FmtMapCursorJunctionDeadEndExit: return "callej\xF3n sin salida %s";
         case Id::AxisNorthSouth:             return "norte-sur";
         case Id::AxisEastWest:               return "este-oeste";
@@ -386,8 +354,6 @@ const char* Get(Id id) {
         case Id::FmtStorePriceSell:         return "Precio %d cr\xE9""ditos, tienes %d";
         case Id::StoreModeBuy:              return "Modo compra";
         case Id::StoreModeSell:             return "Modo venta";
-        case Id::StoreSold:                 return "Vendido";
-        case Id::StoreBought:               return "Comprado";
         case Id::StoreCannotSell:           return "No se puede vender";
         case Id::StoreCannotBuy:            return "No se puede comprar";
         case Id::FmtStoreSoldFor:           return "Vendido por %d cr\xE9""ditos";
@@ -423,7 +389,6 @@ const char* Get(Id id) {
         case Id::PazaakFmtOppBoard:      return "Mesa rival: %s, total %d.";
         case Id::PazaakNoPlayable:       return "No hay cartas para jugar.";
         case Id::PazaakNotYourTurn:      return "No es tu turno.";
-        case Id::PazaakSelectCardFirst:  return "Elige una carta primero.";
         case Id::PazaakChooseSign:       return "Elige el signo. Izquierda o derecha para cambiar, Enter para jugar.";
         case Id::PazaakCancelled:        return "Cancelado.";
         case Id::PazaakDeckAvailable:    return "%s, %d disponibles";
@@ -476,8 +441,6 @@ const char* Get(Id id) {
             return "Espacio para subir de marcha con la se\xF1""al de audio. Gira con A y D. Esquiva los obst\xE1""culos y pisa los paneles aceleradores para batir el tiempo.";
         case Id::SwoopRaceEnded:
             return "Carrera de Swoop terminada.";
-        case Id::SwoopRaceObstacleNear:
-            return "Obst\xE1""culo a %d metros";
         case Id::FmtSwoopRaceGear:
             return "Marcha %d";
         case Id::FmtSwoopRaceTime:
@@ -497,8 +460,6 @@ const char* Get(Id id) {
             return "Caza %d destruido.";
         case Id::TurretNoTargets:
             return "Sin objetivos.";
-        case Id::TurretTargetLost:
-            return "Objetivo perdido.";
 
         case Id::ModSettingsRootLabel:        return "Ajustes del mod";
         case Id::ModSettingsOpened:           return "Ajustes del mod abiertos";
