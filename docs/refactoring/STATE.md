@@ -804,3 +804,64 @@ A11 (4 linkage fixes).
 
 ### NEXT: the 9 possible bugs (Section F) were reported to the user.
 Section B (structural, 7 items) is untouched and still needs approval.
+
+## Phase 3 bugs F1-F8 — FIXED 2026-07-30 (6 commits, 890fa07..17337dc)
+
+User approved F1-F8 and REJECTED F9 (gated dialog replies): there are no
+unavailable dialogue options in KOTOR 1, so a gating cue would produce false
+positives rather than catch edge cases. F9 is closed, not deferred.
+
+**F1 — combat action-list walk, one deref short.** CountSpecialsForCreature
+walked list -> internal then read the internal header as an action node.
+Now three derefs, matching combat_queue.cpp. Also deleted the
+kLinkedListHeadOffset alias that hid the bug (defined equal to
+kListInternalOffset, zero remaining users).
+
+**F2 — six unguarded engine reads.** SEH guards added to
+HasActiveDialogPanel, HasActiveSubScreen (engine_panels_state),
+GetForegroundPanel (engine_manager), FindActiveDialogPanel (dialog_speech),
+ReadControlNameFields (engine_reads - highest risk, called straight from the
+OnHandleFocusChange detour with an unchecked `this`, and it now initialises
+its out-params), FindMatchingPanel (menus_editbox, a TU with no SEH anywhere).
+Plus menus_journal ForceRepopulate gained the acc::addr::Ok() rebase check
+its sibling uses.
+
+**F3-F6 — installer accessibility.** ValidatePath now routes through
+UpdateStatus (new isError overload) so a wrong folder is SPOKEN, not just
+turned red; the enabled/disabled transition is announced via two new locale
+keys in all six JSON files; the Install button's AccessibleDescription is
+refreshed instead of captured once; UninstallForm announces progress;
+Escape works in all four dialogs (UninstallForm gets CancelButton ONLY -
+Enter must not start a destructive action; WelcomeForm handles Escape in
+ProcessDialogKey rather than adding a phantom button, and sets AcceptButton
+per page); three ProgressBars got AccessibleName.
+
+**F7 — kdev short-file crash.** WalkmeshFaceTypesCommand single-file mode now
+uses BwmFile.HasValidHeader (length THEN magic) plus BwmFile's named offsets.
+Verified against a real 1-byte file: clean error, exit 1. This also closes
+part of the "Phase 2 helpers never adopted" finding, in the file where the
+gap was actually crashing.
+
+**F8 — hardcoded speech.** Five new Ids in all six tables (CP1251 generated
+for Russian). The startup greeting - the first thing every player hears - was
+hardcoded English. Chargen spoke the developer tag "BTN_BACK" on a failed
+button read, and a hardcoded "Talent %u". All LOCALISED, not removed, per the
+never-silence-a-fallback rule. The two probe_* Speak calls are deliberately
+left English and now commented as developer-facing RE tooling.
+
+Verification: `kdev build --clean` 195 TUs 0 warnings; kdev + installer
+dotnet build 0 errors.
+
+### NEEDS IN-GAME / MANUAL VERIFICATION (none of this is play-tested)
+1. F1: fight, queue a special (power/grenade/medpac) on a party member,
+   confirm the "you can act now" cue stays quiet while specials pend and
+   fires on the transition to none pending.
+2. F2: normal menu nav; a conversation interrupted by an area transition;
+   the chargen name editbox. Guards must be invisible in normal use.
+3. F8: launch and listen to the greeting in German; force a chargen feat
+   button-text read failure if practical.
+4. F3-F6 with a screen reader: browse to a wrong folder (reason spoken +
+   button state announced), run an uninstall (progress spoken), press Escape
+   in all four dialogs.
+
+### Section B (7 structural items) is still untouched and needs approval.
