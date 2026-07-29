@@ -512,10 +512,10 @@ void* ResolveGuiInGame() {
     void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
     if (!appMgr) return nullptr;
     void* exoApp = *reinterpret_cast<void**>(
-        reinterpret_cast<unsigned char*>(appMgr) + kAppManagerClientOff);
+        reinterpret_cast<unsigned char*>(appMgr) + kAppManagerClientAppOffset);
     if (!exoApp) return nullptr;
     void* internal = *reinterpret_cast<void**>(
-        reinterpret_cast<unsigned char*>(exoApp) + kClientExoAppInternalOff);
+        reinterpret_cast<unsigned char*>(exoApp) + kClientExoAppInternalOffset);
     if (!internal) return nullptr;
     return *reinterpret_cast<void**>(
         reinterpret_cast<unsigned char*>(internal) + kClientExoAppGuiInGameOff);

@@ -10,6 +10,7 @@
 // where ENTER fired at T+0 and a spurious EXIT fired at T+125 ms even
 // though the actual race continued for 40 more seconds.
 
+#include "minigame_aim.h"
 #include "minigame_swoop_race.h"
 
 #include <windows.h>
@@ -36,6 +37,16 @@
 namespace acc::swoop_race {
 
 namespace {
+
+// SEH read primitives + minigame-object-array resolution are shared across
+// the minigame TUs (see minigame_aim.h). Brought into unqualified scope so
+// the dense reads below read as they did when each file had its own copy.
+using acc::minigame::SafeReadPtr;
+using acc::minigame::SafeReadU32;
+using acc::minigame::SafeReadFloat;
+using acc::minigame::SafeReadVector;
+using acc::minigame::ResolveMgoArray;
+using acc::minigame::CallAsCast;
 
 // ============================================================================
 // Engine struct offsets (from docs/llm-docs/re/swkotor.exe.h).
@@ -242,47 +253,6 @@ State g_state;
 // SEH-guarded primitive reads. Same pattern as the rest of engine_*.
 // ============================================================================
 
-void* SafeReadPtr(void* base, size_t off) {
-    if (!base) return nullptr;
-    __try {
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(base) + off);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
-uint32_t SafeReadU32(void* base, size_t off) {
-    if (!base) return 0;
-    __try {
-        return *reinterpret_cast<uint32_t*>(
-            reinterpret_cast<unsigned char*>(base) + off);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return 0;
-    }
-}
-
-float SafeReadFloat(void* base, size_t off) {
-    if (!base) return 0.0f;
-    __try {
-        return *reinterpret_cast<float*>(
-            reinterpret_cast<unsigned char*>(base) + off);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return 0.0f;
-    }
-}
-
-bool SafeReadVector(void* base, size_t off, Vector& out) {
-    if (!base) return false;
-    __try {
-        Vector* v = reinterpret_cast<Vector*>(
-            reinterpret_cast<unsigned char*>(base) + off);
-        out = *v;
-        return true;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-}
 
 // Read CSWCArea.mini_game via the player-area chain. Source of truth at
 // the moment of detection; we latch the result so churn in this chain

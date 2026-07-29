@@ -160,7 +160,7 @@ bool CloseInGameMenuToWorld() {
     void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
     void* gui = ResolveGuiInGame();
     void* client = appMgr ? *reinterpret_cast<void**>(
-        reinterpret_cast<unsigned char*>(appMgr) + kAppManagerClientOff) : nullptr;
+        reinterpret_cast<unsigned char*>(appMgr) + kAppManagerClientAppOffset) : nullptr;
     if (!gui || !client) {
         acclog::Write("CloseInGameMenu", "skipped: gui=%p client=%p", gui, client);
         return false;
@@ -197,7 +197,7 @@ int GetInputClass() {
         void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
         if (!appMgr) return -1;
         void* client = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appMgr) + kAppManagerClientOff);
+            reinterpret_cast<unsigned char*>(appMgr) + kAppManagerClientAppOffset);
         if (!client) return -1;
         void* internal = *reinterpret_cast<void**>(
             reinterpret_cast<unsigned char*>(client) + 0x04);
@@ -219,7 +219,7 @@ int GetInputClass() {
 bool SetGuiInputClass(int klass) {
     void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
     void* client = appMgr ? *reinterpret_cast<void**>(
-        reinterpret_cast<unsigned char*>(appMgr) + kAppManagerClientOff) : nullptr;
+        reinterpret_cast<unsigned char*>(appMgr) + kAppManagerClientAppOffset) : nullptr;
     if (!client) {
         acclog::Write("InputClass", "SetGuiInputClass(%d) skipped: no client", klass);
         return false;

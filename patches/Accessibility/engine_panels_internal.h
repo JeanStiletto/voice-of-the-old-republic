@@ -13,14 +13,23 @@
 #include <cstddef>
 #include <cstdint>
 
+// The first links of the CGuiInGame chain — kAddrAppManagerPtr,
+// kAppManagerClientAppOffset and kClientExoAppInternalOffset — come from
+// here. They are the same walk the player module already does.
+//
+// This header used to carry its own copies of all three, under names one
+// letter different from the canonical ones ("...ClientOff" vs
+// "...ClientAppOffset"), which is how the same address ended up declared
+// in three places. The copies were created by the Phase-1 panels split,
+// which moved them verbatim rather than consolidating — correct for a
+// behaviour-preserving move, wrong to leave behind.
+#include "engine_player.h"
+
 namespace acc::engine {
 
-// CGuiInGame resolution chain. Address values verified against Lane's
-// SARIF (CAppManager_vtable @ 0x007A39FC). Field offsets from the struct
-// definitions in docs/llm-docs/re/swkotor.exe.h.
-inline constexpr uintptr_t kAddrAppManagerPtr        = 0x007A39FC;
-inline constexpr size_t    kAppManagerClientOff      = 0x04;
-inline constexpr size_t    kClientExoAppInternalOff  = 0x04;
+// Last link of the chain, specific to the panels module: CClientExoApp
+// internal -> CGuiInGame. Verified against the struct definitions in
+// docs/llm-docs/re/swkotor.exe.h.
 inline constexpr size_t    kClientExoAppGuiInGameOff = 0x40;
 
 // Walk that chain and return the CGuiInGame*. Defined in

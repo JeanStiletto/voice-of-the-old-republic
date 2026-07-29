@@ -27,6 +27,7 @@
 #include "engine_player.h"
 #include "engine_reads.h"             // ReadCExoString — waypoint tag log
 #include "log.h"
+#include "view_mode.h"   // kHoverPauseMs — shared cursor cadence
 #include "map_shipped_hints.h"        // shipped curated hints in the hover scan
 #include "map_user_markers.h"         // IsUserMarkerPin — fog-exempt marker id
 #include "strings.h"
@@ -55,10 +56,10 @@ constexpr int kMapPixelMaxY = 256;
 // dt cap to prevent teleport-on-stall (loading screens, alt-tab).
 constexpr float kMaxDtSec = 0.1f;
 
-// Hover-pause debounce for cursor narration. 300 ms matches view-mode's
-// pattern so spoken cadence stays consistent across our two cursor
-// surfaces.
-constexpr DWORD kHoverPauseMs = 300;
+// Hover-pause debounce for cursor narration — shared with view mode so
+// spoken cadence stays consistent across our two cursor surfaces. See
+// view_mode.h for the value and rationale.
+using acc::view_mode::kHoverPauseMs;
 
 // Radius (in map pixels) within which a map-note waypoint counts as
 // "under the cursor". A 16-px map-pin icon plus generous slack —

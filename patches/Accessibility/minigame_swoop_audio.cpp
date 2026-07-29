@@ -33,6 +33,17 @@ namespace acc::swoop_race {
 
 namespace {
 
+// SEH read primitives + minigame-object-array resolution are shared across
+// the minigame TUs (see minigame_aim.h). Brought into unqualified scope so
+// the dense reads below read as they did when each file had its own copy.
+using acc::minigame::SafeReadPtr;
+using acc::minigame::SafeReadU32;
+using acc::minigame::SafeReadFloat;
+using acc::minigame::SafeReadVector;
+using acc::minigame::ResolveMgoArray;
+using acc::minigame::CallAsCast;
+using acc::minigame::ReadFollowerPosition;
+
 // ============================================================================
 // Engine struct offsets used by the spatial walks.
 // ============================================================================
@@ -69,7 +80,6 @@ constexpr size_t kAurObjectPositionOffset       = 0x78;
 // non-null slot, keep the non-null returns. We make two such passes
 // per tick — one for obstacles (rocks/debris), one for enemies
 // (accelerator pads).
-constexpr size_t kClientInternalMgoArrayOffset  = 0x0;
 constexpr size_t kMgoArrayObjectsOffset         = 0x4;
 constexpr int    kMgoArraySlotCount             = 255;
 constexpr size_t kVtableSlotAsObstacle          = 0x20;
@@ -159,8 +169,6 @@ constexpr float       kAccelpadCueRangeM        = 300.0f;
 // We replicate that path here. Offset 0x68 is the CExoArrayList<undefined4>
 // `models` field in CSWTrackFollower (after the CSWMiniGameObject base
 // 0x60 + mini_game ptr 0x4 + field2_0x64 0x4).
-constexpr size_t kTrackFollowerModelsDataOffset = 0x68;
-constexpr size_t kModelVtableSlotGetPosition    = 0x64;
 // CSWTrackFollower combat/physics scalars (shared layout with the turret —
 // turret_game.cpp reads sphere_radius at the same offset). sphere_radius is the
 // engine's real hit primitive: the accelpad hit test is a swept sphere-vs-sphere
@@ -700,37 +708,6 @@ SpatialAudioState g_state;
 // SEH-guarded primitive reads. Same pattern as the rest of engine_*.
 // ============================================================================
 
-void* SafeReadPtr(void* base, size_t off) {
-    if (!base) return nullptr;
-    __try {
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(base) + off);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
-bool SafeReadVector(void* base, size_t off, Vector& out) {
-    if (!base) return false;
-    __try {
-        Vector* p = reinterpret_cast<Vector*>(
-            reinterpret_cast<unsigned char*>(base) + off);
-        out = *p;
-        return true;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-}
-
-float SafeReadFloat(void* base, size_t off) {
-    if (!base) return 0.0f;
-    __try {
-        return *reinterpret_cast<float*>(
-            reinterpret_cast<unsigned char*>(base) + off);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return 0.0f;
-    }
-}
 
 // ============================================================================
 // MGO array + AsXxx vtable downcasts + per-type position reads.
@@ -740,32 +717,11 @@ float SafeReadFloat(void* base, size_t off) {
 //   *0x7a39fc (AppManager) +0x4
 //     -> CClientExoApp +0x4
 //       -> CClientExoAppInternal +0x0  (= the array itself)
-void* ResolveMgoArray() {
-    __try {
-        void* appManager = *reinterpret_cast<void**>(
-            kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-        void* clientApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-        if (!clientApp) return nullptr;
-        void* clientInternal = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(clientApp) +
-            kClientExoAppInternalOffset);
-        if (!clientInternal) return nullptr;
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(clientInternal) +
-            kClientInternalMgoArrayOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
 
 // Call an MGO object's vtable[slotOffset] AsXxx() thiscall. Returns
 // the call's return value (which is `this` for the matching subclass
 // or null otherwise). All __thiscall convention — ECX gets `this`, no
 // stack args.
-typedef void* (__thiscall* PFN_AsCast)(void* this_);
 
 // CAurObject vtable[+0xc] — returns the obstacle's name string (lives
 // in the underlying Gob/Model — same accessor sighted UI uses via
@@ -795,52 +751,8 @@ const char* ReadAurObjectName(void* aurObject) {
 //     returns Vector*  (typically writes through outBuf, sometimes
 //                       returns a pointer to a member Vector)
 // Returns false on any null link, empty models array, or SEH fault.
-typedef Vector* (__thiscall* PFN_GetPositionThunk)(void* this_, Vector* outBuf);
 
-bool ReadTrackFollowerPosition(void* follower, Vector& out) {
-    if (!follower) return false;
-    __try {
-        // models is a CExoArrayList<undefined4>. data is the first
-        // member (offset 0); the array holds 4-byte pointers to model
-        // wrapper objects (each with its own vtable).
-        void* modelsData = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(follower) +
-            kTrackFollowerModelsDataOffset);
-        if (!modelsData) return false;
-        // First model handle. (size lives at +0x6c; we don't need to
-        // read it explicitly — a null data[0] is the empty case.)
-        void* model = *reinterpret_cast<void**>(modelsData);
-        if (!model) return false;
-        void* vtable = *reinterpret_cast<void**>(model);
-        if (!vtable) return false;
-        void* fn = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(vtable) +
-            kModelVtableSlotGetPosition);
-        if (!fn) return false;
-        Vector buf = {0.0f, 0.0f, 0.0f};
-        Vector* returned =
-            reinterpret_cast<PFN_GetPositionThunk>(fn)(model, &buf);
-        out = returned ? *returned : buf;
-        return true;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-}
 
-void* CallAsCast(void* obj, size_t vtableSlotOffset) {
-    if (!obj) return nullptr;
-    __try {
-        void* vtable = *reinterpret_cast<void**>(obj);
-        if (!vtable) return nullptr;
-        void* fn = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(vtable) + vtableSlotOffset);
-        if (!fn) return nullptr;
-        auto castFn = reinterpret_cast<PFN_AsCast>(fn);
-        return castFn(obj);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
 
 // ============================================================================
 // Continuous obstacle-proximity cues.
@@ -1042,7 +954,7 @@ void TickObstacleCues(void* /*miniGame*/) {
 // full-lane, so it pointed mid-lane, the WRONG side, ...212526.log.)
 //
 // Pad world positions come from each CSWMiniEnemy's first model via vtable[+0x64]
-// (ReadTrackFollowerPosition); pads are reached via the AsEnemy (vtable[0x1c])
+// (ReadFollowerPosition); pads are reached via the AsEnemy (vtable[0x1c])
 // downcast.
 // ============================================================================
 
@@ -1066,7 +978,7 @@ void TickAccelpadCues(void* miniGame) {
     // right now"; the camera (listener) sits a little behind, but its X
     // tracks the bike's to ~0.04 units (verified), so it's the pan anchor.
     void* player = SafeReadPtr(miniGame, kMiniGamePlayerOffset);
-    Vector bikePos;  const bool bikeOk = ReadTrackFollowerPosition(player, bikePos);
+    Vector bikePos;  const bool bikeOk = ReadFollowerPosition(player, bikePos);
     Vector tunnel;   const bool tunOk  =
         SafeReadVector(player, kMiniPlayerOffsetVectorOffset, tunnel);
     const float refY = bikeOk ? bikePos.y : listener_pos.y;
@@ -1099,7 +1011,7 @@ void TickAccelpadCues(void* miniGame) {
         ++accelpads_found;
 
         Vector pos;
-        if (!ReadTrackFollowerPosition(enemy, pos)) continue;
+        if (!ReadFollowerPosition(enemy, pos)) continue;
 
         // First-fire diagnostic: log every accelpad's slot + position
         // so we have a per-track inventory similar to the obstacle log.

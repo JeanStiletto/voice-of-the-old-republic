@@ -58,6 +58,17 @@ namespace acc::turret_game {
 
 namespace {
 
+// SEH read primitives + minigame-object-array resolution are shared across
+// the minigame TUs (see minigame_aim.h). Brought into unqualified scope so
+// the dense reads below read as they did when each file had its own copy.
+using acc::minigame::SafeReadPtr;
+using acc::minigame::SafeReadU32;
+using acc::minigame::SafeReadFloat;
+using acc::minigame::SafeReadVector;
+using acc::minigame::ResolveMgoArray;
+using acc::minigame::CallAsCast;
+using acc::minigame::ReadFollowerPosition;
+
 // ============================================================================
 // Engine struct offsets (shared with swoop_race.cpp — see that file and
 // docs/llm-docs/re/swkotor.exe.h for the full CSWMiniGame walk).
@@ -96,14 +107,11 @@ constexpr int       kExitDebounceTicks     = 60;
 //   AppManager(*kAddrAppManagerPtr) +0x4 -> CClientExoApp +0x4 ->
 //   CClientExoAppInternal +0x0 -> CSWMiniGameObjectArray
 //   (+0x00 index, +0x04 objects[255]). vtable[0x1c] = AsEnemy.
-constexpr size_t kClientInternalMgoArrayOffset = 0x0;
 constexpr size_t kMgoArrayObjectsOffset        = 0x4;
 constexpr int    kMgoArraySlotCount            = 255;
 constexpr size_t kVtableSlotAsEnemy            = 0x1c;
 // CSWTrackFollower model list (for world position via the model wrapper's
 // vtable[+0x64], mirroring CSWTrackFollower::GetPosition).
-constexpr size_t kTrackFollowerModelsDataOffset = 0x68;
-constexpr size_t kModelVtableSlotGetPosition    = 0x64;
 // Combat fields on CSWTrackFollower (== CSWMiniEnemy, which is just a single
 // follower at offset 0; offsets confirmed against the explicit field9_0x88
 // and field17_0x144 markers in swkotor.exe.h). Diagnostics only:
@@ -583,35 +591,6 @@ State g_state;
 // SEH-guarded primitive reads (same pattern as engine_* / swoop_race).
 // ============================================================================
 
-void* SafeReadPtr(void* base, size_t off) {
-    if (!base) return nullptr;
-    __try {
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(base) + off);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
-uint32_t SafeReadU32(void* base, size_t off) {
-    if (!base) return 0;
-    __try {
-        return *reinterpret_cast<uint32_t*>(
-            reinterpret_cast<unsigned char*>(base) + off);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return 0;
-    }
-}
-
-float SafeReadF32(void* base, size_t off) {
-    if (!base) return 0.0f;
-    __try {
-        return *reinterpret_cast<float*>(
-            reinterpret_cast<unsigned char*>(base) + off);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return 0.0f;
-    }
-}
 
 
 // Read CSWCArea.mini_game via the player-area chain. Source of truth at
@@ -640,57 +619,9 @@ bool LatchedStillValid() {
 // swoop TU isn't entangled with turret-specific cueing).
 // ============================================================================
 
-typedef void*  (__thiscall* PFN_AsCast)(void* this_);
-typedef Vector* (__thiscall* PFN_GetPositionThunk)(void* this_, Vector* outBuf);
 
-void* ResolveMgoArray() {
-    __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-        void* clientApp = SafeReadPtr(appManager, kAppManagerClientAppOffset);
-        if (!clientApp) return nullptr;
-        void* clientInternal = SafeReadPtr(clientApp, kClientExoAppInternalOffset);
-        if (!clientInternal) return nullptr;
-        return SafeReadPtr(clientInternal, kClientInternalMgoArrayOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
 
-void* CallAsCast(void* obj, size_t vtableSlotOffset) {
-    if (!obj) return nullptr;
-    __try {
-        void* vtable = *reinterpret_cast<void**>(obj);
-        if (!vtable) return nullptr;
-        void* fn = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(vtable) + vtableSlotOffset);
-        if (!fn) return nullptr;
-        return reinterpret_cast<PFN_AsCast>(fn)(obj);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
 
-bool ReadFollowerPosition(void* follower, Vector& out) {
-    if (!follower) return false;
-    __try {
-        void* modelsData = SafeReadPtr(follower, kTrackFollowerModelsDataOffset);
-        if (!modelsData) return false;
-        void* model = *reinterpret_cast<void**>(modelsData);
-        if (!model) return false;
-        void* vtable = *reinterpret_cast<void**>(model);
-        if (!vtable) return false;
-        void* fn = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(vtable) + kModelVtableSlotGetPosition);
-        if (!fn) return false;
-        Vector buf = {0.0f, 0.0f, 0.0f};
-        Vector* ret = reinterpret_cast<PFN_GetPositionThunk>(fn)(model, &buf);
-        out = ret ? *ret : buf;
-        return true;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-}
 
 // ============================================================================
 // Approach cue. Only the nearest kFighterMaxConcurrent in-range fighters
@@ -1166,9 +1097,9 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
     if (selectedEnemy && trackingExisting) {
         hp     = static_cast<int>(SafeReadU32(selectedEnemy, kFollowerHpOffset));
         maxHp  = static_cast<int>(SafeReadU32(selectedEnemy, kFollowerMaxHpOffset));
-        radius = SafeReadF32(selectedEnemy, kFollowerSphereRadiusOffset);
-        invuln = SafeReadF32(selectedEnemy, kFollowerInvulnOffset);
-        engineSpeed = SafeReadF32(selectedEnemy, kFollowerSpeedOffset);
+        radius = SafeReadFloat(selectedEnemy, kFollowerSphereRadiusOffset);
+        invuln = SafeReadFloat(selectedEnemy, kFollowerInvulnOffset);
+        engineSpeed = SafeReadFloat(selectedEnemy, kFollowerSpeedOffset);
     }
 
     // ---- Lead: aim at the intercept point. Solve |P + v·t| = kBoltSpeed·t for
@@ -1966,9 +1897,9 @@ extern "C" void __cdecl OnTurretBulletHit(void* hitEvent) {
     if (!hitEvent || !g_state.active) return;
 
     Vector impact;
-    impact.x = SafeReadF32(hitEvent, kHitEventImpactXOffset);
-    impact.y = SafeReadF32(hitEvent, kHitEventImpactYOffset);
-    impact.z = SafeReadF32(hitEvent, kHitEventImpactZOffset);
+    impact.x = SafeReadFloat(hitEvent, kHitEventImpactXOffset);
+    impact.y = SafeReadFloat(hitEvent, kHitEventImpactYOffset);
+    impact.z = SafeReadFloat(hitEvent, kHitEventImpactZOffset);
 
     void* follower = CallAsCast(hitEvent, kVtableSlotGetVictimFollower);
     if (!follower) return;
@@ -1980,7 +1911,7 @@ extern "C" void __cdecl OnTurretBulletHit(void* hitEvent) {
     const float dy = impact.y - centre.y;
     const float dz = impact.z - centre.z;
     const float impactDist   = std::sqrt(dx * dx + dy * dy + dz * dz);
-    const float sphereRadius = SafeReadF32(follower, kFollowerSphereRadiusOffset);
+    const float sphereRadius = SafeReadFloat(follower, kFollowerSphereRadiusOffset);
 
     // Distinguish our shots landing on a fighter (the hitbox we care about)
     // from incoming fire on the player's own ship. CSWMiniPlayer.follower is

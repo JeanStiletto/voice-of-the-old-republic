@@ -17,17 +17,63 @@
 // uses; this header lifts the reusable parts out so swoop can share them.
 //
 // What is shared (here): the offset read/write primitives and the magnetism
-// curve + per-tick-capped step. What stays per-game (in turret_game.cpp /
-// swoop_spatial_audio.cpp): how the aim ERROR is computed (angular for the
-// turret, linear lane-units for swoop), target selection, and the offset→world
-// SIGN (the turret calibrates it; swoop's 1:1 mapping passes +1). All reads
-// SEH-guarded.
+// curve + per-tick-capped step, plus the SEH read primitives and minigame
+// object-array resolution all three minigame TUs need. What stays per-game
+// (in minigame_turret.cpp / minigame_swoop_audio.cpp): how the aim ERROR is
+// computed (angular for the turret, linear lane-units for swoop), target
+// selection, and the offset→world SIGN (the turret calibrates it; swoop's
+// 1:1 mapping passes +1). All reads SEH-guarded.
 
 #pragma once
+
+#include <cstddef>
+#include <cstdint>
 
 #include "engine_offsets.h"  // Vector
 
 namespace acc::minigame {
+
+// ---- SEH read primitives ---------------------------------------------------
+// Fault-tolerant field reads against engine objects. Every minigame TU used to
+// carry its own byte-identical copy of these (Phase-2 duplication finding D2);
+// they live here now. Each returns a benign value rather than propagating a
+// fault, so a stale or half-torn-down engine pointer can never take the game
+// down through us.
+//
+// Naming note: SafeReadFloat, not SafeReadF32 — minigame_turret.cpp used the
+// latter and the other two used the former; one name had to win.
+void*    SafeReadPtr(void* base, size_t off);
+uint32_t SafeReadU32(void* base, size_t off);
+float    SafeReadFloat(void* base, size_t off);
+bool     SafeReadVector(void* base, size_t off, Vector& out);
+
+// ---- Minigame object array -------------------------------------------------
+// CClientExoAppInternal holds the minigame object array (obstacles, accelerator
+// pads, track followers) at offset 0. Resolution walks
+// AppManager -> CClientExoApp -> internal -> array.
+constexpr size_t kClientInternalMgoArrayOffset = 0x0;
+
+// Returns the minigame object array, or nullptr if any link of the chain is
+// null or faults (i.e. no minigame is live).
+void* ResolveMgoArray();
+
+// Call a vtable AsSWCxxx-style downcast at `vtableSlotOffset` on `obj`.
+// Returns nullptr on null input, a null slot, or any fault.
+void* CallAsCast(void* obj, size_t vtableSlotOffset);
+
+// ---- Track-follower world position -----------------------------------------
+// A CSWTrackFollower (the swoop bike, the turret gun, and every racer /
+// obstacle rider) carries a CExoArrayList of model wrappers at +0x68. The
+// first model's vtable slot +0x64 is a GetPosition thunk that fills a
+// caller-supplied Vector. Reading the follower's own transform is not
+// equivalent — the model is what the engine actually renders and what the
+// spatial cues must track.
+constexpr size_t kTrackFollowerModelsDataOffset = 0x68;
+constexpr size_t kModelVtableSlotGetPosition    = 0x64;
+
+// World position of `follower`'s first model. False (out untouched) if the
+// follower, its model list, the model, or the thunk is missing or faults.
+bool ReadFollowerPosition(void* follower, Vector& out);
 
 // CSWMiniPlayer.offset — the per-tick-integrated aim/lane field. See the file
 // header for the per-game interpretation of its components.
