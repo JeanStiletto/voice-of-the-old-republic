@@ -35,7 +35,6 @@ namespace {
 
 constexpr float kCursorSpeedMps = 2.0f;       // matches KOTOR walk pace
 constexpr float kMaxDtSec = 0.1f;             // guard against teleport-on-stall
-constexpr DWORD kHoverPauseMs = 300;          // settle time before speaking
 constexpr float kHoverRadiusMeters = 1.0f;    // cursor must be on the object
 constexpr DWORD kCollisionCueQuietMs = 250;   // collapse sustained wall contact
 

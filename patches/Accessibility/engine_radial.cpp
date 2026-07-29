@@ -59,7 +59,6 @@ constexpr size_t kIfActionLabelOffset    = 0x00;  // CExoString
 constexpr size_t kIfActionIdOffset       = 0x08;  // ulong
 constexpr size_t kIfActionTargetOffset   = 0x1c;  // ulong
 constexpr size_t kIfActionIconOffset     = 0x20;  // CResRef (16B)
-constexpr size_t kResRefMaxLen           = 16;
 
 // CSWGuiLabel name_label sits at TAM +0x15CC (relative). Reading via
 // kLabelGuiStringPtrOffset (0xE4) for the rendered c_string.
@@ -475,7 +474,7 @@ void ReadResRefLocal(void* base, size_t offset,
         const char* src = reinterpret_cast<const char*>(
             reinterpret_cast<unsigned char*>(base) + offset);
         size_t lim = bufSize - 1;
-        if (lim > kResRefMaxLen) lim = kResRefMaxLen;
+        if (lim > kResRefSize) lim = kResRefSize;
         size_t i = 0;
         for (; i < lim; ++i) {
             char c = src[i];

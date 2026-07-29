@@ -113,15 +113,10 @@ constexpr size_t kMapHiderWaypointListOffset          = 0x238;  // CExoLinkedLis
 // engine then resolves via CServerExoApp::GetGameObject. Same access
 // shape as CSWSArea.game_objects (handle array, not object pointer
 // array).
-constexpr size_t kCExoLinkedListInternalOffset = 0x0;
-constexpr size_t kCExoLLInternalHeadOffset     = 0x0;
-constexpr size_t kCExoLLNodeNextOffset         = 0x4;
-constexpr size_t kCExoLLNodePayloadOffset      = 0x8;
 
 // CSWSWaypoint layout offsets (already used elsewhere — re-stated here
 // so the cursor code is self-documenting).
 constexpr size_t kWaypointPositionOffset = 0x90;
-constexpr size_t kWaypointHasMapNoteOff  = 0x22c;
 
 // GetAreaMap / IsWorldPointExplored entry points moved to engine_area.
 // engine_area.h carries the shared constants (kAddrCServerExoAppGetModule,
@@ -337,7 +332,7 @@ void* FindNearestExploredMapNote(void* mapPanel, void* areaMap,
         internal = *reinterpret_cast<void**>(
             reinterpret_cast<unsigned char*>(mapHider) +
             kMapHiderWaypointListOffset +
-            kCExoLinkedListInternalOffset);
+            kListInternalOffset);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return nullptr;
     }
@@ -354,7 +349,7 @@ void* FindNearestExploredMapNote(void* mapPanel, void* areaMap,
     __try {
         node = *reinterpret_cast<void**>(
             reinterpret_cast<unsigned char*>(internal) +
-            kCExoLLInternalHeadOffset);
+            kListInternalHeadOffset);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return nullptr;
     }
@@ -372,13 +367,13 @@ void* FindNearestExploredMapNote(void* mapPanel, void* areaMap,
         __try {
             void* dataPtr = *reinterpret_cast<void**>(
                 reinterpret_cast<unsigned char*>(node) +
-                kCExoLLNodePayloadOffset);
+                kLinkedListNodeDataOff);
             if (dataPtr) {
                 handle = *reinterpret_cast<uint32_t*>(dataPtr);
             }
             nextNode = *reinterpret_cast<void**>(
                 reinterpret_cast<unsigned char*>(node) +
-                kCExoLLNodeNextOffset);
+                kLinkedListNodeNextOff);
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             break;
         }
@@ -394,7 +389,7 @@ void* FindNearestExploredMapNote(void* mapPanel, void* areaMap,
         __try {
             hasNote = *reinterpret_cast<int*>(
                 reinterpret_cast<unsigned char*>(obj) +
-                kWaypointHasMapNoteOff);
+                kWaypointMapNoteEnabledOffset);
             pos = *reinterpret_cast<Vector*>(
                 reinterpret_cast<unsigned char*>(obj) +
                 kWaypointPositionOffset);

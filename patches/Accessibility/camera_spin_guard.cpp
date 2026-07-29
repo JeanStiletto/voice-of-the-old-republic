@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 
+#include "engine_manager.h"  // kAddrGuiManagerPtr
 #include "engine_options.h"  // GetMouseLook
 #include "engine_player.h"   // GetCameraYawRadians / GetCameraPosition /
                              // GetPlayerPosition + chain constants
@@ -19,7 +20,6 @@ namespace {
 constexpr float kRadToDeg = 57.29577951308232f;
 
 // Engine globals (decompiled, see UpdateCamera @0x5f5e10).
-constexpr uintptr_t kAddrGuiManagerPtr        = 0x007A39F4;  // CSWGuiManager**
 constexpr uintptr_t kAddrScreenFramePercent   = 0x007A2444;  // float
 constexpr uintptr_t kAddrRightClickHeld       = 0x008338F0;  // int
 constexpr size_t    kGuiMouseXOffset          = 0x00;        // ulong
