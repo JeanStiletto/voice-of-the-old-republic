@@ -21,9 +21,12 @@ KOTOR 2 (TSL), which runs a very similar engine but a different executable
 ## Current status  (updated 2026-07-29 — read this block, not the older
 ## per-phase sections further down, which are history)
 
-- **Active phase:** Phase 2 (high-level cleanup). Batches A and B done and
-  committed, C partly done. See "Phase 2 status" near the end of this file
-  for the itemised list.
+- **Active phase:** Phase 3 (per-file sweep) — SCAN COMPLETE 2026-07-29,
+  nothing executed, awaiting item-by-item approval. See "Phase 3 status"
+  at the end of this file and the consolidated report
+  `reports/phase-3-sweep.md`.
+- **Phase 2:** code-complete and committed, but STILL NOT VERIFIED IN
+  GAME. See "Phase 2 status" near the end of this file.
 - **Branch:** `refactor/phase2-coupling`, cut from main @ 4c4e216 (the
   Phase-1 merge). Phase 1 is already merged to main and smoke-tested by
   the user; nothing about it is outstanding except candidate 23.
@@ -682,3 +685,71 @@ migration, falls out of Phase 3).
 **Untested in game:** everything in Phase 2. B4 rewired the read
 primitives all three minigames use — a short swoop race and turret
 sequence is the check. A1/A2 touch room + landmark narration.
+
+## Phase 3 status (2026-07-29) — SCAN COMPLETE, NOTHING EXECUTED
+
+Merged Phase 3+4 per-file sweep (general cleanup + AI-pattern pass, two
+separately approvable sections). User approved the full-sweep option.
+
+**Method:** 24 Sonnet agents, batched by line count, read-only on the
+codebase, each writing only its own report. Coverage was complete: all
+362 files / ~103,000 lines (287 patch, 30 kdev, 45 installer), every file
+assigned to exactly one batch. Per-batch reports are `reports/phase-3-*.md`
+(~9,000 lines total). Consolidated candidate list:
+**`reports/phase-3-sweep.md`** — read that, not the 24 individual reports.
+
+**Nothing was executed. No source file was modified.**
+
+### Headline conclusions
+
+1. The Phase-1 splits were executed but never cleaned up after: ~120 dead
+   includes, ~26 dead using-declarations, stranded declarations, stale
+   file banners. All compiler-verifiable.
+2. Phase 2 created shared helpers but did not migrate callers —
+   `FindPanelByKind`, `Core/BwmFile.cs` (imported by all 3 consumers,
+   zero constants used, 22 raw hex literals remain), `kHoverPauseMs`.
+   "Finish Phase 2" is a real, bounded piece of work.
+3. The AppManager→(Client/Server/Gui/Camera) resolve chain is hand-walked
+   at ~20 sites across 8+ files. Biggest architectural finding, and the
+   most K2-relevant — no single seam to change on a port.
+4. Engine reads missing the SEH guard their siblings use: 4 independent
+   batches, bounded to panel/control-reading paths.
+5. Six-language localisation has holes in fallback/startup paths,
+   including the startup greeting every player hears.
+
+### Verified by hand in the main session (not taken on trust)
+
+Two agent claims were CORRECTED: the mojibake count/severity (52 lines,
+49 in comments, cosmetic — not 48 text-corruption instances), and
+`strings.h`'s claim that `lang_fr` aliases `lang_en`, which is FALSE —
+the French table is 651 real entries. That stale comment was handed to
+the agent as fact in its brief; it checked anyway.
+Also verified: the F1 linked-list hop, the F2 guard gap and its local
+convention, F3's silent installer status, the `Get()` never-null
+contract (~20 dead null-checks, not 30+), the BwmFile non-adoption, and
+that `kHoverPauseMs`'s two copies agree (drift risk, not a live bug).
+
+### Also settled this phase
+
+- **C4 has a concrete proposal**: `IterateLandmarks` already receives the
+  `area` and discards it; thread it through and gate the cache read, one
+  caller to update. Turns a silent stale-cache failure into a logged one.
+- **Candidate 28's premise in this file was partly WRONG.** Only
+  `engine_offsets.h` has narrow siblings. `engine_player.h` /
+  `engine_area.h` / `engine_panels.h` / `engine_reads.h` are single
+  headers — Phase 1 split the .cpp files only. There is nothing to
+  migrate to for those four; splitting them is NEW work, not a migration.
+
+### NEXT ACTIONS, in order
+
+1. **Phase-2 in-game smoke test — this gates Phase-3 execution.** Nothing
+   in Phase 2 has been played. Stacking a per-file sweep on top of an
+   unverified Phase 2 makes any later in-game failure much harder to
+   bisect. Priority list is in the "SESSION END 2026-07-29 (afternoon)"
+   block above (equipment picker, workbench arm/close/reopen, loot
+   container, bark bubble, galaxy map, tutorial popup).
+2. **Walk the Phase-3 candidate list with the user item by item** (per
+   the standing rule — bulk approval lists do not work here).
+3. **Add an encoding check to the execution protocol** before executing
+   anything (see P3-A9) — the mojibake is isolated to the one file a
+   recent edit rewrote, so our tooling can reintroduce it.
