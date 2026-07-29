@@ -130,6 +130,7 @@ namespace KotorAccessibilityInstaller
                 Minimum = 0,
                 Maximum = 100
             };
+            _progressBar.AccessibleName = Text;
 
             _cancelButton = new Button
             {

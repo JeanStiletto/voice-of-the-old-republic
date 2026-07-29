@@ -80,6 +80,7 @@ namespace KotorAccessibilityInstaller
                 Minimum = 0,
                 Maximum = 100
             };
+            _progressBar.AccessibleName = Text;
 
             Controls.AddRange(new Control[] { _titleLabel, _statusLabel, _progressBar });
         }

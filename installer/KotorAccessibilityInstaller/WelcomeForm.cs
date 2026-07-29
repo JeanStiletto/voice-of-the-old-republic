@@ -175,6 +175,9 @@ namespace KotorAccessibilityInstaller
             _page2.Visible = false;
             _page1.Visible = true;
             UpdateAccessibleDescription();
+            // Enter activates the page's primary action. The two pages have
+            // different defaults, so this is re-pointed on every page switch.
+            AcceptButton = _nextButton;
             _nextButton.Focus();
         }
 
@@ -183,7 +186,24 @@ namespace KotorAccessibilityInstaller
             _page1.Visible = false;
             _page2.Visible = true;
             UpdateAccessibleDescription();
+            AcceptButton = _installButton;
             _installButton.Focus();
+        }
+
+        // Escape cancels the installer from the welcome dialog. There is no
+        // Cancel button to hang CancelButton off, and adding an invisible one
+        // just to get Escape would put a phantom control in the screen
+        // reader's view - so the key is handled directly.
+        // ProceedWithInstall defaults to false, so closing here is already
+        // treated as "cancelled from welcome dialog" by InstallFlow.
+        protected override bool ProcessDialogKey(Keys keyData)
+        {
+            if (keyData == Keys.Escape)
+            {
+                Close();
+                return true;
+            }
+            return base.ProcessDialogKey(keyData);
         }
 
         private void ApplyLocale()

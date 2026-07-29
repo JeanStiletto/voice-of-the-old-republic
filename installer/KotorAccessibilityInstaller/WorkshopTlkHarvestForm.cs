@@ -120,6 +120,7 @@ namespace KotorAccessibilityInstaller
                 Size = new Size(510, 20),
                 Style = ProgressBarStyle.Marquee
             };
+            _progressBar.AccessibleName = Text;
 
             _cancelButton = new Button
             {

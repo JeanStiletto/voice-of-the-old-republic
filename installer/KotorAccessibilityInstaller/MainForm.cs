@@ -160,11 +160,10 @@ namespace KotorAccessibilityInstaller
                 _progressBar, _launchCheckBox, _readmeCheckBox, _installButton, _cancelButton
             });
 
+            // ValidatePath sets the status text AND refreshes the accessible
+            // description from it, so no separate one-time capture here - that
+            // capture used to go stale the moment status changed.
             ValidatePath();
-
-            string body = $"{_titleLabel.Text}. {_statusLabel.Text}";
-            AccessibleDescription = body;
-            _installButton.AccessibleDescription = body;
 
             FormClosing += (s, e) =>
             {
@@ -201,18 +200,43 @@ namespace KotorAccessibilityInstaller
         private void ValidatePath()
         {
             bool isValid = GamePathDetector.IsValidGamePath(_pathTextBox.Text);
+            bool wasEnabled = _installButton.Enabled;
             _installButton.Enabled = isValid;
 
-            if (!isValid && !string.IsNullOrEmpty(_pathTextBox.Text))
+            bool notFound = !isValid && !string.IsNullOrEmpty(_pathTextBox.Text);
+            string message = notFound
+                ? InstallerLocale.Get("Main_PathNotFound")
+                : InstallerLocale.Get(_updateOnly ? "Main_StatusUpdate" : "Main_StatusInstall");
+
+            // Route through UpdateStatus rather than writing _statusLabel.Text
+            // directly. A raw Text write is invisible to NVDA / JAWS: the user
+            // would browse to an invalid folder, Install would silently become
+            // disabled, and the only feedback was red text. Colour is also not
+            // a signal a screen-reader user can perceive, so the reason has to
+            // be spoken.
+            UpdateStatus(message, isError: notFound);
+
+            // Keep the button's accessible description in step with the state
+            // it describes. It used to be captured once at construction, so it
+            // went stale exactly when status changed.
+            RefreshAccessibleDescription();
+
+            // Announce the enabled/disabled transition itself - the status text
+            // says what is wrong, this says what it means for the user's next
+            // action.
+            if (wasEnabled != isValid)
             {
-                _statusLabel.Text = InstallerLocale.Get("Main_PathNotFound");
-                _statusLabel.ForeColor = Color.Red;
+                RaiseNotification(isValid
+                    ? InstallerLocale.Get("Main_InstallEnabled")
+                    : InstallerLocale.Get("Main_InstallDisabled"));
             }
-            else
-            {
-                _statusLabel.Text = InstallerLocale.Get(_updateOnly ? "Main_StatusUpdate" : "Main_StatusInstall");
-                _statusLabel.ForeColor = SystemColors.ControlText;
-            }
+        }
+
+        private void RefreshAccessibleDescription()
+        {
+            string body = $"{_titleLabel.Text}. {_statusLabel.Text}";
+            AccessibleDescription = body;
+            _installButton.AccessibleDescription = body;
         }
 
         private async void InstallButton_Click(object sender, EventArgs e)
@@ -543,21 +567,27 @@ namespace KotorAccessibilityInstaller
             }
         }
 
-        private void UpdateStatus(string message)
-        {
-            if (InvokeRequired) { Invoke(new Action(() => UpdateStatus(message))); return; }
-            _statusLabel.Text = message;
-            _statusLabel.ForeColor = SystemColors.ControlText;
-            Logger.Info(message);
+        private void UpdateStatus(string message) => UpdateStatus(message, isError: false);
 
-            // WinForms Labels are not UIA live regions, so just changing
-            // `_statusLabel.Text` is invisible to NVDA / JAWS / Narrator until
-            // the user navigates to it. Raise a UIA notification on the label
-            // so screen readers speak each update as it lands.
-            //
-            // MostRecent processing means a fresh update interrupts a pending
-            // one — important during the K1CP step where heartbeat + stdout
-            // forwards can fire in quick succession.
+        private void UpdateStatus(string message, bool isError)
+        {
+            if (InvokeRequired) { Invoke(new Action(() => UpdateStatus(message, isError))); return; }
+            _statusLabel.Text = message;
+            _statusLabel.ForeColor = isError ? Color.Red : SystemColors.ControlText;
+            Logger.Info(message);
+            RaiseNotification(message);
+        }
+
+        // WinForms Labels are not UIA live regions, so just changing
+        // `_statusLabel.Text` is invisible to NVDA / JAWS / Narrator until
+        // the user navigates to it. Raise a UIA notification on the label
+        // so screen readers speak each update as it lands.
+        //
+        // MostRecent processing means a fresh update interrupts a pending
+        // one — important during the K1CP step where heartbeat + stdout
+        // forwards can fire in quick succession.
+        private void RaiseNotification(string message)
+        {
             try
             {
                 _statusLabel.AccessibilityObject?.RaiseAutomationNotification(

@@ -95,6 +95,8 @@
     "Main_PathLabel": "Chemin d'installation de KOTOR :",
     "Main_BrowseButton": "Parcourir...",
     "Main_BrowseDialogDescription": "Sélectionnez le dossier d'installation de KOTOR (contient swkotor.exe)",
+    "Main_InstallEnabled": "Le bouton Installer est maintenant disponible.",
+    "Main_InstallDisabled": "Le bouton Installer est désactivé tant qu'un dossier KOTOR valide n'est pas sélectionné.",
     "Main_PathNotFound": "swkotor.exe n'a pas été trouvé dans le dossier sélectionné.\nVeuillez sélectionner le bon dossier d'installation de KOTOR.",
     "Main_LaunchCheckBox": "Lancer KOTOR après l'installation",
     "Main_ReadmeCheckBox": "Ouvrir le guide de démarrage dans le navigateur",

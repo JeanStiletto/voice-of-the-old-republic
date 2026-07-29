@@ -102,6 +102,8 @@
     "Main_PathLabel": "Путь установки KOTOR:",
     "Main_BrowseButton": "Обзор...",
     "Main_BrowseDialogDescription": "Выберите папку установки KOTOR (в ней есть swkotor.exe)",
+    "Main_InstallEnabled": "Кнопка «Установить» теперь доступна.",
+    "Main_InstallDisabled": "Кнопка «Установить» недоступна, пока не выбрана правильная папка KOTOR.",
     "Main_PathNotFound": "В выбранной папке нет swkotor.exe.\nВыберите правильную папку установки KOTOR.",
     "Main_LaunchCheckBox": "Запустить KOTOR после установки",
     "Main_ReadmeCheckBox": "Открыть руководство для начала работы в браузере",

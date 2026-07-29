@@ -86,6 +86,11 @@ namespace KotorAccessibilityInstaller
             };
             closeButton.Click += (s, e) => { UserChoice = UpdateChoice.Close; Close(); };
 
+            // Escape closes the dialog; Enter activates the same safe
+            // default. Without these, a keyboard-only user had no Escape path.
+            AcceptButton = closeButton;
+            CancelButton = closeButton;
+
             Controls.AddRange(new Control[] { titleLabel, bodyLabel, reinstallButton, toggleButton, collectLogsButton, closeButton });
 
             string body = $"{titleLabel.Text}. {bodyLabel.Text}";
