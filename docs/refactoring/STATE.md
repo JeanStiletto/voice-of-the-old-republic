@@ -18,25 +18,53 @@ KOTOR 2 (TSL), which runs a very similar engine but a different executable
 4. Full file inventory (line counts, sorted): `docs/refactoring/file-inventory.txt`.
 5. Rules of engagement are binding — read them every session.
 
-## Current status
+## Current status  (updated 2026-07-29 — read this block, not the older
+## per-phase sections further down, which are history)
 
-- **Active phase:** Phase 1 (structure audit) — EXECUTED. 14 of 21 approved
-  candidates landed; 5 stopped or reverted with findings; 1 not reached;
-  1 (kdev) landed but is unversioned.
-- **IN-GAME SMOKE TEST: PASSED** (user, 2026-07-28). All eight checklist
-  items confirmed working — menus, leader announce + input restore, combat
-  announces + queue, region/landmark narration, hotkey routing, minigames,
-  focus guard. Phase 1's executed work is verified, not just built.
-- **Next action:** decide the open questions the findings raise
-  (candidates 10+28, 12-rest, 13, 23, 24, and the tools/ versioning
-  question), decide whether to merge Phase 1 to main now rather than
-  carrying the branch through Phases 2-5, then start Phase 2.
-- **Branch:** `refactor/pre-k2-cleanup`. Every executed candidate is its
-  own commit; reverts left the tree clean and the build green.
-- **Build state:** `kdev build --clean` green, 0 warnings. Patch TU count
-  grew from 178 (Phase-0 baseline) to ~195 with the new files.
-  `dotnet build` green for kdev (0/0) and the installer (1 pre-existing
-  warning in an untouched file).
+- **Active phase:** Phase 2 (high-level cleanup). Batches A and B done and
+  committed, C partly done. See "Phase 2 status" near the end of this file
+  for the itemised list.
+- **Branch:** `refactor/phase2-coupling`, cut from main @ 4c4e216 (the
+  Phase-1 merge). Phase 1 is already merged to main and smoke-tested by
+  the user; nothing about it is outstanding except candidate 23.
+- **Build state:** green everywhere. `kdev build --clean` = 194 TUs, 0
+  warnings. kdev and installer `dotnet build` = 0 errors / 0 warnings
+  (the installer's single warning is pre-existing, in a file we never
+  touched).
+
+### NEXT ACTION: execute candidate C8
+
+Everything needed is written down. Do not re-derive it:
+
+1. Spec: `docs/refactoring/reports/phase-2-cleanup.md`, section
+   "C8 — specified, NOT executed". It has the measured type spread, the
+   proposed split, the ordering hazard, and the verification recipe.
+2. Baseline for verification:
+   `docs/refactoring/c8-constant-names-baseline.txt` (358 names).
+3. Why the split is shaped the way it is: the "Major finding" section of
+   the same report — the split mirrors KPatchManager's AddressDatabase
+   taxonomy because the user decided to adopt that mechanism.
+
+Two things to be careful about, both already discovered:
+- **The structs and typedefs are interleaved with the constants through
+  all 1820 lines and some typedefs depend on the structs.** This is NOT a
+  line-range cut. Resolve dependency order first; the structs belong in a
+  base header the other three include.
+- **19 of the 103 .text addresses are not wrapped in `acc::addr::R()`.**
+  Understand why before moving them. Per engine_rebase.h, R() is
+  mandatory for .text and wrong for .data, so this is either a misfiling
+  or a genuine gap in the rebase seam — in which case those addresses are
+  wrong on the Allard Russian build and it is a bug, not a refactor
+  detail. Report it rather than silently "fixing" it.
+
+Phase-2 work is NOT yet in-game tested. B4 rewired the SEH read
+primitives all three minigames share (a short swoop race + turret
+sequence covers it) and A1/A2 touch room + landmark narration.
+
+**Also still open:** candidate 23 (menus_listbox picker, carried from
+Phase 1 — moves state, so measure the variables not just the function
+names), C4 (doorMatched split → Phase 3), candidate 28 (includer
+migration → falls out of Phase 3).
 
 ## Rules of engagement (binding for every phase)
 
