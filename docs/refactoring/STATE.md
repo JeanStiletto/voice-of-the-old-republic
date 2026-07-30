@@ -1039,7 +1039,76 @@ Same pass F3-F6 already owed, now also covering B4:
 3. A TSLRCM / KOTOR2-mods / workshop-TLK run if convenient — those three
    forms' status updates went through the same extraction.
 
-### Section B remaining: B2, B5, B6, B7 (4 items) need approval.
+## Phase 3 B6 — PARTIALLY EXECUTED 2026-07-30 (2 commits: 6767107, cfe54e5)
+
+B6 was nine independent sub-items. Six executed, one rejected on evidence,
+two held back for a user decision.
+
+**EXECUTED, patch side (6767107):**
+1. `CResRef` / `FillResRef` — audio_loop's copy literally commented itself as
+   "Local mirror of the 16-byte tag from audio_bus.cpp". Declared once in
+   audio_bus.h (already included there). NB: first attempt put it at file
+   scope *after* the namespace closed, which made the call ambiguous against
+   the `acc::audio` definition — the compiler caught it.
+2. `CategoryNameId` — diffed byte-identical in view_mode / passive_narrate,
+   moved next to `CategoryName` in filter_objects (same mapping, other
+   direction: English for logs, localised for speech).
+3. cycle_input's 4-line activation cue, spelled out at all four activation
+   paths → `PlayActivationCue(a)`. `bindings` had no other use at any of the
+   four, so the lookup collapsed with it.
+4. menus_pending's conditional is_active raise, inline at SEVEN sites →
+   `RaiseIsActiveIfZero`. **The reason this mattered:** the rule is
+   raise-only-0→1 (tab and equip-slot buttons carry engine bookkeeping there;
+   clobbering it crashed the game in an unrelated subsystem a frame later).
+   The rationale was full at the first site, abbreviated in the middle, and
+   ENTIRELY ABSENT by the last copy — exactly the drift that reintroduces an
+   unconditional write.
+5. `ControlHasVtable` → `HasVtable`, adopted by the five standalone panel
+   detectors that hand-rolled it. Six further comparisons left alone: inside
+   larger detectors with compound logic and an enclosing `__try`, so
+   converting would nest a redundant guard.
+
+**EXECUTED, installer (cfe54e5):** the ~65-line hand-rolled JSON parser →
+`System.Text.Json` (already a dependency via GitHubClient). Because these six
+files supply every string the installer speaks, equivalence was PROVED, not
+assumed: a scratch harness ran both parsers over all six locales and compared
+key-by-key — **1146 keys, zero differences**. Side finding, checked and
+cleared: en/ru have 195 keys vs 189 for de/es/fr/it, but all six extras are
+`Russian_*` notices shown only on a Russian install, with the fallback chain
+covering the rest. Deliberate. One behaviour difference recorded in the
+commit: malformed input used to yield a partial dictionary, now yields an
+empty one plus a warning and English fallback — louder, and better.
+
+**REJECTED on evidence — K1cp / K2cp "skeletons".** Not near-duplicates:
+K1cpInstaller is 293 lines with translation-overlay logic, K2cpInstaller is
+120 and its own docs say "NOT yet part of any pipeline the installer runs",
+gated on two prerequisites. Abstracting a common base over a shape that is
+not finished would have to be redone when K2CP is actually wired up.
+
+**HELD BACK — need a user decision, both touch the real game install:**
+- `IntroMovieDisabler`'s hand-mirrored Disable/Restore pair (~85 lines). It
+  RENAMES files in the user's install; merging the pair means one shared
+  direction-parameterised routine, and getting it wrong leaves intro .bik
+  files renamed with no way back.
+- `SpatialAudioManager.SetEaxValue` reimplementing `SwkotorIniTweaker`'s
+  section/key algorithm. Confirmed genuinely duplicated (same
+  find-section → walk → replace-or-append shape), but the tweaker's general
+  routine is private behind three `Apply*Defaults` entry points, so adoption
+  needs a small public API addition, and it WRITES swkotor.ini.
+Both are worth doing; both want an install/uninstall test rather than riding
+along with a cleanup commit.
+
+### NEEDS IN-GAME VERIFICATION (B6 patch side)
+1. Activation cues: `-`, Shift+-, Ctrl+-, Alt+- on a door, an NPC and a
+   container — the cue must still fire before speech, at the target.
+2. Menu activation: Enter on a MessageBox OK, an options tab, an equip slot,
+   a workbench slot and its assemble button (the seven is_active sites).
+3. Any panel identification: save/load, workbench, level-up, main menu,
+   pazaak start + wager popup (the five vtable detectors).
+4. A looping sound and a one-shot cue (the CResRef move).
+Installer side needs no game test; the locale swap is proved by the harness.
+
+### Section B remaining: B2, B5, B7 (3 items) + the two B6 hold-backs.
 B3 was flagged in the report as the highest value-to-risk ratio; B4 should be
 done with the F3/F5 fixes that are already in (the helper extraction that
 would have prevented them).
