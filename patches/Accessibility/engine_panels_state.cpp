@@ -31,16 +31,12 @@ bool HasActiveDialogPanel() {
     // SEH-guarded like every other panels[] walk in this TU: the null checks
     // below cannot catch a STALE manager/panel pointer, which is exactly what
     // this array holds during a module teardown or cutscene handoff.
+    constexpr int kCap = 16;
+    void* panels[kCap];
+    int n = ReadPanelArray(GetGuiManager(), panels, kCap);
     __try {
-        void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-        if (!mgr) return false;
-        auto* base = reinterpret_cast<unsigned char*>(mgr);
-        int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-        void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-        if (!panelData || panelCount <= 0) return false;
-        int n = panelCount > 16 ? 16 : panelCount;
         for (int i = 0; i < n; ++i) {
-            void* p = panelData[i];
+            void* p = panels[i];
             if (!p) continue;
             switch (IdentifyPanel(p)) {
             case PanelKind::DialogCinematic:
@@ -242,21 +238,11 @@ bool SetGuiInputClass(int klass) {
 
 bool HasActiveMapPanel(void** outPanel) {
     if (outPanel) *outPanel = nullptr;
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return false;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = 0;
-    void** panelData = nullptr;
-    __try {
-        panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-        panelData  = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-    if (!panelData || panelCount <= 0) return false;
-    int n = panelCount > 16 ? 16 : panelCount;
+    constexpr int kCap = 16;
+    void* panels[kCap];
+    int n = ReadPanelArray(GetGuiManager(), panels, kCap);
     for (int i = 0; i < n; ++i) {
-        void* p = panelData[i];
+        void* p = panels[i];
         if (!p) continue;
         if (IdentifyPanel(p) == PanelKind::InGameMap) {
             if (outPanel) *outPanel = p;
@@ -267,21 +253,11 @@ bool HasActiveMapPanel(void** outPanel) {
 }
 
 bool HasActiveLevelUpPanel() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return false;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = 0;
-    void** panelData = nullptr;
-    __try {
-        panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-        panelData  = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-    if (!panelData || panelCount <= 0) return false;
-    int n = panelCount > 16 ? 16 : panelCount;
+    constexpr int kCap = 16;
+    void* panels[kCap];
+    int n = ReadPanelArray(GetGuiManager(), panels, kCap);
     for (int i = 0; i < n; ++i) {
-        void* p = panelData[i];
+        void* p = panels[i];
         if (!p) continue;
         if (IdentifyPanel(p) == PanelKind::InGameLevelUp) return true;
     }
@@ -290,21 +266,11 @@ bool HasActiveLevelUpPanel() {
 
 bool IsInGameOptionsSubScreen(void* panel) {
     if (!panel) return false;
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return false;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = 0;
-    void** panelData = nullptr;
-    __try {
-        panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-        panelData  = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-    if (!panelData || panelCount <= 0) return false;
-    int n = panelCount > 16 ? 16 : panelCount;
+    constexpr int kCap = 16;
+    void* panels[kCap];
+    int n = ReadPanelArray(GetGuiManager(), panels, kCap);
     for (int i = 0; i < n; ++i) {
-        void* p = panelData[i];
+        void* p = panels[i];
         if (!p || p == panel) continue;
         if (IdentifyPanel(p) == PanelKind::InGameOptions) {
             return true;
@@ -315,16 +281,12 @@ bool IsInGameOptionsSubScreen(void* panel) {
 
 bool HasActiveSubScreen() {
     // SEH-guarded — see the note on HasActiveDialogPanel.
+    constexpr int kCap = 16;
+    void* panels[kCap];
+    int n = ReadPanelArray(GetGuiManager(), panels, kCap);
     __try {
-        void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-        if (!mgr) return false;
-        auto* base = reinterpret_cast<unsigned char*>(mgr);
-        int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-        void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-        if (!panelData || panelCount <= 0) return false;
-        int n = panelCount > 16 ? 16 : panelCount;
         for (int i = 0; i < n; ++i) {
-            void* p = panelData[i];
+            void* p = panels[i];
             if (!p) continue;
             switch (IdentifyPanel(p)) {
             case PanelKind::InGameEquip:

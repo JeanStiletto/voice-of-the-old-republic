@@ -610,13 +610,11 @@ char* GetContentSnapshot(void* panel) {
 }
 
 void MonitorPanelContents() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (!panelData || panelCount <= 0) return;
-    if (panelCount > 16) panelCount = 16;
+    constexpr int kCap = 16;
+    void* panelData[kCap];
+    int panelCount = acc::engine::ReadPanelArray(
+        acc::engine::GetGuiManager(), panelData, kCap);
+    if (panelCount <= 0) return;
 
     AnnounceNewSubScreens(panelData, panelCount);
 
@@ -732,26 +730,21 @@ bool IsDialogPanelKind(PanelKind k) {
 }
 
 void MonitorDialogReplies() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return;
-
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+    constexpr int kCap = 16;
+    void* panelData[kCap];
+    int panelCount = acc::engine::ReadPanelArray(
+        acc::engine::GetGuiManager(), panelData, kCap);
 
     void* dialogPanel = nullptr;
     PanelKind dialogKind = PanelKind::Unknown;
-    if (panelData && panelCount > 0) {
-        int n = panelCount > 16 ? 16 : panelCount;
-        for (int i = 0; i < n; ++i) {
-            void* p = panelData[i];
-            if (!p) continue;
-            PanelKind pk = IdentifyPanel(p);
-            if (IsDialogPanelKind(pk)) {
-                dialogPanel = p;
-                dialogKind  = pk;
-                break;
-            }
+    for (int i = 0; i < panelCount; ++i) {
+        void* p = panelData[i];
+        if (!p) continue;
+        PanelKind pk = IdentifyPanel(p);
+        if (IsDialogPanelKind(pk)) {
+            dialogPanel = p;
+            dialogKind  = pk;
+            break;
         }
     }
 
@@ -926,13 +919,10 @@ void TickGeneralMonitors() {
 }
 
 void* FindActiveSubScreenPanel() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return nullptr;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (!panelData || panelCount <= 0) return nullptr;
-    if (panelCount > 16) panelCount = 16;
+    constexpr int kCap = 16;
+    void* panelData[kCap];
+    int panelCount = acc::engine::ReadPanelArray(
+        acc::engine::GetGuiManager(), panelData, kCap);
     for (int i = 0; i < panelCount; ++i) {
         void* p = panelData[i];
         if (!p) continue;

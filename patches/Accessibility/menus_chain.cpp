@@ -99,15 +99,12 @@ bool IsModalTextPanel(PanelKind k) {
 // (crash analysed 2026-05-29, dump swkotor.exe(1).31228.dmp).
 bool IsPanelLive(void* panel) {
     if (!panel) return false;
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return false;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (!panelData || panelCount <= 0) return false;
-    int n = panelCount > 16 ? 16 : panelCount;
+    constexpr int kCap = 16;
+    void* panels[kCap];
+    int n = acc::engine::ReadPanelArray(
+        acc::engine::GetGuiManager(), panels, kCap);
     for (int i = 0; i < n; ++i) {
-        if (panelData[i] == panel) return true;
+        if (panels[i] == panel) return true;
     }
     return false;
 }

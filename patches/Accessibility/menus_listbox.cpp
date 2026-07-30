@@ -553,13 +553,10 @@ void* SkillInfoBoxFindLb(void* p) {
 // chargen substep). Cheap — panels.size is ≤16 in practice and we only
 // fire from picker arrow steps.
 void* FindFeatsCharGenPanel() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return nullptr;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    void** panelsData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    int    panelsSize = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    if (!panelsData || panelsSize <= 0) return nullptr;
-    int n = panelsSize > 32 ? 32 : panelsSize;
+    constexpr int kCap = 32;
+    void* panelsData[kCap];
+    int n = acc::engine::ReadPanelArray(
+        acc::engine::GetGuiManager(), panelsData, kCap);
     for (int i = 0; i < n; ++i) {
         void* panel = panelsData[i];
         if (!panel) continue;

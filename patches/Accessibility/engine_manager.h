@@ -15,6 +15,37 @@
 
 namespace acc::engine {
 
+// *kAddrGuiManagerPtr, SEH-guarded. Null before the engine creates it
+// (early attach) and after teardown.
+void* GetGuiManager();
+
+// Snapshot the manager's panels[] / modal_stack into a caller-owned buffer.
+//
+// Reading these arrays is the single most-repeated engine access in the
+// patch — it appeared eighteen times across eight files, and EIGHT of those
+// copies had no SEH guard at all, including two sitting directly above
+// GetForegroundPanel in engine_manager.cpp, whose own comment spells out the
+// hazard: the null checks cannot catch a STALE manager or panel pointer,
+// which is what this array holds during teardown.
+//
+// Copying (rather than handing back the engine's `data` pointer) is the
+// point: the copy happens inside the guard, so callers iterate their own
+// memory and a torn-down array cannot fault them mid-loop.
+//
+// `maxEntries` is per-call because the old sites did NOT agree on a cap —
+// most used 16, four used 32. Each keeps the number it had; the discrepancy
+// is a behaviour question, not something to normalise silently.
+// `outRawCount`, if given, receives the UNCLAMPED size field (the manager
+// diagnostics print it).
+//
+// Returns the number of entries copied; 0 on null manager, empty array or
+// fault. Entries may still be stale engine pointers — guard what you DO
+// with them.
+int ReadPanelArray(void* mgr, void** outPanels, int maxEntries,
+                   int* outRawCount = nullptr);
+int ReadModalStack(void* mgr, void** outModal, int maxEntries,
+                   int* outRawCount = nullptr);
+
 // Fallback when caller doesn't pass owner explicitly — g_currentPanel
 // only updates on SetActiveControl; chain rebinds can land here while it
 // points at a previous owner. ≤16 panels × ≤32 children, only fires

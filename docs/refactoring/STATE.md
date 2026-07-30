@@ -922,7 +922,67 @@ This touched nearly every subsystem the player hears. Worth covering:
 5. A swoop race (slice 1 touched the race timer read) and any minigame.
 6. Pause paths: open an in-game menu and Esc back out; a tutorial popup.
 
-### Section B remaining: B2-B7 (6 items) still untouched and need approval.
+## Phase 3 B3 — EXECUTED 2026-07-30 (2 commits)
+
+Approved as "option 2": do both halves, as two commits. **Two of B3's three
+reported items were not what the report said.**
+
+**B3 item "kHoverPauseMs local duplicate" — ALREADY DONE.** Section A's A7
+removed it. `view_mode.h` defines it once; `view_mode.cpp` and
+`map_ui_cursor.cpp` both use that one. Struck, nothing to do.
+
+**B3a (BwmFile constants) — smaller than reported.** The report said 22 raw
+literals across 3 consumers; F7 had already fixed one while closing a crash,
+so 14 across 2 files remained. Both now read through `MinLength` / `Magic` /
+the six `Off*` constants. `WalkmeshStatsCommand` deliberately keeps TWO checks
+instead of `HasValidHeader()` so its error still says WHICH way the file was
+wrong. Also deleted the stale "kept local ... hoist if a third walkmesh
+consumer appears" note that survived the exact hoist it warned about.
+Verified beyond the build: output on real extracted m01aa walkmeshes is
+byte-identical before and after (diff clean), and both commands still give a
+clean warning rather than a stack trace on a 1-byte and a 22-byte garbage file.
+
+**B3b (panel array) — the report's framing was WRONG, and the truth was
+better.** It said "adopt FindPanelByKind". The surviving scans CANNOT adopt
+it: they are predicate scans (`IsDialogPanelKind`, `FindSpec`), full
+iterations (`MonitorPanelContents`), or control-list searches
+(`FindOwningPanel`) — not single-kind lookups. What actually repeated was the
+panel-array ACCESS: manager deref, two offset reads, null-check, clamp.
+**18 sites across 8 files, 8 of them with no SEH guard** — including
+`IsPanelInManager` and `FindOwningPanel`, which sit directly above
+`GetForegroundPanel` in the same file, reading the same array, where the
+guarded version's comment spells out the hazard verbatim.
+
+`engine_manager` now publishes `GetGuiManager()`, `ReadPanelArray()` and
+`ReadModalStack()`. They COPY into the caller's buffer inside the guard, so
+callers iterate their own memory — strictly safer than the old guarded sites,
+which looped over engine memory inside the `__try`.
+
+Two things deliberately NOT normalised, both recorded rather than fixed:
+1. **The caps disagree** — most sites clamp panels[] to 16, four to 32, so a
+   panel at index 17-31 is visible to some queries and invisible to others.
+   Every site kept its own number (`maxEntries` is per-call). This is a live
+   behaviour question for the user.
+2. **`GetForegroundPanel` was left alone.** Its last-resort return indexes
+   `panelData[panelSize - 1]` using the RAW size while its scan covers only
+   the first 32 — above 32 the fallback reaches outside its own scan window.
+   Migrating would have quietly changed that. It is already guarded (an F2
+   fix), so it is not part of the class B3b closes.
+Also out of scope and left: the "top of modal stack" reads in
+engine_panels_state, engine_subscreen (2), input_pipeline and view_mode —
+those index the stack top, they do not iterate.
+
+### NEEDS IN-GAME VERIFICATION — B3b touches menu monitoring and the chain
+1. Arrow through several menus; sub-screen entry announces (MonitorPanelContents,
+   FindActiveSubScreenPanel).
+2. A conversation with replies — the dialog-reply monitor.
+3. The chargen feats picker (FindFeatsCharGenPanel) and a name editbox
+   (menus_editbox's FindMatchingPanel).
+4. A bark bubble, the in-game map, a level-up.
+5. Esc from an in-game menu back to the world (foreground/modal routing).
+B3a is CLI-only and was verified by output diff; it needs no in-game pass.
+
+### Section B remaining: B2, B4, B5, B6, B7 (5 items) need approval.
 B3 was flagged in the report as the highest value-to-risk ratio; B4 should be
 done with the F3/F5 fixes that are already in (the helper extraction that
 would have prevented them).

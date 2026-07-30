@@ -438,14 +438,11 @@ PanelMatch FindMatchingPanel() {
     // a stale or freed panel pointer, and the predicates dereference the
     // vtable. This TU had no SEH guard at all; the equivalent walks in
     // engine_panels.cpp and menus_store/journal/pazaakdeck all guard.
+    constexpr int kCap = 16;
+    void* panelData[kCap];
+    int panelCount = acc::engine::ReadPanelArray(
+        acc::engine::GetGuiManager(), panelData, kCap);
     __try {
-        void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-        if (!mgr) return m;
-        auto* base = reinterpret_cast<unsigned char*>(mgr);
-        int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-        void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-        if (!panelData || panelCount <= 0) return m;
-        if (panelCount > 16) panelCount = 16;
         for (int i = 0; i < panelCount; ++i) {
             void* p = panelData[i];
             if (!p) continue;
