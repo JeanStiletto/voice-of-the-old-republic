@@ -22,8 +22,9 @@ KOTOR 2 (TSL), which runs a very similar engine but a different executable
 ## per-phase sections further down, which are history)
 
 - **Active phase:** Phase 3. Sections A and F are done. Section B is
-  **four of seven items done**: B1, B3, B4, B6 all executed AND
-  play-tested. **Remaining: B2, B5, B7.**
+  **five of seven items done**: B1, B3, B4, B6 executed AND play-tested;
+  B2 executed 2026-07-30 (five functions, five commits) and **NOT yet
+  play-tested**. **Remaining: B5, B7.**
 - **Phase 2:** done and verified in game (the gate was lifted 2026-07-29).
 - **Branch:** `refactor/phase2-coupling`, cut from main @ 4c4e216. Not yet
   merged to main. Phase 1 is already on main.
@@ -39,10 +40,13 @@ KOTOR 2 (TSL), which runs a very similar engine but a different executable
    are the useful part.
 2. **The one piece of verification still owed is the manual installer
    pass** (details in the block below). Everything else is play-tested.
-3. Then walk B2, B5 or B7 with the user, ONE ITEM AT A TIME. Do not present
+3. **B2 needs its in-game pass** — the list is in the B2 block below. It is
+   the only unverified work on the branch.
+4. Then walk B5 or B7 with the user, ONE ITEM AT A TIME. Do not present
    them as a bulk list. Verify each item's claims against the code first —
-   in every single Section B item so far the scan's framing or counts were
-   wrong, sometimes in ways that changed what the right fix was.
+   in four of the five Section B items so far the scan's framing or counts
+   were wrong, sometimes in ways that changed what the right fix was. (B2
+   was the exception: its sixteen line counts were all accurate.)
 
 ### THE VERIFICATION LEDGER (what is and is not actually tested)
 
@@ -1234,3 +1238,119 @@ would have been found by reading the files individually.
 - `git add -A` swept an installer change into a commit whose message said
   "patch side". Caught and split with `reset --soft`. Stage explicitly when
   two areas are in flight.
+
+## Phase 3 B2 — EXECUTED 2026-07-30 (5 commits, 6acf591..ac843e7)
+
+User approved three of the sixteen candidates (FromControl, RebindChain,
+HandleInputEvent) and then OVERRODE the recommendation to defer
+room_topology: "the comment is old and it becomes less likely, and even
+then I will change against a better base than we have at the moment,
+that's still a win. Core feature should be code-side very well as well."
+So BuildForArea and ClassifyCluster went in too. `DriveSelectedPeg` stays
+rejected; the remaining ten candidates are untouched.
+
+**B2's report entry was ACCURATE** — the first Section B item where it
+was. All sixteen reported line counts matched the code within a line or
+two. What was wrong was the report's RISK framing, in both directions:
+
+- `FromControl` was called the most hazardous ("an early `return nullptr`
+  mid-function needs explicit tri-state handling"). It was the easiest of
+  the five: five return statements in 1472 lines, two top-level locals,
+  and a uniform `if (!source) { ... }` ladder across 19 sections.
+- `DriveSelectedPeg` was called "8+ jobs". It is one data-dependency
+  pipeline (position -> lead solution -> aim error -> hitbox -> cue ->
+  steering -> sign calibration), each stage consuming the previous
+  stage's floats. Rejected on that basis, and it should stay rejected.
+
+### Results (all bodies moved mechanically, not retyped)
+
+- `FromControl` 1472 -> 69, menus_extract.cpp
+- `RebindChain` 682 -> 93, menus_chain.cpp
+- `HandleInputEvent` 406 -> 127, unified_action_menu.cpp
+- `BuildForArea` 804 -> 156, room_topology.cpp
+- `ClassifyCluster` 504 -> 192, room_topology.cpp
+
+### Method that made this safe, and is worth reusing
+
+Every body was SLICED BY LINE RANGE with a shell script and re-wrapped,
+never retyped. Then a code-line diff (comments and whitespace stripped,
+sorted, `comm`) proved that the only differences were the intended ones.
+That caught nothing wrong in four of five files and came back completely
+empty for ClassifyCluster. The scripts are in the session scratchpad
+(`build_extract.sh`, `build_chain.sh`, `build_uam.sh`, `build_room.sh`,
+`build_cc.sh`) and each rebuilds its file from the pre-refactor original.
+
+Two mistakes the diff could NOT catch, both caught by the compiler:
+1. `menus_chain`: the listbox block's three `continue` statements belonged
+   to the caller's walk loop. Nothing followed that block in the loop
+   body, so they became plain `return` — equivalent, but invisible to a
+   line diff.
+2. `room_topology`: the store-button resolver re-declared its out-params.
+
+**One tooling trap worth writing down: `\b` is NOT a word boundary in
+awk — it is a backspace.** `awk '/\barea\b/'` matches nothing, silently.
+It told me Passes 2 and 3 of BuildForArea do not use `area`; both do. An
+earlier `grep -E` had reported it correctly and I discounted it. Use
+`grep -E` (or awk's `\y`) for word-boundary scans.
+
+### Three findings — reported, NOT fixed
+
+1. **menus_extract step 1 (tooltip) is ungated and clobbers step 0.**
+   Every other rung of the ladder is `if (!source)`. Step 1 is not: a
+   control that has a tooltip gets it even when the step-0 per-kind
+   formatter already produced a phrase, and its `__except` sets
+   `source = nullptr`, wiping a step-0 result outright. Step 0 (the
+   charsheet/credits/equip-stat/pazaak/journal/keybinding row anchors)
+   was added years after step 1, which is almost certainly how this got
+   missed. Preserved verbatim — `TryTooltip` now takes and returns the
+   running `source`, which is what makes the clobber visible at the call
+   site. **Whether it is a live bug depends on whether any step-0 anchor
+   control carries a tooltip; that needs a log check, not a reading.**
+2. **Two per-kind steps deref the owner panel with no SEH.** Step 9a
+   reads `ownerForPerkind + kPanelControlsOffset` as a CExoArrayList and
+   step 9d reads its vtable, both raw. They are downstream of the
+   `IsPanelInManager` filter, so this is not the naked F2 shape, but it
+   is the same class B1 and B3 closed elsewhere.
+3. **menus_extract carries a stale comment.** The "CSWGuiEditbox — we
+   don't yet know its struct layout well enough to read fields by
+   speculative offsets" note sits directly below step 6b, which does
+   exactly that. Left in place (Section A owned stale comments); it is a
+   one-line delete whenever someone wants it.
+
+One stale comment WAS dropped, because the split is what exposed it: the
+post-fire block in `HandleInputEvent` carried its rationale twice, and
+the outer copy was the pre-stack-mode version claiming "Out of combat:
+fire-and-close" flatly — untrue since the paused/stack-mode branch was
+added below it.
+
+### NEEDS IN-GAME VERIFICATION — none of B2 is play-tested
+
+This is the whole announce path plus the room-shape labeller, so the
+coverage list is wide:
+1. **Menus, broadly** — arrow through inventory, equipment (slot names +
+   equipped item), character sheet (stat rows), the in-game menu strip,
+   the map, a workbench, chargen class + portrait + name editbox, the
+   keyboard-mapping screen, a store, the journal, party selection,
+   pazaak start + wager. Every one of those is a distinct FromControl
+   step; if one step was mis-wired it will be silent or say "control N".
+2. **Chain nav** — the same screens, checking that nothing appeared in
+   or vanished from Up/Down order (RebindChain's decorative filter and
+   the four virtual-row anchors: credits, charsheet stats, wager, equip
+   stats), plus the Mod settings entry on the Options screen.
+3. **Unified action menu** — open on a target, arrow the categories,
+   Shift+arrow for a description, Enter to fire; then cycle with `,`/`.`
+   while it is open (follow-cycle re-anchor) and Enter again; Esc close
+   in and out of combat; the out-of-combat paused (stack) vs running
+   (fire-and-close) split.
+4. **Room shape** — walk a nav-heavy area (Taris Upper City, the Sewers,
+   the Ebon Hawk). Korridor / Kreuzung / Bereich labels, door and exit
+   directions, dead ends.
+   **The strongest check for 4 is a DumpGraphToLog comparison**, per the
+   Phase-1 execution protocol for candidate 12: capture the dump for a
+   fixed area and diff it against a pre-B2 build. It should be
+   byte-identical. That is worth more than any amount of listening,
+   because the merge passes are exactly where a threading mistake would
+   show up as a subtly different cluster set.
+
+Verification so far: `kdev build --clean` 196 TUs, warning baseline
+unchanged. That is all — a clean build is not a working mod.
