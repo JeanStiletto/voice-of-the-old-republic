@@ -20,6 +20,7 @@
 #include "menus_extract.h"       // FromControl ("{action}: {key}" readout)
 #include "menus_internal.h"      // DriveListBoxSelection / ListBoxNav*
 #include "menus_keybinds.h"      // DisplayName — name the clashing mod action
+#include "menus_nav.h"           // ClampedCursorStep — clamp-never-wrap convention
 #include "menus_pending.h"       // QueueActivate (click-sim for OK/Cancel/Default)
 #include "prism.h"
 #include "strings.h"
@@ -323,14 +324,8 @@ bool HandleInput(void* activePanel, int param_1, int param_2, int& outRv) {
     if (!s_drilled) {
         // ---- Tab level: arrow across the flat [tabs + OK/Cancel/Default] list.
         if (isUp || isDown || isHome || isEnd) {
-            int ni = s_tabCursor;
-            if      (isUp)   ni = s_tabCursor - 1;
-            else if (isDown) ni = s_tabCursor + 1;
-            else if (isHome) ni = 0;
-            else             ni = kTabEntryCount - 1;
-            if (ni < 0) ni = 0;
-            if (ni >= kTabEntryCount) ni = kTabEntryCount - 1;
-            s_tabCursor = ni;
+            s_tabCursor = acc::menus::nav::ClampedCursorStep(
+                s_tabCursor, kTabEntryCount, isUp, isDown, isHome, isEnd);
             AnnounceTabEntry(activePanel, s_tabCursor);
             outRv = 1;
             return true;

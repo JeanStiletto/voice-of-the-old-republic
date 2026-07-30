@@ -10,6 +10,7 @@
 #include "engine_keymap.h"    // CodeForVk — hardcoded game-key conflict check
 #include "hotkeys.h"
 #include "log.h"
+#include "menus_nav.h"        // ClampedCursorStep — clamp-never-wrap convention
 #include "prism.h"
 #include "strings.h"
 
@@ -313,14 +314,8 @@ bool HandleInput(int keyCode) {
 
     if (g_level == Level::Categories) {
         if (up || down || home || end) {
-            int ni = g_catCursor;
-            if      (up)   ni = g_catCursor - 1;
-            else if (down) ni = g_catCursor + 1;
-            else if (home) ni = 0;
-            else           ni = kCatLevelCount - 1;
-            if (ni < 0) ni = 0;
-            if (ni >= kCatLevelCount) ni = kCatLevelCount - 1;
-            g_catCursor = ni;
+            g_catCursor = acc::menus::nav::ClampedCursorStep(
+                g_catCursor, kCatLevelCount, up, down, home, end);
             SpeakCategory(/*interrupt=*/true);
             return true;
         }
@@ -350,14 +345,8 @@ bool HandleInput(int keyCode) {
     // ---- Action level ----
     const Category& c = kCategories[g_curCat];
     if (up || down || home || end) {
-        int ni = g_actCursor;
-        if      (up)   ni = g_actCursor - 1;
-        else if (down) ni = g_actCursor + 1;
-        else if (home) ni = 0;
-        else           ni = c.count - 1;
-        if (ni < 0) ni = 0;
-        if (ni >= c.count) ni = c.count - 1;
-        g_actCursor = ni;
+        g_actCursor = acc::menus::nav::ClampedCursorStep(
+            g_actCursor, c.count, up, down, home, end);
         SpeakActionRow(/*interrupt=*/true);
         return true;
     }
