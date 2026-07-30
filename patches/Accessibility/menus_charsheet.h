@@ -1,30 +1,27 @@
-// character sheet sub-screen opener announce.
+// character sheet stat rows.
 //
 // CSWGuiInGameCharacter has 17+ inline labels (class / level / HP / FP
 // / XP / 6 attributes + their pre-formatted modifiers / alignment
-// slider). This module reads them and composes a single localised
-// speech line so the user gets the full status on first open.
+// slider). None of them is IsChainNavigable, so this module surfaces
+// them as virtual, text-only chain entries the user arrows through —
+// each read as a composed localised phrase ("Stärke 14, +2").
 //
-// Called from menus.cpp's MonitorPanelContents on the first-sight
-// branch for InGameCharacter sub-screens — the kind name ("Charakter-
-// blatt" / "Character sheet") lands first via the generic sub-screen
-// announce, then this opener fills in the actual values. Subsequent
-// content changes (e.g. level-up) are caught by the generic content
-// fingerprint diff in MonitorPanelContents and don't need a separate
-// re-fire here.
+// Opening the panel speaks its name only ("Charakterblatt"), from the
+// generic sub-screen announce in menus_monitors.cpp. There is
+// deliberately NO read-everything-on-open path: an earlier opener that
+// composed all 12 rows into one line was removed once the rows became
+// arrow-reachable, and the generic content-fingerprint monitor is
+// silent on this kind for the same reason (it spoke the value labels
+// as bare context-free numbers — "14", "120000"). The fingerprint is
+// still TRACKED for this kind, because a content change is what
+// rebinds the chain when Tab swaps the displayed party member and the
+// Force-points row appears or disappears.
 
 #pragma once
 
 #include <cstddef>
 
 namespace acc::menus::charsheet {
-
-// First-sight opener. Self-gates on IdentifyPanel(panel) ==
-// PanelKind::InGameCharacter; safe to call with any panel pointer.
-// Skips fields the engine renders as empty rather than speaking bare
-// labels (e.g. "Stärke ." would happen if the value field hasn't yet
-// rendered when we read it).
-void MaybeAnnounce(void* panel);
 
 // Per-row formatted speech for one Charakterblatt value label.
 // `labelControl` should be a pointer to one of the inline CSWGuiLabel

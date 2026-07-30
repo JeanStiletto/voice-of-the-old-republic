@@ -756,12 +756,14 @@ enum class Id : int {
     FmtLevelUpDoStepFirst,
     LevelUpStepLocked,
 
-    // ---- Character sheet sub-screen opener (CSWGuiInGameCharacter).
-    //      One announce on first-sight per panel-open cycle, built by
-    //      menus_charsheet::MaybeAnnounce. Each Fmt* below is one sentence
-    //      fragment in the composed line; fields the engine renders as
-    //      empty are skipped at the call site so we don't speak bare
-    //      labels with no value.
+    // ---- Character sheet stat rows (CSWGuiInGameCharacter).
+    //      One phrase per virtual chain row, built by
+    //      menus_charsheet::ExtractStatRow as the user arrows onto it.
+    //      Each Fmt* below is one row; rows whose value the engine
+    //      renders as empty are skipped so we don't speak bare labels
+    //      with no value. (These formats were originally also
+    //      concatenated into a single read-everything-on-open line;
+    //      that opener is gone — the panel speaks its name only.)
     //
     //      Class line: takes 1 `%s` (class name as the engine renders it,
     //      e.g. "Soldat" / "Soldier" — already localised via dialog.tlk).

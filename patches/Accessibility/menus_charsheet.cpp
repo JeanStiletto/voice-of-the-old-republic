@@ -1,10 +1,8 @@
-// character sheet sub-screen opener announce.
+// character sheet stat rows.
 //
-// See menus_charsheet.h for design overview. Lifted from menus.cpp in
-// Step 2A of the refactor; the only behaviour change vs the original
-// is that user-facing strings now route through acc::strings::Get
-// (memory: feedback_centralise_user_strings.md) so a non-German
-// install gets the localised opener instead of hardcoded German.
+// See menus_charsheet.h for design overview. User-facing strings route
+// through acc::strings::Get (memory: feedback_centralise_user_strings.md)
+// so a non-German install gets localised phrases.
 
 #include <windows.h>
 #include <cstdint>
@@ -13,11 +11,8 @@
 #include "menus_charsheet.h"
 
 #include "engine_offsets.h"
-#include "engine_panels.h"
 #include "engine_reads.h"
-#include "log.h"
 #include "strings.h"
-#include "prism.h"
 
 namespace acc::menus::charsheet {
 
@@ -293,105 +288,6 @@ bool ExtractStatRow(void* panel, void* labelControl,
         snprintf(outBuf, bufSize, Get(spec->formatId), value);
         return true;
     }
-}
-
-void MaybeAnnounce(void* panel) {
-    if (!panel) return;
-    if (acc::engine::IdentifyPanel(panel) !=
-        acc::engine::PanelKind::InGameCharacter) {
-        return;
-    }
-    // No per-panel "already spoken" guard — `IsSubScreenTracked` in the
-    // caller already gates first-sight per panel-open cycle, so a close +
-    // reopen re-fires both the kind name AND this opener cleanly.
-
-    // Read every value field. Buffers are sized for the typical content
-    // ("14", "+2", "999/999", "Soldat") — ample headroom for localised
-    // class names which can be 32+ chars in some translations.
-    char cls[64], lvl[16], hp[32], fp[32], xpCur[32], xpThresh[32];
-    char str[8],  strMod[8], dex[8], dexMod[8], con[8], conMod[8];
-    char intel[8], intMod[8], wis[8], wisMod[8], cha[8], chaMod[8];
-
-    ReadCharSheetLabel(panel, kCharSheetLblClass,    cls,      sizeof(cls));
-    ReadCharSheetLabel(panel, kCharSheetLblLevel,    lvl,      sizeof(lvl));
-    ReadCharSheetLabel(panel, kCharSheetLblHp,       hp,       sizeof(hp));
-    ReadCharSheetLabel(panel, kCharSheetLblFp,       fp,       sizeof(fp));
-    ReadCharSheetLabel(panel, kCharSheetLblXpCur,    xpCur,    sizeof(xpCur));
-    ReadCharSheetLabel(panel, kCharSheetLblXpThresh, xpThresh, sizeof(xpThresh));
-    ReadCharSheetLabel(panel, kCharSheetLblStr,      str,    sizeof(str));
-    ReadCharSheetLabel(panel, kCharSheetLblStrMod,   strMod, sizeof(strMod));
-    ReadCharSheetLabel(panel, kCharSheetLblDex,      dex,    sizeof(dex));
-    ReadCharSheetLabel(panel, kCharSheetLblDexMod,   dexMod, sizeof(dexMod));
-    ReadCharSheetLabel(panel, kCharSheetLblCon,      con,    sizeof(con));
-    ReadCharSheetLabel(panel, kCharSheetLblConMod,   conMod, sizeof(conMod));
-    ReadCharSheetLabel(panel, kCharSheetLblInt,      intel,  sizeof(intel));
-    ReadCharSheetLabel(panel, kCharSheetLblIntMod,   intMod, sizeof(intMod));
-    ReadCharSheetLabel(panel, kCharSheetLblWis,      wis,    sizeof(wis));
-    ReadCharSheetLabel(panel, kCharSheetLblWisMod,   wisMod, sizeof(wisMod));
-    ReadCharSheetLabel(panel, kCharSheetLblCha,      cha,    sizeof(cha));
-    ReadCharSheetLabel(panel, kCharSheetLblChaMod,   chaMod, sizeof(chaMod));
-
-    // Alignment slider value. cur_value range is [0..100] in vanilla;
-    // 50 = neutral, 0 = Dark Side, 100 = Light Side.
-    uint32_t alignCur = 0, alignMax = 0;
-    __try {
-        auto* sld = reinterpret_cast<unsigned char*>(panel) +
-                    kCharSheetSldAlign;
-        alignCur = acc::engine::ReadU32(sld, kSliderCurValueOffset);
-        alignMax = acc::engine::ReadU32(sld, kSliderMaxValueOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        alignCur = 0;
-        alignMax = 0;
-    }
-
-    // Build the announce string. Pre-formatted attribute modifiers
-    // ("+2") come straight from the engine so we don't reimplement
-    // the +N/-N formatting. Skips fields that read as empty rather
-    // than emitting bare "Stärke ." sentences.
-    using acc::strings::Get;
-    using acc::strings::Id;
-
-    char msg[1024];
-    size_t off = 0;
-    auto append = [&](const char* fmt, auto... args) {
-        if (off >= sizeof(msg)) return;
-        int n = snprintf(msg + off, sizeof(msg) - off, fmt, args...);
-        if (n > 0) off += (size_t)n;
-        if (off > sizeof(msg)) off = sizeof(msg);
-    };
-    if (cls[0])    append(Get(Id::FmtCharSheetClass), cls);
-    if (lvl[0])    append(Get(Id::FmtCharSheetLevel), lvl);
-    if (xpCur[0] && xpThresh[0]) {
-        append(Get(Id::FmtCharSheetXp), xpCur, xpThresh);
-    }
-    if (hp[0])     append(Get(Id::FmtCharSheetHp), hp);
-    // FP only for Force users — lbl_force_stat renders a stale garbage
-    // number for non-Jedi/droids, so gate on the engine's max_force_points.
-    if (fp[0] && DisplayedHasForce(panel)) append(Get(Id::FmtCharSheetFp), fp);
-    if (str[0])    append(Get(Id::FmtCharSheetStr),
-                          str, strMod[0] ? ", " : "", strMod);
-    if (dex[0])    append(Get(Id::FmtCharSheetDex),
-                          dex, dexMod[0] ? ", " : "", dexMod);
-    if (con[0])    append(Get(Id::FmtCharSheetCon),
-                          con, conMod[0] ? ", " : "", conMod);
-    if (intel[0])  append(Get(Id::FmtCharSheetInt),
-                          intel, intMod[0] ? ", " : "", intMod);
-    if (wis[0])    append(Get(Id::FmtCharSheetWis),
-                          wis, wisMod[0] ? ", " : "", wisMod);
-    if (cha[0])    append(Get(Id::FmtCharSheetCha),
-                          cha, chaMod[0] ? ", " : "", chaMod);
-    if (alignMax > 0) {
-        append(Get(Id::FmtCharSheetAlignment), alignCur, alignMax);
-    }
-
-    if (off == 0) {
-        acclog::Write("Menus.CharSheet", "panel=%p — all fields empty, skip",
-                      panel);
-        return;
-    }
-
-    prism::Speak(msg, /*interrupt=*/false);
-    acclog::Write("Menus.CharSheet", "panel=%p text=\"%.500s\"", panel, msg);
 }
 
 }  // namespace acc::menus::charsheet
