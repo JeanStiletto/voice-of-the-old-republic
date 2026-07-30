@@ -18,28 +18,66 @@ KOTOR 2 (TSL), which runs a very similar engine but a different executable
 4. Full file inventory (line counts, sorted): `docs/refactoring/file-inventory.txt`.
 5. Rules of engagement are binding — read them every session.
 
-## Current status  (updated 2026-07-29 — read this block, not the older
+## Current status  (updated 2026-07-30 — read this block, not the older
 ## per-phase sections further down, which are history)
 
-- **Active phase:** Phase 3 (per-file sweep) — SCAN COMPLETE 2026-07-29,
-  nothing executed, awaiting item-by-item approval. See "Phase 3 status"
-  at the end of this file and the consolidated report
-  `reports/phase-3-sweep.md`.
-- **Phase 2:** code-complete and committed, but STILL NOT VERIFIED IN
-  GAME. See "Phase 2 status" near the end of this file.
-- **Branch:** `refactor/phase2-coupling`, cut from main @ 4c4e216 (the
-  Phase-1 merge). Phase 1 is already merged to main and smoke-tested by
-  the user; nothing about it is outstanding except candidate 23.
-- **Build state:** green everywhere. `kdev build --clean` = 194 TUs, 0
-  warnings. kdev and installer `dotnet build` = 0 errors / 0 warnings
-  (the installer's single warning is pre-existing, in a file we never
-  touched).
+- **Active phase:** Phase 3. Sections A and F are done. Section B is
+  **four of seven items done**: B1, B3, B4, B6 all executed AND
+  play-tested. **Remaining: B2, B5, B7.**
+- **Phase 2:** done and verified in game (the gate was lifted 2026-07-29).
+- **Branch:** `refactor/phase2-coupling`, cut from main @ 4c4e216. Not yet
+  merged to main. Phase 1 is already on main.
+- **Build state:** green everywhere. `kdev build --clean` = 196 TUs, 0
+  warnings (195 + engine_app.cpp, added by B1). kdev and installer
+  `dotnet build` = 0 errors; warning baseline is 1 pre-existing installer
+  warning (PriorityGroup2da) + 3 in third_party KPatchCore.
+
+### START HERE NEXT SESSION
+
+1. Read the "Phase 3 Section B" blocks below for what B1/B3/B4/B6 actually
+   did — several corrected the report's own framing, and those corrections
+   are the useful part.
+2. **The one piece of verification still owed is the manual installer
+   pass** (details in the block below). Everything else is play-tested.
+3. Then walk B2, B5 or B7 with the user, ONE ITEM AT A TIME. Do not present
+   them as a bulk list. Verify each item's claims against the code first —
+   in every single Section B item so far the scan's framing or counts were
+   wrong, sometimes in ways that changed what the right fix was.
+
+### THE VERIFICATION LEDGER (what is and is not actually tested)
+
+**Play-tested and confirmed by the user, 2026-07-30.** Each was applied with
+a freshness check on `<install>/patches/accessibility.dll` BEFORE testing, so
+the stale-DLL trap does not apply to any of these results:
+- B1 (all four slices) — DLL 11:18:48, HEAD f259ea5
+- B3 (accessor + cap) — DLL 11:47:31, HEAD 9bfa806
+- B6 patch side — DLL 12:31:57; session log `patch-20260730-103915.log`
+  confirms a game run at 12:39:15–12:40:55 local, i.e. after that apply.
+  (Log FILENAMES are UTC, file mtimes are local — the two are two hours
+  apart and that has already caused one false "did they test the right
+  build?" scare. The `session start utc=... local=...` header line settles
+  it.)
+
+**NOT yet verified — the only outstanding item: the manual installer pass.**
+No installer log newer than 2026-07-10 exists anywhere under the user
+profile, so this has definitely not been run yet. It now covers F3-F6, B4
+and both B6 hold-backs at once, and it is end-user-facing, so it should
+happen before the next release. One real install + uninstall cycle with a
+screen reader:
+- browse to a WRONG folder — the reason must be spoken, and the
+  Install-button enable/disable transition announced (F3, F4, F6, B4)
+- run an uninstall — progress must be spoken (F5, B4)
+- confirm intro movies are disabled on install and restored on uninstall
+  (B6 hold-back 2 — nine states are unit-verified, but never on a real
+  install)
+- if you use the spatial-audio toggle, check EAX lands in swkotor.ini
+  (B6 hold-back 1 — verified against a copy of the real ini, not live)
 
 ### C8 is DONE (2026-07-29), and the Allard address bug it surfaced is FIXED.
 
-**NEXT ACTION: in-game smoke test.** Nothing in Phase 2 has been played yet.
-Two builds are worth covering, and the Russian one is now the interesting
-case — see the smoke-test list at the end of this block.
+**NEXT ACTION (2026-07-29, now DONE — kept for history).** Phase 2 was
+unplayed at the time of writing; it has since been tested and passed,
+including on the Allard Russian build.
 
 **C8 executed and verified.** `engine_offsets.h` is now a 28-line
 aggregator over `engine_offsets_types.h` / `_addresses.h` / `_fields.h` /
@@ -113,7 +151,8 @@ Phase-2 work is NOT yet in-game tested. Smoke-test list:
 (includer migration → falls out of Phase 3). Candidate 23 is now DONE —
 see its entry further down.
 
-## SESSION END 2026-07-29 (afternoon) — START HERE NEXT SESSION
+## SESSION END 2026-07-29 (afternoon) — HISTORY, superseded by the
+## "Current status" block at the top of this file.
 
 Phase 2 is code-complete and committed. What happened this session, and
 what is genuinely still owed:
@@ -740,7 +779,7 @@ that `kHoverPauseMs`'s two copies agree (drift risk, not a live bug).
   headers — Phase 1 split the .cpp files only. There is nothing to
   migrate to for those four; splitting them is NEW work, not a migration.
 
-### NEXT ACTIONS, in order
+### NEXT ACTIONS, in order (2026-07-29 — all three since done)
 
 1. **Phase-2 in-game smoke test — this gates Phase-3 execution.** Nothing
    in Phase 2 has been played. Stacking a per-file sweep on top of an
@@ -1129,3 +1168,69 @@ Installer side needs no game test; the locale swap is proved by the harness.
 B3 was flagged in the report as the highest value-to-risk ratio; B4 should be
 done with the F3/F5 fixes that are already in (the helper extraction that
 would have prevented them).
+
+## SESSION END 2026-07-30 — Section B, four items closed
+
+Eleven commits, `b2627cd..HEAD`. All four items were play-tested by the user
+in the same session they were written, each against a freshness-checked DLL.
+
+**What was done:** B1 (engine resolve seam, 4 slices), B3 (BwmFile constants
++ panel-array accessor + cap unification), B4 (installer announcement
+helper), B6 (nine sub-items: six executed, one rejected, two hold-backs
+later approved and executed with test harnesses).
+
+### The finding that should shape how B2/B5/B7 are approached
+
+**Every single Section B item's report entry was wrong in some way**, and in
+three of four cases the correction changed what the right fix was. Verify
+before proposing, every time:
+
+- **B1** — report said "~20 sites across 8+ files". Actual: ~40 sites across
+  ~25 files, six names for one hop, three copies of the root pointer.
+- **B3** — reported as "adopt FindPanelByKind". The surviving scans CANNOT
+  adopt it; they are predicate scans and whole-array iterations. The real
+  finding was the array ACCESS, duplicated 18x with 8 unguarded. Also, one
+  of B3's three sub-items (`kHoverPauseMs`) was already done by Section A.
+- **B4** — said four copies; there were five, because F5's own fix added one.
+- **B6** — said 22 raw literals across 3 BwmFile consumers; F7 had already
+  fixed one, leaving 14 across 2. And the "K1cp/K2cp skeletons" sub-item was
+  rejected outright: K2cp is a 120-line stub its own docs mark as not wired
+  up, against K1cp's 293 lines.
+
+### Two defects found by refactoring, not by looking for bugs
+
+- `ResolveGuiInGame()` had **no SEH guard at all** — three raw dereferences
+  called from panel code that runs during teardown. Exactly the F2 shape,
+  invisible to the per-file scan because each caller looked fine alone.
+  Fixed by construction in B1 slice 2.
+- **8 of 18 panel-array walks were unguarded**, including two sitting
+  directly above `GetForegroundPanel` in the same file, reading the same
+  array, where the guarded neighbour's comment states the hazard outright.
+  Fixed by construction in B3b.
+
+Both are the "closes F2 by construction" the report predicted, and neither
+would have been found by reading the files individually.
+
+### Behaviour questions surfaced and deliberately NOT auto-resolved
+
+- **Panel-array cap** (16 vs 32) — raised as a question, evidenced from the
+  logs (normal play ≤9, but `patch-20260530-112606.log` hit 27), then
+  unified on 32 on the user's explicit call. The user declined to chase the
+  underlying 2026-05-30 panel growth: "won't care about a month-old one-time
+  bug until it appears again." That log is the starting point if it recurs.
+- **`GetForegroundPanel`'s raw-size fallback** — indexes
+  `panelData[panelSize - 1]` while its scan covers only the first 32, so
+  above 32 it reads outside its own window. Left alone and recorded; it is
+  already guarded, so it was not in the class B3b closed. **Still open.**
+
+### Method notes worth reusing
+
+- Two throwaway harnesses proved equivalence where "it should be fine" was
+  not good enough, both in the session scratchpad and both cheap to rebuild:
+  locale JSON (1146 keys, zero diffs, across all six languages) and the
+  intro-movie rename (nine folder states including both mid-states and a
+  round trip). The INI change got the same treatment against a copy of the
+  real swkotor.ini — one line changed out of 166.
+- `git add -A` swept an installer change into a commit whose message said
+  "patch side". Caught and split with `reset --soft`. Stage explicitly when
+  two areas are in flight.
