@@ -29,6 +29,7 @@ namespace KotorAccessibilityInstaller
         private const string Kotor2IniFileName = "swkotor2.ini";
         private const string GraphicsSectionHeader = "[Graphics Options]";
         private const string KeymappingSectionHeader = "[Keymapping]";
+        private const string SoundSectionHeader = "[Sound Options]";
 
         // Exact key spellings the engine reads. Case-sensitive on the engine side.
         private static readonly (string Key, string Value)[] Tweaks =
@@ -103,6 +104,19 @@ namespace KotorAccessibilityInstaller
         /// </summary>
         public static Result ApplyKotor2WindowedDefaults(string k2GameDir)
             => ApplySectionPairs(k2GameDir, Kotor2IniFileName, GraphicsSectionHeader, Kotor2Tweaks);
+
+        /// <summary>
+        /// Set <c>EAX</c> under <c>[Sound Options]</c> to 1 or 0. Drives the
+        /// optional dsoal spatial-audio toggle, which needs EAX on to get the
+        /// environmental reverb that is the whole point of the feature.
+        ///
+        /// Unlike the three calls above this is a toggle rather than a set of
+        /// defaults, which is why it takes a parameter. SpatialAudioManager used
+        /// to carry its own copy of the section-walk for this one key.
+        /// </summary>
+        public static Result ApplyEaxSetting(string gameDir, bool enable)
+            => ApplySectionPairs(gameDir, IniFileName, SoundSectionHeader,
+                                 new[] { ("EAX", enable ? "1" : "0") });
 
         /// <summary>
         /// Shared in-place editor: sets each <paramref name="pairs"/> key=value inside

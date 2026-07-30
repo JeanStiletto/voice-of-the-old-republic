@@ -1085,18 +1085,35 @@ K1cpInstaller is 293 lines with translation-overlay logic, K2cpInstaller is
 gated on two prerequisites. Abstracting a common base over a shape that is
 not finished would have to be redone when K2CP is actually wired up.
 
-**HELD BACK — need a user decision, both touch the real game install:**
-- `IntroMovieDisabler`'s hand-mirrored Disable/Restore pair (~85 lines). It
-  RENAMES files in the user's install; merging the pair means one shared
-  direction-parameterised routine, and getting it wrong leaves intro .bik
-  files renamed with no way back.
-- `SpatialAudioManager.SetEaxValue` reimplementing `SwkotorIniTweaker`'s
-  section/key algorithm. Confirmed genuinely duplicated (same
-  find-section → walk → replace-or-append shape), but the tweaker's general
-  routine is private behind three `Apply*Defaults` entry points, so adoption
-  needs a small public API addition, and it WRITES swkotor.ini.
-Both are worth doing; both want an install/uninstall test rather than riding
-along with a cleanup commit.
+**HOLD-BACKS — user approved 2026-07-30; both EXECUTED with test harnesses.**
+Both write to a real game install, so neither was taken on a clean build
+alone. Harnesses live in the session scratchpad (`initest`, `introtest`);
+they copy `SwkotorIniTweaker.cs` / `IntroMovieDisabler.cs` next to a stub
+Logger, so they can be recreated in minutes if either file changes.
+
+- **`SpatialAudioManager.SetEaxValue` → `SwkotorIniTweaker.ApplyEaxSetting`.**
+  The tweaker's general routine (`ApplySectionPairs`) was private behind three
+  `Apply*Defaults` wrappers; added a fourth, parameterised because EAX is a
+  toggle rather than a default. File 249 → 184 lines. The write step was
+  already byte-identical in both (`\r\n` + `UTF8Encoding(false)`), which is
+  what made the swap safe. Verified against a COPY of the real swkotor.ini
+  across four cases — key present/changed, present/already-correct, key
+  missing, whole section missing — plus an integrity check: writing EAX=0 to
+  the real 166-line file changes EXACTLY ONE LINE and preserves length.
+  One behaviour improvement recorded: the tweaker skips the write entirely
+  when nothing changed, where the old copy rewrote the file every time.
+
+- **`IntroMovieDisabler` Disable/Restore merged into `MoveIntros(disable:)`.**
+  242 → 190 lines. `DisableIntros` / `RestoreIntros` keep their names and
+  signatures (one caller each: MainForm, UninstallFlow). The pair was
+  perfectly symmetric — same five-branch shape, differing only in which name
+  is the source — which is exactly where a fix lands on one side only.
+  Verified across NINE states: vanilla→disable, disable→disable (idempotent),
+  disabled→restore, restore→restore, BOTH-forms-present in each direction
+  (the mid-state a failed run leaves behind), no intro files at all, missing
+  Movies folder (must fail with a message), and a full round trip that has to
+  return the folder to vanilla exactly. All pass. The real install was not
+  touched by the harness — confirmed afterwards.
 
 ### NEEDS IN-GAME VERIFICATION (B6 patch side)
 1. Activation cues: `-`, Shift+-, Ctrl+-, Alt+- on a door, an NPC and a
@@ -1108,7 +1125,7 @@ along with a cleanup commit.
 4. A looping sound and a one-shot cue (the CResRef move).
 Installer side needs no game test; the locale swap is proved by the harness.
 
-### Section B remaining: B2, B5, B7 (3 items) + the two B6 hold-backs.
+### Section B remaining: B2, B5, B7 (3 items). B6 is fully closed.
 B3 was flagged in the report as the highest value-to-risk ratio; B4 should be
 done with the F3/F5 fixes that are already in (the helper extraction that
 would have prevented them).
