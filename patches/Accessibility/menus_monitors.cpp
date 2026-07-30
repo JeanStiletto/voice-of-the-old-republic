@@ -285,6 +285,22 @@ void MonitorFocusedControl() {
         s_focusMonitorControl = focused;
         strncpy_s(s_focusMonitorText, text, _TRUNCATE);
         prism::Speak(text, /*interrupt=*/false);
+        // Prime channel-0 dedup, exactly as AnnounceControl does after its
+        // own voluntary speech. Without this the monitor's utterance is
+        // INVISIBLE to the pending-slot drain, so the engine's post-nav
+        // SetActiveControl echo speaks the same line a second time.
+        //
+        // This is the chargen class-icon double-announce. It only bit when
+        // the monitor was the FIRST path to produce text for a control:
+        // step 9c's per-icon cache starts cold, so AnnounceControl's
+        // FromControl returns nullptr on the nav itself and exits via its
+        // class-icon early-out, the cursor warp then makes active_control
+        // the icon, and this monitor fills the cache and speaks. The echo
+        // drain — now with a warm cache — spoke it again. On a revisit
+        // AnnounceControl won the race, called MarkSpoken itself, and the
+        // double never appeared, which is why it sounded like a
+        // direction-dependent bug rather than a first-visit one.
+        acc::menus::MarkSpoken(/*channel=*/0, text);
         acclog::Write("Monitor", "focus changed -> %p text=\"%s\"",
                       focused, text);
     }
