@@ -105,11 +105,9 @@ const char* const kActionNames[static_cast<int>(Action::COUNT)] = {
     "HelpMenuOpen",
     "HelpContext",
     "CheckForUpdate",
-    "ProbePathfind",
     "ProbeAudioCycle",
     "ProbeAudioFire",
     "ProbeCameraDump",
-    "ProbeMouseLookToggle",
     "ProbeCameraDistDump",
     "ProbeCameraDistClampToggle",
     "PazaakStand",
@@ -342,7 +340,6 @@ void InitDefaults() {
     // ----- Diagnostic probes -----
     // Plain F9-F12 forbid Ctrl so the Option-B distance probes below can
     // own Ctrl+F11 / Ctrl+F12 without double-firing the bare-F-key probes.
-    bind(Action::ProbePathfind,        VK_F9,  0, 0, kModCtrl);
     bind(Action::ProbeAudioCycle,      VK_F10, 0, 0, kModCtrl);
     // F11 unbound — the camera-distance clamp toggle (Ctrl+F11) needs the
     // key free for sustained per-mode testing; the fixed-North audio probe
@@ -350,7 +347,6 @@ void InitDefaults() {
     // investigating the listener-frame question.
     bind(Action::ProbeAudioFire,       0,      0, 0, 0);
     bind(Action::ProbeCameraDump,      VK_F12, 0, 0, kModCtrl);
-    bind(Action::ProbeMouseLookToggle, VK_RMENU, 0, kModShift, 0);
 
     // Option-B camera-distance probes. Ctrl-modified to disambiguate from
     // the bare F-key probes above. See probe_camera_distance.h for the
@@ -643,11 +639,9 @@ Action FindConflict(Action self, int vk, uint32_t mods) {
 
 bool IsUserRebindable(Action a) {
     switch (a) {
-    case Action::ProbePathfind:
     case Action::ProbeAudioCycle:
     case Action::ProbeAudioFire:
     case Action::ProbeCameraDump:
-    case Action::ProbeMouseLookToggle:
     case Action::ProbeCameraDistDump:
     case Action::ProbeCameraDistClampToggle:
     // Shift+B camera-state probe — a developer diagnostic, not a player

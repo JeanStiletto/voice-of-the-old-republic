@@ -100,11 +100,9 @@ enum class Action : int {
     CheckForUpdate,            // F5 — main menu only, gated on GetPlayerPosition
 
     // ----- Diagnostic probes (NOT user-rebindable) -----
-    ProbePathfind,             // F9     (Ctrl forbidden)
     ProbeAudioCycle,           // F10    (Ctrl forbidden)
     ProbeAudioFire,            // F11    (Ctrl forbidden)
     ProbeCameraDump,           // F12    (Ctrl forbidden)
-    ProbeMouseLookToggle,      // Shift+AltGr
     ProbeCameraDistDump,       // Ctrl+F12 — Option-B camera-distance snapshot
     ProbeCameraDistClampToggle,// Ctrl+F11 — cycle distance clamp modes
 

@@ -93,7 +93,9 @@ uint8_t EffectiveVolumeByte(uint8_t baseVolume) {
 }
 
 // --- Priority-group resolution (live CPriorityGroup table) ----------
-// Layout mirrors probe_priority_groups.cpp (XML type DB 2026-05-14):
+// Layout established by the priority-groups probe against the XML type DB
+// (2026-05-14). That probe was retired once its findings landed here; see
+// probe_priority_groups.cpp in git history if the derivation is needed:
 //   CExoSound facade   +0x00 -> CExoSoundInternal*
 //   CExoSoundInternal  +0x4c -> CPriorityGroup* (heap array)
 //   CPriorityGroup stride 0x18: +0x06 priority(byte) +0x07 volume(byte)
