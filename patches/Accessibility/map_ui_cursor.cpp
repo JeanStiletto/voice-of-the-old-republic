@@ -320,10 +320,18 @@ bool PixelToWorld(void* areaMap, float px, float py, float zSeed, Vector& outWor
 // Same filter the engine's GetNext/PrevMapNote apply — we re-do the
 // scan rather than reading their cached current-node so we get spatial
 // not sequential hit detection.
+// `dump` (optional) collects the per-waypoint diagnostic lines. It is a
+// POINTER rather than a local BlockLog because this function uses __try, and
+// MSVC's C2712 forbids an object needing unwinding in a function with SEH —
+// the same constraint menus_extract.cpp documents. The caller owns the block,
+// so the whole per-tick scan folds as one unit when nothing moved. Line-level
+// dedup cannot fold this: the lines cycle (#0,#1,…,#6,#0,#1,…), so each line
+// differs from the one just before it and Trace never sees a repeat.
 void* FindNearestExploredMapNote(void* mapPanel, void* areaMap,
                                  float cursorPx, float cursorPy,
                                  int* outScannedCount = nullptr,
-                                 float* outBestDist2 = nullptr) {
+                                 float* outBestDist2 = nullptr,
+                                 acclog::BlockLog* dump = nullptr) {
     if (!mapPanel || !areaMap) return nullptr;
     void* mapHider = reinterpret_cast<unsigned char*>(mapPanel) +
                      kInGameMapHiderOffset;
@@ -405,10 +413,11 @@ void* FindNearestExploredMapNote(void* mapPanel, void* areaMap,
         if (!WorldToPixel(areaMap, pos, ppx, ppy)) {
             node = nextNode; continue;
         }
-        acclog::Trace("MapCursor.dump",
-                      "waypoint #%d handle=0x%x world=(%.2f,%.2f) "
-                      "pixel=(%.1f,%.1f)",
-                      scanned, handle, pos.x, pos.y, ppx, ppy);
+        if (dump) {
+            dump->Line("waypoint #%d handle=0x%x world=(%.2f,%.2f) "
+                       "pixel=(%.1f,%.1f)",
+                       scanned, handle, pos.x, pos.y, ppx, ppy);
+        }
         float dx = ppx - cursorPx;
         float dy = ppy - cursorPy;
         float d2 = dx * dx + dy * dy;
@@ -864,10 +873,18 @@ void Tick() {
     float bestDistWay2  = 1e30f;
     float bestDistPin2  = 1e30f;
     float bestDistHint2 = 1e30f;
-    void* hitWaypoint = FindNearestExploredMapNote(mapPanel, areaMap,
-                                                   g_state.px, g_state.py,
-                                                   &scannedCount,
-                                                   &bestDistWay2);
+    // Owned here, not inside the scan: the scan uses SEH and cannot hold an
+    // object with a destructor (C2712). Folds the whole per-tick waypoint
+    // dump to one "(repeated Nx — unchanged)" line while the map sits still.
+    void* hitWaypoint = nullptr;
+    {
+        acclog::BlockLog wayDump("MapCursor.dump");
+        hitWaypoint = FindNearestExploredMapNote(mapPanel, areaMap,
+                                                 g_state.px, g_state.py,
+                                                 &scannedCount,
+                                                 &bestDistWay2,
+                                                 &wayDump);
+    }
     void* clientAreaForPins = nullptr;
     {
         void* serverArea = acc::engine::GetCurrentArea();
