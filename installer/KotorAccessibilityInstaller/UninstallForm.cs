@@ -2,7 +2,6 @@ using System;
 using System.Drawing;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using System.Windows.Forms.Automation;
 
 namespace KotorAccessibilityInstaller
 {
@@ -156,23 +155,9 @@ namespace KotorAccessibilityInstaller
             _statusLabel.Text = message;
             Logger.Info(message);
 
-            // WinForms Labels are not UIA live regions, so a bare Text write is
-            // invisible to NVDA / JAWS / Narrator until the user navigates to
-            // it - which during an uninstall means no progress feedback at all.
-            // Every sibling form does this; this one was missing it.
-            try
-            {
-                _statusLabel.AccessibilityObject?.RaiseAutomationNotification(
-                    AutomationNotificationKind.ActionCompleted,
-                    AutomationNotificationProcessing.MostRecent,
-                    message);
-            }
-            catch (Exception ex)
-            {
-                // Older Windows or no UIA at runtime - degrade silently rather
-                // than taking down the uninstall over a missing announcement.
-                Logger.Warning($"Could not raise automation notification: {ex.Message}");
-            }
+            // Without this an uninstall gives a blind user no progress feedback
+            // at all — this form was the F5 bug.
+            ScreenReaderAnnouncer.Announce(_statusLabel, message);
         }
     }
 }

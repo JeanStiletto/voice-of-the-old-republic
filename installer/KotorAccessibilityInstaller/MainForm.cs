@@ -6,7 +6,6 @@ using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using System.Windows.Forms.Automation;
 using KotorAccessibilityInstaller.ModInstallers;
 
 namespace KotorAccessibilityInstaller
@@ -578,30 +577,11 @@ namespace KotorAccessibilityInstaller
             RaiseNotification(message);
         }
 
-        // WinForms Labels are not UIA live regions, so just changing
-        // `_statusLabel.Text` is invisible to NVDA / JAWS / Narrator until
-        // the user navigates to it. Raise a UIA notification on the label
-        // so screen readers speak each update as it lands.
-        //
-        // MostRecent processing means a fresh update interrupts a pending
-        // one — important during the K1CP step where heartbeat + stdout
-        // forwards can fire in quick succession.
+        // Why a bare Text write is not enough, and why MostRecent: see
+        // ScreenReaderAnnouncer. Kept as a named method because the install
+        // flow calls it directly in places that do not change status text.
         private void RaiseNotification(string message)
-        {
-            try
-            {
-                _statusLabel.AccessibilityObject?.RaiseAutomationNotification(
-                    AutomationNotificationKind.ActionCompleted,
-                    AutomationNotificationProcessing.MostRecent,
-                    message);
-            }
-            catch (Exception ex)
-            {
-                // Older Windows or no UIA at runtime — degrade silently so
-                // missing announcements don't take down the install.
-                Logger.Warning($"Could not raise automation notification: {ex.Message}");
-            }
-        }
+            => ScreenReaderAnnouncer.Announce(_statusLabel, message);
 
         private void UpdateProgress(int value)
         {

@@ -981,7 +981,11 @@ Also out of scope and left: the "top of modal stack" reads in
 engine_panels_state, engine_subscreen (2), input_pipeline and view_mode —
 those index the stack top, they do not iterate.
 
-### NEEDS IN-GAME VERIFICATION — B3b touches menu monitoring and the chain
+### B3 IS VERIFIED IN GAME (2026-07-30) — user tested and reported working.
+DLL freshness confirmed first (installed 11:47:31 from the 11:46:06 kpatch,
+HEAD 9bfa806). Coverage run is the list below.
+
+### In-game coverage that was run
 1. Arrow through several menus; sub-screen entry announces (MonitorPanelContents,
    FindActiveSubScreenPanel).
 2. A conversation with replies — the dialog-reply monitor.
@@ -991,7 +995,51 @@ those index the stack top, they do not iterate.
 5. Esc from an in-game menu back to the world (foreground/modal routing).
 B3a is CLI-only and was verified by output diff; it needs no in-game pass.
 
-### Section B remaining: B2, B4, B5, B6, B7 (5 items) need approval.
+## Phase 3 B4 — EXECUTED 2026-07-30 (installer UIA helper)
+
+The report said four copies; there are now FIVE — F5's fix added the
+UninstallForm one, so the bug fix itself grew the duplication it was caused by.
+
+**Only the notification block was extracted, because only it is identical.**
+All five copies of the `RaiseAutomationNotification` call are byte-for-byte
+the same: same kind (ActionCompleted), same processing (MostRecent), same
+try/catch, same warning text. The `UpdateStatus` wrappers around them are NOT
+interchangeable and stayed per-form — they differ in `Invoke` (synchronous)
+vs `BeginInvoke`, whether the message also goes to the install log, and
+whether the caller can suppress the announcement via an `announce` flag.
+Folding those together would have been a real behaviour change on the
+threading model.
+
+New `ScreenReaderAnnouncer.Announce(Control, string)` (flat top-level file,
+matching the installer's one-class-per-file layout). Five call sites, five
+dead `using System.Windows.Forms.Automation;` removed.
+
+`MainForm.RaiseNotification` was kept as a named method rather than inlined:
+it has a direct caller at MainForm.cs:228 that announces the Install button's
+enabled/disabled transition without changing status text (the F6 work).
+
+**Invariant now checkable by grep, and it is the point of the item:** there
+are exactly five `_statusLabel.Text =` writes in the installer and exactly
+five `Announce` call sites, one per form, each inside the same method. A form
+that adds a status write without an announcement is now visibly odd. F3 and
+F5 were both "a copy that was never made", and silence is the one failure a
+blind user cannot notice.
+
+Verified: F3's `ValidatePath -> UpdateStatus(message, isError: notFound)`
+routing, F4's `RefreshAccessibleDescription`, and F6's enabled/disabled
+announcement all still in place. `dotnet build --no-incremental` 0 errors,
+warning baseline unchanged (1 pre-existing installer warning in
+PriorityGroup2da, 3 in third_party KPatchCore).
+
+### NEEDS MANUAL VERIFICATION with a screen reader (not play-testable)
+Same pass F3-F6 already owed, now also covering B4:
+1. Browse to a wrong folder — reason spoken AND the Install-disabled
+   transition announced.
+2. Run an uninstall — progress spoken.
+3. A TSLRCM / KOTOR2-mods / workshop-TLK run if convenient — those three
+   forms' status updates went through the same extraction.
+
+### Section B remaining: B2, B5, B6, B7 (4 items) need approval.
 B3 was flagged in the report as the highest value-to-risk ratio; B4 should be
 done with the F3/F5 fixes that are already in (the helper extraction that
 would have prevented them).

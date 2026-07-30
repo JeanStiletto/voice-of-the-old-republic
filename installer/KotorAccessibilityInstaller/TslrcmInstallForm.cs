@@ -5,7 +5,6 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using System.Windows.Forms.Automation;
 
 namespace KotorAccessibilityInstaller
 {
@@ -353,19 +352,7 @@ namespace KotorAccessibilityInstaller
             _statusLabel.Text = message;
             if (!announce) return;
 
-            // WinForms Labels are not UIA live regions; raise a notification so
-            // NVDA / JAWS speak the update without the user navigating to it.
-            try
-            {
-                _statusLabel.AccessibilityObject?.RaiseAutomationNotification(
-                    AutomationNotificationKind.ActionCompleted,
-                    AutomationNotificationProcessing.MostRecent,
-                    message);
-            }
-            catch (Exception ex)
-            {
-                Logger.Warning($"Could not raise automation notification: {ex.Message}");
-            }
+            ScreenReaderAnnouncer.Announce(_statusLabel, message);
         }
 
         private static void TryDelete(string path)
