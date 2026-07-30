@@ -1374,6 +1374,416 @@ int AxisOctantMask(acc::strings::Id axisId) {
 // is no dead end at all: the walkmesh ends there because the AREA ends
 // there, so it re-renders as a passage toward the transition instead of
 // "Sackgasse" (the Südlicher Strand exit-corridor fix).
+// ---------------------------------------------------------------------
+// ClassifyCluster's shape branches.
+//
+// ClassifyCluster picks exactly one of these and returns; each writes the
+// label and kind for the shape it names and nothing else. They keep their
+// original bodies verbatim, so a `return` inside one still means what it
+// meant inline: this cluster is classified, stop.
+//
+// The parameter lists are long, but each one is now a statement about
+// what that shape actually depends on — the corridor branch never looks
+// at areaHint or the trigger count, the demoted branches never look at
+// the nav graph at all.
+// ---------------------------------------------------------------------
+
+// Area path: probe-owned merged spaces (open / room / merged big
+// junction). One neutral "Bereich" label, long-axis cue only when
+// elongated, then the exit list — door rewrites kept (the navigational
+// anchors), wall-curve degree-1 artefacts dropped.
+void ClassifyAsArea(const acc::engine::navgraph::NavGraphSnapshot& g, int n,
+                    const Vector& centroid, float centroidFloorZ,
+                    const int* externalNbs, const int* externalSrcs,
+                    const int* externalDoorIdx, int externalCount,
+                    int areaHint, bool isLargeArea,
+                    const std::string& trigEntries,
+                    std::string& outLabel, int& outKind, int& outSig) {
+    using acc::strings::Id;
+    bool octHas[8]  = {false, false, false, false, false, false, false, false};
+    int  octDoor[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+    for (int k = 0; k < externalCount; ++k) {
+        int nb = externalNbs[k];
+        if (nb < 0 || nb >= n) continue;
+        int bit = OctantBit(OctantFromVector(g.nodes[nb].pos.x - centroid.x,
+                                             g.nodes[nb].pos.y - centroid.y));
+        if (bit < 0) continue;
+        int door = externalDoorIdx ? externalDoorIdx[k] : -1;
+        if (door >= 0) {
+            if (octDoor[bit] < 0) octDoor[bit] = door;
+            octHas[bit] = true;
+            continue;
+        }
+        int deg = Degree(g, nb);
+        int src = externalSrcs ? externalSrcs[k] : -1;
+        Vector edgeStart = (src >= 0 && src < n) ? g.nodes[src].pos : centroid;
+        bool realExit = (deg >= 2) ||
+                        (deg == 1 &&
+                         WalkmeshAgreesDeadEnd(g.nodes[nb].pos, edgeStart));
+        if (realExit) octHas[bit] = true;
+    }
+
+    std::string dirList;
+    int mask = 0;
+    for (int idx = 0; idx < 8; ++idx) {
+        int bit = kOctantEmitOrder[idx];
+        if (!octHas[bit]) continue;
+        mask |= (1 << bit);
+        Id dirId = BitToOctant(bit);
+        const char* dirWord = acc::strings::Get(dirId);
+        if (octDoor[bit] >= 0 && dirWord[0]) {
+            AppendListEntry(dirList,
+                            RenderDoorDirection(octDoor[bit], dirWord));
+        } else {
+            AppendListEntry(dirList, DirEntry(dirId, /*markDeadEnd=*/false));
+        }
+    }
+
+    // Attached transition triggers are exits like any other — appended
+    // last so the compass entries keep their canonical clockwise order.
+    AppendListEntry(dirList, trigEntries);
+
+    Id axisId = Id::AxisEastWest;
+    bool elong = ComputeCentroidAxis(centroid, centroidFloorZ, axisId);
+    // Large-footprint clusters swap the neutral "Bereich" noun for
+    // "Großer Bereich" — expectation-setting only; axis/exits/kind
+    // are identical. Large areas only take the areaHint != 0 path
+    // anyway (they're merged spaces), so the swap lives here.
+    const char* noun  = acc::strings::Get(isLargeArea ? Id::AreaNounLarge
+                                                      : Id::AreaNoun);
+    const char* axisW = elong ? acc::strings::Get(axisId) : nullptr;
+    if (!noun[0]) noun = "Bereich";
+
+    // Drop the exit list when it exactly repeats the elongation axis:
+    // an elongated area whose only exits are the two ends of that axis
+    // (both plain directions — a named door exit is always kept, its
+    // destination is information the axis word doesn't carry) reads as
+    // "Bereich Ost-West", not "Bereich Ost-West. Ausgänge: Ost, West".
+    // Narrow by construction — only fires when the exit mask is exactly
+    // the axis pair, so the common case (exits differ from elongation)
+    // is untouched.
+    bool axisCoversExits = false;
+    if (elong && trigEntries.empty()) {
+        int axisMask = AxisOctantMask(axisId);
+        if (axisMask != 0 && mask == axisMask) {
+            bool anyDoor = false;
+            for (int bit = 0; bit < 8; ++bit)
+                if ((axisMask & (1 << bit)) && octDoor[bit] >= 0)
+                    anyDoor = true;
+            axisCoversExits = !anyDoor;
+        }
+    }
+    bool haveExits = !dirList.empty() && !axisCoversExits;
+
+    if (elong && axisW && axisW[0] && haveExits) {
+        const char* fmt = acc::strings::Get(Id::FmtAreaAxisExits);
+        if (fmt[0]) outLabel = acc::strfmt::Format(fmt, noun, axisW,
+                                                          dirList.c_str());
+    } else if (haveExits) {
+        const char* fmt = acc::strings::Get(Id::FmtAreaExits);
+        if (fmt[0]) outLabel = acc::strfmt::Format(fmt, noun,
+                                                          dirList.c_str());
+    } else if (elong && axisW && axisW[0]) {
+        const char* fmt = acc::strings::Get(Id::FmtAreaAxisOnly);
+        if (fmt[0]) outLabel = acc::strfmt::Format(fmt, noun, axisW);
+    } else {
+        outLabel = noun;
+    }
+    outKind = (areaHint == 1) ? kKindRoom : kKindPlatz;
+    outSig  = (outKind & 0xff) | ((mask & 0xff) << 8);
+    return;
+}
+
+// Exactly one external edge — a dead end. Names what is at the end of
+// it (door, trigger, or nothing) so the player knows before walking in.
+void ClassifyAsDeadEnd(const acc::engine::navgraph::NavGraphSnapshot& g, int n,
+                       const Vector& centroid, const int* externalNbs,
+                       const int* externalDoorIdx, int trigCount,
+                       const std::string& trigEntries,
+                       std::string& outLabel, int& outKind, int& outSig,
+                       bool& outFiltered) {
+    using acc::strings::Id;
+    int nb = externalNbs[0];
+    if (nb < 0 || nb >= n) return;
+
+    // A "dead end" carrying a transition trigger is the area exit,
+    // not a dead end — the walkmesh stops because the AREA stops.
+    // Render as a passage: the transition entry first (the salient
+    // information), then the direction back into the map. Corridor
+    // kind so the announce path treats it as a normal passage.
+    if (!trigEntries.empty()) {
+        float bdx = g.nodes[nb].pos.x - centroid.x;
+        float bdy = g.nodes[nb].pos.y - centroid.y;
+        const char* backWord =
+            acc::strings::Get(OctantFromVector(bdx, bdy));
+        std::string list = trigEntries;
+        if (backWord && backWord[0]) {
+            AppendListEntry(list, std::string(backWord));
+        }
+        outLabel = list;
+        outKind  = kKindCorridor;
+        int backBit = OctantBit(OctantFromVector(bdx, bdy));
+        outSig = (kKindCorridor & 0xff) |
+                 (((backBit < 0 ? 0 : backBit) & 0xff) << 8);
+        acclog::Write(
+            "WallTopo",
+            "ClassifyCluster: degree-1 at (%.1f,%.1f) carries %d "
+            "transition trigger%s — rendered as passage \"%s\" instead "
+            "of Sackgasse",
+            centroid.x, centroid.y, trigCount,
+            trigCount == 1 ? "" : "s", outLabel.c_str());
+        return;
+    }
+
+    // Walkmesh-shape gate: a degree-1 graph node is treated as a
+    // primary candidate only when the walkmesh at the node's
+    // position shows the alcove signature (forward > 2m + 3 short
+    // rays) under a 4-ray probe rotated to align with the parent
+    // direction. Wall-curve artefacts in open areas / corridors fail
+    // the gate — they're degree-1 in the graph (one patrol-anchor
+    // connection) but the local geometry doesn't form a recess the
+    // player can walk into.
+    //
+    // Pre-2026-05-22 we dropped the label entirely on gate failure,
+    // which created Bucket-3 "Offene Fläche where it should be
+    // Sackgasse" fires when no other labelled cluster was nearby
+    // (player standing in a real alcove the gate misjudged). We now
+    // render the label anyway and let LookupAt's rescue path use it
+    // only when no unfiltered candidate sits within snap range —
+    // primary scan still skips it, so wall-curve false positives
+    // stay silent in the normal case.
+    bool gateAgrees = WalkmeshAgreesDeadEnd(centroid, g.nodes[nb].pos);
+    if (!gateAgrees) {
+        outFiltered = true;
+        acclog::Write(
+            "WallTopo",
+            "ClassifyCluster: degree-1 at (%.1f,%.1f,%.1f) FAILED "
+            "walkmesh-shape gate (parent=%d at %.1f,%.1f) — labelling "
+            "as filtered Sackgasse (LookupAt rescue only)",
+            centroid.x, centroid.y, centroid.z,
+            nb, g.nodes[nb].pos.x, g.nodes[nb].pos.y);
+    }
+    float dx = g.nodes[nb].pos.x - centroid.x;
+    float dy = g.nodes[nb].pos.y - centroid.y;
+    Id dir = OctantFromVector(dx, dy);
+    const char* word = acc::strings::Get(dir);
+
+    // Door verdict was precomputed during external-edge collection
+    // (ClassifyEdge ran the wall + door tests once per real graph
+    // edge). Read the cached doorIdx rather than re-querying — that
+    // keeps walls + doors decided by the same primitive instead of
+    // running parallel checks here.
+    int doorIdx = externalDoorIdx ? externalDoorIdx[0] : -1;
+    if (doorIdx >= 0 && word && word[0]) {
+        outLabel = RenderDoorDirection(doorIdx, word);
+        if (gateAgrees) {
+            acclog::Write(
+                "WallTopo",
+                "ClassifyCluster: degree-1 at (%.1f,%.1f,%.1f) HIT door "
+                "idx=%d on edge → \"%s\"",
+                centroid.x, centroid.y, centroid.z, doorIdx,
+                outLabel.c_str());
+        }
+    } else {
+        const char* fmt  = acc::strings::Get(Id::FmtMapCursorDeadEnd);
+        if (fmt[0] && word && word[0]) {
+            outLabel = acc::strfmt::Format(fmt, word);
+        }
+    }
+    outKind = kKindDeadEnd;
+    int octBit = OctantBit(dir);
+    outSig = (kKindDeadEnd & 0xff) | ((octBit & 0xff) << 8);
+    return;
+}
+
+// Exactly two external edges — a corridor run, announced by the axis
+// its two ends lie on.
+void ClassifyAsCorridor(const acc::engine::navgraph::NavGraphSnapshot& g, int n,
+                        const Vector& centroid, const int* externalNbs,
+                        const int* externalDoorIdx,
+                        const std::string& trigEntries,
+                        std::string& outLabel, int& outKind, int& outSig) {
+    using acc::strings::Id;
+    int nbA = externalNbs[0];
+    int nbB = externalNbs[1];
+    if (nbA < 0 || nbA >= n || nbB < 0 || nbB >= n) return;
+    // Octant per endpoint, relative to the centroid (cluster
+    // member's position). RenderCorridorAxis picks the right
+    // form — single axis word for symmetric corridors, two-end
+    // form for L-shaped / asymmetric corridors.
+    int bitA = OctantBit(OctantFromVector(g.nodes[nbA].pos.x - centroid.x,
+                                          g.nodes[nbA].pos.y - centroid.y));
+    int bitB = OctantBit(OctantFromVector(g.nodes[nbB].pos.x - centroid.x,
+                                          g.nodes[nbB].pos.y - centroid.y));
+    // Prefer the door verdicts precomputed on the actual graph
+    // edges (member→nbA, member→nbB). If neither edge carried a
+    // door, fall back to the corridor-span test for doors that
+    // sit off both graph edges but still on the spanning line.
+    int doorIdx = -1;
+    if (externalDoorIdx) {
+        doorIdx = externalDoorIdx[0];
+        if (doorIdx < 0) doorIdx = externalDoorIdx[1];
+    }
+    if (doorIdx < 0) {
+        doorIdx = FindDoorOnEdge(g.nodes[nbA].pos, g.nodes[nbB].pos);
+    }
+    outLabel = RenderCorridorAxis(bitA, bitB, doorIdx);
+    AppendListEntry(outLabel, trigEntries);
+    if (doorIdx >= 0) {
+        acclog::Write(
+            "WallTopo",
+            "ClassifyCluster: degree-2 corridor at (%.1f,%.1f,%.1f) "
+            "HIT door idx=%d on segment → \"%s\"",
+            centroid.x, centroid.y, centroid.z, doorIdx, outLabel.c_str());
+    }
+    outKind = kKindCorridor;
+    int sigBit = (bitA < bitB) ? bitA : bitB;
+    outSig = (kKindCorridor & 0xff) | ((sigBit & 0xff) << 8) |
+             ((((bitA < bitB) ? bitB : bitA) & 0xff) << 16);
+    return;
+}
+
+// 3+ external edges that the demote gate reduced to ONE walkable
+// octant: speak it as a dead end, not a junction.
+void ClassifyDemotedToDeadEnd(const Vector& centroid,
+                              const int octantDoorIdx[8],
+                              const int realExitBits[8],
+                              const std::string& trigEntries,
+                              std::string& outLabel, int& outKind,
+                              int& outSig) {
+    using acc::strings::Id;
+    int bit = realExitBits[0];
+    Id dirId = BitToOctant(bit);
+    const char* dirWord = acc::strings::Get(dirId);
+    if (!trigEntries.empty()) {
+        // Same rule as the degree-1 path: a transition trigger makes
+        // this a passage toward the exit, not a Sackgasse.
+        std::string list = trigEntries;
+        if (octantDoorIdx[bit] >= 0) {
+            AppendListEntry(list,
+                            RenderDoorDirection(octantDoorIdx[bit],
+                                                dirWord ? dirWord : ""));
+        } else if (dirWord && dirWord[0]) {
+            AppendListEntry(list, std::string(dirWord));
+        }
+        outLabel = list;
+        outKind  = kKindCorridor;
+        outSig   = (kKindCorridor & 0xff) | ((bit & 0xff) << 8);
+        acclog::Write(
+            "WallTopo",
+            "ClassifyCluster: junction at (%.1f,%.1f) carries transition "
+            "trigger — rendered as passage \"%s\" instead of Sackgasse",
+            centroid.x, centroid.y, outLabel.c_str());
+        return;
+    }
+    if (octantDoorIdx[bit] >= 0) {
+        outLabel = RenderDoorDirection(octantDoorIdx[bit],
+                                       dirWord ? dirWord : "");
+    } else {
+        const char* fmt = acc::strings::Get(Id::FmtMapCursorDeadEnd);
+        if (fmt[0] && dirWord && dirWord[0]) {
+            outLabel = acc::strfmt::Format(fmt, dirWord);
+        }
+    }
+    outKind = kKindDeadEnd;
+    outSig  = (kKindDeadEnd & 0xff) | ((bit & 0xff) << 8);
+    acclog::Write(
+        "WallTopo",
+        "ClassifyCluster: junction at (%.1f,%.1f) DEMOTED to Sackgasse "
+        "(real-exits=1) → \"%s\"",
+        centroid.x, centroid.y, outLabel.c_str());
+    return;
+}
+
+// Same gate, TWO walkable octants: speak it as a corridor.
+void ClassifyDemotedToCorridor(const Vector& centroid,
+                               const int octantDoorIdx[8],
+                               const int realExitBits[8],
+                               int firstDoorBit,
+                               const std::string& trigEntries,
+                               std::string& outLabel, int& outKind,
+                               int& outSig) {
+    using acc::strings::Id;
+    int bitA = realExitBits[0];
+    int bitB = realExitBits[1];
+    int doorIdx = (firstDoorBit >= 0)
+                      ? octantDoorIdx[firstDoorBit]
+                      : -1;
+    outLabel = RenderCorridorAxis(bitA, bitB, doorIdx);
+    AppendListEntry(outLabel, trigEntries);
+    outKind = kKindCorridor;
+    int sigBitLo = (bitA < bitB) ? bitA : bitB;
+    int sigBitHi = (bitA < bitB) ? bitB : bitA;
+    outSig = (kKindCorridor & 0xff) |
+             ((sigBitLo & 0xff) << 8) |
+             ((sigBitHi & 0xff) << 16);
+    acclog::Write(
+        "WallTopo",
+        "ClassifyCluster: junction at (%.1f,%.1f) DEMOTED to Korridor "
+        "(real-exits=2, octants=%d+%d) → \"%s\"",
+        centroid.x, centroid.y, bitA, bitB, outLabel.c_str());
+    return;
+}
+
+// Second pass: emit octants in canonical order (N, NE, E, SE, S,
+// SW, W, NW). Stable across runs; matches the way a compass-oriented
+// player scans for exits clockwise.
+void EmitJunctionLabel(const bool octantHasExit[8],
+                       const bool octantAllDeadEnd[8],
+                       const int octantDoorIdx[8],
+                       const std::string& trigEntries,
+                       std::string& outLabel, int& outKind, int& outSig) {
+    using acc::strings::Id;
+std::string dirList;
+int mask = 0;
+int deadEndMask = 0;
+for (int idx = 0; idx < 8; ++idx) {
+    int bit = kOctantEmitOrder[idx];
+    if (!octantHasExit[bit]) continue;
+    mask |= (1 << bit);
+    Id dirId = BitToOctant(bit);
+
+    // Door wins over Sackgasse: when an octant carries a door, the
+    // (Sackgasse) annotation is suppressed and the direction word
+    // is replaced with the "Tür DIR" form. The door is the player-
+    // actionable information; Sackgasse is metadata about geometry
+    // beyond the door that doesn't matter once we've named the
+    // gateway.
+    if (octantDoorIdx[bit] >= 0) {
+        const char* dirWord = acc::strings::Get(dirId);
+        if (dirWord[0]) {
+            AppendListEntry(dirList,
+                            RenderDoorDirection(octantDoorIdx[bit], dirWord));
+        }
+        continue;
+    }
+
+    bool markDeadEnd = octantAllDeadEnd[bit];
+    if (markDeadEnd) deadEndMask |= (1 << bit);
+    AppendListEntry(dirList, DirEntry(dirId, markDeadEnd));
+}
+
+// Attached transition triggers appended last, same as the area path.
+AppendListEntry(dirList, trigEntries);
+
+// Reached by a hub (singleton or merged) with no open/room geometry, so
+// this path renders "Kreuzung". A hub that IS open/room was flagged a
+// probe-owned place by the caller and took the "Bereich" area path above.
+const char* fmt = acc::strings::Get(Id::FmtMapCursorJunctionDirs);
+if (fmt[0] && !dirList.empty()) {
+    outLabel = acc::strfmt::Format(fmt, dirList.c_str());
+} else {
+    const char* bare = acc::strings::Get(Id::MapCursorJunction);
+    if (bare[0]) {
+        outLabel = bare;
+    }
+}
+outKind = kKindJunction;
+outSig  = (kKindJunction & 0xff) |
+          ((mask & 0xff) << 8) |
+          ((deadEndMask & 0xff) << 16);
+}
+
 void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
                      const Vector& centroid,
                      const int* externalNbs,
@@ -1402,102 +1812,12 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
                         RenderTransitionExit(trigIdxs[t], centroid));
     }
 
-    // Area path: probe-owned merged spaces (open / room / merged big
-    // junction). One neutral "Bereich" label, long-axis cue only when
-    // elongated, then the exit list — door rewrites kept (the navigational
-    // anchors), wall-curve degree-1 artefacts dropped.
+
     if (areaHint != 0) {
-        bool octHas[8]  = {false, false, false, false, false, false, false, false};
-        int  octDoor[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
-        for (int k = 0; k < externalCount; ++k) {
-            int nb = externalNbs[k];
-            if (nb < 0 || nb >= n) continue;
-            int bit = OctantBit(OctantFromVector(g.nodes[nb].pos.x - centroid.x,
-                                                 g.nodes[nb].pos.y - centroid.y));
-            if (bit < 0) continue;
-            int door = externalDoorIdx ? externalDoorIdx[k] : -1;
-            if (door >= 0) {
-                if (octDoor[bit] < 0) octDoor[bit] = door;
-                octHas[bit] = true;
-                continue;
-            }
-            int deg = Degree(g, nb);
-            int src = externalSrcs ? externalSrcs[k] : -1;
-            Vector edgeStart = (src >= 0 && src < n) ? g.nodes[src].pos : centroid;
-            bool realExit = (deg >= 2) ||
-                            (deg == 1 &&
-                             WalkmeshAgreesDeadEnd(g.nodes[nb].pos, edgeStart));
-            if (realExit) octHas[bit] = true;
-        }
-
-        std::string dirList;
-        int mask = 0;
-        for (int idx = 0; idx < 8; ++idx) {
-            int bit = kOctantEmitOrder[idx];
-            if (!octHas[bit]) continue;
-            mask |= (1 << bit);
-            Id dirId = BitToOctant(bit);
-            const char* dirWord = acc::strings::Get(dirId);
-            if (octDoor[bit] >= 0 && dirWord[0]) {
-                AppendListEntry(dirList,
-                                RenderDoorDirection(octDoor[bit], dirWord));
-            } else {
-                AppendListEntry(dirList, DirEntry(dirId, /*markDeadEnd=*/false));
-            }
-        }
-
-        // Attached transition triggers are exits like any other — appended
-        // last so the compass entries keep their canonical clockwise order.
-        AppendListEntry(dirList, trigEntries);
-
-        Id axisId = Id::AxisEastWest;
-        bool elong = ComputeCentroidAxis(centroid, centroidFloorZ, axisId);
-        // Large-footprint clusters swap the neutral "Bereich" noun for
-        // "Großer Bereich" — expectation-setting only; axis/exits/kind
-        // are identical. Large areas only take the areaHint != 0 path
-        // anyway (they're merged spaces), so the swap lives here.
-        const char* noun  = acc::strings::Get(isLargeArea ? Id::AreaNounLarge
-                                                          : Id::AreaNoun);
-        const char* axisW = elong ? acc::strings::Get(axisId) : nullptr;
-        if (!noun[0]) noun = "Bereich";
-
-        // Drop the exit list when it exactly repeats the elongation axis:
-        // an elongated area whose only exits are the two ends of that axis
-        // (both plain directions — a named door exit is always kept, its
-        // destination is information the axis word doesn't carry) reads as
-        // "Bereich Ost-West", not "Bereich Ost-West. Ausgänge: Ost, West".
-        // Narrow by construction — only fires when the exit mask is exactly
-        // the axis pair, so the common case (exits differ from elongation)
-        // is untouched.
-        bool axisCoversExits = false;
-        if (elong && trigEntries.empty()) {
-            int axisMask = AxisOctantMask(axisId);
-            if (axisMask != 0 && mask == axisMask) {
-                bool anyDoor = false;
-                for (int bit = 0; bit < 8; ++bit)
-                    if ((axisMask & (1 << bit)) && octDoor[bit] >= 0)
-                        anyDoor = true;
-                axisCoversExits = !anyDoor;
-            }
-        }
-        bool haveExits = !dirList.empty() && !axisCoversExits;
-
-        if (elong && axisW && axisW[0] && haveExits) {
-            const char* fmt = acc::strings::Get(Id::FmtAreaAxisExits);
-            if (fmt[0]) outLabel = acc::strfmt::Format(fmt, noun, axisW,
-                                                              dirList.c_str());
-        } else if (haveExits) {
-            const char* fmt = acc::strings::Get(Id::FmtAreaExits);
-            if (fmt[0]) outLabel = acc::strfmt::Format(fmt, noun,
-                                                              dirList.c_str());
-        } else if (elong && axisW && axisW[0]) {
-            const char* fmt = acc::strings::Get(Id::FmtAreaAxisOnly);
-            if (fmt[0]) outLabel = acc::strfmt::Format(fmt, noun, axisW);
-        } else {
-            outLabel = noun;
-        }
-        outKind = (areaHint == 1) ? kKindRoom : kKindPlatz;
-        outSig  = (outKind & 0xff) | ((mask & 0xff) << 8);
+        ClassifyAsArea(g, n, centroid, centroidFloorZ, externalNbs,
+                       externalSrcs, externalDoorIdx, externalCount,
+                       areaHint, isLargeArea, trigEntries,
+                       outLabel, outKind, outSig);
         return;
     }
 
@@ -1505,135 +1825,15 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
     // for any zero-exit cluster (see BuildForArea's isArea test), so an
     // isolated cluster always takes the "Bereich" area path above.
     if (externalCount == 1) {
-        int nb = externalNbs[0];
-        if (nb < 0 || nb >= n) return;
-
-        // A "dead end" carrying a transition trigger is the area exit,
-        // not a dead end — the walkmesh stops because the AREA stops.
-        // Render as a passage: the transition entry first (the salient
-        // information), then the direction back into the map. Corridor
-        // kind so the announce path treats it as a normal passage.
-        if (!trigEntries.empty()) {
-            float bdx = g.nodes[nb].pos.x - centroid.x;
-            float bdy = g.nodes[nb].pos.y - centroid.y;
-            const char* backWord =
-                acc::strings::Get(OctantFromVector(bdx, bdy));
-            std::string list = trigEntries;
-            if (backWord && backWord[0]) {
-                AppendListEntry(list, std::string(backWord));
-            }
-            outLabel = list;
-            outKind  = kKindCorridor;
-            int backBit = OctantBit(OctantFromVector(bdx, bdy));
-            outSig = (kKindCorridor & 0xff) |
-                     (((backBit < 0 ? 0 : backBit) & 0xff) << 8);
-            acclog::Write(
-                "WallTopo",
-                "ClassifyCluster: degree-1 at (%.1f,%.1f) carries %d "
-                "transition trigger%s — rendered as passage \"%s\" instead "
-                "of Sackgasse",
-                centroid.x, centroid.y, trigCount,
-                trigCount == 1 ? "" : "s", outLabel.c_str());
-            return;
-        }
-
-        // Walkmesh-shape gate: a degree-1 graph node is treated as a
-        // primary candidate only when the walkmesh at the node's
-        // position shows the alcove signature (forward > 2m + 3 short
-        // rays) under a 4-ray probe rotated to align with the parent
-        // direction. Wall-curve artefacts in open areas / corridors fail
-        // the gate — they're degree-1 in the graph (one patrol-anchor
-        // connection) but the local geometry doesn't form a recess the
-        // player can walk into.
-        //
-        // Pre-2026-05-22 we dropped the label entirely on gate failure,
-        // which created Bucket-3 "Offene Fläche where it should be
-        // Sackgasse" fires when no other labelled cluster was nearby
-        // (player standing in a real alcove the gate misjudged). We now
-        // render the label anyway and let LookupAt's rescue path use it
-        // only when no unfiltered candidate sits within snap range —
-        // primary scan still skips it, so wall-curve false positives
-        // stay silent in the normal case.
-        bool gateAgrees = WalkmeshAgreesDeadEnd(centroid, g.nodes[nb].pos);
-        if (!gateAgrees) {
-            outFiltered = true;
-            acclog::Write(
-                "WallTopo",
-                "ClassifyCluster: degree-1 at (%.1f,%.1f,%.1f) FAILED "
-                "walkmesh-shape gate (parent=%d at %.1f,%.1f) — labelling "
-                "as filtered Sackgasse (LookupAt rescue only)",
-                centroid.x, centroid.y, centroid.z,
-                nb, g.nodes[nb].pos.x, g.nodes[nb].pos.y);
-        }
-        float dx = g.nodes[nb].pos.x - centroid.x;
-        float dy = g.nodes[nb].pos.y - centroid.y;
-        Id dir = OctantFromVector(dx, dy);
-        const char* word = acc::strings::Get(dir);
-
-        // Door verdict was precomputed during external-edge collection
-        // (ClassifyEdge ran the wall + door tests once per real graph
-        // edge). Read the cached doorIdx rather than re-querying — that
-        // keeps walls + doors decided by the same primitive instead of
-        // running parallel checks here.
-        int doorIdx = externalDoorIdx ? externalDoorIdx[0] : -1;
-        if (doorIdx >= 0 && word && word[0]) {
-            outLabel = RenderDoorDirection(doorIdx, word);
-            if (gateAgrees) {
-                acclog::Write(
-                    "WallTopo",
-                    "ClassifyCluster: degree-1 at (%.1f,%.1f,%.1f) HIT door "
-                    "idx=%d on edge → \"%s\"",
-                    centroid.x, centroid.y, centroid.z, doorIdx,
-                    outLabel.c_str());
-            }
-        } else {
-            const char* fmt  = acc::strings::Get(Id::FmtMapCursorDeadEnd);
-            if (fmt[0] && word && word[0]) {
-                outLabel = acc::strfmt::Format(fmt, word);
-            }
-        }
-        outKind = kKindDeadEnd;
-        int octBit = OctantBit(dir);
-        outSig = (kKindDeadEnd & 0xff) | ((octBit & 0xff) << 8);
+        ClassifyAsDeadEnd(g, n, centroid, externalNbs, externalDoorIdx,
+                          trigCount, trigEntries,
+                          outLabel, outKind, outSig, outFiltered);
         return;
     }
+
     if (externalCount == 2) {
-        int nbA = externalNbs[0];
-        int nbB = externalNbs[1];
-        if (nbA < 0 || nbA >= n || nbB < 0 || nbB >= n) return;
-        // Octant per endpoint, relative to the centroid (cluster
-        // member's position). RenderCorridorAxis picks the right
-        // form — single axis word for symmetric corridors, two-end
-        // form for L-shaped / asymmetric corridors.
-        int bitA = OctantBit(OctantFromVector(g.nodes[nbA].pos.x - centroid.x,
-                                              g.nodes[nbA].pos.y - centroid.y));
-        int bitB = OctantBit(OctantFromVector(g.nodes[nbB].pos.x - centroid.x,
-                                              g.nodes[nbB].pos.y - centroid.y));
-        // Prefer the door verdicts precomputed on the actual graph
-        // edges (member→nbA, member→nbB). If neither edge carried a
-        // door, fall back to the corridor-span test for doors that
-        // sit off both graph edges but still on the spanning line.
-        int doorIdx = -1;
-        if (externalDoorIdx) {
-            doorIdx = externalDoorIdx[0];
-            if (doorIdx < 0) doorIdx = externalDoorIdx[1];
-        }
-        if (doorIdx < 0) {
-            doorIdx = FindDoorOnEdge(g.nodes[nbA].pos, g.nodes[nbB].pos);
-        }
-        outLabel = RenderCorridorAxis(bitA, bitB, doorIdx);
-        AppendListEntry(outLabel, trigEntries);
-        if (doorIdx >= 0) {
-            acclog::Write(
-                "WallTopo",
-                "ClassifyCluster: degree-2 corridor at (%.1f,%.1f,%.1f) "
-                "HIT door idx=%d on segment → \"%s\"",
-                centroid.x, centroid.y, centroid.z, doorIdx, outLabel.c_str());
-        }
-        outKind = kKindCorridor;
-        int sigBit = (bitA < bitB) ? bitA : bitB;
-        outSig = (kKindCorridor & 0xff) | ((sigBit & 0xff) << 8) |
-                 ((((bitA < bitB) ? bitB : bitA) & 0xff) << 16);
+        ClassifyAsCorridor(g, n, centroid, externalNbs, externalDoorIdx,
+                           trigEntries, outLabel, outKind, outSig);
         return;
     }
 
@@ -1761,122 +1961,20 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
     }
 
     if (realExitCount == 1) {
-        int bit = realExitBits[0];
-        Id dirId = BitToOctant(bit);
-        const char* dirWord = acc::strings::Get(dirId);
-        if (!trigEntries.empty()) {
-            // Same rule as the degree-1 path: a transition trigger makes
-            // this a passage toward the exit, not a Sackgasse.
-            std::string list = trigEntries;
-            if (octantDoorIdx[bit] >= 0) {
-                AppendListEntry(list,
-                                RenderDoorDirection(octantDoorIdx[bit],
-                                                    dirWord ? dirWord : ""));
-            } else if (dirWord && dirWord[0]) {
-                AppendListEntry(list, std::string(dirWord));
-            }
-            outLabel = list;
-            outKind  = kKindCorridor;
-            outSig   = (kKindCorridor & 0xff) | ((bit & 0xff) << 8);
-            acclog::Write(
-                "WallTopo",
-                "ClassifyCluster: junction at (%.1f,%.1f) carries transition "
-                "trigger — rendered as passage \"%s\" instead of Sackgasse",
-                centroid.x, centroid.y, outLabel.c_str());
-            return;
-        }
-        if (octantDoorIdx[bit] >= 0) {
-            outLabel = RenderDoorDirection(octantDoorIdx[bit],
-                                           dirWord ? dirWord : "");
-        } else {
-            const char* fmt = acc::strings::Get(Id::FmtMapCursorDeadEnd);
-            if (fmt[0] && dirWord && dirWord[0]) {
-                outLabel = acc::strfmt::Format(fmt, dirWord);
-            }
-        }
-        outKind = kKindDeadEnd;
-        outSig  = (kKindDeadEnd & 0xff) | ((bit & 0xff) << 8);
-        acclog::Write(
-            "WallTopo",
-            "ClassifyCluster: junction at (%.1f,%.1f) DEMOTED to Sackgasse "
-            "(real-exits=1) → \"%s\"",
-            centroid.x, centroid.y, outLabel.c_str());
+        ClassifyDemotedToDeadEnd(centroid, octantDoorIdx, realExitBits,
+                                 trigEntries, outLabel, outKind, outSig);
         return;
     }
 
     if (realExitCount == 2) {
-        int bitA = realExitBits[0];
-        int bitB = realExitBits[1];
-        int doorIdx = (firstDoorBit >= 0)
-                          ? octantDoorIdx[firstDoorBit]
-                          : -1;
-        outLabel = RenderCorridorAxis(bitA, bitB, doorIdx);
-        AppendListEntry(outLabel, trigEntries);
-        outKind = kKindCorridor;
-        int sigBitLo = (bitA < bitB) ? bitA : bitB;
-        int sigBitHi = (bitA < bitB) ? bitB : bitA;
-        outSig = (kKindCorridor & 0xff) |
-                 ((sigBitLo & 0xff) << 8) |
-                 ((sigBitHi & 0xff) << 16);
-        acclog::Write(
-            "WallTopo",
-            "ClassifyCluster: junction at (%.1f,%.1f) DEMOTED to Korridor "
-            "(real-exits=2, octants=%d+%d) → \"%s\"",
-            centroid.x, centroid.y, bitA, bitB, outLabel.c_str());
+        ClassifyDemotedToCorridor(centroid, octantDoorIdx, realExitBits,
+                                  firstDoorBit, trigEntries,
+                                  outLabel, outKind, outSig);
         return;
     }
 
-    // Second pass: emit octants in canonical order (N, NE, E, SE, S,
-    // SW, W, NW). Stable across runs; matches the way a compass-oriented
-    // player scans for exits clockwise.
-    std::string dirList;
-    int mask = 0;
-    int deadEndMask = 0;
-    for (int idx = 0; idx < 8; ++idx) {
-        int bit = kOctantEmitOrder[idx];
-        if (!octantHasExit[bit]) continue;
-        mask |= (1 << bit);
-        Id dirId = BitToOctant(bit);
-
-        // Door wins over Sackgasse: when an octant carries a door, the
-        // (Sackgasse) annotation is suppressed and the direction word
-        // is replaced with the "Tür DIR" form. The door is the player-
-        // actionable information; Sackgasse is metadata about geometry
-        // beyond the door that doesn't matter once we've named the
-        // gateway.
-        if (octantDoorIdx[bit] >= 0) {
-            const char* dirWord = acc::strings::Get(dirId);
-            if (dirWord[0]) {
-                AppendListEntry(dirList,
-                                RenderDoorDirection(octantDoorIdx[bit], dirWord));
-            }
-            continue;
-        }
-
-        bool markDeadEnd = octantAllDeadEnd[bit];
-        if (markDeadEnd) deadEndMask |= (1 << bit);
-        AppendListEntry(dirList, DirEntry(dirId, markDeadEnd));
-    }
-
-    // Attached transition triggers appended last, same as the area path.
-    AppendListEntry(dirList, trigEntries);
-
-    // Reached by a hub (singleton or merged) with no open/room geometry, so
-    // this path renders "Kreuzung". A hub that IS open/room was flagged a
-    // probe-owned place by the caller and took the "Bereich" area path above.
-    const char* fmt = acc::strings::Get(Id::FmtMapCursorJunctionDirs);
-    if (fmt[0] && !dirList.empty()) {
-        outLabel = acc::strfmt::Format(fmt, dirList.c_str());
-    } else {
-        const char* bare = acc::strings::Get(Id::MapCursorJunction);
-        if (bare[0]) {
-            outLabel = bare;
-        }
-    }
-    outKind = kKindJunction;
-    outSig  = (kKindJunction & 0xff) |
-              ((mask & 0xff) << 8) |
-              ((deadEndMask & 0xff) << 16);
+    EmitJunctionLabel(octantHasExit, octantAllDeadEnd, octantDoorIdx,
+                      trigEntries, outLabel, outKind, outSig);
 }
 
 // Diagnostic: nav-graph vs wall-cache crossing check.
