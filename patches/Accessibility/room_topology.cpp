@@ -2339,135 +2339,51 @@ void MaybeRefreshDoors(void* area) {
                       g_doors_stability.retry_ticks == 1 ? "" : "s");
     }
 }
+namespace {
 
-void BuildForArea(void* area) {
-    if (!area) return;
-    if (HasGraphForArea(area)) return;
-
-    // Per-area retry accounting — see kNavGraphRetryCapTicks.
-    if (g_navgraph_retry.area != area) {
-        g_navgraph_retry.area         = area;
-        g_navgraph_retry.failed_ticks = 0;
-        g_navgraph_retry.gave_up      = false;
-    }
-    if (g_navgraph_retry.gave_up) return;
-
-    Reset();
-    g_graph.area_owner = area;
-
-    acc::engine::navgraph::NavGraphSnapshot g;
-    if (!acc::engine::navgraph::SnapshotNavGraph(area, g)) {
-        // Log the first miss so an unreadable graph is still visible in the
-        // log immediately, then stay quiet until we give up. Logging all 120
-        // adds nothing — they are identical by construction.
-        if (g_navgraph_retry.failed_ticks == 0) {
-            acclog::Write("WallTopo",
-                          "BuildForArea: nav graph empty / unreadable (areaPtr=%p) "
-                          "— leaving graph unbuilt, retrying", area);
-        }
-        if (++g_navgraph_retry.failed_ticks >= kNavGraphRetryCapTicks) {
-            g_navgraph_retry.gave_up = true;
-            acclog::Write("WallTopo",
-                          "BuildForArea: nav graph still unreadable after %d ticks "
-                          "(areaPtr=%p) — giving up for this area; room topology "
-                          "degrades to open-area until it is re-entered",
-                          g_navgraph_retry.failed_ticks, area);
-        }
-        return;
-    }
-    g_navgraph_retry.failed_ticks = 0;
-
-    int n = static_cast<int>(g.nodes.size());
-    if (n > kMaxNodes) {
-        acclog::Write("WallTopo",
-                      "BuildForArea: nav graph has %d nodes — truncating to "
-                      "kMaxNodes=%d; %d node%s dropped from classification "
-                      "(label/exit data for them will be missing)",
-                      static_cast<int>(g.nodes.size()), kMaxNodes,
-                      static_cast<int>(g.nodes.size()) - kMaxNodes,
-                      static_cast<int>(g.nodes.size()) - kMaxNodes == 1
-                          ? "" : "s");
-        n = kMaxNodes;
-    }
-    g_graph.node_count = n;
-    for (int i = 0; i < n; ++i) {
-        g_graph.node_pos[i]        = g.nodes[i].pos;
-        g_graph.node_label[i].clear();
-        g_graph.node_sig[i]        = 0;
-        g_graph.node_kind[i]       = kKindOpenArea;
-        g_graph.node_cluster_id[i] = kClusterIdNone;
-        g_graph.node_extent[i]     = 0.0f;
-    }
-
-    // Snapshot doors before classifying clusters — ClassifyCluster's
-    // FindDoorOnEdge calls consume g_graph.doors[]. The initial snapshot
-    // can race a partially-populated server-object array; the per-tick
-    // MaybeRefreshDoors loop catches late-arriving doors. Initial
-    // cluster classification is locked to whatever was visible now
-    // (accepted lossy behaviour — late doors still show up as "Tür"
-    // exits via the per-edge query).
-    SnapshotDoors(area);
-    LogDoorSnapshotDetails(area);
-    // Attach landmark map-notes to doors before any cluster labels get
-    // rendered — RenderDoorDirection consults DoorRecord.landmarkName and
-    // labels are baked once during the classification passes below. Also
-    // flags matched landmarks in the transitions cache so the
-    // proximity-fire path won't double-announce.
-    AttachLandmarksToDoors(area);
-    // Walk-through area-transition triggers — the door analog for outdoor
-    // maps. Needs node_pos[] (filled above) for the nearest-node binding.
-    SnapshotTransitionTriggers(area);
-    g_doors_stability.last_count  = g_graph.door_count;
-    g_doors_stability.streak      = 0;
-    g_doors_stability.retry_ticks = 0;
-    g_doors_stability.committed   = false;
-
-    // Per-node shape features first, so every merge pass below can branch
-    // on the same openness / room flags. They no longer drive separate
-    // merge classes — they only decide, per node, whether it is "space"
-    // (a place the player stands in) or "passage" (a link between places);
-    // see the Pass 1 space/passage rule.
+// The working set BuildForArea's passes hand to each other. It lives on
+// BuildForArea's stack for the duration of one build and is threaded
+// through the passes by reference — the passes own no state of their own,
+// which is what lets them be read (and reordered, and tested) one at a
+// time.
+struct BuildPasses {
+    // Per-node shape features. Computed once before Pass 1 and read by
+    // every pass: is this node "space" (a place the player stands in) or
+    // "passage" (a link between places), and at what floor height.
     bool  nodeOpen  [kMaxNodes];
     bool  nodeRoom  [kMaxNodes];
     float nodeFloorZ[kMaxNodes];
-    ComputeNodeShapeFeatures(g, n, nodeOpen, nodeRoom, nodeFloorZ);
 
-    // ===== Pass 1: core merge =====
-    // Form perceptual cores by walking the nav graph once and unioning each
-    // clear, door-free edge whose endpoints are the SAME kind of thing.
-    // Internally there are now only two kinds — the merge layer no longer
-    // separates junction / room / open (they were the same operation,
-    // "union adjacent same-class nodes", and the open-vs-room seam left
-    // door-less interiors fragmented: an Ebon Hawk hold split open↔throat↔
-    // room into three regions). Collapsed to:
-    //
-    //   - SPACE   : a place the player stands in — degree-≥3 hub, or open /
-    //               room by the clearance probe. Two space nodes union.
-    //   - PASSAGE : a straight degree-2 link. Two straight nodes union into
-    //               one corridor run (the L-shaped-corridor rule is carried
-    //               over unchanged: a ~90° bend fails the straightness test
-    //               and breaks the run, so the player still hears the turn).
-    //
-    // PASSAGE↔SPACE never merge — that boundary is exactly the line between
-    // "I'm in a corridor" and "I'm in a room", and is what lets Pass 3 still
-    // voice corridors, junctions and areas distinctly even though the merge
-    // itself stopped distinguishing them.
-    //
-    // Each rule is gated on a clear, door-free edge: the door is tested in
-    // 2D (FindDoorOnEdge); the wall is tested on the floor-z-lifted segment
-    // (the nav nodes sit at z=0, so a z=0 segment would run under same-floor
-    // walls). Adjacency — a real engine nav edge — is the connector, so two
-    // spaces that merely face each other across a junction throat stay
-    // separate (the Oberstadt store / cantina-avenue fix).
-    for (int i = 0; i < n; ++i) s_uf_parent[i] = i;
-
-    // Corridor straightness: a degree-2 node whose two edges point roughly
-    // opposite. Precomputed so the corridor rule is a both-straight test in
-    // the edge-walk; also reused by Pass 2 to keep corridor material out of
-    // the straggler absorb, and by the corner-fold step (chainStraightCos
-    // lets it pick the straightest neighbour to fold a bend into).
+    // Corridor straightness. Precomputed so Pass 1's corridor rule is a
+    // both-straight test in the edge-walk; also read by Pass 1b (to pick
+    // the straightest neighbour to fold a bend into) and by Pass 2 (to
+    // keep corridor material out of the straggler absorb).
     bool  chainStraight   [kMaxNodes];
-    float chainStraightCos[kMaxNodes];  // turn cos at this node; +1 if not deg-2
+    float chainStraightCos[kMaxNodes];
+
+    // Cached walls for the edge-clearness test, shared by Passes 1 and 2.
+    const acc::engine::WallEdge* gw = nullptr;
+    int   gwCount = 0;
+    bool  haveGW  = false;
+
+    // The counters the end-of-build summary reports. Each pass logs its
+    // own veto breakdown locally from its own locals; only these ten
+    // cross a pass boundary.
+    int coreSpace = 0, coreCorridor = 0;
+    int absorbAdj = 0, bboxAbsorbed = 0;
+    int clusters = 0, multiNodeClusters = 0;
+    int deadEnds = 0, corridors = 0, junctions = 0, openAreas = 0;
+};
+
+// Corridor straightness: a degree-2 node whose two edges point roughly
+// opposite. Precomputed so the corridor rule is a both-straight test in
+// the edge-walk; also reused by Pass 2 to keep corridor material out of
+// the straggler absorb, and by the corner-fold step (chainStraightCos
+// lets it pick the straightest neighbour to fold a bend into).
+void ComputeChainStraightness(const acc::engine::navgraph::NavGraphSnapshot& g,
+                              int n, BuildPasses& bp) {
+    bool*  chainStraight    = bp.chainStraight;
+    float* chainStraightCos = bp.chainStraightCos;
     for (int i = 0; i < n; ++i) {
         chainStraight[i]    = false;
         chainStraightCos[i] = 1.0f;
@@ -2488,12 +2404,45 @@ void BuildForArea(void* area) {
         if (chainStraightCos[i] <= kCorridorStraightCosMax)
             chainStraight[i] = true;
     }
+}
 
-    // Wall cache for the edge clearness test (shared by Pass 1 and Pass 2).
-    const acc::engine::WallEdge* gw = nullptr;
-    int gwCount = 0;
-    bool haveGW = acc::spatial::change_detector::GetCachedWalls(
-                      gw, gwCount) && gw && gwCount > 0;
+// ===== Pass 1: core merge =====
+// Form perceptual cores by walking the nav graph once and unioning each
+// clear, door-free edge whose endpoints are the SAME kind of thing.
+// Internally there are now only two kinds — the merge layer no longer
+// separates junction / room / open (they were the same operation,
+// "union adjacent same-class nodes", and the open-vs-room seam left
+// door-less interiors fragmented: an Ebon Hawk hold split open↔throat↔
+// room into three regions). Collapsed to:
+//
+//   - SPACE   : a place the player stands in — degree-≥3 hub, or open /
+//               room by the clearance probe. Two space nodes union.
+//   - PASSAGE : a straight degree-2 link. Two straight nodes union into
+//               one corridor run (the L-shaped-corridor rule is carried
+//               over unchanged: a ~90° bend fails the straightness test
+//               and breaks the run, so the player still hears the turn).
+//
+// PASSAGE↔SPACE never merge — that boundary is exactly the line between
+// "I'm in a corridor" and "I'm in a room", and is what lets Pass 3 still
+// voice corridors, junctions and areas distinctly even though the merge
+// itself stopped distinguishing them.
+//
+// Each rule is gated on a clear, door-free edge: the door is tested in
+// 2D (FindDoorOnEdge); the wall is tested on the floor-z-lifted segment
+// (the nav nodes sit at z=0, so a z=0 segment would run under same-floor
+// walls). Adjacency — a real engine nav edge — is the connector, so two
+// spaces that merely face each other across a junction throat stay
+// separate (the Oberstadt store / cantina-avenue fix).
+void PassCoreMerge(const acc::engine::navgraph::NavGraphSnapshot& g,
+                   int n, BuildPasses& bp) {
+    const bool*  nodeOpen         = bp.nodeOpen;
+    const bool*  nodeRoom         = bp.nodeRoom;
+    const float* nodeFloorZ       = bp.nodeFloorZ;
+    const bool*  chainStraight    = bp.chainStraight;
+    const float* chainStraightCos = bp.chainStraightCos;
+    const acc::engine::WallEdge* gw = bp.gw;
+    const int  gwCount = bp.gwCount;
+    const bool haveGW  = bp.haveGW;
 
     int coreSpace = 0, coreCorridor = 0;
     int coreVetoDoor = 0, coreVetoWall = 0;
@@ -2563,24 +2512,36 @@ void BuildForArea(void* area) {
         "vetoedByDoor=%d vetoedByWall=%d",
         coreSpace, coreCorridor,
         coreVetoDoor, coreVetoWall);
+    bp.coreSpace    = coreSpace;
+    bp.coreCorridor = coreCorridor;
+}
 
-    // ===== Pass 1b: corner fold =====
-    // A sharp bend (degree-2, not chainStraight) is the corner where two
-    // corridor segments meet. Left alone it announces as its own one-node
-    // cluster wedged between the two runs (the Ebon Hawk crew-quarters
-    // 51° dogleg: "corridor / corner / corridor", three cues). Fold it into
-    // the neighbour it continues STRAIGHTEST into — its straight edge extends
-    // that corridor, its turning edge becomes the boundary to the next one.
-    //
-    // "Straightest" = the neighbour nb with the most-opposite edges (smallest
-    // chainStraightCos), among the corner's degree-2 chainStraight neighbours
-    // reachable across a clear, door-free edge. Folding into exactly one side
-    // means the corner NEVER unions across its own bend, so the two corridors
-    // stay distinct (each announced by its own axis) and the player turns at
-    // the boundary — no merged corridor with a misleading end bearing. Runs
-    // before Pass 2 so a corner prefers its straight corridor over being
-    // absorbed into an adjacent space hub. Single pass: folding a corner
-    // can't create a new corner.
+// ===== Pass 1b: corner fold =====
+// A sharp bend (degree-2, not chainStraight) is the corner where two
+// corridor segments meet. Left alone it announces as its own one-node
+// cluster wedged between the two runs (the Ebon Hawk crew-quarters
+// 51° dogleg: "corridor / corner / corridor", three cues). Fold it into
+// the neighbour it continues STRAIGHTEST into — its straight edge extends
+// that corridor, its turning edge becomes the boundary to the next one.
+//
+// "Straightest" = the neighbour nb with the most-opposite edges (smallest
+// chainStraightCos), among the corner's degree-2 chainStraight neighbours
+// reachable across a clear, door-free edge. Folding into exactly one side
+// means the corner NEVER unions across its own bend, so the two corridors
+// stay distinct (each announced by its own axis) and the player turns at
+// the boundary — no merged corridor with a misleading end bearing. Runs
+// before Pass 2 so a corner prefers its straight corridor over being
+// absorbed into an adjacent space hub. Single pass: folding a corner
+// can't create a new corner.
+void PassCornerFold(const acc::engine::navgraph::NavGraphSnapshot& g,
+                    int n, BuildPasses& bp) {
+    const float* nodeFloorZ       = bp.nodeFloorZ;
+    const bool*  chainStraight    = bp.chainStraight;
+    const float* chainStraightCos = bp.chainStraightCos;
+    const acc::engine::WallEdge* gw = bp.gw;
+    const int  gwCount = bp.gwCount;
+    const bool haveGW  = bp.haveGW;
+
     int cornerFolds = 0;
     for (int x = 0; x < n; ++x) {
         int lo = 0, hi = 0;
@@ -2620,33 +2581,41 @@ void BuildForArea(void* area) {
         }
     }
     acclog::Write("WallTopo", "  corner-fold: folded=%d", cornerFolds);
+}
 
-    // ===== Pass 2: straggler absorb =====
-    // Fold leftover corner / doorway nodes into the core they belong to.
-    // The merged successor of the old hub-absorption + bbox-absorption
-    // passes, run HERE (after every core merge, including open) so a corner
-    // hanging off a plaza folds into the plaza, not a singleton. Two
-    // admission rules, both preserving authored boundaries via the door
-    // veto:
-    //
-    //   (a) graph-attached: a degree-≤2 singleton that is NOT corridor
-    //       material (chainStraight) folds into an adjacent multi-node core
-    //       across a clear, door-free edge within kStragglerAbsorbMaxM.
-    //       Cascades to a fixpoint on LIVE membership, so a corner two hops
-    //       from a core still folds in (Oberstadt store corner 24 → spoke
-    //       14 → frontage core — the case the old hub pass structurally
-    //       missed, since it froze its snapshot before building the core).
-    //       Real corridors are safe: they are multi-node cores (Pass 1
-    //       chained them) and chainStraight singletons are excluded, so the
-    //       cascade can neither eat a corridor core nor propagate through a
-    //       straight corridor node.
-    //
-    //   (b) graph-unattached: a remaining singleton whose XY sits inside a
-    //       core's bounding box, with a member within kMergeMaxZM in Z and a
-    //       wall-/door-clear segment to it. Catches nodes that only connect
-    //       to door-vetoed neighbours (Endar Spire start node[3]/[6]).
+// ===== Pass 2: straggler absorb =====
+// Fold leftover corner / doorway nodes into the core they belong to.
+// The merged successor of the old hub-absorption + bbox-absorption
+// passes, run HERE (after every core merge, including open) so a corner
+// hanging off a plaza folds into the plaza, not a singleton. Two
+// admission rules, both preserving authored boundaries via the door
+// veto:
+//
+//   (a) graph-attached: a degree-≤2 singleton that is NOT corridor
+//       material (chainStraight) folds into an adjacent multi-node core
+//       across a clear, door-free edge within kStragglerAbsorbMaxM.
+//       Cascades to a fixpoint on LIVE membership, so a corner two hops
+//       from a core still folds in (Oberstadt store corner 24 → spoke
+//       14 → frontage core — the case the old hub pass structurally
+//       missed, since it froze its snapshot before building the core).
+//       Real corridors are safe: they are multi-node cores (Pass 1
+//       chained them) and chainStraight singletons are excluded, so the
+//       cascade can neither eat a corridor core nor propagate through a
+//       straight corridor node.
+//
+//   (b) graph-unattached: a remaining singleton whose XY sits inside a
+//       core's bounding box, with a member within kMergeMaxZM in Z and a
+//       wall-/door-clear segment to it. Catches nodes that only connect
+//       to door-vetoed neighbours (Endar Spire start node[3]/[6]).
+// (a) Adjacency cascade.
+void AbsorbAdjacentStragglers(const acc::engine::navgraph::NavGraphSnapshot& g,
+                              int n, BuildPasses& bp) {
+    const float* nodeFloorZ    = bp.nodeFloorZ;
+    const bool*  chainStraight = bp.chainStraight;
+    const acc::engine::WallEdge* gw = bp.gw;
+    const int  gwCount = bp.gwCount;
+    const bool haveGW  = bp.haveGW;
 
-    // (a) Adjacency cascade.
     int absorbAdj = 0, absorbAdjVetoDoor = 0, absorbAdjVetoWall = 0;
     {
         int sizeByRoot[kMaxNodes];
@@ -2725,12 +2694,22 @@ void BuildForArea(void* area) {
         "  absorb [adj]: absorbed=%d vetoedByDoor=%d vetoedByWall=%d "
         "(cap=%.0fm)",
         absorbAdj, absorbAdjVetoDoor, absorbAdjVetoWall, kStragglerAbsorbMaxM);
+    bp.absorbAdj = absorbAdj;
+}
 
-    // (b) Bounding-box admission for remaining graph-unattached singletons.
-    // Snapshot taken now, after the adjacency cascade, so the bbox reflects
-    // the final cores. Single pass over a frozen snapshot — absorbing a
-    // candidate does not recompute the bbox or re-test others (iteration
-    // could chain-absorb a real corridor sticking out of a Platz).
+// (b) Bounding-box admission for remaining graph-unattached singletons.
+// Snapshot taken now, after the adjacency cascade, so the bbox reflects
+// the final cores. Single pass over a frozen snapshot — absorbing a
+// candidate does not recompute the bbox or re-test others (iteration
+// could chain-absorb a real corridor sticking out of a Platz).
+void AbsorbStragglersByBoundingBox(void* area,
+                                   const acc::engine::navgraph::NavGraphSnapshot& g,
+                                   int n, BuildPasses& bp) {
+    const float* nodeFloorZ = bp.nodeFloorZ;
+    const acc::engine::WallEdge* gw = bp.gw;
+    const int  gwCount = bp.gwCount;
+    const bool haveGW  = bp.haveGW;
+
     int bboxSnapRoot[kMaxNodes];
     int bboxSnapSize[kMaxNodes];
     for (int i = 0; i < n; ++i) {
@@ -2880,12 +2859,21 @@ void BuildForArea(void* area) {
         "vetoedByZ=%d ambiguous-bbox=%d",
         bboxAbsorbed, bboxVetoedByWall, bboxVetoedByDoor,
         bboxNoZMatch, bboxAmbiguous);
+    bp.bboxAbsorbed = bboxAbsorbed;
+}
 
-    // ===== Pass 3: per-cluster classification =====
-    // For each cluster root (the
-    // smallest node id in its union-find class), compute the centroid,
-    // collect external neighbours (dedup by node id), classify via
-    // ClassifyCluster, and write the result to every member.
+// ===== Pass 3: per-cluster classification =====
+// For each cluster root (the
+// smallest node id in its union-find class), compute the centroid,
+// collect external neighbours (dedup by node id), classify via
+// ClassifyCluster, and write the result to every member.
+void PassClassifyClusters(void* area,
+                          const acc::engine::navgraph::NavGraphSnapshot& g,
+                          int n, BuildPasses& bp) {
+    const bool*  nodeOpen   = bp.nodeOpen;
+    const bool*  nodeRoom   = bp.nodeRoom;
+    const float* nodeFloorZ = bp.nodeFloorZ;
+
     int clusters = 0, multiNodeClusters = 0;
     int deadEnds = 0, corridors = 0, junctions = 0, openAreas = 0;
     for (int root = 0; root < n; ++root) {
@@ -3092,6 +3080,120 @@ void BuildForArea(void* area) {
             g_graph.node_extent[m]   = bboxExtent;
         }
     }
+    bp.clusters          = clusters;
+    bp.multiNodeClusters = multiNodeClusters;
+    bp.deadEnds          = deadEnds;
+    bp.corridors         = corridors;
+    bp.junctions         = junctions;
+    bp.openAreas         = openAreas;
+}
+
+}  // namespace
+
+void BuildForArea(void* area) {
+    if (!area) return;
+    if (HasGraphForArea(area)) return;
+
+    // Per-area retry accounting — see kNavGraphRetryCapTicks.
+    if (g_navgraph_retry.area != area) {
+        g_navgraph_retry.area         = area;
+        g_navgraph_retry.failed_ticks = 0;
+        g_navgraph_retry.gave_up      = false;
+    }
+    if (g_navgraph_retry.gave_up) return;
+
+    Reset();
+    g_graph.area_owner = area;
+
+    acc::engine::navgraph::NavGraphSnapshot g;
+    if (!acc::engine::navgraph::SnapshotNavGraph(area, g)) {
+        // Log the first miss so an unreadable graph is still visible in the
+        // log immediately, then stay quiet until we give up. Logging all 120
+        // adds nothing — they are identical by construction.
+        if (g_navgraph_retry.failed_ticks == 0) {
+            acclog::Write("WallTopo",
+                          "BuildForArea: nav graph empty / unreadable (areaPtr=%p) "
+                          "— leaving graph unbuilt, retrying", area);
+        }
+        if (++g_navgraph_retry.failed_ticks >= kNavGraphRetryCapTicks) {
+            g_navgraph_retry.gave_up = true;
+            acclog::Write("WallTopo",
+                          "BuildForArea: nav graph still unreadable after %d ticks "
+                          "(areaPtr=%p) — giving up for this area; room topology "
+                          "degrades to open-area until it is re-entered",
+                          g_navgraph_retry.failed_ticks, area);
+        }
+        return;
+    }
+    g_navgraph_retry.failed_ticks = 0;
+
+    int n = static_cast<int>(g.nodes.size());
+    if (n > kMaxNodes) {
+        acclog::Write("WallTopo",
+                      "BuildForArea: nav graph has %d nodes — truncating to "
+                      "kMaxNodes=%d; %d node%s dropped from classification "
+                      "(label/exit data for them will be missing)",
+                      static_cast<int>(g.nodes.size()), kMaxNodes,
+                      static_cast<int>(g.nodes.size()) - kMaxNodes,
+                      static_cast<int>(g.nodes.size()) - kMaxNodes == 1
+                          ? "" : "s");
+        n = kMaxNodes;
+    }
+    g_graph.node_count = n;
+    for (int i = 0; i < n; ++i) {
+        g_graph.node_pos[i]        = g.nodes[i].pos;
+        g_graph.node_label[i].clear();
+        g_graph.node_sig[i]        = 0;
+        g_graph.node_kind[i]       = kKindOpenArea;
+        g_graph.node_cluster_id[i] = kClusterIdNone;
+        g_graph.node_extent[i]     = 0.0f;
+    }
+
+    // Snapshot doors before classifying clusters — ClassifyCluster's
+    // FindDoorOnEdge calls consume g_graph.doors[]. The initial snapshot
+    // can race a partially-populated server-object array; the per-tick
+    // MaybeRefreshDoors loop catches late-arriving doors. Initial
+    // cluster classification is locked to whatever was visible now
+    // (accepted lossy behaviour — late doors still show up as "Tür"
+    // exits via the per-edge query).
+    SnapshotDoors(area);
+    LogDoorSnapshotDetails(area);
+    // Attach landmark map-notes to doors before any cluster labels get
+    // rendered — RenderDoorDirection consults DoorRecord.landmarkName and
+    // labels are baked once during the classification passes below. Also
+    // flags matched landmarks in the transitions cache so the
+    // proximity-fire path won't double-announce.
+    AttachLandmarksToDoors(area);
+    // Walk-through area-transition triggers — the door analog for outdoor
+    // maps. Needs node_pos[] (filled above) for the nearest-node binding.
+    SnapshotTransitionTriggers(area);
+    g_doors_stability.last_count  = g_graph.door_count;
+    g_doors_stability.streak      = 0;
+    g_doors_stability.retry_ticks = 0;
+    g_doors_stability.committed   = false;
+
+    // Per-node shape features first, so every merge pass below can branch
+    // on the same openness / room flags. They no longer drive separate
+    // merge classes — they only decide, per node, whether it is "space"
+    // (a place the player stands in) or "passage" (a link between places);
+    // see the Pass 1 space/passage rule.
+    BuildPasses bp;
+    ComputeNodeShapeFeatures(g, n, bp.nodeOpen, bp.nodeRoom, bp.nodeFloorZ);
+
+    // Every node starts in its own union-find class; the passes below merge.
+    for (int i = 0; i < n; ++i) s_uf_parent[i] = i;
+
+    ComputeChainStraightness(g, n, bp);
+
+    // Wall cache for the edge clearness test (shared by Pass 1 and Pass 2).
+    bp.haveGW = acc::spatial::change_detector::GetCachedWalls(
+                    bp.gw, bp.gwCount) && bp.gw && bp.gwCount > 0;
+
+    PassCoreMerge(g, n, bp);
+    PassCornerFold(g, n, bp);
+    AbsorbAdjacentStragglers(g, n, bp);
+    AbsorbStragglersByBoundingBox(area, g, n, bp);
+    PassClassifyClusters(area, g, n, bp);
 
     // Freeze the UFFind roots into node_cluster_id[] now that all merge
     // passes have completed. After this point UFFind itself is no
@@ -3108,10 +3210,10 @@ void BuildForArea(void* area) {
                   "core-merge(space=%d corridor=%d) "
                   "absorb(adj=%d bbox=%d) multi-node-clusters=%d "
                   "(dead=%d corridor=%d junction=%d open=%d)",
-                  area, n, clusters,
-                  coreSpace, coreCorridor,
-                  absorbAdj, bboxAbsorbed, multiNodeClusters,
-                  deadEnds, corridors, junctions, openAreas);
+                  area, n, bp.clusters,
+                  bp.coreSpace, bp.coreCorridor,
+                  bp.absorbAdj, bp.bboxAbsorbed, bp.multiNodeClusters,
+                  bp.deadEnds, bp.corridors, bp.junctions, bp.openAreas);
 
     // Edge-classification summary. Counts are multi-fire (each graph
     // edge is classified by every pass that examines it — Pass 1
