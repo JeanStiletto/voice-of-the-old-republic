@@ -77,7 +77,11 @@ constexpr float kDegToRad = 0.017453292519943295f;
 // is single-valued, the quaternion path returns antipodal readings 360°
 // apart and breaks the arrival check. Falls back to the quaternion if
 // announce hasn't anchored yet.
-bool ReadCurrentEngineYawRad(void* camera, float& out) {
+// No camera parameter: the announce path has its own source and the
+// quaternion fallback re-walks the chain inside GetCameraYawRadians. Callers
+// still resolve the camera themselves — they need it for their own "camera
+// vanished" check — they just have nothing to hand to this.
+bool ReadCurrentEngineYawRad(float& out) {
     float degsFromAnnounce = 0.0f;
     if (acc::camera_announce::TryGetCameraEngineYawDegrees(
             degsFromAnnounce)) {
@@ -90,7 +94,6 @@ bool ReadCurrentEngineYawRad(void* camera, float& out) {
     // fields — engine y/z — which is why this path looked "multi-valued"
     // and got abandoned). GetCameraYawRadians yields the same East=0 frame
     // as the position-derived path. See engine_player.h.
-    (void)camera;  // chain re-walked inside the helper
     return acc::engine::GetCameraYawRadians(out);
 }
 
@@ -175,7 +178,7 @@ void Tick() {
             g_rot.active = false;
         } else {
             float curYawRad = 0.0f;
-            if (!ReadCurrentEngineYawRad(camera, curYawRad)) {
+            if (!ReadCurrentEngineYawRad(curYawRad)) {
                 ReleaseAndDisarm("getyaw_fault", 0.0f);
             } else {
                 float remaining = NormaliseRad(
@@ -253,7 +256,7 @@ void Tick() {
         return;
     }
     float curYawRad = 0.0f;
-    if (!ReadCurrentEngineYawRad(camera, curYawRad)) {
+    if (!ReadCurrentEngineYawRad(curYawRad)) {
         acclog::Write("CameraOrient", "skip: Camera::GetYaw call faulted");
         return;
     }

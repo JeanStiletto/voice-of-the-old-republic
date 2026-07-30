@@ -431,9 +431,11 @@ internal static class WalkmeshGeometryAnalysis
     /// then per column gives O(N) run-length in each cardinal direction;
     /// O(N) per diagonal axis. Bails on rooms whose walkable bbox exceeds
     /// 4M cells — none in KOTOR do at 0.5 m.</summary>
+    /// <remarks>Caller-guarded: the sole call site is inside
+    /// <c>if (cells.Count > 0)</c>. Do not call with an empty set — the bbox
+    /// scan below would leave its min/max sentinels untouched.</remarks>
     private static void ComputeSmoothness(HashSet<long> cells, float cellSize, RoomResult result)
     {
-        if (cells.Count == 0) return;
         int minCx = int.MaxValue, minCy = int.MaxValue, maxCx = int.MinValue, maxCy = int.MinValue;
         foreach (var key in cells)
         {

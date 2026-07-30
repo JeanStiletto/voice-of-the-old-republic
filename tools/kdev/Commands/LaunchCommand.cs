@@ -93,6 +93,11 @@ public static class LaunchCommand
         }
     }
 
+    // The IsWindows() guard below looks redundant — both call sites are already
+    // inside Run's if (OperatingSystem.IsWindows()) block, and kdev.csproj pins
+    // RuntimeIdentifier=win-x64. It is NOT removable: CA1416 does not propagate
+    // a caller's platform guard across a method boundary, so deleting it fails
+    // the build on Process.ProcessorAffinity below. Leave it.
     private static void TryPin(int pid, IntPtr mask, string label)
     {
         if (!OperatingSystem.IsWindows()) return;
