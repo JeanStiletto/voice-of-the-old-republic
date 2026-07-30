@@ -26,54 +26,28 @@
 #include "log.h"
 #include "prism.h"
 #include "menus.h"           // public surface — Step 1 mod-wide tick split
-#include "menus_charsheet.h" // Step 2A — character-sheet opener lifted out
 #include "menus_chargen_attr.h" // Chargen "Attribute" panel label + selected_ability sync
 #include "menus_chargen_skills.h" // Chargen "Fähigkeiten" panel — same shape as Attribute
-#include "menus_chargen_feats.h"  // Chargen "Talente" panel — 2D feat-tree chart
-#include "menus_powers_levelup.h" // Level-up "Kr�fte" — feat-tree-shaped power picker
 #include "menus_extract.h"   // Step 2B — text extraction lifted out
 #include "menus_internal.h"  // Step 2B — shared seam with menus_extract
 #include "menus_focus.h"     // first-sight / focus-capture (Phase-1 split)
 #include "menus_pending.h"   // Step 3 — deferred-op queue lifted out
-#include "menus_abilities.h"  // dedicated Fähigkeiten-screen input handler
 #include "menus_listbox.h"   // Step 4 — listbox-driven panel dispatcher
 #include "menus_editbox.h"   // Editbox (chargen Name) dispatcher + monitor
 #include "menus_chain.h"     // Step 5 — chain navigation lifted out
-#include "menus_modsettings.h" // Virtual mod-settings submenu (Optionen panels)
 #include "menus_monitors.h"  // Post-Step-5 — general per-tick monitors
 #include "tutorial_hints.h"  // mapped tutorial-popup gate (mouse-announce suppression)
 #include "tutorial_popup.h"  // synthetic Trask-line popup (suppress its listbox row)
 #include "menus_store.h"     // Store / trading panel — price+stock suffix + mode announce
-#include "menus_pazaakdeck.h" // Pazaak side-deck builder — 3-row navigator
 #include "menus_galaxymap.h"  // Galaxy / star-map travel screen — planet cycle
 #include "menus_keymap.h"     // dedicated Tastaturbelegung two-level handler
-#include "minigame_pazaak.h"           // Pazaak board game — IsBoardForeground
-#include "menus_journal.h"   // Journal (Aufträge) — Enter on quest row → description
-#include "help.h"             // Help list overlay — suppress engine keys while open
 #include "engine_area.h"     // IsLoadingSaveGame — gate the save-load GUI burst
 #include "engine_input.h"
-#include "engine_keymap.h"   // VksForCode — modifier-shadow consume (manager side)
 #include "engine_manager.h"
 #include "engine_offsets.h"
 #include "engine_panels.h"
-#include "engine_player.h"   // Phase 1 lay-off 4 (test fixture only)
 #include "engine_reads.h"
 #include "hotkeys.h"
-#include "audio_bus.h"       // Phase 1 lay-off 4 (test fixture only)
-#include "announce_degrees.h" // Phase 4 sub-feature D
-#include "probe_mouselook.h"  // Phase 4 lay-off 2 — view-mode probe
-#include "view_mode.h"        // Phase 4 lay-off 3 — view-mode skeleton
-#include "cycle_input.h"     // Phase 2 lay-off 3
-#include "guidance_autowalk.h"  // Phase 2 lay-off 5 (progress watchdog)
-#include "camera_announce.h"    // Phase 2 ad-hoc — camera-direction on A/D
-#include "input_pipeline.h"  // Cross-stream seq counter for input diag
-#include "diag_chargen_feats.h"   // One-shot CSWGuiFeatsCharGen structure dump
-#include "interact_dispatch.h"    // Phase 2 lay-off 9b
-#include "passive_narrate.h"    // Phase 2 lay-off 9a
-#include "peek_description.h"   // Shift+arrow description peek
-#include "spatial_change_detector.h"  // Phase 3 lay-off 3 — Pillar 1 Trigger 1
-#include "audio_footstep_suppress.h"  // Phase 3 lay-off 5 — stuck-detection
-#include "strings.h"            // Container loot panel announces
 #include "update_checker.h"     // Deferred background version check + bringup mark
 #include "focus_guard.h"         // WindowProc subclass for WM_ACTIVATE logging
 #include "bringup_announce.h"   // Loading-phase nag when user presses arrows too early
@@ -85,37 +59,15 @@
 // menu-side TU so callsites stay as they were.
 using namespace acc::engine;
 
-// Step 2B seam: the four detail-namespace helpers + GetControlCenter live
-// in this TU (chain-side has many more callers than extract-side). The
-// using-declarations bring their unqualified names back into scope so
-// existing call sites don't need to be touched.
-using acc::menus::detail::IsChainNavigable;
-using acc::menus::detail::IsClassSelectionIcon;
-using acc::menus::detail::ClassLabelCacheLookup;
-using acc::menus::detail::ClassLabelCacheStore;
-using acc::menus::detail::GetControlCenter;
-
-// Step 4 seam: the listbox-driven panel handlers live in menus_listbox.cpp,
-// but their helpers (FindControlById, FindListBoxChild, IsSaveLoadPanel,
-// ReadSaveLoadEntryString, DriveListBoxSelection, QueueButtonByIdActivate)
-// stay defined here because they're called from menus.cpp's monitors and
-// chain code too. Same using-declaration pattern as Step 2B.
-using acc::menus::detail::FindControlById;
-using acc::menus::detail::FindListBoxChild;
-using acc::menus::detail::IsSaveLoadPanel;
-using acc::menus::detail::ReadSaveLoadEntryString;
-using acc::menus::detail::DriveListBoxSelection;
-using acc::menus::detail::ListBoxNavResult;
-using acc::menus::detail::QueueButtonByIdActivate;
-
-// Step 5 seam: chain state + helpers live in menus_chain.cpp. Bring all
-// the names into unqualified scope so the dense reads in OnHandleInputEvent
-// / OnSetActiveControl / monitors stay as they were. Writes to the
-// externs (g_chainIndex on chain-step advance) work the same way through
-// using-declarations.
-using acc::menus::chain::ChainEntry;
-using acc::menus::chain::kMaxChainEntries;
-using acc::menus::chain::kVirtualMod_SettingsRoot;
+// Chain seam: chain state + the panel-validation helpers live in
+// menus_chain.cpp. These using-declarations bring the names this file
+// still reads into unqualified scope, so the dense reads in
+// OnSetActiveControl / the monitors stay as they were. Writes to the
+// externs (g_chainIndex on chain-step advance) work the same way.
+//
+// The Step-2B (detail::) and Step-4 (listbox helper) seam blocks that used
+// to sit here are gone: every one of those helpers moved out with its
+// callers in the Phase-1 split, so nothing in this file referenced them.
 using acc::menus::chain::g_chain;
 using acc::menus::chain::g_chainPanel;
 using acc::menus::chain::g_chainIndex;
@@ -123,25 +75,10 @@ using acc::menus::chain::g_chainCount;
 using acc::menus::chain::g_tabbedPanel;
 using acc::menus::chain::g_tabsStart;
 using acc::menus::chain::g_tabsCount;
-using acc::menus::chain::g_equipSlotClickOffsetY;
-using acc::menus::chain::g_classIconClickOffsetX;
-using acc::menus::chain::RebindChain;
-using acc::menus::chain::ResetTabbedState;
 using acc::menus::chain::ValidateTabbedPanel;
 using acc::menus::chain::ValidateChainPanel;
 using acc::menus::chain::DetectTabsCluster;
-using acc::menus::chain::IsTabButton;
-using acc::menus::chain::FindAdjacentArrow;
-using acc::menus::chain::FindCloseButton;
-using acc::menus::chain::FindCancelButton;
-using acc::menus::chain::FindChainEntry;
-using acc::menus::chain::ReadPanelActiveControl;
 using acc::menus::chain::WalkChildren;
-
-// Post-Step-5 cleanup: general-monitor TU and listbox-monitor extension.
-// AnnounceControl (writes monitor state) lives in menus_monitors; chain
-// handlers in OnHandleInputEvent below call it through this using-decl.
-using acc::menus::monitors::AnnounceControl;
 
 // Phase-1 structure split: the first-sight / focus-capture step functions
 // moved to menus_focus.cpp. OnSetActiveControl below is their only caller
@@ -163,10 +100,7 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
 
 // Forward declarations + the shared kEquipBtn* / kEquipLb* constants moved
 // to menus_internal.h in Step 2B. g_currentPanel is declared there as
-// extern; defined later in this TU. The four detail-namespace helpers
-// (IsChainNavigable, IsClassSelectionIcon, ClassLabelCache*) and
-// GetControlCenter are defined further down with the chain machinery and
-// brought back into unqualified scope by the using-declarations above.
+// extern; defined later in this TU.
 
 
 

@@ -1,5 +1,6 @@
 #include "engine_manager.h"
 
+#include <windows.h>
 #include <cstddef>
 #include <cstdint>
 
@@ -8,6 +9,50 @@
 #include "log.h"
 
 namespace acc::engine {
+
+void* GetGuiManager() {
+    __try {
+        return *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+namespace {
+
+// Both arrays are CExoArrayList-shaped (data, size, capacity) and differ only
+// in their base offsets, so one body serves panels[] and modal_stack.
+int ReadPanelList(void* mgr, size_t dataOffset, size_t sizeOffset,
+                  void** out, int maxEntries, int* outRawCount) {
+    if (outRawCount) *outRawCount = 0;
+    if (!mgr || !out || maxEntries <= 0) return 0;
+    __try {
+        auto* base = reinterpret_cast<unsigned char*>(mgr);
+        int    size = *reinterpret_cast<int*>(base + sizeOffset);
+        void** data = *reinterpret_cast<void***>(base + dataOffset);
+        if (outRawCount) *outRawCount = size;
+        if (!data || size <= 0) return 0;
+        int n = size > maxEntries ? maxEntries : size;
+        for (int i = 0; i < n; ++i) out[i] = data[i];
+        return n;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
+}  // namespace
+
+int ReadPanelArray(void* mgr, void** outPanels, int maxEntries,
+                   int* outRawCount) {
+    return ReadPanelList(mgr, kMgrPanelsDataOffset, kMgrPanelsSizeOffset,
+                         outPanels, maxEntries, outRawCount);
+}
+
+int ReadModalStack(void* mgr, void** outModal, int maxEntries,
+                   int* outRawCount) {
+    return ReadPanelList(mgr, kMgrModalStackDataOffset, kMgrModalStackSizeOffset,
+                         outModal, maxEntries, outRawCount);
+}
 
 // Panels that exist in the engine's panels[] for rendering reasons but never
 // receive input. Picking the topmost panel for foreground purposes should
@@ -30,39 +75,29 @@ static bool IsTransparentForegroundKind(PanelKind k) {
 
 bool IsPanelInManager(void* panel) {
     if (!panel) return false;
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    void* mgr = GetGuiManager();
     if (!mgr) return false;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (panelData && panelCount > 0) {
-        int n = panelCount > 32 ? 32 : panelCount;
-        for (int i = 0; i < n; ++i) {
-            if (panelData[i] == panel) return true;
-        }
+
+    constexpr int kCap = 32;
+    void* entries[kCap];
+    int n = ReadPanelArray(mgr, entries, kCap);
+    for (int i = 0; i < n; ++i) {
+        if (entries[i] == panel) return true;
     }
-    int   modalSize = *reinterpret_cast<int*>(base + kMgrModalStackSizeOffset);
-    void** modalData = *reinterpret_cast<void***>(base + kMgrModalStackDataOffset);
-    if (modalData && modalSize > 0) {
-        int n = modalSize > 32 ? 32 : modalSize;
-        for (int i = 0; i < n; ++i) {
-            if (modalData[i] == panel) return true;
-        }
+    n = ReadModalStack(mgr, entries, kCap);
+    for (int i = 0; i < n; ++i) {
+        if (entries[i] == panel) return true;
     }
     return false;
 }
 
 void* FindOwningPanel(void* control) {
     if (!control) return nullptr;
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return nullptr;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (!panelData || panelCount <= 0) return nullptr;
-    if (panelCount > 16) panelCount = 16;
+    constexpr int kCap = 32;
+    void* panels[kCap];
+    int panelCount = ReadPanelArray(GetGuiManager(), panels, kCap);
     for (int i = 0; i < panelCount; ++i) {
-        void* p = panelData[i];
+        void* p = panels[i];
         if (!p) continue;
         auto* list = reinterpret_cast<CExoArrayList*>(
             reinterpret_cast<unsigned char*>(p) + kPanelControlsOffset);
@@ -82,31 +117,44 @@ void* FindOwningPanel(void* control) {
     return nullptr;
 }
 
+// NOT migrated to ReadPanelArray, deliberately. The last-resort return below
+// indexes panelData[panelSize - 1] using the RAW size, while the scan above it
+// only covers the first 32 entries — so with a size > 32 the two disagree and
+// the fallback reaches outside its own scan window. Copying into a bounded
+// buffer would quietly change that. It is already guarded (this was one of the
+// F2 fixes), so it is not part of the unguarded class B3b closes; the
+// raw-size/window mismatch is recorded as a separate finding instead.
 void* GetForegroundPanel(void* mgr) {
     if (!mgr) return nullptr;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   modalSize = *reinterpret_cast<int*>(base + kMgrModalStackSizeOffset);
-    void** modalData = *reinterpret_cast<void***>(base + kMgrModalStackDataOffset);
-    if (modalSize > 0 && modalData) {
-        void* top = modalData[modalSize - 1];
-        if (top) return top;
-    }
-    int   panelSize = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (panelSize > 0 && panelData) {
-        // Walk down from the top, skipping render-only kinds (Fade) so the
-        // returned fg is the topmost panel that actually accepts input.
-        // Bound the walk to a sane limit just in case panelSize is corrupt.
-        int n = panelSize > 32 ? 32 : panelSize;
-        for (int i = n - 1; i >= 0; --i) {
-            void* p = panelData[i];
-            if (!p) continue;
-            if (IsTransparentForegroundKind(IdentifyPanel(p))) continue;
-            return p;
+    // SEH-guarded: the null checks below cannot catch a STALE manager or
+    // panel pointer, which is what this array holds during teardown.
+    __try {
+        auto* base = reinterpret_cast<unsigned char*>(mgr);
+        int   modalSize = *reinterpret_cast<int*>(base + kMgrModalStackSizeOffset);
+        void** modalData = *reinterpret_cast<void***>(base + kMgrModalStackDataOffset);
+        if (modalSize > 0 && modalData) {
+            void* top = modalData[modalSize - 1];
+            if (top) return top;
         }
-        // Every entry was either null or transparent — return the actual
-        // top so callers still see *something* and can decide what to do.
-        return panelData[panelSize - 1];
+        int   panelSize = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
+        void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
+        if (panelSize > 0 && panelData) {
+            // Walk down from the top, skipping render-only kinds (Fade) so the
+            // returned fg is the topmost panel that actually accepts input.
+            // Bound the walk to a sane limit just in case panelSize is corrupt.
+            int n = panelSize > 32 ? 32 : panelSize;
+            for (int i = n - 1; i >= 0; --i) {
+                void* p = panelData[i];
+                if (!p) continue;
+                if (IsTransparentForegroundKind(IdentifyPanel(p))) continue;
+                return p;
+            }
+            // Every entry was either null or transparent — return the actual
+            // top so callers still see *something* and can decide what to do.
+            return panelData[panelSize - 1];
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
     }
     return nullptr;
 }
@@ -117,11 +165,12 @@ void LogManagerStack(void* mgr, const char* tag) {
         acclog::Write("ManagerStack", "(%s) mgr=NULL", ctx);
         return;
     }
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelSize  = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    int   modalSize  = *reinterpret_cast<int*>(base + kMgrModalStackSizeOffset);
-    void** modalData = *reinterpret_cast<void***>(base + kMgrModalStackDataOffset);
+    constexpr int kCap = 32;
+    void* panels[kCap];
+    void* modal[kCap];
+    int panelSize = 0, modalSize = 0;
+    int pn = ReadPanelArray(mgr, panels, kCap, &panelSize);
+    int mn = ReadModalStack(mgr, modal, kCap, &modalSize);
     void* fg = GetForegroundPanel(mgr);
     // One block per dump: an unchanged stack (same ctx, same panel/modal
     // pointers) folds to a "(repeated Nx)" summary. Here the pointers ARE the
@@ -130,15 +179,11 @@ void LogManagerStack(void* mgr, const char* tag) {
     acclog::BlockLog block("ManagerStack");
     block.Line("(%s) mgr=%p panels.size=%d modal.size=%d fg=%p",
                ctx, mgr, panelSize, modalSize, fg);
-    int pn = panelSize;
-    if (pn < 0 || pn > 32) pn = (pn < 0) ? 0 : 32;
-    for (int i = 0; i < pn && panelData; ++i) {
-        block.Line("(%s)   panels[%d]=%p", ctx, i, panelData[i]);
+    for (int i = 0; i < pn; ++i) {
+        block.Line("(%s)   panels[%d]=%p", ctx, i, panels[i]);
     }
-    int mn = modalSize;
-    if (mn < 0 || mn > 32) mn = (mn < 0) ? 0 : 32;
-    for (int i = 0; i < mn && modalData; ++i) {
-        block.Line("(%s)   modal[%d]=%p", ctx, i, modalData[i]);
+    for (int i = 0; i < mn; ++i) {
+        block.Line("(%s)   modal[%d]=%p", ctx, i, modal[i]);
     }
 }
 

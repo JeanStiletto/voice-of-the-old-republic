@@ -35,7 +35,6 @@ const char* Get(Id id) {
         case Id::CycleNoTarget:       return "Aucune cible";
 
         case Id::MapPinNoText:        return "Marqueur";
-        case Id::MapPinShiftDashHint: return "Le marqueur ne peut pas \xEAtre atteint directement. Ctrl+Tiret pour activer la balise.";
         case Id::MapPinAltDashUnsupported: return "Marqueur : Alt+Tiret non pris en charge";
         case Id::MapPinInteractHint:  return "Marqueur. Ctrl+Tiret pour activer la balise.";
 
@@ -92,10 +91,7 @@ const char* Get(Id id) {
         case Id::EndarDoorBattleHint: return "Cette porte reste verrouill\xE9""e jusqu'\xE0 la fin du combat dans cette zone.";
         case Id::EndarStuckReloadHint: return "S'il ne reste aucun ennemi \xE0 proximit\xE9, le tutoriel est peut-\xEAtre bloqu\xE9. Chargez une sauvegarde ant\xE9rieure \xE0 cette salle.";
 
-        case Id::FmtActionBarOpened:      return "Barre d'action colonne %d : %s, %d options";
         case Id::FmtActionBarColumnEmpty: return "La colonne %d est vide";
-        case Id::ActionBarColumnEmpty:    return "Colonne vide";
-        case Id::FmtActionBarFired:       return "%s utilis\xE9";
         case Id::FmtFireAtPosition:       return "%s, position %d";
         case Id::FmtFireQueueFull:        return "%s, file pleine";
         case Id::ActionMenuClosed:        return "Menu d'action ferm?.";
@@ -147,7 +143,6 @@ const char* Get(Id id) {
         case Id::FmtEquipDamageDual:   return "D\xE9g\xE2ts gauche %s, droite %s";
 
         case Id::FmtTransitionArea:    return "Zone : %s";
-        case Id::FmtTransitionRoom:    return "Salle : %s";
         case Id::FmtTransitionRoomIndex: return "Salle %d";
         case Id::FmtTransitionLoading: return "Chargement : %s";
 
@@ -167,7 +162,6 @@ const char* Get(Id id) {
         case Id::StuckFreeDirsPrefix:  return "Libre";
         case Id::StuckAllBlocked:      return "Tout bloqu\xE9";
 
-        case Id::FmtCompassDegrees:    return "%d degr\xE9s";
 
         case Id::FmtMapStateOriented:    return "%s. Orient\xE9 \xE0 %d degr\xE9s sur la carte, %s.";
         case Id::FmtMapStateUnknownRoom: return "Orient\xE9 \xE0 %d degr\xE9s sur la carte, %s.";
@@ -191,8 +185,6 @@ const char* Get(Id id) {
         case Id::LevelUpScreenHint:    return "Utilisez les fl\xE8""ches pour choisir une cat\xE9gorie et appuyez sur Entr\xE9""e pour l'ouvrir. R\xE9partissez vos points, puis choisissez Accepter pour terminer."; // fleches categorie Entree Repartissez
 
         case Id::PortraitLabel:        return "Portrait";
-        case Id::PortraitArrowPrev:    return "Portrait pr\xE9""c\xE9""dent";
-        case Id::PortraitArrowNext:    return "Portrait suivant";
         case Id::FmtPortraitArrow:     return "%s : %s";
         case Id::FmtPortraitArrowId:   return "%s %d";
         case Id::PortraitGenderFemale: return "f\xE9minin";
@@ -249,7 +241,6 @@ const char* Get(Id id) {
 
         case Id::EditboxRole:                return "champ de saisie";
         case Id::EditboxEmpty:               return "vide";
-        case Id::EditboxEnd:                 return "fin";
         case Id::FmtKeyBinding:              return "%s : %s";
         case Id::KeyBindingFixed:            return " (non modifiable)";
         case Id::FmtKeyBindCapture:          return "Appuyez sur la nouvelle touche pour %s";
@@ -268,20 +259,16 @@ const char* Get(Id id) {
         case Id::FactionHostile:             return "hostile";
         case Id::FactionFriendly:            return "amical";
         case Id::FactionNeutral:             return "neutre";
-        case Id::TargetIsDead:               return "mort";
 
         case Id::FmtBriefCondition:          return " %s.";
         case Id::FmtBriefDistanceMeters:     return " %d m\xE8tres.";
         case Id::FmtBriefEffects:            return " %s.";
         case Id::FmtBriefWielding:           return " %s.";
         case Id::FmtBriefOffHand:            return " main secondaire %s.";
-        case Id::FmtBriefEffectsCount:       return " %d effets actifs.";
-        case Id::FmtBriefFeatsCount:         return " %d talents.";
         case Id::FmtSelfStatusHp:            return "%d points de vie.";
         case Id::FmtSelfStatusHpOf:          return "%d sur %d points de vie.";
         case Id::FmtSelfStatusFpOf:          return "%d sur %d points de Force.";
 
-        case Id::ExamineOpened:              return "Examen.";
         case Id::ExamineNoTarget:            return "Aucune cible \xE0 examiner.";
         case Id::ExamineFailed:              return "Examen \xE9""chou\xE9.";
 
@@ -314,7 +301,6 @@ const char* Get(Id id) {
         case Id::FmtExamineRowHead:          return "T\xEAte : %s";
         case Id::FmtExamineRowTorso:         return "Armure : %s";
         case Id::FmtExamineRowHands:         return "Mains : %s";
-        case Id::ExamineRowStatusInvisible:  return "Invisible";
         case Id::ExamineRowStatusBlind:      return "Aveugle";
 
         case Id::FmtQueueOpen:               return "File d'actions, %d actions.";
@@ -329,31 +315,16 @@ const char* Get(Id id) {
         case Id::QueueVerbItemCast:          return "Utiliser un objet";
         case Id::QueueVerbEquip:             return "\xC9quiper";
         case Id::QueueVerbUnequip:           return "D\xE9s\xE9quiper";
-        case Id::QueueVerbMove:              return "D\xE9placer";
-        case Id::QueueVerbHeal:              return "Soigner";
         case Id::QueueVerbUseTalent:         return "Utiliser un talent";
-        case Id::QueueVerbCutscene:          return "Cin\xE9matique";
         case Id::QueueVerbUnknown:           return "Action";
 
         // Skeleton: max-HP is not yet read safely (suspected engine
         // accessor), so the hit / crit messages omit the "X of Y hp"
         // tail. Args reduced to (attacker, target, damage).
-        case Id::FmtAttackHit:               return "%s touche %s pour %d d\xE9g\xE2ts.";
-        case Id::FmtAttackMiss:              return "%s rate %s.";
-        case Id::FmtAttackCrit:              return "Critique ! %s frappe %s pour %d d\xE9g\xE2ts.";
-        case Id::FmtAttackDeflected:         return "L'attaque de %s sur %s est par\xE9""e.";
 
-        case Id::FmtSavingThrowSucceeded:    return "%s r\xE9ussit : %s %d contre %d.";
-        case Id::FmtSavingThrowFailed:       return "%s \xE9""choue : %s %d contre %d.";
-        case Id::SaveTypeFort:               return "Vigueur";
-        case Id::SaveTypeReflex:             return "R\xE9""flexes";
-        case Id::SaveTypeWill:               return "Volont\xE9";
 
-        case Id::DialogReplyUnavailable:     return "indisponible";
-        case Id::FmtDialogReplyUnavailableRow: return "%s, %s, %d sur %d";
 
         case Id::MessagesTitleCombatLog:     return "Journal de combat.";
-        case Id::MessagesTitleDialogLog:     return "Journal de dialogue.";
 
         case Id::MapPrevNote:                return "Note pr\xE9""c\xE9""dente";
         case Id::MapNextNote:                return "Note suivante";
@@ -361,8 +332,6 @@ const char* Get(Id id) {
         case Id::MapCursorUnexplored:        return "Inexplor\xE9";
         case Id::MapCursorWaypointPOI:       return "Point d'int\xE9r\xEAt";
         case Id::MapCursorJunction:          return "Carrefour";
-        case Id::MapCursorOffPath:           return "Mur";
-        case Id::FmtMapCursorCorridor:       return "%s, %.0f m\xE8tres";
         case Id::FmtMapCursorDeadEnd:        return "Cul-de-sac, %s";
         case Id::FmtMapCursorJunctionDirs:   return "Carrefour, %s";
         case Id::FmtMapCursorCorridorDir:    return "%s";
@@ -370,7 +339,6 @@ const char* Get(Id id) {
         case Id::FmtMapCursorDoor:           return "%s %s";
         case Id::FmtMapCursorDoorTransition: return "%s %s vers %s";
         case Id::FmtMapCursorDoorLandmark:   return "%s %s, %s";
-        case Id::MapCursorTransitionDoor:    return "Embrasure";
         case Id::FmtMapCursorJunctionDeadEndExit: return "cul-de-sac %s";
         case Id::AxisNorthSouth:             return "nord-sud";
         case Id::AxisEastWest:               return "est-ouest";
@@ -385,8 +353,6 @@ const char* Get(Id id) {
         case Id::FmtStorePriceSell:         return "Prix %d cr\xE9""dits, vous en avez %d";
         case Id::StoreModeBuy:              return "Mode achat";
         case Id::StoreModeSell:             return "Mode vente";
-        case Id::StoreSold:                 return "Vendu";
-        case Id::StoreBought:               return "Achet\xE9";
         case Id::StoreCannotSell:           return "Ne peut \xEAtre vendu";
         case Id::StoreCannotBuy:            return "Ne peut \xEAtre achet\xE9";
         case Id::FmtStoreSoldFor:           return "Vendu pour %d cr\xE9""dits";
@@ -422,7 +388,6 @@ const char* Get(Id id) {
         case Id::PazaakFmtOppBoard:      return "Table adverse : %s, total %d.";
         case Id::PazaakNoPlayable:       return "Aucune carte \xE0 jouer.";
         case Id::PazaakNotYourTurn:      return "Ce n'est pas votre tour.";
-        case Id::PazaakSelectCardFirst:  return "Choisissez d'abord une carte.";
         case Id::PazaakChooseSign:       return "Choisissez le signe. Gauche ou droite pour changer, Entr\xE9""e pour jouer.";
         case Id::PazaakCancelled:        return "Annul\xE9.";
         case Id::PazaakDeckAvailable:    return "%s, %d disponibles";
@@ -475,8 +440,6 @@ const char* Get(Id id) {
             return "Espace pour monter une vitesse au signal sonore. Dirigez avec A et D. \xC9vitez les obstacles et touchez les plaques d'acc\xE9l\xE9ration pour battre le temps.";
         case Id::SwoopRaceEnded:
             return "Course de Swoop termin\xE9""e.";
-        case Id::SwoopRaceObstacleNear:
-            return "Obstacle \xE0 %d m\xE8tres";
         case Id::FmtSwoopRaceGear:
             return "Vitesse %d";
         case Id::FmtSwoopRaceTime:
@@ -496,8 +459,6 @@ const char* Get(Id id) {
             return "Chasseur %d d\xE9truit.";  // d?truit
         case Id::TurretNoTargets:
             return "Aucune cible.";
-        case Id::TurretTargetLost:
-            return "Cible perdue.";
 
         case Id::ModSettingsRootLabel:        return "Param\xE8tres du mod";
         case Id::ModSettingsOpened:           return "Param\xE8tres du mod ouverts";
@@ -837,6 +798,11 @@ const char* Get(Id id) {
         case Id::DialogRepeatLineHint:
             return "Appuyez sur R pour r\xE9p\xE9ter la derni\xE8re ligne de dialogue.";
 
+        case Id::FmtModLoadedVersion:   return "Voice of the Old Republic chargé, version %s";
+        case Id::FmtChargenFeatUnnamed: return "Don %u";
+        case Id::ChargenBtnRecommended: return "Recommandé";
+        case Id::ChargenBtnAccept:      return "Accepter";
+        case Id::ChargenBtnBack:        return "Retour";
         case Id::Count_:               return "";
     }
     return "";

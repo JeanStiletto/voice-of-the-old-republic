@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using System.Windows.Forms.Automation;
 using KotorAccessibilityInstaller.ModInstallers;
 
 namespace KotorAccessibilityInstaller
@@ -80,6 +79,7 @@ namespace KotorAccessibilityInstaller
                 Minimum = 0,
                 Maximum = 100
             };
+            _progressBar.AccessibleName = Text;
 
             Controls.AddRange(new Control[] { _titleLabel, _statusLabel, _progressBar });
         }
@@ -136,19 +136,7 @@ namespace KotorAccessibilityInstaller
             _statusLabel.Text = message;
             Logger.Info(message);
 
-            // Same live-region workaround as MainForm.UpdateStatus: raise a UIA
-            // notification so NVDA / JAWS speak each update as it lands.
-            try
-            {
-                _statusLabel.AccessibilityObject?.RaiseAutomationNotification(
-                    AutomationNotificationKind.ActionCompleted,
-                    AutomationNotificationProcessing.MostRecent,
-                    message);
-            }
-            catch (Exception ex)
-            {
-                Logger.Warning($"Could not raise automation notification: {ex.Message}");
-            }
+            ScreenReaderAnnouncer.Announce(_statusLabel, message);
         }
     }
 }

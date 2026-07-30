@@ -1,7 +1,6 @@
 #include "engine_keymap.h"
 
 #include <windows.h>
-#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>

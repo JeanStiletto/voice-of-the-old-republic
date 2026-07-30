@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Kdev</RootNamespace>
+    <AssemblyName>kdev</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <!-- CVE-2025-6965 (GHSA-2m69-gcr7-jv3q): SQLite memory corruption in
+       aggregate-term handling, reached via SQLitePCLRaw.lib.e_sqlite3, which
+       vendored KPatchCore pulls in through Microsoft.Data.Sqlite 8.0.0.
+       Suppressed rather than fixed because there IS no fixed version — the
+       advisory lists every release up to and including 2.1.11 as affected and
+       "None" as patched (checked 2026-07-25). TreatWarningsAsErrors turns the
+       audit warning into a build failure, so without this kdev cannot build at
+       all.
+       Accepted because the vulnerable path needs attacker-controlled SQL or
+       database content, and the only database in play is the address DB we
+       generate ourselves. NOTE: the same transitive dependency ships in the
+       end-user installer via KPatchCore — tracked separately, not solved here.
+       Remove this once SQLitePCLRaw ships a build on SQLite >= 3.50.2. -->
+  <ItemGroup>
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-2m69-gcr7-jv3q" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
+    <PackageReference Include="Tomlyn" Version="0.19.0" />
+    <PackageReference Include="Microsoft.Diagnostics.Runtime" Version="3.1.456101" />
+    <!-- x86 decoder for `kdev sigscan`. Needed to find the byte offsets of
+         relative-branch and code-pointer operands so they can be wildcarded:
+         those operands legitimately differ between two builds of the engine,
+         and a byte-exact signature containing one can never match. -->
+    <PackageReference Include="Iced" Version="1.21.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\third_party\Kotor-Patch-Manager\src\KPatchCore\KPatchCore.csproj" />
+  </ItemGroup>
+
+  <!-- Shared source: the same minidump stripper the installer ships. Linked
+       (not duplicated) so kdev strip-dump validates the exact production code. -->
+  <ItemGroup>
+    <Compile Include="..\..\installer\KotorAccessibilityInstaller\MinidumpStripper.cs" Link="MinidumpStripper.cs" />
+  </ItemGroup>
+
+</Project>

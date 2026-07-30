@@ -18,6 +18,20 @@ const char* CategoryName(CycleCategory c) {
     return "?";
 }
 
+acc::strings::Id CategoryNameId(CycleCategory c) {
+    using S = acc::strings::Id;
+    switch (c) {
+        case CycleCategory::Door:       return S::CategoryDoor;
+        case CycleCategory::Npc:        return S::CategoryNpc;
+        case CycleCategory::Container:  return S::CategoryContainer;
+        case CycleCategory::Item:       return S::CategoryItem;
+        case CycleCategory::Landmark:   return S::CategoryLandmark;
+        case CycleCategory::Transition: return S::CategoryTransition;
+        case CycleCategory::Count_:     break;
+    }
+    return S::CategoryItem;
+}
+
 bool ObjectMatches(void* gameObject, CycleCategory category) {
     // Player creature is in the area object list and classifies as a
     // Creature (so it would otherwise pass Npc) — but it's at the

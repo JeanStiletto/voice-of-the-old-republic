@@ -2,9 +2,7 @@
 
 #include <windows.h>
 #include <cmath>
-#include <cstdint>
 #include <cstdio>
-#include <cstring>
 
 #include "engine_area.h"      // GetObjectPosition / GetObjectName
 #include "engine_compass.h"   // EngineYawToCompass / CompassToSector / SectorString

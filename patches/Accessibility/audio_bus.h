@@ -91,9 +91,32 @@ bool PlayCue3D(const char* resref, const Vector& worldPosition,
                uint8_t priorityGroup = 0,
                uint8_t baseVolume    = kCueVolumeFull);
 
+// Engine resource-reference tag: a fixed 16-byte, NOT necessarily
+// NUL-terminated char buffer. Lookup is case-insensitive; FillResRef
+// lowercases defensively to match every engine callsite.
+//
+// Shared by audio_bus.cpp and audio_loop.cpp — audio_loop used to carry a
+// private copy whose own comment called it "a local mirror of the 16-byte
+// tag from audio_bus.cpp".
+struct CResRef {
+    char string[16];
+};
+
+void FillResRef(CResRef& out, const char* tag);
+
 }  // namespace acc::audio
 
 // CExoSound facade. *kAddrCExoSoundPtr; nullptr in early DLL-attach.
+//
+// Deliberately NOT passed through acc::addr::R(): this is a .data global
+// pointer, and per engine_rebase.h the rebase seam covers .text only —
+// .data is byte-stable across the builds R() exists for. Same treatment as
+// kAddrGuiManagerPtr (engine_manager.h) and kAddrAppManagerPtr
+// (engine_player.h). Wrapping it would be wrong, not merely redundant.
+//
+// For a KOTOR 2 port this is one of the values the upstream address
+// database already carries by name — see the EXO_RESOURCE_MANAGER_PTR /
+// APP_MANAGER_PTR cluster in KPatchManager's AddressDatabases.
 constexpr uintptr_t kAddrCExoSoundPtr = 0x007A39EC;
 
 // CExoSound::PlayOneShotSound  — __thiscall, RET 0x18 (6 × 4-byte args).
@@ -113,8 +136,14 @@ const uintptr_t kAddrCExoSoundSetListenerPosition = acc::addr::R(0x005D5DF0);
 // to neutralise pitch jitter on accessibility cues: jitter shifts the
 // HRTF response per fire, degrading spatial localisation and breaking
 // per-cue identification.
-constexpr uintptr_t kAddrCExoSoundSourceInternalCalculatePitchVarianceFrequency
-    = 0x005DB3D0;
+//
+// Nothing reads this constant: the detour is declared in hooks.toml (and
+// rebased for the Allard build in allard.hooks.toml), and the patcher resolves
+// hook sites itself. It is kept because the address belongs next to the rest of
+// the CExoSound surface, and R()-wrapped like every other .text address here so
+// that the file has one rule rather than an exception someone has to explain.
+const uintptr_t kAddrCExoSoundSourceInternalCalculatePitchVarianceFrequency
+    = acc::addr::R(0x005DB3D0);
 
 // CExoSoundSource — engine-managed source with full lifecycle (Stop,
 // per-tick position update, looping). Use when a feature needs sustained

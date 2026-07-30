@@ -1,6 +1,8 @@
 #include "menus_journal.h"
 
 #include "engine_offsets.h"
+#include "engine_app.h"     // GetClientApp
+#include "engine_rebase.h"
 #include "engine_reads.h"
 #include "log.h"
 #include "prism.h"
@@ -19,7 +21,7 @@ namespace {
 // `if (param_1 != NULL)` only (decompiled — see peek_description.cpp's
 // RefreshJournal for the same call). Idempotent w.r.t. screen state: just
 // clears+repopulates item_description_label for the passed-in row.
-constexpr std::uintptr_t kAddrJournalOnControlEntered = 0x00645100;
+const std::uintptr_t kAddrJournalOnControlEntered = acc::addr::R(0x00645100);
 
 // CSWGuiInGameJournal.item_description_label @ +0x1a4 (a CSWGuiListBox with
 // exactly one row whose label holds the planet-prefixed entry text).
@@ -74,15 +76,24 @@ bool IsJournalEntry(void* control) {
 void SpeakDescription(void* panel, void* focusedRow) {
     if (!panel || !focusedRow) return;
 
-    __try {
-        auto fn = reinterpret_cast<PFN_PanelOnControl>(
-            kAddrJournalOnControlEntered);
-        fn(panel, focusedRow);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    // Unresolved address behaves like the SEH path: skip the repaint and read
+    // whatever the listbox already holds, rather than dispatching through 0.
+    if (!acc::addr::Ok(kAddrJournalOnControlEntered)) {
         acclog::Write("Menus.Journal",
-                      "OnControlEntered SEH (panel=%p row=%p); reading "
+                      "OnControlEntered skipped (unresolved on build %s); reading "
                       "whatever the description listbox already held",
-                      panel, focusedRow);
+                      acc::addr::ActiveBuildName());
+    } else {
+        __try {
+            auto fn = reinterpret_cast<PFN_PanelOnControl>(
+                kAddrJournalOnControlEntered);
+            fn(panel, focusedRow);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            acclog::Write("Menus.Journal",
+                          "OnControlEntered SEH (panel=%p row=%p); reading "
+                          "whatever the description listbox already held",
+                          panel, focusedRow);
+        }
     }
 
     void* lb = reinterpret_cast<unsigned char*>(panel) +
@@ -166,15 +177,20 @@ void LogEntryCounts(void* panel) {
     //   CClientExoApp::GetInGameGui   @0x005ed690 → CGuiInGame*
     //     +0xbc4 bit0 = done-view mode
     typedef void* (__thiscall* PFN_ClientGetter)(void* client);
+    // 0x007A39FC is .data (byte-stable, raw by design); the two getters are
+    // .text and must go through R().
+    const std::uintptr_t addrGetQuestJournal = acc::addr::R(0x005ed320);
+    const std::uintptr_t addrGetInGameGui    = acc::addr::R(0x005ed690);
+    if (!acc::addr::Ok(addrGetQuestJournal) || !acc::addr::Ok(addrGetInGameGui)) {
+        acclog::Write("Menus.Journal", "entry-count diagnostic skipped: "
+                      "address unresolved on build %s", acc::addr::ActiveBuildName());
+        return;
+    }
+    void* client = acc::engine::GetClientApp();
+    if (!client) return;
     __try {
-        void* appMgr = *reinterpret_cast<void**>(0x007A39FC);
-        if (!appMgr) return;
-        void* client = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appMgr) + 0x4);
-        if (!client) return;
-
-        auto getJournal = reinterpret_cast<PFN_ClientGetter>(0x005ed320);
-        auto getGui     = reinterpret_cast<PFN_ClientGetter>(0x005ed690);
+        auto getJournal = reinterpret_cast<PFN_ClientGetter>(addrGetQuestJournal);
+        auto getGui     = reinterpret_cast<PFN_ClientGetter>(addrGetInGameGui);
         void* journal = getJournal(client);
         void* gui     = getGui(client);
         if (!journal) return;
@@ -191,7 +207,7 @@ void LogEntryCounts(void* panel) {
 
         int listRows = -1;
         if (panel) {
-            void* lb = reinterpret_cast<unsigned char*>(panel) + 0x5c4;
+            void* lb = reinterpret_cast<unsigned char*>(panel) + kJournalItemsListBoxOffset;
             auto* lbList = reinterpret_cast<CExoArrayList*>(
                 reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
             if (lbList) listRows = lbList->size;
@@ -209,6 +225,15 @@ void LogEntryCounts(void* panel) {
 
 void ForceRepopulate(void* panel) {
     if (!panel) return;
+    // Unresolved address behaves like the SEH path: skip the repopulate
+    // rather than dispatching through 0. Same guard the OnControlEntered
+    // sibling above uses; this one was missing it.
+    if (!acc::addr::Ok(kAddrJournalPopulateItemListBox)) {
+        acclog::Write("Menus.Journal",
+                      "ForceRepopulate skipped (unresolved on build %s)",
+                      acc::addr::ActiveBuildName());
+        return;
+    }
     __try {
         auto fn = reinterpret_cast<PFN_PanelThiscall>(
             kAddrJournalPopulateItemListBox);

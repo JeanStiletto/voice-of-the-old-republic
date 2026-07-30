@@ -50,14 +50,18 @@ struct ChartRow {
 };
 
 struct ButtonRow {
-    int             buttonId;
-    const char*     logTag;
+    int                 buttonId;
+    const char*         logTag;    // log only - never spoken
+    acc::strings::Id    labelId;   // localised spoken fallback
 };
 
 constexpr ButtonRow kButtonRows[] = {
-    { kBtnRecommendedId, "BTN_RECOMMENDED" },
-    { kBtnAcceptId,      "BTN_ACCEPT" },
-    { kBtnBackId,        "BTN_BACK" },
+    { kBtnRecommendedId, "BTN_RECOMMENDED",
+      acc::strings::Id::ChargenBtnRecommended },
+    { kBtnAcceptId,      "BTN_ACCEPT",
+      acc::strings::Id::ChargenBtnAccept },
+    { kBtnBackId,        "BTN_BACK",
+      acc::strings::Id::ChargenBtnBack },
 };
 constexpr int kButtonRowCount = sizeof(kButtonRows) / sizeof(kButtonRows[0]);
 
@@ -305,8 +309,11 @@ void AnnounceFocused(void* panel) {
         bool got = btn && ReadButtonText(btn, btnText, sizeof(btnText)) &&
                    btnText[0] != '\0';
         if (!got) {
+            // Localised fallback. This used to speak br.logTag, so a failed
+            // button-text read made the user hear the developer tag
+            // ("BTN_BACK") regardless of language.
             snprintf(btnText, sizeof(btnText), "%s",
-                     br.logTag ? br.logTag : "?");
+                     acc::strings::Get(br.labelId));
         }
         prism::Speak(btnText, /*interrupt=*/false);
         acclog::Write("ChargenFeats",
@@ -323,7 +330,10 @@ void AnnounceFocused(void* panel) {
 
     char name[128];
     if (!ReadNameLabel(panel, name, sizeof(name)) || name[0] == '\0') {
-        snprintf(name, sizeof(name), "Talent %u", (unsigned)featId);
+        // Localised fallback - was a hardcoded "Talent %u".
+        snprintf(name, sizeof(name),
+                 acc::strings::Get(acc::strings::Id::FmtChargenFeatUnnamed),
+                 (unsigned)featId);
     }
     unsigned char st = ReadCellStatus(s_curRow, s_curCol);
     const char* sw   = StatusWord(st);

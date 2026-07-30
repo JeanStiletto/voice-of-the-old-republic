@@ -5,10 +5,10 @@
 #include <cstdint>
 #include <cstring>
 
-#include "engine_player.h"  // GetPlayerArea, kAddrAppManagerPtr
+#include "engine_app.h"     // GetServerApp
+#include "engine_player.h"  // GetPlayerArea
 #include "engine_reads.h"   // ExtractTextOrStrRef, ReadCExoString
 #include "log.h"            // seam-filter telemetry
-#include "map_note_renames.h"  // curated map-note label overrides
 #include "strings.h"        // door state suffix lookup (DoorOpen/DoorLocked)
 #include "engine_rebase.h"
 
@@ -24,18 +24,13 @@ typedef bool  (__thiscall* PFN_GetGameObject)(void* this_,
                                               uint32_t id,
                                               void** out);
 
-// Walk *kAddrAppManagerPtr → AppManager + 0x8 → CServerExoApp* →
-// GetObjectArray() → CGameObjectArray*. SEH-guarded for the same reason as
-// the rest of engine_*: the chain may not be populated during engine
-// teardown / very early init.
+// CServerExoApp → GetObjectArray() → CGameObjectArray*. The walk to the
+// server app is guarded inside GetServerApp(); the __try here covers the
+// engine call, which can still fault during teardown / very early init.
 void* GetServerObjectArray() {
+    void* serverApp = GetServerApp();
+    if (!serverApp) return nullptr;
     __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-        void* serverApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerServerOffset);
-        if (!serverApp) return nullptr;
         auto fn = reinterpret_cast<PFN_GetObjectArray>(
             kAddrCServerExoAppGetObjectArray);
         return fn(serverApp);
@@ -80,7 +75,7 @@ namespace {
 // 0xFFFFFFFF (removed), 0x7F000000 (kInvalidObjectId — the "no object"
 // marker the action queue and LastTarget use).
 bool IsSentinelHandle(uint32_t handle) {
-    return handle == 0u || handle == 0xFFFFFFFFu || handle == 0x7F000000u;
+    return handle == 0u || handle == 0xFFFFFFFFu || handle == kInvalidObjectId;
 }
 
 }  // namespace
@@ -114,24 +109,12 @@ namespace {
 typedef void* (__thiscall* PFN_CClientGetGameObject)(void* this_,
                                                     uint32_t handle);
 
-void* GetClientExoApp() {
-    __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
 }  // namespace
 
 void* ResolveClientObject(uint32_t handle) {
     if (IsSentinelHandle(handle)) return nullptr;
 
-    void* clientApp = GetClientExoApp();
+    void* clientApp = GetClientApp();
     if (!clientApp) return nullptr;
 
     __try {
@@ -470,16 +453,7 @@ bool GetObjectDisplayNameByHandle(uint32_t handle,
     outBuf[0] = '\0';
     if (IsSentinelHandle(handle)) return false;
 
-    void* clientApp = nullptr;
-    __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return false;
-        clientApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
+    void* clientApp = GetClientApp();
     if (!clientApp) return false;
 
     // Try the handle as-is first. Then, if that fails AND the handle
@@ -805,6 +779,14 @@ bool MaybeDrivePassiveSelection() {
     constexpr size_t kFadeAlphaOffset      = 0x4c;   // CSWGuiFade.panel.alpha
     constexpr size_t kInputClassOffset     = 0x9c;   // internal.input_class
     constexpr size_t kAreaNotReadyOffset   = 0x288;  // internal.area_not_ready
+    // These two R() lookups re-run every tick and A12 flagged them as
+    // recomputed work. Measured and deliberately LEFT AS IS: R() is a binary
+    // search over a 223-entry sorted table, so this is ~16 comparisons a
+    // frame — below the noise floor. Caching them costs more than it saves:
+    // a function-local `static` needs a thread-safe init guard, which counts
+    // as object unwinding and trips C2712 in this SEH function (tried, it
+    // does), and hoisting to namespace scope would make the value depend on
+    // static-init ordering against CurrentBuild().
     const uintptr_t kAddrIsGlobalFading = acc::addr::R(0x0062ac60);  // __thiscall(gui)->int
     const uintptr_t kAddrDoPassiveSelection = acc::addr::R(0x005fa5a0);  // __thiscall(internal,float)
     using PFN_Fade      = int(__thiscall*)(void*);
@@ -812,7 +794,7 @@ bool MaybeDrivePassiveSelection() {
 
     static bool s_driving = false;  // rising-edge log latch
 
-    void* clientApp = GetClientExoApp();
+    void* clientApp = GetClientApp();
     if (!clientApp) { s_driving = false; return false; }
 
     __try {

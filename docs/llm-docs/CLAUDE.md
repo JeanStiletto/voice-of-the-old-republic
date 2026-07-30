@@ -59,6 +59,62 @@ carry meaning — trust them when deciding whether code is safe to remove.
   `room_topology` builds the nav-graph clusters and produces the
   perceptual-region vocabulary (Korridor / Kreuzung / Bereich).
 
+## KOTOR 2 portability — what will and will not carry over
+
+Recorded during the Phase-2 K2-portability pass (2026-07-29). K2 on Steam
+is an Aspyr recompile eleven years after K1, not a relocated K1 build:
+`kdev sigscan` scores 0/213 against it, and struct offsets — not
+addresses — dominate the port cost. See `docs/kotor2-port-feasibility.md`.
+
+**Will not port — K1 story content.** These encode specific K1 areas,
+quests or scripted moments and have no K2 counterpart:
+`floor_puzzle`, `spectator_scene`, `endar_softlock`, `tutorial_hints`,
+`map_shipped_hints`.
+
+**Minigames — per-game, not a family.** Do not assume the minigame family
+ports as a unit:
+- `minigame_turret` — **not present in KOTOR 2** (dev's determination,
+  2026-07-29). Treat the whole module as K1-only.
+- `minigame_swoop_race` / `minigame_swoop_audio` — swoop racing exists in
+  K2 but the tracks, pads and tuning differ; expect re-tuning, not a
+  straight port.
+- `minigame_pazaak` — exists in K2, rules and UI differ.
+- `minigame_aim` — the shared primitives. Engine-shaped
+  (CSWMiniPlayer.offset), so it ports as far as the struct layout does.
+
+**Ports for free — no engine dependency.** `strfmt.h`, `announce_degrees`,
+the `strings*` localisation tables, and the debounce/geometry/formatting
+logic generally.
+
+**The address seam.** `acc::addr::R()` (engine_rebase.h) covers **.text
+only** — .data global pointers are byte-stable across the builds it
+targets and are deliberately left raw (`kAddrAppManagerPtr`,
+`kAddrGuiManagerPtr`, `kAddrCExoSoundPtr`). R() is a *same-game*
+build-variant seam, not a cross-game one; it does nothing for K2.
+
+**The real K2 seam is upstream.** KPatchManager ships
+`AddressDatabases/*.db` keyed by executable SHA-256, with global pointers,
+functions and class-member offsets queried by NAME
+(`GameVersion::GetGlobalPointer` / `GetFunctionAddress` / `GetOffset`).
+`kotor1_0_3.db` holds 9710 functions and 4720 offsets;
+`kotor2_steam_aspyr.db` is seeded with 48 functions, 21 offsets and all 14
+global pointers under the same names as K1. Our patch uses none of it yet.
+Decision 2026-07-29: adopt it. New engine-address code should be written
+so the constant can later become a named lookup.
+
+**The object-graph seam is now ours** (Phase-3 B1, 2026-07-30). The walk
+from the AppManager singleton down to the client app, server app, client
+module and camera used to be hand-rolled at ~40 sites across ~25 files,
+with six different names for the `+0x8` hop alone and per-site SEH guards
+that some callers had and others did not. It now lives in
+`patches/Accessibility/engine_app.{h,cpp}`: five constants, seven guarded
+primitives, one dereference of `kAddrAppManagerPtr` in the whole codebase.
+The GUI continuation (`ResolveGuiInGame`, `ResolveMainInterface`) sits in
+`engine_panels`. For a K2 port these are the files whose VALUES change;
+every consumer above them is engine-version agnostic. Keep it that way —
+if you find yourself writing `*reinterpret_cast<void**>(kAddrAppManagerPtr)`
+again, use the primitive instead.
+
 ## `re/` — reverse-engineering assets
 
 - **`swkotor.exe.h`** — Ghidra-exported C header, ~25k lines. Primary source for struct layouts; ~205 structs have real bodies, ~797 are `PlaceHolder`. Cross-check with SARIF when a struct returns garbage.

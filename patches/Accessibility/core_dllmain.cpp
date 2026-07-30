@@ -158,9 +158,13 @@ void EnsurePrismInitialized() {
     if (done) return;
     done = true;
     if (prism::Init()) {
+        // Localised: this is the first thing every player hears on every
+        // launch, so it must follow the configured language like all other
+        // spoken strings. It used to be a hardcoded English literal.
         char greeting[128];
         snprintf(greeting, sizeof(greeting),
-                 "Voice of the Old Republic loaded, version %s", acc::kModVersion);
+                 acc::strings::Get(acc::strings::Id::FmtModLoadedVersion),
+                 acc::kModVersion);
         prism::Speak(greeting, /*interrupt=*/true);
     }
 }

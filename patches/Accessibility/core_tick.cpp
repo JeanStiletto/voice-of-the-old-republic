@@ -44,11 +44,8 @@
 #include "passive_narrate.h"
 #include "minigame_pazaak.h"
 #include "probe_audio_frame.h"
-#include "probe_priority_groups.h"
 #include "probe_camera_distance.h"
 #include "probe_camera_state.h"
-#include "probe_mouselook.h"
-#include "probe_pathfind.h"
 #include "engine_input.h"
 #include "spatial_change_detector.h"
 #include "stealth_watch.h"
@@ -292,10 +289,6 @@ void Dispatch() {
 
     // Diagnostic probes (Shift+AltGr Mouse Look, F9 pathfind, F10 audio
     // frame, F12 camera state, Ctrl+F12 camera distance, B view mode).
-    PHASE("probe_mouselook.poll", acc::probe_mouselook::PollWin32());
-    PHASE("probe_mouselook.sweep", acc::probe_mouselook::TickSweep());
-    PHASE("probe_pathfind.poll", acc::probe_pathfind::PollWin32());
-    PHASE("probe_pathfind.tick", acc::probe_pathfind::Tick());
     PHASE("probe_audio_frame", acc::probe_audio_frame::PollWin32());
     PHASE("probe_camera_state", acc::probe_camera_state::PollWin32());
     PHASE("probe_camera_distance", acc::probe_camera_distance::Tick());
@@ -404,7 +397,6 @@ void Dispatch() {
     PHASE("stealth_watch", acc::stealth_watch::Tick());
 
     // One-shot priority-group dump.
-    PHASE("probe.priority_groups", acc::probe::priority_groups::Tick());
 
     // Dialog screen + bark bubble narration.
     PHASE("dialog_speech", acc::dialog_speech::Tick());

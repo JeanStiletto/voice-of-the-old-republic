@@ -1,6 +1,5 @@
 #include "discovery.h"
 
-#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <string>

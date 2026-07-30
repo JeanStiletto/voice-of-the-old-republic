@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdio>
 
+#include "engine_app.h"      // kAddrAppManagerPtr, GetAppManager, GetServerApp
 #include "engine_manager.h"  // kAddrGuiManagerPtr, kMgrModalStackSizeOffset
 #include "engine_panels.h"   // HasActiveSubScreen, CallPrevSWInGameGui
 #include "log.h"
@@ -39,13 +40,6 @@ const uintptr_t kAddrSetPauseState = acc::addr::R(0x004ae9a0);
 using PFN_SetPauseState =
     void(__thiscall *)(void* server, int source_bit, unsigned long on_off);
 
-// AppManager global @ 0x007A39FC (pointer slot, dereference to get the
-// CAppManager* singleton). AppManager.server lives at offset 0x08
-// (struct definition in docs/llm-docs/re/k1_win_gog_swkotor.exe.xml).
-// We duplicate the constant locally instead of including engine_panels.cpp's
-// internal constants because the latter are file-local.
-constexpr uintptr_t kAddrAppManagerPtrLocal = 0x007A39FC;
-constexpr size_t    kAppManagerServerOff    = 0x08;
 
 // CExoSoundInternal::SetSoundMode @ 0x005d5e80. __thiscall.
 // `this` = global ExoSound (CExoSoundInternal*). Mode 0 = playing,
@@ -104,31 +98,24 @@ void DispatchUnpauseCleanup(const char* trigger) {
     //    the popup-open path doesn't itself touch bit 2 (which
     //    is what we observed empirically — odd cycles unpaused,
     //    even cycles paused).
-    __try {
-        void* appMgr =
-            *reinterpret_cast<void**>(kAddrAppManagerPtrLocal);
-        if (appMgr) {
-            void* server = *reinterpret_cast<void**>(
-                static_cast<unsigned char*>(appMgr) +
-                kAppManagerServerOff);
-            if (server) {
-                auto fn = reinterpret_cast<PFN_SetPauseState>(
-                    kAddrSetPauseState);
-                // OnSetPauseState fires synchronously inside this call —
-                // flag it so the hook stays silent for our own footsteps.
-                g_inOwnPauseCall = true;
-                fn(server, kPauseBitManualOrMenu, 0);
-                g_inOwnPauseCall = false;
-            } else {
-                acclog::Write("PauseToggle",
-                              "SetPauseState skipped: server NULL");
-            }
-        } else {
-            acclog::Write("PauseToggle",
-                          "SetPauseState skipped: AppManager NULL");
+    // Both links are resolved separately so the log still distinguishes
+    // "no AppManager yet" from "AppManager without a server" — the extra
+    // read is one dereference.
+    if (!acc::engine::GetAppManager()) {
+        acclog::Write("PauseToggle", "SetPauseState skipped: AppManager NULL");
+    } else if (void* server = acc::engine::GetServerApp()) {
+        __try {
+            auto fn = reinterpret_cast<PFN_SetPauseState>(kAddrSetPauseState);
+            // OnSetPauseState fires synchronously inside this call —
+            // flag it so the hook stays silent for our own footsteps.
+            g_inOwnPauseCall = true;
+            fn(server, kPauseBitManualOrMenu, 0);
+            g_inOwnPauseCall = false;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            acclog::Write("PauseToggle", "fault in SetPauseState");
         }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        acclog::Write("PauseToggle", "fault in SetPauseState");
+    } else {
+        acclog::Write("PauseToggle", "SetPauseState skipped: server NULL");
     }
 
     // 2. Client-side audio resync: SetSoundMode(0) un-mutes the
@@ -169,24 +156,21 @@ void DispatchUnpauseCleanup(const char* trigger) {
 // public CClientExoApp pointer (AppManager + 0x4). paused 1=pause/0=resume,
 // source 4 = the value the pause key passes, force 0.
 const uintptr_t kAddrSetPausedByCombat = acc::addr::R(0x005edc20);
-constexpr size_t    kAppManagerClientOffset  = 0x4;
 using PFN_SetPausedByCombat =
     void(__thiscall *)(void* clientApp, int paused, int source, int force);
 
 void DispatchOverlayPause(const char* trigger, int paused) {
     acclog::Write("PauseToggle", "%s: SetPausedByCombat(%d,4,0)", trigger, paused);
+    if (!acc::engine::GetAppManager()) {
+        acclog::Write("PauseToggle", "overlay-pause skipped: AppManager NULL");
+        return;
+    }
+    void* client = acc::engine::GetClientApp();
+    if (!client) {
+        acclog::Write("PauseToggle", "overlay-pause skipped: client NULL");
+        return;
+    }
     __try {
-        void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtrLocal);
-        if (!appMgr) {
-            acclog::Write("PauseToggle", "overlay-pause skipped: AppManager NULL");
-            return;
-        }
-        void* client = *reinterpret_cast<void**>(
-            static_cast<unsigned char*>(appMgr) + kAppManagerClientOffset);
-        if (!client) {
-            acclog::Write("PauseToggle", "overlay-pause skipped: client NULL");
-            return;
-        }
         auto fn = reinterpret_cast<PFN_SetPausedByCombat>(kAddrSetPausedByCombat);
         // The pause propagates to the server pause-bit synchronously inside
         // this call, which re-enters OnSetPauseState — flag it as our own so
@@ -257,18 +241,16 @@ bool ResumeWorldIfPaused(const char* reason) {
     // an overlay pause at all).
     g_overlayPauseOwners = 0;
     acclog::Write("PauseToggle", "%s: resume world SetPausedByCombat(0,4,0)", tag);
+    if (!acc::engine::GetAppManager()) {
+        acclog::Write("PauseToggle", "resume skipped: AppManager NULL");
+        return false;
+    }
+    void* client = acc::engine::GetClientApp();
+    if (!client) {
+        acclog::Write("PauseToggle", "resume skipped: client NULL");
+        return false;
+    }
     __try {
-        void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtrLocal);
-        if (!appMgr) {
-            acclog::Write("PauseToggle", "resume skipped: AppManager NULL");
-            return false;
-        }
-        void* client = *reinterpret_cast<void**>(
-            static_cast<unsigned char*>(appMgr) + kAppManagerClientOffset);
-        if (!client) {
-            acclog::Write("PauseToggle", "resume skipped: client NULL");
-            return false;
-        }
         // Deliberately NOT flagged as our own call: we WANT OnSetPauseState to
         // fire un-suppressed so the engine's resume cue ("Fortgesetzt") speaks
         // as the menu-close announcement.

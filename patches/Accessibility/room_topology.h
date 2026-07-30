@@ -46,7 +46,20 @@ constexpr int kClusterIdOpenArea = -2;
 
 // Idempotent on same area pointer. Requires the wall cache to be
 // populated; no-ops with empty graph until then.
+//
+// Callers are expected to re-invoke each tick until HasGraphForArea is
+// true (transitions.cpp does), because the engine can have an area live
+// before its nav-graph data is readable. That retry is capped: an area
+// whose graph never becomes readable is abandoned after ~2s of ticks
+// rather than re-probed every frame forever. Call ResetNavGraphRetry on
+// genuine area entry so an abandoned area recovers when re-entered.
 void BuildForArea(void* area);
+
+// Clears the per-area nav-graph retry latch, re-arming BuildForArea for
+// an area it previously gave up on. Call from the area-change path only —
+// calling it every tick would restore the unbounded retry it exists to
+// bound.
+void ResetNavGraphRetry();
 
 // Re-snapshots doors until the door set stabilises (initial snapshot
 // can race a partially-populated server-object array). Commits when the

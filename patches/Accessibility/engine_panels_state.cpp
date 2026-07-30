@@ -21,63 +21,56 @@
 #include <windows.h>  // SEH __try / __except
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 
 #include "engine_manager.h"
-#include "engine_offsets.h"
-#include "engine_reads.h"
 #include "log.h"
 
 namespace acc::engine {
 
 bool HasActiveDialogPanel() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return false;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (!panelData || panelCount <= 0) return false;
-    int n = panelCount > 16 ? 16 : panelCount;
-    for (int i = 0; i < n; ++i) {
-        void* p = panelData[i];
-        if (!p) continue;
-        switch (IdentifyPanel(p)) {
-        case PanelKind::DialogCinematic:
-        case PanelKind::DialogCinematicCopy:
-        case PanelKind::DialogComputer:
-        case PanelKind::DialogComputerCamera:
-            return true;
-        default:
-            break;
+    // SEH-guarded like every other panels[] walk in this TU: the null checks
+    // below cannot catch a STALE manager/panel pointer, which is exactly what
+    // this array holds during a module teardown or cutscene handoff.
+    constexpr int kCap = 32;
+    void* panels[kCap];
+    int n = ReadPanelArray(GetGuiManager(), panels, kCap);
+    __try {
+        for (int i = 0; i < n; ++i) {
+            void* p = panels[i];
+            if (!p) continue;
+            switch (IdentifyPanel(p)) {
+            case PanelKind::DialogCinematic:
+            case PanelKind::DialogCinematicCopy:
+            case PanelKind::DialogComputer:
+            case PanelKind::DialogComputerCamera:
+                return true;
+            default:
+                break;
+            }
         }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
     }
     return false;
 }
 
 bool HasActiveBarkBubble() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return false;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (!panelData || panelCount <= 0) return false;
-    int n = panelCount > 16 ? 16 : panelCount;
-    for (int i = 0; i < n; ++i) {
-        void* p = panelData[i];
-        if (!p) continue;
-        if (IdentifyPanel(p) == PanelKind::BarkBubble) return true;
-    }
-    return false;
+    return FindPanelByKind(PanelKind::BarkBubble) != nullptr;
 }
 
 // CGuiInGame::PrevSWInGameGui — engine-internal sub-screen pop.
 // Verified address from the RE database (Lane's gzf, exposed via
 // k1_win_gog_swkotor.exe.xml: FUNCTION ENTRY_POINT="0062cdf0").
 // __thiscall, this in ECX, no params, void return.
-static constexpr uintptr_t kAddrPrevSWInGameGui = 0x0062cdf0;
+static const uintptr_t kAddrPrevSWInGameGui = acc::addr::R(0x0062cdf0);
 typedef void (__thiscall* PFN_PrevSWInGameGui)(void* gui);
 
 bool CallPrevSWInGameGui() {
+    if (!acc::addr::Ok(kAddrPrevSWInGameGui)) {
+        acclog::Write("PrevSWInGameGui", "skipped: address unresolved on build %s",
+                      acc::addr::ActiveBuildName());
+        return false;
+    }
     void* gui = ResolveGuiInGame();
     if (!gui) {
         acclog::Write("PrevSWInGameGui",
@@ -99,10 +92,15 @@ bool CallPrevSWInGameGui() {
 //
 // __thiscall, this in ECX, single int parameter on the stack, undefined4
 // return.
-static constexpr uintptr_t kAddrHideSWInGameGui = 0x0062cba0;
+static const uintptr_t kAddrHideSWInGameGui = acc::addr::R(0x0062cba0);
 typedef int (__thiscall* PFN_HideSWInGameGui)(void* gui, int param_1);
 
 bool CallHideSWInGameGui(int param_1) {
+    if (!acc::addr::Ok(kAddrHideSWInGameGui)) {
+        acclog::Write("HideSWInGameGui", "skipped: address unresolved on build %s",
+                      acc::addr::ActiveBuildName());
+        return false;
+    }
     void* gui = ResolveGuiInGame();
     if (!gui) {
         acclog::Write("HideSWInGameGui",
@@ -129,10 +127,15 @@ bool CallHideSWInGameGui(int param_1) {
 // (engine never runs AIActionDialogObject's bail that would clear it), which
 // then gates further click/interact processing. The dialog-approach watchdog
 // calls this with 0 after cancelling a blocked approach to avoid that limbo.
-static constexpr uintptr_t kAddrSetGlobalDialogState = 0x0062ec60;
+static const uintptr_t kAddrSetGlobalDialogState = acc::addr::R(0x0062ec60);
 typedef void (__thiscall* PFN_SetGlobalDialogState)(void* gui, int state);
 
 bool SetGlobalDialogState(int state) {
+    if (!acc::addr::Ok(kAddrSetGlobalDialogState)) {
+        acclog::Write("GlobalDialogState", "skipped: address unresolved on build %s",
+                      acc::addr::ActiveBuildName());
+        return false;
+    }
     void* gui = ResolveGuiInGame();
     if (!gui) {
         acclog::Write("GlobalDialogState",
@@ -153,14 +156,20 @@ bool SetGlobalDialogState(int state) {
 // CClientExoApp::SetInputClass @ 0x005eda60. __thiscall(this, int klass, int).
 // klass 0 = in-world keyboard/mouse routing; the engine raises it while a
 // menu/sub-screen owns input.
-static constexpr uintptr_t kAddrSetInputClass = 0x005eda60;
+static const uintptr_t kAddrSetInputClass = acc::addr::R(0x005eda60);
 typedef void (__thiscall* PFN_SetInputClass)(void* client, int klass, int p2);
 
 bool CloseInGameMenuToWorld() {
-    void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
+    // Both halves are required — closing without the SetInputClass leaves
+    // input_class != 0 and in-world movement dead (see the comment inside), so
+    // if either address is unresolved, do neither.
+    if (!acc::addr::Ok(kAddrHideSWInGameGui) || !acc::addr::Ok(kAddrSetInputClass)) {
+        acclog::Write("CloseInGameMenu", "skipped: address unresolved on build %s",
+                      acc::addr::ActiveBuildName());
+        return false;
+    }
     void* gui = ResolveGuiInGame();
-    void* client = appMgr ? *reinterpret_cast<void**>(
-        reinterpret_cast<unsigned char*>(appMgr) + kAppManagerClientOff) : nullptr;
+    void* client = GetClientApp();
     if (!gui || !client) {
         acclog::Write("CloseInGameMenu", "skipped: gui=%p client=%p", gui, client);
         return false;
@@ -191,17 +200,11 @@ bool CloseInGameMenuToWorld() {
 
 // Read the live input_class (CClientExoAppInternal +0x9c). 0/4 = in-world,
 // 2 = a menu/sub-screen owns input (mouse shown). Diagnostic + gating helper.
-// Chain: *kAddrAppManagerPtr → +0x4 CClientExoApp → +0x4 Internal → +0x9c.
+// Chain: GetClientAppInternal() → +0x9c.
 int GetInputClass() {
+    void* internal = GetClientAppInternal();
+    if (!internal) return -1;
     __try {
-        void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appMgr) return -1;
-        void* client = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appMgr) + kAppManagerClientOff);
-        if (!client) return -1;
-        void* internal = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(client) + 0x04);
-        if (!internal) return -1;
         return *reinterpret_cast<int*>(
             reinterpret_cast<unsigned char*>(internal) + 0x9c);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -217,9 +220,7 @@ int GetInputClass() {
 // the manager's nav codes (181-185), so the wizard sits unreachable on the
 // modal stack (the "frozen until Escape" limbo).
 bool SetGuiInputClass(int klass) {
-    void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-    void* client = appMgr ? *reinterpret_cast<void**>(
-        reinterpret_cast<unsigned char*>(appMgr) + kAppManagerClientOff) : nullptr;
+    void* client = GetClientApp();
     if (!client) {
         acclog::Write("InputClass", "SetGuiInputClass(%d) skipped: no client", klass);
         return false;
@@ -237,21 +238,11 @@ bool SetGuiInputClass(int klass) {
 
 bool HasActiveMapPanel(void** outPanel) {
     if (outPanel) *outPanel = nullptr;
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return false;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = 0;
-    void** panelData = nullptr;
-    __try {
-        panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-        panelData  = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-    if (!panelData || panelCount <= 0) return false;
-    int n = panelCount > 16 ? 16 : panelCount;
+    constexpr int kCap = 32;
+    void* panels[kCap];
+    int n = ReadPanelArray(GetGuiManager(), panels, kCap);
     for (int i = 0; i < n; ++i) {
-        void* p = panelData[i];
+        void* p = panels[i];
         if (!p) continue;
         if (IdentifyPanel(p) == PanelKind::InGameMap) {
             if (outPanel) *outPanel = p;
@@ -262,21 +253,11 @@ bool HasActiveMapPanel(void** outPanel) {
 }
 
 bool HasActiveLevelUpPanel() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return false;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = 0;
-    void** panelData = nullptr;
-    __try {
-        panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-        panelData  = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-    if (!panelData || panelCount <= 0) return false;
-    int n = panelCount > 16 ? 16 : panelCount;
+    constexpr int kCap = 32;
+    void* panels[kCap];
+    int n = ReadPanelArray(GetGuiManager(), panels, kCap);
     for (int i = 0; i < n; ++i) {
-        void* p = panelData[i];
+        void* p = panels[i];
         if (!p) continue;
         if (IdentifyPanel(p) == PanelKind::InGameLevelUp) return true;
     }
@@ -285,21 +266,11 @@ bool HasActiveLevelUpPanel() {
 
 bool IsInGameOptionsSubScreen(void* panel) {
     if (!panel) return false;
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return false;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = 0;
-    void** panelData = nullptr;
-    __try {
-        panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-        panelData  = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-    if (!panelData || panelCount <= 0) return false;
-    int n = panelCount > 16 ? 16 : panelCount;
+    constexpr int kCap = 32;
+    void* panels[kCap];
+    int n = ReadPanelArray(GetGuiManager(), panels, kCap);
     for (int i = 0; i < n; ++i) {
-        void* p = panelData[i];
+        void* p = panels[i];
         if (!p || p == panel) continue;
         if (IdentifyPanel(p) == PanelKind::InGameOptions) {
             return true;
@@ -309,29 +280,30 @@ bool IsInGameOptionsSubScreen(void* panel) {
 }
 
 bool HasActiveSubScreen() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return false;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (!panelData || panelCount <= 0) return false;
-    int n = panelCount > 16 ? 16 : panelCount;
-    for (int i = 0; i < n; ++i) {
-        void* p = panelData[i];
-        if (!p) continue;
-        switch (IdentifyPanel(p)) {
-        case PanelKind::InGameEquip:
-        case PanelKind::InGameInventory:
-        case PanelKind::InGameCharacter:
-        case PanelKind::InGameAbilities:
-        case PanelKind::InGameMessages:
-        case PanelKind::InGameJournal:
-        case PanelKind::InGameMap:
-        case PanelKind::InGameOptions:
-            return true;
-        default:
-            break;
+    // SEH-guarded — see the note on HasActiveDialogPanel.
+    constexpr int kCap = 32;
+    void* panels[kCap];
+    int n = ReadPanelArray(GetGuiManager(), panels, kCap);
+    __try {
+        for (int i = 0; i < n; ++i) {
+            void* p = panels[i];
+            if (!p) continue;
+            switch (IdentifyPanel(p)) {
+            case PanelKind::InGameEquip:
+            case PanelKind::InGameInventory:
+            case PanelKind::InGameCharacter:
+            case PanelKind::InGameAbilities:
+            case PanelKind::InGameMessages:
+            case PanelKind::InGameJournal:
+            case PanelKind::InGameMap:
+            case PanelKind::InGameOptions:
+                return true;
+            default:
+                break;
+            }
         }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
     }
     return false;
 }

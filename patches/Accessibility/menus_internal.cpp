@@ -21,6 +21,7 @@
 #include "menus_internal.h"
 #include "menus_pending.h"   // QueueButtonByIdActivate defers the activate
 #include "engine_offsets.h"
+#include "engine_panels.h"   // HasVtable
 #include "engine_reads.h"
 #include "engine_rebase.h"
 
@@ -62,20 +63,6 @@ bool acc::menus::detail::GetControlCenter(void* control, int& outCx, int& outCy)
 // positions), so one accumulation step is sufficient for the InGameEquip
 // LB_ITEMS case. If we ever need to click rows in a deeper-nested listbox,
 // generalise this into a parent-chain walk.
-static bool GetListBoxRowScreenCenter(void* lb, void* row, int& outCx, int& outCy) {
-    if (!lb || !row) return false;
-    auto* lbExt  = reinterpret_cast<int*>(
-        reinterpret_cast<unsigned char*>(lb)  + kControlExtentOffset);
-    auto* rowExt = reinterpret_cast<int*>(
-        reinterpret_cast<unsigned char*>(row) + kControlExtentOffset);
-    int rowW = rowExt[2];
-    int rowH = rowExt[3];
-    if (rowW <= 0 || rowH <= 0) return false;
-    outCx = lbExt[0] + rowExt[0] + rowW / 2;
-    outCy = lbExt[1] + rowExt[1] + rowH / 2;
-    return true;
-}
-
 // True if the control is button-like (CSWGuiButton or its subclasses
 // CharButton / ActivatedButton / ButtonToggle) OR a CSWGuiSlider.
 // MoveMouseToPosition's hover→active promotion path is safe for buttons but
@@ -363,8 +350,11 @@ bool acc::menus::detail::QueueButtonByIdActivate(void* panel, int buttonId,
 // for some 0 ≤ i < 6.
 bool acc::menus::detail::IsClassSelectionIcon(void* panel, void* control) {
     if (!panel || !control) return false;
-    void** vt = *reinterpret_cast<void***>(panel);
-    if (reinterpret_cast<uintptr_t>(vt) != kVtableCSWGuiClassSelection) {
+    // Guarded deref: this is the gate for menus_extract's step 9c, so it
+    // runs for every control that reaches that far on EVERY panel, not just
+    // chargen — and its caller's `panel` has only cleared IsPanelInManager,
+    // which proves the pointer is listed, not that the object is alive.
+    if (!acc::engine::HasVtable(panel, kVtableCSWGuiClassSelection)) {
         return false;
     }
     auto* panelBase = reinterpret_cast<unsigned char*>(panel);

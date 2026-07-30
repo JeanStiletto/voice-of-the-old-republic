@@ -55,97 +55,14 @@ namespace KotorAccessibilityInstaller
             public int Missing { get; init; }
         }
 
+
         /// <summary>
         /// Rename each intro file to <c>&lt;name&gt;.bik.disabled</c>. Already
         /// renamed → counted as AlreadyDone. Original file missing entirely →
         /// counted as Missing (not an error; e.g. a previous user removal).
         /// </summary>
         public static Result DisableIntros(string gameDir)
-        {
-            string moviesDir = Path.Combine(gameDir, MoviesSubdir);
-            if (!Directory.Exists(moviesDir))
-            {
-                return new Result
-                {
-                    Success = false,
-                    Error = $"{MoviesSubdir} folder not found at {moviesDir}",
-                };
-            }
-
-            int renamed = 0;
-            int alreadyDone = 0;
-            int missing = 0;
-            var errors = new List<string>();
-
-            foreach (var name in IntroFiles)
-            {
-                string src = Path.Combine(moviesDir, name);
-                string dst = src + DisabledSuffix;
-
-                if (File.Exists(dst))
-                {
-                    // Already disabled. If the original still exists alongside
-                    // (mid-state from a previous failed run, or user restored
-                    // manually), delete the original — the disabled one wins.
-                    if (File.Exists(src))
-                    {
-                        try
-                        {
-                            File.Delete(src);
-                            Logger.Info($"  Removed stray {name} (disabled copy already in place)");
-                        }
-                        catch (Exception ex)
-                        {
-                            errors.Add($"could not remove stray {name}: {ex.Message}");
-                            continue;
-                        }
-                    }
-                    alreadyDone++;
-                    Logger.Info($"  {name} already disabled");
-                    continue;
-                }
-
-                if (!File.Exists(src))
-                {
-                    missing++;
-                    Logger.Info($"  {name} not found (skip — already removed or never present)");
-                    continue;
-                }
-
-                try
-                {
-                    File.Move(src, dst);
-                    renamed++;
-                    Logger.Info($"  {name} -> {Path.GetFileName(dst)}");
-                }
-                catch (Exception ex)
-                {
-                    errors.Add($"could not rename {name}: {ex.Message}");
-                }
-            }
-
-            if (errors.Count > 0)
-            {
-                return new Result
-                {
-                    Success = false,
-                    Error = string.Join("; ", errors),
-                    Renamed = renamed,
-                    AlreadyDone = alreadyDone,
-                    Missing = missing,
-                };
-            }
-
-            Logger.Info($"  Intro disable: {renamed} renamed, {alreadyDone} already done, {missing} missing");
-
-            return new Result
-            {
-                Success = true,
-                Renamed = renamed,
-                AlreadyDone = alreadyDone,
-                Missing = missing,
-            };
-        }
+            => MoveIntros(gameDir, disable: true);
 
         /// <summary>
         /// Reverse <see cref="DisableIntros"/>. Renames
@@ -154,6 +71,27 @@ namespace KotorAccessibilityInstaller
         /// Counts already-restored / both-present cases gracefully.
         /// </summary>
         public static Result RestoreIntros(string gameDir)
+            => MoveIntros(gameDir, disable: false);
+
+        /// <summary>
+        /// The rename, in whichever direction. Disable moves
+        /// <c>x.bik → x.bik.disabled</c>; restore moves it back. The two used
+        /// to be hand-mirrored 85-line bodies (Phase-3 B6) — identical in
+        /// structure and differing only in which name is the source, which is
+        /// exactly the kind of pair where a fix lands on one side only.
+        ///
+        /// Every branch is idempotent, because this runs on a real game folder
+        /// that may be in any state — including half-converted by an earlier
+        /// failed run:
+        ///   target exists + source exists → delete the source, the target wins
+        ///   target exists, no source      → AlreadyDone
+        ///   neither exists                → Missing (NOT an error: the user may
+        ///                                   have deleted the .bik themselves)
+        ///   source only                   → the actual rename
+        /// A per-file failure is collected and reported without aborting the
+        /// other two, so one locked file cannot leave the set half-renamed.
+        /// </summary>
+        private static Result MoveIntros(string gameDir, bool disable)
         {
             string moviesDir = Path.Combine(gameDir, MoviesSubdir);
             if (!Directory.Exists(moviesDir))
@@ -165,6 +103,12 @@ namespace KotorAccessibilityInstaller
                 };
             }
 
+            // Log verbs, so the two directions still read naturally in the log.
+            string doneWord   = disable ? "disabled" : "restored";
+            string loserWord  = disable ? "stray" : "stale";
+            string summaryTag = disable ? "Intro disable" : "Intro restore";
+            string summaryVerb = disable ? "renamed" : "restored";
+
             int renamed = 0;
             int alreadyDone = 0;
             int missing = 0;
@@ -172,35 +116,39 @@ namespace KotorAccessibilityInstaller
 
             foreach (var name in IntroFiles)
             {
-                string dst = Path.Combine(moviesDir, name);
-                string src = dst + DisabledSuffix;
+                string plain    = Path.Combine(moviesDir, name);
+                string disabled = plain + DisabledSuffix;
+                string src = disable ? plain : disabled;
+                string dst = disable ? disabled : plain;
 
                 if (File.Exists(dst))
                 {
-                    // Original already restored. If a stale .disabled also
-                    // exists, drop it so we don't leave junk in the install.
+                    // Target already in place. If the source also exists — a
+                    // mid-state from a failed run, or a manual user edit — drop
+                    // it so the install isn't left holding both.
                     if (File.Exists(src))
                     {
                         try
                         {
                             File.Delete(src);
-                            Logger.Info($"  Removed stale {Path.GetFileName(src)} (original already restored)");
+                            Logger.Info($"  Removed {loserWord} {Path.GetFileName(src)} " +
+                                        $"({Path.GetFileName(dst)} already in place)");
                         }
                         catch (Exception ex)
                         {
-                            errors.Add($"could not remove stale {Path.GetFileName(src)}: {ex.Message}");
+                            errors.Add($"could not remove {loserWord} {Path.GetFileName(src)}: {ex.Message}");
                             continue;
                         }
                     }
                     alreadyDone++;
-                    Logger.Info($"  {name} already restored");
+                    Logger.Info($"  {name} already {doneWord}");
                     continue;
                 }
 
                 if (!File.Exists(src))
                 {
                     missing++;
-                    Logger.Info($"  {name} not present in either form (skip)");
+                    Logger.Info($"  {name} not found in either form (skip — already removed or never present)");
                     continue;
                 }
 
@@ -208,11 +156,11 @@ namespace KotorAccessibilityInstaller
                 {
                     File.Move(src, dst);
                     renamed++;
-                    Logger.Info($"  {Path.GetFileName(src)} -> {name}");
+                    Logger.Info($"  {Path.GetFileName(src)} -> {Path.GetFileName(dst)}");
                 }
                 catch (Exception ex)
                 {
-                    errors.Add($"could not restore {name}: {ex.Message}");
+                    errors.Add($"could not rename {Path.GetFileName(src)}: {ex.Message}");
                 }
             }
 
@@ -228,7 +176,7 @@ namespace KotorAccessibilityInstaller
                 };
             }
 
-            Logger.Info($"  Intro restore: {renamed} restored, {alreadyDone} already restored, {missing} missing");
+            Logger.Info($"  {summaryTag}: {renamed} {summaryVerb}, {alreadyDone} already {doneWord}, {missing} missing");
 
             return new Result
             {

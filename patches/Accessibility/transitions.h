@@ -36,7 +36,13 @@ bool FindLandmarkNear(const Vector& pos, float rangeM,
 
 // Walk the cache. cursor=0 on first call; advanced past each populated
 // slot. landmarkIdx is the opaque key for MarkLandmarkClaimedByDoor.
-bool IterateLandmarks(int& cursor,
+//
+// `area` is the area the CALLER believes it is walking. The cache is only
+// valid once RebuildLandmarkCache has run for that same area; if it has
+// not, this yields nothing and logs the mismatch rather than silently
+// looking like an area with no landmarks. Pass the area you were handed —
+// do not pass the cache's own idea of it, which would defeat the check.
+bool IterateLandmarks(void* area, int& cursor,
                       char* nameOut, size_t nameBufSize,
                       Vector& posOut, int& outLandmarkIdx);
 

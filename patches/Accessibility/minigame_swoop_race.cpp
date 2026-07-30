@@ -10,18 +10,18 @@
 // where ENTER fired at T+0 and a spurious EXIT fired at T+125 ms even
 // though the actual race continued for 40 more seconds.
 
+#include "minigame_aim.h"
 #include "minigame_swoop_race.h"
 
 #include <windows.h>
-#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 
+#include "engine_app.h"       // GetServerApp (real race-timer read — see
+                              //   TickRaceTimer)
 #include "engine_area.h"      // GetClientArea + map-pin chain (back-pointer)
 #include "engine_offsets.h"   // Vector
-#include "engine_player.h"    // kAddrAppManagerPtr (server-app chain for the
-                              //   real race-timer read — see TickRaceTimer)
 #include "log.h"
 #include "audio_bus.h"        // PlayCue — non-positional "you can shift now" cue
 #include "audio_cues.h"       // NavCue + GetNavCueResref (shift-ready resref)
@@ -36,6 +36,16 @@
 namespace acc::swoop_race {
 
 namespace {
+
+// SEH read primitives + minigame-object-array resolution are shared across
+// the minigame TUs (see minigame_aim.h). Brought into unqualified scope so
+// the dense reads below read as they did when each file had its own copy.
+using acc::minigame::SafeReadPtr;
+using acc::minigame::SafeReadU32;
+using acc::minigame::SafeReadFloat;
+using acc::minigame::SafeReadVector;
+using acc::minigame::ResolveMgoArray;
+using acc::minigame::CallAsCast;
 
 // ============================================================================
 // Engine struct offsets (from docs/llm-docs/re/swkotor.exe.h).
@@ -242,47 +252,6 @@ State g_state;
 // SEH-guarded primitive reads. Same pattern as the rest of engine_*.
 // ============================================================================
 
-void* SafeReadPtr(void* base, size_t off) {
-    if (!base) return nullptr;
-    __try {
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(base) + off);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
-uint32_t SafeReadU32(void* base, size_t off) {
-    if (!base) return 0;
-    __try {
-        return *reinterpret_cast<uint32_t*>(
-            reinterpret_cast<unsigned char*>(base) + off);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return 0;
-    }
-}
-
-float SafeReadFloat(void* base, size_t off) {
-    if (!base) return 0.0f;
-    __try {
-        return *reinterpret_cast<float*>(
-            reinterpret_cast<unsigned char*>(base) + off);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return 0.0f;
-    }
-}
-
-bool SafeReadVector(void* base, size_t off, Vector& out) {
-    if (!base) return false;
-    __try {
-        Vector* v = reinterpret_cast<Vector*>(
-            reinterpret_cast<unsigned char*>(base) + off);
-        out = *v;
-        return true;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-}
 
 // Read CSWCArea.mini_game via the player-area chain. Source of truth at
 // the moment of detection; we latch the result so churn in this chain
@@ -335,8 +304,6 @@ const uintptr_t kAddrCWorldTimerGetWorldTime = acc::addr::R(0x004ade40);
 const uintptr_t kAddrCServerExoAppGetGlobalVarTable = acc::addr::R(0x004aee60);
 const uintptr_t kAddrGlobalVarTableGetValueNumber = acc::addr::R(0x00529240);
 constexpr size_t    kWorldTimerMinutesPerHourOffset     = 0x38;  // byte
-// AppManager (global ptr kAddrAppManagerPtr) + 0x8 → CServerExoApp.
-constexpr size_t    kAppManagerServerExoAppOffset       = 0x8;
 
 typedef void* (__thiscall* PFN_GetWorldTimer)(void* server);
 typedef void  (__thiscall* PFN_GetWorldTime)(void* timer, uint32_t* outDay,
@@ -348,18 +315,6 @@ typedef void  (__thiscall* PFN_GetValueNumber)(void* table, void* nameExoStr,
 // Matches CExoString { char* c_string; ulong length; }. GetValueNumber only
 // reads it (hash + compare), never frees — a stack literal is safe.
 struct EngineExoString { const char* c_string; uint32_t length; };
-
-void* GetServerApp() {
-    __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerServerExoAppOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
 
 // One global NUMBER (engine stores it as a byte) by name. -1 on failure; the
 // engine writes 0 for an unknown name.
@@ -469,7 +424,7 @@ void TickRaceTimer(void* miniGame) {
     if (speed <= 1.0f) return;     // countdown / not launched yet
     if (maxSpeed <= 0.0f) return;  // race already ended — envelope cleared
 
-    void* server = GetServerApp();
+    void* server = acc::engine::GetServerApp();
     if (!server) return;
 
     // Cache the fixed start stamp once the heartbeat has written THIS race's

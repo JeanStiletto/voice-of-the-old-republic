@@ -2,14 +2,13 @@
 
 #include <windows.h>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 
 #include "engine_area.h"        // ResolveClientObject — client creature for
                                 // the direct ActionInitiateDialog call.
-#include "engine_offsets.h"     // CExoString, kAddrAppManagerPtr,
-                                // kAppManagerClientAppOffset,
-                                // kClientExoAppInternalOffset
+#include "engine_app.h"         // GetClientApp, GetClientAppInternal
+#include "engine_offsets.h"     // CExoString
+#include "engine_panels.h"      // ResolveGuiInGame, ResolveMainInterface
 #include "engine_player.h"      // SetPlayerInputEnabled (auto-restore
                                 // gate around the dispatch — same pattern
                                 // guidance::UseObject uses) +
@@ -45,17 +44,11 @@ namespace {
 //                                                        ClickInWorld)
 //   +0x4cc  int                   descriptor_count     (gate: must be
 //                                                        > 0 to dispatch)
-constexpr size_t kInternalGuiInGameOffset           = 0x040;
 constexpr size_t kInternalLastTargetOffset          = 0x2b4;
 constexpr size_t kInternalLastClickedOnTargetOffset = 0x2b8;
 constexpr size_t kInternalHoverTargetOffset         = 0x4a4;
 constexpr size_t kInternalDescriptorArrayOffset     = 0x4c8;
 constexpr size_t kInternalDescriptorCountOffset     = 0x4cc;
-
-// CGuiInGame.main_interface offset (CSWGuiMainInterface*). Counted from the
-// CGuiInGame struct in swkotor.exe.h (line 10256: main_interface comes
-// after a long pointer table starting at field0_0x0).
-constexpr size_t kGuiInGameMainInterfaceOffset = 0x90;
 
 // CSWGuiInterfaceAction layout (decompile of GetDefaultActions writes,
 // + struct in swkotor.exe.h line 5437). Stride 0x38 between entries.
@@ -94,51 +87,6 @@ typedef void (__thiscall* PFN_SetMainInterfaceTarget)(void* this_,
                                                      uint32_t target,
                                                      uint32_t pad);
 typedef void (__thiscall* PFN_PopulateMenus)(void* this_);
-
-void* GetClientExoApp() {
-    __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
-void* GetClientExoAppInternal(void* exoApp) {
-    if (!exoApp) return nullptr;
-    __try {
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(exoApp) +
-            kClientExoAppInternalOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
-void* GetGuiInGame(void* internal) {
-    if (!internal) return nullptr;
-    __try {
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(internal) +
-            kInternalGuiInGameOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
-void* GetMainInterface(void* guiInGame) {
-    if (!guiInGame) return nullptr;
-    __try {
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(guiInGame) +
-            kGuiInGameMainInterfaceOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
 
 void WriteUInt32(void* base, size_t offset, uint32_t value) {
     if (!base) return;
@@ -269,10 +217,10 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot,
         (targetServerHandle & 0x80000000u) ? targetServerHandle
                                            : (targetServerHandle | 0x80000000u);
 
-    void* exoApp   = GetClientExoApp();
-    void* internal = GetClientExoAppInternal(exoApp);
-    void* guiIn    = GetGuiInGame(internal);
-    void* mainIf   = GetMainInterface(guiIn);
+    void* exoApp   = acc::engine::GetClientApp();
+    void* internal = acc::engine::GetClientAppInternal();
+    void* guiIn    = acc::engine::ResolveGuiInGame();
+    void* mainIf   = acc::engine::ResolveMainInterface();
 
     if (!internal || !guiIn) {
         acclog::Write("Picker", "chain unresolved (target=0x%08x exoApp=%p "
@@ -488,10 +436,9 @@ bool ReanchorRadial(uint32_t targetServerHandle) {
         (targetServerHandle & 0x80000000u) ? targetServerHandle
                                            : (targetServerHandle | 0x80000000u);
 
-    void* exoApp   = GetClientExoApp();
-    void* internal = GetClientExoAppInternal(exoApp);
-    void* guiIn    = GetGuiInGame(internal);
-    void* mainIf   = GetMainInterface(guiIn);
+    void* internal = acc::engine::GetClientAppInternal();
+    void* guiIn    = acc::engine::ResolveGuiInGame();
+    void* mainIf   = acc::engine::ResolveMainInterface();
     if (!internal || !guiIn || !mainIf) return false;
 
     // Same three engine calls as Drive's force-radial branch, minus the
@@ -521,8 +468,7 @@ bool ReanchorRadial(uint32_t targetServerHandle) {
 
 bool ReadCurrent(ActionSnapshot* outSnapshot) {
     ActionSnapshot localSnap = {};
-    void* exoApp   = GetClientExoApp();
-    void* internal = GetClientExoAppInternal(exoApp);
+    void* internal = acc::engine::GetClientAppInternal();
     SnapshotDescriptor(internal, &localSnap);
     if (outSnapshot) *outSnapshot = localSnap;
     return localSnap.valid;

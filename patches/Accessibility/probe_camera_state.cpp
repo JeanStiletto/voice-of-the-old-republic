@@ -7,6 +7,7 @@
 #pragma comment(lib, "user32.lib")
 
 #include "camera_announce.h"  // TryGetCameraEngineYawDegrees
+#include "engine_app.h"      // GetClientAppInternal, GetClientModule
 #include "engine_compass.h"
 #include "engine_player.h"
 #include "hotkeys.h"
@@ -16,7 +17,6 @@ namespace acc::probe_camera_state {
 
 namespace {
 
-constexpr size_t kClientInternalModuleOffset      = 0x18;
 constexpr size_t kCSWCModuleCameraYawOffset       = 0x98;
 constexpr size_t kCSWPlayerControlCameraOffset    = 0x08;  // CAurCamera*
 // Candidate offsets inside the camera object (CSWCameraOnAStick is the
@@ -26,33 +26,6 @@ constexpr size_t kCameraYawOffsetA                = 0x90;
 constexpr size_t kCameraYawOffsetB                = 0x94;
 constexpr size_t kCameraYawOffsetC                = 0x40;
 
-
-void* GetClientInternal() {
-    __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-        void* clientApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-        if (!clientApp) return nullptr;
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(clientApp) +
-            kClientExoAppInternalOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
-void* GetCSWCModule(void* clientInternal) {
-    if (!clientInternal) return nullptr;
-    __try {
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(clientInternal) +
-            kClientInternalModuleOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
 
 void* GetPlayerControlCamera(void* clientInternal) {
     if (!clientInternal) return nullptr;
@@ -85,8 +58,8 @@ T SafeRead(void* base, size_t offset, T fallback) {
 void PollWin32() {
     if (!acc::hotkeys::Pressed(acc::hotkeys::Action::ProbeCameraDump)) return;
 
-    void* clientInternal = GetClientInternal();
-    void* module         = GetCSWCModule(clientInternal);
+    void* clientInternal = acc::engine::GetClientAppInternal();
+    void* module         = acc::engine::GetClientModule();
     void* pcCamera       = GetPlayerControlCamera(clientInternal);
 
     // CSWCModule.camera (Camera*) at +0x40 — this is the Module-owned

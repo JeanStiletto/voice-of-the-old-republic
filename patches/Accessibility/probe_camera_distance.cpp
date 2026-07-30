@@ -7,7 +7,7 @@
 
 #pragma comment(lib, "user32.lib")
 
-#include "engine_player.h"   // AppManager chain constants
+#include "engine_app.h"      // GetClientModule, GetCamera
 #include "hotkeys.h"
 #include "log.h"
 #include "prism.h"
@@ -18,8 +18,6 @@ namespace acc::probe_camera_distance {
 namespace {
 
 // ----- Chain walk constants -------------------------------------------------
-constexpr size_t kClientInternalModuleOffset = 0x18;
-constexpr size_t kCSWCModuleCameraOffset     = 0x40;
 
 // Camera::vtable index for GetBehavior(tag). vtable[0x80/4 = 32]. Called
 // with 0xFFFFFFFF to fetch the currently-active behavior. Matches
@@ -69,16 +67,6 @@ typedef void* (__thiscall* PFN_CameraGetBehavior)(void* this_, unsigned int tag)
 
 // ----- Chain walk -----------------------------------------------------------
 
-void* SafeDeref(void* base, size_t offset) {
-    if (!base) return nullptr;
-    __try {
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(base) + offset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
 template <typename T>
 T SafeRead(void* base, size_t offset, T fallback) {
     if (!base) return fallback;
@@ -102,21 +90,8 @@ bool SafeWrite(void* base, size_t offset, T value) {
     }
 }
 
-void* GetCSWCModule() {
-    void* appManager = SafeDeref(
-        reinterpret_cast<void*>(kAddrAppManagerPtr), 0);
-    if (!appManager) return nullptr;
-    void* clientApp = SafeDeref(appManager, kAppManagerClientAppOffset);
-    if (!clientApp) return nullptr;
-    void* clientInternal = SafeDeref(clientApp, kClientExoAppInternalOffset);
-    if (!clientInternal) return nullptr;
-    return SafeDeref(clientInternal, kClientInternalModuleOffset);
-}
-
 void* GetCamera() {
-    void* module = GetCSWCModule();
-    if (!module) return nullptr;
-    return SafeDeref(module, kCSWCModuleCameraOffset);
+    return acc::engine::GetCamera();
 }
 
 // Camera::GetBehavior(0xffffffff) — fetches the active behavior. Wraps the
@@ -231,6 +206,8 @@ void AdvanceClampMode() {
 
     // Spoken feedback so the user knows which mode we're in without
     // checking the log mid-test.
+    // Developer-facing diagnostic - see the note in probe_audio_frame.cpp.
+    // Deliberately not localised; probe_* is RE tooling, not player output.
     char msg[64];
     std::snprintf(msg, sizeof(msg), "Camera distance probe: %s",
                   ModeName(g_clampMode));
@@ -249,7 +226,7 @@ void AdvanceClampMode() {
 
 // One-shot full state dump. Called on Ctrl+F12 rising edge.
 void DumpSnapshot() {
-    void* module   = GetCSWCModule();
+    void* module   = acc::engine::GetClientModule();
     void* camera   = GetCamera();
     void* behavior = GetActiveBehavior(camera);
     void* state    = GetBehaviorStateStruct(behavior);

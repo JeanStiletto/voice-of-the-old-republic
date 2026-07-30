@@ -57,6 +57,8 @@ endar_softlock.cpp
 endar_softlock.h
 engine_actionbar.cpp
 engine_actionbar.h
+engine_app.cpp
+engine_app.h
 engine_area.cpp
 engine_area.h
 engine_compass.cpp
@@ -72,6 +74,10 @@ engine_manager.h
 engine_navgraph.cpp
 engine_navgraph.h
 engine_offsets.h
+engine_offsets_addresses.h
+engine_offsets_fields.h
+engine_offsets_types.h
+engine_offsets_values.h
 engine_options.cpp
 engine_options.h
 engine_panels.cpp
@@ -168,6 +174,7 @@ menus_keymap.cpp
 menus_keymap.h
 menus_listbox.cpp
 menus_listbox.h
+menus_listbox_picker.cpp
 menus_modsettings.cpp
 menus_modsettings.h
 menus_monitors.cpp

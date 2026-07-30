@@ -137,6 +137,18 @@ struct Landmark {
 Landmark g_landmarks[kMaxLandmarks];
 int      g_landmark_count = 0;
 
+// Which area the cache above currently describes. Set by
+// RebuildLandmarkCache (including when it is handed a null area, so the
+// "never built" and "built for nothing" states are distinguishable).
+//
+// This exists so the landmark→door matching pass can PROVE the cache is
+// the one it wants instead of assuming it. AttachLandmarksToDoors is only
+// correct if RebuildLandmarkCache already ran for the same area; both call
+// sites get that right by construction, and nothing enforced it. A wrong
+// ordering used to present as a silent "0 landmarks matched" — a result
+// indistinguishable from an area that genuinely has no landmark waypoints.
+void* g_landmark_area = nullptr;
+
 // Heuristic: vanilla KOTOR content stores room names as the .lyt-room
 // identifier (`m01aa_10`, `stunt_03_main`, `unk_m13ab`) — pronounceable
 // but meaningless, and they read as letter-soup noise through a screen
@@ -197,6 +209,7 @@ void RebuildLandmarkCache(void* area) {
         g_landmarks[i].handle      = 0;
     }
     g_landmark_count = 0;
+    g_landmark_area  = area;
 
     if (!area) return;
 
@@ -965,10 +978,23 @@ bool FindLandmarkNear(const Vector& pos, float rangeM,
     return true;
 }
 
-bool IterateLandmarks(int& cursor,
+bool IterateLandmarks(void* area, int& cursor,
                       char* nameOut, size_t nameBufSize,
                       Vector& posOut, int& outLandmarkIdx) {
     if (!nameOut || nameBufSize == 0) return false;
+    // Ordering contract, now checked rather than assumed. On a mismatch we
+    // yield nothing — the same outcome as before — but it is logged instead
+    // of looking like an area with no landmarks. Returning false on the
+    // first call also means the caller's walk loop exits immediately, so
+    // this logs once per attempt, not once per landmark.
+    if (area != g_landmark_area) {
+        acclog::Write("Transitions",
+                      "IterateLandmarks: cache belongs to area=%p but caller "
+                      "asked for area=%p — RebuildLandmarkCache has not run "
+                      "for this area; yielding no landmarks",
+                      g_landmark_area, area);
+        return false;
+    }
     if (cursor < 0) cursor = 0;
     while (cursor < g_landmark_count) {
         int i = cursor++;
@@ -985,6 +1011,51 @@ bool IterateLandmarks(int& cursor,
 void MarkLandmarkClaimedByDoor(int landmarkIdx) {
     if (landmarkIdx < 0 || landmarkIdx >= g_landmark_count) return;
     g_landmarks[landmarkIdx].doorMatched = true;
+}
+
+// --- Per-group area-change resets ---------------------------------------
+//
+// Tick() used to clear all of this inline, seventeen assignments reaching
+// into four unrelated state groups. That is what made the state hard to
+// reason about (and what defeated an attempt to split this file): no
+// group owned its own lifecycle, so nothing could move without dragging
+// the reset code with it.
+//
+// Each group now clears itself. Adding a variable to a group means
+// updating exactly one function, next to the variables it clears.
+// Behaviour is identical — same variables, same values, same order.
+
+// Cluster / room-label speech, including the text-equality dedup key and
+// the flap-suppression window.
+void ResetRoomSpeechState() {
+    g_prev_cluster_id            = acc::room_topology::kClusterIdNone;
+    g_pending_cluster_id         = acc::room_topology::kClusterIdNone;
+    g_pending_cluster_count      = 0;
+    g_prev_friendly_room_name[0] = '\0';
+    g_last_spoken_room_text.clear();
+    g_last_spoken_pos_valid      = false;
+    g_flap_prev_text.clear();
+    g_flap_prev_ms               = 0;
+    g_flap_cur_ms                = 0;
+}
+
+// Landmark proximity firing + the recheck cadence timestamp.
+void ResetLandmarkProximityState() {
+    g_lm_prox_pending_idx      = -1;
+    g_lm_prox_pending_count    = 0;
+    g_lm_prox_last_spoken_idx  = -1;
+    g_landmark_recheck_last_ms = 0;
+}
+
+// Deferred "Platz" announcement.
+void ResetPendingPlatzState() {
+    g_pending_platz_valid = false;
+}
+
+// Post-gate cluster re-announce (combat / blocking UI swallowed a change).
+void ResetGatedRefireState() {
+    g_gated_cluster_pending = false;
+    g_gate_clear_since_ms   = 0;
 }
 
 void Tick() {
@@ -1084,29 +1155,31 @@ void Tick() {
         // view-mode panning, and map-cursor exploration all see the
         // same labels.
         //
-        // The wall-edge cache the decomposition depends on may not be
-        // ready on this exact tick (spatial_change_detector::Tick runs
-        // later in the dispatch order). BuildForArea silently leaves
-        // the graph empty when that's the case; we retry below on
-        // every tick until it builds successfully.
+        // The wall-edge cache the decomposition depends on is built by
+        // spatial::change_detector, which runs EARLIER in the dispatch
+        // order (core_tick.cpp: change_detector then transitions —
+        // deliberately, so we never build a graph from the previous
+        // area's walls). It can still come back empty on this exact
+        // tick when the engine has not made the area's walkmesh data
+        // available yet, and BuildForArea silently leaves the graph
+        // empty in that case, so we retry below on every tick until it
+        // builds successfully.
+        //
+        // A previous version of this comment claimed change_detector
+        // ran later; it does not, and the retry is not the reason the
+        // ordering exists. See core_tick.cpp's dispatch-order notes,
+        // which are authoritative.
+        // Re-arm the nav-graph retry before building: this is the only
+        // genuine "we entered an area" edge, so an area previously
+        // abandoned as unreadable gets a fresh set of attempts here (and
+        // only here). Ordering matters — BuildForArea consults the latch.
+        acc::room_topology::ResetNavGraphRetry();
         acc::room_topology::BuildForArea(area);
-        g_prev_area             = area;
-        g_prev_cluster_id       = acc::room_topology::kClusterIdNone;
-        g_pending_cluster_id    = acc::room_topology::kClusterIdNone;
-        g_pending_cluster_count = 0;
-        g_prev_friendly_room_name[0] = '\0';
-        g_last_spoken_room_text.clear();
-        g_last_spoken_pos_valid      = false;
-        g_lm_prox_pending_idx        = -1;
-        g_lm_prox_pending_count      = 0;
-        g_lm_prox_last_spoken_idx    = -1;
-        g_pending_platz_valid        = false;
-        g_gated_cluster_pending      = false;
-        g_gate_clear_since_ms        = 0;
-        g_landmark_recheck_last_ms   = 0;
-        g_flap_prev_text.clear();
-        g_flap_prev_ms               = 0;
-        g_flap_cur_ms                = 0;
+        g_prev_area = area;
+        ResetRoomSpeechState();
+        ResetLandmarkProximityState();
+        ResetPendingPlatzState();
+        ResetGatedRefireState();
     } else if (!acc::room_topology::HasGraphForArea(area)) {
         // Same area as last tick but the graph still isn't built —
         // wall cache wasn't ready when the area-change branch fired.

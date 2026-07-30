@@ -2,7 +2,6 @@
 
 #include <cmath>
 #include <cstdio>
-#include <cstring>
 
 #include "engine_compass.h"
 #include "log.h"

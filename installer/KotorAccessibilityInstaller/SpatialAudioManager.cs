@@ -139,90 +139,25 @@ namespace KotorAccessibilityInstaller
         }
 
         /// <summary>
-        /// Writes <c>EAX=0</c> or <c>EAX=1</c> under <c>[Sound Options]</c>.
-        /// Preserves all other keys, ordering, and whitespace. Idempotent.
+        /// Sets <c>EAX=0</c> or <c>EAX=1</c> under <c>[Sound Options]</c> of
+        /// swkotor.ini. Preserves all other keys, ordering and whitespace.
+        /// Idempotent.
+        ///
+        /// The section-walk used to be reimplemented here; it is
+        /// SwkotorIniTweaker's job and always was (Phase-3 B6). Failure is
+        /// non-fatal by design and only logged: the dsoal DLLs are already in
+        /// place at this point, and the user can set EAX from the game's own
+        /// sound options if the ini write did not land.
         /// </summary>
         private static void SetEaxValue(string gameDir, bool enable)
         {
-            const string sectionHeader = "[Sound Options]";
-            const string key = "EAX";
-            string desired = enable ? "1" : "0";
-
-            string iniPath = Path.Combine(gameDir, "swkotor.ini");
-            if (!File.Exists(iniPath))
+            var result = SwkotorIniTweaker.ApplyEaxSetting(gameDir, enable);
+            if (!result.Success)
             {
-                Logger.Warning($"  swkotor.ini not found at {iniPath} — EAX not toggled");
-                return;
+                Logger.Warning($"  EAX not toggled: {result.Error}");
             }
-
-            var lines = new List<string>(File.ReadAllLines(iniPath));
-
-            int sectionStart = -1;
-            for (int i = 0; i < lines.Count; i++)
-            {
-                if (lines[i].Trim().Equals(sectionHeader, StringComparison.OrdinalIgnoreCase))
-                {
-                    sectionStart = i;
-                    break;
-                }
-            }
-
-            int sectionEnd = lines.Count;
-            if (sectionStart >= 0)
-            {
-                for (int i = sectionStart + 1; i < lines.Count; i++)
-                {
-                    string t = lines[i].Trim();
-                    if (t.StartsWith("[", StringComparison.Ordinal) && t.EndsWith("]", StringComparison.Ordinal))
-                    {
-                        sectionEnd = i;
-                        break;
-                    }
-                }
-            }
-            else
-            {
-                if (lines.Count > 0 && !string.IsNullOrEmpty(lines[^1])) lines.Add(string.Empty);
-                lines.Add(sectionHeader);
-                sectionStart = lines.Count - 1;
-                sectionEnd = lines.Count;
-                Logger.Info($"  {sectionHeader} not found; appending");
-            }
-
-            bool found = false;
-            for (int i = sectionStart + 1; i < sectionEnd; i++)
-            {
-                string line = lines[i];
-                int eq = line.IndexOf('=');
-                if (eq <= 0) continue;
-
-                string k = line.Substring(0, eq).Trim();
-                if (!k.Equals(key, StringComparison.OrdinalIgnoreCase)) continue;
-
-                string current = line.Substring(eq + 1).Trim();
-                if (current.Equals(desired, StringComparison.Ordinal))
-                {
-                    Logger.Info($"  EAX={desired} already set");
-                }
-                else
-                {
-                    lines[i] = $"{key}={desired}";
-                    Logger.Info($"  EAX: {current} -> {desired}");
-                }
-                found = true;
-                break;
-            }
-
-            if (!found)
-            {
-                lines.Insert(sectionEnd, $"{key}={desired}");
-                Logger.Info($"  EAX={desired} appended (key was missing)");
-            }
-
-            var sb = new StringBuilder();
-            foreach (var line in lines) sb.Append(line).Append("\r\n");
-            File.WriteAllText(iniPath, sb.ToString(), new UTF8Encoding(false));
         }
+
 
         private static void Extract(string resourceShortName, string targetPath)
         {

@@ -204,16 +204,6 @@ bool ReencodeAcpToUtf8(const char* in, char* outBuf, size_t outBufSize) {
     return got > 0;
 }
 
-bool WideToUtf8(const wchar_t* in, char* outBuf, size_t outBufSize) {
-    if (!in || !outBuf || outBufSize == 0) return false;
-    int needed = WideCharToMultiByte(CP_UTF8, 0, in, -1, nullptr, 0, nullptr, nullptr);
-    if (needed <= 0 || static_cast<size_t>(needed) > outBufSize) return false;
-    int got = WideCharToMultiByte(CP_UTF8, 0, in, -1, outBuf,
-                                  static_cast<int>(outBufSize),
-                                  nullptr, nullptr);
-    return got > 0;
-}
-
 // ---- SEH guards around prism backend calls -----------------------------
 //
 // Some screen-reader backends delay-load a vendor DLL inside their

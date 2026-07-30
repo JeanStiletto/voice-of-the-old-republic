@@ -13,12 +13,8 @@
 #include "engine_area.h"
 
 #include <windows.h>
-#include <cmath>
 #include <cstdint>
-#include <cstring>
 
-#include "engine_player.h"
-#include "engine_reads.h"
 #include "log.h"
 #include "engine_rebase.h"
 
@@ -211,7 +207,7 @@ static int    s_globalEdgeRoom[kMaxGlobalTriEdges];
 // / near-vertical edges aren't useful as 2D portal matches and bloat
 // the index. Returns the count of edges this room contributed to the
 // running total (written to the global arrays only while there's space).
-int ScanRoomAllTriangleEdges(void* surfaceMesh, int roomId,
+static int ScanRoomAllTriangleEdges(void* surfaceMesh, int roomId,
                              int alreadyWritten) {
     if (!surfaceMesh) return 0;
     auto* mesh = reinterpret_cast<unsigned char*>(surfaceMesh);

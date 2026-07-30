@@ -2,8 +2,6 @@
 
 #include <windows.h>
 #include <cmath>
-#include <cstdint>
-#include <cstring>
 #include <limits>
 
 #include "engine_area.h"                // WallEdge, SegmentCrossesWalkmesh
@@ -18,7 +16,6 @@ namespace {
 // Re-use the navgraph caps so the A* state buffers below have stable
 // sizes that match what SnapshotNavGraph can hand us.
 constexpr int kMaxNodes = acc::engine::navgraph::kMaxNodes;
-constexpr int kMaxEdges = acc::engine::navgraph::kMaxEdges;
 
 using acc::engine::navgraph::PathPointSnapshot;
 

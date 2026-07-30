@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
 
 namespace KotorAccessibilityInstaller
 {
@@ -67,7 +68,18 @@ namespace KotorAccessibilityInstaller
                     using (var reader = new StreamReader(stream, Encoding.UTF8))
                     {
                         string json = reader.ReadToEnd();
-                        ParseFlatJson(json, dict);
+                        // Locale files are flat {"key": "value"} objects.
+                        // This replaced ~65 lines of hand-rolled scanning
+                        // (Phase-3 B6); System.Text.Json was already a
+                        // dependency via GitHubClient. Verified equivalent
+                        // over all 1146 keys in the six shipped locales
+                        // before the swap.
+                        var parsed = JsonSerializer
+                            .Deserialize<Dictionary<string, string>>(json);
+                        if (parsed != null)
+                        {
+                            foreach (var kv in parsed) dict[kv.Key] = kv.Value;
+                        }
                     }
                 }
             }
@@ -78,72 +90,5 @@ namespace KotorAccessibilityInstaller
             return dict;
         }
 
-        private static void ParseFlatJson(string json, Dictionary<string, string> dict)
-        {
-            int i = 0;
-            int len = json.Length;
-            while (i < len && json[i] != '{') i++;
-            i++;
-            while (i < len)
-            {
-                while (i < len && (char.IsWhiteSpace(json[i]) || json[i] == ',')) i++;
-                if (i >= len || json[i] == '}') break;
-                string key = ParseJsonString(json, ref i);
-                if (key == null) break;
-                while (i < len && json[i] != ':') i++;
-                i++;
-                while (i < len && char.IsWhiteSpace(json[i])) i++;
-                string value = ParseJsonString(json, ref i);
-                if (value == null) break;
-                dict[key] = value;
-            }
-        }
-
-        private static string ParseJsonString(string json, ref int i)
-        {
-            int len = json.Length;
-            while (i < len && char.IsWhiteSpace(json[i])) i++;
-            if (i >= len || json[i] != '"') return null;
-            i++;
-
-            var sb = new StringBuilder();
-            while (i < len)
-            {
-                char c = json[i];
-                if (c == '"') { i++; return sb.ToString(); }
-                if (c == '\\' && i + 1 < len)
-                {
-                    i++;
-                    char esc = json[i];
-                    switch (esc)
-                    {
-                        case '"': sb.Append('"'); break;
-                        case '\\': sb.Append('\\'); break;
-                        case '/': sb.Append('/'); break;
-                        case 'n': sb.Append('\n'); break;
-                        case 'r': sb.Append('\r'); break;
-                        case 't': sb.Append('\t'); break;
-                        case 'u':
-                            if (i + 4 < len)
-                            {
-                                string hex = json.Substring(i + 1, 4);
-                                if (int.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out int code))
-                                {
-                                    sb.Append((char)code);
-                                    i += 4;
-                                }
-                            }
-                            break;
-                        default: sb.Append(esc); break;
-                    }
-                }
-                else
-                {
-                    sb.Append(c);
-                }
-                i++;
-            }
-            return sb.ToString();
-        }
     }
 }

@@ -6,9 +6,10 @@
 #include <cstdio>
 
 #include "combat_queue.h"    // OnEngineActionAdded — authoritative queue announce
+#include "engine_app.h"      // GetClientApp
 #include "engine_offsets.h"
-#include "engine_player.h"   // GetPlayerServerCreature, GetClientLeader,
-                             // kAddrAppManagerPtr, kAppManagerClientAppOffset
+#include "engine_panels.h"   // ResolveMainInterface
+#include "engine_player.h"   // GetPlayerServerCreature, GetClientLeader
 #include "log.h"
 #include "narrated_target.h"
 #include "engine_rebase.h"
@@ -27,8 +28,8 @@ const uintptr_t kAddrCClientExoAppGetAutoPaused = acc::addr::R(0x005edef0);
 const uintptr_t kAddrCClientExoAppGetPauseState = acc::addr::R(0x005ed640);
 
 // main_interface.field1_0x64 — the engine target handle SetTarget stamps.
-// Resolved through the standard chain so we can compare per-press.
-constexpr size_t kGuiInGameMainInterfaceOffset = 0x90;
+// Resolved through engine_panels' ResolveMainInterface so we can compare
+// per-press.
 constexpr size_t kMainInterfaceTargetHandleOff = 0x64;
 
 typedef unsigned long (__thiscall* PFN_GetAutoPaused)(void* this_);
@@ -45,17 +46,21 @@ uint8_t ReadCombatModeBit(void* clientLeader) {
     }
 }
 
-int ReadQueueSize(void* serverCreature) {
-    if (!serverCreature) return -1;
+// Queued-action count on a CSWSCombatRound directly. 0 means "nothing
+// queued" — including the case where the round has no action list at all,
+// which is the engine's own TEST EAX,EAX / JZ bail condition at the top of
+// RemoveAllActions. -1 means "couldn't tell" (null round, or a faulted read).
+//
+// Callers that need to distinguish "empty" from "unknown" must check for -1;
+// the RemoveAllActions hook relies on exactly that, so do not collapse the
+// two.
+int ReadRoundActionCount(void* combatRound) {
+    if (!combatRound) return -1;
     __try {
-        void* combatRound = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(serverCreature) +
-            kCreatureCombatRoundOffset);
-        if (!combatRound) return -1;
         void* listPtr = *reinterpret_cast<void**>(
             reinterpret_cast<unsigned char*>(combatRound) +
             kCombatRoundActionsOffset);
-        if (!listPtr) return -1;
+        if (!listPtr) return 0;
         // Fast path — read internal.count directly (engine's own size
         // field). Avoids the walker entirely. Walk path stays as a
         // backup for filtered-count semantics.
@@ -68,6 +73,18 @@ int ReadQueueSize(void* serverCreature) {
             kListInternalCountOffset);
         if (rawCount < 0 || rawCount > 64) return -1;  // sanity
         return rawCount;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
+int ReadQueueSize(void* serverCreature) {
+    if (!serverCreature) return -1;
+    __try {
+        void* combatRound = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(serverCreature) +
+            kCreatureCombatRoundOffset);
+        return ReadRoundActionCount(combatRound);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return -1;
     }
@@ -102,18 +119,6 @@ int ReadOuterQueueSize(void* serverCreature) {
     }
 }
 
-void* GetExoApp() {
-    __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
 int CallGetAutoPaused(void* exoApp) {
     if (!exoApp) return -1;
     __try {
@@ -138,18 +143,9 @@ int CallGetPauseState(void* exoApp) {
 
 uint32_t ReadMainInterfaceTarget(void* exoApp) {
     if (!exoApp) return 0;
+    void* mi = acc::engine::ResolveMainInterface();
+    if (!mi) return 0;
     __try {
-        void* internal = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(exoApp) +
-            kClientExoAppInternalOffset);
-        if (!internal) return 0;
-        void* guiInGame = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(internal) + 0x040);
-        if (!guiInGame) return 0;
-        void* mi = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(guiInGame) +
-            kGuiInGameMainInterfaceOffset);
-        if (!mi) return 0;
         return *reinterpret_cast<uint32_t*>(
             reinterpret_cast<unsigned char*>(mi) +
             kMainInterfaceTargetHandleOff);
@@ -180,7 +176,7 @@ void ReadState(State& s) {
 
     void* server = acc::engine::GetPlayerServerCreature();
     void* client = acc::engine::GetClientLeader();
-    void* exoApp = GetExoApp();
+    void* exoApp = acc::engine::GetClientApp();
 
     s.cm  = ReadCombatModeBit(client);
     s.qs  = ReadQueueSize(server);
@@ -286,10 +282,35 @@ const char* RoleTag(void* combatRound) {
 
 
 extern "C" void __cdecl OnCombatRoundRemoveAllActions(void* this_combatRound) {
+    // Skip no-op clears. The engine's very next instruction after our cut is
+    // TEST EAX,EAX / JZ — a clear against a round with no queued actions
+    // removes nothing and returns immediately. This hook exists to answer
+    // "did the engine silently cull queued entries?", and a clear that culled
+    // nothing never answers it.
+    //
+    // The one thing this does give up: a clear dispatched against an already-
+    // empty queue is no longer visible, so "the engine took the overwrite
+    // path from an empty queue" now looks the same as "it chained". That
+    // distinction has no observable effect (there was nothing to overwrite)
+    // and the following ADD line still records the outcome.
+    //
+    // It matters because the engine re-clears every live combat round once
+    // per frame while combat is being torn down for a cutscene handover. On
+    // the run-up to the turret sequence that was six rounds a frame for seven
+    // seconds — 2542 log lines at ~360/s, each one a formatted write plus an
+    // fflush under a lock on the game thread (patch-20260729-085456.log,
+    // 08:58:00-08:58:07). Everywhere else in that two-hour session the same
+    // line fired 1-3 times a second.
+    //
+    // -1 is "couldn't read the count", not "empty" — log those, or a genuine
+    // clear disappears whenever the read faults.
+    int actions = acc::combat_diag::ReadRoundActionCount(this_combatRound);
+    if (actions == 0) return;
+
     acclog::Write("Combat.Diag",
-        "CLEAR [%s] round=%p",
+        "CLEAR [%s] round=%p actions=%d",
         acc::combat_diag::RoleTag(this_combatRound),
-        this_combatRound);
+        this_combatRound, actions);
 }
 
 extern "C" void __cdecl OnCombatRoundSetCurrentAction(void* this_combatRound,

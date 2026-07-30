@@ -20,7 +20,11 @@ pause-bit shadow (g_pauseShadow) since the Ghidra-labelled offset reads 0.
 - L18 — `bool g_switchHookEverFired`
 - L38 — `kAddrSetPauseState` — CServerExoApp::SetPauseState @0x004ae9a0
   note: first arg is a bit MASK not an index; bit 0x02 = manual/menu pause source.
-- L47-48 — `kAddrAppManagerPtrLocal`, `kAppManagerServerOff`
+- `kAddrAppManagerPtrLocal` / `kAppManagerServerOff` REMOVED (Phase-3 B1
+  slice 1) — the file's own comment justified duplicating them "because the
+  latter are file-local". It now uses `engine_app.h`'s `GetAppManager()` /
+  `GetServerApp()` and the canonical `kAddrAppManagerPtr`. The pause
+  diagnostics still distinguish "AppManager NULL" from "server NULL".
 - L56 — `kAddrSetSoundMode` — CExoSoundInternal::SetSoundMode @0x005d5e80
 - L61 — `kAddrExoSoundPtr`
 - L68 — `kPauseBitManualOrMenu = 0x02`

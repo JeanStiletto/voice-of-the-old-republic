@@ -17,11 +17,11 @@
 #include <cstdint>
 #include <cstring>
 
+#include "engine_app.h"     // GetServerApp
 #include "engine_player.h"
 #include "engine_reads.h"
 #include "log.h"
 #include "map_note_renames.h"
-#include "strings.h"
 #include "engine_rebase.h"
 
 namespace acc::engine {
@@ -88,18 +88,6 @@ typedef bool  (__thiscall* PFN_CSWSAreaMap_IsWorldPointExplored)(
 // the ~1-degree announcement granularity.
 typedef double (__thiscall* PFN_CSWSAreaMap_GetMapRotateCCW)(
     void* /*areaMap*/, Vector /*orientation*/);
-
-void* GetServerApp() {
-    __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerServerOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
 
 }  // namespace
 
@@ -279,15 +267,6 @@ bool GetMapPinPosition(void* mapPin, Vector& out) {
     }
 }
 
-uint32_t GetMapPinFlags(void* mapPin) {
-    if (!mapPin) return 0;
-    __try {
-        return *reinterpret_cast<uint32_t*>(
-            reinterpret_cast<unsigned char*>(mapPin) + kMapPinFlagsOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return 0;
-    }
-}
 
 bool IsMapPinEnabled(void* mapPin) {
     if (!mapPin) return false;

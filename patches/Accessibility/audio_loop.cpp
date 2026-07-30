@@ -14,22 +14,8 @@ namespace acc::audio {
 
 namespace {
 
-// Local mirror of the 16-byte tag from audio_bus.cpp.
-struct CResRef {
-    char string[16];
-};
-
-void FillResRef(CResRef& out, const char* tag) {
-    std::memset(out.string, 0, sizeof(out.string));
-    if (!tag) return;
-    size_t n = std::strlen(tag);
-    if (n > sizeof(out.string)) n = sizeof(out.string);
-    for (size_t i = 0; i < n; ++i) {
-        char c = tag[i];
-        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c + 32);
-        out.string[i] = c;
-    }
-}
+// CResRef + FillResRef come from audio_bus.h (Phase-3 B6) -- this file used
+// to keep a private mirror of both.
 
 // Visible struct is { vtable*, internal* } = 8 bytes; 16 for safety.
 // The 0xa0-byte CExoSoundSourceInternal is engine-owned (operator_new /

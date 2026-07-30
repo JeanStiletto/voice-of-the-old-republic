@@ -299,7 +299,7 @@ void SpeakContext() {
     for (int e = 0; e < kEntryCount; ++e) {
         if (!(kEntries[e].ctx & bit)) continue;
         const char* t = acc::strings::Get(kEntries[e].label);
-        if (!t || !t[0]) continue;
+        if (!t[0]) continue;
         if (n > 0) {
             // Separator between entries.
             len += static_cast<size_t>(

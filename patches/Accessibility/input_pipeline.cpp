@@ -10,7 +10,7 @@
 #include "combat_diag.h"       // LogPreFire — combat-queue probe snapshot
                                // before the engine's bare 1..7 dispatch
 #include "combat_queue.h"      // ReportPrePressDepth — snapshot queue
-                               // depth before dispatch so interact_hotkey's
+                               // depth before dispatch so combat_queue's
                                // announce can detect engine cap-hits
 #include "engine_actionbar.h"  // PrepareBareDispatch — keeps action_lists
                                // fresh against narrated_target so the
@@ -32,7 +32,6 @@
                              // physical-key VK(s) so we can detect a
                              // modifier-shadowed mod hotkey
 #include "engine_manager.h"  // kAddrGuiManagerPtr, modal_stack offsets
-#include "engine_offsets.h"
 #include "hotkeys.h"         // ModifiedComboOwns / CurrentModifiers — the
                              // registry decides if this press belongs to a mod
                              // hotkey rather than the engine's bare action
@@ -40,7 +39,6 @@
 #include "engine_panels.h"   // HasActiveDialogPanel — suppress the bare 1..7
                              // combat dispatch while a dialog reply listbox
                              // owns the number keys
-#include "engine_player.h"   // GetPlayerServerCreature
 #include "log.h"
 #include "narrated_target.h" // TryGet — pull the unified "current focus"
                              // slot to drive deterministic targeting
@@ -300,7 +298,7 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
     // CClientExoAppInternal::HandleInputEvent case 0xdf, when in-world
     // (sw_gui_status==1, input_class==0), calls ShowSWInGameGui(7) — which
     // opens the in-game / Options menu. The overlay's own close runs on a
-    // separate path (interact_hotkey's Win32 poll), so without this the
+    // separate path (input_poll_router's Win32 poll), so without this the
     // user gets BOTH: the overlay closes AND the game menu pops (confirmed
     // in patch-20260606-224421.log: Esc press seq=4395 → ClientHIE while
     // the action bar was armed → Options opened).
@@ -416,7 +414,7 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
             case 0xee: diag_label = "bare-6"; break;
         }
         // Snapshot queue depth right before the engine dispatches so
-        // interact_hotkey's announce can detect engine cap-hits without
+        // combat_queue's announce can detect engine cap-hits without
         // a separate post-engine hook. The bare-press dispatch goes
         // through DoTargetAction / DoPersonalAction which lands in
         // CSWSCombatRound::AddAction; that function silently free's the
@@ -459,9 +457,13 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
         //   0xea (key 5) → col 1   Medical
         //   0xee (key 6) → col 2   Misc
         //   0xec (key 7) → col 3   Explosives
-        // NOTE: the announce path in interact_hotkey is currently crossed
-        // the other way (it labels key 7 as Misc); that mismatch is the
-        // live bug being chased — do not "align" this restamp to it.
+        // NOTE (was stale): this warned that the announce path labelled key
+        // 7 as Misc and called that mismatch a live bug. The announce path
+        // is now in input_poll_router.cpp and uses this same mapping (key 6
+        // -> Misc, key 7 -> Explosives); it records the old crossed
+        // behaviour in the past tense at input_poll_router.cpp:166-174.
+        // Still do not "align" this restamp to an announce path — the
+        // restamp must follow the engine's column layout, not our labels.
         int barSlot = -1;
         switch (param_1) {
             case 0xe8: barSlot = 0; break;

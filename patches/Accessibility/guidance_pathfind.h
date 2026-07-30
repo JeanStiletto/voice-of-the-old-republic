@@ -15,7 +15,8 @@
 // First-cut scope:
 //   - Single area only — cross-area routing is deferred; the user re-fires
 //     Ctrl+- after walking through a transition.
-//   - ~200 nodes max — open/closed sets are fixed-size arrays.
+//   - engine_navgraph::kMaxNodes (512) nodes max — open/closed sets are
+//     fixed-size arrays.
 
 #pragma once
 

@@ -6,7 +6,9 @@
 // attack_feat != 0, or non-Creature target). Filters out the engine's
 // 0xFF placeholder head.
 //
-// Edge trigger on ≥1 → 0 while in combat fires gui_actqueue immediately.
+// Edge trigger on ≥1 → 0 while in combat fires the cue immediately (the
+// cue is kCueResref in the .cpp, currently c_drdastro_hit2; gui_actqueue
+// was tried and rejected as too soft).
 // 6s heartbeat repeats while specials stay at 0 in continued combat.
 // First-round gate keeps the first ~6s silent so "Kampf beginnt" has
 // clean air. Auto-resets across combat enter/exit.

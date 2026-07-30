@@ -16,6 +16,16 @@
 
 namespace acc::view_mode {
 
+// Settle time before a hovered thing is spoken. The cursor must rest on
+// the same target this long, so sweeping across a crowded scene does not
+// produce a burst of half-started announcements.
+//
+// Published because the map cursor deliberately follows the same cadence —
+// map_ui_cursor.cpp used to declare its own 300 with a comment saying it
+// matched this one, which is a coupling better expressed than commented.
+// The two surfaces speaking at different rhythms would read as a bug.
+constexpr unsigned long kHoverPauseMs = 300;
+
 bool IsActive();
 
 // Read-and-clear flag set when PollEnter handled this tick's Enter rising

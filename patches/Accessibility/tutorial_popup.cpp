@@ -3,7 +3,7 @@
 #include <windows.h>
 #include <cstring>
 
-#include "engine_manager.h"  // kAddrGuiManagerPtr, kMgrPanels*
+#include "engine_app.h"      // GetServerApp — SetPauseState `this`
 #include "engine_panels.h"   // ResolveGuiInGame, IdentifyPanel, PanelKind
 #include "log.h"
 #include "engine_rebase.h"
@@ -56,8 +56,6 @@ using PFN_SetPauseState =
 const uintptr_t kAddrSetPauseState = acc::addr::R(0x004ae9a0);
 using PFN_SetSoundMode = void(__thiscall*)(void* self, int mode);
 const uintptr_t kAddrSetSoundMode = acc::addr::R(0x005d5e80);
-constexpr uintptr_t kAddrAppManagerPtr  = 0x007A39FC;
-constexpr size_t    kAppManagerServerOff = 0x08;
 constexpr uintptr_t kAddrExoSoundPtr    = 0x007a39ec;
 constexpr unsigned char kPauseBitMenu   = 0x02;
 
@@ -75,12 +73,9 @@ const char* s_activeHint    = nullptr;   // -> s_activeHintBuf while active
 bool        s_paused        = false;     // we issued the pause
 
 void SetPause(bool on) {
+    void* server = acc::engine::GetServerApp();
+    if (!server) return;
     __try {
-        void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appMgr) return;
-        void* server = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appMgr) + kAppManagerServerOff);
-        if (!server) return;
         reinterpret_cast<PFN_SetPauseState>(kAddrSetPauseState)(
             server, kPauseBitMenu, on ? 1u : 0u);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -99,19 +94,8 @@ void SetPause(bool on) {
 
 // Is a TutorialBox panel currently in the GUI manager's stack?
 bool TutorialBoxPresent() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return false;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   count = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** data = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (!data || count <= 0) return false;
-    int n = count > 16 ? 16 : count;
-    for (int i = 0; i < n; ++i) {
-        void* p = data[i];
-        if (p && acc::engine::IdentifyPanel(p) == acc::engine::PanelKind::TutorialBox)
-            return true;
-    }
-    return false;
+    return acc::engine::FindPanelByKind(acc::engine::PanelKind::TutorialBox)
+           != nullptr;
 }
 
 void FirePopup(uint32_t strref, const char* hint) {
@@ -165,7 +149,7 @@ void FirePopup(uint32_t strref, const char* hint) {
 // this break. Two adjacent Trask lines can carry the same keyboard hint (e.g.
 // the camera line and the footlocker line share one object-navigation hint);
 // when they land in the same popup we speak it once, not twice.
-bool PendingContainsHint(const char* hint) {
+static bool PendingContainsHint(const char* hint) {
     size_t hlen = std::strlen(hint);
     const char* p = s_pendingHints;
     while (*p) {

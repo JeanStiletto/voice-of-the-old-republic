@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <cstdint>   // uintptr_t, in HasVtable's signature
+
 namespace acc::engine {
 
 // Mirrors CGuiInGame's named slots. Add a value here AND a row in
@@ -162,7 +164,15 @@ enum class PanelKind {
 const char* PanelKindName(PanelKind k);
 
 // AppManager → ClientExoApp → Internal → CGuiInGame. Null on any null link.
+// SEH-guarded (the AppManager hops come from engine_app.h).
 void* ResolveGuiInGame();
+
+// CGuiInGame → CSWGuiMainInterface (+0x90). The surface the action bar, the
+// radial menu and the picker all hang their target off. Null on any null
+// link; SEH-guarded. Before Phase-3 B1 this hop was written out four times
+// (engine_radial, engine_actionbar, engine_picker, combat_diag), each with
+// its own copy of the offset constant.
+void* ResolveMainInterface();
 
 // Read the resolved text of the current dialog entry's reply at `replyIndex`
 // from CGuiInGame's render-independent reply-text array (see
@@ -183,6 +193,22 @@ int ReadDialogReplyCount();
 PanelKind IdentifyPanel(void* panel);
 
 bool IsPanelKindInGameMenu(void* panel);
+
+// First panel in CSWGuiManager.panels[] whose IdentifyPanel is `kind`, or
+// nullptr. The "walk panels[], cap the scan at 16, compare IdentifyPanel"
+// loop was hand-copied into eight call sites (listbox monitors, bark-bubble
+// checks, map/galaxy-map/tutorial lookups); this is that loop, once.
+//
+// Scan, don't trust the foreground: the engine parks Fade overlays and the
+// in-game-menu strip on top of panels that are still live and still ours to
+// drive, which is why every one of those sites walked the array instead of
+// asking GetForegroundPanel.
+//
+// The two manager-field reads are SEH-guarded (the manager pointer can be
+// mid-teardown on a module transition); a fault yields nullptr. The 16-entry
+// cap matches every site it replaces — panels[] is small and a runaway size
+// field would otherwise walk off the array.
+void* FindPanelByKind(PanelKind kind);
 
 // Engine-pushed standalone modal popups whose dismissal requires our Esc-routes-
 // to-close handler (the engine's own Esc handling on these is to open the
@@ -294,5 +320,24 @@ struct UiBlockState {
 
 // outState (optional) carries diagnostic detail for the log line.
 bool IsForegroundUiBlocking(UiBlockState* outState = nullptr);
+
+// Verify an object's vtable pointer matches `expected`. Works on anything
+// whose vtable sits at +0 — both child controls and whole panels.
+//
+// Controls: disambiguates panels that share .gui-time IDs but differ in
+// control type at those IDs (canonical case: SaveLoad's BTN_DELETE at ID 11
+// = Button vs. Workbench's LBL_UPGRADE44 at ID 11 = LabelHilight).
+// Panels: heap-allocated single-class panels have no CGuiInGame slot, so
+// vtable equality IS their identity.
+//
+// Use this rather than dereferencing a panel pointer yourself. A panel that
+// passed IsPanelInManager is LISTED, not proven alive — the array still
+// holds freed panels during teardown — so the deref needs the guard even
+// when the pointer looks vetted. Published in Phase-3 B2 after two more
+// hand-spelled copies turned up outside this file; five inside it were
+// folded in B6.
+//
+// Returns false on null / SEH fault.
+bool HasVtable(void* obj, uintptr_t expected);
 
 }  // namespace acc::engine

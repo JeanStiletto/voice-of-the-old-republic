@@ -10,7 +10,7 @@
 #include "engine_offsets.h"
 #include "engine_panels.h"    // PanelKindName — UI-block log
 #include "engine_player.h"    // GetPlayerServerCreature, GetActiveLeaderName, GetPlayerPosition
-#include "engine_reads.h"
+#include "engine_reads.h"     // ReadCreatureForcePoints
 #include "examine_view.h"     // EffectName — shared EFFECT_TYPES → display
 #include "hotkeys.h"
 #include "log.h"

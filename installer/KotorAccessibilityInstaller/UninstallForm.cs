@@ -84,6 +84,14 @@ namespace KotorAccessibilityInstaller
                 _titleLabel, _statusLabel, _pathLabel, _progressBar, _uninstallButton, _cancelButton
             });
 
+            _progressBar.AccessibleName = InstallerLocale.Get("Uninstall_Heading");
+
+            // Escape must close the dialog. Deliberately NOT setting
+            // AcceptButton: this dialog's primary action is destructive, and
+            // Enter should not be able to start an uninstall from anywhere in
+            // the form.
+            CancelButton = _cancelButton;
+
             string body = $"{_titleLabel.Text}. {_statusLabel.Text} {_pathLabel.Text}";
             AccessibleDescription = body;
             _uninstallButton.AccessibleDescription = body;
@@ -146,6 +154,10 @@ namespace KotorAccessibilityInstaller
             if (InvokeRequired) { Invoke(new Action(() => UpdateStatus(message))); return; }
             _statusLabel.Text = message;
             Logger.Info(message);
+
+            // Without this an uninstall gives a blind user no progress feedback
+            // at all — this form was the F5 bug.
+            ScreenReaderAnnouncer.Announce(_statusLabel, message);
         }
     }
 }

@@ -1,22 +1,14 @@
 #include "engine_actionbar.h"
 
 #include <windows.h>
-#include <cstdio>
-#include <cstring>
 
 #include "engine_offsets.h"
-#include "engine_player.h"   // kAddrAppManagerPtr / kAppManagerClientAppOffset /
-                             // kClientExoAppInternalOffset
+#include "engine_app.h"      // GetClientApp, GetClientAppInternal
+#include "engine_panels.h"   // ResolveGuiInGame, ResolveMainInterface
 #include "log.h"
 #include "engine_rebase.h"
 
 namespace {
-
-// CGuiInGame.main_interface offset — same as engine_picker / engine_radial.
-constexpr size_t kGuiInGameMainInterfaceOffset = 0x90;
-
-// CClientExoAppInternal.gui_in_game offset — same as engine_picker.
-constexpr size_t kInternalGuiInGameOffset = 0x040;
 
 // CSWGuiMainInterface field7_0x1bac..field12_0x1bc0 — six int32s, one
 // per column, holding the "currently-selected variant action_id" for
@@ -69,51 +61,6 @@ typedef void (__thiscall* PFN_SetMainInterfaceTarget)(void* this_,
 typedef void (__thiscall* PFN_RePopulateMainInterface)(void* this_);
 
 // Local chain helpers (same shape as engine_radial / engine_picker).
-void* GetClientExoApp() {
-    __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
-void* GetClientExoAppInternal(void* exoApp) {
-    if (!exoApp) return nullptr;
-    __try {
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(exoApp) +
-            kClientExoAppInternalOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
-void* GetGuiInGame(void* internal) {
-    if (!internal) return nullptr;
-    __try {
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(internal) +
-            kInternalGuiInGameOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
-void* GetMainInterface(void* guiInGame) {
-    if (!guiInGame) return nullptr;
-    __try {
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(guiInGame) +
-            kGuiInGameMainInterfaceOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
 bool ReadInt32(void* base, size_t offset, int32_t* out) {
     if (!base || !out) return false;
     __try {
@@ -180,11 +127,10 @@ bool ReadCExoStringLocal(void* base, size_t offset,
 
 namespace acc::engine_actionbar {
 
+// Kept as this module's public name — nine callers, including
+// input_pipeline.cpp. The walk itself now lives in engine_panels.
 void* ResolveMainInterface() {
-    void* exoApp   = GetClientExoApp();
-    void* internal = GetClientExoAppInternal(exoApp);
-    void* guiIn    = GetGuiInGame(internal);
-    return GetMainInterface(guiIn);
+    return acc::engine::ResolveMainInterface();
 }
 
 int VariantCount(void* mi, int slot) {
@@ -275,9 +221,9 @@ void LogState(void* mi, const char* tag) {
 }
 
 bool PrepareBareDispatch(uint32_t targetClientHandle) {
-    void* exoApp   = GetClientExoApp();
-    void* internal = GetClientExoAppInternal(exoApp);
-    void* guiIn    = GetGuiInGame(internal);
+    void* exoApp   = acc::engine::GetClientApp();
+    void* internal = acc::engine::GetClientAppInternal();
+    void* guiIn    = acc::engine::ResolveGuiInGame();
     if (!guiIn) {
         acclog::Write("ActionBar.Prep",
             "chain unresolved (exoApp=%p internal=%p guiIn=%p) target=0x%08x",

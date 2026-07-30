@@ -189,10 +189,10 @@ void PollWin32() {
     if (!acc::hotkeys::Pressed(acc::hotkeys::Action::SaveMarkerAtCursor)) {
         return;
     }
-    // In-world gate — speak only when a player is loaded; otherwise the
-    // map panel can't be foreground anyway. Belt-and-braces.
-    Vector playerPos;
-    if (!acc::engine::GetPlayerPosition(playerPos)) return;
+    // No in-world pre-gate here: OnDrop's own first check is
+    // HasActiveMapPanel(), and the map cannot be foreground without a loaded
+    // player. The gate this replaced read a player position and threw it
+    // away, and its own comment called itself belt-and-braces.
     OnDrop();
 }
 

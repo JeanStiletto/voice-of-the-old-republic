@@ -4,7 +4,8 @@
 // CSWSArea:
 //   +0x190 game_objects      ulong*  — HANDLE array (not CSWSObject**).
 //   +0x194 game_object_count int
-//   +0x230 rooms             CSWSRoom[] inline, stride 0x4c
+//   +0x230 rooms             CSWSRoom* — POINTER to an inline-stride
+//                            (0x4c) array; deref before indexing.
 //   +0x25c room_names        CExoString*
 //
 // CSWSArea::GetRoom @0x4bb600(this, Vector*, int* outRoomIndex /*nullable*/)
@@ -306,7 +307,6 @@ bool GetMapPinPosition(void* mapPin, Vector& out);
 // high bit. So it CANNOT discriminate the mod's saved markers from engine
 // note pins — use acc::map_user_markers::IsUserMarkerPin (identity) for
 // that. Kept as a raw field accessor; no current caller.
-uint32_t GetMapPinFlags(void* mapPin);
 
 // CSWCMapPin.enabled +0xfc. SetMapPinEnabled toggles without removing
 // the array slot — filter callers check before surfacing text.
@@ -368,8 +368,8 @@ private:
 // (NULL-passable per PositionWalkable's decomp).
 const uintptr_t kAddrCSWSAreaGetRoom = acc::addr::R(0x004BB600);
 
-// Handle-resolution chain (server-side master object table).
-constexpr size_t    kAppManagerServerOffset      = 0x8;
+// Handle-resolution chain (server-side master object table). The
+// AppManager → CServerExoApp hop itself is engine_app.h's GetServerApp().
 const uintptr_t kAddrCServerExoAppGetObjectArray = acc::addr::R(0x004AED70);
 const uintptr_t kAddrCGameObjectArrayGetGameObject = acc::addr::R(0x004D8230);
 

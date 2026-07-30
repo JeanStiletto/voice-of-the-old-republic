@@ -59,13 +59,19 @@ bool TryHandleInput(int n, void* thisPtr, void* activePanel,
 // scattering `if (kind == X) speak("…")` checks into the title path.
 const char* GetTitleOverride(void* panel);
 
+// ---------------------------------------------------------------------------
+// Armed-picker state. Owned by menus_listbox_picker.cpp — see that file's
+// header for why these two panels carry a mode when the other eleven specs
+// don't. Everything that touches the state goes through these accessors,
+// including the spec callbacks in menus_listbox.cpp.
+// ---------------------------------------------------------------------------
+
 // EquipPicker zone state. The picker arms when chain Enter activates an
 // equip slot button (BTN_INV_*); it stays armed until Enter commits a row,
 // Esc disarms, or the panel disappears from CSWGuiManager.panels[].
 //
-// menus.cpp's slot-Enter handler calls Arm; the per-tick equip-picker
-// monitor (in this TU as of post-Step-5 cleanup) calls IsArmed + Disarm
-// when the equip panel is gone.
+// menus.cpp's slot-Enter handler calls Arm; the equip spec's stale-reset and
+// the per-tick picker monitor call IsArmed + Disarm.
 bool  IsEquipPickerArmed();
 void* EquipPickerPanel();
 void  ArmEquipPicker(void* panel);
@@ -75,17 +81,28 @@ void  DisarmEquipPicker();
 // a BTN_UPGRADE3X/4X slot button (via click-sim, populating LB_ITEMS with
 // the slot's compatible inventory mods). Disarms on Enter-commit, Esc, or
 // when the panel disappears from CSWGuiManager.panels[] (caught by
-// MonitorWorkbenchUpgradePicker in TickListboxMonitors).
+// MonitorWorkbenchUpgradePicker in TickPickerMonitors).
+//
+// WorkbenchUpgradePickerPanel() is the panel the arming was bound to; the
+// spec's announce callback needs it to ask GetWorkbenchPickerInfo which slot
+// layout is on screen (the row-0 remove entry exists on power slots but not
+// on the colour slot).
 bool  IsWorkbenchUpgradePickerArmed();
+void* WorkbenchUpgradePickerPanel();
 void  ArmWorkbenchUpgradePicker(void* panel);
 void  DisarmWorkbenchUpgradePicker();
 
-// Per-tick fan-out for the 3 listbox-paired monitors:
-// MonitorContainerSelection (per-row navigation announces),
-// MonitorEquipPickerSelection (mirror for the equip-picker LB_ITEMS), and
+// Per-tick fan-out for the listbox-paired monitors that live in this TU:
+// MonitorContainerSelection (per-row navigation announces) and
 // PollContainerGiveModeKey (Win32 poll for the give-mode toggle key — the
-// engine's player-control layer eats Tab before menu dispatch). Called
-// from menus.cpp's TickMonitors, alongside the general-monitor tick.
+// engine's player-control layer eats Tab before menu dispatch). Also calls
+// TickPickerMonitors. Called from menus.cpp's TickMonitors, alongside the
+// general-monitor tick.
 void TickListboxMonitors();
+
+// The two armed-picker monitors (equip + workbench upgrade), in
+// menus_listbox_picker.cpp. Fanned out from TickListboxMonitors so menus.cpp
+// keeps a single listbox-side tick entry point.
+void TickPickerMonitors();
 
 }  // namespace acc::menus::listbox

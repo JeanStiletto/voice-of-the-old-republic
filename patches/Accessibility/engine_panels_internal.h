@@ -13,15 +13,24 @@
 #include <cstddef>
 #include <cstdint>
 
+// The first links of the CGuiInGame chain come from engine_app.h, which owns
+// the whole AppManager walk (Phase-3 B1). This header used to carry its own
+// copies under names one letter different from the canonical ones
+// ("...ClientOff" vs "...ClientAppOffset"), which is how the same address
+// ended up declared in three places — a Phase-1 split that moved constants
+// verbatim rather than consolidating them.
+#include "engine_app.h"
+
 namespace acc::engine {
 
-// CGuiInGame resolution chain. Address values verified against Lane's
-// SARIF (CAppManager_vtable @ 0x007A39FC). Field offsets from the struct
-// definitions in docs/llm-docs/re/swkotor.exe.h.
-inline constexpr uintptr_t kAddrAppManagerPtr        = 0x007A39FC;
-inline constexpr size_t    kAppManagerClientOff      = 0x04;
-inline constexpr size_t    kClientExoAppInternalOff  = 0x04;
+// Last link of the chain, specific to the panels module: CClientExoApp
+// internal -> CGuiInGame. Verified against the struct definitions in
+// docs/llm-docs/re/swkotor.exe.h.
 inline constexpr size_t    kClientExoAppGuiInGameOff = 0x40;
+
+// CGuiInGame -> CSWGuiMainInterface. Canonical home for what engine_radial,
+// engine_actionbar, engine_picker and combat_diag each declared privately.
+inline constexpr size_t    kGuiInGameMainInterfaceOff = 0x90;
 
 // Walk that chain and return the CGuiInGame*. Defined in
 // engine_panels.cpp next to the identity registry; the state readers in

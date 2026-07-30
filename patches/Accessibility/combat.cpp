@@ -6,11 +6,10 @@
 #include <cstring>
 
 #include "engine_area.h"      // GetObjectName, ResolveServerObjectHandle
-#include "engine_manager.h"   // kAddrGuiManagerPtr, kMgrPanels*Offset
 #include "engine_offsets.h"
 #include "engine_panels.h"    // PanelKind, IdentifyPanel
+#include "engine_app.h"       // GetClientApp
 #include "engine_player.h"    // GetPlayerServerCreature
-#include "engine_reads.h"
 #include "log.h"
 #include "menus_extract.h"    // FromControl — listbox row text reader
 #include "same_name_suffix.h" // AppendSuffix for same-LocName disambiguator
@@ -38,13 +37,9 @@ namespace {
 typedef int (__thiscall* PFN_GetCombatMode)(void* this_);
 
 bool ReadCombatMode(int& outMode) {
+    void* exoApp = acc::engine::GetClientApp();
+    if (!exoApp) return false;
     __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return false;
-        void* exoApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-        if (!exoApp) return false;
         auto fn = reinterpret_cast<PFN_GetCombatMode>(kAddrGetCombatMode);
         outMode = fn(exoApp);
         return true;

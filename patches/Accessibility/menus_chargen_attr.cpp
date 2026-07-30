@@ -6,107 +6,52 @@
 #include <cstdint>
 #include <cstddef>
 #include <cstdio>
-#include <cstring>
 
 #include "menus_chargen_attr.h"
 
 #include "engine_offsets.h"
 #include "engine_reads.h"
 #include "log.h"
-#include "menus_chain.h"
-#include "menus_extract.h"
 #include "menus_chargen_layout.h"
 #include "strings.h"
 #include "prism.h"
 
 namespace acc::menus::chargen_attr {
 
+namespace {
+// Everything this panel shares with chargen_skills is driven from here —
+// see menus_chargen_layout.h.
+const chargen_layout::PanelDesc kDesc = {
+    /*vtable*/              kVtableCSWGuiAbilitiesCharGen,
+    /*buttonsOffset*/       kAbilitiesCharGenButtonsArrayOffset,
+    /*labelsOffset*/        kAbilitiesCharGenLabelsArrayOffset,
+    /*selectedOffset*/      kAbilitiesCharGenSelectedAbilityOffset,
+    /*descListBoxOffset*/   kAbilitiesCharGenDescriptionListBoxOffset,
+    /*onEnterPointsButton*/ kAddrCSWGuiAbilitiesCharGenOnEnterPointsButton,
+    /*count*/               kAbilitiesCharGenAbilityCount,
+    /*logTag*/              "Menus.ChargenAttr",
+    /*selectedFieldName*/   "selected_ability",
+};
+}  // namespace
+
 bool IsChargenAttributesPanel(void* panel) {
-    return chargen_layout::IsPanelOfVtable(
-        panel, kVtableCSWGuiAbilitiesCharGen);
+    return chargen_layout::IsPanel(kDesc, panel);
 }
 
 int AbilityIndexFromButton(void* panel, void* control) {
-    if (!IsChargenAttributesPanel(panel)) return -1;
-    return chargen_layout::IndexFromButton(
-        panel, control,
-        kAbilitiesCharGenButtonsArrayOffset,
-        kAbilitiesCharGenAbilityCount);
+    return chargen_layout::IndexFromButton(kDesc, panel, control);
 }
 
 void SyncSelectedAbilityFromChainFocus() {
-    void* panel = acc::menus::chain::g_chainPanel;
-    if (!IsChargenAttributesPanel(panel)) return;
-    if (acc::menus::chain::g_chainIndex < 0 ||
-        acc::menus::chain::g_chainIndex >= acc::menus::chain::g_chainCount) {
-        return;
-    }
-    void* focused =
-        acc::menus::chain::g_chain[acc::menus::chain::g_chainIndex].control;
-    int idx = AbilityIndexFromButton(panel, focused);
-    if (idx < 0) return;
-
-    auto* base = reinterpret_cast<unsigned char*>(panel);
-    int* slot = reinterpret_cast<int*>(
-        base + kAbilitiesCharGenSelectedAbilityOffset);
-    int prev = 0;
-    __try {
-        prev = *slot;
-        if (prev != idx) {
-            *slot = idx;
-        }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return;
-    }
-    if (prev != idx) {
-        acclog::Write("Menus.ChargenAttr",
-                      "selected_ability %d -> %d (focused=%p)",
-                      prev, idx, focused);
-    }
+    chargen_layout::SyncSelectedFromChainFocus(kDesc);
 }
 
 int RowPitchForCursorWarp(void* panel, void* control) {
-    if (AbilityIndexFromButton(panel, control) < 0) return 0;
-    return chargen_layout::RowPitchFromButtonExtents(
-        panel, kAbilitiesCharGenButtonsArrayOffset);
+    return chargen_layout::RowPitchForCursorWarp(kDesc, panel, control);
 }
 
 void CaptureLabelsIfApplicable(void* panel) {
-    if (!IsChargenAttributesPanel(panel)) return;
-    auto* base = reinterpret_cast<unsigned char*>(panel);
-    for (int i = 0; i < kAbilitiesCharGenAbilityCount; ++i) {
-        void* labelCtl = base + kAbilitiesCharGenLabelsArrayOffset +
-                         (size_t)i * kCSWGuiLabelSize;
-        void* buttonCtl = base + kAbilitiesCharGenButtonsArrayOffset +
-                          (size_t)i * kCSWGuiButtonSize;
-
-        char text[64] = {0};
-        bool got = false;
-        __try {
-            if (acc::engine::ReadGuiString(
-                    labelCtl, kLabelGuiStringPtrOffset,
-                    text, sizeof(text)) && text[0] != '\0') {
-                got = true;
-            } else if (acc::engine::ExtractTextOrStrRefIndirect(
-                           labelCtl,
-                           kLabelTextOffset,
-                           kLabelStrRefOffset,
-                           kLabelTextObjectOffset,
-                           text, sizeof(text)) &&
-                       text[0] != '\0') {
-                got = true;
-            }
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
-            got = false;
-        }
-
-        if (got) {
-            acc::menus::extract::CaptureCycleCategory(buttonCtl, text);
-            acclog::Write("Menus.ChargenAttr",
-                          "capture[%d] button=%p label=\"%s\"",
-                          i, buttonCtl, text);
-        }
-    }
+    chargen_layout::CaptureLabels(kDesc, panel);
 }
 
 namespace {
@@ -184,95 +129,12 @@ void FormatModifier(int mod, char* outBuf, size_t bufSize) {
 
 }  // namespace
 
-// Synchronously call the engine's OnEnterPointsButton with the FOCUSED
-// button so description_listbox is populated for the row the user is on,
-// then read controls[0] and speak it. Mirror of
-// chargen_skills::AnnounceChainStepDescription — see that function and the
-// kAddrCSWGuiAbilitiesCharGenOnEnterPointsButton comment for why we bypass
-// the engine's hover/cursor-warp path (resolution-dependent: the hit-test
-// can resolve to the neighbouring ability and paint the wrong description).
-//
-// The OnEnterPointsButton call fires SetActive on description_listbox, which
-// trips our listbox hook; IsChargenAttributesDescriptionListbox below lets
-// menus.cpp silence that engine-side echo so this is the only speaker.
 bool AnnounceChainStepDescription(void* panel, void* control) {
-    int idx = AbilityIndexFromButton(panel, control);
-    if (idx < 0) return false;
-
-    typedef void (__thiscall* PFN_OnEnter)(void* this_, void* btn);
-    __try {
-        auto fn = reinterpret_cast<PFN_OnEnter>(
-            kAddrCSWGuiAbilitiesCharGenOnEnterPointsButton);
-        fn(panel, control);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-
-    auto* base = reinterpret_cast<unsigned char*>(panel);
-    void* listBox = base + kAbilitiesCharGenDescriptionListBoxOffset;
-    auto* lbList = reinterpret_cast<CExoArrayList*>(
-        reinterpret_cast<unsigned char*>(listBox) + kListBoxControlsOffset);
-    void* row = nullptr;
-    __try {
-        if (lbList && lbList->data && lbList->size > 0) {
-            row = lbList->data[0];
-        }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-    if (!row) return false;
-
-    char buf[1024];
-    buf[0] = '\0';
-    __try {
-        if (acc::engine::ReadGuiString(row, kLabelGuiStringPtrOffset,
-                                       buf, sizeof(buf)) &&
-            buf[0] != '\0') {
-            // ok
-        } else if (acc::engine::ExtractTextOrStrRefIndirect(
-                       row,
-                       kLabelTextOffset,
-                       kLabelStrRefOffset,
-                       kLabelTextObjectOffset,
-                       buf, sizeof(buf))) {
-            // ok
-        }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-    if (buf[0] == '\0') return false;
-
-    // Flatten embedded newlines (engine renders "Attribut: <attr>.\n<body>")
-    // for the single-line diagnostic log.
-    char dump[1024];
-    {
-        size_t n = strnlen(buf, sizeof(buf) - 1);
-        if (n >= sizeof(dump)) n = sizeof(dump) - 1;
-        for (size_t i = 0; i < n; ++i) {
-            char c = buf[i];
-            dump[i] = (c == '\n' || c == '\r') ? ' ' : c;
-        }
-        dump[n] = '\0';
-    }
-
-    prism::Speak(buf, /*interrupt=*/false);
-    acclog::Write("Menus.ChargenAttr",
-                  "chain-step description focus=%p idx=%d (first 300 chars: \"%.300s\")",
-                  control, idx, dump);
-    return true;
+    return chargen_layout::AnnounceDescription(kDesc, panel, control);
 }
 
-// True iff `listBox` is the chargen Attributes panel's description_listbox.
-// Dual of AnnounceChainStepDescription: lets menus.cpp's listbox SetActive
-// hook silence the engine's hover-driven description echo, since we speak
-// the focused row's description ourselves from the chain-step handler.
 bool IsChargenAttributesDescriptionListbox(void* listBox) {
-    if (!listBox) return false;
-    void* panel = acc::menus::chain::g_chainPanel;
-    if (!IsChargenAttributesPanel(panel)) return false;
-    auto* base = reinterpret_cast<unsigned char*>(panel);
-    return listBox == reinterpret_cast<void*>(
-        base + kAbilitiesCharGenDescriptionListBoxOffset);
+    return chargen_layout::IsDescriptionListbox(kDesc, listBox);
 }
 
 void AnnounceChainStepSuffix(void* panel, void* control) {

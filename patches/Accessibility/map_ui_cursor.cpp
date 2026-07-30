@@ -14,19 +14,17 @@
 #include <windows.h>
 #include <cmath>
 #include <cstdio>
-#include <cstring>
 #include <string>
 
 #include "audio_bus.h"
-#include "audio_cue_player.h"
 #include "audio_cues.h"
 #include "engine_area.h"
 #include "engine_keymap.h"            // MoveAxisVks — bound move/turn keys
-#include "engine_manager.h"
 #include "engine_panels.h"
 #include "engine_player.h"
 #include "engine_reads.h"             // ReadCExoString — waypoint tag log
 #include "log.h"
+#include "view_mode.h"   // kHoverPauseMs — shared cursor cadence
 #include "map_shipped_hints.h"        // shipped curated hints in the hover scan
 #include "map_user_markers.h"         // IsUserMarkerPin — fog-exempt marker id
 #include "strings.h"
@@ -55,10 +53,10 @@ constexpr int kMapPixelMaxY = 256;
 // dt cap to prevent teleport-on-stall (loading screens, alt-tab).
 constexpr float kMaxDtSec = 0.1f;
 
-// Hover-pause debounce for cursor narration. 300 ms matches view-mode's
-// pattern so spoken cadence stays consistent across our two cursor
-// surfaces.
-constexpr DWORD kHoverPauseMs = 300;
+// Hover-pause debounce for cursor narration — shared with view mode so
+// spoken cadence stays consistent across our two cursor surfaces. See
+// view_mode.h for the value and rationale.
+using acc::view_mode::kHoverPauseMs;
 
 // Radius (in map pixels) within which a map-note waypoint counts as
 // "under the cursor". A 16-px map-pin icon plus generous slack —
@@ -115,16 +113,10 @@ constexpr size_t kMapHiderWaypointListOffset          = 0x238;  // CExoLinkedLis
 // engine then resolves via CServerExoApp::GetGameObject. Same access
 // shape as CSWSArea.game_objects (handle array, not object pointer
 // array).
-constexpr size_t kCExoLinkedListInternalOffset = 0x0;
-constexpr size_t kCExoLLInternalHeadOffset     = 0x0;
-constexpr size_t kCExoLLNodeNextOffset         = 0x4;
-constexpr size_t kCExoLLNodePayloadOffset      = 0x8;
 
 // CSWSWaypoint layout offsets (already used elsewhere — re-stated here
 // so the cursor code is self-documenting).
 constexpr size_t kWaypointPositionOffset = 0x90;
-constexpr size_t kWaypointHasMapNoteOff  = 0x22c;
-constexpr size_t kWaypointMapNoteLocOff  = 0x230;
 
 // GetAreaMap / IsWorldPointExplored entry points moved to engine_area.
 // engine_area.h carries the shared constants (kAddrCServerExoAppGetModule,
@@ -238,30 +230,9 @@ bool IsForegroundProcess() {
 // the map. Walk panels[] explicitly looking for any InGameMap entry;
 // that's how `MonitorPanelContents` finds the sub-screen too.
 bool IsMapPanelActive(void** outPanel) {
-    if (outPanel) *outPanel = nullptr;
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return false;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int panelSize = 0;
-    void** panelData = nullptr;
-    __try {
-        panelSize = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-        panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-    if (!panelData || panelSize <= 0) return false;
-    int n = panelSize > 16 ? 16 : panelSize;
-    for (int i = 0; i < n; ++i) {
-        void* p = panelData[i];
-        if (!p) continue;
-        if (acc::engine::IdentifyPanel(p) ==
-            acc::engine::PanelKind::InGameMap) {
-            if (outPanel) *outPanel = p;
-            return true;
-        }
-    }
-    return false;
+    void* p = acc::engine::FindPanelByKind(acc::engine::PanelKind::InGameMap);
+    if (outPanel) *outPanel = p;
+    return p != nullptr;
 }
 
 // GetServerApp / GetAreaMap / IsWorldPointExplored lifted to engine_area
@@ -349,10 +320,18 @@ bool PixelToWorld(void* areaMap, float px, float py, float zSeed, Vector& outWor
 // Same filter the engine's GetNext/PrevMapNote apply — we re-do the
 // scan rather than reading their cached current-node so we get spatial
 // not sequential hit detection.
+// `dump` (optional) collects the per-waypoint diagnostic lines. It is a
+// POINTER rather than a local BlockLog because this function uses __try, and
+// MSVC's C2712 forbids an object needing unwinding in a function with SEH —
+// the same constraint menus_extract.cpp documents. The caller owns the block,
+// so the whole per-tick scan folds as one unit when nothing moved. Line-level
+// dedup cannot fold this: the lines cycle (#0,#1,…,#6,#0,#1,…), so each line
+// differs from the one just before it and Trace never sees a repeat.
 void* FindNearestExploredMapNote(void* mapPanel, void* areaMap,
                                  float cursorPx, float cursorPy,
                                  int* outScannedCount = nullptr,
-                                 float* outBestDist2 = nullptr) {
+                                 float* outBestDist2 = nullptr,
+                                 acclog::BlockLog* dump = nullptr) {
     if (!mapPanel || !areaMap) return nullptr;
     void* mapHider = reinterpret_cast<unsigned char*>(mapPanel) +
                      kInGameMapHiderOffset;
@@ -361,7 +340,7 @@ void* FindNearestExploredMapNote(void* mapPanel, void* areaMap,
         internal = *reinterpret_cast<void**>(
             reinterpret_cast<unsigned char*>(mapHider) +
             kMapHiderWaypointListOffset +
-            kCExoLinkedListInternalOffset);
+            kListInternalOffset);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return nullptr;
     }
@@ -378,7 +357,7 @@ void* FindNearestExploredMapNote(void* mapPanel, void* areaMap,
     __try {
         node = *reinterpret_cast<void**>(
             reinterpret_cast<unsigned char*>(internal) +
-            kCExoLLInternalHeadOffset);
+            kListInternalHeadOffset);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return nullptr;
     }
@@ -396,13 +375,13 @@ void* FindNearestExploredMapNote(void* mapPanel, void* areaMap,
         __try {
             void* dataPtr = *reinterpret_cast<void**>(
                 reinterpret_cast<unsigned char*>(node) +
-                kCExoLLNodePayloadOffset);
+                kLinkedListNodeDataOff);
             if (dataPtr) {
                 handle = *reinterpret_cast<uint32_t*>(dataPtr);
             }
             nextNode = *reinterpret_cast<void**>(
                 reinterpret_cast<unsigned char*>(node) +
-                kCExoLLNodeNextOffset);
+                kLinkedListNodeNextOff);
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             break;
         }
@@ -418,7 +397,7 @@ void* FindNearestExploredMapNote(void* mapPanel, void* areaMap,
         __try {
             hasNote = *reinterpret_cast<int*>(
                 reinterpret_cast<unsigned char*>(obj) +
-                kWaypointHasMapNoteOff);
+                kWaypointMapNoteEnabledOffset);
             pos = *reinterpret_cast<Vector*>(
                 reinterpret_cast<unsigned char*>(obj) +
                 kWaypointPositionOffset);
@@ -434,10 +413,11 @@ void* FindNearestExploredMapNote(void* mapPanel, void* areaMap,
         if (!WorldToPixel(areaMap, pos, ppx, ppy)) {
             node = nextNode; continue;
         }
-        acclog::Trace("MapCursor.dump",
-                      "waypoint #%d handle=0x%x world=(%.2f,%.2f) "
-                      "pixel=(%.1f,%.1f)",
-                      scanned, handle, pos.x, pos.y, ppx, ppy);
+        if (dump) {
+            dump->Line("waypoint #%d handle=0x%x world=(%.2f,%.2f) "
+                       "pixel=(%.1f,%.1f)",
+                       scanned, handle, pos.x, pos.y, ppx, ppy);
+        }
         float dx = ppx - cursorPx;
         float dy = ppy - cursorPy;
         float d2 = dx * dx + dy * dy;
@@ -893,10 +873,18 @@ void Tick() {
     float bestDistWay2  = 1e30f;
     float bestDistPin2  = 1e30f;
     float bestDistHint2 = 1e30f;
-    void* hitWaypoint = FindNearestExploredMapNote(mapPanel, areaMap,
-                                                   g_state.px, g_state.py,
-                                                   &scannedCount,
-                                                   &bestDistWay2);
+    // Owned here, not inside the scan: the scan uses SEH and cannot hold an
+    // object with a destructor (C2712). Folds the whole per-tick waypoint
+    // dump to one "(repeated Nx — unchanged)" line while the map sits still.
+    void* hitWaypoint = nullptr;
+    {
+        acclog::BlockLog wayDump("MapCursor.dump");
+        hitWaypoint = FindNearestExploredMapNote(mapPanel, areaMap,
+                                                 g_state.px, g_state.py,
+                                                 &scannedCount,
+                                                 &bestDistWay2,
+                                                 &wayDump);
+    }
     void* clientAreaForPins = nullptr;
     {
         void* serverArea = acc::engine::GetCurrentArea();
@@ -997,7 +985,7 @@ void Tick() {
                     if (!haveText) {
                         const char* poi = acc::strings::Get(
                             acc::strings::Id::MapCursorWaypointPOI);
-                        if (poi && poi[0]) {
+                        if (poi[0]) {
                             std::snprintf(text, sizeof(text), "%s", poi);
                         }
                     }
@@ -1009,7 +997,7 @@ void Tick() {
                     if (!haveText) {
                         const char* generic = acc::strings::Get(
                             acc::strings::Id::MapPinNoText);
-                        if (generic && generic[0]) {
+                        if (generic[0]) {
                             std::snprintf(text, sizeof(text), "%s", generic);
                         }
                     }
@@ -1027,7 +1015,7 @@ void Tick() {
                         // engine still renders the coloured dot.
                         const char* poi = acc::strings::Get(
                             acc::strings::Id::MapCursorWaypointPOI);
-                        if (poi && poi[0]) {
+                        if (poi[0]) {
                             std::snprintf(text, sizeof(text), "%s", poi);
                         }
                     }

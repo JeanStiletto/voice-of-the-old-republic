@@ -17,9 +17,9 @@
 #include "engine_player_internal.h"
 
 #include <windows.h>
-#include <cmath>
 #include <cstdint>
 
+#include "engine_app.h"     // GetServerAppInternal
 #include "engine_area.h"
 #include "engine_reads.h"
 #include "log.h"
@@ -32,13 +32,9 @@ void* GetPlayerServerCreature() {
 }
 
 void* GetClientLeader() {
+    void* exoApp = GetClientApp();
+    if (!exoApp) return nullptr;
     __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-        void* exoApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-        if (!exoApp) return nullptr;
         auto fn = reinterpret_cast<PFN_GetPlayerCreature>(
             kAddrGetPlayerCreature);
         return fn(exoApp);
@@ -82,17 +78,9 @@ bool IsAnyPartyMemberInCombat() {
     const uintptr_t kAddrCSWPartyGetCharacter = acc::addr::R(0x006346C0); // __thiscall(int) -> CSWCCreature*
     constexpr int       kPartyScanCap                 = 8;          // KOTOR party <=3; generous cap
     typedef void* (__thiscall* PFN_GetCharacter)(void* this_, int index);
+    void* internal = GetClientAppInternal();
+    if (!internal) return false;
     __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return false;
-        void* exoApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-        if (!exoApp) return false;
-        void* internal = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(exoApp) +
-            kClientExoAppInternalOffset);
-        if (!internal) return false;
         void* party = *reinterpret_cast<void**>(
             reinterpret_cast<unsigned char*>(internal) + kInternalPartyOffset);
         if (!party) return false;
@@ -262,13 +250,9 @@ bool GetActiveLeaderName(char* outBuf, size_t bufSize) {
 bool GetPlayerCharacterName(char* outBuf, size_t bufSize) {
     if (!outBuf || bufSize < 2) return false;
     outBuf[0] = '\0';
+    void* exoApp = GetClientApp();
+    if (!exoApp) return false;
     __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return false;
-        void* exoApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-        if (!exoApp) return false;
         auto fn = reinterpret_cast<PFN_GetPlayerCharacterName>(
             kAddrCClientExoAppGetPlayerCharacterName);
         void* exoStr = fn(exoApp);
@@ -326,25 +310,14 @@ int GetPartyMembers(uint32_t* outHandles, int maxCount) {
 }
 
 void* GetServerPartyTable() {
-    __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-        void* serverApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerServerOffsetPlayer);
-        if (!serverApp) return nullptr;
-        // CServerExoApp facade → CServerExoAppInternal at +0x4 (mirrors
-        // the CClientExoApp / *Internal split). The party_table is
-        // embedded inside the internal at +0x1b770.
-        void* serverInternal = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(serverApp) +
-            kServerExoAppInternalOffset);
-        if (!serverInternal) return nullptr;
-        return reinterpret_cast<unsigned char*>(serverInternal) +
-               kServerInternalPartyTableOffset;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
+    // The party_table is embedded in CServerExoAppInternal at +0x1b770 —
+    // inside the INTERNAL, not the facade (engine_player.h records what the
+    // facade-relative walk returned instead). Address arithmetic only from
+    // here, no dereference, so no guard is needed past the resolve.
+    void* serverInternal = GetServerAppInternal();
+    if (!serverInternal) return nullptr;
+    return reinterpret_cast<unsigned char*>(serverInternal) +
+           kServerInternalPartyTableOffset;
 }
 
 bool GetSoloMode() {

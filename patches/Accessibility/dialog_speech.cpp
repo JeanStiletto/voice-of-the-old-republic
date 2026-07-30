@@ -469,50 +469,44 @@ struct DialogPanelMatch {
 
 DialogPanelMatch FindActiveDialogPanel() {
     DialogPanelMatch out{nullptr, acc::engine::PanelKind::Unknown};
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return out;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (!panelData || panelCount <= 0) return out;
-    int n = panelCount > 16 ? 16 : panelCount;
-    for (int i = 0; i < n; ++i) {
-        void* p = panelData[i];
-        if (!p) continue;
-        auto k = acc::engine::IdentifyPanel(p);
-        switch (k) {
-        case acc::engine::PanelKind::DialogCinematic:
-        case acc::engine::PanelKind::DialogCinematicCopy:
-        case acc::engine::PanelKind::DialogComputer:
-        case acc::engine::PanelKind::DialogComputerCamera:
-            out.panel = p;
-            out.kind  = k;
-            return out;
-        default:
-            break;
+    // SEH-guarded: this walks the manager's panels[], which the engine is
+    // tearing down mid-handoff during a cutscene transition (see the
+    // module-load latch note in Tick() below). The null checks here cannot
+    // catch a stale or freed panel pointer, only an absent one. Callers
+    // that go through Tick() are additionally gated by
+    // transitions::IsModuleLoadPending, but this function is not
+    // Tick()-only, so it guards itself.
+    constexpr int kCap = 32;
+    void* panelData[kCap];
+    int n = acc::engine::ReadPanelArray(
+        acc::engine::GetGuiManager(), panelData, kCap);
+    __try {
+        for (int i = 0; i < n; ++i) {
+            void* p = panelData[i];
+            if (!p) continue;
+            auto k = acc::engine::IdentifyPanel(p);
+            switch (k) {
+            case acc::engine::PanelKind::DialogCinematic:
+            case acc::engine::PanelKind::DialogCinematicCopy:
+            case acc::engine::PanelKind::DialogComputer:
+            case acc::engine::PanelKind::DialogComputerCamera:
+                out.panel = p;
+                out.kind  = k;
+                return out;
+            default:
+                break;
+            }
         }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        out.panel = nullptr;
+        out.kind  = acc::engine::PanelKind::Unknown;
     }
     return out;
 }
 
 // Find a BarkBubble panel (independent lifecycle from main dialog).
 void* FindBarkBubblePanel() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return nullptr;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (!panelData || panelCount <= 0) return nullptr;
-    int n = panelCount > 16 ? 16 : panelCount;
-    for (int i = 0; i < n; ++i) {
-        void* p = panelData[i];
-        if (!p) continue;
-        if (acc::engine::IdentifyPanel(p) ==
-            acc::engine::PanelKind::BarkBubble) {
-            return p;
-        }
-    }
-    return nullptr;
+    return acc::engine::FindPanelByKind(acc::engine::PanelKind::BarkBubble);
 }
 
 // Read row count of a CSWGuiListBox at panel + offset.

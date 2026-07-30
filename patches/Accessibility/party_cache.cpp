@@ -105,8 +105,4 @@ bool IsPartyMember(const char* name) {
     return false;
 }
 
-void InvalidatePartyCache() {
-    g_initialised = false;
-}
-
 }  // namespace acc::combat

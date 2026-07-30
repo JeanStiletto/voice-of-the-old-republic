@@ -8,6 +8,7 @@
 #include "engine_manager.h"   // kAddrGuiManagerPtr, kMgrPanels{Data,Size}Offset
 #include "engine_offsets.h"   // kLabelGuiStringPtrOffset
 #include "engine_panels.h"    // IdentifyPanel / PanelKind / PanelKindName
+#include "engine_rebase.h"    // acc::addr::R / Ok
 #include "engine_reads.h"     // ReadGuiString
 #include "log.h"
 #include "menus_pending.h"    // QueueGalaxyInput
@@ -66,18 +67,7 @@ void AnnouncePlanetName(void* panel, bool interrupt) {
 void* s_announcedPanel = nullptr;
 
 void* FindGalaxyMapInPanels() {
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return nullptr;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int    count = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** data  = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (!data || count <= 0) return nullptr;
-    int n = count > 16 ? 16 : count;
-    for (int i = 0; i < n; ++i) {
-        void* p = data[i];
-        if (p && IdentifyPanel(p) == PanelKind::InGameGalaxyMap) return p;
-    }
-    return nullptr;
+    return FindPanelByKind(PanelKind::InGameGalaxyMap);
 }
 
 }  // namespace
@@ -159,7 +149,12 @@ void DispatchInput(void* panel, int engineCode, bool announcePlanet) {
     // index mismatch.
     typedef void(__thiscall* PFN_GalaxyHandleInput)(void* this_, int code,
                                                     int state);
-    constexpr std::uintptr_t kAddrGalaxyHandleInput = 0x00695980;
+    const std::uintptr_t kAddrGalaxyHandleInput = acc::addr::R(0x00695980);
+    if (!acc::addr::Ok(kAddrGalaxyHandleInput)) {
+        acclog::Write("GalaxyMap", "DispatchInput skipped: address unresolved on build %s",
+                      acc::addr::ActiveBuildName());
+        return;
+    }
     auto fn = reinterpret_cast<PFN_GalaxyHandleInput>(kAddrGalaxyHandleInput);
     __try {
         fn(panel, engineCode, 1);

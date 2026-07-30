@@ -433,23 +433,30 @@ struct PanelMatch {
 
 PanelMatch FindMatchingPanel() {
     PanelMatch m = {nullptr, nullptr};
-    void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
-    if (!mgr) return m;
-    auto* base = reinterpret_cast<unsigned char*>(mgr);
-    int   panelCount = *reinterpret_cast<int*>(base + kMgrPanelsSizeOffset);
-    void** panelData = *reinterpret_cast<void***>(base + kMgrPanelsDataOffset);
-    if (!panelData || panelCount <= 0) return m;
-    if (panelCount > 16) panelCount = 16;
-    for (int i = 0; i < panelCount; ++i) {
-        void* p = panelData[i];
-        if (!p) continue;
-        for (int s = 0; s < kNumSpecs; ++s) {
-            if (kSpecs[s]->matches(p)) {
-                m.spec = kSpecs[s];
-                m.panel = p;
-                return m;
+    // SEH-guarded: walks the manager's panels[] and calls each spec's
+    // vtable-matching predicate on every entry. The null checks cannot catch
+    // a stale or freed panel pointer, and the predicates dereference the
+    // vtable. This TU had no SEH guard at all; the equivalent walks in
+    // engine_panels.cpp and menus_store/journal/pazaakdeck all guard.
+    constexpr int kCap = 32;
+    void* panelData[kCap];
+    int panelCount = acc::engine::ReadPanelArray(
+        acc::engine::GetGuiManager(), panelData, kCap);
+    __try {
+        for (int i = 0; i < panelCount; ++i) {
+            void* p = panelData[i];
+            if (!p) continue;
+            for (int s = 0; s < kNumSpecs; ++s) {
+                if (kSpecs[s]->matches(p)) {
+                    m.spec = kSpecs[s];
+                    m.panel = p;
+                    return m;
+                }
             }
         }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        m.spec = nullptr;
+        m.panel = nullptr;
     }
     return m;
 }

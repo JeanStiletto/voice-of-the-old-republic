@@ -1,11 +1,17 @@
 // control text extraction (the announce ladder).
 //
-// FromControl) and its three extract-only helpers (FindSiblingLabel,
-// IsCycleFlankerArrow, LookupCycleCategory) lift out of menus.cpp.
-// Body is unchanged from the original; helpers shared with chain
-// navigation (IsChainNavigable, IsClassSelectionIcon, ClassLabelCache*,
-// GetControlCenter) and the focused-panel pointer (g_currentPanel) cross
-// the seam via menus_internal.h.
+// FromControl and its three extract-only helpers (FindSiblingLabel,
+// IsCycleFlankerArrow, LookupCycleCategory) lifted out of menus.cpp.
+// Helpers shared with chain navigation (IsChainNavigable,
+// IsClassSelectionIcon, ClassLabelCache*, GetControlCenter) and the
+// focused-panel pointer (g_currentPanel) cross the seam via
+// menus_internal.h.
+//
+// FromControl itself is the ladder: it does no extraction of its own, it
+// runs the Try* steps in order and applies the three announce suffixes.
+// Each step's rationale lives at that step's definition in the anonymous
+// namespace below, under the number it had when the ladder was one
+// function.
 
 #include <windows.h>
 #include <cstdint>
@@ -380,229 +386,276 @@ bool ExtractWagerRow(void* panel, void* maxLabel, char* outBuf, size_t bufSize) 
     return outBuf[0] != '\0';
 }
 
-}  // namespace
 
-void ResetCycleCategoryCache() {
-    s_cycleCategoryCount = 0;
+// ---------------------------------------------------------------------
+// Announce-ladder steps.
+//
+// FromControl is a first-match-wins ladder: each step below inspects the
+// control and either fills outBuf and returns its source tag, or returns
+// nullptr to let the next step try. The steps keep the numbering they had
+// when they were inline sections of FromControl, so a log line reading
+// src=perkind-equip-slot still points at the step named for it here.
+//
+// One step deviates from that contract and says so at its own
+// definition: TryPartyPortrait (step 7b) reports whether it claimed the
+// control even when it produced no text.
+// ---------------------------------------------------------------------
+
+// Resolve the panel that owns `control`. Caller-passed owner wins
+// (RebindChain, WalkChildren, BuildContentFingerprint, SetActiveControl
+// all know the panel). Otherwise scan panels[] — covers callers that don't
+// know the panel (AnnounceControl from chain-step, listbox-row helpers,
+// FindCloseButton from the input hook). g_currentPanel is the last-resort
+// fallback for early-attach windows where the manager isn't resolvable yet.
+//
+// The IsPanelInManager filter drops stale/wild owner pointers: the
+// resolution chain can surface a freed g_currentPanel right after a
+// commit-style button (Annehmen on InGameLevelUp) synchronously destroys
+// its panel inside our FireActivate dispatch. IsPanelInManager is
+// deref-free, so it's safe even when the candidate is wild. Every consumer
+// below (IdentifyPanel, IsStatRowAnchor, IsClassSelectionIcon,
+// IsPanelKindInGameMenu) dereferences the panel vtable and would AV
+// otherwise.
+void* ResolveOwnerPanel(void* control, void* ownerPanel) {
+    void* owner = ownerPanel;
+    if (!owner) owner = FindOwningPanel(control);
+    if (!owner) owner = g_currentPanel;
+    if (owner && !acc::engine::IsPanelInManager(owner)) owner = nullptr;
+    return owner;
 }
 
-void CaptureCycleCategory(void* control, const char* category) {
-    if (!control || !category) return;
-    // Upsert: if `control` is already in the cache, replace its category
-    // text. This lets a panel-specific override (e.g. chargen Attribute's
-    // ability_button → ability_label binding in menus_chargen_attr.cpp)
-    // replace whatever the generic capture loop registered earlier this
-    // panel-walk pass — without an upsert, `LookupCycleCategory` returns
-    // the first hit and the override silently loses.
-    for (int i = 0; i < s_cycleCategoryCount; ++i) {
-        if (s_cycleCategories[i].control == control) {
-            strncpy_s(s_cycleCategories[i].category, category, _TRUNCATE);
-            return;
-        }
-    }
-    if (s_cycleCategoryCount >= kMaxCycleCategoryEntries) return;
-    s_cycleCategories[s_cycleCategoryCount].control = control;
-    strncpy_s(s_cycleCategories[s_cycleCategoryCount].category,
-              category, _TRUNCATE);
-    ++s_cycleCategoryCount;
-}
-
-const char* FromControl(void* control,
-                        char* outBuf, size_t bufSize,
-                        void* ownerPanel) {
-    if (!control || bufSize < 2) return nullptr;
-
+// Character-sheet stat rows on InGameCharacter.
+const char* TryCharsheetStatRow(void* control, void* owner,
+                                char* outBuf, size_t bufSize) {
     const char* source = nullptr;
-
-    // -1. Virtual-entry short-circuit. The mod-settings root chain entry
-    //     uses a static sentinel pointer as `control`; it is NOT an
-    //     engine-allocated CSWGuiControl and dereferencing it (vtable
-    //     reads, struct-offset loads) would AV. Match by pointer equality
-    //     against the registered sentinel and emit the localised label.
-    //     Runs ahead of every other section so no downstream reader
-    //     touches the sentinel.
-    if (acc::menus::modsettings::IsRootAnchor(control)) {
-        if (acc::menus::modsettings::ExtractRootLabel(outBuf, bufSize) &&
-            outBuf[0] != '\0') {
-            return "virtual-modsettings-root";
-        }
-        outBuf[0] = '\0';
-        return nullptr;
-    }
-
-    // 0. Per-kind row formatter for virtual chain entries. Runs BEFORE
-    //    the standard text-extraction ladder because the formatted
-    //    phrase must OVERRIDE the bare label text. lbl_class's inline
-    //    CExoString is "Soldat"; the user navigating the stat chain
-    //    expects "Klasse: Soldat" with the context word, so without
-    //    this early hook the AsLabel path (section 4) would return the
-    //    bare value and never reach the per-kind handler.
-    //
-    //    Only fires when `control` is a registered anchor for the
-    //    owning panel's kind (IsStatRowAnchor short-circuits otherwise),
-    //    so non-virtual controls in InGameCharacter still hit the
-    //    standard ladder.
-    //
-    //    Owner is resolved inline rather than at line 669 because that
-    //    block is after the standard extract sections; we need owner
-    //    here. Cost is one extra FindOwningPanel call when ownerPanel
-    //    is null (announce-control path).
-    {
-        void* owner = ownerPanel;
-        if (!owner) owner = FindOwningPanel(control);
-        if (!owner) owner = g_currentPanel;
-        // Filter stale/wild owner pointers — the resolution chain can
-        // surface a freed g_currentPanel right after a commit-style button
-        // (Annehmen on InGameLevelUp) synchronously destroys its panel
-        // inside our FireActivate dispatch. IsPanelInManager is
-        // deref-free, so it's safe even when `owner` is wild. Downstream
-        // probes (IdentifyPanel, IsStatRowAnchor) deref the panel vtable
-        // and would AV otherwise.
-        if (owner && !acc::engine::IsPanelInManager(owner)) owner = nullptr;
-        if (owner && IdentifyPanel(owner) ==
-                PanelKind::InGameCharacter &&
-            acc::menus::charsheet::IsStatRowAnchor(owner, control)) {
-            __try {
-                if (acc::menus::charsheet::ExtractStatRow(
-                        owner, control, outBuf, bufSize) &&
-                    outBuf[0] != '\0') {
-                    source = "perkind-charsheet-row";
-                }
-            } __except (EXCEPTION_EXECUTE_HANDLER) {
-                source = nullptr;
+    if (owner && IdentifyPanel(owner) ==
+            PanelKind::InGameCharacter &&
+        acc::menus::charsheet::IsStatRowAnchor(owner, control)) {
+        __try {
+            if (acc::menus::charsheet::ExtractStatRow(
+                    owner, control, outBuf, bufSize) &&
+                outBuf[0] != '\0') {
+                source = "perkind-charsheet-row";
             }
-        }
-        // Credits row (Inventory + Store). IsCreditsRowAnchor self-gates on
-        // the owning panel's kind, so the per-kind branch isn't repeated
-        // here — same shape as the stat-row block. Only fires when the
-        // control is the panel's credits_value_label inline member.
-        if (!source && owner &&
-            acc::menus::credits::IsCreditsRowAnchor(owner, control)) {
-            __try {
-                if (acc::menus::credits::ExtractCreditsRow(
-                        owner, control, outBuf, bufSize) &&
-                    outBuf[0] != '\0') {
-                    source = "perkind-credits-row";
-                }
-            } __except (EXCEPTION_EXECUTE_HANDLER) {
-                source = nullptr;
-            }
-        }
-        // Equip stat rows (Vitality, Defense, Attack, Damage). Same
-        // shape as credits — IsEquipStatRowAnchor self-gates on
-        // InGameEquip; ExtractEquipStatRow handles single-vs-dual-wield
-        // attack formatting internally.
-        if (!source && owner &&
-            acc::menus::equipstats::IsEquipStatRowAnchor(owner, control)) {
-            __try {
-                if (acc::menus::equipstats::ExtractEquipStatRow(
-                        owner, control, outBuf, bufSize) &&
-                    outBuf[0] != '\0') {
-                    source = "perkind-equipstat-row";
-                }
-            } __except (EXCEPTION_EXECUTE_HANDLER) {
-                source = nullptr;
-            }
-        }
-        // Pazaak side-deck builder card widgets (CSWGuiPazaakStart). The
-        // widgets carry no text of their own; synthesize the card name +
-        // owned count (available grid) or the chosen-slot contents (the
-        // already-selected state).
-        if (!source && owner &&
-            IdentifyPanel(owner) == PanelKind::PazaakStart) {
-            __try {
-                if (acc::menus::pazaakdeck::ExtractCardLabel(
-                        owner, control, outBuf, bufSize) &&
-                    outBuf[0] != '\0') {
-                    source = "perkind-pazaakdeck";
-                }
-            } __except (EXCEPTION_EXECUTE_HANDLER) {
-                source = nullptr;
-            }
-        }
-        // Pazaak wager popup (CSWGuiWagerPopup). BTN_LESS / BTN_MORE are
-        // text-less CSWGuiSpeedButtons (gui ids 4 / 5); name them so the chain
-        // doesn't fall back to "control 4 / 5". The live amount is announced
-        // separately by pazaak.cpp (the chain re-reads only on focus change).
-        if (!source && owner &&
-            IdentifyPanel(owner) == PanelKind::PazaakWager) {
-            __try {
-                int cid = *reinterpret_cast<int*>(
-                    reinterpret_cast<unsigned char*>(control) + kControlIdOffset);
-                if (cid == 4 || cid == 5) {
-                    snprintf(outBuf, bufSize, "%s",
-                             acc::strings::Get(cid == 4
-                                 ? acc::strings::Id::PazaakWagerLess
-                                 : acc::strings::Id::PazaakWagerMore));
-                    if (outBuf[0] != '\0') source = "perkind-pazaakwager";
-                } else if (cid == kWagerMaxLabelGuiId &&
-                           ExtractWagerRow(owner, control, outBuf, bufSize)) {
-                    // Virtual top-of-chain row: live wager + max + credits.
-                    source = "perkind-pazaakwager-row";
-                }
-            } __except (EXCEPTION_EXECUTE_HANDLER) {
-                source = nullptr;
-            }
-        }
-        // Journal quest-items button. The engine renders an unclear German
-        // label ("Aus Auftrag"); speak a clearer localized term on focus.
-        // Identified by struct offset (quest_items_button @ +0x8a4). The
-        // sub-screen it opens still announces its own LBL_TITLE on entry.
-        if (!source && owner &&
-            IdentifyPanel(owner) == PanelKind::InGameJournal &&
-            control == reinterpret_cast<unsigned char*>(owner) +
-                           kJournalQuestItemsButtonOffset) {
-            snprintf(outBuf, bufSize, "%s",
-                     acc::strings::Get(
-                         acc::strings::Id::JournalQuestItemsButton));
-            if (outBuf[0] != '\0') source = "perkind-journal-questitems-btn";
-        }
-        // Keyboard-mapping row (CSWGuiKeyMapButton). The row's own button text
-        // (action_button at +0) is just the event name ("Vorwärts"); the bound
-        // key lives in the embedded mapped_key_button at +0x1c8. Compose
-        // "{action}: {key}" so the user hears the current binding, and flag
-        // non-remappable rows. Gated on the owning panel kind AND the row
-        // vtable so the panel's other buttons (filter tabs, OK/Abbrechen) fall
-        // through to the normal ladder.
-        if (!source && owner &&
-            IdentifyPanel(owner) == PanelKind::KeyboardMapping) {
-            __try {
-                uintptr_t vt = reinterpret_cast<uintptr_t>(
-                    *reinterpret_cast<void***>(control));
-                if (vt == kVtableKeyMapButton) {
-                    char action[128]; action[0] = '\0';
-                    char key[64];     key[0] = '\0';
-                    acc::engine::ReadButtonText(control, action, sizeof(action));
-                    acc::engine::ReadButtonText(
-                        reinterpret_cast<unsigned char*>(control) +
-                            kKeyMapButtonMappedKeyOffset,
-                        key, sizeof(key));
-                    int fixed = *reinterpret_cast<int*>(
-                        reinterpret_cast<unsigned char*>(control) +
-                            kKeyMapButtonUnchangeableOff);
-                    snprintf(outBuf, bufSize,
-                             acc::strings::Get(acc::strings::Id::FmtKeyBinding),
-                             action, key);
-                    if (fixed != 0) {
-                        size_t cur = strnlen(outBuf, bufSize);
-                        const char* suf = acc::strings::Get(
-                            acc::strings::Id::KeyBindingFixed);
-                        snprintf(outBuf + cur, bufSize - cur, "%s", suf);
-                    }
-                    if (outBuf[0] != '\0') source = "perkind-keybinding";
-                }
-            } __except (EXCEPTION_EXECUTE_HANDLER) {
-                source = nullptr;
-            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            source = nullptr;
         }
     }
+    return source;
+}
 
-    // 1. Tooltip on the base class — works for any control that has one.
-    //    SEH-wrapped: the field at +0x28 holds a `char*` that on a stale
-    //    (freed-and-reused) control can be a bogus address; the memcpy
-    //    would then fault reading the source. CallDowncast already SEH-
-    //    protects steps 2-5; this covers the single read path that doesn't
-    //    go through it.
+// Credits row (Inventory + Store). IsCreditsRowAnchor self-gates on
+// the owning panel's kind, so the per-kind branch isn't repeated
+// here — same shape as the stat-row block. Only fires when the
+// control is the panel's credits_value_label inline member.
+const char* TryCreditsRow(void* control, void* owner,
+                          char* outBuf, size_t bufSize) {
+    const char* source = nullptr;
+    if (owner &&
+        acc::menus::credits::IsCreditsRowAnchor(owner, control)) {
+        __try {
+            if (acc::menus::credits::ExtractCreditsRow(
+                    owner, control, outBuf, bufSize) &&
+                outBuf[0] != '\0') {
+                source = "perkind-credits-row";
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            source = nullptr;
+        }
+    }
+    return source;
+}
+
+// Equip stat rows (Vitality, Defense, Attack, Damage). Same
+// shape as credits — IsEquipStatRowAnchor self-gates on
+// InGameEquip; ExtractEquipStatRow handles single-vs-dual-wield
+// attack formatting internally.
+const char* TryEquipStatRow(void* control, void* owner,
+                            char* outBuf, size_t bufSize) {
+    const char* source = nullptr;
+    if (owner &&
+        acc::menus::equipstats::IsEquipStatRowAnchor(owner, control)) {
+        __try {
+            if (acc::menus::equipstats::ExtractEquipStatRow(
+                    owner, control, outBuf, bufSize) &&
+                outBuf[0] != '\0') {
+                source = "perkind-equipstat-row";
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            source = nullptr;
+        }
+    }
+    return source;
+}
+
+// Pazaak side-deck builder card widgets (CSWGuiPazaakStart). The
+// widgets carry no text of their own; synthesize the card name +
+// owned count (available grid) or the chosen-slot contents (the
+// already-selected state).
+const char* TryPazaakDeckCard(void* control, void* owner,
+                              char* outBuf, size_t bufSize) {
+    const char* source = nullptr;
+    if (owner &&
+        IdentifyPanel(owner) == PanelKind::PazaakStart) {
+        __try {
+            if (acc::menus::pazaakdeck::ExtractCardLabel(
+                    owner, control, outBuf, bufSize) &&
+                outBuf[0] != '\0') {
+                source = "perkind-pazaakdeck";
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            source = nullptr;
+        }
+    }
+    return source;
+}
+
+// Pazaak wager popup (CSWGuiWagerPopup). BTN_LESS / BTN_MORE are
+// text-less CSWGuiSpeedButtons (gui ids 4 / 5); name them so the chain
+// doesn't fall back to "control 4 / 5". The live amount is announced
+// separately by pazaak.cpp (the chain re-reads only on focus change).
+const char* TryPazaakWager(void* control, void* owner,
+                           char* outBuf, size_t bufSize) {
+    const char* source = nullptr;
+    if (owner &&
+        IdentifyPanel(owner) == PanelKind::PazaakWager) {
+        __try {
+            int cid = *reinterpret_cast<int*>(
+                reinterpret_cast<unsigned char*>(control) + kControlIdOffset);
+            if (cid == 4 || cid == 5) {
+                snprintf(outBuf, bufSize, "%s",
+                         acc::strings::Get(cid == 4
+                             ? acc::strings::Id::PazaakWagerLess
+                             : acc::strings::Id::PazaakWagerMore));
+                if (outBuf[0] != '\0') source = "perkind-pazaakwager";
+            } else if (cid == kWagerMaxLabelGuiId &&
+                       ExtractWagerRow(owner, control, outBuf, bufSize)) {
+                // Virtual top-of-chain row: live wager + max + credits.
+                source = "perkind-pazaakwager-row";
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            source = nullptr;
+        }
+    }
+    return source;
+}
+
+// Journal quest-items button. The engine renders an unclear German
+// label ("Aus Auftrag"); speak a clearer localized term on focus.
+// Identified by struct offset (quest_items_button @ +0x8a4). The
+// sub-screen it opens still announces its own LBL_TITLE on entry.
+const char* TryJournalQuestItemsButton(void* control, void* owner,
+                                       char* outBuf, size_t bufSize) {
+    const char* source = nullptr;
+    if (owner &&
+        IdentifyPanel(owner) == PanelKind::InGameJournal &&
+        control == reinterpret_cast<unsigned char*>(owner) +
+                       kJournalQuestItemsButtonOffset) {
+        snprintf(outBuf, bufSize, "%s",
+                 acc::strings::Get(
+                     acc::strings::Id::JournalQuestItemsButton));
+        if (outBuf[0] != '\0') source = "perkind-journal-questitems-btn";
+    }
+    return source;
+}
+
+// Keyboard-mapping row (CSWGuiKeyMapButton). The row's own button text
+// (action_button at +0) is just the event name ("Vorwärts"); the bound
+// key lives in the embedded mapped_key_button at +0x1c8. Compose
+// "{action}: {key}" so the user hears the current binding, and flag
+// non-remappable rows. Gated on the owning panel kind AND the row
+// vtable so the panel's other buttons (filter tabs, OK/Abbrechen) fall
+// through to the normal ladder.
+const char* TryKeyBindingRow(void* control, void* owner,
+                             char* outBuf, size_t bufSize) {
+    const char* source = nullptr;
+    if (owner &&
+        IdentifyPanel(owner) == PanelKind::KeyboardMapping) {
+        __try {
+            uintptr_t vt = reinterpret_cast<uintptr_t>(
+                *reinterpret_cast<void***>(control));
+            if (vt == kVtableKeyMapButton) {
+                char action[128]; action[0] = '\0';
+                char key[64];     key[0] = '\0';
+                acc::engine::ReadButtonText(control, action, sizeof(action));
+                acc::engine::ReadButtonText(
+                    reinterpret_cast<unsigned char*>(control) +
+                        kKeyMapButtonMappedKeyOffset,
+                    key, sizeof(key));
+                int fixed = *reinterpret_cast<int*>(
+                    reinterpret_cast<unsigned char*>(control) +
+                        kKeyMapButtonUnchangeableOff);
+                snprintf(outBuf, bufSize,
+                         acc::strings::Get(acc::strings::Id::FmtKeyBinding),
+                         action, key);
+                if (fixed != 0) {
+                    size_t cur = strnlen(outBuf, bufSize);
+                    const char* suf = acc::strings::Get(
+                        acc::strings::Id::KeyBindingFixed);
+                    snprintf(outBuf + cur, bufSize - cur, "%s", suf);
+                }
+                if (outBuf[0] != '\0') source = "perkind-keybinding";
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            source = nullptr;
+        }
+    }
+    return source;
+}
+
+// 0. Per-kind row formatter for virtual chain entries. Runs BEFORE
+//    the standard text-extraction ladder because the formatted
+//    phrase must OVERRIDE the bare label text. lbl_class's inline
+//    CExoString is "Soldat"; the user navigating the stat chain
+//    expects "Klasse: Soldat" with the context word, so without
+//    this early hook the AsLabel path (section 4) would return the
+//    bare value and never reach the per-kind handler.
+//
+//    Only fires when `control` is a registered anchor for the
+//    owning panel's kind (IsStatRowAnchor short-circuits otherwise),
+//    so non-virtual controls in InGameCharacter still hit the
+//    standard ladder.
+//
+//    Owner is resolved here rather than reusing step 9 resolution: that
+//    one runs after the standard extract sections and we need the owner
+//    now. Cost is one extra FindOwningPanel call when ownerPanel is null
+//    (announce-control path).
+const char* TryVirtualRowAnchor(void* control, void* ownerPanel,
+                                char* outBuf, size_t bufSize) {
+    void* owner = ResolveOwnerPanel(control, ownerPanel);
+    const char* source = nullptr;
+    if (!source) source = TryCharsheetStatRow(control, owner, outBuf, bufSize);
+    if (!source) source = TryCreditsRow(control, owner, outBuf, bufSize);
+    if (!source) source = TryEquipStatRow(control, owner, outBuf, bufSize);
+    if (!source) source = TryPazaakDeckCard(control, owner, outBuf, bufSize);
+    if (!source) source = TryPazaakWager(control, owner, outBuf, bufSize);
+    if (!source) source = TryJournalQuestItemsButton(control, owner, outBuf, bufSize);
+    if (!source) source = TryKeyBindingRow(control, owner, outBuf, bufSize);
+    return source;
+}
+
+// 1. Tooltip on the base class — works for any control that has one.
+//    SEH-wrapped: the field at +0x28 holds a `char*` that on a stale
+//    (freed-and-reused) control can be a bogus address; the memcpy
+//    would then fault reading the source. CallDowncast already SEH-
+//    protects steps 2-5; this covers the single read path that doesn't
+//    go through it.
+//
+//    This step was UNGATED until Phase-3 B2 — it ran even when step 0 had
+//    already produced a per-kind phrase, so a control carrying a tooltip
+//    would lose its composed text ("Stärke 14, +2" replaced by the raw
+//    field), and a faulting read cleared step 0's result outright. Step 0
+//    was added above this one years later, precisely so the formatted
+//    phrase wins; the `!source` gate it needed was never added here.
+//
+//    Nothing observable changed when the gate went in: across every patch
+//    log in the install, all 9202 Menus.FocusChange samples read
+//    tip[0]="" and no chain entry has ever been tagged src=tooltip. K1
+//    appears not to populate the field at all, so step 0 was safe by
+//    accident of the data rather than by construction. It is safe by
+//    construction now.
+const char* TryTooltip(void* control, char* outBuf, size_t bufSize) {
+    const char* source = nullptr;
     __try {
         const char* tip;
         uint32_t    tipLen;
@@ -616,79 +669,91 @@ const char* FromControl(void* control,
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         source = nullptr;
     }
+    return source;
+}
 
-    // 2. CSWGuiButton (most common — also covers CharButton, ActivatedButton,
-    //    ButtonToggle since those embed Button at offset 0 AND the engine's
-    //    AsButton override returns `this` for them). Tries inline CExoString,
-    //    then TLK str_ref, then text_object indirection — the last covers
-    //    classes whose text routes through CSWGuiText.text_params.text_object
-    //    rather than the inline CExoString.
-    if (!source) {
-        if (void* btn = CallDowncast(control, kVtableAsButton)) {
-            if (ExtractTextOrStrRefIndirect(btn,
-                                            kButtonTextOffset,
-                                            kButtonStrRefOffset,
-                                            kButtonTextObjectOffset,
-                                            outBuf, bufSize)) {
-                source = "button";
-            }
+// 2. CSWGuiButton (most common — also covers CharButton, ActivatedButton,
+//    ButtonToggle since those embed Button at offset 0 AND the engine's
+//    AsButton override returns `this` for them). Tries inline CExoString,
+//    then TLK str_ref, then text_object indirection — the last covers
+//    classes whose text routes through CSWGuiText.text_params.text_object
+//    rather than the inline CExoString.
+const char* TryButton(void* control, char* outBuf, size_t bufSize) {
+    const char* source = nullptr;
+    if (void* btn = CallDowncast(control, kVtableAsButton)) {
+        if (ExtractTextOrStrRefIndirect(btn,
+                                        kButtonTextOffset,
+                                        kButtonStrRefOffset,
+                                        kButtonTextObjectOffset,
+                                        outBuf, bufSize)) {
+            source = "button";
         }
     }
+    return source;
+}
 
-    // 3. CSWGuiButtonToggle — defensive fallback if AsButton misses it.
-    //    Same offsets because ButtonToggle.button is at offset 0.
-    if (!source) {
-        if (void* tgl = CallDowncast(control, kVtableAsButtonToggle)) {
-            if (ExtractTextOrStrRefIndirect(tgl,
-                                            kButtonTextOffset,
-                                            kButtonStrRefOffset,
-                                            kButtonTextObjectOffset,
-                                            outBuf, bufSize)) {
-                source = "buttontoggle";
-            }
+// 3. CSWGuiButtonToggle — defensive fallback if AsButton misses it.
+//    Same offsets because ButtonToggle.button is at offset 0.
+const char* TryButtonToggle(void* control, char* outBuf, size_t bufSize) {
+    const char* source = nullptr;
+    if (void* tgl = CallDowncast(control, kVtableAsButtonToggle)) {
+        if (ExtractTextOrStrRefIndirect(tgl,
+                                        kButtonTextOffset,
+                                        kButtonStrRefOffset,
+                                        kButtonTextObjectOffset,
+                                        outBuf, bufSize)) {
+            source = "buttontoggle";
         }
     }
+    return source;
+}
 
-    // 4. CSWGuiLabel.
-    if (!source) {
-        if (void* lbl = CallDowncast(control, kVtableAsLabel)) {
-            if (ExtractTextOrStrRefIndirect(lbl,
-                                            kLabelTextOffset,
-                                            kLabelStrRefOffset,
-                                            kLabelTextObjectOffset,
-                                            outBuf, bufSize)) {
-                source = "label";
-            }
+// 4. CSWGuiLabel.
+const char* TryLabel(void* control, char* outBuf, size_t bufSize) {
+    const char* source = nullptr;
+    if (void* lbl = CallDowncast(control, kVtableAsLabel)) {
+        if (ExtractTextOrStrRefIndirect(lbl,
+                                        kLabelTextOffset,
+                                        kLabelStrRefOffset,
+                                        kLabelTextObjectOffset,
+                                        outBuf, bufSize)) {
+            source = "label";
         }
     }
+    return source;
+}
 
-    // 5. CSWGuiLabelHilight — same offsets (Label embedded at 0).
-    if (!source) {
-        if (void* hil = CallDowncast(control, kVtableAsLabelHilight)) {
-            if (ExtractTextOrStrRefIndirect(hil,
-                                            kLabelTextOffset,
-                                            kLabelStrRefOffset,
-                                            kLabelTextObjectOffset,
-                                            outBuf, bufSize)) {
-                source = "labelhilight";
-            }
+// 5. CSWGuiLabelHilight — same offsets (Label embedded at 0).
+const char* TryLabelHilight(void* control, char* outBuf, size_t bufSize) {
+    const char* source = nullptr;
+    if (void* hil = CallDowncast(control, kVtableAsLabelHilight)) {
+        if (ExtractTextOrStrRefIndirect(hil,
+                                        kLabelTextOffset,
+                                        kLabelStrRefOffset,
+                                        kLabelTextObjectOffset,
+                                        outBuf, bufSize)) {
+            source = "labelhilight";
         }
     }
+    return source;
+}
 
-    // 6. CSWGuiSlider — no AsSlider downcast accessor exists; detect by
-    //    vtable identity. cur_value / max_value are Lane-named uint32 fields.
-    //    The slider widget itself has no inline category text (its CExoString
-    //    is the rendered "X von Y"); the category name lives on a sibling
-    //    CSWGuiLabel rendered to the left of the slider. Look it up via
-    //    FindSiblingLabel and prepend.
-    //
-    //    Engine-text fix-up for the Sound options panel's movie-volume
-    //    slider (id=8): the stock German .gui labels both the music slider
-    //    and the movie slider as "Musik-Lautstärke", so FindSiblingLabel
-    //    resolves a duplicate. When the slider sits on a panel whose ID
-    //    fingerprint matches optionssound.gui ({1,4,7,8} — locale-stable),
-    //    we substitute the localized "Video volume" string for the label.
-    if (!source && IsSlider(control)) {
+// 6. CSWGuiSlider — no AsSlider downcast accessor exists; detect by
+//    vtable identity. cur_value / max_value are Lane-named uint32 fields.
+//    The slider widget itself has no inline category text (its CExoString
+//    is the rendered "X von Y"); the category name lives on a sibling
+//    CSWGuiLabel rendered to the left of the slider. Look it up via
+//    FindSiblingLabel and prepend.
+//
+//    Engine-text fix-up for the Sound options panel's movie-volume
+//    slider (id=8): the stock German .gui labels both the music slider
+//    and the movie slider as "Musik-Lautstärke", so FindSiblingLabel
+//    resolves a duplicate. When the slider sits on a panel whose ID
+//    fingerprint matches optionssound.gui ({1,4,7,8} — locale-stable),
+//    we substitute the localized "Video volume" string for the label.
+const char* TrySlider(void* control, char* outBuf, size_t bufSize) {
+    const char* source = nullptr;
+    if (IsSlider(control)) {
         uint32_t cur = ReadU32(control, kSliderCurValueOffset);
         uint32_t max = ReadU32(control, kSliderMaxValueOffset);
         char label[128];
@@ -713,17 +778,21 @@ const char* FromControl(void* control,
         }
         source = "slider";
     }
+    return source;
+}
 
-    // 6b. CSWGuiEditbox — same vtable-identity pattern as slider (no AsEditbox
-    //     accessor exists). Two vanilla editboxes match (IsEditbox accepts both
-    //     vtables): the chargen Name `name_editbox` and the save-name popup's
-    //     CSWGuiSaveGameEditBox. Speech format: "{role}. {value}" so
-    //     the screen-reader user immediately knows they've landed in an input
-    //     field plus the current contents. The per-tick poll in
-    //     menus_editbox.cpp owns subsequent text-change announcements (single
-    //     char on insert/delete, full re-read on Up/Down or Random-button
-    //     replacement) — this branch only handles the focus-enter announce.
-    if (!source && IsEditbox(control)) {
+// 6b. CSWGuiEditbox — same vtable-identity pattern as slider (no AsEditbox
+//     accessor exists). Two vanilla editboxes match (IsEditbox accepts both
+//     vtables): the chargen Name `name_editbox` and the save-name popup's
+//     CSWGuiSaveGameEditBox. Speech format: "{role}. {value}" so
+//     the screen-reader user immediately knows they've landed in an input
+//     field plus the current contents. The per-tick poll in
+//     menus_editbox.cpp owns subsequent text-change announcements (single
+//     char on insert/delete, full re-read on Up/Down or Random-button
+//     replacement) — this branch only handles the focus-enter announce.
+const char* TryEditbox(void* control, char* outBuf, size_t bufSize) {
+    const char* source = nullptr;
+    if (IsEditbox(control)) {
         const char* role  = acc::strings::Get(acc::strings::Id::EditboxRole);
         const char* empty = acc::strings::Get(acc::strings::Id::EditboxEmpty);
         const char* cstr =
@@ -743,28 +812,32 @@ const char* FromControl(void* control,
         }
         source = "editbox";
     }
+    return source;
+}
 
-    // 7. CSWGuiListBox content. STRICTLY single-row only. Many in-game
-    //    modals (CSWGuiMessageBox-style — the recurring 07434E40 OK/Cancel
-    //    in our log, and the quit-confirmation "Möchtest du wirklich
-    //    aufhören?") put their message text in a single listbox row
-    //    rather than directly in a panel label, so without this path the
-    //    modal appears as src=none.
-    //
-    //    For multi-row listboxes (skills, inventory, save list, journal
-    //    entries, etc.) we return nullptr — the engine's SetActiveControl
-    //    auto-focus on a multi-row listbox used to read every row
-    //    concatenated into one blob ("Computerkenntnisse  Sprengstoff…"
-    //    on every Fähigkeiten open). Row-by-row navigation via the
-    //    ListBoxPanelSpec / chain handlers is the only correct way to
-    //    expose those contents; SetActiveControl on the container
-    //    deliberately speaks nothing now.
-    //
-    //    Recursion is bounded to one level — listbox rows are not
-    //    themselves listboxes in observed layouts, so we only try
-    //    button/label extraction on the single row, never re-enter the
-    //    listbox branch.
-    if (!source && IsListBox(control)) {
+// 7. CSWGuiListBox content. STRICTLY single-row only. Many in-game
+//    modals (CSWGuiMessageBox-style — the recurring 07434E40 OK/Cancel
+//    in our log, and the quit-confirmation "Möchtest du wirklich
+//    aufhören?") put their message text in a single listbox row
+//    rather than directly in a panel label, so without this path the
+//    modal appears as src=none.
+//
+//    For multi-row listboxes (skills, inventory, save list, journal
+//    entries, etc.) we return nullptr — the engine's SetActiveControl
+//    auto-focus on a multi-row listbox used to read every row
+//    concatenated into one blob ("Computerkenntnisse  Sprengstoff…"
+//    on every Fähigkeiten open). Row-by-row navigation via the
+//    ListBoxPanelSpec / chain handlers is the only correct way to
+//    expose those contents; SetActiveControl on the container
+//    deliberately speaks nothing now.
+//
+//    Recursion is bounded to one level — listbox rows are not
+//    themselves listboxes in observed layouts, so we only try
+//    button/label extraction on the single row, never re-enter the
+//    listbox branch.
+const char* TrySingleRowListBox(void* control, char* outBuf, size_t bufSize) {
+    const char* source = nullptr;
+    if (IsListBox(control)) {
         auto* lb = reinterpret_cast<CExoArrayList*>(
             reinterpret_cast<unsigned char*>(control) + kListBoxControlsOffset);
         if (lb && lb->data && lb->size == 1) {
@@ -811,299 +884,300 @@ const char* FromControl(void* control,
             if (off > 0) source = "listbox";
         }
     }
+    return source;
+}
 
-    // 7b. PartySelection portrait resolver (vtable=0x00756BB8). The
-    //     CSWGuiPartySelection panel exposes 9 portrait slots, one per
-    //     companion roster index. Each portrait is a
-    //     CSWGuiPartySelectionButton sub-classed from CSWGuiButton: the
-    //     standard text offsets carry nothing (set programmatically by
-    //     OnPanelAdded @0x006beeb0 with the creature's portrait image,
-    //     not a caption), so the speculative reader in section 8 below
-    //     returns empty and the user hears "control N".
-    //
-    //     Per-portrait layout (observed via PanelWalk / PartyPortrait
-    //     traces; structure size and exact field semantics inferred):
-    //       +0x448 (int)  flag word. For slots that OnPanelAdded fully
-    //                     initialises (the active-party slots) bit 0
-    //                     mirrors the engine's "is selectable" gate
-    //                     and bit 1 marks "in active party". BUT
-    //                     OnPanelAdded does NOT touch this field for
-    //                     every roster slot — in patch-20260526-120026
-    //                     slots 6/7/8 carry uninitialised heap garbage
-    //                     (0xfffffff9, 0x5f484c41, 0x39000001) whose
-    //                     low bit happens to be 1, so this field
-    //                     cannot be used as a selectability gate.
-    //                     Trace-logged for diagnostics only.
-    //       +0x44c (int)  CSWParty index when the slot is in the
-    //                     active party at panel-open; 0xffffffff
-    //                     (-1) otherwise. Reliable.
-    //       +0x450 (int)  NPC roster slot index (0..8) — the param
-    //                     OnEnter passes to CSWPartyTable::GetNPCObject.
-    //                     Reliable.
-    //
-    //     Spoiler rule: only reveal the companion's name when the slot
-    //     is in the active party OR the engine's own
-    //     GetIsNPCAvailable returns true for that roster index. The
-    //     chain filter in RebindChain mirrors this so locked /
-    //     unavailable slots are dropped from arrow nav entirely.
-    if (!source) {
-        void** vt = *reinterpret_cast<void***>(control);
-        if (reinterpret_cast<uintptr_t>(vt) == acc::addr::R(0x00756BB8)) {
-            // Live "selected" flag written by
-            // CSWGuiPartySelectionButton::SetSelected @0x006be370 on every
-            // toggle (OnToggled @0x006bf2a0 → SetSelected). 1 = currently in
-            // the party for this screen, 0 = on the bench. This is the
-            // ground-truth that changes as the user adds/removes companions —
-            // the partyId field at +0x44c is only a snapshot taken once in
-            // OnPanelAdded and never updated, so reading it left the spoken
-            // status frozen at the panel-open composition.
-            constexpr size_t kPartyPortraitSelectedOffset = 0x1c4;
-            constexpr size_t kPartyPortraitFlagsOffset = 0x448;
-            constexpr size_t kPartyPortraitPartyIdOffset = 0x44c;
-            constexpr size_t kPartyPortraitNpcSlotOffset = 0x450;
-            int npcSlot = -1, flags = 0, partyId = -1, selected = 0;
-            __try {
-                auto* base = reinterpret_cast<unsigned char*>(control);
-                selected = *reinterpret_cast<int*>(base + kPartyPortraitSelectedOffset);
-                flags   = *reinterpret_cast<int*>(base + kPartyPortraitFlagsOffset);
-                partyId = *reinterpret_cast<int*>(base + kPartyPortraitPartyIdOffset);
-                npcSlot = *reinterpret_cast<int*>(base + kPartyPortraitNpcSlotOffset);
-            } __except (EXCEPTION_EXECUTE_HANDLER) {
-                npcSlot = -1;
-            }
-            bool inActiveParty = selected != 0;
-            bool available = (npcSlot >= 0 &&
-                              npcSlot < kPartyRosterSlotCount &&
-                              PartyTableIsNPCAvailable(npcSlot));
-            if ((inActiveParty || available) &&
-                npcSlot >= 0 && npcSlot < kPartyRosterSlotCount) {
-                char name[128];
-                if (GetPartyNpcNameForSlot(npcSlot, name, sizeof(name)) &&
-                    name[0]) {
-                    // Compose "{name}, im Team" / "{name}, verfügbar" so the
-                    // user hears whether the slot is currently selected for
-                    // the party or just on the bench. The per-tick focus
-                    // monitor re-runs this extractor and re-announces when
-                    // `selected` flips, so a toggle is heard immediately.
-                    // Locked slots are dropped from the chain by RebindChain
-                    // so we never reach this branch for them.
-                    acc::strings::Id statusFmt =
-                        inActiveParty
-                            ? acc::strings::Id::FmtPartyPortraitInTeam
-                            : acc::strings::Id::FmtPartyPortraitAvailable;
-                    int n = _snprintf(outBuf,
-                                      bufSize,
-                                      acc::strings::Get(statusFmt),
-                                      name);
-                    if (n > 0 && static_cast<size_t>(n) < bufSize) {
-                        outBuf[n] = '\0';
-                        source = "party-portrait";
-                    } else {
-                        // Format overflowed — fall back to bare name so
-                        // the user still hears the companion.
-                        size_t nlen = strnlen(name, sizeof(name));
-                        if (nlen + 1 <= bufSize) {
-                            memcpy(outBuf, name, nlen + 1);
-                            source = "party-portrait";
-                        }
-                    }
-                }
-            }
-            acclog::Trace("Menus.PartyPortrait",
-                          "slot=%d selected=%d flags=0x%x partyId=%d "
-                          "available=%d inActiveParty=%d text=\"%s\"",
-                          npcSlot, selected, (unsigned)flags, partyId,
-                          available ? 1 : 0, inActiveParty ? 1 : 0,
-                          source ? outBuf : "");
-            // Skip the speculative reader for this vtable — it never
-            // resolves anything useful for portraits.
-            if (!source) return nullptr;
-        }
+// 7b. PartySelection portrait resolver (vtable=0x00756BB8). The
+//     CSWGuiPartySelection panel exposes 9 portrait slots, one per
+//     companion roster index. Each portrait is a
+//     CSWGuiPartySelectionButton sub-classed from CSWGuiButton: the
+//     standard text offsets carry nothing (set programmatically by
+//     OnPanelAdded @0x006beeb0 with the creature's portrait image,
+//     not a caption), so the speculative reader in section 8 below
+//     returns empty and the user hears "control N".
+//
+//     Per-portrait layout (observed via PanelWalk / PartyPortrait
+//     traces; structure size and exact field semantics inferred):
+//       +0x448 (int)  flag word. For slots that OnPanelAdded fully
+//                     initialises (the active-party slots) bit 0
+//                     mirrors the engine's "is selectable" gate
+//                     and bit 1 marks "in active party". BUT
+//                     OnPanelAdded does NOT touch this field for
+//                     every roster slot — in patch-20260526-120026
+//                     slots 6/7/8 carry uninitialised heap garbage
+//                     (0xfffffff9, 0x5f484c41, 0x39000001) whose
+//                     low bit happens to be 1, so this field
+//                     cannot be used as a selectability gate.
+//                     Trace-logged for diagnostics only.
+//       +0x44c (int)  CSWParty index when the slot is in the
+//                     active party at panel-open; 0xffffffff
+//                     (-1) otherwise. Reliable.
+//       +0x450 (int)  NPC roster slot index (0..8) — the param
+//                     OnEnter passes to CSWPartyTable::GetNPCObject.
+//                     Reliable.
+//
+//     Spoiler rule: only reveal the companion's name when the slot
+//     is in the active party OR the engine's own
+//     GetIsNPCAvailable returns true for that roster index. The
+//     chain filter in RebindChain mirrors this so locked /
+//     unavailable slots are dropped from arrow nav entirely.
+//
+//     `claimedVtable` reports whether the control IS a party portrait.
+//     When it is and no text came out, the caller must stop the ladder
+//     rather than fall through to the speculative reader at step 8 —
+//     that reader never resolves anything useful for portraits.
+const char* TryPartyPortrait(void* control, char* outBuf, size_t bufSize,
+                             bool& claimedVtable) {
+    const char* source = nullptr;
+    claimedVtable = false;
+    void** vt = *reinterpret_cast<void***>(control);
+    if (reinterpret_cast<uintptr_t>(vt) != acc::addr::R(0x00756BB8)) {
+        return nullptr;
     }
-
-    // 8. Speculative text read for known label/button vtable overrides.
-    //    Some classes override AsLabel/AsButton in their vtable so that
-    //    CallDowncast returns null even though the class IS label-like or
-    //    button-like at the field-offset level. The InGameMenu icons are
-    //    the canonical case: 8 sibling labels at vtable=0x0073E8E8 and
-    //    8 image-only buttons at vtable=0x0073E658, and our standard
-    //    extraction returns nullptr for all of them (panel-walk shows
-    //    src=none).
-    //
-    //    For each entry in kKnownVtableOverrides we try a direct read at
-    //    the standard label/button text offsets, guarded by SEH so that
-    //    reading at an offset that's NOT a CExoString doesn't crash the
-    //    game. If the structure is different, we'll get a SEH exception
-    //    and silently fall through to the placeholder path.
-    //
-    //    Allowlist gating keeps speculative reads off random unknown
-    //    vtables — we only fire on classes we've observed needing this.
-    if (!source) {
-        struct VtableOverrideInfo {
-            uintptr_t vtable;
-            bool      tryLabel;
-            bool      tryButton;
-            const char* tag;
-        };
-        static const VtableOverrideInfo k_knownOverrides[] = {
-            // Sibling labels of in-game-menu icons (Equipment, Inventory,
-            // Character, ...) — observed children [0..7] of CSWGuiInGameMenu.
-            // Also chargen wizard step-number decorations.
-            { 0x0073E8E8, true,  false, "label-spec" },
-            // Image-only buttons (in-game-menu icons children [8..15],
-            // chargen class icons, portrait-picker arrows).
-            { 0x0073E658, false, true,  "button-spec" },
-            // PartySelection portraits (vtable 0x00756BB8) are handled
-            // in section 7b above — they store an NPC roster index, not
-            // inline text, so the speculative offset reader never
-            // resolves anything useful for them.
-        };
-        void** vt = *reinterpret_cast<void***>(control);
-        uintptr_t vta = reinterpret_cast<uintptr_t>(vt);
-        for (const auto& ov : k_knownOverrides) {
-            // Table stays reference-build and compile-time: giving it a runtime
-            // initialiser would make this function need object unwinding, which
-            // its __try blocks below forbid (C2712). Map at the comparison.
-            if (acc::addr::R(ov.vtable) != vta) continue;
-            char text[256];
-            bool got = false;
-            if (ov.tryLabel) {
-                __try {
-                    // Path A: inline CExoString at standard label offset.
-                    if (ReadCExoString(control, kLabelTextOffset,
-                                       text, sizeof(text))) {
-                        got = true;
-                    }
-                    // Path B: strref at standard label offset → TLK.
-                    if (!got) {
-                        uint32_t strref = ReadU32(control, kLabelStrRefOffset);
-                        got = LookupTlk(strref, text, sizeof(text));
-                    }
-                    // Path C: text_object indirection. CSWGuiLabel.text.
-                    // text_params.text_object is a CSWGuiText* at +0x138; if
-                    // non-null, read its text_params.text (CExoString @+0x18)
-                    // or text_params.str_ref (@+0x20). Many labelhilights
-                    // route their rendered text through this pointer rather
-                    // than the inline CExoString.
-                    if (!got) {
-                        void* textObj = *reinterpret_cast<void**>(
-                            reinterpret_cast<unsigned char*>(control)
-                            + kLabelTextObjectOffset);
-                        if (textObj) {
-                            if (ReadCExoString(textObj, kTextObjectTextOffset,
-                                               text, sizeof(text))) {
-                                got = true;
-                            } else {
-                                uint32_t strref = ReadU32(textObj,
-                                                          kTextObjectStrRefOffset);
-                                got = LookupTlk(strref, text, sizeof(text));
-                            }
-                        }
-                    }
-                } __except (EXCEPTION_EXECUTE_HANDLER) {
-                    acclog::Write("Menus.SpecRead", "label SEH for vtable=0x%x "
-                                  "control=%p", (unsigned)vta, control);
-                    got = false;
-                }
-            }
-            if (!got && ov.tryButton) {
-                __try {
-                    // Path A: inline CExoString at standard button offset.
-                    if (ReadCExoString(control, kButtonTextOffset,
-                                       text, sizeof(text))) {
-                        got = true;
-                    }
-                    // Path B: strref at standard button offset → TLK.
-                    if (!got) {
-                        uint32_t strref = ReadU32(control, kButtonStrRefOffset);
-                        got = LookupTlk(strref, text, sizeof(text));
-                    }
-                    // Path C: text_object indirection at +0x1BC (button-side).
-                    if (!got) {
-                        void* textObj = *reinterpret_cast<void**>(
-                            reinterpret_cast<unsigned char*>(control)
-                            + kButtonTextObjectOffset);
-                        if (textObj) {
-                            if (ReadCExoString(textObj, kTextObjectTextOffset,
-                                               text, sizeof(text))) {
-                                got = true;
-                            } else {
-                                uint32_t strref = ReadU32(textObj,
-                                                          kTextObjectStrRefOffset);
-                                got = LookupTlk(strref, text, sizeof(text));
-                            }
-                        }
-                    }
-                } __except (EXCEPTION_EXECUTE_HANDLER) {
-                    acclog::Write("Menus.SpecRead", "button SEH for vtable=0x%x "
-                                  "control=%p", (unsigned)vta, control);
-                    got = false;
-                }
-            }
-            if (got) {
-                size_t tlen = strnlen(text, sizeof(text));
-                if (tlen > 0 && tlen + 1 <= bufSize) {
-                    memcpy(outBuf, text, tlen + 1);
-                    source = ov.tag;
-                    // Trace: chain rebind / step / fingerprint all visit the
-                    // same control multiple times per arrow press; collapse
-                    // identical hit/empty/miss runs while preserving the
-                    // suppressed count.
-                    acclog::Trace("Menus.SpecRead",
-                                  "hit vtable=0x%x control=%p text=\"%s\"",
-                                  (unsigned)vta, control, outBuf);
-                    break;
-                }
-                acclog::Trace("Menus.SpecRead",
-                              "empty vtable=0x%x control=%p "
-                              "(read returned but text was empty)",
-                              (unsigned)vta, control);
+    claimedVtable = true;
+    // Live "selected" flag written by
+    // CSWGuiPartySelectionButton::SetSelected @0x006be370 on every
+    // toggle (OnToggled @0x006bf2a0 → SetSelected). 1 = currently in
+    // the party for this screen, 0 = on the bench. This is the
+    // ground-truth that changes as the user adds/removes companions —
+    // the partyId field at +0x44c is only a snapshot taken once in
+    // OnPanelAdded and never updated, so reading it left the spoken
+    // status frozen at the panel-open composition.
+    constexpr size_t kPartyPortraitSelectedOffset = 0x1c4;
+    constexpr size_t kPartyPortraitFlagsOffset = 0x448;
+    constexpr size_t kPartyPortraitPartyIdOffset = 0x44c;
+    constexpr size_t kPartyPortraitNpcSlotOffset = 0x450;
+    int npcSlot = -1, flags = 0, partyId = -1, selected = 0;
+    __try {
+        auto* base = reinterpret_cast<unsigned char*>(control);
+        selected = *reinterpret_cast<int*>(base + kPartyPortraitSelectedOffset);
+        flags   = *reinterpret_cast<int*>(base + kPartyPortraitFlagsOffset);
+        partyId = *reinterpret_cast<int*>(base + kPartyPortraitPartyIdOffset);
+        npcSlot = *reinterpret_cast<int*>(base + kPartyPortraitNpcSlotOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        npcSlot = -1;
+    }
+    bool inActiveParty = selected != 0;
+    bool available = (npcSlot >= 0 &&
+                      npcSlot < kPartyRosterSlotCount &&
+                      PartyTableIsNPCAvailable(npcSlot));
+    if ((inActiveParty || available) &&
+        npcSlot >= 0 && npcSlot < kPartyRosterSlotCount) {
+        char name[128];
+        if (GetPartyNpcNameForSlot(npcSlot, name, sizeof(name)) &&
+            name[0]) {
+            // Compose "{name}, im Team" / "{name}, verfügbar" so the
+            // user hears whether the slot is currently selected for
+            // the party or just on the bench. The per-tick focus
+            // monitor re-runs this extractor and re-announces when
+            // `selected` flips, so a toggle is heard immediately.
+            // Locked slots are dropped from the chain by RebindChain
+            // so we never reach this branch for them.
+            acc::strings::Id statusFmt =
+                inActiveParty
+                    ? acc::strings::Id::FmtPartyPortraitInTeam
+                    : acc::strings::Id::FmtPartyPortraitAvailable;
+            int n = _snprintf(outBuf,
+                              bufSize,
+                              acc::strings::Get(statusFmt),
+                              name);
+            if (n > 0 && static_cast<size_t>(n) < bufSize) {
+                outBuf[n] = '\0';
+                source = "party-portrait";
             } else {
-                acclog::Trace("Menus.SpecRead",
-                              "miss vtable=0x%x control=%p tag=%s",
-                              (unsigned)vta, control, ov.tag);
+                // Format overflowed — fall back to bare name so
+                // the user still hears the companion.
+                size_t nlen = strnlen(name, sizeof(name));
+                if (nlen + 1 <= bufSize) {
+                    memcpy(outBuf, name, nlen + 1);
+                    source = "party-portrait";
+                }
             }
         }
     }
+    acclog::Trace("Menus.PartyPortrait",
+                  "slot=%d selected=%d flags=0x%x partyId=%d "
+                  "available=%d inActiveParty=%d text=\"%s\"",
+                  npcSlot, selected, (unsigned)flags, partyId,
+                  available ? 1 : 0, inActiveParty ? 1 : 0,
+                  source ? outBuf : "");
+    return source;
+}
 
-    // 9a. Per-kind hardcoded label fallback. Some panels have widgets whose
-    //     text isn't extractable through any of the engine paths we know
-    //     (inline CExoString, strref, text_object, gui_string, tooltip all
-    //     verified empty for CSWGuiInGameMenu's icons in
-    //     patch-20260502-192712.log — 8 labels + 8 buttons all empty).
-    //     The text must be set via script-side or .gui-resource paths we
-    //     haven't traced yet. For known panel structures with fixed layout
-    //     (CSWGuiInGameMenu's struct definition pins the icon order), we
-    //     can hardcode the names by index until the engine-side path is
-    //     identified.
-    //
-    //     CSWGuiInGameMenu layout (per swkotor.exe.h:10145):
-    //       controls[0..7]  = 8 CSWGuiLabelHilight (vtable=0x0073E8E8)
-    //                          equipment, inventory, character, map,
-    //                          abilities, journal, options, messages
-    //       controls[8..15] = 8 CSWGuiButton       (vtable=0x0073E658)
-    //                          same names, same order
-    //
-    //     The user-visible captions in German are different from the
-    //     internal field names; the strings below are the rendered
-    //     in-game captions for the German build (matches "M" / "I" / "C"
-    //     hotkey conventions per the controls-and-input doc).
-    // Resolve the owning panel for the perkind fallback. Caller-passed owner
-    // wins (RebindChain, WalkChildren, BuildContentFingerprint, SetActiveControl
-    // all know the panel). Otherwise scan panels[] — covers callers that don't
-    // know the panel (AnnounceControl from chain-step, listbox-row helpers,
-    // FindCloseButton from the input hook). g_currentPanel is the last-resort
-    // fallback for early-attach windows where the manager isn't resolvable yet.
-    void* ownerForPerkind = ownerPanel;
-    if (!ownerForPerkind) ownerForPerkind = FindOwningPanel(control);
-    if (!ownerForPerkind) ownerForPerkind = g_currentPanel;
-    // Same stale-owner filter as section 0 above — drops freed
-    // g_currentPanel before any of the per-kind detectors (IdentifyPanel,
-    // IsClassSelectionIcon, IsPanelKindInGameMenu) dereferences it.
-    if (ownerForPerkind && !acc::engine::IsPanelInManager(ownerForPerkind)) {
-        ownerForPerkind = nullptr;
+// 8. Speculative text read for known label/button vtable overrides.
+//    Some classes override AsLabel/AsButton in their vtable so that
+//    CallDowncast returns null even though the class IS label-like or
+//    button-like at the field-offset level. The InGameMenu icons are
+//    the canonical case: 8 sibling labels at vtable=0x0073E8E8 and
+//    8 image-only buttons at vtable=0x0073E658, and our standard
+//    extraction returns nullptr for all of them (panel-walk shows
+//    src=none).
+//
+//    For each entry in kKnownVtableOverrides we try a direct read at
+//    the standard label/button text offsets, guarded by SEH so that
+//    reading at an offset that's NOT a CExoString doesn't crash the
+//    game. If the structure is different, we'll get a SEH exception
+//    and silently fall through to the placeholder path.
+//
+//    Allowlist gating keeps speculative reads off random unknown
+//    vtables — we only fire on classes we've observed needing this.
+const char* TrySpeculativeVtableRead(void* control, char* outBuf,
+                                     size_t bufSize) {
+    const char* source = nullptr;
+    struct VtableOverrideInfo {
+        uintptr_t vtable;
+        bool      tryLabel;
+        bool      tryButton;
+        const char* tag;
+    };
+    static const VtableOverrideInfo k_knownOverrides[] = {
+        // Sibling labels of in-game-menu icons (Equipment, Inventory,
+        // Character, ...) — observed children [0..7] of CSWGuiInGameMenu.
+        // Also chargen wizard step-number decorations.
+        { 0x0073E8E8, true,  false, "label-spec" },
+        // Image-only buttons (in-game-menu icons children [8..15],
+        // chargen class icons, portrait-picker arrows).
+        { 0x0073E658, false, true,  "button-spec" },
+        // PartySelection portraits (vtable 0x00756BB8) are handled
+        // in section 7b above — they store an NPC roster index, not
+        // inline text, so the speculative offset reader never
+        // resolves anything useful for them.
+    };
+    void** vt = *reinterpret_cast<void***>(control);
+    uintptr_t vta = reinterpret_cast<uintptr_t>(vt);
+    for (const auto& ov : k_knownOverrides) {
+        // Table stays reference-build and compile-time: giving it a runtime
+        // initialiser would make this function need object unwinding, which
+        // its __try blocks below forbid (C2712). Map at the comparison.
+        if (acc::addr::R(ov.vtable) != vta) continue;
+        char text[256];
+        bool got = false;
+        if (ov.tryLabel) {
+            __try {
+                // Path A: inline CExoString at standard label offset.
+                if (ReadCExoString(control, kLabelTextOffset,
+                                   text, sizeof(text))) {
+                    got = true;
+                }
+                // Path B: strref at standard label offset → TLK.
+                if (!got) {
+                    uint32_t strref = ReadU32(control, kLabelStrRefOffset);
+                    got = LookupTlk(strref, text, sizeof(text));
+                }
+                // Path C: text_object indirection. CSWGuiLabel.text.
+                // text_params.text_object is a CSWGuiText* at +0x138; if
+                // non-null, read its text_params.text (CExoString @+0x18)
+                // or text_params.str_ref (@+0x20). Many labelhilights
+                // route their rendered text through this pointer rather
+                // than the inline CExoString.
+                if (!got) {
+                    void* textObj = *reinterpret_cast<void**>(
+                        reinterpret_cast<unsigned char*>(control)
+                        + kLabelTextObjectOffset);
+                    if (textObj) {
+                        if (ReadCExoString(textObj, kTextObjectTextOffset,
+                                           text, sizeof(text))) {
+                            got = true;
+                        } else {
+                            uint32_t strref = ReadU32(textObj,
+                                                      kTextObjectStrRefOffset);
+                            got = LookupTlk(strref, text, sizeof(text));
+                        }
+                    }
+                }
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                acclog::Write("Menus.SpecRead", "label SEH for vtable=0x%x "
+                              "control=%p", (unsigned)vta, control);
+                got = false;
+            }
+        }
+        if (!got && ov.tryButton) {
+            __try {
+                // Path A: inline CExoString at standard button offset.
+                if (ReadCExoString(control, kButtonTextOffset,
+                                   text, sizeof(text))) {
+                    got = true;
+                }
+                // Path B: strref at standard button offset → TLK.
+                if (!got) {
+                    uint32_t strref = ReadU32(control, kButtonStrRefOffset);
+                    got = LookupTlk(strref, text, sizeof(text));
+                }
+                // Path C: text_object indirection at +0x1BC (button-side).
+                if (!got) {
+                    void* textObj = *reinterpret_cast<void**>(
+                        reinterpret_cast<unsigned char*>(control)
+                        + kButtonTextObjectOffset);
+                    if (textObj) {
+                        if (ReadCExoString(textObj, kTextObjectTextOffset,
+                                           text, sizeof(text))) {
+                            got = true;
+                        } else {
+                            uint32_t strref = ReadU32(textObj,
+                                                      kTextObjectStrRefOffset);
+                            got = LookupTlk(strref, text, sizeof(text));
+                        }
+                    }
+                }
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                acclog::Write("Menus.SpecRead", "button SEH for vtable=0x%x "
+                              "control=%p", (unsigned)vta, control);
+                got = false;
+            }
+        }
+        if (got) {
+            size_t tlen = strnlen(text, sizeof(text));
+            if (tlen > 0 && tlen + 1 <= bufSize) {
+                memcpy(outBuf, text, tlen + 1);
+                source = ov.tag;
+                // Trace: chain rebind / step / fingerprint all visit the
+                // same control multiple times per arrow press; collapse
+                // identical hit/empty/miss runs while preserving the
+                // suppressed count.
+                acclog::Trace("Menus.SpecRead",
+                              "hit vtable=0x%x control=%p text=\"%s\"",
+                              (unsigned)vta, control, outBuf);
+                break;
+            }
+            acclog::Trace("Menus.SpecRead",
+                          "empty vtable=0x%x control=%p "
+                          "(read returned but text was empty)",
+                          (unsigned)vta, control);
+        } else {
+            acclog::Trace("Menus.SpecRead",
+                          "miss vtable=0x%x control=%p tag=%s",
+                          (unsigned)vta, control, ov.tag);
+        }
     }
-    if (!source && ownerForPerkind && IsPanelKindInGameMenu(ownerForPerkind)) {
+    return source;
+}
+
+// 9a. Per-kind hardcoded label fallback. Some panels have widgets whose
+//     text isn't extractable through any of the engine paths we know
+//     (inline CExoString, strref, text_object, gui_string, tooltip all
+//     verified empty for CSWGuiInGameMenu's icons in
+//     patch-20260502-192712.log — 8 labels + 8 buttons all empty).
+//     The text must be set via script-side or .gui-resource paths we
+//     haven't traced yet. For known panel structures with fixed layout
+//     (CSWGuiInGameMenu's struct definition pins the icon order), we
+//     can hardcode the names by index until the engine-side path is
+//     identified.
+//
+//     CSWGuiInGameMenu layout (per swkotor.exe.h:10145):
+//       controls[0..7]  = 8 CSWGuiLabelHilight (vtable=0x0073E8E8)
+//                          equipment, inventory, character, map,
+//                          abilities, journal, options, messages
+//       controls[8..15] = 8 CSWGuiButton       (vtable=0x0073E658)
+//                          same names, same order
+//
+//     The user-visible captions in German are different from the
+//     internal field names; the strings below are the rendered
+//     in-game captions for the German build (matches "M" / "I" / "C"
+//     hotkey conventions per the controls-and-input doc).
+const char* TryInGameMenuIcon(void* control, void* owner,
+                              char* outBuf, size_t bufSize) {
+    const char* source = nullptr;
+    if (owner && IsPanelKindInGameMenu(owner)) {
         // Localized names sourced from dialog.tlk strrefs where they exist;
         // literal fallback for the one strref we couldn't find. Strref values
         // verified by parsing the user's actual dialog.tlk (German build,
@@ -1130,13 +1204,28 @@ const char* FromControl(void* control,
         };
 
         // Find the index of `control` within the owning panel's controls[].
-        auto* list = reinterpret_cast<CExoArrayList*>(
-            reinterpret_cast<unsigned char*>(ownerForPerkind) + kPanelControlsOffset);
-        if (list && list->data && list->size > 0) {
-            int n = list->size > 32 ? 32 : list->size;
+        // The array is COPIED out under the guard so the scan below runs
+        // over our own memory: `owner` cleared IsPanelInManager, which
+        // proves it is listed, not that it is still alive — panels[] holds
+        // freed panels during teardown, and this extractor runs from the
+        // per-frame focus monitor. Same shape as engine_manager's
+        // ReadPanelArray (Phase-3 B3b).
+        void* controls[32];
+        int n = 0;
+        __try {
+            auto* list = reinterpret_cast<CExoArrayList*>(
+                reinterpret_cast<unsigned char*>(owner) + kPanelControlsOffset);
+            if (list && list->data && list->size > 0) {
+                n = list->size > 32 ? 32 : list->size;
+                for (int i = 0; i < n; ++i) controls[i] = list->data[i];
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            n = 0;
+        }
+        if (n > 0) {
             int idx = -1;
             for (int i = 0; i < n; ++i) {
-                if (list->data[i] == control) { idx = i; break; }
+                if (controls[i] == control) { idx = i; break; }
             }
             // Labels are at panel.controls[0..7]; buttons at [8..15].
             // Same name table, shifted index for buttons.
@@ -1183,20 +1272,25 @@ const char* FromControl(void* control,
             }
         }
     }
+    return source;
+}
 
-    // 9b. Per-kind hardcoded label fallback for the equipment screen. The
-    //     9 BTN_INV_* slot buttons (and the matching LBL_INV_* labels) have
-    //     no inline text and no strref in equip.gui — same situation as the
-    //     InGameMenu strip icons. Use the control's stable .gui ID (read at
-    //     +0x50) to pick a slot name, prefer a dialog.tlk lookup so a non-
-    //     German install reads the engine's own translations, fall back to
-    //     a strings.h literal (which adapts to active language).
-    //
-    //     IDs come from equip.gui via xoreos-tools gff2xml; same .gui maps
-    //     button ID → matching label ID (n+1) so we cover both with one
-    //     spec table by listing both ids for each slot.
-    if (!source && ownerForPerkind &&
-        IdentifyPanel(ownerForPerkind) == PanelKind::InGameEquip) {
+// 9b. Per-kind hardcoded label fallback for the equipment screen. The
+//     9 BTN_INV_* slot buttons (and the matching LBL_INV_* labels) have
+//     no inline text and no strref in equip.gui — same situation as the
+//     InGameMenu strip icons. Use the control's stable .gui ID (read at
+//     +0x50) to pick a slot name, prefer a dialog.tlk lookup so a non-
+//     German install reads the engine's own translations, fall back to
+//     a strings.h literal (which adapts to active language).
+//
+//     IDs come from equip.gui via xoreos-tools gff2xml; same .gui maps
+//     button ID → matching label ID (n+1) so we cover both with one
+//     spec table by listing both ids for each slot.
+const char* TryEquipSlot(void* control, void* owner,
+                         char* outBuf, size_t bufSize) {
+    const char* source = nullptr;
+    if (owner &&
+        IdentifyPanel(owner) == PanelKind::InGameEquip) {
         struct EquipSlotName {
             int           btnId;
             int           lblId;
@@ -1251,7 +1345,7 @@ const char* FromControl(void* control,
             uint32_t handle = 0;
             __try {
                 handle = *reinterpret_cast<uint32_t*>(
-                    reinterpret_cast<unsigned char*>(ownerForPerkind) +
+                    reinterpret_cast<unsigned char*>(owner) +
                     s.itemIdOffset);
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 handle = 0;
@@ -1283,29 +1377,34 @@ const char* FromControl(void* control,
             break;
         }
     }
+    return source;
+}
 
-    // 9b2. Per-kind label fallback for the in-game map (CSWGuiInGameMap).
-    //     The panel has two image-only buttons on either side of the map
-    //     render — `up_button` at struct offset +0xab0 and `down_button`
-    //     at +0xc74 (verified 2026-05-12 via the GoG xml MEMBER offsets +
-    //     Ghidra decomp of the panel's OnUpArrowPressed @0x006927b0 and
-    //     OnDownArrowPressed @0x006927c0 which both dispatch
-    //     CSWGuiPanel::HandleInputEvent(0x31/0x32, 1) → the InGameMap
-    //     override routes 0x31 → CSWGuiMapHider::GetPrevMapNote and
-    //     0x32 → CSWGuiMapHider::GetNextMapNote, cycling the engine's
-    //     filtered list of explored map-note waypoints).
-    //
-    //     Both buttons share vtable 0x0073E658 (CSWGuiButton) with empty
-    //     text and no strref — the speculative button-spec read at 9 hits
-    //     "miss" on both. Identify them by panel-base offset (analogous
-    //     to InGameEquip identifying slot buttons by .gui ID). The other
-    //     three buttons (return / partyselect / exit) have real text and
-    //     never reach this fallback.
-    if (!source && ownerForPerkind &&
-        IdentifyPanel(ownerForPerkind) == PanelKind::InGameMap) {
+// 9b2. Per-kind label fallback for the in-game map (CSWGuiInGameMap).
+//     The panel has two image-only buttons on either side of the map
+//     render — `up_button` at struct offset +0xab0 and `down_button`
+//     at +0xc74 (verified 2026-05-12 via the GoG xml MEMBER offsets +
+//     Ghidra decomp of the panel's OnUpArrowPressed @0x006927b0 and
+//     OnDownArrowPressed @0x006927c0 which both dispatch
+//     CSWGuiPanel::HandleInputEvent(0x31/0x32, 1) → the InGameMap
+//     override routes 0x31 → CSWGuiMapHider::GetPrevMapNote and
+//     0x32 → CSWGuiMapHider::GetNextMapNote, cycling the engine's
+//     filtered list of explored map-note waypoints).
+//
+//     Both buttons share vtable 0x0073E658 (CSWGuiButton) with empty
+//     text and no strref — the speculative button-spec read at 9 hits
+//     "miss" on both. Identify them by panel-base offset (analogous
+//     to InGameEquip identifying slot buttons by .gui ID). The other
+//     three buttons (return / partyselect / exit) have real text and
+//     never reach this fallback.
+const char* TryInGameMapArrow(void* control, void* owner,
+                              char* outBuf, size_t bufSize) {
+    const char* source = nullptr;
+    if (owner &&
+        IdentifyPanel(owner) == PanelKind::InGameMap) {
         constexpr uintptr_t kInGameMapUpButtonOffset = 0xab0;
         constexpr uintptr_t kInGameMapDownButtonOffset = 0xc74;
-        uintptr_t panelBase = reinterpret_cast<uintptr_t>(ownerForPerkind);
+        uintptr_t panelBase = reinterpret_cast<uintptr_t>(owner);
         uintptr_t ctrl      = reinterpret_cast<uintptr_t>(control);
         acc::strings::Id sid = acc::strings::Id::Count_;
         const char* tag = nullptr;
@@ -1327,28 +1426,33 @@ const char* FromControl(void* control,
             }
         }
     }
+    return source;
+}
 
-    // 9b3. Per-kind label for workbench upgrade-panel slot buttons
-    //     (upgrade.gui IDs 12..18). The buttons have empty inline text;
-    //     their visual content is the installed mod's icon + name set
-    //     programmatically. The engine carries the SLOT TYPE NAME
-    //     (Energiezelle / Vibrationszelle / Sch\xE4rfe / …) in a 16-entry
-    //     strref table at 0x00756fb0, indexed by
-    //     `(slot_btn.custom_value - 4) + panel.field25_0x2f4c * 4`.
-    //     Read it dynamically so the user hears the actual slot type
-    //     they're focused on — matching the LBL_SLOTNAME the engine
-    //     would render for sighted users when they hover.
-    //
-    //     The category enum (field25_0x2f4c) selects the table column:
-    //         1 = lightsaber (saber UX with crystal picker)
-    //         2 = 4-slot non-saber (Kristall-Steckplatz widgets)
-    //         3 = 3-slot non-saber weapon (Aufwertungs widgets)
-    //         4 = 2-slot non-saber (Kristall widgets, slots 1..2)
-    //     Sentinel entries (UpgradeType = -1) mark positions the
-    //     category doesn't use; fall back to the position-only name for
-    //     those so the user still gets *some* orientation.
-    if (!source && ownerForPerkind &&
-        IdentifyPanel(ownerForPerkind) == PanelKind::WorkbenchUpgrade) {
+// 9b3. Per-kind label for workbench upgrade-panel slot buttons
+//     (upgrade.gui IDs 12..18). The buttons have empty inline text;
+//     their visual content is the installed mod's icon + name set
+//     programmatically. The engine carries the SLOT TYPE NAME
+//     (Energiezelle / Vibrationszelle / Sch\xE4rfe / …) in a 16-entry
+//     strref table at 0x00756fb0, indexed by
+//     `(slot_btn.custom_value - 4) + panel.field25_0x2f4c * 4`.
+//     Read it dynamically so the user hears the actual slot type
+//     they're focused on — matching the LBL_SLOTNAME the engine
+//     would render for sighted users when they hover.
+//
+//     The category enum (field25_0x2f4c) selects the table column:
+//         1 = lightsaber (saber UX with crystal picker)
+//         2 = 4-slot non-saber (Kristall-Steckplatz widgets)
+//         3 = 3-slot non-saber weapon (Aufwertungs widgets)
+//         4 = 2-slot non-saber (Kristall widgets, slots 1..2)
+//     Sentinel entries (UpgradeType = -1) mark positions the
+//     category doesn't use; fall back to the position-only name for
+//     those so the user still gets *some* orientation.
+const char* TryWorkbenchSlot(void* control, void* owner,
+                             char* outBuf, size_t bufSize) {
+    const char* source = nullptr;
+    if (owner &&
+        IdentifyPanel(owner) == PanelKind::WorkbenchUpgrade) {
         int cid = -1;
         __try {
             cid = *reinterpret_cast<int*>(
@@ -1372,7 +1476,7 @@ const char* FromControl(void* control,
             uint8_t category = 0;
             int customValue = -1;
             __try {
-                category = *(reinterpret_cast<unsigned char*>(ownerForPerkind)
+                category = *(reinterpret_cast<unsigned char*>(owner)
                              + kUpgradePanelCategoryOff);
                 customValue = *reinterpret_cast<int*>(
                     reinterpret_cast<unsigned char*>(control)
@@ -1454,7 +1558,7 @@ const char* FromControl(void* control,
                     using acc::strings::Get;
                     using acc::strings::Id;
                     void* installed = acc::engine::GetWorkbenchSlotInstalledItem(
-                        ownerForPerkind, control);
+                        owner, control);
                     if (installed) {
                         char modName[160];
                         modName[0] = '\0';
@@ -1486,48 +1590,53 @@ const char* FromControl(void* control,
             }
         }
     }
+    return source;
+}
 
-    // 9c. Per-kind label override for the chargen class-selection panel
-    //     (CSWGuiClassSelection, vtable=0x00758020). Panel hosts 6
-    //     image-only class-icon buttons (vtable=0x0073E658, empty text)
-    //     in class_selections[6]; the engine maintains the currently-
-    //     hovered class name in the parent's class_label, which it
-    //     updates via OnEnterButton.
-    //
-    //     Two timing hazards we work around:
-    //
-    //     1. STALE READ on focus event. SetActiveControl fires before the
-    //        engine's OnEnterButton has updated class_label, so reading
-    //        class_label at chain-step / SetActive time returns the
-    //        PREVIOUSLY focused icon's class. The chain step's
-    //        AnnounceControl would then speak "previous icon's class" —
-    //        an audible echo of the prior selection.
-    //
-    //     2. ECHO REVERT. After the engine briefly updates class_label
-    //        for the user's target icon, an internal bounce / re-select
-    //        chain (engine sets active_control back to a different
-    //        "selected" icon) reverts class_label to that other icon's
-    //        class. The per-frame focused-control monitor catches the
-    //        revert and speaks it as a phantom "echo of an earlier
-    //        navigated entry."
-    //
-    //     The fix: cache (icon → class_text) lazily — only populate when
-    //     active_control == icon AND class_label is non-empty AND the
-    //     nav-suppress budget has settled. Once cached, lock the entry:
-    //     subsequent extracts return the cached text regardless of the
-    //     engine's transient class_label state, so the revert can't fire
-    //     a phantom utterance. Combine with chain-step gating in the
-    //     navigation handler (skip AnnounceControl for class icons; let
-    //     the per-frame monitor speak when the cache is populated) to
-    //     also kill the stale-read echo.
-    //
-    //     Detection is positional: CSWGuiClassSelection isn't a CGuiInGame
-    //     slot (it's a top-level chargen panel), so IdentifyPanel never
-    //     resolves it. We check the panel's vtable directly and confirm
-    //     the focused control pointer lands on a multiple-of-0x25c offset
-    //     inside the class_selections[] array.
-    if (!source && IsClassSelectionIcon(ownerForPerkind, control)) {
-        const char* cached = ClassLabelCacheLookup(ownerForPerkind, control);
+// 9c. Per-kind label override for the chargen class-selection panel
+//     (CSWGuiClassSelection, vtable=0x00758020). Panel hosts 6
+//     image-only class-icon buttons (vtable=0x0073E658, empty text)
+//     in class_selections[6]; the engine maintains the currently-
+//     hovered class name in the parent's class_label, which it
+//     updates via OnEnterButton.
+//
+//     Two timing hazards we work around:
+//
+//     1. STALE READ on focus event. SetActiveControl fires before the
+//        engine's OnEnterButton has updated class_label, so reading
+//        class_label at chain-step / SetActive time returns the
+//        PREVIOUSLY focused icon's class. The chain step's
+//        AnnounceControl would then speak "previous icon's class" —
+//        an audible echo of the prior selection.
+//
+//     2. ECHO REVERT. After the engine briefly updates class_label
+//        for the user's target icon, an internal bounce / re-select
+//        chain (engine sets active_control back to a different
+//        "selected" icon) reverts class_label to that other icon's
+//        class. The per-frame focused-control monitor catches the
+//        revert and speaks it as a phantom "echo of an earlier
+//        navigated entry."
+//
+//     The fix: cache (icon → class_text) lazily — only populate when
+//     active_control == icon AND class_label is non-empty AND the
+//     nav-suppress budget has settled. Once cached, lock the entry:
+//     subsequent extracts return the cached text regardless of the
+//     engine's transient class_label state, so the revert can't fire
+//     a phantom utterance. Combine with chain-step gating in the
+//     navigation handler (skip AnnounceControl for class icons; let
+//     the per-frame monitor speak when the cache is populated) to
+//     also kill the stale-read echo.
+//
+//     Detection is positional: CSWGuiClassSelection isn't a CGuiInGame
+//     slot (it's a top-level chargen panel), so IdentifyPanel never
+//     resolves it. We check the panel's vtable directly and confirm
+//     the focused control pointer lands on a multiple-of-0x25c offset
+//     inside the class_selections[] array.
+const char* TryClassSelectionIcon(void* control, void* owner,
+                                  char* outBuf, size_t bufSize) {
+    const char* source = nullptr;
+    if (IsClassSelectionIcon(owner, control)) {
+        const char* cached = ClassLabelCacheLookup(owner, control);
         if (cached && cached[0] != '\0') {
             size_t clen = strnlen(cached, 64);
             if (clen + 1 <= bufSize) {
@@ -1544,12 +1653,20 @@ const char* FromControl(void* control,
             // text in a single read. First-write-wins locking on the
             // cache then keeps subsequent reads stable, immune to the
             // engine's later bounces / class_label reverts.
-            void* activeCtrl = *reinterpret_cast<void**>(
-                reinterpret_cast<unsigned char*>(ownerForPerkind) +
-                kPanelActiveControlOffset);
+            //
+            // Guarded: `owner` passed IsPanelInManager, which proves it is
+            // listed in panels[], not that the object is still alive.
+            void* activeCtrl = nullptr;
+            __try {
+                activeCtrl = *reinterpret_cast<void**>(
+                    reinterpret_cast<unsigned char*>(owner) +
+                    kPanelActiveControlOffset);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                activeCtrl = nullptr;
+            }
             if (activeCtrl == control) {
                 void* classLabel =
-                    reinterpret_cast<unsigned char*>(ownerForPerkind) +
+                    reinterpret_cast<unsigned char*>(owner) +
                     kClassSelectionClassLabelOffset;
                 char text[256];
                 if (ExtractTextOrStrRefIndirect(classLabel,
@@ -1560,7 +1677,7 @@ const char* FromControl(void* control,
                     text[0] != '\0') {
                     size_t tlen = strnlen(text, sizeof(text));
                     if (tlen + 1 <= bufSize) {
-                        ClassLabelCacheStore(ownerForPerkind, control, text);
+                        ClassLabelCacheStore(owner, control, text);
                         memcpy(outBuf, text, tlen + 1);
                         source = "perkind-classsel";
                         acclog::Write("Menus.PerKind",
@@ -1571,40 +1688,43 @@ const char* FromControl(void* control,
             }
         }
     }
+    return source;
+}
 
-    // 9d. Per-kind value-display for the chargen portrait-selection panel
-    //     (CSWGuiPortraitCharGen, vtable=0x00759ea8). The two arrow buttons
-    //     (image-only, empty inline text) cycle the portrait but have no
-    //     own readable label — the visible "value" between them is a 3D
-    //     head scene. We anchor the chain on the LEFT arrow only (the
-    //     RIGHT arrow gets filtered out in RebindChain) and announce just
-    //     the current portrait value off the panel here, so the cycle UX
-    //     mirrors a normal `[◀] value [▶]` widget: one chain entry, Left
-    //     and Right cycle, focus on it reads the value.
-    //
-    //     The RIGHT arrow is intentionally returned without text — that's
-    //     what FindAdjacentArrow keys on (it skips controls that have
-    //     announceable text), so Left/Right routing in menus.cpp can find
-    //     the right_arrow as the cycle neighbour.
-    //
-    //     Live cycle state lives on the chargen creature: UpdatePortrait-
-    //     Button (0x006f8ad0) writes the new resref into CSWCObject.portrait
-    //     (+0xa8, inline CSWPortrait = CResRef = char[16]) on every cycle.
-    //     Reading those 16 bytes and parsing the `po_p[mf]h[abc]\d` pattern
-    //     gives us a localised description (e.g. "weiblich asiatisch 3").
-    //     The per-frame focused-control monitor re-extracts every tick —
-    //     when the resref changes, the composed string changes and the
-    //     diff fires speech.
-    //
-    //     Fallback ladder for the value: portrait_label.gui_string
-    //     (defensive — engine doesn't populate it today) → resref-pattern
-    //     parse → raw resref (non-PC / modded portraits) → numeric
-    //     portrait_id+1 (last resort, stable but uninformative).
-    if (!source && ownerForPerkind) {
-        void** ownerVt = *reinterpret_cast<void***>(ownerForPerkind);
-        if (reinterpret_cast<uintptr_t>(ownerVt) ==
-                kVtableCSWGuiPortraitCharGen) {
-            auto* panelBase = reinterpret_cast<unsigned char*>(ownerForPerkind);
+// 9d. Per-kind value-display for the chargen portrait-selection panel
+//     (CSWGuiPortraitCharGen, vtable=0x00759ea8). The two arrow buttons
+//     (image-only, empty inline text) cycle the portrait but have no
+//     own readable label — the visible "value" between them is a 3D
+//     head scene. We anchor the chain on the LEFT arrow only (the
+//     RIGHT arrow gets filtered out in RebindChain) and announce just
+//     the current portrait value off the panel here, so the cycle UX
+//     mirrors a normal `[◀] value [▶]` widget: one chain entry, Left
+//     and Right cycle, focus on it reads the value.
+//
+//     The RIGHT arrow is intentionally returned without text — that's
+//     what FindAdjacentArrow keys on (it skips controls that have
+//     announceable text), so Left/Right routing in menus.cpp can find
+//     the right_arrow as the cycle neighbour.
+//
+//     Live cycle state lives on the chargen creature: UpdatePortrait-
+//     Button (0x006f8ad0) writes the new resref into CSWCObject.portrait
+//     (+0xa8, inline CSWPortrait = CResRef = char[16]) on every cycle.
+//     Reading those 16 bytes and parsing the `po_p[mf]h[abc]\d` pattern
+//     gives us a localised description (e.g. "weiblich asiatisch 3").
+//     The per-frame focused-control monitor re-extracts every tick —
+//     when the resref changes, the composed string changes and the
+//     diff fires speech.
+//
+//     Fallback ladder for the value: portrait_label.gui_string
+//     (defensive — engine doesn't populate it today) → resref-pattern
+//     parse → raw resref (non-PC / modded portraits) → numeric
+//     portrait_id+1 (last resort, stable but uninformative).
+const char* TryPortraitCharGenArrow(void* control, void* owner,
+                                    char* outBuf, size_t bufSize) {
+    const char* source = nullptr;
+    if (owner) {
+        if (acc::engine::HasVtable(owner, kVtableCSWGuiPortraitCharGen)) {
+            auto* panelBase = reinterpret_cast<unsigned char*>(owner);
             auto* ctrlBase  = reinterpret_cast<unsigned char*>(control);
             ptrdiff_t off   = ctrlBase - panelBase;
 
@@ -1738,7 +1858,7 @@ const char* FromControl(void* control,
                     // the panel's stale portrait_id field as a last
                     // resort so the chain entry isn't text-less.
                     uint32_t fallbackId =
-                        ReadU32(ownerForPerkind, kPortraitIdOffset);
+                        ReadU32(owner, kPortraitIdOffset);
                     snprintf(outBuf, bufSize,
                              acc::strings::Get(
                                  acc::strings::Id::FmtPortraitArrowId),
@@ -1756,26 +1876,30 @@ const char* FromControl(void* control,
             }
         }
     }
+    return source;
+}
 
-    // 9. Sibling-label fallback for chain-navigable controls with no text.
-    //    Image-only icon buttons (vtable=0x0073E658 in CSWGuiInGameMenu —
-    //    Equipment / Inventory / Character / Map / Abilities / Journal /
-    //    Options / Messages icons) genuinely have no inline text. Their
-    //    visible name lives on a separately-allocated CSWGuiLabelHilight
-    //    sibling at the same x-coord. FindSiblingLabel locates that sibling
-    //    spatially; we then announce its text as if it were our own. Same
-    //    pattern the slider extraction (step 6) uses for category labels.
-    //
-    //    Gated on IsChainNavigable(control) so we only fire for buttons
-    //    the user can actually focus — a label on its own (already
-    //    extractable elsewhere) wouldn't hit this path.
-    //
-    //    Cycle flanker arrows (chargen ± and Difficulty-style left/right)
-    //    are suppressed here so the cycle-mechanism's empty-text predicate
-    //    engages. Without the suppression the nearest plain label would
-    //    paint both flankers (e.g. "Stärke" for the + and the -),
-    //    defeating both the chain squash and FindAdjacentArrow.
-    if (!source && g_currentPanel && IsChainNavigable(control) &&
+// 9. Sibling-label fallback for chain-navigable controls with no text.
+//    Image-only icon buttons (vtable=0x0073E658 in CSWGuiInGameMenu —
+//    Equipment / Inventory / Character / Map / Abilities / Journal /
+//    Options / Messages icons) genuinely have no inline text. Their
+//    visible name lives on a separately-allocated CSWGuiLabelHilight
+//    sibling at the same x-coord. FindSiblingLabel locates that sibling
+//    spatially; we then announce its text as if it were our own. Same
+//    pattern the slider extraction (step 6) uses for category labels.
+//
+//    Gated on IsChainNavigable(control) so we only fire for buttons
+//    the user can actually focus — a label on its own (already
+//    extractable elsewhere) wouldn't hit this path.
+//
+//    Cycle flanker arrows (chargen ± and Difficulty-style left/right)
+//    are suppressed here so the cycle-mechanism's empty-text predicate
+//    engages. Without the suppression the nearest plain label would
+//    paint both flankers (e.g. "Stärke" for the + and the -),
+//    defeating both the chain squash and FindAdjacentArrow.
+const char* TrySiblingLabel(void* control, char* outBuf, size_t bufSize) {
+    const char* source = nullptr;
+    if (g_currentPanel && IsChainNavigable(control) &&
         !IsCycleFlankerArrow(g_currentPanel, control)) {
         char label[256];
         if (FindSiblingLabel(g_currentPanel, control,
@@ -1791,90 +1915,176 @@ const char* FromControl(void* control,
             }
         }
     }
+    return source;
+}
 
-    // CSWGuiEditbox — the engine doesn't expose an AsEditbox accessor in
-    // GuiControlMethods, and we don't yet know its struct layout well
-    // enough to read fields by speculative offsets. OnSetActiveControl
-    // logs the vtable pointer for any control we can't extract; map via
-    // SARIF + add per-class extraction here.
+// Cycle value-display prefix. Cycle widgets render as `[◀] value [▶]`
+// and the engine rewrites the middle button's CExoString to the new
+// value on each activate, losing the category name. We capture the
+// category at panel-walk time (in OnSetActiveControl, before any
+// activation has run); here we just look it up. Skipped for toggles
+// (whose own text already reads as "{label}, {state}") and for
+// non-cycle buttons (LookupCycleCategory returns null when control
+// isn't in the cycle map). Redundancy guard: if the captured
+// "category" is byte-identical to the current rendered value we
+// suppress the prefix — that's the failure mode where capture caught
+// the value rather than the category (timing-dependent; see
+// OnSetActiveControl), and "Normal, Normal" is worse than just "Normal".
+void ApplyCycleCategoryPrefix(void* control, char* outBuf, size_t bufSize) {
+    const char* category = LookupCycleCategory(control);
+    if (category && strcmp(category, outBuf) != 0) {
+        char value[256];
+        strncpy_s(value, outBuf, _TRUNCATE);
+        snprintf(outBuf, bufSize, "%s, %s", category, value);
+    }
+}
 
-    // Cycle value-display prefix. Cycle widgets render as `[◀] value [▶]`
-    // and the engine rewrites the middle button's CExoString to the new
-    // value on each activate, losing the category name. We capture the
-    // category at panel-walk time (in OnSetActiveControl, before any
-    // activation has run); here we just look it up. Skipped for toggles
-    // (whose own text already reads as "{label}, {state}") and for
-    // non-cycle buttons (LookupCycleCategory returns null when control
-    // isn't in the cycle map). Redundancy guard: if the captured
-    // "category" is byte-identical to the current rendered value we
-    // suppress the prefix — that's the failure mode where capture caught
-    // the value rather than the category (timing-dependent; see
-    // OnSetActiveControl), and "Normal, Normal" is worse than just "Normal".
-    if (source && !IsToggle(control)) {
-        const char* category = LookupCycleCategory(control);
-        if (category && strcmp(category, outBuf) != 0) {
-            char value[256];
-            strncpy_s(value, outBuf, _TRUNCATE);
-            snprintf(outBuf, bufSize, "%s, %s", category, value);
+// Append element-state suffix for toggles. Detected via the same downcast
+// we'd use for text extraction, so works regardless of which path
+// returned the label (most toggles are caught by AsButton at step 2).
+void AppendToggleSuffix(void* control, char* outBuf, size_t bufSize) {
+    bool on = ReadToggleState(control);
+    size_t len = strnlen(outBuf, bufSize);
+    const char* suffix = acc::strings::Get(
+        on ? acc::strings::Id::ToggleOn : acc::strings::Id::ToggleOff);
+    size_t suffixLen = strlen(suffix);
+    if (len + suffixLen + 1 <= bufSize) {
+        memcpy(outBuf + len, suffix, suffixLen + 1);
+    }
+}
+
+// Append "nicht verfügbar" / "unavailable" suffix when the focused
+// button is engine-disabled. CSWGuiControl.bit_flags (+0x44) layout:
+//
+//   bit 0 (0x1) — selection state (CSWGuiControl::SetActive)
+//   bit 1 (0x2) — interactive / accepts click (general gate)
+//   bit 2 (0x4) — visible           (CSWGuiPanel::SetVisible)
+//   bit 3 (0x8) — enabled flag      (CSWGuiControl::SetEnabled @0x004176a0)
+//
+// For most panels bit 1 is the right "does a click dispatch" signal.
+// The InGameLevelUp wizard is the exception: it enforces sequential
+// leveling, enabling exactly ONE category at a time via SetEnabled
+// (bit 3). Its non-current categories keep bit 1 set but bit 3 clear,
+// so on that panel we key the suffix on bit 3 — otherwise only the
+// no-points categories (bit 1 clear) would read as unavailable and the
+// not-yet-your-turn ones (e.g. Kräfte before Fähigkeiten) would sound
+// actionable. menus_chain blocks their activation on the same bit 3, so
+// the announcement and the gate agree. Verified in
+// patch-20260608-125730/125909: current step 0x..8f, others 0x..06/0x..04;
+// Annehmen gains bit 3 only once every step is done.
+//
+// Skipped for toggles — their ", ein" / ", aus" suffix already
+// disambiguates state. Gated on IsChainNavigable so labels don't get
+// the suffix.
+void AppendDisabledSuffix(void* control, void* ownerPanel,
+                          char* outBuf, size_t bufSize) {
+    uint32_t bitFlags = *reinterpret_cast<uint32_t*>(
+        reinterpret_cast<unsigned char*>(control) + 0x44);
+    uint32_t disabledMask = 0x2;
+    if (ownerPanel) {
+        PanelKind k = IdentifyPanel(ownerPanel);
+        if (k == PanelKind::InGameLevelUp || k == PanelKind::CharGen) {
+            disabledMask = 0x8;
         }
     }
-
-    // Append element-state suffix for toggles. Detected via the same downcast
-    // we'd use for text extraction, so works regardless of which path
-    // returned the label (most toggles are caught by AsButton at step 2).
-    if (source && IsToggle(control)) {
-        bool on = ReadToggleState(control);
-        size_t len = strnlen(outBuf, bufSize);
+    if ((bitFlags & disabledMask) == 0) {
         const char* suffix = acc::strings::Get(
-            on ? acc::strings::Id::ToggleOn : acc::strings::Id::ToggleOff);
+            acc::strings::Id::DisabledSuffix);
+        size_t len = strnlen(outBuf, bufSize);
         size_t suffixLen = strlen(suffix);
-        if (len + suffixLen + 1 <= bufSize) {
+        if (suffixLen > 0 && len + suffixLen + 1 <= bufSize) {
             memcpy(outBuf + len, suffix, suffixLen + 1);
         }
     }
+}
 
-    // Append "nicht verfügbar" / "unavailable" suffix when the focused
-    // button is engine-disabled. CSWGuiControl.bit_flags (+0x44) layout:
-    //
-    //   bit 0 (0x1) — selection state (CSWGuiControl::SetActive)
-    //   bit 1 (0x2) — interactive / accepts click (general gate)
-    //   bit 2 (0x4) — visible           (CSWGuiPanel::SetVisible)
-    //   bit 3 (0x8) — enabled flag      (CSWGuiControl::SetEnabled @0x004176a0)
-    //
-    // For most panels bit 1 is the right "does a click dispatch" signal.
-    // The InGameLevelUp wizard is the exception: it enforces sequential
-    // leveling, enabling exactly ONE category at a time via SetEnabled
-    // (bit 3). Its non-current categories keep bit 1 set but bit 3 clear,
-    // so on that panel we key the suffix on bit 3 — otherwise only the
-    // no-points categories (bit 1 clear) would read as unavailable and the
-    // not-yet-your-turn ones (e.g. Kräfte before Fähigkeiten) would sound
-    // actionable. menus_chain blocks their activation on the same bit 3, so
-    // the announcement and the gate agree. Verified in
-    // patch-20260608-125730/125909: current step 0x..8f, others 0x..06/0x..04;
-    // Annehmen gains bit 3 only once every step is done.
-    //
-    // Skipped for toggles — their ", ein" / ", aus" suffix already
-    // disambiguates state. Gated on IsChainNavigable so labels don't get
-    // the suffix.
+}  // namespace
+
+void ResetCycleCategoryCache() {
+    s_cycleCategoryCount = 0;
+}
+
+void CaptureCycleCategory(void* control, const char* category) {
+    if (!control || !category) return;
+    // Upsert: if `control` is already in the cache, replace its category
+    // text. This lets a panel-specific override (e.g. chargen Attribute's
+    // ability_button → ability_label binding in menus_chargen_attr.cpp)
+    // replace whatever the generic capture loop registered earlier this
+    // panel-walk pass — without an upsert, `LookupCycleCategory` returns
+    // the first hit and the override silently loses.
+    for (int i = 0; i < s_cycleCategoryCount; ++i) {
+        if (s_cycleCategories[i].control == control) {
+            strncpy_s(s_cycleCategories[i].category, category, _TRUNCATE);
+            return;
+        }
+    }
+    if (s_cycleCategoryCount >= kMaxCycleCategoryEntries) return;
+    s_cycleCategories[s_cycleCategoryCount].control = control;
+    strncpy_s(s_cycleCategories[s_cycleCategoryCount].category,
+              category, _TRUNCATE);
+    ++s_cycleCategoryCount;
+}
+
+const char* FromControl(void* control,
+                        char* outBuf, size_t bufSize,
+                        void* ownerPanel) {
+    if (!control || bufSize < 2) return nullptr;
+
+    // -1. Virtual-entry short-circuit. The mod-settings root chain entry
+    //     uses a static sentinel pointer as `control`; it is NOT an
+    //     engine-allocated CSWGuiControl and dereferencing it (vtable
+    //     reads, struct-offset loads) would AV. Match by pointer equality
+    //     against the registered sentinel and emit the localised label.
+    //     Runs ahead of every other section so no downstream reader
+    //     touches the sentinel.
+    if (acc::menus::modsettings::IsRootAnchor(control)) {
+        if (acc::menus::modsettings::ExtractRootLabel(outBuf, bufSize) &&
+            outBuf[0] != '\0') {
+            return "virtual-modsettings-root";
+        }
+        outBuf[0] = '\0';
+        return nullptr;
+    }
+
+    const char* source = nullptr;
+
+    if (!source) source = TryVirtualRowAnchor(control, ownerPanel, outBuf, bufSize);
+    if (!source) source = TryTooltip(control, outBuf, bufSize);
+    if (!source) source = TryButton(control, outBuf, bufSize);
+    if (!source) source = TryButtonToggle(control, outBuf, bufSize);
+    if (!source) source = TryLabel(control, outBuf, bufSize);
+    if (!source) source = TryLabelHilight(control, outBuf, bufSize);
+    if (!source) source = TrySlider(control, outBuf, bufSize);
+    if (!source) source = TryEditbox(control, outBuf, bufSize);
+    if (!source) source = TrySingleRowListBox(control, outBuf, bufSize);
+    if (!source) {
+        bool isPartyPortrait = false;
+        source = TryPartyPortrait(control, outBuf, bufSize, isPartyPortrait);
+        // Skip the speculative reader for this vtable — it never resolves
+        // anything useful for portraits.
+        if (!source && isPartyPortrait) return nullptr;
+    }
+    if (!source) source = TrySpeculativeVtableRead(control, outBuf, bufSize);
+
+    // The per-kind fallbacks below all need the owning panel.
+    void* owner = ResolveOwnerPanel(control, ownerPanel);
+    if (!source) source = TryInGameMenuIcon(control, owner, outBuf, bufSize);
+    if (!source) source = TryEquipSlot(control, owner, outBuf, bufSize);
+    if (!source) source = TryInGameMapArrow(control, owner, outBuf, bufSize);
+    if (!source) source = TryWorkbenchSlot(control, owner, outBuf, bufSize);
+    if (!source) source = TryClassSelectionIcon(control, owner, outBuf, bufSize);
+    if (!source) source = TryPortraitCharGenArrow(control, owner, outBuf, bufSize);
+    if (!source) source = TrySiblingLabel(control, outBuf, bufSize);
+
+
+    if (source && !IsToggle(control)) {
+        ApplyCycleCategoryPrefix(control, outBuf, bufSize);
+    }
+    if (source && IsToggle(control)) {
+        AppendToggleSuffix(control, outBuf, bufSize);
+    }
     if (source && !IsToggle(control) && IsChainNavigable(control)) {
-        uint32_t bitFlags = *reinterpret_cast<uint32_t*>(
-            reinterpret_cast<unsigned char*>(control) + 0x44);
-        uint32_t disabledMask = 0x2;
-        if (ownerPanel) {
-            PanelKind k = IdentifyPanel(ownerPanel);
-            if (k == PanelKind::InGameLevelUp || k == PanelKind::CharGen) {
-                disabledMask = 0x8;
-            }
-        }
-        if ((bitFlags & disabledMask) == 0) {
-            const char* suffix = acc::strings::Get(
-                acc::strings::Id::DisabledSuffix);
-            size_t len = strnlen(outBuf, bufSize);
-            size_t suffixLen = strlen(suffix);
-            if (suffixLen > 0 && len + suffixLen + 1 <= bufSize) {
-                memcpy(outBuf + len, suffix, suffixLen + 1);
-            }
-        }
+        AppendDisabledSuffix(control, ownerPanel, outBuf, bufSize);
     }
 
     return source;

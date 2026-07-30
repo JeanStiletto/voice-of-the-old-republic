@@ -190,6 +190,11 @@ constexpr int kEquipLbItemsId    =  5;  // LB_ITEMS
 // picker drives. Same role as the equip picker's LB_ITEMS: excluded from the
 // generic chain flatten so its rows aren't double-exposed as stale buttons.
 constexpr int kWorkbenchUpgradeLbItemsId = 0;  // LB_ITEMS
+// upgrade.gui BTN_BACK — the cursor-park target while the upgrade picker is
+// armed (see ParkPickerCursorOffList in menus_listbox_picker.cpp). Shared
+// here rather than file-local because both the spec callbacks and the picker
+// monitor need it, and they now live in separate TUs.
+constexpr int kWorkbenchUpgradeBtnBackId = 28;  // BTN_BACK
 constexpr int kEquipBtnBackId    = 36;  // BTN_BACK         (TLK 1582 = Schliess.)
 constexpr int kEquipBtnEquipId   = 37;  // BTN_EQUIP        (TLK 1580 = OK)
 
