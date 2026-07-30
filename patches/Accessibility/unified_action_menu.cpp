@@ -692,147 +692,148 @@ bool OpenPersonal(int col) {
     return true;
 }
 
-bool HandleInputEvent(int code, int value) {
-    if (!g.active) return false;
-    if (value == 0) return false;
+// Steps of HandleInputEvent below. They are file-local because every one of
+// them writes `g` and is only meaningful inside a single input dispatch —
+// the HARD RULE is that the menu is populated from input_pipeline and
+// nowhere else, so none of this may become reachable from OnUpdate or
+// PollHotkey.
+namespace {
 
-    // Esc — close. When we held the world pause, ForceDisarm → EndOverlayPause
-    // resumes the world and the engine's pause-resume cue ("Pause aufgehoben")
-    // is the close announcement (no extra phrase — it was redundant and
-    // misleading: Esc closes the menu, it doesn't cancel; queued actions stay
-    // queued and run on resume). When the Action Menu auto-pause option is off
-    // we never paused, so there is no resume cue — speak an explicit close
-    // confirmation instead so the user hears the menu dismissed.
-    if (code == kInputEsc1 || code == kInputEsc2) {
-        const bool wasPaused   = g.pausedOnOpen;
-        const bool outOfCombat = !acc::combat::IsPartyInCombat();
-        ForceDisarm("esc");
-        if (outOfCombat) {
-            // Native sub-screens unpause the world on Esc; the unified menu now
-            // matches that out of combat. ForceDisarm already released our own
-            // overlay pause (auto-pause option on) via EndOverlayPause; if the
-            // world is STILL paused that is the player's own manual pause, so
-            // resume it here — the engine's "Fortgesetzt" resume cue is then the
-            // close announcement. When nothing resumed (never paused, or the
-            // overlay release already unpaused silently) speak an explicit close
-            // confirmation so the close is never silent.
-            if (!acc::engine::ResumeWorldIfPaused("unified-esc")) {
-                prism::Speak(acc::strings::Get(acc::strings::Id::ActionMenuClosed),
-                             /*interrupt=*/true);
-            }
-        } else if (!wasPaused) {
-            // In combat: unchanged. Esc keeps the tactical pause exactly as
-            // before — ForceDisarm → EndOverlayPause resumes only the pause we
-            // owned; the encounter's own pause is untouched.
-            prism::Speak(acc::strings::Get(acc::strings::Id::ActionMenuClosed),
-                         /*interrupt=*/true);
-        }
-        return true;
+// Esc — close. When we held the world pause, ForceDisarm → EndOverlayPause
+// resumes the world and the engine's pause-resume cue ("Pause aufgehoben")
+// is the close announcement (no extra phrase — it was redundant and
+// misleading: Esc closes the menu, it doesn't cancel; queued actions stay
+// queued and run on resume). When the Action Menu auto-pause option is off
+// we never paused, so there is no resume cue — speak an explicit close
+// confirmation instead so the user hears the menu dismissed.
+void CloseFromEsc() {
+const bool wasPaused   = g.pausedOnOpen;
+const bool outOfCombat = !acc::combat::IsPartyInCombat();
+ForceDisarm("esc");
+if (outOfCombat) {
+    // Native sub-screens unpause the world on Esc; the unified menu now
+    // matches that out of combat. ForceDisarm already released our own
+    // overlay pause (auto-pause option on) via EndOverlayPause; if the
+    // world is STILL paused that is the player's own manual pause, so
+    // resume it here — the engine's "Fortgesetzt" resume cue is then the
+    // close announcement. When nothing resumed (never paused, or the
+    // overlay release already unpaused silently) speak an explicit close
+    // confirmation so the close is never silent.
+    if (!acc::engine::ResumeWorldIfPaused("unified-esc")) {
+        prism::Speak(acc::strings::Get(acc::strings::Id::ActionMenuClosed),
+                     /*interrupt=*/true);
     }
+} else if (!wasPaused) {
+    // In combat: unchanged. Esc keeps the tactical pause exactly as
+    // before — ForceDisarm → EndOverlayPause resumes only the pause we
+    // owned; the encounter's own pause is untouched.
+    prism::Speak(acc::strings::Get(acc::strings::Id::ActionMenuClosed),
+                 /*interrupt=*/true);
+}
+}
 
-    void* tam = acc::engine_radial::ResolveTargetActionMenu();
-    void* mi  = acc::engine_actionbar::ResolveMainInterface();
-
-    // FOLLOW-CYCLING re-anchor: when the narrated target changed while the
-    // menu sat open (`,`/`.`/Q/E/passive all stamp the same slot), rebuild
-    // the target rows against the NEW target so the menu always shows that
-    // target's real options and Enter fires at it. One re-anchor per cycle
-    // (the handle comparison self-quiesces), so the per-keypress churn that
-    // originally forced the lazy design doesn't return. The user's selected
-    // action follows BY IDENTITY: each row's shadow index is re-located to
-    // the entry with the same action_id, so cycle → Enter casts the same
-    // power at the next target. A row whose previous action_id is absent on
-    // the new target marks its selection as not-carried; Enter (only) is
-    // then consumed as orientation instead of firing something unheard —
-    // see the Enter case.
+// FOLLOW-CYCLING re-anchor: when the narrated target changed while the
+// menu sat open (`,`/`.`/Q/E/passive all stamp the same slot), rebuild
+// the target rows against the NEW target so the menu always shows that
+// target's real options and Enter fires at it. One re-anchor per cycle
+// (the handle comparison self-quiesces), so the per-keypress churn that
+// originally forced the lazy design doesn't return. The user's selected
+// action follows BY IDENTITY: each row's shadow index is re-located to
+// the entry with the same action_id, so cycle → Enter casts the same
+// power at the next target. A row whose previous action_id is absent on
+// the new target marks its selection as not-carried; Enter (only) is
+// then consumed as orientation instead of firing something unheard —
+// see the Enter case.
+// Returns true when the menu was actually re-anchored onto the new target.
+bool ReanchorToNewTarget(void* tam, uint32_t narrated,
+                         bool rowCarried[kRowCount]) {
     bool targetChanged = false;
-    bool selectionCarried = true;
-    bool rowCarried[kRowCount] = {true, true, true};
-    if (tam) {
-        uint32_t narrated = ResolveNarratedServerHandle();
-        const bool haveBlock = g.hasTargetBlock && g.targetHandle != 0;
-        if (narrated != 0 && haveBlock &&
-            (narrated & ~0x80000000u) != (g.targetHandle & ~0x80000000u)) {
-            uint32_t prevId[kRowCount];
-            for (int r = 0; r < kRowCount; ++r) {
-                prevId[r] = acc::engine_radial::ReadRowActionIdAtIndex(
-                    tam, r, g_targetSel[r]);
+    uint32_t prevId[kRowCount];
+    for (int r = 0; r < kRowCount; ++r) {
+        prevId[r] = acc::engine_radial::ReadRowActionIdAtIndex(
+            tam, r, g_targetSel[r]);
+    }
+    if (acc::picker::ReanchorRadial(narrated)) {
+        uint32_t oldHandle = g.targetHandle;
+        targetChanged  = true;
+        g.targetHandle = narrated;
+        g.creature     = DetectCreature(tam, narrated);
+        if (!acc::engine_radial::ReadTargetName(
+                tam, g.targetName, sizeof(g.targetName))) {
+            g.targetName[0] = '\0';
+        }
+        for (int r = 0; r < kRowCount; ++r) {
+            int ni = acc::engine_radial::FindRowIndexByActionId(
+                tam, r, prevId[r]);
+            rowCarried[r] = (ni >= 0);
+            if (ni >= 0) g_targetSel[r] = ni;
+        }
+        acclog::Write("UnifiedMenu",
+            "follow-cycle re-anchor 0x%08x -> 0x%08x creature=%d "
+            "name=[%s] carried=%d%d%d", oldHandle, narrated,
+            g.creature ? 1 : 0, g.targetName,
+            rowCarried[0] ? 1 : 0, rowCarried[1] ? 1 : 0,
+            rowCarried[2] ? 1 : 0);
+    } else {
+        acclog::Write("UnifiedMenu",
+            "follow-cycle re-anchor FAILED for 0x%08x — keeping "
+            "0x%08x", narrated, g.targetHandle);
+    }
+    return targetChanged;
+}
+
+// UNFOLD: the menu is personal-only (opened without a target, or
+// its target was lost) and the user cycled onto something.
+// Populate the target rows against it and fold them in — the
+// mid-menu equivalent of OpenPersonal's open-time fold-in, which
+// could not happen back then because nothing was narrated. Rows
+// empty → target has no actions → stay personal-only and don't
+// re-run the populate chain for this handle on every keypress.
+// Returns true when the target block was folded in.
+bool UnfoldTargetBlock(void* tam, uint32_t narrated,
+                       bool rowCarried[kRowCount]) {
+    bool targetChanged = false;
+    if (acc::picker::ReanchorRadial(narrated)) {
+        if (FirstPopulatedTargetRow(tam) >= 0) {
+            targetChanged    = true;
+            g.hasTargetBlock = true;
+            g.targetHandle   = narrated;
+            g.creature       = DetectCreature(tam, narrated);
+            if (!acc::engine_radial::ReadTargetName(
+                    tam, g.targetName, sizeof(g.targetName))) {
+                g.targetName[0] = '\0';
             }
-            if (acc::picker::ReanchorRadial(narrated)) {
-                uint32_t oldHandle = g.targetHandle;
-                targetChanged  = true;
-                g.targetHandle = narrated;
-                g.creature     = DetectCreature(tam, narrated);
-                if (!acc::engine_radial::ReadTargetName(
-                        tam, g.targetName, sizeof(g.targetName))) {
-                    g.targetName[0] = '\0';
-                }
-                for (int r = 0; r < kRowCount; ++r) {
-                    int ni = acc::engine_radial::FindRowIndexByActionId(
-                        tam, r, prevId[r]);
-                    rowCarried[r] = (ni >= 0);
-                    if (ni >= 0) g_targetSel[r] = ni;
-                }
-                acclog::Write("UnifiedMenu",
-                    "follow-cycle re-anchor 0x%08x -> 0x%08x creature=%d "
-                    "name=[%s] carried=%d%d%d", oldHandle, narrated,
-                    g.creature ? 1 : 0, g.targetName,
-                    rowCarried[0] ? 1 : 0, rowCarried[1] ? 1 : 0,
-                    rowCarried[2] ? 1 : 0);
-            } else {
-                acclog::Write("UnifiedMenu",
-                    "follow-cycle re-anchor FAILED for 0x%08x — keeping "
-                    "0x%08x", narrated, g.targetHandle);
-            }
-        } else if (narrated != 0 && !haveBlock &&
-                   narrated != g.unfoldDeclined) {
-            // UNFOLD: the menu is personal-only (opened without a target, or
-            // its target was lost) and the user cycled onto something.
-            // Populate the target rows against it and fold them in — the
-            // mid-menu equivalent of OpenPersonal's open-time fold-in, which
-            // could not happen back then because nothing was narrated. Rows
-            // empty → target has no actions → stay personal-only and don't
-            // re-run the populate chain for this handle on every keypress.
-            if (acc::picker::ReanchorRadial(narrated)) {
-                if (FirstPopulatedTargetRow(tam) >= 0) {
-                    targetChanged    = true;
-                    g.hasTargetBlock = true;
-                    g.targetHandle   = narrated;
-                    g.creature       = DetectCreature(tam, narrated);
-                    if (!acc::engine_radial::ReadTargetName(
-                            tam, g.targetName, sizeof(g.targetName))) {
-                        g.targetName[0] = '\0';
-                    }
-                    g.unfoldDeclined = 0;
-                    // Nothing in the new rows was ever selected by the user
-                    // in this menu session — treat all as not-carried so an
-                    // Enter that somehow lands there orients instead of
-                    // firing. The user's personal category re-locates and
-                    // stays carried, so Enter there fires as normal.
-                    rowCarried[0] = rowCarried[1] = rowCarried[2] = false;
-                    acclog::Write("UnifiedMenu",
-                        "follow-cycle unfold target=0x%08x creature=%d "
-                        "name=[%s]", narrated, g.creature ? 1 : 0,
-                        g.targetName);
-                } else {
-                    g.unfoldDeclined = narrated;
-                    acclog::Write("UnifiedMenu",
-                        "follow-cycle unfold declined 0x%08x — no target "
-                        "actions", narrated);
-                }
-            }
+            g.unfoldDeclined = 0;
+            // Nothing in the new rows was ever selected by the user
+            // in this menu session — treat all as not-carried so an
+            // Enter that somehow lands there orients instead of
+            // firing. The user's personal category re-locates and
+            // stays carried, so Enter there fires as normal.
+            rowCarried[0] = rowCarried[1] = rowCarried[2] = false;
+            acclog::Write("UnifiedMenu",
+                "follow-cycle unfold target=0x%08x creature=%d "
+                "name=[%s]", narrated, g.creature ? 1 : 0,
+                g.targetName);
+        } else {
+            g.unfoldDeclined = narrated;
+            acclog::Write("UnifiedMenu",
+                "follow-cycle unfold declined 0x%08x — no target "
+                "actions", narrated);
         }
     }
+    return targetChanged;
+}
 
-    // LAZY re-anchor: re-anchoring on EVERY keypress broke target-menu
-    // navigation (the engine's per-press re-derivation churned the rows so
-    // arrows produced nothing). Instead, only re-anchor to RESTORE the menu
-    // when the engine has actually drained our target rows out from under us
-    // (the cursor-coupling case, project_radial_cursor_coupling). In the
-    // normal paused-overlay case the rows persist, so we skip re-anchor and
-    // navigate the stable snapshot — exactly like the personal-only menu.
-    // Skipped when the follow-cycle re-anchor above already rebuilt this
-    // press (an actionless new target legitimately has zero rows).
+// LAZY re-anchor: re-anchoring on EVERY keypress broke target-menu
+// navigation (the engine's per-press re-derivation churned the rows so
+// arrows produced nothing). Instead, only re-anchor to RESTORE the menu
+// when the engine has actually drained our target rows out from under us
+// (the cursor-coupling case, project_radial_cursor_coupling). In the
+// normal paused-overlay case the rows persist, so we skip re-anchor and
+// navigate the stable snapshot — exactly like the personal-only menu.
+// Skipped when the follow-cycle re-anchor above already rebuilt this
+// press (an actionless new target legitimately has zero rows).
+void MaybeRestoreDrainedRows(void*& tam, bool targetChanged) {
     if (!targetChanged && g.hasTargetBlock && g.targetHandle != 0 && tam) {
         int t = acc::engine_radial::RowActionCount(tam, 0) +
                 acc::engine_radial::RowActionCount(tam, 1) +
@@ -846,6 +847,207 @@ bool HandleInputEvent(int code, int value) {
             tam = acc::engine_radial::ResolveTargetActionMenu();
         }
     }
+}
+
+// Shift + any arrow — describe the selected entry, no movement.
+void DescribeSelectedEntry(void* tam, void* mi, const Cat& cur, int sel) {
+    uint32_t actionId = ReadActionId(tam, mi, cur, sel);
+    char text[8192];
+    if (actionId &&
+        acc::engine::ResolveActionDescriptionFromActionId(
+            actionId, text, sizeof(text))) {
+        prism::Speak(text, /*interrupt=*/true);
+        acclog::Write("UnifiedMenu", "Shift+nav action_id=0x%x desc=\"%s\"",
+            actionId, text);
+    } else {
+        prism::Speak(acc::strings::Get(acc::strings::Id::NoTooltipAvailable),
+                     /*interrupt=*/true);
+        acclog::Write("UnifiedMenu", "Shift+nav action_id=0x%x no desc",
+            actionId);
+    }
+}
+
+// DoTargetAction dispatches at the creature_id baked into the
+// matched list descriptor at PopulateMenus time — and while the
+// menu sits open the engine re-bakes the lists against its own
+// current target (combat reassert / cursor hover), so an Enter
+// seconds after arming fired at the wrong object (Machtbruch
+// meant for a Gefangener-Jedi container hit Malak, patch-
+// 20260717-131859.log). Restamp the whole row with the menu's
+// armed target right before dispatch: raw field writes, safe
+// from this poll context (unlike RePopulate — phantom-confirm,
+// see OpenTarget). Same client-handle convention as input_
+// pipeline's PrepareBareDispatchForNarratedTarget.
+void RestampTargetRowForDispatch(void* tam, const Cat& cur) {
+    if (cur.kind == CatKind::Target && g.targetHandle != 0) {
+        uint32_t targetClient = (g.targetHandle & 0x80000000u)
+            ? g.targetHandle
+            : (g.targetHandle | 0x80000000u);
+        (void)acc::engine_radial::RetargetRowActions(
+            tam, cur.slot, targetClient);
+    }
+}
+
+// Force the engine's APPEND path. Both DoPersonalAction and
+// DoTargetAction wipe the leader's action queue before dispatching
+// unless its combat-mode bit (field200_0x440 bit 0) is set — that
+// bit is the native Shift-held "queue" flag. Our synthetic dispatch
+// bypasses the engine's shift capture, so without this every Enter
+// overwrites the previous queued action (observed 2026-06-08:
+// Macht-Tapferkeit then Kurieren left only Kurieren). Set it for
+// the dispatch, restore afterward so the creature's real combat
+// mode is untouched.
+bool DispatchWithQueueAppend(void* tam, void* mi, const Cat& cur) {
+    int prevQueueBit = acc::engine::SetLeaderQueueModeBit(1);
+
+    acc::combat_diag::LogPreFire("menu-enter");
+    // Attribute the AddAction this dispatch triggers to the user so its
+    // detour speaks the "X, Platz N" cue (see ArmUserQueueAdd).
+    acc::combat::queue::ArmUserQueueAdd();
+    bool ok = Dispatch(tam, mi, cur);
+    acc::combat_diag::LogPostFire("menu-enter");
+
+    if (prevQueueBit >= 0) acc::engine::SetLeaderQueueModeBit(prevQueueBit);
+    return ok;
+}
+
+// What happens to the menu after a successful fire.
+//
+// Out of combat, the pause state picks the interaction model:
+//
+//   World PAUSED (the player pressed the pause key, or the
+//   Action Menu auto-pause option froze the world on open) →
+//   STACK MODE: queue this action and stay armed so several
+//   actions can be lined up without re-opening the menu between
+//   each, exactly like the in-combat menu. The world stays
+//   paused; Esc (or a manual unpause) commits the queue and
+//   closes. The "<action>, Platz N" cue from the AddAction hook
+//   is the confirmation that the menu stayed open on this entry.
+//
+//   World RUNNING → fire-and-close, matching the sighted mouse
+//   radial (click an action → it runs → the radial closes).
+//   Keeping the menu open here just adds an Esc step vanilla
+//   never charges, and a lingering live surface has misfired
+//   (patch-20260617-215141.log). ForceDisarm is the same close
+//   the Esc path runs, and we are in the sanctioned
+//   input-dispatch context (HandleInputEvent), so it obeys the
+//   HARD RULE (no populate off the poll/Open path).
+//
+// Combat is the encounter-level truth (IsPartyInCombat), not the
+// controlled-leader bit, so Tabbing to a not-yet-engaged member
+// mid-fight can't collapse the menu into fire-and-close and
+// unpause an active encounter — the confusion that shaped the
+// party-in-combat auto-close in combat.cpp.
+void ApplyPostFireClosePolicy() {
+    if (!acc::combat::IsPartyInCombat()) {
+        if (acc::engine::WorldIsPaused()) {
+            acclog::Write("UnifiedMenu",
+                "out-of-combat fire while paused — staying open "
+                "(stack mode); announce via AddAction hook");
+            return;
+        }
+        // Close is silent by design: the action's confirmation was just
+        // spoken by the AddAction hook ("<action>, Platz 1" —
+        // out-of-combat actions still route through the leader's combat
+        // round, and ArmUserQueueAdd above put us in its attribution
+        // window).
+        acclog::Write("UnifiedMenu",
+            "out-of-combat fire (world running) — closing "
+            "(fire-and-close)");
+        ForceDisarm("fire-out-of-combat");
+        return;
+    }
+
+    // In combat: stay armed + paused after firing so the user can stack
+    // several actions into the engine queue (grenade → force power →
+    // attack) without re-pausing between each. The world only resumes —
+    // and the queue runs — on Esc (ForceDisarm → EndOverlayPause). The
+    // confirmation message ("…, Position N") is the cue that the menu
+    // is still open on the same entry; press Enter again to re-queue,
+    // or arrow to another category. Selection/category are preserved;
+    // the next keypress's BuildCategoryList + LocateCat re-locates on
+    // the same slot.
+}
+
+// Follow-cycling contract: Enter right after cycling fires
+// immediately when the user's selected action exists on the new
+// target (selection carried by action_id above). When it does
+// NOT — the action is unavailable there, or the whole category
+// vanished — firing would dispatch something the user never
+// heard. Consume this press as orientation instead: announce
+// the new target's menu context; the next Enter fires what was
+// just spoken.
+bool HandleEnter(void* tam, void* mi, const Cat& cur, int sel,
+                 bool targetChanged, bool selectionCarried) {
+    if (targetChanged && !selectionCarried) {
+        char prefix[160] = "";
+        std::snprintf(prefix, sizeof(prefix),
+                      acc::strings::Get(
+                          acc::strings::Id::FmtInteractRadial),
+                      g.targetName);
+        acclog::Write("UnifiedMenu", "ENTER after follow-cycle — "
+            "selection not carried; announcing instead of firing");
+        SpeakCategory(tam, mi, prefix);
+        return true;
+    }
+
+    ApplySelection(tam, mi, cur, sel);
+    char label[128] = "";
+    ReadLabel(tam, mi, cur, sel, label, sizeof(label));
+
+    RestampTargetRowForDispatch(tam, cur);
+    bool ok = DispatchWithQueueAppend(tam, mi, cur);
+
+    // The queued-action confirmation ("X, Platz N" / "Warteschlange
+    // voll") is spoken by the CSWSCombatRound::AddAction detour
+    // (queue::OnEngineActionAdded) that Dispatch() triggers — one
+    // authoritative cue per real add, shared with the bare-key path.
+    // No separate pre/post snapshot here: it raced the queue drain and
+    // double-announced against the hook.
+    acclog::Write("UnifiedMenu", "ENTER kind=%s slot=%d idx=%d label=[%s] "
+        "ok=%d — queued; announce via AddAction hook",
+        cur.kind == CatKind::Target ? "target" : "personal",
+        cur.slot, sel, label, ok ? 1 : 0);
+
+    ApplyPostFireClosePolicy();
+    return true;
+}
+
+}  // namespace
+
+bool HandleInputEvent(int code, int value) {
+    if (!g.active) return false;
+    if (value == 0) return false;
+
+    if (code == kInputEsc1 || code == kInputEsc2) {
+        CloseFromEsc();
+        return true;
+    }
+
+    void* tam = acc::engine_radial::ResolveTargetActionMenu();
+    void* mi  = acc::engine_actionbar::ResolveMainInterface();
+
+    // Follow-cycling: the narrated target may have changed while the menu
+    // sat open. Re-anchor onto it (menu already had a target block) or
+    // unfold one in (menu was personal-only). rowCarried[] records, per
+    // target row, whether the user's selected action_id survived the move —
+    // it gates Enter into orientation mode below.
+    bool targetChanged = false;
+    bool selectionCarried = true;
+    bool rowCarried[kRowCount] = {true, true, true};
+    if (tam) {
+        uint32_t narrated = ResolveNarratedServerHandle();
+        const bool haveBlock = g.hasTargetBlock && g.targetHandle != 0;
+        if (narrated != 0 && haveBlock &&
+            (narrated & ~0x80000000u) != (g.targetHandle & ~0x80000000u)) {
+            targetChanged = ReanchorToNewTarget(tam, narrated, rowCarried);
+        } else if (narrated != 0 && !haveBlock &&
+                   narrated != g.unfoldDeclined) {
+            targetChanged = UnfoldTargetBlock(tam, narrated, rowCarried);
+        }
+    }
+
+    MaybeRestoreDrainedRows(tam, targetChanged);
 
     // Rebuild the category list (target rows may have changed on re-anchor)
     // and re-locate the cursor on the same category, clamping if it drained.
@@ -882,24 +1084,10 @@ bool HandleInputEvent(int code, int value) {
     sel = ClampInt(sel, 0, count > 0 ? count - 1 : 0);
     ApplySelection(tam, mi, cur, sel);
 
-    // Shift + any arrow — describe the selected entry, no movement.
     if ((code == kInputNavUp || code == kInputNavDown ||
          code == kInputNavLeft || code == kInputNavRight) &&
         acc::hotkeys::ShiftHeld()) {
-        uint32_t actionId = ReadActionId(tam, mi, cur, sel);
-        char text[8192];
-        if (actionId &&
-            acc::engine::ResolveActionDescriptionFromActionId(
-                actionId, text, sizeof(text))) {
-            prism::Speak(text, /*interrupt=*/true);
-            acclog::Write("UnifiedMenu", "Shift+nav action_id=0x%x desc=\"%s\"",
-                actionId, text);
-        } else {
-            prism::Speak(acc::strings::Get(acc::strings::Id::NoTooltipAvailable),
-                         /*interrupt=*/true);
-            acclog::Write("UnifiedMenu", "Shift+nav action_id=0x%x no desc",
-                actionId);
-        }
+        DescribeSelectedEntry(tam, mi, cur, sel);
         return true;
     }
 
@@ -947,153 +1135,9 @@ bool HandleInputEvent(int code, int value) {
             return true;
         }
         case kInputEnter1:
-        case kInputEnter2: {
-            // Follow-cycling contract: Enter right after cycling fires
-            // immediately when the user's selected action exists on the new
-            // target (selection carried by action_id above). When it does
-            // NOT — the action is unavailable there, or the whole category
-            // vanished — firing would dispatch something the user never
-            // heard. Consume this press as orientation instead: announce
-            // the new target's menu context; the next Enter fires what was
-            // just spoken.
-            if (targetChanged && !selectionCarried) {
-                char prefix[160] = "";
-                std::snprintf(prefix, sizeof(prefix),
-                              acc::strings::Get(
-                                  acc::strings::Id::FmtInteractRadial),
-                              g.targetName);
-                acclog::Write("UnifiedMenu", "ENTER after follow-cycle — "
-                    "selection not carried; announcing instead of firing");
-                SpeakCategory(tam, mi, prefix);
-                return true;
-            }
-
-            ApplySelection(tam, mi, cur, sel);
-            char label[128] = "";
-            ReadLabel(tam, mi, cur, sel, label, sizeof(label));
-
-            // DoTargetAction dispatches at the creature_id baked into the
-            // matched list descriptor at PopulateMenus time — and while the
-            // menu sits open the engine re-bakes the lists against its own
-            // current target (combat reassert / cursor hover), so an Enter
-            // seconds after arming fired at the wrong object (Machtbruch
-            // meant for a Gefangener-Jedi container hit Malak, patch-
-            // 20260717-131859.log). Restamp the whole row with the menu's
-            // armed target right before dispatch: raw field writes, safe
-            // from this poll context (unlike RePopulate — phantom-confirm,
-            // see OpenTarget). Same client-handle convention as input_
-            // pipeline's PrepareBareDispatchForNarratedTarget.
-            if (cur.kind == CatKind::Target && g.targetHandle != 0) {
-                uint32_t targetClient = (g.targetHandle & 0x80000000u)
-                    ? g.targetHandle
-                    : (g.targetHandle | 0x80000000u);
-                (void)acc::engine_radial::RetargetRowActions(
-                    tam, cur.slot, targetClient);
-            }
-
-            // Force the engine's APPEND path. Both DoPersonalAction and
-            // DoTargetAction wipe the leader's action queue before dispatching
-            // unless its combat-mode bit (field200_0x440 bit 0) is set — that
-            // bit is the native Shift-held "queue" flag. Our synthetic dispatch
-            // bypasses the engine's shift capture, so without this every Enter
-            // overwrites the previous queued action (observed 2026-06-08:
-            // Macht-Tapferkeit then Kurieren left only Kurieren). Set it for
-            // the dispatch, restore afterward so the creature's real combat
-            // mode is untouched.
-            int prevQueueBit = acc::engine::SetLeaderQueueModeBit(1);
-
-            acc::combat_diag::LogPreFire("menu-enter");
-            // Attribute the AddAction this dispatch triggers to the user so its
-            // detour speaks the "X, Platz N" cue (see ArmUserQueueAdd).
-            acc::combat::queue::ArmUserQueueAdd();
-            bool ok = Dispatch(tam, mi, cur);
-            acc::combat_diag::LogPostFire("menu-enter");
-
-            if (prevQueueBit >= 0) acc::engine::SetLeaderQueueModeBit(prevQueueBit);
-
-            // The queued-action confirmation ("X, Platz N" / "Warteschlange
-            // voll") is spoken by the CSWSCombatRound::AddAction detour
-            // (queue::OnEngineActionAdded) that Dispatch() triggers — one
-            // authoritative cue per real add, shared with the bare-key path.
-            // No separate pre/post snapshot here: it raced the queue drain and
-            // double-announced against the hook.
-            acclog::Write("UnifiedMenu", "ENTER kind=%s slot=%d idx=%d label=[%s] "
-                "ok=%d — queued; announce via AddAction hook",
-                cur.kind == CatKind::Target ? "target" : "personal",
-                cur.slot, sel, label, ok ? 1 : 0);
-
-            // Out of combat: fire-and-close, matching the sighted mouse radial
-            // (click an action → it runs → the radial closes). Queueing several
-            // actions is a combat affordance; out of combat you almost always
-            // want one action and an immediate return to the world, so keeping
-            // the menu open + paused just adds an unpause/Esc step vanilla never
-            // charges — and a lingering paused surface across the explore world
-            // has actively misfired (first post-fire Enter landing on a menu
-            // entry instead of the world object, patch-20260617-215141.log).
-            // ForceDisarm here is the same close the Esc path runs, and we're
-            // in the sanctioned input-dispatch context (HandleInputEvent), so it
-            // obeys the HARD RULE (no populate off the poll/Open path).
-            //
-            // Combat is the encounter-level truth (IsPartyInCombat), not the
-            // controlled-leader bit, so Tabbing to a not-yet-engaged member
-            // mid-fight can't collapse the menu into fire-and-close and unpause
-            // an active encounter — the exact confusion that shaped the
-            // party-in-combat auto-close in combat.cpp.
-            if (!acc::combat::IsPartyInCombat()) {
-                // Out of combat, the pause state picks the interaction model:
-                //
-                //   World PAUSED (the player pressed the pause key, or the
-                //   Action Menu auto-pause option froze the world on open) →
-                //   STACK MODE: queue this action and stay armed so several
-                //   actions can be lined up without re-opening the menu between
-                //   each, exactly like the in-combat menu. The world stays
-                //   paused; Esc (or a manual unpause) commits the queue and
-                //   closes. The "<action>, Platz N" cue from the AddAction hook
-                //   is the confirmation that the menu stayed open on this entry.
-                //
-                //   World RUNNING → fire-and-close, matching the sighted mouse
-                //   radial (click an action → it runs → the radial closes).
-                //   Keeping the menu open here just adds an Esc step vanilla
-                //   never charges, and a lingering live surface has misfired
-                //   (patch-20260617-215141.log). ForceDisarm is the same close
-                //   the Esc path runs, and we are in the sanctioned
-                //   input-dispatch context (HandleInputEvent), so it obeys the
-                //   HARD RULE (no populate off the poll/Open path).
-                //
-                // Combat is the encounter-level truth (IsPartyInCombat), not the
-                // controlled-leader bit, so Tabbing to a not-yet-engaged member
-                // mid-fight can't collapse the menu into fire-and-close and
-                // unpause an active encounter — the confusion that shaped the
-                // party-in-combat auto-close in combat.cpp.
-                if (acc::engine::WorldIsPaused()) {
-                    acclog::Write("UnifiedMenu",
-                        "out-of-combat fire while paused — staying open "
-                        "(stack mode); announce via AddAction hook");
-                    return true;
-                }
-                // Close is silent by design: the action's confirmation was just
-                // spoken by the AddAction hook ("<action>, Platz 1" —
-                // out-of-combat actions still route through the leader's combat
-                // round, and ArmUserQueueAdd above put us in its attribution
-                // window).
-                acclog::Write("UnifiedMenu",
-                    "out-of-combat fire (world running) — closing "
-                    "(fire-and-close)");
-                ForceDisarm("fire-out-of-combat");
-                return true;
-            }
-
-            // In combat: stay armed + paused after firing so the user can stack
-            // several actions into the engine queue (grenade → force power →
-            // attack) without re-pausing between each. The world only resumes —
-            // and the queue runs — on Esc (ForceDisarm → EndOverlayPause). The
-            // confirmation message ("…, Position N") is the cue that the menu
-            // is still open on the same entry; press Enter again to re-queue,
-            // or arrow to another category. Selection/category are preserved;
-            // the next keypress's BuildCategoryList + LocateCat re-locates on
-            // the same slot.
-            return true;
-        }
+        case kInputEnter2:
+            return HandleEnter(tam, mi, cur, sel, targetChanged,
+                               selectionCarried);
         default:
             return false;
     }
