@@ -284,23 +284,26 @@ void MonitorFocusedControl() {
     } else {
         s_focusMonitorControl = focused;
         strncpy_s(s_focusMonitorText, text, _TRUNCATE);
-        prism::Speak(text, /*interrupt=*/false);
-        // Prime channel-0 dedup, exactly as AnnounceControl does after its
-        // own voluntary speech. Without this the monitor's utterance is
-        // INVISIBLE to the pending-slot drain, so the engine's post-nav
-        // SetActiveControl echo speaks the same line a second time.
+        // Route through channel-0 dedup rather than speaking unconditionally:
+        // this monitor is the LAST of the three announce paths to run, so if
+        // one of the others already said this line, saying it again is a
+        // double-announce.
         //
-        // This is the chargen class-icon double-announce. It only bit when
-        // the monitor was the FIRST path to produce text for a control:
-        // step 9c's per-icon cache starts cold, so AnnounceControl's
-        // FromControl returns nullptr on the nav itself and exits via its
-        // class-icon early-out, the cursor warp then makes active_control
-        // the icon, and this monitor fills the cache and speaks. The echo
-        // drain — now with a warm cache — spoke it again. On a revisit
-        // AnnounceControl won the race, called MarkSpoken itself, and the
-        // double never appeared, which is why it sounded like a
-        // direction-dependent bug rather than a first-visit one.
-        acc::menus::MarkSpoken(/*channel=*/0, text);
+        // That is the chargen class-icon case. Step 9c's per-icon cache
+        // starts cold, so on a first visit AnnounceControl's FromControl
+        // returns nullptr on the nav itself (SetActive src=none) and it
+        // exits via its class-icon early-out — without speaking, and without
+        // priming this monitor's last-seen control the way its success
+        // branch does. The cursor warp then makes active_control the icon,
+        // DrainPendingAnnounce's FromControl fills the cache and speaks, and
+        // this monitor — still unprimed — spoke the same line again. On a
+        // revisit AnnounceControl wins with a warm cache and does the
+        // priming, which is why the double only ever appeared on the first
+        // pass over each icon and looked direction-dependent.
+        //
+        // SpeakIfChanged also marks, so the dedup stays primed for whichever
+        // path runs next.
+        acc::menus::SpeakIfChanged(/*channel=*/0, text);
         acclog::Write("Monitor", "focus changed -> %p text=\"%s\"",
                       focused, text);
     }
