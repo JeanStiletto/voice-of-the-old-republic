@@ -14,14 +14,7 @@
 
 namespace acc::audio {
 
-namespace {
-
-// Engine resource-reference tag. Case-insensitive at lookup; we lowercase
-// defensively to match every engine callsite.
-struct CResRef {
-    char string[16];
-};
-
+// Declared in audio_bus.h so audio_loop.cpp shares it rather than mirroring.
 void FillResRef(CResRef& out, const char* tag) {
     std::memset(out.string, 0, sizeof(out.string));
     if (!tag) return;
@@ -33,6 +26,8 @@ void FillResRef(CResRef& out, const char* tag) {
         out.string[i] = c;
     }
 }
+
+namespace {
 
 // CExoSound::PlayOneShotSound — __thiscall. Verified by decompile of the
 // inner CExoSoundInternal::PlayOneShotSound. Earlier typedef mislabelled

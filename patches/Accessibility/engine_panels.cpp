@@ -42,15 +42,21 @@ void* FindControlByGuiId(void* panel, int id) {
     return nullptr;
 }
 
-// Verify a child control's vtable matches `expected`. Used by the
-// structural detectors to disambiguate panels that share .gui-time IDs
-// but differ in control type at those IDs (canonical case: SaveLoad's
-// BTN_DELETE at ID 11 = Button vs. Workbench's LBL_UPGRADE44 at ID 11
-// = LabelHilight). Returns false on null / SEH fault.
-bool ControlHasVtable(void* control, uintptr_t expected) {
-    if (!control) return false;
+// Verify an objects vtable pointer matches `expected`. Works on anything
+// whose vtable sits at +0 -- both child controls and whole panels.
+//
+// Controls: disambiguates panels that share .gui-time IDs but differ in
+// control type at those IDs (canonical case: SaveLoads BTN_DELETE at ID 11
+// = Button vs. Workbenchs LBL_UPGRADE44 at ID 11 = LabelHilight).
+// Panels: heap-allocated single-class panels have no CGuiInGame slot, so
+// vtable equality IS their identity -- five detectors below each spelled
+// this same guarded deref out by hand before Phase-3 B6.
+//
+// Returns false on null / SEH fault.
+bool HasVtable(void* obj, uintptr_t expected) {
+    if (!obj) return false;
     __try {
-        void** vt = *reinterpret_cast<void***>(control);
+        void** vt = *reinterpret_cast<void***>(obj);
         return reinterpret_cast<uintptr_t>(vt) == expected;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
@@ -86,9 +92,9 @@ bool IsSaveLoadStructural(void* panel) {
         void* del  = FindControlByGuiId(panel, kIdDeleteButton);
         void* back = FindControlByGuiId(panel, kIdBackButton);
         void* sl   = FindControlByGuiId(panel, kIdSaveLoadButton);
-        return ControlHasVtable(del,  kVtableCSWGuiButton) &&
-               ControlHasVtable(back, kVtableCSWGuiButton) &&
-               ControlHasVtable(sl,   kVtableCSWGuiButton);
+        return HasVtable(del,  kVtableCSWGuiButton) &&
+               HasVtable(back, kVtableCSWGuiButton) &&
+               HasVtable(sl,   kVtableCSWGuiButton);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
@@ -114,8 +120,8 @@ bool IsWorkbenchUpgradeStructural(void* panel) {
         // every other 29-control heap-allocated panel we've seen.
         void* assemble = FindControlByGuiId(panel, /*BTN_ASSEMBLE=*/24);
         void* slot     = FindControlByGuiId(panel, /*BTN_UPGRADE41=*/15);
-        return ControlHasVtable(assemble, kVtableCSWGuiButton) &&
-               ControlHasVtable(slot,     kVtableCSWGuiButton);
+        return HasVtable(assemble, kVtableCSWGuiButton) &&
+               HasVtable(slot,     kVtableCSWGuiButton);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
@@ -135,8 +141,8 @@ bool IsWorkbenchItemsStructural(void* panel) {
         if (reinterpret_cast<uintptr_t>(lbVtable) != kVtableListBox) return false;
         void* upgrade = FindControlByGuiId(panel, /*BTN_UPGRADEITEM=*/4);
         void* back    = FindControlByGuiId(panel, /*BTN_BACK=*/5);
-        if (!ControlHasVtable(upgrade, kVtableCSWGuiButton)) return false;
-        if (!ControlHasVtable(back,    kVtableCSWGuiButton)) return false;
+        if (!HasVtable(upgrade, kVtableCSWGuiButton)) return false;
+        if (!HasVtable(back,    kVtableCSWGuiButton)) return false;
         // Disambiguate from any other shape that might have a listbox at
         // ID 0 + buttons at IDs 4/5: require the panel to NOT also be the
         // upgrade panel (29 controls). upgradeitems.gui has exactly 5
@@ -179,8 +185,8 @@ bool IsWorkbenchSelectStructural(void* panel) {
         void* btnBack = FindControlByGuiId(panel, /*BTN_BACK=*/10);
         void* btnFirst = FindControlByGuiId(panel, /*BTN_RANGED=*/0);
         return btnFirst != nullptr &&
-               ControlHasVtable(btnUpg,  kVtableCSWGuiButton) &&
-               ControlHasVtable(btnBack, kVtableCSWGuiButton);
+               HasVtable(btnUpg,  kVtableCSWGuiButton) &&
+               HasVtable(btnBack, kVtableCSWGuiButton);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
@@ -193,13 +199,7 @@ bool IsWorkbenchSelectStructural(void* panel) {
 const uintptr_t kVtableCSWGuiLevelUpPanel = acc::addr::R(0x00759568);
 
 bool IsLevelUpStructural(void* panel) {
-    if (!panel) return false;
-    __try {
-        void** vt = *reinterpret_cast<void***>(panel);
-        return reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiLevelUpPanel;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
+    return HasVtable(panel, kVtableCSWGuiLevelUpPanel);
 }
 
 // Character-creation step panels by vtable. Heap-allocated, no CGuiInGame
@@ -232,13 +232,7 @@ bool IsCharGenStructural(void* panel) {
 const uintptr_t kVtableCSWGuiOptions = acc::addr::R(0x00758838);
 
 bool IsMainMenuOptionsStructural(void* panel) {
-    if (!panel) return false;
-    __try {
-        void** vt = *reinterpret_cast<void***>(panel);
-        return reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiOptions;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
+    return HasVtable(panel, kVtableCSWGuiOptions);
 }
 
 // CSWGuiMainMenu title-screen panel. Single-instance, vtable equality is
@@ -250,13 +244,7 @@ bool IsMainMenuOptionsStructural(void* panel) {
 const uintptr_t kVtableCSWGuiMainMenu = acc::addr::R(0x00752f70);
 
 bool IsMainMenuStructural(void* panel) {
-    if (!panel) return false;
-    __try {
-        void** vt = *reinterpret_cast<void***>(panel);
-        return reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiMainMenu;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
+    return HasVtable(panel, kVtableCSWGuiMainMenu);
 }
 
 // CSWGuiPazaakStart side-deck builder. Heap-allocated modal (no CGuiInGame
@@ -266,13 +254,7 @@ bool IsMainMenuStructural(void* panel) {
 const uintptr_t kVtableCSWGuiPazaakStart = acc::addr::R(0x007532e8);
 
 bool IsPazaakStartStructural(void* panel) {
-    if (!panel) return false;
-    __try {
-        void** vt = *reinterpret_cast<void***>(panel);
-        return reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiPazaakStart;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
+    return HasVtable(panel, kVtableCSWGuiPazaakStart);
 }
 
 // CSWGuiWagerPopup — the "Wie viel setzt du?" bet popup pushed over the
@@ -282,13 +264,7 @@ bool IsPazaakStartStructural(void* panel) {
 const uintptr_t kVtableCSWGuiWagerPopup = acc::addr::R(0x007534c8);
 
 bool IsPazaakWagerStructural(void* panel) {
-    if (!panel) return false;
-    __try {
-        void** vt = *reinterpret_cast<void***>(panel);
-        return reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiWagerPopup;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
+    return HasVtable(panel, kVtableCSWGuiWagerPopup);
 }
 
 // CSWGuiQuestItem — the journal's "Auftrags-Gegenstände" sub-screen. Single
@@ -299,13 +275,7 @@ bool IsPazaakWagerStructural(void* panel) {
 const uintptr_t kVtableCSWGuiQuestItem = acc::addr::R(0x00757c20);
 
 bool IsQuestItemStructural(void* panel) {
-    if (!panel) return false;
-    __try {
-        void** vt = *reinterpret_cast<void***>(panel);
-        return reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiQuestItem;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
+    return HasVtable(panel, kVtableCSWGuiQuestItem);
 }
 
 // CSWGuiScriptSelect — the character sheet's "Kurzbefehle" combat-behaviour
@@ -315,13 +285,7 @@ bool IsQuestItemStructural(void* panel) {
 const uintptr_t kVtableCSWGuiScriptSelect = acc::addr::R(0x007590a8);
 
 bool IsScriptSelectStructural(void* panel) {
-    if (!panel) return false;
-    __try {
-        void** vt = *reinterpret_cast<void***>(panel);
-        return reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiScriptSelect;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
+    return HasVtable(panel, kVtableCSWGuiScriptSelect);
 }
 
 // CSWGuiPowersLevelUp picker (pwrlvlup.gui). The same class backs both the
@@ -350,13 +314,13 @@ bool IsPowersLevelUpStructural(void* panel) {
         // vtable): powers_listbox (id 6) and description_listbox (id 7) are
         // ListBoxes; BTN_ACCEPT (id 11) and BTN_BACK (id 12) are buttons.
         void* lbPowers = FindControlByGuiId(panel, /*powers_listbox=*/6);
-        if (!ControlHasVtable(lbPowers, kVtableListBox)) return false;
+        if (!HasVtable(lbPowers, kVtableListBox)) return false;
         void* lbDesc   = FindControlByGuiId(panel, /*description_listbox=*/7);
-        if (!ControlHasVtable(lbDesc, kVtableListBox)) return false;
+        if (!HasVtable(lbDesc, kVtableListBox)) return false;
         void* btnAccept = FindControlByGuiId(panel, /*BTN_ACCEPT=*/11);
         void* btnBack   = FindControlByGuiId(panel, /*BTN_BACK=*/12);
-        return ControlHasVtable(btnAccept, kVtableCSWGuiButton) &&
-               ControlHasVtable(btnBack,   kVtableCSWGuiButton);
+        return HasVtable(btnAccept, kVtableCSWGuiButton) &&
+               HasVtable(btnBack,   kVtableCSWGuiButton);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }

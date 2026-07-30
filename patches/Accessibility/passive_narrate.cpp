@@ -110,21 +110,6 @@ acc::audio::NavCue CueForCategory(acc::filter::CycleCategory c, void* obj) {
     return N::Item;  // unreachable safety net
 }
 
-acc::strings::Id CategoryNameId(acc::filter::CycleCategory c) {
-    using C = acc::filter::CycleCategory;
-    using S = acc::strings::Id;
-    switch (c) {
-        case C::Door:       return S::CategoryDoor;
-        case C::Npc:        return S::CategoryNpc;
-        case C::Container:  return S::CategoryContainer;
-        case C::Item:       return S::CategoryItem;
-        case C::Landmark:   return S::CategoryLandmark;
-        case C::Transition: return S::CategoryTransition;
-        case C::Count_:     break;
-    }
-    return S::CategoryItem;
-}
-
 // Returns Count_ for non-nav consumers (combat / dialog target).
 acc::filter::CycleCategory ClassifyForNarration(void* obj) {
     using C = acc::filter::CycleCategory;
@@ -220,7 +205,7 @@ bool NarrateHandle(uint32_t handle, const char* reason, bool explicitRequest) {
     if (!acc::narration::GetSpokenName(obj, cat, name, sizeof(name)) ||
         name[0] == '\0') {
         std::snprintf(name, sizeof(name), "%s",
-                      acc::strings::Get(CategoryNameId(cat)));
+                      acc::strings::Get(acc::filter::CategoryNameId(cat)));
     }
 
     if (havePos && !isParty) {

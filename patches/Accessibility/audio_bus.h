@@ -91,6 +91,19 @@ bool PlayCue3D(const char* resref, const Vector& worldPosition,
                uint8_t priorityGroup = 0,
                uint8_t baseVolume    = kCueVolumeFull);
 
+// Engine resource-reference tag: a fixed 16-byte, NOT necessarily
+// NUL-terminated char buffer. Lookup is case-insensitive; FillResRef
+// lowercases defensively to match every engine callsite.
+//
+// Shared by audio_bus.cpp and audio_loop.cpp — audio_loop used to carry a
+// private copy whose own comment called it "a local mirror of the 16-byte
+// tag from audio_bus.cpp".
+struct CResRef {
+    char string[16];
+};
+
+void FillResRef(CResRef& out, const char* tag);
+
 }  // namespace acc::audio
 
 // CExoSound facade. *kAddrCExoSoundPtr; nullptr in early DLL-attach.

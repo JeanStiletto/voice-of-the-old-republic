@@ -7,6 +7,7 @@
 #pragma once
 
 #include "engine_area.h"
+#include "strings.h"    // Id — CategoryNameId's return type
 
 namespace acc::filter {
 
@@ -21,7 +22,14 @@ enum class CycleCategory : int {
     Count_       = 6,
 };
 
+// English, for logs. Its localised sibling is CategoryNameId below — per the
+// project rule, logs stay English and speech goes through strings::Get(Id).
 const char* CategoryName(CycleCategory c);
+
+// Localised, for speech. Lives here next to CategoryName because it is the
+// same mapping in the other direction; view_mode.cpp and passive_narrate.cpp
+// each carried a byte-identical private copy before Phase-3 B6.
+acc::strings::Id CategoryNameId(CycleCategory c);
 
 // SEH-guarded via engine_area::GetObjectKind.
 bool ObjectMatches(void* gameObject, CycleCategory category);

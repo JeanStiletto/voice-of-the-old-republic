@@ -296,21 +296,6 @@ void StepCursor(float dt) {
     }
 }
 
-acc::strings::Id CategoryNameId(acc::filter::CycleCategory c) {
-    using C = acc::filter::CycleCategory;
-    using S = acc::strings::Id;
-    switch (c) {
-        case C::Door:       return S::CategoryDoor;
-        case C::Npc:        return S::CategoryNpc;
-        case C::Container:  return S::CategoryContainer;
-        case C::Item:       return S::CategoryItem;
-        case C::Landmark:   return S::CategoryLandmark;
-        case C::Transition: return S::CategoryTransition;
-        case C::Count_:     break;
-    }
-    return S::CategoryItem;
-}
-
 // Tier order matches the walking adapter: landmark → friendly room name
 // → shape cache. False = no tier resolved; caller stays silent.
 bool ResolveCursorRegionLabel(void* area, const Vector& cursor,
@@ -479,7 +464,7 @@ void NarrateNearestObject(void* area, const Vector& cursor) {
     if (!acc::engine::GetObjectName(bestObj, name, sizeof(name)) ||
         name[0] == '\0') {
         std::snprintf(name, sizeof(name), "%s",
-                      acc::strings::Get(CategoryNameId(bestCat)));
+                      acc::strings::Get(acc::filter::CategoryNameId(bestCat)));
     }
 
     prism::Speak(name, /*interrupt=*/true);

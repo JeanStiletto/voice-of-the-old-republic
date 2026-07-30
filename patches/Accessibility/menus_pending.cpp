@@ -40,6 +40,38 @@ namespace acc::menus::pending {
 
 namespace {
 
+// Raise a control's is_active flag from 0 to 1 and return what it was.
+//
+// Every engine dispatch we fire by hand needs this first, because several
+// engine onClick handlers gate on `this->is_active != 0` (memory:
+// oncontrolentered_is_active_gate) and silently divert to a different code
+// path when the flag is zero. For MessageBox OK buttons that divergent path
+// appeared to corrupt engine state during close — three Windows __fastfail
+// dumps in one day all landed between a FireActivate and the next frame,
+// with the same MessageBox singleton in the foreground each time.
+//
+// ONLY raise 0 -> 1. HandleLMouseDown's real behaviour is a CONDITIONAL
+// raise, not an unconditional write. Some controls (tab buttons in
+// InGameOptions, equip-slot buttons in InGameEquip) carry non-zero
+// engine-bookkeeping values in this field — a selected-tab marker, equip-state
+// flags. Clobbering those with 1 corrupts the engine's view of which tab is
+// selected, which surfaces later as a crash in an unrelated subsystem on the
+// next render/physics tick. A FireActivate audit across 9 events found 5->1
+// (Feedback tab) was the only non-trivial clobber in all of testing, and the
+// session it appeared in is the one that crashed in CSWRoomSurfaceMesh AABB
+// traversal moments after a tab-subdialog close.
+//
+// This lived inline at seven sites; by the last copy the rationale above had
+// been dropped entirely, which is precisely how an unconditional write gets
+// reintroduced. One home for the rule and its reason.
+uint32_t RaiseIsActiveIfZero(void* control) {
+    uint32_t* isActive = reinterpret_cast<uint32_t*>(
+        reinterpret_cast<unsigned char*>(control) + kControlIsActiveOffset);
+    uint32_t prev = *isActive;
+    if (prev == 0) *isActive = 1;
+    return prev;
+}
+
 enum class Kind {
     None,
     MoveCursor,        // x, y, a = target (self-dedup)
@@ -349,10 +381,7 @@ void Drain(void* gm) {
                 }
             }
 
-            uint32_t* isActive = reinterpret_cast<uint32_t*>(
-                reinterpret_cast<unsigned char*>(op.a) + kControlIsActiveOffset);
-            uint32_t prevIsActive = *isActive;
-            if (prevIsActive == 0) *isActive = 1;
+            uint32_t prevIsActive = RaiseIsActiveIfZero(op.a);
             acclog::Write("Update", "FireActivate target=%p is_active=%u%s",
                           op.a, prevIsActive,
                           prevIsActive == 0 ? "->1" : " (preserved)");
@@ -478,14 +507,7 @@ void Drain(void* gm) {
         void* panel   = op.a;
         void* slotBtn = op.b;
         if (panel && slotBtn) {
-            uint32_t* isActive = reinterpret_cast<uint32_t*>(
-                reinterpret_cast<unsigned char*>(slotBtn) + kControlIsActiveOffset);
-            uint32_t prevIsActive = *isActive;
-            // Conditional raise — see Kind::Activate above for the
-            // 5→1 corruption rationale. Equip slot buttons can carry
-            // non-zero engine state (slot.equipped_state) we mustn't
-            // clobber.
-            if (prevIsActive == 0) *isActive = 1;
+            uint32_t prevIsActive = RaiseIsActiveIfZero(slotBtn);
             auto onEnter  = reinterpret_cast<PFN_InGameEquipOnEnterSlot>(
                 kAddrInGameEquipOnEnterSlot);
             auto onSelect = reinterpret_cast<PFN_InGameEquipOnSelectSlot>(
@@ -513,15 +535,8 @@ void Drain(void* gm) {
         void* row   = op.b;
         void* btn   = op.c;
         if (panel && row && btn) {
-            uint32_t* rowIsActive = reinterpret_cast<uint32_t*>(
-                reinterpret_cast<unsigned char*>(row) + kControlIsActiveOffset);
-            uint32_t* btnIsActive = reinterpret_cast<uint32_t*>(
-                reinterpret_cast<unsigned char*>(btn) + kControlIsActiveOffset);
-            uint32_t prevRowActive = *rowIsActive;
-            uint32_t prevBtnActive = *btnIsActive;
-            // Conditional raise — see Kind::Activate above.
-            if (prevRowActive == 0) *rowIsActive = 1;
-            if (prevBtnActive == 0) *btnIsActive = 1;
+            uint32_t prevRowActive = RaiseIsActiveIfZero(row);
+            uint32_t prevBtnActive = RaiseIsActiveIfZero(btn);
             auto onItem = reinterpret_cast<PFN_InGameEquipOnItemSelected>(
                 kAddrInGameEquipOnItemSelected);
             auto onOK   = reinterpret_cast<PFN_InGameEquipOnOKPressed>(
@@ -553,13 +568,7 @@ void Drain(void* gm) {
         void* panel   = op.a;
         void* slotBtn = op.b;
         if (panel && slotBtn) {
-            uint32_t* isActive = reinterpret_cast<uint32_t*>(
-                reinterpret_cast<unsigned char*>(slotBtn) + kControlIsActiveOffset);
-            uint32_t prevIsActive = *isActive;
-            // Conditional raise — see Kind::Activate above. Workbench slot
-            // buttons carry non-zero engine bookkeeping (slot index + state)
-            // we don't want to clobber.
-            if (prevIsActive == 0) *isActive = 1;
+            uint32_t prevIsActive = RaiseIsActiveIfZero(slotBtn);
             auto onEnter  = reinterpret_cast<PFN_CSWGuiUpgradeOnEnterSlot>(
                 kAddrCSWGuiUpgradeOnEnterSlot);
             auto onSelect = reinterpret_cast<PFN_CSWGuiUpgradeOnSlotSelected>(
@@ -690,14 +699,8 @@ void Drain(void* gm) {
         void* row   = op.b;
         void* btn   = op.c;
         if (panel && row && btn) {
-            uint32_t* rowIsActive = reinterpret_cast<uint32_t*>(
-                reinterpret_cast<unsigned char*>(row) + kControlIsActiveOffset);
-            uint32_t* btnIsActive = reinterpret_cast<uint32_t*>(
-                reinterpret_cast<unsigned char*>(btn) + kControlIsActiveOffset);
-            uint32_t prevRowActive = *rowIsActive;
-            uint32_t prevBtnActive = *btnIsActive;
-            if (prevRowActive == 0) *rowIsActive = 1;
-            if (prevBtnActive == 0) *btnIsActive = 1;
+            uint32_t prevRowActive = RaiseIsActiveIfZero(row);
+            uint32_t prevBtnActive = RaiseIsActiveIfZero(btn);
             auto onRow = reinterpret_cast<PFN_CSWGuiUpgradeOnUpgradeSelected>(
                 kAddrCSWGuiUpgradeOnUpgradeSelected);
             auto onAsm = reinterpret_cast<PFN_CSWGuiUpgradeOnAssemble>(

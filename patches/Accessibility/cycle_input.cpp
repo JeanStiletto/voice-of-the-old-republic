@@ -555,6 +555,17 @@ bool TryResolveOrAnnounceNoFocus(NarratedActivation& a, const char* logTag) {
     return false;
 }
 
+// Per-category 3D cue at the target — spatial confirmation of WHERE the
+// action is aimed. Every activation path (`-`, Shift+-, Ctrl+-, Alt+-) plays
+// it before any speech so the user hears cue → opener → description in
+// audible order. RefineDoorCue is a no-op for map pins, which are never
+// doors. All four call sites used to spell this out identically.
+void PlayActivationCue(const NarratedActivation& a) {
+    auto bindings = BindingsFor(a.category);
+    acc::audio::NavCue cue = RefineDoorCue(bindings.cue, a.obj);
+    acc::audio::PlayCue3D(acc::audio::GetNavCueResref(cue), a.pos);
+}
+
 // `-` repeats the last narrated target with fresh distance + clock. Reads
 // the unified narrated_target slot rather than cycle_state directly — so
 // `-` after a passive-narrate announcement re-announces the passive
@@ -565,11 +576,7 @@ void OnAnnounceFocus() {
     NarratedActivation a;
     if (!TryResolveOrAnnounceNoFocus(a, "- (repeat)")) return;
 
-    auto bindings = BindingsFor(a.category);
-    {
-        acc::audio::NavCue cue = RefineDoorCue(bindings.cue, a.obj);
-        acc::audio::PlayCue3D(acc::audio::GetNavCueResref(cue), a.pos);
-    }
+    PlayActivationCue(a);
 
     Vector playerPos;
     float yaw = 0.0f;
@@ -672,11 +679,7 @@ void OnPathfindFocus() {
     // Per-category 3D cue at the destination — spatial confirmation of WHERE
     // we're walking, same pattern the announce path uses. (RefineDoorCue is a
     // no-op for map pins, which are never doors.)
-    auto bindings = BindingsFor(a.category);
-    {
-        acc::audio::NavCue cue = RefineDoorCue(bindings.cue, a.obj);
-        acc::audio::PlayCue3D(acc::audio::GetNavCueResref(cue), a.pos);
-    }
+    PlayActivationCue(a);
 
     char msg[192];
     std::snprintf(msg, sizeof(msg),
@@ -793,11 +796,7 @@ void OnBeaconFocus() {
     // Per-category 3D cue at the destination — same spatial-confirmation
     // pattern as Shift+-. Plays before any speech so the user hears the
     // category cue → opener → description in audible order.
-    auto bindings = BindingsFor(a.category);
-    {
-        acc::audio::NavCue cue = RefineDoorCue(bindings.cue, a.obj);
-        acc::audio::PlayCue3D(acc::audio::GetNavCueResref(cue), a.pos);
-    }
+    PlayActivationCue(a);
 
     std::vector<Vector> waypoints;
     bool pathOk = acc::guidance::ComputePath(area, playerPos, a.pos, waypoints);
@@ -863,11 +862,7 @@ void OnPathfindFocusForce() {
         return;
     }
 
-    auto bindings = BindingsFor(a.category);
-    {
-        acc::audio::NavCue cue = RefineDoorCue(bindings.cue, a.obj);
-        acc::audio::PlayCue3D(acc::audio::GetNavCueResref(cue), a.pos);
-    }
+    PlayActivationCue(a);
 
     char msg[192];
     std::snprintf(msg, sizeof(msg),
