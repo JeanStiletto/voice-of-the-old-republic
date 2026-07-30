@@ -21,6 +21,7 @@
 #include "menus_internal.h"
 #include "menus_pending.h"   // QueueButtonByIdActivate defers the activate
 #include "engine_offsets.h"
+#include "engine_panels.h"   // HasVtable
 #include "engine_reads.h"
 #include "engine_rebase.h"
 
@@ -349,8 +350,11 @@ bool acc::menus::detail::QueueButtonByIdActivate(void* panel, int buttonId,
 // for some 0 ≤ i < 6.
 bool acc::menus::detail::IsClassSelectionIcon(void* panel, void* control) {
     if (!panel || !control) return false;
-    void** vt = *reinterpret_cast<void***>(panel);
-    if (reinterpret_cast<uintptr_t>(vt) != kVtableCSWGuiClassSelection) {
+    // Guarded deref: this is the gate for menus_extract's step 9c, so it
+    // runs for every control that reaches that far on EVERY panel, not just
+    // chargen — and its caller's `panel` has only cleared IsPanelInManager,
+    // which proves the pointer is listed, not that the object is alive.
+    if (!acc::engine::HasVtable(panel, kVtableCSWGuiClassSelection)) {
         return false;
     }
     auto* panelBase = reinterpret_cast<unsigned char*>(panel);

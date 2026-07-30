@@ -396,9 +396,8 @@ bool ExtractWagerRow(void* panel, void* maxLabel, char* outBuf, size_t bufSize) 
 // when they were inline sections of FromControl, so a log line reading
 // src=perkind-equip-slot still points at the step named for it here.
 //
-// Two steps deviate from that contract and say so at their own
-// definition: TryTooltip (step 1) takes the running source and can clear
-// it, and TryPartyPortrait (step 7b) reports whether it claimed the
+// One step deviates from that contract and says so at its own
+// definition: TryPartyPortrait (step 7b) reports whether it claimed the
 // control even when it produced no text.
 // ---------------------------------------------------------------------
 
@@ -642,27 +641,34 @@ const char* TryVirtualRowAnchor(void* control, void* ownerPanel,
 //    protects steps 2-5; this covers the single read path that doesn't
 //    go through it.
 //
-//    Takes the running `source` and returns it, because this step is the
-//    one ladder entry NOT gated on `!source`: a control that has a
-//    tooltip gets it even when step 0 already produced a per-kind
-//    phrase, and a FAULTING tooltip read clears whatever step 0 set.
-//    That is the pre-existing behaviour this function preserves verbatim;
-//    the pass-through parameter is what makes it visible at the call site.
-const char* TryTooltip(void* control, char* outBuf, size_t bufSize,
-                       const char* source) {
-__try {
-    const char* tip;
-    uint32_t    tipLen;
-    int         id;
-    if (ReadControlNameFields(control, tip, tipLen, id) &&
-        tipLen > 0 && tipLen < bufSize) {
-        memcpy(outBuf, tip, tipLen);
-        outBuf[tipLen] = '\0';
-        source = "tooltip";
+//    This step was UNGATED until Phase-3 B2 — it ran even when step 0 had
+//    already produced a per-kind phrase, so a control carrying a tooltip
+//    would lose its composed text ("Stärke 14, +2" replaced by the raw
+//    field), and a faulting read cleared step 0's result outright. Step 0
+//    was added above this one years later, precisely so the formatted
+//    phrase wins; the `!source` gate it needed was never added here.
+//
+//    Nothing observable changed when the gate went in: across every patch
+//    log in the install, all 9202 Menus.FocusChange samples read
+//    tip[0]="" and no chain entry has ever been tagged src=tooltip. K1
+//    appears not to populate the field at all, so step 0 was safe by
+//    accident of the data rather than by construction. It is safe by
+//    construction now.
+const char* TryTooltip(void* control, char* outBuf, size_t bufSize) {
+    const char* source = nullptr;
+    __try {
+        const char* tip;
+        uint32_t    tipLen;
+        int         id;
+        if (ReadControlNameFields(control, tip, tipLen, id) &&
+            tipLen > 0 && tipLen < bufSize) {
+            memcpy(outBuf, tip, tipLen);
+            outBuf[tipLen] = '\0';
+            source = "tooltip";
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        source = nullptr;
     }
-} __except (EXCEPTION_EXECUTE_HANDLER) {
-    source = nullptr;
-}
     return source;
 }
 
@@ -1198,13 +1204,28 @@ const char* TryInGameMenuIcon(void* control, void* owner,
         };
 
         // Find the index of `control` within the owning panel's controls[].
-        auto* list = reinterpret_cast<CExoArrayList*>(
-            reinterpret_cast<unsigned char*>(owner) + kPanelControlsOffset);
-        if (list && list->data && list->size > 0) {
-            int n = list->size > 32 ? 32 : list->size;
+        // The array is COPIED out under the guard so the scan below runs
+        // over our own memory: `owner` cleared IsPanelInManager, which
+        // proves it is listed, not that it is still alive — panels[] holds
+        // freed panels during teardown, and this extractor runs from the
+        // per-frame focus monitor. Same shape as engine_manager's
+        // ReadPanelArray (Phase-3 B3b).
+        void* controls[32];
+        int n = 0;
+        __try {
+            auto* list = reinterpret_cast<CExoArrayList*>(
+                reinterpret_cast<unsigned char*>(owner) + kPanelControlsOffset);
+            if (list && list->data && list->size > 0) {
+                n = list->size > 32 ? 32 : list->size;
+                for (int i = 0; i < n; ++i) controls[i] = list->data[i];
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            n = 0;
+        }
+        if (n > 0) {
             int idx = -1;
             for (int i = 0; i < n; ++i) {
-                if (list->data[i] == control) { idx = i; break; }
+                if (controls[i] == control) { idx = i; break; }
             }
             // Labels are at panel.controls[0..7]; buttons at [8..15].
             // Same name table, shifted index for buttons.
@@ -1632,9 +1653,17 @@ const char* TryClassSelectionIcon(void* control, void* owner,
             // text in a single read. First-write-wins locking on the
             // cache then keeps subsequent reads stable, immune to the
             // engine's later bounces / class_label reverts.
-            void* activeCtrl = *reinterpret_cast<void**>(
-                reinterpret_cast<unsigned char*>(owner) +
-                kPanelActiveControlOffset);
+            //
+            // Guarded: `owner` passed IsPanelInManager, which proves it is
+            // listed in panels[], not that the object is still alive.
+            void* activeCtrl = nullptr;
+            __try {
+                activeCtrl = *reinterpret_cast<void**>(
+                    reinterpret_cast<unsigned char*>(owner) +
+                    kPanelActiveControlOffset);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                activeCtrl = nullptr;
+            }
             if (activeCtrl == control) {
                 void* classLabel =
                     reinterpret_cast<unsigned char*>(owner) +
@@ -1694,9 +1723,7 @@ const char* TryPortraitCharGenArrow(void* control, void* owner,
                                     char* outBuf, size_t bufSize) {
     const char* source = nullptr;
     if (owner) {
-        void** ownerVt = *reinterpret_cast<void***>(owner);
-        if (reinterpret_cast<uintptr_t>(ownerVt) ==
-                kVtableCSWGuiPortraitCharGen) {
+        if (acc::engine::HasVtable(owner, kVtableCSWGuiPortraitCharGen)) {
             auto* panelBase = reinterpret_cast<unsigned char*>(owner);
             auto* ctrlBase  = reinterpret_cast<unsigned char*>(control);
             ptrdiff_t off   = ctrlBase - panelBase;
@@ -2022,7 +2049,7 @@ const char* FromControl(void* control,
     const char* source = nullptr;
 
     if (!source) source = TryVirtualRowAnchor(control, ownerPanel, outBuf, bufSize);
-    source = TryTooltip(control, outBuf, bufSize, source);  // ungated by design
+    if (!source) source = TryTooltip(control, outBuf, bufSize);
     if (!source) source = TryButton(control, outBuf, bufSize);
     if (!source) source = TryButtonToggle(control, outBuf, bufSize);
     if (!source) source = TryLabel(control, outBuf, bufSize);

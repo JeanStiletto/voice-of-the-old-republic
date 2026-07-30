@@ -14,6 +14,19 @@
 
 namespace acc::engine {
 
+// Declared in engine_panels.h. Lives above the anonymous namespace so the
+// detectors below AND the menus layer can both reach it — see the header
+// for what it is for.
+bool HasVtable(void* obj, uintptr_t expected) {
+    if (!obj) return false;
+    __try {
+        void** vt = *reinterpret_cast<void***>(obj);
+        return reinterpret_cast<uintptr_t>(vt) == expected;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 // CSWGuiSaveLoad structural signature. The panel is allocated dynamically
 // when the user activates load/save and has no slot in CGuiInGame, so the
 // offset table can't catch it — we detect it by the .gui-time control IDs
@@ -40,27 +53,6 @@ void* FindControlByGuiId(void* panel, int id) {
         if (cid == id) return c;
     }
     return nullptr;
-}
-
-// Verify an objects vtable pointer matches `expected`. Works on anything
-// whose vtable sits at +0 -- both child controls and whole panels.
-//
-// Controls: disambiguates panels that share .gui-time IDs but differ in
-// control type at those IDs (canonical case: SaveLoads BTN_DELETE at ID 11
-// = Button vs. Workbenchs LBL_UPGRADE44 at ID 11 = LabelHilight).
-// Panels: heap-allocated single-class panels have no CGuiInGame slot, so
-// vtable equality IS their identity -- five detectors below each spelled
-// this same guarded deref out by hand before Phase-3 B6.
-//
-// Returns false on null / SEH fault.
-bool HasVtable(void* obj, uintptr_t expected) {
-    if (!obj) return false;
-    __try {
-        void** vt = *reinterpret_cast<void***>(obj);
-        return reinterpret_cast<uintptr_t>(vt) == expected;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
 }
 
 bool IsSaveLoadStructural(void* panel) {
