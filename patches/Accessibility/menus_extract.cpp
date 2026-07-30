@@ -2049,11 +2049,6 @@ const char* FromControl(void* control,
     if (!source) source = TryPortraitCharGenArrow(control, owner, outBuf, bufSize);
     if (!source) source = TrySiblingLabel(control, outBuf, bufSize);
 
-    // CSWGuiEditbox — the engine doesn't expose an AsEditbox accessor in
-    // GuiControlMethods, and we don't yet know its struct layout well
-    // enough to read fields by speculative offsets. OnSetActiveControl
-    // logs the vtable pointer for any control we can't extract; map via
-    // SARIF + add per-class extraction here.
 
     if (source && !IsToggle(control)) {
         ApplyCycleCategoryPrefix(control, outBuf, bufSize);
