@@ -27,7 +27,7 @@
 // 0x4 we use. Resource-derived values do not track the executable at all; they
 // follow dialog.tlk and the .gui files. Splitting them apart makes the port's
 // real risk surface countable. See
-// docs/refactoring/reports/phase-2-cleanup.md.
+// archiev/refactoring/reports/phase-2-cleanup.md.
 
 #pragma once
 

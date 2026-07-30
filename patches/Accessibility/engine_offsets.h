@@ -18,7 +18,7 @@
 // Including this header gets you all four, so nothing changed for existing
 // callers. Include a narrower one when you only need that class of constant.
 // The rationale, and what each group costs on a KOTOR 2 port, is in
-// engine_offsets_types.h and docs/refactoring/reports/phase-2-cleanup.md.
+// engine_offsets_types.h and archiev/refactoring/reports/phase-2-cleanup.md.
 
 #pragma once
 

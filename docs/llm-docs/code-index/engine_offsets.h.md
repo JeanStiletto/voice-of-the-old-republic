@@ -36,7 +36,7 @@ struct offsets are mostly but not entirely wrong (upstream's seeded K2 database
 already carries `CAppManager|Client` at the same `0x4` we use), and
 resource-derived values need re-deriving from K2's own resources. See
 `docs/llm-docs/CLAUDE.md` (KOTOR 2 portability section) and
-`docs/refactoring/reports/phase-2-cleanup.md`.
+`archiev/refactoring/reports/phase-2-cleanup.md`.
 
 ## Split-integrity guarantee
 

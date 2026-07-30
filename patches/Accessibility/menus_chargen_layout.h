@@ -18,7 +18,7 @@
 // tracks breakpoint crossings across four message variants; the skills
 // panel has no modifier and a flat class/cross-class cost. Those stay in
 // their own files — see the "not recommended for merging" note in
-// docs/refactoring/reports/phase-3-menus-chain-chargen.md.
+// archiev/refactoring/reports/phase-3-menus-chain-chargen.md.
 
 #pragma once
 

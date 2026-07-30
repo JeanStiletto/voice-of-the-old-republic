@@ -82,7 +82,7 @@ All three layers are fixed: the harvester now sweeps every in-range literal
 rather than matching declaration shapes, the rebase table was regenerated (223
 entries, all 225 `.text` addresses accounted for), and the twelve call sites are
 wrapped and guarded with `acc::addr::Ok()`. Details in
-`docs/refactoring/reports/phase-2-cleanup.md`.
+`archiev/refactoring/reports/phase-2-cleanup.md`.
 
 The standing rule is unchanged and is the cheap way to stay out of that hole:
 new engine addresses belong in this file, in this file's declaration form.
