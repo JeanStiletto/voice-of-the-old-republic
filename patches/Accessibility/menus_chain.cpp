@@ -397,6 +397,620 @@ void AppendChainTextOnly(void* control, void* panel) {
     g_chain[g_chainCount++] = { control, cx, cy, /*textOnly=*/true };
 }
 
+// Panel-aware chain filter: in CSWGuiPortraitCharGen we anchor the chain
+// on the left_arrow alone (announces the current portrait via the
+// PerKind path in menus_extract.cpp's section 9d) and consolidate the
+// right_arrow out of the chain entirely. The user lands on one entry,
+// hears the value, and presses Left/Right to cycle — matching the
+// existing `[◀] value [▶]` UX without needing the head_3d_scene_control
+// (a non-button, IsChainNavigable would reject it) as a chain anchor.
+void* ResolvePortraitChargenSkip(void* panel) {
+    void* portraitChargenSkip = nullptr;
+{
+    void** pVt = *reinterpret_cast<void***>(panel);
+    if (reinterpret_cast<uintptr_t>(pVt) ==
+            kVtableCSWGuiPortraitCharGen) {
+        portraitChargenSkip = reinterpret_cast<unsigned char*>(panel) +
+                              kPortraitRightArrowOffset;
+    }
+}
+    return portraitChargenSkip;
+}
+
+// Store-panel action buttons (Schliess. / Verkaufsliste / Kaufen).
+// These live at fixed struct offsets and we drive them via dedicated
+// hotkeys (Esc to close, G to toggle mode, Enter on item to trade)
+// rather than chain navigation. Walking past the inventory rows into
+// them just adds three dead entries the user has to skip, so filter
+// them out of the chain entirely.
+void ResolveStoreActionButtons(void* panel, void*& storeCancelBtn,
+                               void*& storeToggleBtn,
+                               void*& storeAcceptBtn) {
+if (acc::menus::store::IsStorePanel(panel)) {
+    auto* p = reinterpret_cast<unsigned char*>(panel);
+    storeCancelBtn = p + kStoreCancelButtonOffset;
+    storeToggleBtn = p + kStoreToggleButtonOffset;
+    storeAcceptBtn = p + kStoreAcceptButtonOffset;
+}
+}
+
+// InGameEquip picker listbox (LB_ITEMS, id=5): the equip panel keeps
+// the picker's item listbox in panel.controls[] even when the picker
+// isn't visually shown — the engine pre-populates it with the body-
+// slot candidates at panel open. Letting the chain recurse into its
+// children leaks rows like "Brejiks Armband" / "Energieschild" /
+// "Sith-Energieschild" into the equip screen between the slot
+// buttons. The picker has its own dedicated listbox spec
+// (EquipPickerSpec in menus_listbox.cpp) that drives row selection
+// when armed; chain nav never needs to step into it.
+void* ResolveEquipPickerListBox(void* panel) {
+void* equipPickerLb = nullptr;
+if (IdentifyPanel(panel) == PanelKind::InGameEquip) {
+    equipPickerLb = acc::menus::detail::FindControlById(
+        panel, kEquipLbItemsId);
+}
+    return equipPickerLb;
+}
+
+// WorkbenchUpgrade LB_ITEMS (id=0): the compatible-crystal list. Exactly
+// the same hazard as the equip picker above — the engine keeps the listbox
+// in panel.controls[] (just toggles its visibility via ShowItems), so the
+// generic flatten would expose every crystal row, including rows scrolled
+// off the visible page, as standalone chain buttons. Those off-page rows
+// are un-presented phantoms: their hit-test returns NULL and FireActivate
+// on one AVs the engine (lightsabercrystalcrash — a user arrowed onto the
+// leaked off-page row after Esc-ing the picker and the game shut down).
+// The picker has its own spec (WorkbenchUpgradeSpec) that drives row
+// selection + scroll safely while armed; chain nav must never step into it.
+void* ResolveWorkbenchUpgradeListBox(void* panel) {
+void* workbenchUpgradeLb = nullptr;
+if (IdentifyPanel(panel) == PanelKind::WorkbenchUpgrade) {
+    workbenchUpgradeLb = acc::menus::detail::FindControlById(
+        panel, kWorkbenchUpgradeLbItemsId);
+}
+    return workbenchUpgradeLb;
+}
+
+// Per-kind decorative filter. Identifies non-interactive icon buttons
+// that the engine drops in panel.controls[] but the user has no reason
+// to focus — IsChainNavigable can't tell them from real buttons (same
+// CSWGuiButton vtable). Keyed on (panel kind, .gui id at +0x50) so
+// adding a new entry is one line per kind.
+//
+// Currently registered:
+//   InGameCharacter id=1  (btn_3dchar)   — interaction button for the
+//     3D character model rotator. Image-only with no caption; mouse-
+//     drives the model spin which isn't a screen-reader-useful action.
+//     Without the filter it appears as "control 1" in the chain.
+//   InGameCharacter id=64/67 (btn_change1/btn_change2) — party-member
+//     switch portraits. The engine cycles party leader on Tab, which
+//     re-binds the panel to the new leader and announces the name via
+//     party_leader_announce — that covers the same gesture and works
+//     in-world too, so these portrait buttons are redundant.
+//   InGameCharacter id=65/66 (btn_charright/btn_charleft) — pagination
+//     arrows over the 9-slot NPC roster. Useless in KOTOR 1: max
+//     active party is 3 (PC + 2 NPCs), and the 2 portrait slots already
+//     cover both companions.
+bool IsDecorativeControl(void* panel, void* c,
+                         const char* closeCaption, bool haveCloseCaption) {
+    PanelKind pk = IdentifyPanel(panel);
+    int cid = *reinterpret_cast<int*>(
+        reinterpret_cast<unsigned char*>(c) + kControlIdOffset);
+    // Pazaak deck builder: drop the overlay value/count/title labels and
+    // the unaddable (zero-owned) available cards.
+    if (acc::menus::pazaakdeck::IsChainDecorative(panel, c)) return true;
+    // Pazaak wager popup: mask the less/more SpeedButtons (gui ids 4/5).
+    // The wager is adjusted with Left/Right (held = auto-repeat) via
+    // pazaak::Tick's polled stepper, so these buttons are redundant in the
+    // chain — dropping them lets Up/Down step straight from the wager row
+    // to Setzen/Beenden.
+    if (pk == PanelKind::PazaakWager && (cid == 4 || cid == 5)) return true;
+    if (pk == PanelKind::InGameCharacter &&
+        (cid == 1 || cid == 64 || cid == 65 || cid == 66 || cid == 67)) {
+        return true;
+    }
+    // InGameEquip BTN_EQUIP (id=37, "OK"): the OK button is the
+    // engine's picker-commit button. The accessibility picker
+    // dispatcher (menus_listbox.cpp EquipPickerOnEnter) commits
+    // the selected item directly via QueueEquipCommit, so OK has
+    // no role in chain nav. When the picker isn't armed the
+    // engine renders it as "OK, nicht verfügbar" — landing on
+    // that announces a dead-end. Drop it.
+    //
+    // InGameEquip BTN_BACK (id=36, "Schliess."): Esc closes the
+    // panel via the engine's universal modal-close path, so the
+    // close button is functionally redundant for keyboard nav.
+    // Same reasoning as Store's Schliess./Verkaufsliste/Kaufen
+    // filter above — dedicated hotkey replaces chain landing.
+    if (pk == PanelKind::InGameEquip &&
+        (cid == kEquipBtnEquipId || cid == kEquipBtnBackId)) {
+        return true;
+    }
+    // InGameEquip bottom-row party-cycle buttons. Tab cycles the
+    // active leader engine-side; the panel re-binds and
+    // party_leader_announce speaks the new name. The portrait slots
+    // (change_party_1/2) and pagination arrows (character_left/right)
+    // are therefore redundant — drop them from the chain.
+    if (pk == PanelKind::InGameEquip) {
+        auto* p = reinterpret_cast<unsigned char*>(panel);
+        if (c == p + kEquipPanelChangeParty1ButtonOffset ||
+            c == p + kEquipPanelChangeParty2ButtonOffset ||
+            c == p + kEquipPanelCharacterLeftButtonOffset ||
+            c == p + kEquipPanelCharacterRightButtonOffset) {
+            return true;
+        }
+    }
+    // InGameLevelUp "Zurück" (button_back) and "Abbrechen"
+    // (button_cancel). Both are dead ends for keyboard nav: Zurück
+    // only steps the engine's visual category highlight — we already
+    // navigate the level-up categories with our own arrow keys — and
+    // Abbrechen routes to OnCancelPressed, which the engine gates on a
+    // can-cancel flag it only ever sets to 0 (see kLevelUpButton*Offset
+    // in engine_offsets.h). An in-game level-up cannot be cancelled in
+    // vanilla; Annehmen is the sole exit. Drop both so arrow nav steps
+    // only through the actionable category buttons + Annehmen.
+    if (pk == PanelKind::InGameLevelUp) {
+        auto* p = reinterpret_cast<unsigned char*>(panel);
+        if (c == p + kLevelUpButtonBackOffset ||
+            c == p + kLevelUpButtonCancelOffset) {
+            return true;
+        }
+    }
+    // PartySelection portraits with no currently-selectable
+    // companion. The panel renders all 9 roster slots in a fixed
+    // 3x3 grid; sighted players see empty / greyed slots, but a
+    // blind navigator has nothing actionable on them (the engine
+    // refuses Add/OK anyway) and the spoiler rule from
+    // menus_extract section 7b means we deliberately don't speak
+    // a name. Treating them as decorative drops them from the
+    // chain entirely so arrow keys only step through usable picks.
+    //
+    // The per-portrait flag word at +0x448 is NOT a reliable gate
+    // — patch-20260526-120026.log slots 6/7/8 had values
+    // 0xfffffff9 / 0x5f484c41 / 0x39000001 (clearly uninitialised
+    // heap memory whose low bit randomly happens to be 1).
+    // OnPanelAdded apparently only writes that field for some
+    // slots, so trusting bit 0 leaks 3 unnamed "control N" entries
+    // into the chain. The NPC roster index at +0x450 IS reliable
+    // (clean 0..8 in the log), so route the decision through the
+    // engine: keep the portrait if the slot is in the active
+    // party (partyId >= 0) OR the engine's own GetIsNPCAvailable
+    // returns true for that roster index.
+    if (pk == PanelKind::PartySelection) {
+        void** vt = *reinterpret_cast<void***>(c);
+        if (reinterpret_cast<uintptr_t>(vt) == acc::addr::R(0x00756BB8)) {
+            constexpr size_t kPartyPortraitPartyIdOffset = 0x44c;
+            constexpr size_t kPartyPortraitNpcSlotOffset = 0x450;
+            int partyId = -1, npcSlot = -1;
+            __try {
+                auto* base = reinterpret_cast<unsigned char*>(c);
+                partyId = *reinterpret_cast<int*>(
+                    base + kPartyPortraitPartyIdOffset);
+                npcSlot = *reinterpret_cast<int*>(
+                    base + kPartyPortraitNpcSlotOffset);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                partyId = -1;
+                npcSlot = -1;
+            }
+            bool inActiveParty = partyId >= 0;
+            bool available = (npcSlot >= 0 &&
+                              npcSlot < kPartyRosterSlotCount &&
+                              PartyTableIsNPCAvailable(npcSlot));
+            if (!inActiveParty && !available) return true;
+        }
+    }
+    // WorkbenchUpgrade slot buttons (cid 12..18) that the engine has
+    // marked non-interactive (bit_flags & 0x2 == 0). For a 3-slot
+    // ranged weapon (saber=3) these are the 4 Kristall positions;
+    // for a 4-slot saber/double-shaft (saber=2) they are the 3
+    // Aufwertungs positions. Sighted players see them greyed; a
+    // keyboard navigator has nothing to do with them — OnSlotSelected
+    // gates on is_active so even pressing Enter does nothing useful.
+    // Dropping them from the chain lets arrow-down go straight from
+    // the last applicable slot to BTN_ASSEMBLE.
+    if (pk == PanelKind::WorkbenchUpgrade &&
+        cid >= 12 && cid <= 18) {
+        uint32_t bf = 0;
+        __try {
+            bf = *reinterpret_cast<uint32_t*>(
+                reinterpret_cast<unsigned char*>(c) + 0x44);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            bf = 0;
+        }
+        if ((bf & 0x2) == 0) return true;
+    }
+    // Universal close-button filter (language-agnostic). Every
+    // standalone "close/back" button the engine ships across
+    // sub-screens — whatever the .gui names it (BTN_EXIT / BTN_BACK /
+    // BTN_CANCEL / BTN_Cancel) — renders caption strref 1582. Esc
+    // already dismisses each of these panels (HandleEsc →
+    // FindCancelButton/FindCloseButton scan panel.controls directly, so
+    // they still find it after we drop it from the chain), making the
+    // button redundant for keyboard nav. Match the engine's *resolved*
+    // 1582 text rather than the +0x174 strref field — the engine
+    // renders these captions via gui_string and frequently leaves the
+    // strref slot empty, so a text compare is the reliable signal.
+    // Gated to plain buttons (AsButton): close buttons are never
+    // toggles/sliders, and this keeps ReadButtonText off slider structs.
+    // This subsumes the per-panel Store/Equip/Options Schliess. filters
+    // above; those stay for their non-1582 siblings (Equip OK, Store
+    // Verkaufsliste/Kaufen) and as the Esc-routing anchors.
+    if (haveCloseCaption &&
+        CallDowncast(c, kVtableAsButton) != nullptr) {
+        char btnText[64];
+        if (ReadButtonText(c, btnText, sizeof(btnText)) &&
+            strcmp(btnText, closeCaption) == 0) {
+            acclog::Write("Menus.Chain",
+                          "filter close button panel=%p ctrl=%p "
+                          "text=\"%s\" (TLK %u)",
+                          panel, c, btnText, kCloseButtonStrRef);
+            return true;
+        }
+    }
+    return false;
+}
+
+    // Listbox dispatch:
+    //   * size > 1  — recurse one level into button children (sub-dialog
+    //     settings list).
+    //   * size == 1 in a modal popup — promote the listbox to a text-only
+    //     chain entry so arrow keys can land for re-announce.
+    //   * size == 1 elsewhere — descriptive label blob; skipped.
+void AppendListBoxChildren(void* panel, void* c, void* equipPickerLb,
+                           void* workbenchUpgradeLb, bool modalText) {
+    void** vt = *reinterpret_cast<void***>(c);
+    if (reinterpret_cast<uintptr_t>(vt) == kVtableListBox) {
+        // Store mode filter: the engine keeps BOTH shopitems and
+        // invitems listboxes in panel.controls regardless of which
+        // is currently visible. Walking the hidden one's children
+        // bleeds unreachable rows into the chain — the user nav
+        // would land on items they can neither examine nor trade.
+        // Skip the listbox entirely if it's the hidden one. The
+        // three action buttons live in panel.controls (not in a
+        // listbox) so they stay in the chain.
+        if (acc::menus::store::IsHiddenStoreListBox(panel, c)) {
+            return;
+        }
+        if (c == equipPickerLb) {
+            return;
+        }
+        if (c == workbenchUpgradeLb) {
+            return;
+        }
+        // The journal's quest list (items_listbox @ panel+0x5c4) must
+        // expose its rows even when only ONE quest is active — otherwise
+        // the lone entry (the norm in the Endar Spire tutorial, where the
+        // sole quest is "Angriff auf die Endar Spire") is unreachable and
+        // the user hears no journal content. Its rows carry the dedicated
+        // journal-entry Enter handler (isJournalRow below), so descend via
+        // AppendChainEntry exactly like the size>1 path. The description
+        // listbox (+0x1a4) is a different control and stays skipped.
+        const bool isJournalItemsLb =
+            IdentifyPanel(panel) == PanelKind::InGameJournal &&
+            c == reinterpret_cast<unsigned char*>(panel) +
+                     kJournalItemsListBoxOffset;
+        auto* lbList = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(c) + kListBoxControlsOffset);
+        if (lbList && lbList->data) {
+            if (lbList->size > 1 ||
+                (isJournalItemsLb && lbList->size == 1)) {
+                // Cap the per-listbox walk at the chain bound — AppendChain
+                // Entry self-stops there anyway, so anything past it would
+                // spin the loop for nothing. Using kMaxChainEntries (not a
+                // separate magic number) keeps the two limits in lockstep,
+                // so raising the chain size lifts the item ceiling with it.
+                int lbN = lbList->size > kMaxChainEntries
+                              ? kMaxChainEntries
+                              : lbList->size;
+                for (int j = 0; j < lbN; ++j) {
+                    AppendChainEntry(lbList->data[j]);
+                }
+            } else if (lbList->size == 1 && modalText) {
+                AppendChainTextOnly(c, panel);
+            }
+        }
+    }
+}
+
+// Shared body of the four virtual-row anchors below (credits, charsheet
+// stat rows, pazaak wager, equip stats). All four register a label control
+// the engine renders for sighted players but that IsChainNavigable rejects,
+// so the chain walker would otherwise skip it.
+//
+// cx comes from the real label position so a cursor warp on chain step
+// lands the mouse on the actual on-screen text; cy is overridden to the
+// caller's synthetic sortCy so the y-sort produces the logical reading
+// order instead of interleaving with the real buttons.
+//
+// `probe` is the row's own extractor, called only to answer "does this row
+// have text yet". A label can be present but empty — a mid-frame race
+// during a re-snapshot, or a field the engine has not populated. Those are
+// skipped silently and reappear on the next rebind.
+typedef bool (*RowProbe)(void* panel, void* labelControl);
+
+bool AppendVirtualRow(void* labelControl, int sortCy, void* panel,
+                      RowProbe probe) {
+    if (g_chainCount >= kMaxChainEntries) return false;
+    int cx, cy;
+    if (!GetControlCenter(labelControl, cx, cy)) {
+        cx = 0;
+    }
+    if (!probe(panel, labelControl)) return true;
+    g_chain[g_chainCount++] = {
+        labelControl, cx, sortCy, /*textOnly=*/true
+    };
+    return true;
+}
+
+bool ProbeCreditsRow(void* panel, void* labelControl) {
+    char probe[8];
+    return acc::menus::credits::ExtractCreditsRow(
+        panel, labelControl, probe, sizeof(probe));
+}
+
+bool ProbeStatRow(void* panel, void* labelControl) {
+    char probe[8];
+    return acc::menus::charsheet::ExtractStatRow(
+        panel, labelControl, probe, sizeof(probe));
+}
+
+bool ProbeWagerRow(void* panel, void* labelControl) {
+    char probe[8];
+    return acc::menus::extract::FromControl(
+        labelControl, probe, sizeof(probe), panel) != nullptr;
+}
+
+bool ProbeEquipStatRow(void* panel, void* labelControl) {
+    char probe[8];
+    return acc::menus::equipstats::ExtractEquipStatRow(
+        panel, labelControl, probe, sizeof(probe));
+}
+
+// Virtual credits row for Inventory + Store. credits_value_label isn't
+// IsChainNavigable, so without this the user can't reach the gold display
+// the engine renders for sighted players. ForEachCreditsRowAnchor is a
+// no-op for unsupported panel kinds, so we call it unconditionally.
+//
+// Registered BEFORE the control/listbox walk below — not after, like the
+// other per-kind virtual rows — because Inventory's item listbox can
+// append 60+ entries and fill the chain to kMaxChainEntries; a credits
+// row queued afterwards silently lost its slot to the cap and vanished
+// once the player's inventory grew large (Store, with its smaller shop
+// listbox, stayed under the cap and kept working). The cy-sort below
+// still lands credits at the top via its synthetic sortCy regardless of
+// insertion order.
+bool OnCreditsAnchor(void* labelControl, int sortCy, void* userData) {
+    return AppendVirtualRow(labelControl, sortCy, userData, ProbeCreditsRow);
+}
+
+// Per-kind virtual chain entries. For InGameCharacter the panel
+// hosts a dense value-label cluster (Klasse, Stufe, Erfahrung, HP,
+// FP, six attributes) that the snapshot announce already covers
+// but the chain doesn't expose — labels aren't IsChainNavigable.
+// ForEachStatRowAnchor visits each value-label control; we register
+// it as a text-only chain entry at its real (cx, cy). The y-sort
+// below then drops them into top-to-bottom reading order alongside
+// the real buttons (Autom. Levelaufst., Levelaufst., bottom-row
+// navigation).
+//
+// Text-only flag means Enter re-announces (calls AnnounceControl
+// again) instead of firing vtable[15] — safe for label controls
+// that have no activate handler. FromControl routes through
+// ExtractStatRow at section 0 so the user hears the composed phrase
+// ("Stärke 14, +2") rather than the bare label text ("14").
+bool OnStatRowAnchor(void* labelControl, int sortCy, void* userData) {
+    return AppendVirtualRow(labelControl, sortCy, userData, ProbeStatRow);
+}
+
+// Virtual wager row for the Pazaak wager popup. Same shape as credits:
+// the maximum_label isn't IsChainNavigable, so without this the user
+// can't reach the wager / max / credits readout. The anchor is a no-op
+// for non-PazaakWager panels.
+bool OnWagerAnchor(void* labelControl, int sortCy, void* userData) {
+    return AppendVirtualRow(labelControl, sortCy, userData, ProbeWagerRow);
+}
+
+// Virtual stat rows for the Equip panel (Vitality, Defense, Attack,
+// Damage). Same shape as the credits anchor — value labels live
+// inline in CSWGuiInGameEquip but aren't IsChainNavigable, so the
+// chain walker would skip them. ForEachEquipStatRowAnchor self-gates
+// on InGameEquip (no-op elsewhere) and emits sortCy values above
+// every real button so stats land at the END of the chain after the
+// slots + Back / Change* buttons.
+bool OnEquipStatAnchor(void* labelControl, int sortCy, void* userData) {
+    return AppendVirtualRow(labelControl, sortCy, userData, ProbeEquipStatRow);
+}
+
+// Virtual "Mod settings" entry for InGameOptions + MainMenuOptions.
+// Same shape as the credits / stat-row anchors, but the control
+// pointer is a static sentinel (acc::menus::modsettings::GetRoot
+// Anchor) rather than an engine label — we never need to read /
+// dispatch through it as if it were a real CSWGuiControl. Position
+// is synthetic: sortCy=9000 lands the entry at the end of the
+// chain, after every real button on the Optionen strip.
+bool OnModSettingsAnchor(void* sentinel, int sortCx, int sortCy,
+                         void* /*userData*/) {
+    if (g_chainCount >= kMaxChainEntries) return false;
+    g_chain[g_chainCount++] = {
+        sentinel, sortCx, sortCy,
+        /*textOnly=*/false,
+        /*virtualKind=*/kVirtualMod_SettingsRoot
+    };
+    return true;
+}
+
+// Per-kind virtual chain entries for StatusSummary — the engine's quest-
+// progress / journal-entry info popup. Its body is a cluster of label
+// controls, one per notification type (journal entry, credits, XP, DS/LS
+// points, items gained/lost, stealth XP), NOT a listbox, so the listbox
+// text-only path above never exposed it and the user only reached OK.
+// The engine shows exactly the row(s) that apply and leaves the rest as
+// hidden templates whose text still reads "<CUSTOM0>"; only the shown
+// rows carry the CSWGuiControl visible bit (kControlVisibleBit at +0x44).
+// Expose just those as text-only entries so the user can arrow back and
+// re-read, and so the substituted value ("Erfahrungspunkte erhalten: 45")
+// is what's read rather than the placeholder. The y-sort below drops them
+// above OK (cy ~25 vs ~51) into natural reading order.
+void AppendStatusSummaryRows(void* panel, CExoArrayList* list, int n) {
+if (IdentifyPanel(panel) == PanelKind::StatusSummary) {
+    for (int i = 0; i < n; ++i) {
+        void* c = list->data[i];
+        if (!c) continue;
+        if (CallDowncast(c, kVtableAsLabel) == nullptr) continue;
+        uint32_t bitFlags = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(c) + kControlBitFlagsOffset);
+        if ((bitFlags & kControlVisibleBit) == 0) continue;
+        AppendChainTextOnly(c, panel);  // self-skips empty text / no extent
+    }
+}
+}
+
+// Insertion sort by cy ascending. Stable; the n^2 is cheap int compares
+// and runs once per rebind (panel open / content change), not per tick,
+// so it stays well within budget even at a full kMaxChainEntries chain.
+void SortChainByCy() {
+for (int i = 1; i < g_chainCount; ++i) {
+    for (int j = i; j > 0 && g_chain[j].cy < g_chain[j-1].cy; --j) {
+        ChainEntry tmp = g_chain[j];
+        g_chain[j]   = g_chain[j-1];
+        g_chain[j-1] = tmp;
+    }
+}
+}
+
+// Squash cycle-arrow flankers from the chain. Empty-text navigable
+// entries that share a y-row with a NEARBY text-bearing entry are
+// cycle arrows; the user reaches them via Left/Right cycle dispatch
+// on the value-display entry. Lone empty-text entries with no nearby
+// text-bearing same-row neighbour are kept.
+void SquashCycleFlankers(void* panel) {
+    // Title-screen Options sub-screens (Advanced Sound EAX, Advanced
+    // Graphics AA/texture/anisotropy, Game Settings difficulty) lay their
+    // spinner rows out as a centred value button flanked by empty
+    // left/right arrow buttons at x=72 / x=288 — ~108 px from the value at
+    // x=180, beyond the 80 px reach that catches chargen's tighter
+    // spinners. Widen the squash for just these kinds so the redundant
+    // arrows (the user cycles the value with Left/Right) drop out of Up/Down
+    // nav instead of speaking "control N". Gated by kind so chargen and
+    // every other panel keep the conservative 80 px reach.
+    const int kSquashDxMax =
+        acc::engine::IsMainMenuOptionsSubScreen(IdentifyPanel(panel))
+            ? 130 : 80;
+    int writeIdx = 0;
+    for (int i = 0; i < g_chainCount; ++i) {
+        char tmp[64];
+        bool hasText = acc::menus::extract::FromControl(g_chain[i].control,
+                                               tmp, sizeof(tmp),
+                                               panel) != nullptr;
+        if (hasText) {
+            g_chain[writeIdx++] = g_chain[i];
+            continue;
+        }
+        bool sameRowWithText = false;
+        for (int j = 0; j < g_chainCount; ++j) {
+            if (j == i) continue;
+            int dy = g_chain[j].cy - g_chain[i].cy;
+            if (dy < 0) dy = -dy;
+            if (dy > 5) continue;
+            int dx = g_chain[j].cx - g_chain[i].cx;
+            if (dx < 0) dx = -dx;
+            if (dx == 0 || dx > kSquashDxMax) continue;
+            char tmp2[64];
+            if (acc::menus::extract::FromControl(g_chain[j].control,
+                                        tmp2, sizeof(tmp2),
+                                        panel) != nullptr) {
+                sameRowWithText = true;
+                break;
+            }
+        }
+        if (!sameRowWithText) {
+            g_chain[writeIdx++] = g_chain[i];
+        }
+    }
+    g_chainCount = writeIdx;
+}
+
+// Row pitch between InGameEquip slot buttons, used to compensate the
+// simulated click position. Zero when the panel is not InGameEquip or
+// fewer than two slots made it into the chain.
+void ComputeEquipSlotClickOffset(void* panel) {
+g_equipSlotClickOffsetY = 0;
+if (IdentifyPanel(panel) == PanelKind::InGameEquip) {
+    int firstSlotIdx = -1;
+    int firstSlotY   = 0;
+    for (int i = 0; i < g_chainCount; ++i) {
+        int cid = *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(g_chain[i].control) + kControlIdOffset);
+        bool isSlot =
+            cid == kEquipBtnHeadId    || cid == kEquipBtnImplantId ||
+            cid == kEquipBtnBodyId    || cid == kEquipBtnArmLId    ||
+            cid == kEquipBtnArmRId    || cid == kEquipBtnWeapLId   ||
+            cid == kEquipBtnWeapRId   || cid == kEquipBtnBeltId    ||
+            cid == kEquipBtnHandsId;
+        if (!isSlot) continue;
+        if (firstSlotIdx < 0) {
+            firstSlotIdx = i;
+            firstSlotY   = g_chain[i].cy;
+        } else if (g_chain[i].cy != firstSlotY) {
+            int spacing = g_chain[i].cy - firstSlotY;
+            if (spacing < 0) spacing = -spacing;
+            g_equipSlotClickOffsetY = spacing;
+            break;
+        }
+    }
+}
+}
+
+// Column pitch between chargen class-selection icons, same purpose as
+// ComputeEquipSlotClickOffset above.
+void ComputeClassIconClickOffset(void* panel) {
+g_classIconClickOffsetX = 0;
+{
+    void** pVt = panel ? *reinterpret_cast<void***>(panel) : nullptr;
+    if (reinterpret_cast<uintptr_t>(pVt) ==
+            kVtableCSWGuiClassSelection) {
+        int firstIconIdx = -1;
+        for (int i = 0; i < g_chainCount; ++i) {
+            if (!IsClassSelectionIcon(panel, g_chain[i].control)) continue;
+            if (firstIconIdx < 0) {
+                firstIconIdx = i;
+            } else if (g_chain[i].cy == g_chain[firstIconIdx].cy) {
+                int spacing = g_chain[i].cx - g_chain[firstIconIdx].cx;
+                if (spacing < 0) spacing = -spacing;
+                if (spacing > 0) g_classIconClickOffsetX = spacing;
+                break;
+            }
+        }
+    }
+}
+}
+
+// Per-rebind chain dump. One line for the rebind plus one per entry;
+// this is the trace we read back when a control goes missing from
+// arrow navigation or announces the wrong text.
+void LogChainContents(void* panel, void* active) {
+acclog::Write("Menus.Chain", "rebind panel=%p count=%d index=%d active=%p "
+              "equipSlotOffsetY=%d classIconOffsetX=%d",
+              panel, g_chainCount, g_chainIndex, active,
+              g_equipSlotClickOffsetY, g_classIconClickOffsetX);
+for (int i = 0; i < g_chainCount; ++i) {
+    char text[256];
+    const char* src = acc::menus::extract::FromControl(g_chain[i].control,
+                                              text, sizeof(text),
+                                              panel);
+    unsigned int isActive =
+        *reinterpret_cast<unsigned int*>(
+            reinterpret_cast<unsigned char*>(g_chain[i].control) + 0x4c);
+    unsigned int bitFlags =
+        *reinterpret_cast<unsigned int*>(
+            reinterpret_cast<unsigned char*>(g_chain[i].control) + 0x44);
+    acclog::Write("Menus.Chain", "  [%d] %p (%d,%d)%s %s text=\"%s\" is_active=%u bit_flags=0x%x",
+                  i, g_chain[i].control, g_chain[i].cx, g_chain[i].cy,
+                  g_chain[i].textOnly ? " text-only" : "",
+                  src ? src : "?", src ? text : "", isActive, bitFlags);
+}
+}
+
 }  // namespace
 
 // ============================================================================
@@ -417,24 +1031,16 @@ void RebindChain(void* panel) {
     if (!list->data || list->size <= 0) return;
     int n = list->size > 256 ? 256 : list->size;
 
-    bool modalText = IsModalTextPanel(IdentifyPanel(panel));
+    bool  modalText           = IsModalTextPanel(IdentifyPanel(panel));
+    void* portraitChargenSkip = ResolvePortraitChargenSkip(panel);
+    void* equipPickerLb       = ResolveEquipPickerListBox(panel);
+    void* workbenchUpgradeLb  = ResolveWorkbenchUpgradeListBox(panel);
 
-    // Panel-aware chain filter: in CSWGuiPortraitCharGen we anchor the chain
-    // on the left_arrow alone (announces the current portrait via the
-    // PerKind path in menus_extract.cpp's section 9d) and consolidate the
-    // right_arrow out of the chain entirely. The user lands on one entry,
-    // hears the value, and presses Left/Right to cycle — matching the
-    // existing `[◀] value [▶]` UX without needing the head_3d_scene_control
-    // (a non-button, IsChainNavigable would reject it) as a chain anchor.
-    void* portraitChargenSkip = nullptr;
-    {
-        void** pVt = *reinterpret_cast<void***>(panel);
-        if (reinterpret_cast<uintptr_t>(pVt) ==
-                kVtableCSWGuiPortraitCharGen) {
-            portraitChargenSkip = reinterpret_cast<unsigned char*>(panel) +
-                                  kPortraitRightArrowOffset;
-        }
-    }
+    void* storeCancelBtn = nullptr;
+    void* storeToggleBtn = nullptr;
+    void* storeAcceptBtn = nullptr;
+    ResolveStoreActionButtons(panel, storeCancelBtn, storeToggleBtn,
+                              storeAcceptBtn);
 
     // Resolve the engine's localized close caption (strref 1582 →
     // "Schliess."/"Close"/…) once per rebind, for the universal
@@ -445,271 +1051,11 @@ void RebindChain(void* panel) {
         LookupTlk(kCloseButtonStrRef, closeCaption, sizeof(closeCaption)) &&
         closeCaption[0] != '\0';
 
-    // Per-kind decorative filter. Identifies non-interactive icon buttons
-    // that the engine drops in panel.controls[] but the user has no reason
-    // to focus — IsChainNavigable can't tell them from real buttons (same
-    // CSWGuiButton vtable). Keyed on (panel kind, .gui id at +0x50) so
-    // adding a new entry is one line per kind.
-    //
-    // Currently registered:
-    //   InGameCharacter id=1  (btn_3dchar)   — interaction button for the
-    //     3D character model rotator. Image-only with no caption; mouse-
-    //     drives the model spin which isn't a screen-reader-useful action.
-    //     Without the filter it appears as "control 1" in the chain.
-    //   InGameCharacter id=64/67 (btn_change1/btn_change2) — party-member
-    //     switch portraits. The engine cycles party leader on Tab, which
-    //     re-binds the panel to the new leader and announces the name via
-    //     party_leader_announce — that covers the same gesture and works
-    //     in-world too, so these portrait buttons are redundant.
-    //   InGameCharacter id=65/66 (btn_charright/btn_charleft) — pagination
-    //     arrows over the 9-slot NPC roster. Useless in KOTOR 1: max
-    //     active party is 3 (PC + 2 NPCs), and the 2 portrait slots already
-    //     cover both companions.
-    auto isDecorative = [&](void* c) -> bool {
-        PanelKind pk = IdentifyPanel(panel);
-        int cid = *reinterpret_cast<int*>(
-            reinterpret_cast<unsigned char*>(c) + kControlIdOffset);
-        // Pazaak deck builder: drop the overlay value/count/title labels and
-        // the unaddable (zero-owned) available cards.
-        if (acc::menus::pazaakdeck::IsChainDecorative(panel, c)) return true;
-        // Pazaak wager popup: mask the less/more SpeedButtons (gui ids 4/5).
-        // The wager is adjusted with Left/Right (held = auto-repeat) via
-        // pazaak::Tick's polled stepper, so these buttons are redundant in the
-        // chain — dropping them lets Up/Down step straight from the wager row
-        // to Setzen/Beenden.
-        if (pk == PanelKind::PazaakWager && (cid == 4 || cid == 5)) return true;
-        if (pk == PanelKind::InGameCharacter &&
-            (cid == 1 || cid == 64 || cid == 65 || cid == 66 || cid == 67)) {
-            return true;
-        }
-        // InGameEquip BTN_EQUIP (id=37, "OK"): the OK button is the
-        // engine's picker-commit button. The accessibility picker
-        // dispatcher (menus_listbox.cpp EquipPickerOnEnter) commits
-        // the selected item directly via QueueEquipCommit, so OK has
-        // no role in chain nav. When the picker isn't armed the
-        // engine renders it as "OK, nicht verfügbar" — landing on
-        // that announces a dead-end. Drop it.
-        //
-        // InGameEquip BTN_BACK (id=36, "Schliess."): Esc closes the
-        // panel via the engine's universal modal-close path, so the
-        // close button is functionally redundant for keyboard nav.
-        // Same reasoning as Store's Schliess./Verkaufsliste/Kaufen
-        // filter above — dedicated hotkey replaces chain landing.
-        if (pk == PanelKind::InGameEquip &&
-            (cid == kEquipBtnEquipId || cid == kEquipBtnBackId)) {
-            return true;
-        }
-        // InGameEquip bottom-row party-cycle buttons. Tab cycles the
-        // active leader engine-side; the panel re-binds and
-        // party_leader_announce speaks the new name. The portrait slots
-        // (change_party_1/2) and pagination arrows (character_left/right)
-        // are therefore redundant — drop them from the chain.
-        if (pk == PanelKind::InGameEquip) {
-            auto* p = reinterpret_cast<unsigned char*>(panel);
-            if (c == p + kEquipPanelChangeParty1ButtonOffset ||
-                c == p + kEquipPanelChangeParty2ButtonOffset ||
-                c == p + kEquipPanelCharacterLeftButtonOffset ||
-                c == p + kEquipPanelCharacterRightButtonOffset) {
-                return true;
-            }
-        }
-        // InGameLevelUp "Zurück" (button_back) and "Abbrechen"
-        // (button_cancel). Both are dead ends for keyboard nav: Zurück
-        // only steps the engine's visual category highlight — we already
-        // navigate the level-up categories with our own arrow keys — and
-        // Abbrechen routes to OnCancelPressed, which the engine gates on a
-        // can-cancel flag it only ever sets to 0 (see kLevelUpButton*Offset
-        // in engine_offsets.h). An in-game level-up cannot be cancelled in
-        // vanilla; Annehmen is the sole exit. Drop both so arrow nav steps
-        // only through the actionable category buttons + Annehmen.
-        if (pk == PanelKind::InGameLevelUp) {
-            auto* p = reinterpret_cast<unsigned char*>(panel);
-            if (c == p + kLevelUpButtonBackOffset ||
-                c == p + kLevelUpButtonCancelOffset) {
-                return true;
-            }
-        }
-        // PartySelection portraits with no currently-selectable
-        // companion. The panel renders all 9 roster slots in a fixed
-        // 3x3 grid; sighted players see empty / greyed slots, but a
-        // blind navigator has nothing actionable on them (the engine
-        // refuses Add/OK anyway) and the spoiler rule from
-        // menus_extract section 7b means we deliberately don't speak
-        // a name. Treating them as decorative drops them from the
-        // chain entirely so arrow keys only step through usable picks.
-        //
-        // The per-portrait flag word at +0x448 is NOT a reliable gate
-        // — patch-20260526-120026.log slots 6/7/8 had values
-        // 0xfffffff9 / 0x5f484c41 / 0x39000001 (clearly uninitialised
-        // heap memory whose low bit randomly happens to be 1).
-        // OnPanelAdded apparently only writes that field for some
-        // slots, so trusting bit 0 leaks 3 unnamed "control N" entries
-        // into the chain. The NPC roster index at +0x450 IS reliable
-        // (clean 0..8 in the log), so route the decision through the
-        // engine: keep the portrait if the slot is in the active
-        // party (partyId >= 0) OR the engine's own GetIsNPCAvailable
-        // returns true for that roster index.
-        if (pk == PanelKind::PartySelection) {
-            void** vt = *reinterpret_cast<void***>(c);
-            if (reinterpret_cast<uintptr_t>(vt) == acc::addr::R(0x00756BB8)) {
-                constexpr size_t kPartyPortraitPartyIdOffset = 0x44c;
-                constexpr size_t kPartyPortraitNpcSlotOffset = 0x450;
-                int partyId = -1, npcSlot = -1;
-                __try {
-                    auto* base = reinterpret_cast<unsigned char*>(c);
-                    partyId = *reinterpret_cast<int*>(
-                        base + kPartyPortraitPartyIdOffset);
-                    npcSlot = *reinterpret_cast<int*>(
-                        base + kPartyPortraitNpcSlotOffset);
-                } __except (EXCEPTION_EXECUTE_HANDLER) {
-                    partyId = -1;
-                    npcSlot = -1;
-                }
-                bool inActiveParty = partyId >= 0;
-                bool available = (npcSlot >= 0 &&
-                                  npcSlot < kPartyRosterSlotCount &&
-                                  PartyTableIsNPCAvailable(npcSlot));
-                if (!inActiveParty && !available) return true;
-            }
-        }
-        // WorkbenchUpgrade slot buttons (cid 12..18) that the engine has
-        // marked non-interactive (bit_flags & 0x2 == 0). For a 3-slot
-        // ranged weapon (saber=3) these are the 4 Kristall positions;
-        // for a 4-slot saber/double-shaft (saber=2) they are the 3
-        // Aufwertungs positions. Sighted players see them greyed; a
-        // keyboard navigator has nothing to do with them — OnSlotSelected
-        // gates on is_active so even pressing Enter does nothing useful.
-        // Dropping them from the chain lets arrow-down go straight from
-        // the last applicable slot to BTN_ASSEMBLE.
-        if (pk == PanelKind::WorkbenchUpgrade &&
-            cid >= 12 && cid <= 18) {
-            uint32_t bf = 0;
-            __try {
-                bf = *reinterpret_cast<uint32_t*>(
-                    reinterpret_cast<unsigned char*>(c) + 0x44);
-            } __except (EXCEPTION_EXECUTE_HANDLER) {
-                bf = 0;
-            }
-            if ((bf & 0x2) == 0) return true;
-        }
-        // Universal close-button filter (language-agnostic). Every
-        // standalone "close/back" button the engine ships across
-        // sub-screens — whatever the .gui names it (BTN_EXIT / BTN_BACK /
-        // BTN_CANCEL / BTN_Cancel) — renders caption strref 1582. Esc
-        // already dismisses each of these panels (HandleEsc →
-        // FindCancelButton/FindCloseButton scan panel.controls directly, so
-        // they still find it after we drop it from the chain), making the
-        // button redundant for keyboard nav. Match the engine's *resolved*
-        // 1582 text rather than the +0x174 strref field — the engine
-        // renders these captions via gui_string and frequently leaves the
-        // strref slot empty, so a text compare is the reliable signal.
-        // Gated to plain buttons (AsButton): close buttons are never
-        // toggles/sliders, and this keeps ReadButtonText off slider structs.
-        // This subsumes the per-panel Store/Equip/Options Schliess. filters
-        // above; those stay for their non-1582 siblings (Equip OK, Store
-        // Verkaufsliste/Kaufen) and as the Esc-routing anchors.
-        if (haveCloseCaption &&
-            CallDowncast(c, kVtableAsButton) != nullptr) {
-            char btnText[64];
-            if (ReadButtonText(c, btnText, sizeof(btnText)) &&
-                strcmp(btnText, closeCaption) == 0) {
-                acclog::Write("Menus.Chain",
-                              "filter close button panel=%p ctrl=%p "
-                              "text=\"%s\" (TLK %u)",
-                              panel, c, btnText, kCloseButtonStrRef);
-                return true;
-            }
-        }
-        return false;
-    };
-
-    // Store-panel action buttons (Schliess. / Verkaufsliste / Kaufen).
-    // These live at fixed struct offsets and we drive them via dedicated
-    // hotkeys (Esc to close, G to toggle mode, Enter on item to trade)
-    // rather than chain navigation. Walking past the inventory rows into
-    // them just adds three dead entries the user has to skip, so filter
-    // them out of the chain entirely.
-    void* storeCancelBtn  = nullptr;
-    void* storeToggleBtn  = nullptr;
-    void* storeAcceptBtn  = nullptr;
-    if (acc::menus::store::IsStorePanel(panel)) {
-        auto* p = reinterpret_cast<unsigned char*>(panel);
-        storeCancelBtn = p + kStoreCancelButtonOffset;
-        storeToggleBtn = p + kStoreToggleButtonOffset;
-        storeAcceptBtn = p + kStoreAcceptButtonOffset;
-    }
-
-    // InGameEquip picker listbox (LB_ITEMS, id=5): the equip panel keeps
-    // the picker's item listbox in panel.controls[] even when the picker
-    // isn't visually shown — the engine pre-populates it with the body-
-    // slot candidates at panel open. Letting the chain recurse into its
-    // children leaks rows like "Brejiks Armband" / "Energieschild" /
-    // "Sith-Energieschild" into the equip screen between the slot
-    // buttons. The picker has its own dedicated listbox spec
-    // (EquipPickerSpec in menus_listbox.cpp) that drives row selection
-    // when armed; chain nav never needs to step into it.
-    void* equipPickerLb = nullptr;
-    if (IdentifyPanel(panel) == PanelKind::InGameEquip) {
-        equipPickerLb = acc::menus::detail::FindControlById(
-            panel, kEquipLbItemsId);
-    }
-
-    // WorkbenchUpgrade LB_ITEMS (id=0): the compatible-crystal list. Exactly
-    // the same hazard as the equip picker above — the engine keeps the listbox
-    // in panel.controls[] (just toggles its visibility via ShowItems), so the
-    // generic flatten would expose every crystal row, including rows scrolled
-    // off the visible page, as standalone chain buttons. Those off-page rows
-    // are un-presented phantoms: their hit-test returns NULL and FireActivate
-    // on one AVs the engine (lightsabercrystalcrash — a user arrowed onto the
-    // leaked off-page row after Esc-ing the picker and the game shut down).
-    // The picker has its own spec (WorkbenchUpgradeSpec) that drives row
-    // selection + scroll safely while armed; chain nav must never step into it.
-    void* workbenchUpgradeLb = nullptr;
-    if (IdentifyPanel(panel) == PanelKind::WorkbenchUpgrade) {
-        workbenchUpgradeLb = acc::menus::detail::FindControlById(
-            panel, kWorkbenchUpgradeLbItemsId);
-    }
-
-    // Virtual credits row for Inventory + Store. credits_value_label isn't
-    // IsChainNavigable, so without this the user can't reach the gold display
-    // the engine renders for sighted players. ForEachCreditsRowAnchor is a
-    // no-op for unsupported panel kinds, so we call it unconditionally.
-    //
-    // Registered BEFORE the control/listbox walk below — not after, like the
-    // other per-kind virtual rows — because Inventory's item listbox can
-    // append 60+ entries and fill the chain to kMaxChainEntries; a credits
-    // row queued afterwards silently lost its slot to the cap and vanished
-    // once the player's inventory grew large (Store, with its smaller shop
-    // listbox, stayed under the cap and kept working). The cy-sort below
-    // still lands credits at the top via its synthetic sortCy regardless of
-    // insertion order.
-    {
-        auto onCreditsAnchor = [](void* labelControl, int sortCy,
-                                  void* userData) -> bool {
-            void* p = userData;
-            if (g_chainCount >= kMaxChainEntries) return false;
-            int cx, cy;
-            // cx from the on-screen label so a cursor warp on chain step
-            // lands the mouse on the visible credits readout; cy is the
-            // synthetic sortCy so the entry sorts above real buttons.
-            if (!GetControlCenter(labelControl, cx, cy)) {
-                cx = 0;
-            }
-            // Skip when the engine hasn't yet populated the value (gui_
-            // string empty mid-frame). Row reappears on the next rebind.
-            char probe[8];
-            if (!acc::menus::credits::ExtractCreditsRow(
-                    p, labelControl, probe, sizeof(probe))) {
-                return true;
-            }
-            g_chain[g_chainCount++] = {
-                labelControl, cx, sortCy, /*textOnly=*/true
-            };
-            return true;
-        };
-        acc::menus::credits::ForEachCreditsRowAnchor(panel, onCreditsAnchor,
-                                                    panel);
-    }
+    // Credits row FIRST, before the control/listbox walk: Inventory's item
+    // listbox can append 60+ entries and fill the chain to kMaxChainEntries,
+    // and a credits row queued afterwards silently lost its slot to the cap.
+    // The cy-sort below still lands it at the top via its synthetic sortCy.
+    acc::menus::credits::ForEachCreditsRowAnchor(panel, OnCreditsAnchor, panel);
 
     for (int i = 0; i < n; ++i) {
         void* c = list->data[i];
@@ -719,339 +1065,37 @@ void RebindChain(void* panel) {
             c == storeAcceptBtn) continue;
 
         if (IsChainNavigable(c)) {
-            if (isDecorative(c)) continue;
+            if (IsDecorativeControl(panel, c, closeCaption, haveCloseCaption)) {
+                continue;
+            }
             AppendChainEntry(c);
             continue;
         }
-
-        // Listbox dispatch:
-        //   * size > 1  — recurse one level into button children (sub-dialog
-        //     settings list).
-        //   * size == 1 in a modal popup — promote the listbox to a text-only
-        //     chain entry so arrow keys can land for re-announce.
-        //   * size == 1 elsewhere — descriptive label blob; skipped.
-        void** vt = *reinterpret_cast<void***>(c);
-        if (reinterpret_cast<uintptr_t>(vt) == kVtableListBox) {
-            // Store mode filter: the engine keeps BOTH shopitems and
-            // invitems listboxes in panel.controls regardless of which
-            // is currently visible. Walking the hidden one's children
-            // bleeds unreachable rows into the chain — the user nav
-            // would land on items they can neither examine nor trade.
-            // Skip the listbox entirely if it's the hidden one. The
-            // three action buttons live in panel.controls (not in a
-            // listbox) so they stay in the chain.
-            if (acc::menus::store::IsHiddenStoreListBox(panel, c)) {
-                continue;
-            }
-            if (c == equipPickerLb) {
-                continue;
-            }
-            if (c == workbenchUpgradeLb) {
-                continue;
-            }
-            // The journal's quest list (items_listbox @ panel+0x5c4) must
-            // expose its rows even when only ONE quest is active — otherwise
-            // the lone entry (the norm in the Endar Spire tutorial, where the
-            // sole quest is "Angriff auf die Endar Spire") is unreachable and
-            // the user hears no journal content. Its rows carry the dedicated
-            // journal-entry Enter handler (isJournalRow below), so descend via
-            // AppendChainEntry exactly like the size>1 path. The description
-            // listbox (+0x1a4) is a different control and stays skipped.
-            const bool isJournalItemsLb =
-                IdentifyPanel(panel) == PanelKind::InGameJournal &&
-                c == reinterpret_cast<unsigned char*>(panel) +
-                         kJournalItemsListBoxOffset;
-            auto* lbList = reinterpret_cast<CExoArrayList*>(
-                reinterpret_cast<unsigned char*>(c) + kListBoxControlsOffset);
-            if (lbList && lbList->data) {
-                if (lbList->size > 1 ||
-                    (isJournalItemsLb && lbList->size == 1)) {
-                    // Cap the per-listbox walk at the chain bound — AppendChain
-                    // Entry self-stops there anyway, so anything past it would
-                    // spin the loop for nothing. Using kMaxChainEntries (not a
-                    // separate magic number) keeps the two limits in lockstep,
-                    // so raising the chain size lifts the item ceiling with it.
-                    int lbN = lbList->size > kMaxChainEntries
-                                  ? kMaxChainEntries
-                                  : lbList->size;
-                    for (int j = 0; j < lbN; ++j) {
-                        AppendChainEntry(lbList->data[j]);
-                    }
-                } else if (lbList->size == 1 && modalText) {
-                    AppendChainTextOnly(c, panel);
-                }
-            }
-        }
+        AppendListBoxChildren(panel, c, equipPickerLb, workbenchUpgradeLb,
+                              modalText);
     }
 
-    // Per-kind virtual chain entries. For InGameCharacter the panel
-    // hosts a dense value-label cluster (Klasse, Stufe, Erfahrung, HP,
-    // FP, six attributes) that the snapshot announce already covers
-    // but the chain doesn't expose — labels aren't IsChainNavigable.
-    // ForEachStatRowAnchor visits each value-label control; we register
-    // it as a text-only chain entry at its real (cx, cy). The y-sort
-    // below then drops them into top-to-bottom reading order alongside
-    // the real buttons (Autom. Levelaufst., Levelaufst., bottom-row
-    // navigation).
-    //
-    // Text-only flag means Enter re-announces (calls AnnounceControl
-    // again) instead of firing vtable[15] — safe for label controls
-    // that have no activate handler. FromControl routes through
-    // ExtractStatRow at section 0 so the user hears the composed phrase
-    // ("Stärke 14, +2") rather than the bare label text ("14").
+    // The remaining virtual rows. Each ForEach*Anchor is a no-op on panel
+    // kinds it does not own, except the charsheet one which is gated here.
     if (IdentifyPanel(panel) == PanelKind::InGameCharacter) {
-        auto onAnchor = [](void* labelControl, int sortCy,
-                           void* userData) -> bool {
-            void* p = userData;
-            if (g_chainCount >= kMaxChainEntries) return false;
-            int cx, cy;
-            // cx comes from the real label position so a cursor warp on
-            // chain step lands the mouse on the actual on-screen text;
-            // cy is overridden to sortCy so the y-sort produces the
-            // logical reading order (Klasse → ... → Charisma at cy 1..11)
-            // instead of interleaving with real buttons (cy 237+).
-            if (!GetControlCenter(labelControl, cx, cy)) {
-                cx = 0;
-            }
-            // Label may be present but empty (mid-frame race during a
-            // re-snapshot, or a not-yet-populated field). Skip silently;
-            // the row reappears on the next rebind once the label has
-            // text.
-            char probe[8];
-            if (!acc::menus::charsheet::ExtractStatRow(
-                    p, labelControl, probe, sizeof(probe))) {
-                return true;
-            }
-            g_chain[g_chainCount++] = {
-                labelControl, cx, sortCy, /*textOnly=*/true
-            };
-            return true;
-        };
-        acc::menus::charsheet::ForEachStatRowAnchor(panel, onAnchor, panel);
+        acc::menus::charsheet::ForEachStatRowAnchor(panel, OnStatRowAnchor,
+                                                    panel);
     }
+    AppendStatusSummaryRows(panel, list, n);
+    acc::menus::extract::ForEachWagerRowAnchor(panel, OnWagerAnchor, panel);
+    acc::menus::equipstats::ForEachEquipStatRowAnchor(
+        panel, OnEquipStatAnchor, panel);
+    acc::menus::modsettings::ForEachRootAnchor(panel, OnModSettingsAnchor,
+                                               panel);
 
-    // Per-kind virtual chain entries for StatusSummary — the engine's quest-
-    // progress / journal-entry info popup. Its body is a cluster of label
-    // controls, one per notification type (journal entry, credits, XP, DS/LS
-    // points, items gained/lost, stealth XP), NOT a listbox, so the listbox
-    // text-only path above never exposed it and the user only reached OK.
-    // The engine shows exactly the row(s) that apply and leaves the rest as
-    // hidden templates whose text still reads "<CUSTOM0>"; only the shown
-    // rows carry the CSWGuiControl visible bit (kControlVisibleBit at +0x44).
-    // Expose just those as text-only entries so the user can arrow back and
-    // re-read, and so the substituted value ("Erfahrungspunkte erhalten: 45")
-    // is what's read rather than the placeholder. The y-sort below drops them
-    // above OK (cy ~25 vs ~51) into natural reading order.
-    if (IdentifyPanel(panel) == PanelKind::StatusSummary) {
-        for (int i = 0; i < n; ++i) {
-            void* c = list->data[i];
-            if (!c) continue;
-            if (CallDowncast(c, kVtableAsLabel) == nullptr) continue;
-            uint32_t bitFlags = *reinterpret_cast<uint32_t*>(
-                reinterpret_cast<unsigned char*>(c) + kControlBitFlagsOffset);
-            if ((bitFlags & kControlVisibleBit) == 0) continue;
-            AppendChainTextOnly(c, panel);  // self-skips empty text / no extent
-        }
-    }
-
-    // (Credits row is registered above, before the control/listbox walk, so
-    // a full Inventory item listbox can't starve it of a chain slot.)
-
-    // Virtual wager row for the Pazaak wager popup. Same shape as credits:
-    // the maximum_label isn't IsChainNavigable, so without this the user
-    // can't reach the wager / max / credits readout. The anchor is a no-op
-    // for non-PazaakWager panels.
-    {
-        auto onWagerAnchor = [](void* labelControl, int sortCy,
-                                void* userData) -> bool {
-            void* p = userData;
-            if (g_chainCount >= kMaxChainEntries) return false;
-            int cx, cy;
-            if (!GetControlCenter(labelControl, cx, cy)) cx = 0;
-            // Skip until the panel fields are readable (wager < 0 / label
-            // empty mid-frame). Row reappears on the next rebind.
-            char probe[8];
-            if (!acc::menus::extract::FromControl(labelControl, probe,
-                                                  sizeof(probe), p)) {
-                return true;
-            }
-            g_chain[g_chainCount++] = {
-                labelControl, cx, sortCy, /*textOnly=*/true
-            };
-            return true;
-        };
-        acc::menus::extract::ForEachWagerRowAnchor(panel, onWagerAnchor, panel);
-    }
-
-    // Virtual stat rows for the Equip panel (Vitality, Defense, Attack,
-    // Damage). Same shape as the credits anchor — value labels live
-    // inline in CSWGuiInGameEquip but aren't IsChainNavigable, so the
-    // chain walker would skip them. ForEachEquipStatRowAnchor self-gates
-    // on InGameEquip (no-op elsewhere) and emits sortCy values above
-    // every real button so stats land at the END of the chain after the
-    // slots + Back / Change* buttons.
-    {
-        auto onEquipStatAnchor = [](void* labelControl, int sortCy,
-                                    void* userData) -> bool {
-            void* p = userData;
-            if (g_chainCount >= kMaxChainEntries) return false;
-            int cx, cy;
-            if (!GetControlCenter(labelControl, cx, cy)) {
-                cx = 0;
-            }
-            // Skip rows whose value the engine hasn't populated yet
-            // (gui_string empty mid-frame). Re-emerges on next rebind
-            // once the engine writes the value.
-            char probe[8];
-            if (!acc::menus::equipstats::ExtractEquipStatRow(
-                    p, labelControl, probe, sizeof(probe))) {
-                return true;
-            }
-            g_chain[g_chainCount++] = {
-                labelControl, cx, sortCy, /*textOnly=*/true
-            };
-            return true;
-        };
-        acc::menus::equipstats::ForEachEquipStatRowAnchor(
-            panel, onEquipStatAnchor, panel);
-    }
-
-    // Virtual "Mod settings" entry for InGameOptions + MainMenuOptions.
-    // Same shape as the credits / stat-row anchors, but the control
-    // pointer is a static sentinel (acc::menus::modsettings::GetRoot
-    // Anchor) rather than an engine label — we never need to read /
-    // dispatch through it as if it were a real CSWGuiControl. Position
-    // is synthetic: sortCy=9000 lands the entry at the end of the
-    // chain, after every real button on the Optionen strip.
-    {
-        auto onModSettingsAnchor = [](void* sentinel, int sortCx, int sortCy,
-                                      void* /*userData*/) -> bool {
-            if (g_chainCount >= kMaxChainEntries) return false;
-            g_chain[g_chainCount++] = {
-                sentinel, sortCx, sortCy,
-                /*textOnly=*/false,
-                /*virtualKind=*/kVirtualMod_SettingsRoot
-            };
-            return true;
-        };
-        acc::menus::modsettings::ForEachRootAnchor(
-            panel, onModSettingsAnchor, panel);
-    }
-
-    // Insertion sort by cy ascending. Stable; the n^2 is cheap int compares
-    // and runs once per rebind (panel open / content change), not per tick,
-    // so it stays well within budget even at a full kMaxChainEntries chain.
-    for (int i = 1; i < g_chainCount; ++i) {
-        for (int j = i; j > 0 && g_chain[j].cy < g_chain[j-1].cy; --j) {
-            ChainEntry tmp = g_chain[j];
-            g_chain[j]   = g_chain[j-1];
-            g_chain[j-1] = tmp;
-        }
-    }
-
-    // Squash cycle-arrow flankers from the chain. Empty-text navigable
-    // entries that share a y-row with a NEARBY text-bearing entry are
-    // cycle arrows; the user reaches them via Left/Right cycle dispatch
-    // on the value-display entry. Lone empty-text entries with no nearby
-    // text-bearing same-row neighbour are kept.
-    {
-        // Title-screen Options sub-screens (Advanced Sound EAX, Advanced
-        // Graphics AA/texture/anisotropy, Game Settings difficulty) lay their
-        // spinner rows out as a centred value button flanked by empty
-        // left/right arrow buttons at x=72 / x=288 — ~108 px from the value at
-        // x=180, beyond the 80 px reach that catches chargen's tighter
-        // spinners. Widen the squash for just these kinds so the redundant
-        // arrows (the user cycles the value with Left/Right) drop out of Up/Down
-        // nav instead of speaking "control N". Gated by kind so chargen and
-        // every other panel keep the conservative 80 px reach.
-        const int kSquashDxMax =
-            acc::engine::IsMainMenuOptionsSubScreen(IdentifyPanel(panel))
-                ? 130 : 80;
-        int writeIdx = 0;
-        for (int i = 0; i < g_chainCount; ++i) {
-            char tmp[64];
-            bool hasText = acc::menus::extract::FromControl(g_chain[i].control,
-                                                   tmp, sizeof(tmp),
-                                                   panel) != nullptr;
-            if (hasText) {
-                g_chain[writeIdx++] = g_chain[i];
-                continue;
-            }
-            bool sameRowWithText = false;
-            for (int j = 0; j < g_chainCount; ++j) {
-                if (j == i) continue;
-                int dy = g_chain[j].cy - g_chain[i].cy;
-                if (dy < 0) dy = -dy;
-                if (dy > 5) continue;
-                int dx = g_chain[j].cx - g_chain[i].cx;
-                if (dx < 0) dx = -dx;
-                if (dx == 0 || dx > kSquashDxMax) continue;
-                char tmp2[64];
-                if (acc::menus::extract::FromControl(g_chain[j].control,
-                                            tmp2, sizeof(tmp2),
-                                            panel) != nullptr) {
-                    sameRowWithText = true;
-                    break;
-                }
-            }
-            if (!sameRowWithText) {
-                g_chain[writeIdx++] = g_chain[i];
-            }
-        }
-        g_chainCount = writeIdx;
-    }
+    SortChainByCy();
+    SquashCycleFlankers(panel);
 
     // Tab-cluster Y offset is computed on demand at warp/click-sim time via
     // ComputeTabClickOffsetY — see the header comment for the race that made
     // an eager rebind-time computation unreliable.
-
-    // Compute g_equipSlotClickOffsetY for InGameEquip panels.
-    g_equipSlotClickOffsetY = 0;
-    if (IdentifyPanel(panel) == PanelKind::InGameEquip) {
-        int firstSlotIdx = -1;
-        int firstSlotY   = 0;
-        for (int i = 0; i < g_chainCount; ++i) {
-            int cid = *reinterpret_cast<int*>(
-                reinterpret_cast<unsigned char*>(g_chain[i].control) + kControlIdOffset);
-            bool isSlot =
-                cid == kEquipBtnHeadId    || cid == kEquipBtnImplantId ||
-                cid == kEquipBtnBodyId    || cid == kEquipBtnArmLId    ||
-                cid == kEquipBtnArmRId    || cid == kEquipBtnWeapLId   ||
-                cid == kEquipBtnWeapRId   || cid == kEquipBtnBeltId    ||
-                cid == kEquipBtnHandsId;
-            if (!isSlot) continue;
-            if (firstSlotIdx < 0) {
-                firstSlotIdx = i;
-                firstSlotY   = g_chain[i].cy;
-            } else if (g_chain[i].cy != firstSlotY) {
-                int spacing = g_chain[i].cy - firstSlotY;
-                if (spacing < 0) spacing = -spacing;
-                g_equipSlotClickOffsetY = spacing;
-                break;
-            }
-        }
-    }
-
-    // Compute g_classIconClickOffsetX for the chargen class-selection panel.
-    g_classIconClickOffsetX = 0;
-    {
-        void** pVt = panel ? *reinterpret_cast<void***>(panel) : nullptr;
-        if (reinterpret_cast<uintptr_t>(pVt) ==
-                kVtableCSWGuiClassSelection) {
-            int firstIconIdx = -1;
-            for (int i = 0; i < g_chainCount; ++i) {
-                if (!IsClassSelectionIcon(panel, g_chain[i].control)) continue;
-                if (firstIconIdx < 0) {
-                    firstIconIdx = i;
-                } else if (g_chain[i].cy == g_chain[firstIconIdx].cy) {
-                    int spacing = g_chain[i].cx - g_chain[firstIconIdx].cx;
-                    if (spacing < 0) spacing = -spacing;
-                    if (spacing > 0) g_classIconClickOffsetX = spacing;
-                    break;
-                }
-            }
-        }
-    }
+    ComputeEquipSlotClickOffset(panel);
+    ComputeClassIconClickOffset(panel);
 
     // Anchor at active.
     void* active = ReadPanelActiveControl(panel);
@@ -1067,26 +1111,7 @@ void RebindChain(void* panel) {
     // Same on the Skills panel.
     acc::menus::chargen_skills::SyncSelectedSkillFromChainFocus();
 
-    acclog::Write("Menus.Chain", "rebind panel=%p count=%d index=%d active=%p "
-                  "equipSlotOffsetY=%d classIconOffsetX=%d",
-                  panel, g_chainCount, g_chainIndex, active,
-                  g_equipSlotClickOffsetY, g_classIconClickOffsetX);
-    for (int i = 0; i < g_chainCount; ++i) {
-        char text[256];
-        const char* src = acc::menus::extract::FromControl(g_chain[i].control,
-                                                  text, sizeof(text),
-                                                  panel);
-        unsigned int isActive =
-            *reinterpret_cast<unsigned int*>(
-                reinterpret_cast<unsigned char*>(g_chain[i].control) + 0x4c);
-        unsigned int bitFlags =
-            *reinterpret_cast<unsigned int*>(
-                reinterpret_cast<unsigned char*>(g_chain[i].control) + 0x44);
-        acclog::Write("Menus.Chain", "  [%d] %p (%d,%d)%s %s text=\"%s\" is_active=%u bit_flags=0x%x",
-                      i, g_chain[i].control, g_chain[i].cx, g_chain[i].cy,
-                      g_chain[i].textOnly ? " text-only" : "",
-                      src ? src : "?", src ? text : "", isActive, bitFlags);
-    }
+    LogChainContents(panel, active);
 }
 
 }  // namespace acc::menus::chain
