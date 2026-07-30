@@ -41,30 +41,27 @@ KOTOR 2 (TSL), which runs a very similar engine but a different executable
 
 ### WHAT PHASE 3 STILL OWES (start here next session)
 
-Every candidate section is executed and play-tested. These four are what
-stands between here and Phase 5. None is blocked; each needs a user
-decision, so walk them ONE AT A TIME as usual.
+**Exactly one item: A12.** Everything else is closed — see the
+2026-07-30 (evening) block at the end of this file for what happened to
+each.
 
-1. **A10 — leftover diagnostics. ITS BLOCKER IS GONE.** A10 was held back
-   because the `combat_special_watch` logging was the live evidence trail
-   for bug F1. **F1 is fixed** (commit 890fa07..17337dc), so that logging
-   is no longer load-bearing and A10 is actionable. Three other sites were
-   already available.
-2. **C4 — landmark doorMatched ordering contract.** Has a concrete
-   proposal in `reports/phase-3-sweep.md`: `IterateLandmarks` already
-   RECEIVES the `area` and discards it; thread it through and gate the
-   cache read on it, turning a silent "0 landmarks matched" into a logged
-   mismatch. Exactly one caller to update. Needs an in-game landmark +
-   door narration pass.
-3. **A12 — per-tick work that runs when it has nothing to do.** A
-   behaviour/performance change, not cleanup. Needs its own decision.
-4. **The three probe-retirement questions** (`probe_mouselook`,
-   `probe_pathfind`, `probe_priority_groups`). Each has documented
-   evidence its investigation is closed and its findings are consumed by
-   shipped code. Per the probe convention this is a live-code removal
-   decision for the user, never a mechanical cleanup. NB
-   `probe_priority_groups` is LIVE — re-confirmed by namespace grep, not
-   repeating Phase 1's filename-grep mistake.
+1. **A12 — per-tick work that runs when it has nothing to do.** The only
+   open Phase-3 item. Two sites:
+   - `combat_special_watch.cpp` recomputes the full party-queue walk every
+     frame for 6 seconds to keep a value that is overwritten anyway. (F1
+     fixed whether that walk is CORRECT; A12 is about how often it runs.)
+   - `engine_area.cpp` recomputes rebased addresses on every call.
+   Behaviour-adjacent, not cleanup: changing when work happens can change
+   what a later read sees, so measure before and after. Same shape as the
+   already-fixed 360x/second combat-round clear.
+
+Closed since the list above was written:
+- **A10 — DECIDED, STAYS IN.** User: "we have extensive diagnostics
+  anyways." Not a deferral; do not re-raise it.
+- **C4 — DONE** (ac8ad98), play-tested.
+- **The three probes — RETIRED** (1ea67ba), play-tested.
+- **Log spam — LARGELY DONE** (85db604). See the evening block for why
+  Combat.Diag's residue is genuine signal rather than spam.
 
 **Candidate 28 is NOT owed.** Scope-corrected in the sweep report: only
 `engine_offsets.h` has narrow siblings, so 28 today means opportunistic
@@ -1643,3 +1640,103 @@ the engine_reads helpers are under-discovered, not under-provided.
 - Still open from the previous session: `GetForegroundPanel`'s raw-size
   fallback indexing `panelData[panelSize - 1]` while its scan covers only
   the first 32.
+
+## SESSION END 2026-07-30 (evening) — loose ends closed, only A12 left
+
+Three more commits `ac8ad98..85db604`, all play-tested. Phase 3 now has
+exactly one open item (A12).
+
+### C4 — the report's premise was wrong in a way that changed the work
+
+It said "`IterateLandmarks` already RECEIVES the `area` and discards it".
+It has no `area` parameter at all. The discarded `area` is on
+`AttachLandmarksToDoors` — and more importantly **the landmark cache never
+recorded which area it was built for**, so there was nothing to compare
+against. The fix had to add the state, not just thread a parameter.
+
+`RebuildLandmarkCache` now stores `g_landmark_area` (set even when handed
+a null area, so "never built" and "built for nothing" stay
+distinguishable); `IterateLandmarks` takes the area the CALLER believes it
+is walking; `AttachLandmarksToDoors` un-discards its parameter. On a
+mismatch the walk yields nothing — same outcome as before — but logs it,
+and returning false on the first call exits the caller's loop so it logs
+once per attempt, not once per landmark.
+
+### Probes retired — what had to be checked first
+
+The user's call ("not required, I don't use them any more"). This is a
+live-code removal, not a cleanup — `probe_priority_groups` was ticked
+every frame from `core_tick`. Three checks before deleting:
+- None of the three writes shipped state; they read, log and speak.
+- **Saved keybindings could not be corrupted**: bindings persist by NAME
+  (`Bind_<Name>` in acc_settings.ini), and both probe actions were already
+  excluded from the configurator by `IsUserRebindable`, so they never
+  persisted at all.
+- `kActionNames` is indexed by enum ordinal, so removing enum values could
+  have silently misaligned every name after the cut. Verified afterwards:
+  73 entries against 73 enum values, matching name-for-name across the
+  boundary.
+
+`kdev build --clean` 193 TUs (was 196), 0 warnings. Ctrl+F9 and
+Shift+AltGr are now unbound.
+
+### The log-spam thread — and the fourth under-discovered helper
+
+The user asked for block-aware dedup and then asked whether we already had
+it. **We did.** `acclog::BlockLog` has existed all along and does exactly
+that, including a `Key()` mechanism for stripping volatile pointers out of
+block identity. Its header comment even names the failure mode:
+"Trace's line-level dedup can't fold these because the repeats are
+interleaved across the block's stride".
+
+**Measure before choosing a fix — distinct-count is the wrong metric.**
+`Trace` folds only CONSECUTIVE repeats. In a current 18k log:
+- `Menus.PerKind` 3715 lines, 89% consecutive — Trace territory (and it
+  already works around C2712 by splitting tags).
+- `MapCursor.dump` 1421 lines, 7 distinct, **0% consecutive**.
+- `Combat.Diag` 2649 lines, 36 distinct, **0% consecutive**.
+- `Menus.SpecRead` 370 lines, 48 distinct, **0% consecutive**.
+The three with huge redundancy and zero consecutive repeats emit a
+repeating CYCLE of lines per tick; a per-tag last-message dedup cannot see
+that. Judging by distinct-count alone would have picked exactly the wrong
+mechanism.
+
+**Why those sites never adopted BlockLog, and the way around it.** MSVC
+C2712 forbids an object needing unwinding in a function that uses `__try`;
+`BlockLog` has a destructor and all three sites are SEH-heavy engine
+readers. The fix needs no restructuring of the SEH code: **declare the
+BlockLog in an SEH-free caller and pass a POINTER in.** A pointer is
+trivially destructible so C2712 never fires. Done for `MapCursor.dump`
+(`Tick()` owns the block, `FindNearestExploredMapNote` takes
+`acclog::BlockLog*`). Reuse this pattern for any other cycling dump.
+
+Deliberately NOT changed, having looked:
+- **`Combat.Diag` is not spam.** Its `CLEAR` lines come from a per-round
+  engine HOOK — there is no enclosing scope to own a block. Its 360/s
+  episode was already fixed by the `actions == 0` early-out; the ~2600
+  that remain are genuine state changes logged once each.
+- `Menus.SpecRead` at 370 lines is below the threshold for surgery.
+
+Also worth knowing before anyone panics at a huge log: the 852,540-line
+`patch-20260603-214547.log` is 82% the no-op combat-round clear that was
+already fixed. Current logs run 2k-19k lines.
+
+### THE HEADLINE FINDING FOR PHASE 5's END REPORT
+
+**Four separate times in one day, an existing helper turned out to be
+under-discovered rather than missing** — and two of those nearly became
+new duplicates written by this session:
+- `acc::engine::ReadLabelText` (chargen work — the local copy was WORSE,
+  it did not clear the buffer on fault)
+- `acc::engine::ReadLabelTextAt` (equipstats + charsheet, both
+  hand-rolling it; its own header names it as THE panel+offset form)
+- `acclog::BlockLog` (offered to BUILD it before grepping log.h; the user
+  asked "don't we have that already?" and was right)
+
+The pattern is not that these helpers are missing or badly written. It is
+that they are not findable from the call site. That is a documentation /
+discoverability problem, and it is the single most repeatable defect the
+whole phase surfaced. Worth a Phase-5 recommendation more concrete than
+"search first" — e.g. an index of the engine_reads + acclog surface in
+docs/llm-docs/, since CLAUDE.md's existing rule did not prevent any of the
+four.
